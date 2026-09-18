@@ -156,6 +156,12 @@ func measureRollout(path string, measurement *Measurement) error {
 					Last struct {
 						InputTokens int64 `json:"input_tokens"`
 					} `json:"last_token_usage"`
+					Total struct {
+						InputTokens           int64 `json:"input_tokens"`
+						CachedInputTokens     int64 `json:"cached_input_tokens"`
+						CacheWriteInputTokens int64 `json:"cache_write_input_tokens"`
+						OutputTokens          int64 `json:"output_tokens"`
+					} `json:"total_token_usage"`
 				} `json:"info"`
 			} `json:"payload"`
 		}
@@ -165,8 +171,15 @@ func measureRollout(path string, measurement *Measurement) error {
 		if event.Type == "compacted" {
 			measurement.Compactions++
 		}
+		if event.Type == "response_item" && (event.Payload.Type == "custom_tool_call" || event.Payload.Type == "function_call") {
+			measurement.ToolCalls++
+		}
 		if event.Type == "event_msg" && event.Payload.Type == "token_count" {
 			measurement.Calls++
+			measurement.InputTokens = event.Payload.Info.Total.InputTokens
+			measurement.CacheReadTokens = event.Payload.Info.Total.CachedInputTokens
+			measurement.CacheCreationTokens = event.Payload.Info.Total.CacheWriteInputTokens
+			measurement.OutputTokens = event.Payload.Info.Total.OutputTokens
 			context := event.Payload.Info.Last.InputTokens
 			if context > measurement.PeakContext {
 				measurement.PeakContext = context

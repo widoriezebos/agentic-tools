@@ -41,6 +41,7 @@ var Rows = []Row{
 	{Code: "LAUNCH_BUILD_UNSIZED", Owner: "internal/launch", Site: "admit.go", Shape: Question},
 	{Code: "LAUNCH_BUILD_OVERSIZE", Owner: "internal/launch", Site: "admit.go", Shape: Question},
 	{Code: "LAUNCH_READ_UNSPLIT", Owner: "internal/launch", Site: "admit.go", Shape: Question},
+	{Code: "RECEIPT_USAGE_INCOMPLETE", Owner: "internal/receipt", Site: "receipt.go", Shape: Question},
 	{Code: "UNIT_PLAN_INVALID", Owner: "internal/launch", Site: "unit_plan.go", Shape: Question},
 	{Code: "UNIT_RUN_BUSY", Owner: "internal/launch", Site: "unit_run.go", Shape: Question},
 	{Code: "UNIT_RUN_NOT_AWAITING", Owner: "internal/launch", Site: "unit_run.go", Shape: Question},

@@ -32,7 +32,7 @@ func TestLaunchSettingsPrintsEachValueAndSource(t *testing.T) {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if len(lines) != 14 || lines[0] != "launch.seat.window.tokens=200000 source=conf" || !strings.HasPrefix(lines[13], "context.handoff.margin.tokens=") {
+	if len(lines) != 17 || lines[0] != "launch.seat.window.tokens=200000 source=conf" || !strings.HasPrefix(lines[16], "context.handoff.margin.tokens=") {
 		t.Fatalf("lines=%q", lines)
 	}
 }

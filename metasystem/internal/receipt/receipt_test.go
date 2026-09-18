@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,21 @@ func baseOptions(t *testing.T) Options {
 		Root: root, File: filepath.Join(root, "memory", "receipts.log"),
 		Skills: "none", Verify: "skipped", Corrections: "0", StopLoss: "no",
 		Now: fixedNow, LookupEnv: noEnv,
+	}
+}
+
+func addUsage(opts *Options) {
+	setOptionField(opts, "Requests", "28")
+	setOptionField(opts, "ToolCalls", "162")
+	setOptionField(opts, "PeakContext", "163000")
+	setOptionField(opts, "CacheReadTokens", "2223400")
+	setOptionField(opts, "OutputTokens", "46200")
+}
+
+func setOptionField(opts *Options, name, value string) {
+	field := reflect.ValueOf(opts).Elem().FieldByName(name)
+	if field.IsValid() && field.CanSet() {
+		field.SetString(value)
 	}
 }
 
@@ -119,6 +135,7 @@ func TestReadMetricsAreOptionalAndNumeric(t *testing.T) {
 	}
 	opts.Now = func() time.Time { return fixedNow().Add(time.Second) }
 	opts.ReadTokens, opts.ReadCalls = "16000000", "106"
+	addUsage(&opts)
 	if result := Add(opts); result.Code != 0 {
 		t.Fatalf("receipt with read metrics failed: %+v", result)
 	}
@@ -130,7 +147,7 @@ func TestReadMetricsAreOptionalAndNumeric(t *testing.T) {
 	if strings.Contains(lines[0], "|read_tokens=") || strings.Contains(lines[0], "|read_calls=") {
 		t.Fatalf("optional metrics changed the old receipt shape: %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "|read_tokens=16000000|read_calls=106|") {
+	if !strings.Contains(lines[1], "|read_tokens=16000000|read_calls=106|requests=28|tool_calls=162|peak_context=163000|cache_read_tokens=2223400|output_tokens=46200|") {
 		t.Fatalf("read metrics missing from receipt: %q", lines[1])
 	}
 }
@@ -143,6 +160,7 @@ func TestDesignMetricsAreOptionalAndNumeric(t *testing.T) {
 	}
 	opts.Now = func() time.Time { return fixedNow().Add(time.Second) }
 	opts.DesignTokens, opts.DesignCalls = "56500000", "162"
+	addUsage(&opts)
 	if result := Add(opts); result.Code != 0 {
 		t.Fatalf("receipt with design metrics failed: %+v", result)
 	}
@@ -154,8 +172,55 @@ func TestDesignMetricsAreOptionalAndNumeric(t *testing.T) {
 	if strings.Contains(lines[0], "|design_tokens=") || strings.Contains(lines[0], "|design_calls=") {
 		t.Fatalf("optional metrics changed the old receipt shape: %q", lines[0])
 	}
-	if !strings.Contains(lines[1], "|design_tokens=56500000|design_calls=162|") {
+	if !strings.Contains(lines[1], "|design_tokens=56500000|design_calls=162|requests=28|tool_calls=162|peak_context=163000|cache_read_tokens=2223400|output_tokens=46200|") {
 		t.Fatalf("design metrics missing from receipt: %q", lines[1])
+	}
+}
+
+func TestUsageFieldsFollowTheTokenFields(t *testing.T) {
+	opts := baseOptions(t)
+	opts.Type, opts.Outcome = "design", "shipped"
+	opts.DesignTokens, opts.DesignCalls = "2432374", "7"
+	addUsage(&opts)
+	if result := Add(opts); result.Code != 0 {
+		t.Fatalf("complete usage was refused: %+v", result)
+	}
+	data, err := os.ReadFile(opts.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "|design_tokens=2432374|design_calls=7|requests=28|tool_calls=162|peak_context=163000|cache_read_tokens=2223400|output_tokens=46200|critique_waived="
+	if !strings.Contains(string(data), want) {
+		t.Fatalf("usage fields are out of order: %s", data)
+	}
+
+	incomplete := baseOptions(t)
+	incomplete.Type, incomplete.Outcome, incomplete.DesignTokens = "design", "shipped", "1"
+	result := Add(incomplete)
+	if result.Code != 2 || len(result.Err) != 1 || !strings.Contains(result.Err[0], "RECEIPT_USAGE_INCOMPLETE") {
+		t.Fatalf("incomplete usage was accepted: %+v", result)
+	}
+	for _, field := range []string{"requests", "tool_calls", "peak_context", "cache_read_tokens", "output_tokens"} {
+		if !strings.Contains(result.Err[0], field) {
+			t.Errorf("incomplete refusal omitted %s: %q", field, result.Err[0])
+		}
+	}
+
+	oldShape := baseOptions(t)
+	oldShape.Type, oldShape.Outcome = "design", "shipped"
+	if result := Add(oldShape); result.Code != 0 {
+		t.Fatalf("old shape was refused: %+v", result)
+	}
+	data, _ = os.ReadFile(oldShape.File)
+	if strings.Contains(string(data), "|requests=") || strings.Contains(string(data), "|tool_calls=") {
+		t.Fatalf("optional usage changed the old shape: %s", data)
+	}
+
+	invalid := baseOptions(t)
+	invalid.Type, invalid.Outcome = "other", "shipped"
+	setOptionField(&invalid, "Requests", "many")
+	if result := Add(invalid); result.Code != 2 || result.Err[0] != "invalid --requests: many" {
+		t.Fatalf("non-numeric usage was accepted: %+v", result)
 	}
 }
 
@@ -302,6 +367,36 @@ func TestCorrectDesignCalls(t *testing.T) {
 	data, _ = os.ReadFile(opts.File)
 	if !strings.Contains(string(data), "|field=design_calls|was=162|now=160|reason=usage correction\n") {
 		t.Fatalf("design call correction missing: %s", data)
+	}
+}
+
+func TestCorrectUsageFields(t *testing.T) {
+	opts := baseOptions(t)
+	opts.Type, opts.Outcome = "other", "shipped"
+	addUsage(&opts)
+	if result := Add(opts); result.Code != 0 {
+		t.Fatalf("seed add failed: %+v", result)
+	}
+	data, _ := os.ReadFile(opts.File)
+	original := strings.TrimSuffix(string(data), "\n")
+	opts.RefEpoch = strings.SplitN(original, "|", 2)[0]
+	opts.RefSHA1 = fmt.Sprintf("%x", sha1.Sum([]byte(original)))
+	opts.Reason = "usage correction"
+	for _, field := range []struct{ name, was, now string }{
+		{"requests", "28", "27"},
+		{"tool_calls", "162", "161"},
+		{"peak_context", "163000", "162000"},
+		{"cache_read_tokens", "2223400", "2223300"},
+		{"output_tokens", "46200", "46100"},
+	} {
+		opts.Field, opts.Was, opts.NowValue = field.name, field.was, field.now
+		if result := Correct(opts); result.Code != 0 {
+			t.Fatalf("valid %s correction failed: %+v", field.name, result)
+		}
+	}
+	opts.Field, opts.Was, opts.NowValue = "requests", "28", "many"
+	if result := Correct(opts); result.Code != 2 || result.Err[0] != "invalid corrected requests value: many" {
+		t.Fatalf("non-numeric usage correction was accepted: %+v", result)
 	}
 }
 

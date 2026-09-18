@@ -272,10 +272,55 @@ func TestCodexMeasureReadsTheRolloutFile(t *testing.T) {
 	day := time.Date(2026, 9, 17, 0, 0, 0, 0, time.UTC)
 	dir := filepath.Join(sessions, "2026", "09", "17")
 	os.MkdirAll(dir, 0o700)
-	rows := `{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":210001}}}}` + "\n" + `{"type":"compacted","payload":{}}` + "\n" + `{"type":"response_item","payload":{"type":"token_count"}}` + "\n"
+	rows := strings.Join([]string{
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100000},"total_token_usage":{"input_tokens":100,"cached_input_tokens":200,"cache_write_input_tokens":30,"output_tokens":40}}}}`,
+		`{"type":"response_item","payload":{"type":"custom_tool_call"}}`,
+		`{"type":"response_item","payload":{"type":"custom_tool_call"}}`,
+		`{"type":"response_item","payload":{"type":"function_call"}}`,
+		`{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":210001},"total_token_usage":{"input_tokens":1000,"cached_input_tokens":2000,"cache_write_input_tokens":300,"output_tokens":400}}}}`,
+		`{"type":"compacted","payload":{}}`,
+	}, "\n") + "\n"
 	os.WriteFile(filepath.Join(dir, "rollout-x-"+id+".jsonl"), []byte(rows), 0o600)
 	got, _, _, err := (CodexExec{SessionsRoot: sessions, Now: func() time.Time { return day }}).Measure(Record{Kind: "build"}, state)
-	require(t, err != nil || got.Calls != 1 || got.Compactions != 1 || got.PeakContext != 210001 || got.CallsAbove200 != 1, "measurement=%+v err=%v", got, err)
+	usage := measurementJSON(t, got)
+	require(t, err != nil || got.Calls != 2 || usage.ToolCalls != 3 || usage.InputTokens != 1000 ||
+		usage.CacheReadTokens != 2000 || usage.CacheCreationTokens != 300 || usage.OutputTokens != 400 ||
+		got.Compactions != 1 || got.PeakContext != 210001 || got.CallsAbove200 != 1,
+		"measurement=%+v err=%v", got, err)
+}
+
+func TestClaudeMeasureSumsUsageAndCountsToolCalls(t *testing.T) {
+	rows := strings.Join([]string{
+		`{"type":"assistant","message":{"id":"a","content":[{"type":"text","text":"working"}],"usage":{"input_tokens":10,"cache_read_input_tokens":20,"cache_creation_input_tokens":30,"output_tokens":40}}}`,
+		`{"type":"assistant","message":{"id":"a","content":[{"type":"tool_use","name":"Read"}],"usage":{"input_tokens":10,"cache_read_input_tokens":20,"cache_creation_input_tokens":30,"output_tokens":40}}}`,
+		`{"type":"assistant","message":{"id":"b","content":[{"type":"tool_use","name":"Write"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}`,
+	}, "\n") + "\n"
+	got, _, err := measureFixture(t, rows)
+	usage := measurementJSON(t, got)
+	require(t, err != nil || got.Calls != 2 || usage.ToolCalls != 2 || usage.InputTokens != 11 ||
+		usage.CacheReadTokens != 22 || usage.CacheCreationTokens != 33 || usage.OutputTokens != 44,
+		"measurement=%+v err=%v", got, err)
+}
+
+type measuredUsage struct {
+	ToolCalls           int   `json:"toolCalls"`
+	InputTokens         int64 `json:"inputTokens"`
+	CacheReadTokens     int64 `json:"cacheReadTokens"`
+	CacheCreationTokens int64 `json:"cacheCreationTokens"`
+	OutputTokens        int64 `json:"outputTokens"`
+}
+
+func measurementJSON(t *testing.T, measurement Measurement) measuredUsage {
+	t.Helper()
+	data, err := json.Marshal(measurement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values measuredUsage
+	if err := json.Unmarshal(data, &values); err != nil {
+		t.Fatal(err)
+	}
+	return values
 }
 func TestCoreRecordNamesNoRuntime(t *testing.T) {
 	data, _ := json.Marshal(Record{})

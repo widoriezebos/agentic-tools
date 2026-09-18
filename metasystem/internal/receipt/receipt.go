@@ -32,20 +32,25 @@ type Options struct {
 	Root string
 	File string
 
-	Type         string
-	Outcome      string
-	Skills       string
-	Verify       string
-	Corrections  string
-	StopLoss     string
-	Delegates    []string
-	Goal         string
-	BuiltBy      string
-	ReadTokens   string
-	ReadCalls    string
-	DesignTokens string
-	DesignCalls  string
-	Note         string
+	Type            string
+	Outcome         string
+	Skills          string
+	Verify          string
+	Corrections     string
+	StopLoss        string
+	Delegates       []string
+	Goal            string
+	BuiltBy         string
+	ReadTokens      string
+	ReadCalls       string
+	DesignTokens    string
+	DesignCalls     string
+	Requests        string
+	ToolCalls       string
+	PeakContext     string
+	CacheReadTokens string
+	OutputTokens    string
+	Note            string
 
 	RefEpoch  string
 	RefSHA1   string
@@ -194,6 +199,33 @@ func Add(opts Options) Result {
 	if opts.DesignCalls != "" && !epochRe.MatchString(opts.DesignCalls) {
 		return fail(2, "invalid --design-calls: %s", opts.DesignCalls)
 	}
+	usageFields := []struct {
+		flag  string
+		field string
+		value string
+	}{
+		{"requests", "requests", opts.Requests},
+		{"tool-calls", "tool_calls", opts.ToolCalls},
+		{"peak-context", "peak_context", opts.PeakContext},
+		{"cache-read-tokens", "cache_read_tokens", opts.CacheReadTokens},
+		{"output-tokens", "output_tokens", opts.OutputTokens},
+	}
+	for _, field := range usageFields {
+		if field.value != "" && !epochRe.MatchString(field.value) {
+			return fail(2, "invalid --%s: %s", field.flag, field.value)
+		}
+	}
+	if opts.ReadTokens != "" || opts.DesignTokens != "" {
+		var missing []string
+		for _, field := range usageFields {
+			if field.value == "" {
+				missing = append(missing, field.field)
+			}
+		}
+		if len(missing) > 0 {
+			return fail(2, "RECEIPT_USAGE_INCOMPLETE missing fields: %s", strings.Join(missing, ", "))
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(opts.File), 0o755); err != nil {
 		return fail(2, "cannot create receipt directory: %v", err)
 	}
@@ -237,6 +269,11 @@ func Add(opts Options) Result {
 	}
 	if opts.DesignCalls != "" {
 		line += "|design_calls=" + opts.DesignCalls
+	}
+	for _, field := range usageFields {
+		if field.value != "" {
+			line += "|" + field.field + "=" + field.value
+		}
 	}
 	line += fmt.Sprintf("|critique_waived=%s|waiver_stream=%s|note=%s\n", class, stream, noPipes(note))
 	if err := appendLine(opts.File, line); err != nil {
@@ -283,7 +320,9 @@ func Correct(opts Options) Result {
 		return fail(2, "invalid corrected built_by value: %s", opts.NowValue)
 	}
 	if (opts.Field == "read_tokens" || opts.Field == "read_calls" ||
-		opts.Field == "design_tokens" || opts.Field == "design_calls") &&
+		opts.Field == "design_tokens" || opts.Field == "design_calls" ||
+		opts.Field == "requests" || opts.Field == "tool_calls" || opts.Field == "peak_context" ||
+		opts.Field == "cache_read_tokens" || opts.Field == "output_tokens") &&
 		opts.NowValue != "" && !epochRe.MatchString(opts.NowValue) {
 		return fail(2, "invalid corrected %s value: %s", opts.Field, opts.NowValue)
 	}

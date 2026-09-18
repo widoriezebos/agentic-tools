@@ -9,18 +9,21 @@ import (
 )
 
 const (
-	SeatWindowKey     = "launch.seat.window.tokens"
-	BuildWindowKey    = "launch.build.window.tokens"
-	DesignWindowKey   = "launch.design.window.tokens"
-	ReadWindowKey     = "launch.read.window.tokens"
-	BuildModelKey     = "launch.build.model"
-	BuildEffortKey    = "launch.build.effort"
-	DesignModelKey    = "launch.design.model"
-	ReadModelKey      = "launch.read.model"
-	WaitCapKey        = "launch.wait.cap.seconds"
-	BriefCapKey       = "launch.brief.admitted.tokens"
-	BuildLinesCapKey  = "launch.build.max.changed.lines"
-	ReadSplitLinesKey = "launch.read.split.diff.lines"
+	SeatWindowKey               = "launch.seat.window.tokens"
+	BuildWindowKey              = "launch.build.window.tokens"
+	DesignWindowKey             = "launch.design.window.tokens"
+	ReadWindowKey               = "launch.read.window.tokens"
+	BuildModelKey               = "launch.build.model"
+	BuildEffortKey              = "launch.build.effort"
+	DesignModelKey              = "launch.design.model"
+	ReadModelKey                = "launch.read.model"
+	WaitCapKey                  = "launch.wait.cap.seconds"
+	BriefCapKey                 = "launch.brief.admitted.tokens"
+	BuildLinesCapKey            = "launch.build.max.changed.lines"
+	ReadSplitLinesKey           = "launch.read.split.diff.lines"
+	DesignBaselineTokensKey     = "launch.design.baseline.tokens"
+	DesignBaselineRequestsKey   = "launch.design.baseline.requests"
+	DesignBaselinePeakTokensKey = "launch.design.baseline.peak.tokens"
 )
 
 type Setting struct {
@@ -32,6 +35,8 @@ type Settings struct {
 	BuildModel, BuildEffort, DesignModel, ReadModel   string
 	WaitCapSeconds, BriefCap, BuildLinesCap           int64
 	ReadSplitLines                                    int64
+	DesignBaselineTokens, DesignBaselineRequests      int64
+	DesignBaselinePeakTokens                          int64
 	Values                                            []Setting
 }
 
@@ -42,6 +47,8 @@ var settingDefaults = []Setting{
 	{DesignModelKey, "claude-fable-5-1", "default"}, {ReadModelKey, "claude-opus-5", "default"},
 	{WaitCapKey, "240", "default"}, {BriefCapKey, "120000", "default"},
 	{BuildLinesCapKey, "1500", "default"}, {ReadSplitLinesKey, "1200", "default"},
+	{DesignBaselineTokensKey, "2432374", "default"}, {DesignBaselineRequestsKey, "28", "default"},
+	{DesignBaselinePeakTokensKey, "163000", "default"},
 }
 
 func DefaultSettings() Settings {
@@ -90,7 +97,8 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool), use
 	}
 	result.BuildModel, result.BuildEffort = result.Values[4].Value, result.Values[5].Value
 	result.DesignModel, result.ReadModel = result.Values[6].Value, result.Values[7].Value
-	targets = []*int64{&result.WaitCapSeconds, &result.BriefCap, &result.BuildLinesCap, &result.ReadSplitLines}
+	targets = []*int64{&result.WaitCapSeconds, &result.BriefCap, &result.BuildLinesCap, &result.ReadSplitLines,
+		&result.DesignBaselineTokens, &result.DesignBaselineRequests, &result.DesignBaselinePeakTokens}
 	for offset := range targets {
 		if *targets[offset], err = number(offset + 8); err != nil {
 			return Settings{}, err

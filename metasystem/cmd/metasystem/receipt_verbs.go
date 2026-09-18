@@ -7,11 +7,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
+
+var receiptLaunchStore = func() launch.Store { return launch.Store{} }
 
 // runReceipt relays scripts/receipt.sh's calling convention: the action
 // word, then one flag vocabulary shared by every action (a flag.FlagSet —
@@ -57,6 +61,12 @@ func runReceipt(args []string) int {
 	flags.StringVar(&opts.ReadCalls, "read-calls", "", "tool calls used by the read")
 	flags.StringVar(&opts.DesignTokens, "design-tokens", "", "tokens used by the design revision")
 	flags.StringVar(&opts.DesignCalls, "design-calls", "", "tool calls used by the design revision")
+	launchID := flags.String("launch", "", "terminal launch record that supplies usage")
+	flags.StringVar(&opts.Requests, "requests", "", "requests made by the launch")
+	flags.StringVar(&opts.ToolCalls, "tool-calls", "", "tool calls made by the launch")
+	flags.StringVar(&opts.PeakContext, "peak-context", "", "largest context used by one request")
+	flags.StringVar(&opts.CacheReadTokens, "cache-read-tokens", "", "tokens read from the cache")
+	flags.StringVar(&opts.OutputTokens, "output-tokens", "", "output tokens produced")
 	flags.StringVar(&opts.Note, "note", "", "free-text note")
 	flags.StringVar(&opts.RefEpoch, "ref-epoch", "", "corrected line's epoch")
 	flags.StringVar(&opts.RefSHA1, "ref-sha1", "", "corrected line's sha1")
@@ -95,6 +105,18 @@ func runReceipt(args []string) int {
 		}
 		opts.File = filepath.Join(root, "receipts.log")
 	}
+	if action == "add" && *launchID != "" {
+		record, err := receiptLaunchStore().Read(*launchID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "receipt launch %s: %v\n", *launchID, err)
+			return 2
+		}
+		if !record.State.Terminal() {
+			fmt.Fprintf(os.Stderr, "receipt launch %s is not terminal\n", *launchID)
+			return 2
+		}
+		fillReceiptUsageFromLaunch(&opts, record)
+	}
 	var result receipt.Result
 	switch action {
 	case "add":
@@ -118,4 +140,26 @@ func runReceipt(args []string) int {
 		fmt.Fprintln(os.Stderr, line)
 	}
 	return result.Code
+}
+
+func fillReceiptUsageFromLaunch(opts *receipt.Options, record launch.Record) {
+	measurement := record.Measurement
+	fill := func(target *string, value string) {
+		if *target == "" {
+			*target = value
+		}
+	}
+	if opts.Type == "design" {
+		fill(&opts.DesignTokens, strconv.FormatInt(measurement.TotalTokens(), 10))
+		fill(&opts.DesignCalls, strconv.Itoa(measurement.ToolCalls))
+	}
+	if opts.Type == "review" {
+		fill(&opts.ReadTokens, strconv.FormatInt(measurement.TotalTokens(), 10))
+		fill(&opts.ReadCalls, strconv.Itoa(measurement.ToolCalls))
+	}
+	fill(&opts.Requests, strconv.Itoa(measurement.Calls))
+	fill(&opts.ToolCalls, strconv.Itoa(measurement.ToolCalls))
+	fill(&opts.PeakContext, strconv.FormatInt(measurement.PeakContext, 10))
+	fill(&opts.CacheReadTokens, strconv.FormatInt(measurement.CacheReadTokens, 10))
+	fill(&opts.OutputTokens, strconv.FormatInt(measurement.OutputTokens, 10))
 }

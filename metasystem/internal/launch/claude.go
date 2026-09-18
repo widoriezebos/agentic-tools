@@ -204,11 +204,19 @@ func measureClaudeTranscript(path string, measurement *Measurement, seen map[str
 			continue
 		}
 		var message struct {
-			ID    string          `json:"id"`
+			ID      string `json:"id"`
+			Content []struct {
+				Type string `json:"type"`
+			} `json:"content"`
 			Usage json.RawMessage `json:"usage"`
 		}
 		if err := json.Unmarshal(row.Message, &message); err != nil {
 			return err
+		}
+		for _, block := range message.Content {
+			if block.Type == "tool_use" {
+				measurement.ToolCalls++
+			}
 		}
 		if message.ID == "" || len(message.Usage) == 0 || string(message.Usage) == "null" || seen[message.ID] {
 			continue
@@ -217,12 +225,17 @@ func measureClaudeTranscript(path string, measurement *Measurement, seen map[str
 			Input         int64 `json:"input_tokens"`
 			CacheRead     int64 `json:"cache_read_input_tokens"`
 			CacheCreation int64 `json:"cache_creation_input_tokens"`
+			Output        int64 `json:"output_tokens"`
 		}
 		if err := json.Unmarshal(message.Usage, &usage); err != nil {
 			return err
 		}
 		seen[message.ID] = true
 		measurement.Calls++
+		measurement.InputTokens += usage.Input
+		measurement.CacheReadTokens += usage.CacheRead
+		measurement.CacheCreationTokens += usage.CacheCreation
+		measurement.OutputTokens += usage.Output
 		context := usage.Input + usage.CacheRead + usage.CacheCreation
 		if context > measurement.PeakContext {
 			measurement.PeakContext = context

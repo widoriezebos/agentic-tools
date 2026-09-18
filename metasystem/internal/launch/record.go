@@ -38,20 +38,30 @@ type Output struct {
 	Bytes int64  `json:"bytes"`
 }
 type Measurement struct {
-	Calls         int    `json:"calls"`
-	Compactions   int    `json:"compactions"`
-	PeakContext   int64  `json:"peakContext"`
-	CallsAbove200 int    `json:"callsAbove200K"`
-	Turns         int    `json:"turns"`
-	ResultLines   int    `json:"resultLines"`
-	ResultWords   int    `json:"resultWords"`
-	ResultTail    string `json:"resultTail"`
-	PageLines     int    `json:"pageLines"`
-	PageWords     int    `json:"pageWords"`
-	PageMissing   bool   `json:"pageMissing"`
-	MaterialCount int    `json:"materialCount"`
-	Verdict       string `json:"verdict"`
+	Calls               int    `json:"calls"`
+	ToolCalls           int    `json:"toolCalls"`
+	InputTokens         int64  `json:"inputTokens"`
+	CacheReadTokens     int64  `json:"cacheReadTokens"`
+	CacheCreationTokens int64  `json:"cacheCreationTokens"`
+	OutputTokens        int64  `json:"outputTokens"`
+	Compactions         int    `json:"compactions"`
+	PeakContext         int64  `json:"peakContext"`
+	CallsAbove200       int    `json:"callsAbove200K"`
+	Turns               int    `json:"turns"`
+	ResultLines         int    `json:"resultLines"`
+	ResultWords         int    `json:"resultWords"`
+	ResultTail          string `json:"resultTail"`
+	PageLines           int    `json:"pageLines"`
+	PageWords           int    `json:"pageWords"`
+	PageMissing         bool   `json:"pageMissing"`
+	MaterialCount       int    `json:"materialCount"`
+	Verdict             string `json:"verdict"`
 }
+
+func (m Measurement) TotalTokens() int64 {
+	return m.InputTokens + m.CacheReadTokens + m.CacheCreationTokens + m.OutputTokens
+}
+
 type Record struct {
 	ID               string                     `json:"id"`
 	Kind             string                     `json:"kind"`
