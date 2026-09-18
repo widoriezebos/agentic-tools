@@ -345,11 +345,11 @@ func applyCommitMode(worktree, commit string, threeWay bool) error {
 	if err := contractgit.PreflightCommitAttributes(worktree, before, commit); err != nil {
 		return err
 	}
-	args := []string{"apply", "--index"}
+	gitArgs := []string{"apply", "--index"}
 	if threeWay {
-		args = append(args, "--3way")
+		gitArgs = append(gitArgs, "--3way")
 	}
-	_, err = gitInput(worktree, patch, append(args, "-")...)
+	_, err = gitInput(worktree, patch, append(gitArgs, "-")...)
 	if err != nil {
 		return err
 	}
