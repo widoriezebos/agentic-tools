@@ -1,6 +1,6 @@
 # batch-landing-known-issues-are-fixed
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Fixes to landed batch-landing code, each with a witness; a wrong fix is caught by its witness and the goal's proof."
@@ -9,13 +9,11 @@
 - Origin: human
 - Next step: fix-2 and fix-3 on main a2d38afad38379fcd9a4747f18adbe3035958309 (wave 3d). Next: closing re-read on a2d38afad38379fcd9a4747f18adbe3035958309 of the dm-g2read breaking items (post-push re-arm, capacity refusal classed as budget, BA14c two-tip); batch-buildcd-standard above its 30 s targetMs is a stable-state item.
 - OpenedAt: 2026-09-17T13:57:10Z
-- Revision: 8
+- Revision: 9
 - Labels: known-issue
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-17T13:57:13Z revision=2 opid=42GYA2RA2V15419GPQNH1H23CY-m1e-c6925449 authority=proven digest=599da8e41a5f2f608230bf5bba199521e26671f736f04322515373351937d941
-- Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-18T14:09:05Z revision=7 accountingRevision=7 episodeAt=2026-09-18T14:09:05Z episodeRevision=7
-- StopCapability: generation=7 revision=7 machine=m1b claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-17T13:57:10Z F5AR6ZDRZ3CKX78BNRC8Y7FMG2-m1e-c6925449 open actor=human:Wido targets=batch-landing-known-issues-are-fixed
@@ -26,4 +24,5 @@ History:
 - 2026-09-18T07:07:37Z CYD08HTRXQVGADXYFH4HEXSEZ2-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed
 - 2026-09-18T14:09:05Z VX1W40WNY90QQDD2GAQGNXNYPZ-m1b-d0e95724 claim actor=m1b+main-1789560571-22295-8d907a targets=batch-landing-known-issues-are-fixed
 - 2026-09-18T14:56:44Z SH2SY5T2G3Q2F1CGGTBDSBS3CH-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed displaced=m1b+main-1789560571-22295-8d907a@2026-09-18T14:09:05Z
-Integrity: sha256=dbee4aa42ac67f13dd64a5874007e5c6fe5d85013ba52d5e49819cf33a061e5c
+- 2026-09-18T14:59:51Z J0TXX6390B5A5DM7JST552KQT7-m1e-c6925449 release actor=human:Wido targets=batch-landing-known-issues-are-fixed displaced=m1b+main-1789560571-22295-8d907a@2026-09-18T14:09:05Z
+Integrity: sha256=61a41a946e7ee466985a7dca68bbd918b8601da356ebd23460a3fcebbf004673
