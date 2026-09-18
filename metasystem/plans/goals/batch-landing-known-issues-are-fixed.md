@@ -1,6 +1,6 @@
 # batch-landing-known-issues-are-fixed
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Fixes to landed batch-landing code, each with a witness; a wrong fix is caught by its witness and the goal's proof."
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: 2026-09-18 direct mode (m1e): closing read dm-g2read running on d6bde1f22 since 08:26 local 09-18. Next: conclude on CONCLUDE, fix brief on NOT YET.
 - OpenedAt: 2026-09-17T13:57:10Z
-- Revision: 6
+- Revision: 7
 - Labels: known-issue
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-17T13:57:13Z revision=2 opid=42GYA2RA2V15419GPQNH1H23CY-m1e-c6925449 authority=proven digest=599da8e41a5f2f608230bf5bba199521e26671f736f04322515373351937d941
+- Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-18T14:09:05Z revision=7 accountingRevision=7 episodeAt=2026-09-18T14:09:05Z episodeRevision=7
+- StopCapability: generation=7 revision=7 machine=m1b claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-17T13:57:10Z F5AR6ZDRZ3CKX78BNRC8Y7FMG2-m1e-c6925449 open actor=human:Wido targets=batch-landing-known-issues-are-fixed
@@ -22,4 +24,5 @@ History:
 - 2026-09-17T16:47:54Z S4HSFEV9D25CFRY3JJCC8P43W3-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed
 - 2026-09-17T18:10:38Z B7KWRNKSHPQ0AV0XC7HKCSDH9A-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed
 - 2026-09-18T07:07:37Z CYD08HTRXQVGADXYFH4HEXSEZ2-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed
-Integrity: sha256=909dd75acb0f0aa512fc5c9032edef042b6d5c7c22892333e6c923a9faba6270
+- 2026-09-18T14:09:05Z VX1W40WNY90QQDD2GAQGNXNYPZ-m1b-d0e95724 claim actor=m1b+main-1789560571-22295-8d907a targets=batch-landing-known-issues-are-fixed
+Integrity: sha256=8eb114f363fc6e3512c3a3fa9ea0498852758d439dd6b2f59bcbbe2b04e984d2
