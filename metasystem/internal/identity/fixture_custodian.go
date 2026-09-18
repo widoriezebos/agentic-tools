@@ -266,16 +266,17 @@ func runCustodian(owner Ref, watch io.Reader, log io.Writer, runtime custodianRu
 		case <-clock.After(runtime.poll):
 		}
 		stop := armCustodianHalt(log, runtime)
-		ownerState := AliveRef(runtime.prober, owner)
-		var deadMember Ref
-		if ownerState == Alive {
-			for _, member := range runtime.chain {
-				if AliveRef(runtime.prober, member) == Dead {
-					deadMember = member
-					break
-				}
+		var lostMember Ref
+		for _, member := range runtime.chain {
+			exact, state, _ := runtime.prober.Probe(member.Pid)
+			if state == Dead || state == Alive && (!SameIdentity(exact, member) || exact.Zombie || exact.Exiting) {
+				lostMember = member
+				break
 			}
-			if deadMember.Pid == 0 && runtime.descendants != nil {
+		}
+		ownerState := AliveRef(runtime.prober, owner)
+		if ownerState == Alive {
+			if lostMember.Pid == 0 && runtime.descendants != nil {
 				descendants, err := runtime.descendants(runtime.prober, owner)
 				if err != nil {
 					if errors.Is(err, errFixtureCustodianOwnerNotAlive) {
@@ -304,8 +305,8 @@ func runCustodian(owner Ref, watch io.Reader, log io.Writer, runtime custodianRu
 			}
 		}
 		stop()
-		if deadMember.Pid != 0 {
-			return reapLostLauncher(owner, deadMember, log, runtime)
+		if lostMember.Pid != 0 {
+			return reapLostLauncher(owner, lostMember, log, runtime)
 		}
 		switch ownerState {
 		case Dead:

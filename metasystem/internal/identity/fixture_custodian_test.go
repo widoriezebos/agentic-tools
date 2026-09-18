@@ -911,6 +911,97 @@ func TestCustodianOwnerDeathDuringObservationIsQuiet(t *testing.T) {
 	}
 }
 
+func TestCustodianLostLauncherWhenOwnerAndLauncherDieTogether(t *testing.T) {
+	t.Parallel()
+
+	owner, launcher := fixtureExact(700, 70).Ref(), fixtureExact(701, 71).Ref()
+	var log strings.Builder
+	runtime := custodianRuntime{
+		prober: fixtureTable{}, chain: []Ref{launcher}, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: newManualCustodianClock(), scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+	}
+	if err := runCustodian(owner, strings.NewReader(""), &log, runtime); err != nil {
+		t.Fatal(err)
+	}
+	killLine := "action=kill-owner dead-launcher="
+	killAt, completeAt := strings.Index(log.String(), killLine), strings.Index(log.String(), "action=complete")
+	if killAt < 0 || completeAt <= killAt || !strings.Contains(log.String(), "result=recorded process is gone") {
+		t.Fatalf("custodian log=%q, want lost-launcher result before completion", log.String())
+	}
+}
+
+func TestCustodianLostLauncherZombieKillsLiveOwner(t *testing.T) {
+	t.Parallel()
+
+	owner, launcher := fixtureExact(700, 70), fixtureExact(701, 71)
+	launcher.Zombie = true
+	processes := fixtureTable{owner.Pid: owner, launcher.Pid: launcher}
+	var signaled []int64
+	var log strings.Builder
+	runtime := custodianRuntime{
+		prober: processes, chain: []Ref{launcher.Ref()}, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: newManualCustodianClock(), scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		sender: func(pid int, _ syscall.Signal) error {
+			signaled = append(signaled, int64(pid))
+			delete(processes, int64(pid))
+			return nil
+		},
+	}
+	if err := runCustodian(owner.Ref(), strings.NewReader(""), &log, runtime); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(signaled, []int64{owner.Pid}) || !strings.Contains(log.String(), "action=kill-owner dead-launcher=") {
+		t.Fatalf("custodian signaled=%v log=%q, want zombie launcher to kill owner %d", signaled, log.String(), owner.Pid)
+	}
+}
+
+func TestCustodianChainLiveLauncherDeadOwnerReapsWithoutKillOwner(t *testing.T) {
+	t.Parallel()
+
+	owner, launcher := fixtureExact(700, 70).Ref(), fixtureExact(701, 71)
+	descendantScans := 0
+	var log strings.Builder
+	runtime := custodianRuntime{
+		prober: fixtureTable{launcher.Pid: launcher}, chain: []Ref{launcher.Ref()}, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: newManualCustodianClock(), scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		descendants: func(Prober, Ref) ([]Ref, error) {
+			descendantScans++
+			return nil, nil
+		},
+	}
+	if err := runCustodian(owner, strings.NewReader(""), &log, runtime); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(log.String(), "action=kill-owner") || !strings.Contains(log.String(), "action=complete") || descendantScans != 0 {
+		t.Fatalf("custodian log=%q descendant-scans=%d, want direct reap without owner kill or descendant observation", log.String(), descendantScans)
+	}
+}
+
+func TestCustodianLostLauncherExitingKillsLiveOwner(t *testing.T) {
+	t.Parallel()
+
+	owner, launcher := fixtureExact(700, 70), fixtureExact(701, 71)
+	launcher.Exiting = true
+	processes := fixtureTable{owner.Pid: owner, launcher.Pid: launcher}
+	var signaled []int64
+	var log strings.Builder
+	runtime := custodianRuntime{
+		prober: processes, chain: []Ref{launcher.Ref()}, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: newManualCustodianClock(), scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		sender: func(pid int, _ syscall.Signal) error {
+			signaled = append(signaled, int64(pid))
+			delete(processes, int64(pid))
+			return nil
+		},
+	}
+	if err := runCustodian(owner.Ref(), strings.NewReader(""), &log, runtime); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(signaled, []int64{owner.Pid}) || !strings.Contains(log.String(), "action=kill-owner dead-launcher=") {
+		t.Fatalf("custodian signaled=%v log=%q, want exiting launcher to kill owner %d", signaled, log.String(), owner.Pid)
+	}
+}
+
 func TestNestedCustodiansDoNotSignalEachOther(t *testing.T) {
 	t.Parallel()
 
