@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: The known issues that batch landing (units-land-in-batches-under-one-proof) merges with are fixed forward right after the merge. DONE: (1) the four breaking items of the C+D read (MATERIAL 1 prefix receipt exit 76 aborts the landing, 2 Seal re-applies ejected units, 3 a prefix red loses its groups, 4 a moved trunk re-pushes on every tick) and their riders are fixed with witnesses, by blb FIX 1 unless it rode the merge; (2) C+D read MATERIAL 5-10 and its twelve minors are fixed with witnesses or recorded as not a defect with the reason; (3) Build B's read minors are fixed or recorded the same way; (4) BA14c, the two-tip landing-branch publication of the r3 amendment (candidate branch pushed before the proof, receipt-bearing series after green), is built; (5) while item 1 is open no seat routes a real landing through landing batch; (6) the goal's Next lists each open item until it is fixed. Read files: hact-20260912/m1e-tools-0917/blb-buildcd2-read-items.md and blb-buildb-read-items.md.
 - Origin: human
-- Next step: fix-2 and fix-3 on main a2d38afad38379fcd9a4747f18adbe3035958309 (wave 3d). Next: closing re-read on a2d38afad38379fcd9a4747f18adbe3035958309 of the dm-g2read breaking items (post-push re-arm, capacity refusal classed as budget, BA14c two-tip); batch-buildcd-standard above its 30 s targetMs is a stable-state item.
+- Next step: fix-bed-abandonment on main d2713932efcdc9a3adee0493bd8196f3996e1bb4; remaining: the closing re-read of the dm-g2read breaking items, then conclude; buildcd 30 s targetMs stays a stable-state item.
 - OpenedAt: 2026-09-17T13:57:10Z
-- Revision: 9
+- Revision: 10
 - Labels: known-issue
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
@@ -25,4 +25,5 @@ History:
 - 2026-09-18T14:09:05Z VX1W40WNY90QQDD2GAQGNXNYPZ-m1b-d0e95724 claim actor=m1b+main-1789560571-22295-8d907a targets=batch-landing-known-issues-are-fixed
 - 2026-09-18T14:56:44Z SH2SY5T2G3Q2F1CGGTBDSBS3CH-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed displaced=m1b+main-1789560571-22295-8d907a@2026-09-18T14:09:05Z
 - 2026-09-18T14:59:51Z J0TXX6390B5A5DM7JST552KQT7-m1e-c6925449 release actor=human:Wido targets=batch-landing-known-issues-are-fixed displaced=m1b+main-1789560571-22295-8d907a@2026-09-18T14:09:05Z
-Integrity: sha256=61a41a946e7ee466985a7dca68bbd918b8601da356ebd23460a3fcebbf004673
+- 2026-09-18T20:05:43Z T72PQHQHAWS9F15FFZF44CEXE9-m1e-c6925449 edit actor=human:Wido targets=batch-landing-known-issues-are-fixed
+Integrity: sha256=f28ad62b397653529fe5450190030354e229f4406297ae493da77ae3eebf5cb9
