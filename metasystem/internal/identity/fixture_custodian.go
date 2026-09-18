@@ -186,7 +186,7 @@ func RunCustodian(owner Ref, watch io.Reader, ready io.WriteCloser, log io.Write
 		prober: prober, self: exact.Ref(), chain: chain,
 		scan: FixtureSurvivorsOfDeadOwner, poll: poll, bound: bound, haltMargin: custodianHaltMargin,
 		descendants: func(prober Prober, owner Ref) ([]Ref, error) {
-			return fixtureDescendants(prober, owner, AllPids, ParentPid)
+			return censusDescendants(prober, owner, TakeProcessCensus)
 		},
 		halt: os.Exit, clock: systemCustodianClock{},
 		records: os.Getenv(FixtureCustodianRecordsEnv), closeWatch: closeWatch,
@@ -307,7 +307,7 @@ func runCustodian(owner Ref, watch io.Reader, log io.Writer, runtime custodianRu
 			}
 		}
 		stop()
-		if lostMember.Pid != 0 {
+		if lostMember.Pid != 0 && ownerState != Unknown {
 			return reapLostLauncher(owner, lostMember, log, runtime)
 		}
 		switch ownerState {
@@ -324,6 +324,19 @@ func runCustodian(owner Ref, watch io.Reader, log io.Writer, runtime custodianRu
 			}
 		}
 	}
+}
+
+func censusDescendants(prober Prober, owner Ref, takeCensus func() (ProcessCensus, error)) ([]Ref, error) {
+	if takeCensus == nil {
+		return nil, fmt.Errorf("identity: process census is unavailable")
+	}
+	census, err := takeCensus()
+	if err != nil {
+		return nil, err
+	}
+	return fixtureDescendants(prober, owner, func() ([]int64, error) {
+		return census.Pids(), nil
+	}, census.Parent)
 }
 
 func fixtureDescendants(

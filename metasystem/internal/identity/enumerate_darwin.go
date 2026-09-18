@@ -12,17 +12,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// AllPids returns every process id on the machine via sysctl kern.proc.all —
-// the native replacement for shelling out to `ps`. The kernel returns an
-// array of kinfo_proc structs; p_pid sits at a fixed offset in each, with a
-// fixed stride, so no per-process subprocess is needed.
-//
-// kinfo_proc has a stable darwin ABI: the extern_proc begins each struct and
-// p_pid is at offset 40 (after the 16-byte p_starttime union, two 8-byte
-// pointers, p_flag int, and p_stat char with alignment); sizeof(kinfo_proc)
-// is 648. The tests assert AllPids finds our own pid and that the pids
-// resolve, so an ABI drift is caught rather than silently corrupting.
-func AllPids() ([]int64, error) {
+// TakeProcessCensus reads every process id and parent link from one Darwin
+// process-table snapshot.
+func TakeProcessCensus() (ProcessCensus, error) {
 	var raw []byte
 	var err error
 	// The sysctl sizes its buffer in one call and fills it in another; a
@@ -38,31 +30,58 @@ func AllPids() ([]int64, error) {
 		time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("identity: sysctl kern.proc.all: %w", err)
+		return ProcessCensus{}, fmt.Errorf("identity: sysctl kern.proc.all: %w", err)
 	}
-	return decodeAllPids(raw)
+	return decodeProcessCensus(raw)
+}
+
+// AllPids returns every process id on the machine via sysctl kern.proc.all —
+// the native replacement for shelling out to `ps`.
+func AllPids() ([]int64, error) {
+	census, err := TakeProcessCensus()
+	if err != nil {
+		return nil, err
+	}
+	return census.Pids(), nil
 }
 
 // sysctlRaw is the kernel query; a test replaces it to shape its answers.
 var sysctlRaw = unix.SysctlRaw
 
 func decodeAllPids(raw []byte) ([]int64, error) {
+	census, err := decodeProcessCensus(raw)
+	if err != nil {
+		return nil, err
+	}
+	return census.Pids(), nil
+}
+
+func decodeProcessCensus(raw []byte) (ProcessCensus, error) {
 	if len(raw) == 0 {
-		return nil, nil
+		return ProcessCensus{}, nil
 	}
-	const pPidOffset = 40
-	const kinfoProcSize = 648
+	const (
+		pPidOffset      = int(unsafe.Offsetof(unix.ExternProc{}.P_pid))
+		parentPidOffset = int(unsafe.Offsetof(unix.KinfoProc{}.Eproc) + unsafe.Offsetof(unix.Eproc{}.Ppid))
+		kinfoProcSize   = unix.SizeofKinfoProc
+	)
+	if pPidOffset != 40 {
+		return ProcessCensus{}, fmt.Errorf("identity: kern.proc.all pid offset is %d, want Darwin ABI offset 40 (ABI drift?)", pPidOffset)
+	}
 	if len(raw)%kinfoProcSize != 0 {
-		return nil, fmt.Errorf("identity: kern.proc.all returned %d bytes, not a multiple of %d (ABI drift?)", len(raw), kinfoProcSize)
+		return ProcessCensus{}, fmt.Errorf("identity: kern.proc.all returned %d bytes, not a multiple of %d (ABI drift?)", len(raw), kinfoProcSize)
 	}
-	var pids []int64
+	census := ProcessCensus{parents: make(map[int64]int64, len(raw)/kinfoProcSize)}
 	for offset := 0; offset+pPidOffset+4 <= len(raw); offset += kinfoProcSize {
 		pid := int32(binary.LittleEndian.Uint32(raw[offset+pPidOffset:]))
 		if pid > 0 {
-			pids = append(pids, int64(pid))
+			processID := int64(pid)
+			parentID := int64(int32(binary.LittleEndian.Uint32(raw[offset+parentPidOffset:])))
+			census.pids = append(census.pids, processID)
+			census.parents[processID] = parentID
 		}
 	}
-	return pids, nil
+	return census, nil
 }
 
 // ProcessCwd returns a process's current working directory via the

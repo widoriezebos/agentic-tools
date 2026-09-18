@@ -40,6 +40,20 @@ type timedCustodianExitProber struct {
 	exitAt   map[int64]time.Duration
 }
 
+type knownOwnerAfterClockProber struct {
+	fixtureTable
+	clock      *manualCustodianClock
+	owner      int64
+	knownAfter time.Time
+}
+
+func (prober *knownOwnerAfterClockProber) Probe(pid int64) (Exact, Liveness, error) {
+	if pid == prober.owner && prober.clock.Now().Before(prober.knownAfter) {
+		return Exact{}, Unknown, fmt.Errorf("fixture probe denied")
+	}
+	return prober.fixtureTable.Probe(pid)
+}
+
 func (prober timedCustodianExitProber) Probe(pid int64) (Exact, Liveness, error) {
 	child, present := prober.children[pid]
 	if !present || prober.clock.Now().Sub(prober.started) >= prober.exitAt[pid] {
@@ -884,6 +898,35 @@ func TestCustodianReapsObservedDescendantsAfterReparenting(t *testing.T) {
 	}
 }
 
+func TestCustodianDescendantObservationTakesOneCensus(t *testing.T) {
+	t.Parallel()
+
+	owner := fixtureExact(500, 50)
+	first, second, grandchild := fixtureExact(501, 51), fixtureExact(502, 52), fixtureExact(503, 53)
+	unrelated := fixtureExact(600, 60)
+	processes := fixtureTable{
+		owner.Pid: owner, first.Pid: first, second.Pid: second, grandchild.Pid: grandchild, unrelated.Pid: unrelated,
+	}
+	calls := 0
+	takeCensus := func() (ProcessCensus, error) {
+		calls++
+		return ProcessCensus{
+			pids: []int64{owner.Pid, first.Pid, second.Pid, grandchild.Pid, unrelated.Pid},
+			parents: map[int64]int64{
+				owner.Pid: 1, first.Pid: owner.Pid, second.Pid: owner.Pid, grandchild.Pid: first.Pid, unrelated.Pid: 1,
+			},
+		}, nil
+	}
+	got, err := censusDescendants(processes, owner.Ref(), takeCensus)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Ref{first.Ref(), second.Ref(), grandchild.Ref()}
+	if !slices.Equal(got, want) || calls != 1 {
+		t.Fatalf("descendants = %v, census calls = %d; want %v from one census", got, calls, want)
+	}
+}
+
 func TestCustodianOwnerDeathDuringObservationIsQuiet(t *testing.T) {
 	t.Parallel()
 
@@ -974,6 +1017,34 @@ func TestCustodianLostLauncherNamesTheOutermostLostMember(t *testing.T) {
 				t.Fatalf("custodian log=%q, want outermost lost member %s exactly once, not %s, followed by completion", log.String(), test.want, test.notWant)
 			}
 		})
+	}
+}
+
+func TestCustodianLostLauncherWaitsForAKnownOwnerState(t *testing.T) {
+	t.Parallel()
+
+	owner, launcher := fixtureExact(700, 70), fixtureExact(701, 71).Ref()
+	clock := newManualCustodianClock()
+	poll := time.Millisecond
+	processes := fixtureTable{owner.Pid: owner}
+	prober := &knownOwnerAfterClockProber{
+		fixtureTable: processes, clock: clock, owner: owner.Pid, knownAfter: clock.Now().Add(2 * poll),
+	}
+	var log strings.Builder
+	runtime := custodianRuntime{
+		prober: prober, chain: []Ref{launcher}, poll: poll, bound: 5 * time.Millisecond,
+		clock: clock, scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		sender: func(pid int, _ syscall.Signal) error {
+			delete(processes, int64(pid))
+			return nil
+		},
+	}
+	if err := runCustodian(owner.Ref(), strings.NewReader(""), &log, runtime); err != nil {
+		t.Fatalf("custodian returned %v; log=%q", err, log.String())
+	}
+	if strings.Contains(log.String(), "owner survived launcher loss") || strings.Count(log.String(), "action=kill-owner dead-launcher=") != 1 ||
+		!strings.Contains(log.String(), "action=complete") {
+		t.Fatalf("custodian log=%q, want one delayed owner kill and completion", log.String())
 	}
 }
 

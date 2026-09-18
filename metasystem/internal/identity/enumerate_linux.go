@@ -32,6 +32,22 @@ func AllPids() ([]int64, error) {
 	return pids, nil
 }
 
+// TakeProcessCensus reads the process set and the parent currently reported
+// for each process. Linux exposes these facts through separate procfs files.
+func TakeProcessCensus() (ProcessCensus, error) {
+	pids, err := AllPids()
+	if err != nil {
+		return ProcessCensus{}, err
+	}
+	census := ProcessCensus{pids: pids, parents: make(map[int64]int64, len(pids))}
+	for _, pid := range pids {
+		if parent, known := ParentPid(pid); known {
+			census.parents[pid] = parent
+		}
+	}
+	return census, nil
+}
+
 // ProcessCwd returns a process's current working directory by resolving
 // /proc/<pid>/cwd. ok is false when it cannot be read — reading another
 // user's process fails with EACCES, which the census treats as a denial,
