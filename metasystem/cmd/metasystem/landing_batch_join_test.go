@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 func prepublicationJoinBed(t *testing.T) (batchJoinRequest, batchJoinDependencies, *int) {
@@ -51,6 +53,17 @@ func assertJoinRefusedBeforeQueue(t *testing.T, request batchJoinRequest, depend
 		t.Fatalf("refused join changed queue: records=%+v err=%v", records, readErr)
 	}
 	return err
+}
+
+func TestLandingBatchJoinRefusesZeroAccountingRevision(t *testing.T) {
+	request, dependencies, gateCalls := prepublicationJoinBed(t)
+	dependencies.binding = func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
+		return dispatchcore.GoalBinding{Revision: 2, Machine: "seat", Lineage: "lineage", File: &goal.GoalFile{Claimed: &goal.ClaimRecord{}}, Capability: goal.StopCapability{ClaimEpoch: 1}}, nil
+	}
+	dependencies.publish = func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error) error {
+		return errors.New("join reached publication without an accounting revision")
+	}
+	assertJoinRefusedBeforeQueue(t, request, dependencies, "BATCH_JOIN_REVISION_MOVED", gateCalls, 0)
 }
 
 func TestLandingBatchJoinRefusesRedFastStaticGate(t *testing.T) {

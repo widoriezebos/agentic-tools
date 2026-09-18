@@ -6,6 +6,9 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"slices"
@@ -98,6 +101,65 @@ func TestBatchRuntimeInputsCannotRegisterCapability(t *testing.T) {
 	command.Dir = "../.."
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("runtime input registered a batch capability: %v\n%s", err, output)
+	}
+}
+
+func TestBatchRolloutRequiresSealReceiptDiagnosisAndRecovery(t *testing.T) {
+	want := []batchCapability{
+		assemblyConflictCeilingAndSeal,
+		prefixReceipts,
+		ejectionAndRedScheduling,
+		atomicSeriesAndRecovery,
+	}
+	if !slices.Equal(batchRolloutRequirements[:], want) {
+		t.Fatalf("batch rollout requirements=%v, want %v", batchRolloutRequirements, want)
+	}
+	for _, omitted := range want {
+		available := make([]batchCapability, 0, len(requiredBatchCapabilities)-1)
+		for _, capability := range requiredBatchCapabilities {
+			if capability != omitted {
+				available = append(available, capability)
+			}
+		}
+		registry := map[batchCapability]struct{}{}
+		if registerBatchRollout(registry, available) || len(registry) != 0 {
+			t.Fatalf("batch rollout registered with %s absent: %v", omitted, registry)
+		}
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), "landing_batch_rollout.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var initBody []ast.Stmt
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Recv == nil && function.Name.Name == "init" {
+			initBody = function.Body.List
+			break
+		}
+	}
+	if len(initBody) != 1 {
+		t.Fatalf("production batch rollout init has %d statements, want one guarded registration", len(initBody))
+	}
+	expression, ok := initBody[0].(*ast.ExprStmt)
+	if !ok {
+		t.Fatalf("production batch rollout init statement is %T, want guarded registration call", initBody[0])
+	}
+	call, ok := expression.X.(*ast.CallExpr)
+	if !ok || len(call.Args) != 2 {
+		t.Fatalf("production batch rollout init expression is %T with guarded arguments unavailable", expression.X)
+	}
+	function, functionOK := call.Fun.(*ast.Ident)
+	registry, registryOK := call.Args[0].(*ast.Ident)
+	available, availableOK := call.Args[1].(*ast.SliceExpr)
+	var availableName *ast.Ident
+	availableNameOK := false
+	if availableOK {
+		availableName, availableNameOK = available.X.(*ast.Ident)
+	}
+	if !functionOK || function.Name != "registerBatchRollout" || !registryOK || registry.Name != "compiledBatchCapabilities" ||
+		!availableOK || !availableNameOK || availableName.Name != "requiredBatchCapabilities" || available.Low != nil || available.High != nil || available.Max != nil {
+		t.Fatalf("production batch rollout init does not bind the guarded required capability registration: %#v", call)
 	}
 }
 

@@ -254,7 +254,7 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 			}}, nil
 		},
 	}
-	sample := proofrun.LoadSample{OverlappingHost: 2, OverlapKnown: true}
+	sample := proofrun.LoadSample{OverlappingHost: 7, OverlapKnown: true}
 	if err := executeBatchProof(root, batchID, "landing-owner", "full", sample, time.Unix(8, 0), deps); err != nil {
 		t.Fatal(err)
 	}
@@ -740,6 +740,7 @@ func TestGoalHandoverTargetRootFlagFlows(t *testing.T) {
 func TestBatchProductionReturnAndForwardHandoverArguments(t *testing.T) {
 	const batchID = "01j5x00000000000000000ba01"
 	root, seat := t.TempDir(), filepath.Join(t.TempDir(), "seat")
+	wrongSeat := filepath.Join(t.TempDir(), "wrong-seat")
 	store := batch.NewStore(root, nil)
 	claim := batch.Claim{Machine: "seat-machine", Lineage: "seat-lineage", Epoch: 3, Revision: 4, AccountingRevision: 4}
 	if err := store.Create(batch.Record{Schema: 1, BatchID: batchID, State: batch.StateOpen, Units: []batch.Unit{{
@@ -747,12 +748,26 @@ func TestBatchProductionReturnAndForwardHandoverArguments(t *testing.T) {
 	}}}); err == nil {
 		t.Fatal("invalid return-pending fixture unexpectedly passed")
 	}
-	if err := store.Create(batch.Record{Schema: 1, BatchID: batchID, State: batch.StateOpen, Units: []batch.Unit{{
-		GoalID: "goal-a", Chain: "chain-a", SeatRoot: seat, Claim: claim, State: batch.UnitJoined,
-	}}}); err != nil {
+	if err := store.Create(batch.Record{Schema: 1, BatchID: batchID, State: batch.StateOpen, Units: []batch.Unit{
+		{GoalID: "goal-a", Chain: "chain-a", SeatRoot: seat, Claim: claim, State: batch.UnitJoined},
+		{GoalID: "goal-a", Chain: "old-chain", SeatRoot: wrongSeat, Claim: claim, State: batch.UnitJoined},
+	}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := batch.RequestReturn(store, batchID, "goal-a", batch.UnitEjected, "red", "owner", time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := store.Load(batchID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.Units[0], fixture.Units[1] = fixture.Units[1], fixture.Units[0]
+	fixtureBytes, err := json.MarshalIndent(fixture, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixturePath := filepath.Join(root, "artifacts", "agents", "landing-batches", batchID+".json")
+	if err := os.WriteFile(fixturePath, append(fixtureBytes, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	original, originalRead := batchChildRunner, batchReturnLedgerGoal

@@ -5,10 +5,31 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
+var batchRolloutRequirements = [...]batchCapability{
+	assemblyConflictCeilingAndSeal,
+	prefixReceipts,
+	ejectionAndRedScheduling,
+	atomicSeriesAndRecovery,
+}
+
 func init() {
-	for _, capability := range requiredBatchCapabilities {
-		compiledBatchCapabilities[capability] = struct{}{}
+	registerBatchRollout(compiledBatchCapabilities, requiredBatchCapabilities[:])
+}
+
+func registerBatchRollout(registry map[batchCapability]struct{}, available []batchCapability) bool {
+	for _, requirement := range batchRolloutRequirements {
+		found := false
+		for _, capability := range available {
+			found = found || capability == requirement
+		}
+		if !found {
+			return false
+		}
 	}
+	for _, capability := range available {
+		registry[capability] = struct{}{}
+	}
+	return true
 }
 
 // productionBatchLedgerOwner uses the landing identity that mints trunk-red operation identifiers.

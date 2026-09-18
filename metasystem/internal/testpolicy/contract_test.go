@@ -174,6 +174,47 @@ func TestMetaSystemContractNamesOnlyUntaggedGoTests(t *testing.T) {
 	}
 }
 
+func TestMetaSystemBatchBuildCDPinsInputsAndTaggedWitnessOwner(t *testing.T) {
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const groupID = "batch-buildcd-standard"
+	group, ok := groupMap(contract.Groups)[groupID]
+	if !ok {
+		t.Fatalf("%s group is absent", groupID)
+	}
+	for _, input := range []string{
+		"metasystem/cmd/metasystem/landing_verbs.go",
+		"metasystem/plans/units-land-in-batches-under-one-proof-brief-b.md",
+	} {
+		if !contains(group.Inputs, input) {
+			t.Errorf("%s inputs omit %s: %v", groupID, input, group.Inputs)
+		}
+	}
+	const witness = "TestBatchTaggedCapabilityWitnessExecutesInProof"
+	var owners []string
+	for _, candidate := range contract.Groups {
+		if candidate.Adapter != "go" {
+			continue
+		}
+		all, names, parseErr := GoTests(candidate)
+		if parseErr != nil {
+			t.Fatalf("group %s tests: %v", candidate.ID, parseErr)
+		}
+		if !all && contains(names, witness) {
+			owners = append(owners, candidate.ID)
+		}
+	}
+	if !reflect.DeepEqual(owners, []string{groupID}) {
+		t.Fatalf("%s owners=%v, want exactly [%s]", witness, owners, groupID)
+	}
+}
+
 func TestMetaSystemContractAlwaysAuditsGoTestEnvironments(t *testing.T) {
 	data, err := os.ReadFile("../../testing.json")
 	if err != nil {
