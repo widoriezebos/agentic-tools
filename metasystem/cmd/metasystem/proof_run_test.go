@@ -358,12 +358,12 @@ func TestCommitProofTerminalRefusesWithoutGoalRevisionAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Now().UTC()
-	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
+	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
 		GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 30,
 		Identity: proofIdentity, Launcher: launcher, Now: started}))
 
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || decision.Disposition != proofrun.DispositionExecuted {
+		t.Fatalf("reserve = %+v, %+v, %v", attempt, decision, err)
 	}
 	deadline, err := time.Parse(time.RFC3339Nano, attempt.Deadline)
 	if err != nil {
@@ -414,6 +414,7 @@ func proofExtensionGoalFixture(t *testing.T) (string, time.Time) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/1200m/1/3\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	pinProofBinaryFixture(t, root)
 	amendSyncedGoalFixture(t, root, "proof extension fixture", func(file *goal.GoalFile) {
 		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
 		file.Budget.AttemptLimit = 1
@@ -648,6 +649,7 @@ func TestBatchP2RequiresDiagnosticHeadroom(t *testing.T) {
 
 func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 	controlRoot := syncedClaimedGoalFixture(t)
+	proofFixture := pinProofBinaryFixture(t, controlRoot)
 	controlRoot, err := filepath.EvalSymlinks(controlRoot)
 	if err != nil {
 		t.Fatal(err)
@@ -713,8 +715,7 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 			args = append(args, "--retry-decision", retry)
 		}
 		args = append(args, "--", "bash", "-c", body, "fixture", count)
-		command := exec.Command(engine, args...)
-		command.Env = environment
+		command := proofFixture.command(environment, engine, args...)
 		output, err := command.CombinedOutput()
 		status := 0
 		if exit, ok := err.(*exec.ExitError); ok {
@@ -781,14 +782,15 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 		root := os.Getenv("GOVERNED_COMMAND_ROOT")
-		command := exec.Command(os.Getenv("GOVERNED_COMMAND_ENGINE"), "proof-run", "launch",
+		proofFixture := pinProofBinaryFixture(t, root)
+		command := proofFixture.command(os.Environ(), os.Getenv("GOVERNED_COMMAND_ENGINE"), "proof-run", "launch",
 			"--suite", "governed-command", "--root", root, "--control-root", root,
 			"--conf", filepath.Join(root, "metasystem.conf"), "--progress", filepath.Join(root, "artifacts", "governed.progress.jsonl"),
 			"--log", filepath.Join(root, "artifacts", "governed.log"), "--banner", "governed command canary", "--", "true")
 		// The governed locators travel under the fixture's own names: the
 		// package's TestMain clears every METASYSTEM_PROOF_* control before
 		// a test runs, so the engine receives them here, not by inheritance.
-		command.Env = append(os.Environ(), "METASYSTEM_PROOF_RUN_ROOT="+os.Getenv("GOVERNED_COMMAND_PROOF_RUN_ROOT"),
+		command.Env = append(command.Env, "METASYSTEM_PROOF_RUN_ROOT="+os.Getenv("GOVERNED_COMMAND_PROOF_RUN_ROOT"),
 			"METASYSTEM_PROOF_RUN_ID="+os.Getenv("GOVERNED_COMMAND_PROOF_RUN_ID"))
 		command.Stdout, command.Stderr = os.Stdout, os.Stderr
 		if err := command.Run(); err != nil {
@@ -933,12 +935,12 @@ func terminalCommitFixture(t *testing.T) (string, proofrun.Attempt, func([]strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
+	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
 		GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 30,
 		Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()}))
 
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || decision.Disposition != proofrun.DispositionExecuted {
+		t.Fatalf("reserve = %+v, %+v, %v", attempt, decision, err)
 	}
 	deadline, err := time.Parse(time.RFC3339Nano, attempt.Deadline)
 	if err != nil {

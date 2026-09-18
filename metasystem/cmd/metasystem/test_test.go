@@ -1201,6 +1201,7 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), data, 0o644)
 	confPath := filepath.Join(root, "metasystem.conf")
 	writeTestingFixtureFile(t, confPath, []byte("metasystem.version=1\nmetasystem.runtimes=fake\nrole.code-critic.runtime=fake\ntesting.contract=testing.json\ndispatch.cap-min=1\ndispatch.cap-max=120\n"), 0o644)
+	proofFixture := pinProofBinaryFixture(t, root)
 	ignorePath := filepath.Join(root, ".gitignore")
 	ignore, err := os.ReadFile(ignorePath)
 	if err != nil {
@@ -1270,10 +1271,9 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	// Public admission owns the attempt, authenticated worker, input parity,
 	// and atomic terminal receipt. A manually reserved parent would bind a
 	// different source/configuration context from the actual testing command.
-	public := exec.Command(engine, "test", "run", "--root", root, "--tree", candidate,
+	public := proofFixture.command(fixtureEnvironment, engine, "test", "run", "--root", root, "--tree", candidate,
 		"--mode", "auto", "--purpose", "delivery", "--goal", "policy-corpus", "--cap-min", "5")
 	public.Dir = projectRoot
-	public.Env = fixtureEnvironment
 	output, runErr := public.CombinedOutput()
 	if runErr != nil {
 		t.Fatalf("authenticated first-transition worker did not complete all six frozen cases: %v\n%s", runErr, output)
@@ -1304,6 +1304,7 @@ func TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTestingFixtureFile(t, filepath.Join(root, "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0o644)
+	proofFixture := pinProofBinaryFixture(t, root)
 	writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), data, 0o644)
 	writeTestingFixtureFile(t, filepath.Join(root, "source.txt"), []byte("source\n"), 0o644)
 	testingFixtureGit(t, root, "init", "-q", "-b", "main")
@@ -1327,8 +1328,8 @@ func TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine(t *testing.T) {
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {
 		t.Fatalf("build public flag-negative engine: %v\n%s", buildErr, output)
 	}
-	public := exec.Command(engine, "test", "plan", "--root", root, "--tree", tree, "--mode", "standard", "--purpose", "diagnostic")
-	public.Env = append(os.Environ(), "METASYSTEM_TRUSTED_POLICY_DECISION=1")
+	public := proofFixture.command(nil, engine, "test", "plan", "--root", root, "--tree", tree, "--mode", "standard", "--purpose", "diagnostic")
+	public.Env = append(public.Env, "METASYSTEM_TRUSTED_POLICY_DECISION=1")
 	output, publicErr := public.CombinedOutput()
 	if publicErr == nil || !strings.Contains(string(output), "TEST_POLICY_ENGINE_REQUIRED") {
 		t.Fatalf("public caller bypassed retained engine authentication with an ambient flag: err=%v output=%s", publicErr, output)
@@ -1386,6 +1387,7 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	writeTestingFixtureFile(t, filepath.Join(root, "src", "output.txt"), []byte("v1\n"), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(root, ".gitignore"), []byte("artifacts/\n"), 0o644)
 	testingFixtureGit(t, root, "init")
+	testingFixtureGit(t, root, "config", "metasystem.steward.landing-ref", "refs/remotes/origin/main")
 	testingFixtureGit(t, root, "add", ".")
 	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "base")
 	head, unborn, err := (gittree.Workspace{Dir: root}).HeadCommit()
@@ -1424,6 +1426,7 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 	testingFixtureGit(t, root, "add", "plans/goals/peer.md")
 	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "ledger-only destination advancement")
 	recordOnlyDestination := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", recordOnlyDestination)
 	if err := steward.MintIdentity(steward.RepoIdentityPath(root), steward.InstallIdentity{RepoIdentity: canonicalRoot, Generation: 1,
 		InstallPath: canonicalEngine, InstallDigest: "sha256:" + digest, MintedAt: "2026-09-09T00:00:00Z", Enrollment: steward.EnrollmentFixture,
 		MintedBy: "machine-rebuild", EngineBuild: head[:12], LandedCommit: recordOnlyDestination, LandingRef: "refs/remotes/origin/main"}); err != nil {

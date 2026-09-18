@@ -322,6 +322,22 @@ fixture_first_fixed_line_number() { # pattern, file
   return 0
 }
 
+pin_land_fixture_proof_admission() { # configuration
+  local configuration=$1 pin='proof.admission.top-level-max=4'
+  [[ "$fixture_scenario" == *admission* ]] && return 0
+  if [[ -f "$configuration" ]] && grep -q '^proof[.]admission[.]top-level-max=' "$configuration"; then
+    grep -Fxq "$pin" "$configuration" \
+      || { echo "land $fixture_scenario fixture: conflicting proof admission pin" >&2; return 1; }
+  else
+    printf '%s\n' "$pin" >>"$configuration"
+  fi
+  case "$fixture_scenario" in
+    receipt-cutover | carried-second)
+      echo "land $fixture_scenario fixture: $pin"
+      ;;
+  esac
+}
+
 make_leg() { # name
   leg_root=$tmp/$1
   leg_seed_repo=$leg_root/seed
@@ -654,6 +670,7 @@ BACKLOG
     receipt_root_digest=$("$source_engine" util sha256 --file "$leg_seed/plans/goals/backlog.md")
     printf 'Integrity: sha256=%s\n' "$receipt_root_digest" >>"$leg_seed/plans/goals/backlog.md"
   fi
+  pin_land_fixture_proof_admission "$leg_seed/metasystem.conf"
   git -C "$leg_seed_repo" init -q
   git -C "$leg_seed_repo" symbolic-ref HEAD refs/heads/main
   git -C "$leg_seed" config user.name fixture

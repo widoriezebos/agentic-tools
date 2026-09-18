@@ -47,6 +47,47 @@ func TestSampleLoadExportUsesTheProofCensus(t *testing.T) {
 	}
 }
 
+func TestSubprocessHostLoadSeamOverridesReadersOnlyWhenSet(t *testing.T) {
+	now := time.Unix(7, 0)
+	installFakeLoad(t, hostload.Sample{Available: true, Cores: 12, Load1m: 6}, 2, true)
+
+	previous, present := os.LookupEnv(TestHostLoadEnvironment)
+	if err := os.Unsetenv(TestHostLoadEnvironment); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if present {
+			_ = os.Setenv(TestHostLoadEnvironment, previous)
+		} else {
+			_ = os.Unsetenv(TestHostLoadEnvironment)
+		}
+	})
+	production := SampleLoad(t.TempDir(), "proof-self", 41, now)
+	if production.Cores != 12 || production.Load1m != 6 || production.OverlappingHost != 2 || !production.OverlapKnown {
+		t.Fatalf("unset subprocess seam changed the installed readers: %+v", production)
+	}
+
+	if err := os.Setenv(TestHostLoadEnvironment, "3"); err != nil {
+		t.Fatal(err)
+	}
+	isolated := SampleLoad(t.TempDir(), "proof-self", 41, now)
+	if isolated.Cores != 18 || isolated.Load1m != 0 || isolated.OverlappingHost != 3 || !isolated.OverlapKnown || isolated.At != now.UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("subprocess seam sample = %+v", isolated)
+	}
+	if nested, known := sampleNestedProofLauncher(41); nested || !known {
+		t.Fatalf("subprocess seam nested census = %v, known=%v", nested, known)
+	}
+}
+
+func TestRealLoadReadersRequireExplicitOptIn(t *testing.T) {
+	useRealLoadReaders(t)
+	now := time.Unix(7, 0)
+	sample := SampleLoad(t.TempDir(), "proof-self", int64(os.Getpid()), now)
+	if sample.At != now.UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("real sampler timestamp = %q, want %q", sample.At, now.UTC().Format(time.RFC3339Nano))
+	}
+}
+
 func TestProofLauncherArgv(t *testing.T) {
 	for argv, want := range map[string]bool{
 		"/seat/m1b/metasystem/bin/metasystem proof-run launch --suite testing --root /x": true,
@@ -390,14 +431,24 @@ func TestFilePatienceDefectsNamesFailedConsumptionBoundedGroups(t *testing.T) {
 
 func TestUnreadableAttemptRecordsAreSkippedNotFatal(t *testing.T) {
 	installFakeLoad(t, hostload.Sample{Available: true, Cores: 18, Load1m: 1}, 0, true)
-	root, identity := proofAttemptFixture(t, "skip-unreadable")
+	root, proofIdentity := proofAttemptFixture(t, "skip-unreadable")
 	launcher, err := CurrentProcessIdentity(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	startedAt := time.Unix(launcher.PidStartedAt, 0)
+	if launcher.PidStartedAtMicro != 0 {
+		startedAt = time.UnixMicro(launcher.PidStartedAtMicro)
+	}
+	loadSeams.prober = &censusProber{processes: map[int64]identity.Exact{
+		launcher.Pid: {
+			Pid: launcher.Pid, StartedAt: startedAt,
+			StartTicks: launcher.PidStartTicks, BootID: launcher.BootID,
+		},
+	}, calls: map[int64]int{}}
 	now := time.Date(2026, 9, 12, 17, 0, 0, 0, time.UTC)
 	good, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
-		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now}))
+		AccountingRevision: 2, ReservedMinutes: 4, Identity: proofIdentity, Launcher: launcher, Now: now}))
 
 	if err != nil {
 		t.Fatal(err)

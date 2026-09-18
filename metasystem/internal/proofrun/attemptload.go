@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,20 +33,52 @@ type AttemptLoad struct {
 // LoadAttribution names a terminal taken under load in the record.
 const LoadAttribution = "load"
 
+// TestHostLoadEnvironment lets a subprocess fixture replace the machine load
+// and launcher census with a zero-load host and the named number of other
+// launchers. Ordinary processes do not set it and keep the production readers.
+const TestHostLoadEnvironment = "METASYSTEM_TEST_PROOF_HOST_LOAD"
+
 // loadSeams are the readers the sample is taken from; tests script them.
-var loadSeams = struct {
+type loadReaders struct {
 	host      func(now time.Time) hostload.Sample
 	launchers func(self int64) (int, bool)
 	nested    func(self int64) (bool, bool)
 	prober    identity.Prober
 	pids      func() ([]int64, error)
 	parent    func(pid int64) (int64, bool)
-}{}
+}
+
+var loadSeams loadReaders
 
 func init() {
-	loadSeams.host, loadSeams.launchers = hostload.Read, countProofLaunchers
-	loadSeams.nested, loadSeams.prober = nestedProofLauncher, identity.KernelProber{}
-	loadSeams.pids, loadSeams.parent = identity.AllPids, identity.ParentPid
+	loadSeams = realLoadReaders()
+}
+
+func realLoadReaders() loadReaders {
+	return loadReaders{
+		host: hostload.Read, launchers: countProofLaunchers,
+		nested: nestedProofLauncher, prober: identity.KernelProber{},
+		pids: identity.AllPids, parent: identity.ParentPid,
+	}
+}
+
+func testHostLoad(now time.Time) (hostload.Sample, int, bool, bool) {
+	raw, set := os.LookupEnv(TestHostLoadEnvironment)
+	if !set {
+		return hostload.Sample{}, 0, false, false
+	}
+	launchers, err := strconv.Atoi(raw)
+	if err != nil || launchers < 0 {
+		return hostload.Sample{At: now.UTC().Format(time.RFC3339Nano), Detail: TestHostLoadEnvironment + " must be a non-negative integer"}, 0, false, true
+	}
+	return hostload.Sample{At: now.UTC().Format(time.RFC3339Nano), Available: true, Cores: 18}, launchers, true, true
+}
+
+func sampleNestedProofLauncher(self int64) (bool, bool) {
+	if _, _, _, set := testHostLoad(time.Time{}); set {
+		return false, true
+	}
+	return loadSeams.nested(self)
 }
 
 // sampleLoad reads the host, this checkout's other live attempts, and the
@@ -53,11 +86,18 @@ func init() {
 // is the self every path uses (reserve and every finalize alike), so its
 // family (the battery's nested bed launchers, its parents) never counts.
 func sampleLoad(root, selfAttempt string, launcher int64, now time.Time) LoadSample {
-	sample := LoadSample{Sample: loadSeams.host(now)}
-	sample.OverlappingLocal = liveAttemptsOtherThan(root, selfAttempt)
-	if count, known := loadSeams.launchers(launcher); known {
-		sample.OverlappingHost, sample.OverlapKnown = count, true
+	testSample, testLaunchers, testKnown, testOverride := testHostLoad(now)
+	sample := LoadSample{}
+	if testOverride {
+		sample.Sample = testSample
+		sample.OverlappingHost, sample.OverlapKnown = testLaunchers, testKnown
+	} else {
+		sample.Sample = loadSeams.host(now)
+		if count, known := loadSeams.launchers(launcher); known {
+			sample.OverlappingHost, sample.OverlapKnown = count, true
+		}
 	}
+	sample.OverlappingLocal = liveAttemptsOtherThan(root, selfAttempt)
 	return sample
 }
 

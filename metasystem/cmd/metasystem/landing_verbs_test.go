@@ -572,6 +572,7 @@ git commit "${commit_args[@]}" --trailer "Landing-Provenance: $provenance" \
 
 	writeReceiptFixture(t, root, ".gitignore", "artifacts/\nbin/\n")
 	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.version=1\nmetasystem.runtimes=fake\nrole.code-critic.runtime=fake\ntesting.contract=testing.json\ndispatch.cap-min=1\ndispatch.cap-max=120\n")
+	proofFixture := pinProofBinaryFixture(t, root)
 	writeCandidateEngineBuildFixture(t, root, filepath.Join(root, "bin", "metasystem"))
 	writeReceiptFixture(t, root, "internal/app/source.txt", "base-one\nkeep-two\nkeep-three\nkeep-four\nbase-five\n")
 	recertificationContract := testpolicy.Contract{SchemaVersion: 1,
@@ -732,8 +733,8 @@ git commit "${commit_args[@]}" --trailer "Landing-Provenance: $provenance" \
 		testReceiptArgs = append(testReceiptArgs, "--tree", candidateTree)
 	}
 	testReceiptArgs = append(testReceiptArgs, "--mode", "auto", "--goal", "landing-goal", "--cap-min", "1")
-	testReceiptCommand := exec.Command(filepath.Join(root, "bin", "metasystem"), testReceiptArgs...)
-	testReceiptCommand.Env = append(receiptCanaryEnvironment(), "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	testReceiptCommand := proofFixture.command(receiptCanaryEnvironment(), filepath.Join(root, "bin", "metasystem"), testReceiptArgs...)
+	testReceiptCommand.Env = append(testReceiptCommand.Env, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	if !moveOrigin {
 		started, ok := lease.StartedAt(int64(os.Getpid()), nil)
 		if !ok {
@@ -1092,6 +1093,7 @@ func runCanonicalReceiptFixture(t *testing.T, frozen bool) {
 	runReceiptGit(t, root, "config", "goal.sync-remote", "local")
 	runReceiptGit(t, root, "config", "goal.sync-branch", goal.LocalLedgerBranch)
 	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.runtimes=fake\ndispatch.cap-min=1\ndispatch.cap-max=120\n")
+	proofFixture := pinProofBinaryFixture(t, root)
 	writeReceiptFixture(t, root, ".gitignore", "artifacts/\nbin/\n")
 	writeReceiptFixture(t, root, "go.mod", "module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.27.0\n")
 	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
@@ -1121,6 +1123,10 @@ cp "$RECEIPT_CANARY_ENGINE" "$target"
 chmod 755 "$target"
 `)
 	writeReceiptFixture(t, root, "helpers/gofmt", "#!/usr/bin/env bash\nexit 0\n")
+	writeReceiptFixture(t, root, "helpers/proof-auth", `#!/usr/bin/env bash
+if [[ "${1:-} ${2:-}" == 'proof-run worker-authorized' ]]; then exit 0; fi
+exec "$RECEIPT_CANARY_ENGINE" "$@"
+`)
 	writeReceiptFixture(t, root, "helpers/go", `#!/usr/bin/env bash
 set -euo pipefail
 case "${1:-}" in
@@ -1153,7 +1159,7 @@ case "${1:-}" in
   *) printf 'unexpected tiny go invocation: %q\n' "$*" >&2; exit 97 ;;
 esac
 `)
-	for _, relative := range []string{"scripts/agents/go-gate.sh", "scripts/agents/witness-gate.sh", "scripts/agents/go-build.sh", "helpers/go", "helpers/gofmt"} {
+	for _, relative := range []string{"scripts/agents/go-gate.sh", "scripts/agents/witness-gate.sh", "scripts/agents/go-build.sh", "helpers/go", "helpers/gofmt", "helpers/proof-auth"} {
 		if err := os.Chmod(filepath.Join(root, relative), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -1173,6 +1179,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"start","at":"%s","d
 evidence="$METASYSTEM_PROOF_CONTROL_ROOT/artifacts/agents/proof-runs/delivery/$METASYSTEM_PROOF_ATTEMPT.coverage"
 mkdir -p "$evidence"
 root=$PWD
+export METASYSTEM_PROOF_AUTH_BIN="$root/helpers/proof-auth"
 delivery_contract=0
 export PATH="$root/helpers:$PATH"
 WITNESS_GATE_FALLBACK=plain source scripts/agents/witness-gate.sh
@@ -1246,9 +1253,9 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		t.Fatal(err)
 	}
 	resultPath := filepath.Join(t.TempDir(), "result.json")
-	command := exec.Command(engine, "landing", "test-receipt", "--root", root, "--tree", tree,
+	command := proofFixture.command(receiptCanaryEnvironment(), engine, "landing", "test-receipt", "--root", root, "--tree", tree,
 		"--command", landing.CanonicalValidatorCommand, "--goal", "receipt-goal", "--cap-min", "1", "--result", resultPath)
-	command.Env = append(receiptCanaryEnvironment(), "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
+	command.Env = append(command.Env, "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
 		"RECEIPT_CANARY_MEASUREMENT_COUNT="+measurementCount, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
 		"RECEIPT_CANARY_REAL_GO="+realGo, "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
@@ -1281,9 +1288,9 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		t.Fatal(err)
 	}
 	repeatResult := filepath.Join(t.TempDir(), "repeat-result.json")
-	repeat := exec.Command(engine, "landing", "test-receipt", "--root", root, "--tree", tree,
+	repeat := proofFixture.command(receiptCanaryEnvironment(), engine, "landing", "test-receipt", "--root", root, "--tree", tree,
 		"--command", landing.CanonicalValidatorCommand, "--goal", "receipt-goal", "--cap-min", "1", "--result", repeatResult)
-	repeat.Env = append(receiptCanaryEnvironment(), "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
+	repeat.Env = append(repeat.Env, "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
 		"RECEIPT_CANARY_MEASUREMENT_COUNT="+measurementCount, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
 		"RECEIPT_CANARY_REAL_GO="+realGo, "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
@@ -1326,9 +1333,9 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		{"terminal-parent", []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + root, "METASYSTEM_PROOF_ATTEMPT=" + attempts[0].AttemptID}, "proof parent context is not live"},
 	} {
 		t.Run(refusal.name, func(t *testing.T) {
-			probe := exec.Command(engine, "landing", "test-receipt", "--root", root, "--tree", tree,
+			probe := proofFixture.command(repeat.Env, engine, "landing", "test-receipt", "--root", root, "--tree", tree,
 				"--command", landing.CanonicalValidatorCommand, "--goal", "receipt-goal", "--cap-min", "1")
-			probe.Env = append(append([]string(nil), repeat.Env...), refusal.env...)
+			probe.Env = append(probe.Env, refusal.env...)
 			out, err := probe.CombinedOutput()
 			if err == nil || !strings.Contains(string(out), refusal.want) {
 				t.Fatalf("public %s admission did not refuse exactly: %v\n%s", refusal.name, err, out)
@@ -1401,6 +1408,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	writeReceiptFixture(t, root, ".gitignore", "artifacts/\nbin/\n")
 	writeReceiptFixture(t, projectRoot, "payload.txt", "public shared testing input\n")
 	writeReceiptFixture(t, root, "metasystem.conf", "testing.contract=testing.json\nmetasystem.runtimes=fake\ndispatch.cap-min=1\ndispatch.cap-max=120\n")
+	proofFixture := pinProofBinaryFixture(t, root)
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	writeCandidateEngineBuildFixture(t, root, engine)
 	launchCount := filepath.Join(root, "artifacts", "shared-testing-launches")
@@ -1505,8 +1513,8 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 		t.Fatal(err)
 	}
 	runPublic := func() ([]byte, error) {
-		command := exec.Command(engine, "landing", "test-receipt", "--root", root, "--tree", tree, "--mode", "auto", "--goal", "receipt-goal", "--cap-min", "1")
-		command.Env = append(receiptCanaryEnvironment(), "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+		command := proofFixture.command(receiptCanaryEnvironment(), engine, "landing", "test-receipt", "--root", root, "--tree", tree, "--mode", "auto", "--goal", "receipt-goal", "--cap-min", "1")
+		command.Env = append(command.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 		return command.CombinedOutput()
 	}
 	firstOutput, firstErr := runPublic()
@@ -1567,8 +1575,8 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	if err != nil || !bytes.Equal(bytes.TrimSpace(original), bytes.TrimSpace(reusedBytes)) {
 		t.Fatalf("current-candidate exact reuse changed the original committed receipt: err=%v", err)
 	}
-	verify := exec.Command(engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
-	verify.Env = append(receiptCanaryEnvironment(), "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	verify := proofFixture.command(receiptCanaryEnvironment(), engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
+	verify.Env = append(verify.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	verifyOutput, verifyErr := verify.CombinedOutput()
 	if verifyErr != nil || !strings.Contains(string(verifyOutput), "TEST-RESULT sufficient=true tree="+tree) {
 		t.Fatalf("normal test verification did not consume retained records-only evidence: %v\n%s", verifyErr, verifyOutput)
@@ -1585,8 +1593,8 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	writeReceiptFixture(t, projectRoot, "payload.txt", "moved declared input\n")
 	runReceiptGit(t, projectRoot, "add", "payload.txt")
 	movedTree := runReceiptGit(t, projectRoot, "write-tree")
-	movedVerify := exec.Command(engine, "test", "verify", "--root", root, "--tree", movedTree, "--goal", "receipt-goal")
-	movedVerify.Env = append(receiptCanaryEnvironment(), "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	movedVerify := proofFixture.command(receiptCanaryEnvironment(), engine, "test", "verify", "--root", root, "--tree", movedTree, "--goal", "receipt-goal")
+	movedVerify.Env = append(movedVerify.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	movedOutput, movedErr := movedVerify.CombinedOutput()
 	if exit, ok := movedErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
 		!strings.Contains(string(movedOutput), "proof-input-moved-after-receipt: group policy-protection") ||
@@ -1602,8 +1610,8 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	if err := os.Chmod(filepath.Join(fakeBin, "sh"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	environmentVerify := exec.Command(engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
-	environmentVerify.Env = append(receiptCanaryEnvironment(), "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
+	environmentVerify := proofFixture.command(receiptCanaryEnvironment(), engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
+	environmentVerify.Env = append(environmentVerify.Env, "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	environmentOutput, environmentErr := environmentVerify.CombinedOutput()
 	if exit, ok := environmentErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
@@ -1614,8 +1622,8 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	writeReceiptFixture(t, root, "scripts/agents/coverage-ratchet.json", `{"floors":{"fixture/application":81.0}}`)
 	runReceiptGit(t, projectRoot, "add", engineDeclaredInput)
 	engineInputTree := runReceiptGit(t, projectRoot, "write-tree")
-	engineInputVerify := exec.Command(engine, "test", "verify", "--root", root, "--tree", engineInputTree, "--goal", "receipt-goal")
-	engineInputVerify.Env = append(receiptCanaryEnvironment(), "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	engineInputVerify := proofFixture.command(receiptCanaryEnvironment(), engine, "test", "verify", "--root", root, "--tree", engineInputTree, "--goal", "receipt-goal")
+	engineInputVerify.Env = append(engineInputVerify.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	engineInputOutput, engineInputErr := engineInputVerify.CombinedOutput()
 	if exit, ok := engineInputErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
 		!strings.Contains(string(engineInputOutput), "proof-input-moved-after-receipt: group policy-protection") ||
@@ -1651,9 +1659,9 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 		if err := os.WriteFile(unmarkedPath, append(unmarkedBytes, '\n'), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		unmarkedObserve := exec.Command(engine, "landing", "observe", "--root", root, "--tree", tree, "--chain", chainID,
+		unmarkedObserve := proofFixture.command(receiptCanaryEnvironment(), engine, "landing", "observe", "--root", root, "--tree", tree, "--chain", chainID,
 			"--goal", "receipt-goal", "--test-receipt", unmarkedPath)
-		unmarkedObserve.Env = append(receiptCanaryEnvironment(), "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		unmarkedObserve.Env = append(unmarkedObserve.Env, "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
 			"SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 		unmarkedOutput, unmarkedErr := unmarkedObserve.CombinedOutput()
 		if unmarkedErr != nil || !strings.Contains(string(unmarkedOutput), `"code":"chain-not-design-bearing"`) {
@@ -1663,8 +1671,8 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 			t.Fatal(err)
 		}
 	}
-	verifyBeforeObserve := exec.Command(engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
-	verifyBeforeObserve.Env = append(receiptCanaryEnvironment(), "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	verifyBeforeObserve := proofFixture.command(receiptCanaryEnvironment(), engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
+	verifyBeforeObserve.Env = append(verifyBeforeObserve.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	if output, err := verifyBeforeObserve.CombinedOutput(); err != nil || !strings.Contains(string(output), "TEST-RESULT sufficient=true") {
 		t.Fatalf("pre-observer retained verification was not sufficient: %v\n%s", err, output)
 	}
@@ -1672,9 +1680,9 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	if err != nil || os.Remove(attemptPath) != nil {
 		t.Fatalf("remove retained attempt before observer: path=%s err=%v", attemptPath, err)
 	}
-	observe := exec.Command(engine, "landing", "observe", "--root", root, "--tree", tree, "--chain", chainID,
+	observe := proofFixture.command(receiptCanaryEnvironment(), engine, "landing", "observe", "--root", root, "--tree", tree, "--chain", chainID,
 		"--goal", "receipt-goal", "--test-receipt", landing.TestReceiptPath(root, originalTree))
-	observe.Env = append(receiptCanaryEnvironment(), "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	observe.Env = append(observe.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	observeOutput, observeErr := observe.CombinedOutput()
 	if observeErr != nil || !strings.Contains(string(observeOutput), `"code":"chain-test-receipt-refused"`) ||
 		!strings.Contains(string(observeOutput), "retained proof is not sufficient for the index; missing groups: candidate-smoke,policy-protection") {

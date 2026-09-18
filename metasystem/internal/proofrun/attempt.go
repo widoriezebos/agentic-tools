@@ -688,7 +688,7 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	}
 	nested, nestedKnown := false, false
 	if admission.Max > 0 && start.OverlapKnown {
-		nested, nestedKnown = loadSeams.nested(request.Launcher.Pid)
+		nested, nestedKnown = sampleNestedProofLauncher(request.Launcher.Pid)
 	}
 	if admission.Refuses(start, nested, nestedKnown) {
 		return Attempt{}, LaunchResult{SchemaVersion: 1, Disposition: DispositionAdmissionRefused,

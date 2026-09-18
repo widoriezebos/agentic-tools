@@ -443,6 +443,7 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.cap-max=120\nmetasystem.runtimes=fake\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		pinProofBinaryFixture(t, root)
 		for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
 			if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 				t.Fatal(err)

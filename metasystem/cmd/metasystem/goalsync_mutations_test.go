@@ -1342,6 +1342,7 @@ func syncedClaimedGoalFixture(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	pinProofBinaryFixture(t, root)
 	guard := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
 	if err := os.MkdirAll(filepath.Dir(guard), 0o755); err != nil {
 		t.Fatal(err)
