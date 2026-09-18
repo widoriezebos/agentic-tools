@@ -16,6 +16,34 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
+func TestGoalBranchReadDelegateUsesBinarySeamAndReturnsWithoutWaiting(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args")
+	binary := filepath.Join(dir, "metasystem")
+	script := "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$*\" >\"$ARGS_PATH\"\nprintf '{\"outcome\":\"WON\",\"headline\":\"started\",\"jobId\":\"critic-fake\"}\\n'\n"
+	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ARGS_PATH", argsPath)
+	job, err := readDelegate(binary, dir, filepath.Join(dir, "brief.md"), "goal-a", strings.Repeat("a", 40))
+	if err != nil || job != "critic-fake" {
+		t.Fatalf("job=%q err=%v", job, err)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(args)
+	for _, want := range []string{"delegate --role code-critic", "--reviews commit:" + strings.Repeat("a", 40), "--goal goal-a", "--brief "} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("delegate args %q omit %q", text, want)
+		}
+	}
+	if strings.Contains(text, "--wait") {
+		t.Fatalf("delegate args wait for the model: %q", text)
+	}
+}
+
 type commandRedRunner struct {
 	runs []branch.DiagnosticRun
 }

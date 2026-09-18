@@ -86,6 +86,23 @@ type CommitReadRequest struct {
 	Transport                                     PushTransport
 }
 
+type LandedUnit struct {
+	Goal, Unit, Digest, CriticRoot, GateRunID string
+	Round                                     int64
+	GoalRevision                              uint64
+	FoldPaths, ChangedPaths                   []string
+	HasPlan, Destructive                      bool
+}
+
+type LandedUnitError struct {
+	Code string
+	Err  error
+}
+
+func (e *LandedUnitError) Error() string                  { return e.Err.Error() }
+func (e *LandedUnitError) Unwrap() error                  { return e.Err }
+func (e *LandedUnitError) LandingAttestationCode() string { return e.Code }
+
 func attestationPath(goalID, commit string) string {
 	return "metasystem/records/reads/" + goalID + "/" + commit + ".json"
 }
@@ -348,6 +365,153 @@ func ValidateAttestation(repo, endpointTip, goalID, unit, commit string) (Attest
 // branch snapshot while keeping local critic artifacts available at repo.
 func ValidateAttestationAt(repo, snapshot, endpointTip, goalID, unit, commit string) (Attestation, error) {
 	return validateAttestation(repo, snapshot, endpointTip, goalID, unit, commit, map[string]bool{})
+}
+
+func rawTransition(repo, before, after string) ([]byte, error) {
+	return gitOutput(repo, "diff-tree", "-r", "-z", "--no-renames", "--full-index", before, after)
+}
+
+func filteredTransitionDigest(raw []byte, prefix string, excluded map[string]bool) (string, []string, bool, error) {
+	parts := bytes.Split(raw, []byte{0})
+	var kept bytes.Buffer
+	var paths []string
+	destructive := false
+	for index := 0; index+1 < len(parts) && len(parts[index]) != 0; index += 2 {
+		fields := strings.Fields(string(parts[index]))
+		if len(fields) != 5 || !strings.HasPrefix(fields[0], ":") {
+			return "", nil, false, fmt.Errorf("candidate transition is malformed")
+		}
+		path := string(parts[index+1])
+		if excluded[path] {
+			continue
+		}
+		paths = append(paths, path)
+		kept.Write(parts[index])
+		kept.WriteByte(0)
+		kept.WriteString(prefix + path)
+		kept.WriteByte(0)
+		if fields[4] == "D" {
+			destructive = true
+		}
+	}
+	sum := sha256.Sum256(kept.Bytes())
+	return hex.EncodeToString(sum[:]), paths, destructive, nil
+}
+
+func treeEntryAt(repo, tree, path string) (string, error) {
+	out, err := gitOutput(repo, "ls-tree", "-z", tree, "--", path)
+	if err != nil {
+		return "", err
+	}
+	meta, _, _ := strings.Cut(strings.TrimSuffix(string(out), "\x00"), "\t")
+	return meta, nil
+}
+
+func rootGoalRevision(repo, job, goalID string) (uint64, error) {
+	record, err := dispatch.ReadRecordObject(filepath.Join(repo, "artifacts", "agents", "jobs", job+".json"))
+	if err != nil {
+		return 0, err
+	}
+	lens := dispatch.JobRecordOf(record)
+	revision, present := lens.GoalRevision()
+	if !present || revision == 0 || lens.GoalID() != goalID {
+		return 0, fmt.Errorf("critic root %s is not bound to goal %s at a revision", job, goalID)
+	}
+	return revision, nil
+}
+
+// BindLandedUnit validates the persisted evidence and binds one prospective
+// trunk transition to the exact branch contribution it certifies.
+func BindLandedUnit(repo, snapshot, endpointTip, goalID, commit, beforeTree, afterTree string) (LandedUnit, error) {
+	if _, err := gitOutput(repo, "cat-file", "-e", commit+"^{commit}"); err != nil {
+		return LandedUnit{}, &LandedUnitError{Code: "unreadable", Err: err}
+	}
+	info, err := KindOf(repo, commit, goalID)
+	if err != nil || info.Kind != Unit {
+		if err == nil {
+			err = fmt.Errorf("commit %s is not a Goal-Unit commit", commit)
+		}
+		return LandedUnit{}, &LandedUnitError{Code: "invalid", Err: err}
+	}
+	att, err := readAttestationAt(repo, snapshot, goalID, commit)
+	if err != nil {
+		return LandedUnit{}, &LandedUnitError{Code: "unreadable", Err: err}
+	}
+	if att.Goal != goalID {
+		return LandedUnit{}, &LandedUnitError{Code: "goal-mismatch", Err: fmt.Errorf("attestation names goal %s", att.Goal)}
+	}
+	att, err = ValidateAttestationAt(repo, snapshot, endpointTip, goalID, info.Unit, commit)
+	if err != nil {
+		return LandedUnit{}, &LandedUnitError{Code: "invalid", Err: err}
+	}
+	result := LandedUnit{Goal: att.Goal, Unit: att.Unit, Digest: att.Subject.UnitDigest,
+		CriticRoot: att.Source.RootJob, Round: att.Source.Round, GateRunID: att.Gate.RunID}
+	if att.Source.Kind != "critic-root" {
+		return result, nil
+	}
+	result.GoalRevision, err = rootGoalRevision(repo, att.Source.RootJob, goalID)
+	if err != nil {
+		return LandedUnit{}, &LandedUnitError{Code: "invalid", Err: err}
+	}
+	prefixBytes, err := gitOutput(repo, "rev-parse", "--show-prefix")
+	if err != nil {
+		return LandedUnit{}, &LandedUnitError{Code: "change-mismatch", Err: err}
+	}
+	prefix := strings.TrimSpace(string(prefixBytes))
+	excluded := map[string]bool{
+		"memory/receipts.log": true,
+	}
+	for _, readPrefix := range []string{"records/reads/" + goalID + "/"} {
+		raw, rawErr := rawTransition(repo, beforeTree, afterTree)
+		if rawErr != nil {
+			return LandedUnit{}, &LandedUnitError{Code: "change-mismatch", Err: rawErr}
+		}
+		parts := bytes.Split(raw, []byte{0})
+		for index := 1; index < len(parts); index += 2 {
+			if strings.HasPrefix(string(parts[index]), readPrefix) {
+				excluded[string(parts[index])] = true
+			}
+		}
+	}
+	lastFold := map[string]string{}
+	for _, fold := range att.Folds {
+		result.HasPlan = result.HasPlan || fold.Kind == Plan
+		entries, entriesErr := RawEntries(repo, fold.Commit)
+		if entriesErr != nil {
+			return LandedUnit{}, &LandedUnitError{Code: "invalid", Err: entriesErr}
+		}
+		for _, entry := range entries {
+			path := strings.TrimPrefix(entry.Path, prefix)
+			if prefix != "" && path == entry.Path {
+				return LandedUnit{}, &LandedUnitError{Code: "change-mismatch", Err: fmt.Errorf("folded path %s is outside the landing workspace", entry.Path)}
+			}
+			excluded[path] = true
+			lastFold[path] = fold.Commit
+		}
+	}
+	for path, foldCommit := range lastFold {
+		before, beforeErr := treeEntryAt(repo, beforeTree, path)
+		after, afterErr := treeEntryAt(repo, afterTree, path)
+		want, wantErr := treeEntryAt(repo, foldCommit, prefix+path)
+		if beforeErr != nil || afterErr != nil || wantErr != nil || before != after && after != want {
+			return LandedUnit{}, &LandedUnitError{Code: "change-mismatch", Err: fmt.Errorf("folded path %s does not match %s", path, foldCommit)}
+		}
+		result.FoldPaths = append(result.FoldPaths, path)
+	}
+	raw, err := rawTransition(repo, beforeTree, afterTree)
+	if err != nil {
+		return LandedUnit{}, &LandedUnitError{Code: "change-mismatch", Err: err}
+	}
+	digest, paths, destructive, err := filteredTransitionDigest(raw, prefix, excluded)
+	if err != nil || digest != att.Subject.UnitDigest {
+		if err == nil {
+			err = fmt.Errorf("candidate digest %s does not match attested digest %s", digest, att.Subject.UnitDigest)
+		}
+		return LandedUnit{}, &LandedUnitError{Code: "change-mismatch", Err: err}
+	}
+	result.ChangedPaths, result.Destructive = paths, destructive
+	sort.Strings(result.FoldPaths)
+	return result, nil
 }
 
 func unitCommitInRange(repo, endpointTip, tip, goalID string, units []string) (string, error) {

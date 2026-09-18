@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
@@ -45,15 +48,27 @@ func newBatchProvenanceBed(t *testing.T, verdict string, branchMember bool) batc
 	wrapper := `#!/usr/bin/env bash
 set -euo pipefail
 chain=
+attested=
+snapshot=
+base=
 while (( $# )); do
   case "$1" in
     --chain) chain=$2; shift 2 ;;
+    --attested) attested=$2; shift 2 ;;
+    --attested-snapshot) snapshot=$2; shift 2 ;;
+    --attested-base) base=$2; shift 2 ;;
     --goal|--test-receipt) shift 2 ;;
     *) break ;;
   esac
 done
+printf 'chain=%s attested=%s snapshot=%s base=%s\n' "$chain" "$attested" "$snapshot" "$base" >wrapper.args
+if [[ -n $attested ]]; then
+  provenance="attested=$attested goal=goal-a unit=10b critic=critic-fake/1 change=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+else
+  provenance="chain=$chain change=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+fi
 git commit -q "$@" \
-  --trailer "Landing-Provenance: chain=$chain change=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+  --trailer "Landing-Provenance: $provenance" \
   --trailer "Landing-Provenance-Verdict: ` + verdict + `"
 `
 	batchProvenanceWrite(t, filepath.Join(root, "scripts", "agents", "commit.sh"), wrapper, 0o755)
@@ -133,6 +148,11 @@ func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
 		if err != nil || record.State != batch.StateLanded {
 			t.Fatalf("passing branch record state=%s error=%v", record.State, err)
 		}
+		args := strings.TrimSpace(string(batchProvenanceContents(t, filepath.Join(bed.root, "wrapper.args"))))
+		if strings.Contains(args, "chain=chain-a") || !strings.Contains(args, "attested="+record.Units[0].CommitIDs[0]) ||
+			!strings.Contains(args, "snapshot="+record.Units[0].BranchTip) || !strings.Contains(args, "base="+bed.baseCommit) {
+			t.Fatalf("branch declaration args=%q", args)
+		}
 	})
 }
 
@@ -191,6 +211,79 @@ func TestBatchRecoveryRequiresExactChainField(t *testing.T) {
 			record, _ := recoverBatchProvenanceFixture(t, []string{"a"}, [][]string{{test.trailer}})
 			if record.State != batch.StateLanding || record.Units[0].P6Done || record.Units[0].LandedCommit != "" {
 				t.Fatalf("non-matching field landed chain a: %+v", record)
+			}
+		})
+	}
+}
+
+func TestBatchMixedBranchAndChainMembersLandInBothOrders(t *testing.T) {
+	original := batchChildRunner
+	t.Cleanup(func() { batchChildRunner = original })
+	batchChildRunner = func(string, string, ...string) error { return nil }
+	for _, branchFirst := range []bool{true, false} {
+		name := "chain then branch"
+		if branchFirst {
+			name = "branch then chain"
+		}
+		t.Run(name, func(t *testing.T) {
+			bed := newBatchProvenanceBed(t, "pass bar=e", true)
+			store := batch.NewStore(bed.root, nil)
+			record, err := store.Load(batchProvenanceTestID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			branchUnit := record.Units[0]
+			digest, err := goalbranch.UnitDigest(bed.root, branchUnit.CommitIDs[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			branchUnit.Builds[0].Digest = digest
+			batchProvenanceGit(t, "-C", bed.root, "switch", "-q", "--detach", bed.baseCommit)
+			batchProvenanceWrite(t, filepath.Join(bed.root, "chain.txt"), "chain\n", 0o644)
+			batchProvenanceGit(t, "-C", bed.root, "add", "chain.txt")
+			batchProvenanceGit(t, "-C", bed.root, "commit", "-qm", "chain source")
+			chainCommit := batchProvenanceGit(t, "-C", bed.root, "rev-parse", "HEAD")
+			patch := batchProvenanceGit(t, "-C", bed.root, "diff", "--binary", "--full-index", bed.baseCommit, chainCommit)
+			batchProvenanceWrite(t, filepath.Join(bed.root, "artifacts", "agents", "landing-batches", "chains", "chain-b", "diff.patch"), patch+"\n", 0o644)
+			chainUnit := batch.Unit{GoalID: "goal-chain", Chain: "chain-b", Claim: branchUnit.Claim, State: batch.UnitJoined,
+				AuthorName: "Approver", AuthorEmail: "approver@example.invalid"}
+			workspace := gittree.Workspace{Dir: bed.root}
+			baseTree := record.BaseTree
+			chainTree, err := workspace.Apply(baseTree, []byte(patch+"\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			member := batch.BranchMember{GoalID: branchUnit.GoalID, Tip: branchUnit.BranchTip, Last: branchUnit.GoalLast, Builds: branchUnit.Builds}
+			branchTrees, err := batch.AssembleBranchMembers(bed.root, baseTree, []batch.BranchMember{member})
+			if err != nil {
+				t.Fatal(err)
+			}
+			units, prefixes := []batch.Unit{chainUnit, branchUnit}, []string{chainTree}
+			var finalTrees []string
+			if branchFirst {
+				units, prefixes = []batch.Unit{branchUnit, chainUnit}, []string{branchTrees[0]}
+				final, applyErr := workspace.Apply(branchTrees[0], []byte(patch+"\n"))
+				err, finalTrees = applyErr, []string{final}
+			} else {
+				finalTrees, err = batch.AssembleBranchMembers(bed.root, chainTree, []batch.BranchMember{member})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			prefixes = append(prefixes, finalTrees[0])
+			record.Units, record.PrefixTrees, record.TipTree = units, prefixes, prefixes[1]
+			record.Receipts = map[string]batch.PrefixReceipt{units[0].GoalID: {GoalID: units[0].GoalID, Tree: prefixes[0]}}
+			data, err := json.MarshalIndent(record, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			batchProvenanceWrite(t, filepath.Join(bed.root, "artifacts", "agents", "landing-batches", batchProvenanceTestID+".json"), string(append(data, '\n')), 0o644)
+			if err := executeBatchLanding(bed.root, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
+				t.Fatal(err)
+			}
+			tip := batchProvenanceGit(t, "-C", bed.origin, "rev-parse", "refs/heads/main")
+			if batchProvenanceGit(t, "-C", bed.origin, "show", tip+":member.txt") != "member" || batchProvenanceGit(t, "-C", bed.origin, "show", tip+":chain.txt") != "chain" {
+				t.Fatalf("mixed landing tip=%s", tip)
 			}
 		})
 	}
@@ -276,6 +369,16 @@ func recoverBatchProvenanceFixture(t *testing.T, chains []string, commitTrailers
 	return recovered, commits
 }
 
+func TestRecoveredBatchBranchFinalizationNamesLastSource(t *testing.T) {
+	unit := batch.Unit{Chain: "branch-tip", CommitIDs: []string{"source-a", "source-b"}}
+	if got := recoveredBatchNext(unit, "landed"); got != "landed commit:landed:source=source-b" {
+		t.Fatalf("branch next=%q", got)
+	}
+	if got := recoveredBatchNext(batch.Unit{Chain: "chain-a"}, "landed"); got != "landed commit:landed:chain=chain-a" {
+		t.Fatalf("chain next=%q", got)
+	}
+}
+
 func batchProvenanceWrite(t *testing.T, path, contents string, mode os.FileMode) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -284,6 +387,15 @@ func batchProvenanceWrite(t *testing.T, path, contents string, mode os.FileMode)
 	if err := os.WriteFile(path, []byte(contents), mode); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func batchProvenanceContents(t *testing.T, path string) []byte {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return contents
 }
 
 func batchProvenanceGit(t *testing.T, args ...string) string {

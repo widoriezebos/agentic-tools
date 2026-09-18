@@ -68,7 +68,7 @@ func batchLandSeams(root, id string, record batch.Record, baseCommit, actor stri
 				path = filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", id+".json")
 			}
 			message := fmt.Sprintf("land %s in batch %s\n\nOriginal join order; prefix tree %s.\n", unit.GoalID, id, receipt.Tree)
-			if err := batch.CommitWithWrapper(root, unit.Chain, unit.GoalID, path, message, unit.AuthorName, unit.AuthorEmail, actor); err != nil {
+			if err := batch.CommitWithWrapper(root, batch.ChainDeclaration(unit.Chain), unit.GoalID, path, message, unit.AuthorName, unit.AuthorEmail, actor); err != nil {
 				return "", err
 			}
 			return gitOutput(root, "rev-parse", "HEAD")
@@ -84,12 +84,9 @@ func batchLandSeams(root, id string, record batch.Record, baseCommit, actor stri
 			if path == "" {
 				path = filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", id+".json")
 			}
-			chain := build.Attestation.Source.RootJob
-			if chain == "" {
-				chain = unit.Chain
-			}
 			last := unit.GoalLast && len(unit.CommitIDs) != 0 && build.Commit == unit.CommitIDs[len(unit.CommitIDs)-1]
-			if err := batch.CommitWithWrapper(root, chain, unit.GoalID, path, batch.BranchLandingMessage(unit.GoalID, build, last), unit.AuthorName, unit.AuthorEmail, actor); err != nil {
+			declaration := batch.AttestedDeclaration(build.Commit, unit.BranchTip, baseCommit)
+			if err := batch.CommitWithWrapper(root, declaration, unit.GoalID, path, batch.BranchLandingMessage(unit.GoalID, build, last), unit.AuthorName, unit.AuthorEmail, actor); err != nil {
 				return "", err
 			}
 			commit, err := gitOutput(root, "rev-parse", "HEAD")
@@ -377,8 +374,7 @@ func recoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 			return findTrailer(func(line string) bool { return line == "Goal-Source: "+source })
 		},
 		Finalize: func(unit batch.Unit, commit string) error {
-			next := "landed commit:" + commit + ":chain=" + unit.Chain
-			return batchChildRunner(root, landingOwnerLineage, "goal", "edit", "--root", root, "--id", unit.GoalID, "--next", next, "--lineage", landingOwnerLineage)
+			return batchChildRunner(root, landingOwnerLineage, "goal", "edit", "--root", root, "--id", unit.GoalID, "--next", recoveredBatchNext(unit, commit), "--lineage", landingOwnerLineage)
 		},
 		Cleanup: func() error {
 			record, err := store.Load(id)
@@ -402,6 +398,13 @@ func landingProvenanceNamesChain(line, chain string) bool {
 		}
 	}
 	return false
+}
+
+func recoveredBatchNext(unit batch.Unit, commit string) string {
+	if len(unit.CommitIDs) != 0 {
+		return "landed commit:" + commit + ":source=" + unit.CommitIDs[len(unit.CommitIDs)-1]
+	}
+	return "landed commit:" + commit + ":chain=" + unit.Chain
 }
 
 func commitForTree(root, ref, tree string) (string, error) {

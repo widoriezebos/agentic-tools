@@ -17,6 +17,18 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
+func TestLandingMessageAcceptsAttestedBranchProvenance(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	message := "landed\n\nGoal-Item: goal-a\nLanding-Provenance: attested=" + commit + " goal=goal-a unit=u1 critic=critic-a/1 change=" + strings.Repeat("d", 64) + "\nLanding-Provenance-Verdict: pass bar=e\n"
+	matched, provenance, err := matchLandingMessage(message, "goal-a", "")
+	if err != nil || !matched {
+		t.Fatalf("match=%t provenance=%q err=%v", matched, provenance, err)
+	}
+	if !strings.Contains(provenance, "attested="+commit) {
+		t.Fatalf("provenance=%q", provenance)
+	}
+}
+
 func TestWaitGoalLandingAndHumanAct(t *testing.T) {
 	repo := t.TempDir()
 	mustGit(t, repo, "init", "-q", "-b", "main")

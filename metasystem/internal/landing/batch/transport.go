@@ -220,12 +220,26 @@ func RunCommand(spec CommandSpec) error {
 	return nil
 }
 
+type CommitDeclaration struct{ args []string }
+
+func ChainDeclaration(chain string) CommitDeclaration {
+	return CommitDeclaration{args: []string{"--chain", chain}}
+}
+
+func AttestedDeclaration(commit, snapshot, base string) CommitDeclaration {
+	return CommitDeclaration{args: []string{"--attested", commit, "--attested-snapshot", snapshot, "--attested-base", base}}
+}
+
 // CommitWithWrapper invokes the repository commit boundary for one unit. The
 // caller supplies the goal approver's configured identity; ambient git author
 // and committer configuration is intentionally ignored.
-func CommitWithWrapper(root, chain, goalID, receipt, message, authorName, authorEmail, landedBy string) error {
+func CommitWithWrapper(root string, declaration CommitDeclaration, goalID, receipt, message, authorName, authorEmail, landedBy string) error {
 	if authorName == "" || authorEmail == "" {
 		return fmt.Errorf("BATCH_LAND_AUTHOR_UNBOUND: goal %s has no configured approver identity", goalID)
+	}
+	before, err := landingGitOutput(root, "rev-parse", "HEAD")
+	if err != nil {
+		return err
 	}
 	messageFile, err := os.CreateTemp(root, ".batch-commit-message-*")
 	if err != nil {
@@ -240,10 +254,32 @@ func CommitWithWrapper(root, chain, goalID, receipt, message, authorName, author
 	if err := messageFile.Close(); err != nil {
 		return err
 	}
-	return RunCommand(CommandSpec{Dir: root, Name: filepath.Join(root, "scripts", "agents", "commit.sh"),
-		Args: []string{"--chain", chain, "--goal", goalID, "--test-receipt", receipt, "-F", name},
+	args := append([]string(nil), declaration.args...)
+	args = append(args, "--goal", goalID, "--test-receipt", receipt, "-F", name)
+	if err := RunCommand(CommandSpec{Dir: root, Name: filepath.Join(root, "scripts", "agents", "commit.sh"), Args: args,
 		Env: []string{"GIT_AUTHOR_NAME=" + authorName, "GIT_AUTHOR_EMAIL=" + authorEmail,
-			"GIT_COMMITTER_NAME=" + authorName, "GIT_COMMITTER_EMAIL=" + authorEmail, "METASYSTEM_LANDED_BY=" + landedBy}})
+			"GIT_COMMITTER_NAME=" + authorName, "GIT_COMMITTER_EMAIL=" + authorEmail, "METASYSTEM_LANDED_BY=" + landedBy}}); err != nil {
+		return err
+	}
+	after, err := landingGitOutput(root, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	if after == before {
+		return fmt.Errorf("BATCH_LAND_UNPROVENANCED: goal %s commit boundary did not advance HEAD by exactly one commit", goalID)
+	}
+	parent, err := landingGitOutput(root, "rev-parse", after+"^")
+	if err != nil || parent != before {
+		return fmt.Errorf("BATCH_LAND_UNPROVENANCED: goal %s commit boundary did not advance HEAD by exactly one commit", goalID)
+	}
+	return nil
+}
+
+func landingGitOutput(root string, args ...string) (string, error) {
+	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.Output()
+	return strings.TrimSpace(string(output)), err
 }
 
 // RequirePassingCommitVerdict keeps a branch member local unless the commit
@@ -256,7 +292,7 @@ func RequirePassingCommitVerdict(root, goalID, commit string) error {
 	if err != nil {
 		verdict = "unreadable"
 	}
-	if !strings.HasPrefix(verdict, "pass") {
+	if verdict != "pass" && !strings.HasPrefix(verdict, "pass ") {
 		return fmt.Errorf("BATCH_LAND_UNPROVENANCED: goal %s commit %s verdict %s", goalID, commit, verdict)
 	}
 	return nil

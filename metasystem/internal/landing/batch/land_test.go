@@ -593,7 +593,12 @@ git commit -q "$@"
 `
 	must(t, os.WriteFile(wrapper, []byte(script), 0o755))
 	must(t, exec.Command("git", "init", "-q", "-b", "main", root).Run())
+	must(t, exec.Command("git", "-C", root, "config", "user.name", "Fixture").Run())
+	must(t, exec.Command("git", "-C", root, "config", "user.email", "fixture@example.invalid").Run())
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("one\n"), 0o644))
+	must(t, exec.Command("git", "-C", root, "add", "file").Run())
+	must(t, exec.Command("git", "-C", root, "commit", "-qm", "base").Run())
+	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("two\n"), 0o644))
 	must(t, exec.Command("git", "-C", root, "add", "file").Run())
 	// The fixture wrapper consumes the boundary flags before delegating.
 	script = strings.ReplaceAll(script, "git commit -q \"$@\"", `while (( $# )); do case "$1" in --chain|--goal|--test-receipt) shift 2;; *) break;; esac; done
@@ -603,12 +608,42 @@ git commit -q "$@"`)
 	t.Setenv("GIT_AUTHOR_EMAIL", "ambient@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "Ambient Other")
 	t.Setenv("GIT_COMMITTER_EMAIL", "ambient@example.com")
-	must(t, CommitWithWrapper(root, "chain-a", "goal-a", "receipt.json", "land goal a\n", "Wido", "wido@example.com", "m1l+landing-m1l"))
+	must(t, CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt.json", "land goal a\n", "Wido", "wido@example.com", "m1l+landing-m1l"))
 	if env := string(contents(t, filepath.Join(root, "wrapper.env"))); !strings.Contains(env, "Wido <wido@example.com>|Wido <wido@example.com>|m1l+landing-m1l") {
 		t.Fatalf("wrapper env=%q", env)
 	}
 	if args := string(contents(t, filepath.Join(root, "wrapper.args"))); !strings.Contains(args, "--chain chain-a --goal goal-a --test-receipt receipt.json -F") {
 		t.Fatalf("wrapper args=%q", args)
+	}
+}
+
+func TestCommitWithWrapperRequiresExactlyOneNewCommitAndStrictPassVerdict(t *testing.T) {
+	root := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755))
+	must(t, exec.Command("git", "init", "-q", "-b", "main", root).Run())
+	must(t, exec.Command("git", "-C", root, "config", "user.name", "Fixture").Run())
+	must(t, exec.Command("git", "-C", root, "config", "user.email", "fixture@example.invalid").Run())
+	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("base\n"), 0o644))
+	must(t, exec.Command("git", "-C", root, "add", "file").Run())
+	must(t, exec.Command("git", "-C", root, "commit", "-qm", "base").Run())
+	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("candidate\n"), 0o644))
+	must(t, exec.Command("git", "-C", root, "add", "file").Run())
+	wrapper := filepath.Join(root, "scripts", "agents", "commit.sh")
+	must(t, os.WriteFile(wrapper, []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755))
+	err := CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt", "message\n", "Wido", "wido@example.invalid", "seat")
+	if err == nil || !strings.Contains(err.Error(), "exactly one commit") {
+		t.Fatalf("no-op wrapper err=%v", err)
+	}
+	for _, verdict := range []string{"pass", "pass bar=e", "passive"} {
+		must(t, exec.Command("git", "-C", root, "commit", "--allow-empty", "-qm", "candidate\n\nLanding-Provenance-Verdict: "+verdict).Run())
+		commit := strings.TrimSpace(runGitOutput(t, root, "rev-parse", "HEAD"))
+		err := RequirePassingCommitVerdict(root, "goal-a", commit)
+		if verdict == "passive" && err == nil {
+			t.Fatal("passive verdict was accepted")
+		}
+		if verdict != "passive" && err != nil {
+			t.Fatalf("verdict %q refused: %v", verdict, err)
+		}
 	}
 }
 
@@ -689,7 +724,7 @@ chmod +x "$out"
 	t.Setenv("GIT_COMMITTER_NAME", "Ambient Other")
 	t.Setenv("GIT_COMMITTER_EMAIL", "other@example.net")
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "landing-m1l")
-	must(t, CommitWithWrapper(root, "chain-a", "goal-a", "receipt.json", "land goal a\n", "Wido Explicit", "wido@example.com", "m1l+landing-m1l"))
+	must(t, CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt.json", "land goal a\n", "Wido Explicit", "wido@example.com", "m1l+landing-m1l"))
 	message := runGitOutput(t, root, "show", "-s", "--format=%B", "HEAD")
 	for _, trailer := range []string{
 		"Machine: m1l+landing-m1l", "Goal-Item: goal-a", "Goal-Revision: 7",

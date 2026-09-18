@@ -11,7 +11,7 @@ landing_requested=0
 for argument in "$@"; do
   [[ "$argument" != -- ]] || break
   case "$argument" in
-    --chain|--direct-fix|--revert-of|--root-job|--test-receipt|--recertification|--carried) landing_requested=1 ;;
+    --chain|--direct-fix|--revert-of|--root-job|--test-receipt|--recertification|--carried|--attested|--attested-snapshot|--attested-base) landing_requested=1 ;;
   esac
 done
 if (( landing_requested )); then
@@ -65,6 +65,9 @@ fi
 
 ratchet=
 landing_chain=
+landing_attested=
+landing_attested_snapshot=
+landing_attested_base=
 landing_direct_fix=
 landing_revert_of=
 landing_goal=
@@ -93,6 +96,21 @@ while (( $# )); do
         exit 2
       }
       landing_chain=$2
+      shift 2
+      ;;
+    --attested)
+      [[ $# -ge 2 && -z "$landing_attested" ]] || { echo "commit refused: --attested requires one commit" >&2; exit 2; }
+      landing_attested=$2
+      shift 2
+      ;;
+    --attested-snapshot)
+      [[ $# -ge 2 && -z "$landing_attested_snapshot" ]] || { echo "commit refused: --attested-snapshot requires one commit" >&2; exit 2; }
+      landing_attested_snapshot=$2
+      shift 2
+      ;;
+    --attested-base)
+      [[ $# -ge 2 && -z "$landing_attested_base" ]] || { echo "commit refused: --attested-base requires one commit" >&2; exit 2; }
+      landing_attested_base=$2
       shift 2
       ;;
     --direct-fix)
@@ -591,6 +609,9 @@ if [[ -n "$prefix" ]]; then
 fi
 landing_observe_args=(landing observe --root "$root" --tree "$landing_tree")
 [[ -z "$landing_chain" ]] || landing_observe_args+=(--chain "$landing_chain")
+[[ -z "$landing_attested" ]] || landing_observe_args+=(--attested "$landing_attested")
+[[ -z "$landing_attested_snapshot" ]] || landing_observe_args+=(--attested-snapshot "$landing_attested_snapshot")
+[[ -z "$landing_attested_base" ]] || landing_observe_args+=(--attested-base "$landing_attested_base")
 [[ -z "$landing_direct_fix" ]] || landing_observe_args+=(--direct-fix "$landing_direct_fix")
 [[ -z "$landing_revert_of" ]] || landing_observe_args+=(--revert-of "$landing_revert_of")
 [[ -z "$landing_goal" ]] || landing_observe_args+=(--goal "$landing_goal")
@@ -757,7 +778,8 @@ if (( agent_commit )) && [[ "$landing_mode" == refuse ]]; then
   show_nul_paths "$refusal_paths"
   rm -f "$refusal_paths"
   [[ -z "$landing_repair" ]] || echo "$landing_repair" >&2
-  echo "lawful classification exits: declare the reviewed implementation chain with --chain <root-job-id>, or fix the Change-Class classification and retry" >&2
+  echo "lawful classification exits: declare the reviewed implementation chain with --chain <root-job-id>, declare the attested branch commit with --attested <commit>, or fix the Change-Class classification and retry" >&2
+  [[ -z "$landing_attested" ]] || exit 3
   exit 1
 fi
 

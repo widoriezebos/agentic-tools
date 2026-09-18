@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -36,7 +37,7 @@ func goalBranchGit(root string, args ...string) (string, error) {
 
 func runGoalBranch(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "goal branch needs check, status, commit, push, land-prep, land-push, verify, or sweep")
+		fmt.Fprintln(os.Stderr, "goal branch needs check, status, read, commit, push, land-prep, land-push, verify, or sweep")
 		return 2
 	}
 	switch args[0] {
@@ -44,6 +45,8 @@ func runGoalBranch(args []string) int {
 		return runGoalBranchCheck(args[1:])
 	case "status":
 		return runGoalBranchStatus(args[1:])
+	case "read":
+		return runGoalBranchRead(args[1:])
 	case "commit":
 		return runGoalBranchCommit(args[1:])
 	case "push":
@@ -57,9 +60,122 @@ func runGoalBranch(args []string) int {
 	case "sweep":
 		return runGoalBranchSweep(args[1:])
 	default:
-		fmt.Fprintln(os.Stderr, "goal branch needs check, status, commit, push, land-prep, land-push, verify, or sweep")
+		fmt.Fprintln(os.Stderr, "goal branch needs check, status, read, commit, push, land-prep, land-push, verify, or sweep")
 		return 2
 	}
+}
+
+type goalBranchReadDependencies struct {
+	Binary   string
+	Gate     func(string) (string, error)
+	Delegate func(string, string, string) (string, error)
+	Commit   func(branch.CommitReadRequest) (string, branch.Attestation, error)
+}
+
+func runGoalBranchRead(args []string) int {
+	binary, _ := os.Executable()
+	return runGoalBranchReadWith(args, goalBranchReadDependencies{Binary: binary, Commit: branch.CommitRead})
+}
+
+func lastOutputLine(output []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+func readGate(worktree string) (string, error) {
+	proof, err := os.CreateTemp("", "goal-branch-read-gate-*")
+	if err != nil {
+		return "", err
+	}
+	proofPath := proof.Name()
+	proof.Close()
+	defer os.Remove(proofPath)
+	command := exec.Command("bash", filepath.Join(worktree, "scripts", "agents", "go-gate.sh"), "--fast", "--proof-out", proofPath)
+	command.Dir = worktree
+	command.Env = os.Environ()
+	output, err := command.CombinedOutput()
+	return lastOutputLine(output), err
+}
+
+func readDelegate(binary, root, brief, goalID, commit string) (string, error) {
+	if binary == "" {
+		return "", fmt.Errorf("delegate binary is unavailable")
+	}
+	command := exec.Command(binary, "delegate", "--role", "code-critic", "--reviews", "commit:"+commit,
+		"--goal", goalID, "--brief", brief, "--destructive-reach", "DESIGN-BEARING")
+	command.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+root)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
+	if err != nil {
+		return "", fmt.Errorf("delegate: %s: %w", lastOutputLine(stderr.Bytes()), err)
+	}
+	var outcome delegateOutcome
+	if jsonErr := json.Unmarshal(output, &outcome); jsonErr != nil || outcome.JobID == "" || outcome.Outcome != "WON" {
+		return "", fmt.Errorf("delegate returned no started job: %s", lastOutputLine(output))
+	}
+	return outcome.JobID, nil
+}
+
+func runGoalBranchReadWith(args []string, dependencies goalBranchReadDependencies) int {
+	flags := flag.NewFlagSet("goal branch read", flag.ContinueOnError)
+	root := pathFlag(flags, "root", ".", "checkout root")
+	goalID := flags.String("goal", "", "goal id")
+	unit := flags.String("unit", "", "Goal-Unit commit")
+	collect := flags.Bool("collect", false, "collect a closed critic root into an attestation")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" || *unit == "" {
+		fmt.Fprintln(os.Stderr, "goal branch read needs --goal and --unit")
+		return 2
+	}
+	endpoint, err := goalBranchEndpoint(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	endpointTip, err := goalBranchEndpointTip(*root, endpoint)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	branchTip, present, err := goalBranchOriginTip(*root, endpoint, *goalID)
+	if err != nil || !present {
+		if err == nil {
+			err = fmt.Errorf("origin has no goal/%s", *goalID)
+		}
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	commit, err := goalBranchGit(*root, "rev-parse", "--verify", *unit+"^{commit}")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	gate := dependencies.Gate
+	if gate == nil {
+		gate = readGate
+	}
+	delegate := dependencies.Delegate
+	if delegate == nil {
+		delegate = func(brief, goalID, commit string) (string, error) {
+			return readDelegate(dependencies.Binary, *root, brief, goalID, commit)
+		}
+	}
+	result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: *root, Remote: endpoint.Remote,
+		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect,
+		CheckClaim: goalBranchClaimCheck(*root, *goalID, endpoint), Gate: gate, Delegate: delegate, Commit: dependencies.Commit})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Printf("state=%s root-job=%s gate-run=%s", result.State, result.RootJob, result.GateRunID)
+	if result.AttestationCommit != "" {
+		fmt.Printf(" attestation=%s", result.AttestationCommit)
+	}
+	fmt.Println()
+	return 0
 }
 
 func runGoalBranchLandPush(args []string) int {

@@ -33,6 +33,7 @@ const (
 	BarDirectFix = "b"
 	BarRefusal   = "c"
 	BarCarried   = "d"
+	BarAttested  = "e"
 )
 
 var (
@@ -45,24 +46,36 @@ var (
 // combine only with register-carriage; every other declaration is singular.
 // RepoRoot may itself be nested in a Git worktree.
 type ObserveParams struct {
-	RepoRoot        string
-	CandidateTree   string
-	Chain           string
-	DirectFix       string
-	RevertOf        string
-	Goal            string
-	Actor           string
-	RootJob         string
-	TestReceipt     string
-	Recertification string
-	Carried         string
-	ProjectTree     string
-	LedgerTip       string
-	Judge           string
-	LiveFailure     string
-	CarriedBy       string
-	Now             time.Time
-	VerifyTesting   func() (proofrun.TestResult, error)
+	RepoRoot         string
+	CandidateTree    string
+	Chain            string
+	DirectFix        string
+	RevertOf         string
+	Goal             string
+	Actor            string
+	RootJob          string
+	TestReceipt      string
+	Recertification  string
+	Carried          string
+	ProjectTree      string
+	LedgerTip        string
+	Judge            string
+	LiveFailure      string
+	CarriedBy        string
+	Attested         string
+	AttestedSnapshot string
+	AttestedBase     string
+	Now              time.Time
+	VerifyTesting    func() (proofrun.TestResult, error)
+	BindAttested     func(commit, snapshot, base, goal, beforeTree, afterTree string) (AttestedUnit, error)
+}
+
+type AttestedUnit struct {
+	Goal, Unit, Digest, CriticRoot, GateRunID string
+	Round                                     int64
+	GoalRevision                              uint64
+	FoldPaths, ChangedPaths                   []string
+	HasPlan, Destructive                      bool
 }
 
 // Observation is safe to put directly in a commit trailer. The values never
@@ -116,13 +129,16 @@ func observe(params ObserveParams) Observation {
 	if err != nil {
 		return wouldRefuse("candidate-tree-unreadable", "none change=unknown")
 	}
+	if params.Attested != "" && (params.Chain != "" || params.DirectFix != "") {
+		return refuse("conflicting-declarations", "invalid change="+change)
+	}
 	if params.RevertOf != "" && params.DirectFix != "exact-revert" {
 		return wouldRefuse("conflicting-declarations", "invalid change="+change)
 	}
 	if params.DirectFix == "exact-revert" && params.RevertOf == "" {
 		return wouldRefuse("conflicting-declarations", "invalid change="+change)
 	}
-	if params.Chain == "" && params.DirectFix == "" {
+	if params.Chain == "" && params.DirectFix == "" && params.Attested == "" {
 		return wouldRefuse("missing-declaration", "none change="+change)
 	}
 	if params.Recertification != "" && (params.Chain == "" || (params.DirectFix != "" && params.DirectFix != "register-carriage")) {
@@ -139,11 +155,14 @@ func observe(params ObserveParams) Observation {
 	if params.DirectFix == "tier-1" && (params.RootJob == "" || params.Goal == "" || params.TestReceipt == "") {
 		return refuse("tier1-declaration-refused", "invalid change="+change)
 	}
-	if params.DirectFix != "tier-1" && (params.RootJob != "" || (params.TestReceipt != "" && params.Chain == "")) {
+	if params.DirectFix != "tier-1" && (params.RootJob != "" || (params.TestReceipt != "" && params.Chain == "" && params.Attested == "")) {
 		return wouldRefuse("conflicting-declarations", "invalid change="+change)
 	}
 	if params.Chain != "" {
 		return observeChain(params, change)
+	}
+	if params.Attested != "" {
+		return observeAttested(params, change)
 	}
 	return observeDirectFix(params, change)
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -29,6 +30,9 @@ func runLandingObserve(args []string) int {
 	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "prospective project tree")
 	chain := flags.String("chain", "", "closed implementation chain root")
+	attested := flags.String("attested", "", "critic-attested goal branch commit")
+	attestedSnapshot := flags.String("attested-snapshot", "", "goal branch snapshot containing the attestation")
+	attestedBase := flags.String("attested-base", "", "endpoint commit below the goal branch")
 	directFix := flags.String("direct-fix", "", "typed direct-fix class; register-carriage may accompany --chain")
 	revertOf := flags.String("revert-of", "", "commit inverted by exact-revert")
 	goal := flags.String("goal", "", "goal item carried by the landing")
@@ -55,9 +59,16 @@ func runLandingObserve(args []string) int {
 	}
 	params := landing.ObserveParams{
 		RepoRoot: *root, CandidateTree: *tree, Chain: *chain,
+		Attested: *attested, AttestedSnapshot: *attestedSnapshot, AttestedBase: *attestedBase,
 		DirectFix: *directFix, RevertOf: *revertOf, Goal: *goal, Actor: *actor,
 		RootJob: *rootJob, TestReceipt: *testReceipt, Recertification: *recertification,
 		Carried: *carried, ProjectTree: *projectTree, LedgerTip: *ledgerTip, Judge: *judge, LiveFailure: *liveFailure, CarriedBy: *carriedBy, Now: now,
+	}
+	params.BindAttested = func(commit, snapshot, base, goal, beforeTree, afterTree string) (landing.AttestedUnit, error) {
+		bound, err := goalbranch.BindLandedUnit(*root, snapshot, base, goal, commit, beforeTree, afterTree)
+		return landing.AttestedUnit{Goal: bound.Goal, Unit: bound.Unit, Digest: bound.Digest, CriticRoot: bound.CriticRoot, GateRunID: bound.GateRunID,
+			Round: bound.Round, GoalRevision: bound.GoalRevision, FoldPaths: bound.FoldPaths, ChangedPaths: bound.ChangedPaths,
+			HasPlan: bound.HasPlan, Destructive: bound.Destructive}, err
 	}
 	if (*testReceipt != "" || *carried != "") && *recertification == "" {
 		params.VerifyTesting = func() (proofrun.TestResult, error) {

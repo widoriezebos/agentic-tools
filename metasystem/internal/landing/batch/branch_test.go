@@ -132,6 +132,45 @@ func TestBatchBranchReaderCertifiesThreeBuildMember(t *testing.T) {
 	}
 }
 
+func TestAssembleUnitsKeepsBranchAndChainMembersInJoinOrder(t *testing.T) {
+	bed := newGoalBranchBed(t)
+	branchTip := buildGoalBranch(t, bed, "goal-a", []string{"1"}, -1)
+	member, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: branchTip, GoalID: "goal-a", Last: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	branchGit(t, bed.root, "switch", "-q", "--detach", bed.base)
+	branchWrite(t, bed.root, "metasystem/b-1.txt", "chain\n")
+	branchGit(t, bed.root, "add", "metasystem/b-1.txt")
+	branchGit(t, bed.root, "commit", "-qm", "chain fixture")
+	chainCommit := branchGit(t, bed.root, "rev-parse", "HEAD")
+	patch := branchGit(t, bed.root, "diff", "--binary", "--full-index", bed.base, chainCommit)
+	branchWrite(t, bed.root, "artifacts/agents/landing-batches/chains/chain-a/diff.patch", patch+"\n")
+	baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
+	branchUnit := BindBranchMember(Unit{GoalID: "goal-a"}, member)
+	chainUnit := Unit{GoalID: "goal-chain", Chain: "chain-a"}
+	for _, test := range []struct {
+		name  string
+		units []Unit
+	}{
+		{name: "branch then chain", units: []Unit{branchUnit, chainUnit}},
+		{name: "chain then branch", units: []Unit{chainUnit, branchUnit}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			prefixes, err := assembleUnits(bed.root, baseTree, test.units)
+			if err != nil || len(prefixes) != 2 {
+				t.Fatalf("prefixes=%v err=%v", prefixes, err)
+			}
+			if got := branchGit(t, bed.root, "show", prefixes[1]+":metasystem/a-1.txt"); got != "goal-a/1" {
+				t.Fatalf("branch bytes=%q", got)
+			}
+			if got := branchGit(t, bed.root, "show", prefixes[1]+":metasystem/b-1.txt"); got != "chain" {
+				t.Fatalf("chain bytes=%q", got)
+			}
+		})
+	}
+}
+
 func TestBatchBranchReaderRefusesReaderRecord(t *testing.T) {
 	bed := newGoalBranchBed(t)
 	tip := buildGoalBranch(t, bed, "goal-a", []string{"1", "2", "3"}, 1)

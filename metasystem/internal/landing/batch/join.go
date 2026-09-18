@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -46,67 +45,65 @@ func assembleUnits(root, base string, units []Unit) (prefixes []string, err erro
 	if _, err := batchMergeDriverArgs(); err != nil {
 		return nil, err
 	}
-	if slices.ContainsFunc(units, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
-		current := base
-		for _, unit := range units {
-			member, ok := branchMemberOf(unit)
-			if !ok {
-				return nil, refuseBatch("BATCH_JOIN_UNREAD", "goal "+unit.GoalID+" has no branch member identity")
-			}
+	current := base
+	for _, unit := range units {
+		if member, ok := branchMemberOf(unit); ok {
 			memberPrefixes, memberErr := AssembleBranchMembers(root, current, []BranchMember{member})
 			if memberErr != nil {
 				return nil, memberErr
 			}
 			current = memberPrefixes[0]
-			prefixes = append(prefixes, current)
+		} else {
+			next, chainErr := assembleChainUnit(root, current, unit)
+			if chainErr != nil {
+				return nil, chainErr
+			}
+			current = next
 		}
-		return prefixes, nil
+		prefixes = append(prefixes, current)
 	}
+	return prefixes, nil
+}
+
+func assembleChainUnit(root, base string, unit Unit) (next string, err error) {
 	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(base)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer func() { err = errors.Join(err, detached.Close()) }()
 	workspace := detached.Workspace()
-	for _, unit := range units {
-		patch, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "landing-batches", "chains", unit.Chain, "diff.patch"))
-		if err != nil {
-			return nil, err
-		}
-		before, err := workspace.StagedTree()
-		if err != nil {
-			return nil, err
-		}
-		if err := contractgit.PreflightPatchAttributes(workspace.Dir, before, "unit "+unit.GoalID, patch); err != nil {
-			return nil, err
-		}
-		if output, applyErr := runBatchMergeGit(workspace.Dir, patch, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-"); applyErr != nil {
-			if contractgit.IsRefusal(applyErr) {
-				return nil, applyErr
-			}
-			paths := exec.Command("git", "-C", workspace.Dir, "diff", "--name-only", "--diff-filter=U", "-z")
-			paths.Env = gittree.ScrubbedEnviron()
-			raw, _ := paths.Output()
-			if len(raw) == 0 {
-				return nil, &assemblyConflict{GoalID: unit.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" does not apply: "+strings.TrimSpace(string(output)))}
-			}
-			conflicts := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
-			return nil, &assemblyConflict{GoalID: unit.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" paths "+strings.Join(conflicts, ", "))}
-		}
-		after, err := workspace.StagedTree()
-		if err != nil {
-			return nil, err
-		}
-		if err := contractgit.CheckPatchContract(workspace.Dir, before, after, patch, "unit "+unit.GoalID); err != nil {
-			return nil, err
-		}
-		next, snapshotErr := workspace.Snapshot("HEAD")
-		if snapshotErr != nil {
-			return nil, snapshotErr
-		}
-		prefixes = append(prefixes, next)
+	patch, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "landing-batches", "chains", unit.Chain, "diff.patch"))
+	if err != nil {
+		return "", err
 	}
-	return prefixes, nil
+	before, err := workspace.StagedTree()
+	if err != nil {
+		return "", err
+	}
+	if err := contractgit.PreflightPatchAttributes(workspace.Dir, before, "unit "+unit.GoalID, patch); err != nil {
+		return "", err
+	}
+	if output, applyErr := runBatchMergeGit(workspace.Dir, patch, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-"); applyErr != nil {
+		if contractgit.IsRefusal(applyErr) {
+			return "", applyErr
+		}
+		paths := exec.Command("git", "-C", workspace.Dir, "diff", "--name-only", "--diff-filter=U", "-z")
+		paths.Env = gittree.ScrubbedEnviron()
+		raw, _ := paths.Output()
+		if len(raw) == 0 {
+			return "", &assemblyConflict{GoalID: unit.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" does not apply: "+strings.TrimSpace(string(output)))}
+		}
+		conflicts := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
+		return "", &assemblyConflict{GoalID: unit.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit "+unit.GoalID+" paths "+strings.Join(conflicts, ", "))}
+	}
+	after, err := workspace.StagedTree()
+	if err != nil {
+		return "", err
+	}
+	if err := contractgit.CheckPatchContract(workspace.Dir, before, after, patch, "unit "+unit.GoalID); err != nil {
+		return "", err
+	}
+	return workspace.Snapshot("HEAD")
 }
 
 func branchPatch(repo, commit string) ([]byte, error) {

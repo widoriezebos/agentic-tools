@@ -721,9 +721,10 @@ func captureProcessGroupGone(pgid int) (bool, error) {
 }
 
 var (
-	landingProvenanceRe        = regexp.MustCompile(`^chain=([^ ]+) change=([0-9a-f]{64})(?: .*)?$`)
-	directFixProvenanceRe      = regexp.MustCompile(`^direct-fix [^\n]*\bchange=([0-9a-f]{64})(?: |$)`)
-	carriedLandingProvenanceRe = regexp.MustCompile(`^carried opid=[^ ]+(?: .*)?$`)
+	landingProvenanceRe         = regexp.MustCompile(`^chain=([^ ]+) change=([0-9a-f]{64})(?: .*)?$`)
+	directFixProvenanceRe       = regexp.MustCompile(`^direct-fix [^\n]*\bchange=([0-9a-f]{64})(?: |$)`)
+	carriedLandingProvenanceRe  = regexp.MustCompile(`^carried opid=[^ ]+(?: .*)?$`)
+	attestedLandingProvenanceRe = regexp.MustCompile(`^attested=[0-9a-f]{40} goal=[^ ]+ unit=[^ ]+ critic=[^ /]+/[1-9][0-9]* change=[0-9a-f]{64}$`)
 )
 
 // ObserveLedger validates a private canonical tip from the original cursor
@@ -995,7 +996,7 @@ func matchLandingMessage(message, goalID, chain string) (bool, string, error) {
 		}
 		return true, provenance, nil
 	}
-	if len(match) != 3 && !directFixProvenanceRe.MatchString(provenance) && !carriedLandingProvenanceRe.MatchString(provenance) {
+	if len(match) != 3 && !directFixProvenanceRe.MatchString(provenance) && !carriedLandingProvenanceRe.MatchString(provenance) && !attestedLandingProvenanceRe.MatchString(provenance) {
 		return false, "", nil
 	}
 	return true, provenance, nil
