@@ -36,9 +36,23 @@ func (f *commandLandingProgress) RecordLandingProgress(line, next string) error 
 	return nil
 }
 
-func goalBranchCLIFixture(t *testing.T, lineage string) (string, string, string) {
+func goalBranchMainCLIFixture(t *testing.T, lineage string) (string, string, string) {
+	return goalBranchMainCLIFixtureBelow(t, lineage, ".")
+}
+
+func goalBranchMainCLIFixtureBelow(t *testing.T, lineage, subdir string) (string, string, string) {
 	t.Helper()
-	root := syncedClaimedGoalFixture(t)
+	repo := syncedClaimedGoalFixture(t)
+	root := repo
+	if subdir != "." {
+		root = filepath.Join(repo, subdir)
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range []string{"metasystem.conf", "plans", "scripts"} {
+			goalSyncMutationGit(t, repo, "mv", path, filepath.ToSlash(filepath.Join(subdir, path)))
+		}
+	}
 	rootPath := filepath.Join(root, "plans", "goals", "backlog.md")
 	rootBytes, err := os.ReadFile(rootPath)
 	if err != nil {
@@ -50,7 +64,9 @@ func goalBranchCLIFixture(t *testing.T, lineage string) (string, string, string)
 	}
 	rootRecord.SyncMode = goal.SyncRemote
 	writeTestingFixtureFile(t, rootPath, goal.RenderRoot(rootRecord), 0o644)
-	goalSyncMutationGit(t, root, "add", "plans/goals/backlog.md")
+	writeTestingFixtureFile(t, filepath.Join(repo, "metasystem", "memory", "receipts.log"), []byte("seed receipt\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(repo, "metasystem", "records", "narrator-digest.log"), []byte("seed digest\n"), 0o644)
+	goalSyncMutationGit(t, repo, "add", ".")
 	goalSyncMutationGit(t, root, "commit", "-qm", "remote goal fixture")
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
 	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
@@ -70,6 +86,18 @@ func goalBranchCLIFixture(t *testing.T, lineage string) (string, string, string)
 	return root, upstream, base
 }
 
+func goalBranchCLIFixture(t *testing.T, lineage string) (string, string, string) {
+	return goalBranchCLIFixtureBelow(t, lineage, ".")
+}
+
+func goalBranchCLIFixtureBelow(t *testing.T, lineage, subdir string) (string, string, string) {
+	t.Helper()
+	main, upstream, base := goalBranchMainCLIFixtureBelow(t, lineage, subdir)
+	worktreeTop := filepath.Join(t.TempDir(), "goal-worktree")
+	goalSyncMutationGit(t, main, "worktree", "add", "-q", "-b", "goal/standing-validation", worktreeTop, base)
+	return filepath.Join(worktreeTop, subdir), upstream, base
+}
+
 func goalBranchCLIState(t *testing.T, root string) string {
 	t.Helper()
 	parts := []string{
@@ -79,6 +107,114 @@ func goalBranchCLIState(t *testing.T, root string) string {
 		goalSyncMutationGit(t, root, "for-each-ref", "--format=%(refname) %(objectname)"),
 	}
 	return strings.Join(parts, "\n---\n")
+}
+
+func goalBranchCheckoutState(t *testing.T, root string) string {
+	t.Helper()
+	parts := []string{
+		goalSyncMutationGit(t, root, "symbolic-ref", "-q", "HEAD"),
+		goalSyncMutationGit(t, root, "rev-parse", "HEAD^{commit}"),
+		goalSyncMutationGit(t, root, "write-tree"),
+		goalSyncMutationGit(t, root, "diff", "--binary", "HEAD"),
+		goalSyncMutationGit(t, root, "status", "--porcelain=v1", "--untracked-files=all"),
+	}
+	return strings.Join(parts, "\n---\n")
+}
+
+func dirtyGoalBranchLedgers(t *testing.T, root string) {
+	t.Helper()
+	for _, rel := range []string{"metasystem/memory/receipts.log", "metasystem/records/narrator-digest.log"} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTestingFixtureFile(t, path, append(body, []byte("live append\n")...), 0o644)
+	}
+}
+
+func TestGoalBranchVerbsRunFromTheHoldersLinkedWorktree(t *testing.T) {
+	worktree, _, _ := goalBranchCLIFixture(t, "m1")
+	main, linked := linkedWorktreeMainCheckout(worktree)
+	if !linked {
+		t.Fatalf("fixture %s is not a linked worktree", worktree)
+	}
+	dirtyGoalBranchLedgers(t, main)
+	mainBefore := goalBranchCheckoutState(t, main)
+	record := "metasystem/records/decisions/linked-worktree.md"
+	writeTestingFixtureFile(t, filepath.Join(worktree, filepath.FromSlash(record)), []byte("holder record\n"), 0o644)
+	goalSyncMutationGit(t, worktree, "add", record)
+
+	code, _, stderr := captureCommandOutput(t, true, true, func() int {
+		return runGoalBranch([]string{"status", "--goal", "standing-validation", "--root", worktree})
+	})
+	if code != 0 || stderr != "" {
+		t.Fatalf("status from linked worktree: code=%d stderr=%q", code, stderr)
+	}
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", worktree})
+	})
+	tip := strings.TrimSpace(stdout)
+	if code != 0 || stderr != "" || len(tip) != 40 {
+		t.Fatalf("commit from linked worktree: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, _, stderr = captureCommandOutput(t, true, true, func() int {
+		return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", worktree, "--opid", "linked-holder-push"})
+	})
+	if code != 0 || stderr != "" {
+		t.Fatalf("push from linked worktree: code=%d stderr=%q", code, stderr)
+	}
+	if after := goalBranchCheckoutState(t, main); after != mainBefore {
+		t.Fatalf("linked verbs changed the main checkout:\nbefore=%s\nafter=%s", mainBefore, after)
+	}
+	if head := goalSyncMutationGit(t, worktree, "rev-parse", "HEAD^{commit}"); head != tip {
+		t.Fatalf("worktree HEAD=%s, want %s", head, tip)
+	}
+	remote := strings.Fields(goalSyncMutationGit(t, worktree, "ls-remote", "--refs", "upstream", "refs/heads/goal/standing-validation"))
+	if len(remote) != 2 || remote[0] != tip {
+		t.Fatalf("origin goal branch=%v, want %s", remote, tip)
+	}
+}
+
+func TestGoalBranchHolderResolutionPreservesInstallationSubdirectory(t *testing.T) {
+	worktree, _, _ := goalBranchCLIFixtureBelow(t, "m1", "metasystem")
+	record := "records/decisions/nested-installation.md"
+	writeTestingFixtureFile(t, filepath.Join(worktree, filepath.FromSlash(record)), []byte("nested holder record\n"), 0o644)
+	goalSyncMutationGit(t, worktree, "add", record)
+
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", worktree})
+	})
+	if code != 0 || stderr != "" || len(strings.TrimSpace(stdout)) != 40 {
+		main, linked := linkedWorktreeMainCheckout(worktree)
+		holderRoot := goalBranchHolderRoot(worktree)
+		holder, holderErr := lease.CurrentHolder(holderRoot)
+		t.Fatalf("commit from nested installation: code=%d stdout=%q stderr=%q main=%q linked=%t holder-root=%q holder=%+v holder-err=%v",
+			code, stdout, stderr, main, linked, holderRoot, holder, holderErr)
+	}
+}
+
+func TestGoalBranchCommitRefusesToMoveAnArmedCheckout(t *testing.T) {
+	root, _, _ := goalBranchMainCLIFixture(t, "m1")
+	dirtyGoalBranchLedgers(t, root)
+	record := "metasystem/records/decisions/armed-checkout.md"
+	writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(record)), []byte("staged record\n"), 0o644)
+	goalSyncMutationGit(t, root, "add", record)
+	before := goalBranchCLIState(t, root) + "\n" + goalBranchCheckoutState(t, root)
+
+	stderr, code := captureStderr(t, func() int {
+		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", root})
+	})
+	remedy := "git worktree add <path> goal/standing-validation"
+	if code == 0 || !strings.Contains(stderr, branch.CheckoutArmedCode) || !strings.Contains(stderr, root) || !strings.Contains(stderr, remedy) {
+		t.Fatalf("armed checkout refusal: code=%d stderr=%q", code, stderr)
+	}
+	if strings.Contains(stderr, "receipts.log") || strings.Contains(stderr, "narrator-digest.log") {
+		t.Fatalf("armed checkout reached stale-ledger preflight: %q", stderr)
+	}
+	if after := goalBranchCLIState(t, root) + "\n" + goalBranchCheckoutState(t, root); after != before {
+		t.Fatalf("armed checkout refusal changed checkout:\nbefore=%s\nafter=%s", before, after)
+	}
 }
 
 func TestGoalBranchCheckPrintsKinds(t *testing.T) {
@@ -440,7 +576,8 @@ func TestGoalBranchCommitIsTheGuardedCommitWrapper(t *testing.T) {
 	}
 	guardPath := filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")
 	writeTestingFixtureFile(t, guardPath, guard, 0o755)
-	hook := filepath.Join(root, ".git", "hooks", "pre-commit")
+	common := goalSyncMutationGit(t, root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	hook := filepath.Join(common, "hooks", "pre-commit")
 	writeTestingFixtureFile(t, hook, []byte("#!/bin/sh\nexec bash "+guardPath+"\n"), 0o755)
 
 	product := filepath.Join(root, "metasystem", "guarded.go")

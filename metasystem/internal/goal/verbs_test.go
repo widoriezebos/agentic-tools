@@ -889,6 +889,30 @@ func TestClaimRefusalsAreNamed(t *testing.T) {
 	}
 }
 
+func TestClaimQuotaRefusalNamesTheHeldGoalAndRelease(t *testing.T) {
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	for index, id := range []string{"held-work", "next-work"} {
+		request := verbReq(root, []string{"01J5X00000000000000000CQ00", "01J5X00000000000000000CQ10"}[index], "mac-a")
+		if result, err := Open(request, id, "Exercise the claim quota.", OriginHuman, "Claim it."); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open %s: %+v %v", id, result, err)
+		}
+		approveGoalForTest(t, request, id, testBudget())
+	}
+	if result, err := Claim(verbReq(root, "01J5X00000000000000000CQ20", "mac-a"), "held-work"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim held goal: %+v %v", result, err)
+	}
+	before := acceptedTip(t, root)
+	result, err := Claim(verbReq(root, "01J5X00000000000000000CQ30", "mac-a"), "next-work")
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, ClaimQuotaCode) ||
+		!strings.Contains(result.Detail, "held-work") || !strings.Contains(result.Detail, "metasystem goal release --id held-work") {
+		t.Fatalf("quota refusal: %+v %v", result, err)
+	}
+	if after := acceptedTip(t, root); after != before || result.Tip != before {
+		t.Fatalf("quota refusal moved ledger: before=%s after=%s result=%+v", before, after, result)
+	}
+}
+
 func TestReleaseIsOwnerOrHuman(t *testing.T) {
 	_, a, b := twoClones(t)
 	seedLedger(t, a)

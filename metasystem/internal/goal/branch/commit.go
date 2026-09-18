@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	UnavailableCode = "GOAL_BRANCH_UNAVAILABLE"
-	NotHolderCode   = "GOAL_BRANCH_NOT_HOLDER"
+	UnavailableCode   = "GOAL_BRANCH_UNAVAILABLE"
+	NotHolderCode     = "GOAL_BRANCH_NOT_HOLDER"
+	CheckoutArmedCode = "GOAL_BRANCH_CHECKOUT_ARMED"
 )
 
 type OpError struct {
@@ -75,6 +76,26 @@ func CheckCommitAccess(goalID string, check func() error) error {
 		return fmt.Errorf("goal id must be one nonempty path-free word")
 	}
 	return checkClaim(check)
+}
+
+// CheckCommitCheckout keeps an enrolled checkout on its endpoint branch. A
+// linked worktree and a plain clone already on the goal branch are the two
+// places where the commit verb may install its new tip.
+func CheckCommitCheckout(repo, goalID string, linked bool) error {
+	if linked {
+		return nil
+	}
+	currentOut, _ := gitOutput(repo, "symbolic-ref", "-q", "HEAD")
+	if strings.TrimSpace(string(currentOut)) == goalBranchRef(goalID) {
+		return nil
+	}
+	checkout, err := filepath.Abs(repo)
+	if err != nil {
+		return err
+	}
+	return operationRefusal(CheckoutArmedCode,
+		"checkout %s is not on goal/%s; run git worktree add <path> goal/%s, then run goal branch commit there",
+		filepath.Clean(checkout), goalID, goalID)
 }
 
 func localBranchTip(repo, ref string) (string, bool, error) {

@@ -124,7 +124,7 @@ func runGoalBranchSweep(args []string) int {
 	if *goalID == "" {
 		return listGoalBranchSweep(*root, endpoint, projection.Tree)
 	}
-	if _, err := lease.RequireHolder(*root, int64(os.Getpid()), nil); err != nil {
+	if _, err := lease.RequireHolder(goalBranchHolderRoot(*root), int64(os.Getpid()), nil); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -494,7 +494,11 @@ func goalBranchClaimCheck(root, goalID string, endpoint goal.Endpoint) func() er
 		if err != nil {
 			return err
 		}
-		holder, err := lease.CurrentHolder(root)
+		holderRoot := goalBranchHolderRoot(root)
+		if _, err := lease.RequireHolder(holderRoot, int64(os.Getpid()), nil); err != nil {
+			return err
+		}
+		holder, err := lease.CurrentHolder(holderRoot)
 		if err != nil {
 			return err
 		}
@@ -508,6 +512,22 @@ func goalBranchClaimCheck(root, goalID string, endpoint goal.Endpoint) func() er
 		}
 		return nil
 	}
+}
+
+func goalBranchHolderRoot(root string) string {
+	if main, linked := linkedWorktreeMainCheckout(root); linked {
+		top, topErr := goalBranchGit(root, "rev-parse", "--show-toplevel")
+		installation, rootErr := filepath.Abs(root)
+		if rootErr == nil {
+			installation, rootErr = filepath.EvalSymlinks(installation)
+		}
+		relative, relErr := filepath.Rel(top, installation)
+		if topErr == nil && rootErr == nil && relErr == nil {
+			return filepath.Join(main, relative)
+		}
+		return main
+	}
+	return root
 }
 
 func runGoalBranchCheck(args []string) int {
@@ -611,6 +631,11 @@ func runGoalBranchCommit(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	_, linked := linkedWorktreeMainCheckout(*root)
+	if err := branch.CheckCommitCheckout(*root, *goalID, linked); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	check := goalBranchClaimCheck(*root, *goalID, endpoint)
 	if err := branch.CheckCommitAccess(*goalID, check); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -667,7 +692,7 @@ func runGoalBranchCommit(args []string) int {
 
 func withGoalBranchCommitToken(root string, commit func() error) error {
 	pid := int64(os.Getpid())
-	if _, err := lease.RequireHolder(root, pid, nil); err != nil {
+	if _, err := lease.RequireHolder(goalBranchHolderRoot(root), pid, nil); err != nil {
 		return err
 	}
 	exact, state, err := (identity.KernelProber{}).Probe(pid)

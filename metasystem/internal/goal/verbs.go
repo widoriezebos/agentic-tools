@@ -934,6 +934,8 @@ func returnBlockerParks(t *TreeGoals, r VerbRequest, finished string) []*GoalFil
 // Claim takes ownership of a human-approved goal for the actor's pair.
 // Claim is AGENT-ONLY: humans direct agents; no human
 // lineage exists, so no human claim row.
+const ClaimQuotaCode = "GOAL_CLAIM_QUOTA"
+
 func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	if detail := brain.Fence(r.Endpoint.Root, "claim", ExistingLedgerIdentity(r.Endpoint.Root)); detail != "" {
 		return PublishResult{}, fmt.Errorf("%s", detail)
@@ -945,6 +947,25 @@ func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 		return PublishResult{}, fmt.Errorf("the budget and any norm approval were bound by the human's approval; goal claim carries no tuple or --approved-ref")
 	}
 	return Publish(r.Endpoint, claimRequest(r, id, nil))
+}
+
+func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id string) string {
+	target := t.Live[id]
+	var held []string
+	for _, heldID := range sortedGoalIds(t.Live) {
+		file := t.Live[heldID]
+		if heldID == id || file.State != StateClaimed || file.Claimed == nil || file.Claimed.Machine != r.Actor.Machine ||
+			file.Claimed.HandedOver.present() || file.Landing != nil || file.IsFencedClaim() ||
+			target.Arc != "" && file.Arc == target.Arc {
+			continue
+		}
+		held = append(held, heldID)
+	}
+	if len(held) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s: machine %s already claims %s: the quota is one claim per machine (one arc counts once); run metasystem goal release --id %s before claiming %s",
+		ClaimQuotaCode, r.Actor.Machine, strings.Join(held, ", "), held[0], id)
 }
 
 // Handover transfers one claim from its current holder to one authenticated
@@ -1076,6 +1097,9 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			budget, err := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "claim")
 			if err != nil {
 				return nil, err
+			}
+			if refusal := claimQuotaRefusal(t, r, id); refusal != "" {
+				return nil, fmt.Errorf("%s", refusal)
 			}
 			f.State = StateClaimed
 			f.Budget = &budget
