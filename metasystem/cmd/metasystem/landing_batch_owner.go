@@ -61,6 +61,16 @@ var batchOwnerSetenv = os.Setenv
 var batchOwnerResume = func(owner *batch.Owner) { owner.Resume() }
 var batchOwnerRequire = func(held batchOwnerLease) error { return held.require() }
 var batchOwnerTick = func(owner *batch.Owner, id string) error { return owner.Tick(id) }
+var cadenceProductionClock = time.Now
+var batchOwnerCadenceTick = func(root string, held batchOwnerLease, clock func() time.Time) error {
+	_, err := cadenceTick(root, held, clock)
+	return err
+}
+var batchOwnerCadenceStart = func(tick func()) { go tick() }
+var batchOwnerCadenceReport = func(err error) {
+	line, _ := json.Marshal(map[string]any{"component": "landing-owner", "cadence": "tick", "error": err.Error()})
+	fmt.Fprintln(os.Stderr, string(line))
+}
 
 func inspectBatchOwner(root string) (int64, identity.Liveness, error) {
 	return inspectBatchOwnerWith(root, identity.KernelProber{}, lease.CurrentHolder, lease.AnnouncementsFor)
@@ -532,26 +542,27 @@ func runBatchOwner(args []string) (code int) {
 			code = 1
 		}
 	}()
-	owner, err := batchOwnerConstruct(settings, held, inputs, time.Now)
+	clock := cadenceProductionClock
+	owner, err := batchOwnerConstruct(settings, held, inputs, clock)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	wake, stop, cleanup := batchOwnerSignals()
 	defer cleanup()
-	if err := loopBatchOwner(owner, held, interval, wake, stop); err != nil {
+	if err := loopBatchOwner(owner, held, settings.Root, clock, interval, wake, stop); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func loopBatchOwner(owner *batch.Owner, held batchOwnerLease, interval time.Duration, wake <-chan struct{}, stop <-chan struct{}) error {
+func loopBatchOwner(owner *batch.Owner, held batchOwnerLease, root string, clock func() time.Time, interval time.Duration, wake <-chan struct{}, stop <-chan struct{}) error {
 	for {
 		if err := batchOwnerRequire(held); err != nil {
 			return err
 		}
-		batchOwnerResume(owner)
+		runBatchOwnerPass(owner, held, root, clock)
 		timer := time.NewTimer(interval)
 		select {
 		case <-wake:
@@ -566,6 +577,15 @@ func loopBatchOwner(owner *batch.Owner, held batchOwnerLease, interval time.Dura
 			return nil
 		}
 	}
+}
+
+func runBatchOwnerPass(owner *batch.Owner, held batchOwnerLease, root string, clock func() time.Time) {
+	batchOwnerResume(owner)
+	batchOwnerCadenceStart(func() {
+		if err := batchOwnerCadenceTick(root, held, clock); err != nil {
+			batchOwnerCadenceReport(err)
+		}
+	})
 }
 
 func runBatchTick(args []string) (code int) {

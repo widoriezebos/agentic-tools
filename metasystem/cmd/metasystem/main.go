@@ -349,6 +349,7 @@ func families() []family {
 				{"weight-add", "fold a landing's measured weight into the validation accumulator (numstat on stdin)", runGateWeightAdd},
 				{"weight-check", "exit 1 when accumulated feature weight makes governed direct validation due", runGateWeightCheck},
 				{"weight-discharge", "reset validation weight at the exact authorized green-run boundary", runGateWeightDischarge},
+				{"cadence-tick", "run one landing-owner deep validation cadence decision", runGateCadenceTick},
 			},
 		},
 		{

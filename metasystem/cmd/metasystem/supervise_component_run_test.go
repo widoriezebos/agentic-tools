@@ -355,6 +355,37 @@ func TestLandingOwnerComponentStopsActingAfterLeaseLoss(t *testing.T) {
 	}
 }
 
+func TestLandingOwnerComponentCadenceWiringBound(t *testing.T) {
+	originalStart, originalTick, originalReport := batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport
+	t.Cleanup(func() {
+		batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport = originalStart, originalTick, originalReport
+	})
+	root, pass, release := landingOwnerRetryFixture(t)
+	defer release()
+	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	starts, ticks, reports := 0, 0, 0
+	batchOwnerCadenceStart = func(tick func()) { starts++; tick() }
+	batchOwnerCadenceTick = func(gotRoot string, _ batchOwnerLease, _ func() time.Time) error {
+		if gotRoot != root {
+			t.Fatalf("cadence root=%q want %q", gotRoot, root)
+		}
+		ticks++
+		return errors.New("injected cadence failure")
+	}
+	batchOwnerCadenceReport = func(err error) {
+		if !strings.Contains(err.Error(), "injected cadence failure") {
+			t.Fatalf("cadence report=%v", err)
+		}
+		reports++
+	}
+	if err := pass(); err != nil {
+		t.Fatal(err)
+	}
+	if starts != 1 || ticks != 1 || reports != 1 {
+		t.Fatalf("cadence starts=%d ticks=%d reports=%d", starts, ticks, reports)
+	}
+}
+
 func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 	root := t.TempDir()
 	seedClaimLaunchGoal(t, root)

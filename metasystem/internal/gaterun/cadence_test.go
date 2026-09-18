@@ -133,6 +133,22 @@ func TestCadenceTriggerFiresOnChangedMissingOrNonGreenIdentity(t *testing.T) {
 	}
 }
 
+func TestCadenceMissingProbeAcceptsClaimedNativeIdentity(t *testing.T) {
+	now := cadenceTestStart.Add(time.Hour)
+	probe := cadenceProbe("section/deep", strings.Repeat("1", 64), "not-run")
+	input, deps, _, executions := cadenceFixture(&now, probe)
+	exact := cadenceProbe(probe.ID, strings.Repeat("2", 64), "passed")
+	deps.Run = func(CadenceRunRequest) (CadenceRunResult, error) {
+		*executions++
+		return cadenceRunResult(exact, "passed"), nil
+	}
+	result, err := RunCadenceTick(input, deps)
+	if err != nil || *executions != 1 || result.Status == nil || len(result.Status.Groups) != 1 ||
+		result.Status.Groups[0].Status != "passed" || result.Status.Groups[0].ExecutionIdentity != exact.ExecutionIdentity {
+		t.Fatalf("tick=%+v executions=%d err=%v", result, *executions, err)
+	}
+}
+
 func TestCadenceTriggerForcesEverySixHours(t *testing.T) {
 	now, probe := cadenceTestStart.Add(CadenceForcedInterval-time.Second), cadenceProbe("section/deep", strings.Repeat("1", 64), "reused")
 	input, deps, _, executions := cadenceFixture(&now, probe)
@@ -189,7 +205,7 @@ func TestCadenceTickJoinsLiveClaimAndReadsTerminalResult(t *testing.T) {
 	go func() { result, _ := RunCadenceTick(input, deps); firstDone <- result }()
 	<-entered
 	joined, err := RunCadenceTick(input, deps)
-	if err != nil || joined.ClaimOutcome != goal.CadenceClaimJoined || joined.Executed {
+	if err != nil || joined.ClaimOutcome != goal.CadenceClaimJoined || joined.Trigger != goal.CadenceTriggerIdentityChanged || joined.Executed {
 		t.Fatalf("joined tick=%+v err=%v", joined, err)
 	}
 	close(release)
@@ -235,6 +251,16 @@ func TestCadenceAbsentStandingAuthorityPublishesNonGreen(t *testing.T) {
 	}
 }
 
+func TestCadencePublishedResultCompletesWhenAuthorityReleaseFails(t *testing.T) {
+	now, probe := cadenceTestStart.Add(time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "failed")
+	input, deps, _, executions := cadenceFixture(&now, probe)
+	deps.ReleaseAuthority = func(CadenceAuthority, time.Time) error { return errors.New("release failed") }
+	result, err := RunCadenceTick(input, deps)
+	if err != nil || !result.Published || result.Status == nil || *executions != 1 {
+		t.Fatalf("published tick=%+v executions=%d err=%v", result, *executions, err)
+	}
+}
+
 func TestCadenceRedPublishesThroughTheBatchMapping(t *testing.T) {
 	now, probe := cadenceTestStart.Add(time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "failed")
 	input, deps, _, _ := cadenceFixture(&now, probe)
@@ -265,7 +291,10 @@ func TestCadencePackagesUseNoWallClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	paths = append(paths, filepath.Join("..", "proofrun", "reuse_policy.go"))
+	paths = append(paths,
+		filepath.Join("..", "proofrun", "reuse_policy.go"),
+		filepath.Join("..", "..", "cmd", "metasystem", "gate_cadence.go"),
+	)
 	for _, path := range paths {
 		if strings.HasSuffix(path, "_test.go") {
 			continue

@@ -207,6 +207,7 @@ func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass 
 	var announced *batchOwnerLease
 	var settings config.BatchLanding
 	var inputs productionBatchOwnerInputs
+	clock := cadenceProductionClock
 	release = func() error {
 		if announced != nil {
 			return announced.retire()
@@ -244,7 +245,7 @@ func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass 
 		if err != nil {
 			return fmt.Errorf("invalid batch wait: %w", err)
 		}
-		settings, err = config.NewBatchLanding(repo, wait, time.Now)
+		settings, err = config.NewBatchLanding(repo, wait, clock)
 		if err != nil {
 			return err
 		}
@@ -263,7 +264,7 @@ func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass 
 			held = &acquired
 			announced = held
 		}
-		owner, err := batchOwnerConstruct(settings, *held, inputs, time.Now)
+		owner, err := batchOwnerConstruct(settings, *held, inputs, clock)
 		if err != nil {
 			return err
 		}
@@ -273,7 +274,7 @@ func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass 
 				held = nil
 				return err
 			}
-			batchOwnerResume(owner)
+			runBatchOwnerPass(owner, *held, repo, clock)
 			return nil
 		}
 		return activePass()

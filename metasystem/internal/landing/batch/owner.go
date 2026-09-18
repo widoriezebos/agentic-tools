@@ -114,8 +114,28 @@ func (owner *Owner) Tick(id string) error {
 		return err
 	}
 	if record.State == StateLanding || record.State == StateLanded {
-		if err := owner.clearGreenTipTrunkRed(id, record, at); err != nil {
-			owner.report(id, fmt.Errorf("clear green tip trunk-red entries: %w", err))
+		open, clearErr := owner.clearGreenTipTrunkRed(id, record, at)
+		if clearErr != nil {
+			owner.report(id, fmt.Errorf("clear green tip trunk-red entries: %w", clearErr))
+		} else if record.State == StateLanding && len(open) != 0 {
+			opid, mintErr := owner.mint()
+			if mintErr != nil {
+				return mintErr
+			}
+			baseCommit := ""
+			if record.Proof != nil {
+				baseCommit = record.Proof.BaseCommit
+			}
+			if baseCommit == "" {
+				baseCommit, err = owner.baseCommit(record.BaseTree)
+				if err != nil {
+					return err
+				}
+			}
+			if err := owner.store.HoldRegisteredTrunkRed(id, open, baseCommit, record.BaseTree, opid, at, owner.actor); err != nil {
+				return err
+			}
+			return owner.release(id)
 		}
 		if record.State == StateLanded {
 			return owner.release(id)
@@ -218,13 +238,13 @@ func greenTipClearStatus(record Record) (pending, complete bool) {
 	return pending, complete
 }
 
-func (owner *Owner) clearGreenTipTrunkRed(id string, record Record, at time.Time) error {
+func (owner *Owner) clearGreenTipTrunkRed(id string, record Record, at time.Time) ([]OpenEntry, error) {
 	if _, unbound := owner.store.LedgerOwner().(UnboundLedgerOwner); unbound {
-		return nil
+		return nil, nil
 	}
 	pending, complete := greenTipClearStatus(record)
 	if complete {
-		return nil
+		return owner.store.LedgerOwner().Open()
 	}
 	detail := greenTipClearDetail(record.Proof)
 	if !pending {
@@ -235,13 +255,14 @@ func (owner *Owner) clearGreenTipTrunkRed(id string, record Record, at time.Time
 			current.Transition(current.State, at, "trunk-red-clear-pending", owner.actor, detail)
 			return nil
 		}); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	if err := clearGreenTipEntries(record.Proof, trunkRedClearSeams{mint: owner.mint, ledger: owner.store.LedgerOwner(), descendsFrom: owner.descendsFrom}); err != nil {
-		return err
+	open, err := clearGreenTipEntries(record.Proof, trunkRedClearSeams{mint: owner.mint, ledger: owner.store.LedgerOwner(), descendsFrom: owner.descendsFrom})
+	if err != nil {
+		return nil, err
 	}
-	return owner.store.Update(id, func(current *Record) error {
+	err = owner.store.Update(id, func(current *Record) error {
 		if current.Proof == nil || greenTipClearDetail(current.Proof) != detail || (current.State != StateLanding && current.State != StateLanded) {
 			return fmt.Errorf("batch %s moved before trunk-red clearing completed", id)
 		}
@@ -251,6 +272,7 @@ func (owner *Owner) clearGreenTipTrunkRed(id string, record Record, at time.Time
 		}
 		return nil
 	})
+	return open, err
 }
 
 func (owner *Owner) release(id string) error {

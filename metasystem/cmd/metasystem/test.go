@@ -147,6 +147,9 @@ type testingSelectionRequest struct {
 	Groups                                                     []string
 	Carried                                                    bool
 	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups bool
+	// CadencePreflight plans and revalidates the fetched tree before the cadence
+	// tick claims standing authority. Governed cadence execution does not set it.
+	CadencePreflight bool
 	// LandedRearm is set by outermost plan and run commands. The pinned child
 	// and the verify verb judge the engine as they find it.
 	LandedRearm bool
@@ -291,7 +294,11 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		return testingPreparation{}, fmt.Errorf("testing requires a committed project HEAD")
 	}
 	goalID := request.GoalID
-	if goalID != "" || request.Purpose == testpolicy.PurposeDelivery || request.Purpose == testpolicy.PurposeCadence {
+	accountToGoal, err := testingPreparationAccountsToGoal(request)
+	if err != nil {
+		return testingPreparation{}, err
+	}
+	if accountToGoal {
 		goalID, err = resolveTestingGoal(installation, request.GoalID)
 		if err != nil {
 			return testingPreparation{}, err
@@ -390,9 +397,12 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 	if err != nil {
 		return testingPreparation{}, err
 	}
-	risk, accountingRevision, err := testingGoalRisk(installation, goalID)
-	if err != nil {
-		return testingPreparation{}, err
+	risk, accountingRevision := testpolicy.GoalRisk{}, uint64(0)
+	if accountToGoal {
+		risk, accountingRevision, err = testingGoalRisk(installation, goalID)
+		if err != nil {
+			return testingPreparation{}, err
+		}
 	}
 	plan, err := testpolicy.Select(effective, testpolicy.SelectionRequest{ChangedPaths: changedPaths, GoalRisk: risk,
 		RequestedMode: request.Mode, Purpose: request.Purpose, Groups: request.Groups})
@@ -447,6 +457,16 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		FirstTestingTransition: !basePresent,
 		BehaviorPolicyDigest:   bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: testingEnvironment(os.Environ()),
 		AllGroups: request.AllGroups}, nil
+}
+
+func testingPreparationAccountsToGoal(request testingSelectionRequest) (bool, error) {
+	if request.CadencePreflight {
+		if request.Purpose != testpolicy.PurposeCadence {
+			return false, fmt.Errorf("cadence preflight requires cadence purpose")
+		}
+		return false, nil
+	}
+	return request.GoalID != "" || request.Purpose == testpolicy.PurposeDelivery || request.Purpose == testpolicy.PurposeCadence, nil
 }
 
 var prepareTestingForCommand = prepareTesting

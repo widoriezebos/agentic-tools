@@ -149,34 +149,39 @@ func clearHeldTrunkRedEntries(refs []EntryRef, result DiagnosticResult, newBaseT
 	return true, nil
 }
 
-func clearGreenTipEntries(proof *Proof, seams trunkRedClearSeams) error {
-	if proof == nil || proof.Status != "green" || proof.BaseCommit == "" || seams.mint == nil || seams.ledger == nil || seams.descendsFrom == nil {
-		return nil
+func clearGreenTipEntries(proof *Proof, seams trunkRedClearSeams) ([]OpenEntry, error) {
+	if seams.ledger == nil {
+		return nil, nil
 	}
 	open, err := seams.ledger.Open()
 	if err != nil {
-		return err
+		return nil, err
 	}
+	if proof == nil || proof.Status != "green" || proof.BaseCommit == "" || seams.mint == nil || seams.descendsFrom == nil {
+		return open, nil
+	}
+	remaining := slices.Clone(open)
 	for _, entry := range open {
 		if len(entry.Holds) != 0 || !slices.Contains(proof.Passed, entry.Group) || entry.LastBaseCommit == proof.BaseCommit {
 			continue
 		}
 		descends, err := seams.descendsFrom(proof.BaseCommit, entry.LastBaseCommit)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !descends {
 			continue
 		}
 		opid, err := seams.mint()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := seams.ledger.Clear(opid, EntryRef{ID: entry.ID, Group: entry.Group}, Green{
 			AttemptID: proof.AttemptID, BaseCommit: proof.BaseCommit, Group: entry.Group,
 		}); err != nil {
-			return err
+			return nil, err
 		}
+		remaining = slices.DeleteFunc(remaining, func(candidate OpenEntry) bool { return candidate.ID == entry.ID })
 	}
-	return nil
+	return remaining, nil
 }

@@ -22,6 +22,51 @@ func (store Store) HoldTrunkRed(id string, red TrunkRed, opid string, at time.Ti
 	return store.holdTrunkRed(id, "", red, opid, at, actor)
 }
 
+// HoldRegisteredTrunkRed holds a landing batch on entries already published
+// in the shared register. It records references instead of publishing a
+// second sighting with reconstructed evidence.
+func (store Store) HoldRegisteredTrunkRed(id string, entries []OpenEntry, baseCommit, baseTree, opid string, at time.Time, actor string) error {
+	return store.Update(id, func(record *Record) error {
+		if record.State != StateLanding {
+			return fmt.Errorf("batch %s cannot hold registered trunk red from state %s", id, record.State)
+		}
+		if len(entries) == 0 || opid == "" || len(record.Units) == 0 {
+			return fmt.Errorf("batch %s cannot hold registered trunk red without entries, opid, and units", id)
+		}
+		groups := make([]RedGroup, 0, len(entries))
+		refs := make([]EntryRef, 0, len(entries))
+		seen := map[string]bool{}
+		for _, entry := range entries {
+			if entry.ID == "" || entry.Group == "" || seen[entry.ID] {
+				continue
+			}
+			seen[entry.ID] = true
+			groups = append(groups, RedGroup{ID: entry.Group, Status: "failed"})
+			refs = append(refs, EntryRef{ID: entry.ID, Group: entry.Group})
+		}
+		if len(refs) == 0 {
+			return fmt.Errorf("batch %s cannot hold registered trunk red without valid entries", id)
+		}
+		red := TrunkRed{BatchID: id, AttemptID: "shared-trunk-red", BaseCommit: baseCommit, BaseTree: baseTree, Groups: groups,
+			Joiners: make([]Claim, len(record.Units)), SeenAt: at}
+		for index, unit := range record.Units {
+			red.Joiners[index] = unit.Claim
+		}
+		record.TrunkRed = &TrunkRedHold{Opid: opid, Opids: []string{opid}, Red: red, Entries: refs,
+			RecordedAt: at.UTC().Format(time.RFC3339Nano)}
+		record.Transition(StateHeldTrunkRed, at, "trunk-red-hold", actor, "entries="+strings.Join(entryIDs(refs), ",")+" opid="+opid)
+		return nil
+	})
+}
+
+func entryIDs(entries []EntryRef) []string {
+	ids := make([]string, len(entries))
+	for index, entry := range entries {
+		ids[index] = entry.ID
+	}
+	return ids
+}
+
 // reholdTrunkRed replaces an existing hold only while it still carries the
 // operation that the diagnostic observed.
 func (store Store) reholdTrunkRed(id, expectedOpid string, red TrunkRed, opid string, at time.Time, actor string) error {

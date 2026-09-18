@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
@@ -54,6 +55,18 @@ type batchStatusView struct {
 	BranchTip     string                `json:"branchTip,omitempty"`
 	Sample        proofrun.LoadSample   `json:"sample"`
 	Units         []batchStatusUnit     `json:"units"`
+}
+
+type batchCadenceStatusView struct {
+	State       string `json:"state"`
+	TrunkCommit string `json:"trunkCommit,omitempty"`
+	TrunkTree   string `json:"trunkTree,omitempty"`
+	EndedAt     string `json:"endedAt,omitempty"`
+}
+
+type batchStatusOutput struct {
+	Cadence batchCadenceStatusView `json:"cadence"`
+	Batches []batchStatusView      `json:"batches"`
 }
 
 type batchStatusHeadroom struct {
@@ -145,6 +158,35 @@ func batchReadSettings(root, landingRoot string, maxWait time.Duration) (config.
 	return resolveBatchOwnerSettings(root, landingRoot, maxWait, batchWaitClock.Now)
 }
 
+func batchCadenceStatus(root string, now time.Time) (batchCadenceStatusView, error) {
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		return batchCadenceStatusView{}, err
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return batchCadenceStatusView{}, err
+	}
+	return classifyBatchCadenceStatus(projection.Tree.Cadence, now)
+}
+
+func classifyBatchCadenceStatus(status *goal.CadenceStatus, now time.Time) (batchCadenceStatusView, error) {
+	if status == nil {
+		return batchCadenceStatusView{State: "none-recorded"}, nil
+	}
+	view := batchCadenceStatusView{State: "green", TrunkCommit: status.TrunkCommit, TrunkTree: status.TrunkTree, EndedAt: status.EndedAt}
+	window, parseErr := time.Parse(time.RFC3339, status.ForcedWindowStart)
+	if parseErr != nil {
+		return batchCadenceStatusView{}, parseErr
+	}
+	if !now.UTC().Before(window.Add(gaterun.CadenceForcedInterval + time.Minute)) {
+		view.State = "overdue"
+	} else if !status.Green() {
+		view.State = "non-green"
+	}
+	return view, nil
+}
+
 func runBatchStatus(args []string) int {
 	if !batchCapabilitiesAvailable() {
 		return runBatchVerbSkeleton(nil)
@@ -180,11 +222,16 @@ func runBatchStatus(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	cadence, err := batchCadenceStatus(settings.Root, batchStatusNow().UTC())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	views := make([]batchStatusView, 0, len(records))
 	for _, record := range records {
 		views = append(views, batchRecordStatus(record, settings, *lockDir))
 	}
-	printJSON(views)
+	printJSON(batchStatusOutput{Cadence: cadence, Batches: views})
 	return 0
 }
 

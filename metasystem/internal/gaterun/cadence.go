@@ -64,6 +64,7 @@ type CadenceDependencies struct {
 
 type CadenceTickResult struct {
 	ClaimOutcome goal.CadenceClaimOutcome
+	Trigger      goal.CadenceTrigger
 	Status       *goal.CadenceStatus
 	Executed     bool
 	Published    bool
@@ -133,6 +134,10 @@ func RunCadenceTick(input CadenceTickInput, deps CadenceDependencies) (result Ca
 	if !due && input.Latest != nil && input.Latest.TrunkCommit == trunk.Commit && input.Latest.TrunkTree == trunk.Tree {
 		return result, nil
 	}
+	result.Trigger = trigger
+	if !due {
+		result.Trigger = goal.CadenceTriggerRevalidation
+	}
 	key := goal.CadenceClaimKey{TrunkTree: trunk.Tree, WeightGeneration: input.Weight.Generation, ForcedWindowStart: window}
 	claim, err := deps.Ledger.Claim(started, key, input.Lease)
 	if err != nil {
@@ -141,6 +146,9 @@ func RunCadenceTick(input CadenceTickInput, deps CadenceDependencies) (result Ca
 	result.ClaimOutcome = claim.Outcome
 	if claim.Outcome == goal.CadenceClaimComplete {
 		result.Status = claim.Status
+		if claim.Status != nil {
+			result.Trigger = claim.Status.Trigger
+		}
 		return result, nil
 	}
 	if claim.Outcome != goal.CadenceClaimAcquired {
@@ -190,7 +198,7 @@ func RunCadenceTick(input CadenceTickInput, deps CadenceDependencies) (result Ca
 		}
 	}
 	releaseErr := deps.ReleaseAuthority(authority, ended)
-	if err == nil {
+	if err == nil && !result.Published {
 		err = releaseErr
 	}
 	return result, err
@@ -266,7 +274,7 @@ func cadenceStatus(trunk CadenceTrunk, trigger goal.CadenceTrigger, runID string
 			group.Status, group.ReuseAttempt = "unavailable", ""
 			group.NotRunReason = "cadence result omitted the deep-only group"
 		}
-		if group.ExecutionIdentity != probes[id].ExecutionIdentity {
+		if cadenceGroupGreen(probes[id].Status) && group.ExecutionIdentity != probes[id].ExecutionIdentity {
 			group.Status, group.ReuseAttempt, group.ExecutionIdentity = "invalid", "", probes[id].ExecutionIdentity
 		}
 		if trigger == goal.CadenceTriggerRevalidation {

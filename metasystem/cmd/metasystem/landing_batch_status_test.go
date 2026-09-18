@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
@@ -76,6 +77,33 @@ func TestBatchStatusExposesReturnRevisionHeadroomOwnerLockSampleAndDeadline(t *t
 		view.Branch != "landing/batch" || view.BranchTip != "branch-tip" || len(view.Units) != 1 || view.Units[0].State != batch.UnitReturnPending ||
 		view.Units[0].Revision != 8 || view.Units[0].AccountingRevision != 5 || view.Units[0].LastUnit != "10b" || view.Units[0].PrefixTree != "prefix-a" || !view.Sample.OverlapKnown {
 		t.Fatalf("status=%+v", view)
+	}
+}
+
+func TestBatchStatusReportsCadenceNoneOverdueNonGreenAndGreen(t *testing.T) {
+	now := time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)
+	status := func(window time.Time, group string) *goal.CadenceStatus {
+		return &goal.CadenceStatus{TrunkCommit: strings.Repeat("a", 40), TrunkTree: strings.Repeat("b", 40),
+			ForcedWindowStart: window.Format(time.RFC3339), EndedAt: window.Format(time.RFC3339),
+			Groups: []goal.CadenceGroupStatus{{Group: "section/deep", Status: group}}}
+	}
+	tests := []struct {
+		name string
+		item *goal.CadenceStatus
+		want string
+	}{
+		{name: "none", want: "none-recorded"},
+		{name: "overdue", item: status(now.Add(-gaterun.CadenceForcedInterval-time.Minute), "passed"), want: "overdue"},
+		{name: "non-green", item: status(now, "failed"), want: "non-green"},
+		{name: "green", item: status(now, "passed"), want: "green"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			view, err := classifyBatchCadenceStatus(test.item, now)
+			if err != nil || view.State != test.want || test.item != nil && (view.TrunkCommit != test.item.TrunkCommit || view.TrunkTree != test.item.TrunkTree) {
+				t.Fatalf("cadence status=%+v err=%v", view, err)
+			}
+		})
 	}
 }
 

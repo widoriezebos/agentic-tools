@@ -265,6 +265,41 @@ func TestBatchOwnerResumesLandingAfterTrunkRedClearError(t *testing.T) {
 	}
 }
 
+func TestBatchOwnerHoldsLandingOnRegisteredTrunkRedButNotStatusAlone(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		open     []OpenEntry
+		state    string
+		launches int
+	}{
+		{name: "missing or overdue status has no register entry", state: StateLanded, launches: 1},
+		{name: "cadence red register entry", open: []OpenEntry{{ID: "cadence-entry", Group: "section/deep", LastBaseCommit: "trunk-before"}}, state: StateHeldTrunkRed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			now := time.Unix(20, 0)
+			record := ownerRecord(testBatchID, StateLanding, now.Add(-time.Minute))
+			record.BaseTree = "tree"
+			record.Proof = &Proof{Status: "green", AttemptID: "standard-green", BaseCommit: "trunk-after"}
+			bed := newOwnerBed(t, record, now)
+			ledger := &clearingLedger{open: slices.Clone(test.open)}
+			bed.store = bed.store.WithLedgerOwner(ledger)
+			bed.owner.store = bed.store
+			bed.owner.launch = func(string, proofrun.LoadSample, string) error {
+				bed.launches++
+				return bed.store.Update(testBatchID, func(record *Record) error { record.State = StateLanded; return nil })
+			}
+			must(t, bed.owner.Tick(testBatchID))
+			got := load(t, bed.store)
+			if got.State != test.state || bed.launches != test.launches {
+				t.Fatalf("record=%+v launches=%d", got, bed.launches)
+			}
+			if test.state == StateHeldTrunkRed && (got.TrunkRed == nil || len(got.TrunkRed.Entries) != 1 || got.TrunkRed.Entries[0].ID != "cadence-entry") {
+				t.Fatalf("registered cadence hold=%+v", got.TrunkRed)
+			}
+		})
+	}
+}
+
 func TestBatchOwnerLaunchesAtMaximumWait(t *testing.T) {
 	witness(t, !strings.Contains(string(contents(t, "owner.go")), "time.Now("), "owner reads the wall clock")
 	joined := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)

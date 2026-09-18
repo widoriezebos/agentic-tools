@@ -15,16 +15,16 @@ import (
 
 func TestTrunkRedRoleVerdicts(t *testing.T) {
 	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
-	t.Run("none is alive", func(t *testing.T) {
+	t.Run("none is not green", func(t *testing.T) {
 		root := convertedBed(t, "bed-m1", nil)
 		role := checkTrunkRed(root, now)
-		if role.Status != HealthAlive || role.Reason != "no open trunk red" {
+		if role.Status != HealthDead || !strings.Contains(role.Reason, "no deep validation cadence") || !strings.Contains(role.Remedy, "gate cadence-tick") {
 			t.Fatalf("no entries: %+v", role)
 		}
 	})
 	t.Run("owned is alive with age", func(t *testing.T) {
 		root := convertedBed(t, "bed-m1", nil)
-		writeHealthTrunkRed(t, root, []goal.TrunkRedEntry{healthTrunkRedEntry("owned", "bed-m1", now.Add(-2*time.Hour))})
+		writeHealthTrunkRed(t, root, []goal.TrunkRedEntry{healthTrunkRedEntry("owned", "bed-m1", now.Add(-2*time.Hour))}, healthCadence(now, "passed"))
 		role := checkTrunkRed(root, now)
 		if role.Status != HealthAlive || role.Reason != "1 open, all owned; oldest 2h0m0s" {
 			t.Fatalf("owned entry: %+v", role)
@@ -32,7 +32,7 @@ func TestTrunkRedRoleVerdicts(t *testing.T) {
 	})
 	t.Run("empty owner is dead", func(t *testing.T) {
 		root := convertedBed(t, "bed-m1", nil)
-		writeHealthTrunkRed(t, root, []goal.TrunkRedEntry{healthTrunkRedEntry("unowned", "", now.Add(-time.Hour))})
+		writeHealthTrunkRed(t, root, []goal.TrunkRedEntry{healthTrunkRedEntry("unowned", "", now.Add(-time.Hour))}, healthCadence(now, "passed"))
 		role := checkTrunkRed(root, now)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "unowned") || !strings.Contains(role.Remedy, "goal trunk-red own --id unowned") {
 			t.Fatalf("unowned entry: %+v", role)
@@ -40,6 +40,7 @@ func TestTrunkRedRoleVerdicts(t *testing.T) {
 	})
 	t.Run("stale empty batch hold is dead but a fresh hold is alive", func(t *testing.T) {
 		root := convertedBed(t, "bed-m1", nil)
+		writeHealthTrunkRed(t, root, nil, healthCadence(now, "passed"))
 		landing := healthBatchRoot(t)
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("landing.batch-root="+landing+"\n"), 0o644); err != nil {
 			t.Fatal(err)
@@ -67,6 +68,7 @@ func TestTrunkRedRoleVerdicts(t *testing.T) {
 	})
 	t.Run("unreadable configured batch root is unknown", func(t *testing.T) {
 		root := convertedBed(t, "bed-m1", nil)
+		writeHealthTrunkRed(t, root, nil, healthCadence(now, "passed"))
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("landing.batch-root="+filepath.Join(t.TempDir(), "missing")+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -80,6 +82,34 @@ func TestTrunkRedRoleVerdicts(t *testing.T) {
 	}
 }
 
+func TestTrunkRedHealthReportsOverdueAndNonGreenCadence(t *testing.T) {
+	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name, groupStatus, reason string
+		window                    time.Time
+	}{
+		{name: "overdue", groupStatus: "passed", reason: "overdue", window: now.Add(-6*time.Hour - time.Minute)},
+		{name: "non-green", groupStatus: "failed", reason: "non-green", window: now},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := convertedBed(t, "bed-m1", nil)
+			status := healthCadence(test.window, test.groupStatus)
+			writeHealthTrunkRed(t, root, nil, status)
+			role := checkTrunkRed(root, now)
+			if role.Status != HealthDead || !strings.Contains(role.Reason, test.reason) || !strings.Contains(role.Reason, status.TrunkCommit) || !strings.Contains(role.Remedy, "gate cadence-tick") {
+				t.Fatalf("cadence health=%+v", role)
+			}
+		})
+	}
+}
+
+func healthCadence(window time.Time, groupStatus string) *goal.CadenceStatus {
+	return &goal.CadenceStatus{TrunkCommit: strings.Repeat("a", 40), TrunkTree: strings.Repeat("b", 40), Trigger: goal.CadenceTriggerForcedWindow,
+		RunID: "run-health", AttemptID: "attempt-health", StartedAt: window.UTC().Format(time.RFC3339), EndedAt: window.UTC().Format(time.RFC3339),
+		ForcedWindowStart: window.UTC().Format(time.RFC3339), Opid: goal.Opid("01J5X00000000000000000CR01", "bed-m1", "cadence"),
+		Groups: []goal.CadenceGroupStatus{{Group: "section/deep", ExecutionIdentity: strings.Repeat("c", 64), Status: groupStatus, EvidenceDigest: strings.Repeat("d", 64)}}}
+}
+
 func healthTrunkRedEntry(id, machine string, opened time.Time) goal.TrunkRedEntry {
 	stamp := opened.UTC().Format(time.RFC3339)
 	owner := goal.TrunkRedOwner{}
@@ -91,10 +121,17 @@ func healthTrunkRedEntry(id, machine string, opened time.Time) goal.TrunkRedEntr
 			Opid: goal.Opid("01J5X0000000000000000000W1", "bed-m1", "lineage")}}, Owner: owner, Holds: []string{"batch-1"}, Opened: stamp}
 }
 
-func writeHealthTrunkRed(t *testing.T, root string, entries []goal.TrunkRedEntry) {
+func writeHealthTrunkRed(t *testing.T, root string, entries []goal.TrunkRedEntry, cadence *goal.CadenceStatus) {
 	t.Helper()
 	path := filepath.Join(root, "plans", "goals", "trunk-red.json")
-	if err := os.WriteFile(path, goal.RenderTrunkRed(entries), 0o644); err != nil {
+	if entries == nil {
+		entries = []goal.TrunkRedEntry{}
+	}
+	data, err := json.MarshalIndent(map[string]any{"schema": 1, "entries": entries, "cadence": cadence}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	healthGit(t, root, "add", "plans/goals/trunk-red.json")

@@ -352,7 +352,7 @@ func TestGreenTipProofClearsHeldlessEntryOnlyWhenExecuted(t *testing.T) {
 			{ID: "failed", Status: "failed", NativeLaunched: true}, {ID: "reused", Status: "reused"}}}
 	must(t, FinishProof(store, testBatchID, "owner", result, nil, time.Unix(11, 0)))
 	proof := load(t, store).Proof
-	record := ownerRecord(testBatchID, StateLanding, time.Time{})
+	record := ownerRecord(testBatchID, StateLanding, time.Unix(1, 0))
 	record.Proof = proof
 	bed := newOwnerBed(t, record, time.Unix(12, 0))
 	ledger := &clearingLedger{open: []OpenEntry{
@@ -369,8 +369,9 @@ func TestGreenTipProofClearsHeldlessEntryOnlyWhenExecuted(t *testing.T) {
 	bed.owner.mint = func() (string, error) { calls++; return fmt.Sprintf("clear-%d", calls), nil }
 	bed.owner.descendsFrom = func(_ string, ancestor string) (bool, error) { return ancestor != "other-commit", nil }
 	must(t, bed.owner.Tick(testBatchID))
+	held := load(t, bed.store)
 	if proof.BaseCommit != "next-commit" || proof.BaseTree != "next-tree" || len(ledger.cleared) != 1 || ledger.cleared[0].ref.ID != "eligible" ||
-		ledger.cleared[0].green.AttemptID != "tip-green" || ledger.cleared[0].green.BaseTree != "" || bed.launches != 1 {
+		ledger.cleared[0].green.AttemptID != "tip-green" || ledger.cleared[0].green.BaseTree != "" || bed.launches != 0 || held.State != StateHeldTrunkRed || len(held.TrunkRed.Entries) != 5 {
 		t.Fatalf("proof=%+v clears=%+v launches=%d", proof, ledger.cleared, bed.launches)
 	}
 }

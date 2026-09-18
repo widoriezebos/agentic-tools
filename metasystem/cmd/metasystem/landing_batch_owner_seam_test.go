@@ -53,6 +53,7 @@ func isolateGlobalGitConfig(t *testing.T) {
 func TestBatchOwnerWiringBound(t *testing.T) {
 	if os.Getenv("GO_WANT_BATCH_OWNER_SIGNAL_HELPER") != "" {
 		root := os.Getenv("BATCH_OWNER_TEST_ROOT")
+		batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error { return nil }
 		batchOwnerAcquire = func(string) (batchOwnerLease, error) {
 			return batchOwnerLease{root: root, pid: int64(os.Getpid()), epoch: 1}, nil
 		}
@@ -473,11 +474,49 @@ func TestBatchOwnerLoopStopsBeforePassAfterLeaseLoss(t *testing.T) {
 	batchOwnerRequire = func(batchOwnerLease) error { return errors.New("injected lost lease") }
 	acted := false
 	batchOwnerResume = func(*batch.Owner) { acted = true }
-	err := loopBatchOwner(nil, batchOwnerLease{}, time.Minute, make(chan struct{}), make(chan struct{}))
+	err := loopBatchOwner(nil, batchOwnerLease{}, "root", func() time.Time { return time.Unix(1, 0) }, time.Minute, make(chan struct{}), make(chan struct{}))
 	if err == nil || !strings.Contains(err.Error(), "injected lost lease") {
 		t.Fatalf("owner loop error=%v, want lost lease refusal", err)
 	}
 	if acted {
 		t.Fatal("owner loop kept acting as holder after the lease was lost")
+	}
+}
+
+func TestBatchOwnerCadenceWiringBound(t *testing.T) {
+	originalRequire, originalResume := batchOwnerRequire, batchOwnerResume
+	originalStart, originalTick, originalReport := batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport
+	t.Cleanup(func() {
+		batchOwnerRequire, batchOwnerResume = originalRequire, originalResume
+		batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport = originalStart, originalTick, originalReport
+	})
+	var order []string
+	batchOwnerRequire = func(batchOwnerLease) error { return nil }
+	batchOwnerResume = func(*batch.Owner) { order = append(order, "landing") }
+	var launched func()
+	batchOwnerCadenceStart = func(tick func()) { launched = tick }
+	batchOwnerCadenceTick = func(string, batchOwnerLease, func() time.Time) error {
+		order = append(order, "cadence")
+		return errors.New("injected cadence failure")
+	}
+	reports := 0
+	batchOwnerCadenceReport = func(err error) {
+		if !strings.Contains(err.Error(), "injected cadence failure") {
+			t.Fatalf("reported error=%v", err)
+		}
+		reports++
+	}
+	stop := make(chan struct{})
+	close(stop)
+	clock := func() time.Time { return time.Unix(7, 0) }
+	if err := loopBatchOwner(nil, batchOwnerLease{epoch: 3}, "landing-root", clock, time.Minute, make(chan struct{}), stop); err != nil {
+		t.Fatal(err)
+	}
+	if launched == nil || strings.Join(order, ",") != "landing" {
+		t.Fatalf("owner order=%v launched=%t", order, launched != nil)
+	}
+	launched()
+	if strings.Join(order, ",") != "landing,cadence" || reports != 1 {
+		t.Fatalf("cadence order=%v reports=%d", order, reports)
 	}
 }
