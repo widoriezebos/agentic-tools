@@ -2,6 +2,7 @@ package goal
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -266,6 +267,247 @@ func TestTrunkRedRecoveryRebuildsRecordOwnAndClear(t *testing.T) {
 	projection, err := Project(clear.Endpoint, false, time.Now())
 	if err != nil || len(projection.Tree.TrunkRed) != 1 || projection.Tree.TrunkRed[0].Closed == nil || projection.Tree.TrunkRed[0].Owner.How != "taken" {
 		t.Fatalf("recovered tree: %+v %v", projection.Tree.TrunkRed, err)
+	}
+}
+
+func TestTrunkRedRecoveryLegacyClearClosesOpenEntry(t *testing.T) {
+	t.Parallel()
+	root, request, _, at := legacyTrunkRedClearFixture(t)
+	createDeadTrunkRedEntry(t, root, request)
+
+	reports, err := Recover(requestEndpoint(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := trunkRedRecoveryReport(t, reports, request.Opid)
+	if report.Action != ActionComplete || !strings.Contains(report.Detail, "confirmed") {
+		t.Fatalf("legacy clear recovery report: %+v", report)
+	}
+	entry := projectedTrunkRedEntry(t, root, at)
+	if entry.Closed == nil || entry.Closed.Attempt != request.Intent.Args["attempt"] ||
+		entry.Closed.BaseCommit != request.Intent.Args["baseCommit"] || entry.Closed.How != "green" ||
+		entry.Closed.Opid != request.Opid || len(entry.Holds) != 0 || entry.FixBranch.State != TrunkRedBranchMerged {
+		t.Fatalf("legacy clear did not close the entry from its stored proof: %+v", entry)
+	}
+}
+
+func TestTrunkRedRecoveryLegacyClearIgnoresChangedOwner(t *testing.T) {
+	t.Parallel()
+	root, request, entry, at := legacyTrunkRedClearFixture(t)
+	createDeadTrunkRedEntry(t, root, request)
+
+	reassign := trunkRedVerbReq(root, "01J5X0000000000000000000V2", "mac-b")
+	reassign.Actor.Human = "Wido"
+	reassign.Now = at.Add(time.Hour)
+	result, err := OwnTrunkRed(reassign, TrunkRedOwnArgs{Entry: entry.ID, Goal: "solo-goal", To: "mac-b", By: "Wido"})
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("reassign entry: %+v %v", result, err)
+	}
+	if reports, err := Recover(requestEndpoint(root)); err != nil {
+		t.Fatal(err)
+	} else if report := trunkRedRecoveryReport(t, reports, request.Opid); report.Action != ActionComplete || !strings.Contains(report.Detail, "confirmed") {
+		t.Fatalf("legacy clear recovery report: %+v", report)
+	}
+	recovered := projectedTrunkRedEntry(t, root, at.Add(2*time.Hour))
+	if recovered.Owner.Machine != "mac-b" || recovered.Closed == nil || recovered.Closed.Opid != request.Opid {
+		t.Fatalf("legacy clear did not retain the changed owner and close the entry: %+v", recovered)
+	}
+}
+
+func TestTrunkRedRecoveryLegacyClearRejectsClosedEntry(t *testing.T) {
+	t.Parallel()
+	root, request, entry, at := legacyTrunkRedClearFixture(t)
+	createDeadTrunkRedEntry(t, root, request)
+
+	other := trunkRedVerbReq(root, "01J5X0000000000000000000V3", "mac-b")
+	other.Now = at.Add(time.Hour)
+	result, err := ClearTrunkRed(other, TrunkRedClearArgs{Entry: entry.ID, Attempt: "other-attempt", BaseCommit: "other-base",
+		BaseTree: "other-tree", Group: entry.Group, ExpectedEntry: entry})
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("other clear: %+v %v", result, err)
+	}
+	closedBefore := projectedTrunkRedEntry(t, root, at.Add(2*time.Hour)).Closed
+	if reports, err := Recover(requestEndpoint(root)); err != nil {
+		t.Fatal(err)
+	} else if report := trunkRedRecoveryReport(t, reports, request.Opid); report.Action != ActionComplete || !strings.Contains(report.Detail, "rejected") {
+		t.Fatalf("legacy clear recovery report: %+v", report)
+	}
+	journal, err := ReadEntry(root, request.Opid)
+	if err != nil || journal.Outcome != OutcomeRejected || !strings.Contains(journal.Evidence, "TRUNK_RED_CLOSED") {
+		t.Fatalf("legacy clear journal: %+v %v", journal, err)
+	}
+	closedAfter := projectedTrunkRedEntry(t, root, at.Add(2*time.Hour)).Closed
+	if closedAfter == nil || closedBefore == nil || *closedAfter != *closedBefore || closedAfter.Opid != other.opid() {
+		t.Fatalf("rejected legacy clear changed the existing closure: before=%+v after=%+v", closedBefore, closedAfter)
+	}
+}
+
+func TestTrunkRedRecoveryPresentEmptyBindingIsRejected(t *testing.T) {
+	t.Parallel()
+	root, request, _, at := legacyTrunkRedClearFixture(t)
+	request.Intent.Args["expectedEntry"] = ""
+	createDeadTrunkRedEntry(t, root, request)
+	assertUnreadableTrunkRedBindingRejected(t, root, request, at)
+}
+
+func TestTrunkRedRecoveryPresentMalformedBindingIsRejected(t *testing.T) {
+	t.Parallel()
+	root, request, _, at := legacyTrunkRedClearFixture(t)
+	request.Intent.Args["expectedEntry"] = "{not-json"
+	createDeadTrunkRedEntry(t, root, request)
+	assertUnreadableTrunkRedBindingRejected(t, root, request, at)
+}
+
+func TestTrunkRedRecoveryLegacyClearPreservesStoredIntent(t *testing.T) {
+	t.Parallel()
+	root, stored, _, _ := legacyTrunkRedClearFixture(t)
+	createDeadTrunkRedEntry(t, root, stored)
+	entry, err := ReadEntry(root, stored.Opid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, err := requestForEntry(requestEndpoint(root), entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rebuilt.Opid != stored.Opid {
+		t.Fatalf("rebuilt opid = %q, want %q", rebuilt.Opid, stored.Opid)
+	}
+	if len(rebuilt.Intent.Args) != 6 {
+		t.Fatalf("rebuilt legacy arguments = %#v", rebuilt.Intent.Args)
+	}
+	for key, value := range stored.Intent.Args {
+		if rebuilt.Intent.Args[key] != value {
+			t.Fatalf("rebuilt legacy argument %q = %q, want %q", key, rebuilt.Intent.Args[key], value)
+		}
+	}
+	if _, present := rebuilt.Intent.Args["expectedEntry"]; present {
+		t.Fatalf("rebuilt legacy clear invented an entry binding: %#v", rebuilt.Intent.Args)
+	}
+}
+
+func TestTrunkRedClearZeroExpectedEntryRemainsBound(t *testing.T) {
+	t.Parallel()
+	root, _, entry, at := legacyTrunkRedClearFixture(t)
+	clear := trunkRedVerbReq(root, "01J5X0000000000000000000V5", "mac-a")
+	clear.Now = at.Add(time.Hour)
+	result, err := ClearTrunkRed(clear, TrunkRedClearArgs{Entry: entry.ID, Attempt: "green-zero", BaseCommit: "base-zero",
+		BaseTree: "tree-zero", Group: entry.Group})
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "TRUNK_RED_CHANGED") {
+		t.Fatalf("zero expected entry clear: %+v %v", result, err)
+	}
+	if projected := projectedTrunkRedEntry(t, root, at.Add(2*time.Hour)); projected.Closed != nil {
+		t.Fatalf("zero expected entry clear closed the entry: %+v", projected)
+	}
+}
+
+func TestTrunkRedLegacyClearRequestKeepsUnknownAndAlreadyApplied(t *testing.T) {
+	t.Parallel()
+	t.Run("unknown entry", func(t *testing.T) {
+		root, request, _, _ := legacyTrunkRedClearFixture(t)
+		request.Intent.Args["entry"] = "tr-fast-missing"
+		request.Intent.Targets = []string{"tr-fast-missing"}
+		rebuilt, err := requestForEntry(requestEndpoint(root), Entry{Opid: request.Opid, Machine: request.Machine,
+			Lineage: request.Lineage, Intent: request.Intent})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tip := mustGit(t, root, "rev-parse", LocalLedgerBranch)
+		if _, err := rebuilt.Mutate(tip); err == nil || !strings.Contains(err.Error(), "TRUNK_RED_UNKNOWN") {
+			t.Fatalf("legacy clear of unknown entry: %v", err)
+		}
+	})
+	t.Run("same operation already closed", func(t *testing.T) {
+		root, request, entry, at := legacyTrunkRedClearFixture(t)
+		entry.Closed = &TrunkRedClosure{At: at.Add(time.Hour).Format(time.RFC3339), Attempt: request.Intent.Args["attempt"],
+			BaseCommit: request.Intent.Args["baseCommit"], How: "green", Opid: request.Opid}
+		entry.Holds = []string{}
+		publishTrunkRedWithRequest(t, root, entry, "01J5X0000000000000000000V4")
+		rebuilt, err := requestForEntry(requestEndpoint(root), Entry{Opid: request.Opid, Machine: request.Machine,
+			Lineage: request.Lineage, Intent: request.Intent})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tip := mustGit(t, root, "rev-parse", LocalLedgerBranch)
+		_, err = rebuilt.Mutate(tip)
+		var already AlreadyApplied
+		if !errors.As(err, &already) {
+			t.Fatalf("legacy clear did not recognize its closure: %v", err)
+		}
+	})
+}
+
+func legacyTrunkRedClearFixture(t *testing.T) (string, PublishRequest, TrunkRedEntry, time.Time) {
+	t.Helper()
+	root := soloLedgerRepo(t)
+	at := time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
+	entry := testTrunkRedEntry("tr-fast-legacy-clear", "tr-fast-legacy-clear", at.Format(time.RFC3339))
+	entry.FixGoal = "solo-goal"
+	entry.FixBranch = TrunkRedBranch{Name: "fix/legacy-clear", Commit: "abc123", State: TrunkRedBranchOpen}
+	publishTrunkRed(t, root, []TrunkRedEntry{entry})
+	clear := trunkRedVerbReq(root, "01J5X0000000000000000000V1", "mac-a")
+	clear.Now = at.Add(time.Hour)
+	request := trunkRedClearRequest(clear, TrunkRedClearArgs{Entry: entry.ID, Attempt: "green-legacy", BaseCommit: "base-green",
+		BaseTree: "tree-green", Group: entry.Group, BranchMerged: true, ExpectedEntry: entry})
+	delete(request.Intent.Args, "expectedEntry")
+	return root, request, entry, at
+}
+
+func requestEndpoint(root string) Endpoint {
+	return Endpoint{Root: root, Remote: "local", Branch: "refs/heads/main"}
+}
+
+func projectedTrunkRedEntry(t *testing.T, root string, at time.Time) TrunkRedEntry {
+	t.Helper()
+	projection, err := Project(requestEndpoint(root), false, at)
+	if err != nil || len(projection.Tree.TrunkRed) != 1 {
+		t.Fatalf("project trunk-red entry: %+v %v", projection.Tree.TrunkRed, err)
+	}
+	return projection.Tree.TrunkRed[0]
+}
+
+func trunkRedRecoveryReport(t *testing.T, reports []RecoveryReport, opid string) RecoveryReport {
+	t.Helper()
+	for _, report := range reports {
+		if report.Opid == opid {
+			return report
+		}
+	}
+	t.Fatalf("recovery report for %s not found: %+v", opid, reports)
+	return RecoveryReport{}
+}
+
+func assertUnreadableTrunkRedBindingRejected(t *testing.T, root string, request PublishRequest, at time.Time) {
+	t.Helper()
+	want := "the stored trunk-red clear has no readable entry binding; close it by hand"
+	reports, err := Recover(requestEndpoint(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := trunkRedRecoveryReport(t, reports, request.Opid)
+	if report.Action != ActionComplete || report.Detail != "not rebuildable: "+want {
+		t.Fatalf("unreadable binding recovery report: %+v", report)
+	}
+	journal, err := ReadEntry(root, request.Opid)
+	if err != nil || journal.Outcome != OutcomeRejected || journal.Evidence != want {
+		t.Fatalf("unreadable binding journal: %+v %v", journal, err)
+	}
+	if entry := projectedTrunkRedEntry(t, root, at.Add(2*time.Hour)); entry.Closed != nil {
+		t.Fatalf("unreadable binding closed the entry: %+v", entry)
+	}
+}
+
+func publishTrunkRedWithRequest(t *testing.T, root string, entry TrunkRedEntry, ulid string) {
+	t.Helper()
+	request := trunkRedVerbReq(root, ulid, "mac-a")
+	result, err := Publish(request.Endpoint, PublishRequest{Opid: request.opid(), Machine: request.Actor.Machine, Lineage: request.Actor.Lineage,
+		Intent: Intent{Verb: "trunk-red-fixture"}, Message: "publish trunk-red fixture",
+		Mutate: func(string) ([]Change, error) {
+			return []Change{{Path: trunkRedPath, Content: RenderTrunkRed([]TrunkRedEntry{entry})}}, nil
+		},
+		Validate: func(commit string) error { return ValidateCommit(root, commit) }})
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("publish trunk-red fixture: %+v %v", result, err)
 	}
 }
 

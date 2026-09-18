@@ -523,6 +523,7 @@ type TrunkRedClearArgs struct {
 	Group         string        `json:"group"`
 	BranchMerged  bool          `json:"branchMerged"`
 	ExpectedEntry TrunkRedEntry `json:"expectedEntry"`
+	legacyUnbound bool
 }
 
 // ClearTrunkRed closes an entry after a green proof.
@@ -531,10 +532,13 @@ func ClearTrunkRed(r VerbRequest, args TrunkRedClearArgs) (PublishResult, error)
 }
 
 func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest {
-	expectedEntry, _ := json.Marshal(args.ExpectedEntry)
 	intentArgs := map[string]string{"entry": args.Entry, "attempt": args.Attempt, "baseCommit": args.BaseCommit,
-		"baseTree": args.BaseTree, "group": args.Group, "branchMerged": strconv.FormatBool(args.BranchMerged),
-		"expectedEntry": string(expectedEntry)}
+		"baseTree": args.BaseTree, "group": args.Group, "branchMerged": strconv.FormatBool(args.BranchMerged)}
+	var expectedEntry []byte
+	if !args.legacyUnbound {
+		expectedEntry, _ = json.Marshal(args.ExpectedEntry)
+		intentArgs["expectedEntry"] = string(expectedEntry)
+	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "trunk-red-clear", Targets: []string{args.Entry}, Args: intentArgs},
@@ -554,9 +558,11 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 				}
 				return nil, fmt.Errorf("TRUNK_RED_CLOSED: entry %s is closed", args.Entry)
 			}
-			currentEntry, _ := json.Marshal(entry)
-			if !bytes.Equal(currentEntry, expectedEntry) {
-				return nil, fmt.Errorf("TRUNK_RED_CHANGED: entry %s changed after its clear inputs were classified", args.Entry)
+			if !args.legacyUnbound {
+				currentEntry, _ := json.Marshal(entry)
+				if !bytes.Equal(currentEntry, expectedEntry) {
+					return nil, fmt.Errorf("TRUNK_RED_CHANGED: entry %s changed after its clear inputs were classified", args.Entry)
+				}
 			}
 			entry.Closed = &TrunkRedClosure{At: r.stamp(), Attempt: args.Attempt, BaseCommit: args.BaseCommit, How: "green", Opid: r.opid()}
 			entry.Holds = []string{}

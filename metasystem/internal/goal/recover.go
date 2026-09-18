@@ -343,13 +343,17 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		if err != nil {
 			return PublishRequest{}, fmt.Errorf("the stored trunk-red clear has an invalid branchMerged value; close it by hand")
 		}
-		var expectedEntry TrunkRedEntry
-		if err := json.Unmarshal([]byte(in.Args["expectedEntry"]), &expectedEntry); err != nil {
-			return PublishRequest{}, fmt.Errorf("the stored trunk-red clear has no readable entry binding; close it by hand")
+		args := TrunkRedClearArgs{Entry: in.Args["entry"], Attempt: in.Args["attempt"],
+			BaseCommit: in.Args["baseCommit"], BaseTree: in.Args["baseTree"], Group: in.Args["group"], BranchMerged: branchMerged}
+		expectedEntry, hasExpectedEntry := in.Args["expectedEntry"]
+		if hasExpectedEntry {
+			if err := json.Unmarshal([]byte(expectedEntry), &args.ExpectedEntry); err != nil {
+				return PublishRequest{}, fmt.Errorf("the stored trunk-red clear has no readable entry binding; close it by hand")
+			}
+		} else {
+			args.legacyUnbound = true
 		}
-		return trunkRedClearRequest(r, TrunkRedClearArgs{Entry: in.Args["entry"], Attempt: in.Args["attempt"],
-			BaseCommit: in.Args["baseCommit"], BaseTree: in.Args["baseTree"], Group: in.Args["group"], BranchMerged: branchMerged,
-			ExpectedEntry: expectedEntry}), nil
+		return trunkRedClearRequest(r, args), nil
 	case "carrying":
 		return carryingRequest(r, CarryingArgs{Goal: target, ApprovedRef: in.Args["approvedRef"], Workspace: in.Args["workspace"], Project: in.Args["tree"], By: in.Args["by"]}), nil
 	case "carried":
