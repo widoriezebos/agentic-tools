@@ -168,6 +168,8 @@ func workerAuthorizedAttemptFixture(t *testing.T) (string, string, proofrun.Atte
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", attempt.AttemptID)
 	t.Setenv("METASYSTEM_PROOF_RECORD_KEY", "")
 	t.Setenv("METASYSTEM_PROOF_CREATION_CLAIM", "")
+	t.Setenv(proofWitnessExecutionRootEnv, "")
+	t.Setenv("METASYSTEM_GATE_WITNESS_WRITE", "")
 	return controlRoot, executionRoot, attempt
 }
 
@@ -178,6 +180,20 @@ func TestWorkerAuthorizedAcceptsTheAdmittedRoot(t *testing.T) {
 	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("admitted execution root was not authorized: code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestWorkerAuthorizedAcceptsAttemptWitnessSnapshot(t *testing.T) {
+	_, root, _ := workerAuthorizedAttemptFixture(t)
+	snapshot := t.TempDir()
+	t.Chdir(snapshot)
+	t.Setenv(proofWitnessExecutionRootEnv, root)
+	t.Setenv("METASYSTEM_GATE_WITNESS_WRITE", filepath.Join(t.TempDir(), "witness.json"))
+	code, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runProofRunWorkerAuthorized([]string{"--root", snapshot})
+	})
+	if code != 0 || stderr != "" {
+		t.Fatalf("attempt witness snapshot was not authorized: code=%d stderr=%q", code, stderr)
 	}
 }
 

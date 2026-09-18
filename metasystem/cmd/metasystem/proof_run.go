@@ -236,12 +236,32 @@ func runProofRunWorkerAuthorized(args []string) int {
 			return 3
 		}
 	}
-	if canonicalExecution != authorizedRoot {
+	if canonicalExecution != authorizedRoot && !authorizedWitnessSnapshot(canonicalExecution, authorizedRoot) {
 		fmt.Fprintf(os.Stderr, "proof-run worker-authorized: supplied root %q does not match admitted execution root %q\n",
 			canonicalExecution, authorizedRoot)
 		return 3
 	}
 	return 0
+}
+
+const proofWitnessExecutionRootEnv = "METASYSTEM_PROOF_EXECUTION_ROOT"
+
+// A witness producer may run the worker from the snapshot it just created.
+// Its carried execution root must still name the root retained by the attempt.
+func authorizedWitnessSnapshot(snapshotRoot, authorizedRoot string) bool {
+	if os.Getenv("METASYSTEM_GATE_WITNESS_WRITE") == "" {
+		return false
+	}
+	executionRoot := os.Getenv(proofWitnessExecutionRootEnv)
+	if executionRoot == "" {
+		return false
+	}
+	canonicalExecution, err := canonicalProofRoot(executionRoot)
+	if err != nil || canonicalExecution != authorizedRoot {
+		return false
+	}
+	workingRoot, err := canonicalProofRoot(".")
+	return err == nil && workingRoot == snapshotRoot
 }
 
 func retainIncompleteProofAttempt(root, attemptID string, joined bool, status int) int {

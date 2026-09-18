@@ -172,7 +172,8 @@ if (( witness_common_eligible && witness_roots_clean )); then
 
   witness_gate_rc=0
   ( cd "$witness_snap" \
-      && METASYSTEM_GATE_WITNESS_WRITE="$witness_state/witness.json" \
+      && METASYSTEM_PROOF_EXECUTION_ROOT="$root" \
+         METASYSTEM_GATE_WITNESS_WRITE="$witness_state/witness.json" \
          METASYSTEM_GATE_WITNESS_RUN="$witness_run" \
          METASYSTEM_GATE_WITNESS_CONTROLLER_PID="$witness_controller_pid" \
          METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT="$witness_controller_started_at" \
@@ -274,6 +275,7 @@ elif (( witness_common_eligible && witness_clean_check_ok )); then
   witness_gate_rc=0
   ( cd "$witness_snap" \
       && GOFLAGS=-mod=readonly METASYSTEM_GATE_FROZEN_TOOLCHAIN=1 \
+         METASYSTEM_PROOF_EXECUTION_ROOT="$root" \
          METASYSTEM_GATE_WITNESS_WRITE="$witness_state/witness.json" \
          METASYSTEM_GATE_WITNESS_RUN="$witness_run" \
          METASYSTEM_GATE_WITNESS_MANIFEST_DIGEST="$witness_manifest_digest" \
