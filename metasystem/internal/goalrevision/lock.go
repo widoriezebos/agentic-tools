@@ -20,6 +20,10 @@ import (
 
 var coordinatePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
+// AcquireWait is the bounded wait for a live holder. Tests set it to zero to
+// observe contention without consulting wall time.
+var AcquireWait = time.Second
+
 // Path returns the one lock path shared by dispatch, stop, resume, and
 // sensitive recovery replay.
 func Path(root, goalID string, revision uint64) (string, error) {
@@ -134,7 +138,7 @@ func Acquire(root, goalID string, revision uint64, tag string) (*Held, error) {
 	acquired, err := baselock.Acquire(path, baselock.Identity{
 		Pid: int64(os.Getpid()), PidStartedAt: exact.StartedAt.Unix(), Tag: tag,
 		Label: exactLabel(exact.StartedAt.UnixNano(), exact.StartTicks, exact.BootID),
-	}, baselock.Options{Wait: time.Second, Poll: 25 * time.Millisecond, Probe: holderLiveness, Codec: ownerCodec{}})
+	}, baselock.Options{Wait: AcquireWait, Poll: 25 * time.Millisecond, Probe: holderLiveness, Codec: ownerCodec{}})
 	if err != nil {
 		var holder *baselock.HolderError
 		if errors.As(err, &holder) {

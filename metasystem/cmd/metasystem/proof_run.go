@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -339,6 +340,119 @@ type proofGoalRoles struct {
 	CandidateRevision uint64
 }
 
+var (
+	proofAdmissionUnderLocks    func()
+	proofAdmissionBeforePublish func(*proofrun.AdmissionRequest)
+	proofAdmissionAfterPublish  func()
+	proofAdmissionLockOrder     func([]string)
+)
+
+type proofAdmissionGoalSnapshot struct {
+	ID, State, FenceStopID, ClaimMachine, ClaimLineage   string
+	Revision, LockRevision, EpisodeRevision, WeightEpoch uint64
+	Budget                                               goal.Budget
+	Present, HasBudget, HasWeightEpoch                   bool
+}
+
+type proofAdmissionSnapshots struct {
+	Candidate proofAdmissionGoalSnapshot
+	Authority proofAdmissionGoalSnapshot
+}
+
+func proofAdmissionGoalState(root string, file *goal.GoalFile, now time.Time) (proofAdmissionGoalSnapshot, error) {
+	if file == nil {
+		return proofAdmissionGoalSnapshot{}, nil
+	}
+	snapshot := proofAdmissionGoalSnapshot{ID: file.Id, State: file.State, Revision: file.Revision,
+		LockRevision: file.Revision, EpisodeRevision: goal.BudgetEpisodeRevision(file), Present: true}
+	if file.Budget != nil {
+		snapshot.Budget, snapshot.HasBudget = *file.Budget, true
+	}
+	if file.StopFence != nil {
+		snapshot.FenceStopID = file.StopFence.StopID
+	}
+	if file.Claimed != nil {
+		snapshot.ClaimMachine, snapshot.ClaimLineage = file.Claimed.Machine, file.Claimed.Lineage
+		if file.Claimed.Revision != 0 {
+			snapshot.LockRevision = file.Claimed.Revision
+		}
+	}
+	projection := dispatchcore.ProjectConsumption(root, file, now)
+	if projection.Status != dispatchcore.BudgetKnown {
+		return proofAdmissionGoalSnapshot{}, fmt.Errorf("goal %s consumption projection is unknown", file.Id)
+	}
+	if projection.WeightEpoch != nil {
+		snapshot.WeightEpoch, snapshot.HasWeightEpoch = *projection.WeightEpoch, true
+	}
+	return snapshot, nil
+}
+
+func proofAdmissionGoalStates(root, candidateID, authorityID string, now time.Time) (proofAdmissionSnapshots, error) {
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		return proofAdmissionSnapshots{}, err
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return proofAdmissionSnapshots{}, err
+	}
+	candidate, err := proofAdmissionGoalState(root, projection.Tree.Live[candidateID], now)
+	if err != nil {
+		return proofAdmissionSnapshots{}, err
+	}
+	authority := candidate
+	if authorityID != candidateID {
+		authority, err = proofAdmissionGoalState(root, projection.Tree.Live[authorityID], now)
+		if err != nil {
+			return proofAdmissionSnapshots{}, err
+		}
+	}
+	return proofAdmissionSnapshots{Candidate: candidate, Authority: authority}, nil
+}
+
+func proofAdmissionMoved(before, after proofAdmissionSnapshots, candidateID, authorityID string) error {
+	if before == after {
+		return nil
+	}
+	return fmt.Errorf("CANDIDATE_GOAL_MOVED: candidate goal %s revision %d->%d and authority goal %s revision %d->%d changed during proof admission; retry from the accepted goals",
+		candidateID, before.Candidate.Revision, after.Candidate.Revision,
+		authorityID, before.Authority.Revision, after.Authority.Revision)
+}
+
+func acquireProofAdmissionGoalLocks(root string, snapshots proofAdmissionSnapshots) ([]*goalrevision.Held, error) {
+	coordinates := []proofAdmissionGoalSnapshot{snapshots.Authority}
+	if snapshots.Candidate.ID != snapshots.Authority.ID {
+		coordinates = append(coordinates, snapshots.Candidate)
+	}
+	sort.Slice(coordinates, func(i, j int) bool { return coordinates[i].ID < coordinates[j].ID })
+	order := make([]string, len(coordinates))
+	for i := range coordinates {
+		order[i] = coordinates[i].ID
+	}
+	if proofAdmissionLockOrder != nil {
+		proofAdmissionLockOrder(append([]string(nil), order...))
+	}
+	held := make([]*goalrevision.Held, 0, len(coordinates))
+	for _, coordinate := range coordinates {
+		lock, err := goalrevision.Acquire(root, coordinate.ID, coordinate.LockRevision, "proof-admission")
+		if err != nil {
+			for i := len(held) - 1; i >= 0; i-- {
+				_ = held[i].Release()
+			}
+			return nil, fmt.Errorf("proof admission candidate=%s authority=%s could not acquire %s: %w",
+				snapshots.Candidate.ID, snapshots.Authority.ID, coordinate.ID, err)
+		}
+		held = append(held, lock)
+	}
+	return held, nil
+}
+
+func releaseProofAdmissionGoalLocks(held []*goalrevision.Held) {
+	for i := len(held) - 1; i >= 0; i-- {
+		_ = held[i].Release()
+	}
+}
+
 func candidateGoalRefusal(id, state, detail string) error {
 	if detail != "" {
 		detail = " " + detail
@@ -612,6 +726,18 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, proofAuthorityRefusal(request.AuthorityGoalID, "does not match the bound proof context")
 	}
 	authorityGoalID := roles.Authority.Id
+	preLockSnapshots, err := proofAdmissionGoalState(request.ControlRoot, roles.Candidate, now)
+	if err != nil {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+	}
+	preLockAuthority := preLockSnapshots
+	if authorityGoalID != request.GoalID {
+		preLockAuthority, err = proofAdmissionGoalState(request.ControlRoot, roles.Authority, now)
+		if err != nil {
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+		}
+	}
+	admissionSnapshots := proofAdmissionSnapshots{Candidate: preLockSnapshots, Authority: preLockAuthority}
 	candidateRevision := roles.CandidateRevision
 	if request.CandidateRevision != 0 {
 		if request.CandidateRevision != candidateRevision {
@@ -656,16 +782,26 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		request.CommandClass, request.Sections, behaviorsurface.SupportedVersion)
 	proofIdentity = proofrun.BindIdentityInputs(proofIdentity, request.IdentityInputs)
 	candidateTree := proofAdmissionCandidateTree(request)
-	heldGoal, err := goalrevision.Acquire(request.ControlRoot, authorityGoalID, binding.Revision, "proof-admission")
+	heldGoals, err := acquireProofAdmissionGoalLocks(request.ControlRoot, admissionSnapshots)
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
-	defer heldGoal.Release()
+	defer releaseProofAdmissionGoalLocks(heldGoals)
 	heldProof, err := proofrun.AcquireMutation(request.ControlRoot)
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
 	defer heldProof.Release()
+	if proofAdmissionUnderLocks != nil {
+		proofAdmissionUnderLocks()
+	}
+	lockedSnapshots, err := proofAdmissionGoalStates(request.ControlRoot, request.GoalID, authorityGoalID, now)
+	if err != nil {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+	}
+	if err := proofAdmissionMoved(admissionSnapshots, lockedSnapshots, request.GoalID, authorityGoalID); err != nil {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+	}
 	classifiedCaller, err = classifyVerbCaller(request.ControlRoot, int64(os.Getppid()))
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller reclassification failed under admission lock: %w", err)
@@ -767,15 +903,16 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		return proofrun.Attempt{}, decision, false, nil
 	}
 	if reservationOwner == nil {
-		verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(request.ControlRoot, authorityGoalID, binding.Revision,
-			uint64(capValue), now, "implementer", "fresh", dispatchcore.HazardMechanical)
+		candidateFile := roles.Candidate
+		if request.GoalID == authorityGoalID {
+			candidateFile = binding.File
+		}
+		verdict, err := dispatchcore.EvaluateProofAdmissionForDispatch(request.ControlRoot, authorityGoalID, binding.Revision,
+			candidateFile, candidateRevision, uint64(capValue), now, "implementer", "fresh", dispatchcore.HazardMechanical)
 		if err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
-		if verdict.Extension != nil {
-			if request.GoalID != authorityGoalID {
-				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation refused: candidate goal %s cannot use authority goal %s's earned budget extension", request.GoalID, authorityGoalID)
-			}
+		if verdict.Authority.Extension != nil {
 			if !extensionAuthorized {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation found an extension for goal %s, but only its claim holder pair may apply it", authorityGoalID)
 			}
@@ -793,7 +930,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			extensionRequest := goal.VerbRequest{Endpoint: endpoint,
 				Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage}, Ulid: ulid, Now: now,
 				CallerClass: classifiedCaller.Class}
-			if _, extendErr := goal.ExtendBudget(extensionRequest, authorityGoalID, verdict.Extension.GoalOffer()); extendErr != nil {
+			if _, extendErr := goal.ExtendBudget(extensionRequest, authorityGoalID, verdict.Authority.Extension.GoalOffer()); extendErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation extend budget: %w", extendErr)
 			}
 			binding, err = dispatchcore.ResolveGoalBinding(request.ControlRoot, authorityGoalID, now)
@@ -806,23 +943,45 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			}
 			reservation.BudgetEpoch = projection.WeightEpoch
 			reservation.CandidateBudgetEpoch = projection.WeightEpoch
-			verdict, err = dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(request.ControlRoot, authorityGoalID, binding.Revision,
-				uint64(capValue), now, "implementer", "fresh", dispatchcore.HazardMechanical)
+			lockedSnapshots, err = proofAdmissionGoalStates(request.ControlRoot, request.GoalID, authorityGoalID, now)
+			if err != nil {
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+			}
+			verdict, err = dispatchcore.EvaluateProofAdmissionForDispatch(request.ControlRoot, authorityGoalID, binding.Revision,
+				binding.File, candidateRevision, uint64(capValue), now, "implementer", "fresh", dispatchcore.HazardMechanical)
 			if err != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 			}
 		}
 		if verdict.Refused() {
-			lines := dispatchcore.FormatGoalRevisionAdmission(verdict)
+			lines := dispatchcore.FormatProofAdmission(verdict)
 			detail := strings.Join(lines, "; ")
 			if detail == "" {
-				detail = verdict.PolicyRefusal
+				detail = "proof admission refused without a printable reason"
 			}
-			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation refused for goal %s revision %d: %s", authorityGoalID, binding.Revision, detail)
+			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation refused for candidate %s under authority %s revision %d: %s",
+				request.GoalID, authorityGoalID, binding.Revision, detail)
 		}
 	}
+	if proofAdmissionBeforePublish != nil {
+		proofAdmissionBeforePublish(&reservation)
+	}
 	attempt, decision, err := proofrun.ReserveLocked(reservation)
-	return attempt, decision, false, err
+	if err != nil || attempt.AttemptID == "" {
+		return attempt, decision, false, err
+	}
+	if proofAdmissionAfterPublish != nil {
+		proofAdmissionAfterPublish()
+	}
+	publishedSnapshots, snapshotErr := proofAdmissionGoalStates(request.ControlRoot, request.GoalID, authorityGoalID, now)
+	if snapshotErr == nil {
+		snapshotErr = proofAdmissionMoved(lockedSnapshots, publishedSnapshots, request.GoalID, authorityGoalID)
+	}
+	if snapshotErr != nil {
+		withdrawErr := proofrun.WithdrawReservationLocked(request.ControlRoot, attempt.AttemptID)
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, errors.Join(snapshotErr, withdrawErr)
+	}
+	return attempt, decision, false, nil
 }
 
 func proofAdmissionCandidateTree(request proofLaunchAdmission) string {

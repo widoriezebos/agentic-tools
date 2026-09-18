@@ -137,6 +137,43 @@ func TestEveryBudgetRefusalNamesObservedAndOpenCaps(t *testing.T) {
 	})
 }
 
+func TestProofAdmissionEvaluatesAuthorityAndCandidateLenses(t *testing.T) {
+	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
+	candidate := func() *goal.GoalFile {
+		budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 1, ReservedJobMinutesLimit: 100, ActiveJobLimit: 1, ReviewRoundLimit: 1}
+		return &goal.GoalFile{Id: "candidate", State: goal.StateApproved, Revision: 2, Tier: 1,
+			Budget: budget, Approved: &goal.ApprovalRecord{Revision: 2, EpisodeRevision: 2, At: "2026-08-28T08:00:00Z"},
+			History: []goal.HistoryLine{{At: "2026-08-28T07:59:00Z"}, {At: "2026-08-28T08:00:00Z"}}}
+	}
+	t.Run("authority ignores consumption members but keeps concurrency", func(t *testing.T) {
+		root := admissionBudgetBed(t, 1, 10000, 1)
+		writeBudgetJob(t, root, "authority-spent", "authority-spent", 3, 1, "completed", budgetJobLife{
+			startedAt: "2026-08-28T09:40:00Z", endedAt: "2026-08-28T09:41:00Z", pid: 42})
+		verdict, err := EvaluateProofAdmissionForDispatch(root, "bounded", 3, candidate(), 2, 1, now, "implementer", "fresh", HazardMechanical)
+		if err != nil || verdict.Refused() {
+			t.Fatalf("authority attempt consumption closed a different candidate: verdict=%+v err=%v", verdict, err)
+		}
+		writeBudgetJob(t, root, "authority-live", "authority-live", 3, 1, "running", budgetJobLife{})
+		verdict, err = EvaluateProofAdmissionForDispatch(root, "bounded", 3, candidate(), 2, 1, now, "implementer", "fresh", HazardMechanical)
+		if err != nil || !verdict.Authority.Refused() || verdict.Authority.Refusal == nil || len(verdict.Authority.Refusal.Breaches) != 1 ||
+			verdict.Authority.Refusal.Breaches[0].Field != "activeJobLimit" || verdict.Candidate.Refused() {
+			t.Fatalf("authority concurrency did not stay on its lens: verdict=%+v err=%v", verdict, err)
+		}
+	})
+	t.Run("candidate keeps attempts and proposed minutes", func(t *testing.T) {
+		root := admissionBudgetBed(t, 10, 10000, 10)
+		writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "candidate-spent.json"), map[string]any{
+			"jobId": "candidate-spent", "operationId": "candidate-spent", "goalId": "candidate", "goalRevision": 2,
+			"capMin": 1, "status": "completed", "startedAt": "2026-08-28T09:40:00Z", "endedAt": "2026-08-28T09:41:00Z", "pid": 43,
+		})
+		verdict, err := EvaluateProofAdmissionForDispatch(root, "bounded", 3, candidate(), 2, 1, now, "implementer", "fresh", HazardMechanical)
+		if err != nil || verdict.Authority.Refused() || !verdict.Candidate.Refused() || verdict.Candidate.Refusal == nil ||
+			len(verdict.Candidate.Refusal.Breaches) != 1 || verdict.Candidate.Refusal.Breaches[0].Field != "attemptLimit" {
+			t.Fatalf("candidate attempt consumption did not stay on its lens: verdict=%+v err=%v", verdict, err)
+		}
+	})
+}
+
 func reviewChainBudgetBed(t *testing.T) string {
 	t.Helper()
 	root := revisionBindingBed(t, 2)

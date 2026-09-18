@@ -83,6 +83,23 @@ elapsed, active-job or review-round limits, and those limits themselves are
 unchanged. After one extension, a later exhaustion refuses with the marker and
 waits for a person's set-budget.
 
+For `metasystem test run`, `--goal X` names the candidate goal whose risk,
+proof plan, candidate tree, budget episode, retries, and reuse the run advances;
+it does not automatically name the claim that authorizes the seat. `--authority
+C` may name that claim explicitly, or admission resolves the machine's one live,
+unfenced claim when the flag is omitted. If X itself has that claim, X is both
+candidate and authority. Governed and delegate-launched proof runs require that
+same-goal form. Two different goals may use the split form only when they are
+not members of the same arc; arc mates must claim X and run with X as authority.
+
+Proof admission judges two independent lenses before publishing one reservation.
+The authority lens C pays elapsed time and active-job concurrency. The candidate
+lens X pays attempt count and reserved job minutes, so a live charged attempt can
+count under both lenses at once. Only a candidate that is also the authority may
+take its consumption-earned extension. When X differs from C, exhaustion at the
+candidate lens instead requires claiming X as its own authority or a person's
+one-step `goal set-budget` act.
+
 Risk is four separate questions, never the shape of the change. A goal's
 Risk record scores severity, novelty, exposure and accumulation, each 1 to
 3 with a basis sentence, given to `goal open` and `goal edit` as `--risk

@@ -177,6 +177,26 @@ type GoalRevisionAdmission struct {
 
 func (v GoalRevisionAdmission) Refused() bool { return v.Refusal != nil || v.PolicyRefusal != "" }
 
+// ProofAdmissionVerdict keeps claim capacity and candidate consumption as two
+// independently attributable decisions. A cross-goal proof can therefore
+// spend one goal's attempt box without inheriting that goal's claim clock or
+// concurrency box.
+type ProofAdmissionVerdict struct {
+	Authority GoalRevisionAdmission
+	Candidate GoalRevisionAdmission
+}
+
+func (v ProofAdmissionVerdict) Refused() bool {
+	return v.Authority.Refused() || v.Candidate.Refused()
+}
+
+type admissionBudgetLens uint8
+
+const (
+	allBudgetMembers admissionBudgetLens = iota
+	authorityBudgetMembers
+)
+
 // EvaluateGoalRevisionAdmission preserves admission for callers that do not
 // dispatch a critic chain.
 func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap uint64, now time.Time, hazards ...HazardClass) (GoalRevisionAdmission, error) {
@@ -187,6 +207,37 @@ func EvaluateGoalRevisionAdmission(repoRoot, id string, revision, proposedCap ui
 // cap decision to the exact accepted revision and dispatch context about to
 // publish a reservation.
 func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, proposedCap uint64, now time.Time, role, dispatchMode string, hazards ...HazardClass) (GoalRevisionAdmission, error) {
+	return evaluateGoalRevisionAdmissionForDispatch(repoRoot, id, revision, proposedCap, now, role, dispatchMode, allBudgetMembers, hazards...)
+}
+
+// EvaluateProofAdmissionForDispatch evaluates the claimed authority's clock
+// and concurrency independently from the candidate's attempt and minute
+// consumption. An earned extension is actionable only when both lenses name
+// the same goal.
+func EvaluateProofAdmissionForDispatch(repoRoot, authorityID string, authorityRevision uint64, candidate *goal.GoalFile,
+	candidateRevision, proposedCap uint64, now time.Time, role, dispatchMode string, hazards ...HazardClass) (ProofAdmissionVerdict, error) {
+	var result ProofAdmissionVerdict
+	if candidate == nil || candidate.Id == "" {
+		return result, fmt.Errorf("proof admission requires a candidate goal")
+	}
+	if candidate.Id == authorityID {
+		verdict, err := evaluateGoalRevisionAdmissionForDispatch(repoRoot, authorityID, authorityRevision, proposedCap,
+			now, role, dispatchMode, allBudgetMembers, hazards...)
+		result.Authority = verdict
+		return result, err
+	}
+	var err error
+	result.Authority, err = evaluateGoalRevisionAdmissionForDispatch(repoRoot, authorityID, authorityRevision, proposedCap,
+		now, role, dispatchMode, authorityBudgetMembers, hazards...)
+	if err != nil {
+		return result, err
+	}
+	result.Candidate, err = evaluateCandidateConsumptionAdmission(repoRoot, candidate, candidateRevision, proposedCap, now)
+	return result, err
+}
+
+func evaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, proposedCap uint64, now time.Time,
+	role, dispatchMode string, lens admissionBudgetLens, hazards ...HazardClass) (GoalRevisionAdmission, error) {
 	verdict := GoalRevisionAdmission{GoalID: id, GoalRevision: revision}
 	if proposedCap == 0 {
 		return verdict, fmt.Errorf("goal revision admission requires a positive proposed cap")
@@ -248,15 +299,19 @@ func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 		verdict.Refusal = &GoalAdmissionRefusal{GoalID: id, GoalRevision: revision, Unknown: projection.Unknown}
 		return verdict, nil
 	}
-	if reason := stopReasonFor(binding.File, projection); reason != "" {
+	stopProjection := projection
+	if lens == authorityBudgetMembers {
+		stopProjection.Breaches = budgetBreachesForLens(projection.Breaches, lens)
+	}
+	if reason := stopReasonFor(binding.File, stopProjection); reason != "" {
 		verdict.LiveStopReason = reason
 		verdict.Refusal = &GoalAdmissionRefusal{
-			GoalID: id, GoalRevision: revision, Breaches: admissionBreachesFor(binding.File, projection.Breaches),
+			GoalID: id, GoalRevision: revision, Breaches: admissionBreachesFor(binding.File, stopProjection.Breaches),
 			Reserved: reservedMinutesEvidence(projection), LiveStopReason: reason,
 		}
 		return verdict, nil
 	}
-	breaches := admissionBreachesFor(binding.File, budgetAdmissionBreaches(projection))
+	breaches := budgetBreachesForLens(admissionBreachesFor(binding.File, budgetAdmissionBreaches(projection)), lens)
 	if role == "design-critic" || role == "code-critic" {
 		if dispatchMode == "fresh" {
 			used := projection.CodeCritiques
@@ -271,7 +326,7 @@ func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 			}
 		}
 	}
-	if proposedCap > 0 && projection.ReservedJobMinutes < projection.Limits.ReservedJobMinutesLimit &&
+	if lens == allBudgetMembers && proposedCap > 0 && projection.ReservedJobMinutes < projection.Limits.ReservedJobMinutesLimit &&
 		proposedCap > projection.Limits.ReservedJobMinutesLimit-projection.ReservedJobMinutes {
 		breaches = append(breaches, BudgetBreach{
 			Field: "reservedJobMinutesLimit",
@@ -282,7 +337,7 @@ func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 	if len(breaches) > 0 {
 		verdict.Refusal = &GoalAdmissionRefusal{GoalID: id, GoalRevision: revision, Breaches: breaches,
 			Reserved: reservedMinutesEvidence(projection)}
-		if binding.File.BudgetExtension == nil && consumptionBreachesOnly(breaches) {
+		if lens == allBudgetMembers && binding.File.BudgetExtension == nil && consumptionBreachesOnly(breaches) {
 			verdict.Extension, err = budgetExtensionOffer(repoRoot, binding.File, binding.Tier, now)
 			if err != nil {
 				return verdict, err
@@ -296,6 +351,94 @@ func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 		}
 	}
 	return verdict, nil
+}
+
+func evaluateCandidateConsumptionAdmission(repoRoot string, candidate *goal.GoalFile, revision, proposedCap uint64, now time.Time) (GoalRevisionAdmission, error) {
+	verdict := GoalRevisionAdmission{GoalID: candidate.Id, GoalRevision: revision}
+	if proposedCap == 0 {
+		return verdict, fmt.Errorf("candidate consumption admission requires a positive proposed cap")
+	}
+	if current := goal.BudgetEpisodeRevision(candidate); current == 0 || current != revision {
+		return verdict, fmt.Errorf("candidate goal %s budget episode moved from %d to %d", candidate.Id, revision, current)
+	}
+	if candidate.BudgetExtension != nil {
+		verdict.ExtendedAt = candidate.BudgetExtension.At
+	}
+	projection := BudgetProjection(ProjectConsumption(repoRoot, candidate, now))
+	if projection.Status != BudgetKnown {
+		verdict.Refusal = &GoalAdmissionRefusal{GoalID: candidate.Id, GoalRevision: revision, Unknown: projection.Unknown}
+		return verdict, nil
+	}
+	breaches := budgetBreachesForLens(budgetAdmissionBreaches(projection), allBudgetMembers)
+	breaches = keepBudgetBreaches(breaches, "attemptLimit", "reservedJobMinutesLimit")
+	if projection.ReservedJobMinutes < projection.Limits.ReservedJobMinutesLimit &&
+		proposedCap > projection.Limits.ReservedJobMinutesLimit-projection.ReservedJobMinutes {
+		breaches = append(breaches, BudgetBreach{Field: "reservedJobMinutesLimit",
+			Used:  fmt.Sprintf("%d+%d proposed", projection.ReservedJobMinutes, proposedCap),
+			Limit: fmt.Sprintf("%d", projection.Limits.ReservedJobMinutesLimit)})
+	}
+	if len(breaches) == 0 {
+		return verdict, nil
+	}
+	verdict.Refusal = &GoalAdmissionRefusal{GoalID: candidate.Id, GoalRevision: revision,
+		Breaches: breaches, Reserved: reservedMinutesEvidence(projection)}
+	if candidate.BudgetExtension != nil || !consumptionBreachesOnly(breaches) {
+		return verdict, nil
+	}
+	tier := candidate.Tier
+	if tier == 0 {
+		tier = 3
+	}
+	offer, err := budgetExtensionOffer(repoRoot, candidate, tier, now)
+	if err != nil {
+		return verdict, err
+	}
+	if offer == nil || projection.Attempts >= offer.To.AttemptLimit ||
+		projection.ReservedJobMinutes > offer.To.ReservedJobMinutesLimit ||
+		proposedCap > offer.To.ReservedJobMinutesLimit-projection.ReservedJobMinutes {
+		return verdict, nil
+	}
+	limits := make([]string, 0, len(breaches))
+	for _, breach := range breaches {
+		limits = append(limits, fmt.Sprintf("%s used=%s limit=%s", breach.Field, breach.Used, breach.Limit))
+	}
+	verdict.PolicyRefusal = fmt.Sprintf("CANDIDATE_EXTENSION_REFUSED: candidate goal %s reached %s; remedies: claim %s as authority, or have Wido run goal set-budget for %s",
+		candidate.Id, strings.Join(limits, ", "), candidate.Id, candidate.Id)
+	return verdict, nil
+}
+
+func budgetBreachesForLens(breaches []BudgetBreach, lens admissionBudgetLens) []BudgetBreach {
+	if lens == allBudgetMembers {
+		return breaches
+	}
+	return keepBudgetBreaches(breaches, "elapsedLimit", "activeJobLimit")
+}
+
+func keepBudgetBreaches(breaches []BudgetBreach, fields ...string) []BudgetBreach {
+	kept := make([]BudgetBreach, 0, len(breaches))
+	for _, breach := range breaches {
+		for _, field := range fields {
+			if breach.Field == field {
+				kept = append(kept, breach)
+				break
+			}
+		}
+	}
+	return kept
+}
+
+// FormatProofAdmission keeps each refusal attached to the goal and lens that
+// produced it.
+func FormatProofAdmission(verdict ProofAdmissionVerdict) []string {
+	var lines []string
+	for _, lens := range []GoalRevisionAdmission{verdict.Authority, verdict.Candidate} {
+		if lens.PolicyRefusal != "" {
+			lines = append(lines, lens.PolicyRefusal)
+			continue
+		}
+		lines = append(lines, FormatGoalRevisionAdmission(lens)...)
+	}
+	return lines
 }
 
 // consumptionBreachesOnly reports whether every breach is on attempts or

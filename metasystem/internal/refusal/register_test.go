@@ -286,17 +286,18 @@ func TestHCL03GoalDoneReadItemsOpenRow(t *testing.T) {
 }
 
 func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
-	wants := map[string]string{
-		"CANDIDATE_GOAL_REFUSED":           "proof_run.go:346",
-		"PROOF_AUTHORITY_REQUIRED":         "proof_run.go:388",
-		"PROOF_AUTHORITY_ARC_MATE_REFUSED": "proof_run.go:464",
+	wants := map[string]Row{
+		"CANDIDATE_GOAL_REFUSED":           {Owner: "cmd/metasystem", Site: "proof_run.go:460", Shape: Question},
+		"CANDIDATE_GOAL_MOVED":             {Owner: "cmd/metasystem", Site: "proof_run.go:417", Shape: Question},
+		"PROOF_AUTHORITY_REQUIRED":         {Owner: "cmd/metasystem", Site: "proof_run.go:502", Shape: Question},
+		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run.go:578", Shape: Question},
+		"CANDIDATE_EXTENSION_REFUSED":      {Owner: "internal/dispatch", Site: "admission.go:405", Shape: Question},
+		"RETRY_PRIOR_OUTSIDE_TREE":         {Owner: "internal/proofrun", Site: "attempt.go:1042", Shape: Question},
+		"SET_BUDGET_FENCED_SAME_TUPLE":     {Owner: "internal/goal", Site: "verbs.go:1367", Shape: Question},
+		"REBIND_EPOCH_UNAUTHENTICATED":     {Owner: "internal/goal", Site: "verbs.go:252", Shape: Identity},
 	}
-	data, err := os.ReadFile(filepath.Join(moduleRoot(t), "cmd", "metasystem", "proof_run.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(string(data), "\n")
-	for code, site := range wants {
+	root := moduleRoot(t)
+	for code, want := range wants {
 		var got Row
 		for _, row := range Rows {
 			if row.Code == code {
@@ -304,17 +305,29 @@ func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
 				break
 			}
 		}
-		line, parseErr := strconv.Atoi(strings.TrimPrefix(site, "proof_run.go:"))
-		if got.Code != code || got.Owner != "cmd/metasystem" || got.Site != site || got.Shape != Question || parseErr != nil {
-			t.Errorf("row %s = %+v, want site=%s question row", code, got, site)
+		if got.Code != code || got.Owner != want.Owner || got.Site != want.Site || got.Shape != want.Shape {
+			t.Errorf("row %s = %+v, want %+v", code, got, want)
 			continue
 		}
+		parts := strings.Split(want.Site, ":")
+		line, parseErr := strconv.Atoi(parts[len(parts)-1])
+		if parseErr != nil {
+			t.Errorf("row %s has invalid site %q", code, want.Site)
+			continue
+		}
+		file := filepath.Join(root, want.Owner, strings.Join(parts[:len(parts)-1], ":"))
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Errorf("read row %s site: %v", code, err)
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
 		found := false
 		for index := max(0, line-3); index < min(len(lines), line+2); index++ {
 			found = found || strings.Contains(lines[index], code)
 		}
 		if !found {
-			t.Errorf("row %s site %s has no emission within two lines", code, site)
+			t.Errorf("row %s site %s has no emission within two lines", code, want.Site)
 		}
 	}
 }

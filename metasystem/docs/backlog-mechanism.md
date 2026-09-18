@@ -32,6 +32,14 @@ budget. Unknown evidence and a claimed goal without a budget also
 close admission, naming the exact record that needs repair. No refused
 dispatch creates a job record.
 
+`goal set-budget` is the person's one-step budget act. On a goal stopped at a
+budget fence, supplying a genuinely changed complete tuple atomically records
+the new budget, rebinds the claim, and lifts that fence; no separate resume is
+needed. Repeating the same tuple is refused with
+`SET_BUDGET_FENCED_SAME_TUPLE`, and `goal resume` is the remedy when the limits
+should not change. A set-budget begins a fresh consumption episode. Release,
+reclaim, risk raises, and the earned extension preserve the current episode.
+
 **One extension earned by consumption.** When the exact revision seam would
 refuse on attempts, on reserved job minutes, or on both, and on no other
 member, a goal that has accepted advancement in the preceding two hours may

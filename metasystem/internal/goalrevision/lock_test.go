@@ -8,6 +8,20 @@ import (
 	"testing"
 )
 
+func TestAcquireUsesAcquireWaitSeam(t *testing.T) {
+	data, err := os.ReadFile("lock.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	if !strings.Contains(source, "var AcquireWait = time.Second") {
+		t.Fatal("AcquireWait production default is not one second")
+	}
+	if !strings.Contains(source, "Wait: AcquireWait") {
+		t.Fatal("Acquire does not pass the AcquireWait seam to the ranked lock")
+	}
+}
+
 func TestAcquireReturnsHandleAndReleaseEndsOnlyThatAcquisition(t *testing.T) {
 	root := t.TempDir()
 	held, err := Acquire(root, "goal-a", 2, "first-holder")

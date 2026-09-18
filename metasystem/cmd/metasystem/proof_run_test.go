@@ -48,7 +48,26 @@ func candidateProofLaunchAdmission(request proofLaunchAdmission) proofLaunchAdmi
 	if request.CommandClass == "testing" && request.CandidateTree == "" {
 		request.CandidateTree = strings.Repeat("b", 40)
 	}
+	if proofAdmissionBeforePublish == nil {
+		proofAdmissionBeforePublish = func(reservation *proofrun.AdmissionRequest) {
+			*reservation = proofrun.WithTestHostLoadSampler(*reservation, "0")
+			proofAdmissionBeforePublish = nil
+		}
+	}
 	return request
+}
+
+func admitCandidateProofLaunch(t *testing.T, request proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+	t.Helper()
+	previous := proofAdmissionBeforePublish
+	proofAdmissionBeforePublish = func(reservation *proofrun.AdmissionRequest) {
+		if previous != nil {
+			previous(reservation)
+		}
+		*reservation = proofrun.WithTestHostLoadSampler(*reservation, "0")
+	}
+	defer func() { proofAdmissionBeforePublish = previous }()
+	return admitProofLaunch(candidateProofLaunchAdmission(request))
 }
 
 func TestProofAdmissionCandidateTreeUsesProofIdentityAccessor(t *testing.T) {
@@ -88,6 +107,54 @@ func addProofCandidateGoal(t *testing.T, root, id, arc string, risk *goal.RiskRe
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
 	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
 	return file
+}
+
+func amendProofGoalFixture(t *testing.T, root, id, message string, mutate func(*goal.GoalFile)) *goal.GoalFile {
+	t.Helper()
+	path := filepath.Join(root, "plans", "goals", id+".md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		t.Fatalf("parse goal %s before amendment: %v", id, problems)
+	}
+	mutate(file)
+	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	relative := filepath.ToSlash(filepath.Join("plans", "goals", id+".md"))
+	goalSyncMutationGit(t, root, "add", relative)
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", message)
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	return file
+}
+
+func rebudgetProofGoalFixture(t *testing.T, root, id string, now time.Time) *goal.GoalFile {
+	t.Helper()
+	return amendProofGoalFixture(t, root, id, "rebudget proof candidate", func(file *goal.GoalFile) {
+		file.Revision++
+		file.Budget.AttemptLimit++
+		event := goal.HistoryLine{At: now.UTC().Format(time.RFC3339),
+			Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAX", "mac-cli", id), Verb: "set-budget",
+			Actor: "human:Wido", Targets: []string{id}, Keep: -1}
+		file.History = append(file.History, event)
+		file.Approved = &goal.ApprovalRecord{By: event.Actor, At: event.At, Revision: file.Revision,
+			EpisodeRevision: file.Revision, Opid: event.Opid, Authority: goal.ApprovalAuthorityProven,
+			Digest: goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)}
+		file.BudgetExtension = nil
+	})
+}
+
+func restoreProofAdmissionSeams(t *testing.T) {
+	t.Helper()
+	underLocks, beforePublish, afterPublish, lockOrder := proofAdmissionUnderLocks, proofAdmissionBeforePublish, proofAdmissionAfterPublish, proofAdmissionLockOrder
+	t.Cleanup(func() {
+		proofAdmissionUnderLocks, proofAdmissionBeforePublish = underLocks, beforePublish
+		proofAdmissionAfterPublish, proofAdmissionLockOrder = afterPublish, lockOrder
+	})
 }
 
 func TestCandidateGoalSelectsThePlanRisk(t *testing.T) {
@@ -210,10 +277,10 @@ func TestCandidateLaunchStillNeedsTheClaimHolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, _, _, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+	attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 		GoalID: "candidate-holder", AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
-	}))
+	})
 	if err == nil || !strings.Contains(err.Error(), "active coordinator does not own the claimed goal reservation") || attempt.AttemptID != "" {
 		t.Fatalf("candidate bypassed the claim holder: attempt=%+v err=%v", attempt, err)
 	}
@@ -226,10 +293,10 @@ func TestCandidateUsesResolvedAuthority(t *testing.T) {
 	})
 	announceProofFixtureHolder(t, root)
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, result, noChild, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+	attempt, result, noChild, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 		GoalID: candidate.Id, AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
-	}))
+	})
 	if err != nil || noChild || result.Disposition != proofrun.DispositionExecuted {
 		t.Fatalf("cross-candidate admission failed: attempt=%+v result=%+v noChild=%t err=%v", attempt, result, noChild, err)
 	}
@@ -240,6 +307,119 @@ func TestCandidateUsesResolvedAuthority(t *testing.T) {
 	if stored.GoalID != "standing-validation" || stored.AccountedGoal() != candidate.Id ||
 		stored.AccountedRevision() != goal.BudgetEpisodeRevision(candidate) {
 		t.Fatalf("candidate/authority tuple collapsed: attempt=%+v", stored)
+	}
+}
+
+func TestCandidateGoalTransitionUnderLockIsBeforeOrAfter(t *testing.T) {
+	for _, test := range []struct {
+		name, seam string
+		after      bool
+	}{
+		{name: "park before first snapshot", seam: "under-locks"},
+		{name: "rebudget before publish", seam: "before-publish"},
+		{name: "rebudget after publish", seam: "after-publish"},
+		{name: "rebudget after admission", after: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			restoreProofAdmissionSeams(t)
+			root, now := proofExtensionGoalFixture(t)
+			candidate := addProofCandidateGoal(t, root, "candidate-move", "", &goal.RiskRecord{
+				Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Linearization witness."})
+			announceProofFixtureHolder(t, root)
+			t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+			move := func() {
+				if test.seam == "under-locks" {
+					amendProofGoalFixture(t, root, candidate.Id, "park proof candidate", func(file *goal.GoalFile) {
+						file.Revision++
+						file.State = goal.StateParked
+						file.Parked = &goal.ParkRecord{By: "mac-cli+m1", At: now.Format(time.RFC3339), Because: "linearization witness"}
+						file.History = append(file.History, goal.HistoryLine{At: now.Format(time.RFC3339),
+							Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAY", "mac-cli", candidate.Id), Verb: "park",
+							Actor: "mac-cli+m1", Targets: []string{candidate.Id}, Keep: -1, Reason: "linearization witness"})
+					})
+					return
+				}
+				rebudgetProofGoalFixture(t, root, candidate.Id, now)
+			}
+			switch test.seam {
+			case "under-locks":
+				proofAdmissionUnderLocks = move
+			case "before-publish":
+				proofAdmissionBeforePublish = func(*proofrun.AdmissionRequest) { move() }
+			case "after-publish":
+				proofAdmissionAfterPublish = move
+			}
+			attempt, result, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+				GoalID: candidate.Id, AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+			})
+			if test.after {
+				if err != nil || result.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
+					t.Fatalf("admission before later rebudget: attempt=%+v result=%+v err=%v", attempt, result, err)
+				}
+				moved := rebudgetProofGoalFixture(t, root, candidate.Id, now)
+				stored, readErr := proofrun.ReadAttempt(root, attempt.AttemptID)
+				consumption := dispatchcore.ProjectConsumption(root, moved, now)
+				if readErr != nil || stored.CandidateRevision != goal.BudgetEpisodeRevision(candidate) ||
+					consumption.Status != dispatchcore.BudgetKnown || consumption.Attempts != 0 {
+					t.Fatalf("later episode did not leave the admitted attempt on its old episode: stored=%+v consumption=%+v err=%v", stored, consumption, readErr)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "CANDIDATE_GOAL_MOVED") || attempt.AttemptID != "" {
+				t.Fatalf("movement at %s was not refused: attempt=%+v result=%+v err=%v", test.seam, attempt, result, err)
+			}
+			attempts, readErr := proofrun.ReadAttempts(root)
+			if readErr != nil || len(attempts) != 0 {
+				t.Fatalf("movement at %s retained a reservation: attempts=%+v err=%v", test.seam, attempts, readErr)
+			}
+		})
+	}
+}
+
+func TestProofAdmissionLocksReciprocalGoalsInSortedOrder(t *testing.T) {
+	restoreProofAdmissionSeams(t)
+	root := t.TempDir()
+	var orders [][]string
+	proofAdmissionLockOrder = func(order []string) { orders = append(orders, order) }
+	for _, snapshots := range []proofAdmissionSnapshots{
+		{Candidate: proofAdmissionGoalSnapshot{ID: "b", LockRevision: 2}, Authority: proofAdmissionGoalSnapshot{ID: "a", LockRevision: 3}},
+		{Candidate: proofAdmissionGoalSnapshot{ID: "a", LockRevision: 3}, Authority: proofAdmissionGoalSnapshot{ID: "b", LockRevision: 2}},
+	} {
+		held, err := acquireProofAdmissionGoalLocks(root, snapshots)
+		if err != nil {
+			t.Fatal(err)
+		}
+		releaseProofAdmissionGoalLocks(held)
+	}
+	if len(orders) != 2 || strings.Join(orders[0], ",") != "a,b" || strings.Join(orders[1], ",") != "a,b" {
+		t.Fatalf("reciprocal acquisition orders = %v, want [a b] twice", orders)
+	}
+}
+
+func TestProofAdmissionAcquireWaitZeroNamesBothGoalsAndBusyPath(t *testing.T) {
+	restoreProofAdmissionSeams(t)
+	root, now := proofExtensionGoalFixture(t)
+	candidate := addProofCandidateGoal(t, root, "z-candidate-busy", "", &goal.RiskRecord{
+		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Busy lock witness."})
+	held, err := goalrevision.Acquire(root, candidate.Id, candidate.Revision, "busy-witness")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = held.Release() })
+	previousWait := goalrevision.AcquireWait
+	goalrevision.AcquireWait = 0
+	t.Cleanup(func() { goalrevision.AcquireWait = previousWait })
+	announceProofFixtureHolder(t, root)
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
+		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+	})
+	for _, want := range []string{candidate.Id, "standing-validation", "LOCK_BUSY", candidate.Id + "/r2"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("zero-wait refusal did not name %q: attempt=%+v err=%v", want, attempt, err)
+		}
 	}
 }
 
@@ -256,12 +436,12 @@ func TestCandidateCannotUseAuthorityEarnedExtension(t *testing.T) {
 	})
 	announceProofFixtureHolder(t, root)
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, _, _, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+	attempt, decision, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 		GoalID: "candidate-no-extension", AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
-	}))
-	if err == nil || !strings.Contains(err.Error(), "candidate goal candidate-no-extension cannot use authority goal standing-validation's earned budget extension") || attempt.AttemptID != "" {
-		t.Fatalf("candidate used the authority's extension: attempt=%+v err=%v", attempt, err)
+	})
+	if err != nil || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
+		t.Fatalf("authority consumption incorrectly closed the candidate lens: attempt=%+v decision=%+v err=%v", attempt, decision, err)
 	}
 	data, readErr := os.ReadFile(filepath.Join(root, "plans", "goals", "standing-validation.md"))
 	if readErr != nil {
@@ -269,7 +449,152 @@ func TestCandidateCannotUseAuthorityEarnedExtension(t *testing.T) {
 	}
 	file, problems := goal.ParseFile(data)
 	if len(problems) != 0 || file.BudgetExtension != nil {
-		t.Fatalf("cross-candidate refusal mutated the authority: extension=%+v problems=%v", file.BudgetExtension, problems)
+		t.Fatalf("cross-candidate admission used the authority's extension: extension=%+v problems=%v", file.BudgetExtension, problems)
+	}
+}
+
+func TestOneLiveChargedAttemptCountsForBothLenses(t *testing.T) {
+	root, now := proofExtensionGoalFixture(t)
+	amendSyncedGoalFixture(t, root, "bound authority concurrency", func(file *goal.GoalFile) {
+		file.Budget.AttemptLimit = 6
+		file.Budget.ActiveJobLimit = 1
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	candidate := addProofCandidateGoal(t, root, "candidate-two-lens", "", &goal.RiskRecord{
+		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Two-lens witness."})
+	candidate = amendProofGoalFixture(t, root, candidate.Id, "bound candidate attempts", func(file *goal.GoalFile) {
+		file.Budget.AttemptLimit = 1
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	other := addProofCandidateGoal(t, root, "candidate-other", "", &goal.RiskRecord{
+		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Authority concurrency witness."})
+	announceProofFixtureHolder(t, root)
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	launch := func(goalID, tree string) (proofrun.Attempt, error) {
+		attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+			ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+			GoalID: goalID, AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full",
+			CommandClass: "testing", CandidateTree: tree,
+		})
+		return attempt, err
+	}
+	first, err := launch(candidate.Id, strings.Repeat("b", 40))
+	if err != nil || first.AttemptID == "" || first.GoalID != "standing-validation" || first.CandidateGoalID != candidate.Id {
+		t.Fatalf("first two-lens launch: attempt=%+v err=%v", first, err)
+	}
+	binding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority := dispatchcore.ProjectBudget(root, binding.File, now)
+	if authority.ActiveJobs != 1 || authority.Attempts != 0 {
+		t.Fatalf("live candidate charge did not split authority capacity from consumption: %+v", authority)
+	}
+	if attempt, err := launch(other.Id, strings.Repeat("c", 40)); err == nil || attempt.AttemptID != "" ||
+		!strings.Contains(err.Error(), "standing-validation") || !strings.Contains(err.Error(), "activeJobLimit") {
+		t.Fatalf("second authority job was not refused by the authority lens: attempt=%+v err=%v", attempt, err)
+	}
+	if _, err := proofrun.FinalizeAttempt(root, first.AttemptID, proofrun.TerminalFailed, 1, "two-lens witness", nil, now); err != nil {
+		t.Fatal(err)
+	}
+	if attempt, err := launch(candidate.Id, strings.Repeat("d", 40)); err == nil || attempt.AttemptID != "" ||
+		!strings.Contains(err.Error(), candidate.Id) || !strings.Contains(err.Error(), "attemptLimit") {
+		t.Fatalf("second candidate attempt was not refused by the candidate lens: attempt=%+v err=%v", attempt, err)
+	}
+}
+
+func TestCandidateCannotEscapeAuthorityElapsedLimit(t *testing.T) {
+	root, now := proofExtensionGoalFixture(t)
+	amendSyncedGoalFixture(t, root, "expire authority elapsed budget", func(file *goal.GoalFile) {
+		file.Budget.ElapsedLimit = "1m"
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	candidate := addProofCandidateGoal(t, root, "candidate-elapsed", "", &goal.RiskRecord{
+		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Elapsed authority witness."})
+	announceProofFixtureHolder(t, root)
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
+		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+	})
+	if err == nil || attempt.AttemptID != "" || !strings.Contains(err.Error(), "standing-validation") || !strings.Contains(err.Error(), "elapsedLimit") {
+		t.Fatalf("candidate escaped the authority clock: attempt=%+v err=%v", attempt, err)
+	}
+}
+
+func TestCandidateExtensionIsRefusedUntilCandidateBecomesAuthority(t *testing.T) {
+	root, now := proofExtensionGoalFixture(t)
+	candidate := addProofCandidateGoal(t, root, "candidate-extension", "", &goal.RiskRecord{
+		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Candidate extension witness."})
+	candidate = amendProofGoalFixture(t, root, candidate.Id, "bound candidate extension", func(file *goal.GoalFile) {
+		file.Budget.AttemptLimit = 1
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	receiptPath := filepath.Join(root, "memory", "receipts.log")
+	receipts, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptAt := now.Add(-30 * time.Minute)
+	receipts = append(receipts, []byte(fmt.Sprintf("%d|%s|RECEIPT|type=implement|outcome=shipped|goal=%s|note=candidate extension witness\n",
+		receiptAt.Unix(), receiptAt.Format(time.RFC3339), candidate.Id))...)
+	if err := os.WriteFile(receiptPath, receipts, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "memory/receipts.log")
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", "candidate extension receipt")
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	announceProofFixtureHolder(t, root)
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	first, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
+		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", CandidateTree: strings.Repeat("b", 40),
+	})
+	if err != nil || first.AttemptID == "" {
+		t.Fatalf("first candidate charge: attempt=%+v err=%v", first, err)
+	}
+	if _, err := proofrun.FinalizeAttempt(root, first.AttemptID, proofrun.TerminalFailed, 1, "candidate extension witness", nil, now); err != nil {
+		t.Fatal(err)
+	}
+	request := proofLaunchAdmission{ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
+		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", CandidateTree: strings.Repeat("c", 40)}
+	attempt, _, _, err := admitCandidateProofLaunch(t, request)
+	for _, want := range []string{"CANDIDATE_EXTENSION_REFUSED", candidate.Id, "attemptLimit", "claim " + candidate.Id + " as authority", "goal set-budget"} {
+		if err == nil || !strings.Contains(err.Error(), want) || attempt.AttemptID != "" {
+			t.Fatalf("candidate extension refusal did not name %q: attempt=%+v err=%v", want, attempt, err)
+		}
+	}
+	amendSyncedGoalFixture(t, root, "release old proof authority", func(file *goal.GoalFile) {
+		file.Revision++
+		file.State, file.Claimed, file.StopCapability = goal.StateApproved, nil, nil
+		file.History = append(file.History, goal.HistoryLine{At: now.Format(time.RFC3339),
+			Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAT", "mac-cli", "m1"), Verb: "release",
+			Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1})
+	})
+	unchanged := amendProofGoalFixture(t, root, candidate.Id, "claim extension candidate", func(file *goal.GoalFile) {
+		if file.BudgetExtension != nil {
+			t.Fatalf("candidate refusal wrote an extension: %+v", file.BudgetExtension)
+		}
+		file.Revision++
+		claimedAt := now.Add(-time.Minute).Format(time.RFC3339)
+		event := goal.HistoryLine{At: claimedAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAZ", "mac-cli", candidate.Id),
+			Verb: "claim", Actor: "mac-cli+m1", Targets: []string{candidate.Id}, Keep: -1}
+		file.History = append(file.History, event)
+		file.State = goal.StateClaimed
+		file.Claimed = &goal.ClaimRecord{Machine: "mac-cli", Lineage: "m1", At: claimedAt, Revision: file.Revision, AccountingRevision: file.Revision}
+		file.StopCapability = &goal.StopCapability{Generation: file.Revision, Revision: file.Revision, Machine: "mac-cli", ClaimEpoch: 1}
+	})
+	request.AuthorityGoalID = ""
+	attempt, decision, _, err := admitCandidateProofLaunch(t, request)
+	if err != nil || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
+		t.Fatalf("candidate as authority did not receive its own earned extension: goal=%+v attempt=%+v decision=%+v err=%v", unchanged, attempt, decision, err)
+	}
+	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
+	data := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/"+candidate.Id+".md")
+	file, problems := goal.ParseFile([]byte(data))
+	if len(problems) != 0 || file.BudgetExtension == nil {
+		t.Fatalf("candidate authority extension was not persisted: extension=%+v problems=%v", file.BudgetExtension, problems)
 	}
 }
 
@@ -719,10 +1044,10 @@ func TestProofAdmissionExtendsRejudgesAndReserves(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, decision, joined, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+	attempt, decision, joined, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
-	}))
+	})
 
 	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" ||
 		attempt.SchemaVersion != proofrun.CandidateAttemptSchemaVersion || attempt.CandidateGoalID != attempt.GoalID ||
@@ -765,10 +1090,10 @@ func TestNativeDelegateProofAdmissionExtendsItsClaimPairBudget(t *testing.T) {
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT", root)
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "native-proof")
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, decision, joined, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+	attempt, decision, joined, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
-	}))
+	})
 
 	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("native delegate proof did not extend and reserve: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
@@ -810,10 +1135,10 @@ func TestSupervisorTakeoverRefusesStaleEpochProof(t *testing.T) {
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT", root)
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "stale-proof")
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, _, _, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+	attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
-	}))
+	})
 
 	if err == nil || !strings.Contains(err.Error(), "native delegate proof custody changed before reservation") || attempt.AttemptID != "" {
 		t.Fatalf("stale epoch attempt=%+v err=%v", attempt, err)
@@ -842,11 +1167,11 @@ func TestProofGateAdmitsAfterTheStopCapabilityIsRestamped(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	admission := candidateProofLaunchAdmission(proofLaunchAdmission{
+	admission := proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
-	})
-	attempt, _, _, err := admitProofLaunch(admission)
+	}
+	attempt, _, _, err := admitCandidateProofLaunch(t, admission)
 	wantStart := "active coordinator does not own the claimed goal reservation"
 	if err == nil || !strings.HasPrefix(err.Error(), wantStart) || !strings.Contains(err.Error(), "lease claim epoch 5") ||
 		!strings.Contains(err.Error(), "stop capability claim epoch 1") ||
@@ -866,7 +1191,7 @@ func TestProofGateAdmitsAfterTheStopCapabilityIsRestamped(t *testing.T) {
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("restamp: %+v %v", result, err)
 	}
-	attempt, decision, joined, err := admitProofLaunch(admission)
+	attempt, decision, joined, err := admitCandidateProofLaunch(t, admission)
 	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("proof admission after restamp: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
 	}
@@ -898,11 +1223,11 @@ func TestBatchRevisionBoundAdmissionRefusesBeforeRunnerOrCharge(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := dispatchcore.ProjectBudget(root, binding.File, now)
-			attempt, _, _, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+			attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 				CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
 				ExpectedGoalRevision: test.goalRev, ExpectedAccountingRevision: test.accountRev,
-			}))
+			})
 
 			after := dispatchcore.ProjectBudget(root, binding.File, now)
 			if err == nil || !strings.Contains(err.Error(), "GOAL_REVISION_MOVED") || attempt.AttemptID != "" ||
@@ -945,12 +1270,12 @@ func TestBatchP2RequiresDiagnosticHeadroom(t *testing.T) {
 			}
 			announceProofFixtureHolder(t, root)
 			t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-			attempt, _, _, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+			attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 				CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
 				ExpectedGoalRevision: 2, ExpectedAccountingRevision: 2,
 				RequireDiagnosticHeadroom: true,
-			}))
+			})
 
 			if err == nil || !strings.Contains(err.Error(), "BATCH_MEMBER_BUDGET_REFUSED") || attempt.AttemptID != "" {
 				t.Fatalf("headroom attempt=%+v err=%v", attempt, err)
