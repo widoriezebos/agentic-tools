@@ -9,7 +9,7 @@
 - Origin: human
 - Next step: U1 (join gate and gate unit --base run every reverse dependent; a red ejects the unit) on main d2713932efcdc9a3adee0493bd8196f3996e1bb4; nothing remains; gate unit runs after each stacked unit.
 - OpenedAt: 2026-09-18T14:56:10Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=1d attemptLimit=20 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-18T14:59:39Z revision=3 opid=PA6032YQ1G064X0Z9Y1QAZWXZ9-m1e-c6925449 authority=proven digest=63ef3634356773f959dd428b7ed54f0b1e812050f057aa8ccb2166e1dbe3833a
@@ -20,4 +20,5 @@ History:
 - 2026-09-18T14:59:39Z PA6032YQ1G064X0Z9Y1QAZWXZ9-m1e-c6925449 approve actor=human:Wido targets=unit-gate-runs-reverse-dependents
 - 2026-09-18T15:01:01Z RTD7V1C31TB8MGA3AKEF18XZ96-m1e-c6925449 set-priority actor=human:Wido targets=unit-gate-runs-reverse-dependents reason=priority-order subject=unit-gate-runs-reverse-dependents from=unranked to=1:49 requested-sequence=49
 - 2026-09-18T20:05:06Z GXZ1MMCGY1KHG1RTHGBSBV6KQC-m1e-c6925449 edit actor=human:Wido targets=unit-gate-runs-reverse-dependents
-Integrity: sha256=55a6436e43b2e244582a4179b8fe2074d7f004d4c889879b3024193bfa7659a5
+- 2026-09-18T21:51:33Z JPCGGPFJR0BZMVV5ED2BR6TEDQ-m1e-c6925449 edit actor=human:Wido targets=unit-gate-runs-reverse-dependents
+Integrity: sha256=1bf3091fb34deb3fd81804618d76c85b1250a9d9e21cbf0dc5255544de5d2e3f
