@@ -175,6 +175,9 @@ func TestRuntimeSignatureAbsenceFailsBeforeArmingWithTheFallbackRemedy(t *testin
 
 func TestOrdinaryUpRefusesDriftWithoutMintingANewGeneration(t *testing.T) {
 	root := t.TempDir()
+	if output, err := exec.Command("git", "-C", root, "init", "-q", "-b", "trunk").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, output)
+	}
 	binary := filepath.Join(root, "metasystem")
 	if err := os.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -198,6 +201,38 @@ func TestOrdinaryUpRefusesDriftWithoutMintingANewGeneration(t *testing.T) {
 	} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("ambient drift mutated %s: %v", path, err)
+		}
+	}
+}
+
+func TestOrdinaryUpReportsALandingRefReadFailureByName(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	binary := filepath.Join(root, "metasystem")
+	if err := os.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stageEnrollment(t, root, binary, 7)
+	if err := os.WriteFile(binary, []byte("candidate\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	result := ordinary(Options{Root: root, MetasystemRoot: root, Scope: root, Binary: binary, WaitScaleMilli: 1})
+	if result.Outcome != "failed" || result.Failed != "accepted-engine" ||
+		!strings.Contains(result.Components[len(result.Components)-1].Detail, "read owned landing ref:") ||
+		!strings.Contains(result.Components[len(result.Components)-1].Detail, "exit status 128") ||
+		strings.Contains(result.Remedy, "config --local") {
+		t.Fatalf("landing-ref read failure was not preserved by name: %+v", result)
+	}
+	installed, err := steward.VerifyIdentity(steward.RepoIdentityPath(root), canonicalRuntimePath(root))
+	if err != nil || installed.Generation != 7 {
+		t.Fatalf("landing-ref read failure changed enrollment: %+v %v", installed, err)
+	}
+	for _, path := range []string{
+		filepath.Join(root, "artifacts", "agents", "mains"),
+		filepath.Join(root, "artifacts", "agents", "supervision"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("landing-ref read failure mutated %s: %v", path, err)
 		}
 	}
 }
