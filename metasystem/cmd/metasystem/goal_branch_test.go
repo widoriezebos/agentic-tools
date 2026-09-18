@@ -95,6 +95,7 @@ func goalBranchMainCLIFixtureBelow(t *testing.T, lineage, subdir string) (string
 	writeTestingFixtureFile(t, rootPath, goal.RenderRoot(rootRecord), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(repo, "metasystem", "memory", "receipts.log"), []byte("seed receipt\n"), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(repo, "metasystem", "records", "narrator-digest.log"), []byte("seed digest\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(root, ".gitignore"), []byte("artifacts/\nbin/\n"), 0o644)
 	goalSyncMutationGit(t, repo, "add", ".")
 	goalSyncMutationGit(t, root, "commit", "-qm", "remote goal fixture")
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")

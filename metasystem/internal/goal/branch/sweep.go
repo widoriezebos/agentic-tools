@@ -147,7 +147,14 @@ func cleanGoalWorktrees(repo, goalID string) ([]string, error) {
 			return nil, err
 		}
 		if len(status) != 0 {
-			return nil, operationRefusal(StaleCode, "goal/%s worktree %s has uncommitted work", goalID, path)
+			entries := strings.Split(strings.TrimSpace(string(status)), "\n")
+			for i := range entries {
+				entries[i] = strings.TrimSpace(entries[i])
+			}
+			if len(entries) > 8 {
+				entries = append(entries[:8], fmt.Sprintf("and %d more", len(entries)-8))
+			}
+			return nil, operationRefusal(StaleCode, "goal/%s worktree %s has uncommitted work: %s", goalID, path, strings.Join(entries, ", "))
 		}
 	}
 	return paths, nil

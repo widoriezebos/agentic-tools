@@ -143,7 +143,7 @@ func TestSweepRefusesDirtyGoalWorktree(t *testing.T) {
 	write(t, fixture.root, "metasystem/one.go", "dirty worktree\n")
 	_, err := branch.Sweep(branch.SweepRequest{Repo: fixture.root, Remote: "origin", EndpointTip: prepared.Landing,
 		GoalID: "goal-a", CheckClaim: claimAllowed})
-	if err == nil || !strings.Contains(err.Error(), fixture.root) {
+	if err == nil || !strings.Contains(err.Error(), fixture.root) || !strings.Contains(err.Error(), "metasystem/one.go") {
 		t.Fatalf("dirty worktree sweep = %v", err)
 	}
 	if remote := git(t, fixture.root, "ls-remote", "--refs", "origin", "refs/heads/goal/goal-a"); remote == "" {
