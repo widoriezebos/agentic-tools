@@ -1,6 +1,6 @@
 # goals-live-on-branches
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=3 exposure=3 accumulation=2 basis="severity 2: a mistaken push or rewrite loses reviewed work that main does not hold yet, recoverable from the reader's records; novelty 3: seats push branches for the first time and two landing lanes gain a new input; exposure 3: every goal's build, read, park and landing; accumulation 2: stale branches pile up if cleanup fails, visible in ls-remote"
@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: 2026-09-17 16:22Z (seat m1e, Wido's ruling in chat 2026-09-17 about 18:00 local, recorded in his name): YES to option B of g18/design-glbC2-boundary.md = unit 10c: the commit check accepts a goal-branch build on the code critic's attestation (landing observe --attested, critic-root attestations only); until 10c lands a branch member fails BATCH_LAND_UNPROVENANCED before the push and a branch goal lands only on its own. 10c does NOT gate the glb merge and stays inside this goal. Wido's condition: no complexity or restriction that does not serve ease of use and safe use, so the whole path hides behind ONE read verb (goal branch read --goal G --unit <commit>: fast gate, dispatches the code-critic root, returns at once, --collect writes the attestation; reader records stay only for the hand lane). Page: m1c's C2 Goal-Plan commit (plan tree 00dbb5cb). Form A (units 8 to 10a, C1+fix1+fix2) is on the goal branch, tip 912520d49, gate green 16:21Z. Next: C2 (10b) host gate at m1c, then the glb merge under one deep proof, then 10c with the read verb. EARLIER: KNOWN ISSUES until glb-known-issues-are-fixed concludes (Wido 2026-09-17 ~15:57 local: land when normal functionality is not broken, fix forward right after): the open non-breaking notes of the A, B, B fix, C1 and C2 reads. Gating the merge: C1 read's three data-loss items (m1c fix2) and the land.sh rename so old callers keep working. 2026-09-17 10:27Z (seat m1e): Build A, units 2 to 4, is on origin/goal/goals-live-on-branches at 4d3a38dd7 after the cheap gate (Wido 2026-09-17 10:15Z: builds go on the goal branch, one deep proof at the merge). Build B (5, 6, 7a, 7b) builds on that branch next (m1c); Build C (8, 9, 10a, 10b, 11) on the union with blb's branch once blb's C+D returns; merge under one proof when every unit is on the branch. Build B: units 5, 6, 7a and 7b from the design page on main (rules 6.9 and 6.10). Carried from Build A's reads: an empty Goal-Unit commit passes ValidateRange; a Goal-Read naming a replaced unit survives suffix replay; push.go copies goal.classifyPushFailure's marker list; a crash between adoption's ref move and read-tree stages a reversal; adoption refuses on any untracked file; commit with no local branch requires HEAD at the endpoint tip; TestCommitHasSingleAmendDecision counts a source string. EARLIER: 2026-09-17 09:44Z (seat m1e, lane L18, attempt proof-mu5bbrhm-61f8ba8fda5365e7): landed rule 6.10 302c5af14 (Wido 2026-09-17 08:13Z: the landing verbs author and commit every landed commit as the goal's approver from goal.human.<name>, the seat in a Landed-By trailer, GOAL_LAND_AUTHOR_UNBOUND when unbound, no human act added; land.sh exempt) and unit 1 a18e15cd4 (branch facts, with the package's shared TestMain). Builds as before: Build A = units 2, 3, 4 (m1c, on unit 1); Build B = 5, 6, 7a, 7b (7a carries the 6.10 witnesses); Build C = 8, 9, 10a, 10b, 11 after batch build C.
 - OpenedAt: 2026-09-16T21:00:37Z
-- Revision: 14
+- Revision: 15
 - Budget: elapsedLimit=5d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-17T06:11:05Z revision=3 opid=9G1X6V4RVS6PSRJ3VKT9E3JEHY-m1e-c6925449 authority=proven digest=7574df33c8b680dfb680f22b17d9e639c0085a18f7e29effd7433837cee1d102
-- Episode: machine=m1c lineage=main-1789560465-86072-c7b126 accountingRevision=10 episodeAt=2026-09-17T11:00:18Z episodeRevision=10 idleSeconds=0 released=2026-09-17T23:49:26Z
+- Claimed: machine=m1c lineage=main-1789560465-86072-c7b126 at=2026-09-18T00:30:40Z revision=15 accountingRevision=10 episodeAt=2026-09-17T11:00:18Z episodeRevision=10 idleSeconds=2474
+- StopCapability: generation=15 revision=15 machine=m1c claimEpoch=6 fenceEpoch=0
 
 History:
 - 2026-09-16T21:00:37Z CNC78J1TDXB8EMQH6V4Z1DTQSP-m1c-fde8080b open actor=human:Wido targets=goals-live-on-branches
@@ -30,4 +31,5 @@ History:
 - 2026-09-17T14:00:00Z 8MCV33J7TBVSPGSQB7VWDQEJRD-m1e-c6925449 edit actor=human:Wido targets=goals-live-on-branches displaced=m1c+main-1789560465-86072-c7b126@2026-09-17T11:00:18Z
 - 2026-09-17T16:22:11Z T1M05165JH6SWSE373JTBBZ286-m1e-c6925449 edit actor=human:Wido targets=goals-live-on-branches displaced=m1c+main-1789560465-86072-c7b126@2026-09-17T11:00:18Z
 - 2026-09-17T23:49:26Z ZN1FHKB7SEFYG16Q643F8FAP2Z-m1c-fde8080b release actor=m1c+main-1789560465-86072-c7b126 targets=goals-live-on-branches
-Integrity: sha256=bc7997e0309c04281e94e99b5f53243c08cc7c32cbf3ca1303373371d316cc4d
+- 2026-09-18T00:30:40Z KWSPEY52JPE977Q04ZN9PQH8FE-m1c-fde8080b claim actor=m1c+main-1789560465-86072-c7b126 targets=goals-live-on-branches
+Integrity: sha256=7bd5139a54ebda8b7062cc260c644239f6a3a6c028959dc90f109cc0c9b9f23f
