@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 type goalSyncEnrollmentReader struct {
@@ -164,6 +165,75 @@ func TestSyncReqLineage(t *testing.T) {
 			t.Fatalf("agent refusal = %v, want %q", err, agentRefusal)
 		}
 	})
+}
+
+func TestSyncRequestPublishesEpochAuthorityForTheHolderOnly(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	epoch := int64(6)
+	for _, test := range []struct {
+		name           string
+		classification lease.ClassifyResult
+		wantAuthority  string
+	}{
+		{name: "holder", classification: lease.ClassifyResult{Class: lease.ClassMain, Holder: true, ClaimEpoch: &epoch}, wantAuthority: goal.EpochAuthorityHolder},
+		{name: "non holder", classification: lease.ClassifyResult{Class: lease.ClassMain, ClaimEpoch: &epoch}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := syncReqClassified(root, "", "m1", nil, test.classification)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if request.EpochAuthority != test.wantAuthority {
+				t.Fatalf("epoch authority = %q, want %q", request.EpochAuthority, test.wantAuthority)
+			}
+		})
+	}
+}
+
+func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
+	root, now := proofExtensionGoalFixture(t)
+	announceProofFixtureHolder(t, root)
+	leasePath := filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
+	leaseBytes, err := os.ReadFile(leasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var current lease.Lease
+	if err := json.Unmarshal(leaseBytes, &current); err != nil {
+		t.Fatal(err)
+	}
+	current.ClaimEpoch = 5
+	current.Revision++
+	leaseBytes, err = json.Marshal(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(leasePath, leaseBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return runGoalSetBudget([]string{
+			"--root", root, "--id", "standing-validation", "--by", "Wido", "--fixture-human-authority",
+			"--elapsed-limit", "8h", "--attempt-limit", "2", "--reserved-job-minutes-limit", "1200",
+			"--active-job-limit", "1", "--review-round-limit", "3",
+		})
+	})
+	if code != 0 || stderr != "" || !strings.Contains(stdout, `"outcome":"confirmed"`) {
+		t.Fatalf("holder set-budget: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	binding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
+	if err != nil || binding.Capability.ClaimEpoch != 5 {
+		t.Fatalf("set-budget binding = %+v, %v; want epoch 5", binding, err)
+	}
+	attempt, decision, joined, err := admitProofLaunch(candidateProofLaunchAdmission(proofLaunchAdmission{
+		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
+		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
+	}))
+	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
+		t.Fatalf("proof admission after holder rebudget: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
+	}
 }
 
 func TestStoppingRequestFallsBackToTerminalGrade(t *testing.T) {

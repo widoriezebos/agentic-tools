@@ -135,6 +135,7 @@ func TestSeverityTieredRigorReviewObligationRefusals(t *testing.T) {
 func TestSeverityTieredRigorUtilityWrappers(t *testing.T) {
 	root := obligationAuthorityLocalRoot(t, "utility-goal")
 	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR50", "mac-a")
+	req.CallerClass, req.EpochAuthority = "MAIN", EpochAuthorityHolder
 	// The fixture's claim starts its ownership episode at 2026-08-30T08:05Z; the
 	// verbs below act after it, since a claim never rebinds behind its episode.
 	req.Now = time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)

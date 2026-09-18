@@ -20,16 +20,16 @@ source "$fixture_bed_root/scripts/agents/fixture-bed-scenarios.sh"
 
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-  run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
+	run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
 	"$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep abandoned-with-a-reason \
 		brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal \
-		carry-word carried-record carried-discharge seat-blocker power-of-attorney landing-slot budget-extension proof-grades
+		carry-word carried-record carried-discharge seat-blocker power-of-attorney landing-slot budget-extension fenced-set-budget proof-grades
 fi
 case "$fixture_scenario" in
 	migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | \
 		abandoned-with-a-reason | \
 		brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal | \
-		carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney | landing-slot | budget-extension | proof-grades) ;;
+		carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney | landing-slot | budget-extension | fenced-set-budget | proof-grades) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -503,6 +503,47 @@ if [[ "$fixture_scenario" == budget-extension ]]; then
   [[ $second_extension_rc -eq 1 && "$second_extension" == *"extended once at 2026-09-12T21:00:00Z"* ]] \
     || { echo "the second extension did not refuse with its marker: rc=$second_extension_rc $second_extension" >&2; exit 1; }
   unset METASYSTEM_GOAL_NOW
+fi
+
+if [[ "$fixture_scenario" == fenced-set-budget ]]; then
+	"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+	export METASYSTEM_GOAL_NOW=2026-09-18T10:00:00Z
+	"$ms" goal open --root "$clone" --id fenced-one-step --origin human \
+		--intent "Replace a stopped budget and reopen admission atomically." --next "Run the larger budget." \
+		--tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fenced rebudget fixture" >/dev/null
+	approve_fixture_goal fenced-one-step \
+		--elapsed-limit 1m --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
+	"$ms" goal claim --root "$clone" --id fenced-one-step >/dev/null
+	fenced_revision=$("$ms" job goal-revision --root "$clone" --goal fenced-one-step)
+	export METASYSTEM_GOAL_NOW=2026-09-18T10:02:00Z
+	fenced_stop=$("$ms" job breach-stop --root "$clone" --goal fenced-one-step --revision "$fenced_revision")
+	fenced_stop_id=$("$ms" json get --value "$fenced_stop" --field stopId)
+	fenced_batch=$("$ms" job stop-batch-reconcile --root "$clone" --stop "$fenced_stop_id")
+	[[ "$("$ms" json get --value "$fenced_batch" --field state)" == COMPLETE ]] \
+		|| { echo "fenced set-budget fixture did not complete stop batch $fenced_stop_id: $fenced_batch" >&2; exit 1; }
+	export METASYSTEM_GOAL_NOW=2026-09-18T10:03:00Z
+	"$ms" goal set-budget --root "$clone" --id fenced-one-step \
+		--elapsed-limit 8h --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 \
+		--by Wido --fixture-human-authority >/dev/null
+	fenced_tip=$(git -C "$origin" rev-parse main)
+	git -C "$clone" cat-file -p "$fenced_tip:plans/goals/fenced-one-step.md" >"$tmp/fenced-one-step.md"
+	if grep -q '^- StopFence:' "$tmp/fenced-one-step.md"; then
+		echo "one-step set-budget left the completed launch fence in place" >&2
+		cat "$tmp/fenced-one-step.md" >&2
+		exit 1
+	fi
+	grep -q " set-budget .* resumed=$fenced_stop_id" "$tmp/fenced-one-step.md" \
+		|| { echo "one-step set-budget history did not name the lifted stop $fenced_stop_id" >&2; cat "$tmp/fenced-one-step.md" >&2; exit 1; }
+	grep -q '^- Budget: elapsedLimit=1d attemptLimit=2 reservedJobMinutesLimit=120 activeJobLimit=1 reviewRoundLimit=3$' "$tmp/fenced-one-step.md" \
+		|| { echo "one-step set-budget did not install the replacement tuple" >&2; cat "$tmp/fenced-one-step.md" >&2; exit 1; }
+	set +e
+	fenced_admission=$("$ms" job goal-admission --root "$clone" --stop-lineage fixture-lineage 2>&1)
+	fenced_admission_rc=$?
+	set -e
+	[[ "$fenced_admission_rc" -eq 0 ]] \
+		|| { echo "one-step set-budget did not reopen admission: $fenced_admission" >&2; exit 1; }
+	unset METASYSTEM_GOAL_NOW
+	exit 0
 fi
 
 if [[ "$fixture_scenario" == carry-word ]]; then

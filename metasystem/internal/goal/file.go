@@ -197,13 +197,35 @@ type GoalNormApprovalClaim struct {
 
 // ApprovalRecord is the durable human admission of one exact goal payload.
 type ApprovalRecord struct {
-	By        string
-	At        string
-	Revision  uint64
-	Opid      string
-	Authority string // proven | relayed | channel
-	Digest    string
-	ReviewBy  string // relayed only
+	By              string
+	At              string
+	Revision        uint64
+	EpisodeRevision uint64
+	Opid            string
+	Authority       string // proven | relayed | channel
+	Digest          string
+	ReviewBy        string // relayed only
+}
+
+// BudgetEpisodeRevision returns the approval revision that starts the current
+// consumption episode. Records written before episode= existed fall back to
+// the oldest surviving accounting coordinate so an ownership change cannot
+// accidentally discard spend from the same human-approved budget.
+func BudgetEpisodeRevision(f *GoalFile) uint64 {
+	if f == nil || f.Approved == nil || f.Budget == nil {
+		return 0
+	}
+	if f.Approved.EpisodeRevision != 0 {
+		return f.Approved.EpisodeRevision
+	}
+	revision := f.Approved.Revision
+	if f.Claimed != nil && f.Claimed.AccountingRevision != 0 && f.Claimed.AccountingRevision < revision {
+		revision = f.Claimed.AccountingRevision
+	}
+	if f.Episode != nil && f.Episode.AccountingRevision != 0 && f.Episode.AccountingRevision < revision {
+		revision = f.Episode.AccountingRevision
+	}
+	return revision
 }
 
 // BudgetExtensionRecord records the one automatic raise a goal may earn.
@@ -409,7 +431,7 @@ type AbandonRecord struct {
 // the design's grammar:
 //
 //   - <iso8601> <opid> <verb> actor=<...> [targets=<ids>]
-//     [displaced=<machine>+<lineage>@<at>] [ack] [keep=<n>]
+//     [displaced=<machine>+<lineage>@<at>] [resumed=<stop-id>] [ack] [keep=<n>]
 //     [authorityOutcome=<...> authorityReviewBy=<date>
 //     authorityRuling=<id> temporaryHumanWord=<quoted words>]
 //     [reason=<rest of line>]
@@ -421,6 +443,7 @@ type HistoryLine struct {
 	Targets             []string
 	Displaced           string
 	StopID              string
+	Resumed             string
 	Carried             string
 	Ack                 bool
 	Keep                int // -1 when absent; prune's root-record line only
@@ -814,6 +837,15 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 		return fmt.Errorf("record has incomplete or out-of-range event coordinates")
 	}
 	event := f.History[a.Revision-1]
+	if a.EpisodeRevision != 0 {
+		if a.EpisodeRevision > a.Revision || a.EpisodeRevision > uint64(len(f.History)) {
+			return fmt.Errorf("episode revision is later than the approval event or has no History event")
+		}
+		episodeEvent := f.History[a.EpisodeRevision-1]
+		if episodeEvent.Verb != "approve" && episodeEvent.Verb != "set-budget" {
+			return fmt.Errorf("episode revision does not name an approve or set-budget History event")
+		}
+	}
 	raiseOpid, isRaise := strings.CutPrefix(a.Authority, "raise=")
 	ordinary := event.Actor == a.By && (event.Verb == "approve" || event.Verb == "resume" || event.Verb == "set-budget")
 	raise := isRaise && raiseOpid == event.Opid && event.Verb == "edit" && misclassificationRaises(event.Reason)
@@ -1232,7 +1264,7 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		f.NormApproval = &GoalNormApprovalClaim{ApprovedRef: rec["approvedRef"], Minutes: minutes, ReviewRounds: rounds, GoalRevision: revision}
 		f.legacyThreeNormApproval = legacy
 	case "Approved":
-		rec, err := parseKVRecord(value, []string{"by", "at", "revision", "opid", "authority", "digest"}, []string{"reviewBy"}, "")
+		rec, err := parseKVRecord(value, []string{"by", "at", "revision", "opid", "authority", "digest"}, []string{"episode", "reviewBy"}, "")
 		if err != nil {
 			addProblem("Approved: %v", err)
 			return
@@ -1242,7 +1274,15 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			addProblem("Approved has invalid revision")
 			return
 		}
-		f.Approved = &ApprovalRecord{By: rec["by"], At: rec["at"], Revision: revision, Opid: rec["opid"],
+		episodeRevision := uint64(0)
+		if episode, present := rec["episode"]; present {
+			episodeRevision, err = strconv.ParseUint(episode, 10, 64)
+			if err != nil || episodeRevision == 0 {
+				addProblem("Approved has invalid episode revision")
+				return
+			}
+		}
+		f.Approved = &ApprovalRecord{By: rec["by"], At: rec["at"], Revision: revision, EpisodeRevision: episodeRevision, Opid: rec["opid"],
 			Authority: rec["authority"], Digest: rec["digest"], ReviewBy: rec["reviewBy"]}
 	case "Sliced":
 		rec, err := parseKVRecord(value, []string{"machine", "lineage", "revision", "at"}, nil, "")
@@ -1729,6 +1769,9 @@ func RenderFile(f *GoalFile) []byte {
 		a := f.Approved
 		fmt.Fprintf(&b, "- Approved: by=%s at=%s revision=%d opid=%s authority=%s digest=%s",
 			a.By, a.At, a.Revision, a.Opid, a.Authority, a.Digest)
+		if a.EpisodeRevision != 0 {
+			fmt.Fprintf(&b, " episode=%d", a.EpisodeRevision)
+		}
 		if a.ReviewBy != "" {
 			fmt.Fprintf(&b, " reviewBy=%s", a.ReviewBy)
 		}
@@ -1949,6 +1992,14 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 				return h, err
 			}
 			h.StopID = strings.TrimPrefix(tok, "stopId=")
+		case strings.HasPrefix(tok, "resumed="):
+			if err := dup("resumed"); err != nil {
+				return h, err
+			}
+			h.Resumed = strings.TrimPrefix(tok, "resumed=")
+			if h.Resumed == "" {
+				return h, fmt.Errorf("resumed= wants a safe stop id and is only valid on set-budget history")
+			}
 		case strings.HasPrefix(tok, "carried="):
 			if err := dup("carried"); err != nil {
 				return h, err
@@ -2090,6 +2141,9 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 	if h.ApprovedRef != "" && h.Verb != "resume" && h.Verb != "set-obligation" && h.Verb != "carrying" && h.Verb != "carried" {
 		return h, fmt.Errorf("approvedRef= is only valid on resume, set-obligation, carrying, and carried history")
 	}
+	if h.Resumed != "" && (h.Verb != "set-budget" || !safeStopID(h.Resumed)) {
+		return h, fmt.Errorf("resumed= wants a safe stop id and is only valid on set-budget history")
+	}
 	if h.Verb != "answer" && h.Question != "" {
 		return h, fmt.Errorf("question= is only valid on answer history")
 	}
@@ -2142,6 +2196,9 @@ func RenderHistoryLine(h HistoryLine) string {
 	}
 	if h.StopID != "" {
 		b.WriteString(" stopId=" + h.StopID)
+	}
+	if h.Resumed != "" {
+		b.WriteString(" resumed=" + h.Resumed)
 	}
 	if h.Carried != "" {
 		b.WriteString(" carried=" + h.Carried)

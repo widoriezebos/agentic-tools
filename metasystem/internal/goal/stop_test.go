@@ -201,6 +201,147 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	}
 }
 
+func fencedSetBudgetBed(t *testing.T, state StopBatchState) (string, Budget, Budget, *GoalFile, VerbRequest) {
+	t.Helper()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	goalID := "fenced-rebudget"
+	if result, err := Open(verbReq(root, "01J5X00000000000000000FB00", "mac-a"), goalID, "Rebudget stopped work atomically.", OriginHuman, "Lift the completed fence."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open fenced rebudget goal: %+v %v", result, err)
+	}
+	budget := testBudget()
+	claim := verbReq(root, "01J5X00000000000000000FB10", "mac-a")
+	claim.ClaimEpoch = 9
+	if result, err := claimApprovedForTest(t, claim, goalID, budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim fenced rebudget goal: %+v %v", result, err)
+	}
+	projection, err := Project(endpointFor(root), true, claim.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed := projection.Tree.Live[goalID]
+	stop := CloseStopRequest{
+		VerbRequest: VerbRequest{Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: "01J5X00000000000000000FB20", Now: claim.Now.Add(time.Minute), ClaimEpoch: 9},
+		GoalID:      goalID, StopID: "stop-fenced-rebudget-r3-f1", Reason: StopReasonElapsedLimit, Capability: *claimed.StopCapability,
+	}
+	if result, err := CloseStop(stop); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("close fenced rebudget goal: %+v %v", result, err)
+	}
+	projection, err = Project(endpointFor(root), true, stop.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopped := projection.Tree.Live[goalID]
+	stamp := stop.Now.UTC().Format(time.RFC3339)
+	batch := StopBatch{
+		StopID: stop.StopID, GoalID: goalID, GoalRevision: stopped.Claimed.Revision,
+		FenceEpoch: stopped.StopFence.Epoch, CapabilityGeneration: stopped.StopCapability.Generation,
+		Machine: stopped.Claimed.Machine, ClaimEpoch: stopped.StopCapability.ClaimEpoch, Reason: stopped.StopFence.Reason,
+		State: state, OpenedAt: stamp, UpdatedAt: stamp, Pass: 1,
+	}
+	if state == StopBatchComplete {
+		batch.CompletedAt = stamp
+	}
+	if err := WriteStopBatch(root, batch); err != nil {
+		t.Fatal(err)
+	}
+	next := budget
+	next.ElapsedLimit = "3h"
+	set := verbReq(root, "01J5X00000000000000000FB30", "mac-a")
+	set.Now = stop.Now.Add(time.Minute)
+	return root, budget, next, stopped, set
+}
+
+func TestSetBudgetLiftsCompletedFenceInOneTransaction(t *testing.T) {
+	root, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
+	result, err := setBudgetApprovedForTest(t, set, stopped.Id, next)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("one-step fenced set-budget: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh := tree.Live[stopped.Id]
+	last := fresh.History[len(fresh.History)-1]
+	if fresh.Revision != stopped.Revision+1 || len(fresh.History) != len(stopped.History)+1 ||
+		fresh.StopFence != nil || fresh.IsFencedClaim() || fresh.StopCapability == nil || fresh.StopCapability.FenceEpoch != 0 ||
+		fresh.Claimed == nil || fresh.Claimed.Revision != fresh.Revision || fresh.Claimed.AccountingRevision != fresh.Revision ||
+		*fresh.Budget != next || fresh.Approved == nil || fresh.Approved.EpisodeRevision != fresh.Revision ||
+		last.Verb != "set-budget" || last.Resumed != stopped.StopFence.StopID {
+		t.Fatalf("one-step set-budget did not atomically lift and rebind the stopped goal: before=%+v after=%+v last=%+v", stopped, fresh, last)
+	}
+	if problems := ValidateTree(tree); len(problems) != 0 {
+		t.Fatalf("rebudgeted tree does not admit the fresh claim: %v", problems)
+	}
+}
+
+func TestSetBudgetFencedSameTupleRefusesWithoutMutation(t *testing.T) {
+	root, budget, _, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
+	before := RenderFile(stopped)
+	beforeTip := acceptedTip(t, root)
+	result, err := setBudgetApprovedForTest(t, set, stopped.Id, budget)
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "SET_BUDGET_FENCED_SAME_TUPLE") ||
+		!strings.Contains(result.Detail, "only goal resume") {
+		t.Fatalf("same-tuple fenced set-budget refusal: %+v %v", result, err)
+	}
+	if acceptedTip(t, root) != beforeTip {
+		t.Fatal("same-tuple refusal advanced the accepted ledger")
+	}
+	afterTree, err := loadTree(root, beforeTip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := RenderFile(afterTree.Live[stopped.Id]); string(after) != string(before) {
+		t.Fatalf("same-tuple refusal changed goal bytes or digest:\n%s\n---\n%s", before, after)
+	}
+}
+
+func TestSetBudgetFencedIncompleteBatchNamesRemedy(t *testing.T) {
+	root, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchOpen)
+	before := RenderFile(stopped)
+	result, err := setBudgetApprovedForTest(t, set, stopped.Id, next)
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, stopped.StopFence.StopID) ||
+		!strings.Contains(result.Detail, "metasystem job stop-batch") {
+		t.Fatalf("incomplete stop batch refusal omitted its exact remedy: %+v %v", result, err)
+	}
+	afterTree, loadErr := loadTree(root, acceptedTip(t, root))
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if after := RenderFile(afterTree.Live[stopped.Id]); string(after) != string(before) {
+		t.Fatalf("incomplete-batch refusal changed goal bytes or digest:\n%s\n---\n%s", before, after)
+	}
+}
+
+func TestSetBudgetFencedOtherClaimNamesConflict(t *testing.T) {
+	root, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
+	otherID := "other-live-claim"
+	if result, err := Open(verbReq(root, "01J5X00000000000000000FB40", "mac-a"), otherID, "Occupy the stopped goal's machine.", OriginHuman, "Remain live."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open other claim: %+v %v", result, err)
+	}
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000FB50", "mac-a"), otherID, testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim other goal: %+v %v", result, err)
+	}
+	beforeTree, err := loadTree(root, acceptedTip(t, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := RenderFile(beforeTree.Live[stopped.Id])
+	result, err := setBudgetApprovedForTest(t, set, stopped.Id, next)
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, otherID) ||
+		!strings.Contains(result.Detail, "already holds live claim") {
+		t.Fatalf("other live claim refusal omitted the conflict: %+v %v", result, err)
+	}
+	afterTree, loadErr := loadTree(root, acceptedTip(t, root))
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if after := RenderFile(afterTree.Live[stopped.Id]); string(after) != string(before) {
+		t.Fatalf("other-claim refusal changed the fenced goal:\n%s\n---\n%s", before, after)
+	}
+}
+
 func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDependencyRule(t *testing.T) {
 	_, root, _ := twoClones(t)
 	seedLedger(t, root)

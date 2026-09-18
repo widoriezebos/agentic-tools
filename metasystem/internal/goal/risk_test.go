@@ -78,6 +78,7 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 	beforeClaim := *stopped.Claimed
 	beforeCapability := *stopped.StopCapability
 	beforeRevision := stopped.Revision
+	beforeBudgetEpisode := BudgetEpisodeRevision(stopped)
 	beforeBudget := *stopped.Budget
 	beforeExceptions := stopped.BudgetExceptions
 
@@ -122,7 +123,9 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 		t.Fatalf("raise changed spend members, failed to lift review rounds, or counted an exception: before=%+v after=%+v exceptions=%d", beforeBudget, after.Budget, after.BudgetExceptions)
 	}
 	lastReason := after.History[len(after.History)-1].Reason
-	if after.Approved == nil || after.Approved.Authority != "raise="+raise.opid() || after.ValidateApprovalRecord() != nil || !strings.Contains(lastReason, "Misclassified: from=1 to=2 evidence=refusal:BUDGET_REFUSED") || !strings.Contains(lastReason, "TierOverride: derived=2 set=3 why=retain full review") {
+	if after.Approved == nil || after.Approved.Authority != "raise="+raise.opid() || after.Approved.Revision != after.Revision ||
+		after.Approved.EpisodeRevision != beforeBudgetEpisode || BudgetEpisodeRevision(after) != beforeBudgetEpisode ||
+		after.ValidateApprovalRecord() != nil || !strings.Contains(lastReason, "Misclassified: from=1 to=2 evidence=refusal:BUDGET_REFUSED") || !strings.Contains(lastReason, "TierOverride: derived=2 set=3 why=retain full review") {
 		t.Fatalf("raise approval/history binding is invalid: approved=%+v history=%+v", after.Approved, after.History[len(after.History)-1])
 	}
 	withoutLine := *after

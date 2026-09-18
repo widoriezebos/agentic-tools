@@ -430,7 +430,7 @@ func bindApproval(f *GoalFile, r VerbRequest, authority, reviewBy string) {
 		digest = legacyApprovalDigest(f.Intent, *f.Budget)
 	}
 	f.Approved = &ApprovalRecord{
-		By: r.Actor.historyActor(), At: r.stamp(), Revision: f.Revision, Opid: r.opid(),
+		By: r.Actor.historyActor(), At: r.stamp(), Revision: f.Revision, EpisodeRevision: f.Revision, Opid: r.opid(),
 		Authority: authority, Digest: digest, ReviewBy: reviewBy,
 	}
 }

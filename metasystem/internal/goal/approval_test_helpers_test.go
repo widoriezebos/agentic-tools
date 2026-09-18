@@ -106,7 +106,7 @@ func approvedGoalFixture(f *GoalFile, budget Budget) *GoalFile {
 		digest = legacyApprovalDigest(f.Intent, budget)
 	}
 	f.Approved = &ApprovalRecord{
-		By: event.Actor, At: event.At, Revision: f.Revision, Opid: event.Opid,
+		By: event.Actor, At: event.At, Revision: f.Revision, EpisodeRevision: f.Revision, Opid: event.Opid,
 		Authority: ApprovalAuthorityProven, Digest: digest,
 	}
 	return f

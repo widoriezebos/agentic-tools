@@ -119,6 +119,7 @@ func handoverBed(t *testing.T, id string, rich bool) (string, VerbRequest) {
 	seedLedger(t, root)
 	req := verbReq(root, "01J5X00000000000000000HB01", "mac-studio")
 	req.Actor.Lineage, req.ClaimEpoch = "session-a", 7
+	req.CallerClass, req.EpochAuthority = "MAIN", EpochAuthorityHolder
 	if result, err := openClaimForTest(t, req, id, "Move custody without rebinding it.", OriginMain, "Hand it over.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim handover fixture: %+v %v", result, err)
 	}
@@ -179,6 +180,11 @@ func TestGoalHandoverAppliesCompleteFieldTable(t *testing.T) {
 			t.Fatalf("%s target: %+v %v", state, res, err)
 		}
 	}
+	holder.Ulid, holder.ClaimEpoch, holder.EpochAuthority = "01J5X00000000000000000HB14", 12, "journal"
+	if res, err := Handover(holder, "field-complete", "landing", "landing-lineage", 12, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil }); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "REBIND_EPOCH_UNAUTHENTICATED") {
+		t.Fatalf("unauthenticated epoch rebind: %+v %v", res, err)
+	}
+	holder.EpochAuthority = EpochAuthorityHolder
 	holder.Ulid, holder.ClaimEpoch = "01J5X00000000000000000HB06", 12
 	if res, err := Handover(holder, "field-complete", "landing", "landing-lineage", 12, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil }); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("same-pair epoch rebind: %+v %v", res, err)

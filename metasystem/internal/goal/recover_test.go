@@ -178,6 +178,52 @@ func TestRecoveryRefusesOpenClaimWithoutHumanApproval(t *testing.T) {
 	}
 }
 
+func TestRecoveryRefusesJournaledSetBudgetAuthority(t *testing.T) {
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	request := verbReq(root, "01J5X00000000000000000QE00", "mac-a")
+	if result, err := openClaimForTest(t, request, "recover-set-budget", "Keep journal text untrusted.", OriginMain, "Rebudget only at the human boundary.", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim fixture: %+v %v", result, err)
+	}
+	tipBefore := acceptedTip(t, root)
+	treeBefore, err := loadTree(root, tipBefore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytesBefore := RenderFile(treeBefore.Live["recover-set-budget"])
+	opid := Opid("01J5X00000000000000000QE10", "mac-a", "lin-1")
+	args := budgetIntentArgs(Budget{ElapsedLimit: "8h", AttemptLimit: 6, ReservedJobMinutesLimit: 360, ActiveJobLimit: 3})
+	args["by"] = "Wido"
+	args["claimEpoch"] = "9"
+	intent := Intent{Verb: "set-budget", Targets: []string{"recover-set-budget"}, Args: args}
+	strandEntry(t, root, opid, PhaseCreated, intent)
+	entryForRefusal, readErr := ReadEntry(root, opid)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if _, refusal := requestForEntry(endpointFor(root), entryForRefusal); refusal == nil || !strings.Contains(refusal.Error(), "APPROVAL_REQUIRED: set-budget is proof-bearing and cannot be replayed from journal text") {
+		t.Fatalf("journaled set-budget request did not refuse at construction: %v", refusal)
+	}
+	reports, err := RecoverWithPolicy(endpointFor(root), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := ReadEntry(root, opid)
+	if err != nil || entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "set-budget is proof-bearing and cannot be replayed from journal text") {
+		t.Fatalf("journaled set-budget was not refused at the authority boundary: entry=%+v reports=%+v err=%v", entry, reports, err)
+	}
+	if acceptedTip(t, root) != tipBefore {
+		t.Fatalf("refused recovery moved the accepted goal tip: before=%s after=%s", tipBefore, acceptedTip(t, root))
+	}
+	treeAfter, err := loadTree(root, tipBefore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := RenderFile(treeAfter.Live["recover-set-budget"]); string(got) != string(bytesBefore) {
+		t.Fatalf("refused recovery changed the goal file:\n%s\n---\n%s", bytesBefore, got)
+	}
+}
+
 func TestRecoveryUnblocksAStrandedPush(t *testing.T) {
 	_, a, _ := twoClones(t)
 	seedLedger(t, a)

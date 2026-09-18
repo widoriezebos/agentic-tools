@@ -601,6 +601,7 @@ func TestProofGateAdmitsAfterTheStopCapabilityIsRestamped(t *testing.T) {
 	result, err := goal.Restamp(goal.VerbRequest{
 		Endpoint: endpoint, Actor: goal.Actor{Machine: "mac-cli", Lineage: "m1"},
 		Ulid: "01J5X00000000000000000CP10", Now: now, ClaimEpoch: 5, CallerClass: lease.ClassMain,
+		EpochAuthority: goal.EpochAuthorityHolder,
 	}, "standing-validation")
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("restamp: %+v %v", result, err)

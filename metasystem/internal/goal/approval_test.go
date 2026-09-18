@@ -5,6 +5,98 @@ import (
 	"testing"
 )
 
+func TestBudgetEpisodeRevisionTransitions(t *testing.T) {
+	root := riskLocalRoot(t, "budget-episode-transitions")
+	budget := testBudget()
+	open := obligationAuthorityVerbReq(root, "01J5X00000000000000000BE00", "mac-a")
+	if result, err := Open(open, "budget-episode", "Keep consumption on the human budget act.", OriginMain, "Exercise each transition."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	human := open
+	human.Actor.Human = "Wido"
+	human.Ulid = "01J5X00000000000000000BE10"
+	approved, err := Approve(human, []string{"budget-episode"}, &budget, testHumanAuthority(t, root, human.Now))
+	if err != nil || approved.Outcome != OutcomeConfirmed {
+		t.Fatalf("approve: %+v %v", approved, err)
+	}
+	readEpisode := func(tip string) (*GoalFile, uint64) {
+		t.Helper()
+		tree, loadErr := loadTree(root, tip)
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
+		file := tree.Live["budget-episode"]
+		return file, BudgetEpisodeRevision(file)
+	}
+	approvedFile, episode := readEpisode(approved.Tip)
+	if episode == 0 || approvedFile.Approved.EpisodeRevision != approvedFile.Approved.Revision {
+		t.Fatalf("approve did not start the budget episode: %+v", approvedFile.Approved)
+	}
+
+	claim := obligationAuthorityVerbReq(root, "01J5X00000000000000000BE20", "mac-a")
+	claimed, err := Claim(claim, "budget-episode")
+	if err != nil || claimed.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", claimed, err)
+	}
+	release := obligationAuthorityVerbReq(root, "01J5X00000000000000000BE30", "mac-a")
+	released, err := Release(release, "budget-episode")
+	if err != nil || released.Outcome != OutcomeConfirmed {
+		t.Fatalf("release: %+v %v", released, err)
+	}
+	same := obligationAuthorityVerbReq(root, "01J5X00000000000000000BE40", "mac-a")
+	reclaimed, err := Claim(same, "budget-episode")
+	if err != nil || reclaimed.Outcome != OutcomeConfirmed {
+		t.Fatalf("same-pair reclaim: %+v %v", reclaimed, err)
+	}
+	release.Ulid = "01J5X00000000000000000BE50"
+	released, err = Release(release, "budget-episode")
+	if err != nil || released.Outcome != OutcomeConfirmed {
+		t.Fatalf("second release: %+v %v", released, err)
+	}
+	other := obligationAuthorityVerbReq(root, "01J5X00000000000000000BE60", "mac-b")
+	foreign, err := Claim(other, "budget-episode")
+	if err != nil || foreign.Outcome != OutcomeConfirmed {
+		t.Fatalf("cross-pair claim: %+v %v", foreign, err)
+	}
+	for name, tip := range map[string]string{"claim": claimed.Tip, "release": released.Tip, "same-pair reclaim": reclaimed.Tip, "cross-pair claim": foreign.Tip} {
+		if _, got := readEpisode(tip); got != episode {
+			t.Fatalf("%s changed budget episode from %d to %d", name, episode, got)
+		}
+	}
+
+	next := budget
+	next.AttemptLimit++
+	set := obligationAuthorityVerbReq(root, "01J5X00000000000000000BE70", "mac-b")
+	setResult, err := setBudgetApprovedForTest(t, set, "budget-episode", next)
+	if err != nil || setResult.Outcome != OutcomeConfirmed {
+		t.Fatalf("set-budget: %+v %v", setResult, err)
+	}
+	setFile, setEpisode := readEpisode(setResult.Tip)
+	if setEpisode == episode || setEpisode != setFile.Approved.Revision {
+		t.Fatalf("set-budget did not start a new episode: before=%d after=%d approved=%+v", episode, setEpisode, setFile.Approved)
+	}
+
+	extRoot, extend, offer, _ := budgetExtensionBed(t)
+	beforeTree, loadErr := loadTree(extRoot, acceptedTip(t, extRoot))
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	beforeExtension := BudgetEpisodeRevision(beforeTree.Live["earned-raise"])
+	extended, err := ExtendBudget(extend, "earned-raise", offer)
+	if err != nil || extended.Outcome != OutcomeConfirmed {
+		t.Fatalf("extend-budget: %+v %v", extended, err)
+	}
+	afterTree, loadErr := loadTree(extRoot, extended.Tip)
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if got := BudgetEpisodeRevision(afterTree.Live["earned-raise"]); got != beforeExtension {
+		t.Fatalf("extend-budget changed episode from %d to %d", beforeExtension, got)
+	}
+
+	t.Run("risk raise preserves the budget episode", TestSTR4R1RaiseTransaction)
+}
+
 func TestSTR3MigrationBootstrap01ApprovedAndClaimedLegacyGoals(t *testing.T) {
 	root := riskLocalRoot(t, "migration-bed")
 	legacyBudget := Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1, ReviewRoundLimit: 3}
@@ -259,6 +351,8 @@ func TestProofBearingSetBudgetRatifiesMatchingLegacyClaim(t *testing.T) {
 
 	request := verbReq(root, "01J5X00000000000000000SB00", "mac-a")
 	request.Actor.Human = "Wido"
+	request.CallerClass = "MAIN"
+	request.EpochAuthority = EpochAuthorityHolder
 	result, err := SetBudgetApproved(request, "legacy-budget", budget, testHumanAuthority(t, root, request.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("proof-bearing set-budget did not ratify an otherwise identical legacy tuple: %+v %v", result, err)

@@ -396,6 +396,44 @@ type ResumeRequest struct {
 	Authority *humanauthority.Proof
 }
 
+// liftFenceForRebudget applies the preconditions shared by resume and the
+// one-step fenced set-budget transition. The caller still owns the new
+// History event and claim binding, so any later refusal leaves the durable
+// ledger unchanged with the fence in place.
+func liftFenceForRebudget(root string, t *TreeGoals, f *GoalFile, verb string) (string, error) {
+	if f == nil || f.State != StateClaimed || f.Claimed == nil || f.StopCapability == nil || f.StopFence == nil {
+		id := "<unknown>"
+		if f != nil && f.Id != "" {
+			id = f.Id
+		}
+		return "", fmt.Errorf("goal %s has no breach-stopped claimed revision", id)
+	}
+	fence := *f.StopFence
+	if err := VerifyStopBatchComplete(root, f.Id, *f.StopCapability, fence); err != nil {
+		return "", fmt.Errorf("goal %s %s cannot lift fence %s: %v; advance stop batch %s with metasystem job stop-batch",
+			verb, f.Id, fence.StopID, err, fence.StopID)
+	}
+	machine := f.Claimed.Machine
+	for _, otherID := range OrderedOpenGoalIDs(t.Live) {
+		other := t.Live[otherID]
+		// A breach-stopped goal is waiting on a human and a landing claim is
+		// waiting on integration; neither is another live working claim.
+		if otherID == f.Id || other.State != StateClaimed || other.Claimed == nil ||
+			other.Claimed.Machine != machine || other.IsFencedClaim() || other.IsLandingClaim() {
+			continue
+		}
+		if f.Arc != "" && other.Arc == f.Arc {
+			continue
+		}
+		return "", fmt.Errorf(
+			"goal %s %s refused: machine %s already holds live claim %s; conclude, park or release %s first, then %s %s",
+			verb, f.Id, machine, otherID, otherID, verb, f.Id,
+		)
+	}
+	f.StopFence = nil
+	return fence.StopID, nil
+}
+
 // Resume verifies the exact stop batch and standing approval during the
 // transaction, creates a new execution revision, and clears the old fence.
 func Resume(r ResumeRequest) (PublishResult, error) {
@@ -445,26 +483,9 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 					return nil, err
 				}
 			}
-			fence := *f.StopFence
-			if err := VerifyStopBatchComplete(r.Endpoint.Root, r.GoalID, *f.StopCapability, fence); err != nil {
-				return nil, err
-			}
 			machine, lineage, claimEpoch := f.Claimed.Machine, f.Claimed.Lineage, f.StopCapability.ClaimEpoch
-			for _, otherID := range OrderedOpenGoalIDs(t.Live) {
-				other := t.Live[otherID]
-				// A breach-stopped goal is waiting on a human and must not keep the
-				// machine from taking the next item.
-				if otherID == r.GoalID || other.State != StateClaimed || other.Claimed == nil ||
-					other.Claimed.Machine != machine || other.IsFencedClaim() || other.IsLandingClaim() {
-					continue
-				}
-				if f.Arc != "" && other.Arc == f.Arc {
-					continue
-				}
-				return nil, fmt.Errorf(
-					"goal resume %s refused: machine %s already holds live claim %s; conclude, park or release %s first, then resume %s",
-					r.GoalID, machine, otherID, otherID, r.GoalID,
-				)
+			if _, err := liftFenceForRebudget(r.Endpoint.Root, t, f, "resume"); err != nil {
+				return nil, err
 			}
 			touch(f, r.VerbRequest, "resume", []string{r.GoalID})
 			f.History[len(f.History)-1].ApprovedRef = r.ApprovedRef

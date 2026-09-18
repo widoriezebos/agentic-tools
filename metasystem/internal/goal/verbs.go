@@ -213,6 +213,10 @@ type VerbRequest struct {
 	// ClaimEpoch is the authenticated checkout lease generation. Only
 	// transitions that create a claimed revision consume it.
 	ClaimEpoch int64
+	// EpochAuthority says why ClaimEpoch may replace an epoch already bound
+	// to a stop capability. An absent authority may preserve a recorded epoch,
+	// but it may never replace one.
+	EpochAuthority string
 	// HandoverTargetRoot is present only when goal handover authenticates a return seat.
 	HandoverTargetRoot string
 	// CallerClass is the one command-edge classification used by every
@@ -229,6 +233,31 @@ type VerbRequest struct {
 	ParkBranchCheck func(goalID, next string) (string, error)
 	// SweepBranch removes recoverable branch work after a confirmed conclusion.
 	SweepBranch func(goalID string) error
+}
+
+const EpochAuthorityHolder = "holder"
+
+// ClaimEpochForRebind is the single authority for replacing or preserving a
+// claimed goal's stop-capability epoch. Only the authenticated live MAIN
+// holder may replace it; every other actor preserves the recorded epoch.
+func ClaimEpochForRebind(f *GoalFile, r VerbRequest) (int64, error) {
+	if r.EpochAuthority == EpochAuthorityHolder {
+		if r.CallerClass != "MAIN" || r.ClaimEpoch < 1 {
+			return 0, fmt.Errorf("REBIND_EPOCH_UNAUTHENTICATED: holder epoch authority is contradictory: class=%s claimEpoch=%d", r.CallerClass, r.ClaimEpoch)
+		}
+		return r.ClaimEpoch, nil
+	}
+	if r.EpochAuthority != "" {
+		return 0, fmt.Errorf("REBIND_EPOCH_UNAUTHENTICATED: epoch authority %q is unknown", r.EpochAuthority)
+	}
+	if f != nil && f.StopCapability != nil && f.StopCapability.ClaimEpoch >= 1 {
+		return f.StopCapability.ClaimEpoch, nil
+	}
+	id := "the claimed goal"
+	if f != nil && f.Id != "" {
+		id = "goal " + f.Id
+	}
+	return 0, fmt.Errorf("REBIND_EPOCH_UNAUTHENTICATED: %s has neither authenticated holder authority nor a recorded stop-capability epoch to preserve", id)
 }
 
 type humanAuthorityRow struct {
@@ -1006,13 +1035,17 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 			if !ownPair(f.Claimed, r.Actor) {
 				return nil, fmt.Errorf("goal %s is claimed by %s+%s; a foreign release is a human act (steal has its own verb)", id, f.Claimed.Machine, f.Claimed.Lineage)
 			}
+			rebindEpoch, err := ClaimEpochForRebind(f, r)
+			if err != nil {
+				return nil, err
+			}
 			currentEpoch := f.StopCapability.ClaimEpoch
 			samePair := f.Claimed.Machine == targetMachine && f.Claimed.Lineage == targetLineage
 			if samePair {
-				if r.ClaimEpoch != targetClaimEpoch || targetClaimEpoch <= currentEpoch {
+				if rebindEpoch != targetClaimEpoch || targetClaimEpoch <= currentEpoch {
 					return nil, fmt.Errorf("goal %s same-pair handover is an epoch rebind: authenticated target epoch %d must be higher than current epoch %d", id, targetClaimEpoch, currentEpoch)
 				}
-			} else if r.ClaimEpoch != currentEpoch {
+			} else if rebindEpoch != currentEpoch {
 				return nil, fmt.Errorf("goal %s handover caller epoch %d does not match the current holder epoch %d", id, r.ClaimEpoch, currentEpoch)
 			}
 			handedOver := f.Claimed.HandedOver
@@ -1322,8 +1355,18 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			overBox := budget.ElapsedDuration() > box.ElapsedDuration() || budget.AttemptLimit > box.AttemptLimit ||
 				budget.ReservedJobMinutesLimit > box.ReservedJobMinutesLimit || budget.ActiveJobLimit > box.ActiveJobLimit ||
 				budget.ReviewRoundLimit > box.ReviewRoundLimit
+			resumedStopID := ""
 			if f.StopFence != nil {
-				return nil, fmt.Errorf("goal %s revision %d is breach-stopped by %s; only goal resume with its standing approved budget may reopen admission", id, f.StopFence.Revision, f.StopFence.StopID)
+				if f.Budget != nil && *f.Budget == budget {
+					return nil, fmt.Errorf("SET_BUDGET_FENCED_SAME_TUPLE: goal %s is breach-stopped by %s and the supplied budget is unchanged; only goal resume may reopen admission", id, f.StopFence.StopID)
+				}
+				if _, approvalErr := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "set-budget resume"); approvalErr != nil {
+					return nil, approvalErr
+				}
+				resumedStopID, err = liftFenceForRebudget(r.Endpoint.Root, t, f, "set-budget")
+				if err != nil {
+					return nil, err
+				}
 			}
 			if temporary {
 				if err := repeatedRelayedActError(t.Root, f, "set-budget", proof.Departure); err != nil {
@@ -1352,15 +1395,16 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			}
 			f.NormApproval = approval
 			touchDisplaced(f, r, "set-budget", []string{id}, displaced)
+			f.History[len(f.History)-1].Resumed = resumedStopID
 			recordApprovalRelay(f, proof, temporary)
 			if entry != nil {
 				recordAttorney(f, entry.ID)
 			}
 			bindApproval(f, r, authority, reviewBy)
 			if f.State == StateClaimed && f.Claimed != nil {
-				claimEpoch := r.ClaimEpoch
-				if f.StopCapability != nil && (!ownPair(f.Claimed, r.Actor) || claimEpoch < 1 && r.Actor.Human != "") {
-					claimEpoch = f.StopCapability.ClaimEpoch
+				claimEpoch, err := ClaimEpochForRebind(f, r)
+				if err != nil {
+					return nil, err
 				}
 				if err := rebindClaimKeepEpisode(f, r.stamp(), f.Revision, claimEpoch); err != nil {
 					return nil, err
@@ -2929,7 +2973,7 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 					f.Budget.ReviewRoundLimit = box.ReviewRoundLimit
 				}
 				prior := f.Approved
-				f.Approved = &ApprovalRecord{By: prior.By, At: r.stamp(), Revision: f.Revision, Opid: r.opid(), Authority: "raise=" + r.opid(), Digest: ApprovalDigest(f.Intent, f.Tier, *f.Budget, f.Risk)}
+				f.Approved = &ApprovalRecord{By: prior.By, At: r.stamp(), Revision: f.Revision, EpisodeRevision: prior.EpisodeRevision, Opid: r.opid(), Authority: "raise=" + r.opid(), Digest: ApprovalDigest(f.Intent, f.Tier, *f.Budget, f.Risk)}
 				if f.Claimed != nil {
 					if err := rebindClaimRevisionForRiskRaise(f, f.Revision); err != nil {
 						return nil, err

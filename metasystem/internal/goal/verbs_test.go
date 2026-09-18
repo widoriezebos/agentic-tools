@@ -447,6 +447,41 @@ func TestSetBudgetKeepsForeignHolderClaimEpoch(t *testing.T) {
 	}
 }
 
+func TestRebindEpochFollowsTheAuthenticatedHolderOnly(t *testing.T) {
+	file := &GoalFile{Id: "epoch-authority", StopCapability: &StopCapability{ClaimEpoch: 5}}
+	tests := []struct {
+		name    string
+		request VerbRequest
+		want    int64
+		refusal string
+	}{
+		{name: "human epoch is not holder authority", request: VerbRequest{Actor: Actor{Human: "Wido"}, ClaimEpoch: 1}, want: 5},
+		{name: "human zero epoch preserves the record", request: VerbRequest{Actor: Actor{Human: "Wido"}}, want: 5},
+		{name: "attorney act preserves the record", request: VerbRequest{}, want: 5},
+		{name: "authenticated holder replaces the record", request: VerbRequest{CallerClass: "MAIN", ClaimEpoch: 6, EpochAuthority: EpochAuthorityHolder}, want: 6},
+		{name: "holder zero epoch is contradictory", request: VerbRequest{CallerClass: "MAIN", EpochAuthority: EpochAuthorityHolder}, refusal: "REBIND_EPOCH_UNAUTHENTICATED"},
+		{name: "non main holder authority is contradictory", request: VerbRequest{CallerClass: "DELEGATE", ClaimEpoch: 6, EpochAuthority: EpochAuthorityHolder}, refusal: "REBIND_EPOCH_UNAUTHENTICATED"},
+		{name: "unknown authority is contradictory", request: VerbRequest{CallerClass: "MAIN", ClaimEpoch: 6, EpochAuthority: "journal"}, refusal: "REBIND_EPOCH_UNAUTHENTICATED"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := ClaimEpochForRebind(file, test.request)
+			if test.refusal != "" {
+				if err == nil || !strings.Contains(err.Error(), test.refusal) {
+					t.Fatalf("rebind epoch = %d, %v; want refusal %s", got, err, test.refusal)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("rebind epoch = %d, %v; want %d", got, err, test.want)
+			}
+		})
+	}
+	if _, err := ClaimEpochForRebind(&GoalFile{Id: "legacy-without-capability"}, VerbRequest{}); err == nil || !strings.Contains(err.Error(), "REBIND_EPOCH_UNAUTHENTICATED") {
+		t.Fatalf("missing recorded and authenticated epochs were admitted: %v", err)
+	}
+}
+
 func publishClaimFixtureMutation(t *testing.T, root, id, opid string, mutate func(*GoalFile)) PublishResult {
 	t.Helper()
 	result, err := Publish(obligationAuthorityEndpoint(root), PublishRequest{
@@ -567,6 +602,7 @@ func TestSetBudgetPinsLegacyAnchor(t *testing.T) {
 			next := testBudget()
 			next.ElapsedLimit = "8h"
 			setBudget := obligationAuthorityVerbReq(root, "01J5X00000000000000000EP01", "mac-a")
+			setBudget.CallerClass, setBudget.EpochAuthority = "MAIN", EpochAuthorityHolder
 			setBudget.Now = time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
 			result, err := setBudgetApprovedForTest(t, setBudget, "legacy-anchor", next)
 			if err != nil || result.Outcome != OutcomeConfirmed {
@@ -602,6 +638,7 @@ func TestSetBudgetRejectsContradictoryLegacyOrigin(t *testing.T) {
 	next := testBudget()
 	next.ElapsedLimit = "8h"
 	request := obligationAuthorityVerbReq(root, "01J5X00000000000000000EC00", "mac-a")
+	request.CallerClass, request.EpochAuthority = "MAIN", EpochAuthorityHolder
 	request.Now = time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
 	result, err := setBudgetApprovedForTest(t, request, "contradictory-legacy", next)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "claimed episodeAt=") || !strings.Contains(result.Detail, "contradicts History revision=1") {
@@ -639,6 +676,7 @@ func TestSetBudgetStartsFirstEpisodeForRevisionlessMigration(t *testing.T) {
 	next := testBudget()
 	next.ElapsedLimit = "8h"
 	first := obligationAuthorityVerbReq(root, "01J5X00000000000000000EM00", "mac-a")
+	first.CallerClass, first.EpochAuthority = "MAIN", EpochAuthorityHolder
 	first.Now = time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
 	result, err := setBudgetApprovedForTest(t, first, "revisionless-migration", next)
 	if err != nil || result.Outcome != OutcomeConfirmed {
@@ -655,6 +693,7 @@ func TestSetBudgetStartsFirstEpisodeForRevisionlessMigration(t *testing.T) {
 	secondBudget := next
 	secondBudget.ElapsedLimit = "10h"
 	second := obligationAuthorityVerbReq(root, "01J5X00000000000000000EM01", "mac-a")
+	second.CallerClass, second.EpochAuthority = "MAIN", EpochAuthorityHolder
 	second.Now = first.Now.Add(time.Hour)
 	result, err = setBudgetApprovedForTest(t, second, "revisionless-migration", secondBudget)
 	if err != nil || result.Outcome != OutcomeConfirmed {

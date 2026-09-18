@@ -648,6 +648,9 @@ func syncReqClassifiedWithTerminalGrade(root, by, lineageFlag string, observedPr
 		Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lineage, Human: by},
 		Authority: authority, Ulid: ulid, Now: now, CallerClass: classification.Class,
 	}
+	if classification.Holder && classification.ClaimEpoch != nil {
+		req.EpochAuthority = goal.EpochAuthorityHolder
+	}
 	if classification.ClaimEpoch != nil && (classification.Holder || by != "" || classification.Class == lease.ClassHuman) {
 		req.ClaimEpoch = *classification.ClaimEpoch
 	} else if classification.Class == lease.ClassHuman {

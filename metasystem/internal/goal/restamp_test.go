@@ -15,6 +15,7 @@ func restampFixture(t *testing.T, id string) (string, VerbRequest) {
 		t.Fatalf("claim fixture goal: %+v %v", result, err)
 	}
 	request.CallerClass = "MAIN"
+	request.EpochAuthority = EpochAuthorityHolder
 	return root, request
 }
 
@@ -99,6 +100,7 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 		request.Ulid = "01J5X00000000000000000CV20"
 		request.CallerClass = "MAIN"
 		request.ClaimEpoch = 5
+		request.EpochAuthority = EpochAuthorityHolder
 		result, err := Restamp(request, "unclaimed")
 		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "is not claimed") {
 			t.Fatalf("unclaimed refusal: %+v %v", result, err)
@@ -109,6 +111,7 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 		_, request := restampFixture(t, "not-holder")
 		request.Ulid = "01J5X00000000000000000CH10"
 		request.CallerClass = "DELEGATE"
+		request.EpochAuthority = ""
 		request.ClaimEpoch = 5
 		result, err := Restamp(request, "not-holder")
 		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "live lease holder of class MAIN") {

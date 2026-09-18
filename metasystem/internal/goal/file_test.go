@@ -105,6 +105,83 @@ func TestReadItemsRoundTripBesideNextStep(t *testing.T) {
 	}
 }
 
+func TestApprovalEpisodeRevisionGrammar(t *testing.T) {
+	file := approvedGoalFixture(vGoal("approval-episode", StateQueued), testBudget())
+	rendered := RenderFile(file)
+	if !strings.Contains(string(rendered), " episode=2") {
+		t.Fatalf("Approved line does not render its episode revision:\n%s", rendered)
+	}
+	parsed, problems := ParseFile(rendered)
+	if len(problems) != 0 || parsed.Approved == nil || parsed.Approved.EpisodeRevision != 2 || string(RenderFile(parsed)) != string(rendered) {
+		t.Fatalf("episode revision did not parse and round-trip: approved=%+v problems=%v", parsed.Approved, problems)
+	}
+
+	invalid := *file
+	invalid.Approved = new(ApprovalRecord)
+	*invalid.Approved = *file.Approved
+	invalid.Approved.EpisodeRevision = 1
+	if err := invalid.ValidateApprovalRecord(); err == nil || !strings.Contains(err.Error(), "approve or set-budget") {
+		t.Fatalf("episode revision naming a non-budget event was accepted: %v", err)
+	}
+
+	malformed := strings.Replace(string(rendered), " episode=2", " episode=0", 1)
+	if _, malformedProblems := ParseFile([]byte(withFreshIntegrity(malformed))); len(malformedProblems) == 0 {
+		t.Fatal("episode=0 parsed as a valid approval coordinate")
+	}
+	empty := strings.Replace(string(rendered), " episode=2", " episode=", 1)
+	if _, emptyProblems := ParseFile([]byte(withFreshIntegrity(empty))); len(emptyProblems) == 0 {
+		t.Fatal("empty episode= parsed as a legacy-absent approval coordinate")
+	}
+}
+
+func TestBudgetEpisodeRevisionLegacyMinimum(t *testing.T) {
+	budget := testBudget()
+	base := &GoalFile{Budget: &budget, Approved: &ApprovalRecord{Revision: 9}}
+	tests := []struct {
+		name string
+		edit func(*GoalFile)
+		want uint64
+	}{
+		{name: "approval only", want: 9},
+		{name: "claimed accounting is older", edit: func(f *GoalFile) { f.Claimed = &ClaimRecord{AccountingRevision: 7} }, want: 7},
+		{name: "kept accounting is oldest", edit: func(f *GoalFile) { f.Episode = &EpisodeRecord{AccountingRevision: 5} }, want: 5},
+		{name: "explicit episode wins", edit: func(f *GoalFile) {
+			f.Approved.EpisodeRevision = 4
+			f.Claimed = &ClaimRecord{AccountingRevision: 2}
+		}, want: 4},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			file := *base
+			file.Approved = new(ApprovalRecord)
+			*file.Approved = *base.Approved
+			if test.edit != nil {
+				test.edit(&file)
+			}
+			if got := BudgetEpisodeRevision(&file); got != test.want {
+				t.Fatalf("BudgetEpisodeRevision = %d, want %d", got, test.want)
+			}
+		})
+	}
+	if BudgetEpisodeRevision(nil) != 0 || BudgetEpisodeRevision(&GoalFile{Approved: base.Approved}) != 0 || BudgetEpisodeRevision(&GoalFile{Budget: &budget}) != 0 {
+		t.Fatal("an unapproved or unbudgeted goal acquired a consumption episode")
+	}
+}
+
+func TestLegacyApprovalWithReadItemsRoundTripsByteIdentical(t *testing.T) {
+	file := approvedGoalFixture(vGoal("legacy-approval-read", StateQueued), testBudget())
+	file.Approved.EpisodeRevision = 0
+	file.ReadItems = []ReadItem{{ID: "critic-1", Read: "critic", Text: "Keep the legacy grammar beside this open item.", State: ReadItemOpen, AddedAt: "2026-09-17T10:00:00Z"}}
+	legacy := RenderFile(file)
+	if strings.Contains(string(legacy), " episode=") {
+		t.Fatalf("legacy approval unexpectedly rendered the new field:\n%s", legacy)
+	}
+	parsed, problems := ParseFile(legacy)
+	if len(problems) != 0 || parsed.Approved.EpisodeRevision != 0 || len(parsed.ReadItems) != 1 || string(RenderFile(parsed)) != string(legacy) {
+		t.Fatalf("legacy approval with read items did not round-trip byte-identically: approved=%+v reads=%+v problems=%v", parsed.Approved, parsed.ReadItems, problems)
+	}
+}
+
 func episodeGolden() *GoalFile {
 	f := claimedGolden()
 	f.Revision = 5
@@ -651,6 +728,51 @@ func TestHistoryGrammarRoundTripsEveryField(t *testing.T) {
 	}
 	if parsed.Reason != line.Reason {
 		t.Fatalf("reason= must consume the remainder losslessly, got %q", parsed.Reason)
+	}
+}
+
+func TestHistoryLineResumedField(t *testing.T) {
+	line := HistoryLine{
+		At: "2026-09-18T10:00:00Z", Opid: "01J5X0000000000000000000R8-mac-a-1a2b3c4d",
+		Verb: "set-budget", Actor: "human:Wido", Targets: []string{"fenced-goal"}, Resumed: "stop-fenced-r4-f1", Keep: -1,
+	}
+	rendered := RenderHistoryLine(line)
+	if !strings.Contains(rendered, " resumed=stop-fenced-r4-f1") {
+		t.Fatalf("set-budget history omitted its resumed stop: %s", rendered)
+	}
+	parsed, err := ParseHistoryLine(rendered)
+	if err != nil || parsed.Resumed != line.Resumed || RenderHistoryLine(parsed) != rendered {
+		t.Fatalf("resumed stop did not parse and round-trip: parsed=%+v err=%v", parsed, err)
+	}
+
+	legacy := line
+	legacy.Resumed = ""
+	legacyRendered := RenderHistoryLine(legacy)
+	legacyParsed, err := ParseHistoryLine(legacyRendered)
+	if err != nil || legacyParsed.Resumed != "" || RenderHistoryLine(legacyParsed) != legacyRendered {
+		t.Fatalf("legacy set-budget history changed: parsed=%+v err=%v", legacyParsed, err)
+	}
+	for _, invalid := range []string{
+		strings.Replace(rendered, " set-budget ", " resume ", 1),
+		strings.Replace(rendered, "stop-fenced-r4-f1", "../unsafe", 1),
+		strings.Replace(rendered, "resumed=stop-fenced-r4-f1", "resumed=", 1),
+	} {
+		if _, err := ParseHistoryLine(invalid); err == nil || !strings.Contains(err.Error(), "only valid on set-budget") {
+			t.Fatalf("invalid resumed history was accepted: %q err=%v", invalid, err)
+		}
+	}
+	duplicate := strings.Replace(rendered, "resumed=stop-fenced-r4-f1", "resumed=stop-fenced-r4-f1 resumed=stop-fenced-r4-f1", 1)
+	if _, err := ParseHistoryLine(duplicate); err == nil || !strings.Contains(err.Error(), "duplicate resumed=") {
+		t.Fatalf("duplicate resumed= was accepted: %v", err)
+	}
+	withStopID := line
+	withStopID.StopID = "stop-fenced-r4-f1"
+	var stopProblem string
+	validateAbandonHistory(&GoalFile{Id: "fenced-goal", History: []HistoryLine{withStopID}}, func(format string, args ...any) {
+		stopProblem = fmt.Sprintf(format, args...)
+	})
+	if !strings.Contains(stopProblem, "set-budget line carries stopId=") {
+		t.Fatalf("set-budget stopId= was accepted: %q", stopProblem)
 	}
 }
 

@@ -182,6 +182,8 @@ var Rows = []Row{
 	{Code: "attested-not-design-bearing", Owner: "internal/landing", Site: "attested.go", Shape: Question},
 	{Code: "GOAL_SPLIT_REFUSED", Owner: "internal/goal", Site: "split.go:240", Shape: Agent},
 	{Code: "GOAL_CLAIM_QUOTA", Owner: "internal/goal", Site: "verbs.go", Shape: Question},
+	{Code: "REBIND_EPOCH_UNAUTHENTICATED", Owner: "internal/goal", Site: "verbs.go", Shape: Identity},
+	{Code: "SET_BUDGET_FENCED_SAME_TUPLE", Owner: "internal/goal", Site: "verbs.go", Shape: Question},
 	{Code: "SPLIT_RATIFY_REFUSED", Owner: "internal/goal", Site: "split.go:334", Shape: Question},
 	{Code: "SWEEP_DUPLICATE_GOAL", Owner: "internal/goal", Site: "approval.go:85", Shape: Question},
 	{Code: "SWEEP_INCOMPLETE", Owner: "internal/goal", Site: "approval.go:108", Shape: Question},
