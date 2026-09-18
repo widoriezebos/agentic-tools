@@ -462,34 +462,67 @@ func TestBatchDelegationRules(t *testing.T) {
 }
 
 func TestBatchCommitRefusalIsAtomicAndKeepsJoinOrder(t *testing.T) {
-	bed := assemblyFixture(t)
-	bed.record.Units = append(bed.record.Units, Unit{GoalID: "goal-c", Chain: "chain-b", Claim: bed.record.Units[0].Claim, State: UnitJoined})
-	bed.record.State, bed.record.PrefixTrees, bed.record.TipTree = StateLanding, []string{"prefix-a", "prefix-b", "prefix-c"}, "prefix-c"
-	bed.record.Proof = &Proof{Status: "green", AttemptID: "tip"}
-	bed.record.History = append(bed.record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "owner"})
-	bed.record.Receipts = map[string]PrefixReceipt{
-		"goal-a": {GoalID: "goal-a", Tree: "prefix-a"},
-		"goal-b": {GoalID: "goal-b", Tree: "prefix-b"},
-	}
-	store := NewStore(bed.root, nil)
-	must(t, store.Create(bed.record))
-	var events []string
-	seams := greenLandSeams(&events)
-	seams.Commit = func(unit Unit, _ PrefixReceipt) (string, error) {
-		events = append(events, "commit:"+unit.GoalID)
-		if unit.GoalID == "goal-b" {
-			return "", os.ErrPermission
+	fixture := func(t *testing.T) Store {
+		t.Helper()
+		bed := assemblyFixture(t)
+		bed.record.Units = append(bed.record.Units, Unit{GoalID: "goal-c", Chain: "chain-b", Claim: bed.record.Units[0].Claim, State: UnitJoined})
+		bed.record.State, bed.record.PrefixTrees, bed.record.TipTree = StateLanding, []string{"prefix-a", "prefix-b", "prefix-c"}, "prefix-c"
+		bed.record.Proof = &Proof{Status: "green", AttemptID: "tip"}
+		bed.record.History = append(bed.record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "owner"})
+		bed.record.Receipts = map[string]PrefixReceipt{
+			"goal-a": {GoalID: "goal-a", Tree: "prefix-a"},
+			"goal-b": {GoalID: "goal-b", Tree: "prefix-b"},
 		}
-		return "commit-" + unit.GoalID, nil
+		store := NewStore(bed.root, nil)
+		must(t, store.Create(bed.record))
+		return store
 	}
-	must(t, LandSeries(store, testBatchID, "owner", time.Unix(4, 0), seams))
-	record := load(t, store)
-	if slices.Contains(events, "push") || !slices.Contains(events, "reset") || record.Units[1].State != UnitReturnPending || record.State != StateOpen || record.Units[0].State != UnitJoined || record.Units[2].State != UnitJoined {
-		t.Fatalf("events=%v record=%+v", events, record)
-	}
-	if got := []string{record.Units[0].GoalID, record.Units[2].GoalID}; !slices.Equal(got, []string{"goal-a", "goal-c"}) {
-		t.Fatalf("survivor order=%v", got)
-	}
+
+	t.Run("plain error keeps every member", func(t *testing.T) {
+		store := fixture(t)
+		var events []string
+		seams := greenLandSeams(&events)
+		seams.Commit = func(unit Unit, _ PrefixReceipt) (string, error) {
+			events = append(events, "commit:"+unit.GoalID)
+			if unit.GoalID == "goal-b" {
+				return "", os.ErrPermission
+			}
+			return "commit-" + unit.GoalID, nil
+		}
+		err := LandSeries(store, testBatchID, "owner", time.Unix(4, 0), seams)
+		record := load(t, store)
+		if !errors.Is(err, os.ErrPermission) || slices.Contains(events, "push") || slices.Contains(events, "reset") || record.State != StateLanding {
+			t.Fatalf("error=%v events=%v record=%+v", err, events, record)
+		}
+		for _, unit := range record.Units {
+			if unit.State != UnitJoined || unit.Outcome != "" || unit.Failure != "" {
+				t.Fatalf("plain error changed member %+v", unit)
+			}
+		}
+	})
+
+	t.Run("named boundary refusal ejects and keeps survivor order", func(t *testing.T) {
+		store := fixture(t)
+		var events []string
+		seams := greenLandSeams(&events)
+		seams.Commit = func(unit Unit, _ PrefixReceipt) (string, error) {
+			events = append(events, "commit:"+unit.GoalID)
+			if unit.GoalID == "goal-b" {
+				return "", refuseBatch("BATCH_LAND_UNPROVENANCED", "fixture refusal")
+			}
+			return "commit-" + unit.GoalID, nil
+		}
+		err := LandSeries(store, testBatchID, "owner", time.Unix(4, 0), seams)
+		record := load(t, store)
+		if err == nil || !strings.Contains(err.Error(), "BATCH_LAND_UNPROVENANCED") || !strings.Contains(err.Error(), "re-prove before the next landing") ||
+			slices.Contains(events, "push") || !slices.Contains(events, "reset") || record.Units[1].State != UnitReturnPending ||
+			record.State != StateOpen || record.Units[0].State != UnitJoined || record.Units[2].State != UnitJoined {
+			t.Fatalf("error=%v events=%v record=%+v", err, events, record)
+		}
+		if got := []string{record.Units[0].GoalID, record.Units[2].GoalID}; !slices.Equal(got, []string{"goal-a", "goal-c"}) {
+			t.Fatalf("survivor order=%v", got)
+		}
+	})
 }
 
 func TestBatchAfterPushRecoveryFinalizesEachTrailerOnce(t *testing.T) {

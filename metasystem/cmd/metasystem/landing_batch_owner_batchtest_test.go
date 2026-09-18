@@ -618,6 +618,11 @@ func TestBatchPostPushRearmFastForwardsRebuildsAndArms(t *testing.T) {
 }
 
 func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
+	if reexecWithFixedProofLoad(t, "GO_WANT_BATCH_TAKEOVER_FIXED_LOAD", "TestBatchSupervisorTakeoverRebindsJoinedClaims") {
+		return
+	}
+	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", "")
+	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "")
 	const batchID = "01j5x00000000000000000ba01"
 	if !slices.Contains(supervise.ProductionComponents(), supervise.LandingOwner) {
 		t.Fatal("production supervisor arming omitted the landing owner")

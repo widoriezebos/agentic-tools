@@ -551,16 +551,22 @@ func reopenLandingCandidate(store Store, id, newBaseTree, actor string, at time.
 }
 
 func ejectRefusedMember(store Store, id, actor string, at time.Time, base string, unit Unit, err error, reset func(string) error) error {
-	err = fmt.Errorf("commit %s refused: %w", unit.GoalID, err)
+	if !isBoundaryRefusal(err) {
+		return err
+	}
+	refusal := fmt.Errorf("commit %s refused: %w", unit.GoalID, err)
 	if reset != nil {
 		if resetErr := reset(base); resetErr != nil {
-			return fmt.Errorf("%v; reset: %w", err, resetErr)
+			return errors.Join(refusal, fmt.Errorf("reset: %w", resetErr))
 		}
 	}
-	if returnErr := RequestReturn(store, id, unit.GoalID, UnitEjected, err.Error(), actor, at); returnErr != nil {
-		return returnErr
+	if returnErr := RequestReturn(store, id, unit.GoalID, UnitEjected, refusal.Error(), actor, at); returnErr != nil {
+		return errors.Join(refusal, returnErr)
 	}
-	return ReassembleSurvivors(store, id, actor, at)
+	if reassembleErr := ReassembleSurvivors(store, id, actor, at); reassembleErr != nil {
+		return errors.Join(refusal, reassembleErr)
+	}
+	return fmt.Errorf("%w; goal %s was ejected; fix and rejoin it, then re-prove before the next landing", refusal, unit.GoalID)
 }
 
 func cloneStrings(source map[string]string) map[string]string {

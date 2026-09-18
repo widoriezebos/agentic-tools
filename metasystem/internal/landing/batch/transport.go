@@ -57,8 +57,12 @@ func PrepareLandingBranch(root, id, baseCommit string) error {
 // batch ref. An empty expected tip means the ref must still be absent.
 func PublishLandingBranch(root, id, expected, tip string) error {
 	lease := "--force-with-lease=" + landingBranchRef(id) + ":" + expected
-	if err := runLandingGit(root, "BATCH_LANDING_BRANCH_MOVED", "push", "origin", tip+":"+landingBranchRef(id), lease); err != nil {
-		return err
+	command := exec.Command("git", "-C", root, "push", "origin", tip+":"+landingBranchRef(id), lease)
+	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
+	if output, err := command.CombinedOutput(); err != nil {
+		text := strings.TrimSpace(string(output))
+		cause := fmt.Errorf("BATCH_LANDING_BRANCH_MOVED: %s: %w", text, err)
+		return classifyEndpointPushError(text, cause)
 	}
 	return nil
 }
@@ -116,7 +120,17 @@ func RebuildLandingBranch(root, id, baseTree, expected, actor string, survivors 
 		expected = ""
 	}
 	if err := PublishLandingBranch(root, id, expected, parent); err != nil {
-		return "", err
+		if !IsStaleEndpointLease(err) {
+			return "", err
+		}
+		remoteTip, remoteTree, present, inspectErr := remoteLandingBranchTipAndTree(root, id)
+		if inspectErr != nil {
+			return "", errors.Join(err, inspectErr)
+		}
+		if !present || remoteTree != tree {
+			return "", err
+		}
+		return remoteTip, nil
 	}
 	return parent, nil
 }
@@ -177,13 +191,37 @@ func AbandonLandingBranch(root, id, expectedTip, detachAt string) error {
 }
 
 func remoteLandingBranchPresent(root, id string) (bool, error) {
+	_, present, err := remoteLandingBranchTip(root, id)
+	return present, err
+}
+
+func remoteLandingBranchTip(root, id string) (string, bool, error) {
 	command := exec.Command("git", "-C", root, "ls-remote", "--heads", "origin", landingBranchRef(id))
 	command.Env = gittree.ScrubbedEnviron()
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return false, fmt.Errorf("BATCH_LANDING_BRANCH_MOVED: inspect %s: %s: %w", landingBranchRef(id), strings.TrimSpace(string(output)), err)
+		return "", false, fmt.Errorf("BATCH_LANDING_BRANCH_MOVED: inspect %s: %s: %w", landingBranchRef(id), strings.TrimSpace(string(output)), err)
 	}
-	return len(strings.TrimSpace(string(output))) != 0, nil
+	fields := strings.Fields(string(output))
+	if len(fields) == 0 {
+		return "", false, nil
+	}
+	if len(fields) != 2 {
+		return "", false, fmt.Errorf("BATCH_LANDING_BRANCH_MOVED: inspect %s returned an unreadable ref", landingBranchRef(id))
+	}
+	return fields[0], true, nil
+}
+
+func remoteLandingBranchTipAndTree(root, id string) (string, string, bool, error) {
+	tip, present, err := remoteLandingBranchTip(root, id)
+	if err != nil || !present {
+		return tip, "", present, err
+	}
+	tree, err := landingGitOutput(root, "rev-parse", tip+"^{tree}")
+	if err != nil {
+		return "", "", false, fmt.Errorf("BATCH_LANDING_BRANCH_MOVED: inspect %s tree: %w", landingBranchRef(id), err)
+	}
+	return tip, tree, true, nil
 }
 
 // CleanupLandingBranch leaves no checked-out landing branch after the remote
@@ -266,11 +304,11 @@ func CommitWithWrapper(root string, declaration CommitDeclaration, goalID, recei
 		return err
 	}
 	if after == before {
-		return fmt.Errorf("BATCH_LAND_UNPROVENANCED: goal %s commit boundary did not advance HEAD by exactly one commit", goalID)
+		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("goal %s commit boundary did not advance HEAD by exactly one commit", goalID))
 	}
 	parent, err := landingGitOutput(root, "rev-parse", after+"^")
 	if err != nil || parent != before {
-		return fmt.Errorf("BATCH_LAND_UNPROVENANCED: goal %s commit boundary did not advance HEAD by exactly one commit", goalID)
+		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("goal %s commit boundary did not advance HEAD by exactly one commit", goalID))
 	}
 	return nil
 }
@@ -293,7 +331,7 @@ func RequirePassingCommitVerdict(root, goalID, commit string) error {
 		verdict = "unreadable"
 	}
 	if verdict != "pass" && !strings.HasPrefix(verdict, "pass ") {
-		return fmt.Errorf("BATCH_LAND_UNPROVENANCED: goal %s commit %s verdict %s", goalID, commit, verdict)
+		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("goal %s commit %s verdict %s", goalID, commit, verdict))
 	}
 	return nil
 }

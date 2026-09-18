@@ -426,6 +426,58 @@ func TestBatchGoalEjectionRebuildsLeasedLandingBranch(t *testing.T) {
 	}
 }
 
+func TestReassembleSurvivorsAdoptsPublishedEquivalentTreeAfterStoreLoss(t *testing.T) {
+	bed := newGoalBranchBed(t)
+	tipA := buildGoalBranch(t, bed, "goal-a", []string{"1"}, -1)
+	memberA, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipA, GoalID: "goal-a", Last: true})
+	must(t, err)
+	tipB := buildGoalBranch(t, bed, "goal-b", []string{"1"}, -1)
+	memberB, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipB, GoalID: "goal-b", Last: true})
+	must(t, err)
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	branchGit(t, filepath.Dir(origin), "init", "-q", "--bare", origin)
+	branchGit(t, bed.root, "remote", "add", "origin", origin)
+	branchGit(t, bed.root, "push", "-q", "origin", bed.base+":refs/heads/main")
+	claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
+	unitA := BindBranchMember(Unit{GoalID: "goal-a", Chain: tipA, Claim: claim, State: UnitJoined, AuthorName: "Approver A", AuthorEmail: "a@example.invalid"}, memberA)
+	unitB := BindBranchMember(Unit{GoalID: "goal-b", Chain: tipB, Claim: claim, State: UnitJoined, AuthorName: "Approver B", AuthorEmail: "b@example.invalid"}, memberB)
+	baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
+	oldTip, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, "", "owner", []Unit{unitA, unitB})
+	must(t, err)
+	prefixes, err := assembleUnits(bed.root, baseTree, []Unit{unitA, unitB})
+	must(t, err)
+	store := NewStore(bed.root, nil)
+	must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, TipTree: prefixes[1], State: StateLanding, Units: []Unit{unitA, unitB},
+		Landing: &LandingProgress{Base: baseTree, BranchTip: oldTip}, batchRecordFields: batchRecordFields{BaseTree: baseTree, PrefixTrees: prefixes}}))
+	must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "fixture refusal", "owner", time.Unix(2, 0)))
+
+	t.Setenv("GIT_AUTHOR_DATE", "2001-01-01T00:00:00Z")
+	t.Setenv("GIT_COMMITTER_DATE", "2001-01-01T00:00:00Z")
+	publishedTip, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, oldTip, "owner", []Unit{unitB})
+	must(t, err)
+	// The publish succeeded, but the record still names oldTip, exactly as it
+	// would after a process death before the following store update.
+	if stored := load(t, store); stored.Landing == nil || stored.Landing.BranchTip != oldTip {
+		t.Fatalf("store unexpectedly learned published tip %s: %+v", publishedTip, stored.Landing)
+	}
+
+	t.Setenv("GIT_AUTHOR_DATE", "2001-01-01T00:00:01Z")
+	t.Setenv("GIT_COMMITTER_DATE", "2001-01-01T00:00:01Z")
+	must(t, ReassembleSurvivors(store, testBatchID, "owner", time.Unix(3, 0)))
+	updated := load(t, store)
+	if updated.State != StateOpen || updated.Landing == nil || updated.Landing.BranchTip != publishedTip {
+		t.Fatalf("retry did not adopt published survivor tip %s: %+v", publishedTip, updated)
+	}
+	remoteTip := branchGit(t, origin, "rev-parse", "refs/heads/landing/"+testBatchID)
+	if remoteTip != publishedTip || branchGit(t, origin, "rev-parse", remoteTip+"^{tree}") != branchGit(t, bed.root, "rev-parse", publishedTip+"^{tree}") {
+		t.Fatalf("remote survivor tip=%s record=%+v", remoteTip, updated.Landing)
+	}
+	must(t, LandLandingBranch(bed.root, testBatchID, bed.base, publishedTip))
+	if got := branchGit(t, origin, "rev-parse", "refs/heads/main"); got != publishedTip {
+		t.Fatalf("retry landed main=%s, want survivor tip %s", got, publishedTip)
+	}
+}
+
 func TestReassembleSurvivorsKeepsChainOnlyAndMixedBatches(t *testing.T) {
 	for _, mixed := range []bool{false, true} {
 		name := "chain only"

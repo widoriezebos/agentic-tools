@@ -22,7 +22,6 @@ type certifiedChain struct {
 // CertifiedChain is the closed implementation output accepted by join.
 type CertifiedChain = certifiedChain
 
-func refuseBatch(code, detail string) error { return fmt.Errorf("%s: %s", code, detail) }
 func readJob(root, id string) (dispatch.JobRecord, error) {
 	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "jobs", id+".json"))
 	if err != nil {

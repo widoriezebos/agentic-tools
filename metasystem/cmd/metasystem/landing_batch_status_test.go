@@ -156,6 +156,9 @@ func TestLandingReceiptForwardsBothExpectedRevisions(t *testing.T) {
 }
 
 func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
+	if reexecWithFixedProofLoad(t, "GO_WANT_DIAGNOSTIC_NO_REUSE_FIXED_LOAD", "TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses") {
+		return
+	}
 	root := t.TempDir()
 	diagnostic, _, status := parseTestingSelection("test run", []string{
 		"--root", root, "--purpose", "diagnostic", "--groups", "red-group", "--no-reuse",
@@ -217,13 +220,14 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	}
 
 	controlRoot, now := proofExtensionGoalFixture(t)
+	conf := filepath.Join(controlRoot, "metasystem.conf")
 	amendSyncedGoalFixture(t, controlRoot, "diagnostic no-reuse fixture", func(file *goal.GoalFile) {
 		file.Budget.AttemptLimit = 4
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
 	announceProofFixtureHolder(t, controlRoot)
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	admission := proofLaunchAdmission{ControlRoot: controlRoot, ExecutionRoot: controlRoot, ConfPath: filepath.Join(controlRoot, "metasystem.conf"),
+	admission := proofLaunchAdmission{ControlRoot: controlRoot, ExecutionRoot: controlRoot, ConfPath: conf,
 		GoalID: "standing-validation", CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
 		CandidateTree: strings.Repeat("b", 40), IdentityInputs: []string{"diagnostic-no-reuse"}, ForceAttempt: true}
 	retained, decision, _, err := admitProofLaunch(admission)
@@ -244,6 +248,27 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	if _, err := proofrun.FinalizeAttempt(controlRoot, fresh.AttemptID, proofrun.TerminalFailed, 1, "fixture cleanup", nil, now.Add(3*time.Second)); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func reexecWithFixedProofLoad(t *testing.T, marker, testName string) bool {
+	t.Helper()
+	if os.Getenv(marker) != "" {
+		return false
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sampler := filepath.Join(t.TempDir(), proofrun.TestHostLoadCommandName("0"))
+	if err := os.Link(executable, sampler); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(sampler, "-test.run=^"+testName+"$", "-test.count=1")
+	command.Env = append(proofFixtureEnvironmentWithoutHostLoad(os.Environ()), marker+"=1")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("fixed-load %s child: %v\n%s", testName, err, output)
+	}
+	return true
 }
 
 func TestPrefixReceiptAllowsIdentityReuseAndBindsRevisions(t *testing.T) {

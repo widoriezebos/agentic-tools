@@ -118,7 +118,28 @@ func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
 
 	t.Run("would-refuse ejects without a push", func(t *testing.T) {
 		bed := newBatchProvenanceBed(t, "would-refuse code=chain-not-implementation", true)
-		_ = executeBatchLanding(bed.root, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0))
+		batchProvenanceGit(t, "-C", bed.root, "config", "metasystem.goal.machine", "landing-machine")
+		seat := t.TempDir()
+		batchProvenanceGit(t, "init", "-q", seat)
+		t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-18T10:00:00Z")
+		originalAcquire, originalRequire, originalTick := batchOwnerAcquire, batchOwnerRequire, batchOwnerTick
+		t.Cleanup(func() {
+			batchOwnerAcquire, batchOwnerRequire, batchOwnerTick = originalAcquire, originalRequire, originalTick
+		})
+		batchOwnerAcquire = func(root string) (batchOwnerLease, error) {
+			return batchOwnerLease{root: root, pid: int64(os.Getpid()), epoch: 1}, nil
+		}
+		batchOwnerRequire = func(batchOwnerLease) error { return nil }
+		batchOwnerTick = func(_ *batch.Owner, id string) error {
+			return executeBatchLanding(bed.root, id, landingOwnerLineage, time.Unix(3, 0))
+		}
+		code, _, stderr := captureCommandOutput(t, false, true, func() int {
+			return runBatchTick([]string{"--root", seat, "--landing-root", bed.root, "--max-wait", "1m", "--batch", batchProvenanceTestID})
+		})
+		if code != 1 || !strings.Contains(stderr, "goal goal-a") || !strings.Contains(stderr, "BATCH_LAND_UNPROVENANCED") ||
+			!strings.Contains(stderr, "re-prove before the next landing") {
+			t.Fatalf("ejection command result code=%d stderr=%q", code, stderr)
+		}
 		originTip := batchProvenanceGit(t, "-C", bed.origin, "rev-parse", "refs/heads/main")
 		if originTip != bed.baseCommit {
 			t.Fatalf("would-refuse branch commit reached origin/main: got %s, want base %s", originTip, bed.baseCommit)
