@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -435,6 +436,19 @@ func (reader custodianKillTreeReader) Sample(rootPID int) (processTreeSample, er
 	if len(reader.fixture.custodians) < 2 {
 		return processTreeSample{}, fmt.Errorf("helper did not announce its custodian and fixture child")
 	}
+	if reader.fixture.owner.Pid == 0 {
+		exact, state, err := (identity.KernelProber{}).Probe(int64(rootPID))
+		if err != nil || state != identity.Alive || exact.Zombie {
+			return processTreeSample{}, fmt.Errorf("probe custodian-reaped-child helper owner: state=%s zombie=%t err=%v", state, exact.Zombie, err)
+		}
+		logPath := fmt.Sprintf("%s.custodian-%d.log", os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME"), rootPID)
+		log, err := os.Open(logPath)
+		if err != nil {
+			return processTreeSample{}, fmt.Errorf("open custodian-reaped-child helper custodian log: %w", err)
+		}
+		reader.fixture.owner = exact.Ref()
+		reader.fixture.custodianLog = log
+	}
 	return processTreeSample{Members: []int{rootPID, int(reader.fixture.custodians[0].Pid)}}, nil
 }
 
@@ -460,6 +474,8 @@ type supervisorHelperFixture struct {
 	stdout              *bufio.Reader
 	ready               chan error
 	custodians          []identity.Ref
+	owner               identity.Ref
+	custodianLog        *os.File
 	keepAlive           chan struct{}
 	log                 *synchronizedBuffer
 	readyActivity       time.Time
@@ -531,11 +547,13 @@ func TestSupervisorKillSparesTheFixtureCustodian(t *testing.T) {
 		t.Fatalf("helper announced refs=%v, want custodian and child", helper.custodians)
 	}
 	custodian, child := helper.custodians[0], helper.custodians[1]
-	waitProofProcessDead(t, custodian)
-	logPath := fmt.Sprintf("%s.custodian-%d.log", os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME"), helper.command.Process.Pid)
-	log, err := os.ReadFile(logPath)
-	if err != nil || !strings.Contains(string(log), "action=kill pid="+strconv.FormatInt(child.Pid, 10)) {
-		t.Fatalf("custodian log %s omitted the kill for pid %d: log=%q err=%v", logPath, child.Pid, log, err)
+	completion := identity.FixtureCustodianCompletionLine(helper.owner)
+	childKill := "fixture-custodian action=kill pid=" + strconv.FormatInt(child.Pid, 10) + " carrier=record"
+	err := waitProofProcessDead(completion, childKill, func() (proofProcessFacts, bool) {
+		return observeProofProcessFacts(custodian, identity.KernelProber{}, helper.custodianLog)
+	})
+	if err != nil {
+		t.Fatalf("custodian process %d contradicted its required completion facts: %v", custodian.Pid, err)
 	}
 	exact, state, err := (identity.KernelProber{}).Probe(child.Pid)
 	if err != nil || state != identity.Dead && (state != identity.Alive || identity.SameIdentity(exact, child) && !exact.Zombie) {
@@ -543,17 +561,121 @@ func TestSupervisorKillSparesTheFixtureCustodian(t *testing.T) {
 	}
 }
 
-func waitProofProcessDead(t *testing.T, ref identity.Ref) {
-	t.Helper()
-	observed := identity.Unknown
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		exact, state, err := (identity.KernelProber{}).Probe(ref.Pid)
-		observed = state
-		if err == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, ref) || exact.Zombie)) {
-			return
+type proofProcessFacts struct {
+	state identity.Liveness
+	log   string
+}
+
+type proofProcessObserver func() (proofProcessFacts, bool)
+
+func waitProofProcessDead(completion, required string, observe proofProcessObserver) error {
+	for {
+		facts, observed := observe()
+		if !observed {
+			runtime.Gosched()
+			continue
 		}
+		done, contradiction := proofProcessCompletionFacts(facts.state, facts.log, completion, required)
+		if contradiction != "" {
+			return fmt.Errorf("%s; state=%s log=%q", contradiction, facts.state, facts.log)
+		}
+		if done {
+			return nil
+		}
+		runtime.Gosched()
 	}
-	t.Fatalf("process %d did not become dead; state=%s", ref.Pid, observed)
+}
+
+func observeProofProcessFacts(ref identity.Ref, prober identity.Prober, log *os.File) (proofProcessFacts, bool) {
+	exact, state, err := prober.Probe(ref.Pid)
+	if err == nil && state == identity.Alive && (!identity.SameIdentity(exact, ref) || exact.Zombie) {
+		state = identity.Dead
+	} else if err != nil {
+		state = identity.Unknown
+	}
+	if _, err := log.Seek(0, io.SeekStart); err != nil {
+		return proofProcessFacts{}, false
+	}
+	contents, err := io.ReadAll(log)
+	if err != nil {
+		return proofProcessFacts{}, false
+	}
+	return proofProcessFacts{state: state, log: string(contents)}, true
+}
+
+func proofProcessCompletionFacts(state identity.Liveness, log, completion, required string) (bool, string) {
+	completed := strings.Contains(log, completion)
+	if completed && !strings.Contains(log, required) {
+		return false, "completion record omitted " + strconv.Quote(required)
+	}
+	if state == identity.Dead {
+		if !completed {
+			return false, "process exited before publishing its completion record"
+		}
+		return true, ""
+	}
+	return false, ""
+}
+
+func TestProofProcessWaitNeedsCompletionRequiredRowAndExit(t *testing.T) {
+	completion := "fixture-custodian owner=exact action=complete\n"
+	required := "fixture-custodian action=kill pid=42 carrier=record"
+	t.Run("all facts converge", func(t *testing.T) {
+		observations := []proofProcessFacts{
+			{state: identity.Alive},
+			{state: identity.Unknown},
+			{state: identity.Alive, log: required + "\n" + completion},
+			{state: identity.Dead, log: required + "\n" + completion},
+		}
+		calls := 0
+		err := waitProofProcessDead(completion, required, func() (proofProcessFacts, bool) {
+			index := min(calls, len(observations)-1)
+			calls++
+			return observations[index], true
+		})
+		if err != nil || calls != len(observations) {
+			t.Fatalf("fact wait returned after %d observations with %v; want all %d facts", calls, err, len(observations))
+		}
+	})
+	t.Run("exit without completion contradicts", func(t *testing.T) {
+		err := waitProofProcessDead(completion, required, func() (proofProcessFacts, bool) {
+			return proofProcessFacts{state: identity.Dead, log: required + "\n"}, true
+		})
+		if err == nil || !strings.Contains(err.Error(), "exited before publishing") {
+			t.Fatalf("exit without completion returned %v", err)
+		}
+	})
+	t.Run("completion without kill contradicts", func(t *testing.T) {
+		states := []identity.Liveness{identity.Alive, identity.Dead}
+		calls := 0
+		err := waitProofProcessDead(completion, required, func() (proofProcessFacts, bool) {
+			state := states[min(calls, len(states)-1)]
+			calls++
+			return proofProcessFacts{state: state, log: completion}, true
+		})
+		if err == nil || !strings.Contains(err.Error(), "completion record omitted") || calls != 1 {
+			t.Fatalf("completion without kill returned %v after %d observations", err, calls)
+		}
+	})
+	t.Run("unlinked completion remains observable", func(t *testing.T) {
+		log, err := os.CreateTemp(t.TempDir(), "custodian-log")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer log.Close()
+		if _, err := io.WriteString(log, completion); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(log.Name()); err != nil {
+			t.Fatal(err)
+		}
+		err = waitProofProcessDead(completion, required, func() (proofProcessFacts, bool) {
+			return observeProofProcessFacts(identity.Ref{Pid: 1}, deadTestProber{}, log)
+		})
+		if err == nil || !strings.Contains(err.Error(), "completion record omitted") {
+			t.Fatalf("unlinked completion without kill returned %v", err)
+		}
+	})
 }
 
 func (reader *readinessGatedTreeReader) Sample(rootPID int) (processTreeSample, error) {
@@ -665,6 +787,11 @@ func newSupervisorHelperFixture(t *testing.T, mode string, args ...string) *supe
 		fixture.ready <- readErr
 	}()
 	t.Cleanup(fixture.closeInput)
+	t.Cleanup(func() {
+		if fixture.custodianLog != nil {
+			_ = fixture.custodianLog.Close()
+		}
+	})
 	return fixture
 }
 
