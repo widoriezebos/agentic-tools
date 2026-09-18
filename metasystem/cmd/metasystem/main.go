@@ -436,6 +436,11 @@ func families() []family {
 			},
 		},
 		{
+			name:    "unit",
+			summary: "one build, fresh read, and owned proof sequence",
+			verbs:   []verb{{"run", "advance one unit run through its launch sequence", runUnitRun}},
+		},
+		{
 			name:    "janitor",
 			summary: "disk-hygiene: headroom guard and (later) the artifact-class sweep",
 			verbs: []verb{

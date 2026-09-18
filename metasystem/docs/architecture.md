@@ -173,6 +173,7 @@ it does; this table adds where the decisions live.
 | `json` | `jsonedit` |
 | `lease` | `lease` |
 | `launch` | `launch` |
+| `unit` | `launch` |
 | `mission` | `mission`, `missionrunner`, `contract`, `config` |
 | `evidence` | `evidence` |
 | `supervise` | `supervise`, `registry`, `lock`, `identity`, `census`, `dispatch` |

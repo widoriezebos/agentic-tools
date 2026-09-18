@@ -487,6 +487,8 @@ func adapterForKind(kind string) string {
 		return "codex-exec"
 	case "design", "read":
 		return "claude-headless"
+	case "proof":
+		return "plain-exec"
 	default:
 		return ""
 	}
