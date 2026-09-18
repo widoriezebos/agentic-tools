@@ -69,6 +69,9 @@ type ReadOptions struct {
 	Installation string
 	Now          time.Time
 	NonBlocking  bool
+	MaxBytes     int64
+	Deadline     time.Time
+	Clock        func() time.Time
 }
 
 type Reading struct {

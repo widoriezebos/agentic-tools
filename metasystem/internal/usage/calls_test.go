@@ -2,13 +2,18 @@ package usage
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestLatestCallReadsAClaudeTranscriptToTheFigure(t *testing.T) {
@@ -50,6 +55,241 @@ func TestLatestCallReadsAClaudeTranscriptToTheFigure(t *testing.T) {
 	}
 	if len(samples) != 2 || len(markers) != 0 {
 		t.Fatalf("samples=%d markers=%d, want 2 and 0; transcript=%s", len(samples), len(markers), transcript)
+	}
+}
+
+func TestLatestCallReadsBoundedTail(t *testing.T) {
+	stateRoot := t.TempDir()
+	transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
+	session := "bounded-tail"
+	oldRow := claudeAssistant("old", 1, 0, 0, false, "2026-09-13T10:00:00Z")
+	writeCallRows(t, transcript, oldRow)
+	baseline, err := LatestCall(stateRoot, "claude", session, ReadOptions{Capability: PerCall, Transcript: transcript})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newRow := claudeAssistant("newest", 220000, 2000, 3000, false, "2026-09-13T10:01:00Z")
+	prefix := oldRow + "\n"
+	fillerLength := 1<<20 - len(prefix) - len(newRow) - 2
+	if fillerLength < 262144 {
+		t.Fatalf("fixture filler is only %d bytes", fillerLength)
+	}
+	fixture := prefix + strings.Repeat("x", fillerLength) + "\n" + newRow + "\n"
+	if len(fixture) != 1<<20 {
+		t.Fatalf("fixture length = %d, want %d", len(fixture), 1<<20)
+	}
+	if err := os.WriteFile(transcript, []byte(fixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cursorPath := CursorPath(stateRoot, "claude", session)
+	samplesPath := SamplesPath(stateRoot, "claude", session)
+	cursorBefore, err := os.ReadFile(cursorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	samplesBefore, err := os.ReadFile(samplesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bytesRead := 0
+	previousCounter := callBytesRead
+	callBytesRead = func(count int) { bytesRead += count }
+	t.Cleanup(func() { callBytesRead = previousCounter })
+
+	reading, err := LatestCall(stateRoot, "claude", session, ReadOptions{
+		Capability: PerCall,
+		Transcript: transcript,
+		MaxBytes:   262144,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytesRead > 262144 {
+		t.Fatalf("bounded read consumed %d bytes", bytesRead)
+	}
+	if reading.Latest == nil || reading.Latest.InvocationID != "newest" || reading.Latest.PromptTokens != 225000 {
+		t.Fatalf("bounded reading latest = %#v", reading.Latest)
+	}
+	gotCursor, _ := json.Marshal(reading.Cursor)
+	wantCursor, _ := json.Marshal(baseline.Cursor)
+	if !bytes.Equal(gotCursor, wantCursor) {
+		t.Fatalf("bounded reading advanced cursor: got=%s want=%s", gotCursor, wantCursor)
+	}
+	cursorAfter, err := os.ReadFile(cursorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	samplesAfter, err := os.ReadFile(samplesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(cursorBefore, cursorAfter) || !bytes.Equal(samplesBefore, samplesAfter) {
+		t.Fatal("bounded read changed the cursor or samples file")
+	}
+}
+
+func TestLatestCallSkipsAPartialLine(t *testing.T) {
+	t.Run("partial-first-line", func(t *testing.T) {
+		partial := claudeAssistant("partial", 10, 0, 0, false, "2026-09-13T10:00:00Z")
+		complete := claudeAssistant("complete", 20, 0, 0, false, "2026-09-13T10:01:00Z")
+		transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
+		writeCallRows(t, transcript, partial, complete)
+		partialSuffix := len(partial) / 2
+		window := int64(partialSuffix + 1 + len(complete) + 1)
+
+		reading, err := LatestCall(t.TempDir(), "claude", "partial-line", ReadOptions{
+			Capability: PerCall,
+			Transcript: transcript,
+			MaxBytes:   window,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reading.Latest == nil || reading.Latest.InvocationID != "complete" {
+			t.Fatalf("partial-line reading latest = %#v", reading.Latest)
+		}
+	})
+
+	t.Run("line-longer-than-window", func(t *testing.T) {
+		transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
+		writeCallRows(t, transcript, strings.Repeat("x", 4096))
+		reading, err := LatestCall(t.TempDir(), "claude", "long-line", ReadOptions{
+			Capability: PerCall,
+			Transcript: transcript,
+			MaxBytes:   128,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reading.Latest != nil {
+			t.Fatalf("long line produced a sample: %#v", reading.Latest)
+		}
+	})
+}
+
+func TestLatestCallHonoursTheDeadline(t *testing.T) {
+	stateRoot := t.TempDir()
+	transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
+	session := "deadline"
+	writeCallRows(t, transcript, claudeAssistant("old", 1, 0, 0, false, "2026-09-13T10:00:00Z"))
+	if _, err := LatestCall(stateRoot, "claude", session, ReadOptions{Capability: PerCall, Transcript: transcript}); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 100; index++ {
+		appendCallTestRow(t, transcript, claudeAssistant(
+			fmt.Sprintf("new-%d", index), int64(index+2), 0, 0, false, "2026-09-13T10:01:00Z",
+		))
+	}
+	cursorPath := CursorPath(stateRoot, "claude", session)
+	samplesPath := SamplesPath(stateRoot, "claude", session)
+	cursorBefore, err := os.ReadFile(cursorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	samplesBefore, err := os.ReadFile(samplesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, 9, 13, 10, 2, 0, 0, time.UTC)
+	clockCalls := 0
+	clock := func() time.Time {
+		at := start.Add(time.Duration(clockCalls) * time.Nanosecond)
+		clockCalls++
+		return at
+	}
+
+	wallStart := time.Now()
+	reading, err := LatestCall(stateRoot, "claude", session, ReadOptions{
+		Capability: PerCall,
+		Transcript: transcript,
+		Deadline:   start.Add(3 * time.Nanosecond),
+		Clock:      clock,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(wallStart); elapsed >= time.Second {
+		t.Fatalf("deadline read took %s", elapsed)
+	}
+	if reading.Capability != PerCall || reading.Reason != "deadline" || reading.Latest != nil {
+		t.Fatalf("deadline reading = %#v", reading)
+	}
+	cursorAfter, err := os.ReadFile(cursorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	samplesAfter, err := os.ReadFile(samplesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(cursorBefore, cursorAfter) || !bytes.Equal(samplesBefore, samplesAfter) {
+		t.Fatal("deadline read changed the cursor or samples file")
+	}
+}
+
+func TestLatestCallNonBlockingReturnsBusyOnEitherHeldLock(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		lockPath  func(string, string) string
+		assertErr func(*testing.T, error, string)
+	}{
+		{
+			name:     "maintenance",
+			lockPath: func(stateRoot, _ string) string { return callMaintenancePath(stateRoot) },
+			assertErr: func(t *testing.T, err error, path string) {
+				var busy *CallStoreBusyError
+				if !errors.As(err, &busy) || busy.Path != path {
+					t.Fatalf("maintenance contention = %v", err)
+				}
+			},
+		},
+		{
+			name:     "cursor",
+			lockPath: func(stateRoot, session string) string { return CursorPath(stateRoot, "claude", session) + ".lock" },
+			assertErr: func(t *testing.T, err error, path string) {
+				var busy *CursorBusyError
+				if !errors.As(err, &busy) || busy.Path != path {
+					t.Fatalf("cursor contention = %v", err)
+				}
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stateRoot := t.TempDir()
+			transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
+			session := "busy-" + test.name
+			writeCallRows(t, transcript, claudeAssistant("busy", 40, 2, 3, false, "2026-09-13T14:00:00Z"))
+			lockPath := test.lockPath(stateRoot, session)
+			if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer lock.Close()
+			if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+				t.Fatal(err)
+			}
+			defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+
+			bytesRead := 0
+			previousCounter := callBytesRead
+			callBytesRead = func(count int) { bytesRead += count }
+			defer func() { callBytesRead = previousCounter }()
+			_, readErr := LatestCall(stateRoot, "claude", session, ReadOptions{
+				Capability:  PerCall,
+				Transcript:  transcript,
+				NonBlocking: true,
+				MaxBytes:    262144,
+			})
+			test.assertErr(t, readErr, lockPath)
+			if bytesRead != 0 {
+				t.Fatalf("contended read consumed %d transcript bytes", bytesRead)
+			}
+		})
 	}
 }
 

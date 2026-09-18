@@ -67,6 +67,9 @@ func readUnderCursor(stateRoot, runtime, session, path string, parse lineParser,
 	defer unlockCallFile(lock)
 
 	cursorPath := CursorPath(stateRoot, runtime, session)
+	if opts.MaxBytes > 0 || !opts.Deadline.IsZero() {
+		return readCallObservation(cursorPath, runtime, session, path, parse, opts)
+	}
 	if err := recoverCallRetirement(stateRoot, cursorPath); err != nil {
 		return Reading{}, err
 	}
@@ -216,6 +219,121 @@ func readUnderCursor(stateRoot, runtime, session, path string, parse lineParser,
 	}
 	reading := readingFromCursor(opts.Capability, cursor, newSamples, newMarkers)
 	reading.PreviousReadAt = previousReadAt
+	return reading, nil
+}
+
+// readCallObservation reads current usage without advancing the durable
+// cursor. Hook-time observations must leave publication to the normal reader.
+func readCallObservation(cursorPath, runtime, session, path string, parse lineParser, opts ReadOptions) (Reading, error) {
+	cursor, loaded, err := loadCallCursor(cursorPath, runtime, session)
+	if err != nil {
+		return Reading{}, err
+	}
+	reading := Reading{Capability: opts.Capability, Cursor: cursor}
+	if loaded {
+		reading.PreviousReadAt = cursor.LastReadAt
+	}
+
+	clock := opts.Clock
+	if clock == nil {
+		clock = time.Now
+	}
+	deadlineReached := func() bool {
+		return !opts.Deadline.IsZero() && !clock().Before(opts.Deadline)
+	}
+	if deadlineReached() {
+		return Reading{Capability: opts.Capability, Reason: "deadline"}, nil
+	}
+
+	info, err := os.Lstat(path)
+	if err != nil {
+		return Reading{}, fmt.Errorf("cannot inspect call stream %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return Reading{}, fmt.Errorf("call stream is not a regular file: %s", path)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return Reading{}, fmt.Errorf("cannot read file identity for call stream %s", path)
+	}
+
+	cursorOffset := int64(0)
+	useTail := false
+	if loaded && cursor.Path == path && cursor.Dev == uint64(stat.Dev) && cursor.Inode == uint64(stat.Ino) && cursor.Offset <= info.Size() {
+		cursorOffset = cursor.Offset
+		useTail = true
+	}
+	start := cursorOffset
+	if opts.MaxBytes > 0 && info.Size()-opts.MaxBytes > start {
+		start = info.Size() - opts.MaxBytes
+		useTail = false
+	}
+	if start > info.Size() {
+		start = info.Size()
+		useTail = false
+	}
+	remaining := info.Size() - start
+	if remaining == 0 && (!useTail || len(cursor.Tail) == 0) {
+		return reading, nil
+	}
+
+	stream, err := os.Open(path)
+	observeCallOpen(path)
+	if err != nil {
+		return Reading{}, fmt.Errorf("cannot open call stream %s: %w", path, err)
+	}
+	defer stream.Close()
+	if _, err := stream.Seek(start, io.SeekStart); err != nil {
+		return Reading{}, fmt.Errorf("cannot seek call stream %s to %d: %w", path, start, err)
+	}
+
+	var reader io.Reader = io.LimitReader(observedCallReader{reader: stream}, remaining)
+	if useTail && len(cursor.Tail) > 0 {
+		reader = io.MultiReader(bytes.NewReader(cursor.Tail), reader)
+	}
+	buffered := bufio.NewReader(reader)
+	dropFirst := start > cursorOffset
+	ordinal := cursor.Line
+	for {
+		if deadlineReached() {
+			return Reading{Capability: opts.Capability, Reason: "deadline"}, nil
+		}
+		line, readErr := buffered.ReadBytes('\n')
+		if opts.MaxBytes <= 0 && len(line) > maxCallLineBytes {
+			return Reading{}, fmt.Errorf("cannot scan call stream %s: token too long", path)
+		}
+		if dropFirst {
+			dropFirst = false
+			if readErr == nil {
+				ordinal++
+				continue
+			}
+			if readErr != io.EOF {
+				return Reading{}, fmt.Errorf("cannot read call stream %s: %w", path, readErr)
+			}
+			break
+		}
+		if readErr == nil {
+			ordinal++
+			if opts.MaxBytes > 0 && int64(len(line)) > opts.MaxBytes {
+				continue
+			}
+			sample, marker, _ := parse(bytes.TrimSuffix(line, []byte{'\n'}), ordinal)
+			if sample != nil {
+				reading.Latest = sample
+				reading.Reason = ""
+				reading.NewSamples++
+			}
+			if marker != nil {
+				reading.NewMarkers++
+			}
+			continue
+		}
+		if readErr != io.EOF {
+			return Reading{}, fmt.Errorf("cannot read call stream %s: %w", path, readErr)
+		}
+		break
+	}
 	return reading, nil
 }
 
