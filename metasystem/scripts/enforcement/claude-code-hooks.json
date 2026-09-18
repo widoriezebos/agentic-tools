@@ -1,5 +1,5 @@
 {
-  "_comment": "Claude Code project hooks: session start arms repository supervision, Stop emits one compact status line backed by an immutable report, and SessionEnd retires this session's announcement.",
+  "_comment": "Claude Code project hooks: session start arms repository supervision, PreToolUse checks the context budget, Stop emits one compact status line backed by an immutable report, and SessionEnd retires this session's announcement.",
   "hooks": {
     "SessionStart": [
       {
@@ -9,6 +9,17 @@
             "type": "command",
             "command": "bash scripts/agents/supervision-hook.sh claude start",
             "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "(bash scripts/agents/supervision-hook.sh claude tool) || true",
+            "timeout": 5
           }
         ]
       }

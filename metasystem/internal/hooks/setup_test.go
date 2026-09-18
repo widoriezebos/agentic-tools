@@ -159,6 +159,85 @@ func TestCheckSettingsAllowsForeignSiblingAndGroupMetadata(t *testing.T) {
 	}
 }
 
+func TestMergeSettingsPreservesPreToolUse(t *testing.T) {
+	live := []byte(`{"hooks":{"PreToolUse":[{"matcher":"Bash","foreignGroup":"kept","hooks":[{"type":"command","command":"foreign-tool-handler","timeout":7}]}]}}`)
+	merged, err := MergeSettings(live, []byte(claudeShipped), "claude", "metasystem", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckSettings(merged, []byte(claudeShipped), "claude", "metasystem", false); err != nil {
+		t.Fatalf("merged settings failed their structural check: %v", err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(merged, &settings); err != nil {
+		t.Fatal(err)
+	}
+	groups := settings["hooks"].(map[string]any)["PreToolUse"].([]any)
+	if len(groups) != 2 {
+		t.Fatalf("PreToolUse groups = %d, want foreign and installed groups: %s", len(groups), merged)
+	}
+	foreign := groups[0].(map[string]any)
+	if foreign["matcher"] != "Bash" || foreign["foreignGroup"] != "kept" || foreign["hooks"].([]any)[0].(map[string]any)["command"] != "foreign-tool-handler" {
+		t.Fatalf("foreign PreToolUse group changed: %#v", foreign)
+	}
+	installed := groups[1].(map[string]any)
+	if _, present := installed["matcher"]; present {
+		t.Fatalf("installed PreToolUse group gained a matcher: %#v", installed)
+	}
+	handler := installed["hooks"].([]any)[0].(map[string]any)
+	command := handler["command"].(string)
+	if !strings.Contains(command, "supervision-hook.sh claude tool") || !strings.HasSuffix(command, ") || true") || handler["timeout"] != float64(5) {
+		t.Fatalf("installed PreToolUse handler lost its contract: %#v", handler)
+	}
+}
+
+func TestCheckSettingsReportsMissingPreToolUse(t *testing.T) {
+	valid, err := MergeSettings([]byte(`{}`), []byte(claudeShipped), "claude", "metasystem", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(valid, &settings); err != nil {
+		t.Fatal(err)
+	}
+	events := settings["hooks"].(map[string]any)
+	preToolUse := events["PreToolUse"]
+
+	t.Run("missing group", func(t *testing.T) {
+		delete(events, "PreToolUse")
+		missing, err := json.Marshal(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := CheckSettings(missing, []byte(claudeShipped), "claude", "metasystem", false); err == nil || !strings.Contains(err.Error(), "missing lifecycle event PreToolUse") {
+			t.Fatalf("missing PreToolUse group was not reported: %v", err)
+		}
+		events["PreToolUse"] = preToolUse
+	})
+
+	for name, mutate := range map[string]func(map[string]any, map[string]any){
+		"wrong timeout": func(_ map[string]any, handler map[string]any) { handler["timeout"] = float64(6) },
+		"matcher":       func(group map[string]any, _ map[string]any) { group["matcher"] = "Bash" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var candidate map[string]any
+			if err := json.Unmarshal(valid, &candidate); err != nil {
+				t.Fatal(err)
+			}
+			group := candidate["hooks"].(map[string]any)["PreToolUse"].([]any)[0].(map[string]any)
+			handler := group["hooks"].([]any)[0].(map[string]any)
+			mutate(group, handler)
+			corrupt, err := json.Marshal(candidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := CheckSettings(corrupt, []byte(claudeShipped), "claude", "metasystem", false); err == nil || !strings.Contains(err.Error(), "event PreToolUse") {
+				t.Fatalf("%s PreToolUse group was not reported: %v", name, err)
+			}
+		})
+	}
+}
+
 func TestCheckSettingsAcceptsEmptyDevinNonToolMatcher(t *testing.T) {
 	valid, err := MergeSettings([]byte(`{}`), []byte(devinShipped), "devin", ".", true)
 	if err != nil {

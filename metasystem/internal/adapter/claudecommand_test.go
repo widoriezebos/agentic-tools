@@ -1,11 +1,37 @@
 package adapter
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestClaudeJobSettingsInstallNoToolGate(t *testing.T) {
+	dir := t.TempDir()
+	record := writeClaudeRecord(t, `{
+		"workspaceRoot": "/ws",
+		"permissions": {"requested": {"writeRoots": [], "readRoots": ["/ws"], "network": "deny"}}
+	}`)
+	settingsPath := filepath.Join(dir, "settings.json")
+	if err := BuildClaudeSettings(record, settingsPath, "/opt/bin/metasystem", ""); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Hooks map[string]json.RawMessage `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := settings.Hooks["PreToolUse"]; present {
+		t.Fatalf("delegate job settings installed the host tool gate: %s", data)
+	}
+}
 
 func TestClaudeBudgetPolicy(t *testing.T) {
 	budget, turns, err := ClaudeBudget(stubEnv(nil))

@@ -11,7 +11,7 @@ import (
 
 const gitSteeringUnset = "unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM GIT_GRAFT_FILE GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE GIT_IMPLICIT_WORK_TREE GIT_NO_REPLACE_OBJECTS GIT_PREFIX"
 
-var lifecycleCommand = regexp.MustCompile(`scripts/agents/supervision-hook\.sh\s+([a-z][a-z0-9-]{0,31})\s+(start|receipt|stop|end)(?:[)[:space:]]|$)`)
+var lifecycleCommand = regexp.MustCompile(`scripts/agents/supervision-hook\.sh\s+([a-z][a-z0-9-]{0,31})\s+(start|receipt|stop|end|tool)(?:[)[:space:]]|$)`)
 
 // launcherFallback splits a shipped launcher of the form
 // `(<command>) || <fallback>`. The shipped template decides what a nonzero

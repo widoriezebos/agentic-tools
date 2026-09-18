@@ -381,6 +381,40 @@ METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry "$ms" brain declare --root 
   --by Wido --fixture-human-authority >/dev/null
 cp "$brain_repo/artifacts/agents/brain.json" "$tmp/valid-brain.json"
 
+brain_cache_engine=$tmp/brain-cache-engine
+cat >"$brain_cache_engine" <<'BRAIN_CACHE_ENGINE'
+#!/usr/bin/env bash
+if [[ ${1:-} == runtime && ${2:-} == list ]]; then
+  printf '%s\n' claude
+  exit 0
+fi
+if [[ ${1:-} == path && ${2:-} == state-root ]]; then
+  printf '%s\n' "$3"
+  exit 0
+fi
+exit 7
+BRAIN_CACHE_ENGINE
+chmod +x "$brain_cache_engine"
+printf '{"session_id":"tool-engine-cache","cwd":"%s","source":"startup"}\n' "$brain_repo" \
+  >"$tmp/brain-cache-start.json"
+harness_fixture_bed_leg tool_engine_cache_written_at_start
+run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" \
+  "$tmp/brain-cache-start.json" "$tmp/brain-cache-start.out" "$tmp/brain-cache-start.err" "$brain_cache_engine"
+brain_engine_cache=$brain_repo/artifacts/agents/context/engine-path
+brain_cached_engine=
+brain_cached_installation=
+brain_expected_installation=$(cd "$brain_repo" && pwd -P)
+[[ -r "$brain_engine_cache" ]] \
+  || { echo "brain start did not write its tool engine cache" >&2; exit 1; }
+{
+  IFS= read -r brain_cached_engine
+  IFS= read -r brain_cached_installation
+} <"$brain_engine_cache" \
+  || { echo "brain start wrote an incomplete tool engine cache" >&2; exit 1; }
+[[ "$brain_cached_engine" == "$brain_identity_engine" && "$brain_cached_installation" == "$brain_expected_installation" ]] \
+  || { echo "brain start cached the wrong engine or installation" >&2; cat "$brain_engine_cache" >&2; exit 1; }
+harness_fixture_bed_leg brain-session-start
+
 brain_fake_path=$tmp/brain-fake
 mkdir -p "$brain_fake_path"
 "$ms" channel fake serve --dir "$brain_fake_path" >"$tmp/brain-fake.log" 2>&1 &

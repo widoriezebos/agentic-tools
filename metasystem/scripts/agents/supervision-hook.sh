@@ -3,6 +3,23 @@
 runtime=${1-}
 event=${2-}
 
+# A delegate job is already fenced by its adapter. Host tool calls use the
+# engine from the last start that resolved an executable engine, while missing
+# or stale cache state leaves the tool call untouched.
+if [[ "$runtime" == claude && "$event" == tool ]]; then
+  [[ -z ${METASYSTEM_HOOK_DELEGATE_JOB:-} ]] || exit 0
+  tool_engine_cache=${BASH_SOURCE[0]%/*}/../../artifacts/agents/context/engine-path
+  tool_engine=
+  tool_installation=
+  [[ -r "$tool_engine_cache" ]] || exit 0
+  {
+    IFS= read -r tool_engine
+    IFS= read -r tool_installation
+  } <"$tool_engine_cache" || exit 0
+  [[ -n "$tool_engine" && -n "$tool_installation" && -x "$tool_engine" ]] || exit 0
+  exec "$tool_engine" adapter claude-tool-gate --root "$tool_installation"
+fi
+
 # SessionStart owns its outcome before it asks the filesystem, Git, an engine,
 # or temporary storage for anything. These values use shell builtins only, so
 # the EXIT trap can always explain an ordinary runtime failure.
@@ -386,6 +403,24 @@ start_signal() {
 
 start_defer_signal() {
   start_deferred_signal_status=$1
+}
+
+start_write_engine_cache() {
+  local cache_dir=$harness_root/artifacts/agents/context
+  local cache_path=$cache_dir/engine-path
+  local cache_tmp=
+  if {
+    mkdir -p "$cache_dir" \
+      && cache_tmp=$(mktemp "$cache_dir/.engine-path.XXXXXX") \
+      && builtin printf '%s\n%s\n' "$ms" "$world_installation" >"$cache_tmp" \
+      && mv "$cache_tmp" "$cache_path"
+  } 2>/dev/null; then
+    return 0
+  fi
+  if [[ -n "$cache_tmp" ]]; then
+    if rm -f "$cache_tmp" 2>/dev/null; then :; fi
+  fi
+  return 0
 }
 
 if [[ "$event" == start ]]; then
@@ -903,6 +938,7 @@ start_main() {
   if [[ ! -x "$canonical" || ! -x "$ms" ]]; then
     start_finish notice engine-missing
   fi
+  start_write_engine_cache
   start_capture runtime-registry registered_runtimes required-nonempty "$ms" runtime list
   case $'\n'$registered_runtimes$'\n' in
     *$'\n'$runtime$'\n'*) ;;

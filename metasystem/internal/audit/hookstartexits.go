@@ -88,6 +88,28 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 		}
 		return ""
 	}
+	toolBranchStart := 0
+	for index, line := range prefixLines {
+		if strings.TrimSpace(line) == `if [[ "$runtime" == claude && "$event" == tool ]]; then` {
+			toolBranchStart = index + 1
+			break
+		}
+	}
+	if ownerAt(toolBranchStart) != "" {
+		toolBranchStart = 0
+	}
+	toolBranchEnd := 0
+	if toolBranchStart > 0 {
+		for index := toolBranchStart; index < len(prefixLines); index++ {
+			if strings.TrimSpace(prefixLines[index]) == "fi" {
+				toolBranchEnd = index + 1
+				break
+			}
+		}
+	}
+	startReachableLine := func(line int) bool {
+		return toolBranchStart == 0 || toolBranchEnd == 0 || line < toolBranchStart || line > toolBranchEnd
+	}
 	var findings []HookStartExitFinding
 	add := func(line int, invariant, detail string) {
 		findings = append(findings, HookStartExitFinding{path, line, invariant, detail})
@@ -192,6 +214,9 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 	}
 
 	for _, command := range commands {
+		if !startReachableLine(command.Line) {
+			continue
+		}
 		owner := ownerAt(command.Line)
 		if owner != "" && !reachable[owner] {
 			continue
@@ -229,6 +254,9 @@ func auditHookStartSource(path, source, fixtures, fixtureAssertions string) []Ho
 	}
 	for index, line := range prefixLines {
 		lineNumber := index + 1
+		if !startReachableLine(lineNumber) {
+			continue
+		}
 		owner := ownerAt(lineNumber)
 		if owner != "" && !reachable[owner] {
 			continue

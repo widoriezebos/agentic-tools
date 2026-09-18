@@ -17,6 +17,11 @@ func acceptedHookStartSource() string {
 	return fmt.Sprintf(`#!/usr/bin/env bash
 runtime=${1-}
 event=${2-}
+if [[ "$runtime" == claude && "$event" == tool ]]; then
+  [[ -n ${METASYSTEM_HOOK_DELEGATE_JOB:-} ]] && exit 0
+  [[ -r cache ]] || exit 0
+  exec engine adapter claude-tool-gate --root installation
+fi
 start_terminal_complete=false
 start_arming_status=0
 start_wait_recovery_status=0
@@ -291,6 +296,9 @@ func TestAuditHookStartExitsRejectsMutationBypasses(t *testing.T) {
 	}{
 		{"bare exit zero", func(s string) string {
 			return strings.Replace(s, "  start_finish notice engine-missing", "  exit 0\n  start_finish notice engine-missing", 1)
+		}, fixtures, "start exit ownership"},
+		{"tool branch reaches start", func(s string) string {
+			return strings.Replace(s, `if [[ "$runtime" == claude && "$event" == tool ]]; then`, `if [[ "$runtime" == claude || "$event" == tool ]]; then`, 1)
 		}, fixtures, "start exit ownership"},
 		{"bare exit nonzero", func(s string) string {
 			return strings.Replace(s, "  start_finish notice engine-missing", "  'exit' 1\n  start_finish notice engine-missing", 1)
@@ -1504,6 +1512,9 @@ func snapshotFixtureTree(t *testing.T, root string) string {
 		relative, err := filepath.Rel(root, path)
 		if err != nil || relative == "." || info.IsDir() {
 			return err
+		}
+		if relative == filepath.Join("artifacts", "agents", "context", "engine-path") {
+			return nil
 		}
 		content, err := os.ReadFile(path)
 		if err != nil {
