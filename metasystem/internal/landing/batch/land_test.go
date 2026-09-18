@@ -244,6 +244,7 @@ func TestBatchLandingLostAcknowledgementTakesP6Recovery(t *testing.T) {
 	if err := RecoverPushedSeries(store, testBatchID, "owner", time.Unix(5, 0), RecoverySeams{
 		OriginCommit: func(unit Unit) (string, bool, error) { return "origin-" + unit.GoalID, true, nil },
 		Finalize:     func(Unit, string) error { finalized++; return nil },
+		Rearm:        func(string) error { return nil },
 		Cleanup:      func() error { return nil },
 	}); err != nil {
 		t.Fatal(err)
@@ -499,11 +500,62 @@ func TestBatchAfterPushRecoveryFinalizesEachTrailerOnce(t *testing.T) {
 	seams := RecoverySeams{
 		OriginCommit: func(unit Unit) (string, bool, error) { return "origin-" + unit.Chain, true, nil },
 		Finalize:     func(unit Unit, _ string) error { finalized[unit.GoalID]++; return nil },
+		Rearm:        func(string) error { return nil },
 	}
 	must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(5, 0), seams))
 	must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(6, 0), seams))
 	if finalized["goal-a"] != 1 || finalized["goal-b"] != 1 || load(t, store).State != StateLanded {
 		t.Fatalf("finalized=%v record=%+v", finalized, load(t, store))
+	}
+}
+
+func TestBatchRecoveryRecordsPostPushRearm(t *testing.T) {
+	_, store := landingBed(t)
+	pushes := 0
+	landing := greenLandSeams(&[]string{})
+	landing.Push = func(string, string) error { pushes++; return nil }
+	must(t, LandSeries(store, testBatchID, "owner", time.Unix(4, 0), landing))
+	rearms := 0
+	must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(5, 0), RecoverySeams{
+		OriginCommit: func(unit Unit) (string, bool, error) { return "origin-" + unit.Chain, true, nil },
+		Finalize:     func(Unit, string) error { return nil },
+		Rearm:        func(tip string) error { rearms++; return nil },
+	}))
+	record := load(t, store)
+	if pushes != 1 || rearms != 1 || record.Landing == nil || !record.Landing.PushComplete || !record.Landing.RearmComplete || record.State != StateLanded {
+		t.Fatalf("pushes=%d rearms=%d record=%+v", pushes, rearms, record)
+	}
+}
+
+func TestBatchRecoveryRetriesPostPushRearmWithoutRepush(t *testing.T) {
+	_, store := landingBed(t)
+	pushes := 0
+	landing := greenLandSeams(&[]string{})
+	landing.Push = func(string, string) error { pushes++; return nil }
+	must(t, LandSeries(store, testBatchID, "owner", time.Unix(4, 0), landing))
+	rearms, finalizations := 0, 0
+	seams := RecoverySeams{
+		OriginCommit: func(unit Unit) (string, bool, error) { return "origin-" + unit.Chain, true, nil },
+		Finalize:     func(Unit, string) error { finalizations++; return nil },
+		Rearm: func(string) error {
+			rearms++
+			if rearms == 1 {
+				return errors.New("re-arm failed")
+			}
+			return nil
+		},
+	}
+	if err := RecoverPushedSeries(store, testBatchID, "owner", time.Unix(5, 0), seams); err == nil || !strings.Contains(err.Error(), "re-arm failed") {
+		t.Fatalf("first recovery=%v", err)
+	}
+	pending := load(t, store)
+	if pushes != 1 || finalizations != 2 || pending.Landing == nil || !pending.Landing.PushComplete || pending.Landing.RearmComplete || pending.State != StateLanding {
+		t.Fatalf("pending pushes=%d finalizations=%d record=%+v", pushes, finalizations, pending)
+	}
+	must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(6, 0), seams))
+	finished := load(t, store)
+	if pushes != 1 || rearms != 2 || finalizations != 2 || finished.Landing == nil || !finished.Landing.RearmComplete || finished.State != StateLanded {
+		t.Fatalf("finished pushes=%d rearms=%d finalizations=%d record=%+v", pushes, rearms, finalizations, finished)
 	}
 }
 
@@ -527,6 +579,7 @@ func TestBatchRecoveryRefusalsNameCauses(t *testing.T) {
 		err := RecoverPushedSeries(store, testBatchID, "owner", time.Unix(5, 0), RecoverySeams{
 			OriginCommit: func(unit Unit) (string, bool, error) { return "origin-" + unit.Chain, true, nil },
 			Finalize:     func(Unit, string) error { return nil },
+			Rearm:        func(string) error { return nil },
 			Cleanup:      func() error { return errors.New("cleanup cause") },
 		})
 		if err == nil || !strings.Contains(err.Error(), "BATCH_P6_REFUSED") || !strings.Contains(err.Error(), "cleanup cause") {
@@ -552,6 +605,7 @@ func TestBatchRecoveryRequiresEveryMemberGoalSource(t *testing.T) {
 			return "landed-" + source, source == "source-a" || foundB, nil
 		},
 		Finalize: func(Unit, string) error { finalized++; return nil },
+		Rearm:    func(string) error { return nil },
 		Cleanup:  func() error { return nil },
 	}
 	must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(4, 0), seams))
@@ -605,6 +659,7 @@ func TestBatchRecoverySweepsOnlyLastBranchMember(t *testing.T) {
 				return nil
 			},
 			Finalize: func(Unit, string) error { finalized++; return nil },
+			Rearm:    func(string) error { return nil },
 			Cleanup:  func() error { return nil },
 		}
 		if err := RecoverPushedSeries(store, testBatchID, "owner", time.Unix(2, 0), seams); err == nil || !strings.Contains(err.Error(), "sweep refused") {
@@ -631,6 +686,7 @@ func TestBatchRecoverySweepsOnlyLastBranchMember(t *testing.T) {
 			OriginCommit:    func(Unit) (string, bool, error) { return "landed-chain", true, nil },
 			SweepGoalBranch: func(Unit, string) error { return errors.New("unexpected sweep") },
 			Finalize:        func(Unit, string) error { finalized++; return nil },
+			Rearm:           func(string) error { return nil },
 			Cleanup:         func() error { return nil },
 		}))
 		if finalized != 2 || load(t, store).State != StateLanded {

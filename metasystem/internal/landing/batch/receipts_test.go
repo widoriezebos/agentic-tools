@@ -78,6 +78,34 @@ func TestPrefixRevisionMoveReturnsForRevision(t *testing.T) {
 	}
 }
 
+func TestPrefixAdmissionRefusalDoesNotWithdrawCapacity(t *testing.T) {
+	_, store := prefixReceiptBed(t)
+	err := ComposePrefixReceipts(store, testBatchID, "owner", time.Unix(3, 0), PrefixReceiptSeams{Execute: func(string, string, []string) (PrefixRunResult, error) {
+		return PrefixRunResult{}, &PrefixAdmissionRefusal{Code: "ADMISSION_REFUSED", Reason: "ADMISSION_REFUSED rank=host-load"}
+	}})
+	var admission *PrefixAdmissionRefusal
+	if !errors.As(err, &admission) || admission.Code != "ADMISSION_REFUSED" {
+		t.Fatalf("capacity refusal=%T %+v", err, admission)
+	}
+	record := load(t, store)
+	if record.Units[0].State != UnitJoined || record.State != StateLanding {
+		t.Fatalf("capacity refusal withdrew member: %+v", record)
+	}
+}
+
+func TestPrefixBudgetRefusalWithdrawsMember(t *testing.T) {
+	_, store := prefixReceiptBed(t)
+	if err := ComposePrefixReceipts(store, testBatchID, "owner", time.Unix(3, 0), PrefixReceiptSeams{Execute: func(string, string, []string) (PrefixRunResult, error) {
+		return PrefixRunResult{}, &PrefixBudgetRefusal{Reason: "BATCH_MEMBER_BUDGET_REFUSED: no diagnostic headroom"}
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	record := load(t, store)
+	if record.Units[0].State != UnitReturnPending || record.Units[0].Outcome != UnitWithdrawnBudget || record.State != StateOpen {
+		t.Fatalf("budget refusal did not withdraw member: %+v", record)
+	}
+}
+
 func TestPrefixRedEjectsItsUnit(t *testing.T) {
 	_, store := prefixReceiptBed(t)
 	red := []RedGroup{{ID: "different", InputManifest: []string{"a.go"}}}

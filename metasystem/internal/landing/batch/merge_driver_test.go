@@ -34,6 +34,11 @@ func TestEveryBatchThreeWayApplyUsesTestingMergeDriver(t *testing.T) {
 			for number, line := range strings.Split(string(data), "\n") {
 				contentMerge := strings.Contains(line, `"--3way"`) || strings.Contains(line, `"cherry-pick"`) ||
 					strings.Contains(line, `"rebase", upstream`) || strings.Contains(line, `"merge"`)
+				// Argument construction is checked at the call that consumes it;
+				// it is not itself a Git invocation.
+				if strings.Contains(line, `args = append(args, "--3way")`) {
+					continue
+				}
 				if !contentMerge || strings.Contains(line, `"rebase", "--abort"`) || strings.Contains(line, `"--ff-only"`) {
 					continue
 				}

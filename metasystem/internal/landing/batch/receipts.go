@@ -43,6 +43,14 @@ type PrefixRevisionRefusal struct{ Reason string }
 
 func (refusal *PrefixRevisionRefusal) Error() string { return refusal.Reason }
 
+// PrefixAdmissionRefusal preserves a non-budget admission decision so receipt
+// composition can retry it without changing the member's lifecycle.
+type PrefixAdmissionRefusal struct {
+	Code, Reason string
+}
+
+func (refusal *PrefixAdmissionRefusal) Error() string { return refusal.Reason }
+
 // ComposePrefixReceipts reuses only identity-equal terminal evidence. A
 // prefix with no identity differences creates no attempt.
 func ComposePrefixReceipts(store Store, id, actor string, at time.Time, seams PrefixReceiptSeams) error {

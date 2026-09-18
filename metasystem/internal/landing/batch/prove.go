@@ -18,6 +18,7 @@ type Proof struct {
 	RequiredMode    testpolicy.Mode     `json:"requiredMode"`
 	ExecutedMode    testpolicy.Mode     `json:"executedMode"`
 	SelectedGroups  []string            `json:"selectedGroups"`
+	CandidateTip    string              `json:"candidateTip,omitempty"`
 	AttemptID       string              `json:"attemptId,omitempty"`
 	BaseCommit      string              `json:"baseCommit,omitempty"`
 	BaseTree        string              `json:"baseTree,omitempty"`
@@ -56,7 +57,11 @@ func RequireProofPlan(store Store, id, actor, window string, sample proofrun.Loa
 			return fmt.Errorf("BATCH_PROOF_INPUT_MOVED: batch changed before proof admission")
 		}
 		current.ClosedReason = "proof-admitted"
-		current.Proof = &Proof{Status: "planned", Tree: current.TipTree, Window: window, RequiredMode: plan.RequiredMode,
+		candidateTip := ""
+		if current.Landing != nil {
+			candidateTip = current.Landing.candidateTip()
+		}
+		current.Proof = &Proof{Status: "planned", Tree: current.TipTree, CandidateTip: candidateTip, Window: window, RequiredMode: plan.RequiredMode,
 			ExecutedMode: plan.ExecutedMode, SelectedGroups: selected, Sample: sample, Launchers: sample.OverlappingHost}
 		current.Transition(StateProving, at, "prove", actor, "planned")
 		return nil
@@ -184,7 +189,7 @@ func ReassembleSurvivors(store Store, id, actor string, at time.Time) error {
 	survivors := slices.DeleteFunc(slices.Clone(record.Units), func(unit Unit) bool { return unit.State != UnitJoined })
 	if len(survivors) == 0 {
 		if record.Landing != nil {
-			if err := DeleteLandingBranch(store.root, id, record.Landing.BranchTip); err != nil {
+			if err := DeleteLandingBranch(store.root, id, record.Landing.publishedTip()); err != nil {
 				return err
 			}
 		}
@@ -200,8 +205,8 @@ func ReassembleSurvivors(store Store, id, actor string, at time.Time) error {
 		return err
 	}
 	branchTip := ""
-	if record.Landing != nil && record.Landing.BranchTip != "" && slices.ContainsFunc(survivors, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
-		branchTip, err = RebuildLandingBranch(store.root, id, record.BaseTree, record.Landing.BranchTip, actor, survivors)
+	if record.Landing != nil && record.Landing.publishedTip() != "" && slices.ContainsFunc(survivors, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
+		branchTip, err = RebuildLandingBranch(store.root, id, record.BaseTree, record.Landing.publishedTip(), actor, survivors)
 		if err != nil {
 			return err
 		}
@@ -209,7 +214,7 @@ func ReassembleSurvivors(store Store, id, actor string, at time.Time) error {
 	return store.Update(id, func(current *Record) error {
 		current.PrefixTrees, current.SelectedGroups, current.Seal, current.Proof, current.Landing, current.Receipts = prefixes, nil, nil, nil, nil, nil
 		if branchTip != "" {
-			current.Landing = &LandingProgress{Base: current.BaseTree, BranchTip: branchTip}
+			current.Landing = &LandingProgress{Base: current.BaseTree, BranchTip: branchTip, CandidateTip: branchTip}
 		}
 		current.TipTree = prefixes[len(prefixes)-1]
 		current.ClosedReason = ""

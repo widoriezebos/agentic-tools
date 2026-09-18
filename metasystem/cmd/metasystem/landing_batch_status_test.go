@@ -368,6 +368,42 @@ func TestPrefixReceiptClassifiesRevisionMove(t *testing.T) {
 	}
 }
 
+func TestPrefixReceiptClassifiesCapacityWithoutBudgetWithdrawal(t *testing.T) {
+	root := t.TempDir()
+	fake := filepath.Join(root, "fake-metasystem")
+	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'ADMISSION_REFUSED rank=host-load retry=retry-when-a-launcher-ends' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := batchPrefixReceiptExecutable
+	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
+	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
+	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
+	_, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", "tree", []string{"same"})
+	var admission *batch.PrefixAdmissionRefusal
+	if !errors.As(err, &admission) || admission.Code != "ADMISSION_REFUSED" || !strings.Contains(admission.Error(), "rank=host-load") {
+		t.Fatalf("capacity refusal=%T %+v", err, admission)
+	}
+}
+
+func TestPrefixReceiptClassifiesBudgetForWithdrawal(t *testing.T) {
+	root := t.TempDir()
+	fake := filepath.Join(root, "fake-metasystem")
+	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'BATCH_MEMBER_BUDGET_REFUSED: no diagnostic headroom' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := batchPrefixReceiptExecutable
+	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
+	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
+	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
+	_, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", "tree", []string{"same"})
+	var budget *batch.PrefixBudgetRefusal
+	if !errors.As(err, &budget) || !strings.Contains(budget.Error(), "BATCH_MEMBER_BUDGET_REFUSED") {
+		t.Fatalf("budget refusal=%T %v", err, err)
+	}
+}
+
 func TestBatchDiagnosisForwardsStoredPrefixEvidence(t *testing.T) {
 	const batchID = "01j5x00000000000000000ba20"
 	root := t.TempDir()

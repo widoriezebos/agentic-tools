@@ -13,15 +13,36 @@ type LandingProgress struct {
 	Base          string            `json:"base"`
 	Commits       map[string]string `json:"commits,omitempty"`
 	BuildCommits  map[string]string `json:"buildCommits,omitempty"`
-	BranchTip     string            `json:"branchTip,omitempty"`
+	BranchTip     string            `json:"branchTip,omitempty"` // legacy current-tip projection
+	CandidateTip  string            `json:"candidateTip,omitempty"`
+	ReceiptTip    string            `json:"receiptTip,omitempty"`
 	HeldChecked   bool              `json:"heldChecked,omitempty"`
 	PushComplete  bool              `json:"pushComplete,omitempty"`
 	PushedTip     string            `json:"pushedTip,omitempty"`
+	RearmComplete bool              `json:"rearmComplete,omitempty"`
 	CleanupDone   bool              `json:"cleanupDone,omitempty"`
 	RefusedOrigin string            `json:"refusedOrigin,omitempty"`
 	RefusedBase   string            `json:"refusedBase,omitempty"`
 	PushRounds    int               `json:"pushRounds,omitempty"`
 	PushRejection *PushRejection    `json:"pushRejection,omitempty"`
+}
+
+func (progress LandingProgress) candidateTip() string {
+	if progress.CandidateTip != "" {
+		return progress.CandidateTip
+	}
+	return progress.BranchTip
+}
+
+func (progress LandingProgress) publishedTip() string {
+	if progress.ReceiptTip != "" {
+		return progress.ReceiptTip
+	}
+	return progress.candidateTip()
+}
+
+func (progress *LandingProgress) recordReceiptTip(tip string) {
+	progress.ReceiptTip, progress.BranchTip = tip, tip
 }
 
 // PushRejection is the durable held state for a remote refusal that was not
@@ -134,7 +155,8 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		if checkErr != nil || !landed {
 			return false, checkErr
 		}
-		progress.PushComplete, progress.PushedTip, progress.BranchTip = true, candidateTip, candidateTip
+		progress.PushComplete, progress.PushedTip = true, candidateTip
+		progress.recordReceiptTip(candidateTip)
 		progress.RefusedOrigin, progress.RefusedBase, progress.PushRounds, progress.PushRejection = "", "", 0, nil
 		return true, persistProgress(true)
 	}
@@ -177,7 +199,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		if recovery.Tip != "" {
 			// PublishLandingBranch completed. Preserve its lease tip even
 			// when the following endpoint transaction was refused.
-			progress.BranchTip = recovery.Tip
+			progress.recordReceiptTip(recovery.Tip)
 		}
 		if recoveryErr != nil && IsNonLeaseEndpointRejection(recoveryErr) {
 			if storeErr := holdPushRejection(recovery.Origin, recoveryErr); storeErr != nil {
@@ -201,7 +223,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 						return false, err
 					}
 				}
-				return abandonAndReopen(progress.BranchTip, recovery.Origin, baseTree)
+				return abandonAndReopen(progress.publishedTip(), recovery.Origin, baseTree)
 			}
 			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s recovery failed: %w", recoveryOrigin, errors.Join(pushErr, recoveryErr))
 		}
@@ -223,7 +245,8 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		if !recovery.Pushed || recovery.Tip == "" {
 			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s is unchanged after the refused push: %w", recoveryOrigin, pushErr)
 		}
-		progress.PushComplete, progress.PushedTip, progress.BranchTip = true, recovery.Tip, recovery.Tip
+		progress.PushComplete, progress.PushedTip = true, recovery.Tip
+		progress.recordReceiptTip(recovery.Tip)
 		progress.RefusedOrigin, progress.RefusedBase, progress.PushRounds = "", "", 0
 		if storeErr := persistProgress(true); storeErr != nil {
 			return false, storeErr
@@ -277,8 +300,8 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		}
 		return recoverNow(origin, candidateTip, pushErr)
 	}
-	if !progress.PushComplete && progress.BranchTip != "" {
-		if landed, checkErr := markAlreadyLanded(origin, progress.BranchTip); checkErr != nil {
+	if !progress.PushComplete && progress.publishedTip() != "" {
+		if landed, checkErr := markAlreadyLanded(origin, progress.publishedTip()); checkErr != nil {
 			return checkErr
 		} else if landed {
 			return nil
@@ -288,7 +311,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		if origin == progress.PushRejection.OriginTip {
 			return nil
 		}
-		candidateTip := progress.BranchTip
+		candidateTip := progress.publishedTip()
 		if candidateTip == "" {
 			candidateTip = progress.Commits[units[len(units)-1].GoalID]
 		}
@@ -304,7 +327,7 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		}
 	}
 	if !progress.PushComplete && progress.RefusedBase != "" {
-		candidateTip := progress.BranchTip
+		candidateTip := progress.publishedTip()
 		if candidateTip == "" {
 			candidateTip = progress.Commits[units[len(units)-1].GoalID]
 		}
@@ -409,10 +432,10 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 	}
 	tip := progress.Commits[units[len(units)-1].GoalID]
 	if !progress.PushComplete && seams.PublishBranch != nil {
-		if err := seams.PublishBranch(progress.BranchTip, tip); err != nil {
+		if err := seams.PublishBranch(progress.publishedTip(), tip); err != nil {
 			return err
 		}
-		progress.BranchTip = tip
+		progress.recordReceiptTip(tip)
 		if err := store.Update(id, func(current *Record) error { current.Landing = &progress; return nil }); err != nil {
 			return err
 		}
@@ -489,11 +512,11 @@ func reopenLandingCandidate(store Store, id, newBaseTree, actor string, at time.
 		branchTip := ""
 		if record.Landing != nil {
 			if len(survivors) == 0 {
-				if err := DeleteLandingBranch(store.root, id, record.Landing.BranchTip); err != nil {
+				if err := DeleteLandingBranch(store.root, id, record.Landing.publishedTip()); err != nil {
 					return err
 				}
 			} else if slices.ContainsFunc(survivors, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
-				branchTip, err = RebuildLandingBranch(store.root, id, newBaseTree, record.Landing.BranchTip, actor, survivors)
+				branchTip, err = RebuildLandingBranch(store.root, id, newBaseTree, record.Landing.publishedTip(), actor, survivors)
 				if err != nil {
 					return err
 				}
@@ -511,7 +534,7 @@ func reopenLandingCandidate(store Store, id, newBaseTree, actor string, at time.
 				return nil
 			}
 			if branchTip != "" {
-				current.Landing = &LandingProgress{Base: newBaseTree, BranchTip: branchTip}
+				current.Landing = &LandingProgress{Base: newBaseTree, BranchTip: branchTip, CandidateTip: branchTip}
 			}
 			current.PrefixTrees, current.TipTree, current.ClosedReason = survivorPrefixes, survivorPrefixes[len(survivorPrefixes)-1], ""
 			current.Transition(StateOpen, at, "reassemble", actor, "survivors")

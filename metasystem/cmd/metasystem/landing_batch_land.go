@@ -149,6 +149,7 @@ func finishBatchLanding(root string, store batch.Store, id, actor string, at tim
 
 var batchMovedEndpointPush = batch.LandLandingBranch
 var batchGoalBranchSweep = goalbranch.Sweep
+var batchRecoveryRearm = rearmBatchTip
 var batchRecoveryGoalNext = func(root, goalID string, at time.Time) (string, error) {
 	endpoint, err := goalBranchEndpoint(root)
 	if err != nil {
@@ -333,10 +334,16 @@ func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tre
 	command.Dir, command.Env = root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
 	output, runErr := command.CombinedOutput()
 	if runErr != nil && command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitAdmissionRefused {
-		if strings.Contains(string(output), "GOAL_REVISION_MOVED") {
-			return batch.PrefixRunResult{}, &batch.PrefixRevisionRefusal{Reason: strings.TrimSpace(string(output))}
+		reason := strings.TrimSpace(string(output))
+		code := batchAdmissionRefusalCode(reason)
+		switch code {
+		case "GOAL_REVISION_MOVED":
+			return batch.PrefixRunResult{}, &batch.PrefixRevisionRefusal{Reason: reason}
+		case "BATCH_MEMBER_BUDGET_REFUSED":
+			return batch.PrefixRunResult{}, &batch.PrefixBudgetRefusal{Reason: reason}
+		default:
+			return batch.PrefixRunResult{}, &batch.PrefixAdmissionRefusal{Code: code, Reason: reason}
 		}
-		return batch.PrefixRunResult{}, &batch.PrefixBudgetRefusal{Reason: strings.TrimSpace(string(output))}
 	}
 	var result proofrun.TestResult
 	if err := readStrictJSON(resultPath, &result); err != nil {
@@ -361,6 +368,26 @@ func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tre
 		return out, nil
 	}
 	return out, runErr
+}
+
+func batchAdmissionRefusalCode(reason string) string {
+	for _, field := range strings.Fields(reason) {
+		candidate := strings.Trim(field, ":,;()[]")
+		if candidate == "" {
+			continue
+		}
+		valid := true
+		for _, char := range candidate {
+			if char != '_' && (char < 'A' || char > 'Z') && (char < '0' || char > '9') {
+				valid = false
+				break
+			}
+		}
+		if valid && (strings.HasSuffix(candidate, "_REFUSED") || strings.HasSuffix(candidate, "_MOVED")) {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func batchPrefixReceiptArgs(root, goalID, tree, resultPath string, groups []string, claim batch.Claim) []string {
@@ -419,6 +446,9 @@ func recoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 				return nil
 			}
 			return batchChildRunner(root, landingOwnerLineage, "goal", "edit", "--root", root, "--id", unit.GoalID, "--next", next, "--lineage", landingOwnerLineage)
+		},
+		Rearm: func(tip string) error {
+			return batchRecoveryRearm(root, tip)
 		},
 		Cleanup: func() error {
 			record, err := store.Load(id)

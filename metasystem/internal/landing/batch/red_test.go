@@ -218,6 +218,7 @@ func TestBatchSingleOwnerRedEjectsAndSurvivorsLand(t *testing.T) {
 			finalized++
 			return nil
 		},
+		Rearm:   func(string) error { return nil },
 		Cleanup: func() error { t.Fatal("landing cleanup ran twice"); return nil },
 	}))
 	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(6, 0), returns))

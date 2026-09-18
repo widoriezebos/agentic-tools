@@ -108,9 +108,13 @@ git commit -q "$@" \
 func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
 	original := batchChildRunner
 	originalNext := batchRecoveryGoalNext
-	t.Cleanup(func() { batchChildRunner, batchRecoveryGoalNext = original, originalNext })
+	originalRearm := batchRecoveryRearm
+	t.Cleanup(func() {
+		batchChildRunner, batchRecoveryGoalNext, batchRecoveryRearm = original, originalNext, originalRearm
+	})
 	batchChildRunner = func(string, string, ...string) error { return nil }
 	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
+	batchRecoveryRearm = func(string, string) error { return nil }
 
 	t.Run("would-refuse ejects without a push", func(t *testing.T) {
 		bed := newBatchProvenanceBed(t, "would-refuse code=chain-not-implementation", true)
@@ -163,9 +167,13 @@ func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
 func TestBatchChainCommitKeepsWouldRefuseVerdictBehavior(t *testing.T) {
 	original := batchChildRunner
 	originalNext := batchRecoveryGoalNext
-	t.Cleanup(func() { batchChildRunner, batchRecoveryGoalNext = original, originalNext })
+	originalRearm := batchRecoveryRearm
+	t.Cleanup(func() {
+		batchChildRunner, batchRecoveryGoalNext, batchRecoveryRearm = original, originalNext, originalRearm
+	})
 	batchChildRunner = func(string, string, ...string) error { return nil }
 	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
+	batchRecoveryRearm = func(string, string) error { return nil }
 	bed := newBatchProvenanceBed(t, "would-refuse code=chain-not-implementation", false)
 	if err := executeBatchLanding(bed.root, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
 		t.Fatal(err)
@@ -225,9 +233,13 @@ func TestBatchRecoveryRequiresExactChainField(t *testing.T) {
 func TestBatchMixedBranchAndChainMembersLandInBothOrders(t *testing.T) {
 	original := batchChildRunner
 	originalNext := batchRecoveryGoalNext
-	t.Cleanup(func() { batchChildRunner, batchRecoveryGoalNext = original, originalNext })
+	originalRearm := batchRecoveryRearm
+	t.Cleanup(func() {
+		batchChildRunner, batchRecoveryGoalNext, batchRecoveryRearm = original, originalNext, originalRearm
+	})
 	batchChildRunner = func(string, string, ...string) error { return nil }
 	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
+	batchRecoveryRearm = func(string, string) error { return nil }
 	for _, branchFirst := range []bool{true, false} {
 		name := "chain then branch"
 		if branchFirst {
@@ -366,9 +378,13 @@ func recoverBatchProvenanceFixture(t *testing.T, chains []string, commitTrailers
 
 	original := batchChildRunner
 	originalNext := batchRecoveryGoalNext
-	t.Cleanup(func() { batchChildRunner, batchRecoveryGoalNext = original, originalNext })
+	originalRearm := batchRecoveryRearm
+	t.Cleanup(func() {
+		batchChildRunner, batchRecoveryGoalNext, batchRecoveryRearm = original, originalNext, originalRearm
+	})
 	batchChildRunner = func(string, string, ...string) error { return nil }
 	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
+	batchRecoveryRearm = func(string, string) error { return nil }
 	if err := recoverBatchLanding(root, store, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +438,9 @@ func TestBatchRecoveryLostFinalizeReplyDoesNotRepeatGoalEdit(t *testing.T) {
 	}
 
 	original := batchChildRunner
-	t.Cleanup(func() { batchChildRunner = original })
+	originalRearm := batchRecoveryRearm
+	t.Cleanup(func() { batchChildRunner, batchRecoveryRearm = original, originalRearm })
+	batchRecoveryRearm = func(string, string) error { return nil }
 	edits := 0
 	batchChildRunner = func(_ string, _ string, args ...string) error {
 		if len(args) < 2 || args[0] != "goal" || args[1] != "edit" {
@@ -472,7 +490,15 @@ func TestBatchLastBranchLandingSweepsGoalBranch(t *testing.T) {
 		{name: "failed sweep retries", last: true, failOnce: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			originalRearm := batchRecoveryRearm
+			t.Cleanup(func() { batchRecoveryRearm = originalRearm })
+			batchRecoveryRearm = func(string, string) error { return nil }
 			root, upstream, base := goalBranchCLIFixture(t, "m1")
+			exclude := batchProvenanceGit(t, "-C", root, "rev-parse", "--git-path", "info/exclude")
+			if !filepath.IsAbs(exclude) {
+				exclude = filepath.Join(root, exclude)
+			}
+			batchProvenanceWrite(t, exclude, "artifacts/agents/landing-batches/\nartifacts/agents/locks/landing-batches.lock\n", 0o644)
 			batchProvenanceGit(t, "-C", root, "remote", "add", "origin", upstream)
 			batchProvenanceWrite(t, filepath.Join(root, "metasystem", "batch-last.go"), "package fixture\n", 0o644)
 			batchProvenanceGit(t, "-C", root, "add", "metasystem/batch-last.go")

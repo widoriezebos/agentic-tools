@@ -22,9 +22,9 @@ import (
 func init() { compiledBatchCapabilities[proofPlanningAndTipLaunch] = struct{}{} }
 
 type batchProofLaunch struct {
-	Root, BatchID, GoalID, Tree, ResultPath string
-	Mode                                    testpolicy.Mode
-	GoalRevision, AccountingRevision        uint64
+	Root, BatchID, GoalID, Tree, CandidateTip, ResultPath string
+	Mode                                                  testpolicy.Mode
+	GoalRevision, AccountingRevision                      uint64
 }
 
 type batchProofDependencies struct {
@@ -92,7 +92,7 @@ func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSampl
 			return branchErr
 		}
 		if err := store.Update(id, func(current *batch.Record) error {
-			current.Landing = &batch.LandingProgress{Base: current.BaseTree, BranchTip: tip}
+			current.Landing = &batch.LandingProgress{Base: current.BaseTree, BranchTip: tip, CandidateTip: tip}
 			return nil
 		}); err != nil {
 			return err
@@ -130,7 +130,7 @@ func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSampl
 	}
 	resultPath := filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", id+".json")
 	sealed := admitted.Seal[head.GoalID]
-	request := batchProofLaunch{Root: root, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, ResultPath: resultPath,
+	request := batchProofLaunch{Root: root, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath,
 		Mode: plan.ExecutedMode, GoalRevision: sealed.Revision, AccountingRevision: sealed.AccountingRevision}
 	result, launchErr := dependencies.launch(request)
 	var refused *batchProofAdmissionRefusal
@@ -193,6 +193,15 @@ func productionBatchPlan(root, goalID, tree string, mode testpolicy.Mode) (testp
 }
 
 func launchBatchTipProof(request batchProofLaunch) (proofrun.TestResult, error) {
+	if request.CandidateTip != "" {
+		candidateTree, treeErr := gitOutput(request.Root, "rev-parse", request.CandidateTip+"^{tree}")
+		if treeErr != nil {
+			return proofrun.TestResult{}, fmt.Errorf("resolve batch proof candidate tip %s: %w", request.CandidateTip, treeErr)
+		}
+		if candidateTree != request.Tree {
+			return proofrun.TestResult{}, fmt.Errorf("batch proof candidate tip %s has tree %s, want %s", request.CandidateTip, candidateTree, request.Tree)
+		}
+	}
 	binary, err := os.Executable()
 	if err != nil {
 		return proofrun.TestResult{}, err
@@ -281,5 +290,19 @@ func rearmBatchBase(root, baseTree string) error {
 		return err
 	}
 	_, err = batchBaseRearm.up(context.Background(), root, root)
+	return err
+}
+
+func rearmBatchTip(root, tip string) error {
+	if tip == "" {
+		return fmt.Errorf("re-arm landed batch: pushed tip is absent")
+	}
+	if err := batchBaseRearm.fastForward(context.Background(), root, tip); err != nil {
+		return err
+	}
+	if err := batchBaseRearm.rebuild(context.Background(), root); err != nil {
+		return err
+	}
+	_, err := batchBaseRearm.up(context.Background(), root, root)
 	return err
 }

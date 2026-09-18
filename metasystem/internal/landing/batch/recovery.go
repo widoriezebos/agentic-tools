@@ -12,8 +12,11 @@ type RecoverySeams struct {
 	OriginSource func(Unit, string) (string, bool, error)
 	// SweepGoalBranch removes a completed goal branch under its lease.
 	SweepGoalBranch func(Unit, string) error
-	// Finalize performs the idempotent P6 re-arm, Next edit and cleanup.
+	// Finalize performs one member's idempotent Goal Next edit.
 	Finalize func(Unit, string) error
+	// Rearm fast-forwards the landing checkout to the pushed tip, rebuilds its
+	// engine, and arms supervision after every member has been finalized.
+	Rearm func(string) error
 	// Cleanup removes the detached/local assembly after trailer recognition.
 	Cleanup func() error
 }
@@ -108,6 +111,21 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 	for _, unit := range record.Units {
 		if unit.State == UnitJoining || unit.State == UnitJoined || unit.Outcome == UnitLanded && !unit.P6Done {
 			complete = false
+		}
+	}
+	if complete && record.Landing != nil && !record.Landing.RearmComplete {
+		if seams.Rearm == nil {
+			return fmt.Errorf("BATCH_P6_REFUSED: landing re-arm helper is absent")
+		}
+		if rearmErr := seams.Rearm(record.Landing.PushedTip); rearmErr != nil {
+			return fmt.Errorf("BATCH_P6_REFUSED: landing re-arm failed: %w", rearmErr)
+		}
+		if err := store.Update(id, func(next *Record) error { next.Landing.RearmComplete = true; return nil }); err != nil {
+			return err
+		}
+		record, err = store.Load(id)
+		if err != nil {
+			return err
 		}
 	}
 	if complete && record.Landing != nil && !record.Landing.CleanupDone {

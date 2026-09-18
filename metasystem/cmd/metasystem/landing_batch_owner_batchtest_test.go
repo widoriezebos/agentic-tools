@@ -273,6 +273,74 @@ func TestBatchProofCoversTheUnion(t *testing.T) {
 	}
 }
 
+func TestBatchTwoTipPublicationRetainsCandidateAndReceiptTips(t *testing.T) {
+	root, id, store, _ := batchProofRefusalBed(t)
+	before, err := store.Load(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateTip := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "commit-tree", before.TipTree, "-p", "HEAD", "-m", "candidate"))))
+	if err := store.Update(id, func(record *batch.Record) error {
+		record.Landing = &batch.LandingProgress{Base: record.BaseTree, CandidateTip: candidateTip}
+		record.Receipts = map[string]batch.PrefixReceipt{record.Units[0].GoalID: {GoalID: record.Units[0].GoalID, Tree: record.PrefixTrees[0]}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var launched batchProofLaunch
+	deps := batchProofDependencies{
+		rearm: func(string, string) error { return nil },
+		plan: func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error) {
+			return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard, SelectedGroups: []string{"required"}}, nil
+		},
+		launch: func(request batchProofLaunch) (proofrun.TestResult, error) {
+			launched = request
+			return proofrun.TestResult{AttemptID: "two-tip", CandidateTree: request.Tree, Delivery: proofrun.DeliveryJudgment{Sufficient: true}}, nil
+		},
+	}
+	if err := executeBatchProof(root, id, "owner", "full", proofrun.LoadSample{}, time.Unix(10, 0), deps); err != nil {
+		t.Fatal(err)
+	}
+	receiptTip := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "commit-tree", launched.Tree, "-p", "HEAD", "-m", "receipt"))))
+	seams := batch.LandSeams{
+		Prepare:       func(string) error { return nil },
+		Apply:         func(batch.Unit) error { return nil },
+		AppendReceipt: func(batch.Unit, batch.PrefixReceipt) error { return nil },
+		Commit:        func(batch.Unit, batch.PrefixReceipt) (string, error) { return receiptTip, nil },
+		Held:          func(string, string) error { return nil },
+		PublishBranch: func(expected, tip string) error {
+			if expected != candidateTip || tip != receiptTip {
+				t.Fatalf("branch replacement=%s..%s, want %s..%s", expected, tip, candidateTip, receiptTip)
+			}
+			return nil
+		},
+		Push:    func(string, string) error { return nil },
+		Cleanup: func() error { return nil },
+	}
+	if err := batch.LandSeries(store, id, "owner", time.Unix(11, 0), seams); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Load(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateTree := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "rev-parse", record.Landing.CandidateTip+"^{tree}"))))
+	receiptTree := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "rev-parse", record.Landing.ReceiptTip+"^{tree}"))))
+	if launched.CandidateTip != candidateTip || record.Proof.CandidateTip != candidateTip || record.Landing.CandidateTip != candidateTip ||
+		record.Landing.ReceiptTip != receiptTip || candidateTree != receiptTree || candidateTree != launched.Tree {
+		t.Fatalf("launch=%+v proof=%+v landing=%+v candidateTree=%s receiptTree=%s", launched, record.Proof, record.Landing, candidateTree, receiptTree)
+	}
+}
+
+func TestBatchTipProofRejectsCandidateTreeMismatchBeforeLaunch(t *testing.T) {
+	root, _, _, _ := batchProofRefusalBed(t)
+	candidateTip := strings.TrimSpace(string(mustOutput(t, exec.Command("git", "-C", root, "rev-parse", "HEAD"))))
+	_, err := launchBatchTipProof(batchProofLaunch{Root: root, CandidateTip: candidateTip, Tree: strings.Repeat("0", 40)})
+	if err == nil || !strings.Contains(err.Error(), "batch proof candidate tip") || !strings.Contains(err.Error(), "has tree") {
+		t.Fatalf("candidate/tree mismatch=%v", err)
+	}
+}
+
 func TestBatchProofDurableUnionRefusalSkipsSecondRearm(t *testing.T) {
 	const batchID = "01j5x00000000000000000ba19"
 	root := t.TempDir()
@@ -521,6 +589,31 @@ func TestBatchProofRearmsBaseBeforePlanningEvenWhenTreeMatches(t *testing.T) {
 	mustRun("checkout", "-q", "refs/remotes/origin/main")
 	if err := rearmBatchBase(root, baseTree); err != nil || strings.Join(events, ",") != "rebuild,up" {
 		t.Fatalf("equal-tree rearm events=%v error=%v", events, err)
+	}
+}
+
+func TestBatchPostPushRearmFastForwardsRebuildsAndArms(t *testing.T) {
+	original := batchBaseRearm
+	t.Cleanup(func() { batchBaseRearm = original })
+	var events []string
+	batchBaseRearm.fastForward = func(_ context.Context, root, tip string) error {
+		events = append(events, "fast-forward:"+root+":"+tip)
+		return nil
+	}
+	batchBaseRearm.rebuild = func(_ context.Context, root string) error {
+		events = append(events, "rebuild:"+root)
+		return nil
+	}
+	batchBaseRearm.up = func(_ context.Context, root, repo string) (upOutcome, error) {
+		events = append(events, "up:"+root+":"+repo)
+		return upOutcome{}, nil
+	}
+	if err := rearmBatchTip("/landing", "receipt-tip"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"fast-forward:/landing:receipt-tip", "rebuild:/landing", "up:/landing:/landing"}
+	if !slices.Equal(events, want) {
+		t.Fatalf("post-push re-arm events=%v, want %v", events, want)
 	}
 }
 
