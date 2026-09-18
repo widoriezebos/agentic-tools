@@ -185,7 +185,7 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Diagnostic || decoded.Role.Line()+"\n" != text || decoded.Reading.Latest == nil || decoded.Reading.Latest.PromptTokens != 150001 {
+	if decoded.Diagnostic || !strings.HasPrefix(text, decoded.Role.Line()+"\n") || decoded.Reading.Latest == nil || decoded.Reading.Latest.PromptTokens != 150001 {
 		t.Fatalf("text/JSON evaluations diverged: text=%q JSON=%+v", text, decoded)
 	}
 
@@ -194,7 +194,7 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 	code, explicit, problem := captureChannelOutput(t, func() int {
 		return runContextStatus([]string{"--root", explicitRoot, "--runtime", "claude", "--session", "explicit", "--transcript", explicitTranscript})
 	})
-	if code != 0 || problem != "" || explicit != "context-budget=alive (diagnostic transcript override; 120 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger)\n" {
+	if code != 0 || problem != "" || !strings.HasPrefix(explicit, "context-budget=alive (diagnostic transcript override; 120 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger)\n") {
 		t.Fatalf("explicit status = code %d stdout %q stderr %q", code, explicit, problem)
 	}
 	if _, err := os.Stat(filepath.Join(explicitRoot, "artifacts", "agents", "context", "sessions.jsonl")); !os.IsNotExist(err) {
@@ -246,6 +246,26 @@ func TestContextStatusVerbPrintsTheRoleLine(t *testing.T) {
 	}
 }
 
+func TestContextStatusNamesTheWindowAndItsSource(t *testing.T) {
+	root := contextCommandRoot(t)
+	conf := "launch.seat.window.tokens=210000\ncontext.ceiling.tokens=250000\ncontext.handoff.margin.tokens=145000\n"
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, output, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root}) })
+	if code != 0 || problem != "" || !strings.Contains(output, "\nwindow: 210000 tokens (launch.seat.window.tokens, conf); ceiling: 250000 tokens (context.ceiling.tokens, conf); ceiling-above-window\n") {
+		t.Fatalf("code=%d output=%q problem=%q", code, output, problem)
+	}
+	code, structured, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root, "--json"}) })
+	var decoded contextStatusOutput
+	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 || problem != "" || decoded.Window.Tokens != 210000 || decoded.Window.Source != "conf" || !decoded.Window.CeilingAboveWindow {
+		t.Fatalf("decoded=%+v code=%d problem=%q", decoded.Window, code, problem)
+	}
+}
+
 func TestContextStatusPrintsTheBudgetLine(t *testing.T) {
 	t.Setenv("METASYSTEM_CONTEXT_CEILING_TOKENS", "")
 	_ = os.Unsetenv("METASYSTEM_CONTEXT_CEILING_TOKENS")
@@ -293,7 +313,7 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 	code, emptyText, problem := captureChannelOutput(t, func() int {
 		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "empty", "--transcript", empty})
 	})
-	if code != 0 || problem != "" || emptyText != "context-budget=alive (diagnostic transcript override; unknown (no call recorded yet))\n" {
+	if code != 0 || problem != "" || !strings.HasPrefix(emptyText, "context-budget=alive (diagnostic transcript override; unknown (no call recorded yet))\n") {
 		t.Fatalf("empty diagnostic = code %d stdout %q stderr %q", code, emptyText, problem)
 	}
 
@@ -302,7 +322,7 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 		return runContextStatus([]string{"--root", root, "--runtime", "claude", "--session", "over-bound", "--transcript", overBound})
 	})
 	wantOverBound := "context-budget=alive (diagnostic transcript override; 160 thousand tokens this call, trigger 105, proof line 150, proof maximum 200, ceiling 250; over the trigger)\n"
-	if code != 0 || problem != "" || overBoundText != wantOverBound || strings.Contains(overBoundText, "handoff") {
+	if code != 0 || problem != "" || !strings.HasPrefix(overBoundText, wantOverBound) || strings.Contains(overBoundText, "handoff") {
 		t.Fatalf("over-bound diagnostic = code %d stdout %q stderr %q", code, overBoundText, problem)
 	}
 	code, structured, problem := captureChannelOutput(t, func() int {
@@ -312,7 +332,7 @@ func TestContextStatusLabelsTranscriptDiagnostics(t *testing.T) {
 	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if code != 0 || problem != "" || !decoded.Diagnostic || decoded.Role.Line()+"\n" != overBoundText ||
+	if code != 0 || problem != "" || !decoded.Diagnostic || !strings.HasPrefix(overBoundText, decoded.Role.Line()+"\n") ||
 		strings.Contains(structured, `"seen"`) || strings.Contains(structured, `"tail"`) {
 		t.Fatalf("structured diagnostic = code %d stdout %q stderr %q decoded=%+v", code, structured, problem, decoded)
 	}

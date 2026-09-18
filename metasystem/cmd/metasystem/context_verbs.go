@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -23,6 +24,17 @@ type contextStatusOutput struct {
 	Diagnostic bool                `json:"diagnostic"`
 	Role       steward.RoleVerdict `json:"role"`
 	Reading    contextReadingView  `json:"reading"`
+	Window     contextWindowView   `json:"window"`
+}
+
+type contextWindowView struct {
+	Tokens             int64  `json:"tokens"`
+	Key                string `json:"key"`
+	Source             string `json:"source"`
+	Ceiling            int64  `json:"ceiling"`
+	CeilingKey         string `json:"ceilingKey"`
+	CeilingSource      string `json:"ceilingSource"`
+	CeilingAboveWindow bool   `json:"ceilingAboveWindow"`
 }
 
 type contextReadingView struct {
@@ -87,16 +99,70 @@ func runContextStatus(args []string) int {
 	role, reading, readErr := steward.ContextBudgetLine(stateRoot, stateRoot, time.Now().UTC(), steward.ContextOptions{
 		Runtime: *runtimeName, Session: *session, Transcript: *transcript,
 	})
+	window, windowErr := contextWindow(stateRoot)
 	if *asJSON {
-		printJSON(contextStatusOutput{Diagnostic: transcriptSupplied, Role: role, Reading: projectContextReading(reading)})
+		printJSON(contextStatusOutput{Diagnostic: transcriptSupplied, Role: role, Reading: projectContextReading(reading), Window: window})
 	} else {
 		fmt.Println(role.Line())
+		if windowErr == nil {
+			fmt.Println(windowLine(window))
+		}
+	}
+	if windowErr != nil {
+		fmt.Fprintln(os.Stderr, "metasystem context status:", windowErr)
+		return 1
 	}
 	if readErr != nil {
 		fmt.Fprintln(os.Stderr, "metasystem context status:", readErr)
 		return 1
 	}
 	return 0
+}
+
+func contextWindow(root string) (contextWindowView, error) {
+	confPath := filepath.Join(root, "metasystem.conf")
+	settings := launch.DefaultSettings()
+	confExists := true
+	if _, statErr := os.Stat(confPath); os.IsNotExist(statErr) {
+		confExists = false
+	} else if statErr != nil {
+		return contextWindowView{}, statErr
+	}
+	var err error
+	if confExists {
+		settings, err = launch.ResolveSettings(confPath, os.LookupEnv)
+	}
+	if err != nil {
+		return contextWindowView{}, err
+	}
+	budget, err := config.ContextBudget(root)
+	if err != nil {
+		return contextWindowView{}, err
+	}
+	windowSource := "default"
+	for _, value := range settings.Values {
+		if value.Key == launch.SeatWindowKey {
+			windowSource = value.Source
+			break
+		}
+	}
+	ceilingParams := config.GetParams{Key: config.ContextCeilingTokensKey, ConfPath: confPath, Default: strconv.FormatInt(config.DefaultContextCeilingTokens, 10), DefaultSet: true}
+	ceilingSource := "default"
+	if confExists {
+		ceilingSource, err = config.KeyOrigin(ceilingParams)
+	}
+	if err != nil {
+		return contextWindowView{}, err
+	}
+	return contextWindowView{Tokens: settings.SeatWindow, Key: launch.SeatWindowKey, Source: windowSource, Ceiling: budget.Ceiling, CeilingKey: config.ContextCeilingTokensKey, CeilingSource: ceilingSource, CeilingAboveWindow: budget.Ceiling > settings.SeatWindow}, nil
+}
+
+func windowLine(window contextWindowView) string {
+	line := fmt.Sprintf("window: %d tokens (%s, %s); ceiling: %d tokens (%s, %s)", window.Tokens, window.Key, window.Source, window.Ceiling, window.CeilingKey, window.CeilingSource)
+	if window.CeilingAboveWindow {
+		line += "; ceiling-above-window"
+	}
+	return line
 }
 
 func runContextReport(args []string) int {

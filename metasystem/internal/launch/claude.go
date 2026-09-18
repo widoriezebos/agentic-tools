@@ -29,6 +29,9 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 	if err != nil {
 		return Command{}, err
 	}
+	if diff := readString(record.AdapterData, "readDiff"); diff != "" {
+		brief = append(brief, []byte("\nDiff: "+diff+"\n")...)
+	}
 	model := readString(record.AdapterData, "model")
 	if model == "" {
 		switch record.Kind {
@@ -42,9 +45,13 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 	if session := readString(record.AdapterData, "resumeSession"); session != "" {
 		args = append(args, "--resume", session)
 	}
+	window := DefaultClaudeAutoCompactWindow
+	if value := readInt64(record.AdapterData, "window"); value > 0 {
+		window = fmt.Sprint(value)
+	}
 	return Command{
 		Program: adapter.Binary, Directory: record.WorkingDirectory, Stdin: string(brief), Args: args,
-		Environment: []string{"CLAUDE_CODE_AUTO_COMPACT_WINDOW=" + DefaultClaudeAutoCompactWindow},
+		Environment: []string{"CLAUDE_CODE_AUTO_COMPACT_WINDOW=" + window},
 		StdoutPath:  filepath.Join(stateDir, "result.json"), LogPath: filepath.Join(stateDir, "stderr.log"),
 	}, nil
 }

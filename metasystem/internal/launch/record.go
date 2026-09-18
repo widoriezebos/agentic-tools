@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -70,6 +71,20 @@ type Record struct {
 	Measurement      Measurement                `json:"measurement"`
 	Outputs          []Output                   `json:"outputs"`
 	AdapterData      map[string]json.RawMessage `json:"adapterData"`
+	DeclaredLines    int64                      `json:"declaredLines,omitempty"`
+	ReadMode         string                     `json:"readMode,omitempty"`
+	ReadPackage      string                     `json:"readPackage,omitempty"`
+	ChangedLines     int64                      `json:"changedLines,omitempty"`
+	VerdictCounts    *bool                      `json:"verdictCounts,omitempty"`
+}
+
+type Refusal struct {
+	Time    string           `json:"time"`
+	Code    string           `json:"code"`
+	Kind    string           `json:"kind"`
+	Goal    string           `json:"goal"`
+	Tag     string           `json:"tag"`
+	Numbers map[string]int64 `json:"numbers"`
 }
 
 var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
@@ -185,6 +200,60 @@ func (s Store) List() ([]Record, error) {
 	}
 	sort.Slice(records, func(i, j int) bool { return records[i].StartedAt < records[j].StartedAt })
 	return records, nil
+}
+func (s Store) AppendRefusal(refusal Refusal) error {
+	root, err := s.root()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(filepath.Join(root, ".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
+		return err
+	}
+	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	path := filepath.Join(root, "refusals.jsonl")
+	content, readErr := os.ReadFile(path)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return readErr
+	}
+	row, err := json.Marshal(refusal)
+	if err != nil {
+		return err
+	}
+	_, err = atomicfile.WriteText(path, string(content)+string(row)+"\n", filepath.Dir(root))
+	return err
+}
+func (s Store) Refusals() ([]Refusal, error) {
+	root, err := s.root()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(filepath.Join(root, "refusals.jsonl"))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var result []Refusal
+	for number, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var row Refusal
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			return nil, fmt.Errorf("refusal row %d: %w", number+1, err)
+		}
+		result = append(result, row)
+	}
+	return result, nil
 }
 func (s Store) write(dir string, record Record) error {
 	data, err := json.MarshalIndent(record, "", "  ")

@@ -100,7 +100,7 @@ func manager(t *testing.T) (*Manager, *fakeProcesses, *fakeProber, *time.Time) {
 func brief(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "brief.md")
-	os.WriteFile(path, []byte("brief"), 0o600)
+	os.WriteFile(path, []byte("Declared size: 1 changed lines\n"), 0o600)
 	return path
 }
 func seed(t *testing.T, m *Manager, id string, state State) Record {

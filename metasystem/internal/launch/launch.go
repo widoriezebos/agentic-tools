@@ -35,20 +35,34 @@ type SupervisorStarter interface {
 }
 type StartSpec struct {
 	ID, Kind, Goal, Tag, WorkingDirectory, Brief, Page string
-	Inputs, Outputs                                    []string
+	Model, Effort, UnitsPage, DiffFile, Package        string
+	Wide                                               bool
+	Inputs, Outputs, Units                             []string
 	AdapterData                                        map[string]json.RawMessage
 }
 type Manager struct {
-	Store      Store
-	Adapters   map[string]Adapter
-	Processes  ProcessSystem
-	Prober     identity.Prober
-	Supervisor SupervisorStarter
-	Now        func() time.Time
-	Sleep      func(time.Duration)
-	Grace      time.Duration
-	Poll       time.Duration
-	StartCap   time.Duration
+	Store         Store
+	Adapters      map[string]Adapter
+	Processes     ProcessSystem
+	Prober        identity.Prober
+	Supervisor    SupervisorStarter
+	Now           func() time.Time
+	Sleep         func(time.Duration)
+	Grace         time.Duration
+	Poll          time.Duration
+	StartCap      time.Duration
+	Settings      Settings
+	SettingsError error
+}
+
+func (m *Manager) resolvedSettings() (Settings, error) {
+	if m.SettingsError != nil {
+		return Settings{}, m.SettingsError
+	}
+	if len(m.Settings.Values) == 0 {
+		return DefaultSettings(), nil
+	}
+	return m.Settings, nil
 }
 
 func (m *Manager) Start(spec StartSpec) (Record, error) {
@@ -62,6 +76,10 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	if spec.WorkingDirectory == "" {
 		return Record{}, errors.New("launch working directory is required")
 	}
+	if err := m.Admit(spec); err != nil {
+		return Record{}, err
+	}
+	settings, _ := m.resolvedSettings()
 	absDir, err := filepath.Abs(spec.WorkingDirectory)
 	if err != nil {
 		return Record{}, err
@@ -83,18 +101,65 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	record := Record{ID: id, Kind: spec.Kind, Adapter: adapterName, Goal: spec.Goal, Tag: spec.Tag,
 		WorkingDirectory: absDir, Inputs: inputs, State: Starting, StartedAt: m.Now().UTC().Format(time.RFC3339Nano),
 		AdapterData: spec.AdapterData}
-	if record.AdapterData == nil {
-		record.AdapterData = map[string]json.RawMessage{}
+	data := map[string]json.RawMessage{}
+	for key, value := range record.AdapterData {
+		data[key] = value
 	}
+	record.AdapterData = data
 	setString(record.AdapterData, "brief", inputs[0].Path)
 	setStrings(record.AdapterData, "declaredOutputs", spec.Outputs)
+	model, effort, window := settings.launchValues(spec.Kind)
+	if value := readString(record.AdapterData, "model"); value != "" {
+		model = value
+	}
+	if value := readString(record.AdapterData, "effort"); value != "" {
+		effort = value
+	}
+	if spec.Model != "" {
+		model = spec.Model
+	}
+	if spec.Effort != "" {
+		effort = spec.Effort
+	}
+	setString(record.AdapterData, "model", model)
+	setString(record.AdapterData, "effort", effort)
+	setInt64(record.AdapterData, "window", window)
 	if spec.Page != "" {
 		setString(record.AdapterData, "page", spec.Page)
+	}
+	if spec.Kind == "build" {
+		_, record.DeclaredLines, err = buildSize(spec)
+		if err != nil {
+			return Record{}, err
+		}
+	}
+	var diff []byte
+	if spec.Kind == "read" && spec.DiffFile != "" {
+		choice, choiceErr := ChooseReadMode(spec.DiffFile, settings.ReadSplitLines)
+		if choiceErr != nil {
+			return Record{}, choiceErr
+		}
+		record.ReadMode, record.ReadPackage = choice.Mode, spec.Package
+		diff, record.ChangedLines, err = readDiff(spec.DiffFile, choice.Mode, spec.Package)
+		if err != nil {
+			return Record{}, err
+		}
 	}
 	if err := m.Store.Create(record); err != nil {
 		return Record{}, err
 	}
 	stateDir, _ := m.Store.StateDir(id)
+	if diff != nil {
+		path := filepath.Join(stateDir, "read.diff")
+		if _, err := atomicfile.WriteText(path, string(diff), filepath.Dir(stateDir)); err != nil {
+			return Record{}, err
+		}
+		setString(record.AdapterData, "readDiff", path)
+		record, err = m.Store.Update(id, func(current *Record) error { current.AdapterData = record.AdapterData; return nil })
+		if err != nil {
+			return Record{}, err
+		}
+	}
 	supervisor, err := m.Supervisor.StartSupervisor(id, stateDir)
 	if err != nil {
 		failed, writeErr := m.fail(id, "supervisor-start: "+err.Error(), nil)
@@ -221,6 +286,10 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		record.ExitCode = &exitCode
 		record.FinishedAt = m.Now().UTC().Format(time.RFC3339Nano)
 		record.Measurement, record.Outputs = measurement, outputs
+		if record.Kind == "read" {
+			counts := measurement.Compactions == 0
+			record.VerdictCounts = &counts
+		}
 		for key, value := range adapterData {
 			record.AdapterData[key] = value
 		}
@@ -284,6 +353,14 @@ func (m *Manager) endGroup(pgid int64) error {
 func (m *Manager) Wait(id string, timeout time.Duration) (Record, bool, error) {
 	if timeout < 0 {
 		return Record{}, false, errors.New("wait timeout must not be negative")
+	}
+	settings, err := m.resolvedSettings()
+	if err != nil {
+		return Record{}, false, err
+	}
+	cap := time.Duration(settings.WaitCapSeconds) * time.Second
+	if timeout > cap {
+		timeout = cap
 	}
 	deadline := m.Now().Add(timeout)
 	for {
@@ -459,8 +536,16 @@ func setString(values map[string]json.RawMessage, key, value string) {
 func setStrings(values map[string]json.RawMessage, key string, value []string) {
 	values[key], _ = json.Marshal(value)
 }
+func setInt64(values map[string]json.RawMessage, key string, value int64) {
+	values[key], _ = json.Marshal(value)
+}
 func readString(values map[string]json.RawMessage, key string) string {
 	var value string
+	_ = json.Unmarshal(values[key], &value)
+	return value
+}
+func readInt64(values map[string]json.RawMessage, key string) int64 {
+	var value int64
 	_ = json.Unmarshal(values[key], &value)
 	return value
 }

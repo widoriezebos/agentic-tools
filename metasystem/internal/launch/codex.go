@@ -61,10 +61,14 @@ func (adapter CodexExec) Command(record Record, stateDir string) (Command, error
 	if value := readString(record.AdapterData, "effort"); value != "" {
 		effort = value
 	}
+	window := int64(200000)
+	if value := readInt64(record.AdapterData, "window"); value > 0 {
+		window = value
+	}
 	return Command{Program: adapter.Binary, Directory: directory, Stdin: string(data),
 		Args: []string{"exec", "-m", model, "-c", "model_reasoning_effort=" + effort, "-C", directory,
 			"-s", "workspace-write", "-o", filepath.Join(stateDir, "last-message.txt"), "-"},
-		Environment: []string{"CODEX_CONTEXT_WINDOW=200000"}, LogPath: filepath.Join(stateDir, "exec.log")}, nil
+		Environment: []string{fmt.Sprintf("CODEX_CONTEXT_WINDOW=%d", window)}, LogPath: filepath.Join(stateDir, "exec.log")}, nil
 }
 func (adapter CodexExec) prepareCritique(record Record) (string, error) {
 	if record.Tag == "" || len(record.Inputs) < 3 {

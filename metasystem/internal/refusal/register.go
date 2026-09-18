@@ -34,6 +34,11 @@ type Defect struct{ Code, Why string }
 
 var Rows = []Row{
 	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go", Shape: Question},
+	{Code: "LAUNCH_SETTING_INVALID", Owner: "internal/launch", Site: "settings.go", Shape: Question},
+	{Code: "LAUNCH_BRIEF_OVERSIZE", Owner: "internal/launch", Site: "admit.go", Shape: Question},
+	{Code: "LAUNCH_BUILD_UNSIZED", Owner: "internal/launch", Site: "admit.go", Shape: Question},
+	{Code: "LAUNCH_BUILD_OVERSIZE", Owner: "internal/launch", Site: "admit.go", Shape: Question},
+	{Code: "LAUNCH_READ_UNSPLIT", Owner: "internal/launch", Site: "admit.go", Shape: Question},
 	{Code: "BATCH_UNAVAILABLE", Owner: "cmd/metasystem", Site: "landing_batch_verbs.go:29", Shape: Question},
 	{Code: "BATCH_CHAIN_CONFLICT", Owner: "internal/landing/batch", Site: "chain.go", Shape: Question},
 	{Code: "BATCH_CLOSED", Owner: "internal/landing/batch", Site: "join.go", Shape: Question},
