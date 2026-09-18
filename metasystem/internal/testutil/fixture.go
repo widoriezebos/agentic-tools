@@ -1,8 +1,10 @@
 package testutil
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -163,6 +165,51 @@ func (f *ProcessFixture) Shell(script string, args ...string) *exec.Cmd {
 func (f *ProcessFixture) Record(pid int) { f.record(pid, false) }
 
 func (f *ProcessFixture) Hold(pid int) { f.record(pid, true) }
+
+// WaitForNoUnrecordedChildren waits until the fixture key names only children recorded by this fixture.
+func (f *ProcessFixture) WaitForNoUnrecordedChildren(ctx context.Context) error {
+	recorded := make(map[string]bool, len(f.refs))
+	for _, ref := range f.refs {
+		encoded, err := identity.EncodeRef(ref)
+		if err != nil {
+			return fmt.Errorf("encode recorded fixture child: %w", err)
+		}
+		recorded[encoded] = true
+	}
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		survivors, err := f.scan(f.key)
+		if err != nil {
+			return fmt.Errorf("scan process fixture survivors: %w", err)
+		}
+		unrecorded := make([]identity.FixtureSurvivor, 0, len(survivors))
+		for _, survivor := range survivors {
+			encoded, encodeErr := identity.EncodeRef(survivor.Ref)
+			if encodeErr == nil && recorded[encoded] {
+				continue
+			}
+			exact, state, probeErr := f.prober.Probe(survivor.Ref.Pid)
+			if probeErr == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, survivor.Ref) || exact.Zombie)) {
+				continue
+			}
+			unrecorded = append(unrecorded, survivor)
+		}
+		if len(unrecorded) == 0 {
+			return nil
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			parts := make([]string, 0, len(unrecorded))
+			for _, survivor := range unrecorded {
+				parts = append(parts, fmt.Sprintf("pid=%d exe=%q argv=%q", survivor.Ref.Pid, survivor.Exe, survivor.Argv))
+			}
+			return fmt.Errorf("unrecorded fixture children still running: %s: %w", strings.Join(parts, "; "), ctx.Err())
+		}
+	}
+}
 
 func (f *ProcessFixture) record(pid int, held bool) {
 	exact, state, err := f.prober.Probe(int64(pid))

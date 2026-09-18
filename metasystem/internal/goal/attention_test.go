@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -139,6 +140,7 @@ func TestWaitGoalFetchDeadline(t *testing.T) {
 				t.Fatalf("announce installed bounds holder: %v %s", announceErr, output)
 			}
 			dir := t.TempDir()
+			fixture := testutil.Fixture(t)
 			wrapper := filepath.Join(dir, "git")
 			realGit, lookupErr := exec.LookPath("git")
 			if lookupErr != nil {
@@ -147,13 +149,12 @@ func TestWaitGoalFetchDeadline(t *testing.T) {
 			marker := filepath.Join(dir, "fetch-started")
 			groupMarker := filepath.Join(dir, "fetch-group")
 			childMarker := filepath.Join(dir, "fetch-child")
-			wrapperSource := `#!/bin/sh
-case " $* " in
+			wrapperSource := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
   *" fetch "*)
     printf reached >"${LEDGER_HANG_MARKER:?}"
-    echo $$ >"${LEDGER_HANG_GROUP:?}"
+	printf '%s %s\n' "$$" "$(ps -o pgid= -p $$ | tr -d ' ')" >"${LEDGER_HANG_GROUP:?}"
     trap '' TERM
-    sh -c 'trap "" TERM; echo $$ >"${LEDGER_HANG_CHILD:?}"; while :; do :; done' &
+	sh -c 'trap "" TERM; echo $$ >"${LEDGER_HANG_CHILD:?}"; read -r _ <"${METASYSTEM_FIXTURE_LEASH:?}"' sh "$tag" &
     wait
     ;;
 esac
@@ -162,21 +163,6 @@ exec "${LEDGER_REAL_GIT:?}" "$@"
 			if writeErr := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); writeErr != nil {
 				t.Fatal(writeErr)
 			}
-			defer func() {
-				groupData, readErr := os.ReadFile(groupMarker)
-				if readErr != nil {
-					return
-				}
-				groupID, parseErr := strconv.Atoi(strings.TrimSpace(string(groupData)))
-				if parseErr != nil || groupID < 1 {
-					t.Errorf("hanging Git fixture wrote an invalid process group: %q", groupData)
-					return
-				}
-				_ = syscall.Kill(-groupID, syscall.SIGKILL)
-				if cleanupErr := waitForGroupAbsence(groupID, 5*time.Second); cleanupErr != nil {
-					t.Errorf("hanging Git fixture cleanup: %v", cleanupErr)
-				}
-			}()
 			cmd := exec.Command(binary, "wait", "--root", repo, "--goal", "goal-a", "--event", "human-act", "--verb", "deny", "--after", cursor, "--timeout", "30s", "--json")
 			childEnvironment := environWithoutGitSteering()
 			pathValue := "PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH")
@@ -191,41 +177,38 @@ exec "${LEDGER_REAL_GIT:?}" "$@"
 				childEnvironment = append(childEnvironment, pathValue)
 			}
 			childEnvironment = append(childEnvironment, "LEDGER_REAL_GIT="+realGit, "LEDGER_HANG_MARKER="+marker, "LEDGER_HANG_GROUP="+groupMarker, "LEDGER_HANG_CHILD="+childMarker)
-			cmd.Env = childEnvironment
+			cmd.Env = fixture.Env(childEnvironment)
 			started := time.Now()
 			type result struct {
 				output []byte
 				err    error
 			}
+			var commandOutput bytes.Buffer
+			cmd.Stdout = &commandOutput
+			cmd.Stderr = &commandOutput
+			if startErr := cmd.Start(); startErr != nil {
+				t.Fatalf("start installed hanging Git wait: %v", startErr)
+			}
+			fixture.Record(cmd.Process.Pid)
 			done := make(chan result, 1)
 			go func() {
-				output, commandErr := cmd.CombinedOutput()
-				done <- result{output: output, err: commandErr}
+				commandErr := cmd.Wait()
+				done <- result{output: append([]byte(nil), commandOutput.Bytes()...), err: commandErr}
 			}()
+			wrapperID, groupID, childID := waitForHangingGitPIDs(t, groupMarker, childMarker, 25*time.Second)
+			fixture.Record(wrapperID)
+			fixture.Record(childID)
+			if wrapperID != groupID {
+				t.Fatalf("installed hanging Git wrapper pid %d did not lead process group %d", wrapperID, groupID)
+			}
 			select {
 			case commandResult := <-done:
 				exit, ok := commandResult.err.(*exec.ExitError)
 				if !ok || exit.ExitCode() != metarun.ExitWaiterIO || time.Since(started) > 20*time.Second {
 					t.Fatalf("installed hanging Git wait exit=%v elapsed=%s output=%s", commandResult.err, time.Since(started), commandResult.output)
 				}
-				groupData, readErr := os.ReadFile(groupMarker)
-				if readErr != nil {
-					t.Fatalf("installed hanging Git did not record its process group: %v", readErr)
-				}
-				groupID, parseErr := strconv.Atoi(strings.TrimSpace(string(groupData)))
-				if parseErr != nil {
-					t.Fatal(parseErr)
-				}
 				if groupErr := waitForGroupAbsence(groupID, 2*time.Second); groupErr != nil {
 					t.Fatalf("installed wait returned before its hanging Git process group was gone: %v", groupErr)
-				}
-				childData, childErr := os.ReadFile(childMarker)
-				if childErr != nil {
-					t.Fatalf("installed hanging Git did not record its spinner: %v", childErr)
-				}
-				childID, parseErr := strconv.Atoi(strings.TrimSpace(string(childData)))
-				if parseErr != nil {
-					t.Fatal(parseErr)
 				}
 				if stateOut, stateErr := exec.Command("ps", "-o", "stat=", "-p", fmt.Sprint(childID)).CombinedOutput(); stateErr == nil && !strings.HasPrefix(strings.TrimSpace(string(stateOut)), "Z") {
 					t.Fatalf("installed hanging Git spinner %d survived with state %q", childID, stateOut)
@@ -557,15 +540,15 @@ func TestCaptureTipBoundedKillsTheWholeTransportGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
+	fixture := testutil.Fixture(t)
 	groupFile := filepath.Join(dir, "group")
 	childFile := filepath.Join(dir, "child")
 	wrapper := filepath.Join(dir, "git")
-	script := `#!/bin/sh
-case " $* " in
+	script := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
   *" fetch "*)
-    echo $$ > "$LEDGER_FETCH_GROUP_FILE"
+	printf '%s %s\n' "$$" "$(ps -o pgid= -p $$ | tr -d ' ')" > "$LEDGER_FETCH_GROUP_FILE"
     trap '' TERM
-    sh -c 'trap "" TERM; echo $$ > "$LEDGER_FETCH_CHILD_FILE"; while :; do sleep 1; done' &
+	sh -c 'trap "" TERM; echo $$ > "$LEDGER_FETCH_CHILD_FILE"; read -r _ <"${METASYSTEM_FIXTURE_LEASH:?}"' sh "$tag" &
     wait
     ;;
 esac
@@ -578,6 +561,7 @@ exec "$LEDGER_REAL_GIT" "$@"
 	t.Setenv("LEDGER_FETCH_GROUP_FILE", groupFile)
 	t.Setenv("LEDGER_FETCH_CHILD_FILE", childFile)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	setFixtureEnvironment(t, fixture.Env(nil))
 
 	root := t.TempDir()
 	mustGit(t, root, "init", "-q")
@@ -585,15 +569,11 @@ exec "$LEDGER_REAL_GIT" "$@"
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("blocking transport did not time out: %v", err)
 	}
-	groupData, groupErr := os.ReadFile(groupFile)
-	childData, childErr := os.ReadFile(childFile)
-	if groupErr != nil || childErr != nil {
-		t.Fatalf("transport did not publish its real process identities: group=%v child=%v", groupErr, childErr)
-	}
-	groupID, _ := strconv.Atoi(strings.TrimSpace(string(groupData)))
-	childID, _ := strconv.Atoi(strings.TrimSpace(string(childData)))
-	if groupID < 1 || childID < 1 || groupID == childID {
-		t.Fatalf("invalid transport identities: group=%d child=%d", groupID, childID)
+	wrapperID, groupID, childID := readHangingGitPIDs(t, groupFile, childFile)
+	fixture.Record(wrapperID)
+	fixture.Record(childID)
+	if wrapperID != groupID || groupID == childID {
+		t.Fatalf("invalid transport identities: wrapper=%d group=%d child=%d", wrapperID, groupID, childID)
 	}
 	if err := waitForGroupAbsence(groupID, 30*time.Second); err != nil {
 		t.Fatal(err)
@@ -617,15 +597,17 @@ func TestCaptureTipBoundedLetsCooperativeTransportExitDuringGrace(t *testing.T) 
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
+	fixture := testutil.Fixture(t)
 	groupFile := filepath.Join(dir, "group")
+	childFile := filepath.Join(dir, "child")
 	termFile := filepath.Join(dir, "term")
 	wrapper := filepath.Join(dir, "git")
-	script := `#!/bin/sh
-case " $* " in
+	script := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
   *" fetch "*)
-    echo $$ > "$LEDGER_GRACE_GROUP_FILE"
+	printf '%s %s\n' "$$" "$(ps -o pgid= -p $$ | tr -d ' ')" > "$LEDGER_GRACE_GROUP_FILE"
     trap 'echo TERM > "$LEDGER_GRACE_TERM_FILE"; exit 0' TERM
-    while :; do sleep 1; done
+	sh -c 'echo $$ > "$LEDGER_GRACE_CHILD_FILE"; read -r _ <"${METASYSTEM_FIXTURE_LEASH:?}"' sh "$tag" &
+	wait
     ;;
 esac
 exec "$LEDGER_GRACE_REAL_GIT" "$@"
@@ -635,8 +617,10 @@ exec "$LEDGER_GRACE_REAL_GIT" "$@"
 	}
 	t.Setenv("LEDGER_GRACE_REAL_GIT", realGit)
 	t.Setenv("LEDGER_GRACE_GROUP_FILE", groupFile)
+	t.Setenv("LEDGER_GRACE_CHILD_FILE", childFile)
 	t.Setenv("LEDGER_GRACE_TERM_FILE", termFile)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	setFixtureEnvironment(t, fixture.Env(nil))
 	root := t.TempDir()
 	mustGit(t, root, "init", "-q")
 	_, err = CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main"}, 300*time.Millisecond)
@@ -646,17 +630,82 @@ exec "$LEDGER_GRACE_REAL_GIT" "$@"
 	if data, readErr := os.ReadFile(termFile); readErr != nil || strings.TrimSpace(string(data)) != "TERM" {
 		t.Fatalf("transport received no graceful TERM opportunity: %q %v", data, readErr)
 	}
-	groupData, err := os.ReadFile(groupFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	groupID, err := strconv.Atoi(strings.TrimSpace(string(groupData)))
-	if err != nil {
-		t.Fatal(err)
+	wrapperID, groupID, childID := readHangingGitPIDs(t, groupFile, childFile)
+	fixture.Record(wrapperID)
+	fixture.Record(childID)
+	if wrapperID != groupID {
+		t.Fatalf("cooperative transport wrapper pid %d did not lead process group %d", wrapperID, groupID)
 	}
 	if err := waitForGroupAbsence(groupID, 30*time.Second); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func setFixtureEnvironment(t *testing.T, environment []string) {
+	t.Helper()
+	for _, entry := range environment {
+		name, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			t.Fatalf("fixture environment entry has no value: %q", entry)
+		}
+		t.Setenv(name, value)
+	}
+}
+
+func waitForHangingGitPIDs(t *testing.T, groupFile, childFile string, ceiling time.Duration) (int, int, int) {
+	t.Helper()
+	deadline := time.Now().Add(ceiling)
+	for {
+		groupData, groupErr := os.ReadFile(groupFile)
+		childData, childErr := os.ReadFile(childFile)
+		if groupErr == nil && childErr == nil && hangingGitPIDsReady(groupData, childData) {
+			return parseHangingGitPIDs(t, groupData, childData)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("transport did not publish its process identities: group=%q err=%v child=%q err=%v", groupData, groupErr, childData, childErr)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func hangingGitPIDsReady(groupData, childData []byte) bool {
+	groupFields := strings.Fields(string(groupData))
+	childFields := strings.Fields(string(childData))
+	if len(groupFields) != 2 || len(childFields) != 1 {
+		return false
+	}
+	for _, field := range append(groupFields, childFields[0]) {
+		pid, err := strconv.Atoi(field)
+		if err != nil || pid < 1 {
+			return false
+		}
+	}
+	return true
+}
+
+func readHangingGitPIDs(t *testing.T, groupFile, childFile string) (int, int, int) {
+	t.Helper()
+	groupData, groupErr := os.ReadFile(groupFile)
+	childData, childErr := os.ReadFile(childFile)
+	if groupErr != nil || childErr != nil {
+		t.Fatalf("transport did not publish its process identities: group=%q err=%v child=%q err=%v", groupData, groupErr, childData, childErr)
+	}
+	return parseHangingGitPIDs(t, groupData, childData)
+}
+
+func parseHangingGitPIDs(t *testing.T, groupData, childData []byte) (int, int, int) {
+	t.Helper()
+	fields := strings.Fields(string(groupData))
+	if len(fields) != 2 {
+		t.Fatalf("transport wrote invalid wrapper and process-group identities: %q", groupData)
+	}
+	wrapperID, wrapperErr := strconv.Atoi(fields[0])
+	groupID, groupErr := strconv.Atoi(fields[1])
+	childID, childErr := strconv.Atoi(strings.TrimSpace(string(childData)))
+	if wrapperErr != nil || groupErr != nil || childErr != nil || wrapperID < 1 || groupID < 1 || childID < 1 {
+		t.Fatalf("transport wrote invalid process identities: wrapper=%q err=%v group=%q err=%v child=%q err=%v", fields[0], wrapperErr, fields[1], groupErr, childData, childErr)
+	}
+	return wrapperID, groupID, childID
 }
 
 func waitForGroupAbsence(pgid int, failsafe time.Duration) error {
