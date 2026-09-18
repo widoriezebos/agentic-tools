@@ -23,7 +23,7 @@ Use `wow.md` as the only routing index. Read just the guidance and skills releva
 - **Strictness guards invariants, never conveniences.** A check refuses loudly only for a named invariant whose violation is a real defect. A rule that breaks on benign variation—an arbitrary cap, a missing lawful path, or a format nit—is defective: handle the variation intuitively or omit the rule. No nameable invariant, no rule.
 - Use focused tests first; use expensive, model-backed, debugger, or full-suite validation only for a named question.
 - When subagents are available, delegate independent exploration and verifiable subtasks, keeping the main context for decisions. Dispatch rostered roles through `metasystem delegate`; if exact-session resume is unavailable, use the documented fresh-dispatch embed fallback (`docs/orchestration.md`).
-- A subagent's tool call never waits over 240 seconds. Run longer waits as `metasystem wait` in a main-session background task that wakes the session when done.
+- A subagent's tool call never waits over 240 seconds. Register longer background waits with `metasystem wait register`; the stop gate then lets the seat stop.
 - Keep machine-verifiable requirements in schemas, tests, linters, permissions, or scripts, never in repeated prose.
 - Keep project-specific commands and policies in `docs/project-rules.md`.
 
