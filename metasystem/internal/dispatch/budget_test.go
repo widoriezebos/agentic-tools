@@ -124,12 +124,14 @@ func TestConsumptionLensSameForClaimedAndUnclaimed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+	_, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now, AttemptID: "lens-proof",
-	})); err != nil {
+	}))
+	if err != nil {
 		t.Fatal(err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	store := &run.Store{Root: root, Now: func() time.Time { return now }}
 	weightGeneration := uint64(1)
 	store.AdmitGoverned = func(run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
@@ -192,13 +194,15 @@ func TestConsumptionLensUsesCandidateProofIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+	_, decision, err := proofrun.ReserveLocked(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "authority", GoalRevision: 5, AccountingRevision: 5,
 		CandidateGoalID: "candidate", CandidateRevision: 3, ReservedMinutes: 5,
 		Identity: identity, Launcher: launcher, Now: time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC), AttemptID: "candidate-charge",
-	}); err != nil {
+	}, "0"))
+	if err != nil {
 		t.Fatal(err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	file := budgetGoal()
 	file.Id = "candidate"
 	file.State = goal.StateApproved
@@ -225,16 +229,18 @@ func TestOldEpochProofSkipsPrunedGovernedOwnerValidation(t *testing.T) {
 	oldEpoch := uint64(0)
 	started := time.Date(2026, 8, 28, 9, 40, 0, 0, time.UTC)
 	deadline := started.Add(5 * time.Minute).Format(time.RFC3339Nano)
-	if _, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+	_, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 		BudgetEpoch: &oldEpoch, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: started,
 		AttemptID: "old-epoch-owner", ReservationOwner: &proofrun.ReservationOwner{
 			ControlRoot: root, RunID: "pruned-old-owner", RunGeneration: 1, LaunchNonce: "old-epoch-nonce",
 			GoalRevision: 3, ObligationRevision: 6, AttemptOrdinal: 1, BudgetEpoch: &oldEpoch, Deadline: deadline,
 		},
-	})); err != nil {
+	}))
+	if err != nil {
 		t.Fatal(err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 9, 41, 0, 0, time.UTC))
 	if projection.Status != BudgetKnown || projection.Attempts != 0 || projection.ReservedJobMinutes != 0 {
 		t.Fatalf("old epoch proof validated its pruned owner instead of being ignored: %+v", projection)
@@ -683,7 +689,7 @@ func TestReservedJobMinutesIsSumOfNamedComponents(t *testing.T) {
 			t.Fatal(err)
 		}
 		terminalStarted := time.Date(2026, 8, 28, 8, 0, 0, 0, time.UTC)
-		terminal, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+		terminal, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 			ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 			ReservedMinutes: 20, Identity: terminalIdentity, Launcher: launcher, Now: terminalStarted, AttemptID: "sum-terminal-proof",
 		}))
@@ -691,17 +697,20 @@ func TestReservedJobMinutesIsSumOfNamedComponents(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		requireProofReservationNotAdmissionRefused(t, decision)
 		if _, err := proofrun.FinalizeAttempt(root, terminal.AttemptID, proofrun.TerminalFailed, 1, "controlled proof failure", nil,
 			terminalStarted.Add(5*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+		_, decision, err = proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 			ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 			ReservedMinutes: 15, Identity: liveIdentity, Launcher: launcher,
 			Now: time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC), AttemptID: "sum-live-proof",
-		})); err != nil {
+		}))
+		if err != nil {
 			t.Fatal(err)
 		}
+		requireProofReservationNotAdmissionRefused(t, decision)
 	}
 
 	for _, test := range []struct {
@@ -771,7 +780,7 @@ func TestBudgetProjectionRefusesObservedProofAccountingOverflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Date(2026, 8, 28, 8, 2, 0, 0, time.UTC)
-	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 		ReservedMinutes: 1, Identity: proofIdentity, Launcher: launcher, Now: started, AttemptID: "overflowed-terminal-proof",
 	}))
@@ -779,6 +788,7 @@ func TestBudgetProjectionRefusesObservedProofAccountingOverflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	terminal, err := proofrun.FinalizeAttempt(root, attempt.AttemptID, proofrun.TerminalFailed, 1, "controlled failure", nil, started.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)

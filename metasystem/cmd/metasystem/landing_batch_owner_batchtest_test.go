@@ -770,12 +770,13 @@ func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 		t.Fatal(err)
 	}
 	parentIdentity := proofrun.ProcessIdentity{Pid: parent.Pid, PidStartedAt: ref.StartedAtSec, PidStartedAtMicro: ref.StartedAtUnixMicro, PidStartTicks: ref.StartTicks, BootID: ref.BootID}
-	parentAttempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: canonicalRoot, ExecutionRoot: canonicalRoot, GoalID: "standing-validation",
+	parentAttempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: canonicalRoot, ExecutionRoot: canonicalRoot, GoalID: "standing-validation",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 1, Identity: proofIdentity, Launcher: parentIdentity, Now: time.Unix(2, 0)}))
 
 	if err != nil {
 		t.Fatal(err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "")
 	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", canonicalRoot)
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", parentAttempt.AttemptID)

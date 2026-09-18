@@ -457,10 +457,11 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		proofAttempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 1, AccountingRevision: 1, ReservedMinutes: 1, Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()}))
+		proofAttempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 1, AccountingRevision: 1, ReservedMinutes: 1, Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()}))
 		if err != nil {
 			t.Fatal(err)
 		}
+		requireProofReservationNotAdmissionRefused(t, decision)
 		if _, err := proofrun.FinalizeAttempt(root, proofAttempt.AttemptID, proofrun.TerminalSuccess, 0, "installed proof terminal", nil, time.Now().UTC()); err != nil {
 			t.Fatal(err)
 		}

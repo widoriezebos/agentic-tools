@@ -42,11 +42,12 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
+	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
 		GoalID: "goal", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}, tree))
 	if err != nil {
 		t.Fatal(err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	zero := 0
 	digest := strings.Repeat("a", 64)
 	result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion,
@@ -425,11 +426,12 @@ func TestSchemaTwoReceiptAcceptsReuseFromAFailedDeliveryPredecessor(t *testing.T
 	// identity after a failed terminal would answer retry-required instead.
 	reserve := func(identity proofrun.ProofIdentity) string {
 		t.Helper()
-		attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
+		attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
 			GoalID: "goal", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}, tree))
 		if err != nil {
 			t.Fatal(err)
 		}
+		requireProofReservationNotAdmissionRefused(t, decision)
 		return attempt.AttemptID
 	}
 	zero, failedExit := 0, 24

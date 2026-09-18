@@ -231,13 +231,14 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		proof, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
+		proof, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
 			GoalID: "bounded", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 30,
 			Identity: identity, Launcher: launcher, Now: now.Add(time.Minute), AttemptID: "late-proof"}))
 
 		if err != nil {
 			t.Fatal(err)
 		}
+		requireProofReservationNotAdmissionRefused(t, decision)
 		// A terminal proof is charged what it used (decision 3 of the
 		// hang-detection design): this one runs its whole thirty-minute
 		// reservation before it fails, so it counts for thirty.

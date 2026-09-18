@@ -23,7 +23,14 @@ func candidateProofAdmission(request proofrun.AdmissionRequest) proofrun.Admissi
 	if request.Identity.CommandClass == "testing" && request.CandidateTree == "" {
 		request.CandidateTree = strings.Repeat("b", 40)
 	}
-	return request
+	return proofrun.WithTestHostLoadSampler(request, "0")
+}
+
+func requireProofReservationNotAdmissionRefused(t *testing.T, decision proofrun.LaunchResult) {
+	t.Helper()
+	if decision.Disposition == proofrun.DispositionAdmissionRefused {
+		t.Fatalf("proof reservation fixture was admission-refused: %+v", decision)
+	}
 }
 
 func commitExtensionReceipt(t *testing.T, root, content string) {

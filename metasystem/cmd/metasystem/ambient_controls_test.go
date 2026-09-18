@@ -1,11 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
@@ -17,6 +20,20 @@ var declaredContextCostCandidateEngine string
 // whose candidate is a package-level input; its proof flag declares that
 // input before the ambient selector is removed.
 func TestMain(m *testing.M) {
+	executable, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "locate command test executable:", err)
+		os.Exit(2)
+	}
+	if filepath.Base(os.Args[0]) == proofrun.TestHostLoadCommandName("0") {
+		os.Args[0] = executable
+	} else {
+		arguments := append([]string{proofrun.TestHostLoadCommandName("0")}, os.Args[1:]...)
+		if err := syscall.Exec(executable, arguments, os.Environ()); err != nil {
+			fmt.Fprintln(os.Stderr, "replace command test process:", err)
+			os.Exit(2)
+		}
+	}
 	if os.Getenv("METASYSTEM_CONTEXT_COST_PROOF") == "1" {
 		declaredContextCostCandidateEngine = os.Getenv("METASYSTEM_BIN")
 	}

@@ -50,11 +50,14 @@ func TestProofReservationBeforeChildPublicationIsStoppable(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
+	attempt, decision, err := proofrun.ReserveLocked(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
 		GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, CandidateGoalID: "goal-a", CandidateRevision: 2, ReservedMinutes: 2,
-		Identity: proofIdentity, Launcher: launcher, Now: now})
+		Identity: proofIdentity, Launcher: launcher, Now: now}, "0"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if decision.Disposition == proofrun.DispositionAdmissionRefused {
+		t.Fatalf("proof stop inventory fixture was admission-refused: %+v", decision)
 	}
 	family := newProofRunFamily(root, 10, &suiteStopGroups{groups: map[int64]bool{}})
 	items, err := family.Inventory()

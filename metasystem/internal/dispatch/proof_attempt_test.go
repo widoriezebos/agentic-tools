@@ -25,7 +25,7 @@ func TestOrdinaryProofSharesGoalBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Date(2026, 8, 28, 8, 15, 0, 0, time.UTC)
-	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 		ReservedMinutes: 45, Identity: identity, Launcher: launcher, Now: started,
 	}))
@@ -33,6 +33,7 @@ func TestOrdinaryProofSharesGoalBudget(t *testing.T) {
 	if err != nil || attempt.BudgetEpoch != nil {
 		t.Fatalf("reserve ordinary proof with nullable epoch: attempt=%+v err=%v", attempt, err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	writeBudgetJob(t, root, "delegate", "delegate-reservation", 3, 30, "completed", budgetJobLife{
 		pid: 4242, startedAt: "2026-08-28T08:15:00Z", endedAt: "2026-08-28T08:45:00Z",
 	})
@@ -95,7 +96,7 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 2, AccountingRevision: 2,
 		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now,
 	}))
@@ -103,12 +104,13 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	unrelatedIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "unrelated-proof", []string{"gate"}, behaviorsurface.SupportedVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
 	self, _ := proofrun.CurrentProcessIdentity(nil)
-	unrelated, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+	unrelated, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "other-goal", GoalRevision: 1, AccountingRevision: 1,
 		ReservedMinutes: 5, Identity: unrelatedIdentity, Launcher: self, Now: now,
 	}))
@@ -116,6 +118,7 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	stamp := now.Format(time.RFC3339)
 	batch := goal.StopBatch{StopID: "stop-bounded-r3-f1", GoalID: "bounded", GoalRevision: 3,
 		FenceEpoch: 1, CapabilityGeneration: 3, Machine: "bed-m1", ClaimEpoch: 7,
@@ -211,7 +214,7 @@ func TestProofGovernedReservationJoin(t *testing.T) {
 	}
 	deadline := started.Add(5 * time.Minute).Format(time.RFC3339Nano)
 	launcher, _ := proofrun.CurrentProcessIdentity(nil)
-	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 3, AccountingRevision: 3,
 		ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: started,
 		ReservationOwner: &proofrun.ReservationOwner{ControlRoot: root, RunID: record.RunId,
@@ -223,6 +226,7 @@ func TestProofGovernedReservationJoin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	file := budgetGoal()
 	file.Claimed.AccountingRevision = 3
 	live := ProjectBudget(root, file, started.Add(time.Minute))

@@ -21,7 +21,14 @@ func candidateProofAdmission(request proofrun.AdmissionRequest, tree string) pro
 	if request.Identity.CommandClass == "testing" {
 		request.CandidateTree = tree
 	}
-	return request
+	return proofrun.WithTestHostLoadSampler(request, "0")
+}
+
+func requireProofReservationNotAdmissionRefused(t *testing.T, decision proofrun.LaunchResult) {
+	t.Helper()
+	if decision.Disposition == proofrun.DispositionAdmissionRefused {
+		t.Fatalf("proof reservation fixture was admission-refused: %+v", decision)
+	}
 }
 
 func TestCanonicalReceiptProofContext(t *testing.T) {
@@ -183,11 +190,12 @@ func TestReceiptPreparationSurvivesCanonicalRecordMotion(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: preparation.ExecutionRoot(),
+	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: preparation.ExecutionRoot(),
 		GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: now}, tree))
 	if err != nil {
 		t.Fatal(err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	f.write("records/steward/narration.txt", "record motion\n")
 	f.git("add", "records/steward/narration.txt")
 	receipt, err := preparation.Complete(attempt, now.Add(time.Second))
@@ -249,12 +257,13 @@ func newCanonicalReceiptFixture(t *testing.T) *canonicalReceiptFixture {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root,
+	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root,
 		ExecutionRoot: preparation.ExecutionRoot(), GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
 		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}, tree))
 	if err != nil {
 		t.Fatal(err)
 	}
+	requireProofReservationNotAdmissionRefused(t, decision)
 	baselineName := "coverage-ratchet.json"
 	if runtime.GOOS == "linux" {
 		baselineName = "coverage-ratchet-linux.json"

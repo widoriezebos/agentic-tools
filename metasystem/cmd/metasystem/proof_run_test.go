@@ -34,7 +34,14 @@ func candidateProofAdmission(request proofrun.AdmissionRequest) proofrun.Admissi
 	if request.Identity.CommandClass == "testing" && request.CandidateTree == "" {
 		request.CandidateTree = strings.Repeat("b", 40)
 	}
-	return request
+	return proofrun.WithTestHostLoadSampler(request, "0")
+}
+
+func requireProofReservationNotAdmissionRefused(t *testing.T, decision proofrun.LaunchResult) {
+	t.Helper()
+	if decision.Disposition == proofrun.DispositionAdmissionRefused {
+		t.Fatalf("proof reservation fixture was admission-refused: %+v", decision)
+	}
 }
 
 func candidateProofLaunchAdmission(request proofLaunchAdmission) proofLaunchAdmission {
@@ -405,14 +412,17 @@ func workerAuthorizedAttemptFixture(t *testing.T) (string, string, proofrun.Atte
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, _, err := proofrun.ReserveLocked(proofrun.AdmissionRequest{
+	attempt, decision, err := proofrun.ReserveLocked(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
 		ControlRoot: controlRoot, ExecutionRoot: executionRoot, GoalID: "standing-validation", GoalRevision: 2,
 		AccountingRevision: 2, CandidateGoalID: "standing-validation", CandidateRevision: 2,
 		ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher,
 		Now: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC),
-	})
+	}, "0"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if decision.Disposition == proofrun.DispositionAdmissionRefused {
+		t.Fatalf("worker-authorized attempt fixture was admission-refused: %+v", decision)
 	}
 	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", controlRoot)
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", attempt.AttemptID)
