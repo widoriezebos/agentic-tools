@@ -126,9 +126,18 @@ func decideLandedRearm(facts landedRearmFacts, checkout string) landedRearmDecis
 // does and splits it into the remote and branch the fetch needs.
 func landingRefParts(ctx context.Context, clock steward.RearmClock, seconds int, projectRoot string) (ref, remote, branch string, err error) {
 	ref, err = landedRearmGitStep(ctx, clock, seconds, "read-landing-ref", projectRoot, "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
+	if err != nil {
+		if errors.Is(err, steward.ErrJudgmentStalled) {
+			return "", "", "", err
+		}
+		var exitError *exec.ExitError
+		if !errors.As(err, &exitError) || exitError.ExitCode() != 1 {
+			return "", "", "", err
+		}
+	}
 	tail := strings.TrimPrefix(ref, "refs/remotes/")
 	remote, branch, qualified := strings.Cut(tail, "/")
-	if err != nil || tail == ref || !qualified || remote == "" || branch == "" {
+	if tail == ref || !qualified || remote == "" || branch == "" {
 		return "", "", "", fmt.Errorf("trusted testing policy base requires local metasystem.steward.landing-ref shaped refs/remotes/<remote>/<branch>")
 	}
 	return ref, remote, branch, nil
@@ -300,7 +309,14 @@ func readLandedRearmFacts(ctx context.Context, clock steward.RearmClock, seconds
 	}
 	head, err := landedRearmGitStep(ctx, clock, seconds, "resolve-checkout-head", projectRoot, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
-		return facts, fmt.Errorf("testing requires a committed project HEAD")
+		if errors.Is(err, steward.ErrJudgmentStalled) {
+			return facts, err
+		}
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) && exitError.ExitCode() == 1 {
+			return facts, fmt.Errorf("testing requires a committed project HEAD")
+		}
+		return facts, fmt.Errorf("resolve-checkout-head: %w", err)
 	}
 	facts.Head = head
 	facts.SourceOwnsTip, err = ownsTip(facts.Tip)

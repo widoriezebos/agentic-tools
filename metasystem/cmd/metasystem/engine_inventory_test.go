@@ -33,6 +33,8 @@ var engineBindingStandardTests = []string{
 	"TestLandedRearmFastForwardsRebuildsAndReArms",
 	"TestLandedRearmJudgmentIsProgressBounded",
 	"TestLandedRearmReadsTheCheckoutAgainstItsRemote",
+	"TestLandedRearmRefusesARepositoryFailureReadingTheLandingRefWithGitDetail",
+	"TestLandedRearmRefusesARepositoryFailureResolvingCheckoutHeadWithGitDetail",
 	"TestLandedRearmRefusesAFastForwardBlockedByDirtyLedgers",
 	"TestLandedRearmRefusesAncestorPathCollisionsBeforeFastForward",
 	"TestLandedRearmRefusesAStalledTipCompareByName",

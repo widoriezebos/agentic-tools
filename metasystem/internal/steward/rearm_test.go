@@ -31,6 +31,10 @@ func rearmGit(t *testing.T, root string, args ...string) string {
 }
 
 func failRearmGitSubcommand(t *testing.T, subcommand string) {
+	failRearmGitSubcommandWithStatus(t, subcommand, 128)
+}
+
+func failRearmGitSubcommandWithStatus(t *testing.T, subcommand string, status int) {
 	t.Helper()
 	realGit, err := exec.LookPath("git")
 	if err != nil {
@@ -43,7 +47,7 @@ set -euo pipefail
 for argument in "$@"; do
   if [[ "$argument" == "${REARM_FAIL_GIT_SUBCOMMAND:?}" ]]; then
     printf '%s\n' 'fatal: not a git repository (or any of the parent directories)' >&2
-    exit 128
+    exit "${REARM_FAIL_GIT_STATUS:?}"
   fi
 done
 exec "${REARM_REAL_GIT:?}" "$@"
@@ -53,7 +57,88 @@ exec "${REARM_REAL_GIT:?}" "$@"
 	}
 	t.Setenv("REARM_REAL_GIT", realGit)
 	t.Setenv("REARM_FAIL_GIT_SUBCOMMAND", subcommand)
+	t.Setenv("REARM_FAIL_GIT_STATUS", fmt.Sprint(status))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func failRearmGitSubcommandOnce(t *testing.T, subcommand string) string {
+	t.Helper()
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	wrapper := filepath.Join(dir, "git")
+	marker := filepath.Join(dir, "failed")
+	calls := filepath.Join(dir, "calls")
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+for argument in "$@"; do
+  if [[ "$argument" == "${REARM_FAIL_GIT_SUBCOMMAND:?}" ]]; then
+    printf '%s\n' "$*" >>"${REARM_GIT_CALLS:?}"
+    if [[ ! -e "${REARM_GIT_FAILED_ONCE:?}" ]]; then
+      : >"${REARM_GIT_FAILED_ONCE:?}"
+      printf '%s\n' 'fatal: not a git repository (or any of the parent directories)' >&2
+      exit 128
+    fi
+  fi
+done
+exec "${REARM_REAL_GIT:?}" "$@"
+`
+	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("REARM_REAL_GIT", realGit)
+	t.Setenv("REARM_FAIL_GIT_SUBCOMMAND", subcommand)
+	t.Setenv("REARM_GIT_FAILED_ONCE", marker)
+	t.Setenv("REARM_GIT_CALLS", calls)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return calls
+}
+
+func stallRearmGitSubcommandOnce(t *testing.T, subcommand string) (string, string) {
+	t.Helper()
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	wrapper := filepath.Join(dir, "git")
+	marker := filepath.Join(dir, "stalled")
+	calls := filepath.Join(dir, "calls")
+	started := filepath.Join(dir, "started")
+	release := filepath.Join(dir, "release")
+	if err := syscall.Mkfifo(started, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(release, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/usr/bin/env bash
+set -euo pipefail
+for argument in "$@"; do
+  if [[ "$argument" == "${REARM_STALL_GIT_SUBCOMMAND:?}" ]]; then
+    printf '%s\n' "$*" >>"${REARM_GIT_CALLS:?}"
+    if [[ ! -e "${REARM_GIT_STALLED_ONCE:?}" ]]; then
+      : >"${REARM_GIT_STALLED_ONCE:?}"
+      printf started >"${REARM_GIT_STARTED_FIFO:?}"
+      IFS= read -r answer <"${REARM_GIT_RELEASE_FIFO:?}"
+    fi
+  fi
+done
+exec "${REARM_REAL_GIT:?}" "$@"
+`
+	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("REARM_REAL_GIT", realGit)
+	t.Setenv("REARM_STALL_GIT_SUBCOMMAND", subcommand)
+	t.Setenv("REARM_GIT_STALLED_ONCE", marker)
+	t.Setenv("REARM_GIT_CALLS", calls)
+	t.Setenv("REARM_GIT_STARTED_FIFO", started)
+	t.Setenv("REARM_GIT_RELEASE_FIFO", release)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return calls, started
 }
 
 func writeRearmFile(t *testing.T, path, content string) {
@@ -438,6 +523,56 @@ func TestEnrollmentBuildSourceCheckSeparatesNotAnAncestorFromARepositoryFailure(
 		t.Fatalf("non-ancestor changed its enrollment judgment: %v", notAncestorErr)
 	}
 
+	t.Run("witness operational failure does not run the reverse comparison", func(t *testing.T) {
+		root := initRearmRepo(t)
+		landed := commitRearmTree(t, root, "landed")
+		source := commitRearmTree(t, root, "source descendant")
+		calls := failRearmGitSubcommandOnce(t, "merge-base")
+		err := verifyEnrollmentBuildSourceWithClock(SystemRearmClock(), root, "witness-aaaaaaaaaaaa", source, landed)
+		if err == nil || !strings.Contains(err.Error(), "git merge-base --is-ancestor") ||
+			!strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") ||
+			errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
+			t.Fatalf("witness comparison replaced its repository failure with a reverse result: %v", err)
+		}
+		rawCalls, readErr := os.ReadFile(calls)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if got := strings.Count(string(rawCalls), "\n"); got != 1 {
+			t.Fatalf("witness repository failure ran %d recorded comparisons, want exactly one: %q", got, rawCalls)
+		}
+	})
+
+	t.Run("witness stall does not run the reverse comparison", func(t *testing.T) {
+		root := initRearmRepo(t)
+		landed := commitRearmTree(t, root, "landed")
+		source := commitRearmTree(t, root, "source descendant")
+		calls, started := stallRearmGitSubcommandOnce(t, "merge-base")
+		clock := newManualRearmClock()
+		result := make(chan error, 1)
+		go func() {
+			result <- verifyEnrollmentBuildSourceWithClock(clock, root, "witness-aaaaaaaaaaaa", source, landed)
+		}()
+		if _, err := os.ReadFile(started); err != nil {
+			t.Fatal(err)
+		}
+		timer := waitForRearmTimer(clock, 1)
+		clock.advance(21 * time.Second)
+		timer <- clock.Now()
+		err := <-result
+		if err == nil || err.Error() != "compare-enrollment-ancestry exceeded the configured 20-second bound (metasystem.steward.rearm-resolve-seconds)" ||
+			!errors.Is(err, ErrJudgmentStalled) || errors.Is(err, ErrNotOwned) {
+			t.Fatalf("witness comparison replaced its stall with a reverse result: %v", err)
+		}
+		rawCalls, readErr := os.ReadFile(calls)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if got := strings.Count(string(rawCalls), "\n"); got != 1 {
+			t.Fatalf("witness stall ran %d comparisons, want exactly one: %q", got, rawCalls)
+		}
+	})
+
 	failRearmGitSubcommand(t, "merge-base")
 	failureErr := verifyEnrollmentBuildSource(root, side, side, landed)
 	if failureErr == nil || !strings.Contains(failureErr.Error(), "git merge-base --is-ancestor") ||
@@ -698,8 +833,9 @@ func TestLandingRefReadIgnoresGlobalConfigurationAndOrdinaryBranchMovement(t *te
 	global := filepath.Join(t.TempDir(), "gitconfig")
 	writeRearmFile(t, global, "[metasystem \"steward\"]\n\tlanding-ref = "+ref+"\n")
 	t.Setenv("GIT_CONFIG_GLOBAL", global)
-	if _, err := readOwnedLandingRef(root); err == nil {
-		t.Fatal("a global landing-ref value satisfied the installation")
+	wantUnset := fmt.Sprintf("the installation owns no remote-tracking landing ref (%s is <unset>; expected refs/remotes/<remote>/<branch>)", landingRefConfigKey)
+	if _, err := readOwnedLandingRef(root); err == nil || err.Error() != wantUnset {
+		t.Fatalf("a global landing-ref value changed the absent local value result: %v", err)
 	}
 	included := filepath.Join(t.TempDir(), "included-config")
 	writeRearmFile(t, included, "[metasystem \"steward\"]\n\tlanding-ref = "+ref+"\n")
@@ -708,9 +844,14 @@ func TestLandingRefReadIgnoresGlobalConfigurationAndOrdinaryBranchMovement(t *te
 		t.Fatal("an included landing-ref value satisfied the installation")
 	}
 	rearmGit(t, root, "config", "--local", "--unset-all", "include.path")
+	rearmGit(t, root, "config", "--local", landingRefConfigKey, "")
+	if _, err := readOwnedLandingRef(root); err == nil || err.Error() != wantUnset {
+		t.Fatalf("an empty local landing-ref value changed its result: %v", err)
+	}
 	localRef := "refs/heads/trunk"
 	rearmGit(t, root, "config", "--local", landingRefConfigKey, localRef)
-	if _, err := readOwnedLandingRef(root); err == nil || !strings.Contains(err.Error(), localRef) || !strings.Contains(err.Error(), "refs/remotes/<remote>/<branch>") {
+	wantMalformed := fmt.Sprintf("the installation owns no remote-tracking landing ref (%s is %s; expected refs/remotes/<remote>/<branch>)", landingRefConfigKey, localRef)
+	if _, err := readOwnedLandingRef(root); err == nil || err.Error() != wantMalformed {
 		t.Fatalf("a local branch ref was not refused with the expected remote-tracking shape: %v", err)
 	}
 	rearmGit(t, root, "config", "--local", landingRefConfigKey, ref)
@@ -765,6 +906,38 @@ func TestMintPlanReportsARepositoryFailureAsAFailureNotAsDrift(t *testing.T) {
 			!strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") ||
 			errors.Is(err, ErrEnrollmentDrift) || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
 			t.Fatalf("repository failure became mint-plan drift: %v", err)
+		}
+	})
+
+	t.Run("landing ref config failure is a failed step", func(t *testing.T) {
+		bed := newRearmBed(t, false)
+		failRearmGitSubcommand(t, landingRefConfigKey)
+		_, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		if err == nil || !strings.Contains(err.Error(), "read owned landing ref") || !strings.Contains(err.Error(), "git config") ||
+			!strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") ||
+			errors.Is(err, ErrEnrollmentDrift) || errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled) {
+			t.Fatalf("landing-ref config failure became mint-plan drift: %v", err)
+		}
+	})
+
+	t.Run("checkout HEAD failure is a failed step", func(t *testing.T) {
+		bed := newRearmBed(t, false)
+		failRearmGitSubcommand(t, "HEAD^{commit}")
+		_, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		if err == nil || !strings.Contains(err.Error(), "resolve landed source at checkout HEAD") || !strings.Contains(err.Error(), "git rev-parse") ||
+			!strings.Contains(err.Error(), "fatal: not a git repository (or any of the parent directories)") ||
+			errors.Is(err, ErrEnrollmentDrift) || errors.Is(err, ErrNotOwned) {
+			t.Fatalf("checkout HEAD repository failure became mint-plan drift: %v", err)
+		}
+	})
+
+	t.Run("checkout HEAD negative answer remains drift", func(t *testing.T) {
+		bed := newRearmBed(t, false)
+		failRearmGitSubcommandWithStatus(t, "HEAD^{commit}", 1)
+		_, err := ReArmRebuiltEngine(bed.root, bed.root, bed.engine)
+		want := "ENROLLMENT_DRIFT: resolve landed source at checkout HEAD: git rev-parse --verify HEAD^{commit}: exit status 1 (fatal: not a git repository (or any of the parent directories))"
+		if err == nil || err.Error() != want || !errors.Is(err, ErrEnrollmentDrift) {
+			t.Fatalf("checkout HEAD negative answer changed its mint-plan drift: %v", err)
 		}
 	})
 }

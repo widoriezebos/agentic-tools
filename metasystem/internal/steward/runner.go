@@ -338,7 +338,10 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 		}
 		landedCommit, err := gitOutputContext(context.Background(), installationRoot, "rev-parse", "--verify", "HEAD^{commit}")
 		if err != nil {
-			return mintPlan{}, fmt.Errorf("%w: resolve landed source at checkout HEAD: %v", ErrEnrollmentDrift, err)
+			if gitSaidNo(err) {
+				return mintPlan{}, fmt.Errorf("%w: resolve landed source at checkout HEAD: %v", ErrEnrollmentDrift, err)
+			}
+			return mintPlan{}, fmt.Errorf("resolve landed source at checkout HEAD: %w", err)
 		}
 		if err := verifyEnrollmentBuildSource(installationRoot, bytes.Stamp, sourceCommit, landedCommit); err != nil {
 			if !errors.Is(err, ErrNotOwned) {

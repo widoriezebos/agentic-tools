@@ -93,9 +93,14 @@ func RearmResolveSeconds(installationRoot string) int {
 }
 
 func readOwnedLandingRef(installationRoot string) (string, error) {
-	out, err := exec.Command("git", "-C", installationRoot, "config", "--local", "--no-includes", "--get", landingRefConfigKey).Output()
-	value := strings.TrimSpace(string(out))
-	if err != nil || value == "" {
+	value, err := gitOutputContext(context.Background(), installationRoot, "config", "--local", "--no-includes", "--get", landingRefConfigKey)
+	if err != nil {
+		if !gitSaidNo(err) {
+			return "", &gitCommandFailure{cause: err}
+		}
+		value = ""
+	}
+	if value == "" {
 		shown := value
 		if shown == "" {
 			shown = "<unset>"
