@@ -9,7 +9,7 @@
 - Origin: human
 - Next step: 2026-09-18 direct mode (m1e): none; reads C and D done. Next: conclude together with batch-landing-known-issues when its closing read (dm-g2read) returns CONCLUDE; the batch verbs get their end-to-end machinery test after the stable state.
 - OpenedAt: 2026-09-16T13:45:00Z
-- Revision: 43
+- Revision: 44
 - Budget: elapsedLimit=5d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-17T06:05:10Z revision=32 opid=9SM144F0E2F8TXWZVS92BVJ3JA-m1e-c6925449 authority=proven digest=be2a6acf3d7fab09d0b7689c2a5b182bbbc0d371a3d808e8f2e1f7e31b521372
@@ -58,4 +58,5 @@ History:
 - 2026-09-17T16:09:06Z 6K005BEHC9RNR577NPNAZPZDJM-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
 - 2026-09-18T07:07:25Z GXJJQSJYH59JRJQFST47QYVYDZ-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
 - 2026-09-18T21:51:09Z 73XJ9G7DRHPCS15V3TJWHT81F1-m1e-c6925449 release actor=human:Wido targets=units-land-in-batches-under-one-proof displaced=m1e+main-1789030447-51011-2956ea@2026-09-17T06:05:10Z
-Integrity: sha256=8f30f335e656b0fd23bbce13fc1ed8c0dbc98744f9a01caee9375cd4b710cf65
+- 2026-09-18T21:51:17Z 0BVSGKQTJEKFBBKG2FPRVHVMTE-m1e-c6925449 edit actor=human:Wido targets=units-land-in-batches-under-one-proof
+Integrity: sha256=84b5bec54c101e493110fef3ea2fc493664b6f9583572f92871c17f6e3d95211
