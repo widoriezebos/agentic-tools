@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: A goal's unlanded work is a pushed git branch, one commit per unit, so it survives a lost machine or an emptied /tmp, can be parked and resumed on any enrolled machine, and its land-ready units can be taken onto a release lane and, later, approved by a human before they land. Wido 2026-09-16 23:00 CEST: 'create the design and the backlog item for switching to using branches for goals. That makes it much easier to park goals and to have pre or land ready goals be put onto a release lane. Even if they are across several machines.' Today a unit is a diff file and a detached worktree under /tmp on one machine; on 2026-09-16 three read-clean units and two design amendments existed nowhere else. DONE: (1) every build and fix round of a unit is a commit on goal/<goal-id>, pushed to origin before the round is read, with a trailer naming the goal and the unit, and the branch never carries the ledgers or the goal store; (2) a read names the commit id it read, and a landing proves the landed diff is that commit's diff; (3) a parked goal is resumed on another enrolled machine from the branch alone; (4) the hand lane and the batch lane (units-land-in-batches-under-one-proof) take a unit from a fetched branch commit; (5) the branch is deleted when the goal's last unit lands. The human word before a landing is the separate goal goal-landing-needs-a-human-word.
 - Origin: human
-- Next step: 2026-09-18 direct mode (m1e): every unit on main (unit 11 in 6b499c272); the glbki fix (M1c) is in the wave 3d integration. Next: proof of DONE 1 and 2 (units on origin goal/<id>, a goal landed from its branch) wait for the machinery end-to-end test after the stable state; closing read after glbki lands.
+- Next step: fix-sweep (a local goal ref with unlanded commits is kept) on main d2713932efcdc9a3adee0493bd8196f3996e1bb4; remaining: the DONE-rule-1 question for Wido, then conclude.
 - OpenedAt: 2026-09-16T21:00:37Z
-- Revision: 16
+- Revision: 17
 - Budget: elapsedLimit=5d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-17T06:11:05Z revision=3 opid=9G1X6V4RVS6PSRJ3VKT9E3JEHY-m1e-c6925449 authority=proven digest=7574df33c8b680dfb680f22b17d9e639c0085a18f7e29effd7433837cee1d102
@@ -33,4 +33,5 @@ History:
 - 2026-09-17T23:49:26Z ZN1FHKB7SEFYG16Q643F8FAP2Z-m1c-fde8080b release actor=m1c+main-1789560465-86072-c7b126 targets=goals-live-on-branches
 - 2026-09-18T00:30:40Z KWSPEY52JPE977Q04ZN9PQH8FE-m1c-fde8080b claim actor=m1c+main-1789560465-86072-c7b126 targets=goals-live-on-branches
 - 2026-09-18T07:07:49Z ZZGR286PFSCV9JF1STPSD9C79R-m1e-c6925449 edit actor=human:Wido targets=goals-live-on-branches displaced=m1c+main-1789560465-86072-c7b126@2026-09-18T00:30:40Z
-Integrity: sha256=f46b8fcca441cb66624ca7529f0f6dd2e5da9c4d45862fb0d260014647607830
+- 2026-09-18T20:05:55Z 848ZGMDF3GSYJ5J0E8S7B6F6DK-m1e-c6925449 edit actor=human:Wido targets=goals-live-on-branches displaced=m1c+main-1789560465-86072-c7b126@2026-09-18T00:30:40Z
+Integrity: sha256=5b67c817ee61f2221689a121ff63937e8abb45b096847f123822e465034fa369
