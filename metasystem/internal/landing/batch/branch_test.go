@@ -425,3 +425,91 @@ func TestBatchGoalEjectionRebuildsLeasedLandingBranch(t *testing.T) {
 		t.Fatalf("republished tip=%s, want %s", got, republished)
 	}
 }
+
+func TestReassembleSurvivorsKeepsChainOnlyAndMixedBatches(t *testing.T) {
+	for _, mixed := range []bool{false, true} {
+		name := "chain only"
+		if mixed {
+			name = "chain and branch"
+		}
+		t.Run(name, func(t *testing.T) {
+			bed := newGoalBranchBed(t)
+			tipA := buildGoalBranch(t, bed, "goal-a", []string{"1"}, -1)
+			memberA, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipA, GoalID: "goal-a", Last: true})
+			must(t, err)
+			tipB := buildGoalBranch(t, bed, "goal-b", []string{"1"}, -1)
+			memberB, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipB, GoalID: "goal-b", Last: true})
+			must(t, err)
+
+			makeChain := func(goalID, chain, path, body string) Unit {
+				branchGit(t, bed.root, "switch", "-q", "--detach", bed.base)
+				branchWrite(t, bed.root, path, body)
+				branchGit(t, bed.root, "add", path)
+				branchGit(t, bed.root, "commit", "-qm", chain)
+				commit := branchGit(t, bed.root, "rev-parse", "HEAD")
+				patch := branchGit(t, bed.root, "diff", "--binary", "--full-index", bed.base, commit)
+				branchWrite(t, bed.root, "artifacts/agents/landing-batches/chains/"+chain+"/diff.patch", patch+"\n")
+				return Unit{GoalID: goalID, Chain: chain, State: UnitJoined}
+			}
+			chainOne := makeChain("goal-chain-one", "chain-one", "metasystem/chain-one.txt", "chain one\n")
+			chainTwo := makeChain("goal-chain-two", "chain-two", "metasystem/chain-two.txt", "chain two\n")
+
+			origin := filepath.Join(t.TempDir(), "origin.git")
+			branchGit(t, filepath.Dir(origin), "init", "-q", "--bare", origin)
+			branchGit(t, bed.root, "remote", "add", "origin", origin)
+			branchGit(t, bed.root, "push", "-q", "origin", bed.base+":refs/heads/main")
+			claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
+			unitA := BindBranchMember(Unit{GoalID: "goal-a", Chain: tipA, Claim: claim, State: UnitJoined,
+				AuthorName: "Approver A", AuthorEmail: "a@example.invalid"}, memberA)
+			unitB := BindBranchMember(Unit{GoalID: "goal-b", Chain: tipB, Claim: claim, State: UnitJoined,
+				AuthorName: "Approver B", AuthorEmail: "b@example.invalid"}, memberB)
+			chainOne.Claim, chainTwo.Claim = claim, claim
+			units := []Unit{unitA, chainOne, chainTwo}
+			branchUnits := []Unit{unitA}
+			if mixed {
+				units = []Unit{unitA, chainOne, unitB}
+				branchUnits = []Unit{unitA, unitB}
+			}
+			baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
+			oldTip, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, "", "owner", branchUnits)
+			must(t, err)
+			prefixes, err := assembleUnits(bed.root, baseTree, units)
+			must(t, err)
+			record := Record{Schema: 1, BatchID: testBatchID, TipTree: prefixes[len(prefixes)-1], State: StateOpen, Units: units,
+				Landing:           &LandingProgress{Base: baseTree, BranchTip: oldTip},
+				batchRecordFields: batchRecordFields{BaseTree: baseTree, PrefixTrees: prefixes}}
+			store := NewStore(bed.root, nil)
+			must(t, store.Create(record))
+			must(t, RequestReturn(store, testBatchID, "goal-a", UnitEjected, "fixture ejection", "owner", time.Unix(2, 0)))
+			must(t, ReassembleSurvivors(store, testBatchID, "owner", time.Unix(3, 0)))
+
+			updated := load(t, store)
+			if updated.State != StateOpen || len(updated.PrefixTrees) != 2 || updated.Units[1].GoalID != "goal-chain-one" {
+				t.Fatalf("reassembled record=%+v", updated)
+			}
+			if got := branchGit(t, bed.root, "show", updated.TipTree+":metasystem/chain-one.txt"); got != "chain one" {
+				t.Fatalf("first chain bytes=%q", got)
+			}
+			if mixed {
+				if updated.Units[2].GoalID != "goal-b" || updated.Landing == nil || updated.Landing.BranchTip == oldTip {
+					t.Fatalf("mixed survivor order or branch=%+v", updated)
+				}
+				if got := branchGit(t, bed.root, "show", updated.TipTree+":metasystem/b-1.txt"); got != "goal-b/1" {
+					t.Fatalf("branch survivor bytes=%q", got)
+				}
+				remoteTip := branchGit(t, origin, "rev-parse", "refs/heads/landing/"+testBatchID)
+				if remoteTip != updated.Landing.BranchTip || branchGit(t, origin, "show", remoteTip+":metasystem/a-1.txt") != "base" ||
+					branchGit(t, origin, "show", remoteTip+":metasystem/b-1.txt") != "goal-b/1" {
+					t.Fatalf("rebuilt landing branch=%s record=%+v", remoteTip, updated.Landing)
+				}
+			} else {
+				if updated.Units[2].GoalID != "goal-chain-two" || updated.Landing != nil {
+					t.Fatalf("chain survivor order or landing=%+v", updated)
+				}
+				if got := branchGit(t, bed.root, "show", updated.TipTree+":metasystem/chain-two.txt"); got != "chain two" {
+					t.Fatalf("second chain bytes=%q", got)
+				}
+			}
+		})
+	}
+}

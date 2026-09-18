@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
@@ -105,8 +107,10 @@ git commit -q "$@" \
 
 func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
 	original := batchChildRunner
-	t.Cleanup(func() { batchChildRunner = original })
+	originalNext := batchRecoveryGoalNext
+	t.Cleanup(func() { batchChildRunner, batchRecoveryGoalNext = original, originalNext })
 	batchChildRunner = func(string, string, ...string) error { return nil }
+	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
 
 	t.Run("would-refuse ejects without a push", func(t *testing.T) {
 		bed := newBatchProvenanceBed(t, "would-refuse code=chain-not-implementation", true)
@@ -158,8 +162,10 @@ func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
 
 func TestBatchChainCommitKeepsWouldRefuseVerdictBehavior(t *testing.T) {
 	original := batchChildRunner
-	t.Cleanup(func() { batchChildRunner = original })
+	originalNext := batchRecoveryGoalNext
+	t.Cleanup(func() { batchChildRunner, batchRecoveryGoalNext = original, originalNext })
 	batchChildRunner = func(string, string, ...string) error { return nil }
+	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
 	bed := newBatchProvenanceBed(t, "would-refuse code=chain-not-implementation", false)
 	if err := executeBatchLanding(bed.root, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
 		t.Fatal(err)
@@ -218,8 +224,10 @@ func TestBatchRecoveryRequiresExactChainField(t *testing.T) {
 
 func TestBatchMixedBranchAndChainMembersLandInBothOrders(t *testing.T) {
 	original := batchChildRunner
-	t.Cleanup(func() { batchChildRunner = original })
+	originalNext := batchRecoveryGoalNext
+	t.Cleanup(func() { batchChildRunner, batchRecoveryGoalNext = original, originalNext })
 	batchChildRunner = func(string, string, ...string) error { return nil }
+	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
 	for _, branchFirst := range []bool{true, false} {
 		name := "chain then branch"
 		if branchFirst {
@@ -357,8 +365,10 @@ func recoverBatchProvenanceFixture(t *testing.T, chains []string, commitTrailers
 	}
 
 	original := batchChildRunner
-	t.Cleanup(func() { batchChildRunner = original })
+	originalNext := batchRecoveryGoalNext
+	t.Cleanup(func() { batchChildRunner, batchRecoveryGoalNext = original, originalNext })
 	batchChildRunner = func(string, string, ...string) error { return nil }
+	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
 	if err := recoverBatchLanding(root, store, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
 		t.Fatal(err)
 	}
@@ -376,6 +386,163 @@ func TestRecoveredBatchBranchFinalizationNamesLastSource(t *testing.T) {
 	}
 	if got := recoveredBatchNext(batch.Unit{Chain: "chain-a"}, "landed"); got != "landed commit:landed:chain=chain-a" {
 		t.Fatalf("chain next=%q", got)
+	}
+}
+
+func TestBatchRecoveryLostFinalizeReplyDoesNotRepeatGoalEdit(t *testing.T) {
+	root, upstream, _ := goalBranchCLIFixture(t, landingOwnerLineage)
+	goalPath := filepath.Join(root, "plans", "goals", "standing-validation.md")
+	file, problems := goal.ParseFile(batchProvenanceContents(t, goalPath))
+	if len(problems) != 0 {
+		t.Fatalf("parse goal page: %v", problems)
+	}
+	file.Claimed.Lineage = landingOwnerLineage
+	batchProvenanceWrite(t, goalPath, string(goal.RenderFile(file)), 0o644)
+	batchProvenanceGit(t, "-C", root, "add", "plans/goals/standing-validation.md")
+	batchProvenanceGit(t, "-C", root, "commit", "-qm", "handover fixture goal")
+	batchProvenanceGit(t, "-C", root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	batchProvenanceGit(t, "-C", root, "update-ref", goal.AcceptedRef, "HEAD")
+	batchProvenanceGit(t, "-C", root, "push", "-q", "upstream", "HEAD:main")
+	batchProvenanceGit(t, "-C", root, "remote", "add", "origin", upstream)
+
+	change := strings.Repeat("a", 64)
+	batchProvenanceGit(t, "-C", root, "commit", "--allow-empty", "-qm", "land fixture",
+		"--trailer", "Landing-Provenance: chain=chain-a change="+change)
+	landed := batchProvenanceGit(t, "-C", root, "rev-parse", "HEAD")
+	batchProvenanceGit(t, "-C", root, "push", "-q", "upstream", "HEAD:main")
+	batchProvenanceGit(t, "-C", root, "update-ref", "refs/remotes/origin/main", landed)
+
+	store := batch.NewStore(root, nil)
+	record := batch.Record{Schema: 1, BatchID: batchProvenanceTestID, State: batch.StateLanding,
+		Units: []batch.Unit{{GoalID: "standing-validation", Chain: "chain-a", State: batch.UnitJoined,
+			Claim: batch.Claim{Machine: "landing", Lineage: landingOwnerLineage, Epoch: 1, Revision: 3, AccountingRevision: 1}}},
+		Landing: &batch.LandingProgress{PushComplete: true, PushedTip: landed}}
+	if err := store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+
+	original := batchChildRunner
+	t.Cleanup(func() { batchChildRunner = original })
+	edits := 0
+	batchChildRunner = func(_ string, _ string, args ...string) error {
+		if len(args) < 2 || args[0] != "goal" || args[1] != "edit" {
+			return nil
+		}
+		edits++
+		code, _, stderr := captureCommandOutput(t, true, true, func() int { return runGoalEdit(args[2:]) })
+		if code != 0 {
+			return errors.New(stderr)
+		}
+		if edits == 1 {
+			return errors.New("finalize reply lost after goal edit")
+		}
+		return nil
+	}
+	if err := recoverBatchLanding(root, store, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err == nil {
+		t.Fatal("lost finalization reply unexpectedly completed recovery")
+	}
+	if err := recoverBatchLanding(root, store, batchProvenanceTestID, landingOwnerLineage, time.Unix(4, 0)); err != nil {
+		t.Fatal(err)
+	}
+	projection, err := goal.Project(goal.Endpoint{Root: root, Remote: "upstream", Branch: "refs/heads/main"}, true, time.Unix(5, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := projection.Tree.Live["standing-validation"]
+	rows := 0
+	for _, history := range current.History {
+		if history.Verb == "edit" {
+			rows++
+		}
+	}
+	if edits != 1 || rows != 1 || current.NextStep != recoveredBatchNext(record.Units[0], landed) {
+		t.Fatalf("finalize calls=%d edit history rows=%d next=%q", edits, rows, current.NextStep)
+	}
+}
+
+func TestBatchLastBranchLandingSweepsGoalBranch(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		last     bool
+		failOnce bool
+		want     bool
+	}{
+		{name: "last deletes branch", last: true},
+		{name: "through keeps branch", last: false, want: true},
+		{name: "failed sweep retries", last: true, failOnce: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root, upstream, base := goalBranchCLIFixture(t, "m1")
+			batchProvenanceGit(t, "-C", root, "remote", "add", "origin", upstream)
+			batchProvenanceWrite(t, filepath.Join(root, "metasystem", "batch-last.go"), "package fixture\n", 0o644)
+			batchProvenanceGit(t, "-C", root, "add", "metasystem/batch-last.go")
+			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+				return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "unit", "--unit", "last", "--root", root})
+			})
+			unit := strings.TrimSpace(stdout)
+			if code != 0 || stderr != "" || len(unit) != 40 {
+				t.Fatalf("unit commit: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			code, _, stderr = captureCommandOutput(t, true, true, func() int {
+				return runGoalBranch([]string{"push", "--goal", "standing-validation", "--root", root, "--opid", "batch-last-push"})
+			})
+			if code != 0 || stderr != "" {
+				t.Fatalf("goal push: code=%d stderr=%q", code, stderr)
+			}
+			digest, err := goalbranch.UnitDigest(root, unit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			message := "land batch member\n\nGoal-Unit: standing-validation/last\nGoal-Digest: " + digest + "\nGoal-Source: " + unit + "\n"
+			if test.last {
+				message += "Goal-Last: standing-validation\n"
+			}
+			landed := batchProvenanceGit(t, "-C", root, "commit-tree", unit+"^{tree}", "-p", base, "-m", message)
+			batchProvenanceGit(t, "-C", root, "push", "-q", "upstream", landed+":refs/heads/main")
+			batchProvenanceGit(t, "-C", root, "update-ref", "refs/remotes/origin/main", landed)
+
+			store := batch.NewStore(root, nil)
+			record := batch.Record{Schema: 1, BatchID: batchProvenanceTestID, State: batch.StateLanding,
+				Units: []batch.Unit{{GoalID: "standing-validation", Chain: unit, State: batch.UnitJoined, CommitIDs: []string{unit},
+					BranchTip: unit, LastUnit: "last", GoalLast: test.last,
+					Claim: batch.Claim{Machine: "mac-cli", Lineage: "m1", Epoch: 1, Revision: 3, AccountingRevision: 1}}},
+				Landing: &batch.LandingProgress{PushComplete: true, PushedTip: landed}}
+			if err := store.Create(record); err != nil {
+				t.Fatal(err)
+			}
+			original := batchChildRunner
+			originalSweep := batchGoalBranchSweep
+			t.Cleanup(func() { batchChildRunner, batchGoalBranchSweep = original, originalSweep })
+			batchChildRunner = func(string, string, ...string) error { return nil }
+			sweeps := 0
+			if test.failOnce {
+				batchGoalBranchSweep = func(request goalbranch.SweepRequest) (goalbranch.SweepResult, error) {
+					sweeps++
+					if sweeps == 1 {
+						return goalbranch.SweepResult{}, errors.New("fixture sweep refusal")
+					}
+					return originalSweep(request)
+				}
+				firstErr := recoverBatchLanding(root, store, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0))
+				first, loadErr := store.Load(batchProvenanceTestID)
+				if loadErr != nil || firstErr == nil || !strings.Contains(firstErr.Error(), "fixture sweep refusal") || first.Units[0].P6Done {
+					t.Fatalf("first recovery error=%v load=%v record=%+v", firstErr, loadErr, first)
+				}
+				if refs := batchProvenanceGit(t, "-C", root, "ls-remote", "--heads", "upstream", "refs/heads/goal/standing-validation"); refs == "" {
+					t.Fatal("failed sweep deleted the goal branch")
+				}
+			}
+			if err := recoverBatchLanding(root, store, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
+				t.Fatal(err)
+			}
+			if test.failOnce && sweeps != 2 {
+				t.Fatalf("sweep calls=%d, want 2", sweeps)
+			}
+			refs := batchProvenanceGit(t, "-C", root, "ls-remote", "--heads", "upstream", "refs/heads/goal/standing-validation")
+			if present := refs != ""; present != test.want {
+				t.Fatalf("goal branch present=%v, want %v: %s", present, test.want, refs)
+			}
+		})
 	}
 }
 

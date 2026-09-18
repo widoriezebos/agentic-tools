@@ -10,6 +10,8 @@ type RecoverySeams struct {
 	OriginCommit func(Unit) (string, bool, error)
 	// OriginSource resolves the endpoint commit carrying one Goal-Source id.
 	OriginSource func(Unit, string) (string, bool, error)
+	// SweepGoalBranch removes a completed goal branch under its lease.
+	SweepGoalBranch func(Unit, string) error
 	// Finalize performs the idempotent P6 re-arm, Next edit and cleanup.
 	Finalize func(Unit, string) error
 	// Cleanup removes the detached/local assembly after trailer recognition.
@@ -72,6 +74,14 @@ func RecoverPushedSeries(store Store, id, actor string, at time.Time, seams Reco
 		unit, ok := unitByGoal(current.Units, snapshot.GoalID)
 		if !ok || unit.P6Done {
 			continue
+		}
+		if unit.GoalLast && len(unit.CommitIDs) != 0 {
+			if seams.SweepGoalBranch == nil {
+				return fmt.Errorf("BATCH_P6_REFUSED: member %s goal branch sweep helper is absent", snapshot.GoalID)
+			}
+			if sweepErr := seams.SweepGoalBranch(unit, commit); sweepErr != nil {
+				return fmt.Errorf("BATCH_P6_REFUSED: member %s goal branch sweep failed: %w", snapshot.GoalID, sweepErr)
+			}
 		}
 		if seams.Finalize == nil {
 			return fmt.Errorf("BATCH_P6_REFUSED: unit %s finalization helper is absent", snapshot.GoalID)

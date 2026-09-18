@@ -198,6 +198,41 @@ func TestBatchHistoryIsAppendOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestBatchRecordSchemaOneFixtureStillLoads(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "artifacts", "agents", "landing-batches", testBatchID+".json")
+	must(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	raw := `{
+  "schema": 1,
+  "batchId": "01j5x00000000000000000ba01",
+  "tipTree": "chain-tree",
+  "state": "open",
+  "units": [
+    {
+      "goalId": "goal-a",
+      "chain": "implementation-chain-a",
+      "claim": {
+        "machine": "seat-a",
+        "lineage": "lineage-a",
+        "epoch": 1,
+        "revision": 2,
+        "accountingRevision": 3
+      },
+      "state": "joined"
+    }
+  ],
+  "history": []
+}
+`
+	must(t, os.WriteFile(path, []byte(raw), 0o644))
+	record, err := NewStore(root, nil).Load(testBatchID)
+	must(t, err)
+	if len(record.Units) != 1 || record.Units[0].Chain != "implementation-chain-a" || len(record.Units[0].CommitIDs) != 0 ||
+		record.Units[0].GoalLast || record.Units[0].BranchTip != "" || len(record.Units[0].Builds) != 0 {
+		t.Fatalf("legacy chain record=%+v", record)
+	}
+}
 func TestBatchLivenessUsesInjectedProber(t *testing.T) {
 	prober := scriptedProber{101: identity.Alive, 102: identity.Dead, 103: identity.Unknown}
 	for pid, want := range prober {

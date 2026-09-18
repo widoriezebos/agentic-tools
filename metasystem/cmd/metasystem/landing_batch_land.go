@@ -13,6 +13,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -146,6 +148,23 @@ func finishBatchLanding(root string, store batch.Store, id, actor string, at tim
 }
 
 var batchMovedEndpointPush = batch.LandLandingBranch
+var batchGoalBranchSweep = goalbranch.Sweep
+var batchRecoveryGoalNext = func(root, goalID string, at time.Time) (string, error) {
+	endpoint, err := goalBranchEndpoint(root)
+	if err != nil {
+		return "", err
+	}
+	projection, err := goal.Project(endpoint, true, at)
+	if err != nil {
+		return "", err
+	}
+	for _, goals := range []map[string]*goal.GoalFile{projection.Tree.Live, projection.Tree.Done, projection.Tree.Abandoned} {
+		if file := goals[goalID]; file != nil {
+			return file.NextStep, nil
+		}
+	}
+	return "", fmt.Errorf("goal %s is absent from the current ledger", goalID)
+}
 
 func recoverMovedBatchPush(root, id string, record batch.Record, expectedBase, originCommit, baseTree, tip string) (batch.PushRecovery, error) {
 	originTree, err := gitOutput(root, "rev-parse", originCommit+"^{tree}")
@@ -373,8 +392,33 @@ func recoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 		OriginSource: func(_ batch.Unit, source string) (string, bool, error) {
 			return findTrailer(func(line string) bool { return line == "Goal-Source: "+source })
 		},
+		SweepGoalBranch: func(unit batch.Unit, _ string) error {
+			endpoint, err := goalBranchEndpoint(root)
+			if err != nil {
+				return err
+			}
+			record, err := store.Load(id)
+			if err != nil {
+				return err
+			}
+			transport := ""
+			if _, remoteErr := goalBranchGit(root, "remote", "get-url", "transport"); remoteErr == nil {
+				transport = "transport"
+			}
+			_, err = batchGoalBranchSweep(goalbranch.SweepRequest{Repo: root, Remote: endpoint.Remote, Transport: transport,
+				EndpointTip: record.Landing.PushedTip, GoalID: unit.GoalID, CheckClaim: goalBranchClaimCheck(root, unit.GoalID, endpoint)})
+			return err
+		},
 		Finalize: func(unit batch.Unit, commit string) error {
-			return batchChildRunner(root, landingOwnerLineage, "goal", "edit", "--root", root, "--id", unit.GoalID, "--next", recoveredBatchNext(unit, commit), "--lineage", landingOwnerLineage)
+			next := recoveredBatchNext(unit, commit)
+			current, err := batchRecoveryGoalNext(root, unit.GoalID, at)
+			if err != nil {
+				return err
+			}
+			if current == next {
+				return nil
+			}
+			return batchChildRunner(root, landingOwnerLineage, "goal", "edit", "--root", root, "--id", unit.GoalID, "--next", next, "--lineage", landingOwnerLineage)
 		},
 		Cleanup: func() error {
 			record, err := store.Load(id)

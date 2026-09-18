@@ -566,6 +566,79 @@ func TestBatchRecoveryRequiresEveryMemberGoalSource(t *testing.T) {
 	}
 }
 
+func TestBatchRecoverySweepsOnlyLastBranchMember(t *testing.T) {
+	newStore := func(t *testing.T, units []Unit) Store {
+		t.Helper()
+		root := t.TempDir()
+		store := NewStore(root, nil)
+		must(t, store.Create(Record{Schema: 1, BatchID: testBatchID, State: StateLanding, Units: units,
+			Landing: &LandingProgress{PushComplete: true, PushedTip: testCommit(9)}}))
+		return store
+	}
+	claim := Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 1, AccountingRevision: 1}
+	last := Unit{GoalID: "goal-a", Chain: "branch-a", Claim: claim, State: UnitJoined,
+		CommitIDs: []string{"source-a"}, BranchTip: "branch-a", GoalLast: true}
+	originSource := func(_ Unit, source string) (string, bool, error) { return "landed-" + source, true, nil }
+
+	t.Run("missing seam refuses", func(t *testing.T) {
+		store := newStore(t, []Unit{last})
+		finalized := 0
+		err := RecoverPushedSeries(store, testBatchID, "owner", time.Unix(2, 0), RecoverySeams{
+			OriginSource: originSource,
+			Finalize:     func(Unit, string) error { finalized++; return nil },
+		})
+		if err == nil || !strings.Contains(err.Error(), "goal branch sweep helper is absent") || finalized != 0 || load(t, store).Units[0].P6Done {
+			t.Fatalf("error=%v finalized=%d record=%+v", err, finalized, load(t, store))
+		}
+	})
+
+	t.Run("failed sweep retries before finalization", func(t *testing.T) {
+		store := newStore(t, []Unit{last})
+		sweeps, finalized := 0, 0
+		seams := RecoverySeams{
+			OriginSource: originSource,
+			SweepGoalBranch: func(Unit, string) error {
+				sweeps++
+				if sweeps == 1 {
+					return errors.New("sweep refused")
+				}
+				return nil
+			},
+			Finalize: func(Unit, string) error { finalized++; return nil },
+			Cleanup:  func() error { return nil },
+		}
+		if err := RecoverPushedSeries(store, testBatchID, "owner", time.Unix(2, 0), seams); err == nil || !strings.Contains(err.Error(), "sweep refused") {
+			t.Fatalf("first recovery=%v", err)
+		}
+		if finalized != 0 || load(t, store).Units[0].P6Done {
+			t.Fatalf("failed sweep finalized=%d record=%+v", finalized, load(t, store))
+		}
+		must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(3, 0), seams))
+		if sweeps != 2 || finalized != 1 || !load(t, store).Units[0].P6Done {
+			t.Fatalf("sweeps=%d finalized=%d record=%+v", sweeps, finalized, load(t, store))
+		}
+	})
+
+	t.Run("through and chain members do not sweep", func(t *testing.T) {
+		through := last
+		through.GoalID, through.GoalLast = "goal-through", false
+		through.CommitIDs = []string{"source-through"}
+		chain := Unit{GoalID: "goal-chain", Chain: "chain-a", Claim: claim, State: UnitJoined, GoalLast: true}
+		store := newStore(t, []Unit{through, chain})
+		finalized := 0
+		must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(2, 0), RecoverySeams{
+			OriginSource:    originSource,
+			OriginCommit:    func(Unit) (string, bool, error) { return "landed-chain", true, nil },
+			SweepGoalBranch: func(Unit, string) error { return errors.New("unexpected sweep") },
+			Finalize:        func(Unit, string) error { finalized++; return nil },
+			Cleanup:         func() error { return nil },
+		}))
+		if finalized != 2 || load(t, store).State != StateLanded {
+			t.Fatalf("finalized=%d record=%+v", finalized, load(t, store))
+		}
+	})
+}
+
 func TestApplyCertifiedPatchStagesTheTransportedBytes(t *testing.T) {
 	bed := assemblyFixture(t)
 	worktree := t.TempDir()
