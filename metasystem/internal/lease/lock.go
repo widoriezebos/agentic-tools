@@ -25,6 +25,24 @@ func lockWaitSeconds() float64 {
 
 type fileLock struct{ f *os.File }
 
+const lockRetryPause = 50 * time.Millisecond
+
+// lockPause is the bounded-lock retry pause, overridable with clock in tests.
+var lockPause = time.Sleep
+
+func waitForFileLock(f *os.File, wait time.Duration) bool {
+	deadline := clock().Add(wait)
+	for {
+		if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
+			return true
+		}
+		if clock().After(deadline) {
+			return false
+		}
+		lockPause(lockRetryPause)
+	}
+}
+
 // acquireBounded takes the exclusive lease lock, creating the lock file on
 // first use, and never blocks forever. what names the operation for the
 // refusal message.
@@ -37,19 +55,13 @@ func acquireBounded(path, what string) (*fileLock, error) {
 		return nil, fmt.Errorf("checkout lease lock cannot be opened: %w", err)
 	}
 	wait := lockWaitSeconds()
-	deadline := time.Now().Add(time.Duration(wait * float64(time.Second)))
-	for {
-		if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
-			return &fileLock{f: f}, nil
-		}
-		if time.Now().After(deadline) {
-			f.Close()
-			return nil, fmt.Errorf("checkout lease lock is busy for %s after %gs; "+
-				"another lease-gated operation holds it. If this call is nested inside "+
-				"one, pass --lease-held; otherwise retry in a moment", what, wait)
-		}
-		time.Sleep(50 * time.Millisecond)
+	if waitForFileLock(f, time.Duration(wait*float64(time.Second))) {
+		return &fileLock{f: f}, nil
 	}
+	f.Close()
+	return nil, fmt.Errorf("checkout lease lock is busy for %s after %gs; "+
+		"another lease-gated operation holds it. If this call is nested inside "+
+		"one, pass --lease-held; otherwise retry in a moment", what, wait)
 }
 
 // acquireBoundedExisting takes a lock only when its directory and lock file
@@ -63,19 +75,13 @@ func acquireBoundedExisting(path, what string) (*fileLock, bool, error) {
 		return nil, false, fmt.Errorf("checkout lease lock cannot be opened: %w", err)
 	}
 	wait := lockWaitSeconds()
-	deadline := time.Now().Add(time.Duration(wait * float64(time.Second)))
-	for {
-		if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
-			return &fileLock{f: f}, true, nil
-		}
-		if time.Now().After(deadline) {
-			f.Close()
-			return nil, true, fmt.Errorf("checkout lease lock is busy for %s after %gs; "+
-				"another lease-gated operation holds it. If this call is nested inside "+
-				"one, pass --lease-held; otherwise retry in a moment", what, wait)
-		}
-		time.Sleep(50 * time.Millisecond)
+	if waitForFileLock(f, time.Duration(wait*float64(time.Second))) {
+		return &fileLock{f: f}, true, nil
 	}
+	f.Close()
+	return nil, true, fmt.Errorf("checkout lease lock is busy for %s after %gs; "+
+		"another lease-gated operation holds it. If this call is nested inside "+
+		"one, pass --lease-held; otherwise retry in a moment", what, wait)
 }
 
 func (l *fileLock) release() {

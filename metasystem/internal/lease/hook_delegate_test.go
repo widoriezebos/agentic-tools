@@ -3,7 +3,6 @@ package lease
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -59,22 +58,15 @@ func TestHookDelegateVerifiesProviderChildOrRecordedAdapterAncestor(t *testing.T
 	self := hookExact(t, int64(os.Getpid()))
 	writeHookJob(t, root, "job-ancestor", self, false)
 
-	child := exec.Command("sleep", "30")
-	if err := child.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = child.Process.Kill()
-		_ = child.Wait()
-	})
-	result, err := HookDelegate(root, installation, "job-ancestor", int64(child.Process.Pid))
+	childPID, _ := readyChild(t)
+	result, err := HookDelegate(root, installation, "job-ancestor", childPID)
 	if err != nil || !result.Delegate || result.JobID != "job-ancestor" || result.MatchedPID != self.Pid {
 		t.Fatalf("ancestor custody = %+v, %v", result, err)
 	}
 
-	writeHookJob(t, root, "job-child", hookExact(t, int64(child.Process.Pid)), true)
-	result, err = HookDelegate(root, installation, "job-child", int64(child.Process.Pid))
-	if err != nil || !result.Delegate || result.MatchedPID != int64(child.Process.Pid) {
+	writeHookJob(t, root, "job-child", hookExact(t, childPID), true)
+	result, err = HookDelegate(root, installation, "job-child", childPID)
+	if err != nil || !result.Delegate || result.MatchedPID != childPID {
 		t.Fatalf("direct child custody = %+v, %v", result, err)
 	}
 }

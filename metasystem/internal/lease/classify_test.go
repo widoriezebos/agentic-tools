@@ -7,11 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -20,12 +18,8 @@ import (
 // child walks up through us — letting us stage what the ancestor resolves to.
 func childOf(t *testing.T) int64 {
 	t.Helper()
-	cmd := exec.Command("/bin/sleep", "120")
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("spawn child: %v", err)
-	}
-	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	return int64(cmd.Process.Pid)
+	pid, _ := readyChild(t)
+	return pid
 }
 
 func selfStart(t *testing.T) int64 {
@@ -251,7 +245,7 @@ func classifyThroughDevinShape(t *testing.T, intermediateCommand string) Classif
 		t.Fatalf("announce self: %v", err)
 	}
 	writeDevinAdapter(t, root)
-	intermediate, child := grandchild(t, root)
+	intermediate, child := grandchild(t)
 	table := fmt.Sprintf(`{"%d":{"pidStartedAt":1,"command":%q}}`, intermediate, intermediateCommand)
 	tablePath := filepath.Join(root, "identity.json")
 	if err := os.WriteFile(tablePath, []byte(table), 0o644); err != nil {
@@ -286,30 +280,23 @@ func writeDevinAdapter(t *testing.T, root string) {
 // grandchild spawns a real intermediate (a plain shell) and returns both
 // its pid and its child's pid — the ancestry shape the classify walk
 // reads; the intermediate's COMMAND is overridden through the fixture.
-func grandchild(t *testing.T, root string) (int64, int64) {
+func grandchild(t *testing.T) (int64, int64) {
 	t.Helper()
-	pidFile := filepath.Join(root, "grandchild.pid")
-	cmd := exec.Command("/bin/sh", "-c", "sleep 120 & echo $! > \""+pidFile+"\"; wait")
+	cmd := exec.Command("/bin/sh", "-c", "sleep 120 & printf '%s\\n' \"$!\"; wait")
+	ready, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("spawn intermediate: %v", err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	deadline := time.Now().Add(wiringBound)
-	for {
-		data, err := os.ReadFile(pidFile)
-		if err == nil && len(data) > 0 {
-			pid, perr := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
-			if perr != nil {
-				t.Fatalf("grandchild pid unreadable: %v", perr)
-			}
-			t.Cleanup(func() { _ = syscall.Kill(int(pid), syscall.SIGKILL) })
-			return int64(cmd.Process.Pid), pid
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("intermediate never published its child pid")
-		}
-		time.Sleep(20 * time.Millisecond)
+	var pid int64
+	if _, err := fmt.Fscan(ready, &pid); err != nil {
+		t.Fatalf("intermediate never published its child pid: %v", err)
 	}
+	t.Cleanup(func() { _ = syscall.Kill(int(pid), syscall.SIGKILL) })
+	return int64(cmd.Process.Pid), pid
 }
 
 // stageStewardInstall mints a valid installation whose binary is a real
@@ -375,9 +362,6 @@ func spawnAndSettle(t *testing.T, bin string) int64 {
 	}
 	_ = readyWriter.Close()
 	t.Cleanup(func() { _ = hold.Close(); _ = ready.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	if err := ready.SetReadDeadline(time.Now().Add(wiringBound)); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := ready.Read(make([]byte, 1)); err != nil {
 		t.Fatalf("spawned steward never reported running: %v", err)
 	}
@@ -559,7 +543,7 @@ func TestBinaryAncestorDoesNotPreemptTheAnnouncedMain(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	intermediate, child := grandchild(t, root)
+	intermediate, child := grandchild(t)
 	// The intermediate "is" the installed binary mid-dispatch — the
 	// exact shape lease run-held puts between a job child and its
 	// MAIN. The walk must reach the MAIN above it: STEWARD here
@@ -586,7 +570,7 @@ func TestHeadlessChildOfStewardChainClassifiesSteward(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	intermediate, child := grandchild(t, root)
+	intermediate, child := grandchild(t)
 	table := fmt.Sprintf(`{"%d": {"pidStartedAt": 1, "command": %q}, "%d": {"terminal": false}}`, intermediate, bin+" steward revive --repo .", child)
 	tablePath := filepath.Join(root, "identity.json")
 	if err := os.WriteFile(tablePath, []byte(table), 0o644); err != nil {
@@ -608,7 +592,7 @@ func TestTerminalCallerUnderPlumbingAncestorStaysHuman(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	intermediate, child := grandchild(t, root)
+	intermediate, child := grandchild(t)
 	// A NON-steward invocation of the installed binary (run-held) is
 	// transparent, so the terminal decides: pre-arming parity for a
 	// person's direct dispatch with no enrolled main.
@@ -637,7 +621,7 @@ func TestDelegateAncestorAboveStewardChainDoesNotPreempt(t *testing.T) {
 	// agent session, an agent-invoked manual tick): the NEAREST
 	// recognised ancestor — the steward plumbing — owns the chain.
 	writeDevinAdapter(t, root)
-	intermediate, child := grandchild(t, root)
+	intermediate, child := grandchild(t)
 	// The test process itself wears a delegate's command: the walk
 	// WOULD reach it two hops above the child if the steward
 	// plumbing did not return first.

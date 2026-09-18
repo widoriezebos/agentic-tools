@@ -272,17 +272,11 @@ func acquireRecordLock(path string) (*fileLock, error) {
 		return nil, err
 	}
 	wait := lockWaitSeconds()
-	deadline := time.Now().Add(time.Duration(wait * float64(time.Second)))
-	for {
-		if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
-			return &fileLock{f: f}, nil
-		}
-		if time.Now().After(deadline) {
-			f.Close()
-			return nil, fmt.Errorf("claim sweep cannot lock job record %s after %gs; a wedged holder keeps it", filepath.Base(path), wait)
-		}
-		time.Sleep(50 * time.Millisecond)
+	if waitForFileLock(f, time.Duration(wait*float64(time.Second))) {
+		return &fileLock{f: f}, nil
 	}
+	f.Close()
+	return nil, fmt.Errorf("claim sweep cannot lock job record %s after %gs; a wedged holder keeps it", filepath.Base(path), wait)
 }
 
 // protocolCounts totals the distinct protocol-error keys per root job chain —

@@ -1,35 +1,50 @@
 package lease
 
 import (
+	"io"
 	"os/exec"
 	"testing"
-	"time"
 )
 
-// liveChild spawns a real, long-lived process and returns its pid and true
-// start second, so Live(pid, start, nil) is genuinely true until the test ends.
-func liveChild(t *testing.T) (pid, start int64) {
+// readyChild starts a stand-in that reports readiness after exec and then
+// remains alive until the test releases it.
+func readyChild(t *testing.T) (pid, start int64) {
 	t.Helper()
-	cmd := exec.Command("/bin/sleep", "120")
+	cmd := exec.Command("/bin/sh", "-c", "printf r; read line")
+	hold, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("spawn live child: %v", err)
 	}
-	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	pid = int64(cmd.Process.Pid)
-	// The child's identity is rightly unreadable inside its fork-to-execve
-	// window (the flake dossier's family — sixth instance, first seen on
-	// the VM's snapshot gate); the property is steady-state, wait bounded.
-	deadline := time.Now().Add(wiringBound)
-	for {
-		s, ok := StartedAt(pid, nil)
-		if ok {
-			return pid, s
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("could not read live child %d start", pid)
-		}
-		time.Sleep(20 * time.Millisecond)
+	t.Cleanup(func() {
+		_ = hold.Close()
+		_ = ready.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	var signal [1]byte
+	if _, err := io.ReadFull(ready, signal[:]); err != nil {
+		t.Fatalf("live child never reported ready: %v", err)
 	}
+	pid = int64(cmd.Process.Pid)
+	start, ok := StartedAt(pid, nil)
+	if !ok {
+		t.Fatalf("ready child %d has no readable start", pid)
+	}
+	return pid, start
+}
+
+// liveChild returns a process whose identity is stable and remains live until
+// the test ends.
+func liveChild(t *testing.T) (pid, start int64) {
+	t.Helper()
+	return readyChild(t)
 }
 
 // deadPid returns a pid that is certainly not alive.

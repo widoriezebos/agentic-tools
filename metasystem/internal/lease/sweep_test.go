@@ -1,17 +1,22 @@
 package lease
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
+
+type groupOwnershipProbe map[int64]identity.FixtureEntry
+
+func (p groupOwnershipProbe) FixtureEntry(pid int64) (identity.FixtureEntry, bool) {
+	entry, ok := p[pid]
+	return entry, ok
+}
 
 func TestCleanupStaleJobsFailsOnlyOlderInFlightJobs(t *testing.T) {
 	savedPids, savedPgid, savedCmd, savedKill := sweepAllPids, sweepGetpgid, sweepProcessCommand, sweepKill
@@ -59,58 +64,43 @@ func TestCleanupStaleJobsFailsOnlyOlderInFlightJobs(t *testing.T) {
 }
 
 func TestGroupOwnsTag(t *testing.T) {
-	savedPids := sweepAllPids
-	defer func() { sweepAllPids = savedPids }()
+	savedPids, savedPgid, savedCommand := sweepAllPids, sweepGetpgid, sweepProcessCommand
+	defer func() {
+		sweepAllPids, sweepGetpgid, sweepProcessCommand = savedPids, savedPgid, savedCommand
+	}()
 
-	self := os.Getpid()
-	pgid, err := unix.Getpgid(self)
-	if err != nil {
-		t.Fatal(err)
+	const pgid int64 = 42
+	sweepAllPids = func() ([]int64, error) { return []int64{101, 102, 201}, nil }
+	sweepGetpgid = func(pid int64) (int64, error) {
+		if pid == 201 {
+			return 99, nil
+		}
+		return pgid, nil
 	}
-	command, ok := ProcessCommand(int64(self), nil)
-	if !ok {
-		t.Skip("cannot read our own command")
+	sweepProcessCommand = ProcessCommand
+	probe := groupOwnershipProbe{}
+	for pid, command := range map[int64]string{
+		101: "runner --tag owned-tag",
+		102: "helper",
+		201: "other-group --tag absent-from-42",
+	} {
+		probe[pid] = identity.FixtureEntry{
+			StartedAt: 1, HasStartedAt: true,
+			Command: command, HasCommand: true,
+		}
 	}
-	// Our own group carries our own command, so it is proven owned. The
-	// group scan can transiently fail to read argvs under nested-gate load
-	// (the execve/report window the flake dossier root-caused for the
-	// other child-probing tests); the property is steady-state, so the
-	// assertion waits it out, bounded.
-	deadline := time.Now().Add(wiringBound)
-	for {
-		owned, provable := groupOwnsTag(int64(pgid), command, nil)
-		if owned && provable {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("our group should own our command tag: owned=%v provable=%v", owned, provable)
-		}
-		time.Sleep(50 * time.Millisecond)
+
+	if owned, provable := groupOwnsTag(pgid, "owned-tag", probe); !owned || !provable {
+		t.Fatalf("tagged fixture member must prove ownership: owned=%v provable=%v", owned, provable)
 	}
-	// A tag no process carries is not owned (but still provable). Unlike
-	// the own-tag scan, this one must inspect EVERY live pid — so any
-	// process on the machine inside its fork-to-execve window makes the
-	// sweep rightly unprovable for that instant. Same dossier mechanism,
-	// same remedy: the property is steady-state, wait it out bounded.
-	deadline = time.Now().Add(wiringBound)
-	for {
-		owned, provable := groupOwnsTag(int64(pgid), "no-process-carries-this-xyzzy", nil)
-		if !owned && provable {
-			break
-		}
-		if owned {
-			t.Fatalf("absent tag reads as owned")
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("absent tag never became provable: owned=%v provable=%v", owned, provable)
-		}
-		time.Sleep(50 * time.Millisecond)
+	if owned, provable := groupOwnsTag(pgid, "absent-from-42", probe); owned || !provable {
+		t.Fatalf("readable fixture members must prove an absent tag: owned=%v provable=%v", owned, provable)
 	}
 
 	// An empty member scan contains no observation that could disprove
 	// ownership.
 	sweepAllPids = func() ([]int64, error) { return nil, nil }
-	if owned, provable := groupOwnsTag(int64(pgid), command, nil); owned || provable {
+	if owned, provable := groupOwnsTag(pgid, "owned-tag", probe); owned || provable {
 		t.Fatalf("an empty member scan must be unprovable: owned=%v provable=%v", owned, provable)
 	}
 }

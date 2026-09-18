@@ -5,7 +5,6 @@ import (
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,33 +17,11 @@ import (
 // lease), and returns its pid and start.
 func announceLiveChild(t *testing.T, root string) (pid, start int64) {
 	t.Helper()
-	cmd := exec.Command("/bin/sleep", "120")
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("spawn: %v", err)
-	}
-	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	pid = int64(cmd.Process.Pid)
-	// cmd.Start returns after fork, BEFORE the child completes execve; in
-	// that window the kernel reports an empty argv and the auth identity
-	// (pid, start, command) is rightly unreadable. Under load — nested
-	// gates inside full suites — the window stretches to test-visible
-	// width, which was tonight's wandering nested-gate flake. Wait it out,
-	// bounded.
-	var s int64
-	ok := false
-	for deadline := time.Now().Add(wiringBound); time.Now().Before(deadline); {
-		if s, ok = StartedAt(pid, nil); ok {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !ok {
-		t.Fatalf("child start unreadable after the exec window")
-	}
-	if _, err := Announce(root, "child sess", pid, s, "tag", "fake", ""); err != nil {
+	pid, start = readyChild(t)
+	if _, err := Announce(root, "child sess", pid, start, "tag", "fake", ""); err != nil {
 		t.Fatalf("announce child: %v", err)
 	}
-	return pid, s
+	return pid, start
 }
 
 func TestRequireHolderRefusesNonHolderMain(t *testing.T) {
@@ -324,6 +301,16 @@ func TestGroupOwnsTagUnprovableRows(t *testing.T) {
 // naming the record, never an indefinite hang under the lease lock.
 func TestRecordLockAcquisitionIsBounded(t *testing.T) {
 	t.Setenv("METASYSTEM_LEASE_LOCK_WAIT_SEC", "0.2")
+	fakeStart := time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC)
+	fakeNow := fakeStart
+	oldClock, oldPause := clock, lockPause
+	t.Cleanup(func() { clock, lockPause = oldClock, oldPause })
+	clock = func() time.Time { return fakeNow }
+	pauses := 0
+	lockPause = func(d time.Duration) {
+		pauses++
+		fakeNow = fakeNow.Add(d)
+	}
 	path := filepath.Join(t.TempDir(), "wedged.lock")
 	holder, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
@@ -333,13 +320,12 @@ func TestRecordLockAcquisitionIsBounded(t *testing.T) {
 	if err := unix.Flock(int(holder.Fd()), unix.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now()
 	_, err = acquireRecordLock(path)
 	if err == nil || !strings.Contains(err.Error(), "wedged.lock") {
 		t.Fatalf("a held record lock must refuse by name: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 5*time.Second {
-		t.Fatalf("the bound did not release the caller: %v", elapsed)
+	if pauses != 5 || !fakeNow.Equal(fakeStart.Add(250*time.Millisecond)) {
+		t.Fatalf("bounded acquisition pauses = %d, clock = %v; want 5 pauses and 250ms advanced", pauses, fakeNow)
 	}
 }
 
