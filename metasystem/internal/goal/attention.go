@@ -42,6 +42,7 @@ type waitGitContextFunc func(context.Context, time.Duration, []string) (context.
 type waitGitDependencies struct {
 	run         attentionGitRun
 	withTimeout waitGitContextFunc
+	timers      attentionTimerSource
 }
 
 type waitGitDependenciesKey struct{}
@@ -60,6 +61,9 @@ func waitDependencies(ctx context.Context) waitGitDependencies {
 			return context.WithTimeout(parent, budget)
 		}
 	}
+	if dependencies.timers == nil {
+		dependencies.timers = wallAttentionTimerSource{}
+	}
 	return dependencies
 }
 
@@ -68,6 +72,7 @@ func runWaitGit(ctx context.Context, root string, stdin []byte, args ...string) 
 }
 
 func runAttentionGit(ctx context.Context, root string, stdin []byte, args ...string) (string, error) {
+	timers := waitDependencies(ctx).timers
 	full := append([]string{"-C", root, "-c", "core.logAllRefUpdates=false"}, args...)
 	cmd := exec.Command("git", full...)
 	cmd.Env = environWithoutGitSteering()
@@ -91,8 +96,8 @@ func runAttentionGit(ctx context.Context, root string, stdin []byte, args ...str
 	case <-ctx.Done():
 		pgid := cmd.Process.Pid
 		_ = syscall.Kill(-pgid, syscall.SIGTERM)
-		grace := time.NewTimer(boundedCaptureGrace)
-		poll := time.NewTicker(10 * time.Millisecond)
+		grace := timers.NewTimer(boundedCaptureGrace)
+		poll := timers.NewTicker(10 * time.Millisecond)
 		defer grace.Stop()
 		defer poll.Stop()
 		waitDone := false
@@ -111,8 +116,8 @@ func runAttentionGit(ctx context.Context, root string, stdin []byte, args ...str
 			select {
 			case <-waited:
 				waitDone = true
-			case <-poll.C:
-			case <-grace.C:
+			case <-poll.C():
+			case <-grace.C():
 				_ = syscall.Kill(-pgid, syscall.SIGKILL)
 				if !waitDone {
 					<-waited
@@ -655,18 +660,19 @@ func CaptureTipBounded(e Endpoint, budget time.Duration) (BoundedCapture, error)
 	}
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
-	timer := time.NewTimer(budget)
+	timers := currentCaptureTipTimerSource()
+	timer := timers.NewTimer(budget)
 	defer timer.Stop()
 	select {
 	case waitErr := <-waited:
 		if waitErr != nil {
 			return fail(fmt.Errorf("git fetch --no-tags --refmap=: %v (%s)", waitErr, strings.TrimSpace(stderr.String())))
 		}
-	case <-timer.C:
+	case <-timer.C():
 		pgid := cmd.Process.Pid
 		termErr := syscall.Kill(-pgid, syscall.SIGTERM)
-		grace := time.NewTimer(boundedCaptureGrace)
-		poll := time.NewTicker(10 * time.Millisecond)
+		grace := timers.NewTimer(boundedCaptureGrace)
+		poll := timers.NewTicker(10 * time.Millisecond)
 		defer grace.Stop()
 		defer poll.Stop()
 		waitDone := false
@@ -686,10 +692,10 @@ func CaptureTipBounded(e Endpoint, budget time.Duration) (BoundedCapture, error)
 			select {
 			case waitErr = <-waited:
 				waitDone = true
-			case <-poll.C:
+			case <-poll.C():
 				// Recheck the process-group condition above; cooperative Git
 				// transports return without spending the grace ceiling.
-			case <-grace.C:
+			case <-grace.C():
 				killErr := syscall.Kill(-pgid, syscall.SIGKILL)
 				if !waitDone {
 					waitErr = <-waited

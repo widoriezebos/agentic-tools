@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -540,8 +542,51 @@ func TestLedgerChangesDoesNotDisguiseUnreadableHistoryAsARewind(t *testing.T) {
 	}
 }
 
+func TestRunAttentionGitCancellationUsesInjectedTimers(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	mustGit(t, root, "init", "-q")
+	startedPath := filepath.Join(t.TempDir(), "started")
+	blockedPath := filepath.Join(t.TempDir(), "blocked")
+	for _, path := range []string{startedPath, blockedPath} {
+		if err := syscall.Mkfifo(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	started, err := os.OpenFile(startedPath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = started.Close() })
+
+	timers := newFakeAttentionTimerSource()
+	timers.fireTimers = true
+	ctx, cancel := context.WithCancel(withWaitGitDependencies(context.Background(), waitGitDependencies{timers: timers}))
+	defer cancel()
+	result := make(chan error, 1)
+	alias := "!trap '' TERM; printf S > " + strconv.Quote(startedPath) + "; read -r _ < " + strconv.Quote(blockedPath)
+	go func() {
+		_, runErr := runAttentionGit(ctx, root, nil, "-c", "alias.attention-hang="+alias, "attention-hang")
+		result <- runErr
+	}()
+	startedByte := make([]byte, 1)
+	if _, err := started.Read(startedByte); err != nil || string(startedByte) != "S" {
+		t.Fatalf("hanging git start signal=%q err=%v", startedByte, err)
+	}
+	cancel()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled git returned %v", err)
+	}
+	created := timers.Created()
+	if len(created) != 2 || created[0].kind != fakeAttentionTimer || created[0].duration != boundedCaptureGrace || created[1].kind != fakeAttentionTicker || created[1].duration != 10*time.Millisecond {
+		t.Fatalf("cancelled git timers=%v, want grace %s then 10ms poll", created, boundedCaptureGrace)
+	}
+}
+
 func TestCaptureTipBoundedKillsTheWholeTransportGroup(t *testing.T) {
 	t.Parallel()
+	timers := newFakeAttentionTimerSource()
+	useCaptureTipTimerSource(t, timers)
 	realGit, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
@@ -553,8 +598,8 @@ func TestCaptureTipBoundedKillsTheWholeTransportGroup(t *testing.T) {
 	wrapper := filepath.Join(dir, "git")
 	script := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
   *" fetch "*)
-	printf '%s %s\n' "$$" "$(ps -o pgid= -p $$ | tr -d ' ')" > "$LEDGER_FETCH_GROUP_FILE"
     trap '' TERM
+	printf '%s %s\n' "$$" "$(ps -o pgid= -p $$ | tr -d ' ')" > "$LEDGER_FETCH_GROUP_FILE"
 	sh -c 'trap "" TERM; echo $$ > "$LEDGER_FETCH_CHILD_FILE"; read -r _ <"${METASYSTEM_FIXTURE_LEASH:?}"' sh "$tag" &
     wait
     ;;
@@ -570,15 +615,27 @@ exec "$LEDGER_REAL_GIT" "$@"
 
 	root := t.TempDir()
 	mustGit(t, root, "init", "-q")
-	_, err = CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment}, 300*time.Millisecond)
-	if err == nil || !strings.Contains(err.Error(), "timed out") {
-		t.Fatalf("blocking transport did not time out: %v", err)
-	}
-	wrapperID, groupID, childID := readHangingGitPIDs(t, groupFile, childFile)
+	captured := make(chan error, 1)
+	go func() {
+		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment}, 300*time.Millisecond)
+		captured <- captureErr
+	}()
+	wrapperID, groupID, childID := waitForHangingGitPIDs(t, groupFile, childFile, 25*time.Second)
 	fixture.Record(wrapperID)
 	fixture.Record(childID)
 	if wrapperID != groupID || groupID == childID {
 		t.Fatalf("invalid transport identities: wrapper=%d group=%d child=%d", wrapperID, groupID, childID)
+	}
+	timers.Next(t, fakeAttentionTimer, 300*time.Millisecond).Fire()
+	grace := timers.Next(t, fakeAttentionTimer, boundedCaptureGrace)
+	_ = timers.Next(t, fakeAttentionTicker, 10*time.Millisecond)
+	if groupErr := syscall.Kill(-groupID, 0); groupErr != nil && !errors.Is(groupErr, syscall.EPERM) {
+		t.Fatalf("transport process group %d did not remain during TERM grace: %v", groupID, groupErr)
+	}
+	grace.Fire()
+	err = <-captured
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("blocking transport did not time out: %v", err)
 	}
 	if err := waitForGroupAbsence(groupID, 30*time.Second); err != nil {
 		t.Fatal(err)
@@ -595,6 +652,8 @@ exec "$LEDGER_REAL_GIT" "$@"
 
 func TestCaptureTipBoundedLetsCooperativeTransportExitDuringGrace(t *testing.T) {
 	t.Parallel()
+	timers := newFakeAttentionTimerSource()
+	useCaptureTipTimerSource(t, timers)
 	if boundedCaptureGrace != 5*time.Second {
 		t.Fatalf("bounded capture grace=%s, want 5s", boundedCaptureGrace)
 	}
@@ -610,8 +669,8 @@ func TestCaptureTipBoundedLetsCooperativeTransportExitDuringGrace(t *testing.T) 
 	wrapper := filepath.Join(dir, "git")
 	script := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
   *" fetch "*)
-	printf '%s %s\n' "$$" "$(ps -o pgid= -p $$ | tr -d ' ')" > "$LEDGER_GRACE_GROUP_FILE"
     trap 'echo TERM > "$LEDGER_GRACE_TERM_FILE"; exit 0' TERM
+	printf '%s %s\n' "$$" "$(ps -o pgid= -p $$ | tr -d ' ')" > "$LEDGER_GRACE_GROUP_FILE"
 	sh -c 'echo $$ > "$LEDGER_GRACE_CHILD_FILE"; read -r _ <"${METASYSTEM_FIXTURE_LEASH:?}"' sh "$tag" &
 	wait
     ;;
@@ -627,22 +686,139 @@ exec "$LEDGER_GRACE_REAL_GIT" "$@"
 	environment = fixture.Env(environment)
 	root := t.TempDir()
 	mustGit(t, root, "init", "-q")
-	_, err = CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment}, 300*time.Millisecond)
-	if err == nil || !strings.Contains(err.Error(), "timed out") {
-		t.Fatalf("cooperative transport did not time out: %v", err)
-	}
-	if data, readErr := os.ReadFile(termFile); readErr != nil || strings.TrimSpace(string(data)) != "TERM" {
-		t.Fatalf("transport received no graceful TERM opportunity: %q %v", data, readErr)
-	}
-	wrapperID, groupID, childID := readHangingGitPIDs(t, groupFile, childFile)
+	captured := make(chan error, 1)
+	go func() {
+		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment}, 300*time.Millisecond)
+		captured <- captureErr
+	}()
+	wrapperID, groupID, childID := waitForHangingGitPIDs(t, groupFile, childFile, 25*time.Second)
 	fixture.Record(wrapperID)
 	fixture.Record(childID)
 	if wrapperID != groupID {
 		t.Fatalf("cooperative transport wrapper pid %d did not lead process group %d", wrapperID, groupID)
 	}
+	timers.Next(t, fakeAttentionTimer, 300*time.Millisecond).Fire()
+	grace := timers.Next(t, fakeAttentionTimer, boundedCaptureGrace)
+	poll := timers.Next(t, fakeAttentionTicker, 10*time.Millisecond)
+	for {
+		select {
+		case err = <-captured:
+			goto captureReturned
+		default:
+			poll.Fire()
+			runtime.Gosched()
+		}
+	}
+
+captureReturned:
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("cooperative transport did not time out: %v", err)
+	}
+	if grace.Fired() {
+		t.Fatal("cooperative transport spent the grace timer")
+	}
+	if data, readErr := os.ReadFile(termFile); readErr != nil || strings.TrimSpace(string(data)) != "TERM" {
+		t.Fatalf("transport received no graceful TERM opportunity: %q %v", data, readErr)
+	}
 	if err := waitForGroupAbsence(groupID, 30*time.Second); err != nil {
 		t.Fatal(err)
 	}
+}
+
+type fakeAttentionTimerKind string
+
+const (
+	fakeAttentionTimer  fakeAttentionTimerKind = "timer"
+	fakeAttentionTicker fakeAttentionTimerKind = "ticker"
+)
+
+type fakeAttentionTimerSource struct {
+	created chan *fakeAttentionTimerInstance
+	mu      sync.Mutex
+	all     []*fakeAttentionTimerInstance
+
+	fireTimers bool
+}
+
+type fakeAttentionTimerInstance struct {
+	kind     fakeAttentionTimerKind
+	duration time.Duration
+	c        chan time.Time
+	mu       sync.Mutex
+	fired    bool
+}
+
+func newFakeAttentionTimerSource() *fakeAttentionTimerSource {
+	return &fakeAttentionTimerSource{created: make(chan *fakeAttentionTimerInstance, 3)}
+}
+
+func (s *fakeAttentionTimerSource) NewTimer(after time.Duration) attentionTimer {
+	return s.newTimer(fakeAttentionTimer, after)
+}
+
+func (s *fakeAttentionTimerSource) NewTicker(every time.Duration) attentionTimer {
+	return s.newTimer(fakeAttentionTicker, every)
+}
+
+func (s *fakeAttentionTimerSource) newTimer(kind fakeAttentionTimerKind, duration time.Duration) attentionTimer {
+	timer := &fakeAttentionTimerInstance{kind: kind, duration: duration, c: make(chan time.Time, 1)}
+	s.mu.Lock()
+	s.all = append(s.all, timer)
+	s.mu.Unlock()
+	if s.fireTimers && kind == fakeAttentionTimer {
+		timer.Fire()
+	}
+	s.created <- timer
+	return timer
+}
+
+func (s *fakeAttentionTimerSource) Created() []*fakeAttentionTimerInstance {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]*fakeAttentionTimerInstance(nil), s.all...)
+}
+
+func (s *fakeAttentionTimerSource) Next(t *testing.T, kind fakeAttentionTimerKind, duration time.Duration) *fakeAttentionTimerInstance {
+	t.Helper()
+	timer := <-s.created
+	if timer.kind != kind || timer.duration != duration {
+		t.Fatalf("created attention %s for %s, want %s for %s", timer.kind, timer.duration, kind, duration)
+	}
+	return timer
+}
+
+func (t *fakeAttentionTimerInstance) C() <-chan time.Time {
+	return t.c
+}
+
+func (t *fakeAttentionTimerInstance) Stop() {}
+
+func (t *fakeAttentionTimerInstance) Fire() {
+	t.mu.Lock()
+	t.fired = true
+	t.mu.Unlock()
+	select {
+	case t.c <- time.Time{}:
+	default:
+	}
+}
+
+func (t *fakeAttentionTimerInstance) Fired() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.fired
+}
+
+var captureTipTimerSourceTestMu sync.Mutex
+
+func useCaptureTipTimerSource(t *testing.T, source attentionTimerSource) {
+	t.Helper()
+	captureTipTimerSourceTestMu.Lock()
+	previous := replaceCaptureTipTimerSource(source)
+	t.Cleanup(func() {
+		replaceCaptureTipTimerSource(previous)
+		captureTipTimerSourceTestMu.Unlock()
+	})
 }
 
 func waitForHangingGitPIDs(t *testing.T, groupFile, childFile string, ceiling time.Duration) (int, int, int) {
@@ -674,16 +850,6 @@ func hangingGitPIDsReady(groupData, childData []byte) bool {
 		}
 	}
 	return true
-}
-
-func readHangingGitPIDs(t *testing.T, groupFile, childFile string) (int, int, int) {
-	t.Helper()
-	groupData, groupErr := os.ReadFile(groupFile)
-	childData, childErr := os.ReadFile(childFile)
-	if groupErr != nil || childErr != nil {
-		t.Fatalf("transport did not publish its process identities: group=%q err=%v child=%q err=%v", groupData, groupErr, childData, childErr)
-	}
-	return parseHangingGitPIDs(t, groupData, childData)
 }
 
 func parseHangingGitPIDs(t *testing.T, groupData, childData []byte) (int, int, int) {
