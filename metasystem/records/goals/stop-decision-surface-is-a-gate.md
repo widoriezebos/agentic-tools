@@ -1,6 +1,6 @@
 # stop-decision-surface-is-a-gate
 
-- State: approved
+- State: done
 - Priority: 1
 - Sequence: 40
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: an undeclared Stop-decision change is how the loop broke; novelty 2: the extraction exists as a script, the gate integration and declaration are new; exposure 3: every landing that touches the Stop path; accumulation 2: each undetected inversion compounds across seats"
@@ -8,8 +8,9 @@
 - Intent: A change that moves a Stop decision must say so, enforced by the machinery. On 2026-09-13 a build quietly closed the third-refusal release and the delegate-job exemption; it was caught only by a scratchpad script (decision-surface.sh) that extracts every assertion naming a Stop decision and diffs it against trunk. That guard lives outside the repository, so no other seat has it and nothing enforces it. DONE: the check runs in the gate; a change moving any assertion that names a Stop decision is refused unless the landing declares the moved assertions and the goal permitting the change; additions are reported, removals and changes refused without that declaration.
 - Origin: human
 - Next step: fix-4 (the Stop surface trusts only the canonical goal record) on main 97f17b5ebdc6a15f94a3d548865e14204e3deae9 (push 3); remaining: closing read 3 on that tip, then conclude.
+- Concluded: Stop-decision moves are gated by the machinery: the Stop surface audit (audit stop-decision-surface, run by scripts/agents/go-gate.sh) refuses any move of a Stop decision assertion unless a declaration names a goal whose canonical record, read only through goal.ParseFile, is open and carries StopSurface: moves; declaration creation and audit acceptance both refuse a nil reader, any parse problem, a done or abandoned goal and a missing permission, and multiline and parenthesized decision operands stay on the surface. Units decisionsurface, fix-1, fix-2, fix-3 and fix-4 landed; three closing reads, the last (g47read3 on e7b75fc88) CONCLUDE with every rule witnessed under mutation. D3, a testing.json group that routes a go-gate.sh-only change to the Stop-surface tests, is absent; the reads class it as a stable-state item the DONE text does not require.
 - OpenedAt: 2026-09-14T16:16:14Z
-- Revision: 120
+- Revision: 121
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:24Z revision=2 opid=90XPDEVA986F5HF56X2C2EXQY8-m1e-c6925449 authority=proven digest=3ddae773a96ecaaab5e32b5b9d04e0536a88604b28d2deb5669b392cc93c3c39
@@ -135,4 +136,5 @@ History:
 - 2026-09-18T21:59:00Z XTYMKPCS72WK2SJA5J764WFGYZ-m1e-c6925449 done actor=human:Wido targets=cross-cutting-change-inventories-its-readers,failures-show-observed-against-expected,go-tests-run-in-parallel,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror reason=priority-order from=1:42 to=1:41
 - 2026-09-18T23:29:58Z 7ZZT16G6CMR8R3R8T295HE80T4-m1e-c6925449 edit actor=human:Wido targets=stop-decision-surface-is-a-gate
 - 2026-09-18T23:30:04Z G0BZ9GRRJGEP0S795CRP91W0TM-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-launchers-become-go-verbs,delegate-runs-stay-under-200k-context,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,efficiency-settings-ship-in-the-repository,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-children-cannot-outlive-their-test,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-decision-surface-is-a-gate,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,waits-run-outside-model-contexts reason=priority-order from=1:41 to=1:40
-Integrity: sha256=65123b068c1358d66ebd2b6561080fde9703a00553dd307beebbacb2e7c32460
+- 2026-09-18T23:49:16Z 63PJ5YAVTHS17J6BCSD87SJ99M-m1e-c6925449 done actor=human:Wido targets=go-tests-run-in-parallel,stop-decision-surface-is-a-gate
+Integrity: sha256=6ed6548a5ca5adff67ad36db8095141a76b5834c45ea8fc8ae655861611131e9
