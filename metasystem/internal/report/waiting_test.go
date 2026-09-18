@@ -57,6 +57,70 @@ func TestWaitingLinesUseDurableResumeCommand(t *testing.T) {
 	}
 }
 
+func TestWaitingLinesUseWaitEndForLiveLocalWait(t *testing.T) {
+	root := t.TempDir()
+	row := run.Waiter{
+		SchemaVersion: 2,
+		WaitID:        "0123456789abcdef0123456789abcdef",
+		Nonce:         "fedcba9876543210fedcba9876543210",
+		Kind:          "local",
+		TargetID:      "0123456789abcdef0123456789abcdef",
+		OwnerLineage:  "lineage-a",
+		Pid:           int64(os.Getpid()),
+		Label:         "compile release",
+		JobID:         "job-a",
+		State:         "pending",
+		Deadline:      "2026-09-18T14:00:00Z",
+	}
+	data, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(run.WaitersDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(run.WaitersDir(root), "local-live-owner.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	lines, err := WaitingLines(root, "lineage-a")
+	want := "WAITING local compile release for job job-a until 2026-09-18T14:00:00Z: metasystem wait end --wait-id 0123456789abcdef0123456789abcdef"
+	if err != nil || len(lines) != 1 || lines[0] != want || strings.Contains(lines[0], "--resume") {
+		t.Fatalf("waiting lines=%q err=%v", lines, err)
+	}
+}
+
+func TestWaitingLinesUseWaitEndForPendingHumanWait(t *testing.T) {
+	root := t.TempDir()
+	row := run.Waiter{
+		SchemaVersion: 2,
+		WaitID:        "abcdefabcdefabcdefabcdefabcdefab",
+		Nonce:         "1234567890abcdef1234567890abcdef",
+		Kind:          "human",
+		TargetID:      "abcdefabcdefabcdefabcdefabcdefab",
+		OwnerLineage:  "lineage-a",
+		Question:      "Proceed with release?",
+		State:         "pending",
+		Deadline:      "2026-09-18T15:00:00Z",
+	}
+	data, err := json.Marshal(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(run.WaitersDir(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(run.WaitersDir(root), "human-pending-owner.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	lines, err := WaitingLines(root, "lineage-a")
+	want := "WAITING human answer to Proceed with release? until 2026-09-18T15:00:00Z: metasystem wait end --wait-id abcdefabcdefabcdefabcdefabcdefab"
+	if err != nil || len(lines) != 1 || lines[0] != want || strings.Contains(lines[0], "--resume") {
+		t.Fatalf("waiting lines=%q err=%v", lines, err)
+	}
+}
+
 func TestSucceededWaitOwnerUsesMainIDChainAndAnnouncementLineage(t *testing.T) {
 	root := t.TempDir()
 	mains := filepath.Join(root, "artifacts", "agents", "mains")

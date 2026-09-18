@@ -67,7 +67,24 @@ func CurrentWaitingLines(root string) ([]string, error) {
 }
 
 func waitingLine(row run.Waiter) string {
+	switch row.Kind {
+	case "local":
+		return detachedWaitingLine(row, row.Label)
+	case "human":
+		return detachedWaitingLine(row, "answer to "+row.Question)
+	}
 	return fmt.Sprintf("WAITING %s %s until %s: %s", row.Kind, row.TargetID, row.Deadline, run.WaitResumeCommand(row))
+}
+
+func detachedWaitingLine(row run.Waiter, status string) string {
+	line := fmt.Sprintf("WAITING %s %s", row.Kind, status)
+	if row.JobID != "" {
+		line += " for job " + row.JobID
+	}
+	if row.Deadline != "" {
+		line += " until " + row.Deadline
+	}
+	return line + ": metasystem wait end --wait-id " + row.WaitID
 }
 
 // SucceededWaitOwner proves that candidateMain is connected to the current
