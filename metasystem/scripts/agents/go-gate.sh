@@ -543,6 +543,24 @@ if [[ "$gate_hook_start_scope" == script-fixture ]]; then
   echo "go gate: SessionStart exit audit not applicable to this script fixture"
 fi
 
+gate_stop_surface_applicable=0
+if [[ "$gate_hook_start_scope" == installation \
+  && -f "$root/scripts/agents/stop-decision-surface.txt" ]] \
+  && git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  gate_stop_surface_applicable=1
+fi
+if [[ -n "$gate_build_scratch" && "$gate_stop_surface_applicable" == 1 ]]; then
+  if gate_stop_surface_out=$("$gate_build_scratch" audit stop-decision-surface --root "$root" 2>&1); then
+    printf '%s\n' "$gate_stop_surface_out"
+  else
+    gate_static_reds+=("Stop decision surface audit failed:
+$gate_stop_surface_out")
+  fi
+fi
+if [[ "$gate_stop_surface_applicable" != 1 ]]; then
+  echo "go gate: Stop decision surface audit not applicable to this tree"
+fi
+
 if (( ${#gate_static_reds[@]} )); then
   echo "go gate: ${#gate_static_reds[@]} static check(s) red — the complete block:" >&2
   for red in "${gate_static_reds[@]}"; do
@@ -569,7 +587,7 @@ if [[ "$gate_fast" == 1 ]]; then
   rm -f "$gate_build_scratch"
   gate_build_scratch=
   if [[ "$gate_hook_start_scope" == installation ]]; then
-    echo "go gate: fast mode passed (dependency ratchet, gofmt, vet, staticcheck, refusal register, SessionStart exit audit, build); the full gate remains the landing requirement"
+    echo "go gate: fast mode passed (dependency ratchet, gofmt, vet, staticcheck, refusal register, SessionStart exit audit, Stop decision surface audit, build); the full gate remains the landing requirement"
   else
     echo "go gate: fast mode passed (dependency ratchet, gofmt, vet, staticcheck, refusal register, build); the full gate remains the landing requirement"
   fi

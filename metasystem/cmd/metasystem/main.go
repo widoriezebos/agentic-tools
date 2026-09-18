@@ -308,6 +308,7 @@ func families() []family {
 				{"dependency-ratchet", "refuse undeclared executable interpreter dependencies in shell sources", runAuditDependencyRatchet},
 				{"hook-start-exits", "refuse SessionStart paths around the outcome owner", runAuditHookStartExits},
 				{"metasystem", "instruction-asset audit: required files, outside references, placeholders, word budgets", runAuditMetasystem},
+				{"stop-decision-surface", "report additions and refuse undeclared moves of Stop assertions", runAuditStopDecisionSurface},
 			},
 		},
 		{

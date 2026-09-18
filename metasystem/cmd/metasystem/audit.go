@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -142,5 +143,62 @@ func runAuditHookStartExits(args []string) int {
 		return 1
 	}
 	fmt.Println("hook start exit audit passed")
+	return 0
+}
+
+func runAuditStopDecisionSurface(args []string) int {
+	flags := flag.NewFlagSet("audit stop-decision-surface", flag.ContinueOnError)
+	root := pathFlag(flags, "root", ".", "metasystem installation to audit")
+	base := flags.String("base", "", "base commit (default: merge-base HEAD origin/main, or HEAD)")
+	jsonOutput := flags.Bool("json", false, "print the result as JSON")
+	declare := flags.Bool("declare", false, "write a declaration for the current removed set")
+	goal := flags.String("goal", "", "ledger goal that permits a declaration")
+	reason := flags.String("reason", "", "one-line reason for a declaration")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || (*declare && *jsonOutput) || (!*declare && (*goal != "" || *reason != "")) {
+		fmt.Fprintln(os.Stderr, "usage: metasystem audit stop-decision-surface [--root INSTALLATION] [--base COMMIT] [--json] [--declare --goal GOAL --reason TEXT]")
+		return 2
+	}
+	options := audit.StopSurfaceOptions{Base: *base}
+	if *declare {
+		path, err := audit.DeclareStopDecisionSurface(*root, options, *goal, *reason)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		fmt.Println(path)
+		return 0
+	}
+	result, err := audit.AuditStopDecisionSurface(*root, options)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if result.Refused() {
+			return 1
+		}
+		return 0
+	}
+	for _, line := range result.Added {
+		fmt.Printf("added: %s: %s\n", line.File, line.Line)
+	}
+	for _, line := range result.Moved {
+		fmt.Printf("moved: %s: %s (goal %s)\n", line.File, line.Line, line.Goal)
+	}
+	for _, line := range result.Removed {
+		fmt.Fprintf(os.Stderr, "removed: %s: %s\n", line.File, line.Line)
+	}
+	for _, problem := range result.Problems {
+		fmt.Fprintln(os.Stderr, "stop decision surface: "+problem)
+	}
+	fmt.Println(result.Summary())
+	if result.Refused() {
+		fmt.Fprintln(os.Stderr, "restore the assertion, or run metasystem audit stop-decision-surface --declare --goal <goal-id> --reason <text> with the goal that permits the move")
+		return 1
+	}
 	return 0
 }
