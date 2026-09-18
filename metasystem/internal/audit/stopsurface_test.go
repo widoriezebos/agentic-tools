@@ -6,10 +6,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 )
+
+const stopSurfaceListPath = "scripts/agents/stop-decision-surface.txt"
 
 type stopSurfaceFixture struct {
 	t    *testing.T
@@ -26,6 +27,7 @@ func newStopSurfaceFixture(t *testing.T, files []stopSurfaceFile, contents map[s
 	fixture.git("config", "--local", "user.name", "Stop Surface Fixture")
 	fixture.git("config", "--local", "user.email", "stop-surface@invalid")
 	fixture.git("config", "--local", "commit.gpgsign", "false")
+	fixture.write("go.mod", "module fixture\n\ngo 1.25\n")
 	for path, content := range contents {
 		fixture.write(path, content)
 	}
@@ -93,16 +95,16 @@ func (f *stopSurfaceFixture) declare(goal, reason string, moves []StopSurfaceLin
 }
 
 func standardStopFiles() []stopSurfaceFile {
-	return []stopSurfaceFile{{Kind: "go", Path: "a_test.go"}, {Kind: "bed", Path: "bed.sh"}}
+	return []stopSurfaceFile{{Kind: "go", Path: "a_test.go"}, {Kind: "bed", Path: "scripts/agents/bed-fixtures.sh"}}
 }
 
 func TestStopSurfaceReportsAdditions(t *testing.T) {
 	fixture := newStopSurfaceFixture(t, standardStopFiles(), map[string]string{
-		"a_test.go": "package fixture\n",
-		"bed.sh":    "#!/usr/bin/env bash\n",
+		"a_test.go":                      "package fixture\n",
+		"scripts/agents/bed-fixtures.sh": "#!/usr/bin/env bash\n",
 	}, true)
 	fixture.write("a_test.go", "package fixture\nwant := Verdict{\tShouldBlock:   true}\n")
-	fixture.write("bed.sh", "#!/usr/bin/env bash\nwant='{\"decision\":\"block\"}'\n")
+	fixture.write("scripts/agents/bed-fixtures.sh", "#!/usr/bin/env bash\nwant='{\"decision\":\"block\"}'\n")
 
 	result := fixture.audit(StopSurfaceOptions{})
 	if result.Refused() {
@@ -110,10 +112,53 @@ func TestStopSurfaceReportsAdditions(t *testing.T) {
 	}
 	want := []StopSurfaceLine{
 		{File: "a_test.go", Line: "want := Verdict{ ShouldBlock: true}"},
-		{File: "bed.sh", Line: `want='{"decision":"block"}'`},
+		{File: "scripts/agents/bed-fixtures.sh", Line: `want='{"decision":"block"}'`},
 	}
 	if !slices.Equal(result.Added, want) {
 		t.Fatalf("added = %#v, want %#v", result.Added, want)
+	}
+}
+
+func TestStopSurfaceDiscoversOnlyFixtureBeds(t *testing.T) {
+	fixture := newStopSurfaceFixture(t, nil, map[string]string{
+		"scripts/agents/nested/base-fixtures.sh": "#!/usr/bin/env bash\n",
+		"scripts/agents/emit.sh":                 "#!/usr/bin/env bash\n",
+	}, false)
+	fixture.write("scripts/agents/nested/base-fixtures.sh", "#!/usr/bin/env bash\nwant='{\"decision\":\"allow\"}'\n")
+	fixture.write("scripts/agents/emit.sh", "#!/usr/bin/env bash\nprintf '{\"decision\":\"block\"}'\n")
+
+	result := fixture.audit(StopSurfaceOptions{})
+	want := []StopSurfaceLine{{File: "scripts/agents/nested/base-fixtures.sh", Line: `want='{"decision":"allow"}'`}}
+	if result.Refused() || !slices.Equal(result.Added, want) {
+		t.Fatalf("fixture-bed discovery result = %#v, want additions %#v", result, want)
+	}
+}
+
+func TestStopSurfaceDiscoversAssertionsOutsideTheOldList(t *testing.T) {
+	const path = "nested/new_decision_test.go"
+	fixture := newStopSurfaceFixture(t, []stopSurfaceFile{{Kind: "go", Path: "a_test.go"}}, map[string]string{
+		"a_test.go": "package fixture\n",
+	}, true)
+	fixture.write(path, "package nested\nvar want = Verdict{ShouldBlock: true}\n")
+
+	added := fixture.audit(StopSurfaceOptions{})
+	wantAdded := StopSurfaceLine{File: path, Line: "var want = Verdict{ShouldBlock: true}"}
+	if added.Refused() || !slices.Contains(added.Added, wantAdded) {
+		t.Fatalf("unlisted addition result = %+v, want addition %+v", added, wantAdded)
+	}
+
+	fixture.commit("add assertion outside the old list")
+	fixture.write(path, "package nested\n")
+	removed := fixture.audit(StopSurfaceOptions{})
+	if !removed.Refused() || !slices.Contains(removed.Removed, wantAdded) {
+		t.Fatalf("unlisted removal result = %+v, want refusal for %+v", removed, wantAdded)
+	}
+
+	fixture.write(path, "package nested\nvar want = Verdict{ShouldBlock: false}\n")
+	inverted := fixture.audit(StopSurfaceOptions{})
+	wantInverted := StopSurfaceLine{File: path, Line: "var want = Verdict{ShouldBlock: false}"}
+	if !inverted.Refused() || !slices.Contains(inverted.Removed, wantAdded) || !slices.Contains(inverted.Added, wantInverted) {
+		t.Fatalf("unlisted inversion result = %+v, want removal %+v and addition %+v", inverted, wantAdded, wantInverted)
 	}
 }
 
@@ -150,7 +195,7 @@ func TestStopSurfaceRefusesAnInvertedDecision(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			path := "a_test.go"
 			if test.kind == "bed" {
-				path = "bed.sh"
+				path = "scripts/agents/bed-fixtures.sh"
 			}
 			fixture := newStopSurfaceFixture(t, []stopSurfaceFile{{Kind: test.kind, Path: path}}, map[string]string{path: test.old}, true)
 			fixture.write(path, test.new)
@@ -250,14 +295,14 @@ func TestStopSurfaceRefusesAFalseDeclaration(t *testing.T) {
 
 func TestStopSurfaceListRemovalCountsAsRemoval(t *testing.T) {
 	fixture := newStopSurfaceFixture(t, standardStopFiles(), map[string]string{
-		"a_test.go": "want := Verdict{ShouldBlock: true}\n",
-		"bed.sh":    "#!/usr/bin/env bash\n",
+		"a_test.go":                      "want := Verdict{ShouldBlock: true}\n",
+		"scripts/agents/bed-fixtures.sh": "#!/usr/bin/env bash\n",
 	}, true)
-	fixture.write(stopSurfaceListPath, renderStopSurfaceList([]stopSurfaceFile{{Kind: "bed", Path: "bed.sh"}}))
+	fixture.write(stopSurfaceListPath, renderStopSurfaceList([]stopSurfaceFile{{Kind: "bed", Path: "scripts/agents/bed-fixtures.sh"}}))
 
 	result := fixture.audit(StopSurfaceOptions{})
-	if !result.Refused() || len(result.Removed) != 1 || result.Removed[0].File != "a_test.go" {
-		t.Fatalf("list removal result = %+v", result)
+	if result.Refused() || len(result.Removed) != 0 {
+		t.Fatalf("obsolete list changed discovered surface: %+v", result)
 	}
 }
 
@@ -381,7 +426,6 @@ func TestGoGateRunsTheStopDecisionSurfaceCheck(t *testing.T) {
 		`gate_static_reds+=("Stop decision surface audit failed:`,
 		`"$gate_hook_start_scope" == installation`,
 		`git -C "$root" rev-parse --is-inside-work-tree`,
-		`-f "$root/scripts/agents/stop-decision-surface.txt"`,
 		`Stop decision surface audit not applicable`,
 		`printf '%s\n' "$gate_stop_surface_out"`,
 	} {
@@ -389,45 +433,85 @@ func TestGoGateRunsTheStopDecisionSurfaceCheck(t *testing.T) {
 			t.Errorf("go gate lacks %q", required)
 		}
 	}
+	if strings.Contains(script[hook:], "stop-decision-surface.txt") {
+		t.Error("go gate still makes the audit depend on the removed include list")
+	}
 }
 
 func TestStopSurfaceListOfThisRepositoryIsSound(t *testing.T) {
 	root := filepath.Join("..", "..")
-	content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(stopSurfaceListPath)))
+	files, err := discoverStopSurfaceFiles(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, err := parseStopSurfaceList(content)
+	surface, err := extractStopSurface(files, func(path string) ([]byte, bool, error) {
+		data, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		return data, readErr == nil, readErr
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 13 {
-		t.Fatalf("surface list has %d files, want 13", len(files))
+
+	tokens := []string{"ShouldBlock", "BlockSource", "IdleRefusal", "CountSpent"}
+	if got, want := stopGoPattern.String(), strings.Join(tokens, "|"); got != want {
+		t.Fatalf("Stop decision token pattern = %q, want complete set %q", got, want)
 	}
-	paths := make([]string, 0, len(files))
+	for _, token := range tokens {
+		found := false
+		for line := range surface {
+			if strings.Contains(line.Line, token) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("discovered repository surface has no extracted line for %s", token)
+		}
+	}
+
+	discovered := map[string]bool{}
 	for _, file := range files {
-		paths = append(paths, file.Path)
-		info, err := os.Stat(filepath.Join(root, filepath.FromSlash(file.Path)))
-		if err != nil || !info.Mode().IsRegular() {
-			t.Errorf("listed file %s is not a regular file", file.Path)
-			continue
-		}
-		if file.Kind != "go" {
-			continue
-		}
-		surface, err := extractStopSurface([]stopSurfaceFile{file}, func(path string) ([]byte, bool, error) {
-			data, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
-			return data, readErr == nil, readErr
-		})
-		if err != nil {
-			t.Errorf("extract %s: %v", file.Path, err)
-		} else if len(surface) == 0 {
-			t.Errorf("listed Go test %s has no Stop surface lines", file.Path)
+		discovered[file.Path] = true
+	}
+	for _, oldBed := range []string{
+		"scripts/agents/runtime-hook-fixtures.sh",
+		"scripts/agents/supervision-fixtures.sh",
+		"scripts/agents/supervision-hook-fixtures.sh",
+	} {
+		if !discovered[oldBed] {
+			t.Errorf("discovery omitted fixture bed %s", oldBed)
 		}
 	}
-	sorted := append([]string(nil), paths...)
-	sort.Strings(sorted)
-	if unique := slices.Compact(sorted); len(unique) != len(paths) {
-		t.Fatal("surface list has a duplicate path")
+
+	required := []struct {
+		file string
+		text string
+	}{
+		{file: "cmd/metasystem/context_cost_test.go", text: "if code != 0 || problem != \"\" || decodeErr != nil || verdict.ShouldBlock ||"},
+		{file: "cmd/metasystem/wait_verb_test.go", text: "if !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != \"unwatched-work\" ||"},
+		{file: "cmd/metasystem/wait_verb_test.go", text: "if verdict.ShouldBlock || verdict.BlockSource != nil || verdict.IdleRefusal || verdict.CountSpent ||"},
+		{file: "internal/report/stoppresentation_test.go", text: "if result.Control.ShouldBlock != input.Control.ShouldBlock || !sameStringPointer(result.Control.BlockSource, input.Control.BlockSource) {"},
+	}
+	for _, assertion := range required {
+		content, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(assertion.file)))
+		if readErr != nil {
+			t.Errorf("read %s: %v", assertion.file, readErr)
+			continue
+		}
+		lines := strings.Split(string(content), "\n")
+		lineNumber := 0
+		for index, line := range lines {
+			if strings.Join(strings.Fields(line), " ") == assertion.text {
+				lineNumber = index + 1
+				break
+			}
+		}
+		if lineNumber == 0 {
+			t.Errorf("%s no longer contains %q", assertion.file, assertion.text)
+			continue
+		}
+		if surface[stopSurfaceKey{File: assertion.file, Line: assertion.text}] == 0 {
+			t.Errorf("discovered surface omitted %s:%d: %s", assertion.file, lineNumber, assertion.text)
+		}
 	}
 }

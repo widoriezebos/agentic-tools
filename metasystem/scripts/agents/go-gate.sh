@@ -544,8 +544,7 @@ if [[ "$gate_hook_start_scope" == script-fixture ]]; then
 fi
 
 gate_stop_surface_applicable=0
-if [[ "$gate_hook_start_scope" == installation \
-  && -f "$root/scripts/agents/stop-decision-surface.txt" ]] \
+if [[ "$gate_hook_start_scope" == installation ]] \
   && git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   gate_stop_surface_applicable=1
 fi

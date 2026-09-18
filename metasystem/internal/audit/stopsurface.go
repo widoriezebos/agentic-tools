@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -15,8 +17,7 @@ import (
 )
 
 const (
-	stopSurfaceListPath = "scripts/agents/stop-decision-surface.txt"
-	stopMoveDirectory   = "docs/stop-decision-moves"
+	stopMoveDirectory = "docs/stop-decision-moves"
 )
 
 var (
@@ -201,24 +202,13 @@ func inspectStopDecisionSurface(root string, options StopSurfaceOptions) (stopSu
 	if err != nil {
 		return stopSurfaceInspection{}, fmt.Errorf("stop decision surface base tree: %w", err)
 	}
-	candidateList, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(stopSurfaceListPath)))
+	baseFiles, err := discoverStopSurfaceFilesAtTree(root, baseTree)
 	if err != nil {
-		return stopSurfaceInspection{}, fmt.Errorf("stop decision surface list unreadable: %w", err)
+		return stopSurfaceInspection{}, fmt.Errorf("discover base stop decision surface: %w", err)
 	}
-	baseList, exists, err := workspace.FileAt(baseTree, stopSurfaceListPath)
+	candidateFiles, err := discoverStopSurfaceFiles(root)
 	if err != nil {
-		return stopSurfaceInspection{}, fmt.Errorf("stop decision surface base list unreadable: %w", err)
-	}
-	if !exists {
-		baseList = candidateList
-	}
-	baseFiles, err := parseStopSurfaceList(baseList)
-	if err != nil {
-		return stopSurfaceInspection{}, fmt.Errorf("base stop decision surface list: %w", err)
-	}
-	candidateFiles, err := parseStopSurfaceList(candidateList)
-	if err != nil {
-		return stopSurfaceInspection{}, fmt.Errorf("candidate stop decision surface list: %w", err)
+		return stopSurfaceInspection{}, fmt.Errorf("discover candidate stop decision surface: %w", err)
 	}
 	baseSurface, err := extractStopSurface(baseFiles, func(path string) ([]byte, bool, error) {
 		return workspace.FileAt(baseTree, path)
@@ -279,28 +269,85 @@ func resolveStopSurfaceBase(workspace gittree.Workspace, requested string) (stri
 	return bases[0], nil
 }
 
-func parseStopSurfaceList(content []byte) ([]stopSurfaceFile, error) {
+func discoverStopSurfaceFiles(root string) ([]stopSurfaceFile, error) {
 	files := []stopSurfaceFile{}
-	seen := map[string]bool{}
-	for index, raw := range strings.Split(string(content), "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") {
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == root {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		if entry.IsDir() {
+			if relative == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		kind, selected := stopSurfaceFileKind(relative)
+		if !selected {
+			return nil
+		}
+		if !validStopSurfacePath(relative) {
+			return fmt.Errorf("discovered non-canonical path %q", relative)
+		}
+		files = append(files, stopSurfaceFile{Kind: kind, Path: relative})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sortStopSurfaceFiles(files)
+	return files, nil
+}
+
+func discoverStopSurfaceFilesAtTree(root, tree string) ([]stopSurfaceFile, error) {
+	command := exec.Command("git", "-C", root, "ls-tree", "-r", "-z", "--name-only", "--full-tree", tree)
+	output, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("list tree %s: %w", tree, err)
+	}
+	files := []stopSurfaceFile{}
+	for _, raw := range bytes.Split(output, []byte{0}) {
+		if len(raw) == 0 {
 			continue
 		}
-		kind, path, ok := strings.Cut(line, "\t")
-		if !ok || strings.Contains(path, "\t") || (kind != "go" && kind != "bed") || !validStopSurfacePath(path) {
-			return nil, fmt.Errorf("line %d is not kind<TAB>relative-path", index+1)
+		path := string(raw)
+		kind, selected := stopSurfaceFileKind(path)
+		if !selected {
+			continue
 		}
-		if seen[path] {
-			return nil, fmt.Errorf("line %d repeats %s", index+1, path)
+		if !validStopSurfacePath(path) {
+			return nil, fmt.Errorf("tree contains non-canonical path %q", path)
 		}
-		seen[path] = true
 		files = append(files, stopSurfaceFile{Kind: kind, Path: path})
 	}
-	if len(files) == 0 {
-		return nil, fmt.Errorf("list has no files")
-	}
+	sortStopSurfaceFiles(files)
 	return files, nil
+}
+
+func stopSurfaceFileKind(path string) (string, bool) {
+	if strings.HasSuffix(path, "_test.go") {
+		return "go", true
+	}
+	if strings.HasPrefix(path, "scripts/agents/") && strings.HasSuffix(path, "-fixtures.sh") {
+		return "bed", true
+	}
+	return "", false
+}
+
+func sortStopSurfaceFiles(files []stopSurfaceFile) {
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].Path != files[j].Path {
+			return files[i].Path < files[j].Path
+		}
+		return files[i].Kind < files[j].Kind
+	})
 }
 
 func validStopSurfacePath(path string) bool {
