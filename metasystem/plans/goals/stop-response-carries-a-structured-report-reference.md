@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 46
+- Sequence: 45
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a wrong reference would break delivery matching for every Stop, but the field is the same data the parent already holds; novelty 1: the reference exists, it moves from text to a field; exposure 3: every Stop of every seat; accumulation 2: settlement, the steward check and the beds read it"
 - Tier: 2
 - Intent: Delivery-efficiency phase D, delegate loop. The Stop response carries its report reference (installation, id, alias, path, digest) as a structured field, and the human line is rendered from it; settlement, the steward's delivery check and the beds resolve the report from the field and never from the console wording, so a change to the human line cannot break delivery matching or a bed's report lookup. Why: two Stop-message wording changes landed during the stop-decisions build; one broke the receipt matcher outright and four build rounds were spent on text drift. DONE: a fixture changes the human line's wording and every matcher and every bed still resolves the report; a response without the field is refused as unreadable. every mechanism in this goal lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime; it is proven on at least two runtimes.
 - Origin: human
 - Next step: fix-1 (settlement verb resolves the report from the response record) on main a2d38afad38379fcd9a4747f18adbe3035958309. Next: closing re-read of M-1 on a2d38afad38379fcd9a4747f18adbe3035958309, then conclude from the pane.
 - OpenedAt: 2026-09-14T15:31:30Z
-- Revision: 109
+- Revision: 110
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:53:59Z revision=3 opid=B39ANC154E1FM3MF7A24V0R51V-m1e-c6925449 authority=proven digest=b1291aeb353351c5d395b3474fd1d47a1f6cffe54c2ee67aad776f9d54105220
@@ -124,4 +124,5 @@ History:
 - 2026-09-18T01:32:09Z TA6500951ZK8SD2D37N3PQPNWP-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-goal-verbs-forgiving,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-json-merges-by-surface,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,units-run-through-one-launcher reason=priority-order from=1:47 to=1:46
 - 2026-09-18T07:10:30Z 1WB73KEBHF3YSF20TQYK7Y00EY-m1e-c6925449 edit actor=human:Wido targets=stop-response-carries-a-structured-report-reference
 - 2026-09-18T14:58:05Z K3JW720Q09PAC5CJZZZ4FVVY27-m1e-c6925449 edit actor=human:Wido targets=stop-response-carries-a-structured-report-reference
-Integrity: sha256=c75c7cf49caca79efd102c9f1ce6139372f1cfc2b101b845bc996b452b81d31b
+- 2026-09-18T14:58:43Z DPXCN7TGWX2BEJ2ECE4RKCWFWM-m1e-c6925449 done actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,delegate-sandbox-runs-the-beds,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,failures-show-observed-against-expected,human-goal-verbs-forgiving,round-proof-feeds-the-next-brief,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order from=1:46 to=1:45
+Integrity: sha256=8b24e990030b2ec1f6df5d83a725517fa5b372fa46e9a573e6e8e44f7d8af9b4

@@ -1,6 +1,6 @@
 # stop-gate-sees-harness-tracked-work
 
-- State: approved
+- State: done
 - Priority: 1
 - Sequence: 34
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="severity 2: wasted model turns and context, no wrong landing; novelty 2: extends the registered wait to local work and human answers; exposure 3: every seat, every wait; accumulation 2: grows with parallel work"
@@ -8,12 +8,12 @@
 - Intent: The stop gate reports a seat idle ('no task in flight, 0 jobs') while the seat waits on harness-tracked work: Codex builds, subagent reads, local engine and bed runs, or a human answer. On 2026-09-15 this forced dozens of empty turns on m1e, about 50 on m1b and 30 to 60 minutes on m1c, each with a 15 to 36 second hook and more context. registered-wait-matches-the-runtime-session covers job watches only. DONE: a seat can register in-flight local work (by pid) or a pending human question (with a deadline) as a wait; the stop gate allows the stop while that wait is live and names it; the wait ends when the work ends; fixtures prove a live local wait and a human wait each allow the stop and a dead one does not.
 - Origin: human
 - Next step: 2026-09-18 direct mode (m1e): closing read on bfa166a93 returned CONCLUDE, no breaking item, one material non-breaking defect (detached local and human waits advertised with an invalid resume command). Fix-1 (Codex dm-g34fix) lands in wave 3d. Next: conclude from the pane after the wave 3d push naming the landed shas.
+- Concluded: Concluded on main a2d38afad38379fcd9a4747f18adbe3035958309: the stop gate sees harness-tracked work. The closing read returned CONCLUDE with one material defect, detached waits advertised resume instead of wait end; fix-1 on main a2d38afad38379fcd9a4747f18adbe3035958309 (wave 3d) closes it. Deferred items are on the stable-state agenda.
 - OpenedAt: 2026-09-15T05:55:06Z
-- Revision: 82
+- Revision: 83
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T05:55:14Z revision=2 opid=Q4A1XGD8SS1NP18ZXR6H4J2D7P-m1e-c6925449 authority=proven digest=0e2336de904436c47d7feb8c7c51efa0f94188b03a99d611ddc81305c50a88b7
-- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=35 episodeAt=2026-09-15T14:20:48Z episodeRevision=35 idleSeconds=0 released=2026-09-15T14:21:29Z
 
 History:
 - 2026-09-15T05:55:06Z 41RARJ72SCV6WTBF0AMDG4AF1E-m1e-c6925449 open actor=human:Wido targets=stop-gate-sees-harness-tracked-work
@@ -98,4 +98,5 @@ History:
 - 2026-09-18T01:32:09Z TA6500951ZK8SD2D37N3PQPNWP-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,degraded-stop-forms-have-one-source,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,human-goal-verbs-forgiving,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-hook-never-forces-an-empty-turn,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-json-merges-by-surface,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,units-run-through-one-launcher reason=priority-order from=1:35 to=1:34
 - 2026-09-18T07:09:17Z QSM5Y4FAHJ82BJSX2ZZA190CV0-m1e-c6925449 edit actor=human:Wido targets=stop-gate-sees-harness-tracked-work
 - 2026-09-18T07:39:18Z 42VTEE6D4D1AX65ZNBDRESM5R2-m1e-c6925449 edit actor=human:Wido targets=stop-gate-sees-harness-tracked-work
-Integrity: sha256=3c5663fd0225053513d463dcc1e400ee6a276dbd25b78646c2dbbfb89db8d2ba
+- 2026-09-18T14:58:43Z DPXCN7TGWX2BEJ2ECE4RKCWFWM-m1e-c6925449 done actor=human:Wido targets=beds-run-under-the-oldest-supported-bash,cross-cutting-change-inventories-its-readers,deep-sections-cannot-stay-red-unseen,delegate-sandbox-runs-the-beds,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,failures-show-observed-against-expected,human-goal-verbs-forgiving,round-proof-feeds-the-next-brief,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-gate-sees-harness-tracked-work,stop-response-carries-a-structured-report-reference,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time
+Integrity: sha256=793f0899e24635c2968ab642ae7746dafcd69b8bc4e04f70c259331b3054ea23
