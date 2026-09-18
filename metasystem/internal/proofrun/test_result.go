@@ -280,14 +280,14 @@ func TestPlanDigest(contract testpolicy.Contract, plan testpolicy.Plan, candidat
 // whatever goal or attempt produced it (retained-proof-reuse-crosses-
 // claims-and-attempts). It starts no test or build and creates no attempt.
 func ReusedTestResult(template TestResult, attempts []Attempt, identities map[string]string, contract testpolicy.Contract) TestResult {
-	return reusedTestResult(template, attempts, identities, contract, "")
+	return ReusedTestResultWithPolicy(template, attempts, identities, contract, ReusePolicy{})
 }
 
 // ReusedTestResultExcluding composes evidence retained before the current
 // reservation. The current live attempt is the mutation-locked exclusion
 // that prevents another caller from reserving the same missing components.
 func ReusedTestResultExcluding(template TestResult, attempts []Attempt, identities map[string]string, contract testpolicy.Contract, excludedAttempt string) TestResult {
-	return reusedTestResult(template, attempts, identities, contract, excludedAttempt)
+	return ReusedTestResultExcludingWithPolicy(template, attempts, identities, contract, excludedAttempt, ReusePolicy{})
 }
 
 // reuseObservation is one retained sighting of a group at an execution
@@ -321,6 +321,8 @@ func (observation reuseObservation) newerThan(other reuseObservation) bool {
 // policy) must match the template's.
 func newestReuseObservation(template TestResult, attempts []Attempt, id, identity, excludedAttempt string) (reuseObservation, bool) {
 	var newest reuseObservation
+	var incomplete reuseObservation
+	incompleteFound := false
 	found := false
 	consider := func(observation reuseObservation) {
 		if !found || observation.newerThan(newest) {
@@ -336,32 +338,42 @@ func newestReuseObservation(template TestResult, attempts []Attempt, id, identit
 			continue
 		}
 		started, _ := time.Parse(time.RFC3339Nano, attempt.StartedAt)
+		planned := componentInputs(attempt.ProofIdentity.IdentityInputs)
+		for plannedID, plannedIdentity := range attempt.PendingTestGroups {
+			planned[plannedID] = plannedIdentity
+		}
 		if attempt.Terminal == nil {
-			planned := componentInputs(attempt.ProofIdentity.IdentityInputs)
-			for plannedID, plannedIdentity := range attempt.PendingTestGroups {
-				planned[plannedID] = plannedIdentity
-			}
 			if planned[id] == identity {
 				consider(reuseObservation{attemptID: attempt.AttemptID, started: started, live: true})
 			}
 			continue
 		}
-		source := attempt.TestResult
-		if source == nil || source.ContractDigest != template.ContractDigest || source.BaseContractDigest != template.BaseContractDigest ||
-			source.JudgeKey != template.JudgeKey || source.BehaviorPolicyDigest != template.BehaviorPolicyDigest {
-			continue
-		}
-		for _, group := range source.Groups {
-			if group.ID != id || group.ExecutionIdentity != identity || !(group.NativeLaunched || group.Status == "reused") {
-				continue
+		observed := false
+		if source := attempt.TestResult; source != nil && source.ContractDigest == template.ContractDigest && source.BaseContractDigest == template.BaseContractDigest &&
+			source.JudgeKey == template.JudgeKey && source.BehaviorPolicyDigest == template.BehaviorPolicyDigest {
+			for _, group := range source.Groups {
+				if group.ID != id || group.ExecutionIdentity != identity || !(group.NativeLaunched || group.Status == "reused") {
+					continue
+				}
+				at, err := time.Parse(time.RFC3339Nano, group.EndedAt)
+				if err != nil {
+					at = started
+				}
+				consider(reuseObservation{attemptID: attempt.AttemptID, at: at, started: started, group: group,
+					passed: (group.Status == "passed" || group.Status == "reused") && group.CollectionComplete})
+				observed = true
 			}
-			at, err := time.Parse(time.RFC3339Nano, group.EndedAt)
-			if err != nil {
-				at = started
-			}
-			consider(reuseObservation{attemptID: attempt.AttemptID, at: at, started: started, group: group,
-				passed: (group.Status == "passed" || group.Status == "reused") && group.CollectionComplete})
 		}
+		if !observed && planned[id] == identity {
+			at, _ := time.Parse(time.RFC3339Nano, attempt.Terminal.At)
+			candidate := reuseObservation{attemptID: attempt.AttemptID, at: at, started: started}
+			if !incompleteFound || candidate.newerThan(incomplete) {
+				incomplete, incompleteFound = candidate, true
+			}
+		}
+	}
+	if found && incompleteFound {
+		consider(incomplete)
 	}
 	return newest, found
 }
@@ -420,7 +432,7 @@ func ExactReusableTestResult(template TestResult, attempts []Attempt, identities
 	return *newest.TestResult, true
 }
 
-func reusedTestResult(template TestResult, attempts []Attempt, identities map[string]string, contract testpolicy.Contract, excludedAttempt string) TestResult {
+func reusedTestResult(template TestResult, attempts []Attempt, identities map[string]string, contract testpolicy.Contract, excludedAttempt string, policy ReusePolicy) TestResult {
 	result := template
 	result.AttemptID = ""
 	result.Groups = nil
@@ -440,10 +452,8 @@ func reusedTestResult(template TestResult, attempts []Attempt, identities map[st
 				InputDigest: result.CandidateTree, InputManifest: append([]string(nil), definition.Inputs...), ExecutionIdentity: identities[id], CWD: definition.CWD, Status: "not-run", NotRunReason: reason,
 				ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
 		}
-		// A cadence attempt is the fresh sweep that establishes trust in a
-		// judge; it inherits nothing.
-		if result.Purpose == testpolicy.PurposeCadence {
-			result.Groups = append(result.Groups, unrun("cadence-executes-afresh"))
+		if policy.ForceGroups {
+			result.Groups = append(result.Groups, unrun("forced-group-execution"))
 			continue
 		}
 		observation, found := newestReuseObservation(result, attempts, id, identities[id], excludedAttempt)

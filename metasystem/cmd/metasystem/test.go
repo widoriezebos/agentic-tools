@@ -140,13 +140,13 @@ func runTestPlan(args []string) int {
 }
 
 type testingSelectionRequest struct {
-	Root, GoalID, Tree, CapMin, RetryDecision, ResultPath string
-	ExpectedGoalRevision, ExpectedAccountingRevision      uint64
-	Mode                                                  testpolicy.Mode
-	Purpose                                               testpolicy.Purpose
-	Groups                                                []string
-	Carried                                               bool
-	NoReuse, RequireDiagnosticHeadroom, AllGroups         bool
+	Root, GoalID, Tree, CapMin, RetryDecision, ResultPath      string
+	ExpectedGoalRevision, ExpectedAccountingRevision           uint64
+	Mode                                                       testpolicy.Mode
+	Purpose                                                    testpolicy.Purpose
+	Groups                                                     []string
+	Carried                                                    bool
+	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups bool
 	// LandedRearm is set by outermost plan and run commands. The pinned child
 	// and the verify verb judge the engine as they find it.
 	LandedRearm bool
@@ -154,7 +154,7 @@ type testingSelectionRequest struct {
 }
 
 func admitTestingRun(request testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
-	admission.ExecuteAfresh = request.Purpose == testpolicy.PurposeCadence || request.NoReuse
+	admission.ForceAttempt = request.Purpose == testpolicy.PurposeCadence || request.NoReuse
 	if admission.CandidateTree == "" {
 		admission.CandidateTree = request.Tree
 	}
@@ -177,6 +177,7 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		flags.StringVar(&request.CapMin, "cap-min", "", "reserved proof minutes")
 		flags.StringVar(&request.RetryDecision, "retry-decision", "", "accountable version-1 retry decision")
 		flags.StringVar(&request.ResultPath, "result", "", "atomic result projection path")
+		flags.BoolVar(&request.ForceGroups, "force-groups", false, "execute every selected group regardless of retained evidence")
 		flags.Uint64Var(&request.ExpectedGoalRevision, "expected-goal-revision", 0, "sealed goal revision")
 		flags.Uint64Var(&request.ExpectedAccountingRevision, "expected-accounting-revision", 0, "sealed accounting revision")
 		flags.BoolVar(&request.NoReuse, "no-reuse", false, "execute diagnostic groups freshly")
@@ -971,7 +972,7 @@ func runTestRun(args []string) int {
 		// The goal-scoped admission saw only this goal's successes; the seat's
 		// newest observations say otherwise (a newer failure or a live plan
 		// under another goal). Run afresh instead of stranding the caller.
-		admission.ExecuteAfresh = true
+		admission.ForceAttempt = true
 		attempt, decision, joined, err = admitProofLaunch(admission)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "metasystem test run:", err)
@@ -999,8 +1000,8 @@ func runTestRun(args []string) int {
 			fmt.Fprintln(os.Stderr, "metasystem test run: read reusable component evidence:", readErr)
 			return retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, 1)
 		}
-		reused := proofrun.ReusedTestResultExcluding(proofrun.NewTestResult(preRequest), attempts, identities,
-			prepared.EffectiveContract, attempt.AttemptID)
+		reused := proofrun.ReusedTestResultExcludingWithPolicy(proofrun.NewTestResult(preRequest), attempts, identities,
+			prepared.EffectiveContract, attempt.AttemptID, proofrun.ReusePolicy{ForceGroups: request.ForceGroups})
 		for _, group := range reused.Groups {
 			if group.Status == "reused" {
 				reusedGroups[group.ID] = group

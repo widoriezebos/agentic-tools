@@ -15,6 +15,7 @@ const (
 	CadenceTriggerIdentityChanged CadenceTrigger = "identity-changed"
 	CadenceTriggerWeightDue       CadenceTrigger = "weight-due"
 	CadenceTriggerForcedWindow    CadenceTrigger = "forced-window"
+	CadenceTriggerRevalidation    CadenceTrigger = "tip-revalidation"
 )
 
 // CadenceClaimKey identifies one cadence decision across every owner machine.
@@ -222,12 +223,19 @@ func validateCadenceClaim(claim *CadenceClaim) error {
 }
 
 func validateCadenceStatus(status *CadenceStatus) error {
-	if status == nil || !validCadenceObjectID(status.TrunkCommit) || status.RunID == "" || status.AttemptID == "" ||
+	if status == nil || !validCadenceObjectID(status.TrunkCommit) ||
 		!validTrunkRedTime(status.StartedAt) || !validTrunkRedTime(status.EndedAt) || !validOpidShape(status.Opid) || len(status.Groups) == 0 {
 		return fmt.Errorf("cadence status is incomplete")
 	}
-	if status.Trigger != CadenceTriggerIdentityChanged && status.Trigger != CadenceTriggerWeightDue && status.Trigger != CadenceTriggerForcedWindow {
+	if status.Trigger != CadenceTriggerIdentityChanged && status.Trigger != CadenceTriggerWeightDue && status.Trigger != CadenceTriggerForcedWindow && status.Trigger != CadenceTriggerRevalidation {
 		return fmt.Errorf("cadence status has unknown trigger %q", status.Trigger)
+	}
+	if status.Trigger == CadenceTriggerRevalidation {
+		if status.RunID != "" || status.AttemptID != "" {
+			return fmt.Errorf("cadence revalidation invents a run or attempt")
+		}
+	} else if status.RunID == "" || status.AttemptID == "" {
+		return fmt.Errorf("cadence execution status has no run or attempt")
 	}
 	if err := validateCadenceKey(status.Key()); err != nil {
 		return err

@@ -316,7 +316,7 @@ type proofLaunchAdmission struct {
 	SharedEngine                                                        string
 	SharedManifestDigest                                                string
 	ComponentIdentities                                                 map[string]string
-	ExecuteAfresh                                                       bool
+	ForceAttempt                                                        bool
 	RequireDiagnosticHeadroom                                           bool
 }
 
@@ -378,7 +378,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 				GoalRevision: attempt.GoalRevision, AccountingRevision: attempt.AccountingRevision,
 				CandidateGoalID: attempt.AccountedGoal(), CandidateRevision: attempt.AccountedRevision(),
 				CandidateBudgetEpoch: attempt.AccountedBudgetEpoch(), CandidateTree: candidateTree,
-				RetryDecisionPath: request.RetryDecision, ComponentIdentities: request.ComponentIdentities, ExecuteAfresh: request.ExecuteAfresh}
+				RetryDecisionPath: request.RetryDecision, ComponentIdentities: request.ComponentIdentities, ForceAttempt: request.ForceAttempt}
 			decision, decided, decisionErr := proofrun.JoinedComponentDecisionLocked(componentRequest)
 			if decisionErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, decisionErr
@@ -592,7 +592,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		CandidateTree:   candidateTree,
 		ReservedMinutes: uint64(capValue), Identity: proofIdentity, Launcher: launcher, ReservationOwner: reservationOwner,
 		RetryDecisionPath: request.RetryDecision, Now: now,
-		ComponentIdentities: request.ComponentIdentities, ExecuteAfresh: request.ExecuteAfresh,
+		ComponentIdentities: request.ComponentIdentities, ForceAttempt: request.ForceAttempt,
 	}
 	decision, noChild, err := proofrun.NoChildDecisionLocked(reservation)
 	if err != nil {

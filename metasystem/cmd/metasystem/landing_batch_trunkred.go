@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/trunkredmap"
 )
 
 type ledgerTrunkRedOwner struct {
@@ -51,18 +52,7 @@ func (owner ledgerTrunkRedOwner) Record(opid string, red batch.TrunkRed) ([]batc
 	}
 	args := goal.TrunkRedRecordArgs{Batch: red.BatchID, Attempt: red.AttemptID, BaseCommit: red.BaseCommit,
 		BaseTree: red.BaseTree, SeenAt: red.SeenAt.UTC().Truncate(time.Second).Format(time.RFC3339), OwnerMachine: red.OwnerMachine()}
-	for _, group := range red.Groups {
-		converted := goal.TrunkRedRecordGroup{Identity: batch.TrunkRedID(group), Group: group.ID, Status: group.Status,
-			NotRunReason: group.NotRunReason, LogPath: group.LogPath, LogDigest: group.LogDigest}
-		for _, failure := range group.Failures {
-			converted.Failures = append(converted.Failures, goal.TrunkRedFailure{Report: failure.Report, Classname: failure.Classname,
-				Name: failure.Name, Status: failure.Status, Reason: failure.Reason})
-		}
-		if converted.Failures == nil {
-			converted.Failures = []goal.TrunkRedFailure{}
-		}
-		args.Groups = append(args.Groups, converted)
-	}
+	args.Groups = trunkredmap.RedGroupsToRecordGroups(red.Groups)
 	result, err := owner.runJournaled(opid, func() (goal.PublishResult, error) { return goal.RecordTrunkRed(request, args) })
 	if err != nil {
 		return nil, err

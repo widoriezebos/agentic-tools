@@ -147,7 +147,14 @@ func TestCadenceComposesNoReuse(t *testing.T) {
 	f := newReuseFixture(t)
 	a := f.reserve("goal-x", 3, f.now, "a")
 	f.finalize(a, "passed", TerminalSuccess, f.now.Add(time.Second))
-	if group := f.compose(testpolicy.PurposeCadence); group.Status != "not-run" || group.NotRunReason != "cadence-executes-afresh" {
+	attempts, err := ReadAttempts(f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := componentAttemptResult("", "first", strings.Repeat("1", 64), "passed")
+	template.Groups, template.Purpose = nil, testpolicy.PurposeCadence
+	projection := ReusedTestResultWithPolicy(template, attempts, map[string]string{"first": strings.Repeat("1", 64)}, f.contract, ReusePolicy{ForceGroups: true})
+	if group := projection.Groups[0]; group.Status != "not-run" || group.NotRunReason != "forced-group-execution" {
 		t.Fatalf("a cadence template reused retained proof: %+v", group)
 	}
 }
@@ -176,7 +183,7 @@ func TestExecuteAfreshNeverAnswersReusableSuccess(t *testing.T) {
 	if decision, decided, err := NoChildDecisionLocked(candidateAdmission(request)); err != nil || !decided || decision.Disposition != DispositionReusableSuccess {
 		t.Fatalf("a same-goal success was not answered reusable-success by default: %+v decided=%v err=%v", decision, decided, err)
 	}
-	request.ExecuteAfresh = true
+	request.ForceAttempt = true
 	if decision, decided, err := NoChildDecisionLocked(candidateAdmission(request)); err != nil || decided {
 		t.Fatalf("an execute-afresh admission still answered without a child: %+v err=%v", decision, err)
 	}
@@ -188,6 +195,76 @@ func TestExecuteAfreshNeverAnswersReusableSuccess(t *testing.T) {
 	duplicate.Now = f.now.Add(3 * time.Second)
 	if decision, decided, err := NoChildDecisionLocked(candidateAdmission(duplicate)); err != nil || !decided || decision.Disposition != DispositionLiveDuplicate {
 		t.Fatalf("execute-afresh admission stopped answering a live duplicate: %+v decided=%v err=%v", decision, decided, err)
+	}
+}
+
+func TestForceAttemptReusesOnlyExactNewestGreenIdentity(t *testing.T) {
+	cases := []struct {
+		name, identity string
+		change         func(*reuseFixture)
+		wantReuse      bool
+	}{
+		{name: "exact green", identity: strings.Repeat("1", 64), wantReuse: true},
+		{name: "changed identity", identity: strings.Repeat("2", 64)},
+		{name: "newest failed", identity: strings.Repeat("1", 64), change: func(f *reuseFixture) {
+			attempt := f.reserve("goal-y", 1, f.now.Add(2*time.Second), "failed")
+			f.finalize(attempt, "failed", TerminalFailed, f.now.Add(3*time.Second))
+		}},
+		{name: "newest live", identity: strings.Repeat("1", 64), change: func(f *reuseFixture) {
+			f.reserve("goal-y", 1, f.now.Add(2*time.Second), "live")
+		}},
+		{name: "incomplete", identity: strings.Repeat("1", 64), change: func(f *reuseFixture) {
+			attempt := f.reserve("goal-y", 1, f.now.Add(2*time.Second), "incomplete")
+			if _, err := FinalizeAttempt(f.root, attempt.AttemptID, TerminalFailed, 23, "incomplete", nil, f.now.Add(3*time.Second)); err != nil {
+				f.t.Fatal(err)
+			}
+		}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			f := newReuseFixture(t)
+			seed := f.reserve("goal-x", 3, f.now, "seed")
+			f.finalize(seed, "passed", TerminalSuccess, f.now.Add(time.Second))
+			if test.change != nil {
+				test.change(f)
+			}
+			attempts, err := ReadAttempts(f.root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			template := componentAttemptResult("", "first", test.identity, "passed")
+			template.Groups = nil
+			group := ReusedTestResult(template, attempts, map[string]string{"first": test.identity}, f.contract).Groups[0]
+			if (group.Status == "reused") != test.wantReuse {
+				t.Fatalf("reuse = %+v, want reuse %t", group, test.wantReuse)
+			}
+		})
+	}
+
+	f := newReuseFixture(t)
+	seed := f.reserve("goal-x", 3, f.now, "same")
+	f.finalize(seed, "passed", TerminalSuccess, f.now.Add(time.Second))
+	request := AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root, GoalID: "goal-x", GoalRevision: 3, AccountingRevision: 3,
+		ReservedMinutes: 2, Identity: BindIdentityInputs(f.identity, []string{"group:first:" + strings.Repeat("1", 64), "plan:same"}),
+		Launcher: f.launcher, Now: f.now.Add(2 * time.Second), ComponentIdentities: map[string]string{"first": strings.Repeat("1", 64)}, ForceAttempt: true}
+	if _, decided, err := NoChildDecisionLocked(candidateAdmission(request)); err != nil || decided {
+		t.Fatalf("force-attempt did not require a recorded attempt: decided=%t err=%v", decided, err)
+	}
+}
+
+func TestForceGroupsExecutesEveryCadenceGroup(t *testing.T) {
+	f := newReuseFixture(t)
+	attempt := f.reserve("goal-x", 3, f.now, "green")
+	f.finalize(attempt, "passed", TerminalSuccess, f.now.Add(time.Second))
+	attempts, err := ReadAttempts(f.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := componentAttemptResult("", "first", strings.Repeat("1", 64), "passed")
+	template.Groups, template.Purpose = nil, testpolicy.PurposeCadence
+	result := ReusedTestResultWithPolicy(template, attempts, map[string]string{"first": strings.Repeat("1", 64)}, f.contract, ReusePolicy{ForceGroups: true})
+	if len(result.Groups) != 1 || result.Groups[0].Status != "not-run" || result.Groups[0].NotRunReason != "forced-group-execution" {
+		t.Fatalf("forced cadence group was reused: %+v", result.Groups)
 	}
 }
 

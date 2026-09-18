@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/trunkredmap"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
@@ -117,20 +118,7 @@ func launchBatchDiagnostic(root, batchID string, request batch.DiagnosticRequest
 		}
 		return batch.DiagnosticResult{}, readErr
 	}
-	diagnostic := batch.DiagnosticResult{AttemptID: result.AttemptID}
-	for _, group := range result.Groups {
-		if group.Status == "passed" || group.Status == "reused" {
-			continue
-		}
-		red := batch.RedGroup{ID: group.ID, Status: group.Status, NotRunReason: group.NotRunReason, LogPath: group.LogPath,
-			LogDigest: group.LogDigest, InputManifest: slices.Clone(group.InputManifest)}
-		for _, observed := range group.Observed {
-			if observed.Status == "failed" {
-				red.Failures = append(red.Failures, batch.Failure{Report: observed.Report, Classname: observed.Classname, Name: observed.Name, Status: observed.Status, Reason: observed.Reason})
-			}
-		}
-		diagnostic.Groups = append(diagnostic.Groups, red)
-	}
+	diagnostic := batch.DiagnosticResult{AttemptID: result.AttemptID, Groups: trunkredmap.ResultToRedGroups(result)}
 	if runErr != nil && len(diagnostic.Groups) == 0 {
 		return diagnostic, fmt.Errorf("batch diagnostic: %s: %w", strings.TrimSpace(string(output)), runErr)
 	}

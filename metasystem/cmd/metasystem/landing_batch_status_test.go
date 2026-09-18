@@ -197,7 +197,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
 	admission := proofLaunchAdmission{ControlRoot: controlRoot, ExecutionRoot: controlRoot, ConfPath: filepath.Join(controlRoot, "metasystem.conf"),
 		GoalID: "standing-validation", CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
-		CandidateTree: strings.Repeat("b", 40), IdentityInputs: []string{"diagnostic-no-reuse"}, ExecuteAfresh: true}
+		CandidateTree: strings.Repeat("b", 40), IdentityInputs: []string{"diagnostic-no-reuse"}, ForceAttempt: true}
 	retained, decision, _, err := admitProofLaunch(admission)
 	if err != nil || decision.Disposition != proofrun.DispositionExecuted || retained.AttemptID == "" {
 		t.Fatalf("seed admission=%+v attempt=%+v err=%v", decision, retained, err)
@@ -205,7 +205,7 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	if _, err := proofrun.FinalizeAttempt(controlRoot, retained.AttemptID, proofrun.TerminalSuccess, 0, "retained green", nil, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	admission.ExecuteAfresh = false
+	admission.ForceAttempt = false
 	if _, reused, _, err := admitProofLaunch(admission); err != nil || reused.Disposition != proofrun.DispositionReusableSuccess {
 		t.Fatalf("same diagnostic without --no-reuse did not reuse: decision=%+v err=%v", reused, err)
 	}

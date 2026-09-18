@@ -319,24 +319,34 @@ func WeightAddScaled(root, commit string, numstat []byte, prefix string, thresho
 }
 
 func WeightCheck(root string, threshold int64) (WeightState, bool, error) {
+	return WeightCheckAt(root, threshold, weightNow())
+}
+
+// WeightCheckAt reads cadence weight using its caller's clock.
+func WeightCheckAt(root string, threshold int64, now time.Time) (WeightState, bool, error) {
 	lock, err := acquireWeightLock(root)
 	if err != nil {
 		return WeightState{}, false, err
 	}
 	defer lock.release()
-	state, err := loadWeight(root, weightNow())
+	state, err := loadWeight(root, now)
 	return state, err == nil && threshold > 0 && state.Accumulated >= threshold, err
 }
 
 // WeightDischarge is the reset action boundary. DRAFT and OBSERVE record an
 // inert would-refuse; only exact current human authority can reset weight.
 func WeightDischarge(root, goalID string, obligationRevision uint64, runID string) (WeightDischargeResult, error) {
+	return WeightDischargeAt(root, goalID, obligationRevision, runID, weightNow())
+}
+
+// WeightDischargeAt applies the existing governed discharge path using its
+// caller's clock so cadence orchestration never reads wall time implicitly.
+func WeightDischargeAt(root, goalID string, obligationRevision uint64, runID string, now time.Time) (WeightDischargeResult, error) {
 	lock, err := acquireWeightLock(root)
 	if err != nil {
 		return WeightDischargeResult{}, err
 	}
 	defer lock.release()
-	now := weightNow()
 	state, err := loadWeight(root, now)
 	if err != nil {
 		return WeightDischargeResult{}, err

@@ -220,11 +220,10 @@ type AdmissionRequest struct {
 	Now                  time.Time
 	AttemptID            string
 	ComponentIdentities  map[string]string
-	// ExecuteAfresh never answers reusable-success: the caller wants a fresh
-	// execution (a cadence sweep, or a composer that could not compose from
-	// the seat's newest observations); live duplicates and retry decisions
-	// still apply.
-	ExecuteAfresh bool
+	// ForceAttempt never answers reusable-success: the caller needs a recorded
+	// attempt even when every selected group can reuse exact green evidence.
+	// Live duplicates and retry decisions still apply.
+	ForceAttempt bool
 }
 
 // AccountedGoal returns the goal whose budget consumption owns the attempt.
@@ -838,7 +837,7 @@ func componentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, 
 		}
 		return newestFailed, LaunchResult{}, false, nil
 	}
-	if successCount == len(request.ComponentIdentities) && !request.ExecuteAfresh {
+	if successCount == len(request.ComponentIdentities) && !request.ForceAttempt {
 		return nil, LaunchResult{SchemaVersion: 1, Disposition: DispositionReusableSuccess,
 			EvidencePath: attemptsDir(request.ControlRoot), ExitStatus: ExitReusableSuccess}, true, nil
 	}
@@ -988,7 +987,7 @@ func noChildDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, bo
 			AttemptID: previous.AttemptID, ExitStatus: ExitLiveDuplicate}, true, nil
 	}
 	if previous.Terminal.Result == TerminalSuccess {
-		if request.ExecuteAfresh {
+		if request.ForceAttempt {
 			return nil, LaunchResult{}, false, nil
 		}
 		return previous, LaunchResult{SchemaVersion: 1, Disposition: DispositionReusableSuccess,

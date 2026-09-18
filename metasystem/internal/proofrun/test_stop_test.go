@@ -228,7 +228,7 @@ func TestDeliveryRetryReusesTheFailedPredecessorsPassedGroups(t *testing.T) {
 	}
 	cadence := template
 	cadence.Purpose = testpolicy.PurposeCadence
-	for _, group := range ReusedTestResult(cadence, attempts, identities, contract).Groups {
+	for _, group := range ReusedTestResultWithPolicy(cadence, attempts, identities, contract, ReusePolicy{ForceGroups: true}).Groups {
 		if group.Status == "reused" {
 			t.Fatalf("a cadence template reused %s from a failed predecessor", group.ID)
 		}
