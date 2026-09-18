@@ -46,14 +46,14 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	writeAuditStopFixture(t, root, "scripts/agents/stop-decision-surface.txt", "go\ta_test.go\n")
-	writeAuditStopFixture(t, root, "a_test.go", "base := Verdict{ShouldBlock: true}\n")
+	writeAuditStopFixture(t, root, "a_test.go", auditStopGoFixture("base := Verdict{ShouldBlock: true}\n"))
 	runAuditStopGit(t, root, "init", "-q", "-b", "main")
 	runAuditStopGit(t, root, "config", "--local", "user.name", "Stop Surface Fixture")
 	runAuditStopGit(t, root, "config", "--local", "user.email", "stop-surface@invalid")
 	runAuditStopGit(t, root, "config", "--local", "commit.gpgsign", "false")
 	runAuditStopGit(t, root, "add", "-A")
 	runAuditStopGit(t, root, "commit", "-q", "-m", "base")
-	writeAuditStopFixture(t, root, "a_test.go", "base := Verdict{ShouldBlock: true}\nadded := Verdict{BlockSource: source}\n")
+	writeAuditStopFixture(t, root, "a_test.go", auditStopGoFixture("base := Verdict{ShouldBlock: true}\nadded := Verdict{BlockSource: source}\n"))
 
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
 		return runAuditStopDecisionSurface([]string{"--root", root})
@@ -79,7 +79,7 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 		}
 	}
 
-	writeAuditStopFixture(t, root, "a_test.go", "package fixture\n")
+	writeAuditStopFixture(t, root, "a_test.go", auditStopGoFixture(""))
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
 		return runAuditStopDecisionSurface([]string{"--root", root})
 	})
@@ -95,6 +95,10 @@ func TestAuditStopDecisionSurfaceVerb(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("invalid invocation exit = %d, want 2", code)
 	}
+}
+
+func auditStopGoFixture(body string) string {
+	return "package fixture\n\nfunc TestFixture() {\n\t" + strings.ReplaceAll(strings.TrimSuffix(body, "\n"), "\n", "\n\t") + "\n}\n"
 }
 
 func writeAuditStopFixture(t *testing.T, root, path, content string) {

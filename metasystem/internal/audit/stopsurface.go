@@ -5,12 +5,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -21,7 +25,8 @@ const (
 )
 
 var (
-	stopGoPattern   = regexp.MustCompile(`ShouldBlock|BlockSource|IdleRefusal|CountSpent`)
+	stopGoPattern   = regexp.MustCompile(`ShouldBlock|BlockSource|IdleRefusal|CountSpent|\\?"decision\\?"\s*:\s*\\?"(?:block|allow)\\?"|\[\s*"decision"\s*\]\s*(?:==|!=)\s*"(?:block|allow)"`)
+	stopWirePattern = regexp.MustCompile(`\\?"decision\\?"\s*:\s*\\?"(?:block|allow)\\?"`)
 	stopBedPattern  = regexp.MustCompile(`"decision":"(block|allow)"|stop response outcome=|stop response decision=`)
 	stopGoalPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	stopDigestName  = regexp.MustCompile(`^(.+)-([0-9a-f]{12})\.txt$`)
@@ -365,12 +370,14 @@ func extractStopSurface(files []stopSurfaceFile, read func(string) ([]byte, bool
 		if !exists {
 			continue
 		}
-		pattern := stopGoPattern
-		if file.Kind == "bed" {
-			pattern = stopBedPattern
+		if file.Kind == "go" {
+			if err := extractGoStopSurface(surface, file.Path, content); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		for _, raw := range bytes.Split(content, []byte{'\n'}) {
-			if !pattern.Match(raw) {
+			if !stopBedPattern.Match(raw) {
 				continue
 			}
 			line := strings.Join(strings.Fields(string(raw)), " ")
@@ -378,6 +385,159 @@ func extractStopSurface(files []stopSurfaceFile, read func(string) ([]byte, bool
 		}
 	}
 	return surface, nil
+}
+
+func extractGoStopSurface(surface map[stopSurfaceKey]int, path string, content []byte) error {
+	files := token.NewFileSet()
+	parsed, err := parser.ParseFile(files, path, content, parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+
+	masked := bytes.Clone(content)
+	executableLines := map[int]bool{}
+	keptStrings := goStopDecisionStrings(parsed)
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		switch value := node.(type) {
+		case *ast.FuncDecl:
+			if value.Body != nil {
+				first := files.Position(value.Body.Lbrace).Line
+				last := files.Position(value.Body.Rbrace).Line
+				for line := first; line <= last; line++ {
+					executableLines[line] = true
+				}
+			}
+		case *ast.BasicLit:
+			if value.Kind == token.STRING && !keptStrings[value] {
+				maskStopSurfaceSpan(masked, files, value.Pos(), value.End())
+			}
+		}
+		return true
+	})
+	for _, commentGroup := range parsed.Comments {
+		maskStopSurfaceSpan(masked, files, commentGroup.Pos(), commentGroup.End())
+	}
+	originalLines := bytes.Split(content, []byte{'\n'})
+	maskedLines := bytes.Split(masked, []byte{'\n'})
+	for index, raw := range maskedLines {
+		if !executableLines[index+1] || !stopGoPattern.Match(raw) {
+			continue
+		}
+		line := strings.Join(strings.Fields(string(originalLines[index])), " ")
+		surface[stopSurfaceKey{File: path, Line: line}]++
+	}
+	return nil
+}
+
+func goStopDecisionStrings(parsed *ast.File) map[*ast.BasicLit]bool {
+	kept := map[*ast.BasicLit]bool{}
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Body == nil {
+			continue
+		}
+		var ancestors []ast.Node
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			if node == nil {
+				ancestors = ancestors[:len(ancestors)-1]
+				return true
+			}
+			switch value := node.(type) {
+			case *ast.BasicLit:
+				if value.Kind == token.STRING && !insideStopSurfaceMetadata(ancestors) &&
+					!embeddedSourceLiteral(value.Value) && stopWirePattern.MatchString(unquotedString(value.Value)) {
+					kept[value] = true
+				}
+			case *ast.KeyValueExpr:
+				if key, keyOK := stringLiteral(value.Key); keyOK && key == "decision" {
+					if decision, decisionOK := stringLiteral(value.Value); decisionOK && (decision == "block" || decision == "allow") {
+						keepStringLiterals(kept, value)
+					}
+				}
+			case *ast.BinaryExpr:
+				if value.Op == token.EQL || value.Op == token.NEQ {
+					if decisionIndexComparedWithControl(value.X, value.Y) || decisionIndexComparedWithControl(value.Y, value.X) {
+						keepStringLiterals(kept, value)
+					}
+				}
+			}
+			ancestors = append(ancestors, node)
+			return true
+		})
+	}
+	return kept
+}
+
+func insideStopSurfaceMetadata(ancestors []ast.Node) bool {
+	for _, ancestor := range ancestors {
+		literal, ok := ancestor.(*ast.CompositeLit)
+		if ok && stopSurfaceMetadataType(literal.Type) {
+			return true
+		}
+	}
+	return false
+}
+
+func stopSurfaceMetadataType(expression ast.Expr) bool {
+	switch value := expression.(type) {
+	case *ast.Ident:
+		return value.Name == "StopSurfaceLine"
+	case *ast.SelectorExpr:
+		return value.Sel.Name == "StopSurfaceLine"
+	case *ast.ArrayType:
+		return stopSurfaceMetadataType(value.Elt)
+	default:
+		return false
+	}
+}
+
+func embeddedSourceLiteral(raw string) bool {
+	return strings.Contains(raw, `\n`) || strings.Contains(unquotedString(raw), "package ")
+}
+
+func unquotedString(raw string) string {
+	value, err := strconv.Unquote(raw)
+	if err != nil {
+		return raw
+	}
+	return value
+}
+
+func stringLiteral(expression ast.Expr) (string, bool) {
+	literal, ok := expression.(*ast.BasicLit)
+	if !ok || literal.Kind != token.STRING {
+		return "", false
+	}
+	return unquotedString(literal.Value), true
+}
+
+func decisionIndexComparedWithControl(indexed, control ast.Expr) bool {
+	index, ok := indexed.(*ast.IndexExpr)
+	if !ok {
+		return false
+	}
+	key, keyOK := stringLiteral(index.Index)
+	decision, decisionOK := stringLiteral(control)
+	return keyOK && key == "decision" && decisionOK && (decision == "block" || decision == "allow")
+}
+
+func keepStringLiterals(kept map[*ast.BasicLit]bool, root ast.Node) {
+	ast.Inspect(root, func(node ast.Node) bool {
+		if literal, ok := node.(*ast.BasicLit); ok && literal.Kind == token.STRING && !embeddedSourceLiteral(literal.Value) {
+			kept[literal] = true
+		}
+		return true
+	})
+}
+
+func maskStopSurfaceSpan(content []byte, files *token.FileSet, start, end token.Pos) {
+	first := files.Position(start).Offset
+	last := files.Position(end).Offset
+	for index := first; index < last && index < len(content); index++ {
+		if content[index] != '\n' {
+			content[index] = ' '
+		}
+	}
 }
 
 func stopSurfaceDifference(base, candidate map[stopSurfaceKey]int) ([]StopSurfaceLine, []StopSurfaceLine) {
