@@ -11,6 +11,7 @@ install:go.work.sum behavior
 install:.gitattributes behavior
 install:.gitignore behavior
 install:testing.json behavior
+install:testing-parallel-ratchet.json behavior
 install:cmd/ behavior
 install:internal/ behavior
 install:docs/ behavior
@@ -50,6 +51,7 @@ repo:CLAUDE.md behavior
 repo:README.md behavior
 repo:LICENSE behavior
 repo:.gitignore behavior
+repo:.gitattributes behavior
 repo:.agents/ behavior
 repo:.claude/ behavior
 repo:.codex/ behavior
