@@ -439,7 +439,8 @@ brain_cache_temp_lines=$(grep -F '/.engine-path.' "$tmp/brain-cache-mktemp.log" 
 brain_cache_temp_count=$(printf '%s\n' "$brain_cache_temp_lines" | awk 'NF { count++ } END { print count + 0 }')
 brain_cache_temp_path=$(printf '%s\n' "$brain_cache_temp_lines" | awk 'NR == 1 { print $1 }')
 brain_cache_temp_inode=$(printf '%s\n' "$brain_cache_temp_lines" | awk 'NR == 1 { print $2 }')
-[[ "$brain_cache_temp_count" -eq 1 && "${brain_cache_temp_path%/*}" == "$brain_cache_dir" ]] || { echo "brain cache rename observed unexpected mktemp log:" >&2; cat "$tmp/brain-cache-mktemp.log" >&2; exit 1; }
+# The hook names its temporary file from its physically resolved installation, so compare physical paths.
+[[ "$brain_cache_temp_count" -eq 1 && "${brain_cache_temp_path%/*}" == "$brain_expected_installation/artifacts/agents/context" ]] || { echo "brain cache rename observed unexpected mktemp log:" >&2; cat "$tmp/brain-cache-mktemp.log" >&2; exit 1; }
 [[ ! -e "$brain_cache_temp_path" ]] || { echo "brain cache rename left temporary path $brain_cache_temp_path" >&2; exit 1; }
 brain_cache_inode_after=$(ls -i "$brain_engine_cache" 2>/dev/null | awk '{print $1}' || true)
 [[ -n "$brain_cache_inode_after" && "$brain_cache_inode_after" == "$brain_cache_temp_inode" && "$brain_cache_inode_after" != "$brain_cache_inode_before" ]] || { echo "brain cache rename inode mismatch: before=$brain_cache_inode_before temp=$brain_cache_temp_inode after=$brain_cache_inode_after" >&2; exit 1; }
