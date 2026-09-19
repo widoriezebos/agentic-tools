@@ -7,6 +7,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -123,22 +124,46 @@ func runLaunchSupervise(args []string) int {
 	return 0
 }
 func runLaunchWait(args []string) int {
+	return launchWaitWith(launchManager(), args, os.Stdout, os.Stderr)
+}
+func launchWaitWith(manager *launch.Manager, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("launch wait", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	id := flags.String("id", "", "launch id")
 	timeout := flags.Duration("timeout", time.Duration(1<<63-1), "maximum wait")
 	if flags.Parse(args) != nil || *id == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch wait --id <id> [--timeout <duration>]")
+		fmt.Fprintln(stderr, "usage: metasystem launch wait --id <id> [--timeout <duration>] (one call waits at most launch.wait.cap.seconds)")
 		return 2
 	}
-	record, terminal, err := launchManager().Wait(*id, *timeout)
+	cap, err := manager.WaitCap()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "launch wait:", err)
+		fmt.Fprintln(stderr, "launch wait:", err)
+		return 1
+	}
+	effectiveWait := *timeout
+	if effectiveWait > cap {
+		effectiveWait = cap
+		record, statusErr := manager.Status(*id)
+		if statusErr != nil {
+			fmt.Fprintln(stderr, "launch wait:", statusErr)
+			return 1
+		}
+		if record.State.Terminal() {
+			fmt.Fprintln(stdout, launchReport(record))
+			return 0
+		}
+		fmt.Fprintf(stderr, "launch wait: --timeout %s exceeds launch.wait.cap.seconds=%d; waiting %s\n", *timeout, cap/time.Second, cap)
+	}
+	record, terminal, err := manager.Wait(*id, *timeout)
+	if err != nil {
+		fmt.Fprintln(stderr, "launch wait:", err)
 		return 1
 	}
 	if !terminal {
+		fmt.Fprintf(stderr, "launch wait: %s still %s after %s; run launch wait again or launch status\n", *id, record.State, effectiveWait)
 		return 3
 	}
-	fmt.Println(launchReport(record))
+	fmt.Fprintln(stdout, launchReport(record))
 	return 0
 }
 func runLaunchStatus(args []string) int {

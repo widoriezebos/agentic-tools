@@ -226,6 +226,17 @@ func TestWaitHonoursTheCapAndReportsTheTerminalState(t *testing.T) {
 	got, terminal, err = m.Wait("wait", 0)
 	require(t, err != nil || !terminal || got.State != Failed, "terminal wait=%+v %v %v", got, terminal, err)
 }
+func TestWaitCapIsTheValueWaitClampsTo(t *testing.T) {
+	t.Parallel()
+	m, _, _, now := manager(t)
+	start := *now
+	m.Settings = Settings{WaitCapSeconds: 2, Values: []Setting{{Key: WaitCapKey, Value: "2", Source: "fixture"}}}
+	seed(t, m, "capped", Running)
+	cap, err := m.WaitCap()
+	require(t, err != nil || cap != 2*time.Second, "cap=%s err=%v", cap, err)
+	_, terminal, err := m.Wait("capped", time.Hour)
+	require(t, err != nil || terminal || now.Sub(start) != 2*time.Second, "terminal=%v elapsed=%s err=%v", terminal, now.Sub(start), err)
+}
 func TestStatusReconcilesALostSupervisor(t *testing.T) {
 	m, _, probe, _ := manager(t)
 	seed(t, m, "lost", Running)

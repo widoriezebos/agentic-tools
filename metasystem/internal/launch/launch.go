@@ -351,15 +351,21 @@ func (m *Manager) endGroup(pgid int64) error {
 	}
 	return nil
 }
+func (m *Manager) WaitCap() (time.Duration, error) {
+	settings, err := m.resolvedSettings()
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(settings.WaitCapSeconds) * time.Second, nil
+}
 func (m *Manager) Wait(id string, timeout time.Duration) (Record, bool, error) {
 	if timeout < 0 {
 		return Record{}, false, errors.New("wait timeout must not be negative")
 	}
-	settings, err := m.resolvedSettings()
+	cap, err := m.WaitCap()
 	if err != nil {
 		return Record{}, false, err
 	}
-	cap := time.Duration(settings.WaitCapSeconds) * time.Second
 	if timeout > cap {
 		timeout = cap
 	}
