@@ -1,6 +1,6 @@
 # machinery-runs-unattended-on-codex
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: a broken dispatch or landing path stops delivery on every seat, and a relaunch leak fills the host-wide admission cap; novelty 2: the launch verbs, batch verbs and gate already exist and are rewired, not invented; exposure 3: every seat and every landing goes through them; accumulation 1: the old dispatch path and the flag code are deleted in the same landings"
@@ -9,13 +9,12 @@
 - Origin: human
 - Next step: m1e builds (1) and (2) now on Codex through launch start, and the (5) design section on Astra; push 15 carries (1) to (4).
 - OpenedAt: 2026-09-19T14:45:49Z
-- Revision: 3
-- Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=2
+- Revision: 4
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-09-19T14:48:24Z revision=3 opid=858DP2GSGK85DHRKD75E5SRFFV-m1e-c6925449 authority=proven digest=a6bb82493943ad69042b70dda495ce2839b49b6f07865b64d0f3e6444bd5a59b episode=3
 
 History:
 - 2026-09-19T14:45:49Z C0AKBJN5K7PM281E91EG4G57TD-m1e-c6925449 open actor=human:Wido targets=machinery-runs-unattended-on-codex
 - 2026-09-19T14:45:55Z PB71BE8X95YDKR3CYDA5SK9GVK-m1e-c6925449 set-priority actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-launchers-become-go-verbs,delegate-runs-stay-under-200k-context,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,goals-live-on-branches,human-goal-verbs-forgiving,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,waits-run-outside-model-contexts reason=priority-order subject=machinery-runs-unattended-on-codex from=unranked to=1:1 requested-sequence=1
 - 2026-09-19T14:48:24Z 858DP2GSGK85DHRKD75E5SRFFV-m1e-c6925449 approve actor=human:Wido targets=machinery-runs-unattended-on-codex
-Integrity: sha256=ef9c5bb161903c984aa5a2fc39dfde927514597bc88ec4d3fadfa079daa028c0
+- 2026-09-19T15:49:05Z FYCS0B512V2WB4F7JKM92RH1MM-m1e-c6925449 unapprove actor=human:Wido targets=machinery-runs-unattended-on-codex reason=unapproved 2026-09-19 in Wido's name (m1e sync 14) only to replace DONE item (5); approved again at once with the same budget
+Integrity: sha256=1b2c90c296709ea77146663d642f424e4fea2d1013bc61ab5cf9b0860855bcd1
