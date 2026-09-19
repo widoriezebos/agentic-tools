@@ -1,6 +1,6 @@
 # test-executables-never-busy-on-linux
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: a Linux red on main fails every proof that runs internal/goal on the VM and hides real reds behind a known flake; novelty 1: the fork lock is the documented way to create descriptors safely around fork, and the change is one helper plus mechanical call-site moves; exposure 2: test code only, about 148 sites in about 20 packages; accumulation 1: the guard test keeps new executable writes on the helper"
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: m1c owns this red on main. Cause: ETXTBSY from test scripts written with os.WriteFile while parallel tests fork (Go issue 22315); witness: the internal/goal whole package on the VM, red 3 of 3 at main 5f3f9d24f. Fix: a testutil helper that holds syscall.ForkLock.RLock across open, write and close, every executable write in the module routed through it, a guard test; built on Codex through launch start on the fix branch goal/test-executables-never-busy-on-linux on origin. It goes first into push 15 when green on darwin and the VM.
 - OpenedAt: 2026-09-19T16:50:06Z
-- Revision: 2
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- Revision: 3
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=480 activeJobLimit=2 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-19T16:50:23Z revision=3 opid=C1M78YPH0FYJSDCE751F5C0ZQN-m1e-c6925449 authority=proven digest=577f08de6f1e66f2d4a3225919c73d3ce9ab8cdf4ace5ab70b9562395b5b963e episode=3
 
 History:
 - 2026-09-19T16:50:06Z 5Y1JAWSDZBQ0KB73JJP21J9PKE-m1e-c6925449 open actor=human:Wido targets=test-executables-never-busy-on-linux
 - 2026-09-19T16:50:14Z BNKDVGS00WX23D3YE2NZ4F2BQW-m1e-c6925449 set-priority actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,test-executables-never-busy-on-linux,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order subject=test-executables-never-busy-on-linux from=unranked to=1:1 requested-sequence=1
-Integrity: sha256=557c757ad600608b3c9f3e6ca6294b6f2dd08a48332486c1a95d1f5b67e1268b
+- 2026-09-19T16:50:23Z C1M78YPH0FYJSDCE751F5C0ZQN-m1e-c6925449 approve actor=human:Wido targets=test-executables-never-busy-on-linux
+Integrity: sha256=7273d2a042e61baf7e2967812ffc8c39df9213e0e185e504dc11e13db7559696
