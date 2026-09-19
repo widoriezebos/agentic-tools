@@ -65,7 +65,7 @@ func runRuntimeSetup(args []string) int {
 		fmt.Printf("TEST_CONTRACT_INVALID configuration=%s reason=testing.contract-is-not-relative-and-normalized\n", confPath)
 	default:
 		contractPath := filepath.Join(result.Layout.InstallationRoot, filepath.FromSlash(contractRel))
-		if _, contractErr := testpolicy.Load(contractPath); contractErr == nil {
+		if _, contractErr := testpolicy.LoadAt(contractPath, result.Layout.GitRoot); contractErr == nil {
 			fmt.Printf("TEST_CONTRACT_READY contract=%s\n", contractPath)
 		} else if strings.Contains(contractErr.Error(), "TEST_CONTRACT_REQUIRED:") {
 			fmt.Printf("TEST_CONTRACT_REQUIRED contract=%s\n", contractPath)

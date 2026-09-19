@@ -14,6 +14,13 @@ func Render(contract testpolicy.Contract) ([]byte, error) {
 	var out bytes.Buffer
 	out.WriteString("{\n")
 	fmt.Fprintf(&out, "  \"schemaVersion\": %d,\n", contract.SchemaVersion)
+	if contract.Impacted != nil {
+		impacted, err := json.Marshal(contract.Impacted)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(&out, "  \"impacted\": %s,\n", impacted)
+	}
 	risk, err := renderProjectRisk(contract.ProjectRisk)
 	if err != nil {
 		return nil, err

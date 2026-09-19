@@ -41,6 +41,7 @@ func families() []family {
 			name:    "test",
 			summary: "risk-selected common application testing with retained proof and reuse",
 			verbs: []verb{
+				{"impacted", "run project-owned impacted tests, with full-test fallback", runTestImpacted},
 				{"list", "list every group in the committed testing contract", runTestList},
 				{"check", "validate the committed contract and declared tools without running tests", runTestCheck},
 				{"plan", "compute the candidate's risk-selected groups without running tests", runTestPlan},

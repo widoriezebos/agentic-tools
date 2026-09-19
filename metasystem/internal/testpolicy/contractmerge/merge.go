@@ -213,7 +213,7 @@ func mergeValue(base, ours, theirs reflect.Value, entity, field string) (reflect
 		pointer.Elem().Set(value)
 		return pointer, nil
 	}
-	if base.Kind() == reflect.Slice {
+	if base.Kind() == reflect.Slice && !(entity == "contract" && field == "argv") {
 		return mergeSet(base, ours, theirs), nil
 	}
 	if reflect.DeepEqual(ours.Interface(), theirs.Interface()) {

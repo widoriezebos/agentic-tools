@@ -1308,6 +1308,16 @@ func groupArguments(ctx context.Context, group testpolicy.Group, root, cwd strin
 	}
 }
 
+type groupArgumentsContextKey struct{}
+
+func GroupArguments(ctx context.Context, group testpolicy.Group, root, cwd string, environment []string, run func(*exec.Cmd) error) ([]string, error) {
+	if run != nil {
+		ctx = context.WithValue(ctx, groupArgumentsContextKey{}, run)
+	}
+	argv, _, _, _, err := groupArguments(ctx, group, root, cwd, environment, nil)
+	return argv, err
+}
+
 func prepareSectionEngine(cwd, source, expected string) (string, error) {
 	info, err := os.Lstat(source)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {

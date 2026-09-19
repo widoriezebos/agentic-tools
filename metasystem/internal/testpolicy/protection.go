@@ -54,6 +54,11 @@ func ProtectedPolicyChange(paths []string) bool {
 // change.
 func ProtectedContract(base, candidate Contract) Contract {
 	result := cloneContract(base)
+	if result.Impacted == nil && candidate.Impacted != nil {
+		implementation := *candidate.Impacted
+		implementation.Argv = append([]string(nil), candidate.Impacted.Argv...)
+		result.Impacted = &implementation
+	}
 	groupIDs := map[string]int{}
 	for index, group := range result.Groups {
 		groupIDs[group.ID] = index
@@ -108,6 +113,11 @@ func ProtectedContract(base, candidate Contract) Contract {
 
 func cloneContract(value Contract) Contract {
 	result := value
+	if value.Impacted != nil {
+		implementation := *value.Impacted
+		implementation.Argv = append([]string(nil), value.Impacted.Argv...)
+		result.Impacted = &implementation
+	}
 	result.Surfaces = make([]Surface, len(value.Surfaces))
 	for index, surface := range value.Surfaces {
 		result.Surfaces[index] = surface

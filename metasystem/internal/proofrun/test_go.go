@@ -138,10 +138,20 @@ func loadGoPackageCatalog(ctx context.Context, moduleRoot, moduleName string, en
 		return goPackageCatalog{}, false, err
 	}
 	var stdout, stderr synchronizedBuffer
-	activity := newOutputActivity(time.Now())
+	var activity *outputActivity
+	var outcome supervisorOutcome
+	var waitErr error
+	if run, ok := ctx.Value(groupArgumentsContextKey{}).(func(*exec.Cmd) error); ok {
+		command.Cancel, command.Stdout, command.Stderr = nil, &stdout, &stderr
+		if runErr := run(command); runErr != nil {
+			return goPackageCatalog{}, true, fmt.Errorf("go package discovery failed: %w: %s", runErr, strings.TrimSpace(stderr.String()))
+		}
+		goto decode
+	}
+	activity = newOutputActivity(time.Now())
 	command.Stdout = &activityWriter{activity: activity, writer: &stdout}
 	command.Stderr = &activityWriter{activity: activity, writer: &stderr}
-	outcome := superviseCommand(command, supervisorOptions{Context: ctx, Activity: activity,
+	outcome = superviseCommand(command, supervisorOptions{Context: ctx, Activity: activity,
 		Limits: supervisorLimits{CPUBudgetSeconds: 60}, SampleInterval: supervisorSampleInterval})
 	if !outcome.Started {
 		return goPackageCatalog{}, false, fmt.Errorf("start go package discovery: %w", outcome.WaitErr)
@@ -149,10 +159,11 @@ func loadGoPackageCatalog(ctx context.Context, moduleRoot, moduleName string, en
 	if outcome.Verdict != "" {
 		return goPackageCatalog{}, true, fmt.Errorf("go package discovery %s: %s", outcome.Verdict, outcome.Reason)
 	}
-	waitErr := outcome.WaitErr
+	waitErr = outcome.WaitErr
 	if waitErr != nil {
 		return goPackageCatalog{}, true, fmt.Errorf("go package discovery failed: %w: %s", waitErr, strings.TrimSpace(stderr.String()))
 	}
+decode:
 	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
 	canonicalModuleRoot := canonicalGoPath(moduleRoot)
 	allPackages := map[string]goListPackage{}

@@ -23,6 +23,7 @@ var (
 type Contract struct {
 	SchemaVersion     int         `json:"schemaVersion"`
 	TailoringRequired bool        `json:"tailoringRequired,omitempty"`
+	Impacted          *Impacted   `json:"impacted,omitempty"`
 	ProjectRisk       ProjectRisk `json:"projectRisk"`
 	// Fallback names the surface that owns a changed path by exclusion when no surface path pattern matches.
 	Fallback string    `json:"fallback,omitempty"`
@@ -31,6 +32,11 @@ type Contract struct {
 	Always   Always    `json:"always"`
 	Unknown  []string  `json:"unknown"`
 	Cadence  []string  `json:"cadence"`
+}
+
+type Impacted struct {
+	CWD  string   `json:"cwd"`
+	Argv []string `json:"argv"`
 }
 
 type ProjectRisk struct {
@@ -183,6 +189,17 @@ func jsonEmptyValue(value reflect.Value) bool {
 }
 
 func Decode(data []byte) (Contract, error) {
+	contract, err := Parse(data)
+	if err != nil {
+		return Contract{}, err
+	}
+	if err := contract.Validate(); err != nil {
+		return contract, err
+	}
+	return contract, nil
+}
+
+func Parse(data []byte) (Contract, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var contract Contract
@@ -192,8 +209,12 @@ func Decode(data []byte) (Contract, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return Contract{}, fmt.Errorf("decode testing contract: trailing data")
 	}
-	if err := contract.Validate(); err != nil {
-		return Contract{}, err
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return Contract{}, fmt.Errorf("decode testing contract: %w", err)
+	}
+	if raw, present := fields["impacted"]; present && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return Contract{}, fmt.Errorf("decode testing contract: impacted cannot be null")
 	}
 	return contract, nil
 }
@@ -206,9 +227,28 @@ func Load(path string) (Contract, error) {
 	return Decode(data)
 }
 
+func LoadAt(path, repositoryRoot string) (Contract, error) {
+	contract, validationErr := Load(path)
+	if contract.Impacted == nil {
+		return contract, validationErr
+	}
+	if err := ValidateImpactedCWD(repositoryRoot, contract.Impacted.CWD); err != nil {
+		return contract, err
+	}
+	return contract, validationErr
+}
+
 func (contract Contract) Validate() error {
 	if contract.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("testing contract schemaVersion must be %d", SchemaVersion)
+	}
+	if contract.Impacted != nil {
+		if !validRelative(contract.Impacted.CWD) {
+			return fmt.Errorf("testing impacted cwd must be a normalized repository-relative path")
+		}
+		if err := ValidateCommandArgv(contract.Impacted.Argv); err != nil {
+			return fmt.Errorf("testing impacted: %w", err)
+		}
 	}
 	if contract.TailoringRequired {
 		if len(contract.Surfaces) != 0 || len(contract.Groups) != 0 || len(contract.Unknown) != 0 ||
@@ -301,6 +341,20 @@ func (contract Contract) Validate() error {
 	return nil
 }
 
+func (contract Contract) ValidateExecutableGroups() error {
+	seen := map[string]bool{}
+	for _, group := range contract.Groups {
+		if !groupIdentifier.MatchString(group.ID) || seen[group.ID] {
+			return fmt.Errorf("testing group id %q is invalid or duplicated", group.ID)
+		}
+		seen[group.ID] = true
+		if err := validateGroup(group); err != nil {
+			return fmt.Errorf("testing group %s: %w", group.ID, err)
+		}
+	}
+	return nil
+}
+
 // IncompleteTemplate is the explicit first-adoption state. It is valid JSON
 // in the current schema but deliberately cannot pass contract validation or
 // claim application readiness until the project replaces it with real groups.
@@ -372,11 +426,8 @@ func validateGroup(group Group) error {
 			return fmt.Errorf("section adapter requires one stable section id")
 		}
 	case "command":
-		if len(group.Argv) == 0 || group.Argv[0] == "" {
-			return fmt.Errorf("command adapter requires argv")
-		}
-		if group.Argv[0] == "true" || (len(group.Argv) >= 3 && strings.HasSuffix(group.Argv[0], "sh") && group.Argv[1] == "-c" && strings.TrimSpace(group.Argv[2]) == "true") {
-			return fmt.Errorf("blanket success commands are not testing evidence")
+		if err := ValidateCommandArgv(group.Argv); err != nil {
+			return fmt.Errorf("command adapter: %w", err)
 		}
 		if group.Format == "junit-xml" {
 			if len(group.Reports) == 0 || len(group.ExpectedTests) == 0 || len(group.Outputs) == 0 {
@@ -422,6 +473,33 @@ func validateGroup(group Group) error {
 		}
 	default:
 		return fmt.Errorf("adapter must be go, section, or command")
+	}
+	return nil
+}
+
+func ValidateCommandArgv(argv []string) error {
+	if len(argv) == 0 || argv[0] == "" {
+		return fmt.Errorf("requires argv")
+	}
+	for _, argument := range argv {
+		if strings.ContainsRune(argument, '\x00') {
+			return fmt.Errorf("argv must not contain NUL")
+		}
+	}
+	if argv[0] == "true" || (len(argv) >= 3 && strings.HasSuffix(argv[0], "sh") && argv[1] == "-c" && strings.TrimSpace(argv[2]) == "true") {
+		return fmt.Errorf("blanket success commands are not testing evidence")
+	}
+	return nil
+}
+
+func ValidateImpactedCWD(root, relative string) error {
+	cwd := filepath.Join(root, filepath.FromSlash(relative))
+	resolvedRoot, rootErr := filepath.EvalSymlinks(root)
+	resolved, cwdErr := filepath.EvalSymlinks(cwd)
+	inside, relErr := filepath.Rel(resolvedRoot, resolved)
+	info, statErr := os.Stat(resolved)
+	if rootErr != nil || cwdErr != nil || relErr != nil || statErr != nil || !info.IsDir() || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("testing impacted cwd %q must be an existing directory inside the repository", relative)
 	}
 	return nil
 }

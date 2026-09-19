@@ -134,7 +134,7 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 		add("testing.contract must be a relative normalized path")
 	} else {
 		contractPath := filepath.Join(filepath.Dir(confPath), filepath.FromSlash(contractRel))
-		if _, loadErr := testpolicy.Load(contractPath); loadErr != nil {
+		if _, loadErr := testpolicy.LoadAt(contractPath, repo); loadErr != nil {
 			add("testing.contract is invalid: %v", loadErr)
 		}
 	}
