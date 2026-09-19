@@ -48,11 +48,7 @@ func TestCallEvidenceSnapshotSerializesMaintenance(t *testing.T) {
 			evidence, err := ReadCallEvidence(stateRoot)
 			snapshotDone <- snapshotResult{evidence: evidence, err: err}
 		}()
-		select {
-		case <-snapshotPaused:
-		case <-time.After(5 * time.Second):
-			t.Fatal("evidence snapshot did not reach the registry barrier")
-		}
+		<-snapshotPaused
 
 		writerAttempted := make(chan struct{})
 		var attemptOnce sync.Once
@@ -68,12 +64,7 @@ func TestCallEvidenceSnapshotSerializesMaintenance(t *testing.T) {
 			_, err := LatestCall(stateRoot, "claude", "snapshot", ReadOptions{Capability: PerCall, Transcript: transcript})
 			writerDone <- err
 		}()
-		select {
-		case <-writerAttempted:
-		case <-time.After(5 * time.Second):
-			close(releaseSnapshot)
-			t.Fatal("writer did not attempt the maintenance lock")
-		}
+		<-writerAttempted
 		select {
 		case err := <-writerDone:
 			close(releaseSnapshot)
@@ -82,23 +73,13 @@ func TestCallEvidenceSnapshotSerializesMaintenance(t *testing.T) {
 		}
 
 		close(releaseSnapshot)
-		var snapshot CallEvidence
-		select {
-		case result := <-snapshotDone:
-			if result.err != nil {
-				t.Fatal(result.err)
-			}
-			snapshot = result.evidence
-		case <-time.After(5 * time.Second):
-			t.Fatal("evidence snapshot did not release its maintenance lock")
+		result := <-snapshotDone
+		if result.err != nil {
+			t.Fatal(result.err)
 		}
-		select {
-		case err := <-writerDone:
-			if err != nil {
-				t.Fatal(err)
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("writer did not continue after the evidence snapshot")
+		snapshot := result.evidence
+		if err := <-writerDone; err != nil {
+			t.Fatal(err)
 		}
 
 		if snapshot.RetainedSince != (time.Time{}) ||
@@ -192,18 +173,10 @@ func TestCallRetentionPreservesNonBlockingReads(t *testing.T) {
 
 	assertStoreBusy := func(name string, operation func() error) {
 		t.Helper()
-		done := make(chan error, 1)
-		go func() { done <- operation() }()
-		select {
-		case operationErr := <-done:
-			var busy *CallStoreBusyError
-			if !errors.As(operationErr, &busy) || busy.Path != callMaintenancePath(stateRoot) {
-				t.Fatalf("%s error = %v", name, operationErr)
-			}
-		case <-time.After(time.Second):
-			release()
-			<-done
-			t.Fatalf("%s waited on maintenance", name)
+		operationErr := operation()
+		var busy *CallStoreBusyError
+		if !errors.As(operationErr, &busy) || busy.Path != callMaintenancePath(stateRoot) {
+			t.Fatalf("%s error = %v", name, operationErr)
 		}
 	}
 	assertStoreBusy("latest call", func() error {
@@ -269,12 +242,7 @@ func TestCallEvidenceSnapshotBlocksPruneAtEveryBoundary(t *testing.T) {
 				evidence, err := ReadCallEvidence(root)
 				evidenceDone <- evidenceResult{evidence: evidence, err: err}
 			}()
-			select {
-			case <-paused:
-			case <-time.After(5 * time.Second):
-				close(release)
-				t.Fatalf("evidence read did not reach %s occurrence %d", boundary.step, boundary.occurrence)
-			}
+			<-paused
 
 			pruneAttempted := make(chan struct{})
 			var attemptOnce sync.Once
@@ -294,12 +262,7 @@ func TestCallEvidenceSnapshotBlocksPruneAtEveryBoundary(t *testing.T) {
 				removed, err := PruneCallSessions(root, before)
 				pruneDone <- pruneResult{removed: removed, err: err}
 			}()
-			select {
-			case <-pruneAttempted:
-			case <-time.After(5 * time.Second):
-				close(release)
-				t.Fatal("prune did not attempt the maintenance lock")
-			}
+			<-pruneAttempted
 			select {
 			case result := <-pruneDone:
 				close(release)

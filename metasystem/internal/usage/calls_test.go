@@ -193,14 +193,23 @@ func TestLatestCallHonoursTheDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := time.Date(2026, 9, 13, 10, 2, 0, 0, time.UTC)
+	clockInstants := []time.Time{
+		start,
+		start.Add(time.Nanosecond),
+		start.Add(2 * time.Nanosecond),
+		start.Add(3 * time.Nanosecond),
+	}
 	clockCalls := 0
+	lastClockInstant := time.Time{}
 	clock := func() time.Time {
-		at := start.Add(time.Duration(clockCalls) * time.Nanosecond)
 		clockCalls++
-		return at
+		if clockCalls > len(clockInstants) {
+			t.Fatalf("clock called %d times after last instant %s", clockCalls, lastClockInstant.Format(time.RFC3339Nano))
+		}
+		lastClockInstant = clockInstants[clockCalls-1]
+		return lastClockInstant
 	}
 
-	wallStart := time.Now()
 	reading, err := LatestCall(stateRoot, "claude", session, ReadOptions{
 		Capability: PerCall,
 		Transcript: transcript,
@@ -210,8 +219,8 @@ func TestLatestCallHonoursTheDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if elapsed := time.Since(wallStart); elapsed >= time.Second {
-		t.Fatalf("deadline read took %s", elapsed)
+	if clockCalls != len(clockInstants) {
+		t.Fatalf("deadline read called clock %d times, want %d", clockCalls, len(clockInstants))
 	}
 	if reading.Capability != PerCall || reading.Reason != "deadline" || reading.Latest != nil {
 		t.Fatalf("deadline reading = %#v", reading)

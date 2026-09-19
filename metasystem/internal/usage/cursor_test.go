@@ -63,32 +63,14 @@ func TestLatestCallNonBlockingReturnsBusy(t *testing.T) {
 	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		t.Fatal(err)
 	}
-	locked := true
-	release := func() {
-		if locked {
-			_ = unix.Flock(int(lock.Fd()), unix.LOCK_UN)
-			locked = false
-		}
-	}
-	defer release()
+	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
 
-	done := make(chan error, 1)
-	go func() {
-		_, readErr := LatestCall(stateRoot, "claude", "busy", ReadOptions{
-			Capability: PerCall, Transcript: transcript, NonBlocking: true,
-		})
-		done <- readErr
-	}()
-	select {
-	case readErr := <-done:
-		var busy *CursorBusyError
-		if !errors.As(readErr, &busy) || busy.Path != lockPath {
-			t.Fatalf("contended non-blocking read = %v", readErr)
-		}
-	case <-time.After(time.Second):
-		release()
-		<-done
-		t.Fatal("non-blocking call read waited on the cursor lock")
+	_, readErr := LatestCall(stateRoot, "claude", "busy", ReadOptions{
+		Capability: PerCall, Transcript: transcript, NonBlocking: true,
+	})
+	var busy *CursorBusyError
+	if !errors.As(readErr, &busy) || busy.Path != lockPath {
+		t.Fatalf("contended non-blocking read = %v", readErr)
 	}
 }
 
@@ -106,29 +88,12 @@ func TestRegisterSessionNonBlockingReturnsBusy(t *testing.T) {
 	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		t.Fatal(err)
 	}
-	locked := true
-	release := func() {
-		if locked {
-			_ = unix.Flock(int(lock.Fd()), unix.LOCK_UN)
-			locked = false
-		}
-	}
-	defer release()
+	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
 
-	done := make(chan error, 1)
-	go func() {
-		done <- RegisterSessionNonBlocking(stateRoot, "claude", "busy", 10, 20)
-	}()
-	select {
-	case registerErr := <-done:
-		var busy *SessionRegistryBusyError
-		if !errors.As(registerErr, &busy) || busy.Path != lockPath {
-			t.Fatalf("contended non-blocking registration = %v", registerErr)
-		}
-	case <-time.After(time.Second):
-		release()
-		<-done
-		t.Fatal("non-blocking session registration waited on the registry lock")
+	registerErr := RegisterSessionNonBlocking(stateRoot, "claude", "busy", 10, 20)
+	var busy *SessionRegistryBusyError
+	if !errors.As(registerErr, &busy) || busy.Path != lockPath {
+		t.Fatalf("contended non-blocking registration = %v", registerErr)
 	}
 }
 

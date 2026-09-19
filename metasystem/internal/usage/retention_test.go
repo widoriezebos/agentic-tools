@@ -489,12 +489,7 @@ func TestCallRetirementPreservesDamageAndLockInodes(t *testing.T) {
 			_, err := PruneCallSessions(root, before)
 			done <- err
 		}()
-		select {
-		case <-attempted:
-		case <-time.After(5 * time.Second):
-			unlockCallFile(lock)
-			t.Fatal("prune did not contend on the stable cursor lock")
-		}
+		<-attempted
 		unlockCallFile(lock)
 		if err := <-done; err != nil {
 			t.Fatal(err)

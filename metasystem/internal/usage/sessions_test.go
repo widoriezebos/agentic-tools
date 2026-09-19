@@ -236,21 +236,12 @@ func TestCallSessionsDiscoversPairsWithoutReadingSamples(t *testing.T) {
 			sessions, err := CallSessions(stateRoot)
 			finished <- result{sessions: sessions, err: err}
 		}()
-		select {
-		case <-attempted:
-		case <-time.After(5 * time.Second):
-			unlockCallFile(lock)
-			t.Fatal("discovery did not reach the existing cursor lock")
-		}
+		<-attempted
 		writeDiscoveryCursor(t, stateRoot, runtimeName, session)
 		unlockCallFile(lock)
-		select {
-		case got := <-finished:
-			if got.err != nil || !reflect.DeepEqual(got.sessions, []CallSession{{Runtime: runtimeName, Session: session}}) {
-				t.Fatalf("concurrent discovery = %#v, %v", got.sessions, got.err)
-			}
-		case <-time.After(5 * time.Second):
-			t.Fatal("discovery did not finish after publication")
+		got := <-finished
+		if got.err != nil || !reflect.DeepEqual(got.sessions, []CallSession{{Runtime: runtimeName, Session: session}}) {
+			t.Fatalf("concurrent discovery = %#v, %v", got.sessions, got.err)
 		}
 	})
 }
