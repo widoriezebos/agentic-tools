@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -145,46 +146,7 @@ func TestLandingBatchBinaryIgnoresAmbientProofHostLoad(t *testing.T) {
 		t.Fatalf("build metasystem binary: %v\n%s", err, output)
 	}
 
-	blockerRoot := t.TempDir()
-	blockerConf := filepath.Join(blockerRoot, "metasystem.conf")
-	if err := os.WriteFile(blockerConf, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	fifo := filepath.Join(blockerRoot, "release.fifo")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	blocker := exec.Command(engine, "proof-run", "launch", "--suite", "ambient-admission-blocker",
-		"--root", blockerRoot, "--conf", blockerConf, "--progress", filepath.Join(blockerRoot, "progress.jsonl"),
-		"--log", filepath.Join(blockerRoot, "proof.log"), "--banner", "blocker-starting", "--",
-		"sh", "-c", `printf 'blocker-ready\n'; read -r _ <"$1"`, "sh", fifo)
-	blocker.Env = proofFixtureEnvironmentWithoutHostLoad(os.Environ())
-	stdout, err := blocker.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var blockerStderr bytes.Buffer
-	blocker.Stderr = &blockerStderr
-	if err := blocker.Start(); err != nil {
-		t.Fatal(err)
-	}
-	blockerReader := bufio.NewReader(stdout)
-	if line, err := blockerReader.ReadString('\n'); err != nil || line != "blocker-starting\n" {
-		t.Fatalf("blocker banner=%q error=%v stderr=%s", line, err, blockerStderr.String())
-	}
-	if line, err := blockerReader.ReadString('\n'); err != nil || line != "blocker-ready\n" {
-		t.Fatalf("blocker readiness=%q error=%v stderr=%s", line, err, blockerStderr.String())
-	}
-	t.Cleanup(func() {
-		release, openErr := os.OpenFile(fifo, os.O_WRONLY, 0)
-		if openErr == nil {
-			_, _ = release.WriteString("release\n")
-			_ = release.Close()
-		}
-		if waitErr := blocker.Wait(); openErr != nil || waitErr != nil {
-			t.Errorf("release proof blocker: open=%v wait=%v stderr=%s", openErr, waitErr, blockerStderr.String())
-		}
-	})
+	startAdmissionBlocker(t, engine, "ambient-admission-blocker")
 
 	root, now := proofExtensionGoalFixture(t)
 	caller, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
@@ -239,13 +201,143 @@ func TestLandingBatchBinaryIgnoresAmbientProofHostLoad(t *testing.T) {
 	}
 
 	withoutAmbient, withoutStatus, withoutOutput := run("without-ambient-host-load", false)
+	// A second live launcher makes the host count differ on an otherwise idle
+	// machine, proving that this assertion ignores only that ambient count.
+	startAdmissionBlocker(t, engine, "ambient-admission-second-blocker")
 	withAmbient, withStatus, withOutput := run("with-ambient-host-load", true)
 	if withoutStatus != proofrun.ExitAdmissionRefused || withStatus != proofrun.ExitAdmissionRefused ||
-		withoutAmbient != withAmbient || withoutAmbient.Disposition != proofrun.DispositionAdmissionRefused ||
-		!strings.HasPrefix(withAmbient.Reason, "ADMISSION_") {
+		withoutAmbient.Disposition != proofrun.DispositionAdmissionRefused ||
+		!strings.HasPrefix(withoutAmbient.Reason, "ADMISSION_") || !strings.HasPrefix(withAmbient.Reason, "ADMISSION_") {
 		t.Fatalf("ambient variable changed built-binary admission:\nwithout=%+v status=%d output=%s\nwith=%+v status=%d output=%s",
 			withoutAmbient, withoutStatus, withoutOutput, withAmbient, withStatus, withOutput)
 	}
+	compareLaunchResultsIgnoringObserved(t, withoutAmbient, withAmbient)
+}
+
+func startAdmissionBlocker(t *testing.T, engine, name string) {
+	t.Helper()
+	root := t.TempDir()
+	conf := filepath.Join(root, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte(proofrun.AdmissionCapKey+"=0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fifo := filepath.Join(root, "release.fifo")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	banner := name + "-starting"
+	blocker := exec.Command(engine, "proof-run", "launch", "--suite", name,
+		"--root", root, "--conf", conf, "--progress", filepath.Join(root, "progress.jsonl"),
+		"--log", filepath.Join(root, "proof.log"), "--banner", banner, "--",
+		"sh", "-c", `printf '%s-ready\n' "$1"; read -r _ <"$2"`, "sh", name, fifo)
+	blocker.Env = proofFixtureEnvironmentWithoutHostLoad(os.Environ())
+	stdout, err := blocker.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	blocker.Stderr = &stderr
+	if err := blocker.Start(); err != nil {
+		t.Fatal(err)
+	}
+	ready := false
+	defer func() {
+		if !ready {
+			_ = blocker.Process.Kill()
+			_ = blocker.Wait()
+		}
+	}()
+	reader := bufio.NewReader(stdout)
+	if line, err := reader.ReadString('\n'); err != nil || line != banner+"\n" {
+		t.Fatalf("%s banner=%q error=%v stderr=%s", name, line, err, stderr.String())
+	}
+	if line, err := reader.ReadString('\n'); err != nil || line != name+"-ready\n" {
+		t.Fatalf("%s readiness=%q error=%v stderr=%s", name, line, err, stderr.String())
+	}
+	ready = true
+	t.Cleanup(func() {
+		release, openErr := os.OpenFile(fifo, os.O_WRONLY, 0)
+		if openErr == nil {
+			_, _ = release.WriteString("release\n")
+			_ = release.Close()
+		}
+		if waitErr := blocker.Wait(); openErr != nil || waitErr != nil {
+			t.Errorf("release proof blocker %s: open=%v wait=%v stderr=%s", name, openErr, waitErr, stderr.String())
+		}
+	})
+}
+
+func compareLaunchResultsIgnoringObserved(t *testing.T, withoutAmbient, withAmbient proofrun.LaunchResult) {
+	t.Helper()
+	fields := []struct {
+		name                    string
+		withoutValue, withValue string
+	}{
+		{"SchemaVersion", strconv.Itoa(withoutAmbient.SchemaVersion), strconv.Itoa(withAmbient.SchemaVersion)},
+		{"Disposition", withoutAmbient.Disposition, withAmbient.Disposition},
+		{"AttemptID", withoutAmbient.AttemptID, withAmbient.AttemptID},
+		{"PriorAttempt", withoutAmbient.PriorAttempt, withAmbient.PriorAttempt},
+		{"EvidencePath", withoutAmbient.EvidencePath, withAmbient.EvidencePath},
+		{"ExitStatus", strconv.Itoa(withoutAmbient.ExitStatus), strconv.Itoa(withAmbient.ExitStatus)},
+	}
+	for _, field := range fields {
+		if field.withoutValue != field.withValue {
+			t.Fatalf("launch result field %s differs: without=%q with=%q", field.name, field.withoutValue, field.withValue)
+		}
+	}
+
+	withoutTokens := admissionReasonTokens(t, withoutAmbient.Reason)
+	withTokens := admissionReasonTokens(t, withAmbient.Reason)
+	for _, leg := range []struct {
+		name   string
+		tokens map[string]string
+	}{{"without", withoutTokens}, {"with", withTokens}} {
+		observed, ok := leg.tokens["observed"]
+		value, err := strconv.Atoi(observed)
+		if !ok || err != nil || value < 1 {
+			t.Fatalf("%s reason token observed=%q, want an integer of at least 1", leg.name, observed)
+		}
+	}
+	tokenNames := make([]string, 0, len(withoutTokens)+len(withTokens))
+	seen := map[string]bool{}
+	for name := range withoutTokens {
+		tokenNames = append(tokenNames, name)
+		seen[name] = true
+	}
+	for name := range withTokens {
+		if !seen[name] {
+			tokenNames = append(tokenNames, name)
+		}
+	}
+	sort.Strings(tokenNames)
+	for _, name := range tokenNames {
+		withoutValue, withoutOK := withoutTokens[name]
+		withValue, withOK := withTokens[name]
+		if name != "observed" && (withoutOK != withOK || withoutValue != withValue) {
+			t.Fatalf("launch result reason token %s differs: without=%q present=%t with=%q present=%t",
+				name, withoutValue, withoutOK, withValue, withOK)
+		}
+	}
+}
+
+func admissionReasonTokens(t *testing.T, reason string) map[string]string {
+	t.Helper()
+	fields := strings.Fields(reason)
+	if len(fields) == 0 {
+		t.Fatal("admission reason has no tokens")
+	}
+	tokens := map[string]string{"code": fields[0]}
+	for _, field := range fields[1:] {
+		name, value, found := strings.Cut(field, "=")
+		if !found {
+			name, value = field, field
+		}
+		if _, exists := tokens[name]; exists {
+			t.Fatalf("admission reason repeats token %s", name)
+		}
+		tokens[name] = value
+	}
+	return tokens
 }
 
 func proofFixtureEnvironmentWithoutHostLoad(environment []string) []string {
