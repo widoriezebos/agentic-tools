@@ -1,6 +1,6 @@
 # beds-run-under-the-oldest-supported-bash
 
-- State: approved
+- State: parked
 - Priority: 1
 - Sequence: 22
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="severity 2: a bed that cannot start hides every scenario in it; novelty 1: a known portability class; exposure 3: every bed on every Mac seat; accumulation 2: each new array risks it again"
@@ -9,10 +9,11 @@
 - Origin: human
 - Next step: parked 2026-09-19 by Wido: "park list is ok" (16:40 CEST, under his machine-ready target). Resume only when Wido picks the goal. Existing work: on main 878acfb8a (scripts/agents/oldest-bash-gate.sh:135, wired at scripts/validate-metasystem.sh:1132-1134) and 9a3eb6056 (B2, push 14). Left, about 395 lines: B3, B4, B5, B6, converting the 164 allowlisted sites in 17 files.
 - OpenedAt: 2026-09-14T16:16:20Z
-- Revision: 123
+- Revision: 124
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:30Z revision=2 opid=EJSD1FG33MKT5NRH95HQJ5XSQD-m1e-c6925449 authority=proven digest=37322810b14872d2df18353f03628f0f19340493c8c98660a7cc2900065de837
+- Parked: by=human:Wido at=2026-09-19T15:46:00Z because=parked 2026-09-19 by Wido: "park list is ok" (16:40 CEST, under his machine-ready target). Resume only when Wido picks the goal. Existing work: on main 878acfb8a (scripts/agents/oldest-bash-gate.sh:135, wired at scripts/validate-metasystem.sh:1132-1134) and 9a3eb6056 (B2, push 14). Left, about 395 lines: B3, B4, B5, B6, converting the 164 allowlisted sites in 17 files.
 
 History:
 - 2026-09-14T16:16:20Z 0R2JYA4MM81F6BQDPSSP9KEJBH-m1e-c6925449 open actor=human:Wido targets=beds-run-under-the-oldest-supported-bash
@@ -138,4 +139,5 @@ History:
 - 2026-09-19T15:45:05Z Q0DPZ8J74XAJHP5SGCGPB8NPRZ-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,waits-run-outside-model-contexts reason=priority-order from=1:24 to=1:23
 - 2026-09-19T15:45:17Z FZTA3B9JDRW4R7CH82VMAVGQKP-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order from=1:23 to=1:22
 - 2026-09-19T15:45:53Z JHC09D649H6FAXT0PJBAT9DVJR-m1e-c6925449 edit actor=human:Wido targets=beds-run-under-the-oldest-supported-bash
-Integrity: sha256=e7f270f03205fee09787fae5e47df1b6947eecb5366069d4a5971deb339ac1dc
+- 2026-09-19T15:46:00Z 49PS3Y7C06DSG7AFGJ49GEXE86-m1e-c6925449 park actor=human:Wido targets=beds-run-under-the-oldest-supported-bash reason=parked 2026-09-19 by Wido: "park list is ok" (16:40 CEST, under his machine-ready target). Resume only when Wido picks the goal. Existing work: on main 878acfb8a (scripts/agents/oldest-bash-gate.sh:135, wired at scripts/validate-metasystem.sh:1132-1134) and 9a3eb6056 (B2, push 14). Left, about 395 lines: B3, B4, B5, B6, converting the 164 allowlisted sites in 17 files.
+Integrity: sha256=b2d7a1cc3c373df3bdfbe035b12b0dbb12be643bb5c9939b47546d6fbc6e08ad
