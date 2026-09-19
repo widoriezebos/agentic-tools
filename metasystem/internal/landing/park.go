@@ -59,6 +59,8 @@ type ParkParams struct {
 	RecoveryRefs    []string
 	CallerPID       int64
 	Now             time.Time
+	Clock           func() time.Time
+	Pause           func(time.Duration)
 }
 
 type ParkResult struct {
@@ -214,7 +216,7 @@ func parkRecoveryRefs(workspace gittree.Workspace, names []string) ([]RecoveryRe
 	return refs, nil
 }
 
-func parkLock(root, chain string, deadline time.Time) (func(), error) {
+func parkLock(root, chain string, deadline time.Time, clock func() time.Time, pause func(time.Duration)) (func(), error) {
 	lockPath := filepath.Join(root, "artifacts", "agents", "landing", "locks", chain+".d")
 	pid, tag := int64(os.Getpid()), "metasystem"
 	for {
@@ -223,10 +225,10 @@ func parkLock(root, chain string, deadline time.Time) (func(), error) {
 		} else if !errors.Is(err, dispatch.ErrOwnerLockBusy) {
 			return nil, err
 		}
-		if time.Now().After(deadline) {
+		if clock().After(deadline) {
 			return nil, fmt.Errorf("park lock timed out")
 		}
-		time.Sleep(20 * time.Millisecond)
+		pause(20 * time.Millisecond)
 	}
 }
 
@@ -281,6 +283,14 @@ func Park(params ParkParams) (ParkResult, error) {
 	if params.CallerPID <= 0 {
 		return fail(fmt.Errorf("caller pid is required"))
 	}
+	clock := params.Clock
+	if clock == nil {
+		clock = time.Now
+	}
+	pause := params.Pause
+	if pause == nil {
+		pause = time.Sleep
+	}
 	workspace := gittree.Workspace{Dir: params.Root}
 	target, err := workspace.ResolveCommit(params.TargetCommit)
 	if err != nil || target != params.TargetCommit {
@@ -298,8 +308,8 @@ func Park(params ParkParams) (ParkResult, error) {
 	if err != nil {
 		return fail(err)
 	}
-	deadline := time.Now().Add(landingParkLimit)
-	release, err := parkLock(params.Root, params.Chain, deadline)
+	deadline := clock().Add(landingParkLimit)
+	release, err := parkLock(params.Root, params.Chain, deadline, clock, pause)
 	if err != nil {
 		return fail(err)
 	}
@@ -314,7 +324,7 @@ func Park(params ParkParams) (ParkResult, error) {
 	}
 	now := params.Now
 	if now.IsZero() {
-		now = time.Now().UTC()
+		now = clock().UTC()
 	}
 	record := ParkRecord{
 		SchemaVersion: 1, State: "parked", Chain: params.Chain, Goal: goalValue, Actor: actor,
@@ -390,7 +400,7 @@ func Park(params ParkParams) (ParkResult, error) {
 	} else {
 		return fail(err)
 	}
-	if time.Now().After(deadline) {
+	if clock().After(deadline) {
 		return fail(fmt.Errorf("park publication exceeded ten seconds"))
 	}
 	readback, err := os.ReadFile(path)

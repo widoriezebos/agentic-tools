@@ -1,6 +1,7 @@
 package landing
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -202,7 +204,7 @@ func TestCreateTestReceiptIgnoresLiveWorkspaceMotion(t *testing.T) {
 	receipt, err := CreateTestReceipt(
 		f.root,
 		candidate,
-		`test "$GOTOOLCHAIN" = receipt-fixture && printf '%s\n' 'digest=during-receipt' >> "$LANDING_RECEIPT_LIVE_ROOT/records/narrator-digest.log" && sleep 0.1`,
+		`test "$GOTOOLCHAIN" = receipt-fixture && printf '%s\n' 'digest=during-receipt' >> "$LANDING_RECEIPT_LIVE_ROOT/records/narrator-digest.log"`,
 		io.Discard,
 		io.Discard,
 	)
@@ -482,7 +484,7 @@ func TestCreateTestReceiptRemovesIsolatedWorktreeAfterSignal(t *testing.T) {
 		_, err := CreateTestReceipt(
 			os.Getenv("LANDING_RECEIPT_SIGNAL_ROOT"),
 			os.Getenv("LANDING_RECEIPT_SIGNAL_TREE"),
-			`printf '%s\n' "$PWD" > "$LANDING_RECEIPT_SIGNAL_PROBE"; exec sleep 5`,
+			`printf '%s\n' "$PWD" > "$LANDING_RECEIPT_SIGNAL_PROBE"; exec bash -c 'read -r _' < "$LANDING_RECEIPT_SIGNAL_HOLD"`,
 			io.Discard,
 			io.Discard,
 		)
@@ -498,13 +500,32 @@ func TestCreateTestReceiptRemovesIsolatedWorktreeAfterSignal(t *testing.T) {
 		t.Fatal(err)
 	}
 	worktreesBefore := f.git("worktree", "list", "--porcelain")
-	probe := filepath.Join(t.TempDir(), "isolated-root")
+	signalDir := t.TempDir()
+	probe := filepath.Join(signalDir, "isolated-root")
+	hold := filepath.Join(signalDir, "parent-lifetime")
+	if err := syscall.Mkfifo(probe, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(hold, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ready, err := os.OpenFile(probe, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ready.Close()
+	held, err := os.OpenFile(hold, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
 	helper := exec.Command(os.Args[0], "-test.run=^TestCreateTestReceiptRemovesIsolatedWorktreeAfterSignal$")
 	helper.Env = gittree.ScrubbedEnviron(
 		"LANDING_RECEIPT_SIGNAL_HELPER=1",
 		"LANDING_RECEIPT_SIGNAL_ROOT="+f.root,
 		"LANDING_RECEIPT_SIGNAL_TREE="+candidate,
 		"LANDING_RECEIPT_SIGNAL_PROBE="+probe,
+		"LANDING_RECEIPT_SIGNAL_HOLD="+hold,
 	)
 	var output bytes.Buffer
 	helper.Stdout = &output
@@ -519,30 +540,13 @@ func TestCreateTestReceiptRemovesIsolatedWorktreeAfterSignal(t *testing.T) {
 			_ = helper.Wait()
 		}
 	})
-	// The helper is a second copy of this test binary doing real git work;
-	// under a loaded box its probe takes longer than a quiet box's few
-	// seconds, so the bound is one only a hang trips (2026-09-11: ten
-	// seconds failed inside the pooled battery). And the helper's output is
-	// read only after the helper has been waited for: its stdout copier
-	// writes the buffer until then, which the race detector reported.
-	deadline := time.Now().Add(90 * time.Second)
-	var isolatedRoot string
-	for time.Now().Before(deadline) {
-		data, readErr := os.ReadFile(probe)
-		if readErr == nil {
-			isolatedRoot = strings.TrimSpace(string(data))
-			break
-		}
-		if !os.IsNotExist(readErr) {
-			t.Fatal(readErr)
-		}
-		time.Sleep(10 * time.Millisecond)
+	isolatedRoot, err := bufio.NewReader(ready).ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
 	}
+	isolatedRoot = strings.TrimSpace(isolatedRoot)
 	if isolatedRoot == "" {
-		_ = helper.Process.Signal(os.Interrupt)
-		_ = helper.Wait()
-		helperWaited = true
-		t.Fatalf("signal helper did not expose its isolated root:\n%s", output.String())
+		t.Fatal("signal helper exposed an empty isolated root")
 	}
 	resolvedTemp, err := filepath.EvalSymlinks(os.TempDir())
 	if err != nil {
