@@ -1,0 +1,1399 @@
+diff --git a/metasystem/cmd/metasystem/report.go b/metasystem/cmd/metasystem/report.go
+index aa74a92af..670cf3df2 100644
+--- a/metasystem/cmd/metasystem/report.go
++++ b/metasystem/cmd/metasystem/report.go
+@@ -10,6 +10,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopincident"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
+ )
+ 
+@@ -175,6 +176,10 @@ func runReportStopBlock(args []string) int {
+ 	remedy := flags.String("remedy", "", "operator remedy for an external stop refusal")
+ 	armingResult := flags.String("arming-result", "", "failed supervision component lines and aggregate carried in the stop notice")
+ 	class := flags.String("class", string(report.StopClassSeatActionable), "stop condition class: infrastructure or seat-actionable")
++	causeCode := flags.String("cause-code", "", "stable stop-incident cause code")
++	component := flags.String("component", "", "stop-incident component")
++	generation := flags.String("generation", "", "stop-incident hook generation or -")
++	deadlineEnd := flags.Int64("deadline-end", 0, "stop-incident deadline end epoch")
+ 	boundedIdle := flags.Bool("bounded-idle", false, "render a counted idle-backlog refusal without the open-work block-once preface")
+ 	openWorkRoot := flags.String("open-work-root", "", "checkout root whose open-work lines must be durably marked")
+ 	if flags.Parse(args) != nil {
+@@ -210,7 +215,14 @@ func runReportStopBlock(args []string) int {
+ 			return 2
+ 		}
+ 		var err error
+-		block, err = report.StopRefusal(*refusalRecord, *session, *cause, *remedy, detail, *systemMessage, report.StopClass(*class), time.Now())
++		var incident *stopincident.Incident
++		if *causeCode != "" {
++			incident = &stopincident.Incident{
++				Class: *class, Cause: *causeCode, Component: *component, Generation: *generation,
++				DeadlineEnd: *deadlineEnd, Outcome: "degraded-allow", Source: stopincident.SourceRefusalRecord,
++			}
++		}
++		block, err = report.StopRefusal(*refusalRecord, *session, *cause, *remedy, detail, *systemMessage, report.StopClass(*class), time.Now(), incident)
+ 		if err != nil {
+ 			fmt.Fprintf(os.Stderr, "report stop-block: %v\n", err)
+ 			return 1
+diff --git a/metasystem/cmd/metasystem/steward_verbs.go b/metasystem/cmd/metasystem/steward_verbs.go
+index 6065b1fac..9a33d67b6 100644
+--- a/metasystem/cmd/metasystem/steward_verbs.go
++++ b/metasystem/cmd/metasystem/steward_verbs.go
+@@ -426,6 +426,7 @@ func runStewardTick(args []string) int {
+ 		"health":             result.Health,
+ 		"reaped":             result.Reaped,
+ 		"goalStops":          result.GoalStops,
++		"stopIncidents":      result.StopIncidents,
+ 		"delivered":          delivered,
+ 		"channelUndelivered": channelUndelivered,
+ 		"revived":            revived,
+diff --git a/metasystem/internal/report/stopblock.go b/metasystem/internal/report/stopblock.go
+index 9237f685e..f90c14be7 100644
+--- a/metasystem/internal/report/stopblock.go
++++ b/metasystem/internal/report/stopblock.go
+@@ -18,6 +18,7 @@ import (
+ 
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopincident"
+ )
+ 
+ // stopBlockReason is the fixed guidance a block carries. The refusal is
+@@ -119,13 +120,16 @@ func BoundedIdleStopBlock(detail string) map[string]any {
+ var stopRefusalLockWait = 100 * time.Millisecond
+ var stopRefusalLockSleep = time.Sleep
+ 
+-func StopRefusal(path, session, cause, remedy, detail, systemMessage string, class StopClass, now time.Time) (map[string]any, error) {
++func StopRefusal(path, session, cause, remedy, detail, systemMessage string, class StopClass, now time.Time, incident *stopincident.Incident) (map[string]any, error) {
+ 	if path == "" || session == "" || cause == "" || remedy == "" {
+ 		return nil, fmt.Errorf("stop refusal requires a record path, session, cause, and remedy")
+ 	}
+ 	if class != StopClassInfrastructure && class != StopClassSeatActionable {
+ 		return nil, fmt.Errorf("stop refusal class must be infrastructure or seat-actionable")
+ 	}
++	if incident != nil && (incident.Class != string(class) || incident.Cause == "" || incident.Component == "" || incident.Generation == "" || incident.DeadlineEnd <= 0) {
++		return nil, fmt.Errorf("stop refusal incident must carry matching class, cause, component, generation, and deadline end")
++	}
+ 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+ 		return nil, fmt.Errorf("prepare stop-refusal directory: %w", err)
+ 	}
+@@ -169,6 +173,24 @@ func StopRefusal(path, session, cause, remedy, detail, systemMessage string, cla
+ 	}
+ 	entry.Count++
+ 	entry.LastAt = stamp
++	if incident != nil {
++		stored := stopRefusalIncident{
++			Identity: stopincident.Identity(*incident), Cause: incident.Cause, Component: incident.Component,
++			Generation: incident.Generation, DeadlineEnd: incident.DeadlineEnd,
++		}
++		entry.Class = incident.Class
++		kept := make([]stopRefusalIncident, 0, len(entry.Incidents)+1)
++		for _, existing := range entry.Incidents {
++			if existing.Identity != stored.Identity {
++				kept = append(kept, existing)
++			}
++		}
++		kept = append(kept, stored)
++		if len(kept) > 32 {
++			kept = kept[len(kept)-32:]
++		}
++		entry.Incidents = kept
++	}
+ 	record.Causes[digest] = entry
+ 	encoded, err := json.MarshalIndent(record, "", "  ")
+ 	if err != nil {
+@@ -206,8 +228,18 @@ type stopRefusalRecord struct {
+ }
+ 
+ type stopRefusalCause struct {
+-	Cause   string `json:"cause"`
+-	Count   int    `json:"count"`
+-	FirstAt string `json:"firstAt"`
+-	LastAt  string `json:"lastAt"`
++	Cause     string                `json:"cause"`
++	Count     int                   `json:"count"`
++	FirstAt   string                `json:"firstAt"`
++	LastAt    string                `json:"lastAt"`
++	Class     string                `json:"class,omitempty"`
++	Incidents []stopRefusalIncident `json:"incidents,omitempty"`
++}
++
++type stopRefusalIncident struct {
++	Identity    string `json:"identity"`
++	Cause       string `json:"cause"`
++	Component   string `json:"component"`
++	Generation  string `json:"generation"`
++	DeadlineEnd int64  `json:"deadlineEnd"`
+ }
+diff --git a/metasystem/internal/report/stopblock_test.go b/metasystem/internal/report/stopblock_test.go
+index 3a95d2589..c5cba13c4 100644
+--- a/metasystem/internal/report/stopblock_test.go
++++ b/metasystem/internal/report/stopblock_test.go
+@@ -11,6 +11,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopincident"
+ 	"golang.org/x/sys/unix"
+ )
+ 
+@@ -42,14 +43,14 @@ func TestBoundedIdleStopBlockDoesNotClaimItIsNonRepeating(t *testing.T) {
+ func TestStopRefusalBlocksOnceThenSurfacesAndRecords(t *testing.T) {
+ 	path := filepath.Join(t.TempDir(), "session.json")
+ 	now := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)
+-	first, err := StopRefusal(path, "session-a", "supervision arming failed", "exact up diagnostic", "unsafe", "health", StopClassSeatActionable, now)
++	first, err := StopRefusal(path, "session-a", "supervision arming failed", "exact up diagnostic", "unsafe", "health", StopClassSeatActionable, now, nil)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+ 	if first["decision"] != "block" {
+ 		t.Fatalf("first external cause must block: %v", first)
+ 	}
+-	second, err := StopRefusal(path, "session-a", "supervision arming failed", "exact up diagnostic", "unsafe", "health", StopClassSeatActionable, now.Add(time.Minute))
++	second, err := StopRefusal(path, "session-a", "supervision arming failed", "exact up diagnostic", "unsafe", "health", StopClassSeatActionable, now.Add(time.Minute), nil)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+@@ -87,10 +88,10 @@ func TestStopRefusalBlocksOnceThenSurfacesAndRecords(t *testing.T) {
+ func TestStopRefusalDifferentCauseBlocksAgain(t *testing.T) {
+ 	path := filepath.Join(t.TempDir(), "session.json")
+ 	now := time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC)
+-	if _, err := StopRefusal(path, "session-a", "cause one", "remedy", "detail", "", StopClassSeatActionable, now); err != nil {
++	if _, err := StopRefusal(path, "session-a", "cause one", "remedy", "detail", "", StopClassSeatActionable, now, nil); err != nil {
+ 		t.Fatal(err)
+ 	}
+-	second, err := StopRefusal(path, "session-a", "cause two", "remedy", "detail", "", StopClassSeatActionable, now)
++	second, err := StopRefusal(path, "session-a", "cause two", "remedy", "detail", "", StopClassSeatActionable, now, nil)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+@@ -104,7 +105,7 @@ func TestStopRefusalUnreadableRecordReturnsError(t *testing.T) {
+ 	if err := os.WriteFile(path, []byte("{broken\n"), 0o600); err != nil {
+ 		t.Fatal(err)
+ 	}
+-	if _, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", StopClassSeatActionable, time.Now()); err == nil {
++	if _, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", StopClassSeatActionable, time.Now(), nil); err == nil {
+ 		t.Fatal("an unreadable refusal record must be reported to the hook")
+ 	}
+ }
+@@ -131,7 +132,7 @@ func TestStopRefusalWaitsBrieflyForOverlappingWriter(t *testing.T) {
+ 			t.Fatalf("release overlapping writer: %v", err)
+ 		}
+ 	}
+-	response, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", StopClassSeatActionable, time.Now())
++	response, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", StopClassSeatActionable, time.Now(), nil)
+ 	if err != nil {
+ 		t.Fatalf("a brief overlapping writer must not force surfacing: %v", err)
+ 	}
+@@ -158,7 +159,7 @@ func TestStopRefusalReportsAWedgedWriter(t *testing.T) {
+ 	previous := stopRefusalLockWait
+ 	stopRefusalLockWait = 0
+ 	t.Cleanup(func() { stopRefusalLockWait = previous })
+-	if _, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", StopClassSeatActionable, time.Now()); err == nil || !strings.Contains(err.Error(), "busy after") {
++	if _, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", StopClassSeatActionable, time.Now(), nil); err == nil || !strings.Contains(err.Error(), "busy after") {
+ 		t.Fatalf("a wedged writer must be reported to the hook: %v", err)
+ 	}
+ }
+@@ -167,7 +168,7 @@ func TestStopBlockClassesInfrastructureAllows(t *testing.T) {
+ 	path := filepath.Join(t.TempDir(), "session.json")
+ 	now := time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC)
+ 	for occurrence := 1; occurrence <= 5; occurrence++ {
+-		response, err := StopRefusal(path, "session-a", "narrator failed", "the steward owns repair", "detail", "health", StopClassInfrastructure, now.Add(time.Duration(occurrence)*time.Minute))
++		response, err := StopRefusal(path, "session-a", "narrator failed", "the steward owns repair", "detail", "health", StopClassInfrastructure, now.Add(time.Duration(occurrence)*time.Minute), nil)
+ 		if err != nil {
+ 			t.Fatal(err)
+ 		}
+@@ -178,7 +179,7 @@ func TestStopBlockClassesInfrastructureAllows(t *testing.T) {
+ 			t.Fatalf("occurrence missing: %q", message)
+ 		}
+ 	}
+-	seat, err := StopRefusal(filepath.Join(t.TempDir(), "seat.json"), "session-a", "owned work", "run it", "work remains", "", StopClassSeatActionable, now)
++	seat, err := StopRefusal(filepath.Join(t.TempDir(), "seat.json"), "session-a", "owned work", "run it", "work remains", "", StopClassSeatActionable, now, nil)
+ 	if err != nil || seat["decision"] != "block" {
+ 		t.Fatalf("seat-actionable behavior changed: %+v %v", seat, err)
+ 	}
+@@ -187,7 +188,7 @@ func TestStopBlockClassesInfrastructureAllows(t *testing.T) {
+ func TestInfrastructureStopNoticePreservesCheckInTail(t *testing.T) {
+ 	tail := "HEALTH good — hook-freshness=current\nNARRATOR DIGEST since last check-in: landed abc123"
+ 	response, err := StopRefusal(filepath.Join(t.TempDir(), "session.json"), "session-a", "arming failed", "repair it",
+-		strings.Repeat("large verdict detail ", 400), tail, StopClassInfrastructure, time.Now())
++		strings.Repeat("large verdict detail ", 400), tail, StopClassInfrastructure, time.Now(), nil)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+@@ -200,6 +201,38 @@ func TestInfrastructureStopNoticePreservesCheckInTail(t *testing.T) {
+ 	}
+ }
+ 
++func TestStopRefusalRecordKeepsTheClass(t *testing.T) {
++	t.Parallel()
++
++	dir := t.TempDir()
++	path := filepath.Join(dir, "session.json")
++	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
++	incident := stopincident.Incident{
++		Class: "infrastructure", Cause: "supervision-arming-failed", Component: "supervision-arming",
++		Generation: "4", DeadlineEnd: now.Add(time.Minute).Unix(), Outcome: "degraded-allow",
++	}
++	if _, err := StopRefusal(path, "session-a", "supervision arming failed", "repair it", "detail", "", StopClassInfrastructure, now, &incident); err != nil {
++		t.Fatal(err)
++	}
++	without := filepath.Join(dir, "history.json")
++	if _, err := StopRefusal(without, "session-b", "old failure", "repair it", "detail", "", StopClassInfrastructure, now, nil); err != nil {
++		t.Fatal(err)
++	}
++
++	got, err := stopincident.ReadRefusalRecords(dir)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(got) != 1 {
++		t.Fatalf("ReadRefusalRecords returned %d incidents, want 1: %+v", len(got), got)
++	}
++	matchingLog := incident
++	matchingLog.Source = stopincident.SourceHookLog
++	if got[0].Class != "infrastructure" || got[0].Source != stopincident.SourceRefusalRecord || stopincident.Identity(got[0]) != stopincident.Identity(matchingLog) {
++		t.Fatalf("stored refusal incident=%+v, want class and identity matching %+v", got[0], matchingLog)
++	}
++}
++
+ func TestStopBlockEmptyDetail(t *testing.T) {
+ 	b := StopBlock("")
+ 	if b["reason"] != stopBlockReason {
+diff --git a/metasystem/internal/steward/intervene.go b/metasystem/internal/steward/intervene.go
+index 2f8c7d26c..4a5d1c75f 100644
+--- a/metasystem/internal/steward/intervene.go
++++ b/metasystem/internal/steward/intervene.go
+@@ -318,9 +318,12 @@ func LiveIntents(repoRoot string) ([]Intent, error) {
+ // PendingNotification is one undelivered operator message, durable
+ // until delivery succeeds; retried every tick, never redispatching.
+ type PendingNotification struct {
+-	Nonce         string `json:"nonce"`
+-	Message       string `json:"message"`
+-	DeliveryOwner string `json:"deliveryOwner,omitempty"`
++	Nonce              string `json:"nonce"`
++	Message            string `json:"message"`
++	DeliveryOwner      string `json:"deliveryOwner,omitempty"`
++	DeliveredAt        string `json:"deliveredAt,omitempty"`
++	StopIncidentSource string `json:"stopIncidentSource,omitempty"`
++	StopIncidentDay    string `json:"stopIncidentDay,omitempty"`
+ }
+ 
+ // L3 used this literal to mark held health findings for L4. The episode
+diff --git a/metasystem/internal/steward/notify.go b/metasystem/internal/steward/notify.go
+index 391baf8b3..5275f5a02 100644
+--- a/metasystem/internal/steward/notify.go
++++ b/metasystem/internal/steward/notify.go
+@@ -17,6 +17,8 @@ import (
+ 	"runtime"
+ 	"strings"
+ 	"time"
++
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopincident"
+ )
+ 
+ // notifyTimeout bounds one delivery attempt; a hung notifier is a
+@@ -113,6 +115,10 @@ func appendFixtureNotification(repoRoot, message string) error {
+ // the first failure stops the pass (the channel is down — one named
+ // failure beats a burst of them). Returns how many were delivered.
+ func DeliverPending(repoRoot string) (int, error) {
++	return deliverPending(repoRoot, deliverNotification)
++}
++
++func deliverPending(repoRoot string, sender func(string, string) error) (int, error) {
+ 	pending, err := PendingNotifications(repoRoot)
+ 	if err != nil {
+ 		return 0, err
+@@ -133,7 +139,7 @@ func DeliverPending(repoRoot string) (int, error) {
+ 		}
+ 		if strings.HasPrefix(n.Nonce, "handoff-") {
+ 			handoffDeliveryAfterSnapshot()
+-			wasDelivered, err := deliverPendingHandoff(repoRoot, n)
++			wasDelivered, err := deliverPendingHandoff(repoRoot, n, sender)
+ 			if err != nil {
+ 				return delivered, err
+ 			}
+@@ -142,7 +148,7 @@ func DeliverPending(repoRoot string) (int, error) {
+ 			}
+ 			continue
+ 		}
+-		if err := deliverPendingNotification(repoRoot, n); err != nil {
++		if err := deliverPendingNotification(repoRoot, n, sender); err != nil {
+ 			return delivered, err
+ 		}
+ 		delivered++
+@@ -150,7 +156,7 @@ func DeliverPending(repoRoot string) (int, error) {
+ 	return delivered, nil
+ }
+ 
+-func deliverPendingHandoff(repoRoot string, snapshot PendingNotification) (bool, error) {
++func deliverPendingHandoff(repoRoot string, snapshot PendingNotification, sender func(string, string) error) (bool, error) {
+ 	authorized, err := handoffNoticeIsAuthorized(repoRoot, snapshot.Nonce)
+ 	if err != nil {
+ 		return false, err
+@@ -161,7 +167,7 @@ func deliverPendingHandoff(repoRoot string, snapshot PendingNotification) (bool,
+ 		}
+ 		return false, nil
+ 	}
+-	if err := deliverPendingNotification(repoRoot, snapshot); err != nil {
++	if err := deliverPendingNotification(repoRoot, snapshot, sender); err != nil {
+ 		return false, err
+ 	}
+ 	return true, nil
+@@ -185,8 +191,11 @@ func handoffNoticeIsAuthorized(repoRoot, noticeNonce string) (bool, error) {
+ 	return false, nil
+ }
+ 
+-func deliverPendingNotification(repoRoot string, n PendingNotification) error {
+-	if err := deliverNotification(repoRoot, n.Message); err != nil {
++func deliverPendingNotification(repoRoot string, n PendingNotification, sender func(string, string) error) error {
++	if strings.HasPrefix(n.Nonce, "stop-incident-") {
++		return deliverPendingStopIncident(repoRoot, n, sender)
++	}
++	if err := sender(repoRoot, n.Message); err != nil {
+ 		return err
+ 	}
+ 	// The intent acknowledges FIRST: a crash between these two
+@@ -202,6 +211,30 @@ func deliverPendingNotification(repoRoot string, n PendingNotification) error {
+ 	return nil
+ }
+ 
++func deliverPendingStopIncident(repoRoot string, notification PendingNotification, sender func(string, string) error) error {
++	if notification.DeliveredAt == "" {
++		if err := sender(repoRoot, notification.Message); err != nil {
++			return err
++		}
++		notification.DeliveredAt = time.Now().UTC().Format(time.RFC3339Nano)
++		if err := QueueNotification(repoRoot, notification); err != nil {
++			return fmt.Errorf("stamp delivered stop incident: %w", err)
++		}
++	}
++	if err := appendStopIncidentDelivery(repoRoot, notification); err != nil {
++		return err
++	}
++	if err := MarkDelivered(repoRoot, notification.Nonce); err != nil {
++		return err
++	}
++	identity := strings.TrimPrefix(notification.Nonce, "stop-incident-")
++	deliveredAt, err := time.Parse(time.RFC3339Nano, notification.DeliveredAt)
++	if err == nil {
++		_ = stopincident.AppendAck(stopIncidentHookLogPath(repoRoot), identity, deliveredAt)
++	}
++	return nil
++}
++
+ // markIntentNotified flips the live intent matching a delivered
+ // message; a nonce with no live intent is ordinary (verdict and reap
+ // messages have none).
+diff --git a/metasystem/internal/steward/notify_test.go b/metasystem/internal/steward/notify_test.go
+index 760e9d087..bc43d4717 100644
+--- a/metasystem/internal/steward/notify_test.go
++++ b/metasystem/internal/steward/notify_test.go
+@@ -2,6 +2,7 @@ package steward
+ 
+ import (
+ 	"context"
++	"fmt"
+ 	"os"
+ 	"os/exec"
+ 	"path/filepath"
+@@ -207,6 +208,138 @@ func TestPendingQueueDrainsOnDeliveryAndHoldsOnFailure(t *testing.T) {
+ 	}
+ }
+ 
++func TestStopIncidentDeliveryUnconfirmed(t *testing.T) {
++	t.Parallel()
++
++	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
++	cfg := TickConfig{Now: now}
++	incident := stopIncidentAt(now, "delivery-unconfirmed", now.Add(time.Minute).Unix())
++
++	t.Run("both sources unreadable", func(t *testing.T) {
++		root := t.TempDir()
++		if got := DrainStopIncidents(root, cfg.now()); got.Unconfirmed {
++			t.Fatalf("initialize drain: %+v", got)
++		}
++		hookPath := filepath.Join(root, "artifacts", "agents", "supervision", "hooks.log")
++		if err := os.MkdirAll(hookPath, 0o755); err != nil {
++			t.Fatal(err)
++		}
++		refusalPath := filepath.Join(root, "artifacts", "agents", "supervision", "stop-refusals")
++		if err := os.MkdirAll(filepath.Dir(refusalPath), 0o755); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(refusalPath, []byte("unreadable source shape"), 0o600); err != nil {
++			t.Fatal(err)
++		}
++		if got := DrainStopIncidents(root, cfg.now()); !got.Unconfirmed || !strings.Contains(got.Detail, "sources") {
++			t.Fatalf("unreadable sources drain=%+v, want named unconfirmed result", got)
++		}
++	})
++
++	t.Run("ledger unusable", func(t *testing.T) {
++		root := t.TempDir()
++		ledgerDir := filepath.Dir(stopIncidentLedgerPath(root, now))
++		if err := os.MkdirAll(filepath.Dir(ledgerDir), 0o755); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(ledgerDir, []byte("not a directory"), 0o600); err != nil {
++			t.Fatal(err)
++		}
++		writeStopIncidentHookLog(t, root, incident)
++		if got := DrainStopIncidents(root, cfg.now()); !got.Unconfirmed || got.Queued != 0 || !strings.Contains(got.Detail, "ledger") {
++			t.Fatalf("unusable ledger drain=%+v, want no queue and named failure", got)
++		}
++	})
++
++	t.Run("queue write fails and retries", func(t *testing.T) {
++		root := t.TempDir()
++		if got := DrainStopIncidents(root, cfg.now()); got.Unconfirmed {
++			t.Fatalf("initialize drain: %+v", got)
++		}
++		writeStopIncidentHookLog(t, root, incident)
++		if err := os.MkdirAll(filepath.Dir(pendingDir(root)), 0o755); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(pendingDir(root), []byte("blocked"), 0o600); err != nil {
++			t.Fatal(err)
++		}
++		if got := DrainStopIncidents(root, cfg.now()); !got.Unconfirmed || !strings.Contains(got.Detail, "queue") {
++			t.Fatalf("queue failure drain=%+v, want named failure", got)
++		}
++		if err := os.Remove(pendingDir(root)); err != nil {
++			t.Fatal(err)
++		}
++		if got := DrainStopIncidents(root, cfg.now()); got.Unconfirmed || got.Queued != 1 {
++			t.Fatalf("queue retry drain=%+v, want the same incident queued", got)
++		}
++	})
++
++	t.Run("channel failure leaves pending", func(t *testing.T) {
++		root := t.TempDir()
++		DrainStopIncidents(root, cfg.now())
++		writeStopIncidentHookLog(t, root, incident)
++		if got := DrainStopIncidents(root, cfg.now()); got.Queued != 1 {
++			t.Fatalf("queue incident: %+v", got)
++		}
++		sender := func(_, message string) error {
++			if !strings.Contains(message, incident.Cause) {
++				t.Fatalf("channel saw message=%q", message)
++			}
++			return os.ErrPermission
++		}
++		if delivered, err := deliverPending(root, sender); err == nil || delivered != 0 {
++			t.Fatalf("failed channel delivered=%d err=%v", delivered, err)
++		}
++		if pending, err := PendingNotifications(root); err != nil || len(pending) != 1 || pending[0].DeliveredAt != "" {
++			t.Fatalf("channel failure pending=%+v err=%v", pending, err)
++		}
++		ledger, _ := os.ReadFile(stopIncidentLedgerPath(root, now))
++		if strings.Contains(string(ledger), "delivered ") {
++			t.Fatalf("failed channel wrote a delivered ledger line: %q", ledger)
++		}
++	})
++
++	t.Run("ledger append failure never redelivers", func(t *testing.T) {
++		root := t.TempDir()
++		DrainStopIncidents(root, cfg.now())
++		writeStopIncidentHookLog(t, root, incident)
++		if got := DrainStopIncidents(root, cfg.now()); got.Queued != 1 {
++			t.Fatalf("queue incident: %+v", got)
++		}
++		ledgerPath := stopIncidentLedgerPath(root, now)
++		if err := os.Remove(ledgerPath); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.Mkdir(ledgerPath, 0o755); err != nil {
++			t.Fatal(err)
++		}
++		calls := 0
++		sender := func(_, message string) error {
++			calls++
++			if calls > 1 || !strings.Contains(message, incident.Cause) {
++				t.Fatalf("unexpected delivery call %d with message %q", calls, message)
++			}
++			return nil
++		}
++		if delivered, err := deliverPending(root, sender); err == nil || delivered != 0 {
++			t.Fatalf("ledger failure delivered=%d err=%v, want unconfirmed", delivered, err)
++		}
++		pending, err := PendingNotifications(root)
++		if err != nil || len(pending) != 1 || pending[0].DeliveredAt == "" || calls != 1 {
++			t.Fatalf("stamped pending=%+v calls=%d err=%v", pending, calls, err)
++		}
++		if err := os.Remove(ledgerPath); err != nil {
++			t.Fatal(err)
++		}
++		if err := os.WriteFile(ledgerPath, []byte(fmt.Sprintf("drain-start %d\n", now.Unix())), 0o600); err != nil {
++			t.Fatal(err)
++		}
++		if delivered, err := deliverPending(root, sender); err != nil || delivered != 1 || calls != 1 {
++			t.Fatalf("stamped retry delivered=%d calls=%d err=%v, want removal without redelivery", delivered, calls, err)
++		}
++	})
++}
++
+ func TestPendingQueueRetiresAnObsoleteAlertBeforeRevival(t *testing.T) {
+ 	root, sink := notifyRepo(t, "")
+ 	nonce := "verdict-" + string(VerdictStalledDead)
+diff --git a/metasystem/internal/steward/tick.go b/metasystem/internal/steward/tick.go
+index 6ded4f38c..a39216d30 100644
+--- a/metasystem/internal/steward/tick.go
++++ b/metasystem/internal/steward/tick.go
+@@ -32,7 +32,8 @@ type TickConfig struct {
+ 	MaxRevivals int
+ 	// Now is set only by fixture-authorized command boundaries. A zero value
+ 	// keeps each tick operation on the wall clock.
+-	Now time.Time
++	Now           time.Time
++	narrateDigest func(string, Evidence, TickResult, time.Time) error
+ }
+ 
+ var tickHealthNow = time.Now
+@@ -44,6 +45,9 @@ func (c TickConfig) withDefaults() TickConfig {
+ 	if c.MaxRevivals <= 0 {
+ 		c.MaxRevivals = 3
+ 	}
++	if c.narrateDigest == nil {
++		c.narrateDigest = NarrateDigest
++	}
+ 	return c
+ }
+ 
+@@ -67,6 +71,7 @@ type TickResult struct {
+ 	Health          HealthVerdict
+ 	GoalStops       []BreachStopReport
+ 	LedgerAttention LedgerAttentionReport
++	StopIncidents   StopIncidentDrain
+ }
+ 
+ // BreachStopReport is machinery history for one heal-before-notify stop pass.
+@@ -129,6 +134,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
+ 	if err != nil || selfState != identity.Alive {
+ 		return TickResult{}, fmt.Errorf("the steward tick cannot read its own process identity")
+ 	}
++	stopIncidents := DrainStopIncidents(repoRoot, cfg.now())
+ 	generation, generationErr := installedGeneration(repoRoot)
+ 	if generationErr != nil {
+ 		// An unarmed manual tick remains useful for diagnosis, but generation
+@@ -238,8 +244,8 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
+ 	}
+ 	result = TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
+ 		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark, GoalStops: goalStops,
+-		LedgerAttention: ledgerReport}
+-	if err := NarrateDigest(repoRoot, prev, result, cfg.now()); err != nil {
++		LedgerAttention: ledgerReport, StopIncidents: stopIncidents}
++	if err := cfg.narrateDigest(repoRoot, prev, result, cfg.now()); err != nil {
+ 		return result, fmt.Errorf("write narrator digest: %w", err)
+ 	}
+ 	machine := "this machine"
+diff --git a/metasystem/internal/steward/tick_test.go b/metasystem/internal/steward/tick_test.go
+index b2cef2fd4..7131e2e5e 100644
+--- a/metasystem/internal/steward/tick_test.go
++++ b/metasystem/internal/steward/tick_test.go
+@@ -2,6 +2,7 @@ package steward
+ 
+ import (
+ 	"encoding/json"
++	"fmt"
+ 	"os"
+ 	"os/exec"
+ 	"path/filepath"
+@@ -10,6 +11,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopincident"
+ )
+ 
+ type fakeCensus struct {
+@@ -19,6 +21,30 @@ type fakeCensus struct {
+ 
+ func (f fakeCensus) Workers(string) (Workers, error) { return f.workers, f.err }
+ 
++func writeStopIncidentHookLog(t *testing.T, root string, incidents ...stopincident.Incident) string {
++	t.Helper()
++	path := filepath.Join(root, "artifacts", "agents", "supervision", "hooks.log")
++	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	var body strings.Builder
++	for _, incident := range incidents {
++		fmt.Fprintf(&body, "stop-condition %s %s %s %s %d %s\n", incident.Class, incident.Cause,
++			incident.Component, incident.Generation, incident.DeadlineEnd, incident.Outcome)
++	}
++	if err := os.WriteFile(path, []byte(body.String()), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	return path
++}
++
++func stopIncidentAt(now time.Time, cause string, deadlineEnd int64) stopincident.Incident {
++	return stopincident.Incident{
++		Class: "infrastructure", Cause: cause, Component: "stop-worker", Generation: "7",
++		DeadlineEnd: deadlineEnd, Outcome: "degraded-allow", Source: stopincident.SourceHookLog,
++	}
++}
++
+ // gitRepoWithCurrentGoal builds a real repository with an owned goal,
+ // so marks and open work read from genuine sources.
+ func gitRepoWithCurrentGoal(t *testing.T) string {
+@@ -61,6 +87,182 @@ func tickN(t *testing.T, root string, cfg TickConfig, census WorkerCensus, n int
+ 	return last
+ }
+ 
++func TestStopIncidentDrainBeforeNarrator(t *testing.T) {
++	t.Parallel()
++
++	root := gitRepoWithCurrentGoal(t)
++	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
++	cfg := TickConfig{
++		Now:           now,
++		narrateDigest: func(string, Evidence, TickResult, time.Time) error { return os.ErrPermission },
++	}
++	if got := DrainStopIncidents(root, cfg.now()); got.Unconfirmed {
++		t.Fatalf("initialize stop-incident drain: %+v", got)
++	}
++	incident := stopIncidentAt(now, "narrator-unreadable", now.Add(time.Minute).Unix())
++	hookLog := writeStopIncidentHookLog(t, root, incident)
++	result, err := RunTick(root, cfg, fakeCensus{workers: Workers{Live: 1, CensusComplete: true}})
++	if err == nil || !strings.Contains(err.Error(), "narrator digest") {
++		t.Fatalf("tick result=%+v error=%v, want narrator digest failure", result, err)
++	}
++	if result.StopIncidents.Queued != 1 {
++		t.Fatalf("stop incidents queued=%d before narrator failure, want 1: %+v", result.StopIncidents.Queued, result.StopIncidents)
++	}
++	nonce := "stop-incident-" + stopincident.Identity(incident)
++	if _, err := os.Stat(filepath.Join(pendingDir(root), nonce+".json")); err != nil {
++		t.Fatalf("drain did not leave %s before narrator failure: %v", nonce, err)
++	}
++
++	sender := func(_, message string) error {
++		if !strings.Contains(message, incident.Cause) {
++			t.Fatalf("delivery message=%q, want cause %q", message, incident.Cause)
++		}
++		return nil
++	}
++	if delivered, err := deliverPending(root, sender); err != nil || delivered != 1 {
++		t.Fatalf("DeliverPending delivered=%d err=%v, want 1", delivered, err)
++	}
++	ledger, err := os.ReadFile(stopIncidentLedgerPath(root, now))
++	if err != nil || !strings.Contains(string(ledger), "delivered "+stopincident.Identity(incident)+" ") {
++		t.Fatalf("delivery ledger=%q err=%v", ledger, err)
++	}
++	logData, err := os.ReadFile(hookLog)
++	if err != nil || !strings.Contains(string(logData), "stop-incident-ack "+stopincident.Identity(incident)+" ") {
++		t.Fatalf("hook acknowledgment=%q err=%v", logData, err)
++	}
++	for pass := 0; pass < 2; pass++ {
++		drain := DrainStopIncidents(root, cfg.now())
++		if drain.Queued != 0 || drain.Unconfirmed {
++			t.Fatalf("post-delivery drain %d=%+v, want no queue", pass+1, drain)
++		}
++	}
++}
++
++func TestStopIncidentDrainFromHookLog(t *testing.T) {
++	t.Parallel()
++
++	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
++	cfg := TickConfig{Now: now}
++	root, _ := notifyRepo(t, "true")
++	if drain := DrainStopIncidents(root, cfg.now()); drain.Queued != 0 || drain.Unconfirmed {
++		t.Fatalf("first drain=%+v, want an empty initialized ledger", drain)
++	}
++	start := now.Unix()
++	first := stopIncidentAt(now, "first", start+10)
++	second := stopIncidentAt(now, "second", start+20)
++	history := stopIncidentAt(now, "history", start-1)
++	writeStopIncidentHookLog(t, root, first, second, history,
++		stopincident.Incident{Class: "seat-actionable", Cause: "owned", Component: "verdict-state", Generation: "7", DeadlineEnd: start + 30, Outcome: "refused"})
++	drain := DrainStopIncidents(root, cfg.now())
++	if drain.Queued != 2 || drain.Pending != 2 || drain.Unconfirmed {
++		t.Fatalf("hook drain=%+v, want exactly the two current infrastructure incidents", drain)
++	}
++	if delivered, err := DeliverPending(root); err != nil || delivered != 2 {
++		t.Fatalf("DeliverPending delivered=%d err=%v, want 2", delivered, err)
++	}
++	ledgerData, err := os.ReadFile(stopIncidentLedgerPath(root, now))
++	if err != nil || strings.Count(string(ledgerData), "delivered ") != 2 {
++		t.Fatalf("delivery ledger=%q err=%v, want two delivered lines", ledgerData, err)
++	}
++	hookData, err := os.ReadFile(stopIncidentHookLogPath(root))
++	if err != nil || strings.Count(string(hookData), "stop-incident-ack ") != 2 {
++		t.Fatalf("hook log=%q err=%v, want two acknowledgment lines", hookData, err)
++	}
++	if got := DrainStopIncidents(root, cfg.now()); got.Queued != 0 || got.Pending != 0 || got.Unconfirmed {
++		t.Fatalf("post-delivery drain=%+v, want no queue", got)
++	}
++
++	noLedgerRoot := t.TempDir()
++	writeStopIncidentHookLog(t, noLedgerRoot, first)
++	if got := DrainStopIncidents(noLedgerRoot, cfg.now()); got.Queued != 0 || got.Unconfirmed {
++		t.Fatalf("first tick with an incident=%+v, want only drain-start", got)
++	}
++	data, err := os.ReadFile(stopIncidentLedgerPath(noLedgerRoot, now))
++	if err != nil || !strings.HasPrefix(string(data), fmt.Sprintf("drain-start %d\n", now.Unix())) {
++		t.Fatalf("first tick ledger=%q err=%v", data, err)
++	}
++
++	rolloverRoot := t.TempDir()
++	yesterday := now.AddDate(0, 0, -1)
++	oldDelivered := stopIncidentAt(yesterday, "old-delivered", yesterday.Add(time.Hour).Unix())
++	lateYesterday := stopIncidentAt(yesterday, "late-yesterday", yesterday.Add(2*time.Hour).Unix())
++	if err := os.MkdirAll(filepath.Dir(stopIncidentLedgerPath(rolloverRoot, yesterday)), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	yesterdayBody := fmt.Sprintf("drain-start %d\ndelivered %s %d hook-log\n", yesterday.Unix(), stopincident.Identity(oldDelivered), yesterday.Add(3*time.Hour).Unix())
++	if err := os.WriteFile(stopIncidentLedgerPath(rolloverRoot, yesterday), []byte(yesterdayBody), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	writeStopIncidentHookLog(t, rolloverRoot, oldDelivered, lateYesterday)
++	rolled := DrainStopIncidents(rolloverRoot, cfg.now())
++	if rolled.Queued != 1 || rolled.Pending != 1 {
++		t.Fatalf("rollover drain=%+v, want only the incident after yesterday's start", rolled)
++	}
++	if _, err := os.Stat(stopIncidentLedgerPath(rolloverRoot, now)); err != nil {
++		t.Fatalf("rollover did not create today's drain-start: %v", err)
++	}
++}
++
++func TestStopIncidentOutageRecoveryOutage(t *testing.T) {
++	t.Parallel()
++
++	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
++	cfg := TickConfig{Now: now}
++	root := t.TempDir()
++	if got := DrainStopIncidents(root, cfg.now()); got.Unconfirmed {
++		t.Fatalf("initialize drain: %+v", got)
++	}
++	incident := stopIncidentAt(now, "source-outage", now.Add(time.Minute).Unix())
++	refusalDir := filepath.Join(root, "artifacts", "agents", "supervision", "stop-refusals")
++	if err := os.MkdirAll(refusalDir, 0o755); err != nil {
++		t.Fatal(err)
++	}
++	identity := stopincident.Identity(incident)
++	record := fmt.Sprintf(`{"schemaVersion":1,"sessionId":"s","causes":{"c":{"cause":"human diagnostic","count":1,"firstAt":"2026-09-19T12:00:00Z","lastAt":"2026-09-19T12:00:00Z","class":"infrastructure","incidents":[{"identity":"%s","cause":"%s","component":"%s","generation":"%s","deadlineEnd":%d}]}}}`,
++		identity, incident.Cause, incident.Component, incident.Generation, incident.DeadlineEnd)
++	if err := os.WriteFile(filepath.Join(refusalDir, "s.json"), []byte(record), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	hookLog := filepath.Join(root, "artifacts", "agents", "supervision", "hooks.log")
++	if err := os.MkdirAll(hookLog, 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if got := DrainStopIncidents(root, cfg.now()); got.Queued != 1 || got.Unconfirmed {
++		t.Fatalf("refusal-only drain=%+v, want one queued incident", got)
++	}
++	calls := 0
++	sender := func(_, message string) error {
++		calls++
++		if calls > 1 || !strings.Contains(message, incident.Cause) {
++			t.Fatalf("unexpected delivery call %d with message %q", calls, message)
++		}
++		return nil
++	}
++	if delivered, err := deliverPending(root, sender); err != nil || delivered != 1 {
++		t.Fatalf("DeliverPending delivered=%d err=%v", delivered, err)
++	}
++	if err := os.Remove(hookLog); err != nil {
++		t.Fatal(err)
++	}
++	writeStopIncidentHookLog(t, root, incident)
++	if got := DrainStopIncidents(root, cfg.now()); got.Queued != 0 || got.Unconfirmed {
++		t.Fatalf("recovered hook drain=%+v, want acknowledgment repair only", got)
++	}
++	data, err := os.ReadFile(hookLog)
++	if err != nil || !strings.Contains(string(data), "stop-incident-ack "+identity+" ") {
++		t.Fatalf("recovered hook log=%q err=%v", data, err)
++	}
++	if err := os.Remove(hookLog); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.Mkdir(hookLog, 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if got := DrainStopIncidents(root, cfg.now()); got.Queued != 0 || got.Unconfirmed {
++		t.Fatalf("second hook outage drain=%+v, want delivered identity suppressed by ledger", got)
++	}
++}
++
+ func TestKilledWatcherIsRoutedToItsOwnerWithinOneTick(t *testing.T) {
+ 	root := t.TempDir()
+ 	directory := filepath.Join(root, "artifacts", "agents", "supervision")
+diff --git a/metasystem/scripts/agents/supervision-hook.sh b/metasystem/scripts/agents/supervision-hook.sh
+index b81208e8b..d451eb54b 100755
+--- a/metasystem/scripts/agents/supervision-hook.sh
++++ b/metasystem/scripts/agents/supervision-hook.sh
+@@ -1242,6 +1242,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]];
+   [[ "$deadline_budget_sec" =~ ^([4-9]|[1-5][0-9]|60)$ ]] || deadline_budget_sec=60
+   deadline_worker_sec=$((deadline_budget_sec - 3))
+   deadline_started_epoch=$(date -u +%s)
++  deadline_end=$((deadline_started_epoch + deadline_budget_sec))
+   deadline_dir=
+   deadline_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
+     || deadline_dir=$(mktemp -d "/tmp/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
+@@ -1332,9 +1333,8 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]];
+   # notice, never fatal.
+   deadline_log_failure=
+   deadline_log_stop_condition() { # cause code, component
+-    local supervision_root deadline_log deadline_end
++    local supervision_root deadline_log
+     deadline_log_failure=
+-    deadline_end=$((deadline_started_epoch + deadline_budget_sec))
+     supervision_root=${deadline_repo:-}
+     deadline_log="$supervision_root/artifacts/agents/supervision/hooks.log"
+     if [[ -z "$supervision_root" ]]; then
+@@ -1580,6 +1580,8 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]];
+       --class infrastructure \
+       --refusal-record "$deadline_record" --session "$deadline_session" \
+       --open-work-root "$deadline_repo" \
++      --cause-code stop-deadline-expired --component stop-deadline \
++      --generation - --deadline-end "$deadline_end" \
+       --cause "$deadline_cause" --remedy "$deadline_remedy" "$deadline_detail" 2>/dev/null) || \
+       deadline_record_failure="the stop-refusal record could not be read or atomically updated"
+   fi
+@@ -2072,6 +2074,8 @@ stop_block_json() { # system message, reason, bounded idle
+ external_stop_json() { # system message, reason, cause, remedy
+   "$ms" report stop-block --class infrastructure --system-message "$1" \
+     --refusal-record "$stop_refusal_record" --session "$session" \
++    --cause-code "$stop_failure_code" --component "$stop_failure_component" \
++    --generation "${hook_generation:--}" --deadline-end "$((stop_started_epoch + 60))" \
+     --cause "$3" --remedy "$4" --arming-result "$up_failure_result" "$2"
+ }
+ 
+diff --git a/metasystem/testing.json b/metasystem/testing.json
+index f9df33fa1..cd7116ce4 100644
+--- a/metasystem/testing.json
++++ b/metasystem/testing.json
+@@ -47,7 +47,7 @@
+     {"id":"carry-landing-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/landing/**","metasystem/internal/goal/branch/**","metasystem/cmd/metasystem/channel_verbs.go","metasystem/cmd/metasystem/channel_verbs_test.go","metasystem/cmd/metasystem/goalsync_mutations.go","metasystem/cmd/metasystem/goalsync_mutations_test.go","metasystem/cmd/metasystem/landing_verbs.go","metasystem/cmd/metasystem/landing_verbs_test.go"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["carried-landing-landing"],"platforms":["any"],"targetMs":20000,"packages":["internal/landing","internal/landing/batch","cmd/metasystem"],"tests":["TestHCL33ExpiredReservationNotDebt","TestHCL37EvaluatorUnavailablePrecedesUnneeded","TestHCL51CarriedCounselorAppendBelongsToItsRow","TestHCL57CarriedMatchAndRedBattery","TestHCL58BaseJudgeFenceOwners","TestHCL58GenerationZeroNeedsFixtureAuthority","TestHCL12KindCarryRequiresWants","TestHCL54CarryByRejectsStoredActorPrefix","TestHCL55CarriedJudgeGrammar","TestHCL80TrailingWhitespaceWhyIsAdmitted","TestBatchBranchReaderCertifiesThreeBuildMember","TestBatchBranchReaderRefusesReaderRecord","TestBatchBranchMembersCheckEachGoalTransition","TestBatchBranchMemberRefusesMovedTrunk","TestBatchBranchAllowsOnlyOneMemberPerGoal","TestObserveAttestedBranchDeclarationEnforcesBoundary","TestAttestedBoundaryValidatesTheClosureBundle"]},
+     {"id":"carry-plumbing-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/dispatch/**","metasystem/internal/config/**","metasystem/internal/testpolicy/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["carried-landing-plumbing"],"platforms":["any"],"targetMs":10000,"packages":["internal/dispatch","internal/config","internal/testpolicy"],"tests":["TestHCL09BadFormRefused","TestHCL09ReviewReferenceAdmits","TestHCL09TwoChainsUnite","TestHCL08CapKeyDefaultOne","TestHCL08CapLocalRefused","TestHCL31ContractOwnsFivePackages","TestHCL34PlanExecutesEveryFixture"]},
+     {"id":"goal-decision-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/cmd/metasystem/goal_branch.go","metasystem/cmd/metasystem/goal_branch_test.go","metasystem/cmd/metasystem/main.go","metasystem/cmd/metasystem/goalsync_mutations.go","metasystem/cmd/metasystem/goalsync_mutations_test.go","metasystem/internal/dispatch/**","metasystem/internal/readsubject/**","metasystem/cmd/metasystem/goal_list.go","metasystem/cmd/metasystem/goal_list_test.go",".gitattributes","metasystem/internal/testpolicy/contractgit/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["budget-stop-authority"],"platforms":["any"],"targetMs":30000,"packages":["internal/goal","internal/goal/branch","cmd/metasystem"],"tests":["TestGoalDoneWithoutLocalBranchSkipsUnreadableRemote","TestGoalDoneWithLocalBranchStillSweepsUnreadableRemote","TestBudgetTupleIsCompletePositiveAndCanonical","TestElapsedBreachDurationAppliesGraceAtTheStopBoundary","TestBudgetValidationNamesEveryInvalidLimit","TestStoredBudgetRequiresCompleteNumericLimits","TestHandedOverClaimGuards","TestHandedOverClaimRoundTripsWithoutChangingExistingClaims","TestHandedOverClaimsDoNotConsumeLandingSlots","TestHandedOverClaimsUseOneDerivedLandingPair","TestHandedOverRecordRequiresEveryCoordinate","TestGoalHandoverAppliesCompleteFieldTable","TestHandedOverClaimReleaseClearsRecord","TestHandedOverClaimConclusionClearsRecord","TestUnitDigestIgnoresDiffConfiguration","TestValidateRangeRefusals","TestValidateRangeCleanRangePasses","TestGoalBranchCheckPrintsKinds","TestGoalHandBackClearsHandedOverAndValidates","TestGoalHandBackRefusals","TestGoalHandoverTargetLiveness","TestGoalBranchCheckFetchesCurrentOriginTip","TestGoalBranchGitKeepsStderrOutOfObjectIDs","TestValidateRangeAllowsBranchBehindEndpoint","TestCommitCreatesBranchAndAmendsUnit","TestCommitRefusesNonHolder","TestCommitRefusesWithoutPushProtocol","TestCommitHasSingleAmendDecision","TestCommitRefusalsPreserveCheckout","TestAmendKeepsUnstagedTrackedEdits","TestAmendRefusesBeforeOverwritingUnstagedTrackedEdit","TestAmendInstallFailureRestoresCheckout","TestAmendRechecksClaimBeforeBranchUpdate","TestPushPublishesAmendAndSecondCloneAdopts","TestPushReconcilesUnknownOutcomeAndPreparedTransaction","TestPushAndCommitAdoptDescendantRemoteAfterLandedCrash","TestPushLeaseAndClaimMovementRefuseWithoutRetry","TestPushUnknownNotLandedDoesNotWedgeLaterAmend","TestPushAdoptsRemoteAdvanceAndCommitUsesIt","TestPushAndCommitRefuseDivergedRemote","TestPushAdoptionValidatesRangeAndCleansFetchRef","TestAttestationReaderRecordIntegrity","TestAttestationRequiresFastGateAndNamesChangedTests","TestAttestationCriticRootSourceValidates","TestAttestationCarryPreservesUnitAndFoldBytes","TestAttestationCarryRefusesChangedUnitOrFold","TestAttestationCarryChecksEveryEarlierFold","TestReadRefusalsPreserveCheckout","TestReadAdoptionRefusalsLeaveCheckoutUntouched","TestReadAdoptionKeepsUntrackedScratchFile","TestGoalBranchClaimRequiresMachineAndLineage","TestGoalBranchCommitAndPushUseEndpointRemote","TestGoalBranchHelpNamesPush","TestGoalBranchStatusReportsAbsentOrigin","TestGoalBranchTestingContractIncludesReadDependencies","TestGoalBranchLandPrepRoutesLocalRedCandidate","TestStatusLandReadyPrefixAndParkSafety","TestParkRecordsPushedBranchSummary","TestParkCommandEdgeSkipsUnreadableRemoteOnlyWithoutLocalBranch","TestParkCommandEdgeChecksEndpointOnlyForLocalBranch","TestTransportMirrorAndLeasedDelete","TestGoalLandingPreparationSeries","TestGoalLandingPreimageRetryAndCanaryFence","TestGoalLandingRetryIdentitySurvivesASecondClone","TestGoalLandingLastRefusesUnitBeyondPrefix","TestLandingRedLoopClassificationAndBudget","TestValidateRangeAcceptsBuildListsAndRejectsDuplicateUnitAcrossBuilds","TestAmendDropsReadOfReplacedBuildAndReplaysLaterPlan","TestGoalBranchPushUsesLedgerFailureClassification","TestPushAdoptionCrashCannotStageAReversal","TestPushAdoptionKeepsUntrackedScratchFile","TestCommitAdoptsRemoteWithoutEndpointCheckout","TestGoalBranchCommitIsTheGuardedCommitWrapper","TestFailedCommitLeavesCheckoutAndRefsUnchanged","TestGoalBranchCommitAcceptsBuildUnitList","TestGoalLandingPublicationAndVerification","TestGoalBranchSweepRules","TestOpenClaimDoneLifecycle","TestLastArcGoalConclusionRaisesRetroDebtWhenSweepFails","TestGoalBranchSweepListsParkedDoneAbandonedAndOrphan","TestStatusAndReadBindWholeBuildList","TestAmendReplacesWholeBuildList","TestGoalLandingKeepsBuildUnitList","TestGoalBranchLastLandingSweepsGoalBranch","TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag","TestEmptyReadItemListPreservesRecordBytesAndDigest","TestReadItemsRoundTripBesideNextStep","TestReadItemsAddIsIdempotent","TestReadItemIDsStayStableAcrossAddCalls","TestReadItemsCloseNeedsExactlyOneWay","TestReadItemsFixedRefusesUnknownCommit","TestReadItemsMoveIsAtomicAndRefusesDoneTarget","TestReadItemsAcceptedRefusesBlankReason","TestReadItemsCloseRefusesClosedItem","TestDoneRefusesOpenReadItemIDsAndPassesWhenClosed","TestRetroReadItemsListsOpenAndFlagsConcludedDefect","TestGoalShowAndNextPrintOpenReadItemFixUnit","TestGoalReadItemsListJSONShape","TestReadItemsFileSkipsBlanksAndComments","TestGoalBranchGitRunnersSupplyTestingMergeDriver","TestBranchLandingSyncMergesTestingContractBySurface","TestEveryTerminalGoalTransitionRefusesOpenReadItems","TestDoneReadItemRefusalRemedyExecutes","TestCadenceClaimDeduplicatesTreeAcrossMachines","TestCadenceRedPublishesOwnerlessUntilHumanNamesGoal","TestCadenceStateAbsentLeavesLedgerBytesUnchanged","TestCadenceDeadClaimIsRecoverableAfterLease","TestGoalBranchVerbsRunFromTheHoldersLinkedWorktree","TestGoalBranchCommitRefusesToMoveAnArmedCheckout","TestClaimQuotaRefusalNamesTheHeldGoalAndRelease","TestGoalBranchHolderResolutionPreservesInstallationSubdirectory","TestTrunkRedBatchGuardsExcludeCadenceRecords","TestGoalBranchReadRunsGateDispatchesAndCollectsClosedCritic","TestGoalBranchReadRedGateAndUncleanClosureDispatchNothingFurther","TestLandingMessageAcceptsAttestedBranchProvenance","TestGoalBranchReadDelegateUsesBinarySeamAndReturnsWithoutWaiting","TestCommitReadRefusesUnrecordedFastGateRun","TestAdoptRemoteTipRestoresHeadWhenTheRefUpdateFails","TestBindLandedUnitRefusesOmittedFold","TestCriticAttestationSurvivesFreshCloneWithoutJobStore","TestRecoveryRefusesParkWhenGoalBranchIsUnpushed","TestRecoveryCompletesParkWhenGoalBranchIsPushed","TestParkFailsClosedWithoutBranchChecker","TestRestampVerbRefusesTheByFlag","TestReadInstallRefusalLeavesNothingStaged","TestReadCommitKeepsDirtyLedgerWithoutAdoption","TestAmendInstallFailureRollsBackMovedCheckout","TestAmendDroppingReadStillChecksReplayedTree","TestPlainCommitKeepsDirtyLedgerWithoutAdoption","TestAdoptionUntrackedCollisionRefusesStale","TestGoalLandingCommitDatesComeFromReceiptStamp","TestLandThroughIgnoresStopFenceReason","TestGoalLandingRefusesFoldWithStalePreimage","TestMirrorDeleteReconcilesUnknownOutcome","TestLandPushRerunAfterPublishedCrashReportsLanded","TestLandPushRechecksClaimBeforePush","TestParkRefusalDoesNotClaimOriginState","TestSweepRefusesDirtyGoalWorktree","TestSweepRefusesTransportTipWithUnlandedCommit","TestSweepCleansLeftoversWhenOriginBranchIsGone","TestSweepRequiresExactConcludedDroppedDeclaration","TestParkKeepsNextStepNarrativeAndAddsBranchSummary","TestSyncRequestPublishesEpochAuthorityForTheHolderOnly","TestHolderSetBudgetRebindsEpochForProofAdmission","TestBudgetEpisodeRevisionTransitions","TestApprovalEpisodeRevisionGrammar","TestBudgetEpisodeRevisionLegacyMinimum","TestLegacyApprovalWithReadItemsRoundTripsByteIdentical","TestHistoryLineResumedField","TestRecoveryRefusesJournaledSetBudgetAuthority","TestSetBudgetLiftsCompletedFenceInOneTransaction","TestSetBudgetFencedSameTupleRefusesWithoutMutation","TestSetBudgetFencedIncompleteBatchNamesRemedy","TestSetBudgetFencedOtherClaimNamesConflict","TestRebindEpochFollowsTheAuthenticatedHolderOnly","TestSweepRefusesUnlandedLocalTip","TestSweepRefusalPreservesRefsAndWorktree","TestSweepRefusalNamesEveryUnlandedCommit","TestSweepKeepsLocalRefMovedAfterCheck","TestSweepLocalTipExemptions","TestSweepAbandonedStillValidatesRemoteRange","TestWithLockDeadlineUsesInjectedClock","TestPublishRetryDeadlineUsesInjectedClock"]},
+-    {"id":"wait-stop-standard","kind":"integration","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/internal/adapter/**","metasystem/internal/run/**","metasystem/internal/proofrun/**","metasystem/cmd/metasystem/wait_verb.go","metasystem/cmd/metasystem/wait_verb_test.go","metasystem/scripts/agents/adapters/**","metasystem/scripts/agents/supervision-fixtures.sh","metasystem/docs/design/turn-verdict-delivery-contract.md","metasystem/internal/report/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]},{"id":"bash","executable":"bash","versionArgs":["--version"]},{"id":"git","executable":"git","versionArgs":["--version"]}],"obligations":["budget-stop-authority","runtime-custody"],"platforms":["any"],"targetMs":60000,"packages":["internal/goal","internal/adapter","cmd/metasystem","internal/report"],"tests":["TestPendingWaitTurnVerdict","TestPendingWaitIdleBacklog","TestWaitDeliveryContract","TestPendingWaitInstalledVerdicts","TestWaitPathSelectorIsValidated","TestNextStepNamesAPendingHumanWord","TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord","TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord","TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation","TestMapStopOutputWritesTheResponseRecord","TestMapStopOutputAcceptsChangedWording","TestStopLineIsRenderedFromTheReportReference","TestPruneRemovesTheResponseRecordWithItsReport","TestReportStopResponseResolvesUnderChangedWording","TestReportStopResponseRefusesAnUnreadableResponse","TestBedsResolveStopReportsThroughTheEngine","TestToolGateAllowlist","TestToolGateNeverDeniesLandingWaitOrAgent","TestToolGateAllowEmitsNothing","TestToolGateCeilingColumnEqualsTrigger","TestToolGateMemoryNoteRule","TestWaitRegisterLocalRecordsTheTrackedProcess","TestWaitRegisterHumanNeedsAQuestionAndADeadline","TestRegisteredLocalAndHumanWaitsInstalledVerdicts","TestLocalWaitAllowsTheStopWhileItsProcessLives","TestLocalWaitOfADeadProcessDoesNotAllowTheStop","TestHumanWaitAllowsTheStopUntilItsDeadline","TestLocalWaitCoversTheJobItNames","TestToolGateDeadlineCountsFromTheShellBirth","TestToolGateFallsBackToEntryWhenBirthUnreadable","TestToolGateClassifiesBeforeReading","TestToolGateReadOptionsAreNonBlocking","TestToolGateAllowsNativeSubagentCalls","TestToolGateSubagentCallsWriteNoRow","TestToolGateAllowsPastItsDeadline","TestToolGateNoDecisionWhenTheCallStoreIsBusy","TestToolGateLeavesTheCursor","TestToolGateWritesDecisionRows","TestToolGateObserveModeAllowsAndRecordsTheDenyDecision","TestToolGateDenyModeDenies","TestClaudeJobSettingsInstallNoToolGate","TestWaitingLinesUseWaitEndForLiveLocalWait","TestWaitingLinesUseWaitEndForPendingHumanWait"],"race":false,"coverage":false},
++    {"id":"wait-stop-standard","kind":"integration","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/internal/adapter/**","metasystem/internal/run/**","metasystem/internal/proofrun/**","metasystem/cmd/metasystem/wait_verb.go","metasystem/cmd/metasystem/wait_verb_test.go","metasystem/scripts/agents/adapters/**","metasystem/scripts/agents/supervision-fixtures.sh","metasystem/docs/design/turn-verdict-delivery-contract.md","metasystem/internal/report/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]},{"id":"bash","executable":"bash","versionArgs":["--version"]},{"id":"git","executable":"git","versionArgs":["--version"]}],"obligations":["budget-stop-authority","runtime-custody"],"platforms":["any"],"targetMs":60000,"packages":["internal/goal","internal/adapter","cmd/metasystem","internal/report"],"tests":["TestPendingWaitTurnVerdict","TestPendingWaitIdleBacklog","TestWaitDeliveryContract","TestPendingWaitInstalledVerdicts","TestWaitPathSelectorIsValidated","TestNextStepNamesAPendingHumanWord","TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord","TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord","TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation","TestMapStopOutputWritesTheResponseRecord","TestMapStopOutputAcceptsChangedWording","TestStopLineIsRenderedFromTheReportReference","TestPruneRemovesTheResponseRecordWithItsReport","TestReportStopResponseResolvesUnderChangedWording","TestReportStopResponseRefusesAnUnreadableResponse","TestBedsResolveStopReportsThroughTheEngine","TestToolGateAllowlist","TestToolGateNeverDeniesLandingWaitOrAgent","TestToolGateAllowEmitsNothing","TestToolGateCeilingColumnEqualsTrigger","TestToolGateMemoryNoteRule","TestWaitRegisterLocalRecordsTheTrackedProcess","TestWaitRegisterHumanNeedsAQuestionAndADeadline","TestRegisteredLocalAndHumanWaitsInstalledVerdicts","TestLocalWaitAllowsTheStopWhileItsProcessLives","TestLocalWaitOfADeadProcessDoesNotAllowTheStop","TestHumanWaitAllowsTheStopUntilItsDeadline","TestLocalWaitCoversTheJobItNames","TestToolGateDeadlineCountsFromTheShellBirth","TestToolGateFallsBackToEntryWhenBirthUnreadable","TestToolGateClassifiesBeforeReading","TestToolGateReadOptionsAreNonBlocking","TestToolGateAllowsNativeSubagentCalls","TestToolGateSubagentCallsWriteNoRow","TestToolGateAllowsPastItsDeadline","TestToolGateNoDecisionWhenTheCallStoreIsBusy","TestToolGateLeavesTheCursor","TestToolGateWritesDecisionRows","TestToolGateObserveModeAllowsAndRecordsTheDenyDecision","TestToolGateDenyModeDenies","TestClaudeJobSettingsInstallNoToolGate","TestWaitingLinesUseWaitEndForLiveLocalWait","TestWaitingLinesUseWaitEndForPendingHumanWait","TestStopRefusalRecordKeepsTheClass"],"race":false,"coverage":false},
+     {"id":"obligationstate-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/obligationstate/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["budget-stop-authority"],"platforms":["any"],"targetMs":5000,"packages":["internal/obligationstate"],"tests":"all"},
+     {"id":"mission-decision-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/missionrunner/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["budget-stop-authority"],"platforms":["any"],"targetMs":6000,"packages":["internal/missionrunner"],"tests":["TestProjectFences","TestProjectFencesRefusesBadReservations","TestConcludeTurnStatusDecision","TestAcquireLeaseLifecycle","TestVerifyStateShapeRefusals","TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost","TestStopLiveRunnerSignalsOwnedGroup"]},
+     {"id":"goal-full-coverage","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/scripts/agents/coverage-ratchet.json","metasystem/scripts/agents/coverage-ratchet-linux.json"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["goal-package-coverage"],"platforms":["any"],"targetMs":1800000,"packages":["internal/goal"],"tests":"all","coverage":true,"shards":4},
+@@ -57,7 +57,7 @@
+     {"id":"runtime-owner-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/identity/**","metasystem/internal/census/**","metasystem/internal/lease/**","metasystem/internal/run/**","metasystem/internal/supervise/**","metasystem/scripts/agents/schemas/design-critic.schema.json","metasystem/internal/testutil/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["runtime-custody"],"platforms":["any"],"targetMs":8000,"packages":["internal/identity","internal/census","internal/supervise","internal/lease","internal/run","internal/testutil"],"tests":"all"},
+     {"id":"config-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/config/**","metasystem/internal/behaviorsurface/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["config-readiness"],"platforms":["any"],"targetMs":5000,"packages":["internal/config","internal/behaviorsurface"],"tests":["TestValidateRequiresStrictCommittedTestingContract","TestResolveBatchLandingConfiguration","TestBatchLandingBoundaryUsesInjectedClock","TestValidateBatchLandingConfiguration","TestPolicyVersionAndDeclaredSkipSet","TestToolGateModeRefusesOtherValues","TestShippedToolGateModeIsObserve"]},
+     {"id":"governed-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/cmd/metasystem/**","metasystem/internal/**","metasystem/internal/stopreport/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["governed-cadence"],"platforms":["any"],"targetMs":5000,"packages":["internal/gaterun","internal/steward","internal/stopreport"],"tests":"all"},
+-    {"id":"context-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/cmd/**","metasystem/internal/**","metasystem/scripts/**","metasystem/docs/orchestration.md","metasystem/metasystem.conf","metasystem/testing.json"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]},{"id":"bash","executable":"bash","versionArgs":["--version"]},{"id":"git","executable":"git","versionArgs":["--version"]}],"obligations":[],"platforms":["any"],"targetMs":30000,"packages":["internal/usage","internal/runtimes","internal/output","internal/steward","internal/goal","cmd/metasystem"],"tests":["TestCodexReaderDecodesEachLineOnce","TestUnchangedEmptyTranscriptDoesNotRepublishCursor","TestLatestCallReturnsThePreviousReadTime","TestLatestCallNonBlockingReturnsBusy","TestRegisterSessionNonBlockingReturnsBusy","TestEveryDeclarationDeclaresContextSample","TestRuntimeContextSampleVerb","TestRoleContextRendersBoundCeilingAndUnknowns","TestHealthLineCarriesContextBudget","TestContextBudgetDoesNotAttributeUsageToAStaleHolder","TestContextHolderResolutionSkipsForeignMalformedAnnouncements","TestContextBudgetReturnsBusyUnknownWithoutWaiting","TestContextBudgetReturnsRegistryBusyUnknownWithoutWaiting","TestRoleContextNamesTheNewestSpill","TestNewestSinceReturnsOnlyANewerRegularFile","TestContextStatusVerbPrintsTheRoleLine","TestContextStatusExitCodesForReadableUnknownAndCeilingBreach","TestContextStatusJSONOmitsCursorHistory","TestContextStatusPropagatesEvidenceErrors","TestContextTranscriptOverrideUsesPrivateEvidence","TestContextTranscriptOverridePreservesTheNextHealthRead","TestContextTranscriptOverrideIgnoresLiveStoreFailures","TestContextTranscriptOverrideDisposesPrivateCursor","TestContextStatusLabelsTranscriptDiagnostics","TestCallRegistrationsReadsStrictSnapshot","TestCallSessionsDiscoversPairsWithoutReadingSamples","TestContextReportVerbPublishesTheWeek","TestContextReportComputesTheWeek","TestContextReportPropagatesRecoveryError","TestContextReportDeduplicatesTranscriptReplays","TestContextReportHandlesFallbackAndConflictingIdentities","TestContextReportWindowAndCoverage","TestContextReportExcludesTranscriptDiagnostics","TestContextCostRoleFromHealthLine","TestContextTestingContractSelectsProof","TestHandoffWritesAVerifiedStateFile","TestHandoffManifestPreservesOverflow","TestHandoffRefusals","TestHandoffRetriesNonceCollisionWithoutOverwriting","TestHandoffCleansDirectoryPublicationFailure","TestHandoffPublicationIsExclusiveAndReverified","TestLiveHandoffUsesNoExpiryClock","TestLiveHandoffReadDoesNotWaitOrWrite","TestHandoffAcceptsOnlyTheActiveContinuation","TestHandoffIgnoresConcurrentUnrelatedRecords","TestSecondHandoffSupersedesTheFirst","TestConcurrentHandoffsDoNotCross","TestCancelHandoffReportsItsExactPartialOutcome","TestVerifyHandoffStateUsesExactLifecycleRecord","TestHandoffRejectsInvalidLiveAuthority","TestContextPruneKeepsLiveHandoffs","TestContextPruneSerializesWithConsumption","TestContextPruneStopsOnUsageError","TestContextPruneDefaultAgeComposesWithUsageFloor","TestContextPruneRefusesRedirectedHandoffTrees","TestContextPruneRechecksBeforeRemoval","TestContextPruneReportsRemovalBeforeSyncFailure","TestContextPruneRetainsDamageAndRefusesBadBounds","TestHandoffAndDiagnosticsHaveSeparateLifetimes","TestTurnVerdictAllowsTheStopUnderARecordedHandoff","TestHandoffAllowanceCarriesFrozenFacts","TestContextHandoffVerb","TestContextVerifyAndCancel","TestContextPruneVerb","TestContextVerbUsage","TestHandoffRecordsDeclaredTasksFromTheTranscript","TestHandoffRecordsNoEmptyDelegateField","TestHandoffNoteSameSecondPassesWithANewDigest","TestHandoffNoteDirectoryIsPerRuntime","TestHandoffStateWithoutANoteStillReads","TestHandoffStateVerifierChecksLessonsNoteOrder","TestMemoryDirectoryResolvesTheProjectDirectory","TestMemoryDirectoryRefusesEscapes","TestAdapterClaudeToolGateVerb"],"race":false,"coverage":false},
++    {"id":"context-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/cmd/**","metasystem/internal/**","metasystem/scripts/**","metasystem/docs/orchestration.md","metasystem/metasystem.conf","metasystem/testing.json"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]},{"id":"bash","executable":"bash","versionArgs":["--version"]},{"id":"git","executable":"git","versionArgs":["--version"]}],"obligations":[],"platforms":["any"],"targetMs":30000,"packages":["internal/stopincident","internal/usage","internal/runtimes","internal/output","internal/steward","internal/goal","cmd/metasystem"],"tests":["TestCodexReaderDecodesEachLineOnce","TestUnchangedEmptyTranscriptDoesNotRepublishCursor","TestLatestCallReturnsThePreviousReadTime","TestLatestCallNonBlockingReturnsBusy","TestRegisterSessionNonBlockingReturnsBusy","TestEveryDeclarationDeclaresContextSample","TestRuntimeContextSampleVerb","TestRoleContextRendersBoundCeilingAndUnknowns","TestHealthLineCarriesContextBudget","TestContextBudgetDoesNotAttributeUsageToAStaleHolder","TestContextHolderResolutionSkipsForeignMalformedAnnouncements","TestContextBudgetReturnsBusyUnknownWithoutWaiting","TestContextBudgetReturnsRegistryBusyUnknownWithoutWaiting","TestRoleContextNamesTheNewestSpill","TestNewestSinceReturnsOnlyANewerRegularFile","TestContextStatusVerbPrintsTheRoleLine","TestContextStatusExitCodesForReadableUnknownAndCeilingBreach","TestContextStatusJSONOmitsCursorHistory","TestContextStatusPropagatesEvidenceErrors","TestContextTranscriptOverrideUsesPrivateEvidence","TestContextTranscriptOverridePreservesTheNextHealthRead","TestContextTranscriptOverrideIgnoresLiveStoreFailures","TestContextTranscriptOverrideDisposesPrivateCursor","TestContextStatusLabelsTranscriptDiagnostics","TestCallRegistrationsReadsStrictSnapshot","TestCallSessionsDiscoversPairsWithoutReadingSamples","TestContextReportVerbPublishesTheWeek","TestContextReportComputesTheWeek","TestContextReportPropagatesRecoveryError","TestContextReportDeduplicatesTranscriptReplays","TestContextReportHandlesFallbackAndConflictingIdentities","TestContextReportWindowAndCoverage","TestContextReportExcludesTranscriptDiagnostics","TestContextCostRoleFromHealthLine","TestContextTestingContractSelectsProof","TestHandoffWritesAVerifiedStateFile","TestHandoffManifestPreservesOverflow","TestHandoffRefusals","TestHandoffRetriesNonceCollisionWithoutOverwriting","TestHandoffCleansDirectoryPublicationFailure","TestHandoffPublicationIsExclusiveAndReverified","TestLiveHandoffUsesNoExpiryClock","TestLiveHandoffReadDoesNotWaitOrWrite","TestHandoffAcceptsOnlyTheActiveContinuation","TestHandoffIgnoresConcurrentUnrelatedRecords","TestSecondHandoffSupersedesTheFirst","TestConcurrentHandoffsDoNotCross","TestCancelHandoffReportsItsExactPartialOutcome","TestVerifyHandoffStateUsesExactLifecycleRecord","TestHandoffRejectsInvalidLiveAuthority","TestContextPruneKeepsLiveHandoffs","TestContextPruneSerializesWithConsumption","TestContextPruneStopsOnUsageError","TestContextPruneDefaultAgeComposesWithUsageFloor","TestContextPruneRefusesRedirectedHandoffTrees","TestContextPruneRechecksBeforeRemoval","TestContextPruneReportsRemovalBeforeSyncFailure","TestContextPruneRetainsDamageAndRefusesBadBounds","TestHandoffAndDiagnosticsHaveSeparateLifetimes","TestTurnVerdictAllowsTheStopUnderARecordedHandoff","TestHandoffAllowanceCarriesFrozenFacts","TestContextHandoffVerb","TestContextVerifyAndCancel","TestContextPruneVerb","TestContextVerbUsage","TestHandoffRecordsDeclaredTasksFromTheTranscript","TestHandoffRecordsNoEmptyDelegateField","TestHandoffNoteSameSecondPassesWithANewDigest","TestHandoffNoteDirectoryIsPerRuntime","TestHandoffStateWithoutANoteStillReads","TestHandoffStateVerifierChecksLessonsNoteOrder","TestMemoryDirectoryResolvesTheProjectDirectory","TestMemoryDirectoryRefusesEscapes","TestAdapterClaudeToolGateVerb","TestStopIncidentDrainBeforeNarrator","TestStopIncidentDrainFromHookLog","TestStopIncidentOutageRecoveryOutage","TestStopIncidentDeliveryUnconfirmed","TestHookLogLinesRoundTrip"],"race":false,"coverage":false},
+     {"id":"context-foundations-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/usage/**","metasystem/internal/output/**","metasystem/internal/runtimes/**","metasystem/testing.json"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":[],"platforms":["any"],"targetMs":30000,"packages":["internal/usage","internal/output","internal/runtimes"],"tests":"all","race":false,"coverage":false},
+     {"id":"events-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/events/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":[],"platforms":["any"],"targetMs":5000,"packages":["internal/events"],"tests":"all","race":false,"coverage":false},
+     {"id":"context-stop-cost","kind":"performance","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/cmd/**","metasystem/internal/**","metasystem/scripts/**","metasystem/metasystem.conf","metasystem/testing.json"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]},{"id":"bash","executable":"bash","versionArgs":["--version"]},{"id":"git","executable":"git","versionArgs":["--version"]}],"obligations":[],"platforms":["any"],"targetMs":120000,"packages":["cmd/metasystem"],"tests":["TestContextStopFitsDurationBudget"],"race":false,"coverage":false,"env":{"METASYSTEM_CONTEXT_COST_PROOF":"1"}},
+diff --git a/metasystem/internal/stopincident/stopincident.go b/metasystem/internal/stopincident/stopincident.go
+new file mode 100644
+index 000000000..89a62349c
+--- /dev/null
++++ b/metasystem/internal/stopincident/stopincident.go
+@@ -0,0 +1,178 @@
++// Package stopincident owns the stable identity and on-disk source formats for
++// infrastructure failures that allowed a Stop request to finish.
++package stopincident
++
++import (
++	"bufio"
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"fmt"
++	"os"
++	"path/filepath"
++	"strconv"
++	"strings"
++	"time"
++)
++
++const (
++	SourceHookLog       = "hook-log"
++	SourceRefusalRecord = "refusal-record"
++)
++
++// Incident is the shared coordinate set carried by the hook log and refusal
++// records. Outcome describes the latest observation but is not part of the
++// identity, so retrying one deadline cannot create another notification.
++type Incident struct {
++	Class       string
++	Cause       string
++	Component   string
++	Generation  string
++	DeadlineEnd int64
++	Outcome     string
++	Source      string
++}
++
++// Identity returns the first 16 hexadecimal characters of the coordinate
++// digest shared by every source.
++func Identity(incident Incident) string {
++	coordinates := strings.Join([]string{
++		incident.Class,
++		incident.Cause,
++		incident.Component,
++		incident.Generation,
++		strconv.FormatInt(incident.DeadlineEnd, 10),
++	}, "\x00")
++	sum := sha256.Sum256([]byte(coordinates))
++	return hex.EncodeToString(sum[:8])
++}
++
++// ReadHookLog returns infrastructure incidents and delivered acknowledgments.
++// Unknown and incomplete lines remain available to their existing consumers
++// and are skipped here.
++func ReadHookLog(path string) ([]Incident, map[string]bool, error) {
++	file, err := os.Open(path)
++	if err != nil {
++		if os.IsNotExist(err) {
++			return []Incident{}, map[string]bool{}, nil
++		}
++		return nil, nil, err
++	}
++	defer file.Close()
++
++	incidents := []Incident{}
++	acked := map[string]bool{}
++	scanner := bufio.NewScanner(file)
++	for scanner.Scan() {
++		fields := strings.Fields(scanner.Text())
++		switch {
++		case len(fields) == 7 && fields[0] == "stop-condition" && fields[1] == "infrastructure":
++			deadlineEnd, parseErr := strconv.ParseInt(fields[5], 10, 64)
++			if parseErr != nil {
++				continue
++			}
++			incidents = append(incidents, Incident{
++				Class: fields[1], Cause: fields[2], Component: fields[3], Generation: fields[4],
++				DeadlineEnd: deadlineEnd, Outcome: fields[6], Source: SourceHookLog,
++			})
++		case len(fields) == 3 && fields[0] == "stop-incident-ack" && validIdentity(fields[1]):
++			if _, parseErr := strconv.ParseInt(fields[2], 10, 64); parseErr == nil {
++				acked[fields[1]] = true
++			}
++		}
++	}
++	if err := scanner.Err(); err != nil {
++		return nil, nil, err
++	}
++	return incidents, acked, nil
++}
++
++// AppendAck records that the steward delivered an incident notification.
++func AppendAck(path, identity string, deliveredAt time.Time) error {
++	if !validIdentity(identity) {
++		return fmt.Errorf("stop incident acknowledgment has invalid identity %q", identity)
++	}
++	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
++		return err
++	}
++	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
++	if err != nil {
++		return err
++	}
++	if _, err := fmt.Fprintf(file, "stop-incident-ack %s %d\n", identity, deliveredAt.UTC().Unix()); err != nil {
++		_ = file.Close()
++		return err
++	}
++	return file.Close()
++}
++
++type refusalRecord struct {
++	SchemaVersion int                     `json:"schemaVersion"`
++	Causes        map[string]refusalCause `json:"causes"`
++}
++
++type refusalCause struct {
++	Class     string            `json:"class"`
++	Incidents []refusalIncident `json:"incidents"`
++}
++
++type refusalIncident struct {
++	Identity    string `json:"identity"`
++	Cause       string `json:"cause"`
++	Component   string `json:"component"`
++	Generation  string `json:"generation"`
++	DeadlineEnd int64  `json:"deadlineEnd"`
++}
++
++// ReadRefusalRecords returns the incident coordinates retained in version-one
++// records. Causes written before incidents were added remain valid history.
++func ReadRefusalRecords(dir string) ([]Incident, error) {
++	entries, err := os.ReadDir(dir)
++	if err != nil {
++		if os.IsNotExist(err) {
++			return []Incident{}, nil
++		}
++		return nil, err
++	}
++	incidents := []Incident{}
++	for _, entry := range entries {
++		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
++			continue
++		}
++		path := filepath.Join(dir, entry.Name())
++		data, err := os.ReadFile(path)
++		if err != nil {
++			return nil, fmt.Errorf("read refusal record %s: %w", entry.Name(), err)
++		}
++		var record refusalRecord
++		if err := json.Unmarshal(data, &record); err != nil {
++			return nil, fmt.Errorf("read refusal record %s: %w", entry.Name(), err)
++		}
++		if record.SchemaVersion != 1 || record.Causes == nil {
++			return nil, fmt.Errorf("read refusal record %s: unexpected schema", entry.Name())
++		}
++		for _, cause := range record.Causes {
++			for _, stored := range cause.Incidents {
++				incident := Incident{
++					Class: cause.Class, Cause: stored.Cause, Component: stored.Component,
++					Generation: stored.Generation, DeadlineEnd: stored.DeadlineEnd, Source: SourceRefusalRecord,
++				}
++				if cause.Class != "infrastructure" || incident.Cause == "" || incident.Component == "" ||
++					incident.Generation == "" || incident.DeadlineEnd <= 0 ||
++					(stored.Identity != "" && stored.Identity != Identity(incident)) {
++					return nil, fmt.Errorf("read refusal record %s: invalid stop incident", entry.Name())
++				}
++				incidents = append(incidents, incident)
++			}
++		}
++	}
++	return incidents, nil
++}
++
++func validIdentity(identity string) bool {
++	if len(identity) != 16 {
++		return false
++	}
++	_, err := hex.DecodeString(identity)
++	return err == nil
++}
+diff --git a/metasystem/internal/stopincident/stopincident_test.go b/metasystem/internal/stopincident/stopincident_test.go
+new file mode 100644
+index 000000000..a9e775e88
+--- /dev/null
++++ b/metasystem/internal/stopincident/stopincident_test.go
+@@ -0,0 +1,52 @@
++package stopincident
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++)
++
++func TestHookLogLinesRoundTrip(t *testing.T) {
++	t.Parallel()
++
++	root := t.TempDir()
++	path := filepath.Join(root, "hooks.log")
++	body := "noise the parser must ignore\n" +
++		"stop-condition infrastructure hook-unreadable stop-worker 7 1789812060 degraded-allow\n" +
++		"stop-condition infrastructure hook-unreadable stop-worker 7 1789812060 retrying\n" +
++		"stop-condition infrastructure hook-unreadable stop-worker 8 1789812060 degraded-allow\n" +
++		"stop-condition infrastructure hook-unreadable stop-worker 7 1789812120 degraded-allow\n" +
++		"stop-condition seat-actionable owned-work verdict-state 7 1789812060 refused\n" +
++		"stop-condition infrastructure too-short\n"
++	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	if err := AppendAck(path, "0123456789abcdef", time.Unix(1789812070, 0)); err != nil {
++		t.Fatal(err)
++	}
++
++	incidents, acked, err := ReadHookLog(path)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(incidents) != 4 {
++		t.Fatalf("ReadHookLog incidents=%d, want 4: %+v", len(incidents), incidents)
++	}
++	if !acked["0123456789abcdef"] || len(acked) != 1 {
++		t.Fatalf("ReadHookLog acknowledgments=%v, want the appended identity", acked)
++	}
++	want := Incident{Class: "infrastructure", Cause: "hook-unreadable", Component: "stop-worker", Generation: "7", DeadlineEnd: 1789812060, Outcome: "degraded-allow", Source: SourceHookLog}
++	if incidents[0] != want {
++		t.Fatalf("first incident=%+v, want %+v", incidents[0], want)
++	}
++	if Identity(incidents[0]) != Identity(incidents[1]) {
++		t.Fatalf("outcome changed identity: %s != %s", Identity(incidents[0]), Identity(incidents[1]))
++	}
++	if Identity(incidents[0]) == Identity(incidents[2]) {
++		t.Fatal("another generation reused the incident identity")
++	}
++	if Identity(incidents[0]) == Identity(incidents[3]) {
++		t.Fatal("another deadline end reused the incident identity")
++	}
++}
+diff --git a/metasystem/internal/steward/stopincident.go b/metasystem/internal/steward/stopincident.go
+new file mode 100644
+index 000000000..ccf40436f
+--- /dev/null
++++ b/metasystem/internal/steward/stopincident.go
+@@ -0,0 +1,263 @@
++package steward
++
++import (
++	"bufio"
++	"fmt"
++	"os"
++	"path/filepath"
++	"sort"
++	"strconv"
++	"strings"
++	"time"
++
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopincident"
++)
++
++const maxStopIncidentsPerTick = 20
++
++// StopIncidentDrain reports the bounded work done while moving infrastructure
++// stop incidents toward the operator.
++type StopIncidentDrain struct {
++	Queued      int    `json:"queued"`
++	Pending     int    `json:"pending"`
++	Unconfirmed bool   `json:"unconfirmed"`
++	Detail      string `json:"detail,omitempty"`
++}
++
++type stopIncidentLedger struct {
++	exists    bool
++	start     int64
++	delivered map[string]bool
++}
++
++func stopIncidentLedgerPath(repoRoot string, day time.Time) string {
++	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "stop-incidents", day.UTC().Format("2006-01-02")+".log")
++}
++
++func stopIncidentHookLogPath(repoRoot string) string {
++	return filepath.Join(repoRoot, "artifacts", "agents", "supervision", "hooks.log")
++}
++
++func stopIncidentRefusalDir(repoRoot string) string {
++	return filepath.Join(repoRoot, "artifacts", "agents", "supervision", "stop-refusals")
++}
++
++func readStopIncidentLedger(path string) (stopIncidentLedger, error) {
++	ledger := stopIncidentLedger{delivered: map[string]bool{}}
++	file, err := os.Open(path)
++	if err != nil {
++		if os.IsNotExist(err) {
++			return ledger, nil
++		}
++		return ledger, err
++	}
++	defer file.Close()
++	ledger.exists = true
++	scanner := bufio.NewScanner(file)
++	for scanner.Scan() {
++		fields := strings.Fields(scanner.Text())
++		switch {
++		case len(fields) == 2 && fields[0] == "drain-start":
++			stamp, parseErr := strconv.ParseInt(fields[1], 10, 64)
++			if parseErr != nil || stamp <= 0 {
++				return ledger, fmt.Errorf("invalid drain-start line")
++			}
++			if ledger.start == 0 || stamp < ledger.start {
++				ledger.start = stamp
++			}
++		case len(fields) == 4 && fields[0] == "delivered":
++			if len(fields[1]) != 16 {
++				return ledger, fmt.Errorf("invalid delivered identity")
++			}
++			if _, parseErr := strconv.ParseInt(fields[2], 10, 64); parseErr != nil {
++				return ledger, fmt.Errorf("invalid delivered timestamp")
++			}
++			ledger.delivered[fields[1]] = true
++		default:
++			return ledger, fmt.Errorf("invalid stop-incident ledger line")
++		}
++	}
++	if err := scanner.Err(); err != nil {
++		return ledger, err
++	}
++	if ledger.start == 0 {
++		return ledger, fmt.Errorf("stop-incident ledger has no drain-start")
++	}
++	return ledger, nil
++}
++
++func appendStopIncidentLedgerLine(path, line string) error {
++	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
++		return err
++	}
++	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
++	if err != nil {
++		return err
++	}
++	if _, err := file.WriteString(line); err != nil {
++		_ = file.Close()
++		return err
++	}
++	return file.Close()
++}
++
++func ensureStopIncidentDayStarted(path string, now time.Time) error {
++	ledger, err := readStopIncidentLedger(path)
++	if err != nil {
++		return err
++	}
++	if ledger.exists {
++		return nil
++	}
++	return appendStopIncidentLedgerLine(path, fmt.Sprintf("drain-start %d\n", now.UTC().Unix()))
++}
++
++// DrainStopIncidents merges the current hook and refusal sources against the
++// two-day append-only ledger. A missing ledger establishes a history boundary
++// before any incident can be queued.
++func DrainStopIncidents(repoRoot string, now time.Time) StopIncidentDrain {
++	now = now.UTC()
++	todayPath := stopIncidentLedgerPath(repoRoot, now)
++	yesterdayPath := stopIncidentLedgerPath(repoRoot, now.AddDate(0, 0, -1))
++	today, todayErr := readStopIncidentLedger(todayPath)
++	yesterday, yesterdayErr := readStopIncidentLedger(yesterdayPath)
++	if todayErr != nil || yesterdayErr != nil {
++		return StopIncidentDrain{Unconfirmed: true, Detail: "stop-incident ledger unreadable: " + joinStopIncidentErrors(todayErr, yesterdayErr)}
++	}
++	if !today.exists {
++		if err := ensureStopIncidentDayStarted(todayPath, now); err != nil {
++			return StopIncidentDrain{Unconfirmed: true, Detail: "stop-incident ledger could not record drain-start: " + err.Error()}
++		}
++		today, todayErr = readStopIncidentLedger(todayPath)
++		if todayErr != nil {
++			return StopIncidentDrain{Unconfirmed: true, Detail: "stop-incident ledger unreadable after drain-start: " + todayErr.Error()}
++		}
++		if !yesterday.exists {
++			return StopIncidentDrain{}
++		}
++	}
++
++	historyStart := today.start
++	if yesterday.exists && (historyStart == 0 || yesterday.start < historyStart) {
++		historyStart = yesterday.start
++	}
++	delivered := map[string]bool{}
++	for identity := range yesterday.delivered {
++		delivered[identity] = true
++	}
++	for identity := range today.delivered {
++		delivered[identity] = true
++	}
++
++	hookIncidents, acked, hookErr := stopincident.ReadHookLog(stopIncidentHookLogPath(repoRoot))
++	refusalIncidents, refusalErr := stopincident.ReadRefusalRecords(stopIncidentRefusalDir(repoRoot))
++	if hookErr != nil && refusalErr != nil {
++		return StopIncidentDrain{Unconfirmed: true, Detail: "stop-incident sources unreadable: " + joinStopIncidentErrors(hookErr, refusalErr)}
++	}
++	merged := map[string]stopincident.Incident{}
++	for _, incident := range refusalIncidents {
++		if incident.DeadlineEnd >= historyStart {
++			merged[stopincident.Identity(incident)] = incident
++		}
++	}
++	for _, incident := range hookIncidents {
++		if incident.DeadlineEnd >= historyStart {
++			merged[stopincident.Identity(incident)] = incident
++		}
++	}
++
++	pendingNotifications, err := PendingNotifications(repoRoot)
++	if err != nil {
++		return StopIncidentDrain{Unconfirmed: true, Detail: "stop-incident queue unreadable: " + err.Error()}
++	}
++	pending := map[string]bool{}
++	for _, notification := range pendingNotifications {
++		if strings.HasPrefix(notification.Nonce, "stop-incident-") {
++			pending[strings.TrimPrefix(notification.Nonce, "stop-incident-")] = true
++		}
++	}
++
++	identities := make([]string, 0, len(merged))
++	for identity := range merged {
++		identities = append(identities, identity)
++	}
++	sort.Strings(identities)
++	result := StopIncidentDrain{Pending: len(pending)}
++	for _, identity := range identities {
++		if result.Queued >= maxStopIncidentsPerTick || delivered[identity] || pending[identity] {
++			continue
++		}
++		incident := merged[identity]
++		notification := PendingNotification{
++			Nonce:              "stop-incident-" + identity,
++			Message:            fmt.Sprintf("steward: Stop infrastructure incident — cause %s; component %s; deadline %d", incident.Cause, incident.Component, incident.DeadlineEnd),
++			StopIncidentSource: incident.Source,
++			StopIncidentDay:    now.Format("2006-01-02"),
++		}
++		if err := QueueNotification(repoRoot, notification); err != nil {
++			result.Unconfirmed = true
++			result.Detail = "stop-incident queue write failed: " + err.Error()
++			break
++		}
++		pending[identity] = true
++		result.Queued++
++		result.Pending++
++	}
++
++	if hookErr == nil {
++		repaired := 0
++		deliveredIdentities := make([]string, 0, len(delivered))
++		for identity := range delivered {
++			deliveredIdentities = append(deliveredIdentities, identity)
++		}
++		sort.Strings(deliveredIdentities)
++		for _, identity := range deliveredIdentities {
++			if repaired >= maxStopIncidentsPerTick || acked[identity] {
++				continue
++			}
++			if err := stopincident.AppendAck(stopIncidentHookLogPath(repoRoot), identity, now); err != nil {
++				break
++			}
++			repaired++
++		}
++	}
++	return result
++}
++
++func joinStopIncidentErrors(errors ...error) string {
++	parts := make([]string, 0, len(errors))
++	for _, err := range errors {
++		if err != nil {
++			parts = append(parts, err.Error())
++		}
++	}
++	return strings.Join(parts, "; ")
++}
++
++func appendStopIncidentDelivery(repoRoot string, notification PendingNotification) error {
++	identity := strings.TrimPrefix(notification.Nonce, "stop-incident-")
++	if identity == notification.Nonce || notification.StopIncidentDay == "" || notification.StopIncidentSource == "" {
++		return fmt.Errorf("pending stop incident has incomplete delivery coordinates")
++	}
++	day, err := time.Parse("2006-01-02", notification.StopIncidentDay)
++	if err != nil {
++		return fmt.Errorf("pending stop incident has invalid ledger day: %w", err)
++	}
++	path := stopIncidentLedgerPath(repoRoot, day)
++	ledger, err := readStopIncidentLedger(path)
++	if err != nil {
++		return fmt.Errorf("read stop-incident delivery ledger: %w", err)
++	}
++	if !ledger.exists {
++		return fmt.Errorf("stop-incident delivery ledger is missing")
++	}
++	if ledger.delivered[identity] {
++		return nil
++	}
++	deliveredAt, err := time.Parse(time.RFC3339Nano, notification.DeliveredAt)
++	if err != nil {
++		return fmt.Errorf("pending stop incident has invalid delivery stamp: %w", err)
++	}
++	line := fmt.Sprintf("delivered %s %d %s\n", identity, deliveredAt.UTC().Unix(), notification.StopIncidentSource)
++	return appendStopIncidentLedgerLine(path, line)
++}

@@ -1,0 +1,644 @@
+diff --git a/metasystem/cmd/metasystem/runtime_conformance_test.go b/metasystem/cmd/metasystem/runtime_conformance_test.go
+index ef8fb5c71..dc35ee125 100644
+--- a/metasystem/cmd/metasystem/runtime_conformance_test.go
++++ b/metasystem/cmd/metasystem/runtime_conformance_test.go
+@@ -1,17 +1,298 @@
+ package main
+ 
+ import (
++	"context"
++	"crypto/sha256"
++	"encoding/json"
++	"fmt"
++	"io"
+ 	"os"
++	"os/exec"
+ 	"path/filepath"
+ 	"strings"
+ 	"testing"
++	"time"
+ 
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/host"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+ 	usageseam "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
+ )
+ 
++const fakeStopReplayDeliveryUnconfirmed = "Delivery of this incident to the steward is unconfirmed: neither the hook log nor the refusal record could be written."
++
++func TestFakeStopReplay(t *testing.T) {
++	t.Parallel()
++
++	engine := filepath.Join(t.TempDir(), "metasystem")
++	build := exec.Command("go", "build", "-o", engine, ".")
++	if output, err := build.CombinedOutput(); err != nil {
++		t.Fatalf("build stop replay engine: %v\n%s", err, output)
++	}
++
++	t.Run("FakeReplayUnreadableHookState", func(t *testing.T) {
++		t.Parallel()
++		fixture := testutil.Fixture(t)
++		cases := []struct {
++			fault             string
++			wantLogFailure    bool
++			wantRecordFailure bool
++			wantUnconfirmed   bool
++			wantReplayCall    bool
++		}{
++			{fault: "none", wantReplayCall: true},
++			{fault: "hook-log", wantLogFailure: true, wantReplayCall: true},
++			{fault: "incident-state", wantRecordFailure: true, wantReplayCall: true},
++			{fault: "both", wantLogFailure: true, wantRecordFailure: true, wantUnconfirmed: true, wantReplayCall: true},
++			{fault: "engine"},
++			{fault: "engine", wantLogFailure: true},
++		}
++		for index, testCase := range cases {
++			root := installFakeStopReplayBed(t, engine)
++			if index == 5 {
++				if err := os.MkdirAll(filepath.Join(root, "artifacts", "agents", "supervision", "hooks.log"), 0o755); err != nil {
++					t.Fatal(err)
++				}
++			}
++			response := runFakeStopReplay(t, fixture, root, "arming", testCase.fault, fmt.Sprintf("arming-%d", index+1), false)
++			message := allowedStopMessage(t, response)
++			if testCase.fault == "engine" {
++				want := "Task unknown; Stop allowed; needs supervision repair; engine missing. Rebuild bin/metasystem. Status un" + "available."
++				if message != want {
++					t.Fatalf("run %d missing-engine message = %q; want %q", index+1, message, want)
++				}
++			} else {
++				report := resolveFakeStopReplayReport(t, root, fmt.Sprintf("arming-%d", index+1), response)
++				if strings.Contains(report, "could not be appended to the hook log") != testCase.wantLogFailure {
++					calls := readOptionalFixtureFile(t, filepath.Join(root, "artifacts", "agents", "fake-stop-replay", "replay-calls.log"))
++					t.Fatalf("run %d hook-log failure presence = %t in %q; calls=%q", index+1, !testCase.wantLogFailure, report, calls)
++				}
++				if strings.Contains(report, "stop-refusal record failure") != testCase.wantRecordFailure {
++					t.Fatalf("run %d record failure presence = %t in %q", index+1, !testCase.wantRecordFailure, report)
++				}
++				if strings.Contains(report, fakeStopReplayDeliveryUnconfirmed) != testCase.wantUnconfirmed {
++					t.Fatalf("run %d delivery-unconfirmed presence = %t in %q", index+1, !testCase.wantUnconfirmed, report)
++				}
++			}
++			if testCase.fault == "engine" && strings.Contains(message, fakeStopReplayDeliveryUnconfirmed) != testCase.wantUnconfirmed {
++				t.Fatalf("run %d delivery-unconfirmed presence = %t in %q", index+1, !testCase.wantUnconfirmed, message)
++			}
++			calls := readOptionalFixtureFile(t, filepath.Join(root, "artifacts", "agents", "fake-stop-replay", "replay-calls.log"))
++			if strings.Contains(calls, "report stop-block") != testCase.wantReplayCall {
++				t.Fatalf("run %d replay calls = %q", index+1, calls)
++			}
++			assertFakeStopReplayCalls(t, calls)
++		}
++		waitForFakeStopReplayChildren(t, fixture)
++	})
++
++	t.Run("FakeReplayDeadlineUnreadable", func(t *testing.T) {
++		t.Parallel()
++		fixture := testutil.Fixture(t)
++		for index, testCase := range []struct {
++			fault           string
++			wantRecord      bool
++			wantCondition   bool
++			wantUnconfirmed bool
++		}{
++			{fault: "none"},
++			{fault: "hook-log", wantCondition: true},
++			{fault: "incident-state", wantRecord: true},
++			{fault: "both", wantRecord: true, wantCondition: true, wantUnconfirmed: true},
++		} {
++			root := installFakeStopReplayBed(t, engine)
++			response := runFakeStopReplay(t, fixture, root, "deadline", testCase.fault, fmt.Sprintf("deadline-%d", index+1), false)
++			message := allowedStopMessage(t, response)
++			if strings.Contains(message, "record update failed") != testCase.wantRecord ||
++				strings.Contains(message, "condition log failed") != testCase.wantCondition ||
++				strings.Contains(message, "steward delivery unconfirmed") != testCase.wantUnconfirmed {
++				t.Fatalf("deadline run %d qualifiers do not match fault %s: %q", index+1, testCase.fault, message)
++			}
++			if testCase.fault != "hook-log" && testCase.fault != "both" {
++				log := readOptionalFixtureFile(t, filepath.Join(root, "artifacts", "agents", "supervision", "hooks.log"))
++				if !strings.Contains(log, "stop-condition infrastructure stop-deadline-expired stop-deadline - 1000000004 degraded-allow") {
++					t.Fatalf("deadline run %d did not use the fixture epoch: %q", index+1, log)
++				}
++			}
++			assertFakeStopReplayCalls(t, readOptionalFixtureFile(t, filepath.Join(root, "artifacts", "agents", "fake-stop-replay", "replay-calls.log")))
++		}
++
++		root := installFakeStopReplayBed(t, engine)
++		response := runFakeStopReplay(t, fixture, root, "deadline", "none", "deadline-seam-off", true)
++		_ = allowedStopMessage(t, response)
++		log := readOptionalFixtureFile(t, filepath.Join(root, "artifacts", "agents", "supervision", "hooks.log"))
++		if strings.Contains(log, "stop-condition infrastructure stop-deadline-expired stop-deadline - 1000000004 degraded-allow") {
++			t.Fatalf("deadline seam was honored without the fixture owner tag: %q", log)
++		}
++		waitForFakeStopReplayChildren(t, fixture)
++	})
++}
++
++func installFakeStopReplayBed(t *testing.T, engine string) string {
++	t.Helper()
++	root := t.TempDir()
++	sourceRoot, err := filepath.Abs(filepath.Join("..", ".."))
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, relative := range []string{
++		"scripts/receipt.sh",
++		"scripts/agents/supervision-hook.sh",
++		"scripts/agents/evidence-gc.sh",
++		"scripts/agents/arm-supervision.sh",
++		"scripts/agents/dispatch.sh",
++		"scripts/agents/adapters/fake.sh",
++		"scripts/agents/adapters/runtime-common.sh",
++		"scripts/enforcement/claude-code-hooks.json",
++		"scripts/watch-background-jobs.sh",
++		"scripts/metasystem-config.sh",
++	} {
++		copyFakeStopReplayFile(t, filepath.Join(sourceRoot, relative), filepath.Join(root, relative), 0o755)
++	}
++	canonical := filepath.Join(root, "bin", "metasystem")
++	copyFakeStopReplayFile(t, engine, canonical, 0o755)
++	if output, err := exec.Command("git", "-C", root, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
++		t.Fatalf("initialize stop replay bed: %v %s", err, output)
++	}
++	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\nrole.default.model.claude=fixture\n"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	canonicalRoot, err := filepath.EvalSymlinks(root)
++	if err != nil {
++		t.Fatal(err)
++	}
++	data, err := os.ReadFile(canonical)
++	if err != nil {
++		t.Fatal(err)
++	}
++	digest := sha256.Sum256(data)
++	if err := os.MkdirAll(filepath.Dir(steward.RepoIdentityPath(canonicalRoot)), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if err := steward.MintIdentity(steward.RepoIdentityPath(canonicalRoot), steward.InstallIdentity{
++		RepoIdentity: canonicalRoot, Generation: 1, InstallPath: canonical,
++		InstallDigest: fmt.Sprintf("sha256:%x", digest), MintedAt: time.Now().UTC().Format(time.RFC3339Nano),
++		Enrollment: steward.EnrollmentFixture,
++	}); err != nil {
++		t.Fatal(err)
++	}
++	return root
++}
++
++func copyFakeStopReplayFile(t *testing.T, source, target string, mode os.FileMode) {
++	t.Helper()
++	data, err := os.ReadFile(source)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(target, data, mode); err != nil {
++		t.Fatal(err)
++	}
++}
++
++func runFakeStopReplay(t *testing.T, fixture *testutil.ProcessFixture, root, cause, fault, label string, withoutOwner bool) string {
++	t.Helper()
++	action := filepath.Join(root, "scripts", "agents", "adapters", "fake.sh")
++	script := `exec "$1" stop-replay --root "$2" --session "$3" --cause "$4" --fault "$5"`
++	if withoutOwner {
++		script = `exec env -u METASYSTEM_FIXTURE_OWNER "$1" stop-replay --root "$2" --session "$3" --cause "$4" --fault "$5"`
++	}
++	command := fixture.Shell(script, action, root, label, cause, fault)
++	var stdout, stderr strings.Builder
++	command.Stdout, command.Stderr = &stdout, &stderr
++	if err := command.Start(); err != nil {
++		t.Fatalf("start %s: %v", label, err)
++	}
++	fixture.Record(command.Process.Pid)
++	if err := command.Wait(); err != nil {
++		t.Fatalf("%s: %v\nstdout=%s\nstderr=%s", label, err, stdout.String(), stderr.String())
++	}
++	if stderr.Len() != 0 {
++		t.Logf("%s hook diagnostics: %s", label, stderr.String())
++	}
++	return stdout.String()
++}
++
++func allowedStopMessage(t *testing.T, response string) string {
++	t.Helper()
++	decoder := json.NewDecoder(strings.NewReader(response))
++	var object map[string]any
++	if err := decoder.Decode(&object); err != nil {
++		t.Fatalf("response is not one JSON object: %v: %q", err, response)
++	}
++	var trailing any
++	if err := decoder.Decode(&trailing); err != io.EOF {
++		t.Fatalf("response contains trailing data: %v: %q", err, response)
++	}
++	if decision, present := object["decision"]; present {
++		t.Fatalf("response did not allow Stop: decision=%v response=%q", decision, response)
++	}
++	message, ok := object["systemMessage"].(string)
++	if !ok || message == "" {
++		t.Fatalf("response has no systemMessage: %q", response)
++	}
++	return message
++}
++
++func readOptionalFixtureFile(t *testing.T, path string) string {
++	t.Helper()
++	data, err := os.ReadFile(path)
++	if os.IsNotExist(err) {
++		return ""
++	}
++	if err != nil {
++		t.Fatal(err)
++	}
++	return string(data)
++}
++
++func assertFakeStopReplayCalls(t *testing.T, calls string) {
++	t.Helper()
++	allowed := map[string]bool{
++		"adapter stop-output": true, "health --hook-preview": true, "json get": true,
++		"json object": true, "json strip": true, "lease classify": true,
++		"lease hook-delegate": true, "lease require-holder": true, "path state-root": true, "proc find-ancestor": true,
++		"receipt check": true, "report stop-block": true, "report stop-input": true,
++		"report stop-present": true, "report turn-verdict": true, "runtime list": true,
++		"steward digest-pending": true, "steward hook-attempt": true, "steward hook-complete": true,
++		"steward hook-expire": true, "supervise watchdog-report": true, "up --metasystem-root": true,
++		"util sha256": true, "util slug": true, "util token-hex": true,
++	}
++	for _, call := range strings.Split(strings.TrimSpace(calls), "\n") {
++		if call != "" && !allowed[call] {
++			t.Fatalf("unexpected fake stop replay engine call %q in replay-calls.log:\n%s", call, calls)
++		}
++	}
++}
++
++func resolveFakeStopReplayReport(t *testing.T, root, session, response string) string {
++	t.Helper()
++	canonicalRoot, err := filepath.EvalSymlinks(root)
++	if err != nil {
++		t.Fatal(err)
++	}
++	resolved, err := stopreport.ResolveResponse(canonicalRoot, []byte(response), "claude", session)
++	if err != nil {
++		t.Fatalf("resolve %s Stop report: %v", session, err)
++	}
++	return string(resolved.Report)
++}
++
++func waitForFakeStopReplayChildren(t *testing.T, fixture *testutil.ProcessFixture) {
++	t.Helper()
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++	defer cancel()
++	if err := fixture.WaitForNoUnrecordedChildren(ctx); err != nil {
++		t.Fatal(err)
++	}
++}
++
+ // The registry's capability EXPECTATIONS and the owner tables'
+ // registered capabilities must agree both ways
+ // (expected-but-unregistered fails, registered-but-undeclared fails) —
+diff --git a/metasystem/internal/hooks/degraded_stop_forms_test.go b/metasystem/internal/hooks/degraded_stop_forms_test.go
+index 1a106c28e..83c6a08fc 100644
+--- a/metasystem/internal/hooks/degraded_stop_forms_test.go
++++ b/metasystem/internal/hooks/degraded_stop_forms_test.go
+@@ -110,8 +110,8 @@ func TestDegradedStopFormsMatchTheGoldenContract(t *testing.T) {
+ 		t.Fatalf("--list differs from the golden: exit %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+ 	}
+ 	rows := parseDegradedRows(t, golden)
+-	if len(rows) != 18 {
+-		t.Fatalf("golden has %d forms; want 18", len(rows))
++	if len(rows) != 26 {
++		t.Fatalf("golden has %d forms; want 26", len(rows))
+ 	}
+ 	for _, row := range rows {
+ 		var object map[string]any
+diff --git a/metasystem/internal/hooks/testdata/stop-degraded-forms.golden b/metasystem/internal/hooks/testdata/stop-degraded-forms.golden
+index 7df936795..51671630e 100644
+--- a/metasystem/internal/hooks/testdata/stop-degraded-forms.golden
++++ b/metasystem/internal/hooks/testdata/stop-degraded-forms.golden
+@@ -13,6 +13,14 @@ allowed	deadline-expired	no-resolved-checkout	{"systemMessage":"Task unknown; St
+ allowed	deadline-expired	record-update-failed,no-resolved-checkout	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; record update failed; no resolved checkout. The steward must restore supervision. Status unavailable."}
+ allowed	deadline-expired	condition-log-failed,no-resolved-checkout	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; condition log failed; no resolved checkout. The steward must restore supervision. Status unavailable."}
+ allowed	deadline-expired	record-update-failed,condition-log-failed,no-resolved-checkout	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; record update failed; condition log failed; no resolved checkout. The steward must restore supervision. Status unavailable."}
++allowed	deadline-expired	delivery-unconfirmed	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; steward delivery unconfirmed. The steward must restore supervision. Status unavailable."}
++allowed	deadline-expired	record-update-failed,delivery-unconfirmed	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; record update failed; steward delivery unconfirmed. The steward must restore supervision. Status unavailable."}
++allowed	deadline-expired	condition-log-failed,delivery-unconfirmed	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; condition log failed; steward delivery unconfirmed. The steward must restore supervision. Status unavailable."}
++allowed	deadline-expired	record-update-failed,condition-log-failed,delivery-unconfirmed	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; record update failed; condition log failed; steward delivery unconfirmed. The steward must restore supervision. Status unavailable."}
++allowed	deadline-expired	no-resolved-checkout,delivery-unconfirmed	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; no resolved checkout; steward delivery unconfirmed. The steward must restore supervision. Status unavailable."}
++allowed	deadline-expired	record-update-failed,no-resolved-checkout,delivery-unconfirmed	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; record update failed; no resolved checkout; steward delivery unconfirmed. The steward must restore supervision. Status unavailable."}
++allowed	deadline-expired	condition-log-failed,no-resolved-checkout,delivery-unconfirmed	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; condition log failed; no resolved checkout; steward delivery unconfirmed. The steward must restore supervision. Status unavailable."}
++allowed	deadline-expired	record-update-failed,condition-log-failed,no-resolved-checkout,delivery-unconfirmed	{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; stop deadline expired; record update failed; condition log failed; no resolved checkout; steward delivery unconfirmed. The steward must restore supervision. Status unavailable."}
+ allowed	bootstrap-failed		{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; hook-bootstrap-failed. The steward must restore supervision. Status unavailable."}
+ allowed	bare		{"systemMessage":"Task unknown; Stop allowed; needs supervision repair; Status unavailable."}
+ blocked	bare		{"decision":"block","reason":"Task unknown; Stop blocked; needs supervision repair; Status unavailable."}
+diff --git a/metasystem/scripts/agents/adapters/fake.sh b/metasystem/scripts/agents/adapters/fake.sh
+index 0d78741a2..bf3d9088d 100755
+--- a/metasystem/scripts/agents/adapters/fake.sh
++++ b/metasystem/scripts/agents/adapters/fake.sh
+@@ -19,6 +19,8 @@ Usage:
+   scripts/agents/adapters/fake.sh selftest
+   scripts/agents/adapters/fake.sh local-config-paths
+   scripts/agents/adapters/fake.sh wait-delivery --wait-id ID --nonce NONCE --deadline RFC3339-UTC --session SESSION-ID
++  scripts/agents/adapters/fake.sh stop-replay --root BED --session ID
++      --cause arming|deadline --fault none|hook-log|incident-state|both|engine
+ 
+ The simulator reads FAKE:<behavior> markers from the assembled prompt.
+ Supported behaviors include malformed-return, missing-session-id,
+@@ -379,10 +381,111 @@ probe() {
+     --profile "$profile" --age-days "$age_days" --handshake-sec "$handshake"
+ }
+ 
++stop_replay() {
++  local bed= session= cause= fault= action_dir seam_dir release_file wrapper engine
++  local hook_config command_line stop_command payload response
++  while (($#)); do
++    case "$1" in
++      --root) [[ $# -ge 2 ]] || { usage; return 2; }; bed=$2; shift 2 ;;
++      --session) [[ $# -ge 2 ]] || { usage; return 2; }; session=$2; shift 2 ;;
++      --cause) [[ $# -ge 2 ]] || { usage; return 2; }; cause=$2; shift 2 ;;
++      --fault) [[ $# -ge 2 ]] || { usage; return 2; }; fault=$2; shift 2 ;;
++      *) usage; return 2 ;;
++    esac
++  done
++  [[ "$bed" == /* && -d "$bed" && -n "$session" ]] || { usage; return 2; }
++  case "$cause" in arming|deadline) ;; *) usage; return 2 ;; esac
++  case "$fault" in none|hook-log|incident-state|both|engine) ;; *) usage; return 2 ;; esac
++
++  action_dir="$bed/artifacts/agents/fake-stop-replay"
++  seam_dir="$action_dir/deadline"
++  release_file="$action_dir/release"
++  wrapper="$action_dir/metasystem-wrapper"
++  engine="$bed/bin/metasystem"
++  mkdir -p "$seam_dir"
++  printf '%s\n' 1000000000 >"$seam_dir/started-epoch"
++  rm -f "$seam_dir/worker-blocked" "$release_file" "$action_dir/replay-calls.log"
++
++  case "$fault" in
++    hook-log)
++      mkdir -p "$bed/artifacts/agents/supervision/hooks.log"
++      ;;
++    incident-state)
++      mkdir -p "$bed/artifacts/agents/supervision"
++      printf '%s\n' 'refusal records unavailable' >"$bed/artifacts/agents/supervision/stop-refusals"
++      ;;
++    both)
++      mkdir -p "$bed/artifacts/agents/supervision/hooks.log"
++      printf '%s\n' 'refusal records unavailable' >"$bed/artifacts/agents/supervision/stop-refusals"
++      ;;
++  esac
++
++  if [[ "$fault" == engine ]]; then
++    wrapper="$action_dir/missing-metasystem"
++  else
++    cat >"$wrapper" <<'SH'
++#!/usr/bin/env bash
++set -euo pipefail
++printf '%s %s\n' "${1-}" "${2-}" >>"${METASYSTEM_FAKE_STOP_REPLAY_CALLS:?}"
++if [[ ${METASYSTEM_FAKE_STOP_REPLAY_CAUSE:?} == arming && ${1-} == up ]]; then
++  exit 64
++fi
++if [[ ${METASYSTEM_FAKE_STOP_REPLAY_CAUSE:?} == deadline &&
++      ${1-} == steward && ${2-} == hook-attempt &&
++      ! -e "${METASYSTEM_FAKE_STOP_REPLAY_SEAM:?}/worker-blocked" ]]; then
++  "${METASYSTEM_FAKE_STOP_REPLAY_ENGINE:?}" "$@"
++  : >"$METASYSTEM_FAKE_STOP_REPLAY_SEAM/worker-blocked"
++  hook_parent=$PPID
++  wait_started=$SECONDS
++  while [[ ! -e "${METASYSTEM_FAKE_STOP_REPLAY_RELEASE:?}" ]] &&
++      kill -0 "$hook_parent" 2>/dev/null && (( SECONDS - wait_started < 61 )); do
++    sleep 0.05
++  done
++  if [[ -e "$METASYSTEM_FAKE_STOP_REPLAY_RELEASE" ]] || ! kill -0 "$hook_parent" 2>/dev/null; then
++    exit 0
++  fi
++  echo "fake stop replay deadline wrapper exceeded its 61-second cap" >&2
++  exit 70
++fi
++exec "${METASYSTEM_FAKE_STOP_REPLAY_ENGINE:?}" "$@"
++SH
++    chmod +x "$wrapper"
++  fi
++
++  hook_config="$bed/scripts/enforcement/claude-code-hooks.json"
++  command_line=$(awk '
++    /"Stop"[[:space:]]*:/ { in_stop=1 }
++    in_stop && /"command"[[:space:]]*:/ { sub(/,[[:space:]]*$/, ""); print; exit }
++  ' "$hook_config")
++  [[ -n "$command_line" ]] || { echo "fake stop replay could not read the installed Stop command" >&2; return 1; }
++  stop_command=$("$engine" json get --value "{$command_line}" --field command --shell-safe) \
++    || { echo "fake stop replay could not decode the installed Stop command" >&2; return 1; }
++  payload=$(printf '{"session_id":"%s","cwd":"%s","hook_event_name":"Stop"}' "$session" "$bed")
++
++  trap ': >"$release_file"' RETURN
++  response=$(cd "$bed" && printf '%s\n' "$payload" |
++    METASYSTEM_BIN="$wrapper" \
++    METASYSTEM_DEADLINE_REAL_ENGINE="$engine" \
++    METASYSTEM_FAKE_STOP_REPLAY_ENGINE="$engine" \
++    METASYSTEM_FAKE_STOP_REPLAY_CAUSE="$cause" \
++    METASYSTEM_FAKE_STOP_REPLAY_CALLS="$action_dir/replay-calls.log" \
++    METASYSTEM_FAKE_STOP_REPLAY_SEAM="$seam_dir" \
++    METASYSTEM_FAKE_STOP_REPLAY_RELEASE="$release_file" \
++    METASYSTEM_STOP_DEADLINE_FIXTURE="$seam_dir" \
++    METASYSTEM_STOP_DEADLINE_BUDGET_SEC=4 \
++    METASYSTEM_DEADLINE_RELEASE_FILE="$release_file" \
++    sh -c "$stop_command")
++  : >"$release_file"
++  wait
++  trap - RETURN
++  printf '%s\n' "$response"
++}
++
+ command=${1:-}
+ [[ -n "$command" ]] || { usage; exit 2; }
+ shift
+ case "$command" in
++  stop-replay) stop_replay "$@" ;;
+   wait-delivery)
+     wait_id= nonce= deadline= session=
+     while (($#)); do
+diff --git a/metasystem/scripts/agents/stop-degraded-forms.sh b/metasystem/scripts/agents/stop-degraded-forms.sh
+index 065925711..1bfcf4bd6 100755
+--- a/metasystem/scripts/agents/stop-degraded-forms.sh
++++ b/metasystem/scripts/agents/stop-degraded-forms.sh
+@@ -35,7 +35,7 @@ declare -ar degraded_stop_cause_qualifiers=(
+   ''
+   ''
+   ''
+-  'record-update-failed,condition-log-failed,no-resolved-checkout'
++  'record-update-failed,condition-log-failed,no-resolved-checkout,delivery-unconfirmed'
+   ''
+   ''
+ )
+@@ -43,11 +43,13 @@ declare -ar degraded_stop_qualifier_keys=(
+   record-update-failed
+   condition-log-failed
+   no-resolved-checkout
++  delivery-unconfirmed
+ )
+ declare -ar degraded_stop_qualifier_texts=(
+   'record update failed'
+   'condition log failed'
+   'no resolved checkout'
++  'steward delivery unconfirmed'
+ )
+ 
+ # degraded_stop_form renders one fixed provider payload without consulting the
+@@ -55,7 +57,7 @@ declare -ar degraded_stop_qualifier_texts=(
+ degraded_stop_form() { # allowed|blocked cause-key [qualifier-key...]
+   local outcome=${1-} cause=${2-} cause_index=-1 index qualifier qualifier_index
+   local cause_text remedy admitted qualifiers= message outcome_word
+-  local requested=(false false false)
++  local requested=(false false false false)
+   (( $# >= 2 )) || return 2
+   shift 2
+   case "$outcome" in
+diff --git a/metasystem/scripts/agents/supervision-hook.sh b/metasystem/scripts/agents/supervision-hook.sh
+index b81208e8b..a11ce6fae 100755
+--- a/metasystem/scripts/agents/supervision-hook.sh
++++ b/metasystem/scripts/agents/supervision-hook.sh
+@@ -1145,7 +1145,7 @@ declare -ar degraded_stop_cause_qualifiers=(
+   ''
+   ''
+   ''
+-  'record-update-failed,condition-log-failed,no-resolved-checkout'
++  'record-update-failed,condition-log-failed,no-resolved-checkout,delivery-unconfirmed'
+   ''
+   ''
+ )
+@@ -1153,11 +1153,13 @@ declare -ar degraded_stop_qualifier_keys=(
+   record-update-failed
+   condition-log-failed
+   no-resolved-checkout
++  delivery-unconfirmed
+ )
+ declare -ar degraded_stop_qualifier_texts=(
+   'record update failed'
+   'condition log failed'
+   'no resolved checkout'
++  'steward delivery unconfirmed'
+ )
+ 
+ # degraded_stop_form renders one fixed provider payload without consulting the
+@@ -1165,7 +1167,7 @@ declare -ar degraded_stop_qualifier_texts=(
+ degraded_stop_form() { # allowed|blocked cause-key [qualifier-key...]
+   local outcome=${1-} cause=${2-} cause_index=-1 index qualifier qualifier_index
+   local cause_text remedy admitted qualifiers= message outcome_word
+-  local requested=(false false false)
++  local requested=(false false false false)
+   (( $# >= 2 )) || return 2
+   shift 2
+   case "$outcome" in
+@@ -1242,6 +1244,14 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]];
+   [[ "$deadline_budget_sec" =~ ^([4-9]|[1-5][0-9]|60)$ ]] || deadline_budget_sec=60
+   deadline_worker_sec=$((deadline_budget_sec - 3))
+   deadline_started_epoch=$(date -u +%s)
++  deadline_fixture=
++  if [[ -n "${METASYSTEM_FIXTURE_OWNER:-}" && -n "${METASYSTEM_STOP_DEADLINE_FIXTURE:-}" ]]; then
++    deadline_fixture=$METASYSTEM_STOP_DEADLINE_FIXTURE
++    deadline_fixture_started=$(command cat "$deadline_fixture/started-epoch" 2>/dev/null || true)
++    if [[ "$deadline_fixture_started" =~ ^[0-9]+$ ]]; then
++      deadline_started_epoch=$deadline_fixture_started
++    fi
++  fi
+   deadline_dir=
+   deadline_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
+     || deadline_dir=$(mktemp -d "/tmp/metasystem-stop-deadline.XXXXXX" 2>/dev/null) \
+@@ -1376,7 +1386,14 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]];
+   deadline_running() {
+     kill -0 "$deadline_worker" 2>/dev/null
+   }
+-  while deadline_running && (( SECONDS < deadline_expires )); do
++  deadline_waiting() {
++    if [[ -n "$deadline_fixture" ]]; then
++      [[ ! -e "$deadline_fixture/worker-blocked" ]]
++    else
++      (( SECONDS < deadline_expires ))
++    fi
++  }
++  while deadline_running && deadline_waiting; do
+     deadline_capture_engine_coordinates
+     sleep 0.05
+   done
+@@ -1588,6 +1605,9 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]];
+   [[ -z "$deadline_record_failure" ]] || deadline_form_qualifiers+=(record-update-failed)
+   [[ -z "$deadline_log_failure" ]] || deadline_form_qualifiers+=(condition-log-failed)
+   [[ -n "$deadline_repo" ]] || deadline_form_qualifiers+=(no-resolved-checkout)
++  if [[ -n "$deadline_record_failure" && -n "$deadline_log_failure" ]]; then
++    deadline_form_qualifiers+=(delivery-unconfirmed)
++  fi
+   if [[ -n "$deadline_record_failure" ]]; then
+     deadline_log_stop_outcome deadline-expired-record-failure-allow "$deadline_elapsed_sec"
+   else
+@@ -2187,7 +2207,7 @@ fallback_stop_payload() { # retained control
+ 
+ present_stop_payload() { # retained shouldBlock, optional judgment-free advisor mode
+   local retained_block=$1 advisor_mode=${2:-false}
+-  local input_file mapped_file failure_file notice_file attempt_token compose_rc present_rc map_rc
++  local input_file mapped_file failure_file notice_file attempt_token compose_rc present_rc map_rc presentation_diagnostics
+   local stop_input_args
+   stop_delivery_ready=false
+   if [[ "$advisor_mode" != true && ! -s "$verdict_file" ]]; then
+@@ -2204,6 +2224,10 @@ present_stop_payload() { # retained shouldBlock, optional judgment-free advisor
+   mapped_file=$stop_work_dir/provider-output.json
+   failure_file=$stop_work_dir/failures.txt
+   notice_file=$stop_work_dir/notices.txt
++  presentation_diagnostics=$supervision_dir/hooks.log
++  # Presentation must still deliver the provider response when the hook log
++  # is the failed incident channel being reported in that response.
++  [[ -z "$hook_log_failure" ]] || presentation_diagnostics=$stop_work_dir/presentation.stderr
+   printf '%s' "$stop_failure" >"$failure_file" || true
+   printf '%s' "${extras:-}" >"$notice_file" || true
+   stop_input_args=(report stop-input --root "$repo" --runtime "$runtime" --session "$session"
+@@ -2220,21 +2244,21 @@ present_stop_payload() { # retained shouldBlock, optional judgment-free advisor
+     --arming-file "$arming_capture" --arming-stderr-file "$arming_stderr" --arming-exit "$up_rc" \
+     --notice-file "$notice_file" --failure-file "$failure_file" --output-file "$input_file")
+   compose_rc=0
+-  "$ms" "${stop_input_args[@]}" 2>>"$supervision_dir/hooks.log" || compose_rc=$?
++  "$ms" "${stop_input_args[@]}" 2>>"$presentation_diagnostics" || compose_rc=$?
+   if (( compose_rc != 0 )); then
+     fallback_stop_payload "$retained_block"
+     return 0
+   fi
+   present_rc=0
+   "$ms" report stop-present --root "$repo" --input-file "$input_file" --output-file "$presentation_file" \
+-    2>>"$supervision_dir/hooks.log" || present_rc=$?
++    2>>"$presentation_diagnostics" || present_rc=$?
+   if (( present_rc != 0 )); then
+     fallback_stop_payload "$retained_block"
+     return 0
+   fi
+   map_rc=0
+   "$ms" adapter stop-output --runtime "$runtime" --input-file "$presentation_file" --output-file "$mapped_file" \
+-    2>>"$supervision_dir/hooks.log" || map_rc=$?
++    2>>"$presentation_diagnostics" || map_rc=$?
+   if (( map_rc != 0 )); then
+     fallback_stop_payload "$retained_block"
+     return 0
+@@ -2329,6 +2353,10 @@ Infrastructure condition, not a refusal (the steward owns repair): $cause"
+     record_failure_message="Metasystem stop-refusal record failure: the record could not be read or atomically updated. Stopping is allowed so record failure cannot recreate the refusal loop.
+ Cause: $cause
+ Remedy: $remedy"
++    if [[ -n "$hook_log_failure" ]]; then
++      record_failure_message="$record_failure_message
++Delivery of this incident to the steward is unconfirmed: neither the hook log nor the refusal record could be written."
++    fi
+     extras=$(printf '%s%s%s' "$extras" "${extras:+$'\n'}" "$record_failure_message")
+     if [[ "$verdict_should_block" == true ]]; then
+       blocking_message=$record_failure_message
+diff --git a/metasystem/testing.json b/metasystem/testing.json
+index d226ec70f..efe8555c9 100644
+--- a/metasystem/testing.json
++++ b/metasystem/testing.json
+@@ -47,7 +47,7 @@
+     {"id":"carry-landing-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/landing/**","metasystem/internal/goal/branch/**","metasystem/cmd/metasystem/channel_verbs.go","metasystem/cmd/metasystem/channel_verbs_test.go","metasystem/cmd/metasystem/goalsync_mutations.go","metasystem/cmd/metasystem/goalsync_mutations_test.go","metasystem/cmd/metasystem/landing_verbs.go","metasystem/cmd/metasystem/landing_verbs_test.go"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["carried-landing-landing"],"platforms":["any"],"targetMs":20000,"packages":["internal/landing","internal/landing/batch","cmd/metasystem"],"tests":["TestHCL33ExpiredReservationNotDebt","TestHCL37EvaluatorUnavailablePrecedesUnneeded","TestHCL51CarriedCounselorAppendBelongsToItsRow","TestHCL57CarriedMatchAndRedBattery","TestHCL58BaseJudgeFenceOwners","TestHCL58GenerationZeroNeedsFixtureAuthority","TestHCL12KindCarryRequiresWants","TestHCL54CarryByRejectsStoredActorPrefix","TestHCL55CarriedJudgeGrammar","TestHCL80TrailingWhitespaceWhyIsAdmitted","TestBatchBranchReaderCertifiesThreeBuildMember","TestBatchBranchReaderRefusesReaderRecord","TestBatchBranchMembersCheckEachGoalTransition","TestBatchBranchMemberRefusesMovedTrunk","TestBatchBranchAllowsOnlyOneMemberPerGoal","TestObserveAttestedBranchDeclarationEnforcesBoundary","TestAttestedBoundaryValidatesTheClosureBundle"]},
+     {"id":"carry-plumbing-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/dispatch/**","metasystem/internal/config/**","metasystem/internal/testpolicy/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["carried-landing-plumbing"],"platforms":["any"],"targetMs":10000,"packages":["internal/dispatch","internal/config","internal/testpolicy"],"tests":["TestHCL09BadFormRefused","TestHCL09ReviewReferenceAdmits","TestHCL09TwoChainsUnite","TestHCL08CapKeyDefaultOne","TestHCL08CapLocalRefused","TestHCL31ContractOwnsFivePackages","TestHCL34PlanExecutesEveryFixture"]},
+     {"id":"goal-decision-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/cmd/metasystem/goal_branch.go","metasystem/cmd/metasystem/goal_branch_test.go","metasystem/cmd/metasystem/main.go","metasystem/cmd/metasystem/goalsync_mutations.go","metasystem/cmd/metasystem/goalsync_mutations_test.go","metasystem/internal/dispatch/**","metasystem/internal/readsubject/**","metasystem/cmd/metasystem/goal_list.go","metasystem/cmd/metasystem/goal_list_test.go",".gitattributes","metasystem/internal/testpolicy/contractgit/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["budget-stop-authority"],"platforms":["any"],"targetMs":30000,"packages":["internal/goal","internal/goal/branch","cmd/metasystem"],"tests":["TestGoalDoneWithoutLocalBranchSkipsUnreadableRemote","TestGoalDoneWithLocalBranchStillSweepsUnreadableRemote","TestBudgetTupleIsCompletePositiveAndCanonical","TestElapsedBreachDurationAppliesGraceAtTheStopBoundary","TestBudgetValidationNamesEveryInvalidLimit","TestStoredBudgetRequiresCompleteNumericLimits","TestHandedOverClaimGuards","TestHandedOverClaimRoundTripsWithoutChangingExistingClaims","TestHandedOverClaimsDoNotConsumeLandingSlots","TestHandedOverClaimsUseOneDerivedLandingPair","TestHandedOverRecordRequiresEveryCoordinate","TestGoalHandoverAppliesCompleteFieldTable","TestHandedOverClaimReleaseClearsRecord","TestHandedOverClaimConclusionClearsRecord","TestUnitDigestIgnoresDiffConfiguration","TestValidateRangeRefusals","TestValidateRangeCleanRangePasses","TestGoalBranchCheckPrintsKinds","TestGoalHandBackClearsHandedOverAndValidates","TestGoalHandBackRefusals","TestGoalHandoverTargetLiveness","TestGoalBranchCheckFetchesCurrentOriginTip","TestGoalBranchGitKeepsStderrOutOfObjectIDs","TestValidateRangeAllowsBranchBehindEndpoint","TestCommitCreatesBranchAndAmendsUnit","TestCommitRefusesNonHolder","TestCommitRefusesWithoutPushProtocol","TestCommitHasSingleAmendDecision","TestCommitRefusalsPreserveCheckout","TestAmendKeepsUnstagedTrackedEdits","TestAmendRefusesBeforeOverwritingUnstagedTrackedEdit","TestAmendInstallFailureRestoresCheckout","TestAmendRechecksClaimBeforeBranchUpdate","TestPushPublishesAmendAndSecondCloneAdopts","TestPushReconcilesUnknownOutcomeAndPreparedTransaction","TestPushAndCommitAdoptDescendantRemoteAfterLandedCrash","TestPushLeaseAndClaimMovementRefuseWithoutRetry","TestPushUnknownNotLandedDoesNotWedgeLaterAmend","TestPushAdoptsRemoteAdvanceAndCommitUsesIt","TestPushAndCommitRefuseDivergedRemote","TestPushAdoptionValidatesRangeAndCleansFetchRef","TestAttestationReaderRecordIntegrity","TestAttestationRequiresFastGateAndNamesChangedTests","TestAttestationCriticRootSourceValidates","TestAttestationCarryPreservesUnitAndFoldBytes","TestAttestationCarryRefusesChangedUnitOrFold","TestAttestationCarryChecksEveryEarlierFold","TestReadRefusalsPreserveCheckout","TestReadAdoptionRefusalsLeaveCheckoutUntouched","TestReadAdoptionKeepsUntrackedScratchFile","TestGoalBranchClaimRequiresMachineAndLineage","TestGoalBranchCommitAndPushUseEndpointRemote","TestGoalBranchHelpNamesPush","TestGoalBranchStatusReportsAbsentOrigin","TestGoalBranchTestingContractIncludesReadDependencies","TestGoalBranchLandPrepRoutesLocalRedCandidate","TestStatusLandReadyPrefixAndParkSafety","TestParkRecordsPushedBranchSummary","TestParkCommandEdgeSkipsUnreadableRemoteOnlyWithoutLocalBranch","TestParkCommandEdgeChecksEndpointOnlyForLocalBranch","TestTransportMirrorAndLeasedDelete","TestGoalLandingPreparationSeries","TestGoalLandingPreimageRetryAndCanaryFence","TestGoalLandingRetryIdentitySurvivesASecondClone","TestGoalLandingLastRefusesUnitBeyondPrefix","TestLandingRedLoopClassificationAndBudget","TestValidateRangeAcceptsBuildListsAndRejectsDuplicateUnitAcrossBuilds","TestAmendDropsReadOfReplacedBuildAndReplaysLaterPlan","TestGoalBranchPushUsesLedgerFailureClassification","TestPushAdoptionCrashCannotStageAReversal","TestPushAdoptionKeepsUntrackedScratchFile","TestCommitAdoptsRemoteWithoutEndpointCheckout","TestGoalBranchCommitIsTheGuardedCommitWrapper","TestFailedCommitLeavesCheckoutAndRefsUnchanged","TestGoalBranchCommitAcceptsBuildUnitList","TestGoalLandingPublicationAndVerification","TestGoalBranchSweepRules","TestOpenClaimDoneLifecycle","TestLastArcGoalConclusionRaisesRetroDebtWhenSweepFails","TestGoalBranchSweepListsParkedDoneAbandonedAndOrphan","TestStatusAndReadBindWholeBuildList","TestAmendReplacesWholeBuildList","TestGoalLandingKeepsBuildUnitList","TestGoalBranchLastLandingSweepsGoalBranch","TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag","TestEmptyReadItemListPreservesRecordBytesAndDigest","TestReadItemsRoundTripBesideNextStep","TestReadItemsAddIsIdempotent","TestReadItemIDsStayStableAcrossAddCalls","TestReadItemsCloseNeedsExactlyOneWay","TestReadItemsFixedRefusesUnknownCommit","TestReadItemsMoveIsAtomicAndRefusesDoneTarget","TestReadItemsAcceptedRefusesBlankReason","TestReadItemsCloseRefusesClosedItem","TestDoneRefusesOpenReadItemIDsAndPassesWhenClosed","TestRetroReadItemsListsOpenAndFlagsConcludedDefect","TestGoalShowAndNextPrintOpenReadItemFixUnit","TestGoalReadItemsListJSONShape","TestReadItemsFileSkipsBlanksAndComments","TestGoalBranchGitRunnersSupplyTestingMergeDriver","TestBranchLandingSyncMergesTestingContractBySurface","TestEveryTerminalGoalTransitionRefusesOpenReadItems","TestDoneReadItemRefusalRemedyExecutes","TestCadenceClaimDeduplicatesTreeAcrossMachines","TestCadenceRedPublishesOwnerlessUntilHumanNamesGoal","TestCadenceStateAbsentLeavesLedgerBytesUnchanged","TestCadenceDeadClaimIsRecoverableAfterLease","TestGoalBranchVerbsRunFromTheHoldersLinkedWorktree","TestGoalBranchCommitRefusesToMoveAnArmedCheckout","TestClaimQuotaRefusalNamesTheHeldGoalAndRelease","TestGoalBranchHolderResolutionPreservesInstallationSubdirectory","TestTrunkRedBatchGuardsExcludeCadenceRecords","TestGoalBranchReadRunsGateDispatchesAndCollectsClosedCritic","TestGoalBranchReadRedGateAndUncleanClosureDispatchNothingFurther","TestLandingMessageAcceptsAttestedBranchProvenance","TestGoalBranchReadDelegateUsesBinarySeamAndReturnsWithoutWaiting","TestCommitReadRefusesUnrecordedFastGateRun","TestAdoptRemoteTipRestoresHeadWhenTheRefUpdateFails","TestBindLandedUnitRefusesOmittedFold","TestCriticAttestationSurvivesFreshCloneWithoutJobStore","TestRecoveryRefusesParkWhenGoalBranchIsUnpushed","TestRecoveryCompletesParkWhenGoalBranchIsPushed","TestParkFailsClosedWithoutBranchChecker","TestRestampVerbRefusesTheByFlag","TestReadInstallRefusalLeavesNothingStaged","TestReadCommitKeepsDirtyLedgerWithoutAdoption","TestAmendInstallFailureRollsBackMovedCheckout","TestAmendDroppingReadStillChecksReplayedTree","TestPlainCommitKeepsDirtyLedgerWithoutAdoption","TestAdoptionUntrackedCollisionRefusesStale","TestGoalLandingCommitDatesComeFromReceiptStamp","TestLandThroughIgnoresStopFenceReason","TestGoalLandingRefusesFoldWithStalePreimage","TestMirrorDeleteReconcilesUnknownOutcome","TestLandPushRerunAfterPublishedCrashReportsLanded","TestLandPushRechecksClaimBeforePush","TestParkRefusalDoesNotClaimOriginState","TestSweepRefusesDirtyGoalWorktree","TestSweepRefusesTransportTipWithUnlandedCommit","TestSweepCleansLeftoversWhenOriginBranchIsGone","TestSweepRequiresExactConcludedDroppedDeclaration","TestParkKeepsNextStepNarrativeAndAddsBranchSummary","TestSyncRequestPublishesEpochAuthorityForTheHolderOnly","TestHolderSetBudgetRebindsEpochForProofAdmission","TestBudgetEpisodeRevisionTransitions","TestApprovalEpisodeRevisionGrammar","TestBudgetEpisodeRevisionLegacyMinimum","TestLegacyApprovalWithReadItemsRoundTripsByteIdentical","TestHistoryLineResumedField","TestRecoveryRefusesJournaledSetBudgetAuthority","TestSetBudgetLiftsCompletedFenceInOneTransaction","TestSetBudgetFencedSameTupleRefusesWithoutMutation","TestSetBudgetFencedIncompleteBatchNamesRemedy","TestSetBudgetFencedOtherClaimNamesConflict","TestRebindEpochFollowsTheAuthenticatedHolderOnly","TestSweepRefusesUnlandedLocalTip","TestSweepRefusalPreservesRefsAndWorktree","TestSweepRefusalNamesEveryUnlandedCommit","TestSweepKeepsLocalRefMovedAfterCheck","TestSweepLocalTipExemptions","TestSweepAbandonedStillValidatesRemoteRange","TestWithLockDeadlineUsesInjectedClock","TestPublishRetryDeadlineUsesInjectedClock"]},
+-    {"id":"wait-stop-standard","kind":"integration","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/internal/adapter/**","metasystem/internal/run/**","metasystem/internal/proofrun/**","metasystem/cmd/metasystem/wait_verb.go","metasystem/cmd/metasystem/wait_verb_test.go","metasystem/scripts/agents/adapters/**","metasystem/scripts/agents/supervision-fixtures.sh","metasystem/docs/design/turn-verdict-delivery-contract.md","metasystem/internal/report/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]},{"id":"bash","executable":"bash","versionArgs":["--version"]},{"id":"git","executable":"git","versionArgs":["--version"]}],"obligations":["budget-stop-authority","runtime-custody"],"platforms":["any"],"targetMs":60000,"packages":["internal/goal","internal/adapter","cmd/metasystem","internal/report"],"tests":["TestPendingWaitTurnVerdict","TestPendingWaitIdleBacklog","TestWaitDeliveryContract","TestPendingWaitInstalledVerdicts","TestWaitPathSelectorIsValidated","TestNextStepNamesAPendingHumanWord","TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord","TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord","TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation","TestMapStopOutputWritesTheResponseRecord","TestMapStopOutputAcceptsChangedWording","TestStopLineIsRenderedFromTheReportReference","TestPruneRemovesTheResponseRecordWithItsReport","TestReportStopResponseResolvesUnderChangedWording","TestReportStopResponseRefusesAnUnreadableResponse","TestBedsResolveStopReportsThroughTheEngine","TestToolGateAllowlist","TestToolGateNeverDeniesLandingWaitOrAgent","TestToolGateAllowEmitsNothing","TestToolGateCeilingColumnEqualsTrigger","TestToolGateMemoryNoteRule","TestWaitRegisterLocalRecordsTheTrackedProcess","TestWaitRegisterHumanNeedsAQuestionAndADeadline","TestRegisteredLocalAndHumanWaitsInstalledVerdicts","TestLocalWaitAllowsTheStopWhileItsProcessLives","TestLocalWaitOfADeadProcessDoesNotAllowTheStop","TestHumanWaitAllowsTheStopUntilItsDeadline","TestLocalWaitCoversTheJobItNames","TestToolGateDeadlineCountsFromTheShellBirth","TestToolGateFallsBackToEntryWhenBirthUnreadable","TestToolGateClassifiesBeforeReading","TestToolGateReadOptionsAreNonBlocking","TestToolGateAllowsNativeSubagentCalls","TestToolGateSubagentCallsWriteNoRow","TestToolGateAllowsPastItsDeadline","TestToolGateNoDecisionWhenTheCallStoreIsBusy","TestToolGateLeavesTheCursor","TestToolGateWritesDecisionRows","TestToolGateObserveModeAllowsAndRecordsTheDenyDecision","TestToolGateDenyModeDenies","TestClaudeJobSettingsInstallNoToolGate","TestWaitingLinesUseWaitEndForLiveLocalWait","TestWaitingLinesUseWaitEndForPendingHumanWait"],"race":false,"coverage":false},
++    {"id":"wait-stop-standard","kind":"integration","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/internal/adapter/**","metasystem/internal/run/**","metasystem/internal/proofrun/**","metasystem/cmd/metasystem/wait_verb.go","metasystem/cmd/metasystem/wait_verb_test.go","metasystem/scripts/agents/adapters/**","metasystem/scripts/agents/supervision-fixtures.sh","metasystem/scripts/agents/supervision-hook.sh","metasystem/scripts/agents/stop-degraded-forms.sh","metasystem/scripts/enforcement/claude-code-hooks.json","metasystem/docs/design/turn-verdict-delivery-contract.md","metasystem/internal/report/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]},{"id":"bash","executable":"bash","versionArgs":["--version"]},{"id":"git","executable":"git","versionArgs":["--version"]}],"obligations":["budget-stop-authority","runtime-custody"],"platforms":["any"],"targetMs":60000,"packages":["internal/goal","internal/adapter","cmd/metasystem","internal/report"],"tests":["TestPendingWaitTurnVerdict","TestPendingWaitIdleBacklog","TestWaitDeliveryContract","TestPendingWaitInstalledVerdicts","TestWaitPathSelectorIsValidated","TestNextStepNamesAPendingHumanWord","TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord","TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord","TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation","TestMapStopOutputWritesTheResponseRecord","TestMapStopOutputAcceptsChangedWording","TestStopLineIsRenderedFromTheReportReference","TestPruneRemovesTheResponseRecordWithItsReport","TestReportStopResponseResolvesUnderChangedWording","TestReportStopResponseRefusesAnUnreadableResponse","TestBedsResolveStopReportsThroughTheEngine","TestToolGateAllowlist","TestToolGateNeverDeniesLandingWaitOrAgent","TestToolGateAllowEmitsNothing","TestToolGateCeilingColumnEqualsTrigger","TestToolGateMemoryNoteRule","TestWaitRegisterLocalRecordsTheTrackedProcess","TestWaitRegisterHumanNeedsAQuestionAndADeadline","TestRegisteredLocalAndHumanWaitsInstalledVerdicts","TestLocalWaitAllowsTheStopWhileItsProcessLives","TestLocalWaitOfADeadProcessDoesNotAllowTheStop","TestHumanWaitAllowsTheStopUntilItsDeadline","TestLocalWaitCoversTheJobItNames","TestToolGateDeadlineCountsFromTheShellBirth","TestToolGateFallsBackToEntryWhenBirthUnreadable","TestToolGateClassifiesBeforeReading","TestToolGateReadOptionsAreNonBlocking","TestToolGateAllowsNativeSubagentCalls","TestToolGateSubagentCallsWriteNoRow","TestToolGateAllowsPastItsDeadline","TestToolGateNoDecisionWhenTheCallStoreIsBusy","TestToolGateLeavesTheCursor","TestToolGateWritesDecisionRows","TestToolGateObserveModeAllowsAndRecordsTheDenyDecision","TestToolGateDenyModeDenies","TestClaudeJobSettingsInstallNoToolGate","TestWaitingLinesUseWaitEndForLiveLocalWait","TestWaitingLinesUseWaitEndForPendingHumanWait","TestFakeStopReplay"],"race":false,"coverage":false},
+     {"id":"obligationstate-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/obligationstate/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["budget-stop-authority"],"platforms":["any"],"targetMs":5000,"packages":["internal/obligationstate"],"tests":"all"},
+     {"id":"mission-decision-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/missionrunner/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["budget-stop-authority"],"platforms":["any"],"targetMs":6000,"packages":["internal/missionrunner"],"tests":["TestProjectFences","TestProjectFencesRefusesBadReservations","TestConcludeTurnStatusDecision","TestAcquireLeaseLifecycle","TestVerifyStateShapeRefusals","TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost","TestStopLiveRunnerSignalsOwnedGroup"]},
+     {"id":"goal-full-coverage","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/scripts/agents/coverage-ratchet.json","metasystem/scripts/agents/coverage-ratchet-linux.json"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["goal-package-coverage"],"platforms":["any"],"targetMs":1800000,"packages":["internal/goal"],"tests":"all","coverage":true,"shards":4},

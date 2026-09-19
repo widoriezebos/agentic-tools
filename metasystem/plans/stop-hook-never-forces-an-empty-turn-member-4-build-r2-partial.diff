@@ -1,0 +1,1417 @@
+diff --git a/metasystem/cmd/metasystem/goal.go b/metasystem/cmd/metasystem/goal.go
+index 4c7df468e..847c34ee6 100644
+--- a/metasystem/cmd/metasystem/goal.go
++++ b/metasystem/cmd/metasystem/goal.go
+@@ -767,13 +767,7 @@ func runReportTurnVerdict(args []string) int {
+ 	if rootErr != nil {
+ 		options.SeatActorProblem = "the seat state root could not be resolved: " + rootErr.Error()
+ 	} else {
+-		options.HandoffRecorded = func(session string) (string, bool, error) {
+-			return steward.LiveHandoffForSession(stateRoot, session)
+-		}
+-		store.PrepareIdleContinuation = prepareSeatIdleContinuation(stateRoot)
+-		store.RecordIdleIncident = recordSeatIdleIncident(stateRoot, now)
+-		store.RaiseIdleAlarm = raiseSeatIdleAlarm(stateRoot)
+-		store.ResolveIdleSeat = resolveSeatIdleActor(stateRoot, *mainId)
++		wireTurnVerdictSeat(stateRoot, *mainId, now, store, &options)
+ 	}
+ 	verdict, err := store.TurnVerdict(scan, *session, *watchdog, *mainId, options)
+ 	if err != nil {
+@@ -830,6 +824,24 @@ func runReportTurnVerdict(args []string) int {
+ 	return 0
+ }
+ 
++func wireTurnVerdictSeat(stateRoot, mainID string, now time.Time, store *goal.Store, options *goal.TurnVerdictOptions) {
++	options.HandoffRecorded = func(session string) (string, bool, error) {
++		return steward.LiveHandoffForSession(stateRoot, session)
++	}
++	store.PrepareIdleContinuation = prepareSeatIdleContinuation(stateRoot)
++	store.RecordIdleIncident = recordSeatIdleIncident(stateRoot, now)
++	store.RaiseIdleAlarm = raiseSeatIdleAlarm(stateRoot)
++	store.ResolveIdleSeat = resolveSeatIdleActor(stateRoot, mainID)
++	options.RecheckBoard = func() (string, int64, error) {
++		tip, err := goal.AcceptedTip(stateRoot)
++		if err != nil {
++			return "", 0, err
++		}
++		_, epoch, err := resolveSeatIdleActor(stateRoot, mainID)()
++		return tip, epoch, err
++	}
++}
++
+ func turnVerdictContextLine(root, stateRoot, runtimeName, session, transcript string, now time.Time, rootErr error) string {
+ 	const contextPrefix = "CONTEXT: "
+ 	unknown := func(reason string) string {
+diff --git a/metasystem/cmd/metasystem/goal_test.go b/metasystem/cmd/metasystem/goal_test.go
+index d00a73d13..684ddb8b9 100644
+--- a/metasystem/cmd/metasystem/goal_test.go
++++ b/metasystem/cmd/metasystem/goal_test.go
+@@ -12,6 +12,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+ )
+ 
+@@ -65,6 +66,53 @@ func TestStopVerdictWaitingLinesFromGateOnly(t *testing.T) {
+ 	}
+ }
+ 
++func TestTurnVerdictSeatWiringRechecksTheBoard(t *testing.T) {
++	t.Parallel()
++	root := t.TempDir()
++	for _, args := range [][]string{
++		{"init", "-q", "-b", "main"},
++		{"config", "user.name", "turn-verdict-fixture"},
++		{"config", "user.email", "turn-verdict-fixture@example.invalid"},
++		{"config", "metasystem.goal.machine", "fixture-machine"},
++	} {
++		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
++			t.Fatalf("git %v: %v %s", args, err, output)
++		}
++	}
++	if err := os.WriteFile(filepath.Join(root, "accepted.txt"), []byte("accepted\n"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	for _, args := range [][]string{{"add", "accepted.txt"}, {"commit", "-q", "-m", "accepted fixture"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
++		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
++			t.Fatalf("git %v: %v %s", args, err, output)
++		}
++	}
++	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
++	if err != nil || state != identity.Alive {
++		t.Fatalf("current process identity=%+v state=%s err=%v", exact, state, err)
++	}
++	announcement, err := lease.AnnounceWithPair(root, "turn-verdict-fixture", exact.Pid, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "turn-verdict-fixture", "fake", "fixture-lineage")
++	if err != nil {
++		t.Fatal(err)
++	}
++	mainID := announcedMainID(t, announcement)
++	store := &goal.Store{Root: root}
++	options := goal.TurnVerdictOptions{}
++	wireTurnVerdictSeat(root, mainID, time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC), store, &options)
++	if options.RecheckBoard == nil {
++		t.Fatal("turn verdict seat wiring did not set RecheckBoard")
++	}
++	wantTip, wantTipErr := goal.AcceptedTip(root)
++	_, wantEpoch, wantEpochErr := resolveSeatIdleActor(root, mainID)()
++	gotTip, gotEpoch, gotErr := options.RecheckBoard()
++	if wantTipErr != nil || wantEpochErr != nil {
++		t.Fatalf("fixture board state: accepted tip error=%v seat error=%v", wantTipErr, wantEpochErr)
++	}
++	if gotErr != nil || gotTip != wantTip || gotEpoch != wantEpoch {
++		t.Fatalf("RecheckBoard() = (%q, %d, %v), want (%q, %d, nil)", gotTip, gotEpoch, gotErr, wantTip, wantEpoch)
++	}
++}
++
+ // The command-layer genesis boundary: goalCaller classifies against the
+ // ONE root it is writing (never a caller-named second root — a root
+ // the caller chooses is an authority-laundering hole) and applies the
+diff --git a/metasystem/internal/goal/project.go b/metasystem/internal/goal/project.go
+index 4b20a501c..13050ce3f 100644
+--- a/metasystem/internal/goal/project.go
++++ b/metasystem/internal/goal/project.go
+@@ -15,11 +15,13 @@ import (
+ 	"os"
+ 	"path/filepath"
+ 	"sort"
++	"strconv"
+ 	"strings"
+ 	"time"
+ 
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
++	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+ )
+ 
+ // Projection is one read of the accepted world.
+@@ -221,6 +223,7 @@ func captureRemoteTipWithinDeadline(e Endpoint, nonce string, processTimeout tim
+ // record has not reached a terminal status, independent of whether its process
+ // is live.
+ type ClaimableBudgetedWork struct {
++	Board           *StopBoard
+ 	Claimed         []string
+ 	Landing         []string
+ 	Claimable       []string
+@@ -255,12 +258,7 @@ func (w ClaimableBudgetedWork) HasInFlight() bool { return len(w.InFlight) > 0 }
+ // only a non-terminal delegate job proves that separate work is still being
+ // carried while claimable backlog waits.
+ func (w ClaimableBudgetedWork) HasDelegateJobInFlight() bool {
+-	for _, activity := range w.InFlight {
+-		if strings.HasPrefix(activity, "job:") {
+-			return true
+-		}
+-	}
+-	return false
++	return w.Board != nil && w.Board.HasJoinedWork()
+ }
+ 
+ // ResolveStateRoot maps a containing template checkout to the metasystem
+@@ -326,10 +324,10 @@ func acceptedGoalWorld(root string) (bool, error) {
+ // ReadClaimableBudgetedWork performs the fresh canonical read and the one
+ // process-liveness join used by every runtime-independent owner.
+ func ReadClaimableBudgetedWork(root string, now time.Time) (ClaimableBudgetedWork, error) {
+-	return readClaimableBudgetedWork(root, now, identity.KernelProber{}, projectionDependencies{})
++	return readClaimableBudgetedWork(root, now, BoardOwner{}, identity.KernelProber{}, projectionDependencies{})
+ }
+ 
+-func readClaimableBudgetedWork(root string, now time.Time, prober identity.Prober, dependencies projectionDependencies) (ClaimableBudgetedWork, error) {
++func readClaimableBudgetedWork(root string, now time.Time, owner BoardOwner, prober identity.Prober, dependencies projectionDependencies) (ClaimableBudgetedWork, error) {
+ 	resolved, err := ResolveStateRoot(root)
+ 	if err != nil {
+ 		return ClaimableBudgetedWork{}, err
+@@ -395,10 +393,12 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
+ 	}
+ 	work.Queued = len(frontier.Awaiting)
+ 	work.Claimable = append(work.Claimable, frontier.Ready...)
+-	work.InFlight, work.NonTerminalJobs, err = readLiveBacklogActivity(root, claimLineages, false, prober)
++	live, err := readLiveBacklogActivity(root, claimLineages, false, prober)
+ 	if err != nil {
+ 		return ClaimableBudgetedWork{}, err
+ 	}
++	work.InFlight, work.NonTerminalJobs = live.InFlight, live.NonTerminalJobs
++	work.Board = newStopBoard(projection, frontier, owner, live.Activity, now)
+ 	return work, nil
+ }
+ 
+@@ -424,10 +424,11 @@ func readLegacyClaimableWork(root string, prober identity.Prober) (ClaimableBudg
+ 		work.Claimed = append(work.Claimed, ledger.Current.Id)
+ 		work.GoalFacts[ledger.Current.Id] = GoalFacts{Id: ledger.Current.Id, Intent: ledger.Current.Intent, NextStep: ledger.Current.NextStep, Revision: ledger.Revision()}
+ 	}
+-	work.InFlight, work.NonTerminalJobs, err = readLiveBacklogActivity(root, nil, legacyClaim, prober)
++	live, err := readLiveBacklogActivity(root, nil, legacyClaim, prober)
+ 	if err != nil {
+ 		return ClaimableBudgetedWork{}, err
+ 	}
++	work.InFlight, work.NonTerminalJobs = live.InFlight, live.NonTerminalJobs
+ 	return work, nil
+ }
+ 
+@@ -451,9 +452,12 @@ func recordedProcessAlive(prober identity.Prober, ref activityProcessRef) bool {
+ }
+ 
+ type backlogJobRecord struct {
+-	JobId  string `json:"jobId"`
+-	GoalID string `json:"goalId"`
+-	Status string `json:"status"`
++	JobId        string          `json:"jobId"`
++	GoalID       string          `json:"goalId"`
++	MachineID    string          `json:"machineId"`
++	GoalRevision json.RawMessage `json:"goalRevision"`
++	ClaimEpoch   json.RawMessage `json:"claimEpoch"`
++	Status       string          `json:"status"`
+ 	activityProcessRef
+ 	Creator          *activityProcessRef  `json:"creatorLiveness"`
+ 	CustodyProcesses []activityProcessRef `json:"custodyProcesses"`
+@@ -515,21 +519,49 @@ func liveJobRecord(prober identity.Prober, record backlogJobRecord) bool {
+ 	return false
+ }
+ 
+-func readLiveBacklogActivity(root string, claimLineages map[string]string, legacyClaim bool, prober identity.Prober) ([]string, []string, error) {
+-	var activity []string
++type liveBacklogActivity struct {
++	Activity        []BoardActivity
++	InFlight        []string
++	NonTerminalJobs []string
++}
++
++func permissiveUint64(raw json.RawMessage) *uint64 {
++	if len(raw) == 0 || string(raw) == "null" {
++		return nil
++	}
++	value, err := strconv.ParseUint(string(raw), 10, 64)
++	if err != nil {
++		return nil
++	}
++	return &value
++}
++
++func permissiveInt64(raw json.RawMessage) *int64 {
++	if len(raw) == 0 || string(raw) == "null" {
++		return nil
++	}
++	value, err := strconv.ParseInt(string(raw), 10, 64)
++	if err != nil || value < 0 {
++		return nil
++	}
++	return &value
++}
++
++func readLiveBacklogActivity(root string, claimLineages map[string]string, legacyClaim bool, prober identity.Prober) (liveBacklogActivity, error) {
++	result := liveBacklogActivity{}
+ 	nonTerminalJobs := map[string]bool{}
+ 	paths, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "jobs", "*.json"))
+ 	if err != nil {
+-		return nil, nil, err
++		return result, err
+ 	}
+ 	for _, path := range paths {
+ 		data, err := os.ReadFile(path)
+ 		if err != nil {
+-			return nil, nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
++			return result, fmt.Errorf("%s: %w", filepath.Base(path), err)
+ 		}
+ 		var record backlogJobRecord
+ 		if err := json.Unmarshal(data, &record); err != nil {
+-			return nil, nil, fmt.Errorf("%s is malformed: %w", filepath.Base(path), err)
++			return result, fmt.Errorf("%s is malformed: %w", filepath.Base(path), err)
+ 		}
+ 		id := record.JobId
+ 		if id == "" {
+@@ -543,7 +575,12 @@ func readLiveBacklogActivity(root string, claimLineages map[string]string, legac
+ 		switch record.Status {
+ 		case "pending-setup", "pending", "running":
+ 			if liveJobRecord(prober, record) {
+-				activity = append(activity, "job:"+id)
++				ref := "job:" + id
++				result.InFlight = append(result.InFlight, ref)
++				result.Activity = append(result.Activity, BoardActivity{
++					Ref: ref, GoalId: record.GoalID, Machine: record.MachineID,
++					Revision: permissiveUint64(record.GoalRevision), ClaimEpoch: permissiveInt64(record.ClaimEpoch),
++				})
+ 			}
+ 		}
+ 	}
+@@ -553,13 +590,36 @@ func readLiveBacklogActivity(root string, claimLineages map[string]string, legac
+ 	}
+ 	sort.Strings(nonTerminal)
+ 
++	result.NonTerminalJobs = nonTerminal
++	runs, _ := (&metarun.Store{Root: root}).List()
++	for _, record := range runs {
++		if record.Governed == nil || (record.Status != metarun.StatusRunning && record.Status != metarun.StatusDraining) ||
++			record.Pid == nil || record.PidStartedAt == nil {
++			continue
++		}
++		process := activityProcessRef{Pid: *record.Pid, PidStartedAt: *record.PidStartedAt, PidStartTicks: record.PidStartTicks, BootID: record.BootID}
++		if !recordedProcessAlive(prober, process) {
++			continue
++		}
++		lineage := ""
++		if record.OwnerLineage != nil {
++			lineage = *record.OwnerLineage
++		}
++		revision := record.Governed.GoalRevision
++		result.Activity = append(result.Activity, BoardActivity{
++			Ref: "run:" + record.RunId, GoalId: record.GoalId, Lineage: lineage,
++			Revision: &revision, ClaimEpoch: record.ClaimEpoch,
++		})
++		result.InFlight = append(result.InFlight, "run:"+record.RunId)
++	}
++
+ 	if len(claimLineages) == 0 && !legacyClaim {
+-		sort.Strings(activity)
+-		return activity, nonTerminal, nil
++		sort.Strings(result.InFlight)
++		return result, nil
+ 	}
+ 	announcements, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "mains", "*.json"))
+ 	if err != nil {
+-		return nil, nil, err
++		return result, err
+ 	}
+ 	liveLineages := map[string]bool{}
+ 	for _, path := range announcements {
+@@ -570,10 +630,10 @@ func readLiveBacklogActivity(root string, claimLineages map[string]string, legac
+ 		}
+ 		data, err := os.ReadFile(path)
+ 		if err != nil {
+-			return nil, nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
++			return result, fmt.Errorf("%s: %w", filepath.Base(path), err)
+ 		}
+ 		if err := json.Unmarshal(data, &record); err != nil {
+-			return nil, nil, fmt.Errorf("%s is malformed: %w", filepath.Base(path), err)
++			return result, fmt.Errorf("%s is malformed: %w", filepath.Base(path), err)
+ 		}
+ 		if record.MainId == "" || !recordedProcessAlive(prober, record.activityProcessRef) {
+ 			continue
+@@ -585,15 +645,15 @@ func readLiveBacklogActivity(root string, claimLineages map[string]string, legac
+ 		liveLineages[lineage] = true
+ 	}
+ 	if legacyClaim && len(liveLineages) > 0 {
+-		activity = append(activity, "claim:legacy-current")
++		result.InFlight = append(result.InFlight, "claim:legacy-current")
+ 	}
+ 	for id, lineage := range claimLineages {
+ 		if liveLineages[lineage] {
+-			activity = append(activity, "claim:"+id)
++			result.InFlight = append(result.InFlight, "claim:"+id)
+ 		}
+ 	}
+-	sort.Strings(activity)
+-	return activity, nonTerminal, nil
++	sort.Strings(result.InFlight)
++	return result, nil
+ }
+ 
+ // AdmissionRefusal records a goal the claim gate would refuse, with the
+diff --git a/metasystem/internal/goal/turnfacts.go b/metasystem/internal/goal/turnfacts.go
+index 82c522d0d..54970e11f 100644
+--- a/metasystem/internal/goal/turnfacts.go
++++ b/metasystem/internal/goal/turnfacts.go
+@@ -19,6 +19,7 @@ type TurnVerdictFacts struct {
+ 	Ownership     TurnOwnershipFacts `json:"ownership"`
+ 	Actions       []TurnAction       `json:"actions"`
+ 	Refusal       TurnRefusalFacts   `json:"refusal"`
++	Board         *StopBoard         `json:"board,omitempty"`
+ }
+ 
+ type TurnFactsIdentity struct {
+@@ -85,7 +86,7 @@ type TurnEscalationFacts struct {
+ 	SupervisionRepair bool   `json:"supervisionRepair"`
+ }
+ 
+-func freezeTurnVerdictFacts(root, sessionID, mainID string, scan ScanResult, work ClaimableBudgetedWork, workRead bool, workErr error, verdict Verdict, fullDisplay string, session *sessionState, options TurnVerdictOptions, humanStopConsumed bool, watchOption ...authenticatedWatches) *TurnVerdictFacts {
++func freezeTurnVerdictFacts(root, sessionID, mainID string, scan ScanResult, work ClaimableBudgetedWork, board *StopBoard, workRead bool, workErr error, verdict Verdict, fullDisplay string, session *sessionState, options TurnVerdictOptions, humanStopConsumed bool, watchOption ...authenticatedWatches) *TurnVerdictFacts {
+ 	watches := authenticatedWatches{}
+ 	if len(watchOption) > 0 {
+ 		watches = watchOption[0]
+@@ -96,7 +97,7 @@ func freezeTurnVerdictFacts(root, sessionID, mainID string, scan ScanResult, wor
+ 		SchemaVersion: 1,
+ 		Identity:      TurnFactsIdentity{Installation: root, Session: sessionID, MainId: mainID, ObservedAt: sNowISO(root, session)},
+ 		Verdict:       verdict, FullDisplay: fullDisplay, Scan: scan,
+-		Work: freezeWork(work, workRead, workErr), Actions: []TurnAction{},
++		Work: freezeWork(work, workRead, workErr), Board: board, Actions: []TurnAction{},
+ 		Refusal: TurnRefusalFacts{
+ 			Class: verdict.Class, CauseCode: verdict.CauseCode, Component: verdict.Component,
+ 			Detail: fullDisplay, Occurrence: session.IdleBlocks, CountSpent: verdict.CountSpent,
+diff --git a/metasystem/internal/goal/turnfacts_test.go b/metasystem/internal/goal/turnfacts_test.go
+index 5e0bdbf16..f933c6f92 100644
+--- a/metasystem/internal/goal/turnfacts_test.go
++++ b/metasystem/internal/goal/turnfacts_test.go
+@@ -9,7 +9,7 @@ func TestFreezeTurnVerdictFactsDoesNotMutateCallerScan(t *testing.T) {
+ 		Runs: []RunFact{{Id: "run-1", MainId: "other", Ownership: "unknown"}},
+ 	}
+ 	facts := freezeTurnVerdictFacts("/installation", "session", "main-1", scan,
+-		ClaimableBudgetedWork{}, true, nil, Verdict{}, "display",
++		ClaimableBudgetedWork{}, nil, true, nil, Verdict{}, "display",
+ 		&sessionState{LastTouched: "2026-09-13T12:00:00Z"}, TurnVerdictOptions{}, false)
+ 	if scan.Jobs[0].Ownership != "unknown" || scan.Runs[0].Ownership != "unknown" {
+ 		t.Fatalf("freeze changed its caller's scan: jobs=%+v runs=%+v", scan.Jobs, scan.Runs)
+diff --git a/metasystem/internal/goal/turnverdict.go b/metasystem/internal/goal/turnverdict.go
+index 734d8696d..5db385c00 100644
+--- a/metasystem/internal/goal/turnverdict.go
++++ b/metasystem/internal/goal/turnverdict.go
+@@ -212,6 +212,7 @@ type TurnVerdictOptions struct {
+ 	SeatActor        Actor
+ 	SeatClaimEpoch   int64
+ 	SeatActorProblem string
++	RecheckBoard     func() (tip string, claimEpoch int64, err error)
+ 	HandoffRecorded  func(session string) (nonce string, live bool, err error)
+ }
+ 
+@@ -458,7 +459,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
+ 		// fence deliberately returns before reading the ledger.
+ 		stamp := &sessionState{LastTouched: s.nowISO()}
+ 		stopped.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan,
+-			ClaimableBudgetedWork{}, false, nil, stopped, stopped.Display, stamp, options, false, authenticatedWatches{})
++			ClaimableBudgetedWork{}, nil, false, nil, stopped, stopped.Display, stamp, options, false, authenticatedWatches{})
+ 		stopped.Facts.Actions = []TurnAction{}
+ 		return stopped, nil
+ 	}
+@@ -478,7 +479,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
+ 			}
+ 			stamp := &sessionState{LastTouched: s.nowISO()}
+ 			allowed.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan,
+-				ClaimableBudgetedWork{}, false, nil, allowed, display, stamp, options, false, authenticatedWatches{})
++				ClaimableBudgetedWork{}, nil, false, nil, allowed, display, stamp, options, false, authenticatedWatches{})
+ 			allowed.Facts.Actions = []TurnAction{}
+ 			return allowed, nil
+ 		}
+@@ -491,50 +492,95 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
+ 		}
+ 		var work ClaimableBudgetedWork
+ 		var workErr error
++		var owner BoardOwner
+ 		workRead := !humanAuthorized && !brainSeat
+ 		if workRead {
+-			work, workErr = readClaimableBudgetedWork(s.Root, s.now(), s.prober(), s.projectionDeps)
+-		}
+-		waits := registeredWaits{}
+-		var waitDropReasons []string
+-		if workRead && workErr == nil && len(scan.Unreadable) == 0 && len(scan.RunUnreadable) == 0 {
+-			waits, waitDropReasons = s.registeredWaits(work, sessionId, mainId, options.SessionAbsent)
+-		} else if workRead && !options.SessionAbsent && mainId != "" {
+-			paths, _ := filepath.Glob(filepath.Join(run.WaitersDir(s.Root), "*-"+run.OwnerDigest(mainId)+".json"))
+-			if len(paths) > 0 {
+-				waitDropReasons = []string{fmt.Sprintf("registered waits not credited at work-unreadable: workErr=%v unreadable=%v runUnreadable=%v", workErr, scan.Unreadable, scan.RunUnreadable)}
++			if options.SeatActor.Machine == "" && s.ResolveIdleSeat != nil {
++				actor, epoch, resolveErr := s.ResolveIdleSeat()
++				if resolveErr != nil {
++					options.SeatActorProblem = resolveErr.Error()
++				} else {
++					options.SeatActor = actor
++					options.SeatClaimEpoch = epoch
++				}
+ 			}
++			owner = BoardOwner{Machine: options.SeatActor.Machine, Lineage: options.SeatActor.Lineage, ClaimEpoch: options.SeatClaimEpoch}
++			work, workErr = readClaimableBudgetedWork(s.Root, s.now(), owner, s.prober(), s.projectionDeps)
+ 		}
+-		watches := s.authenticatedWatches(scan, mainId, waits)
+-		state, err := s.loadVerdictState()
++		baseState, err := s.loadVerdictState()
+ 		if err != nil {
+ 			return Result{}, infrastructureFailure{"verdict-state", err}
+ 		}
+-		session := state.touch(sessionId, s.nowISO())
++		var state *verdictState
++		var session *sessionState
++		var waits registeredWaits
++		var waitDropReasons []string
++		var watches authenticatedWatches
++		var brainLines []string
++		var runLines runDisplayLines
++		var greens []string
++		var fullDisplay string
++		rebuilt := false
++		for {
++			state, err = cloneVerdictState(baseState)
++			if err != nil {
++				return Result{}, infrastructureFailure{"verdict-state", err}
++			}
++			verdict = Verdict{SchemaVersion: 1, Class: "seat-actionable", LedgerStatus: "ok"}
++			waits = registeredWaits{}
++			waitDropReasons = nil
++			if workRead && workErr == nil && len(scan.Unreadable) == 0 && len(scan.RunUnreadable) == 0 {
++				waits, waitDropReasons = s.registeredWaits(work, sessionId, mainId, options.SessionAbsent)
++			} else if workRead && !options.SessionAbsent && mainId != "" {
++				paths, _ := filepath.Glob(filepath.Join(run.WaitersDir(s.Root), "*-"+run.OwnerDigest(mainId)+".json"))
++				if len(paths) > 0 {
++					waitDropReasons = []string{fmt.Sprintf("registered waits not credited at work-unreadable: workErr=%v unreadable=%v runUnreadable=%v", workErr, scan.Unreadable, scan.RunUnreadable)}
++				}
++			}
++			watches = s.authenticatedWatches(scan, mainId, waits)
++			session = state.touch(sessionId, s.nowISO())
++			brainLines = append(s.brainSummary(scan, brainState), designCritiqueLines(scan.Jobs)...)
++			runLines = s.decideRuns(&verdict, scan, session, mainId, watches)
++			s.decide(&verdict, scan, session, &work, brainSeat, waits)
++			if len(waitDropReasons) > 0 && strings.HasPrefix(waitDropReasons[0], "registered waits not credited at work-unreadable:") {
++				verdict.Diagnostics = append(waitDropReasons, verdict.Diagnostics...)
++			} else {
++				verdict.Diagnostics = append(verdict.Diagnostics, waitDropReasons...)
++			}
++			if options.SessionAbsent {
++				detail := "registered waits were not read because the Stop supplied no session"
++				verdict.Diagnostics = append(verdict.Diagnostics, detail)
++				verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
++			}
++			if markerDetail != "" {
++				verdict.Diagnostics = append(verdict.Diagnostics, markerDetail)
++				verdict.Display = strings.TrimSpace(verdict.Display + "\n" + markerDetail)
++			}
++			if !humanAuthorized && !brainSeat {
++				s.enforceIdleBacklogWithWaits(&verdict, &work, workErr, session, sessionId, mainId, options, waits)
++			}
++			greens = s.decideGreens(scan, session)
++			fullDisplay = composeDisplay(append(append([]string{}, brainLines...), runLines.lines...), verdict.Display, greens)
++			verdict.SurfaceWatchdog = session.watchdog(watchdogDigest)
+ 
+-		brainLines := append(s.brainSummary(scan, brainState), designCritiqueLines(scan.Jobs)...)
+-		runLines := s.decideRuns(&verdict, scan, session, mainId, watches)
+-		s.decide(&verdict, scan, session, &work, brainSeat, waits)
+-		if len(waitDropReasons) > 0 && strings.HasPrefix(waitDropReasons[0], "registered waits not credited at work-unreadable:") {
+-			verdict.Diagnostics = append(waitDropReasons, verdict.Diagnostics...)
+-		} else {
+-			verdict.Diagnostics = append(verdict.Diagnostics, waitDropReasons...)
+-		}
+-		if options.SessionAbsent {
+-			detail := "registered waits were not read because the Stop supplied no session"
+-			verdict.Diagnostics = append(verdict.Diagnostics, detail)
+-			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + detail)
+-		}
+-		if markerDetail != "" {
+-			verdict.Diagnostics = append(verdict.Diagnostics, markerDetail)
+-			verdict.Display = strings.TrimSpace(verdict.Display + "\n" + markerDetail)
+-		}
+-		if !humanAuthorized && !brainSeat {
+-			s.enforceIdleBacklogWithWaits(&verdict, &work, workErr, session, sessionId, mainId, options, waits)
++			if workErr != nil || work.Board == nil || options.RecheckBoard == nil {
++				break
++			}
++			tip, epoch, recheckErr := options.RecheckBoard()
++			if recheckErr != nil {
++				return Result{}, infrastructureFailure{"stop-board-stale", recheckErr}
++			}
++			if tip == work.Board.Tip && epoch == work.Board.Owner.ClaimEpoch {
++				break
++			}
++			if rebuilt {
++				return Result{}, infrastructureFailure{"stop-board-stale", fmt.Errorf("accepted tip or claim epoch changed twice")}
++			}
++			rebuilt = true
++			options.SeatClaimEpoch = epoch
++			owner.ClaimEpoch = epoch
++			work, workErr = readClaimableBudgetedWork(s.Root, s.now(), owner, s.prober(), s.projectionDeps)
+ 		}
+-		greens := s.decideGreens(scan, session)
+-		fullDisplay := composeDisplay(append(append([]string{}, brainLines...), runLines.lines...), verdict.Display, greens)
+-		verdict.SurfaceWatchdog = session.watchdog(watchdogDigest)
+ 		verdictPersistenceFailed := false
+ 		if brainState.State == brain.Declared {
+ 			verdict.BrainStatusDue = brain.StatusDue(s.Root, s.now())
+@@ -626,7 +672,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
+ 			trailer = options.ContextLine + "\n" + fileLine
+ 		}
+ 		verdict.Display = renderTurnVerdict(verdict, brainLines, runLines, greens, trailer)
+-		verdict.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan, work, workRead, workErr, verdict, fullDisplay, session, options, humanStopConsumed, watches)
++		verdict.Facts = freezeTurnVerdictFacts(s.Root, sessionId, mainId, scan, work, work.Board, workRead, workErr, verdict, fullDisplay, session, options, humanStopConsumed, watches)
+ 		return Result{}, nil
+ 	})
+ 	_ = result
+@@ -1133,7 +1179,8 @@ func (failure infrastructureFailure) Error() string {
+ var infrastructureProducerPrefixes = map[string]string{
+ 	"state-root": "state root", "goal-fence": "goal fence", "verdict-state": "turn verdict state",
+ 	"verdict-state-lock": "turn verdict state lock", "status-write": "status write", "session-stop-marker": "session stop marker",
+-	"handoff-record": "handoff record",
++	"handoff-record":   "handoff record",
++	"stop-board-stale": "stop board stale",
+ }
+ 
+ func infrastructureVerdict(component string, err error) Verdict {
+@@ -1283,17 +1330,7 @@ func idleBacklogDigest(work ClaimableBudgetedWork) string {
+ }
+ 
+ func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, sessionID, mainID, goalID string, claimNeeded, blockedBeforeIdle bool, options TurnVerdictOptions, unavailable string) {
+-	escalationRepair := unavailable != ""
+-	if unavailable == "" && s.ResolveIdleSeat != nil {
+-		actor, epoch, err := s.ResolveIdleSeat()
+-		if err != nil {
+-			options.SeatActorProblem = err.Error()
+-			escalationRepair = true
+-		} else {
+-			options.SeatActor = actor
+-			options.SeatClaimEpoch = epoch
+-		}
+-	}
++	escalationRepair := unavailable != "" || options.SeatActorProblem != ""
+ 	event := IdleEscalationEvent{
+ 		SessionID: sessionID, MainID: mainID, GoalID: goalID,
+ 		BacklogDigest: session.IdleBlockDigest, Refusal: session.IdleBlocks,
+@@ -1621,7 +1658,11 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
+ 	verdict.OpenWorkSignature = scan.OpenWorkSignature()
+ 	verdict.Diagnostics = append(verdict.Diagnostics, scan.Unreadable...)
+ 
+-	facts, status, statusLine := s.goalFacts()
++	var board *StopBoard
++	if work != nil {
++		board = work.Board
++	}
++	facts, status, statusLine := s.goalFacts(board)
+ 	verdict.LedgerStatus = status
+ 	verdict.Goal = facts
+ 
+@@ -1715,7 +1756,7 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
+ 			} else {
+ 				display = append(display, "NOTHING LEFT TO WORK ON; the current goal is "+facts.Id+" ("+facts.NextStep+")")
+ 			}
+-			if first, digest := s.queuedFrontier(); digest != "" {
++			if first, digest := s.queuedFrontier(board); digest != "" {
+ 				if session.ObservedQueueDigest == "" {
+ 					session.ObservedQueueDigest = digest
+ 				} else if digest != session.ObservedQueueDigest {
+@@ -1732,7 +1773,7 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
+ 				display = append(display, LandingClaimLines(work.landingClaims, s.now())...)
+ 			}
+ 		case "queued-only":
+-			first, _ := s.queuedFrontier()
++			first, _ := s.queuedFrontier(board)
+ 			if first == "" {
+ 				display = append(display, "no goal is claimed here and the queue is empty; a person opens the next goal (`goal open --origin human`); a seat opens only the blocker of its claimed goal (`--blocks`, R-93-m1e)")
+ 				if work != nil {
+@@ -1777,9 +1818,9 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
+ // checkout from the single file. The vocabulary is shared — ok,
+ // queued-only, goal-free, absent, degraded — so every verdict rule
+ // downstream is world-neutral.
+-func (s *Store) goalFacts() (*GoalFacts, string, string) {
++func (s *Store) goalFacts(board *StopBoard) (*GoalFacts, string, string) {
+ 	if NewWorld(s.Root) {
+-		return s.convertedGoalFacts()
++		return s.convertedGoalFacts(board)
+ 	}
+ 	return s.legacyGoalFacts()
+ }
+@@ -1788,7 +1829,21 @@ func (s *Store) goalFacts() (*GoalFacts, string, string) {
+ // vocabulary: this machine's claimed goal plays the Current role, the
+ // root record's declaration plays goal-free, and a queue nobody here
+ // claimed plays queued-only.
+-func (s *Store) convertedGoalFacts() (*GoalFacts, string, string) {
++func (s *Store) convertedGoalFacts(boardOption ...*StopBoard) (*GoalFacts, string, string) {
++	var board *StopBoard
++	if len(boardOption) > 0 {
++		board = boardOption[0]
++	}
++	if board != nil {
++		if len(board.Held) > 0 {
++			goal := board.Held[0]
++			return &GoalFacts{Id: goal.Id, Intent: goal.Intent, NextStep: goal.NextStep, Revision: fmt.Sprintf("%s@%d", goal.Id, goal.Revision)}, "ok", ""
++		}
++		if board.tree != nil && board.tree.Root != nil && board.tree.Root.Free != nil {
++			return nil, "goal-free", ""
++		}
++		return nil, "queued-only", ""
++	}
+ 	machine, err := ResolveMachine(s.Root)
+ 	if err != nil {
+ 		return nil, "degraded", err.Error()
+@@ -1852,8 +1907,11 @@ func (s *Store) legacyGoalFacts() (*GoalFacts, string, string) {
+ 
+ // queuedFrontier names the first awaiting or approved goal and a stable
+ // digest of that whole backlog frontier.
+-func (s *Store) queuedFrontier() (first, digest string) {
++func (s *Store) queuedFrontier(boardOption ...*StopBoard) (first, digest string) {
+ 	if NewWorld(s.Root) {
++		if len(boardOption) > 0 && boardOption[0] != nil && boardOption[0].tree != nil {
++			return queuedFrontierFromTree(boardOption[0].tree)
++		}
+ 		endpoint, err := ResolveEndpoint(s.Root)
+ 		if err != nil {
+ 			return "", ""
+@@ -1862,25 +1920,7 @@ func (s *Store) queuedFrontier() (first, digest string) {
+ 		if err != nil || proj.Tree == nil {
+ 			return "", ""
+ 		}
+-		type row struct {
+-			id  string
+-			rev uint64
+-		}
+-		var rows []row
+-		for _, id := range OrderedOpenGoalIDs(proj.Tree.Live) {
+-			f := proj.Tree.Live[id]
+-			if f.State == StateQueued || f.State == StateApproved {
+-				rows = append(rows, row{id, f.Revision})
+-			}
+-		}
+-		if len(rows) == 0 {
+-			return "", sha256Hex(nil)
+-		}
+-		var lines []string
+-		for _, r := range rows {
+-			lines = append(lines, fmt.Sprintf("%s@%d", r.id, r.rev))
+-		}
+-		return rows[0].id, sha256Hex([]byte(strings.Join(lines, "\n")))
++		return queuedFrontierFromTree(proj.Tree)
+ 	}
+ 	ledger, _, _ := s.ReadLedger()
+ 	if ledger == nil {
+@@ -1892,6 +1932,28 @@ func (s *Store) queuedFrontier() (first, digest string) {
+ 	return ledger.Queued[0].Id, ledger.QueuedDigest()
+ }
+ 
++func queuedFrontierFromTree(tree *TreeGoals) (first, digest string) {
++	type row struct {
++		id  string
++		rev uint64
++	}
++	var rows []row
++	for _, id := range OrderedOpenGoalIDs(tree.Live) {
++		file := tree.Live[id]
++		if file.State == StateQueued || file.State == StateApproved {
++			rows = append(rows, row{id, file.Revision})
++		}
++	}
++	if len(rows) == 0 {
++		return "", sha256Hex(nil)
++	}
++	var lines []string
++	for _, row := range rows {
++		lines = append(lines, fmt.Sprintf("%s@%d", row.id, row.rev))
++	}
++	return rows[0].id, sha256Hex([]byte(strings.Join(lines, "\n")))
++}
++
+ // freeState reads the goal-free declaration's freshness, routed on the
+ // world: both worlds compare the recorded digest against the current
+ // plans-stream scan, because a declaration is only as good as the world
+@@ -1966,6 +2028,18 @@ func (s *Store) loadVerdictState() (*verdictState, error) {
+ 	return state, nil
+ }
+ 
++func cloneVerdictState(state *verdictState) (*verdictState, error) {
++	data, err := json.Marshal(state)
++	if err != nil {
++		return nil, err
++	}
++	var clone verdictState
++	if err := json.Unmarshal(data, &clone); err != nil {
++		return nil, err
++	}
++	return &clone, nil
++}
++
+ // touch returns the session's entry, pruning expired sessions and
+ // evicting oldest-lastTouched beyond the map cap.
+ func (state *verdictState) touch(sessionId, now string) *sessionState {
+diff --git a/metasystem/internal/goal/turnverdict_idle_test.go b/metasystem/internal/goal/turnverdict_idle_test.go
+index 39239f772..52e579812 100644
+--- a/metasystem/internal/goal/turnverdict_idle_test.go
++++ b/metasystem/internal/goal/turnverdict_idle_test.go
+@@ -60,7 +60,7 @@ func installIdleLiveClaim(t *testing.T, root, lineage string) identity.Prober {
+ 
+ func seedPendingWaitIdleCounter(t *testing.T, fixture *pendingWaitVerdictFixture, blocks int) ClaimableBudgetedWork {
+ 	t.Helper()
+-	work, err := readClaimableBudgetedWork(fixture.root, fixture.store.Now(), fixture.store.Prober, fixture.store.projectionDeps)
++	work, err := readClaimableBudgetedWork(fixture.root, fixture.store.Now(), BoardOwner{}, fixture.store.Prober, fixture.store.projectionDeps)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+@@ -105,7 +105,7 @@ func TestPendingWaitIdleBacklog(t *testing.T) {
+ 		writeIdleJSON(t, filepath.Join(liveDelegate.root, "artifacts", "agents", "jobs", liveDelegate.row.TargetID+".json"), map[string]any{
+ 			"jobId": liveDelegate.row.TargetID, "operationId": liveDelegate.row.Target.OperationID,
+ 			"round": liveDelegate.row.Target.Round, "startedAt": liveDelegate.row.Target.StartedAt,
+-			"status": "running", "goalId": pendingWaitGoalID,
++			"status": "running", "goalId": pendingWaitGoalID, "machineId": "bed-m1", "goalRevision": 2, "claimEpoch": 7,
+ 			"pid": 43, "pidStartedAt": 300, "pidStartTicks": 430, "bootId": pendingWaitBootID,
+ 		})
+ 		seedPendingWaitIdleCounter(t, liveDelegate, 2)
+@@ -837,6 +837,37 @@ func TestIdleBacklogDigestChangeResetsTheRefusalCount(t *testing.T) {
+ 	}
+ }
+ 
++func TestIdleDigestKeepsEveryNonterminalJob(t *testing.T) {
++	t.Parallel()
++	now := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
++	root := servingBed(t, "bed-m1", map[string]*GoalFile{
++		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
++	})
++	store := &Store{Root: root, Now: func() time.Time { return now }}
++	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "lineage-a"}, SeatClaimEpoch: 7}
++	first, err := store.TurnVerdict(ScanResult{}, "all-jobs-digest", "", "main-1", options)
++	if err != nil || !first.ShouldBlock || !strings.Contains(first.Display, "refusal 1 of 3") {
++		t.Fatalf("first backlog refusal was not counted: %+v %v", first, err)
++	}
++	jobPath := filepath.Join(root, "artifacts", "agents", "jobs", "foreign.json")
++	writeIdleJSON(t, jobPath, map[string]any{
++		"jobId": "foreign", "goalId": "waiting", "machineId": "bed-m2", "goalRevision": 2,
++		"claimEpoch": 9, "status": "pending", "pid": 99999999, "pidStartedAt": 1,
++	})
++	second, err := store.TurnVerdict(ScanResult{}, "all-jobs-digest", "", "main-1", options)
++	if err != nil || !second.ShouldBlock || !strings.Contains(second.Display, "refusal 1 of 3") {
++		t.Fatalf("another owner's non-terminal job did not reset the digest: %+v %v", second, err)
++	}
++	writeIdleJSON(t, jobPath, map[string]any{
++		"jobId": "foreign", "goalId": "waiting", "machineId": "bed-m2", "goalRevision": 2,
++		"claimEpoch": 9, "status": "completed", "pid": 99999999, "pidStartedAt": 1,
++	})
++	third, err := store.TurnVerdict(ScanResult{}, "all-jobs-digest", "", "main-1", options)
++	if err != nil || !third.ShouldBlock || !strings.Contains(third.Display, "refusal 1 of 3") {
++		t.Fatalf("another owner's completed job did not reset the digest: %+v %v", third, err)
++	}
++}
++
+ func TestIdleBacklogFailedIntentStillEndsAndNamesTheFailure(t *testing.T) {
+ 	t.Parallel()
+ 	waiting := budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z")
+@@ -1656,27 +1687,40 @@ func TestSessionEndDurablySpendsUnusedStopAuthorizationBeforeAnnouncementRetirem
+ 
+ func TestClaudeTurnExitRequiresDelegateWorkNotMerelyALiveSeat(t *testing.T) {
+ 	t.Parallel()
++	held := budgetedQueuedGoal("held", "2026-08-22T00:00:00Z")
++	held.State = StateClaimed
++	held.Revision = 2
++	held.Claimed = &ClaimRecord{Machine: "bed-m1", Lineage: "lineage-a", At: "2026-08-23T01:00:00Z", Revision: 2}
+ 	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+ 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
++		"held":    held,
+ 	})
+ 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+ 	writeIdleJSON(t, filepath.Join(jobs, "delegate.json"), map[string]any{
+-		"jobId": "delegate", "status": "running", "pid": 99, "pidStartedAt": 1,
++		"jobId": "delegate", "goalId": "held", "machineId": "bed-m1", "goalRevision": 2,
++		"claimEpoch": 7, "status": "running", "pid": 99, "pidStartedAt": 1,
+ 	})
+-	store := &Store{Root: root, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}}}
++	store := &Store{
++		Root: root, Prober: idleFixtureProber{41: {Pid: 41, StartedAt: time.Unix(100, 0)}},
++		ResolveIdleSeat: func() (Actor, int64, error) {
++			return Actor{Machine: "bed-m1", Lineage: "lineage-a"}, 7, nil
++		},
++	}
+ 	stale, _ := store.TurnVerdict(ScanResult{}, "stale-job", "", "main-1")
+ 	if !stale.ShouldBlock {
+ 		t.Fatalf("a stale running record must not suppress the block: %+v", stale)
+ 	}
+ 	writeIdleJSON(t, filepath.Join(jobs, "delegate.json"), map[string]any{
+-		"jobId": "delegate", "status": "running", "pid": 41, "pidStartedAt": 100,
++		"jobId": "delegate", "goalId": "held", "machineId": "bed-m1", "goalRevision": 2,
++		"claimEpoch": 7, "status": "running", "pid": 41, "pidStartedAt": 100,
+ 	})
+ 	live, _ := store.TurnVerdict(ScanResult{}, "live-job", "", "main-1")
+ 	if live.ShouldBlock {
+ 		t.Fatalf("a running job joined to its live process is in flight: %+v", live)
+ 	}
+ 	writeIdleJSON(t, filepath.Join(jobs, "delegate.json"), map[string]any{
+-		"jobId": "delegate", "status": "pending-setup",
++		"jobId": "delegate", "goalId": "held", "machineId": "bed-m1", "goalRevision": 2,
++		"claimEpoch": 7, "status": "pending-setup",
+ 		"creatorLiveness": map[string]any{"pid": 41, "pidStartedAt": 100},
+ 	})
+ 	pendingSetup, _ := store.TurnVerdict(ScanResult{}, "pending-setup", "", "main-1")
+diff --git a/metasystem/internal/goal/turnverdict_localwait_test.go b/metasystem/internal/goal/turnverdict_localwait_test.go
+index a948a8a91..4a05718d9 100644
+--- a/metasystem/internal/goal/turnverdict_localwait_test.go
++++ b/metasystem/internal/goal/turnverdict_localwait_test.go
+@@ -148,7 +148,7 @@ func TestHumanWaitAllowsTheStopUntilItsDeadline(t *testing.T) {
+ 
+ func readClaimableWorkForTest(t *testing.T, fixture *pendingWaitVerdictFixture) ClaimableBudgetedWork {
+ 	t.Helper()
+-	work, err := readClaimableBudgetedWork(fixture.root, fixture.store.Now(), fixture.store.Prober, fixture.store.projectionDeps)
++	work, err := readClaimableBudgetedWork(fixture.root, fixture.store.Now(), BoardOwner{}, fixture.store.Prober, fixture.store.projectionDeps)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+diff --git a/metasystem/internal/goal/turnverdict_test.go b/metasystem/internal/goal/turnverdict_test.go
+index 467631a4b..7b9a58b75 100644
+--- a/metasystem/internal/goal/turnverdict_test.go
++++ b/metasystem/internal/goal/turnverdict_test.go
+@@ -125,6 +125,9 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool)
+ 		42: {Pid: 42, StartedAt: time.Unix(200, 0), StartTicks: 420, BootID: pendingWaitBootID},
+ 	}
+ 	store := &Store{Root: root, Now: func() time.Time { return now }, Prober: prober}
++	store.ResolveIdleSeat = func() (Actor, int64, error) {
++		return Actor{Machine: "bed-m1", Lineage: pendingWaitLineage}, 7, nil
++	}
+ 	store.verdictDeps.bootClock = func() (string, time.Duration, error) { return pendingWaitBootID, bootElapsed, nil }
+ 	writePendingWaitJSON(t, sessionStopLeasePath(root), sessionStopLease{
+ 		HolderMainId: pendingWaitMainID, Pid: 41, PidStartedAt: 100,
+@@ -147,6 +150,7 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool)
+ 		writePendingWaitJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", selector.TargetID+".json"), map[string]any{
+ 			"jobId": selector.TargetID, "operationId": target.OperationID, "round": target.Round,
+ 			"startedAt": target.StartedAt, "status": "running", "goalId": pendingWaitGoalID,
++			"machineId": "bed-m1", "goalRevision": 2, "claimEpoch": 7,
+ 		})
+ 	case "run", "attempt":
+ 		epoch := int64(7)
+@@ -1136,6 +1140,7 @@ func TestClaimedSessionReblocksOnceWhenTheSharedQueueChanges(t *testing.T) {
+ 		t.Fatalf("open queued goal: %+v %v", result, err)
+ 	}
+ 	store := &Store{Root: root, Now: func() time.Time { return request.Now }, Prober: installIdleLiveClaim(t, root, "lin-1")}
++	store.ResolveIdleSeat = func() (Actor, int64, error) { return Actor{Machine: "mac-a", Lineage: "lin-1"}, 1, nil }
+ 	first, err := store.TurnVerdict(ScanResult{}, "claimed-queue-session", "", "")
+ 	if err != nil || !first.ShouldBlock {
+ 		t.Fatalf("initial claimed world did not block: %+v %v", first, err)
+@@ -1191,6 +1196,7 @@ func TestClaimedSessionBaselinesAnUnchangedQueueWithoutFalseChange(t *testing.T)
+ 		t.Fatalf("claim steady goal: %+v %v", result, err)
+ 	}
+ 	store := &Store{Root: root, Now: func() time.Time { return request.Now }, Prober: installIdleLiveClaim(t, root, "lin-1")}
++	store.ResolveIdleSeat = func() (Actor, int64, error) { return Actor{Machine: "mac-a", Lineage: "lin-1"}, 1, nil }
+ 	first, err := store.TurnVerdict(ScanResult{}, "fresh-steady-session", "", "")
+ 	if err != nil || !first.ShouldBlock || strings.Contains(first.Display, "shared goal queue changed") {
+ 		t.Fatalf("a fresh session falsely described its empty queue baseline as a change: %+v %v", first, err)
+diff --git a/metasystem/internal/goal/turnverdict_world_test.go b/metasystem/internal/goal/turnverdict_world_test.go
+index a99152b36..34c934442 100644
+--- a/metasystem/internal/goal/turnverdict_world_test.go
++++ b/metasystem/internal/goal/turnverdict_world_test.go
+@@ -1,13 +1,231 @@
+ package goal
+ 
+ import (
++	"errors"
+ 	"os"
+ 	"os/exec"
+ 	"path/filepath"
+ 	"strings"
+ 	"testing"
++	"time"
++
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
++	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+ )
+ 
++func TestStopFrontierOwnerRevisionAndFreshness(t *testing.T) {
++	t.Parallel()
++	now := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
++	newFixture := func(t *testing.T) (*Store, TurnVerdictOptions, string) {
++		t.Helper()
++		held := budgetedQueuedGoal("held", "2026-08-22T00:00:00Z")
++		held.State = StateClaimed
++		held.Revision = 2
++		held.NextStep = "Continue the held revision."
++		held.Claimed = &ClaimRecord{Machine: "bed-m1", Lineage: "lineage-a", At: "2026-08-23T01:00:00Z", Revision: 2}
++		ready := budgetedQueuedGoal("ready", "2026-08-23T00:00:00Z")
++		ready.NextStep = "Dispatch the ready frontier."
++		other := budgetedQueuedGoal("other-lineage", "2026-08-21T00:00:00Z")
++		other.State = StateClaimed
++		other.Revision = 2
++		other.Claimed = &ClaimRecord{Machine: "bed-m1", Lineage: "lineage-b", At: "2026-08-23T00:30:00Z", Revision: 2}
++		root := servingBed(t, "bed-m1", map[string]*GoalFile{"held": held, "other-lineage": other, "ready": ready})
++		store := &Store{Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{
++			41: {Pid: 41, StartedAt: time.Unix(100, 0)},
++		}}
++		resolverCalls := 0
++		store.ResolveIdleSeat = func() (Actor, int64, error) {
++			resolverCalls++
++			if resolverCalls > 1 {
++				t.Fatal("ResolveIdleSeat was called more than once")
++			}
++			return Actor{Machine: "bed-m1", Lineage: "lineage-a"}, 7, nil
++		}
++		return store, TurnVerdictOptions{}, root
++	}
++
++	t.Run("joined job", func(t *testing.T) {
++		t.Parallel()
++		store, options, root := newFixture(t)
++		writeIdleJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "joined.json"), map[string]any{
++			"jobId": "joined", "goalId": "held", "machineId": "bed-m1", "goalRevision": 2,
++			"claimEpoch": 7, "status": "running", "pid": 41, "pidStartedAt": 100,
++		})
++		verdict, err := store.TurnVerdict(ScanResult{}, "joined-job", "", "main-1", options)
++		if err != nil || verdict.ShouldBlock || verdict.Facts == nil || verdict.Facts.Board == nil || !verdict.Facts.Board.HasJoinedWork() {
++			t.Fatalf("joined job did not exempt the owner: %+v %v", verdict, err)
++		}
++		if len(verdict.Facts.Board.Ready) != 1 || verdict.Facts.Board.Ready[0].NextStep != "Dispatch the ready frontier." {
++			t.Fatalf("the ready next step was not frozen on the board: %+v", verdict.Facts.Board)
++		}
++	})
++
++	t.Run("joined governed run", func(t *testing.T) {
++		t.Parallel()
++		store, options, root := newFixture(t)
++		epoch := int64(7)
++		runStore := &metarun.Store{
++			Root: root, Now: func() time.Time { return now }, Prober: idleFixtureProber{
++				41: {Pid: 41, StartedAt: time.Unix(100, 0)},
++			}, Getpgid: func(int64) (int64, error) { return 41, nil },
++			AdmitGoverned: func(metarun.GovernedAdmissionRequest) (metarun.GovernedAdmissionResult, error) {
++				generation := uint64(0)
++				return metarun.GovernedAdmissionResult{Attempt: metarun.GovernedAttempt{
++					GoalRevision: 2, ObligationRevision: 1, WeightGeneration: &generation,
++					Recurrence: governance.StandingSharedProcess, ExecutionCostMinutes: 1, AttemptOrdinal: 1,
++					Budget:          goalbudget.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1},
++					BudgetStartedAt: now.Format(time.RFC3339),
++					ExpectedAssumptions: governance.ObligationAssumptions{
++						Recurrence: governance.StandingSharedProcess, Platform: "fixture/os", ToolchainIdentity: "fixture-go",
++						SurfaceDigest: "fixture-digest", MaxActiveJobs: 1, TimingEnvelopeSeconds: 3600, ObservationSource: "run-terminal-record",
++					},
++					AdmissionDecision: governance.ConsequenceDecision{Apply: true}, Breaker: metarun.BreakerClosed,
++				}}, nil
++			},
++		}
++		caller := metarun.Caller{Class: "MAIN", MainId: "main-1", OwnerLineage: "lineage-a", ClaimEpoch: &epoch, SessionId: "joined-run"}
++		nonce, err := runStore.Launch(caller, metarun.LaunchParams{
++			Id: "joined-run", Kind: "suite", Display: "joined run", Log: "artifacts/joined-run.log",
++			GoalId: "held", ObligationRevision: 1, StandingShared: true,
++		})
++		if err != nil {
++			t.Fatal(err)
++		}
++		if err := runStore.Bind("joined-run", nonce, 41, 41); err != nil {
++			t.Fatal(err)
++		}
++		verdict, err := store.TurnVerdict(ScanResult{}, "joined-run", "", "main-1", options)
++		if err != nil || verdict.ShouldBlock || verdict.Facts == nil || verdict.Facts.Board == nil || !verdict.Facts.Board.HasJoinedWork() {
++			t.Fatalf("joined governed run did not exempt the owner: %+v %v", verdict, err)
++		}
++	})
++
++	for _, test := range []struct {
++		name       string
++		machine    string
++		goal       string
++		revision   any
++		claimEpoch any
++	}{
++		{name: "another machine", machine: "bed-m2", goal: "held", revision: 2, claimEpoch: 7},
++		{name: "another lineage", machine: "bed-m1", goal: "other-lineage", revision: 2, claimEpoch: 7},
++		{name: "old revision", machine: "bed-m1", goal: "held", revision: 1, claimEpoch: 7},
++		{name: "old claim epoch", machine: "bed-m1", goal: "held", revision: 2, claimEpoch: 6},
++	} {
++		test := test
++		t.Run(test.name, func(t *testing.T) {
++			t.Parallel()
++			store, options, root := newFixture(t)
++			writeIdleJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "not-joined.json"), map[string]any{
++				"jobId": "not-joined", "goalId": test.goal, "machineId": test.machine,
++				"goalRevision": test.revision, "claimEpoch": test.claimEpoch,
++				"status": "running", "pid": 41, "pidStartedAt": 100,
++			})
++			verdict, err := store.TurnVerdict(ScanResult{}, "not-joined", "", "main-1", options)
++			if err != nil || !verdict.ShouldBlock || verdict.Facts == nil || verdict.Facts.Board == nil || verdict.Facts.Board.HasJoinedWork() {
++				t.Fatalf("unjoined job exempted the owner: %+v %v", verdict, err)
++			}
++		})
++	}
++
++	t.Run("owner resolution failure", func(t *testing.T) {
++		t.Parallel()
++		store, options, root := newFixture(t)
++		store.ResolveIdleSeat = func() (Actor, int64, error) { return Actor{}, 0, errors.New("owner unavailable") }
++		writeIdleJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "unresolved.json"), map[string]any{
++			"jobId": "unresolved", "goalId": "held", "machineId": "bed-m1", "goalRevision": 2,
++			"claimEpoch": 7, "status": "running", "pid": 41, "pidStartedAt": 100,
++		})
++		verdict, err := store.TurnVerdict(ScanResult{}, "unresolved-owner", "", "main-1", options)
++		if err != nil || !verdict.ShouldBlock || verdict.Facts == nil || verdict.Facts.Board == nil || verdict.Facts.Board.HasJoinedWork() {
++			t.Fatalf("an unresolved owner received a work exemption: %+v %v", verdict, err)
++		}
++	})
++
++	t.Run("failed fetch", func(t *testing.T) {
++		t.Parallel()
++		store, options, _ := newFixture(t)
++		store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
++			return AdvanceResult{}, errors.New("fresh board unavailable")
++		}
++		verdict, err := store.TurnVerdict(ScanResult{}, "failed-fetch", "", "main-1", options)
++		if err != nil || !verdict.ShouldBlock || verdict.Facts == nil || verdict.Facts.Board != nil ||
++			!strings.Contains(verdict.Display, "fresh board unavailable") {
++			t.Fatalf("failed fetch did not keep the unreadable-ledger path: %+v %v", verdict, err)
++		}
++	})
++
++	t.Run("one rebuild saves one decision", func(t *testing.T) {
++		t.Parallel()
++		store, options, root := newFixture(t)
++		firstTip := strings.TrimSpace(mustGit(t, root, "rev-parse", AcceptedRef))
++		rewriteBedRoot(t, root, &RootRecord{
++			Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: SyncLocal, Revision: 2,
++		})
++		secondTip := strings.TrimSpace(mustGit(t, root, "rev-parse", AcceptedRef))
++		mustGit(t, root, "update-ref", AcceptedRef, firstTip)
++		fetches := 0
++		store.projectionDeps.fetch = func(endpoint Endpoint) (AdvanceResult, error) {
++			fetches++
++			if fetches == 2 {
++				mustGit(t, endpoint.Root, "update-ref", AcceptedRef, secondTip)
++			}
++			return AdvanceResult{Tip: strings.TrimSpace(mustGit(t, endpoint.Root, "rev-parse", AcceptedRef))}, nil
++		}
++		checks := 0
++		options.RecheckBoard = func() (string, int64, error) {
++			checks++
++			if checks > 2 {
++				t.Fatal("RecheckBoard was called more than twice")
++			}
++			return secondTip, 7, nil
++		}
++		verdict, err := store.TurnVerdict(ScanResult{}, "one-rebuild", "", "main-1", options)
++		if err != nil || verdict.Class == "infrastructure" || verdict.Facts == nil || verdict.Facts.Board == nil || verdict.Facts.Board.Tip != secondTip {
++			t.Fatalf("one freshness change did not rebuild and decide: %+v %v", verdict, err)
++		}
++		state, err := store.loadVerdictState()
++		if err != nil || len(state.Sessions) != 1 || state.Sessions["one-rebuild"] == nil || state.Sessions["one-rebuild"].IdleBlocks != 1 {
++			t.Fatalf("the rebuilt verdict did not save exactly one decision: %+v %v", state, err)
++		}
++	})
++
++	t.Run("two changes allow stop without spending count", func(t *testing.T) {
++		t.Parallel()
++		store, options, root := newFixture(t)
++		firstTip := strings.TrimSpace(mustGit(t, root, "rev-parse", AcceptedRef))
++		rewriteBedRoot(t, root, &RootRecord{
++			Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: SyncLocal, Revision: 2,
++		})
++		secondTip := strings.TrimSpace(mustGit(t, root, "rev-parse", AcceptedRef))
++		mustGit(t, root, "update-ref", AcceptedRef, firstTip)
++		fetches := 0
++		store.projectionDeps.fetch = func(endpoint Endpoint) (AdvanceResult, error) {
++			fetches++
++			if fetches == 2 {
++				mustGit(t, endpoint.Root, "update-ref", AcceptedRef, secondTip)
++			}
++			return AdvanceResult{}, nil
++		}
++		checks := 0
++		options.RecheckBoard = func() (string, int64, error) {
++			checks++
++			if checks == 1 {
++				return secondTip, 7, nil
++			}
++			return "changed-again", 7, nil
++		}
++		verdict, err := store.TurnVerdict(ScanResult{}, "stale-twice", "", "main-1", options)
++		if err != nil || verdict.Class != "infrastructure" || verdict.CauseCode != "stop-board-stale" || verdict.ShouldBlock || verdict.CountSpent {
++			t.Fatalf("a board that changed twice was not allowed as stale infrastructure: %+v %v", verdict, err)
++		}
++		if _, statErr := os.Stat(statePath(root)); !os.IsNotExist(statErr) {
++			t.Fatalf("stale infrastructure wrote verdict state: %v", statErr)
++		}
++	})
++}
++
+ // The end-of-turn verdict on a converted checkout: a claim-only world retains
+ // the existing next-step block-once contract. Liveness governs whether a
+ // claim may suppress separate claimable backlog, which is covered by the idle
+@@ -22,14 +240,15 @@ func TestTurnVerdictConvertedClaimHasTheFloor(t *testing.T) {
+ 		},
+ 	})
+ 	store := &Store{Root: root}
+-	first, err := store.TurnVerdict(ScanResult{}, "world-session", "", "main-1")
++	options := TurnVerdictOptions{SeatActor: Actor{Machine: "bed-m1", Lineage: "coordinator"}, SeatClaimEpoch: 1}
++	first, err := store.TurnVerdict(ScanResult{}, "world-session", "", "main-1", options)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+ 	if !first.ShouldBlock || !strings.Contains(first.Display, "Land it in pieces") {
+ 		t.Fatalf("the claimed goal must block once with its next step: %+v", first)
+ 	}
+-	second, err := store.TurnVerdict(ScanResult{}, "world-session", "", "main-1")
++	second, err := store.TurnVerdict(ScanResult{}, "world-session", "", "main-1", options)
+ 	if err != nil {
+ 		t.Fatal(err)
+ 	}
+diff --git a/metasystem/internal/goal/txn.go b/metasystem/internal/goal/txn.go
+index 1f7b4bdfc..568efa376 100644
+--- a/metasystem/internal/goal/txn.go
++++ b/metasystem/internal/goal/txn.go
+@@ -187,6 +187,18 @@ func acceptedTipForGates(root string) (string, bool, error) {
+ 	return "", false, fmt.Errorf("the accepted ref exists but does not resolve to a commit; repair %s before continuing", AcceptedRef)
+ }
+ 
++// AcceptedTip reads the accepted commit without fetching or changing refs.
++func AcceptedTip(root string) (string, error) {
++	tip, present, err := acceptedTipForGates(root)
++	if err != nil {
++		return "", err
++	}
++	if !present {
++		return "", nil
++	}
++	return tip, nil
++}
++
+ // tipCarriesLedger reports whether the tip has a ledger root at
+ // all — the pre-migration discriminator the mutation-side
+ // validation and the sync-mode gate share. Absence and FAILURE are
+diff --git a/metasystem/testing.json b/metasystem/testing.json
+index d226ec70f..c0713375a 100644
+--- a/metasystem/testing.json
++++ b/metasystem/testing.json
+@@ -47,7 +47,7 @@
+     {"id":"carry-landing-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/landing/**","metasystem/internal/goal/branch/**","metasystem/cmd/metasystem/channel_verbs.go","metasystem/cmd/metasystem/channel_verbs_test.go","metasystem/cmd/metasystem/goalsync_mutations.go","metasystem/cmd/metasystem/goalsync_mutations_test.go","metasystem/cmd/metasystem/landing_verbs.go","metasystem/cmd/metasystem/landing_verbs_test.go"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["carried-landing-landing"],"platforms":["any"],"targetMs":20000,"packages":["internal/landing","internal/landing/batch","cmd/metasystem"],"tests":["TestHCL33ExpiredReservationNotDebt","TestHCL37EvaluatorUnavailablePrecedesUnneeded","TestHCL51CarriedCounselorAppendBelongsToItsRow","TestHCL57CarriedMatchAndRedBattery","TestHCL58BaseJudgeFenceOwners","TestHCL58GenerationZeroNeedsFixtureAuthority","TestHCL12KindCarryRequiresWants","TestHCL54CarryByRejectsStoredActorPrefix","TestHCL55CarriedJudgeGrammar","TestHCL80TrailingWhitespaceWhyIsAdmitted","TestBatchBranchReaderCertifiesThreeBuildMember","TestBatchBranchReaderRefusesReaderRecord","TestBatchBranchMembersCheckEachGoalTransition","TestBatchBranchMemberRefusesMovedTrunk","TestBatchBranchAllowsOnlyOneMemberPerGoal","TestObserveAttestedBranchDeclarationEnforcesBoundary","TestAttestedBoundaryValidatesTheClosureBundle"]},
+     {"id":"carry-plumbing-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/dispatch/**","metasystem/internal/config/**","metasystem/internal/testpolicy/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["carried-landing-plumbing"],"platforms":["any"],"targetMs":10000,"packages":["internal/dispatch","internal/config","internal/testpolicy"],"tests":["TestHCL09BadFormRefused","TestHCL09ReviewReferenceAdmits","TestHCL09TwoChainsUnite","TestHCL08CapKeyDefaultOne","TestHCL08CapLocalRefused","TestHCL31ContractOwnsFivePackages","TestHCL34PlanExecutesEveryFixture"]},
+     {"id":"goal-decision-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/cmd/metasystem/goal_branch.go","metasystem/cmd/metasystem/goal_branch_test.go","metasystem/cmd/metasystem/main.go","metasystem/cmd/metasystem/goalsync_mutations.go","metasystem/cmd/metasystem/goalsync_mutations_test.go","metasystem/internal/dispatch/**","metasystem/internal/readsubject/**","metasystem/cmd/metasystem/goal_list.go","metasystem/cmd/metasystem/goal_list_test.go",".gitattributes","metasystem/internal/testpolicy/contractgit/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["budget-stop-authority"],"platforms":["any"],"targetMs":30000,"packages":["internal/goal","internal/goal/branch","cmd/metasystem"],"tests":["TestGoalDoneWithoutLocalBranchSkipsUnreadableRemote","TestGoalDoneWithLocalBranchStillSweepsUnreadableRemote","TestBudgetTupleIsCompletePositiveAndCanonical","TestElapsedBreachDurationAppliesGraceAtTheStopBoundary","TestBudgetValidationNamesEveryInvalidLimit","TestStoredBudgetRequiresCompleteNumericLimits","TestHandedOverClaimGuards","TestHandedOverClaimRoundTripsWithoutChangingExistingClaims","TestHandedOverClaimsDoNotConsumeLandingSlots","TestHandedOverClaimsUseOneDerivedLandingPair","TestHandedOverRecordRequiresEveryCoordinate","TestGoalHandoverAppliesCompleteFieldTable","TestHandedOverClaimReleaseClearsRecord","TestHandedOverClaimConclusionClearsRecord","TestUnitDigestIgnoresDiffConfiguration","TestValidateRangeRefusals","TestValidateRangeCleanRangePasses","TestGoalBranchCheckPrintsKinds","TestGoalHandBackClearsHandedOverAndValidates","TestGoalHandBackRefusals","TestGoalHandoverTargetLiveness","TestGoalBranchCheckFetchesCurrentOriginTip","TestGoalBranchGitKeepsStderrOutOfObjectIDs","TestValidateRangeAllowsBranchBehindEndpoint","TestCommitCreatesBranchAndAmendsUnit","TestCommitRefusesNonHolder","TestCommitRefusesWithoutPushProtocol","TestCommitHasSingleAmendDecision","TestCommitRefusalsPreserveCheckout","TestAmendKeepsUnstagedTrackedEdits","TestAmendRefusesBeforeOverwritingUnstagedTrackedEdit","TestAmendInstallFailureRestoresCheckout","TestAmendRechecksClaimBeforeBranchUpdate","TestPushPublishesAmendAndSecondCloneAdopts","TestPushReconcilesUnknownOutcomeAndPreparedTransaction","TestPushAndCommitAdoptDescendantRemoteAfterLandedCrash","TestPushLeaseAndClaimMovementRefuseWithoutRetry","TestPushUnknownNotLandedDoesNotWedgeLaterAmend","TestPushAdoptsRemoteAdvanceAndCommitUsesIt","TestPushAndCommitRefuseDivergedRemote","TestPushAdoptionValidatesRangeAndCleansFetchRef","TestAttestationReaderRecordIntegrity","TestAttestationRequiresFastGateAndNamesChangedTests","TestAttestationCriticRootSourceValidates","TestAttestationCarryPreservesUnitAndFoldBytes","TestAttestationCarryRefusesChangedUnitOrFold","TestAttestationCarryChecksEveryEarlierFold","TestReadRefusalsPreserveCheckout","TestReadAdoptionRefusalsLeaveCheckoutUntouched","TestReadAdoptionKeepsUntrackedScratchFile","TestGoalBranchClaimRequiresMachineAndLineage","TestGoalBranchCommitAndPushUseEndpointRemote","TestGoalBranchHelpNamesPush","TestGoalBranchStatusReportsAbsentOrigin","TestGoalBranchTestingContractIncludesReadDependencies","TestGoalBranchLandPrepRoutesLocalRedCandidate","TestStatusLandReadyPrefixAndParkSafety","TestParkRecordsPushedBranchSummary","TestParkCommandEdgeSkipsUnreadableRemoteOnlyWithoutLocalBranch","TestParkCommandEdgeChecksEndpointOnlyForLocalBranch","TestTransportMirrorAndLeasedDelete","TestGoalLandingPreparationSeries","TestGoalLandingPreimageRetryAndCanaryFence","TestGoalLandingRetryIdentitySurvivesASecondClone","TestGoalLandingLastRefusesUnitBeyondPrefix","TestLandingRedLoopClassificationAndBudget","TestValidateRangeAcceptsBuildListsAndRejectsDuplicateUnitAcrossBuilds","TestAmendDropsReadOfReplacedBuildAndReplaysLaterPlan","TestGoalBranchPushUsesLedgerFailureClassification","TestPushAdoptionCrashCannotStageAReversal","TestPushAdoptionKeepsUntrackedScratchFile","TestCommitAdoptsRemoteWithoutEndpointCheckout","TestGoalBranchCommitIsTheGuardedCommitWrapper","TestFailedCommitLeavesCheckoutAndRefsUnchanged","TestGoalBranchCommitAcceptsBuildUnitList","TestGoalLandingPublicationAndVerification","TestGoalBranchSweepRules","TestOpenClaimDoneLifecycle","TestLastArcGoalConclusionRaisesRetroDebtWhenSweepFails","TestGoalBranchSweepListsParkedDoneAbandonedAndOrphan","TestStatusAndReadBindWholeBuildList","TestAmendReplacesWholeBuildList","TestGoalLandingKeepsBuildUnitList","TestGoalBranchLastLandingSweepsGoalBranch","TestGoalListJSONKeepsItsShapeAndRequiresHistoryFlag","TestEmptyReadItemListPreservesRecordBytesAndDigest","TestReadItemsRoundTripBesideNextStep","TestReadItemsAddIsIdempotent","TestReadItemIDsStayStableAcrossAddCalls","TestReadItemsCloseNeedsExactlyOneWay","TestReadItemsFixedRefusesUnknownCommit","TestReadItemsMoveIsAtomicAndRefusesDoneTarget","TestReadItemsAcceptedRefusesBlankReason","TestReadItemsCloseRefusesClosedItem","TestDoneRefusesOpenReadItemIDsAndPassesWhenClosed","TestRetroReadItemsListsOpenAndFlagsConcludedDefect","TestGoalShowAndNextPrintOpenReadItemFixUnit","TestGoalReadItemsListJSONShape","TestReadItemsFileSkipsBlanksAndComments","TestGoalBranchGitRunnersSupplyTestingMergeDriver","TestBranchLandingSyncMergesTestingContractBySurface","TestEveryTerminalGoalTransitionRefusesOpenReadItems","TestDoneReadItemRefusalRemedyExecutes","TestCadenceClaimDeduplicatesTreeAcrossMachines","TestCadenceRedPublishesOwnerlessUntilHumanNamesGoal","TestCadenceStateAbsentLeavesLedgerBytesUnchanged","TestCadenceDeadClaimIsRecoverableAfterLease","TestGoalBranchVerbsRunFromTheHoldersLinkedWorktree","TestGoalBranchCommitRefusesToMoveAnArmedCheckout","TestClaimQuotaRefusalNamesTheHeldGoalAndRelease","TestGoalBranchHolderResolutionPreservesInstallationSubdirectory","TestTrunkRedBatchGuardsExcludeCadenceRecords","TestGoalBranchReadRunsGateDispatchesAndCollectsClosedCritic","TestGoalBranchReadRedGateAndUncleanClosureDispatchNothingFurther","TestLandingMessageAcceptsAttestedBranchProvenance","TestGoalBranchReadDelegateUsesBinarySeamAndReturnsWithoutWaiting","TestCommitReadRefusesUnrecordedFastGateRun","TestAdoptRemoteTipRestoresHeadWhenTheRefUpdateFails","TestBindLandedUnitRefusesOmittedFold","TestCriticAttestationSurvivesFreshCloneWithoutJobStore","TestRecoveryRefusesParkWhenGoalBranchIsUnpushed","TestRecoveryCompletesParkWhenGoalBranchIsPushed","TestParkFailsClosedWithoutBranchChecker","TestRestampVerbRefusesTheByFlag","TestReadInstallRefusalLeavesNothingStaged","TestReadCommitKeepsDirtyLedgerWithoutAdoption","TestAmendInstallFailureRollsBackMovedCheckout","TestAmendDroppingReadStillChecksReplayedTree","TestPlainCommitKeepsDirtyLedgerWithoutAdoption","TestAdoptionUntrackedCollisionRefusesStale","TestGoalLandingCommitDatesComeFromReceiptStamp","TestLandThroughIgnoresStopFenceReason","TestGoalLandingRefusesFoldWithStalePreimage","TestMirrorDeleteReconcilesUnknownOutcome","TestLandPushRerunAfterPublishedCrashReportsLanded","TestLandPushRechecksClaimBeforePush","TestParkRefusalDoesNotClaimOriginState","TestSweepRefusesDirtyGoalWorktree","TestSweepRefusesTransportTipWithUnlandedCommit","TestSweepCleansLeftoversWhenOriginBranchIsGone","TestSweepRequiresExactConcludedDroppedDeclaration","TestParkKeepsNextStepNarrativeAndAddsBranchSummary","TestSyncRequestPublishesEpochAuthorityForTheHolderOnly","TestHolderSetBudgetRebindsEpochForProofAdmission","TestBudgetEpisodeRevisionTransitions","TestApprovalEpisodeRevisionGrammar","TestBudgetEpisodeRevisionLegacyMinimum","TestLegacyApprovalWithReadItemsRoundTripsByteIdentical","TestHistoryLineResumedField","TestRecoveryRefusesJournaledSetBudgetAuthority","TestSetBudgetLiftsCompletedFenceInOneTransaction","TestSetBudgetFencedSameTupleRefusesWithoutMutation","TestSetBudgetFencedIncompleteBatchNamesRemedy","TestSetBudgetFencedOtherClaimNamesConflict","TestRebindEpochFollowsTheAuthenticatedHolderOnly","TestSweepRefusesUnlandedLocalTip","TestSweepRefusalPreservesRefsAndWorktree","TestSweepRefusalNamesEveryUnlandedCommit","TestSweepKeepsLocalRefMovedAfterCheck","TestSweepLocalTipExemptions","TestSweepAbandonedStillValidatesRemoteRange","TestWithLockDeadlineUsesInjectedClock","TestPublishRetryDeadlineUsesInjectedClock"]},
+-    {"id":"wait-stop-standard","kind":"integration","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/internal/adapter/**","metasystem/internal/run/**","metasystem/internal/proofrun/**","metasystem/cmd/metasystem/wait_verb.go","metasystem/cmd/metasystem/wait_verb_test.go","metasystem/scripts/agents/adapters/**","metasystem/scripts/agents/supervision-fixtures.sh","metasystem/docs/design/turn-verdict-delivery-contract.md","metasystem/internal/report/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]},{"id":"bash","executable":"bash","versionArgs":["--version"]},{"id":"git","executable":"git","versionArgs":["--version"]}],"obligations":["budget-stop-authority","runtime-custody"],"platforms":["any"],"targetMs":60000,"packages":["internal/goal","internal/adapter","cmd/metasystem","internal/report"],"tests":["TestPendingWaitTurnVerdict","TestPendingWaitIdleBacklog","TestWaitDeliveryContract","TestPendingWaitInstalledVerdicts","TestWaitPathSelectorIsValidated","TestNextStepNamesAPendingHumanWord","TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord","TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord","TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation","TestMapStopOutputWritesTheResponseRecord","TestMapStopOutputAcceptsChangedWording","TestStopLineIsRenderedFromTheReportReference","TestPruneRemovesTheResponseRecordWithItsReport","TestReportStopResponseResolvesUnderChangedWording","TestReportStopResponseRefusesAnUnreadableResponse","TestBedsResolveStopReportsThroughTheEngine","TestToolGateAllowlist","TestToolGateNeverDeniesLandingWaitOrAgent","TestToolGateAllowEmitsNothing","TestToolGateCeilingColumnEqualsTrigger","TestToolGateMemoryNoteRule","TestWaitRegisterLocalRecordsTheTrackedProcess","TestWaitRegisterHumanNeedsAQuestionAndADeadline","TestRegisteredLocalAndHumanWaitsInstalledVerdicts","TestLocalWaitAllowsTheStopWhileItsProcessLives","TestLocalWaitOfADeadProcessDoesNotAllowTheStop","TestHumanWaitAllowsTheStopUntilItsDeadline","TestLocalWaitCoversTheJobItNames","TestToolGateDeadlineCountsFromTheShellBirth","TestToolGateFallsBackToEntryWhenBirthUnreadable","TestToolGateClassifiesBeforeReading","TestToolGateReadOptionsAreNonBlocking","TestToolGateAllowsNativeSubagentCalls","TestToolGateSubagentCallsWriteNoRow","TestToolGateAllowsPastItsDeadline","TestToolGateNoDecisionWhenTheCallStoreIsBusy","TestToolGateLeavesTheCursor","TestToolGateWritesDecisionRows","TestToolGateObserveModeAllowsAndRecordsTheDenyDecision","TestToolGateDenyModeDenies","TestClaudeJobSettingsInstallNoToolGate","TestWaitingLinesUseWaitEndForLiveLocalWait","TestWaitingLinesUseWaitEndForPendingHumanWait"],"race":false,"coverage":false},
++    {"id":"wait-stop-standard","kind":"integration","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/internal/adapter/**","metasystem/internal/run/**","metasystem/internal/proofrun/**","metasystem/cmd/metasystem/wait_verb.go","metasystem/cmd/metasystem/wait_verb_test.go","metasystem/scripts/agents/adapters/**","metasystem/scripts/agents/supervision-fixtures.sh","metasystem/docs/design/turn-verdict-delivery-contract.md","metasystem/internal/report/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]},{"id":"bash","executable":"bash","versionArgs":["--version"]},{"id":"git","executable":"git","versionArgs":["--version"]}],"obligations":["budget-stop-authority","runtime-custody"],"platforms":["any"],"targetMs":60000,"packages":["internal/goal","internal/adapter","cmd/metasystem","internal/report"],"tests":["TestPendingWaitTurnVerdict","TestPendingWaitIdleBacklog","TestStopFrontierOwnerRevisionAndFreshness","TestIdleDigestKeepsEveryNonterminalJob","TestBoardJoinReadsOlderRecords","TestWaitDeliveryContract","TestPendingWaitInstalledVerdicts","TestWaitPathSelectorIsValidated","TestNextStepNamesAPendingHumanWord","TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord","TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord","TestIdleBacklogWithOnlyHumanWaitingGoalsPreparesNoContinuation","TestMapStopOutputWritesTheResponseRecord","TestMapStopOutputAcceptsChangedWording","TestStopLineIsRenderedFromTheReportReference","TestPruneRemovesTheResponseRecordWithItsReport","TestReportStopResponseResolvesUnderChangedWording","TestReportStopResponseRefusesAnUnreadableResponse","TestBedsResolveStopReportsThroughTheEngine","TestToolGateAllowlist","TestToolGateNeverDeniesLandingWaitOrAgent","TestToolGateAllowEmitsNothing","TestToolGateCeilingColumnEqualsTrigger","TestToolGateMemoryNoteRule","TestWaitRegisterLocalRecordsTheTrackedProcess","TestWaitRegisterHumanNeedsAQuestionAndADeadline","TestRegisteredLocalAndHumanWaitsInstalledVerdicts","TestLocalWaitAllowsTheStopWhileItsProcessLives","TestLocalWaitOfADeadProcessDoesNotAllowTheStop","TestHumanWaitAllowsTheStopUntilItsDeadline","TestLocalWaitCoversTheJobItNames","TestToolGateDeadlineCountsFromTheShellBirth","TestToolGateFallsBackToEntryWhenBirthUnreadable","TestToolGateClassifiesBeforeReading","TestToolGateReadOptionsAreNonBlocking","TestToolGateAllowsNativeSubagentCalls","TestToolGateSubagentCallsWriteNoRow","TestToolGateAllowsPastItsDeadline","TestToolGateNoDecisionWhenTheCallStoreIsBusy","TestToolGateLeavesTheCursor","TestToolGateWritesDecisionRows","TestToolGateObserveModeAllowsAndRecordsTheDenyDecision","TestToolGateDenyModeDenies","TestClaudeJobSettingsInstallNoToolGate","TestWaitingLinesUseWaitEndForLiveLocalWait","TestWaitingLinesUseWaitEndForPendingHumanWait"],"race":false,"coverage":false},
+     {"id":"obligationstate-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/obligationstate/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["budget-stop-authority"],"platforms":["any"],"targetMs":5000,"packages":["internal/obligationstate"],"tests":"all"},
+     {"id":"mission-decision-standard","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/missionrunner/**"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["budget-stop-authority"],"platforms":["any"],"targetMs":6000,"packages":["internal/missionrunner"],"tests":["TestProjectFences","TestProjectFencesRefusesBadReservations","TestConcludeTurnStatusDecision","TestAcquireLeaseLifecycle","TestVerifyStateShapeRefusals","TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost","TestStopLiveRunnerSignalsOwnedGroup"]},
+     {"id":"goal-full-coverage","kind":"unit","adapter":"go","cwd":"metasystem","inputs":["metasystem/go.mod","metasystem/go.sum","metasystem/internal/goal/**","metasystem/scripts/agents/coverage-ratchet.json","metasystem/scripts/agents/coverage-ratchet-linux.json"],"outputs":[],"tools":[{"id":"go","executable":"go","versionArgs":["version"]}],"obligations":["goal-package-coverage"],"platforms":["any"],"targetMs":1800000,"packages":["internal/goal"],"tests":"all","coverage":true,"shards":4},
+diff --git a/metasystem/internal/goal/stopboard.go b/metasystem/internal/goal/stopboard.go
+new file mode 100644
+index 000000000..5048b4e04
+--- /dev/null
++++ b/metasystem/internal/goal/stopboard.go
+@@ -0,0 +1,169 @@
++package goal
++
++import (
++	"fmt"
++	"sort"
++	"strings"
++	"time"
++)
++
++// BoardOwner identifies the checkout claim whose stop is being judged.
++type BoardOwner struct {
++	Machine    string `json:"machine"`
++	Lineage    string `json:"lineage"`
++	ClaimEpoch int64  `json:"claimEpoch"`
++}
++
++// BoardGoal is the goal information needed by a stop decision.
++type BoardGoal struct {
++	Id       string `json:"id"`
++	Revision uint64 `json:"revision"`
++	Intent   string `json:"intent"`
++	NextStep string `json:"nextStep"`
++}
++
++// BoardActivity is one live job or governed run and its join result.
++type BoardActivity struct {
++	Ref        string  `json:"ref"`
++	GoalId     string  `json:"goalId,omitempty"`
++	Revision   *uint64 `json:"revision,omitempty"`
++	ClaimEpoch *int64  `json:"claimEpoch,omitempty"`
++	Machine    string  `json:"machine,omitempty"`
++	Lineage    string  `json:"lineage,omitempty"`
++	Joined     bool    `json:"joined"`
++	Reason     string  `json:"reason"`
++}
++
++// StopBoard is the single accepted-world snapshot used by one stop decision.
++type StopBoard struct {
++	Owner         BoardOwner      `json:"owner"`
++	Tip           string          `json:"tip"`
++	FetchedAt     time.Time       `json:"fetchedAt"`
++	ProjectedAt   time.Time       `json:"projectedAt"`
++	Held          []BoardGoal     `json:"held"`
++	HeldElsewhere []BoardGoal     `json:"heldElsewhere"`
++	Ready         []BoardGoal     `json:"ready"`
++	Activity      []BoardActivity `json:"activity"`
++	tree          *TreeGoals
++}
++
++// HasJoinedWork reports whether a live job or governed run belongs to the
++// exact owner and goal revision represented by this board.
++func (b *StopBoard) HasJoinedWork() bool {
++	if b == nil {
++		return false
++	}
++	for _, activity := range b.Activity {
++		if activity.Joined {
++			return true
++		}
++	}
++	return false
++}
++
++// ExcludeJob removes one job from this decision without changing the stored
++// activity record used by other readers.
++func (b *StopBoard) ExcludeJob(id string) {
++	if b == nil {
++		return
++	}
++	ref := "job:" + id
++	for index := range b.Activity {
++		if b.Activity[index].Ref == ref {
++			b.Activity[index].Joined = false
++			b.Activity[index].Reason = "excluded from this stop decision"
++		}
++	}
++}
++
++func newStopBoard(projection Projection, frontier NextVerdict, owner BoardOwner, activity []BoardActivity, now time.Time) *StopBoard {
++	board := &StopBoard{
++		Owner: owner, Tip: projection.Tip, FetchedAt: now, ProjectedAt: now,
++		Activity: append([]BoardActivity(nil), activity...), tree: projection.Tree,
++	}
++	if projection.Tree == nil {
++		return board
++	}
++	for _, id := range append(append([]string(nil), frontier.Claimed...), frontier.Landing...) {
++		file := projection.Tree.Live[id]
++		if file == nil || file.Claimed == nil {
++			continue
++		}
++		goal := boardGoal(file)
++		if owner.Lineage != "" && file.Claimed.Machine == owner.Machine && file.Claimed.Lineage == owner.Lineage {
++			board.Held = append(board.Held, goal)
++		} else {
++			board.HeldElsewhere = append(board.HeldElsewhere, goal)
++		}
++	}
++	for _, id := range frontier.Ready {
++		if file := projection.Tree.Live[id]; file != nil {
++			board.Ready = append(board.Ready, boardGoal(file))
++		}
++	}
++	board.joinActivity()
++	return board
++}
++
++func boardGoal(file *GoalFile) BoardGoal {
++	return BoardGoal{Id: file.Id, Revision: file.Revision, Intent: file.Intent, NextStep: file.NextStep}
++}
++
++func (b *StopBoard) joinActivity() {
++	held := make(map[string]BoardGoal, len(b.Held))
++	for _, goal := range b.Held {
++		held[goal.Id] = goal
++	}
++	for index := range b.Activity {
++		row := &b.Activity[index]
++		goal, present := held[row.GoalId]
++		missing := boardActivityMissing(*row)
++		if missing != "" {
++			row.Reason = "missing " + missing
++			continue
++		}
++		if !present {
++			row.Reason = "goal is not held by this owner"
++			continue
++		}
++		if strings.HasPrefix(row.Ref, "job:") && row.Machine != b.Owner.Machine {
++			row.Reason = "machine does not match the owner"
++			continue
++		}
++		if strings.HasPrefix(row.Ref, "run:") && row.Lineage != b.Owner.Lineage {
++			row.Reason = "lineage does not match the owner"
++			continue
++		}
++		if *row.Revision != goal.Revision {
++			row.Reason = fmt.Sprintf("revision %d does not match held revision %d", *row.Revision, goal.Revision)
++			continue
++		}
++		if *row.ClaimEpoch != b.Owner.ClaimEpoch {
++			row.Reason = fmt.Sprintf("claim epoch %d does not match owner epoch %d", *row.ClaimEpoch, b.Owner.ClaimEpoch)
++			continue
++		}
++		row.Joined = true
++		row.Reason = "joined to the owner and held revision"
++	}
++	sort.Slice(b.Activity, func(i, j int) bool { return b.Activity[i].Ref < b.Activity[j].Ref })
++}
++
++func boardActivityMissing(row BoardActivity) string {
++	var missing []string
++	if row.GoalId == "" {
++		missing = append(missing, "goal id")
++	}
++	if strings.HasPrefix(row.Ref, "job:") && row.Machine == "" {
++		missing = append(missing, "machine id")
++	}
++	if strings.HasPrefix(row.Ref, "run:") && row.Lineage == "" {
++		missing = append(missing, "owner lineage")
++	}
++	if row.Revision == nil {
++		missing = append(missing, "goal revision")
++	}
++	if row.ClaimEpoch == nil {
++		missing = append(missing, "claim epoch")
++	}
++	return strings.Join(missing, ", ")
++}
+diff --git a/metasystem/internal/goal/stopboard_test.go b/metasystem/internal/goal/stopboard_test.go
+new file mode 100644
+index 000000000..7c7be6387
+--- /dev/null
++++ b/metasystem/internal/goal/stopboard_test.go
+@@ -0,0 +1,46 @@
++package goal
++
++import (
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++)
++
++func TestBoardJoinReadsOlderRecords(t *testing.T) {
++	t.Parallel()
++	now := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
++	held := budgetedQueuedGoal("held", "2026-08-23T00:00:00Z")
++	held.State = StateClaimed
++	held.Revision = 2
++	held.Claimed = &ClaimRecord{Machine: "bed-m1", Lineage: "lineage-a", At: "2026-08-23T01:00:00Z", Revision: 2}
++	root := servingBed(t, "bed-m1", map[string]*GoalFile{"held": held})
++	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
++	writeIdleJSON(t, filepath.Join(jobs, "missing.json"), map[string]any{
++		"jobId": "missing", "goalId": "held", "machineId": "bed-m1", "status": "running",
++		"pid": 41, "pidStartedAt": 100,
++	})
++	writeIdleJSON(t, filepath.Join(jobs, "fractional.json"), map[string]any{
++		"jobId": "fractional", "goalId": "held", "machineId": "bed-m1", "goalRevision": 2.5,
++		"claimEpoch": 7, "status": "running", "pid": 42, "pidStartedAt": 101,
++	})
++	owner := BoardOwner{Machine: "bed-m1", Lineage: "lineage-a", ClaimEpoch: 7}
++	work, err := readClaimableBudgetedWork(root, now, owner, idleFixtureProber{
++		41: {Pid: 41, StartedAt: time.Unix(100, 0)},
++		42: {Pid: 42, StartedAt: time.Unix(101, 0)},
++	}, projectionDependencies{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if work.Board == nil || len(work.Board.Activity) != 2 {
++		t.Fatalf("older live records were not listed on the board: %+v", work.Board)
++	}
++	for _, row := range work.Board.Activity {
++		if row.Joined {
++			t.Fatalf("an incomplete older record joined: %+v", row)
++		}
++		if !strings.Contains(row.Reason, "missing") {
++			t.Fatalf("the missing coordinate was not named: %+v", row)
++		}
++	}
++}
