@@ -1,6 +1,6 @@
 # pipelines-never-lose-a-truncated-producer
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 50
 - Risk: severity=3 novelty=1 exposure=3 accumulation=2 basis="severity 3: the witness gate runs git archive into tar under pipefail on a real landing path, so a tree crossing the pipe-buffer window refuses real landings with a false tar write error; novelty 1: a known SIGPIPE-under-pipefail class; exposure 3: every seat's landings through the witness gate plus the land and supervision beds; accumulation 2: the failure comes and goes with tree size, so it recurs silently as the tree grows"
@@ -9,8 +9,9 @@
 - Origin: human
 - Next step: parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido picks the goal. Existing work: on main 9bc768c05, the witness gate and the supervision bed archive to a file instead of a pipe (metasystem/scripts/agents/witness-gate.sh, metasystem/scripts/agents/supervision-fixtures.sh); 71b96a020, the supervision bed reads with here-strings. Left: the gate check and its fixtures, about 300-500 lines. No origin goal/pipelines-never-lose-a-truncated-producer branch exists: nothing unlanded exists; the work below is all on main.
 - OpenedAt: 2026-09-14T17:06:35Z
-- Revision: 109
+- Revision: 110
 - BudgetExceptions: 0
+- Parked: by=human:Wido at=2026-09-19T15:47:28Z because=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido picks the goal. Existing work: on main 9bc768c05, the witness gate and the supervision bed archive to a file instead of a pipe (metasystem/scripts/agents/witness-gate.sh, metasystem/scripts/agents/supervision-fixtures.sh); 71b96a020, the supervision bed reads with here-strings. Left: the gate check and its fixtures, about 300-500 lines. No origin goal/pipelines-never-lose-a-truncated-producer branch exists: nothing unlanded exists; the work below is all on main.
 
 History:
 - 2026-09-14T17:06:35Z BZGJWQGTEKXMPXCJXYHQ2VFGQ5-m1e-c6925449 open actor=human:Wido targets=pipelines-never-lose-a-truncated-producer
@@ -122,4 +123,5 @@ History:
 - 2026-09-16T20:32:59Z GBTR7QRDKCMEGQ2H9JTXRXFYS4-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,pipelines-never-lose-a-truncated-producer reason=priority-order subject=pipelines-never-lose-a-truncated-producer from=1:55 to=2:50 requested-sequence=50
 - 2026-09-16T20:35:03Z AZBGWAB9SPBECX708CF13VKFA9-m1e-c6925449 unapprove actor=human:Wido targets=pipelines-never-lose-a-truncated-producer reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
 - 2026-09-19T15:47:21Z YK5ZVSJ7F35PCYX3T15K4J3A3X-m1e-c6925449 edit actor=human:Wido targets=pipelines-never-lose-a-truncated-producer
-Integrity: sha256=2b50e7607be53d442f0ac63336c13ee2f5092dd6f5a00ec9378cfe065fc30a60
+- 2026-09-19T15:47:28Z 0MH0M00QGKZVAFZSNYSJRDJ0JC-m1e-c6925449 park actor=human:Wido targets=pipelines-never-lose-a-truncated-producer reason=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido picks the goal. Existing work: on main 9bc768c05, the witness gate and the supervision bed archive to a file instead of a pipe (metasystem/scripts/agents/witness-gate.sh, metasystem/scripts/agents/supervision-fixtures.sh); 71b96a020, the supervision bed reads with here-strings. Left: the gate check and its fixtures, about 300-500 lines. No origin goal/pipelines-never-lose-a-truncated-producer branch exists: nothing unlanded exists; the work below is all on main.
+Integrity: sha256=b78f0c4899ee2668165e994fdac18e6bc05b5fdf12c83a3605e5e649f2169b8b
