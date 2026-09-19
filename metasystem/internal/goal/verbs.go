@@ -1369,7 +1369,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 				if _, approvalErr := requireApprovedForClaim(r.Endpoint.Root, t, f, r.Now, "set-budget resume"); approvalErr != nil {
 					return nil, approvalErr
 				}
-				resumedStopID, err = liftFenceForRebudget(r.Endpoint.Root, t, f, "set-budget")
+				resumedStopID, err = checkFenceLiftForRebudget(r.Endpoint.Root, t, f, "set-budget")
 				if err != nil {
 					return nil, err
 				}

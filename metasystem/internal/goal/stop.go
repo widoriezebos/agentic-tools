@@ -396,11 +396,11 @@ type ResumeRequest struct {
 	Authority *humanauthority.Proof
 }
 
-// liftFenceForRebudget applies the preconditions shared by resume and the
-// one-step fenced set-budget transition. The caller still owns the new
-// History event and claim binding, so any later refusal leaves the durable
-// ledger unchanged with the fence in place.
-func liftFenceForRebudget(root string, t *TreeGoals, f *GoalFile, verb string) (string, error) {
+// checkFenceLiftForRebudget checks that the stop batch is complete and the
+// machine holds no other live claim, then returns the completed stop ID. The
+// caller's rebind through bindClaim lifts the fence in the same transaction,
+// so a refusal after this check leaves the fence in place.
+func checkFenceLiftForRebudget(root string, t *TreeGoals, f *GoalFile, verb string) (string, error) {
 	if f == nil || f.State != StateClaimed || f.Claimed == nil || f.StopCapability == nil || f.StopFence == nil {
 		id := "<unknown>"
 		if f != nil && f.Id != "" {
@@ -430,7 +430,6 @@ func liftFenceForRebudget(root string, t *TreeGoals, f *GoalFile, verb string) (
 			verb, f.Id, machine, otherID, otherID, verb, f.Id,
 		)
 	}
-	f.StopFence = nil
 	return fence.StopID, nil
 }
 
@@ -484,7 +483,7 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 				}
 			}
 			machine, lineage, claimEpoch := f.Claimed.Machine, f.Claimed.Lineage, f.StopCapability.ClaimEpoch
-			if _, err := liftFenceForRebudget(r.Endpoint.Root, t, f, "resume"); err != nil {
+			if _, err := checkFenceLiftForRebudget(r.Endpoint.Root, t, f, "resume"); err != nil {
 				return nil, err
 			}
 			touch(f, r.VerbRequest, "resume", []string{r.GoalID})
