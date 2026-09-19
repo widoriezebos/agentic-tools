@@ -266,7 +266,7 @@ func TestSupervisorSectionResultGrowthCountsAsOutput(t *testing.T) {
 	reader := availableProcessTreeReader(t)
 	options := supervisorOptionsForTest(t, 10, 80*time.Millisecond)
 	options.Limits.ZeroConsumptionWindow = 0
-	activity := newOutputActivity(time.Now())
+	activity := newOutputActivity(options.clock.now)
 	activityBefore := activity.Last()
 	observedMembers := 0
 	observedStageGrowth := false
@@ -590,10 +590,13 @@ func TestSupervisorKillSparesTheFixtureCustodian(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	options := supervisorOptionsForTest(t, 0, 5*time.Second)
 	options.Context = ctx
-	options.Activity = newOutputActivity(time.Now())
+	options.Activity = newOutputActivity(options.clock.now)
 	options.Reader = &readinessGatedTreeReader{
 		ready: helper.ready, keepAlive: helper.keepAlive, activity: options.Activity, readyActivity: &helper.readyActivity,
-		reader: custodianKillTreeReader{fixture: helper}, onSample: func(int, processTreeSample) { cancel() }, clock: options.clock,
+		reader: custodianKillTreeReader{fixture: helper}, onSample: func(int, processTreeSample) {
+			helper.keepAliveUntilExit()
+			cancel()
+		}, clock: options.clock,
 	}
 	outcome := superviseCommand(helper.command, options.supervisorOptions)
 	if outcome.Verdict != "cancelled" || outcome.WaitErr == nil {
@@ -901,7 +904,11 @@ func (fixture *supervisorHelperFixture) keepAliveUntilExit() {
 
 func (fixture *supervisorHelperFixture) gate(options *supervisorTestOptions, reader processTreeReader, onSample func(int, processTreeSample)) {
 	if options.Activity == nil {
-		options.Activity = newOutputActivity(time.Now())
+		startedAt := time.Now()
+		if options.clock != nil {
+			startedAt = options.clock.now
+		}
+		options.Activity = newOutputActivity(startedAt)
 	}
 	options.Reader = &readinessGatedTreeReader{
 		ready: fixture.ready, keepAlive: fixture.keepAlive, activity: options.Activity, readyActivity: &fixture.readyActivity,
