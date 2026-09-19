@@ -211,16 +211,9 @@ func withDelegateClaimCapabilityStoreLock(root string, fn func() error) error {
 		return fmt.Errorf("cannot open delegate claim capability store lock: %w", err)
 	}
 	defer handle.Close()
-	deadline := time.Now().Add(recordLockWait())
-	for {
-		err = unix.Flock(int(handle.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("delegate claim capability store is busy after %s", recordLockWait())
-		}
-		time.Sleep(50 * time.Millisecond)
+	wait := recordLockWait()
+	if !flockWithin(handle, wait, recordLockClock{}) {
+		return fmt.Errorf("delegate claim capability store is busy after %s", wait)
 	}
 	defer unix.Flock(int(handle.Fd()), unix.LOCK_UN)
 	return fn()

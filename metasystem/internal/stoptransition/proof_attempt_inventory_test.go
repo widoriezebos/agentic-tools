@@ -10,8 +10,21 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
+
+type proofInventoryStopProbe struct {
+	exact identity.Exact
+	state identity.Liveness
+}
+
+func (p *proofInventoryStopProbe) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	if pid != p.exact.Pid || p.state == identity.Dead {
+		return identity.Exact{}, identity.Dead, nil
+	}
+	return p.exact, p.state, nil
+}
 
 func TestProofReservationBeforeChildPublicationIsStoppable(t *testing.T) {
 	root := t.TempDir()
@@ -36,6 +49,7 @@ func TestProofReservationBeforeChildPublicationIsStoppable(t *testing.T) {
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("proof inventory helper pid: %d", child.Process.Pid)
 	waited := make(chan error, 1)
 	go func() { waited <- child.Wait() }()
 	finished := false
@@ -49,7 +63,12 @@ func TestProofReservationBeforeChildPublicationIsStoppable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	exact, state, err := (identity.KernelProber{}).Probe(int64(child.Process.Pid))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe proof inventory helper: state=%s err=%v", state, err)
+	}
+	prober := &proofInventoryStopProbe{exact: exact, state: identity.Alive}
+	now := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
 	attempt, decision, err := proofrun.ReserveLocked(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
 		GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, CandidateGoalID: "goal-a", CandidateRevision: 2, ReservedMinutes: 2,
 		Identity: proofIdentity, Launcher: launcher, Now: now}, "0"))
@@ -60,6 +79,15 @@ func TestProofReservationBeforeChildPublicationIsStoppable(t *testing.T) {
 		t.Fatalf("proof stop inventory fixture was admission-refused: %+v", decision)
 	}
 	family := newProofRunFamily(root, 10, &suiteStopGroups{groups: map[int64]bool{}})
+	family.prober = prober
+	clock := now
+	family.now = func() time.Time { return clock }
+	var proofStopWaits int
+	family.sleep = func(duration time.Duration) {
+		proofStopWaits++
+		clock = clock.Add(duration)
+		prober.state = identity.Dead
+	}
 	items, err := family.Inventory()
 	if err != nil || len(items) != 1 || !strings.Contains(items[0].Key, attempt.AttemptID) {
 		t.Fatalf("reserved launcher was absent from stop inventory: items=%+v err=%v", items, err)
@@ -67,6 +95,9 @@ func TestProofReservationBeforeChildPublicationIsStoppable(t *testing.T) {
 	outcome, err := (&Transition{Families: []Family{family}}).stopItem(items[0])
 	if err != nil || !outcome.Complete {
 		t.Fatalf("reserved launcher did not stop through proofrun identity handling: outcome=%+v err=%v", outcome, err)
+	}
+	if proofStopWaits != 1 {
+		t.Fatalf("proof inventory stop waits = %d, want one artificial-clock wait", proofStopWaits)
 	}
 	<-waited
 	finished = true

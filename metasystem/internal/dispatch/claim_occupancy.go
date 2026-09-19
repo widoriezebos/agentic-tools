@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -187,16 +186,9 @@ func withSessionOccupancyLock(root, sessionKey string, fn func(indexPath string)
 		return fmt.Errorf("cannot open session lock for %s: %w", sessionKey, err)
 	}
 	defer handle.Close()
-	deadline := time.Now().Add(recordLockWait())
-	for {
-		err = unix.Flock(int(handle.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("session lock for %s is busy after %s; a wedged holder keeps it", sessionKey, recordLockWait())
-		}
-		time.Sleep(50 * time.Millisecond)
+	wait := recordLockWait()
+	if !flockWithin(handle, wait, recordLockClock{}) {
+		return fmt.Errorf("session lock for %s is busy after %s; a wedged holder keeps it", sessionKey, wait)
 	}
 	defer unix.Flock(int(handle.Fd()), unix.LOCK_UN)
 	return fn(indexPath)

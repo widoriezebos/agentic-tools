@@ -28,13 +28,25 @@ func TestWithRecordLockIsBounded(t *testing.T) {
 	if err := unix.Flock(int(holder.Fd()), unix.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now()
-	err = withRecordLock(root, "wedged", func(string) error { return nil })
+	now := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
+	var sleeps []time.Duration
+	err = withRecordLock(root, "wedged", func(string) error { return nil }, recordLockClock{
+		now: func() time.Time { return now },
+		sleep: func(duration time.Duration) {
+			sleeps = append(sleeps, duration)
+			now = now.Add(duration)
+		},
+	})
 	if err == nil || !strings.Contains(err.Error(), "wedged") || !strings.Contains(err.Error(), "busy") {
 		t.Fatalf("a held record lock must refuse by name: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > wiringBound {
-		t.Fatalf("the bound did not release the caller: %v", elapsed)
+	if len(sleeps) != 5 {
+		t.Fatalf("record-lock polling waits = %v, want five artificial-clock waits", sleeps)
+	}
+	for _, sleep := range sleeps {
+		if sleep != 50*time.Millisecond {
+			t.Fatalf("record-lock polling wait = %s, want 50ms", sleep)
+		}
 	}
 }
 

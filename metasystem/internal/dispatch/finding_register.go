@@ -919,15 +919,9 @@ func withFindingRegisterLock(root string, fn func() (string, error)) (string, er
 		return "", fmt.Errorf("cannot open finding-register lock: %w", err)
 	}
 	defer handle.Close()
-	deadline := time.Now().Add(recordLockWait())
-	for {
-		if err := unix.Flock(int(handle.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			return "", fmt.Errorf("finding-register lock is busy after %s", recordLockWait())
-		}
-		time.Sleep(50 * time.Millisecond)
+	wait := recordLockWait()
+	if !flockWithin(handle, wait, recordLockClock{}) {
+		return "", fmt.Errorf("finding-register lock is busy after %s", wait)
 	}
 	defer unix.Flock(int(handle.Fd()), unix.LOCK_UN)
 	return fn()

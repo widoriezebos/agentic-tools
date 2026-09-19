@@ -586,6 +586,21 @@ func AuthorizeStopCancellation(root, stopID, jobID string) error {
 // cancellation intent, stops every published process identity, and commits a
 // terminal cancellation only after each identity is gone.
 func CancelStopProof(root, stopID, attemptID string) error {
+	return cancelStopProof(root, stopID, attemptID, proofrun.StopOptions{
+		TermGrace: 5 * time.Second,
+		KillGrace: time.Second,
+		Now:       time.Now,
+		Sleep:     time.Sleep,
+	})
+}
+
+func cancelStopProof(root, stopID, attemptID string, options proofrun.StopOptions) error {
+	if options.Now == nil {
+		options.Now = time.Now
+	}
+	if options.Sleep == nil {
+		options.Sleep = time.Sleep
+	}
 	batch, err := goal.ReadStopBatch(root, stopID)
 	if err != nil {
 		return err
@@ -631,7 +646,12 @@ func CancelStopProof(root, stopID, attemptID string) error {
 		attempt.AccountingRevision != observed.AccountingRevision {
 		return fmt.Errorf("proof attempt %s accounting binding changed during stop", attemptID)
 	}
-	options := proofrun.StopOptions{TermGrace: 5 * time.Second, KillGrace: time.Second}
+	if options.TermGrace <= 0 {
+		options.TermGrace = 5 * time.Second
+	}
+	if options.KillGrace <= 0 {
+		options.KillGrace = time.Second
+	}
 	if len(attempt.ProcessKeys) == 0 {
 		outcome := proofrun.StopRecordedIdentity("launcher", attempt.Launcher, options)
 		if outcome.Result == proofrun.StopNotStopped {
@@ -660,7 +680,7 @@ func CancelStopProof(root, stopID, attemptID string) error {
 		return err
 	}
 	_, err = proofrun.FinalizeAttemptLocked(root, attemptID, proofrun.TerminalCancelled, 1,
-		"cancelled by goal stop batch "+stopID, nil, time.Now().UTC())
+		"cancelled by goal stop batch "+stopID, nil, options.Now().UTC())
 	return err
 }
 

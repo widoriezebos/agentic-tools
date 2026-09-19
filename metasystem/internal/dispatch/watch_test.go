@@ -36,32 +36,30 @@ func TestJobWatchRoundTrip(t *testing.T) {
 
 	caller := run.Caller{Class: "MAIN", MainId: "main-w", SessionId: "s"}
 	done := make(chan int, 1)
-	go func() { done <- JobWatch(root, "j-watch", caller, 20*time.Millisecond) }()
+	waiting := make(chan struct{})
+	advance := make(chan struct{})
+	go func() {
+		done <- JobWatch(root, "j-watch", caller, 20*time.Millisecond, func(time.Duration) {
+			waiting <- struct{}{}
+			<-advance
+		})
+	}()
 
-	// While waiting, the waiter record is live (our own process, so the
-	// kernel prober verifies it) and owner-correlated. Wait for it rather
-	// than sleeping a fixed slice: under a loaded -race suite the watcher
-	// goroutine can take longer than any constant to write its record.
+	// The first requested poll happens only after waiter registration, so it
+	// is the completion signal for the state this assertion observes.
+	<-waiting
 	target := run.WaiterTarget{StartedAt: "2026-08-15T10:00:00Z"}
-	deadline := time.Now().Add(wiringBound)
-	for !run.LiveWaiter(root, identity.KernelProber{}, "job", "j-watch", "main-w", target) {
-		if time.Now().After(deadline) {
-			t.Fatal("the waiting watch holds no live waiter record")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !run.LiveWaiter(root, identity.KernelProber{}, "job", "j-watch", "main-w", target) {
+		t.Fatal("the waiting watch holds no live waiter record")
 	}
 	if run.LiveWaiter(root, identity.KernelProber{}, "job", "j-watch", "main-other", target) {
 		t.Fatal("a foreign owner saw the waiter as its own")
 	}
 
 	writeRecord("completed")
-	select {
-	case code := <-done:
-		if code != 0 {
-			t.Fatalf("completed job watch exit %d", code)
-		}
-	case <-time.After(wiringBound):
-		t.Fatal("watch did not return")
+	advance <- struct{}{}
+	if code := <-done; code != 0 {
+		t.Fatalf("completed job watch exit %d", code)
 	}
 
 	// Failed maps to 1; missing maps to 4.

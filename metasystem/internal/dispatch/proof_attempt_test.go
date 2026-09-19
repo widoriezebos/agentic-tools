@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,9 +15,22 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
+
+type proofStopProbe struct {
+	exact identity.Exact
+	state identity.Liveness
+}
+
+func (p *proofStopProbe) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	if pid != p.exact.Pid || p.state == identity.Dead {
+		return identity.Exact{}, identity.Dead, nil
+	}
+	return p.exact, p.state, nil
+}
 
 func TestOrdinaryProofSharesGoalBudget(t *testing.T) {
 	root, identity := dispatchProofFixture(t, "ordinary-full-proof")
@@ -57,21 +71,33 @@ func TestOrdinaryProofSharesGoalBudget(t *testing.T) {
 
 func TestProofOnlyGoalStopBatch(t *testing.T) {
 	if os.Getenv("GO_WANT_PROOF_STOP_HELPER") == "1" {
-		if err := os.WriteFile(os.Getenv("PROOF_STOP_READY"), []byte("ready\n"), 0o600); err != nil {
+		ready := os.NewFile(3, "proof-stop-ready")
+		if ready == nil {
 			os.Exit(97)
 		}
+		if _, err := ready.Write([]byte{1}); err != nil {
+			os.Exit(97)
+		}
+		_ = ready.Close()
 		for {
 			time.Sleep(time.Minute)
 		}
 	}
-	root, identity := dispatchProofFixture(t, "stop-proof")
-	ready := filepath.Join(t.TempDir(), "ready")
+	root, proofIdentity := dispatchProofFixture(t, "stop-proof")
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = readyRead.Close() })
 	child := exec.Command(os.Args[0], "-test.run=^TestProofOnlyGoalStopBatch$")
-	child.Env = append(os.Environ(), "GO_WANT_PROOF_STOP_HELPER=1", "PROOF_STOP_READY="+ready)
+	child.Env = append(os.Environ(), "GO_WANT_PROOF_STOP_HELPER=1")
+	child.ExtraFiles = []*os.File{readyWrite}
 	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
 	}
+	_ = readyWrite.Close()
+	t.Logf("proof stop helper pid: %d", child.Process.Pid)
 	waited := make(chan error, 1)
 	go func() { waited <- child.Wait() }()
 	killed := false
@@ -81,24 +107,22 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 			<-waited
 		}
 	})
-	deadline := time.Now().Add(wiringBound)
-	for {
-		if _, err := os.Stat(ready); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("proof stop helper did not become ready")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if _, err := io.ReadFull(readyRead, make([]byte, 1)); err != nil {
+		t.Fatalf("proof stop helper did not become ready: %v", err)
 	}
 	launcher, err := proofrun.ProcessIdentityForPID(int64(child.Process.Pid), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	exact, state, err := (identity.KernelProber{}).Probe(int64(child.Process.Pid))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe proof stop helper: state=%s err=%v", state, err)
+	}
+	prober := &proofStopProbe{exact: exact, state: identity.Alive}
+	now := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
 	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 2, AccountingRevision: 2,
-		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now,
+		ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: now,
 	}))
 
 	if err != nil {
@@ -136,8 +160,21 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 		member.Machine != "bed-m1" || member.ClaimEpoch != 7 {
 		t.Fatalf("proof stop member lost authority coordinates: %+v", member)
 	}
-	if err := CancelStopProof(root, batch.StopID, attempt.AttemptID); err != nil {
+	clock := now
+	var proofStopWaits int
+	if err := cancelStopProof(root, batch.StopID, attempt.AttemptID, proofrun.StopOptions{
+		Prober: prober,
+		Now:    func() time.Time { return clock },
+		Sleep: func(duration time.Duration) {
+			proofStopWaits++
+			clock = clock.Add(duration)
+			prober.state = identity.Dead
+		},
+	}); err != nil {
 		t.Fatal(err)
+	}
+	if proofStopWaits != 1 {
+		t.Fatalf("proof stop waits = %d, want one artificial-clock wait", proofStopWaits)
 	}
 	<-waited
 	killed = true

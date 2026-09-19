@@ -17,7 +17,7 @@ import (
 // missing or unparsable=4, with the waiter layer's operational codes for
 // registration failures. The waiter record it holds is what the turn
 // verdict's unwatched rule reads; it is removed on every exit path.
-func JobWatch(root, jobId string, caller run.Caller, poll time.Duration) int {
+func JobWatch(root, jobId string, caller run.Caller, poll time.Duration, sleepers ...func(time.Duration)) int {
 	record, ok := readJobStatus(root, jobId)
 	if !ok {
 		return run.ExitNoRecord
@@ -30,6 +30,10 @@ func JobWatch(root, jobId string, caller run.Caller, poll time.Duration) int {
 	defer store.RemoveWaiter("job", jobId, caller)
 	if poll <= 0 {
 		poll = 2 * time.Second
+	}
+	sleep := time.Sleep
+	if len(sleepers) > 0 && sleepers[0] != nil {
+		sleep = sleepers[0]
 	}
 	for {
 		record, ok := readJobStatus(root, jobId)
@@ -50,7 +54,7 @@ func JobWatch(root, jobId string, caller run.Caller, poll time.Duration) int {
 		default:
 			return run.ExitNoRecord // an unknown status is a malformed record
 		}
-		time.Sleep(poll)
+		sleep(poll)
 	}
 }
 

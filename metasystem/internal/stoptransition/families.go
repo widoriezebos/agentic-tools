@@ -281,6 +281,9 @@ type proofRunFamily struct {
 	items      map[string]proofRunItem
 	outcomes   map[string]proofrun.StopOutcome
 	suiteStops *suiteStopGroups
+	prober     identity.Prober
+	now        func() time.Time
+	sleep      func(time.Duration)
 }
 
 // suiteStopGroups is the in-memory join between a proof-run launcher and the
@@ -299,7 +302,10 @@ type proofRunItem struct {
 }
 
 func newProofRunFamily(root string, scaleMilli int, suiteStops *suiteStopGroups) *proofRunFamily {
-	return &proofRunFamily{root: root, scaleMilli: scaleMilli, items: map[string]proofRunItem{}, outcomes: map[string]proofrun.StopOutcome{}, suiteStops: suiteStops}
+	return &proofRunFamily{
+		root: root, scaleMilli: scaleMilli, items: map[string]proofRunItem{}, outcomes: map[string]proofrun.StopOutcome{}, suiteStops: suiteStops,
+		prober: identity.KernelProber{}, now: time.Now, sleep: time.Sleep,
+	}
 }
 
 func (f *proofRunFamily) Name() string { return "proof-run" }
@@ -320,7 +326,7 @@ func (f *proofRunFamily) Inventory() ([]Item, error) {
 			process   proofrun.ProcessIdentity
 		}{{"suite", record.SuiteProcess}, {"watchdog", record.Watchdog}, {"launcher", record.Launcher}}
 		for _, process := range processes {
-			if identity.AliveRef(identity.KernelProber{}, process.process.Ref()) == identity.Dead {
+			if identity.AliveRef(f.prober, process.process.Ref()) == identity.Dead {
 				continue
 			}
 			if record.AttemptID != "" {
@@ -376,11 +382,12 @@ func (f *proofRunFamily) Stop(item Item) (Outcome, error) {
 		}
 		term := time.Duration((int64(5*time.Second)*int64(waitScale) + 999) / 1000)
 		kill := time.Duration((int64(time.Second)*int64(waitScale) + 999) / 1000)
+		options := proofrun.StopOptions{TermGrace: term, KillGrace: kill, Prober: f.prober, Now: f.now, Sleep: f.sleep}
 		if current.attemptOnly {
-			outcome = proofrun.StopRecordedIdentity("launcher", current.identity, proofrun.StopOptions{TermGrace: term, KillGrace: kill})
+			outcome = proofrun.StopRecordedIdentity("launcher", current.identity, options)
 			f.outcomes[cacheKey] = outcome
 		} else {
-			for _, stopped := range proofrun.Stop(current.record, proofrun.StopOptions{TermGrace: term, KillGrace: kill}) {
+			for _, stopped := range proofrun.Stop(current.record, options) {
 				f.outcomes[current.record.Key()+":"+stopped.Component] = stopped
 				if stopped.Component == "suite" && stopped.Result == proofrun.StopStopped && f.suiteStops != nil && current.record.Launcher.Pgid > 1 {
 					f.suiteStops.groups[current.record.Launcher.Pgid] = true
@@ -419,7 +426,7 @@ func (f *proofRunFamily) joinStoppedAttempt(attemptID string) error {
 	if err != nil || attempt.Terminal != nil {
 		return err
 	}
-	if identity.AliveRef(identity.KernelProber{}, attempt.Launcher.Ref()) != identity.Dead {
+	if identity.AliveRef(f.prober, attempt.Launcher.Ref()) != identity.Dead {
 		return nil
 	}
 	for _, key := range attempt.ProcessKeys {
@@ -428,7 +435,7 @@ func (f *proofRunFamily) joinStoppedAttempt(attemptID string) error {
 			return readErr
 		}
 		for _, process := range []proofrun.ProcessIdentity{record.Launcher, record.SuiteProcess, record.Watchdog} {
-			if identity.AliveRef(identity.KernelProber{}, process.Ref()) != identity.Dead {
+			if identity.AliveRef(f.prober, process.Ref()) != identity.Dead {
 				return nil
 			}
 		}
@@ -437,7 +444,7 @@ func (f *proofRunFamily) joinStoppedAttempt(attemptID string) error {
 		return err
 	}
 	_, err = proofrun.FinalizeAttempt(f.root, attemptID, proofrun.TerminalCancelled, 1,
-		"all retained proof identities joined by checkout stop", nil, time.Now().UTC())
+		"all retained proof identities joined by checkout stop", nil, f.now().UTC())
 	return err
 }
 

@@ -164,7 +164,7 @@ func paths(root, job string) (jobsDir, recordPath, lockPath string) {
 // withRecordLock runs fn while holding the exclusive lock for one job's
 // record. The lock is a single flock held for the whole read-decide-write
 // cycle, so a concurrent dispatcher blocks rather than racing the same record.
-func withRecordLock(root, job string, fn func(recordPath string) error) error {
+func withRecordLock(root, job string, fn func(recordPath string) error, clocks ...recordLockClock) error {
 	if !validJobID.MatchString(job) {
 		return silentRefusal(2)
 	}
@@ -186,16 +186,9 @@ func withRecordLock(root, job string, fn func(recordPath string) error) error {
 	// (SIGSTOP, fsync stall, an inherited flock fd) would otherwise block
 	// here forever and every subsequent claim, renew, and succession
 	// would refuse at its own bound for as long as the wedge lasts.
-	deadline := time.Now().Add(recordLockWait())
-	for {
-		err := unix.Flock(int(handle.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("record lock for %s is busy after %s; a wedged holder keeps it", job, recordLockWait())
-		}
-		time.Sleep(50 * time.Millisecond)
+	wait := recordLockWait()
+	if !flockWithin(handle, wait, selectRecordLockClock(clocks)) {
+		return fmt.Errorf("record lock for %s is busy after %s; a wedged holder keeps it", job, wait)
 	}
 	defer unix.Flock(int(handle.Fd()), unix.LOCK_UN)
 	return fn(recordPath)
@@ -214,19 +207,43 @@ func withOperationPublicationLock(root string, fn func() error) error {
 		return fmt.Errorf("cannot open global operation lock: %w", err)
 	}
 	defer handle.Close()
-	deadline := time.Now().Add(recordLockWait())
-	for {
-		err = unix.Flock(int(handle.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("global operation lock is busy after %s", recordLockWait())
-		}
-		time.Sleep(50 * time.Millisecond)
+	wait := recordLockWait()
+	if !flockWithin(handle, wait, recordLockClock{}) {
+		return fmt.Errorf("global operation lock is busy after %s", wait)
 	}
 	defer unix.Flock(int(handle.Fd()), unix.LOCK_UN)
 	return fn()
+}
+
+type recordLockClock struct {
+	now   func() time.Time
+	sleep func(time.Duration)
+}
+
+func selectRecordLockClock(clocks []recordLockClock) recordLockClock {
+	if len(clocks) > 0 {
+		return clocks[0]
+	}
+	return recordLockClock{}
+}
+
+func flockWithin(handle *os.File, wait time.Duration, clock recordLockClock) bool {
+	if clock.now == nil {
+		clock.now = time.Now
+	}
+	if clock.sleep == nil {
+		clock.sleep = time.Sleep
+	}
+	deadline := clock.now().Add(wait)
+	for {
+		if err := unix.Flock(int(handle.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
+			return true
+		}
+		if clock.now().After(deadline) {
+			return false
+		}
+		clock.sleep(50 * time.Millisecond)
+	}
 }
 
 // recordLockWait bounds record-lock acquisition, honoring the same env
