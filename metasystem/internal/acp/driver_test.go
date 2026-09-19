@@ -320,11 +320,12 @@ func TestSpoolByteBound(t *testing.T) {
 // their wire seq; the stream drains after settle then ends; the ask
 // stream yields nothing; Answer types its refusal.
 func TestDriverStreamTruth(t *testing.T) {
+	promptSeen := make(chan struct{}, 1)
 	steps := []stubStep{
 		initStep("[]"),
 		newSessionStep(),
 		{expectMethod: "session/set_mode", result: `{}`},
-		{expectMethod: "session/prompt", silent: true},
+		{expectMethod: "session/prompt", silent: true, seen: promptSeen},
 	}
 	req := promptRequest()
 	req.Mode = "ask"
@@ -343,7 +344,9 @@ func TestDriverStreamTruth(t *testing.T) {
 		t.Fatalf("session-established params %s", ev.Params)
 	}
 	// Observed pre-settle: the prompt is still pending (the server is
-	// silent); the turn must NOT be done yet.
+	// silent); the turn must NOT be done yet. The server has seen the
+	// prompt first, so the cancel below lands on the prompt, not on setup.
+	<-promptSeen
 	quick, quickCancel := context.WithCancel(context.Background())
 	quickCancel()
 	if _, err := turn.Result(quick); !errors.Is(err, context.Canceled) {
