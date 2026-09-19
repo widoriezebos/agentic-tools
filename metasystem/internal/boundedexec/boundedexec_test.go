@@ -1,12 +1,13 @@
 package boundedexec
 
 import (
+	"bufio"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -58,75 +59,94 @@ func TestRunPropagatesCommandFailure(t *testing.T) {
 // The hang test (B4's proof): a command that never returns is killed at the
 // bound and named, instead of hanging its caller forever.
 func TestRunKillsAHangingCommand(t *testing.T) {
-	started := time.Now()
-	err := Run(exec.Command("sleep", "60"), FixedBound(300*time.Millisecond, "exec.local-timeout-sec"), "the sleeping command")
+	bound := FixedBound(300*time.Millisecond, "exec.local-timeout-sec")
+	expiry := make(chan time.Time, 1)
+	expiry <- time.Time{}
+	var waits []time.Duration
+	command := exec.Command("sleep", "60")
+	err := runWithDeadline(command, bound, "the sleeping command", func(wait time.Duration) <-chan time.Time {
+		waits = append(waits, wait)
+		return expiry
+	})
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("a hanging command was not bounded: %v", err)
 	}
 	if !strings.Contains(err.Error(), "the sleeping command") {
 		t.Fatalf("the failure does not name the operation: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 10*time.Second {
-		t.Fatalf("the bound did not release the caller promptly: %v", elapsed)
+	if command.ProcessState == nil || command.ProcessState.Success() {
+		t.Fatalf("the expired command was not reaped after being killed: %v", command.ProcessState)
 	}
+	assertDeadlineWaits(t, waits, bound.Limit)
 }
 
 // A script's children must die with it: the group is signalled, not just the
 // direct child.
 func TestRunKillsTheWholeProcessGroup(t *testing.T) {
 	dir := t.TempDir()
-	ready := filepath.Join(dir, "grandchild-ready")
 	script := filepath.Join(dir, "spawn.sh")
-	os.WriteFile(script, []byte(
-		"#!/bin/sh\nsleep 60 &\necho ready > "+ready+"\nwait\n"), 0o755)
+	if err := os.WriteFile(script, []byte(
+		"#!/bin/sh\nsleep 60 &\necho ready\nwait\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = readPipe.Close()
+		_ = writePipe.Close()
+	})
 	deadline := make(chan time.Time)
 	command := exec.Command("/bin/sh", script)
+	command.Stdout = writePipe
 	done := make(chan error, 1)
+	var waits []time.Duration
 	go func() {
+		defer writePipe.Close()
 		done <- runWithDeadline(command, FixedBound(300*time.Millisecond, "exec.local-timeout-sec"), "the spawning script", func(duration time.Duration) <-chan time.Time {
-			if duration == 300*time.Millisecond {
-				return deadline
-			}
-			return time.After(duration)
+			waits = append(waits, duration)
+			return deadline
 		})
 	}()
-	readyBy := time.Now().Add(wiringBound)
-	for {
-		if _, err := os.Stat(ready); err == nil {
-			break
-		}
-		if time.Now().After(readyBy) {
-			deadline <- time.Time{}
-			<-done
-			t.Fatal("the spawning script did not start its child")
-		}
-		time.Sleep(10 * time.Millisecond)
+	reader := bufio.NewReader(readPipe)
+	ready, err := reader.ReadString('\n')
+	if err != nil || ready != "ready\n" {
+		t.Fatalf("the spawning script did not report its child ready: line %q, error %v", ready, err)
+	}
+	if err := writePipe.Close(); err != nil {
+		t.Fatalf("release parent pipe writer: %v", err)
 	}
 	deadline <- time.Time{}
-	err := <-done
+	remaining, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read process-group completion signal: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("unexpected process-group output after ready: %q", remaining)
+	}
+	err = <-done
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("the spawning script was not bounded: %v", err)
 	}
-	groupGoneBy := time.Now().Add(wiringBound)
-	for {
-		probeErr := syscall.Kill(-command.Process.Pid, 0)
-		if errors.Is(probeErr, syscall.ESRCH) {
-			break
-		}
-		if time.Now().After(groupGoneBy) {
-			t.Fatalf("a grandchild outlived the bound: group probe: %v", probeErr)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	assertDeadlineWaits(t, waits, 300*time.Millisecond)
 }
 
 // Callers for whom a timeout is an ANSWER (a ceiling verdict, not a failure
 // to run) rely on the sentinel surviving the wrap.
 func TestRunTimeoutMatchesTheSentinel(t *testing.T) {
-	err := Run(exec.Command("sleep", "60"), FixedBound(300*time.Millisecond, "exec.local-timeout-sec"), "the sleeping command")
+	bound := FixedBound(300*time.Millisecond, "exec.local-timeout-sec")
+	expiry := make(chan time.Time, 1)
+	expiry <- time.Time{}
+	var waits []time.Duration
+	err := runWithDeadline(exec.Command("sleep", "60"), bound, "the sleeping command", func(wait time.Duration) <-chan time.Time {
+		waits = append(waits, wait)
+		return expiry
+	})
 	if !errors.Is(err, ErrTimedOut) {
 		t.Fatalf("expiry must match ErrTimedOut: %v", err)
 	}
+	assertDeadlineWaits(t, waits, bound.Limit)
 	exit := exec.Command("false")
 	if failure := Run(exit, FixedBound(time.Minute, "exec.local-timeout-sec"), "false"); errors.Is(failure, ErrTimedOut) {
 		t.Fatalf("a plain failure must not match ErrTimedOut: %v", failure)
@@ -147,11 +167,25 @@ func TestTimeoutErrorNamesItsOwnKey(t *testing.T) {
 	if bound.Key != "exec.local-timeout-sec" || bound.Limit != time.Second {
 		t.Fatalf("bound = %+v", bound)
 	}
-	err := Run(exec.Command("sleep", "60"), bound, "the tuned command")
+	expiry := make(chan time.Time, 1)
+	expiry <- time.Time{}
+	var waits []time.Duration
+	err := runWithDeadline(exec.Command("sleep", "60"), bound, "the tuned command", func(wait time.Duration) <-chan time.Time {
+		waits = append(waits, wait)
+		return expiry
+	})
 	if err == nil || !strings.Contains(err.Error(), "exec.local-timeout-sec") {
 		t.Fatalf("expiry must name the key that produced the bound: %v", err)
 	}
 	if strings.Contains(err.Error(), "network") {
 		t.Fatalf("the old magnitude guess resurfaced: %v", err)
+	}
+	assertDeadlineWaits(t, waits, bound.Limit)
+}
+
+func assertDeadlineWaits(t *testing.T, got []time.Duration, bound time.Duration) {
+	t.Helper()
+	if len(got) != 2 || got[0] != bound || got[1] != killGraceWindow {
+		t.Fatalf("deadline waits = %v, want [%s %s]", got, bound, killGraceWindow)
 	}
 }
