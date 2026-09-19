@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -795,6 +796,172 @@ captureReturned:
 	}
 }
 
+func TestTransportMemberExitedCountsAReapedGroupLeader(t *testing.T) {
+	t.Parallel()
+	fixture := testutil.Fixture(t)
+	script := filepath.Join(t.TempDir(), "reaped-group-leader")
+	source := "#!/bin/sh\n" + testutil.ShellPrologue + `sh -c 'read -r _ <"${METASYSTEM_FIXTURE_LEASH:?}"' sh "$tag" >/dev/null 2>&1 &
+printf '%s\n' "$!"
+`
+	if err := os.WriteFile(script, []byte(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(script)
+	cmd.Env = fixture.Env(os.Environ())
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	leaderID := cmd.Process.Pid
+	var descendantID int
+	if _, err := fmt.Fscan(stdout, &descendantID); err != nil {
+		t.Fatalf("read descendant pid: %v", err)
+	}
+	fixture.Record(leaderID)
+	fixture.Record(descendantID)
+	fixture.Hold(descendantID)
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("reap process-group leader %d: %v", leaderID, err)
+	}
+	if err := syscall.Kill(-leaderID, 0); err != nil && !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("process group %d has no live descendant: %v", leaderID, err)
+	}
+	leaderExited, err := transportMemberExited(leaderID)
+	if err != nil || !leaderExited {
+		t.Fatalf("reaped process-group leader %d probe: exited=%t err=%v", leaderID, leaderExited, err)
+	}
+	descendantExited, err := transportMemberExited(descendantID)
+	if err != nil || descendantExited {
+		t.Fatalf("live descendant %d probe: exited=%t err=%v", descendantID, descendantExited, err)
+	}
+}
+
+func TestCaptureTipBoundedKillsADescendantThatOutlivesTheTransport(t *testing.T) {
+	t.Parallel()
+	timers := newFakeAttentionTimerSource()
+	timers.noticeCCalls = true
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	fixture := testutil.Fixture(t)
+	groupFile := filepath.Join(dir, "group")
+	childFile := filepath.Join(dir, "child")
+	groupFIFO, childFIFO := openHangingGitPIDFIFOs(t, groupFile, childFile)
+	exitFile := filepath.Join(dir, "exit")
+	if err := syscall.Mkfifo(exitFile, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	exitFIFO, err := os.OpenFile(exitFile, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = exitFIFO.Close() })
+	termFile := filepath.Join(dir, "term")
+	wrapper := filepath.Join(dir, "git")
+	script := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
+  *" fetch "*)
+    trap 'echo TERM > "$LEDGER_GRACE_TERM_FILE"; exit 0' TERM
+	printf '%s %s\n' "$$" "$$" > "$LEDGER_GRACE_GROUP_FILE"
+	# Closing these pipes lets capture wait for the transport without waiting for its descendant.
+	sh -c 'trap "" TERM; exec 3>"$LEDGER_GRACE_EXIT_FILE"; echo $$ > "$LEDGER_GRACE_CHILD_FILE"; read -r _ <"${METASYSTEM_FIXTURE_LEASH:?}"' sh "$tag" >/dev/null 2>&1 &
+	wait
+    ;;
+esac
+exec "$LEDGER_GRACE_REAL_GIT" "$@"
+`
+	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	environment := testEnvironment(os.Environ(), "LEDGER_GRACE_REAL_GIT="+realGit, "LEDGER_GRACE_GROUP_FILE="+groupFile,
+		"LEDGER_GRACE_CHILD_FILE="+childFile, "LEDGER_GRACE_EXIT_FILE="+exitFile, "LEDGER_GRACE_TERM_FILE="+termFile,
+		"PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	environment = fixture.Env(environment)
+	root := t.TempDir()
+	mustGit(t, root, "init", "-q")
+	captured := make(chan error, 1)
+	go func() {
+		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment, captureTimers: timers}, 300*time.Millisecond)
+		captured <- captureErr
+	}()
+	var wrapperID, groupID, childID int
+	select {
+	case identities := <-waitForHangingGitPIDs(groupFIFO, childFIFO):
+		if identities.err != nil {
+			t.Fatal(identities.err)
+		}
+		wrapperID, groupID, childID = identities.wrapperID, identities.groupID, identities.childID
+	case result := <-captured:
+		t.Fatalf("capture returned before publishing transport identities: %v", result)
+	}
+	fixture.Record(wrapperID)
+	fixture.Record(childID)
+	if wrapperID != groupID || groupID == childID {
+		t.Fatalf("invalid transport identities: wrapper=%d group=%d child=%d", wrapperID, groupID, childID)
+	}
+	if err := syscall.SetNonblock(int(exitFIFO.Fd()), false); err != nil {
+		t.Fatal(err)
+	}
+	timers.Next(t, captured, fakeAttentionTimer, 300*time.Millisecond).Fire()
+	grace := timers.Next(t, captured, fakeAttentionTimer, boundedCaptureGrace)
+	poll := timers.Next(t, captured, fakeAttentionTicker, 10*time.Millisecond)
+	failEarly := func(result error) {
+		exited, exitErr := transportMemberExited(childID)
+		if exitErr == nil && !exited {
+			t.Fatalf("transport descendant %d survived after capture returned before grace: %v", childID, result)
+		}
+		t.Fatalf("capture returned before grace: %v (descendant probe: %v)", result, exitErr)
+	}
+	// Capture evaluates poll.C on each select entry. The second call follows only
+	// after the leader's wait result woke the first select and the probe found
+	// the descendant still in the process group.
+	for entries := 0; entries < 2; entries++ {
+		select {
+		case <-poll.cCalls:
+		case result := <-captured:
+			failEarly(result)
+		}
+	}
+	select {
+	case result := <-captured:
+		failEarly(result)
+	default:
+	}
+	leaderExited, leaderErr := transportMemberExited(wrapperID)
+	if leaderErr != nil || !leaderExited {
+		t.Fatalf("transport leader %d still running at second select entry: %v", wrapperID, leaderErr)
+	}
+	if data, readErr := os.ReadFile(termFile); readErr != nil || strings.TrimSpace(string(data)) != "TERM" {
+		t.Fatalf("transport received no graceful TERM opportunity: %q %v", data, readErr)
+	}
+	childExited, childErr := transportMemberExited(childID)
+	if childErr != nil || childExited {
+		t.Fatalf("transport descendant %d exited before grace: %v", childID, childErr)
+	}
+	grace.Fire()
+	err = <-captured
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("transport did not time out: %v", err)
+	}
+	if !grace.Fired() {
+		t.Fatal("transport did not spend the grace timer")
+	}
+	if n, readErr := exitFIFO.Read(make([]byte, 1)); n != 0 || !errors.Is(readErr, io.EOF) {
+		t.Fatalf("read descendant exit witness: bytes=%d err=%v", n, readErr)
+	}
+	for _, pid := range []int{wrapperID, childID} {
+		exited, exitErr := transportMemberExited(pid)
+		if exitErr != nil || !exited {
+			t.Fatalf("transport member %d survived after exit witness: exited=%t err=%v", pid, exited, exitErr)
+		}
+	}
+}
+
 type fakeAttentionTimerKind string
 
 const (
@@ -807,7 +974,8 @@ type fakeAttentionTimerSource struct {
 	mu      sync.Mutex
 	all     []*fakeAttentionTimerInstance
 
-	fireTimers bool
+	fireTimers   bool
+	noticeCCalls bool
 }
 
 type fakeAttentionTimerInstance struct {
@@ -816,6 +984,7 @@ type fakeAttentionTimerInstance struct {
 	c        chan time.Time
 	mu       sync.Mutex
 	fired    bool
+	cCalls   chan struct{}
 }
 
 func newFakeAttentionTimerSource() *fakeAttentionTimerSource {
@@ -833,6 +1002,9 @@ func (s *fakeAttentionTimerSource) NewTicker(every time.Duration) attentionTimer
 func (s *fakeAttentionTimerSource) newTimer(kind fakeAttentionTimerKind, duration time.Duration) attentionTimer {
 	timer := &fakeAttentionTimerInstance{kind: kind, duration: duration, c: make(chan time.Time, 1)}
 	s.mu.Lock()
+	if s.noticeCCalls {
+		timer.cCalls = make(chan struct{}, 2)
+	}
 	s.all = append(s.all, timer)
 	s.mu.Unlock()
 	if s.fireTimers && kind == fakeAttentionTimer {
@@ -863,6 +1035,9 @@ func (s *fakeAttentionTimerSource) Next(t *testing.T, captured <-chan error, kin
 }
 
 func (t *fakeAttentionTimerInstance) C() <-chan time.Time {
+	if t.cCalls != nil {
+		t.cCalls <- struct{}{}
+	}
 	return t.c
 }
 
