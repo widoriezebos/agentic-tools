@@ -64,7 +64,7 @@ func TestRunKillsAHangingCommand(t *testing.T) {
 	expiry <- time.Time{}
 	var waits []time.Duration
 	command := exec.Command("sleep", "60")
-	err := runWithDeadline(command, bound, "the sleeping command", func(wait time.Duration) <-chan time.Time {
+	err := RunWithDeadline(command, bound, "the sleeping command", func(wait time.Duration) <-chan time.Time {
 		waits = append(waits, wait)
 		return expiry
 	})
@@ -104,7 +104,7 @@ func TestRunKillsTheWholeProcessGroup(t *testing.T) {
 	var waits []time.Duration
 	go func() {
 		defer writePipe.Close()
-		done <- runWithDeadline(command, FixedBound(300*time.Millisecond, "exec.local-timeout-sec"), "the spawning script", func(duration time.Duration) <-chan time.Time {
+		done <- RunWithDeadline(command, FixedBound(300*time.Millisecond, "exec.local-timeout-sec"), "the spawning script", func(duration time.Duration) <-chan time.Time {
 			waits = append(waits, duration)
 			return deadline
 		})
@@ -139,7 +139,7 @@ func TestRunTimeoutMatchesTheSentinel(t *testing.T) {
 	expiry := make(chan time.Time, 1)
 	expiry <- time.Time{}
 	var waits []time.Duration
-	err := runWithDeadline(exec.Command("sleep", "60"), bound, "the sleeping command", func(wait time.Duration) <-chan time.Time {
+	err := RunWithDeadline(exec.Command("sleep", "60"), bound, "the sleeping command", func(wait time.Duration) <-chan time.Time {
 		waits = append(waits, wait)
 		return expiry
 	})
@@ -170,7 +170,7 @@ func TestTimeoutErrorNamesItsOwnKey(t *testing.T) {
 	expiry := make(chan time.Time, 1)
 	expiry <- time.Time{}
 	var waits []time.Duration
-	err := runWithDeadline(exec.Command("sleep", "60"), bound, "the tuned command", func(wait time.Duration) <-chan time.Time {
+	err := RunWithDeadline(exec.Command("sleep", "60"), bound, "the tuned command", func(wait time.Duration) <-chan time.Time {
 		waits = append(waits, wait)
 		return expiry
 	})

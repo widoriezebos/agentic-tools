@@ -82,10 +82,12 @@ func Timeout(confPath string, kind Kind) Bound {
 // The returned error on expiry is a dependency failure: the metasystem
 // could not finish because something it depends on did not answer.
 func Run(cmd *exec.Cmd, bound Bound, what string) error {
-	return runWithDeadline(cmd, bound, what, time.After)
+	return RunWithDeadline(cmd, bound, what, time.After)
 }
 
-func runWithDeadline(cmd *exec.Cmd, bound Bound, what string, deadline func(time.Duration) <-chan time.Time) error {
+// RunWithDeadline is the seam for callers whose tests drive the expiry.
+// Production callers use Run.
+func RunWithDeadline(cmd *exec.Cmd, bound Bound, what string, deadline func(time.Duration) <-chan time.Time) error {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}

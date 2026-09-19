@@ -1,10 +1,14 @@
 package dispatch
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 )
 
 // gitOutput runs inside the LOCKED build-record path: a hung git there
@@ -24,12 +28,20 @@ func TestGitOutputBoundsAHangingGit(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	started := time.Now()
-	_, err := gitOutput(dir, "rev-parse", "HEAD")
-	if err == nil {
-		t.Fatal("a hung git must fail, not answer")
+	expiry := make(chan time.Time, 1)
+	expiry <- time.Time{}
+	var waits []time.Duration
+	_, err := gitOutputWithDeadline(dir, func(wait time.Duration) <-chan time.Time {
+		waits = append(waits, wait)
+		return expiry
+	}, "rev-parse", "HEAD")
+	if !errors.Is(err, boundedexec.ErrTimedOut) {
+		t.Fatalf("a hung git must fail with ErrTimedOut: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 30*time.Second {
-		t.Fatalf("the bound did not release the caller: %v", elapsed)
+	if !strings.Contains(err.Error(), "git rev-parse HEAD") {
+		t.Fatalf("the failure does not name the git operation: %v", err)
+	}
+	if len(waits) != 2 || waits[0] != time.Second {
+		t.Fatalf("deadline waits = %v, want two waits beginning with %s", waits, time.Second)
 	}
 }
