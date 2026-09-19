@@ -1,6 +1,6 @@
 # fleet-channel-gateway
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 18
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="severity 3: the channel is the only path for the human's word when no terminal is at hand, and a wrong bind is an unauthorized approval; novelty 2: a shared git inbox, first commit wins, and long-polling are new here though each piece exists elsewhere; exposure 3: every machine in the fleet and the shared transport; accumulation 2: the channel package produced four defects on 2026-09-04 alone (unthreaded replies lost, code checked at poll time, budget answers binding nothing, an authenticated no binding the asked token)"
@@ -9,10 +9,11 @@
 - Origin: main
 - Next step: parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido picks the goal. Existing work: on main 444eda07c, the ledger inbox fences, schema and matrix (metasystem/internal/goal/channel.go); 31ce3c73b, the provider contract and its fake (metasystem/internal/channel/fake/fake.go); 57c310a1e, the ledger receive library (metasystem/internal/goal/channel_inbox.go), which has no caller yet. Build briefs start at metasystem/plans/fleet-channel-gateway-build1-brief.md. Left: about 2,000 lines. No origin goal/fleet-channel-gateway branch exists: nothing unlanded exists; the work below is all on main.
 - OpenedAt: 2026-09-03T15:27:54Z
-- Revision: 39
+- Revision: 40
 - Labels: headless-communication, headless-fleet
 - BudgetExceptions: 1
 - Sliced: machine=m3 lineage=mac-m3 revision=9 at=2026-09-04T17:22:16Z
+- Parked: by=human:Wido at=2026-09-19T15:46:48Z because=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido picks the goal. Existing work: on main 444eda07c, the ledger inbox fences, schema and matrix (metasystem/internal/goal/channel.go); 31ce3c73b, the provider contract and its fake (metasystem/internal/channel/fake/fake.go); 57c310a1e, the ledger receive library (metasystem/internal/goal/channel_inbox.go), which has no caller yet. Build briefs start at metasystem/plans/fleet-channel-gateway-build1-brief.md. Left: about 2,000 lines. No origin goal/fleet-channel-gateway branch exists: nothing unlanded exists; the work below is all on main.
 
 History:
 - 2026-09-03T15:27:54Z 3K5AD6XK8Z3V6BQ4MADHFJ1856-m0-c5dbf036 open actor=human:Wido targets=fleet-channel-gateway
@@ -54,4 +55,5 @@ History:
 - 2026-09-13T08:21:48Z NRD0NSKR47C7ESV46MD65VP4V0-m1-c6925449 done actor=human:Wido targets=commit-goal-binding,first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,gate-governance-records,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,landing-design-provenance,merge-stage-critic-close,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-context-composition,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:20 to=2:19
 - 2026-09-13T08:23:10Z R328E6Y43B7EEREMEA8T0MVQWG-m1-c6925449 done actor=human:Wido targets=first-headless-run,fleet-channel-gateway,fleet-join-bootstrap,fleet-pull,headless-continuous-delivery-proof,headless-fleet-coordination-proof,idle-every-runtime-enforcement,mission-birth-baseline-from-dirty-worktree,never-idle-ironclad,recovery-rehearsal,recovery-to-good-state,role-lane-packets,seat-mutual-awareness reason=priority-order from=2:19 to=2:18
 - 2026-09-19T15:46:42Z Y7C6KS9TAT916A9GBPGPQD0FHS-m1e-c6925449 edit actor=human:Wido targets=fleet-channel-gateway
-Integrity: sha256=c8a04e1ca4206c5c42a91104e3f5dd9caf7be426675e7fe680d3019c9f1f1109
+- 2026-09-19T15:46:48Z Y9EZR0R8CT7KY9KFRVR2VNQ75A-m1e-c6925449 park actor=human:Wido targets=fleet-channel-gateway reason=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido picks the goal. Existing work: on main 444eda07c, the ledger inbox fences, schema and matrix (metasystem/internal/goal/channel.go); 31ce3c73b, the provider contract and its fake (metasystem/internal/channel/fake/fake.go); 57c310a1e, the ledger receive library (metasystem/internal/goal/channel_inbox.go), which has no caller yet. Build briefs start at metasystem/plans/fleet-channel-gateway-build1-brief.md. Left: about 2,000 lines. No origin goal/fleet-channel-gateway branch exists: nothing unlanded exists; the work below is all on main.
+Integrity: sha256=7e574fd47243ce43df657aed8da6fa1812a8a96b2c084db0b8e9f5315ce1ae6a
