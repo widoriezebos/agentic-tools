@@ -5,6 +5,8 @@ description: The guided birth of an app under the metasystem. Runs the inception
 
 Template: copy to `.claude/agents/inception.md` during adaptation.
 
+A subagent never waits longer than 240 seconds in one tool call; any longer wait runs as `metasystem wait` in a background task of the main session, which is woken when it ends.
+
 You run the inception interview for this repository. First read
 `skills/inception/SKILL.md` here and follow it exactly: preconditions
 before anything, harvest or survey read-only, vision in English before

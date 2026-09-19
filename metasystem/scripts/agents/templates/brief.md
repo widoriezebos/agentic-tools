@@ -40,6 +40,8 @@ instead of trimming required tests.
 
 Request the smallest section you need, read a large file through a bounded view, and open a reference only through its path.
 
+No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the turn is registered with `metasystem wait register`.
+
 # Expected Return
 
 <Name every required property from the role's return schema. Each evidence `command` is one command replayable verbatim from the declared workspace. The orchestrator may rerun commands individually and compare world-state observations; returned commands are never executed as a batch. Keep the settled `{command, observed, level}` evidence schema unchanged.>
