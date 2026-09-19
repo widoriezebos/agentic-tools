@@ -411,15 +411,9 @@ func TestContextBudgetReturnsBusyUnknownWithoutWaiting(t *testing.T) {
 	go func() {
 		done <- checkContextBudget(root, root, time.Now().UTC(), probe)
 	}()
-	select {
-	case role := <-done:
-		if role.Status != HealthUnknown || !strings.Contains(role.Reason, "cursor is busy") || role.Remedy == "" {
-			t.Fatalf("contended cursor = %+v", role)
-		}
-	case <-time.After(time.Second):
-		release()
-		<-done
-		t.Fatal("context-budget blocked on the contended cursor lock")
+	role := <-done
+	if role.Status != HealthUnknown || !strings.Contains(role.Reason, "cursor is busy") || role.Remedy == "" {
+		t.Fatalf("contended cursor = %+v", role)
 	}
 }
 
@@ -454,16 +448,10 @@ func TestContextBudgetReturnsRegistryBusyUnknownWithoutWaiting(t *testing.T) {
 	go func() {
 		done <- checkContextBudget(root, root, time.Now().UTC(), probe)
 	}()
-	select {
-	case role := <-done:
-		if role.Status != HealthUnknown || !strings.Contains(role.Reason, "session registry is busy") ||
-			!strings.Contains(role.Reason, lockPath) || role.Remedy == "" {
-			t.Fatalf("contended session registry = %+v", role)
-		}
-	case <-time.After(time.Second):
-		release()
-		<-done
-		t.Fatal("context-budget blocked on the contended session-registry lock")
+	role := <-done
+	if role.Status != HealthUnknown || !strings.Contains(role.Reason, "session registry is busy") ||
+		!strings.Contains(role.Reason, lockPath) || role.Remedy == "" {
+		t.Fatalf("contended session registry = %+v", role)
 	}
 }
 

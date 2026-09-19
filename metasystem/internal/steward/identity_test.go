@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestIdentityMintVerifyRoundTrips(t *testing.T) {
@@ -264,7 +263,7 @@ func TestConcurrentPreparationKeepsEveryPreparedCommandValid(t *testing.T) {
 func TestConcurrentProcessPreparationKeepsEveryPreparedCommandValid(t *testing.T) {
 	contents := append([]byte("#!/bin/sh\n"), bytes.Repeat([]byte("# fixture engine block\n"), 1<<18)...)
 	root, _ := makeEnrolledBinaryFixture(t, 9, contents)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	type helperProcess struct {

@@ -2,7 +2,6 @@ package steward
 
 import (
 	"testing"
-	"time"
 )
 
 func TestArbitrationAdmitsOneContenderAtATime(t *testing.T) {
@@ -30,9 +29,5 @@ func TestArbitrationAdmitsOneContenderAtATime(t *testing.T) {
 	default:
 	}
 	first.Release()
-	select {
-	case <-entered:
-	case <-time.After(2 * time.Second):
-		t.Fatal("releasing must admit the waiter")
-	}
+	<-entered
 }

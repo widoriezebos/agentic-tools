@@ -119,6 +119,18 @@ func TestDisarmReportsRunnerThatSurvivesKill(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { runnerSignal = originalSignal })
+	clockNow := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
+	originalNow, originalSleep := runnerNow, runnerSleep
+	sleeps := 0
+	runnerNow = func() time.Time { return clockNow }
+	runnerSleep = func(interval time.Duration) {
+		if interval != 50*time.Millisecond {
+			t.Fatalf("disarm poll sleep = %s; want 50ms", interval)
+		}
+		clockNow = clockNow.Add(interval)
+		sleeps++
+	}
+	t.Cleanup(func() { runnerNow, runnerSleep = originalNow, originalSleep })
 
 	outcome, err := Disarm(root)
 	if err != nil || outcome.Result != "not-stopped" || outcome.Signal != "kill" ||
@@ -127,6 +139,9 @@ func TestDisarmReportsRunnerThatSurvivesKill(t *testing.T) {
 	}
 	if len(signals) != 2 || signals[0] != syscall.SIGTERM || signals[1] != syscall.SIGKILL {
 		t.Fatalf("disarm did not use TERM then KILL: %v", signals)
+	}
+	if sleeps != 3 {
+		t.Fatalf("disarm took %d artificial poll sleeps; want 3", sleeps)
 	}
 	if current, alive := liveRunner(root); !alive || !sameRunner(outcome.Record, current) {
 		t.Fatalf("the real recorded runner did not survive the no-op KILL seam: current=%+v alive=%t", current, alive)

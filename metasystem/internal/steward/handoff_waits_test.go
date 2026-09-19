@@ -102,15 +102,14 @@ func TestEndInFlightWaitsGraceUsesInjectedClock(t *testing.T) {
 					writeHandoffWaiter(t, root, "grace", row)
 				}
 			}}
-			wall := time.Now()
 			got, err := EndInFlightWaits(root, handoffMainCaller(), testHandoffNonce, clock)
 			row, _ := readHandoffWaiterTest(t, path)
 			wantState := run.WaiterStateInterrupted
 			if tc.want == 0 {
 				wantState = run.WaiterStateReady
 			}
-			if err != nil || len(got) != tc.want || sleeps != tc.sleeps || now.Sub(started) != time.Duration(tc.sleeps)*250*time.Millisecond || row.State != wantState || time.Since(wall) >= time.Second {
-				t.Fatalf("got=%+v row=%s sleeps=%d advanced=%s elapsed=%s err=%v", got, row.State, sleeps, now.Sub(started), time.Since(wall), err)
+			if err != nil || len(got) != tc.want || sleeps != tc.sleeps || now.Sub(started) != time.Duration(tc.sleeps)*250*time.Millisecond || row.State != wantState {
+				t.Fatalf("got=%+v row=%s sleeps=%d advanced=%s err=%v", got, row.State, sleeps, now.Sub(started), err)
 			}
 		})
 	}

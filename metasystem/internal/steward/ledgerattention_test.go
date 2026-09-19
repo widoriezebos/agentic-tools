@@ -1,12 +1,11 @@
 package steward
 
 import (
-	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -610,10 +609,20 @@ func TestLedgerAttentionFetchTimeoutLeavesAcceptedAndTransportDead(t *testing.T)
 	}
 	dir := t.TempDir()
 	groupFile := filepath.Join(dir, "group")
+	lifetimeFIFO := filepath.Join(dir, "lifetime")
+	if err := syscall.Mkfifo(lifetimeFIFO, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lifetime, err := os.OpenFile(lifetimeFIFO, os.O_RDONLY|syscall.O_NONBLOCK, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lifetime.Close()
 	wrapper := filepath.Join(dir, "git")
 	script := `#!/bin/sh
 case " $* " in
   *" fetch "*)
+	    exec 9>"$LEDGER_ATTENTION_LIFETIME_FIFO"
     echo $$ > "$LEDGER_ATTENTION_GROUP_FILE"
     trap '' TERM
     while :; do sleep 1; done
@@ -626,6 +635,7 @@ exec "$LEDGER_ATTENTION_REAL_GIT" "$@"
 	}
 	t.Setenv("LEDGER_ATTENTION_REAL_GIT", realGit)
 	t.Setenv("LEDGER_ATTENTION_GROUP_FILE", groupFile)
+	t.Setenv("LEDGER_ATTENTION_LIFETIME_FIFO", lifetimeFIFO)
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	previousBudget := ledgerAttentionFetchBudget
 	ledgerAttentionFetchBudget = 300 * time.Millisecond
@@ -641,26 +651,14 @@ exec "$LEDGER_ATTENTION_REAL_GIT" "$@"
 		t.Fatalf("timed-out fetch advanced accepted ref: before=%s after=%s", acceptedBefore, accepted)
 	}
 	data, err := os.ReadFile(groupFile)
-	if err != nil {
+	if err != nil || strings.TrimSpace(string(data)) == "" {
+		t.Fatalf("transport wrapper did not publish its group identity: %q %v", data, err)
+	}
+	if err := syscall.SetNonblock(int(lifetime.Fd()), false); err != nil {
 		t.Fatal(err)
 	}
-	groupID, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || groupID < 1 {
-		t.Fatalf("invalid transport group identity %q: %v", data, err)
-	}
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		err := syscall.Kill(-groupID, 0)
-		if errors.Is(err, syscall.ESRCH) {
-			break
-		}
-		if err != nil && !errors.Is(err, syscall.EPERM) {
-			t.Fatal(err)
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("ledger transport group %d survived the 30-second hang failsafe", groupID)
-		}
-		time.Sleep(10 * time.Millisecond)
+	if inherited, err := io.ReadAll(lifetime); err != nil || len(inherited) != 0 {
+		t.Fatalf("transport lifetime pipe did not close cleanly: bytes=%q err=%v", inherited, err)
 	}
 }
 

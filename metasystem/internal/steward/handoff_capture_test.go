@@ -727,17 +727,16 @@ func TestLiveHandoffReadDoesNotWaitOrWrite(t *testing.T) {
 		err   error
 	}
 	done := make(chan lookup, 1)
+	previous := beforeArbitrationWait
+	beforeArbitrationWait = func() { t.Error("live handoff lookup tried to acquire steward arbitration") }
+	t.Cleanup(func() { beforeArbitrationWait = previous })
 	go func() {
 		nonce, live, err := LiveHandoffForSession(root, handoffMainCaller().Session)
 		done <- lookup{nonce: nonce, live: live, err: err}
 	}()
-	select {
-	case got := <-done:
-		if got.err != nil || !got.live || got.nonce != result.Nonce {
-			t.Fatalf("lookup behind arbitration=%+v", got)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("live handoff lookup waited for steward arbitration")
+	got := <-done
+	if got.err != nil || !got.live || got.nonce != result.Nonce {
+		t.Fatalf("lookup behind arbitration=%+v", got)
 	}
 }
 
@@ -1615,11 +1614,7 @@ func TestContextPruneSerializesWithConsumption(t *testing.T) {
 		pruned, pruneErr := PruneContext(root, 15*24*time.Hour, handoffCaptureNow)
 		done <- pruneOutcome{result: pruned, err: pruneErr}
 	}()
-	select {
-	case <-entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("prune did not reach steward arbitration")
-	}
+	<-entered
 	if _, err := ConsumeIntent(root, result.Nonce); err != nil {
 		t.Fatal(err)
 	}

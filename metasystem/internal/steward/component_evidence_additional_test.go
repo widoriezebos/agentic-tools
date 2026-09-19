@@ -18,22 +18,38 @@ func TestComponentEvidenceHealthReadIsBoundedWhenWriterIsBusy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	started := time.Now()
+	now := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
+	sleeps := 0
+	previousClock := componentEvidenceHealthClock
+	componentEvidenceHealthClock = HandoffClock{
+		Now: func() time.Time { return now },
+		Sleep: func(interval time.Duration) {
+			if interval != 10*time.Millisecond {
+				t.Fatalf("health read sleep = %s; want 10ms", interval)
+			}
+			now = now.Add(interval)
+			sleeps++
+		},
+	}
+	t.Cleanup(func() { componentEvidenceHealthClock = previousClock })
 	_, _, err = loadComponentEvidenceForHealth(root, "supervision-hook")
-	elapsed := time.Since(started)
 	var busy *ComponentEvidenceBusyError
 	if !errors.As(err, &busy) || busy.Component != "supervision-hook" {
 		unlockComponentEvidence(lock)
 		t.Fatalf("the contended health read did not return its typed busy error: %v", err)
 	}
-	if elapsed >= wiringBound {
+	if sleeps != 20 {
 		unlockComponentEvidence(lock)
-		t.Fatalf("the contended health read exceeded its one-second test bound: %s", elapsed)
+		t.Fatalf("the contended health read took %d retry sleeps; want 20", sleeps)
 	}
 	role := checkHookFreshness(root, time.Now())
 	if role.Status != HealthUnknown || role.Reason != "component evidence for supervision-hook is busy (a writer holds its lock)" {
 		unlockComponentEvidence(lock)
 		t.Fatalf("hook health did not surface the bounded-lock reason with its usual remedy: %+v", role)
+	}
+	if sleeps != 40 {
+		unlockComponentEvidence(lock)
+		t.Fatalf("hook health took %d total retry sleeps; want 40", sleeps)
 	}
 	unlockComponentEvidence(lock)
 	role = checkHookFreshness(root, time.Now())

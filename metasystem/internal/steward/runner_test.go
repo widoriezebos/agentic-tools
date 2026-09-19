@@ -40,6 +40,16 @@ func reapStewardRunnerFixture(t *testing.T, root string) {
 	})
 }
 
+type runnerTickCensus struct {
+	calls   chan<- struct{}
+	workers Workers
+}
+
+func (c runnerTickCensus) Workers(string) (Workers, error) {
+	c.calls <- struct{}{}
+	return c.workers, nil
+}
+
 func TestArmTemporaryRefusesContentFreeRemoteWord(t *testing.T) {
 	for _, test := range []struct {
 		name     string
@@ -67,10 +77,23 @@ func TestRunnerLaunchArgumentsRemainCompatible(t *testing.T) {
 
 func TestRunLoopTicksUntilTheStopFile(t *testing.T) {
 	root := gitRepoWithCurrentGoal(t)
-	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
+	calls := make(chan struct{})
+	census := runnerTickCensus{calls: calls, workers: Workers{Live: 1, CensusComplete: true}}
+	now := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
+	previousNow, previousSleep := runnerNow, runnerSleep
+	sleeps := 0
+	runnerNow = func() time.Time { return now }
+	runnerSleep = func(interval time.Duration) {
+		if interval != 200*time.Millisecond {
+			t.Errorf("runner loop sleep = %s; want 200ms", interval)
+		}
+		now = now.Add(interval)
+		sleeps++
+	}
+	t.Cleanup(func() { runnerNow, runnerSleep = previousNow, previousSleep })
 	done := make(chan error, 1)
 	go func() {
-		done <- RunLoop(root, census, nil, 50*time.Millisecond, TickConfig{})
+		done <- RunLoop(root, census, nil, 50*time.Millisecond, TickConfig{Now: now})
 		close(done)
 	}()
 	t.Cleanup(func() {
@@ -78,47 +101,24 @@ func TestRunLoopTicksUntilTheStopFile(t *testing.T) {
 		if err := os.WriteFile(runnerStopPath(root), []byte("stop\n"), 0o644); err != nil && !os.IsExist(err) {
 			t.Errorf("stop RunLoop during cleanup: %v", err)
 		}
-		select {
-		case <-done:
-		case <-time.After(30 * time.Second):
-			t.Errorf("RunLoop did not exit after stop: checkout %s", root)
-		}
+		<-done
 	})
-	overallDeadline := time.Now().Add(120 * time.Second)
-	if deadline, ok := t.Deadline(); ok {
-		overallDeadline = deadline.Add(-5 * time.Second)
+	var ev Evidence
+	for range 4 {
+		<-calls
+		ev, _ = LoadEvidence(EvidencePath(root))
 	}
-	lastEvidence, _ := LoadEvidence(EvidencePath(root))
-	lastEvidenceChange := time.Now()
-	for {
-		ev, _ := LoadEvidence(EvidencePath(root))
-		now := time.Now()
-		if ev != lastEvidence {
-			lastEvidence = ev
-			lastEvidenceChange = now
-		}
-		if ev.TicksSinceAdvance >= 2 {
-			break
-		}
-		if now.Sub(lastEvidenceChange) >= wiringBound || !now.Before(overallDeadline) {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	ev, _ := LoadEvidence(EvidencePath(root))
 	if ev.TicksSinceAdvance < 2 {
 		t.Fatalf("the loop must tick repeatedly: %+v", ev)
 	}
 	if err := os.WriteFile(runnerStopPath(root), []byte("stop\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("a stopped loop exits clean: %v", err)
-		}
-	case <-time.After(time.Until(overallDeadline)):
-		t.Fatal("the stop file must end the loop")
+	if err := <-done; err != nil {
+		t.Fatalf("a stopped loop exits clean: %v", err)
+	}
+	if sleeps != 3 {
+		t.Fatalf("runner loop took %d artificial sleeps; want 3", sleeps)
 	}
 	if _, err := os.Stat(runnerRecordPath(root)); !os.IsNotExist(err) {
 		t.Fatal("a stopped runner removes its record")
@@ -158,14 +158,12 @@ func TestSecondRunnerRefusesBesideALiveOne(t *testing.T) {
 	root := gitRepoWithCurrentGoal(t)
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	done := make(chan error, 1)
+	recordPublished := make(chan struct{})
+	previousPublished := runnerAfterRecordPublished
+	runnerAfterRecordPublished = func() { close(recordPublished) }
+	t.Cleanup(func() { runnerAfterRecordPublished = previousPublished })
 	go func() { done <- RunLoop(root, census, nil, time.Hour, TickConfig{}) }()
-	deadline := time.Now().Add(wiringBound)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(runnerRecordPath(root)); err == nil {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	<-recordPublished
 	if err := RunLoop(root, census, nil, time.Hour, TickConfig{}); err == nil {
 		t.Fatal("one repository, one runner")
 	}
@@ -253,26 +251,41 @@ func TestKilledStewardIsRestoredByOneWatcherRepairPass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
+	initialWait, err := runnerStopWait(root, int((10*runnerConfirmationWait)/time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(initialWait)
+	becameHealthy := false
 	for time.Now().Before(deadline) {
 		if checkStewardRunner(root, time.Now(), identity.KernelProber{}).Status == HealthAlive {
+			becameHealthy = true
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	before, alive := liveRunner(root)
-	if !alive || checkStewardRunner(root, time.Now(), identity.KernelProber{}).Status != HealthAlive {
+	if !becameHealthy || !alive || checkStewardRunner(root, time.Now(), identity.KernelProber{}).Status != HealthAlive {
 		t.Fatal("the fixture runner never completed its first generation-bound pass")
 	}
 	if err := syscall.Kill(int(before.Pid), syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	deadline = time.Now().Add(3 * time.Second)
+	replacementWait, err := runnerStopWait(root, int((10*runnerReplacementKillWait)/time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(replacementWait)
+	died := false
 	for time.Now().Before(deadline) {
 		if _, stillAlive := liveRunner(root); !stillAlive {
+			died = true
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+	if !died {
+		t.Fatalf("killed fixture runner pid %d remained alive after %s", before.Pid, replacementWait)
 	}
 	outcome, err := RepairEnrolledRunner(root)
 	if err != nil {
@@ -319,10 +332,9 @@ func TestSlowFirstAttemptSurvivesSecondEnsureAndWatcherRepair(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := beginComponentAttempt(root, "steward-tick", 1, self.Ref(), time.Now()); err != nil {
+	if _, err := beginComponentAttempt(root, "steward-tick", 1, self.Ref(), time.Now().Add(-11*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(11 * time.Second)
 	pinned, err := OpenEnrolledBinary(root)
 	if err != nil {
 		t.Fatal(err)
@@ -374,11 +386,7 @@ func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
 	}()
 	t.Cleanup(func() {
 		_ = stuck.Process.Kill()
-		select {
-		case <-stuckDone:
-		case <-time.After(5 * time.Second):
-			t.Errorf("stuck fixture process did not exit")
-		}
+		<-stuckDone
 	})
 	exact, state, err := identity.KernelProber{}.Probe(int64(stuck.Process.Pid))
 	if err != nil || state != identity.Alive {

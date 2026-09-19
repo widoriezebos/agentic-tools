@@ -241,20 +241,17 @@ func TestHandoffNoticeDeliveryDoesNotReacquireArbitration(t *testing.T) {
 		err       error
 	}
 	done := make(chan deliveryResult, 1)
+	previousWait := beforeArbitrationWait
+	beforeArbitrationWait = func() { t.Error("handoff notice delivery tried to acquire steward arbitration") }
+	t.Cleanup(func() { beforeArbitrationWait = previousWait })
 	go func() {
 		delivered, err := DeliverPending(root)
 		done <- deliveryResult{delivered: delivered, err: err}
 	}()
-	select {
-	case result := <-done:
-		arbitration.Release()
-		if result.err != nil || result.delivered != 1 {
-			t.Fatalf("handoff notice delivery failed while its caller held arbitration: %+v", result)
-		}
-	case <-time.After(time.Second):
-		arbitration.Release()
-		result := <-done
-		t.Fatalf("handoff notice delivery tried to reacquire arbitration: %+v", result)
+	result := <-done
+	arbitration.Release()
+	if result.err != nil || result.delivered != 1 {
+		t.Fatalf("handoff notice delivery failed while its caller held arbitration: %+v", result)
 	}
 }
 

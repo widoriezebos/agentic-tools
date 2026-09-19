@@ -305,12 +305,7 @@ func TestContextReportSerializesWithPrune(t *testing.T) {
 		_, _, report, err := WriteContextReport(fixture.root, fixture.weekStart, fixture.now)
 		reportDone <- reportResult{report: report, err: err}
 	}()
-	select {
-	case <-snapshotReady:
-	case <-time.After(5 * time.Second):
-		close(releaseSnapshot)
-		t.Fatal("report did not finish its evidence snapshot")
-	}
+	<-snapshotReady
 	if removed, err := usage.PruneCallSessions(fixture.root, fixture.weekStart.AddDate(0, 0, 7)); err != nil || removed != 2 {
 		close(releaseSnapshot)
 		t.Fatalf("concurrent prune removed=%d err=%v", removed, err)

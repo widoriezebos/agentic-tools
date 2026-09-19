@@ -208,12 +208,12 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 			fmt.Fprintf(os.Stderr, "channel pending: %d undelivered: %v\n", undelivered, channelErr)
 		}
 		cancelChannel()
-		deadline := time.Now().Add(interval)
-		for time.Now().Before(deadline) {
+		deadline := runnerNow().Add(interval)
+		for runnerNow().Before(deadline) {
 			if _, err := os.Stat(runnerStopPath(top)); err == nil {
 				return nil
 			}
-			time.Sleep(200 * time.Millisecond)
+			runnerSleep(200 * time.Millisecond)
 		}
 	}
 }
@@ -397,11 +397,13 @@ func canonicalPath(path string) string {
 	return filepath.Clean(absolute)
 }
 
+const runnerConfirmationWait = 10 * time.Second
+
 func scaledRunnerWait(scaleMilli int) time.Duration {
 	if scaleMilli < 1 {
 		scaleMilli = 1000
 	}
-	seconds := (10*scaleMilli + 999) / 1000
+	seconds := (int(runnerConfirmationWait/time.Second)*scaleMilli + 999) / 1000
 	if seconds < 1 {
 		seconds = 1
 	}
@@ -409,11 +411,11 @@ func scaledRunnerWait(scaleMilli int) time.Duration {
 }
 
 func waitForRunnerSuccess(repoRoot string, wait time.Duration) RoleVerdict {
-	deadline := time.Now().Add(wait)
-	verdict := checkStewardRunner(repoRoot, time.Now(), identity.KernelProber{})
-	for verdict.Status != HealthAlive && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
-		verdict = checkStewardRunner(repoRoot, time.Now(), identity.KernelProber{})
+	deadline := runnerNow().Add(wait)
+	verdict := checkStewardRunner(repoRoot, runnerNow(), identity.KernelProber{})
+	for verdict.Status != HealthAlive && runnerNow().Before(deadline) {
+		runnerSleep(50 * time.Millisecond)
+		verdict = checkStewardRunner(repoRoot, runnerNow(), identity.KernelProber{})
 	}
 	return verdict
 }
@@ -557,7 +559,7 @@ func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func(), w
 		return RunnerRepairOutcome{Status: AutoHealEnded, Generation: installed.Generation}, nil
 	}
 
-	verdict := checkStewardRunner(top, time.Now(), identity.KernelProber{})
+	verdict := checkStewardRunner(top, runnerNow(), identity.KernelProber{})
 	if verdict.Status == HealthAlive {
 		record, _ := liveRunner(top)
 		return RunnerRepairOutcome{Status: "CURRENT", Generation: installed.Generation, ReplacementPid: record.Pid}, nil
@@ -575,15 +577,15 @@ func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func(), w
 	if err != nil {
 		return RunnerRepairOutcome{}, err
 	}
-	deadline := time.Now().Add(wait)
-	for time.Now().Before(deadline) {
-		if current := checkStewardRunner(top, time.Now(), identity.KernelProber{}); current.Status == HealthAlive {
+	deadline := runnerNow().Add(wait)
+	for runnerNow().Before(deadline) {
+		if current := checkStewardRunner(top, runnerNow(), identity.KernelProber{}); current.Status == HealthAlive {
 			return RunnerRepairOutcome{
 				Status: "RESTORED", Generation: installed.Generation,
 				PreviousPid: previous.Pid, ReplacementPid: replacement.Pid,
 			}, nil
 		}
-		time.Sleep(50 * time.Millisecond)
+		runnerSleep(50 * time.Millisecond)
 	}
 	return RunnerRepairOutcome{}, fmt.Errorf("replacement runner pid %d did not complete generation %d within %s", replacement.Pid, installed.Generation, wait)
 }
@@ -790,16 +792,19 @@ func launchRunner(repoRoot string, binary *EnrolledBinary) (RunnerRecord, error)
 		return RunnerRecord{}, err
 	}
 	// The runner is detached on purpose: it must outlive this launch.
-	go func() { _ = cmd.Wait() }()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	deadline := runnerNow().Add(runnerConfirmationWait)
+	for runnerNow().Before(deadline) {
 		if rec, alive := liveRunner(repoRoot); alive {
 			return rec, nil
 		}
-		if _, probeState, _ := (identity.KernelProber{}).Probe(int64(cmd.Process.Pid)); probeState == identity.Dead {
+		select {
+		case <-waited:
 			return RunnerRecord{}, fmt.Errorf("the runner died before guarding the repository; see %s", runnerLogPath(repoRoot))
+		default:
 		}
-		time.Sleep(50 * time.Millisecond)
+		runnerSleep(50 * time.Millisecond)
 	}
 	return RunnerRecord{}, fmt.Errorf("the runner did not confirm within ten seconds; see %s", runnerLogPath(repoRoot))
 }
@@ -810,6 +815,10 @@ func runnerLaunchArguments(repoRoot string) []string {
 
 var runnerStopWriter = os.WriteFile
 var runnerSignal = syscall.Kill
+var runnerNow = time.Now
+var runnerSleep = time.Sleep
+
+const runnerReplacementKillWait = 2 * time.Second
 
 func stopRunnerForReplacement(repoRoot string, runner RunnerRecord) error {
 	if err := runnerStopWriter(runnerStopPath(repoRoot), []byte("restart\n"), 0o644); err != nil {
@@ -821,24 +830,24 @@ func stopRunnerForReplacement(repoRoot string, runner RunnerRecord) error {
 	// A stalled runner may itself be stopped, so let it receive the termination
 	// signal before deciding whether a hard stop is necessary.
 	_ = runnerSignal(int(runner.Pid), syscall.SIGCONT)
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	deadline := runnerNow().Add(runnerReplacementKillWait)
+	for runnerNow().Before(deadline) {
 		if _, alive := liveRunner(repoRoot); !alive {
 			return nil
 		}
-		time.Sleep(50 * time.Millisecond)
+		runnerSleep(50 * time.Millisecond)
 	}
 	if current, alive := liveRunner(repoRoot); alive && current.Pid == runner.Pid {
 		if err := runnerSignal(int(runner.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
 			return fmt.Errorf("kill stalled runner pid %d for replacement: %w", runner.Pid, err)
 		}
 	}
-	deadline = time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	deadline = runnerNow().Add(runnerReplacementKillWait)
+	for runnerNow().Before(deadline) {
 		if _, alive := liveRunner(repoRoot); !alive {
 			return nil
 		}
-		time.Sleep(50 * time.Millisecond)
+		runnerSleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("runner pid %d remained alive after replacement stop", runner.Pid)
 }
@@ -942,13 +951,13 @@ func sameRunner(left, right RunnerRecord) bool {
 }
 
 func waitForRunnerGone(root string, record RunnerRecord, wait time.Duration) bool {
-	deadline := time.Now().Add(wait)
-	for time.Now().Before(deadline) {
+	deadline := runnerNow().Add(wait)
+	for runnerNow().Before(deadline) {
 		current, alive := liveRunner(root)
 		if !alive || !sameRunner(record, current) {
 			return true
 		}
-		time.Sleep(50 * time.Millisecond)
+		runnerSleep(50 * time.Millisecond)
 	}
 	current, alive := liveRunner(root)
 	return !alive || !sameRunner(record, current)

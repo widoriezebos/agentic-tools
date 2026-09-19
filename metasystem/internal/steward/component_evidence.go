@@ -568,10 +568,12 @@ func loadComponentEvidence(path string) (ComponentEvidence, error) {
 	return record, nil
 }
 
+var componentEvidenceHealthClock = HandoffClock{Now: time.Now, Sleep: time.Sleep}
+
 func loadComponentEvidenceForHealth(repoRoot, component string) (ComponentEvidence, bool, error) {
 	const waitLimit = 200 * time.Millisecond
 	const retryInterval = 10 * time.Millisecond
-	deadline := time.Now().Add(waitLimit)
+	deadline := componentEvidenceHealthClock.Now().Add(waitLimit)
 	var lock *os.File
 	for {
 		var err error
@@ -582,14 +584,14 @@ func loadComponentEvidenceForHealth(repoRoot, component string) (ComponentEviden
 		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
 			return ComponentEvidence{}, false, err
 		}
-		remaining := time.Until(deadline)
+		remaining := deadline.Sub(componentEvidenceHealthClock.Now())
 		if remaining <= 0 {
 			return ComponentEvidence{}, false, &ComponentEvidenceBusyError{Component: component}
 		}
 		if remaining < retryInterval {
-			time.Sleep(remaining)
+			componentEvidenceHealthClock.Sleep(remaining)
 		} else {
-			time.Sleep(retryInterval)
+			componentEvidenceHealthClock.Sleep(retryInterval)
 		}
 	}
 	defer unlockComponentEvidence(lock)
