@@ -88,7 +88,7 @@ func testPlatformReapedChildCPU(t *testing.T) {
 			helper.closeInput()
 		}
 	})
-	outcome := superviseCommand(helper.command, options)
+	outcome := superviseCommand(helper.command, options.supervisorOptions)
 	if outcome.Verdict != "" || outcome.WaitErr != nil || !observedNonRootReap || !observedRootReap || counterDropped || observedCPU < 0.25 || outcome.CPUSeconds < 0.25 {
 		t.Fatalf("Linux nested reap accounting outcome=%+v observedCPU=%.2f beforeNonRoot=%.2f afterNonRoot=%.2f observedNonRoot=%v observedRoot=%v dropped=%v", outcome, observedCPU, beforeNonRootReap, afterNonRootReap, observedNonRootReap, observedRootReap, counterDropped)
 	}

@@ -60,6 +60,7 @@ type LaunchOptions struct {
 	CommitTerminal     func(CompletionContext, json.RawMessage) error
 	HintTerminal       func(root, attemptID, publicationID, bootID string, bootNanos int64)
 	BeforeProcessDone  func(CompletionContext) error
+	Now                func() time.Time
 }
 
 var proofPublicationBootClock = identity.BootClock
@@ -78,6 +79,10 @@ type CompletionContext struct {
 }
 
 func LaunchSuite(options LaunchOptions) int {
+	now := options.Now
+	if now == nil {
+		now = time.Now
+	}
 	if options.Output == nil {
 		options.Output = io.Discard
 	}
@@ -165,7 +170,7 @@ func LaunchSuite(options LaunchOptions) int {
 			fmt.Fprintln(combinedErr, "suite launcher: acquire child-publication ownership:", err)
 			return 1
 		}
-		if err := attemptLaunchAllowedLocked(controlRoot, options.AttemptID, launcherExact.Ref(), time.Now().UTC()); err != nil {
+		if err := attemptLaunchAllowedLocked(controlRoot, options.AttemptID, launcherExact.Ref(), now().UTC()); err != nil {
 			fmt.Fprintln(combinedErr, "suite launcher:", err)
 			return 1
 		}
@@ -349,14 +354,26 @@ func LaunchSuite(options LaunchOptions) int {
 	}
 	secondFence, secondFenceErr := readFence(controlRoot)
 	stoppedDuringStart := secondFenceErr == nil && (secondFence.State == stopfence.StateClosed || secondFence.Generation != fence.Generation)
-	var suiteWait <-chan error
+	var suiteDone <-chan struct{}
+	var suiteWaitErr error
 	if secondFenceErr != nil || stoppedDuringStart {
-		waited := make(chan error, 1)
-		suiteWait = waited
-		go func() { waited <- suite.Wait() }()
+		done := make(chan struct{})
+		suiteDone = done
+		go func() {
+			suiteWaitErr = suite.Wait()
+			close(done)
+		}()
+		waitForSuite := func(duration time.Duration) {
+			timer := time.NewTimer(duration)
+			defer timer.Stop()
+			select {
+			case <-done:
+			case <-timer.C:
+			}
+		}
 		outcome := StopSuite(record.SuiteProcess, StopOptions{
 			TermGrace: options.TermGrace, KillGrace: options.KillGrace, Poll: options.Poll,
-			Prober: prober, Signal: options.Signal,
+			Prober: prober, Signal: options.Signal, Now: now, Sleep: waitForSuite,
 		})
 		if secondFenceErr != nil {
 			fmt.Fprintln(combinedErr, "suite launcher: second stop-fence read:", secondFenceErr)
@@ -386,11 +403,10 @@ func LaunchSuite(options LaunchOptions) int {
 		claimClosed = true
 	}
 
-	var suiteErrWait error
-	if suiteWait == nil {
-		suiteErrWait = suite.Wait()
+	if suiteDone == nil {
+		suiteWaitErr = suite.Wait()
 	} else {
-		suiteErrWait = <-suiteWait
+		<-suiteDone
 	}
 	doneErr := touchDone(donePath)
 	if doneErr != nil {
@@ -427,7 +443,7 @@ func LaunchSuite(options LaunchOptions) int {
 		claimClosed = true
 	}
 
-	result := exitStatus(suiteErrWait)
+	result := exitStatus(suiteWaitErr)
 	if doneErr != nil {
 		result = 1
 	}
@@ -492,7 +508,7 @@ func LaunchSuite(options LaunchOptions) int {
 			result = 1
 		}
 	}
-	completedAt := time.Now().UTC()
+	completedAt := now().UTC()
 	completion := CompletionContext{ControlRoot: controlRoot, ExecutionRoot: options.Root, AttemptID: options.AttemptID,
 		RecordKey: record.Key(), ExitStatus: result, CompletedAt: completedAt, InputIdentity: parityIdentity, ErrorOutput: combinedErr}
 	var receipt json.RawMessage
@@ -502,10 +518,10 @@ func LaunchSuite(options LaunchOptions) int {
 			fmt.Fprintln(combinedErr, "suite launcher: prepare successful proof delivery:", err)
 			result = 1
 			completion.ExitStatus = result
-			completion.CompletedAt = time.Now().UTC()
+			completion.CompletedAt = now().UTC()
 		}
 		if err == nil {
-			completion.CompletedAt = time.Now().UTC()
+			completion.CompletedAt = now().UTC()
 		}
 	}
 	if options.AttemptID != "" && !options.JoinedAttempt {

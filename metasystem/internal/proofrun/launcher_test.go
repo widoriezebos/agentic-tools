@@ -580,7 +580,7 @@ func TestPreparationCrossingTheReservationStillCommitsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC().Add(-59*time.Second - 500*time.Millisecond)
+	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 1, Identity: proofIdentity, Launcher: launcher, Now: now}))
 
@@ -591,6 +591,7 @@ func TestPreparationCrossingTheReservationStillCommitsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	clock := deadline.Add(-time.Millisecond)
 	watchdog := filepath.Join(root, "artifacts", "deadline-watchdog.sh")
 	writeExecutable(t, watchdog, `#!/usr/bin/env bash
 done_path=
@@ -604,11 +605,9 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 		LogPath: filepath.Join(root, "artifacts", "deadline.log"), Banner: "deadline fixture", Silence: time.Second, SectionCap: time.Second,
 		EvidenceTimeout: time.Second, EvidenceMax: 1024, Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second,
 		WatchdogExecutable: watchdog, Command: []string{"true"}, ErrorOutput: io.Discard,
+		Now: func() time.Time { return clock },
 		PrepareSuccess: func(CompletionContext) (json.RawMessage, error) {
-			// Preparation outlives the deadline: it waits for that fact.
-			for !time.Now().After(deadline) {
-				time.Sleep(5 * time.Millisecond)
-			}
+			clock = deadline.Add(time.Minute)
 			return json.RawMessage(`{"prepared":true}`), nil
 		}})
 	if result != 0 {

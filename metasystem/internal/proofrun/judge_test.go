@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -244,23 +243,14 @@ func TestComputeJudgeKeyWaitsForSlowSuccessfulGitAndKeepsTheStableKey(t *testing
 	go func() {
 		result <- computeJudgeKey(context.Background(), "/slow-repository", digest, "metasystem", readGit)
 	}()
-	select {
-	case <-entered:
-	case <-time.After(wiringBound):
-		t.Fatal("slow Git reader did not start")
-	}
+	<-entered
 	select {
 	case key := <-result:
 		t.Fatalf("judge key returned before successful Git completed: %s", key)
 	default:
 	}
 	close(release)
-	var first string
-	select {
-	case first = <-result:
-	case <-time.After(wiringBound):
-		t.Fatal("judge key did not follow successful Git completion")
-	}
+	first := <-result
 	second := computeJudgeKey(context.Background(), "/slow-repository", digest, "metasystem", readGit)
 	if first != second || !strings.HasPrefix(first, JudgeCompatibilityVersion+":"+digest+":") {
 		t.Fatalf("slow successful Git produced unstable judge keys: first=%q second=%q", first, second)

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -22,22 +23,28 @@ func TestStageRunsIndependentGroupsSideBySide(t *testing.T) {
 	ids := []string{"alpha", "beta", "gamma"}
 	groups := []testpolicy.Group{}
 	// Side by side is a fact the groups witness themselves: each announces
-	// its start in a rendezvous directory outside the tree and waits for
-	// the other two before it reports, so a stage that ran them one after
-	// another fails loudly, and no stopwatch is read on a loaded box. The
-	// wait is bounded far above what three shells need to arrive.
+	// its start through the other groups' FIFOs and blocks on its own until
+	// both peers have announced themselves.
 	meet := t.TempDir()
-	allStarted := ""
+	arrivals := make(map[string]string, len(ids))
 	for _, id := range ids {
-		allStarted += " && [[ -e " + strconv.Quote(filepath.Join(meet, "started-"+id)) + " ]]"
+		arrivals[id] = filepath.Join(meet, "arrivals-"+id)
+		if err := syscall.Mkfifo(arrivals[id], 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	allStarted = strings.TrimPrefix(allStarted, " && ")
 	for _, id := range ids {
 		body := "<testsuite><testcase classname=\"fixture\" name=\"" + id + "\"></testcase></testsuite>"
+		arrive := "exec 9<>" + strconv.Quote(arrivals[id]) + "\n"
+		for _, other := range ids {
+			if other != id {
+				arrive += "printf '%s\\n' " + strconv.Quote(id) + " > " + strconv.Quote(arrivals[other]) + "\n"
+			}
+		}
 		script := "#!/usr/bin/env bash\nset -euo pipefail\n" +
-			": > " + strconv.Quote(filepath.Join(meet, "started-"+id)) + "\n" +
-			"for ((i = 0; i < 300; i++)); do\n  if " + allStarted + "; then break; fi\n  sleep 0.1\ndone\n" +
-			"if ! { " + allStarted + "; }; then echo '" + id + " never saw the other groups start: the stage ran them one after another' >&2; exit 1; fi\n" +
+			arrive +
+			"read -r first <&9\nread -r second <&9\n" +
+			"[[ \"$first\" != \"$second\" ]]\n" +
 			"mkdir -p reports-" + id + "\nprintf '%s\\n' " + strconv.Quote(body) + " > reports-" + id + "/tests.xml\n"
 		path := filepath.Join(root, "scripts", id+".sh")
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -50,9 +50,11 @@ func reconcileOptions(probe *mapProbe, now time.Time, signal func(int, syscall.S
 	if signal == nil {
 		signal = func(int, syscall.Signal) error { return nil }
 	}
+	stopNow := now
 	return ReconcileOptions{Prober: probe, Now: now, ObservationWindow: time.Minute,
 		GroupMembers: func(int64) ([]int64, error) { return nil, nil },
-		Stop:         StopOptions{TermGrace: 20 * time.Millisecond, KillGrace: 20 * time.Millisecond, Poll: time.Millisecond, Prober: probe, Signal: signal}}
+		Stop: StopOptions{TermGrace: 20 * time.Millisecond, KillGrace: 20 * time.Millisecond, Poll: time.Millisecond, Prober: probe, Signal: signal,
+			Now: func() time.Time { return stopNow }, Sleep: func(duration time.Duration) { stopNow = stopNow.Add(duration) }}}
 }
 
 func TestReconcileKeepsTheReservationWhileTheSuiteGroupHasAnUnrecordedMember(t *testing.T) {
@@ -170,9 +172,19 @@ func TestReconcileKeepsTheReservationWhileAChildResistsTheStop(t *testing.T) {
 	root, attempt, _ := reconcileFixture(t, now)
 	// The launcher is dead, the suite group is alive and ignores every signal.
 	probe := &mapProbe{states: map[int64]identity.Liveness{1001: identity.Dead, 1002: identity.Alive, 1003: identity.Dead}}
-	outcomes, err := ReconcileAttempts(root, reconcileOptions(probe, now.Add(time.Hour), nil))
+	options := reconcileOptions(probe, now.Add(time.Hour), nil)
+	artificialSleeps := 0
+	sleep := options.Stop.Sleep
+	options.Stop.Sleep = func(duration time.Duration) {
+		artificialSleeps++
+		sleep(duration)
+	}
+	outcomes, err := ReconcileAttempts(root, options)
 	if err != nil || len(outcomes) != 1 || outcomes[0].Action != ReconcileCustodyPending || !strings.Contains(outcomes[0].Reason, "suite") {
 		t.Fatalf("outcomes = %+v, %v", outcomes, err)
+	}
+	if artificialSleeps == 0 {
+		t.Fatal("resistant child stop did not use the artificial sleeper")
 	}
 	after, err := ReadAttempt(root, attempt.AttemptID)
 	if err != nil || after.Terminal != nil {

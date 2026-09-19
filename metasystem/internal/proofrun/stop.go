@@ -39,6 +39,8 @@ type StopOptions struct {
 	Poll      time.Duration
 	Prober    identity.Prober
 	Signal    func(int, syscall.Signal) error
+	Now       func() time.Time
+	Sleep     func(time.Duration)
 }
 
 // Stop acts on a durable proof-run record in suite, watchdog, launcher order.
@@ -87,6 +89,12 @@ func stopDefaults(options StopOptions) StopOptions {
 	}
 	if options.Signal == nil {
 		options.Signal = syscall.Kill
+	}
+	if options.Now == nil {
+		options.Now = time.Now
+	}
+	if options.Sleep == nil {
+		options.Sleep = time.Sleep
 	}
 	if options.Poll <= 0 {
 		options.Poll = 20 * time.Millisecond
@@ -152,9 +160,9 @@ func waitForIdentity(ref identity.Ref, duration time.Duration, options StopOptio
 	if duration <= 0 || state != identity.Alive {
 		return state
 	}
-	deadline := time.Now().Add(duration)
-	for state == identity.Alive && time.Now().Before(deadline) {
-		time.Sleep(options.Poll)
+	deadline := options.Now().Add(duration)
+	for state == identity.Alive && options.Now().Before(deadline) {
+		options.Sleep(options.Poll)
 		state = identity.AliveRef(options.Prober, ref)
 	}
 	return state

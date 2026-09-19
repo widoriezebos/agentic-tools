@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -21,8 +22,18 @@ func TestVersionIdentityHelper(t *testing.T) {
 		return
 	}
 	if mode == "hang" {
-		time.Sleep(10 * time.Second)
-		return
+		ready, err := os.OpenFile(os.Getenv("VERSION_IDENTITY_READY"), os.O_WRONLY, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ready.Write([]byte{'1'}); err != nil {
+			_ = ready.Close()
+			t.Fatal(err)
+		}
+		if err := ready.Close(); err != nil {
+			t.Fatal(err)
+		}
+		select {}
 	}
 	file, err := os.OpenFile(os.Getenv("VERSION_IDENTITY_MARKER"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -64,12 +75,38 @@ func TestPreparedToolIdentityStartsVersionHelperOnceAndHonorsBound(t *testing.T)
 		t.Fatalf("version helper was repeated after preparation: %q err=%v", data, err)
 	}
 
-	hangingEnvironment := mergeTestEnvironment(os.Environ(), map[string]string{"GO_WANT_VERSION_IDENTITY_HELPER": "hang"})
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-	_, _, started, err := identifyTool(ctx, root, hangingEnvironment, group.Tools[0])
-	if !started || !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("hanging version helper started=%v err=%v", started, err)
+	readyPath := filepath.Join(root, "version-ready")
+	if err := syscall.Mkfifo(readyPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hangingEnvironment := mergeTestEnvironment(os.Environ(), map[string]string{
+		"GO_WANT_VERSION_IDENTITY_HELPER": "hang",
+		"VERSION_IDENTITY_READY":          readyPath,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	type identityResult struct {
+		started bool
+		err     error
+	}
+	result := make(chan identityResult, 1)
+	go func() {
+		_, _, started, err := identifyTool(ctx, root, hangingEnvironment, group.Tools[0])
+		result <- identityResult{started: started, err: err}
+	}()
+	ready, err := os.Open(readyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byteRead := make([]byte, 1)
+	_, readErr := io.ReadFull(ready, byteRead)
+	closeErr := ready.Close()
+	if readErr != nil || closeErr != nil || string(byteRead) != "1" {
+		t.Fatalf("version helper readiness = %q, read=%v close=%v", byteRead, readErr, closeErr)
+	}
+	cancel()
+	identity := <-result
+	if !identity.started || !errors.Is(identity.err, context.Canceled) {
+		t.Fatalf("hanging version helper started=%v err=%v", identity.started, identity.err)
 	}
 }
 

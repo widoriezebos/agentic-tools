@@ -19,6 +19,7 @@ func (p *stopStateProbe) Probe(pid int64) (identity.Exact, identity.Liveness, er
 }
 
 func TestStopUsesRecordIdentityWhenWatchdogIsDeadAndSuiteIsLive(t *testing.T) {
+	now := time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)
 	probe := &stopStateProbe{
 		started: map[int64]int64{201: 1201, 202: 1202, 203: 1203},
 		states:  map[int64]identity.Liveness{201: identity.Alive, 202: identity.Dead, 203: identity.Dead},
@@ -32,6 +33,7 @@ func TestStopUsesRecordIdentityWhenWatchdogIsDeadAndSuiteIsLive(t *testing.T) {
 	}
 	outcomes := Stop(record, StopOptions{
 		TermGrace: time.Millisecond, KillGrace: time.Millisecond, Poll: time.Microsecond, Prober: probe,
+		Now: func() time.Time { return now }, Sleep: func(duration time.Duration) { now = now.Add(duration) },
 		Signal: func(target int, signal syscall.Signal) error {
 			signals = append(signals, fmt.Sprintf("%d:%s", target, signal))
 			if target == -201 && signal == syscall.SIGTERM {

@@ -67,6 +67,8 @@ type supervisorOptions struct {
 	Signal          identity.SignalFunc
 	OnReading       func(reading string)
 	OnVerdict       func(verdict string)
+	Now             func() time.Time
+	NewTicker       func(time.Duration) (<-chan time.Time, func())
 }
 
 type supervisorOutcome struct {
@@ -191,7 +193,18 @@ func consumptionRise(window time.Duration) time.Duration {
 }
 
 func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOutcome {
-	startedAt := time.Now()
+	now := options.Now
+	if now == nil {
+		now = time.Now
+	}
+	newTicker := options.NewTicker
+	if newTicker == nil {
+		newTicker = func(interval time.Duration) (<-chan time.Time, func()) {
+			ticker := time.NewTicker(interval)
+			return ticker.C, ticker.Stop
+		}
+	}
+	startedAt := now()
 	if options.Activity == nil {
 		options.Activity = newOutputActivity(startedAt)
 	}
@@ -221,8 +234,8 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 	waited := make(chan error, 1)
 	go func() { waited <- command.Wait() }()
 
-	ticker := time.NewTicker(options.SampleInterval)
-	defer ticker.Stop()
+	ticks, stopTicker := newTicker(options.SampleInterval)
+	defer stopTicker()
 	lastStageSize := int64(0)
 	zeroCPUStarted, zeroCPUBase := startedAt, float64(0)
 	readerFailures := 0
@@ -255,8 +268,8 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 				outcome.CPUSeconds = directCPU
 			}
 		}
-		now := time.Now()
-		updateSupervisorDurations(&outcome, now, options.Activity.Last(), zeroCPUStarted)
+		finishedAt := now()
+		updateSupervisorDurations(&outcome, finishedAt, options.Activity.Last(), zeroCPUStarted)
 		if dumpRequested && outcome.Dump == "" {
 			outcome.Dump = "dump: complete"
 		}
@@ -277,7 +290,7 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 				outcome.Reason = options.Context.Err().Error()
 			}
 			return finishWait(waitErr)
-		case sampledAt := <-ticker.C:
+		case sampledAt := <-ticks:
 			if stageResultGrew(options.StageResultPath, &lastStageSize) {
 				options.Activity.Mark(sampledAt)
 			}

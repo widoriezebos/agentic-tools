@@ -1,6 +1,7 @@
 package proofrun
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +22,22 @@ type sequenceProbe struct {
 	exacts []identity.Exact
 	states []identity.Liveness
 	calls  int
+}
+
+type watchdogTestClock struct {
+	now    time.Time
+	sleeps int
+}
+
+func newWatchdogTestClock() *watchdogTestClock {
+	return &watchdogTestClock{now: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC)}
+}
+
+func (clock *watchdogTestClock) Now() time.Time { return clock.now }
+
+func (clock *watchdogTestClock) Sleep(duration time.Duration) {
+	clock.sleeps++
+	clock.now = clock.now.Add(duration)
 }
 
 func (p *sequenceProbe) Probe(int64) (identity.Exact, identity.Liveness, error) {
@@ -45,12 +62,19 @@ func TestEvidenceTimeoutLeavesLoudPartialNoteBeforeRefusingKill(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Now().Add(-time.Minute).Unix()
+	timerCalls := 0
 	options := WatchdogOptions{
 		Suite: "fixture", Root: root, ProgressPath: "progress", DonePath: "done",
 		LogPaths: []string{"log"}, SuiteIdentity: identity.Ref{Pid: 72, StartedAtSec: started},
 		Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: 20 * time.Millisecond, EvidenceMax: 1,
 		TermGrace: time.Millisecond, KillGrace: time.Millisecond, Executable: blocker, ErrorOutput: os.Stderr,
 		Prober: fixedProbe{exact: identity.Exact{Pid: 72, StartedAt: time.Unix(started+1, 0)}, state: identity.Alive},
+		NewTimer: func(time.Duration) (<-chan time.Time, func()) {
+			timerCalls++
+			fired := make(chan time.Time, 1)
+			fired <- time.Unix(1, 0)
+			return fired, func() {}
+		},
 	}
 	err := stopStalledSuite(options, "fixture-section", "fixture stall", ProgressRun{})
 	if err == nil || !strings.Contains(err.Error(), "partial evidence retained") {
@@ -63,6 +87,9 @@ func TestEvidenceTimeoutLeavesLoudPartialNoteBeforeRefusingKill(t *testing.T) {
 	note, readErr := os.ReadFile(matches[0])
 	if readErr != nil || !strings.Contains(string(note), "DROPPED evidence copy exceeded") {
 		t.Fatalf("partial note = %q, %v", note, readErr)
+	}
+	if timerCalls != 1 {
+		t.Fatalf("evidence timer creations = %d, want 1", timerCalls)
 	}
 }
 
@@ -122,38 +149,37 @@ func (p fixedProbe) Probe(int64) (identity.Exact, identity.Liveness, error) {
 	return p.exact, p.state, nil
 }
 
-func endSuiteAfterNotes(t *testing.T, notePath, donePath string, fragments ...string) {
+func endSuiteAfterNotes(t *testing.T, donePath string, fragments ...string) (*os.File, <-chan time.Time, func() string) {
 	t.Helper()
-	stop := make(chan struct{})
-	t.Cleanup(func() { close(stop) })
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = writer.Close()
+		_ = reader.Close()
+	})
+	wake := make(chan time.Time, 1)
+	notes := &synchronizedBuffer{}
 	go func() {
-		ticker := time.NewTicker(time.Millisecond)
-		defer ticker.Stop()
-		bound := time.NewTimer(wiringBound)
-		defer bound.Stop()
-		for {
-			data, _ := os.ReadFile(notePath)
+		scanner := bufio.NewScanner(reader)
+		for scanner.Scan() {
+			_, _ = notes.Write([]byte(scanner.Text() + "\n"))
 			found := true
 			for _, fragment := range fragments {
-				found = found && strings.Contains(string(data), fragment)
+				found = found && strings.Contains(notes.String(), fragment)
 			}
 			if found {
 				if err := os.WriteFile(donePath, nil, 0o600); err != nil {
 					t.Errorf("publish suite completion after watchdog notes: %v", err)
 				}
+				wake <- time.Unix(1, 0)
 				return
-			}
-			select {
-			case <-stop:
-				return
-			case <-bound.C:
-				t.Errorf("watchdog notes did not contain %q within the wiring bound; notes = %q", fragments, data)
-				_ = os.WriteFile(donePath, nil, 0o600)
-				return
-			case <-ticker.C:
 			}
 		}
+		t.Errorf("watchdog note stream ended before it contained %q; notes = %q; read error = %v", fragments, notes.String(), scanner.Err())
 	}()
+	return writer, wake, notes.String
 }
 
 // A printing section past its cap, and a suite past its reservation's
@@ -179,35 +205,37 @@ func TestRunWatchdogLetsAPrintingSectionAndAnExpiredDeadlineRunOn(t *testing.T) 
 	writeExecutable(t, preserve, "#!/usr/bin/env bash\necho bounded-copy-completed\n")
 	shutdowns := 0
 	var signals []syscall.Signal
-	notes, err := os.Create(filepath.Join(root, "watchdog.err"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer notes.Close()
-	readNotes := func() string {
-		data, _ := os.ReadFile(notes.Name())
-		return string(data)
-	}
 	done := filepath.Join(root, "done")
-	// The suite completion follows the two notes. The wiring bound can only
-	// fail a broken test; it never supplies the completion fact.
-	endSuiteAfterNotes(t, notes.Name(), done, "passed its 1ms cap", "deadline")
-	err = RunWatchdog(WatchdogOptions{
+	notePipe, wake, readNotes := endSuiteAfterNotes(t, done, "passed its 1ms cap", "deadline")
+	observedAt := started.Add(2 * time.Minute)
+	nowCalls, tickerCalls := 0, 0
+	err := RunWatchdog(WatchdogOptions{
 		Suite: "fixture", Root: root, ProgressPath: progress, DonePath: done, LogPaths: []string{logPath},
 		SuiteIdentity: identity.Ref{Pid: 999999, StartedAtSec: started.Unix()},
-		Deadline:      time.Now().Add(-time.Minute),
+		Deadline:      started.Add(time.Minute),
 		Silence:       time.Hour, SectionCap: time.Millisecond, EvidenceTimeout: time.Second, EvidenceMax: 1024,
 		Poll: time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
-		Executable: preserve, Output: os.Stdout, ErrorOutput: notes,
+		Executable: preserve, Output: os.Stdout, ErrorOutput: notePipe,
 		Prober:   fixedProbe{exact: identity.Exact{Pid: 999999, StartedAt: time.Unix(started.Unix(), 0)}, state: identity.Alive},
 		Signal:   func(_ int, signal syscall.Signal) error { signals = append(signals, signal); return nil },
 		Shutdown: func() error { shutdowns++; return nil },
+		Now: func() time.Time {
+			nowCalls++
+			return observedAt
+		},
+		NewTicker: func(time.Duration) (<-chan time.Time, func()) {
+			tickerCalls++
+			return wake, func() {}
+		},
 	})
 	if err != nil {
 		t.Fatalf("a printing section past its cap and a passed deadline ended the suite: %v", err)
 	}
 	if shutdowns != 0 || len(signals) != 0 {
 		t.Fatalf("the clock signalled the suite: shutdowns = %d, signals = %v", shutdowns, signals)
+	}
+	if nowCalls == 0 || tickerCalls != 1 {
+		t.Fatalf("watchdog artificial time use: now calls=%d ticker creations=%d", nowCalls, tickerCalls)
 	}
 	if got := readNotes(); strings.Count(got, "passed its 1ms cap") != 1 || strings.Count(got, "the reservation's deadline") != 1 {
 		t.Fatalf("the notes were not written once each:\n%s", got)
@@ -240,6 +268,7 @@ func TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse(t *testin
 	}
 	started := time.Now().Add(-time.Minute)
 	options := func(root, progress, logPath string, shutdowns *int) WatchdogOptions {
+		clock := &watchdogTestClock{now: started.Add(2 * time.Hour)}
 		return WatchdogOptions{
 			Suite: "fixture", Root: root, ProgressPath: progress, DonePath: filepath.Join(root, "done"), LogPaths: []string{logPath},
 			SuiteIdentity: identity.Ref{Pid: 999999, StartedAtSec: started.Unix()},
@@ -249,6 +278,8 @@ func TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse(t *testin
 			Prober:   fixedProbe{exact: identity.Exact{Pid: 999999, StartedAt: time.Unix(started.Unix(), 0)}, state: identity.Alive},
 			Signal:   func(int, syscall.Signal) error { return nil },
 			Shutdown: func() error { *shutdowns++; return nil },
+			Now:      clock.Now,
+			Sleep:    clock.Sleep,
 		}
 	}
 	t.Run("silence and a passed cap end nothing; the done file does", func(t *testing.T) {
@@ -257,13 +288,9 @@ func TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse(t *testin
 		opts := options(root, progress, logPath, &shutdowns)
 		// The done file lands once the watchdog has noted the cap, a fact
 		// the note proves it read the silent section past its window.
-		notes, err := os.Create(filepath.Join(root, "watchdog.err"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer notes.Close()
-		opts.ErrorOutput = notes
-		endSuiteAfterNotes(t, notes.Name(), opts.DonePath, "passed its 1ms cap")
+		notePipe, wake, _ := endSuiteAfterNotes(t, opts.DonePath, "passed its 1ms cap")
+		opts.ErrorOutput = notePipe
+		opts.NewTicker = func(time.Duration) (<-chan time.Time, func()) { return wake, func() {} }
 		if err := RunWatchdog(opts); err != nil || shutdowns != 0 {
 			t.Fatalf("a silent suite past every window was ended by the clock: err = %v, shutdowns = %d", err, shutdowns)
 		}
@@ -288,13 +315,9 @@ func TestRunWatchdogEndsASuiteForAVerdictOrACancellationAndNothingElse(t *testin
 		}
 		shutdowns := 0
 		opts := options(root, progress, logPath, &shutdowns)
-		notes, err := os.Create(filepath.Join(root, "watchdog.err"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer notes.Close()
-		opts.ErrorOutput = notes
-		endSuiteAfterNotes(t, notes.Name(), opts.DonePath, "passed its 1ms cap")
+		notePipe, wake, _ := endSuiteAfterNotes(t, opts.DonePath, "passed its 1ms cap")
+		opts.ErrorOutput = notePipe
+		opts.NewTicker = func(time.Duration) (<-chan time.Time, func()) { return wake, func() {} }
 		if err := RunWatchdog(opts); err != nil || shutdowns != 0 {
 			t.Fatalf("a verdict from a closed section invocation ended the suite: err = %v, shutdowns = %d", err, shutdowns)
 		}
@@ -373,15 +396,17 @@ func TestSuiteSignalsReauthenticateImmediatelyAndAbortOnMismatch(t *testing.T) {
 		states: []identity.Liveness{identity.Alive, identity.Alive, identity.Alive},
 	}
 	var signals []syscall.Signal
+	clock := newWatchdogTestClock()
 	err := signalSuiteGroup(WatchdogOptions{
 		SuiteIdentity: identity.Ref{Pid: 999997, StartedAtSec: started},
 		TermGrace:     time.Millisecond, KillGrace: time.Millisecond,
 		Signal: func(_ int, signal syscall.Signal) error { signals = append(signals, signal); return nil },
+		Now:    clock.Now, Sleep: clock.Sleep,
 	}, probe)
 	if err == nil || !strings.Contains(err.Error(), "kill") || !strings.Contains(err.Error(), "recorded start identity") {
 		t.Fatalf("error = %v", err)
 	}
-	if probe.calls != 3 || fmt.Sprint(signals) != fmt.Sprint([]syscall.Signal{syscall.SIGCONT, syscall.SIGTERM}) {
+	if probe.calls != 4 || fmt.Sprint(signals) != fmt.Sprint([]syscall.Signal{syscall.SIGCONT, syscall.SIGTERM}) {
 		t.Fatalf("probe calls = %d, signals = %v", probe.calls, signals)
 	}
 }
@@ -395,9 +420,11 @@ func TestGuardMemberSignalsReauthenticateAndAbortOnMismatch(t *testing.T) {
 		states: []identity.Liveness{identity.Alive, identity.Alive},
 	}
 	var signals []syscall.Signal
+	clock := newWatchdogTestClock()
 	err := stopGuardMember(WatchdogOptions{
 		TermGrace: time.Millisecond,
 		Signal:    func(_ int, signal syscall.Signal) error { signals = append(signals, signal); return nil },
+		Now:       clock.Now, Sleep: clock.Sleep,
 	}, identity.Ref{Pid: 999996, StartedAtSec: started}, probe)
 	if err == nil || !strings.Contains(err.Error(), "terminate") || !strings.Contains(err.Error(), "recorded start identity") {
 		t.Fatalf("error = %v", err)
@@ -419,10 +446,12 @@ func TestExecutionGuardSweepSignalsExactDetachedMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	var signals []syscall.Signal
+	clock := newWatchdogTestClock()
 	options := WatchdogOptions{
 		Root: root, SuiteIdentity: identity.Ref{Pid: 999999, StartedAtSec: started},
 		TermGrace: time.Millisecond,
 		Signal:    func(_ int, signal syscall.Signal) error { signals = append(signals, signal); return nil },
+		Now:       clock.Now, Sleep: clock.Sleep,
 	}
 	probe := fixedProbe{exact: identity.Exact{Pid: 999998, StartedAt: time.Unix(started, 0)}, state: identity.Alive}
 	if err := sweepExecutionGuard(options, probe); err != nil {
@@ -430,6 +459,9 @@ func TestExecutionGuardSweepSignalsExactDetachedMember(t *testing.T) {
 	}
 	if len(signals) != 3 || signals[0] != syscall.SIGCONT || signals[2] != syscall.SIGKILL {
 		t.Fatalf("signals = %v", signals)
+	}
+	if clock.sleeps == 0 {
+		t.Fatal("execution-guard stop did not use the artificial sleeper")
 	}
 }
 
@@ -445,6 +477,7 @@ func TestExecutionGuardSweepContinuesAfterMemberFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	var secondSignals []syscall.Signal
+	clock := newWatchdogTestClock()
 	options := WatchdogOptions{
 		Root: root, SuiteIdentity: identity.Ref{Pid: 999999, StartedAtSec: started}, TermGrace: time.Millisecond,
 		Signal: func(target int, signal syscall.Signal) error {
@@ -454,6 +487,7 @@ func TestExecutionGuardSweepContinuesAfterMemberFailure(t *testing.T) {
 			secondSignals = append(secondSignals, signal)
 			return nil
 		},
+		Now: clock.Now, Sleep: clock.Sleep,
 	}
 	err := sweepExecutionGuard(options, pidProbe{started: started})
 	if err == nil || !strings.Contains(err.Error(), "999991") {

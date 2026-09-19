@@ -66,7 +66,7 @@ func testPlatformReapedChildCPU(t *testing.T) {
 			helper.closeInput()
 		}
 	})
-	outcome := superviseCommand(helper.command, options)
+	outcome := superviseCommand(helper.command, options.supervisorOptions)
 	if outcome.Verdict != "" || outcome.WaitErr != nil || !seenChild || !seenAfterChild || childCPU < 0.25 || outcome.CPUSeconds < 0.25 {
 		t.Fatalf("Darwin retained-member accounting outcome=%+v seenChild=%v seenAfter=%v childCPU=%.2f", outcome, seenChild, seenAfterChild, childCPU)
 	}

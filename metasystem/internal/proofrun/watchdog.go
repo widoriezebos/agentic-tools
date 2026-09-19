@@ -1,6 +1,7 @@
 package proofrun
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,6 +44,10 @@ type WatchdogOptions struct {
 	Prober           identity.Prober
 	Signal           func(int, syscall.Signal) error
 	Shutdown         func() error
+	Now              func() time.Time
+	Sleep            func(time.Duration)
+	NewTicker        func(time.Duration) (<-chan time.Time, func())
+	NewTimer         func(time.Duration) (<-chan time.Time, func())
 }
 
 func RunWatchdog(options WatchdogOptions) error {
@@ -50,13 +55,13 @@ func RunWatchdog(options WatchdogOptions) error {
 		return err
 	}
 	deadlineNoted, capNoted := false, ""
-	ticker := time.NewTicker(options.Poll)
-	defer ticker.Stop()
+	ticks, stopTicker := watchdogTicker(options, options.Poll)
+	defer stopTicker()
 	for {
 		if suiteDone(options.DonePath) {
 			return nil
 		}
-		now := time.Now()
+		now := watchdogNow(options)()
 		run, readErr := ReadLatestProgressRun(options.ProgressPath)
 		section, sectionStarted := "startup", time.Time{}
 		if readErr == nil {
@@ -87,7 +92,7 @@ func RunWatchdog(options WatchdogOptions) error {
 		if intent := recordedCancellation(options); intent != "" {
 			return stopStalledSuite(options, section, "cancellation intent recorded: "+intent, run)
 		}
-		<-ticker.C
+		<-ticks
 	}
 }
 
@@ -168,7 +173,7 @@ func stopStalledSuite(options WatchdogOptions, section, reason string, run Progr
 	// the reason with it; this line survives that.
 	fmt.Fprintf(options.ErrorOutput, "suite watchdog: stalling suite in section %s (%s)\n", section, reason)
 	evidenceDir := filepath.Join(options.Root, "artifacts", "agents", "suite-failures",
-		time.Now().UTC().Format("20060102T150405Z")+"-watchdog-"+strconv.FormatInt(options.SuiteIdentity.Pid, 10))
+		watchdogNow(options)().UTC().Format("20060102T150405Z")+"-watchdog-"+strconv.FormatInt(options.SuiteIdentity.Pid, 10))
 	sources := append([]string{}, run.Header.TmpPaths...)
 	sources = append(sources, run.Header.LogPaths...)
 	if len(sources) == 0 {
@@ -218,27 +223,46 @@ func suiteDone(path string) bool {
 }
 
 func preserveWithBound(options WatchdogOptions, destination string, sources []string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), options.EvidenceTimeout)
-	defer cancel()
 	args := []string{"proof-run", "preserve", "--destination", destination, "--max-bytes", strconv.FormatInt(options.EvidenceMax, 10)}
 	for _, source := range sources {
 		args = append(args, "--source", source)
 	}
-	command := exec.CommandContext(ctx, options.Executable, args...)
-	output, err := command.CombinedOutput()
-	if ctx.Err() == context.DeadlineExceeded {
+	command := exec.Command(options.Executable, args...)
+	var output bytes.Buffer
+	command.Stdout = &output
+	command.Stderr = &output
+	if err := command.Start(); err != nil {
+		note := fmt.Sprintf("DROPPED evidence copy failed: %v", err)
+		_ = AppendEvidenceNote(destination, note)
+		fmt.Fprintln(options.ErrorOutput, "suite watchdog:", note)
+		return note
+	}
+	ticks, stopTimer := watchdogTimer(options, options.EvidenceTimeout)
+	waited := make(chan error, 1)
+	go func() { waited <- command.Wait() }()
+	timedOut := false
+	var err error
+	select {
+	case err = <-waited:
+	case <-ticks:
+		timedOut = true
+		_ = command.Process.Kill()
+		err = <-waited
+	}
+	stopTimer()
+	if timedOut {
 		note := fmt.Sprintf("DROPPED evidence copy exceeded its %s timeout; partial evidence retained", options.EvidenceTimeout)
 		_ = AppendEvidenceNote(destination, note)
 		fmt.Fprintln(options.ErrorOutput, "suite watchdog:", note)
 		return note
 	}
 	if err != nil {
-		note := fmt.Sprintf("DROPPED evidence copy failed: %v: %s", err, string(output))
+		note := fmt.Sprintf("DROPPED evidence copy failed: %v: %s", err, output.String())
 		_ = AppendEvidenceNote(destination, note)
 		fmt.Fprintln(options.ErrorOutput, "suite watchdog:", note)
 		return note
 	}
-	note := string(output)
+	note := output.String()
 	if note == "" {
 		note = "bounded copy completed"
 	}
@@ -271,11 +295,11 @@ func SignalSuiteGroup(options WatchdogOptions, prober identity.Prober) error {
 	if err := SignalAuthenticated(options, prober, options.SuiteIdentity, pgid, syscall.SIGTERM, "suite process group"); err != nil {
 		return fmt.Errorf("terminate process group: %w", err)
 	}
-	waitForGroup(options.SuiteIdentity.Pid, options.TermGrace)
+	waitForGroup(options, prober, options.TermGrace)
 	if err := SignalAuthenticated(options, prober, options.SuiteIdentity, pgid, syscall.SIGKILL, "suite process group"); err != nil {
 		return fmt.Errorf("kill process group: %w", err)
 	}
-	waitForGroup(options.SuiteIdentity.Pid, options.KillGrace)
+	waitForGroup(options, prober, options.KillGrace)
 	return nil
 }
 
@@ -309,13 +333,14 @@ func signalAuthenticated(options WatchdogOptions, prober identity.Prober, ref id
 	return SignalAuthenticated(options, prober, ref, target, signalValue, label)
 }
 
-func waitForGroup(pgid int64, duration time.Duration) {
-	deadline := time.Now().Add(duration)
-	for time.Now().Before(deadline) {
-		if err := syscall.Kill(-int(pgid), 0); err == syscall.ESRCH {
+func waitForGroup(options WatchdogOptions, prober identity.Prober, duration time.Duration) {
+	now := watchdogNow(options)
+	deadline := now().Add(duration)
+	for now().Before(deadline) {
+		if identity.AliveRef(prober, options.SuiteIdentity) != identity.Alive {
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		watchdogSleep(options)(20 * time.Millisecond)
 	}
 }
 
@@ -368,14 +393,45 @@ func stopGuardMember(options WatchdogOptions, ref identity.Ref, prober identity.
 	if err := signalAuthenticated(options, prober, ref, target, syscall.SIGTERM, "execution-guard member"); err != nil {
 		return fmt.Errorf("terminate execution-guard member %d: %w", ref.Pid, err)
 	}
-	deadline := time.Now().Add(options.TermGrace)
-	for time.Now().Before(deadline) && identity.AliveRef(prober, ref) == identity.Alive {
-		time.Sleep(20 * time.Millisecond)
+	now := watchdogNow(options)
+	deadline := now().Add(options.TermGrace)
+	for now().Before(deadline) && identity.AliveRef(prober, ref) == identity.Alive {
+		watchdogSleep(options)(20 * time.Millisecond)
 	}
 	if err := signalAuthenticated(options, prober, ref, target, syscall.SIGKILL, "execution-guard member"); err != nil {
 		return fmt.Errorf("kill execution-guard member %d: %w", ref.Pid, err)
 	}
 	return nil
+}
+
+func watchdogNow(options WatchdogOptions) func() time.Time {
+	if options.Now != nil {
+		return options.Now
+	}
+	return time.Now
+}
+
+func watchdogSleep(options WatchdogOptions) func(time.Duration) {
+	if options.Sleep != nil {
+		return options.Sleep
+	}
+	return time.Sleep
+}
+
+func watchdogTicker(options WatchdogOptions, interval time.Duration) (<-chan time.Time, func()) {
+	if options.NewTicker != nil {
+		return options.NewTicker(interval)
+	}
+	ticker := time.NewTicker(interval)
+	return ticker.C, ticker.Stop
+}
+
+func watchdogTimer(options WatchdogOptions, duration time.Duration) (<-chan time.Time, func()) {
+	if options.NewTimer != nil {
+		return options.NewTimer(duration)
+	}
+	timer := time.NewTimer(duration)
+	return timer.C, func() { timer.Stop() }
 }
 
 // errorOutput is where the watchdog's notes go: the configured error

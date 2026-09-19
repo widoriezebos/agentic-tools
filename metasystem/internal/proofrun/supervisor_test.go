@@ -64,7 +64,7 @@ func TestSupervisorLegitimateWaitDeadDumpAndReaderFailures(t *testing.T) {
 				helper.closeInput()
 			}
 		})
-		outcome := superviseCommand(helper.command, options)
+		outcome := superviseCommand(helper.command, options.supervisorOptions)
 		if outcome.Verdict != "" || outcome.WaitErr != nil {
 			t.Fatalf("legitimate wait outcome=%+v", outcome)
 		}
@@ -79,7 +79,7 @@ func TestSupervisorLegitimateWaitDeadDumpAndReaderFailures(t *testing.T) {
 			helper.keepAliveUntilExit()
 		}
 		helper.gate(&options, reader, nil)
-		outcome := superviseCommand(helper.command, options)
+		outcome := superviseCommand(helper.command, options.supervisorOptions)
 		if outcome.Verdict != "dead" || outcome.Dump != "dump: complete" || !strings.Contains(outcome.Reason, "no CPU or output progress") || len(verdicts) != 1 || verdicts[0] != "dead" {
 			t.Fatalf("dead outcome=%+v", outcome)
 		}
@@ -95,7 +95,7 @@ func TestSupervisorLegitimateWaitDeadDumpAndReaderFailures(t *testing.T) {
 		verdicts := []string{}
 		options.OnVerdict = func(verdict string) { verdicts = append(verdicts, verdict) }
 		helper.gate(&options, reader, nil)
-		outcome := superviseCommand(helper.command, options)
+		outcome := superviseCommand(helper.command, options.supervisorOptions)
 		if outcome.Verdict != "invalid" || !strings.Contains(outcome.Reason, "three consecutive") || len(verdicts) != 1 || verdicts[0] != "invalid" {
 			t.Fatalf("reader-failure outcome=%+v", outcome)
 		}
@@ -107,7 +107,7 @@ func TestSupervisorLegitimateWaitDeadDumpAndReaderFailures(t *testing.T) {
 			t.Fatal("supervisor options installed an unexpected verdict callback")
 		}
 		helper.gate(&options, &scriptedTreeReader{samples: []processTreeSample{{}, {}, {}, {}, {}, {}, {}, {}}}, nil)
-		outcome := superviseCommand(helper.command, options)
+		outcome := superviseCommand(helper.command, options.supervisorOptions)
 		if outcome.Verdict != "dead" || outcome.Dump != "dump: killed while writing" {
 			t.Fatalf("quiet dump outcome=%+v", outcome)
 		}
@@ -136,7 +136,7 @@ func TestSupervisorLegitimateWaitDeadDumpAndReaderFailures(t *testing.T) {
 				}
 			}
 		})
-		outcome := superviseCommand(helper.command, options)
+		outcome := superviseCommand(helper.command, options.supervisorOptions)
 		if outcome.Verdict != "" || !rootRose || outcome.CPUSeconds < 1.01 {
 			t.Fatalf("retained member did not preserve the later root rise: outcome=%+v rootRose=%v", outcome, rootRose)
 		}
@@ -153,7 +153,7 @@ func TestSupervisorLegitimateWaitDeadDumpAndReaderFailures(t *testing.T) {
 				helper.closeInput()
 			}
 		})
-		outcome := superviseCommand(helper.command, options)
+		outcome := superviseCommand(helper.command, options.supervisorOptions)
 		if outcome.Verdict != "" || outcome.CPUSeconds != 4 {
 			t.Fatalf("non-retaining sample summed a vanished member: %+v", outcome)
 		}
@@ -175,7 +175,7 @@ func TestSupervisorHostWaitReadingIsNonterminalAndResetsWindow(t *testing.T) {
 		reported = true
 		readings <- reading
 	}
-	outcome := superviseCommand(helper.command, options)
+	outcome := superviseCommand(helper.command, options.supervisorOptions)
 	select {
 	case state := <-readings:
 		if state != "waiting on the host" {
@@ -223,7 +223,7 @@ func TestSupervisorStoppedProcessIsReportedLeftAliveAndResumes(t *testing.T) {
 		}
 		reportedStopped = true
 	}
-	outcome := superviseCommand(helper.command, options)
+	outcome := superviseCommand(helper.command, options.supervisorOptions)
 	if outcome.Verdict != "" || outcome.WaitErr != nil || !reportedStopped || !observedStopped || stateReadErr != nil {
 		t.Fatalf("resumed process outcome=%+v reported=%v observed=%v stateReadErr=%v", outcome, reportedStopped, observedStopped, stateReadErr)
 	}
@@ -252,7 +252,7 @@ func TestSupervisorDescendantAndReapedChildCPUAreCounted(t *testing.T) {
 				helper.closeInput()
 			}
 		})
-		outcome := superviseCommand(helper.command, options)
+		outcome := superviseCommand(helper.command, options.supervisorOptions)
 		if outcome.Verdict != "" || outcome.WaitErr != nil || observedCPU < 0.25 || observedMembers < 2 {
 			t.Fatalf("real setsid descendant outcome=%+v observedCPU=%.2f members=%d", outcome, observedCPU, observedMembers)
 		}
@@ -286,7 +286,7 @@ func TestSupervisorSectionResultGrowthCountsAsOutput(t *testing.T) {
 			helper.closeInput()
 		}
 	})
-	outcome := superviseCommand(helper.command, options)
+	outcome := superviseCommand(helper.command, options.supervisorOptions)
 	if outcome.Verdict != "" || outcome.WaitErr != nil || observedMembers < 2 || !observedStageGrowth || !activity.Last().After(activityBefore) {
 		t.Fatalf("real stage-result growth outcome=%+v members=%d growth=%v activityBefore=%s activityAfter=%s", outcome, observedMembers, observedStageGrowth, activityBefore, activity.Last())
 	}
@@ -300,16 +300,16 @@ func TestSupervisorKillsSIGQUITIgnoringBusyChildAfterCounterRises(t *testing.T) 
 		verdicts := []string{}
 		options.OnVerdict = func(verdict string) { verdicts = append(verdicts, verdict) }
 		helper.gate(&options, reader, nil)
-		outcome := superviseCommand(helper.command, options)
+		outcome := superviseCommand(helper.command, options.supervisorOptions)
 		if outcome.Verdict != "runaway" || outcome.Dump != "dump: not produced, the process kept computing" || len(verdicts) != 1 || verdicts[0] != "runaway" {
 			t.Fatalf("SIGQUIT-ignoring outcome=%+v", outcome)
 		}
 	})
 	t.Run("no window kills after quiet sample", func(t *testing.T) {
 		helper := newSupervisorHelperFixture(t, "ignore-quit-idle")
-		options := supervisorOptions{Limits: supervisorLimits{CPUBudgetSeconds: 1}, SampleInterval: 10 * time.Millisecond}
+		options := newSupervisorTestClock(t, 10*time.Millisecond).options(supervisorOptions{Limits: supervisorLimits{CPUBudgetSeconds: 1}, SampleInterval: 10 * time.Millisecond})
 		helper.gate(&options, &scriptedTreeReader{samples: []processTreeSample{{CPUSeconds: 1}, {CPUSeconds: 1}}}, nil)
-		outcome := superviseCommand(helper.command, options)
+		outcome := superviseCommand(helper.command, options.supervisorOptions)
 		if outcome.Verdict != "runaway" || outcome.Dump != "dump: killed while writing" {
 			t.Fatalf("no-window quiet dump outcome=%+v", outcome)
 		}
@@ -462,6 +462,7 @@ type readinessGatedTreeReader struct {
 	readyErr      error
 	call          int
 	onSample      func(int, processTreeSample)
+	clock         *supervisorTestClock
 }
 
 type supervisorHelperFixture struct {
@@ -485,7 +486,62 @@ type supervisorHelperFixture struct {
 	keepOnce            sync.Once
 }
 
-func supervisorOptionsForTest(t *testing.T, cpuBudget int64, window time.Duration) supervisorOptions {
+type supervisorTestOptions struct {
+	supervisorOptions
+	clock *supervisorTestClock
+}
+
+type supervisorTestClock struct {
+	t        *testing.T
+	now      time.Time
+	step     time.Duration
+	ticks    chan time.Time
+	closed   bool
+	started  bool
+	nowCalls int
+}
+
+func newSupervisorTestClock(t *testing.T, step time.Duration) *supervisorTestClock {
+	t.Helper()
+	clock := &supervisorTestClock{t: t, now: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC), step: step, ticks: make(chan time.Time, 1)}
+	t.Cleanup(func() {
+		if !clock.started || !clock.closed || clock.nowCalls < 2 {
+			t.Errorf("supervisor artificial clock use: ticker started=%t stopped=%t now calls=%d", clock.started, clock.closed, clock.nowCalls)
+		}
+	})
+	return clock
+}
+
+func (clock *supervisorTestClock) advance() {
+	clock.t.Helper()
+	if clock.closed {
+		clock.t.Fatal("supervisor requested a sample after stopping its ticker")
+	}
+	clock.now = clock.now.Add(clock.step)
+	select {
+	case clock.ticks <- clock.now:
+	default:
+		clock.t.Fatal("supervisor did not consume the preceding artificial tick")
+	}
+}
+
+func (clock *supervisorTestClock) options(options supervisorOptions) supervisorTestOptions {
+	options.Now = func() time.Time {
+		clock.nowCalls++
+		return clock.now
+	}
+	options.NewTicker = func(interval time.Duration) (<-chan time.Time, func()) {
+		if interval != clock.step {
+			clock.t.Fatalf("supervisor ticker interval = %s, want %s", interval, clock.step)
+		}
+		clock.started = true
+		clock.advance()
+		return clock.ticks, func() { clock.closed = true }
+	}
+	return supervisorTestOptions{supervisorOptions: options, clock: clock}
+}
+
+func supervisorOptionsForTest(t *testing.T, cpuBudget int64, window time.Duration) supervisorTestOptions {
 	t.Helper()
 	if supervisorLimitsForTest != (supervisorLimits{}) {
 		t.Fatal("supervisor test limits leaked between tests")
@@ -493,7 +549,7 @@ func supervisorOptionsForTest(t *testing.T, cpuBudget int64, window time.Duratio
 	supervisorLimitsForTest = supervisorLimits{CPUBudgetSeconds: cpuBudget, ZeroConsumptionWindow: window}
 	t.Cleanup(func() { supervisorLimitsForTest = supervisorLimits{} })
 	limits, interval := groupSupervisorSettings(nil)
-	return supervisorOptions{Limits: limits, SampleInterval: interval}
+	return newSupervisorTestClock(t, interval).options(supervisorOptions{Limits: limits, SampleInterval: interval})
 }
 
 func (reader *scriptedTreeReader) Sample(rootPID int) (processTreeSample, error) {
@@ -537,9 +593,9 @@ func TestSupervisorKillSparesTheFixtureCustodian(t *testing.T) {
 	options.Activity = newOutputActivity(time.Now())
 	options.Reader = &readinessGatedTreeReader{
 		ready: helper.ready, keepAlive: helper.keepAlive, activity: options.Activity, readyActivity: &helper.readyActivity,
-		reader: custodianKillTreeReader{fixture: helper}, onSample: func(int, processTreeSample) { cancel() },
+		reader: custodianKillTreeReader{fixture: helper}, onSample: func(int, processTreeSample) { cancel() }, clock: options.clock,
 	}
-	outcome := superviseCommand(helper.command, options)
+	outcome := superviseCommand(helper.command, options.supervisorOptions)
 	if outcome.Verdict != "cancelled" || outcome.WaitErr == nil {
 		t.Fatalf("cancelled supervisor outcome=%+v", outcome)
 	}
@@ -680,23 +736,31 @@ func TestProofProcessWaitNeedsCompletionRequiredRowAndExit(t *testing.T) {
 }
 
 func (reader *readinessGatedTreeReader) Sample(rootPID int) (processTreeSample, error) {
+	defer func() {
+		if reader.clock == nil {
+			return
+		}
+		select {
+		case <-reader.keepAlive:
+		default:
+			reader.clock.advance()
+		}
+	}()
 	if reader.readyErr != nil {
 		return processTreeSample{}, reader.readyErr
 	}
 	if !reader.readyObserved {
-		select {
-		case reader.readyErr = <-reader.ready:
-			if reader.readyErr != nil {
-				return processTreeSample{}, reader.readyErr
-			}
-			reader.readyObserved = true
-		default:
+		reader.readyErr = <-reader.ready
+		if reader.readyErr != nil {
+			return processTreeSample{}, reader.readyErr
 		}
+		reader.readyObserved = true
 		markedAt := time.Now()
-		reader.activity.Mark(markedAt)
-		if reader.readyObserved {
-			*reader.readyActivity = markedAt
+		if reader.clock != nil {
+			markedAt = reader.clock.now
 		}
+		reader.activity.Mark(markedAt)
+		*reader.readyActivity = markedAt
 		return processTreeSample{Members: []int{rootPID}}, nil
 	}
 	sample, err := reader.reader.Sample(rootPID)
@@ -709,7 +773,11 @@ func (reader *readinessGatedTreeReader) Sample(rootPID int) (processTreeSample, 
 	}
 	select {
 	case <-reader.keepAlive:
-		reader.activity.Mark(time.Now())
+		markedAt := time.Now()
+		if reader.clock != nil {
+			markedAt = reader.clock.now
+		}
+		reader.activity.Mark(markedAt)
 	default:
 	}
 	return sample, nil
@@ -831,13 +899,14 @@ func (fixture *supervisorHelperFixture) keepAliveUntilExit() {
 	fixture.keepOnce.Do(func() { close(fixture.keepAlive) })
 }
 
-func (fixture *supervisorHelperFixture) gate(options *supervisorOptions, reader processTreeReader, onSample func(int, processTreeSample)) {
+func (fixture *supervisorHelperFixture) gate(options *supervisorTestOptions, reader processTreeReader, onSample func(int, processTreeSample)) {
 	if options.Activity == nil {
 		options.Activity = newOutputActivity(time.Now())
 	}
 	options.Reader = &readinessGatedTreeReader{
 		ready: fixture.ready, keepAlive: fixture.keepAlive, activity: options.Activity, readyActivity: &fixture.readyActivity,
 		reader: &supervisorHelperTreeReader{reader: reader, custodians: &fixture.custodians, prober: identity.KernelProber{}}, onSample: onSample,
+		clock: options.clock,
 	}
 }
 
@@ -897,7 +966,7 @@ func TestSupervisorHelperCustodianAccountingUsesExactIdentity(t *testing.T) {
 	}
 	fixture := &supervisorHelperFixture{ready: make(chan error, 1), custodians: []identity.Ref{custodian}, keepAlive: make(chan struct{})}
 	fixture.ready <- nil
-	options := supervisorOptions{}
+	options := supervisorTestOptions{}
 	fixture.gate(&options, &scriptedTreeReader{samples: []processTreeSample{sample}}, nil)
 	if _, err := options.Reader.Sample(ownerPID); err != nil {
 		t.Fatal(err)
