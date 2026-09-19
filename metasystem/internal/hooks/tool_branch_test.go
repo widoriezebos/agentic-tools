@@ -3,6 +3,7 @@ package hooks
 import (
 	"bytes"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +23,7 @@ func copyToolHook(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	script := filepath.Join(scriptDir, "supervision-hook.sh")
-	if err := os.WriteFile(script, source, 0o755); err != nil {
+	if err := testexec.WriteFile(script, source, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return root, script
@@ -31,7 +32,7 @@ func copyToolHook(t *testing.T) (string, string) {
 func writeToolEngine(t *testing.T, root, body string, mode os.FileMode) string {
 	t.Helper()
 	path := filepath.Join(root, "stub-engine")
-	if err := os.WriteFile(path, []byte(body), mode); err != nil {
+	if err := testexec.WriteFile(path, []byte(body), mode); err != nil {
 		t.Fatal(err)
 	}
 	return path

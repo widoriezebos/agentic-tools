@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestBatchPushRejectionAppearsInStatus(t *testing.T) {
@@ -64,7 +65,7 @@ done
 printf '%s\n' '{"attemptId":"interrupted-attempt","groups":[{"id":"group-a","status":"cancelled","nativeLaunched":true}]}' >"$result"
 exit 2
 `
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	original := batchPrefixReceiptExecutable

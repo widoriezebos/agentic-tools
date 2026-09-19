@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,7 +45,7 @@ func setupCLIWrite(t *testing.T, path, content string, mode os.FileMode) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(content), mode); err != nil {
+	if err := testexec.WriteFile(path, []byte(content), mode); err != nil {
 		t.Fatal(err)
 	}
 }

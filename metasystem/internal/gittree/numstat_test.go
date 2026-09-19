@@ -1,6 +1,7 @@
 package gittree
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -115,7 +116,7 @@ func TestChangedLinesCommandPins(t *testing.T) {
 	logPath := filepath.Join(dir, "argv")
 	shim := filepath.Join(dir, "git")
 	script := "#!/bin/sh\n: > \"$NUMSTAT_ARGV\"\nfor arg do\n  printf '%s\\n' \"$arg\" >> \"$NUMSTAT_ARGV\"\ndone\n"
-	if err := os.WriteFile(shim, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(shim, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
@@ -160,7 +161,7 @@ func TestChangedLinesCommandPins(t *testing.T) {
 func TestChangedLinesHostileDiffConfig(t *testing.T) {
 	f := newTreeFixture(t)
 	hostile := filepath.Join(t.TempDir(), "hostile-diff")
-	if err := os.WriteFile(hostile, []byte("#!/bin/sh\nexit 77\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(hostile, []byte("#!/bin/sh\nexit 77\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	f.write(".gitattributes", "README.md diff=hostile\n")

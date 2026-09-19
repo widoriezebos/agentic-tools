@@ -1,6 +1,7 @@
 package census
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,7 +11,7 @@ import (
 func TestSignatureText(t *testing.T) {
 	dir := t.TempDir()
 	adapter := filepath.Join(dir, "good.sh")
-	os.WriteFile(adapter, []byte("#!/bin/sh\nprintf 'match ^claude\\nexclude foo\\n'\n"), 0o755)
+	testexec.WriteFile(adapter, []byte("#!/bin/sh\nprintf 'match ^claude\\nexclude foo\\n'\n"), 0o755)
 	text, err := SignatureText(adapter)
 	if err != nil {
 		t.Fatal(err)
@@ -20,12 +21,12 @@ func TestSignatureText(t *testing.T) {
 	}
 
 	bad := filepath.Join(dir, "bad.sh")
-	os.WriteFile(bad, []byte("#!/bin/sh\nprintf '  match ^claude\\n'\n"), 0o755) // leading space
+	testexec.WriteFile(bad, []byte("#!/bin/sh\nprintf '  match ^claude\\n'\n"), 0o755) // leading space
 	if _, err := SignatureText(bad); err == nil {
 		t.Fatal("a leading-space declaration must be rejected")
 	}
 	empty := filepath.Join(dir, "empty.sh")
-	os.WriteFile(empty, []byte("#!/bin/sh\ntrue\n"), 0o755)
+	testexec.WriteFile(empty, []byte("#!/bin/sh\ntrue\n"), 0o755)
 	if _, err := SignatureText(empty); err == nil {
 		t.Fatal("an adapter emitting nothing must be rejected")
 	}
@@ -63,7 +64,7 @@ func TestFingerprintDeterministicAndSensitive(t *testing.T) {
 	}
 	adapterDir := filepath.Join(root, "scripts", "agents", "adapters")
 	os.MkdirAll(adapterDir, 0o755)
-	os.WriteFile(filepath.Join(adapterDir, "fake.sh"),
+	testexec.WriteFile(filepath.Join(adapterDir, "fake.sh"),
 		[]byte("#!/bin/sh\nprintf 'match ^metasystem-fake-agent\\n'\n"), 0o755)
 	os.WriteFile(filepath.Join(root, "metasystem.conf"),
 		[]byte("metasystem.runtimes=fake\nwatch.interval-sec=60\n"), 0o644)

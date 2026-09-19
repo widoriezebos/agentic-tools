@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"net"
 	"os"
 	"path/filepath"
@@ -230,7 +231,7 @@ esac
 		filepath.Join(root, "scripts", "assert-return-complete.sh"): "#!/usr/bin/env bash\nexit 0\n",
 		filepath.Join(root, "adapter.sh"):                           "#!/usr/bin/env bash\nexit 0\n",
 	} {
-		if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		if err := testexec.WriteFile(path, []byte(content), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -319,7 +320,7 @@ func TestSelftestRunRefusesSessionDrift(t *testing.T) {
 	if drifted == string(text) {
 		t.Fatal("fixture drift edit did not apply")
 	}
-	if err := os.WriteFile(dispatch, []byte(drifted), 0o755); err != nil {
+	if err := testexec.WriteFile(dispatch, []byte(drifted), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	p := SelftestParams{
@@ -388,7 +389,7 @@ func TestSelftestRunRefusals(t *testing.T) {
 		if edited == string(text) {
 			t.Fatalf("fixture edit did not apply: %q", old)
 		}
-		if err := os.WriteFile(dispatch, []byte(edited), 0o755); err != nil {
+		if err := testexec.WriteFile(dispatch, []byte(edited), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -414,7 +415,7 @@ func TestSelftestRunRefusals(t *testing.T) {
 	})
 	t.Run("adapter probe refusal aborts", func(t *testing.T) {
 		root := stageSelftestFixture(t, "mapped", "mapped")
-		if err := os.WriteFile(filepath.Join(root, "adapter.sh"),
+		if err := testexec.WriteFile(filepath.Join(root, "adapter.sh"),
 			[]byte("#!/usr/bin/env bash\nexit 3\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -471,7 +472,7 @@ func TestSelftestRunEvidenceRefusals(t *testing.T) {
 		if edited == string(text) {
 			t.Fatalf("fixture edit did not apply: %q", old)
 		}
-		if err := os.WriteFile(dispatch, []byte(edited), 0o755); err != nil {
+		if err := testexec.WriteFile(dispatch, []byte(edited), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

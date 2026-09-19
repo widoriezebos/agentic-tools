@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
@@ -89,7 +91,7 @@ func (f *observeFixture) write(relative, content string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := testexec.WriteFile(path, []byte(content), 0o644); err != nil {
 		f.t.Fatal(err)
 	}
 }

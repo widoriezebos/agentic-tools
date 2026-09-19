@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type treeReader struct {
@@ -91,7 +92,7 @@ func authorityRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	script := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match codex-agent'\n"
-	if err := os.WriteFile(filepath.Join(directory, "codex.sh"), []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(directory, "codex.sh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return root
@@ -601,10 +602,7 @@ func TestProtectedSystemImageAdmissionRequiresStableWithheldArgumentsAndRootOwne
 
 func TestRootOwnedProcessWithWritableExecutableCannotHideArguments(t *testing.T) {
 	executable := filepath.Join(t.TempDir(), "writable-system-image")
-	if err := os.WriteFile(executable, []byte("fixture"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(executable, 0o777); err != nil {
+	if err := testexec.WriteFile(executable, []byte("fixture"), 0o777); err != nil {
 		t.Fatal(err)
 	}
 	snapshot := withheldSystemSnapshot(97, 0, "tty-1", executable)

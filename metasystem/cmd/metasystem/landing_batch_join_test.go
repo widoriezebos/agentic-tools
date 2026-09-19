@@ -14,6 +14,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -96,7 +97,7 @@ func TestLandingBatchJoinRefusesRedFastStaticGate(t *testing.T) {
 	}
 	fakeBin := t.TempDir()
 	fakeBash := "#!/bin/sh\n[ -f go.mod ] || { echo 'wrong module root' >&2; exit 9; }\necho 'staticcheck: unused assignment' >&2\nexit 7\n"
-	if err := os.WriteFile(filepath.Join(fakeBin, "bash"), []byte(fakeBash), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(fakeBin, "bash"), []byte(fakeBash), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -147,7 +148,7 @@ func TestProductionJoinGateSelectsPackagesAgainstTheLandingRoot(t *testing.T) {
 		if strings.HasSuffix(path, ".sh") {
 			mode = 0o755
 		}
-		if err := os.WriteFile(absolute, []byte(content), mode); err != nil {
+		if err := testexec.WriteFile(absolute, []byte(content), mode); err != nil {
 			t.Fatal(err)
 		}
 	}

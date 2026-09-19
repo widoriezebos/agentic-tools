@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	watchsurface "github.com/widoriezebos/agentic-tools/metasystem/internal/watch"
 )
 
@@ -88,7 +89,7 @@ json_field() { printf '%s\n' "${FIXTURE_STATUS:-completed}"; }
 source "$functions"
 wait_for_job compat
 `
-	if err := os.WriteFile(harnessPath, []byte(harness), 0o700); err != nil {
+	if err := testexec.WriteFile(harnessPath, []byte(harness), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	stateRoot := t.TempDir()
@@ -103,7 +104,7 @@ wait_for_job compat
 	stub := filepath.Join(t.TempDir(), "metasystem")
 	for _, mapping := range []struct{ wait, delegate int }{{0, 0}, {1, 3}, {2, 4}, {3, 8}, {4, 5}} {
 		stubSource := fmt.Sprintf("#!/bin/sh\nexit %d\n", mapping.wait)
-		if err := os.WriteFile(stub, []byte(stubSource), 0o700); err != nil {
+		if err := testexec.WriteFile(stub, []byte(stubSource), 0o700); err != nil {
 			t.Fatal(err)
 		}
 		command := exec.Command(harnessPath, stateRoot, jobs, heartbeats, stub, functionsPath)
@@ -119,7 +120,7 @@ wait_for_job compat
 	if err := os.WriteFile(filepath.Join(jobs, "compat.json"), []byte("{\"status\":\"completed\"}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(stub, []byte("#!/bin/sh\necho 'metasystem: unknown family \"wait\"' >&2\nexit 2\n"), 0o700); err != nil {
+	if err := testexec.WriteFile(stub, []byte("#!/bin/sh\necho 'metasystem: unknown family \"wait\"' >&2\nexit 2\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if output, err := exec.Command(harnessPath, stateRoot, jobs, heartbeats, stub, functionsPath).CombinedOutput(); err != nil {

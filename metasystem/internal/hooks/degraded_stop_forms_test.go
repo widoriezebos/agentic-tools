@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -137,7 +138,7 @@ func TestDegradedStopFormsMatchTheGoldenContract(t *testing.T) {
 	if changed == string(source) {
 		t.Fatal("renderer remedy mutation did not change the source")
 	}
-	if err := os.WriteFile(mutated, []byte(changed), 0o755); err != nil {
+	if err := testexec.WriteFile(mutated, []byte(changed), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	mutatedOutput, _, mutatedCode := runDegradedForms(t, root, mutated, "--list")
@@ -180,7 +181,7 @@ func TestStopHookTakesDegradedFormsFromTheRenderer(t *testing.T) {
 	temporaryRoot, temporaryScript := degradedSyncTree(t, root)
 	temporaryHook := filepath.Join(temporaryRoot, degradedHook)
 	mutated := strings.Replace(degradedRead(t, temporaryHook), "Rebuild bin/metasystem.", "Repair bin/metasystem.", 1)
-	if err := os.WriteFile(temporaryHook, []byte(mutated), 0o755); err != nil {
+	if err := testexec.WriteFile(temporaryHook, []byte(mutated), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	_, staleError, staleCode := runDegradedForms(t, temporaryRoot, temporaryScript, "--check", "--root", temporaryRoot)
@@ -395,7 +396,7 @@ func degradedSyncTree(t *testing.T, root string) (string, string) {
 		if relative != degradedTemplate {
 			mode = 0o755
 		}
-		if err := os.WriteFile(destination, contents, mode); err != nil {
+		if err := testexec.WriteFile(destination, contents, mode); err != nil {
 			t.Fatal(err)
 		}
 	}

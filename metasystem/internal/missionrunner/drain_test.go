@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // The proof of the finite drain and the runner's mission-scoped
@@ -631,7 +632,7 @@ func measurableDrainMission(t *testing.T) (engine *Engine, statePath, ledgerPath
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte(content), mode); err != nil {
+		if err := testexec.WriteFile(path, []byte(content), mode); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // gitOutput runs inside the LOCKED build-record path: a hung git there
@@ -20,7 +21,7 @@ func TestGitOutputBoundsAHangingGit(t *testing.T) {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nsleep 600\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(bin, "git"), []byte("#!/bin/sh\nsleep 600\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "metasystem.conf"), []byte("exec.local-timeout-sec=1\n"), 0o644); err != nil {

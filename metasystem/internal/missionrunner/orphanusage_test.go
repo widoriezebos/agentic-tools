@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 const orphanTestSHA = "77b6f9ab2c13e302782555a4830ad9ce08d738eb"
@@ -30,7 +31,7 @@ func seedLandedChain(t *testing.T, root, missionID, jobID string) {
 	if err := os.MkdirAll(filepath.Dir(checker), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(checker, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(checker, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

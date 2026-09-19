@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestUpAssociationIgnoresEnv(t *testing.T) {
@@ -179,11 +180,11 @@ func TestOrdinaryUpRefusesDriftWithoutMintingANewGeneration(t *testing.T) {
 		t.Fatalf("git init: %v\n%s", err, output)
 	}
 	binary := filepath.Join(root, "metasystem")
-	if err := os.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	stageEnrollment(t, root, binary, 7)
-	if err := os.WriteFile(binary, []byte("candidate\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(binary, []byte("candidate\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	result := ordinary(Options{Root: root, MetasystemRoot: root, Scope: root, Binary: binary, WaitScaleMilli: 1})
@@ -209,11 +210,11 @@ func TestOrdinaryUpReportsALandingRefReadFailureByName(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	binary := filepath.Join(root, "metasystem")
-	if err := os.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	stageEnrollment(t, root, binary, 7)
-	if err := os.WriteFile(binary, []byte("candidate\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(binary, []byte("candidate\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	result := ordinary(Options{Root: root, MetasystemRoot: root, Scope: root, Binary: binary, WaitScaleMilli: 1})
@@ -248,11 +249,11 @@ func TestMissingConfiguredLandingRefNamesItsActualRepair(t *testing.T) {
 		}
 	}
 	binary := filepath.Join(root, "metasystem")
-	if err := os.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	stageEnrollment(t, root, binary, 7)
-	if err := os.WriteFile(binary, []byte("candidate\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(binary, []byte("candidate\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	result := ordinary(Options{Root: root, MetasystemRoot: root, Scope: root, Binary: binary, WaitScaleMilli: 1})
@@ -333,15 +334,15 @@ func TestOrdinaryUpRefusesAStrangerBeforeSessionState(t *testing.T) {
 			root := t.TempDir()
 			accepted := filepath.Join(root, "accepted-engine")
 			stranger := filepath.Join(root, "stranger-engine")
-			if err := os.WriteFile(accepted, []byte("accepted\n"), 0o755); err != nil {
+			if err := testexec.WriteFile(accepted, []byte("accepted\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(stranger, []byte("stranger\n"), 0o755); err != nil {
+			if err := testexec.WriteFile(stranger, []byte("stranger\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			stageEnrollment(t, root, accepted, 7)
 			if changed {
-				if err := os.WriteFile(accepted, []byte("rebuilt\n"), 0o755); err != nil {
+				if err := testexec.WriteFile(accepted, []byte("rebuilt\n"), 0o755); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -370,11 +371,11 @@ func TestOrdinaryUpRefusesAStrangerBeforeSessionState(t *testing.T) {
 func TestRecoveryNeverRearmsChangedEnrolledBytes(t *testing.T) {
 	root := t.TempDir()
 	binary := filepath.Join(root, "metasystem")
-	if err := os.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	stageEnrollment(t, root, binary, 7)
-	if err := os.WriteFile(binary, []byte("rebuilt\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(binary, []byte("rebuilt\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	result := recovery(Options{
@@ -402,7 +403,7 @@ func syntheticFingerprintRoot(t *testing.T) string {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte("fixture\n"), 0o755); err != nil {
+		if err := testexec.WriteFile(path, []byte("fixture\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -689,7 +690,7 @@ func TestInvokingEnrollmentRefusesAnotherBinaryAtTheSameDigest(t *testing.T) {
 	accepted := filepath.Join(root, "accepted")
 	candidate := filepath.Join(root, "candidate")
 	for _, path := range []string{accepted, candidate} {
-		if err := os.WriteFile(path, []byte("same binary bytes\n"), 0o755); err != nil {
+		if err := testexec.WriteFile(path, []byte("same binary bytes\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -730,7 +731,7 @@ func TestCanonicalRuntimePathResolvesSymlinkedBinary(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "engine")
 	link := filepath.Join(root, "engine-link")
-	if err := os.WriteFile(target, []byte("engine"), 0o755); err != nil {
+	if err := testexec.WriteFile(target, []byte("engine"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, link); err != nil {

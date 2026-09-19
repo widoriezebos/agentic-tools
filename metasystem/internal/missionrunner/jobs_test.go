@@ -1,6 +1,7 @@
 package missionrunner
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -135,7 +136,7 @@ exit 0
 	if err := os.MkdirAll(scripts, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(scripts, "dispatch.sh"), []byte(stub), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(scripts, "dispatch.sh"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,7 +185,7 @@ if [ "$(wc -l < "$count_file")" -ge 2 ]; then
 fi
 exit 0
 `
-	if err := os.WriteFile(filepath.Join(scripts, "dispatch.sh"), []byte(stub), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(scripts, "dispatch.sh"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

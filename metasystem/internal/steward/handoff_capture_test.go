@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -850,7 +851,7 @@ func handoffHumanProof(t *testing.T, root string, exact identity.Exact) humanaut
 		t.Fatal(err)
 	}
 	adapter := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-an-attended-human-shell'\n"
-	if err := os.WriteFile(filepath.Join(adapters, "human-fixture.sh"), []byte(adapter), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(adapters, "human-fixture.sh"), []byte(adapter), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	proof, err := humanauthority.ProveTerminal(root, exact.Pid, handoffHumanReader{exact}, handoffCaptureNow)

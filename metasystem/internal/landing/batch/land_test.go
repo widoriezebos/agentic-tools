@@ -12,6 +12,7 @@ import (
 	"time"
 
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func landingBed(t *testing.T) (assemblyBed, Store) {
@@ -753,7 +754,7 @@ printf '%s\n' "$*" >wrapper.args
 printf '%s <%s>|%s <%s>|%s\n' "$GIT_AUTHOR_NAME" "$GIT_AUTHOR_EMAIL" "$GIT_COMMITTER_NAME" "$GIT_COMMITTER_EMAIL" "$METASYSTEM_LANDED_BY" >wrapper.env
 git commit -q "$@"
 `
-	must(t, os.WriteFile(wrapper, []byte(script), 0o755))
+	must(t, testexec.WriteFile(wrapper, []byte(script), 0o755))
 	must(t, exec.Command("git", "init", "-q", "-b", "main", root).Run())
 	must(t, exec.Command("git", "-C", root, "config", "user.name", "Fixture").Run())
 	must(t, exec.Command("git", "-C", root, "config", "user.email", "fixture@example.invalid").Run())
@@ -765,7 +766,7 @@ git commit -q "$@"
 	// The fixture wrapper consumes the boundary flags before delegating.
 	script = strings.ReplaceAll(script, "git commit -q \"$@\"", `while (( $# )); do case "$1" in --chain|--goal|--test-receipt) shift 2;; *) break;; esac; done
 git commit -q "$@"`)
-	must(t, os.WriteFile(wrapper, []byte(script), 0o755))
+	must(t, testexec.WriteFile(wrapper, []byte(script), 0o755))
 	t.Setenv("GIT_AUTHOR_NAME", "Ambient Other")
 	t.Setenv("GIT_AUTHOR_EMAIL", "ambient@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "Ambient Other")
@@ -791,7 +792,7 @@ func TestCommitWithWrapperRequiresExactlyOneNewCommitAndStrictPassVerdict(t *tes
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("candidate\n"), 0o644))
 	must(t, exec.Command("git", "-C", root, "add", "file").Run())
 	wrapper := filepath.Join(root, "scripts", "agents", "commit.sh")
-	must(t, os.WriteFile(wrapper, []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755))
+	must(t, testexec.WriteFile(wrapper, []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755))
 	err := CommitWithWrapper(root, ChainDeclaration("chain-a"), "goal-a", "receipt", "message\n", "Wido", "wido@example.invalid", "seat")
 	if err == nil || !strings.Contains(err.Error(), "exactly one commit") {
 		t.Fatalf("no-op wrapper err=%v", err)
@@ -816,7 +817,7 @@ func TestCommitWithRealWrapperWritesBatchTrailersAndExplicitIdentity(t *testing.
 	}
 	realWrapper, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "agents", "commit.sh"))
 	must(t, err)
-	must(t, os.WriteFile(filepath.Join(root, "scripts", "agents", "commit.sh"), realWrapper, 0o755))
+	must(t, testexec.WriteFile(filepath.Join(root, "scripts", "agents", "commit.sh"), realWrapper, 0o755))
 	engine := `#!/usr/bin/env bash
 set -euo pipefail
 verb=${1:-}; noun=${2:-}
@@ -860,7 +861,7 @@ if [[ "$verb $noun" == "gate weight-add" ]]; then cat >/dev/null; exit 0; fi
 printf 'unexpected fake engine command: %s\n' "$*" >&2
 exit 40
 `
-	must(t, os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte(engine), 0o755))
+	must(t, testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte(engine), 0o755))
 	build := `#!/usr/bin/env bash
 set -euo pipefail
 out=
@@ -868,7 +869,7 @@ while (($#)); do if [[ "$1" == --out ]]; then out=$2; shift 2; else shift; fi; d
 cp "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)/bin/metasystem" "$out"
 chmod +x "$out"
 `
-	must(t, os.WriteFile(filepath.Join(root, "scripts", "agents", "go-build.sh"), []byte(build), 0o755))
+	must(t, testexec.WriteFile(filepath.Join(root, "scripts", "agents", "go-build.sh"), []byte(build), 0o755))
 	must(t, os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0o644))
 	must(t, os.WriteFile(filepath.Join(root, "testing.json"), []byte("{}\n"), 0o644))
 	must(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("artifacts/agents/\n"), 0o644))

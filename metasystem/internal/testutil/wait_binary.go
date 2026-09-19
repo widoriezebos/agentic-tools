@@ -1,10 +1,13 @@
 package testutil
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // InstalledWaitBinary places the candidate in a temporary installation whose
@@ -39,16 +42,21 @@ func InstalledWaitBinary(t testing.TB, candidate string) string {
 		t.Fatalf("inspect wait candidate: %v", err)
 	}
 	installed := filepath.Join(binDir, "metasystem")
-	destination, err := os.OpenFile(installed, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
-	if err != nil {
-		t.Fatalf("create installed wait candidate: %v", err)
-	}
-	if _, err := io.Copy(destination, source); err != nil {
-		_ = destination.Close()
-		t.Fatalf("copy wait candidate into temporary installation: %v", err)
-	}
-	if err := destination.Close(); err != nil {
-		t.Fatalf("close installed wait candidate: %v", err)
+	if err := testexec.Locked(func() error {
+		destination, err := os.OpenFile(installed, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+		if err != nil {
+			return fmt.Errorf("create installed wait candidate: %w", err)
+		}
+		if _, err := io.Copy(destination, source); err != nil {
+			_ = destination.Close()
+			return fmt.Errorf("copy wait candidate into temporary installation: %w", err)
+		}
+		if err := destination.Close(); err != nil {
+			return fmt.Errorf("close installed wait candidate: %w", err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 	return installed
 }

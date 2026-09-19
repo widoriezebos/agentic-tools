@@ -10,6 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func captureMissionStderr(t *testing.T, run func() int) (string, int) {
@@ -27,7 +28,7 @@ func missionFenceFixture(t *testing.T, terminal bool) string {
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("fixture"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("fixture"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	command := exec.Command("git", "-C", root, "init", "-q")
@@ -151,7 +152,7 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 	if err := os.MkdirAll(filepath.Join(installation, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(installation, "bin", "metasystem"), []byte("fixture"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(installation, "bin", "metasystem"), []byte("fixture"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
@@ -161,7 +162,7 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 	if err := os.MkdirAll(filepath.Dir(adapter), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(adapter, []byte("#!/bin/sh\n[ \"$1\" = signature ] && printf 'match .*\\n'\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(adapter, []byte("#!/bin/sh\n[ \"$1\" = signature ] && printf 'match .*\\n'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	table := filepath.Join(t.TempDir(), "identities.json")

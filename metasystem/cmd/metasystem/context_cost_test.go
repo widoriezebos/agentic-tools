@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -468,7 +469,7 @@ if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
 fi
 exec "${METASYSTEM_CONTEXT_COST_REAL_ENGINE:?}" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	testBinary, err := os.Executable()
@@ -1122,15 +1123,17 @@ func copyContextCostFile(t *testing.T, source, target string, mode os.FileMode) 
 		t.Fatal(err)
 	}
 	defer input.Close()
-	output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.Copy(output, input); err != nil {
-		output.Close()
-		t.Fatal(err)
-	}
-	if err := output.Close(); err != nil {
+	if err := testexec.Locked(func() error {
+		output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(output, input); err != nil {
+			_ = output.Close()
+			return err
+		}
+		return output.Close()
+	}); err != nil {
 		t.Fatal(err)
 	}
 }

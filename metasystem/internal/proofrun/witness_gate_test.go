@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"io"
 	"os"
 	"os/exec"
@@ -483,7 +484,7 @@ func witnessGateEnvironment(fixture *witnessGateFixture, options witnessGateRunO
 func writeWitnessGateWrapper(t *testing.T, path, mode string) {
 	t.Helper()
 	content := "#!/usr/bin/env bash\nexec \"$WITNESS_GATE_HELPER\" -test.run=^TestWitnessGateHelperProcess$ -- " + mode + " \"$@\"\n"
-	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+	if err := testexec.WriteFile(path, []byte(content), 0o700); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -581,7 +582,7 @@ func witnessGateCommandHelper() int {
 			fmt.Fprintln(os.Stderr, err)
 			return 97
 		}
-		if err := os.WriteFile(filepath.Join("bin", "metasystem"), []byte("proven test binary\n"), 0o700); err != nil {
+		if err := testexec.WriteFile(filepath.Join("bin", "metasystem"), []byte("proven test binary\n"), 0o700); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 97
 		}

@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	runpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -680,7 +681,7 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("#!/usr/bin/env bash\n[[ \"$1\" == --witness-check-only && \"$METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE\" == ENGINE && \"$METASYSTEM_GATE_WITNESS\" == usable ]]\n"), 0o700); err != nil {
+	if err := testexec.WriteFile(script, []byte("#!/usr/bin/env bash\n[[ \"$1\" == --witness-check-only && \"$METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE\" == ENGINE && \"$METASYSTEM_GATE_WITNESS\" == usable ]]\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_GATE_WITNESS", "usable")
@@ -826,7 +827,7 @@ case "$1" in
   *) exit 2 ;;
 esac
 `
-	if err := os.WriteFile(selector, []byte(script), 0o700); err != nil {
+	if err := testexec.WriteFile(selector, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	sections, repeated, err := selectedSections(selector, "", false)
@@ -961,7 +962,7 @@ func TestCommitProofTerminalRefusesWithoutGoalRevisionAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	watchdog := filepath.Join(artifactDir, "watchdog.sh")
-	if err := os.WriteFile(watchdog, []byte(`#!/usr/bin/env bash
+	if err := testexec.WriteFile(watchdog, []byte(`#!/usr/bin/env bash
 done_path=
 while (($#)); do
   if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
@@ -1606,7 +1607,7 @@ func terminalCommitFixture(t *testing.T) (string, proofrun.Attempt, func([]strin
 		t.Fatal(err)
 	}
 	watchdog := filepath.Join(artifactDir, "watchdog.sh")
-	if err := os.WriteFile(watchdog, []byte(`#!/usr/bin/env bash
+	if err := testexec.WriteFile(watchdog, []byte(`#!/usr/bin/env bash
 done_path=
 while (($#)); do
   if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi

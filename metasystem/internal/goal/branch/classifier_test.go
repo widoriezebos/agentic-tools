@@ -1,12 +1,12 @@
 package branch_test
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestGoalBranchPushUsesLedgerFailureClassification(t *testing.T) {
@@ -18,7 +18,7 @@ func TestGoalBranchPushUsesLedgerFailureClassification(t *testing.T) {
 	} {
 		bin := t.TempDir()
 		script := filepath.Join(bin, "git")
-		if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s\\n' \"$PUSH_FAILURE\" >&2\nexit 1\n"), 0o755); err != nil {
+		if err := testexec.WriteFile(script, []byte("#!/bin/sh\nprintf '%s\\n' \"$PUSH_FAILURE\" >&2\nexit 1\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		t.Setenv("PATH", bin)

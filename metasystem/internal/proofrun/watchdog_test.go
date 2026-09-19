@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type fixedProbe struct {
@@ -58,7 +59,7 @@ func (p pidProbe) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
 func TestEvidenceTimeoutLeavesLoudPartialNoteBeforeRefusingKill(t *testing.T) {
 	root := t.TempDir()
 	blocker := filepath.Join(root, "block-preserve.sh")
-	if err := os.WriteFile(blocker, []byte("#!/usr/bin/env bash\nexec sleep 2\n"), 0o700); err != nil {
+	if err := testexec.WriteFile(blocker, []byte("#!/usr/bin/env bash\nexec sleep 2\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	started := time.Now().Add(-time.Minute).Unix()

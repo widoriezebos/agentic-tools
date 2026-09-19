@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"golang.org/x/sys/unix"
 )
@@ -938,7 +939,7 @@ func TestGoalGitParsesStdoutCleanOfStderrWarnings(t *testing.T) {
 	// A wrapper that always warns on stderr stands in for the real
 	// polluters (advice hints, safe.directory notices).
 	wrapper := filepath.Join(t.TempDir(), "git")
-	if err := os.WriteFile(wrapper, []byte("#!/bin/sh\necho 'warning: stderr noise' >&2\nexec /usr/bin/git \"$@\"\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte("#!/bin/sh\necho 'warning: stderr noise' >&2\nexec /usr/bin/git \"$@\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	environment := testEnvironment(os.Environ(), "PATH="+filepath.Dir(wrapper)+":"+os.Getenv("PATH"))

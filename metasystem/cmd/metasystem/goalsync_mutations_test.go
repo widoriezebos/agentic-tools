@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type goalSyncEnrollmentReader struct {
@@ -69,7 +70,7 @@ func goalSyncTerminalReader(t *testing.T, root, terminalID string) goalSyncEnrol
 		t.Fatal(err)
 	}
 	adapter := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-an-attended-human-shell'\n"
-	if err := os.WriteFile(filepath.Join(adapters, "human-fixture.sh"), []byte(adapter), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(adapters, "human-fixture.sh"), []byte(adapter), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
@@ -1274,7 +1275,7 @@ func twoMachineEnrollmentFixture(t *testing.T) (string, string) {
 		if strings.HasSuffix(path, ".sh") {
 			mode = 0o755
 		}
-		if err := os.WriteFile(path, data, mode); err != nil {
+		if err := testexec.WriteFile(path, data, mode); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1428,7 +1429,7 @@ func syncedClaimedGoalFixture(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Dir(guard), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(guard, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	rootRecord := &goal.RootRecord{

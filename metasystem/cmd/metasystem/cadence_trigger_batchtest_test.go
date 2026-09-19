@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -60,7 +61,7 @@ func TestCadenceTickSurfacesPlantedDeepOnlyRedWithoutDeepLanding(t *testing.T) {
 		t.Fatal(err)
 	}
 	selector := filepath.Join(landingRoot, "scripts", "agents", "validate-section-selector.sh")
-	if err := os.WriteFile(selector, []byte(`#!/usr/bin/env bash
+	if err := testexec.WriteFile(selector, []byte(`#!/usr/bin/env bash
 set -eu
 if grep -qx green app/deep.flag; then
   printf 'section\tdeep-only\tpass\t0\n' >"$METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT"

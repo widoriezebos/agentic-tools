@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 const batchProvenanceTestID = "01j5x00000000000000000baff"
@@ -598,7 +599,7 @@ func batchProvenanceWrite(t *testing.T, path, contents string, mode os.FileMode)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(contents), mode); err != nil {
+	if err := testexec.WriteFile(path, []byte(contents), mode); err != nil {
 		t.Fatal(err)
 	}
 }

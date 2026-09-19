@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestLandedRearmDecidesFromTheThreeFacts(t *testing.T) {
@@ -103,7 +104,7 @@ for argument in "$@"; do
 done
 exec "${LANDED_REARM_REAL_GIT:?}" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	factory := landedRearmGitCommandFactory(func(commandContext context.Context, args ...string) *exec.Cmd {
@@ -145,7 +146,7 @@ for argument in "$@"; do
 done
 exec "${LANDED_REARM_REAL_GIT:?}" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	factory := landedRearmGitCommandFactory(func(commandContext context.Context, args ...string) *exec.Cmd {

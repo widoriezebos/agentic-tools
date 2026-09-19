@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func mustPolicy(t *testing.T) Policy {
@@ -230,7 +232,7 @@ func TestDigestIsNULSafeModeIndependentAndDoesNotFollowSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	odd := filepath.Join(root, "docs", "white space\n$meta;name.md")
-	if err := os.WriteFile(odd, []byte("one"), 0o600); err != nil {
+	if err := testexec.WriteFile(odd, []byte("one"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	first, err := policy.Digest(root, Landing)

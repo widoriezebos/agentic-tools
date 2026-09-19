@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/evidencetable"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 const evidenceBedCovenant = `{
@@ -51,7 +52,7 @@ func evidenceBed(t *testing.T) string {
 		"docs/covenant-evidence.md": evidenceBedTable,
 	}
 	for name, content := range files {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o755); err != nil {
+		if err := testexec.WriteFile(filepath.Join(root, name), []byte(content), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

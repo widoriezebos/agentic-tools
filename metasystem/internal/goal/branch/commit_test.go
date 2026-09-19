@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func claimAllowed() error { return nil }
@@ -365,7 +366,7 @@ printf 'injected\n' > metasystem/injected.go
 git add metasystem/injected.go
 GOAL_TREE_HOOK=1 git commit --amend --no-edit --quiet
 `
-	if err := os.WriteFile(filepath.Join(hooks, "post-commit"), []byte(hook), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(hooks, "post-commit"), []byte(hook), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	git(t, f.root, "config", "core.hooksPath", hooks)
@@ -450,7 +451,7 @@ func TestFailedCommitLeavesCheckoutAndRefsUnchanged(t *testing.T) {
 	if err := os.MkdirAll(hooks, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\necho fixture hook refusal >&2\nexit 1\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\necho fixture hook refusal >&2\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	git(t, f.root, "config", "core.hooksPath", hooks)

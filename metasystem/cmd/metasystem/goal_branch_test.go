@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -22,7 +23,7 @@ func TestGoalBranchReadDelegateUsesBinarySeamAndReturnsWithoutWaiting(t *testing
 	argsPath := filepath.Join(dir, "args")
 	binary := filepath.Join(dir, "metasystem")
 	script := "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$*\" >\"$ARGS_PATH\"\nprintf '{\"outcome\":\"WON\",\"headline\":\"started\",\"jobId\":\"critic-fake\"}\\n'\n"
-	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(binary, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("ARGS_PATH", argsPath)

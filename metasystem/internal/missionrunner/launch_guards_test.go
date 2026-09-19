@@ -1,6 +1,7 @@
 package missionrunner
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ func stubArming(t *testing.T, root, body string) {
 	t.Helper()
 	dir := filepath.Join(root, "scripts", "agents")
 	os.MkdirAll(dir, 0o755)
-	os.WriteFile(filepath.Join(dir, "arm-supervision.sh"),
+	testexec.WriteFile(filepath.Join(dir, "arm-supervision.sh"),
 		[]byte("#!/bin/sh\n"+body+"\n"), 0o755)
 }
 

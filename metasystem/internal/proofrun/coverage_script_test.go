@@ -2,6 +2,7 @@ package proofrun
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -198,10 +199,10 @@ case "${1:-}" in
   *) exit 97 ;;
 esac
 `
-	if err := os.WriteFile(filepath.Join(root, "helpers", "go"), []byte(goHelper), 0o700); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "helpers", "go"), []byte(goHelper), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "helpers", "gofmt"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o700); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "helpers", "gofmt"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	gateEnvironment := func() []string {
@@ -322,7 +323,7 @@ func writeDependencyGateFile(t *testing.T, path, content string, mode os.FileMod
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(content), mode); err != nil {
+	if err := testexec.WriteFile(path, []byte(content), mode); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -359,7 +360,7 @@ func TestGoGateWorkerContextsReachOwnedStageBoundary(t *testing.T) {
 			beginCount := filepath.Join(root, "coverage-begin-count")
 			writeEntrypointHelperWrapper(t, auth, "engine")
 			writeEntrypointHelperWrapper(t, filepath.Join(helperDir, "go"), "go")
-			if err := os.WriteFile(filepath.Join(helperDir, "gofmt"), []byte("#!/usr/bin/env bash\nexit 79\n"), 0o700); err != nil {
+			if err := testexec.WriteFile(filepath.Join(helperDir, "gofmt"), []byte("#!/usr/bin/env bash\nexit 79\n"), 0o700); err != nil {
 				t.Fatal(err)
 			}
 			command := exec.Command("bash", filepath.Join(root, "scripts", "agents", "go-gate.sh"))
@@ -553,7 +554,7 @@ func coverageDeltaScriptFixture(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "scripts", "agents", "coverage-delta.sh"), source, 0o700); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "scripts", "agents", "coverage-delta.sh"), source, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.invalid/metasystem\n"), 0o600); err != nil {
@@ -567,7 +568,7 @@ func coverageDeltaScriptFixture(t *testing.T) string {
 	// The normal wrapper-provided override must win over the installed
 	// generation. Make the installed path unusable so retained reuse proves
 	// it reached the candidate engine selected by METASYSTEM_BIN.
-	if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("#!/usr/bin/env bash\nexit 97\n"), 0o700); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("#!/usr/bin/env bash\nexit 97\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	writeCoverageScriptWrapper(t, filepath.Join(root, "helpers", "metasystem"), "engine")
@@ -578,7 +579,7 @@ func coverageDeltaScriptFixture(t *testing.T) string {
 func writeCoverageScriptWrapper(t *testing.T, path, mode string) {
 	t.Helper()
 	wrapper := "#!/usr/bin/env bash\nexec \"$COVERAGE_SCRIPT_HELPER\" -test.run=^TestCoverageDeltaProductionConsumerHelper$ -- " + mode + " \"$@\"\n"
-	if err := os.WriteFile(path, []byte(wrapper), 0o700); err != nil {
+	if err := testexec.WriteFile(path, []byte(wrapper), 0o700); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -610,7 +611,7 @@ func copyScriptFile(t *testing.T, source, destination string) {
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(destination, data, 0o755); err != nil {
+	if err := testexec.WriteFile(destination, data, 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -624,7 +625,7 @@ func writeEntrypointHelperWrapper(t *testing.T, path, mode string) {
 
 func writeEntrypointWrapperNow(path, mode string) error {
 	wrapper := "#!/usr/bin/env bash\nexec \"$PROOF_ENTRYPOINT_HELPER\" -test.run=^TestProofScriptEntrypointHelper$ -- " + mode + " \"$@\"\n"
-	return os.WriteFile(path, []byte(wrapper), 0o755)
+	return testexec.WriteFile(path, []byte(wrapper), 0o755)
 }
 
 func filteredCoverageScriptEnvironment() []string {

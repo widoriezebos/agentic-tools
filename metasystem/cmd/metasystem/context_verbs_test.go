@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -673,7 +674,7 @@ func TestContextTestingContractSelectsProof(t *testing.T) {
 			t.Fatal(err)
 		}
 		body := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' %q >>\"${CONTEXT_SECTION_RECORD:?}\"\n", name)
-		if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+		if err := testexec.WriteFile(path, []byte(body), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}

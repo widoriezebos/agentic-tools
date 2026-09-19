@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // childOf spawns a child whose parent is this test process, so classifying the
@@ -142,7 +143,7 @@ func TestClassifyDelegateThroughSignedAncestor(t *testing.T) {
 	// backslashes reach the signature registry intact.
 	line := "match " + regexp.QuoteMeta(command)
 	script := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' '" + line + "'\n"
-	if err := os.WriteFile(filepath.Join(adapterDir, "fake.sh"), []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(adapterDir, "fake.sh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	got, err := Classify(root, childOf(t))
@@ -272,7 +273,7 @@ func writeDevinAdapter(t *testing.T, root string) {
   'match ^([^[:space:]]*/)?devin-delegate-acp([[:space:]]|$)' \
   'exclude ^([^[:space:]]*/)?devin[[:space:]]+acp([[:space:]]|$)'
 `
-	if err := os.WriteFile(filepath.Join(adapterDir, "devin.sh"), []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(adapterDir, "devin.sh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

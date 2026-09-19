@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 const proofAdmissionFixtureMax = 4
@@ -62,7 +63,7 @@ func pinProofBinaryFixture(t *testing.T, root string) proofBinaryFixture {
 		if statErr != nil {
 			t.Fatalf("stat proof fixture configuration: %v", statErr)
 		}
-		if err := os.WriteFile(path, data, info.Mode().Perm()); err != nil {
+		if err := testexec.WriteFile(path, data, info.Mode().Perm()); err != nil {
 			t.Fatalf("write proof fixture admission pin: %v", err)
 		}
 	}

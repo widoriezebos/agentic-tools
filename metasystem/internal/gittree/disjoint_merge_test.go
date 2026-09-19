@@ -2,6 +2,7 @@ package gittree
 
 import (
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,14 +22,14 @@ func disjointFixtureTrees(t *testing.T, base, chain, main []byte, chainMode, mai
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, chain, chainMode); err != nil {
+	if err := testexec.WriteFile(path, chain, chainMode); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(path, chainMode); err != nil {
 		t.Fatal(err)
 	}
 	chainTree := f.snapshot()
-	if err := os.WriteFile(path, main, mainMode); err != nil {
+	if err := testexec.WriteFile(path, main, mainMode); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(path, mainMode); err != nil {

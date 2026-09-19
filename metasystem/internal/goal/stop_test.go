@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type goalAuthorityReader struct{}
@@ -39,7 +40,7 @@ func testHumanAuthority(t *testing.T, root string, now time.Time) *humanauthorit
 		t.Fatal(err)
 	}
 	script := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-a-human-shell'\n"
-	if err := os.WriteFile(filepath.Join(directory, "authority-test.sh"), []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(directory, "authority-test.sh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	reader := goalAuthorityReader{}
@@ -60,7 +61,7 @@ func testTerminalAuthority(t *testing.T, root string, now time.Time) *humanautho
 		t.Fatal(err)
 	}
 	script := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-a-human-shell'\n"
-	if err := os.WriteFile(filepath.Join(directory, "authority-test.sh"), []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(directory, "authority-test.sh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	proof, err := humanauthority.ProveTerminal(root, 20, goalAuthorityReader{}, now)

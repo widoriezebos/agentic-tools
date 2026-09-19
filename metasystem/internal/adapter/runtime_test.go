@@ -3,6 +3,7 @@ package adapter
 import (
 	"context"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,7 +62,7 @@ func TestWaitDeliveryContract(t *testing.T) {
 	}
 
 	declining := filepath.Join(t.TempDir(), "declining-adapter.sh")
-	if err := os.WriteFile(declining, []byte("#!/bin/sh\nexit 2\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(declining, []byte("#!/bin/sh\nexit 2\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	_, err := DeliverWait(context.Background(), declining, WaitDeliveryRequest{

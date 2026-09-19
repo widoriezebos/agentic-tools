@@ -3,6 +3,7 @@ package boundedexec
 import (
 	"bufio"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"io"
 	"os"
 	"os/exec"
@@ -85,7 +86,7 @@ func TestRunKillsAHangingCommand(t *testing.T) {
 func TestRunKillsTheWholeProcessGroup(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "spawn.sh")
-	if err := os.WriteFile(script, []byte(
+	if err := testexec.WriteFile(script, []byte(
 		"#!/bin/sh\nsleep 60 &\necho ready\nwait\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

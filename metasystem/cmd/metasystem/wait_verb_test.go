@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	usagecore "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -242,7 +243,7 @@ func TestWaitActionableCheckUsesNoGitAndHonorsItsContext(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte(body), mode); err != nil {
+		if err := testexec.WriteFile(path, []byte(body), mode); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -710,19 +711,19 @@ func TestWaitSessionStartPrintsPendingRows(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(hook, hookBytes, 0o755); err != nil {
+		if err := testexec.WriteFile(hook, hookBytes, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		engineBytes, err := os.ReadFile(binary)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(canonicalEngine, engineBytes, 0o755); err != nil {
+		if err := testexec.WriteFile(canonicalEngine, engineBytes, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		wrapper := filepath.Join(t.TempDir(), "metasystem-hook-engine")
 		wrapperSource := "#!/bin/sh\nif [ \"${1:-}\" = up ]; then printf '%s\\n' 'UP SUCCESS'; exit 0; fi\nexec \"${METASYSTEM_WAIT_REAL_ENGINE:?}\" \"$@\"\n"
-		if err := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
+		if err := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		command := exec.Command("bash", hook, "fake", "start")
@@ -938,7 +939,7 @@ func copyExecutableFixture(t *testing.T, source, target string) {
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(target, data, 0o755); err != nil {
+	if err := testexec.WriteFile(target, data, 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -997,7 +998,7 @@ if [ "${1:-}" = up ]; then
 fi
 exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return hook, canonical, wrapper
@@ -1338,11 +1339,11 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		if writeErr := os.WriteFile(target, data, 0o755); writeErr != nil {
+		if writeErr := testexec.WriteFile(target, data, 0o755); writeErr != nil {
 			t.Fatal(writeErr)
 		}
 	}
-	if err := os.WriteFile(evidenceGC, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(evidenceGC, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	wrapper := filepath.Join(t.TempDir(), "metasystem-hook-engine")
@@ -1354,7 +1355,7 @@ if [ "${1:-}" = health ]; then
 fi
 exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", "2099-01-01T00:00:00Z")
@@ -1417,7 +1418,7 @@ if [ "${1:-}" = health ]; then
 fi
 exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	payload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop"}`, session, root)

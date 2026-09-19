@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestHeldRecheckReadsTheParent(t *testing.T) {
@@ -294,7 +295,7 @@ func TestHeldRejectsAMovedBaseWithoutWalkingHistory(t *testing.T) {
 	callLog := filepath.Join(wrapperDir, "calls")
 	wrapper := filepath.Join(wrapperDir, "git")
 	script := "#!/bin/sh\nprintf 'git\\n' >> \"$HELD_GIT_CALLS\"\nexec \"$HELD_REAL_GIT\" \"$@\"\n"
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HELD_GIT_CALLS", callLog)

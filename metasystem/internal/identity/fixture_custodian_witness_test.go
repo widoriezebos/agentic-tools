@@ -3,6 +3,7 @@ package identity
 import (
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"io"
 	"os"
 	"os/exec"
@@ -475,7 +476,7 @@ func runWitnessOwner(t *testing.T, dir string) {
 	word := fixtureWord(t, FixtureKey{Owner: exact.Ref(), Test: t.Name(), Nonce: "1234abcd"})
 	script := filepath.Join(dir, "detached.sh")
 	body := `if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"; [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"; shift; fi; printf %s $$ > "$1"; trap '' TERM; exec tail -f /dev/null`
-	checkWitness(t, os.WriteFile(script, []byte(body), 0o700))
+	checkWitness(t, testexec.WriteFile(script, []byte(body), 0o700))
 	detached := exec.Command("/bin/sh", "-c", `exec /bin/sh "$1" "$2"`, "sh", script, filepath.Join(dir, "pid0"))
 	detached.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	commands := []*exec.Cmd{

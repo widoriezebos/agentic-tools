@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func rearmGit(t *testing.T, root string, args ...string) string {
@@ -52,7 +53,7 @@ for argument in "$@"; do
 done
 exec "${REARM_REAL_GIT:?}" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("REARM_REAL_GIT", realGit)
@@ -85,7 +86,7 @@ for argument in "$@"; do
 done
 exec "${REARM_REAL_GIT:?}" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("REARM_REAL_GIT", realGit)
@@ -128,7 +129,7 @@ for argument in "$@"; do
 done
 exec "${REARM_REAL_GIT:?}" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("REARM_REAL_GIT", realGit)
@@ -146,7 +147,7 @@ func writeRearmFile(t *testing.T, path, content string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := testexec.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1323,7 +1324,7 @@ func TestCommandTimeDriftSurvivesTheStewardLaunchChain(t *testing.T) {
 		t.Fatal(err)
 	}
 	replacement := pinned.execPath + ".changed"
-	if err := os.WriteFile(replacement, []byte("changed\n"), 0o500); err != nil {
+	if err := testexec.WriteFile(replacement, []byte("changed\n"), 0o500); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Rename(replacement, pinned.execPath); err != nil {

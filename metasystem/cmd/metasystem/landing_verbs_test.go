@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
@@ -517,7 +518,7 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(destination)), data, mode); err != nil {
+		if err := testexec.WriteFile(filepath.Join(root, filepath.FromSlash(destination)), data, mode); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1783,7 +1784,7 @@ func writeReceiptFixture(t *testing.T, root, relative, content string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := testexec.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

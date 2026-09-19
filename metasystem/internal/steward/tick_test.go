@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type fakeCensus struct {
@@ -145,14 +146,14 @@ func TestBreachStopCustodianReportsIndeterminateFailureAndCommandOutcome(t *test
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf 'stop failed\\n'\nexit 1\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(script, []byte("#!/bin/sh\nprintf 'stop failed\\n'\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	reports = runBreachStopCustodian(commandRoot, now)
 	if len(reports) != 1 || reports[0].State != "FAILED" || reports[0].Detail != "stop failed" {
 		t.Fatalf("failed stop command was not reported: %+v", reports)
 	}
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf 'stop complete\\n'\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(script, []byte("#!/bin/sh\nprintf 'stop complete\\n'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	reports = runBreachStopCustodian(commandRoot, now)

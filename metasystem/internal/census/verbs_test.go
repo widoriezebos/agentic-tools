@@ -3,6 +3,7 @@ package census
 import (
 	"encoding/json"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"testing"
@@ -56,7 +57,7 @@ func TestAuthIdentityFixtureFile(t *testing.T) {
 func TestSignatureCheckContract(t *testing.T) {
 	dir := t.TempDir()
 	adapter := filepath.Join(dir, "fake.sh")
-	os.WriteFile(adapter, []byte("#!/bin/sh\nprintf 'match (^|[[:space:]/-])metasystem-fake-agent([[:space:]]|$)\\nexclude fake\\.sh\\n'\n"), 0o755)
+	testexec.WriteFile(adapter, []byte("#!/bin/sh\nprintf 'match (^|[[:space:]/-])metasystem-fake-agent([[:space:]]|$)\\nexclude fake\\.sh\\n'\n"), 0o755)
 	// positive classifies, lookalike does not: contract holds.
 	if err := SignatureCheck(adapter, "metasystem-fake-agent job", "unrelated proc"); err != nil {
 		t.Fatalf("valid contract rejected: %v", err)

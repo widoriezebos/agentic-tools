@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -736,7 +737,7 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 
 func writeExecutable(t *testing.T, path, content string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+	if err := testexec.WriteFile(path, []byte(content), 0o700); err != nil {
 		t.Fatal(err)
 	}
 }

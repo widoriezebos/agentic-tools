@@ -20,6 +20,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -172,7 +173,7 @@ func TestWaitGoalFetchDeadline(t *testing.T) {
 esac
 exec "${LEDGER_REAL_GIT:?}" "$@"
 `
-			if writeErr := os.WriteFile(wrapper, []byte(wrapperSource), 0o755); writeErr != nil {
+			if writeErr := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); writeErr != nil {
 				t.Fatal(writeErr)
 			}
 			cmd := exec.Command(binary, "wait", "--root", repo, "--goal", "goal-a", "--event", "human-act", "--verb", "deny", "--after", cursor, "--timeout", "30s", "--json")
@@ -645,7 +646,7 @@ func TestCaptureTipBoundedKillsTheWholeTransportGroup(t *testing.T) {
 esac
 exec "$LEDGER_REAL_GIT" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	environment := testEnvironment(os.Environ(), "LEDGER_REAL_GIT="+realGit, "LEDGER_FETCH_GROUP_FILE="+groupFile,
@@ -731,7 +732,7 @@ func TestCaptureTipBoundedLetsCooperativeTransportExitDuringGrace(t *testing.T) 
 esac
 exec "$LEDGER_GRACE_REAL_GIT" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	environment := testEnvironment(os.Environ(), "LEDGER_GRACE_REAL_GIT="+realGit, "LEDGER_GRACE_GROUP_FILE="+groupFile,

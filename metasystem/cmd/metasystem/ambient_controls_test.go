@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 var declaredContextCostCandidateEngine string
@@ -56,7 +57,7 @@ case "${1:-} ${2:-}" in
 esac
 exit 73
 `
-	if err := os.WriteFile(hostileEngine, []byte(hostile), 0o755); err != nil {
+	if err := testexec.WriteFile(hostileEngine, []byte(hostile), 0o755); err != nil {
 		t.Fatal(err)
 	}
 

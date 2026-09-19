@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"time"
 )
 
@@ -66,7 +68,7 @@ func (f *treeFixture) write(path, content string) {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		f.t.Fatal(err)
 	}
-	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+	if err := testexec.WriteFile(full, []byte(content), 0o644); err != nil {
 		f.t.Fatal(err)
 	}
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestStopVerdictWaitingLinesFromGateOnly(t *testing.T) {
@@ -90,7 +91,7 @@ func delegateRoot(t *testing.T) string {
 	}
 	line := "match " + regexp.QuoteMeta(command)
 	script := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' '" + line + "'\n"
-	if err := os.WriteFile(filepath.Join(adapterDir, "fake.sh"), []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(adapterDir, "fake.sh"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return root
@@ -238,7 +239,7 @@ func TestFreshInitializationUsesHumanGitCommitThenRealMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh"), guardBytes, 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh"), guardBytes, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// Only the terminal fact is simulated. The installed production guard,
@@ -249,10 +250,10 @@ if [[ ${1:-} == lease && ${2:-} == classify ]]; then printf '%s\n' '{"class":"HU
 if [[ ${1:-} == json && ${2:-} == get ]]; then printf '%s\n' HUMAN; exit 0; fi
 exit 1
 `
-	if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte(stub), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte("#!/bin/sh\nexec \""+filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")+"\"\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte("#!/bin/sh\nexec \""+filepath.Join(root, "scripts", "agents", "pre-commit-guard.sh")+"\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	legacy := "# Goals\n\n## Goal-free: declared 2026-09-09T00:00:00Z by human over " + strings.Repeat("ab", 32) + "\n"

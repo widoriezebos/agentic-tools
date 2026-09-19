@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -65,7 +66,7 @@ func runVerdictFixture(t *testing.T, name, status string) GroupResult {
 	if status == "skipped" {
 		nativeOutput = "printf 'unterminated native output'\n"
 	}
-	if err := os.WriteFile(scriptPath, []byte(fmt.Sprintf("#!/usr/bin/env bash\nset -eu\nmkdir -p %s\nprintf '%%s\\n' '%s' > %s\n%s", reportDir, report, reportPath, nativeOutput)), 0o700); err != nil {
+	if err := testexec.WriteFile(scriptPath, []byte(fmt.Sprintf("#!/usr/bin/env bash\nset -eu\nmkdir -p %s\nprintf '%%s\\n' '%s' > %s\n%s", reportDir, report, reportPath, nativeOutput)), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	runTestResultGit(t, root, "init", "-q")

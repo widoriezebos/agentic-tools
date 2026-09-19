@@ -1,6 +1,7 @@
 package census
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,7 +18,7 @@ func TestAllHostSignaturesIgnoreExecutionRoster(t *testing.T) {
 	}
 	for _, runtime := range []string{"codex", "devin", "claude"} {
 		body := "#!/usr/bin/env bash\n[[ ${1:-} == signature ]] || exit 2\nprintf 'match ^" + runtime + "([[:space:]]|$)\\n'\n"
-		if err := os.WriteFile(filepath.Join(dir, runtime+".sh"), []byte(body), 0o755); err != nil {
+		if err := testexec.WriteFile(filepath.Join(dir, runtime+".sh"), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

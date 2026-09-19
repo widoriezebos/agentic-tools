@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // The armed-preflight fixture: a real
@@ -171,7 +172,7 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 	for _, dir := range []string{"scripts/agents", "truth", "plans", "docs"} {
 		os.MkdirAll(filepath.Join(root, dir), 0o755)
 	}
-	os.WriteFile(filepath.Join(root, "scripts", "gate.sh"),
+	testexec.WriteFile(filepath.Join(root, "scripts", "gate.sh"),
 		[]byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\n'\n"), 0o755)
 	os.WriteFile(filepath.Join(root, "truth", "reference.txt"), []byte("certified truth\n"), 0o644)
 	// The seal reads the pre-authorization table from project-rules; the
@@ -193,7 +194,7 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 		[]byte("metasystem.runtimes=fake\nrole.default.runtime=fake\n"), 0o644)
 	// The stub armer: typed armed outcome for arming, a fixed fingerprint for both seal
 	// and preflight — agreement by construction.
-	os.WriteFile(filepath.Join(root, "scripts", "agents", "arm-supervision.sh"), []byte(
+	testexec.WriteFile(filepath.Join(root, "scripts", "agents", "arm-supervision.sh"), []byte(
 		"#!/usr/bin/env bash\nset -euo pipefail\n"+
 			"if [[ ${1:-} == fingerprint ]]; then printf 'fixture-fingerprint\\n'; exit 0; fi\n"+
 			"printf 'up outcome=armed authority=writer\\n'\n"), 0o755)
@@ -240,7 +241,7 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 			t.Fatal(rerr)
 		}
 		os.MkdirAll(filepath.Join(root, "bin"), 0o755)
-		if werr := os.WriteFile(filepath.Join(root, "bin", "metasystem"), binary, 0o755); werr != nil {
+		if werr := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), binary, 0o755); werr != nil {
 			t.Fatal(werr)
 		}
 		stdout, stderr, code := runCaptured(root, nil,
@@ -516,7 +517,7 @@ func TestAdmissionBindsTheApprovedContract(t *testing.T) {
 	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
 	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
 	tampered := strings.Replace(fixtureContract, "exposure=EUR:10", "exposure=EUR:9999", 1)
-	if err := os.WriteFile(engine.contractPath(), []byte(tampered), 0o644); err != nil {
+	if err := testexec.WriteFile(engine.contractPath(), []byte(tampered), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	fixtureGit(t, engine.Root, "add", "plans")
@@ -1272,7 +1273,7 @@ func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 		t.Fatal(err)
 	}
 	os.MkdirAll(filepath.Join(root, "bin"), 0o755)
-	if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), binary, 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), binary, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	os.MkdirAll(filepath.Join(root, "scripts", "agents", "hosts"), 0o755)
@@ -1283,7 +1284,7 @@ func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 		if err != nil {
 			t.Fatal(err)
 		}
-		os.WriteFile(filepath.Join(root, "scripts", "agents", "hosts", name), adapter, 0o755)
+		testexec.WriteFile(filepath.Join(root, "scripts", "agents", "hosts", name), adapter, 0o755)
 	}
 	// The human entrypoint IS the engine verb now (the wrapper died in
 	// the L15 delete tranche); the resolution fixtures drive the same
@@ -1310,7 +1311,7 @@ func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 			mode = 0o755
 		}
 		os.MkdirAll(filepath.Dir(filepath.Join(root, artifact)), 0o755)
-		os.WriteFile(filepath.Join(root, artifact), data, mode)
+		testexec.WriteFile(filepath.Join(root, artifact), data, mode)
 	}
 	commitBedBaseline(t, engine.Root)
 	return engine

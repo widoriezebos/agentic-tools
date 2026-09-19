@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -50,7 +51,7 @@ func TestStageRunsIndependentGroupsSideBySide(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		if err := testexec.WriteFile(path, []byte(script), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		groups = append(groups, testpolicy.Group{ID: id, Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"scripts/**"}, Outputs: []string{"reports-" + id},

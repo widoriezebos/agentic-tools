@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"golang.org/x/sys/unix"
 )
 
@@ -204,7 +205,7 @@ func startUntaggedFixtureCopy(t *testing.T, fixture *ProcessFixture, directory s
 	binary := filepath.Join(directory, "fixture-copy")
 	data, err := os.ReadFile(os.Args[0])
 	failOnFixtureError(t, err)
-	failOnFixtureError(t, os.WriteFile(binary, data, 0o700))
+	failOnFixtureError(t, testexec.WriteFile(binary, data, 0o700))
 	releaseReader, releaseWriter, err := os.Pipe()
 	failOnFixtureError(t, err)
 	readyReader, readyWriter, err := os.Pipe()
@@ -395,7 +396,7 @@ func TestShellPrologueCarriesTheTagIntoArgv(t *testing.T) {
 		t.Run(fmt.Sprint("tagged=", tagged), func(t *testing.T) {
 			fixture := Fixture(t)
 			script := filepath.Join(t.TempDir(), "fixture.sh")
-			failOnFixtureError(t, os.WriteFile(script, []byte(ShellPrologue+"printf '%s|' \"$@\"; printf '\\n'\nread -r _ || :\n"), 0o700))
+			failOnFixtureError(t, testexec.WriteFile(script, []byte(ShellPrologue+"printf '%s|' \"$@\"; printf '\\n'\nread -r _ || :\n"), 0o700))
 			args := []string{"a", "b c"}
 			if !tagged {
 				args = []string{fixture.tag, "a"}

@@ -1,6 +1,7 @@
 package behaviorsurface
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,7 @@ func writeConsumerFixture(t *testing.T, path, body string, executable bool) {
 	if executable {
 		mode = 0o755
 	}
-	if err := os.WriteFile(path, []byte(body), mode); err != nil {
+	if err := testexec.WriteFile(path, []byte(body), mode); err != nil {
 		t.Fatal(err)
 	}
 }

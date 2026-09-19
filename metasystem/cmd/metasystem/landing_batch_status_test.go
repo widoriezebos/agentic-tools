@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -296,7 +297,7 @@ done
 printf '%s\n' '{"delivery":{"sufficient":true},"groups":[{"id":"same","status":"reused","reuseAttempt":"tip-attempt"}]}' >"$result"
 exit 76
 `
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	original := batchPrefixReceiptExecutable
@@ -343,7 +344,7 @@ done
 printf '%s\n' '{"attemptId":"prefix-attempt","groups":[{"id":"red-group","status":"failed","nativeLaunched":true,"logPath":"red.log","logDigest":"sha256:red","inputManifest":["source/**"]}]}' >"$result"
 exit 1
 `
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	original := batchPrefixReceiptExecutable
@@ -379,7 +380,7 @@ func TestPrefixReceiptClassifiesRevisionMove(t *testing.T) {
 	root := t.TempDir()
 	fake := filepath.Join(root, "fake-metasystem")
 	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'GOAL_REVISION_MOVED: goal-a changed after seal' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	original := batchPrefixReceiptExecutable
@@ -397,7 +398,7 @@ func TestPrefixReceiptClassifiesCapacityWithoutBudgetWithdrawal(t *testing.T) {
 	root := t.TempDir()
 	fake := filepath.Join(root, "fake-metasystem")
 	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'ADMISSION_REFUSED rank=host-load retry=retry-when-a-launcher-ends' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	original := batchPrefixReceiptExecutable
@@ -415,7 +416,7 @@ func TestPrefixReceiptClassifiesBudgetForWithdrawal(t *testing.T) {
 	root := t.TempDir()
 	fake := filepath.Join(root, "fake-metasystem")
 	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'BATCH_MEMBER_BUDGET_REFUSED: no diagnostic headroom' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	original := batchPrefixReceiptExecutable

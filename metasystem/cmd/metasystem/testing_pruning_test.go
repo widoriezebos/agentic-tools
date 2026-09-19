@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,7 +71,7 @@ func TestDispatcherSharedEngineCapabilityRejectsTamperAndForeignBed(t *testing.T
 		t.Fatal(err)
 	}
 	shim := filepath.Join(root, "bin", "metasystem")
-	if err := os.WriteFile(shim, []byte("#!/usr/bin/env bash\nset -euo pipefail\n[[ $1 == util && $2 == sha256 && $3 == --file ]]\nshasum -a 256 \"$4\" | awk '{print $1}'\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(shim, []byte("#!/usr/bin/env bash\nset -euo pipefail\n[[ $1 == util && $2 == sha256 && $3 == --file ]]\nshasum -a 256 \"$4\" | awk '{print $1}'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	owner := t.TempDir()
@@ -103,7 +104,7 @@ func TestDispatcherSharedEngineCapabilityRejectsTamperAndForeignBed(t *testing.T
 	}
 	foreign := t.TempDir()
 	foreignEngine := filepath.Join(foreign, "fixture-engine")
-	if err := os.WriteFile(foreignEngine, []byte("foreign engine\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(foreignEngine, []byte("foreign engine\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	digestCommand := exec.Command(shim, "util", "sha256", "--file", foreignEngine)

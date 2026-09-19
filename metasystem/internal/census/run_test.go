@@ -2,6 +2,7 @@ package census
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ func writeBundle(t *testing.T) (root, procFile string) {
 	os.MkdirAll(filepath.Join(root, "artifacts", "agents", "mains"), 0o755)
 	os.MkdirAll(filepath.Join(root, "artifacts", "agents", "jobs"), 0o755)
 	os.MkdirAll(filepath.Join(root, "artifacts", "agents", "supervision"), 0o755)
-	os.WriteFile(filepath.Join(root, "scripts", "agents", "adapters", "fake.sh"),
+	testexec.WriteFile(filepath.Join(root, "scripts", "agents", "adapters", "fake.sh"),
 		[]byte("#!/bin/sh\nprintf 'match (^|[[:space:]/-])metasystem-fake-agent([[:space:]]|$)\\n'\n"), 0o755)
 	os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644)
 	procFile = filepath.Join(t.TempDir(), "procs.json")

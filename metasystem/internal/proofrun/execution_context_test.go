@@ -3,6 +3,7 @@ package proofrun
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,7 +58,7 @@ func TestPreparedEnvironmentSelectsTheMeasuredGoExecutable(t *testing.T) {
 	}
 	goPath := filepath.Join(bin, "go")
 	body := "#!/bin/sh\ncase \"$1\" in version) printf 'prepared-go\\n';; env) printf 'prepared-env:%s\\n' \"$*\";; *) exit 9;; esac\n"
-	if err := os.WriteFile(goPath, []byte(body), 0o755); err != nil {
+	if err := testexec.WriteFile(goPath, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	environment := []string{"PATH=" + bin, "GOFLAGS=-mod=readonly"}

@@ -2,6 +2,7 @@ package goal
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,7 +27,7 @@ func TestReadCommitGoalsUsesOneBatchBlobRead(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "git-calls.log")
 	wrapper := filepath.Join(binDir, "git")
 	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\nexec %q \"$@\"\n", logPath, realGit)
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	environment := testEnvironment(os.Environ(), "PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"))

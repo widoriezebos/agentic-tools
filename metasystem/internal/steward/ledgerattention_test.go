@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func attentionGit(t *testing.T, dir string, args ...string) string {
@@ -110,7 +111,7 @@ func newLedgerAttentionBed(t *testing.T) *ledgerAttentionBed {
 		t.Fatal(err)
 	}
 	adapter := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-an-attended-human-shell'\n"
-	if err := os.WriteFile(filepath.Join(adapterDir, "fake.sh"), []byte(adapter), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(adapterDir, "fake.sh"), []byte(adapter), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := humanauthority.Enroll(bed.publisher, 20, attentionAuthorityReader{}, bed.now); err != nil {
@@ -630,7 +631,7 @@ case " $* " in
 esac
 exec "$LEDGER_ATTENTION_REAL_GIT" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("LEDGER_ATTENTION_REAL_GIT", realGit)

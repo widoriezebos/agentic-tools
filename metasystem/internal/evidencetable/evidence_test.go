@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/covenant"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"golang.org/x/sys/unix"
 )
 
@@ -409,7 +410,7 @@ func TestJudgeCountDrift(t *testing.T) {
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+	if err := testexec.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

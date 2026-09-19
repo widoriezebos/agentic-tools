@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func separateProcessScopeFixture(t *testing.T) (string, string) {
@@ -29,7 +30,7 @@ func separateProcessScopeFixture(t *testing.T) (string, string) {
 	if err := os.MkdirAll(filepath.Join(installation, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(installation, "bin", "metasystem"), []byte("fixture engine\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(installation, "bin", "metasystem"), []byte("fixture engine\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if output, err := fixtureGitCommand("-C", installation, "rev-parse", "--show-toplevel").CombinedOutput(); err != nil {
@@ -58,7 +59,7 @@ func runnableSeparateProcessScopeFixture(t *testing.T) (string, string) {
 	if err := os.MkdirAll(filepath.Dir(adapter), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(adapter, []byte("#!/bin/sh\nprintf 'match fake-runtime-never-present\\n'\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(adapter, []byte("#!/bin/sh\nprintf 'match fake-runtime-never-present\\n'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	processes := filepath.Join(t.TempDir(), "processes.json")

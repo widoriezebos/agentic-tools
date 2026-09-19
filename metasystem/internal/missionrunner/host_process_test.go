@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"golang.org/x/sys/unix"
 	"os"
 	"os/exec"
@@ -154,7 +155,7 @@ func TestAssembleHostCommandExportsMissionLineage(t *testing.T) {
 		t.Fatal(err)
 	}
 	adapter := filepath.Join(adapterDir, "fake.sh")
-	if err := os.WriteFile(adapter, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(adapter, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// The sealed-cap pass-through reads the PINNED approved snapshot and

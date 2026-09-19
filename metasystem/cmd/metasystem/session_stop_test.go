@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func sessionStopBed(t *testing.T) string {
@@ -156,7 +157,7 @@ func sessionStopCommandProof(t *testing.T, root string, now time.Time) humanauth
 		t.Fatal(err)
 	}
 	adapter := "#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-an-attended-human-shell'\n"
-	if err := os.WriteFile(filepath.Join(adapters, "human-fixture.sh"), []byte(adapter), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(adapters, "human-fixture.sh"), []byte(adapter), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))

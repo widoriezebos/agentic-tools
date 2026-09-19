@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -78,7 +79,7 @@ func TestPolicyChildNeverFetchesOrReArms(t *testing.T) {
 
 	engine := filepath.Join(t.TempDir(), "policy-engine")
 	script := "#!/bin/sh\nseen=\nfor arg in \"$@\"; do [ \"$arg\" = --policy-child ] && seen=1; done\n[ \"$seen\" = 1 ] || exit 9\nprintf '%s\\n' '{\"schemaVersion\":1}'\n"
-	if err := os.WriteFile(engine, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(engine, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := planWithTrustedPolicyEngine(engine, testingSelectionRequest{Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic}, t.TempDir(), "candidate"); err != nil {
@@ -1469,7 +1470,7 @@ func writeTestingFixtureFile(t *testing.T, path string, data []byte, mode os.Fil
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, data, mode); err != nil {
+	if err := testexec.WriteFile(path, data, mode); err != nil {
 		t.Fatal(err)
 	}
 }

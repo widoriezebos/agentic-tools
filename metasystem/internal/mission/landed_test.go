@@ -3,6 +3,7 @@ package mission
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,7 +24,7 @@ func landedRepo(t *testing.T) string {
 	stub := "#!/bin/sh\n" +
 		"if [ -f invalid-jobs ] && grep -qx -- \"$2\" invalid-jobs; then exit 1; fi\n" +
 		"exit 0\n"
-	if err := os.WriteFile(script, []byte(stub), 0o755); err != nil {
+	if err := testexec.WriteFile(script, []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	return repo

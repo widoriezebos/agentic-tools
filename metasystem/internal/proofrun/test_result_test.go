@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -35,7 +36,7 @@ func TestSectionEnginePreparationPreservesBytesAndNestedSelector(t *testing.T) {
 	}
 	source := filepath.Join(t.TempDir(), "engine")
 	data := []byte("#!/bin/sh\nexit 0\n")
-	if err := os.WriteFile(source, data, 0o500); err != nil {
+	if err := testexec.WriteFile(source, data, 0o500); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := prepareSectionEngine(cwd, source, strings.Repeat("0", 64)); err == nil {
@@ -471,7 +472,7 @@ func writeTestResultFile(t *testing.T, path string, data []byte, mode os.FileMod
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, data, mode); err != nil {
+	if err := testexec.WriteFile(path, data, mode); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -488,7 +489,7 @@ func writeTestResultScript(t *testing.T, root, name, status string, exit int) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"io"
 	"os"
 	"os/exec"
@@ -86,7 +87,7 @@ func TestZeroGenerationRefuses(t *testing.T) {
 func TestVerifyEnrolledBinaryDetectsByteDrift(t *testing.T) {
 	root := canonicalPath(t.TempDir())
 	bin := filepath.Join(root, "metasystem")
-	if err := os.WriteFile(bin, []byte("accepted engine\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(bin, []byte("accepted engine\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	digest, err := installDigest(bin)
@@ -105,7 +106,7 @@ func TestVerifyEnrolledBinaryDetectsByteDrift(t *testing.T) {
 	if installed, err := VerifyEnrolledBinary(root); err != nil || installed.Generation != 3 {
 		t.Fatalf("accepted engine did not verify: %+v %v", installed, err)
 	}
-	if err := os.WriteFile(bin, []byte("changed engine\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(bin, []byte("changed engine\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := VerifyEnrolledBinary(root); !errors.Is(err, ErrEnrollmentDrift) {
@@ -116,7 +117,7 @@ func TestVerifyEnrolledBinaryDetectsByteDrift(t *testing.T) {
 func TestPinnedEnrollmentExecutesTheVerifiedInodeAfterPathReplacement(t *testing.T) {
 	root := canonicalPath(t.TempDir())
 	bin := filepath.Join(root, "metasystem")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf 'accepted-engine\\n'\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(bin, []byte("#!/bin/sh\nprintf 'accepted-engine\\n'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	digest, err := installDigest(bin)
@@ -140,7 +141,7 @@ func TestPinnedEnrollmentExecutesTheVerifiedInodeAfterPathReplacement(t *testing
 		t.Fatal(err)
 	}
 	temporary := bin + ".replacement"
-	if err := os.WriteFile(temporary, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(temporary, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Rename(temporary, bin); err != nil {
@@ -159,7 +160,7 @@ func TestPinnedEnrollmentExecutesTheVerifiedInodeAfterPathReplacement(t *testing
 func TestPinnedEnrollmentRejectsChangedBytesInThePreparedInode(t *testing.T) {
 	root := canonicalPath(t.TempDir())
 	bin := filepath.Join(root, "metasystem")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(bin, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	digest, err := installDigest(bin)
@@ -185,7 +186,7 @@ func TestPinnedEnrollmentRejectsChangedBytesInThePreparedInode(t *testing.T) {
 	if err := os.Chmod(pinned.execPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(pinned.execPath, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
+	if err := testexec.WriteFile(pinned.execPath, []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pinned.Command(); !errors.Is(err, ErrEnrollmentDrift) {
@@ -197,7 +198,7 @@ func makeEnrolledBinaryFixture(t *testing.T, generation int, contents []byte) (s
 	t.Helper()
 	root := canonicalPath(t.TempDir())
 	bin := filepath.Join(root, "metasystem")
-	if err := os.WriteFile(bin, contents, 0o755); err != nil {
+	if err := testexec.WriteFile(bin, contents, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	digest, err := installDigest(bin)
@@ -432,7 +433,7 @@ func TestPrepareForExecutionRepairsInvalidPins(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(pinPath, fixture.contents, fixture.mode); err != nil {
+			if err := testexec.WriteFile(pinPath, fixture.contents, fixture.mode); err != nil {
 				t.Fatal(err)
 			}
 			pinned, err := OpenEnrolledBinary(root)

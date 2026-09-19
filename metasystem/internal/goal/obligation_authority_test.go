@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type obligationAuthorityReader struct {
@@ -39,7 +40,7 @@ func enrollObligationHuman(t *testing.T, root string) *obligationAuthorityReader
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "codex.sh"), []byte("#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match codex-agent'\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(directory, "codex.sh"), []byte("#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match codex-agent'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	reader := &obligationAuthorityReader{snapshots: map[int64]humanauthority.Snapshot{
