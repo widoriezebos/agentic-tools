@@ -114,9 +114,10 @@ func BoundedIdleStopBlock(detail string) map[string]any {
 // response for that occurrence. The first occurrence blocks; later
 // occurrences remain visible without keeping the turn open.
 // stopRefusalLockWait bounds the wait for an overlapping writer of the
-// refusal record; tests set it so the waited-for writer is provably brief
-// or provably wedged, whatever the box's load.
+// refusal record. stopRefusalLockSleep is replaceable so tests can drive a
+// lock retry from the writer's release instead of wall time.
 var stopRefusalLockWait = 100 * time.Millisecond
+var stopRefusalLockSleep = time.Sleep
 
 func StopRefusal(path, session, cause, remedy, detail, systemMessage string, class StopClass, now time.Time) (map[string]any, error) {
 	if path == "" || session == "" || cause == "" || remedy == "" {
@@ -136,7 +137,7 @@ func StopRefusal(path, session, cause, remedy, detail, systemMessage string, cla
 	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		deadline := time.Now().Add(stopRefusalLockWait)
 		for err != nil && time.Now().Before(deadline) {
-			time.Sleep(10 * time.Millisecond)
+			stopRefusalLockSleep(10 * time.Millisecond)
 			err = unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 		}
 		if err != nil {

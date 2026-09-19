@@ -119,21 +119,24 @@ func TestStopRefusalWaitsBrieflyForOverlappingWriter(t *testing.T) {
 	if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}
-	// The writer is brief by construction: the refusal's wait is far above
-	// the moment the writer holds the lock, whatever the box's load.
-	previous := stopRefusalLockWait
-	stopRefusalLockWait = 30 * time.Second
-	t.Cleanup(func() { stopRefusalLockWait = previous })
-	released := make(chan struct{})
-	go func() {
-		time.Sleep(40 * time.Millisecond)
-		_ = unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)
-		close(released)
-	}()
+	previous := stopRefusalLockSleep
+	t.Cleanup(func() { stopRefusalLockSleep = previous })
+	sleeps := 0
+	stopRefusalLockSleep = func(duration time.Duration) {
+		sleeps++
+		if sleeps != 1 || duration != 10*time.Millisecond {
+			t.Fatalf("lock retry sleeps=%d duration=%s", sleeps, duration)
+		}
+		if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_UN); err != nil {
+			t.Fatalf("release overlapping writer: %v", err)
+		}
+	}
 	response, err := StopRefusal(path, "session-a", "cause", "remedy", "detail", "", StopClassSeatActionable, time.Now())
-	<-released
 	if err != nil {
 		t.Fatalf("a brief overlapping writer must not force surfacing: %v", err)
+	}
+	if sleeps != 1 {
+		t.Fatalf("lock retries=%d, want 1", sleeps)
 	}
 	if response["decision"] != "block" {
 		t.Fatalf("the first occurrence must still block after waiting for its writer: %v", response)

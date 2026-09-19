@@ -276,23 +276,30 @@ func TestWaitOpenWorkSignatureReadsOnlyPlanStepsUnderContext(t *testing.T) {
 	realReader := readOpenWorkPlan
 	t.Cleanup(func() { readOpenWorkPlan = realReader })
 	reads := 0
+	entered := make(chan struct{})
 	release := make(chan struct{})
 	finished := make(chan struct{})
 	readOpenWorkPlan = func(_ string) ([]byte, error) {
 		defer close(finished)
 		reads++
+		close(entered)
 		<-release
 		return nil, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	started := time.Now()
-	_, err = OpenWorkSignature(ctx, root)
-	elapsed := time.Since(started)
+	result := make(chan error, 1)
+	go func() {
+		_, resultErr := OpenWorkSignature(ctx, root)
+		result <- resultErr
+	}()
+	<-entered
+	cancel()
+	err = <-result
 	close(release)
 	<-finished
-	if !errors.Is(err, context.DeadlineExceeded) || elapsed > time.Second || reads != 1 {
-		t.Fatalf("slow plan reader err=%v elapsed=%s reads=%d", err, elapsed, reads)
+	if !errors.Is(err, context.Canceled) || reads != 1 {
+		t.Fatalf("canceled plan reader err=%v reads=%d", err, reads)
 	}
 }
 
