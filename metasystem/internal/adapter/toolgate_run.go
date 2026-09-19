@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -45,17 +47,18 @@ type toolGatePayload struct {
 }
 
 type toolGateDecisionRow struct {
-	Session   string `json:"session"`
-	At        string `json:"at"`
-	Tokens    int64  `json:"tokens"`
-	Tool      string `json:"tool"`
-	Mode      string `json:"mode"`
-	Decision  string `json:"decision"`
-	WouldDeny bool   `json:"wouldDeny"`
-	Cause     string `json:"cause"`
-	ElapsedMs int64  `json:"elapsedMs"`
-	Birth     string `json:"birth"`
-	Reason    string `json:"reason,omitempty"`
+	Session     string `json:"session"`
+	At          string `json:"at"`
+	Tokens      int64  `json:"tokens"`
+	Tool        string `json:"tool"`
+	Mode        string `json:"mode"`
+	Decision    string `json:"decision"`
+	WouldDeny   bool   `json:"wouldDeny"`
+	Cause       string `json:"cause"`
+	ElapsedMs   int64  `json:"elapsedMs"`
+	Birth       string `json:"birth"`
+	Reason      string `json:"reason,omitempty"`
+	ReserveUsed bool   `json:"reserveUsed,omitempty"`
 }
 
 // RunToolGate decides one PreToolUse payload. Operational failures fail open
@@ -130,9 +133,23 @@ func RunToolGate(opts ToolGateOptions) error {
 	}
 
 	tokens := reading.Latest.PromptTokens
-	decision := Decide(class, tokens, budget, opts.Installation)
+	reserve := ReserveReading{Size: budget.Reserve}
+	decision := Decide(class, tokens, budget, reserve, opts.Installation)
+	if decision.Cause == "under-trigger" {
+		return nil
+	}
+	reserveClass := isReserveClass(class)
+	var locked *os.File
+	if reserveClass {
+		reserve, locked = readToolGateReserve(opts, payload.SessionID, reserve, deadline)
+		decision = Decide(class, tokens, budget, reserve, opts.Installation)
+		if locked != nil {
+			defer locked.Close()
+			defer unix.Flock(int(locked.Fd()), unix.LOCK_UN)
+		}
+	}
 	decidedAt := opts.Clock()
-	if !decidedAt.Before(deadline) {
+	if !reserveClass && !decidedAt.Before(deadline) {
 		writeToolGateRow(opts, toolGateDecisionRow{
 			Session: payload.SessionID, Tool: payload.Tool, Mode: opts.Mode,
 			Decision: "allow", WouldDeny: decision.Deny, Cause: "deadline", Birth: birth,
@@ -140,14 +157,12 @@ func RunToolGate(opts ToolGateOptions) error {
 		}, base, decidedAt)
 		return nil
 	}
-	if decision.Cause == "under-trigger" {
-		return nil
-	}
 
 	row := toolGateDecisionRow{
 		Session: payload.SessionID, Tool: payload.Tool, Mode: opts.Mode,
 		Decision: "allow", WouldDeny: decision.Deny, Cause: decision.Cause, Birth: birth,
-		Tokens: tokens,
+		Tokens:      tokens,
+		ReserveUsed: reserveClass && (!decision.Deny || opts.Mode == "observe"),
 	}
 	if decision.Deny && opts.Mode == "deny" {
 		row.Decision = "deny"
@@ -155,7 +170,21 @@ func RunToolGate(opts ToolGateOptions) error {
 	if decision.Deny && opts.Mode == "observe" {
 		row.Reason = decision.Reason
 	}
-	writeToolGateRow(opts, row, base, decidedAt)
+	var writeErr error
+	if locked != nil {
+		writeErr = appendToolGateRow(locked, row, base, decidedAt, true)
+	} else {
+		writeToolGateRow(opts, row, base, decidedAt)
+	}
+	if writeErr != nil && reserve.Fault == "" {
+		reserve.Fault = "reserve-unrecordable"
+		decision = Decide(class, tokens, budget, reserve, opts.Installation)
+		row.Decision, row.WouldDeny, row.Cause, row.ReserveUsed = "deny", true, decision.Cause, opts.Mode == "observe"
+		if opts.Mode == "observe" {
+			row.Decision, row.Reason = "allow", decision.Reason
+		}
+		writeToolGateRow(opts, row, base, opts.Clock())
+	}
 
 	if decision.Deny && opts.Mode == "deny" {
 		output := append(decision.Output(), '\n')
@@ -173,7 +202,73 @@ func trivialToolGateAllow(class Classification) bool {
 	if class.Kind != NeverDenied && class.Kind != AllowedAtTrigger {
 		return false
 	}
-	return class.Row != nil && class.Row.trigger && class.Row.ceiling
+	return class.Row != nil && class.Row.trigger && class.Row.ceiling == ceilingAllow
+}
+
+func isReserveClass(class Classification) bool {
+	return class.Row != nil && class.Row.ceiling == ceilingDenyReserve
+}
+
+func readToolGateReserve(opts ToolGateOptions, session string, reserve ReserveReading, deadline time.Time) (ReserveReading, *os.File) {
+	fail := func(cause string) (ReserveReading, *os.File) { reserve.Fault = cause; return reserve, nil }
+	path := toolGateLogPath(opts.StateRoot)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fail("reserve-unrecordable")
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	if err != nil {
+		return fail("reserve-unrecordable")
+	}
+
+	for {
+		err = unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if err != unix.EWOULDBLOCK && err != unix.EAGAIN {
+			file.Close()
+			return fail("reserve-unrecordable")
+		}
+		if !opts.Clock().Before(deadline) {
+			file.Close()
+			return fail("reserve-busy")
+		}
+	}
+	reserve.Used, err = countReserveRows(file, session)
+	if err != nil {
+		reserve.Fault = "reserve-unrecordable"
+	}
+	return reserve, file
+}
+
+func countReserveRows(file *os.File, session string) (int64, error) {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return 0, err
+	}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return 0, err
+	}
+	var used int64
+	lines := strings.Split(string(data), "\n")
+	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
+		used++
+		lines = lines[:len(lines)-1]
+	}
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var row toolGateDecisionRow
+		if json.Unmarshal([]byte(line), &row) != nil {
+			used++
+			continue
+		}
+		if row.Session == session && row.ReserveUsed {
+			used++
+		}
+	}
+	return used, nil
 }
 
 func toolGateReadOptions(transcript string, deadline time.Time, clock func() time.Time) usage.ReadOptions {
@@ -189,25 +284,40 @@ func toolGateBusy(err error) bool {
 	return errors.As(err, &storeBusy) || errors.As(err, &cursorBusy)
 }
 
-func writeToolGateRow(opts ToolGateOptions, row toolGateDecisionRow, base, at time.Time) {
+func appendToolGateRow(file *os.File, row toolGateDecisionRow, base, at time.Time, sync bool) error {
 	row.At = at.UTC().Format(time.RFC3339Nano)
 	row.ElapsedMs = at.Sub(base).Milliseconds()
 	encoded, err := json.Marshal(row)
+	if err != nil {
+		return err
+	}
+	if _, err = file.Write(append(encoded, '\n')); err != nil {
+		return err
+	}
+	if sync {
+		return file.Sync()
+	}
+	return nil
+}
+
+func writeToolGateRow(opts ToolGateOptions, row toolGateDecisionRow, base, at time.Time) {
+	path := toolGateLogPath(opts.StateRoot)
+	err := os.MkdirAll(filepath.Dir(path), 0o755)
 	if err == nil {
-		path := filepath.Join(opts.StateRoot, "artifacts", "agents", "context", "tool-gate.jsonl")
-		if err = os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
-			var file *os.File
-			file, err = os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-			if err == nil {
-				_, err = file.Write(append(encoded, '\n'))
-				closeErr := file.Close()
-				if err == nil {
-					err = closeErr
-				}
+		var file *os.File
+		file, err = os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+		if err == nil {
+			err = appendToolGateRow(file, row, base, at, false)
+			if closeErr := file.Close(); err == nil {
+				err = closeErr
 			}
 		}
 	}
 	if err != nil && opts.Stderr != nil {
 		fmt.Fprintf(opts.Stderr, "metasystem adapter claude-tool-gate: write decision row: %v\n", err)
 	}
+}
+
+func toolGateLogPath(root string) string {
+	return filepath.Join(root, "artifacts", "agents", "context", "tool-gate.jsonl")
 }

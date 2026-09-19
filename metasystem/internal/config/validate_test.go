@@ -113,6 +113,8 @@ func TestContextBudgetConfigRefusesInvalidValues(t *testing.T) {
 		{"malformed", ContextCeilingTokensKey + "=many\n", "key=" + ContextCeilingTokensKey + " reason=must be a positive integer", false},
 		{"non-positive", ContextCeilingTokensKey + "=0\n", "key=" + ContextCeilingTokensKey + " reason=must be a positive integer", true},
 		{"non-positive-margin", ContextHandoffMarginTokensKey + "=-1\n", "key=" + ContextHandoffMarginTokensKey + " reason=must be a positive integer", true},
+		{"zero-reserve", ContextToolGateReserveCallsKey + "=0\n", "key=" + ContextToolGateReserveCallsKey + " reason=must be a positive integer", true},
+		{"malformed-reserve", ContextToolGateReserveCallsKey + "=many\n", "key=" + ContextToolGateReserveCallsKey + " reason=must be a positive integer", true},
 		{"inverted", ContextHandoffMarginTokensKey + "=250000\n", "key=" + ContextHandoffMarginTokensKey + " reason=must be below", false},
 		{"trigger-over-the-line", ContextHandoffMarginTokensKey + "=143361\n", "key=" + ContextCeilingTokensKey + " reason=trigger 106639 exceeds construction line 106638", false},
 		{"valve-past-the-line", ContextCeilingTokensKey + "=251639\n", "key=" + ContextCeilingTokensKey + " reason=trigger 106639 exceeds construction line 106638", false},
@@ -148,6 +150,31 @@ func TestContextBudgetConfigRefusesInvalidValues(t *testing.T) {
 	budget, err := ContextBudget(root)
 	if problems := validateRepo(t, validConf+setting); err != nil || budget.Trigger != ContextConstructionLineTokens || len(problems) != 0 {
 		t.Fatalf("construction line was not accepted: budget=%+v err=%v problems=%v", budget, err, problems)
+	}
+}
+
+func TestContextConfigRefusesTriggerAboveReserveLine(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	conf := filepath.Join(root, "metasystem.conf")
+
+	putFile(t, conf, ContextToolGateReserveCallsKey+"=1\n")
+	if _, err := ContextBudget(root); err == nil || !strings.Contains(err.Error(), "trigger 105000 exceeds construction line 92184") {
+		t.Fatalf("reserve 1 with default margin was not refused at its construction line: %v", err)
+	}
+	putFile(t, conf, ContextHandoffMarginTokensKey+"=158000\n"+ContextToolGateReserveCallsKey+"=1\n")
+	if budget, err := ContextBudget(root); err != nil || budget.Trigger != 92000 || budget.Reserve != 1 {
+		t.Fatalf("sized reserve budget = %+v, err=%v", budget, err)
+	}
+	putFile(t, conf, ContextHandoffMarginTokensKey+"=145000\n")
+	if budget, err := ContextBudget(root); err != nil || budget.Trigger != 105000 || budget.Reserve != 0 {
+		t.Fatalf("unsized reserve budget = %+v, err=%v", budget, err)
+	}
+	for _, value := range []string{"0", "many"} {
+		putFile(t, conf, ContextToolGateReserveCallsKey+"="+value+"\n")
+		if _, err := ContextBudget(root); err == nil || !strings.Contains(err.Error(), "key="+ContextToolGateReserveCallsKey+" reason=must be a positive integer") {
+			t.Fatalf("reserve %q was not refused by key: %v", value, err)
+		}
 	}
 }
 

@@ -32,8 +32,17 @@ const (
 	matchTool toolGateMatch = iota
 	matchToolPrefix
 	matchCommand
+	matchCommandFlag
 	matchLandingScript
 	matchMemoryPath
+)
+
+type toolGateCeiling uint8
+
+const (
+	ceilingDeny toolGateCeiling = iota
+	ceilingAllow
+	ceilingDenyReserve
 )
 
 type toolGateRow struct {
@@ -41,32 +50,35 @@ type toolGateRow struct {
 	kind    ClassificationKind
 	match   toolGateMatch
 	words   []string
+	flag    string
 	trigger bool
-	ceiling bool
+	ceiling toolGateCeiling
 }
 
 // toolGateRows is the complete allow policy. Grammar code only identifies a
 // row; the row's two decision columns determine whether the call may proceed.
 var toolGateRows = []toolGateRow{
-	{pattern: "Agent", kind: NeverDenied, match: matchTool, words: []string{"Agent"}, trigger: true, ceiling: true},
-	{pattern: "SendMessage", kind: NeverDenied, match: matchTool, words: []string{"SendMessage"}, trigger: true, ceiling: true},
-	{pattern: "Monitor", kind: NeverDenied, match: matchTool, words: []string{"Monitor"}, trigger: true, ceiling: true},
-	{pattern: "TaskStop", kind: NeverDenied, match: matchTool, words: []string{"TaskStop"}, trigger: true, ceiling: true},
-	{pattern: "Task*", kind: NeverDenied, match: matchToolPrefix, words: []string{"Task"}, trigger: true, ceiling: true},
-	{pattern: "metasystem landing <verb>", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "landing", "<verb>"}, trigger: true, ceiling: true},
-	{pattern: "metasystem goal land-ready", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "goal", "land-ready"}, trigger: true, ceiling: true},
-	{pattern: "metasystem wait", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "wait"}, trigger: true, ceiling: true},
-	{pattern: "metasystem job watch", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "job", "watch"}, trigger: true, ceiling: true},
-	{pattern: "scripts/agents/land.sh", kind: NeverDenied, match: matchLandingScript, trigger: true, ceiling: true},
-	{pattern: "metasystem context handoff", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "context", "handoff"}, trigger: true, ceiling: true},
-	{pattern: "metasystem context resume", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "context", "resume"}, trigger: true, ceiling: true},
-	{pattern: "metasystem context status", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "context", "status"}, trigger: true, ceiling: true},
-	{pattern: "metasystem context verify", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "context", "verify"}, trigger: true, ceiling: true},
-	{pattern: "metasystem delegate", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "delegate"}, trigger: true, ceiling: true},
-	{pattern: "metasystem steward revive", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "steward", "revive"}, trigger: true, ceiling: true},
-	{pattern: "metasystem steward status", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "steward", "status"}, trigger: true, ceiling: true},
-	{pattern: "Write under memoryDir", kind: MemoryNote, match: matchMemoryPath, words: []string{"Write"}, trigger: true, ceiling: true},
-	{pattern: "Edit under memoryDir", kind: MemoryNote, match: matchMemoryPath, words: []string{"Edit"}, trigger: true, ceiling: true},
+	{pattern: "Agent", kind: NeverDenied, match: matchTool, words: []string{"Agent"}, trigger: true, ceiling: ceilingDenyReserve},
+	{pattern: "SendMessage", kind: NeverDenied, match: matchTool, words: []string{"SendMessage"}, trigger: true, ceiling: ceilingAllow},
+	{pattern: "Monitor", kind: NeverDenied, match: matchTool, words: []string{"Monitor"}, trigger: true, ceiling: ceilingAllow},
+	{pattern: "TaskStop", kind: NeverDenied, match: matchTool, words: []string{"TaskStop"}, trigger: true, ceiling: ceilingAllow},
+	{pattern: "Task*", kind: NeverDenied, match: matchToolPrefix, words: []string{"Task"}, trigger: true, ceiling: ceilingDenyReserve},
+	{pattern: "metasystem landing <verb>", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "landing", "<verb>"}, trigger: true, ceiling: ceilingDenyReserve},
+	{pattern: "metasystem goal land-ready", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "goal", "land-ready"}, trigger: true, ceiling: ceilingDenyReserve},
+	{pattern: "metasystem wait", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "wait"}, trigger: true, ceiling: ceilingDenyReserve},
+	{pattern: "metasystem job watch", kind: NeverDenied, match: matchCommand, words: []string{"metasystem", "job", "watch"}, trigger: true, ceiling: ceilingDenyReserve},
+	{pattern: "scripts/agents/land.sh", kind: NeverDenied, match: matchLandingScript, trigger: true, ceiling: ceilingDenyReserve},
+	{pattern: "metasystem context handoff", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "context", "handoff"}, trigger: true, ceiling: ceilingAllow},
+	{pattern: "metasystem context resume", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "context", "resume"}, trigger: true, ceiling: ceilingAllow},
+	{pattern: "metasystem context status", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "context", "status"}, trigger: true, ceiling: ceilingAllow},
+	{pattern: "metasystem context verify", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "context", "verify"}, trigger: true, ceiling: ceilingAllow},
+	{pattern: "metasystem goal next", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "goal", "next"}, trigger: true, ceiling: ceilingAllow},
+	{pattern: "metasystem goal claim --continue-handoff", kind: AllowedAtTrigger, match: matchCommandFlag, words: []string{"metasystem", "goal", "claim"}, flag: "--continue-handoff", trigger: true, ceiling: ceilingAllow},
+	{pattern: "metasystem delegate", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "delegate"}, trigger: true, ceiling: ceilingDenyReserve},
+	{pattern: "metasystem steward revive", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "steward", "revive"}, trigger: true, ceiling: ceilingAllow},
+	{pattern: "metasystem steward status", kind: AllowedAtTrigger, match: matchCommand, words: []string{"metasystem", "steward", "status"}, trigger: true, ceiling: ceilingAllow},
+	{pattern: "Write under memoryDir", kind: MemoryNote, match: matchMemoryPath, words: []string{"Write"}, trigger: true, ceiling: ceilingAllow},
+	{pattern: "Edit under memoryDir", kind: MemoryNote, match: matchMemoryPath, words: []string{"Edit"}, trigger: true, ceiling: ceilingAllow},
 }
 
 // Classification records the policy row and normalized Bash command that
@@ -82,6 +94,13 @@ type Decision struct {
 	Deny   bool
 	Cause  string
 	Reason string
+}
+
+// ReserveReading is the recorded reserve state used for one decision.
+type ReserveReading struct {
+	Size  int64
+	Used  int64
+	Fault string
 }
 
 // Classify identifies a policy row without reading token state or files.
@@ -125,7 +144,7 @@ func Classify(call Call, memoryDir string) Classification {
 }
 
 // Decide applies the matched row at the configured context thresholds.
-func Decide(class Classification, tokens int64, budget config.Budget, installation string) Decision {
+func Decide(class Classification, tokens int64, budget config.Budget, reserve ReserveReading, installation string) Decision {
 	if tokens < budget.Trigger {
 		return Decision{Cause: "under-trigger"}
 	}
@@ -134,8 +153,20 @@ func Decide(class Classification, tokens int64, budget config.Budget, installati
 	}
 	if class.Row != nil {
 		allowed := class.Row.trigger
+		if class.Row.ceiling == ceilingDenyReserve {
+			if reserve.Fault != "" {
+				return reserveDenied(tokens, budget.Trigger, reserve, installation, reserve.Fault)
+			}
+			if reserve.Size == 0 {
+				return Decision{Cause: "reserve-unsized"}
+			}
+			if reserve.Used < reserve.Size {
+				return Decision{Cause: "reserve"}
+			}
+			return reserveDenied(tokens, budget.Trigger, reserve, installation, "reserve-exhausted")
+		}
 		if tokens >= budget.Ceiling {
-			allowed = class.Row.ceiling
+			allowed = class.Row.ceiling == ceilingAllow
 		}
 		if allowed {
 			cause := "allowlisted"
@@ -150,6 +181,14 @@ func Decide(class Classification, tokens int64, budget config.Budget, installati
 		tokens/1000, budget.Trigger/1000, installation,
 	)
 	return Decision{Deny: true, Cause: string(class.Kind), Reason: reason}
+}
+
+func reserveDenied(tokens, trigger int64, reserve ReserveReading, installation, cause string) Decision {
+	reason := fmt.Sprintf(
+		"CONTEXT AT %dK (trigger %dK, reserve %d/%d used): this call is denied; run metasystem context handoff --root %s alone; the successor continues it",
+		tokens/1000, trigger/1000, reserve.Used, reserve.Size, installation,
+	)
+	return Decision{Deny: true, Cause: cause, Reason: reason}
 }
 
 // Output returns the hook response. An allow is represented by silence so the
@@ -218,8 +257,11 @@ func commandRow(words []string) *toolGateRow {
 	for index := range toolGateRows {
 		row := &toolGateRows[index]
 		switch row.match {
-		case matchCommand:
+		case matchCommand, matchCommandFlag:
 			if commandPrefixMatches(words, row.words) {
+				if row.match == matchCommandFlag && !containsWord(words[len(row.words):], row.flag) {
+					continue
+				}
 				return row
 			}
 		case matchLandingScript:
@@ -229,6 +271,15 @@ func commandRow(words []string) *toolGateRow {
 		}
 	}
 	return nil
+}
+
+func containsWord(words []string, want string) bool {
+	for _, word := range words {
+		if word == want {
+			return true
+		}
+	}
+	return false
 }
 
 func commandPrefixMatches(command, pattern []string) bool {

@@ -13,18 +13,20 @@ const (
 	ContextHandoffMarginTokensKey           = "context.handoff.margin.tokens"
 	ContextHandoffNoteDirectoryPrefix       = "context.handoff.note-directory."
 	ContextToolGateModeKey                  = "context.toolgate.mode"
+	ContextToolGateReserveCallsKey          = "context.toolgate.reserve.calls"
 	DefaultContextCeilingTokens       int64 = 250000
 	DefaultContextHandoffMarginTokens int64 = 145000
 	// The construction line is 150000 proof tokens minus 3 handoff calls of at most 14454 tokens.
 	ContextConstructionLineTokens int64 = 106638
 )
 
-type Budget struct{ Ceiling, Margin, Trigger int64 }
+type Budget struct{ Ceiling, Margin, Trigger, Reserve int64 }
 
 var contextKeys = map[string]struct{}{
-	ContextCeilingTokensKey:       {},
-	ContextHandoffMarginTokensKey: {},
-	ContextToolGateModeKey:        {},
+	ContextCeilingTokensKey:        {},
+	ContextHandoffMarginTokensKey:  {},
+	ContextToolGateModeKey:         {},
+	ContextToolGateReserveCallsKey: {},
 }
 
 var contextRuntimeName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
@@ -49,11 +51,21 @@ func contextBudgetFromConf(confPath string) (Budget, error) {
 	if margin >= ceiling {
 		return Budget{}, contextConfigInvalid(ContextHandoffMarginTokensKey, "must be below %s=%d", ContextCeilingTokensKey, ceiling)
 	}
-	budget := Budget{Ceiling: ceiling, Margin: margin, Trigger: ceiling - margin}
-	if budget.Trigger > ContextConstructionLineTokens {
-		return Budget{}, contextConfigInvalid(ContextCeilingTokensKey, "trigger %d exceeds construction line %d", budget.Trigger, ContextConstructionLineTokens)
+	reserve, err := contextOptionalPositiveValue(confPath, ContextToolGateReserveCallsKey)
+	if err != nil {
+		return Budget{}, err
+	}
+	budget := Budget{Ceiling: ceiling, Margin: margin, Trigger: ceiling - margin, Reserve: reserve}
+	constructionLine := ContextConstructionLine(reserve)
+	if budget.Trigger > constructionLine {
+		return Budget{}, contextConfigInvalid(ContextCeilingTokensKey, "trigger %d exceeds construction line %d", budget.Trigger, constructionLine)
 	}
 	return budget, nil
+}
+
+// ContextConstructionLine returns the latest safe trigger for a reserve size.
+func ContextConstructionLine(reserve int64) int64 {
+	return 150000 - (3+reserve)*14454
 }
 
 func validateContextKeys(confPath string) error {
@@ -112,6 +124,22 @@ func contextPositiveValue(confPath, key string, fallback int64) (int64, error) {
 	raw, err := budgetLawValue(confPath, key, strconv.FormatInt(fallback, 10))
 	if err != nil {
 		return 0, contextConfigInvalid(key, "%v", err)
+	}
+	value, parseErr := strconv.ParseInt(raw, 10, 64)
+	if parseErr != nil || value < 1 {
+		return 0, contextConfigInvalid(key, "must be a positive integer, got %q", raw)
+	}
+	return value, nil
+}
+
+func contextOptionalPositiveValue(confPath, key string) (int64, error) {
+	const absent = "\x00"
+	raw, err := budgetLawValue(confPath, key, absent)
+	if err != nil {
+		return 0, contextConfigInvalid(key, "%v", err)
+	}
+	if raw == absent {
+		return 0, nil
 	}
 	value, parseErr := strconv.ParseInt(raw, 10, 64)
 	if parseErr != nil || value < 1 {

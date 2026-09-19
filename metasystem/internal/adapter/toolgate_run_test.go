@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 	"golang.org/x/sys/unix"
 )
@@ -83,8 +85,9 @@ func TestToolGateFallsBackToEntryWhenBirthUnreadable(t *testing.T) {
 }
 
 func TestToolGateClassifiesBeforeReading(t *testing.T) {
+	t.Parallel()
 	for _, call := range []Call{
-		{Tool: "Agent", Input: json.RawMessage(`{}`)},
+		{Tool: "SendMessage", Input: json.RawMessage(`{}`)},
 		bashToolGateCall("metasystem context status --root /repo"),
 	} {
 		root := t.TempDir()
@@ -247,6 +250,7 @@ func TestToolGateLeavesTheCursor(t *testing.T) {
 }
 
 func TestToolGateWritesDecisionRows(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("context.toolgate.mode=deny\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -258,17 +262,19 @@ func TestToolGateWritesDecisionRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := []struct {
-		session   string
-		tokens    int64
-		call      Call
-		memoryDir string
-		cause     string
-		decision  string
-		wouldDeny bool
+		session     string
+		tokens      int64
+		call        Call
+		memoryDir   string
+		cause       string
+		decision    string
+		wouldDeny   bool
+		reserveUsed bool
 	}{
 		{session: "deny", tokens: 120000, call: bashToolGateCall("rm x"), memoryDir: memoryDir, cause: "other", decision: "deny", wouldDeny: true},
 		{session: "note", tokens: 120000, call: toolGatePathCall("Write", filepath.Join(memoryDir, "note.md")), memoryDir: memoryDir, cause: "memory-note", decision: "allow"},
 		{session: "unresolved", tokens: 120000, call: toolGatePathCall("Edit", "/unknown/note.md"), cause: "memory-unresolved", decision: "allow"},
+		{session: "reserve", tokens: 120000, call: Call{Tool: "Agent"}, cause: "reserve-unsized", decision: "allow", reserveUsed: true},
 	}
 	for _, test := range tests {
 		transcript := filepath.Join(root, test.session+".jsonl")
@@ -288,7 +294,7 @@ func TestToolGateWritesDecisionRows(t *testing.T) {
 	if err := RunToolGate(opts); err != nil {
 		t.Fatal(err)
 	}
-	opts.Stdin = bytes.NewReader(toolGatePayloadBytes("allowlisted", filepath.Join(root, "missing"), Call{Tool: "Agent", Input: json.RawMessage(`{}`)}, ""))
+	opts.Stdin = bytes.NewReader(toolGatePayloadBytes("allowlisted", filepath.Join(root, "missing"), Call{Tool: "SendMessage", Input: json.RawMessage(`{}`)}, ""))
 	if err := RunToolGate(opts); err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +305,7 @@ func TestToolGateWritesDecisionRows(t *testing.T) {
 	}
 	for index, want := range tests {
 		got := rows[index]
-		if got.Session != want.session || got.At != at.Format(time.RFC3339Nano) || got.Tokens != want.tokens || got.Tool != want.call.Tool || got.Mode != "deny" || got.Decision != want.decision || got.WouldDeny != want.wouldDeny || got.Cause != want.cause || got.ElapsedMs != 20 || got.Birth != birth.Format(time.RFC3339Nano) || got.Reason != "" {
+		if got.Session != want.session || got.At != at.Format(time.RFC3339Nano) || got.Tokens != want.tokens || got.Tool != want.call.Tool || got.Mode != "deny" || got.Decision != want.decision || got.WouldDeny != want.wouldDeny || got.Cause != want.cause || got.ReserveUsed != want.reserveUsed || got.ElapsedMs != 20 || got.Birth != birth.Format(time.RFC3339Nano) || got.Reason != "" {
 			t.Fatalf("row %d = %#v, fixture = %#v", index, got, want)
 		}
 	}
@@ -314,13 +320,144 @@ func TestToolGateWritesDecisionRows(t *testing.T) {
 		if err := json.Unmarshal(scanner.Bytes(), &fields); err != nil {
 			t.Fatal(err)
 		}
-		if len(fields) != 10 {
+		wantFields := 10
+		if fields["reserveUsed"] == true {
+			wantFields = 11
+		}
+		if len(fields) != wantFields {
 			t.Fatalf("row fields = %v", fields)
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestToolGateDeniesPastReserveFromRows(t *testing.T) {
+	t.Parallel()
+	root, transcript := sizedToolGateFixture(t, 2, 173000)
+	writeGateLog(t, root, "{\"session\":\"session\",\"reserveUsed\":true}\n{\"session\":\"another\",\"reserveUsed\":true}\n")
+	rows, stdout, err := runReserveFixture(t, root, transcript, "session", "deny", nil, nil)
+	if err != nil || stdout != "" {
+		t.Fatalf("last reserve call: err=%v stdout=%q", err, stdout)
+	}
+	if got := rows[len(rows)-1]; !got.ReserveUsed || got.Cause != "reserve" || got.Decision != "allow" {
+		t.Fatalf("last reserve row = %#v", got)
+	}
+	rows, stdout, err = runReserveFixture(t, root, transcript, "session", "deny", nil, nil)
+	want := "CONTEXT AT 120K (trigger 77K, reserve 2/2 used): this call is denied; run metasystem context handoff --root " + root + " alone; the successor continues it"
+	if got := rows[len(rows)-1]; err != nil || got.ReserveUsed || got.Cause != "reserve-exhausted" || got.Decision != "deny" || !strings.Contains(stdout, want) {
+		t.Fatalf("exhausted row=%#v stdout=%q err=%v", got, stdout, err)
+	}
+	rows, stdout, err = runReserveFixture(t, root, transcript, "session", "observe", nil, nil)
+	if got := rows[len(rows)-1]; err != nil || stdout != "" || !got.ReserveUsed || !got.WouldDeny || got.Decision != "allow" {
+		t.Fatalf("observe exhausted row = %#v", got)
+	}
+
+	t.Run("concurrent reserve calls serialize", func(t *testing.T) {
+		root := t.TempDir()
+		birth := time.Date(2026, 9, 19, 9, 30, 0, 0, time.UTC)
+		results := make(chan error, 2)
+		run := func() {
+			opts := ToolGateOptions{Clock: func() time.Time { return birth.Add(time.Millisecond) }, Mode: "deny", StateRoot: root, Installation: root, Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
+			class := Classify(bashToolGateCall("metasystem wait"), "")
+			reserve, file := readToolGateReserve(opts, "race", ReserveReading{Size: 1}, birth.Add(toolGateDeadline))
+			decision := Decide(class, 120000, config.Budget{Trigger: 92000}, reserve, root)
+			row := toolGateDecisionRow{Session: "race", Decision: "deny", Cause: decision.Cause, ReserveUsed: !decision.Deny}
+			if !decision.Deny {
+				row.Decision = "allow"
+			}
+			err := appendToolGateRow(file, row, birth, birth, true)
+			_ = unix.Flock(int(file.Fd()), unix.LOCK_UN)
+			_ = file.Close()
+			results <- err
+		}
+		go run()
+		go run()
+		for range 2 {
+			if err := <-results; err != nil {
+				t.Fatal(err)
+			}
+		}
+		rows := readToolGateRows(t, root)
+		if len(rows) != 2 || rows[0].ReserveUsed == rows[1].ReserveUsed {
+			t.Fatalf("concurrent rows = %#v, want one allow and one exhausted deny", rows)
+		}
+	})
+}
+
+func TestReserveCountSurvivesCrashCutsAndCorruption(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ name, content, want string }{
+		{"missing log", "", ""}, {"undecodable line", "not-json\n", "reserve 1/1 used"},
+		{"truncated tail", "{\"session\":\"cut\"", "reserve 1/1 used"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root, transcript := sizedToolGateFixture(t, 1, 158000)
+			if test.content != "" {
+				writeGateLog(t, root, test.content)
+			}
+			rows, stdout, err := runReserveFixture(t, root, transcript, "damaged", "deny", nil, nil)
+			if err != nil || !strings.Contains(stdout, test.want) || (test.want == "" && (len(rows) != 1 || !rows[0].ReserveUsed)) {
+				t.Fatalf("rows=%#v stdout=%q err=%v", rows, stdout, err)
+			}
+		})
+	}
+	t.Run("unrecordable", func(t *testing.T) {
+		root, transcript := sizedToolGateFixture(t, 1, 158000)
+		if err := os.MkdirAll(toolGateRowsPath(root), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		_, stdout, err := runReserveFixture(t, root, transcript, "unrecordable", "deny", nil, nil)
+		if err != nil || !strings.Contains(stdout, "reserve 0/1 used") {
+			t.Fatalf("stdout=%q err=%v", stdout, err)
+		}
+	})
+	t.Run("busy", func(t *testing.T) {
+		root, transcript := sizedToolGateFixture(t, 1, 158000)
+		path := toolGateRowsPath(root)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		lock, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lock.Close()
+		if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+			t.Fatal(err)
+		}
+		defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+		birth := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
+		calls := 0
+		clock := func() time.Time {
+			calls++
+			if calls < 6 {
+				return birth.Add(time.Millisecond)
+			}
+			return birth.Add(toolGateDeadline)
+		}
+		rows, stdout, runErr := runReserveFixture(t, root, transcript, "busy", "deny", clock, nil)
+		if runErr != nil || !strings.Contains(stdout, "reserve 0/1 used") {
+			t.Fatalf("stdout=%q err=%v clock calls=%d", stdout, runErr, calls)
+		}
+		if got := rows[len(rows)-1]; got.Cause != "reserve-busy" || got.Decision != "deny" {
+			t.Fatalf("busy row = %#v", got)
+		}
+	})
+	t.Run("stdout crash cut", func(t *testing.T) {
+		root, transcript := sizedToolGateFixture(t, 1, 158000)
+		if _, _, err := runReserveFixture(t, root, transcript, "crash", "deny", nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		rows, _, err := runReserveFixture(t, root, transcript, "crash", "deny", nil, failingToolGateWriter{})
+		if err == nil || !strings.Contains(err.Error(), "write Claude tool gate decision") {
+			t.Fatalf("stdout failure = %v", err)
+		}
+		if got := rows[len(rows)-1]; got.Cause != "reserve-exhausted" || got.Decision != "deny" {
+			t.Fatalf("decision row was not durable before stdout failed: %#v", got)
+		}
+	})
 }
 
 func TestToolGateObserveModeAllowsAndRecordsTheDenyDecision(t *testing.T) {
@@ -369,6 +506,68 @@ func toolGateFixture(t *testing.T, tokens int64) (string, string) {
 	transcript := filepath.Join(root, "transcript.jsonl")
 	writeToolGateTranscript(t, transcript, "sample", tokens)
 	return root, transcript
+}
+
+func sizedToolGateFixture(t *testing.T, reserve, margin int64) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	writeSizedToolGateConfig(t, root, reserve, margin)
+	transcript := filepath.Join(root, "transcript.jsonl")
+	writeToolGateTranscript(t, transcript, "sample", 120000)
+	return root, transcript
+}
+
+func writeSizedToolGateConfig(t *testing.T, root string, reserve, margin int64) {
+	t.Helper()
+	conf := fmt.Sprintf("context.handoff.margin.tokens=%d\ncontext.toolgate.reserve.calls=%d\ncontext.toolgate.mode=deny\n", margin, reserve)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeGateLog(t *testing.T, root, content string) {
+	t.Helper()
+	path := toolGateRowsPath(root)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func runReserveFixture(t *testing.T, root, transcript, session, mode string, clock func() time.Time, writer io.Writer) ([]toolGateDecisionRow, string, error) {
+	t.Helper()
+	birth := time.Date(2026, 9, 19, 10, 0, 0, 0, time.UTC)
+	if clock == nil {
+		clock = func() time.Time { return birth.Add(time.Millisecond) }
+	}
+	stdout := &bytes.Buffer{}
+	opts := toolGateOptions(root, transcript, mode, birth, clock, stdout)
+	if writer != nil {
+		opts.Stdout = writer
+	}
+	opts.Stdin = bytes.NewReader(toolGatePayloadBytes(session, transcript, bashToolGateCall("metasystem wait"), ""))
+	err := RunToolGate(opts)
+	info, statErr := os.Stat(toolGateRowsPath(root))
+	if statErr != nil || info.IsDir() {
+		return nil, stdout.String(), err
+	}
+	data := readToolGateFile(t, toolGateRowsPath(root))
+	var rows []toolGateDecisionRow
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var row toolGateDecisionRow
+		if json.Unmarshal([]byte(line), &row) == nil {
+			rows = append(rows, row)
+		}
+	}
+	return rows, stdout.String(), err
+}
+
+type failingToolGateWriter struct{}
+
+func (failingToolGateWriter) Write([]byte) (int, error) {
+	return 0, fmt.Errorf("injected stdout failure")
 }
 
 func toolGateOptions(root, transcript, mode string, birth time.Time, clock func() time.Time, stdout *bytes.Buffer) ToolGateOptions {

@@ -11,12 +11,12 @@ import (
 func TestContextBudgetConfigDefaultsAndAccessor(t *testing.T) {
 	clearContextEnvironment(t)
 	root := t.TempDir()
-	want := Budget{Ceiling: 250000, Margin: 145000, Trigger: 105000}
+	want := Budget{Ceiling: 250000, Margin: 145000, Trigger: 105000, Reserve: 0}
 	if got, err := ContextBudget(root); err != nil || got != want {
 		t.Fatalf("defaults = %+v, err=%v, want %+v", got, err, want)
 	}
-	putFile(t, filepath.Join(root, "metasystem.conf"), ContextCeilingTokensKey+"=250001\n"+ContextHandoffMarginTokensKey+"=145001\n")
-	if got, err := ContextBudget(root); err != nil || got != (Budget{250001, 145001, 105000}) {
+	putFile(t, filepath.Join(root, "metasystem.conf"), ContextCeilingTokensKey+"=250001\n"+ContextHandoffMarginTokensKey+"=158001\n"+ContextToolGateReserveCallsKey+"=1\n")
+	if got, err := ContextBudget(root); err != nil || got != (Budget{250001, 158001, 92000, 1}) {
 		t.Fatalf("committed budget = %+v, err=%v", got, err)
 	}
 	putFile(t, filepath.Join(root, "metasystem.conf.local"), ContextHandoffMarginTokensKey+"=145002\n")
@@ -25,7 +25,7 @@ func TestContextBudgetConfigDefaultsAndAccessor(t *testing.T) {
 	}
 	putFile(t, filepath.Join(root, "metasystem.conf"), "metasystem.runtimes=fake\n")
 	t.Setenv(EnvName(ContextCeilingTokensKey), "250002")
-	if got, err := ContextBudget(root); err != nil || got != (Budget{250002, 145002, 105000}) {
+	if got, err := ContextBudget(root); err != nil || got != (Budget{250002, 145002, 105000, 0}) {
 		t.Fatalf("fixture layers = %+v, err=%v", got, err)
 	}
 
@@ -47,7 +47,7 @@ func TestContextConfKeysDocumented(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"context.ceiling.tokens=250000", "context.handoff.margin.tokens=145000", "context.handoff.note-directory.codex=", "context.toolgate.mode=observe", "trigger 105000", "106638"} {
+	for _, text := range []string{"context.ceiling.tokens=250000", "context.handoff.margin.tokens=145000", "context.handoff.note-directory.codex=", "context.toolgate.mode=deny", "context.toolgate.reserve.calls", "first observe day", "trigger 105000", "106638"} {
 		if !strings.Contains(string(content), text) {
 			t.Fatalf("metasystem.conf does not document %q", text)
 		}
@@ -55,11 +55,15 @@ func TestContextConfKeysDocumented(t *testing.T) {
 }
 
 func TestNoKeyLowersTheConstructionLine(t *testing.T) {
+	t.Parallel()
 	if ContextConstructionLineTokens != 106638 {
 		t.Fatalf("construction line = %d", ContextConstructionLineTokens)
 	}
 	for key := range contextKeys {
 		t.Run(key, func(t *testing.T) {
+			if key == ContextToolGateReserveCallsKey {
+				return
+			}
 			if key == ContextToolGateModeKey {
 				for _, mode := range []string{"observe", "deny"} {
 					root := t.TempDir()
@@ -87,6 +91,19 @@ func TestNoKeyLowersTheConstructionLine(t *testing.T) {
 	}
 }
 
+func TestReserveLineArithmetic(t *testing.T) {
+	t.Parallel()
+	want := []int64{106638, 92184, 77730, 63276}
+	for reserve, line := range want {
+		if got := ContextConstructionLine(int64(reserve)); got != line {
+			t.Fatalf("reserve %d construction line = %d, want %d", reserve, got, line)
+		}
+	}
+	if ContextConstructionLineTokens != ContextConstructionLine(0) {
+		t.Fatalf("constant = %d, reserve-0 line = %d", ContextConstructionLineTokens, ContextConstructionLine(0))
+	}
+}
+
 func TestToolGateModeRefusesOtherValues(t *testing.T) {
 	clearContextEnvironment(t)
 	root := t.TempDir()
@@ -103,10 +120,10 @@ func TestToolGateModeRefusesOtherValues(t *testing.T) {
 	}
 }
 
-func TestShippedToolGateModeIsObserve(t *testing.T) {
+func TestShippedToolGateModeIsDeny(t *testing.T) {
 	root := filepath.Join("..", "..")
 	mode, err := ToolGateMode(root)
-	if err != nil || mode != "observe" {
+	if err != nil || mode != "deny" {
 		t.Fatalf("shipped tool gate mode = %q, %v", mode, err)
 	}
 }

@@ -10,6 +10,7 @@ import (
 )
 
 func TestToolGateAllowlist(t *testing.T) {
+	t.Parallel()
 	budget := config.Budget{Trigger: 105000, Ceiling: 250000}
 	memoryDir := filepath.Join(t.TempDir(), "memory")
 	type allowCase struct {
@@ -69,7 +70,7 @@ func TestToolGateAllowlist(t *testing.T) {
 				t.Fatal("Bash classification did not retain its matched simple command")
 			}
 			for _, tokens := range []int64{budget.Trigger, budget.Ceiling} {
-				decision := Decide(class, tokens, budget, "/repo")
+				decision := Decide(class, tokens, budget, ReserveReading{Size: 1}, "/repo")
 				if decision.Deny == test.allow {
 					t.Fatalf("tokens=%d decision=%#v, allow=%t", tokens, decision, test.allow)
 				}
@@ -86,11 +87,11 @@ func TestToolGateAllowlist(t *testing.T) {
 		if !ok {
 			t.Fatalf("table row %q has no decision-changing case", row.pattern)
 		}
-		oldTrigger, oldCeiling := row.trigger, row.ceiling
-		row.trigger, row.ceiling = !row.trigger, !row.ceiling
-		atTrigger := Decide(class, budget.Trigger, budget, "/repo")
-		atCeiling := Decide(class, budget.Ceiling, budget, "/repo")
-		row.trigger, row.ceiling = oldTrigger, oldCeiling
+		changed := *row
+		changed.trigger, changed.ceiling = false, ceilingDeny
+		class.Row = &changed
+		atTrigger := Decide(class, budget.Trigger, budget, ReserveReading{}, "/repo")
+		atCeiling := Decide(class, budget.Ceiling, budget, ReserveReading{}, "/repo")
 		if !atTrigger.Deny || !atCeiling.Deny {
 			t.Fatalf("flipping row %q did not change both decisions: trigger=%#v ceiling=%#v", row.pattern, atTrigger, atCeiling)
 		}
@@ -98,30 +99,39 @@ func TestToolGateAllowlist(t *testing.T) {
 }
 
 func TestToolGateNeverDeniesLandingWaitOrAgent(t *testing.T) {
+	t.Parallel()
 	budget := config.Budget{Trigger: 105000, Ceiling: 250000}
 	for index := range toolGateRows {
 		row := &toolGateRows[index]
-		if row.kind != NeverDenied {
-			continue
-		}
 		t.Run(row.pattern, func(t *testing.T) {
 			class := Classify(toolGateCallForRow(row, filepath.Join(t.TempDir(), "memory")), "")
-			decision := Decide(class, budget.Ceiling+500000, budget, "/repo")
-			if decision.Deny || decision.Cause != "allowlisted" {
-				t.Fatalf("decision above ceiling = %#v", decision)
+			if row.ceiling == ceilingDenyReserve {
+				for _, reserve := range []ReserveReading{{}, {Size: 2, Used: 1}} {
+					if decision := Decide(class, budget.Ceiling+500000, budget, reserve, "/repo"); decision.Deny {
+						t.Fatalf("reserve decision above ceiling = %#v", decision)
+					}
+				}
+				return
+			}
+			if row.trigger && row.ceiling == ceilingAllow {
+				decision := Decide(class, budget.Ceiling+500000, budget, ReserveReading{Size: 1, Used: 1}, "/repo")
+				if decision.Deny {
+					t.Fatalf("non-reserve decision above ceiling = %#v", decision)
+				}
 			}
 		})
 	}
 }
 
 func TestToolGateAllowEmitsNothing(t *testing.T) {
+	t.Parallel()
 	budget := config.Budget{Trigger: 105000, Ceiling: 250000}
 	memoryDir := filepath.Join(t.TempDir(), "memory")
 	allows := []Decision{
-		Decide(Classify(bashToolGateCall("rm scratch"), memoryDir), budget.Trigger-1, budget, "/repo"),
-		Decide(Classify(Call{Tool: "Agent"}, memoryDir), budget.Ceiling, budget, "/repo"),
-		Decide(Classify(toolGatePathCall("Write", filepath.Join(memoryDir, "note.md")), memoryDir), budget.Trigger, budget, "/repo"),
-		Decide(Classify(Call{Tool: "Edit", Input: json.RawMessage(`{"bad":true}`)}, ""), budget.Ceiling, budget, "/repo"),
+		Decide(Classify(bashToolGateCall("rm scratch"), memoryDir), budget.Trigger-1, budget, ReserveReading{}, "/repo"),
+		Decide(Classify(Call{Tool: "Agent"}, memoryDir), budget.Ceiling, budget, ReserveReading{}, "/repo"),
+		Decide(Classify(toolGatePathCall("Write", filepath.Join(memoryDir, "note.md")), memoryDir), budget.Trigger, budget, ReserveReading{}, "/repo"),
+		Decide(Classify(Call{Tool: "Edit", Input: json.RawMessage(`{"bad":true}`)}, ""), budget.Ceiling, budget, ReserveReading{}, "/repo"),
 	}
 	for index, decision := range allows {
 		if decision.Deny || decision.Output() != nil {
@@ -129,7 +139,7 @@ func TestToolGateAllowEmitsNothing(t *testing.T) {
 		}
 	}
 
-	deny := Decide(Classify(bashToolGateCall("rm scratch"), memoryDir), 123456, budget, "/repo")
+	deny := Decide(Classify(bashToolGateCall("rm scratch"), memoryDir), 123456, budget, ReserveReading{}, "/repo")
 	wantReason := "CONTEXT AT 123K (trigger 105K): this call is denied; run metasystem context handoff --root /repo alone, or launch a delegate"
 	wantOutput := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"` + wantReason + `"}}`
 	if !deny.Deny || deny.Reason != wantReason || string(deny.Output()) != wantOutput {
@@ -137,15 +147,59 @@ func TestToolGateAllowEmitsNothing(t *testing.T) {
 	}
 }
 
-func TestToolGateCeilingColumnEqualsTrigger(t *testing.T) {
+func TestToolGateCeilingColumnDiffersOnlyOnReserveRows(t *testing.T) {
+	t.Parallel()
+	wantReserve := map[string]bool{
+		"Agent": true, "Task*": true, "metasystem landing <verb>": true,
+		"metasystem goal land-ready": true, "metasystem wait": true,
+		"metasystem job watch": true, "scripts/agents/land.sh": true,
+		"metasystem delegate": true,
+	}
 	for _, row := range toolGateRows {
-		if row.trigger != row.ceiling {
-			t.Fatalf("row %q has trigger=%t ceiling=%t", row.pattern, row.trigger, row.ceiling)
+		if got := row.ceiling == ceilingDenyReserve; got != wantReserve[row.pattern] {
+			t.Fatalf("row %q reserve cell = %t, want %t", row.pattern, got, wantReserve[row.pattern])
+		}
+		if !wantReserve[row.pattern] && (row.ceiling == ceilingAllow) != row.trigger {
+			t.Fatalf("row %q has trigger=%t ceiling=%d", row.pattern, row.trigger, row.ceiling)
 		}
 	}
 }
 
+func TestSuccessorStartupSequenceAllowedAtEverySize(t *testing.T) {
+	t.Parallel()
+	budget := config.Budget{Trigger: 105000, Ceiling: 250000, Reserve: 1}
+	memoryDir := filepath.Join(t.TempDir(), "memory")
+	calls := []Call{
+		bashToolGateCall("metasystem context resume --root X"),
+		bashToolGateCall("metasystem goal next"),
+		bashToolGateCall("metasystem goal claim --root X --id Y --continue-handoff"),
+		bashToolGateCall("metasystem context handoff --root X"),
+		{Tool: "SendMessage"}, {Tool: "Monitor"}, {Tool: "TaskStop"},
+		toolGatePathCall("Write", filepath.Join(memoryDir, "note.md")),
+	}
+	readings := []ReserveReading{
+		{Size: 1, Used: 1},
+		{Size: 1, Used: 1, Fault: "reserve-unrecordable"},
+		{Size: 1, Used: 1, Fault: "reserve-busy"},
+	}
+	for _, call := range calls {
+		class := Classify(call, memoryDir)
+		for _, tokens := range []int64{budget.Trigger, budget.Ceiling, budget.Ceiling + 500000} {
+			for _, reserve := range readings {
+				if decision := Decide(class, tokens, budget, reserve, "/repo"); decision.Deny {
+					t.Fatalf("call=%s tokens=%d reserve=%+v decision=%#v", call.Tool, tokens, reserve, decision)
+				}
+			}
+		}
+	}
+	plain := Classify(bashToolGateCall("metasystem goal claim --root X --id Y"), memoryDir)
+	if plain.Kind != Other || plain.Row != nil {
+		t.Fatalf("plain goal claim classification = %#v", plain)
+	}
+}
+
 func TestToolGateMemoryNoteRule(t *testing.T) {
+	t.Parallel()
 	budget := config.Budget{Trigger: 105000, Ceiling: 250000}
 	root := t.TempDir()
 	memoryDir := filepath.Join(root, "memory", ".")
@@ -156,7 +210,7 @@ func TestToolGateMemoryNoteRule(t *testing.T) {
 				t.Fatalf("inside classification = %#v", class)
 			}
 			for _, tokens := range []int64{budget.Trigger, budget.Ceiling} {
-				decision := Decide(class, tokens, budget, "/repo")
+				decision := Decide(class, tokens, budget, ReserveReading{}, "/repo")
 				if decision.Deny || decision.Cause != "memory-note" {
 					t.Fatalf("tokens=%d inside decision = %#v", tokens, decision)
 				}
@@ -170,7 +224,7 @@ func TestToolGateMemoryNoteRule(t *testing.T) {
 		} {
 			t.Run(tool+"-"+name, func(t *testing.T) {
 				class := Classify(toolGatePathCall(tool, path), memoryDir)
-				decision := Decide(class, budget.Trigger, budget, "/repo")
+				decision := Decide(class, budget.Trigger, budget, ReserveReading{}, "/repo")
 				if class.Kind != Other || !decision.Deny {
 					t.Fatalf("outside classification=%#v decision=%#v", class, decision)
 				}
@@ -183,7 +237,7 @@ func TestToolGateMemoryNoteRule(t *testing.T) {
 				t.Fatalf("unresolved classification = %#v", class)
 			}
 			for _, tokens := range []int64{budget.Trigger, budget.Ceiling} {
-				decision := Decide(class, tokens, budget, "/repo")
+				decision := Decide(class, tokens, budget, ReserveReading{}, "/repo")
 				if decision.Deny || decision.Cause != "memory-unresolved" {
 					t.Fatalf("tokens=%d unresolved decision = %#v", tokens, decision)
 				}
@@ -198,8 +252,11 @@ func toolGateCallForRow(row *toolGateRow, memoryDir string) Call {
 		return Call{Tool: row.words[0]}
 	case matchToolPrefix:
 		return Call{Tool: row.words[0] + "Create"}
-	case matchCommand:
+	case matchCommand, matchCommandFlag:
 		command := strings.ReplaceAll(strings.Join(row.words, " "), "<verb>", "finish")
+		if row.match == matchCommandFlag {
+			command += " " + row.flag
+		}
 		return bashToolGateCall(command)
 	case matchLandingScript:
 		return bashToolGateCall("./scripts/agents/land.sh goal")
