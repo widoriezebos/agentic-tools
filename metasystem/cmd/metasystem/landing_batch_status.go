@@ -101,7 +101,7 @@ func statusHeadroom(root, goalID string, now time.Time, capMinutes uint64) batch
 }
 
 func batchRecordStatus(record batch.Record, settings config.BatchLanding, configuredLockDir ...string) batchStatusView {
-	controlRoot := batchModuleRoot(settings.Root)
+	controlRoot := batch.ModuleRoot(settings.Root)
 	lockDir := batch.DefaultProofLockDir
 	if len(configuredLockDir) != 0 && configuredLockDir[0] != "" {
 		lockDir = configuredLockDir[0]
@@ -218,7 +218,7 @@ func runBatchStatus(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	cadence, err := batchCadenceStatus(batchModuleRoot(settings.Root), batchStatusNow().UTC())
+	cadence, err := batchCadenceStatus(batch.ModuleRoot(settings.Root), batchStatusNow().UTC())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

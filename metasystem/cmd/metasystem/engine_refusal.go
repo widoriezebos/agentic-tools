@@ -84,18 +84,35 @@ func batchPrefixProofControlRoot(installation, requested string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("resolve batch prefix proof control root: %w", err)
 	}
-	mainInstallation, linked := linkedWorktreeMainInstallation(installation)
+	_, linked := linkedWorktreeMainInstallation(installation)
 	if !linked {
 		return "", fmt.Errorf("batch prefix proof execution root is not a linked worktree")
 	}
-	mainInstallation, err = canonicalProofRoot(mainInstallation)
-	if err != nil {
-		return "", fmt.Errorf("resolve batch prefix main installation: %w", err)
-	}
-	if controlRoot != mainInstallation {
+	controlCommon, controlPrefix, controlErr := gitOwnership(controlRoot)
+	executionCommon, executionPrefix, executionErr := gitOwnership(installation)
+	if controlErr != nil || executionErr != nil || controlCommon != executionCommon || controlPrefix != executionPrefix {
 		return "", fmt.Errorf("batch prefix proof control root %s does not own execution installation %s", controlRoot, installation)
 	}
 	return controlRoot, nil
+}
+
+func gitOwnership(root string) (commonDir, prefix string, err error) {
+	read := func(args ...string) (string, error) {
+		command := exec.Command("git", append([]string{"-C", root, "rev-parse"}, args...)...)
+		command.Env = gittree.ScrubbedEnviron()
+		output, commandErr := command.Output()
+		return strings.TrimSpace(string(output)), commandErr
+	}
+	commonDir, err = read("--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return "", "", err
+	}
+	commonDir, err = canonicalProofRoot(commonDir)
+	if err != nil {
+		return "", "", err
+	}
+	prefix, err = read("--show-prefix")
+	return commonDir, prefix, err
 }
 
 func enrollmentRefusal(installation string, cause error) error {

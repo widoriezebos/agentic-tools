@@ -87,7 +87,7 @@ var batchLandOriginTree = func(root, commit string) (string, error) {
 var batchLandRecoverPush = recoverMovedBatchPush
 
 func batchLandSeams(root, id string, record batch.Record, baseCommit, actor string) batch.LandSeams {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	return batch.LandSeams{
 		Prepare: func(_ string) error { return batch.PrepareLandingBranch(root, id, baseCommit) },
 		Apply:   func(unit batch.Unit) error { return batch.ApplyCertifiedPatch(root, root, unit.Chain) },
@@ -198,7 +198,7 @@ var batchRecoveryGoalNext = func(root, goalID string, at time.Time) (string, err
 }
 
 func recoverMovedBatchPush(root, id string, record batch.Record, expectedBase, originCommit, baseTree, tip string) (batch.PushRecovery, error) {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	originTree, err := gitOutput(root, "rev-parse", originCommit+"^{tree}")
 	recovery := batch.PushRecovery{Origin: originCommit, BaseTree: originTree}
 	if err != nil {
@@ -348,7 +348,7 @@ func gitHead(root string) string {
 var batchPrefixReceiptExecutable = os.Executable
 
 func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tree string, groups []string) (batch.PrefixRunResult, error) {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	var unit batch.Unit
 	for _, candidate := range record.Units {
 		if candidate.GoalID == goalID {
@@ -362,7 +362,7 @@ func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tre
 		return batch.PrefixRunResult{}, err
 	}
 	defer detached.Close()
-	executionRoot := batchModuleRoot(detached.Workspace().Dir)
+	executionRoot := batch.ModuleRoot(detached.Workspace().Dir)
 	binary, err := batchPrefixReceiptExecutable()
 	if err != nil {
 		return batch.PrefixRunResult{}, err
@@ -437,7 +437,7 @@ func batchPrefixReceiptArgs(root, controlRoot, goalID, tree, resultPath string, 
 }
 
 func recoverBatchLanding(root string, store batch.Store, id, actor string, at time.Time) error {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	findTrailer := func(matches func(string) bool) (string, bool, error) {
 		format := "%H%x00%B%x00"
 		output, err := gitOutput(root, "log", "--first-parent", "origin/main", "--format="+format)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -77,6 +78,23 @@ func sealedFixture(t *testing.T) (assemblyBed, Record, []string, int, func(strin
 	must(t, sealBatch(bed.root, bed.moved, "landing+owner", time.Unix(1, 0), &record, plan, gate, assemble))
 	return bed, record, trees, assemblies, plan
 }
+
+func nestedAssemblyFixture(t *testing.T) assemblyBed {
+	bed := assemblyFixture(t)
+	module := filepath.Join(bed.root, "metasystem")
+	must(t, os.Mkdir(module, 0o755))
+	must(t, os.Rename(filepath.Join(bed.root, "plans"), filepath.Join(module, "plans")))
+	must(t, os.WriteFile(filepath.Join(module, "go.mod"), []byte("module example.invalid/metasystem\n\ngo 1.27\n"), 0o644))
+	bedGit(t, bed.root, "add", "metasystem", "plans")
+	bedGit(t, bed.root, "commit", "-qm", "nest module ledger")
+	bed.base = bedGit(t, bed.root, "rev-parse", "HEAD^{tree}")
+	must(t, os.WriteFile(filepath.Join(bed.root, "trunk"), []byte("nested moved\n"), 0o644))
+	bedGit(t, bed.root, "add", "trunk")
+	bedGit(t, bed.root, "commit", "-qm", "move nested base")
+	bed.moved = bedGit(t, bed.root, "rev-parse", "HEAD^{tree}")
+	bed.record.BaseTree, bed.record.TipTree = bed.base, bed.base
+	return bed
+}
 func witness(t *testing.T, ok bool, format string, args ...any) {
 	if !ok {
 		t.Fatalf(format, args...)
@@ -125,6 +143,23 @@ func TestBatchSealRegates(t *testing.T)                   { sealWitness(t, "rega
 func TestBatchSelectionUnionClosesAtCeiling(t *testing.T) { sealWitness(t, "ceiling") }
 func TestBatchSealExecutesChangedInputs(t *testing.T)     { sealWitness(t, "inputs") }
 func TestBatchSealDryRunsTheBoundary(t *testing.T)        { sealWitness(t, "boundary") }
+
+func TestBatchSealReadsClaimsFromTheNestedModuleWithTheStoreAtTheRepositoryTop(t *testing.T) {
+	t.Parallel()
+	bed := nestedAssemblyFixture(t)
+	record := bed.record
+	plan := func(_, goalID, _ string) (testpolicy.Plan, error) {
+		return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, SelectedGroups: []string{goalID}}, nil
+	}
+	gate := func(string, gateStep) gateStepResult { return gateStepResult{RunID: "seal-green"} }
+	must(t, sealBatch(bed.root, bed.moved, "landing+owner", time.Unix(1, 0), &record, plan, gate, assembleUnits))
+	for _, goalID := range []string{"goal-a", "goal-b"} {
+		claim := record.Seal[goalID]
+		if claim.Revision != 2 || claim.AccountingRevision != 1 {
+			t.Fatalf("sealed claim for %s=%+v, want ledger revisions 2 and 1", goalID, claim)
+		}
+	}
+}
 
 func TestBatchSealExcludesReturnedUnits(t *testing.T) {
 	bed := assemblyFixture(t)

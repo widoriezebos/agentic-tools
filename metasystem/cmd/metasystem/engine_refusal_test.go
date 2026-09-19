@@ -119,6 +119,38 @@ func TestBatchPrefixProofControlRootMustOwnLinkedExecution(t *testing.T) {
 	}
 }
 
+func TestBatchPrefixProofControlRootAcceptsALinkedLandingWorktree(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	main := filepath.Join(parent, "main")
+	landedGit(t, parent, "init", "-q", "-b", "main", main)
+	module := filepath.Join(main, "metasystem")
+	if err := os.Mkdir(module, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := osWriteFile(filepath.Join(module, "go.mod"), "module fixture\n"); err != nil {
+		t.Fatal(err)
+	}
+	landedGit(t, main, "add", ".")
+	landedGit(t, main, "commit", "-qm", "seed nested module")
+	landing := filepath.Join(parent, "landing")
+	landedGit(t, main, "worktree", "add", "-q", "-b", "landing", landing)
+	proof := filepath.Join(parent, "proof")
+	landedGit(t, main, "worktree", "add", "-q", "--detach", proof)
+	controlRoot := filepath.Join(landing, "metasystem")
+	execution := filepath.Join(proof, "metasystem")
+	want, err := canonicalProofRoot(controlRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := batchPrefixProofControlRoot(execution, controlRoot); err != nil || got != want {
+		t.Fatalf("linked landing control root=%q error=%v, want %q", got, err, want)
+	}
+	if _, err := batchPrefixProofControlRoot(execution, landing); err == nil || !strings.Contains(err.Error(), "does not own") {
+		t.Fatalf("linked landing root with another prefix was accepted: %v", err)
+	}
+}
+
 func TestDecisionMismatchNamesTheField(t *testing.T) {
 	err := decisionMismatchRefusal("candidate", "ours-base", "digest", testingPlanOutput{
 		CandidateTree: "candidate", PolicyBaseCommit: "engine-base", BaseContractDigest: "digest",

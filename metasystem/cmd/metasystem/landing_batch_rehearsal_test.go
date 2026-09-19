@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -105,7 +106,7 @@ func TestBatchLandingRehearsalOnRealOrigin(t *testing.T) {
 
 	run.landing = filepath.Join(run.work, "landing")
 	run.clone(run.landing, "landing")
-	run.control = batchModuleRoot(run.landing)
+	run.control = batch.ModuleRoot(run.landing)
 	run.writeSeed()
 	run.startCommit = run.git(run.landing, "rev-parse", "HEAD")
 	run.startTree = run.git(run.landing, "rev-parse", "HEAD^{tree}")
@@ -119,7 +120,7 @@ func TestBatchLandingRehearsalOnRealOrigin(t *testing.T) {
 	for _, goalID := range []string{"goal-rehearsal-a", "goal-rehearsal-b", "goal-rehearsal-c"} {
 		seat := filepath.Join(run.work, "seat-"+strings.TrimPrefix(goalID, "goal-rehearsal-"))
 		run.clone(seat, goalID)
-		run.seats[goalID] = batchModuleRoot(seat)
+		run.seats[goalID] = batch.ModuleRoot(seat)
 		run.announce(run.seats[goalID], "lineage-"+goalID)
 		run.addGoalBranch(goalID)
 		run.branchTips[goalID] = run.git(run.origin, "rev-parse", "refs/heads/goal/"+goalID)
@@ -257,7 +258,7 @@ func (run *batchRehearsalRun) isolateGitEnvironment() {
 		run.t.Fatal(err)
 	}
 	shim := "#!/bin/sh\nexport GIT_CONFIG_NOSYSTEM=1\nexport GIT_CONFIG_SYSTEM=/dev/null\nexport GIT_CONFIG_GLOBAL=/dev/null\nexec " + shellQuote(realGit) + " \"$@\"\n"
-	if err := os.WriteFile(filepath.Join(shimDir, "git"), []byte(shim), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(shimDir, "git"), []byte(shim), 0o755); err != nil {
 		run.t.Fatal(err)
 	}
 	if err := os.Setenv("PATH", shimDir+string(os.PathListSeparator)+originalPath); err != nil {
@@ -293,7 +294,7 @@ func (run *batchRehearsalRun) clone(root, machine string) {
 	if err != nil || filepath.Clean(remotePath) != filepath.Clean(run.origin) {
 		run.t.Fatalf("rehearsal clone %s origin=%q resolves to %q error=%v, want %s", root, remoteURL, remotePath, err, run.origin)
 	}
-	control := batchModuleRoot(root)
+	control := batch.ModuleRoot(root)
 	if control == root {
 		run.t.Fatalf("real rehearsal checkout %s does not contain the metasystem module", root)
 	}

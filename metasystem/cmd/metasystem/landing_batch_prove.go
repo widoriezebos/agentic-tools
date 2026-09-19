@@ -56,7 +56,7 @@ func proofPlanCovers(plan testpolicy.Plan, union []string) bool {
 }
 
 func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSample, at time.Time, dependencies batchProofDependencies) error {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	store := batch.NewStore(root, nil)
 	record, err := store.Load(id)
 	if err != nil {
@@ -246,7 +246,7 @@ var batchBaseRearm = struct {
 }{landing.FastForwardPreservingRegisters, landedRearmRebuild, landedRearmUp}
 
 func rearmBatchBase(root, baseTree string) error {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	workspace := gittree.Workspace{Dir: root}
 	head, unborn, err := workspace.HeadCommit()
 	if err != nil || unborn {
@@ -290,7 +290,7 @@ func rearmBatchTip(root, tip string) error {
 	if tip == "" {
 		return fmt.Errorf("re-arm landed batch: pushed tip is absent")
 	}
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	if err := batchBaseRearm.fastForward(context.Background(), controlRoot, tip); err != nil {
 		return err
 	}

@@ -40,7 +40,7 @@ func TestBatchLandReceiptsRunFromNestedModuleRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := filepath.Join(module, "scripts", "receipt.sh")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\npwd > receipt-root.txt\n"), 0o755); err != nil {
+	if err := testexec.WriteFile(script, []byte("#!/bin/sh\npwd > receipt-root.txt\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	seams := batchLandSeams(repository, "batch", batch.Record{}, "base", "actor")
@@ -72,7 +72,7 @@ done
 pwd > wrapper-root.txt
 git commit -q "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if output, err := exec.Command("git", "init", "-q", "-b", "main", repository).CombinedOutput(); err != nil {

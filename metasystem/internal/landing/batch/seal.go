@@ -13,6 +13,15 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
+// ModuleRoot returns the nested MetaSystem module when a checkout contains one.
+func ModuleRoot(checkout string) string {
+	nested := filepath.Join(checkout, "metasystem")
+	if info, err := os.Stat(filepath.Join(nested, "go.mod")); err == nil && !info.IsDir() {
+		return nested
+	}
+	return checkout
+}
+
 // Seal re-derives the batch at the fetched base, dry-runs every prefix
 // boundary, and freezes member selections and revisions before proof admission.
 func Seal(store Store, id, baseTree, owner string, at time.Time, plan func(string, string, string) (testpolicy.Plan, error), gate GateExecutor) error {
@@ -205,7 +214,7 @@ func runSealGate(root, tree string, units []Unit, execute batchGateExec) error {
 }
 
 func claimAt(root, tree, batchID, goalID string) (Claim, error) {
-	workspace := gittree.Workspace{Dir: root}
+	workspace := gittree.Workspace{Dir: ModuleRoot(root)}
 	prefix, err := workspace.Prefix()
 	if err != nil {
 		return Claim{}, err

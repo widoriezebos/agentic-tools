@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,6 +58,141 @@ func TestTestRunRearmsOnALandedEngine(t *testing.T) {
 	})
 	if status != 1 || called != 1 || !rearm {
 		t.Fatalf("outer test run did not enter landed re-arm: status=%d calls=%d rearm=%t", status, called, rearm)
+	}
+}
+
+func TestTestRunKeepsProofRecordsUnderTheControlRoot(t *testing.T) {
+	t.Parallel()
+	fset := token.NewFileSet()
+	source, err := os.ReadFile("test.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := parser.ParseFile(fset, "test.go", source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body *ast.BlockStmt
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.Name == "runTestRun" {
+			body = function.Body
+			break
+		}
+	}
+	if body == nil {
+		t.Fatal("runTestRun was not found")
+	}
+	expressionText := func(expression ast.Expr) string {
+		start, end := fset.Position(expression.Pos()).Offset, fset.Position(expression.End()).Offset
+		if start < 0 || end < start || end > len(source) {
+			return fmt.Sprintf("%T", expression)
+		}
+		return string(source[start:end])
+	}
+	isIdentifier := func(expression ast.Expr, name string) bool {
+		identifier, ok := expression.(*ast.Ident)
+		return ok && identifier.Name == name
+	}
+	callName := func(call *ast.CallExpr) string {
+		switch function := call.Fun.(type) {
+		case *ast.Ident:
+			return function.Name
+		case *ast.SelectorExpr:
+			if qualifier, ok := function.X.(*ast.Ident); ok {
+				return qualifier.Name + "." + function.Sel.Name
+			}
+		}
+		return ""
+	}
+	found := map[string]int{}
+	wantFirstArgument := map[string]bool{
+		"proofrun.ReadAttempts":        true,
+		"proofrun.RecordTestResult":    true,
+		"publishTestingResult":         true,
+		"retainIncompleteProofAttempt": true,
+	}
+	ast.Inspect(body, func(node ast.Node) bool {
+		switch typed := node.(type) {
+		case *ast.AssignStmt:
+			for index, left := range typed.Lhs {
+				identifier, ok := left.(*ast.Ident)
+				if !ok || index >= len(typed.Rhs) {
+					continue
+				}
+				right := typed.Rhs[index]
+				switch identifier.Name {
+				case "controlRoot":
+					found["controlRoot assignment"]++
+					call, ok := right.(*ast.CallExpr)
+					var selector *ast.SelectorExpr
+					if ok {
+						selector, ok = call.Fun.(*ast.SelectorExpr)
+					}
+					if !ok || selector.Sel.Name != "proofControlRoot" || !isIdentifier(selector.X, "prepared") {
+						t.Errorf("controlRoot assignment takes %s instead of prepared.proofControlRoot()", expressionText(right))
+					}
+				case "pathsRoot":
+					found["pathsRoot filepath.Join"]++
+					call, ok := right.(*ast.CallExpr)
+					if !ok || callName(call) != "filepath.Join" || len(call.Args) == 0 || !isIdentifier(call.Args[0], "controlRoot") {
+						t.Errorf("pathsRoot filepath.Join takes %s first instead of controlRoot", expressionText(right))
+					}
+				}
+			}
+		case *ast.CompositeLit:
+			site := ""
+			switch literalType := typed.Type.(type) {
+			case *ast.Ident:
+				if literalType.Name == "proofLaunchAdmission" {
+					site = "proofLaunchAdmission.ControlRoot"
+				}
+			case *ast.SelectorExpr:
+				if isIdentifier(literalType.X, "proofrun") && literalType.Sel.Name == "LaunchOptions" {
+					site = "proofrun.LaunchOptions.ControlRoot"
+				}
+			}
+			if site != "" {
+				for _, element := range typed.Elts {
+					field, ok := element.(*ast.KeyValueExpr)
+					if !ok || !isIdentifier(field.Key, "ControlRoot") {
+						continue
+					}
+					found[site]++
+					if !isIdentifier(field.Value, "controlRoot") {
+						t.Errorf("%s takes %s instead of controlRoot", site, expressionText(field.Value))
+					}
+				}
+			}
+		case *ast.CallExpr:
+			name := callName(typed)
+			if !wantFirstArgument[name] {
+				break
+			}
+			found[name]++
+			if len(typed.Args) == 0 || !isIdentifier(typed.Args[0], "controlRoot") {
+				argument := "no argument"
+				if len(typed.Args) != 0 {
+					argument = expressionText(typed.Args[0])
+				}
+				t.Errorf("%s takes %s first instead of controlRoot", name, argument)
+			}
+		}
+		return true
+	})
+	for _, site := range []string{
+		"controlRoot assignment",
+		"proofLaunchAdmission.ControlRoot",
+		"proofrun.ReadAttempts",
+		"proofrun.RecordTestResult",
+		"publishTestingResult",
+		"retainIncompleteProofAttempt",
+		"pathsRoot filepath.Join",
+		"proofrun.LaunchOptions.ControlRoot",
+	} {
+		if found[site] == 0 {
+			t.Errorf("runTestRun has no %s site", site)
+		}
 	}
 }
 

@@ -271,7 +271,7 @@ func productionJoinGate(root string) batch.GateExecutor {
 			args[0] = binary
 		}
 		command := exec.Command(args[0], args[1:]...)
-		command.Dir, command.Env = batchModuleRoot(detached.Workspace().Dir), gittree.ScrubbedEnviron()
+		command.Dir, command.Env = batch.ModuleRoot(detached.Workspace().Dir), gittree.ScrubbedEnviron()
 		output, commandErr := command.CombinedOutput()
 		if commandErr != nil {
 			fmt.Fprintf(os.Stderr, "landing batch join gate %s: %s\n", step.Name, strings.TrimSpace(string(output)))
@@ -288,14 +288,6 @@ func productionJoinGate(root string) batch.GateExecutor {
 
 func joinGateFailure(exitCode int, output []byte) batch.GateStepResult {
 	return batch.GateStepResult{ExitCode: exitCode, Detail: strings.TrimSpace(string(output))}
-}
-
-func batchModuleRoot(checkout string) string {
-	nested := filepath.Join(checkout, "metasystem")
-	if info, err := os.Stat(filepath.Join(nested, "go.mod")); err == nil && !info.IsDir() {
-		return nested
-	}
-	return checkout
 }
 
 func directoryTreesOverlap(left, right string) bool {
@@ -337,7 +329,7 @@ func productionBatchTreePlan(root, goalID, tree string, mode testpolicy.Mode) (_
 }
 
 func batchTreePlanCommand(binary, planningRoot, goalID, tree string, mode testpolicy.Mode) *exec.Cmd {
-	controlRoot := batchModuleRoot(planningRoot)
+	controlRoot := batch.ModuleRoot(planningRoot)
 	command := exec.Command(binary, "test", "plan", "--root", controlRoot, "--goal", goalID, "--tree", tree, "--mode", string(mode), "--purpose", "delivery", "--json")
 	command.Dir, command.Env = controlRoot, gittree.ScrubbedEnviron()
 	return command

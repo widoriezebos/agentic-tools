@@ -26,7 +26,7 @@ var batchDiagnosisSeams = struct {
 }{commitForTree, batch.DiagnoseRed}
 
 func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	ledgerOwner, err := productionTrunkRedLedgerOwner(controlRoot)
 	if err != nil {
 		return err
@@ -87,7 +87,7 @@ var batchDiagnosticExecute = func(binary string, args []string, dir string, envi
 // clearingDiagnostic is the owner's trunk-red clearing run. That path hands the member's claim beside the
 // request, and the launcher reads the expected revisions from the request, so the claim goes in first.
 func clearingDiagnostic(root string) func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	return func(batchID string, request batch.DiagnosticRequest, claim batch.Claim) (batch.DiagnosticResult, error) {
 		request.Claim = claim
 		return launchBatchDiagnostic(controlRoot, batchID, request)

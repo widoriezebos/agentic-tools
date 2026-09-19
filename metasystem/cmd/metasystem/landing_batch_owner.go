@@ -109,7 +109,7 @@ func launchBatchOwner(root string) error {
 }
 
 func batchOwnerLaunchCommand(binary, repositoryRoot string) *exec.Cmd {
-	controlRoot := batchModuleRoot(repositoryRoot)
+	controlRoot := batch.ModuleRoot(repositoryRoot)
 	command := exec.Command(binary, "up", "--recover-only", "--if-down", "--repo", repositoryRoot, "--metasystem-root", controlRoot)
 	command.Dir = controlRoot
 	return command
@@ -229,7 +229,7 @@ func resolveBatchOwnerSettings(seatRoot, landingRoot string, maxWait time.Durati
 }
 
 func fetchBatchTree(root string) (string, error) {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	endpoint, err := goal.ResolveEndpoint(controlRoot)
 	if err != nil {
 		return "", err
@@ -340,7 +340,7 @@ func runBatchChildAs(root, lineage string, args ...string) error {
 }
 
 func productionReturnSeams(root string, tree func() string) batch.ReturnSeams {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	return batch.ReturnSeams{
 		Read: func(_ string, tree, goalID string) (batch.ReturnLedgerGoal, error) {
 			return batchReturnLedgerGoal(controlRoot, tree, goalID)
@@ -385,7 +385,7 @@ func findBatchUnit(root, batchID, goalID string) (batch.Unit, error) {
 }
 
 func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read func(string, string, string) (batch.ReturnLedgerGoal, error), run func(string, ...string) error) error {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	record, err := batch.NewStore(root, nil).Load(batchID)
 	if err != nil {
 		return err
@@ -415,7 +415,7 @@ func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read fu
 }
 
 func resolveProductionBatchOwnerInputs(root string) (productionBatchOwnerInputs, error) {
-	controlRoot := batchModuleRoot(root)
+	controlRoot := batch.ModuleRoot(root)
 	ledgerOwner, err := productionTrunkRedLedgerOwner(controlRoot)
 	if err != nil {
 		return productionBatchOwnerInputs{}, err
@@ -428,7 +428,7 @@ func resolveProductionBatchOwnerInputs(root string) (productionBatchOwnerInputs,
 }
 
 func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease, inputs productionBatchOwnerInputs, now func() time.Time) (*batch.Owner, error) {
-	controlRoot := batchModuleRoot(settings.Root)
+	controlRoot := batch.ModuleRoot(settings.Root)
 	store := batch.NewStore(settings.Root, identity.KernelProber{}).WithLedgerOwner(inputs.ledgerOwner)
 	latestTree := ""
 	returns := productionReturnSeams(settings.Root, func() string { return latestTree })
