@@ -127,6 +127,31 @@ type promptResult struct {
 	Usage      json.RawMessage `json:"usage"`
 }
 
+type turnWait string
+
+const (
+	turnWaitHandshake   turnWait = "handshake"
+	turnWaitPrompt      turnWait = "prompt"
+	turnWaitCancelGrace turnWait = "cancel-grace"
+	turnWaitLateFrames  turnWait = "late-frames"
+)
+
+// turnTimer owns every elapsed-time decision within one turn. Purpose keeps
+// independent waits distinct even when their configured durations match.
+type turnTimer struct {
+	withTimeout func(context.Context, turnWait, time.Duration) (context.Context, context.CancelFunc)
+	after       func(turnWait, time.Duration) <-chan time.Time
+}
+
+var realTurnTimer = turnTimer{
+	withTimeout: func(parent context.Context, _ turnWait, duration time.Duration) (context.Context, context.CancelFunc) {
+		return context.WithTimeout(parent, duration)
+	},
+	after: func(_ turnWait, duration time.Duration) <-chan time.Time {
+		return time.After(duration)
+	},
+}
+
 // turnDriver is the single event pump: every call — setup and
 // prompt alike — is serviced while notifications and server
 // requests keep flowing, so a request flood or a server that
@@ -150,12 +175,12 @@ type turnDriver struct {
 // replay before it and stragglers after it are journaled evidence
 // that arithmetic, not timing, keeps out of the candidate.
 func RunTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
-	return runTurn(ctx, conn, cfg, time.After)
+	return runTurn(ctx, conn, cfg, realTurnTimer)
 }
 
-func runTurn(ctx context.Context, conn *Conn, cfg TurnConfig, lateDeadline func(time.Duration) <-chan time.Time) Outcome {
+func runTurn(ctx context.Context, conn *Conn, cfg TurnConfig, timer turnTimer) Outcome {
 	driver := &turnDriver{conn: conn, tap: cfg.OnEvent}
-	handshake, cancelHandshake := context.WithTimeout(ctx, cfg.HandshakeTimeout)
+	handshake, cancelHandshake := timer.withTimeout(ctx, turnWaitHandshake, cfg.HandshakeTimeout)
 	defer cancelHandshake()
 
 	initFrame, err := driver.call(handshake, "initialize", map[string]any{
@@ -241,7 +266,7 @@ func runTurn(ctx context.Context, conn *Conn, cfg TurnConfig, lateDeadline func(
 	driver.assembler.SetFence(conn.LastSeq())
 	driver.inWindow = true
 
-	promptCtx, cancelPrompt := context.WithTimeout(ctx, cfg.PromptTimeout)
+	promptCtx, cancelPrompt := timer.withTimeout(ctx, turnWaitPrompt, cfg.PromptTimeout)
 	defer cancelPrompt()
 	respFrame, err := driver.call(promptCtx, "session/prompt", map[string]any{
 		"sessionId": driver.sessionID,
@@ -254,11 +279,11 @@ func runTurn(ctx context.Context, conn *Conn, cfg TurnConfig, lateDeadline func(
 			// server the grace window to settle; a COMPLETE
 			// PromptResponse inside it wins (the matrix's
 			// cancellation-race row).
-			return driver.cancelAndSettle(cfg)
+			return driver.cancelAndSettle(cfg, timer)
 		}
 		return driver.fail("prompt", err)
 	}
-	return driver.settle(respFrame, cfg.LateFrameWindow, lateDeadline)
+	return driver.settle(ctx, respFrame, cfg.LateFrameWindow, timer)
 }
 
 // sessionEstablishedParams builds the pinned beat encoding with real
@@ -369,12 +394,12 @@ func (d *turnDriver) fail(phase string, err error) Outcome {
 // window still wins; otherwise the turn is cancelled. The script's
 // kill path follows regardless — cancel is never a shutdown
 // contract.
-func (d *turnDriver) cancelAndSettle(cfg TurnConfig) Outcome {
+func (d *turnDriver) cancelAndSettle(cfg TurnConfig, timer turnTimer) Outcome {
 	grace := cfg.CancelGrace
 	if grace <= 0 {
 		grace = 2 * time.Second
 	}
-	graceCtx, cancel := context.WithTimeout(context.Background(), grace)
+	graceCtx, cancel := timer.withTimeout(context.Background(), turnWaitCancelGrace, grace)
 	defer cancel()
 	if err := d.conn.Notify(graceCtx, "session/cancel", map[string]any{"sessionId": d.sessionID}); err != nil {
 		return Outcome{Row: RowCancelled, SessionID: d.sessionID, Violations: d.violations, Detail: fmt.Sprintf("cancelled; courtesy cancel failed: %v", err)}
@@ -386,7 +411,7 @@ func (d *turnDriver) cancelAndSettle(cfg TurnConfig) Outcome {
 	// cancelled, and the kill path owns the rest. We wait only for
 	// quiet.
 	select {
-	case <-time.After(grace):
+	case <-timer.after(turnWaitCancelGrace, grace):
 	case <-d.conn.Done():
 	}
 	return Outcome{Row: RowCancelled, SessionID: d.sessionID, Violations: d.violations, Detail: "parent cancellation; courtesy cancel sent"}
@@ -414,11 +439,9 @@ func classifySetup(frame Frame, violations int, phase string) (*Outcome, string)
 // first — the sequence fence, not drain timing, decides window
 // membership — and the bounded late window drains as journaled
 // evidence with post-window requests answered as violations.
-func (d *turnDriver) settle(respFrame Frame, lateWindow time.Duration, lateDeadline func(time.Duration) <-chan time.Time) Outcome {
+func (d *turnDriver) settle(ctx context.Context, respFrame Frame, lateWindow time.Duration, timer turnTimer) Outcome {
 	d.inWindow = false
 	d.emit(TapEvent{WireSeq: respFrame.Seq, Synthetic: true, Kind: TapSettlementStarted})
-	settleCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	for {
 		select {
 		case frame, ok := <-d.conn.Notifications():
@@ -437,12 +460,12 @@ func (d *turnDriver) settle(respFrame Frame, lateWindow time.Duration, lateDeadl
 					// legitimate in-window request, answered under
 					// the in-window policy.
 					d.inWindow = true
-					if err := d.answer(settleCtx, frame); err != nil && d.failure == nil {
+					if err := d.answer(ctx, frame); err != nil && d.failure == nil {
 						d.failure = err
 					}
 					d.inWindow = false
 				} else {
-					if err := d.answer(settleCtx, frame); err != nil && d.failure == nil {
+					if err := d.answer(ctx, frame); err != nil && d.failure == nil {
 						d.failure = err
 					}
 				}
@@ -467,7 +490,7 @@ drained:
 	if err := json.Unmarshal(resp.Result, &body); err != nil {
 		return Outcome{Row: RowProtocolError, SessionID: d.sessionID, Violations: d.violations, Detail: "prompt result unreadable"}
 	}
-	d.drainLate(lateWindow, respFrame.Seq, lateDeadline)
+	d.drainLate(ctx, lateWindow, respFrame.Seq, timer)
 	if d.failure != nil {
 		return Outcome{Row: RowProtocolError, SessionID: d.sessionID, Violations: d.violations, Detail: fmt.Sprintf("mandatory answer never reached the wire: %v", d.failure)}
 	}
@@ -503,13 +526,11 @@ drained:
 // They are journaled evidence; the fence arithmetic keeps them out
 // of the candidate, and post-window requests are violations
 // answered cancelled.
-func (d *turnDriver) drainLate(window time.Duration, responseSeq uint64, lateDeadline func(time.Duration) <-chan time.Time) {
+func (d *turnDriver) drainLate(ctx context.Context, window time.Duration, responseSeq uint64, timer turnTimer) {
 	if window <= 0 {
 		return
 	}
-	lateCtx, cancel := context.WithTimeout(context.Background(), window+5*time.Second)
-	defer cancel()
-	deadline := lateDeadline(window)
+	deadline := timer.after(turnWaitLateFrames, window)
 	for {
 		select {
 		case <-deadline:
@@ -525,7 +546,7 @@ func (d *turnDriver) drainLate(window time.Duration, responseSeq uint64, lateDea
 			if !ok {
 				return
 			}
-			if err := d.answer(lateCtx, frame); err != nil && d.failure == nil {
+			if err := d.answer(ctx, frame); err != nil && d.failure == nil {
 				d.failure = err
 			}
 			_ = responseSeq

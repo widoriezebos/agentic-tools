@@ -111,14 +111,41 @@ func (s *stubServer) run(steps []stubStep) {
 // requireConsumed asserts the stub actually served every scripted
 // step — a green fixture must have earned its responses.
 func (s *stubServer) requireConsumed(want int) {
-	select {
-	case got := <-s.consumed:
-		if got != want {
-			s.t.Fatalf("stub consumed %d steps, fixture requires %d", got, want)
-		}
-	case <-time.After(5 * time.Second):
-		s.t.Fatal("stub never finished")
+	got := <-s.consumed
+	if got != want {
+		s.t.Fatalf("stub consumed %d steps, fixture requires %d", got, want)
 	}
+}
+
+func artificialTurnTimer() turnTimer {
+	return turnTimer{
+		withTimeout: func(parent context.Context, purpose turnWait, _ time.Duration) (context.Context, context.CancelFunc) {
+			ctx, cancel := context.WithCancel(parent)
+			switch purpose {
+			case turnWaitHandshake, turnWaitPrompt:
+				return ctx, cancel
+			case turnWaitCancelGrace:
+				cancel()
+				return ctx, cancel
+			default:
+				panic(fmt.Sprintf("artificial turn timer saw unexpected timeout purpose %q", purpose))
+			}
+		},
+		after: func(purpose turnWait, _ time.Duration) <-chan time.Time {
+			deadline := make(chan time.Time, 1)
+			switch purpose {
+			case turnWaitCancelGrace, turnWaitLateFrames:
+				deadline <- time.Time{}
+			default:
+				panic(fmt.Sprintf("artificial turn timer saw unexpected channel purpose %q", purpose))
+			}
+			return deadline
+		},
+	}
+}
+
+func runTestTurn(ctx context.Context, conn *Conn, cfg TurnConfig) Outcome {
+	return runTurn(ctx, conn, cfg, artificialTurnTimer())
 }
 
 func baseConfig() TurnConfig {
@@ -160,7 +187,7 @@ func TestTurnDelivered(t *testing.T) {
 		},
 	})
 	defer cleanup()
-	outcome := RunTurn(context.Background(), conn, baseConfig())
+	outcome := runTestTurn(context.Background(), conn, baseConfig())
 	if outcome.Row != RowDelivered || string(outcome.Candidate) != "the answer" {
 		t.Fatalf("%+v", outcome)
 	}
@@ -179,7 +206,7 @@ func TestTurnVersionMismatch(t *testing.T) {
 		{expectMethod: "initialize", result: `{"protocolVersion":2,"authMethods":[]}`},
 	})
 	defer cleanup()
-	if outcome := RunTurn(context.Background(), conn, baseConfig()); outcome.Row != RowVersionMismatch {
+	if outcome := runTestTurn(context.Background(), conn, baseConfig()); outcome.Row != RowVersionMismatch {
 		t.Fatalf("%+v", outcome)
 	}
 }
@@ -193,7 +220,7 @@ func TestTurnAuthClassification(t *testing.T) {
 		{expectMethod: "session/new", errorCode: authRequiredCode, errorMessage: "sign in required"},
 	})
 	defer cleanup()
-	if outcome := RunTurn(context.Background(), conn, baseConfig()); outcome.Row != RowAuthRequired {
+	if outcome := runTestTurn(context.Background(), conn, baseConfig()); outcome.Row != RowAuthRequired {
 		t.Fatalf("%+v", outcome)
 	}
 
@@ -204,7 +231,7 @@ func TestTurnAuthClassification(t *testing.T) {
 		{expectMethod: "session/new", errorCode: -32603, errorMessage: "boom"},
 	})
 	defer cleanup()
-	if outcome := RunTurn(context.Background(), conn, baseConfig()); outcome.Row != RowSetupError {
+	if outcome := runTestTurn(context.Background(), conn, baseConfig()); outcome.Row != RowSetupError {
 		t.Fatalf("%+v", outcome)
 	}
 }
@@ -218,7 +245,7 @@ func TestTurnLoadCapabilityGate(t *testing.T) {
 	defer cleanup()
 	cfg := baseConfig()
 	cfg.LoadSessionID = "old"
-	outcome := RunTurn(context.Background(), conn, cfg)
+	outcome := runTestTurn(context.Background(), conn, cfg)
 	if outcome.Row != RowSetupError || !strings.Contains(outcome.Detail, "loadSession") {
 		t.Fatalf("%+v", outcome)
 	}
@@ -235,7 +262,7 @@ func TestTurnSetModeFailure(t *testing.T) {
 	defer cleanup()
 	cfg := baseConfig()
 	cfg.ModeID = "ask"
-	if outcome := RunTurn(context.Background(), conn, cfg); outcome.Row != RowSetupError {
+	if outcome := runTestTurn(context.Background(), conn, cfg); outcome.Row != RowSetupError {
 		t.Fatalf("%+v", outcome)
 	}
 }
@@ -261,7 +288,7 @@ func TestTurnLoadReplayWatermark(t *testing.T) {
 	defer cleanup()
 	cfg := baseConfig()
 	cfg.LoadSessionID = "old-session"
-	outcome := RunTurn(context.Background(), conn, cfg)
+	outcome := runTestTurn(context.Background(), conn, cfg)
 	if outcome.Row != RowDelivered || string(outcome.Candidate) != "fresh answer" {
 		t.Fatalf("the stale answer must not win: %+v candidate=%q", outcome, outcome.Candidate)
 	}
@@ -280,7 +307,7 @@ func TestTurnStopReasonRows(t *testing.T) {
 			newSessionStep(),
 			{expectMethod: "session/prompt", result: fmt.Sprintf(`{"stopReason":%q}`, stop)},
 		})
-		outcome := RunTurn(context.Background(), conn, baseConfig())
+		outcome := runTestTurn(context.Background(), conn, baseConfig())
 		cleanup()
 		if outcome.Row != want {
 			t.Fatalf("stop %s: got %+v want %s", stop, outcome, want)
@@ -295,7 +322,7 @@ func TestTurnPromptErrorAndDeath(t *testing.T) {
 		{expectMethod: "session/prompt", errorCode: -32603, errorMessage: "inference exploded"},
 	})
 	defer cleanup()
-	if outcome := RunTurn(context.Background(), conn, baseConfig()); outcome.Row != RowTurnFailed {
+	if outcome := runTestTurn(context.Background(), conn, baseConfig()); outcome.Row != RowTurnFailed {
 		t.Fatalf("prompt error: %+v", outcome)
 	}
 
@@ -306,7 +333,7 @@ func TestTurnPromptErrorAndDeath(t *testing.T) {
 		{expectMethod: "session/prompt", notifications: []string{chunkFor("s-1", "partial")}, dropAfter: true},
 	})
 	defer cleanup()
-	if outcome := RunTurn(context.Background(), conn, baseConfig()); outcome.Row != RowTurnFailed {
+	if outcome := runTestTurn(context.Background(), conn, baseConfig()); outcome.Row != RowTurnFailed {
 		t.Fatalf("EOF mid-prompt: %+v", outcome)
 	}
 
@@ -317,7 +344,7 @@ func TestTurnPromptErrorAndDeath(t *testing.T) {
 		{expectMethod: "session/prompt", rawFrames: []string{"garbage-not-json"}, silent: true},
 	})
 	defer cleanup()
-	if outcome := RunTurn(context.Background(), conn, baseConfig()); outcome.Row != RowProtocolError {
+	if outcome := runTestTurn(context.Background(), conn, baseConfig()); outcome.Row != RowProtocolError {
 		t.Fatalf("malformed mid-prompt: %+v", outcome)
 	}
 
@@ -330,7 +357,24 @@ func TestTurnPromptErrorAndDeath(t *testing.T) {
 	defer cleanup()
 	cfg := baseConfig()
 	cfg.PromptTimeout = 200 * time.Millisecond
-	if outcome := RunTurn(context.Background(), conn, cfg); outcome.Row != RowProtocolError {
+	promptDeadline := make(chan time.Duration, 1)
+	var expirePrompt context.CancelFunc
+	timer := artificialTurnTimer()
+	timer.withTimeout = func(parent context.Context, purpose turnWait, duration time.Duration) (context.Context, context.CancelFunc) {
+		deadlineCtx, cancel := context.WithCancel(parent)
+		if purpose == turnWaitPrompt {
+			expirePrompt = cancel
+			promptDeadline <- duration
+		}
+		return deadlineCtx, cancel
+	}
+	outcomeCh := make(chan Outcome, 1)
+	go func() { outcomeCh <- runTurn(context.Background(), conn, cfg, timer) }()
+	if duration := <-promptDeadline; duration != cfg.PromptTimeout {
+		t.Fatalf("prompt deadline = %s, want %s", duration, cfg.PromptTimeout)
+	}
+	expirePrompt()
+	if outcome := <-outcomeCh; outcome.Row != RowProtocolError {
 		t.Fatalf("deadline: %+v", outcome)
 	}
 }
@@ -363,7 +407,26 @@ func TestTurnParentCancellation(t *testing.T) {
 	}()
 	cfg := baseConfig()
 	cfg.CancelGrace = 300 * time.Millisecond
-	outcome := RunTurn(ctx, conn, cfg)
+	graceStarted := make(chan time.Duration, 1)
+	graceExpired := make(chan time.Time, 1)
+	timer := artificialTurnTimer()
+	timer.withTimeout = func(parent context.Context, _ turnWait, _ time.Duration) (context.Context, context.CancelFunc) {
+		return context.WithCancel(parent)
+	}
+	timer.after = func(purpose turnWait, duration time.Duration) <-chan time.Time {
+		if purpose != turnWaitCancelGrace {
+			panic(fmt.Sprintf("parent-cancellation timer saw %q, want %q", purpose, turnWaitCancelGrace))
+		}
+		graceStarted <- duration
+		return graceExpired
+	}
+	outcomeCh := make(chan Outcome, 1)
+	go func() { outcomeCh <- runTurn(ctx, conn, cfg, timer) }()
+	if duration := <-graceStarted; duration != cfg.CancelGrace {
+		t.Fatalf("cancel grace = %s, want %s", duration, cfg.CancelGrace)
+	}
+	graceExpired <- time.Time{}
+	outcome := <-outcomeCh
 	if outcome.Row != RowCancelled {
 		t.Fatalf("%+v", outcome)
 	}
@@ -403,7 +466,7 @@ func TestTurnSetupServicesQueues(t *testing.T) {
 	}()
 	cfg := baseConfig()
 	cfg.HandshakeTimeout = 15 * time.Second
-	outcome := RunTurn(context.Background(), conn, cfg)
+	outcome := runTestTurn(context.Background(), conn, cfg)
 	if outcome.Row != RowDelivered || outcome.Violations != 1 {
 		t.Fatalf("%+v", outcome)
 	}
@@ -433,7 +496,7 @@ func TestTurnUnsolicitedRequestFailsClosed(t *testing.T) {
 		}
 		writer.Send(&Message{JSONRPC: "2.0", ID: promptID, Result: json.RawMessage(`{"stopReason":"end_turn"}`)})
 	}()
-	outcome := RunTurn(context.Background(), conn, baseConfig())
+	outcome := runTestTurn(context.Background(), conn, baseConfig())
 	if outcome.Row != RowDelivered || outcome.Violations != 1 {
 		t.Fatalf("%+v", outcome)
 	}
@@ -467,7 +530,7 @@ func TestTurnPermissionGateAndStrictAnswer(t *testing.T) {
 		answers <- string(reply.Result)
 		writer.Send(&Message{JSONRPC: "2.0", ID: promptID, Result: json.RawMessage(`{"stopReason":"end_turn"}`)})
 	}()
-	outcome := RunTurn(context.Background(), conn, baseConfig())
+	outcome := runTestTurn(context.Background(), conn, baseConfig())
 	if outcome.Row != RowDelivered || outcome.Violations != 1 {
 		t.Fatalf("%+v", outcome)
 	}
@@ -503,7 +566,7 @@ func TestJournalIntegrityUnderConcurrency(t *testing.T) {
 		msg, _ = reader.Next()
 		writer.Send(&Message{JSONRPC: "2.0", ID: msg.ID, Result: json.RawMessage(`{"stopReason":"end_turn"}`)})
 	}()
-	if outcome := RunTurn(context.Background(), conn, baseConfig()); outcome.Row != RowDelivered {
+	if outcome := runTestTurn(context.Background(), conn, baseConfig()); outcome.Row != RowDelivered {
 		t.Fatalf("%+v", outcome)
 	}
 	for lineNumber, line := range strings.Split(strings.TrimSuffix(journal.String(), "\n"), "\n") {
@@ -528,20 +591,21 @@ func TestJournalIntegrityUnderConcurrency(t *testing.T) {
 // hand-off is context-bounded even while the physical write is
 // wedged.
 func TestBlockedWriteIsBounded(t *testing.T) {
-	clientReads, _ := io.Pipe()
-	_, clientWrites := io.Pipe() // nobody ever reads this side
-	conn := NewConn(clientReads, clientWrites, nil)
-	defer clientWrites.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
-	defer cancel()
-	start := time.Now()
+	clientReads, serverWrites := io.Pipe()
+	blocked := &writeStartedBlocker{started: make(chan struct{}), release: make(chan struct{})}
+	conn := NewConn(clientReads, blocked, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-blocked.started
+		cancel()
+	}()
 	_, err := conn.CallSeq(ctx, "initialize", map[string]any{"big": strings.Repeat("x", 1024*1024)})
-	if err != context.DeadlineExceeded {
-		t.Fatalf("blocked write must surface the deadline: %v", err)
+	if err != context.Canceled {
+		t.Fatalf("blocked write must surface cancellation: %v", err)
 	}
-	if time.Since(start) > 2*time.Second {
-		t.Fatal("the wait was not bounded by the context")
-	}
+	close(blocked.release)
+	serverWrites.Close()
+	<-conn.Done()
 }
 
 // The session file lands at setup success — the adapter's early
@@ -557,7 +621,7 @@ func TestTurnSessionFileEarlyHandshake(t *testing.T) {
 	defer cleanup()
 	cfg := baseConfig()
 	cfg.SessionFile = sessionFile
-	outcome := RunTurn(context.Background(), conn, cfg)
+	outcome := runTestTurn(context.Background(), conn, cfg)
 	if outcome.Row != RowDelivered {
 		t.Fatalf("%+v", outcome)
 	}
@@ -565,4 +629,15 @@ func TestTurnSessionFileEarlyHandshake(t *testing.T) {
 	if err != nil || strings.TrimSpace(string(body)) != "s-1" {
 		t.Fatalf("session file must carry the id: %q err %v", body, err)
 	}
+}
+
+type writeStartedBlocker struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (w *writeStartedBlocker) Write(p []byte) (int, error) {
+	close(w.started)
+	<-w.release
+	return len(p), nil
 }

@@ -60,6 +60,7 @@ type NativeDriver struct {
 
 	expectedProtocol int64
 	declaration      delegate.Declaration
+	turnTimer        turnTimer
 }
 
 // Declaration reports the native driver's earned capability surface
@@ -172,8 +173,12 @@ func (s *nativeSession) PromptTurn(ctx context.Context, req delegate.PromptReque
 		CancelGrace:             req.CancelGrace,
 		OnEvent:                 turn.tap,
 	}
+	timer := s.driver.turnTimer
+	if timer.withTimeout == nil || timer.after == nil {
+		timer = realTurnTimer
+	}
 	go func() {
-		outcome := RunTurn(turnCtx, s.conn, cfg)
+		outcome := runTurn(turnCtx, s.conn, cfg, timer)
 		turn.mu.Lock()
 		turn.outcome = outcome
 		turn.finalized = true
@@ -488,5 +493,6 @@ func newNative(decl runtimes.Declaration, resolver func(tools string) (string, e
 		ModeResolver:     resolver,
 		expectedProtocol: decl.ExpectedACP.ExpectedProtocolVersion,
 		declaration:      nativeDeclaration,
+		turnTimer:        realTurnTimer,
 	}, nil
 }

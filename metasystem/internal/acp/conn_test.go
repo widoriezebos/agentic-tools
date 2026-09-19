@@ -30,6 +30,7 @@ func TestConnCallCancelAndClose(t *testing.T) {
 	serverReads, clientWrites := io.Pipe()
 	conn := NewConn(clientReads, clientWrites, nil)
 	defer func() { clientWrites.Close(); serverWrites.Close() }()
+	firstCallSeen := make(chan struct{})
 	secondCallSeen := make(chan struct{})
 	go func() {
 		reader := NewReader(serverReads, nil)
@@ -38,14 +39,20 @@ func TestConnCallCancelAndClose(t *testing.T) {
 			if err != nil {
 				return
 			}
+			if msg.Method == "never/answered" {
+				close(firstCallSeen)
+			}
 			if msg.Method == "also/never" {
 				close(secondCallSeen)
 			}
 		}
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	if _, err := conn.Call(ctx, "never/answered", nil); err != context.DeadlineExceeded {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-firstCallSeen
+		cancel()
+	}()
+	if _, err := conn.Call(ctx, "never/answered", nil); err != context.Canceled {
 		t.Fatalf("a cancelled call must surface the context error: %v", err)
 	}
 
@@ -105,7 +112,7 @@ func TestTurnUnreadableResult(t *testing.T) {
 		{expectMethod: "session/prompt", result: `{"stopReason":123}`},
 	})
 	defer cleanup()
-	if outcome := RunTurn(context.Background(), conn, baseConfig()); outcome.Row != RowProtocolError {
+	if outcome := runTestTurn(context.Background(), conn, baseConfig()); outcome.Row != RowProtocolError {
 		t.Fatalf("unreadable result: %+v", outcome)
 	}
 }
@@ -132,7 +139,7 @@ func TestSetupEdges(t *testing.T) {
 		{expectMethod: "session/new", result: `{"sessionId":42}`},
 	})
 	defer cleanup()
-	if outcome := RunTurn(context.Background(), conn, baseConfig()); outcome.Row != RowProtocolError {
+	if outcome := runTestTurn(context.Background(), conn, baseConfig()); outcome.Row != RowProtocolError {
 		t.Fatalf("unreadable session id: %+v", outcome)
 	}
 
@@ -192,9 +199,14 @@ func TestTurnLateWindowTraffic(t *testing.T) {
 	}()
 	cfg := baseConfig()
 	cfg.LateFrameWindow = 500 * time.Millisecond
-	outcome := runTurn(context.Background(), conn, cfg, func(time.Duration) <-chan time.Time {
+	timer := artificialTurnTimer()
+	timer.after = func(purpose turnWait, _ time.Duration) <-chan time.Time {
+		if purpose != turnWaitLateFrames {
+			panic("late-window fixture received the wrong timer purpose: " + purpose)
+		}
 		return lateDeadline
-	})
+	}
+	outcome := runTurn(context.Background(), conn, cfg, timer)
 	if outcome.Row != RowDelivered || outcome.Candidate != nil {
 		t.Fatalf("late chunk must not become a candidate: %+v %q", outcome, outcome.Candidate)
 	}
@@ -232,7 +244,7 @@ func TestCancelWithDeadWriteSide(t *testing.T) {
 	}()
 	cfg := baseConfig()
 	cfg.CancelGrace = 200 * time.Millisecond
-	outcome := RunTurn(ctx, conn, cfg)
+	outcome := runTestTurn(ctx, conn, cfg)
 	if outcome.Row != RowCancelled && outcome.Row != RowTurnFailed && outcome.Row != RowProtocolError {
 		t.Fatalf("cancel against a dying connection must settle a terminal row: %+v", outcome)
 	}

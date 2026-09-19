@@ -49,6 +49,7 @@ func testDriver() *NativeDriver {
 	if err != nil {
 		panic(err)
 	}
+	driver.turnTimer = artificialTurnTimer()
 	return driver
 }
 
@@ -123,7 +124,7 @@ func TestDriverDifferentialAgainstDirectRunTurn(t *testing.T) {
 			defer directCleanup()
 			cfg := baseConfig()
 			cfg.ModeID = "ask"
-			outcome := RunTurn(context.Background(), conn, cfg)
+			outcome := runTestTurn(context.Background(), conn, cfg)
 			directCleanup()
 			<-conn.Done()
 			_ = directServer
@@ -164,7 +165,7 @@ func TestDriverJournalByteIdentity(t *testing.T) {
 	go server.run(deliveredSteps("hi"))
 	cfg := baseConfig()
 	cfg.ModeID = "ask"
-	if outcome := RunTurn(context.Background(), conn, cfg); outcome.Row != RowDelivered {
+	if outcome := runTestTurn(context.Background(), conn, cfg); outcome.Row != RowDelivered {
 		t.Fatalf("direct not delivered: %+v", outcome)
 	}
 	clientWrites.Close()
@@ -194,9 +195,7 @@ func TestDriverJournalByteIdentity(t *testing.T) {
 	// evidence is final only after the Done wait and the journal
 	// health sample (the design's owner law, exercised for real).
 	cleanup()
-	quiesceCtx, quiesceCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer quiesceCancel()
-	if err := session.(Quiescer).Quiesce(quiesceCtx); err != nil {
+	if err := session.(Quiescer).Quiesce(context.Background()); err != nil {
 		t.Fatalf("driver quiesce: %v", err)
 	}
 	if !bytes.Equal(directJournal.Bytes(), driverJournal.Bytes()) {
@@ -232,13 +231,11 @@ func TestDriverFloodOverflowProductionPath(t *testing.T) {
 	if err != nil || result.Row != delegate.RowDelivered {
 		t.Fatalf("flooded turn: %+v %v", result, err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 	stream := turn.EventStream()
 	spooled := 0
 	var dropped uint64
 	for {
-		ev, ok := stream.Next(ctx)
+		ev, ok := stream.Next(context.Background())
 		if !ok {
 			break
 		}
@@ -335,9 +332,7 @@ func TestDriverStreamTruth(t *testing.T) {
 	defer cleanup()
 
 	stream := turn.EventStream()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	ev, ok := stream.Next(ctx)
+	ev, ok := stream.Next(context.Background())
 	if !ok || ev.Kind != "driver/session-established" {
 		t.Fatalf("first stream event = %+v ok=%v, want driver/session-established", ev, ok)
 	}
@@ -349,9 +344,9 @@ func TestDriverStreamTruth(t *testing.T) {
 	}
 	// Observed pre-settle: the prompt is still pending (the server is
 	// silent); the turn must NOT be done yet.
-	quick, quickCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer quickCancel()
-	if _, err := turn.Result(quick); !errors.Is(err, context.DeadlineExceeded) {
+	quick, quickCancel := context.WithCancel(context.Background())
+	quickCancel()
+	if _, err := turn.Result(quick); !errors.Is(err, context.Canceled) {
 		t.Fatalf("turn settled before the prompt resolved: %v", err)
 	}
 	if err := turn.Cancel(context.Background()); err != nil {
@@ -369,11 +364,11 @@ func TestDriverStreamTruth(t *testing.T) {
 	}
 	// Drain-on-close, then end-of-stream.
 	for {
-		if _, ok := stream.Next(ctx); !ok {
+		if _, ok := stream.Next(context.Background()); !ok {
 			break
 		}
 	}
-	if ask, ok := turn.AskStream().Next(ctx); ok {
+	if ask, ok := turn.AskStream().Next(context.Background()); ok {
 		t.Fatalf("ask stream yielded %+v", ask)
 	}
 	if err := turn.Answer(context.Background(), delegate.Answer{}); !errors.Is(err, ErrAskPolicyRefused) {
@@ -408,14 +403,12 @@ func TestDriverUpdateEventsAndRefusedAskBeat(t *testing.T) {
 	if result.Violations != 0 {
 		t.Fatalf("the in-window refused ask must not count as a violation; got %d", result.Violations)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
 	stream := turn.EventStream()
 	var kinds []string
 	var lastSeq uint64
 	sawSeq := false
 	for {
-		ev, ok := stream.Next(ctx)
+		ev, ok := stream.Next(context.Background())
 		if !ok {
 			break
 		}
