@@ -2,7 +2,6 @@ cmd/metasystem/hold_test.go	1	The ticker only retries signal delivery until the 
 cmd/metasystem/wait_verb_test.go	2	Both deadlines are fixed in the past to test cancellation propagation and never wait.
 internal/dispatch/proof_attempt_test.go	1	The sleeping child is the stop fixture's subject and is killed, never waited out.
 internal/identity/fixture_custodian_witness_test.go	2	The timers are failure ceilings around a real command and its forced reap; successful observation comes from the command result.
-internal/identity/identity_test.go	3	The probes observe real kernel process transitions; success is an identity fact and the delays only avoid busy-spinning.
 internal/identity/survivors_test.go	2	The scans observe real kernel process membership; success is a survivor fact and the delays only avoid busy-spinning.
 internal/missionrunner/preflight_fixture_test.go	2	The sleeps only pace forced teardown of real process groups before temporary-directory removal.
 internal/run/waiter_pair_test.go	1	The installed-process fixture succeeds on its published row, and the sleep only avoids busy-spinning while observing it.

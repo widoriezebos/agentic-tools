@@ -2,6 +2,7 @@ package identity
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -72,19 +73,17 @@ func TestProbeZombieKeepsItsExactLiveIdentity(t *testing.T) {
 	if err != nil || state != Alive || running.Zombie {
 		t.Fatalf("running child: state=%v zombie=%v err=%v", state, running.Zombie, err)
 	}
+	watch, err := armExitWatch(command.Process.Pid)
+	if err != nil {
+		t.Fatalf("arm child exit watch: %v", err)
+	}
 	_ = writePipe.Close()
-
-	var zombie Exact
-	deadline := time.Now().Add(wiringBound)
-	for !zombie.Zombie {
-		zombie, state, err = (KernelProber{}).Probe(pid)
-		if err == nil && state == Dead {
-			t.Fatal("unreaped child probed dead")
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("child did not become a readable zombie: state=%v err=%v", state, err)
-		}
-		<-time.After(10 * time.Millisecond)
+	if err := watch.wait(); err != nil {
+		t.Fatalf("wait for child exit: %v", err)
+	}
+	zombie, state, err := (KernelProber{}).Probe(pid)
+	if err == nil && state == Dead {
+		t.Fatalf("unreaped child probed dead: state=%v", state)
 	}
 	if state != Alive || err != nil || !SameIdentity(zombie, running.Ref()) {
 		t.Fatalf("zombie lost its exact live identity: state=%v exact=%+v err=%v", state, zombie, err)
@@ -222,38 +221,10 @@ func TestLivenessStrings(t *testing.T) {
 }
 
 func TestProbeLiveChildArgv(t *testing.T) {
-	// The child outlives the probe's own deadline by a wide margin: a child
-	// that slept exactly as long as the deadline could exit inside the
-	// fork-to-execve wait on a loaded box and read as an empty argv
-	// (2026-09-12, inside the pooled cadence battery); the deferred kill
-	// ends it. The command is a list, not one simple command: bash replaces
-	// itself with a lone `sleep 60` (exec optimization), so the three-word
-	// argv this test reads existed only until that exec, a few milliseconds
-	// the probe won on a quiet box and lost under load (cadence run 11,
-	// proof-mtxzv4im, read `[sleep 60]` for the whole deadline). With the
-	// trailing `true` the shell stays the process the probe reads.
-	command := exec.Command("/bin/sh", "-c", "sleep 60; true")
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() }()
-	// The child's argv is rightly empty inside its fork-to-execve window
-	// (the flake dossier's family, seventh instance — this test calls the
-	// prober directly, so the earlier helper sweep missed it). The
-	// property is steady-state; wait it out, bounded.
-	var exact Exact
-	var state Liveness
-	var err error
-	deadline := time.Now().Add(wiringBound)
-	for {
-		exact, state, err = KernelProber{}.Probe(int64(command.Process.Pid))
-		if err == nil && state == Alive && len(exact.Argv) == 3 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("child argv misread: %v (state %v err %v)", exact.Argv, state, err)
-		}
-		time.Sleep(20 * time.Millisecond)
+	command := startReadyShell(t, nil)
+	exact, state, err := KernelProber{}.Probe(int64(command.Process.Pid))
+	if err != nil || state != Alive || len(exact.Argv) != 3 {
+		t.Fatalf("child argv misread: %v (state %v err %v)", exact.Argv, state, err)
 	}
 	if exact.Argv[1] != "-c" {
 		t.Fatalf("child argv misread: %v", exact.Argv)
@@ -264,29 +235,58 @@ func TestProbeLiveChildArgv(t *testing.T) {
 }
 
 func TestProbeRestrictedShellDoesNotClaimKnownEmptyEnvironment(t *testing.T) {
-	if runtime.GOOS != "darwin" {
-		t.Skip("Darwin kern.procargs2 restriction")
+	command := startReadyShell(t, append(os.Environ(), "METASYSTEM_IDENTITY_TEST=known"))
+	exact, state, err := (KernelProber{}).Probe(int64(command.Process.Pid))
+	if err != nil || state != Alive || !exact.ArgvKnown || len(exact.Argv) != 3 {
+		t.Fatalf("restricted child argv unreadable: state=%v err=%v", state, err)
 	}
-	command := exec.Command("/bin/sh", "-c", "sleep 60; true")
-	command.Env = append(os.Environ(), "METASYSTEM_IDENTITY_TEST=known")
-	if err := command.Start(); err != nil {
+	if exact.EnvironKnown && len(exact.Environ) == 0 {
+		t.Fatal("restricted child environment reported as known empty")
+	}
+}
+
+func startReadyShell(t *testing.T, environment []string) *exec.Cmd {
+	t.Helper()
+	readyReader, readyWriter, err := os.Pipe()
+	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() }()
-	deadline := time.Now().Add(wiringBound)
-	for {
-		exact, state, err := (KernelProber{}).Probe(int64(command.Process.Pid))
-		if err == nil && state == Alive && exact.ArgvKnown && len(exact.Argv) == 3 {
-			if exact.EnvironKnown && len(exact.Environ) == 0 {
-				t.Fatal("restricted child environment reported as known empty")
-			}
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("restricted child argv unreadable: state=%v err=%v", state, err)
-		}
-		time.Sleep(20 * time.Millisecond)
+	stdinReader, stdinWriter, err := os.Pipe()
+	if err != nil {
+		_ = readyReader.Close()
+		_ = readyWriter.Close()
+		t.Fatal(err)
 	}
+	command := exec.Command("/bin/sh", "-c", "printf R >&3; read value; true")
+	command.Stdin = stdinReader
+	command.ExtraFiles = []*os.File{readyWriter}
+	if environment != nil {
+		command.Env = environment
+	}
+	if err := command.Start(); err != nil {
+		_ = readyReader.Close()
+		_ = readyWriter.Close()
+		_ = stdinReader.Close()
+		_ = stdinWriter.Close()
+		t.Fatal(err)
+	}
+	_ = readyWriter.Close()
+	_ = stdinReader.Close()
+	t.Cleanup(func() {
+		_ = stdinWriter.Close()
+		_ = readyReader.Close()
+		_ = command.Process.Kill()
+		_, _ = command.Process.Wait()
+	})
+	// The shell writes the byte after its own exec.
+	var ready [1]byte
+	if _, err := io.ReadFull(readyReader, ready[:]); err != nil {
+		t.Fatalf("read shell readiness byte: %v", err)
+	}
+	if ready[0] != 'R' {
+		t.Fatalf("shell readiness byte=%q, want R", ready[0])
+	}
+	return command
 }
 
 // btimeShiftProber replays the btime-step kernel behavior: the same live

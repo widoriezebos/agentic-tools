@@ -140,7 +140,7 @@ func TestCustodianObservesAPlatformBinaryChild(t *testing.T) {
 		if err != nil || state != Alive {
 			t.Fatalf("probe platform-binary owner: state=%s err=%v", state, err)
 		}
-		checkWitness(t, os.WriteFile(filepath.Join(dir, "ownerpid"), []byte(strconv.Itoa(os.Getpid())), 0o600))
+		checkWitness(t, publishWitnessPID(filepath.Join(dir, "ownerpid"), os.Getpid()))
 		registry := os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME")
 		if registry == "" {
 			t.Fatal("platform-binary owner has no test registry home")
@@ -149,7 +149,7 @@ func TestCustodianObservesAPlatformBinaryChild(t *testing.T) {
 		command := exec.Command("/bin/sh", "-c", "exec tail -f /dev/null")
 		command.Env = slices.DeleteFunc(os.Environ(), func(entry string) bool { return strings.HasPrefix(entry, FixtureOwnerEnv+"=") })
 		startWitnessCommand(t, command, filepath.Join(dir, "platform.stderr"), false)
-		checkWitness(t, os.WriteFile(filepath.Join(dir, "platformpid"), []byte(strconv.Itoa(command.Process.Pid)), 0o600))
+		checkWitness(t, publishWitnessPID(filepath.Join(dir, "platformpid"), command.Process.Pid))
 		refValue := liveWitnessProcessRef(t, int64(command.Process.Pid), 0)
 		ref, err := ParseRef(refValue)
 		checkWitness(t, err)
@@ -237,7 +237,7 @@ func runLauncherWitnessMode(t *testing.T) bool {
 		command := exec.Command("/bin/sh", "-c", `"$1" -test.run="^$2$" -test.count=1; exec tail -f /dev/null`, "sh", os.Args[0], t.Name())
 		command.Env = environment
 		checkWitness(t, command.Start())
-		checkWitness(t, os.WriteFile(filepath.Join(dir, "shellpid"), []byte(strconv.Itoa(command.Process.Pid)), 0o600))
+		checkWitness(t, publishWitnessPID(filepath.Join(dir, "shellpid"), command.Process.Pid))
 		holdWitnessProcess(t)
 	default:
 		return false
@@ -277,6 +277,14 @@ func runLauncherDeathWitness(t *testing.T, exported bool) {
 		waitWitnessCustodianObserved(t, dir, string(launcherLog), shell)
 	}
 	launcherValue := liveWitnessProcessRef(t, int64(command.Process.Pid), owner.Pid)
+	deaths := []witnessDeath{
+		armWitnessDeath(t, owner),
+		armWitnessDeath(t, child),
+		armWitnessDeath(t, other),
+	}
+	if exported {
+		deaths = append(deaths, armWitnessDeath(t, shell))
+	}
 	_ = command.Process.Kill()
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
@@ -284,12 +292,8 @@ func runLauncherDeathWitness(t *testing.T, exported bool) {
 		data, _ := os.ReadFile(filepath.Join(dir, "launcher.stderr"))
 		return string(data)
 	})
-	waitWitnessDead(t, dir, owner)
-	waitWitnessDead(t, dir, child)
-	waitWitnessDead(t, dir, other)
-	if exported {
-		// The launcher owns this fixture shell; its custodian must reap it without killing the nested owner custodian.
-		waitWitnessDead(t, dir, shell)
+	for _, death := range deaths {
+		waitWitnessDead(t, dir, death)
 	}
 	waitWitnessLog(t, dir, string(logPath), "dead-launcher="+launcherValue)
 }
@@ -310,7 +314,7 @@ func TestQuietCustodianRemovesItsLog(t *testing.T) {
 		checkWitness(t, os.WriteFile(filepath.Join(dir, "recordspath"), []byte(recordsPath), 0o600))
 		checkWitness(t, recordWitnessRef(dir, "owner", exact.Ref()))
 		custodian := waitWitnessCustodian(t, dir, exact.Ref())
-		checkWitness(t, os.WriteFile(filepath.Join(dir, "custodianpid"), []byte(strconv.FormatInt(custodian.Pid, 10)), 0o600))
+		checkWitness(t, publishWitnessPID(filepath.Join(dir, "custodianpid"), int(custodian.Pid)))
 		waitWitnessFile(t, dir, filepath.Join(dir, "release"))
 		return
 	}
@@ -328,6 +332,7 @@ func TestQuietCustodianRemovesItsLog(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(string(logPath)) })
 	waitWitnessFile(t, dir, string(logPath))
 	waitWitnessFile(t, dir, string(recordsPath))
+	custodianDeath := armWitnessDeath(t, custodian)
 	checkWitness(t, os.WriteFile(filepath.Join(dir, "release"), nil, 0o600))
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
@@ -338,7 +343,7 @@ func TestQuietCustodianRemovesItsLog(t *testing.T) {
 		output, _ := os.ReadFile(filepath.Join(dir, "owner.stderr"))
 		t.Fatalf("quiet owner exit: %v output=%q", err, output)
 	}
-	waitWitnessDead(t, dir, custodian)
+	waitWitnessDead(t, dir, custodianDeath)
 	_, logState := os.Lstat(string(logPath))
 	_, recordsState := os.Lstat(string(recordsPath))
 	if !os.IsNotExist(logState) || !os.IsNotExist(recordsState) {
@@ -433,6 +438,11 @@ func custodianWitness(t *testing.T, hard bool) {
 	custodian := waitWitnessCustodian(t, dir, owner.Ref())
 	t.Cleanup(func() { _ = SignalExact(KernelProber{}, custodian, syscall.SIGKILL) })
 	waitWitnessCustodianObserved(t, dir, string(logPath), refs...)
+	deaths := make([]witnessDeath, 0, len(refs)+1)
+	for _, ref := range refs {
+		deaths = append(deaths, armWitnessDeath(t, ref))
+	}
+	deaths = append(deaths, armWitnessDeath(t, custodian))
 	if hard {
 		checkWitness(t, os.WriteFile(filepath.Join(dir, "stop"), nil, 0o600))
 		waitWitnessFile(t, dir, filepath.Join(dir, "stopped"))
@@ -446,10 +456,9 @@ func custodianWitness(t *testing.T, hard bool) {
 		data, _ := os.ReadFile(filepath.Join(dir, "owner.stderr"))
 		return string(data)
 	})
-	for _, ref := range refs {
-		waitWitnessDead(t, dir, ref)
+	for _, death := range deaths {
+		waitWitnessDead(t, dir, death)
 	}
-	waitWitnessDead(t, dir, custodian)
 	log, err := os.ReadFile(string(logPath))
 	if err != nil {
 		t.Fatalf("read completed custodian log: %v log=%q", err, log)
@@ -472,17 +481,17 @@ func runWitnessOwner(t *testing.T, dir string) {
 	if err != nil || state != Alive {
 		t.Fatalf("probe owner: state=%s err=%v", state, err)
 	}
-	checkWitness(t, os.WriteFile(filepath.Join(dir, "ownerpid"), []byte(strconv.Itoa(os.Getpid())), 0o600))
+	checkWitness(t, publishWitnessPID(filepath.Join(dir, "ownerpid"), os.Getpid()))
 	word := fixtureWord(t, FixtureKey{Owner: exact.Ref(), Test: t.Name(), Nonce: "1234abcd"})
 	script := filepath.Join(dir, "detached.sh")
-	body := `if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"; [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"; shift; fi; printf %s $$ > "$1"; trap '' TERM; exec tail -f /dev/null`
+	body := `if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then tag="METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER"; [ "${1-}" = "$tag" ] || exec /bin/sh "$0" "$tag" "$@"; shift; fi; tmp="$1.tmp.$$"; printf %s $$ > "$tmp"; mv "$tmp" "$1"; trap '' TERM; exec tail -f /dev/null`
 	checkWitness(t, testexec.WriteFile(script, []byte(body), 0o700))
 	detached := exec.Command("/bin/sh", "-c", `exec /bin/sh "$1" "$2"`, "sh", script, filepath.Join(dir, "pid0"))
 	detached.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	commands := []*exec.Cmd{
 		detached,
-		exec.Command("/bin/sh", "-c", `printf %s $$ > "$2"; exec tail -f /dev/null`, "sh", word, filepath.Join(dir, "pid1")),
-		exec.Command("/bin/sh", "-c", `printf %s $$ > "$1"; exec tail -f /dev/null`, "sh", filepath.Join(dir, "pid2")),
+		exec.Command("/bin/sh", "-c", `tmp="$2.tmp.$$"; printf %s $$ > "$tmp"; mv "$tmp" "$2"; exec tail -f /dev/null`, "sh", word, filepath.Join(dir, "pid1")),
+		exec.Command("/bin/sh", "-c", `tmp="$1.tmp.$$"; printf %s $$ > "$tmp"; mv "$tmp" "$1"; exec tail -f /dev/null`, "sh", filepath.Join(dir, "pid2")),
 	}
 	commands[1].SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	registry := os.Getenv("METASYSTEM_SUPERVISION_REGISTRY_HOME")
@@ -583,17 +592,28 @@ func startWitnessCommand(t *testing.T, command *exec.Cmd, stderrPath string, cap
 func waitWitnessRef(t *testing.T, dir, path string, stderrPaths ...string) Ref {
 	t.Helper()
 	var result Ref
-	waitWitness(t, dir, "fixture child to publish "+filepath.Base(path), func() (bool, string) {
+	waitWitness(t, dir, "fixture child to publish "+filepath.Base(path), func() witnessEventSource {
+		return armWitnessFileEvent(t, path)
+	}, func() (bool, string) {
 		data, readErr := os.ReadFile(path)
+		if os.IsNotExist(readErr) {
+			return false, fmt.Sprintf("path=%s read=%v", path, readErr)
+		}
+		if readErr != nil {
+			t.Fatalf("read published pid %s: %v\n%s", path, readErr, witnessDiagnostics(dir, 0))
+		}
 		pid, parseErr := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+		if parseErr != nil {
+			t.Fatalf("parse published pid %s data=%q: %v\n%s", path, data, parseErr, witnessDiagnostics(dir, 0))
+		}
 		exact, state, probeErr := (KernelProber{}).Probe(pid)
 		observed := fmt.Sprintf("path=%s data=%q read=%v parse=%v pid=%d state=%s zombie=%t probe=%v",
 			path, data, readErr, parseErr, pid, state, exact.Zombie, probeErr)
-		if readErr == nil && parseErr == nil && probeErr == nil && state == Alive {
-			result = exact.Ref()
-			return true, observed
+		if probeErr != nil || state != Alive {
+			t.Fatalf("published pid was not alive: %s\n%s", observed, witnessDiagnostics(dir, 0))
 		}
-		return false, observed
+		result = exact.Ref()
+		return true, observed
 	})
 	checkWitness(t, recordWitnessRef(dir, filepath.Base(path), result))
 	return result
@@ -601,7 +621,9 @@ func waitWitnessRef(t *testing.T, dir, path string, stderrPaths ...string) Ref {
 
 func waitWitnessFile(t *testing.T, dir, path string) {
 	t.Helper()
-	waitWitness(t, dir, "file "+filepath.Base(path)+" to appear", func() (bool, string) {
+	waitWitness(t, dir, "file "+filepath.Base(path)+" to appear", func() witnessEventSource {
+		return armWitnessFileEvent(t, path)
+	}, func() (bool, string) {
 		info, err := os.Stat(path)
 		return err == nil, fmt.Sprintf("path=%s mode=%v error=%v", path, func() os.FileMode {
 			if info == nil {
@@ -614,39 +636,81 @@ func waitWitnessFile(t *testing.T, dir, path string) {
 
 func waitWitnessCustodian(t *testing.T, dir string, owner Ref) Ref {
 	t.Helper()
-	ownerValue, err := EncodeRef(owner)
-	checkWitness(t, err)
-	want := FixtureCustodianOwnerEnv + "=" + ownerValue
-	var result Ref
-	waitWitness(t, dir, fmt.Sprintf("fixture custodian for owner %d", owner.Pid), func() (bool, string) {
-		pids, enumerateErr := AllPids()
-		if enumerateErr != nil {
-			return false, "enumerate processes: " + enumerateErr.Error()
+	awaitOwnerPublication := func() {}
+	if owner.Pid != int64(os.Getpid()) {
+		awaitOwnerPublication = func() {
+			waitWitnessFile(t, dir, filepath.Join(dir, "ownerpid"))
 		}
-		observed := "no matching child"
-		for _, pid := range pids {
-			parent, known := ParentPid(pid)
-			if !known || parent != owner.Pid {
-				continue
-			}
-			exact, state, probeErr := (KernelProber{}).Probe(pid)
-			observed = fmt.Sprintf("pid=%d ppid=%d state=%s zombie=%t environ-known=%t err=%v",
-				pid, parent, state, exact.Zombie, exact.EnvironKnown, probeErr)
-			if probeErr == nil && state == Alive && exact.EnvironKnown && slices.Contains(exact.Environ, want) {
-				result = exact.Ref()
-				return true, observed
-			}
-		}
-		return false, observed
+	}
+	result, observed, err := witnessCustodianAfterOwnerPublication(awaitOwnerPublication, func() (Ref, string, error) {
+		return censusWitnessCustodian(owner)
 	})
+	if err != nil {
+		t.Fatalf("find fixture custodian for owner %d: %v; observation=%s\n%s",
+			owner.Pid, err, observed, witnessDiagnostics(dir, 0))
+	}
 	checkWitness(t, recordWitnessRef(dir, "custodian", result))
 	return result
+}
+
+func witnessCustodianAfterOwnerPublication(
+	awaitOwnerPublication func(),
+	census func() (Ref, string, error),
+) (Ref, string, error) {
+	awaitOwnerPublication()
+	return census()
+}
+
+func censusWitnessCustodian(owner Ref) (Ref, string, error) {
+	ownerValue, err := EncodeRef(owner)
+	if err != nil {
+		return Ref{}, "owner reference could not be encoded", err
+	}
+	want := FixtureCustodianOwnerEnv + "=" + ownerValue
+	pids, err := AllPids()
+	if err != nil {
+		return Ref{}, "enumerate processes", err
+	}
+	observed := "no matching child"
+	for _, pid := range pids {
+		parent, known := ParentPid(pid)
+		if !known || parent != owner.Pid {
+			continue
+		}
+		exact, state, probeErr := (KernelProber{}).Probe(pid)
+		observed = fmt.Sprintf("pid=%d ppid=%d state=%s zombie=%t environ-known=%t err=%v",
+			pid, parent, state, exact.Zombie, exact.EnvironKnown, probeErr)
+		if probeErr == nil && state == Alive && exact.EnvironKnown && slices.Contains(exact.Environ, want) {
+			return exact.Ref(), observed, nil
+		}
+	}
+	return Ref{}, observed, errors.New("one census found no matching live custodian")
+}
+
+func TestWitnessCustodianCensusWaitsForOwnerPublication(t *testing.T) {
+	t.Parallel()
+
+	published := false
+	want := fixtureExact(703, 73).Ref()
+	got, _, err := witnessCustodianAfterOwnerPublication(func() {
+		published = true
+	}, func() (Ref, string, error) {
+		if !published {
+			return Ref{}, "census before owner publication", errors.New("census ran before owner publication")
+		}
+		return want, "matching child", nil
+	})
+	if err != nil || got != want {
+		t.Fatalf("custodian after publication=%+v err=%v, want %+v", got, err, want)
+	}
 }
 
 func waitWitnessLog(t *testing.T, dir, path, want string) []byte {
 	t.Helper()
 	var result []byte
-	waitWitness(t, dir, fmt.Sprintf("custodian log to contain %q", want), func() (bool, string) {
+	waitWitness(t, dir, fmt.Sprintf("custodian log to contain %q", want), func() witnessEventSource {
+		return armWitnessFileEvent(t, path)
+	}, func() (bool, string) {
 		data, err := os.ReadFile(path)
 		result = data
 		return err == nil && strings.Contains(string(data), want), fmt.Sprintf("path=%s read=%v content=%q", path, err, data)
@@ -656,7 +720,9 @@ func waitWitnessLog(t *testing.T, dir, path, want string) []byte {
 
 func waitWitnessCustodianObserved(t *testing.T, dir, path string, refs ...Ref) {
 	t.Helper()
-	waitWitness(t, dir, "custodian to observe every fixture descendant", func() (bool, string) {
+	waitWitness(t, dir, "custodian to observe every fixture descendant", func() witnessEventSource {
+		return armWitnessFileEvent(t, path)
+	}, func() (bool, string) {
 		data, err := os.ReadFile(path)
 		missing := missingCustodianObservations(data, refs)
 		return err == nil && len(missing) == 0, fmt.Sprintf("path=%s read=%v missing=%q content=%q", path, err, missing, data)
@@ -696,15 +762,48 @@ func TestWitnessRequiresCustodianObservationOfEveryChild(t *testing.T) {
 	}
 }
 
-func waitWitnessDead(t *testing.T, dir string, ref Ref) {
+type witnessDeath struct {
+	ref   Ref
+	event witnessEventSource
+}
+
+func armWitnessDeath(t *testing.T, ref Ref) witnessDeath {
 	t.Helper()
+	return witnessDeath{ref: ref, event: armWitnessDeathEvent(t, ref)}
+}
+
+func witnessIdentityReleased(ref Ref) (bool, string) {
+	exact, state, err := (KernelProber{}).Probe(ref.Pid)
+	refState := state
+	if state == Alive {
+		comparison := Compare(exact, ref)
+		switch {
+		case comparison.Mode == CompareInvalid:
+			refState = Unknown
+		case !comparison.Matches:
+			refState = Dead
+		}
+	}
+	// A zombie has exited; only its parent owns the reap. Linux does not
+	// report that reap to a process that is not the parent.
+	released := fixtureCustodianIdentityReleased(exact, state, err, ref)
+	return released, fmt.Sprintf("pid=%d exact-state=%s ref-state=%s same=%t zombie=%t probe=%v",
+		ref.Pid, state, refState, SameIdentity(exact, ref), exact.Zombie, err)
+}
+
+func waitWitnessDead(t *testing.T, dir string, death witnessDeath) {
+	t.Helper()
+	ref := death.ref
 	checkWitness(t, recordWitnessRef(dir, fmt.Sprintf("wait-dead-%d", ref.Pid), ref))
-	waitWitness(t, dir, fmt.Sprintf("process %d to die", ref.Pid), func() (bool, string) {
-		exact, state, err := (KernelProber{}).Probe(ref.Pid)
-		alive := AliveRef(KernelProber{}, ref)
-		return alive == Dead, fmt.Sprintf("pid=%d exact-state=%s ref-state=%s same=%t zombie=%t probe=%v",
-			ref.Pid, state, alive, SameIdentity(exact, ref), exact.Zombie, err)
+	waitWitness(t, dir, fmt.Sprintf("process %d to die", ref.Pid), func() witnessEventSource {
+		return death.event
+	}, func() (bool, string) {
+		return witnessIdentityReleased(ref)
 	})
+}
+
+func publishWitnessPID(path string, pid int) error {
+	return publishWitnessFile(path, []byte(strconv.Itoa(pid)), 0o600)
 }
 
 func waitWitnessCommand(t *testing.T, dir string, command *exec.Cmd, done <-chan error, output func() string) error {
@@ -772,51 +871,40 @@ func TestWitnessCommandTimeoutCapturesStateBeforeKill(t *testing.T) {
 	}
 }
 
-func waitWitness(t *testing.T, dir, want string, observe func() (bool, string)) {
+func waitWitness(t *testing.T, dir, want string, arm func() witnessEventSource, observe func() (bool, string)) {
 	t.Helper()
-	bound := witnessKernelBound(witnessCustodianPoll, witnessCustodianBound)
-	waitWitnessWithClock(dir, want, bound, witnessCustodianPoll/5, time.Now, time.Sleep, observe, func(message string) {
+	started := time.Now()
+	waitWitnessWithClock(dir, want, arm, func() time.Duration {
+		return time.Since(started)
+	}, observe, func(message string) {
 		t.Fatal(message)
-	})
+	}, os.Stderr)
 }
 
 func waitWitnessWithClock(
 	dir, want string,
-	bound, poll time.Duration,
-	now func() time.Time,
-	sleep func(time.Duration),
+	arm func() witnessEventSource,
+	elapsed func() time.Duration,
 	observe func() (bool, string),
 	fail func(string),
+	writer io.Writer,
 ) {
-	started := now()
-	deadline := started.Add(bound)
-	lastSnapshot := ""
-	var timeline []string
-	for {
-		done, observed := observe()
-		checkedAt := now()
-		snapshot := observed + "; " + witnessProcessStates(dir)
-		if snapshot != lastSnapshot {
-			timeline = append(timeline, fmt.Sprintf("+%s %s", checkedAt.Sub(started).Round(time.Millisecond), snapshot))
-			if len(timeline) > 64 {
-				timeline = append([]string{"(earlier observations omitted)"}, timeline[len(timeline)-63:]...)
-			}
-			lastSnapshot = snapshot
-		}
-		if done {
-			return
-		}
-		if !checkedAt.Before(deadline) {
-			elapsed := checkedAt.Sub(started)
-			fail(fmt.Sprintf("timed out waiting for %s after %s (bound %s)\nobservations:\n%s\n%s",
-				want, elapsed, bound, strings.Join(timeline, "\n"), witnessDiagnostics(dir, elapsed)))
-			return
-		}
-		pause := poll
-		if remaining := deadline.Sub(checkedAt); remaining < pause {
-			pause = remaining
-		}
-		sleep(pause)
+	waitForWitnessEvent(want, arm, observe, elapsed, func(name string, observations []string, label time.Duration) {
+		writeWitnessSnapshot(writer, dir, name, observations, label)
+	}, fail)
+}
+
+func writeWitnessSnapshot(writer io.Writer, dir, want string, observations []string, elapsed time.Duration) {
+	lines := []string{
+		"wait=" + want,
+		fmt.Sprintf("elapsed-label=%s", elapsed),
+	}
+	for index, observation := range observations {
+		lines = append(lines, fmt.Sprintf("observation[%d]=%s", index, observation))
+	}
+	lines = append(lines, strings.Split(witnessDiagnostics(dir, elapsed), "\n")...)
+	for _, line := range lines {
+		_, _ = fmt.Fprintln(writer, "witness-wait: "+line)
 	}
 }
 
@@ -909,26 +997,30 @@ func TestWaitWitnessFailureIncludesLogStatesAndElapsed(t *testing.T) {
 	logPath := filepath.Join(dir, "custodian.log")
 	checkWitness(t, os.WriteFile(logPath, []byte("wait diagnostic log"), 0o600))
 	checkWitness(t, os.WriteFile(filepath.Join(dir, "logpath"), []byte(logPath), 0o600))
-	started := time.Unix(100, 0)
-	nowCalls := 0
+	var snapshots strings.Builder
+	terminal := errors.New("scripted terminal watch error")
 	var failure string
-	waitWitnessWithClock(dir, "test fact", 2*time.Second, time.Millisecond, func() time.Time {
-		nowCalls++
-		if nowCalls == 1 {
-			return started
-		}
-		return started.Add(2 * time.Second)
-	}, func(time.Duration) {
-		t.Fatal("timed-out artificial wait slept")
+	waitWitnessWithClock(dir, "test fact", func() witnessEventSource {
+		return witnessEventFunc(func() error {
+			if !strings.Contains(snapshots.String(), "observation[0]=still alive") {
+				return errors.New("event blocked before initial snapshot")
+			}
+			return terminal
+		})
+	}, func() time.Duration {
+		return 2 * time.Second
 	}, func() (bool, string) {
 		return false, "still alive"
 	}, func(message string) {
 		failure = message
-	})
-	for _, want := range []string{"test fact after 2s", "bound 2s", "state=alive", "wait diagnostic log"} {
-		if !strings.Contains(failure, want) {
-			t.Fatalf("wait failure %q omits %q", failure, want)
+	}, &snapshots)
+	for _, want := range []string{"wait=test fact", "elapsed-label=2s", "state=alive", "wait diagnostic log", terminal.Error()} {
+		if !strings.Contains(snapshots.String(), want) {
+			t.Fatalf("wait snapshots %q omit %q; failure=%q", snapshots.String(), want, failure)
 		}
+	}
+	if !strings.Contains(failure, terminal.Error()) {
+		t.Fatalf("wait failure %q omits %q", failure, terminal)
 	}
 }
 

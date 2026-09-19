@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,13 +41,14 @@ type walltimeAllowance struct {
 type walltimeCall struct {
 	name     string
 	position token.Position
+	called   bool
 }
 
-// TestNoTestWaitsOnWallTime forbids tests from using time.Sleep, time.After,
-// time.AfterFunc, time.NewTimer, time.NewTicker, time.Tick,
-// context.WithTimeout, or context.WithDeadline to wait for a condition. Set
-// WALLTIME_ALLOWANCE_UPDATE=1 to rewrite the allowance after removing a call;
-// update mode always fails so the rewritten file must be reviewed.
+// TestNoTestWaitsOnWallTime counts calls and function values that reference
+// time.Sleep, time.After, time.AfterFunc, time.NewTimer, time.NewTicker,
+// time.Tick, context.WithTimeout, or context.WithDeadline. Set
+// WALLTIME_ALLOWANCE_UPDATE=1 to rewrite the allowance after removing a
+// reference; update mode always fails so the rewritten file must be reviewed.
 func TestNoTestWaitsOnWallTime(t *testing.T) {
 	t.Parallel()
 
@@ -124,8 +126,15 @@ func findTestWalltimeCalls(root string) (map[string][]walltimeCall, error) {
 			return err
 		}
 		aliases := make(map[string]string)
+		dotNames := make(map[string]string)
 		for importPath := range guardedWalltimeCalls {
 			for alias := range importedAliases(file, importPath, importPath) {
+				if alias == "." {
+					for name := range guardedWalltimeCalls[importPath] {
+						dotNames[name] = importPath
+					}
+					continue
+				}
 				aliases[alias] = importPath
 			}
 		}
@@ -134,27 +143,50 @@ func findTestWalltimeCalls(root string) (map[string][]walltimeCall, error) {
 			return err
 		}
 		relative = filepath.ToSlash(relative)
+		callees := make(map[token.Pos]bool)
+		selectorNames := make(map[token.Pos]bool)
 		ast.Inspect(file, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
+			switch expression := node.(type) {
+			case *ast.CallExpr:
+				if position := walltimeReferencePosition(expression.Fun); position.IsValid() {
+					callees[position] = true
+				}
+			case *ast.SelectorExpr:
+				selectorNames[expression.Sel.Pos()] = true
 			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
+			return true
+		})
+		ast.Inspect(file, func(node ast.Node) bool {
+			switch reference := node.(type) {
+			case *ast.SelectorExpr:
+				identifier, ok := reference.X.(*ast.Ident)
+				if !ok || identifier.Obj != nil {
+					return true
+				}
+				importPath, ok := aliases[identifier.Name]
+				if !ok || !guardedWalltimeCalls[importPath][reference.Sel.Name] {
+					return true
+				}
+				callsByPath[relative] = append(callsByPath[relative], walltimeCall{
+					name:     importPath + "." + reference.Sel.Name,
+					position: fileSet.Position(reference.Sel.Pos()),
+					called:   callees[reference.Sel.Pos()],
+				})
 				return true
+			case *ast.Ident:
+				if reference.Obj != nil || selectorNames[reference.Pos()] {
+					return true
+				}
+				importPath, ok := dotNames[reference.Name]
+				if !ok || !guardedWalltimeCalls[importPath][reference.Name] {
+					return true
+				}
+				callsByPath[relative] = append(callsByPath[relative], walltimeCall{
+					name:     importPath + "." + reference.Name,
+					position: fileSet.Position(reference.Pos()),
+					called:   callees[reference.Pos()],
+				})
 			}
-			identifier, ok := selector.X.(*ast.Ident)
-			if !ok {
-				return true
-			}
-			importPath, ok := aliases[identifier.Name]
-			if !ok || !guardedWalltimeCalls[importPath][selector.Sel.Name] {
-				return true
-			}
-			callsByPath[relative] = append(callsByPath[relative], walltimeCall{
-				name:     importPath + "." + selector.Sel.Name,
-				position: fileSet.Position(selector.Sel.Pos()),
-			})
 			return true
 		})
 		return nil
@@ -168,6 +200,72 @@ func findTestWalltimeCalls(root string) (map[string][]walltimeCall, error) {
 		})
 	}
 	return callsByPath, nil
+}
+
+func walltimeReferencePosition(expression ast.Expr) token.Pos {
+	for {
+		parenthesized, ok := expression.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expression = parenthesized.X
+	}
+	switch reference := expression.(type) {
+	case *ast.SelectorExpr:
+		return reference.Sel.Pos()
+	case *ast.Ident:
+		return reference.Pos()
+	default:
+		return token.NoPos
+	}
+}
+
+func TestWalltimeCounterIncludesFunctionValues(t *testing.T) {
+	t.Parallel()
+
+	const source = `package fixture
+import (
+	. "context"
+	tm "time"
+	"time"
+)
+func fixture() {
+	time.Sleep(0)
+	_ = time.After
+	_ = tm.NewTimer
+	(time.Tick)(0)
+	_ = WithDeadline
+	time := struct{ Sleep func(int) }{}
+	_ = time.Sleep
+}
+`
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "fixture_test.go"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	callsByPath, err := findTestWalltimeCalls(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := callsByPath["fixture_test.go"]
+	got := make([]string, 0, len(calls))
+	for _, call := range calls {
+		name := call.name
+		if !call.called {
+			name += " (value)"
+		}
+		got = append(got, fmt.Sprintf("%s:%d", name, call.position.Line))
+	}
+	want := []string{
+		"time.Sleep:8",
+		"time.After (value):9",
+		"time.NewTimer (value):10",
+		"time.Tick:11",
+		"context.WithDeadline (value):12",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("wall-time references=%q, want %q", got, want)
+	}
 }
 
 func readWalltimeAllowances(path, root string) (map[string]walltimeAllowance, []string) {
@@ -251,7 +349,11 @@ func describeWalltimeCalls(path string, calls []walltimeCall) string {
 	}
 	lines := make([]string, 0, len(calls))
 	for _, call := range calls {
-		lines = append(lines, fmt.Sprintf("  %s:%d: %s", path, call.position.Line, call.name))
+		name := call.name
+		if !call.called {
+			name += " (value)"
+		}
+		lines = append(lines, fmt.Sprintf("  %s:%d: %s", path, call.position.Line, name))
 	}
 	return strings.Join(lines, "\n")
 }
