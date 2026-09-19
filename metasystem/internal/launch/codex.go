@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -18,6 +19,9 @@ type Process struct {
 	Argv []string
 }
 type ProcessScanner interface{ Scan() ([]Process, error) }
+type ProcessSignaler interface {
+	Signal(int64, syscall.Signal) error
+}
 type KernelProcessScanner struct{ Prober identity.Prober }
 
 func (scanner KernelProcessScanner) Scan() ([]Process, error) {
@@ -289,6 +293,51 @@ func (adapter CodexExec) Strays() ([]string, error) {
 	}
 	return lines, nil
 }
+
+func (adapter CodexExec) ReapIdleBrokers(prober identity.Prober, signaler ProcessSignaler) ([]string, error) {
+	processes, err := adapter.Scanner.Scan()
+	if err != nil {
+		return nil, err
+	}
+	companions := map[string]bool{}
+	for _, process := range processes {
+		if hasScript(process.Argv, "codex-companion.mjs") {
+			companions[flagValue(process.Argv, "--cwd")] = true
+		}
+	}
+	var lines []string
+	for _, process := range processes {
+		if !hasScriptCommand(process.Argv, "app-server-broker.mjs", "serve") {
+			continue
+		}
+		cwd := flagValue(process.Argv, "--cwd")
+		if companions[cwd] {
+			continue
+		}
+		if prober == nil || identity.AliveRef(prober, process.Ref) != identity.Alive {
+			lines = append(lines, fmt.Sprintf("skipped idle-plugin-broker pid=%d: identity changed", process.Ref.Pid))
+			continue
+		}
+		if signaler == nil {
+			return lines, fmt.Errorf("signal idle-plugin-broker pid %d: process signaler is unavailable", process.Ref.Pid)
+		}
+		if err := signaler.Signal(process.Ref.Pid, syscall.SIGTERM); err != nil {
+			return lines, fmt.Errorf("signal idle-plugin-broker pid %d: %w", process.Ref.Pid, err)
+		}
+		lines = append(lines, fmt.Sprintf("reaped idle-plugin-broker pid=%d cwd=%s", process.Ref.Pid, cwd))
+	}
+	return lines, nil
+}
+
+func hasScript(argv []string, script string) bool {
+	for _, value := range argv {
+		if strings.HasSuffix(value, "/"+script) || value == script {
+			return true
+		}
+	}
+	return false
+}
+
 func hasScriptCommand(argv []string, script, command string) bool {
 	for index, value := range argv {
 		if strings.HasSuffix(value, "/"+script) || value == script {

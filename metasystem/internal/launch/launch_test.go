@@ -2,6 +2,7 @@ package launch
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"path/filepath"
@@ -248,6 +249,103 @@ func TestStatusReconcilesALostSupervisor(t *testing.T) {
 type scan []Process
 
 func (s scan) Scan() ([]Process, error) { return s, nil }
+
+type recordingSignaler struct {
+	pids    []int64
+	signals []syscall.Signal
+	err     error
+}
+
+func (s *recordingSignaler) Signal(pid int64, signal syscall.Signal) error {
+	s.pids = append(s.pids, pid)
+	s.signals = append(s.signals, signal)
+	return s.err
+}
+
+func TestCensusReapOnlySignalsBrokersWithoutAnyCompanion(t *testing.T) {
+	t.Parallel()
+	m, _, probe, _ := manager(t)
+	processes := scan{
+		{Ref: ref(40), Argv: []string{"node", "/p/app-server-broker.mjs", "serve", "--cwd", "/idle"}},
+		{Ref: ref(41), Argv: []string{"node", "/p/app-server-broker.mjs", "serve", "--cwd", "/worker"}},
+		{Ref: ref(42), Argv: []string{"node", "/p/app-server-broker.mjs", "serve", "--cwd", "/foreground"}},
+		{Ref: ref(43), Argv: []string{"node", "/p/codex-companion.mjs", "task-worker", "--cwd", "/worker"}},
+		{Ref: ref(44), Argv: []string{"node", "/p/codex-companion.mjs", "task", "--cwd", "/foreground"}},
+	}
+	for pid := int64(40); pid <= 44; pid++ {
+		probe.states[pid] = identity.Alive
+	}
+	signaler := &recordingSignaler{}
+	m.Signaler = signaler
+	m.Adapters["codex-exec"] = CodexExec{Scanner: processes}
+	lines, err := m.Census(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(signaler.pids, []int64{40}) || !slices.Equal(signaler.signals, []syscall.Signal{syscall.SIGTERM}) {
+		t.Fatalf("signalled pids=%v signals=%v", signaler.pids, signaler.signals)
+	}
+	if got := strings.Join(lines, "\n"); got != "reaped idle-plugin-broker pid=40 cwd=/idle" {
+		t.Fatalf("reap output=%q", got)
+	}
+}
+
+type changedIdentityProber struct{}
+
+func (changedIdentityProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	return identity.Exact{Pid: pid, StartedAt: time.Unix(pid+1, 0)}, identity.Alive, nil
+}
+
+func TestCensusReapSkipsChangedIdentity(t *testing.T) {
+	t.Parallel()
+	m, _, _, _ := manager(t)
+	signaler := &recordingSignaler{}
+	m.Prober = changedIdentityProber{}
+	m.Signaler = signaler
+	m.Adapters["codex-exec"] = CodexExec{Scanner: scan{{Ref: ref(50), Argv: []string{"node", "app-server-broker.mjs", "serve", "--cwd", "/moved"}}}}
+	lines, err := m.Census(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(signaler.pids) != 0 || !slices.Equal(lines, []string{"skipped idle-plugin-broker pid=50: identity changed"}) {
+		t.Fatalf("signals=%v lines=%v", signaler.pids, lines)
+	}
+}
+
+func TestCensusWithoutReapSignalsNothing(t *testing.T) {
+	t.Parallel()
+	m, _, probe, _ := manager(t)
+	probe.states[60], probe.states[61], probe.states[62] = identity.Alive, identity.Alive, identity.Alive
+	signaler := &recordingSignaler{}
+	m.Signaler = signaler
+	m.Adapters["codex-exec"] = CodexExec{Scanner: scan{
+		{Ref: ref(60), Argv: []string{"node", "app-server-broker.mjs", "serve", "--cwd", "/foreground"}},
+		{Ref: ref(61), Argv: []string{"node", "codex-companion.mjs", "task", "--cwd", "/foreground"}},
+		{Ref: ref(62), Argv: []string{"node", "app-server-broker.mjs", "serve", "--cwd", "/idle"}},
+	}}
+	lines, err := m.Census()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"idle-plugin-broker pid=60 cwd=/foreground", "idle-plugin-broker pid=62 cwd=/idle"}
+	if len(signaler.pids) != 0 || !slices.Equal(lines, want) {
+		t.Fatalf("signals=%v lines=%v", signaler.pids, lines)
+	}
+}
+
+func TestCensusReapNamesSignalFailure(t *testing.T) {
+	t.Parallel()
+	m, _, probe, _ := manager(t)
+	probe.states[70] = identity.Alive
+	signaler := &recordingSignaler{err: errors.New("permission denied")}
+	m.Signaler = signaler
+	m.Adapters["codex-exec"] = CodexExec{Scanner: scan{{Ref: ref(70), Argv: []string{"node", "app-server-broker.mjs", "serve", "--cwd", "/idle"}}}}
+	_, err := m.Census(true)
+	if err == nil || !strings.Contains(err.Error(), "pid 70") || len(signaler.pids) != 1 {
+		t.Fatalf("signals=%v err=%v", signaler.pids, err)
+	}
+}
+
 func TestCensusNamesOrphansAndIdleBrokers(t *testing.T) {
 	m, p, probe, _ := manager(t)
 	seed(t, m, "orphan", Running)

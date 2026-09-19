@@ -104,6 +104,9 @@ func (OSProcesses) SignalGroup(pgid int64, signal syscall.Signal) error {
 	}
 	return err
 }
+func (OSProcesses) Signal(pid int64, signal syscall.Signal) error {
+	return syscall.Kill(int(pid), signal)
+}
 func (OSProcesses) GroupAlive(pgid int64) (bool, error) {
 	err := syscall.Kill(-int(pgid), 0)
 	switch {

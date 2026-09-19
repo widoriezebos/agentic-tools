@@ -47,6 +47,7 @@ type Manager struct {
 	Adapters          map[string]Adapter
 	TemplateDirectory string
 	Processes         ProcessSystem
+	Signaler          ProcessSignaler
 	Prober            identity.Prober
 	Supervisor        SupervisorStarter
 	Now               func() time.Time
@@ -472,7 +473,8 @@ func (m *Manager) provenDead(record Record) bool {
 	alive, err := m.Processes.GroupAlive(record.ProcessGroup.Pid)
 	return err == nil && !alive
 }
-func (m *Manager) Census() ([]string, error) {
+func (m *Manager) Census(reapValues ...bool) ([]string, error) {
+	reap := len(reapValues) > 0 && reapValues[0]
 	records, err := m.Store.List()
 	if err != nil {
 		return nil, err
@@ -494,7 +496,11 @@ func (m *Manager) Census() ([]string, error) {
 	for _, adapter := range m.Adapters {
 		var strays []string
 		var strayErr error
-		if aware, ok := adapter.(interface {
+		if reaper, ok := adapter.(interface {
+			ReapIdleBrokers(identity.Prober, ProcessSignaler) ([]string, error)
+		}); reap && ok {
+			strays, strayErr = reaper.ReapIdleBrokers(m.Prober, m.Signaler)
+		} else if aware, ok := adapter.(interface {
 			StraysFor([]Record) ([]string, error)
 		}); ok {
 			strays, strayErr = aware.StraysFor(records)
