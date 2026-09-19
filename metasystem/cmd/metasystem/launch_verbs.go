@@ -218,6 +218,12 @@ func runLaunchSettings(args []string) int {
 		return 1
 	}
 	values := append([]launch.Setting{}, settings.Values...)
+	shipped, err := launch.LoadShippedSeatWindow(filepath.Dir(confPath), settings.SeatWindow)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "launch settings:", err)
+		return 1
+	}
+	values = append(values, launch.Setting{Key: launch.ShippedSeatWindowKey, Value: strconv.FormatInt(shipped.Tokens, 10), Source: shipped.Source, ShippedDiffersFromConf: &shipped.DiffersFromConf})
 	for _, definition := range []struct {
 		key      string
 		fallback int64
@@ -240,7 +246,11 @@ func runLaunchSettings(args []string) int {
 		return 0
 	}
 	for _, value := range values {
-		fmt.Printf("%s=%s source=%s\n", value.Key, value.Value, value.Source)
+		suffix := ""
+		if value.ShippedDiffersFromConf != nil && *value.ShippedDiffersFromConf {
+			suffix = " shipped-differs-from-conf"
+		}
+		fmt.Printf("%s=%s source=%s%s\n", value.Key, value.Value, value.Source, suffix)
 	}
 	return 0
 }

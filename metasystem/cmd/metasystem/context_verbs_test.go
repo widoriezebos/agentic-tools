@@ -252,8 +252,9 @@ func TestContextStatusNamesTheWindowAndItsSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeShippedSeatWindow(t, root, 210000, true)
 	code, output, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root}) })
-	if code != 0 || problem != "" || !strings.Contains(output, "\nwindow: 210000 tokens (launch.seat.window.tokens, conf); ceiling: 250000 tokens (context.ceiling.tokens, conf); ceiling-above-window\n") {
+	if code != 0 || problem != "" || !strings.Contains(output, "\nwindow: 210000 tokens (launch.seat.window.tokens, conf); ceiling: 250000 tokens (context.ceiling.tokens, conf); ceiling-above-window; shipped: 210000 (claude-code-hooks.json)\n") {
 		t.Fatalf("code=%d output=%q problem=%q", code, output, problem)
 	}
 	code, structured, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root, "--json"}) })
@@ -261,7 +262,20 @@ func TestContextStatusNamesTheWindowAndItsSource(t *testing.T) {
 	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if code != 0 || problem != "" || decoded.Window.Tokens != 210000 || decoded.Window.Source != "conf" || !decoded.Window.CeilingAboveWindow {
+	if code != 0 || problem != "" || decoded.Window.Tokens != 210000 || decoded.Window.Source != "conf" || !decoded.Window.CeilingAboveWindow || decoded.Window.Shipped != 210000 || decoded.Window.ShippedSource != "scripts/enforcement/claude-code-hooks.json" || decoded.Window.ShippedDiffersFromConf {
+		t.Fatalf("decoded=%+v code=%d problem=%q", decoded.Window, code, problem)
+	}
+	writeShippedSeatWindow(t, root, 200000, true)
+	code, output, problem = captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root}) })
+	if code != 0 || problem != "" || !strings.Contains(output, "; shipped: 200000 (claude-code-hooks.json) shipped-differs-from-conf\n") {
+		t.Fatalf("code=%d output=%q problem=%q", code, output, problem)
+	}
+	code, structured, problem = captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root, "--json"}) })
+	decoded = contextStatusOutput{}
+	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 || problem != "" || decoded.Window.Shipped != 200000 || decoded.Window.ShippedSource != "scripts/enforcement/claude-code-hooks.json" || !decoded.Window.ShippedDiffersFromConf {
 		t.Fatalf("decoded=%+v code=%d problem=%q", decoded.Window, code, problem)
 	}
 }

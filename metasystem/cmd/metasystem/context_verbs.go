@@ -28,13 +28,16 @@ type contextStatusOutput struct {
 }
 
 type contextWindowView struct {
-	Tokens             int64  `json:"tokens"`
-	Key                string `json:"key"`
-	Source             string `json:"source"`
-	Ceiling            int64  `json:"ceiling"`
-	CeilingKey         string `json:"ceilingKey"`
-	CeilingSource      string `json:"ceilingSource"`
-	CeilingAboveWindow bool   `json:"ceilingAboveWindow"`
+	Tokens                 int64  `json:"tokens"`
+	Key                    string `json:"key"`
+	Source                 string `json:"source"`
+	Ceiling                int64  `json:"ceiling"`
+	CeilingKey             string `json:"ceilingKey"`
+	CeilingSource          string `json:"ceilingSource"`
+	CeilingAboveWindow     bool   `json:"ceilingAboveWindow"`
+	Shipped                int64  `json:"shipped"`
+	ShippedSource          string `json:"shippedSource"`
+	ShippedDiffersFromConf bool   `json:"shippedDiffersFromConf"`
 }
 
 type contextReadingView struct {
@@ -154,13 +157,21 @@ func contextWindow(root string) (contextWindowView, error) {
 	if err != nil {
 		return contextWindowView{}, err
 	}
-	return contextWindowView{Tokens: settings.SeatWindow, Key: launch.SeatWindowKey, Source: windowSource, Ceiling: budget.Ceiling, CeilingKey: config.ContextCeilingTokensKey, CeilingSource: ceilingSource, CeilingAboveWindow: budget.Ceiling > settings.SeatWindow}, nil
+	shipped, err := launch.LoadShippedSeatWindow(root, settings.SeatWindow)
+	if err != nil {
+		return contextWindowView{}, err
+	}
+	return contextWindowView{Tokens: settings.SeatWindow, Key: launch.SeatWindowKey, Source: windowSource, Ceiling: budget.Ceiling, CeilingKey: config.ContextCeilingTokensKey, CeilingSource: ceilingSource, CeilingAboveWindow: budget.Ceiling > settings.SeatWindow, Shipped: shipped.Tokens, ShippedSource: shipped.Source, ShippedDiffersFromConf: shipped.DiffersFromConf}, nil
 }
 
 func windowLine(window contextWindowView) string {
 	line := fmt.Sprintf("window: %d tokens (%s, %s); ceiling: %d tokens (%s, %s)", window.Tokens, window.Key, window.Source, window.Ceiling, window.CeilingKey, window.CeilingSource)
 	if window.CeilingAboveWindow {
 		line += "; ceiling-above-window"
+	}
+	line += fmt.Sprintf("; shipped: %d (claude-code-hooks.json)", window.Shipped)
+	if window.ShippedDiffersFromConf {
+		line += " shipped-differs-from-conf"
 	}
 	return line
 }

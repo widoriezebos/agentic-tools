@@ -74,6 +74,28 @@ func hostHookFixture(t *testing.T, name string) string {
 	return string(contents)
 }
 
+func TestSetupPassesShippedSeatWindowThroughClaudeTransform(t *testing.T) {
+	t.Parallel()
+	repo, _ := hostFixture(t, true)
+	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if settings["autoCompactWindow"] != float64(200000) {
+		t.Fatalf("generated autoCompactWindow=%v, want 200000", settings["autoCompactWindow"])
+	}
+	if _, present := settings["_comment"]; present {
+		t.Fatal("the generated Claude settings retained the source comment")
+	}
+}
+
 func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *testing.T) {
 	repo, _ := hostFixture(t, true)
 	writeHostFile(t, filepath.Join(repo, "AGENTS.md"), "application instructions\n", 0o600)

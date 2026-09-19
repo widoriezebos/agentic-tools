@@ -61,3 +61,19 @@ func TestTrackedConfCarriesEveryLaunchKey(t *testing.T) {
 		}
 	}
 }
+
+func TestShippedSeatWindowMatchesTrackedConf(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join("..", "..")
+	settings, err := ResolveSettings(filepath.Join(root, "metasystem.conf"), func(string) (string, bool) { return "", false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	shipped, err := LoadShippedSeatWindow(root, settings.SeatWindow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shipped.Tokens != settings.SeatWindow {
+		t.Fatalf("shipped autoCompactWindow=%d differs from %s=%d", shipped.Tokens, SeatWindowKey, settings.SeatWindow)
+	}
+}

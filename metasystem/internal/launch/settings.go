@@ -1,7 +1,10 @@
 package launch
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -24,10 +27,19 @@ const (
 	DesignBaselineTokensKey     = "launch.design.baseline.tokens"
 	DesignBaselineRequestsKey   = "launch.design.baseline.requests"
 	DesignBaselinePeakTokensKey = "launch.design.baseline.peak.tokens"
+	ShippedSeatWindowKey        = "launch.seat.window.shipped"
+	ShippedClaudeSettingsSource = "scripts/enforcement/claude-code-hooks.json"
 )
 
 type Setting struct {
-	Key, Value, Source string
+	Key, Value, Source     string
+	ShippedDiffersFromConf *bool `json:"shippedDiffersFromConf,omitempty"`
+}
+
+type ShippedSeatWindow struct {
+	Tokens          int64
+	Source          string
+	DiffersFromConf bool
 }
 
 type Settings struct {
@@ -41,14 +53,35 @@ type Settings struct {
 }
 
 var settingDefaults = []Setting{
-	{SeatWindowKey, "200000", "default"}, {BuildWindowKey, "200000", "default"},
-	{DesignWindowKey, "200000", "default"}, {ReadWindowKey, "400000", "default"},
-	{BuildModelKey, "gpt-5.6-sol", "default"}, {BuildEffortKey, "xhigh", "default"},
-	{DesignModelKey, "claude-fable-5-1", "default"}, {ReadModelKey, "claude-opus-5", "default"},
-	{WaitCapKey, "240", "default"}, {BriefCapKey, "120000", "default"},
-	{BuildLinesCapKey, "1500", "default"}, {ReadSplitLinesKey, "1200", "default"},
-	{DesignBaselineTokensKey, "2432374", "default"}, {DesignBaselineRequestsKey, "28", "default"},
-	{DesignBaselinePeakTokensKey, "163000", "default"},
+	{Key: SeatWindowKey, Value: "200000", Source: "default"}, {Key: BuildWindowKey, Value: "200000", Source: "default"},
+	{Key: DesignWindowKey, Value: "200000", Source: "default"}, {Key: ReadWindowKey, Value: "400000", Source: "default"},
+	{Key: BuildModelKey, Value: "gpt-5.6-sol", Source: "default"}, {Key: BuildEffortKey, Value: "xhigh", Source: "default"},
+	{Key: DesignModelKey, Value: "claude-fable-5-1", Source: "default"}, {Key: ReadModelKey, Value: "claude-opus-5", Source: "default"},
+	{Key: WaitCapKey, Value: "240", Source: "default"}, {Key: BriefCapKey, Value: "120000", Source: "default"},
+	{Key: BuildLinesCapKey, Value: "1500", Source: "default"}, {Key: ReadSplitLinesKey, Value: "1200", Source: "default"},
+	{Key: DesignBaselineTokensKey, Value: "2432374", Source: "default"}, {Key: DesignBaselineRequestsKey, Value: "28", Source: "default"},
+	{Key: DesignBaselinePeakTokensKey, Value: "163000", Source: "default"},
+}
+
+func LoadShippedSeatWindow(moduleRoot string, configured int64) (ShippedSeatWindow, error) {
+	path := filepath.Join(moduleRoot, filepath.FromSlash(ShippedClaudeSettingsSource))
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return ShippedSeatWindow{Source: "absent", DiffersFromConf: configured != 0}, nil
+	}
+	if err != nil {
+		return ShippedSeatWindow{}, err
+	}
+	var source struct {
+		AutoCompactWindow *int64 `json:"autoCompactWindow"`
+	}
+	if err := json.Unmarshal(data, &source); err != nil {
+		return ShippedSeatWindow{}, fmt.Errorf("read shipped Claude settings: %w", err)
+	}
+	if source.AutoCompactWindow == nil {
+		return ShippedSeatWindow{Source: "absent", DiffersFromConf: configured != 0}, nil
+	}
+	return ShippedSeatWindow{Tokens: *source.AutoCompactWindow, Source: ShippedClaudeSettingsSource, DiffersFromConf: *source.AutoCompactWindow != configured}, nil
 }
 
 func DefaultSettings() Settings {
@@ -79,7 +112,7 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool), use
 		if strings.TrimSpace(value) == "" {
 			return Settings{}, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s", definition.Key)
 		}
-		result.Values = append(result.Values, Setting{definition.Key, value, source})
+		result.Values = append(result.Values, Setting{Key: definition.Key, Value: value, Source: source})
 	}
 	number := func(index int) (int64, error) {
 		value, err := strconv.ParseInt(result.Values[index].Value, 10, 64)
