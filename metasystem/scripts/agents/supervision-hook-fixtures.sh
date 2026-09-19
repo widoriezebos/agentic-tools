@@ -413,6 +413,78 @@ brain_expected_installation=$(cd "$brain_repo" && pwd -P)
   || { echo "brain start wrote an incomplete tool engine cache" >&2; exit 1; }
 [[ "$brain_cached_engine" == "$brain_identity_engine" && "$brain_cached_installation" == "$brain_expected_installation" ]] \
   || { echo "brain start cached the wrong engine or installation" >&2; cat "$brain_engine_cache" >&2; exit 1; }
+harness_fixture_bed_leg tool_engine_cache_replaced_by_rename
+brain_cache_dir=${brain_engine_cache%/engine-path}
+brain_cache_inode_before=$(ls -i "$brain_engine_cache" | awk '{print $1}')
+mkdir -p "$tmp/mktemp-shim"
+cat >"$tmp/mktemp-shim/mktemp" <<'BRAIN_MKTEMP_SHIM'
+#!/usr/bin/env bash
+brain_mktemp_path=$(/usr/bin/mktemp "$@")
+brain_mktemp_rc=$?
+if (( brain_mktemp_rc == 0 )); then
+  brain_mktemp_inode=$(ls -i "$brain_mktemp_path" | awk '{print $1}')
+  printf '%s %s\n' "$brain_mktemp_path" "$brain_mktemp_inode" >>"${BRAIN_FIXTURE_MKTEMP_LOG:?}"
+  printf '%s\n' "$brain_mktemp_path"
+fi
+exit "$brain_mktemp_rc"
+BRAIN_MKTEMP_SHIM
+chmod +x "$tmp/mktemp-shim/mktemp"
+brain_cache_rename_rc=0
+PATH="$tmp/mktemp-shim:$PATH" BRAIN_FIXTURE_MKTEMP_LOG=$tmp/brain-cache-mktemp.log \
+  run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" "$tmp/brain-cache-start.json" \
+    "$tmp/brain-cache-rename.out" "$tmp/brain-cache-rename.err" "$brain_cache_engine" \
+  || brain_cache_rename_rc=$?
+[[ "$brain_cache_rename_rc" -eq 0 ]] || { echo "brain cache rename start exited $brain_cache_rename_rc" >&2; exit 1; }
+brain_cache_temp_lines=$(grep -F '/.engine-path.' "$tmp/brain-cache-mktemp.log" || true)
+brain_cache_temp_count=$(printf '%s\n' "$brain_cache_temp_lines" | awk 'NF { count++ } END { print count + 0 }')
+brain_cache_temp_path=$(printf '%s\n' "$brain_cache_temp_lines" | awk 'NR == 1 { print $1 }')
+brain_cache_temp_inode=$(printf '%s\n' "$brain_cache_temp_lines" | awk 'NR == 1 { print $2 }')
+[[ "$brain_cache_temp_count" -eq 1 && "${brain_cache_temp_path%/*}" == "$brain_cache_dir" ]] || { echo "brain cache rename observed unexpected mktemp log:" >&2; cat "$tmp/brain-cache-mktemp.log" >&2; exit 1; }
+[[ ! -e "$brain_cache_temp_path" ]] || { echo "brain cache rename left temporary path $brain_cache_temp_path" >&2; exit 1; }
+brain_cache_inode_after=$(ls -i "$brain_engine_cache" 2>/dev/null | awk '{print $1}' || true)
+[[ -n "$brain_cache_inode_after" && "$brain_cache_inode_after" == "$brain_cache_temp_inode" && "$brain_cache_inode_after" != "$brain_cache_inode_before" ]] || { echo "brain cache rename inode mismatch: before=$brain_cache_inode_before temp=$brain_cache_temp_inode after=$brain_cache_inode_after" >&2; exit 1; }
+brain_cached_engine=
+brain_cached_installation=
+{
+  IFS= read -r brain_cached_engine
+  IFS= read -r brain_cached_installation
+} <"$brain_engine_cache" \
+  || { echo "brain cache rename wrote incomplete cache content" >&2; exit 1; }
+[[ "$brain_cached_engine" == "$brain_identity_engine" && "$brain_cached_installation" == "$brain_expected_installation" ]] || { echo "brain cache rename wrote unexpected cache content" >&2; cat "$brain_engine_cache" >&2; exit 1; }
+brain_cache_temp_listing=$(find "$brain_cache_dir" -name '.engine-path.*')
+[[ -z "$brain_cache_temp_listing" ]] || { echo "brain cache rename left temporary files: $brain_cache_temp_listing" >&2; exit 1; }
+
+harness_fixture_bed_leg tool_engine_cache_write_fails_open
+[[ "$(id -u)" != 0 ]] || { echo "the unwritable-directory witness needs an unprivileged user; this bed runs as root" >&2; exit 1; }
+brain_cache_sha_before=$(shasum -a 256 "$brain_engine_cache" | awk '{print $1}')
+brain_cache_inode_before=$(ls -i "$brain_engine_cache" | awk '{print $1}')
+chmod 0500 "$brain_cache_dir"
+brain_unwritable_rc=0
+run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" "$tmp/brain-cache-start.json" \
+  "$tmp/brain-cache-unwritable.out" "$tmp/brain-cache-unwritable.err" "$brain_cache_engine" \
+  || brain_unwritable_rc=$?
+chmod 0755 "$brain_cache_dir"
+[[ "$brain_unwritable_rc" -eq 0 ]] || { echo "brain cache unwritable start exited $brain_unwritable_rc" >&2; exit 1; }
+# A cache write failure must continue through normal delivery instead of the EXIT trap.
+if grep -Fq 'could not produce its response' "$tmp/brain-cache-unwritable.out"; then
+  echo "brain cache unwritable start printed the last-resort notice:" >&2
+  cat "$tmp/brain-cache-unwritable.out" >&2
+  exit 1
+fi
+
+# Identical inputs and engines must produce the healthy start's response after a cache write failure.
+if ! cmp -s "$tmp/brain-cache-start.out" "$tmp/brain-cache-unwritable.out"; then
+  echo "brain cache healthy start stdout was:" >&2
+  cat "$tmp/brain-cache-start.out" >&2
+  echo "brain cache unwritable start stdout was:" >&2
+  cat "$tmp/brain-cache-unwritable.out" >&2
+  exit 1
+fi
+brain_cache_sha_after=$(shasum -a 256 "$brain_engine_cache" | awk '{print $1}')
+brain_cache_inode_after=$(ls -i "$brain_engine_cache" | awk '{print $1}')
+[[ "$brain_cache_sha_after" == "$brain_cache_sha_before" && "$brain_cache_inode_after" == "$brain_cache_inode_before" ]] || { echo "brain cache changed after unwritable write: sha_before=$brain_cache_sha_before sha_after=$brain_cache_sha_after inode_before=$brain_cache_inode_before inode_after=$brain_cache_inode_after" >&2; exit 1; }
+brain_cache_dir_listing=$(ls -A "$brain_cache_dir")
+[[ "$brain_cache_dir_listing" == engine-path ]] || { echo "brain cache unwritable directory listing was: $brain_cache_dir_listing" >&2; exit 1; }
 harness_fixture_bed_leg brain-session-start
 
 brain_fake_path=$tmp/brain-fake
