@@ -170,7 +170,7 @@ prepare_receipt_environment() { # process identity file, registry
 }
 
 receipt_env_run() {
-  harness_fixture_without_outer_proof env -i "${receipt_environment[@]}" "$@"
+  harness_fixture_without_outer_proof env -i ${receipt_environment[@]+"${receipt_environment[@]}"} "$@"
 }
 
 receipt_checkout_env_run() { # checkout, command...

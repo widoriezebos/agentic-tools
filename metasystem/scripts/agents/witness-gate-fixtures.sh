@@ -80,7 +80,7 @@ SH
 #!/usr/bin/env bash
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-[[ $# -eq 4 && "$1 $2 $3" == 'proof-run worker-authorized --root' && "$4" == "$root" ]]
+[[ $# -eq 4 && "$1 $2 $3" == 'proof-run worker-authorized --root' && "$4" == "$root" ]] || exit 1
 SH
   chmod +x "$leg_tree/scripts/agents/go-gate.sh" "$leg_tree/scripts/agents/go-gate-impl.sh" \
     "$leg_tree/scripts/agents/fixture-worker-auth.sh"

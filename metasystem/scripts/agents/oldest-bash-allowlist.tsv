@@ -119,7 +119,6 @@ bare-test	scripts/agents/static-reproof-fixtures.sh	beca019e194f4e1f137464a52dfc
 bare-test	scripts/agents/static-reproof-fixtures.sh	f3cb0757061d0e10bc4bc91ba1b7033f755f0605da664dca4e6beb2c126d6d4b	[[ -n "$proof_out" ]]
 bare-test	scripts/agents/suite-progress-fixtures.sh	9cfaaa6c7fca0d93c1061d2789c70cb26334b1b0db736f202659f59541c4c58c	[[ -n "$evidence_dir" && -f "$evidence_dir/copy-note.txt" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	158b0a6c52bc9da0ea5cccb61a98c5be36d9f5d96c3ed6ccfded66f1815364f5	[[ "${operator_env[*]}" == *"METASYSTEM_CENSUS_PROCESS_FILE=$operator_process_fixture"* ]]
-bare-test	scripts/agents/supervision-fixtures.sh	16cea9925572c5c9579ebbe3a9535d56fcabfe74f602da3a5150094742316edd	[[ "$decision_surface_deadline_assertion" =~ $deadline_pattern_regex ]]
 bare-test	scripts/agents/supervision-fixtures.sh	57473eecd6bc76eb86dd2a8119c94832dea0b4a18546b20d92a6f753cdad1217	[[ -f "$file" ]] && [[ "$("$engine" json get --file "$file" --field "$field" 2>/dev/null)" == "$expected" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	5f0f5a4614271736bdd51b853da109f4f03f040002a4dcb92e2b902854d72233	[[ "$(json_field "$state" "components.$1.pid")" != "$2" ]]
 bare-test	scripts/agents/supervision-fixtures.sh	76c91f8502846bd19b7f62136e9fac46354f91d627f34813755712c1878be1dc	[[ ! -e "$2" ]]
@@ -157,14 +156,7 @@ empty-array	scripts/agents/dispatch-fixtures.sh	b81cd9e29411a016695c814082d3df35
 empty-array	scripts/agents/dispatch-fixtures.sh	dd16dadd86e17a70870b19c7b4973c27d81e80d9f2b53abc0bd9affa18abccca	"$fixture_bed_script" "${fixture_parent_scenarios[@]}"
 empty-array	scripts/agents/evidence-segment-fixtures.sh	816e538664bc95d46519701c06b7109277fdbf76d3b0c148cd4b3e9f3e21e654	for destination in "${destinations[@]}"; do
 empty-array	scripts/agents/fixture-bed-scenarios.sh	b68485456c5d31c3f709e57c6545028680d0867ed4005064c6196f29040c3699	fixture_bed_parent_child_pids="${live_pids[*]}"
-empty-array	scripts/agents/fixture-stop-report.sh	05b3090b0bb32ac5d2e7dd26e053d32038191ba6e04c416fb44a57aea024c784	! "$engine" json get "${payload_args[@]}" --field systemMessage >/dev/null 2>&1 || return 1
-empty-array	scripts/agents/fixture-stop-report.sh	1118fcba26e55e2aac5f6e1d076ce903aebf0683ffd11a4cb50007280564499e	! "$engine" json get "${payload_args[@]}" --field reason >/dev/null 2>&1 || return 1
-empty-array	scripts/agents/fixture-stop-report.sh	16257e743ef331e19440283d3bc284bcc75ea35c4a31c590fe94dcd149da639e	payload_shape=$("$engine" json strip "${payload_args[@]}" --key systemMessage) || return 1
-empty-array	scripts/agents/fixture-stop-report.sh	72e50f4a33f7a94ec547f21321e44b76d61dc707f8917ab70566aa1d2931e511	payload_shape=$("$engine" json strip "${payload_args[@]}" --key decision --key reason) || return 1
-empty-array	scripts/agents/fixture-stop-report.sh	9192cc354f64dfb9cd61d7e4eb8b6814befcd333e7e959afbafc06aebe558cf3	line=$("$engine" json get "${payload_args[@]}" --field "$field") || return 1
-empty-array	scripts/agents/fixture-stop-report.sh	f05763cd989bb46c7b559f75b86a9fcd7bceafb14dff855a218d5fffe1f5b0b2	decision=$("$engine" json get "${payload_args[@]}" --field decision 2>/dev/null) || decision_rc=$?
 empty-array	scripts/agents/land-fixtures.sh	2888abdbb6415c3f5ff34bb6ebcbea738508282c4056dda7c402035f1cb16c03	for entry in "${receipt_environment[@]}"; do
-empty-array	scripts/agents/land-fixtures.sh	2a3994d0bd65d841fe850c18f7f7f26f739c1dfa88f412d39d6e3d63cb83bf61	env -i "${receipt_environment[@]}" "$@"
 empty-array	scripts/agents/land-fixtures.sh	9f70565e827d0c012851c57b84718891985a62a35886934531ff30608485f147	git commit "${commit_args[@]}"
 empty-array	scripts/agents/path-class-fixtures.sh	4b40e70698acad0cfb3f09000fcfd5798dc60e4b550c3e5a99d227b3a4775c57	grep -rnE -I "$pattern" -- "${repo_paths[@]}"
 empty-array	scripts/agents/path-class-fixtures.sh	871d0c30123f274a605695b3b4d48af813198de618d315d9aef25ba8c2372437	grep -rnE -I --exclude-dir=reviews --exclude=journey.md "$pattern" -- "${install_paths[@]}"
