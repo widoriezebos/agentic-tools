@@ -59,6 +59,11 @@ var engineBindingStandardTests = []string{
 	"TestVerifyDoesNotKeyLegacyCandidateDigestByWholeTreeReceipt",
 	"TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt",
 	"TestDiagnosticsReadersFollowTheCandidatePair",
+	"TestBatchPrefixProofControlRootAcceptsALinkedLandingWorktree",
+	"TestBatchPrefixProofControlRootMustOwnLinkedExecution",
+	"TestBatchPrefixTestingControlRootRetainsAttemptOutsideExecution",
+	"TestLinkedWorktreeMainInstallationPreservesInstallationSubdirectory",
+	"TestTestRunKeepsProofRecordsUnderTheControlRoot",
 }
 
 func TestEngineBindingWitnessInventory(t *testing.T) {
