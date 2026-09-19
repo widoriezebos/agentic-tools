@@ -1,6 +1,6 @@
 # failures-show-observed-against-expected
 
-- State: approved
+- State: parked
 - Priority: 1
 - Sequence: 29
 - Risk: severity=2 novelty=1 exposure=3 accumulation=3 basis="severity 2: a one-line failure sends the builder guessing, and a confident wrong guess costs a whole round; novelty 1: printing observed and expected is a known discipline; exposure 3: every failing assertion in every bed and fixture; accumulation 3: every guess-round compounds across seats and days"
@@ -9,12 +9,12 @@
 - Origin: human
 - Next step: parked 2026-09-19 by Wido: "park list is ok" (16:40 CEST, under his machine-ready target). Resume only when Wido picks the goal. Existing work: on main 537e1a6e0 (1a, engine prints observed against expected, expect.go:158) and dc267cec (1b, METASYSTEM_BED_FAILURES in scripts/agents/fixture-assert.sh:59). Left: 1c harness report fields and 1d fixture-assert audit, each at most 400 lines, then the bed migrations (at least 1,098 sites, verification-loop-design.md:240,411), several thousand lines unsized.
 - OpenedAt: 2026-09-14T19:25:47Z
-- Revision: 148
+- Revision: 149
 - Budget: elapsedLimit=2d attemptLimit=20 reservedJobMinutesLimit=720 activeJobLimit=2 reviewRoundLimit=2
 - BudgetExceptions: 3
 - Approved: by=human:Wido at=2026-09-15T06:42:12Z revision=56 opid=XHNRK0A1TCHZ64SC6SCRGQB9K1-m1b-c6925449 authority=proven digest=fbd730e48f1f45a9fd99143bcf63581a01a7c9b5ba232140a2c3457af8ede0e2
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=11 at=2026-09-14T22:39:44Z
-- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=56 episodeAt=2026-09-14T22:39:33Z episodeRevision=11 idleSeconds=0 released=2026-09-15T08:17:00Z
+- Parked: by=human:Wido at=2026-09-19T15:46:36Z because=parked 2026-09-19 by Wido: "park list is ok" (16:40 CEST, under his machine-ready target). Resume only when Wido picks the goal. Existing work: on main 537e1a6e0 (1a, engine prints observed against expected, expect.go:158) and dc267cec (1b, METASYSTEM_BED_FAILURES in scripts/agents/fixture-assert.sh:59). Left: 1c harness report fields and 1d fixture-assert audit, each at most 400 lines, then the bed migrations (at least 1,098 sites, verification-loop-design.md:240,411), several thousand lines unsized.
 
 History:
 - 2026-09-14T19:25:47Z B9YWHY0CP8CV0QY1J09Y4NZ39D-m1e-c6925449 open actor=human:Wido targets=failures-show-observed-against-expected
@@ -165,4 +165,5 @@ History:
 - 2026-09-19T15:45:05Z Q0DPZ8J74XAJHP5SGCGPB8NPRZ-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,waits-run-outside-model-contexts reason=priority-order from=1:31 to=1:30
 - 2026-09-19T15:45:17Z FZTA3B9JDRW4R7CH82VMAVGQKP-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order from=1:30 to=1:29
 - 2026-09-19T15:46:30Z 330J9CMFHJ5R58TNPB1SY5589V-m1e-c6925449 edit actor=human:Wido targets=failures-show-observed-against-expected
-Integrity: sha256=da3d92296124b23b84f7610a0c7fa7613026e120e279972075a857e80633b412
+- 2026-09-19T15:46:36Z Y7WM8SDH8Q1YJY70X3KFNRHT56-m1e-c6925449 park actor=human:Wido targets=failures-show-observed-against-expected reason=parked 2026-09-19 by Wido: "park list is ok" (16:40 CEST, under his machine-ready target). Resume only when Wido picks the goal. Existing work: on main 537e1a6e0 (1a, engine prints observed against expected, expect.go:158) and dc267cec (1b, METASYSTEM_BED_FAILURES in scripts/agents/fixture-assert.sh:59). Left: 1c harness report fields and 1d fixture-assert audit, each at most 400 lines, then the bed migrations (at least 1,098 sites, verification-loop-design.md:240,411), several thousand lines unsized.
+Integrity: sha256=d877933db031204404f78c63c423af9fc797025896191091503b8446c293d791
