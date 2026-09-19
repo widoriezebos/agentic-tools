@@ -65,7 +65,8 @@ type TestRunRequest struct {
 	Concurrency int
 	// AllGroups keeps a delivery run collecting after a failed group. Other
 	// purposes already collect every selected group.
-	AllGroups bool `json:",omitempty"`
+	AllGroups   bool `json:",omitempty"`
+	loadOptions []loadSampleOption
 }
 
 // PreparedGroupExecution is immutable metadata collected once before
@@ -712,7 +713,13 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		if len(existing) > 0 && existing[len(existing)-1] != '\n' {
 			separator = "\n"
 		}
-		_, writeErr := io.WriteString(logFile, separator+verdict)
+		var reruns strings.Builder
+		for _, finding := range result.Reruns {
+			fmt.Fprintf(&reruns, "TEST-RERUN %s %s.%s first=%s second=%s failed-load=%s rerun-load=%s\n",
+				group.ID, finding.Package, finding.Test, finding.First, finding.Second,
+				finding.FailedLoad.Describe(), finding.RerunLoad.Describe())
+		}
+		_, writeErr := io.WriteString(logFile, separator+reruns.String()+verdict)
 		_, seekErr := logFile.Seek(0, io.SeekStart)
 		logBytes, readErr := io.ReadAll(logFile)
 		closeErr := logFile.Close()
@@ -956,6 +963,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 	// error and must not overwrite the structured section/JUnit diagnostics.
 	err = nil
 	result.LogDigest = digestBytes(output.Bytes())
+	rerunEligible := false
 	if result.Status == "" {
 		switch group.Adapter {
 		case "go":
@@ -1001,6 +1009,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			evidenceFailed, evidenceSummary := nativeEvidenceSummary(result.Observed)
 			if exit != 0 || !result.CollectionComplete || evidenceFailed {
 				result.Status = "failed"
+				rerunEligible = group.Adapter == "go" && evidenceFailed
 				if exit == 0 && !result.CollectionComplete {
 					result.Status = "invalid"
 				}
@@ -1022,6 +1031,9 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 				result.Status = "passed"
 			}
 		}
+	}
+	if rerunEligible {
+		rerunFailedTests(ctx, request, group, cwd, environment, limits, sampleInterval, &result)
 	}
 	if afterDigest, digestErr := digestGroupInputsWithImplicit(root, group, environment, implicitInputs); digestErr != nil || afterDigest != inputDigest {
 		result.Status = "invalid"

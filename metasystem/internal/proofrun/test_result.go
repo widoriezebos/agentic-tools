@@ -27,6 +27,17 @@ type NativeTestIdentity struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
+type RerunFinding struct {
+	Package    string     `json:"package"`
+	Test       string     `json:"test"`
+	First      string     `json:"first"`
+	Second     string     `json:"second"`
+	FailedLoad LoadSample `json:"failedLoad"`
+	RerunLoad  LoadSample `json:"rerunLoad"`
+	LogPath    string     `json:"logPath"`
+	At         string     `json:"at"`
+}
+
 type GroupResult struct {
 	ID                    string               `json:"id"`
 	Kind                  string               `json:"kind"`
@@ -64,6 +75,8 @@ type GroupResult struct {
 	ReuseAttempt          string               `json:"reuseAttempt,omitempty"`
 	NotRunReason          string               `json:"notRunReason,omitempty"`
 	BlockingGroups        []string             `json:"blockingGroups,omitempty"`
+	Reruns                []RerunFinding       `json:"reruns,omitempty"`
+	RerunNote             string               `json:"rerunNote,omitempty"`
 }
 
 type LaunchCounts struct {
@@ -122,6 +135,14 @@ func ValidateTestResult(result TestResult) error {
 			}
 		default:
 			return fmt.Errorf("test result group %s has invalid status %q", group.ID, group.Status)
+		}
+		if (group.Status == "passed" || group.Status == "reused") && len(group.Reruns) > 0 {
+			return fmt.Errorf("passed or reused group %s carries rerun findings", group.ID)
+		}
+		for _, rerun := range group.Reruns {
+			if rerun.Second == "passed" && group.Status != "failed" {
+				return fmt.Errorf("group %s has a fail-then-pass rerun but status %s", group.ID, group.Status)
+			}
 		}
 	}
 	if len(seen) != len(selected) {

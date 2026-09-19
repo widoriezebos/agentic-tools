@@ -53,8 +53,11 @@ var loadSeams loadReaders
 var commandLoadOptions []loadSampleOption
 
 type loadSampleSettings struct {
-	fixtureRaw string
-	fixtureSet bool
+	fixtureRaw        string
+	fixtureSet        bool
+	scripted          *hostload.Sample
+	scriptedLaunchers int
+	scriptedKnown     bool
 }
 
 type loadSampleOption func(*loadSampleSettings)
@@ -62,9 +65,16 @@ type loadSampleOption func(*loadSampleSettings)
 // withTestHostLoad is the explicit same-package test seam for a deterministic
 // zero-load host with the named launcher count. Production callers pass no
 // option and can never activate the fixture through inherited process state.
+// Tests can also pass a complete scripted reading without changing global readers.
 func withTestHostLoad(raw string) loadSampleOption {
 	return func(settings *loadSampleSettings) {
 		settings.fixtureRaw, settings.fixtureSet = raw, true
+	}
+}
+
+func withScriptedLoad(sample hostload.Sample, launchers int, known bool) loadSampleOption {
+	return func(settings *loadSampleSettings) {
+		settings.scripted, settings.scriptedLaunchers, settings.scriptedKnown = &sample, launchers, known
 	}
 }
 
@@ -125,7 +135,11 @@ func sampleLoad(root, selfAttempt string, launcher int64, now time.Time, options
 		option(&settings)
 	}
 	sample := LoadSample{}
-	if settings.fixtureSet {
+	if settings.scripted != nil {
+		sample.Sample = *settings.scripted
+		sample.Sample.At = now.UTC().Format(time.RFC3339Nano)
+		sample.OverlappingHost, sample.OverlapKnown = settings.scriptedLaunchers, settings.scriptedKnown
+	} else if settings.fixtureSet {
 		sample.Sample, sample.OverlappingHost, sample.OverlapKnown = testHostLoad(settings.fixtureRaw, now)
 	} else {
 		sample.Sample = loadSeams.host(now)
