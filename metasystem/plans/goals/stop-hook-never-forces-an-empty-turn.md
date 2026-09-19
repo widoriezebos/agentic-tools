@@ -1,6 +1,6 @@
 # stop-hook-never-forces-an-empty-turn
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 14
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong refusal rule either forces turns as today or lets an unsafe stop through; novelty 2: refusal causes are reclassified between seat and steward; exposure 3: every seat's every stop; accumulation 1: one hook"
@@ -9,14 +9,15 @@
 - Origin: human
 - Next step: decoupled from stop-decisions per Wido 09-19; members design r2 in flight; builds follow as rows
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 100
+- Revision: 101
 - BlockedBy: stop-decisions-record-deadline-evidence, stop-infrastructure-allows-the-seat-to-stop
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-11T20:33:06Z revision=10 opid=E8FTZC5HAT5QQ1ANYHR53FNVAE-m1-c6925449 authority=proven digest=2e1c7149776e2d5db51a6e1b319f9e6b77f7793aa24d621a6222d5f077423609
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=20 at=2026-09-12T17:01:57Z
-- Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=34 episodeAt=2026-09-13T07:32:59Z episodeRevision=34 idleSeconds=0 released=2026-09-13T07:33:02Z
+- Claimed: machine=m1b lineage=main-1789560571-22295-8d907a at=2026-09-19T14:53:12Z revision=101 accountingRevision=101 episodeAt=2026-09-19T14:53:12Z episodeRevision=101
+- StopCapability: generation=101 revision=101 machine=m1b claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-11T15:45:01Z T6Z7DYJ3CFGDRPYXNRNTTWXERM-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=stop-hook-never-forces-an-empty-turn
@@ -119,4 +120,5 @@ History:
 - 2026-09-19T07:35:47Z B0RY96P5BQHMSHMFFXM6KWDBSG-m1e-c6925449 unpark actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-19T07:35:53Z RB9ND96270ZH5K7XZRHMNY5S51-m1e-c6925449 edit actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-19T14:45:55Z PB71BE8X95YDKR3CYDA5SK9GVK-m1e-c6925449 set-priority actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-launchers-become-go-verbs,delegate-runs-stay-under-200k-context,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,goals-live-on-branches,human-goal-verbs-forgiving,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,waits-run-outside-model-contexts reason=priority-order subject=machinery-runs-unattended-on-codex from=1:13 to=1:14 requested-sequence=1
-Integrity: sha256=3ba1d9242783a25fe930bb77b6a610c29f8a761890f3f5b07d9f3459f1040eae
+- 2026-09-19T14:53:12Z TJQ1Y0QHSG6JGD10S9J3THCQ11-m1b-d0e95724 claim actor=m1b+main-1789560571-22295-8d907a targets=stop-hook-never-forces-an-empty-turn
+Integrity: sha256=fff51398fccc316a90fccd0f9de84b30966d512d4e117617aa646e1bbfdabbdd
