@@ -1,16 +1,17 @@
 # stop-hook-health-cost
 
-- State: queued
+- State: parked
 - Risk: severity=2 novelty=1 exposure=3 accumulation=1 basis="severity 2: an expired deadline refuses a turn end that was safe, which costs a seat a full turn and teaches it to distrust the refusal, but nothing unsafe is permitted; novelty 1: this is profiling and caching inside one existing verb, not new machinery; exposure 3: every seat on every machine pays this cost at every turn end; accumulation 1: first time this has been measured, though it is a plausible contributor to refusals already blamed on other causes"
 - Tier: 3
 - Intent: The Stop hook gets four seconds and one health call spends two of them: metasystem health --hook-preview costs a steady 2.0s on m1 (measured three times, 2.04/2.01/2.07), and the hook also pays turn-verdict at 0.83s plus arming, digest, watchdog, evidence and sha256 work inside the same budget. On 2026-09-05 that budget expired and the turn end was refused with 'Stop deadline expired before a safe turn verdict'. DONE means the hook's health input costs a small fraction of its budget, proven by a measurement in a fixture rather than by hand, with the refusal path unchanged when the budget really is exceeded
 - Origin: main
 - Next step: parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido sets its priority and picks the goal. Existing work: on main 1271fa380 (09-06), the Stop hook health preview stops re-reading the world (metasystem/internal/spend/transcript.go, metasystem/internal/spend/cache.go, metasystem/internal/steward/health.go). Wido reopened the goal on 09-16 (df5c833f0) over a 20-42 s regression; no diagnosis of it is recorded. Left: about 100-400 lines, not verified. No origin goal/stop-hook-health-cost branch exists: nothing unlanded exists; the work below is all on main.
 - OpenedAt: 2026-09-05T10:09:49Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1d
 - BudgetExceptions: 0
 - Sliced: machine=m1d lineage=main-1788683763-71870-f7f607 revision=5 at=2026-09-06T10:52:15Z
+- Parked: by=human:Wido at=2026-09-19T15:48:40Z because=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido sets its priority and picks the goal. Existing work: on main 1271fa380 (09-06), the Stop hook health preview stops re-reading the world (metasystem/internal/spend/transcript.go, metasystem/internal/spend/cache.go, metasystem/internal/steward/health.go). Wido reopened the goal on 09-16 (df5c833f0) over a 20-42 s regression; no diagnosis of it is recorded. Left: about 100-400 lines, not verified. No origin goal/stop-hook-health-cost branch exists: nothing unlanded exists; the work below is all on main.
 
 History:
 - 2026-09-05T10:09:49Z YM1KHGTB9X8C64HM9WQJ3KJNZ5-m1-a4f8999f open actor=m1+main-1788594343-3833-fb64b9 targets=stop-hook-health-cost
@@ -25,4 +26,5 @@ History:
 - 2026-09-06T15:30:08Z 580XN2TMPTEWBH0W6V8KXQNSTD-m1d-62183579 done actor=m1d+main-1788683763-71870-f7f607 targets=stop-hook-health-cost
 - 2026-09-16T09:17:21Z HZH6NQ9RJ49323Q7Q1E8W6EDKP-m1e-c6925449 reopen actor=human:Wido targets=stop-hook-health-cost
 - 2026-09-19T15:48:30Z KT2340DTG2C5JW1V04KK9VHFBH-m1e-c6925449 edit actor=human:Wido targets=stop-hook-health-cost
-Integrity: sha256=3ed51982ba2dc53867eef3c5e2d05cda4c9f8eee4596b8289fb46d3f1f4f084f
+- 2026-09-19T15:48:40Z GPRCEQ4CV83J30TAZGWJNJK2XM-m1e-c6925449 park actor=human:Wido targets=stop-hook-health-cost reason=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume only when Wido sets its priority and picks the goal. Existing work: on main 1271fa380 (09-06), the Stop hook health preview stops re-reading the world (metasystem/internal/spend/transcript.go, metasystem/internal/spend/cache.go, metasystem/internal/steward/health.go). Wido reopened the goal on 09-16 (df5c833f0) over a 20-42 s regression; no diagnosis of it is recorded. Left: about 100-400 lines, not verified. No origin goal/stop-hook-health-cost branch exists: nothing unlanded exists; the work below is all on main.
+Integrity: sha256=95d65c17091dd0444988b6888e821a63468d275233aa399f36d837beda5a6e3e
