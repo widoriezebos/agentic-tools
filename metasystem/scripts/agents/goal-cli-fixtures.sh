@@ -20,16 +20,17 @@ source "$fixture_bed_root/scripts/agents/fixture-bed-scenarios.sh"
 
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
-	run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
-	"$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep abandoned-with-a-reason \
-		brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal \
-		carry-word carried-record carried-discharge seat-blocker power-of-attorney landing-slot budget-extension fenced-set-budget proof-grades
+  run_fixture_bed_scenarios goal-cli "goal CLI fixtures: PASSED" \
+    "$fixture_bed_script" migration-recovery human-lineage risk-basis labels-and-filtering structured-budget scope-bounds archive-and-prune classification-sweep abandoned-with-a-reason \
+    brain-claim-refuses brain-human-word-refuses brain-classification-fails brain-stop-seeded brain-stop-corrupt brain-status-line wrong-terminal \
+    carry-word carried-record carried-discharge seat-blocker power-of-attorney landing-slot budget-extension fenced-set-budget proof-grades \
+    forgiving-budget-states forgiving-budget-members forgiving-budget-identity-aliases forgiving-human-refusals
 fi
 case "$fixture_scenario" in
-	migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | \
-		abandoned-with-a-reason | \
-		brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal | \
-		carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney | landing-slot | budget-extension | fenced-set-budget | proof-grades) ;;
+  migration-recovery | human-lineage | risk-basis | labels-and-filtering | structured-budget | scope-bounds | archive-and-prune | classification-sweep | abandoned-with-a-reason | \
+    brain-claim-refuses | brain-human-word-refuses | brain-classification-fails | brain-stop-seeded | brain-stop-corrupt | brain-status-line | wrong-terminal | \
+    carry-word | carried-record | carried-discharge | seat-blocker | power-of-attorney | landing-slot | budget-extension | fenced-set-budget | proof-grades | \
+    forgiving-budget-states | forgiving-budget-members | forgiving-budget-identity-aliases | forgiving-human-refusals) ;;
   *) echo "goal CLI fixtures: unknown scenario: $fixture_scenario" >&2; exit 64 ;;
 esac
 
@@ -1435,6 +1436,565 @@ grep -q "\"lineage\": \"$derived_lineage\"" "$clone/artifacts/agents/goal-transa
   || { echo "the derived approval journal did not record $derived_lineage" >&2; exit 1; }
 fi
 
+case "$fixture_scenario" in
+  forgiving-*) export PATH="$(dirname "$ms"):$PATH" ;;
+esac
+
+open_forgiving_fixture_goal() { # goal id, optional goal-open flags
+  local goal_id=$1
+  shift
+  "$ms" goal open --root "$clone" --id "$goal_id" \
+    --intent "Exercise the forgiving budget command for $goal_id." --next "Inspect the recorded box." \
+    --origin human --by Wido --fixture-human-authority \
+    --tier 3 --risk severity=3,novelty=1,exposure=1,accumulation=1 --basis "fixture risk" "$@" >/dev/null
+}
+
+write_forgiving_fixture_enrollment() { # optional human name
+  local human=${1:-} human_line=
+  [[ -z "$human" ]] || human_line="  \"human\": \"$human\","$'\n'
+  mkdir -p "$clone/artifacts/agents/authority"
+  {
+    printf '%s\n' '{' '  "schema": 1,' '  "enrolledAt": "2026-09-01T09:00:00Z",' '  "generation": 1,'
+    printf '%s' "$human_line"
+    printf '%s\n' '  "terminalId": "fixture-terminal",' \
+      '  "terminalRef": {"pid": 20, "pidStartedAt": 200},' \
+      '  "sessionLeaderRef": {"pid": 10, "pidStartedAt": 100}' '}'
+  } >"$clone/artifacts/agents/authority/human-terminal.json"
+}
+
+read_forgiving_goal() { # goal id, destination
+  local goal_id=$1 destination=$2 tip
+  tip=$(git -C "$origin" rev-parse main)
+  git -C "$clone" cat-file -p "$tip:plans/goals/$goal_id.md" >"$destination"
+}
+
+run_forgiving_refusal_remedy() { # label, goal id, twin id, long-form command..., --refusal, refused command...
+	local label=$1 goal_id=$2 twin_id=$3 output_file=$tmp/forgiving-refusal.out error_file=$tmp/forgiving-refusal.err
+	local remedy rc goal_budget twin_budget goal_history twin_history
+	local -a long_form=()
+	shift 3
+	while [[ $# -gt 0 && $1 != --refusal ]]; do
+		long_form+=("$1")
+		shift
+	done
+	[[ $# -gt 0 ]] || { echo "$label did not separate its long-form and refused commands" >&2; exit 1; }
+	shift
+	set +e
+	"$@" >"$output_file" 2>"$error_file"
+  rc=$?
+  set -e
+  [[ $rc -ne 0 ]] || { echo "$label did not refuse" >&2; exit 1; }
+	[[ $(wc -l <"$error_file" | tr -d ' ') -eq 2 ]] \
+		|| { echo "$label did not print exactly two refusal lines" >&2; cat "$error_file" >&2; exit 1; }
+	remedy=$(sed -n 's/^run: //p' "$error_file")
+	[[ -n "$remedy" ]] || { echo "$label did not print a runnable remedy" >&2; cat "$error_file" >&2; exit 1; }
+	eval "$remedy" >/dev/null \
+		|| { echo "$label printed a command that did not complete" >&2; cat "$error_file" >&2; exit 1; }
+	read_forgiving_goal "$goal_id" "$tmp/$goal_id-remedy.md"
+	"${long_form[@]}" >/dev/null \
+		|| { echo "$label's long-form twin command did not complete" >&2; exit 1; }
+	read_forgiving_goal "$twin_id" "$tmp/$twin_id-long-form.md"
+	goal_budget=$(sed -n 's/^- Budget: //p' "$tmp/$goal_id-remedy.md")
+	twin_budget=$(sed -n 's/^- Budget: //p' "$tmp/$twin_id-long-form.md")
+	goal_history=$(awk '/^History:$/ { in_history=1; next } in_history && /^- / { value=$4 " " $5 } END { print value }' "$tmp/$goal_id-remedy.md")
+	twin_history=$(awk '/^History:$/ { in_history=1; next } in_history && /^- / { value=$4 " " $5 } END { print value }' "$tmp/$twin_id-long-form.md")
+	[[ -n "$goal_budget" && "$goal_budget" == "$twin_budget" && -n "$goal_history" && "$goal_history" == "$twin_history" ]] \
+		|| { echo "$label's remedy did not match its long-form twin" >&2; diff -u "$tmp/$twin_id-long-form.md" "$tmp/$goal_id-remedy.md" >&2 || true; exit 1; }
+}
+
+release_forgiving_claim_if_present() { # goal id
+	local goal_id=$1 tip record
+	record=$tmp/$goal_id-release-check.md
+	tip=$(git -C "$origin" rev-parse main)
+	if git -C "$clone" cat-file -e "$tip:plans/goals/$goal_id.md" 2>/dev/null; then
+		git -C "$clone" cat-file -p "$tip:plans/goals/$goal_id.md" >"$record"
+		if grep -q '^- State: claimed$' "$record"; then
+			"$ms" goal release --root "$clone" --id "$goal_id" >/dev/null
+		fi
+	fi
+}
+
+claim_forgiving_goal() { # goal id
+	local goal_id=$1 claim_output
+	claim_output=$("$ms" goal claim --root "$clone" --id "$goal_id" 2>&1) \
+		|| { echo "claiming $goal_id failed: $claim_output" >&2; return 1; }
+	grep -q '"outcome":"confirmed"' <<<"$claim_output" \
+		|| { echo "claiming $goal_id did not confirm: $claim_output" >&2; return 1; }
+}
+
+breach_stop_forgiving_goal() { # goal id
+	local goal_id=$1 revision breach_stop breach_stop_id record
+	record=$tmp/$goal_id-before-stop.md
+	read_forgiving_goal "$goal_id" "$record"
+	revision=$(sed -n 's/^- Claimed: .* revision=\([0-9][0-9]*\).*/\1/p' "$record")
+	[[ -n "$revision" ]] \
+		|| { echo "$goal_id has no claimed revision for its breach-stop" >&2; cat "$record" >&2; return 1; }
+	breach_stop=$("$ms" job breach-stop --root "$clone" --goal "$goal_id" --revision "$revision")
+	breach_stop_id=$(sed -n 's/.*"stopId":"\([^"]*\)".*/\1/p' <<<"$breach_stop")
+	[[ -n "$breach_stop_id" ]] \
+		|| { echo "breach-stop did not print a stop identifier for $goal_id: $breach_stop" >&2; return 1; }
+	"$ms" job stop-batch-reconcile --root "$clone" --stop "$breach_stop_id" >/dev/null
+}
+
+if [[ "$fixture_scenario" == forgiving-budget-states ]]; then
+write_forgiving_fixture_enrollment Wido
+
+# A queued goal accepts the token after its flags and re-approval changes only
+# its approval tuple. The parked transaction keeps the pause intact.
+"$ms" goal budget --root "$clone" --id fix-docs --fixture-human-authority 2h/4/240m/1/2 >/dev/null
+read_forgiving_goal fix-docs "$tmp/fix-docs-approved.md"
+grep -q '^- State: approved$' "$tmp/fix-docs-approved.md" \
+  && grep -q '^- Budget: elapsedLimit=2h attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=2$' "$tmp/fix-docs-approved.md" \
+  && grep -q ' approve actor=human:Wido ' "$tmp/fix-docs-approved.md" \
+  || { echo "queued goal budget did not publish an approval" >&2; cat "$tmp/fix-docs-approved.md" >&2; exit 1; }
+"$ms" goal budget 3h/5/300m/1/2 --root "$clone" --id fix-docs --by Wido --fixture-human-authority >/dev/null
+read_forgiving_goal fix-docs "$tmp/fix-docs-reapproved.md"
+[[ $(grep -c ' approve actor=human:Wido ' "$tmp/fix-docs-reapproved.md") -eq 2 ]] \
+  && grep -q '^- Budget: elapsedLimit=3h attemptLimit=5 reservedJobMinutesLimit=300 activeJobLimit=1 reviewRoundLimit=2$' "$tmp/fix-docs-reapproved.md" \
+  || { echo "approved goal budget did not re-approve" >&2; cat "$tmp/fix-docs-reapproved.md" >&2; exit 1; }
+
+"$ms" goal budget --root "$clone" --id perf-pass 2h/4/240m/1/2 --by Wido --fixture-human-authority >/dev/null
+read_forgiving_goal perf-pass "$tmp/perf-pass-parked.md"
+grep -q '^- State: parked$' "$tmp/perf-pass-parked.md" \
+  && grep -q '^- Parked: ' "$tmp/perf-pass-parked.md" \
+  && grep -q '^- Budget: elapsedLimit=2h attemptLimit=4 reservedJobMinutesLimit=240 activeJobLimit=1 reviewRoundLimit=2$' "$tmp/perf-pass-parked.md" \
+  && grep -q ' approve actor=human:Wido ' "$tmp/perf-pass-parked.md" \
+  || { echo "parked goal budget moved or erased the park" >&2; cat "$tmp/perf-pass-parked.md" >&2; exit 1; }
+
+# A claimed goal routes through set-budget and advances the claim binding.
+read_forgiving_goal ship-widget "$tmp/ship-widget-before-budget.md"
+claim_revision_before=$(sed -n 's/^- Claimed: .* revision=\([0-9][0-9]*\).*/\1/p' "$tmp/ship-widget-before-budget.md")
+"$ms" goal budget --root "$clone" --id ship-widget 4h/6/600m/1/2 --by Wido --fixture-human-authority >/dev/null
+read_forgiving_goal ship-widget "$tmp/ship-widget-after-budget.md"
+claim_revision_after=$(sed -n 's/^- Claimed: .* revision=\([0-9][0-9]*\).*/\1/p' "$tmp/ship-widget-after-budget.md")
+[[ "$claim_revision_after" -gt "$claim_revision_before" ]] \
+  && grep -q ' set-budget actor=human:Wido ' "$tmp/ship-widget-after-budget.md" \
+  || { echo "claimed goal budget did not rebind through set-budget" >&2; cat "$tmp/ship-widget-after-budget.md" >&2; exit 1; }
+
+# The stop custodian closes the claimed revision; keep then routes through the
+# standing resume transaction.
+export METASYSTEM_GOAL_NOW=2026-09-20T17:00:00Z
+breach_stop=$("$ms" job breach-stop --root "$clone" --goal ship-widget --revision "$claim_revision_after")
+breach_stop_id=$(sed -n 's/.*"stopId":"\([^"]*\)".*/\1/p' <<<"$breach_stop")
+[[ -n "$breach_stop_id" ]] || { echo "breach-stop did not print its stop identifier: $breach_stop" >&2; exit 1; }
+"$ms" job stop-batch-reconcile --root "$clone" --stop "$breach_stop_id" >/dev/null
+set +e
+"$ms" goal budget --root "$clone" --id ship-widget keep --approved-ref rejected-on-resume --by Wido --fixture-human-authority \
+	>"$tmp/stopped-approved-ref.out" 2>"$tmp/stopped-approved-ref.err"
+stopped_approved_ref_rc=$?
+set -e
+stopped_approved_ref_remedy=$(sed -n 's/^run: //p' "$tmp/stopped-approved-ref.err")
+[[ $stopped_approved_ref_rc -ne 0 && -n "$stopped_approved_ref_remedy" && "$stopped_approved_ref_remedy" != *"--approved-ref"* ]] \
+	|| { echo "the stopped-goal keep remedy retained its rejected approval reference" >&2; cat "$tmp/stopped-approved-ref.err" >&2; exit 1; }
+eval "$stopped_approved_ref_remedy" >/dev/null
+read_forgiving_goal ship-widget "$tmp/ship-widget-resumed.md"
+grep -q ' resume actor=human:Wido ' "$tmp/ship-widget-resumed.md" \
+  && ! grep -q '^- StopFence:' "$tmp/ship-widget-resumed.md" \
+  || { echo "keep did not resume the breach-stopped goal" >&2; cat "$tmp/ship-widget-resumed.md" >&2; exit 1; }
+unset METASYSTEM_GOAL_NOW
+
+for refused_id in port-engine absent-goal; do
+  set +e
+  "$ms" goal budget --root "$clone" --id "$refused_id" norm --by Wido --fixture-human-authority \
+    >"$tmp/$refused_id.out" 2>"$tmp/$refused_id.err"
+  refused_rc=$?
+  set -e
+  [[ $refused_rc -ne 0 && $(wc -l <"$tmp/$refused_id.err" | tr -d ' ') -eq 2 ]] \
+    && grep -q '^no command completes this:' "$tmp/$refused_id.err" \
+    && ! grep -q '^run:' "$tmp/$refused_id.err" \
+    || { echo "$refused_id did not use the terminal words refusal" >&2; cat "$tmp/$refused_id.err" >&2; exit 1; }
+done
+fi
+
+if [[ "$fixture_scenario" == forgiving-budget-members ]]; then
+write_forgiving_fixture_enrollment Wido
+
+open_forgiving_fixture_goal norm-preset
+"$ms" goal budget --root "$clone" --id norm-preset norm --fixture-human-authority >/dev/null
+read_forgiving_goal norm-preset "$tmp/norm-preset.md"
+grep -q '^- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3$' "$tmp/norm-preset.md" \
+  || { echo "norm did not resolve to the tier-three fixture box" >&2; cat "$tmp/norm-preset.md" >&2; exit 1; }
+
+open_forgiving_fixture_goal keep-preset \
+  --elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
+"$ms" goal budget --root "$clone" --id keep-preset keep --fixture-human-authority >/dev/null
+read_forgiving_goal keep-preset "$tmp/keep-preset.md"
+grep -q '^- Budget: elapsedLimit=3h attemptLimit=5 reservedJobMinutesLimit=300 activeJobLimit=1 reviewRoundLimit=2$' "$tmp/keep-preset.md" \
+  || { echo "keep did not preserve the opened box" >&2; cat "$tmp/keep-preset.md" >&2; exit 1; }
+
+open_forgiving_fixture_goal empty-member \
+  --elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
+"$ms" goal budget --root "$clone" --id empty-member 4h//// --fixture-human-authority >/dev/null
+read_forgiving_goal empty-member "$tmp/empty-member.md"
+grep -q '^- Budget: elapsedLimit=4h attemptLimit=5 reservedJobMinutesLimit=300 activeJobLimit=1 reviewRoundLimit=2$' "$tmp/empty-member.md" \
+  || { echo "empty compact members did not inherit the standing limits" >&2; cat "$tmp/empty-member.md" >&2; exit 1; }
+
+open_forgiving_fixture_goal keep-without-standing-twin
+"$ms" goal budget --root "$clone" --id keep-without-standing-twin norm --by Wido --fixture-human-authority >/dev/null
+"$ms" goal unapprove --root "$clone" --id keep-without-standing-twin --because "prepare a fieldless budget twin" --by Wido --fixture-human-authority >/dev/null
+run_forgiving_refusal_remedy "keep without a standing box" fix-docs keep-without-standing-twin \
+	"$ms" goal budget --root "$clone" --id keep-without-standing-twin --fixture-human-authority \
+		--elapsed-limit 1d --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3 \
+	--refusal "$ms" goal budget --root "$clone" --id fix-docs keep --fixture-human-authority
+read_forgiving_goal fix-docs "$tmp/keep-without-standing.md"
+grep -q '^- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3$' "$tmp/keep-without-standing.md" \
+  || { echo "the printed norm remedy did not approve the goal" >&2; cat "$tmp/keep-without-standing.md" >&2; exit 1; }
+
+open_forgiving_fixture_goal four-members \
+	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
+open_forgiving_fixture_goal four-members-twin \
+	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
+run_forgiving_refusal_remedy "four-member compact box" four-members four-members-twin \
+	"$ms" goal budget --root "$clone" --id four-members-twin --fixture-human-authority \
+		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2 \
+	--refusal "$ms" goal budget --root "$clone" --id four-members 4h/6/360m/1 --fixture-human-authority
+open_forgiving_fixture_goal invalid-member \
+	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
+open_forgiving_fixture_goal invalid-member-twin \
+	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
+run_forgiving_refusal_remedy "invalid compact member" invalid-member invalid-member-twin \
+	"$ms" goal budget --root "$clone" --id invalid-member-twin --fixture-human-authority \
+		--elapsed-limit 4h --attempt-limit 5 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2 \
+	--refusal "$ms" goal budget --root "$clone" --id invalid-member 4h/many/360m/1/2 --fixture-human-authority
+open_forgiving_fixture_goal mixed-box \
+	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
+open_forgiving_fixture_goal mixed-box-twin \
+	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
+run_forgiving_refusal_remedy "compact and long form together" mixed-box mixed-box-twin \
+	"$ms" goal budget --root "$clone" --id mixed-box-twin --fixture-human-authority \
+		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2 \
+	--refusal "$ms" goal budget --root "$clone" --id mixed-box 4h/6/360m/1/2 --fixture-human-authority \
+		--elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3
+
+open_forgiving_fixture_goal extra-member
+open_forgiving_fixture_goal extra-member-twin
+run_forgiving_refusal_remedy "extra compact member" extra-member extra-member-twin \
+	"$ms" goal budget --root "$clone" --id extra-member-twin --fixture-human-authority \
+		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2 \
+	--refusal "$ms" goal budget --root "$clone" --id extra-member 4h/6/360m/1/2/ignored --fixture-human-authority
+
+open_forgiving_fixture_goal over-round-limit
+set +e
+"$ms" goal budget --root "$clone" --id over-round-limit 4h/6/360m/1/4 --fixture-human-authority \
+	>"$tmp/over-round-limit.out" 2>"$tmp/over-round-limit.err"
+over_round_limit_rc=$?
+set -e
+[[ $over_round_limit_rc -ne 0 && $(wc -l <"$tmp/over-round-limit.err" | tr -d ' ') -eq 2 ]] \
+	&& grep -q '^no command completes this: reviewRoundLimit 4 exceeds configured maximum 3' "$tmp/over-round-limit.err" \
+	&& ! grep -q '^run:' "$tmp/over-round-limit.err" \
+	|| { echo "an over-limit review-round member printed a retry command" >&2; cat "$tmp/over-round-limit.err" >&2; exit 1; }
+
+open_forgiving_fixture_goal approved-completion \
+	--elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2
+"$ms" goal budget --root "$clone" --id approved-completion keep --fixture-human-authority >/dev/null
+set +e
+"$ms" goal budget --root "$clone" --id approved-completion 3h/5/300m/1 --fixture-human-authority \
+	>"$tmp/approved-completion.out" 2>"$tmp/approved-completion.err"
+approved_completion_rc=$?
+set -e
+[[ $approved_completion_rc -ne 0 && $(wc -l <"$tmp/approved-completion.err" | tr -d ' ') -eq 2 ]] \
+	&& grep -q '^no command completes this: the goal already carries that box' "$tmp/approved-completion.err" \
+	&& ! grep -q '^run:' "$tmp/approved-completion.err" \
+	|| { echo "an approved standing-box completion printed a no-op command" >&2; cat "$tmp/approved-completion.err" >&2; exit 1; }
+
+open_forgiving_fixture_goal rejected-reference
+set +e
+"$ms" goal budget --root "$clone" --id rejected-reference norm --approved-ref missing-reference --fixture-human-authority \
+	>"$tmp/rejected-reference.out" 2>"$tmp/rejected-reference.err"
+rejected_reference_rc=$?
+set -e
+[[ $rejected_reference_rc -ne 0 && $(wc -l <"$tmp/rejected-reference.err" | tr -d ' ') -eq 2 ]] \
+	&& grep -q '^no command completes this: the approved reference must cover this exact goal revision and box' "$tmp/rejected-reference.err" \
+	&& ! grep -q '^run:' "$tmp/rejected-reference.err" \
+	|| { echo "a rejected approval reference printed the failing command again" >&2; cat "$tmp/rejected-reference.err" >&2; exit 1; }
+
+open_forgiving_fixture_goal fixture-over-norm
+set +e
+"$ms" goal budget --root "$clone" --id fixture-over-norm 8h/10/1201m/1/3 --fixture-human-authority \
+  >"$tmp/fixture-over-norm.out" 2>"$tmp/fixture-over-norm.err"
+fixture_over_norm_rc=$?
+set -e
+[[ $fixture_over_norm_rc -ne 0 && $(wc -l <"$tmp/fixture-over-norm.err" | tr -d ' ') -eq 2 ]] \
+  && grep -q '^no command completes this: run the over-norm box at a real enrolled terminal' "$tmp/fixture-over-norm.err" \
+  || { echo "fixture authority entered the enrolled-terminal over-norm branch" >&2; cat "$tmp/fixture-over-norm.err" >&2; exit 1; }
+fi
+
+if [[ "$fixture_scenario" == forgiving-budget-identity-aliases ]]; then
+write_forgiving_fixture_enrollment Wido
+"$ms" goal release --root "$clone" --id ship-widget >/dev/null
+open_forgiving_fixture_goal default-human
+"$ms" goal budget --root "$clone" --id default-human 2h/4/240m/1/2 --fixture-human-authority >/dev/null
+read_forgiving_goal default-human "$tmp/default-human.md"
+grep -q ' approve actor=human:Wido ' "$tmp/default-human.md" \
+  || { echo "the enrollment name did not default --by" >&2; cat "$tmp/default-human.md" >&2; exit 1; }
+
+open_forgiving_fixture_goal explicit-human
+"$ms" goal budget --root "$clone" --id explicit-human 2h/4/240m/1/2 --by Alice --fixture-human-authority >/dev/null
+read_forgiving_goal explicit-human "$tmp/explicit-human.md"
+grep -q ' approve actor=human:Alice ' "$tmp/explicit-human.md" \
+  || { echo "an explicit --by did not win over the enrollment name" >&2; cat "$tmp/explicit-human.md" >&2; exit 1; }
+
+write_forgiving_fixture_enrollment
+open_forgiving_fixture_goal nameless-enrollment
+set +e
+"$ms" goal budget --root "$clone" --id nameless-enrollment norm --fixture-human-authority \
+  >"$tmp/nameless-enrollment.out" 2>"$tmp/nameless-enrollment.err"
+nameless_rc=$?
+set -e
+[[ $nameless_rc -ne 0 && $(wc -l <"$tmp/nameless-enrollment.err" | tr -d ' ') -eq 2 ]] \
+  && grep -q '^goal budget: the enrolled terminal has no recorded name' "$tmp/nameless-enrollment.err" \
+  && grep -q '^no command completes this:' "$tmp/nameless-enrollment.err" \
+  && ! grep -q '^run:' "$tmp/nameless-enrollment.err" \
+  || { echo "a fieldless enrollment did not produce the words-only name refusal" >&2; cat "$tmp/nameless-enrollment.err" >&2; exit 1; }
+write_forgiving_fixture_enrollment Wido
+
+for alias_goal in alias-approve-box direct-approve-box alias-approve-long direct-approve-long alias-set-budget direct-set-budget; do
+  open_forgiving_fixture_goal "$alias_goal"
+done
+"$ms" goal approve --root "$clone" --id alias-approve-box --budget box --by Wido --fixture-human-authority \
+  >"$tmp/alias-approve-box.out" 2>"$tmp/alias-approve-box.err"
+grep -q '^hint: metasystem goal budget .*--id alias-approve-box .*norm$' "$tmp/alias-approve-box.err" \
+  || { echo "approve --budget box did not print its goal budget norm hint" >&2; cat "$tmp/alias-approve-box.err" >&2; exit 1; }
+"$ms" goal budget --root "$clone" --id direct-approve-box norm --by Wido --fixture-human-authority >/dev/null
+
+"$ms" goal approve --root "$clone" --id alias-approve-long --by Wido --fixture-human-authority \
+  --elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2 \
+  >"$tmp/alias-approve-long.out" 2>"$tmp/alias-approve-long.err"
+grep -q '^hint: metasystem goal budget .*--id alias-approve-long .*3h/5/300m/1/2$' "$tmp/alias-approve-long.err" \
+  || { echo "approve long form did not print its compact goal budget hint" >&2; cat "$tmp/alias-approve-long.err" >&2; exit 1; }
+"$ms" goal budget --root "$clone" --id direct-approve-long 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
+
+"$ms" goal budget --root "$clone" --id alias-set-budget norm --by Wido --fixture-human-authority >/dev/null
+"$ms" goal claim --root "$clone" --id alias-set-budget >/dev/null
+"$ms" goal set-budget --root "$clone" --id alias-set-budget --by Wido --fixture-human-authority \
+  --elapsed-limit 3h --attempt-limit 5 --reserved-job-minutes-limit 300 --active-job-limit 1 --review-round-limit 2 \
+  >"$tmp/alias-set-budget.out" 2>"$tmp/alias-set-budget.err"
+grep -q '^hint: metasystem goal budget .*--id alias-set-budget .*3h/5/300m/1/2$' "$tmp/alias-set-budget.err" \
+  || { echo "set-budget did not print its compact goal budget hint" >&2; cat "$tmp/alias-set-budget.err" >&2; exit 1; }
+"$ms" goal release --root "$clone" --id alias-set-budget >/dev/null
+"$ms" goal budget --root "$clone" --id direct-set-budget norm --by Wido --fixture-human-authority >/dev/null
+"$ms" goal claim --root "$clone" --id direct-set-budget >/dev/null
+"$ms" goal budget --root "$clone" --id direct-set-budget 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
+
+for pair in 'alias-approve-box direct-approve-box approve' 'alias-approve-long direct-approve-long approve' 'alias-set-budget direct-set-budget set-budget'; do
+  read -r alias_id direct_id history_verb <<<"$pair"
+  read_forgiving_goal "$alias_id" "$tmp/$alias_id.md"
+  read_forgiving_goal "$direct_id" "$tmp/$direct_id.md"
+  alias_budget=$(sed -n 's/^- Budget: //p' "$tmp/$alias_id.md")
+  direct_budget=$(sed -n 's/^- Budget: //p' "$tmp/$direct_id.md")
+  [[ "$alias_budget" == "$direct_budget" ]] \
+    && grep -q " $history_verb actor=human:Wido " "$tmp/$alias_id.md" \
+    && grep -q " $history_verb actor=human:Wido " "$tmp/$direct_id.md" \
+    || { echo "$alias_id did not land the same budget and history verb as $direct_id" >&2; exit 1; }
+done
+fi
+
+if [[ "$fixture_scenario" == forgiving-human-refusals ]]; then
+write_forgiving_fixture_enrollment Wido
+
+open_forgiving_fixture_goal dropped-shape
+open_forgiving_fixture_goal dropped-shape-twin
+run_forgiving_refusal_remedy "shared flag-shape refusal" dropped-shape dropped-shape-twin \
+	"$ms" goal budget --root "$clone" --id dropped-shape-twin --by Wido --fixture-human-authority \
+		--elapsed-limit 1d --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3 \
+	--refusal "$ms" goal budget --root "$clone" --id dropped-shape norm --by Wido --fixture-human-authority --label stray
+
+open_forgiving_fixture_goal fixture-pair
+open_forgiving_fixture_goal fixture-pair-twin
+run_forgiving_refusal_remedy "fixture and temporary authority refusal" fixture-pair fixture-pair-twin \
+	"$ms" goal budget --root "$clone" --id fixture-pair-twin --by Wido --fixture-human-authority \
+		--elapsed-limit 1d --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3 \
+	--refusal "$ms" goal budget --root "$clone" --id fixture-pair norm --by Wido --fixture-human-authority \
+		--temporary-human-word "Wido authorizes this relay" --review-by 2026-09-06
+
+set +e
+"$ms" goal approve --root "$clone" --sweep --budget box --by Wido --fixture-human-authority \
+	>"$tmp/approval-sweep-extras.out" 2>"$tmp/approval-sweep-extras.err"
+approval_sweep_extras_rc=$?
+set -e
+approval_sweep_extras_remedy=$(sed -n 's/^run: //p' "$tmp/approval-sweep-extras.err")
+[[ $approval_sweep_extras_rc -ne 0 && -n "$approval_sweep_extras_remedy" ]] \
+	|| { echo "approval sweep extras did not print a runnable sweep" >&2; cat "$tmp/approval-sweep-extras.err" >&2; exit 1; }
+approval_sweep_preview=$(eval "$approval_sweep_extras_remedy")
+grep -q '^listing-sha256=' <<<"$approval_sweep_preview" \
+	|| { echo "approval sweep extras printed a command that did not preview" >&2; exit 1; }
+
+open_forgiving_fixture_goal sweep-with-id
+open_forgiving_fixture_goal sweep-with-id-twin
+run_forgiving_refusal_remedy "approval sweep with a named goal" sweep-with-id sweep-with-id-twin \
+	"$ms" goal budget --root "$clone" --id sweep-with-id-twin --by Wido --fixture-human-authority \
+		--elapsed-limit 1d --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3 \
+	--refusal "$ms" goal approve --root "$clone" --sweep --id sweep-with-id --confirm stale \
+		--by Wido --fixture-human-authority
+
+for parked_id in parked-completion parked-completion-twin; do
+	open_forgiving_fixture_goal "$parked_id"
+	"$ms" goal budget --root "$clone" --id "$parked_id" 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
+	"$ms" goal park --root "$clone" --id "$parked_id" --because "hold the completed-box fixture" \
+		--by Wido --fixture-human-authority >/dev/null
+done
+run_forgiving_refusal_remedy "parked compact completion" parked-completion parked-completion-twin \
+	"$ms" goal budget --root "$clone" --id parked-completion-twin --by Wido --fixture-human-authority \
+		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2 \
+	--refusal "$ms" goal budget --root "$clone" --id parked-completion 4h/6/360m/1 --by Wido --fixture-human-authority
+
+set +e
+"$ms" goal resume --root "$clone" --id ship-widget --by Wido --fixture-human-authority \
+	--elapsed-limit 8h --attempt-limit 10 --reserved-job-minutes-limit 1200 --active-job-limit 1 --review-round-limit 3 \
+	>"$tmp/resume-without-fence.out" 2>"$tmp/resume-without-fence.err"
+resume_without_fence_rc=$?
+set -e
+[[ $resume_without_fence_rc -ne 0 && $(wc -l <"$tmp/resume-without-fence.err" | tr -d ' ') -eq 2 ]] \
+	&& grep -q '^run: metasystem goal budget .*--id ship-widget .*norm$' "$tmp/resume-without-fence.err" \
+	|| { echo "resume without a fence did not print the norm budget command" >&2; cat "$tmp/resume-without-fence.err" >&2; exit 1; }
+resume_without_fence_remedy=$(sed -n 's/^run: //p' "$tmp/resume-without-fence.err")
+eval "$resume_without_fence_remedy" >/dev/null
+read_forgiving_goal ship-widget "$tmp/ship-widget-after-resume-remedy.md"
+grep -q ' set-budget actor=human:Wido ' "$tmp/ship-widget-after-resume-remedy.md" \
+	&& grep -q '^- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3$' "$tmp/ship-widget-after-resume-remedy.md" \
+	|| { echo "resume without a fence printed a command that did not land the norm box" >&2; cat "$tmp/ship-widget-after-resume-remedy.md" >&2; exit 1; }
+
+# Earlier fixture rows can leave the machine's claim authority occupied. Free
+# every claim this scenario inherited before constructing the claimed twins.
+release_forgiving_claim_if_present direct-set-budget
+release_forgiving_claim_if_present ship-widget
+for claimed_id in claimed-completion claimed-completion-twin; do
+	open_forgiving_fixture_goal "$claimed_id"
+	"$ms" goal budget --root "$clone" --id "$claimed_id" 3h/5/300m/1/2 --by Wido --fixture-human-authority >/dev/null
+done
+claim_forgiving_goal claimed-completion
+run_claimed_completion_twin() {
+	release_forgiving_claim_if_present claimed-completion
+	claim_forgiving_goal claimed-completion-twin
+	"$ms" goal budget --root "$clone" --id claimed-completion-twin --by Wido --fixture-human-authority \
+		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2
+}
+run_forgiving_refusal_remedy "claimed compact completion" claimed-completion claimed-completion-twin \
+	run_claimed_completion_twin \
+	--refusal "$ms" goal budget --root "$clone" --id claimed-completion 4h/6/360m/1 --by Wido --fixture-human-authority
+
+for completed_id in parked-completion claimed-completion-twin; do
+	set +e
+	"$ms" goal budget --root "$clone" --id "$completed_id" 4h/6/360m/1 --by Wido --fixture-human-authority \
+		>"$tmp/$completed_id-same.out" 2>"$tmp/$completed_id-same.err"
+	completed_rc=$?
+	set -e
+	[[ $completed_rc -ne 0 && $(wc -l <"$tmp/$completed_id-same.err" | tr -d ' ') -eq 2 ]] \
+		&& grep -q '^no command completes this: the goal already carries that box' "$tmp/$completed_id-same.err" \
+		&& ! grep -q '^run:' "$tmp/$completed_id-same.err" \
+		|| { echo "$completed_id printed a no-op completed box as a command" >&2; cat "$tmp/$completed_id-same.err" >&2; exit 1; }
+done
+
+# The same completed box is an act when the claim is breach-stopped: the
+# compact refusal must print keep, and keep must match an explicit resume.
+export METASYSTEM_GOAL_NOW=2026-09-20T17:00:00Z
+breach_stop_forgiving_goal claimed-completion-twin
+run_stopped_completion_twin() {
+	release_forgiving_claim_if_present claimed-completion-twin
+	claim_forgiving_goal claimed-completion
+	export METASYSTEM_GOAL_NOW=2026-09-21T17:00:00Z
+	breach_stop_forgiving_goal claimed-completion
+	"$ms" goal resume --root "$clone" --id claimed-completion --by Wido --fixture-human-authority \
+		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2
+}
+run_forgiving_refusal_remedy "breach-stopped claimed compact completion" claimed-completion-twin claimed-completion \
+	run_stopped_completion_twin \
+	--refusal "$ms" goal budget --root "$clone" --id claimed-completion-twin 4h/6/360m/1 --by Wido --fixture-human-authority
+unset METASYSTEM_GOAL_NOW
+release_forgiving_claim_if_present claimed-completion
+release_forgiving_claim_if_present claimed-completion-twin
+claim_forgiving_goal ship-widget
+
+set +e
+"$ms" goal unapprove --root "$clone" --id fix-docs --by Wido --fixture-human-authority \
+  >"$tmp/unapprove-missing.out" 2>"$tmp/unapprove-missing.err"
+unapprove_missing_rc=$?
+set -e
+[[ $unapprove_missing_rc -ne 0 && $(wc -l <"$tmp/unapprove-missing.err" | tr -d ' ') -eq 2 ]] \
+  && grep -q '^no command completes this:' "$tmp/unapprove-missing.err" \
+  || { echo "unapprove's unseen reason did not produce a words refusal" >&2; cat "$tmp/unapprove-missing.err" >&2; exit 1; }
+
+mkdir -p "$clone/artifacts/agents/jobs"
+cat >"$clone/artifacts/agents/jobs/fixture-risk.json" <<'JSON'
+{"jobId":"fixture-risk","role":"code-critic","round":1,"parentJob":null,"status":"completed","goalId":"ship-widget","findingRegisterRound":1,"reviewRoundLimit":3,"criticRoundsConsumed":3,"demotions":[],"findingRegister":[{"findingId":"RISK-1","critic":"fixture-critic","rigorClass":"severe","factsDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","facts":{"local":true},"artifact":"metasystem/fixture.go","title":"fixture severe finding","status":"open","resolution":"","decisionOpid":"","evidence":"direct fixture evidence","evidenceDigest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","multiplicity":1}]}
+JSON
+set +e
+"$ms" goal accept-risk --root "$clone" --id ship-widget --finding RISK-1 --chain fixture-risk --why "fixture pair" --by Wido \
+	--fixture-human-authority --temporary-human-word "Wido authorizes this relay" \
+	>"$tmp/accept-risk-pair.out" 2>"$tmp/accept-risk-pair.err"
+accept_risk_pair_rc=$?
+set -e
+[[ $accept_risk_pair_rc -ne 0 && $(wc -l <"$tmp/accept-risk-pair.err" | tr -d ' ') -eq 2 ]] \
+	&& grep -q '^run: metasystem goal accept-risk ' "$tmp/accept-risk-pair.err" \
+	|| { echo "accept-risk's temporary pair did not produce a two-line command refusal" >&2; cat "$tmp/accept-risk-pair.err" >&2; exit 1; }
+accept_risk_pair_remedy=$(sed -n 's/^run: //p' "$tmp/accept-risk-pair.err")
+eval "$accept_risk_pair_remedy" >/dev/null
+read_forgiving_goal ship-widget "$tmp/ship-widget-accepted-risk.md"
+grep -q '^- AcceptedRisk: finding=RISK-1 chain=fixture-risk by=Wido opid=' "$tmp/ship-widget-accepted-risk.md" \
+	|| { echo "accept-risk's printed pair remedy did not accept the real fixture finding" >&2; cat "$tmp/ship-widget-accepted-risk.md" >&2; exit 1; }
+
+set +e
+"$ms" goal set-obligation --root "$clone" --id ship-widget --fixture-human-authority \
+  >"$tmp/set-obligation-missing.out" 2>"$tmp/set-obligation-missing.err"
+set_obligation_missing_rc=$?
+set -e
+[[ $set_obligation_missing_rc -ne 0 && $(wc -l <"$tmp/set-obligation-missing.err" | tr -d ' ') -eq 2 ]] \
+  && grep -q '^no command completes this:' "$tmp/set-obligation-missing.err" \
+  || { echo "set-obligation's absent values did not produce a words refusal" >&2; cat "$tmp/set-obligation-missing.err" >&2; exit 1; }
+
+set +e
+"$ms" goal enroll-terminal --root "$clone" --lineage fixture-lineage \
+  >"$tmp/enroll-missing-name.out" 2>"$tmp/enroll-missing-name.err"
+enroll_missing_name_rc=$?
+set -e
+[[ $enroll_missing_name_rc -ne 0 && $(wc -l <"$tmp/enroll-missing-name.err" | tr -d ' ') -eq 2 ]] \
+  && grep -q '^no command completes this:' "$tmp/enroll-missing-name.err" \
+  || { echo "enroll-terminal without a name did not produce a words refusal" >&2; cat "$tmp/enroll-missing-name.err" >&2; exit 1; }
+
+refusal_draft="$tmp/forgiving-classification.txt"
+cat >"$refusal_draft" <<'DRAFT'
+ship-widget 3,1,1,1 claimed migration
+fix-docs 1,1,1,1 queued migration
+perf-pass 2,1,1,1 parked migration
+DRAFT
+set +e
+"$ms" goal classify-sweep --root "$clone" --draft "$refusal_draft" \
+	>"$tmp/classify-missing-mode.out" 2>"$tmp/classify-missing-mode.err"
+classify_missing_mode_rc=$?
+set -e
+classify_missing_mode_remedy=$(sed -n 's/^run: //p' "$tmp/classify-missing-mode.err")
+[[ $classify_missing_mode_rc -ne 0 && -n "$classify_missing_mode_remedy" ]] \
+	|| { echo "classify-sweep's missing mode did not print a preview command" >&2; cat "$tmp/classify-missing-mode.err" >&2; exit 1; }
+classify_missing_mode_preview=$(eval "$classify_missing_mode_remedy")
+grep -q '^listing-digest ' <<<"$classify_missing_mode_preview" \
+	|| { echo "classify-sweep's missing-mode command did not run" >&2; exit 1; }
+
+set +e
+"$ms" goal classify-sweep --root "$clone" --draft "$tmp/missing-classification.txt" --preview \
+  >"$tmp/classify-unreadable.out" 2>"$tmp/classify-unreadable.err"
+classify_unreadable_rc=$?
+set -e
+[[ $classify_unreadable_rc -ne 0 && $(wc -l <"$tmp/classify-unreadable.err" | tr -d ' ') -eq 2 ]] \
+  && grep -q '^no command completes this:' "$tmp/classify-unreadable.err" \
+  || { echo "classify-sweep's unreadable draft did not produce a words refusal" >&2; cat "$tmp/classify-unreadable.err" >&2; exit 1; }
+
+classification_preview=$("$ms" goal classify-sweep --root "$clone" --draft "$refusal_draft" --preview)
+classification_digest=$(sed -n 's/^listing-digest //p' <<<"$classification_preview")
+sed 's/claimed migration/changed migration/' "$refusal_draft" >"$tmp/changed-forgiving-classification.txt"
+set +e
+"$ms" goal classify-sweep --root "$clone" --draft "$tmp/changed-forgiving-classification.txt" \
+	--confirm "$classification_digest" --by Wido --fixture-human-authority \
+	>"$tmp/classify-changed.out" 2>"$tmp/classify-changed.err"
+classify_changed_rc=$?
+set -e
+classify_changed_remedy=$(sed -n 's/^run: //p' "$tmp/classify-changed.err")
+[[ $classify_changed_rc -ne 0 && -n "$classify_changed_remedy" ]] \
+	|| { echo "classify-sweep's changed listing did not print a preview command" >&2; cat "$tmp/classify-changed.err" >&2; exit 1; }
+classify_changed_preview=$(eval "$classify_changed_remedy")
+grep -q '^listing-digest ' <<<"$classify_changed_preview" \
+	|| { echo "classify-sweep's changed-listing command did not run" >&2; exit 1; }
+fi
+
 if [[ "$fixture_scenario" == risk-basis ]]; then
 set +e
 tier_alone=$("$ms" goal open --root "$clone" --id unanswered-risk \
@@ -1817,7 +2377,7 @@ set -e
   || { echo "changed classification draft did not refuse by digest: rc=$changed_rc output=$changed_output" >&2; exit 1; }
 
 classification_confirm=$("$ms" goal classify-sweep --root "$clone" --draft "$classification_draft" \
-  --confirm "$classification_digest" --by Wido)
+  --confirm "$classification_digest" --by Wido --fixture-human-authority)
 grep -q '"outcome":"confirmed"' <<<"$classification_confirm" \
   || { echo "classification confirmation did not confirm: $classification_confirm" >&2; exit 1; }
 classified_tip=$(git -C "$origin" rev-parse main)

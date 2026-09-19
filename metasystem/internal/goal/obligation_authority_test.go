@@ -49,7 +49,7 @@ func enrollObligationHuman(t *testing.T, root string) *obligationAuthorityReader
 		20: obligationAuthoritySnapshot(20, 10, []string{"shell"}),
 		30: obligationAuthoritySnapshot(30, 20, []string{"human-command"}),
 	}}
-	if _, err := humanauthority.Enroll(root, 20, reader, time.Date(2026, 8, 30, 8, 0, 0, 0, time.UTC)); err != nil {
+	if _, err := humanauthority.Enroll(root, 20, reader, "Wido", time.Date(2026, 8, 30, 8, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
 	return reader

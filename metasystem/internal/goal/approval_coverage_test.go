@@ -144,6 +144,115 @@ func TestApproveRefusalsAndProvenReratification(t *testing.T) {
 	}
 }
 
+func TestApproveRecordsABoxWhileLeavingAParkStanding(t *testing.T) {
+	t.Parallel()
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	if result, err := Open(verbReq(root, "01J5X00000000000000000RP00", "mac-a"), "parked-ratification", "Keep the pause while changing the box.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open parked approval fixture: %+v %v", result, err)
+	}
+	human := verbReq(root, "01J5X00000000000000000RP10", "mac-a")
+	human.Actor.Human = "Wido"
+	proof := testHumanAuthority(t, root, human.Now)
+	first := testBudget()
+	if result, err := Approve(human, []string{"parked-ratification"}, &first, proof); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("approve parked fixture: %+v %v", result, err)
+	}
+	park := verbReq(root, "01J5X00000000000000000RP20", "mac-a")
+	if result, err := Park(park, "parked-ratification", "wait for a dependency"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("park approved fixture: %+v %v", result, err)
+	}
+
+	second := first
+	second.AttemptLimit++
+	human.Ulid = "01J5X00000000000000000RP30"
+	result, err := Approve(human, []string{"parked-ratification"}, &second, proof)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("approve a parked goal with a new box: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := tree.Live["parked-ratification"]
+	if file.State != StateParked || file.Parked == nil || file.Parked.Because != "wait for a dependency" || file.Budget == nil || *file.Budget != second {
+		t.Fatalf("parked approval moved something besides the approval tuple: %+v", file)
+	}
+	last := file.History[len(file.History)-1]
+	if last.Verb != "approve" {
+		t.Fatalf("parked ratification changed the history verb: %+v", last)
+	}
+	historyCount := len(file.History)
+	human.Ulid = "01J5X00000000000000000RP35"
+	result, err = Approve(human, []string{"parked-ratification"}, &second, proof)
+	if err != nil || result.Outcome != OutcomeAbandoned || !strings.Contains(result.Detail, "same proven approval") {
+		t.Fatalf("identical parked approval was not an explicit no-op: %+v %v", result, err)
+	}
+	tree, err = loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file = tree.Live["parked-ratification"]
+	if len(file.History) != historyCount || file.State != StateParked || file.Budget == nil || *file.Budget != second {
+		t.Fatalf("identical parked approval recorded a line or moved the park: %+v", file)
+	}
+
+	unpark := verbReq(root, "01J5X00000000000000000RP40", "mac-a")
+	if result, err = Unpark(unpark, "parked-ratification"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("unpark ratified goal: %+v %v", result, err)
+	}
+	tree, err = loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file = tree.Live["parked-ratification"]; file.State != StateApproved || file.Budget == nil || *file.Budget != second {
+		t.Fatalf("unpark did not return to approved with the parked box: %+v", file)
+	}
+}
+
+func TestEnrolledTerminalFoldsItsOperationIntoOverNormApproval(t *testing.T) {
+	t.Parallel()
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	open := verbReq(root, "01J5X00000000000000000RN00", "mac-a")
+	if result, err := OpenTiered(open, "terminal-over-norm", "Fold the terminal word into the norm claim.", OriginMain, "Check idempotency.", 1, nil); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open over-norm fixture: %+v %v", result, err)
+	}
+	human := verbReq(root, "01J5X00000000000000000RN10", "mac-a")
+	human.Actor.Human = "Wido"
+	proof := testHumanAuthority(t, root, human.Now)
+	budget := testBudget()
+	budget.ReservedJobMinutesLimit = 361
+	first, err := Approve(human, []string{"terminal-over-norm"}, &budget, proof)
+	if err != nil || first.Outcome != OutcomeConfirmed {
+		t.Fatalf("real enrolled-terminal over-norm act was not folded in: result=%+v err=%v", first, err)
+	}
+	tree, err := loadTree(root, first.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := tree.Live["terminal-over-norm"]
+	claim := file.NormApproval
+	operationID := human.opid()
+	if claim == nil || claim.ApprovedRef != operationID || claim.Minutes != 361 || claim.ReviewRounds != budget.ReviewRoundLimit || claim.GoalRevision != 1 {
+		t.Fatalf("over-norm claim did not bind its own operation and tuple: %+v", claim)
+	}
+	historyCount := len(file.History)
+	human.Ulid = "01J5X00000000000000000RN20"
+	second, err := Approve(human, []string{"terminal-over-norm"}, &budget, proof)
+	if err != nil || second.Outcome != OutcomeAbandoned || !strings.Contains(second.Detail, "same proven approval") {
+		t.Fatalf("identical terminal-folded approval was not a no-op: %+v %v", second, err)
+	}
+	tree, err = loadTree(root, second.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file = tree.Live["terminal-over-norm"]
+	if len(file.History) != historyCount || file.NormApproval == nil || file.NormApproval.ApprovedRef != operationID || file.BudgetExceptions != 0 {
+		t.Fatalf("identical terminal-folded approval recorded another act or exception: %+v", file)
+	}
+}
+
 func TestApprovalRequiredNamesEveryClaimProducingPath(t *testing.T) {
 	t.Parallel()
 	file := vGoal("not-approved", StateQueued)
@@ -366,7 +475,7 @@ func TestOverNormApprovalRefusesWithoutAndPassesWithCoveringToken(t *testing.T) 
 	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1500, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 	human := verbReq(root, "01J5X00000000000000000NR10", "mac-a")
 	human.Actor.Human = "Wido"
-	proof := testHumanAuthority(t, root, human.Now)
+	proof := testFixtureHumanAuthority(t, root, human.Now)
 	result, err := Approve(human, []string{"covered-over-norm"}, &over, proof)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "GOAL_NORM_REFUSED") {
 		t.Fatalf("over-norm approval passed without a covering token: %+v %v", result, err)

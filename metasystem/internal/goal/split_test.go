@@ -373,7 +373,7 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 	over := Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1201, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 	request := verbReq(root, "01J5X00000000000000000GN10", "mac-a")
 	request.Actor.Human = "wido"
-	refused, err := Approve(request, []string{"large-goal"}, &over, testHumanAuthority(t, root, request.Now))
+	refused, err := Approve(request, []string{"large-goal"}, &over, testFixtureHumanAuthority(t, root, request.Now))
 	if err != nil || refused.Outcome != OutcomeRejected || !strings.Contains(refused.Detail, "GOAL_NORM_REFUSED") || !strings.Contains(refused.Detail, "split it into an arc of members within the box") {
 		t.Fatalf("over-norm claim did not exercise the typed split remedy: %+v %v", refused, err)
 	}
@@ -386,7 +386,7 @@ func TestGoalNormRefusesAndPublishesStrictApproval(t *testing.T) {
 	approved := verbReq(root, "01J5X00000000000000000GN20", "mac-a")
 	approved.Actor.Human = "wido"
 	approved.ApprovedRef = "R-25b"
-	result, err := Approve(approved, []string{"large-goal"}, &over, testHumanAuthority(t, root, approved.Now))
+	result, err := Approve(approved, []string{"large-goal"}, &over, testFixtureHumanAuthority(t, root, approved.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("strict approval did not admit set-budget: %+v %v", result, err)
 	}

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -551,18 +553,30 @@ func terminalAuthorityLineage(observedTerminalID string, generation uint64) stri
 }
 
 func syncReqWithProof(verb, root, by, lineageFlag string, observedProof *humanauthority.Proof) (goal.VerbRequest, error) {
+	return syncReqWithProofAt(verb, root, by, lineageFlag, observedProof, goalCommandNow)
+}
+
+func syncReqWithProofAt(verb, root, by, lineageFlag string, observedProof *humanauthority.Proof, commandNow func(string) (time.Time, error)) (goal.VerbRequest, error) {
 	classification, classifyErr := brainHumanWordClassification(verb, root, by, observedProof)
 	if classifyErr != nil {
 		return goal.VerbRequest{}, classifyErr
 	}
-	return syncReqClassified(root, by, lineageFlag, observedProof, classification)
+	return syncReqClassifiedAt(root, by, lineageFlag, observedProof, classification, commandNow)
 }
 
 func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult) (goal.VerbRequest, error) {
-	return syncReqClassifiedWithTerminalGrade(root, by, lineageFlag, observedProof, classification, false)
+	return syncReqClassifiedAt(root, by, lineageFlag, observedProof, classification, goalCommandNow)
+}
+
+func syncReqClassifiedAt(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, commandNow func(string) (time.Time, error)) (goal.VerbRequest, error) {
+	return syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag, observedProof, classification, false, commandNow)
 }
 
 func syncReqClassifiedWithTerminalGrade(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, allowTerminal bool) (goal.VerbRequest, error) {
+	return syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag, observedProof, classification, allowTerminal, goalCommandNow)
+}
+
+func syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, allowTerminal bool, commandNow func(string) (time.Time, error)) (goal.VerbRequest, error) {
 	if err := ensureGuardEnrolled(root); err != nil {
 		return goal.VerbRequest{}, err
 	}
@@ -577,7 +591,7 @@ func syncReqClassifiedWithTerminalGrade(root, by, lineageFlag string, observedPr
 	}
 	authority := observedProof
 	if allowTerminal && by != "" && authority == nil {
-		now, nowErr := goalCommandNow(root)
+		now, nowErr := commandNow(root)
 		if nowErr != nil {
 			return goal.VerbRequest{}, nowErr
 		}
@@ -622,7 +636,7 @@ func syncReqClassifiedWithTerminalGrade(root, by, lineageFlag string, observedPr
 		if err != nil {
 			return goal.VerbRequest{}, fmt.Errorf("a human act derives its lineage from the enrolled terminal, and this checkout has none: run metasystem goal enroll-terminal here once, or pass --lineage: %w", err)
 		}
-		now, nowErr := goalCommandNow(root)
+		now, nowErr := commandNow(root)
 		if nowErr != nil {
 			return goal.VerbRequest{}, nowErr
 		}
@@ -652,7 +666,7 @@ func syncReqClassifiedWithTerminalGrade(root, by, lineageFlag string, observedPr
 	if err != nil {
 		return goal.VerbRequest{}, err
 	}
-	now, err := goalCommandNow(root)
+	now, err := commandNow(root)
 	if err != nil {
 		return goal.VerbRequest{}, err
 	}
@@ -948,7 +962,48 @@ func (v *repeatedStrings) Set(value string) error {
 }
 
 func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
+	f, err := parseSyncFlagValues(name, args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return nil, false
+	}
+	return f, true
+}
+
+func parseHumanSyncFlags(values *humanVerbValues, name string, args []string) (*syncFlags, bool) {
+	f, err := parseSyncFlagValues(name, args)
+	if err == nil {
+		values.bindSyncFlags(f)
+		return f, true
+	}
+	message := strings.TrimPrefix(err.Error(), "goal "+name+" ")
+	drop := humanFlagDrop(err.Error())
+	remedy := humanVerbRemedy{words: "remove the unrecognized flag and retry"}
+	if len(drop) > 0 {
+		remedy = humanVerbRemedy{command: values.sameCommandWithout(drop...)}
+	}
+	refuseHumanVerb(values, 2, message, remedy)
+	return nil, false
+}
+
+func humanFlagDrop(message string) []string {
+	for _, name := range []string{"label", "unlabel", "tier", "members", "approved-ref"} {
+		if strings.Contains(message, "--"+name) || strings.Contains(message, "-"+name) {
+			return []string{name}
+		}
+	}
+	if strings.Contains(message, "--risk, --basis, or --evidence") {
+		return []string{"risk", "basis", "evidence"}
+	}
+	if strings.Contains(message, "budget flags") {
+		return []string{"elapsed-limit", "attempt-limit", "reserved-job-minutes-limit", "active-job-limit", "review-round-limit"}
+	}
+	return nil
+}
+
+func parseSyncFlagValues(name string, args []string) (*syncFlags, error) {
 	fs := flag.NewFlagSet("goal "+name, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
 	f := &syncFlags{}
 	pathFlagVar(fs, &f.root, "root", ".", "checkout root")
 	fs.StringVar(&f.by, "by", "", "the directing human (a human act carries its name)")
@@ -1001,11 +1056,11 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 		fs.BoolVar(&f.sweep, "sweep", false, "preview or confirm the grandfather approval sweep")
 		fs.StringVar(&f.confirm, "confirm", "", "sha256 from the exact sweep listing")
 	}
-	if name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" {
+	if name == "budget" || name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" {
 		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
 		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	}
-	if name == "approve" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "park" || name == "reopen" {
+	if name == "budget" || name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "park" || name == "reopen" {
 		fs.BoolVar(&f.fixtureHumanAuthority, "fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
 	}
 	fs.Var(&f.labels, "label", "label token (repeatable)")
@@ -1013,60 +1068,48 @@ func parseSyncFlags(name string, args []string) (*syncFlags, bool) {
 	fs.BoolVar(&f.claim, "claim", false, "claim on open")
 	fs.BoolVar(&f.refreshOnly, "refresh-only", false, "complete a died refresh")
 	fs.IntVar(&f.keep, "keep", 10, "archive entries to keep")
-	if fs.Parse(args) != nil {
-		return nil, false
+	if err := fs.Parse(args); err != nil {
+		return nil, err
 	}
 	if name != "open" && f.blocks != "" {
-		fmt.Fprintf(os.Stderr, "goal %s does not take --blocks\n", name)
-		return nil, false
+		return nil, fmt.Errorf("goal %s does not take --blocks", name)
 	}
 	if name != "approve" && name != "set-budget" && name != "unpark" && f.under != "" {
-		fmt.Fprintf(os.Stderr, "goal %s does not take --under; a power of attorney covers approve, set-budget and unpark\n", name)
-		return nil, false
+		return nil, fmt.Errorf("goal %s does not take --under; a power of attorney covers approve, set-budget and unpark", name)
 	}
 	if name != "grant" && (f.tiers != "" || f.verbs != "" || f.expires != "") {
-		fmt.Fprintf(os.Stderr, "goal %s does not take --tiers, --verbs or --expires\n", name)
-		return nil, false
+		return nil, fmt.Errorf("goal %s does not take --tiers, --verbs or --expires", name)
 	}
 	if name != "open" && name != "edit" {
 		if len(f.labels) > 0 {
-			fmt.Fprintf(os.Stderr, "goal %s does not take --label\n", name)
-			return nil, false
+			return nil, fmt.Errorf("goal %s does not take --label", name)
 		}
 		if len(f.unlabels) > 0 {
-			fmt.Fprintf(os.Stderr, "goal %s does not take --unlabel\n", name)
-			return nil, false
+			return nil, fmt.Errorf("goal %s does not take --unlabel", name)
 		}
 		if f.tier != 0 {
-			fmt.Fprintf(os.Stderr, "goal %s does not take --tier\n", name)
-			return nil, false
+			return nil, fmt.Errorf("goal %s does not take --tier", name)
 		}
 		if f.risk != "" || f.basis != "" || f.evidence != "" {
-			fmt.Fprintf(os.Stderr, "goal %s does not take --risk, --basis, or --evidence\n", name)
-			return nil, false
+			return nil, fmt.Errorf("goal %s does not take --risk, --basis, or --evidence", name)
 		}
 	}
-	if name != "open" && name != "claim" && name != "set-budget" && name != "resume" && name != "approve" && f.hasAnyBudgetFlag() {
-		fmt.Fprintf(os.Stderr, "goal %s does not take budget flags\n", name)
-		return nil, false
+	if name != "open" && name != "claim" && name != "budget" && name != "set-budget" && name != "resume" && name != "approve" && f.hasAnyBudgetFlag() {
+		return nil, fmt.Errorf("goal %s does not take budget flags", name)
 	}
-	if f.approvedRef != "" && name != "set-budget" && name != "resume" && name != "approve" {
-		fmt.Fprintf(os.Stderr, "goal %s does not take --approved-ref\n", name)
-		return nil, false
+	if f.approvedRef != "" && name != "budget" && name != "set-budget" && name != "resume" && name != "approve" {
+		return nil, fmt.Errorf("goal %s does not take --approved-ref", name)
 	}
 	if f.members != "" && name != "split" {
-		fmt.Fprintf(os.Stderr, "goal %s does not take --members\n", name)
-		return nil, false
+		return nil, fmt.Errorf("goal %s does not take --members", name)
 	}
 	if name != "trunk-red own" && (f.goal != "" || f.branch != "" || f.to != "") {
-		fmt.Fprintf(os.Stderr, "goal %s does not take --goal, --branch, or --to\n", name)
-		return nil, false
+		return nil, fmt.Errorf("goal %s does not take --goal, --branch, or --to", name)
 	}
 	if name == "trunk-red own" && f.to != "" && f.by == "" {
-		fmt.Fprintln(os.Stderr, "goal trunk-red own takes --to only with --by")
-		return nil, false
+		return nil, fmt.Errorf("goal trunk-red own takes --to only with --by")
 	}
-	return f, true
+	return f, nil
 }
 
 func runGoalDischargeReviewObligation(args []string) int {
@@ -1104,22 +1147,21 @@ func runGoalAcceptRisk(args []string) int {
 }
 
 func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) int {
-	f, ok := parseSyncFlags("accept-risk", args)
-	if ok {
-		f.why = strings.TrimSpace(f.why)
-	}
-	if !ok || f.id == "" || f.finding == "" || f.chain == "" || f.by == "" || f.why == "" {
-		fmt.Fprintln(os.Stderr, "goal accept-risk needs --id, --finding, --chain, --by, and --why")
+	values := newHumanVerbValues("accept-risk", args)
+	f, ok := parseHumanSyncFlags(values, "accept-risk", args)
+	if !ok {
 		return 2
 	}
+	if f.id == "" || f.finding == "" || f.chain == "" || strings.TrimSpace(f.why) == "" {
+		return refuseHumanVerb(values, 2, "needs --id, --finding, --chain, and --why", humanVerbRemedy{words: "add the missing decision value named in the refusal"})
+	}
+	f.why = strings.TrimSpace(f.why)
 	if (f.temporaryWord == "") != (f.reviewBy == "") {
-		fmt.Fprintln(os.Stderr, "--temporary-human-word and --review-by travel together")
-		return 2
+		return refuseHumanVerb(values, 2, "--temporary-human-word and --review-by travel together", humanVerbRemedy{command: values.sameCommandWithout("temporary-human-word", "review-by")})
 	}
 	classification, err := classifyGoalAuthorityFirst("accept-risk", f)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "choose an open severe or unproven finding from the named critique register"})
 	}
 	var finding dispatchcore.CritiqueDecisionFinding
 	if f.chain != goal.HumanCarriedChain {
@@ -1131,13 +1173,15 @@ func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) in
 	}
 	proof, err := proveGoalHumanAuthority("accept-risk", f, prove)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy))
 	}
+	if err := resolveGoalHuman(f, proof); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
+	}
+	values.by = f.by
 	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
 	opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 	var carriedRisk counselor.CarriedAcceptedRiskAppend
@@ -1155,32 +1199,31 @@ func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) in
 	}
 	res, err := goal.AcceptedRiskDecision(req, f.id, f.finding, f.chain, f.by, f.why, &proof)
 	if err != nil {
-		return printSyncResult(res, err)
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "read the current goal and critique finding before retrying"})
+	}
+	if res.Outcome != goal.OutcomeConfirmed {
+		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "read the current goal and critique finding before retrying"})
 	}
 	opid, err = goal.AcceptedRiskDecisionOpID(f.root, f.id, f.finding, f.chain, req.Now)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "the goal act landed, but its accepted-risk record needs repair"})
 	}
 	if f.chain == goal.HumanCarriedChain {
 		carriedRisk.OpID = opid
 		if err := counselor.AppendCarriedAcceptedRisk(f.root, carriedRisk); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "the goal act landed, but its carried accepted-risk record needs repair"})
 		}
 	} else {
 		if err := counselor.AppendAcceptedRisk(f.root, counselor.AcceptedRiskAppend{Goal: f.id, RootJob: f.chain, FindingID: f.finding, Class: finding.RigorClass, Title: finding.Title, Claim: finding.Claim, Evidence: finding.Evidence, Why: f.why, OpID: opid, RecordedAt: req.Now}); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "the goal act landed, but its accepted-risk record needs repair"})
 		}
 		if err := dispatchcore.CritiqueRegisterAcceptRisk(f.root, f.chain, f.finding, opid); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "the goal act landed, but the critique register needs repair"})
 		}
 	}
 	if err := recordGoalApprovalProof(f.root, opid, "goal accept-risk", proof); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 	}
 	return printSyncResult(res, nil)
 }
@@ -1223,6 +1266,366 @@ func (f *syncFlags) approvalBudget() (*goal.Budget, error) {
 		return nil, fmt.Errorf("--budget is box")
 	}
 	return f.budgetTuple(false)
+}
+
+func extractGoalBudgetBox(args []string) ([]string, string, error) {
+	cleaned := make([]string, 0, len(args))
+	box := ""
+	for index := 0; index < len(args); index++ {
+		token := args[index]
+		if strings.HasPrefix(token, "--") {
+			cleaned = append(cleaned, token)
+			nameValue := strings.TrimPrefix(token, "--")
+			name, _, joined := strings.Cut(nameValue, "=")
+			if joined || goalBooleanFlag(name) || index+1 >= len(args) {
+				continue
+			}
+			index++
+			cleaned = append(cleaned, args[index])
+			continue
+		}
+		if token == "norm" || token == "keep" || strings.Contains(token, "/") {
+			if box != "" {
+				return nil, "", fmt.Errorf("takes one box, not both %q and %q", box, token)
+			}
+			box = token
+			continue
+		}
+		return nil, "", fmt.Errorf("does not recognize positional value %q as a box", token)
+	}
+	return cleaned, box, nil
+}
+
+func completeBudgetBox(value string, fallback goal.Budget, standing *goal.Budget, reviewRoundMax uint64) (goal.Budget, string, bool) {
+	parts := strings.Split(value, "/")
+	if len(parts) > 5 {
+		firstFive := strings.Join(parts[:5], "/")
+		completed, err := goalbudget.ParseBox(firstFive, standing, reviewRoundMax)
+		return completed, firstFive, err == nil
+	}
+	base := strings.Split(goalbudget.FormatBox(fallback), "/")
+	for len(parts) < 5 {
+		parts = append(parts, "")
+	}
+	valid := []func(string) bool{
+		func(part string) bool { _, ok := goalbudget.ParseWorkingDuration(part); return ok },
+		func(part string) bool { value, err := strconv.ParseUint(part, 10, 64); return err == nil && value > 0 },
+		func(part string) bool {
+			value, err := strconv.ParseUint(strings.TrimSuffix(part, "m"), 10, 64)
+			return strings.HasSuffix(part, "m") && err == nil && value > 0
+		},
+		func(part string) bool { value, err := strconv.ParseUint(part, 10, 64); return err == nil && value > 0 },
+		func(part string) bool { value, err := strconv.ParseInt(part, 10, 64); return err == nil && value >= 0 },
+	}
+	for index := range parts {
+		if !valid[index](parts[index]) {
+			parts[index] = base[index]
+		}
+	}
+	completed, err := goalbudget.ParseBox(strings.Join(parts, "/"), nil, reviewRoundMax)
+	if err != nil {
+		return goal.Budget{}, "", false
+	}
+	return completed, goalbudget.FormatBox(completed), true
+}
+
+func completedBudgetRemedy(values *humanVerbValues, file *goal.GoalFile, completed goal.Budget, box string, horizon goal.ApprovalHorizon) humanVerbRemedy {
+	if file.Budget == nil || *file.Budget != completed {
+		return humanVerbRemedy{command: values.budgetCommand(box)}
+	}
+	switch file.State {
+	case goal.StateClaimed:
+		if file.StopFence != nil {
+			return humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")}
+		}
+		if values.approvedRef == "" {
+			return humanVerbRemedy{words: "the goal already carries that box, so there is no new act to record"}
+		}
+	case goal.StateApproved, goal.StateParked:
+		expired, _ := file.ApprovalExpired(horizon)
+		if file.Approved != nil && file.Approved.Authority == goal.ApprovalAuthorityProven &&
+			values.temporaryWord == "" && values.reviewBy == "" && !expired {
+			return humanVerbRemedy{words: "the goal already carries that box, so there is no new act to record"}
+		}
+	}
+	return humanVerbRemedy{command: values.budgetCommand(box)}
+}
+
+func malformedBudgetRemedy(values *humanVerbValues, file *goal.GoalFile, value string, fallback goal.Budget, reviewRoundMax uint64, parseErr error, horizon goal.ApprovalHorizon) humanVerbRemedy {
+	if strings.Contains(parseErr.Error(), "exceeds configured maximum") {
+		return humanVerbRemedy{words: parseErr.Error()}
+	}
+	completed, box, ok := completeBudgetBox(value, fallback, file.Budget, reviewRoundMax)
+	if !ok {
+		if len(strings.Split(value, "/")) > 5 {
+			return humanVerbRemedy{words: "the first five compact-box members do not form a valid box"}
+		}
+		return humanVerbRemedy{words: "the compact box cannot be completed from the goal's standing limits"}
+	}
+	values.box = &completed
+	return completedBudgetRemedy(values, file, completed, box, horizon)
+}
+
+func bindGoalTierView(values *humanVerbValues, root string, file *goal.GoalFile) error {
+	tier := file.Tier
+	if tier == 0 {
+		tier = 3
+	}
+	tierBox, err := config.TierBox(filepath.Join(root, "metasystem.conf"), tier)
+	if err != nil {
+		return err
+	}
+	values.bindGoalView(file, tierBox)
+	return nil
+}
+
+func resolveGoalHuman(flags *syncFlags, proof humanauthority.Proof) error {
+	if flags.by != "" {
+		return nil
+	}
+	if !proof.EnrolledTerminalFor(flags.root) && !(proof.FixtureOnly && proof.ValidFor(flags.root)) {
+		return fmt.Errorf("the enrolled terminal has no recorded name")
+	}
+	enrollment, err := humanauthority.ReadEnrollment(flags.root)
+	if err != nil || strings.TrimSpace(enrollment.Human) == "" {
+		return fmt.Errorf("the enrolled terminal has no recorded name")
+	}
+	if proof.EnrolledTerminalFor(flags.root) &&
+		(proof.TerminalGeneration != enrollment.Generation || proof.TerminalRef != enrollment.TerminalRef) {
+		return fmt.Errorf("the enrolled terminal has no recorded name")
+	}
+	flags.by = enrollment.Human
+	return nil
+}
+
+func runGoalBudget(args []string) int {
+	return runGoalBudgetWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+func runGoalBudgetWithAuthority(args []string, prove goalAuthorityProver) int {
+	return runGoalBudgetWithAuthorityAt(args, prove, goalCommandNow)
+}
+
+func runGoalBudgetWithAuthorityAt(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error)) int {
+	values := newHumanVerbValues("budget", args)
+	cleaned, box, err := extractGoalBudgetBox(args)
+	if err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "give exactly one compact box after or before the flags"})
+	}
+	flags, ok := parseHumanSyncFlags(values, "budget", cleaned)
+	if !ok {
+		return 2
+	}
+	values.boxTyped = box
+	return runGoalBudgetPreparedAt(values, flags, box, prove, commandNow)
+}
+
+func runGoalBudgetPrepared(values *humanVerbValues, flags *syncFlags, boxToken string, prove goalAuthorityProver) int {
+	return runGoalBudgetPreparedAt(values, flags, boxToken, prove, goalCommandNow)
+}
+
+func runGoalBudgetPreparedAt(values *humanVerbValues, flags *syncFlags, boxToken string, prove goalAuthorityProver, commandNow func(string) (time.Time, error)) int {
+	values.bindSyncFlags(flags)
+	values.boxTyped = boxToken
+	if !converted(flags.root) {
+		return refuseHumanVerb(values, 1, "works only with the synced backlog", humanVerbRemedy{words: "migrate this checkout to the synced backlog first"})
+	}
+	if flags.id == "" {
+		return refuseHumanVerb(values, 2, "needs --id", humanVerbRemedy{words: "add the live goal's identifier with --id"})
+	}
+	endpoint, err := goal.ResolveEndpoint(flags.root)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the checkout's goal synchronization endpoint"})
+	}
+	now, err := commandNow(flags.root)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "provide a valid goal command clock"})
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the accepted goal projection before retrying"})
+	}
+	file := projection.Tree.Live[flags.id]
+	if file == nil {
+		if projection.Tree.Done[flags.id] != nil {
+			return refuseHumanVerb(values, 1, "the goal is done and its archived budget is read-only", humanVerbRemedy{words: "reopen the goal before giving its live revision a box"})
+		}
+		return refuseHumanVerb(values, 1, "the goal identifier is unknown", humanVerbRemedy{words: "choose an identifier from metasystem goal list"})
+	}
+	tier := file.Tier
+	if tier == 0 {
+		tier = 3
+	}
+	tierBox, err := config.TierBox(filepath.Join(flags.root, "metasystem.conf"), tier)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the configured tier box"})
+	}
+	reviewRoundMax, err := config.ReviewRoundMax(filepath.Join(flags.root, "metasystem.conf"))
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the configured review-round limit"})
+	}
+	values.bindGoalView(file, tierBox)
+	approvalHorizon := goal.ApprovalHorizon{Now: now}
+	var budget goal.Budget
+	switch {
+	case boxToken != "" && flags.hasAnyBudgetFlag():
+		parsed, parseErr := goalbudget.ParseBox(boxToken, file.Budget, reviewRoundMax)
+		if parseErr != nil {
+			fallback := tierBox
+			if file.Budget != nil {
+				fallback = *file.Budget
+			}
+			return refuseHumanVerb(values, 2, "a compact box and the five long-form limits cannot be combined", malformedBudgetRemedy(values, file, boxToken, fallback, reviewRoundMax, parseErr, approvalHorizon))
+		}
+		values.box = &parsed
+		return refuseHumanVerb(values, 2, "a compact box and the five long-form limits cannot be combined", completedBudgetRemedy(values, file, parsed, goalbudget.FormatBox(parsed), approvalHorizon))
+	case boxToken == "norm":
+		budget = tierBox
+	case boxToken == "keep":
+		if file.Budget == nil {
+			return refuseHumanVerb(values, 2, "keep needs a standing budget", humanVerbRemedy{command: values.budgetCommand(goalbudget.FormatBox(tierBox))})
+		}
+		budget = *file.Budget
+	case boxToken != "":
+		budget, err = goalbudget.ParseBox(boxToken, file.Budget, reviewRoundMax)
+		if err != nil {
+			fallback := tierBox
+			if file.Budget != nil {
+				fallback = *file.Budget
+			}
+			return refuseHumanVerb(values, 2, err.Error(), malformedBudgetRemedy(values, file, boxToken, fallback, reviewRoundMax, err, approvalHorizon))
+		}
+	default:
+		budgetPointer, budgetErr := flags.budgetTuple(true)
+		if budgetErr != nil {
+			fallback := tierBox
+			if file.Budget != nil {
+				fallback = *file.Budget
+			}
+			values.box = &fallback
+			return refuseHumanVerb(values, 2, budgetErr.Error(), completedBudgetRemedy(values, file, fallback, goalbudget.FormatBox(fallback), approvalHorizon))
+		}
+		budget = *budgetPointer
+		if budgetErr := budget.Validate(reviewRoundMax); budgetErr != nil {
+			return refuseHumanVerb(values, 2, budgetErr.Error(), humanVerbRemedy{words: budgetErr.Error()})
+		}
+	}
+	values.box = &budget
+	if file.StopFence != nil && file.Budget != nil && budget != *file.Budget {
+		return refuseHumanVerb(values, 1, "a breach-stopped goal resumes under its standing box before a new box is recorded", humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
+	}
+	proof, err := proveGoalHumanAuthority("budget", flags, prove)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy))
+	}
+	if err := resolveGoalHuman(flags, proof); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
+	}
+	values.by = flags.by
+	req, err := syncReqWithProofAt("budget", flags.root, flags.by, flags.lineage, &proof, commandNow)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
+	}
+	req.ApprovedRef = flags.approvedRef
+	var result goal.PublishResult
+	action := ""
+	switch file.State {
+	case goal.StateQueued, goal.StateApproved, goal.StateParked:
+		result, err = goal.Approve(req, []string{flags.id}, &budget, &proof)
+		action = "goal approve"
+	case goal.StateClaimed:
+		if file.StopFence == nil {
+			result, err = goal.SetBudgetApproved(req, flags.id, budget, &proof)
+			action = "goal set-budget"
+		} else {
+			binding, bindingErr := dispatchcore.ResolveGoalBinding(flags.root, flags.id, req.Now)
+			if bindingErr != nil {
+				return refuseHumanVerb(values, 1, bindingErr.Error(), humanVerbRemedy{words: "repair the stopped goal binding before retrying"})
+			}
+			held, lockErr := goalrevision.Acquire(flags.root, flags.id, binding.Revision, "goal-resume")
+			if lockErr != nil {
+				return refuseHumanVerb(values, 1, lockErr.Error(), humanVerbRemedy{words: "wait for the goal-revision lock holder to finish"})
+			}
+			defer held.Release()
+			result, err = goal.Resume(goal.ResumeRequest{VerbRequest: req, GoalID: flags.id, Budget: budget, Authority: &proof})
+			action = "goal resume"
+		}
+	default:
+		return refuseHumanVerb(values, 1, "the live goal state cannot receive a budget", humanVerbRemedy{words: "repair the goal's state before retrying"})
+	}
+	if err != nil || result.Outcome != goal.OutcomeConfirmed {
+		if err == nil {
+			printJSON(map[string]any{"outcome": result.Outcome, "tip": result.Tip, "detail": result.Detail})
+		}
+		detail := result.Detail
+		if err != nil {
+			detail = err.Error()
+		}
+		if file.StopFence != nil && flags.approvedRef != "" && strings.Contains(detail, "--approved-ref") {
+			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
+		}
+		if flags.approvedRef != "" && strings.Contains(detail, "--approved-ref") {
+			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{words: "the approved reference must cover this exact goal revision and box"})
+		}
+		if strings.Contains(detail, "GOAL_NORM_REFUSED") && !proof.EnrolledTerminalFor(flags.root) {
+			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{words: "run the over-norm box at a real enrolled terminal, or pass a recorded --approved-ref"})
+		}
+		if result.Outcome == goal.OutcomeAbandoned {
+			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{words: "the goal already has that box, so there is no new act to record"})
+		}
+		return refuseHumanVerb(values, 1, detail, budgetRemedyAfterRefusal(values, endpoint, now))
+	}
+	operationID := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
+	if action == "goal resume" {
+		err = humanauthority.RecordResumeProof(flags.root, operationID, proof)
+	} else {
+		err = recordGoalApprovalProof(flags.root, operationID, action, proof)
+	}
+	if err != nil {
+		return refuseHumanVerb(values, 1, "the act landed at tip "+result.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
+	}
+	if budgetExceedsCommandBox(budget, tierBox) {
+		count := file.BudgetExceptions
+		if action == "goal set-budget" && count < ^uint16(0) {
+			count++
+		}
+		if after, readErr := goal.Project(endpoint, false, now); readErr == nil && after.Tree.Live[flags.id] != nil {
+			count = after.Tree.Live[flags.id].BudgetExceptions
+		}
+		fmt.Printf("goal budget: %s exceeds tier %d box %s; exception count %d\n", goalbudget.FormatBox(budget), tier, goalbudget.FormatBox(tierBox), count)
+	}
+	return printSyncResult(result, nil)
+}
+
+func budgetExceedsCommandBox(budget, box goal.Budget) bool {
+	return budget.ElapsedDuration() > box.ElapsedDuration() || budget.AttemptLimit > box.AttemptLimit ||
+		budget.ReservedJobMinutesLimit > box.ReservedJobMinutesLimit || budget.ActiveJobLimit > box.ActiveJobLimit ||
+		budget.ReviewRoundLimit > box.ReviewRoundLimit
+}
+
+func budgetRemedyAfterRefusal(values *humanVerbValues, endpoint goal.Endpoint, now time.Time) humanVerbRemedy {
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return humanVerbRemedy{words: "repair the accepted goal projection before retrying"}
+	}
+	file := projection.Tree.Live[values.id]
+	if file == nil {
+		if projection.Tree.Done[values.id] != nil {
+			return humanVerbRemedy{words: "reopen the goal before giving its live revision a box"}
+		}
+		return humanVerbRemedy{words: "choose an identifier from metasystem goal list"}
+	}
+	if file.StopFence != nil {
+		return humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")}
+	}
+	box := values.suggestedBudgetBox()
+	if box == "" && file.Budget != nil {
+		box = goalbudget.FormatBox(*file.Budget)
+	}
+	if box == "" {
+		return humanVerbRemedy{words: "choose a complete box for the live goal"}
+	}
+	return humanVerbRemedy{command: values.budgetCommand(box)}
 }
 
 // trySyncMutation intercepts a legacy mutation command on a
@@ -1836,39 +2239,49 @@ func runGoalApprove(args []string) int {
 }
 
 func runGoalClassifySweep(args []string) int {
+	return runGoalClassifySweepWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+func runGoalClassifySweepWithAuthority(args []string, prove goalAuthorityProver) int {
+	values := newHumanVerbValues("classify-sweep", args)
 	fs := flag.NewFlagSet("goal classify-sweep", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
 	root := pathFlag(fs, "root", ".", "checkout root")
 	draftPath := fs.String("draft", "", "classification draft file")
 	preview := fs.Bool("preview", false, "print the normalized listing without mutation")
 	confirm := fs.String("confirm", "", "sha256 of the normalized preview listing")
 	by := fs.String("by", "", "the directing human")
 	lineage := fs.String("lineage", "", "this coordinator's lineage")
-	if fs.Parse(args) != nil {
-		return 2
+	fixtureHumanAuthority := fs.Bool("fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
+	if err := fs.Parse(args); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "remove the unrecognized flag and retry with the sweep fields"})
 	}
-	if !converted(*root) || *draftPath == "" || (*preview == (*confirm != "")) || (!*preview && *by == "") {
-		fmt.Fprintln(os.Stderr, "goal classify-sweep needs a synced backlog, --draft, and exactly one of --preview or --confirm; confirmation also needs --by")
-		return 2
+	values.root, values.lineage, values.by = *root, *lineage, *by
+	values.fixtureHumanAuthority = *fixtureHumanAuthority
+	if !converted(*root) {
+		return refuseHumanVerb(values, 2, "needs a synced backlog", humanVerbRemedy{words: "migrate this checkout to the synced backlog first"})
+	}
+	if *draftPath == "" {
+		return refuseHumanVerb(values, 2, "needs --draft", humanVerbRemedy{words: "provide the classification draft path before choosing --preview or --confirm"})
+	}
+	if *preview == (*confirm != "") {
+		return refuseHumanVerb(values, 2, "needs a synced backlog, --draft, and exactly one of --preview or --confirm", humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
 	draft, err := os.ReadFile(*draftPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "goal classify-sweep could not read its draft:", err)
-		return 1
+		return refuseHumanVerb(values, 1, "could not read its draft: "+err.Error(), humanVerbRemedy{words: "repair the draft path before previewing again"})
 	}
 	endpoint, err := goal.ResolveEndpoint(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the checkout's goal synchronization endpoint"})
 	}
 	now, err := goalCommandNow(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "provide a valid goal command clock"})
 	}
 	listing, err := goal.PreviewClassificationSweep(endpoint, draft, now)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
 	if *preview {
 		for _, line := range listing.Lines {
@@ -1878,38 +2291,56 @@ func runGoalClassifySweep(args []string) int {
 		return 0
 	}
 	if listing.Digest != *confirm {
-		fmt.Fprintf(os.Stderr, "SWEEP_LISTING_CHANGED: confirmation %s does not match current listing %s; preview again\n", *confirm, listing.Digest)
-		return 1
+		return refuseHumanVerb(values, 1, fmt.Sprintf("SWEEP_LISTING_CHANGED: confirmation %s does not match current listing %s", *confirm, listing.Digest), humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
+	authorityFlags := &syncFlags{root: *root, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureHumanAuthority}
+	proof, err := proveGoalHumanAuthority("classify-sweep", authorityFlags, prove)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "run confirmation at the enrolled terminal"})
+	}
+	if err := resolveGoalHuman(authorityFlags, proof); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
+	}
+	*by = authorityFlags.by
+	values.by = *by
 	if len(listing.Proposals) == 0 {
 		if listing.TierLawInstalled {
 			printJSON(map[string]any{"outcome": goal.OutcomeConfirmed, "detail": "the tier law is already installed and no tierless goals remain"})
 			return 0
 		}
-		req, reqErr := syncReq("classify-sweep", *root, *by, *lineage)
+		req, reqErr := syncReqWithProof("classify-sweep", *root, *by, *lineage, &proof)
 		if reqErr != nil {
-			fmt.Fprintln(os.Stderr, reqErr)
-			return 1
+			return refuseHumanVerb(values, 1, reqErr.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 		}
 		res, installErr := goal.InstallTierLaw(req)
 		if installErr != nil || res.Outcome != goal.OutcomeConfirmed {
-			return printSyncResult(res, installErr)
+			detail := res.Detail
+			if installErr != nil {
+				detail = installErr.Error()
+			}
+			return refuseHumanVerb(values, 1, detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+		}
+		if proofErr := recordGoalApprovalProof(*root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal classify-sweep", proof); proofErr != nil {
+			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+proofErr.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 		}
 		printJSON(map[string]any{"outcome": goal.OutcomeConfirmed, "classified": 0, "listingDigest": listing.Digest})
 		return 0
 	}
 	for index, proposal := range listing.Proposals {
-		req, reqErr := syncReq("classify-sweep", *root, *by, *lineage)
+		req, reqErr := syncReqWithProof("classify-sweep", *root, *by, *lineage, &proof)
 		if reqErr != nil {
-			fmt.Fprintln(os.Stderr, reqErr)
-			return 1
+			return refuseHumanVerb(values, 1, reqErr.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 		}
 		res, classifyErr := goal.ClassifyTier(req, proposal, index == len(listing.Proposals)-1)
 		if classifyErr != nil {
-			return printSyncResult(res, classifyErr)
+			return refuseHumanVerb(values, 1, classifyErr.Error(), humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 		}
 		if res.Outcome != goal.OutcomeConfirmed {
-			return printSyncResult(res, nil)
+			printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+			return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
+		}
+		if proofErr := recordGoalApprovalProof(*root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal classify-sweep", proof); proofErr != nil {
+			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+proofErr.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 		}
 	}
 	printJSON(map[string]any{"outcome": goal.OutcomeConfirmed, "classified": len(listing.Proposals), "listingDigest": listing.Digest})
@@ -1917,37 +2348,32 @@ func runGoalClassifySweep(args []string) int {
 }
 
 func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
-	f, ok := parseSyncFlags("approve", args)
+	values := newHumanVerbValues("approve", args)
+	f, ok := parseHumanSyncFlags(values, "approve", args)
 	if !ok {
 		return 2
 	}
 	if !converted(f.root) {
-		fmt.Fprintln(os.Stderr, "goal approve works only with the synced backlog")
-		return 1
+		return refuseHumanVerb(values, 1, "works only with the synced backlog", humanVerbRemedy{words: "migrate this checkout to the synced backlog first"})
 	}
 	if f.sweep && len(f.ids) != 0 || !f.sweep && f.confirm != "" {
-		fmt.Fprintln(os.Stderr, "goal approve uses either repeatable --id or --sweep; --confirm belongs only to the sweep")
-		return 2
+		return refuseHumanVerb(values, 2, "uses either repeatable --id or --sweep; --confirm belongs only to the sweep", humanVerbRemedy{command: values.sameCommandWithout("sweep", "confirm")})
 	}
 	if f.sweep && f.hasAnyBudgetFlag() || f.sweep && f.budgetBox != "" || f.sweep && f.approvedRef != "" {
-		fmt.Fprintln(os.Stderr, "goal approve --sweep uses the tuples already listed and takes no budget or --approved-ref")
-		return 2
+		return refuseHumanVerb(values, 2, "--sweep uses the tuples already listed and takes no budget or --approved-ref", humanVerbRemedy{command: values.sameCommandWithout("budget", "elapsed-limit", "attempt-limit", "reserved-job-minutes-limit", "active-job-limit", "review-round-limit", "approved-ref")})
 	}
 	if f.sweep && f.confirm == "" {
 		e, err := goal.ResolveEndpoint(f.root)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the checkout's goal synchronization endpoint"})
 		}
 		now, err := goalCommandNow(f.root)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "provide a valid goal command clock"})
 		}
 		listing, err := goal.PreviewApprovalSweep(e, now)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the approval sweep listing"})
 		}
 		for _, line := range listing.Lines {
 			fmt.Println(line)
@@ -1965,14 +2391,29 @@ func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
 		}
 		return runGoalUnderAttorney("approve", f)
 	}
-	if f.by == "" || (!f.sweep && len(f.ids) == 0) {
-		fmt.Fprintln(os.Stderr, "goal approve needs --by and either repeatable --id or --sweep")
-		return 2
+	if !f.sweep && len(f.ids) == 0 {
+		return refuseHumanVerb(values, 2, "needs either repeatable --id or --sweep", humanVerbRemedy{words: "add the live goal's identifier with --id, or choose --sweep"})
+	}
+	if !f.sweep && len(f.ids) == 1 && (f.budgetBox != "" || f.hasAnyBudgetFlag()) {
+		f.id = f.ids[0]
+		values.id = f.id
+		routeBox := ""
+		hintBox := ""
+		if f.budgetBox != "" {
+			if f.budgetBox != "box" {
+				return refuseHumanVerb(values, 2, "--budget is box", humanVerbRemedy{command: values.budgetCommand("norm")})
+			}
+			routeBox = "norm"
+			hintBox = "norm"
+		} else if parsed, budgetErr := f.budgetTuple(true); budgetErr == nil {
+			hintBox = goalbudget.FormatBox(*parsed)
+		}
+		fmt.Fprintln(os.Stderr, "hint:", values.budgetCommand(hintBox))
+		return runGoalBudgetPrepared(values, f, routeBox, prove)
 	}
 	budget, err := f.approvalBudget()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "give each goal its box with goal budget"})
 	}
 	classification, err := classifyGoalAuthorityFirst("approve", f)
 	if err != nil {
@@ -1981,13 +2422,15 @@ func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
 	}
 	proof, err := proveGoalHumanAuthority("approve", f, prove)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy))
 	}
+	if err := resolveGoalHuman(f, proof); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
+	}
+	values.by = f.by
 	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
 	req.ApprovedRef = f.approvedRef
 	var res goal.PublishResult
@@ -1997,7 +2440,7 @@ func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
 		res, err = goal.Approve(req, f.ids, budget, &proof)
 	}
 	if err != nil {
-		return printSyncResult(res, err)
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "read the current goal state and give each live goal its box with goal budget"})
 	}
 	if res.Outcome == goal.OutcomeConfirmed {
 		action := "goal approve"
@@ -2005,12 +2448,18 @@ func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
 			action = "goal approve --sweep"
 		}
 		if err := recordGoalApprovalProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), action, proof); err != nil {
-			fmt.Fprintln(os.Stderr, "goal approve confirmed but could not record its authority proof:", err)
-			return 1
+			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 		}
 		if proof.TemporaryResumeFor(f.root) {
 			fmt.Printf("goal approve: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
 		}
+	}
+	if res.Outcome != goal.OutcomeConfirmed {
+		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		if res.Outcome == goal.OutcomeAbandoned {
+			return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "every target already has the same proven approval, so there is no new act to record"})
+		}
+		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "read the current goal state and give each live goal its box with goal budget"})
 	}
 	return printSyncResult(res, nil)
 }
@@ -2020,13 +2469,16 @@ func runGoalUnapprove(args []string) int {
 }
 
 func runGoalUnapproveWithAuthority(args []string, prove goalAuthorityProver) int {
-	f, ok := parseSyncFlags("unapprove", args)
+	values := newHumanVerbValues("unapprove", args)
+	f, ok := parseHumanSyncFlags(values, "unapprove", args)
 	if !ok {
 		return 2
 	}
-	if !converted(f.root) || f.id == "" || f.by == "" || f.because == "" {
-		fmt.Fprintln(os.Stderr, "goal unapprove needs a synced backlog plus --id, --by, and --because")
-		return 2
+	if !converted(f.root) {
+		return refuseHumanVerb(values, 1, "works only with the synced backlog", humanVerbRemedy{words: "migrate this checkout to the synced backlog first"})
+	}
+	if f.id == "" || f.because == "" {
+		return refuseHumanVerb(values, 2, "needs --id and --because", humanVerbRemedy{words: "add the missing goal identifier or reason, whose value was not supplied"})
 	}
 	classification, err := classifyGoalAuthorityFirst("unapprove", f)
 	if err != nil {
@@ -2035,26 +2487,31 @@ func runGoalUnapproveWithAuthority(args []string, prove goalAuthorityProver) int
 	}
 	proof, err := proveGoalHumanAuthority("unapprove", f, prove)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy))
 	}
+	if err := resolveGoalHuman(f, proof); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
+	}
+	values.by = f.by
 	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
 	res, err := goal.Unapprove(req, f.id, f.because, &proof)
 	if err != nil {
-		return printSyncResult(res, err)
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "read the goal's current approval state before retrying"})
 	}
 	if res.Outcome == goal.OutcomeConfirmed {
 		if err := recordGoalApprovalProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal unapprove", proof); err != nil {
-			fmt.Fprintln(os.Stderr, "goal unapprove confirmed but could not record its authority proof:", err)
-			return 1
+			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 		}
 		if proof.TemporaryResumeFor(f.root) {
 			fmt.Printf("goal unapprove: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
 		}
+	}
+	if res.Outcome != goal.OutcomeConfirmed {
+		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "read the goal's current approval state before retrying"})
 	}
 	return printSyncResult(res, nil)
 }
@@ -2125,7 +2582,8 @@ func runGoalExtendBudget(args []string) int {
 }
 
 func runGoalSetBudgetWithAuthority(args []string, prove goalAuthorityProver) int {
-	f, ok := parseSyncFlags("set-budget", args)
+	values := newHumanVerbValues("set-budget", args)
+	f, ok := parseHumanSyncFlags(values, "set-budget", args)
 	if !ok {
 		return 2
 	}
@@ -2136,45 +2594,75 @@ func runGoalSetBudgetWithAuthority(args []string, prove goalAuthorityProver) int
 		}
 		return runGoalUnderAttorney("set-budget", f)
 	}
-	if !converted(f.root) || f.id == "" || f.by == "" {
-		fmt.Fprintln(os.Stderr, "goal set-budget needs a synced backlog plus --id and --by")
-		return 2
+	box := ""
+	if parsed, err := f.budgetTuple(true); err == nil {
+		box = goalbudget.FormatBox(*parsed)
 	}
-	budget, err := f.budgetTuple(true)
+	fmt.Fprintln(os.Stderr, "hint:", values.budgetCommand(box))
+	if box != "" && stoppedGoalForSetBudget(f) {
+		return runGoalStoppedSetBudget(values, f, prove)
+	}
+	return runGoalBudgetPrepared(values, f, "", prove)
+}
+
+func stoppedGoalForSetBudget(flags *syncFlags) bool {
+	if !converted(flags.root) || flags.id == "" {
+		return false
+	}
+	endpoint, err := goal.ResolveEndpoint(flags.root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
+		return false
 	}
-	classification, err := classifyGoalAuthorityFirst("set-budget", f)
+	now, err := goalCommandNow(flags.root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return false
 	}
-	proof, err := proveGoalHumanAuthority("set-budget", f, prove)
+	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return false
 	}
-	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	file := projection.Tree.Live[flags.id]
+	return file != nil && file.StopFence != nil
+}
+
+func runGoalStoppedSetBudget(values *humanVerbValues, flags *syncFlags, prove goalAuthorityProver) int {
+	budget, err := flags.budgetTuple(true)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return runGoalBudgetPrepared(values, flags, "", prove)
 	}
-	req.ApprovedRef = f.approvedRef
-	res, err := goal.SetBudgetApproved(req, f.id, *budget, &proof)
+	values.box = budget
+	classification, err := classifyGoalAuthorityFirst("set-budget", flags)
 	if err != nil {
-		return printSyncResult(res, err)
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the goal authority classification before retrying"})
 	}
-	if res.Outcome == goal.OutcomeConfirmed {
-		if err := recordGoalApprovalProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal set-budget", proof); err != nil {
-			fmt.Fprintln(os.Stderr, "goal set-budget confirmed but could not record its authority proof:", err)
-			return 1
-		}
-		if proof.TemporaryResumeFor(f.root) {
-			fmt.Printf("goal set-budget: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
-		}
+	proof, err := proveGoalHumanAuthority("set-budget", flags, prove)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy))
 	}
-	return printSyncResult(res, nil)
+	if err := resolveGoalHuman(flags, proof); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
+	}
+	values.by = flags.by
+	req, err := syncReqClassified(flags.root, flags.by, flags.lineage, &proof, classification)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
+	}
+	req.ApprovedRef = flags.approvedRef
+	result, err := goal.SetBudgetApproved(req, flags.id, *budget, &proof)
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
+	}
+	if result.Outcome != goal.OutcomeConfirmed {
+		printJSON(map[string]any{"outcome": result.Outcome, "tip": result.Tip, "detail": result.Detail})
+		return refuseHumanVerb(values, 1, result.Detail, humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
+	}
+	if err := recordGoalApprovalProof(flags.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), "goal set-budget", proof); err != nil {
+		return refuseHumanVerb(values, 1, "the act landed at tip "+result.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
+	}
+	if proof.TemporaryResumeFor(flags.root) {
+		fmt.Printf("goal set-budget: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", flags.reviewBy)
+	}
+	return printSyncResult(result, nil)
 }
 
 // runGoalUnderAttorney runs approve or set-budget as the seat's own act under
@@ -2339,83 +2827,111 @@ func runGoalResume(args []string) int {
 // already-granted proof. The shipped command always enters through
 // runGoalResume, whose authority owner reads the real wall clock.
 func runGoalResumeWithAuthority(args []string, prove goalAuthorityProver) int {
-	f, ok := parseSyncFlags("resume", args)
+	return runGoalResumeWithAuthorityAt(args, prove, goalCommandNow)
+}
+
+func runGoalResumeWithAuthorityAt(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error)) int {
+	values := newHumanVerbValues("resume", args)
+	f, ok := parseHumanSyncFlags(values, "resume", args)
 	if !ok {
 		return 2
 	}
 	if !converted(f.root) {
-		fmt.Fprintln(os.Stderr, "goal resume works the synced backlog; this checkout still carries the legacy ledger")
-		return 1
+		return refuseHumanVerb(values, 1, "works the synced backlog; this checkout still carries the legacy ledger", humanVerbRemedy{words: "migrate this checkout to the synced backlog first"})
 	}
-	if f.id == "" || f.by == "" {
-		fmt.Fprintln(os.Stderr, "goal resume needs --id and --by")
-		return 2
+	if f.id == "" {
+		return refuseHumanVerb(values, 2, "needs --id", humanVerbRemedy{words: "add the stopped goal's identifier with --id"})
 	}
 	budget, err := f.budgetTuple(true)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{command: values.budgetCommand("keep")})
 	}
+	values.box = budget
 	classification, err := classifyGoalAuthorityFirst("resume", f)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	ancestryNow, err := goalCommandNow(f.root)
+	ancestryNow, err := commandNow(f.root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "provide a valid goal command clock"})
 	}
 	var proof humanauthority.Proof
 	if f.approvedRef != "" {
 		recorded, approvalErr := goal.AuthenticatedChannelApproval(f.root, f.id, f.approvedRef, goal.ResumeApprovalToken(f.id, *budget), ancestryNow)
 		if approvalErr != nil {
-			fmt.Fprintln(os.Stderr, "goal resume could not validate --approved-ref:", approvalErr)
-			return 1
+			return refuseHumanVerb(values, 1, "could not validate --approved-ref: "+approvalErr.Error(), humanVerbRemedy{words: "record a channel answer for this exact standing budget, or run at the enrolled terminal"})
 		}
 		proof, err = humanauthority.AuthenticatedChannelProof(f.root, recorded, ancestryNow)
 	} else {
-		proof, err = prove(f.root, int64(os.Getppid()), nil, f.temporaryWord, f.reviewBy, ancestryNow)
+		proof, err = proveGoalHumanAuthority("resume", f, prove)
 	}
 	if err != nil {
-		if f.temporaryWord == "" && f.reviewBy == "" {
-			fmt.Fprintln(os.Stderr, "goal resume could not prove enrolled human ancestry:", err)
-			return 1
+		code := 1
+		message := "could not prove enrolled human ancestry: " + err.Error()
+		if f.temporaryWord != "" || f.reviewBy != "" {
+			code = 2
+			message = "could not bind its temporary recorded relay: " + err.Error()
 		}
-		fmt.Fprintln(os.Stderr, "goal resume could not bind its temporary recorded relay:", err)
-		return 2
+		return refuseHumanVerb(values, code, message, humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy))
 	}
 	temporaryAuthority := proof.TemporaryResumeFor(f.root)
-	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	if err := resolveGoalHuman(f, proof); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
+	}
+	values.by = f.by
+	req, err := syncReqClassifiedAt(f.root, f.by, f.lineage, &proof, classification, commandNow)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
 	req.ApprovedRef = f.approvedRef
+	projection, projectErr := goal.Project(req.Endpoint, false, req.Now)
+	if projectErr == nil {
+		if file := projection.Tree.Live[f.id]; file != nil && file.State == goal.StateClaimed && file.StopFence == nil && file.Budget == nil {
+			return refuseHumanVerb(values, 1, "the claimed goal is not breach-stopped and has no standing budget", humanVerbRemedy{command: values.budgetCommand("norm")})
+		}
+	}
 	binding, err := dispatchcore.ResolveGoalBinding(f.root, f.id, req.Now)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the goal's current claim binding before retrying"})
 	}
 	if binding.Fence == nil {
-		fmt.Fprintf(os.Stderr, "goal %s revision %d is not breach-stopped\n", f.id, binding.Revision)
-		return 1
+		projection, projectErr := goal.Project(req.Endpoint, false, req.Now)
+		if projectErr == nil {
+			if file := projection.Tree.Live[f.id]; file != nil {
+				if file.Budget == nil {
+					return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", binding.Revision), humanVerbRemedy{command: values.budgetCommand("norm")})
+				}
+				if viewErr := bindGoalTierView(values, f.root, file); viewErr != nil {
+					return refuseHumanVerb(values, 1, viewErr.Error(), humanVerbRemedy{words: "repair the configured tier box"})
+				}
+				if *file.Budget != *budget {
+					return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", binding.Revision), humanVerbRemedy{command: values.budgetCommand(goalbudget.FormatBox(*budget))})
+				}
+			}
+		}
+		return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", binding.Revision), humanVerbRemedy{words: "the goal is already live under that standing box"})
 	}
 	held, err := goalrevision.Acquire(f.root, f.id, binding.Revision, "goal-resume")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "goal resume could not acquire the goal-revision lock:", err)
-		return 1
+		return refuseHumanVerb(values, 1, "could not acquire the goal-revision lock: "+err.Error(), humanVerbRemedy{words: "wait for the current goal revision operation to finish"})
 	}
 	defer held.Release()
 	res, err := goal.Resume(goal.ResumeRequest{VerbRequest: req, GoalID: f.id, Budget: *budget, Authority: &proof})
 	if err == nil && res.Outcome == goal.OutcomeConfirmed {
 		if err := humanauthority.RecordResumeProof(f.root, goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage), proof); err != nil {
-			fmt.Fprintln(os.Stderr, "goal resume confirmed but could not record its authority proof:", err)
-			return 1
+			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 		}
 	}
 	if err == nil && res.Outcome == goal.OutcomeConfirmed && temporaryAuthority {
 		fmt.Printf("goal resume: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", f.reviewBy)
+	}
+	if err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the stopped goal's recorded cancellation batch before retrying"})
+	}
+	if res.Outcome != goal.OutcomeConfirmed {
+		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{command: values.budgetCommand("keep")})
 	}
 	return printSyncResult(res, err)
 }
@@ -2539,40 +3055,43 @@ func mainSplitRatification(id, digest string, classification lease.ClassifyResul
 	return goal.SplitRatification{Tier: goal.RatifierMain, MainID: classification.MainId, ClaimEpoch: *classification.ClaimEpoch, DraftSHA256: digest}, nil
 }
 
-type goalTerminalEnroller func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Enrollment, error)
+type goalTerminalEnroller func(string, int64, humanauthority.Reader, string, time.Time) (humanauthority.Enrollment, error)
 
 func runGoalEnrollTerminal(args []string) int {
 	return runGoalEnrollTerminalWith(args, humanauthority.Enroll)
 }
 
 func runGoalEnrollTerminalWith(args []string, enroll goalTerminalEnroller) int {
+	values := newHumanVerbValues("enroll-terminal", args)
 	flags := flag.NewFlagSet("goal enroll-terminal", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
 	root := pathFlag(flags, "root", ".", "checkout root")
+	by := flags.String("by", "", "the human enrolling this terminal")
 	lineage := flags.String("lineage", "", "coordinator lineage used to publish the fleet enrollment")
-	if flags.Parse(args) != nil {
-		return 2
+	if err := flags.Parse(args); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "use only --root, --lineage, and --by with terminal enrollment"})
 	}
+	values.root, values.lineage, values.by = *root, *lineage, *by
 	if !converted(*root) {
-		fmt.Fprintln(os.Stderr, "goal enroll-terminal requires the synced backlog so the first enrollment ends relayed approval fleet-wide")
-		return 1
+		return refuseHumanVerb(values, 1, "requires the synced backlog so the first enrollment ends relayed approval fleet-wide", humanVerbRemedy{words: "migrate this checkout to the synced backlog first"})
 	}
-	enrollment, err := enroll(*root, int64(os.Getppid()), nil, time.Now().UTC())
+	if strings.TrimSpace(*by) == "" {
+		return refuseHumanVerb(values, 2, "needs --by", humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>"})
+	}
+	enrollment, err := enroll(*root, int64(os.Getppid()), nil, *by, time.Now().UTC())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "run enrollment from a shell whose ancestry to its session leader is owned by you"})
 	}
 	req, err := syncReq("enroll-terminal", *root, "terminal", *lineage)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
 	req.Now = enrollment.EnrolledAt
 	res, err := goal.RecordFleetEnrollment(req, enrollment.Generation)
 	// Another machine may already own the immutable fleet cutoff. That leaves
 	// this machine's completed local enrollment valid and needs no root rewrite.
 	if err != nil || (res.Outcome != goal.OutcomeConfirmed && res.Outcome != goal.OutcomeConfirmedLate && res.Outcome != goal.OutcomeAbandoned) {
-		fmt.Fprintln(os.Stderr, "terminal enrolled locally but its fleet cutoff did not publish:", err, res.Detail)
-		return 1
+		return refuseHumanVerb(values, 1, fmt.Sprint("the terminal enrolled locally but its fleet cutoff did not publish: ", err, " ", res.Detail), humanVerbRemedy{words: "the local enrollment stands; repair fleet synchronization without re-enrolling"})
 	}
 	printJSON(enrollment)
 	return 0
@@ -2585,7 +3104,9 @@ func runGoalSetObligation(args []string) int {
 // runGoalSetObligationWithAuthority is the test-only entry seam paired with
 // runGoalResumeWithAuthority; no flag, config, or environment value selects it.
 func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver) int {
+	values := newHumanVerbValues("set-obligation", args)
 	flags := flag.NewFlagSet("goal set-obligation", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "claimed goal id")
 	by := flags.String("by", "", "directing human")
@@ -2611,19 +3132,26 @@ func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver)
 	temporaryWord := flags.String("temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; authorizes set-obligation TEMPORARILY")
 	reviewBy := flags.String("review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	approvedRef := flags.String("approved-ref", "", "authenticated channel answer operation on this goal")
-	if flags.Parse(args) != nil {
-		return 2
+	fixtureHumanAuthority := flags.Bool("fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
+	if err := flags.Parse(args); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "remove the unrecognized flag and retry with the documented obligation fields"})
 	}
-	if flags.NArg() != 0 || *id == "" || *by == "" || *state == "" || *owner == "" || *recurrence == "" ||
+	values.root, values.lineage, values.id, values.by = *root, *lineage, *id, *by
+	values.approvedRef, values.temporaryWord, values.reviewBy = *approvedRef, *temporaryWord, *reviewBy
+	values.fixtureHumanAuthority = *fixtureHumanAuthority
+	if flags.NArg() != 0 {
+		return refuseHumanVerb(values, 2, "does not take positional values", humanVerbRemedy{words: "remove the positional value and retry with the documented obligation fields"})
+	}
+	if *id == "" || *by == "" || *state == "" || *owner == "" || *recurrence == "" ||
 		*platform == "" || *toolchain == "" || *surface == "" || *maxActiveJobs == 0 || *timingEnvelope == 0 ||
 		len(effects) == 0 || *valueJudgment == "" || *reversibility == "" || *severeHarm == "" ||
 		*unfamiliarApproach == "" || *testDiscrimination == "" || *correlatedRisk == "" || *authorityScopeChange == "" || *destructiveReach == "" {
-		fmt.Fprintln(os.Stderr, "goal set-obligation requires identity, recurrence, platform/toolchain/surface observations, active/timing ceilings, effects, and every typed review trigger")
-		return 2
+		if *id == "" || *state == "" || *owner == "" || *recurrence == "" || *platform == "" || *toolchain == "" || *surface == "" || *maxActiveJobs == 0 || *timingEnvelope == 0 || len(effects) == 0 || *valueJudgment == "" || *reversibility == "" || *severeHarm == "" || *unfamiliarApproach == "" || *testDiscrimination == "" || *correlatedRisk == "" || *authorityScopeChange == "" || *destructiveReach == "" {
+			return refuseHumanVerb(values, 2, "requires identity, recurrence, platform and toolchain and surface observations, active and timing ceilings, effects, and every typed review trigger", humanVerbRemedy{words: "supply every missing named flag; their values were not present"})
+		}
 	}
 	if !converted(*root) {
-		fmt.Fprintln(os.Stderr, "goal set-obligation works only with the synced backlog")
-		return 1
+		return refuseHumanVerb(values, 1, "works only with the synced backlog", humanVerbRemedy{words: "migrate this checkout to the synced backlog first"})
 	}
 	classification, err := brainHumanWordClassification("set-obligation", *root, *by, nil)
 	if err != nil {
@@ -2632,33 +3160,39 @@ func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver)
 	}
 	ancestryNow, err := goalCommandNow(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "provide a valid goal command clock"})
 	}
 	var proof humanauthority.Proof
 	if *approvedRef != "" {
 		recorded, approvalErr := goal.AuthenticatedChannelApproval(*root, *id, *approvedRef, goal.SetObligationApprovalToken(*id, goal.ObligationState(*state), *owner), ancestryNow)
 		if approvalErr != nil {
-			fmt.Fprintln(os.Stderr, "goal set-obligation could not validate --approved-ref:", approvalErr)
-			return 1
+			return refuseHumanVerb(values, 1, "could not validate --approved-ref: "+approvalErr.Error(), humanVerbRemedy{words: "record a channel answer for this exact obligation, or run at the enrolled terminal"})
 		}
 		proof, err = humanauthority.AuthenticatedChannelProof(*root, recorded, ancestryNow)
 	} else {
-		proof, err = prove(*root, int64(os.Getppid()), nil, *temporaryWord, *reviewBy, ancestryNow)
+		authorityFlags := &syncFlags{root: *root, id: *id, by: *by, lineage: *lineage,
+			temporaryWord: *temporaryWord, reviewBy: *reviewBy, fixtureHumanAuthority: *fixtureHumanAuthority}
+		proof, err = proveGoalHumanAuthority("set-obligation", authorityFlags, prove)
 	}
 	if err != nil {
-		if *temporaryWord == "" && *reviewBy == "" {
-			fmt.Fprintln(os.Stderr, "goal set-obligation could not prove enrolled human ancestry:", err)
-			return 1
+		code := 1
+		message := "could not prove enrolled human ancestry: " + err.Error()
+		if *temporaryWord != "" || *reviewBy != "" {
+			code = 2
+			message = "could not bind its temporary recorded relay: " + err.Error()
 		}
-		fmt.Fprintln(os.Stderr, "goal set-obligation could not bind its temporary recorded relay:", err)
-		return 2
+		return refuseHumanVerb(values, code, message, humanProofRemedy(values, *fixtureHumanAuthority, *temporaryWord, *reviewBy))
 	}
 	temporaryAuthority := proof.TemporarySetObligationFor(*root)
+	authorityFlags := &syncFlags{root: *root, by: *by}
+	if err := resolveGoalHuman(authorityFlags, proof); err != nil {
+		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
+	}
+	*by = authorityFlags.by
+	values.by = *by
 	req, err := syncReqClassified(*root, *by, *lineage, &proof, classification)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
 	operationID := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 	governingEffects := make([]goal.GoverningEffect, len(effects))
@@ -2677,16 +3211,19 @@ func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver)
 	}
 	res, err := goal.SetObligation(req, *id, obligation, &proof)
 	if err != nil {
-		return printSyncResult(res, err)
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the goal's current claimed budget or obligation fields before retrying"})
 	}
 	if res.Outcome == goal.OutcomeConfirmed {
 		if err := humanauthority.RecordSetObligationProof(*root, operationID, proof); err != nil {
-			fmt.Fprintln(os.Stderr, "goal set-obligation could not record its authority proof:", err)
-			return 1
+			return refuseHumanVerb(values, 1, "the act landed at tip "+res.Tip+", but its authority proof did not: "+err.Error(), humanVerbRemedy{words: "the act already landed; do not run it again"})
 		}
 	}
 	if res.Outcome == goal.OutcomeConfirmed && temporaryAuthority {
 		fmt.Printf("goal set-obligation: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due %s at an agent-free terminal\n", *reviewBy)
+	}
+	if res.Outcome != goal.OutcomeConfirmed {
+		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
+		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "repair the goal's current claimed budget or obligation fields before retrying"})
 	}
 	return printSyncResult(res, nil)
 }

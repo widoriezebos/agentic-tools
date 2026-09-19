@@ -114,7 +114,7 @@ func newLedgerAttentionBed(t *testing.T) *ledgerAttentionBed {
 	if err := testexec.WriteFile(filepath.Join(adapterDir, "fake.sh"), []byte(adapter), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := humanauthority.Enroll(bed.publisher, 20, attentionAuthorityReader{}, bed.now); err != nil {
+	if _, err := humanauthority.Enroll(bed.publisher, 20, attentionAuthorityReader{}, "Wido", bed.now); err != nil {
 		t.Fatalf("enroll approval fixture terminal: %v", err)
 	}
 	return bed

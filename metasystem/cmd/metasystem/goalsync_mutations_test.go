@@ -13,6 +13,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
@@ -83,7 +84,7 @@ func goalSyncTerminalReader(t *testing.T, root, terminalID string) goalSyncEnrol
 func enrollGoalSyncTerminal(t *testing.T, root, terminalID string) (humanauthority.Enrollment, goalSyncEnrollmentReader) {
 	t.Helper()
 	reader := goalSyncTerminalReader(t, root, terminalID)
-	enrollment, err := humanauthority.Enroll(root, reader.exact.Pid, reader, time.Date(2026, 9, 6, 8, 0, 0, 0, time.UTC))
+	enrollment, err := humanauthority.Enroll(root, reader.exact.Pid, reader, "Wido", time.Date(2026, 9, 6, 8, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,6 +192,28 @@ func TestSyncRequestPublishesEpochAuthorityForTheHolderOnly(t *testing.T) {
 	}
 }
 
+func TestGoalBudgetFindsItsBoxOnEitherSideOfFlags(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		args []string
+	}{
+		{name: "box after flags", args: []string{"--id", "norm", "--root", "/tmp/root", "1d/10/720m/1/3"}},
+		{name: "box before flags", args: []string{"1d/10/720m/1/3", "--id", "keep", "--root", "/tmp/root"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cleaned, box, err := extractGoalBudgetBox(test.args)
+			if err != nil || box != "1d/10/720m/1/3" {
+				t.Fatalf("compact box was not extracted: cleaned=%v box=%q err=%v", cleaned, box, err)
+			}
+			flags, err := parseSyncFlagValues("budget", cleaned)
+			if err != nil || (flags.id != "norm" && flags.id != "keep") {
+				t.Fatalf("the goal identifier was mistaken for a box: flags=%+v err=%v", flags, err)
+			}
+		})
+	}
+}
+
 func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	root, now := proofExtensionGoalFixture(t)
 	announceProofFixtureHolder(t, root)
@@ -221,7 +244,10 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 			"--active-job-limit", "1", "--review-round-limit", "3",
 		})
 	})
-	if code != 0 || stderr != "" || !strings.Contains(stdout, `"outcome":"confirmed"`) {
+	if code != 0 || !strings.Contains(stderr, "hint: metasystem goal budget ") ||
+		!strings.Contains(stderr, "--id standing-validation ") ||
+		!strings.Contains(stderr, "1d/2/1200m/1/3") ||
+		!strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("holder set-budget: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	binding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
@@ -373,6 +399,166 @@ func TestParkCommandEdgeSkipsUnreadableRemoteOnlyWithoutLocalBranch(t *testing.T
 	}
 }
 
+func TestGoalBudgetCompletionUsesOnlyFiveValidMembers(t *testing.T) {
+	t.Parallel()
+	standing := goal.Budget{ElapsedLimit: "3h", AttemptLimit: 5, ReservedJobMinutesLimit: 300, ActiveJobLimit: 1, ReviewRoundLimit: 2}
+	completed, box, ok := completeBudgetBox("4h/6/360m/1/2/ignored", standing, &standing, 3)
+	if !ok || box != "4h/6/360m/1/2" || completed.ElapsedLimit != "4h" || completed.AttemptLimit != 6 {
+		t.Fatalf("the first five valid members were not retained: budget=%+v box=%q ok=%v", completed, box, ok)
+	}
+	if _, _, ok := completeBudgetBox("4h/many/360m/1/2/ignored", standing, &standing, 3); ok {
+		t.Fatal("an invalid first-five prefix produced a runnable remedy")
+	}
+}
+
+func TestGoalApproveSweepWithIDsDropsSweepAndConfirmFromItsRemedy(t *testing.T) {
+	t.Parallel()
+	root := syncedClaimedGoalFixture(t)
+	code, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runGoalApproveWithAuthority([]string{
+			"--root", root, "--sweep", "--id", "standing-validation", "--confirm", "stale",
+			"--by", "Wido", "--fixture-human-authority",
+		}, fixedFixtureGoalAuthority)
+	})
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	if code != 2 || len(lines) != 2 || !strings.Contains(lines[1], "run: metasystem goal approve") || !strings.Contains(lines[1], "--id standing-validation") ||
+		strings.Contains(lines[1], "--sweep") || strings.Contains(lines[1], "--confirm") {
+		t.Fatalf("the direct-ID approval remedy retained sweep-only flags: code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestGoalClassifySweepWithoutDraftPrintsWordsInsteadOfAnEmptyPath(t *testing.T) {
+	t.Parallel()
+	root := syncedClaimedGoalFixture(t)
+	code, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runGoalClassifySweepWithAuthority([]string{"--root", root, "--preview"}, fixedFixtureGoalAuthority)
+	})
+	if code != 2 || !strings.Contains(stderr, "no command completes this:") || strings.Contains(stderr, "run:") || strings.Contains(stderr, "--draft ''") {
+		t.Fatalf("the missing-draft refusal printed an unusable command: code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name             string
+		fixture          func(*testing.T) string
+		mutate           func(*goal.GoalFile)
+		wantRun          bool
+		proveRerun       bool
+		wantRemedySuffix string
+		wantFenceCleared bool
+	}{
+		{
+			name: "approved proven box",
+			mutate: func(file *goal.GoalFile) {
+				file.State = goal.StateApproved
+				file.Claimed = nil
+				file.StopCapability = nil
+			},
+		},
+		{
+			name: "parked proven box",
+			mutate: func(file *goal.GoalFile) {
+				file.State = goal.StateParked
+				file.Claimed = nil
+				file.StopCapability = nil
+				file.Parked = &goal.ParkRecord{By: "mac-cli+m1", At: "2026-08-31T10:00:00Z", Because: "wait for the fixture"}
+			},
+		},
+		{
+			name: "claimed standing box",
+		},
+		{
+			name:             "claimed breach-stopped box",
+			fixture:          syncedStoppedGoalFixture,
+			wantRun:          true,
+			proveRerun:       true,
+			wantRemedySuffix: " keep",
+			wantFenceCleared: true,
+		},
+		{
+			name: "approved expired relayed box",
+			mutate: func(file *goal.GoalFile) {
+				file.State = goal.StateApproved
+				file.Claimed = nil
+				file.StopCapability = nil
+				file.Approved.Authority = goal.ApprovalAuthorityRelayed
+				file.Approved.ReviewBy = "2026-08-31"
+				approval := &file.History[len(file.History)-1]
+				approval.AuthorityOutcome = goal.AuthorityOutcomeTemporaryHumanWord
+				approval.AuthorityReviewBy = "2026-08-31"
+				approval.AuthorityRuling = humanauthority.TemporaryWordRuling
+				approval.TemporaryHumanWord = "Wido authorizes this relayed approval"
+			},
+			wantRun:    true,
+			proveRerun: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := test.fixture
+			if fixture == nil {
+				fixture = syncedClaimedGoalFixture
+			}
+			root := fixture(t)
+			if test.mutate != nil {
+				amendSyncedGoalFixture(t, root, test.name, test.mutate)
+			}
+			writeFixtureEnrollment(t, root, "Wido")
+			code, _, stderr := captureCommandOutput(t, false, true, func() int {
+				return runGoalBudgetWithAuthorityAt([]string{
+					"--root", root, "--id", "standing-validation", "4h/4/240m/2", "--fixture-human-authority", "--lineage", "m1",
+				}, fixedFixtureGoalAuthority, fixedForgivingGoalNow)
+			})
+			if code != 2 {
+				t.Fatalf("the incomplete compact box did not refuse: code=%d stderr=%q", code, stderr)
+			}
+			if test.wantRun {
+				if !strings.Contains(stderr, "run: metasystem goal budget") || strings.Contains(stderr, "already carries that box") {
+					t.Fatalf("a fresh re-approval was hidden behind a words line: stderr=%q", stderr)
+				}
+				if test.wantRemedySuffix != "" && !strings.Contains(stderr, test.wantRemedySuffix+"\n") {
+					t.Fatalf("the printed remedy did not end in %q: stderr=%q", test.wantRemedySuffix, stderr)
+				}
+			} else if !strings.Contains(stderr, "already carries that box") || strings.Contains(stderr, "run:") {
+				t.Fatalf("an engine no-op was printed as a command: stderr=%q", stderr)
+			}
+			if test.proveRerun {
+				var remedy string
+				for _, line := range strings.Split(strings.TrimSpace(stderr), "\n") {
+					if strings.HasPrefix(line, "run: ") {
+						remedy = strings.TrimPrefix(line, "run: ")
+						break
+					}
+				}
+				fields := strings.Fields(remedy)
+				if len(fields) < 4 || strings.Join(fields[:3], " ") != "metasystem goal budget" {
+					t.Fatalf("the refusal did not print an executable goal budget command: stderr=%q", stderr)
+				}
+				runCode, stdout, runStderr := captureCommandOutput(t, true, true, func() int {
+					return runGoalBudgetWithAuthorityAt(fields[3:], fixedFixtureGoalAuthority, fixedForgivingGoalNow)
+				})
+				if runCode != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
+					t.Fatalf("the printed completion did not represent a successful proven re-approval: code=%d stdout=%q stderr=%q", runCode, stdout, runStderr)
+				}
+				if test.wantFenceCleared {
+					endpoint, err := goal.ResolveEndpoint(root)
+					if err != nil {
+						t.Fatal(err)
+					}
+					projection, err := goal.Project(endpoint, false, time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if projected := projection.Tree.Live["standing-validation"]; projected == nil || projected.StopFence != nil {
+						t.Fatalf("the printed keep command did not clear the projected stop fence: %+v", projected)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestParkCommandEdgeChecksEndpointOnlyForLocalBranch(t *testing.T) {
 	for _, test := range []struct {
 		name        string
@@ -472,6 +658,124 @@ func TestArcStoppingCommandsFallBackToTerminalGrade(t *testing.T) {
 	}
 }
 
+func TestGoalResumeBindsTheConfiguredTierBoxBesideTheStandingBox(t *testing.T) {
+	t.Parallel()
+	root := syncedClaimedGoalFixture(t)
+	data, err := os.ReadFile(filepath.Join(root, "plans", "goals", "standing-validation.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		t.Fatalf("goal fixture did not parse: %v", problems)
+	}
+	values := newHumanVerbValues("resume", nil)
+	if err := bindGoalTierView(values, root, file); err != nil {
+		t.Fatal(err)
+	}
+	wantTier, err := config.TierBox(filepath.Join(root, "metasystem.conf"), file.Tier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if values.tierBox == nil || *values.tierBox != wantTier {
+		t.Fatalf("resume bound the standing box as its tier norm: got=%+v want=%+v", values.tierBox, wantTier)
+	}
+	if values.standingBox == nil || *values.standingBox != *file.Budget || *values.standingBox == *values.tierBox {
+		t.Fatalf("resume did not keep the distinct standing and tier boxes: standing=%+v tier=%+v", values.standingBox, values.tierBox)
+	}
+}
+
+func TestGoalResumeWithoutAStopFencePrintsTheTypedBudget(t *testing.T) {
+	t.Parallel()
+	root := syncedClaimedGoalFixture(t)
+	amendSyncedGoalFixture(t, root, "bind breach-stop authority without a fence", func(file *goal.GoalFile) {
+		file.StopCapability = &goal.StopCapability{
+			Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1,
+		}
+	})
+	writeFixtureEnrollment(t, root, "Wido")
+	code, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runGoalResumeWithAuthorityAt([]string{
+			"--root", root, "--id", "standing-validation", "--by", "Wido", "--fixture-human-authority",
+			"--elapsed-limit", "3h", "--attempt-limit", "5", "--reserved-job-minutes-limit", "300",
+			"--active-job-limit", "1", "--review-round-limit", "2", "--lineage", "m1",
+		}, fixedFixtureGoalAuthority, fixedForgivingGoalNow)
+	})
+	if code != 1 {
+		t.Fatalf("resume without a stop fence did not refuse: code=%d stderr=%q", code, stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	if len(lines) != 2 || !strings.HasPrefix(lines[1], "run: metasystem goal budget ") ||
+		!strings.HasSuffix(lines[1], " 3h/5/300m/1/2") || strings.Contains(lines[1], " 4h/4/240m/2/3") {
+		t.Fatalf("resume without a stop fence did not print the typed budget unchanged: stderr=%q", stderr)
+	}
+}
+
+func TestGoalBudgetRoutesQueuedBoxesAndDefaultsTheEnrolledName(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		args func(string) []string
+		want string
+	}{
+		{
+			name: "box after flags",
+			args: func(root string) []string {
+				return []string{"--root", root, "--id", "standing-validation", "--fixture-human-authority", "--lineage", "m1", "2h/4/240m/1/2"}
+			},
+			want: "human:Enroller",
+		},
+		{
+			name: "box before flags with explicit name",
+			args: func(root string) []string {
+				return []string{"2h/4/240m/1/2", "--root", root, "--id", "standing-validation", "--fixture-human-authority", "--by", "Explicit", "--lineage", "m1"}
+			},
+			want: "human:Explicit",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := syncedClaimedGoalFixture(t)
+			amendSyncedGoalFixture(t, root, "queued compact-budget fixture", func(file *goal.GoalFile) {
+				file.State = goal.StateQueued
+				file.Budget = nil
+				file.Approved = nil
+				file.Claimed = nil
+				file.StopCapability = nil
+			})
+			writeFixtureEnrollment(t, root, "Enroller")
+			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+				return runGoalBudgetWithAuthorityAt(test.args(root), fixedFixtureGoalAuthority, fixedForgivingGoalNow)
+			})
+			if code != 0 || stderr != "" || !strings.Contains(stdout, `"outcome":"confirmed"`) {
+				t.Fatalf("compact budget command did not confirm: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			projection, err := goal.Project(goal.Endpoint{Root: root, Remote: "local", Branch: goal.LocalLedgerBranch}, false, time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC))
+			if err != nil {
+				t.Fatal(err)
+			}
+			file := projection.Tree.Live["standing-validation"]
+			last := file.History[len(file.History)-1]
+			if file.State != goal.StateApproved || file.Budget == nil || file.Budget.ElapsedLimit != "2h" || file.Budget.ReviewRoundLimit != 2 || last.Verb != "approve" || last.Actor != test.want {
+				t.Fatalf("queued route did not land the expected approval: goal=%+v history=%+v", file, last)
+			}
+		})
+	}
+}
+
+func TestGoalBudgetKeepsOverNormFixtureAuthorityOutsideTheTerminalFold(t *testing.T) {
+	t.Parallel()
+	root := syncedClaimedGoalFixture(t)
+	writeFixtureEnrollment(t, root, "Wido")
+	args := []string{"--root", root, "--id", "standing-validation", "--fixture-human-authority", "--lineage", "m1", "8h/10/1201m/1/3"}
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return runGoalBudgetWithAuthorityAt(args, fixedFixtureGoalAuthority, fixedForgivingGoalNow)
+	})
+	if code != 1 || !strings.Contains(stdout, `"outcome":"rejected"`) || strings.Count(stderr, "\n") != 2 ||
+		!strings.Contains(stderr, "goal budget: GOAL_NORM_REFUSED") || !strings.Contains(stderr, "no command completes this: run the over-norm box at a real enrolled terminal") {
+		t.Fatalf("fixture proof reached the enrolled-terminal fold: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
 func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testing.T) {
 	root := syncedClaimedGoalFixture(t)
 	amendSyncedGoalFixture(t, root, "risk-scored classification fixture", func(file *goal.GoalFile) {
@@ -494,7 +798,7 @@ func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testin
 	}
 	digest := strings.TrimSpace(strings.TrimPrefix(preview[markerIndex:], "listing-digest "))
 	confirmed, confirmCode := captureStdout(t, func() int {
-		return runGoalClassifySweep([]string{"--root", root, "--draft", draft, "--confirm", digest, "--by", "Wido"})
+		return runGoalClassifySweepWithAuthority([]string{"--root", root, "--draft", draft, "--confirm", digest, "--by", "Wido"}, fixedFixtureGoalAuthority)
 	})
 	if confirmCode != 0 || !strings.Contains(confirmed, `"outcome":"confirmed"`) || !strings.Contains(confirmed, `"classified":0`) {
 		t.Fatalf("empty classification confirmation failed: code=%d output=%q", confirmCode, confirmed)
@@ -741,7 +1045,8 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 		}
 	}
 	stderr, code := captureStderr(t, func() int { return runGoalAcceptRiskWithAuthority(blankWhy, fixedTemporaryGoalAuthority) })
-	if code != 2 || !strings.Contains(stderr, "goal accept-risk needs") {
+	if code != 2 || !strings.Contains(stderr, "goal accept-risk: needs --id, --finding, --chain, and --why") ||
+		!strings.Contains(stderr, "no command completes this: add the missing decision value named in the refusal") {
 		t.Fatalf("blank accepted-risk reason = exit %d stderr %q", code, stderr)
 	}
 	paired := append(append([]string(nil), base...), "--temporary-human-word", "Wido accepts this severe risk")
@@ -1301,13 +1606,41 @@ func twoMachineEnrollmentFixture(t *testing.T) (string, string) {
 
 func captureEnrollTerminalOutput(t *testing.T, args []string, enroll goalTerminalEnroller) (string, string, int) {
 	t.Helper()
-	var stdout string
-	stderr, code := captureStderr(t, func() int {
-		var innerCode int
-		stdout, innerCode = captureStdout(t, func() int { return runGoalEnrollTerminalWith(args, enroll) })
-		return innerCode
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return runGoalEnrollTerminalWith(args, enroll)
 	})
 	return stdout, stderr, code
+}
+
+func TestGoalEnrollTerminalKeepsLiteralTerminalActor(t *testing.T) {
+	t.Parallel()
+	machine, _ := twoMachineEnrollmentFixture(t)
+	enrolledAt := time.Date(2026, 9, 2, 7, 30, 0, 0, time.UTC)
+	enroll := func(_ string, _ int64, _ humanauthority.Reader, human string, _ time.Time) (humanauthority.Enrollment, error) {
+		if human != "NamedEnroller" {
+			t.Fatalf("enrollment name = %q", human)
+		}
+		return humanauthority.Enrollment{Schema: 1, EnrolledAt: enrolledAt, Generation: 1, Human: human}, nil
+	}
+
+	stdout, stderr, code := captureEnrollTerminalOutput(t, []string{
+		"--root", machine, "--lineage", "enrollment-fixture", "--by", "NamedEnroller",
+	}, enroll)
+	if code != 0 || stderr != "" {
+		t.Fatalf("terminal enrollment failed: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	endpoint, err := goal.ResolveEndpoint(machine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := goal.Project(endpoint, false, enrolledAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := projection.Tree.Root.History[len(projection.Tree.Root.History)-1]
+	if last.Verb != "enroll-terminal" || last.Actor != "human:terminal" {
+		t.Fatalf("enroll-terminal history = %+v, want literal actor human:terminal", last)
+	}
 }
 
 func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T) {
@@ -1326,11 +1659,11 @@ func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T)
 		return humanauthority.Prove(root, exact.Pid, reader, now)
 	}
 	t.Cleanup(func() { proveSyncReqHumanAuthority = originalProver })
-	enroll := func(root string, _ int64, _ humanauthority.Reader, _ time.Time) (humanauthority.Enrollment, error) {
-		return humanauthority.Enroll(root, exact.Pid, reader, times[root])
+	enroll := func(root string, _ int64, _ humanauthority.Reader, human string, _ time.Time) (humanauthority.Enrollment, error) {
+		return humanauthority.Enroll(root, exact.Pid, reader, human, times[root])
 	}
 
-	stdoutA, stderrA, codeA := captureEnrollTerminalOutput(t, []string{"--root", machineA}, enroll)
+	stdoutA, stderrA, codeA := captureEnrollTerminalOutput(t, []string{"--root", machineA, "--by", "Wido"}, enroll)
 	if codeA != 0 || stderrA != "" {
 		t.Fatalf("first machine enrollment failed: code=%d stdout=%q stderr=%q", codeA, stdoutA, stderrA)
 	}
@@ -1354,7 +1687,7 @@ func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T)
 		t.Fatalf("the first machine's enrollment did not end relayed approval fleet-wide: result=%+v err=%v", claim, err)
 	}
 
-	stdoutB, stderrB, codeB := captureEnrollTerminalOutput(t, []string{"--root", machineB}, enroll)
+	stdoutB, stderrB, codeB := captureEnrollTerminalOutput(t, []string{"--root", machineB, "--by", "Wido"}, enroll)
 	if codeB != 0 || stderrB != "" {
 		t.Fatalf("second machine enrollment failed: code=%d stdout=%q stderr=%q", codeB, stdoutB, stderrB)
 	}
@@ -1475,6 +1808,27 @@ func syncedClaimedGoalFixture(t *testing.T) string {
 	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
 	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
 	return root
+}
+
+func writeFixtureEnrollment(t *testing.T, root, human string) {
+	t.Helper()
+	enrollment := humanauthority.Enrollment{
+		Schema: 1, EnrolledAt: time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC), Generation: 1, Human: human,
+		TerminalID:    "fixture-terminal",
+		TerminalRef:   humanauthority.ProcessRef{PID: 20, PIDStartedAt: 200},
+		SessionLeader: humanauthority.ProcessRef{PID: 10, PIDStartedAt: 100},
+	}
+	encoded, err := json.MarshalIndent(enrollment, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "artifacts", "agents", "authority", "human-terminal.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(encoded, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func syncedStoppedGoalFixture(t *testing.T) string {
@@ -1669,6 +2023,22 @@ func fixedTemporaryGoalAuthority(root string, _ int64, _ humanauthority.Reader, 
 	setPrivateAuthorityTestField(value.FieldByName("observedRoot"), reflect.ValueOf(filepath.Clean(abs)))
 	setPrivateAuthorityTestField(value.FieldByName("observed"), reflect.ValueOf(true))
 	return proof, nil
+}
+
+func fixedFixtureGoalAuthority(root string, _ int64, _ humanauthority.Reader, _, _ string, now time.Time) (humanauthority.Proof, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return humanauthority.Proof{}, err
+	}
+	proof := humanauthority.Proof{Schema: 1, CheckedAt: now.UTC(), Outcome: humanauthority.OutcomeProven, FixtureOnly: true}
+	value := reflect.ValueOf(&proof).Elem()
+	setPrivateAuthorityTestField(value.FieldByName("observedRoot"), reflect.ValueOf(filepath.Clean(abs)))
+	setPrivateAuthorityTestField(value.FieldByName("observed"), reflect.ValueOf(true))
+	return proof, nil
+}
+
+func fixedForgivingGoalNow(string) (time.Time, error) {
+	return time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), nil
 }
 
 func setPrivateAuthorityTestField(field, value reflect.Value) {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 )
@@ -237,18 +236,7 @@ func (s *TierBoxSet) TierBox(tier uint8) (goalbudget.Budget, error) {
 	if err != nil {
 		return goalbudget.Budget{}, fmt.Errorf("resolve %s: %w", key, err)
 	}
-	parts := strings.Split(value, "/")
-	if len(parts) != 5 || !strings.HasSuffix(parts[2], "m") {
-		return goalbudget.Budget{}, fmt.Errorf("%s must use <elapsed>/<attempts>/<minutes>/<active>/<rounds-per-class>", key)
-	}
-	attempts, attemptsErr := strconv.ParseInt(parts[1], 10, 64)
-	minutes, minutesErr := strconv.ParseInt(strings.TrimSuffix(parts[2], "m"), 10, 64)
-	active, activeErr := strconv.ParseInt(parts[3], 10, 64)
-	rounds, roundsErr := strconv.ParseInt(parts[4], 10, 64)
-	if attemptsErr != nil || minutesErr != nil || activeErr != nil || roundsErr != nil {
-		return goalbudget.Budget{}, fmt.Errorf("%s must use <elapsed>/<attempts>/<minutes>/<active>/<rounds-per-class>", key)
-	}
-	budget, err := goalbudget.New(parts[0], attempts, minutes, active, rounds)
+	budget, err := goalbudget.ParseBox(value, nil)
 	if err != nil {
 		return goalbudget.Budget{}, fmt.Errorf("%s: %w", key, err)
 	}

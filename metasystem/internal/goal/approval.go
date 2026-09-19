@@ -555,8 +555,8 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
 				}
-				if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed {
-					return nil, fmt.Errorf("goal %s is %s; approve admits queued or already-approved work and may re-ratify a claim", id, f.State)
+				if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed && f.State != StateParked {
+					return nil, fmt.Errorf("goal %s is %s; approve admits queued, parked, or already-approved work and may re-ratify a claim", id, f.State)
 				}
 				if f.State == StateClaimed && budget != nil {
 					return nil, fmt.Errorf("goal %s is claimed; its tuple changes through goal set-budget", id)
@@ -588,13 +588,13 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 					norm = f.NormApproval
 				} else {
 					var normErr error
-					norm, normErr = goalNormApproval(r.Endpoint.Root, t, f, *nextBudget, r.ApprovedRef, proof)
+					norm, normErr = goalNormApproval(r.Endpoint.Root, t, f, *nextBudget, r.ApprovedRef, r.opid(), proof)
 					if normErr != nil {
 						return nil, normErr
 					}
 				}
 				if f.Approved != nil && f.Approved.Authority == ApprovalAuthorityProven && authority == ApprovalAuthorityProven &&
-					*f.Budget == *nextBudget && sameGoalNormApproval(f.NormApproval, norm) {
+					f.Budget != nil && *f.Budget == *nextBudget {
 					if expired, _ := f.ApprovalExpired(approvalHorizon(t, r.Now)); !expired {
 						continue
 					}

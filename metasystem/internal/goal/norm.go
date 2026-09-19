@@ -102,7 +102,7 @@ func refuseGoalNorm(id string, budget, box Budget) error {
 		id, budget.ReservedJobMinutesLimit, budget.ReviewRoundLimit, box.ReservedJobMinutesLimit, box.ReviewRoundLimit, id, budget.ReservedJobMinutesLimit, budget.ReviewRoundLimit)
 }
 
-func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget Budget, approvedRef string, proof *humanauthority.Proof) (*GoalNormApprovalClaim, error) {
+func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget Budget, approvedRef, operationID string, proof *humanauthority.Proof) (*GoalNormApprovalClaim, error) {
 	tier := file.Tier
 	if tier == 0 {
 		tier = 3
@@ -118,6 +118,9 @@ func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget B
 		if budget.ReservedJobMinutesLimit > box.ReservedJobMinutesLimit || budget.ReviewRoundLimit > box.ReviewRoundLimit {
 			if proof != nil && proof.ChannelWordFor(repoRoot) && proof.Outcome == humanauthority.OutcomeVerifiedChannel {
 				return &GoalNormApprovalClaim{ApprovedRef: proof.ChannelContext, Minutes: budget.ReservedJobMinutesLimit, ReviewRounds: budget.ReviewRoundLimit, GoalRevision: file.Revision}, nil
+			}
+			if proof != nil && proof.EnrolledTerminalFor(repoRoot) && operationID != "" {
+				return &GoalNormApprovalClaim{ApprovedRef: operationID, Minutes: budget.ReservedJobMinutesLimit, ReviewRounds: budget.ReviewRoundLimit, GoalRevision: file.Revision}, nil
 			}
 			return nil, refuseGoalNorm(file.Id, budget, box)
 		}
@@ -146,6 +149,12 @@ func goalNormApproval(repoRoot string, tree *TreeGoals, file *GoalFile, budget B
 		return nil, nil
 	}
 	return &GoalNormApprovalClaim{ApprovedRef: approvedRef, Minutes: minutes, ReviewRounds: rounds, GoalRevision: revision}, nil
+}
+
+func budgetExceedsBox(budget, box Budget) bool {
+	return budget.ElapsedDuration() > box.ElapsedDuration() || budget.AttemptLimit > box.AttemptLimit ||
+		budget.ReservedJobMinutesLimit > box.ReservedJobMinutesLimit || budget.ActiveJobLimit > box.ActiveJobLimit ||
+		budget.ReviewRoundLimit > box.ReviewRoundLimit
 }
 
 func requireWithinGoalNorm(repoRoot string, tier uint8, budget Budget, id, context string) error {

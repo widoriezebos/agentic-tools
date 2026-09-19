@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -44,7 +45,7 @@ func testHumanAuthority(t *testing.T, root string, now time.Time) *humanauthorit
 		t.Fatal(err)
 	}
 	reader := goalAuthorityReader{}
-	if _, err := humanauthority.Enroll(root, 20, reader, now); err != nil {
+	if _, err := humanauthority.Enroll(root, 20, reader, "Wido", now); err != nil {
 		t.Fatal(err)
 	}
 	proof, err := humanauthority.Prove(root, 20, reader, now)
@@ -65,6 +66,19 @@ func testTerminalAuthority(t *testing.T, root string, now time.Time) *humanautho
 		t.Fatal(err)
 	}
 	proof, err := humanauthority.ProveTerminal(root, 20, goalAuthorityReader{}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &proof
+}
+
+func testFixtureHumanAuthority(t *testing.T, root string, now time.Time) *humanauthority.Proof {
+	t.Helper()
+	authorization, err := fixtureauth.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := humanauthority.FixtureGoalProof(root, authorization.GoalHumanAuthority(), now)
 	if err != nil {
 		t.Fatal(err)
 	}

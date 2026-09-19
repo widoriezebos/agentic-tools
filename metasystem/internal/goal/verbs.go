@@ -1358,9 +1358,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			if boxErr != nil {
 				return nil, boxErr
 			}
-			overBox := budget.ElapsedDuration() > box.ElapsedDuration() || budget.AttemptLimit > box.AttemptLimit ||
-				budget.ReservedJobMinutesLimit > box.ReservedJobMinutesLimit || budget.ActiveJobLimit > box.ActiveJobLimit ||
-				budget.ReviewRoundLimit > box.ReviewRoundLimit
+			overBox := budgetExceedsBox(budget, box)
 			resumedStopID := ""
 			if f.StopFence != nil {
 				if f.Budget != nil && *f.Budget == budget {
@@ -1382,7 +1380,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			if f.Approved != nil && f.Budget != nil && *f.Budget == budget && r.ApprovedRef == "" && f.Claimed.Revision > 0 {
 				return nil, NothingToDo{Reason: "the complete budget tuple already reads exactly that"}
 			}
-			approval, err := goalNormApproval(r.Endpoint.Root, t, f, budget, r.ApprovedRef, proof)
+			approval, err := goalNormApproval(r.Endpoint.Root, t, f, budget, r.ApprovedRef, r.opid(), proof)
 			if err != nil {
 				return nil, err
 			}

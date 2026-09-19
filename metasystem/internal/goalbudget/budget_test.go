@@ -71,6 +71,33 @@ func TestNewNormalizesAndRefusesIncompleteTuples(t *testing.T) {
 	}
 }
 
+func TestParseBoxSharesTheTupleGrammarAndFillsEmptyMembers(t *testing.T) {
+	t.Parallel()
+	standing, err := New("4h", 6, 720, 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseBox("1d////3", &standing)
+	if err != nil {
+		t.Fatalf("parse compact box: %v", err)
+	}
+	if got := FormatBox(parsed); got != "1d/6/720m/1/3" {
+		t.Fatalf("filled box = %q", got)
+	}
+	complete, err := ParseBox("24h/10/960m/2/3", nil)
+	if err != nil || FormatBox(complete) != "3d/10/960m/2/3" {
+		t.Fatalf("complete box did not normalize: %+v, %v", complete, err)
+	}
+	for _, value := range []string{"1d/10/720m/1", "1d//720m/1/3", "1d/10/720/1/3", "1d/ten/720m/1/3", "1d/10/720m/1/-1"} {
+		if _, err := ParseBox(value, nil); err == nil {
+			t.Fatalf("malformed box %q was accepted", value)
+		}
+	}
+	if _, err := ParseBox("1d/10/720m/1/4", nil, 3); err == nil || !strings.Contains(err.Error(), "exceeds configured maximum 3") {
+		t.Fatalf("a box above the three-round ceiling was not refused during parsing: %v", err)
+	}
+}
+
 func TestValidateMirrorsConstructionRules(t *testing.T) {
 	good := Budget{ElapsedLimit: "4h", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1}
 	if err := good.Validate(); err != nil {

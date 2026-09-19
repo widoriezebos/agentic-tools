@@ -112,7 +112,7 @@ func enrolledReader() *treeReader {
 
 func enrollTestTerminal(t *testing.T, root string, reader *treeReader) {
 	t.Helper()
-	if _, err := Enroll(root, 20, reader, time.Unix(1000, 0)); err != nil {
+	if _, err := Enroll(root, 20, reader, "Wido", time.Unix(1000, 0)); err != nil {
 		t.Fatalf("enroll terminal: %v", err)
 	}
 	reader.reads = map[int64]int{}
@@ -135,6 +135,9 @@ func TestProofRequiresExactAgentFreeEnrolledAncestry(t *testing.T) {
 	}
 	if !proof.ValidFor(root) || proof.ValidFor(t.TempDir()) {
 		t.Fatal("an observed proof was not bound to its checked root")
+	}
+	if !proof.EnrolledTerminalFor(root) {
+		t.Fatal("a real enrolled-terminal observation was not classified as one")
 	}
 	var parsed Proof
 	if err := json.Unmarshal(encoded, &parsed); err != nil {
@@ -432,6 +435,49 @@ func TestUnreadableEnrollmentReturnsNotEnrolledAfterTheTerminalWalk(t *testing.T
 	}
 }
 
+func TestEnrollmentNameIsOptionalOnReadAndRequiredOnWrite(t *testing.T) {
+	t.Parallel()
+	root := authorityRoot(t)
+	reader := enrolledReader()
+	enrollment, err := Enroll(root, 20, reader, "  Wido van Riezebos  ", time.Unix(1000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enrollment.Human != "  Wido van Riezebos  " {
+		t.Fatalf("enrollment changed the human's exact name: %q", enrollment.Human)
+	}
+	if _, err := Enroll(root, 20, reader, " \t ", time.Unix(1100, 0)); err == nil || !strings.Contains(err.Error(), "human's name") {
+		t.Fatalf("a nameless new enrollment was accepted: %v", err)
+	}
+
+	path := enrollmentPath(root)
+	encoded, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy map[string]any
+	if err := json.Unmarshal(encoded, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacy, "human")
+	encoded, err = json.MarshalIndent(legacy, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(encoded, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadEnrollment(root)
+	if err != nil || read.Human != "" {
+		t.Fatalf("a legacy fieldless enrollment did not parse: enrollment=%+v err=%v", read, err)
+	}
+	reader.reads = map[int64]int{}
+	proof, err := Prove(root, 30, reader, time.Unix(1200, 0))
+	if err != nil || !proof.EnrolledTerminalFor(root) {
+		t.Fatalf("a legacy fieldless enrollment did not still prove: proof=%+v err=%v", proof, err)
+	}
+}
+
 func TestTerminalAppLoginAndTmuxSessionShapesEnroll(t *testing.T) {
 	t.Run("Terminal app login is the session leader", func(t *testing.T) {
 		if runtime.GOOS != "darwin" {
@@ -454,7 +500,7 @@ func TestTerminalAppLoginAndTmuxSessionShapesEnroll(t *testing.T) {
 				70:    {command},
 			},
 		}
-		enrollment, err := Enroll(root, 61288, reader, time.Unix(1700, 0))
+		enrollment, err := Enroll(root, 61288, reader, "Wido", time.Unix(1700, 0))
 		if err != nil {
 			t.Fatalf("Terminal.app shell enrollment failed: %v", err)
 		}
@@ -481,7 +527,7 @@ func TestTerminalAppLoginAndTmuxSessionShapesEnroll(t *testing.T) {
 				8457: {server},
 			},
 		}
-		enrollment, err := Enroll(root, 8458, reader, time.Unix(1900, 0))
+		enrollment, err := Enroll(root, 8458, reader, "Wido", time.Unix(1900, 0))
 		if err != nil {
 			t.Fatalf("tmux shell enrollment failed: %v", err)
 		}
@@ -576,7 +622,7 @@ func TestProtectedSystemImageAdmissionRequiresStableWithheldArgumentsAndRootOwne
 			}
 			reader := &treeReader{reads: map[int64]int{}, session: test.first.Exact.Pid,
 				snapshots: map[int64][]Snapshot{test.first.Exact.Pid: values}}
-			_, err := Enroll(root, test.first.Exact.Pid, reader, time.Unix(2000, 0))
+			_, err := Enroll(root, test.first.Exact.Pid, reader, "Wido", time.Unix(2000, 0))
 			if err == nil || !strings.Contains(err.Error(), test.wantOutcome) {
 				t.Fatalf("refusal outcome mismatch: err=%v want=%s", err, test.wantOutcome)
 			}
@@ -621,7 +667,7 @@ func TestProofRecordsWithheldArgumentsForAProtectedSystemNode(t *testing.T) {
 	shell := authoritySnapshot(101, 100, []string{"shell"}, "tty-3")
 	reader := &treeReader{reads: map[int64]int{}, session: 100,
 		snapshots: map[int64][]Snapshot{1: {systemRootSnapshot()}, 100: {systemNode}, 101: {shell}}}
-	if _, err := Enroll(root, 100, reader, time.Unix(2100, 0)); err != nil {
+	if _, err := Enroll(root, 100, reader, "Wido", time.Unix(2100, 0)); err != nil {
 		t.Fatalf("enroll protected system process fixture: %v", err)
 	}
 	reader.reads = map[int64]int{}
@@ -877,6 +923,9 @@ func TestFixtureGoalProofIsBoundToTheExactFakeRuntimeRoot(t *testing.T) {
 		proof.AuthorityGrade() != GradeEnrolled || !proof.FixtureOnly {
 		t.Fatalf("fixture proof was not valid for its root: proof=%+v err=%v", proof, err)
 	}
+	if proof.EnrolledTerminalFor(fixtureRoot) {
+		t.Fatal("fixture authority was classified as a real enrolled terminal")
+	}
 	if proof.ValidFor(t.TempDir()) {
 		t.Fatal("fixture proof authorized a different root")
 	}
@@ -926,6 +975,9 @@ func TestTemporaryGoalProofIsDurableAndDistinct(t *testing.T) {
 	if temporaryProof.Valid() || temporaryProof.ValidFor(root) {
 		t.Fatal("a temporary word became an enrolled-terminal ancestry proof")
 	}
+	if temporaryProof.EnrolledTerminalFor(root) {
+		t.Fatal("a temporary word was classified as a real enrolled terminal")
+	}
 	if !temporaryProof.AuthorizesSetObligation(root) || temporaryProof.AuthorizesSetObligation(t.TempDir()) {
 		t.Fatal("the temporary word was not scoped to set-obligation in its observed root")
 	}
@@ -967,6 +1019,21 @@ func TestTemporaryGoalProofIsDurableAndDistinct(t *testing.T) {
 	}
 	if err := RecordProof(root, operationID+"-split", "goal split", temporaryProof); err == nil {
 		t.Fatal("a temporary goal proof was recordable for an unrelated human-only verb")
+	}
+}
+
+func TestChannelProofIsNotAnEnrolledTerminalProof(t *testing.T) {
+	t.Parallel()
+	root := authorityRoot(t)
+	proof, err := VerifiedChannelAnswerProof(root, governance.RecordedChannelAuthority{
+		Outcome: governance.AuthorityOutcomeVerifiedChannelAnswer, Provider: "slack", UserID: "UWIDO",
+		MessageRef: "1/2", ContextID: "question-1", Step: 42,
+	}, time.Unix(1500, 0))
+	if err != nil || !proof.ChannelWordFor(root) {
+		t.Fatalf("verified channel fixture was not valid: proof=%+v err=%v", proof, err)
+	}
+	if proof.EnrolledTerminalFor(root) {
+		t.Fatal("a verified channel answer was classified as a real enrolled terminal")
 	}
 }
 

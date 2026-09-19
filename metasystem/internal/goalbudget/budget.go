@@ -87,6 +87,69 @@ type Budget struct {
 	ReviewRoundLimit        int64  `json:"reviewRoundLimit"`
 }
 
+// ParseBox reads the compact elapsed/attempts/reserved-minutes/active/rounds
+// form. Empty members inherit from standing when one is available.
+func ParseBox(value string, standing *Budget, reviewRoundMax ...uint64) (Budget, error) {
+	parts := strings.Split(value, "/")
+	if len(parts) != 5 {
+		return Budget{}, fmt.Errorf("box must have five members: <elapsed>/<attempts>/<minutes>m/<active>/<rounds>")
+	}
+	if standing != nil {
+		defaults := []string{
+			standing.ElapsedLimit,
+			strconv.FormatUint(standing.AttemptLimit, 10),
+			strconv.FormatUint(standing.ReservedJobMinutesLimit, 10) + "m",
+			strconv.FormatUint(standing.ActiveJobLimit, 10),
+			strconv.FormatInt(standing.ReviewRoundLimit, 10),
+		}
+		for index := range parts {
+			if parts[index] == "" {
+				parts[index] = defaults[index]
+			}
+		}
+	} else {
+		for _, part := range parts {
+			if part == "" {
+				return Budget{}, fmt.Errorf("an empty box member requires a standing budget")
+			}
+		}
+	}
+	if !strings.HasSuffix(parts[2], "m") || strings.TrimSuffix(parts[2], "m") == "" {
+		return Budget{}, fmt.Errorf("reserved job minutes must be a positive integer with the m suffix")
+	}
+	attempts, attemptsErr := strconv.ParseInt(parts[1], 10, 64)
+	minutes, minutesErr := strconv.ParseInt(strings.TrimSuffix(parts[2], "m"), 10, 64)
+	active, activeErr := strconv.ParseInt(parts[3], 10, 64)
+	rounds, roundsErr := strconv.ParseInt(parts[4], 10, 64)
+	if attemptsErr != nil {
+		return Budget{}, fmt.Errorf("attempts must be a positive integer")
+	}
+	if minutesErr != nil {
+		return Budget{}, fmt.Errorf("reserved job minutes must be a positive integer with the m suffix")
+	}
+	if activeErr != nil {
+		return Budget{}, fmt.Errorf("active jobs must be a positive integer")
+	}
+	if roundsErr != nil {
+		return Budget{}, fmt.Errorf("review rounds must be a non-negative integer")
+	}
+	budget, err := New(parts[0], attempts, minutes, active, rounds)
+	if err != nil {
+		return Budget{}, err
+	}
+	if err := budget.Validate(reviewRoundMax...); err != nil {
+		return Budget{}, err
+	}
+	return budget, nil
+}
+
+// FormatBox writes the canonical compact form used by configuration and the
+// human command surface.
+func FormatBox(b Budget) string {
+	return fmt.Sprintf("%s/%d/%dm/%d/%d", b.ElapsedLimit, b.AttemptLimit,
+		b.ReservedJobMinutesLimit, b.ActiveJobLimit, b.ReviewRoundLimit)
+}
+
 func New(elapsedLimit string, attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit int64) (Budget, error) {
 	elapsed, ok := ParseWorkingDuration(elapsedLimit)
 	if !ok {

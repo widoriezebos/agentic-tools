@@ -58,6 +58,7 @@ type Enrollment struct {
 	Schema        int        `json:"schema"`
 	EnrolledAt    time.Time  `json:"enrolledAt"`
 	Generation    uint64     `json:"generation"`
+	Human         string     `json:"human,omitempty"`
 	TerminalID    string     `json:"terminalId"`
 	TerminalRef   ProcessRef `json:"terminalRef"`
 	SessionLeader ProcessRef `json:"sessionLeaderRef"`
@@ -205,6 +206,12 @@ func (p Proof) TerminalValidFor(root string) bool {
 	grade := p.AuthorityGrade()
 	return err == nil && p.Valid() && (grade == GradeTerminal || grade == GradeEnrolled) &&
 		p.observedRoot == filepath.Clean(abs)
+}
+
+// EnrolledTerminalFor distinguishes a real ancestry observation from the
+// explicit fixture equivalent accepted by other human-only mutations.
+func (p Proof) EnrolledTerminalFor(root string) bool {
+	return !p.FixtureOnly && p.ValidFor(root)
 }
 
 // AuthorizesSetObligation accepts either enrolled-terminal ancestry or the
@@ -770,7 +777,10 @@ func terminalWalkFailure(agentRuntime, laterOutcome string, laterErr error) (str
 // Enroll records the direct invoker as this terminal's root only after an
 // agent-free stable walk reaches the operating system's session leader and
 // continues to the process-tree root.
-func Enroll(root string, invokerPID int64, reader Reader, now time.Time) (Enrollment, error) {
+func Enroll(root string, invokerPID int64, reader Reader, human string, now time.Time) (Enrollment, error) {
+	if strings.TrimSpace(human) == "" {
+		return Enrollment{}, fmt.Errorf("terminal enrollment requires the human's name")
+	}
 	proof, err := ProveTerminal(root, invokerPID, reader, now)
 	if err != nil {
 		return Enrollment{}, fmt.Errorf("terminal enrollment refused: %w", err)
@@ -781,7 +791,7 @@ func Enroll(root string, invokerPID int64, reader Reader, now time.Time) (Enroll
 	} else if !os.IsNotExist(readErr) {
 		return Enrollment{}, readErr
 	}
-	enrollment := Enrollment{Schema: 1, EnrolledAt: now.UTC(), Generation: generation,
+	enrollment := Enrollment{Schema: 1, EnrolledAt: now.UTC(), Generation: generation, Human: human,
 		TerminalID: proof.observedTerminalID, TerminalRef: proof.InvokerRef, SessionLeader: proof.TerminalRef}
 	encoded, err := json.MarshalIndent(enrollment, "", "  ")
 	if err != nil {
