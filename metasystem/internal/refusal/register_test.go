@@ -688,9 +688,10 @@ func TestHCL11EntryPointsPresent(t *testing.T) {
 		}
 	}
 	// The original 48 pending Rows lose three non-carry ledger-meaning
-	// overrides in the same flip, leaving 45 carryable refusal codes.
-	if carriedOverrides != 45 {
-		t.Fatalf("carried refusal override count = %d, want 45 carryable refusal rows", carriedOverrides)
+	// overrides and the two deleted promotion-reader failures, leaving 43
+	// carryable refusal codes.
+	if carriedOverrides != 43 {
+		t.Fatalf("carried refusal override count = %d, want 43 carryable refusal rows", carriedOverrides)
 	}
 	want := []string{"carry-ledger-moved", "carry-goal-not-live", "carry-word-missing", "carry-word-unproven", "carry-seat-mismatch", "carry-tree-mismatch", "carry-not-carryable", "carry-word-expired", "carry-word-consumed", "carry-debt-unpaid", "carry-cap-reached", "carry-base-judge-blind", "carry-battery-unverified", "carry-unneeded", "carry-refusal-mismatch"}
 	for _, code := range want {

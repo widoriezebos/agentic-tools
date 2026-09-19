@@ -594,9 +594,8 @@ fi
 rm -f "$settled_unbound"
 
 # Evaluate the exact project tree the commit is about to record. Every outcome
-# remains a durable observation, while the base-tree promotion record may mark
-# a named verdict as refusing for agent commits. Human commits never consume
-# that refusal bit.
+# remains durable. Every would-refuse verdict refuses an agent commit except
+# the evaluator's named temporary exception; human commits stay sovereign.
 machine_nickname=$(git -C "$root" config --get metasystem.goal.machine || true)
 [[ -n "$machine_nickname" ]] \
   || { echo "commit refused: no machine nickname is enrolled and hostnames are never published — run  git config metasystem.goal.machine <nickname>  once on this machine" >&2; exit 2; }
@@ -627,6 +626,7 @@ landing_provenance="none change=unknown"
 landing_verdict="would-refuse code=evaluator-unavailable"
 landing_code="evaluator-unavailable"
 landing_mode="refuse"
+landing_refuses_agent=true
 landing_observation=
 landing_refusal=
 landing_goal_revision=
@@ -642,14 +642,23 @@ read_landing_observation() { # JSON reader
   observed_verdict=$("$reader" json get --value "$landing_observation" --field verdictTrailer 2>/dev/null || true)
   observed_code=$("$reader" json get --value "$landing_observation" --field code 2>/dev/null || true)
   observed_mode=$("$reader" json get --value "$landing_observation" --field mode 2>/dev/null || true)
+  observed_refuses_agent=$("$reader" json get --value "$landing_observation" --field refusesAgent --default "" 2>/dev/null || true)
   observed_refusal=$("$reader" json get --value "$landing_observation" --field refusal --default "" 2>/dev/null || true)
   observed_goal_revision=$("$reader" json get --value "$landing_observation" --field goalRevision --default "" 2>/dev/null || true)
+  # An older judge has no explicit enforcement field. Promotion-on treats its
+  # would-refuse output conservatively until the current judge is installed.
+  if [[ -z "$observed_refuses_agent" ]]; then
+    observed_refuses_agent=false
+    [[ "$observed_verdict" != would-refuse\ * ]] || observed_refuses_agent=true
+  fi
   if [[ -n "$observed_provenance" && -n "$observed_verdict" && -n "$observed_code" \
-    && ( "$observed_mode" == observe || "$observed_mode" == refuse ) ]]; then
+    && ( "$observed_mode" == observe || "$observed_mode" == refuse ) \
+    && ( "$observed_refuses_agent" == true || "$observed_refuses_agent" == false ) ]]; then
     landing_provenance=$observed_provenance
     landing_verdict=$observed_verdict
     landing_code=$observed_code
     landing_mode=$observed_mode
+    landing_refuses_agent=$observed_refuses_agent
     landing_refusal=$observed_refusal
     if [[ "$observed_goal_revision" =~ ^[1-9][0-9]*$ ]]; then
       landing_goal_revision=$observed_goal_revision
@@ -708,21 +717,13 @@ if [[ -n "$landing_carried" && "$landing_mode" == refuse ]]; then
   fi
   exit 3
 fi
-if (( agent_commit )) && [[ "$landing_mode" == refuse ]]; then
+if (( agent_commit )) && [[ "$landing_refuses_agent" == true ]]; then
   refusal_paths=$(mktemp "${TMPDIR:-/tmp}/metasystem-landing-refusal-paths.XXXXXX")
   git -C "$root" diff --cached --name-only -z -- >"$refusal_paths"
   case "$landing_code" in
     evaluator-unavailable)
       echo "agent commit refused: the landing evaluator failed or returned an incomplete decision ($landing_verdict)" >&2
       landing_repair="restore or rebuild the proof-built landing evaluator, then retry"
-      ;;
-    promotion-base-unreadable)
-      echo "agent commit refused: the landing base tree is unreadable ($landing_verdict)" >&2
-      landing_repair="restore a readable landing base tree at HEAD, then retry"
-      ;;
-    promotion-record-malformed)
-      echo "agent commit refused: the landing promotion record is malformed ($landing_verdict)" >&2
-      landing_repair="The landing judge may be older than this policy. A human must rebuild and re-arm it from the landed policy commit or a descendant, then retry. If that judge supports the record version, repair the record through a reviewed implementation chain."
       ;;
     path-unclassified)
       echo "agent commit refused: the landing contains an unclassified path ($landing_verdict)" >&2
@@ -770,7 +771,7 @@ if (( agent_commit )) && [[ "$landing_mode" == refuse ]]; then
       landing_repair="restore existing bytes and append complete lines only"
       ;;
     *)
-      echo "agent commit refused: promoted landing verdict $landing_verdict" >&2
+      echo "agent commit refused: landing verdict $landing_verdict" >&2
       landing_repair=
       ;;
   esac

@@ -55,7 +55,7 @@ func newObserveFixtureAt(t *testing.T, repository, root string) *observeFixture 
 	f.git("config", "user.email", "landing@example.invalid")
 	f.write(".gitignore", "artifacts/\n")
 	f.write("product.txt", "before\n")
-	for _, policyFile := range []string{"path-classes.txt", "landing-classes.json", "landing-promotion.json"} {
+	for _, policyFile := range []string{"path-classes.txt", "landing-classes.json"} {
 		content, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", policyFile))
 		if err != nil {
 			t.Fatalf("read repository policy %s: %v", policyFile, err)
@@ -315,14 +315,16 @@ func TestObserveChainBoundLandingEvaluatesBarA(t *testing.T) {
 	}
 
 	negativeShapes := []struct {
-		name string
-		code string
-		edit func(map[string]any)
+		name         string
+		code         string
+		mode         string
+		refusesAgent bool
+		edit         func(map[string]any)
 	}{
-		{name: "open chain", code: "chain-open", edit: func(record map[string]any) { record["chainClosed"] = false }},
-		{name: "non-implementer role", code: "chain-not-implementation", edit: func(record map[string]any) { record["role"] = "designer" }},
-		{name: "non-design-bearing reach", code: "chain-not-design-bearing", edit: func(record map[string]any) { record["destructiveReach"] = "MECHANICAL" }},
-		{name: "parented record", code: "chain-record-malformed", edit: func(record map[string]any) { record["parentJob"] = "parent-job" }},
+		{name: "open chain", code: "chain-open", mode: "refuse", refusesAgent: true, edit: func(record map[string]any) { record["chainClosed"] = false }},
+		{name: "non-implementer role", code: "chain-not-implementation", mode: "refuse", refusesAgent: true, edit: func(record map[string]any) { record["role"] = "designer" }},
+		{name: "non-design-bearing reach", code: "chain-not-design-bearing", mode: "observe", refusesAgent: false, edit: func(record map[string]any) { record["destructiveReach"] = "MECHANICAL" }},
+		{name: "parented record", code: "chain-record-malformed", mode: "refuse", refusesAgent: true, edit: func(record map[string]any) { record["parentJob"] = "parent-job" }},
 	}
 	for _, test := range negativeShapes {
 		t.Run(test.name, func(t *testing.T) {
@@ -333,7 +335,7 @@ func TestObserveChainBoundLandingEvaluatesBarA(t *testing.T) {
 			test.edit(record)
 			f.writeChainRecord("impl-chain", record)
 			got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: candidate, Chain: "impl-chain"})
-			if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != test.code {
+			if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != test.code || got.Mode != test.mode || got.RefusesAgent != test.refusesAgent {
 				t.Fatalf("negative root shape classified as %+v", got)
 			}
 		})
@@ -597,14 +599,6 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 			t.Fatalf("manifest self-change classified as %+v", got)
 		}
 
-		promotion := newObserveFixture(t)
-		promotion.write("scripts/agents/landing-promotion.json", "{}\n")
-		got = Observe(ObserveParams{
-			RepoRoot: promotion.root, CandidateTree: promotion.tree(), DirectFix: "register-carriage",
-		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
-			t.Fatalf("promotion record self-change classified as %+v", got)
-		}
 	})
 }
 
@@ -1233,103 +1227,31 @@ func TestObserveUndeclaredLandingRecordsWouldRefuse(t *testing.T) {
 }
 
 func TestObservePromotionRecordIsStrictAndAbsentMeansObserve(t *testing.T) {
-	t.Run("promoted conflicting declarations refuse", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.write("product.txt", "conflicting declaration\n")
-		got := Observe(ObserveParams{
-			RepoRoot: f.root, CandidateTree: f.tree(), Chain: "implementation-chain",
-			DirectFix: "exact-revert",
-		})
-		if got.Mode != "refuse" || got.Code != "conflicting-declarations" || got.VerdictTrailer != "would-refuse code=conflicting-declarations" {
-			t.Fatalf("promoted conflict classified as %+v", got)
-		}
-	})
-
-	t.Run("absent record observes everything", func(t *testing.T) {
-		f := newObserveFixture(t)
-		if err := os.Remove(filepath.Join(f.root, promotionRecordPath)); err != nil {
-			t.Fatal(err)
-		}
-		f.git("add", "-u", promotionRecordPath)
-		f.git("commit", "-qm", "remove promotion policy")
-		f.write("product.txt", "undeclared without promotion\n")
-		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree()})
-		if got.Mode != "observe" || got.Code != "missing-declaration" {
-			t.Fatalf("absent promotion record classified as %+v", got)
-		}
-		got = Observe(ObserveParams{
-			RepoRoot: f.root, CandidateTree: f.tree(), Chain: "implementation-chain",
-			DirectFix: "exact-revert",
-		})
-		if got.Mode != "observe" || got.Code != "conflicting-declarations" {
-			t.Fatalf("absent promotion record promoted a conflict: %+v", got)
-		}
-	})
-
-	malformed := map[string]string{
-		"unparseable":                     "{\n",
-		"unknown field":                   `{"schemaVersion":1,"refuseCodes":[],"extra":true}` + "\n",
-		"unknown code":                    `{"schemaVersion":1,"refuseCodes":["not-a-verdict"]}` + "\n",
-		"duplicate code":                  `{"schemaVersion":1,"refuseCodes":["missing-declaration","missing-declaration"]}` + "\n",
-		"missing codes":                   `{"schemaVersion":1}` + "\n",
-		"version two code in version one": `{"schemaVersion":1,"refuseCodes":["goal-binding-missing"]}` + "\n",
-		"unsupported schema":              `{"schemaVersion":3,"refuseCodes":[]}` + "\n",
-		"trailing JSON":                   `{"schemaVersion":1,"refuseCodes":[]} {}` + "\n",
+	t.Parallel()
+	observeMissingDeclaration := func(f *observeFixture, content string) Observation {
+		f.t.Helper()
+		f.write("product.txt", content)
+		return Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree()})
 	}
 
-	t.Run("version one keeps its original vocabulary", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.write(promotionRecordPath, `{"schemaVersion":1,"refuseCodes":["missing-declaration"]}`+"\n")
-		f.git("add", promotionRecordPath)
-		f.git("commit", "-qm", "install version one promotion policy")
-		f.write("product.txt", "undeclared under version one\n")
-		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree()})
-		if got.Mode != "refuse" || got.Code != "missing-declaration" {
-			t.Fatalf("version one promotion policy classified as %+v", got)
-		}
-	})
-
-	t.Run("version two adds the goal binding vocabulary", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.write(promotionRecordPath, `{"schemaVersion":2,"refuseCodes":["goal-binding-missing","goal-binding-mismatch","goal-revision-moved"]}`+"\n")
-		f.git("add", promotionRecordPath)
-		f.git("commit", "-qm", "install version two promotion policy")
-		codes, present, err := loadPromotionAtTree(f.root, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !present || len(codes) != 3 || !codes["goal-binding-missing"] || !codes["goal-binding-mismatch"] || !codes["goal-revision-moved"] {
-			t.Fatalf("version two promotion vocabulary loaded as %#v, present=%v", codes, present)
-		}
-	})
-	for name, content := range malformed {
-		t.Run(name, func(t *testing.T) {
-			f := newObserveFixture(t)
-			f.write(promotionRecordPath, content)
-			f.git("add", promotionRecordPath)
-			f.git("commit", "-qm", "install malformed promotion policy")
-			f.write("product.txt", "otherwise lawful classification\n")
-			got := Observe(ObserveParams{
-				RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage",
-			})
-			if got.Mode != "refuse" || got.Code != "promotion-record-malformed" || got.VerdictTrailer != "would-refuse code=promotion-record-malformed" {
-				t.Fatalf("malformed promotion record classified as %+v", got)
-			}
-		})
+	absent := newObserveFixture(t)
+	if _, err := os.Stat(filepath.Join(absent.root, "scripts", "agents", "landing-promotion.json")); !os.IsNotExist(err) {
+		t.Fatalf("deleted promotion record exists or cannot be inspected: %v", err)
+	}
+	absentObservation := observeMissingDeclaration(absent, "undeclared without promotion record\n")
+	if absentObservation.Mode != "refuse" || !absentObservation.RefusesAgent || absentObservation.Code != "missing-declaration" {
+		t.Fatalf("missing promotion record changed refusing behavior: %+v", absentObservation)
 	}
 
-	t.Run("unreadable landing base reports its own cause", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.write("product.txt", "candidate before base loss\n")
-		candidate := f.tree()
-		f.git("update-ref", "-d", "refs/heads/main")
-		got := Observe(ObserveParams{
-			RepoRoot: f.root, CandidateTree: candidate, DirectFix: "register-carriage",
-		})
-		if got.Mode != "refuse" || got.Code != "promotion-base-unreadable" || got.VerdictTrailer != "would-refuse code=promotion-base-unreadable" {
-			t.Fatalf("unreadable landing base classified as %+v", got)
-		}
-	})
+	ignored := newObserveFixture(t)
+	ignored.write("scripts/agents/landing-promotion.json", "not policy\n")
+	ignored.git("add", "scripts/agents/landing-promotion.json")
+	ignored.git("commit", "-qm", "irrelevant legacy filename")
+	ignoredObservation := observeMissingDeclaration(ignored, "undeclared with ignored legacy file\n")
+	if ignoredObservation.Mode != absentObservation.Mode || ignoredObservation.Code != absentObservation.Code ||
+		ignoredObservation.RefusesAgent != absentObservation.RefusesAgent || ignoredObservation.VerdictTrailer != absentObservation.VerdictTrailer {
+		t.Fatalf("legacy promotion filename changed behavior: absent=%+v present=%+v", absentObservation, ignoredObservation)
+	}
 }
 
 func TestObserveVerdictSurvivesLanding(t *testing.T) {

@@ -63,7 +63,7 @@ func newAttestedBundleFixture(t *testing.T) attestedBundleFixture {
 	bundleGit(t, f.root, "remote", "add", "origin", f.origin)
 	bundleWrite(t, f.root, ".gitignore", []byte("artifacts/\n"))
 	bundleWrite(t, f.root, "metasystem/product.go", []byte("package product\n"))
-	for _, name := range []string{"path-classes.txt", "landing-classes.json", "landing-promotion.json"} {
+	for _, name := range []string{"path-classes.txt", "landing-classes.json"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", name))
 		if err != nil {
 			t.Fatal(err)

@@ -79,13 +79,6 @@ func TestChainLandingRecertifiesAfterBaseMove(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "scripts", "agents", "path-classes.txt"), pathClasses, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	promotion, err := os.ReadFile("../../scripts/agents/landing-promotion.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(project, "scripts", "agents", "landing-promotion.json"), promotion, 0o644); err != nil {
-		t.Fatal(err)
-	}
 	landingClasses, err := os.ReadFile("../../scripts/agents/landing-classes.json")
 	if err != nil {
 		t.Fatal(err)
@@ -360,7 +353,7 @@ func TestChainLandingRecertifiesAfterBaseMove(t *testing.T) {
 	extraObservation := landing.Observe(landing.ObserveParams{RepoRoot: project, CandidateTree: extraCandidate, Chain: "impl",
 		Recertification: recertification, TestReceipt: landing.TestReceiptPath(project, extraCandidate)})
 	if extraObservation.Code != "chain-has-uncarried-paths" || extraObservation.Verdict != "would-refuse" ||
-		extraObservation.Mode != "observe" || extraObservation.Bar != landing.BarRefusal {
+		extraObservation.Mode != "refuse" || !extraObservation.RefusesAgent || extraObservation.Bar != landing.BarRefusal {
 		t.Fatalf("uncarried path refusal = %+v", extraObservation)
 	}
 
@@ -525,7 +518,6 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 	copyFixture("../../scripts/agents/land.sh", "scripts/agents/land.sh", 0o755)
 	copyFixture("../../scripts/agents/path-classes.txt", "scripts/agents/path-classes.txt", 0o644)
 	copyFixture("../../scripts/agents/landing-classes.json", "scripts/agents/landing-classes.json", 0o644)
-	copyFixture("../../scripts/agents/landing-promotion.json", "scripts/agents/landing-promotion.json", 0o644)
 	copyFixture("../../memory/rulings.md", "memory/rulings.md", 0o644)
 
 	// This is the established landing fixture's reduced commit boundary: it

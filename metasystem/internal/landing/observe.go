@@ -1,6 +1,6 @@
-// Package landing owns the two-bars landing classification. Observe mode
-// makes the same decision enforcement will consume, but turns every policy
-// failure into a durable would-refuse verdict instead of an exit failure.
+// Package landing owns the two-bars landing classification. Every policy
+// failure produces a durable would-refuse verdict and refuses an agent commit,
+// apart from the evaluator's named temporary exception.
 package landing
 
 import (
@@ -35,6 +35,11 @@ const (
 	BarCarried   = "d"
 	BarAttested  = "e"
 )
+
+// records/misc/a5-would-refuse-review-2026-09-19.md establishes this temporary
+// exception. Small-change-lane unit U5b removes it by replacing the hazard-label
+// test with a critique-evidence test.
+const nonRefusingWouldRefuseCode = "chain-not-design-bearing"
 
 var (
 	landingID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -83,6 +88,7 @@ type AttestedUnit struct {
 type Observation struct {
 	SchemaVersion  int      `json:"schemaVersion"`
 	Mode           string   `json:"mode"`
+	RefusesAgent   bool     `json:"refusesAgent"`
 	Bar            string   `json:"bar"`
 	Verdict        string   `json:"verdict"`
 	Code           string   `json:"code"`
@@ -92,27 +98,16 @@ type Observation struct {
 	Refusal        string   `json:"refusal,omitempty"`
 	Detail         string   `json:"detail,omitempty"`
 	GoalRevision   uint64   `json:"goalRevision,omitempty"`
-	promotionTree  string
 	frozenTarget   string
 }
 
-// Observe evaluates one prospective landing, then applies the promotion
-// policy recorded in the landing base. The caller remains responsible for
-// enforcing Mode only for agent commits; human commits stay sovereign.
+// Observe evaluates one prospective landing. The caller enforces refusing
+// outcomes only for agent commits; human commits stay sovereign.
 func Observe(params ObserveParams) Observation {
 	if params.Carried != "" {
 		return observeCarried(params)
 	}
 	observation := observe(params)
-	if params.Recertification == "" {
-		return applyPromotion(params, observation)
-	}
-	// Explicit proof failures are hard refusals independent of ordinary
-	// observation-promotion policy. Once the proof is valid, load that policy
-	// from frozen T rather than whatever commit HEAD may name after a race.
-	if observation.Mode != "refuse" {
-		observation = applyPromotionAtTree(params, observation, observation.promotionTree)
-	}
 	if observation.frozenTarget != "" && recertifiedTargetMoved(gittree.Workspace{Dir: params.RepoRoot}, observation.frozenTarget) {
 		moved := refuse("chain-recertification-target-moved", observation.Provenance)
 		moved.Detail = "target-commit"
@@ -345,7 +340,6 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 	var observedGoalRevision uint64
 	goalFree := false
 	defer func() {
-		observation.promotionTree = frozenTargetTree
 		observation.frozenTarget = frozenTargetCommit
 		if observation.Mode == "observe" && observedGoalRevision > 0 {
 			observation.GoalRevision = observedGoalRevision
@@ -1649,8 +1643,14 @@ func pass(bar, code, provenance string) Observation {
 }
 
 func wouldRefuse(code, provenance string) Observation {
+	mode := "refuse"
+	refusesAgent := true
+	if code == nonRefusingWouldRefuseCode {
+		mode = "observe"
+		refusesAgent = false
+	}
 	return Observation{
-		SchemaVersion: 1, Mode: "observe", Bar: BarRefusal, Verdict: "would-refuse", Code: code,
+		SchemaVersion: 1, Mode: mode, RefusesAgent: refusesAgent, Bar: BarRefusal, Verdict: "would-refuse", Code: code,
 		Provenance: provenance, VerdictTrailer: "would-refuse code=" + code,
 	}
 }
@@ -1658,7 +1658,64 @@ func wouldRefuse(code, provenance string) Observation {
 func refuse(code, provenance string) Observation {
 	observation := wouldRefuse(code, provenance)
 	observation.Mode = "refuse"
+	observation.RefusesAgent = true
 	return observation
+}
+
+func knownRefusalCode(code string) bool {
+	switch code {
+	case "evaluator-unavailable",
+		"malformed-candidate-tree",
+		"candidate-tree-unreadable",
+		"attested-malformed-id",
+		"attested-unreadable",
+		"attested-invalid",
+		"attested-not-critic",
+		"attested-goal-mismatch",
+		"attested-change-mismatch",
+		"attested-not-design-bearing",
+		"missing-declaration",
+		"conflicting-declarations",
+		"path-unclassified",
+		"ledger-path-not-goal-verb",
+		"runtime-path-refused",
+		"exact-revert-record-refused",
+		"goal-item-not-held",
+		"goal-revision-moved",
+		"goal-binding-missing",
+		"goal-binding-mismatch",
+		"record-not-owned",
+		"malformed-chain-id",
+		"chain-record-unreadable",
+		"chain-record-malformed",
+		"chain-not-implementation",
+		"chain-not-design-bearing",
+		"chain-open",
+		"chain-output-unreadable",
+		"chain-output-mismatch",
+		"chain-has-uncarried-paths",
+		"chain-full-gate-refused",
+		"chain-recertification-base-unproven",
+		"chain-recertification-source-changed",
+		"chain-recertification-overlap",
+		"chain-recertification-unproven",
+		"chain-recertification-worktree-incomplete",
+		"chain-recertification-timeout",
+		"chain-recertification-target-moved",
+		"chain-recertification-test-command-refused",
+		"chain-recertification-park-failed",
+		"register-carriage-policy-unreadable",
+		"register-carriage-path-refused",
+		"register-carriage-not-append-only",
+		"malformed-revert-commit",
+		"direct-fix-policy-unreadable",
+		"not-exact-revert",
+		"direct-fix-floor-refused",
+		"unknown-direct-fix-class":
+		return true
+	default:
+		return false
+	}
 }
 
 // AdoptionRulings prepares the landing authority register while preserving the

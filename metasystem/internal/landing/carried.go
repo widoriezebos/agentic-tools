@@ -406,7 +406,7 @@ func baseJudgeBlindPaths(root, projectTree string) ([]string, error) {
 
 func baseJudgeOwns(path string) bool {
 	owners := []string{"internal/landing/", "internal/goal/", "internal/proofrun/", "internal/testpolicy/", "internal/behaviorsurface/", "internal/config/", "internal/refusal/", "internal/governance/", "internal/humanauthority/", "internal/fixtureauth/"}
-	exact := map[string]bool{"metasystem.conf": true, "testing.json": true, "scripts/agents/landing-classes.json": true, "scripts/agents/path-classes.txt": true, "scripts/agents/landing-promotion.json": true}
+	exact := map[string]bool{"metasystem.conf": true, "testing.json": true, "scripts/agents/landing-classes.json": true, "scripts/agents/path-classes.txt": true}
 	if exact[path] {
 		return true
 	}

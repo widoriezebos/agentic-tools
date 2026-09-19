@@ -253,7 +253,7 @@ func TestHCL58BaseJudgeFenceOwners(t *testing.T) {
 		"internal/testpolicy/probe.txt", "internal/behaviorsurface/probe.txt", "internal/config/probe.txt",
 		"internal/refusal/probe.txt", "internal/governance/probe.txt", "internal/humanauthority/probe.txt",
 		"internal/fixtureauth/probe.txt", "metasystem.conf", "testing.json",
-		"scripts/agents/landing-classes.json", "scripts/agents/path-classes.txt", "scripts/agents/landing-promotion.json",
+		"scripts/agents/landing-classes.json", "scripts/agents/path-classes.txt",
 	}
 	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {

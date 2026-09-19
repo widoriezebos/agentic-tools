@@ -478,7 +478,6 @@ SH
 	  cp "$root/scripts/agents/commit.sh" "$leg_seed/scripts/agents/commit.sh"
 	  cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
 	  cp "$root/scripts/agents/landing-classes.json" "$leg_seed/scripts/agents/landing-classes.json"
-	  cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
 	  mkdir -p "$leg_seed/memory"
 	  cp "$root/memory/rulings.md" "$leg_seed/memory/rulings.md"
 	  printf 'install:payload.txt behavior\ninstall:payload-b.txt behavior\n' >>"$leg_seed/scripts/agents/path-classes.txt"
@@ -496,20 +495,12 @@ SH
     mkdir -p "$leg_seed/memory"
     cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
     cp "$root/scripts/agents/landing-classes.json" "$leg_seed/scripts/agents/landing-classes.json"
-    cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
     cp "$root/memory/rulings.md" "$leg_seed/memory/rulings.md"
   fi
   if is_workspace_receipt_scenario; then
     mkdir -p "$leg_seed/memory"
     cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
     cp "$root/scripts/agents/landing-classes.json" "$leg_seed/scripts/agents/landing-classes.json"
-    cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
-    if [[ "$fixture_scenario" == receipt-cutover ]]; then
-      # The historical reader and writer meet the exact policy record from
-      # their pinned source; version 2 is exercised on a separate base below.
-      cp "$cutover_old_source/metasystem/scripts/agents/landing-promotion.json" \
-        "$leg_seed/scripts/agents/landing-promotion.json"
-    fi
     cp "$root/memory/rulings.md" "$leg_seed/memory/rulings.md"
     cat >"$leg_seed/scripts/agents/go-build.sh" <<'SH'
 #!/usr/bin/env bash
@@ -562,7 +553,6 @@ JSON
     mkdir -p "$leg_seed/memory" "$leg_seed/records"
     cp "$root/scripts/agents/path-classes.txt" "$leg_seed/scripts/agents/path-classes.txt"
     cp "$root/scripts/agents/landing-classes.json" "$leg_seed/scripts/agents/landing-classes.json"
-    cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
     cp "$root/memory/rulings.md" "$leg_seed/memory/rulings.md"
     printf 'receipt=seed\n' >"$leg_seed/memory/receipts.log"
     printf 'digest=seed\n' >"$leg_seed/records/narrator-digest.log"
@@ -1458,12 +1448,14 @@ make_brain_source_leg() { # name
   cp "$root/internal/landing/observe.go" "$leg_seed/internal/landing/observe.go"
   cp "$root/internal/landing/carried.go" "$leg_seed/internal/landing/carried.go"
   cp "$root/internal/landing/tierone.go" "$leg_seed/internal/landing/tierone.go"
-  cp "$root/internal/landing/promotion.go" "$leg_seed/internal/landing/promotion.go"
   cp "$root/internal/landing/held.go" "$leg_seed/internal/landing/held.go"
   cp "$root/internal/landing/observe_test.go" "$leg_seed/internal/landing/observe_test.go"
   cp "$root/internal/landing/held_test.go" "$leg_seed/internal/landing/held_test.go"
   cp "$root/internal/refusal/register.go" "$leg_seed/internal/refusal/register.go"
-  cp "$root/scripts/agents/landing-promotion.json" "$leg_seed/scripts/agents/landing-promotion.json"
+  (
+    cd "$leg_seed"
+    rm -f internal/landing/promotion.go scripts/agents/landing-promotion.json
+  )
   cp "$source_engine" "$leg_seed/bin/metasystem"
   rm -rf "$leg_seed/plans/goals"
   rm -f "$leg_seed/plans/goals.md" "$leg_seed/plans/goals-accepted.json"
@@ -3220,12 +3212,6 @@ if grep -Eq '^- Claimed: .* (episodeAt|episodeRevision|episodeObligationRevision
   echo "land receipt-cutover fixture: the pinned goal writer emitted candidate-only claim grammar" >&2
   exit 1
 fi
-cmp -s "$leg_seed/scripts/agents/landing-promotion.json" \
-  "$cutover_old_source/metasystem/scripts/agents/landing-promotion.json" || {
-  echo "land receipt-cutover fixture: the seed does not carry the pinned version-one promotion record" >&2
-  exit 1
-}
-
 # Trunk's claimed record gained the elapsed-budget episode binding after the
 # pinned reader. Project only those optional keys away so this fixture still
 # compares the real pre-cutover receipt producer with the current producer.
@@ -3348,189 +3334,6 @@ cutover_refusal=$(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasyst
 [[ $(receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" json get --value "$cutover_refusal" --field verdictTrailer) == 'would-refuse code=chain-test-receipt-refused' ]]
 stop_receipt_runner
 stop_receipt_runner
-
-# Version 2 is a new landing base, not a candidate-side policy substitution.
-# The old and new readers judge the same otherwise-valid staged record there,
-# and the real wrapper proves that the selected old judge owns the refusal.
-cutover_policy_remote=$leg_root/policy-origin.git
-cutover_policy_seed=$leg_root/policy-seed
-cutover_policy_old=$leg_root/policy-old
-cutover_policy_new=$leg_root/policy-new
-git clone -q --bare "$cutover_moved_remote" "$cutover_policy_remote"
-git clone -q "$cutover_policy_remote" "$cutover_policy_seed"
-git -C "$cutover_policy_seed" config user.name fixture-cutover-policy
-git -C "$cutover_policy_seed" config user.email fixture-cutover-policy@example.invalid
-cp "$root/scripts/agents/landing-promotion.json" \
-  "$cutover_policy_seed/scripts/agents/landing-promotion.json"
-cp "$root/scripts/agents/commit.sh" "$cutover_policy_seed/scripts/agents/commit.sh"
-chmod +x "$cutover_policy_seed/scripts/agents/commit.sh"
-git -C "$cutover_policy_seed" add -- scripts/agents/landing-promotion.json scripts/agents/commit.sh
-git -C "$cutover_policy_seed" commit -qm 'install version two landing promotion policy'
-git -C "$cutover_policy_seed" push -q origin main
-cutover_policy_base=$(git -C "$cutover_policy_seed" rev-parse HEAD)
-[[ $("$source_engine" json get --file "$cutover_policy_seed/scripts/agents/landing-promotion.json" \
-  --field schemaVersion) == 2 ]]
-git clone -q "$cutover_policy_remote" "$cutover_policy_old"
-git clone -q "$cutover_policy_remote" "$cutover_policy_new"
-for cutover_checkout in "$cutover_policy_old" "$cutover_policy_new"; do
-  git -C "$cutover_checkout" config user.name fixture-cutover-policy
-  git -C "$cutover_checkout" config user.email fixture-cutover-policy@example.invalid
-  git -C "$cutover_checkout" config metasystem.goal.machine fixture-machine
-  git -C "$cutover_checkout" config goal.sync-remote origin
-  git -C "$cutover_checkout" config goal.sync-branch refs/heads/main
-  git -C "$cutover_checkout" update-ref refs/heads/metasystem/goals origin/main
-  git -C "$cutover_checkout" update-ref refs/metasystem/goals/accepted origin/main
-done
-cutover_policy_old_engine=$leg_root/policy-old-engine
-cutover_policy_new_engine=$leg_root/policy-new-engine
-METASYSTEM_BUILD_STAMP="$cutover_policy_base" \
-  bash "$cutover_old_source/metasystem/scripts/agents/go-build.sh" --out "$cutover_policy_old_engine" >/dev/null
-METASYSTEM_BUILD_STAMP="$cutover_policy_base" \
-  bash "$root/scripts/agents/go-build.sh" --out "$cutover_policy_new_engine" >/dev/null
-install_cutover_engine "$cutover_policy_old" "$cutover_policy_old_engine"
-install_cutover_engine "$cutover_policy_new" "$cutover_policy_new_engine"
-
-arm_receipt_runner "$cutover_policy_old" "$cutover_policy_old/bin/metasystem"
-mkdir -p "$cutover_policy_old/records/misc"
-printf 'promotion policy compatibility\n' >"$cutover_policy_old/records/misc/promotion-policy.md"
-git -C "$cutover_policy_old" add -- records/misc/promotion-policy.md
-cutover_policy_tree=$(git -C "$cutover_policy_old" write-tree)
-take_fixture_receipt "$cutover_policy_old/bin/metasystem" "$cutover_policy_old" \
-  "$leg_root/policy-old-receipt.out"
-cutover_policy_receipt=$fixture_receipt_path
-# The runner's ignored narrator cursor is runtime state. The real commit
-# wrapper correctly refuses it as an unrecorded landing input, so remove that
-# disposable cursor before exercising the policy-version refusal.
-rm -f "$cutover_policy_old/records/narrator-digest.log"
-cutover_policy_new_accept=$(receipt_checkout_env_run "$cutover_policy_old" \
-  "$cutover_policy_new_engine" landing observe --root "$cutover_policy_old" \
-  --tree "$cutover_policy_tree" --direct-fix register-carriage --goal fx \
-  --actor fixture-machine+land-receipt-fixture)
-[[ $("$source_engine" json get --value "$cutover_policy_new_accept" --field mode) == observe ]]
-[[ $("$source_engine" json get --value "$cutover_policy_new_accept" --field verdictTrailer) == 'pass bar=b' ]]
-
-cutover_policy_before=$(git -C "$cutover_policy_old" rev-parse HEAD)
-cutover_policy_remote_before=$(git --git-dir="$cutover_policy_remote" rev-parse refs/heads/main)
-cutover_policy_patch_before=$(git -C "$cutover_policy_old" diff --cached --binary -- records/misc/promotion-policy.md)
-cutover_policy_wrapper_out=$leg_root/policy-wrapper.out
-cutover_policy_agent_start=$(receipt_env_run "$cutover_policy_old/bin/metasystem" proc started-at --pid "$$")
-receipt_env_run "$cutover_policy_old/bin/metasystem" lease announce --root "$cutover_policy_old" \
-  --session land-receipt-policy-agent --pid "$$" --start "$cutover_policy_agent_start" \
-  --tag land-receipt-policy-agent --runtime fake --owner-lineage land-receipt-fixture >/dev/null
-if receipt_checkout_env_run "$cutover_policy_old" env METASYSTEM_OWNER_LINEAGE=land-receipt-fixture \
-    bash "$cutover_policy_old/scripts/agents/commit.sh" --goal fx \
-      --direct-fix register-carriage -m 'version two policy waits for its judge' \
-      >"$cutover_policy_wrapper_out" 2>&1; then
-  cutover_policy_wrapper_rc=0
-else
-  cutover_policy_wrapper_rc=$?
-fi
-receipt_env_run "$cutover_policy_old/bin/metasystem" lease retire --root "$cutover_policy_old" \
-  --session land-receipt-policy-agent --pid "$$" --start "$cutover_policy_agent_start" >/dev/null
-[[ $cutover_policy_wrapper_rc -eq 1 ]] || {
-  echo "land receipt-cutover fixture: old judge did not refuse version two through the real wrapper" >&2
-  sed -n '1,260p' "$cutover_policy_wrapper_out" >&2
-  exit 1
-}
-grep -Fq 'agent commit refused: the landing promotion record is malformed (would-refuse code=promotion-record-malformed)' \
-  "$cutover_policy_wrapper_out" || {
-  echo "land receipt-cutover fixture: real wrapper did not print the promotion-record refusal" >&2
-  sed -n '1,260p' "$cutover_policy_wrapper_out" >&2
-  exit 1
-}
-grep -Fq 'The landing judge may be older than this policy. A human must rebuild and re-arm it from the landed policy commit or a descendant, then retry. If that judge supports the record version, repair the record through a reviewed implementation chain.' \
-  "$cutover_policy_wrapper_out" || {
-  echo "land receipt-cutover fixture: real wrapper did not print the promotion-record repair" >&2
-  sed -n '1,260p' "$cutover_policy_wrapper_out" >&2
-  exit 1
-}
-[[ $(git -C "$cutover_policy_old" rev-parse HEAD) == "$cutover_policy_before" ]]
-[[ $(git --git-dir="$cutover_policy_remote" rev-parse refs/heads/main) == "$cutover_policy_remote_before" ]]
-[[ $(git -C "$cutover_policy_old" diff --cached --binary -- records/misc/promotion-policy.md) == "$cutover_policy_patch_before" ]]
-stop_receipt_runner
-
-# The new reader keeps the three goal failures distinct on the version-two
-# base. Its own receipt lets the revision-moved arm reach the held-goal check.
-arm_receipt_runner "$cutover_policy_new" "$cutover_policy_new/bin/metasystem"
-mkdir -p "$cutover_policy_new/records/misc"
-printf 'promotion policy compatibility\n' >"$cutover_policy_new/records/misc/promotion-policy.md"
-git -C "$cutover_policy_new" add -- records/misc/promotion-policy.md
-cutover_policy_new_tree=$(git -C "$cutover_policy_new" write-tree)
-prepare_receipt_chain "$cutover_policy_new" cutover-policy-revision "$cutover_policy_new_tree"
-take_fixture_receipt "$cutover_policy_new/bin/metasystem" "$cutover_policy_new" \
-  "$leg_root/policy-new-receipt.out"
-cutover_policy_new_receipt=$fixture_receipt_path
-
-cutover_goal_missing=$(receipt_checkout_env_run "$cutover_policy_new" \
-  "$cutover_policy_new/bin/metasystem" landing observe --root "$cutover_policy_new" \
-  --tree "$cutover_policy_new_tree" --direct-fix register-carriage \
-  --actor fixture-machine+land-receipt-fixture)
-[[ $("$source_engine" json get --value "$cutover_goal_missing" --field mode) == refuse ]]
-[[ $("$source_engine" json get --value "$cutover_goal_missing" --field code) == goal-binding-missing ]]
-
-cat >"$cutover_policy_new/artifacts/agents/jobs/cutover-policy-mismatch.json" <<'JSON'
-{"jobId":"cutover-policy-mismatch","parentJob":null,"role":"implementer","goalId":"other-goal","goalRevision":1}
-JSON
-cutover_goal_mismatch=$(receipt_checkout_env_run "$cutover_policy_new" \
-  "$cutover_policy_new/bin/metasystem" landing observe --root "$cutover_policy_new" \
-  --tree "$cutover_policy_new_tree" --chain cutover-policy-mismatch --goal fx \
-  --actor fixture-machine+land-receipt-fixture)
-[[ $("$source_engine" json get --value "$cutover_goal_mismatch" --field mode) == refuse ]]
-[[ $("$source_engine" json get --value "$cutover_goal_mismatch" --field code) == goal-binding-mismatch ]]
-
-conf_edit "$cutover_policy_new/artifacts/agents/jobs/cutover-policy-revision.json" replace-line-first \
-  '^  "goalId": null,$' '  "goalId": "fx",'
-conf_edit "$cutover_policy_new/artifacts/agents/jobs/cutover-policy-revision.json" insert-after-first \
-  '^  "goalId": "fx",$' '  "goalRevision": 2,'
-cutover_goal_revision=$(receipt_checkout_env_run "$cutover_policy_new" \
-  "$cutover_policy_new/bin/metasystem" landing observe --root "$cutover_policy_new" \
-  --tree "$cutover_policy_new_tree" --chain cutover-policy-revision --goal fx \
-  --actor fixture-machine+land-receipt-fixture --test-receipt "$cutover_policy_new_receipt")
-[[ $("$source_engine" json get --value "$cutover_goal_revision" --field mode) == refuse ]]
-[[ $("$source_engine" json get --value "$cutover_goal_revision" --field code) == goal-revision-moved ]]
-stop_receipt_runner
-
-# A version-two-only code is invalid in version 1, and version 3 is above both
-# readers' maxima. Each reader refuses the whole record in both cases.
-cutover_policy_invalid=$leg_root/policy-invalid
-git clone -q "$cutover_policy_remote" "$cutover_policy_invalid"
-git -C "$cutover_policy_invalid" config user.name fixture-cutover-invalid
-git -C "$cutover_policy_invalid" config user.email fixture-cutover-invalid@example.invalid
-printf '{"schemaVersion":1,"refuseCodes":["goal-binding-missing"]}\n' \
-  >"$cutover_policy_invalid/scripts/agents/landing-promotion.json"
-git -C "$cutover_policy_invalid" add -- scripts/agents/landing-promotion.json
-git -C "$cutover_policy_invalid" commit -qm 'install invalid version one promotion vocabulary'
-for cutover_reader in "$cutover_policy_old_engine" "$cutover_policy_new_engine"; do
-  cutover_invalid_observation=$("$cutover_reader" landing observe --root "$cutover_policy_invalid" \
-    --tree "$(git -C "$cutover_policy_invalid" rev-parse HEAD^{tree})" --direct-fix register-carriage \
-    --goal fx --actor fixture-machine+land-receipt-fixture)
-  [[ $("$source_engine" json get --value "$cutover_invalid_observation" --field mode) == refuse ]]
-  [[ $("$source_engine" json get --value "$cutover_invalid_observation" --field code) == promotion-record-malformed ]]
-done
-conf_edit "$cutover_policy_invalid/scripts/agents/landing-promotion.json" replace-literal \
-  '"schemaVersion":1' '"schemaVersion":3'
-git -C "$cutover_policy_invalid" add -- scripts/agents/landing-promotion.json
-git -C "$cutover_policy_invalid" commit -qm 'install unsupported promotion policy version'
-for cutover_reader in "$cutover_policy_old_engine" "$cutover_policy_new_engine"; do
-  cutover_invalid_observation=$("$cutover_reader" landing observe --root "$cutover_policy_invalid" \
-    --tree "$(git -C "$cutover_policy_invalid" rev-parse HEAD^{tree})" --direct-fix register-carriage \
-    --goal fx --actor fixture-machine+land-receipt-fixture)
-  [[ $("$source_engine" json get --value "$cutover_invalid_observation" --field mode) == refuse ]]
-  [[ $("$source_engine" json get --value "$cutover_invalid_observation" --field code) == promotion-record-malformed ]]
-done
-
-cutover_policy_candidate=$leg_root/policy-candidate
-git clone -q "$cutover_policy_remote" "$cutover_policy_candidate"
-printf '{"schemaVersion":1,"refuseCodes":[]}\n' \
-  >"$cutover_policy_candidate/scripts/agents/landing-promotion.json"
-printf 'candidate cannot strip base policy\n' >"$cutover_policy_candidate/product.txt"
-git -C "$cutover_policy_candidate" add -- scripts/agents/landing-promotion.json product.txt
-cutover_candidate_policy_tree=$(git -C "$cutover_policy_candidate" write-tree)
-cutover_candidate_policy_observation=$("$cutover_policy_new_engine" landing observe \
-  --root "$cutover_policy_candidate" --tree "$cutover_candidate_policy_tree" \
-  --actor fixture-machine+land-receipt-fixture)
-[[ $("$source_engine" json get --value "$cutover_candidate_policy_observation" --field mode) == refuse ]]
-[[ $("$source_engine" json get --value "$cutover_candidate_policy_observation" --field code) == missing-declaration ]]
 
 leg_local=$leg_root/moved
 cutover_moved_peer=$leg_root/moved-peer

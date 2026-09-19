@@ -13,12 +13,14 @@ unset METASYSTEM_BIN
 
 TestRealCommitWrapperStampsParseableObservation() {
   local fixture real_engine wrapper candidate_tree observation expected_provenance expected_verdict expected_mode message
-  local refusal status unclassified orphan chain_message conflict floor_refusal record_message goal_digest malformed human_message
+  local refusal status unclassified orphan conflict floor_refusal record_message goal_digest
+  local chain_open_refusal human_chain_message mechanical_message
   local vendored_fixture vendored_install
   fixture="$tmp/real-observer"
   real_engine="$tmp/real-metasystem"
   wrapper="$root/scripts/agents/commit.sh"
-  mkdir -p "$fixture/scripts/agents" "$fixture/scripts" "$fixture/bin" "$fixture/artifacts/agents/mains" "$fixture/memory" "$fixture/plans/goals"
+  mkdir -p "$fixture/scripts/agents" "$fixture/scripts" "$fixture/bin" \
+    "$fixture/artifacts/agents/mains" "$fixture/artifacts/agents/jobs" "$fixture/memory" "$fixture/plans/goals"
 
   (cd "$root" && go build -o "$real_engine" ./cmd/metasystem)
   cp "$wrapper" "$fixture/scripts/agents/commit.sh"
@@ -65,6 +67,13 @@ SH
       METASYSTEM_OWNER_LINEAGE=human \
       "$installation/scripts/agents/commit.sh" __lease-held 1 --goal fx "$@"
   }
+  human_fixture_commit() { # installation root, wrapper arguments
+    local installation=$1
+    shift
+    harness_fixture_without_outer_proof env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
+      METASYSTEM_OWNER_LINEAGE=human \
+      "$installation/scripts/agents/commit.sh" __lease-held human --goal fx "$@"
+  }
   fixture_git init -q -b main
   fixture_git config user.name fixture
   fixture_git config user.email fixture@example.invalid
@@ -95,7 +104,7 @@ SH
   expected_provenance=$("$real_engine" json get --value "$observation" --field provenance)
   expected_verdict=$("$real_engine" json get --value "$observation" --field verdictTrailer)
   expected_mode=$("$real_engine" json get --value "$observation" --field mode)
-  goal_bound_fixture_commit "$fixture" -q -m "absent promotion observes"
+  human_fixture_commit "$fixture" -q -m "human keeps refusing verdict"
   message=$(fixture_git log -1 --format=%B)
 
   grep -Fqx "Landing-Provenance: $expected_provenance" <<<"$message" \
@@ -103,16 +112,8 @@ SH
   grep -Fqx "Landing-Provenance-Verdict: $expected_verdict" <<<"$message" \
     || { echo "TestRealCommitWrapperStampsParseableObservation: commit lost the real evaluator verdict" >&2; exit 1; }
   [[ "$expected_provenance" =~ ^none\ change=[0-9a-f]{64}$ \
-    && "$expected_verdict" == "would-refuse code=missing-declaration" && "$expected_mode" == observe ]] \
+    && "$expected_verdict" == "would-refuse code=missing-declaration" && "$expected_mode" == refuse ]] \
     || { echo "TestRealCommitWrapperStampsParseableObservation: real evaluator returned unexpected provenance '$expected_provenance' and verdict '$expected_verdict'" >&2; exit 1; }
-
-  # Install the reviewed promotion record as base policy. From this commit
-  # onward the two named classification verdicts refuse agent wrappers.
-  cp "$root/scripts/agents/landing-promotion.json" "$fixture/scripts/agents/landing-promotion.json"
-  fixture_git add scripts/agents/landing-promotion.json
-  fixture_git commit -qm "install landing promotion policy"
-  printf 'promoted missing declaration\n' >"$fixture/README"
-  fixture_git add README
 
   vendored_fixture="$tmp/vendored-observer"
   vendored_install="$vendored_fixture/metasystem"
@@ -123,7 +124,6 @@ SH
   cp "$root/scripts/agents/coverage-delta.sh" "$vendored_install/scripts/agents/coverage-delta.sh"
   cp "$root/scripts/agents/landing-classes.json" "$vendored_install/scripts/agents/landing-classes.json"
   cp "$root/scripts/agents/path-classes.txt" "$vendored_install/scripts/agents/path-classes.txt"
-  cp "$root/scripts/agents/landing-promotion.json" "$vendored_install/scripts/agents/landing-promotion.json"
   cp "$root/memory/rulings.md" "$vendored_install/memory/rulings.md"
   cp "$fixture/plans/goals/fx.md" "$vendored_install/plans/goals/fx.md"
   cp "$fixture/bin/metasystem" "$vendored_install/bin/metasystem"
@@ -151,12 +151,14 @@ SH
     && "$unclassified" == *"path README has no class in scripts/agents/path-classes.txt; no classified ancestor; add a row for README or its directory to scripts/agents/path-classes.txt"* ]] \
     || { echo "TestRealCommitWrapperStampsParseableObservation: unclassified refusal lost its base-manifest detail: $unclassified" >&2; exit 1; }
 
+  printf 'missing declaration refuses agents\n' >"$fixture/README"
+  fixture_git add README
   set +e
-  refusal=$(goal_bound_fixture_commit "$fixture" -m "promoted missing must refuse" 2>&1)
+  refusal=$(goal_bound_fixture_commit "$fixture" -m "missing declaration must refuse" 2>&1)
   status=$?
   set -e
   [[ $status -ne 0 ]] \
-    || { echo "TestRealCommitWrapperStampsParseableObservation: promoted missing declaration landed" >&2; exit 1; }
+    || { echo "TestRealCommitWrapperStampsParseableObservation: missing declaration landed" >&2; exit 1; }
   grep -Fq 'would-refuse code=missing-declaration' <<<"$refusal" \
     || { echo "TestRealCommitWrapperStampsParseableObservation: missing-declaration refusal lost its verdict: $refusal" >&2; exit 1; }
   grep -Fq 'README' <<<"$refusal" \
@@ -175,12 +177,32 @@ SH
     && "$orphan" == *"fix the Change-Class classification"* ]] \
     || { echo "TestRealCommitWrapperStampsParseableObservation: orphaned revert parameter did not refuse as a conflict: $orphan" >&2; exit 1; }
 
-  goal_bound_fixture_commit "$fixture" --chain fixture-chain -q -m "chain verdict remains observe"
-  chain_message=$(fixture_git log -1 --format=%B)
-  grep -Fq 'Landing-Provenance-Verdict: would-refuse code=chain-record-unreadable' <<<"$chain_message" \
-    || { echo "TestRealCommitWrapperStampsParseableObservation: unpromoted chain verdict did not land" >&2; exit 1; }
+  cat >"$fixture/artifacts/agents/jobs/fixture-chain.json" <<'JSON'
+{"jobId":"fixture-chain","parentJob":null,"role":"implementer","destructiveReach":"DESIGN-BEARING","chainClosed":false}
+JSON
+  set +e
+  chain_open_refusal=$(goal_bound_fixture_commit "$fixture" --chain fixture-chain \
+    -m "open chain must refuse agent" 2>&1)
+  status=$?
+  set -e
+  [[ $status -ne 0 && "$chain_open_refusal" == *"would-refuse code=chain-open"* ]] \
+    || { echo "TestRealCommitWrapperStampsParseableObservation: chain-open did not refuse an agent: $chain_open_refusal" >&2; exit 1; }
+  human_fixture_commit "$fixture" --chain fixture-chain -q -m "human remains sovereign over chain-open"
+  human_chain_message=$(fixture_git log -1 --format=%B)
+  grep -Fq 'Landing-Provenance-Verdict: would-refuse code=chain-open' <<<"$human_chain_message" \
+    || { echo "TestRealCommitWrapperStampsParseableObservation: human chain-open landing lost its verdict" >&2; exit 1; }
 
-  printf 'promoted conflict\n' >"$fixture/README"
+  printf 'mechanical exception\n' >"$fixture/README"
+  fixture_git add README
+  cat >"$fixture/artifacts/agents/jobs/mechanical-chain.json" <<'JSON'
+{"jobId":"mechanical-chain","parentJob":null,"role":"implementer","destructiveReach":"MECHANICAL","chainClosed":false}
+JSON
+  goal_bound_fixture_commit "$fixture" --chain mechanical-chain -q -m "mechanical chain exception lands"
+  mechanical_message=$(fixture_git log -1 --format=%B)
+  grep -Fq 'Landing-Provenance-Verdict: would-refuse code=chain-not-design-bearing' <<<"$mechanical_message" \
+    || { echo "TestRealCommitWrapperStampsParseableObservation: mechanical exception lost its would-refuse trailer" >&2; exit 1; }
+
+  printf 'conflicting declarations\n' >"$fixture/README"
   fixture_git add README
   set +e
   conflict=$(goal_bound_fixture_commit "$fixture" --chain fixture-chain \
@@ -198,11 +220,11 @@ SH
   fixture_git add internal/floor.txt
   set +e
   floor_refusal=$(goal_bound_fixture_commit "$fixture" --direct-fix register-carriage \
-    -m "promoted behavior floor must refuse" 2>&1)
+    -m "behavior floor must refuse" 2>&1)
   status=$?
   set -e
   [[ $status -ne 0 && "$floor_refusal" == *"would-refuse code=direct-fix-floor-refused"* ]] \
-    || { echo "TestRealCommitWrapperStampsParseableObservation: promoted behavior floor did not refuse: $floor_refusal" >&2; exit 1; }
+    || { echo "TestRealCommitWrapperStampsParseableObservation: behavior floor did not refuse: $floor_refusal" >&2; exit 1; }
   fixture_git restore --staged internal/floor.txt
   rm "$fixture/internal/floor.txt"
 
@@ -211,28 +233,8 @@ SH
   goal_bound_fixture_commit "$fixture" --direct-fix register-carriage -q -m "held goal carries record"
   record_message=$(fixture_git log -1 --format=%B)
   grep -Fq 'Landing-Provenance-Verdict: pass bar=b' <<<"$record_message" \
-    || { echo "TestRealCommitWrapperStampsParseableObservation: held goal record did not pass the promoted floor" >&2; exit 1; }
+    || { echo "TestRealCommitWrapperStampsParseableObservation: held goal record did not pass the behavior floor" >&2; exit 1; }
 
-  printf '{"schemaVersion":1,"refuseCodes":["unknown-code"]}\n' >"$fixture/scripts/agents/landing-promotion.json"
-  fixture_git add scripts/agents/landing-promotion.json
-  fixture_git commit -qm "install malformed landing promotion policy"
-  printf 'malformed policy agent change\n' >"$fixture/README"
-  fixture_git add README
-  set +e
-  malformed=$(goal_bound_fixture_commit "$fixture" --direct-fix register-carriage \
-    -m "malformed policy must refuse agent" 2>&1)
-  status=$?
-  set -e
-  [[ $status -ne 0 && "$malformed" == *"would-refuse code=promotion-record-malformed"* \
-    && "$malformed" == *"README"* \
-    && "$malformed" == *"The landing judge may be older than this policy. A human must rebuild and re-arm it from the landed policy commit or a descendant, then retry. If that judge supports the record version, repair the record through a reviewed implementation chain."* ]] \
-    || { echo "TestRealCommitWrapperStampsParseableObservation: malformed policy did not fail closed: $malformed" >&2; exit 1; }
-
-  harness_fixture_without_outer_proof env -i PATH="$PATH" HOME="${HOME:-/tmp}" TMPDIR="${TMPDIR:-/tmp}" \
-    "$fixture/scripts/agents/commit.sh" __lease-held human -q -m "human remains sovereign"
-  human_message=$(fixture_git log -1 --format=%B)
-  [[ "$human_message" == *"human remains sovereign"* ]] \
-    || { echo "TestRealCommitWrapperStampsParseableObservation: malformed policy changed the human path" >&2; exit 1; }
   echo "TestRealCommitWrapperStampsParseableObservation: PASSED"
 }
 
@@ -295,21 +297,12 @@ case "$1 $2" in
   "util token-hex") echo cafecafecafecafecafecafecafecafe ;;
   "lease commit-token") : ;;
   "json get")
-    if [[ ${4:-} == *'promotion-base-unreadable'* ]]; then
-      case " $* " in
-        *" --field provenance "*) echo "none change=unknown" ;;
-        *" --field verdictTrailer "*) echo "would-refuse code=promotion-base-unreadable" ;;
-        *" --field code "*) echo "promotion-base-unreadable" ;;
-        *" --field mode "*) echo "refuse" ;;
-      esac
-    else
-      case " $* " in
-        *" --field provenance "*) echo "none change=0000000000000000000000000000000000000000000000000000000000000000" ;;
-        *" --field verdictTrailer "*) echo "would-refuse code=missing-declaration" ;;
-        *" --field code "*) echo "missing-declaration" ;;
-        *" --field mode "*) echo "observe" ;;
-      esac
-    fi ;;
+    case " $* " in
+      *" --field provenance "*) echo "none change=0000000000000000000000000000000000000000000000000000000000000000" ;;
+      *" --field verdictTrailer "*) echo "would-refuse code=missing-declaration" ;;
+      *" --field code "*) echo "missing-declaration" ;;
+      *" --field mode "*) echo "refuse" ;;
+    esac ;;
   "behavior-surface select")
     while IFS= read -r -d '' path; do
       case "$path" in artifacts/*|bin/*|plans/goals/*|plans/goals.md|plans/goals-accepted.json|memory/receipts.log|records/narrator-digest.log|metasystem.conf.local) ;;
@@ -336,10 +329,8 @@ case "$1 $2" in
   "landing observe")
     if [[ -n "${STATIC_REPROOF_EVALUATOR_FAIL:-}" ]]; then
       exit 72
-    elif [[ -n "${STATIC_REPROOF_BASE_UNREADABLE:-}" ]]; then
-      echo '{"mode":"refuse","code":"promotion-base-unreadable","provenance":"none change=unknown","verdictTrailer":"would-refuse code=promotion-base-unreadable"}'
     else
-      echo '{"mode":"observe","code":"missing-declaration","provenance":"none change=0000000000000000000000000000000000000000000000000000000000000000","verdictTrailer":"would-refuse code=missing-declaration"}'
+      echo '{"mode":"refuse","code":"missing-declaration","provenance":"none change=0000000000000000000000000000000000000000000000000000000000000000","verdictTrailer":"would-refuse code=missing-declaration"}'
     fi ;;
   *) : ;;
 esac
@@ -442,28 +433,6 @@ human_fallback=$(git -C "$fixture_root" log -1 --format=%B)
 grep -Fq 'Landing-Provenance-Verdict: would-refuse code=evaluator-unavailable' <<<"$human_fallback" \
   || { echo "static re-proof fixture: human evaluator-failure landing lost its fallback stamp" >&2; exit 1; }
 
-# Leg 3b: a promotion evaluator that cannot read the landing base reports that
-# infrastructure cause and its repair instead of masquerading as a promoted
-# classification verdict.
-printf 'unreadable landing base\n' >>"$fixture_root/README"
-git -C "$fixture_root" add README
-before_failure=$(git -C "$fixture_root" rev-parse HEAD)
-set +e
-base_failure=$(harness_fixture_without_outer_proof env METASYSTEM_OWNER_LINEAGE=fixture-lineage STATIC_REPROOF_BASE_UNREADABLE=1 \
-  "$fixture_root/scripts/agents/commit.sh" __lease-held 1 -m "must refuse unreadable base" 2>&1)
-status=$?
-set -e
-[[ $status -ne 0 && "$base_failure" == *"landing base tree is unreadable"* \
-  && "$base_failure" == *"would-refuse code=promotion-base-unreadable"* \
-  && "$base_failure" == *"README"* \
-  && "$base_failure" == *"restore a readable landing base tree at HEAD"* \
-  && "$base_failure" == *"--chain <root-job-id>"* \
-  && "$base_failure" == *"fix the Change-Class classification"* ]] \
-  || { echo "static re-proof fixture: unreadable landing base did not report its real cause and remedy: $base_failure" >&2; exit 1; }
-[[ "$(git -C "$fixture_root" rev-parse HEAD)" == "$before_failure" ]] \
-  || { echo "static re-proof fixture: unreadable landing base created an agent commit" >&2; exit 1; }
-git -C "$fixture_root" restore --staged --worktree README
-
 # Weight bookkeeping is NON-FATAL by proof, not by inspection. The
 # proof-built engine refuses the weight verb; the live stub below is stale and
 # cannot replace the prospective policy owner.
@@ -479,7 +448,7 @@ case "$1 $2" in
       *" --field provenance "*) echo "none change=0000000000000000000000000000000000000000000000000000000000000000" ;;
       *" --field verdictTrailer "*) echo "would-refuse code=missing-declaration" ;;
       *" --field code "*) echo "missing-declaration" ;;
-      *" --field mode "*) echo "observe" ;;
+      *" --field mode "*) echo "refuse" ;;
     esac ;;
   "behavior-surface select")
     while IFS= read -r -d '' path; do

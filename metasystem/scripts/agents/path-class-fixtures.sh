@@ -167,7 +167,6 @@ make_wrapper_fixture() { # fixture name
   cp "$root/scripts/agents/land.sh" "$landing_fixture/scripts/agents/land.sh"
   cp "$root/scripts/agents/coverage-delta.sh" "$landing_fixture/scripts/agents/coverage-delta.sh"
   cp "$root/scripts/agents/landing-classes.json" "$landing_fixture/scripts/agents/landing-classes.json"
-  cp "$root/scripts/agents/landing-promotion.json" "$landing_fixture/scripts/agents/landing-promotion.json"
   cp "$root/scripts/agents/path-classes.txt" "$landing_fixture/scripts/agents/path-classes.txt"
   cp "$root/memory/rulings.md" "$landing_fixture/memory/rulings.md"
   cat >"$landing_fixture/bin/metasystem" <<SH
