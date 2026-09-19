@@ -290,7 +290,7 @@ var Rows = []Row{
 	{Code: "unknown-direct-fix-class", Owner: "internal/landing", Site: "observe.go:1469", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "chain-full-gate-refused", Owner: "internal/landing", Site: "observe.go:403", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "chain-test-receipt-refused", Owner: "internal/landing", Site: "observe.go:393", Shape: Agent, Override: "land.sh --carried", Commands: 1},
-	{Code: "proof-input-moved-after-receipt", Owner: "cmd/metasystem", Site: "test.go:1355", Shape: Agent, Override: "reset to the pushed tip, re-stage, landing test-receipt --mode auto, land again", Commands: 4},
+	{Code: "proof-input-moved-after-receipt", Owner: "cmd/metasystem", Site: "test.go:1358", Shape: Agent, Override: "reset to the pushed tip, re-stage, landing test-receipt --mode auto, land again", Commands: 4},
 	{Code: "tier1-declaration-refused", Owner: "internal/landing", Site: "tierone.go:35", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "tier1-policy-unreadable", Owner: "internal/landing", Site: "tierone.go:62", Shape: Agent, Override: "land.sh --carried", Commands: 1},
 	{Code: "tier1-root-refused", Owner: "internal/landing", Site: "tierone.go:39", Shape: Agent, Override: "land.sh --carried", Commands: 1},
