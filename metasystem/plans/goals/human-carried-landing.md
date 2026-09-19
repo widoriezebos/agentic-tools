@@ -1,6 +1,6 @@
 # human-carried-landing
 
-- State: queued
+- State: parked
 - Priority: 3
 - Sequence: 16
 - Tier: 3
@@ -8,10 +8,11 @@
 - Origin: human
 - Next step: parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume on Wido's ruling on the 11 refusal codes. Existing work: on main ef296c399, the refusal register (metasystem/internal/refusal/register.go), live. Left: about 100 lines: a register row for metasystem/internal/landing/tierone.go:85 and the tier-1 ShellRows in metasystem/scripts/agents/land.sh. No origin goal/human-carried-landing branch exists: nothing unlanded exists; the work below is all on main.
 - OpenedAt: 2026-09-04T10:56:02Z
-- Revision: 62
+- Revision: 63
 - Labels: governance
 - BudgetExceptions: 0
 - Sliced: machine=m3 lineage=mac-m3 revision=5 at=2026-09-04T14:47:24Z
+- Parked: by=human:Wido at=2026-09-19T15:47:15Z because=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume on Wido's ruling on the 11 refusal codes. Existing work: on main ef296c399, the refusal register (metasystem/internal/refusal/register.go), live. Left: about 100 lines: a register row for metasystem/internal/landing/tierone.go:85 and the tier-1 ShellRows in metasystem/scripts/agents/land.sh. No origin goal/human-carried-landing branch exists: nothing unlanded exists; the work below is all on main.
 
 History:
 - 2026-09-04T10:56:02Z 295K6XSWMRHBC0V1H94Y9C6XQ9-m3-a5da21ff open actor=human:Wido targets=human-carried-landing
@@ -76,4 +77,5 @@ History:
 - 2026-09-15T05:59:02Z G1CSAQJCKM1B4YG6KPG6MAFYNN-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,follow-up-brief-cannot-cite-fresh-trunk-files,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,seam-declaration-convergence,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=follow-up-brief-cannot-cite-fresh-trunk-files from=3:18 to=3:17 requested-sequence=67
 - 2026-09-16T21:02:51Z HE021GFD8V1YPVBEXGSBFRHWV0-m1e-c6925449 set-priority actor=human:Wido targets=app-doctrine,app-guardrail-custody,app-guardrail-program,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,cross-repo-guardrails,delegate-sandbox-cannot-run-the-beds,design-prohibition-is-role-scoped,effort-by-complexity-per-model,fixture-default-branch-assumption,goal-suite-sits-on-the-default-test-timeout,human-carried-landing,incident-proposal-drafting,integration-branch,land-verb-pruning,ledger-authentication,metasystem-way-patterns,missionrunner-terminate-flake,paid-proof-authorization,precedent-index,python3-kit-port,reconciliation-guards,registry-design-names-selection-rows,repo-flag-resolves-one-root,runtime-limit-is-not-a-protocol-error,seam-declaration-convergence,set-priority-treats-an-oversize-sequence-as-last,standing-validation,uncapped-delegate-fanout,watchdog-kill-observation-gap reason=priority-order subject=runtime-limit-is-not-a-protocol-error from=3:17 to=3:16 requested-sequence=54
 - 2026-09-19T15:47:09Z 5WSAYM5EHE99BATECKJWV89TFY-m1e-c6925449 edit actor=human:Wido targets=human-carried-landing
-Integrity: sha256=f24c0c0a3925d21cc3d881ea27c920eb741a964abbc489bb37b1be33ae66ffb1
+- 2026-09-19T15:47:15Z GKWA449NHM4F4Y7Q3G280V7HMP-m1e-c6925449 park actor=human:Wido targets=human-carried-landing reason=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume on Wido's ruling on the 11 refusal codes. Existing work: on main ef296c399, the refusal register (metasystem/internal/refusal/register.go), live. Left: about 100 lines: a register row for metasystem/internal/landing/tierone.go:85 and the tier-1 ShellRows in metasystem/scripts/agents/land.sh. No origin goal/human-carried-landing branch exists: nothing unlanded exists; the work below is all on main.
+Integrity: sha256=9667d42039b5612201dcb84f439983ba7c0fd94b701982c2616ea0657b02bff6
