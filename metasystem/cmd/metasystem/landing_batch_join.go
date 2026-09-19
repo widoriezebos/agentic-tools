@@ -298,6 +298,17 @@ func batchModuleRoot(checkout string) string {
 	return checkout
 }
 
+func directoryTreesOverlap(left, right string) bool {
+	contains := func(parent, child string) bool {
+		relative, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(child))
+		if err != nil {
+			return false
+		}
+		return relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	}
+	return contains(left, right) || contains(right, left)
+}
+
 func productionJoinPlan(root, goalID, tree string) (testpolicy.Plan, error) {
 	return productionBatchTreePlan(root, goalID, tree, testpolicy.ModeAuto)
 }
@@ -313,8 +324,7 @@ func productionBatchTreePlan(root, goalID, tree string, mode testpolicy.Mode) (_
 	if err != nil {
 		return testpolicy.Plan{}, err
 	}
-	command := exec.Command(binary, "test", "plan", "--root", planningRoot, "--goal", goalID, "--tree", tree, "--mode", string(mode), "--purpose", "delivery", "--json")
-	command.Dir, command.Env = planningRoot, gittree.ScrubbedEnviron()
+	command := batchTreePlanCommand(binary, planningRoot, goalID, tree, mode)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return testpolicy.Plan{}, fmt.Errorf("plan joined unit: %s: %w", strings.TrimSpace(string(output)), err)
@@ -324,6 +334,13 @@ func productionBatchTreePlan(root, goalID, tree string, mode testpolicy.Mode) (_
 		return testpolicy.Plan{}, err
 	}
 	return planned.Plan, nil
+}
+
+func batchTreePlanCommand(binary, planningRoot, goalID, tree string, mode testpolicy.Mode) *exec.Cmd {
+	controlRoot := batchModuleRoot(planningRoot)
+	command := exec.Command(binary, "test", "plan", "--root", controlRoot, "--goal", goalID, "--tree", tree, "--mode", string(mode), "--purpose", "delivery", "--json")
+	command.Dir, command.Env = controlRoot, gittree.ScrubbedEnviron()
+	return command
 }
 
 func productionForwardHandover(request batchJoinRequest, batchID string, source batch.Claim) error {

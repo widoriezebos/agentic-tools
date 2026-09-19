@@ -205,7 +205,13 @@ func runSealGate(root, tree string, units []Unit, execute batchGateExec) error {
 }
 
 func claimAt(root, tree, batchID, goalID string) (Claim, error) {
-	data, present, err := (gittree.Workspace{Dir: root}).FileAt(tree, filepath.ToSlash(filepath.Join("plans", "goals", goalID+".md")))
+	workspace := gittree.Workspace{Dir: root}
+	prefix, err := workspace.Prefix()
+	if err != nil {
+		return Claim{}, err
+	}
+	path := prefix + filepath.ToSlash(filepath.Join("plans", "goals", goalID+".md"))
+	data, present, err := workspace.FileAt(tree, path)
 	if err != nil || !present {
 		return Claim{}, fmt.Errorf("goal ledger entry %s is absent from tree %s: %w", goalID, tree, err)
 	}

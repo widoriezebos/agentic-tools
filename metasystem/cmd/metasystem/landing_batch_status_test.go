@@ -273,9 +273,9 @@ func reexecWithFixedProofLoad(t *testing.T, marker, testName string) bool {
 }
 
 func TestPrefixReceiptAllowsIdentityReuseAndBindsRevisions(t *testing.T) {
-	args := batchPrefixReceiptArgs("/landing", "goal-a", "tree-a", "result.json", []string{"same", "different"}, batch.Claim{Revision: 7, AccountingRevision: 5})
+	args := batchPrefixReceiptArgs("/prefix", "/landing", "goal-a", "tree-a", "result.json", []string{"same", "different"}, batch.Claim{Revision: 7, AccountingRevision: 5})
 	joined := strings.Join(args, " ")
-	if strings.Contains(joined, "--no-reuse") || !strings.Contains(joined, "--purpose delivery --groups same,different") || !strings.Contains(joined, "--batch-prefix") ||
+	if strings.Contains(joined, "--no-reuse") || !strings.Contains(joined, "--root /prefix --control-root /landing") || !strings.Contains(joined, "--purpose delivery --groups same,different") || !strings.Contains(joined, "--batch-prefix") ||
 		!strings.Contains(joined, "--expected-goal-revision 7 --expected-accounting-revision 5") {
 		t.Fatalf("prefix receipt argv=%v", args)
 	}

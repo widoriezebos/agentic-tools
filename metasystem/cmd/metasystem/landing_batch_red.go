@@ -26,7 +26,8 @@ var batchDiagnosisSeams = struct {
 }{commitForTree, batch.DiagnoseRed}
 
 func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
-	ledgerOwner, err := productionTrunkRedLedgerOwner(root)
+	controlRoot := batchModuleRoot(root)
+	ledgerOwner, err := productionTrunkRedLedgerOwner(controlRoot)
 	if err != nil {
 		return err
 	}
@@ -45,10 +46,10 @@ func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 	}
 	return batchDiagnosisSeams.diagnose(store, id, actor, record.Proof.RedGroups, record.Proof.PrefixGoal, at, batch.RedSeams{
 		Run: func(request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
-			return batchDiagnosticLauncher(root, id, request)
+			return batchDiagnosticLauncher(controlRoot, id, request)
 		},
 		MintOpid: func() (string, error) {
-			machine, err := goal.ResolveMachine(root)
+			machine, err := goal.ResolveMachine(controlRoot)
 			if err != nil {
 				return "", err
 			}
@@ -61,7 +62,7 @@ func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 		Ledger:     ledgerOwner,
 		BaseCommit: baseCommit,
 		UpdateNext: func(goalID, status string) error {
-			return batchChildRunner(root, landingOwnerLineage, "goal", "edit", "--root", root, "--id", goalID, "--next", status, "--lineage", landingOwnerLineage)
+			return batchChildRunner(controlRoot, landingOwnerLineage, "goal", "edit", "--root", controlRoot, "--id", goalID, "--next", status, "--lineage", landingOwnerLineage)
 		},
 	})
 }
@@ -86,9 +87,10 @@ var batchDiagnosticExecute = func(binary string, args []string, dir string, envi
 // clearingDiagnostic is the owner's trunk-red clearing run. That path hands the member's claim beside the
 // request, and the launcher reads the expected revisions from the request, so the claim goes in first.
 func clearingDiagnostic(root string) func(string, batch.DiagnosticRequest, batch.Claim) (batch.DiagnosticResult, error) {
+	controlRoot := batchModuleRoot(root)
 	return func(batchID string, request batch.DiagnosticRequest, claim batch.Claim) (batch.DiagnosticResult, error) {
 		request.Claim = claim
-		return launchBatchDiagnostic(root, batchID, request)
+		return launchBatchDiagnostic(controlRoot, batchID, request)
 	}
 }
 

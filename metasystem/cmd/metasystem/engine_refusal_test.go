@@ -61,6 +61,64 @@ func TestUnenrolledLinkedWorktreeNamesItsMainCheckout(t *testing.T) {
 	}
 }
 
+func TestLinkedWorktreeMainInstallationPreservesInstallationSubdirectory(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "main")
+	landedGit(t, filepath.Dir(root), "init", "-q", "-b", "main", root)
+	module := filepath.Join(root, "metasystem")
+	if err := os.Mkdir(module, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := osWriteFile(filepath.Join(module, "go.mod"), "module fixture\n"); err != nil {
+		t.Fatal(err)
+	}
+	landedGit(t, root, "add", ".")
+	landedGit(t, root, "commit", "-qm", "seed nested module")
+	linked := filepath.Join(filepath.Dir(root), "linked")
+	landedGit(t, root, "worktree", "add", "-q", "-b", "linked-nested", linked)
+	got, ok := linkedWorktreeMainInstallation(filepath.Join(linked, "metasystem"))
+	want, err := canonicalPath(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got != want {
+		t.Fatalf("linked nested installation resolved to %q, linked=%t, want %q", got, ok, want)
+	}
+}
+
+func TestBatchPrefixProofControlRootMustOwnLinkedExecution(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	main := filepath.Join(parent, "main")
+	landedGit(t, parent, "init", "-q", "-b", "main", main)
+	module := filepath.Join(main, "metasystem")
+	if err := os.Mkdir(module, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := osWriteFile(filepath.Join(module, "go.mod"), "module fixture\n"); err != nil {
+		t.Fatal(err)
+	}
+	landedGit(t, main, "add", ".")
+	landedGit(t, main, "commit", "-qm", "seed nested module")
+	linked := filepath.Join(parent, "linked")
+	landedGit(t, main, "worktree", "add", "-q", "-b", "linked-prefix", linked)
+	execution := filepath.Join(linked, "metasystem")
+	want, err := canonicalProofRoot(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := batchPrefixProofControlRoot(execution, module); err != nil || got != want {
+		t.Fatalf("owned batch prefix control root=%q error=%v, want %q", got, err, want)
+	}
+	unrelated := filepath.Join(parent, "unrelated")
+	if err := os.Mkdir(unrelated, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := batchPrefixProofControlRoot(execution, unrelated); err == nil || !strings.Contains(err.Error(), "does not own") {
+		t.Fatalf("unrelated batch prefix control root was accepted: %v", err)
+	}
+}
+
 func TestDecisionMismatchNamesTheField(t *testing.T) {
 	err := decisionMismatchRefusal("candidate", "ours-base", "digest", testingPlanOutput{
 		CandidateTree: "candidate", PolicyBaseCommit: "engine-base", BaseContractDigest: "digest",

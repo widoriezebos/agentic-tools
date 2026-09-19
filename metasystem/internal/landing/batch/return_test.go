@@ -3,9 +3,32 @@ package batch
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestBatchLedgerReadersHonorNestedModuleRoot(t *testing.T) {
+	t.Parallel()
+	repository := t.TempDir()
+	module := filepath.Join(repository, "metasystem")
+	must(t, os.MkdirAll(filepath.Join(module, "plans", "goals"), 0o755))
+	must(t, os.WriteFile(filepath.Join(module, "plans", "goals", "goal-a.md"), goalBed("goal-a"), 0o644))
+	bedGit(t, repository, "init", "-q", "-b", "main")
+	bedGit(t, repository, "config", "user.name", "Fixture")
+	bedGit(t, repository, "config", "user.email", "fixture@example.invalid")
+	bedGit(t, repository, "add", ".")
+	bedGit(t, repository, "commit", "-qm", "seed nested ledger")
+	tree := bedGit(t, repository, "rev-parse", "HEAD^{tree}")
+	claim, err := ReadClaimAt(module, tree, testBatchID, "goal-a")
+	if err != nil || claim.Machine != "seat" || claim.Lineage != "goal-a" || claim.Revision != 2 || claim.AccountingRevision != 1 {
+		t.Fatalf("nested claim=%+v error=%v", claim, err)
+	}
+	ledger, err := ReadReturnLedgerGoal(module, tree, "goal-a")
+	if err != nil || !ledger.Claimed || ledger.Machine != "landing" || ledger.Batch != testBatchID {
+		t.Fatalf("nested return ledger=%+v error=%v", ledger, err)
+	}
+}
 
 func returnBed(t *testing.T) Store {
 	store := NewStore(t.TempDir(), scriptedProber{})

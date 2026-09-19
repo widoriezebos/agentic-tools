@@ -169,6 +169,51 @@ func TestProductionJoinGateSelectsPackagesAgainstTheLandingRoot(t *testing.T) {
 	}
 }
 
+func TestBatchTreePlanCommandUsesNestedModuleRoot(t *testing.T) {
+	t.Parallel()
+	repository := t.TempDir()
+	module := filepath.Join(repository, "metasystem")
+	if err := os.Mkdir(module, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := batchTreePlanCommand("metasystem", repository, "goal-a", "tree-a", testpolicy.ModeAuto)
+	if command.Dir != module {
+		t.Fatalf("batch tree plan directory=%s, want nested module %s", command.Dir, module)
+	}
+	want := []string{"metasystem", "test", "plan", "--root", module, "--goal", "goal-a", "--tree", "tree-a", "--mode", "auto", "--purpose", "delivery", "--json"}
+	if !reflect.DeepEqual(command.Args, want) {
+		t.Fatalf("batch tree plan argv=%v, want %v", command.Args, want)
+	}
+}
+
+func TestDirectoryTreesOverlapRejectsAncestorsOnly(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cases := []struct {
+		name        string
+		left, right string
+		want        bool
+	}{
+		{name: "equal", left: root, right: root, want: true},
+		{name: "left ancestor", left: root, right: filepath.Join(root, "child"), want: true},
+		{name: "right ancestor", left: filepath.Join(root, "child"), right: root, want: true},
+		{name: "siblings", left: filepath.Join(root, "left"), right: filepath.Join(root, "right")},
+		{name: "prefix sibling", left: root, right: root + "-neighbor"},
+	}
+	for _, test := range cases {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := directoryTreesOverlap(test.left, test.right); got != test.want {
+				t.Fatalf("directoryTreesOverlap(%q, %q)=%t, want %t", test.left, test.right, got, test.want)
+			}
+		})
+	}
+}
+
 func TestLandingBatchJoinRefusesDroppedListedTest(t *testing.T) {
 	production := productionBatchJoinDependencies()
 	if reflect.ValueOf(production.protectedTests).Pointer() != reflect.ValueOf(batch.CheckProtectedTests).Pointer() {

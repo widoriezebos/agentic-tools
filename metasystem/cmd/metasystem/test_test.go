@@ -456,6 +456,39 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 	}
 }
 
+func TestBatchPrefixTestingControlRootRetainsAttemptOutsideExecution(t *testing.T) {
+	t.Parallel()
+	controlRoot, executionRoot := t.TempDir(), t.TempDir()
+	prepared := testingPreparation{Installation: executionRoot, ControlRoot: controlRoot, ProjectRoot: executionRoot}
+	runRequest := testingRunRequest(prepared, "", "", "", strings.Repeat("1", 64), strings.Repeat("2", 40))
+	if runRequest.ControlRoot != controlRoot || runRequest.ProjectRoot != executionRoot {
+		t.Fatalf("batch prefix request control=%s execution=%s, want %s and %s", runRequest.ControlRoot, runRequest.ProjectRoot, controlRoot, executionRoot)
+	}
+	proofIdentity, err := proofrun.BuildProofIdentity(executionRoot, "", "selected", "testing", nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, decision, err := proofrun.ReserveLocked(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
+		ControlRoot: controlRoot, ExecutionRoot: executionRoot, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
+		CandidateGoalID: "goal-a", CandidateRevision: 2, CandidateTree: strings.Repeat("b", 40), ReservedMinutes: 2,
+		Identity: proofIdentity, Launcher: launcher, Now: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC),
+	}, "0"))
+	if err != nil || decision.Disposition == proofrun.DispositionAdmissionRefused {
+		t.Fatalf("reserve split-root batch prefix attempt: decision=%+v error=%v", decision, err)
+	}
+	retained, err := proofrun.ReadAttempt(controlRoot, attempt.AttemptID)
+	if err != nil || retained.ControlRoot != controlRoot || retained.ExecutionRoot != executionRoot {
+		t.Fatalf("durable split-root attempt=%+v error=%v", retained, err)
+	}
+	if _, err := proofrun.ReadAttempt(executionRoot, attempt.AttemptID); !os.IsNotExist(err) {
+		t.Fatalf("batch prefix attempt leaked into disposable execution root: %v", err)
+	}
+}
+
 func TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories(t *testing.T) {
 	script, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "go-build.sh"))
 	if err != nil {

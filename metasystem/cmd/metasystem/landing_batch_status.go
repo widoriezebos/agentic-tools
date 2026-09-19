@@ -101,21 +101,22 @@ func statusHeadroom(root, goalID string, now time.Time, capMinutes uint64) batch
 }
 
 func batchRecordStatus(record batch.Record, settings config.BatchLanding, configuredLockDir ...string) batchStatusView {
+	controlRoot := batchModuleRoot(settings.Root)
 	lockDir := batch.DefaultProofLockDir
 	if len(configuredLockDir) != 0 && configuredLockDir[0] != "" {
 		lockDir = configuredLockDir[0]
 	}
-	view := batchStatusView{BatchID: record.BatchID, State: record.State, Lock: batchStatusLock(lockDir), Sample: batchStatusSample(settings.Root)}
+	view := batchStatusView{BatchID: record.BatchID, State: record.State, Lock: batchStatusLock(lockDir), Sample: batchStatusSample(controlRoot)}
 	if record.Proof != nil {
 		view.Reason, view.ProofStatus = record.Proof.Failure, record.Proof.Status
 	}
-	capMinutes, _, _, capErr := dispatchcore.ResolveCap(filepath.Join(settings.Root, "metasystem.conf"), "proof", "main", "proof", "", "")
+	capMinutes, _, _, capErr := dispatchcore.ResolveCap(filepath.Join(controlRoot, "metasystem.conf"), "proof", "main", "proof", "", "")
 	if capErr != nil || capMinutes < 1 {
 		capMinutes = 120
 	}
 	for _, unit := range record.Units {
 		if _, sealed := record.Seal[unit.GoalID]; sealed {
-			view.Headroom = append(view.Headroom, statusHeadroom(settings.Root, unit.GoalID, batchStatusNow().UTC(), uint64(capMinutes)))
+			view.Headroom = append(view.Headroom, statusHeadroom(controlRoot, unit.GoalID, batchStatusNow().UTC(), uint64(capMinutes)))
 		}
 	}
 	if record.Landing != nil && record.Landing.BranchTip != "" {
@@ -217,7 +218,7 @@ func runBatchStatus(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	cadence, err := batchCadenceStatus(settings.Root, batchStatusNow().UTC())
+	cadence, err := batchCadenceStatus(batchModuleRoot(settings.Root), batchStatusNow().UTC())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

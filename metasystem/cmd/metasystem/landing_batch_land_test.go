@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +26,87 @@ func TestBatchPushRejectionAppearsInStatus(t *testing.T) {
 	view := batchRecordStatus(record, settings)
 	if view.State != batch.StateLanding || view.ProofStatus != "green" || view.Reason != "endpoint push held: protected branch" {
 		t.Fatalf("status=%+v", view)
+	}
+}
+
+func TestBatchLandReceiptsRunFromNestedModuleRoot(t *testing.T) {
+	t.Parallel()
+	repository := t.TempDir()
+	module := filepath.Join(repository, "metasystem")
+	if err := os.MkdirAll(filepath.Join(module, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(module, "scripts", "receipt.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\npwd > receipt-root.txt\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seams := batchLandSeams(repository, "batch", batch.Record{}, "base", "actor")
+	if err := seams.AppendReceipt(batch.Unit{GoalID: "goal-a"}, batch.PrefixReceipt{Tree: "tree"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(module, "receipt-root.txt"))
+	want, canonicalErr := canonicalPath(module)
+	if err != nil || canonicalErr != nil || strings.TrimSpace(string(data)) != want {
+		t.Fatalf("receipt root=%q error=%v canonical-error=%v, want %s", data, err, canonicalErr, want)
+	}
+}
+
+func TestBatchLandCommitWrapperRunsFromNestedModuleRoot(t *testing.T) {
+	t.Parallel()
+	repository := t.TempDir()
+	module := filepath.Join(repository, "metasystem")
+	if err := os.MkdirAll(filepath.Join(module, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(module, "scripts", "agents", "commit.sh")
+	script := `#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  case "$1" in --chain|--goal|--test-receipt) shift 2;; *) break;; esac
+done
+pwd > wrapper-root.txt
+git commit -q "$@"
+`
+	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "init", "-q", "-b", "main", repository).CombinedOutput(); err != nil {
+		t.Fatalf("init: %v: %s", err, output)
+	}
+	for _, args := range [][]string{{"config", "user.name", "Fixture"}, {"config", "user.email", "fixture@example.invalid"}} {
+		if output, err := exec.Command("git", append([]string{"-C", repository}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	product := filepath.Join(module, "product.go")
+	if err := os.WriteFile(product, []byte("package fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", repository, "add", ".").CombinedOutput(); err != nil {
+		t.Fatalf("add base: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", repository, "commit", "-qm", "base").CombinedOutput(); err != nil {
+		t.Fatalf("commit base: %v: %s", err, output)
+	}
+	if err := os.WriteFile(product, []byte("package fixture\n\n// changed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", repository, "add", "metasystem/product.go").CombinedOutput(); err != nil {
+		t.Fatalf("stage product: %v: %s", err, output)
+	}
+	seams := batchLandSeams(repository, "batch", batch.Record{}, "base", "actor")
+	if _, err := seams.Commit(batch.Unit{GoalID: "goal-a", Chain: "chain-a", AuthorName: "Owner", AuthorEmail: "owner@example.invalid"}, batch.PrefixReceipt{}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(module, "wrapper-root.txt"))
+	want, canonicalErr := canonicalPath(module)
+	if err != nil || canonicalErr != nil || strings.TrimSpace(string(data)) != want {
+		t.Fatalf("wrapper root=%q error=%v canonical-error=%v, want %s", data, err, canonicalErr, want)
 	}
 }
 

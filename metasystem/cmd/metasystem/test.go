@@ -33,21 +33,21 @@ import (
 )
 
 type testingPreparation struct {
-	Installation, ProjectRoot, Prefix, ConfPath string
-	GoalID                                      string
-	AccountingRevision                          uint64
-	BaseCommit, PolicyBaseCommit, CandidateTree string
-	CandidateContract, BaseContract             testpolicy.Contract
-	EffectiveContract                           testpolicy.Contract
-	ContractDigest, BaseContractDigest          string
-	PolicyEngineDigest, BehaviorPolicyDigest    string
-	JudgeKey                                    string
-	EngineRearm                                 *proofrun.EngineRearm
-	PolicyEngine                                string
-	FirstTestingTransition                      bool
-	Plan                                        testpolicy.Plan
-	Environment                                 []string
-	AllGroups                                   bool
+	Installation, ControlRoot, ProjectRoot, Prefix, ConfPath string
+	GoalID                                                   string
+	AccountingRevision                                       uint64
+	BaseCommit, PolicyBaseCommit, CandidateTree              string
+	CandidateContract, BaseContract                          testpolicy.Contract
+	EffectiveContract                                        testpolicy.Contract
+	ContractDigest, BaseContractDigest                       string
+	PolicyEngineDigest, BehaviorPolicyDigest                 string
+	JudgeKey                                                 string
+	EngineRearm                                              *proofrun.EngineRearm
+	PolicyEngine                                             string
+	FirstTestingTransition                                   bool
+	Plan                                                     testpolicy.Plan
+	Environment                                              []string
+	AllGroups                                                bool
 }
 
 type testingPlanOutput struct {
@@ -61,6 +61,13 @@ type testingPlanOutput struct {
 	BaseContractDigest string             `json:"baseContractDigest"`
 	Plan               testpolicy.Plan    `json:"plan"`
 	Groups             []testpolicy.Group `json:"groups"`
+}
+
+func (prepared testingPreparation) proofControlRoot() string {
+	if prepared.ControlRoot != "" {
+		return prepared.ControlRoot
+	}
+	return prepared.Installation
 }
 
 func runTestList(args []string) int {
@@ -140,14 +147,14 @@ func runTestPlan(args []string) int {
 }
 
 type testingSelectionRequest struct {
-	Root, GoalID, AuthorityGoalID, Tree, CapMin, RetryDecision, ResultPath string
-	ExpectedGoalRevision, ExpectedAccountingRevision                       uint64
-	Mode                                                                   testpolicy.Mode
-	Purpose                                                                testpolicy.Purpose
-	Groups                                                                 []string
-	Carried                                                                bool
-	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups             bool
-	BatchPrefixReceipt                                                     bool
+	Root, ControlRoot, GoalID, AuthorityGoalID, Tree, CapMin, RetryDecision, ResultPath string
+	ExpectedGoalRevision, ExpectedAccountingRevision                                    uint64
+	Mode                                                                                testpolicy.Mode
+	Purpose                                                                             testpolicy.Purpose
+	Groups                                                                              []string
+	Carried                                                                             bool
+	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups                          bool
+	BatchPrefixReceipt                                                                  bool
 	// CadencePreflight plans and revalidates the fetched tree before the cadence
 	// tick claims standing authority. Governed cadence execution does not set it.
 	CadencePreflight bool
@@ -180,6 +187,7 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	flags.BoolVar(&request.BatchPrefixReceipt, "batch-prefix", false, "compose delivery evidence for a batch prefix")
 	flags.BoolVar(&request.Carried, "carried", false, "compose a completed red result for carried-landing classification")
 	if execution {
+		pathFlagVar(flags, &request.ControlRoot, "control-root", "", "durable proof control root for an internal batch prefix")
 		flags.StringVar(&request.CapMin, "cap-min", "", "reserved proof minutes")
 		flags.StringVar(&request.RetryDecision, "retry-decision", "", "accountable version-1 retry decision")
 		flags.StringVar(&request.ResultPath, "result", "", "atomic result projection path")
@@ -215,6 +223,10 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	request.Mode, request.Purpose = testpolicy.Mode(*mode), testpolicy.Purpose(*purpose)
 	if request.BatchPrefixReceipt && (request.Purpose != testpolicy.PurposeDelivery || len(request.Groups) == 0) {
 		fmt.Fprintln(os.Stderr, "--batch-prefix requires delivery purpose and explicit groups")
+		return request, false, 2
+	}
+	if request.ControlRoot != "" && !request.BatchPrefixReceipt {
+		fmt.Fprintln(os.Stderr, "--control-root is internal to a batch prefix proof")
 		return request, false, 2
 	}
 	if request.NoReuse && request.Purpose != testpolicy.PurposeDiagnostic {
@@ -277,6 +289,13 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 	installation, err := canonicalProofRoot(request.Root)
 	if err != nil {
 		return testingPreparation{}, err
+	}
+	controlRoot := installation
+	if request.ControlRoot != "" {
+		controlRoot, err = batchPrefixProofControlRoot(installation, request.ControlRoot)
+		if err != nil {
+			return testingPreparation{}, err
+		}
 	}
 	confPath := filepath.Join(installation, "metasystem.conf")
 	contractRel, present, err := config.ConfLookup(confPath, "testing.contract")
@@ -457,7 +476,7 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 	if policyBaseErr != nil {
 		plan.Uncertainty = append(plan.Uncertainty, "trusted destination policy base unavailable: "+policyBaseErr.Error())
 	}
-	return testingPreparation{Installation: installation, ProjectRoot: projectRoot, Prefix: strings.TrimSuffix(prefix, "/"),
+	return testingPreparation{Installation: installation, ControlRoot: controlRoot, ProjectRoot: projectRoot, Prefix: strings.TrimSuffix(prefix, "/"),
 		GoalID: goalID, AccountingRevision: accountingRevision,
 		ConfPath: confPath, BaseCommit: baseCommit, PolicyBaseCommit: policyBaseCommit, CandidateTree: candidateTree, BaseContract: baseContract,
 		CandidateContract: candidateContract, EffectiveContract: effective, ContractDigest: bytesSHA256(candidateBytes),
@@ -610,6 +629,9 @@ func planWithTrustedPolicyEngine(engine string, request testingSelectionRequest,
 	defer cancel()
 	command := exec.CommandContext(ctx, engine, args...)
 	command.Env = testingEnvironment(os.Environ())
+	if os.Getenv(policyProbeWorkerEnvironment) == "1" {
+		command.Env = append(command.Env, policyProbeWorkerEnvironment+"=1")
+	}
 	data, err := command.CombinedOutput()
 	if err != nil {
 		return testingPlanOutput{}, engineRefusal("child-failed", []enginecause.Fact{enginecause.Path("engine", engine)}, fmt.Sprintf("retained trusted-base engine could not decide version-1 policy: %v: %s", err, strings.TrimSpace(string(data))))
@@ -681,7 +703,7 @@ func planOutput(prepared testingPreparation) testingPlanOutput {
 
 func testingRunRequest(prepared testingPreparation, attemptID, logRoot, candidateEngine, candidateEngineDigest, candidateEngineBuildIdentity string) proofrun.TestRunRequest {
 	return proofrun.TestRunRequest{ProjectRoot: prepared.ProjectRoot, InstallationPrefix: prepared.Prefix,
-		ControlRoot:   prepared.Installation,
+		ControlRoot:   prepared.proofControlRoot(),
 		CandidateTree: prepared.CandidateTree, BaseCommit: prepared.BaseCommit, PolicyBaseCommit: prepared.PolicyBaseCommit,
 		Contract: prepared.EffectiveContract, Plan: prepared.Plan, AttemptID: attemptID, Environment: prepared.Environment,
 		LogRoot: logRoot, ContractDigest: prepared.ContractDigest, BaseContractDigest: prepared.BaseContractDigest,
@@ -930,6 +952,7 @@ func runTestRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 		return 1
 	}
+	controlRoot := prepared.proofControlRoot()
 	limits, err := resolveProofRunLimits(prepared.ConfPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
@@ -976,7 +999,7 @@ func runTestRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test run: bounded testing metadata preparation:", identityErr)
 		return proofrun.ExitAdmissionRefused
 	}
-	admission := proofLaunchAdmission{ControlRoot: prepared.Installation,
+	admission := proofLaunchAdmission{ControlRoot: controlRoot,
 		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, AuthorityGoalID: request.AuthorityGoalID,
 		CandidateRevision: prepared.AccountingRevision, RetryDecision: request.RetryDecision,
 		CapMin: request.CapMin, ExpectedGoalRevision: request.ExpectedGoalRevision,
@@ -993,7 +1016,7 @@ func runTestRun(args []string) int {
 		return proofrun.ExitAdmissionRefused
 	}
 	if decision.Disposition == proofrun.DispositionReusableSuccess {
-		attempts, readErr := proofrun.ReadAttempts(prepared.Installation)
+		attempts, readErr := proofrun.ReadAttempts(controlRoot)
 		if readErr != nil || identityErr != nil {
 			fmt.Fprintln(os.Stderr, "metasystem test run: reusable component evidence is unreadable")
 			return 1
@@ -1004,7 +1027,7 @@ func runTestRun(args []string) int {
 			projection = proofrun.ReusedTestResult(template, attempts, identities, prepared.EffectiveContract)
 		}
 		if projection.Delivery.Sufficient {
-			if err := publishTestingResult(prepared.Installation, request.ResultPath, projection); err != nil {
+			if err := publishTestingResult(controlRoot, request.ResultPath, projection); err != nil {
 				fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 				return 1
 			}
@@ -1036,10 +1059,10 @@ func runTestRun(args []string) int {
 	preRequest.PreparationDurationMS, preRequest.CommandStartedAt = preparationDuration, commandStarted.Format(time.RFC3339Nano)
 	reusedGroups := map[string]proofrun.GroupResult{}
 	if identityErr == nil {
-		attempts, readErr := proofrun.ReadAttempts(prepared.Installation)
+		attempts, readErr := proofrun.ReadAttempts(controlRoot)
 		if readErr != nil {
 			fmt.Fprintln(os.Stderr, "metasystem test run: read reusable component evidence:", readErr)
-			return retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, 1)
+			return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
 		}
 		reused := proofrun.ReusedTestResultExcludingWithPolicy(proofrun.NewTestResult(preRequest), attempts, identities,
 			prepared.EffectiveContract, attempt.AttemptID, proofrun.ReusePolicy{ForceGroups: request.ForceGroups})
@@ -1049,10 +1072,10 @@ func runTestRun(args []string) int {
 			}
 		}
 	}
-	pathsRoot := filepath.Join(prepared.Installation, "artifacts", "agents", "proof-runs", attempt.AttemptID, "testing", planDigest)
+	pathsRoot := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", attempt.AttemptID, "testing", planDigest)
 	if err := os.MkdirAll(pathsRoot, 0o700); err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
-		return retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, 1)
+		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
 	}
 	runRequest := testingRunRequest(prepared, attempt.AttemptID, filepath.Join(pathsRoot, "groups"), candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
 	runRequest.ProgressPath = filepath.Join(pathsRoot, "progress.jsonl")
@@ -1064,12 +1087,12 @@ func runTestRun(args []string) int {
 	packetPath, workerResultPath := filepath.Join(pathsRoot, "request.json"), filepath.Join(pathsRoot, "result.json")
 	if err := writePrivateJSON(packetPath, runRequest); err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
-		return retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, 1)
+		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
 	}
 	packetDigest, err := fileSHA256(packetPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
-		return retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, 1)
+		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
 	}
 	deadline, _ := time.Parse(time.RFC3339Nano, attempt.Deadline)
 	var retained *proofrun.TestResult
@@ -1080,10 +1103,10 @@ func runTestRun(args []string) int {
 	workerEnvironment, err := testingWorkerEnvironment(prepared.Environment)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run: export run owner:", err)
-		return retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, 1)
+		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
 	}
 	launchStatus := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "testing", Root: prepared.ProjectRoot,
-		ControlRoot: prepared.Installation, AttemptID: attempt.AttemptID, JoinedAttempt: joined, Deadline: deadline, ConfPath: prepared.ConfPath,
+		ControlRoot: controlRoot, AttemptID: attempt.AttemptID, JoinedAttempt: joined, Deadline: deadline, ConfPath: prepared.ConfPath,
 		ProgressPath: runRequest.ProgressPath, LogPath: filepath.Join(pathsRoot, "launcher.log"),
 		Banner: "TESTING-CONTRACT plan=" + planDigest, Silence: limits.silence, SectionCap: limits.sectionCap,
 		EvidenceTimeout: limits.evidenceTimeout, EvidenceMax: limits.evidenceMax, Poll: time.Second, TermGrace: 5 * time.Second,
@@ -1107,7 +1130,7 @@ func runTestRun(args []string) int {
 			return payload, prepareErr
 		},
 		CommitTerminal: testingTerminalCommit(workerResultPath, &retained)})
-	launchStatus = retainIncompleteProofAttempt(prepared.Installation, attempt.AttemptID, joined, launchStatus)
+	launchStatus = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, launchStatus)
 	if retained == nil {
 		if result, readErr := readTestingWorkerResult(workerResultPath); readErr == nil {
 			retained = &result
@@ -1115,12 +1138,12 @@ func runTestRun(args []string) int {
 	}
 	if retained != nil {
 		if joined {
-			if _, err := proofrun.RecordTestResult(prepared.Installation, attempt.AttemptID, *retained); err != nil {
+			if _, err := proofrun.RecordTestResult(controlRoot, attempt.AttemptID, *retained); err != nil {
 				fmt.Fprintln(os.Stderr, "metasystem test run: retain joined result:", err)
 				return 1
 			}
 		}
-		if err := publishTestingResult(prepared.Installation, request.ResultPath, *retained); err != nil {
+		if err := publishTestingResult(controlRoot, request.ResultPath, *retained); err != nil {
 			fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 			return 1
 		}

@@ -65,6 +65,39 @@ func linkedEnrollmentRoot(installation string) (string, bool) {
 	return filepath.Join(mainCheckout, relative), true
 }
 
+func linkedWorktreeMainInstallation(installation string) (string, bool) {
+	main, linked := linkedWorktreeMainCheckout(installation)
+	if !linked {
+		return "", false
+	}
+	prefixCommand := exec.Command("git", "-C", installation, "rev-parse", "--show-prefix")
+	prefixCommand.Env = gittree.ScrubbedEnviron()
+	prefix, err := prefixCommand.Output()
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(main, filepath.FromSlash(strings.TrimSuffix(strings.TrimSpace(string(prefix)), "/"))), true
+}
+
+func batchPrefixProofControlRoot(installation, requested string) (string, error) {
+	controlRoot, err := canonicalProofRoot(requested)
+	if err != nil {
+		return "", fmt.Errorf("resolve batch prefix proof control root: %w", err)
+	}
+	mainInstallation, linked := linkedWorktreeMainInstallation(installation)
+	if !linked {
+		return "", fmt.Errorf("batch prefix proof execution root is not a linked worktree")
+	}
+	mainInstallation, err = canonicalProofRoot(mainInstallation)
+	if err != nil {
+		return "", fmt.Errorf("resolve batch prefix main installation: %w", err)
+	}
+	if controlRoot != mainInstallation {
+		return "", fmt.Errorf("batch prefix proof control root %s does not own execution installation %s", controlRoot, installation)
+	}
+	return controlRoot, nil
+}
+
 func enrollmentRefusal(installation string, cause error) error {
 	facts := engineCheckoutFacts(installation)
 	if checkout, linked := linkedWorktreeMainCheckout(installation); linked {

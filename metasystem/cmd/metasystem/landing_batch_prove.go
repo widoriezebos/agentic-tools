@@ -56,6 +56,7 @@ func proofPlanCovers(plan testpolicy.Plan, union []string) bool {
 }
 
 func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSample, at time.Time, dependencies batchProofDependencies) error {
+	controlRoot := batchModuleRoot(root)
 	store := batch.NewStore(root, nil)
 	record, err := store.Load(id)
 	if err != nil {
@@ -134,9 +135,9 @@ func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSampl
 	if err != nil {
 		return err
 	}
-	resultPath := filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", id+".json")
+	resultPath := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+".json")
 	sealed := admitted.Seal[head.GoalID]
-	request := batchProofLaunch{Root: root, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath,
+	request := batchProofLaunch{Root: controlRoot, BatchID: id, GoalID: head.GoalID, Tree: admitted.TipTree, CandidateTip: admitted.Proof.CandidateTip, ResultPath: resultPath,
 		Mode: plan.ExecutedMode, GoalRevision: sealed.Revision, AccountingRevision: sealed.AccountingRevision}
 	result, launchErr := dependencies.launch(request)
 	var refused *batchProofAdmissionRefusal
@@ -245,6 +246,7 @@ var batchBaseRearm = struct {
 }{landing.FastForwardPreservingRegisters, landedRearmRebuild, landedRearmUp}
 
 func rearmBatchBase(root, baseTree string) error {
+	controlRoot := batchModuleRoot(root)
 	workspace := gittree.Workspace{Dir: root}
 	head, unborn, err := workspace.HeadCommit()
 	if err != nil || unborn {
@@ -273,14 +275,14 @@ func rearmBatchBase(root, baseTree string) error {
 		if baseCommit == "" {
 			return fmt.Errorf("BATCH_BASE_MOVED: origin/main ancestry has no commit for recorded base tree %s", baseTree)
 		}
-		if err := batchBaseRearm.fastForward(context.Background(), root, baseCommit); err != nil {
+		if err := batchBaseRearm.fastForward(context.Background(), controlRoot, baseCommit); err != nil {
 			return err
 		}
 	}
-	if err := batchBaseRearm.rebuild(context.Background(), root); err != nil {
+	if err := batchBaseRearm.rebuild(context.Background(), controlRoot); err != nil {
 		return err
 	}
-	_, err = batchBaseRearm.up(context.Background(), root, root)
+	_, err = batchBaseRearm.up(context.Background(), controlRoot, controlRoot)
 	return err
 }
 
@@ -288,12 +290,13 @@ func rearmBatchTip(root, tip string) error {
 	if tip == "" {
 		return fmt.Errorf("re-arm landed batch: pushed tip is absent")
 	}
-	if err := batchBaseRearm.fastForward(context.Background(), root, tip); err != nil {
+	controlRoot := batchModuleRoot(root)
+	if err := batchBaseRearm.fastForward(context.Background(), controlRoot, tip); err != nil {
 		return err
 	}
-	if err := batchBaseRearm.rebuild(context.Background(), root); err != nil {
+	if err := batchBaseRearm.rebuild(context.Background(), controlRoot); err != nil {
 		return err
 	}
-	_, err := batchBaseRearm.up(context.Background(), root, root)
+	_, err := batchBaseRearm.up(context.Background(), controlRoot, controlRoot)
 	return err
 }

@@ -31,7 +31,13 @@ type ReturnSeams struct {
 // ReadReturnLedgerGoal reads return custody from the exact fetched tree used
 // for the rest of an owner tick.
 func ReadReturnLedgerGoal(root, tree, goalID string) (ReturnLedgerGoal, error) {
-	data, present, err := (gittree.Workspace{Dir: root}).FileAt(tree, filepath.ToSlash(filepath.Join("plans", "goals", goalID+".md")))
+	workspace := gittree.Workspace{Dir: root}
+	prefix, err := workspace.Prefix()
+	if err != nil {
+		return ReturnLedgerGoal{}, err
+	}
+	path := prefix + filepath.ToSlash(filepath.Join("plans", "goals", goalID+".md"))
+	data, present, err := workspace.FileAt(tree, path)
 	if err != nil || !present {
 		return ReturnLedgerGoal{}, fmt.Errorf("goal ledger entry %s is absent from tree %s: %w", goalID, tree, err)
 	}

@@ -101,12 +101,18 @@ func launchBatchOwner(root string) error {
 	if err != nil {
 		return err
 	}
-	command := exec.Command(binary, "up", "--recover-only", "--if-down", "--repo", root, "--metasystem-root", root)
-	command.Dir = root
+	command := batchOwnerLaunchCommand(binary, root)
 	command.Env = os.Environ()
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	command.Stdin, command.Stdout, command.Stderr = nil, nil, nil
 	return command.Start()
+}
+
+func batchOwnerLaunchCommand(binary, repositoryRoot string) *exec.Cmd {
+	controlRoot := batchModuleRoot(repositoryRoot)
+	command := exec.Command(binary, "up", "--recover-only", "--if-down", "--repo", repositoryRoot, "--metasystem-root", controlRoot)
+	command.Dir = controlRoot
+	return command
 }
 
 func ensureBatchOwner(root string) error {
@@ -223,7 +229,8 @@ func resolveBatchOwnerSettings(seatRoot, landingRoot string, maxWait time.Durati
 }
 
 func fetchBatchTree(root string) (string, error) {
-	endpoint, err := goal.ResolveEndpoint(root)
+	controlRoot := batchModuleRoot(root)
+	endpoint, err := goal.ResolveEndpoint(controlRoot)
 	if err != nil {
 		return "", err
 	}
@@ -253,7 +260,11 @@ func goalFilesAt(root, tree string) ([]*goal.GoalFile, error) {
 		if !strings.HasSuffix(name, ".md") || strings.HasSuffix(name, "/backlog.md") {
 			continue
 		}
-		data, present, readErr := (gittree.Workspace{Dir: root}).FileAt(tree, name)
+		prefix, prefixErr := (gittree.Workspace{Dir: root}).Prefix()
+		if prefixErr != nil {
+			return nil, prefixErr
+		}
+		data, present, readErr := (gittree.Workspace{Dir: root}).FileAt(tree, prefix+name)
 		if readErr != nil || !present {
 			return nil, errors.Join(readErr, fmt.Errorf("goal file %s disappeared from %s", name, tree))
 		}
@@ -329,13 +340,16 @@ func runBatchChildAs(root, lineage string, args ...string) error {
 }
 
 func productionReturnSeams(root string, tree func() string) batch.ReturnSeams {
+	controlRoot := batchModuleRoot(root)
 	return batch.ReturnSeams{
-		Read: batchReturnLedgerGoal,
+		Read: func(_ string, tree, goalID string) (batch.ReturnLedgerGoal, error) {
+			return batchReturnLedgerGoal(controlRoot, tree, goalID)
+		},
 		Target: func(unit batch.Unit) batch.ReturnTarget {
-			return productionReturnTarget(root, tree(), identity.KernelProber{}, unit)
+			return productionReturnTarget(controlRoot, tree(), identity.KernelProber{}, unit)
 		},
 		HandBack: func(goalID string, source batch.Claim, epoch uint64) error {
-			record, err := batchReturnLedgerGoal(root, tree(), goalID)
+			record, err := batchReturnLedgerGoal(controlRoot, tree(), goalID)
 			if err != nil {
 				return err
 			}
@@ -343,16 +357,16 @@ func productionReturnSeams(root string, tree func() string) batch.ReturnSeams {
 			if err != nil {
 				return err
 			}
-			return batchChildRunner(root, landingOwnerLineage, "goal", "handover", "--root", root, "--id", goalID,
+			return batchChildRunner(controlRoot, landingOwnerLineage, "goal", "handover", "--root", controlRoot, "--id", goalID,
 				"--lineage", landingOwnerLineage, "--target-machine", source.Machine,
 				"--target-lineage", source.Lineage, "--target-claim-epoch", strconv.FormatUint(epoch, 10),
 				"--batch", record.Batch, "--target-root", loaded.SeatRoot)
 		},
 		Release: func(goalID, next string) error {
-			if err := batchChildRunner(root, landingOwnerLineage, "goal", "edit", "--root", root, "--id", goalID, "--next", next, "--lineage", landingOwnerLineage); err != nil {
+			if err := batchChildRunner(controlRoot, landingOwnerLineage, "goal", "edit", "--root", controlRoot, "--id", goalID, "--next", next, "--lineage", landingOwnerLineage); err != nil {
 				return err
 			}
-			return batchChildRunner(root, landingOwnerLineage, "goal", "release", "--root", root, "--id", goalID, "--lineage", landingOwnerLineage)
+			return batchChildRunner(controlRoot, landingOwnerLineage, "goal", "release", "--root", controlRoot, "--id", goalID, "--lineage", landingOwnerLineage)
 		},
 	}
 }
@@ -371,6 +385,7 @@ func findBatchUnit(root, batchID, goalID string) (batch.Unit, error) {
 }
 
 func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read func(string, string, string) (batch.ReturnLedgerGoal, error), run func(string, ...string) error) error {
+	controlRoot := batchModuleRoot(root)
 	record, err := batch.NewStore(root, nil).Load(batchID)
 	if err != nil {
 		return err
@@ -379,7 +394,7 @@ func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read fu
 		if unit.State != batch.UnitJoined {
 			continue
 		}
-		ledger, err := read(root, tree, unit.GoalID)
+		ledger, err := read(controlRoot, tree, unit.GoalID)
 		if err != nil {
 			return fmt.Errorf("read joined goal %s before rebind: %w", unit.GoalID, err)
 		}
@@ -389,7 +404,7 @@ func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read fu
 		if ledger.ClaimEpoch > uint64(epoch) {
 			return fmt.Errorf("rebind joined goal %s: claim epoch %d is ahead of owner epoch %d", unit.GoalID, ledger.ClaimEpoch, epoch)
 		}
-		if err := run(root, "goal", "handover", "--root", root, "--id", unit.GoalID,
+		if err := run(controlRoot, "goal", "handover", "--root", controlRoot, "--id", unit.GoalID,
 			"--lineage", landingOwnerLineage, "--target-machine", machine,
 			"--target-lineage", landingOwnerLineage, "--target-claim-epoch", strconv.FormatInt(epoch, 10),
 			"--batch", batchID); err != nil {
@@ -400,11 +415,12 @@ func rebindBatchClaims(root, batchID, tree, machine string, epoch int64, read fu
 }
 
 func resolveProductionBatchOwnerInputs(root string) (productionBatchOwnerInputs, error) {
-	ledgerOwner, err := productionTrunkRedLedgerOwner(root)
+	controlRoot := batchModuleRoot(root)
+	ledgerOwner, err := productionTrunkRedLedgerOwner(controlRoot)
 	if err != nil {
 		return productionBatchOwnerInputs{}, err
 	}
-	machine, err := goal.ResolveMachine(root)
+	machine, err := goal.ResolveMachine(controlRoot)
 	if err != nil {
 		return productionBatchOwnerInputs{}, err
 	}
@@ -412,6 +428,7 @@ func resolveProductionBatchOwnerInputs(root string) (productionBatchOwnerInputs,
 }
 
 func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease, inputs productionBatchOwnerInputs, now func() time.Time) (*batch.Owner, error) {
+	controlRoot := batchModuleRoot(settings.Root)
 	store := batch.NewStore(settings.Root, identity.KernelProber{}).WithLedgerOwner(inputs.ledgerOwner)
 	latestTree := ""
 	returns := productionReturnSeams(settings.Root, func() string { return latestTree })
@@ -424,7 +441,9 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 	}
 	return batch.NewOwner(batch.OwnerOptions{
 		Store: store, Settings: settings, Actor: landingOwnerLineage, PID: held.pid, Now: now,
-		FetchTree: fetch, ReadClaim: batch.ReadClaimAt, Returns: returns,
+		FetchTree: fetch, ReadClaim: func(_ string, tree, batchID, goalID string) (batch.Claim, error) {
+			return batch.ReadClaimAt(controlRoot, tree, batchID, goalID)
+		}, Returns: returns,
 		Rebind: func(batchID, tree string) error {
 			return rebindBatchClaims(settings.Root, batchID, tree, inputs.machine, held.epoch, batch.ReadReturnLedgerGoal, func(root string, args ...string) error {
 				return batchChildRunner(root, landingOwnerLineage, args...)
@@ -454,9 +473,9 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 			}
 			return false, err
 		},
-		Sample: func() proofrun.LoadSample { return proofrun.SampleLoad(settings.Root, "", held.pid, now()) },
+		Sample: func() proofrun.LoadSample { return proofrun.SampleLoad(controlRoot, "", held.pid, now()) },
 		Admission: func(sample proofrun.LoadSample) proofrun.AdmissionCap {
-			cap, err := proofrun.ResolveAdmissionCap(filepath.Join(settings.Root, "metasystem.conf"), sample.Cores)
+			cap, err := proofrun.ResolveAdmissionCap(filepath.Join(controlRoot, "metasystem.conf"), sample.Cores)
 			if err != nil {
 				return proofrun.AdmissionCap{}
 			}

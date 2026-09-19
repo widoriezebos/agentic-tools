@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -19,6 +20,23 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
+
+func TestBatchOwnerLaunchUsesNestedControlRoot(t *testing.T) {
+	t.Parallel()
+	repository := t.TempDir()
+	module := filepath.Join(repository, "metasystem")
+	if err := os.Mkdir(module, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := batchOwnerLaunchCommand("metasystem", repository)
+	want := []string{"metasystem", "up", "--recover-only", "--if-down", "--repo", repository, "--metasystem-root", module}
+	if command.Dir != module || !slices.Equal(command.Args, want) {
+		t.Fatalf("owner launch dir=%s argv=%v, want dir=%s argv=%v", command.Dir, command.Args, module, want)
+	}
+}
 
 func TestBatchLedgerOwnerDefaultRefusesUnbound(t *testing.T) {
 	isolateGlobalGitConfig(t)

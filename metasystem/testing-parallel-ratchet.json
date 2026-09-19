@@ -91,6 +91,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc": 7
   },
   "exempt": [
+    {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestBatchLandingRehearsalOnRealOrigin","reason":"drives the production batch command through its process environment clock and helper controls and owns SIGUSR1 handling"},
     {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestBatchOwnerLoopStopJoinsCadenceTick","reason":"swaps process-wide batchOwnerRequire, batchOwnerResume, and cadence seams"},
     {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestCandidateGoalTransitionUnderLockIsBeforeOrAfter","reason":"swaps process-wide proofAdmissionUnderLocks, proofAdmissionBeforePublish, and proofAdmissionAfterPublish seams"},
     {"package":"github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem","test":"TestProofAdmissionLocksReciprocalGoalsInSortedOrder","reason":"swaps the process-wide proofAdmissionLockOrder seam"},
