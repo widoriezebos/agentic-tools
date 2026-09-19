@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,17 +26,13 @@ func bed(t *testing.T) (context.Context, channel.Provider, channel.DestinationCo
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- fake.Serve(ctx, dir) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "base-url")); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			cancel()
-			t.Fatal("fake did not publish base-url")
-		}
-		runtime.Gosched()
+	ready := make(chan string, 1)
+	go func() { done <- fake.ServeReady(ctx, dir, ready) }()
+	select {
+	case <-ready:
+	case err := <-done:
+		cancel()
+		t.Fatalf("fake did not publish base-url: %v", err)
 	}
 	p, d, err := fake.TelegramProvider(dir)
 	if err != nil {
@@ -46,16 +41,17 @@ func bed(t *testing.T) (context.Context, channel.Provider, channel.DestinationCo
 	}
 	t.Cleanup(func() {
 		cancel()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Error(err)
-			}
-		case <-time.After(5 * time.Second):
-			t.Error("fake did not stop")
+		if err := <-done; err != nil {
+			t.Error(err)
 		}
 	})
 	return ctx, p, d, dir
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
 }
 
 func journal(t *testing.T, dir string) []map[string]any {
@@ -272,29 +268,36 @@ func TestConfirmRequestShapeAndEmptyCursor(t *testing.T) {
 }
 
 func TestReceiveAppliesRequestDeadline(t *testing.T) {
-	released := make(chan struct{})
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/getMe") {
-			fmt.Fprint(w, `{"ok":true,"result":{"id":1}}`)
-			return
+	const requestTimeout = 24 * time.Hour
+	started := time.Now()
+	var calls int
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		calls++
+		observedAt := time.Now()
+		deadline, ok := request.Context().Deadline()
+		if !ok {
+			t.Errorf("request %s has no deadline", request.URL.Path)
+		} else if deadline.Before(started.Add(requestTimeout)) || deadline.After(observedAt.Add(requestTimeout)) {
+			t.Errorf("request %s deadline = %s, want creation time plus %s", request.URL.Path, deadline, requestTimeout)
 		}
-		// The poll never answers: only the request deadline can end the
-		// receive, so the error it reports is the whole proof and no
-		// stopwatch is read. The body is consumed so the server notices
-		// the client's cancellation, and the test releases the handler
-		// before the server closes, whatever the connection did.
-		_, _ = io.Copy(io.Discard, r.Body)
-		select {
-		case <-r.Context().Done():
-		case <-released:
+		if strings.HasSuffix(request.URL.Path, "/getMe") {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":{"id":1}}`)),
+				Request:    request,
+			}, nil
 		}
-	}))
-	defer s.Close()
-	defer close(released)
-	d := channel.DestinationConfig{ChannelID: "1", Token: "token", APIBase: s.URL, HTTPTimeout: 200 * time.Millisecond}
-	_, _, err := telegram.New(nil).Receive(context.Background(), d, nil, "")
+		return nil, context.DeadlineExceeded
+	})}
+	d := channel.DestinationConfig{ChannelID: "1", Token: "token", APIBase: "https://telegram.invalid", HTTPTimeout: requestTimeout}
+	_, _, err := telegram.New(client).Receive(context.Background(), d, nil, "")
 	if err == nil || !channel.IsKind(err, channel.ReceiveFailed) || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
 		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("transport calls = %d, want credential and update requests", calls)
 	}
 }
 

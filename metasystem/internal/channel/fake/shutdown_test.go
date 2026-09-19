@@ -9,84 +9,76 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 )
 
-func cancellationServer(t *testing.T) (string, string, context.CancelFunc, <-chan error, <-chan http.ConnState) {
+func cancellationServer(t *testing.T) (string, string, context.CancelFunc, <-chan error, <-chan http.ConnState, <-chan WaitPoint) {
 	t.Helper()
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	states := make(chan http.ConnState, 16)
+	parked := make(chan WaitPoint, 1)
+	ready := make(chan string, 1)
 	go func() {
-		done <- serve(ctx, dir, func(_ net.Conn, state http.ConnState) {
-			select {
-			case states <- state:
-			default:
-			}
+		done <- ServeWithHooks(ctx, dir, ServeHooks{
+			ConnState: func(_ net.Conn, state http.ConnState) {
+				select {
+				case states <- state:
+				default:
+				}
+			},
+			Ready:  ready,
+			Parked: parked,
 		})
 	}()
-	deadline := time.Now().Add(wiringBound)
-	basePath := filepath.Join(dir, "base-url")
-	for time.Now().Before(deadline) {
-		if data, err := os.ReadFile(basePath); err == nil && strings.TrimSpace(string(data)) != "" {
-			t.Cleanup(cancel)
-			return dir, strings.TrimSpace(string(data)), cancel, done, states
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case base := <-ready:
+		t.Cleanup(cancel)
+		return dir, base, cancel, done, states, parked
+	case err := <-done:
+		cancel()
+		t.Fatalf("fake server did not publish its base URL: %v", err)
+		return "", "", nil, nil, nil, nil
 	}
-	cancel()
-	t.Fatal("fake server did not publish its base URL")
-	return "", "", nil, nil, nil
 }
 
 func waitConnectionState(t *testing.T, states <-chan http.ConnState, want http.ConnState) {
 	t.Helper()
-	deadline := time.After(wiringBound)
-	for {
-		select {
-		case got := <-states:
-			if got == want {
-				return
-			}
-		case <-deadline:
-			t.Fatalf("fake server connection never reached state %s", want)
+	for got := range states {
+		if got == want {
+			return
 		}
 	}
+	t.Fatalf("fake server connection states closed before state %s", want)
 }
 
 func waitServerCancellation(t *testing.T, done <-chan error) {
 	t.Helper()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("fake server cancellation failed: %v", err)
-		}
-	case <-time.After(wiringBound):
-		t.Fatal("fake server cancellation waited for a fixture client")
+	if err := <-done; err != nil {
+		t.Fatalf("fake server cancellation failed: %v", err)
 	}
 }
 
-func assertConnectionHeld(t *testing.T, states <-chan http.ConnState) {
+func assertConnectionHeld(t *testing.T, states <-chan http.ConnState, parked <-chan WaitPoint) {
 	t.Helper()
-	timer := time.NewTimer(250 * time.Millisecond)
-	defer timer.Stop()
+	if got := <-parked; got != PauseWait {
+		t.Fatalf("controlled request parked at %q, want %q", got, PauseWait)
+	}
 	for {
 		select {
 		case state := <-states:
 			if state == http.StateIdle || state == http.StateClosed {
 				t.Fatalf("controlled request was not held; connection became %s", state)
 			}
-		case <-timer.C:
+		default:
 			return
 		}
 	}
 }
 
 func TestCancellationClosesAcceptedPartialRequest(t *testing.T) {
-	_, base, cancel, done, states := cancellationServer(t)
+	_, base, cancel, done, states, _ := cancellationServer(t)
 	parsed, err := url.Parse(base)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +98,7 @@ func TestCancellationClosesAcceptedPartialRequest(t *testing.T) {
 }
 
 func TestCancellationCancelsPausedHandlerBeforeRelease(t *testing.T) {
-	dir, base, cancel, done, states := cancellationServer(t)
+	dir, base, cancel, done, states, parked := cancellationServer(t)
 	parsed, err := url.Parse(base)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +121,7 @@ func TestCancellationCancelsPausedHandlerBeforeRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitConnectionState(t, states, http.StateActive)
-	assertConnectionHeld(t, states)
+	assertConnectionHeld(t, states, parked)
 	cancel()
 	waitServerCancellation(t, done)
 	waitConnectionState(t, states, http.StateClosed)

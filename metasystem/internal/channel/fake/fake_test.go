@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,32 +20,101 @@ import (
 )
 
 func serverBed(t *testing.T) (context.Context, string, func()) {
+	return serverBedWithHooks(t, fake.ServeHooks{})
+}
+
+func serverBedWithHooks(t *testing.T, hooks fake.ServeHooks) (context.Context, string, func()) {
 	t.Helper()
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- fake.Serve(ctx, dir) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "base-url")); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			cancel()
-			t.Fatal("fake did not start")
-		}
-		runtime.Gosched()
+	ready := make(chan string, 1)
+	hooks.Ready = ready
+	go func() { done <- fake.ServeWithHooks(ctx, dir, hooks) }()
+	select {
+	case <-ready:
+	case err := <-done:
+		cancel()
+		t.Fatalf("fake did not start: %v", err)
 	}
 	return ctx, dir, func() {
 		cancel()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Error(err)
-			}
-		case <-time.After(5 * time.Second):
-			t.Error("fake did not stop")
+		if err := <-done; err != nil {
+			t.Error(err)
 		}
+	}
+}
+
+type scheduledLongPollWait struct {
+	duration time.Duration
+	fire     chan time.Time
+}
+
+type longPollClock struct {
+	t     *testing.T
+	mu    sync.Mutex
+	now   time.Time
+	waits chan scheduledLongPollWait
+}
+
+func newLongPollClock(t *testing.T) *longPollClock {
+	t.Helper()
+	return &longPollClock{
+		t:     t,
+		now:   time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC),
+		waits: make(chan scheduledLongPollWait, 1),
+	}
+}
+
+func (c *longPollClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *longPollClock) After(duration time.Duration) <-chan time.Time {
+	fire := make(chan time.Time, 1)
+	wait := scheduledLongPollWait{duration: duration, fire: fire}
+	select {
+	case c.waits <- wait:
+	default:
+		c.t.Errorf("long poll scheduled overlapping waits; latest duration %s", duration)
+		fire <- c.Now()
+	}
+	return fire
+}
+
+func (c *longPollClock) Advance(t *testing.T, elapsed time.Duration) {
+	t.Helper()
+	var wait scheduledLongPollWait
+	select {
+	case wait = <-c.waits:
+	default:
+		t.Fatalf("long poll had no scheduled wait before clock advance by %s", elapsed)
+	}
+	if wait.duration <= 0 {
+		t.Fatalf("long poll scheduled non-positive wait %s", wait.duration)
+	}
+	c.mu.Lock()
+	c.now = c.now.Add(elapsed)
+	now := c.now
+	c.mu.Unlock()
+	wait.fire <- now
+}
+
+func waitForPark(t *testing.T, parked <-chan fake.WaitPoint, want fake.WaitPoint) {
+	t.Helper()
+	if got := <-parked; got != want {
+		t.Fatalf("server parked at %q, want %q", got, want)
+	}
+}
+
+func assertRequestParked[T any](t *testing.T, done <-chan T) {
+	t.Helper()
+	select {
+	case got := <-done:
+		t.Fatalf("parked request returned: %+v", got)
+	default:
 	}
 }
 
@@ -359,7 +428,8 @@ func TestTelegramDeliverOnlyToAndConflictCountdown(t *testing.T) {
 }
 
 func TestTelegramPauseBeforeHoldsOneRequest(t *testing.T) {
-	ctx, dir, stop := serverBed(t)
+	parked := make(chan fake.WaitPoint, 1)
+	ctx, dir, stop := serverBedWithHooks(t, fake.ServeHooks{Parked: parked})
 	defer stop()
 	p, dest, _ := fake.TelegramProvider(dir, "paused")
 	until := filepath.Join(dir, "release")
@@ -369,26 +439,24 @@ func TestTelegramPauseBeforeHoldsOneRequest(t *testing.T) {
 		_, err := p.Post(ctx, dest, "held", nil)
 		done <- err
 	}()
-	select {
-	case err := <-done:
-		t.Fatalf("paused request returned before release: %v", err)
-	case <-time.After(250 * time.Millisecond):
-	}
+	waitForPark(t, parked, fake.PauseWait)
+	assertRequestParked(t, done)
 	if err := os.WriteFile(until, []byte("release\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(wiringBound):
-		t.Fatal("paused request did not resume")
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestTelegramLongPollWaitsForAnUpdate(t *testing.T) {
-	_, dir, stop := serverBed(t)
+	clock := newLongPollClock(t)
+	parked := make(chan fake.WaitPoint, 2)
+	_, dir, stop := serverBedWithHooks(t, fake.ServeHooks{
+		Parked:        parked,
+		LongPollNow:   clock.Now,
+		LongPollAfter: clock.After,
+	})
 	defer stop()
 	base, err := os.ReadFile(filepath.Join(dir, "base-url"))
 	if err != nil {
@@ -399,7 +467,6 @@ func TestTelegramLongPollWaitsForAnUpdate(t *testing.T) {
 		err   error
 	}
 	done := make(chan result, 1)
-	started := time.Now()
 	go func() {
 		resp, err := http.Post(strings.TrimSpace(string(base))+"/botfake-telegram-token-waiting/getUpdates", "application/json", strings.NewReader(`{"timeout":1,"limit":100}`))
 		if err != nil {
@@ -413,27 +480,24 @@ func TestTelegramLongPollWaitsForAnUpdate(t *testing.T) {
 		err = json.NewDecoder(resp.Body).Decode(&envelope)
 		done <- result{count: len(envelope.Result), err: err}
 	}()
-	select {
-	case got := <-done:
-		t.Fatalf("long poll returned before an update arrived: %+v", got)
-	case <-time.After(250 * time.Millisecond):
-	}
+	waitForPark(t, parked, fake.TelegramUpdateWait)
+	assertRequestParked(t, done)
 	appendLine(t, dir, `{"face":"telegram","user":7001,"text":"arrived"}`)
-	select {
-	case got := <-done:
-		if got.err != nil || got.count != 1 {
-			t.Fatalf("long poll result = %+v", got)
-		}
-		if elapsed := time.Since(started); elapsed < 250*time.Millisecond {
-			t.Fatalf("long poll returned after %s, before the update was appended", elapsed)
-		}
-	case <-time.After(wiringBound):
-		t.Fatal("long poll did not return after an update arrived")
+	clock.Advance(t, time.Millisecond)
+	got := <-done
+	if got.err != nil || got.count != 1 {
+		t.Fatalf("long poll result = %+v", got)
 	}
 }
 
 func TestTelegramLongPollReloadsDeliveryControls(t *testing.T) {
-	ctx, dir, stop := serverBed(t)
+	clock := newLongPollClock(t)
+	parked := make(chan fake.WaitPoint, 3)
+	ctx, dir, stop := serverBedWithHooks(t, fake.ServeHooks{
+		Parked:        parked,
+		LongPollNow:   clock.Now,
+		LongPollAfter: clock.After,
+	})
 	defer stop()
 	allowed, allowedDest, err := fake.TelegramProvider(dir, "allowed")
 	if err != nil {
@@ -450,13 +514,11 @@ func TestTelegramLongPollReloadsDeliveryControls(t *testing.T) {
 	nextUpdateID := postedID + 1
 
 	type result struct {
-		count   int
-		status  int
-		elapsed time.Duration
-		err     error
+		count  int
+		status int
+		err    error
 	}
 	done := make(chan result, 1)
-	started := time.Now()
 	go func() {
 		resp, err := http.Post(allowedDest.APIBase+"/botfake-telegram-token-excluded/getUpdates", "application/json", strings.NewReader(`{"timeout":3,"limit":100}`))
 		if err != nil {
@@ -468,27 +530,21 @@ func TestTelegramLongPollReloadsDeliveryControls(t *testing.T) {
 			Result []json.RawMessage `json:"result"`
 		}
 		err = json.NewDecoder(resp.Body).Decode(&envelope)
-		done <- result{count: len(envelope.Result), status: resp.StatusCode, elapsed: time.Since(started), err: err}
+		done <- result{count: len(envelope.Result), status: resp.StatusCode, err: err}
 	}()
-	select {
-	case got := <-done:
-		t.Fatalf("long poll returned before controls changed: %+v", got)
-	case <-time.After(250 * time.Millisecond):
-	}
+	waitForPark(t, parked, fake.TelegramUpdateWait)
+	assertRequestParked(t, done)
 	writeControl(t, dir, map[string]any{
 		"deliverOnlyTo": map[string][]string{strconv.FormatInt(nextUpdateID, 10): {"allowed"}},
 	})
 	appendLine(t, dir, `{"face":"telegram","user":7001,"text":"restricted"}`)
-	select {
-	case got := <-done:
-		if got.err != nil || got.status != http.StatusOK || got.count != 0 {
-			t.Fatalf("excluded long poll result = %+v", got)
-		}
-		if got.elapsed < 2500*time.Millisecond {
-			t.Fatalf("excluded long poll returned after %s", got.elapsed)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("excluded long poll did not reach its deadline")
+	clock.Advance(t, time.Millisecond)
+	waitForPark(t, parked, fake.TelegramUpdateWait)
+	assertRequestParked(t, done)
+	clock.Advance(t, 3*time.Second)
+	got := <-done
+	if got.err != nil || got.status != http.StatusOK || got.count != 0 {
+		t.Fatalf("excluded long poll result = %+v", got)
 	}
 	visible, _, err := allowed.Receive(ctx, allowedDest, nil, "")
 	if err != nil || len(visible) != 1 || visible[0].UpdateID != nextUpdateID {
@@ -497,7 +553,13 @@ func TestTelegramLongPollReloadsDeliveryControls(t *testing.T) {
 }
 
 func TestTelegramLongPollReloadsMalformedControl(t *testing.T) {
-	_, dir, stop := serverBed(t)
+	clock := newLongPollClock(t)
+	parked := make(chan fake.WaitPoint, 2)
+	_, dir, stop := serverBedWithHooks(t, fake.ServeHooks{
+		Parked:        parked,
+		LongPollNow:   clock.Now,
+		LongPollAfter: clock.After,
+	})
 	defer stop()
 	base, err := os.ReadFile(filepath.Join(dir, "base-url"))
 	if err != nil {
@@ -522,21 +584,15 @@ func TestTelegramLongPollReloadsMalformedControl(t *testing.T) {
 		err = json.NewDecoder(resp.Body).Decode(&envelope)
 		done <- result{status: resp.StatusCode, description: envelope.Description, err: err}
 	}()
-	select {
-	case got := <-done:
-		t.Fatalf("long poll returned before control became malformed: %+v", got)
-	case <-time.After(250 * time.Millisecond):
-	}
+	waitForPark(t, parked, fake.TelegramUpdateWait)
+	assertRequestParked(t, done)
 	if err := os.WriteFile(filepath.Join(dir, "control.json"), []byte("not-json\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case got := <-done:
-		if got.err != nil || got.status != http.StatusInternalServerError || !strings.Contains(got.description, "invalid character") {
-			t.Fatalf("malformed mid-poll control result = %+v", got)
-		}
-	case <-time.After(wiringBound):
-		t.Fatal("malformed mid-poll control did not end the request")
+	clock.Advance(t, time.Millisecond)
+	got := <-done
+	if got.err != nil || got.status != http.StatusInternalServerError || !strings.Contains(got.description, "invalid character") {
+		t.Fatalf("malformed mid-poll control result = %+v", got)
 	}
 }
 

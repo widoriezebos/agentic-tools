@@ -94,6 +94,9 @@ type controls struct {
 
 type server struct {
 	dir              string
+	parked           chan<- WaitPoint
+	longPollNow      func() time.Time
+	longPollAfter    func(time.Duration) <-chan time.Time
 	mu               sync.Mutex
 	counter          uint64
 	lastTSMicros     int64
@@ -106,6 +109,25 @@ type server struct {
 	controls         controls
 }
 
+// WaitPoint identifies a server wait that tests can observe without waiting
+// for wall time.
+type WaitPoint string
+
+const (
+	PauseWait          WaitPoint = "pause"
+	TelegramUpdateWait WaitPoint = "telegram update"
+)
+
+// ServeHooks exposes lifecycle and time seams for deterministic fixture tests.
+// Nil hooks retain the production server's network and wall-clock behaviour.
+type ServeHooks struct {
+	ConnState     func(net.Conn, http.ConnState)
+	Ready         chan<- string
+	Parked        chan<- WaitPoint
+	LongPollNow   func() time.Time
+	LongPollAfter func(time.Duration) <-chan time.Time
+}
+
 func Serve(ctx context.Context, dir string) error {
 	return serve(ctx, dir, nil)
 }
@@ -113,14 +135,14 @@ func Serve(ctx context.Context, dir string) error {
 // ServeReady publishes the listener address after the server is ready to
 // accept requests. A nil channel preserves the production Serve contract.
 func ServeReady(ctx context.Context, dir string, ready chan<- string) error {
-	return serveWithReady(ctx, dir, nil, ready)
+	return ServeWithHooks(ctx, dir, ServeHooks{Ready: ready})
 }
 
 func serve(ctx context.Context, dir string, connState func(net.Conn, http.ConnState)) error {
-	return serveWithReady(ctx, dir, connState, nil)
+	return ServeWithHooks(ctx, dir, ServeHooks{ConnState: connState})
 }
 
-func serveWithReady(ctx context.Context, dir string, connState func(net.Conn, http.ConnState), ready chan<- string) error {
+func ServeWithHooks(ctx context.Context, dir string, hooks ServeHooks) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -128,10 +150,22 @@ func serveWithReady(ctx context.Context, dir string, connState func(net.Conn, ht
 	if err != nil {
 		return err
 	}
-	s := &server{dir: dir, counter: 1000000}
+	if hooks.LongPollNow == nil {
+		hooks.LongPollNow = time.Now
+	}
+	if hooks.LongPollAfter == nil {
+		hooks.LongPollAfter = time.After
+	}
+	s := &server{
+		dir:           dir,
+		parked:        hooks.Parked,
+		longPollNow:   hooks.LongPollNow,
+		longPollAfter: hooks.LongPollAfter,
+		counter:       1000000,
+	}
 	httpServer := &http.Server{
 		Handler:   s,
-		ConnState: connState,
+		ConnState: hooks.ConnState,
 		BaseContext: func(net.Listener) context.Context {
 			return ctx
 		},
@@ -141,8 +175,8 @@ func serveWithReady(ctx context.Context, dir string, connState func(net.Conn, ht
 		ln.Close()
 		return err
 	}
-	if ready != nil {
-		ready <- base
+	if hooks.Ready != nil {
+		hooks.Ready <- base
 	}
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(ln) }()
@@ -212,7 +246,7 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.controlError(w, err)
 		return
 	}
-	if !waitForPause(r.Context(), pause) {
+	if !waitForPause(r.Context(), pause, s.parked) {
 		return
 	}
 	s.record(method, method, "", r.Form)
@@ -255,7 +289,7 @@ func (s *server) serveTelegram(w http.ResponseWriter, r *http.Request) {
 		s.controlError(w, err)
 		return
 	}
-	if !waitForPause(r.Context(), pause) {
+	if !waitForPause(r.Context(), pause, s.parked) {
 		return
 	}
 	s.record(effectiveMethod, method, listener, body)
@@ -392,7 +426,7 @@ func (s *server) controlError(w http.ResponseWriter, err error) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error(), "description": err.Error()})
 }
 
-func waitForPause(ctx context.Context, until string) bool {
+func waitForPause(ctx context.Context, until string, parked chan<- WaitPoint) bool {
 	if until == "" {
 		return true
 	}
@@ -402,11 +436,23 @@ func waitForPause(ctx context.Context, until string) bool {
 		if _, err := os.Stat(until); err == nil {
 			return true
 		}
+		signalParked(parked, PauseWait)
+		parked = nil
 		select {
 		case <-ctx.Done():
 			return false
 		case <-ticker.C:
 		}
+	}
+}
+
+func signalParked(parked chan<- WaitPoint, point WaitPoint) {
+	if parked == nil {
+		return
+	}
+	select {
+	case parked <- point:
+	default:
 	}
 }
 
@@ -479,7 +525,7 @@ func (s *server) replies(w http.ResponseWriter, form url.Values) {
 
 func (s *server) telegramUpdates(ctx context.Context, w http.ResponseWriter, body map[string]any, listener string) {
 	timeout := time.Duration(intValue(body["timeout"])) * time.Second
-	deadline := time.Now().Add(timeout)
+	deadline := s.longPollNow().Add(timeout)
 	for {
 		s.mu.Lock()
 		if err := s.reloadControls(); err != nil {
@@ -489,20 +535,20 @@ func (s *server) telegramUpdates(ctx context.Context, w http.ResponseWriter, bod
 		}
 		updates := s.telegramUpdatesLocked(body, listener)
 		s.mu.Unlock()
-		if len(updates) > 0 || timeout <= 0 || !time.Now().Before(deadline) {
+		if len(updates) > 0 || timeout <= 0 || !s.longPollNow().Before(deadline) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": updates})
 			return
 		}
-		remaining := time.Until(deadline)
+		remaining := deadline.Sub(s.longPollNow())
 		if remaining > 100*time.Millisecond {
 			remaining = 100 * time.Millisecond
 		}
-		timer := time.NewTimer(remaining)
+		wake := s.longPollAfter(remaining)
+		signalParked(s.parked, TelegramUpdateWait)
 		select {
 		case <-ctx.Done():
-			timer.Stop()
 			return
-		case <-timer.C:
+		case <-wake:
 		}
 	}
 }

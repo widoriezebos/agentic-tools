@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
@@ -20,17 +18,13 @@ func bed(t *testing.T) (context.Context, context.CancelFunc, channel.Provider, c
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- fake.Serve(ctx, dir) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "base-url")); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			cancel()
-			t.Fatal("fake did not publish base-url")
-		}
-		runtime.Gosched()
+	ready := make(chan string, 1)
+	go func() { done <- fake.ServeReady(ctx, dir, ready) }()
+	select {
+	case <-ready:
+	case err := <-done:
+		cancel()
+		t.Fatalf("fake did not publish base-url: %v", err)
 	}
 	p, d, err := fake.Provider(dir)
 	if err != nil {
@@ -39,13 +33,8 @@ func bed(t *testing.T) (context.Context, context.CancelFunc, channel.Provider, c
 	}
 	t.Cleanup(func() {
 		cancel()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Error(err)
-			}
-		case <-time.After(5 * time.Second):
-			t.Error("fake did not stop")
+		if err := <-done; err != nil {
+			t.Error(err)
 		}
 	})
 	return ctx, cancel, p, d, dir
