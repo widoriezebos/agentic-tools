@@ -82,6 +82,7 @@ func TestLocalWaitOfADeadProcessDoesNotAllowTheStop(t *testing.T) {
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			fixture := detachedWaitFixture(t, "local", true)
 			test.mutate(fixture)
 			fixture.writeRow(t)

@@ -368,9 +368,10 @@ func TestLastArcGoalConclusionRaisesRetroDebtWhenSweepFails(t *testing.T) {
 
 func TestBudgetedClaimRevisionLaws(t *testing.T) {
 	t.Parallel()
-	a := riskLocalRoot(t, "budget-revision-bed")
 
 	t.Run("claim requires the complete budget and binds its revision", func(t *testing.T) {
+		t.Parallel()
+		a := riskLocalRoot(t, "budget-revision-claim")
 		if res, err := Open(obligationAuthorityVerbReq(a, "01J5X00000000000000000H100", "mac-a"), "budgeted", "Bounded work.", "main", "Start."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open: %+v %v", res, err)
 		}
@@ -398,6 +399,8 @@ func TestBudgetedClaimRevisionLaws(t *testing.T) {
 	})
 
 	t.Run("set-budget preserves elapsed origin while advancing claim and accounting", func(t *testing.T) {
+		t.Parallel()
+		a := riskLocalRoot(t, "budget-revision-set")
 		claimReq := obligationAuthorityVerbReq(a, "01J5X00000000000000000H200", "mac-b")
 		res, err := openClaimForTest(t, claimReq, "rebudget", "Bounded work.", "main", "Start.", testBudget())
 		if err != nil || res.Outcome != OutcomeConfirmed {
@@ -436,6 +439,7 @@ func TestSetBudgetKeepsForeignHolderClaimEpoch(t *testing.T) {
 		{name: "human without seat lease"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			root := riskLocalRoot(t, "foreign-budget-epoch")
 			holder := obligationAuthorityVerbReq(root, "01J5X00000000000000000H300", "mac-a")
 			holder.ClaimEpoch = 6
@@ -482,6 +486,7 @@ func TestRebindEpochFollowsTheAuthenticatedHolderOnly(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := ClaimEpochForRebind(file, test.request)
 			if test.refusal != "" {
 				if err == nil || !strings.Contains(err.Error(), test.refusal) {
@@ -590,6 +595,7 @@ func TestSetBudgetPinsLegacyAnchor(t *testing.T) {
 	t.Parallel()
 	for _, withObligation := range []bool{false, true} {
 		t.Run(fmt.Sprintf("live obligation %v", withObligation), func(t *testing.T) {
+			t.Parallel()
 			root := obligationAuthorityLocalRoot(t, "legacy-anchor")
 			if withObligation {
 				if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {

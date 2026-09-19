@@ -148,6 +148,7 @@ func TestHCL60CarriedReplayMismatchNamesTargetThenFourteenFields(t *testing.T) {
 	}
 	row := HistoryLine{Reason: renderCarriedReason(intent)}
 	t.Run("goal", func(t *testing.T) {
+		t.Parallel()
 		err := compareCarriedReplay("row-goal", "intent-goal", row, intent)
 		if err == nil || !strings.Contains(err.Error(), "goal differs: row=row-goal intent=intent-goal") {
 			t.Fatalf("goal mismatch = %v", err)
@@ -155,6 +156,7 @@ func TestHCL60CarriedReplayMismatchNamesTargetThenFourteenFields(t *testing.T) {
 	})
 	for _, field := range []string{"commit", "workspace", "project", "past", "battery", "missing", "failing", "judge", "judgeTree", "judgeDigest", "liveFailure", "ledger", "outcome", "by"} {
 		t.Run(field, func(t *testing.T) {
+			t.Parallel()
 			changed := cloneStringMap(intent)
 			intentKey := field
 			if field == "project" {
@@ -224,6 +226,7 @@ func TestHCL60SupersedePreconditions(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			tree, args, codeTip := test.make()
 			request := VerbRequest{Endpoint: Endpoint{Root: repo}, Actor: Actor{Machine: "seat-a"}, Now: now}
 			_, _, err := carrySupersedePrecondition(request, tree, codeTip, args)
@@ -268,6 +271,7 @@ func TestHCL60CarryDebtAsksAtTheWord(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			tree, tip := test.make()
 			err := carryDebtAskAt("", tree, tip, "", now)
 			requireCarryAsk(t, err, "carry-debt-unpaid")

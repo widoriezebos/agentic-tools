@@ -432,6 +432,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 	t.Parallel()
 	base := time.Date(2026, 9, 13, 9, 0, 0, 0, time.UTC)
 	t.Run("missing anchor", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		ref := "01ARZ3NDEKTSV4RRFFQ69G5FAZ-mac-a-1a2b3c4d"
@@ -443,6 +444,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		}
 	})
 	t.Run("unused word and expiry", func(t *testing.T) {
+		t.Parallel()
 		root, _, human, _, word, ref := openCarryWordForAbandonTest(t, base)
 		before, beforeTip := acceptedTree(t, root, base.Add(2*time.Minute))
 		request := carryVerb(human, "01J5X00000000000000000D020", 2)
@@ -467,6 +469,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 	})
 
 	t.Run("open and closed reservation", func(t *testing.T) {
+		t.Parallel()
 		root, _, human, _, _, ref := openCarryWordForAbandonTest(t, base)
 		seat := carryVerb(human, "01J5X00000000000000000D030", 2)
 		seat.Actor.Human = ""
@@ -492,6 +495,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 	})
 
 	t.Run("carried commit without ledger row", func(t *testing.T) {
+		t.Parallel()
 		root, other, human, _, word, ref := openCarryWordForAbandonTest(t, base)
 		mustGit(t, other, "pull", "-q", "origin", "main")
 		if err := os.WriteFile(filepath.Join(other, "unrecorded-carry.txt"), []byte("carried\n"), 0o644); err != nil {
@@ -510,6 +514,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 	})
 
 	t.Run("also target is atomic", func(t *testing.T) {
+		t.Parallel()
 		root, _, human := carryBed(t, base)
 		configureAbandonFloorTest(t, strings.Repeat("a", 40))
 		recordAbandonFloorTest(t, root, "01J5X00000000000000000D050")
@@ -818,6 +823,7 @@ func TestAbandonKeepsClosedCarryHistoryVisible(t *testing.T) {
 	}
 
 	t.Run("superseded words stay closed", func(t *testing.T) {
+		t.Parallel()
 		root, _, human := carryBed(t, base.Add(3*time.Hour))
 		configureAbandonFloorTest(t, strings.Repeat("a", 40))
 		recordAbandonFloorTest(t, root, "01J5X00000000000000000D0A0")

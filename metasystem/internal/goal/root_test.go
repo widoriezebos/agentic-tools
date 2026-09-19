@@ -105,6 +105,7 @@ func TestEngineFloorHistoryLineCarriesAHumanAndCommit(t *testing.T) {
 		{name: "human with commit", actor: "human:Wido", reason: strings.Repeat("a", 40) + " every enrolled seat runs this engine or newer"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			r := rootGolden()
 			r.Revision++
 			r.History = append(r.History, HistoryLine{

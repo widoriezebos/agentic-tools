@@ -39,6 +39,7 @@ func TestFileGrammarRefusesTheMalformed(t *testing.T) {
 		}, "Claimed at=\"soon\" is not an RFC3339 timestamp"},
 	} {
 		t.Run(leg.name, func(t *testing.T) {
+			t.Parallel()
 			f := vGoal("grammar-probe", StateQueued)
 			leg.mutate(f)
 			_, problems := ParseFile(RenderFile(f))
@@ -104,6 +105,7 @@ func TestRootFieldsAreShapedNotMerelyNonempty(t *testing.T) {
 		{"an unknown MigrationMode", func(r *RootRecord) { r.MigrationMode = "vibes" }, "not manifest|bare"},
 	} {
 		t.Run(leg.name, func(t *testing.T) {
+			t.Parallel()
 			r := rootGolden()
 			leg.mutate(r)
 			_, problems := ParseRoot(RenderRoot(r))

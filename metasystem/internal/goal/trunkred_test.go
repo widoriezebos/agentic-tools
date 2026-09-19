@@ -115,19 +115,22 @@ func TestTrunkRedMutationBoundariesRejectInvalidAuthorityAndShape(t *testing.T) 
 	root := soloLedgerRepo(t)
 	request := trunkRedVerbReq(root, "01J5X0000000000000000000Q1", "mac-a")
 	tip := mustGit(t, root, "rev-parse", AcceptedRef)
-	for name, args := range map[string]TrunkRedRecordArgs{
-		"empty batch":  trunkRedRecordFixture("tr-fast-empty-batch", "", "attempt", "base", request.stamp()),
-		"empty groups": {Batch: "batch", Attempt: "attempt", BaseCommit: "base", BaseTree: "tree", SeenAt: request.stamp()},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := RecordTrunkRed(request, args); err == nil {
-				t.Fatalf("%s record was accepted", name)
-			}
-			if got := mustGit(t, root, "rev-parse", AcceptedRef); got != tip {
-				t.Fatalf("%s record moved accepted tip from %s to %s", name, tip, got)
-			}
-		})
-	}
+	t.Run("invalid records leave the accepted tip unchanged", func(t *testing.T) {
+		for name, args := range map[string]TrunkRedRecordArgs{
+			"empty batch":  trunkRedRecordFixture("tr-fast-empty-batch", "", "attempt", "base", request.stamp()),
+			"empty groups": {Batch: "batch", Attempt: "attempt", BaseCommit: "base", BaseTree: "tree", SeenAt: request.stamp()},
+		} {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				if _, err := RecordTrunkRed(request, args); err == nil {
+					t.Fatalf("%s record was accepted", name)
+				}
+				if got := mustGit(t, root, "rev-parse", AcceptedRef); got != tip {
+					t.Fatalf("%s record moved accepted tip from %s to %s", name, tip, got)
+				}
+			})
+		}
+	})
 
 	identity := "tr-fast-brainfence"
 	result, err := RecordTrunkRed(request, trunkRedRecordFixture(identity, "batch", "attempt", "base", request.stamp()))
@@ -404,6 +407,7 @@ func TestTrunkRedClearZeroExpectedEntryRemainsBound(t *testing.T) {
 func TestTrunkRedLegacyClearRequestKeepsUnknownAndAlreadyApplied(t *testing.T) {
 	t.Parallel()
 	t.Run("unknown entry", func(t *testing.T) {
+		t.Parallel()
 		root, request, _, _ := legacyTrunkRedClearFixture(t)
 		request.Intent.Args["entry"] = "tr-fast-missing"
 		request.Intent.Targets = []string{"tr-fast-missing"}
@@ -418,6 +422,7 @@ func TestTrunkRedLegacyClearRequestKeepsUnknownAndAlreadyApplied(t *testing.T) {
 		}
 	})
 	t.Run("same operation already closed", func(t *testing.T) {
+		t.Parallel()
 		root, request, entry, at := legacyTrunkRedClearFixture(t)
 		entry.Closed = &TrunkRedClosure{At: at.Add(time.Hour).Format(time.RFC3339), Attempt: request.Intent.Args["attempt"],
 			BaseCommit: request.Intent.Args["baseCommit"], How: "green", Opid: request.Opid}

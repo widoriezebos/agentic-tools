@@ -72,6 +72,7 @@ func TestGovernedObligationRoundTripsEveryLawfulState(t *testing.T) {
 	t.Parallel()
 	for _, state := range []ObligationState{ObligationDraft, ObligationObserve, ObligationLimited, ObligationEnforced} {
 		t.Run(string(state), func(t *testing.T) {
+			t.Parallel()
 			f := claimedGolden()
 			f.Id = "governed-" + strings.ToLower(string(state))
 			f.Budget = &Budget{ElapsedLimit: "2h", AttemptLimit: 3, ReservedJobMinutesLimit: 90, ActiveJobLimit: 1}

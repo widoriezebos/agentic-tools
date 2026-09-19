@@ -31,6 +31,7 @@ func TestCritiqueVerdictShowsMechanicalFallingFold(t *testing.T) {
 		want    string
 	}{{"falling", true, "design critique round 2 of 2 folded: 3 mechanical, falling"}, {"not_falling", false, "design critique round 2 of 2 folded: 3 material"}} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			display, blocked := critiqueVerdict(t, JobFact{Id: "critic", MainId: "other", Status: "completed", Role: "design-critic", ReviewRoundLimit: 2, CritiqueRound: 2, CritiqueMaterial: 3, CritiqueMechanical: true, CritiqueFalling: tc.falling})
 			if strings.Count("\n"+display+"\n", "\n"+tc.want+"\n") != 1 || blocked {
 				t.Fatalf("fold display = %q, blocked=%t; want one %q, false", display, blocked, tc.want)

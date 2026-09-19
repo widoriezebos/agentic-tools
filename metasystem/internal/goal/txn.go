@@ -31,6 +31,7 @@ type Endpoint struct {
 	Remote                 string // goal.sync-remote; "local" is single-machine mode
 	Branch                 string // goal.sync-branch, fully qualified
 	commandEnv             []string
+	captureTimers          attentionTimerSource
 	carriedCounselorAppend func(string, string, HistoryLine, time.Time) error
 }
 

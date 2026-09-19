@@ -177,6 +177,7 @@ func TestHumanCanRatifyAMainOriginSplitWithFreshProof(t *testing.T) {
 func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 	t.Parallel()
 	t.Run("foreign claim", func(t *testing.T) {
+		t.Parallel()
 		_, a, b := twoClones(t)
 		seedLedger(t, a)
 		if res, err := openClaimForTest(t, verbReq(a, "01J5X00000000000000000PF00", "mac-a"), "foreign-parent", "Foreign claim.", OriginMain, "Work.", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
@@ -195,6 +196,7 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 			name = "archived"
 		}
 		t.Run(name+" arc collision", func(t *testing.T) {
+			t.Parallel()
 			_, root := oneClone(t)
 			seedLedger(t, root)
 			if res, err := Open(verbReq(root, "01J5X00000000000000000PC00", "mac-a"), "collision-parent", "Collision parent.", OriginMain, "Split."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -220,6 +222,7 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 	}
 
 	t.Run("human origin requires proof and propagates", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		if res, err := Open(verbReq(root, "01J5X00000000000000000PH00", "mac-a"), "human-parent", "Human origin.", OriginHuman, "Split."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -594,6 +597,7 @@ func TestReconcileRefusesGeneratedScopeBoundaryFields(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			edited := *base
 			test.edit(&edited)
 			if _, err := mapOneChange("plans/goals/boundary-fields.md", base, &edited); err == nil || !strings.Contains(err.Error(), test.want) {

@@ -1,6 +1,7 @@
 package goal
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -102,10 +103,11 @@ func TestWaitGoalFetchDeadline(t *testing.T) {
 	}
 	for _, stage := range stages {
 		t.Run(stage.name, func(t *testing.T) {
+			t.Parallel()
 			dependencies := waitGitDependencies{}
 			reached := false
 			dependencies.withTimeout = func(parent context.Context, budget time.Duration, args []string) (context.Context, context.CancelFunc) {
-				stageCtx, cancel := context.WithTimeout(parent, budget)
+				stageCtx, cancel := context.WithCancel(parent)
 				if !reached && stage.match(args) {
 					cancel()
 				}
@@ -114,8 +116,12 @@ func TestWaitGoalFetchDeadline(t *testing.T) {
 			dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
 				if !reached && stage.match(args) {
 					reached = true
-					<-gitCtx.Done()
-					return "", gitCtx.Err()
+					select {
+					case <-gitCtx.Done():
+						return "", gitCtx.Err()
+					default:
+						return "", fmt.Errorf("%s ran with a live context", stage.name)
+					}
 				}
 				return realRunner(gitCtx, root, stdin, args...)
 			}
@@ -133,6 +139,7 @@ func TestWaitGoalFetchDeadline(t *testing.T) {
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
 		t.Run("installed hanging git", func(t *testing.T) {
+			t.Parallel()
 			binary := testutil.InstalledWaitBinary(t, binary)
 			self := int64(os.Getpid())
 			exact, state, probeErr := (identity.KernelProber{}).Probe(self)
@@ -153,6 +160,7 @@ func TestWaitGoalFetchDeadline(t *testing.T) {
 			marker := filepath.Join(dir, "fetch-started")
 			groupMarker := filepath.Join(dir, "fetch-group")
 			childMarker := filepath.Join(dir, "fetch-child")
+			groupFIFO, childFIFO := openHangingGitPIDFIFOs(t, groupMarker, childMarker)
 			wrapperSource := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
   *" fetch "*)
     printf reached >"${LEDGER_HANG_MARKER:?}"
@@ -182,7 +190,6 @@ exec "${LEDGER_REAL_GIT:?}" "$@"
 			}
 			childEnvironment = append(childEnvironment, "LEDGER_REAL_GIT="+realGit, "LEDGER_HANG_MARKER="+marker, "LEDGER_HANG_GROUP="+groupMarker, "LEDGER_HANG_CHILD="+childMarker)
 			cmd.Env = fixture.Env(childEnvironment)
-			started := time.Now()
 			type result struct {
 				output []byte
 				err    error
@@ -199,33 +206,37 @@ exec "${LEDGER_REAL_GIT:?}" "$@"
 				commandErr := cmd.Wait()
 				done <- result{output: append([]byte(nil), commandOutput.Bytes()...), err: commandErr}
 			}()
-			wrapperID, groupID, childID := waitForHangingGitPIDs(t, groupMarker, childMarker, 25*time.Second)
+			var wrapperID, groupID, childID int
+			select {
+			case identities := <-waitForHangingGitPIDs(groupFIFO, childFIFO):
+				if identities.err != nil {
+					t.Fatal(identities.err)
+				}
+				wrapperID, groupID, childID = identities.wrapperID, identities.groupID, identities.childID
+			case commandResult := <-done:
+				t.Fatalf("installed hanging Git wait returned before publishing transport identities: exit=%v output=%s", commandResult.err, commandResult.output)
+			}
 			fixture.Record(wrapperID)
 			fixture.Record(childID)
 			if wrapperID != groupID {
 				t.Fatalf("installed hanging Git wrapper pid %d did not lead process group %d", wrapperID, groupID)
 			}
-			select {
-			case commandResult := <-done:
-				exit, ok := commandResult.err.(*exec.ExitError)
-				if !ok || exit.ExitCode() != metarun.ExitWaiterIO || time.Since(started) > 20*time.Second {
-					t.Fatalf("installed hanging Git wait exit=%v elapsed=%s output=%s", commandResult.err, time.Since(started), commandResult.output)
+			commandResult := <-done
+			exit, ok := commandResult.err.(*exec.ExitError)
+			if !ok || exit.ExitCode() != metarun.ExitWaiterIO {
+				t.Fatalf("installed hanging Git wait exit=%v output=%s", commandResult.err, commandResult.output)
+			}
+			for _, pid := range []int{wrapperID, childID} {
+				exited, exitErr := transportMemberExited(pid)
+				if exitErr != nil {
+					t.Fatalf("probe installed hanging Git transport member %d: %v", pid, exitErr)
 				}
-				if groupErr := waitForGroupAbsence(groupID, 2*time.Second); groupErr != nil {
-					t.Fatalf("installed wait returned before its hanging Git process group was gone: %v", groupErr)
+				if !exited {
+					t.Fatalf("installed hanging Git transport member %d survived after wait returned", pid)
 				}
-				if stateOut, stateErr := exec.Command("ps", "-o", "stat=", "-p", fmt.Sprint(childID)).CombinedOutput(); stateErr == nil && !strings.HasPrefix(strings.TrimSpace(string(stateOut)), "Z") {
-					t.Fatalf("installed hanging Git spinner %d survived with state %q", childID, stateOut)
-				}
-			case <-time.After(25 * time.Second):
-				if cmd.Process != nil {
-					_ = cmd.Process.Kill()
-				}
-				<-done
-				if _, markerErr := os.Stat(marker); markerErr != nil {
-					t.Fatalf("installed hanging Git wait exceeded its 25-second fixture ceiling before reaching the PATH wrapper: %v", markerErr)
-				}
-				t.Fatal("installed hanging Git wait exceeded its 25-second fixture ceiling after reaching the PATH wrapper")
+			}
+			if stateOut, stateErr := exec.Command("ps", "-o", "stat=", "-p", fmt.Sprint(childID)).CombinedOutput(); stateErr == nil && !strings.HasPrefix(strings.TrimSpace(string(stateOut)), "Z") {
+				t.Fatalf("installed hanging Git spinner %d survived with state %q", childID, stateOut)
 			}
 		})
 	}
@@ -303,6 +314,25 @@ func TestWaitGoalObservationUsesBoundedBatchReads(t *testing.T) {
 	}
 }
 
+type spentDeadlineContext struct {
+	context.Context
+	done <-chan struct{}
+}
+
+func newSpentDeadlineContext(parent context.Context) context.Context {
+	done := make(chan struct{})
+	close(done)
+	return spentDeadlineContext{Context: parent, done: done}
+}
+
+func (c spentDeadlineContext) Done() <-chan struct{} {
+	return c.done
+}
+
+func (spentDeadlineContext) Err() error {
+	return context.DeadlineExceeded
+}
+
 func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 	t.Parallel()
 	_, publisher, waiterClone := twoClones(t)
@@ -355,94 +385,103 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 	}
 
 	realRunner := attentionGitRun(runAttentionGit)
-	realContext := waitGitContextFunc(func(parent context.Context, budget time.Duration, _ []string) (context.Context, context.CancelFunc) {
-		return context.WithTimeout(parent, budget)
+	realContext := waitGitContextFunc(func(parent context.Context, _ time.Duration, _ []string) (context.Context, context.CancelFunc) {
+		return context.WithCancel(parent)
 	})
 
-	t.Run("later accepted changes replay the saved answer from its event floor", func(t *testing.T) {
-		var projectedTips []string
-		dependencies := waitGitDependencies{run: func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
-			if len(args) >= 4 && args[0] == "ls-tree" {
-				projectedTips = append(projectedTips, args[3])
+	t.Run("before rewinding the ledger", func(t *testing.T) {
+		t.Run("later accepted changes replay the saved answer from its event floor", func(t *testing.T) {
+			t.Parallel()
+			var projectedTips []string
+			dependencies := waitGitDependencies{run: func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
+				if len(args) >= 4 && args[0] == "ls-tree" {
+					projectedTips = append(projectedTips, args[3])
+				}
+				return realRunner(gitCtx, root, stdin, args...)
+			}}
+			replayed := store.ResumeWait(withWaitGitDependencies(context.Background(), dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
+			if replayed.ExitCode != metarun.ExitGreen {
+				t.Fatalf("replay after later accepted changes: %+v", replayed)
 			}
-			return realRunner(gitCtx, root, stdin, args...)
-		}}
-		replayed := store.ResumeWait(withWaitGitDependencies(context.Background(), dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
-		if replayed.ExitCode != metarun.ExitGreen {
-			t.Fatalf("replay after later accepted changes: %+v", replayed)
-		}
-		if len(projectedTips) == 0 || len(projectedTips) > laterChanges+2 {
-			t.Fatalf("replay projected %d ledger states, want at most %d: %v", len(projectedTips), laterChanges+2, projectedTips)
-		}
-		sawAnswerFloor := false
-		for _, tip := range projectedTips {
-			if tip == answered.Tip {
-				sawAnswerFloor = true
+			if len(projectedTips) == 0 || len(projectedTips) > laterChanges+2 {
+				t.Fatalf("replay projected %d ledger states, want at most %d: %v", len(projectedTips), laterChanges+2, projectedTips)
 			}
-			if preActTips[tip] {
-				t.Fatalf("replay reprojected a ledger state before the saved answer: %s in %v", tip, projectedTips)
+			sawAnswerFloor := false
+			for _, tip := range projectedTips {
+				if tip == answered.Tip {
+					sawAnswerFloor = true
+				}
+				if preActTips[tip] {
+					t.Fatalf("replay reprojected a ledger state before the saved answer: %s in %v", tip, projectedTips)
+				}
 			}
-		}
-		if !sawAnswerFloor {
-			t.Fatalf("replay did not project its saved answer floor: %v", projectedTips)
-		}
-	})
+			if !sawAnswerFloor {
+				t.Fatalf("replay did not project its saved answer floor: %v", projectedTips)
+			}
+		})
 
-	t.Run("an exhausted intervening read is an operational failure", func(t *testing.T) {
-		contextReads := 0
-		dependencies := waitGitDependencies{}
-		dependencies.withTimeout = func(parent context.Context, budget time.Duration, args []string) (context.Context, context.CancelFunc) {
-			if len(args) > 0 && args[0] == "ls-tree" {
-				contextReads++
-				if contextReads == 3 {
-					return context.WithTimeout(parent, 50*time.Millisecond)
+		t.Run("an exhausted intervening read is an operational failure", func(t *testing.T) {
+			t.Parallel()
+			contextReads := 0
+			dependencies := waitGitDependencies{}
+			dependencies.withTimeout = func(parent context.Context, budget time.Duration, args []string) (context.Context, context.CancelFunc) {
+				if len(args) > 0 && args[0] == "ls-tree" {
+					contextReads++
+					if contextReads == 3 {
+						return newSpentDeadlineContext(parent), func() {}
+					}
 				}
+				return realContext(parent, budget, args)
 			}
-			return realContext(parent, budget, args)
-		}
-		runnerReads := 0
-		dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
-			if len(args) > 0 && args[0] == "ls-tree" {
-				runnerReads++
-				if runnerReads == 3 {
-					<-gitCtx.Done()
-					return "", gitCtx.Err()
+			runnerReads := 0
+			dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
+				if len(args) > 0 && args[0] == "ls-tree" {
+					runnerReads++
+					if runnerReads == 3 {
+						select {
+						case <-gitCtx.Done():
+							return "", gitCtx.Err()
+						default:
+							return "", errors.New("third read ran with a live context")
+						}
+					}
 				}
+				return realRunner(gitCtx, root, stdin, args...)
 			}
-			return realRunner(gitCtx, root, stdin, args...)
-		}
-		replayed := store.ResumeWait(withWaitGitDependencies(context.Background(), dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
-		if replayed.ExitCode != metarun.ExitWaiterIO || replayed.SourceOutcome != "transport-failure" || runnerReads != 3 {
-			t.Fatalf("budget-exhausted replay=%+v intervening reads=%d", replayed, runnerReads)
-		}
-	})
+			replayed := store.ResumeWait(withWaitGitDependencies(context.Background(), dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
+			if replayed.ExitCode != metarun.ExitWaiterIO || replayed.SourceOutcome != "transport-failure" || runnerReads != 3 {
+				t.Fatalf("budget-exhausted replay=%+v intervening reads=%d", replayed, runnerReads)
+			}
+		})
 
-	t.Run("cancelling an intervening read interrupts replay", func(t *testing.T) {
-		reached := make(chan struct{})
-		runnerReads := 0
-		dependencies := waitGitDependencies{run: func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
-			if len(args) > 0 && args[0] == "ls-tree" {
-				runnerReads++
-				if runnerReads == 3 {
-					close(reached)
-					<-gitCtx.Done()
-					return "", gitCtx.Err()
+		t.Run("cancelling an intervening read interrupts replay", func(t *testing.T) {
+			t.Parallel()
+			reached := make(chan struct{})
+			runnerReads := 0
+			dependencies := waitGitDependencies{run: func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
+				if len(args) > 0 && args[0] == "ls-tree" {
+					runnerReads++
+					if runnerReads == 3 {
+						close(reached)
+						<-gitCtx.Done()
+						return "", gitCtx.Err()
+					}
 				}
+				return realRunner(gitCtx, root, stdin, args...)
+			}}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancelled := make(chan struct{})
+			go func() {
+				<-reached
+				cancel()
+				close(cancelled)
+			}()
+			replayed := store.ResumeWait(withWaitGitDependencies(ctx, dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
+			<-cancelled
+			if replayed.ExitCode != metarun.ExitInterrupted || replayed.SourceOutcome != "interrupted" || runnerReads != 3 {
+				t.Fatalf("cancelled replay=%+v intervening reads=%d", replayed, runnerReads)
 			}
-			return realRunner(gitCtx, root, stdin, args...)
-		}}
-		ctx, cancel := context.WithCancel(context.Background())
-		cancelled := make(chan struct{})
-		go func() {
-			<-reached
-			cancel()
-			close(cancelled)
-		}()
-		replayed := store.ResumeWait(withWaitGitDependencies(ctx, dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
-		<-cancelled
-		if replayed.ExitCode != metarun.ExitInterrupted || replayed.SourceOutcome != "interrupted" || runnerReads != 3 {
-			t.Fatalf("cancelled replay=%+v intervening reads=%d", replayed, runnerReads)
-		}
+		})
 	})
 
 	t.Run("rewinding away the answer invalidates the saved evidence", func(t *testing.T) {
@@ -586,7 +625,6 @@ func TestRunAttentionGitCancellationUsesInjectedTimers(t *testing.T) {
 func TestCaptureTipBoundedKillsTheWholeTransportGroup(t *testing.T) {
 	t.Parallel()
 	timers := newFakeAttentionTimerSource()
-	useCaptureTipTimerSource(t, timers)
 	realGit, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
@@ -595,6 +633,7 @@ func TestCaptureTipBoundedKillsTheWholeTransportGroup(t *testing.T) {
 	fixture := testutil.Fixture(t)
 	groupFile := filepath.Join(dir, "group")
 	childFile := filepath.Join(dir, "child")
+	groupFIFO, childFIFO := openHangingGitPIDFIFOs(t, groupFile, childFile)
 	wrapper := filepath.Join(dir, "git")
 	script := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
   *" fetch "*)
@@ -617,18 +656,27 @@ exec "$LEDGER_REAL_GIT" "$@"
 	mustGit(t, root, "init", "-q")
 	captured := make(chan error, 1)
 	go func() {
-		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment}, 300*time.Millisecond)
+		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment, captureTimers: timers}, 300*time.Millisecond)
 		captured <- captureErr
 	}()
-	wrapperID, groupID, childID := waitForHangingGitPIDs(t, groupFile, childFile, 25*time.Second)
+	var wrapperID, groupID, childID int
+	select {
+	case identities := <-waitForHangingGitPIDs(groupFIFO, childFIFO):
+		if identities.err != nil {
+			t.Fatal(identities.err)
+		}
+		wrapperID, groupID, childID = identities.wrapperID, identities.groupID, identities.childID
+	case result := <-captured:
+		t.Fatalf("capture returned before publishing transport identities: %v", result)
+	}
 	fixture.Record(wrapperID)
 	fixture.Record(childID)
 	if wrapperID != groupID || groupID == childID {
 		t.Fatalf("invalid transport identities: wrapper=%d group=%d child=%d", wrapperID, groupID, childID)
 	}
-	timers.Next(t, fakeAttentionTimer, 300*time.Millisecond).Fire()
-	grace := timers.Next(t, fakeAttentionTimer, boundedCaptureGrace)
-	_ = timers.Next(t, fakeAttentionTicker, 10*time.Millisecond)
+	timers.Next(t, captured, fakeAttentionTimer, 300*time.Millisecond).Fire()
+	grace := timers.Next(t, captured, fakeAttentionTimer, boundedCaptureGrace)
+	_ = timers.Next(t, captured, fakeAttentionTicker, 10*time.Millisecond)
 	if groupErr := syscall.Kill(-groupID, 0); groupErr != nil && !errors.Is(groupErr, syscall.EPERM) {
 		t.Fatalf("transport process group %d did not remain during TERM grace: %v", groupID, groupErr)
 	}
@@ -637,8 +685,14 @@ exec "$LEDGER_REAL_GIT" "$@"
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("blocking transport did not time out: %v", err)
 	}
-	if err := waitForGroupAbsence(groupID, 30*time.Second); err != nil {
-		t.Fatal(err)
+	for _, pid := range []int{wrapperID, childID} {
+		exited, exitErr := transportMemberExited(pid)
+		if exitErr != nil {
+			t.Fatalf("probe blocking transport member %d: %v", pid, exitErr)
+		}
+		if !exited {
+			t.Fatalf("blocking transport member %d survived after capture returned", pid)
+		}
 	}
 	if err := syscall.Kill(childID, 0); err == nil {
 		// A killed child may remain briefly as a zombie. Its process state,
@@ -653,7 +707,6 @@ exec "$LEDGER_REAL_GIT" "$@"
 func TestCaptureTipBoundedLetsCooperativeTransportExitDuringGrace(t *testing.T) {
 	t.Parallel()
 	timers := newFakeAttentionTimerSource()
-	useCaptureTipTimerSource(t, timers)
 	if boundedCaptureGrace != 5*time.Second {
 		t.Fatalf("bounded capture grace=%s, want 5s", boundedCaptureGrace)
 	}
@@ -665,6 +718,7 @@ func TestCaptureTipBoundedLetsCooperativeTransportExitDuringGrace(t *testing.T) 
 	fixture := testutil.Fixture(t)
 	groupFile := filepath.Join(dir, "group")
 	childFile := filepath.Join(dir, "child")
+	groupFIFO, childFIFO := openHangingGitPIDFIFOs(t, groupFile, childFile)
 	termFile := filepath.Join(dir, "term")
 	wrapper := filepath.Join(dir, "git")
 	script := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
@@ -688,18 +742,27 @@ exec "$LEDGER_GRACE_REAL_GIT" "$@"
 	mustGit(t, root, "init", "-q")
 	captured := make(chan error, 1)
 	go func() {
-		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment}, 300*time.Millisecond)
+		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment, captureTimers: timers}, 300*time.Millisecond)
 		captured <- captureErr
 	}()
-	wrapperID, groupID, childID := waitForHangingGitPIDs(t, groupFile, childFile, 25*time.Second)
+	var wrapperID, groupID, childID int
+	select {
+	case identities := <-waitForHangingGitPIDs(groupFIFO, childFIFO):
+		if identities.err != nil {
+			t.Fatal(identities.err)
+		}
+		wrapperID, groupID, childID = identities.wrapperID, identities.groupID, identities.childID
+	case result := <-captured:
+		t.Fatalf("capture returned before publishing transport identities: %v", result)
+	}
 	fixture.Record(wrapperID)
 	fixture.Record(childID)
 	if wrapperID != groupID {
 		t.Fatalf("cooperative transport wrapper pid %d did not lead process group %d", wrapperID, groupID)
 	}
-	timers.Next(t, fakeAttentionTimer, 300*time.Millisecond).Fire()
-	grace := timers.Next(t, fakeAttentionTimer, boundedCaptureGrace)
-	poll := timers.Next(t, fakeAttentionTicker, 10*time.Millisecond)
+	timers.Next(t, captured, fakeAttentionTimer, 300*time.Millisecond).Fire()
+	grace := timers.Next(t, captured, fakeAttentionTimer, boundedCaptureGrace)
+	poll := timers.Next(t, captured, fakeAttentionTicker, 10*time.Millisecond)
 	for {
 		select {
 		case err = <-captured:
@@ -720,8 +783,14 @@ captureReturned:
 	if data, readErr := os.ReadFile(termFile); readErr != nil || strings.TrimSpace(string(data)) != "TERM" {
 		t.Fatalf("transport received no graceful TERM opportunity: %q %v", data, readErr)
 	}
-	if err := waitForGroupAbsence(groupID, 30*time.Second); err != nil {
-		t.Fatal(err)
+	for _, pid := range []int{wrapperID, childID} {
+		exited, exitErr := transportMemberExited(pid)
+		if exitErr != nil {
+			t.Fatalf("probe cooperative transport member %d: %v", pid, exitErr)
+		}
+		if !exited {
+			t.Fatalf("cooperative transport member %d survived after capture returned", pid)
+		}
 	}
 }
 
@@ -778,9 +847,14 @@ func (s *fakeAttentionTimerSource) Created() []*fakeAttentionTimerInstance {
 	return append([]*fakeAttentionTimerInstance(nil), s.all...)
 }
 
-func (s *fakeAttentionTimerSource) Next(t *testing.T, kind fakeAttentionTimerKind, duration time.Duration) *fakeAttentionTimerInstance {
+func (s *fakeAttentionTimerSource) Next(t *testing.T, captured <-chan error, kind fakeAttentionTimerKind, duration time.Duration) *fakeAttentionTimerInstance {
 	t.Helper()
-	timer := <-s.created
+	var timer *fakeAttentionTimerInstance
+	select {
+	case timer = <-s.created:
+	case result := <-captured:
+		t.Fatalf("capture returned before creating attention %s for %s: %v", kind, duration, result)
+	}
 	if timer.kind != kind || timer.duration != duration {
 		t.Fatalf("created attention %s for %s, want %s for %s", timer.kind, timer.duration, kind, duration)
 	}
@@ -809,32 +883,53 @@ func (t *fakeAttentionTimerInstance) Fired() bool {
 	return t.fired
 }
 
-var captureTipTimerSourceTestMu sync.Mutex
-
-func useCaptureTipTimerSource(t *testing.T, source attentionTimerSource) {
-	t.Helper()
-	captureTipTimerSourceTestMu.Lock()
-	previous := replaceCaptureTipTimerSource(source)
-	t.Cleanup(func() {
-		replaceCaptureTipTimerSource(previous)
-		captureTipTimerSourceTestMu.Unlock()
-	})
+type hangingGitPIDs struct {
+	wrapperID int
+	groupID   int
+	childID   int
+	err       error
 }
 
-func waitForHangingGitPIDs(t *testing.T, groupFile, childFile string, ceiling time.Duration) (int, int, int) {
+func openHangingGitPIDFIFOs(t *testing.T, groupPath, childPath string) (*os.File, *os.File) {
 	t.Helper()
-	deadline := time.Now().Add(ceiling)
-	for {
-		groupData, groupErr := os.ReadFile(groupFile)
-		childData, childErr := os.ReadFile(childFile)
-		if groupErr == nil && childErr == nil && hangingGitPIDsReady(groupData, childData) {
-			return parseHangingGitPIDs(t, groupData, childData)
+	for _, path := range []string{groupPath, childPath} {
+		if err := syscall.Mkfifo(path, 0o600); err != nil {
+			t.Fatal(err)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("transport did not publish its process identities: group=%q err=%v child=%q err=%v", groupData, groupErr, childData, childErr)
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
+	groupFIFO, err := os.OpenFile(groupPath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childFIFO, err := os.OpenFile(childPath, os.O_RDWR, 0)
+	if err != nil {
+		_ = groupFIFO.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = groupFIFO.Close()
+		_ = childFIFO.Close()
+	})
+	return groupFIFO, childFIFO
+}
+
+func waitForHangingGitPIDs(groupFIFO, childFIFO *os.File) <-chan hangingGitPIDs {
+	identities := make(chan hangingGitPIDs, 1)
+	go func() {
+		groupData, groupErr := bufio.NewReader(groupFIFO).ReadBytes('\n')
+		if groupErr != nil {
+			identities <- hangingGitPIDs{err: fmt.Errorf("read transport wrapper and group identities: %w", groupErr)}
+			return
+		}
+		childData, childErr := bufio.NewReader(childFIFO).ReadBytes('\n')
+		if childErr != nil {
+			identities <- hangingGitPIDs{err: fmt.Errorf("read transport child identity: %w", childErr)}
+			return
+		}
+		wrapperID, groupID, childID, parseErr := parseHangingGitPIDs(groupData, childData)
+		identities <- hangingGitPIDs{wrapperID: wrapperID, groupID: groupID, childID: childID, err: parseErr}
+	}()
+	return identities
 }
 
 func hangingGitPIDsReady(groupData, childData []byte) bool {
@@ -852,36 +947,18 @@ func hangingGitPIDsReady(groupData, childData []byte) bool {
 	return true
 }
 
-func parseHangingGitPIDs(t *testing.T, groupData, childData []byte) (int, int, int) {
-	t.Helper()
-	fields := strings.Fields(string(groupData))
-	if len(fields) != 2 {
-		t.Fatalf("transport wrote invalid wrapper and process-group identities: %q", groupData)
+func parseHangingGitPIDs(groupData, childData []byte) (int, int, int, error) {
+	if !hangingGitPIDsReady(groupData, childData) {
+		return 0, 0, 0, fmt.Errorf("transport wrote invalid process identities: group=%q child=%q", groupData, childData)
 	}
+	fields := strings.Fields(string(groupData))
 	wrapperID, wrapperErr := strconv.Atoi(fields[0])
 	groupID, groupErr := strconv.Atoi(fields[1])
 	childID, childErr := strconv.Atoi(strings.TrimSpace(string(childData)))
 	if wrapperErr != nil || groupErr != nil || childErr != nil || wrapperID < 1 || groupID < 1 || childID < 1 {
-		t.Fatalf("transport wrote invalid process identities: wrapper=%q err=%v group=%q err=%v child=%q err=%v", fields[0], wrapperErr, fields[1], groupErr, childData, childErr)
+		return 0, 0, 0, fmt.Errorf("transport wrote invalid process identities: wrapper=%q err=%v group=%q err=%v child=%q err=%v", fields[0], wrapperErr, fields[1], groupErr, childData, childErr)
 	}
-	return wrapperID, groupID, childID
-}
-
-func waitForGroupAbsence(pgid int, failsafe time.Duration) error {
-	deadline := time.Now().Add(failsafe)
-	for {
-		err := syscall.Kill(-pgid, 0)
-		if errors.Is(err, syscall.ESRCH) {
-			return nil
-		}
-		if err != nil && !errors.Is(err, syscall.EPERM) {
-			return err
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("transport process group %d still existed after the 30-second hang failsafe", pgid)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	return wrapperID, groupID, childID, nil
 }
 
 func TestProjectAtReadsACommitWithoutMovingAnyRef(t *testing.T) {

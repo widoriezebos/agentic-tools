@@ -647,6 +647,7 @@ func TestForeignClaimMakesTheWholeMixedArcCascadeAHumanAct(t *testing.T) {
 func TestMixedArcJoinUsesOwnPairOrNewestAllParkedRecord(t *testing.T) {
 	t.Parallel()
 	t.Run("all parked copies newest", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		for index, id := range []string{"park-old", "park-new", "park-join"} {
@@ -686,6 +687,7 @@ func TestMixedArcJoinUsesOwnPairOrNewestAllParkedRecord(t *testing.T) {
 	})
 
 	t.Run("reconcile matches own-pair verb", func(t *testing.T) {
+		t.Parallel()
 		_, a, b := twoClones(t)
 		seedLedger(t, a)
 		for index, id := range []string{"join-own", "join-foreign", "join-candidate"} {

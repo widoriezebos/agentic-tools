@@ -158,6 +158,7 @@ func TestBudgetEpisodeRevisionLegacyMinimum(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			file := *base
 			file.Approved = new(ApprovalRecord)
 			*file.Approved = *base.Approved
@@ -208,6 +209,7 @@ func TestClaimedEpisodeRoundTrip(t *testing.T) {
 	t.Parallel()
 	for _, obligationRevision := range []uint64{0, 4} {
 		t.Run(fmt.Sprintf("obligation revision %d", obligationRevision), func(t *testing.T) {
+			t.Parallel()
 			file := episodeGolden()
 			file.Claimed.EpisodeObligationRevision = obligationRevision
 			rendered := RenderFile(file)
@@ -251,6 +253,7 @@ func TestEpisodeBindingContradictionsRefuse(t *testing.T) {
 		{name: "zero inherited obligation", suffix: " episodeAt=2026-08-20T00:35:00Z episodeRevision=2 episodeObligationRevision=0", want: `Claimed episodeObligationRevision="0" is not a positive integer`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			raw := strings.Replace(base, " accountingRevision=2", " accountingRevision=2"+test.suffix, 1)
 			if _, problems := ParseFile([]byte(withFreshIntegrity(raw))); !problemsContain(problems, test.want) {
 				t.Fatalf("malformed episode keys did not refuse with %q: %v", test.want, problems)
@@ -273,6 +276,7 @@ func TestEpisodeBindingContradictionsRefuse(t *testing.T) {
 		{name: "inherited obligation above claim", mutate: func(f *GoalFile) { f.Claimed.EpisodeObligationRevision = 6 }, want: "claimed episodeObligationRevision=6 must be later than episodeRevision=2 and earlier than claim revision=5"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			file := episodeGolden()
 			test.mutate(file)
 			if _, problems := ParseFile(RenderFile(file)); !problemsContain(problems, "BUDGET_UNKNOWN "+test.want) {
@@ -322,6 +326,7 @@ func TestLegacyFourMemberBudgetUsesGoalTierReviewRounds(t *testing.T) {
 		{name: "tier three", tier: 3, want: 3},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			file := vGoal("legacy-budget", StateQueued)
 			file.Tier = test.tier
 			file.Budget = &Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1, ReviewRoundLimit: 3}
@@ -363,6 +368,7 @@ func TestMixedLegacyReviewRoundMemberUsesExplicitValue(t *testing.T) {
 		{name: "legacy norm approval uses explicit budget", legacyBudget: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			file := vGoal("mixed-legacy-rounds", StateQueued)
 			file.Tier = 2
 			file.Budget = &Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1, ReviewRoundLimit: 7}
@@ -513,6 +519,7 @@ func TestAbandonRecordMustBindItsEvent(t *testing.T) {
 		{name: "first target", mutate: func(file *GoalFile) { file.History[1].Targets = []string{"survivor", "bound-abandon"} }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			file := fixture()
 			test.mutate(file)
 			_, problems := ParseFile(RenderFile(file))
@@ -566,6 +573,7 @@ func TestAbandonRecordMustBindItsEvent(t *testing.T) {
 		}(), want: "Abandoned record does not bind its abandon History event"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, problems := ParseFile(RenderFile(test.file))
 			if test.want == "" && len(problems) != 0 {
 				t.Fatalf("valid binding refused: %v", problems)
@@ -637,6 +645,7 @@ func TestHistoryKeysStopIdAndCarriedOnlyOnAbandonLines(t *testing.T) {
 		{name: "current state does not invalidate an earlier carry", history: []HistoryLine{ownAbandon, {Verb: "carry", Carried: "successor-two"}, {Verb: "reopen"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			file := &GoalFile{Id: "history-keys", History: test.history}
 			got := historyProblems(file)
 			if test.want == "" && len(got) != 0 {
@@ -720,6 +729,7 @@ func TestClaimRevisionMustExistAndKeepItsHistoryTimestamp(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			f := claimedGolden()
 			test.mutate(f)
 			_, problems := ParseFile(RenderFile(f))

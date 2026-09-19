@@ -660,7 +660,10 @@ func CaptureTipBounded(e Endpoint, budget time.Duration) (BoundedCapture, error)
 	}
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
-	timers := currentCaptureTipTimerSource()
+	timers := e.captureTimers
+	if timers == nil {
+		timers = wallAttentionTimerSource{}
+	}
 	timer := timers.NewTimer(budget)
 	defer timer.Stop()
 	select {

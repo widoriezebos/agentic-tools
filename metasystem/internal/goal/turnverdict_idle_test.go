@@ -93,6 +93,7 @@ func pendingWaitIdleOutcome(t *testing.T, fixture *pendingWaitVerdictFixture) (V
 func TestPendingWaitIdleBacklog(t *testing.T) {
 	t.Parallel()
 	t.Run("work waits have the live delegate counter effect", func(t *testing.T) {
+		t.Parallel()
 		liveDelegate := newPendingWaitVerdictFixture(t, "job", true)
 		liveDelegate.row.OpenWorkSignature = ""
 		liveDelegate.writeRow(t)
@@ -116,6 +117,7 @@ func TestPendingWaitIdleBacklog(t *testing.T) {
 
 		for _, kind := range []string{"job", "run", "attempt", "landing"} {
 			t.Run(kind, func(t *testing.T) {
+				t.Parallel()
 				fixture := newPendingWaitVerdictFixture(t, kind, true)
 				fixture.row.OpenWorkSignature = ""
 				fixture.writeRow(t)
@@ -134,8 +136,10 @@ func TestPendingWaitIdleBacklog(t *testing.T) {
 	})
 
 	t.Run("human and channel waits never exempt idle backlog", func(t *testing.T) {
+		t.Parallel()
 		for _, kind := range []string{"human-act", "channel"} {
 			t.Run(kind, func(t *testing.T) {
+				t.Parallel()
 				fixture := newPendingWaitVerdictFixture(t, kind, true)
 				fixture.row.OpenWorkSignature = ""
 				fixture.row.ClaimableGoals = []metarun.ClaimableGoal{{ID: "ready-after-wait", Revision: 2}}
@@ -160,6 +164,7 @@ func TestPendingWaitIdleBacklog(t *testing.T) {
 	})
 
 	t.Run("an invalid wait keeps today's idle refusal", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", true)
 		fixture.row.Delivery = "declined"
 		fixture.writeRow(t)
@@ -171,6 +176,7 @@ func TestPendingWaitIdleBacklog(t *testing.T) {
 	})
 
 	t.Run("a changed signature does not revoke the live delegate counter effect", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", true)
 		fixture.row.OpenWorkSignature = strings.Repeat("d", 64)
 		fixture.writeRow(t)
@@ -182,6 +188,7 @@ func TestPendingWaitIdleBacklog(t *testing.T) {
 	})
 
 	t.Run("human-act wait clears pending with exit 6 for changed work", func(t *testing.T) {
+		t.Parallel()
 		savedSignature := strings.Repeat("a", 64)
 		for _, test := range []struct {
 			name             string
@@ -194,6 +201,7 @@ func TestPendingWaitIdleBacklog(t *testing.T) {
 			{"changed open work", nil, nil, strings.Repeat("d", 64)},
 		} {
 			t.Run(test.name, func(t *testing.T) {
+				t.Parallel()
 				root := t.TempDir()
 				now := time.Date(2026, 8, 23, 2, 0, 0, 0, time.UTC)
 				bootElapsed := 2 * time.Hour
@@ -281,6 +289,7 @@ func TestIdleBacklogDisplayLimitsAndPreservesGoalOrder(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			verdict := Verdict{}
 			session := &sessionState{}
 			store := &Store{}
@@ -971,6 +980,7 @@ func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
 	t.Run("fetch failure", func(t *testing.T) {
+		t.Parallel()
 		store := &Store{Root: root}
 		store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
 			return AdvanceResult{}, errors.New("canonical remote unavailable")
@@ -986,6 +996,7 @@ func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 	})
 
 	t.Run("fetch timeout", func(t *testing.T) {
+		t.Parallel()
 		store := &Store{Root: root}
 		deadline := make(chan time.Time)
 		releaseFetch := make(chan struct{})
@@ -1315,6 +1326,7 @@ func TestSessionStopInfrastructurePreservesAuthority(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	t.Run("marker read failure", func(t *testing.T) {
+		t.Parallel()
 		root := servingBed(t, "bed-m1", nil)
 		path := sessionStopPath(root, "read-failure")
 		if err := os.MkdirAll(path, 0o755); err != nil {
@@ -1333,6 +1345,7 @@ func TestSessionStopInfrastructurePreservesAuthority(t *testing.T) {
 	})
 
 	t.Run("consume failure", func(t *testing.T) {
+		t.Parallel()
 		root := servingBed(t, "bed-m1", map[string]*GoalFile{
 			"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 		})
@@ -1533,6 +1546,7 @@ func TestSessionStopConsumeOnUseSurvivesAbsentOrFailedSessionEnd(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			root := servingBed(t, "bed-m1", map[string]*GoalFile{
 				"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 			})

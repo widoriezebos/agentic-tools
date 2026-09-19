@@ -23,6 +23,7 @@ func openInboxQuestion(id, goalID, wants string) *ChannelQuestion {
 func TestReadChannelTree(t *testing.T) {
 	t.Parallel()
 	t.Run("missing directory is empty", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		tip := mustGit(t, root, "rev-parse", "HEAD")
 		tree, err := ReadChannelTree(endpointFor(root), tip)
@@ -32,6 +33,7 @@ func TestReadChannelTree(t *testing.T) {
 	})
 
 	t.Run("all record kinds use path keys", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		tip := commitChannelFiles(t, root, validChannelFixture().files(t))
 		tree, err := ReadChannelTree(endpointFor(root), tip)
@@ -44,6 +46,7 @@ func TestReadChannelTree(t *testing.T) {
 	})
 
 	t.Run("decode refusal names the path", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		path := ChannelPrefix + "questions/" + channelTestQuestionID + ".json"
 		files := vTree(vRoot(), []*GoalFile{vGoal(channelTestGoalID, StateQueued)}, nil)
@@ -66,15 +69,18 @@ func TestMatchChannelInboundThreadReferences(t *testing.T) {
 	question.Answer = &ChannelAnswer{ReceiptRef: receiptRef}
 	tree := &ChannelTree{Questions: map[string]*ChannelQuestion{question.ID: question}, Inbox: map[string]*ChannelInbound{}, Listeners: map[string]*ChannelListener{}}
 
-	for _, reply := range []string{"question-post", "rejection-post", "orphan-post", "receipt-post"} {
-		t.Run(reply, func(t *testing.T) {
-			record := ChannelInbound{Destination: "team", ReplyTo: channelString(reply), Outcome: "verified"}
-			got, bound := MatchChannelInbound(tree, record, func(*ChannelQuestion) bool { return false })
-			if got != question.ID || !bound {
-				t.Fatalf("reply %q matched %q bound=%v", reply, got, bound)
-			}
-		})
-	}
+	t.Run("verified open thread references", func(t *testing.T) {
+		for _, reply := range []string{"question-post", "rejection-post", "orphan-post", "receipt-post"} {
+			t.Run(reply, func(t *testing.T) {
+				t.Parallel()
+				record := ChannelInbound{Destination: "team", ReplyTo: channelString(reply), Outcome: "verified"}
+				got, bound := MatchChannelInbound(tree, record, func(*ChannelQuestion) bool { return false })
+				if got != question.ID || !bound {
+					t.Fatalf("reply %q matched %q bound=%v", reply, got, bound)
+				}
+			})
+		}
+	})
 	record := ChannelInbound{Destination: "team", ReplyTo: channelString("question-post"), Outcome: "wrong-user"}
 	if got, bound := MatchChannelInbound(tree, record, func(*ChannelQuestion) bool { return false }); got != question.ID || bound {
 		t.Fatalf("unverified thread matched %q bound=%v", got, bound)
@@ -100,47 +106,63 @@ func TestMatchChannelInboundUnthreadedTokens(t *testing.T) {
 
 	assert := func(t *testing.T, tree *ChannelTree, text, want string, bound bool) {
 		t.Helper()
-		record.Text = text
-		got, gotBound := matchByToken(tree, record)
+		candidate := record
+		candidate.Text = text
+		got, gotBound := matchByToken(tree, candidate)
 		if got != want || gotBound != bound {
 			t.Fatalf("text %q matched %q bound=%v, want %q bound=%v", text, got, gotBound, want, bound)
 		}
 	}
 	t.Run("zero tokens with one open", func(t *testing.T) {
+		t.Parallel()
 		assert(t, &ChannelTree{Questions: map[string]*ChannelQuestion{q1.ID: q1}}, "no token", "unbound", false)
 	})
 	t.Run("zero tokens with two open", func(t *testing.T) {
+		t.Parallel()
 		assert(t, &ChannelTree{Questions: map[string]*ChannelQuestion{q1.ID: q1, q2.ID: q2}}, "no token", "unmatched", false)
 	})
 	t.Run("one token", func(t *testing.T) {
+		t.Parallel()
 		assert(t, &ChannelTree{Questions: map[string]*ChannelQuestion{q1.ID: q1, q2.ID: q2}}, q2.Wants, q2.ID, true)
 	})
 	t.Run("two tokens", func(t *testing.T) {
+		t.Parallel()
 		assert(t, &ChannelTree{Questions: map[string]*ChannelQuestion{q1.ID: q1, q2.ID: q2}}, q1.Wants+" "+q2.Wants, "unmatched", false)
 	})
 	t.Run("one token repeated", func(t *testing.T) {
+		t.Parallel()
 		assert(t, &ChannelTree{Questions: map[string]*ChannelQuestion{q2.ID: q2}}, q2.Wants+" "+q2.Wants, "unmatched", false)
 	})
 	t.Run("last token field accepts punctuation", func(t *testing.T) {
+		t.Parallel()
 		assert(t, &ChannelTree{Questions: map[string]*ChannelQuestion{q1.ID: q1}}, q1.Wants+".", q1.ID, true)
 	})
 	t.Run("partial token does not match", func(t *testing.T) {
+		t.Parallel()
 		assert(t, &ChannelTree{Questions: map[string]*ChannelQuestion{q1.ID: q1}}, "goal=one resume", "unbound", false)
 	})
 	t.Run("unposted question does not bind", func(t *testing.T) {
+		t.Parallel()
 		copy := *q1
 		copy.Thread = nil
 		assert(t, &ChannelTree{Questions: map[string]*ChannelQuestion{copy.ID: &copy}}, copy.Wants, "unbound", false)
 	})
 	t.Run("case differs", func(t *testing.T) {
+		t.Parallel()
 		assert(t, &ChannelTree{Questions: map[string]*ChannelQuestion{q2.ID: q2}}, strings.ToUpper(q2.Wants), "unbound", false)
 	})
 	t.Run("unverified unthreaded", func(t *testing.T) {
-		record.Outcome = "wrong-user"
-		assert(t, &ChannelTree{Questions: map[string]*ChannelQuestion{q2.ID: q2}}, q2.Wants, "unmatched", false)
-		record.Outcome = "verified"
+		t.Parallel()
+		candidate := record
+		candidate.Text = q2.Wants
+		candidate.Outcome = "wrong-user"
+		got, bound := matchByToken(&ChannelTree{Questions: map[string]*ChannelQuestion{q2.ID: q2}}, candidate)
+		if got != "unmatched" || bound {
+			t.Fatalf("unverified text %q matched %q bound=%v", q2.Wants, got, bound)
+		}
 	})
 	t.Run("no open questions", func(t *testing.T) {
+		t.Parallel()
 		copy := *q2
 		copy.State = "answered"
 		assert(t, &ChannelTree{Questions: map[string]*ChannelQuestion{copy.ID: &copy}}, copy.Wants, "unmatched", false)
@@ -276,6 +298,7 @@ func TestChannelInboundPublishBudgetAnswerRows(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			question := openInboxQuestion(channelTestQuestionID, channelTestGoalID, "approve exactly")
 			question.Kind = "budget-above-norm"
 			question.Budget = &Budget{ElapsedLimit: "1d", AttemptLimit: 10, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3}

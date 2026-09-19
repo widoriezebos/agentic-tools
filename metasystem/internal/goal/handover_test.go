@@ -100,6 +100,7 @@ func TestHandedOverClaimGuards(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			file := handedOverGoal("guard", "landing", "landing-lineage")
 			test.mutate(file)
 			problems := ValidateTree(handedOverTree(file))
@@ -167,6 +168,7 @@ func TestGoalHandoverAppliesCompleteFieldTable(t *testing.T) {
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
 			if !row.ok {
 				t.Fatalf("field-table row changed: before=%+v after=%+v", want, got)
 			}
@@ -295,6 +297,7 @@ func TestGoalHandBackRefusals(t *testing.T) {
 	}
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			root, source, holder := handBackBed(t, false)
 			setHandoverTargetRoot(t, &holder, test.targetRoot)
 			if test.occupied {

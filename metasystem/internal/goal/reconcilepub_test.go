@@ -12,6 +12,7 @@ import (
 func TestPriorityReconcile(t *testing.T) {
 	t.Parallel()
 	t.Run("same-priority", func(t *testing.T) {
+		t.Parallel()
 		root, base := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c", "d", "e"), nil)
 		for _, id := range []string{"b", "d"} {
 			editFile(t, root, livePath(id), func(file *GoalFile) {
@@ -46,6 +47,7 @@ func TestPriorityReconcile(t *testing.T) {
 	})
 
 	t.Run("different-priorities", func(t *testing.T) {
+		t.Parallel()
 		live := append(rankedPriorityGoals(1, "a", "b", "c"), rankedPriorityGoals(2, "d", "e", "f")...)
 		live = append(live, vGoal("unranked", StateQueued))
 		root, _ := priorityReconcileBed(t, live, nil)
@@ -70,6 +72,7 @@ func TestPriorityReconcile(t *testing.T) {
 	})
 
 	t.Run("survivor-edit", func(t *testing.T) {
+		t.Parallel()
 		root, _ := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c"), nil)
 		editFile(t, root, livePath("b"), func(file *GoalFile) {
 			file.State = StateDone
@@ -96,6 +99,7 @@ func TestPriorityReconcile(t *testing.T) {
 	})
 
 	t.Run("done-edit", func(t *testing.T) {
+		t.Parallel()
 		root, _ := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c"), nil)
 		editFile(t, root, livePath("b"), func(file *GoalFile) {
 			file.State = StateDone
@@ -115,6 +119,7 @@ func TestPriorityReconcile(t *testing.T) {
 	})
 
 	t.Run("reopen-refused", func(t *testing.T) {
+		t.Parallel()
 		archived := vGoal("already-done", StateDone)
 		root, base := priorityReconcileBed(t, rankedPriorityGoals(1, "a", "b", "c"), []*GoalFile{archived})
 		editFile(t, root, livePath("b"), func(file *GoalFile) {
@@ -168,6 +173,7 @@ func TestReconcileEditRowSeesAnAbandonedArchive(t *testing.T) {
 		{"done", &TreeGoals{Live: map[string]*GoalFile{}, Done: map[string]*GoalFile{"raced": {Id: "raced", State: StateDone}}, Abandoned: map[string]*GoalFile{}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := applyRow(test.tree, request, row, newReplaySession())
 			if err == nil || !strings.Contains(err.Error(), "archived on the fetched tip; the hand edit was made against a live goal") || strings.Contains(err.Error(), "not live on the fetched tip") {
 				t.Fatalf("archive race was classified incorrectly: %v", err)

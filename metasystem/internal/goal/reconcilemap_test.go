@@ -63,6 +63,7 @@ func TestHandEditsMapToTheSmallestVerbSet(t *testing.T) {
 func TestHandEditToAbandonedHasNoReconcileGrammar(t *testing.T) {
 	t.Parallel()
 	t.Run("live state change", func(t *testing.T) {
+		t.Parallel()
 		root, tip := reconcileBed(t)
 		editFile(t, root, livePath("editable"), func(file *GoalFile) {
 			file.State = StateAbandoned
@@ -78,6 +79,7 @@ func TestHandEditToAbandonedHasNoReconcileGrammar(t *testing.T) {
 	})
 
 	t.Run("new archive file", func(t *testing.T) {
+		t.Parallel()
 		root, tip := reconcileBed(t)
 		path := filepath.Join(root, filepath.FromSlash(recordsGoalsPrefix+"hand-abandoned.md"))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -120,6 +122,7 @@ func TestGeneratedFieldTamperRefusesByFileAndField(t *testing.T) {
 		{name: "episode obligation revision", mutate: func(claim *ClaimRecord) { claim.EpisodeObligationRevision++ }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			base := episodeGolden()
 			edited := *base
 			claim := *base.Claimed

@@ -35,6 +35,7 @@ func TestTurnVerdictDoesNotBlockAndDescribesTheDurableStopPhase(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			root := t.TempDir()
 			if err := stopfence.Write(root, stopfence.Record{
 				State: stopfence.StateClosed, Phase: test.phase, Generation: 1,

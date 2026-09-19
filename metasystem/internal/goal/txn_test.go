@@ -59,6 +59,7 @@ func TestWaitGoalLandingAndHumanAct(t *testing.T) {
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
 		t.Run("installed two-clone ledger waits", func(t *testing.T) {
+			t.Parallel()
 			binary := testutil.InstalledWaitBinary(t, binary)
 			testInstalledGoalWaits(t, binary)
 		})

@@ -55,6 +55,7 @@ func TestRestampMovesTheStopCapabilityToTheLeaseEpoch(t *testing.T) {
 func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 	t.Parallel()
 	t.Run("foreign pair", func(t *testing.T) {
+		t.Parallel()
 		_, request := restampFixture(t, "foreign-pair")
 		request.Ulid = "01J5X00000000000000000CF10"
 		request.Actor.Lineage = "foreign-lineage"
@@ -66,6 +67,7 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 	})
 
 	t.Run("main non-holder with claim epoch", func(t *testing.T) {
+		t.Parallel()
 		_, request := restampFixture(t, "main-non-holder")
 		request.Ulid = "01J5X00000000000000000CF20"
 		request.Actor = Actor{Machine: "mac-b", Lineage: "other-main"}
@@ -78,6 +80,7 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 	})
 
 	t.Run("lower epoch", func(t *testing.T) {
+		t.Parallel()
 		_, request := restampFixture(t, "lower-epoch")
 		request.Ulid = "01J5X00000000000000000CK10"
 		request.ClaimEpoch = 5
@@ -93,6 +96,7 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 	})
 
 	t.Run("unclaimed goal", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		request := verbReq(root, "01J5X00000000000000000CV10", "mac-a")
@@ -110,6 +114,7 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 	})
 
 	t.Run("caller is not the holder", func(t *testing.T) {
+		t.Parallel()
 		_, request := restampFixture(t, "not-holder")
 		request.Ulid = "01J5X00000000000000000CH10"
 		request.CallerClass = "DELEGATE"

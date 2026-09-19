@@ -1,7 +1,6 @@
 cmd/metasystem/hold_test.go	1	The ticker only retries signal delivery until the result channel fires; elapsed time never decides the assertion.
 cmd/metasystem/wait_verb_test.go	2	Both deadlines are fixed in the past to test cancellation propagation and never wait.
 internal/dispatch/proof_attempt_test.go	1	The sleeping child is the stop fixture's subject and is killed, never waited out.
-internal/goal/attention_test.go	6	These calls inject cancellation or place failsafes around real Git fixtures; assertions use cancellation, process, and file state rather than elapsed time.
 internal/identity/fixture_custodian_witness_test.go	2	The timers are failure ceilings around a real command and its forced reap; successful observation comes from the command result.
 internal/identity/identity_test.go	3	The probes observe real kernel process transitions; success is an identity fact and the delays only avoid busy-spinning.
 internal/identity/survivors_test.go	2	The scans observe real kernel process membership; success is a survivor fact and the delays only avoid busy-spinning.

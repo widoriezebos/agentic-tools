@@ -304,6 +304,7 @@ func TestSessionAbsentReadsNoWait(t *testing.T) {
 func TestPendingWaitTurnVerdict(t *testing.T) {
 	t.Parallel()
 	t.Run("work waits suppress matching open work and their own unwatched join", func(t *testing.T) {
+		t.Parallel()
 		liveDelegate := newPendingWaitVerdictFixture(t, "job", false)
 		if err := os.Remove(metarun.WaiterPath(liveDelegate.root, liveDelegate.row.Kind, liveDelegate.row.TargetID, liveDelegate.row.OwnerDigest)); err != nil {
 			t.Fatal(err)
@@ -326,6 +327,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 
 		for _, kind := range []string{"job", "run", "attempt", "landing"} {
 			t.Run(kind, func(t *testing.T) {
+				t.Parallel()
 				fixture := newPendingWaitVerdictFixture(t, kind, false)
 				scan := fixture.scan
 				scan.Busy = append([]Item{}, liveScan.Busy...)
@@ -372,6 +374,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("the live Stop session must match both row sessions", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", false)
 		fixture.row.Session = "another-logical-session"
 		fixture.row.RuntimeSession = "another-logical-session"
@@ -388,6 +391,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("a lineage filled after registration accepts the main default only", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", false)
 		fixture.row.OwnerLineage = pendingWaitMainID
 		fixture.writeRow(t)
@@ -402,8 +406,10 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("human act suppresses only its matching waiting condition", func(t *testing.T) {
+		t.Parallel()
 		for _, kind := range []string{"human-act", "channel"} {
 			t.Run(kind, func(t *testing.T) {
+				t.Parallel()
 				fixture := newPendingWaitVerdictFixture(t, kind, false)
 				scan := fixture.scan
 				scan.WaitingOnHuman = []Item{{Kind: "plan", Id: "plans/waiting.md", Detail: "claimed goal waits on Wido"}}
@@ -423,6 +429,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("changed open signature is never suppressed", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", false)
 		scan := fixture.scan
 		scan.Open[0].Detail += " and newly added work"
@@ -436,6 +443,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("unrelated unwatched work still blocks", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", false)
 		scan := fixture.scan
 		scan.Jobs = []JobFact{{Id: "another-job", MainId: pendingWaitMainID, StartedAt: "another-start", Status: "running"}}
@@ -446,6 +454,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("an attempt wait watches only its governed run incarnation", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "attempt", false)
 		attempt, err := proofrun.ReadAttempt(fixture.root, fixture.row.TargetID)
 		if err != nil || attempt.ReservationOwner == nil {
@@ -463,6 +472,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("only the canonical waiter path is eligible", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", false)
 		expected := metarun.WaiterPath(fixture.root, fixture.row.Kind, fixture.row.TargetID, fixture.row.OwnerDigest)
 		if err := os.Rename(expected, filepath.Join(metarun.WaitersDir(fixture.root), "copied-row.json")); err != nil {
@@ -474,6 +484,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("malformed waiter is ineligible", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", false)
 		path := metarun.WaiterPath(fixture.root, fixture.row.Kind, fixture.row.TargetID, fixture.row.OwnerDigest)
 		if err := os.WriteFile(path, []byte("{\n"), 0o644); err != nil {
@@ -485,6 +496,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("owner lifecycle is required", func(t *testing.T) {
+		t.Parallel()
 		for _, test := range []struct {
 			name   string
 			mutate func(*pendingWaitVerdictFixture)
@@ -517,6 +529,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 			}},
 		} {
 			t.Run(test.name, func(t *testing.T) {
+				t.Parallel()
 				fixture := newPendingWaitVerdictFixture(t, "job", false)
 				test.mutate(fixture)
 				if verdict := fixture.verdict(t, fixture.scan); !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
@@ -527,6 +540,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("failed eligibility changes no decision", func(t *testing.T) {
+		t.Parallel()
 		result := &metarun.WaitResult{SchemaVersion: 2, WaitID: strings.Repeat("b", 32)}
 		cases := []struct {
 			name   string
@@ -590,6 +604,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 		}
 		for _, test := range cases {
 			t.Run(test.name, func(t *testing.T) {
+				t.Parallel()
 				fixture := newPendingWaitVerdictFixture(t, "job", false)
 				test.mutate(fixture)
 				fixture.writeRow(t)
@@ -602,6 +617,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("source must join the claimed goal", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", false)
 		writePendingWaitJSON(t, filepath.Join(fixture.root, "artifacts", "agents", "jobs", fixture.row.TargetID+".json"), map[string]any{
 			"jobId": fixture.row.TargetID, "operationId": fixture.row.Target.OperationID, "round": fixture.row.Target.Round,
@@ -613,6 +629,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("source must remain pending", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", false)
 		writePendingWaitJSON(t, filepath.Join(fixture.root, "artifacts", "agents", "jobs", fixture.row.TargetID+".json"), map[string]any{
 			"jobId": fixture.row.TargetID, "operationId": fixture.row.Target.OperationID, "round": fixture.row.Target.Round,
@@ -624,6 +641,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("landing wait requires the landing phase", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "human-act", false)
 		fixture.row.Selector.Event = "landing"
 		fixture.row.GoalID = pendingWaitGoalID
@@ -634,6 +652,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("warnings and degraded input are unchanged", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", false)
 		scan := fixture.scan
 		scan.Runs = []RunFact{{Id: "red-run", Status: "red", ExpectRed: "inspect red evidence"}}
@@ -650,6 +669,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("closed fence remains terminal", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", false)
 		if err := stopfence.Write(fixture.root, stopfence.Record{
 			SchemaVersion: stopfence.SchemaVersion, State: stopfence.StateClosed, Phase: stopfence.PhaseStopped,
@@ -665,6 +685,7 @@ func TestPendingWaitTurnVerdict(t *testing.T) {
 	})
 
 	t.Run("human stop authority remains final", func(t *testing.T) {
+		t.Parallel()
 		fixture := newPendingWaitVerdictFixture(t, "job", false)
 		prober := fixture.store.Prober.(idleFixtureProber)
 		prober[20] = identity.Exact{Pid: 20, StartedAt: time.Unix(200, 0)}
@@ -783,6 +804,7 @@ func TestInfrastructureVerdictNeverBlocks(t *testing.T) {
 		}
 	}
 	t.Run("state root", func(t *testing.T) {
+		t.Parallel()
 		root := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(root, "development"), 0o755); err != nil {
 			t.Fatal(err)
@@ -794,6 +816,7 @@ func TestInfrastructureVerdictNeverBlocks(t *testing.T) {
 		assertInfrastructure(t, verdict, err, "state-root", "missing metasystem.conf")
 	})
 	t.Run("goal fence", func(t *testing.T) {
+		t.Parallel()
 		store := testStore(t)
 		path := stopfence.TransitionPath(store.Root)
 		if err := os.MkdirAll(path, 0o755); err != nil {
@@ -803,6 +826,7 @@ func TestInfrastructureVerdictNeverBlocks(t *testing.T) {
 		assertInfrastructure(t, verdict, err, "goal-fence", "goal fence")
 	})
 	t.Run("verdict state", func(t *testing.T) {
+		t.Parallel()
 		store := testStore(t)
 		if err := os.MkdirAll(filepath.Dir(statePath(store.Root)), 0o755); err != nil {
 			t.Fatal(err)
@@ -814,6 +838,7 @@ func TestInfrastructureVerdictNeverBlocks(t *testing.T) {
 		assertInfrastructure(t, verdict, err, "verdict-state", "turn verdict state")
 	})
 	t.Run("status write", func(t *testing.T) {
+		t.Parallel()
 		store := &Store{Root: servingBed(t, "bed-m1", nil), Now: func() time.Time { return time.Unix(1786800000, 0) }}
 		record := brain.Record{Schema: 1, Ledger: ExistingLedgerIdentity(store.Root), Machine: "bed-m1", DeclaredBy: "Wido", DeclaredAt: "2026-09-12T00:00:00Z"}
 		data, err := json.Marshal(record)
@@ -837,6 +862,7 @@ func TestTurnVerdictAllowsTheStopUnderARecordedHandoff(t *testing.T) {
 	openWork := ScanResult{Open: []Item{openItem("plans/handoff.md next: continue this session")}}
 
 	t.Run("same session precedes open work", func(t *testing.T) {
+		t.Parallel()
 		store := testStore(t)
 		var lookedUp string
 		verdict, err := store.TurnVerdict(openWork, "handoff-session", "", "main-1", TurnVerdictOptions{
@@ -858,6 +884,7 @@ func TestTurnVerdictAllowsTheStopUnderARecordedHandoff(t *testing.T) {
 	})
 
 	t.Run("closed checkout keeps precedence", func(t *testing.T) {
+		t.Parallel()
 		store := testStore(t)
 		if err := stopfence.Write(store.Root, stopfence.Record{
 			State: stopfence.StateClosed, Phase: stopfence.PhaseStopped, Generation: 1,
@@ -883,6 +910,7 @@ func TestTurnVerdictAllowsTheStopUnderARecordedHandoff(t *testing.T) {
 	})
 
 	t.Run("foreign session gives no allowance", func(t *testing.T) {
+		t.Parallel()
 		store := testStore(t)
 		verdict, err := store.TurnVerdict(openWork, "current-session", "", "main-1", TurnVerdictOptions{
 			HandoffRecorded: func(session string) (string, bool, error) {
@@ -906,6 +934,7 @@ func TestTurnVerdictAllowsTheStopUnderARecordedHandoff(t *testing.T) {
 		{name: "absent"},
 	} {
 		t.Run(state.name+" handoff gives no allowance", func(t *testing.T) {
+			t.Parallel()
 			store := testStore(t)
 			verdict, err := store.TurnVerdict(openWork, "handoff-session", "", "main-1", TurnVerdictOptions{
 				HandoffRecorded: func(string) (string, bool, error) { return state.nonce, false, nil },
@@ -917,6 +946,7 @@ func TestTurnVerdictAllowsTheStopUnderARecordedHandoff(t *testing.T) {
 	}
 
 	t.Run("unreadable handoff is infrastructure failure", func(t *testing.T) {
+		t.Parallel()
 		store := testStore(t)
 		verdict, err := store.TurnVerdict(openWork, "handoff-session", "", "main-1", TurnVerdictOptions{
 			HandoffRecorded: func(string) (string, bool, error) {
@@ -931,6 +961,7 @@ func TestTurnVerdictAllowsTheStopUnderARecordedHandoff(t *testing.T) {
 	})
 
 	t.Run("nil seam gives no allowance", func(t *testing.T) {
+		t.Parallel()
 		store := testStore(t)
 		verdict, err := store.TurnVerdict(openWork, "handoff-session", "", "main-1")
 		if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "open-work" {
@@ -939,6 +970,7 @@ func TestTurnVerdictAllowsTheStopUnderARecordedHandoff(t *testing.T) {
 	})
 
 	t.Run("command supplies steward lookup", func(t *testing.T) {
+		t.Parallel()
 		_, testFile, _, ok := runtime.Caller(0)
 		if !ok {
 			t.Fatal("turn-verdict test source path is unavailable")

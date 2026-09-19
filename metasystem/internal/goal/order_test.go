@@ -19,6 +19,7 @@ func TestNextPriority(t *testing.T) {
 	seedGoalNormConfig(t, root)
 
 	t.Run("pins", func(t *testing.T) {
+		t.Parallel()
 		a := nextPriorityGoal("a", 1, 1, "m1")
 		b := nextPriorityGoal("b", 1, 2, "")
 		c := nextPriorityGoal("c", 1, 3, "m2")
@@ -46,6 +47,7 @@ func TestNextPriority(t *testing.T) {
 	})
 
 	t.Run("held", func(t *testing.T) {
+		t.Parallel()
 		heldA := vGoal("held-a", StateClaimed)
 		heldA.Priority, heldA.Sequence, heldA.Arc = 1, 1, "held-arc"
 		heldA.Labels = []string{"hidden-by-filter"}
@@ -70,6 +72,7 @@ func TestNextPriority(t *testing.T) {
 	})
 
 	t.Run("blocked-expired", func(t *testing.T) {
+		t.Parallel()
 		blocked := nextPriorityGoal("blocked", 1, 1, "")
 		blocked.Blocked = []string{"dependency"}
 		expired := nextPriorityGoal("expired", 1, 2, "")
@@ -97,6 +100,7 @@ func TestNextPriority(t *testing.T) {
 	})
 
 	t.Run("none", func(t *testing.T) {
+		t.Parallel()
 		foreign := nextPriorityGoal("foreign", 1, 1, "other-machine")
 		parked := vGoal("parked", StateParked)
 		projection := Projection{Root: root, Tree: &TreeGoals{Live: map[string]*GoalFile{
@@ -113,6 +117,7 @@ func TestNextPriority(t *testing.T) {
 	})
 
 	t.Run("labels", func(t *testing.T) {
+		t.Parallel()
 		higher := nextPriorityGoal("higher", 1, 1, "")
 		higher.Labels = []string{"other"}
 		lower := nextPriorityGoal("lower", 1, 2, "")
@@ -132,6 +137,7 @@ func TestNextPriority(t *testing.T) {
 	})
 
 	t.Run("over-norm", func(t *testing.T) {
+		t.Parallel()
 		overNormBudget := testBudget()
 		overNormBudget.ReservedJobMinutesLimit = 2400
 		overNorm := approvedGoalFixture(vGoal("over-norm", StateQueued), overNormBudget)
@@ -161,6 +167,7 @@ func TestNextPriority(t *testing.T) {
 	})
 
 	t.Run("refused-only", func(t *testing.T) {
+		t.Parallel()
 		overNormBudget := testBudget()
 		overNormBudget.ReservedJobMinutesLimit = 2400
 		overNorm := approvedGoalFixture(vGoal("over-norm", StateQueued), overNormBudget)
@@ -182,6 +189,7 @@ func TestNextPriority(t *testing.T) {
 	})
 
 	t.Run("configuration-failure-keeps-idle-refusal", func(t *testing.T) {
+		t.Parallel()
 		candidate := nextPriorityGoal("candidate", 1, 1, "")
 		root := servingBed(t, "bed-m1", map[string]*GoalFile{candidate.Id: candidate})
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(config.Tier3BudgetKey+"=malformed\n"), 0o644); err != nil {
@@ -209,6 +217,7 @@ func TestNextPriority(t *testing.T) {
 	})
 
 	t.Run("configuration-loads-once", func(t *testing.T) {
+		t.Parallel()
 		loads := 0
 		loader := func(path string) (*config.TierBoxSet, error) {
 			loads++
@@ -246,6 +255,7 @@ func nextPriorityGoal(id string, priority uint8, sequence uint64, pin string) *G
 func TestPriorityUnranked(t *testing.T) {
 	t.Parallel()
 	t.Run("sort-last", func(t *testing.T) {
+		t.Parallel()
 		unrankedA := vGoal("a-unranked", StateQueued)
 		unrankedB := vGoal("b-unranked", StateParked)
 		rankedZ := vGoal("z-ranked", StateApproved)
@@ -263,6 +273,7 @@ func TestPriorityUnranked(t *testing.T) {
 	})
 
 	t.Run("grammar", func(t *testing.T) {
+		t.Parallel()
 		base := vGoal("rank-grammar", StateQueued)
 		base.Priority = 1
 		base.Sequence = ^uint64(0)
@@ -296,6 +307,7 @@ func TestPriorityUnranked(t *testing.T) {
 			{name: "duplicate", fields: "- Priority: 1\n- Priority: 2\n- Sequence: 1\n", fragment: "duplicate field"},
 		} {
 			t.Run(test.name, func(t *testing.T) {
+				t.Parallel()
 				_, problems := ParseFile(insertRankFields(vGoal("rank-grammar", StateQueued), test.fields))
 				expectProblem(t, problems, test.fragment)
 			})
@@ -340,6 +352,7 @@ func TestPriorityUnranked(t *testing.T) {
 	})
 
 	t.Run("manual-edit", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		file := vGoal("ranked-edit", StateQueued)
@@ -368,6 +381,7 @@ func insertRankFields(file *GoalFile, fields string) []byte {
 func TestPriorityReordersAndResequences(t *testing.T) {
 	t.Parallel()
 	t.Run("insert", func(t *testing.T) {
+		t.Parallel()
 		root := rankedGoalBed(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
@@ -394,6 +408,7 @@ func TestPriorityReordersAndResequences(t *testing.T) {
 	})
 
 	t.Run("move-priority", func(t *testing.T) {
+		t.Parallel()
 		root := rankedGoalBed(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3}, "d": {2, 1},
 		})
@@ -412,6 +427,7 @@ func TestPriorityReordersAndResequences(t *testing.T) {
 	})
 
 	t.Run("append", func(t *testing.T) {
+		t.Parallel()
 		root := rankedGoalBed(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
@@ -425,6 +441,7 @@ func TestPriorityReordersAndResequences(t *testing.T) {
 	})
 
 	t.Run("same-priority-noop", func(t *testing.T) {
+		t.Parallel()
 		root := rankedGoalBed(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
@@ -440,6 +457,7 @@ func TestPriorityReordersAndResequences(t *testing.T) {
 	})
 
 	t.Run("claimed-peer", func(t *testing.T) {
+		t.Parallel()
 		root := rankedGoalBed(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
@@ -471,6 +489,7 @@ func TestPriorityReordersAndResequences(t *testing.T) {
 func TestPriorityLifecycle(t *testing.T) {
 	t.Parallel()
 	t.Run("done-reopen", func(t *testing.T) {
+		t.Parallel()
 		root := rankedGoalBed(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
@@ -517,6 +536,7 @@ func TestPriorityLifecycle(t *testing.T) {
 	})
 
 	t.Run("split", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		files := []*GoalFile{
@@ -576,6 +596,7 @@ func TestPriorityLifecycle(t *testing.T) {
 	})
 
 	t.Run("done-then-split", func(t *testing.T) {
+		t.Parallel()
 		root := rankedGoalBed(t, map[string][2]uint64{
 			"a": {1, 1}, "b": {1, 2}, "c": {1, 3},
 		})
@@ -616,6 +637,7 @@ func TestPriorityLifecycle(t *testing.T) {
 func TestPriorityRace(t *testing.T) {
 	t.Parallel()
 	t.Run("same-position", func(t *testing.T) {
+		t.Parallel()
 		a, b := priorityRaceBed(t, []*GoalFile{
 			rankedGoal("a", 1, 1), rankedGoal("b", 1, 2),
 			vGoal("d", StateQueued), vGoal("e", StateQueued),
@@ -648,6 +670,7 @@ func TestPriorityRace(t *testing.T) {
 	})
 
 	t.Run("same-target", func(t *testing.T) {
+		t.Parallel()
 		a, b := priorityRaceBed(t, []*GoalFile{
 			rankedGoal("a", 1, 1), rankedGoal("b", 1, 2), vGoal("target", StateQueued),
 		})
@@ -677,6 +700,7 @@ func TestPriorityRace(t *testing.T) {
 	})
 
 	t.Run("range-changed", func(t *testing.T) {
+		t.Parallel()
 		a, b := priorityRaceBed(t, []*GoalFile{
 			rankedGoal("a", 1, 1), rankedGoal("b", 1, 2), vGoal("target", StateQueued),
 		})
@@ -706,6 +730,7 @@ func TestPriorityRace(t *testing.T) {
 	})
 
 	t.Run("claim-first", func(t *testing.T) {
+		t.Parallel()
 		target := approvedGoalFixture(rankedGoal("target", 1, 2), testBudget())
 		a, b := priorityRaceBed(t, []*GoalFile{rankedGoal("peer", 1, 1), target})
 		rankRequest := priorityVerbReq(a, "01J5X000000000000000000V70", "mac-a")
@@ -745,6 +770,7 @@ func TestPriorityRace(t *testing.T) {
 	})
 
 	t.Run("priority-first", func(t *testing.T) {
+		t.Parallel()
 		target := approvedGoalFixture(rankedGoal("target", 1, 2), testBudget())
 		a, b := priorityRaceBed(t, []*GoalFile{rankedGoal("peer", 1, 1), target})
 		rankRequest := priorityVerbReq(a, "01J5X000000000000000000V90", "mac-a")
@@ -782,6 +808,7 @@ func TestPriorityRace(t *testing.T) {
 func TestPriorityRecovery(t *testing.T) {
 	t.Parallel()
 	t.Run("unlanded", func(t *testing.T) {
+		t.Parallel()
 		root := rankedGoalBed(t, map[string][2]uint64{"target": {1, 1}})
 		opid := Opid("01J5X000000000000000000W10", "mac-a", "lin-1")
 		intent := Intent{Verb: "set-priority", Targets: []string{"target"}, Args: map[string]string{
@@ -817,6 +844,7 @@ func TestPriorityRecovery(t *testing.T) {
 	})
 
 	t.Run("landed", func(t *testing.T) {
+		t.Parallel()
 		a, b := priorityRaceBed(t, []*GoalFile{rankedGoal("a", 1, 1), vGoal("target", StateQueued)})
 		request := priorityVerbReq(b, "01J5X000000000000000000W20", "mac-b")
 		publish := setPriorityRequest(request, "target", 1, sequencePointer(2))

@@ -404,6 +404,7 @@ func TestApproveBatchRefusesClaimedMember(t *testing.T) {
 func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 	t.Parallel()
 	t.Run("claim", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		if result, err := Open(verbReq(root, "01J5X00000000000000000KC00", "mac-a"), "unapproved-claim", "Await review.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -416,6 +417,7 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 	})
 
 	t.Run("steal", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		publishGoalFixtures(t, root, legacyClaimedFixture("unapproved-steal", testBudget()))
@@ -428,6 +430,7 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 	})
 
 	t.Run("recover", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		if result, err := Open(verbReq(root, "01J5X00000000000000000KR00", "mac-a"), "unapproved-recovery", "Await review.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -445,6 +448,7 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 	})
 
 	t.Run("reconcile", func(t *testing.T) {
+		t.Parallel()
 		base := vGoal("unapproved-reconcile", StateQueued)
 		edited := *base
 		edited.State = StateClaimed
@@ -455,6 +459,7 @@ func TestUnapprovedExecutionPathsRefuseApprovalRequired(t *testing.T) {
 	})
 
 	t.Run("resume", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		budget := testBudget()
@@ -491,6 +496,7 @@ func TestApprovedOverNormWithoutCoveringNormApprovalRefusesExecution(t *testing.
 	}
 
 	t.Run("claim", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		seedGoalNormConfig(t, root)
@@ -502,6 +508,7 @@ func TestApprovedOverNormWithoutCoveringNormApprovalRefusesExecution(t *testing.
 	})
 
 	t.Run("steal", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		seedGoalNormConfig(t, root)
@@ -516,6 +523,7 @@ func TestApprovedOverNormWithoutCoveringNormApprovalRefusesExecution(t *testing.
 	})
 
 	t.Run("resume", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		seedGoalNormConfig(t, root)

@@ -316,6 +316,7 @@ func TestRecoveryRefusesToReplayAbandonEngineFloorAndAbandonedReopen(t *testing.
 		{verb: "reopen", args: map[string]string{"from": "abandoned"}},
 	} {
 		t.Run(test.verb, func(t *testing.T) {
+			t.Parallel()
 			ulid := fmt.Sprintf("01J5X00000000000000001Q0%d0", index)
 			entry := Entry{
 				Opid: Opid(ulid, "mac-a", "lin-1"), Machine: "mac-a", Lineage: "lin-1",
@@ -641,6 +642,7 @@ func TestRecoveryReplaysOwnReleaseAndRefusesHumanRequiredStoppingActs(t *testing
 func TestRecoveryNamedStoppingIntentsPreserveTypedOutcomes(t *testing.T) {
 	t.Parallel()
 	t.Run("already applied park confirms", func(t *testing.T) {
+		t.Parallel()
 		_, root, _ := twoClones(t)
 		seedLedger(t, root)
 		if res, err := Open(verbReq(root, "01J5X00000000000000000Q154", "mac-a"), "landed-human-park", "The delayed human park.", OriginMain, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -683,6 +685,7 @@ func TestRecoveryNamedStoppingIntentsPreserveTypedOutcomes(t *testing.T) {
 	})
 
 	t.Run("release lost to competitor stays lost", func(t *testing.T) {
+		t.Parallel()
 		_, root, _ := twoClones(t)
 		seedLedger(t, root)
 		opid := Opid("01J5X00000000000000000Q156", "mac-a", "lin-1")
@@ -957,6 +960,7 @@ func TestRecoveryRefusesJournaledHumanDone(t *testing.T) {
 func TestRecoveryCompletesMainSplitAndRejectsHumanOrDoctoredDrafts(t *testing.T) {
 	t.Parallel()
 	t.Run("created main split completes", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		if res, err := Open(verbReq(root, "01J5X00000000000000000RM00", "mac-a"), "recover-main-split", "Recover the split.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -982,6 +986,7 @@ func TestRecoveryCompletesMainSplitAndRejectsHumanOrDoctoredDrafts(t *testing.T)
 	})
 
 	t.Run("human ratification remains fresh authority", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		if res, err := Open(verbReq(root, "01J5X00000000000000000RH00", "mac-a"), "recover-human-split", "Human-ratified split.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {
@@ -1011,6 +1016,7 @@ func TestRecoveryCompletesMainSplitAndRejectsHumanOrDoctoredDrafts(t *testing.T)
 	})
 
 	t.Run("doctored stored members fail their digest", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		if res, err := Open(verbReq(root, "01J5X00000000000000000RD00", "mac-a"), "recover-doctored", "Digest-bound split.", OriginMain, "Split it."); err != nil || res.Outcome != OutcomeConfirmed {

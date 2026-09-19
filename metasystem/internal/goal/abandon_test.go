@@ -79,6 +79,7 @@ func TestAbandonRepairsBlockerParksForCarriedWaivedAndAlso(t *testing.T) {
 	}
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, root := oneClone(t)
 			seedLedger(t, root)
 			configureAbandonFloorTest(t, strings.Repeat("a", 40))
@@ -429,6 +430,7 @@ func TestAbandonWaiveRefusesBlankAndDuplicateReasons(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := Abandon(req, "primary", test.spec, proof)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("got %v, want %q", err, test.want)
@@ -762,6 +764,7 @@ func TestAbandonLocksEveryGoalInTheSetAndRefusesAnyRecordChange(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, root, competitor := twoClones(t)
 			seedLedger(t, root)
 			configureAbandonFloorTest(t, strings.Repeat("a", 40))

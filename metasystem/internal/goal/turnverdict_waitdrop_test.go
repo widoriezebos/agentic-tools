@@ -97,6 +97,7 @@ func TestRegisteredWaitDropReasons(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			kind := map[bool]string{false: tc.kind, true: "job"}[tc.kind == ""]
 			fixture := newPendingWaitVerdictFixture(t, kind, false)
 			tc.mutate(t, fixture)

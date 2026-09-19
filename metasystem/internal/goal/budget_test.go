@@ -65,6 +65,7 @@ func TestBudgetValidationNamesEveryInvalidLimit(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			if err := test.budget.Validate(); err == nil || !strings.Contains(err.Error(), test.fragment) {
 				t.Fatalf("invalid budget was not refused by field name: %v", err)
 			}
@@ -84,6 +85,7 @@ func TestBudgetValidationNamesEveryInvalidLimit(t *testing.T) {
 	}
 	for _, test := range newBudgetTests {
 		t.Run("new "+test.name, func(t *testing.T) {
+			t.Parallel()
 			_, err := NewBudget(test.elapsed, test.attempts, test.reservedMinutes, test.activeJobs, 0)
 			if err == nil || !strings.Contains(err.Error(), test.fragment) {
 				t.Fatalf("invalid command budget was not refused by field name: %v", err)
@@ -114,6 +116,7 @@ func TestStoredBudgetRequiresCompleteNumericLimits(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			args := map[string]string{}
 			for key, value := range valid {
 				args[key] = value

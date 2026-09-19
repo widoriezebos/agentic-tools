@@ -28,6 +28,7 @@ func TestNextStepNamesAPendingHumanWord(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			if got := NextStepNamesAPendingHumanWord(test.nextStep); got != test.want {
 				t.Fatalf("NextStepNamesAPendingHumanWord(%q) = %t, want %t", test.nextStep, got, test.want)
 			}

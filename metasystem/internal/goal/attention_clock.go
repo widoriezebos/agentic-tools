@@ -1,7 +1,6 @@
 package goal
 
 import (
-	"sync"
 	"time"
 )
 
@@ -48,23 +47,4 @@ func (t wallAttentionTimer) C() <-chan time.Time {
 
 func (t wallAttentionTimer) Stop() {
 	t.stop()
-}
-
-var captureTipTimers = struct {
-	sync.RWMutex
-	source attentionTimerSource
-}{source: wallAttentionTimerSource{}}
-
-func currentCaptureTipTimerSource() attentionTimerSource {
-	captureTipTimers.RLock()
-	defer captureTipTimers.RUnlock()
-	return captureTipTimers.source
-}
-
-func replaceCaptureTipTimerSource(source attentionTimerSource) attentionTimerSource {
-	captureTipTimers.Lock()
-	defer captureTipTimers.Unlock()
-	previous := captureTipTimers.source
-	captureTipTimers.source = source
-	return previous
 }

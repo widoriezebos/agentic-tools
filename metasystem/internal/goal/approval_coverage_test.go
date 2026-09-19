@@ -10,6 +10,7 @@ import (
 func TestUnapproveWithdrawsApprovedAndClaimedWork(t *testing.T) {
 	t.Parallel()
 	t.Run("approved work returns to queued", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		if result, err := Open(verbReq(root, "01J5X00000000000000000RV00", "mac-a"), "revoke-waiting", "Approval may be withdrawn.", OriginMain, "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -46,6 +47,7 @@ func TestUnapproveWithdrawsApprovedAndClaimedWork(t *testing.T) {
 	})
 
 	t.Run("claimed work is parked and its claimant is displaced", func(t *testing.T) {
+		t.Parallel()
 		_, root := oneClone(t)
 		seedLedger(t, root)
 		if result, err := Open(verbReq(root, "01J5X00000000000000000RC00", "mac-a"), "revoke-running", "Withdraw a running approval.", OriginMain, "Run."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -147,6 +149,7 @@ func TestApprovalRequiredNamesEveryClaimProducingPath(t *testing.T) {
 	file := vGoal("not-approved", StateQueued)
 	for _, verb := range []string{"claim", "arc claim", "steal", "set-arc claim", "reconcile set-arc claim", "resume"} {
 		t.Run(verb, func(t *testing.T) {
+			t.Parallel()
 			if _, err := requireApprovedForClaim(t.TempDir(), &TreeGoals{Root: vRoot()}, file, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), verb); err == nil || !strings.Contains(err.Error(), "APPROVAL_REQUIRED") || !strings.Contains(err.Error(), "this "+verb+" is refused") {
 				t.Fatalf("%s did not carry its approval refusal and remedy: %v", verb, err)
 			}
@@ -200,6 +203,7 @@ func TestApprovalRecordRejectsEveryIncompleteBindingClass(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			file := approvedGoalFixture(vGoal("approval-binding", StateQueued), testBudget())
 			test.edit(file)
 			if err := file.ValidateApprovalRecord(); err == nil || !strings.Contains(err.Error(), test.want) {

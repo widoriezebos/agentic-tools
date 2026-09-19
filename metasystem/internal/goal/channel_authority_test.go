@@ -40,6 +40,7 @@ func TestContainsContiguousFieldsMatchesExactlyOnce(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			got := containsContiguousFields(test.text, token)
 			if test.name == "empty token" {
 				got = containsContiguousFields(test.text, "")
@@ -60,6 +61,7 @@ func TestAskedAppendsTheAskedMarkerOnce(t *testing.T) {
 		{"filled next step", "Start here.", "Start here.; ASKED question-a (other): First fact."},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, root, _ := twoClones(t)
 			seedLedger(t, root)
 			if result, err := Open(verbReq(root, "01J5X0000000000000000000D0", "mac-a"), "asked", "Ask something.", "main", test.initial); err != nil || result.Outcome != OutcomeConfirmed {
@@ -144,6 +146,7 @@ func TestAnswerRecordsAuthenticatedChannelWordOnce(t *testing.T) {
 func TestAuthenticatedChannelApprovalRequiresTheTokenOnce(t *testing.T) {
 	t.Parallel()
 	t.Run("lookup and strict token", func(t *testing.T) {
+		t.Parallel()
 		_, root, _ := twoClones(t)
 		seedLedger(t, root)
 		if result, err := Open(verbReq(root, "01J5X0000000000000000000F0", "mac-a"), "authority", "Authorize an act.", "main", "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
@@ -178,6 +181,7 @@ func TestAuthenticatedChannelApprovalRequiresTheTokenOnce(t *testing.T) {
 	})
 
 	t.Run("resume uses standing approval without consuming an answer", func(t *testing.T) {
+		t.Parallel()
 		_, root, _ := twoClones(t)
 		seedLedger(t, root)
 		budget := testBudget()
@@ -221,6 +225,7 @@ func TestAuthenticatedChannelApprovalRequiresTheTokenOnce(t *testing.T) {
 	})
 
 	t.Run("set-obligation consumes the answer", func(t *testing.T) {
+		t.Parallel()
 		root := obligationAuthorityLocalRoot(t, "obligation-goal")
 		if err := os.WriteFile(root+"/metasystem.conf", []byte("metasystem.governance.correlation-policy=\n"), 0o644); err != nil {
 			t.Fatal(err)

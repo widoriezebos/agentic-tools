@@ -131,6 +131,7 @@ func TestMarshalChannelRoundTripsEveryStruct(t *testing.T) {
 	for _, value := range values {
 		value := value
 		t.Run(reflect.TypeOf(value).Name(), func(t *testing.T) {
+			t.Parallel()
 			data := mustMarshalChannel(t, value)
 			if len(data) == 0 || data[len(data)-1] != '\n' {
 				t.Fatal("canonical channel JSON must end in one newline")
@@ -191,6 +192,7 @@ func TestValidateChannelTreeRefusalTable(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, root := oneClone(t)
 			fixture := validChannelFixture()
 			test.mutate(&fixture)
@@ -241,6 +243,7 @@ func TestValidateChannelTreeSecretAndClosedNullEdges(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, root := oneClone(t)
 			fixture := validChannelFixture()
 			test.mutate(&fixture)
@@ -275,6 +278,7 @@ func TestValidateChannelTreeJSONEdges(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			_, root := oneClone(t)
 			fixture := validChannelFixture()
 			test.mutate(&fixture, t)
@@ -298,6 +302,7 @@ func TestChannelTimeRequiresCanonicalSecondPrecision(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			err := channelTime(test.value)
 			if (err != nil) != test.wantErr {
 				t.Fatalf("channelTime(%q) error = %v, wantErr %v", test.value, err, test.wantErr)
@@ -386,6 +391,7 @@ func TestClassifyChannelTransitionMatrix(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			row, ok := ChannelMatrix[test.name]
 			if !ok {
 				t.Fatalf("matrix row %q is missing", test.name)
@@ -445,6 +451,7 @@ func TestListAndSilenceIntentsRejectClosedQuestions(t *testing.T) {
 	closed := ChannelTuple{State: "closed", ThreadNull: false, ReceiptRefNull: true}
 	for _, name := range []string{"list intent", "silence intent"} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			apply, err := ClassifyChannelTransition(endpointFor(root), tip, channelTestQuestionID, "opid", "mac-a", "", true, closed, ChannelMatrix[name])
 			if apply || err == nil || !strings.HasPrefix(err.Error(), "channel-transition: ") {
 				t.Fatalf("closed %s must refuse with a channel-transition error: apply=%v err=%v", name, apply, err)
@@ -473,6 +480,7 @@ func TestTakeOverRequiresStaleForeignPosting(t *testing.T) {
 		{"Tuple without a clock", question.Tuple()},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "opid", "mac-a", "", true, test.tuple, row)
 			if apply || err == nil || !strings.HasPrefix(err.Error(), "channel-transition: ") {
 				t.Fatalf("non-stale posting must refuse with a channel-transition error: apply=%v err=%v", apply, err)

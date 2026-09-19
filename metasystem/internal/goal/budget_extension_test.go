@@ -290,6 +290,7 @@ func TestReconcileRefusesBudgetExtensionEdits(t *testing.T) {
 		"alter":  func(f *GoalFile) { copy := *f.BudgetExtension; copy.EvidenceID = "other"; f.BudgetExtension = &copy },
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			edited := *base
 			mutate(&edited)
 			if _, err := mapOneChange("plans/goals/extension-edit.md", base, &edited); err == nil || !strings.Contains(err.Error(), "BudgetExtension is a generated field") {

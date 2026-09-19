@@ -206,6 +206,7 @@ func assertTerminalReadItemRefusal(t *testing.T, root, goalID, itemID string, be
 func TestEveryTerminalGoalTransitionRefusesOpenReadItems(t *testing.T) {
 	t.Parallel()
 	t.Run("split", func(t *testing.T) {
+		t.Parallel()
 		root := readItemBed(t, "split-parent")
 		if result, err := AddReadItems(readItemRequest(root, 100), "split-parent", "critic", []string{"Keep the parent live."}); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("add: %+v %v", result, err)
@@ -225,6 +226,7 @@ func TestEveryTerminalGoalTransitionRefusesOpenReadItems(t *testing.T) {
 	})
 
 	t.Run("abandon --also member", func(t *testing.T) {
+		t.Parallel()
 		root := readItemBed(t, "abandon-parent", "abandon-child")
 		configureAbandonFloorTest(t, strings.Repeat("a", 40))
 		recordAbandonFloorTest(t, root, "01J5X00000000000000000RT00")
@@ -254,6 +256,7 @@ func TestEveryTerminalGoalTransitionRefusesOpenReadItems(t *testing.T) {
 	})
 
 	t.Run("reconcile to done", func(t *testing.T) {
+		t.Parallel()
 		file := vGoal("reconcile-done", StateQueued)
 		file.ReadItems = []ReadItem{{ID: "critic-1", Read: "critic", Text: "Close before reconciling.", State: ReadItemOpen, AddedAt: "2026-09-17T10:00:00Z"}}
 		root, _ := priorityReconcileBed(t, []*GoalFile{file}, nil)
@@ -280,6 +283,7 @@ func TestEveryTerminalGoalTransitionRefusesOpenReadItems(t *testing.T) {
 	})
 
 	t.Run("done on parked goal", func(t *testing.T) {
+		t.Parallel()
 		root := readItemBed(t, "parked-done")
 		if result, err := AddReadItems(readItemRequest(root, 130), "parked-done", "critic", []string{"Close before done."}); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("add: %+v %v", result, err)
