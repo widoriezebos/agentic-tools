@@ -137,7 +137,11 @@ exit 1
 		result, tickErr := gaterun.RunCadenceTick(input, redDeps)
 		firstDone <- tickAnswer{result: result, err: tickErr}
 	}()
-	<-entered
+	select {
+	case <-entered:
+	case answer := <-firstDone:
+		t.Fatalf("first cadence tick returned before entering its run: result=%+v err=%v", answer.result, answer.err)
+	}
 	joined, joinedErr := gaterun.RunCadenceTick(input, redDeps)
 	close(release)
 	first := <-firstDone

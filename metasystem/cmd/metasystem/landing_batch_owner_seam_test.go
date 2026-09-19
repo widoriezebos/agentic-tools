@@ -558,8 +558,16 @@ func TestBatchOwnerLoopStopJoinsCadenceTick(t *testing.T) {
 	go func() {
 		done <- loopBatchOwnerWithCadence(nil, batchOwnerLease{}, "landing-root", time.Now, time.Minute, make(chan struct{}), stop, cadence)
 	}()
-	<-started
-	<-cadence.stopping
+	select {
+	case <-started:
+	case err := <-done:
+		t.Fatalf("batch owner returned before its cadence tick started: %v", err)
+	}
+	select {
+	case <-cadence.stopping:
+	case err := <-done:
+		t.Fatalf("batch owner returned before cadence stopping began: %v", err)
+	}
 	runtime.Gosched()
 
 	returnedBeforeTick := false

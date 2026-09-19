@@ -190,7 +190,11 @@ func TestBatchSealReleasesLockDuringGateAndRefusesChangedCandidate(t *testing.T)
 	}
 	sealDone := make(chan error, 1)
 	go func() { sealDone <- Seal(store, testBatchID, bed.base, "owner", time.Unix(3, 0), plan, gate) }()
-	<-gateStarted
+	select {
+	case <-gateStarted:
+	case err := <-sealDone:
+		t.Fatalf("seal returned before its gate: %v", err)
+	}
 	if gateHeldLock.Load() {
 		close(releaseGate)
 		<-sealDone

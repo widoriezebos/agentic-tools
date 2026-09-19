@@ -17,24 +17,68 @@ type capturedStream struct {
 	err  error
 }
 
-var (
-	stdoutCaptureMu sync.Mutex
-	stderrCaptureMu sync.Mutex
-)
+// captureStreams acquires every requested stream at once. Holding one stream
+// while waiting for another would deadlock with disjoint captures.
+type captureStreams struct {
+	mu                     sync.Mutex
+	cond                   *sync.Cond
+	stdoutHeld, stderrHeld bool
+	waiters                int
+}
+
+func (streams *captureStreams) conditionLocked() *sync.Cond {
+	if streams.cond == nil {
+		streams.cond = sync.NewCond(&streams.mu)
+	}
+	return streams.cond
+}
+
+func (streams *captureStreams) acquire(stdout, stderr bool) {
+	streams.mu.Lock()
+	defer streams.mu.Unlock()
+	condition := streams.conditionLocked()
+	waiting := false
+	for stdout && streams.stdoutHeld || stderr && streams.stderrHeld {
+		if !waiting {
+			streams.waiters++
+			waiting = true
+			condition.Broadcast()
+		}
+		condition.Wait()
+	}
+	if waiting {
+		streams.waiters--
+		condition.Broadcast()
+	}
+	if stdout {
+		streams.stdoutHeld = true
+	}
+	if stderr {
+		streams.stderrHeld = true
+	}
+}
+
+func (streams *captureStreams) release(stdout, stderr bool) {
+	streams.mu.Lock()
+	defer streams.mu.Unlock()
+	if stdout {
+		streams.stdoutHeld = false
+	}
+	if stderr {
+		streams.stderrHeld = false
+	}
+	streams.conditionLocked().Broadcast()
+}
+
+var commandCaptureStreams captureStreams
 
 // captureCommandOutput drains both capture pipes while the command runs.
 // Callers select which standard streams to redirect so one-stream captures
 // can be nested without intercepting the stream owned by an outer capture.
 func captureCommandOutput(t *testing.T, captureStdout, captureStderr bool, run func() int) (int, string, string) {
 	t.Helper()
-	if captureStdout {
-		stdoutCaptureMu.Lock()
-		defer stdoutCaptureMu.Unlock()
-	}
-	if captureStderr {
-		stderrCaptureMu.Lock()
-		defer stderrCaptureMu.Unlock()
-	}
+	commandCaptureStreams.acquire(captureStdout, captureStderr)
+	defer commandCaptureStreams.release(captureStdout, captureStderr)
 	outRead, outWrite, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("create the standard output capture pipe: %v", err)
@@ -90,6 +134,34 @@ func captureCommandOutput(t *testing.T, captureStdout, captureStderr bool, run f
 		t.Fatalf("read captured standard error: %v", stderr.err)
 	}
 	return code, string(stdout.data), string(stderr.data)
+}
+
+func TestCaptureStreamsWaitWithoutHoldingAStream(t *testing.T) {
+	t.Parallel()
+	var streams captureStreams
+	streams.acquire(false, true)
+	done := make(chan struct{})
+	go func() {
+		streams.acquire(true, true)
+		streams.release(true, true)
+		close(done)
+	}()
+
+	streams.mu.Lock()
+	condition := streams.conditionLocked()
+	for streams.waiters != 1 {
+		condition.Wait()
+	}
+	stdoutHeld := streams.stdoutHeld
+	streams.mu.Unlock()
+	if stdoutHeld {
+		t.Fatal("stdout is held while a capture waits for stderr")
+	}
+
+	streams.acquire(true, false)
+	streams.release(true, false)
+	streams.release(false, true)
+	<-done
 }
 
 func TestCaptureCommandOutputAllowsNestedAndConcurrentDisjointStreams(t *testing.T) {

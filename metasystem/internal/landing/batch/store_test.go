@@ -155,12 +155,18 @@ func TestBatchJoinsSerializeUnderTheLock(t *testing.T) {
 	done := make(chan error, 2)
 	update := func(change func(*Record) error) { done <- store.Update(testBatchID, change) }
 	go update(func(record *Record) error { record.TipTree += "+goal-1"; close(first); <-release; return nil })
-	<-first
+	select {
+	case <-first:
+	case err := <-done:
+		t.Fatalf("first batch update returned before entering its mutation: %v", err)
+	}
 	go update(func(record *Record) error { record.TipTree += "+goal-2"; close(second); return nil })
 	select {
 	case <-contended:
 	case <-second:
 		t.Error("second join entered the batch mutation while the first held it")
+	case err := <-done:
+		t.Fatalf("second batch update returned before contending for the flock: %v", err)
 	}
 	close(release)
 	must(t, <-done)
@@ -444,7 +450,11 @@ func TestBatchJoinPublicationHoldsTheFlock(t *testing.T) {
 		go func() {
 			joinDone <- PublishJoin(store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0), joinPlanMode(testpolicy.ModeStandard), func() error { return nil })
 		}()
-		<-reached
+		select {
+		case <-reached:
+		case err := <-joinDone:
+			t.Fatalf("join returned before reaching publication %q: %v", point, err)
+		}
 		tickDone := make(chan error, 1)
 		go func() {
 			tickDone <- ReconcileJoins(store, testBatchID, "unused", "landing+owner", time.Unix(2, 0), nil)

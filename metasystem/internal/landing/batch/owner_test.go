@@ -321,8 +321,16 @@ func TestBatchOwnerWakesOnSignal(t *testing.T) {
 	bed.owner.after = func(time.Duration) <-chan time.Time { waiting <- struct{}{}; <-release; return make(chan time.Time) }
 	wake, stop, done := make(chan struct{}, 1), make(chan struct{}), make(chan struct{})
 	go func() { bed.owner.Loop(time.Minute, wake, stop); close(done) }()
-	<-passes
-	<-waiting
+	select {
+	case <-passes:
+	case <-done:
+		t.Fatal("batch owner returned before its first pass")
+	}
+	select {
+	case <-waiting:
+	case <-done:
+		t.Fatal("batch owner returned before waiting for a wake signal")
+	}
 	wake <- struct{}{}
 	close(stop)
 	close(release)

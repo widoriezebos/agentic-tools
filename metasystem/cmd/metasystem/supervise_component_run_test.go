@@ -442,7 +442,11 @@ func TestLandingOwnerComponentReleaseJoinsCadenceTick(t *testing.T) {
 		releaseReturned.Store(true)
 		released <- err
 	}()
-	<-cadence.stopping
+	select {
+	case <-cadence.stopping:
+	case err := <-released:
+		t.Fatalf("landing-owner release returned before cadence stopping began: %v", err)
+	}
 	stdruntime.Gosched()
 
 	releasedBeforeTick := false
@@ -531,7 +535,11 @@ func TestLandingOwnerComponentReleaseLeavesNoCadenceChild(t *testing.T) {
 	<-started
 	released := make(chan error, 1)
 	go func() { released <- release() }()
-	<-cadence.stopping
+	select {
+	case <-cadence.stopping:
+	case err := <-released:
+		t.Fatalf("landing-owner release returned before cadence stopping began: %v", err)
+	}
 	stdruntime.Gosched()
 
 	releasedBeforeChild := false
