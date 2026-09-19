@@ -1,0 +1,16 @@
+# test-executables-never-busy-on-linux
+
+- State: queued
+- Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="severity 2: a Linux red on main fails every proof that runs internal/goal on the VM and hides real reds behind a known flake; novelty 1: the fork lock is the documented way to create descriptors safely around fork, and the change is one helper plus mechanical call-site moves; exposure 2: test code only, about 148 sites in about 20 packages; accumulation 1: the guard test keeps new executable writes on the helper"
+- Tier: 2
+- Intent: Main is red on Linux. Seat m1c found it on 2026-09-19 at about 18:46 CEST: the whole internal/goal package, run on the VM metasystem-debian inside a real module tree at main 5f3f9d24f, failed 3 runs of 3 with "fork/exec .../scripts/agents/adapters/authority-test.sh: text file busy" (evidence in /Users/wido/LocalStorage/hact-20260912/m1c-dm-0917/etxtbsy/). The cause is Go issue 22315. A test writes a script with os.WriteFile while a parallel test forks. The forked child holds a copy of the write descriptor until it execs, and Linux refuses to exec a file that is open for writing (ETXTBSY). darwin does not refuse, so the host stays green. The module has about 148 test sites that write a file with an execute bit, in about 20 packages, so the same race waits in all of them. m1e ruled at about 18:50 CEST that a red on main outranks the rest and asked for this goal in Wido's name under the mission grant (Wido 16:40 CEST: "yes you are allowed to open / approve / whatever in my name while working on this mssion"). DONE: (1) One testutil helper writes a test executable while it holds syscall.ForkLock for reading across open, write and close, so no fork in the test binary can copy the descriptor. (2) Every test in the module that writes a file with an execute bit goes through that helper. A guard test refuses os.WriteFile, os.OpenFile and os.Chmod with an execute bit in any _test.go outside the helper, and turns red when one site goes back. (3) The internal/goal whole package passes 3 runs of 3 on the Linux VM, where main fails 3 of 3, and every package the change touches passes on darwin and on the VM. (4) Test-only: no production change, no retry, no skip, no raised bound.
+- Origin: human
+- Next step: m1c owns this red on main. Cause: ETXTBSY from test scripts written with os.WriteFile while parallel tests fork (Go issue 22315); witness: the internal/goal whole package on the VM, red 3 of 3 at main 5f3f9d24f. Fix: a testutil helper that holds syscall.ForkLock.RLock across open, write and close, every executable write in the module routed through it, a guard test; built on Codex through launch start on the fix branch goal/test-executables-never-busy-on-linux on origin. It goes first into push 15 when green on darwin and the VM.
+- OpenedAt: 2026-09-19T16:50:06Z
+- Revision: 1
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
+- BudgetExceptions: 0
+
+History:
+- 2026-09-19T16:50:06Z 5Y1JAWSDZBQ0KB73JJP21J9PKE-m1e-c6925449 open actor=human:Wido targets=test-executables-never-busy-on-linux
+Integrity: sha256=c4c42cace6483883363fec5b77a0ffba46cf9603fcaa8111de4a9ddf4c7435f3
