@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 func TestExecutionGuardRegistersSpawnedMemberUntilLastRelease(t *testing.T) {
@@ -54,19 +56,64 @@ func TestExecutionGuardQueuesReportsExpiryAndCleansDeadHolder(t *testing.T) {
 	if err := holderProcess.Start(); err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		_ = holderProcess.Process.Kill()
+		_, _ = holderProcess.Process.Wait()
+	}()
 	holderPid := int64(holderProcess.Process.Pid)
 	if result, err := AcquireExecutionGuard(root, holderPid, "long suite", time.Second, time.Second, &bytes.Buffer{}); err != nil || result != GuardAcquired {
 		t.Fatalf("holder acquire: result=%v err=%v", result, err)
 	}
+	holder, err := readExecutionGuardRecord(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	realClock := clock
+	realLockAcquire := executionGuardLockAcquire
+	defer func() {
+		clock = realClock
+		executionGuardLockAcquire = realLockAcquire
+	}()
+	fakeStart := time.Date(2026, time.September, 18, 12, 0, 0, 0, time.UTC)
+	fakeNow := fakeStart
+	clockReads := 0
+	var lockWaits []time.Duration
+	clock = func() time.Time {
+		clockReads++
+		if clockReads > 12 {
+			t.Fatalf("fake clock read %d times after lock waits %v; guard bypassed its injected lock wait", clockReads, lockWaits)
+		}
+		return fakeNow
+	}
+	executionGuardLockAcquire = func(path string, self lock.Identity, opts lock.Options) (*lock.Lock, error) {
+		lockWaits = append(lockWaits, opts.Wait)
+		if len(lockWaits) > 2 {
+			t.Fatalf("injected lock wait called %d times; observed waits %v", len(lockWaits), lockWaits)
+		}
+		if opts.Now == nil || !opts.Now().Equal(fakeNow) {
+			t.Fatalf("lock wait did not receive the guard clock at %s", fakeNow)
+		}
+		fakeNow = fakeNow.Add(opts.Wait)
+		return nil, &lock.HolderError{Path: path, Holder: holder.identity(), State: lock.Alive}
+	}
 
 	var notes bytes.Buffer
-	_, err := AcquireExecutionGuard(root, int64(os.Getpid()), "dispatch", 140*time.Millisecond, 30*time.Millisecond, &notes)
+	_, err = AcquireExecutionGuard(root, int64(os.Getpid()), "dispatch", 140*time.Millisecond, 30*time.Millisecond, &notes)
 	if err == nil || !strings.Contains(err.Error(), "waiting for long suite") {
 		t.Fatalf("expiry did not name its holder: %v", err)
 	}
 	if !strings.Contains(notes.String(), "waiting for long suite") {
 		t.Fatalf("bounded wait emitted no progress note: %q", notes.String())
 	}
+	if len(lockWaits) != 2 || lockWaits[0] != 100*time.Millisecond || lockWaits[1] != 40*time.Millisecond {
+		t.Fatalf("lock waits = %v; want 100ms then 40ms", lockWaits)
+	}
+	if elapsed := fakeNow.Sub(fakeStart); elapsed != 140*time.Millisecond {
+		t.Fatalf("fake elapsed = %s; want 140ms", elapsed)
+	}
+	clock = realClock
+	executionGuardLockAcquire = realLockAcquire
 
 	if err := holderProcess.Process.Kill(); err != nil {
 		t.Fatal(err)

@@ -36,6 +36,8 @@ type executionGuardRecord struct {
 	Members      []executionGuardMember `json:"members"`
 }
 
+var executionGuardLockAcquire = lock.Acquire
+
 func executionGuardPath(root string) string {
 	return filepath.Join(markerDir(root), "checkout-execution.lock.d")
 }
@@ -248,7 +250,7 @@ func AcquireExecutionGuard(root string, pid int64, owner string, wait, progress 
 	if err != nil {
 		return GuardAcquired, err
 	}
-	started := time.Now()
+	started := clock()
 	deadline := started.Add(wait)
 	lastProgress := started
 	probe := executionGuardProbe(root)
@@ -258,7 +260,7 @@ func AcquireExecutionGuard(root string, pid int64, owner string, wait, progress 
 		} else if joined {
 			return GuardJoined, nil
 		}
-		remaining := time.Until(deadline)
+		remaining := deadline.Sub(clock())
 		if remaining <= 0 {
 			remaining = time.Millisecond
 		}
@@ -271,8 +273,8 @@ func AcquireExecutionGuard(root string, pid int64, owner string, wait, progress 
 			Generation: 1, AcquiredAt: clock().UTC().Format("2006-01-02T15:04:05Z"),
 			Members: []executionGuardMember{self},
 		}
-		_, acquireErr := lock.Acquire(executionGuardPath(root), record.identity(), lock.Options{
-			Wait: slice, Poll: 25 * time.Millisecond, Probe: probe, Codec: executionGuardCodec{record: record},
+		_, acquireErr := executionGuardLockAcquire(executionGuardPath(root), record.identity(), lock.Options{
+			Wait: slice, Poll: 25 * time.Millisecond, Now: clock, Probe: probe, Codec: executionGuardCodec{record: record},
 			OnStale: func(holder lock.Identity) {
 				fmt.Fprintf(notes, "checkout execution guard: removed stale holder %s (pid %d, started %d)\n", holder.Label, holder.Pid, holder.PidStartedAt)
 			},
@@ -284,7 +286,7 @@ func AcquireExecutionGuard(root string, pid int64, owner string, wait, progress 
 		if !errors.As(acquireErr, &holderErr) {
 			return GuardAcquired, acquireErr
 		}
-		now := time.Now()
+		now := clock()
 		if now.Sub(lastProgress) >= progress {
 			fmt.Fprintf(notes, "checkout execution guard: waiting for %s (pid %d); elapsed %s\n", holderErr.Holder.Label, holderErr.Holder.Pid, now.Sub(started).Round(time.Second))
 			lastProgress = now
