@@ -135,6 +135,31 @@ func TestBuildSizeComesFromTheUnitRowsOrTheBriefLine(t *testing.T) {
 	}
 }
 
+func TestSizesFromTableStopsAtTheFirstNonTableLine(t *testing.T) {
+	t.Parallel()
+	page := strings.Join([]string{
+		"| Unit | Lines |",
+		"| --- | --- |",
+		"| first | 40 |",
+		"Count the output with command | wc -l.",
+		"```sh",
+		"printf '%s\\n' value | sed 's/value/other/'",
+		"```",
+		"| Unit | Lines |",
+		"| --- | --- |",
+		"| later | 900 |",
+	}, "\n")
+
+	units, size, err := sizesFromTable(page, nil)
+	if err != nil || size != 40 || len(units) != 1 || units[0] != (UnitSize{Name: "first", Lines: 40}) {
+		t.Fatalf("units=%+v size=%d err=%v", units, size, err)
+	}
+	units, size, err = sizesFromTable("| Unit | Lines |\n| --- | --- |\n| first | 40 |\n\n| later | 900 |\n", nil)
+	if err != nil || size != 40 || len(units) != 1 || units[0].Name != "first" {
+		t.Fatalf("blank boundary: units=%+v size=%d err=%v", units, size, err)
+	}
+}
+
 func TestUnsizedBuildRefuses(t *testing.T) {
 	_, _, err := buildSize(StartSpec{Brief: writeLaunchFile(t, "brief", "none\n")})
 	if err == nil || !strings.Contains(err.Error(), "LAUNCH_BUILD_UNSIZED missing=declared-size") {

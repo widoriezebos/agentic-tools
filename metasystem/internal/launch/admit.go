@@ -209,6 +209,9 @@ func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
 	seen := map[string]bool{}
 	var result []UnitSize
 	for _, line := range lines[header+1:] {
+		if !strings.HasPrefix(strings.TrimSpace(line), "|") {
+			break
+		}
 		cells := tableCells(line)
 		if len(cells) <= sizeColumn || separatorRow(cells) {
 			continue
