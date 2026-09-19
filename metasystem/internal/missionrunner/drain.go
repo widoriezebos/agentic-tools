@@ -76,14 +76,14 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 		if len(active) == 0 {
 			return nil, nil
 		}
-		if time.Since(lastReap) >= reapEvery {
-			lastReap = time.Now()
+		if now := runClock.now(); now.Sub(lastReap) >= reapEvery {
+			lastReap = now
 			// Reaps come before waits: the runner's R1/R2 reap clears what
 			// is provably dead, then the dispatch-owned reap runs per job
 			// exactly as the drain always ran it (budget wind-downs stay
 			// with the code that owns process lifecycles — the runner has
 			// no kill authority).
-			if err := e.reapReservedRecords(time.Now()); err != nil {
+			if err := e.reapReservedRecords(runClock.now()); err != nil {
 				return nil, err
 			}
 			for _, record := range active {
@@ -98,7 +98,7 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 		// follow-up reserved mid-drain lawfully extends it, a record gaining
 		// a capDeadline moves to the real clock, and the park condition is
 		// judged against this same pass's deadline.
-		now := time.Now()
+		now := runClock.now()
 		if deadline := drainDeadline(live, now); !deadline.After(now) {
 			// A kill-capable reap is still OWED before any park: the reap
 			// cadence is coarser than the slack the deadline leaves, so a
@@ -113,21 +113,21 @@ func (e *Engine) drainJobs(statePath, ledger, turnID string, cycle int64) (map[s
 			// must not park the drain while this branch — the one
 			// that concludes a marked dead group cancelled — never
 			// saw the record's current phase.
-			if err := e.reapReservedRecords(time.Now()); err != nil {
+			if err := e.reapReservedRecords(runClock.now()); err != nil {
 				return nil, err
 			}
-			lastReap = time.Now()
+			lastReap = runClock.now()
 			live = activeJobRecords(e.Root, e.Mission)
 			if len(live) == 0 {
 				return nil, nil
 			}
-			now = time.Now()
+			now = runClock.now()
 			if deadline := drainDeadline(live, now); deadline.After(now) {
 				continue // the owed reap extended or resolved the deadline
 			}
 			return e.parkDrainStalled(statePath, ledger, turnID, cycle, e.drainSurvivors(live, now))
 		}
-		time.Sleep(poll)
+		runClock.sleep(poll)
 	}
 }
 

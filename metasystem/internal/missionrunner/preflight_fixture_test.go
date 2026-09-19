@@ -3,6 +3,7 @@ package missionrunner
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,30 +82,43 @@ func fixtureGit(t *testing.T, dir string, args ...string) {
 }
 
 // spawnTaggedHold starts a live process whose argv carries the tag, and
-// returns its pid and kernel start time. The caller's cleanup kills it.
+// returns its pid and kernel start time. The caller's cleanup closes its hold
+// pipe and waits for the process to be reaped.
 func spawnTaggedHold(t *testing.T, tag string) (int, int64) {
 	t.Helper()
-	cmd := exec.Command("bash", "-c", "exec -a "+tag+" sleep 120")
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	holdRead, holdWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", "-c", `printf x >&3; read -r _ <&4`,
+		"metasystem", "util", "hold", "--tag", tag)
+	cmd.ExtraFiles = []*os.File{readyWrite, holdRead}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	go cmd.Wait()
-	t.Cleanup(func() { _ = cmd.Process.Kill() })
-	// Wait out the fork-to-exec window: immediately after Start the argv
-	// is empty and the probe under-reports (the nested-gate flake's root).
-	var exact identity.Exact
-	for deadline := time.Now().Add(wiringBound); time.Now().Before(deadline); {
-		probed, state, err := identity.KernelProber{}.Probe(int64(cmd.Process.Pid))
-		if err == nil && state == identity.Alive && probed.ArgvKnown &&
-			strings.Contains(strings.Join(probed.Argv, " "), tag) {
-			exact = probed
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	readyWrite.Close()
+	holdRead.Close()
+	waited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(waited) }()
+	t.Cleanup(func() {
+		holdWrite.Close()
+		<-waited
+		readyRead.Close()
+	})
+	ready := []byte{0}
+	if _, err := io.ReadFull(readyRead, ready); err != nil || ready[0] != 'x' {
+		t.Fatalf("tagged holder pid %d did not publish readiness: byte=%q err=%v", cmd.Process.Pid, ready, err)
 	}
-	if exact.Pid == 0 {
-		t.Skipf("argv tagging not visible on this host")
+	exact, state, err := identity.KernelProber{}.Probe(int64(cmd.Process.Pid))
+	if err != nil || state != identity.Alive || !exact.ArgvKnown ||
+		!strings.Contains(strings.Join(exact.Argv, " "), tag) {
+		t.Fatalf("ready tagged holder pid %d was not visible: state=%s argvKnown=%v argv=%q err=%v",
+			cmd.Process.Pid, state, exact.ArgvKnown, exact.Argv, err)
 	}
 	return cmd.Process.Pid, exact.StartedAt.Unix()
 }
@@ -1002,6 +1016,10 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 	// start fits it at any scale.
 	engine := equipFullCycleBed(t, buildPreflightBed(t, "FAKEHOST:close-stream", true))
 	statePath := filepath.Join(engine.missionDir(), "state.json")
+	teardownBound, err := ScaledWaitAtLeast(10, 10*killThroughFloor)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		recordPath, _, _ := engine.runnerPaths()
 		record, err := readJSONDoc(recordPath)
@@ -1074,14 +1092,14 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 			}
 			_ = syscall.Kill(-int(recPgid), syscall.SIGKILL)
 		}
-		deadline := time.Now().Add(wiringBound)
+		deadline := time.Now().Add(teardownBound)
 		for _, g := range groups {
 			for {
 				if err := syscall.Kill(-int(g), 0); err != nil {
 					break
 				}
 				if time.Now().After(deadline) {
-					t.Errorf("mission-birth teardown: process group %d still alive after %s; TempDir removal would race it", g, wiringBound)
+					t.Errorf("mission-birth teardown: process group %d still alive after %s; TempDir removal would race it", g, teardownBound)
 					break
 				}
 				time.Sleep(50 * time.Millisecond)
@@ -1094,7 +1112,7 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 		// inside this test's private TempDir: sweep by cwd, then wait
 		// the directory quiet before TempDir removal runs.
 		checkout := filepath.Dir(engine.Root)
-		sweepDeadline := time.Now().Add(wiringBound)
+		sweepDeadline := time.Now().Add(teardownBound)
 		for {
 			live := 0
 			if pids, pidErr := identity.AllPids(); pidErr == nil {
@@ -1111,34 +1129,22 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 				break
 			}
 			if time.Now().After(sweepDeadline) {
-				t.Errorf("mission-birth teardown: %d process(es) still working under %s after %s; TempDir removal would race them", live, checkout, wiringBound)
+				t.Errorf("mission-birth teardown: %d process(es) still working under %s after %s; TempDir removal would race them", live, checkout, teardownBound)
 				break
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
 	})
 	cmd := exec.Command(filepath.Join(engine.Root, "bin", "metasystem"),
-		"mission", "start", "--root", engine.Root, "--mission", engine.Mission)
+		"mission", "start", "--root", engine.Root, "--mission", engine.Mission, "--foreground")
 	cmd.Dir = engine.Root
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("the nested start must give birth: %v\n%s", err, out)
 	}
-	// A nested engine run measures fifteen seconds on a quiet box; the
-	// bound is ten times that.
-	deadline := time.Now().Add(180 * time.Second)
-	var state map[string]any
-	for {
-		state, err = readJSONDoc(statePath)
-		if err == nil {
-			if status, _ := state["status"].(string); status != "" && status != "running" {
-				break
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the nested mission reached no terminal: %v (%v)", state, err)
-		}
-		time.Sleep(200 * time.Millisecond)
+	state, err := readJSONDoc(statePath)
+	if err != nil {
+		t.Fatalf("the foreground nested mission returned without terminal state: %v", err)
 	}
 	status, _ := state["status"].(string)
 	reason, _ := state["parkReason"].(string)

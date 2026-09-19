@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -63,6 +64,12 @@ func fixtureOrphanTurn(t *testing.T) (string, Item, *exec.Cmd) {
 	}
 	item.Liveness = identity.Alive.String()
 	return root, item, command
+}
+
+func installWindDownClockWaitingFor(t *testing.T, waited <-chan struct{}) {
+	t.Helper()
+	installFakeClock(t)
+	windDown.sleep = func(time.Duration) { <-waited }
 }
 
 func TestInventoryFindsOrphanTurnWithoutRunner(t *testing.T) {
@@ -195,9 +202,7 @@ func TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost(t *testing.T) {
 	waited := make(chan struct{})
 	go func() { _ = command.Wait(); close(waited) }()
 	t.Cleanup(func() { _ = command.Process.Kill(); <-waited })
-	// The default TERM grace stays: it bounds the fact the stop waits for
-	// (a real group ending) and a compressed grace turned a slow box's
-	// reap into an escalation to KILL and a red.
+	installWindDownClockWaitingFor(t, waited)
 
 	engine := NewEngine(root, "orphan")
 	recordPath, _, _ := engine.runnerPaths()
@@ -257,9 +262,7 @@ func TestStopLiveRunnerSignalsOwnedGroup(t *testing.T) {
 	waited := make(chan struct{})
 	go func() { _ = command.Wait(); close(waited) }()
 	t.Cleanup(func() { _ = command.Process.Kill(); <-waited })
-	// The default TERM grace stays: it bounds the fact the stop waits for
-	// (a real group ending) and a compressed grace turned a slow box's
-	// reap into an escalation to KILL and a red.
+	installWindDownClockWaitingFor(t, waited)
 	runner.Kind = ItemRunner
 	engine := NewEngine(root, runner.MissionID)
 	runner.RecordPath, _, _ = engine.runnerPaths()

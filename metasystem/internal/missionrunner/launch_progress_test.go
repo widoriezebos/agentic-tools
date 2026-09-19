@@ -1,8 +1,12 @@
 package missionrunner
 
 import (
+	"bufio"
+	"io"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -62,13 +66,30 @@ func TestTreeCPUProgressOnAScriptedSampler(t *testing.T) {
 	if !progress.advanced(now.Add(5*time.Second)) || taken != 6 {
 		t.Fatalf("growth after an unreadable sample was missed (samples %d)", taken)
 	}
+
+	original := runClock
+	artificialNow := now
+	nowCalls, sleeps := 0, 0
+	runClock.now = func() time.Time { nowCalls++; return artificialNow }
+	runClock.sleep = func(wait time.Duration) { artificialNow = artificialNow.Add(wait); sleeps++ }
+	t.Cleanup(func() { runClock = original })
+	window := newLaunchVerificationWindow(15 * time.Second)
+	windowProgress := newTreeCPUProgress(4243)
+	windowProgress.interval = 0
+	windowProgress.sample = func(int) (float64, bool) { return float64(nowCalls), true }
+	window.extendOnProgress(windowProgress) // establishes the first sample
+	window.pause(time.Second)
+	window.extendOnProgress(windowProgress) // observed growth extends the window
+	if window.deadline != now.Add(16*time.Second) || window.ceiling != now.Add(120*time.Second) ||
+		sleeps != 1 || nowCalls < 3 || !window.open() {
+		t.Fatalf("artificial launch window: deadline=%s ceiling=%s sleeps=%d nowCalls=%d open=%v",
+			window.deadline, window.ceiling, sleeps, nowCalls, window.open())
+	}
 }
 
 // TestProcessTreeCPUSecondsCountsDescendants is the reader's wiring proof:
 // a busy child under a shell, and the tree's CPU time grows while the
 // shell itself sits in wait, so descendant time must be part of the sum.
-// It waits for the growth it asserts, bounded far above what a burner
-// needs to show up in ps.
 func TestProcessTreeCPUSecondsCountsDescendants(t *testing.T) {
 	// The shell and its burner share a process group of their own, and the
 	// group is what ends. A bare Process.Kill ended only the shell, before
@@ -76,43 +97,81 @@ func TestProcessTreeCPUSecondsCountsDescendants(t *testing.T) {
 	// full core behind it: ten of them burned through the night of
 	// 2026-09-11 under every cadence measurement (found 2026-09-12 08:40,
 	// parent launchd, start times matching the runs). The shell's own
-	// timer is the last resort should this process die before its cleanup,
-	// and sits far beyond the cleanup's bound so it never satisfies it.
-	command := exec.Command("sh", "-c", "yes >/dev/null & sleep 600; kill $!")
+	// lifetime pipe keeps cleanup tied to that whole group rather than only
+	// to the shell process returned by Start.
+	startRead, startWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifetimeRead, lifetimeWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportRead, reportWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The burner starts behind a pipe gate, consumes its own CPU in Bash,
+	// reports `times` on a second pipe, then becomes yes. The lifetime pipe's
+	// writer is inherited by the shell and burner; EOF therefore proves every
+	// member has exited after cleanup.
+	script := `bash -c '
+printf "%s\n" "$$" >&5
+read -r _ <&3
+i=0
+while [ "$i" -lt 50000 ]; do i=$((i + 1)); done
+times >&5
+exec yes >/dev/null
+' &
+wait`
+	command := exec.Command("bash", "-c", script)
+	command.ExtraFiles = []*os.File{startRead, lifetimeWrite, reportWrite}
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
+	startRead.Close()
+	lifetimeWrite.Close()
+	reportWrite.Close()
 	group := command.Process.Pid
+	burnerPID := 0
 	t.Cleanup(func() {
+		startWrite.Close()
 		_ = syscall.Kill(-group, syscall.SIGKILL)
-		_ = command.Wait()
-		// The burner is launchd's to reap once the shell is gone; a killed
-		// process answers signal 0 until it is reaped (cadence run 12 read
-		// the group alive 2 ms after the kill).
-		deadline := time.Now().Add(wiringBound)
-		for syscall.Kill(-group, 0) == nil {
-			if time.Now().After(deadline) {
-				t.Errorf("the burner outlived the test in process group %d", group)
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
+		if burnerPID > 0 {
+			_ = syscall.Kill(burnerPID, syscall.SIGKILL)
 		}
+		_ = command.Wait()
+		if _, err := io.Copy(io.Discard, lifetimeRead); err != nil {
+			t.Errorf("read process-group lifetime pipe: %v", err)
+		}
+		lifetimeRead.Close()
+		reportRead.Close()
 	})
+	reportReader := bufio.NewReader(reportRead)
+	pidLine, err := reportReader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("burner did not report its pid: %v", err)
+	}
+	burnerPID, err = strconv.Atoi(strings.TrimSpace(pidLine))
+	if err != nil || burnerPID < 2 {
+		t.Fatalf("burner pid report %q: %v", pidLine, err)
+	}
 	first, ok := processTreeCPUSeconds(group)
 	if !ok {
 		t.Skip("platform process reader is unavailable on this test host")
 	}
-	deadline := time.Now().Add(wiringBound)
-	for {
-		second, ok := processTreeCPUSeconds(group)
-		if ok && second > first {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("descendant CPU did not grow within %s: first=%v last=%v ok=%v", wiringBound, first, second, ok)
-		}
-		time.Sleep(100 * time.Millisecond)
+	if _, err := startWrite.Write([]byte("burn\n")); err != nil {
+		t.Fatal(err)
+	}
+	startWrite.Close()
+	reported, err := reportReader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("burner did not report its CPU fact: %v", err)
+	}
+	second, ok := processTreeCPUSeconds(group)
+	if !ok || second <= first {
+		t.Fatalf("descendant CPU did not grow after burner report %q: first=%v second=%v ok=%v", reported, first, second, ok)
 	}
 	if _, ok := processTreeCPUSeconds(os.Getpid() + 1_000_000); ok {
 		t.Fatal("an absent process must report no sample")

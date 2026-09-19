@@ -28,6 +28,17 @@ type hostProcess struct {
 	done chan struct{}
 }
 
+// runClock is the runner's pacing clock. Production uses wall time; tests
+// can replace the three operations so deadlines, sleeps, and bounded
+// process waits advance on one artificial timeline.
+type runClockSeam struct {
+	now   func() time.Time
+	sleep func(time.Duration)
+	after func(time.Duration) <-chan time.Time
+}
+
+var runClock = runClockSeam{now: time.Now, sleep: time.Sleep, after: time.After}
+
 // startProcess starts a command and begins its one Wait in the background.
 func startProcess(cmd *exec.Cmd) (*hostProcess, error) {
 	if err := cmd.Start(); err != nil {
@@ -57,7 +68,7 @@ func (p *hostProcess) waitFor(limit time.Duration) bool {
 	select {
 	case <-p.done:
 		return true
-	case <-time.After(limit):
+	case <-runClock.after(limit):
 		return false
 	}
 }
@@ -76,6 +87,35 @@ func (p *hostProcess) exitCode() int {
 // minted. A fixture may force the unverified path to exercise the refusal.
 func hostStartVerified(pid, pgid int, command, tag string, forceUnverified bool) bool {
 	return !forceUnverified && pgid == pid && strings.Contains(command, tag)
+}
+
+// awaitHostStart owns the bounded polling clock for the host-start proof.
+// The probe owns process and identity facts; this function only orders those
+// facts, runner heartbeats, and the artificial-clock-friendly cadence.
+func awaitHostStart(
+	grace, poll time.Duration,
+	probe func() (exited bool, started int64, haveStarted, verified bool),
+	heartbeat func() error,
+) (started int64, haveStarted, verified bool, err error) {
+	deadline := runClock.now().Add(grace)
+	for !runClock.now().After(deadline) {
+		exited, observedStart, observed, proven := probe()
+		if exited {
+			break
+		}
+		if observed {
+			started, haveStarted = observedStart, true
+		}
+		if proven {
+			verified = true
+			break
+		}
+		if err := heartbeat(); err != nil {
+			return 0, false, false, err
+		}
+		runClock.sleep(poll)
+	}
+	return started, haveStarted, verified, nil
 }
 
 // terminateGroup is the best-effort wind-down of a host group this runner
@@ -108,6 +148,9 @@ var windDown = windDownSeam{
 	now: time.Now, sleep: time.Sleep, groupAlive: groupAlive,
 	groupHasSubstantiveMember: groupHasSubstantiveMember, groupOwnership: groupOwnership,
 }
+
+// killThroughFloor is the minimum post-SIGKILL observation window.
+const killThroughFloor = time.Second
 
 func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, error) {
 	if !windDown.groupAlive(pgid) {
@@ -182,7 +225,7 @@ func (e *Engine) terminateGroup(pgid int, tag string, allowFake bool) (string, e
 			return TerminationTerm, nil
 		}
 		_ = stopSignal(-pgid, syscall.SIGKILL)
-		killFloor, floorErr := ScaledWaitAtLeast(1, time.Second)
+		killFloor, floorErr := ScaledWaitAtLeast(1, killThroughFloor)
 		if floorErr != nil {
 			return "", floorErr
 		}
@@ -395,32 +438,28 @@ func (e *Engine) spawnAndVerifyHost(l *hostLaunch) (code int, detail string, don
 	l.process = process
 	l.pid = l.command.Process.Pid
 	forceUnverified := l.fakeRuntime && os.Getenv("METASYSTEM_FAKE_HOST_START_UNVERIFIED") == "1"
-	deadline := time.Now().Add(grace)
-	var started int64
-	haveStarted := false
-	verified := false
-	for !time.Now().After(deadline) {
+	started, haveStarted, verified, err := awaitHostStart(grace, handshakePoll, func() (bool, int64, bool, bool) {
 		if process.exited() {
-			break
+			return true, 0, false, false
 		}
 		if at, err := processStartedAt(l.pid); err == nil {
-			started, haveStarted = at, true
 			published := true
 			if l.fakeRuntime && publishFakeIdentityForEngine(e, l.pid, at, l.tag) != nil {
 				published = false
 			}
 			if published {
 				pgid, pgErr := unix.Getpgid(l.pid)
-				verified = pgErr == nil && hostStartVerified(l.pid, pgid, processCommand(l.pid, hostCommandProbe(e, l.fakeRuntime)), l.tag, forceUnverified)
+				return false, at, true, pgErr == nil && hostStartVerified(l.pid, pgid,
+					processCommand(l.pid, hostCommandProbe(e, l.fakeRuntime)), l.tag, forceUnverified)
 			}
+			return false, at, true, false
 		}
-		if verified {
-			break
-		}
-		if err := e.heartbeat(l.turnID); err != nil {
-			return 0, "", false, err
-		}
-		time.Sleep(handshakePoll)
+		return false, 0, false, false
+	}, func() error {
+		return e.heartbeat(l.turnID)
+	})
+	if err != nil {
+		return 0, "", false, err
 	}
 	if !verified || !haveStarted {
 		if !process.exited() {

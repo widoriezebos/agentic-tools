@@ -2,12 +2,11 @@ package missionrunner
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
@@ -18,24 +17,38 @@ import (
 // spawnTaggedGroup starts a real process group whose leader's argv carries
 // the tag in the janitor's tagged-hold positional shape. termImmune leaders
 // ignore SIGTERM so only the kill-through path can end them.
-func spawnTaggedGroup(t *testing.T, tag string, termImmune bool) *exec.Cmd {
+type taggedTestGroup struct {
+	cmd          *exec.Cmd
+	waited       <-chan struct{}
+	lifetimeRead *os.File
+}
+
+func spawnTaggedGroup(t *testing.T, tag string, termImmune bool) *taggedTestGroup {
 	t.Helper()
-	ready := filepath.Join(t.TempDir(), "ready")
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifetimeRead, lifetimeWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	// The trailing no-op keeps Bash from replacing the positioned, tagged
-	// leader with its final external command. The ready file is published by
-	// that leader only after any TERM trap has been installed. The holder
-	// outlives the wiring bound by an order of magnitude: a group gone
-	// within the bound was wound down, never dead of old age.
-	script := `: > "$METASYSTEM_TEST_OWNER_READY"; sleep 600; :`
+	// leader with its final external command. Its child writes readiness only
+	// after inheriting the leader's TERM disposition. Both inherit the lifetime
+	// writer, so EOF proves the whole group has exited.
+	script := `bash -c 'printf x >&3; exec 3>&-; exec sleep 600' & wait; :`
 	if termImmune {
-		script = `trap "" TERM; : > "$METASYSTEM_TEST_OWNER_READY"; sleep 600; :`
+		script = `trap "" TERM; bash -c 'printf x >&3; exec 3>&-; exec sleep 600' & wait; :`
 	}
 	cmd := exec.Command("bash", "-c", script, "metasystem", "util", "hold", "--tag", tag)
-	cmd.Env = append(os.Environ(), "METASYSTEM_TEST_OWNER_READY="+ready)
+	cmd.ExtraFiles = []*os.File{readyWrite, lifetimeWrite}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	readyWrite.Close()
+	lifetimeWrite.Close()
 	// Reap concurrently: an unreaped leader is a zombie that keeps its
 	// group technically alive after the kill, which is this harness's
 	// artifact, not the wind-down's failure (the same rule the older
@@ -43,28 +56,24 @@ func spawnTaggedGroup(t *testing.T, tag string, termImmune bool) *exec.Cmd {
 	waited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(waited) }()
 	t.Cleanup(func() {
-		// An unreaped leader is still ours, whatever its argv reads now; a
-		// reaped one may have handed its pid on, and only a leader still
-		// carrying the tag proves the group is ours to end.
 		select {
 		case <-waited:
-			if taggedGroupLeader(cmd.Process.Pid, tag) {
-				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			}
 		default:
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			<-waited
 		}
+		_, _ = io.Copy(io.Discard, lifetimeRead)
+		lifetimeRead.Close()
+		readyRead.Close()
 	})
-	deadline := time.Now().Add(wiringBound)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(ready); err == nil && taggedGroupLeader(cmd.Process.Pid, tag) {
-			return cmd
-		}
-		time.Sleep(10 * time.Millisecond)
+	ready := []byte{0}
+	if _, err := io.ReadFull(readyRead, ready); err != nil || ready[0] != 'x' {
+		t.Fatalf("tagged test owner pid %d did not publish readiness: byte=%q err=%v", cmd.Process.Pid, ready, err)
 	}
-	t.Fatalf("tagged test owner pid %d never became a kernel-visible positioned group leader", cmd.Process.Pid)
-	return cmd
+	if !taggedGroupLeader(cmd.Process.Pid, tag) {
+		t.Fatalf("ready tagged test owner pid %d was not a positioned group leader", cmd.Process.Pid)
+	}
+	return &taggedTestGroup{cmd: cmd, waited: waited, lifetimeRead: lifetimeRead}
 }
 
 func taggedGroupLeader(pid int, tag string) bool {
@@ -77,15 +86,9 @@ func taggedGroupLeader(pid int, tag string) bool {
 	return err == nil && pgid == pid && positioned
 }
 
-func waitGroupDead(pgid int, patience time.Duration) bool {
-	deadline := time.Now().Add(patience)
-	for time.Now().Before(deadline) {
-		if !groupAlive(pgid) {
-			return true
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	return !groupAlive(pgid)
+func waitGroupDead(group *taggedTestGroup) {
+	<-group.waited
+	_, _ = io.Copy(io.Discard, group.lifetimeRead)
 }
 
 func censusHoldsGroup(pgid int, observed census.TaggedProcessCensus) bool {
@@ -218,12 +221,13 @@ func TestTerminateGroupLeaksNoGroupsUnderCompression(t *testing.T) {
 	abandonedToCensus := 0
 	for cycle := 0; cycle < 4; cycle++ {
 		tag := fmt.Sprintf("metasystem-job-scale-%d-%d", os.Getpid(), cycle)
-		cmd := spawnTaggedGroup(t, tag, cycle%2 == 1)
-		pgid := cmd.Process.Pid
-		_, windDownErr := engine.terminateGroup(pgid, tag, false)
+		group := spawnTaggedGroup(t, tag, cycle%2 == 1)
+		pgid := group.cmd.Process.Pid
+		termination, windDownErr := engine.terminateGroup(pgid, tag, false)
 		// A wind-down that reports a leak is one, whatever the group does
 		// afterwards; only a clean wind-down earns the wait for its death.
-		if windDownErr == nil && waitGroupDead(pgid, wiringBound) {
+		if windDownErr == nil && termination != TerminationAlreadyGone {
+			waitGroupDead(group)
 			continue
 		}
 		classification, observed := classifyLiveWindDown(pgid, windDownErr, func() census.TaggedProcessCensus {

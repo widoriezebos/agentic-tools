@@ -160,10 +160,11 @@ func TestDrainReapCadenceIsDecoupled(t *testing.T) {
 	root := t.TempDir()
 	mission := "demo"
 	jobs := jobsDirPath(root)
+	clockNow := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
 	// One active job whose deadline is far away, so the drain loops.
 	writeJSONFile(t, filepath.Join(jobs, "busy.json"), map[string]any{
 		"jobId": "busy", "mission": mission, "status": "running",
-		"startedAt": time.Now().UTC().Format(time.RFC3339), "capMin": 30,
+		"startedAt": clockNow.Format(time.RFC3339), "capMin": 30,
 	})
 	// The runner record the heartbeat reads.
 	writeJSONFile(t, filepath.Join(root, "artifacts", "agents", "missions", "runners", mission+".json"),
@@ -179,11 +180,7 @@ count_file="$(dirname "$0")/reaps"
 echo x >> "$count_file"
 if [ "$(wc -l < "$count_file")" -ge 2 ]; then
   record="$(dirname "$0")/../../artifacts/agents/jobs/busy.json"
-  python3 - "$record" <<'PY'
-import json, sys
-v = json.load(open(sys.argv[1])); v["status"] = "completed"
-open(sys.argv[1], "w").write(json.dumps(v))
-PY
+  printf '%s\n' '{"jobId":"busy","mission":"demo","status":"completed"}' > "$record"
 fi
 exit 0
 `
@@ -193,20 +190,29 @@ exit 0
 
 	t.Setenv("METASYSTEM_HEARTBEAT_INTERVAL_MS", "10")
 	t.Setenv("METASYSTEM_DRAIN_REAP_INTERVAL_MS", "300")
+	original := runClock
+	sleeps := 0
+	runClock.now = func() time.Time { return clockNow }
+	runClock.sleep = func(wait time.Duration) {
+		if wait != 10*time.Millisecond {
+			t.Fatalf("drain sleep = %s, want heartbeat poll 10ms", wait)
+		}
+		clockNow = clockNow.Add(wait)
+		sleeps++
+	}
+	t.Cleanup(func() { runClock = original })
 	e := &Engine{Root: root, Mission: mission}
-	started := time.Now()
 	state, err := e.drainJobs(filepath.Join(root, "state.json"), filepath.Join(root, "ledger.md"), "t1", 1)
 	if err != nil || state != nil {
 		t.Fatalf("drain: state=%v err=%v", state, err)
 	}
-	// Two reap passes 300ms apart means the drain ran at least ~300ms while
-	// heartbeating every 10ms; at heartbeat-coupled cadence the stub would
-	// have been called dozens of times before its second line landed.
-	if elapsed := time.Since(started); elapsed < 250*time.Millisecond {
-		t.Fatalf("drain finished before a second decoupled reap could run: %v", elapsed)
+	// The artificial clock must cross the 300ms reap cadence through 10ms
+	// heartbeat sleeps before the second reap can finish the job.
+	if sleeps != 30 {
+		t.Fatalf("heartbeat sleeps before the second reap = %d, want 30", sleeps)
 	}
 	data, _ := os.ReadFile(filepath.Join(scripts, "reaps"))
-	if reaps := strings.Count(string(data), "x"); reaps > 4 {
-		t.Fatalf("reap ran at heartbeat speed: %d invocations", reaps)
+	if reaps := strings.Count(string(data), "x"); reaps != 2 {
+		t.Fatalf("reap count = %d, want exactly two cadence passes", reaps)
 	}
 }

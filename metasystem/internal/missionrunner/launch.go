@@ -758,19 +758,10 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 	// more than the fifteen-second window under a fully parallel battery).
 	// Only a tree that stops consuming for one whole window, or the
 	// absolute ceiling, ends the wait.
-	started := time.Now()
-	ceiling := started.Add(8 * verifyWindow)
-	deadline := started.Add(verifyWindow)
+	window := newLaunchVerificationWindow(verifyWindow)
 	progress := newTreeCPUProgress(command.Process.Pid)
-	for !time.Now().After(deadline) {
-		if progress.advanced(time.Now()) {
-			if extended := time.Now().Add(verifyWindow); extended.After(deadline) {
-				deadline = extended
-				if deadline.After(ceiling) {
-					deadline = ceiling
-				}
-			}
-		}
+	for window.open() {
+		window.extendOnProgress(progress)
 		if pathExists(signalPath) {
 			signal, err := readDocLabeled(signalPath, "runner start signal", 3)
 			if err != nil {
@@ -799,7 +790,7 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 			}
 			return failf(3, "%s", message)
 		}
-		time.Sleep(poll)
+		window.pause(poll)
 	}
 	if !process.exited() {
 		pid := command.Process.Pid
@@ -812,6 +803,43 @@ func (e *Engine) launch(mode string, foreground bool, generations ...int64) erro
 		}
 	}
 	return failf(3, "mission runner start verification timed out")
+}
+
+// launchVerificationWindow owns the start verifier's sliding deadline and
+// absolute ceiling. Its clock calls stay together so tests can prove the
+// extend-on-progress rule without starting or waiting for a process.
+type launchVerificationWindow struct {
+	span     time.Duration
+	deadline time.Time
+	ceiling  time.Time
+}
+
+func newLaunchVerificationWindow(span time.Duration) launchVerificationWindow {
+	started := runClock.now()
+	return launchVerificationWindow{
+		span: span, deadline: started.Add(span), ceiling: started.Add(8 * span),
+	}
+}
+
+func (w *launchVerificationWindow) open() bool {
+	return !runClock.now().After(w.deadline)
+}
+
+func (w *launchVerificationWindow) extendOnProgress(progress *treeCPUProgress) {
+	now := runClock.now()
+	if !progress.advanced(now) {
+		return
+	}
+	if extended := now.Add(w.span); extended.After(w.deadline) {
+		w.deadline = extended
+		if w.deadline.After(w.ceiling) {
+			w.deadline = w.ceiling
+		}
+	}
+}
+
+func (*launchVerificationWindow) pause(poll time.Duration) {
+	runClock.sleep(poll)
 }
 
 // treeCPUProgress samples the CPU time of a process and its descendants at

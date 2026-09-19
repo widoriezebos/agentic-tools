@@ -25,9 +25,7 @@ func TestStartProcessLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !process.waitFor(wiringBound) {
-		t.Fatal("never reaped")
-	}
+	<-process.done
 	if !process.exited() {
 		t.Fatal("reaped but not exited")
 	}
@@ -45,26 +43,37 @@ func TestWaitForBoundsItsWait(t *testing.T) {
 	if process.exited() {
 		t.Fatal("reported exited while sleeping")
 	}
-	started := time.Now()
+	original := runClock
+	fired := make(chan time.Time, 1)
+	afterCalls := 0
+	runClock.after = func(limit time.Duration) <-chan time.Time {
+		afterCalls++
+		if limit != 200*time.Millisecond {
+			t.Fatalf("wait bound = %s, want 200ms", limit)
+		}
+		fired <- time.Date(2026, 9, 18, 0, 0, 0, 0, time.UTC)
+		return fired
+	}
+	t.Cleanup(func() { runClock = original })
 	if process.waitFor(200 * time.Millisecond) {
 		t.Fatal("a running child reported reaped")
 	}
-	if time.Since(started) > 5*time.Second {
-		t.Fatal("the bound did not release the caller")
+	if afterCalls != 1 {
+		t.Fatalf("clock after calls = %d, want one", afterCalls)
 	}
 }
 
 func TestExitCodeShapes(t *testing.T) {
 	// A failing child reports its code.
 	process, _ := startProcess(exec.Command("false"))
-	process.waitFor(wiringBound)
+	<-process.done
 	if code := process.exitCode(); code != 1 {
 		t.Fatalf("false exited %d", code)
 	}
 	// A signaled child reads as -1, the plain-failure convention.
 	process, _ = startProcess(exec.Command("sleep", "30"))
 	process.cmd.Process.Signal(syscall.SIGKILL)
-	process.waitFor(wiringBound)
+	<-process.done
 	if code := process.exitCode(); code != -1 {
 		t.Fatalf("a signaled child read as %d", code)
 	}
@@ -86,6 +95,32 @@ func TestHostStartVerifiedMatrix(t *testing.T) {
 	}
 	if hostStartVerified(100, 100, "metasystem host --tag mr-x1", "mr-x1", true) {
 		t.Fatal("the fixture force-unverified path must refuse")
+	}
+
+	artificialNow := time.Date(2026, 9, 18, 1, 0, 0, 0, time.UTC)
+	original := runClock
+	nowCalls, sleeps, heartbeats, probes := 0, 0, 0, 0
+	runClock.now = func() time.Time { nowCalls++; return artificialNow }
+	runClock.sleep = func(wait time.Duration) {
+		if wait != 20*time.Millisecond {
+			t.Fatalf("host-start poll = %s, want 20ms", wait)
+		}
+		artificialNow = artificialNow.Add(wait)
+		sleeps++
+	}
+	t.Cleanup(func() { runClock = original })
+	started, haveStarted, verified, err := awaitHostStart(5*time.Second, 20*time.Millisecond,
+		func() (bool, int64, bool, bool) {
+			probes++
+			if probes == 2 && artificialNow != time.Date(2026, 9, 18, 1, 0, 0, 20_000_000, time.UTC) {
+				t.Fatalf("second probe saw artificial time %s", artificialNow)
+			}
+			return false, 77, true, probes == 2
+		},
+		func() error { heartbeats++; return nil })
+	if err != nil || !haveStarted || !verified || started != 77 || probes != 2 || heartbeats != 1 || sleeps != 1 || nowCalls < 2 {
+		t.Fatalf("artificial host-start result: started=%d have=%v verified=%v err=%v probes=%d heartbeats=%d sleeps=%d now=%d",
+			started, haveStarted, verified, err, probes, heartbeats, sleeps, nowCalls)
 	}
 }
 
