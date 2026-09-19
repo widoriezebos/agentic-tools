@@ -642,3 +642,93 @@ func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 		t.Fatalf("watcher run pass did not durably carry its projection: run=%+v state=%+v found=%t err=%v stateErr=%v", concluded, state, found, err, stateErr)
 	}
 }
+
+// nestedLandingCheckoutFixture builds the production shape of this repository: a
+// git checkout whose Go module sits in a nested metasystem directory. It returns
+// the checkout root and the installation root, which is what the steward passes
+// as --scope and --repo respectively.
+func nestedLandingCheckoutFixture(t *testing.T) (checkout, installation string) {
+	t.Helper()
+	// The host's own git configuration is kept out per command rather than with
+	// t.Setenv, which would forbid t.Parallel on every caller.
+	isolated := append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_SYSTEM="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+	// The configured root is compared after symlink resolution, and the macOS
+	// temporary directory is a symlink, so resolve once here and let every side
+	// of the fixture speak the same path.
+	resolved, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkout = resolved
+	installation = filepath.Join(checkout, "metasystem")
+	if err := os.Mkdir(installation, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	module := "module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.24\n"
+	if err := os.WriteFile(filepath.Join(installation, "go.mod"), []byte(module), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"config", "user.email", "fixture@example.com"},
+		{"config", "user.name", "Fixture"}, {"add", "metasystem/go.mod"}, {"commit", "-qm", "base"}} {
+		command := exec.Command("git", append([]string{"-C", checkout}, args...)...)
+		command.Env = isolated
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	conf := config.BatchRootKey + "=" + checkout + "\n" + config.BatchMaxWaitKey + "=1m\n"
+	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte(conf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return checkout, installation
+}
+
+// TestLandingOwnerResolvesItsBatchRootFromTheCheckoutNotTheInstallation pins the
+// one spelling of landing.batch-root that both sides of batch landing can use. A
+// seat can only configure the git toplevel, because config.ResolveBatchLanding
+// refuses anything else; the owner component must therefore compare and store
+// against that same toplevel. Handing it the installation root made the
+// activation test fail on every tick with no error written anywhere, so batches
+// were joined and never sealed.
+func TestLandingOwnerResolvesItsBatchRootFromTheCheckoutNotTheInstallation(t *testing.T) {
+	t.Parallel()
+	checkout, installation := nestedLandingCheckoutFixture(t)
+	conf := filepath.Join(installation, "metasystem.conf")
+
+	seat, err := config.ResolveBatchLanding(conf, t.TempDir(), func() time.Time { return time.Unix(0, 0).UTC() })
+	if err != nil {
+		t.Fatalf("a seat cannot resolve the configured batch root: %v", err)
+	}
+	if seat.Root != checkout {
+		t.Fatalf("seat resolved batch root %q, want the checkout %q", seat.Root, checkout)
+	}
+
+	// The steward launches every component with --repo naming the installation
+	// and --scope naming the toplevel; see supervise_owner.go where the owner
+	// passes its own three flags straight through to each component.
+	release, pass, ok := setupLandingOwner(installation, landingOwnerCheckoutRoot(installation, checkout))
+	if !ok {
+		t.Fatal("landing owner setup stopped the component")
+	}
+	defer release()
+	err = pass()
+	if err == nil {
+		t.Fatal("the landing owner treated the seats' batch root as someone else's and never activated")
+	}
+	if !strings.Contains(err.Error(), "no machine nickname is enrolled") {
+		t.Fatalf("landing owner setup error=%v, want the enrollment error that only a resolved owner reaches", err)
+	}
+}
+
+// TestLandingOwnerCheckoutRootFallsBackToTheRepoFlag keeps a flat checkout, where
+// the steward sends no --scope, on today's behaviour.
+func TestLandingOwnerCheckoutRootFallsBackToTheRepoFlag(t *testing.T) {
+	t.Parallel()
+	if got := landingOwnerCheckoutRoot("/checkout", ""); got != "/checkout" {
+		t.Fatalf("absent scope resolved to %q, want the repo flag", got)
+	}
+	if got := landingOwnerCheckoutRoot("/checkout/metasystem", "/checkout"); got != "/checkout" {
+		t.Fatalf("nested layout resolved to %q, want the checkout toplevel", got)
+	}
+}

@@ -132,7 +132,7 @@ func runSuperviseComponent(args []string) (code int) {
 			return nil
 		}
 	case "landing-owner":
-		release, pass, ok := setupLandingOwner(*metasystemRoot, *repo)
+		release, pass, ok := setupLandingOwner(*metasystemRoot, landingOwnerCheckoutRoot(*repo, *scope))
 		if !ok {
 			return 1
 		}
@@ -194,6 +194,24 @@ func runSuperviseComponent(args []string) (code int) {
 			}
 		}
 	}
+}
+
+// landingOwnerCheckoutRoot picks the checkout root the batch landing owner
+// operates on. On a repository that nests the module the steward launches every
+// component with --repo naming the installation (…/checkout/metasystem) and
+// --scope naming the git toplevel (…/checkout). The batch landing root is the
+// toplevel: config.ResolveBatchLanding refuses any value whose
+// `git rev-parse --show-toplevel` is not itself, and the batch store, the
+// control root and the owner inputs are all derived from the toplevel by
+// batch.ModuleRoot. Comparing the configured root against the installation
+// instead made the owner's activation test fail on every tick, silently, so
+// batches were joined and never sealed. --scope defaults to --repo, so a flat
+// checkout is unchanged.
+func landingOwnerCheckoutRoot(repo, scope string) string {
+	if scope == "" {
+		return repo
+	}
+	return scope
 }
 
 func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass func() error, ok bool) {
