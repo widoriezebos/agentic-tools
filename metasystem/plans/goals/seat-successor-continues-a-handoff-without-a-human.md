@@ -1,6 +1,6 @@
 # seat-successor-continues-a-handoff-without-a-human
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 15
 - Risk: severity=3 novelty=3 exposure=3 accumulation=3 basis="severity 3: the successor launches a headless session, moves a claim and its lineage and fences the handed-off session's mutations, so a wrong move leaves two sessions acting on one claim or none owning it; novelty 3: no automatic successor exists, and two design rounds on it churned (criticals 1 then 4); exposure 3: every seat at every handoff; accumulation 3: a handoff with no successor stalls the claimed goal until a human restarts the seat, which happened three times on 2026-09-15"
@@ -9,10 +9,12 @@
 - Origin: human
 - Next step: Wido 09-19: U3c-6 deny mode yes, reserve from the first observe day after arming; resumed from goal/<id> on a second enrolled checkout after push 12 (goals-live-on-branches DONE 3)
 - OpenedAt: 2026-09-15T18:17:56Z
-- Revision: 59
+- Revision: 60
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-15T18:18:10Z revision=3 opid=PN4MSZ0G3QRM6S1C7B6SQ9GNAS-m1e-c6925449 authority=proven digest=157b0696ef6f5644c39c114a00a5f7176d9ea9bd3fac1243cfdbcacbee2efe89
+- Claimed: machine=m1e lineage=main-1789561396-11601-6f713b at=2026-09-19T07:41:10Z revision=60 accountingRevision=60 episodeAt=2026-09-19T07:41:10Z episodeRevision=60
+- StopCapability: generation=60 revision=60 machine=m1e claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-15T18:17:56Z 3CSBRTWS0764XQA48WZ4ZF0HF0-m1e-c6925449 open actor=human:Wido targets=seat-successor-continues-a-handoff-without-a-human
@@ -74,4 +76,5 @@ History:
 - 2026-09-19T03:11:35Z XXQM7J5WKE8QP0T64GQ5076WS0-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,efficiency-settings-ship-in-the-repository,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order from=1:16 to=1:15
 - 2026-09-19T05:59:47Z VA9D5FAD3YK9G6T06QHBB9X00M-m1e-c6925449 edit actor=human:Wido targets=seat-successor-continues-a-handoff-without-a-human
 - 2026-09-19T07:35:41Z E7Q8HM2E05W4GQMHHF92FNWAQ8-m1e-c6925449 unpark actor=human:Wido targets=seat-successor-continues-a-handoff-without-a-human
-Integrity: sha256=7aee67049845603ffb56afe70f8140955503d86b9cbcd9287d3c1e119cf73b08
+- 2026-09-19T07:41:10Z NMVW479WVWDK7N1WYMCNMPRN5Y-m1e-c19f13ae claim actor=m1e+main-1789561396-11601-6f713b targets=seat-successor-continues-a-handoff-without-a-human
+Integrity: sha256=89374209eca33436a39dcddb67030ef91b7694e29a84936fd077c4cf2708aa6f
