@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 33
+- Sequence: 32
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Test-only and gate-only changes; a wrong parallelisation shows as a race under -race or a red, a wrong ratchet shows as a refused gate; nothing reaches production behaviour"
 - Tier: 2
 - Intent: Go tests run in parallel and stay parallel by machinery. DONE when internal/goal runs with t.Parallel on every test and independent subtest with no shared process state, the audit parallel-ratchet verb refuses any package whose serial-test count rises above its recorded floor from the fast gate, and the floor only ratchets down.
 - Origin: human
 - Next step: U3 landed 978182e0c (push 14). U3b rides push 15 with the Goal-Unit go-tests-run-in-parallel/U3b; conclude when push 15 lands.
 - OpenedAt: 2026-09-18T14:56:01Z
-- Revision: 27
+- Revision: 28
 - Budget: elapsedLimit=1d attemptLimit=20 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-18T14:59:25Z revision=3 opid=XRMD7ZBWBBG03DHS0YFF8E1BH5-m1e-c6925449 authority=proven digest=97d790857a9e1bfceaec9d311599579d3af851a1ebc6594c70d3243d04da4d31
@@ -42,4 +42,5 @@ History:
 - 2026-09-19T15:45:17Z FZTA3B9JDRW4R7CH82VMAVGQKP-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order from=1:33 to=1:32
 - 2026-09-19T15:49:55Z 0P56D8SMPRJ1V8HHFET4CZ73EH-m1e-c6925449 edit actor=human:Wido targets=go-tests-run-in-parallel
 - 2026-09-19T16:50:14Z BNKDVGS00WX23D3YE2NZ4F2BQW-m1e-c6925449 set-priority actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,test-executables-never-busy-on-linux,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order subject=test-executables-never-busy-on-linux from=1:32 to=1:33 requested-sequence=1
-Integrity: sha256=9d9d7a6e68aa0803d657713b7894bc70cfc734df48673f46e201397dd5b25018
+- 2026-09-19T19:03:53Z 602TW9BXPRBJ04Q9NZGSYSHT8K-m1e-c6925449 done actor=human:Wido targets=cross-cutting-change-inventories-its-readers,failures-show-observed-against-expected,go-tests-run-in-parallel,human-goal-verbs-forgiving,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror reason=priority-order from=1:33 to=1:32
+Integrity: sha256=d495541bec4678dbf38110ce9209be4deb76dfc5721ae04812308e4a7e6c2625
