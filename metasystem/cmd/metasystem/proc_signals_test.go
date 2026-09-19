@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"testing"
 )
@@ -60,11 +61,17 @@ func TestProcDefaultSignalsRestoresIgnoredSignals(t *testing.T) {
 	}
 
 	t.Run("refusals", func(t *testing.T) {
-		if got := runProcDefaultSignals([]string{"--"}); got != 2 {
-			t.Fatalf("proc default-signals without a command exit = %d, want 2", got)
+		code, _, stderr := captureCommandOutput(t, false, true, func() int {
+			return runProcDefaultSignals([]string{"--"})
+		})
+		if code != 2 || !strings.Contains(stderr, "a command is required after --") {
+			t.Fatalf("proc default-signals without a command = exit %d, stderr %q; want exit 2 and refusal text", code, stderr)
 		}
-		if got := runProcDefaultSignals([]string{"--", "/nonexistent/metasystem-no-such-command"}); got != 127 {
-			t.Fatalf("proc default-signals with an absent command exit = %d, want 127", got)
+		code, _, stderr = captureCommandOutput(t, false, true, func() int {
+			return runProcDefaultSignals([]string{"--", "/nonexistent/metasystem-no-such-command"})
+		})
+		if code != 127 || !strings.Contains(stderr, "/nonexistent/metasystem-no-such-command") {
+			t.Fatalf("proc default-signals with an absent command = exit %d, stderr %q; want exit 127 and command path", code, stderr)
 		}
 	})
 }
