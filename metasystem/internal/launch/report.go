@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type KindReport struct {
@@ -64,7 +65,11 @@ type SummaryReport struct {
 	CompactedReads     int                        `json:"compactedReads"`
 }
 
-func (m *Manager) Report(goal string) (SummaryReport, error) {
+func (m *Manager) Report(goal string, sinceValues ...time.Time) (SummaryReport, error) {
+	var since time.Time
+	if len(sinceValues) > 0 {
+		since = sinceValues[0]
+	}
 	settings, err := m.resolvedSettings()
 	if err != nil {
 		return SummaryReport{}, err
@@ -87,7 +92,7 @@ func (m *Manager) Report(goal string) (SummaryReport, error) {
 		byKind[kind] = len(result.Kinds) - 1
 	}
 	for _, record := range records {
-		if goal != "" && record.Goal != goal {
+		if goal != "" && record.Goal != goal || !reportTimeAtOrAfter(record.StartedAt, since) {
 			continue
 		}
 		index, found := byKind[record.Kind]
@@ -131,9 +136,9 @@ func (m *Manager) Report(goal string) (SummaryReport, error) {
 			result.CompactedReads++
 		}
 	}
-	result.addRounds(records, goal)
+	result.addRounds(recordsAtOrAfter(records, since), goal)
 	for _, refusal := range refusals {
-		if goal != "" && refusal.Goal != goal {
+		if goal != "" && refusal.Goal != goal || !reportTimeAtOrAfter(refusal.Time, since) {
 			continue
 		}
 		result.Refusals[refusal.Code]++
@@ -142,6 +147,27 @@ func (m *Manager) Report(goal string) (SummaryReport, error) {
 		}
 	}
 	return result, nil
+}
+
+func recordsAtOrAfter(records []Record, since time.Time) []Record {
+	if since.IsZero() {
+		return records
+	}
+	filtered := make([]Record, 0, len(records))
+	for _, record := range records {
+		if reportTimeAtOrAfter(record.StartedAt, since) {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
+}
+
+func reportTimeAtOrAfter(value string, since time.Time) bool {
+	if since.IsZero() {
+		return true
+	}
+	instant, err := time.Parse(time.RFC3339, value)
+	return err == nil && !instant.Before(since)
 }
 
 func (report SummaryReport) Lines() []string {

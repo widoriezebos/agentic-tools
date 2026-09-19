@@ -31,7 +31,7 @@ func newLaunchManager() *launch.Manager {
 	codex := launch.CodexExec{Binary: "codex", SessionsRoot: filepath.Join(home, ".codex", "sessions"), CommonTemplate: filepath.Join(filepath.Dir(executable), "..", "scripts", "agents", "templates", "design-common.md"), Now: time.Now, Scanner: scanner}
 	claude := launch.ClaudeHeadless{Binary: "claude", ProjectsRoot: filepath.Join(home, ".claude", "projects"), Scanner: scanner}
 	return &launch.Manager{Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": codex, "claude-headless": claude},
-		Processes: processes, Prober: prober, Supervisor: launch.OSSupervisorStarter{Prober: prober}, Now: time.Now,
+		Processes: processes, Signaler: processes, Prober: prober, Supervisor: launch.OSSupervisorStarter{Prober: prober}, Now: time.Now,
 		Sleep: time.Sleep, Grace: 2 * time.Second, Poll: 50 * time.Millisecond, StartCap: launch.DefaultWaitTimeout,
 		Settings: settings, SettingsError: settingsErr}
 }
@@ -209,11 +209,13 @@ func launchRecordVerb(args []string, verb string, action func(*launch.Manager, s
 	return 0
 }
 func runLaunchCensus(args []string) int {
-	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch census")
+	flags := flag.NewFlagSet("launch census", flag.ContinueOnError)
+	reap := flags.Bool("reap", false, "terminate idle plugin brokers")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem launch census [--reap]")
 		return 2
 	}
-	lines, err := launchManager().Census()
+	lines, err := launchManager().Census(*reap)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "launch census:", err)
 		return 1
@@ -282,10 +284,20 @@ func runLaunchReport(args []string) int {
 	flags := flag.NewFlagSet("launch report", flag.ContinueOnError)
 	id := flags.String("id", "", "launch id")
 	goal := flags.String("goal", "", "goal id")
+	sinceText := flags.String("since", "", "include activity at or after this RFC3339 instant")
 	asJSON := flags.Bool("json", false, "print structured report")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || (*id != "" && *goal != "") {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch report [--id <id>|--goal <goal>] [--json]")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || (*id != "" && (*goal != "" || *sinceText != "")) {
+		fmt.Fprintln(os.Stderr, "usage: metasystem launch report [--id <id>|--goal <goal> [--since <RFC3339>]] [--json]")
 		return 2
+	}
+	var since time.Time
+	if *sinceText != "" {
+		var err error
+		since, err = time.Parse(time.RFC3339, *sinceText)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "launch report: invalid --since %q: must be RFC3339\n", *sinceText)
+			return 2
+		}
 	}
 	manager := launchManager()
 	if *id != "" {
@@ -301,7 +313,7 @@ func runLaunchReport(args []string) int {
 		fmt.Printf("%s declared-lines=%d read-mode=%s read-package=%s changed-lines=%d verdict-counts=%t\n", launchReport(record), record.DeclaredLines, record.ReadMode, record.ReadPackage, record.ChangedLines, verdictCounts(record))
 		return 0
 	}
-	report, err := manager.Report(*goal)
+	report, err := manager.Report(*goal, since)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "launch report:", err)
 		return 1

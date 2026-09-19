@@ -10,6 +10,7 @@ The metasystem improves itself the same way improve mode improves code: changes 
 ## Inputs
 
 - Receipts since the last retro: `scripts/receipt.sh stats` for the period numbers, including the critique-waiver count, and the raw `critique_waived` plus `waiver_stream` fields for per-stream waiver patterns.
+- Launch usage for the same period: in the receipt ledger used by `scripts/receipt.sh stats`, read the final `RETRO` row and use its second pipe-separated field as the previous retro's RFC3339 time. Run `metasystem launch report --since <the previous retro's time> --json` and record these four numbers in the retro record: builds over the cap, compactions per build job, compacted reads, and calls above 200K context.
 - Git history for the same period, cross-checked against receipts. A "shipped" receipt followed by fix commits is hidden rework, and it counts as rework.
 - The instruction ledger at `memory/instruction-ledger.md`: every change previous retros adopted, each with its expected effect.
 

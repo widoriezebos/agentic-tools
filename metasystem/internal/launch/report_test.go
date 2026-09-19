@@ -6,7 +6,45 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestReportSinceFiltersRecordsAndRefusals(t *testing.T) {
+	t.Parallel()
+	m, _, _, _ := manager(t)
+	for _, record := range []Record{
+		{ID: "before", Kind: "build", Goal: "goal-a", State: Completed, StartedAt: "2026-09-18T09:59:59Z"},
+		{ID: "boundary", Kind: "build", Goal: "goal-a", State: Completed, StartedAt: "2026-09-18T10:00:00Z"},
+		{ID: "after", Kind: "read", Goal: "goal-a", State: Completed, StartedAt: "2026-09-18T10:00:01Z"},
+		{ID: "other-goal", Kind: "build", Goal: "goal-b", State: Completed, StartedAt: "2026-09-18T10:00:02Z"},
+	} {
+		if err := m.Store.Create(record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, refusal := range []Refusal{
+		{Time: "2026-09-18T09:59:59Z", Code: "BEFORE", Goal: "goal-a"},
+		{Time: "2026-09-18T10:00:00Z", Code: "BOUNDARY", Goal: "goal-a"},
+		{Time: "2026-09-18T10:00:01Z", Code: "AFTER", Goal: "goal-a"},
+		{Time: "2026-09-18T10:00:02Z", Code: "OTHER_GOAL", Goal: "goal-b"},
+	} {
+		if err := m.Store.AppendRefusal(refusal); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	since := time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC)
+	report, err := m.Report("goal-a", since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Kinds[0].Jobs != 1 || report.Kinds[2].Jobs != 1 {
+		t.Fatalf("record boundary was not inclusive: %+v", report.Kinds)
+	}
+	if report.Refusals["BEFORE"] != 0 || report.Refusals["BOUNDARY"] != 1 || report.Refusals["AFTER"] != 1 || report.Refusals["OTHER_GOAL"] != 0 {
+		t.Fatalf("refusal boundary was not inclusive: %+v", report.Refusals)
+	}
+}
 
 func TestReportPerGoalCountsKindsRefusalsAndCompactions(t *testing.T) {
 	m, _, _, _ := manager(t)
