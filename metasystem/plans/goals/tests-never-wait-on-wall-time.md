@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: Delivery-efficiency phase D, delegate loop. The testing contract refuses a Go test that waits on wall-clock time for a condition to become true (a sleep, a timer, or a deadline used as a hang guard around a fake-clock condition), and the gate treats a test that fails and then passes on rerun as a patience finding with its load reading, never as a green. Why: on 2026-09-14 the stop-decisions build's hook bed went red on a one-second wall-clock guard added in round 10, under a load average above five, while the code under test was unchanged and the subtest passed five reruns in a row; under R-35-m3 a load-caused failure is a patience defect and must be attributable, and a wall-clock guard is a flake source that will recur on every loaded machine. DONE: a source contract names the constructs a test may not use to wait and the gate refuses a test that uses them; a fixture test with a wall-clock guard is refused with the line named; the gate records fail-then-pass reruns as findings with the load reading, proven by a fixture. every mechanism in this goal lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime; it is proven on at least two runtimes.
 - Origin: human
-- Next step: push 12 92743c951 landed 1 units: testsupport; see reads/tests-never-wait-on-wall-time-units.md for the rest
+- Next step: push 13 b8e6f6128 landed 1 units: tw-guard (walltime allowance, DONE 1); tw-rerun fix-2 staged as row 200; new unit tw-identity-prober (identity red under load); see reads/tests-never-wait-on-wall-time-units.md
 - OpenedAt: 2026-09-14T16:17:21Z
-- Revision: 133
+- Revision: 134
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-14T18:54:18Z revision=3 opid=R6K59WYRSQ0VKNA03P3ZW9R9YJ-m1e-c6925449 authority=proven digest=0c51567678d94b5076e5895a0141492324419794dcbfb555f5e4c9b685d50924
@@ -149,4 +149,5 @@ History:
 - 2026-09-19T04:44:03Z SJ86PXGS0N8K2VYW4WHPQ8G0C9-m1e-c6925449 edit actor=human:Wido targets=tests-never-wait-on-wall-time
 - 2026-09-19T05:59:42Z M7PXZV2VXX0B7S9Q9JFZ7GK4CX-m1e-c6925449 edit actor=human:Wido targets=tests-never-wait-on-wall-time
 - 2026-09-19T07:33:26Z PB7RVM19M618PJDCQXE1MRVDD4-m1e-c6925449 edit actor=human:Wido targets=tests-never-wait-on-wall-time
-Integrity: sha256=e8421d45796ec796dc2175244adabb2e4ebd8aa51c5b599d1074c9e531241004
+- 2026-09-19T12:38:14Z 2Z1YEPRXRP1H8HHWTWYV2C6TGR-m1e-c6925449 edit actor=human:Wido targets=tests-never-wait-on-wall-time
+Integrity: sha256=08815487e39fa2ca44d602d0ea82aa8be8c0c2fd3466ed9b23cb52d516adb76b
