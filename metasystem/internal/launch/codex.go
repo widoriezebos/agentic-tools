@@ -101,6 +101,11 @@ var verdictLine = regexp.MustCompile(`(?i)^VERDICT\b`)
 
 func (adapter CodexExec) Measure(record Record, stateDir string) (Measurement, []Output, map[string]json.RawMessage, error) {
 	measurement := Measurement{}
+	var outputs []Output
+	var pageErr error
+	if record.Kind == "design" {
+		measurement, outputs, pageErr = measurePage(record, stateDir)
+	}
 	last, _ := os.ReadFile(filepath.Join(stateDir, "last-message.txt"))
 	measurement.ResultWords = len(strings.Fields(string(last)))
 	if len(last) > 0 {
@@ -111,23 +116,25 @@ func (adapter CodexExec) Measure(record Record, stateDir string) (Measurement, [
 	}
 	log, err := os.ReadFile(filepath.Join(stateDir, "exec.log"))
 	if err != nil {
-		return measurement, nil, nil, err
+		return measurement, outputs, nil, err
 	}
 	match := sessionLine.FindSubmatch(log)
 	if len(match) != 2 {
-		return measurement, nil, nil, fmt.Errorf("codex exec log has no session id")
+		return measurement, outputs, nil, fmt.Errorf("codex exec log has no session id")
 	}
 	sessionID := string(match[1])
 	day := adapter.Now().UTC()
 	pattern := filepath.Join(adapter.SessionsRoot, day.Format("2006"), day.Format("01"), day.Format("02"), "rollout-*"+sessionID+".jsonl")
 	files, err := filepath.Glob(pattern)
 	if err != nil || len(files) != 1 {
-		return measurement, nil, nil, fmt.Errorf("rollout for session %s: found %d: %w", sessionID, len(files), err)
+		return measurement, outputs, nil, fmt.Errorf("rollout for session %s: found %d: %w", sessionID, len(files), err)
 	}
 	if err := measureRollout(files[0], &measurement); err != nil {
-		return measurement, nil, nil, err
+		return measurement, outputs, nil, err
 	}
-	var outputs []Output
+	if pageErr != nil {
+		return measurement, outputs, nil, pageErr
+	}
 	if record.Kind == "critique" {
 		output, err := copyCritique(record, stateDir, &measurement)
 		if err != nil {

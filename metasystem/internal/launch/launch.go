@@ -8,6 +8,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -67,10 +68,6 @@ func (m *Manager) resolvedSettings() (Settings, error) {
 }
 
 func (m *Manager) Start(spec StartSpec) (Record, error) {
-	adapterName := adapterForKind(spec.Kind)
-	if adapterName == "" {
-		return Record{}, fmt.Errorf("launch kind %q is not available", spec.Kind)
-	}
 	if m.Supervisor == nil {
 		return Record{}, errors.New("launch supervisor is unavailable")
 	}
@@ -81,6 +78,26 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 		return Record{}, err
 	}
 	settings, _ := m.resolvedSettings()
+	model, effort, window := settings.launchValues(spec.Kind)
+	if value := readString(spec.AdapterData, "model"); value != "" {
+		model = value
+	}
+	if value := readString(spec.AdapterData, "effort"); value != "" {
+		effort = value
+	}
+	if spec.Model != "" {
+		model = spec.Model
+	}
+	if spec.Effort != "" {
+		effort = spec.Effort
+	}
+	adapterName := adapterForKind(spec.Kind, model)
+	if adapterName == "" {
+		return Record{}, fmt.Errorf("launch kind %q is not available", spec.Kind)
+	}
+	if spec.Kind == "design" && m.Adapters[adapterName] == nil {
+		return Record{}, errors.New("adapter-unavailable")
+	}
 	absDir, err := filepath.Abs(spec.WorkingDirectory)
 	if err != nil {
 		return Record{}, err
@@ -109,19 +126,6 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	record.AdapterData = data
 	setString(record.AdapterData, "brief", inputs[0].Path)
 	setStrings(record.AdapterData, "declaredOutputs", spec.Outputs)
-	model, effort, window := settings.launchValues(spec.Kind)
-	if value := readString(record.AdapterData, "model"); value != "" {
-		model = value
-	}
-	if value := readString(record.AdapterData, "effort"); value != "" {
-		effort = value
-	}
-	if spec.Model != "" {
-		model = spec.Model
-	}
-	if spec.Effort != "" {
-		effort = spec.Effort
-	}
 	setString(record.AdapterData, "model", model)
 	setString(record.AdapterData, "effort", effort)
 	setInt64(record.AdapterData, "window", window)
@@ -488,11 +492,16 @@ func (m *Manager) Census() ([]string, error) {
 	return lines, nil
 }
 
-func adapterForKind(kind string) string {
+func adapterForKind(kind, model string) string {
 	switch kind {
 	case "build", "critique":
 		return "codex-exec"
-	case "design", "read":
+	case "design":
+		if model == "" || strings.HasPrefix(model, "claude-") {
+			return "claude-headless"
+		}
+		return "codex-exec"
+	case "read":
 		return "claude-headless"
 	case "proof":
 		return "plain-exec"

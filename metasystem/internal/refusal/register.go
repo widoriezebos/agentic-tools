@@ -33,7 +33,7 @@ type Shell struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
-	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go:226", Shape: Question},
+	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go:231", Shape: Question},
 	{Code: "LAUNCH_SETTING_INVALID", Owner: "internal/launch", Site: "settings.go:104", Shape: Question},
 	{Code: "LAUNCH_BRIEF_OVERSIZE", Owner: "internal/launch", Site: "admit.go:99", Shape: Question},
 	{Code: "LAUNCH_BRIEF_PACK_UNFILLED", Owner: "internal/launch", Site: "pack.go:48", Shape: Question},
