@@ -8,10 +8,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
@@ -208,28 +206,21 @@ func commandFakeBed(t *testing.T) (string, string) {
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- channelFake.Serve(ctx, dir) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if b, err := os.ReadFile(filepath.Join(dir, "base-url")); err == nil {
-			t.Cleanup(func() {
-				cancel()
-				select {
-				case err := <-done:
-					if err != nil {
-						t.Error(err)
-					}
-				case <-time.After(5 * time.Second):
-					t.Error("fake did not stop")
-				}
-			})
-			return dir, strings.TrimSpace(string(b))
-		}
-		if time.Now().After(deadline) {
+	ready := make(chan string, 1)
+	go func() { done <- channelFake.ServeReady(ctx, dir, ready) }()
+	select {
+	case base := <-ready:
+		t.Cleanup(func() {
 			cancel()
-			t.Fatal("fake did not start")
-		}
-		runtime.Gosched()
+			if err := <-done; err != nil {
+				t.Error(err)
+			}
+		})
+		return dir, strings.TrimSpace(base)
+	case err := <-done:
+		cancel()
+		t.Fatalf("fake did not start: %v", err)
+		return "", ""
 	}
 }
 

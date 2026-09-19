@@ -130,26 +130,9 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 	if err := syscall.Kill(command.Process.Pid, syscall.SIGUSR1); err != nil {
 		t.Fatal(err)
 	}
-	lines := make(chan string)
-	go func() {
-		defer close(lines)
-		for scanner.Scan() {
-			lines <- scanner.Text()
-		}
-	}()
-	bound := time.NewTimer(wiringBound)
-	defer bound.Stop()
-	for observed := ""; observed != "TICK"; {
-		select {
-		case line, ok := <-lines:
-			if !ok {
-				t.Fatalf("SIGUSR1 wiring ended before the owner loop ticked: %v", scanner.Err())
-			}
-			observed = line
-		case <-bound.C:
-			_ = command.Process.Kill()
-			_ = command.Wait()
-			t.Fatalf("SIGUSR1 did not reach the owner loop within %s", wiringBound)
+	for observed := ""; observed != "TICK"; observed = scanner.Text() {
+		if !scanner.Scan() {
+			t.Fatalf("SIGUSR1 wiring ended before the owner loop ticked: %v", scanner.Err())
 		}
 	}
 	if err := syscall.Kill(command.Process.Pid, syscall.SIGTERM); err != nil {

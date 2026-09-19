@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +14,6 @@ import (
 	"sync"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -24,27 +24,6 @@ func commandSurvivorRef(pid, token int64) identity.Ref {
 		return identity.Ref{Pid: pid, StartTicks: token, BootID: "fixture-boot"}
 	}
 	return identity.Ref{Pid: pid, StartedAtSec: token, StartedAtUnixMicro: token * 1_000_000}
-}
-
-func waitFixtureRef(t *testing.T, ref identity.Ref, want identity.Liveness) {
-	t.Helper()
-	prober := identity.KernelProber{}
-	ticker, deadline := time.NewTicker(10*time.Millisecond), time.NewTimer(10*time.Second)
-	defer ticker.Stop()
-	defer deadline.Stop()
-	for {
-		exact, state, err := prober.Probe(ref.Pid)
-		same := state == identity.Alive && identity.SameIdentity(exact, ref)
-		_, _, tagged := identity.FixtureTag(exact)
-		if err == nil && (want == identity.Dead && (state == identity.Dead || state == identity.Alive && (!same || exact.Zombie)) || want == identity.Alive && same && !exact.Zombie && tagged) {
-			return
-		}
-		select {
-		case <-ticker.C:
-		case <-deadline.C:
-			t.Fatalf("pid %d state=%s zombie=%t same-identity=%t err=%v, want %s", ref.Pid, state, exact.Zombie, same, err, want)
-		}
-	}
 }
 
 func commandSurvivorProcess(pid, token int64) census.Process {
@@ -162,8 +141,17 @@ func TestProcFixtureSurvivorsReapsALiveSurvivor(t *testing.T) {
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	owner := exec.Command("/bin/sh", "-c", `IFS= read -r tag; export METASYSTEM_FIXTURE_OWNER="$tag"; /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- /bin/sh -c 'exec 3<"$1"; read line <&3' sh "$1" "METASYSTEM_FIXTURE_OWNER=$tag" & printf '%s\n' "$!"; wait`, "sh", fifo)
+	deathReader, deathWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = deathReader.Close()
+		_ = deathWriter.Close()
+	})
+	owner := exec.Command("/bin/sh", "-c", `IFS= read -r tag; export METASYSTEM_FIXTURE_OWNER="$tag"; /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' -- /bin/sh -c 'exec 4<"$1"; read line <&4' sh "$1" "METASYSTEM_FIXTURE_OWNER=$tag" & printf '%s\n' "$!"; wait`, "sh", fifo)
 	owner.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	owner.ExtraFiles = []*os.File{deathWriter}
 	input, err := owner.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -175,6 +163,7 @@ func TestProcFixtureSurvivorsReapsALiveSurvivor(t *testing.T) {
 	if err := owner.Start(); err != nil {
 		t.Fatal(err)
 	}
+	_ = deathWriter.Close()
 	var ownerWaitOnce sync.Once
 	var ownerWaitErr error
 	ownerReaped := false
@@ -213,28 +202,40 @@ func TestProcFixtureSurvivorsReapsALiveSurvivor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fifoWriter, err := os.OpenFile(fifo, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = fifoWriter.Close() })
 	childExact, state, err := (identity.KernelProber{}).Probe(pid)
 	childRef := childExact.Ref()
 	if childRef.NativeExact() {
 		t.Cleanup(func() { _ = identity.SignalExact(identity.KernelProber{}, childRef, syscall.SIGKILL) })
 	}
-	if err != nil || state != identity.Alive {
-		t.Fatalf("child probe state=%s err=%v", state, err)
+	_, _, tagged := identity.FixtureTag(childExact)
+	if err != nil || state != identity.Alive || childExact.Zombie || !tagged {
+		t.Fatalf("child probe state=%s zombie=%t tagged=%t err=%v", state, childExact.Zombie, tagged, err)
 	}
-	waitFixtureRef(t, childRef, identity.Alive)
 	if err := identity.SignalExact(identity.KernelProber{}, ownerRef, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	_ = waitOwner()
-	waitFixtureRef(t, ownerRef, identity.Dead)
-	waitFixtureRef(t, childRef, identity.Alive)
+	ownerErr := waitOwner()
+	if _, ok := ownerErr.(*exec.ExitError); !ok {
+		t.Fatalf("owner Wait did not report its signalled exit: %v", ownerErr)
+	}
+	childAfterOwner, state, err := (identity.KernelProber{}).Probe(childRef.Pid)
+	if err != nil || state != identity.Alive || childAfterOwner.Zombie || !identity.SameIdentity(childAfterOwner, childRef) {
+		t.Fatalf("survivor after owner exit state=%s zombie=%t same-identity=%t err=%v", state, childAfterOwner.Zombie, identity.SameIdentity(childAfterOwner, childRef), err)
+	}
 	root := t.TempDir()
 	ownerText, _ := identity.EncodeRef(ownerRef)
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int { return runFixtureSurvivors([]string{"--owner", ownerText, "--reap", "--root", root}) })
 	if code != 1 || stderr != "" || !strings.Contains(stdout, fmt.Sprintf("pid=%d ", childRef.Pid)) {
 		t.Fatalf("reap = code %d stdout %q stderr %q", code, stdout, stderr)
 	}
-	waitFixtureRef(t, childRef, identity.Dead)
+	if _, err := io.ReadAll(deathReader); err != nil {
+		t.Fatalf("wait for survivor descriptor EOF: %v", err)
+	}
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int { return runFixtureSurvivors([]string{"--owner", ownerText, "--root", root}) })
 	if code != 0 || stdout != "" || stderr != "" {
 		t.Fatalf("second scan = code %d stdout %q stderr %q", code, stdout, stderr)

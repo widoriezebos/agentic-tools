@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -293,22 +294,20 @@ func TestWaitActionableCheckUsesNoGitAndHonorsItsContext(t *testing.T) {
 		<-ctx.Done()
 		return "", ctx.Err()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Unix(1, 0))
 	defer cancel()
-	started := time.Now()
-	if _, _, actionErr := options.Actionable(ctx, row); !errors.Is(actionErr, context.DeadlineExceeded) || time.Since(started) > time.Second {
-		t.Fatalf("slow actionable read err=%v elapsed=%s", actionErr, time.Since(started))
+	if _, _, actionErr := options.Actionable(ctx, row); !errors.Is(actionErr, context.DeadlineExceeded) {
+		t.Fatalf("actionable read did not honor the expired context: %v", actionErr)
 	}
 	waitOpenWorkSignature = originalSignature
 	waitCurrentHolder = func(ctx context.Context, _ string) (lease.CurrentHolderView, error) {
 		<-ctx.Done()
 		return lease.CurrentHolderView{}, ctx.Err()
 	}
-	ctx, cancel = context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel = context.WithDeadline(context.Background(), time.Unix(1, 0))
 	defer cancel()
-	started = time.Now()
-	if _, _, actionErr := options.Actionable(ctx, row); !errors.Is(actionErr, context.DeadlineExceeded) || time.Since(started) > time.Second {
-		t.Fatalf("slow checkout-holder read err=%v elapsed=%s", actionErr, time.Since(started))
+	if _, _, actionErr := options.Actionable(ctx, row); !errors.Is(actionErr, context.DeadlineExceeded) {
+		t.Fatalf("checkout-holder read did not honor the expired context: %v", actionErr)
 	}
 }
 
@@ -930,15 +929,6 @@ type installedHookResult struct {
 	upCommand string
 }
 
-func boundedFixtureContext(t *testing.T, duration time.Duration) (context.Context, context.CancelFunc) {
-	t.Helper()
-	deadline := time.Now().Add(duration)
-	if testDeadline, ok := t.Deadline(); ok && testDeadline.Before(deadline) {
-		deadline = testDeadline
-	}
-	return context.WithDeadline(context.Background(), deadline)
-}
-
 func copyExecutableFixture(t *testing.T, source, target string) {
 	t.Helper()
 	data, err := os.ReadFile(source)
@@ -1114,9 +1104,7 @@ func runPendingWaitHook(t *testing.T, fixture *testutil.ProcessFixture, hook, wr
 		_ = stdout.Close()
 		t.Fatal(err)
 	}
-	ctx, cancel := boundedFixtureContext(t, 30*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, "/bin/bash", hook, "fake", event)
+	command := exec.Command("/bin/bash", hook, "fake", event)
 	command.Env = fixture.Env(pendingWaitHookEnvironment(wrapper, canonical, now))
 	command.Stdin = strings.NewReader(payload)
 	command.Stdout, command.Stderr = stdout, stderr
@@ -1127,12 +1115,6 @@ func runPendingWaitHook(t *testing.T, fixture *testutil.ProcessFixture, hook, wr
 	upCommandData, upCommandErr := os.ReadFile(wrapper + ".up-command")
 	if os.IsNotExist(upCommandErr) {
 		upCommandData, upCommandErr = []byte("not captured"), nil
-	}
-	if ctx.Err() != nil {
-		fixtureRoot := filepath.Dir(filepath.Dir(filepath.Dir(hook)))
-		announcements := lease.AnnouncementsFor(fixtureRoot, int64(os.Getpid()))
-		t.Fatalf("%s hook exceeded its Go deadline: announcements=%+v up-command=%s stdout=%s stderr=%s",
-			label, announcements, upCommandData, stdoutData, stderrData)
 	}
 	if runErr != nil || closeStdoutErr != nil || closeStderrErr != nil || stdoutErr != nil || stderrErr != nil || upCommandErr != nil {
 		t.Fatalf("%s hook failed: run=%v close=(%v,%v) read=(%v,%v,%v) up-command=%s stdout=%s stderr=%s",
@@ -1263,28 +1245,6 @@ func pendingWaiterRows(root string) ([]metarun.Waiter, error) {
 	return rows, nil
 }
 
-func pollPendingWaiter(t *testing.T, root, target string) metarun.Waiter {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	if testDeadline, ok := t.Deadline(); ok && testDeadline.Before(deadline) {
-		deadline = testDeadline
-	}
-	for time.Now().Before(deadline) {
-		rows, err := pendingWaiterRows(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, row := range rows {
-			if row.Kind == "job" && row.TargetID == target && row.State == "pending" {
-				return row
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("waiter for %s did not become pending before the Go poll deadline", target)
-	return metarun.Waiter{}
-}
-
 func writeWaiterFixture(t *testing.T, root string, row metarun.Waiter) {
 	t.Helper()
 	data, err := json.Marshal(row)
@@ -1303,17 +1263,12 @@ func proveFixtureProcessOwnership(t *testing.T, pid int, instanceTag string) err
 	if err != nil {
 		return err
 	}
-	ctx, cancel := boundedFixtureContext(t, 2*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, "ps", "-p", fmt.Sprint(pid), "-o", "command=")
+	command := exec.Command("ps", "-p", fmt.Sprint(pid), "-o", "command=")
 	command.Stdout = output
 	command.Stderr = output
 	runErr := command.Run()
 	closeErr := output.Close()
 	data, readErr := os.ReadFile(outputPath)
-	if ctx.Err() != nil {
-		return fmt.Errorf("process ownership proof exceeded its Go deadline")
-	}
 	if runErr != nil || closeErr != nil || readErr != nil {
 		return fmt.Errorf("process ownership proof failed: run=%v close=%v read=%v", runErr, closeErr, readErr)
 	}
@@ -1562,21 +1517,36 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 		_ = childStdout.Close()
 		t.Fatal(err)
 	}
-	child := exec.Command("/bin/bash", "-c", `exec "$0" job watch --root "$1" --job "$2" --caller-pid $$`, binary, root, "wait-stop-job")
-	child.Env = fixture.Env(os.Environ())
-	child.Stdout, child.Stderr = childStdout, childStderr
-	if err := child.Start(); err != nil {
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
 		_ = childStdout.Close()
 		_ = childStderr.Close()
 		t.Fatal(err)
 	}
+	child := exec.Command("/bin/bash", "-c", `exec "$0" job watch --root "$1" --job "$2" --caller-pid $$`, binary, root, "wait-stop-job")
+	child.Env = fixture.Env(append(os.Environ(), waitRegisteredFDEnvironment+"=3"))
+	child.ExtraFiles = []*os.File{readyWrite}
+	child.Stdout, child.Stderr = childStdout, childStderr
+	if err := child.Start(); err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		_ = childStdout.Close()
+		_ = childStderr.Close()
+		t.Fatal(err)
+	}
+	_ = readyWrite.Close()
 	fixture.Record(child.Process.Pid)
 	childPID := child.Process.Pid
 	childExit := make(chan error, 1)
 	go func() { childExit <- child.Wait() }()
 	childObserved := false
 	var childWaitErr error
-	var childWaitID string
+	readyLine, readyErr := bufio.NewReader(readyRead).ReadString('\n')
+	_ = readyRead.Close()
+	childWaitID := strings.TrimSpace(readyLine)
+	if readyErr != nil || !metarun.ValidWaitID(childWaitID) {
+		t.Fatalf("child wait registration signal = %q, %v", readyLine, readyErr)
+	}
 	finishChild := func() error {
 		if childObserved {
 			return childWaitErr
@@ -1593,39 +1563,15 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 			_ = notifyStdout.Close()
 			return err
 		}
-		notifyContext, cancel := boundedFixtureContext(t, 5*time.Second)
-		notify := exec.CommandContext(notifyContext, binary, "wait", "notify", "--root", root, "--job", "wait-stop-job")
+		notify := exec.Command(binary, "wait", "notify", "--root", root, "--job", "wait-stop-job")
 		notify.Stdout, notify.Stderr = notifyStdout, notifyStderr
 		notifyErr := notify.Run()
-		notifyContextErr := notifyContext.Err()
-		cancel()
 		closeNotifyStdoutErr, closeNotifyStderrErr := notifyStdout.Close(), notifyStderr.Close()
-		if notifyContextErr != nil || notifyErr != nil || closeNotifyStdoutErr != nil || closeNotifyStderrErr != nil {
-			return fmt.Errorf("notify child wait while waiting for wait notify --job wait-stop-job: context=%v run=%v close=(%v,%v)", notifyContextErr, notifyErr, closeNotifyStdoutErr, closeNotifyStderrErr)
+		if notifyErr != nil || closeNotifyStdoutErr != nil || closeNotifyStderrErr != nil {
+			return fmt.Errorf("notify child wait while waiting for wait notify --job wait-stop-job: run=%v close=(%v,%v)", notifyErr, closeNotifyStdoutErr, closeNotifyStderrErr)
 		}
-		completionContext, cancelCompletion := boundedFixtureContext(t, 5*time.Second)
-		defer cancelCompletion()
-		select {
-		case childWaitErr = <-childExit:
-			childObserved = true
-		case <-completionContext.Done():
-			completionErr := completionContext.Err()
-			if err := proveFixtureProcessOwnership(t, childPID, filepath.Base(binary)); err != nil {
-				return err
-			}
-			if err := child.Process.Kill(); err != nil {
-				return err
-			}
-			reapContext, cancelReap := boundedFixtureContext(t, 5*time.Second)
-			defer cancelReap()
-			select {
-			case childWaitErr = <-childExit:
-				childObserved = true
-			case <-reapContext.Done():
-				return fmt.Errorf("wait for the killed child wait process to be reaped: %w", reapContext.Err())
-			}
-			return fmt.Errorf("wait for the child wait process to exit after notifying wait-stop-job: %w", completionErr)
-		}
+		childWaitErr = <-childExit
+		childObserved = true
 		closeStdoutErr, closeStderrErr := childStdout.Close(), childStderr.Close()
 		if closeStdoutErr != nil || closeStderrErr != nil {
 			return fmt.Errorf("close child output: stdout=%v stderr=%v", closeStdoutErr, closeStderrErr)
@@ -1633,20 +1579,12 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 		if childWaitErr != nil {
 			return childWaitErr
 		}
-		for childWaitID != "" {
-			select {
-			case <-completionContext.Done():
-				return fmt.Errorf("wait for registered wait %s to leave pending after its child exited: %w", childWaitID, completionContext.Err())
-			default:
-			}
-			stored, _, findErr := metarun.FindWaiterByID(root, childWaitID)
-			if findErr != nil {
-				return fmt.Errorf("read registered wait %s after its child exited: %w", childWaitID, findErr)
-			}
-			if stored.State != "pending" {
-				break
-			}
-			time.Sleep(10 * time.Millisecond)
+		stored, _, findErr := metarun.FindWaiterByID(root, childWaitID)
+		if findErr != nil {
+			return fmt.Errorf("read registered wait %s after its child exited: %w", childWaitID, findErr)
+		}
+		if stored.State == "pending" {
+			return fmt.Errorf("registered wait %s remained pending after its child exited", childWaitID)
 		}
 		return nil
 	}
@@ -1658,8 +1596,10 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 		}
 	})
 
-	row := pollPendingWaiter(t, root, "wait-stop-job")
-	childWaitID = row.WaitID
+	row, _, err := metarun.FindWaiterByID(root, childWaitID)
+	if err != nil || row.Kind != "job" || row.TargetID != "wait-stop-job" || row.State != "pending" {
+		t.Fatalf("ready child wait registration = %+v, %v", row, err)
+	}
 	if row.Session != runtimeSession || row.RuntimeSession != runtimeSession || row.MainId != mainID || row.Pid != int64(childPID) {
 		t.Fatalf("child-shell waiter did not carry the runtime owner: row=%+v child-pid=%d", row, childPID)
 	}

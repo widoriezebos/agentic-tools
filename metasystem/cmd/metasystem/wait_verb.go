@@ -9,12 +9,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -29,6 +31,32 @@ var waitBootClock = identity.BootClock
 var waitPathStat = metarun.PathStat(os.Stat)
 var errChannelPollNotDue = errors.New("channel provider poll is not due")
 var waitOpenWorkSignature = report.OpenWorkSignature
+
+const waitRegisteredFDEnvironment = "METASYSTEM_WAIT_REGISTERED_FD"
+
+var waitCommandEvents = &events.Emitter{Component: "run", Pid: int64(os.Getpid())}
+
+func emitWaitCommandEvent(root, event, summary string, fields map[string]string) error {
+	if err := waitCommandEvents.EmitChecked(root, event, summary, fields); err != nil {
+		return err
+	}
+	if event != "wait-registered" || os.Getenv(waitRegisteredFDEnvironment) == "" {
+		return nil
+	}
+	descriptor, err := strconv.Atoi(os.Getenv(waitRegisteredFDEnvironment))
+	if err != nil || descriptor < 3 {
+		return fmt.Errorf("%s must name an inherited descriptor", waitRegisteredFDEnvironment)
+	}
+	ready := os.NewFile(uintptr(descriptor), "wait-registered")
+	if ready == nil {
+		return fmt.Errorf("%s descriptor is unavailable", waitRegisteredFDEnvironment)
+	}
+	if _, err := fmt.Fprintln(ready, fields["waitId"]); err != nil {
+		_ = ready.Close()
+		return err
+	}
+	return ready.Close()
+}
 
 var waitCurrentHolder = func(ctx context.Context, root string) (lease.CurrentHolderView, error) {
 	type result struct {
@@ -403,6 +431,7 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 		OpenHintReceiver:  openHintReceiver,
 		OpenWorkSignature: openWorkSignature,
 		BootClock:         waitBootClock,
+		EmitEvent:         emitWaitCommandEvent,
 		Deliver: func(ctx context.Context, waitID, nonce string, deadline time.Time, session string) (string, bool, error) {
 			answer, err := adapter.DeliverWait(ctx, adapterPath, adapter.WaitDeliveryRequest{WaitID: waitID, Nonce: nonce, Deadline: deadline, Session: session})
 			if errors.Is(err, adapter.ErrWaitDeliveryDeclined) {

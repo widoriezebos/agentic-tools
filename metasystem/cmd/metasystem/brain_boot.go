@@ -55,6 +55,18 @@ var newBrainBootInputsCommand = func(executable string, args ...string) *exec.Cm
 	return exec.Command(executable, args...)
 }
 
+type brainBootTimer struct {
+	C    <-chan time.Time
+	Stop func() bool
+}
+
+var brainBootNow = time.Now
+
+var newBrainBootTimer = func(duration time.Duration) brainBootTimer {
+	timer := time.NewTimer(duration)
+	return brainBootTimer{C: timer.C, Stop: timer.Stop}
+}
+
 func runBrainBootCommand(args []string) int {
 	flags := flag.NewFlagSet("brain boot", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout state root")
@@ -91,7 +103,7 @@ func composeBrainBoot(root, repo string, bound, deadlineMS int) (brainBootOutput
 }
 
 func composeBrainBootMode(root, repo string, bound, deadlineMS int, readOnly bool) (brainBootOutput, error) {
-	started := time.Now()
+	started := brainBootNow()
 	state, phaseOne := brain.PhaseOne(root, repo, goal.ExistingLedgerIdentity(root), bound)
 	if state.State == brain.Undeclared {
 		return brainBootOutput{Declared: false}, nil
@@ -118,12 +130,12 @@ func composeBrainBootMode(root, repo string, bound, deadlineMS int, readOnly boo
 	}
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
-	remaining := time.Duration(deadlineMS)*time.Millisecond - time.Since(started)
+	remaining := time.Duration(deadlineMS)*time.Millisecond - brainBootNow().Sub(started)
 	timedOut := false
 	if remaining <= 0 {
 		timedOut = true
 	} else {
-		timer := time.NewTimer(remaining)
+		timer := newBrainBootTimer(remaining)
 		select {
 		case <-waited:
 			timer.Stop()
@@ -133,7 +145,7 @@ func composeBrainBootMode(root, repo string, bound, deadlineMS int, readOnly boo
 	}
 	if timedOut {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-		killTimer := time.NewTimer(200 * time.Millisecond)
+		killTimer := newBrainBootTimer(200 * time.Millisecond)
 		select {
 		case <-waited:
 			killTimer.Stop()

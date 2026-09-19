@@ -8,7 +8,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -19,7 +18,6 @@ const (
 	procCustodianHelperEnv = "METASYSTEM_PROC_CUSTODIAN_TEST_HELPER"
 	procCustodianOwnerEnv  = "METASYSTEM_PROC_CUSTODIAN_TEST_OWNER"
 	procCustodianLogEnv    = "METASYSTEM_PROC_CUSTODIAN_TEST_LOG"
-	procCustodianTestBound = 2 * time.Second
 )
 
 func TestProcCustodianProcessBoundaries(t *testing.T) {
@@ -63,24 +61,9 @@ func TestProcCustodianProcessBoundaries(t *testing.T) {
 		process := startProcCustodianProcess(t, []*os.File{watchReader, heldWriter}, false, false, false)
 		process.watchWriter = watchWriter
 		_ = heldWriter.Close()
-		ready := make(chan struct {
-			data string
-			err  error
-		}, 1)
-		go func() {
-			data, err := io.ReadAll(heldReader)
-			ready <- struct {
-				data string
-				err  error
-			}{string(data), err}
-		}()
-		select {
-		case result := <-ready:
-			if result.err != nil || result.data != "ready\n" {
-				t.Fatalf("descriptor 4 read = %q, %v; want ready and EOF", result.data, result.err)
-			}
-		case <-time.After(procCustodianTestBound):
-			t.Fatal("custodian kept inherited descriptor 4 open")
+		data, err := io.ReadAll(heldReader)
+		if err != nil || string(data) != "ready\n" {
+			t.Fatalf("descriptor 4 read = %q, %v; want ready and EOF", data, err)
 		}
 		var status syscall.WaitStatus
 		pid, err := syscall.Wait4(process.command.Process.Pid, &status, syscall.WNOHANG, nil)
@@ -107,15 +90,7 @@ func startProcCustodianProcess(t *testing.T, extraFiles []*os.File, nonblocking,
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = owner.Process.Kill(); _, _ = owner.Process.Wait() })
-	var exact identity.Exact
-	var state identity.Liveness
-	var err error
-	for deadline := time.Now().Add(procCustodianTestBound); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		exact, state, err = (identity.KernelProber{}).Probe(int64(owner.Process.Pid))
-		if err == nil && state == identity.Alive {
-			break
-		}
-	}
+	exact, state, err := (identity.KernelProber{}).Probe(int64(owner.Process.Pid))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe custodian owner: state=%s err=%v", state, err)
 	}
@@ -177,23 +152,14 @@ func (process *procCustodianProcess) cleanup() {
 	_ = process.owner.Process.Kill()
 	_, _ = process.owner.Process.Wait()
 	process.startWait()
-	select {
-	case <-process.done:
-	case <-time.After(3 * time.Second):
-		_ = syscall.Kill(process.command.Process.Pid, syscall.SIGKILL)
-		<-process.done
-	}
+	<-process.done
 	_ = process.output.Close()
 }
 
 func assertProcCustodianExit2(t *testing.T, process *procCustodianProcess, want string) {
 	t.Helper()
 	process.startWait()
-	select {
-	case <-process.done:
-	case <-time.After(procCustodianTestBound):
-		t.Fatalf("custodian did not reject %s", want)
-	}
+	<-process.done
 	exit, ok := process.waitErr.(*exec.ExitError)
 	data, _ := os.ReadFile(process.output.Name())
 	if !ok || exit.ExitCode() != 2 || !strings.Contains(string(data), want) {

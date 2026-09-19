@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1405,19 +1407,22 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 
 func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 	if os.Getenv("GO_WANT_GOVERNED_COMMAND_PARENT") == "1" {
-		if err := os.WriteFile(os.Getenv("GOVERNED_COMMAND_READY"), []byte("ready\n"), 0o600); err != nil {
+		ready := os.NewFile(3, "governed-command-ready")
+		if ready == nil {
 			os.Exit(97)
 		}
-		deadline := time.Now().Add(wiringBound)
-		for {
-			if _, err := os.Stat(os.Getenv("GOVERNED_COMMAND_RELEASE")); err == nil {
-				break
-			}
-			if time.Now().After(deadline) {
-				os.Exit(97)
-			}
-			time.Sleep(10 * time.Millisecond)
+		if _, err := fmt.Fprintln(ready, "ready"); err != nil || ready.Close() != nil {
+			os.Exit(97)
 		}
+		release := os.NewFile(4, "governed-command-release")
+		if release == nil {
+			os.Exit(97)
+		}
+		var signal [1]byte
+		if _, err := io.ReadFull(release, signal[:]); err != nil {
+			os.Exit(97)
+		}
+		_ = release.Close()
 		root := os.Getenv("GOVERNED_COMMAND_ROOT")
 		proofFixture := pinProofBinaryFixture(t, root)
 		command := proofFixture.command(os.Environ(), os.Getenv("GOVERNED_COMMAND_ENGINE"), "proof-run", "launch",
@@ -1494,17 +1499,34 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ready, release := filepath.Join(t.TempDir(), "ready"), filepath.Join(t.TempDir(), "release")
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseRead, releaseWrite, err := os.Pipe()
+	if err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		_ = releaseRead.Close()
+		_ = releaseWrite.Close()
+	})
 	child := exec.Command(os.Args[0], "-test.run=^TestProofRunCommandGovernedParentSharesOneCharge$")
-	child.Env = append(receiptCanaryEnvironment(), "GO_WANT_GOVERNED_COMMAND_PARENT=1", "GOVERNED_COMMAND_READY="+ready,
-		"GOVERNED_COMMAND_RELEASE="+release, "GOVERNED_COMMAND_ROOT="+root, "GOVERNED_COMMAND_ENGINE="+engine,
+	child.Env = append(receiptCanaryEnvironment(), "GO_WANT_GOVERNED_COMMAND_PARENT=1", "GOVERNED_COMMAND_ROOT="+root, "GOVERNED_COMMAND_ENGINE="+engine,
 		"GOVERNED_COMMAND_PROOF_RUN_ROOT="+root, "GOVERNED_COMMAND_PROOF_RUN_ID=governed-command")
+	child.ExtraFiles = []*os.File{readyWrite, releaseRead}
 	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var output bytes.Buffer
 	child.Stdout, child.Stderr = &output, &output
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
 	}
+	_ = readyWrite.Close()
+	_ = releaseRead.Close()
 	finished := false
 	t.Cleanup(func() {
 		if !finished {
@@ -1512,16 +1534,11 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 			_ = child.Wait()
 		}
 	})
-	deadline := time.Now().Add(wiringBound)
-	for {
-		if _, err := os.Stat(ready); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("governed parent did not become ready: %s", output.String())
-		}
-		time.Sleep(10 * time.Millisecond)
+	line, err := bufio.NewReader(readyRead).ReadString('\n')
+	if err != nil || line != "ready\n" {
+		t.Fatalf("governed parent readiness = %q, %v: %s", line, err, output.String())
 	}
+	_ = readyRead.Close()
 	pgid, err := syscall.Getpgid(child.Process.Pid)
 	if err != nil {
 		t.Fatal(err)
@@ -1529,9 +1546,10 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 	if err := store.Bind("governed-command", nonce, int64(child.Process.Pid), int64(pgid)); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(release, []byte("go\n"), 0o600); err != nil {
+	if _, err := releaseWrite.Write([]byte{'x'}); err != nil {
 		t.Fatal(err)
 	}
+	_ = releaseWrite.Close()
 	if err := child.Wait(); err != nil {
 		t.Fatalf("governed command failed: %v\n%s", err, output.String())
 	}

@@ -32,7 +32,6 @@ func TestRunUtilHoldWritesStoppedFileOnTerm(t *testing.T) {
 
 	// The signal is re-sent until the verb reports it saw one, because there
 	// is no ordering guarantee between this send and its handler install.
-	deadline := time.After(wiringBound)
 	tick := time.NewTicker(50 * time.Millisecond)
 	defer tick.Stop()
 	for {
@@ -50,8 +49,6 @@ func TestRunUtilHoldWritesStoppedFileOnTerm(t *testing.T) {
 			if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
 				t.Fatal(err)
 			}
-		case <-deadline:
-			t.Fatal("hold never returned after SIGTERM")
 		}
 	}
 }

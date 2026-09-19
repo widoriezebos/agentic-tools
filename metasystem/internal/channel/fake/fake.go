@@ -110,7 +110,17 @@ func Serve(ctx context.Context, dir string) error {
 	return serve(ctx, dir, nil)
 }
 
+// ServeReady publishes the listener address after the server is ready to
+// accept requests. A nil channel preserves the production Serve contract.
+func ServeReady(ctx context.Context, dir string, ready chan<- string) error {
+	return serveWithReady(ctx, dir, nil, ready)
+}
+
 func serve(ctx context.Context, dir string, connState func(net.Conn, http.ConnState)) error {
+	return serveWithReady(ctx, dir, connState, nil)
+}
+
+func serveWithReady(ctx context.Context, dir string, connState func(net.Conn, http.ConnState), ready chan<- string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -130,6 +140,9 @@ func serve(ctx context.Context, dir string, connState func(net.Conn, http.ConnSt
 	if err := writeRename(filepath.Join(dir, "base-url"), []byte(base+"\n")); err != nil {
 		ln.Close()
 		return err
+	}
+	if ready != nil {
+		ready <- base
 	}
 	done := make(chan error, 1)
 	go func() { done <- httpServer.Serve(ln) }()

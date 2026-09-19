@@ -3,10 +3,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -16,6 +19,34 @@ import (
 )
 
 const brainBootTestPacket = "# Fixture brain packet\n\n## The standing instruction\nKeep going.\n"
+
+func useNonFiringBrainBootTimer(t *testing.T) {
+	t.Helper()
+	originalNow, originalTimer := brainBootNow, newBrainBootTimer
+	now := time.Unix(1, 0)
+	brainBootNow = func() time.Time { return now }
+	newBrainBootTimer = func(time.Duration) brainBootTimer {
+		return brainBootTimer{C: make(chan time.Time), Stop: func() bool { return true }}
+	}
+	t.Cleanup(func() {
+		brainBootNow, newBrainBootTimer = originalNow, originalTimer
+	})
+}
+
+func useFiringBrainBootTimer(t *testing.T) {
+	t.Helper()
+	originalNow, originalTimer := brainBootNow, newBrainBootTimer
+	now := time.Unix(1, 0)
+	brainBootNow = func() time.Time { return now }
+	newBrainBootTimer = func(time.Duration) brainBootTimer {
+		fired := make(chan time.Time, 1)
+		fired <- now
+		return brainBootTimer{C: fired, Stop: func() bool { return false }}
+	}
+	t.Cleanup(func() {
+		brainBootNow, newBrainBootTimer = originalNow, originalTimer
+	})
+}
 
 func declaredBrainBootTestRoot(t *testing.T) string {
 	t.Helper()
@@ -44,6 +75,7 @@ func declaredBrainBootTestRoot(t *testing.T) string {
 }
 
 func TestBrainBootKeepsPhaseOneWhenOptionalInputChildFails(t *testing.T) {
+	useNonFiringBrainBootTimer(t)
 	root := declaredBrainBootTestRoot(t)
 
 	original := newBrainBootInputsCommand
@@ -67,8 +99,36 @@ func TestBrainBootKeepsPhaseOneWhenOptionalInputChildFails(t *testing.T) {
 }
 
 func TestBrainBootDeadlineKeepsCompletedSections(t *testing.T) {
+	if os.Getenv("GO_WANT_BRAIN_BOOT_DEADLINE_HELPER") == "1" {
+		terminated := make(chan os.Signal, 1)
+		signal.Notify(terminated, syscall.SIGTERM)
+		if err := os.WriteFile(os.Getenv("BRAIN_BOOT_ASKS_PATH"), []byte(`{"status":"complete","lines":[{"text":"kept ask"}]}`+"\n"), 0o600); err != nil {
+			os.Exit(97)
+		}
+		ready := os.NewFile(3, "brain-boot-ready")
+		if ready == nil {
+			os.Exit(97)
+		}
+		if _, err := ready.Write([]byte{'x'}); err != nil || ready.Close() != nil {
+			os.Exit(97)
+		}
+		<-terminated
+		if err := os.WriteFile(os.Getenv("BRAIN_BOOT_TERM_PATH"), []byte("term"), 0o600); err != nil {
+			os.Exit(97)
+		}
+		os.Exit(0)
+	}
 	root := declaredBrainBootTestRoot(t)
-	original := newBrainBootInputsCommand
+	originalCommand, originalNow, originalTimer := newBrainBootInputsCommand, brainBootNow, newBrainBootTimer
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+	})
+	termPath := filepath.Join(t.TempDir(), "term")
 	newBrainBootInputsCommand = func(_ string, args ...string) *exec.Cmd {
 		dir := ""
 		for index := 0; index+1 < len(args); index++ {
@@ -80,21 +140,43 @@ func TestBrainBootDeadlineKeepsCompletedSections(t *testing.T) {
 		if dir == "" {
 			t.Fatal("boot-inputs command omitted --dir")
 		}
-		// The command outlives any bound the boot could honour: a boot that
-		// waited for it would take minutes, one that kept its deadline
-		// returns well inside the wiring bound.
-		return exec.Command("sh", "-c", `printf '%s\n' "$2" >"$1"; sleep 120`, "brain-boot-test",
-			filepath.Join(dir, "asks.json"), `{"status":"complete","lines":[{"text":"kept ask"}]}`)
+		command := exec.Command(os.Args[0], "-test.run=^TestBrainBootDeadlineKeepsCompletedSections$")
+		command.Env = append(os.Environ(), "GO_WANT_BRAIN_BOOT_DEADLINE_HELPER=1",
+			"BRAIN_BOOT_ASKS_PATH="+filepath.Join(dir, "asks.json"), "BRAIN_BOOT_TERM_PATH="+termPath)
+		command.ExtraFiles = []*os.File{readyWrite}
+		return command
 	}
-	t.Cleanup(func() { newBrainBootInputsCommand = original })
+	brainBootNow = func() time.Time { return time.Unix(1, 0) }
+	fired := 0
+	var firedDuration time.Duration
+	newBrainBootTimer = func(duration time.Duration) brainBootTimer {
+		if fired == 0 {
+			_ = readyWrite.Close()
+			var signal [1]byte
+			if _, err := io.ReadFull(readyRead, signal[:]); err != nil {
+				t.Fatalf("wait for optional-input section: %v", err)
+			}
+			fired++
+			firedDuration = duration
+			ch := make(chan time.Time, 1)
+			ch <- brainBootNow()
+			return brainBootTimer{C: ch, Stop: func() bool { return false }}
+		}
+		return brainBootTimer{C: make(chan time.Time), Stop: func() bool { return true }}
+	}
+	t.Cleanup(func() {
+		newBrainBootInputsCommand, brainBootNow, newBrainBootTimer = originalCommand, originalNow, originalTimer
+	})
 
-	started := time.Now()
 	output, err := composeBrainBoot(root, root, minimumBrainContextBytes, 250)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if elapsed := time.Since(started); elapsed > wiringBound {
-		t.Fatalf("deadline boot took %s", elapsed)
+	if fired != 1 || firedDuration != 250*time.Millisecond {
+		t.Fatalf("deadline timer fired %d times at %s, want once at 250ms", fired, firedDuration)
+	}
+	if data, err := os.ReadFile(termPath); err != nil || string(data) != "term" {
+		t.Fatalf("deadline did not signal the optional-input process group: data=%q err=%v", data, err)
 	}
 	if output.Sections["asks"] != "complete" || !strings.Contains(output.Payload, "kept ask") {
 		t.Fatalf("completed asks section was discarded after the deadline: %+v", output)
@@ -110,6 +192,7 @@ func TestBrainBootDeadlineKeepsCompletedSections(t *testing.T) {
 }
 
 func TestBrainReadOnlyBootDefersStatusUntilStartDelivered(t *testing.T) {
+	useFiringBrainBootTimer(t)
 	root := declaredBrainBootTestRoot(t)
 	statusPath := brain.StatusPath(root)
 
@@ -134,6 +217,7 @@ func TestBrainReadOnlyBootDefersStatusUntilStartDelivered(t *testing.T) {
 }
 
 func TestBrainStartDeliveredRefusesChangedDeclaration(t *testing.T) {
+	useFiringBrainBootTimer(t)
 	root := declaredBrainBootTestRoot(t)
 	output, err := composeBrainBootMode(root, root, minimumBrainContextBytes, 50, true)
 	if err != nil {
@@ -166,6 +250,7 @@ func TestBrainStartDeliveredRefusesChangedDeclaration(t *testing.T) {
 }
 
 func TestBrainStartDeliveredAdvancesOnlyTheEmittedBrainDigest(t *testing.T) {
+	useFiringBrainBootTimer(t)
 	root := declaredBrainBootTestRoot(t)
 	if err := os.MkdirAll(filepath.Join(root, "records"), 0o755); err != nil {
 		t.Fatal(err)

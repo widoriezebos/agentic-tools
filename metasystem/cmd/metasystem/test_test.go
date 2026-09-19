@@ -322,8 +322,7 @@ func TestTrustedPolicyEngineIsRequiredWithoutBuildingDuringReadOnlySelection(t *
 
 func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *testing.T) {
 	fixture := newCandidateEngineFixture(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	built, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
 	if err != nil {
 		t.Fatalf("build candidate proof engine: %v", err)
@@ -565,8 +564,7 @@ func TestTestWorkerBuildIdentityCompatibilityDoorIsPolicyProbeOnly(t *testing.T)
 
 func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	fixture := newCandidateEngineFixture(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx := context.Background()
 	built, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
 	if err != nil {
 		t.Fatal(err)
@@ -643,9 +641,7 @@ func TestCandidateEngineBuildFailureCannotFallBackToPolicyEngine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	built, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", brokenTree, testingEnvironment(os.Environ()))
+	built, err := buildCandidateEngine(context.Background(), gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", brokenTree, testingEnvironment(os.Environ()))
 	if built != nil || err == nil || !strings.Contains(err.Error(), "candidate engine build failed") || !strings.Contains(err.Error(), "fixture candidate compile failed") {
 		t.Fatalf("candidate build failure did not remain an explicit insufficient outcome: build=%+v err=%v", built, err)
 	}
