@@ -902,7 +902,16 @@ func pendingWaitVerdictCommandFixtureWithOptions(t *testing.T, root, runtimeName
 	if err != nil || bootID == "" {
 		t.Fatalf("read fixture boot clock: %q %s %v", bootID, elapsed, err)
 	}
-	now := time.Now().UTC()
+	// The verb under test reads "now" through the fixture clock authority, which
+	// honours METASYSTEM_GOAL_NOW on a fake-runtime root like this one. Stamping
+	// the row from the wall clock instead left the deadline unreachable whenever
+	// an ambient fixture clock was set, and the real-origin rehearsal sets one
+	// process-wide before it drives any verb, so its dependent-package gate ran
+	// this fixture against a "now" seven hours in the past.
+	now, err := goalCommandNow(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	epoch := holder.ClaimEpoch
 	row := metarun.Waiter{
 		SchemaVersion: 2, WaitID: strings.Repeat("a", 32), Nonce: strings.Repeat("b", 32),

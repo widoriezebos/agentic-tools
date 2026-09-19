@@ -701,7 +701,12 @@ func movedBatchGitFixture(t *testing.T) (root, peer, origin, baseCommit, baseTre
 	t.Helper()
 	base := t.TempDir()
 	origin, root, peer = filepath.Join(base, "origin.git"), filepath.Join(base, "landing"), filepath.Join(base, "peer")
-	if output, err := exec.Command("git", "init", "-q", "--bare", origin).CombinedOutput(); err != nil {
+	// -b main is not cosmetic here. Without it the bare origin takes its initial
+	// branch from init.defaultBranch, which this host supplies and an isolated
+	// git configuration does not. The fixture then pushes main to an origin whose
+	// HEAD names master, and the clone below checks out nothing and still exits
+	// zero, so the failure surfaces later as a missing file in the peer tree.
+	if output, err := exec.Command("git", "init", "-q", "-b", "main", "--bare", origin).CombinedOutput(); err != nil {
 		t.Fatalf("init origin: %v: %s", err, output)
 	}
 	if output, err := exec.Command("git", "init", "-q", "-b", "main", root).CombinedOutput(); err != nil {
