@@ -220,7 +220,7 @@ start_emergency() {
     start_terminal_complete=true
     builtin exit 1
   fi
-  if [[ -w /dev/fd/1 ]] && builtin printf '%s\n' "$start_last_resort" 2>/dev/null; then
+  if (builtin printf '%s\n' "$start_last_resort") 2>/dev/null; then
     start_terminal_complete=true
     builtin exit 0
   fi
@@ -341,7 +341,7 @@ start_finish() { # notice <catalog-key> | intentional <declared-reason>
     builtin exit 0
   fi
 
-  if [[ ! -w /dev/fd/1 ]] || ! builtin printf '%s\n' "$response" 2>/dev/null; then
+  if ! (builtin printf '%s\n' "$response") 2>/dev/null; then
     builtin printf '%s\n' "$start_last_resort" >&2 || :
     start_terminal_complete=true
     builtin trap - EXIT HUP INT TERM

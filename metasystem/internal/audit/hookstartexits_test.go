@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1418,6 +1419,48 @@ func TestHookStartLastResortUsesStderrWhenStdoutIsClosed(t *testing.T) {
 	}
 }
 
+func TestHookStartPublishesThroughOpenStdoutWithUnwritableModeBits(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, injected, expected string
+	}{
+		{
+			name:     "declared-notice",
+			injected: "  start_finish notice installation-validation\n",
+			expected: `{"systemMessage":"Metasystem SessionStart could not validate the metasystem installation: this session received no role context; if this checkout is a declared brain it is uninstructed. Restore a complete, readable metasystem installation and rebuild bin/metasystem with scripts/agents/go-build.sh. Then start a new session."}` + "\n",
+		},
+		{
+			name:     "emergency-fallback",
+			injected: "  start_finish notice undeclared\n",
+			expected: hookStartFallback + "\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hook := mutatedStartHook(t, test.injected)
+			stdout, err := os.OpenFile(filepath.Join(t.TempDir(), "stdout"), os.O_CREATE|os.O_RDWR, 0o600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stdout.Close()
+			if err := stdout.Chmod(0); err != nil {
+				t.Fatal(err)
+			}
+			stderr, status := runHookStartCommandTo(t, hook, "fake", "{}\n", nil, stdout, false)
+			if _, err := stdout.Seek(0, 0); err != nil {
+				t.Fatal(err)
+			}
+			output, err := io.ReadAll(stdout)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status != 0 || string(output) != test.expected || stderr != "" {
+				t.Fatalf("open stdout = status %d stdout %q stderr %q", status, output, stderr)
+			}
+		})
+	}
+}
+
 func TestHookStartBash32ArrayCanaryCoversEmptyAndPopulatedValues(t *testing.T) {
 	script := `set -u
 empty=()
@@ -1478,6 +1521,13 @@ func runHookStart(t *testing.T, hook string, extraEnv []string, stdoutClosed boo
 
 func runHookStartCommand(t *testing.T, hook, runtime, input string, extraEnv []string, stdoutClosed bool) (string, string, int) {
 	t.Helper()
+	var stdout bytes.Buffer
+	stderr, status := runHookStartCommandTo(t, hook, runtime, input, extraEnv, &stdout, stdoutClosed)
+	return stdout.String(), stderr, status
+}
+
+func runHookStartCommandTo(t *testing.T, hook, runtime, input string, extraEnv []string, stdout io.Writer, stdoutClosed bool) (string, int) {
+	t.Helper()
 	var command *exec.Cmd
 	if stdoutClosed {
 		command = exec.Command("/bin/bash", "-c", `exec 1>&-; exec /bin/bash "$1" "$2" start`, "hook-start-test", hook, runtime)
@@ -1487,8 +1537,8 @@ func runHookStartCommand(t *testing.T, hook, runtime, input string, extraEnv []s
 	command.Stdin = strings.NewReader(input)
 	command.Env = withoutEnvironment(os.Environ(), "METASYSTEM_BIN")
 	command.Env = append(command.Env, extraEnv...)
-	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
+	var stderr bytes.Buffer
+	command.Stdout = stdout
 	command.Stderr = &stderr
 	err := command.Run()
 	status := 0
@@ -1499,7 +1549,7 @@ func runHookStartCommand(t *testing.T, hook, runtime, input string, extraEnv []s
 		}
 		status = exitError.ExitCode()
 	}
-	return stdout.String(), stderr.String(), status
+	return stderr.String(), status
 }
 
 func snapshotFixtureTree(t *testing.T, root string) string {

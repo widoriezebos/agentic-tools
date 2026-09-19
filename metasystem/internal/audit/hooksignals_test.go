@@ -15,8 +15,8 @@ var (
 
 // armHookSignalGuard gives hook subprocesses dispositions that Bash can trap.
 // Bash cannot trap signals ignored on entry, so a test binary launched by nohup
-// must own HUP, INT, and TERM before it execs a hook. No test in this package runs
-// in parallel, making the process-wide guard safe. The drain restores and re-raises
+// must own HUP, INT, and TERM before it execs a hook. Signal-disposition tests run
+// sequentially, making the process-wide guard safe. The drain restores and re-raises
 // signals sent to the test binary so the guard cannot swallow launcher cancellation.
 func armHookSignalGuard() {
 	hookSignalGuardOnce.Do(func() {
