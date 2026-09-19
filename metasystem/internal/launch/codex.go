@@ -38,10 +38,15 @@ func (scanner KernelProcessScanner) Scan() ([]Process, error) {
 type CodexExec struct {
 	Binary, Model, Effort, SessionsRoot, CommonTemplate string
 	Now                                                 func() time.Time
+	Location                                            *time.Location
 	Scanner                                             ProcessScanner
 }
 
 func (adapter CodexExec) Command(record Record, stateDir string) (Command, error) {
+	window := readInt64(record.AdapterData, "window")
+	if window <= 0 {
+		return Command{}, fmt.Errorf(`AdapterData key "window" must be positive`)
+	}
 	brief := readString(record.AdapterData, "brief")
 	data, err := os.ReadFile(brief)
 	if err != nil {
@@ -61,14 +66,11 @@ func (adapter CodexExec) Command(record Record, stateDir string) (Command, error
 	if value := readString(record.AdapterData, "effort"); value != "" {
 		effort = value
 	}
-	window := int64(200000)
-	if value := readInt64(record.AdapterData, "window"); value > 0 {
-		window = value
-	}
 	return Command{Program: adapter.Binary, Directory: directory, Stdin: string(data),
 		Args: []string{"exec", "-m", model, "-c", "model_reasoning_effort=" + effort, "-C", directory,
-			"-s", "workspace-write", "-o", filepath.Join(stateDir, "last-message.txt"), "-"},
-		Environment: []string{fmt.Sprintf("CODEX_CONTEXT_WINDOW=%d", window)}, LogPath: filepath.Join(stateDir, "exec.log")}, nil
+			"-s", "workspace-write", "-o", filepath.Join(stateDir, "last-message.txt"),
+			"-c", fmt.Sprintf("model_auto_compact_token_limit=%d", window), "-"},
+		LogPath: filepath.Join(stateDir, "exec.log")}, nil
 }
 func (adapter CodexExec) prepareCritique(record Record) (string, error) {
 	if record.Tag == "" || len(record.Inputs) < 3 {
@@ -123,11 +125,21 @@ func (adapter CodexExec) Measure(record Record, stateDir string) (Measurement, [
 		return measurement, outputs, nil, fmt.Errorf("codex exec log has no session id")
 	}
 	sessionID := string(match[1])
-	day := adapter.Now().UTC()
-	pattern := filepath.Join(adapter.SessionsRoot, day.Format("2006"), day.Format("01"), day.Format("02"), "rollout-*"+sessionID+".jsonl")
-	files, err := filepath.Glob(pattern)
-	if err != nil || len(files) != 1 {
-		return measurement, outputs, nil, fmt.Errorf("rollout for session %s: found %d: %w", sessionID, len(files), err)
+	directories, err := adapter.rolloutDirectories(record)
+	if err != nil {
+		return measurement, outputs, nil, err
+	}
+	var files []string
+	for _, directory := range directories {
+		pattern := filepath.Join(directory, "rollout-*"+sessionID+".jsonl")
+		matches, globErr := filepath.Glob(pattern)
+		if globErr != nil {
+			return measurement, outputs, nil, fmt.Errorf("rollout for session %s: search %s: %w", sessionID, pattern, globErr)
+		}
+		files = append(files, matches...)
+	}
+	if len(files) != 1 {
+		return measurement, outputs, nil, fmt.Errorf("rollout for session %s: found %d", sessionID, len(files))
 	}
 	if err := measureRollout(files[0], &measurement); err != nil {
 		return measurement, outputs, nil, err
@@ -145,6 +157,42 @@ func (adapter CodexExec) Measure(record Record, stateDir string) (Measurement, [
 	patch := map[string]json.RawMessage{}
 	setString(patch, "sessionID", sessionID)
 	return measurement, outputs, patch, nil
+}
+
+func (adapter CodexExec) rolloutDirectories(record Record) ([]string, error) {
+	now := adapter.Now()
+	started := now
+	if record.StartedAt != "" {
+		var err error
+		started, err = time.Parse(time.RFC3339Nano, record.StartedAt)
+		if err != nil {
+			return nil, fmt.Errorf("launch start time %q: %w", record.StartedAt, err)
+		}
+	}
+	location := adapter.Location
+	if location == nil {
+		location = time.Local
+	}
+	seen := map[string]bool{}
+	var directories []string
+	add := func(day time.Time) {
+		directory := filepath.Join(adapter.SessionsRoot, day.Format("2006"), day.Format("01"), day.Format("02"))
+		if !seen[directory] {
+			seen[directory] = true
+			directories = append(directories, directory)
+		}
+	}
+	localStart := started.In(location)
+	localEnd := now.In(location)
+	day := time.Date(localStart.Year(), localStart.Month(), localStart.Day(), 0, 0, 0, 0, location)
+	end := time.Date(localEnd.Year(), localEnd.Month(), localEnd.Day(), 0, 0, 0, 0, location)
+	for !day.After(end) {
+		add(day)
+		day = day.AddDate(0, 0, 1)
+	}
+	add(started.UTC())
+	add(now.UTC())
+	return directories, nil
 }
 func measureRollout(path string, measurement *Measurement) error {
 	file, err := os.Open(path)

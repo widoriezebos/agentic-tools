@@ -28,7 +28,9 @@ func claudeRecord(t *testing.T, kind string) (Record, string) {
 	if err := os.WriteFile(briefPath, []byte("brief text\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return Record{Kind: kind, Tag: "alpha", WorkingDirectory: root, AdapterData: map[string]json.RawMessage{"brief": rawString(briefPath)}}, root
+	data := map[string]json.RawMessage{"brief": rawString(briefPath)}
+	setInt64(data, "window", 1000000)
+	return Record{Kind: kind, Tag: "alpha", WorkingDirectory: root, AdapterData: data}, root
 }
 
 func TestClaudeHeadlessCommand(t *testing.T) {
@@ -60,7 +62,7 @@ func TestWindowVariableReachesOnlyTheChild(t *testing.T) {
 	command := Command{
 		Program: os.Args[0], Args: []string{"-test.run=^TestLaunchEnvironmentHelper$"},
 		Stdin:       strings.Repeat("x", 16<<20),
-		Environment: []string{"GO_LAUNCH2_CHILD=1", "CLAUDE_CODE_AUTO_COMPACT_WINDOW=" + DefaultClaudeAutoCompactWindow},
+		Environment: []string{"GO_LAUNCH2_CHILD=1", "CLAUDE_CODE_AUTO_COMPACT_WINDOW=" + wantWindow},
 		LogPath:     filepath.Join(state, "stderr"), StdoutPath: filepath.Join(state, "stdout"),
 	}
 	child, ref, err := processes.StartChild(command)
@@ -73,7 +75,7 @@ func TestWindowVariableReachesOnlyTheChild(t *testing.T) {
 		t.Fatalf("child exit=%d err=%v", exit, err)
 	}
 	data, err := os.ReadFile(command.StdoutPath)
-	require(t, err != nil || string(data) != wantWindow || DefaultClaudeAutoCompactWindow != wantWindow, "child window=%q constant=%q err=%v", data, DefaultClaudeAutoCompactWindow, err)
+	require(t, err != nil || string(data) != wantWindow, "child window=%q err=%v", data, err)
 	require(t, os.Getenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW") != "765432", "caller window changed to %q", os.Getenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW"))
 }
 
@@ -145,6 +147,7 @@ func seedClaude(t *testing.T, m *Manager, id string) (Record, string) {
 		current.Adapter = "claude-headless"
 		current.Kind = "design"
 		current.AdapterData["brief"] = rawString(briefPath)
+		setInt64(current.AdapterData, "window", 200000)
 		return nil
 	})
 	record.Adapter = "claude-headless"

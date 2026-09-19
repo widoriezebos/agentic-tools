@@ -88,6 +88,7 @@ func TestCodexDesignCommandUsesTheWorkingDirectory(t *testing.T) {
 	}
 	data := map[string]json.RawMessage{}
 	setString(data, "brief", briefPath)
+	setInt64(data, "window", 200000)
 	command, err := (CodexExec{Binary: "codex"}).Command(Record{
 		Kind:             "design",
 		WorkingDirectory: workingDirectory,

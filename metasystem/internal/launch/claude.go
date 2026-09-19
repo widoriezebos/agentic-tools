@@ -14,8 +14,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-const DefaultClaudeAutoCompactWindow = "1000000"
-
 var errClaudeResultUnreadable = errors.New("result-unreadable")
 var errClaudeResultError = errors.New("result-error")
 
@@ -25,6 +23,10 @@ type ClaudeHeadless struct {
 }
 
 func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, error) {
+	window := readInt64(record.AdapterData, "window")
+	if window <= 0 {
+		return Command{}, fmt.Errorf(`AdapterData key "window" must be positive`)
+	}
 	brief, err := os.ReadFile(readString(record.AdapterData, "brief"))
 	if err != nil {
 		return Command{}, err
@@ -45,13 +47,9 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 	if session := readString(record.AdapterData, "resumeSession"); session != "" {
 		args = append(args, "--resume", session)
 	}
-	window := DefaultClaudeAutoCompactWindow
-	if value := readInt64(record.AdapterData, "window"); value > 0 {
-		window = fmt.Sprint(value)
-	}
 	return Command{
 		Program: adapter.Binary, Directory: record.WorkingDirectory, Stdin: string(brief), Args: args,
-		Environment: []string{"CLAUDE_CODE_AUTO_COMPACT_WINDOW=" + window},
+		Environment: []string{"CLAUDE_CODE_AUTO_COMPACT_WINDOW=" + fmt.Sprint(window)},
 		StdoutPath:  filepath.Join(stateDir, "result.json"), LogPath: filepath.Join(stateDir, "stderr.log"),
 	}, nil
 }

@@ -78,6 +78,7 @@ type Record struct {
 	FinishedAt       string                     `json:"finishedAt"`
 	ExitCode         *int                       `json:"exitCode"`
 	Reason           string                     `json:"reason"`
+	Measured         bool                       `json:"measured"`
 	Measurement      Measurement                `json:"measurement"`
 	Outputs          []Output                   `json:"outputs"`
 	AdapterData      map[string]json.RawMessage `json:"adapterData"`
@@ -86,6 +87,12 @@ type Record struct {
 	ReadPackage      string                     `json:"readPackage,omitempty"`
 	ChangedLines     int64                      `json:"changedLines,omitempty"`
 	VerdictCounts    *bool                      `json:"verdictCounts,omitempty"`
+}
+
+func (record *Record) UnmarshalJSON(data []byte) error {
+	type recordJSON Record
+	record.Measured = true
+	return json.Unmarshal(data, (*recordJSON)(record))
 }
 
 type Refusal struct {

@@ -37,7 +37,7 @@ func TestWindowReachesTheChildFromTheRecord(t *testing.T) {
 	setString(data, "brief", brief)
 	setInt64(data, "window", 345678)
 	codex, err := (CodexExec{}).Command(Record{Kind: "build", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
-	if err != nil || !containsString(codex.Environment, "CODEX_CONTEXT_WINDOW=345678") {
+	if err != nil || len(codex.Args) < 3 || codex.Args[len(codex.Args)-2] != "model_auto_compact_token_limit=345678" || containsString(codex.Environment, "CODEX_CONTEXT_WINDOW=345678") {
 		t.Fatalf("codex=%+v err=%v", codex, err)
 	}
 	claude, err := (ClaudeHeadless{}).Command(Record{Kind: "read", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
@@ -45,9 +45,9 @@ func TestWindowReachesTheChildFromTheRecord(t *testing.T) {
 		t.Fatalf("claude=%+v err=%v", claude, err)
 	}
 	delete(data, "window")
-	claude, _ = (ClaudeHeadless{}).Command(Record{Kind: "read", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
-	if !containsString(claude.Environment, "CLAUDE_CODE_AUTO_COMPACT_WINDOW="+DefaultClaudeAutoCompactWindow) {
-		t.Fatalf("legacy environment=%v", claude.Environment)
+	_, err = (ClaudeHeadless{}).Command(Record{Kind: "read", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), `"window"`) {
+		t.Fatalf("missing window error=%v", err)
 	}
 }
 

@@ -2,9 +2,11 @@ package launch
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 type KindReport struct {
@@ -13,6 +15,7 @@ type KindReport struct {
 	Completed      int    `json:"completed"`
 	Failed         int    `json:"failed"`
 	Cancelled      int    `json:"cancelled"`
+	Unmeasured     int    `json:"unmeasured"`
 	Compactions    int    `json:"compactions"`
 	CompactedJobs  int    `json:"compactedJobs"`
 	PeaksAbove200K int    `json:"peaksAbove200K"`
@@ -103,6 +106,9 @@ func (m *Manager) Report(goal string) (SummaryReport, error) {
 		case Cancelled:
 			row.Cancelled++
 		}
+		if !record.Measured {
+			row.Unmeasured++
+		}
 		row.Compactions += record.Measurement.Compactions
 		if record.Measurement.Compactions > 0 {
 			row.CompactedJobs++
@@ -141,7 +147,7 @@ func (m *Manager) Report(goal string) (SummaryReport, error) {
 func (report SummaryReport) Lines() []string {
 	var lines []string
 	for _, row := range report.Kinds {
-		lines = append(lines, fmt.Sprintf("kind=%s jobs=%d completed=%d failed=%d cancelled=%d compactions=%d compacted-jobs=%d peaks-above-200k=%d", row.Kind, row.Jobs, row.Completed, row.Failed, row.Cancelled, row.Compactions, row.CompactedJobs, row.PeaksAbove200K))
+		lines = append(lines, fmt.Sprintf("kind=%s jobs=%d completed=%d failed=%d cancelled=%d unmeasured=%d compactions=%d compacted-jobs=%d peaks-above-200k=%d", row.Kind, row.Jobs, row.Completed, row.Failed, row.Cancelled, row.Unmeasured, row.Compactions, row.CompactedJobs, row.PeaksAbove200K))
 	}
 	var codes []string
 	for code := range report.Refusals {
@@ -195,6 +201,26 @@ func (report SummaryReport) Lines() []string {
 		lines = append(lines, fmt.Sprintf("rounds-to-acceptance goal=%s rounds=%s", summary.Goal, rounds))
 	}
 	return append(lines, fmt.Sprintf("builds-over-cap=%d compacted-reads=%d", report.BuildsOverCap, report.CompactedReads))
+}
+
+func RecordLine(record Record, root string) string {
+	exit := "-"
+	if record.ExitCode != nil {
+		exit = strconv.Itoa(*record.ExitCode)
+	}
+	verdict := strings.ReplaceAll(record.Measurement.Verdict, "\n", " ")
+	page := fmt.Sprintf("page-lines=%d page-words=%d", record.Measurement.PageLines, record.Measurement.PageWords)
+	if record.Measurement.PageMissing {
+		page = "page=missing"
+	}
+	verdictState := ""
+	if record.VerdictCounts != nil && !*record.VerdictCounts {
+		verdictState = " rerun-split"
+	}
+	return fmt.Sprintf("id=%s state=%s directory=%s exit=%s measured=%t result-lines=%d result-words=%d result-tail=%q calls=%d turns=%d compactions=%d peak-context=%d calls-above-200k=%d %s material=%d verdict=%q%s",
+		record.ID, record.State, filepath.Join(root, record.ID), exit, record.Measured, record.Measurement.ResultLines, record.Measurement.ResultWords,
+		record.Measurement.ResultTail, record.Measurement.Calls, record.Measurement.Turns, record.Measurement.Compactions, record.Measurement.PeakContext,
+		record.Measurement.CallsAbove200, page, record.Measurement.MaterialCount, verdict, verdictState)
 }
 
 var readFixVerdict = regexp.MustCompile(`^VERDICT: fix first \(([0-9]+) material findings\)$`)

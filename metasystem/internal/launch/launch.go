@@ -118,7 +118,7 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	}
 	record := Record{ID: id, Kind: spec.Kind, Adapter: adapterName, Goal: spec.Goal, Tag: spec.Tag,
 		WorkingDirectory: absDir, Inputs: inputs, State: Starting, StartedAt: m.Now().UTC().Format(time.RFC3339Nano),
-		AdapterData: spec.AdapterData}
+		Measured: true, AdapterData: spec.AdapterData}
 	data := map[string]json.RawMessage{}
 	for key, value := range record.AdapterData {
 		data[key] = value
@@ -290,6 +290,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		}
 		record.ExitCode = &exitCode
 		record.FinishedAt = m.Now().UTC().Format(time.RFC3339Nano)
+		record.Measured = measureErr == nil
 		record.Measurement, record.Outputs = measurement, outputs
 		if record.Kind == "read" {
 			counts := measurement.Compactions == 0

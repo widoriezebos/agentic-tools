@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -321,21 +320,5 @@ func verdictCounts(record launch.Record) bool {
 }
 func launchReport(record launch.Record) string {
 	root, _ := launch.DefaultRoot()
-	exit := "-"
-	if record.ExitCode != nil {
-		exit = strconv.Itoa(*record.ExitCode)
-	}
-	verdict := strings.ReplaceAll(record.Measurement.Verdict, "\n", " ")
-	page := fmt.Sprintf("page-lines=%d page-words=%d", record.Measurement.PageLines, record.Measurement.PageWords)
-	if record.Measurement.PageMissing {
-		page = "page=missing"
-	}
-	verdictState := ""
-	if record.VerdictCounts != nil && !*record.VerdictCounts {
-		verdictState = " rerun-split"
-	}
-	return fmt.Sprintf("id=%s state=%s directory=%s exit=%s result-lines=%d result-words=%d result-tail=%q calls=%d turns=%d compactions=%d peak-context=%d calls-above-200k=%d %s material=%d verdict=%q%s",
-		record.ID, record.State, filepath.Join(root, record.ID), exit, record.Measurement.ResultLines, record.Measurement.ResultWords,
-		record.Measurement.ResultTail, record.Measurement.Calls, record.Measurement.Turns, record.Measurement.Compactions, record.Measurement.PeakContext,
-		record.Measurement.CallsAbove200, page, record.Measurement.MaterialCount, verdict, verdictState)
+	return launch.RecordLine(record, root)
 }

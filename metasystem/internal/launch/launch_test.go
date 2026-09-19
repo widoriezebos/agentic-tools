@@ -271,8 +271,9 @@ func TestCodexExecCommand(t *testing.T) {
 	setString(data, "brief", briefPath)
 	setString(data, "model", "m")
 	setString(data, "effort", "high")
+	setInt64(data, "window", 200000)
 	command, err := (CodexExec{Binary: "fake-codex"}).Command(Record{Kind: "build", WorkingDirectory: root, AdapterData: data}, root)
-	want := []string{"exec", "-m", "m", "-c", "model_reasoning_effort=high", "-C", root, "-s", "workspace-write", "-o", filepath.Join(root, "last-message.txt"), "-"}
+	want := []string{"exec", "-m", "m", "-c", "model_reasoning_effort=high", "-C", root, "-s", "workspace-write", "-o", filepath.Join(root, "last-message.txt"), "-c", "model_auto_compact_token_limit=200000", "-"}
 	require(t, err != nil || command.Program != "fake-codex" || command.Stdin != "do it" || !reflect.DeepEqual(command.Args, want), "command=%+v err=%v", command, err)
 }
 func TestCodexMeasureReadsTheRolloutFile(t *testing.T) {
@@ -341,7 +342,7 @@ func TestCoreRecordNamesNoRuntime(t *testing.T) {
 	for key := range values {
 		keys = append(keys, key)
 	}
-	expected := []string{"adapter", "adapterData", "child", "exitCode", "finishedAt", "goal", "id", "inputs", "kind", "measurement", "outputs", "processGroup", "reason", "startedAt", "state", "supervisor", "tag", "workingDirectory"}
+	expected := []string{"adapter", "adapterData", "child", "exitCode", "finishedAt", "goal", "id", "inputs", "kind", "measured", "measurement", "outputs", "processGroup", "reason", "startedAt", "state", "supervisor", "tag", "workingDirectory"}
 	slices.Sort(keys)
 	require(t, !reflect.DeepEqual(keys, expected) || strings.Contains(string(data), "codex") || strings.Contains(string(data), "claude"), "record keys=%v json=%s", keys, data)
 }
@@ -354,6 +355,7 @@ func TestCritiqueCopiesTheReportAndRecordsTheExit(t *testing.T) {
 	}
 	data := map[string]json.RawMessage{}
 	setString(data, "brief", task)
+	setInt64(data, "window", 200000)
 	record := Record{Kind: "critique", Tag: "tag", WorkingDirectory: worktree, Inputs: []Input{{Path: task}, {Path: page}, {Path: design}}, AdapterData: data}
 	adapter := CodexExec{CommonTemplate: common}
 	command, err := adapter.Command(record, state)
