@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -63,11 +62,7 @@ func TestKernelProberReportsExitingBeforeProcessDeath(t *testing.T) {
 	t.Parallel()
 
 	if os.Getenv(exitingWitnessMode) == "child" {
-		allocation := make([]byte, 3<<30)
-		for offset := 0; offset < len(allocation); offset += 2 << 20 {
-			allocation[offset] = 1
-		}
-		runtime.KeepAlive(allocation)
+		_, _ = io.Copy(io.Discard, os.Stdin)
 		os.Exit(0)
 	}
 
@@ -75,42 +70,64 @@ func TestKernelProberReportsExitingBeforeProcessDeath(t *testing.T) {
 	stderrPath := filepath.Join(dir, "exiting.stderr")
 	command := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
 	command.Env = append(os.Environ(), exitingWitnessMode+"=child")
+	stdin, err := command.StdinPipe()
+	if err != nil {
+		t.Fatalf("create exiting child stdin: %v; state=%s zombie=false exiting=false running-started-at=%s zombie-started-at=%s output=%q",
+			err, Unknown, (Exact{}).StartedAt, (Exact{}).StartedAt, "")
+	}
 	startWitnessCommand(t, command, stderrPath, true)
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
-
-	seenExiting := false
-	var probeFailure error
-	var failure string
-	waitWitnessWithClock(dir, "kernel exiting flag before process death", witnessCustodianBound, time.Millisecond, time.Now, time.Sleep,
-		func() (bool, string) {
-			exact, state, err := (KernelProber{}).Probe(int64(command.Process.Pid))
-			if err != nil {
-				probeFailure = err
-				return true, fmt.Sprintf("state=%s exiting=%t probe=%v", state, exact.Exiting, err)
-			}
-			if state == Alive {
-				seenExiting = seenExiting || exact.Exiting
-				return false, fmt.Sprintf("state=%s exiting=%t zombie=%t", state, exact.Exiting, exact.Zombie)
-			}
-			return state == Dead, fmt.Sprintf("state=%s exiting=%t zombie=%t", state, exact.Exiting, exact.Zombie)
-		}, func(message string) { failure = message })
-	if probeFailure != nil || failure != "" {
+	reaped := false
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		if reaped {
+			return
+		}
 		_ = command.Process.Kill()
+		_ = command.Wait()
+		reaped = true
+	})
+
+	var running, zombie, observed Exact
+	state := Unknown
+	var probeErr error
+	fail := func(message string) {
+		output, _ := os.ReadFile(stderrPath)
+		t.Fatalf("%s; pid=%d state=%s zombie=%t exiting=%t running-started-at=%s zombie-started-at=%s probe=%v output=%q",
+			message, command.Process.Pid, state, observed.Zombie, observed.Exiting, running.StartedAt, zombie.StartedAt, probeErr, output)
 	}
-	waitErr := <-done
-	output, _ := os.ReadFile(stderrPath)
-	if probeFailure != nil {
-		t.Fatalf("probe exiting child: %v; wait=%v output=%q", probeFailure, waitErr, output)
+
+	observed, state, probeErr = (KernelProber{}).Probe(int64(command.Process.Pid))
+	running = observed
+	if probeErr != nil || state != Alive || observed.Zombie || observed.Exiting {
+		fail("running child did not report Alive without zombie or exiting flags")
 	}
-	if failure != "" {
-		t.Fatalf("%s; wait=%v output=%q", failure, waitErr, output)
+
+	watch, err := armExitWatch(command.Process.Pid)
+	if err != nil {
+		fail(fmt.Sprintf("arm exit watch: %v", err))
 	}
+	if err := stdin.Close(); err != nil {
+		watch.close()
+		fail(fmt.Sprintf("close exiting child stdin: %v", err))
+	}
+	if err := watch.wait(); err != nil {
+		fail(fmt.Sprintf("wait for exiting child: %v", err))
+	}
+
+	observed, state, probeErr = (KernelProber{}).Probe(int64(command.Process.Pid))
+	zombie = observed
+	if probeErr != nil || state != Alive || !observed.Zombie || !observed.Exiting || !observed.StartedAt.Equal(running.StartedAt) {
+		fail("exited unreaped child did not report Alive with zombie and exiting flags and the original start time")
+	}
+
+	waitErr := command.Wait()
+	reaped = true
 	if waitErr != nil {
-		t.Fatalf("exiting child failed: %v output=%q", waitErr, output)
+		fail(fmt.Sprintf("reap exiting child: %v", waitErr))
 	}
-	if !seenExiting {
-		t.Fatalf("kernel probe never reported Exiting before child death; output=%q", output)
+	observed, state, probeErr = (KernelProber{}).Probe(int64(command.Process.Pid))
+	if probeErr != nil || state != Dead {
+		fail("reaped child did not report Dead")
 	}
 }
 
