@@ -27,6 +27,19 @@ func TestJudgementLineNamesBuildReadAndProof(t *testing.T) {
 	}
 }
 
+func TestJudgementLineSkipsReadSupersededByCountingRerun(t *testing.T) {
+	t.Parallel()
+	yes, no := true, false
+	record := launch.UnitRunRecord{ID: "run", State: "awaiting-judgement", Rounds: []launch.UnitRound{{Number: 1, Directory: t.TempDir(), Outcome: "green", Steps: []launch.UnitStep{
+		{Name: "read:pkg/a", LaunchID: "compacted", State: launch.StepPassed, Package: "pkg/a", Verdict: "fix first", VerdictCounts: &no},
+		{Name: "read:pkg/a/a.go:rerun", LaunchID: "rerun", State: launch.StepPassed, Package: "pkg/a", File: "pkg/a/a.go", Rerun: true, Verdict: "pass", VerdictCounts: &yes},
+	}}}}
+	line := unitJudgementLine(record, nil)
+	if strings.Contains(line, "compacted:fix first") || !strings.Contains(line, "read=rerun:pass verdict-counts=true") {
+		t.Fatalf("line=%q", line)
+	}
+}
+
 type fakeUnitAdvancer struct {
 	result launch.UnitResult
 	err    error

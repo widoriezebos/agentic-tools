@@ -40,7 +40,7 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 		case "design":
 			model = "claude-fable-5-1"
 		case "read":
-			model = "claude-opus-5"
+			model = "claude-opus-5[1m]"
 		}
 	}
 	args := []string{"-p", "--model", model, "--dangerously-skip-permissions", "--output-format", "json", "--name", record.Kind + "-" + record.Tag}

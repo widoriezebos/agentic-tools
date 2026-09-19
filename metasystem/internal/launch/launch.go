@@ -36,7 +36,7 @@ type SupervisorStarter interface {
 }
 type StartSpec struct {
 	ID, Kind, Goal, Tag, WorkingDirectory, Brief, Page string
-	Model, Effort, UnitsPage, DiffFile, Package        string
+	Model, Effort, UnitsPage, DiffFile, Package, File  string
 	Wide                                               bool
 	Inputs, Outputs, Units                             []string
 	AdapterData                                        map[string]json.RawMessage
@@ -150,7 +150,7 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 		if choiceErr != nil {
 			return Record{}, choiceErr
 		}
-		record.ReadMode, record.ReadPackage = choice.Mode, spec.Package
+		record.ReadMode, record.ReadPackage, record.ReadFile = choice.Mode, spec.Package, spec.File
 		if spec.readMode != "" {
 			record.ReadMode = spec.readMode
 		}
@@ -158,7 +158,11 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 		if record.ReadMode == "wide" && spec.Package != "" {
 			diffMode = "package"
 		}
-		diff, record.ChangedLines, err = readDiff(spec.DiffFile, diffMode, spec.Package)
+		share := spec.Package
+		if record.ReadMode == "file" {
+			share = spec.File
+		}
+		diff, record.ChangedLines, err = readDiff(spec.DiffFile, diffMode, share)
 		if err != nil {
 			return Record{}, err
 		}

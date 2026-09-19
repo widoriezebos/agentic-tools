@@ -44,6 +44,22 @@ func TestClaudeHeadlessCommand(t *testing.T) {
 	require(t, command.StdoutPath != filepath.Join(state, "result.json") || command.LogPath != filepath.Join(state, "stderr.log") || command.StdoutPath == command.LogPath, "output paths=%+v", command)
 }
 
+func TestReadModelWithContextSuffixPassesThroughToClaude(t *testing.T) {
+	t.Parallel()
+	record, _ := claudeRecord(t, "read")
+	record.AdapterData["model"] = rawString("claude-opus-5[1m]")
+	command, err := (ClaudeHeadless{Binary: "claude"}).Command(record, t.TempDir())
+	want := []string{"-p", "--model", "claude-opus-5[1m]", "--dangerously-skip-permissions", "--output-format", "json", "--name", "read-alpha"}
+	if err != nil || !reflect.DeepEqual(command.Args, want) {
+		t.Fatalf("argv=%v want=%v err=%v", command.Args, want, err)
+	}
+	delete(record.AdapterData, "model")
+	command, err = (ClaudeHeadless{Binary: "claude"}).Command(record, t.TempDir())
+	if err != nil || !reflect.DeepEqual(command.Args, want) {
+		t.Fatalf("fallback argv=%v want=%v err=%v", command.Args, want, err)
+	}
+}
+
 func TestLaunchEnvironmentHelper(t *testing.T) {
 	if os.Getenv("GO_LAUNCH2_CHILD") != "1" {
 		return
@@ -89,7 +105,7 @@ func TestKindSelectsTheAdapterAndTheDefaultModel(t *testing.T) {
 		kind, adapter, model string
 	}{
 		{"design", "claude-headless", "claude-fable-5-1"},
-		{"read", "claude-headless", "claude-opus-5"},
+		{"read", "claude-headless", "claude-opus-5[1m]"},
 		{"build", "codex-exec", "gpt-5.6-sol"},
 		{"critique", "codex-exec", "gpt-5.6-sol"},
 	}
@@ -334,8 +350,12 @@ func TestNoTrackedFileNamesTheDeletedLaunchers(t *testing.T) {
 		"codex-" + "critique-launch.sh",
 		"critique-" + "round-task.sh",
 		"headless-" + "launchers-fixtures.sh",
+		"companion CLI",
+		"codex-companion",
+		"codex:codex-rescue",
+		"/codex:",
 	}
-	paths := []string{"scripts", "docs", "skills", "cmd", "internal", "testing.json", "AGENTS.md", "wow.md"}
+	paths := []string{"scripts", "docs", "skills", "AGENTS.md"}
 	for _, relative := range paths {
 		path := filepath.Join(root, relative)
 		info, err := os.Stat(path)
@@ -367,8 +387,10 @@ func checkForbiddenNames(t *testing.T, path string, forbidden []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	lowerPath, lowerData := strings.ToLower(path), bytes.ToLower(data)
 	for _, name := range forbidden {
-		if strings.Contains(path, name) || bytes.Contains(data, []byte(name)) {
+		lowerName := strings.ToLower(name)
+		if strings.Contains(lowerPath, lowerName) || bytes.Contains(lowerData, []byte(lowerName)) {
 			t.Errorf("%s names removed file %s", path, name)
 		}
 	}

@@ -85,6 +85,7 @@ type Record struct {
 	DeclaredLines    int64                      `json:"declaredLines,omitempty"`
 	ReadMode         string                     `json:"readMode,omitempty"`
 	ReadPackage      string                     `json:"readPackage,omitempty"`
+	ReadFile         string                     `json:"readFile,omitempty"`
 	ChangedLines     int64                      `json:"changedLines,omitempty"`
 	VerdictCounts    *bool                      `json:"verdictCounts,omitempty"`
 }

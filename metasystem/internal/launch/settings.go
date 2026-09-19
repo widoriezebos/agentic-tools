@@ -56,7 +56,7 @@ var settingDefaults = []Setting{
 	{Key: SeatWindowKey, Value: "200000", Source: "default"}, {Key: BuildWindowKey, Value: "200000", Source: "default"},
 	{Key: DesignWindowKey, Value: "200000", Source: "default"}, {Key: ReadWindowKey, Value: "400000", Source: "default"},
 	{Key: BuildModelKey, Value: "gpt-5.6-sol", Source: "default"}, {Key: BuildEffortKey, Value: "xhigh", Source: "default"},
-	{Key: DesignModelKey, Value: "claude-fable-5-1", Source: "default"}, {Key: ReadModelKey, Value: "claude-opus-5", Source: "default"},
+	{Key: DesignModelKey, Value: "claude-fable-5-1", Source: "default"}, {Key: ReadModelKey, Value: "claude-opus-5[1m]", Source: "default"},
 	{Key: WaitCapKey, Value: "240", Source: "default"}, {Key: BriefCapKey, Value: "120000", Source: "default"},
 	{Key: BuildLinesCapKey, Value: "1500", Source: "default"}, {Key: ReadSplitLinesKey, Value: "1200", Source: "default"},
 	{Key: DesignBaselineTokensKey, Value: "2432374", Source: "default"}, {Key: DesignBaselineRequestsKey, Value: "28", Source: "default"},

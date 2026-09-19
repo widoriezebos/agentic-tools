@@ -66,7 +66,7 @@ func unitJudgementLine(record launch.UnitRunRecord, manager *launch.Manager) str
 	passed, total := 0, 0
 	counts := true
 	var red []string
-	for _, step := range round.Steps {
+	for index, step := range round.Steps {
 		switch {
 		case strings.HasPrefix(step.Name, "build"):
 			value := step.LaunchID + ":" + unitLaunchState(manager, step)
@@ -76,6 +76,9 @@ func unitJudgementLine(record launch.UnitRunRecord, manager *launch.Manager) str
 				build += "," + value
 			}
 		case strings.HasPrefix(step.Name, "read"):
+			if readStepHasCountingRerun(round.Steps, index) {
+				continue
+			}
 			reads = append(reads, step.LaunchID+":"+chooseUnitValue(step.Verdict, "none"))
 			counts = counts && step.VerdictCounts != nil && *step.VerdictCounts
 		case strings.HasPrefix(step.Name, "proof:"):
@@ -96,6 +99,19 @@ func unitJudgementLine(record launch.UnitRunRecord, manager *launch.Manager) str
 	}
 	return fmt.Sprintf("run=%s round=%d state=%s outcome=%s build=%s read=%s verdict-counts=%t proof=%d/%d red=%s directory=%s",
 		record.ID, round.Number, record.State, round.Outcome, build, strings.Join(reads, ","), counts, passed, total, redValue, filepath.Clean(round.Directory))
+}
+
+func readStepHasCountingRerun(steps []launch.UnitStep, index int) bool {
+	step := steps[index]
+	if step.Rerun {
+		return false
+	}
+	for _, candidate := range steps[index+1:] {
+		if candidate.Rerun && candidate.VerdictCounts != nil && *candidate.VerdictCounts && (step.Package == "" || candidate.Package == step.Package) {
+			return true
+		}
+	}
+	return false
 }
 
 func unitLaunchState(manager *launch.Manager, step launch.UnitStep) string {

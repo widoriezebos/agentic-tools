@@ -22,11 +22,11 @@ func TestDesignAdapterFollowsTheResolvedModel(t *testing.T) {
 		want        string
 	}{
 		{name: "Codex from settings", kind: "design", useSettings: true, settings: "gpt-6-astra", want: "codex-exec"},
-		{name: "Claude from settings", kind: "design", useSettings: true, settings: "claude-opus-5", want: "claude-headless"},
+		{name: "Claude from settings", kind: "design", useSettings: true, settings: "claude-opus-5[1m]", want: "claude-headless"},
 		{name: "empty model", kind: "design", useSettings: true, want: "claude-headless"},
 		{name: "default design", kind: "design", want: "claude-headless"},
-		{name: "adapter data overrides settings", kind: "design", useSettings: true, settings: "claude-opus-5", adapterData: "gpt-6-astra", want: "codex-exec"},
-		{name: "spec overrides adapter data", kind: "design", useSettings: true, settings: "gpt-6-astra", adapterData: "gpt-6-astra", model: "claude-opus-5", want: "claude-headless"},
+		{name: "adapter data overrides settings", kind: "design", useSettings: true, settings: "claude-opus-5[1m]", adapterData: "gpt-6-astra", want: "codex-exec"},
+		{name: "spec overrides adapter data", kind: "design", useSettings: true, settings: "gpt-6-astra", adapterData: "gpt-6-astra", model: "claude-opus-5[1m]", want: "claude-headless"},
 		{name: "read stays Claude", kind: "read", model: "gpt-6-astra", want: "claude-headless"},
 	}
 	for index, row := range cases {

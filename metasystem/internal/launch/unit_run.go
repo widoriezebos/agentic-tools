@@ -62,6 +62,7 @@ type UnitStep struct {
 	Model         string        `json:"model"`
 	Mode          string        `json:"mode,omitempty"`
 	Package       string        `json:"package,omitempty"`
+	File          string        `json:"file,omitempty"`
 	Brief         string        `json:"brief,omitempty"`
 	Units         []string      `json:"units,omitempty"`
 	Rerun         bool          `json:"rerun,omitempty"`
@@ -118,6 +119,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		if err != nil {
 			return UnitResult{}, err
 		}
+		if err = runner.requireGoalBranch(plan); err != nil {
+			return UnitResult{}, err
+		}
 		if err = runner.admitRound(plan, plan.Build.Brief, nil); err != nil {
 			return UnitResult{}, err
 		}
@@ -143,6 +147,11 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 	if request.Resume != "" {
 		record, err = runner.read(record.ID)
 		if err != nil {
+			return UnitResult{}, err
+		}
+	}
+	if request.Resume != "" && (request.FollowUp != "" || record.State != "awaiting-judgement") {
+		if err := runner.requireGoalBranch(plan); err != nil {
 			return UnitResult{}, err
 		}
 	}
@@ -172,30 +181,52 @@ func (runner *UnitRunner) admitRound(plan UnitPlan, buildBrief string, previous 
 	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
 	spec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree,
 		Brief: buildBrief, Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: plan.Build.Units}
-	if err := runner.Manager.Admit(spec); err != nil {
+	settings, err := runner.Manager.resolvedSettings()
+	if err != nil {
+		return err
+	}
+	if err := runner.Manager.admit(spec, settings); err != nil {
 		if !strings.HasPrefix(err.Error(), "LAUNCH_BUILD_OVERSIZE") {
 			return err
-		}
-		settings, settingsErr := runner.Manager.resolvedSettings()
-		if settingsErr != nil {
-			return settingsErr
 		}
 		units, _, sizeErr := buildSize(spec)
 		if sizeErr != nil {
 			return sizeErr
 		}
 		for _, group := range serialGroups(units, settings.BuildLinesCap) {
-			if group.OverCap {
-				return err
-			}
 			groupSpec := spec
 			groupSpec.Units = group.Units
+			if group.OverCap {
+				return runner.Manager.Admit(groupSpec)
+			}
 			if groupErr := runner.Manager.Admit(groupSpec); groupErr != nil {
 				return groupErr
 			}
 		}
 	}
 	return nil
+}
+
+func (runner *UnitRunner) requireGoalBranch(plan UnitPlan) error {
+	git := runner.Git
+	if git == nil {
+		git = OSGitRunner{}
+	}
+	output, branchErr := git.Run(plan.Worktree, nil, "symbolic-ref", "--short", "HEAD")
+	branch := strings.TrimSpace(string(output))
+	if branchErr != nil {
+		branch = "unavailable"
+		if _, headErr := git.Run(plan.Worktree, nil, "rev-parse", "--verify", "HEAD"); headErr == nil {
+			branch = "detached HEAD"
+		}
+	}
+	required := "goal/" + plan.Goal
+	if branch == required {
+		return nil
+	}
+	err := fmt.Errorf("LAUNCH_UNIT_GOAL_BRANCH_REQUIRED worktree=%q branch=%q required=%q", plan.Worktree, branch, required)
+	_ = runner.Manager.Store.AppendRefusal(Refusal{Time: runner.Manager.Now().UTC().Format(time.RFC3339Nano), Code: "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED", Kind: "build", Goal: plan.Goal, Tag: plan.Unit})
+	return err
 }
 
 func (runner *UnitRunner) newRun(plan UnitPlan) (UnitRunRecord, error) {
@@ -456,7 +487,7 @@ func (runner *UnitRunner) runReadSteps(record *UnitRunRecord, round *UnitRound, 
 			continue
 		}
 		spec := StartSpec{Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
-			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, DiffFile: diffPath, Package: step.Package, Wide: step.Mode == "wide"}
+			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, DiffFile: diffPath, Package: step.Package, File: step.File, Wide: step.Mode == "wide"}
 		if step.Rerun {
 			spec.readMode = step.Mode
 		}
@@ -493,7 +524,19 @@ func (runner *UnitRunner) appendReadReruns(record *UnitRunRecord, round *UnitRou
 			continue
 		}
 		if step.Package != "" {
-			reruns = append(reruns, UnitStep{Name: "read:" + step.Package + ":wide", State: StepPending, Model: round.ReadModel, Mode: "wide", Package: step.Package, Rerun: true})
+			var files []string
+			for name := range choice.Files {
+				if filepath.Dir(name) == step.Package {
+					files = append(files, name)
+				}
+			}
+			sort.Strings(files)
+			if len(files) <= 1 {
+				continue
+			}
+			for _, name := range files {
+				reruns = append(reruns, UnitStep{Name: "read:" + name + ":rerun", State: StepPending, Model: round.ReadModel, Mode: "file", Package: step.Package, File: name, Rerun: true})
+			}
 			continue
 		}
 		var packages []string

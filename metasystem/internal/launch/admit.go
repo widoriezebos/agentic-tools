@@ -19,6 +19,7 @@ type ReadChoice struct {
 	Mode        string
 	Lines       int64
 	Directories map[string]int64
+	Files       map[string]int64
 }
 
 var firstInteger = regexp.MustCompile(`[0-9]+`)
@@ -123,12 +124,16 @@ func (m *Manager) admit(spec StartSpec, settings Settings) error {
 			return choiceErr
 		}
 		_, packageExists := choice.Directories[spec.Package]
+		_, fileExists := choice.Files[spec.File]
 		follows := choice.Mode == "whole" && spec.Package == "" && !spec.Wide || choice.Mode == "package" && spec.Package != "" && packageExists && !spec.Wide || choice.Mode == "wide" && spec.Wide && spec.Package == ""
 		if spec.readMode == "package" {
 			follows = spec.Package != "" && packageExists && !spec.Wide
 		}
 		if spec.readMode == "wide" {
 			follows = spec.Package != "" && packageExists && spec.Wide
+		}
+		if spec.readMode == "file" {
+			follows = spec.Package != "" && spec.File != "" && filepath.Dir(spec.File) == spec.Package && fileExists && !spec.Wide
 		}
 		if !follows {
 			lines := []string{fmt.Sprintf("LAUNCH_READ_UNSPLIT choice=%s", choice.Mode)}
@@ -322,13 +327,14 @@ func ChooseReadMode(path string, splitLines int64) (ReadChoice, error) {
 		return ReadChoice{}, err
 	}
 	blocks := parseDiff(data)
-	choice := ReadChoice{Mode: "whole", Directories: map[string]int64{}}
+	choice := ReadChoice{Mode: "whole", Directories: map[string]int64{}, Files: map[string]int64{}}
 	for _, block := range blocks {
 		if block.lines == 0 || block.directory == "" {
 			continue
 		}
 		choice.Lines += block.lines
 		choice.Directories[block.directory] += block.lines
+		choice.Files[block.file] += block.lines
 	}
 	if choice.Lines <= splitLines {
 		return choice, nil
@@ -346,6 +352,7 @@ func ChooseReadMode(path string, splitLines int64) (ReadChoice, error) {
 type diffBlock struct {
 	text      []string
 	directory string
+	file      string
 	lines     int64
 }
 
@@ -366,6 +373,7 @@ func parseDiff(data []byte) []diffBlock {
 			path := strings.TrimPrefix(strings.TrimPrefix(line, "+++ "), "--- ")
 			if path != "/dev/null" {
 				path = strings.TrimPrefix(strings.TrimPrefix(path, "a/"), "b/")
+				current.file = path
 				current.directory = filepath.Dir(path)
 			}
 		}
@@ -376,25 +384,25 @@ func parseDiff(data []byte) []diffBlock {
 	return blocks
 }
 
-func readDiff(path, mode, directory string) ([]byte, int64, error) {
+func readDiff(path, mode, share string) ([]byte, int64, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, 0, err
 	}
-	if mode != "package" {
+	if mode != "package" && mode != "file" {
 		choice, err := ChooseReadMode(path, 1<<62)
 		return data, choice.Lines, err
 	}
 	var lines []string
 	var count int64
 	for _, block := range parseDiff(data) {
-		if block.directory == directory {
+		if mode == "package" && block.directory == share || mode == "file" && block.file == share {
 			lines = append(lines, block.text...)
 			count += block.lines
 		}
 	}
 	if len(lines) == 0 {
-		return nil, 0, fmt.Errorf("LAUNCH_READ_UNSPLIT choice=package missing=%s", directory)
+		return nil, 0, fmt.Errorf("LAUNCH_READ_UNSPLIT choice=%s missing=%s", mode, share)
 	}
 	return []byte(strings.Join(lines, "\n") + "\n"), count, nil
 }

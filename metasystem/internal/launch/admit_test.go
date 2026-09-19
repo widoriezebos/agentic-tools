@@ -31,6 +31,17 @@ func TestStartStoresModelEffortAndWindow(t *testing.T) {
 	}
 }
 
+func TestReadStartRecordsFourHundredThousandTokenWindow(t *testing.T) {
+	t.Parallel()
+	m, _, _, _ := manager(t)
+	m.Supervisor = childStarter(m)
+	m.Adapters["claude-headless"] = fakeAdapter{}
+	record, err := m.Start(StartSpec{ID: "read-window", Kind: "read", Brief: writeLaunchFile(t, "brief.md", "read\n"), WorkingDirectory: t.TempDir(), DiffFile: writeLaunchFile(t, "change.diff", "")})
+	if err != nil || readInt64(record.AdapterData, "window") != 400000 {
+		t.Fatalf("window=%d record=%+v err=%v", readInt64(record.AdapterData, "window"), record, err)
+	}
+}
+
 func TestWindowReachesTheChildFromTheRecord(t *testing.T) {
 	brief := writeLaunchFile(t, "brief", "hello")
 	data := map[string]json.RawMessage{}

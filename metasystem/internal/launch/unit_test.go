@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
 )
 
 type recordingGit struct {
@@ -35,8 +36,11 @@ func (git *recordingOSGit) Run(directory string, environment []string, args ...s
 	return git.runner.Run(directory, environment, args...)
 }
 
-func (git *recordingGit) Run(_ string, env []string, args ...string) ([]byte, error) {
+func (git *recordingGit) Run(directory string, env []string, args ...string) ([]byte, error) {
 	git.calls, git.envs = append(git.calls, append([]string(nil), args...)), append(git.envs, append([]string(nil), env...))
+	if args[0] == "symbolic-ref" || args[0] == "rev-parse" && len(args) > 1 && args[1] == "--verify" {
+		return (OSGitRunner{}).Run(directory, env, args...)
+	}
 	if args[0] == "rev-parse" && args[len(args)-1] == "index" {
 		return []byte(git.index + "\n"), nil
 	}
@@ -96,11 +100,12 @@ func (starter *completingStarter) StartSupervisor(id, _ string) (identity.Ref, e
 }
 
 type unitFixture struct {
-	runner  *UnitRunner
-	manager *Manager
-	starter *completingStarter
-	git     *recordingGit
-	plan    string
+	runner   *UnitRunner
+	manager  *Manager
+	starter  *completingStarter
+	git      *recordingGit
+	plan     string
+	worktree string
 }
 
 func newUnitFixture(t *testing.T, diff string) unitFixture {
@@ -108,6 +113,7 @@ func newUnitFixture(t *testing.T, diff string) unitFixture {
 	root := t.TempDir()
 	worktree := filepath.Join(root, "work")
 	os.MkdirAll(worktree, 0o700)
+	initializeGoalRepository(t, worktree, "goal")
 	brief := filepath.Join(root, "build.md")
 	read := filepath.Join(root, "read.md")
 	page := filepath.Join(root, "units.md")
@@ -131,7 +137,48 @@ func newUnitFixture(t *testing.T, diff string) unitFixture {
 	objects := filepath.Join(root, "objects")
 	os.MkdirAll(objects, 0o700)
 	git := &recordingGit{index: index, objects: objects, diff: []byte(diff)}
-	return unitFixture{&UnitRunner{Manager: m, Git: git, Root: filepath.Join(root, "unit")}, m, starter, git, plan}
+	return unitFixture{runner: &UnitRunner{Manager: m, Git: git, Root: filepath.Join(root, "unit")}, manager: m, starter: starter, git: git, plan: plan, worktree: worktree}
+}
+
+func TestUnitRunStartsOnGoalBranch(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "")
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil || result.Record.Rounds[0].Outcome != "green" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestUnitRunRefusesMainBranch(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "")
+	runGit(t, fixture.worktree, "branch", "-m", "main")
+	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	want := "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED worktree=\"" + fixture.worktree + "\" branch=\"main\" required=\"goal/goal\""
+	if err == nil || err.Error() != want {
+		t.Fatalf("error=%v want=%q", err, want)
+	}
+	wantRow := refusal.Row{Code: "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED", Owner: "internal/launch", Site: "unit_run.go:227", Shape: refusal.Question}
+	for _, row := range refusal.Rows {
+		if row.Code == wantRow.Code {
+			if row != wantRow {
+				t.Fatalf("refusal row=%+v want=%+v", row, wantRow)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing refusal row %+v", wantRow)
+}
+
+func TestUnitRunRefusesDetachedHead(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "")
+	head := strings.TrimSpace(runGit(t, fixture.worktree, "rev-parse", "HEAD"))
+	runGit(t, fixture.worktree, "update-ref", "--no-deref", "HEAD", head)
+	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err == nil || !strings.Contains(err.Error(), "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED") || !strings.Contains(err.Error(), `branch="detached HEAD"`) || !strings.Contains(err.Error(), `required="goal/goal"`) {
+		t.Fatalf("error=%v", err)
+	}
 }
 
 func TestPlanRefusesWhatItCannotRun(t *testing.T) {
@@ -454,7 +501,7 @@ func TestUnitRunNeverWritesToTheRepository(t *testing.T) {
 	}
 	git := fixture.runner.Git.(*recordingOSGit)
 	for index, call := range git.calls {
-		if !slices.Contains([]string{"rev-parse", "for-each-ref", "ls-files", "add", "diff"}, call[0]) {
+		if !slices.Contains([]string{"symbolic-ref", "rev-parse", "for-each-ref", "ls-files", "add", "diff"}, call[0]) {
 			t.Fatalf("git call=%v", call)
 		}
 		if call[0] == "add" && !envOutside(git.envs[index], first.Record.Worktree) {
@@ -467,9 +514,7 @@ func newGitUnitFixture(t *testing.T) (unitFixture, string) {
 	t.Helper()
 	fixture := newUnitFixture(t, "")
 	repo := t.TempDir()
-	runGit(t, repo, "init")
-	runGit(t, repo, "config", "user.email", "test@example.invalid")
-	runGit(t, repo, "config", "user.name", "Test")
+	initializeGoalRepository(t, repo, "goal")
 	writeFile(t, filepath.Join(repo, "tracked"), "original\n")
 	runGit(t, repo, "add", "tracked")
 	runGit(t, repo, "commit", "-m", "base")
@@ -492,7 +537,17 @@ func newGitUnitFixture(t *testing.T) (unitFixture, string) {
 		t.Fatal(err)
 	}
 	fixture.runner.Git = &recordingOSGit{}
+	fixture.worktree = repo
 	return fixture, repo
+}
+
+func initializeGoalRepository(t *testing.T, directory, goal string) {
+	t.Helper()
+	runGit(t, directory, "init")
+	runGit(t, directory, "symbolic-ref", "HEAD", "refs/heads/goal/"+goal)
+	runGit(t, directory, "config", "user.email", "test@example.invalid")
+	runGit(t, directory, "config", "user.name", "Test")
+	runGit(t, directory, "commit", "--allow-empty", "-m", "base")
 }
 
 func repositoryDigest(t *testing.T, repo string) string {

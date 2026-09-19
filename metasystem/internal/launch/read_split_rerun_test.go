@@ -100,9 +100,9 @@ func TestCompactedPackageRerunEndsReadCompacted(t *testing.T) {
 
 func TestCompactedPackageReadRerunsWide(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, sampleDiff())
-	fixture.manager.Settings.ReadSplitLines = 2
-	fixture.starter.readCounts = []bool{false, true, true}
+	fixture := newUnitFixture(t, multiFilePackageDiff())
+	fixture.manager.Settings.ReadSplitLines = 4
+	fixture.starter.readCounts = []bool{false, true, true, true}
 	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil {
 		t.Fatal(err)
@@ -111,16 +111,106 @@ func TestCompactedPackageReadRerunsWide(t *testing.T) {
 	if round.Outcome != "green" {
 		t.Fatalf("outcome=%s steps=%+v", round.Outcome, round.Steps)
 	}
-	var wide UnitStep
+	var files []string
+	for _, step := range round.Steps {
+		if !step.Rerun {
+			continue
+		}
+		launchRecord, readErr := fixture.manager.Store.Read(step.LaunchID)
+		data, diffErr := os.ReadFile(filepath.Join(fixture.manager.Store.Root, step.LaunchID, "read.diff"))
+		other := map[string]string{"pkg/a/a.go": "pkg/a/c.go", "pkg/a/c.go": "pkg/a/a.go"}[step.File]
+		if readErr != nil || diffErr != nil || step.Mode != "file" || step.Package != "pkg/a" || launchRecord.ReadMode != "file" || launchRecord.ReadPackage != "pkg/a" || launchRecord.ReadFile != step.File || launchRecord.ChangedLines != 2 || !strings.Contains(string(data), step.File) || strings.Contains(string(data), other) {
+			t.Fatalf("step=%+v launch=%+v diff=%q errors=%v/%v", step, launchRecord, data, readErr, diffErr)
+		}
+		files = append(files, step.File)
+	}
+	if !slices.Equal(files, []string{"pkg/a/a.go", "pkg/a/c.go"}) {
+		t.Fatalf("file reruns=%v", files)
+	}
+}
+
+func TestCompactedSingleFilePackageReadEndsWithoutRerun(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, sampleDiff())
+	fixture.manager.Settings.ReadSplitLines = 2
+	fixture.starter.readCounts = []bool{false, true}
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	round := result.Record.Rounds[0]
 	for _, step := range round.Steps {
 		if step.Rerun {
-			wide = step
+			t.Fatalf("single-file share reran: %+v", round.Steps)
 		}
 	}
-	launchRecord, readErr := fixture.manager.Store.Read(wide.LaunchID)
-	if readErr != nil || wide.Mode != "wide" || wide.Package != "pkg/a" || launchRecord.ReadMode != "wide" || launchRecord.ReadPackage != "pkg/a" || launchRecord.ChangedLines != 2 {
-		t.Fatalf("step=%+v launch=%+v err=%v", wide, launchRecord, readErr)
+	if round.Outcome != "read-compacted" {
+		t.Fatalf("outcome=%s steps=%+v", round.Outcome, round.Steps)
 	}
+}
+
+func TestCompactedPerFileRerunEndsReadCompacted(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, multiFilePackageDiff())
+	fixture.manager.Settings.ReadSplitLines = 4
+	fixture.starter.readCounts = []bool{false, true, false, true}
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	round := result.Record.Rounds[0]
+	reruns := 0
+	for _, step := range round.Steps {
+		if step.Rerun {
+			reruns++
+		}
+	}
+	if round.Outcome != "read-compacted" || reruns != 2 {
+		t.Fatalf("outcome=%s reruns=%d steps=%+v", round.Outcome, reruns, round.Steps)
+	}
+}
+
+func TestCompactedWideReadRerunsPackages(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, multiFilePackageDiff())
+	fixture.manager.Settings.ReadSplitLines = 2
+	fixture.starter.readCounts = []bool{false, true, true}
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reruns []string
+	for _, step := range result.Record.Rounds[0].Steps {
+		if step.Rerun {
+			reruns = append(reruns, step.Package+":"+step.Mode)
+		}
+	}
+	if result.Record.Rounds[0].Outcome != "green" || !slices.Equal(reruns, []string{"pkg/a:package", "pkg/b:package"}) {
+		t.Fatalf("outcome=%s reruns=%v", result.Record.Rounds[0].Outcome, reruns)
+	}
+}
+
+func TestLargeSingleDirectoryDiffStartsOneWideRead(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "diff --git a/pkg/a/a.go b/pkg/a/a.go\n--- a/pkg/a/a.go\n+++ b/pkg/a/a.go\n-old\n+new\ndiff --git a/pkg/a/c.go b/pkg/a/c.go\n--- a/pkg/a/c.go\n+++ b/pkg/a/c.go\n-old\n+new\n")
+	fixture.manager.Settings.ReadSplitLines = 2
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reads []UnitStep
+	for _, step := range result.Record.Rounds[0].Steps {
+		if strings.HasPrefix(step.Name, "read") {
+			reads = append(reads, step)
+		}
+	}
+	if len(reads) != 1 || reads[0].Mode != "wide" || reads[0].Package != "" {
+		t.Fatalf("reads=%+v", reads)
+	}
+}
+
+func multiFilePackageDiff() string {
+	return "diff --git a/pkg/a/a.go b/pkg/a/a.go\n--- a/pkg/a/a.go\n+++ b/pkg/a/a.go\n-old\n+new\ndiff --git a/pkg/a/c.go b/pkg/a/c.go\n--- a/pkg/a/c.go\n+++ b/pkg/a/c.go\n-old\n+new\ndiff --git a/pkg/b/b.go b/pkg/b/b.go\n--- a/pkg/b/b.go\n+++ b/pkg/b/b.go\n-old\n+new\n"
 }
 
 func TestIndependentReadStartsThroughLaunchVerbs(t *testing.T) {

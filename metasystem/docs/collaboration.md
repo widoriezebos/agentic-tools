@@ -131,5 +131,4 @@ coordinator sessions with the limit raised:
 
 Put it in the shell profile of any machine that runs a coordinator.
 The variable is read at session start; a capped session cannot raise
-it from inside — there, dispatch codex work directly through the
-companion CLI, which the cap does not govern.
+it from inside — there, start Codex work with `metasystem launch start`.

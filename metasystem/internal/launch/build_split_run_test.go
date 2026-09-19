@@ -58,6 +58,34 @@ func TestFailedFirstBuildGroupStopsTheRound(t *testing.T) {
 	}
 }
 
+func TestSplitUnitRunDoesNotRecordOversizeRefusal(t *testing.T) {
+	t.Parallel()
+	fixture := threeUnitBuildFixture(t)
+	if _, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := fixture.manager.Report("goal")
+	if err != nil || report.BuildsOverCap != 0 || report.Refusals["LAUNCH_BUILD_OVERSIZE"] != 0 {
+		t.Fatalf("builds-over-cap=%d refusals=%v err=%v", report.BuildsOverCap, report.Refusals, err)
+	}
+}
+
+func TestOversizeDirectStartRecordsBuildOverCap(t *testing.T) {
+	t.Parallel()
+	m, _, _, _ := manager(t)
+	m.Supervisor = childStarter(m)
+	m.Settings = DefaultSettings()
+	m.Settings.BuildLinesCap = 1
+	_, startErr := m.Start(StartSpec{ID: "direct-oversize", Kind: "build", Goal: "goal", Brief: writeLaunchFile(t, "brief.md", "| Unit | Lines |\n|---|---|\n| direct | 2 |\n"), WorkingDirectory: t.TempDir()})
+	if startErr == nil || !strings.HasPrefix(startErr.Error(), "LAUNCH_BUILD_OVERSIZE") {
+		t.Fatalf("start error=%v", startErr)
+	}
+	report, reportErr := m.Report("goal")
+	if reportErr != nil || report.BuildsOverCap != 1 || report.Refusals["LAUNCH_BUILD_OVERSIZE"] != 1 {
+		t.Fatalf("builds-over-cap=%d refusals=%v err=%v", report.BuildsOverCap, report.Refusals, reportErr)
+	}
+}
+
 func threeUnitBuildFixture(t *testing.T) unitFixture {
 	t.Helper()
 	fixture := newUnitFixture(t, "")
