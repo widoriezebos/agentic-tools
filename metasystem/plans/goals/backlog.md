@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 101
+- Revision: 102
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -128,4 +128,5 @@ History:
 - 2026-09-17T15:37:34Z 9C051BTV9GHW41WCH66QXW1AAY-m1b-d0e95724 ack actor=m1b+main-1789560571-22295-8d907a targets=red-on-main-gets-an-owner-on-the-ledger displaced=m1b+main-1789560571-22295-8d907a@2026-09-17T06:05:36Z ack
 - 2026-09-19T14:53:12Z TJQ1Y0QHSG6JGD10S9J3THCQ11-m1b-d0e95724 ack actor=m1b+main-1789560571-22295-8d907a targets=batch-landing-known-issues-are-fixed displaced=m1b+main-1789560571-22295-8d907a@2026-09-18T14:09:05Z ack
 - 2026-09-19T15:51:18Z SBW1ZKJ7EZ94F2YH97VKC8VC3Z-m1e-c19f13ae ack actor=m1e+main-1789561396-11601-6f713b targets=seat-successor-continues-a-handoff-without-a-human displaced=m1e+main-1789561396-11601-6f713b@2026-09-19T07:41:10Z ack
-Integrity: sha256=fa02ae1fc5399ef44b12955b081cf09ae9c82bde067fdf1a58f710b9ae26cdba
+- 2026-09-19T20:56:07Z 7D3J897XRPZZ0JHWA60Q8BNWEC-m1e-c19f13ae ack actor=m1e+main-1789561396-11601-6f713b targets=machinery-runs-unattended-on-codex displaced=m1e+main-1789561396-11601-6f713b@2026-09-19T15:51:18Z ack
+Integrity: sha256=5af4b68a9011b8c148b7f002ea348c0a6c9e8b90267073050441f1e185f53348
