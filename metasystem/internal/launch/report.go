@@ -214,7 +214,7 @@ func RecordLine(record Record, root string) string {
 		page = "page=missing"
 	}
 	verdictState := ""
-	if record.VerdictCounts != nil && !*record.VerdictCounts {
+	if !record.VerdictIsCounting() {
 		verdictState = " rerun-split"
 	}
 	return fmt.Sprintf("id=%s state=%s directory=%s exit=%s measured=%t result-lines=%d result-words=%d result-tail=%q calls=%d turns=%d compactions=%d peak-context=%d calls-above-200k=%d %s material=%d verdict=%q%s",

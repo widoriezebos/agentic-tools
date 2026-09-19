@@ -56,12 +56,12 @@ func runLaunchStart(args []string) int {
 	var inputs, outputs, units multiFlag
 	flags.Var(&inputs, "input", "additional input file (repeatable)")
 	flags.Var(&outputs, "output", "output file to copy into launch state (repeatable)")
-	flags.Var(&units, "unit", "unit name from --units-page (repeatable)")
+	flags.Var(&units, "unit", "unit name from the selected units table (repeatable)")
 	if flags.Parse(args) != nil {
 		return 2
 	}
 	if *kind == "" || *brief == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem launch start --kind <build|design|read|critique> --brief <file> [--dir <directory>] [--goal <id>] [--tag <tag>] [--model <model>] [--effort <effort>] [--resume-session <id>] [--page <file>] [--input <file>]... [--output <file>]... [--units-page <file> --unit <name>]... [--diff-file <file> [--package <directory>|--wide]]")
+		fmt.Fprintln(os.Stderr, "usage: metasystem launch start --kind <build|design|read|critique> --brief <file> [--dir <directory>] [--goal <id>] [--tag <tag>] [--model <model>] [--effort <effort>] [--resume-session <id>] [--page <file>] [--input <file>]... [--output <file>]... [--units-page <file>] [--unit <name>]... [--diff-file <file> [--package <directory>|--wide]]")
 		return 2
 	}
 	data := map[string]json.RawMessage{}
@@ -316,7 +316,7 @@ func runLaunchReport(args []string) int {
 	return 0
 }
 func verdictCounts(record launch.Record) bool {
-	return record.VerdictCounts == nil || *record.VerdictCounts
+	return record.VerdictIsCounting()
 }
 func launchReport(record launch.Record) string {
 	root, _ := launch.DefaultRoot()

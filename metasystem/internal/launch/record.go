@@ -95,6 +95,13 @@ func (record *Record) UnmarshalJSON(data []byte) error {
 	return json.Unmarshal(data, (*recordJSON)(record))
 }
 
+func (record Record) VerdictIsCounting() bool {
+	if record.Kind == "read" {
+		return record.VerdictCounts != nil && *record.VerdictCounts
+	}
+	return record.VerdictCounts == nil || *record.VerdictCounts
+}
+
 type Refusal struct {
 	Time    string           `json:"time"`
 	Code    string           `json:"code"`

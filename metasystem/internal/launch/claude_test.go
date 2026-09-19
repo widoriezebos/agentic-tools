@@ -95,7 +95,11 @@ func TestKindSelectsTheAdapterAndTheDefaultModel(t *testing.T) {
 	}
 	for index, row := range cases {
 		briefPath := brief(t)
-		record, err := m.Start(StartSpec{ID: fmt.Sprintf("kind-%d", index), Kind: row.kind, Tag: "tag", Brief: briefPath, WorkingDirectory: t.TempDir()})
+		spec := StartSpec{ID: fmt.Sprintf("kind-%d", index), Kind: row.kind, Tag: "tag", Brief: briefPath, WorkingDirectory: t.TempDir()}
+		if row.kind == "read" {
+			spec.DiffFile = writeLaunchFile(t, "change.diff", "")
+		}
+		record, err := m.Start(spec)
 		if err != nil || record.Adapter != row.adapter {
 			t.Fatalf("%s record=%+v err=%v", row.kind, record, err)
 		}
@@ -121,7 +125,7 @@ func TestKindSelectsTheAdapterAndTheDefaultModel(t *testing.T) {
 		}
 	}
 	override := map[string]json.RawMessage{"model": rawString("override")}
-	record, err := m.Start(StartSpec{ID: "kind-override", Kind: "read", Tag: "tag", Brief: brief(t), WorkingDirectory: t.TempDir(), AdapterData: override})
+	record, err := m.Start(StartSpec{ID: "kind-override", Kind: "read", Tag: "tag", Brief: brief(t), WorkingDirectory: t.TempDir(), DiffFile: writeLaunchFile(t, "override.diff", ""), AdapterData: override})
 	command, commandErr := (ClaudeHeadless{Binary: "claude"}).Command(record, t.TempDir())
 	require(t, err != nil || commandErr != nil || flagValue(command.Args, "--model") != "override", "override command=%+v err=%v/%v", command, err, commandErr)
 	before, _ := m.Store.List()

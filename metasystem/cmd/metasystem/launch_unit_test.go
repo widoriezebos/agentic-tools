@@ -40,12 +40,15 @@ func TestUnitRunPrintsOneLine(t *testing.T) {
 	terminal := launch.UnitResult{Record: launch.UnitRunRecord{ID: "terminal", State: "awaiting-judgement", Rounds: []launch.UnitRound{{
 		Number: 1, Directory: t.TempDir(), Outcome: "green", Steps: []launch.UnitStep{{Name: "build", State: launch.StepPassed}},
 	}}}, Round: 1}
+	compacted := launch.UnitResult{Record: launch.UnitRunRecord{ID: "compacted", State: "awaiting-judgement", Rounds: []launch.UnitRound{{
+		Number: 1, Directory: t.TempDir(), Outcome: "read-compacted", Steps: []launch.UnitStep{{Name: "read", State: launch.StepPassed}},
+	}}}, Round: 1}
 	capped := launch.UnitResult{Record: launch.UnitRunRecord{ID: "capped"}, Round: 1, Step: "proof:check", Launch: "launch", Capped: true}
 	for _, row := range []struct {
 		name string
 		code int
 		give launch.UnitResult
-	}{{"terminal", 0, terminal}, {"capped", 3, capped}} {
+	}{{"terminal", 0, terminal}, {"read compacted", unitExitReadCompacted, compacted}, {"capped", 3, capped}} {
 		t.Run(row.name, func(t *testing.T) {
 			old := unitRunner
 			unitRunner = func() unitAdvancer { return fakeUnitAdvancer{result: row.give} }

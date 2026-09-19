@@ -21,7 +21,6 @@ type ReadChoice struct {
 	Directories map[string]int64
 }
 
-var declaredSizePattern = regexp.MustCompile(`(?mi)^Declared size:\s*([0-9]+)\s+changed lines\s*$`)
 var firstInteger = regexp.MustCompile(`[0-9]+`)
 var witnessInteger = regexp.MustCompile(`(?i)witness[^0-9]*([0-9]+)`)
 
@@ -48,6 +47,9 @@ func (m *Manager) Admit(spec StartSpec) error {
 }
 
 func (m *Manager) admit(spec StartSpec, settings Settings) error {
+	if spec.Kind == "read" && spec.DiffFile == "" {
+		return fmt.Errorf("LAUNCH_READ_UNSIZED missing=diff-file")
+	}
 	if _, err := m.CheckPack(spec); err != nil {
 		return err
 	}
@@ -115,13 +117,19 @@ func (m *Manager) admit(spec StartSpec, settings Settings) error {
 			return fmt.Errorf("%s", strings.Join(lines, "\n"))
 		}
 	}
-	if spec.Kind == "read" && spec.DiffFile != "" {
+	if spec.Kind == "read" {
 		choice, choiceErr := ChooseReadMode(spec.DiffFile, settings.ReadSplitLines)
 		if choiceErr != nil {
 			return choiceErr
 		}
 		_, packageExists := choice.Directories[spec.Package]
 		follows := choice.Mode == "whole" && spec.Package == "" && !spec.Wide || choice.Mode == "package" && spec.Package != "" && packageExists && !spec.Wide || choice.Mode == "wide" && spec.Wide && spec.Package == ""
+		if spec.readMode == "package" {
+			follows = spec.Package != "" && packageExists && !spec.Wide
+		}
+		if spec.readMode == "wide" {
+			follows = spec.Package != "" && packageExists && spec.Wide
+		}
 		if !follows {
 			lines := []string{fmt.Sprintf("LAUNCH_READ_UNSPLIT choice=%s", choice.Mode)}
 			type pair struct {
@@ -148,29 +156,22 @@ func (m *Manager) admit(spec StartSpec, settings Settings) error {
 }
 
 func buildSize(spec StartSpec) ([]UnitSize, int64, error) {
-	if spec.UnitsPage != "" || len(spec.Units) > 0 {
-		if spec.UnitsPage == "" {
-			return nil, 0, fmt.Errorf("LAUNCH_BUILD_UNSIZED missing=units-page")
-		}
-		if len(spec.Units) == 0 {
-			return nil, 0, fmt.Errorf("LAUNCH_BUILD_UNSIZED missing=unit")
-		}
-		data, err := os.ReadFile(spec.UnitsPage)
-		if err != nil {
+	path := spec.Brief
+	if spec.UnitsPage != "" {
+		path = spec.UnitsPage
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if spec.UnitsPage != "" {
 			return nil, 0, fmt.Errorf("LAUNCH_BUILD_UNSIZED missing=units-page: %v", err)
 		}
-		return sizesFromTable(string(data), spec.Units)
-	}
-	data, err := os.ReadFile(spec.Brief)
-	if err != nil {
 		return nil, 0, err
 	}
-	match := declaredSizePattern.FindSubmatch(data)
-	if len(match) != 2 {
+	units, size, err := sizesFromTable(string(data), spec.Units)
+	if spec.UnitsPage == "" && err != nil && strings.Contains(err.Error(), "missing=units-table") {
 		return nil, 0, fmt.Errorf("LAUNCH_BUILD_UNSIZED missing=declared-size")
 	}
-	size, _ := strconv.ParseInt(string(match[1]), 10, 64)
-	return nil, size, nil
+	return units, size, err
 }
 
 func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
@@ -213,11 +214,14 @@ func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
 			continue
 		}
 		name := strings.TrimSpace(cells[0])
-		matched := ""
-		for wanted := range wants {
-			if name == wanted || strings.HasPrefix(name, wanted+".") || strings.HasPrefix(name, wanted+" ") {
-				matched = wanted
-				break
+		matched := name
+		if len(wants) > 0 {
+			matched = ""
+			for wanted := range wants {
+				if name == wanted || strings.HasPrefix(name, wanted+".") || strings.HasPrefix(name, wanted+" ") {
+					matched = wanted
+					break
+				}
 			}
 		}
 		if matched == "" || seen[matched] {
@@ -265,33 +269,47 @@ func separatorRow(cells []string) bool {
 	return true
 }
 func serialSplit(units []UnitSize, cap int64) []string {
-	var result []string
-	var names []string
-	var size int64
-	flush := func(over bool) {
-		if len(names) == 0 {
-			return
-		}
+	groups := serialGroups(units, cap)
+	result := make([]string, 0, len(groups))
+	for index, group := range groups {
 		suffix := ""
-		if over {
+		if group.OverCap {
 			suffix = " over-cap"
 		}
-		result = append(result, fmt.Sprintf("job=%d units=%s size=%d%s", len(result)+1, strings.Join(names, ","), size, suffix))
-		names, size = nil, 0
+		result = append(result, fmt.Sprintf("job=%d units=%s size=%d%s", index+1, strings.Join(group.Units, ","), group.Size, suffix))
+	}
+	return result
+}
+
+type buildGroup struct {
+	Units   []string
+	Size    int64
+	OverCap bool
+}
+
+func serialGroups(units []UnitSize, cap int64) []buildGroup {
+	var result []buildGroup
+	var group buildGroup
+	flush := func() {
+		if len(group.Units) == 0 {
+			return
+		}
+		result = append(result, group)
+		group = buildGroup{}
 	}
 	for _, unit := range units {
 		if unit.Lines > cap {
-			flush(false)
-			names, size = []string{unit.Name}, unit.Lines
-			flush(true)
+			flush()
+			result = append(result, buildGroup{Units: []string{unit.Name}, Size: unit.Lines, OverCap: true})
 			continue
 		}
-		if size > 0 && size+unit.Lines > cap {
-			flush(false)
+		if group.Size > 0 && group.Size+unit.Lines > cap {
+			flush()
 		}
-		names, size = append(names, unit.Name), size+unit.Lines
+		group.Units = append(group.Units, unit.Name)
+		group.Size += unit.Lines
 	}
-	flush(false)
+	flush()
 	return result
 }
 

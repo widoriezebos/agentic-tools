@@ -22,7 +22,7 @@ func TestStartStoresModelEffortAndWindow(t *testing.T) {
 	m, _, _, _ := manager(t)
 	m.Supervisor = childStarter(m)
 	m.Settings = DefaultSettings()
-	record, err := m.Start(StartSpec{ID: "configured", Kind: "build", Brief: writeLaunchFile(t, "brief", "Declared size: 20 changed lines\n"), WorkingDirectory: t.TempDir(), Model: "override", Effort: "high"})
+	record, err := m.Start(StartSpec{ID: "configured", Kind: "build", Brief: writeLaunchFile(t, "brief", "| Unit | Lines |\n|---|---|\n| configured | 20 |\n"), WorkingDirectory: t.TempDir(), Model: "override", Effort: "high"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,8 +121,16 @@ func TestBuildSizeComesFromTheUnitRowsOrTheBriefLine(t *testing.T) {
 	if err != nil || size != 450 || len(units) != 2 || units[0].Name != "alpha" {
 		t.Fatalf("units=%+v size=%d err=%v", units, size, err)
 	}
+	allUnits, allSize, allErr := buildSize(StartSpec{UnitsPage: page})
+	if allErr != nil || allSize != 450 || len(allUnits) != 2 {
+		t.Fatalf("all units=%+v size=%d err=%v", allUnits, allSize, allErr)
+	}
+	units, size, err = buildSize(StartSpec{Brief: writeLaunchFile(t, "brief-table", "| Unit | Lines |\n|---|---|\n| one | 40 |\n| two | 31 |\n")})
+	if err != nil || size != 71 || len(units) != 2 {
+		t.Fatalf("brief units=%+v size=%d err=%v", units, size, err)
+	}
 	_, size, err = buildSize(StartSpec{Brief: writeLaunchFile(t, "brief", "Declared size: 71 changed lines\n")})
-	if err != nil || size != 71 {
+	if err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BUILD_UNSIZED") {
 		t.Fatalf("size=%d err=%v", size, err)
 	}
 }

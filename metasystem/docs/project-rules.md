@@ -59,7 +59,7 @@ List only rules that cannot be inferred from code or tooling and apply broadly i
   exact receipt; commits remain local until one range-held check passes; one
   push publishes the series; recovery identifies units by their individual
   origin trailers and finalizes each once.
-- A Codex job on a seat machine starts through `metasystem launch start`; the plugin's slash commands and the codex-rescue agent are not used on seat machines. A design run and a read start with `--kind design` and `--kind read`, a critique with `--kind critique`, and a later critique task comes from `metasystem launch round-task`.
+- A Codex job on a seat machine starts through `metasystem launch start`; the plugin's slash commands and the codex-rescue agent are not used on seat machines. A design run and a read start with `--kind design` and `--kind read`, a critique with `--kind critique`, and a later critique task comes from `metasystem launch round-task`. An independent read of a unit diff starts through `metasystem launch start --kind read --diff-file`, or through `metasystem unit run`, never as an in-process agent.
 - A unit on a seat machine runs through `metasystem unit run`.
 - `metasystem launch settings` explains effective limits, and `metasystem launch report` summarizes outcomes and refusals.
 - The shipped Claude settings carry the seat context window, and `metasystem launch settings` reports drift from the configured value.

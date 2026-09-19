@@ -86,7 +86,11 @@ func TestPackCheckRefusesADriftedExcerpt(t *testing.T) {
 				}
 			}
 			brief := writeLaunchFile(t, "brief.md", row.brief)
-			err := m.Admit(StartSpec{Kind: row.kind, Brief: brief, WorkingDirectory: directory})
+			spec := StartSpec{Kind: row.kind, Brief: brief, WorkingDirectory: directory}
+			if row.kind == "read" {
+				spec.DiffFile = writeLaunchFile(t, "review.diff", "")
+			}
+			err := m.Admit(spec)
 			if err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_PACK_DRIFTED") || !strings.Contains(err.Error(), "range=`") || !strings.Contains(err.Error(), row.want) {
 				t.Fatalf("error=%v", err)
 			}
@@ -112,7 +116,7 @@ func TestPackCheckAdmitsAFilledBrief(t *testing.T) {
 		t.Fatalf("filled design: %v", err)
 	}
 	review := writeLaunchFile(t, "review.md", "# Ready\nCheck `alpha.txt:1-1`.\n")
-	if err := m.Admit(StartSpec{Kind: "read", Brief: review, WorkingDirectory: directory}); err != nil {
+	if err := m.Admit(StartSpec{Kind: "read", Brief: review, WorkingDirectory: directory, DiffFile: writeLaunchFile(t, "read.diff", "")}); err != nil {
 		t.Fatalf("filled review: %v", err)
 	}
 	if !reflect.ValueOf(m).MethodByName("CheckPack").IsValid() {
@@ -162,7 +166,11 @@ func TestPackCheckChecksEveryShippedTemplatePlaceholder(t *testing.T) {
 
 			filled := pattern.ReplaceAll(template, []byte("filled"))
 			brief = writeLaunchFile(t, row.kind+"-filled.md", string(filled))
-			if err := m.Admit(StartSpec{Kind: row.kind, Brief: brief, WorkingDirectory: t.TempDir()}); err != nil {
+			spec := StartSpec{Kind: row.kind, Brief: brief, WorkingDirectory: t.TempDir()}
+			if row.kind == "read" {
+				spec.DiffFile = writeLaunchFile(t, "filled.diff", "")
+			}
+			if err := m.Admit(spec); err != nil {
 				t.Fatalf("filled shipped template: %v", err)
 			}
 
@@ -190,7 +198,11 @@ func TestDesignAndReadLaunchesRunThePackCheck(t *testing.T) {
 	m, _, _, _ := manager(t)
 	packTemplates(t, m, "Design <N>\n", "Read <N>\n")
 	for _, kind := range []string{"build", "critique"} {
-		brief := writeLaunchFile(t, kind+".md", "Declared size: 1 changed lines\nKeep <N>\n")
+		content := "Keep <N>\n"
+		if kind == "build" {
+			content = "| Unit | Lines |\n|---|---|\n| fixture | 1 |\n" + content
+		}
+		brief := writeLaunchFile(t, kind+".md", content)
 		if err := m.Admit(StartSpec{Kind: kind, Brief: brief, WorkingDirectory: t.TempDir()}); err != nil {
 			t.Fatalf("%s should not check packs: %v", kind, err)
 		}
@@ -198,7 +210,11 @@ func TestDesignAndReadLaunchesRunThePackCheck(t *testing.T) {
 	for _, kind := range []string{"design", "read"} {
 		kindName := map[string]string{"design": "Design", "read": "Read"}[kind]
 		brief := writeLaunchFile(t, kind+".md", kindName+" <N>\n")
-		if err := m.Admit(StartSpec{Kind: kind, Brief: brief, WorkingDirectory: t.TempDir()}); err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_PACK_UNFILLED") {
+		spec := StartSpec{Kind: kind, Brief: brief, WorkingDirectory: t.TempDir()}
+		if kind == "read" {
+			spec.DiffFile = writeLaunchFile(t, "invalid.diff", "")
+		}
+		if err := m.Admit(spec); err == nil || !strings.HasPrefix(err.Error(), "LAUNCH_BRIEF_PACK_UNFILLED") {
 			t.Fatalf("%s error=%v", kind, err)
 		}
 	}

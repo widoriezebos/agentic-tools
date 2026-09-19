@@ -12,6 +12,8 @@ in scope, hostile inputs are not.">
 Scope: <the files, behaviors, or contracts under review — and
 what is explicitly OUT, including any agreed ceiling on fix work>
 
+An independent read of a unit diff starts through `metasystem launch start --kind read --diff-file`, or through `metasystem unit run`, never as an in-process agent.
+
 ## Prepared copy
 
 Path: <absolute path to the reader's private copy>

@@ -44,14 +44,18 @@ func TestDesignAdapterFollowsTheResolvedModel(t *testing.T) {
 			if row.adapterData != "" {
 				setString(data, "model", row.adapterData)
 			}
-			record, err := m.Start(StartSpec{
+			spec := StartSpec{
 				ID:               "design-runtime-" + string(rune('a'+index)),
 				Kind:             row.kind,
 				Brief:            brief(t),
 				WorkingDirectory: t.TempDir(),
 				Model:            row.model,
 				AdapterData:      data,
-			})
+			}
+			if row.kind == "read" {
+				spec.DiffFile = writeLaunchFile(t, "change.diff", "")
+			}
+			record, err := m.Start(spec)
 			if err != nil || record.Adapter != row.want {
 				t.Fatalf("adapter=%q, want %q, err=%v", record.Adapter, row.want, err)
 			}

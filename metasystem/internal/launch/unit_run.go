@@ -61,6 +61,10 @@ type UnitStep struct {
 	FinishedAt    string        `json:"finishedAt"`
 	Model         string        `json:"model"`
 	Mode          string        `json:"mode,omitempty"`
+	Package       string        `json:"package,omitempty"`
+	Brief         string        `json:"brief,omitempty"`
+	Units         []string      `json:"units,omitempty"`
+	Rerun         bool          `json:"rerun,omitempty"`
 	Verdict       string        `json:"verdict,omitempty"`
 	VerdictCounts *bool         `json:"verdictCounts,omitempty"`
 }
@@ -166,16 +170,32 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 
 func (runner *UnitRunner) admitRound(plan UnitPlan, buildBrief string, previous []string) error {
 	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
-	if err := runner.Manager.Admit(StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree,
-		Brief: buildBrief, Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: plan.Build.Units}); err != nil {
-		return err
+	spec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree,
+		Brief: buildBrief, Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: plan.Build.Units}
+	if err := runner.Manager.Admit(spec); err != nil {
+		if !strings.HasPrefix(err.Error(), "LAUNCH_BUILD_OVERSIZE") {
+			return err
+		}
+		settings, settingsErr := runner.Manager.resolvedSettings()
+		if settingsErr != nil {
+			return settingsErr
+		}
+		units, _, sizeErr := buildSize(spec)
+		if sizeErr != nil {
+			return sizeErr
+		}
+		for _, group := range serialGroups(units, settings.BuildLinesCap) {
+			if group.OverCap {
+				return err
+			}
+			groupSpec := spec
+			groupSpec.Units = group.Units
+			if groupErr := runner.Manager.Admit(groupSpec); groupErr != nil {
+				return groupErr
+			}
+		}
 	}
-	readInputs := append(append([]string{}, plan.Read.Inputs...), previous...)
-	if buildBrief != plan.Build.Brief {
-		readInputs = append(readInputs, buildBrief)
-	}
-	return runner.Manager.Admit(StartSpec{Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree,
-		Brief: plan.Read.Brief, Inputs: readInputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model})
+	return nil
 }
 
 func (runner *UnitRunner) newRun(plan UnitPlan) (UnitRunRecord, error) {
@@ -224,27 +244,37 @@ func (runner *UnitRunner) addRound(record *UnitRunRecord, plan UnitPlan, followU
 
 func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, deadline time.Time) (UnitResult, error) {
 	round := &record.Rounds[len(record.Rounds)-1]
-	build := &round.Steps[0]
 	brief, previous := plan.Build.Brief, []string(nil)
 	if round.FollowUp != "" {
 		brief = round.FollowUp
 		previous = readOutputs(runner.Manager, record.Rounds[len(record.Rounds)-2])
 	}
-	buildSpec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: brief,
-		Inputs: append(append([]string{}, plan.Build.Inputs...), previous...), Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: plan.Build.Units}
-	if capped, err := runner.advanceStep(record, round, 0, buildSpec, deadline); err != nil || capped {
-		return runner.result(*record, round, build, capped), err
+	buildCount, err := runner.ensureBuildSteps(record, round, plan, brief)
+	if err != nil {
+		return UnitResult{}, err
 	}
-	if build.State != StepPassed {
-		if len(round.Steps) == 1 {
+	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
+	for index := 0; index < buildCount; index++ {
+		step := &round.Steps[index]
+		buildSpec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: step.Brief,
+			Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: step.Units}
+		if capped, stepErr := runner.advanceStep(record, round, index, buildSpec, deadline); stepErr != nil || capped {
+			return runner.result(*record, round, step, capped), stepErr
+		}
+		if step.State != StepPassed {
+			for pending := index + 1; pending < buildCount; pending++ {
+				if round.Steps[pending].State == StepPending {
+					round.Steps[pending].State, round.Steps[pending].Reason = StepSkipped, "build-failed"
+				}
+			}
 			for _, command := range proofCommands(plan) {
 				round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepSkipped, Reason: "build-failed"})
 			}
 			round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepSkipped, Reason: "build-failed", Model: round.ReadModel})
+			return runner.finish(record, round, "build-failed")
 		}
-		return runner.finish(record, round, "build-failed")
 	}
-	if len(round.Steps) == 1 {
+	if len(round.Steps) == buildCount {
 		for _, command := range proofCommands(plan) {
 			round.Steps = append(round.Steps, UnitStep{Name: "proof:" + command.Name, State: StepPending})
 		}
@@ -252,7 +282,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return UnitResult{}, err
 		}
 	}
-	if err := proofMayStart(*round); err != nil {
+	if err := proofMayStart(*round, buildCount); err != nil {
 		return UnitResult{}, err
 	}
 	commands := proofCommands(plan)
@@ -262,7 +292,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	}
 	red := false
 	for offset, command := range commands {
-		index := 1 + offset
+		index := buildCount + offset
 		briefPath := filepath.Join(round.Directory, "proof-"+command.Name+".json")
 		if _, err := os.Stat(briefPath); os.IsNotExist(err) {
 			data, _ := json.Marshal(PlainBrief{command.Argv, command.Dir, command.Env})
@@ -307,37 +337,45 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	if round.FollowUp == "" {
 		readInputs = readInputs[:len(readInputs)-1]
 	}
-	for index := readStart; index < len(round.Steps); index++ {
-		step := &round.Steps[index]
-		if step.State == StepPending || step.State == StepStarting {
-			packageName := strings.TrimPrefix(step.Name, "read:")
-			if step.Name == "read" {
-				packageName = ""
-			}
-			spec := StartSpec{Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
-				Inputs: readInputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, DiffFile: diffPath, Package: packageName, Wide: step.Mode == "wide"}
-			if _, err := runner.startStep(record, round, index, spec); err != nil {
-				return UnitResult{}, err
-			}
-		}
-	}
-	for index := readStart; index < len(round.Steps); index++ {
-		step := &round.Steps[index]
-		if capped, err := runner.waitStep(record, round, index, deadline); err != nil || capped {
-			return runner.result(*record, round, step, capped), err
-		}
+	if result, done, err := runner.runReadSteps(record, round, plan, readInputs, diffPath, readStart, deadline); done || err != nil {
+		return result, err
 	}
 	for index := readStart; index < len(round.Steps); index++ {
 		if round.Steps[index].State != StepPassed {
 			return runner.finish(record, round, "read-failed")
 		}
 	}
+	if err := runner.appendReadReruns(record, round, diffPath, readStart); err != nil {
+		return UnitResult{}, err
+	}
+	if result, done, err := runner.runReadSteps(record, round, plan, readInputs, diffPath, readStart, deadline); done || err != nil {
+		return result, err
+	}
+	hasRerun, initialDidNotCount := false, false
+	for index := readStart; index < len(round.Steps); index++ {
+		step := round.Steps[index]
+		if step.State != StepPassed {
+			return runner.finish(record, round, "read-failed")
+		}
+		if step.Rerun {
+			hasRerun = true
+		}
+		if step.Rerun && !unitStepVerdictCounts(step) {
+			return runner.finish(record, round, "read-compacted")
+		}
+		if !step.Rerun && !unitStepVerdictCounts(step) {
+			initialDidNotCount = true
+		}
+	}
+	if initialDidNotCount && !hasRerun {
+		return runner.finish(record, round, "read-compacted")
+	}
 	return runner.finish(record, round, "green")
 }
 
 func (runner *UnitRunner) appendReadSteps(record *UnitRunRecord, round *UnitRound, diffPath string) (int, error) {
 	readStart := len(round.Steps)
-	for index := 1; index < len(round.Steps); index++ {
+	for index := 0; index < len(round.Steps); index++ {
 		if strings.HasPrefix(round.Steps[index].Name, "read") {
 			return index, nil
 		}
@@ -357,12 +395,125 @@ func (runner *UnitRunner) appendReadSteps(record *UnitRunRecord, round *UnitRoun
 		}
 		sort.Strings(directories)
 		for _, directory := range directories {
-			round.Steps = append(round.Steps, UnitStep{Name: "read:" + directory, State: StepPending, Model: round.ReadModel, Mode: "package"})
+			round.Steps = append(round.Steps, UnitStep{Name: "read:" + directory, State: StepPending, Model: round.ReadModel, Mode: "package", Package: directory})
 		}
 	} else {
 		round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepPending, Model: round.ReadModel, Mode: choice.Mode})
 	}
 	return readStart, runner.save(*record)
+}
+
+func (runner *UnitRunner) ensureBuildSteps(record *UnitRunRecord, round *UnitRound, plan UnitPlan, brief string) (int, error) {
+	count := 0
+	for count < len(round.Steps) && strings.HasPrefix(round.Steps[count].Name, "build") {
+		count++
+	}
+	if count > 1 || count == 1 && len(round.Steps[0].Units) > 0 {
+		return count, nil
+	}
+	settings, err := runner.Manager.resolvedSettings()
+	if err != nil {
+		return 0, err
+	}
+	units, size, err := buildSize(StartSpec{Brief: brief, UnitsPage: plan.Build.UnitsPage, Units: plan.Build.Units})
+	if err != nil {
+		return 0, err
+	}
+	groups := []buildGroup{{Units: append([]string(nil), plan.Build.Units...), Size: size}}
+	if size > settings.BuildLinesCap {
+		groups = serialGroups(units, settings.BuildLinesCap)
+	}
+	steps := make([]UnitStep, 0, len(groups))
+	for index, group := range groups {
+		if group.OverCap {
+			return 0, fmt.Errorf("LAUNCH_BUILD_OVERSIZE unit=%s size=%d cap=%d", strings.Join(group.Units, ","), group.Size, settings.BuildLinesCap)
+		}
+		name, stepBrief := "build", brief
+		if len(groups) > 1 {
+			name = fmt.Sprintf("build:%d", index+1)
+			stepBrief = filepath.Join(round.Directory, fmt.Sprintf("build-%d.md", index+1))
+			if _, statErr := os.Stat(stepBrief); os.IsNotExist(statErr) {
+				data, readErr := os.ReadFile(brief)
+				if readErr != nil {
+					return 0, readErr
+				}
+				content := strings.TrimRight(string(data), "\n") + "\nBuild units: " + strings.Join(group.Units, ",") + "\n"
+				if _, writeErr := atomicfile.WriteText(stepBrief, content, runner.runDir(record.ID)); writeErr != nil {
+					return 0, writeErr
+				}
+			}
+		}
+		steps = append(steps, UnitStep{Name: name, State: StepPending, Model: round.BuildModel, Brief: stepBrief, Units: append([]string(nil), group.Units...)})
+	}
+	round.Steps = append(steps, round.Steps[count:]...)
+	return len(steps), runner.save(*record)
+}
+
+func (runner *UnitRunner) runReadSteps(record *UnitRunRecord, round *UnitRound, plan UnitPlan, inputs []string, diffPath string, readStart int, deadline time.Time) (UnitResult, bool, error) {
+	for index := readStart; index < len(round.Steps); index++ {
+		step := &round.Steps[index]
+		if !strings.HasPrefix(step.Name, "read") || step.State != StepPending && step.State != StepStarting {
+			continue
+		}
+		spec := StartSpec{Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
+			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, DiffFile: diffPath, Package: step.Package, Wide: step.Mode == "wide"}
+		if step.Rerun {
+			spec.readMode = step.Mode
+		}
+		if _, err := runner.startStep(record, round, index, spec); err != nil {
+			return UnitResult{}, false, err
+		}
+	}
+	for index := readStart; index < len(round.Steps); index++ {
+		step := &round.Steps[index]
+		if !strings.HasPrefix(step.Name, "read") {
+			continue
+		}
+		if capped, err := runner.waitStep(record, round, index, deadline); err != nil || capped {
+			return runner.result(*record, round, step, capped), true, err
+		}
+	}
+	return UnitResult{}, false, nil
+}
+
+func (runner *UnitRunner) appendReadReruns(record *UnitRunRecord, round *UnitRound, diffPath string, readStart int) error {
+	for index := readStart; index < len(round.Steps); index++ {
+		if round.Steps[index].Rerun {
+			return nil
+		}
+	}
+	choice, err := ChooseReadMode(diffPath, 1<<62)
+	if err != nil {
+		return err
+	}
+	var reruns []UnitStep
+	for index := readStart; index < len(round.Steps); index++ {
+		step := round.Steps[index]
+		if step.Rerun || !strings.HasPrefix(step.Name, "read") || unitStepVerdictCounts(step) {
+			continue
+		}
+		if step.Package != "" {
+			reruns = append(reruns, UnitStep{Name: "read:" + step.Package + ":wide", State: StepPending, Model: round.ReadModel, Mode: "wide", Package: step.Package, Rerun: true})
+			continue
+		}
+		var packages []string
+		for name := range choice.Directories {
+			packages = append(packages, name)
+		}
+		sort.Strings(packages)
+		for _, name := range packages {
+			reruns = append(reruns, UnitStep{Name: "read:" + name + ":rerun", State: StepPending, Model: round.ReadModel, Mode: "package", Package: name, Rerun: true})
+		}
+	}
+	if len(reruns) == 0 {
+		return nil
+	}
+	round.Steps = append(round.Steps, reruns...)
+	return runner.save(*record)
+}
+
+func unitStepVerdictCounts(step UnitStep) bool {
+	return step.VerdictCounts != nil && *step.VerdictCounts
 }
 
 func (runner *UnitRunner) advanceStep(record *UnitRunRecord, round *UnitRound, index int, spec StartSpec, deadline time.Time) (bool, error) {
@@ -595,9 +746,14 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 	return repositorySnapshot{Head: string(head), Refs: string(refs), Index: fmt.Sprintf("%x", indexDigest), Tree: string(tree)}, nil
 }
 
-func proofMayStart(round UnitRound) error {
-	if len(round.Steps) == 0 || round.Steps[0].Name != "build" || round.Steps[0].State != StepPassed {
-		return fmt.Errorf("proof requires the build launch to be completed")
+func proofMayStart(round UnitRound, buildCount int) error {
+	if buildCount == 0 || len(round.Steps) < buildCount {
+		return fmt.Errorf("proof requires every build launch to be completed")
+	}
+	for index := 0; index < buildCount; index++ {
+		if !strings.HasPrefix(round.Steps[index].Name, "build") || round.Steps[index].State != StepPassed {
+			return fmt.Errorf("proof requires every build launch to be completed")
+		}
 	}
 	return nil
 }

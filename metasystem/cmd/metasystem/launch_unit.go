@@ -14,6 +14,8 @@ type unitAdvancer interface {
 	Advance(launch.UnitRequest) (launch.UnitResult, error)
 }
 
+const unitExitReadCompacted = 1
+
 var unitRunner = func() unitAdvancer {
 	manager := launchManager()
 	return &launch.UnitRunner{Manager: manager, Git: launch.OSGitRunner{}}
@@ -52,6 +54,9 @@ func runUnitRun(args []string) int {
 		manager = concrete.Manager
 	}
 	fmt.Println(unitJudgementLine(result.Record, manager))
+	if result.Record.Rounds[len(result.Record.Rounds)-1].Outcome == "read-compacted" {
+		return unitExitReadCompacted
+	}
 	return 0
 }
 
@@ -63,11 +68,16 @@ func unitJudgementLine(record launch.UnitRunRecord, manager *launch.Manager) str
 	var red []string
 	for _, step := range round.Steps {
 		switch {
-		case step.Name == "build":
-			build = step.LaunchID + ":" + unitLaunchState(manager, step)
+		case strings.HasPrefix(step.Name, "build"):
+			value := step.LaunchID + ":" + unitLaunchState(manager, step)
+			if build == "-:skipped" {
+				build = value
+			} else {
+				build += "," + value
+			}
 		case strings.HasPrefix(step.Name, "read"):
 			reads = append(reads, step.LaunchID+":"+chooseUnitValue(step.Verdict, "none"))
-			counts = counts && (step.VerdictCounts == nil || *step.VerdictCounts)
+			counts = counts && step.VerdictCounts != nil && *step.VerdictCounts
 		case strings.HasPrefix(step.Name, "proof:"):
 			total++
 			if step.State == launch.StepPassed {

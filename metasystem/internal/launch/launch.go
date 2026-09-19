@@ -40,6 +40,7 @@ type StartSpec struct {
 	Wide                                               bool
 	Inputs, Outputs, Units                             []string
 	AdapterData                                        map[string]json.RawMessage
+	readMode                                           string
 }
 type Manager struct {
 	Store             Store
@@ -119,6 +120,10 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 	record := Record{ID: id, Kind: spec.Kind, Adapter: adapterName, Goal: spec.Goal, Tag: spec.Tag,
 		WorkingDirectory: absDir, Inputs: inputs, State: Starting, StartedAt: m.Now().UTC().Format(time.RFC3339Nano),
 		Measured: true, AdapterData: spec.AdapterData}
+	if spec.Kind == "read" {
+		counts := true
+		record.VerdictCounts = &counts
+	}
 	data := map[string]json.RawMessage{}
 	for key, value := range record.AdapterData {
 		data[key] = value
@@ -139,13 +144,20 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 		}
 	}
 	var diff []byte
-	if spec.Kind == "read" && spec.DiffFile != "" {
+	if spec.Kind == "read" {
 		choice, choiceErr := ChooseReadMode(spec.DiffFile, settings.ReadSplitLines)
 		if choiceErr != nil {
 			return Record{}, choiceErr
 		}
 		record.ReadMode, record.ReadPackage = choice.Mode, spec.Package
-		diff, record.ChangedLines, err = readDiff(spec.DiffFile, choice.Mode, spec.Package)
+		if spec.readMode != "" {
+			record.ReadMode = spec.readMode
+		}
+		diffMode := record.ReadMode
+		if record.ReadMode == "wide" && spec.Package != "" {
+			diffMode = "package"
+		}
+		diff, record.ChangedLines, err = readDiff(spec.DiffFile, diffMode, spec.Package)
 		if err != nil {
 			return Record{}, err
 		}
@@ -322,6 +334,10 @@ func (m *Manager) fail(id, reason string, exit *int) (Record, error) {
 		}
 		record.State, record.Reason, record.ExitCode = Failed, reason, exit
 		record.FinishedAt = m.Now().UTC().Format(time.RFC3339Nano)
+		if record.Kind == "read" && record.VerdictCounts == nil {
+			counts := record.Measurement.Compactions == 0
+			record.VerdictCounts = &counts
+		}
 		return nil
 	})
 }
