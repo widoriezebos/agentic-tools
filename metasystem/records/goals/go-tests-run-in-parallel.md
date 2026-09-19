@@ -1,6 +1,6 @@
 # go-tests-run-in-parallel
 
-- State: approved
+- State: done
 - Priority: 1
 - Sequence: 32
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Test-only and gate-only changes; a wrong parallelisation shows as a race under -race or a red, a wrong ratchet shows as a refused gate; nothing reaches production behaviour"
@@ -8,8 +8,9 @@
 - Intent: Go tests run in parallel and stay parallel by machinery. DONE when internal/goal runs with t.Parallel on every test and independent subtest with no shared process state, the audit parallel-ratchet verb refuses any package whose serial-test count rises above its recorded floor from the fast gate, and the floor only ratchets down.
 - Origin: human
 - Next step: U3 landed 978182e0c (push 14). U3b rides push 15 with the Goal-Unit go-tests-run-in-parallel/U3b; conclude when push 15 lands.
+- Concluded: U3 landed 978182e0c (push 14). U3b 2b8f776bf and U3c fb5886eb1 landed in push 15 (c636ee484): the capture and seal tests fail instead of hanging, and the descendant-outlives-transport capture has its own test. internal/goal runs with t.Parallel under the parallel ratchet of the fast gate, which refuses a rise in serial tests; the whole package passed plain and with -tags batchtest on darwin at c636ee484.
 - OpenedAt: 2026-09-18T14:56:01Z
-- Revision: 28
+- Revision: 29
 - Budget: elapsedLimit=1d attemptLimit=20 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-18T14:59:25Z revision=3 opid=XRMD7ZBWBBG03DHS0YFF8E1BH5-m1e-c6925449 authority=proven digest=97d790857a9e1bfceaec9d311599579d3af851a1ebc6594c70d3243d04da4d31
@@ -43,4 +44,5 @@ History:
 - 2026-09-19T15:49:55Z 0P56D8SMPRJ1V8HHFET4CZ73EH-m1e-c6925449 edit actor=human:Wido targets=go-tests-run-in-parallel
 - 2026-09-19T16:50:14Z BNKDVGS00WX23D3YE2NZ4F2BQW-m1e-c6925449 set-priority actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,test-executables-never-busy-on-linux,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order subject=test-executables-never-busy-on-linux from=1:32 to=1:33 requested-sequence=1
 - 2026-09-19T19:03:53Z 602TW9BXPRBJ04Q9NZGSYSHT8K-m1e-c6925449 done actor=human:Wido targets=cross-cutting-change-inventories-its-readers,failures-show-observed-against-expected,go-tests-run-in-parallel,human-goal-verbs-forgiving,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror reason=priority-order from=1:33 to=1:32
-Integrity: sha256=d495541bec4678dbf38110ce9209be4deb76dfc5721ae04812308e4a7e6c2625
+- 2026-09-19T19:04:04Z HZP31E4FBBHHVAAVMT30YFF7EF-m1e-c6925449 done actor=human:Wido targets=go-tests-run-in-parallel
+Integrity: sha256=feb8368df3c507e6f2f6f6e8558f19828c3f655fcb14723903e9bad71f5c6f37
