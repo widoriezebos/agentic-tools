@@ -144,6 +144,13 @@ if [[ "${METASYSTEM_SUITE_PROGRESS_ACTIVE:-0}" == 1 \
     suite_progress_worker=1
   fi
 fi
+if [[ "${METASYSTEM_VALIDATE_RELAUNCHED:-0}" == 1 ]]; then
+  if (( ! suite_progress_worker )); then
+    echo "validate metasystem: relaunched child is not an authorized proof worker" >&2
+    exit 1
+  fi
+  unset METASYSTEM_VALIDATE_RELAUNCHED
+fi
 if (( ! suite_progress_worker )); then
   suite_progress_run="$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
   suite_progress_tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-validate.XXXXXX")
@@ -179,6 +186,8 @@ if (( ! suite_progress_worker )); then
     --tmp "$suite_progress_tmp" --banner "$suite_banner" \
     "${selector_args[@]}" -- \
     env METASYSTEM_SUITE_PROGRESS_ACTIVE=1 \
+      METASYSTEM_VALIDATE_RELAUNCHED=1 \
+      METASYSTEM_PROOF_AUTH_BIN="$suite_progress_engine" \
       METASYSTEM_SUITE_PROGRESS_ROOT="$root" \
       METASYSTEM_SUITE_PROGRESS_DEPTH="$suite_depth" \
       METASYSTEM_SUITE_PROGRESS_TMP="$suite_progress_tmp" \
@@ -668,7 +677,7 @@ if (( run_gate_fence_fixture )); then
     echo "a foreign live gate run did not block the fence" >&2; exit 1
   fi
   gate_fence_err=$(mktemp)
-  if bash scripts/agents/go-gate.sh 2>"$gate_fence_err"; then
+  if bash scripts/agents/go-gate.sh --fast 2>"$gate_fence_err"; then
     echo "go-gate rebuilt over a foreign live gate run" >&2; exit 1
   fi
   grep -q "swap its binary mid-run" "$gate_fence_err" \
@@ -905,7 +914,7 @@ gate_fail_open_tripwire_section() {
   printf '#!/usr/bin/env bash\necho "shim: gofmt is broken" >&2\nexit 7\n' >"$gofmt_shim_dir/gofmt"
   chmod +x "$gofmt_shim_dir/gofmt"
   if METASYSTEM_ALLOW_CONCURRENT_GATE=1 PATH="$gofmt_shim_dir:$PATH" \
-      bash scripts/agents/go-gate.sh >"$gofmt_shim_dir/out" 2>&1; then
+      bash scripts/agents/go-gate.sh --fast >"$gofmt_shim_dir/out" 2>&1; then
     echo "go gate passed with a broken gofmt; the fail-open hole is back" >&2
     exit 1
   fi

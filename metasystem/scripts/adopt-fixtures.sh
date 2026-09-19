@@ -53,6 +53,7 @@ source scripts/agents/fixture-budget.sh
 
 adopt_progress_path="$root/artifacts/agents/supervision/suite-progress.jsonl"
 adopt_progress_parent=0
+adopt_progress_worker=0
 if (( fixture_bed_child )); then
   adopt_progress_parent=1
 elif [[ "${METASYSTEM_SUITE_PROGRESS_ACTIVE:-0}" == 1 \
@@ -61,7 +62,15 @@ elif [[ "${METASYSTEM_SUITE_PROGRESS_ACTIVE:-0}" == 1 \
   if [[ -x "$adopt_progress_auth_bin" ]] \
     && "$adopt_progress_auth_bin" proof-run worker-authorized --root "$root" >/dev/null 2>&1; then
     adopt_progress_parent=1
+    adopt_progress_worker=1
   fi
+fi
+if [[ "${METASYSTEM_ADOPT_FIXTURES_RELAUNCHED:-0}" == 1 ]]; then
+  if (( ! adopt_progress_worker )); then
+    echo "adopt fixtures: relaunched child is not an authorized proof worker" >&2
+    exit 1
+  fi
+  unset METASYSTEM_ADOPT_FIXTURES_RELAUNCHED
 fi
 if (( ! adopt_progress_parent )); then
   adopt_progress_run="$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
@@ -78,6 +87,8 @@ if (( ! adopt_progress_parent )); then
     --progress "$adopt_progress_path" --log "$adopt_progress_log" \
     --tmp "$adopt_progress_tmp" --banner "$adopt_banner" -- \
     env METASYSTEM_SUITE_PROGRESS_ACTIVE=1 \
+      METASYSTEM_ADOPT_FIXTURES_RELAUNCHED=1 \
+      METASYSTEM_PROOF_AUTH_BIN="$adopt_progress_engine" \
       METASYSTEM_SUITE_PROGRESS_SUITE=adopt-fixtures \
       METASYSTEM_SUITE_PROGRESS_ROOT="$root" \
       METASYSTEM_SUITE_PROGRESS_DEPTH="$adopt_depth" \

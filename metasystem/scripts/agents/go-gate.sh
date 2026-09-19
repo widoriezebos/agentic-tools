@@ -74,6 +74,13 @@ proof_auth_bin=${METASYSTEM_PROOF_AUTH_BIN:-$root/bin/metasystem}
 if [[ -x "$proof_auth_bin" ]] && "$proof_auth_bin" proof-run worker-authorized --root "$root" >/dev/null 2>&1; then
   proof_worker=1
 fi
+if [[ "${METASYSTEM_GO_GATE_RELAUNCHED:-0}" == 1 ]]; then
+  if [[ "$proof_worker" != 1 ]]; then
+    echo "go gate: relaunched child is not an authorized proof worker" >&2
+    exit 1
+  fi
+  unset METASYSTEM_GO_GATE_RELAUNCHED
+fi
 if [[ "$gate_fast" != 1 && "$gate_witness_check_only" != 1 \
   && "$proof_worker" != 1 \
   && -f "$root/go.mod" ]] \
@@ -91,7 +98,9 @@ if [[ "$gate_fast" != 1 && "$gate_witness_check_only" != 1 \
     --progress "$proof_progress" --log "$proof_log" --banner "$proof_banner" --scope full --command-class go-gate)
   [[ -z "$gate_goal" ]] || proof_args+=(--goal "$gate_goal")
   [[ -z "$gate_cap_min" ]] || proof_args+=(--cap-min "$gate_cap_min")
-  exec "${proof_launcher[@]}" "${proof_args[@]}" --tmp "$proof_tmp" -- bash "$root/scripts/agents/go-gate.sh"
+  exec "${proof_launcher[@]}" "${proof_args[@]}" --tmp "$proof_tmp" -- \
+    env METASYSTEM_GO_GATE_RELAUNCHED=1 METASYSTEM_PROOF_AUTH_BIN="$proof_engine" \
+      bash "$root/scripts/agents/go-gate.sh"
 fi
 
 # Fast mode is an edit-loop tool, not a landing gate: it must neither

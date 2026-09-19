@@ -189,6 +189,13 @@ coverage_auth_bin=${METASYSTEM_PROOF_AUTH_BIN:-$engine}
 if [[ -x "$coverage_auth_bin" ]] && "$coverage_auth_bin" proof-run worker-authorized --root "$root" >/dev/null 2>&1; then
   coverage_proof_worker=1
 fi
+if [[ "${METASYSTEM_COVERAGE_DELTA_RELAUNCHED:-0}" == 1 ]]; then
+  if [[ $coverage_proof_worker -ne 1 ]]; then
+    echo "coverage delta: relaunched child is not an authorized proof worker" >&2
+    exit 1
+  fi
+  unset METASYSTEM_COVERAGE_DELTA_RELAUNCHED
+fi
 if [[ $coverage_proof_worker -ne 1 ]]; then
   coverage_proof_run="$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
   coverage_proof_progress="$root/artifacts/agents/supervision/coverage-delta-$coverage_proof_run.progress.jsonl"
@@ -206,7 +213,8 @@ if [[ $coverage_proof_worker -ne 1 ]]; then
     coverage_proof_args+=(--identity-input "coverage-package=$package")
   done
   exec "$engine" "${coverage_proof_args[@]}" -- \
-    bash "$root/scripts/agents/coverage-delta.sh" --ratchet "$ratchet" -- "${normalized[@]}"
+    env METASYSTEM_COVERAGE_DELTA_RELAUNCHED=1 METASYSTEM_PROOF_AUTH_BIN="$engine" \
+      bash "$root/scripts/agents/coverage-delta.sh" --ratchet "$ratchet" -- "${normalized[@]}"
 fi
 
 below=()
