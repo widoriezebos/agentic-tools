@@ -56,9 +56,6 @@ func executeBatchWithdraw(request batchWithdrawRequest, dependencies batchWithdr
 }
 
 func runBatchWithdraw(args []string) int {
-	if !batchCapabilitiesAvailable() {
-		return runBatchVerbSkeleton(nil)
-	}
 	flags := flag.NewFlagSet("landing batch withdraw", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	goalID := flags.String("goal", "", "joined goal id")

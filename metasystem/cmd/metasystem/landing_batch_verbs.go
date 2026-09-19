@@ -25,11 +25,3 @@ func runLandingBatch(args []string) int {
 }
 
 func runGoalHandover(args []string) int { return runGoalHandoverMutation(args) }
-
-func runBatchVerbSkeleton(_ []string) int {
-	if !batchCapabilitiesAvailable() {
-		fmt.Fprintln(os.Stderr, "BATCH_UNAVAILABLE: automatic batch landing is not compiled in")
-		return 1
-	}
-	return 0
-}

@@ -17,11 +17,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
-func init() {
-	compiledBatchCapabilities[freshBaseDiagnosis] = struct{}{}
-	compiledBatchCapabilities[ejectionAndRedScheduling] = struct{}{}
-}
-
 var productionTrunkRedLedgerOwner = productionBatchLedgerOwner
 var batchDiagnosticLauncher = launchBatchDiagnostic
 

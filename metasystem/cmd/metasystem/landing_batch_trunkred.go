@@ -27,6 +27,15 @@ func newLedgerTrunkRedOwner(root, machine, lineage string) (batch.LedgerOwner, e
 	return &ledgerTrunkRedOwner{endpoint: endpoint, actor: goal.Actor{Machine: machine, Lineage: lineage}, now: time.Now}, nil
 }
 
+// productionBatchLedgerOwner uses the landing identity that mints trunk-red operation identifiers.
+func productionBatchLedgerOwner(root string) (batch.LedgerOwner, error) {
+	machine, err := goal.ResolveMachine(root)
+	if err != nil {
+		return nil, err
+	}
+	return newLedgerTrunkRedOwner(root, machine, landingOwnerLineage)
+}
+
 func isLedgerTrunkRedOwner(owner batch.LedgerOwner) bool {
 	if _, ok := owner.(*ledgerTrunkRedOwner); ok {
 		return true

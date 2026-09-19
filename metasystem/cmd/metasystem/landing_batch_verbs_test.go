@@ -6,43 +6,51 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"os/exec"
-	"slices"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 )
 
 func TestBatchVerbsUnavailableWithoutFilesystemWrites(t *testing.T) {
 	root := t.TempDir()
-	missing := requiredBatchCapabilities[0]
-	delete(compiledBatchCapabilities, missing)
-	defer func() { compiledBatchCapabilities[missing] = struct{}{} }()
-	commands := [][]string{
-		{"landing", "batch", "join"}, {"landing", "batch", "status"},
-		{"landing", "batch", "withdraw"}, {"landing", "batch", "owner"},
-		{"landing", "batch", "tick"}, {"landing", "batch", "wait"},
-		{"goal", "handover"},
+	commands := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"join", []string{"landing", "batch", "join", "--root", root}, "landing batch join"},
+		{"status", []string{"landing", "batch", "status", "--root", root, "unexpected"}, "landing batch status"},
+		{"withdraw", []string{"landing", "batch", "withdraw", "--root", root}, "landing batch withdraw"},
+		{"owner", []string{"landing", "batch", "owner", "--root", root, "unexpected"}, "landing batch owner"},
+		{"tick", []string{"landing", "batch", "tick", "--root", root}, "landing batch tick"},
+		{"wait", []string{"landing", "batch", "wait", "--root", root}, "landing batch wait"},
+		{"handover", []string{"goal", "handover", "--root", root}, "goal handover needs"},
 	}
 	for _, command := range commands {
-		args := append(append([]string{}, command...), "--root", root)
-		stderr, code := captureStderr(t, func() int { return dispatch(args) })
-		if code != 1 || !strings.Contains(stderr, "BATCH_UNAVAILABLE") {
-			t.Errorf("%v = code %d, stderr %q", command, code, stderr)
-		}
-		entries, err := os.ReadDir(root)
-		if err != nil || len(entries) != 0 {
-			t.Fatalf("%v touched the filesystem: entries=%v err=%v", command, entries, err)
-		}
+		t.Run(command.name, func(t *testing.T) {
+			stderr, code := captureStderr(t, func() int { return dispatch(command.args) })
+			if code != 2 || !strings.Contains(stderr, command.want) || strings.Contains(stderr, "BATCH_UNAVAILABLE") {
+				t.Errorf("default command = code %d, stderr %q", code, stderr)
+			}
+		})
+	}
+	stderr, code := captureStderr(t, func() int { return runLandingBatch([]string{"unknown", "--root", root}) })
+	if code != 2 || !strings.Contains(stderr, `unknown verb "unknown"`) {
+		t.Fatalf("unknown verb = code %d, stderr %q", code, stderr)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("command validation touched the filesystem: entries=%v err=%v", entries, err)
 	}
 }
 
 func TestBatchTaggedCapabilityWitnessExecutesInProof(t *testing.T) {
 	names := []string{
-		"TestBatchCapabilitiesGate", "TestGoalHandoverRequiresCompleteInputs", "TestGoalHandoverTargetAuthenticationFailsClosed",
+		"TestGoalHandoverRequiresCompleteInputs", "TestGoalHandoverTargetAuthenticationFailsClosed",
 		"TestBatchJoinSpawnsOneOwner", "TestBatchOwnerHoldsTheLease", "TestBatchOwnerWiringBound",
 		"TestBatchOwnerInspectionUsesInjectedProberAndKeepsReadErrorsUnknown", "TestBatchProductionReturnTargetClassifiesCustody",
 		"TestBatchProofCoversTheUnion", "TestBatchProofAcceptsReusableSuccess", "TestBatchProofRearmsBaseBeforePlanningEvenWhenTreeMatches",
@@ -105,82 +113,43 @@ func TestBatchRuntimeInputsCannotRegisterCapability(t *testing.T) {
 }
 
 func TestBatchRolloutRequiresSealReceiptDiagnosisAndRecovery(t *testing.T) {
-	want := []batchCapability{
-		assemblyConflictCeilingAndSeal,
-		prefixReceipts,
-		ejectionAndRedScheduling,
-		atomicSeriesAndRecovery,
+	if productionBatchProofDependencies.seal == nil || productionBatchProofDependencies.launch == nil ||
+		batchDiagnosisSeams.diagnose == nil || batchLandRecoverPush == nil {
+		t.Fatal("seal, proof, diagnosis, and moved-base recovery must be bound in every build")
 	}
-	if !slices.Equal(batchRolloutRequirements[:], want) {
-		t.Fatalf("batch rollout requirements=%v, want %v", batchRolloutRequirements, want)
-	}
-	for _, omitted := range want {
-		available := make([]batchCapability, 0, len(requiredBatchCapabilities)-1)
-		for _, capability := range requiredBatchCapabilities {
-			if capability != omitted {
-				available = append(available, capability)
-			}
-		}
-		registry := map[batchCapability]struct{}{}
-		if registerBatchRollout(registry, available) || len(registry) != 0 {
-			t.Fatalf("batch rollout registered with %s absent: %v", omitted, registry)
-		}
-	}
-	parsed, err := parser.ParseFile(token.NewFileSet(), "landing_batch_rollout.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var initBody []ast.Stmt
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if ok && function.Recv == nil && function.Name.Name == "init" {
-			initBody = function.Body.List
-			break
-		}
-	}
-	if len(initBody) != 1 {
-		t.Fatalf("production batch rollout init has %d statements, want one guarded registration", len(initBody))
-	}
-	expression, ok := initBody[0].(*ast.ExprStmt)
-	if !ok {
-		t.Fatalf("production batch rollout init statement is %T, want guarded registration call", initBody[0])
-	}
-	call, ok := expression.X.(*ast.CallExpr)
-	if !ok || len(call.Args) != 2 {
-		t.Fatalf("production batch rollout init expression is %T with guarded arguments unavailable", expression.X)
-	}
-	function, functionOK := call.Fun.(*ast.Ident)
-	registry, registryOK := call.Args[0].(*ast.Ident)
-	available, availableOK := call.Args[1].(*ast.SliceExpr)
-	var availableName *ast.Ident
-	availableNameOK := false
-	if availableOK {
-		availableName, availableNameOK = available.X.(*ast.Ident)
-	}
-	if !functionOK || function.Name != "registerBatchRollout" || !registryOK || registry.Name != "compiledBatchCapabilities" ||
-		!availableOK || !availableNameOK || availableName.Name != "requiredBatchCapabilities" || available.Low != nil || available.High != nil || available.Max != nil {
-		t.Fatalf("production batch rollout init does not bind the guarded required capability registration: %#v", call)
+	seams := batchLandSeams("root", "batch", batch.Record{}, "base", "actor")
+	if seams.Prepare == nil || seams.AppendReceipt == nil || seams.Commit == nil || seams.Held == nil ||
+		seams.PublishBranch == nil || seams.Push == nil || seams.RecoverPush == nil || seams.Cleanup == nil {
+		t.Fatal("receipt composition and atomic series landing must be bound in every build")
 	}
 }
 
 func TestBatchProductionRegistryComplete(t *testing.T) {
-	want := []batchCapability{
-		recordStoreHistoryAndProberSeam, chainReaderIdentityUniquenessAndTransport, joinGate, assemblyConflictCeilingAndSeal,
-		handedOverClaimCardinality, fieldCompleteHandover, serializedJoinPublication, crashSafeTerminalReturn,
-		censusOnTheInjectedProber, boundedRolloutConfiguration, fifoLockAndStartRule, ownerVerbAndTick,
-		productionSupervisorTakeover, registerPreservingFastForward, proofPlanningAndTipLaunch,
-		revisionBoundAdmissionAndDiagnosticHeadroom, freshBaseDiagnosis, ejectionAndRedScheduling, trunkRedLedgerOwner,
-		prefixReceipts, landingTransportHelpers, atomicSeriesAndRecovery, waitStatusDocsAndInventory,
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !slices.Equal(requiredBatchCapabilities[:], want) {
-		t.Fatalf("required batch capability registry=%v, want literal production inventory %v", requiredBatchCapabilities, want)
+	for _, file := range files {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		data, readErr := os.ReadFile(file)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		for _, dead := range []string{"batchCapabilitiesAvailable", "compiledBatchCapabilities", "registerBatchRollout", "BATCH_UNAVAILABLE"} {
+			if strings.Contains(string(data), dead) {
+				t.Fatalf("production source %s still contains dead registry symbol %s", file, dead)
+			}
+		}
 	}
-	if len(compiledBatchCapabilities) != len(requiredBatchCapabilities) {
-		t.Fatalf("production registered %d batch capabilities, want %d", len(compiledBatchCapabilities), len(requiredBatchCapabilities))
+	wantVerbs := []string{"join", "status", "withdraw", "owner", "tick", "wait"}
+	if len(landingBatchVerbs) != len(wantVerbs) {
+		t.Fatalf("default batch verbs=%v, want %v", landingBatchVerbs, wantVerbs)
 	}
-	for _, capability := range requiredBatchCapabilities {
-		if _, ok := compiledBatchCapabilities[capability]; !ok {
-			t.Fatalf("production did not register required capability %s", capability)
+	for _, verb := range wantVerbs {
+		if landingBatchVerbs[verb] == nil {
+			t.Fatalf("default build does not bind batch verb %s", verb)
 		}
 	}
 	root := syncedClaimedGoalFixture(t)

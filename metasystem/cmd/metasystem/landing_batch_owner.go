@@ -27,8 +27,6 @@ import (
 
 const landingOwnerLineage = "landing-m1l"
 
-func init() { compiledBatchCapabilities[ownerVerbAndTick] = struct{}{} }
-
 type batchOwnerLease struct {
 	root, session string
 	pid, started  int64
@@ -518,9 +516,6 @@ func parseBatchOwner(args []string, verb string) (config.BatchLanding, time.Dura
 }
 
 func runBatchOwner(args []string) (code int) {
-	if !batchCapabilitiesAvailable() {
-		return runBatchVerbSkeleton(nil)
-	}
 	settings, interval, err := parseBatchOwner(args, "owner")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -594,9 +589,6 @@ func runBatchOwnerPass(owner *batch.Owner, held batchOwnerLease, root string, cl
 }
 
 func runBatchTick(args []string) (code int) {
-	if !batchCapabilitiesAvailable() {
-		return runBatchVerbSkeleton(nil)
-	}
 	flags := flag.NewFlagSet("landing batch tick", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")

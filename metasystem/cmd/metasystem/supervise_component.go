@@ -201,11 +201,6 @@ func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass 
 }
 
 func setupLandingOwnerWithCadence(metasystemRoot, repo string, cadence *batchOwnerCadence) (release func() error, pass func() error, ok bool) {
-	noWork := func() error { return nil }
-	if !batchCapabilitiesAvailable() {
-		return noWork, noWork, true
-	}
-
 	var activePass func() error
 	var held *batchOwnerLease
 	var announced *batchOwnerLease

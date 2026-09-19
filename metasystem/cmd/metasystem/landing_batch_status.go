@@ -17,8 +17,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
-func init() { compiledBatchCapabilities[waitStatusDocsAndInventory] = struct{}{} }
-
 var batchWaitClock = batch.WaitClock{Now: time.Now, After: time.After}
 var batchStatusOwner = inspectBatchOwner
 var batchStatusLock = batch.ProofLockOwner
@@ -188,9 +186,6 @@ func classifyBatchCadenceStatus(status *goal.CadenceStatus, now time.Time) (batc
 }
 
 func runBatchStatus(args []string) int {
-	if !batchCapabilitiesAvailable() {
-		return runBatchVerbSkeleton(nil)
-	}
 	flags := flag.NewFlagSet("landing batch status", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")
@@ -236,9 +231,6 @@ func runBatchStatus(args []string) int {
 }
 
 func runBatchWait(args []string) int {
-	if !batchCapabilitiesAvailable() {
-		return runBatchVerbSkeleton(nil)
-	}
 	flags := flag.NewFlagSet("landing batch wait", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")

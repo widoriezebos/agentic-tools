@@ -333,9 +333,6 @@ func productionForwardHandover(request batchJoinRequest, batchID string, source 
 }
 
 func runBatchJoin(args []string) int {
-	if !batchCapabilitiesAvailable() {
-		return runBatchVerbSkeleton(nil)
-	}
 	flags := flag.NewFlagSet("landing batch join", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	goalID := flags.String("goal", "", "claimed goal id")

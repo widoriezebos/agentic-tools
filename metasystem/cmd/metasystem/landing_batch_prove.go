@@ -19,8 +19,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-func init() { compiledBatchCapabilities[proofPlanningAndTipLaunch] = struct{}{} }
-
 type batchProofLaunch struct {
 	Root, BatchID, GoalID, Tree, CandidateTip, ResultPath string
 	Mode                                                  testpolicy.Mode

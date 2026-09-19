@@ -47,7 +47,6 @@ var Rows = []Row{
 	{Code: "UNIT_RUN_BUSY", Owner: "internal/launch", Site: "unit_run.go:829", Shape: Question},
 	{Code: "UNIT_RUN_NOT_AWAITING", Owner: "internal/launch", Site: "unit_run.go:763", Shape: Question},
 	{Code: "UNIT_FOLLOW_UP_MISSING", Owner: "internal/launch", Site: "unit_run.go:767", Shape: Question},
-	{Code: "BATCH_UNAVAILABLE", Owner: "cmd/metasystem", Site: "landing_batch_verbs.go:31", Shape: Question},
 	{Code: "BATCH_CHAIN_CONFLICT", Owner: "internal/landing/batch", Site: "chain.go:111", Shape: Question},
 	{Code: "BATCH_CLOSED", Owner: "internal/landing/batch", Site: "join.go:36", Shape: Question},
 	{Code: "BATCH_GOAL_ELSEWHERE", Owner: "internal/landing/batch", Site: "join.go:308", Shape: Question},

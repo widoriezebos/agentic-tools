@@ -20,12 +20,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
-func init() {
-	compiledBatchCapabilities[prefixReceipts] = struct{}{}
-	compiledBatchCapabilities[landingTransportHelpers] = struct{}{}
-	compiledBatchCapabilities[atomicSeriesAndRecovery] = struct{}{}
-}
-
 func executeBatchLanding(root, id, actor string, at time.Time) error {
 	store := batch.NewStore(root, nil)
 	record, err := store.Load(id)

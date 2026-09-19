@@ -119,9 +119,6 @@ func goalHandoverAuthenticationRoot(seatRoot, targetRoot string) (string, error)
 }
 
 func runGoalHandoverMutation(args []string) int {
-	if !batchCapabilitiesAvailable() {
-		return runBatchVerbSkeleton(nil)
-	}
 	flags := flag.NewFlagSet("goal handover", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	id := flags.String("id", "", "goal id")
