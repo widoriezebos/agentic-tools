@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 37
+- Sequence: 38
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Test-only and gate-only changes; a wrong parallelisation shows as a race under -race or a red, a wrong ratchet shows as a refused gate; nothing reaches production behaviour"
 - Tier: 2
 - Intent: Go tests run in parallel and stay parallel by machinery. DONE when internal/goal runs with t.Parallel on every test and independent subtest with no shared process state, the audit parallel-ratchet verb refuses any package whose serial-test count rises above its recorded floor from the fast gate, and the floor only ratchets down.
 - Origin: human
 - Next step: push 12 92743c951 landed 1 units: pathclass-manifest (a red on main since 09-17 fixed); see reads/go-tests-run-in-parallel-units.md for the rest
 - OpenedAt: 2026-09-18T14:56:01Z
-- Revision: 18
+- Revision: 19
 - Budget: elapsedLimit=1d attemptLimit=20 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-18T14:59:25Z revision=3 opid=XRMD7ZBWBBG03DHS0YFF8E1BH5-m1e-c6925449 authority=proven digest=97d790857a9e1bfceaec9d311599579d3af851a1ebc6594c70d3243d04da4d31
@@ -33,4 +33,5 @@ History:
 - 2026-09-19T03:11:35Z XXQM7J5WKE8QP0T64GQ5076WS0-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,efficiency-settings-ship-in-the-repository,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order from=1:38 to=1:37
 - 2026-09-19T06:00:11Z BP1E7BT2E8YDQ69XQ70P5FY8TV-m1e-c6925449 edit actor=human:Wido targets=go-tests-run-in-parallel
 - 2026-09-19T07:33:32Z 2127690W89RW2RX9JAGY4RBBJ7-m1e-c6925449 edit actor=human:Wido targets=go-tests-run-in-parallel
-Integrity: sha256=700c3a75e69751edf7a2d29f97a39bdb26a49fca2d4a23e37c2fd2e64d977b87
+- 2026-09-19T14:45:55Z PB71BE8X95YDKR3CYDA5SK9GVK-m1e-c6925449 set-priority actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-launchers-become-go-verbs,delegate-runs-stay-under-200k-context,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,goals-live-on-branches,human-goal-verbs-forgiving,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,waits-run-outside-model-contexts reason=priority-order subject=machinery-runs-unattended-on-codex from=1:37 to=1:38 requested-sequence=1
+Integrity: sha256=3f6a43da8f7623df18c0a921338519eaf63c8f21a680a213d4c4576af92c0b0e
