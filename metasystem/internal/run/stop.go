@@ -315,7 +315,7 @@ func (s *Store) stopHeld(record *Record, note string, mechanism stopMechanism) h
 		return outcome
 	}
 	outcome.Signal = StopSignalTerm
-	if !s.waitGroupEmpty(pgid, scaledStopDuration(5*time.Second)) {
+	if !s.waitGroupEmpty(pgid, scaledFixtureDuration(5*time.Second)) {
 		if !mechanism.escalate {
 			outcome.Result, outcome.Reason = StopResultNotStopped, "group survived TERM"
 			return outcome
@@ -330,7 +330,7 @@ func (s *Store) stopHeld(record *Record, note string, mechanism stopMechanism) h
 			return outcome
 		}
 		outcome.Signal = StopSignalKill
-		if !s.waitGroupEmpty(pgid, scaledStopDuration(500*time.Millisecond)) {
+		if !s.waitGroupEmpty(pgid, scaledFixtureDuration(500*time.Millisecond)) {
 			outcome.Result, outcome.Reason = StopResultNotStopped, "group survived KILL"
 			return outcome
 		}
@@ -386,23 +386,24 @@ func (s *Store) concludeStoppedHeld(record *Record, note string) error {
 }
 
 func (s *Store) waitGroupEmpty(pgid int64, wait time.Duration) bool {
-	deadline := time.Now().Add(wait)
+	deadline := s.stopNow().Add(wait)
 	for {
 		if s.groupEmpty(pgid) {
 			return true
 		}
-		if !time.Now().Before(deadline) {
+		now := s.stopNow()
+		if !now.Before(deadline) {
 			return false
 		}
-		poll := scaledStopDuration(100 * time.Millisecond)
-		if poll > time.Until(deadline) {
-			poll = time.Until(deadline)
+		poll := scaledFixtureDuration(100 * time.Millisecond)
+		if remaining := deadline.Sub(now); poll > remaining {
+			poll = remaining
 		}
-		time.Sleep(poll)
+		s.stopSleep(poll)
 	}
 }
 
-func scaledStopDuration(base time.Duration) time.Duration {
+func scaledFixtureDuration(base time.Duration) time.Duration {
 	scale := int64(1000)
 	if raw := os.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI"); raw != "" {
 		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {

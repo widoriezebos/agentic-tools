@@ -590,25 +590,27 @@ func TestWaiterContract(t *testing.T) {
 	s.WriteSidecar("watch-run", record.Generation, record.LaunchNonce, 0)
 	prober.verdicts[501] = identity.Dead
 	done := make(chan int, 1)
+	watchSleeping := make(chan time.Duration, 1)
+	continueWatch := make(chan struct{})
+	t.Cleanup(func() { close(continueWatch) })
+	s.WatchSleep = func(duration time.Duration) {
+		watchSleeping <- duration
+		<-continueWatch
+	}
 	go func() { done <- s.Watch("watch-run", mainCaller, 30*time.Millisecond, nil) }()
 	waiterTarget := WaiterTarget{Generation: record.Generation, LaunchNonce: record.LaunchNonce}
-	deadline := time.Now().Add(wiringBound)
-	for !LiveWaiter(s.Root, prober, "run", "watch-run", mainCaller.MainId, waiterTarget) {
-		if time.Now().After(deadline) {
-			t.Fatal("watch did not publish its waiter record")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if duration := <-watchSleeping; duration != 30*time.Millisecond {
+		t.Fatalf("watch sleep = %s, want 30ms", duration)
+	}
+	if !LiveWaiter(s.Root, prober, "run", "watch-run", mainCaller.MainId, waiterTarget) {
+		t.Fatal("watch sleep began before its waiter record was published")
 	}
 	if _, err := s.Assess("watch-run"); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case code := <-done:
-		if code != ExitGreen {
-			t.Fatalf("watch exit %d, want green", code)
-		}
-	case <-time.After(wiringBound):
-		t.Fatal("watch did not return after conclusion")
+	continueWatch <- struct{}{}
+	if code := <-done; code != ExitGreen {
+		t.Fatalf("watch exit %d, want green", code)
 	}
 	if LiveWaiter(s.Root, prober, "run", "watch-run", mainCaller.MainId, waiterTarget) {
 		t.Fatal("the waiter record survived the watch exit")

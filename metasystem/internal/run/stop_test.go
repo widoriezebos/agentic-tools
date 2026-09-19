@@ -346,6 +346,18 @@ func TestStopPreservesSidecarVerdictWrittenDuringOrderlySignal(t *testing.T) {
 func TestStopReportsWrappedRunThatSurvivesKill(t *testing.T) {
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "1")
 	s, _, _ := boundWrappedForStop(t)
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	started := now
+	nowReads := 0
+	s.StopNow = func() time.Time {
+		nowReads++
+		return now
+	}
+	var sleeps []time.Duration
+	s.StopSleep = func(duration time.Duration) {
+		sleeps = append(sleeps, duration)
+		now = now.Add(duration)
+	}
 	// The liveness seam stays present even after both injected signals: a
 	// successful signal syscall is not proof that the group ended.
 	s.GroupPresent = func(int64) (bool, bool) { return true, true }
@@ -362,6 +374,20 @@ func TestStopReportsWrappedRunThatSurvivesKill(t *testing.T) {
 	}
 	if len(signals) != 2 || signals[0] != syscall.SIGTERM || signals[1] != syscall.SIGKILL {
 		t.Fatalf("signals = %v", signals)
+	}
+	if nowReads == 0 {
+		t.Fatal("stop wait did not read its injected clock")
+	}
+	if len(sleeps) != 6 {
+		t.Fatalf("stop sleeps = %v, want six artificial-clock advances", sleeps)
+	}
+	for _, duration := range sleeps {
+		if duration != time.Millisecond {
+			t.Fatalf("stop sleeps = %v, want 1ms advances", sleeps)
+		}
+	}
+	if elapsed := now.Sub(started); elapsed != 6*time.Millisecond {
+		t.Fatalf("artificial stop elapsed = %s, want 6ms", elapsed)
 	}
 	record, _ := s.Read("stop-wrapped")
 	if record.Status != StatusRunning {

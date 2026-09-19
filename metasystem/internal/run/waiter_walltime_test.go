@@ -82,7 +82,6 @@ func TestWaiterSourcesUseNoWallTime(t *testing.T) {
 	exceptionList := []wallTimeException{
 		{function: "defaultWaitSleep", reason: "the injected sleep seam needs a real-time default"},
 		{function: "withWaiterLock", reason: "the file-lock retry has its own five-second bound"},
-		{function: "(*Store).Watch", reason: "the watch verb has a separate polling loop from the wait loop"},
 	}
 	exceptions := make(map[string]wallTimeException, len(exceptionList))
 	for _, exception := range exceptionList {

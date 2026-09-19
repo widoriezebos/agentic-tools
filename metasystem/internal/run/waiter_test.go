@@ -445,9 +445,15 @@ func TestWaitFIFOHintDelivery(t *testing.T) {
 	if err != nil || delivery.Matched != 2 || delivery.Delivered != 1 {
 		t.Fatalf("delivery=%+v err=%v", delivery, err)
 	}
-	hinted, err := receiver.Wait(context.Background(), time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hinted, err := receiver.Wait(ctx, 0)
 	if err != nil || !hinted {
 		t.Fatalf("valid nonce did not survive the preceding forged hint: hinted=%t err=%v", hinted, err)
+	}
+	cancel()
+	if _, err := receiver.Wait(ctx, 0); err != context.Canceled {
+		t.Fatalf("context-only FIFO wait ignored cancellation: %v", err)
 	}
 	row.State = "ready"
 	if err := writeV2Waiter(rowPath, row); err != nil {

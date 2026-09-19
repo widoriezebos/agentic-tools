@@ -228,9 +228,15 @@ func Terminal(status string) bool {
 // checkout's epoch inside the runs lock — authorization at the command
 // layer is point-in-time and a stalled child can outlive its main.
 type Store struct {
-	Root         string
-	Prober       identity.Prober
-	Now          func() time.Time
+	Root   string
+	Prober identity.Prober
+	Now    func() time.Time
+	// StopNow and StopSleep drive the process-group disappearance wait.
+	// WatchSleep drives the run-record polling wait. Production leaves these
+	// nil for real time; tests can advance either wait without wall time.
+	StopNow      func() time.Time
+	StopSleep    func(time.Duration)
+	WatchSleep   func(time.Duration)
 	CurrentEpoch func() (*int64, bool)
 	// Getpgid is the kernel process-group reader, a seam for tests
 	// whose recorded pids are synthetic.
@@ -315,6 +321,29 @@ func (s *Store) now() time.Time {
 		return s.Now()
 	}
 	return time.Now()
+}
+
+func (s *Store) stopNow() time.Time {
+	if s.StopNow != nil {
+		return s.StopNow()
+	}
+	return time.Now()
+}
+
+func (s *Store) stopSleep(duration time.Duration) {
+	if s.StopSleep != nil {
+		s.StopSleep(duration)
+		return
+	}
+	time.Sleep(duration)
+}
+
+func (s *Store) watchSleep(duration time.Duration) {
+	if s.WatchSleep != nil {
+		s.WatchSleep(duration)
+		return
+	}
+	time.Sleep(duration)
 }
 
 func (s *Store) nowISO() string { return s.now().UTC().Format("2006-01-02T15:04:05Z") }

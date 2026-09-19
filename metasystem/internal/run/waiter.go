@@ -243,6 +243,8 @@ type finishStamps struct {
 
 var waitEvents = &events.Emitter{Component: "run", Pid: int64(os.Getpid())}
 
+const waiterLockWait = 5 * time.Second
+
 // WaitersDir is the one namespace for job and run waiters alike.
 func WaitersDir(root string) string { return filepath.Join(root, "artifacts", "agents", "waiters") }
 
@@ -262,7 +264,7 @@ func withWaiterLock(root string, fn func() error) error {
 		return err
 	}
 	defer f.Close()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(waiterLockWait)
 	for {
 		if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
 			break
@@ -563,7 +565,7 @@ func withWaiterLockBounded(ctx context.Context, root string, deadline time.Time,
 		return err
 	}
 	defer f.Close()
-	lockDeadline := now().Add(5 * time.Second)
+	lockDeadline := now().Add(waiterLockWait)
 	if deadline.Before(lockDeadline) {
 		lockDeadline = deadline
 	}
@@ -1872,7 +1874,7 @@ func (s *Store) Watch(id string, owner Caller, poll time.Duration, out io.Writer
 		case StatusLaunchFailed:
 			return line("launch-failed", ExitLaunchFailed, record)
 		}
-		time.Sleep(poll)
+		s.watchSleep(poll)
 	}
 }
 

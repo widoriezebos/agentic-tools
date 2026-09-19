@@ -69,7 +69,8 @@ func TestSuccessorRefusesWrongSessionRow(t *testing.T) {
 			done := make(chan error, 1)
 			go func() { done <- cmd.Wait() }()
 			var row Waiter
-			deadline := time.Now().Add(20 * time.Second)
+			registrationWait := scaledFixtureDuration(10 * waiterLockWait)
+			deadline := time.Now().Add(registrationWait)
 			for row.WaitID == "" && time.Now().Before(deadline) {
 				select {
 				case waitErr := <-done:
@@ -90,7 +91,7 @@ func TestSuccessorRefusesWrongSessionRow(t *testing.T) {
 			if row.WaitID == "" {
 				_ = cmd.Process.Kill()
 				<-done
-				t.Fatal("installed waiter did not publish its pending row within 20 seconds")
+				t.Fatalf("installed waiter did not publish its pending row within %s", registrationWait)
 			}
 			if err := cmd.Process.Kill(); err != nil {
 				t.Fatal(err)

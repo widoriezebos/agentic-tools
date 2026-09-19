@@ -15,7 +15,8 @@ import (
 )
 
 // HintReceiver waits for an authenticated notification on a waiter's private
-// channel. A true result only schedules another durable source read.
+// channel. A non-positive duration leaves the wait bounded only by the
+// context. A true result only schedules another durable source read.
 type HintReceiver interface {
 	Wait(context.Context, time.Duration) (bool, error)
 	Close() error
@@ -90,19 +91,25 @@ func OpenFIFOHintReceiver(path, waitID, nonce string) (HintReceiver, error) {
 }
 
 func (receiver *fifoHintReceiver) Wait(ctx context.Context, duration time.Duration) (bool, error) {
-	deadline := time.Now().Add(duration)
+	bounded := duration > 0
+	var deadline time.Time
+	if bounded {
+		deadline = time.Now().Add(duration)
+	}
 	buffer := make([]byte, 4096)
 	for {
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return false, nil
-		}
-		chunk := remaining
-		if chunk > 100*time.Millisecond {
-			chunk = 100 * time.Millisecond
+		chunk := 100 * time.Millisecond
+		if bounded {
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				return false, nil
+			}
+			if remaining < chunk {
+				chunk = remaining
+			}
 		}
 		milliseconds := int((chunk + time.Millisecond - 1) / time.Millisecond)
 		fds := []unix.PollFd{{Fd: int32(receiver.fd), Events: unix.POLLIN}}
