@@ -10,10 +10,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv("METASYSTEM_CONTRACT_DRIVER_HELPER") == "1" {
-		if len(os.Args) != 6 || os.Args[1] != "testing" || os.Args[2] != "merge-driver" {
-			os.Exit(2)
-		}
+	if len(os.Args) == 6 && os.Args[1] == "testing" && os.Args[2] == "merge-driver" {
 		base, baseErr := os.ReadFile(os.Args[3])
 		ours, oursErr := os.ReadFile(os.Args[4])
 		theirs, theirsErr := os.ReadFile(os.Args[5])

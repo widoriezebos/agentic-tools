@@ -58,6 +58,7 @@ func requireCheckoutUnchanged(t *testing.T, root string, before checkoutSnapshot
 }
 
 func TestCommitCreatesBranchAndAmendsUnit(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	stage(t, f, "metasystem/plans/goal-a.md", "plan")
 	plan, err := branch.CommitStaged(branch.CommitRequest{
@@ -128,11 +129,14 @@ func prepareTrackedAmendFixture(t *testing.T, f *branchFixture) {
 }
 
 func TestAmendKeepsUnstagedTrackedEdits(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name string
 		away bool
 	}{{name: "on goal branch"}, {name: "away from goal branch", away: true}} {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			f := newBranchFixture(t)
 			prepareTrackedAmendFixture(t, f)
 			commitUnit(t, f, "u1", "metasystem/code.go", "one")
@@ -165,6 +169,7 @@ func TestAmendKeepsUnstagedTrackedEdits(t *testing.T) {
 }
 
 func TestAmendRefusesBeforeOverwritingUnstagedTrackedEdit(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	prepareTrackedAmendFixture(t, f)
 	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
@@ -189,6 +194,7 @@ func TestAmendRefusesBeforeOverwritingUnstagedTrackedEdit(t *testing.T) {
 }
 
 func TestAmendInstallFailureRestoresCheckout(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	prepareTrackedAmendFixture(t, f)
 	commitUnit(t, f, "u1", "metasystem/code.go", "one")
@@ -217,6 +223,7 @@ func TestAmendInstallFailureRestoresCheckout(t *testing.T) {
 }
 
 func TestAmendInstallFailureRollsBackMovedCheckout(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	prepareTrackedAmendFixture(t, f)
 	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
@@ -251,6 +258,7 @@ func TestAmendInstallFailureRollsBackMovedCheckout(t *testing.T) {
 }
 
 func TestCommitRefusesNonHolder(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	stage(t, f, "metasystem/code.go", "one")
 	_, err := branch.CommitStaged(branch.CommitRequest{
@@ -267,7 +275,9 @@ func TestCommitRefusesNonHolder(t *testing.T) {
 }
 
 func TestCommitRefusalsPreserveCheckout(t *testing.T) {
+	t.Parallel()
 	t.Run("class from another branch", func(t *testing.T) {
+		t.Parallel()
 		f := newBranchFixture(t)
 		commitUnit(t, f, "u1", "metasystem/code.go", "one")
 		git(t, f.root, "switch", "--quiet", "-c", "other", f.base)
@@ -285,6 +295,7 @@ func TestCommitRefusalsPreserveCheckout(t *testing.T) {
 	})
 
 	t.Run("invalid range", func(t *testing.T) {
+		t.Parallel()
 		f := newBranchFixture(t)
 		invalid := git(t, f.root, "commit-tree", f.base+"^{tree}", "-p", f.base, "-m", "invalid")
 		git(t, f.root, "update-ref", "refs/heads/goal/goal-a", invalid)
@@ -303,6 +314,7 @@ func TestCommitRefusalsPreserveCheckout(t *testing.T) {
 }
 
 func TestAmendRechecksClaimBeforeBranchUpdate(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	old := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	stage(t, f, "metasystem/code.go", "two")
@@ -327,6 +339,7 @@ func TestAmendRechecksClaimBeforeBranchUpdate(t *testing.T) {
 }
 
 func TestAmendDropsReadOfReplacedBuildAndReplaysLaterPlan(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	f.commit(t, "metasystem/records/reads/goal-a/"+unit+".json", "{}", "read\n\nGoal-Read: goal-a/u1 "+unit)
@@ -352,6 +365,7 @@ func TestAmendDropsReadOfReplacedBuildAndReplaysLaterPlan(t *testing.T) {
 }
 
 func TestAmendDroppingReadStillChecksReplayedTree(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	f.commit(t, "metasystem/records/reads/goal-a/"+unit+".json", "{}", "read\n\nGoal-Read: goal-a/u1 "+unit)
@@ -382,6 +396,7 @@ GOAL_TREE_HOOK=1 git commit --amend --no-edit --quiet
 }
 
 func TestPlainCommitKeepsDirtyLedgerWithoutAdoption(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	write(t, f.root, "metasystem/memory/receipts.log", "seed\n")
 	git(t, f.root, "add", ".")
@@ -402,6 +417,7 @@ func TestPlainCommitKeepsDirtyLedgerWithoutAdoption(t *testing.T) {
 }
 
 func TestAdoptionUntrackedCollisionRefusesStale(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	commitUnit(t, f, "u1", "metasystem/one.go", "one")
 	if _, err := branch.Push(pushRequest(f, "collision-first")); err != nil {
@@ -428,6 +444,7 @@ func TestAdoptionUntrackedCollisionRefusesStale(t *testing.T) {
 }
 
 func TestCommitAdoptsRemoteWithoutEndpointCheckout(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	remote := commitUnit(t, f, "u1", "metasystem/remote.go", "remote")
 	if _, err := branch.Push(pushRequest(f, "seed-remote")); err != nil {
@@ -446,6 +463,7 @@ func TestCommitAdoptsRemoteWithoutEndpointCheckout(t *testing.T) {
 }
 
 func TestFailedCommitLeavesCheckoutAndRefsUnchanged(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	hooks := filepath.Join(f.root, ".fixture-hooks")
 	if err := os.MkdirAll(hooks, 0o755); err != nil {
@@ -471,6 +489,7 @@ func TestFailedCommitLeavesCheckoutAndRefsUnchanged(t *testing.T) {
 }
 
 func TestAmendReplacesWholeBuildList(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	stage(t, f, "metasystem/multi.go", "one")
 	request := branch.CommitRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base, GoalID: "goal-a",

@@ -40,6 +40,7 @@ func goalRef(t *testing.T, root, prefix string) string {
 }
 
 func TestPushPublishesAmendAndSecondCloneAdopts(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	first := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	result, err := branch.Push(pushRequest(f, "push-first"))
@@ -77,6 +78,7 @@ func TestPushPublishesAmendAndSecondCloneAdopts(t *testing.T) {
 }
 
 func TestAdoptRemoteTipRestoresHeadWhenTheRefUpdateFails(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	first := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	if _, err := branch.Push(pushRequest(f, "restore-first")); err != nil {
@@ -129,6 +131,7 @@ func (t fetchThenFail) Fetch(repo, remote, ref, destination string) error {
 }
 
 func TestPushReconcilesUnknownOutcomeAndPreparedTransaction(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	request := pushRequest(f, "unknown")
@@ -172,6 +175,7 @@ func TestPushReconcilesUnknownOutcomeAndPreparedTransaction(t *testing.T) {
 }
 
 func TestPushAndCommitAdoptDescendantRemoteAfterLandedCrash(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name       string
 		seedOrigin bool
@@ -180,7 +184,9 @@ func TestPushAndCommitAdoptDescendantRemoteAfterLandedCrash(t *testing.T) {
 		{name: "origin record lags", seedOrigin: true},
 	} {
 		for _, nextAction := range []string{"push", "commit"} {
+			test, nextAction := test, nextAction
 			t.Run(test.name+" then "+nextAction, func(t *testing.T) {
+				t.Parallel()
 				f := newBranchFixture(t)
 				if test.seedOrigin {
 					commitUnit(t, f, "u0", "metasystem/seed.go", "seed")
@@ -239,6 +245,7 @@ func TestPushAndCommitAdoptDescendantRemoteAfterLandedCrash(t *testing.T) {
 }
 
 func TestPushLeaseAndClaimMovementRefuseWithoutRetry(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	first := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	if _, err := branch.Push(pushRequest(f, "seed")); err != nil {
@@ -292,6 +299,7 @@ func TestPushLeaseAndClaimMovementRefuseWithoutRetry(t *testing.T) {
 }
 
 func TestPushUnknownNotLandedDoesNotWedgeLaterAmend(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	request := pushRequest(f, "unknown-not-landed")
@@ -319,6 +327,7 @@ func TestPushUnknownNotLandedDoesNotWedgeLaterAmend(t *testing.T) {
 }
 
 func TestPushAdoptsRemoteAdvanceAndCommitUsesIt(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	first := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	if _, err := branch.Push(pushRequest(f, "push-first")); err != nil {
@@ -369,6 +378,7 @@ func TestPushAdoptsRemoteAdvanceAndCommitUsesIt(t *testing.T) {
 }
 
 func TestPushAndCommitRefuseDivergedRemote(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	if _, err := branch.Push(pushRequest(f, "seed")); err != nil {
@@ -417,6 +427,7 @@ func TestPushAndCommitRefuseDivergedRemote(t *testing.T) {
 }
 
 func TestPushAdoptionValidatesRangeAndCleansFetchRef(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	invalid := git(t, f.root, "commit-tree", f.base+"^{tree}", "-p", f.base, "-m", "invalid")
 	git(t, f.root, "push", "-q", "origin", invalid+":refs/heads/goal/goal-a")
@@ -445,6 +456,7 @@ func TestPushAdoptionValidatesRangeAndCleansFetchRef(t *testing.T) {
 }
 
 func TestPushAdoptionKeepsUntrackedScratchFile(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	if _, err := branch.Push(pushRequest(f, "publish-scratch")); err != nil {
@@ -462,6 +474,7 @@ func TestPushAdoptionKeepsUntrackedScratchFile(t *testing.T) {
 }
 
 func TestPushAdoptionCrashCannotStageAReversal(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	first := commitUnit(t, f, "u1", "metasystem/one.go", "one")
 	if _, err := branch.Push(pushRequest(f, "publish-first")); err != nil {

@@ -10,6 +10,7 @@ import (
 )
 
 func TestCommitRefusesWithoutPushProtocol(t *testing.T) {
+	// This test changes the package-wide push protocol availability check.
 	prior := pushProtocolAvailable
 	pushProtocolAvailable = false
 	t.Cleanup(func() { pushProtocolAvailable = prior })
@@ -21,6 +22,7 @@ func TestCommitRefusesWithoutPushProtocol(t *testing.T) {
 }
 
 func TestCommitHasSingleAmendDecision(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run := func(args ...string) string {
 		t.Helper()

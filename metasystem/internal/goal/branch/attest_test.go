@@ -30,6 +30,7 @@ func readerRecord(t *testing.T, f *branchFixture, commit string) string {
 }
 
 func TestAttestationReaderRecordIntegrity(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	record := readerRecord(t, f, unit)
@@ -72,6 +73,7 @@ func TestAttestationReaderRecordIntegrity(t *testing.T) {
 }
 
 func TestAttestationRequiresFastGateAndNamesChangedTests(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	write(t, f.root, "metasystem/code_test.go", "package fixture\n")
 	git(t, f.root, "add", ".")
@@ -111,6 +113,7 @@ func writeJSONFixture(t *testing.T, root, path string, value any) {
 }
 
 func TestAttestationCriticRootSourceValidates(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	subject, present, err := dispatch.ComputeReadSubject(dispatch.ReadSubjectRequest{
@@ -255,6 +258,7 @@ func newTwoUnitCarryFixture(t *testing.T) carryFixture {
 }
 
 func TestAttestationCarryPreservesUnitAndFoldBytes(t *testing.T) {
+	t.Parallel()
 	c := newCarryFixture(t)
 	endpoint, unit := rebaseCarryFixture(t, c, "unrelated.txt")
 	_, att, err := branch.CommitRead(branch.CommitReadRequest{
@@ -276,6 +280,7 @@ func TestAttestationCarryPreservesUnitAndFoldBytes(t *testing.T) {
 }
 
 func TestReadInstallRefusalLeavesNothingStaged(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	record := readerRecord(t, f, unit)
@@ -306,6 +311,7 @@ func TestReadInstallRefusalLeavesNothingStaged(t *testing.T) {
 }
 
 func TestReadCommitKeepsDirtyLedgerWithoutAdoption(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	write(t, f.root, "metasystem/memory/receipts.log", "seed\n")
 	git(t, f.root, "add", ".")
@@ -328,8 +334,11 @@ func TestReadCommitKeepsDirtyLedgerWithoutAdoption(t *testing.T) {
 }
 
 func TestAttestationCarryRefusesChangedUnitOrFold(t *testing.T) {
+	t.Parallel()
 	for _, changed := range []string{"metasystem/code.go", "metasystem/plans/goal-a.md"} {
+		changed := changed
 		t.Run(filepath.Base(changed), func(t *testing.T) {
+			t.Parallel()
 			c := newCarryFixture(t)
 			endpoint, unit := rebaseCarryFixture(t, c, changed)
 			_, _, err := branch.CommitRead(branch.CommitReadRequest{
@@ -345,6 +354,7 @@ func TestAttestationCarryRefusesChangedUnitOrFold(t *testing.T) {
 }
 
 func TestAttestationCarryChecksEveryEarlierFold(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, changedPath string
 		wantStale         bool
@@ -352,7 +362,9 @@ func TestAttestationCarryChecksEveryEarlierFold(t *testing.T) {
 		{name: "first plan changes", changedPath: "metasystem/plans/p1.md", wantStale: true},
 		{name: "unrelated endpoint change", changedPath: "unrelated.txt"},
 	} {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			c := newTwoUnitCarryFixture(t)
 			endpoint, unit := rebaseCarryUnit(t, c, test.changedPath, "u2")
 			_, _, err := branch.CommitRead(branch.CommitReadRequest{
@@ -372,7 +384,9 @@ func TestAttestationCarryChecksEveryEarlierFold(t *testing.T) {
 }
 
 func TestReadRefusalsPreserveCheckout(t *testing.T) {
+	t.Parallel()
 	t.Run("non-holder", func(t *testing.T) {
+		t.Parallel()
 		f := newBranchFixture(t)
 		unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 		record := readerRecord(t, f, unit)
@@ -393,6 +407,7 @@ func TestReadRefusalsPreserveCheckout(t *testing.T) {
 	})
 
 	t.Run("class", func(t *testing.T) {
+		t.Parallel()
 		f := newBranchFixture(t)
 		unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 		record := readerRecord(t, f, unit)
@@ -414,6 +429,7 @@ func TestReadRefusalsPreserveCheckout(t *testing.T) {
 }
 
 func TestReadAdoptionRefusalsLeaveCheckoutUntouched(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, wantCode string
 		remoteRead     bool
@@ -422,7 +438,9 @@ func TestReadAdoptionRefusalsLeaveCheckoutUntouched(t *testing.T) {
 		{name: "staged change conflicts with remote", wantCode: branch.StaleCode, remoteRead: true},
 		{name: "claim moves during preparation", wantCode: branch.NotHolderCode, claimMoves: true},
 	} {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			f := newBranchFixture(t)
 			unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 			if _, err := branch.Push(pushRequest(f, "first-push")); err != nil {
@@ -495,6 +513,7 @@ func TestReadAdoptionRefusalsLeaveCheckoutUntouched(t *testing.T) {
 }
 
 func TestReadAdoptionKeepsUntrackedScratchFile(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	if _, err := branch.Push(pushRequest(f, "scratch-first")); err != nil {

@@ -25,6 +25,7 @@ func mirrorRequest(f *branchFixture, transport string) branch.MirrorRequest {
 }
 
 func TestTransportMirrorAndLeasedDelete(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	transport := filepath.Join(t.TempDir(), "transport.git")
 	git(t, filepath.Dir(transport), "init", "-q", "--bare", transport)
@@ -77,7 +78,9 @@ func TestTransportMirrorAndLeasedDelete(t *testing.T) {
 }
 
 func TestMirrorDeleteReconcilesUnknownOutcome(t *testing.T) {
+	t.Parallel()
 	t.Run("mirror operation id", func(t *testing.T) {
+		t.Parallel()
 		f := newBranchFixture(t)
 		transport := filepath.Join(t.TempDir(), "transport.git")
 		git(t, filepath.Dir(transport), "init", "-q", "--bare", transport)
@@ -96,6 +99,7 @@ func TestMirrorDeleteReconcilesUnknownOutcome(t *testing.T) {
 	})
 
 	t.Run("delete completed", func(t *testing.T) {
+		t.Parallel()
 		f := newBranchFixture(t)
 		tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 		git(t, f.root, "push", "-q", "origin", tip+":refs/heads/goal/goal-a")
@@ -107,6 +111,7 @@ func TestMirrorDeleteReconcilesUnknownOutcome(t *testing.T) {
 	})
 
 	t.Run("delete not completed", func(t *testing.T) {
+		t.Parallel()
 		f := newBranchFixture(t)
 		tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 		git(t, f.root, "push", "-q", "origin", tip+":refs/heads/goal/goal-a")
@@ -119,6 +124,7 @@ func TestMirrorDeleteReconcilesUnknownOutcome(t *testing.T) {
 	})
 
 	t.Run("sweep delete completed", func(t *testing.T) {
+		t.Parallel()
 		f := newBranchFixture(t)
 		commitUnit(t, f, "u1", "metasystem/code.go", "one")
 		if _, err := branch.Push(pushRequest(f, "unknown-sweep-origin")); err != nil {

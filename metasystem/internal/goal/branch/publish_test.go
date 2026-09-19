@@ -29,7 +29,9 @@ func requirePublishCode(t *testing.T, err error, code string) {
 }
 
 func TestGoalLandingPublicationAndVerification(t *testing.T) {
+	t.Parallel()
 	t.Run("whole series", func(t *testing.T) {
+		t.Parallel()
 		fixture := newLandFixture(t)
 		out, prepared := preparedLanding(t, fixture)
 		result, err := branch.LandPush(branch.LandPushRequest{Repo: fixture.root, Remote: "origin", EndpointRef: "refs/heads/main",
@@ -78,7 +80,9 @@ func TestGoalLandingPublicationAndVerification(t *testing.T) {
 		{name: "endpoint moved", code: branch.LandTrunkMovedCode, movedRef: "refs/heads/main"},
 		{name: "landing moved", code: branch.LandBranchMovedCode, movedRef: "refs/heads/landing/goal-a"},
 	} {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			fixture := newLandFixture(t)
 			out, prepared := preparedLanding(t, fixture)
 			intruder := git(t, fixture.root, "commit-tree", fixture.base+"^{tree}", "-p", fixture.base, "-m", "intruder")
@@ -101,6 +105,7 @@ func TestGoalLandingPublicationAndVerification(t *testing.T) {
 }
 
 func TestLandPushRerunAfterPublishedCrashReportsLanded(t *testing.T) {
+	t.Parallel()
 	fixture := newLandFixture(t)
 	out, prepared := preparedLanding(t, fixture)
 	git(t, fixture.root, "push", "-q", "--atomic", "origin",
@@ -114,6 +119,7 @@ func TestLandPushRerunAfterPublishedCrashReportsLanded(t *testing.T) {
 }
 
 func TestLandPushRechecksClaimBeforePush(t *testing.T) {
+	t.Parallel()
 	fixture := newLandFixture(t)
 	out, prepared := preparedLanding(t, fixture)
 	checks := 0

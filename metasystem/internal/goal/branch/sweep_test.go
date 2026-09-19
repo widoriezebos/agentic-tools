@@ -11,7 +11,9 @@ import (
 )
 
 func TestGoalBranchSweepRules(t *testing.T) {
+	t.Parallel()
 	t.Run("last landing", func(t *testing.T) {
+		t.Parallel()
 		fixture := newLandFixture(t)
 		transport := filepath.Join(t.TempDir(), "transport.git")
 		git(t, filepath.Dir(transport), "init", "-q", "--bare", transport)
@@ -31,6 +33,7 @@ func TestGoalBranchSweepRules(t *testing.T) {
 	})
 
 	t.Run("plan tail and abandoned word", func(t *testing.T) {
+		t.Parallel()
 		fixture := newLandFixture(t)
 		out, prepared := preparedLanding(t, fixture)
 		if _, err := branch.LandPush(branch.LandPushRequest{Repo: fixture.root, Remote: "origin", EndpointRef: "refs/heads/main",
@@ -59,6 +62,7 @@ func TestGoalBranchSweepRules(t *testing.T) {
 	})
 
 	t.Run("tip race", func(t *testing.T) {
+		t.Parallel()
 		fixture := newLandFixture(t)
 		out, prepared := preparedLanding(t, fixture)
 		if _, err := branch.LandPush(branch.LandPushRequest{Repo: fixture.root, Remote: "origin", EndpointRef: "refs/heads/main",
@@ -80,6 +84,7 @@ func TestGoalBranchSweepRules(t *testing.T) {
 	})
 
 	t.Run("orphan landing word", func(t *testing.T) {
+		t.Parallel()
 		fixture := newLandFixture(t)
 		_, _ = preparedLanding(t, fixture)
 		if err := branch.DeleteLanding(branch.DeleteLandingRequest{Repo: fixture.root, Remote: "origin", GoalID: "goal-a", CheckClaim: claimAllowed}); err != nil {
@@ -91,6 +96,7 @@ func TestGoalBranchSweepRules(t *testing.T) {
 	})
 
 	t.Run("unknown commit", func(t *testing.T) {
+		t.Parallel()
 		fixture := newBranchFixture(t)
 		unknown := git(t, fixture.root, "commit-tree", fixture.base+"^{tree}", "-p", fixture.base, "-m", "unknown")
 		git(t, fixture.root, "push", "-q", "origin", unknown+":refs/heads/goal/goal-a")
@@ -285,7 +291,9 @@ func TestSweepLocalTipExemptions(t *testing.T) {
 			}
 		}},
 	} {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			fixture, prepared := landedSweepFixture(t)
 			tail := addSweepTail(t, fixture, prepared.Landing)
 			git(t, fixture.root, "push", "-q", "--force", "origin", fixture.tip+":refs/heads/goal/goal-a")
@@ -298,6 +306,7 @@ func TestSweepLocalTipExemptions(t *testing.T) {
 }
 
 func TestSweepRefusesDirtyGoalWorktree(t *testing.T) {
+	t.Parallel()
 	fixture, prepared := landedSweepFixture(t)
 	write(t, fixture.root, "metasystem/one.go", "dirty worktree\n")
 	_, err := branch.Sweep(branch.SweepRequest{Repo: fixture.root, Remote: "origin", EndpointTip: prepared.Landing,
@@ -311,6 +320,7 @@ func TestSweepRefusesDirtyGoalWorktree(t *testing.T) {
 }
 
 func TestSweepRefusesTransportTipWithUnlandedCommit(t *testing.T) {
+	t.Parallel()
 	fixture, prepared := landedSweepFixture(t)
 	transport := filepath.Join(t.TempDir(), "transport.git")
 	git(t, filepath.Dir(transport), "init", "-q", "--bare", transport)
@@ -330,6 +340,7 @@ func TestSweepRefusesTransportTipWithUnlandedCommit(t *testing.T) {
 }
 
 func TestSweepCleansLeftoversWhenOriginBranchIsGone(t *testing.T) {
+	t.Parallel()
 	fixture := newLandFixture(t)
 	transport := filepath.Join(t.TempDir(), "transport.git")
 	git(t, filepath.Dir(transport), "init", "-q", "--bare", transport)
@@ -357,6 +368,7 @@ func TestSweepCleansLeftoversWhenOriginBranchIsGone(t *testing.T) {
 }
 
 func TestSweepRequiresExactConcludedDroppedDeclaration(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name        string
 		declaration func(string, string) string
@@ -368,7 +380,9 @@ func TestSweepRequiresExactConcludedDroppedDeclaration(t *testing.T) {
 		{name: "exact entry without conclusion", declaration: func(commit, digest string) string { return "dropped:" + commit + ":" + digest }},
 		{name: "last landing takes no exemption", declaration: func(commit, digest string) string { return "dropped:" + commit + ":" + digest }},
 	} {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			fixture, prepared := landedSweepFixture(t)
 			tail := addSweepTail(t, fixture, prepared.Landing)
 			digest, err := branch.UnitDigest(fixture.root, tail)

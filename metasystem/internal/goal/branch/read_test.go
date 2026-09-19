@@ -16,6 +16,7 @@ import (
 )
 
 func TestBindLandedUnitRefusesOmittedFold(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	write(t, f.root, "metasystem/code.go", "base code")
 	write(t, f.root, "metasystem/plans/goal-a.md", "base plan")
@@ -79,6 +80,7 @@ func rewriteLegacyAttestation(t *testing.T, root, path string) {
 }
 
 func TestCriticAttestationSurvivesFreshCloneWithoutJobStore(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	writeReadJob(t, f.root, "critic-portable", unit, "completed", false)
@@ -197,6 +199,7 @@ func writeReadJob(t *testing.T, root, job, commit, status string, openFinding bo
 }
 
 func TestGoalBranchReadRunsGateDispatchesAndCollectsClosedCritic(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 	gateCalls, delegateCalls := 0, 0
@@ -269,7 +272,9 @@ func TestGoalBranchReadRunsGateDispatchesAndCollectsClosedCritic(t *testing.T) {
 }
 
 func TestGoalBranchReadRedGateAndUncleanClosureDispatchNothingFurther(t *testing.T) {
+	t.Parallel()
 	t.Run("red gate", func(t *testing.T) {
+		t.Parallel()
 		f := newBranchFixture(t)
 		unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 		delegates := 0
@@ -283,6 +288,7 @@ func TestGoalBranchReadRedGateAndUncleanClosureDispatchNothingFurther(t *testing
 	})
 
 	t.Run("open finding", func(t *testing.T) {
+		t.Parallel()
 		f := newBranchFixture(t)
 		unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
 		request := branch.BranchReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base, BranchTip: unit,

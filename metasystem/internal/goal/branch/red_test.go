@@ -48,7 +48,9 @@ func redRequest(runner branch.RedRunner, ledger branch.TrunkRedRecorder, progres
 }
 
 func TestLandingRedLoopClassificationAndBudget(t *testing.T) {
+	t.Parallel()
 	t.Run("manifest-owned failure", func(t *testing.T) {
+		t.Parallel()
 		runner := &fakeRedRunner{result: branch.DiagnosticResult{AttemptID: "must-not-run", Green: true}}
 		progress := &fakeLandingProgress{}
 		req := redRequest(runner, &fakeTrunkRed{}, progress)
@@ -60,6 +62,7 @@ func TestLandingRedLoopClassificationAndBudget(t *testing.T) {
 	})
 
 	t.Run("endpoint green means integration red", func(t *testing.T) {
+		t.Parallel()
 		runner := &fakeRedRunner{result: branch.DiagnosticResult{AttemptID: "endpoint-green", Green: true}}
 		progress := &fakeLandingProgress{}
 		result, err := branch.HandleLandingRed(redRequest(runner, &fakeTrunkRed{}, progress))
@@ -74,6 +77,7 @@ func TestLandingRedLoopClassificationAndBudget(t *testing.T) {
 	})
 
 	t.Run("endpoint red opens register and holds", func(t *testing.T) {
+		t.Parallel()
 		runner := &fakeRedRunner{result: branch.DiagnosticResult{AttemptID: "endpoint-red"}}
 		ledger, progress := &fakeTrunkRed{}, &fakeLandingProgress{}
 		result, err := branch.HandleLandingRed(redRequest(runner, ledger, progress))
@@ -87,6 +91,7 @@ func TestLandingRedLoopClassificationAndBudget(t *testing.T) {
 	})
 
 	t.Run("claim admission precedes runner", func(t *testing.T) {
+		t.Parallel()
 		runner := &fakeRedRunner{result: branch.DiagnosticResult{AttemptID: "must-not-run", Green: true}}
 		req := redRequest(runner, &fakeTrunkRed{}, &fakeLandingProgress{})
 		req.AdmitDiagnostic = func() error { return fmt.Errorf("attempt box exhausted") }
@@ -97,6 +102,7 @@ func TestLandingRedLoopClassificationAndBudget(t *testing.T) {
 	})
 
 	t.Run("proof record appends red and green counts", func(t *testing.T) {
+		t.Parallel()
 		progress := &fakeLandingProgress{}
 		req := redRequest(&fakeRedRunner{}, &fakeTrunkRed{}, progress)
 		req.FailingGroups = []string{"owned"}

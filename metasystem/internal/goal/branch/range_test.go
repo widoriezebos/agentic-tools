@@ -59,6 +59,7 @@ func git(t *testing.T, dir string, args ...string) string {
 }
 
 func TestUnitDigestIgnoresDiffConfiguration(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	commit := f.commit(t, "metasystem/code.go", "a", "unit\n\nGoal-Unit: goal-a/u1")
 	git(t, f.root, "push", "-q", "origin", "HEAD:main")
@@ -97,6 +98,7 @@ func TestUnitDigestIgnoresDiffConfiguration(t *testing.T) {
 }
 
 func TestValidateRangeRefusals(t *testing.T) {
+	t.Parallel()
 	hexA, hexB := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	tests := []struct {
 		name    string
@@ -168,7 +170,9 @@ func TestValidateRangeRefusals(t *testing.T) {
 		}},
 	}
 	for _, test := range tests {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			f := newBranchFixture(t)
 			tip := test.makeTip(f, t)
 			_, err := branch.ValidateRange(f.root, f.base, tip, "goal-a")
@@ -190,6 +194,7 @@ func TestValidateRangeRefusals(t *testing.T) {
 }
 
 func TestValidateRangeAllowsBranchBehindEndpoint(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	tip := f.commit(t, "metasystem/code.go", "unit", "unit\n\nGoal-Unit: goal-a/u1")
 	git(t, f.root, "checkout", "-q", "-b", "endpoint", f.base)
@@ -201,6 +206,7 @@ func TestValidateRangeAllowsBranchBehindEndpoint(t *testing.T) {
 }
 
 func TestValidateRangeCleanRangePasses(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	f.commit(t, "metasystem/plans/x.md", "plan", "plan\n\nGoal-Plan: goal-a")
 	unit := f.commit(t, "metasystem/code.go", "unit", "unit\n\nGoal-Unit: goal-a/u1")
@@ -216,6 +222,7 @@ func TestValidateRangeCleanRangePasses(t *testing.T) {
 }
 
 func TestValidateRangeAcceptsBuildListsAndRejectsDuplicateUnitAcrossBuilds(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	first := f.commit(t, "metasystem/a.go", "one", "build\n\nGoal-Unit: goal-a/5+6+7a+7b")
 	commits, err := branch.ValidateRange(f.root, f.base, first, "goal-a")

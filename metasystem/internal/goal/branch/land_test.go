@@ -110,6 +110,7 @@ func requireAbsent(t *testing.T, path string) {
 }
 
 func TestGoalLandingPreparationSeries(t *testing.T) {
+	t.Parallel()
 	f := newLandFixture(t)
 
 	existingOut := filepath.Join(t.TempDir(), "existing")
@@ -298,6 +299,7 @@ func TestGoalLandingPreparationSeries(t *testing.T) {
 }
 
 func TestGoalLandingCommitDatesComeFromReceiptStamp(t *testing.T) {
+	t.Parallel()
 	f := newLandFixture(t)
 	result, err := branch.PrepareLanding(landRequest(t, f, filepath.Join(t.TempDir(), "dated")))
 	if err != nil {
@@ -311,6 +313,7 @@ func TestGoalLandingCommitDatesComeFromReceiptStamp(t *testing.T) {
 }
 
 func TestLandThroughIgnoresStopFenceReason(t *testing.T) {
+	t.Parallel()
 	f := newLandFixture(t)
 	req := landRequest(t, f, filepath.Join(t.TempDir(), "stop-fence"))
 	req.Last, req.Through = false, f.units[1]
@@ -331,6 +334,7 @@ func TestLandThroughIgnoresStopFenceReason(t *testing.T) {
 }
 
 func TestGoalLandingRefusesFoldWithStalePreimage(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	write(t, f.root, "metasystem/memory/receipts.log", "1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n")
 	write(t, f.root, "metasystem/plans/goal-a.md", "first\nsecond\n")
@@ -369,6 +373,7 @@ func TestGoalLandingRefusesFoldWithStalePreimage(t *testing.T) {
 }
 
 func TestBranchLandingSyncMergesTestingContractBySurface(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	write(t, f.root, ".gitattributes", "metasystem/testing.json merge=metasystem-testing\n")
 	writeBranchContract(t, f.root, branchContractFixture())
@@ -393,8 +398,6 @@ func TestBranchLandingSyncMergesTestingContractBySurface(t *testing.T) {
 	git(t, f.root, "commit", "-qm", "main testing group")
 	endpointTip := git(t, f.root, "rev-parse", "HEAD")
 	git(t, f.root, "push", "-q", "origin", endpointTip+":main")
-
-	t.Setenv("METASYSTEM_CONTRACT_DRIVER_HELPER", "1")
 	receipt := filepath.Join(t.TempDir(), "receipt.json")
 	writeLandingReceipt(t, receipt, strings.Repeat("0", 40), "discover-sync")
 	request := branch.LandRequest{Repo: f.root, Remote: "origin", EndpointTip: endpointTip, BranchTip: branchTip,
@@ -501,6 +504,7 @@ func branchContractSurface(t *testing.T, contract testpolicy.Contract, id string
 }
 
 func TestGoalLandingKeepsBuildUnitList(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	write(t, f.root, "metasystem/memory/receipts.log", "1|1970-01-01T00:00:00Z|RECEIPT|type=seed|outcome=shipped\n")
 	git(t, f.root, "add", ".")
@@ -538,7 +542,9 @@ func TestGoalLandingKeepsBuildUnitList(t *testing.T) {
 }
 
 func TestGoalLandingPreimageRetryAndCanaryFence(t *testing.T) {
+	t.Parallel()
 	t.Run("endpoint preimage", func(t *testing.T) {
+		t.Parallel()
 		f := newLandFixture(t)
 		other := filepath.Join(t.TempDir(), "endpoint")
 		git(t, filepath.Dir(other), "clone", "-q", f.origin, other)
@@ -558,6 +564,7 @@ func TestGoalLandingPreimageRetryAndCanaryFence(t *testing.T) {
 	})
 
 	t.Run("recorded red candidate", func(t *testing.T) {
+		t.Parallel()
 		f := newLandFixture(t)
 		firstOut := filepath.Join(t.TempDir(), "first")
 		first, err := branch.PrepareLanding(landRequest(t, f, firstOut))
@@ -588,6 +595,7 @@ func TestGoalLandingPreimageRetryAndCanaryFence(t *testing.T) {
 	})
 
 	t.Run("red proof needs clean canary", func(t *testing.T) {
+		t.Parallel()
 		f := newLandFixture(t)
 		proof := branch.LandingProof{Number: 1, Endpoint: f.base, Candidate: f.base, Landing: f.base,
 			Attempt: "old", Verdict: "red", Groups: []string{"deep"}}
@@ -636,6 +644,7 @@ func TestGoalLandingPreimageRetryAndCanaryFence(t *testing.T) {
 }
 
 func TestGoalLandingRetryIdentitySurvivesASecondClone(t *testing.T) {
+	t.Parallel()
 	f := newLandFixture(t)
 	first, err := branch.PrepareLanding(landRequest(t, f, filepath.Join(t.TempDir(), "first")))
 	if err != nil {
@@ -702,6 +711,7 @@ func TestGoalLandingRetryIdentitySurvivesASecondClone(t *testing.T) {
 }
 
 func TestGoalLandingLastRefusesUnitBeyondPrefix(t *testing.T) {
+	t.Parallel()
 	f := newLandFixture(t)
 	commitUnit(t, f.branchFixture, "u4", "metasystem/four.go", "four\n")
 	if _, err := branch.Push(pushRequest(f.branchFixture, "land-unread-u4")); err != nil {

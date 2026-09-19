@@ -10,6 +10,7 @@ import (
 )
 
 func TestGoalBranchPushUsesLedgerFailureClassification(t *testing.T) {
+	// This test changes the process environment used to resolve and control Git.
 	for index, output := range []string{
 		"stale info",
 		"[rejected] main -> main (fetch first)",

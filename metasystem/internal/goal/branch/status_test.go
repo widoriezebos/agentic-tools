@@ -27,6 +27,7 @@ func readUnit(t *testing.T, f *branchFixture, unit, commit string) {
 }
 
 func TestStatusLandReadyPrefixAndParkSafety(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	u1 := commitUnit(t, f, "u1", "metasystem/one.go", "one")
 	readUnit(t, f, "u1", u1)
@@ -84,6 +85,7 @@ func TestStatusLandReadyPrefixAndParkSafety(t *testing.T) {
 }
 
 func TestParkRefusalDoesNotClaimOriginState(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	narrated := git(t, f.root, "commit-tree", f.base+"^{tree}", "-p", f.base, "-m", "unit\n\nGoal-Unit: goal-a/u1")
 	_, err := branch.CheckParkBranch(f.root, "goal-a", "resume commit "+narrated, func() (string, string, bool, error) {
@@ -98,6 +100,7 @@ func TestParkRefusalDoesNotClaimOriginState(t *testing.T) {
 }
 
 func TestStatusAndReadBindWholeBuildList(t *testing.T) {
+	t.Parallel()
 	f := newBranchFixture(t)
 	stage(t, f, "metasystem/multi.go", "multi")
 	commit, err := branch.CommitStaged(branch.CommitRequest{

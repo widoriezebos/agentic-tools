@@ -15,6 +15,7 @@ import (
 )
 
 func TestGoalBranchGitRunnersSupplyTestingMergeDriver(t *testing.T) {
+	t.Parallel()
 	for _, path := range []string{"digest.go", "commit.go"} {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -27,6 +28,7 @@ func TestGoalBranchGitRunnersSupplyTestingMergeDriver(t *testing.T) {
 }
 
 func TestContentMergingVerbsRefuseWithoutTheDriver(t *testing.T) {
+	// This test replaces the package-wide merge-driver argument resolver.
 	saved := branchMergeDriverArgs
 	branchMergeDriverArgs = func() ([]string, error) {
 		return contractgit.DriverArgs(func() (string, error) { return filepath.Join(t.TempDir(), "missing-metasystem"), nil })
@@ -40,8 +42,8 @@ func TestContentMergingVerbsRefuseWithoutTheDriver(t *testing.T) {
 }
 
 func TestOrdinaryFileCannotOptIntoTheTestingMergeDriver(t *testing.T) {
+	t.Parallel()
 	repo, endpoint, attributeCommit, contentCommit := ordinaryDriverBranchFixture(t)
-	t.Setenv("METASYSTEM_CONTRACT_DRIVER_HELPER", "1")
 	mergeDriverGit(t, repo, "reset", "--hard", endpoint)
 	if err := applyCommit(repo, attributeCommit); err != nil {
 		t.Fatal(err)
@@ -77,6 +79,7 @@ func ordinaryDriverBranchFixture(t *testing.T) (string, string, string, string) 
 }
 
 func TestHandRebasedTestingContractHunkRefusesToLand(t *testing.T) {
+	// This test replaces the package-wide merge-driver argument resolver.
 	repo, endpoint, incoming, hand := handMergedBranchFixture(t)
 	saved := branchMergeDriverArgs
 	branchMergeDriverArgs = func() ([]string, error) {
@@ -92,7 +95,6 @@ func TestHandRebasedTestingContractHunkRefusesToLand(t *testing.T) {
 	}
 
 	branchMergeDriverArgs = saved
-	t.Setenv("METASYSTEM_CONTRACT_DRIVER_HELPER", "1")
 	mergeDriverGit(t, repo, "reset", "--hard", endpoint)
 	if err := applyCommit(repo, incoming); err != nil {
 		t.Fatalf("semantic testing contract result: %v", err)
