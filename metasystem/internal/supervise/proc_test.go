@@ -79,10 +79,16 @@ func TestProcStopProvenGone(t *testing.T) {
 	var signals []syscall.Signal
 	var mu sync.Mutex
 	prober := procProber{50: identity.Alive}
+	now := time.Unix(1000, 0)
+	sleeps := 0
 	comps := &ProcComponents{
 		Prober:      prober,
 		StopCeiling: 50 * time.Millisecond,
-		clock:       time.Now,
+		clock:       func() time.Time { return now },
+		sleep: func(duration time.Duration) {
+			sleeps++
+			now = now.Add(duration)
+		},
 		signal: func(pid int64, sig syscall.Signal) error {
 			mu.Lock()
 			signals = append(signals, sig)
@@ -111,6 +117,9 @@ func TestProcStopProvenGone(t *testing.T) {
 	comps.signal = func(int64, syscall.Signal) error { return nil }
 	if comps.Stop(Held{Component: Watcher, Identity: identity.Ref{Pid: 52, StartedAtSec: 200}}) {
 		t.Fatal("an unknown-liveness survivor must NOT read as proven gone")
+	}
+	if sleeps == 0 || now.Sub(time.Unix(1000, 0)) < comps.StopCeiling+componentPostKillProofInterval {
+		t.Fatalf("stop wait sleeps=%d fakeElapsed=%s", sleeps, now.Sub(time.Unix(1000, 0)))
 	}
 }
 

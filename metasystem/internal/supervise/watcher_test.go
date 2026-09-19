@@ -169,17 +169,18 @@ func TestWatcherPassCensusFailedOnFingerprintError(t *testing.T) {
 func TestWatcherPassWarnsWhenScanExceedsInterval(t *testing.T) {
 	dir := t.TempDir()
 	var warnings []string
+	fakeNow := time.Unix(1786000000, 0).UTC()
 	cfg := WatcherConfig{
 		SupervisionDir: dir,
 		Interval:       5,
-		IntervalMS:     1, // any real scan duration exceeds a 1ms interval
+		IntervalMS:     1,
 		BudgetPercent:  50,
 		Fingerprint:    func() (string, error) { return "deadbeef", nil },
 		Census: func(fingerprint string, now time.Time) (census.Verdict, error) {
-			time.Sleep(5 * time.Millisecond)
+			fakeNow = fakeNow.Add(5 * time.Millisecond)
 			return censusFailedVerdict(fingerprint, 5, "stub", now), nil
 		},
-		Now:  func() time.Time { return time.Unix(1786000000, 0).UTC() },
+		Now:  func() time.Time { return fakeNow },
 		Warn: func(message string) { warnings = append(warnings, message) },
 	}
 	if err := cfg.WatcherPass(); err != nil {

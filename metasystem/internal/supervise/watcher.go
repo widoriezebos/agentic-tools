@@ -51,13 +51,13 @@ type WatcherConfig struct {
 // is itself recorded as a CENSUS-FAILED verdict, not a returned error, so the
 // caller keeps looping.
 func (cfg WatcherConfig) WatcherPass() error {
-	started := time.Now()
-	now := cfg.Now()
+	started := cfg.Now()
+	now := started
 
 	fingerprint, err := cfg.Fingerprint()
 	if err != nil {
 		verdict := censusFailedVerdict("FINGERPRINT-FAILED", cfg.Interval, "fingerprint:"+err.Error(), now)
-		verdict.DurationMs = time.Since(started).Milliseconds()
+		verdict.DurationMs = cfg.Now().Sub(started).Milliseconds()
 		return cfg.publish(verdict)
 	}
 
@@ -67,7 +67,7 @@ func (cfg WatcherConfig) WatcherPass() error {
 		// under the real fingerprint rather than leaving a stale success behind.
 		verdict = censusFailedVerdict(fingerprint, cfg.Interval, "census:"+err.Error(), now)
 	}
-	verdict.DurationMs = time.Since(started).Milliseconds()
+	verdict.DurationMs = cfg.Now().Sub(started).Milliseconds()
 	if err := cfg.publish(verdict); err != nil {
 		return err
 	}

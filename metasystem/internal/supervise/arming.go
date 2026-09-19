@@ -289,7 +289,7 @@ func acquireCapAuthorityLock(root string, scaleMilli int) (func() error, error) 
 	if err := os.MkdirAll(filepath.Dir(directory), 0o755); err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(scaledWait(10, scaleMilli))
+	deadline := armingNow().Add(scaledWait(10, scaleMilli))
 	for {
 		err := dispatch.OwnerLockClaim(directory, int64(os.Getpid()), "metasystem up")
 		if err == nil {
@@ -300,10 +300,10 @@ func acquireCapAuthorityLock(root string, scaleMilli int) (func() error, error) 
 		if !errors.Is(err, dispatch.ErrOwnerLockBusy) {
 			return nil, err
 		}
-		if !time.Now().Before(deadline) {
+		if !armingNow().Before(deadline) {
 			return nil, fmt.Errorf("repository cap-authority lock remained busy")
 		}
-		time.Sleep(50 * time.Millisecond)
+		armingSleep(50 * time.Millisecond)
 	}
 }
 
@@ -319,7 +319,7 @@ func requireCeilingClear(root, metasystemRoot string, ceiling int64) error {
 }
 
 func publishedForOwner(root string, owner ArmingOwner, wait time.Duration) (PublishedGeneration, error) {
-	deadline := time.Now().Add(wait)
+	deadline := armingNow().Add(wait)
 	var lastErr error
 	for {
 		generation, err := ReadPublishedGeneration(root)
@@ -331,10 +331,10 @@ func publishedForOwner(root string, owner ArmingOwner, wait time.Duration) (Publ
 		} else {
 			lastErr = fmt.Errorf("supervision state names another owner")
 		}
-		if !time.Now().Before(deadline) {
+		if !armingNow().Before(deadline) {
 			return PublishedGeneration{}, lastErr
 		}
-		time.Sleep(20 * time.Millisecond)
+		armingSleep(20 * time.Millisecond)
 	}
 }
 
@@ -345,15 +345,16 @@ func generationMatches(generation PublishedGeneration, options EnsureOptions) bo
 }
 
 func waitUntilArmed(options EnsureOptions, owner ArmingOwner) ArmedInspection {
-	deadline := time.Now().Add(scaledWait(options.IntervalSec+10, options.WaitScaleMilli))
+	deadline := armingNow().Add(scaledWait(options.IntervalSec+10, options.WaitScaleMilli))
 	inspection := ArmedInspection{Component: "repo-watcher", Reason: "the supervision generation has not completed its first census"}
-	for time.Now().Before(deadline) {
+	for armingNow().Before(deadline) {
+		now := armingNow()
 		inspection = InspectArmedAt(filepath.Join(options.Root, "artifacts", "agents"), options.MetasystemRoot, owner.Pid,
-			owner.PidStartedAt, owner.InstanceTag, int64(options.IntervalSec), time.Now())
+			owner.PidStartedAt, owner.InstanceTag, int64(options.IntervalSec), now)
 		if inspection.Armed() {
 			return inspection
 		}
-		time.Sleep(50 * time.Millisecond)
+		armingSleep(50 * time.Millisecond)
 	}
 	return inspection
 }
@@ -382,6 +383,7 @@ func signalGroup(pid int64, signal syscall.Signal) error {
 
 var (
 	armingOwnerSignal = signalGroup
+	armingOwnerProbe  = (identity.KernelProber{}).Probe
 	armingNow         = time.Now
 	armingSleep       = time.Sleep
 )
@@ -600,13 +602,13 @@ func authenticateRecordedComponent(control recordedComponentControl, held Held) 
 var errRecordedComponentGone = errors.New("recorded component is already gone")
 
 func waitForRecordedGroupAbsence(control recordedComponentControl, pgid int64, wait time.Duration) (bool, error) {
-	deadline := time.Now().Add(wait)
+	deadline := armingNow().Add(wait)
 	for {
 		absent, err := control.groupAbsent(pgid)
-		if err != nil || absent || !time.Now().Before(deadline) {
+		if err != nil || absent || !armingNow().Before(deadline) {
 			return absent, err
 		}
-		time.Sleep(20 * time.Millisecond)
+		armingSleep(20 * time.Millisecond)
 	}
 }
 
@@ -985,18 +987,18 @@ func launchOwner(options EnsureOptions, tag string) (ArmingOwner, error) {
 		return ArmingOwner{}, err
 	}
 	pid := int64(cmd.Process.Pid)
-	deadline := time.Now().Add(scaledWait(5, options.WaitScaleMilli))
+	deadline := armingNow().Add(scaledWait(5, options.WaitScaleMilli))
 	var exact identity.Exact
-	for time.Now().Before(deadline) {
+	for armingNow().Before(deadline) {
 		var state identity.Liveness
-		exact, state, _ = (identity.KernelProber{}).Probe(pid)
+		exact, state, _ = armingOwnerProbe(pid)
 		if state == identity.Alive {
 			break
 		}
 		if state == identity.Dead {
 			return ArmingOwner{}, fmt.Errorf("owner process died before publishing its identity")
 		}
-		time.Sleep(20 * time.Millisecond)
+		armingSleep(20 * time.Millisecond)
 	}
 	if exact.Pid == 0 {
 		_ = cmd.Process.Kill()

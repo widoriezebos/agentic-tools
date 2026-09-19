@@ -40,9 +40,10 @@ type ProcComponents struct {
 	IntervalSec int
 	// StopCeiling is D-6's component stop wait.
 	StopCeiling time.Duration
-	// clock and signal are injectable; nil means real time and a real
-	// group signal.
+	// clock, sleep, and signal are injectable; nil means real time and a real
+	// sleep or group signal.
 	clock  func() time.Time
+	sleep  func(time.Duration)
 	signal func(pid int64, sig syscall.Signal) error
 
 	// children tracks processes this owner launched so it can reap
@@ -56,6 +57,14 @@ func (p *ProcComponents) now() time.Time {
 		return p.clock()
 	}
 	return time.Now()
+}
+
+func (p *ProcComponents) pause(duration time.Duration) {
+	if p.sleep != nil {
+		p.sleep(duration)
+		return
+	}
+	time.Sleep(duration)
 }
 
 func (p *ProcComponents) heartbeatPath(component Component) string {
@@ -195,7 +204,7 @@ func (p *ProcComponents) Stop(held Held) (proven bool) {
 		if identity.AliveRef(p.Prober, held.Identity) == identity.Dead {
 			return true
 		}
-		time.Sleep(20 * time.Millisecond)
+		p.pause(20 * time.Millisecond)
 	}
 	p.signalGroup(held.Identity.Pid, syscall.SIGKILL)
 	// Give the kill a moment to land, reaping the zombie so death is
@@ -206,7 +215,7 @@ func (p *ProcComponents) Stop(held Held) (proven bool) {
 		if identity.AliveRef(p.Prober, held.Identity) == identity.Dead {
 			return true
 		}
-		time.Sleep(20 * time.Millisecond)
+		p.pause(20 * time.Millisecond)
 	}
 	return false
 }

@@ -75,15 +75,15 @@ func armingOwnerHelper(args []string) error {
 	fingerprint := processArgument(args, "--fingerprint")
 	interval, _ := strconv.Atoi(processArgument(args, "--interval"))
 	watcherCap, _ := strconv.Atoi(processArgument(args, "--watcher-cap"))
-	deadline := time.Now().Add(wiringBound)
-	for {
-		if _, err := os.Stat(gate); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			return errors.New("the parent did not open the owner publication gate")
-		}
-		time.Sleep(10 * time.Millisecond)
+	gateReader, err := os.Open(gate)
+	if err != nil {
+		return fmt.Errorf("open owner publication gate: %w", err)
+	}
+	defer gateReader.Close()
+	defer os.Remove(gate)
+	var release [1]byte
+	if _, err := gateReader.Read(release[:]); err != nil {
+		return fmt.Errorf("read owner publication gate: %w", err)
 	}
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
@@ -141,15 +141,27 @@ func armingOwnerHelper(args []string) error {
 }
 
 func armingOwnerCommand(args ...string) (*exec.Cmd, error) {
+	gate := processArgument(args, "--gate")
+	if err := syscall.Mkfifo(gate, 0o600); err != nil {
+		return nil, fmt.Errorf("create owner publication gate: %w", err)
+	}
 	arguments := append([]string{"-test.run=^TestArmingOwnerHelper$", "--", "--arming-owner-helper"}, args...)
 	return exec.Command(os.Args[0], arguments...), nil
 }
 
 func armingOptions(root string) EnsureOptions {
+	scaleMilli := 1000
+	if raw := os.Getenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 {
+			panic("METASYSTEM_FIXTURE_CAP_SCALE_MILLI must be a positive integer")
+		}
+		scaleMilli = parsed
+	}
 	return EnsureOptions{
 		Root: root, MetasystemRoot: root, Scope: root, Command: armingOwnerCommand,
 		Fingerprint: "fingerprint-a", IntervalSec: 1, WatcherCap: 330,
-		WaitScaleMilli: 1, OwnerTagPrefix: "metasystem-supervision-owner-test-", FenceGeneration: 12,
+		WaitScaleMilli: scaleMilli, OwnerTagPrefix: "metasystem-supervision-owner-test-", FenceGeneration: 12,
 	}
 }
 
@@ -321,6 +333,12 @@ func (p *armingComponentProbe) Probe(int64) (identity.Exact, identity.Liveness, 
 }
 
 func TestArmingOwnerRecordsAndPublishedGenerationRoundTrip(t *testing.T) {
+	now := time.Unix(1000, 0)
+	priorNow, priorSleep := armingNow, armingSleep
+	armingNow = func() time.Time { return now }
+	armingSleep = func(duration time.Duration) { now = now.Add(duration) }
+	t.Cleanup(func() { armingNow, armingSleep = priorNow, priorSleep })
+
 	root := t.TempDir()
 	if err := os.MkdirAll(ownerLockDir(root), 0o755); err != nil {
 		t.Fatal(err)
@@ -355,8 +373,12 @@ func TestArmingOwnerRecordsAndPublishedGenerationRoundTrip(t *testing.T) {
 	}
 	other := owner
 	other.InstanceTag = "owner-b"
-	if _, err := publishedForOwner(root, other, 0); err == nil || !strings.Contains(err.Error(), "another owner") {
+	before := now
+	if _, err := publishedForOwner(root, other, 200*time.Millisecond); err == nil || !strings.Contains(err.Error(), "another owner") {
 		t.Fatalf("a generation naming another owner was accepted: %v", err)
+	}
+	if elapsed := now.Sub(before); elapsed != 200*time.Millisecond {
+		t.Fatalf("published owner wait advanced fake time by %s, want 200ms", elapsed)
 	}
 	if failure := (&ComponentFailure{Component: "repo-watcher", Err: os.ErrPermission}); !errors.Is(failure, os.ErrPermission) || failure.Error() != os.ErrPermission.Error() {
 		t.Fatalf("component failure did not preserve its cause: %v", failure)
@@ -579,6 +601,13 @@ func TestRecordedComponentStopEscalatesOnlyAfterReauthentication(t *testing.T) {
 }
 
 func TestRecordedComponentSurvivesKillReportsNotStopped(t *testing.T) {
+	now := time.Unix(1000, 0)
+	priorNow, priorSleep := armingNow, armingSleep
+	armingNow = func() time.Time { return now }
+	armingSleep = func(duration time.Duration) { now = now.Add(duration) }
+	t.Cleanup(func() { armingNow, armingSleep = priorNow, priorSleep })
+	started := now
+
 	probe := &armingComponentProbe{state: identity.Alive, exact: identity.Exact{
 		Pid: 71, StartedAt: time.Unix(100, 0), Argv: []string{"component-tag"}, ArgvKnown: true,
 	}}
@@ -601,6 +630,9 @@ func TestRecordedComponentSurvivesKillReportsNotStopped(t *testing.T) {
 	}
 	if len(signals) != 2 || signals[0] != syscall.SIGTERM || signals[1] != syscall.SIGKILL {
 		t.Fatalf("surviving component signal order = %v", signals)
+	}
+	if elapsed := now.Sub(started); elapsed < time.Second {
+		t.Fatalf("recorded component proof advanced fake time by %s, want at least 1s", elapsed)
 	}
 }
 
@@ -938,6 +970,13 @@ func TestShutdownWithoutOwnerSweepsRecordedComponents(t *testing.T) {
 }
 
 func TestCapAuthorityLockTimesOutBehindAnotherArmer(t *testing.T) {
+	now := time.Unix(1000, 0)
+	priorNow, priorSleep := armingNow, armingSleep
+	armingNow = func() time.Time { return now }
+	armingSleep = func(duration time.Duration) { now = now.Add(duration) }
+	t.Cleanup(func() { armingNow, armingSleep = priorNow, priorSleep })
+	started := now
+
 	root := t.TempDir()
 	directory := filepath.Join(SupervisionDir(root), "cap-authority.lock.d")
 	if err := os.MkdirAll(filepath.Dir(directory), 0o755); err != nil {
@@ -954,6 +993,23 @@ func TestCapAuthorityLockTimesOutBehindAnotherArmer(t *testing.T) {
 	t.Cleanup(func() { _ = dispatch.OwnerLockRelease(directory, int64(holder.Process.Pid), "sleep") })
 	if _, err := acquireCapAuthorityLock(root, 1); err == nil || !strings.Contains(err.Error(), "remained busy") {
 		t.Fatalf("a second armer crossed the cap-authority lock: %v", err)
+	}
+	if elapsed := now.Sub(started); elapsed != time.Second {
+		t.Fatalf("cap-authority wait advanced fake time by %s, want 1s", elapsed)
+	}
+	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "25")
+	now = time.Unix(2000, 0)
+	options := armingOptions(t.TempDir())
+	if options.WaitScaleMilli != 25 {
+		t.Fatalf("arming fixture scale = %d, want 25", options.WaitScaleMilli)
+	}
+	options.WaitScaleMilli = 1
+	owner := ArmingOwner{Pid: 41, PidStartedAt: 100, InstanceTag: "owner-tag"}
+	if inspection := waitUntilArmed(options, owner); inspection.Armed() {
+		t.Fatalf("missing supervision facts reported armed: %+v", inspection)
+	}
+	if elapsed := now.Sub(time.Unix(2000, 0)); elapsed != time.Second {
+		t.Fatalf("arming wait advanced fake time by %s, want 1s", elapsed)
 	}
 }
 
@@ -975,6 +1031,46 @@ func TestLaunchOwnerReportsCommandAndStartFailures(t *testing.T) {
 	options.Binary = filepath.Join(root, "also-missing")
 	if _, err := launchOwner(options, "owner-tag"); err == nil {
 		t.Fatal("a missing configured owner binary was reported as launched")
+	}
+
+	clockRoot := t.TempDir()
+	if err := os.MkdirAll(ownerLockDir(clockRoot), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1000, 0)
+	priorNow, priorSleep := armingNow, armingSleep
+	priorProbe, priorRelease := armingOwnerProbe, releaseLaunchedOwner
+	armingNow = func() time.Time { return now }
+	sleeps := 0
+	armingSleep = func(duration time.Duration) {
+		sleeps++
+		now = now.Add(duration)
+	}
+	probes := 0
+	armingOwnerProbe = func(pid int64) (identity.Exact, identity.Liveness, error) {
+		probes++
+		if probes < 3 {
+			return identity.Exact{}, identity.Unknown, os.ErrPermission
+		}
+		return identity.Exact{Pid: pid, StartedAt: time.Unix(900, 0)}, identity.Alive, nil
+	}
+	releaseLaunchedOwner = func(command *exec.Cmd) error { return command.Wait() }
+	t.Cleanup(func() {
+		armingNow, armingSleep = priorNow, priorSleep
+		armingOwnerProbe, releaseLaunchedOwner = priorProbe, priorRelease
+	})
+
+	clockOptions := armingOptions(clockRoot)
+	clockOptions.WaitScaleMilli = 1
+	clockOptions.Command = func(...string) (*exec.Cmd, error) {
+		return exec.Command("sh", "-c", "exit 0"), nil
+	}
+	owner, err := launchOwner(clockOptions, "owner-tag")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner.Pid < 1 || sleeps != 2 || probes != 3 || now.Sub(time.Unix(1000, 0)) != 40*time.Millisecond {
+		t.Fatalf("launch wait owner=%+v probes=%d sleeps=%d fakeElapsed=%s", owner, probes, sleeps, now.Sub(time.Unix(1000, 0)))
 	}
 }
 
@@ -1173,11 +1269,11 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 	}
 	componentDone := make(chan error, 1)
 	go func() { componentDone <- componentCommand.Wait() }()
+	componentWaited := false
 	t.Cleanup(func() {
-		_ = componentCommand.Process.Kill()
-		select {
-		case <-componentDone:
-		case <-time.After(wiringBound):
+		if !componentWaited {
+			_ = componentCommand.Process.Kill()
+			<-componentDone
 		}
 	})
 	componentExact, state, err := (identity.KernelProber{}).Probe(int64(componentCommand.Process.Pid))
@@ -1202,10 +1298,10 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 		t.Fatalf("dead-owner takeover did not establish a verified generation: %+v", result)
 	}
 	appendPreviousOwnerRows(t, registryPath, root, result)
-	select {
-	case <-componentDone:
-	case <-time.After(wiringBound):
-		t.Fatal("the pre-publication watcher survived the takeover sweep")
+	componentErr := <-componentDone
+	componentWaited = true
+	if componentErr == nil {
+		t.Fatal("the pre-publication watcher exited successfully instead of being swept")
 	}
 	enumerateTakeoverProcesses = func(string) ([]census.Process, error) { return nil, nil }
 	if _, err := ShutdownAt(root, root, root, "metasystem-supervision-owner-test-", 1); err != nil {
@@ -1442,7 +1538,8 @@ func exerciseCheckoutCustodyInvariant(t *testing.T) {
 	if err := signalGroup(requestedResult.Owner.Pid, syscall.SIGTERM); err != nil {
 		t.Fatalf("stop requested checkout owner for takeover: %v", err)
 	}
-	ownerDeadline := time.Now().Add(wiringBound)
+	_, teardownCeilingSeconds := publishedOwnerState(requestedRoot, requestedResult.Owner)
+	ownerDeadline := time.Now().Add(scaledWait(10*teardownCeilingSeconds, armingOptions(requestedRoot).WaitScaleMilli))
 	for ownerLiveness(requestedResult.Owner) != identity.Dead && time.Now().Before(ownerDeadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
