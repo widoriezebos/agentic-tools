@@ -9,10 +9,7 @@ import (
 	"time"
 )
 
-const (
-	fixtureCleanupBound = 15 * time.Second
-	fixtureExitBound    = 5 * time.Second
-)
+const fixtureCleanupBound = 15 * time.Second
 
 // FixtureProcessGroup identifies a test-owned child that is expected to be
 // the leader of its own process group. Resolve runs at cleanup before orderly
@@ -50,11 +47,15 @@ type resolvedFixtureProcessGroup struct {
 
 // ReapFixtureProcessGroups makes detached fixture children part of the test's
 // lifecycle. It runs every orderly stop, kills each remaining process group,
-// and does not return from cleanup until every group is gone or a fixed bound
-// expires. Resolve callbacks should read the durable pid record written by the
-// child they own.
+// and does not return from cleanup until every group is gone or the fixture
+// exit bound expires. Resolve callbacks should read the durable pid record
+// written by the child they own.
 func ReapFixtureProcessGroups(t testing.TB, groups []FixtureProcessGroup, cleanups ...FixtureCleanup) {
 	t.Helper()
+	exitBound, err := FixtureExitWaitBound()
+	if err != nil {
+		t.Fatalf("derive fixture process-group exit bound: %v", err)
+	}
 	reapFixtureProcessGroups(t, groups, cleanups, fixtureProcessGroupOps{
 		groupID: syscall.Getpgid,
 		signal:  syscall.Kill,
@@ -63,7 +64,7 @@ func ReapFixtureProcessGroups(t testing.TB, groups []FixtureProcessGroup, cleanu
 			return context.WithTimeout(context.Background(), fixtureCleanupBound)
 		},
 		exitContext: func() (context.Context, context.CancelFunc) {
-			return context.WithTimeout(context.Background(), fixtureExitBound)
+			return context.WithTimeout(context.Background(), exitBound)
 		},
 	})
 }

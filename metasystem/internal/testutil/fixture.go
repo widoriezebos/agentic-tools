@@ -117,6 +117,10 @@ func makeProcessFixture(t fixtureTB, testName string, custodian identity.Ref, cu
 	if err != nil {
 		t.Fatalf("create process fixture for test name %q: %v", testName, err)
 	}
+	waitBound, err := testenv.FixtureExitWaitBound()
+	if err != nil {
+		t.Fatalf("derive process fixture exit bound: %v", err)
+	}
 	leash, err := openFixtureLeash()
 	if err != nil {
 		t.Fatalf("create process fixture leash: %v", err)
@@ -124,7 +128,7 @@ func makeProcessFixture(t fixtureTB, testName string, custodian identity.Ref, cu
 	fixture := &ProcessFixture{
 		t: t, key: key, tag: identity.FixtureOwnerEnv + "=" + encoded,
 		prober: prober, signal: signal, scan: identity.FixtureSurvivors,
-		held: make(map[identity.Ref]bool), released: make(map[identity.Ref]bool), leash: leash, waitBound: 5 * time.Second,
+		held: make(map[identity.Ref]bool), released: make(map[identity.Ref]bool), leash: leash, waitBound: waitBound,
 	}
 	return fixture
 }
@@ -284,6 +288,12 @@ func (f *ProcessFixture) stopRecordedChild(ref identity.Ref, held bool) {
 }
 
 func (f *ProcessFixture) waitForExits(refs []identity.Ref) {
+	type observation struct {
+		exact identity.Exact
+		state identity.Liveness
+		err   error
+	}
+	observed := make(map[identity.Ref]observation, len(refs))
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	deadline := time.After(f.waitBound)
@@ -291,6 +301,7 @@ func (f *ProcessFixture) waitForExits(refs []identity.Ref) {
 		var pending []identity.Ref
 		for _, ref := range refs {
 			exact, state, err := f.prober.Probe(ref.Pid)
+			observed[ref] = observation{exact: exact, state: state, err: err}
 			if err != nil || state == identity.Unknown || state == identity.Alive && identity.SameIdentity(exact, ref) && !exact.Zombie {
 				pending = append(pending, ref)
 			} else {
@@ -304,7 +315,9 @@ func (f *ProcessFixture) waitForExits(refs []identity.Ref) {
 		case <-ticker.C:
 		case <-deadline:
 			for _, ref := range pending {
-				f.t.Errorf("child did not exit within five seconds: ref=%+v", ref)
+				last := observed[ref]
+				f.t.Errorf("child did not exit after %s: ref=%+v state=%s same-identity=%t zombie=%t probe=%v",
+					f.waitBound, ref, last.state, identity.SameIdentity(last.exact, ref), last.exact.Zombie, last.err)
 			}
 			return
 		}

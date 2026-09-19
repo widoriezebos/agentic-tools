@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -32,6 +33,13 @@ const registryHomePrefix = "metasystem-test-registry-"
 const registryOwnerFile = ".owner"
 
 const registryNonceSize = 32
+
+const (
+	fixtureCapScaleEnv      = "METASYSTEM_FIXTURE_CAP_SCALE_MILLI"
+	fixtureCapScalePermille = 1000
+	fixtureExitBoundFactor  = 10
+	minimumFixtureExitBound = 10 * time.Millisecond
+)
 
 var inheritedControlNames = []string{
 	"METASYSTEM_ALLOW_NEW_PLAN",
@@ -65,6 +73,39 @@ var fixtureKeys struct {
 
 var fixtureCustodian identity.Ref
 var fixtureCustodianRecords string
+
+// FixtureExitWaitBound returns the fixture-exit observation bound derived
+// from the effective custodian bound and the fixture cap scale.
+func FixtureExitWaitBound() (time.Duration, error) {
+	custodianBound, err := identity.FixtureCustodianBound()
+	if err != nil {
+		return 0, err
+	}
+	scale, err := fixtureCapScaleMilli(os.Getenv(fixtureCapScaleEnv))
+	if err != nil {
+		return 0, err
+	}
+	return fixtureExitWaitBound(custodianBound, scale), nil
+}
+
+func fixtureCapScaleMilli(raw string) (int, error) {
+	if raw == "" {
+		return fixtureCapScalePermille, nil
+	}
+	scale, err := strconv.Atoi(raw)
+	if err != nil || scale < 1 {
+		return 0, fmt.Errorf("%s must be a positive integer", fixtureCapScaleEnv)
+	}
+	return scale, nil
+}
+
+func fixtureExitWaitBound(custodianBound time.Duration, scaleMilli int) time.Duration {
+	bound := fixtureExitBoundFactor * custodianBound * time.Duration(scaleMilli) / fixtureCapScalePermille
+	if bound < minimumFixtureExitBound {
+		return minimumFixtureExitBound
+	}
+	return bound
+}
 
 // FixtureCustodian returns the exact custodian started for this test binary.
 func FixtureCustodian() (identity.Ref, bool) { return fixtureCustodian, fixtureCustodian.Pid != 0 }
@@ -201,7 +242,12 @@ func exitScan(code int, keys []identity.FixtureKey, scan fixtureScanFunc, prober
 			failed = true
 			if survivor.Class == identity.FixtureSurvivorCertain {
 				_ = identity.SignalExact(prober, survivor.Ref, syscall.SIGKILL, signal)
-				waitForFixtureExit(prober, survivor.Ref)
+				bound, boundErr := FixtureExitWaitBound()
+				if boundErr != nil {
+					fmt.Fprintf(output, "fixture exit wait: pid=%d error=%v\n", survivor.Ref.Pid, boundErr)
+					continue
+				}
+				waitForFixtureExit(prober, survivor.Ref, bound, output)
 			}
 		}
 	}
@@ -211,10 +257,10 @@ func exitScan(code int, keys []identity.FixtureKey, scan fixtureScanFunc, prober
 	return code
 }
 
-func waitForFixtureExit(prober identity.Prober, ref identity.Ref) {
+func waitForFixtureExit(prober identity.Prober, ref identity.Ref, bound time.Duration, output io.Writer) {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(bound)
 	for {
 		exact, state, err := prober.Probe(ref.Pid)
 		if err == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, ref) || exact.Zombie)) {
@@ -223,6 +269,8 @@ func waitForFixtureExit(prober identity.Prober, ref identity.Ref) {
 		select {
 		case <-ticker.C:
 		case <-deadline:
+			fmt.Fprintf(output, "fixture exit wait expired: pid=%d bound=%s state=%s same-identity=%t zombie=%t probe=%v\n",
+				ref.Pid, bound, state, identity.SameIdentity(exact, ref), exact.Zombie, err)
 			return
 		}
 	}

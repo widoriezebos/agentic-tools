@@ -7,6 +7,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -63,5 +64,34 @@ func TestExitScanReadsNothingWithoutAMintedKey(t *testing.T) {
 				t.Fatalf("code=%d scans=%d sent=%d named=%v output=%q", code, scans, sent, strings.Contains(output.String(), key.Test), output.String())
 			}
 		})
+	}
+}
+
+func TestWaitForFixtureExitReportsObservationAtExpiry(t *testing.T) {
+	t.Parallel()
+
+	exact := identity.Exact{Pid: 42, StartedAt: time.Unix(100, 0), Exe: "/tmp/child", ExeKnown: true}
+	prober := exitProbeFunc(func(int64) (identity.Exact, identity.Liveness, error) {
+		return exact, identity.Alive, nil
+	})
+	var output bytes.Buffer
+	waitForFixtureExit(prober, exact.Ref(), time.Millisecond, &output)
+	for _, want := range []string{"fixture exit wait expired", "pid=42", "bound=1ms", "state=alive", "same-identity=true", "zombie=false", "probe=<nil>"} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("expiry output %q lacks %q", output.String(), want)
+		}
+	}
+}
+
+func TestFixtureExitWaitBoundDerivesFromCustodianTiming(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		scale int
+		want  time.Duration
+	}{{1000, 50 * time.Second}, {250, 12500 * time.Millisecond}} {
+		if got := fixtureExitWaitBound(5*time.Second, test.scale); got != test.want {
+			t.Errorf("fixture exit wait bound at scale %d = %s, want %s", test.scale, got, test.want)
+		}
 	}
 }

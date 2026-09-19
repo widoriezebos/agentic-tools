@@ -217,6 +217,19 @@ func custodianTiming(lookup func(string) (string, bool)) (time.Duration, time.Du
 	return poll, bound, nil
 }
 
+// FixtureCustodianBound returns the effective fixture custodian bound.
+func FixtureCustodianBound() (time.Duration, error) {
+	value, present := os.LookupEnv(FixtureCustodianBoundEnv)
+	if !present {
+		return custodianBound, nil
+	}
+	bound, err := time.ParseDuration(value)
+	if err != nil || bound <= 0 {
+		return 0, fmt.Errorf("identity: %s must be a positive duration, got %q", FixtureCustodianBoundEnv, value)
+	}
+	return bound, nil
+}
+
 func (runtime custodianRuntime) timing() (custodianClock, time.Duration) {
 	clock := runtime.clock
 	if clock == nil {

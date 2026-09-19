@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -287,7 +288,7 @@ func TestTestEnvironmentStandardInventoryMatchesPackageTests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	packages, err := loadPackageTests(root)
+	packages, _, err := loadPackageTests(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,7 +378,7 @@ func (group *packageTests) testFunctionNames() []string {
 }
 
 func auditTestPackages(root string) ([]string, error) {
-	packages, err := loadPackageTests(root)
+	packages, _, err := loadPackageTests(root)
 	if err != nil {
 		return nil, err
 	}
@@ -402,14 +403,15 @@ func auditTestPackages(root string) ([]string, error) {
 	return problems, nil
 }
 
-func loadPackageTests(root string) (map[string]*packageTests, error) {
+func loadPackageTests(root string) (map[string]*packageTests, []string, error) {
 	packages := map[string]*packageTests{}
+	var walkedDirectories []string
 	for _, top := range []string{"cmd", "internal"} {
 		scanRoot := filepath.Join(root, top)
 		if _, err := os.Stat(scanRoot); os.IsNotExist(err) {
 			continue
 		} else if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		err := filepath.WalkDir(scanRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
@@ -426,6 +428,11 @@ func loadPackageTests(root string) (map[string]*packageTests, error) {
 						return err
 					}
 				}
+				relative, err := filepath.Rel(root, path)
+				if err != nil {
+					return err
+				}
+				walkedDirectories = append(walkedDirectories, filepath.ToSlash(relative))
 				return nil
 			}
 			if strings.HasPrefix(entry.Name(), ".") || strings.HasPrefix(entry.Name(), "_") || !strings.HasSuffix(entry.Name(), "_test.go") {
@@ -453,14 +460,14 @@ func loadPackageTests(root string) (map[string]*packageTests, error) {
 			return nil
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return packages, nil
+	return packages, walkedDirectories, nil
 }
 
 func skippedDirectory(name string) bool {
-	return name == "testdata" || name == "vendor" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
+	return name == "artifacts" || name == "testdata" || name == "vendor" || strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
 }
 
 func (group *packageTests) sharedMainProblems(localTestenv bool) []string {
@@ -840,7 +847,7 @@ func TestPackageWalkSkipsIgnoredGoTrees(t *testing.T) {
 	writeAuditFixture(t, root, "internal/testdata/broken_test.go", "this is not Go")
 	writeAuditFixture(t, root, "artifacts/copied/internal/broken_test.go", "this is not Go")
 
-	packages, err := loadPackageTests(root)
+	packages, _, err := loadPackageTests(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -854,21 +861,31 @@ func TestPackageWalkExternalCheckout(t *testing.T) {
 	if root == "" {
 		t.Skip("TESTENV_PROTECTION_EXTERNAL_ROOT is not set")
 	}
-	started := time.Now()
-	packages, err := loadPackageTests(root)
+	pruningProbe := t.TempDir()
+	writeAuditFixture(t, pruningProbe, "internal/kept/kept_test.go", "package kept\n")
+	writeAuditFixture(t, pruningProbe, "internal/artifacts/copied/copied_test.go", "package copied\n")
+	_, pruningWalk, err := loadPackageTests(pruningProbe)
 	if err != nil {
 		t.Fatal(err)
 	}
-	elapsed := time.Since(started)
-	for directory := range packages {
-		if !strings.HasPrefix(directory, "cmd/") && !strings.HasPrefix(directory, "internal/") {
-			t.Fatalf("walk escaped cmd and internal into %s", directory)
+	for _, directory := range pruningWalk {
+		if slices.Contains(strings.Split(directory, "/"), "artifacts") {
+			t.Fatalf("walk entered pruned directory %s", directory)
 		}
 	}
-	if elapsed >= 2*time.Second {
-		t.Fatalf("walk read %d package directories in %s, want under 2s", len(packages), elapsed)
+	packages, walkedDirectories, err := loadPackageTests(root)
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Logf("walk read %d package directories in %s; none came from artifacts", len(packages), elapsed)
+	for _, directory := range walkedDirectories {
+		if directory != "cmd" && !strings.HasPrefix(directory, "cmd/") && directory != "internal" && !strings.HasPrefix(directory, "internal/") {
+			t.Fatalf("walk escaped cmd and internal into %s", directory)
+		}
+		if slices.Contains(strings.Split(directory, "/"), "artifacts") {
+			t.Fatalf("walk entered pruned directory %s", directory)
+		}
+	}
+	t.Logf("walk read %d package directories across %d directories; none came from artifacts", len(packages), len(walkedDirectories))
 }
 
 func parsePackageSource(t *testing.T, source string) *packageTests {

@@ -192,6 +192,23 @@ func TestCustodianUsesConfiguredTiming(t *testing.T) {
 	}
 }
 
+func TestFixtureCustodianBoundReturnsEffectiveTiming(t *testing.T) {
+	t.Parallel()
+
+	want := custodianBound
+	if raw, present := os.LookupEnv(FixtureCustodianBoundEnv); present {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed <= 0 {
+			t.Fatalf("test needs a positive %s, got %q", FixtureCustodianBoundEnv, raw)
+		}
+		want = parsed
+	}
+	got, err := FixtureCustodianBound()
+	if err != nil || got != want {
+		t.Fatalf("FixtureCustodianBound() = %s, %v; want %s", got, err, want)
+	}
+}
+
 func TestCustodianLeashWaitsForDelayedExitAfterOldWindow(t *testing.T) {
 	t.Parallel()
 
