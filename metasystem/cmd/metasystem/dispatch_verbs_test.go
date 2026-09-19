@@ -405,20 +405,23 @@ func TestGoalRevisionAdmissionCommandMarksThenEnforcesWithExplicitDispatchContex
 	root := syncedClaimedGoalFixture(t)
 	amendSyncedGoalFixture(t, root, "breach-stop capable admission fixture", func(file *goal.GoalFile) {
 		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+		file.Risk = nil
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
 	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "5", "--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}
-	marked, markCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
 	want := "RISK_UNANSWERED goal=standing-validation tier=3 next: goal edit --risk"
-	if markCode != 0 || strings.TrimSpace(marked) != want {
-		t.Fatalf("mark-mode command did not print its notice and proceed: code=%d output=%q", markCode, marked)
+	refusal, refusalCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	if refusalCode != 9 || strings.TrimSpace(refusal) != want {
+		t.Fatalf("unanswered-risk command did not refuse: code=%d output=%q", refusalCode, refusal)
 	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.risk-gate=enforce\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	refusal, enforceCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmission(args) })
-	if enforceCode != 9 || strings.TrimSpace(refusal) != want {
-		t.Fatalf("enforce-mode command did not refuse with the same code: code=%d output=%q", enforceCode, refusal)
+	amendSyncedGoalFixture(t, root, "answer admission risk", func(file *goal.GoalFile) {
+		file.Risk = &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture answers every risk question."}
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	output, admittedCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	if admittedCode != 0 || strings.TrimSpace(output) != "" {
+		t.Fatalf("answered-risk command was not admitted: code=%d output=%q", admittedCode, output)
 	}
 }
 

@@ -83,7 +83,7 @@ file misclassification-register.jsonl, same strict schema.
 Amends 02's marker. The refusal of a tiered goal without a Risk record
 is governed by one tracked key, `metasystem.budget.risk-gate=mark|enforce`
 (config/budget.go beside `TierBox`; validate.go refuses any other
-value), landed as `mark`. In mark mode `delegate` proceeds and prints
+value), landed as `mark`. Since 2026-09-19 the gate always refuses; the key is retired. In mark mode `delegate` proceeds and prints
 `RISK_UNANSWERED goal=<id> tier=<n> next: goal edit --risk`, and the
 steward's claimed-goal-appetite line (internal/steward/health.go:55)
 carries `riskUnanswered=<count>`; in enforce mode `delegate` refuses

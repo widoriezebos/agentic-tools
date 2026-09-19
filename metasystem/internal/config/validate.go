@@ -557,9 +557,6 @@ func Validate(confPath, repoRoot string) (tiersAbsent bool, problems []string, e
 	if _, contextErr := contextBudgetFromConf(confPath); contextErr != nil {
 		add("%v", contextErr)
 	}
-	if _, riskGateErr := RiskGate(confPath); riskGateErr != nil {
-		add("%v", riskGateErr)
-	}
 	if maximum, maxErr := ReviewRoundMax(confPath); maxErr != nil {
 		add("%v", maxErr)
 	} else if !retiredPresent {

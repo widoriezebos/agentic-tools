@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 )
@@ -269,16 +268,8 @@ func evaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 		verdict.ExtendedAt = binding.File.BudgetExtension.At
 	}
 	if binding.File.Risk == nil {
-		line := fmt.Sprintf("RISK_UNANSWERED goal=%s tier=%d next: goal edit --risk", id, binding.Tier)
-		mode, modeErr := config.RiskGate(filepath.Join(repoRoot, "metasystem.conf"))
-		if modeErr != nil {
-			return verdict, modeErr
-		}
-		if mode == config.RiskGateEnforce {
-			verdict.PolicyRefusal = line
-			return verdict, nil
-		}
-		verdict.PolicyNotice = line
+		verdict.PolicyRefusal = fmt.Sprintf("RISK_UNANSWERED goal=%s tier=%d next: goal edit --risk", id, binding.Tier)
+		return verdict, nil
 	}
 	if binding.Tier == 1 && hazard != HazardMechanical {
 		verdict.PolicyRefusal = "HAZARD_REFUSED: the hazard needs review the tier does not have; goal edit --tier 2"

@@ -18,6 +18,7 @@ func addFencedAdmissionGoal(t *testing.T, root, id, stopID string, opids [3]stri
 	file := &goal.GoalFile{
 		Id: id, State: goal.StateClaimed, Intent: "Hold the stopped work", Origin: goal.OriginMain,
 		NextStep: "Wait for a human resume.", OpenedAt: openedAt, Revision: 3,
+		Risk: &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture exercises a fenced tier-three goal."},
 		Budget: &goal.Budget{
 			ElapsedLimit: "1d", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1, ReviewRoundLimit: 3,
 		},

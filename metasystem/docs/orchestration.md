@@ -118,9 +118,8 @@ act alone. A raise after claim is one transaction that re-binds the claim's
 revision and clears no fence or obligation; a chain dispatched before the
 raise keeps the tier it was dispatched under. A misclassification is raised
 with `--evidence` in a fixed grammar (`root:<jobId>`, `finding:<jobId>/<id>`,
-or `refusal:<code>` with a code from the admission list), and the risk gate runs in the mode
-`metasystem.budget.risk-gate` names: `mark` prints `RISK_UNANSWERED` and
-admits, `enforce` refuses with that code. Accumulation 2 or higher writes
+or `refusal:<code>` with a code from the admission list). Admission refuses a
+goal whose risk is unanswered with `RISK_UNANSWERED`. Accumulation 2 or higher writes
 `gateWidth: full` on the chain root. The width remains a frozen risk fact;
 the shared testing contract converts it and the affected surfaces into the
 required groups, and landing requires sufficient current schema-2 evidence

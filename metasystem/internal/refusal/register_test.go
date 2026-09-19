@@ -291,7 +291,7 @@ func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
 		"CANDIDATE_GOAL_MOVED":             {Owner: "cmd/metasystem", Site: "proof_run.go:417", Shape: Question},
 		"PROOF_AUTHORITY_REQUIRED":         {Owner: "cmd/metasystem", Site: "proof_run.go:502", Shape: Question},
 		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run.go:578", Shape: Question},
-		"CANDIDATE_EXTENSION_REFUSED":      {Owner: "internal/dispatch", Site: "admission.go:405", Shape: Question},
+		"CANDIDATE_EXTENSION_REFUSED":      {Owner: "internal/dispatch", Site: "admission.go:396", Shape: Question},
 		"RETRY_PRIOR_OUTSIDE_TREE":         {Owner: "internal/proofrun", Site: "attempt.go:1042", Shape: Question},
 		"SET_BUDGET_FENCED_SAME_TUPLE":     {Owner: "internal/goal", Site: "verbs.go:1367", Shape: Question},
 		"REBIND_EPOCH_UNAUTHENTICATED":     {Owner: "internal/goal", Site: "verbs.go:252", Shape: Identity},

@@ -525,20 +525,23 @@ func TestRiskGateAdmissionCommandMarksThenEnforces(t *testing.T) {
 	root := syncedClaimedGoalFixture(t)
 	amendSyncedGoalFixture(t, root, "breach-stop capable admission fixture", func(file *goal.GoalFile) {
 		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+		file.Risk = nil
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
 	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "5", "--destructive-reach", "MECHANICAL"}
-	marked, markCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
 	want := "RISK_UNANSWERED goal=standing-validation tier=3 next: goal edit --risk"
-	if markCode != 0 || strings.TrimSpace(marked) != want {
-		t.Fatalf("mark-mode command did not print its notice and proceed: code=%d output=%q", markCode, marked)
+	refusal, refusalCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	if refusalCode != 9 || strings.TrimSpace(refusal) != want {
+		t.Fatalf("unanswered-risk command did not refuse: code=%d output=%q", refusalCode, refusal)
 	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.risk-gate=enforce\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	refusal, enforceCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmission(args) })
-	if enforceCode != 9 || strings.TrimSpace(refusal) != want {
-		t.Fatalf("enforce-mode command did not refuse with the same code: code=%d output=%q", enforceCode, refusal)
+	amendSyncedGoalFixture(t, root, "answer admission risk", func(file *goal.GoalFile) {
+		file.Risk = &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture answers every risk question."}
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	output, admittedCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	if admittedCode != 0 || strings.TrimSpace(output) != "" {
+		t.Fatalf("answered-risk command was not admitted: code=%d output=%q", admittedCode, output)
 	}
 }
 
@@ -1439,15 +1442,16 @@ func syncedClaimedGoalFixture(t *testing.T) string {
 	claimAt := "2026-08-30T08:05:00Z"
 	approvedAt := "2026-08-30T08:06:00Z"
 	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2, ReviewRoundLimit: 3}
+	risk := &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture exercises an admitted tier-three goal."}
 	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAZ", "mac-cli", "m1")
 	file := &goal.GoalFile{
 		Id: "standing-validation", State: goal.StateClaimed, Tier: 3, Intent: "Govern validation.", Origin: goal.OriginMain,
 		NextStep: "Run it.", OpenedAt: openedAt, Revision: 3,
-		Budget:  budget,
+		Budget: budget, Risk: risk,
 		Claimed: &goal.ClaimRecord{Machine: "mac-cli", Lineage: "m1", At: claimAt, Revision: 2},
 		Approved: &goal.ApprovalRecord{
 			By: "human:Wido", At: approvedAt, Revision: 3, Opid: approvalOpid,
-			Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest("Govern validation.", 3, *budget),
+			Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest("Govern validation.", 3, *budget, risk),
 		},
 		History: []goal.HistoryLine{
 			{At: openedAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAA", "mac-cli", "m1"), Verb: "open", Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1},

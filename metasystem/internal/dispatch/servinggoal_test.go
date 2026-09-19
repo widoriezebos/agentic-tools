@@ -81,6 +81,7 @@ func revisionBindingBed(t *testing.T, claimRevision uint64) string {
 	file := &goal.GoalFile{
 		Id: "bounded", State: goal.StateClaimed, Intent: "Bound the dispatch", Origin: goal.OriginMain,
 		NextStep: "Run the bounded work.", OpenedAt: "2026-08-28T08:00:00Z", Revision: 4,
+		Risk:    &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture exercises an admitted tier-three goal."},
 		Claimed: &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-28T09:00:00Z", Revision: claimRevision},
 		History: []goal.HistoryLine{
 			{At: "2026-08-28T08:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAV-bed-m1-00000000", Verb: "open", Actor: "bed-m1+coordinator", Targets: []string{"bounded"}, Keep: -1},

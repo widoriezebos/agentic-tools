@@ -769,10 +769,14 @@ func TestAbandonLocksEveryGoalInTheSetAndRefusesAnyRecordChange(t *testing.T) {
 			seedLedger(t, root)
 			configureAbandonFloorTest(t, strings.Repeat("a", 40))
 			recordAbandonFloorTest(t, root, "01J5X000000000000000001D00")
+			risk := RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture exercises tier-three goal admission."}
 			for index, id := range []string{"lock-primary", "lock-dependent"} {
 				result, err := Open(verbReq(root, []string{"01J5X000000000000000001D10", "01J5X000000000000000001D20"}[index], "mac-a"), id, "intent", "main", "next")
 				if err != nil || result.Outcome != OutcomeConfirmed {
 					t.Fatalf("open %s: %+v %v", id, result, err)
+				}
+				if result, err := Edit(verbReq(root, []string{"01J5X000000000000000001D15", "01J5X000000000000000001D25"}[index], "mac-a"), id, EditFields{Risk: &risk}); err != nil || result.Outcome != OutcomeConfirmed {
+					t.Fatalf("answer %s risk: %+v %v", id, result, err)
 				}
 			}
 			blocked := []string{"lock-primary"}

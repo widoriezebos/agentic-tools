@@ -11,7 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-func commitRiskBindingState(t *testing.T, root string, risk goal.RiskRecord, tier uint8) {
+func commitRiskBindingState(t *testing.T, root string, risk *goal.RiskRecord, tier uint8) {
 	t.Helper()
 	path := filepath.Join(root, "plans", "goals", "bounded.md")
 	data, err := os.ReadFile(path)
@@ -22,7 +22,7 @@ func commitRiskBindingState(t *testing.T, root string, risk goal.RiskRecord, tie
 	if len(problems) != 0 {
 		t.Fatalf("parse goal binding fixture: %v", problems)
 	}
-	file.Risk = &risk
+	file.Risk = risk
 	file.Tier = tier
 	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func TestSTR4R1RaiseTransactionDispatchSnapshots(t *testing.T) {
 	root := revisionBindingBed(t, 2)
 	now := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
 	low := goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "landed precedent"}
-	commitRiskBindingState(t, root, low, 1)
+	commitRiskBindingState(t, root, &low, 1)
 	before, err := ResolveGoalBinding(root, "bounded", now)
 	if err != nil || before.Tier != 1 || before.GateWidth != "area" {
 		t.Fatalf("pre-raise binding = %+v, %v", before, err)
@@ -54,7 +54,7 @@ func TestSTR4R1RaiseTransactionDispatchSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	raised := goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 2, Basis: "accumulation discovered"}
-	commitRiskBindingState(t, root, raised, 2)
+	commitRiskBindingState(t, root, &raised, 2)
 	after, err := ResolveGoalBinding(root, "bounded", now)
 	if err != nil || after.Tier != 2 || after.GateWidth != "full" {
 		t.Fatalf("post-raise binding = %+v, %v", after, err)
@@ -76,16 +76,16 @@ func TestSTR4R1RaiseTransactionDispatchSnapshots(t *testing.T) {
 func TestRiskGateAdmissionMarksThenEnforces(t *testing.T) {
 	root := revisionBindingBed(t, 2)
 	now := time.Date(2026, 8, 28, 9, 30, 0, 0, time.UTC)
-	mark, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now, HazardMechanical)
-	if err != nil || mark.Refused() || mark.PolicyNotice != "RISK_UNANSWERED goal=bounded tier=3 next: goal edit --risk" {
-		t.Fatalf("mark-mode admission = %+v, %v", mark, err)
+	commitRiskBindingState(t, root, nil, 3)
+	unanswered, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now, HazardMechanical)
+	if err != nil || !unanswered.Refused() || unanswered.PolicyRefusal != "RISK_UNANSWERED goal=bounded tier=3 next: goal edit --risk" {
+		t.Fatalf("unanswered-risk admission = %+v, %v", unanswered, err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.budget.risk-gate=enforce\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	enforce, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now, HazardMechanical)
-	if err != nil || !enforce.Refused() || enforce.PolicyRefusal != "RISK_UNANSWERED goal=bounded tier=3 next: goal edit --risk" {
-		t.Fatalf("enforce-mode admission = %+v, %v", enforce, err)
+	risk := goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture answers every risk question."}
+	commitRiskBindingState(t, root, &risk, 3)
+	answered, err := EvaluateGoalRevisionAdmission(root, "bounded", 2, 5, now, HazardMechanical)
+	if err != nil || answered.Refused() {
+		t.Fatalf("answered-risk admission = %+v, %v", answered, err)
 	}
 }
 

@@ -117,6 +117,10 @@ func TestElapsedOriginRaiseCanary(t *testing.T) {
 	if result, err := goal.Open(request("01J5X00000000000000000E000", t0.Add(-2*time.Minute)), "elapsed-canary", "Preserve elapsed origin.", goal.OriginMain, "Exercise the breach clock."); err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
+	risk := goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture exercises a tier-three elapsed budget."}
+	if result, err := goal.Edit(request("01J5X00000000000000000E005", t0.Add(-90*time.Second)), "elapsed-canary", goal.EditFields{Risk: &risk}); err != nil || result.Outcome != goal.OutcomeConfirmed {
+		t.Fatalf("answer risk: %+v %v", result, err)
+	}
 	initial := goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2}
 	human := request("01J5X00000000000000000E001", t0.Add(-time.Minute))
 	human.Actor.Human = "Wido"

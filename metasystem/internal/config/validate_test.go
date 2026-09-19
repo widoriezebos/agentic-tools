@@ -152,9 +152,10 @@ func TestContextBudgetConfigRefusesInvalidValues(t *testing.T) {
 }
 
 func TestValidateRefusesUnknownRiskGate(t *testing.T) {
-	problems := validateRepo(t, validConf+RiskGateKey+"=maybe\n")
-	if !hasProblem(problems, "mark or enforce") {
-		t.Fatalf("unknown risk gate was not refused: %v", problems)
+	const retired = "metasystem.budget.risk-gate is retired; the risk gate is always on since 2026-09-19 and this line should be deleted"
+	problems := validateRepo(t, validConf+"metasystem.budget.risk-gate=enforce\n")
+	if !hasProblem(problems, retired) {
+		t.Fatalf("retired risk gate was not refused: %v", problems)
 	}
 }
 
