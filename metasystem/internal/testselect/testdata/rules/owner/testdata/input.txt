@@ -1,0 +1,1 @@
+fixture input owned by the parent package
