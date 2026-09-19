@@ -39,6 +39,32 @@ func linkedWorktreeMainCheckout(installation string) (string, bool) {
 	return filepath.Dir(common), true
 }
 
+// linkedEnrollmentRoot names the installation inside a linked worktree's main
+// checkout at the same relative path, so a nested installation keeps its
+// subdirectory. Callers try the installation's own enrollment first: a proof
+// worktree may carry one, while a batch tree worktree borrows its checkout's.
+func linkedEnrollmentRoot(installation string) (string, bool) {
+	mainCheckout, linked := linkedWorktreeMainCheckout(installation)
+	if !linked {
+		return "", false
+	}
+	command := exec.Command("git", "-C", installation, "rev-parse", "--show-toplevel")
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.Output()
+	if err != nil {
+		return "", false
+	}
+	resolved, err := filepath.EvalSymlinks(installation)
+	if err != nil {
+		return "", false
+	}
+	relative, err := filepath.Rel(filepath.Clean(strings.TrimSpace(string(output))), resolved)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.Join(mainCheckout, relative), true
+}
+
 func enrollmentRefusal(installation string, cause error) error {
 	facts := engineCheckoutFacts(installation)
 	if checkout, linked := linkedWorktreeMainCheckout(installation); linked {

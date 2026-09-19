@@ -558,10 +558,13 @@ func trustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 	engine := current
 	if !firstTransition {
 		enrollmentRoot := installation
-		if mainCheckout, linked := linkedWorktreeMainCheckout(installation); linked {
-			enrollmentRoot = mainCheckout
-		}
 		pinned, openErr := steward.OpenEnrolledBinary(enrollmentRoot)
+		if openErr != nil {
+			if borrowed, linked := linkedEnrollmentRoot(installation); linked {
+				enrollmentRoot = borrowed
+				pinned, openErr = steward.OpenEnrolledBinary(enrollmentRoot)
+			}
+		}
 		if openErr != nil {
 			return "", "", false, enrollmentRefusal(installation, openErr)
 		}
