@@ -231,7 +231,14 @@ func fetchBatchTree(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return (gittree.Workspace{Dir: root}).TreeOf(fetched.Tip)
+	origin, tree, err := fetchBatchOrigin(root)
+	if err != nil {
+		return "", err
+	}
+	if origin != fetched.Tip {
+		return "", fmt.Errorf("BATCH_BASE_MOVED: validated goal tip %s differs from origin/main %s", fetched.Tip, origin)
+	}
+	return tree, nil
 }
 
 func goalFilesAt(root, tree string) ([]*goal.GoalFile, error) {

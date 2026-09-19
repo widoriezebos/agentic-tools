@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -26,6 +25,7 @@ type batchProofLaunch struct {
 }
 
 type batchProofDependencies struct {
+	base   func(string) (string, error)
 	rearm  func(string, string) error
 	seal   func(string, string, string, string, time.Time) error
 	plan   func(string, string, string, testpolicy.Mode) (testpolicy.Plan, error)
@@ -33,6 +33,7 @@ type batchProofDependencies struct {
 }
 
 var productionBatchProofDependencies = batchProofDependencies{
+	base:  fetchBatchTree,
 	rearm: rearmBatchBase,
 	seal: func(root, id, actor, baseTree string, at time.Time) error {
 		return batch.Seal(batch.NewStore(root, nil), id, baseTree, actor, at, productionJoinPlan, productionJoinGate(root))
@@ -66,14 +67,21 @@ func executeBatchProof(root, id, actor, window string, sample proofrun.LoadSampl
 	if record.State == batch.StateSealed && record.Proof != nil && record.Proof.Status == "union-uncovered" && record.Proof.Tree == record.TipTree {
 		return nil
 	}
-	if err := dependencies.rearm(root, record.BaseTree); err != nil {
+	baseTree := record.BaseTree
+	if record.State == batch.StateOpen && dependencies.base != nil {
+		baseTree, err = dependencies.base(root)
+		if err != nil {
+			return err
+		}
+	}
+	if err := dependencies.rearm(root, baseTree); err != nil {
 		return err
 	}
 	if record.State == batch.StateOpen {
 		if dependencies.seal == nil {
 			return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: proof seal seam is absent")
 		}
-		if err := dependencies.seal(root, id, actor, record.BaseTree, at); err != nil {
+		if err := dependencies.seal(root, id, actor, baseTree, at); err != nil {
 			return err
 		}
 		record, err = store.Load(id)
@@ -172,22 +180,7 @@ func planBatchMemberUnion(root, tree string, units []batch.Unit, mode testpolicy
 }
 
 func productionBatchPlan(root, goalID, tree string, mode testpolicy.Mode) (testpolicy.Plan, error) {
-	binary, err := os.Executable()
-	if err != nil {
-		return testpolicy.Plan{}, err
-	}
-	command := exec.Command(binary, "test", "plan", "--root", root, "--goal", goalID, "--tree", tree,
-		"--mode", string(mode), "--purpose", "delivery", "--json")
-	command.Dir, command.Env = root, gittree.ScrubbedEnviron()
-	output, err := command.Output()
-	if err != nil {
-		return testpolicy.Plan{}, fmt.Errorf("plan batch tip: %w", err)
-	}
-	var planned testingPlanOutput
-	if err := json.Unmarshal(output, &planned); err != nil {
-		return testpolicy.Plan{}, err
-	}
-	return planned.Plan, nil
+	return productionBatchTreePlan(root, goalID, tree, mode)
 }
 
 func launchBatchTipProof(request batchProofLaunch) (proofrun.TestResult, error) {

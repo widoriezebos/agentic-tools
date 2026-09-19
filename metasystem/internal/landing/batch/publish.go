@@ -79,36 +79,25 @@ func planJoinedUnit(root, baseTree string, unit Unit, unitTree string, plan func
 	if err != nil {
 		return testpolicy.Plan{}, err
 	}
-	top, err := (gittree.Workspace{Dir: root}).TopLevel()
-	if err != nil {
-		return testpolicy.Plan{}, err
-	}
 	canonicalRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: resolve workspace: %w", unit.GoalID, err)
 	}
-	prefix, err := filepath.Rel(top, canonicalRoot)
+	detached, err := (gittree.Workspace{Dir: canonicalRoot}).NewDetachedCommitWorktree(baseCommit)
 	if err != nil {
-		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: resolve workspace prefix: %w", unit.GoalID, err)
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: create planning worktree: %w", unit.GoalID, err)
 	}
-	if strings.HasPrefix(prefix, "..") {
-		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: workspace %s is outside repository %s", unit.GoalID, root, top)
+	defer func() { err = errors.Join(err, detached.Close()) }()
+	planningRoot := detached.Workspace().Dir
+	policyRef := "refs/remotes/metasystem-batch/" + baseCommit
+	if output, refErr := runPlanningGit(canonicalRoot, nil, "update-ref", policyRef, baseCommit); refErr != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: pin planning base: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), refErr)
 	}
-	temporary, err := os.MkdirTemp("", "metasystem-batch-plan.")
-	if err != nil {
-		return testpolicy.Plan{}, err
+	if output, configErr := runPlanningGit(canonicalRoot, nil, "config", "extensions.worktreeConfig", "true"); configErr != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: enable isolated planning configuration: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), configErr)
 	}
-	defer func() { err = errors.Join(err, os.RemoveAll(temporary)) }()
-	clone := filepath.Join(temporary, "worktree")
-	if output, cloneErr := runPlanningGit("", nil, "clone", "--shared", "--no-checkout", "--quiet", top, clone); cloneErr != nil {
-		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: clone planning workspace: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), cloneErr)
-	}
-	planningRoot := clone
-	if prefix != "." {
-		planningRoot = filepath.Join(clone, prefix)
-	}
-	if output, checkoutErr := runPlanningGit(clone, nil, "checkout", "--quiet", "--detach", baseCommit); checkoutErr != nil {
-		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: checkout batch base: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), checkoutErr)
+	if output, configErr := runPlanningGit(planningRoot, nil, "config", "--worktree", "metasystem.steward.landing-ref", policyRef); configErr != nil {
+		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: configure planning base: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), configErr)
 	}
 	if source := filepath.Join(canonicalRoot, "artifacts"); pathExists(source) && !pathExists(filepath.Join(planningRoot, "artifacts")) {
 		if err := os.Symlink(source, filepath.Join(planningRoot, "artifacts")); err != nil {
@@ -138,15 +127,8 @@ func planJoinedUnit(root, baseTree string, unit Unit, unitTree string, plan func
 	if err := contractgit.CheckPatchContract(planningRoot, baseCommit, candidate, patch, "unit "+unit.GoalID); err != nil {
 		return testpolicy.Plan{}, err
 	}
-	if output, commitErr := runPlanningGit(clone, nil, "-c", "user.name=MetaSystem", "-c", "user.email=metasystem@invalid", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "temporary batch unit plan"); commitErr != nil {
+	if output, commitErr := runPlanningGit(planningRoot, nil, "-c", "user.name=MetaSystem", "-c", "user.email=metasystem@invalid", "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "temporary batch unit plan"); commitErr != nil {
 		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: commit planning candidate: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), commitErr)
-	}
-	const policyRef = "refs/remotes/metasystem-batch/base"
-	if output, refErr := runPlanningGit(clone, nil, "update-ref", policyRef, baseCommit); refErr != nil {
-		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: pin planning base: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), refErr)
-	}
-	if output, configErr := runPlanningGit(clone, nil, "config", "--local", "metasystem.steward.landing-ref", policyRef); configErr != nil {
-		return testpolicy.Plan{}, fmt.Errorf("select joined unit %s: configure planning base: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), configErr)
 	}
 	return plan(planningRoot, unit.GoalID, candidate)
 }

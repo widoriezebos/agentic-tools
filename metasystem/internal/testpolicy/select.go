@@ -20,11 +20,12 @@ const (
 )
 
 type SelectionRequest struct {
-	ChangedPaths  []string
-	GoalRisk      GoalRisk
-	RequestedMode Mode
-	Purpose       Purpose
-	Groups        []string
+	ChangedPaths             []string
+	GoalRisk                 GoalRisk
+	RequestedMode            Mode
+	Purpose                  Purpose
+	Groups                   []string
+	SupplementDeliveryGroups bool
 }
 
 type Stage struct {
@@ -105,10 +106,11 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 	if request.Purpose != PurposeDelivery && request.Purpose != PurposeDiagnostic && request.Purpose != PurposeCadence {
 		return Plan{}, fmt.Errorf("test purpose must be delivery, diagnostic, or cadence")
 	}
-	if len(request.Groups) > 0 && request.RequestedMode != ModeCanary {
+	deliveryGroups := len(request.Groups) > 0 && request.Purpose == PurposeDelivery && request.SupplementDeliveryGroups
+	if len(request.Groups) > 0 && request.RequestedMode != ModeCanary && !deliveryGroups {
 		return Plan{}, fmt.Errorf("TEST_GROUP_SELECTION_REFUSED: --groups requires diagnostic canary mode; use --mode canary --groups <ids>")
 	}
-	if len(request.Groups) > 0 {
+	if len(request.Groups) > 0 && !deliveryGroups {
 		request.Purpose = PurposeDiagnostic
 	}
 	if request.RequestedMode == ModeCanary && request.Purpose == PurposeDelivery {
@@ -241,18 +243,22 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 			stages = appendStage(stages, "deep", deepStage)
 		}
 	}
-	if request.Purpose != PurposeDelivery {
-		diagnostic := map[string]bool{}
+	if request.Purpose != PurposeDelivery || deliveryGroups {
+		explicit := map[string]bool{}
 		for _, id := range request.Groups {
 			if _, ok := groups[id]; !ok {
-				return Plan{}, fmt.Errorf("requested diagnostic group %s does not exist", id)
+				return Plan{}, fmt.Errorf("requested group %s does not exist", id)
 			}
 			if !selected[id] {
-				diagnostic[id] = true
+				explicit[id] = true
 				selected[id] = true
 			}
 		}
-		stages = appendStage(stages, "diagnostic", diagnostic)
+		stage := "diagnostic"
+		if deliveryGroups {
+			stage = "delivery-supplement"
+		}
+		stages = appendStage(stages, stage, explicit)
 	}
 	plan := Plan{Purpose: request.Purpose, RequestedMode: request.RequestedMode, RequiredMode: requiredMode,
 		ExecutedMode: selectedMode, AffectedSurfaces: keys(affected), RequiredGroups: keys(required), SelectedGroups: keys(selected),

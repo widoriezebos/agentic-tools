@@ -275,15 +275,29 @@ func reexecWithFixedProofLoad(t *testing.T, marker, testName string) bool {
 func TestPrefixReceiptAllowsIdentityReuseAndBindsRevisions(t *testing.T) {
 	args := batchPrefixReceiptArgs("/landing", "goal-a", "tree-a", "result.json", []string{"same", "different"}, batch.Claim{Revision: 7, AccountingRevision: 5})
 	joined := strings.Join(args, " ")
-	if strings.Contains(joined, "--no-reuse") || !strings.Contains(joined, "--purpose delivery --groups same,different") ||
+	if strings.Contains(joined, "--no-reuse") || !strings.Contains(joined, "--purpose delivery --groups same,different") || !strings.Contains(joined, "--batch-prefix") ||
 		!strings.Contains(joined, "--expected-goal-revision 7 --expected-accounting-revision 5") {
 		t.Fatalf("prefix receipt argv=%v", args)
 	}
 }
 
+func batchPrefixReceiptTestRoot(t *testing.T) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	runReceiptGit(t, root, "init", "-q", "-b", "main")
+	runReceiptGit(t, root, "config", "user.name", "Batch fixture")
+	runReceiptGit(t, root, "config", "user.email", "batch-fixture@example.invalid")
+	if err := os.WriteFile(filepath.Join(root, "seed"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runReceiptGit(t, root, "add", "seed")
+	runReceiptGit(t, root, "commit", "-qm", "seed")
+	return root, runReceiptGit(t, root, "rev-parse", "HEAD^{tree}")
+}
+
 func TestPrefixReceiptAcceptsSufficientReusableExit(t *testing.T) {
 	const batchID = "01j5x00000000000000000ba22"
-	root := t.TempDir()
+	root, tree := batchPrefixReceiptTestRoot(t)
 	if err := os.MkdirAll(filepath.Join(root, "artifacts", "agents", "proof-runs", "batch"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +318,7 @@ exit 76
 	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
 	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
 	claim := batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 7, AccountingRevision: 5}
-	record := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateLanding, BaseTree: "base", PrefixTrees: []string{"prefix", "tip"}, TipTree: "tip",
+	record := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateLanding, BaseTree: tree, PrefixTrees: []string{tree, tree}, TipTree: tree,
 		Units: []batch.Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: batch.UnitJoined}, {GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: batch.UnitJoined}},
 		Proof: &batch.Proof{Status: "green", SelectedGroups: []string{"same"}},
 	}
@@ -330,7 +344,7 @@ exit 76
 
 func TestPrefixReceiptPersistsRedResultFromExitOne(t *testing.T) {
 	const batchID = "01j5x00000000000000000ba23"
-	root := t.TempDir()
+	root, tree := batchPrefixReceiptTestRoot(t)
 	if err := os.MkdirAll(filepath.Join(root, "artifacts", "agents", "proof-runs", "batch"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +365,7 @@ exit 1
 	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
 	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
 	claim := batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 7, AccountingRevision: 5}
-	record := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateLanding, BaseTree: "base", PrefixTrees: []string{"prefix", "tip"}, TipTree: "tip",
+	record := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateLanding, BaseTree: tree, PrefixTrees: []string{tree, tree}, TipTree: tree,
 		Units: []batch.Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: batch.UnitJoined}, {GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: batch.UnitJoined}},
 		Proof: &batch.Proof{Status: "green", SelectedGroups: []string{"red-group"}},
 	}
@@ -377,7 +391,7 @@ exit 1
 }
 
 func TestPrefixReceiptClassifiesRevisionMove(t *testing.T) {
-	root := t.TempDir()
+	root, tree := batchPrefixReceiptTestRoot(t)
 	fake := filepath.Join(root, "fake-metasystem")
 	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'GOAL_REVISION_MOVED: goal-a changed after seal' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
@@ -387,7 +401,7 @@ func TestPrefixReceiptClassifiesRevisionMove(t *testing.T) {
 	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
 	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	_, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", "tree", []string{"same"})
+	_, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", tree, []string{"same"})
 	var revision *batch.PrefixRevisionRefusal
 	if !errors.As(err, &revision) || !strings.Contains(revision.Error(), "GOAL_REVISION_MOVED") {
 		t.Fatalf("revision refusal=%T %v", err, err)
@@ -395,7 +409,7 @@ func TestPrefixReceiptClassifiesRevisionMove(t *testing.T) {
 }
 
 func TestPrefixReceiptClassifiesCapacityWithoutBudgetWithdrawal(t *testing.T) {
-	root := t.TempDir()
+	root, tree := batchPrefixReceiptTestRoot(t)
 	fake := filepath.Join(root, "fake-metasystem")
 	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'ADMISSION_REFUSED rank=host-load retry=retry-when-a-launcher-ends' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
@@ -405,7 +419,7 @@ func TestPrefixReceiptClassifiesCapacityWithoutBudgetWithdrawal(t *testing.T) {
 	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
 	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	_, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", "tree", []string{"same"})
+	_, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", tree, []string{"same"})
 	var admission *batch.PrefixAdmissionRefusal
 	if !errors.As(err, &admission) || admission.Code != "ADMISSION_REFUSED" || !strings.Contains(admission.Error(), "rank=host-load") {
 		t.Fatalf("capacity refusal=%T %+v", err, admission)
@@ -413,7 +427,7 @@ func TestPrefixReceiptClassifiesCapacityWithoutBudgetWithdrawal(t *testing.T) {
 }
 
 func TestPrefixReceiptClassifiesBudgetForWithdrawal(t *testing.T) {
-	root := t.TempDir()
+	root, tree := batchPrefixReceiptTestRoot(t)
 	fake := filepath.Join(root, "fake-metasystem")
 	script := fmt.Sprintf("#!/usr/bin/env bash\nprintf '%%s\\n' 'BATCH_MEMBER_BUDGET_REFUSED: no diagnostic headroom' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
@@ -423,7 +437,7 @@ func TestPrefixReceiptClassifiesBudgetForWithdrawal(t *testing.T) {
 	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
 	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	_, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", "tree", []string{"same"})
+	_, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", tree, []string{"same"})
 	var budget *batch.PrefixBudgetRefusal
 	if !errors.As(err, &budget) || !strings.Contains(budget.Error(), "BATCH_MEMBER_BUDGET_REFUSED") {
 		t.Fatalf("budget refusal=%T %v", err, err)
@@ -649,7 +663,7 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 
 func TestBatchRebasedVerifyUsesIdentityComposition(t *testing.T) {
 	args := batchRebasedVerifyArgs("/landing", "goal-a", "tree-a", []string{"one", "two"})
-	if got := strings.Join(args, " "); got != "test verify --root /landing --goal goal-a --tree tree-a --mode auto --purpose delivery --groups one,two" {
+	if got := strings.Join(args, " "); got != "test verify --root /landing --goal goal-a --tree tree-a --mode auto --purpose delivery --groups one,two --batch-prefix" {
 		t.Fatalf("rebased verify argv=%v", args)
 	}
 }

@@ -26,6 +26,9 @@ func executeBatchLanding(root, id, actor string, at time.Time) error {
 	if err != nil {
 		return err
 	}
+	if reopened, err := reopenBatchBeforeReceiptsWhenProofBaseMoved(root, store, id, actor, at, record); err != nil || reopened {
+		return err
+	}
 	if record.Landing == nil || !record.Landing.PushComplete {
 		if err := batch.ComposePrefixReceipts(store, id, actor, at, batch.PrefixReceiptSeams{Execute: func(goalID, tree string, groups []string) (batch.PrefixRunResult, error) {
 			return executeBatchPrefixReceipt(root, id, record, goalID, tree, groups)
@@ -42,6 +45,38 @@ func executeBatchLanding(root, id, actor string, at time.Time) error {
 		}
 	}
 	return finishBatchLanding(root, store, id, actor, at)
+}
+
+func reopenBatchBeforeReceiptsWhenProofBaseMoved(root string, store batch.Store, id, actor string, at time.Time, record batch.Record) (bool, error) {
+	if record.Proof == nil || record.Proof.BaseCommit == "" {
+		return false, nil
+	}
+	origin, originTree, err := batchLandFetchOrigin(root)
+	if err != nil || origin == record.Proof.BaseCommit {
+		return false, err
+	}
+	changed, err := (gittree.Workspace{Dir: root}).ChangedPaths(record.BaseTree, originTree)
+	if err != nil {
+		return false, err
+	}
+	prefix, err := (gittree.Workspace{Dir: root}).Prefix()
+	if err != nil {
+		return false, err
+	}
+	if !batchProofInputsMoved(record, changed, prefix) {
+		return false, nil
+	}
+	tip := ""
+	if record.Landing != nil {
+		tip = record.Landing.CandidateTip
+		if tip == "" {
+			tip = record.Landing.BranchTip
+		}
+	}
+	if err := batchLandAbandon(root, id, tip, origin); err != nil {
+		return false, err
+	}
+	return true, batch.ReopenMovedTrunk(store, id, originTree, actor, at)
 }
 
 var batchLandFetchOrigin = fetchBatchOrigin
@@ -300,7 +335,7 @@ func batchProofInputsMoved(record batch.Record, changed []string, installationPr
 }
 
 func batchRebasedVerifyArgs(root, goalID, tree string, groups []string) []string {
-	return []string{"test", "verify", "--root", root, "--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--groups", strings.Join(groups, ",")}
+	return []string{"test", "verify", "--root", root, "--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--groups", strings.Join(groups, ","), "--batch-prefix"}
 }
 
 func gitHead(root string) string {
@@ -319,13 +354,24 @@ func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tre
 		}
 	}
 	resultPath := filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", id+"-prefix-"+goalID+".json")
+	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
+	if err != nil {
+		return batch.PrefixRunResult{}, err
+	}
+	defer detached.Close()
+	executionRoot := detached.Workspace().Dir
+	if _, statErr := os.Lstat(filepath.Join(executionRoot, "artifacts")); os.IsNotExist(statErr) {
+		if linkErr := os.Symlink(filepath.Join(root, "artifacts"), filepath.Join(executionRoot, "artifacts")); linkErr != nil {
+			return batch.PrefixRunResult{}, fmt.Errorf("expose batch prefix proof records: %w", linkErr)
+		}
+	}
 	binary, err := batchPrefixReceiptExecutable()
 	if err != nil {
 		return batch.PrefixRunResult{}, err
 	}
-	args := batchPrefixReceiptArgs(root, goalID, tree, resultPath, groups, unit.Claim)
+	args := batchPrefixReceiptArgs(executionRoot, goalID, tree, resultPath, groups, unit.Claim)
 	command := exec.Command(binary, args...)
-	command.Dir, command.Env = root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
+	command.Dir, command.Env = executionRoot, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
 	output, runErr := command.CombinedOutput()
 	if runErr != nil && command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitAdmissionRefused {
 		reason := strings.TrimSpace(string(output))
@@ -341,6 +387,9 @@ func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tre
 	}
 	var result proofrun.TestResult
 	if err := readStrictJSON(resultPath, &result); err != nil {
+		if runErr != nil {
+			return batch.PrefixRunResult{}, fmt.Errorf("run batch prefix proof: %s: %w", strings.TrimSpace(string(output)), runErr)
+		}
 		return batch.PrefixRunResult{}, err
 	}
 	out := batch.PrefixRunResult{AttemptID: result.AttemptID, ResultPath: resultPath, Reused: map[string]string{}}
@@ -386,7 +435,7 @@ func batchAdmissionRefusalCode(reason string) string {
 
 func batchPrefixReceiptArgs(root, goalID, tree, resultPath string, groups []string, claim batch.Claim) []string {
 	return []string{"test", "run", "--root", root, "--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--groups", strings.Join(groups, ","), "--result", resultPath,
-		"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision)}
+		"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision), "--batch-prefix"}
 }
 
 func recoverBatchLanding(root string, store batch.Store, id, actor string, at time.Time) error {

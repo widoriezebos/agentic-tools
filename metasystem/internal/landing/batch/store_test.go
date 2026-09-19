@@ -406,7 +406,7 @@ func TestBatchJoinPlanningPinsMergeBaseToBatchBase(t *testing.T) {
 	bedGit(t, bed.root, "add", "newer-trunk")
 	bedGit(t, bed.root, "commit", "-qm", "newer trunk")
 	plan := func(root, _ string, _ string) (testpolicy.Plan, error) {
-		policyRef := bedGit(t, root, "config", "--local", "--get", "metasystem.steward.landing-ref")
+		policyRef := bedGit(t, root, "config", "--worktree", "--get", "metasystem.steward.landing-ref")
 		mergeBase := bedGit(t, root, "merge-base", "HEAD", policyRef)
 		mergeBaseTree, err := (gittree.Workspace{Dir: root}).TreeOf(mergeBase)
 		must(t, err)

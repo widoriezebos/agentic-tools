@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -298,15 +299,25 @@ func batchModuleRoot(checkout string) string {
 }
 
 func productionJoinPlan(root, goalID, tree string) (testpolicy.Plan, error) {
+	return productionBatchTreePlan(root, goalID, tree, testpolicy.ModeAuto)
+}
+
+func productionBatchTreePlan(root, goalID, tree string, mode testpolicy.Mode) (_ testpolicy.Plan, err error) {
+	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
+	if err != nil {
+		return testpolicy.Plan{}, fmt.Errorf("plan batch tree: %w", err)
+	}
+	defer func() { err = errors.Join(err, detached.Close()) }()
+	planningRoot := detached.Workspace().Dir
 	binary, err := os.Executable()
 	if err != nil {
 		return testpolicy.Plan{}, err
 	}
-	command := exec.Command(binary, "test", "plan", "--root", root, "--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--json")
-	command.Dir, command.Env = root, gittree.ScrubbedEnviron()
-	output, err := command.Output()
+	command := exec.Command(binary, "test", "plan", "--root", planningRoot, "--goal", goalID, "--tree", tree, "--mode", string(mode), "--purpose", "delivery", "--json")
+	command.Dir, command.Env = planningRoot, gittree.ScrubbedEnviron()
+	output, err := command.CombinedOutput()
 	if err != nil {
-		return testpolicy.Plan{}, err
+		return testpolicy.Plan{}, fmt.Errorf("plan joined unit: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 	var planned testingPlanOutput
 	if err := json.Unmarshal(output, &planned); err != nil {

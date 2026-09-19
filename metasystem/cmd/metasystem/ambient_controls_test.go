@@ -35,6 +35,9 @@ func TestMain(m *testing.M) {
 			os.Exit(2)
 		}
 	}
+	if os.Getenv("GO_WANT_BATCH_E2E_COMMAND") == "1" && len(os.Args) > 1 && os.Args[1][0] != '-' {
+		os.Exit(dispatch(os.Args[1:]))
+	}
 	if os.Getenv("METASYSTEM_CONTEXT_COST_PROOF") == "1" {
 		declaredContextCostCandidateEngine = os.Getenv("METASYSTEM_BIN")
 	}

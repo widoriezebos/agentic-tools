@@ -147,6 +147,7 @@ type testingSelectionRequest struct {
 	Groups                                                                 []string
 	Carried                                                                bool
 	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups             bool
+	BatchPrefixReceipt                                                     bool
 	// CadencePreflight plans and revalidates the fetched tree before the cadence
 	// tick claims standing authority. Governed cadence execution does not set it.
 	CadencePreflight bool
@@ -176,6 +177,7 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	groups := flags.String("groups", "", "comma-separated diagnostic groups")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
 	flags.BoolVar(&request.PolicyChild, "policy-child", false, "judge policy in the pinned child without re-arming")
+	flags.BoolVar(&request.BatchPrefixReceipt, "batch-prefix", false, "compose delivery evidence for a batch prefix")
 	flags.BoolVar(&request.Carried, "carried", false, "compose a completed red result for carried-landing classification")
 	if execution {
 		flags.StringVar(&request.CapMin, "cap-min", "", "reserved proof minutes")
@@ -211,6 +213,10 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		}
 	}
 	request.Mode, request.Purpose = testpolicy.Mode(*mode), testpolicy.Purpose(*purpose)
+	if request.BatchPrefixReceipt && (request.Purpose != testpolicy.PurposeDelivery || len(request.Groups) == 0) {
+		fmt.Fprintln(os.Stderr, "--batch-prefix requires delivery purpose and explicit groups")
+		return request, false, 2
+	}
 	if request.NoReuse && request.Purpose != testpolicy.PurposeDiagnostic {
 		fmt.Fprintln(os.Stderr, "--no-reuse is available only for diagnostic purpose")
 		return request, false, 2
@@ -409,7 +415,7 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		}
 	}
 	plan, err := testpolicy.Select(effective, testpolicy.SelectionRequest{ChangedPaths: changedPaths, GoalRisk: risk,
-		RequestedMode: request.Mode, Purpose: request.Purpose, Groups: request.Groups})
+		RequestedMode: request.Mode, Purpose: request.Purpose, Groups: request.Groups, SupplementDeliveryGroups: request.BatchPrefixReceipt})
 	if err != nil {
 		return testingPreparation{}, err
 	}
@@ -551,20 +557,24 @@ func trustedPolicyEngine(installation, policyBaseCommit string, firstTransition 
 	}
 	engine := current
 	if !firstTransition {
-		pinned, openErr := steward.OpenEnrolledBinary(installation)
+		enrollmentRoot := installation
+		if mainCheckout, linked := linkedWorktreeMainCheckout(installation); linked {
+			enrollmentRoot = mainCheckout
+		}
+		pinned, openErr := steward.OpenEnrolledBinary(enrollmentRoot)
 		if openErr != nil {
 			return "", "", false, enrollmentRefusal(installation, openErr)
 		}
 		identity := pinned.Install
 		defer pinned.Close()
-		if sourceErr := pinned.VerifySourceAtDestination(installation, policyBaseCommit); sourceErr != nil {
+		if sourceErr := pinned.VerifySourceAtDestination(enrollmentRoot, policyBaseCommit); sourceErr != nil {
 			facts := append(engineCheckoutFacts(installation), enginecause.Value("destination", policyBaseCommit))
 			return "", "", false, judgmentRefusal(sourceErr, facts, "retained destination engine does not bind the captured policy base")
 		}
 		if prepareErr := pinned.PrepareForExecution(); prepareErr != nil {
 			return "", "", false, engineRefusal(enginecause.TokenEngineUnavailable, engineCheckoutFacts(installation), "retain destination engine descriptor: "+prepareErr.Error())
 		}
-		engine = steward.EnrolledExecutionPath(installation, identity)
+		engine = steward.EnrolledExecutionPath(enrollmentRoot, identity)
 	}
 	engineInfo, err := os.Stat(engine)
 	if err != nil || !engineInfo.Mode().IsRegular() || engineInfo.Mode().Perm()&0o111 == 0 {
@@ -587,6 +597,9 @@ func planWithTrustedPolicyEngine(engine string, request testingSelectionRequest,
 	}
 	if len(request.Groups) > 0 {
 		args = append(args, "--groups", strings.Join(request.Groups, ","))
+	}
+	if request.BatchPrefixReceipt {
+		args = append(args, "--batch-prefix")
 	}
 	// No clock on the planning engine: a plan that never returns is ended
 	// by the attempt's cancellation, never by a wall bound under load.
@@ -1079,7 +1092,7 @@ func runTestRun(args []string) int {
 				return nil, readErr
 			}
 			retained = &result
-			if !testingReceiptWanted(joined, prepared.Plan.Purpose, result.Delivery.Sufficient) {
+			if request.BatchPrefixReceipt || !testingReceiptWanted(joined, prepared.Plan.Purpose, result.Delivery.Sufficient) {
 				return nil, nil
 			}
 			receipt, payload, prepareErr := landing.PrepareTestingReceiptPayload(prepared.Installation,
@@ -1552,9 +1565,10 @@ func resolveTestingGoal(root, requested string) (string, error) {
 }
 
 func trustedTestingPolicyBase(projectRoot string, workspace gittree.Workspace) (string, error) {
-	command := exec.Command("git", "-C", projectRoot, "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
-	command.Env = gittree.ScrubbedEnviron()
-	data, err := command.Output()
+	data, err := testingLandingRef(projectRoot, "--worktree")
+	if err != nil {
+		data, err = testingLandingRef(projectRoot, "--local")
+	}
 	ref := strings.TrimSpace(string(data))
 	tail := strings.TrimPrefix(ref, "refs/remotes/")
 	remote, branch, qualified := strings.Cut(tail, "/")
@@ -1566,6 +1580,12 @@ func trustedTestingPolicyBase(projectRoot string, workspace gittree.Workspace) (
 		return "", fmt.Errorf("resolve trusted testing policy base %s: %w", ref, err)
 	}
 	return commit, nil
+}
+
+func testingLandingRef(projectRoot, scope string) ([]byte, error) {
+	command := exec.Command("git", "-C", projectRoot, "config", scope, "--no-includes", "--get", "metasystem.steward.landing-ref")
+	command.Env = gittree.ScrubbedEnviron()
+	return command.Output()
 }
 
 func testingEnvironment(environment []string) []string {

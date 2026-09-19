@@ -165,6 +165,11 @@ func TestExplicitGroupsRequireDiagnosticCanaryMode(t *testing.T) {
 			})
 		}
 	}
+	plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeAuto,
+		Purpose: PurposeDelivery, Groups: requested, SupplementDeliveryGroups: true})
+	if err != nil || plan.Purpose != PurposeDelivery || !reflect.DeepEqual(plan.SelectedGroups, wantSelected) {
+		t.Fatalf("batch prefix delivery selection purpose=%s groups=%v err=%v, want delivery %v", plan.Purpose, plan.SelectedGroups, err, wantSelected)
+	}
 }
 
 func TestMetaSystemGroupSelectionScenario(t *testing.T) {
