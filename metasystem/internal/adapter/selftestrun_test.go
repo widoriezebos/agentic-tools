@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -343,7 +344,9 @@ func mustOne(t *testing.T, matches []string, err error) string {
 // become the request log — the very evidence a denied fetch got through.
 func TestSelftestTripwireRecordsTheOneRequest(t *testing.T) {
 	requestLog := filepath.Join(t.TempDir(), "network-requested")
-	port, stop, err := startTripwire(requestLog, 5*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	port, stop, err := startTripwire(ctx, requestLog)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -571,20 +574,34 @@ func TestAdjudicateValidate(t *testing.T) {
 
 // waitForJob gives up at the runtime's ceiling when a job never terminates.
 func TestSelftestWaitForJobCeiling(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
-		t.Fatal(err)
+	restoreNow, restoreSleep := now, sleep
+	current := time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC)
+	now = func() time.Time { return current }
+	polls := 0
+	sleep = func(time.Duration) {
+		polls++
+		current = current.Add(200 * time.Millisecond)
 	}
-	if err := os.WriteFile(filepath.Join(root, "scripts", "agents", "dispatch.sh"),
-		[]byte("#!/usr/bin/env bash\n[[ $1 == status ]] && echo running\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
+	defer func() {
+		now, sleep = restoreNow, restoreSleep
+	}()
+
+	statusCalls, reapCalls := 0, 0
+	p := SelftestParams{
+		Runtime: "stub", TurnCeilingSec: 1,
+		statusProbe: func(string) string {
+			statusCalls++
+			return "running"
+		},
+		reapProbe: func(string) { reapCalls++ },
 	}
-	p := SelftestParams{Root: root, Runtime: "stub", TurnCeilingSec: 1}
-	start := time.Now()
 	if p.waitForJob("stuck-job") {
 		t.Fatal("a stuck job read as terminal")
 	}
-	if time.Since(start) > wiringBound {
-		t.Fatal("ceiling did not bound the wait")
+	if polls != 5 {
+		t.Fatalf("poll sleeps = %d, want 5 before the one-second ceiling", polls)
+	}
+	if statusCalls != 6 || reapCalls != 6 {
+		t.Fatalf("poll probes = status:%d reap:%d, want 6 each", statusCalls, reapCalls)
 	}
 }

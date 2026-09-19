@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"net"
 	"os"
 	"os/exec"
@@ -260,50 +261,53 @@ func TestFakeGuardedWriteDeniedAndAllowed(t *testing.T) {
 func TestFakeGuardedNetworkDeniedAndAllowed(t *testing.T) {
 	dir := t.TempDir()
 	permissions := filepath.Join(dir, "permissions.json")
+	dialed := 0
+	requestContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	received := make(chan string, 1)
+	restoreDial := fakeNetworkDialContext
+	fakeNetworkDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		dialed++
+		if ctx != requestContext || network != "tcp" || address != "127.0.0.1:4321" {
+			t.Fatalf("dial = (%v, %q, %q), want caller context and tcp probe address", ctx, network, address)
+		}
+		client, server := net.Pipe()
+		go func() {
+			defer server.Close()
+			buffer := make([]byte, 256)
+			n, _ := server.Read(buffer)
+			received <- string(buffer[:n])
+		}()
+		return client, nil
+	}
+	defer func() { fakeNetworkDialContext = restoreDial }()
 
 	writeFile(t, permissions, `{"network": "deny"}`)
-	allowed, err := FakeGuardedNetwork(permissions, "127.0.0.1", "9")
+	allowed, err := FakeGuardedNetworkContext(requestContext, permissions, "127.0.0.1", "4321")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if allowed {
 		t.Fatal("a denied envelope must refuse the call without dialing")
 	}
-
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	if dialed != 0 {
+		t.Fatalf("denied probe dialed %d times", dialed)
 	}
-	defer listener.Close()
-	received := make(chan string, 1)
-	go func() {
-		connection, err := listener.Accept()
-		if err != nil {
-			received <- ""
-			return
-		}
-		defer connection.Close()
-		buffer := make([]byte, 256)
-		n, _ := connection.Read(buffer)
-		received <- string(buffer[:n])
-	}()
 
 	writeFile(t, permissions, `{"network": "allow"}`)
-	_, port, _ := net.SplitHostPort(listener.Addr().String())
-	allowed, err = FakeGuardedNetwork(permissions, "127.0.0.1", port)
+	allowed, err = FakeGuardedNetworkContext(requestContext, permissions, "127.0.0.1", "4321")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !allowed {
 		t.Fatal("an allowed envelope must make the call")
 	}
-	select {
-	case request := <-received:
-		if !strings.Contains(request, "fake-envelope-probe") {
-			t.Fatalf("unexpected probe request %q", request)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the probe request never arrived")
+	if dialed != 1 {
+		t.Fatalf("allowed probe dialed %d times, want 1", dialed)
+	}
+	request := <-received
+	if !strings.Contains(request, "fake-envelope-probe") {
+		t.Fatalf("unexpected probe request %q", request)
 	}
 }
 

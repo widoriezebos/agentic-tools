@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -152,23 +153,18 @@ func TestSelftestListenerAnswersExactlyOneRequest(t *testing.T) {
 	dir := t.TempDir()
 	portFile := filepath.Join(dir, "port")
 	requestLog := filepath.Join(dir, "requested")
-	done := make(chan error, 1)
-	go func() { done <- SelftestListener(portFile, requestLog, 5*time.Second) }()
-
-	var port string
-	deadline := time.Now().Add(wiringBound)
-	for time.Now().Before(deadline) {
-		if data, err := os.ReadFile(portFile); err == nil && len(data) > 0 {
-			port = string(data)
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	port, done, err := StartSelftestListener(ctx, portFile, requestLog)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if port == "" {
-		t.Fatal("port file never appeared")
+	published, err := os.ReadFile(portFile)
+	if err != nil || string(published) != fmt.Sprint(port) {
+		t.Fatalf("published port = %q, %v; want %d", published, err, port)
 	}
 
-	connection, err := net.Dial("tcp", "127.0.0.1:"+port)
+	connection, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +189,13 @@ func TestSelftestListenerAnswersExactlyOneRequest(t *testing.T) {
 func TestSelftestListenerTimesOutQuietlyWithoutARequest(t *testing.T) {
 	dir := t.TempDir()
 	requestLog := filepath.Join(dir, "requested")
-	if err := SelftestListener(filepath.Join(dir, "port"), requestLog, 50*time.Millisecond); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	_, done, err := StartSelftestListener(ctx, filepath.Join(dir, "port"), requestLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if err := <-done; err != nil {
 		t.Fatalf("timeout should be quiet success: %v", err)
 	}
 	// No request means no log: the log's existence is the tripwire.

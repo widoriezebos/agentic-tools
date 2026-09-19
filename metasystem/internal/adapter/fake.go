@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"time"
 )
+
+var fakeNetworkDialContext = (&net.Dialer{}).DialContext
 
 // The fake runtime is the deterministic stand-in the fixture suite dispatches
 // instead of a real CLI. Everything here backs its adapter: the canned role
@@ -220,6 +223,14 @@ func FakeGuardedWrite(permissionsPath, targetPath string) (bool, error) {
 // permissions envelope allows network access, reporting whether the call was
 // allowed. Paired with FakeGuardedWrite as the fake's enforcement mechanism.
 func FakeGuardedNetwork(permissionsPath, host, port string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	return FakeGuardedNetworkContext(ctx, permissionsPath, host, port)
+}
+
+// FakeGuardedNetworkContext performs the guarded probe within the caller's
+// cancellation and deadline.
+func FakeGuardedNetworkContext(ctx context.Context, permissionsPath, host, port string) (bool, error) {
 	permissions, err := readObject(permissionsPath)
 	if err != nil {
 		return false, err
@@ -227,7 +238,7 @@ func FakeGuardedNetwork(permissionsPath, host, port string) (bool, error) {
 	if network, _ := permissions["network"].(string); network != "allow" {
 		return false, nil
 	}
-	connection, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), time.Second)
+	connection, err := fakeNetworkDialContext(ctx, "tcp", net.JoinHostPort(host, port))
 	if err != nil {
 		return false, err
 	}

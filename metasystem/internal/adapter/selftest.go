@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -166,31 +167,57 @@ func enforcementEvidence(enforcement, deniedTag string) string {
 // evidence that a supposedly denied fetch got through, so it is written only
 // when a connection actually arrives; an idle timeout is a quiet success.
 func SelftestListener(portFilePath, requestLogPath string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	_, done, err := StartSelftestListener(ctx, portFilePath, requestLogPath)
+	if err != nil {
+		return err
+	}
+	return <-done
+}
+
+// StartSelftestListener binds and publishes the port before it returns, then
+// serves the one request until the caller cancels the context.
+func StartSelftestListener(ctx context.Context, portFilePath, requestLogPath string) (int, <-chan error, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
-	defer listener.Close()
 	port := listener.Addr().(*net.TCPAddr).Port
 	if err := os.WriteFile(portFilePath, []byte(strconv.Itoa(port)), 0o644); err != nil {
-		return err
+		listener.Close()
+		return 0, nil, err
 	}
-	if tcp, ok := listener.(*net.TCPListener); ok {
-		tcp.SetDeadline(time.Now().Add(timeout))
-	}
+	done := make(chan error, 1)
+	go func() {
+		done <- serveSelftestListener(ctx, listener, requestLogPath)
+		close(done)
+	}()
+	return port, done, nil
+}
+
+// serveSelftestListener answers one connection. Cancellation closes either
+// blocking network operation and is a quiet success when no request arrived.
+func serveSelftestListener(ctx context.Context, listener net.Listener, requestLogPath string) error {
+	defer listener.Close()
+	stopAcceptCancellation := context.AfterFunc(ctx, func() { listener.Close() })
 	connection, err := listener.Accept()
+	stopAcceptCancellation()
 	if err != nil {
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
+		if errors.Is(err, net.ErrClosed) && ctx.Err() != nil {
 			return nil
 		}
 		return err
 	}
 	defer connection.Close()
-	connection.SetDeadline(time.Now().Add(timeout))
+	stopReadCancellation := context.AfterFunc(ctx, func() { connection.Close() })
+	defer stopReadCancellation()
 	request := make([]byte, 4096)
 	n, readErr := connection.Read(request)
 	if n == 0 && readErr != nil && readErr != io.EOF {
+		if errors.Is(readErr, net.ErrClosed) && ctx.Err() != nil {
+			return nil
+		}
 		return readErr
 	}
 	if err := os.WriteFile(requestLogPath, request[:n], 0o644); err != nil {

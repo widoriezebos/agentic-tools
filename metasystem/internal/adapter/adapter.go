@@ -24,6 +24,10 @@ import (
 // and capture time are deterministic.
 var now = time.Now
 
+// sleep is the scheduler wait, overridable with now so polling tests advance
+// the same artificial clock that supplies their deadline.
+var sleep = time.Sleep
+
 // timestampUTC renders a time the way every dated artifact in this system is
 // stamped: whole seconds, UTC, trailing Z.
 func timestampUTC(t time.Time) string {

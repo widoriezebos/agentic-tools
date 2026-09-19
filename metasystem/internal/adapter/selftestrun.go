@@ -1,10 +1,10 @@
 package adapter
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -39,6 +39,8 @@ type SelftestParams struct {
 	Probe          *SelftestProbe
 	TurnCeilingSec int  // how long one self-test turn may take
 	DenialEndsTurn bool // the runtime ends a turn on a denied tool
+	statusProbe    func(string) string
+	reapProbe      func(string)
 }
 
 func (p SelftestParams) agentsDir() string { return filepath.Join(p.Root, "artifacts", "agents") }
@@ -260,7 +262,9 @@ func SelftestRun(p SelftestParams, model string, stdout io.Writer) error {
 
 	// Permission legs, against the denied-fetch tripwire.
 	requestLog := filepath.Join(dir, "network-requested")
-	port, stopListener, err := startTripwire(requestLog, time.Duration(p.TurnCeilingSec)*3*time.Second)
+	tripwireCtx, cancelTripwire := context.WithTimeout(context.Background(), time.Duration(p.TurnCeilingSec)*3*time.Second)
+	defer cancelTripwire()
+	port, stopListener, err := startTripwire(tripwireCtx, requestLog)
 	if err != nil {
 		return fmt.Errorf("selftest network listener did not start: %w", err)
 	}
@@ -403,20 +407,31 @@ func (p SelftestParams) waitForJob(job string) bool {
 		case "failed", "timeout", "cancelled":
 			return false
 		}
-		_ = runSilent(p.dispatch(), "reap", "--job", job)
+		p.reapJob(job)
 		if !now().Before(deadline) {
 			return false
 		}
-		time.Sleep(200 * time.Millisecond)
+		sleep(200 * time.Millisecond)
 	}
 }
 
 func (p SelftestParams) dispatchStatus(job string) string {
+	if p.statusProbe != nil {
+		return p.statusProbe(job)
+	}
 	out, err := exec.Command(p.dispatch(), "status", "--job", job).Output()
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func (p SelftestParams) reapJob(job string) {
+	if p.reapProbe != nil {
+		p.reapProbe(job)
+		return
+	}
+	_ = runSilent(p.dispatch(), "reap", "--job", job)
 }
 
 // jobField reads one string field from a job record; absence is an empty
@@ -447,57 +462,26 @@ func (p SelftestParams) noteUnasserted(job, name, field string) {
 // startTripwire binds the loopback tripwire in-process and serves exactly one
 // request, recording its bytes; the request log's very existence is the
 // evidence that a supposedly denied fetch got through.
-func startTripwire(requestLogPath string, timeout time.Duration) (port int, stop func(), err error) {
+func startTripwire(ctx context.Context, requestLogPath string) (port int, stop func(), err error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, nil, err
 	}
+	serveCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		serveTripwireOnce(listener, requestLogPath, timeout)
+		serveSelftestListener(serveCtx, listener, requestLogPath)
 	}()
 	var once bool
 	stop = func() {
 		if !once {
 			once = true
-			listener.Close()
+			cancel()
 			<-done
 		}
 	}
 	return listener.Addr().(*net.TCPAddr).Port, stop, nil
-}
-
-// serveTripwireOnce answers one connection on an already-bound listener and
-// records the request bytes. A timeout or a closed listener is a quiet
-// success: no connection means no escape.
-func serveTripwireOnce(listener net.Listener, requestLogPath string, timeout time.Duration) error {
-	if tcp, ok := listener.(*net.TCPListener); ok {
-		tcp.SetDeadline(time.Now().Add(timeout))
-	}
-	connection, err := listener.Accept()
-	if err != nil {
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			return nil
-		}
-		if errors.Is(err, net.ErrClosed) {
-			return nil
-		}
-		return err
-	}
-	defer connection.Close()
-	connection.SetDeadline(time.Now().Add(timeout))
-	request := make([]byte, 4096)
-	n, readErr := connection.Read(request)
-	if n == 0 && readErr != nil && readErr != io.EOF {
-		return readErr
-	}
-	if err := os.WriteFile(requestLogPath, request[:n], 0o644); err != nil {
-		return err
-	}
-	_, err = connection.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"))
-	return err
 }
 
 func writeBrief(path, goal string) error {
