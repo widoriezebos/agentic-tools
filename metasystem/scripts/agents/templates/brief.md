@@ -40,7 +40,7 @@ instead of trimming required tests.
 
 Request the smallest section you need, read a large file through a bounded view, and open a reference only through its path.
 
-No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the turn is registered with `metasystem wait register`.
+No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the host turn is registered with `metasystem wait register`.
 
 # Expected Return
 

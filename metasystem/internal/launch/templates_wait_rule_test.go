@@ -11,7 +11,7 @@ func TestBriefsAndProfilesCarryTheWaitRule(t *testing.T) {
 	t.Parallel()
 
 	const profileSentence = "A subagent never waits longer than 240 seconds in one tool call; any longer wait runs as `metasystem wait` in a background task of the main session, which is woken when it ends."
-	const templateSentence = "No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the turn is registered with `metasystem wait register`."
+	const templateSentence = "No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the host turn is registered with `metasystem wait register`."
 
 	templateDirectory := filepath.Join("..", "..", "scripts", "agents", "templates")
 	for _, name := range []string{"brief.md", "review-brief.md"} {

@@ -27,7 +27,7 @@ document checks, and fixture row names or ranges for fixture checks.
 
 Batch independent reads: when several files or ranges are needed and none depends on another's content, request them all in one turn, never one per turn.
 
-No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the turn is registered with `metasystem wait register`.
+No single command may wait longer than 240 seconds; run a longer one in the background with its output to a file and poll the file. A wait that outlives the host turn is registered with `metasystem wait register`.
 
 1. `<file>:<start>-<end>` — <behavior or contract to check>
 2. `<fixture file>:<row name or start-end>` — <scenario to check>
