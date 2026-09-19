@@ -1,6 +1,6 @@
 # token-spend-fence
 
-- State: queued
+- State: parked
 - Priority: 2
 - Sequence: 37
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong fence stops or fails to stop spending, no data loss; novelty 2: enforcement on token spend is new; exposure 3: every seat's sessions; accumulation 1: one fence and its records"
@@ -9,10 +9,11 @@
 - Origin: main
 - Next step: parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume on Wido's word on step 2 (R-60-m1). Existing work: on main 0acb09738, step 1, alert mode (metasystem/internal/spend/measure.go, metasystem/internal/spend/transcript.go, metasystem/internal/config/spend.go, metasystem/internal/steward/alert_episode.go). The validator refuses spend.mode=enforce until step 2 lands. Left: step 2, about 500 lines. No origin goal/token-spend-fence branch exists: nothing unlanded exists; the work below is all on main.
 - OpenedAt: 2026-09-03T08:42:26Z
-- Revision: 213
+- Revision: 214
 - Labels: robustness, spend
 - BudgetExceptions: 0
 - Sliced: machine=m1b lineage=main-1788333346-60696-6a3256 revision=4 at=2026-09-03T11:28:16Z
+- Parked: by=human:Wido at=2026-09-19T15:48:57Z because=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume on Wido's word on step 2 (R-60-m1). Existing work: on main 0acb09738, step 1, alert mode (metasystem/internal/spend/measure.go, metasystem/internal/spend/transcript.go, metasystem/internal/config/spend.go, metasystem/internal/steward/alert_episode.go). The validator refuses spend.mode=enforce until step 2 lands. Left: step 2, about 500 lines. No origin goal/token-spend-fence branch exists: nothing unlanded exists; the work below is all on main.
 
 History:
 - 2026-09-03T08:42:26Z XR3P846WY3BC85808G7NY1YZJQ-m1-7bb1546e open actor=m1+main-1788333680-2840-7f79f4 targets=token-spend-fence
@@ -228,4 +229,5 @@ History:
 - 2026-09-16T20:31:40Z RKT636JJPJ4B2WE1GN3B55Z10W-m1e-c6925449 set-priority actor=human:Wido targets=census-lifecycle-scenario-holds-under-load,chain-landing-carries-the-reviewed-diff,dispatch-bases-chains-on-the-remote-tip,events-package-has-a-test-group,fixture-repo-copies-exclude-the-artifacts-store,fixture-waits-name-their-producer,human-authority-surface-runs-its-cmd-tests,human-wait-does-not-consume-goal-budget,metasystem-stop-escalation-proofs,metasystem-stop-fleet-form,new-elapsed-budgets-use-explicit-hours,pipelines-never-lose-a-truncated-producer,repo-root-paths-ride-agent-commits-unjudged,run-scoped-build-caches-have-a-janitor,skipped-test-fails-its-group-on-the-other-os,token-spend-fence reason=priority-order subject=token-spend-fence from=1:54 to=2:37 requested-sequence=37
 - 2026-09-16T20:33:49Z CWWB2BQWH4NBB395G9VNBES51V-m1e-c6925449 unapprove actor=human:Wido targets=token-spend-fence reason=Wido 2026-09-16 22:40 CEST: clean house on priority 1 first, then a few human convenience features; every priority 2+ goal is unapproved until then
 - 2026-09-19T15:48:48Z NGQHQ6HYACE1HGV987VSF0Z478-m1e-c6925449 edit actor=human:Wido targets=token-spend-fence
-Integrity: sha256=aae3385c4ff037fdac8690592a7778715ceba42baadffa101c2fa14a9bb0956b
+- 2026-09-19T15:48:57Z TKGET7N7PBXHJ2FN81XG2911X8-m1e-c6925449 park actor=human:Wido targets=token-spend-fence reason=parked 2026-09-19 in Wido's name (his 16:40 CEST grant, "yes you are allowed to open / approve / whatever in my name while working on this mssion"; m1e sync 14): lower priority than his machine-ready target. Resume on Wido's word on step 2 (R-60-m1). Existing work: on main 0acb09738, step 1, alert mode (metasystem/internal/spend/measure.go, metasystem/internal/spend/transcript.go, metasystem/internal/config/spend.go, metasystem/internal/steward/alert_episode.go). The validator refuses spend.mode=enforce until step 2 lands. Left: step 2, about 500 lines. No origin goal/token-spend-fence branch exists: nothing unlanded exists; the work below is all on main.
+Integrity: sha256=73f139a328e6c5e857406610fbaaa5717f38fc20331bd00589ebe6c13f1ab908
