@@ -1,6 +1,6 @@
 # stop-hook-never-forces-an-empty-turn
 
-- State: parked
+- State: approved
 - Priority: 1
 - Sequence: 13
 - Risk: severity=2 novelty=2 exposure=3 accumulation=1 basis="severity 2: a wrong refusal rule either forces turns as today or lets an unsafe stop through; novelty 2: refusal causes are reclassified between seat and steward; exposure 3: every seat's every stop; accumulation 1: one hook"
@@ -9,7 +9,7 @@
 - Origin: human
 - Next step: r1 designed 08:37 via launch verb; critique r1 material 16; r2 fold launched 09:18. Evidence: a headless claude -p delegate ran only the plugin Stop hook; the repo supervision-hook.sh Stop entry did not run
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 97
+- Revision: 98
 - BlockedBy: stop-decisions-record-deadline-evidence, stop-infrastructure-allows-the-seat-to-stop
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -17,7 +17,6 @@
 - Approved: by=human:Wido at=2026-09-11T20:33:06Z revision=10 opid=E8FTZC5HAT5QQ1ANYHR53FNVAE-m1-c6925449 authority=proven digest=2e1c7149776e2d5db51a6e1b319f9e6b77f7793aa24d621a6222d5f077423609
 - Sliced: machine=m1b lineage=main-1789191336-90295-e4b24b revision=20 at=2026-09-12T17:01:57Z
 - Episode: machine=m1b lineage=main-1789191336-90295-e4b24b accountingRevision=34 episodeAt=2026-09-13T07:32:59Z episodeRevision=34 idleSeconds=0 released=2026-09-13T07:33:02Z
-- Parked: by=m1b+main-1789191336-90295-e4b24b at=2026-09-13T07:33:02Z blocker=stop-decisions-record-deadline-evidence because=blocked by stop-decisions-record-deadline-evidence; returns when it is done
 
 History:
 - 2026-09-11T15:45:01Z T6Z7DYJ3CFGDRPYXNRNTTWXERM-m1e-5083721b open actor=m1e+main-1789141490-27414-b9c0d2 targets=stop-hook-never-forces-an-empty-turn
@@ -117,4 +116,5 @@ History:
 - 2026-09-19T03:11:35Z XXQM7J5WKE8QP0T64GQ5076WS0-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,efficiency-settings-ship-in-the-repository,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,human-goal-verbs-forgiving,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order from=1:14 to=1:13
 - 2026-09-19T05:59:53Z ZN9MQ3XQEH5HZKZDKQHKW0V3NY-m1e-c6925449 edit actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-19T07:33:38Z JQ3DAPQHNVR8G0XAASK7YSG0NH-m1e-c6925449 edit actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
-Integrity: sha256=d6bb053890d4c49903d2ea82bb4646cf33742cfdf89f08ad2424955f572b8d24
+- 2026-09-19T07:35:47Z B0RY96P5BQHMSHMFFXM6KWDBSG-m1e-c6925449 unpark actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
+Integrity: sha256=310f474b9aed150c3fcab087effde22308718d3fa2bdd9f09d5c7344dd76966c
