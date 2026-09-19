@@ -803,7 +803,7 @@ func TestTransportMemberExitedCountsAReapedGroupLeader(t *testing.T) {
 	source := "#!/bin/sh\n" + testutil.ShellPrologue + `sh -c 'read -r _ <"${METASYSTEM_FIXTURE_LEASH:?}"' sh "$tag" >/dev/null 2>&1 &
 printf '%s\n' "$!"
 `
-	if err := os.WriteFile(script, []byte(source), 0o755); err != nil {
+	if err := testexec.WriteFile(script, []byte(source), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(script)
@@ -875,7 +875,7 @@ func TestCaptureTipBoundedKillsADescendantThatOutlivesTheTransport(t *testing.T)
 esac
 exec "$LEDGER_GRACE_REAL_GIT" "$@"
 `
-	if err := os.WriteFile(wrapper, []byte(script), 0o755); err != nil {
+	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	environment := testEnvironment(os.Environ(), "LEDGER_GRACE_REAL_GIT="+realGit, "LEDGER_GRACE_GROUP_FILE="+groupFile,

@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type relaunchScriptSite struct {
@@ -130,11 +132,11 @@ func newRelaunchScriptFixture(t *testing.T, site relaunchScriptSite) relaunchScr
 		t.Fatal(err)
 	}
 	selector := "#!/usr/bin/env bash\n[[ ${1:-} == context ]] || exit 97\nprintf 'template\\n'\n"
-	if err := os.WriteFile(filepath.Join(root, "scripts", "agents", "validate-section-selector.sh"), []byte(selector), 0o700); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "scripts", "agents", "validate-section-selector.sh"), []byte(selector), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	fixtureBudget := "#!/usr/bin/env bash\nharness_fixture_bed_child_scenario() { return 1; }\n"
-	if err := os.WriteFile(filepath.Join(root, "scripts", "agents", "fixture-budget.sh"), []byte(fixtureBudget), 0o700); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "scripts", "agents", "fixture-budget.sh"), []byte(fixtureBudget), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,7 +186,7 @@ case "${1:-}/${2:-}" in
   *) printf 'unexpected recording engine invocation: %q\n' "$*" >&2; exit 97 ;;
 esac
 `
-	if err := os.WriteFile(fixture.engine, []byte(engine), 0o700); err != nil {
+	if err := testexec.WriteFile(fixture.engine, []byte(engine), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	goStub := `#!/usr/bin/env bash
@@ -203,7 +205,7 @@ fi
 : >"$PROOF_SCRIPT_PROGRESSED"
 exit 79
 `
-	if err := os.WriteFile(filepath.Join(root, "helpers", "go"), []byte(goStub), 0o700); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, "helpers", "go"), []byte(goStub), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return fixture
