@@ -1,0 +1,15 @@
+cmd/metasystem/hold_test.go	1	The ticker only retries signal delivery until the result channel fires; elapsed time never decides the assertion.
+cmd/metasystem/wait_verb_test.go	2	Both deadlines are fixed in the past to test cancellation propagation and never wait.
+internal/dispatch/proof_attempt_test.go	1	The sleeping child is the stop fixture's subject and is killed, never waited out.
+internal/goal/attention_test.go	6	These calls inject cancellation or place failsafes around real Git fixtures; assertions use cancellation, process, and file state rather than elapsed time.
+internal/identity/fixture_custodian_witness_test.go	2	The timers are failure ceilings around a real command and its forced reap; successful observation comes from the command result.
+internal/identity/identity_test.go	3	The probes observe real kernel process transitions; success is an identity fact and the delays only avoid busy-spinning.
+internal/identity/survivors_test.go	2	The scans observe real kernel process membership; success is a survivor fact and the delays only avoid busy-spinning.
+internal/missionrunner/preflight_fixture_test.go	2	The sleeps only pace forced teardown of real process groups before temporary-directory removal.
+internal/run/waiter_pair_test.go	1	The installed-process fixture succeeds on its published row, and the sleep only avoids busy-spinning while observing it.
+internal/steward/runner_test.go	2	The installed runner fixture succeeds on kernel identity and health state, and the sleeps only avoid busy-spinning while observing it.
+internal/supervise/arming_test.go	3	Two sleeps keep fixture subjects alive until killed, while the third only paces observation of a real owner's kernel death.
+internal/testenv/protection_test.go	1	The context is passed to a fake that checks for a deadline and returns immediately without waiting.
+internal/testenv/testenv_test.go	1	The timer is only a failure ceiling after a fixture custodian receives SIGKILL; success comes from Wait returning.
+internal/testutil/fixture_test.go	4	The ticker and deadlines bound observation of real fixture process exit states while success comes from the kernel fact.
+internal/usage/cursor_test.go	1	The ticker spaces fixture writes, and all assertions count samples only after the writer reports completion.
