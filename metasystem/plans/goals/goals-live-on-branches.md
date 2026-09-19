@@ -1,6 +1,6 @@
 # goals-live-on-branches
 
-- State: parked
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=3 exposure=3 accumulation=2 basis="severity 2: a mistaken push or rewrite loses reviewed work that main does not hold yet, recoverable from the reader's records; novelty 3: seats push branches for the first time and two landing lanes gain a new input; exposure 3: every goal's build, read, park and landing; accumulation 2: stale branches pile up if cleanup fails, visible in ls-remote"
@@ -9,11 +9,10 @@
 - Origin: human
 - Next step: pickup: the first goal-branch lane after re-arm
 - OpenedAt: 2026-09-16T21:00:37Z
-- Revision: 21
+- Revision: 22
 - Budget: elapsedLimit=5d attemptLimit=20 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-17T06:11:05Z revision=3 opid=9G1X6V4RVS6PSRJ3VKT9E3JEHY-m1e-c6925449 authority=proven digest=7574df33c8b680dfb680f22b17d9e639c0085a18f7e29effd7433837cee1d102
-- Parked: by=human:Wido at=2026-09-18T21:51:50Z displaced=m1c+main-1789560465-86072-c7b126@2026-09-18T00:30:40Z because=pickup: the first goal-branch lane after re-arm
 
 History:
 - 2026-09-16T21:00:37Z CNC78J1TDXB8EMQH6V4Z1DTQSP-m1c-fde8080b open actor=human:Wido targets=goals-live-on-branches
@@ -37,4 +36,5 @@ History:
 - 2026-09-18T21:51:50Z HJ2ZZA0Q73HYMSVG6W79H7KKDQ-m1e-c6925449 park actor=human:Wido targets=goals-live-on-branches displaced=m1c+main-1789560465-86072-c7b126@2026-09-18T00:30:40Z reason=pickup: the first goal-branch lane after re-arm
 - 2026-09-18T21:58:18Z BQ0SCQXCAWQZFJH1TWF80HT9X6-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,batch-landing-known-issues-are-fixed,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-launchers-become-go-verbs,delegate-runs-stay-under-200k-context,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,efficiency-settings-ship-in-the-repository,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-children-cannot-outlive-their-test,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,goals-live-on-branches,human-goal-verbs-forgiving,one-steward-per-checkout-on-its-own-root,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,red-on-main-known-issues-are-fixed,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,waits-run-outside-model-contexts reason=priority-order from=1:3 to=1:2
 - 2026-09-18T21:58:39Z E81P5SWYYNQ877PAMQN3G76S3B-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,coordinator-context-stays-under-budget,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-launchers-become-go-verbs,delegate-runs-stay-under-200k-context,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,efficiency-settings-ship-in-the-repository,engine-policy-binding-survives-drift-and-load,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-children-cannot-outlive-their-test,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,go-tests-run-in-parallel,goals-live-on-branches,human-goal-verbs-forgiving,one-steward-per-checkout-on-its-own-root,proof-admission-fits-a-seat-proving-several-units,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,red-on-main-known-issues-are-fixed,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-capability-follows-the-lease-epoch,stop-decision-surface-is-a-gate,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time,units-land-in-batches-under-one-proof,waits-run-outside-model-contexts reason=priority-order from=1:2 to=1:1
-Integrity: sha256=e337d1a7a95898e39d51ced720f208911334227beeae68a96b25b35fe2cd7b52
+- 2026-09-19T07:35:35Z VFJV9RJJTGSTTY6XMCRG171JD0-m1e-c6925449 unpark actor=human:Wido targets=goals-live-on-branches
+Integrity: sha256=6ca09fd5d5d796274357756b25926c7736d504bd6d8d90e3e556456f203e1421
