@@ -1,6 +1,6 @@
 # machinery-runs-unattended-on-codex
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: a broken dispatch or landing path stops delivery on every seat, and a relaunch leak fills the host-wide admission cap; novelty 2: the launch verbs, batch verbs and gate already exist and are rewired, not invented; exposure 3: every seat and every landing goes through them; accumulation 1: the old dispatch path and the flag code are deleted in the same landings"
@@ -9,8 +9,10 @@
 - Origin: human
 - Next step: push 15 carries (1) to (4) through the batch lane after the local rehearsal; then the (6) trial runs goal test-environment-edges-are-closed, chosen by m1e on Wido's word of 2026-09-19 17:35 CEST: "you chose. I don;t mind what we use as the test".
 - OpenedAt: 2026-09-19T14:45:49Z
-- Revision: 5
+- Revision: 6
+- Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=2
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-09-19T15:49:27Z revision=6 opid=Q2BM49SPT5YPBKH90FFX32T3F9-m1e-c6925449 authority=proven digest=6e3fcca60467676e227960b85c799c1f964a8db2320448c024fbdf059b4c8bd2 episode=6
 
 History:
 - 2026-09-19T14:45:49Z C0AKBJN5K7PM281E91EG4G57TD-m1e-c6925449 open actor=human:Wido targets=machinery-runs-unattended-on-codex
@@ -18,4 +20,5 @@ History:
 - 2026-09-19T14:48:24Z 858DP2GSGK85DHRKD75E5SRFFV-m1e-c6925449 approve actor=human:Wido targets=machinery-runs-unattended-on-codex
 - 2026-09-19T15:49:05Z FYCS0B512V2WB4F7JKM92RH1MM-m1e-c6925449 unapprove actor=human:Wido targets=machinery-runs-unattended-on-codex reason=unapproved 2026-09-19 in Wido's name (m1e sync 14) only to replace DONE item (5); approved again at once with the same budget
 - 2026-09-19T15:49:15Z MDJFY4HDJGB2RQ8QSE27KB6EBF-m1e-c6925449 edit actor=human:Wido targets=machinery-runs-unattended-on-codex
-Integrity: sha256=27b204ac489ce66d2420b62a48644005771db390305742399392a2606cd52842
+- 2026-09-19T15:49:27Z Q2BM49SPT5YPBKH90FFX32T3F9-m1e-c6925449 approve actor=human:Wido targets=machinery-runs-unattended-on-codex
+Integrity: sha256=cc15b2605812dad56b05af6ed42f2155484620951bd2407382badec7101eca9b
