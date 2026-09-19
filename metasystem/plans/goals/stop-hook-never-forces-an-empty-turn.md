@@ -7,9 +7,9 @@
 - Tier: 3
 - Intent: The seat's stop gate (today the Claude Code Stop hook on Claude seats, and the stop-time gate of every other runtime's adapter) refused 331 times in five days, forcing 292 coordinator turns that cost 157 million prompt tokens, 90 of which only polled again and 73 were text-only; the recorded causes were 'the narrator digest could not be read' (184 across m1, m1b and m1d since 2026-09-10), 'stop deadline expired' (117 on m1) and 'supervision arming failed' (about 95) (claude-sessions.md section 4c and the seats' stop-refusal records). DONE means, for the stop gate of every runtime: (1) a refusal names a condition the seat can act on and the one command that clears it; (2) an infrastructure read failure the seat cannot change (narrator digest, hook-evidence state, arming state) never refuses the stop and is reported to the steward instead; (3) an infrastructure refusal is not repeated for an unchanged condition within one stop deadline; (4) the idle-with-backlog path is untouched: approved backlog with no job still refuses the stop and after three unchanged refusals hands the seat to steward continuation as today (records/goals/idle-with-backlog-alarm.md); proven by fixtures under the fake adapter and one real runtime replaying the three recorded infrastructure causes and the approved-backlog-with-no-job case, and by a week of stop refusals under 10 per seat per day. Goal 4 of plans/delivery-efficiency-plan.md. RUNTIME INDEPENDENCE (plan principle 0; architecture doctrine of 2026-08-16: correctness never depends on an accelerator): this holds for every runtime the roster can host today (claude, codex, devin) and for future adapters such as opencode; the mechanism lives in the Go engine, the ledger verbs and the adapter contract, never in one runtime's hook, harness, CLI or transcript format; a native facility may accelerate it through its adapter, and an agent on any runtime with no accelerator gets the same guarantee from the records and the verb alone; where the goal touches a runtime path, DONE is proven on at least two runtimes.
 - Origin: human
-- Next step: r1 designed 08:37 via launch verb; critique r1 material 16; r2 fold launched 09:18. Evidence: a headless claude -p delegate ran only the plugin Stop hook; the repo supervision-hook.sh Stop entry did not run
+- Next step: decoupled from stop-decisions per Wido 09-19; members design r2 in flight; builds follow as rows
 - OpenedAt: 2026-09-11T15:45:01Z
-- Revision: 98
+- Revision: 99
 - BlockedBy: stop-decisions-record-deadline-evidence, stop-infrastructure-allows-the-seat-to-stop
 - Pinned: m1b
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=3
@@ -117,4 +117,5 @@ History:
 - 2026-09-19T05:59:53Z ZN9MQ3XQEH5HZKZDKQHKW0V3NY-m1e-c6925449 edit actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-19T07:33:38Z JQ3DAPQHNVR8G0XAASK7YSG0NH-m1e-c6925449 edit actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
 - 2026-09-19T07:35:47Z B0RY96P5BQHMSHMFFXM6KWDBSG-m1e-c6925449 unpark actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
-Integrity: sha256=310f474b9aed150c3fcab087effde22308718d3fa2bdd9f09d5c7344dd76966c
+- 2026-09-19T07:35:53Z RB9ND96270ZH5K7XZRHMNY5S51-m1e-c6925449 edit actor=human:Wido targets=stop-hook-never-forces-an-empty-turn
+Integrity: sha256=3f4d3424f594cd9537a89dc13f0e7f157fa949d4a41ab455c4437f98bb83c17a
