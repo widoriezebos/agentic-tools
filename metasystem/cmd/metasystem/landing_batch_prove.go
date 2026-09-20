@@ -184,6 +184,8 @@ func productionBatchPlan(root, goalID, tree string, mode testpolicy.Mode) (testp
 	return productionBatchTreePlan(root, goalID, tree, mode)
 }
 
+var batchTipProofExecutable = os.Executable
+
 func launchBatchTipProof(request batchProofLaunch) (proofrun.TestResult, error) {
 	if request.CandidateTip != "" {
 		candidateTree, treeErr := gitOutput(request.Root, "rev-parse", request.CandidateTip+"^{tree}")
@@ -194,17 +196,34 @@ func launchBatchTipProof(request batchProofLaunch) (proofrun.TestResult, error) 
 			return proofrun.TestResult{}, fmt.Errorf("batch proof candidate tip %s has tree %s, want %s", request.CandidateTip, candidateTree, request.Tree)
 		}
 	}
-	binary, err := os.Executable()
+	binary, err := batchTipProofExecutable()
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
-	args := []string{"test", "run", "--root", request.Root, "--goal", request.GoalID, "--tree", request.Tree,
+	// A delivery run proves the exact index it is handed and refuses to move a
+	// checkout out from under a named tree, so the caller owns the positioning.
+	// The control root stays on the batch base, because the base is what arms
+	// the engine that judges. The tip is therefore projected into its own
+	// detached worktree, whose index git itself verifies against the tree, and
+	// the run is pointed back at the control root for every durable write.
+	projectRoot, err := (gittree.Workspace{Dir: request.Root}).TopLevel()
+	if err != nil {
+		return proofrun.TestResult{}, err
+	}
+	detached, err := (gittree.Workspace{Dir: projectRoot}).NewDetachedWorktree(request.Tree)
+	if err != nil {
+		return proofrun.TestResult{}, fmt.Errorf("project batch tip %s: %w", request.Tree, err)
+	}
+	defer detached.Close()
+	executionRoot := batch.ModuleRoot(detached.Workspace().Dir)
+	args := []string{"test", "run", "--root", executionRoot, "--control-root", request.Root, "--batch-tip",
+		"--goal", request.GoalID, "--tree", request.Tree,
 		"--mode", string(request.Mode), "--purpose", "delivery", "--result", request.ResultPath,
 		"--require-diagnostic-headroom",
 		"--expected-goal-revision", fmt.Sprint(request.GoalRevision),
 		"--expected-accounting-revision", fmt.Sprint(request.AccountingRevision)}
 	command := exec.Command(binary, args...)
-	command.Dir, command.Env = request.Root, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
+	command.Dir, command.Env = executionRoot, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
 	output, launchErr := command.CombinedOutput()
 	if launchErr != nil && command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitAdmissionRefused {
 		reason := strings.TrimSpace(string(output))

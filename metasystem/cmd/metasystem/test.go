@@ -154,7 +154,7 @@ type testingSelectionRequest struct {
 	Groups                                                                              []string
 	Carried                                                                             bool
 	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups                          bool
-	BatchPrefixReceipt                                                                  bool
+	BatchPrefixReceipt, BatchTipProof                                                   bool
 	// CadencePreflight plans and revalidates the fetched tree before the cadence
 	// tick claims standing authority. Governed cadence execution does not set it.
 	CadencePreflight bool
@@ -187,7 +187,8 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	flags.BoolVar(&request.BatchPrefixReceipt, "batch-prefix", false, "compose delivery evidence for a batch prefix")
 	flags.BoolVar(&request.Carried, "carried", false, "compose a completed red result for carried-landing classification")
 	if execution {
-		pathFlagVar(flags, &request.ControlRoot, "control-root", "", "durable proof control root for an internal batch prefix")
+		pathFlagVar(flags, &request.ControlRoot, "control-root", "", "durable proof control root for an internal batch proof")
+		flags.BoolVar(&request.BatchTipProof, "batch-tip", false, "prove a batch tip projected into its own detached worktree")
 		flags.StringVar(&request.CapMin, "cap-min", "", "reserved proof minutes")
 		flags.StringVar(&request.RetryDecision, "retry-decision", "", "accountable version-1 retry decision")
 		flags.StringVar(&request.ResultPath, "result", "", "atomic result projection path")
@@ -225,8 +226,17 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		fmt.Fprintln(os.Stderr, "--batch-prefix requires delivery purpose and explicit groups")
 		return request, false, 2
 	}
-	if request.ControlRoot != "" && !request.BatchPrefixReceipt {
-		fmt.Fprintln(os.Stderr, "--control-root is internal to a batch prefix proof")
+	if request.BatchTipProof && request.Purpose != testpolicy.PurposeDelivery {
+		fmt.Fprintln(os.Stderr, "--batch-tip requires delivery purpose")
+		return request, false, 2
+	}
+	// Both internal batch proofs execute in a detached worktree holding the
+	// exact tree they name, so both direct durable writes back at the control
+	// root that owns them. batchPrefixProofControlRoot is what makes that safe:
+	// it admits a control root only when the execution root is a linked
+	// worktree sharing its git common directory and prefix.
+	if request.ControlRoot != "" && !request.BatchPrefixReceipt && !request.BatchTipProof {
+		fmt.Fprintln(os.Stderr, "--control-root is internal to a batch proof")
 		return request, false, 2
 	}
 	if request.NoReuse && request.Purpose != testpolicy.PurposeDiagnostic {
