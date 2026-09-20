@@ -1,6 +1,6 @@
 # machinery-runs-unattended-on-codex
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=3 novelty=2 exposure=3 accumulation=1 basis="severity 3: a broken dispatch or landing path stops delivery on every seat, and a relaunch leak fills the host-wide admission cap; novelty 2: the launch verbs, batch verbs and gate already exist and are rewired, not invented; exposure 3: every seat and every landing goes through them; accumulation 1: the old dispatch path and the flag code are deleted in the same landings"
@@ -9,12 +9,10 @@
 - Origin: human
 - Next step: Push 17 (58a943387) landed the batch lane; ledger tip after SYNC 17 is 5b9d9588e. In flight: the rehearsal driver job 20260919t193156-acc7dad92f (worktree mruc-rehearse) and the impacted-tests verb U1 to U3 job 20260919t183829-a8e293b0fd (worktree mruc-timpb1, design r2 be795570e, plans/impacted-tests-verb-design.md). The verb's deep-analysis units U4 to U7 are parked under goal test-selection-improves-on-the-simple-rule (Wido 22:50 CEST). Next: push 18 with both jobs and the lessons L1 to L7, the local rehearsal, landing.batch-root on a dedicated checkout, then the staged switch-on with trial goal test-environment-edges-are-closed. A3 and A6 wait (Wido 16:40 CEST).
 - OpenedAt: 2026-09-19T14:45:49Z
-- Revision: 11
+- Revision: 12
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=1200 activeJobLimit=3 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-09-19T15:49:27Z revision=6 opid=Q2BM49SPT5YPBKH90FFX32T3F9-m1e-c6925449 authority=proven digest=6e3fcca60467676e227960b85c799c1f964a8db2320448c024fbdf059b4c8bd2 episode=6
-- Claimed: machine=m1e lineage=main-1789561396-11601-6f713b at=2026-09-19T15:51:18Z revision=7 accountingRevision=7 episodeAt=2026-09-19T15:51:18Z episodeRevision=7
-- StopCapability: generation=7 revision=7 machine=m1e claimEpoch=2 fenceEpoch=0
 
 History:
 - 2026-09-19T14:45:49Z C0AKBJN5K7PM281E91EG4G57TD-m1e-c6925449 open actor=human:Wido targets=machinery-runs-unattended-on-codex
@@ -28,4 +26,5 @@ History:
 - 2026-09-19T19:04:14Z MMJJV309GDG8D05ZQWHZKHXD8F-m1e-c6925449 done actor=human:Wido targets=adoption-filled-delivery-passes-on-trunk,beds-run-under-the-oldest-supported-bash,brief-declares-the-round-boundary,build-jobs-fit-one-builder-context,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,codex-jobs-run-through-a-metasystem-verb,critique-closes-on-folded-proof,cross-cutting-change-inventories-its-readers,delegate-sandbox-runs-the-beds,design-rounds-read-less-and-repeat-less,every-round-gets-an-independent-read,evidence-and-build-output-have-retention-and-stay-unindexed,failures-show-observed-against-expected,fixture-runners-and-fakes-bound-their-own-life,fleet-doctor-repairs-what-stops-other-seats,follow-up-brief-cannot-cite-fresh-trunk-files,machinery-runs-unattended-on-codex,one-steward-per-checkout-on-its-own-root,proof-runs-reap-what-they-armed-and-a-census-names-the-rest,reads-keep-the-whole-diff-in-context,receipt-writer-follows-the-worktree-it-runs-in,round-proof-feeds-the-next-brief,seat-successor-continues-a-handoff-without-a-human,seats-spend-tokens-in-bounded-sessions,spend-fence-reports-tokens-per-model-and-cause,stop-hook-never-forces-an-empty-turn,test-environment-edges-are-closed,test-executables-never-busy-on-linux,testing-surfaces-declare-their-mirror,tests-never-wait-on-wall-time reason=priority-order from=1:2 to=1:1
 - 2026-09-19T19:04:27Z 8KSQA1TWH1GJG5FDXQKZHQ213R-m1e-c6925449 edit actor=human:Wido targets=machinery-runs-unattended-on-codex displaced=m1e+main-1789561396-11601-6f713b@2026-09-19T15:51:18Z
 - 2026-09-19T20:56:07Z 7D3J897XRPZZ0JHWA60Q8BNWEC-m1e-c19f13ae edit actor=m1e+main-1789561396-11601-6f713b targets=machinery-runs-unattended-on-codex
-Integrity: sha256=1d798da272a3e97d2532aa99318dbab181de94dffc887ae402a0cb7441500729
+- 2026-09-20T10:44:46Z M6YGC9STCMK39H5J313E2WY8AH-m1e-063b9fe0 release actor=human:Wido targets=machinery-runs-unattended-on-codex displaced=m1e+main-1789561396-11601-6f713b@2026-09-19T15:51:18Z
+Integrity: sha256=6b7b4534b4b7d375b042cc477536df8ccc3686ee39bb737849d5f926d768ca79
