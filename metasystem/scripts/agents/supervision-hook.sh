@@ -941,7 +941,17 @@ start_main() {
   start_capture runtime-registry registered_runtimes required-nonempty "$ms" runtime list
   case $'\n'$registered_runtimes$'\n' in
     *$'\n'$runtime$'\n'*) ;;
-    *) start_finish notice runtime-unregistered ;;
+    # Refusing the start does not end the session. A real claude session whose
+    # SessionStart hook exits non-zero keeps running and still fires PreToolUse,
+    # measured on 2.1.276. The tool fast path leaves the call untouched when the
+    # cache is unreadable, so without a cache written here this session would
+    # run every tool call ungated, and a session we refused to register is the
+    # one that least deserves that. Write before the exit.
+    #
+    # This is not the foreign-runtime case. Both foreign-runtime exits are
+    # below, and a foreign runtime is a registered one, so it never reaches this
+    # branch. runtime-hook-fixtures' byte-identical assertion is untouched.
+    *) start_write_engine_cache; start_finish notice runtime-unregistered ;;
   esac
 
   start_capture payload-storage start_payload required-nonempty command mktemp "${TMPDIR:-/tmp}/metasystem-supervision-hook.XXXXXX"
