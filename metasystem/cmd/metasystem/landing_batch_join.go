@@ -254,12 +254,53 @@ func fetchLandingBaseTree(root string) (string, error) {
 	return (gittree.Workspace{Dir: root}).TreeOf("FETCH_HEAD")
 }
 
-// joinGateStepBound is the wall-clock ceiling for one join gate step. A step is
-// a whole test run, so the ceiling is deliberately generous; its job is not to
-// pace a slow gate but to turn a hung child into a named red. Round 3 of the
-// landing rehearsal sat in exec.Cmd.Wait for 53 minutes because this call had
-// no bound at all, and an armed landing owner runs the same executor.
-var joinGateStepBound = 20 * time.Minute
+// joinGateStepMargin is how much longer than a step's OWN declared timeout the
+// gate waits before it calls that step hung. A `go test -timeout` expires from
+// inside and prints the offending stack, which diagnoses a stall far better
+// than a kill from outside, so the outer bound must always be the looser of the
+// two deadlines and never the one that fires first.
+var joinGateStepMargin = 5 * time.Minute
+
+// joinGateStepFallbackBound applies only to a step that declares no timeout of
+// its own. Its job is not to pace a slow gate but to turn a hung child into a
+// named red. Round 3 of the landing rehearsal sat in exec.Cmd.Wait for 53
+// minutes because this call had no bound at all, and an armed landing owner
+// runs the same executor.
+var joinGateStepFallbackBound = 20 * time.Minute
+
+// boundForGateStep derives one step's ceiling from the step's own -timeout.
+// A fixed ceiling cannot work here: JoinGatePackageSteps gives a changed
+// package 900s but a dependent package 40m, and both AggregateUnitGateSteps and
+// batchTestStep declare 40m (internal/landing/batch/unitgate.go). Any single
+// number generous enough for a hung child either sits BELOW what most steps are
+// allowed, which kills a step that is still legitimately running and reports it
+// as a red, or sits so far above the short steps that it stops being a bound.
+// Deriving it means the backstop can only ever catch a child that ignored its
+// own deadline, which is exactly the round 3 shape.
+func boundForGateStep(args []string, margin, fallback time.Duration) time.Duration {
+	for i, arg := range args {
+		value := ""
+		switch {
+		case arg == "-timeout" || arg == "--timeout":
+			if i+1 < len(args) {
+				value = args[i+1]
+			}
+		case strings.HasPrefix(arg, "-timeout="):
+			value = strings.TrimPrefix(arg, "-timeout=")
+		case strings.HasPrefix(arg, "--timeout="):
+			value = strings.TrimPrefix(arg, "--timeout=")
+		}
+		if value == "" {
+			continue
+		}
+		declared, err := time.ParseDuration(value)
+		if err != nil || declared <= 0 {
+			continue
+		}
+		return declared + margin
+	}
+	return fallback
+}
 
 // joinGateGrandchildGrace bounds how long the output pipes are still read after
 // the step's own process is gone. A descendant that inherited the write end
@@ -343,12 +384,13 @@ func productionJoinGate(root string) batch.GateExecutor {
 			}
 			args[0] = binary
 		}
-		outcome := runBoundedGateCommand(batch.ModuleRoot(detached.Workspace().Dir), gittree.ScrubbedEnviron(), args, joinGateStepBound, joinGateGrandchildGrace)
+		bound := boundForGateStep(args, joinGateStepMargin, joinGateStepFallbackBound)
+		outcome := runBoundedGateCommand(batch.ModuleRoot(detached.Workspace().Dir), gittree.ScrubbedEnviron(), args, bound, joinGateGrandchildGrace)
 		if outcome.Leaked {
 			fmt.Fprintf(os.Stderr, "landing batch join gate %s: step exited 0 but a descendant still held its output pipes after %s; the group was killed\n", step.Name, joinGateGrandchildGrace)
 		}
 		if outcome.TimedOut {
-			detail := fmt.Sprintf("step exceeded its %s bound and its process group was killed", joinGateStepBound)
+			detail := fmt.Sprintf("step exceeded its %s bound and its process group was killed", bound)
 			fmt.Fprintf(os.Stderr, "landing batch join gate %s: %s\n%s\n", step.Name, detail, strings.TrimSpace(string(outcome.Output)))
 			return joinGateFailure(1, []byte(detail+"\n"+strings.TrimSpace(string(outcome.Output))))
 		}
