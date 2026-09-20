@@ -1465,10 +1465,14 @@ make_brain_source_leg() { # name
 # Goals
 
 ## Current goal: ship-widget — Ship the widget
-- Risk: severity=3 novelty=1 exposure=1 accumulation=1 basis="severity 3 holds the goal at tier 3, which is the landing path this fixture exercises; novelty, exposure and accumulation are 1 because the fixture runs in an isolated throwaway checkout that nothing else reads."
 - Origin: main
 - Next step: Let a node finish it.
 LEDGER
+  # This seed is a LEGACY ledger: goal migrate reads it through the
+  # semantic-lossless check in goal.go, whose field set has no Risk. A Risk
+  # row here is rejected as an unknown field, which is what broke all ten
+  # callers of this function. The risk answer belongs after migration, on the
+  # synced ledger, not in this heredoc.
   for fixture_template in "$leg_seed/docs/project-rules.md" "$leg_seed/metasystem.conf"; do
     awk '{ gsub(/<[^>]+>/, "fixture"); print }' "$fixture_template" >"$fixture_template.fixture"
     mv "$fixture_template.fixture" "$fixture_template"
