@@ -520,7 +520,9 @@ check_receipt_line() {
     echo "land refused: $detail" >&2
     # Pathspec mode staged the set itself; give the index back so the retry
     # is the same command with the ledger path added, not a --staged-only dance.
-    if (( ! staged_only )); then
+    # --carried reaches here with no pathspecs and nothing staged by us, and a
+    # bare `git reset --` would reset the whole index instead of nothing.
+    if (( ! staged_only && ${#pathspecs[@]} > 0 )); then
       git reset -q -- "${pathspecs[@]}" || true
     fi
     return 2
