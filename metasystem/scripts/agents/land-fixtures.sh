@@ -1604,6 +1604,29 @@ prepare_abandonment_landing_leg() { # name
   git -C "$leg_peer" fetch -q origin
   git -C "$leg_peer" reset -q --hard origin/main
   git -C "$leg_peer" update-ref refs/metasystem/goals/accepted origin/main
+  # Answer the four risk questions BEFORE the approval, which is where a real
+  # goal answers them: goal open takes --risk, and every other goal this bed
+  # opens supplies it at birth. ship-widget cannot, because
+  # make_brain_source_leg seeds a LEGACY ledger and goal migrate's field set
+  # has no Risk (goal.go:327), so the answer has to be given after migration.
+  #
+  # Before the approval is the only workable moment, and that is a measured
+  # claim, not a preference. Answering after it hits
+  # goalsync_mutations.go:3286, which demands misclassification evidence
+  # whenever an APPROVED goal's answer raises its derived tier; a migrated
+  # goal has no recorded tier, so beforeDerived is 0 and even severity=1
+  # raises it. Both severity=3 and severity=1 were refused that way. Answering
+  # after prepare_abandonment_landing_leg returns fails differently again, on
+  # a rejected peer push, because the ledger commit lands outside the
+  # fetch/reset sequence below.
+  #
+  # Without this, the one route that reserves a proof, abandonment-route-
+  # recertified, is refused at goal revision admission with
+  # RISK_UNANSWERED goal=ship-widget tier=3 (admission.go:271). The other
+  # routes never reach that gate, so the answer is inert for them.
+  METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal edit --root "$leg_local" \
+    --id ship-widget --risk severity=1,novelty=1,exposure=1,accumulation=1 \
+    --basis "The fixture leg is local and disposable." >/dev/null
   saved_config=$leg_root/metasystem.conf.approve
   cp "$leg_local/metasystem.conf" "$saved_config"
   printf '%s\n' 'metasystem.runtimes=fake' >"$leg_local/metasystem.conf"
