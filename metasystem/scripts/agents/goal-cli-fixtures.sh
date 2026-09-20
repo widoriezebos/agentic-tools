@@ -1491,7 +1491,7 @@ run_forgiving_refusal_remedy() { # label, goal id, twin id, long-form command...
 	eval "$remedy" >/dev/null \
 		|| { echo "$label printed a command that did not complete" >&2; cat "$error_file" >&2; exit 1; }
 	read_forgiving_goal "$goal_id" "$tmp/$goal_id-remedy.md"
-	"${long_form[@]}" >/dev/null \
+	${long_form[@]+"${long_form[@]}"} >/dev/null \
 		|| { echo "$label's long-form twin command did not complete" >&2; exit 1; }
 	read_forgiving_goal "$twin_id" "$tmp/$twin_id-long-form.md"
 	goal_budget=$(sed -n 's/^- Budget: //p' "$tmp/$goal_id-remedy.md")
