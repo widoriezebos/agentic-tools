@@ -1281,13 +1281,22 @@ DRAFT
   declare_brain_fixture
   cp "$clone/artifacts/agents/brain.json" "$tmp/valid-brain.json"
 
+  # Every row carries the human's word as --by, which is the carrier the brain
+  # fence refuses at goalsync_mutations.go:697. Three rows used to add
+  # --temporary-human-word so the relayed-word carrier was covered too. That
+  # carrier is unreachable today: authority.go:318 refuses a --review-by past
+  # the 2026-09-06 horizon while the verb refuses one already in the past, so
+  # no date exists that both accept. --fixture-human-authority is NOT a
+  # substitute for it. It sets FixtureOnly, the one input line 698 exempts from
+  # the fence, so a row carrying it demands a refusal from an input designed
+  # never to refuse and then reports a pass because nothing refused. Found by
+  # m1c. Restore the relayed-word coverage the day the horizon moves, by
+  # appending --temporary-human-word "..." --review-by <date inside it>.
   assert_human_word_matrix() { # expected text
     local expected=$1
-    assert_brain_goal_refusal "$expected" "$ms" goal approve --root "$clone" --id fix-docs --by Wido --budget box \
-      --fixture-human-authority
+    assert_brain_goal_refusal "$expected" "$ms" goal approve --root "$clone" --id fix-docs --by Wido --budget box
     assert_brain_goal_refusal "$expected" "$ms" goal resume --root "$clone" --id fix-docs --by Wido \
-      --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 \
-      --fixture-human-authority
+      --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3
     assert_brain_goal_refusal "$expected" "$ms" goal resume --root "$clone" --id fix-docs --by Wido \
       --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 \
       --approved-ref fixture-answer
@@ -1296,8 +1305,7 @@ DRAFT
       --toolchain-identity go-fixture --surface-digest fixture-surface --max-active-jobs 1 --timing-envelope-sec 60 \
       --effect local-write --value-judgment no --reversibility reversible --severe-harm no \
       --unfamiliar-approach no --test-discrimination strong --correlated-assumption-risk no \
-      --authority-scope-change no --destructive-reach reversible-local \
-      --fixture-human-authority
+      --authority-scope-change no --destructive-reach reversible-local
     assert_brain_goal_refusal "$expected" "$ms" goal steal --root "$clone" --id fix-docs --by Wido
     assert_brain_goal_refusal "$expected" "$ms" goal set-pin --root "$clone" --id fix-docs --pin node --by Wido
     assert_brain_goal_refusal "$expected" "$ms" goal classify-sweep --root "$clone" --draft "$classification_draft" \
