@@ -1497,7 +1497,15 @@ LEDGER
   leg_fixture_start=$fixture_start
   "$source_engine" lease announce --root "$leg_local" --session brain-land-fixture \
     --pid "$$" --start "$fixture_start" --tag brain-land-fixture --runtime fake --owner-lineage fixture-lineage >/dev/null
-  digest=$("$source_engine" goal source-digest --root "$leg_local")
+  # A goal verb prints a refusal as JSON on stdout and exits 1
+  # (printSyncResult in goalsync_mutations.go), so a bare capture or a bare
+  # >/dev/null here turns a refusal into an empty log. This function runs
+  # before any leg is named, so the parent then reports only "failed while
+  # serving leg unnamed with status 1" and the engine's own words are lost.
+  # Ten scenarios failed that way and none of them said why. Every engine call
+  # below keeps its output and prints it before the child dies. Found by m1c.
+  digest=$("$source_engine" goal source-digest --root "$leg_local") \
+    || { printf 'brain leg source-digest refused: %s\n' "$digest" >&2; exit 1; }
   manifest=$leg_root/migration.md
   cat >"$manifest" <<MANIFEST
 # Queue amendments
@@ -1506,7 +1514,8 @@ MIGRATION_EPOCH: 2026-09-07T00:00:00Z
 REVIEWED_SOURCE_SHA256: $digest
 MANIFEST
   migrate_out=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal migrate --root "$leg_local" \
-    --source-digest "$digest" --manifest "$manifest" --by Wido)
+    --source-digest "$digest" --manifest "$manifest" --by Wido) \
+    || { printf 'brain leg migrate refused: %s\n' "$migrate_out" >&2; exit 1; }
   leg_identity_matches=$(sed -n 's/.*"identity": "\([^"]*\)".*/\1/p' <<<"$migrate_out") \
     || { echo "brain land fixture migration identity could not be extracted" >&2; exit 1; }
   IFS= read -r leg_identity <<<"$leg_identity_matches" \
@@ -1516,10 +1525,12 @@ MANIFEST
   git -C "$leg_local" reset -q --hard origin/main
   git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
   if [[ "$fixture_scenario" == brain-absent-node-proceeds ]]; then
-    METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal done --root "$leg_local" \
-      --id ship-widget --conclude "Fixture empties the ledger for a Goal-free node landing." >/dev/null
+    done_out=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal done --root "$leg_local" \
+      --id ship-widget --conclude "Fixture empties the ledger for a Goal-free node landing.") \
+      || { printf 'brain leg done refused: %s\n' "$done_out" >&2; exit 1; }
   else
-    METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal release --root "$leg_local" --id ship-widget >/dev/null
+    release_out=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal release --root "$leg_local" --id ship-widget) \
+      || { printf 'brain leg release refused: %s\n' "$release_out" >&2; exit 1; }
   fi
   git -C "$leg_local" fetch -q origin
   git -C "$leg_local" reset -q --hard origin/main
@@ -1528,8 +1539,9 @@ MANIFEST
     plans_world=$(find "$leg_local/plans" -maxdepth 1 -type f -name '*.md' ! -name goals.md \
       -exec basename {} \; | LC_ALL=C sort)
     free_digest=$(printf '%s' "$plans_world" | "$source_engine" util sha256)
-    METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal declare-free --root "$leg_local" \
-      --digest "$free_digest" >/dev/null
+    free_out=$(METASYSTEM_OWNER_LINEAGE=fixture-lineage "$source_engine" goal declare-free --root "$leg_local" \
+      --digest "$free_digest") \
+      || { printf 'brain leg declare-free refused: %s\n' "$free_out" >&2; exit 1; }
     git -C "$leg_local" fetch -q origin
     git -C "$leg_local" reset -q --hard origin/main
     git -C "$leg_local" update-ref refs/metasystem/goals/accepted origin/main
