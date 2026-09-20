@@ -22,7 +22,7 @@ Every delegation states the goal, the workspace it runs in, the inputs it may re
 
 No model context waits. A delegate that launches a job, a proof or a landing returns at once; a shell or Go waiter re-invokes the seat when the record is durable (`metasystem wait`, or the launcher's own poll outside any model context). A wait inside a model context is billed at the whole context per poll: the landing lanes and build chains of 2026-09-15 and 09-16 cost about 110M weighted tokens for 70 output tokens per call.
 
-Before dispatching a code read or critique, the seat prepares the reader's private copy and completes and reads `scripts/agents/templates/review-brief.md`: it records the copy's path and exact commit or diff, writes a focused numbered checklist whose items name file line ranges or fixture rows, and sets a numeric tool-call budget at which the reader stops and reports unchecked items. Each round uses a fresh reader and never resumes a reader from an earlier round. After findings are folded, a confirmation read uses the template's scoped variant and checks only those folded findings.
+Before dispatching a code read or critique, the seat prepares the reader's private copy and completes and reads `scripts/agents/templates/review-brief.md`: it records the copy's path and exact commit or diff, writes a focused numbered checklist whose items name file line ranges or fixture rows, and sets a numeric tool-call budget at which the reader stops and reports unchecked items. Each round uses a fresh reader and never resumes a reader from an earlier round. After findings are folded, conformance checks the whole recomputed diff; the confirmation read uses the template's scoped variant for the corrections, their consumers and prior findings, expanding if the design or unrelated behavior changed.
 
 At a read's return, before landing the build, the seat records every non-breaking finding with `metasystem goal read-items add --id <goal> --read <label> --item "<text>"`; breaking findings still gate the landing.
 
@@ -50,10 +50,11 @@ For each substantial piece of work, use this five-step loop:
    orchestrator does not write the product itself.
 4. **Implementation critique.** A delegate in the code-critic role, in a fresh
    session and on a different effective model unless configuration declares
-   `independence=session-only`, reviews the exact implementation tree: one
-   read per build, of the whole build. The orchestrator dispositions every
-   finding; a material finding goes back to the builder once, and the re-read
-   covers the fix only. The proof gates main.
+   `independence=session-only`, reviews the exact implementation tree. The first
+   read covers the complete build. The orchestrator dispositions every finding;
+   a material finding goes back to the builder once. Conformance checks the
+   whole recomputed diff, while the substantive re-read covers the fix, its
+   consumers and prior findings. The proof gates main.
 5. **Gate and merge.** The orchestrator runs the gate of record and merges. The
    gate is a floor beneath the two parties' agreement, not a substitute for it.
 
@@ -109,7 +110,8 @@ renders the tier itself); `--tier` without the four answers is refused. The
 tier derives from severity and novelty alone, the worse of the two; exposure
 and accumulation scale the proof instead: the highest of the four answers
 multiplies the landing's cadence weight (`gate weight-add --goal`), and
-accumulation 2 or higher owes the one-time full battery. Exposure alone had lifted three
+accumulation 2 or higher requires the full-width selected coverage once.
+Exposure alone had lifted three
 quarters of the backlog to tier 3 (goal tier-from-severity-and-novelty);
 `goal tier-probe` reports the backlog's recorded and derived tiers and the
 goals a person may lower. An override above the derivation is recorded
@@ -126,6 +128,18 @@ required groups, and landing requires sufficient current schema-2 evidence
 for those groups rather than a literal full-battery command. Every over-box budget member increments the goal's
 `BudgetExceptions`; a second exception marks the appetite line `repeated
 exception: defect signal`.
+
+For a measured test run, `test run --result <path>` writes the retained result
+and `test report --result <path> --expensive-ms <threshold>` projects its
+observed native and reused group costs as JSON without launching work. The
+threshold is chosen for the compared cohort. A reused group's duration is
+the original producer's observed duration, not measured time saved. Group
+durations can overlap under parallel execution. The preparation field measures
+group metadata preparation, and worker duration includes any wait inside that
+worker; queue and publication times remain unknown when the result did not
+measure them. Compare matched source,
+configuration, selected groups and cache conditions before interpreting a
+before/after change.
 
 A seat opens only the defect that blocks its claimed goal (R-93-m1e, Wido
 2026-09-11). Its `goal open` (origin main) names that goal with

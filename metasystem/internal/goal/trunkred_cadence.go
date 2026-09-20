@@ -260,7 +260,7 @@ func validateCadenceStatus(status *CadenceStatus) error {
 			if group.ReuseSource == "" {
 				return fmt.Errorf("reused cadence group %s has no source", group.Group)
 			}
-		case "failed", "invalid", "unavailable", "cancelled", "runaway", "dead", "not-run":
+		case "failed", "invalid", "unavailable", "cancelled", "runaway", "dead", "not-run", "blocked":
 			if group.ReuseSource != "" {
 				return fmt.Errorf("non-green cadence group %s names a reuse source", group.Group)
 			}

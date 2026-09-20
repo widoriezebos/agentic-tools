@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 )
 
 // headOID reads the fixture's current HEAD commit id via raw git.
@@ -391,6 +393,56 @@ func TestSnapshotRelevantIncludesIgnoredInputsAndExcludesUnrelatedWork(t *testin
 	}
 	if _, ok := f.entry(drifted, "inputs/generated.txt"); !ok {
 		t.Fatalf("ignored relevant input vanished from snapshot")
+	}
+}
+
+func TestGLEPathSnapshotRelevantExpandsCandidateAndWorktreeWildcards(t *testing.T) {
+	t.Parallel()
+	f := newTreeFixture(t)
+	f.write("inputs/a.go", "candidate\n")
+	f.write("inputs/other.txt", "candidate\n")
+	f.git("add", "inputs/a.go", "inputs/other.txt")
+	f.commit("wildcard candidate")
+	expected, err := f.w.HeadTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pattern := []string{"inputs/*.go"}
+	f.write("inputs/other.txt", "unrelated\n")
+	if actual, err := f.w.SnapshotRelevant(expected, pattern); err != nil || actual != expected {
+		t.Fatalf("unmatched change moved snapshot: %s, %v", actual, err)
+	}
+	f.write("inputs/a.go", "working edit\n")
+	if actual, err := f.w.SnapshotRelevant(expected, pattern); err != nil || actual == expected {
+		t.Fatalf("matched edit was missed: %s, %v", actual, err)
+	}
+	f.write("inputs/a.go", "candidate\n")
+	f.write("inputs/b.go", "new file\n")
+	if actual, err := f.w.SnapshotRelevant(expected, pattern); err != nil || actual == expected {
+		t.Fatalf("matched addition was missed: %s, %v", actual, err)
+	}
+	if err := os.Remove(filepath.Join(f.w.Dir, "inputs", "a.go")); err != nil {
+		t.Fatal(err)
+	}
+	if actual, err := f.w.SnapshotRelevant(expected, pattern); err != nil || actual == expected {
+		t.Fatalf("matched deletion was missed: %s, %v", actual, err)
+	}
+}
+
+func TestGLEPathSnapshotRelevantUsesVersionedLiteralManifest(t *testing.T) {
+	t.Parallel()
+	f := newTreeFixture(t)
+	f.write("inputs/[literal].go", "candidate\n")
+	f.git("add", "inputs/[literal].go")
+	f.commit("literal candidate")
+	expected, err := f.w.HeadTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.write("inputs/[literal].go", "working edit\n")
+	actual, err := f.w.SnapshotRelevant(expected, []string{pathpattern.EncodeLiteral("inputs/[literal].go")})
+	if err != nil || actual == expected {
+		t.Fatalf("literal metacharacter edit was missed: %s, %v", actual, err)
 	}
 }
 

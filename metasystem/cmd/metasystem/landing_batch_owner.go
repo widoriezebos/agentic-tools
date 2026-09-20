@@ -37,6 +37,9 @@ type batchOwnerLease struct {
 type productionBatchOwnerInputs struct {
 	ledgerOwner batch.LedgerOwner
 	machine     string
+	sample      func() proofrun.LoadSample
+	lockDir     string
+	queueDir    string
 }
 
 type batchOwnerEnsureSeams struct {
@@ -58,7 +61,7 @@ var batchOwnerRetire = lease.Retire
 var batchOwnerSetenv = os.Setenv
 var batchOwnerResume = func(owner *batch.Owner) { owner.Resume() }
 var batchOwnerRequire = func(held batchOwnerLease) error { return held.require() }
-var batchOwnerTick = func(owner *batch.Owner, id string) error { return owner.Tick(id) }
+var batchOwnerTick = func(owner *batch.Owner, id string) error { return owner.TickOnce(id) }
 var cadenceProductionClock = time.Now
 var batchOwnerCadenceTick = func(root string, held batchOwnerLease, clock func() time.Time) error {
 	_, err := cadenceTick(root, held, clock)
@@ -429,6 +432,10 @@ func resolveProductionBatchOwnerInputs(root string) (productionBatchOwnerInputs,
 
 func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease, inputs productionBatchOwnerInputs, now func() time.Time) (*batch.Owner, error) {
 	controlRoot := batch.ModuleRoot(settings.Root)
+	sample := inputs.sample
+	if sample == nil {
+		sample = func() proofrun.LoadSample { return proofrun.SampleLoad(controlRoot, "", held.pid, now()) }
+	}
 	store := batch.NewStore(settings.Root, identity.KernelProber{}).WithLedgerOwner(inputs.ledgerOwner)
 	latestTree := ""
 	returns := productionReturnSeams(settings.Root, func() string { return latestTree })
@@ -440,7 +447,7 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 		return tree, err
 	}
 	return batch.NewOwner(batch.OwnerOptions{
-		Store: store, Settings: settings, Actor: landingOwnerLineage, PID: held.pid, Now: now,
+		Store: store, Settings: settings, Actor: landingOwnerLineage, PID: held.pid, LockDir: inputs.lockDir, QueueDir: inputs.queueDir, Now: now,
 		FetchTree: fetch, ReadClaim: func(_ string, tree, batchID, goalID string) (batch.Claim, error) {
 			return batch.ReadClaimAt(controlRoot, tree, batchID, goalID)
 		}, Returns: returns,
@@ -473,7 +480,7 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 			}
 			return false, err
 		},
-		Sample: func() proofrun.LoadSample { return proofrun.SampleLoad(controlRoot, "", held.pid, now()) },
+		Sample: sample,
 		Admission: func(sample proofrun.LoadSample) proofrun.AdmissionCap {
 			cap, err := proofrun.ResolveAdmissionCap(filepath.Join(controlRoot, "metasystem.conf"), sample.Cores)
 			if err != nil {

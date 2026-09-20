@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 )
 
 // RunFailure marks a git invocation that could not run at all — spawn
@@ -506,13 +507,42 @@ func (w Workspace) SnapshotRelevant(expectedTree string, declaredPaths []string)
 	paths := make([]string, 0, len(declaredPaths))
 	seen := map[string]bool{}
 	for _, declared := range declaredPaths {
-		path := strings.TrimSuffix(strings.TrimPrefix(declared, "./"), "/**")
-		if path == "" || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../") || filepath.ToSlash(filepath.Clean(path)) != path {
-			return "", fmt.Errorf("gittree relevant snapshot: invalid declared path %q", declared)
+		value, literal, err := pathpattern.ManifestEntry(declared)
+		if err != nil {
+			return "", fmt.Errorf("gittree relevant snapshot: %w", err)
 		}
-		if !seen[path] {
-			seen[path] = true
-			paths = append(paths, path)
+		pattern, parseErr := pathpattern.Parse(value)
+		var matches []string
+		if literal {
+			if !filepath.IsLocal(value) || value == "." || filepath.ToSlash(filepath.Clean(value)) != value || strings.ContainsRune(value, 0) {
+				return "", fmt.Errorf("gittree relevant snapshot: invalid input path %q", value)
+			}
+			matches = []string{value}
+		} else if parseErr != nil {
+			return "", fmt.Errorf("gittree relevant snapshot: %w", parseErr)
+		} else if pattern.HasComponentWildcard() {
+			candidate, err := w.Entries(expectedTree, []string{pattern.StaticPrefix()})
+			if err != nil {
+				return "", fmt.Errorf("gittree relevant snapshot: candidate input %s: %w", declared, err)
+			}
+			for name := range candidate {
+				if pattern.Match(name) {
+					matches = append(matches, name)
+				}
+			}
+			working, err := pattern.Expand(w.Dir)
+			if err != nil {
+				return "", fmt.Errorf("gittree relevant snapshot: working input %s: %w", declared, err)
+			}
+			matches = append(matches, working...)
+		} else {
+			matches = []string{strings.TrimSuffix(pattern.String(), "/**")}
+		}
+		for _, path := range matches {
+			if !seen[path] {
+				seen[path] = true
+				paths = append(paths, path)
+			}
 		}
 	}
 	sort.Strings(paths)

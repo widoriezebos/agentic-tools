@@ -44,6 +44,10 @@ func (f *reuseFixture) reserve(goalID string, revision uint64, startedAt time.Ti
 	if err != nil {
 		f.t.Fatal(err)
 	}
+	attempt, err = BindJoinedTestComponentsLocked(f.root, attempt.AttemptID, map[string]string{"first": strings.Repeat("1", 64)})
+	if err != nil {
+		f.t.Fatal(err)
+	}
 	return attempt
 }
 
@@ -304,6 +308,10 @@ func TestExactReuseFollowsTheCandidatePair(t *testing.T) {
 		GoalID: "authority-c", GoalRevision: 4, AccountingRevision: 3,
 		CandidateGoalID: "candidate-x", CandidateRevision: 7, CandidateTree: strings.Repeat("b", 40),
 		ReservedMinutes: 2, Identity: identity, Launcher: f.launcher, Now: f.now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err = BindJoinedTestComponentsLocked(f.root, attempt.AttemptID, map[string]string{"first": strings.Repeat("1", 64)})
 	if err != nil {
 		t.Fatal(err)
 	}

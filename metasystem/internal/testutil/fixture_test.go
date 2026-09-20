@@ -440,6 +440,14 @@ func TestShellPrologueCarriesTheTagIntoArgv(t *testing.T) {
 		t.Parallel()
 
 		fixture := Fixture(t)
+		wantAttempt := "attempt-a"
+		for _, entry := range os.Environ() {
+			if value, ok := strings.CutPrefix(entry, identity.FixtureAttemptEnv+"="); ok {
+				// An outer proof owns attribution for nested fixture children.
+				wantAttempt = value
+				break
+			}
+		}
 		base := append(os.Environ(), identity.FixtureAttemptEnv+"=attempt-a")
 		command := fixture.shell(base, "printf '%s|' \"$@\"; printf '\\n'; read -r _ || :", "a", "b c")
 		input, _ := command.StdinPipe()
@@ -454,8 +462,11 @@ func TestShellPrologueCarriesTheTagIntoArgv(t *testing.T) {
 			t.Fatalf("arguments = %q, want user arguments only", line)
 		}
 		exact, state, err := (identity.KernelProber{}).Probe(ref.Pid)
-		if err != nil || state != identity.Alive || !slices.Contains(exact.Argv, identity.FixtureAttemptEnv+"=attempt-a") {
-			t.Fatalf("proof attempt carrier = argv %q state=%s err=%v", exact.Argv, state, err)
+		if err != nil || state != identity.Alive || !slices.Contains(exact.Argv, identity.FixtureAttemptEnv+"="+wantAttempt) {
+			t.Fatalf("proof attempt carrier = argv %q state=%s err=%v, want governing attempt %q", exact.Argv, state, err, wantAttempt)
+		}
+		if wantAttempt != "attempt-a" && slices.Contains(exact.Argv, identity.FixtureAttemptEnv+"=attempt-a") {
+			t.Fatalf("appended fixture attempt overrode governing proof attribution: argv %q", exact.Argv)
 		}
 		failOnFixtureError(t, input.Close())
 		failOnFixtureError(t, command.Wait())

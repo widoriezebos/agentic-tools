@@ -71,8 +71,20 @@ fi
 # locator strings do not bypass the wrapper.
 proof_worker=0
 proof_auth_bin=${METASYSTEM_PROOF_AUTH_BIN:-$root/bin/metasystem}
-if [[ -x "$proof_auth_bin" ]] && "$proof_auth_bin" proof-run worker-authorized --root "$root" >/dev/null 2>&1; then
+proof_auth_command=("$proof_auth_bin")
+if [[ -x "$proof_auth_bin" ]] && "${proof_auth_command[@]}" proof-run worker-authorized --root "$root" >/dev/null 2>&1; then
   proof_worker=1
+fi
+# An enrolled engine may be older than the candidate source executing this
+# admitted command group. Keep the actual detached root and ask that source's
+# worker verifier to check the inherited attempt and live process custody.
+if [[ "$proof_worker" != 1 && -n "${METASYSTEM_PROOF_ATTEMPT:-}" && -n "${METASYSTEM_PROOF_CONTROL_ROOT:-}" \
+  && -f "$root/go.mod" ]] && grep -qs '^module github.com/widoriezebos/agentic-tools/metasystem$' "$root/go.mod" \
+  && command -v go >/dev/null 2>&1; then
+  proof_auth_command=(env GOFLAGS=-mod=readonly GOWORK=off CGO_ENABLED=0 go run ./cmd/metasystem)
+  if "${proof_auth_command[@]}" proof-run worker-authorized --root "$root" >/dev/null 2>&1; then
+    proof_worker=1
+  fi
 fi
 if [[ "${METASYSTEM_GO_GATE_RELAUNCHED:-0}" == 1 ]]; then
   if [[ "$proof_worker" != 1 ]]; then
@@ -468,10 +480,10 @@ coverage_proof_candidate=0
 if [[ -n "${METASYSTEM_PROOF_CONTROL_ROOT:-}" || -n "${METASYSTEM_PROOF_ATTEMPT:-}" ]]; then
   [[ -n "${METASYSTEM_PROOF_CONTROL_ROOT:-}" ]] \
     || { echo "go gate: proof worker locator has no control root" >&2; exit 1; }
-  [[ -x "$proof_auth_bin" ]] \
+  [[ "${proof_auth_command[0]}" != "$proof_auth_bin" || -x "$proof_auth_bin" ]] \
     || { echo "go gate: proof worker has no authentication engine" >&2; exit 1; }
-  "$proof_auth_bin" proof-run worker-authorized --root "$root" >/dev/null 2>&1 \
-    || { echo "go gate: proof worker custody is not authenticated" >&2; exit 1; }
+  proof_auth_error=$("${proof_auth_command[@]}" proof-run worker-authorized --root "$root" 2>&1) \
+    || { echo "go gate: proof worker custody is not authenticated: $proof_auth_error" >&2; exit 1; }
   # A legacy launch has a live control-root/process binding but no admitted
   # attempt, so it runs every stage without retained coverage. An admitted
   # unseeded full gate defers the source-identity decision until measurement.
@@ -677,12 +689,12 @@ fi
 coverage_log=$(mktemp)
 if (( coverage_proof_candidate )); then
   coverage_eligibility_rc=0
-  "$proof_auth_bin" proof-run coverage-eligible --root "$root" \
+  "${proof_auth_command[@]}" proof-run coverage-eligible --root "$root" \
     --baseline "$ratchet_baseline" --producer-pid $$ >/dev/null 2>&1 \
     || coverage_eligibility_rc=$?
   case "$coverage_eligibility_rc" in
     0)
-      "$proof_auth_bin" proof-run coverage-begin --root "$root" \
+      "${proof_auth_command[@]}" proof-run coverage-begin --root "$root" \
         --baseline "$ratchet_baseline" --producer-pid $$ \
         || { rm -f "$coverage_log"; echo "go gate: could not claim the authenticated coverage producer slot" >&2; exit 1; }
       coverage_proof_handoff=1

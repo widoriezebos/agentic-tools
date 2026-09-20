@@ -662,6 +662,7 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 }
 
 func TestBatchRebasedVerifyUsesIdentityComposition(t *testing.T) {
+	t.Parallel()
 	args := batchRebasedVerifyArgs("/landing", "goal-a", "tree-a", []string{"one", "two"})
 	if got := strings.Join(args, " "); got != "test verify --root /landing --goal goal-a --tree tree-a --mode auto --purpose delivery --groups one,two --batch-prefix" {
 		t.Fatalf("rebased verify argv=%v", args)

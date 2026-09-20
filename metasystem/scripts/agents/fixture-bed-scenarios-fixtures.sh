@@ -1231,6 +1231,7 @@ fi
 
 if [[ "$fixture_scenario" == hang-leash ]]; then
   hang_leash_started=$SECONDS
+  unset METASYSTEM_FIXTURE_ONLY
   hang_leash_outer_custodian_log=${harness_fixture_custodian_log:-}
   interrupt_owner= interrupt_child_pid= interrupt_grandchild_pid=
   leash_owner= leash_pid= custodian_owner= custodian_child=
@@ -1427,10 +1428,14 @@ LEASH_CHILD
     harness_fixture_owner "$root"
     harness_fixture_key hang-leash-disabled
     printf "%s\n" "$harness_fixture_custodian_log" >"$log_file"
+    tags=("$harness_fixture_tag")
+    if [[ -n "${METASYSTEM_FIXTURE_ATTEMPT:-}" ]]; then
+      tags+=("METASYSTEM_FIXTURE_ATTEMPT=$METASYSTEM_FIXTURE_ATTEMPT")
+    fi
     METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" \
       METASYSTEM_FIXTURE_LEASH= FIXTURE_CHILD_PID_FILE="$pid_file" \
       /bin/sh -c "$(sed "s|exec 3<.*|while :; do sleep 1; done|; /read -r _ <&3/d" "$child")" \
-      sh "$harness_fixture_tag" 9>&- &
+      sh "${tags[@]}" 9>&- &
     child_pid=$!
     harness_fixture_hold_pid "$child_pid"
     wait "$child_pid"

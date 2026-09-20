@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -54,10 +56,17 @@ type TestRunRequest struct {
 	ControlRoot                  string
 	BehaviorPolicyDigest         string
 	ComponentIdentities          map[string]string
+	FreshnessEpisode             string          `json:",omitempty"`
+	FreshnessBinding             string          `json:",omitempty"`
+	FreshnessExpiresAt           string          `json:",omitempty"`
+	FreshGroups                  map[string]bool `json:",omitempty"`
+	FreshnessCandidateProjection string          `json:",omitempty"`
+	SyntheticProbe               bool            `json:"-"`
 	PreparedGroups               map[string]PreparedGroupExecution
 	CommandStartedAt             string
 	PreparationLaunches          int
 	PreparationDurationMS        int64
+	QueueDurationMS              int64
 	EvidenceTimeoutMS            int64
 	EvidenceMaxBytes             int64
 	// Concurrency bounds how many groups of one stage run at once; zero or
@@ -92,9 +101,37 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 		started = parsed
 	}
 	result := NewTestResult(request)
+	var admitted Attempt
+	if request.ControlRoot != "" && request.AttemptID != "" {
+		stored, err := ReadAttempt(request.ControlRoot, request.AttemptID)
+		if err != nil && !os.IsNotExist(err) {
+			return result, 1, err
+		}
+		if err == nil && len(stored.TestInventory) != 0 && !request.SyntheticProbe {
+			if stored.CandidateTree != request.CandidateTree || stored.ExecutionRoot != request.ProjectRoot {
+				return result, 1, fmt.Errorf("testing worker tree or root differs from admitted attempt")
+			}
+			if stored.FreshnessEpisode != request.FreshnessEpisode || stored.FreshnessBinding != request.FreshnessBinding ||
+				stored.FreshnessExpiresAt != request.FreshnessExpiresAt {
+				return result, 1, fmt.Errorf("testing worker freshness differs from admitted attempt")
+			}
+			if len(stored.TestFreshGroups) != len(request.FreshGroups) {
+				return result, 1, fmt.Errorf("testing worker fresh groups differ from admitted attempt")
+			}
+			for id := range stored.TestFreshGroups {
+				if !request.FreshGroups[id] {
+					return result, 1, fmt.Errorf("testing worker fresh group %s differs from admitted attempt", id)
+				}
+			}
+			admitted = stored
+		}
+	}
 	groups := make(map[string]testpolicy.Group, len(request.Contract.Groups))
 	for _, group := range request.Contract.Groups {
 		groups[group.ID] = group
+	}
+	if request.Contract.SchemaVersion == testpolicy.ExecutionContractSchemaVersion {
+		return runExecutionContractPlan(ctx, request, result, groups, admitted, started, workerStarted)
 	}
 	firstStatus := 0
 	progress := &progressWriter{path: request.ProgressPath}
@@ -107,6 +144,53 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 	for _, stage := range request.Plan.Stages {
 		var runnable []string
 		for _, id := range stage.Groups {
+			if haltedBy != "" {
+				result.Groups = append(result.Groups, unlaunchedGroupResult(request, groups[id], haltReason(haltedBy)))
+				continue
+			}
+			if len(admitted.TestInventory) != 0 {
+				if admitted.TestInventory[id] != request.ComponentIdentities[id] {
+					return result, 1, fmt.Errorf("testing worker group %s differs from admitted inventory", id)
+				}
+				if admitted.TestWaits[id] != "" {
+					borrowed, waitErr := WaitForTestProducer(ctx, request.ControlRoot, admitted, id)
+					if waitErr != nil {
+						return result, 1, waitErr
+					}
+					result.Groups = append(result.Groups, borrowed)
+					if borrowed.Status != "reused" {
+						if firstStatus == 0 {
+							firstStatus = 1
+						}
+						if stopAtFirstFailure && haltedBy == "" {
+							haltedBy = id
+						}
+					} else if groups[id].Kind == "build" {
+						result.LaunchCounts.ReusedBuild++
+					} else {
+						result.LaunchCounts.ReusedTest++
+					}
+					continue
+				}
+				if admitted.TestOwned[id] != "" {
+					runnable = append(runnable, id)
+					continue
+				}
+				if source := admitted.TestSources[id]; source != "" {
+					original, sourceErr := nativeSourceGroup(admitted, GroupResult{ID: id, ExecutionIdentity: admitted.TestInventory[id], ReuseAttempt: source})
+					if sourceErr != nil || original.Status != "passed" || !original.CollectionComplete {
+						return result, 1, fmt.Errorf("admitted source for %s is incomplete: %v", id, sourceErr)
+					}
+					original.Status, original.NativeLaunched, original.ReuseAttempt = "reused", false, source
+					result.Groups = append(result.Groups, original)
+					if groups[id].Kind == "build" {
+						result.LaunchCounts.ReusedBuild++
+					} else {
+						result.LaunchCounts.ReusedTest++
+					}
+					continue
+				}
+			}
 			if reused, ok := request.Reused[id]; ok {
 				if err := validateRetainedGroupReuse(request.ControlRoot, id, reused); err != nil {
 					reused.Status, reused.CollectionComplete, reused.NativeLaunched = "invalid", false, false
@@ -129,6 +213,9 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 					result.LaunchCounts.ReusedTest++
 				}
 				continue
+			}
+			if len(admitted.TestInventory) != 0 {
+				return result, 1, fmt.Errorf("testing group %s has no retained source for its admitted inventory", id)
 			}
 			runnable = append(runnable, id)
 		}
@@ -185,6 +272,135 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 	return result, firstStatus, nil
 }
 
+func runExecutionContractPlan(ctx context.Context, request TestRunRequest, result TestResult, groups map[string]testpolicy.Group, admitted Attempt, started, workerStarted time.Time) (TestResult, int, error) {
+	progress := &progressWriter{path: request.ProgressPath}
+	completed := map[string]GroupResult{}
+	firstStatus := 0
+	add := func(groupResult GroupResult) {
+		result.Groups = append(result.Groups, groupResult)
+		completed[groupResult.ID] = groupResult
+		result.ChildDurationMS += groupResult.DurationMS
+		result.LaunchCounts.Other += groupResult.OtherLaunches
+		if groupResult.NativeLaunched {
+			if groups[groupResult.ID].Kind == "build" {
+				result.LaunchCounts.Build++
+			} else {
+				result.LaunchCounts.Test++
+			}
+		} else if groupResult.Status == "reused" {
+			if groups[groupResult.ID].Kind == "build" {
+				result.LaunchCounts.ReusedBuild++
+			} else {
+				result.LaunchCounts.ReusedTest++
+			}
+		}
+		if groupResult.Status != "passed" && groupResult.Status != "reused" && firstStatus == 0 {
+			if groupResult.NativeExitStatus != nil && *groupResult.NativeExitStatus != 0 {
+				firstStatus = *groupResult.NativeExitStatus
+			} else {
+				firstStatus = 1
+			}
+		}
+	}
+	for _, stage := range request.Plan.Stages {
+		pending := append([]string(nil), stage.Groups...)
+		for len(pending) > 0 {
+			if err := ctx.Err(); err != nil {
+				return result, 1, err
+			}
+			var ready, deferred []string
+			for _, id := range pending {
+				group, exists := groups[id]
+				if !exists {
+					return result, 1, fmt.Errorf("selected testing group %s is absent", id)
+				}
+				var blockers []string
+				waiting := false
+				for _, dependency := range group.Requires {
+					if prior, done := completed[dependency]; done {
+						if prior.Status != "passed" && prior.Status != "reused" {
+							blockers = append(blockers, dependency)
+						}
+					} else if slices.Contains(pending, dependency) {
+						waiting = true
+					} else {
+						return result, 1, fmt.Errorf("testing plan omits prerequisite %s for %s", dependency, id)
+					}
+				}
+				if len(blockers) > 0 {
+					add(blockedGroupResult(unlaunchedGroupResult(request, group, "prerequisite blocked"), blockers))
+				} else if waiting {
+					deferred = append(deferred, id)
+				} else {
+					ready = append(ready, id)
+				}
+			}
+			if len(ready) == 0 && len(deferred) > 0 {
+				return result, 1, fmt.Errorf("testing plan has a prerequisite cycle or later-stage prerequisite")
+			}
+			var runnable []string
+			for _, id := range ready {
+				if len(admitted.TestInventory) != 0 {
+					if admitted.TestInventory[id] != request.ComponentIdentities[id] {
+						return result, 1, fmt.Errorf("testing worker group %s differs from admitted inventory", id)
+					}
+					if admitted.TestWaits[id] != "" {
+						borrowed, err := WaitForTestProducer(ctx, request.ControlRoot, admitted, id)
+						if err != nil {
+							return result, 1, err
+						}
+						add(borrowed)
+						continue
+					}
+					if source := admitted.TestSources[id]; source != "" {
+						original, err := nativeSourceGroup(admitted, GroupResult{ID: id,
+							ExecutionIdentity: admitted.TestInventory[id], ReuseAttempt: source})
+						if err != nil || original.Status != "passed" || !original.CollectionComplete {
+							return result, 1, fmt.Errorf("admitted source for %s is incomplete: %v", id, err)
+						}
+						original.Status, original.NativeLaunched, original.ReuseAttempt = "reused", false, source
+						add(original)
+						continue
+					}
+					if admitted.TestOwned[id] == "" {
+						return result, 1, fmt.Errorf("testing group %s has no admitted execution owner", id)
+					}
+					runnable = append(runnable, id)
+					continue
+				}
+				if reused, ok := request.Reused[id]; ok {
+					if err := validateRetainedGroupReuse(request.ControlRoot, id, reused); err != nil {
+						reused.Status, reused.CollectionComplete, reused.NativeLaunched = "invalid", false, false
+						reused.NotRunReason, reused.ReuseAttempt = "forged or stale component reuse: "+err.Error(), ""
+					} else {
+						reused.Status = "reused"
+					}
+					add(reused)
+				} else {
+					runnable = append(runnable, id)
+				}
+			}
+			ran, _, err := runStageGroups(ctx, request, groups, runnable, progress, false)
+			for _, groupResult := range ran {
+				add(groupResult)
+			}
+			if err != nil {
+				return result, 1, err
+			}
+			pending = deferred
+		}
+	}
+	result.EndedAt, result.DurationMS = resultDuration(started)
+	result.Cost.ActualDurationMS, result.Cost.ChildDurationMS = result.DurationMS, result.ChildDurationMS
+	result.Cost.ExecutionDurationMS = time.Since(workerStarted).Milliseconds()
+	result.Cost.ReusedLaunches = result.LaunchCounts.ReusedTest + result.LaunchCounts.ReusedBuild + result.LaunchCounts.ReusedOther
+	result.RecomputeDelivery()
+	if request.Plan.Purpose == testpolicy.PurposeDelivery && !result.Delivery.Sufficient && firstStatus == 0 {
+		firstStatus = 1
+	}
+	return result, firstStatus, nil
+}
+
 func stoppedAtFirstFailure(groups []GroupResult) bool {
 	for _, group := range groups {
 		if group.Status == "not-run" && strings.HasPrefix(group.NotRunReason, "delivery attempt stopped at the first failed group ") {
@@ -204,7 +420,8 @@ func haltReason(haltedBy string) string {
 // the reason; the shape is the one ValidateTestResult accepts for not-run.
 func unlaunchedGroupResult(request TestRunRequest, group testpolicy.Group, reason string) GroupResult {
 	return GroupResult{ID: group.ID, Kind: group.Kind, Obligations: append([]string(nil), group.Obligations...),
-		InputDigest: request.CandidateTree, InputManifest: append([]string(nil), group.Inputs...), CWD: group.CWD,
+		IdentityVersion: GroupExecutionIdentityVersion,
+		InputDigest:     request.CandidateTree, InputManifest: append([]string(nil), group.Inputs...), CWD: group.CWD,
 		ExecutionIdentity: request.ComponentIdentities[group.ID],
 		Status:            "not-run", NotRunReason: reason,
 		ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
@@ -455,6 +672,9 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 	}
 	for index := range partitions {
 		args := []string{"go", "test", "-json", "-count=1", "-timeout", "0"}
+		if len(group.BuildTags) != 0 {
+			args = append(args, "-tags", strings.Join(group.BuildTags, ","))
+		}
 		if group.Race {
 			args = append(args, "-race")
 		}
@@ -501,7 +721,15 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 			activity := newOutputActivity(time.Now())
 			tee := &activityWriter{activity: activity, writer: io.MultiWriter(&runs[index].output, logFile)}
 			command.Stdout, command.Stderr = tee, tee
+			closeInherited, inheritErr := InheritHostResourceLease(command)
+			if inheritErr != nil {
+				runs[index].err = inheritErr
+				_ = logFile.Close()
+				cancelShards()
+				return
+			}
 			runs[index].outcome = superviseCommand(command, supervisorOptions{Context: shardCtx, Limits: limits, SampleInterval: sampleInterval, Activity: activity})
+			closeInherited()
 			runs[index].err = logFile.Close()
 		}(index, command, logFile)
 	}
@@ -554,7 +782,10 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 			_ = writeLog()
 			return merged, closeErr, "", err
 		}
-		data, err := percent.CombinedOutput()
+		var percentOutput bytes.Buffer
+		percent.Stdout, percent.Stderr = &percentOutput, &percentOutput
+		err = RunResourceCommand(ctx, percent, HostResourceLeaseFromContext(ctx))
+		data := percentOutput.Bytes()
 		if err != nil {
 			_ = writeLog()
 			return merged, closeErr, "", fmt.Errorf("merge shard coverage: %v: %s", err, strings.TrimSpace(string(data)))
@@ -663,17 +894,21 @@ func NewTestResult(request TestRunRequest) TestResult {
 		CandidateEngineDigest: request.CandidateEngineDigest, CandidateEngineBuildIdentity: request.CandidateEngineBuildIdentity,
 		BehaviorPolicyDigest: behaviorPolicyDigest,
 		PlanDigest:           TestPlanDigest(request.Contract, request.Plan, request.CandidateTree), Risk: request.Plan.Risk,
+		FreshnessEpisode: request.FreshnessEpisode, FreshnessBinding: request.FreshnessBinding,
+		FreshnessExpiresAt: request.FreshnessExpiresAt, FreshGroups: cloneFreshGroups(request.FreshGroups),
 		RequiredGroups: append([]string(nil), request.Plan.RequiredGroups...), SelectedGroups: append([]string(nil), request.Plan.SelectedGroups...),
 		Omissions: append([]testpolicy.Omission(nil), request.Plan.Omissions...), Uncertainty: append([]string(nil), request.Plan.Uncertainty...),
 		LaunchCounts: LaunchCounts{Other: request.PreparationLaunches, CountsComplete: true}, StartedAt: request.CommandStartedAt,
-		Cost: TestCost{DeclaredTargetMS: targetMS, PreparationDurationMS: request.PreparationDurationMS}}
+		Cost: TestCost{DeclaredTargetMS: targetMS, PreparationDurationMS: request.PreparationDurationMS,
+			QueueDurationMS: request.QueueDurationMS}}
 }
 
 func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group) (result GroupResult) {
 	started := time.Now().UTC()
 	limits, sampleInterval := groupSupervisorSettings(group.CPUBudgetSeconds)
 	result = GroupResult{ID: group.ID, Kind: group.Kind, Obligations: append([]string(nil), group.Obligations...),
-		InputDigest: request.CandidateTree, InputManifest: append([]string(nil), group.Inputs...), CWD: group.CWD,
+		IdentityVersion: GroupExecutionIdentityVersion,
+		InputDigest:     request.CandidateTree, InputManifest: append([]string(nil), group.Inputs...), CWD: group.CWD,
 		ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}, StartedAt: started.Format(time.RFC3339Nano),
 		ProgressRule: progressRule(limits)}
 	defer func() {
@@ -776,7 +1011,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		return result
 	}
 	result.InputDigest = inputDigest
-	result.EnvironmentDigest = digestEnvironment(environment)
+	result.EnvironmentDigest = digestGroupEnvironment(group, environment)
 	plannedTools, argv, expected, availabilityErr := map[string]string{}, []string(nil), []NativeTestIdentity(nil), error(nil)
 	if hasPrepared {
 		if prepared.InputDigest != inputDigest || prepared.EnvironmentDigest != result.EnvironmentDigest {
@@ -793,7 +1028,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		}
 	} else {
 		var launches int
-		plannedTools, _, argv, expected, implicitInputs, coverageInventory, coverageModule, launches, availabilityErr = plannedToolIdentities(ctx, cwd, environment, group, root, nil)
+		plannedTools, _, argv, expected, implicitInputs, coverageInventory, coverageModule, launches, availabilityErr = plannedToolIdentities(ctx, cwd, environment, group, root, nil, request.Contract.SchemaVersion)
 		result.OtherLaunches += launches
 		if discoveredDigest, digestErr := digestGroupInputsWithImplicit(root, group, environment, implicitInputs); digestErr != nil {
 			availabilityErr = errors.Join(availabilityErr, digestErr)
@@ -838,14 +1073,14 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 				result.EndedAt, result.DurationMS = resultDuration(started)
 				return result
 			}
-			environment = mergeTestEnvironment(environment, map[string]string{
+			environment = overlayTestEnvironment(environment, map[string]string{
 				"METASYSTEM_BIN": engine,
 				"METASYSTEM_STEWARD_TEST_CANDIDATE_ENGINE": "1",
 			})
 		}
 	case "section":
 		sectionReport = filepath.Join(request.LogRoot, group.ID+".stage-results.tsv")
-		environment = mergeTestEnvironment(environment, map[string]string{"METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT": sectionReport})
+		environment = overlayTestEnvironment(environment, map[string]string{"METASYSTEM_ENUMERATION_STAGE_RESULTS_OUT": sectionReport})
 		if request.CandidateEngine != "" || request.CandidateEngineDigest != "" {
 			engine, err := prepareSectionEngine(cwd, request.CandidateEngine, request.CandidateEngineDigest)
 			if err != nil {
@@ -855,7 +1090,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			}
 			// Readiness follows the verified immutable input-bound artifact.
 			// The shell still authenticates this worker's actual parent custody.
-			environment = mergeTestEnvironment(environment, map[string]string{
+			environment = overlayTestEnvironment(environment, map[string]string{
 				"METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY": "ready",
 				"METASYSTEM_PROOF_AUTH_BIN":                engine,
 				"METASYSTEM_SUITE_PROGRESS_ACTIVE":         "1",
@@ -916,8 +1151,16 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		activity := newOutputActivity(time.Now())
 		tee := &activityWriter{activity: activity, writer: io.MultiWriter(&output, logFile)}
 		command.Stdout, command.Stderr = tee, tee
+		closeInherited, inheritErr := InheritHostResourceLease(command)
+		if inheritErr != nil {
+			result.Status, result.NotRunReason = "invalid", inheritErr.Error()
+			result.EndedAt, result.DurationMS = resultDuration(started)
+			_ = logFile.Close()
+			return result
+		}
 		supervised = superviseCommand(command, supervisorOptions{Context: ctx, Limits: limits, SampleInterval: sampleInterval,
 			Activity: activity, StageResultPath: sectionReport})
+		closeInherited()
 		closeErr = logFile.Close()
 	}
 	if supervised.RuleSuffix != "" {
@@ -1006,7 +1249,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			result.NotRunReason = err.Error()
 		}
 		if result.Status == "" {
-			evidenceFailed, evidenceSummary := nativeEvidenceSummary(result.Observed)
+			evidenceFailed, evidenceSummary := nativeEvidenceSummaryForGroup(request, group, result.Observed)
 			if exit != 0 || !result.CollectionComplete || evidenceFailed {
 				result.Status = "failed"
 				rerunEligible = group.Adapter == "go" && evidenceFailed
@@ -1050,8 +1293,13 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 
 func mergeInputManifest(declared, implicit []string) []string {
 	seen := map[string]bool{}
-	for _, path := range append(append([]string(nil), declared...), implicit...) {
+	for _, path := range declared {
 		seen[path] = true
+	}
+	for _, path := range implicit {
+		if !seen[path] {
+			seen[pathpattern.EncodeLiteral(path)] = true
+		}
 	}
 	result := make([]string, 0, len(seen))
 	for path := range seen {
@@ -1070,8 +1318,9 @@ func GroupExecutionIdentities(ctx context.Context, request TestRunRequest) (map[
 
 // RevalidateRetainedGroupExecutionIdentities rebuilds current group identity
 // from metadata already committed by prior attempts. It re-hashes declared
-// inputs and executable bytes but never invokes version helpers, go list,
-// tests, builds or dependency downloads.
+// inputs and executable bytes, retaining version-command observations only
+// while their declared closure is unchanged. It launches no tool, group
+// command, or discovery process.
 func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request TestRunRequest, attempts []Attempt) (map[string]string, error) {
 	groups := make(map[string]testpolicy.Group, len(request.Contract.Groups))
 	for _, group := range request.Contract.Groups {
@@ -1089,53 +1338,70 @@ func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request Tes
 		if !ok {
 			return nil, fmt.Errorf("selected testing group %s is absent", id)
 		}
-		var source *GroupResult
+		environment := groupTestEnvironment(request, group)
+		cwd := filepath.Join(root, filepath.FromSlash(group.CWD))
 		var newest *Attempt
 		for index := range attempts {
 			attempt := attempts[index]
-			// The same sources the composer may reuse: any attempt with a terminal,
-			// and the judge key rather than the engine's bytes, so a
-			// rebuilt judge still finds the metadata it retained.
+			// A later result for a changed definition cannot hide compatible
+			// metadata retained by an earlier successful observation.
 			if attempt.TestResult == nil || attempt.Terminal == nil {
 				continue
 			}
 			result := attempt.TestResult
-			if result.ContractDigest != request.ContractDigest || result.BaseContractDigest != request.BaseContractDigest ||
-				result.JudgeKey != judgeKeyOf(request) || result.BehaviorPolicyDigest != request.BehaviorPolicyDigest {
+			if result.SchemaVersion != TestResultSchemaVersion || result.JudgeKey != judgeKeyOf(request) || result.BehaviorPolicyDigest != request.BehaviorPolicyDigest {
 				continue
 			}
 			for groupIndex := range result.Groups {
-				candidate := &result.Groups[groupIndex]
-				if candidate.ID == id && candidate.CollectionComplete && (candidate.Status == "passed" || candidate.Status == "reused") &&
-					(newest == nil || newerAttempt(newest, attempt).AttemptID == attempt.AttemptID) {
-					copyGroup := *candidate
-					source, newest = &copyGroup, newerAttempt(newest, attempt)
+				source := &result.Groups[groupIndex]
+				if source.ID != id || source.IdentityVersion != GroupExecutionIdentityVersion ||
+					!source.CollectionComplete || (source.Status != "passed" && source.Status != "reused") ||
+					len(source.ExecutableDigests) == 0 || len(source.InputManifest) == 0 {
+					continue
+				}
+				toolMetadataComplete := len(source.ToolIdentities) >= len(group.Tools)
+				for _, tool := range group.Tools {
+					if source.ToolIdentities[tool.ID] == "" || source.ExecutableDigests[tool.ID] == "" {
+						toolMetadataComplete = false
+						break
+					}
+				}
+				if !toolMetadataComplete {
+					continue
+				}
+				declared := map[string]bool{}
+				for _, path := range group.Inputs {
+					declared[path] = true
+				}
+				var implicit []string
+				manifestValid := true
+				for _, entry := range source.InputManifest {
+					path, literal, err := pathpattern.ManifestEntry(entry)
+					if err != nil {
+						manifestValid = false
+						break
+					}
+					if literal || !declared[path] {
+						implicit = append(implicit, path)
+					}
+				}
+				if !manifestValid {
+					continue
+				}
+				inputDigest, digestErr := digestGroupInputsWithImplicit(root, group, environment, implicit)
+				if digestErr != nil || inputDigest != source.InputDigest || digestGroupEnvironment(group, environment) != source.EnvironmentDigest ||
+					verifyPreparedExecutables(ctx, cwd, environment, group, source.Argv, source.ExecutableDigests) != nil {
+					continue
+				}
+				identity := groupExecutionIdentity(request, group, cwd, inputDigest, source.EnvironmentDigest, source.ToolIdentities, source.Expected)
+				if identity == source.ExecutionIdentity && (newest == nil || newerAttempt(newest, attempt).AttemptID == attempt.AttemptID) {
+					identities[id], newest = identity, newerAttempt(newest, attempt)
 				}
 			}
 		}
-		if source == nil || len(source.ExecutableDigests) == 0 || len(source.InputManifest) == 0 {
+		if identities[id] == "" {
 			identities[id] = digestBytes([]byte("missing-retained-metadata\x00" + id + "\x00" + request.CandidateTree))
-			continue
 		}
-		declared := map[string]bool{}
-		for _, path := range group.Inputs {
-			declared[path] = true
-		}
-		var implicit []string
-		for _, path := range source.InputManifest {
-			if !declared[path] {
-				implicit = append(implicit, path)
-			}
-		}
-		environment := groupTestEnvironment(request, group)
-		inputDigest, digestErr := digestGroupInputsWithImplicit(root, group, environment, implicit)
-		cwd := filepath.Join(root, filepath.FromSlash(group.CWD))
-		if digestErr != nil || inputDigest != source.InputDigest || digestEnvironment(environment) != source.EnvironmentDigest ||
-			verifyPreparedExecutables(ctx, cwd, environment, group, source.Argv, source.ExecutableDigests) != nil {
-			identities[id] = digestBytes([]byte("changed-retained-metadata\x00" + id + "\x00" + request.CandidateTree))
-			continue
-		}
-		identities[id] = groupExecutionIdentity(request, group, cwd, inputDigest, source.EnvironmentDigest, source.ToolIdentities, source.Expected)
 	}
 	return identities, ctx.Err()
 }
@@ -1165,13 +1431,13 @@ func PrepareGroupExecutionIdentities(ctx context.Context, request TestRunRequest
 		}
 		cwd := filepath.Join(root, filepath.FromSlash(group.CWD))
 		environment := groupTestEnvironment(request, group)
-		toolIdentities, executables, argv, expected, implicitInputs, coverageInventory, coverageModule, count, availabilityErr := plannedToolIdentities(ctx, cwd, environment, group, root, discoveryCache)
+		toolIdentities, executables, argv, expected, implicitInputs, coverageInventory, coverageModule, count, availabilityErr := plannedToolIdentities(ctx, cwd, environment, group, root, discoveryCache, request.Contract.SchemaVersion)
 		launches += count
 		inputDigest, digestErr := digestGroupInputsWithImplicit(root, group, environment, implicitInputs)
 		if digestErr != nil {
 			return nil, nil, launches, digestErr
 		}
-		environmentDigest := digestEnvironment(environment)
+		environmentDigest := digestGroupEnvironment(group, environment)
 		identities[id] = groupExecutionIdentity(request, group, cwd, inputDigest, environmentDigest, toolIdentities, expected)
 		item := PreparedGroupExecution{InputDigest: inputDigest, EnvironmentDigest: environmentDigest,
 			ToolIdentities: toolIdentities, ExecutableDigests: executables, Argv: argv, Expected: expected,
@@ -1187,7 +1453,7 @@ func PrepareGroupExecutionIdentities(ctx context.Context, request TestRunRequest
 	return identities, prepared, launches, nil
 }
 
-func plannedToolIdentities(ctx context.Context, cwd string, environment []string, group testpolicy.Group, root string, discoveryCache *goDiscoveryCache) (map[string]string, map[string]string, []string, []NativeTestIdentity, []string, []string, string, int, error) {
+func plannedToolIdentities(ctx context.Context, cwd string, environment []string, group testpolicy.Group, root string, discoveryCache *goDiscoveryCache, schemaVersion int) (map[string]string, map[string]string, []string, []NativeTestIdentity, []string, []string, string, int, error) {
 	identities := map[string]string{}
 	executables := map[string]string{}
 	launches := 0
@@ -1205,7 +1471,7 @@ func plannedToolIdentities(ctx context.Context, cwd string, environment []string
 		identities[tool.ID] = identity
 		executables[tool.ID] = executableDigest
 	}
-	argv, expected, discovery, discoveryStarted, err := groupArguments(ctx, group, root, cwd, environment, discoveryCache)
+	argv, expected, discovery, discoveryStarted, err := groupArgumentsForSchema(ctx, group, root, cwd, environment, discoveryCache, schemaVersion)
 	if discoveryStarted {
 		launches++
 	}
@@ -1235,6 +1501,13 @@ func unavailableToolIdentity(kind, id, executable string) string {
 }
 
 func groupExecutionIdentity(request TestRunRequest, group testpolicy.Group, cwd, inputDigest, environmentDigest string, toolIdentities map[string]string, discovery []NativeTestIdentity) string {
+	// The protected effective definition is already in request.Contract. The
+	// obligations and supported platforms decide policy, not what is launched.
+	definition := group
+	definition.Obligations = nil
+	definition.Platforms = nil
+	definition.Requires = nil
+	definition.Phase = ""
 	sectionEngine := ""
 	if group.Adapter == "section" {
 		sectionEngine = request.CandidateEngineDigest
@@ -1244,20 +1517,20 @@ func groupExecutionIdentity(request TestRunRequest, group testpolicy.Group, cwd,
 		stewardEngine = request.CandidateEngineDigest
 	}
 	identityBytes, _ := json.Marshal(struct {
+		Version              int
 		Group                testpolicy.Group
 		Inputs               string
 		Env                  string
 		Tools                map[string]string
 		Discovery            []NativeTestIdentity
 		Platform             string
-		ContractDigest       string
-		BaseContractDigest   string
 		JudgeKey             string
 		BehaviorPolicyDigest string
 		SectionEngineDigest  string
 		StewardEngineDigest  string `json:",omitempty"`
-	}{group, inputDigest, environmentDigest, toolIdentities, discovery, runtime.GOOS + "/" + runtime.GOARCH,
-		request.ContractDigest, request.BaseContractDigest, judgeKeyOf(request), request.BehaviorPolicyDigest, sectionEngine, stewardEngine})
+		GoSkipVerdictPolicy  string `json:",omitempty"`
+	}{GroupExecutionIdentityVersion, definition, inputDigest, environmentDigest, toolIdentities, discovery, runtime.GOOS + "/" + runtime.GOARCH,
+		judgeKeyOf(request), request.BehaviorPolicyDigest, sectionEngine, stewardEngine, goSkipVerdictPolicy(request, group)})
 	return digestBytes(identityBytes)
 }
 
@@ -1278,9 +1551,13 @@ func metaSystemStewardConsumesCandidateEngine(request TestRunRequest, group test
 }
 
 func groupArguments(ctx context.Context, group testpolicy.Group, root, cwd string, environment []string, discoveryCache *goDiscoveryCache) ([]string, []NativeTestIdentity, goDiscovery, bool, error) {
+	return groupArgumentsForSchema(ctx, group, root, cwd, environment, discoveryCache, testpolicy.SchemaVersion)
+}
+
+func groupArgumentsForSchema(ctx context.Context, group testpolicy.Group, root, cwd string, environment []string, discoveryCache *goDiscoveryCache, schemaVersion int) ([]string, []NativeTestIdentity, goDiscovery, bool, error) {
 	switch group.Adapter {
 	case "go":
-		argv, expected, discovery, started, err := goArgumentsCached(ctx, group, cwd, environment, discoveryCache)
+		argv, expected, discovery, started, err := goArgumentsCachedForSchema(ctx, group, cwd, environment, discoveryCache, schemaVersion)
 		if err == nil {
 			moduleRoot, _, moduleErr := nearestGoModule(cwd)
 			prefix, relErr := filepath.Rel(root, moduleRoot)
@@ -1352,11 +1629,30 @@ func nativeEvidenceFailed(observed []NativeTestIdentity) bool {
 }
 
 func nativeEvidenceSummary(observed []NativeTestIdentity) (failed bool, summary string) {
+	return nativeEvidenceSummaryWithSkips(observed, false)
+}
+
+func nativeEvidenceSummaryForGroup(request TestRunRequest, group testpolicy.Group, observed []NativeTestIdentity) (failed bool, summary string) {
+	return nativeEvidenceSummaryWithSkips(observed, goSkipVerdictPolicy(request, group) != "")
+}
+
+func goSkipVerdictPolicy(request TestRunRequest, group testpolicy.Group) string {
+	if request.Contract.SchemaVersion != testpolicy.ExecutionContractSchemaVersion || group.Adapter != "go" {
+		return ""
+	}
+	all, _, err := testpolicy.GoTests(group)
+	if err == nil && all {
+		return "go-full-package-native-skips-v1"
+	}
+	return ""
+}
+
+func nativeEvidenceSummaryWithSkips(observed []NativeTestIdentity, allowSkipped bool) (failed bool, summary string) {
 	nonPassing := make([]string, 0, 5)
 	nonPassingCount := 0
 	failedCount := 0
 	for _, test := range observed {
-		if test.Status != "passed" {
+		if test.Status != "passed" && !(allowSkipped && test.Status == "skipped") {
 			nonPassingCount++
 			if test.Status == "failed" {
 				failedCount++
@@ -1442,6 +1738,25 @@ func digestGroupInputsWithImplicit(root string, group testpolicy.Group, environm
 	}
 	sort.Strings(implicit)
 	for _, relative := range implicit {
+		if !filepath.IsLocal(relative) || relative == "." || filepath.ToSlash(filepath.Clean(relative)) != relative ||
+			strings.ContainsRune(relative, '\x00') || strings.Contains(relative, `\`) {
+			return "", fmt.Errorf("implicit group input %q is not an exact relative path", relative)
+		}
+		parent := root
+		components := strings.Split(relative, "/")
+		for _, component := range components[:len(components)-1] {
+			parent = filepath.Join(parent, component)
+			info, err := os.Lstat(parent)
+			if os.IsNotExist(err) {
+				break
+			}
+			if err != nil {
+				return "", fmt.Errorf("read implicit group input %s: %w", relative, err)
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				return "", fmt.Errorf("implicit group input %s traverses symlink %s", relative, parent)
+			}
+		}
 		hash.Write([]byte("implicit\x00" + relative + "\x00"))
 		path := filepath.Join(root, filepath.FromSlash(relative))
 		info, statErr := os.Lstat(path)
@@ -1463,54 +1778,32 @@ func digestGroupInputsWithImplicit(root string, group testpolicy.Group, environm
 		hash.Write(body)
 	}
 	for _, declaration := range group.Inputs {
-		hash.Write([]byte("declaration\x00" + declaration + "\x00"))
-		plain := strings.TrimSuffix(declaration, "/**")
-		path := filepath.Join(root, filepath.FromSlash(plain))
-		rel, err := filepath.Rel(root, path)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return "", fmt.Errorf("group input %s escapes candidate root", declaration)
+		pattern, err := pathpattern.Parse(declaration)
+		if err != nil {
+			return "", fmt.Errorf("group input %s: %w", declaration, err)
 		}
-		var entries []entry
-		walkErr := filepath.WalkDir(path, func(current string, directory os.DirEntry, walkErr error) error {
-			if os.IsNotExist(walkErr) && current == path {
-				return nil
-			}
-			if walkErr != nil {
-				return walkErr
-			}
-			relative, relErr := filepath.Rel(root, current)
-			if relErr != nil {
-				return relErr
-			}
-			relative = filepath.ToSlash(relative)
-			if relative == ".git" || strings.HasPrefix(relative, ".git/") {
-				if directory.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if directory.IsDir() {
-				return nil
-			}
-			item, inspectErr := inspectEntry(current, relative, directory)
-			if inspectErr != nil {
-				return inspectErr
-			}
-			entries = append(entries, item)
-			return nil
-		})
-		if walkErr != nil {
-			return "", fmt.Errorf("read group input %s: %w", declaration, walkErr)
+		hash.Write([]byte("declaration\x00" + pattern.String() + "\x00"))
+		matches, err := pattern.Expand(root)
+		if err != nil {
+			return "", fmt.Errorf("read group input %s: %w", declaration, err)
 		}
-		sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
-		for _, item := range entries {
+		for _, relative := range matches {
+			current := filepath.Join(root, filepath.FromSlash(relative))
+			info, err := os.Lstat(current)
+			if err != nil {
+				return "", fmt.Errorf("read group input %s: %w", relative, err)
+			}
+			item, err := inspectEntry(current, relative, fs.FileInfoToDirEntry(info))
+			if err != nil {
+				return "", fmt.Errorf("read group input %s: %w", relative, err)
+			}
 			body := recordBody(item)
 			var length [8]byte
 			binary.BigEndian.PutUint64(length[:], uint64(len(body)))
 			hash.Write(length[:])
 			hash.Write(body)
 		}
-		if len(entries) == 0 {
+		if len(matches) == 0 {
 			hash.Write([]byte("absent\x00"))
 		}
 	}
@@ -1612,6 +1905,10 @@ func mergeTestEnvironment(base []string, additions map[string]string) []string {
 	if len(base) == 0 {
 		base = os.Environ()
 	}
+	return overlayTestEnvironment(base, additions)
+}
+
+func overlayTestEnvironment(base []string, additions map[string]string) []string {
 	values := map[string]string{}
 	order := []string{}
 	for _, entry := range base {
@@ -1638,7 +1935,20 @@ func mergeTestEnvironment(base []string, additions map[string]string) []string {
 }
 
 func groupTestEnvironment(request TestRunRequest, group testpolicy.Group) []string {
-	environment := mergeTestEnvironment(request.Environment, group.Env)
+	var environment []string
+	if group.EnvironmentMode == "explicit" {
+		environment = []string{}
+		names := make([]string, 0, len(group.Env))
+		for name := range group.Env {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			environment = append(environment, name+"="+group.Env[name])
+		}
+	} else {
+		environment = mergeTestEnvironment(request.Environment, group.Env)
+	}
 	if group.Adapter == "section" {
 		environment = dropTestEnvironmentName(environment, "METASYSTEM_BIN")
 	}
@@ -1661,6 +1971,12 @@ func dropTestEnvironmentName(environment []string, drop string) []string {
 // exact environment instead of using the caller's ambient PATH differently.
 func TestingEnvironment(base []string, additions map[string]string) []string {
 	return mergeTestEnvironment(base, additions)
+}
+
+// GroupTestingEnvironment is the tool-readiness view of a group's actual
+// execution environment, including its explicit or inherited mode.
+func GroupTestingEnvironment(base []string, group testpolicy.Group) []string {
+	return groupTestEnvironment(TestRunRequest{Environment: base}, group)
 }
 
 // ResolveTestingExecutable performs the execution owner's non-launching argv
@@ -1697,6 +2013,15 @@ func digestEnvironment(environment []string) string {
 	sort.Strings(filtered)
 	return digestBytes([]byte(strings.Join(filtered, "\x00")))
 }
+
+func digestGroupEnvironment(group testpolicy.Group, environment []string) string {
+	if group.EnvironmentMode != "explicit" {
+		return digestEnvironment(environment)
+	}
+	ordered := append([]string(nil), environment...)
+	sort.Strings(ordered)
+	return digestBytes([]byte(strings.Join(ordered, "\x00")))
+}
 func digestBytes(data []byte) string {
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:])
@@ -1708,15 +2033,13 @@ func identifyTool(ctx context.Context, cwd string, environment []string, tool te
 	}
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
-	if err := command.Start(); err != nil {
-		return "", "", false, fmt.Errorf("tool %s unavailable: %w", tool.ID, err)
-	}
-	err = command.Wait()
+	err = RunResourceCommand(ctx, command, HostResourceLeaseFromContext(ctx))
+	started := command.Process != nil
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return "", "", true, fmt.Errorf("tool %s version command: %w", tool.ID, ctxErr)
+			return "", "", started, fmt.Errorf("tool %s version command: %w", tool.ID, ctxErr)
 		}
-		return "", "", true, fmt.Errorf("tool %s unavailable: %w", tool.ID, err)
+		return "", "", started, fmt.Errorf("tool %s unavailable: %w", tool.ID, err)
 	}
 	executableDigest, err := executableIdentity(command.Path)
 	if err != nil {
@@ -1762,6 +2085,7 @@ func explicitEnvironmentCommand(ctx context.Context, cwd string, environment, ar
 	command := exec.CommandContext(ctx, executable, argv[1:]...)
 	command.Args[0] = argv[0]
 	command.Dir, command.Env = cwd, environment
+	AttachHostResourceLease(ctx, command)
 	return command, nil
 }
 

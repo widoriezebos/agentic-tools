@@ -23,6 +23,69 @@ type DetachedWorktree struct {
 	closed     bool
 }
 
+// RegisteredDetachedWorktreeOf checks one linked worktree's reciprocal Git
+// administrative links. It does not enumerate other worktrees: a sibling may
+// still be midway through git worktree add while this one is in use.
+func (w Workspace) RegisteredDetachedWorktreeOf(base Workspace) bool {
+	sectionTop, err := w.topLevel()
+	if err != nil {
+		return false
+	}
+	common, err := base.gitPathLine(nil, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return false
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(base.Dir, common)
+	}
+	common, err = filepath.EvalSymlinks(common)
+	if err != nil {
+		return false
+	}
+	gitFile := filepath.Join(sectionTop, ".git")
+	if info, statErr := os.Lstat(gitFile); statErr != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	link, err := os.ReadFile(gitFile)
+	if err != nil || !strings.HasPrefix(string(link), "gitdir: ") {
+		return false
+	}
+	admin := strings.TrimSuffix(strings.TrimPrefix(string(link), "gitdir: "), "\n")
+	if !filepath.IsAbs(admin) {
+		admin = filepath.Join(sectionTop, admin)
+	}
+	admin, err = filepath.EvalSymlinks(admin)
+	if err != nil || admin != filepath.Join(common, "worktrees", filepath.Base(sectionTop)) {
+		return false
+	}
+	back, err := os.ReadFile(filepath.Join(admin, "gitdir"))
+	if err != nil {
+		return false
+	}
+	backPath := strings.TrimSuffix(string(back), "\n")
+	if !filepath.IsAbs(backPath) {
+		backPath = filepath.Join(admin, backPath)
+	}
+	backPath, err = filepath.EvalSymlinks(backPath)
+	if err != nil || backPath != gitFile {
+		return false
+	}
+	commonLink, err := os.ReadFile(filepath.Join(admin, "commondir"))
+	if err != nil {
+		return false
+	}
+	linkedCommon := strings.TrimSuffix(string(commonLink), "\n")
+	if !filepath.IsAbs(linkedCommon) {
+		linkedCommon = filepath.Join(admin, linkedCommon)
+	}
+	linkedCommon, err = filepath.EvalSymlinks(linkedCommon)
+	if err != nil || linkedCommon != common {
+		return false
+	}
+	_, detached, err := w.SymbolicHead()
+	return err == nil && detached
+}
+
 // NewDetachedWorktree creates a detached worktree under the system temporary
 // directory and checks out tree in the caller's workspace-relative path
 // space. Close removes both the linked worktree and its administrative entry.

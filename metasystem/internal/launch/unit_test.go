@@ -375,6 +375,50 @@ func TestLargeDiffIsReadPerDirectory(t *testing.T) {
 	}
 }
 
+func TestSplitReadsSharingAReportWaitForPriorCollection(t *testing.T) {
+	t.Parallel()
+	diff := "diff --git a/a/x.go b/a/x.go\n--- a/a/x.go\n+++ b/a/x.go\n+x\ndiff --git a/b/y.go b/b/y.go\n--- a/b/y.go\n+++ b/b/y.go\n+y\n"
+	fixture := newUnitFixture(t, diff)
+	fixture.manager.Settings.ReadSplitLines = 1
+	plan, err := ReadUnitPlan(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Read.Outputs = []string{filepath.Join(t.TempDir(), "shared-read.md")}
+	data, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.plan, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	firstCollected := false
+	fixture.runner.AfterWrite = func(record UnitRunRecord) error {
+		if len(record.Rounds) > 0 {
+			for _, step := range record.Rounds[0].Steps {
+				if step.Name == "read:a" && step.State == StepPassed {
+					firstCollected = true
+				}
+			}
+		}
+		return nil
+	}
+	readStarts := 0
+	fixture.starter.onStart = func(record Record) error {
+		if record.Kind == "read" {
+			readStarts++
+			if readStarts == 2 && !firstCollected {
+				t.Error("second writer started before the first report was collected")
+			}
+		}
+		return nil
+	}
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil || result.Record.Rounds[0].Outcome != "green" || readStarts != 2 {
+		t.Fatalf("outcome=%+v read starts=%d err=%v", result.Record.Rounds, readStarts, err)
+	}
+}
+
 func TestEachRoundReadsFreshWithThePreviousReadAsInput(t *testing.T) {
 	fixture := newUnitFixture(t, "")
 	output := filepath.Join(t.TempDir(), "read.out")

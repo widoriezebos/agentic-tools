@@ -296,7 +296,9 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	briefSeen := false
 	opSeen := false
 	reviewsSeen := false
+	reviews := ""
 	outputsSeen, designSeen := false, false
+	runtimeSeen, modelSeen := false, false
 	destructiveReachSeen := false
 	out := []string{"dispatch"}
 	for index := 0; index < len(args); index++ {
@@ -340,7 +342,25 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 				return nil, "", fmt.Errorf("delegate accepts at most one --reviews value")
 			}
 			reviewsSeen = true
+			reviews = args[index+1]
 			out = append(out, "--reviews", args[index+1])
+			index++
+		case "--runtime", "--model":
+			if index+1 >= len(args) || args[index+1] == "" {
+				return nil, "", fmt.Errorf("delegate %s requires a value", args[index])
+			}
+			if args[index] == "--runtime" {
+				if runtimeSeen {
+					return nil, "", fmt.Errorf("delegate accepts one --runtime")
+				}
+				runtimeSeen = true
+			} else {
+				if modelSeen {
+					return nil, "", fmt.Errorf("delegate accepts one --model")
+				}
+				modelSeen = true
+			}
+			out = append(out, args[index], args[index+1])
 			index++
 		case "--outputs", "--design":
 			if index+1 >= len(args) {
@@ -387,6 +407,9 @@ func normalizeDelegateArgs(args []string) ([]string, string, error) {
 	}
 	if reviewsSeen && role != "code-critic" && role != "warden" && role != "verifier" {
 		return nil, "", fmt.Errorf("--reviews is only valid for the code-critic, warden, and verifier roles")
+	}
+	if (runtimeSeen || modelSeen) && (role != "code-critic" || !strings.HasPrefix(reviews, "commit:")) {
+		return nil, "", fmt.Errorf("delegate --runtime and --model require a code-critic commit review")
 	}
 	if role == "design-critic" && (!outputsSeen || !designSeen) {
 		return nil, "", fmt.Errorf("design-critic dispatch requires --outputs <file> and --design <file>")

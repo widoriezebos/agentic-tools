@@ -146,6 +146,16 @@ func sampleLoad(root, selfAttempt string, launcher int64, now time.Time, options
 		if count, known := loadSeams.launchers(launcher); known {
 			sample.OverlappingHost, sample.OverlapKnown = count, true
 		}
+		if sample.OverlapKnown {
+			directory, dirErr := hostAdmissionDirectory()
+			if dirErr != nil {
+				sample.OverlapKnown = false
+			} else if active, activeErr := activeHostResourceSlots(directory); activeErr != nil {
+				sample.OverlapKnown = false
+			} else {
+				sample.OverlappingHost += active
+			}
+		}
 	}
 	sample.OverlappingLocal = liveAttemptsOtherThan(root, selfAttempt)
 	return sample
@@ -217,7 +227,8 @@ func readProcessRows() ([]processRow, bool) {
 			row.parent = parent
 		}
 		exact, state, err := loadSeams.prober.Probe(pid)
-		if err == nil && state == identity.Alive && exact.ArgvKnown && isProofLauncherArgv(exact.Argv) {
+		if err == nil && state == identity.Alive && exact.ArgvKnown && isProofLauncherArgv(exact.Argv) &&
+			!managedProofProcess(exact) {
 			row.launcher = true
 		}
 		rows = append(rows, row)

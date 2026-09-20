@@ -594,6 +594,159 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 	}
 }
 
+func candidateResourceCustodyContext(t *testing.T) context.Context {
+	t.Helper()
+	executable := filepath.Join(t.TempDir(), "metasystem")
+	build := exec.Command("go", "build", "-buildvcs=false", "-o", executable, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build resource custodian fixture: %v\n%s", err, output)
+	}
+	return proofrun.WithResourceCustodyExecutable(context.Background(), executable)
+}
+
+func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) {
+	fixture := newCandidateEngineFixture(t)
+	counter := filepath.Join(t.TempDir(), "builds")
+	custodySeen := filepath.Join(t.TempDir(), "custody-seen")
+	scriptPath := filepath.Join(fixture.installationRoot, "scripts", "agents", "go-build.sh")
+	script, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script = []byte(strings.Replace(string(script), "set -euo pipefail\n", "set -euo pipefail\nprintf 'build\\n' >> '"+counter+"'\nprintf '%s' \"${METASYSTEM_PROOF_ATTEMPT:-}\" > '"+custodySeen+"'\n", 1))
+	writeTestingFixtureFile(t, scriptPath, script, 0o755)
+	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/scripts/agents/go-build.sh")
+	workspace := gittree.Workspace{Dir: fixture.projectRoot}
+	tree, err := workspace.StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlRoot := t.TempDir()
+	writeTestingFixtureFile(t, filepath.Join(controlRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=64\n"), 0o600)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(controlRoot, "admission"))
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
+	custodyContext := candidateResourceCustodyContext(t)
+	environment := inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_ATTEMPT=legacy-parent"})
+	prepare := func(tree string) *candidateEngineBuild {
+		t.Helper()
+		artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return artifact
+	}
+	buildCount := func() int {
+		t.Helper()
+		data, err := os.ReadFile(counter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Count(string(data), "build\n")
+	}
+	first := prepare(tree)
+	if buildCount() != 1 {
+		t.Fatal("cold candidate engine preparation did not build once")
+	}
+	if seen, err := os.ReadFile(custodySeen); err != nil || string(seen) != "legacy-parent" {
+		t.Fatalf("candidate build lost legacy proof custody: seen=%q err=%v", seen, err)
+	}
+	second := prepare(tree)
+	if buildCount() != 1 || first.Path != second.Path || first.Digest != second.Digest {
+		t.Fatalf("warm candidate engine preparation rebuilt: first=%+v second=%+v count=%d", first, second, buildCount())
+	}
+	environment = inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_ATTEMPT=another-parent"})
+	custodyVariant := prepare(tree)
+	if buildCount() != 1 || custodyVariant.Commit != first.Commit {
+		t.Fatalf("custody-only change fragmented candidate engine cache: first=%s variant=%s count=%d", first.Commit, custodyVariant.Commit, buildCount())
+	}
+	if err := testexec.Locked(func() error { return os.Chmod(second.Path, 0o700) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.WriteFile(second.Path, []byte("corrupt"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	third := prepare(tree)
+	if buildCount() != 2 || third.Digest != first.Digest {
+		t.Fatalf("corrupt candidate engine was not rebuilt: third=%+v count=%d", third, buildCount())
+	}
+	if err := os.Remove(third.Path); err != nil {
+		t.Fatal(err)
+	}
+	prepare(tree)
+	if buildCount() != 3 {
+		t.Fatalf("missing candidate engine was not rebuilt: %d", buildCount())
+	}
+	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "go.sum"), []byte("changed sum\n"), 0o644)
+	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/go.sum")
+	changedTree, err := workspace.StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := prepare(changedTree)
+	if changed.Commit == first.Commit || buildCount() != 4 {
+		t.Fatalf("changed build input reused previous artifact: first=%s changed=%s count=%d", first.Commit, changed.Commit, buildCount())
+	}
+	environment = append(append([]string(nil), environment...), "METASYSTEM_FIXTURE_BUILD_MODE=changed")
+	changedEnvironment := prepare(changedTree)
+	if changedEnvironment.Commit == changed.Commit || buildCount() != 5 {
+		t.Fatalf("changed build environment reused previous artifact: previous=%s current=%s count=%d", changed.Commit, changedEnvironment.Commit, buildCount())
+	}
+	realGo, err := exec.LookPath("go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolDir := t.TempDir()
+	writeTestingFixtureFile(t, filepath.Join(toolDir, "go"), []byte("#!/bin/sh\nexec '"+realGo+"' \"$@\"\n"), 0o755)
+	toolEnvironment := append([]string(nil), environment...)
+	for index, entry := range toolEnvironment {
+		if strings.HasPrefix(entry, "PATH=") {
+			toolEnvironment[index] = "PATH=" + toolDir + string(os.PathListSeparator) + strings.TrimPrefix(entry, "PATH=")
+		}
+	}
+	environment = toolEnvironment
+	changedTool := prepare(changedTree)
+	if changedTool.Commit == changedEnvironment.Commit || buildCount() != 6 {
+		t.Fatalf("changed Go executable reused previous artifact: previous=%s current=%s count=%d", changedEnvironment.Commit, changedTool.Commit, buildCount())
+	}
+}
+
+func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
+	fixture := newCandidateEngineFixture(t)
+	counter := filepath.Join(t.TempDir(), "builds")
+	scriptPath := filepath.Join(fixture.installationRoot, "scripts", "agents", "go-build.sh")
+	script := []byte("#!/usr/bin/env bash\nprintf 'build\\n' >> '" + counter + "'\nexit 23\n")
+	writeTestingFixtureFile(t, scriptPath, script, 0o755)
+	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/scripts/agents/go-build.sh")
+	workspace := gittree.Workspace{Dir: fixture.projectRoot}
+	tree, err := workspace.StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlRoot := t.TempDir()
+	writeTestingFixtureFile(t, filepath.Join(controlRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=64\n"), 0o600)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(controlRoot, "admission"))
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
+	custodyContext := candidateResourceCustodyContext(t)
+	environment := testingEnvironment(os.Environ())
+	for run := 0; run < 2; run++ {
+		if artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment); artifact != nil || err == nil {
+			t.Fatalf("failed build %d entered cache: artifact=%+v err=%v", run, artifact, err)
+		}
+	}
+	data, err := os.ReadFile(counter)
+	if err != nil || strings.Count(string(data), "build\n") != 2 {
+		t.Fatalf("failed builds were cached: count=%q err=%v", data, err)
+	}
+	buildIdentity, err := candidateEngineBuildIdentity(context.Background(), workspace, "metasystem", tree, environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines", buildIdentity)
+	if _, err := os.Lstat(entry); !os.IsNotExist(err) {
+		t.Fatalf("failed build published an artifact entry: %v", err)
+	}
+}
+
 func TestBatchPrefixTestingControlRootRetainsAttemptOutsideExecution(t *testing.T) {
 	t.Parallel()
 	controlRoot, executionRoot := t.TempDir(), t.TempDir()
@@ -698,7 +851,11 @@ func TestRunOwnerSurvivesTestingWorkerFilters(t *testing.T) {
 }
 
 func TestTestWorkerBuildIdentityCompatibilityDoorIsPolicyProbeOnly(t *testing.T) {
-	root := t.TempDir()
+	root, err := os.MkdirTemp("", "metasystem-policy-probe.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	candidateEngine := filepath.Join(root, "candidate-engine")
 	writeTestingFixtureFile(t, candidateEngine, []byte("candidate engine\n"), 0o755)
 	candidateDigest, err := fileSHA256(candidateEngine)
@@ -707,6 +864,8 @@ func TestTestWorkerBuildIdentityCompatibilityDoorIsPolicyProbeOnly(t *testing.T)
 	}
 	request := proofrun.TestRunRequest{
 		CandidateEngine: candidateEngine, CandidateEngineDigest: candidateDigest,
+		ProjectRoot: root, Contract: testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{{ID: "literal"}}},
+		Plan: testpolicy.Plan{SelectedGroups: []string{"literal"}},
 	}
 	packet, err := json.Marshal(request)
 	if err != nil {
@@ -868,7 +1027,8 @@ func TestVerifyRecoversCandidateDigestFromNewestSufficientAttempt(t *testing.T) 
 			StartedAt: now.Add(-time.Minute).Format(time.RFC3339Nano), Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalSuccess},
 			PendingTestGroups: map[string]string{groupID: executionIdentity}, TestResult: &successful},
 		{AttemptID: failed.AttemptID, GoalID: prepared.GoalID, AccountingRevision: prepared.AccountingRevision,
-			StartedAt: now.Format(time.RFC3339Nano), Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalFailed}, TestResult: &failed},
+			StartedAt: now.Format(time.RFC3339Nano), Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalFailed},
+			PendingTestGroups: map[string]string{groupID: executionIdentity}, TestResult: &failed},
 	}
 	recovered, err := retainedCandidateEngineDigest(prepared, attempts, buildIdentity, false)
 	if err != nil || recovered != candidateDigest {
@@ -1218,6 +1378,57 @@ func TestFrozenWorkerProbeReaderAcceptsCandidateGroupFields(t *testing.T) {
 	}
 }
 
+func TestFrozenNegativeProbeResponseIsLegacyOnlyForActualInvalidResult(t *testing.T) {
+	t.Parallel()
+	group := testpolicy.Group{ID: "literal", Kind: "unit", Inputs: []string{"source.txt"}, TargetMS: 1}
+	request := proofrun.TestRunRequest{SyntheticProbe: true, ProjectRoot: t.TempDir(), CandidateTree: strings.Repeat("a", 40),
+		BaseCommit: strings.Repeat("b", 40), Contract: testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}},
+		Plan: testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard,
+			ExecutedMode: testpolicy.ModeStandard, RequiredGroups: []string{"literal"}, SelectedGroups: []string{"literal"}},
+		CandidateEngineDigest: strings.Repeat("c", 64)}
+	result := proofrun.NewTestResult(request)
+	result.Groups = []proofrun.GroupResult{{ID: "literal", Kind: "unit", InputManifest: []string{"source.txt"}, Status: "invalid",
+		IdentityVersion: proofrun.GroupExecutionIdentityVersion, ExecutableDigests: map[string]string{"__argv0__": strings.Repeat("d", 64)}}}
+	result.RecomputeDelivery()
+	legacy, err := frozenNegativeProbeResponse(request, result)
+	if err != nil || legacy.SchemaVersion != proofrun.LegacyTestResultSchemaVersion || legacy.Delivery.Sufficient ||
+		legacy.Groups[0].Status != "invalid" || legacy.Groups[0].CollectionComplete || legacy.Groups[0].IdentityVersion != 0 ||
+		len(legacy.Groups[0].ExecutableDigests) != 0 || result.SchemaVersion != proofrun.TestResultSchemaVersion {
+		t.Fatalf("legacy projection changed negative verdict or normal result: legacy=%+v source=%+v err=%v", legacy, result, err)
+	}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "identityVersion") || strings.Contains(string(data), "freshnessEpisode") || strings.Contains(string(data), "freshGroups") ||
+		strings.Contains(string(data), "queueDurationMs") {
+		t.Fatalf("probe-only v1 wire contains new schema fields: %s", data)
+	}
+	path := filepath.Join(t.TempDir(), "result.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if decoded, err := readFrozenWorkerProbeResult(path); err != nil || decoded.SchemaVersion != 1 || decoded.Delivery.Sufficient {
+		t.Fatalf("frozen reader rejected negative v1 response: %+v %v", decoded, err)
+	}
+	for name, mutate := range map[string]func(*proofrun.TestRunRequest, *proofrun.TestResult){
+		"normal worker": func(r *proofrun.TestRunRequest, _ *proofrun.TestResult) { r.SyntheticProbe = false },
+		"green":         func(_ *proofrun.TestRunRequest, r *proofrun.TestResult) { r.Delivery.Sufficient = true },
+		"multiple":      func(_ *proofrun.TestRunRequest, r *proofrun.TestResult) { r.Groups = append(r.Groups, r.Groups[0]) },
+		"fresh":         func(r *proofrun.TestRunRequest, _ *proofrun.TestResult) { r.FreshnessEpisode = strings.Repeat("f", 64) },
+		"reused":        func(_ *proofrun.TestRunRequest, r *proofrun.TestResult) { r.Groups[0].ReuseAttempt = "forged" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, candidate := request, result
+			candidate.Groups = append([]proofrun.GroupResult(nil), result.Groups...)
+			mutate(&r, &candidate)
+			if _, err := frozenNegativeProbeResponse(r, candidate); err == nil {
+				t.Fatalf("%s projected into legacy probe response", name)
+			}
+		})
+	}
+}
+
 func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *testing.T) {
 	root := t.TempDir()
 	group := testpolicy.Group{ID: "policy-protection", Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{"source.go"},
@@ -1437,7 +1648,11 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	if err := os.WriteFile(identityTable, identityData, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fixtureEnvironment := append(receiptCanaryEnvironment(), "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+	admissionDir := filepath.Join(t.TempDir(), "host-admission")
+	fixtureEnvironment := append(receiptCanaryEnvironment(),
+		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable,
+		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
+		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
 	// Public admission owns the attempt, authenticated worker, input parity,
 	// and atomic terminal receipt. A manually reserved parent would bind a
 	// different source/configuration context from the actual testing command.
@@ -1447,6 +1662,9 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	output, runErr := public.CombinedOutput()
 	if runErr != nil {
 		t.Fatalf("authenticated first-transition worker did not complete all six frozen cases: %v\n%s", runErr, output)
+	}
+	if _, err := os.Stat(filepath.Join(admissionDir, "admission.lock")); err != nil {
+		t.Fatalf("public worker did not use its authenticated temporary admission directory: %v", err)
 	}
 	attempts, err := proofrun.ReadAttempts(root)
 	if err != nil || len(attempts) != 1 {
@@ -1553,6 +1771,8 @@ func TestTestListCheckPlanAndVerifyWithoutLaunching(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTestingFixtureFile(t, filepath.Join(root, "metasystem.conf"), []byte("testing.contract=testing.json\nmetasystem.runtimes=fake\n"), 0o644)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(root, "admission"))
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
 	writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), contractBytes, 0o644)
 	writeTestingFixtureFile(t, filepath.Join(root, "src", "output.txt"), []byte("v1\n"), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(root, ".gitignore"), []byte("artifacts/\n"), 0o644)

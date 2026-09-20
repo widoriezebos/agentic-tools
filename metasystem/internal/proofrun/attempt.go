@@ -33,6 +33,7 @@ const (
 	LegacyAttemptSchemaVersion    = 1
 	AttemptSchemaVersion          = 2
 	CandidateAttemptSchemaVersion = 3
+	IdentityAttemptSchemaVersion  = 4
 
 	DispositionExecuted         = "executed"
 	DispositionFailed           = "failed"
@@ -171,7 +172,20 @@ type Attempt struct {
 	CancellationIntent   string            `json:"cancellationIntent,omitempty"`
 	PendingCoverage      *PendingCoverage  `json:"pendingCoverage,omitempty"`
 	PendingTestGroups    map[string]string `json:"pendingTestGroups,omitempty"`
-	DeliveryReceipt      json.RawMessage   `json:"deliveryReceipt,omitempty"`
+	// TestInventory is the immutable selection admitted for this attempt.
+	// TestOwned names only native work reserved by this attempt; TestWaits names
+	// earlier producers. A selected group can belong to exactly one of these
+	// sets or be satisfied by retained evidence at admission.
+	TestInventory      map[string]string `json:"testInventory,omitempty"`
+	TestOwned          map[string]string `json:"testOwned,omitempty"`
+	TestWaits          map[string]string `json:"testWaits,omitempty"`
+	TestSources        map[string]string `json:"testSources,omitempty"`
+	TestAdmission      uint64            `json:"testAdmission,omitempty"`
+	TestFreshGroups    map[string]bool   `json:"testFreshGroups,omitempty"`
+	FreshnessEpisode   string            `json:"freshnessEpisode,omitempty"`
+	FreshnessBinding   string            `json:"freshnessBinding,omitempty"`
+	FreshnessExpiresAt string            `json:"freshnessExpiresAt,omitempty"`
+	DeliveryReceipt    json.RawMessage   `json:"deliveryReceipt,omitempty"`
 	// DeliveryReceiptBytes preserves the exact prepared schema-2 payload. A
 	// json.RawMessage is re-indented when the enclosing attempt is persisted,
 	// so it cannot be the recovery source for byte-exact publication.
@@ -220,11 +234,18 @@ type AdmissionRequest struct {
 	Now                  time.Time
 	AttemptID            string
 	ComponentIdentities  map[string]string
+	SharedComponents     bool
+	FreshnessEpisode     string
+	FreshnessBinding     string
+	FreshnessExpiresAt   string
+	FreshGroups          map[string]bool
 	// ForceAttempt never answers reusable-success: the caller needs a recorded
 	// attempt even when every selected group can reuse exact green evidence.
 	// Live duplicates and retry decisions still apply.
-	ForceAttempt bool
-	loadOptions  []loadSampleOption
+	ForceAttempt    bool
+	ForceGroups     bool
+	ManagedCapacity bool
+	loadOptions     []loadSampleOption
 }
 
 // WithTestHostLoadSampler gives test code an explicit deterministic sampler
@@ -238,21 +259,21 @@ func WithTestHostLoadSampler(request AdmissionRequest, raw string) AdmissionRequ
 // The schema branch is deliberate: an incomplete schema-3 tuple must never be
 // silently reattributed to the authority goal.
 func (attempt Attempt) AccountedGoal() string {
-	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+	if attempt.SchemaVersion >= CandidateAttemptSchemaVersion {
 		return attempt.CandidateGoalID
 	}
 	return attempt.GoalID
 }
 
 func (attempt Attempt) AccountedRevision() uint64 {
-	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+	if attempt.SchemaVersion >= CandidateAttemptSchemaVersion {
 		return attempt.CandidateRevision
 	}
 	return attempt.AccountingRevision
 }
 
 func (attempt Attempt) AccountedBudgetEpoch() *uint64 {
-	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+	if attempt.SchemaVersion >= CandidateAttemptSchemaVersion {
 		return attempt.CandidateBudgetEpoch
 	}
 	return attempt.BudgetEpoch
@@ -262,7 +283,7 @@ func (attempt Attempt) AccountedBudgetEpoch() *uint64 {
 // records derive it from their testing result or the legacy proof-identity
 // input so retained evidence remains readable without rewriting it.
 func (attempt Attempt) CandidateTreeDigest() (string, bool) {
-	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+	if attempt.SchemaVersion >= CandidateAttemptSchemaVersion {
 		return attempt.CandidateTree, validTreeDigest(attempt.CandidateTree)
 	}
 	if attempt.TestResult != nil && validTreeDigest(attempt.TestResult.CandidateTree) {
@@ -345,6 +366,21 @@ func ReadAttempt(root, id string) (Attempt, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Attempt{}, err
+	}
+	var header struct {
+		SchemaVersion int `json:"schemaVersion"`
+		TestResult    *struct {
+			SchemaVersion int `json:"schemaVersion"`
+		} `json:"testResult"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return Attempt{}, fmt.Errorf("read proof attempt %s: %w", id, err)
+	}
+	if header.SchemaVersion > IdentityAttemptSchemaVersion {
+		return Attempt{}, fmt.Errorf("read proof attempt %s: unsupported future attempt schema %d", id, header.SchemaVersion)
+	}
+	if header.TestResult != nil && header.TestResult.SchemaVersion > TestResultSchemaVersion {
+		return Attempt{}, fmt.Errorf("read proof attempt %s: unsupported future test result schema %d", id, header.TestResult.SchemaVersion)
 	}
 	var attempt Attempt
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -449,14 +485,14 @@ func writeAttempt(attempt Attempt) error {
 
 func validateAttempt(attempt Attempt) error {
 	if (attempt.SchemaVersion != LegacyAttemptSchemaVersion && attempt.SchemaVersion != AttemptSchemaVersion &&
-		attempt.SchemaVersion != CandidateAttemptSchemaVersion) || !safeAttemptID(attempt.AttemptID) ||
+		attempt.SchemaVersion != CandidateAttemptSchemaVersion && attempt.SchemaVersion != IdentityAttemptSchemaVersion) || !safeAttemptID(attempt.AttemptID) ||
 		attempt.GoalID == "" || attempt.GoalRevision == 0 || attempt.AccountingRevision == 0 ||
 		attempt.AccountingRevision > attempt.GoalRevision || attempt.ReservedMinutes == 0 ||
 		attempt.ControlRoot == "" || attempt.ExecutionRoot == "" || attempt.ProofIdentity.IdentityDigest == "" ||
 		attempt.Launcher.Pid < 1 || attempt.Launcher.Ref().Mode() == identity.CompareInvalid {
 		return fmt.Errorf("proof attempt has incomplete accounting, identity, or launcher facts")
 	}
-	if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+	if attempt.SchemaVersion >= CandidateAttemptSchemaVersion {
 		if attempt.CandidateGoalID == "" || attempt.CandidateRevision == 0 {
 			return fmt.Errorf("schema-3 proof attempt has an incomplete candidate tuple")
 		}
@@ -474,6 +510,12 @@ func validateAttempt(attempt Attempt) error {
 	if attempt.SchemaVersion == LegacyAttemptSchemaVersion && attempt.TestResult != nil {
 		return fmt.Errorf("legacy proof attempt cannot carry schema-2 testing evidence")
 	}
+	if attempt.TestResult != nil && attempt.TestResult.SchemaVersion == TestResultSchemaVersion && attempt.SchemaVersion != IdentityAttemptSchemaVersion {
+		return fmt.Errorf("test result schema %d requires attempt schema %d", TestResultSchemaVersion, IdentityAttemptSchemaVersion)
+	}
+	if attempt.SchemaVersion != IdentityAttemptSchemaVersion && len(attempt.TestFreshGroups) > 0 {
+		return fmt.Errorf("proof attempt schema %d cannot carry fresh group claims", attempt.SchemaVersion)
+	}
 	if attempt.TestResult != nil {
 		if err := ValidateTestResult(*attempt.TestResult); err != nil {
 			return fmt.Errorf("proof attempt testing evidence: %w", err)
@@ -483,6 +525,13 @@ func validateAttempt(attempt Attempt) error {
 		}
 		if candidateTree, ok := attempt.CandidateTreeDigest(); ok && candidateTree != attempt.TestResult.CandidateTree {
 			return fmt.Errorf("proof attempt testing evidence names candidate tree %s, want %s", attempt.TestResult.CandidateTree, candidateTree)
+		}
+		if attempt.SchemaVersion == IdentityAttemptSchemaVersion && attempt.Terminal != nil && len(attempt.TestInventory) != 0 &&
+			!admittedTestFreshnessMatches(attempt, *attempt.TestResult) {
+			return fmt.Errorf("proof attempt testing evidence differs from admitted freshness expiry or binding")
+		}
+		if err := validateNativeProducerClaims(attempt); err != nil {
+			return err
 		}
 	}
 	if identityTree, ok := CandidateTreeFromProofIdentity(attempt.ProofIdentity); ok {
@@ -572,6 +621,9 @@ func validateAttempt(attempt Attempt) error {
 			return fmt.Errorf("pending test component identity is invalid")
 		}
 	}
+	if err := validateTestOwnership(attempt); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -607,7 +659,7 @@ func sameUint64Value(left, right *uint64) bool {
 }
 
 func testingAttemptSchema(version int) bool {
-	return version == AttemptSchemaVersion || version == CandidateAttemptSchemaVersion
+	return version == AttemptSchemaVersion || version == CandidateAttemptSchemaVersion || version == IdentityAttemptSchemaVersion
 }
 
 // WithdrawReservationLocked removes an attempt only while it remains the
@@ -623,6 +675,24 @@ func WithdrawReservationLocked(root, id string) error {
 		attempt.PendingCoverage != nil || len(attempt.PendingTestGroups) != 0 || len(CommittedDeliveryReceipt(attempt)) != 0 {
 		return fmt.Errorf("proof attempt %s has observations and cannot be withdrawn", id)
 	}
+	if len(attempt.TestInventory) != 0 {
+		attempts, readErr := ReadAttempts(root)
+		if readErr != nil {
+			return readErr
+		}
+		for _, consumer := range attempts {
+			for group, owner := range consumer.TestWaits {
+				if owner == id {
+					return fmt.Errorf("proof attempt %s produces waited group %s for %s", id, group, consumer.AttemptID)
+				}
+			}
+			for group, owner := range consumer.TestSources {
+				if owner == id {
+					return fmt.Errorf("proof attempt %s supplies retained group %s for %s", id, group, consumer.AttemptID)
+				}
+			}
+		}
+	}
 	path, err := AttemptPath(root, id)
 	if err != nil {
 		return err
@@ -637,6 +707,7 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
+	request.Now = now
 	if request.Identity.IdentityDigest == "" {
 		request.Identity.IdentityDigest = request.Identity.digest()
 	}
@@ -689,6 +760,22 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	} else if _, statErr := os.Lstat(path); statErr == nil || !os.IsNotExist(statErr) {
 		return Attempt{}, LaunchResult{}, fmt.Errorf("proof attempt id %s is already retained", id)
 	}
+	if request.ManagedCapacity && (request.Identity.CommandClass != "testing" || !request.SharedComponents) {
+		return Attempt{}, LaunchResult{}, fmt.Errorf("managed capacity requires shared testing admission")
+	}
+	directory, err := hostAdmissionDirectory()
+	if err != nil {
+		return Attempt{}, LaunchResult{}, err
+	}
+	hostGuard, acquired, err := tryHostFile(filepath.Join(directory, "admission.lock"))
+	if err != nil {
+		return Attempt{}, LaunchResult{}, err
+	}
+	if !acquired {
+		return Attempt{}, LaunchResult{SchemaVersion: 1, Disposition: DispositionAdmissionRefused,
+			ExitStatus: ExitAdmissionRefused, Reason: "host proof admission is busy"}, nil
+	}
+	defer hostGuard.Close()
 	start := sampleLoad(request.ControlRoot, id, request.Launcher.Pid, now, request.loadOptions...)
 	admission, err := ResolveAdmissionCap(request.ConfPath, start.Cores)
 	if err != nil {
@@ -698,12 +785,12 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	if admission.Max > 0 && start.OverlapKnown {
 		nested, nestedKnown = sampleNestedProofLauncher(request.Launcher.Pid, request.loadOptions...)
 	}
-	if admission.Refuses(start, nested, nestedKnown) {
+	if !request.ManagedCapacity && admission.Refuses(start, nested, nestedKnown) {
 		return Attempt{}, LaunchResult{SchemaVersion: 1, Disposition: DispositionAdmissionRefused,
 			ExitStatus: ExitAdmissionRefused, Reason: admission.RefusalReason(start, nestedKnown)}, nil
 	}
 	attempt := Attempt{
-		SchemaVersion: CandidateAttemptSchemaVersion, AttemptID: id, GoalID: request.GoalID,
+		SchemaVersion: IdentityAttemptSchemaVersion, AttemptID: id, GoalID: request.GoalID,
 		GoalRevision: request.GoalRevision, AccountingRevision: request.AccountingRevision,
 		BudgetEpoch: request.BudgetEpoch, ReservedMinutes: request.ReservedMinutes,
 		CandidateGoalID: request.CandidateGoalID, CandidateRevision: request.CandidateRevision,
@@ -712,6 +799,11 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 		ProofIdentity: request.Identity, ControlRoot: request.ControlRoot, ExecutionRoot: request.ExecutionRoot,
 		Launcher: request.Launcher, ProcessKeys: []string{}, Retry: retry, ReservationOwner: request.ReservationOwner,
 		Load: &AttemptLoad{Start: start},
+	}
+	if request.SharedComponents {
+		if err := allocateTestOwnershipLocked(&attempt, request); err != nil {
+			return Attempt{}, LaunchResult{}, err
+		}
 	}
 	if previous != nil {
 		attempt.PreviousAttempt = previous.AttemptID
@@ -754,6 +846,9 @@ func repeatDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, boo
 	if err != nil || componentDecided || componentPrevious != nil {
 		return componentPrevious, componentDecision, componentDecided, err
 	}
+	if request.SharedComponents {
+		return nil, LaunchResult{}, false, nil
+	}
 	return noChildDecisionLocked(request)
 }
 
@@ -764,6 +859,9 @@ func repeatDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, boo
 func componentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, bool, error) {
 	if len(request.ComponentIdentities) == 0 {
 		return nil, LaunchResult{}, false, nil
+	}
+	if request.SharedComponents {
+		return sharedComponentDecisionLocked(request)
 	}
 	attempts, err := ReadAttempts(request.ControlRoot)
 	if err != nil {
@@ -1309,6 +1407,16 @@ func FinalizeAttemptWithTestResultLocked(root, id, result string, exitStatus int
 		if err := ValidateTestResult(copyResult); err != nil {
 			return Attempt{}, fmt.Errorf("retain test result: %w", err)
 		}
+		if err := validateAdmittedTestResult(attempt, copyResult); err != nil {
+			return Attempt{}, err
+		}
+		if copyResult.SchemaVersion == TestResultSchemaVersion {
+			if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+				attempt.SchemaVersion = IdentityAttemptSchemaVersion
+			} else if attempt.SchemaVersion != IdentityAttemptSchemaVersion {
+				return Attempt{}, fmt.Errorf("test result schema %d requires candidate attempt schema %d", TestResultSchemaVersion, IdentityAttemptSchemaVersion)
+			}
+		}
 		attempt.TestResult = &copyResult
 	}
 	// The end sample: a failure under a crowded host is attributed in the
@@ -1363,6 +1471,16 @@ func RecordTestResult(root, id string, result TestResult) (Attempt, error) {
 	result.AttemptID = attempt.AttemptID
 	if err := ValidateTestResult(result); err != nil {
 		return Attempt{}, fmt.Errorf("retain test result: %w", err)
+	}
+	if err := validateAdmittedTestResult(attempt, result); err != nil {
+		return Attempt{}, err
+	}
+	if result.SchemaVersion == TestResultSchemaVersion {
+		if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
+			attempt.SchemaVersion = IdentityAttemptSchemaVersion
+		} else if attempt.SchemaVersion != IdentityAttemptSchemaVersion {
+			return Attempt{}, fmt.Errorf("test result schema %d requires candidate attempt schema %d", TestResultSchemaVersion, IdentityAttemptSchemaVersion)
+		}
 	}
 	if len(attempt.PendingTestGroups) > 0 {
 		observed := make(map[string]string, len(result.Groups))

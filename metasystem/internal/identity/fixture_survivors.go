@@ -80,8 +80,9 @@ var fixtureSurvivorScope = func(pid int64) FixtureProcessScope {
 
 // FixtureSurvivorSelection chooses one scan contract. Its zero value scans the whole process table.
 type FixtureSurvivorSelection struct {
-	Key   *FixtureKey
-	Owner *Ref
+	Key              *FixtureKey
+	Owner            *Ref
+	IncludeLiveOwner bool // Caller must authenticate the owner before using this active-owner view.
 }
 
 // FixtureSurvivors returns processes for key, including unreadable processes only when their process group or session ties them to a certain result.
@@ -111,7 +112,7 @@ type fixtureObservation struct {
 
 // ScanFixtureSurvivors classifies fixture processes from exactly the supplied source.
 func ScanFixtureSurvivors(pids []int64, prober Prober, scope func(int64) FixtureProcessScope, selection FixtureSurvivorSelection) ([]FixtureSurvivor, error) {
-	if prober == nil || scope == nil || selection.Key != nil && selection.Owner != nil {
+	if prober == nil || scope == nil || selection.Key != nil && selection.Owner != nil || selection.IncludeLiveOwner && selection.Owner == nil {
 		return nil, fmt.Errorf("identity: invalid fixture survivor scan")
 	}
 	var wantedKey, wantedOwner string
@@ -124,7 +125,9 @@ func ScanFixtureSurvivors(pids []int64, prober Prober, scope func(int64) Fixture
 		if err == nil {
 			switch fixtureOwnerLiveness(prober, *selection.Owner) {
 			case Alive:
-				return nil, fmt.Errorf("identity: fixture owner %s is alive", wantedOwner)
+				if !selection.IncludeLiveOwner {
+					return nil, fmt.Errorf("identity: fixture owner %s is alive", wantedOwner)
+				}
 			case Unknown:
 				return nil, fmt.Errorf("identity: fixture owner %s cannot be proved dead", wantedOwner)
 			}

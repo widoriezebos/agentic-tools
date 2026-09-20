@@ -177,7 +177,41 @@ func TestBatchJoinRefusesDroppedProtectedTest(t *testing.T) {
 }
 
 func TestBatchProtectedTestsAcceptTheBaseTree(t *testing.T) {
-	root := filepath.Join("..", "..", "..", "..")
+	// Keep the policy and tests in the same committed fixture. The installed
+	// checkout's HEAD is an older rollout base, while this test executes from
+	// a separately assembled candidate tree.
+	root := t.TempDir()
+	for _, args := range [][]string{{"init", "-q"}, {"config", "user.name", "Fixture"}, {"config", "user.email", "fixture@example.invalid"}} {
+		command := exec.Command("git", args...)
+		command.Dir = root
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	contract := testpolicy.Contract{SchemaVersion: 1,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces:    []testpolicy.Surface{{ID: "app", Paths: []string{"pkg/**"}, Standard: []string{"protected"}, Critical: []string{"protected"}}},
+		Groups: []testpolicy.Group{{ID: "protected", Kind: "unit", Adapter: "go", CWD: ".", Inputs: []string{"pkg/**"},
+			Obligations: []string{"protected"}, Platforms: []string{"any"}, TargetMS: 1, Packages: []string{"./pkg"},
+			Tests: json.RawMessage(`["TestProtected"]`)}},
+		Always: testpolicy.Always{Canary: []string{"protected"}}, Unknown: []string{"protected"}}
+	policy, err := json.Marshal(contract)
+	must(t, err)
+	for path, data := range map[string][]byte{
+		"metasystem/testing.json":      policy,
+		"metasystem/pkg/value_test.go": []byte("package pkg\nimport \"testing\"\nfunc TestProtected(t *testing.T) {}\n"),
+	} {
+		path = filepath.Join(root, filepath.FromSlash(path))
+		must(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		must(t, os.WriteFile(path, data, 0o644))
+	}
+	for _, args := range [][]string{{"add", "."}, {"commit", "-qm", "base"}} {
+		command := exec.Command("git", args...)
+		command.Dir = root
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
 	tree, err := (gittree.Workspace{Dir: root}).TreeOf("HEAD")
 	must(t, err)
 	if err := CheckProtectedTests(root, tree, tree); err != nil {

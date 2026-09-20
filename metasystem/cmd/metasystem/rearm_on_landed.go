@@ -373,12 +373,20 @@ var (
 		return landing.FastForwardPreservingRegisters(ctx, installation, tip)
 	}
 	landedRearmRebuild = func(ctx context.Context, installation string) error {
+		lease, err := proofrun.AcquireHostResources(ctx, installation, filepath.Join(installation, "metasystem.conf"), "heavy", nil)
+		if err != nil {
+			return fmt.Errorf("admit landed engine rebuild: %w", err)
+		}
+		defer lease.Close()
+		fmt.Fprintf(os.Stderr, "metasystem test: landed engine rebuild host queue=%dms\n", lease.Waited().Milliseconds())
 		command := exec.CommandContext(ctx, "bash", "scripts/agents/go-build.sh")
 		command.Dir = installation
 		command.Env = os.Environ()
-		out, err := command.CombinedOutput()
+		var output bytes.Buffer
+		command.Stdout, command.Stderr = &output, &output
+		err = proofrun.RunResourceCommand(ctx, command, lease)
 		if err != nil {
-			return fmt.Errorf("scripts/agents/go-build.sh: %w: %s", err, strings.TrimSpace(string(out)))
+			return fmt.Errorf("scripts/agents/go-build.sh: %w: %s", err, strings.TrimSpace(output.String()))
 		}
 		return nil
 	}

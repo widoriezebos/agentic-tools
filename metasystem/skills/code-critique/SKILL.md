@@ -69,16 +69,18 @@ point STR2-ROUND-ACCOUNTING-05): dispatch freezes that member on the critic
 chain root (a goal-free root reads `metasystem.budget.review-round-max`
 alone), counts each follow-up round against it, refuses the round past it,
 and exhaustion opens no fresh budget. A chain root under accumulation 2 or
-higher carries `gateWidth: full` and lands only with the full battery
-receipt. Start every chain from
+higher carries `gateWidth: full`; the shared testing contract selects the
+required groups and landing consumes sufficient current evidence for them.
+The width does not authorize a second test selector or an unconditional
+full-suite run. Start every chain from
 `scripts/agents/templates/review-brief.md` — round budget, threat model,
 appetite, and scope declared BEFORE round one; a true finding outside the
 declared threat model closes as out-of-scope citing the brief. Record the
 goal's budget in the brief before review:
 
 1. Run both layers over the full implementation and adjudicate every finding.
-2. If corrections were required, send one focused follow-up to the same implementer, then recompute the whole diff and run both layers again.
-3. While the reviewer's declared budget has a round left, review each focused follow-up and the whole recomputed diff.
+2. If corrections were required, send one focused follow-up to the same implementer. The builder runs checks that reproduce each finding and cover the affected behavior; the selected acceptance checks run once when their evidence is consumed for the exact candidate.
+3. While the reviewer's declared budget has a round left, recompute the whole diff and check it for scope and brief conformance. The substantive confirmation read focuses on the corrections, their consumers and prior findings. Expand that read when a correction changes the design or unrelated behavior.
 
 As the reviewer's R-60-m1 rule, stop at the first round with zero material findings.
 

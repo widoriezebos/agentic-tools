@@ -214,11 +214,11 @@ func TestGoalBranchReadRunsGateDispatchesAndCollectsClosedCritic(t *testing.T) {
 			}
 			return "go gate: fast mode passed", nil
 		},
-		Delegate: func(brief, goalID, commit string) (string, error) {
+		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
 			delegateCalls++
 			body, err := os.ReadFile(brief)
 			if err != nil || goalID != "goal-a" || commit != unit || !strings.Contains(string(body), "git diff "+unit+"^ "+unit) ||
-				!strings.Contains(string(body), "goals-live-on-branches-design.md") {
+				strings.Contains(string(body), "goals-live-on-branches-design.md") {
 				t.Fatalf("brief=%q goal=%s commit=%s err=%v", body, goalID, commit, err)
 			}
 			writeReadJob(t, f.root, "critic-read", unit, "running", false)
@@ -281,7 +281,7 @@ func TestGoalBranchReadRedGateAndUncleanClosureDispatchNothingFurther(t *testing
 		_, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base,
 			BranchTip: unit, GoalID: "goal-a", UnitCommit: unit, CheckClaim: claimAllowed,
 			Gate:     func(string) (string, error) { return "go gate: staticcheck red", errors.New("exit 1") },
-			Delegate: func(string, string, string) (string, error) { delegates++; return "critic", nil }})
+			Delegate: func(string, string, string, string, string) (string, error) { delegates++; return "critic", nil }})
 		if err == nil || !strings.Contains(err.Error(), branch.ReadUngatedCode) || !strings.Contains(err.Error(), "staticcheck red") || delegates != 0 {
 			t.Fatalf("red gate err=%v delegates=%d", err, delegates)
 		}
@@ -294,7 +294,7 @@ func TestGoalBranchReadRedGateAndUncleanClosureDispatchNothingFurther(t *testing
 		request := branch.BranchReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base, BranchTip: unit,
 			GoalID: "goal-a", UnitCommit: unit, CheckClaim: claimAllowed,
 			Gate: func(string) (string, error) { return "green", nil }, NewID: func(string) (string, error) { return "fast-open", nil },
-			Delegate: func(string, string, string) (string, error) {
+			Delegate: func(string, string, string, string, string) (string, error) {
 				writeReadJob(t, f.root, "critic-open", unit, "completed", true)
 				return "critic-open", nil
 			}}
@@ -310,4 +310,236 @@ func TestGoalBranchReadRedGateAndUncleanClosureDispatchNothingFurther(t *testing
 			t.Fatalf("unclean closure wrote an attestation: %v", err)
 		}
 	})
+}
+
+func TestGLEBranchReadFreezesSuppliedBriefAndRejectsConflictingRetry(t *testing.T) {
+	t.Parallel()
+	f := newBranchFixture(t)
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	input := filepath.Join(t.TempDir(), "accepted-design.md")
+	original := []byte("Accepted design: exact wildcard ownership and input identity.\n")
+	if err := os.WriteFile(input, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var frozenPath, frozenBody string
+	delegates := 0
+	request := branch.BranchReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base, BranchTip: unit,
+		GoalID: "goal-a", UnitCommit: unit, BriefPath: input, Runtime: "codex", Model: "gpt-5.6-sol",
+		CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
+		NewID: func(string) (string, error) { return "frozen-brief-gate", nil },
+		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+			delegates++
+			body, err := os.ReadFile(brief)
+			if err != nil {
+				t.Fatal(err)
+			}
+			frozenPath, frozenBody = brief, string(body)
+			if brief == input || goalID != "goal-a" || commit != unit || runtime != "codex" || model != "gpt-5.6-sol" ||
+				!strings.Contains(frozenBody, string(original)) || strings.Contains(frozenBody, "goals-live-on-branches-design.md") {
+				t.Fatalf("dispatch brief=%q body=%q goal=%q commit=%q runtime=%q model=%q", brief, body, goalID, commit, runtime, model)
+			}
+			writeReadJob(t, f.root, "critic-frozen", unit, "running", false)
+			return "critic-frozen", nil
+		},
+	}
+	result, err := branch.RunBranchRead(request)
+	if err != nil || result.State != "dispatched" || delegates != 1 {
+		t.Fatalf("dispatch=%+v delegates=%d err=%v", result, delegates, err)
+	}
+	if err := os.WriteFile(input, []byte("changed after dispatch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if body, err := os.ReadFile(frozenPath); err != nil || string(body) != frozenBody {
+		t.Fatalf("frozen brief changed: %q err=%v", body, err)
+	}
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), "different brief") {
+		t.Fatalf("changed brief retry=%v", err)
+	}
+	request.BriefPath = ""
+	request.Runtime = "claude"
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), "runtime/model") {
+		t.Fatalf("changed runtime retry=%v", err)
+	}
+	request.Runtime, request.Model = "", ""
+	result, err = branch.RunBranchRead(request)
+	if err != nil || result.State != "open" || delegates != 1 {
+		t.Fatalf("flagless resume=%+v delegates=%d err=%v", result, delegates, err)
+	}
+}
+
+func TestGLEBranchReadMissingBriefRefusesBeforeGateAndDefaultNamesPlanFold(t *testing.T) {
+	t.Parallel()
+	f := newBranchFixture(t)
+	stage(t, f, "metasystem/plans/accepted-design.md", "accepted plan")
+	plan, err := branch.CommitStaged(branch.CommitRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base,
+		GoalID: "goal-a", OpID: "read-plan", Kind: branch.Plan, CheckClaim: claimAllowed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	gateCalls, delegates := 0, 0
+	request := branch.BranchReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base, BranchTip: unit,
+		GoalID: "goal-a", UnitCommit: unit, BriefPath: filepath.Join(t.TempDir(), "missing.md"),
+		CheckClaim: claimAllowed, Gate: func(string) (string, error) { gateCalls++; return "green", nil },
+		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+			delegates++
+			body, err := os.ReadFile(brief)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(body), plan) || !strings.Contains(string(body), "metasystem/plans/accepted-design.md") ||
+				strings.Contains(string(body), "goals-live-on-branches-design.md") {
+				t.Fatalf("generic default brief=%q", body)
+			}
+			writeReadJob(t, f.root, "critic-plan", unit, "running", false)
+			return "critic-plan", nil
+		},
+	}
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), "read goal branch brief") || gateCalls != 0 || delegates != 0 {
+		t.Fatalf("missing brief err=%v gate=%d delegates=%d", err, gateCalls, delegates)
+	}
+	request.BriefPath = ""
+	if result, err := branch.RunBranchRead(request); err != nil || result.State != "dispatched" || gateCalls != 1 || delegates != 1 {
+		t.Fatalf("default dispatch=%+v gate=%d delegates=%d err=%v", result, gateCalls, delegates, err)
+	}
+}
+
+func gleBranchReadRecordPath(t *testing.T, root, unit string) string {
+	t.Helper()
+	common := git(t, root, "rev-parse", "--git-common-dir")
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(root, common)
+	}
+	return filepath.Join(common, "metasystem", "goal-reads", "goal-a", unit+".json")
+}
+
+func TestGLEBranchReadInterruptedLaunchKeepsFrozenPendingIntent(t *testing.T) {
+	t.Parallel()
+	f := newBranchFixture(t)
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	input := filepath.Join(t.TempDir(), "accepted.md")
+	if err := os.WriteFile(input, []byte("accepted design A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recordPath := gleBranchReadRecordPath(t, f.root, unit)
+	delegates := 0
+	request := branch.BranchReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base, BranchTip: unit,
+		GoalID: "goal-a", UnitCommit: unit, BriefPath: input, Runtime: "codex", Model: "gpt-5.6-sol",
+		CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
+		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+			delegates++
+			data, err := os.ReadFile(recordPath)
+			if err != nil || !strings.Contains(string(data), `"dispatchPending": true`) ||
+				!strings.Contains(string(data), `"runtime": "codex"`) || !strings.Contains(string(data), `"model": "gpt-5.6-sol"`) {
+				t.Fatalf("dispatch intent before launch=%q err=%v", data, err)
+			}
+			panic("process interrupted after critic launch")
+		},
+	}
+	func() {
+		defer func() {
+			if got := recover(); got != "process interrupted after critic launch" {
+				t.Fatalf("interruption=%v", got)
+			}
+		}()
+		_, _ = branch.RunBranchRead(request)
+	}()
+	if err := os.WriteFile(input, []byte("accepted design B\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), "different brief") {
+		t.Fatalf("changed request after interruption=%v", err)
+	}
+	request.BriefPath, request.Runtime, request.Model = "", "", ""
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), branch.ReadDispatchPendingCode) || delegates != 1 {
+		t.Fatalf("omitted options after interruption=%v delegates=%d", err, delegates)
+	}
+}
+
+func TestGLEBranchReadRecordWriteFailureNeverDispatchesAgain(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("permission failure requires an unprivileged test process")
+	}
+	f := newBranchFixture(t)
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	recordPath := gleBranchReadRecordPath(t, f.root, unit)
+	delegates := 0
+	request := branch.BranchReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base, BranchTip: unit,
+		GoalID: "goal-a", UnitCommit: unit, CheckClaim: claimAllowed,
+		Gate: func(string) (string, error) { return "green", nil },
+		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+			delegates++
+			if err := os.Chmod(filepath.Dir(recordPath), 0o500); err != nil {
+				t.Fatal(err)
+			}
+			return "critic-write-failure", nil
+		},
+	}
+	defer os.Chmod(filepath.Dir(recordPath), 0o755)
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), branch.ReadDispatchPendingCode) || delegates != 1 {
+		t.Fatalf("post-launch record failure=%v delegates=%d", err, delegates)
+	}
+	if err := os.Chmod(filepath.Dir(recordPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(recordPath)
+	if err != nil || !strings.Contains(string(data), `"dispatchPending": true`) || strings.Contains(string(data), `"rootJob"`) {
+		t.Fatalf("retained pending intent=%q err=%v", data, err)
+	}
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), branch.ReadDispatchPendingCode) || delegates != 1 {
+		t.Fatalf("retry after record failure=%v delegates=%d", err, delegates)
+	}
+}
+
+func TestGLEBranchReadPrelaunchRefusalRetriesFrozenSelectionOnce(t *testing.T) {
+	t.Parallel()
+	f := newBranchFixture(t)
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	input := filepath.Join(t.TempDir(), "accepted.md")
+	original := []byte("accepted design before refusal\n")
+	if err := os.WriteFile(input, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	delegates, launches := 0, 0
+	var firstBrief string
+	request := branch.BranchReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base, BranchTip: unit,
+		GoalID: "goal-a", UnitCommit: unit, BriefPath: input, Runtime: "codex", Model: "gpt-5.6-sol",
+		CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
+		Delegate: func(brief, goalID, commit, runtime, model string) (string, error) {
+			delegates++
+			body, err := os.ReadFile(brief)
+			if err != nil || runtime != "codex" || model != "gpt-5.6-sol" || !strings.Contains(string(body), string(original)) {
+				t.Fatalf("retry delegate brief=%q runtime=%q model=%q err=%v", body, runtime, model, err)
+			}
+			if delegates == 1 {
+				firstBrief = string(body)
+				return "", &branch.ReadNeverLaunchedError{Err: errors.New("REFUSED-ROSTER before claim")}
+			}
+			if string(body) != firstBrief {
+				t.Fatalf("retry changed frozen brief: first=%q second=%q", firstBrief, body)
+			}
+			launches++
+			writeReadJob(t, f.root, "critic-retry", unit, "running", false)
+			return "critic-retry", nil
+		},
+	}
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), "REFUSED-ROSTER") || delegates != 1 || launches != 0 {
+		t.Fatalf("prelaunch refusal=%v delegates=%d launches=%d", err, delegates, launches)
+	}
+	record, err := os.ReadFile(gleBranchReadRecordPath(t, f.root, unit))
+	if err != nil || !strings.Contains(string(record), `"dispatchRetryable": true`) || strings.Contains(string(record), `"dispatchPending": true`) {
+		t.Fatalf("retryable record=%q err=%v", record, err)
+	}
+	if err := os.WriteFile(input, []byte("changed source after refusal\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := branch.RunBranchRead(request); err == nil || !strings.Contains(err.Error(), "different brief") || delegates != 1 {
+		t.Fatalf("conflicting retry=%v delegates=%d", err, delegates)
+	}
+	request.BriefPath, request.Runtime, request.Model = "", "", ""
+	result, err := branch.RunBranchRead(request)
+	if err != nil || result.State != "dispatched" || delegates != 2 || launches != 1 {
+		t.Fatalf("frozen retry=%+v err=%v delegates=%d launches=%d", result, err, delegates, launches)
+	}
 }

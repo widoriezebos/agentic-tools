@@ -32,6 +32,23 @@ func TestNormalizeDelegateFreshForwardsReviewsForCriticRoles(t *testing.T) {
 	}
 }
 
+func TestGLEBranchReadDelegateForwardsCriticCommitOverrides(t *testing.T) {
+	t.Parallel()
+	input := []string{"--role", "code-critic", "--reviews", "commit:" + strings.Repeat("a", 40),
+		"--goal", "goal-a", "--brief", "frozen.md", "--destructive-reach", "DESIGN-BEARING",
+		"--runtime", "codex", "--model", "gpt-5.6-sol"}
+	got, mode, err := normalizeDelegateArgs(input)
+	want := append([]string{"dispatch"}, input...)
+	if err != nil || mode != "dispatch" || !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalize = %v %s %v, want %v dispatch", got, mode, err, want)
+	}
+	for _, suffix := range [][]string{{"--runtime", "codex"}, {"--model", "gpt-5.6-sol"}} {
+		if _, _, err := normalizeDelegateArgs(append(append([]string(nil), input...), suffix...)); err == nil {
+			t.Fatalf("duplicate override %v was accepted", suffix)
+		}
+	}
+}
+
 func TestDelegateDesignCriticWithoutOutputsRefusesAtFrontDoor(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {

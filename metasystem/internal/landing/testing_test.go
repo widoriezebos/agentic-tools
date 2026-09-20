@@ -12,9 +12,109 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
+
+func TestFreshReceiptCannotMatchOrdinaryVerification(t *testing.T) {
+	t.Parallel()
+	ordinary := proofrun.TestResult{SelectedGroups: []string{"check"}, RequiredGroups: []string{"check"},
+		Groups: []proofrun.GroupResult{{ID: "check", ExecutionIdentity: strings.Repeat("a", 64)}}}
+	fresh := ordinary
+	fresh.FreshnessEpisode, fresh.FreshnessBinding = strings.Repeat("b", 64), strings.Repeat("c", 64)
+	if differences := testingIdentityDifferences(ordinary, fresh); len(differences) != 1 || differences[0] != "check" {
+		t.Fatalf("ordinary verification matched a fresh receipt: %v", differences)
+	}
+}
+
+func TestFreshReceiptRequiresItsNativeProducerEpisodeBindingAndExpiry(t *testing.T) {
+	f := newObserveFixture(t)
+	f.write("metasystem.conf", "dispatch.cap-max=120\n")
+	identity, err := proofrun.BuildProofIdentity(f.root, filepath.Join(f.root, "metasystem.conf"), "selected", "testing", nil, behaviorsurface.SupportedVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	episode, binding, groupIdentity := strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("3", 64)
+	expiry := time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
+	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
+		GoalID: "goal", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher,
+		Now: time.Now().UTC(), SharedComponents: true, ComponentIdentities: map[string]string{"check": groupIdentity},
+		FreshnessEpisode: episode, FreshnessBinding: binding, FreshnessExpiresAt: expiry}, strings.Repeat("b", 40)))
+	if err != nil || decision.Disposition != proofrun.DispositionExecuted {
+		t.Fatalf("fresh reservation: %+v %+v %v", attempt, decision, err)
+	}
+	result := proofrun.TestResult{AttemptID: attempt.AttemptID, FreshnessEpisode: episode, FreshnessBinding: binding, FreshnessExpiresAt: expiry,
+		Groups: []proofrun.GroupResult{{ID: "check", ExecutionIdentity: groupIdentity, Status: "passed", NativeLaunched: true, CollectionComplete: true}}}
+	if _, err := validateTestingAttemptOwners(f.root, result, true); err != nil {
+		t.Fatalf("matching live native producer refused: %v", err)
+	}
+	for _, testCase := range []struct {
+		name   string
+		change func(*proofrun.TestResult)
+	}{
+		{"missing episode", func(value *proofrun.TestResult) { value.FreshnessEpisode = "" }},
+		{"wrong episode", func(value *proofrun.TestResult) { value.FreshnessEpisode = strings.Repeat("4", 64) }},
+		{"wrong binding", func(value *proofrun.TestResult) { value.FreshnessBinding = strings.Repeat("5", 64) }},
+		{"wrong expiry", func(value *proofrun.TestResult) {
+			value.FreshnessExpiresAt = time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339Nano)
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			changed := result
+			testCase.change(&changed)
+			if _, err := validateTestingAttemptOwners(f.root, changed, true); err == nil {
+				t.Fatal("fresh receipt accepted an unmatched producer")
+			}
+		})
+	}
+	expired := attempt
+	expired.FreshnessExpiresAt = time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)
+	encoded, err := json.Marshal(expired)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := proofrun.AttemptPath(f.root, attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result.FreshnessExpiresAt = expired.FreshnessExpiresAt
+	if _, err := validateTestingAttemptOwners(f.root, result, true); err == nil {
+		t.Fatal("expired native producer satisfied fresh receipt")
+	}
+}
+
+func TestGLEPathTestingReceiptPostureReadsLiteralManifest(t *testing.T) {
+	t.Parallel()
+	f := newAdoptedObserveFixture(t)
+	f.write("metasystem.conf", "testing.contract=testing.json\n")
+	f.write("testing.json", "{}\n")
+	f.write("inputs/[literal].go", "candidate\n")
+	f.git("add", ".")
+	f.git("commit", "-qm", "candidate")
+	tree, err := (gittree.Workspace{Dir: f.root}).HeadTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.write("inputs/[literal].go", "working edit\n")
+	projectRoot, err := (gittree.Workspace{Dir: f.root}).TopLevel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := proofrun.TestResult{ProjectRoot: projectRoot, CandidateTree: tree,
+		Groups: []proofrun.GroupResult{{InputManifest: []string{pathpattern.EncodeLiteral("inputs/[literal].go")}}}}
+	_, working, err := testingReceiptPosture(f.root, result)
+	if err != nil || working == tree {
+		t.Fatalf("receipt posture missed literal input drift: %s, %v", working, err)
+	}
+}
 
 func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	f := newObserveFixture(t)

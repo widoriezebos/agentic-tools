@@ -154,6 +154,66 @@ func TestFixtureModeRoot(t *testing.T) {
 	}
 }
 
+func TestFixtureModeUsesLocalConfigButNeverEnvironmentAlone(t *testing.T) {
+	root := fakeCheckout(t, "claude")
+	local := filepath.Join(root, "metasystem.conf.local")
+	if err := os.WriteFile(local, []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_RUNTIMES", "claude")
+	t.Setenv(goalNowEnv, "2026-08-29T14:30:00+02:00")
+	if !FixtureModeRoot(root) {
+		t.Fatal("trusted local fake runtime was ignored")
+	}
+	authorization, err := New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := authorization.Clock().GoalNow(); err != nil || !ok {
+		t.Fatalf("local fake runtime did not authorize the clock: ok=%v err=%v", ok, err)
+	}
+	if err := os.Remove(local); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_RUNTIMES", "fake")
+	if FixtureModeRoot(root) {
+		t.Fatal("environment alone authorized fake runtime")
+	}
+	t.Setenv(fixtureEnv, writeTable(t, `{}`))
+	if _, err := New(root); err == nil {
+		t.Fatal("environment alone authorized the fixture table")
+	}
+	committedFake := fakeCheckout(t, "fake")
+	if err := os.WriteFile(filepath.Join(committedFake, "metasystem.conf.local"), []byte("metasystem.runtimes=claude\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if FixtureModeRoot(committedFake) {
+		t.Fatal("local non-fake runtime did not override the committed fake runtime")
+	}
+	if _, err := New(committedFake); err == nil {
+		t.Fatal("local non-fake runtime did not fence the fixture table")
+	}
+}
+
+func TestFixtureRequestReportsMalformedLocalRuntime(t *testing.T) {
+	root := fakeCheckout(t, "claude")
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf.local"), []byte("metasystem.runtimes=fake\nmetasystem.runtimes=claude\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(fixtureEnv, writeTable(t, `{}`))
+	if FixtureModeRoot(root) {
+		t.Fatal("ambiguous local runtime authorized fixtures")
+	}
+	if _, err := New(root); err == nil || !strings.Contains(err.Error(), "duplicate metasystem configuration key") {
+		t.Fatalf("malformed local runtime was not reported: %v", err)
+	}
+	t.Setenv(fixtureEnv, "")
+	t.Setenv(goalNowEnv, "2026-08-29T14:30:00+02:00")
+	if _, err := New(root); err == nil || !strings.Contains(err.Error(), "duplicate metasystem configuration key") {
+		t.Fatalf("clock request with malformed local runtime was not reported: %v", err)
+	}
+}
+
 func TestGoalClockRequiresFixtureModeAndValidTime(t *testing.T) {
 	t.Setenv(fixtureEnv, "")
 	t.Setenv(goalNowEnv, "not-a-time")

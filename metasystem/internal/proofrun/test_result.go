@@ -14,9 +14,11 @@ import (
 )
 
 const (
-	TestResultSchemaVersion              = 1
+	LegacyTestResultSchemaVersion        = 1
+	TestResultSchemaVersion              = 2
 	candidateEngineDigestIdentityVersion = 1
 	CandidateEngineIdentitySchemaVersion = 2
+	GroupExecutionIdentityVersion        = 2
 )
 
 type NativeTestIdentity struct {
@@ -45,6 +47,7 @@ type GroupResult struct {
 	InputDigest           string               `json:"inputDigest"`
 	InputManifest         []string             `json:"inputManifest"`
 	ExecutionIdentity     string               `json:"executionIdentity"`
+	IdentityVersion       int                  `json:"identityVersion,omitempty"`
 	Argv                  []string             `json:"argv"`
 	CWD                   string               `json:"cwd"`
 	EnvironmentDigest     string               `json:"environmentDigest"`
@@ -90,6 +93,9 @@ type LaunchCounts struct {
 }
 
 func ValidateTestResult(result TestResult) error {
+	if result.SchemaVersion > TestResultSchemaVersion {
+		return fmt.Errorf("unsupported future test result schema %d", result.SchemaVersion)
+	}
 	candidateEngineMissing := result.CandidateEngineDigest == ""
 	candidateEngineInvalid := !candidateEngineMissing && !validResultDigest(result.CandidateEngineDigest)
 	candidateEngineIdentityInvalid := result.CandidateEngineIdentityVersion < 0 ||
@@ -97,7 +103,7 @@ func ValidateTestResult(result TestResult) error {
 		result.CandidateEngineIdentityVersion == candidateEngineDigestIdentityVersion && candidateEngineMissing ||
 		result.CandidateEngineIdentityVersion == CandidateEngineIdentitySchemaVersion &&
 			(candidateEngineMissing || !validTreeDigest(result.CandidateEngineBuildIdentity))
-	if result.SchemaVersion != TestResultSchemaVersion || result.Purpose == "" || result.RequestedMode == "" ||
+	if (result.SchemaVersion != LegacyTestResultSchemaVersion && result.SchemaVersion != TestResultSchemaVersion) || result.Purpose == "" || result.RequestedMode == "" ||
 		result.RequiredMode == "" || result.ExecutedMode == "" || result.ProjectRoot == "" || result.BaseCommit == "" ||
 		!validTreeDigest(result.CandidateTree) || !validResultDigest(result.ContractDigest) ||
 		!validResultDigest(result.BaseContractDigest) || !validResultDigest(result.PolicyEngineDigest) ||
@@ -106,6 +112,18 @@ func ValidateTestResult(result TestResult) error {
 		!result.LaunchCounts.CountsComplete || result.Cost.DeclaredTargetMS <= 0 {
 		return fmt.Errorf("test result has incomplete identity or launch accounting")
 	}
+	if result.FreshnessEpisode != "" && (!validResultDigest(result.FreshnessEpisode) || !validResultDigest(result.FreshnessBinding)) ||
+		result.FreshnessEpisode == "" && result.FreshnessBinding != "" {
+		return fmt.Errorf("test result has incomplete freshness binding")
+	}
+	if result.FreshnessExpiresAt != "" {
+		if result.FreshnessEpisode == "" {
+			return fmt.Errorf("test result freshness expiry has no episode")
+		}
+		if _, err := time.Parse(time.RFC3339Nano, result.FreshnessExpiresAt); err != nil {
+			return fmt.Errorf("test result freshness expiry is invalid: %w", err)
+		}
+	}
 	selected := map[string]bool{}
 	for _, id := range result.SelectedGroups {
 		if id == "" || selected[id] {
@@ -113,10 +131,21 @@ func ValidateTestResult(result TestResult) error {
 		}
 		selected[id] = true
 	}
+	for id, fresh := range result.FreshGroups {
+		if !selected[id] || !fresh {
+			return fmt.Errorf("test result freshness group %q is invalid", id)
+		}
+	}
+	if result.SchemaVersion == LegacyTestResultSchemaVersion && len(result.FreshGroups) > 0 {
+		return fmt.Errorf("legacy test result cannot carry fresh group claims")
+	}
 	seen := map[string]bool{}
 	for _, group := range result.Groups {
 		if group.ID == "" || group.Kind == "" || len(group.InputManifest) == 0 || seen[group.ID] || !selected[group.ID] {
 			return fmt.Errorf("test result group inventory is invalid or duplicated")
+		}
+		if group.IdentityVersion < 0 || group.IdentityVersion > GroupExecutionIdentityVersion {
+			return fmt.Errorf("test result group %s has unsupported execution identity version", group.ID)
 		}
 		seen[group.ID] = true
 		switch group.Status {
@@ -129,9 +158,12 @@ func ValidateTestResult(result TestResult) error {
 				return fmt.Errorf("reused group %s has no successful source", group.ID)
 			}
 		case "failed", "invalid", "unavailable", "cancelled", "runaway", "dead":
-		case "not-run":
+		case "not-run", "blocked":
 			if group.NativeLaunched || group.StartedAt != "" || group.EndedAt != "" || group.NativeExitStatus != nil || group.NotRunReason == "" {
-				return fmt.Errorf("not-run group %s invents execution facts or lacks a reason", group.ID)
+				return fmt.Errorf("unlaunched group %s invents execution facts or lacks a reason", group.ID)
+			}
+			if group.Status == "blocked" && len(group.BlockingGroups) == 0 {
+				return fmt.Errorf("blocked group %s names no prerequisite", group.ID)
 			}
 		default:
 			return fmt.Errorf("test result group %s has invalid status %q", group.ID, group.Status)
@@ -182,6 +214,7 @@ type DeliveryJudgment struct {
 type TestCost struct {
 	DeclaredTargetMS      int64 `json:"declaredTargetMs"`
 	ActualDurationMS      int64 `json:"actualDurationMs"`
+	QueueDurationMS       int64 `json:"queueDurationMs,omitempty"`
 	PreparationDurationMS int64 `json:"preparationDurationMs"`
 	ExecutionDurationMS   int64 `json:"executionDurationMs"`
 	PublicationDurationMS int64 `json:"publicationDurationMs"`
@@ -211,9 +244,13 @@ type TestResult struct {
 	CandidateEngineBuildIdentity   string                    `json:"candidateEngineBuildIdentity,omitempty"`
 	BehaviorPolicyDigest           string                    `json:"behaviorPolicyDigest"`
 	PlanDigest                     string                    `json:"planDigest"`
+	FreshnessEpisode               string                    `json:"freshnessEpisode,omitempty"`
+	FreshnessBinding               string                    `json:"freshnessBinding,omitempty"`
+	FreshnessExpiresAt             string                    `json:"freshnessExpiresAt,omitempty"`
 	Risk                           testpolicy.RiskAssessment `json:"risk"`
 	RequiredGroups                 []string                  `json:"requiredGroups"`
 	SelectedGroups                 []string                  `json:"selectedGroups"`
+	FreshGroups                    map[string]bool           `json:"freshGroups,omitempty"`
 	Omissions                      []testpolicy.Omission     `json:"omissions"`
 	Uncertainty                    []string                  `json:"uncertainty,omitempty"`
 	Groups                         []GroupResult             `json:"groups"`
@@ -262,7 +299,7 @@ func (result *TestResult) RecomputeDelivery() {
 				}
 			}
 		}
-		if !ok || group.Status == "not-run" {
+		if !ok || group.Status == "not-run" || group.Status == "blocked" {
 			result.Delivery.MissingGroups = append(result.Delivery.MissingGroups, id)
 			result.Delivery.Sufficient = false
 			continue
@@ -338,8 +375,9 @@ func (observation reuseObservation) newerThan(other reuseObservation) bool {
 // observation of one group at one identity. A not-run or invalid record is
 // not an observation: the group was not judged there. Goal, accounting
 // revision and the attempt's terminal result do not scope the scan; the
-// result-level digests (contract, base contract, judge key, behavior
-// policy) must match the template's.
+// Legacy observations require their original whole-contract context. Current
+// observations carry an effective per-group identity, while judge and
+// behavior-policy trust remain bound at the result level.
 func newestReuseObservation(template TestResult, attempts []Attempt, id, identity, excludedAttempt string) (reuseObservation, bool) {
 	var newest reuseObservation
 	var incomplete reuseObservation
@@ -359,21 +397,32 @@ func newestReuseObservation(template TestResult, attempts []Attempt, id, identit
 			continue
 		}
 		started, _ := time.Parse(time.RFC3339Nano, attempt.StartedAt)
-		planned := componentInputs(attempt.ProofIdentity.IdentityInputs)
-		for plannedID, plannedIdentity := range attempt.PendingTestGroups {
-			planned[plannedID] = plannedIdentity
+		requestEpisode, requestBinding := resultGroupFreshness(template, id)
+		ownerEpisode, ownerBinding := attemptGroupFreshness(attempt, id)
+		if ownerEpisode != requestEpisode || ownerBinding != requestBinding ||
+			requestEpisode != "" && attempt.FreshnessExpiresAt != template.FreshnessExpiresAt {
+			continue
+		}
+		if ownerEpisode != "" && attempt.FreshnessExpiresAt != "" {
+			expires, err := time.Parse(time.RFC3339Nano, attempt.FreshnessExpiresAt)
+			if err != nil || !expires.After(time.Now().UTC()) {
+				continue
+			}
 		}
 		if attempt.Terminal == nil {
-			if planned[id] == identity {
+			if ownsTestComponent(attempt, id, identity) {
 				consider(reuseObservation{attemptID: attempt.AttemptID, started: started, live: true})
 			}
 			continue
 		}
 		observed := false
-		if source := attempt.TestResult; source != nil && source.ContractDigest == template.ContractDigest && source.BaseContractDigest == template.BaseContractDigest &&
-			source.JudgeKey == template.JudgeKey && source.BehaviorPolicyDigest == template.BehaviorPolicyDigest {
+		if source := attempt.TestResult; source != nil && source.JudgeKey == template.JudgeKey && source.BehaviorPolicyDigest == template.BehaviorPolicyDigest {
 			for _, group := range source.Groups {
-				if group.ID != id || group.ExecutionIdentity != identity || !(group.NativeLaunched || group.Status == "reused") {
+				if group.ID != id || group.ExecutionIdentity != identity || !NativeTestProducer(attempt, group) {
+					continue
+				}
+				if group.IdentityVersion != GroupExecutionIdentityVersion &&
+					(source.ContractDigest != template.ContractDigest || source.BaseContractDigest != template.BaseContractDigest) {
 					continue
 				}
 				at, err := time.Parse(time.RFC3339Nano, group.EndedAt)
@@ -385,7 +434,7 @@ func newestReuseObservation(template TestResult, attempts []Attempt, id, identit
 				observed = true
 			}
 		}
-		if !observed && planned[id] == identity {
+		if !observed && ownsTestComponent(attempt, id, identity) {
 			at, _ := time.Parse(time.RFC3339Nano, attempt.Terminal.At)
 			candidate := reuseObservation{attemptID: attempt.AttemptID, at: at, started: started}
 			if !incompleteFound || candidate.newerThan(incomplete) {
@@ -414,6 +463,7 @@ func ExactReusableTestResult(template TestResult, attempts []Attempt, identities
 		}
 		result := attempt.TestResult
 		if result.ContractDigest != template.ContractDigest ||
+			result.FreshnessEpisode != template.FreshnessEpisode || result.FreshnessBinding != template.FreshnessBinding ||
 			result.BaseContractDigest != template.BaseContractDigest || result.JudgeKey != template.JudgeKey ||
 			result.CandidateEngineDigest != template.CandidateEngineDigest ||
 			result.CandidateEngineIdentityVersion != template.CandidateEngineIdentityVersion ||
@@ -491,7 +541,10 @@ func reusedTestResult(template TestResult, attempts []Attempt, identities map[st
 		}
 		reused := observation.group
 		reused.Status = "reused"
+		reused.NativeLaunched = false
 		reused.ReuseAttempt = observation.attemptID
+		// Obligations describe the current decision, not the original command.
+		reused.Obligations = append([]string(nil), definition.Obligations...)
 		result.Groups = append(result.Groups, reused)
 		switch reused.Kind {
 		case "build":
@@ -500,9 +553,62 @@ func reusedTestResult(template TestResult, attempts []Attempt, identities map[st
 			result.LaunchCounts.ReusedTest++
 		}
 	}
+	blockUnsatisfiedPrerequisites(&result, contract)
 	result.Cost.ReusedLaunches = result.LaunchCounts.ReusedTest + result.LaunchCounts.ReusedBuild + result.LaunchCounts.ReusedOther
 	result.RecomputeDelivery()
 	return result
+}
+
+func blockUnsatisfiedPrerequisites(result *TestResult, contract testpolicy.Contract) {
+	if contract.SchemaVersion != testpolicy.ExecutionContractSchemaVersion {
+		return
+	}
+	definitions := map[string]testpolicy.Group{}
+	for _, group := range contract.Groups {
+		definitions[group.ID] = group
+	}
+	byID := map[string]int{}
+	for index, group := range result.Groups {
+		byID[group.ID] = index
+	}
+	for changed := true; changed; {
+		changed = false
+		for index, group := range result.Groups {
+			if group.Status != "passed" && group.Status != "reused" {
+				continue
+			}
+			var blockers []string
+			for _, dependency := range definitions[group.ID].Requires {
+				position, found := byID[dependency]
+				if !found || result.Groups[position].Status != "passed" && result.Groups[position].Status != "reused" {
+					blockers = append(blockers, dependency)
+				}
+			}
+			if len(blockers) == 0 {
+				continue
+			}
+			// A retained dependent observation is valid history, but cannot
+			// satisfy this decision with a currently unsatisfied prerequisite.
+			if group.Status == "reused" {
+				switch group.Kind {
+				case "build":
+					result.LaunchCounts.ReusedBuild--
+				default:
+					result.LaunchCounts.ReusedTest--
+				}
+			}
+			result.Groups[index] = blockedGroupResult(group, blockers)
+			changed = true
+		}
+	}
+}
+
+func blockedGroupResult(group GroupResult, blockers []string) GroupResult {
+	return GroupResult{ID: group.ID, Kind: group.Kind, Obligations: append([]string(nil), group.Obligations...),
+		InputDigest: group.InputDigest, InputManifest: append([]string(nil), group.InputManifest...), CWD: group.CWD,
+		ExecutionIdentity: group.ExecutionIdentity, Status: "blocked",
+		NotRunReason:   "prerequisite failed or lacked valid evidence: " + strings.Join(blockers, ","),
+		BlockingGroups: append([]string(nil), blockers...), ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
 }
 
 func resultDuration(start time.Time) (string, int64) {

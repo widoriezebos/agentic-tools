@@ -68,8 +68,26 @@ func runGoalBranch(args []string) int {
 type goalBranchReadDependencies struct {
 	Binary   string
 	Gate     func(string) (string, error)
-	Delegate func(string, string, string) (string, error)
+	Delegate func(string, string, string, string, string) (string, error)
 	Commit   func(branch.CommitReadRequest) (string, branch.Attestation, error)
+}
+
+type goalBranchReadOption struct {
+	name, value string
+	seen        bool
+}
+
+func (option *goalBranchReadOption) String() string { return option.value }
+
+func (option *goalBranchReadOption) Set(value string) error {
+	if option.seen {
+		return fmt.Errorf("goal branch read accepts --%s only once", option.name)
+	}
+	if value == "" {
+		return fmt.Errorf("goal branch read --%s needs a nonempty value", option.name)
+	}
+	option.value, option.seen = value, true
+	return nil
 }
 
 func runGoalBranchRead(args []string) int {
@@ -100,24 +118,64 @@ func readGate(worktree string) (string, error) {
 	return lastOutputLine(output), err
 }
 
-func readDelegate(binary, root, brief, goalID, commit string) (string, error) {
+type readDelegateOutcomeError struct {
+	Outcome delegateOutcome
+	Cause   error
+}
+
+func (failure *readDelegateOutcomeError) Error() string {
+	if failure.Cause != nil {
+		return fmt.Sprintf("delegate outcome %s: %s: %v", failure.Outcome.Outcome, failure.Outcome.Detail, failure.Cause)
+	}
+	return fmt.Sprintf("delegate outcome %s: %s", failure.Outcome.Outcome, failure.Outcome.Detail)
+}
+
+func (failure *readDelegateOutcomeError) Unwrap() error { return failure.Cause }
+
+func readDelegateNeverLaunched(outcome delegateOutcome) bool {
+	if outcome.JobID != "" {
+		return false
+	}
+	switch outcome.Outcome {
+	case "REFUSED-REQUEST", "BRAIN_REFUSED", "REFUSED-ROSTER":
+		return true
+	default:
+		return false
+	}
+}
+
+func readDelegate(binary, root, brief, goalID, commit, runtime, model string) (string, error) {
 	if binary == "" {
 		return "", fmt.Errorf("delegate binary is unavailable")
 	}
-	command := exec.Command(binary, "delegate", "--role", "code-critic", "--reviews", "commit:"+commit,
-		"--goal", goalID, "--brief", brief, "--destructive-reach", "DESIGN-BEARING")
+	args := []string{"delegate", "--role", "code-critic", "--reviews", "commit:" + commit,
+		"--goal", goalID, "--brief", brief, "--destructive-reach", "DESIGN-BEARING"}
+	if runtime != "" {
+		args = append(args, "--runtime", runtime)
+	}
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	command := exec.Command(binary, args...)
 	command.Env = append(os.Environ(), "METASYSTEM_DELEGATE_ROOT="+root)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	output, err := command.Output()
+	var outcome delegateOutcome
+	if jsonErr := json.Unmarshal(bytes.TrimSpace(output), &outcome); jsonErr == nil && outcome.Outcome != "" {
+		if err == nil && outcome.Outcome == "WON" && outcome.JobID != "" {
+			return outcome.JobID, nil
+		}
+		failure := &readDelegateOutcomeError{Outcome: outcome, Cause: err}
+		if err != nil && readDelegateNeverLaunched(outcome) {
+			return "", &branch.ReadNeverLaunchedError{Err: failure}
+		}
+		return "", failure
+	}
 	if err != nil {
 		return "", fmt.Errorf("delegate: %s: %w", lastOutputLine(stderr.Bytes()), err)
 	}
-	var outcome delegateOutcome
-	if jsonErr := json.Unmarshal(output, &outcome); jsonErr != nil || outcome.JobID == "" || outcome.Outcome != "WON" {
-		return "", fmt.Errorf("delegate returned no started job: %s", lastOutputLine(output))
-	}
-	return outcome.JobID, nil
+	return "", fmt.Errorf("delegate returned no started job: %s", lastOutputLine(output))
 }
 
 func runGoalBranchReadWith(args []string, dependencies goalBranchReadDependencies) int {
@@ -125,6 +183,10 @@ func runGoalBranchReadWith(args []string, dependencies goalBranchReadDependencie
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	unit := flags.String("unit", "", "Goal-Unit commit")
+	brief, runtime, model := &goalBranchReadOption{name: "brief"}, &goalBranchReadOption{name: "runtime"}, &goalBranchReadOption{name: "model"}
+	flags.Var(brief, "brief", "accepted implementation brief to freeze into the critic dispatch")
+	flags.Var(runtime, "runtime", "requested critic runtime (subject to roster authorization)")
+	flags.Var(model, "model", "requested critic model (subject to roster authorization)")
 	collect := flags.Bool("collect", false, "collect a closed critic root into an attestation")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *goalID == "" || *unit == "" {
 		fmt.Fprintln(os.Stderr, "goal branch read needs --goal and --unit")
@@ -159,12 +221,13 @@ func runGoalBranchReadWith(args []string, dependencies goalBranchReadDependencie
 	}
 	delegate := dependencies.Delegate
 	if delegate == nil {
-		delegate = func(brief, goalID, commit string) (string, error) {
-			return readDelegate(dependencies.Binary, *root, brief, goalID, commit)
+		delegate = func(brief, goalID, commit, runtime, model string) (string, error) {
+			return readDelegate(dependencies.Binary, *root, brief, goalID, commit, runtime, model)
 		}
 	}
 	result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: *root, Remote: endpoint.Remote,
 		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect,
+		BriefPath: brief.value, Runtime: runtime.value, Model: model.value,
 		CheckClaim: goalBranchClaimCheck(*root, *goalID, endpoint), Gate: gate, Delegate: delegate, Commit: dependencies.Commit})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

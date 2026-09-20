@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
@@ -231,9 +232,21 @@ func fileSHA256(path string) (string, []byte, error) {
 	return hex.EncodeToString(sum[:]), data, nil
 }
 
+func projectFilePath(repo, path string) (string, error) {
+	top, err := (gittree.Workspace{Dir: repo}).TopLevel()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(top, filepath.FromSlash(path)), nil
+}
+
 func fileAt(repo, snapshot, path string) ([]byte, error) {
 	if snapshot == "" {
-		return os.ReadFile(filepath.Join(repo, filepath.FromSlash(path)))
+		absolute, err := projectFilePath(repo, path)
+		if err != nil {
+			return nil, err
+		}
+		return os.ReadFile(absolute)
 	}
 	data, err := gitOutput(repo, "show", snapshot+":"+path)
 	if err != nil {
@@ -276,7 +289,11 @@ func directSource(req CommitReadRequest, subject AttestationSubject, read readsu
 	if !safeReaderRecord(req.ReaderRecord) {
 		return AttestationSource{}, nil, fmt.Errorf("reader record must be a repository-relative path under metasystem/records/misc")
 	}
-	digest, data, err := fileSHA256(filepath.Join(req.Repo, filepath.FromSlash(req.ReaderRecord)))
+	absolute, err := projectFilePath(req.Repo, req.ReaderRecord)
+	if err != nil {
+		return AttestationSource{}, nil, err
+	}
+	digest, data, err := fileSHA256(absolute)
 	if err != nil {
 		return AttestationSource{}, nil, err
 	}
@@ -649,7 +666,7 @@ func prospectiveReadPatch(repo string, generated map[string][]byte, readerRecord
 		}
 	}
 	if readerRecord != "" {
-		if _, err := gitInputEnv(repo, env, nil, "add", "--", readerRecord); err != nil {
+		if _, err := gitInputEnv(repo, env, nil, "add", "--", ":(top)"+readerRecord); err != nil {
 			return nil, err
 		}
 	}
@@ -780,13 +797,17 @@ func CommitRead(req CommitReadRequest) (string, Attestation, error) {
 		return "", Attestation{}, err
 	}
 	indexBefore := strings.TrimSpace(string(indexBeforeOut))
+	projectRoot, err := (gittree.Workspace{Dir: req.Repo}).TopLevel()
+	if err != nil {
+		return "", Attestation{}, err
+	}
 	rollbackMaterialized := func(cause error) error {
 		var cleanup []string
 		if _, err := gitOutput(req.Repo, "read-tree", indexBefore); err != nil {
 			cleanup = append(cleanup, err.Error())
 		}
 		for path := range generated {
-			if err := os.Remove(filepath.Join(req.Repo, filepath.FromSlash(path))); err != nil && !os.IsNotExist(err) {
+			if err := os.Remove(filepath.Join(projectRoot, filepath.FromSlash(path))); err != nil && !os.IsNotExist(err) {
 				cleanup = append(cleanup, err.Error())
 			}
 		}
@@ -796,7 +817,7 @@ func CommitRead(req CommitReadRequest) (string, Attestation, error) {
 		return cause
 	}
 	for path, contents := range generated {
-		abs := filepath.Join(req.Repo, filepath.FromSlash(path))
+		abs := filepath.Join(projectRoot, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 			return "", Attestation{}, rollbackMaterialized(err)
 		}
@@ -811,7 +832,10 @@ func CommitRead(req CommitReadRequest) (string, Attestation, error) {
 	if att.Source.Kind == "reader-record" && att.Carry == nil {
 		paths = append(paths, att.Source.ReaderRecord)
 	}
-	args := append([]string{"add", "--"}, paths...)
+	args := []string{"add", "--"}
+	for _, path := range paths {
+		args = append(args, ":(top)"+path)
+	}
 	if _, err := gitOutput(req.Repo, args...); err != nil {
 		return "", Attestation{}, rollbackMaterialized(err)
 	}

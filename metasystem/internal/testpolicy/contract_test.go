@@ -456,6 +456,34 @@ func TestOutputOwnershipPreservesTrackedBinAndInputIntegrity(t *testing.T) {
 	}
 }
 
+func TestGLEPathContractRejectsWildcardErrorsAndOverlap(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []string{"src/**/file.go", "src/[ab].go", "src/../secret", "src/{a,b}.go"} {
+		contract := fixtureContract()
+		contract.Surfaces[0].Paths = []string{bad}
+		if err := contract.Validate(); err == nil {
+			t.Errorf("surface accepted %q", bad)
+		}
+		contract = fixtureContract()
+		contract.Groups[0].Inputs = []string{bad}
+		if err := contract.Validate(); err == nil {
+			t.Errorf("input accepted %q", bad)
+		}
+	}
+	contract := fixtureContract()
+	contract.Groups[0].Inputs = []string{"src/*.go"}
+	contract.Groups[0].Outputs = []string{"src/a?.go"}
+	if err := contract.Validate(); err == nil {
+		t.Fatal("wildcard input/output overlap accepted")
+	}
+	contract = fixtureContract()
+	contract.Groups[0].Inputs = []string{"src/?.txt"}
+	contract.Groups[0].Outputs = []string{"src/é.txt"}
+	if err := contract.Validate(); err == nil {
+		t.Fatal("Unicode wildcard input/output overlap accepted")
+	}
+}
+
 func TestSectionGroupNamespaceIsAccepted(t *testing.T) {
 	contract := fixtureContract()
 	contract.Groups = append(contract.Groups, Group{ID: "section/example", Kind: "integration", Adapter: "section", CWD: ".", Inputs: []string{"scripts/**"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "example"})

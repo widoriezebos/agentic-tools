@@ -1511,6 +1511,9 @@ func runGoalBudgetPreparedAt(values *humanVerbValues, flags *syncFlags, boxToken
 	if file.StopFence != nil && file.Budget != nil && budget != *file.Budget {
 		return refuseHumanVerb(values, 1, "a breach-stopped goal resumes under its standing box before a new box is recorded", humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
 	}
+	if _, err := classifyGoalAuthorityFirst(values.verb, flags); err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "run this at the enrolled terminal"})
+	}
 	proof, err := proveGoalHumanAuthority("budget", flags, prove)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy))
@@ -2291,6 +2294,9 @@ func runGoalClassifySweepWithAuthority(args []string, prove goalAuthorityProver)
 		return refuseHumanVerb(values, 1, fmt.Sprintf("SWEEP_LISTING_CHANGED: confirmation %s does not match current listing %s", *confirm, listing.Digest), humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
 	authorityFlags := &syncFlags{root: *root, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureHumanAuthority}
+	if _, err := classifyGoalAuthorityFirst("classify-sweep", authorityFlags); err != nil {
+		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "run this at the enrolled terminal"})
+	}
 	proof, err := proveGoalHumanAuthority("classify-sweep", authorityFlags, prove)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "run confirmation at the enrolled terminal"})

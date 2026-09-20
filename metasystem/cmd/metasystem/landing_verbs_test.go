@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -1087,6 +1088,15 @@ func runCanonicalReceiptFixture(t *testing.T, frozen bool) {
 	runReceiptGit(t, root, "config", "goal.sync-branch", goal.LocalLedgerBranch)
 	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.runtimes=fake\ndispatch.cap-min=1\ndispatch.cap-max=120\n")
 	proofFixture := pinProofBinaryFixture(t, root)
+	capacityConfig := filepath.Join(root, "metasystem.conf")
+	capacityBytes, err := os.ReadFile(capacityConfig)
+	if err != nil || !bytes.Contains(capacityBytes, []byte(proofrun.AdmissionCapKey+"=4")) {
+		t.Fatalf("read pinned receipt host capacity: %v", err)
+	}
+	capacityBytes = bytes.Replace(capacityBytes, []byte(proofrun.AdmissionCapKey+"=4"), []byte(proofrun.AdmissionCapKey+"=1"), 1)
+	if err := os.WriteFile(capacityConfig, capacityBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	writeReceiptFixture(t, root, ".gitignore", "artifacts/\nbin/\n")
 	writeReceiptFixture(t, root, "go.mod", "module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.27.0\n")
 	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
@@ -1167,6 +1177,8 @@ set -euo pipefail
 launches=0
 if [[ -f "$RECEIPT_CANARY_LAUNCH_COUNT" ]]; then launches=$(cat "$RECEIPT_CANARY_LAUNCH_COUNT"); fi
 printf '%d\n' "$((launches + 1))" >"$RECEIPT_CANARY_LAUNCH_COUNT"
+printf 'ready\n' >"$RECEIPT_CANARY_RESOURCE_READY"
+while [[ ! -f "$RECEIPT_CANARY_RESOURCE_RELEASE" ]]; do sleep .05; done
 progress="$METASYSTEM_PROOF_CONTROL_ROOT/artifacts/agents/proof-runs/delivery/$METASYSTEM_PROOF_ATTEMPT.progress.jsonl"
 printf '{"suite":"landing-receipt","section":"tiny","event":"start","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
 evidence="$METASYSTEM_PROOF_CONTROL_ROOT/artifacts/agents/proof-runs/delivery/$METASYSTEM_PROOF_ATTEMPT.coverage"
@@ -1246,13 +1258,41 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		t.Fatal(err)
 	}
 	resultPath := filepath.Join(t.TempDir(), "result.json")
+	admissionDir := filepath.Join(t.TempDir(), "host-admission")
+	resourceReady := filepath.Join(t.TempDir(), "resource-ready")
+	resourceRelease := filepath.Join(t.TempDir(), "resource-release")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
 	command := proofFixture.command(receiptCanaryEnvironment(), engine, "landing", "test-receipt", "--root", root, "--tree", tree,
 		"--command", landing.CanonicalValidatorCommand, "--goal", "receipt-goal", "--cap-min", "1", "--result", resultPath)
 	command.Env = append(command.Env, "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
 		"RECEIPT_CANARY_MEASUREMENT_COUNT="+measurementCount, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
 		"RECEIPT_CANARY_REAL_GO="+realGo, "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
-	output, err := command.CombinedOutput()
+		"RECEIPT_CANARY_RESOURCE_READY="+resourceReady, "RECEIPT_CANARY_RESOURCE_RELEASE="+resourceRelease,
+		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable,
+		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
+		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
+	var outputBuffer bytes.Buffer
+	command.Stdout, command.Stderr = &outputBuffer, &outputBuffer
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer command.Process.Kill()
+	waitForPublicRouteFile(t, resourceReady)
+	contender, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	lease, acquireErr := proofrun.AcquireHostResources(contender, root, capacityConfig, "heavy", nil)
+	cancel()
+	if lease != nil {
+		_ = lease.Close()
+	}
+	if !errors.Is(acquireErr, context.DeadlineExceeded) {
+		t.Fatalf("landing receipt did not hold cap-1 slot: %v", acquireErr)
+	}
+	if err := os.WriteFile(resourceRelease, []byte("release\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = command.Wait()
+	output := outputBuffer.Bytes()
 	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
 		t.Fatalf("canonical receipt CLI did not retain a successful proof before projection failure: %v\n%s", err, output)
 	}
@@ -1261,6 +1301,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	if err != nil || json.Unmarshal(data, &result) != nil || result.Disposition != proofrun.DispositionFailed || result.ExitStatus != 1 {
 		t.Fatalf("canonical receipt result = %+v readErr=%v bytes=%s", result, err, data)
 	}
+	assertHostAdmissionClean(t, admissionDir, 1)
 	attempts, err := proofrun.ReadAttempts(root)
 	if err != nil || len(attempts) != 1 || attempts[0].Terminal == nil || attempts[0].Terminal.Result != proofrun.TerminalSuccess ||
 		attempts[0].PendingCoverage == nil || attempts[0].PendingCoverage.Evidence == nil || len(attempts[0].ProcessKeys) != 1 || len(attempts[0].DeliveryReceipt) == 0 {
@@ -1286,7 +1327,9 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	repeat.Env = append(repeat.Env, "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
 		"RECEIPT_CANARY_MEASUREMENT_COUNT="+measurementCount, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
 		"RECEIPT_CANARY_REAL_GO="+realGo, "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable,
+		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
+		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
 	repeatOutput, repeatErr := repeat.CombinedOutput()
 	if exit, ok := repeatErr.(*exec.ExitError); !ok || exit.ExitCode() != proofrun.ExitReusableSuccess {
 		t.Fatalf("spent-budget receipt recovery exit=%v output:\n%s", repeatErr, repeatOutput)
@@ -1296,6 +1339,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	if readErr != nil || json.Unmarshal(repeatedData, &repeated) != nil || repeated.Disposition != proofrun.DispositionReusableSuccess || repeated.AttemptID != attempts[0].AttemptID {
 		t.Fatalf("receipt recovery result=%+v readErr=%v bytes=%s", repeated, readErr, repeatedData)
 	}
+	assertHostAdmissionClean(t, admissionDir, 1)
 	recovered, err := os.ReadFile(receiptPath)
 	if err != nil || !bytes.Equal(bytes.TrimSpace(original), bytes.TrimSpace(recovered)) {
 		t.Fatalf("recovered receipt changed committed payload: err=%v", err)

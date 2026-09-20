@@ -63,31 +63,32 @@ func (m Measurement) TotalTokens() int64 {
 }
 
 type Record struct {
-	ID               string                     `json:"id"`
-	Kind             string                     `json:"kind"`
-	Adapter          string                     `json:"adapter"`
-	Goal             string                     `json:"goal"`
-	Tag              string                     `json:"tag"`
-	WorkingDirectory string                     `json:"workingDirectory"`
-	Inputs           []Input                    `json:"inputs"`
-	State            State                      `json:"state"`
-	Supervisor       *identity.Ref              `json:"supervisor"`
-	Child            *identity.Ref              `json:"child"`
-	ProcessGroup     *identity.Ref              `json:"processGroup"`
-	StartedAt        string                     `json:"startedAt"`
-	FinishedAt       string                     `json:"finishedAt"`
-	ExitCode         *int                       `json:"exitCode"`
-	Reason           string                     `json:"reason"`
-	Measured         bool                       `json:"measured"`
-	Measurement      Measurement                `json:"measurement"`
-	Outputs          []Output                   `json:"outputs"`
-	AdapterData      map[string]json.RawMessage `json:"adapterData"`
-	DeclaredLines    int64                      `json:"declaredLines,omitempty"`
-	ReadMode         string                     `json:"readMode,omitempty"`
-	ReadPackage      string                     `json:"readPackage,omitempty"`
-	ReadFile         string                     `json:"readFile,omitempty"`
-	ChangedLines     int64                      `json:"changedLines,omitempty"`
-	VerdictCounts    *bool                      `json:"verdictCounts,omitempty"`
+	ID                  string                     `json:"id"`
+	Kind                string                     `json:"kind"`
+	Adapter             string                     `json:"adapter"`
+	Goal                string                     `json:"goal"`
+	Tag                 string                     `json:"tag"`
+	WorkingDirectory    string                     `json:"workingDirectory"`
+	Inputs              []Input                    `json:"inputs"`
+	State               State                      `json:"state"`
+	Supervisor          *identity.Ref              `json:"supervisor"`
+	Child               *identity.Ref              `json:"child"`
+	ProcessGroup        *identity.Ref              `json:"processGroup"`
+	OutputOwnerUnproven bool                       `json:"outputOwnerUnproven,omitempty"`
+	StartedAt           string                     `json:"startedAt"`
+	FinishedAt          string                     `json:"finishedAt"`
+	ExitCode            *int                       `json:"exitCode"`
+	Reason              string                     `json:"reason"`
+	Measured            bool                       `json:"measured"`
+	Measurement         Measurement                `json:"measurement"`
+	Outputs             []Output                   `json:"outputs"`
+	AdapterData         map[string]json.RawMessage `json:"adapterData"`
+	DeclaredLines       int64                      `json:"declaredLines,omitempty"`
+	ReadMode            string                     `json:"readMode,omitempty"`
+	ReadPackage         string                     `json:"readPackage,omitempty"`
+	ReadFile            string                     `json:"readFile,omitempty"`
+	ChangedLines        int64                      `json:"changedLines,omitempty"`
+	VerdictCounts       *bool                      `json:"verdictCounts,omitempty"`
 }
 
 func (record *Record) UnmarshalJSON(data []byte) error {
@@ -214,7 +215,7 @@ func (s Store) List() ([]Record, error) {
 	}
 	var records []Record
 	for _, entry := range entries {
-		if !entry.IsDir() || !idPattern.MatchString(entry.Name()) {
+		if !entry.IsDir() || !idPattern.MatchString(entry.Name()) || entry.Name() == "declared-output-locks" {
 			continue
 		}
 		record, err := s.Read(entry.Name())

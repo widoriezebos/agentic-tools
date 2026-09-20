@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -61,6 +62,9 @@ func runFailedTestAgain(ctx context.Context, request TestRunRequest, group testp
 ) RerunFinding {
 	logPath := filepath.Join(request.LogRoot, fmt.Sprintf("%s.rerun-%d.log", group.ID, number))
 	argv := []string{"go", "test", "-json", "-count=1", "-timeout", "0"}
+	if len(group.BuildTags) != 0 {
+		argv = append(argv, "-tags", strings.Join(group.BuildTags, ","))
+	}
 	if group.Race {
 		argv = append(argv, "-race")
 	}

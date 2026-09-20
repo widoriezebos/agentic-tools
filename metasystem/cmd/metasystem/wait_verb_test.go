@@ -446,6 +446,10 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 			t.Fatal(err)
 		}
 		pinProofBinaryFixture(t, root)
+		// The synthetic proof reservation must not contend with the proof run
+		// executing this test; the fake-runtime root authorizes this temp slot.
+		t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(root, "proof-admission"))
+		t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
 		for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
 			if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 				t.Fatal(err)

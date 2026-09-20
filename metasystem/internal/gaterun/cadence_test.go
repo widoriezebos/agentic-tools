@@ -286,6 +286,55 @@ func TestCadenceRedPublishesThroughTheBatchMapping(t *testing.T) {
 	}
 }
 
+func TestCadenceBlockedPrerequisitePublishesTerminalRed(t *testing.T) {
+	t.Parallel()
+	now := cadenceTestStart.Add(time.Hour)
+	probe := cadenceProbe("section/deep", strings.Repeat("1", 64), "not-run")
+	input, deps, _, executions := cadenceFixture(&now, probe)
+	root, _ := governedWeightBed(t, cadenceTestStart)
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ulids := []string{"01J5X00000000000000000BD01", "01J5X00000000000000000BD02", "01J5X00000000000000000BD03"}
+	deps.Ledger = GoalCadenceLedger{Endpoint: endpoint, Actor: goal.Actor{Machine: "bed-m1", Lineage: "cadence"}, MintULID: func() (string, error) {
+		ulid := ulids[0]
+		ulids = ulids[1:]
+		return ulid, nil
+	}}
+	deps.Run = func(CadenceRunRequest) (CadenceRunResult, error) {
+		*executions++
+		canary := cadenceProbe("section/canary", strings.Repeat("2", 64), "failed")
+		canary.Observed = []proofrun.NativeTestIdentity{{Report: "canary.xml", Classname: "fixture", Name: "canary", Status: "failed", Reason: "planted"}}
+		blocked := probe
+		blocked.Status = "blocked"
+		blocked.NotRunReason = "prerequisite section/canary failed"
+		return CadenceRunResult{RunID: "run-blocked", Result: proofrun.TestResult{AttemptID: "attempt-blocked", Groups: []proofrun.GroupResult{canary, blocked}}}, nil
+	}
+
+	result, err := RunCadenceTick(input, deps)
+	if err != nil || !result.Published || result.Status == nil || result.Status.Green() || *executions != 1 ||
+		len(result.Status.Groups) != 1 || result.Status.Groups[0].Status != "blocked" || result.Status.Groups[0].ReuseSource != "" {
+		t.Fatalf("blocked tick=%+v executions=%d err=%v", result, *executions, err)
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil || projection.Tree.Cadence == nil || projection.Tree.Cadence.Green() || projection.Tree.CadenceClaim != nil ||
+		len(projection.Tree.TrunkRed) != 2 {
+		t.Fatalf("terminal blocked cadence=%+v red=%+v err=%v", projection.Tree.Cadence, projection.Tree.TrunkRed, err)
+	}
+	statuses := map[string]string{}
+	for _, record := range projection.Tree.TrunkRed {
+		statuses[record.Group] = record.Status
+	}
+	if statuses["section/canary"] != "failed" || statuses["section/deep"] != "blocked" {
+		t.Fatalf("failed prerequisite and blocked dependent were not both retained: %+v", statuses)
+	}
+	complete, err := RunCadenceTick(input, deps)
+	if err != nil || complete.ClaimOutcome != goal.CadenceClaimComplete || complete.Status == nil || complete.Status.Green() || *executions != 1 {
+		t.Fatalf("terminal claim=%+v executions=%d err=%v", complete, *executions, err)
+	}
+}
+
 func TestCadencePackagesUseNoWallClock(t *testing.T) {
 	paths, err := filepath.Glob("cadence*.go")
 	if err != nil {

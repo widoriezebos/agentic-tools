@@ -1437,7 +1437,6 @@ cat >"$budget_dispatch_repo/plans/goals.md" <<'BUDGET_LEDGER'
 # Goals
 
 ## Queued goal: structured-budget — Exercise structured dispatch admission
-- Risk: severity=3 novelty=1 exposure=1 accumulation=1 basis="severity 3 holds the goal at tier 3, which is the admission path this fixture exercises; novelty, exposure and accumulation are 1 because the fixture runs in an isolated throwaway checkout that nothing else reads."
 - Origin: main
 - Next step: Dispatch while the complete tuple remains within its limits.
 BUDGET_LEDGER
@@ -1456,6 +1455,13 @@ METASYSTEM_OWNER_LINEAGE=budget-fixture \
   METASYSTEM_GOAL_NOW=2000-01-01T00:00:00Z \
   "$budget_dispatch_repo/bin/metasystem" goal migrate --root "$budget_dispatch_repo" \
     --source-digest "$budget_source_digest" --sync-mode local --by wido >/dev/null
+git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
+METASYSTEM_OWNER_LINEAGE=budget-fixture \
+  METASYSTEM_GOAL_NOW=2000-01-01T00:02:00Z \
+  "$budget_dispatch_repo/bin/metasystem" goal edit --root "$budget_dispatch_repo" \
+    --id structured-budget --tier 3 --why "exercise tier-3 dispatch admission" \
+    --risk severity=3,novelty=1,exposure=1,accumulation=1 \
+    --basis "The isolated fixture holds severity at tier 3 while novelty, exposure, and accumulation are low." >/dev/null
 git -C "$budget_dispatch_repo" -c core.hooksPath=/dev/null reset -q --hard refs/heads/metasystem/goals
 track_armed_supervision "$budget_dispatch_repo"
 budget_main_start=$("$budget_dispatch_repo/bin/metasystem" proc started-at --pid "$$")

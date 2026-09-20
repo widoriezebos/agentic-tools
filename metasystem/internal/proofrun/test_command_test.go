@@ -63,7 +63,7 @@ func TestPreparedToolIdentityStartsVersionHelperOnceAndHonorsBound(t *testing.T)
 		Argv: []string{executable, "-test.run=^TestVersionIdentityHelper$"},
 		Tools: []testpolicy.Tool{{ID: "fixture", Executable: executable,
 			VersionArgs: []string{"-test.run=^TestVersionIdentityHelper$"}}}}
-	_, executableDigests, argv, _, _, _, _, launches, err := plannedToolIdentities(context.Background(), root, environment, group, root, nil)
+	_, executableDigests, argv, _, _, _, _, launches, err := plannedToolIdentities(context.Background(), root, environment, group, root, nil, testpolicy.SchemaVersion)
 	if err != nil || launches != 1 {
 		t.Fatalf("prepared identity starts=%d err=%v", launches, err)
 	}
@@ -412,7 +412,7 @@ func TestNativeDiscoveryRejectsDeclaredMissingGoTestWithoutCompiling(t *testing.
 		t.Fatal(err)
 	}
 	group := testpolicy.Group{ID: "app", Adapter: "go", CWD: ".", Packages: []string{"."}, Tests: json.RawMessage(`["TestMissing"]`)}
-	if err := CheckNativeDiscovery(root, root, testpolicy.Contract{Groups: []testpolicy.Group{group}}); err == nil || !strings.Contains(err.Error(), "TestMissing") {
+	if err := CheckNativeDiscovery(context.Background(), root, root, testpolicy.Contract{Groups: []testpolicy.Group{group}}, os.Environ()); err == nil || !strings.Contains(err.Error(), "TestMissing") {
 		t.Fatalf("missing declared Go test passed metadata discovery: %v", err)
 	}
 }

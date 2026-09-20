@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -59,6 +60,70 @@ func TestLandedRearmDecidesFromTheThreeFacts(t *testing.T) {
 	if d.Rearm || !strings.Contains(d.Refusal, "fact=live-attempt") || !strings.Contains(d.Refusal, "live (proof-live-1)") {
 		t.Fatalf("a rebuild under a live attempt was not refused: %+v", d)
 	}
+}
+
+func TestLandedRearmRebuildWaitsForHostSlotAndClearsCustody(t *testing.T) {
+	installation, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(installation, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(installation, "scripts", "agents", "go-build.sh")
+	if err := os.MkdirAll(filepath.Dir(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.WriteFile(script, []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'built\\n' > build-ran\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	build := exec.Command("go", "build", "-o", engine, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build rebuild custodian: %v\n%s", err, output)
+	}
+	admissionDir := filepath.Join(t.TempDir(), "host-admission")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", installation)
+	lease, err := proofrun.AcquireHostResources(context.Background(), installation, conf, "heavy", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	if err := landedRearmRebuild(proofrun.WithResourceCustodyExecutable(blocked, engine), installation); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("rebuild did not wait for occupied host slot: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(installation, "build-ran")); !os.IsNotExist(err) {
+		t.Fatalf("rebuild ran before host admission: %v", err)
+	}
+	// The blocked rebuild created no second lease; the first remains held.
+	assertHostAdmissionClean(t, admissionDir, 1)
+	firstMarker := ""
+	for _, file := range lease.Files() {
+		if strings.HasPrefix(filepath.Base(file.Name()), "lease-heavy-") {
+			firstMarker = file.Name()
+		}
+	}
+	if firstMarker == "" {
+		t.Fatal("held host lease has no custody marker")
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := landedRearmRebuild(proofrun.WithResourceCustodyExecutable(context.Background(), engine), installation); err != nil {
+		t.Fatalf("admitted rebuild failed: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(installation, "build-ran")); err != nil || string(data) != "built\n" {
+		t.Fatalf("rebuild script did not run: data=%q err=%v", data, err)
+	}
+	// The next admission reclaims the clean, unlocked first marker. Only the
+	// newly admitted rebuild's clean marker should remain.
+	if _, err := os.Stat(firstMarker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("clean first custody marker was not reclaimed: %v", err)
+	}
+	assertHostAdmissionClean(t, admissionDir, 1)
 }
 
 type landedRearmFixture struct {
@@ -437,6 +502,11 @@ func TestLandedRearmFastForwardsRebuildsAndReArms(t *testing.T) {
 	t.Cleanup(func() {
 		landedRearmFastForward, landedRearmRebuild, landedRearmUp, landedRearmOpenEnrollment, landedRearmMutationLock = previousFastForward, previousRebuild, previousUp, previousOpen, previousLock
 	})
+	noOp := facts
+	noOp.SourceOwnsTip = true
+	if record, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, noOp, 1); err != nil || record != nil || rebuiltIn != "" || upInstallation != "" || locked != 0 {
+		t.Fatalf("already-owned tip consumed re-arm work: record=%+v err=%v rebuild=%q up=%q locks=%d", record, err, rebuiltIn, upInstallation, locked)
+	}
 	record, err := landedRearmAct(context.Background(), fixture.installation, fixture.projectRoot, facts, 1)
 	if err != nil {
 		t.Fatal(err)

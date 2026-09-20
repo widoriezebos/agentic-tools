@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -129,6 +130,10 @@ func testingContractEnabled(root string) bool {
 func validateTestingAttemptOwners(installationRoot string, result proofrun.TestResult, allowCurrentLive bool) ([]string, error) {
 	attemptIDs := map[string]bool{}
 	for _, group := range result.Groups {
+		freshGroup := proofrun.TestGroupFresh(result, group.ID)
+		if freshGroup && group.Status == "reused" && group.NativeLaunched {
+			return nil, fmt.Errorf("fresh testing group %s copies native launch evidence", group.ID)
+		}
 		// A cadence attempt executes every group afresh; a cadence result that
 		// carries a reused group did not come from the composer.
 		if group.Status == "reused" && result.Purpose == testpolicy.PurposeCadence {
@@ -144,6 +149,20 @@ func validateTestingAttemptOwners(installationRoot string, result proofrun.TestR
 		attempt, readErr := proofrun.ReadAttempt(installationRoot, attemptID)
 		if readErr != nil {
 			return nil, fmt.Errorf("testing group %s has no successful terminal outer attempt", group.ID)
+		}
+		if group.Status == "passed" && !proofrun.MatchesTestResultFreshness(attempt, result, group.ID) {
+			return nil, fmt.Errorf("testing group %s changes its native producer freshness", group.ID)
+		}
+		if freshGroup {
+			if !proofrun.MatchesTestResultFreshness(attempt, result, group.ID) {
+				return nil, fmt.Errorf("testing group %s has no producer in the required freshness episode", group.ID)
+			}
+			if attempt.FreshnessExpiresAt != "" {
+				expires, err := time.Parse(time.RFC3339Nano, attempt.FreshnessExpiresAt)
+				if err != nil || !expires.After(time.Now().UTC()) {
+					return nil, fmt.Errorf("testing group %s native producer has expired", group.ID)
+				}
+			}
 		}
 		currentLive := allowCurrentLive && attemptID == result.AttemptID && attempt.Terminal == nil && attempt.CancellationIntent == ""
 		// A reused group may come from any attempt that reached a terminal,
@@ -165,8 +184,16 @@ func validateTestingAttemptOwners(installationRoot string, result proofrun.TestR
 			}
 		}
 		for _, recorded := range ownerResult.Groups {
+			nativeOwner := proofrun.NativeTestProducer(attempt, recorded)
+			if len(attempt.TestInventory) == 0 {
+				// Older attempts did not separate complete plans from native
+				// reservations. Their own native marker remains valid for an
+				// existing receipt, but never creates a new shared producer.
+				nativeOwner = recorded.NativeLaunched && recorded.ReuseAttempt == ""
+			}
 			if recorded.ID == group.ID && recorded.ExecutionIdentity == group.ExecutionIdentity &&
-				(recorded.Status == "passed" || recorded.Status == "reused") && recorded.CollectionComplete {
+				recorded.Status == "passed" && recorded.CollectionComplete &&
+				nativeOwner {
 				owned = true
 			}
 		}
@@ -247,7 +274,19 @@ func testingReceiptPosture(installationRoot string, result proofrun.TestResult) 
 		paths = append(paths, filepath.ToSlash(filepath.Join(prefix, contract)))
 	}
 	for _, group := range result.Groups {
-		paths = append(paths, group.InputManifest...)
+		for _, input := range group.InputManifest {
+			value, literal, err := pathpattern.ManifestEntry(input)
+			if err != nil {
+				return "", "", fmt.Errorf("testing receipt input manifest: %w", err)
+			}
+			if !literal {
+				if _, err := pathpattern.Parse(value); err != nil {
+					// Older manifests carried discovered exact files without a tag.
+					input = pathpattern.EncodeLiteral(value)
+				}
+			}
+			paths = append(paths, input)
+		}
 	}
 	working, err := workspace.SnapshotRelevant(result.CandidateTree, paths)
 	return index, working, err

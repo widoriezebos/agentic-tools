@@ -57,6 +57,7 @@ func assertJoinRefusedBeforeQueue(t *testing.T, request batchJoinRequest, depend
 }
 
 func TestLandingBatchJoinRefusesZeroAccountingRevision(t *testing.T) {
+	t.Parallel()
 	request, dependencies, gateCalls := prepublicationJoinBed(t)
 	dependencies.binding = func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
 		return dispatchcore.GoalBinding{Revision: 2, Machine: "seat", Lineage: "lineage", File: &goal.GoalFile{Claimed: &goal.ClaimRecord{}}, Capability: goal.StopCapability{ClaimEpoch: 1}}, nil
@@ -215,6 +216,7 @@ func TestDirectoryTreesOverlapRejectsAncestorsOnly(t *testing.T) {
 }
 
 func TestLandingBatchJoinRefusesDroppedListedTest(t *testing.T) {
+	t.Parallel()
 	production := productionBatchJoinDependencies()
 	if reflect.ValueOf(production.protectedTests).Pointer() != reflect.ValueOf(batch.CheckProtectedTests).Pointer() {
 		t.Fatal("production join does not use the protected-test gate")

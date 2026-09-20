@@ -58,6 +58,9 @@ func (adapter CodexExec) Command(record Record, stateDir string) (Command, error
 	if err != nil {
 		return Command{}, err
 	}
+	if diff := readString(record.AdapterData, "readDiff"); diff != "" {
+		data = append(data, []byte("\nDiff: "+diff+"\n")...)
+	}
 	directory := record.WorkingDirectory
 	if record.Kind == "critique" {
 		directory, err = adapter.prepareCritique(record)
@@ -152,6 +155,9 @@ func (adapter CodexExec) Measure(record Record, stateDir string) (Measurement, [
 	}
 	if err := measureRollout(files[0], &measurement); err != nil {
 		return measurement, outputs, nil, err
+	}
+	if record.Kind == "read" {
+		measurement.Verdict = readVerdict(record)
 	}
 	if pageErr != nil {
 		return measurement, outputs, nil, pageErr

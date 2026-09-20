@@ -298,6 +298,36 @@ func TestGoalLandingPreparationSeries(t *testing.T) {
 	requireAbsent(t, movedOut)
 }
 
+func TestGLENestedInstallationLandingProjection(t *testing.T) {
+	t.Parallel()
+	f := newLandFixture(t)
+	request := landRequest(t, f, filepath.Join(t.TempDir(), "prepared"))
+	request.Repo = filepath.Join(f.root, "metasystem")
+	result, err := branch.PrepareLanding(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Candidate == "" || result.Landing == "" {
+		t.Fatalf("incomplete landing result: %+v", result)
+	}
+}
+
+func TestGLEProjectRootLandingProjection(t *testing.T) {
+	t.Parallel()
+	f := newLandFixture(t)
+	request := landRequest(t, f, filepath.Join(t.TempDir(), "prepared"))
+	if request.Repo != f.root {
+		t.Fatalf("project-root caller changed: %s", request.Repo)
+	}
+	result, err := branch.PrepareLanding(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Candidate == "" || result.Landing == "" {
+		t.Fatalf("incomplete landing result: %+v", result)
+	}
+}
+
 func TestGoalLandingCommitDatesComeFromReceiptStamp(t *testing.T) {
 	t.Parallel()
 	f := newLandFixture(t)

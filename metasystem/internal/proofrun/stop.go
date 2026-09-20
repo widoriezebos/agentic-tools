@@ -49,7 +49,16 @@ type StopOptions struct {
 func Stop(record Record, options StopOptions) []StopOutcome {
 	options = stopDefaults(options)
 	outcomes := make([]StopOutcome, 0, 3)
-	suite := stopOne("suite", record.SuiteProcess, -int(record.SuiteProcess.Pgid), true, options)
+	managedResources := record.SuiteProcess.Pgid == record.Watchdog.Pid && record.Watchdog.Pid > 0
+	var suite StopOutcome
+	if managedResources {
+		// The watchdog anchors this group and holds resource custody. Stop the
+		// exact worker; killing the entire group would release its lease before
+		// the custodian could prove descendant cleanup.
+		suite = stopOne("suite", record.SuiteProcess, int(record.SuiteProcess.Pid), false, options)
+	} else {
+		suite = stopOne("suite", record.SuiteProcess, -int(record.SuiteProcess.Pgid), true, options)
+	}
 	outcomes = append(outcomes, suite)
 
 	for _, item := range []struct {
@@ -62,6 +71,11 @@ func Stop(record Record, options StopOptions) []StopOutcome {
 		state := waitForIdentity(item.identity.Ref(), options.KillGrace, options)
 		if state == identity.Dead {
 			outcomes = append(outcomes, StopOutcome{Component: item.name, Identity: item.identity, Signal: StopSignalNone, Result: StopAlreadyGone, Reason: "suite ended"})
+			continue
+		}
+		if managedResources && item.name == "watchdog" {
+			outcomes = append(outcomes, StopOutcome{Component: item.name, Identity: item.identity,
+				Signal: StopSignalNone, Result: StopNotStopped, Reason: "resource custodian retains the lease until descendants drain"})
 			continue
 		}
 		outcomes = append(outcomes, stopOne(item.name, item.identity, int(item.identity.Pid), false, options))

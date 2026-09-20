@@ -14,6 +14,7 @@ package fixtureauth
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,22 +47,29 @@ type Authorization struct {
 }
 
 // New constructs the authorization from a checkout root. Outcomes:
-//   - env unset: an authorization whose probes all answer "no entry"
-//     (fixtures simply are not in play);
-//   - env set and the root's conf declares metasystem.runtimes=fake:
-//     probes serve the table;
-//   - env set and the conf is anything else or unreadable: a LOUD
-//     error — the reserved-cap fence's rule (reservedcap.go), applied
-//     at construction so a leaked fixture never rides an unfenced
-//     entry point.
+//   - fixture table env unset: an authorization whose identity probes answer
+//     "no entry";
+//   - fixture table env set and layered config declares
+//     metasystem.runtimes=fake: probes serve the table;
+//   - fixture table env set but the config is non-fake or invalid: an error;
+//   - fixture clock requested with invalid runtime config: an error, except
+//     for an absent config, which remains a production root and ignores the
+//     clock environment variable.
 func New(root string) (*Authorization, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
 	}
 	absRoot = filepath.Clean(absRoot)
-	mode := FixtureModeRoot(root)
+	mode, modeErr := fixtureModeRoot(root)
 	path := os.Getenv(fixtureEnv)
+	if modeErr != nil && (path != "" || os.Getenv(goalNowEnv) != "" && !errors.Is(modeErr, os.ErrNotExist)) {
+		request := fixtureEnv
+		if path == "" {
+			request = goalNowEnv
+		}
+		return nil, fmt.Errorf("%s is set but fixture runtime configuration is invalid: %w", request, modeErr)
+	}
 	if path == "" {
 		return &Authorization{root: absRoot, fixtureMode: mode}, nil
 	}
@@ -284,10 +292,20 @@ func (p MissionHolderProbe) FixtureEntry(pid int64) (identity.FixtureEntry, bool
 }
 
 // FixtureModeRoot is the ONE fixture-mode predicate (the reserved-cap
-// rule): the root's conf declares metasystem.runtimes=fake. The
+// rule): the root's committed or local config declares metasystem.runtimes=fake.
+// Environment overrides cannot grant fixture mode. The
 // env-independent gates — the census process-table file and the
 // synthetic ancestor pin, which ride their own environment variables —
 // consult this instead of open-coding the conf read.
 func FixtureModeRoot(root string) bool {
-	return config.ConfValue(filepath.Join(root, "metasystem.conf"), "metasystem.runtimes", "") == "fake"
+	mode, _ := fixtureModeRoot(root)
+	return mode
+}
+
+func fixtureModeRoot(root string) (bool, error) {
+	value, _, err := config.Get(config.GetParams{
+		Key: "metasystem.runtimes", ConfPath: filepath.Join(root, "metasystem.conf"),
+		LookupEnv: func(string) (string, bool) { return "", false },
+	})
+	return err == nil && value == "fake", err
 }

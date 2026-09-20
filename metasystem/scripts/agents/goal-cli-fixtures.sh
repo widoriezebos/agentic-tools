@@ -333,6 +333,21 @@ MANIFEST
 migrate_out=$(cd "$clone" && METASYSTEM_OWNER_LINEAGE=fixture-lineage \
   "$ms" goal migrate --root "$clone" --source-digest "$digest" --manifest "$manifest" --by wido)
 
+# Migration records its claim at the real clock. Start the two elapsed-budget
+# scenarios just after that claim, then advance the fixture clock from the
+# same base so the breach is independent of when the bed runs.
+fixture_stamp() { # seconds since the epoch -> RFC3339 UTC
+  date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ
+}
+case "$fixture_scenario" in
+  forgiving-budget-states | forgiving-human-refusals)
+    forgiving_base_epoch=$(( $(date -u +%s) + 60 ))
+    export METASYSTEM_GOAL_NOW=$(fixture_stamp "$forgiving_base_epoch")
+    forgiving_breach_at=$(fixture_stamp $((forgiving_base_epoch + 6 * 3600)))
+    forgiving_second_breach_at=$(fixture_stamp $((forgiving_base_epoch + 30 * 3600)))
+    ;;
+esac
+
 if [[ "$fixture_scenario" == migration-recovery ]]; then
 grep -q '"outcome": "confirmed"' <<<"$migrate_out" \
   || { echo "goal migrate did not confirm: $migrate_out" >&2; exit 1; }
@@ -1584,7 +1599,7 @@ claim_revision_after=$(sed -n 's/^- Claimed: .* revision=\([0-9][0-9]*\).*/\1/p'
 
 # The stop custodian closes the claimed revision; keep then routes through the
 # standing resume transaction.
-export METASYSTEM_GOAL_NOW=2026-09-20T17:00:00Z
+export METASYSTEM_GOAL_NOW=$forgiving_breach_at
 breach_stop=$("$ms" job breach-stop --root "$clone" --goal ship-widget --revision "$claim_revision_after")
 breach_stop_id=$(sed -n 's/.*"stopId":"\([^"]*\)".*/\1/p' <<<"$breach_stop")
 [[ -n "$breach_stop_id" ]] || { echo "breach-stop did not print its stop identifier: $breach_stop" >&2; exit 1; }
@@ -1602,7 +1617,6 @@ read_forgiving_goal ship-widget "$tmp/ship-widget-resumed.md"
 grep -q ' resume actor=human:Wido ' "$tmp/ship-widget-resumed.md" \
   && ! grep -q '^- StopFence:' "$tmp/ship-widget-resumed.md" \
   || { echo "keep did not resume the breach-stopped goal" >&2; cat "$tmp/ship-widget-resumed.md" >&2; exit 1; }
-unset METASYSTEM_GOAL_NOW
 
 for refused_id in port-engine absent-goal; do
   set +e
@@ -1898,12 +1912,12 @@ done
 
 # The same completed box is an act when the claim is breach-stopped: the
 # compact refusal must print keep, and keep must match an explicit resume.
-export METASYSTEM_GOAL_NOW=2026-09-20T17:00:00Z
+export METASYSTEM_GOAL_NOW=$forgiving_breach_at
 breach_stop_forgiving_goal claimed-completion-twin
 run_stopped_completion_twin() {
 	release_forgiving_claim_if_present claimed-completion-twin
 	claim_forgiving_goal claimed-completion
-	export METASYSTEM_GOAL_NOW=2026-09-21T17:00:00Z
+	export METASYSTEM_GOAL_NOW=$forgiving_second_breach_at
 	breach_stop_forgiving_goal claimed-completion
 	"$ms" goal resume --root "$clone" --id claimed-completion --by Wido --fixture-human-authority \
 		--elapsed-limit 4h --attempt-limit 6 --reserved-job-minutes-limit 360 --active-job-limit 1 --review-round-limit 2
@@ -1911,7 +1925,6 @@ run_stopped_completion_twin() {
 run_forgiving_refusal_remedy "breach-stopped claimed compact completion" claimed-completion-twin claimed-completion \
 	run_stopped_completion_twin \
 	--refusal "$ms" goal budget --root "$clone" --id claimed-completion-twin 4h/6/360m/1 --by Wido --fixture-human-authority
-unset METASYSTEM_GOAL_NOW
 release_forgiving_claim_if_present claimed-completion
 release_forgiving_claim_if_present claimed-completion-twin
 claim_forgiving_goal ship-widget
@@ -2598,9 +2611,6 @@ if [[ "$fixture_scenario" == landing-slot ]]; then
 # re-claim keep the accounting episode with the gap as idle seconds. The
 # stamps are computed from the real clock (the migrated claim carries it)
 # so every publish is later than the one before.
-fixture_stamp() { # seconds since the epoch -> RFC3339 UTC
-  date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ
-}
 landing_base=$(( $(date -u +%s) + 60 ))
 land_at=$(fixture_stamp "$landing_base")
 open_at=$(fixture_stamp $((landing_base + 300)))

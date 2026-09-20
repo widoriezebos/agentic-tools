@@ -27,6 +27,9 @@ func TestTestingMergeDriverUsesGitArgumentOrderAndPrintsUsage(t *testing.T) {
 		if err := os.WriteFile(paths[i], data, 0o640); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.Chmod(paths[i], 0o640); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if code := runTestingMergeDriver(paths); code != 0 {
 		t.Fatalf("merge driver exit = %d", code)

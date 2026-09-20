@@ -329,6 +329,7 @@ func TestContextCostHealthHelper(t *testing.T) {
 }
 
 func TestContextCostRoleFromHealthLine(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		line string
 		want string
@@ -347,6 +348,23 @@ func TestContextCostRoleFromHealthLine(t *testing.T) {
 		if got := contextCostRoleFromHealthLine(test.line); got != test.want {
 			t.Errorf("context role from %q = %q, want %q", test.line, got, test.want)
 		}
+	}
+}
+
+func TestContextCostReportRoleLineDecodesStructuredHealth(t *testing.T) {
+	t.Parallel()
+	role := steward.RoleVerdict{Role: steward.RoleContext, Status: steward.HealthAlive,
+		Reason: "handoff --note <configured-note-path> --no-delegates"}
+	health := steward.NewHookHealthPreview(steward.HealthVerdict{
+		Schema: 1, Aggregate: "healthy", Roles: []steward.RoleVerdict{role},
+	})
+	encoded, err := json.MarshalIndent(health, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := "## Console text\n\ncontext-budget=dead (unrelated prose)\n\n## Health\n\n```json\n" + string(encoded) + "\n```\n"
+	if got := contextCostReportRoleLine(report); got != role.Line() {
+		t.Fatalf("decoded report role=%q, want %q", got, role.Line())
 	}
 }
 
@@ -678,17 +696,21 @@ func (bed *contextCostBed) requireExpectedLiveRole(label string, role steward.Ro
 }
 
 func contextCostReportRoleLine(report string) string {
-	scanner := bufio.NewScanner(strings.NewReader(report))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.Contains(line, "HEALTH ") {
-			continue
-		}
-		if role := contextCostRoleFromHealthLine(line); role != "" {
-			return role
-		}
+	const healthSection = "## Health\n\n```json\n"
+	start := strings.Index(report, healthSection)
+	if start < 0 {
+		return ""
 	}
-	return ""
+	section := report[start+len(healthSection):]
+	end := strings.Index(section, "\n```")
+	if end < 0 {
+		return ""
+	}
+	var health steward.HookHealthPreview
+	if err := json.Unmarshal([]byte(section[:end]), &health); err != nil {
+		return ""
+	}
+	return contextCostRoleFromHealthLine(health.Line)
 }
 
 func contextCostRoleFromHealthLine(line string) string {

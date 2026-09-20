@@ -26,6 +26,19 @@ func cadenceStatusFixture(key CadenceClaimKey, started time.Time, status string)
 	}
 }
 
+func TestCadenceBlockedStatusIsNonGreenWithoutReuseSource(t *testing.T) {
+	t.Parallel()
+	status := cadenceStatusFixture(cadenceKeyFixture(), time.Date(2026, 9, 17, 0, 0, 0, 0, time.UTC), "blocked")
+	status.Opid = Opid("01J5X00000000000000000BC01", "mac-a", "cadence")
+	if err := validateCadenceStatus(&status); err != nil || status.Green() {
+		t.Fatalf("blocked cadence status=%+v err=%v", status, err)
+	}
+	status.Groups[0].ReuseSource = "cached-attempt"
+	if err := validateCadenceStatus(&status); err == nil {
+		t.Fatal("blocked cadence group accepted a reuse source")
+	}
+}
+
 func TestTrunkRedBatchGuardsExcludeCadenceRecords(t *testing.T) {
 	t.Parallel()
 	root := soloLedgerRepo(t)

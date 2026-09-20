@@ -507,6 +507,57 @@ func TestJoinedSharedLaunchUsesEngineIdentityForShellCommand(t *testing.T) {
 	testJoinedLaunchInputParity(t, "testing")
 }
 
+func TestNonJoinedTestingLaunchUsesEngineIdentityForDifferentWorker(t *testing.T) {
+	t.Parallel()
+	root, fixtureIdentity := proofAttemptFixture(t, "testing")
+	conf := filepath.Join(root, "metasystem.conf")
+	engine, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := FullDigest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	context, err := CaptureSharedExecutionContext(root, conf, os.Environ(), engine, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proofIdentity := BuildProofIdentityForContext(context, "full", "testing", []string{"gate"}, fixtureIdentity.BehaviorPolicy)
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	watchdog := filepath.Join(root, "watchdog.sh")
+	writeExecutable(t, watchdog, `#!/usr/bin/env bash
+done_path=
+while (($#)); do
+  if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
+done
+while [[ ! -e "$done_path" ]]; do sleep 0.01; done
+`)
+	var output bytes.Buffer
+	status := LaunchSuite(LaunchOptions{Suite: "testing-different-worker", Root: root, ControlRoot: root, AttemptID: attempt.AttemptID,
+		Deadline: now.Add(2 * time.Minute), ConfPath: conf, ProgressPath: filepath.Join(root, "progress.jsonl"),
+		LogPath: filepath.Join(root, "launcher.log"), Banner: "testing engine fixture", Silence: time.Second,
+		SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
+		Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second, WatchdogExecutable: watchdog,
+		Command: []string{"sh", "-c", "true"}, Environment: os.Environ(), ErrorOutput: &output})
+	if status != 0 {
+		t.Fatalf("nonjoined testing worker changed the shared engine identity: exit=%d output=%q", status, output.String())
+	}
+	stored, err := ReadAttempt(root, attempt.AttemptID)
+	if err != nil || stored.Terminal == nil || stored.Terminal.Result != TerminalSuccess {
+		t.Fatalf("testing attempt terminal = %+v, err=%v", stored.Terminal, err)
+	}
+}
+
 func testJoinedLaunchInputParity(t *testing.T, commandClass string) {
 	controlRoot, parentIdentity := proofAttemptFixture(t, commandClass)
 	childRoot := t.TempDir()

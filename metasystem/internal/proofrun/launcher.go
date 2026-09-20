@@ -50,17 +50,21 @@ type LaunchOptions struct {
 	WatchdogExecutable string
 	Command            []string
 	Environment        []string
-	Output             io.Writer
-	ErrorOutput        io.Writer
-	FenceReader        func(string) (stopfence.Record, error)
-	ClaimCreator       func(string, string, int64, identity.Ref) (CreationClaim, error)
-	Prober             identity.Prober
-	Signal             func(int, syscall.Signal) error
-	PrepareSuccess     func(CompletionContext) (json.RawMessage, error)
-	CommitTerminal     func(CompletionContext, json.RawMessage) error
-	HintTerminal       func(root, attemptID, publicationID, bootID string, bootNanos int64)
-	BeforeProcessDone  func(CompletionContext) error
-	Now                func() time.Time
+	HostResourceFiles  []*os.File
+	// RequireCustody anchors a public launch even when it borrows a legacy
+	// parent's capacity without inheritable resource descriptors.
+	RequireCustody    bool
+	Output            io.Writer
+	ErrorOutput       io.Writer
+	FenceReader       func(string) (stopfence.Record, error)
+	ClaimCreator      func(string, string, int64, identity.Ref) (CreationClaim, error)
+	Prober            identity.Prober
+	Signal            func(int, syscall.Signal) error
+	PrepareSuccess    func(CompletionContext) (json.RawMessage, error)
+	CommitTerminal    func(CompletionContext, json.RawMessage) error
+	HintTerminal      func(root, attemptID, publicationID, bootID string, bootNanos int64)
+	BeforeProcessDone func(CompletionContext) error
+	Now               func() time.Time
 }
 
 var proofPublicationBootClock = identity.BootClock
@@ -149,7 +153,28 @@ func LaunchSuite(options LaunchOptions) int {
 	defer log.Close()
 	combined := &lockedWriter{writers: []io.Writer{options.Output, log}}
 	combinedErr := &lockedWriter{writers: []io.Writer{options.ErrorOutput, log}}
-	if err := AppendProgressHeader(options.ProgressPath, ProgressHeader{TmpPaths: options.TmpPaths, LogPaths: []string{options.LogPath}}); err != nil {
+	resourceFiles := len(options.HostResourceFiles) != 0
+	managedResources := resourceFiles || options.RequireCustody
+	var spools *custodySpools
+	var suiteSpools *custodySpools
+	logPaths := []string{options.LogPath}
+	if managedResources {
+		spools, err = newCustodySpools(options.LogPath, "watchdog")
+		if err != nil {
+			fmt.Fprintln(combinedErr, "suite launcher: create durable watchdog output:", err)
+			return 1
+		}
+		defer spools.close()
+		logPaths = append(logPaths, spools.stdout.Name(), spools.stderr.Name())
+		suiteSpools, err = newCustodySpools(options.LogPath, "suite")
+		if err != nil {
+			fmt.Fprintln(combinedErr, "suite launcher: create durable suite output:", err)
+			return 1
+		}
+		defer func() { _ = suiteSpools.finish() }()
+		logPaths = append(logPaths, suiteSpools.stdout.Name(), suiteSpools.stderr.Name())
+	}
+	if err := AppendProgressHeader(options.ProgressPath, ProgressHeader{TmpPaths: options.TmpPaths, LogPaths: logPaths}); err != nil {
 		fmt.Fprintln(combinedErr, "suite launcher:", err)
 		return 1
 	}
@@ -179,6 +204,16 @@ func LaunchSuite(options LaunchOptions) int {
 			fmt.Fprintln(combinedErr, "suite launcher: read proof identity before launch:", readErr)
 			return 1
 		}
+		if attempt.ProofIdentity.CommandClass == "testing" {
+			// Admission binds the running shared engine. The selected trusted
+			// worker may be a different executable and is bound separately by
+			// the attempt's identity inputs.
+			testingEngine, err = os.Executable()
+			if err != nil {
+				fmt.Fprintln(combinedErr, "suite launcher: locate testing engine:", err)
+				return 1
+			}
+		}
 		launchInputIdentity = attempt.ProofIdentity.IdentityDigest
 		if options.JoinedAttempt {
 			var context ExecutionContext
@@ -186,10 +221,7 @@ func LaunchSuite(options LaunchOptions) int {
 			if attempt.ProofIdentity.CommandClass == "testing" {
 				// Joined suites may execute env, Bash, or an application command.
 				// The running launcher is the engine owning their proof identity.
-				testingEngine, identityErr = os.Executable()
-				if identityErr == nil {
-					context, identityErr = CaptureSharedExecutionContext(options.Root, options.ConfPath, childEnvironment, testingEngine, attempt.ProofIdentity.ManifestDigest)
-				}
+				context, identityErr = CaptureSharedExecutionContext(options.Root, options.ConfPath, childEnvironment, testingEngine, attempt.ProofIdentity.ManifestDigest)
 			} else {
 				context, identityErr = CaptureExecutionContext(options.Root, options.ConfPath, childEnvironment)
 			}
@@ -210,6 +242,7 @@ func LaunchSuite(options LaunchOptions) int {
 	}
 	suite := exec.Command(options.Command[0], options.Command[1:]...)
 	suite.Dir = options.Root
+	suite.ExtraFiles = append(suite.ExtraFiles, options.HostResourceFiles...)
 	suite.Env = append(childEnvironment,
 		"METASYSTEM_PROOF_CONTROL_ROOT="+controlRoot,
 		"METASYSTEM_PROOF_RECORD_KEY="+options.Suite,
@@ -224,68 +257,184 @@ func LaunchSuite(options LaunchOptions) int {
 			identity.FixtureAttemptEnv+"="+options.AttemptID,
 		)
 	}
-	suite.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	suiteOut, err := suite.StdoutPipe()
-	if err != nil {
-		fmt.Fprintln(combinedErr, "suite launcher:", err)
-		return 1
+	if len(options.HostResourceFiles) != 0 {
+		suite.Env = append(suite.Env, HostResourceFDEnvironment(options.HostResourceFiles))
 	}
-	suiteErr, err := suite.StderrPipe()
-	if err != nil {
-		fmt.Fprintln(combinedErr, "suite launcher:", err)
-		return 1
+	donePath := options.LogPath + ".done"
+	_ = os.Remove(donePath)
+	var custody *resourceCustody
+	var barrier *custodyBarrier
+	if managedResources {
+		if resourceFiles {
+			if err := MarkHostResourcesDirty(options.HostResourceFiles); err != nil {
+				fmt.Fprintln(combinedErr, "suite launcher: mark native custody active:", err)
+				return 1
+			}
+		}
+		custody, err = startResourceCustody(options, launcherExact.Ref(), donePath, options.HostResourceFiles, spools)
+		if err != nil {
+			if resourceFiles {
+				_ = MarkHostResourcesClean(options.HostResourceFiles)
+			}
+			fmt.Fprintln(combinedErr, "suite launcher: start resource custodian:", err)
+			return 1
+		}
+		custody.spools.follow(combined, combinedErr, log)
+		engine := options.WatchdogExecutable
+		if engine == "" {
+			engine, err = os.Executable()
+		}
+		if err == nil {
+			barrier, err = prepareCustodyExec(suite, engine)
+		}
+		if err != nil {
+			_ = custody.finish()
+			fmt.Fprintln(combinedErr, "suite launcher: prepare resource start barrier:", err)
+			return 1
+		}
+		defer barrier.close()
+		suite.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pgid: custody.group}
+	} else {
+		suite.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	}
+	var suiteOut, suiteErr io.ReadCloser
+	if suiteSpools != nil {
+		suite.Stdout, suite.Stderr = suiteSpools.stdout, suiteSpools.stderr
+	} else {
+		suiteOut, err = suite.StdoutPipe()
+		if err == nil {
+			suiteErr, err = suite.StderrPipe()
+		}
+		if err != nil {
+			fmt.Fprintln(combinedErr, "suite launcher:", err)
+			return 1
+		}
 	}
 	if err := suite.Start(); err != nil {
+		if custody != nil {
+			_ = custody.finish()
+		}
 		fmt.Fprintln(combinedErr, "suite launcher:", err)
 		return 1
+	}
+	if suiteSpools != nil {
+		// The child has its own regular-file descriptors; the parent can
+		// follow live output without keeping a write descriptor open.
+		suiteSpools.close()
+		suiteSpools.follow(combined, combinedErr, log)
+	}
+	if barrier != nil {
+		for _, file := range suite.ExtraFiles[len(suite.ExtraFiles)-2:] {
+			_ = file.Close()
+		}
+		if err := barrier.await(); err != nil {
+			_ = suite.Process.Kill()
+			_ = suite.Wait()
+			_ = custody.finish()
+			fmt.Fprintln(combinedErr, "suite launcher: resource start barrier:", err)
+			return 1
+		}
 	}
 	suiteExact, state, probeErr := prober.Probe(int64(suite.Process.Pid))
 	if probeErr != nil || state != identity.Alive {
 		releaseLaunchMutation()
-		_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		_ = suite.Process.Kill()
 		_ = suite.Wait()
+		if custody != nil {
+			_ = custody.finish()
+		}
 		fmt.Fprintf(combinedErr, "suite launcher: cannot record exact suite identity: %v (%s)\n", probeErr, state)
 		return 1
 	}
+	if custody != nil {
+		if err := custody.bind(suiteExact.Ref()); err != nil {
+			_ = suite.Process.Kill()
+			_ = suite.Wait()
+			_ = custody.finish()
+			fmt.Fprintln(combinedErr, "suite launcher: bind exact resource worker:", err)
+			return 1
+		}
+	}
 
 	var copies sync.WaitGroup
-	copies.Add(2)
-	go copyStream(&copies, combined, suiteOut)
-	go copyStream(&copies, combinedErr, suiteErr)
-	donePath := options.LogPath + ".done"
-	_ = os.Remove(donePath)
-	watchdog := watchdogCommand(options, suiteExact.Ref(), donePath, fence.Generation)
-	watchdog.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	watchdogOut, err := watchdog.StdoutPipe()
+	if suiteSpools == nil {
+		copies.Add(2)
+		go copyStream(&copies, combined, suiteOut, true)
+		go copyStream(&copies, combinedErr, suiteErr, true)
+	}
+	var watchdog *exec.Cmd
+	var watchdogOut, watchdogErr io.ReadCloser
+	if custody != nil {
+		watchdog = custody.command
+	} else {
+		watchdog = watchdogCommand(options, suiteExact.Ref(), donePath, fence.Generation)
+		watchdog.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		watchdogOut, err = watchdog.StdoutPipe()
+	}
 	if err != nil {
 		releaseLaunchMutation()
-		_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		if custody != nil {
+			_ = suite.Process.Kill()
+		} else {
+			_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		}
 		_ = suite.Wait()
+		if custody != nil {
+			_ = custody.finish()
+		}
 		fmt.Fprintln(combinedErr, "suite launcher:", err)
 		return 1
 	}
-	watchdogErr, err := watchdog.StderrPipe()
+	if custody == nil {
+		watchdogErr, err = watchdog.StderrPipe()
+	}
 	if err != nil {
 		releaseLaunchMutation()
-		_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		if custody != nil {
+			_ = suite.Process.Kill()
+		} else {
+			_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		}
 		_ = suite.Wait()
+		if custody != nil {
+			_ = custody.finish()
+		}
 		fmt.Fprintln(combinedErr, "suite launcher:", err)
 		return 1
 	}
-	if err := watchdog.Start(); err != nil {
+	if custody == nil {
+		err = watchdog.Start()
+	}
+	if err != nil {
 		releaseLaunchMutation()
-		_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		if custody != nil {
+			_ = suite.Process.Kill()
+		} else {
+			_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		}
 		_ = suite.Wait()
+		if custody != nil {
+			_ = custody.finish()
+		}
 		fmt.Fprintln(combinedErr, "suite launcher: start sibling watchdog:", err)
 		return 1
 	}
 	watchdogExact, watchdogState, watchdogProbeErr := prober.Probe(int64(watchdog.Process.Pid))
 	if watchdogProbeErr != nil || watchdogState != identity.Alive {
 		releaseLaunchMutation()
-		_ = watchdog.Process.Kill()
-		_ = watchdog.Wait()
-		_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		if custody == nil {
+			_ = watchdog.Process.Kill()
+			_ = watchdog.Wait()
+		}
+		if custody != nil {
+			_ = suite.Process.Kill()
+		} else {
+			_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		}
 		_ = suite.Wait()
+		if custody != nil {
+			_ = custody.finish()
+		}
 		fmt.Fprintf(combinedErr, "suite launcher: cannot record exact watchdog identity: %v (%s)\n", watchdogProbeErr, watchdogState)
 		return 1
 	}
@@ -295,12 +444,15 @@ func LaunchSuite(options LaunchOptions) int {
 	// five (2026-09-12, the suite-progress fixture's chatty scenario). The
 	// watchdog's own children (evidence preservation, supervision shutdown)
 	// end before it returns, so draining its pipes before Wait cannot hang.
-	// The suite keeps the old order: a detached fixture child may hold the
-	// suite's descriptors open long after the suite itself has exited.
+	// Unmanaged suite pipes keep their old order: a detached fixture child
+	// may hold the descriptors after the suite itself exits. Custodied
+	// suites use durable files and an independently bounded final drain.
 	var watchdogCopies sync.WaitGroup
-	watchdogCopies.Add(2)
-	go copyStream(&watchdogCopies, combined, watchdogOut)
-	go copyStream(&watchdogCopies, combinedErr, watchdogErr)
+	if custody == nil {
+		watchdogCopies.Add(2)
+		go copyStream(&watchdogCopies, combined, watchdogOut, false)
+		go copyStream(&watchdogCopies, combinedErr, watchdogErr, false)
+	}
 
 	launcherPgid, _ := syscall.Getpgid(os.Getpid())
 	record := Record{
@@ -310,14 +462,25 @@ func LaunchSuite(options LaunchOptions) int {
 		Watchdog:     processIdentity(watchdogExact, int64(watchdog.Process.Pid)),
 		Status:       StatusRunning,
 	}
+	if custody != nil {
+		record.SuiteProcess.Pgid = int64(custody.group)
+	}
 	if options.AttemptID != "" {
 		launchID, launchErr := newLaunchID()
 		if launchErr != nil {
 			releaseLaunchMutation()
-			_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+			if custody != nil {
+				_ = suite.Process.Kill()
+			} else {
+				_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+			}
 			_ = suite.Wait()
-			_ = watchdog.Process.Kill()
-			_ = watchdog.Wait()
+			if custody != nil {
+				_ = custody.finish()
+			} else {
+				_ = watchdog.Process.Kill()
+				_ = watchdog.Wait()
+			}
 			copies.Wait()
 			watchdogCopies.Wait()
 			fmt.Fprintln(combinedErr, "suite launcher: create process launch identity:", launchErr)
@@ -329,10 +492,18 @@ func LaunchSuite(options LaunchOptions) int {
 	}
 	if err := writeRecord(record); err != nil {
 		releaseLaunchMutation()
-		_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		if custody != nil {
+			_ = suite.Process.Kill()
+		} else {
+			_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+		}
 		_ = suite.Wait()
-		_ = watchdog.Process.Kill()
-		_ = watchdog.Wait()
+		if custody != nil {
+			_ = custody.finish()
+		} else {
+			_ = watchdog.Process.Kill()
+			_ = watchdog.Wait()
+		}
 		copies.Wait()
 		watchdogCopies.Wait()
 		fmt.Fprintln(combinedErr, "suite launcher: publish proof-run record:", err)
@@ -341,16 +512,33 @@ func LaunchSuite(options LaunchOptions) int {
 	if options.AttemptID != "" {
 		if err := updateAttemptProcessesLocked(controlRoot, options.AttemptID, launcherExact.Ref(), []string{record.Key()}); err != nil {
 			releaseLaunchMutation()
-			_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+			if custody != nil {
+				_ = suite.Process.Kill()
+			} else {
+				_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+			}
 			_ = suite.Wait()
-			_ = watchdog.Process.Kill()
-			_ = watchdog.Wait()
+			if custody != nil {
+				_ = custody.finish()
+			} else {
+				_ = watchdog.Process.Kill()
+				_ = watchdog.Wait()
+			}
 			copies.Wait()
 			watchdogCopies.Wait()
 			fmt.Fprintln(combinedErr, "suite launcher: publish proof attempt processes:", err)
 			return 1
 		}
 		releaseLaunchMutation()
+	}
+	if barrier != nil {
+		if err := barrier.releaseWork(); err != nil {
+			_ = suite.Process.Kill()
+			_ = suite.Wait()
+			_ = custody.finish()
+			fmt.Fprintln(combinedErr, "suite launcher: release resource worker:", err)
+			return 1
+		}
 	}
 	secondFence, secondFenceErr := readFence(controlRoot)
 	stoppedDuringStart := secondFenceErr == nil && (secondFence.State == stopfence.StateClosed || secondFence.Generation != fence.Generation)
@@ -371,7 +559,13 @@ func LaunchSuite(options LaunchOptions) int {
 			case <-timer.C:
 			}
 		}
-		outcome := StopSuite(record.SuiteProcess, StopOptions{
+		stopSuite := StopSuite
+		if custody != nil {
+			stopSuite = func(process ProcessIdentity, options StopOptions) StopOutcome {
+				return StopRecordedIdentity("suite", process, options)
+			}
+		}
+		outcome := stopSuite(record.SuiteProcess, StopOptions{
 			TermGrace: options.TermGrace, KillGrace: options.KillGrace, Poll: options.Poll,
 			Prober: prober, Signal: options.Signal, Now: now, Sleep: waitForSuite,
 		})
@@ -391,10 +585,18 @@ func LaunchSuite(options LaunchOptions) int {
 	closeAfterCleanup := secondFenceErr != nil || stoppedDuringStart
 	if !closeAfterCleanup {
 		if err := claim.Close(); err != nil {
-			_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+			if custody != nil {
+				_ = suite.Process.Kill()
+			} else {
+				_ = syscall.Kill(-suite.Process.Pid, syscall.SIGKILL)
+			}
 			_ = suite.Wait()
-			_ = watchdog.Process.Kill()
-			_ = watchdog.Wait()
+			if custody != nil {
+				_ = custody.finish()
+			} else {
+				_ = watchdog.Process.Kill()
+				_ = watchdog.Wait()
+			}
 			copies.Wait()
 			watchdogCopies.Wait()
 			fmt.Fprintln(combinedErr, "suite launcher: close creation claim:", err)
@@ -413,7 +615,12 @@ func LaunchSuite(options LaunchOptions) int {
 		fmt.Fprintln(combinedErr, "suite launcher: write watchdog done file:", doneErr)
 	}
 	watchdogCopies.Wait()
-	watchdogErrWait := watchdog.Wait()
+	var watchdogErrWait error
+	if custody != nil {
+		watchdogErrWait = custody.finish()
+	} else {
+		watchdogErrWait = watchdog.Wait()
+	}
 	copies.Wait()
 	survivorFailure := false
 	processes, processErr := census.EnumerateConfiguredProcesses(filepath.Dir(options.ConfPath))
@@ -434,6 +641,9 @@ func LaunchSuite(options LaunchOptions) int {
 			owner: launcherExact.Ref(), attemptID: options.AttemptID, startedAt: launcherExact.StartedAt,
 		}, combinedErr)
 	}
+	// Custody and declared fixture cleanup have finished writing. Freeze one
+	// finite final prefix before evaluating output or publishing the result.
+	suiteSpoolErr := suiteSpools.finish()
 	defer os.Remove(donePath)
 	if closeAfterCleanup {
 		if err := claim.Close(); err != nil {
@@ -444,6 +654,14 @@ func LaunchSuite(options LaunchOptions) int {
 	}
 
 	result := exitStatus(suiteWaitErr)
+	if suiteSpoolErr != nil {
+		fmt.Fprintln(log, "suite launcher: drain durable suite output:", suiteSpoolErr)
+		result = 1
+	}
+	if outputErr := errors.Join(combined.Err(), combinedErr.Err()); outputErr != nil {
+		fmt.Fprintln(log, "suite launcher: public output failed:", outputErr)
+		result = 1
+	}
 	if doneErr != nil {
 		result = 1
 	}
@@ -661,27 +879,70 @@ func fenceCheckout(record stopfence.Record, fallback string) string {
 }
 
 type lockedWriter struct {
-	mu      sync.Mutex
-	writers []io.Writer
+	mu       sync.Mutex
+	writers  []io.Writer
+	disabled []bool
+	err      error
 }
 
 func (w *lockedWriter) Write(data []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	for _, writer := range w.writers {
-		if writer == nil {
+	if w.disabled == nil {
+		w.disabled = make([]bool, len(w.writers))
+	}
+	var writeErr error
+	for index, writer := range w.writers {
+		if writer == nil || w.disabled[index] {
 			continue
 		}
-		if _, err := writer.Write(data); err != nil {
-			return 0, err
+		n, err := writer.Write(data)
+		if err == nil && n != len(data) {
+			err = io.ErrShortWrite
 		}
+		if err != nil {
+			w.disabled[index] = true
+			w.err = errors.Join(w.err, err)
+		}
+		writeErr = errors.Join(writeErr, err)
+	}
+	if writeErr != nil {
+		return 0, writeErr
 	}
 	return len(data), nil
 }
 
-func copyStream(group *sync.WaitGroup, destination io.Writer, source io.Reader) {
+func (w *lockedWriter) Err() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.err
+}
+
+func (w *lockedWriter) recordError(err error) {
+	w.mu.Lock()
+	w.err = errors.Join(w.err, err)
+	w.mu.Unlock()
+}
+
+func copyStream(group *sync.WaitGroup, destination *lockedWriter, source io.Reader, allowClosedSource bool) {
 	defer group.Done()
-	_, _ = io.Copy(destination, source)
+	buffer := make([]byte, 32*1024)
+	for {
+		n, readErr := source.Read(buffer)
+		if n > 0 {
+			// A failed public sink is disabled by lockedWriter. Keep draining
+			// the pipe into the suite log so the child and custodian can end.
+			_, _ = destination.Write(buffer[:n])
+		}
+		if readErr != nil {
+			// Only the legacy unmanaged suite waits before joining its
+			// readers; exec.Cmd.Wait closes those pipes on success.
+			if readErr != io.EOF && !(allowClosedSource && errors.Is(readErr, os.ErrClosed)) {
+				destination.recordError(readErr)
+			}
+			return
+		}
+	}
 }
 
 func watchdogCommand(options LaunchOptions, ref identity.Ref, donePath string, fenceGeneration int64) *exec.Cmd {

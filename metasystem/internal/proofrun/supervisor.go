@@ -224,7 +224,8 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 		options.Signal = syscall.Kill
 	}
 	riseSeconds := consumptionRise(options.Limits.ZeroConsumptionWindow).Seconds()
-	if err := command.Start(); err != nil {
+	finishCustody, err := startResourceCommand(options.Context, command, HostResourceLeaseFromContext(options.Context))
+	if err != nil {
 		return supervisorOutcome{WaitErr: err}
 	}
 	outcome := supervisorOutcome{Started: true}
@@ -232,7 +233,7 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 		outcome.RuleSuffix = source.ProgressRuleSuffix()
 	}
 	waited := make(chan error, 1)
-	go func() { waited <- command.Wait() }()
+	go func() { waited <- errors.Join(command.Wait(), finishCustody()) }()
 
 	ticks, stopTicker := newTicker(options.SampleInterval)
 	defer stopTicker()

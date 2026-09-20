@@ -1567,7 +1567,10 @@ dispatch_job() {
   # keeps only the approval ladder below.
   roster_json=$("$ms" job resolve-roster --conf "$root/metasystem.conf" --role "$role" --mode "$mode" \
     ${runtime_override:+--runtime-override "$runtime_override"} \
-    ${model_override:+--model-override "$model_override"}) || exit 1
+    ${model_override:+--model-override "$model_override"}) || {
+      record_delegate_outcome REFUSED-ROSTER refused "role roster resolution refused before job claim or launch"
+      return 1
+    }
   roster_runtime=$(json_value "$roster_json" rosterRuntime)
   roster_model=$(json_value "$roster_json" rosterModel)
   roster_pair=$(json_value "$roster_json" rosterPair)

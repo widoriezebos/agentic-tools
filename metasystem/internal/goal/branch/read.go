@@ -2,6 +2,7 @@ package branch
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,14 +16,18 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"golang.org/x/sys/unix"
 )
+
+const ReadDispatchPendingCode = "GOAL_READ_DISPATCH_PENDING"
 
 type BranchReadRequest struct {
 	Repo, Remote, EndpointTip, BranchTip, GoalID, UnitCommit string
+	BriefPath, Runtime, Model                                string
 	Collect                                                  bool
 	CheckClaim                                               func() error
 	Gate                                                     func(string) (string, error)
-	Delegate                                                 func(string, string, string) (string, error)
+	Delegate                                                 func(string, string, string, string, string) (string, error)
 	Commit                                                   func(CommitReadRequest) (string, Attestation, error)
 	NewID                                                    func(string) (string, error)
 }
@@ -30,6 +35,13 @@ type BranchReadRequest struct {
 type BranchReadResult struct {
 	State, RootJob, GateRunID, AttestationCommit string
 }
+
+// ReadNeverLaunchedError is returned only when the delegate boundary proves
+// that no critic process was started. Other launch failures remain uncertain.
+type ReadNeverLaunchedError struct{ Err error }
+
+func (e *ReadNeverLaunchedError) Error() string { return e.Err.Error() }
+func (e *ReadNeverLaunchedError) Unwrap() error { return e.Err }
 
 type ReadGateRequest struct {
 	Repo, GoalID, UnitCommit string
@@ -45,6 +57,12 @@ type branchReadRecord struct {
 	GateRunID         string `json:"gateRunId,omitempty"`
 	RootJob           string `json:"rootJob,omitempty"`
 	Brief             string `json:"brief,omitempty"`
+	BriefInputSHA256  string `json:"briefInputSha256,omitempty"`
+	Runtime           string `json:"runtime,omitempty"`
+	Model             string `json:"model,omitempty"`
+	DispatchPending   bool   `json:"dispatchPending,omitempty"`
+	DispatchRetryable bool   `json:"dispatchRetryable,omitempty"`
+	FrozenBriefSHA256 string `json:"frozenBriefSha256,omitempty"`
 	AttestationCommit string `json:"attestationCommit,omitempty"`
 }
 
@@ -94,8 +112,29 @@ func saveBranchReadRecord(common, path string, record branchReadRecord) error {
 	if err != nil {
 		return err
 	}
-	_, err = atomicfile.WriteText(path, string(append(data, '\n')), common)
-	return err
+	durable, err := atomicfile.WriteText(path, string(append(data, '\n')), common)
+	if err != nil {
+		return err
+	}
+	if !durable {
+		return fmt.Errorf("%s: read record publication is visible but durability is unknown", ReadDispatchPendingCode)
+	}
+	return nil
+}
+
+func lockBranchRead(path string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		lock.Close()
+		return nil, operationRefusal(ReadDispatchPendingCode, "another read of this unit is in progress")
+	}
+	return lock, nil
 }
 
 func resolveReadGate(request ReadGateRequest, common, recordPath string, record branchReadRecord, subject AttestationSubject) (branchReadRecord, GateObservation, error) {
@@ -139,6 +178,14 @@ func ResolveReadGate(request ReadGateRequest) (GateObservation, error) {
 	if err != nil {
 		return GateObservation{}, err
 	}
+	lock, err := lockBranchRead(recordPath)
+	if err != nil {
+		return GateObservation{}, err
+	}
+	defer func() {
+		_ = unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+		_ = lock.Close()
+	}()
 	record, err := loadBranchReadRecord(recordPath)
 	if err != nil {
 		return GateObservation{}, err
@@ -189,13 +236,56 @@ func branchUnit(repo, endpoint, tip, goal, commit string) (KindInfo, error) {
 	return KindInfo{}, operationRefusal(ReadInvalidCode, "commit %s is not a Goal-Unit commit of goal %s's branch", commit, goal)
 }
 
-func branchReadBrief(goal, commit string) string {
-	return "# Code read for goal branch unit\n\n" +
+func branchReadBrief(repo, endpoint, goal, commit string, supplied []byte) (string, error) {
+	commits, err := ValidateRange(repo, endpoint, commit, goal)
+	if err != nil {
+		return "", err
+	}
+	brief := "# Code read for goal branch unit\n\n" +
 		"Review unit commit `" + commit + "` for goal `" + goal + "`.\n\n" +
 		"Inspect its exact change with:\n\n```sh\ngit diff " + commit + "^ " + commit + " --\n```\n\n" +
-		"The governing design is `metasystem/plans/goals-live-on-branches-design.md`, especially sections 5 and 10.1. " +
+		"Review against the goal's accepted requirements and the unit's actual behavior. " +
 		"Report correctness, safety, contract, test, and compatibility defects that should refuse this commit. " +
 		"Close the finding register cleanly only when no refusal-worthy defect remains.\n"
+	for _, fold := range commits {
+		if fold.Kind != Plan {
+			continue
+		}
+		entries, err := RawEntries(repo, fold.ID)
+		if err != nil {
+			return "", err
+		}
+		brief += "\nGoal-Plan fold `" + fold.ID + "`:\n"
+		for _, entry := range entries {
+			brief += "- `" + entry.Path + "`\n"
+		}
+	}
+	if len(supplied) != 0 {
+		brief += "\n# Supplied accepted implementation brief (frozen at dispatch)\n\n" + string(supplied) + "\n"
+	}
+	return brief, nil
+}
+
+func branchReadInput(path string) ([]byte, string, error) {
+	if path == "" {
+		return nil, "", nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("read goal branch brief %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, "", fmt.Errorf("goal branch brief %s is not a regular file", path)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("read goal branch brief %s: %w", path, err)
+	}
+	if len(data) == 0 {
+		return nil, "", fmt.Errorf("goal branch brief %s is empty", path)
+	}
+	sum := sha256.Sum256(data)
+	return data, hex.EncodeToString(sum[:]), nil
 }
 
 func branchReadJobState(repo, job string) (string, error) {
@@ -238,12 +328,31 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	if err != nil {
 		return result, err
 	}
+	lock, err := lockBranchRead(recordPath)
+	if err != nil {
+		return result, err
+	}
+	defer func() {
+		_ = unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+		_ = lock.Close()
+	}()
 	record, err := loadBranchReadRecord(recordPath)
 	if err != nil {
 		return result, err
 	}
 	if record.Goal != "" && (record.Goal != request.GoalID || record.UnitCommit != request.UnitCommit || record.Tree != subject.Tree) {
 		return result, fmt.Errorf("goal branch read record does not match the requested unit")
+	}
+	supplied, inputSHA256, err := branchReadInput(request.BriefPath)
+	if err != nil {
+		return result, err
+	}
+	if (record.RootJob != "" || record.DispatchPending || record.DispatchRetryable) && (inputSHA256 != "" && inputSHA256 != record.BriefInputSHA256 ||
+		request.Runtime != "" && request.Runtime != record.Runtime || request.Model != "" && request.Model != record.Model) {
+		return result, operationRefusal(ReadInvalidCode, "goal branch read already dispatched with different brief or runtime/model overrides")
+	}
+	if record.DispatchPending && record.RootJob == "" {
+		return result, operationRefusal(ReadDispatchPendingCode, "critic dispatch outcome is unknown for unit %s; inspect the job store before recovery", request.UnitCommit)
 	}
 	record.Goal, record.UnitCommit, record.Tree = request.GoalID, request.UnitCommit, subject.Tree
 	result.GateRunID, result.RootJob, result.AttestationCommit = record.GateRunID, record.RootJob, record.AttestationCommit
@@ -293,20 +402,59 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	if err != nil {
 		return result, err
 	}
-	brief := branchReadBrief(request.GoalID, request.UnitCommit)
-	if _, err := atomicfile.WriteText(briefPath, brief, common); err != nil {
-		return result, err
-	}
 	if request.Delegate == nil {
 		return result, fmt.Errorf("goal branch read has no delegate command")
 	}
-	job, err := request.Delegate(briefPath, request.GoalID, request.UnitCommit)
-	if err != nil || job == "" {
-		return result, errors.Join(fmt.Errorf("goal branch read could not dispatch its critic"), err)
+	var brief string
+	effectiveRuntime, effectiveModel := request.Runtime, request.Model
+	if record.DispatchRetryable {
+		if record.Brief != briefPath || record.FrozenBriefSHA256 == "" || record.GateRunID == "" {
+			return result, operationRefusal(ReadDispatchPendingCode, "frozen critic dispatch intent is incomplete for unit %s", request.UnitCommit)
+		}
+		frozen, readErr := os.ReadFile(briefPath)
+		if readErr != nil {
+			return result, operationRefusal(ReadDispatchPendingCode, "frozen critic brief for unit %s is unreadable: %v", request.UnitCommit, readErr)
+		}
+		sum := sha256.Sum256(frozen)
+		if hex.EncodeToString(sum[:]) != record.FrozenBriefSHA256 {
+			return result, operationRefusal(ReadDispatchPendingCode, "frozen critic brief for unit %s changed", request.UnitCommit)
+		}
+		effectiveRuntime, effectiveModel = record.Runtime, record.Model
+	} else {
+		brief, err = branchReadBrief(request.Repo, request.EndpointTip, request.GoalID, request.UnitCommit, supplied)
+		if err != nil {
+			return result, err
+		}
+		durable, writeErr := atomicfile.WriteText(briefPath, brief, common)
+		if writeErr != nil {
+			return result, writeErr
+		}
+		if !durable {
+			return result, operationRefusal(ReadDispatchPendingCode, "frozen read brief durability is unknown; no critic was launched")
+		}
+		record.Brief, record.BriefInputSHA256 = briefPath, inputSHA256
+		record.Runtime, record.Model = effectiveRuntime, effectiveModel
+		sum := sha256.Sum256([]byte(brief))
+		record.FrozenBriefSHA256 = hex.EncodeToString(sum[:])
 	}
-	record.RootJob, record.Brief = job, briefPath
+	record.DispatchPending, record.DispatchRetryable = true, false
 	if err := saveBranchReadRecord(common, recordPath, record); err != nil {
 		return result, err
+	}
+	job, err := request.Delegate(briefPath, request.GoalID, request.UnitCommit, effectiveRuntime, effectiveModel)
+	if err != nil || job == "" {
+		var neverLaunched *ReadNeverLaunchedError
+		if job == "" && errors.As(err, &neverLaunched) {
+			record.DispatchPending, record.DispatchRetryable = false, true
+			if saveErr := saveBranchReadRecord(common, recordPath, record); saveErr != nil {
+				return result, fmt.Errorf("%s: pre-launch refusal could not be recorded for retry: %w", ReadDispatchPendingCode, errors.Join(err, saveErr))
+			}
+		}
+		return result, errors.Join(fmt.Errorf("goal branch read could not dispatch its critic"), err)
+	}
+	record.RootJob, record.DispatchPending, record.DispatchRetryable = job, false, false
+	if err := saveBranchReadRecord(common, recordPath, record); err != nil {
+		return result, fmt.Errorf("%s: critic root %s may be running; recording its outcome failed: %w", ReadDispatchPendingCode, job, err)
 	}
 	result.State, result.RootJob, result.GateRunID = "dispatched", job, record.GateRunID
 	return result, nil

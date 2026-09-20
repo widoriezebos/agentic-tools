@@ -11,13 +11,18 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 )
 
 const SchemaVersion = 1
+const ExecutionContractSchemaVersion = 2
 
 var (
 	identifier      = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 	groupIdentifier = regexp.MustCompile(`^[a-z][a-z0-9-]*(?:/[a-z][a-z0-9-]*)?$`)
+	environmentName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
 type Contract struct {
@@ -83,19 +88,29 @@ type ExpectedTest struct {
 }
 
 type Group struct {
-	ID               string          `json:"id"`
-	Kind             string          `json:"kind"`
-	Adapter          string          `json:"adapter"`
-	CWD              string          `json:"cwd"`
-	Inputs           []string        `json:"inputs"`
-	Outputs          []string        `json:"outputs"`
-	Tools            []Tool          `json:"tools"`
-	ExternalInputs   []ExternalInput `json:"externalInputs,omitempty"`
-	Obligations      []string        `json:"obligations"`
-	Platforms        []string        `json:"platforms"`
-	TargetMS         int64           `json:"targetMs"`
-	CPUBudgetSeconds *int64          `json:"cpuBudgetSeconds,omitempty"`
-	Packages         []string        `json:"packages,omitempty"`
+	ID                string          `json:"id"`
+	Requires          []string        `json:"requires,omitempty"`
+	Phase             string          `json:"phase,omitempty"`
+	EnvironmentMode   string          `json:"environmentMode,omitempty"`
+	Resources         GroupResources  `json:"resources,omitempty"`
+	Freshness         string          `json:"freshness,omitempty"`
+	FreshnessMaxAgeMS *int64          `json:"freshnessMaxAgeMs,omitempty"`
+	Kind              string          `json:"kind"`
+	Adapter           string          `json:"adapter"`
+	CWD               string          `json:"cwd"`
+	Inputs            []string        `json:"inputs"`
+	Outputs           []string        `json:"outputs"`
+	Tools             []Tool          `json:"tools"`
+	ExternalInputs    []ExternalInput `json:"externalInputs,omitempty"`
+	Obligations       []string        `json:"obligations"`
+	Platforms         []string        `json:"platforms"`
+	TargetMS          int64           `json:"targetMs"`
+	CPUBudgetSeconds  *int64          `json:"cpuBudgetSeconds,omitempty"`
+	Packages          []string        `json:"packages,omitempty"`
+	BuildTags         []string        `json:"buildTags,omitempty"`
+	// PackageSelection is a protected template expanded against exact Go trees
+	// into one ordinary group per affected package before policy selection.
+	PackageSelection string          `json:"packageSelection,omitempty"`
 	Tests            json.RawMessage `json:"tests,omitempty"`
 	Race             bool            `json:"race,omitempty"`
 	Coverage         bool            `json:"coverage,omitempty"`
@@ -115,6 +130,13 @@ type Group struct {
 	Reports       []string          `json:"reports,omitempty"`
 	Format        string            `json:"format,omitempty"`
 	ExpectedTests []ExpectedTest    `json:"expectedTests,omitempty"`
+}
+
+// GroupResources declares the local capacity class and exclusive resources
+// consumed while this group's native command and its children are live.
+type GroupResources struct {
+	Class     string   `json:"class,omitempty"`
+	Exclusive []string `json:"exclusive,omitempty"`
 }
 
 type groupWithoutMethods Group
@@ -178,6 +200,8 @@ func jsonEmptyValue(value reflect.Value) bool {
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
 		reflect.Interface, reflect.Pointer:
 		return value.IsZero()
+	case reflect.Struct:
+		return value.IsZero()
 	}
 	return false
 }
@@ -207,8 +231,8 @@ func Load(path string) (Contract, error) {
 }
 
 func (contract Contract) Validate() error {
-	if contract.SchemaVersion != SchemaVersion {
-		return fmt.Errorf("testing contract schemaVersion must be %d", SchemaVersion)
+	if contract.SchemaVersion != SchemaVersion && contract.SchemaVersion != ExecutionContractSchemaVersion {
+		return fmt.Errorf("testing contract schemaVersion must be %d or %d", SchemaVersion, ExecutionContractSchemaVersion)
 	}
 	if contract.TailoringRequired {
 		if len(contract.Surfaces) != 0 || len(contract.Groups) != 0 || len(contract.Unknown) != 0 ||
@@ -231,7 +255,44 @@ func (contract Contract) Validate() error {
 		if err := validateGroup(group); err != nil {
 			return fmt.Errorf("testing group %s: %w", group.ID, err)
 		}
+		if contract.SchemaVersion == SchemaVersion && (len(group.Requires) > 0 || group.Phase != "" || group.EnvironmentMode != "" || group.PackageSelection != "" || len(group.BuildTags) != 0 ||
+			group.Resources.Class != "" || len(group.Resources.Exclusive) != 0 || group.Freshness != "" || group.FreshnessMaxAgeMS != nil) {
+			return fmt.Errorf("testing group %s: execution contract fields require schemaVersion %d", group.ID, ExecutionContractSchemaVersion)
+		}
+		if contract.SchemaVersion == ExecutionContractSchemaVersion && (group.Phase != "admission" && group.Phase != "acceptance") {
+			return fmt.Errorf("testing group %s: phase must be admission or acceptance", group.ID)
+		}
+		if contract.SchemaVersion == ExecutionContractSchemaVersion && group.EnvironmentMode != "inherit" && group.EnvironmentMode != "explicit" {
+			return fmt.Errorf("testing group %s: environmentMode must be inherit or explicit", group.ID)
+		}
 		groups[group.ID] = group
+	}
+	visiting, visited := map[string]bool{}, map[string]bool{}
+	var visit func(string) error
+	visit = func(id string) error {
+		if visiting[id] {
+			return fmt.Errorf("testing group prerequisite cycle at %s", id)
+		}
+		if visited[id] {
+			return nil
+		}
+		visiting[id] = true
+		for _, dependency := range groups[id].Requires {
+			if _, ok := groups[dependency]; !ok {
+				return fmt.Errorf("testing group %s requires missing group %s", id, dependency)
+			}
+			if err := visit(dependency); err != nil {
+				return err
+			}
+		}
+		delete(visiting, id)
+		visited[id] = true
+		return nil
+	}
+	for id := range groups {
+		if err := visit(id); err != nil {
+			return err
+		}
 	}
 	surfaces := make(map[string]Surface, len(contract.Surfaces))
 	for _, surface := range contract.Surfaces {
@@ -286,6 +347,40 @@ func (contract Contract) Validate() error {
 			return fmt.Errorf("testing contract references missing group %s", group)
 		}
 	}
+	// A selector is policy, not executable evidence. Its generated concrete
+	// groups enter always.standard after exact-tree expansion. Keeping the
+	// template out of every other policy edge prevents a missing or empty
+	// expansion from satisfying an obligation or prerequisite by name.
+	for _, template := range contract.Groups {
+		if template.PackageSelection == "" {
+			continue
+		}
+		if strings.Contains(template.ID, "/") {
+			return fmt.Errorf("testing group %s: package selector template id cannot contain a slash", template.ID)
+		}
+		if len(template.Obligations) != 0 || len(template.Requires) != 0 {
+			return fmt.Errorf("testing group %s: package selector template cannot provide obligations or require groups", template.ID)
+		}
+		for _, other := range contract.Groups {
+			for _, id := range other.Requires {
+				if id == template.ID {
+					return fmt.Errorf("testing group %s requires package selector template %s", other.ID, template.ID)
+				}
+			}
+		}
+		for _, surface := range contract.Surfaces {
+			for _, id := range append(append([]string{}, surface.Standard...), surface.Deep...) {
+				if id == template.ID {
+					return fmt.Errorf("testing surface %s references package selector template %s", surface.ID, template.ID)
+				}
+			}
+		}
+		for _, id := range append(append(append([]string{}, contract.Always.Canary...), contract.Always.Standard...), append(contract.Unknown, contract.Cadence...)...) {
+			if id == template.ID {
+				return fmt.Errorf("testing contract references package selector template %s", template.ID)
+			}
+		}
+	}
 	applicationProvider := false
 	for _, surface := range contract.Surfaces {
 		for _, id := range surface.Standard {
@@ -316,6 +411,45 @@ func IncompleteTemplate() ([]byte, error) {
 }
 
 func validateGroup(group Group) error {
+	if group.Resources.Class != "" && group.Resources.Class != "cheap" && group.Resources.Class != "heavy" {
+		return fmt.Errorf("resource class must be cheap or heavy")
+	}
+	seenResources := map[string]bool{}
+	for _, resource := range group.Resources.Exclusive {
+		if !identifier.MatchString(resource) || seenResources[resource] {
+			return fmt.Errorf("exclusive resources require unique ids")
+		}
+		seenResources[resource] = true
+	}
+	if group.Freshness != "" && group.Freshness != "reusable" && group.Freshness != "episode" {
+		return fmt.Errorf("freshness must be reusable or episode")
+	}
+	if group.FreshnessMaxAgeMS != nil && (*group.FreshnessMaxAgeMS <= 0 || group.Freshness != "episode") {
+		return fmt.Errorf("freshnessMaxAgeMs requires episode freshness and a positive duration")
+	}
+	if group.Phase != "" && group.Phase != "admission" && group.Phase != "acceptance" {
+		return fmt.Errorf("phase must be admission or acceptance")
+	}
+	if group.EnvironmentMode != "" && group.EnvironmentMode != "inherit" && group.EnvironmentMode != "explicit" {
+		return fmt.Errorf("environmentMode must be inherit or explicit")
+	}
+	if group.EnvironmentMode == "explicit" {
+		for name, value := range group.Env {
+			if !environmentName.MatchString(name) || strings.ContainsRune(value, '\x00') {
+				return fmt.Errorf("explicit environment has invalid entry %q", name)
+			}
+		}
+	}
+	seenPrerequisites := map[string]bool{}
+	for _, dependency := range group.Requires {
+		if !groupIdentifier.MatchString(dependency) {
+			return fmt.Errorf("invalid prerequisite %q", dependency)
+		}
+		if seenPrerequisites[dependency] {
+			return fmt.Errorf("duplicate prerequisite %s", dependency)
+		}
+		seenPrerequisites[dependency] = true
+	}
 	kinds := map[string]bool{"unit": true, "component": true, "integration": true, "e2e": true, "performance": true, "static": true, "build": true}
 	if !kinds[group.Kind] || group.CWD == "" || !validRelative(group.CWD) || len(group.Inputs) == 0 || len(group.Platforms) == 0 || group.TargetMS <= 0 {
 		return fmt.Errorf("kind, cwd, platforms, and positive targetMs are required")
@@ -351,12 +485,28 @@ func validateGroup(group Group) error {
 	}
 	switch group.Adapter {
 	case "go":
-		if len(group.Packages) == 0 || len(group.Tests) == 0 {
+		seenTags := map[string]bool{}
+		for _, tag := range group.BuildTags {
+			if !validGoBuildTag(tag) || seenTags[tag] {
+				return fmt.Errorf("go buildTags require unique valid Go tag names")
+			}
+			seenTags[tag] = true
+		}
+		if group.PackageSelection != "" && group.PackageSelection != "changed-and-consumers" {
+			return fmt.Errorf("unknown go packageSelection %q", group.PackageSelection)
+		}
+		if group.PackageSelection == "changed-and-consumers" && len(group.Packages) != 0 {
+			return fmt.Errorf("changed-and-consumers packageSelection forbids explicit packages")
+		}
+		if group.PackageSelection == "" && len(group.Packages) == 0 || len(group.Tests) == 0 {
 			return fmt.Errorf("go adapter requires packages and tests")
 		}
 		allTests, _, err := GoTests(group)
 		if err != nil {
 			return err
+		}
+		if group.PackageSelection != "" && !allTests {
+			return fmt.Errorf("changed-and-consumers packageSelection requires tests=all")
 		}
 		if group.Coverage && !allTests {
 			return fmt.Errorf("whole-package coverage requires tests=all")
@@ -368,10 +518,22 @@ func validateGroup(group Group) error {
 			return fmt.Errorf("go shards require tests=all")
 		}
 	case "section":
+		if group.PackageSelection != "" {
+			return fmt.Errorf("packageSelection requires go adapter")
+		}
+		if len(group.BuildTags) != 0 {
+			return fmt.Errorf("buildTags require go adapter")
+		}
 		if !identifier.MatchString(group.Section) {
 			return fmt.Errorf("section adapter requires one stable section id")
 		}
 	case "command":
+		if group.PackageSelection != "" {
+			return fmt.Errorf("packageSelection requires go adapter")
+		}
+		if len(group.BuildTags) != 0 {
+			return fmt.Errorf("buildTags require go adapter")
+		}
 		if len(group.Argv) == 0 || group.Argv[0] == "" {
 			return fmt.Errorf("command adapter requires argv")
 		}
@@ -436,9 +598,9 @@ func validExternalLocator(locator string) bool {
 }
 
 func pathDeclarationsOverlap(left, right string) bool {
-	left = strings.TrimSuffix(left, "/**")
-	right = strings.TrimSuffix(right, "/**")
-	return left == right || strings.HasPrefix(left, right+"/") || strings.HasPrefix(right, left+"/")
+	a, errA := pathpattern.Parse(left)
+	b, errB := pathpattern.Parse(right)
+	return errA == nil && errB == nil && a.Overlaps(b)
 }
 
 func GoTests(group Group) (all bool, names []string, err error) {
@@ -463,12 +625,23 @@ func GoTests(group Group) (all bool, names []string, err error) {
 	return false, names, nil
 }
 
-func validPathDeclaration(path string) bool {
-	if path == "" || filepath.IsAbs(path) || strings.ContainsRune(path, '\x00') {
+// Match go/build/constraint's tag operand rule, which also permits release
+// tags such as go1.24 and architecture tags such as 386.
+func validGoBuildTag(tag string) bool {
+	if tag == "" {
 		return false
 	}
-	plain := strings.TrimSuffix(path, "/**")
-	return validRelative(plain) && (plain == path || strings.HasSuffix(path, "/**"))
+	for _, character := range tag {
+		if !unicode.IsLetter(character) && !unicode.IsDigit(character) && character != '_' && character != '.' {
+			return false
+		}
+	}
+	return true
+}
+
+func validPathDeclaration(path string) bool {
+	_, err := pathpattern.Parse(path)
+	return err == nil
 }
 
 func validRelative(path string) bool {

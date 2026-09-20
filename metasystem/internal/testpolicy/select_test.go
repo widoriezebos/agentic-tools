@@ -22,6 +22,26 @@ func TestSelectionUsesFallbackForUnownedPath(t *testing.T) {
 	if !contains(plan.AffectedSurfaces, "residual") || !contains(plan.SelectedGroups, "app-deep") {
 		t.Fatalf("fallback groups were not selected: %+v", plan)
 	}
+	if !containsSubstring(plan.Risk.Reasons, "because no declared path matched") {
+		t.Fatalf("fallback cause was not explained: %v", plan.Risk.Reasons)
+	}
+}
+
+func TestGLEPathActualBatchWildcardOwnsChangedFiles(t *testing.T) {
+	t.Parallel()
+	contract, err := Load("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"metasystem/cmd/metasystem/landing_batch_land.go", "metasystem/cmd/metasystem/landing_batch_new.go"} {
+		plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{path}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !contains(plan.AffectedSurfaces, "proof-and-landing") || contains(plan.AffectedSurfaces, "residual") {
+			t.Fatalf("%s ownership = %v", path, plan.AffectedSurfaces)
+		}
+	}
 }
 
 func TestSelectionWithoutFallbackKeepsUnownedPathUncertain(t *testing.T) {
@@ -169,6 +189,9 @@ func TestExplicitGroupsRequireDiagnosticCanaryMode(t *testing.T) {
 		Purpose: PurposeDelivery, Groups: requested, SupplementDeliveryGroups: true})
 	if err != nil || plan.Purpose != PurposeDelivery || !reflect.DeepEqual(plan.SelectedGroups, wantSelected) {
 		t.Fatalf("batch prefix delivery selection purpose=%s groups=%v err=%v, want delivery %v", plan.Purpose, plan.SelectedGroups, err, wantSelected)
+	}
+	if !contains(plan.RequiredGroups, "manual-only") || !contains(plan.RequiredGroups, "app-deep") {
+		t.Fatalf("batch admitted groups are selected but not required: %+v", plan)
 	}
 }
 

@@ -29,7 +29,7 @@ func ProofLockOwner(lockDir string) string {
 
 type lockPoll uint8
 
-const lockAcquired, lockQueued, lockStaleRemoved lockPoll = 0, 1, 2
+const lockAcquired, lockQueued lockPoll = 0, 1
 
 type proofLock struct {
 	lockDir, queueDir, purpose, entry string
@@ -91,8 +91,8 @@ func (lock *proofLock) poll() (lockPoll, error) {
 			return lockQueued, err
 		}
 	}
-	if removed, err := lock.cleanStale(now); err != nil || removed {
-		return lockStaleRemoved, err
+	if _, err := lock.cleanStale(now); err != nil {
+		return lockQueued, err
 	}
 	paths, err := queuePaths(lock.queueDir)
 	if err != nil {

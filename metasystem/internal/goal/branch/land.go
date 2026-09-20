@@ -519,7 +519,14 @@ func landingRetryIdentity(repo, tree, goalID string) (string, error) {
 }
 
 func projectLandingWorkspace(repo, tree string) (string, error) {
-	return landing.ProjectWorkspaceTree(filepath.Join(repo, "metasystem"), tree)
+	prefix, err := (gittree.Workspace{Dir: repo}).Prefix()
+	if err != nil {
+		return "", err
+	}
+	if prefix == "" {
+		return landing.ProjectWorkspaceTree(filepath.Join(repo, "metasystem"), tree)
+	}
+	return landing.ProjectWorkspaceTree(repo, tree)
 }
 
 func writeLandArtifacts(out string, result LandResult, proof LandingProof, messages, diffs map[string][]byte) error {

@@ -385,7 +385,7 @@ brain_cache_engine=$tmp/brain-cache-engine
 cat >"$brain_cache_engine" <<'BRAIN_CACHE_ENGINE'
 #!/usr/bin/env bash
 if [[ ${1:-} == runtime && ${2:-} == list ]]; then
-  printf '%s\n' claude
+  printf '%s\n' fake
   exit 0
 fi
 if [[ ${1:-} == path && ${2:-} == state-root ]]; then
@@ -398,14 +398,18 @@ chmod +x "$brain_cache_engine"
 printf '{"session_id":"tool-engine-cache","cwd":"%s","source":"startup"}\n' "$brain_repo" \
   >"$tmp/brain-cache-start.json"
 harness_fixture_bed_leg tool_engine_cache_written_at_start
+brain_cache_start_rc=0
 run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" \
-  "$tmp/brain-cache-start.json" "$tmp/brain-cache-start.out" "$tmp/brain-cache-start.err" "$brain_cache_engine"
+  "$tmp/brain-cache-start.json" "$tmp/brain-cache-start.out" "$tmp/brain-cache-start.err" "$brain_cache_engine" \
+  || brain_cache_start_rc=$?
+[[ "$brain_cache_start_rc" -eq 2 ]] \
+  || { echo "brain cache unregistered-runtime start exited $brain_cache_start_rc, want 2" >&2; cat "$tmp/brain-cache-start.out" "$tmp/brain-cache-start.err" >&2; exit 1; }
 brain_engine_cache=$brain_repo/artifacts/agents/context/engine-path
 brain_cached_engine=
 brain_cached_installation=
 brain_expected_installation=$(cd "$brain_repo" && pwd -P)
 [[ -r "$brain_engine_cache" ]] \
-  || { echo "brain start did not write its tool engine cache" >&2; exit 1; }
+  || { echo "brain start did not write its tool engine cache" >&2; cat "$tmp/brain-cache-start.out" "$tmp/brain-cache-start.err" >&2; exit 1; }
 {
   IFS= read -r brain_cached_engine
   IFS= read -r brain_cached_installation
@@ -434,7 +438,7 @@ PATH="$tmp/mktemp-shim:$PATH" BRAIN_FIXTURE_MKTEMP_LOG=$tmp/brain-cache-mktemp.l
   run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" "$tmp/brain-cache-start.json" \
     "$tmp/brain-cache-rename.out" "$tmp/brain-cache-rename.err" "$brain_cache_engine" \
   || brain_cache_rename_rc=$?
-[[ "$brain_cache_rename_rc" -eq 0 ]] || { echo "brain cache rename start exited $brain_cache_rename_rc" >&2; exit 1; }
+[[ "$brain_cache_rename_rc" -eq 2 ]] || { echo "brain cache rename start exited $brain_cache_rename_rc, want 2" >&2; exit 1; }
 brain_cache_temp_lines=$(grep -F '/.engine-path.' "$tmp/brain-cache-mktemp.log" || true)
 brain_cache_temp_count=$(printf '%s\n' "$brain_cache_temp_lines" | awk 'NF { count++ } END { print count + 0 }')
 brain_cache_temp_path=$(printf '%s\n' "$brain_cache_temp_lines" | awk 'NR == 1 { print $1 }')
@@ -465,7 +469,7 @@ run_brain_hook "$brain_repo/scripts/agents/supervision-hook.sh" "$tmp/brain-cach
   "$tmp/brain-cache-unwritable.out" "$tmp/brain-cache-unwritable.err" "$brain_cache_engine" \
   || brain_unwritable_rc=$?
 chmod 0755 "$brain_cache_dir"
-[[ "$brain_unwritable_rc" -eq 0 ]] || { echo "brain cache unwritable start exited $brain_unwritable_rc" >&2; exit 1; }
+[[ "$brain_unwritable_rc" -eq 2 ]] || { echo "brain cache unwritable start exited $brain_unwritable_rc, want 2" >&2; exit 1; }
 # A cache write failure must continue through normal delivery instead of the EXIT trap.
 if grep -Fq 'could not produce its response' "$tmp/brain-cache-unwritable.out"; then
   echo "brain cache unwritable start printed the last-resort notice:" >&2

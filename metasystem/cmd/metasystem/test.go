@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -18,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -27,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/output"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -48,19 +52,26 @@ type testingPreparation struct {
 	Plan                                                     testpolicy.Plan
 	Environment                                              []string
 	AllGroups                                                bool
+	UnmatchedInputs                                          []testingUnmatchedInput
+}
+
+type testingUnmatchedInput struct {
+	Group   string `json:"group"`
+	Pattern string `json:"pattern"`
 }
 
 type testingPlanOutput struct {
-	SchemaVersion      int                `json:"schemaVersion"`
-	ProjectRoot        string             `json:"projectRoot"`
-	InstallationPrefix string             `json:"installationPrefix"`
-	BaseCommit         string             `json:"baseCommit"`
-	PolicyBaseCommit   string             `json:"policyBaseCommit"`
-	CandidateTree      string             `json:"candidateTree"`
-	ContractDigest     string             `json:"contractDigest"`
-	BaseContractDigest string             `json:"baseContractDigest"`
-	Plan               testpolicy.Plan    `json:"plan"`
-	Groups             []testpolicy.Group `json:"groups"`
+	SchemaVersion      int                     `json:"schemaVersion"`
+	ProjectRoot        string                  `json:"projectRoot"`
+	InstallationPrefix string                  `json:"installationPrefix"`
+	BaseCommit         string                  `json:"baseCommit"`
+	PolicyBaseCommit   string                  `json:"policyBaseCommit"`
+	CandidateTree      string                  `json:"candidateTree"`
+	ContractDigest     string                  `json:"contractDigest"`
+	BaseContractDigest string                  `json:"baseContractDigest"`
+	Plan               testpolicy.Plan         `json:"plan"`
+	Groups             []testpolicy.Group      `json:"groups"`
+	UnmatchedInputs    []testingUnmatchedInput `json:"unmatchedInputs,omitempty"`
 }
 
 func (prepared testingPreparation) proofControlRoot() string {
@@ -111,7 +122,16 @@ func runTestCheck(args []string) int {
 		err = checkTestingTools(projectRoot, contract)
 	}
 	if err == nil {
-		err = proofrun.CheckNativeDiscovery(projectRoot, installation, contract)
+		ctx := context.Background()
+		lease, leaseErr := proofrun.AcquireHostResources(ctx, installation,
+			filepath.Join(installation, "metasystem.conf"), "heavy", nil)
+		if leaseErr != nil {
+			err = leaseErr
+		} else {
+			err = proofrun.CheckNativeDiscovery(proofrun.WithHostResourceLease(ctx, lease), projectRoot, installation, contract,
+				testingEnvironment(os.Environ()))
+			err = errors.Join(err, lease.Close())
+		}
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test check:", err)
@@ -142,6 +162,7 @@ func runTestPlan(args []string) int {
 	} else {
 		fmt.Printf("TEST-PLAN mode=%s required=%s tree=%s groups=%s\n", prepared.Plan.ExecutedMode,
 			prepared.Plan.RequiredMode, prepared.CandidateTree, strings.Join(prepared.Plan.SelectedGroups, ","))
+		printUnmatchedInputs(prepared.UnmatchedInputs)
 	}
 	return 0
 }
@@ -154,7 +175,8 @@ type testingSelectionRequest struct {
 	Groups                                                                              []string
 	Carried                                                                             bool
 	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups                          bool
-	BatchPrefixReceipt, BatchTipProof                                                   bool
+	BatchPrefixReceipt, BatchTipProof, BatchAdmission                                   bool
+	FreshEpisode, FreshExpiresAt                                                        string
 	// CadencePreflight plans and revalidates the fetched tree before the cadence
 	// tick claims standing authority. Governed cadence execution does not set it.
 	CadencePreflight bool
@@ -165,7 +187,7 @@ type testingSelectionRequest struct {
 }
 
 func admitTestingRun(request testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
-	admission.ForceAttempt = request.Purpose == testpolicy.PurposeCadence || request.NoReuse
+	admission.ForceAttempt = request.Purpose == testpolicy.PurposeCadence || request.NoReuse || request.ForceGroups
 	if admission.CandidateTree == "" {
 		admission.CandidateTree = request.Tree
 	}
@@ -186,9 +208,12 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	flags.BoolVar(&request.PolicyChild, "policy-child", false, "judge policy in the pinned child without re-arming")
 	flags.BoolVar(&request.BatchPrefixReceipt, "batch-prefix", false, "compose delivery evidence for a batch prefix")
 	flags.BoolVar(&request.Carried, "carried", false, "compose a completed red result for carried-landing classification")
+	flags.StringVar(&request.FreshEpisode, "fresh-episode", "", "retained freshness episode for a proof decision")
+	flags.StringVar(&request.FreshExpiresAt, "fresh-expires-at", "", "expiry for a retained freshness episode")
 	if execution {
 		pathFlagVar(flags, &request.ControlRoot, "control-root", "", "durable proof control root for an internal batch proof")
 		flags.BoolVar(&request.BatchTipProof, "batch-tip", false, "prove a batch tip projected into its own detached worktree")
+		flags.BoolVar(&request.BatchAdmission, "batch-admission", false, "run selected batch admission checks on an exact tree")
 		flags.StringVar(&request.CapMin, "cap-min", "", "reserved proof minutes")
 		flags.StringVar(&request.RetryDecision, "retry-decision", "", "accountable version-1 retry decision")
 		flags.StringVar(&request.ResultPath, "result", "", "atomic result projection path")
@@ -222,12 +247,16 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		}
 	}
 	request.Mode, request.Purpose = testpolicy.Mode(*mode), testpolicy.Purpose(*purpose)
-	if request.BatchPrefixReceipt && (request.Purpose != testpolicy.PurposeDelivery || len(request.Groups) == 0) {
-		fmt.Fprintln(os.Stderr, "--batch-prefix requires delivery purpose and explicit groups")
+	if request.BatchPrefixReceipt && request.Purpose != testpolicy.PurposeDelivery {
+		fmt.Fprintln(os.Stderr, "--batch-prefix requires delivery purpose")
 		return request, false, 2
 	}
 	if request.BatchTipProof && request.Purpose != testpolicy.PurposeDelivery {
 		fmt.Fprintln(os.Stderr, "--batch-tip requires delivery purpose")
+		return request, false, 2
+	}
+	if request.BatchAdmission && request.Purpose != testpolicy.PurposeDelivery {
+		fmt.Fprintln(os.Stderr, "--batch-admission requires delivery purpose")
 		return request, false, 2
 	}
 	// Both internal batch proofs execute in a detached worktree holding the
@@ -235,13 +264,33 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	// root that owns them. batchPrefixProofControlRoot is what makes that safe:
 	// it admits a control root only when the execution root is a linked
 	// worktree sharing its git common directory and prefix.
-	if request.ControlRoot != "" && !request.BatchPrefixReceipt && !request.BatchTipProof {
+	if request.ControlRoot != "" && !request.BatchPrefixReceipt && !request.BatchTipProof && !request.BatchAdmission {
 		fmt.Fprintln(os.Stderr, "--control-root is internal to a batch proof")
 		return request, false, 2
 	}
 	if request.NoReuse && request.Purpose != testpolicy.PurposeDiagnostic {
 		fmt.Fprintln(os.Stderr, "--no-reuse is available only for diagnostic purpose")
 		return request, false, 2
+	}
+	if request.FreshEpisode != "" {
+		if len(request.FreshEpisode) != 64 {
+			fmt.Fprintln(os.Stderr, "--fresh-episode must be a 64-digit hexadecimal identifier")
+			return request, false, 2
+		}
+		if _, err := hex.DecodeString(request.FreshEpisode); err != nil {
+			fmt.Fprintln(os.Stderr, "--fresh-episode must be a 64-digit hexadecimal identifier")
+			return request, false, 2
+		}
+	}
+	if request.FreshExpiresAt != "" {
+		if request.FreshEpisode == "" {
+			fmt.Fprintln(os.Stderr, "--fresh-expires-at requires --fresh-episode")
+			return request, false, 2
+		}
+		if _, err := time.Parse(time.RFC3339Nano, request.FreshExpiresAt); err != nil {
+			fmt.Fprintln(os.Stderr, "--fresh-expires-at must be an RFC3339 timestamp")
+			return request, false, 2
+		}
 	}
 	if request.RequireDiagnosticHeadroom && request.Purpose != testpolicy.PurposeDelivery {
 		fmt.Fprintln(os.Stderr, "--require-diagnostic-headroom is available only for delivery purpose")
@@ -436,6 +485,13 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 	if err != nil {
 		return testingPreparation{}, err
 	}
+	// Expand protected Go package selectors against the exact trees before
+	// policy selection. Each affected package becomes its own reusable group.
+	selectionEnvironment := testingEnvironment(os.Environ())
+	effective, err = proofrun.ExpandGoPackageGroupsWithEnvironment(effective, projectRoot, changeBaseTree, candidateTree, selectionEnvironment)
+	if err != nil {
+		return testingPreparation{}, err
+	}
 	risk, accountingRevision := testpolicy.GoalRisk{}, uint64(0)
 	if accountToGoal {
 		risk, accountingRevision, err = testingGoalRisk(installation, goalID)
@@ -471,17 +527,23 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		return testingPreparation{}, fmt.Errorf("delivery impact is unresolved: %s; use diagnostic purpose for the bounded unknown groups", strings.Join(plan.Uncertainty, "; "))
 	}
 	if request.Purpose == testpolicy.PurposeDelivery {
-		declarations, declarationErr := testingRelevantInputs(prefix, contractRel, effective, plan)
-		if declarationErr != nil {
-			return testingPreparation{}, declarationErr
+		if err := checkDeliveryInputParity(workspace, candidateTree, prefix, contractRel, effective, plan); err != nil {
+			return testingPreparation{}, err
 		}
-		workingTree, snapshotErr := workspace.SnapshotRelevant(candidateTree, declarations)
-		if snapshotErr != nil {
-			return testingPreparation{}, fmt.Errorf("capture relevant candidate working inputs: %w", snapshotErr)
+	}
+	// Admission is a phase of the fully protected delivery decision. Preserve
+	// the complete floor through trusted policy comparison and relevant-input
+	// checks, then execute only the contract's admission subset. Legacy v1
+	// contracts conservatively retain their whole selected plan here.
+	if request.BatchAdmission {
+		plan, err = testpolicy.AdmissionPlan(effective, plan)
+		if err != nil {
+			return testingPreparation{}, err
 		}
-		if candidateTree != workingTree {
-			return testingPreparation{}, fmt.Errorf("delivery candidate differs from relevant working-tree inputs: candidate=%s working=%s", candidateTree, workingTree)
-		}
+	}
+	unmatchedInputs, err := unmatchedTestingInputs(workspace, candidateTree, effective, plan)
+	if err != nil {
+		return testingPreparation{}, err
 	}
 	if policyBaseErr != nil {
 		plan.Uncertainty = append(plan.Uncertainty, "trusted destination policy base unavailable: "+policyBaseErr.Error())
@@ -493,8 +555,9 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		BaseContractDigest: baseContractDigest, PolicyEngineDigest: policyEngineDigest, PolicyEngine: policyEngine,
 		JudgeKey:               proofrun.ComputeJudgeKey(context.Background(), projectRoot, policyBaseCommit, strings.TrimSuffix(prefix, "/")),
 		EngineRearm:            engineRearm,
+		UnmatchedInputs:        unmatchedInputs,
 		FirstTestingTransition: !basePresent,
-		BehaviorPolicyDigest:   bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: testingEnvironment(os.Environ()),
+		BehaviorPolicyDigest:   bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: selectionEnvironment,
 		AllGroups: request.AllGroups}, nil
 }
 
@@ -697,6 +760,61 @@ func testingRelevantInputs(prefix, contractRel string, contract testpolicy.Contr
 	return paths, nil
 }
 
+func checkDeliveryInputParity(workspace gittree.Workspace, candidateTree, prefix, contractRel string, contract testpolicy.Contract, plan testpolicy.Plan) error {
+	declarations, err := testingRelevantInputs(prefix, contractRel, contract, plan)
+	if err != nil {
+		return err
+	}
+	workingTree, err := workspace.SnapshotRelevant(candidateTree, declarations)
+	if err != nil {
+		return fmt.Errorf("capture relevant candidate working inputs: %w", err)
+	}
+	if candidateTree != workingTree {
+		return fmt.Errorf("delivery candidate differs from relevant working-tree inputs: candidate=%s working=%s", candidateTree, workingTree)
+	}
+	return nil
+}
+
+func unmatchedTestingInputs(workspace gittree.Workspace, tree string, contract testpolicy.Contract, plan testpolicy.Plan) ([]testingUnmatchedInput, error) {
+	entries, err := workspace.Entries(tree, []string{"."})
+	if err != nil {
+		return nil, fmt.Errorf("inspect candidate input patterns: %w", err)
+	}
+	selected := map[string]bool{}
+	for _, id := range plan.SelectedGroups {
+		selected[id] = true
+	}
+	var unmatched []testingUnmatchedInput
+	for _, group := range contract.Groups {
+		if !selected[group.ID] {
+			continue
+		}
+		for _, declaration := range group.Inputs {
+			pattern, err := pathpattern.Parse(declaration)
+			if err != nil {
+				return nil, fmt.Errorf("testing group %s input %q: %w", group.ID, declaration, err)
+			}
+			found := false
+			for name := range entries {
+				if pattern.Covers(name) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				unmatched = append(unmatched, testingUnmatchedInput{Group: group.ID, Pattern: pattern.String()})
+			}
+		}
+	}
+	return unmatched, nil
+}
+
+func printUnmatchedInputs(values []testingUnmatchedInput) {
+	for _, item := range values {
+		fmt.Fprintf(os.Stderr, "TEST-INPUT-NO-MATCH group=%q pattern=%q\n", item.Group, item.Pattern)
+	}
+}
+
 func planOutput(prepared testingPreparation) testingPlanOutput {
 	groupsByID := map[string]testpolicy.Group{}
 	for _, group := range prepared.EffectiveContract.Groups {
@@ -708,7 +826,7 @@ func planOutput(prepared testingPreparation) testingPlanOutput {
 	}
 	return testingPlanOutput{SchemaVersion: 1, ProjectRoot: prepared.ProjectRoot, InstallationPrefix: prepared.Prefix,
 		BaseCommit: prepared.BaseCommit, PolicyBaseCommit: prepared.PolicyBaseCommit, CandidateTree: prepared.CandidateTree, ContractDigest: prepared.ContractDigest,
-		BaseContractDigest: prepared.BaseContractDigest, Plan: prepared.Plan, Groups: groups}
+		BaseContractDigest: prepared.BaseContractDigest, Plan: prepared.Plan, Groups: groups, UnmatchedInputs: prepared.UnmatchedInputs}
 }
 
 func testingRunRequest(prepared testingPreparation, attemptID, logRoot, candidateEngine, candidateEngineDigest, candidateEngineBuildIdentity string) proofrun.TestRunRequest {
@@ -725,7 +843,14 @@ func testingRunRequest(prepared testingPreparation, attemptID, logRoot, candidat
 
 type candidateEngineBuild struct {
 	Path, Digest, Commit string
+	QueueDurationMS      int64
 	directory            string
+}
+
+type candidateEngineCacheRecord struct {
+	Version       int    `json:"version"`
+	BuildIdentity string `json:"buildIdentity"`
+	Digest        string `json:"digest"`
 }
 
 func candidateEngineBuildEnvironment(environment []string, stamp string) []string {
@@ -746,6 +871,26 @@ func candidateEngineBuildEnvironment(environment []string, stamp string) []strin
 		"GOEXPERIMENT=", "GOFLAGS=-mod=readonly", "GOTOOLCHAIN=local", "GOWORK=off", "METASYSTEM_BUILD_STAMP="+stamp)
 }
 
+// Proof custody identifies the enclosing run, not the candidate engine's
+// compiled behavior. It reaches legacy build scripts but does not fragment
+// the cache key across equivalent attempts.
+func candidateEngineSemanticEnvironment(environment []string) []string {
+	nonsemantic := map[string]bool{
+		"METASYSTEM_PROOF_CONTROL_ROOT": true, "METASYSTEM_PROOF_ATTEMPT": true,
+		"METASYSTEM_PROOF_RECORD_KEY": true, "METASYSTEM_PROOF_CREATION_CLAIM": true,
+		"METASYSTEM_PROOF_AUTH_BIN": true, identity.RunOwnerEnv: true,
+		identity.FixtureAttemptEnv: true,
+	}
+	result := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		name, _, ok := strings.Cut(entry, "=")
+		if ok && !nonsemantic[name] {
+			result = append(result, entry)
+		}
+	}
+	return result
+}
+
 func (build *candidateEngineBuild) Close() error {
 	if build == nil || build.directory == "" {
 		return nil
@@ -753,6 +898,123 @@ func (build *candidateEngineBuild) Close() error {
 	directory := build.directory
 	build.directory = ""
 	return os.RemoveAll(directory)
+}
+
+// prepareCandidateEngine keeps build outputs under the proof control root.
+// The existing build identity covers the tracked engine closure, platform and
+// toolchain. Every cache hit also checks the published bytes before use.
+func prepareCandidateEngine(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string) (*candidateEngineBuild, error) {
+	buildIdentity, err := candidateEngineBuildIdentity(ctx, workspace, installationPrefix, candidateTree, environment)
+	if err != nil {
+		return nil, err
+	}
+	cacheRoot := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines")
+	if err := os.MkdirAll(cacheRoot, 0o700); err != nil {
+		return nil, fmt.Errorf("create candidate engine cache: %w", err)
+	}
+	// The file lock is the identity reservation. A crashed producer releases
+	// it through the kernel; a partial staging directory is never a hit.
+	lockFile, err := os.OpenFile(filepath.Join(cacheRoot, buildIdentity+".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("reserve candidate engine identity: %w", err)
+	}
+	defer lockFile.Close()
+	cacheWaitStarted := time.Now()
+	for {
+		if err := unix.Flock(int(lockFile.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
+			break
+		} else if err != unix.EWOULDBLOCK && err != unix.EAGAIN {
+			return nil, fmt.Errorf("reserve candidate engine identity: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	cacheWaitMS := time.Since(cacheWaitStarted).Milliseconds()
+	defer unix.Flock(int(lockFile.Fd()), unix.LOCK_UN)
+	entry := filepath.Join(cacheRoot, buildIdentity)
+	if cached := validatedCandidateEngine(entry, buildIdentity); cached != nil {
+		cached.QueueDurationMS = cacheWaitMS
+		return cached, nil
+	}
+	lease, err := proofrun.AcquireHostResources(ctx, controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", nil)
+	if err != nil {
+		return nil, fmt.Errorf("admit candidate engine build: %w", err)
+	}
+	defer lease.Close()
+	built, err := buildCandidateEngine(proofrun.WithHostResourceLease(ctx, lease), workspace, installationPrefix, candidateTree, environment)
+	if err != nil {
+		return nil, err
+	}
+	defer built.Close()
+	if built.Commit != buildIdentity {
+		return nil, fmt.Errorf("candidate engine build identity changed during preparation")
+	}
+	stage, err := os.MkdirTemp(cacheRoot, ".candidate-engine-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(stage)
+	artifact := filepath.Join(stage, "metasystem")
+	if err := copyCandidateEngineArtifact(built.Path, artifact); err != nil {
+		return nil, err
+	}
+	record := candidateEngineCacheRecord{Version: 1, BuildIdentity: buildIdentity, Digest: built.Digest}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(stage, "record.json"), encoded, 0o600); err != nil {
+		return nil, err
+	}
+	if err := os.RemoveAll(entry); err != nil {
+		return nil, fmt.Errorf("discard invalid candidate engine artifact: %w", err)
+	}
+	if err := os.Rename(stage, entry); err != nil {
+		return nil, fmt.Errorf("publish candidate engine artifact: %w", err)
+	}
+	if cached := validatedCandidateEngine(entry, buildIdentity); cached != nil {
+		cached.QueueDurationMS = cacheWaitMS + lease.Waited().Milliseconds()
+		return cached, nil
+	}
+	return nil, fmt.Errorf("published candidate engine artifact failed validation")
+}
+
+func validatedCandidateEngine(entry, buildIdentity string) *candidateEngineBuild {
+	var record candidateEngineCacheRecord
+	encoded, err := os.ReadFile(filepath.Join(entry, "record.json"))
+	if err != nil || json.Unmarshal(encoded, &record) != nil || record.Version != 1 ||
+		record.BuildIdentity != buildIdentity || len(record.Digest) != sha256.Size*2 {
+		return nil
+	}
+	path := filepath.Join(entry, "metasystem")
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
+		return nil
+	}
+	digest, err := fileSHA256(path)
+	if err != nil || digest != record.Digest {
+		return nil
+	}
+	return &candidateEngineBuild{Path: path, Digest: digest, Commit: buildIdentity}
+}
+
+func copyCandidateEngineArtifact(source, target string) error {
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o500)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(output, input)
+	syncErr := output.Sync()
+	closeErr := output.Close()
+	return errors.Join(copyErr, syncErr, closeErr)
 }
 
 // buildCandidateEngine materializes the exact project tree, stamps its
@@ -792,8 +1054,12 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 	command := exec.CommandContext(ctx, "bash", "scripts/agents/go-build.sh", "--trimpath", "--out", build.Path)
 	command.Dir = installationRoot
 	command.Env = candidateEngineBuildEnvironment(environment, candidateCommit)
+	proofrun.AttachHostResourceLease(ctx, command)
 	command.WaitDelay = 5 * time.Second
-	output, commandErr := command.CombinedOutput()
+	var combined bytes.Buffer
+	command.Stdout, command.Stderr = &combined, &combined
+	commandErr := proofrun.RunResourceCommand(ctx, command, proofrun.HostResourceLeaseFromContext(ctx))
+	output := combined.Bytes()
 	if commandErr != nil {
 		return fail(commandErr, output)
 	}
@@ -831,7 +1097,10 @@ func candidateEngineBuildIdentity(ctx context.Context, workspace gittree.Workspa
 	if err != nil {
 		return "", err
 	}
-	buildEnvironment := candidateEngineBuildEnvironment(environment, "")
+	buildEnvironment := candidateEngineBuildEnvironment(candidateEngineSemanticEnvironment(environment), "")
+	// The build script receives this explicit environment. Its tracked bytes
+	// can consume any supplied value, so the build key covers all of them.
+	environmentDigest := bytesSHA256([]byte(strings.Join(buildEnvironment, "\x00")))
 	installationRoot := workspace.Dir
 	if installationPrefix != "" {
 		installationRoot = filepath.Join(workspace.Dir, filepath.FromSlash(installationPrefix))
@@ -844,6 +1113,7 @@ func candidateEngineBuildIdentity(ctx context.Context, workspace gittree.Workspa
 		"stable candidate proof snapshot",
 		"engine-tree=" + engineTree,
 		"toolchain-closure=" + toolchainClosure,
+		"build-environment=" + environmentDigest,
 		"platform=" + runtime.GOOS + "/" + runtime.GOARCH,
 		"build-context=CGO_ENABLED=0,GOAMD64=v1,GOARM64=v8.0,GOARM=7,GOENV=off,GOEXPERIMENT=,GOFLAGS=-mod=readonly,GOTOOLCHAIN=local,GOWORK=off,-buildvcs=false,-trimpath",
 	}, "\n")
@@ -956,12 +1226,19 @@ func runTestRun(args []string) int {
 	if status != 0 {
 		return status
 	}
+	unmark, markErr := proofrun.MarkManagedProofProcess()
+	if markErr != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test run: mark host admission process:", markErr)
+		return proofrun.ExitAdmissionRefused
+	}
+	defer unmark()
 	request.LandedRearm = true
 	prepared, err := prepareTestingForCommand(request)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
 		return 1
 	}
+	printUnmatchedInputs(prepared.UnmatchedInputs)
 	controlRoot := prepared.proofControlRoot()
 	limits, err := resolveProofRunLimits(prepared.ConfPath)
 	if err != nil {
@@ -974,7 +1251,7 @@ func runTestRun(args []string) int {
 		return 1
 	}
 	buildContext, cancelBuild := context.WithCancel(context.Background())
-	candidateEngine, err := buildCandidateEngine(buildContext, gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix,
+	candidateEngine, err := prepareCandidateEngine(buildContext, controlRoot, gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix,
 		prepared.CandidateTree, inheritedTestingEnvironment(prepared.Environment, os.Environ()))
 	cancelBuild()
 	if err != nil {
@@ -989,13 +1266,26 @@ func runTestRun(args []string) int {
 		return proofrun.ExitAdmissionRefused
 	}
 	preRequest := testingRunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
-	metadataStarted := time.Now()
 	metadataContext, cancelMetadata := context.WithCancel(context.Background())
-	identities, preparedGroups, preparationLaunches, identityErr := proofrun.PrepareGroupExecutionIdentities(metadataContext, preRequest)
+	metadataLease, leaseErr := proofrun.AcquireHostResources(metadataContext, controlRoot, prepared.ConfPath, "heavy", nil)
+	if leaseErr != nil {
+		cancelMetadata()
+		fmt.Fprintln(os.Stderr, "metasystem test run: admit testing metadata preparation:", leaseErr)
+		return proofrun.ExitAdmissionRefused
+	}
+	queueDurationMS := candidateEngine.QueueDurationMS + metadataLease.Waited().Milliseconds()
+	metadataStarted := time.Now()
+	identities, preparedGroups, preparationLaunches, identityErr := proofrun.PrepareGroupExecutionIdentities(
+		proofrun.WithHostResourceLease(metadataContext, metadataLease), preRequest)
+	closeLeaseErr := metadataLease.Close()
 	cancelMetadata()
+	if identityErr == nil {
+		identityErr = closeLeaseErr
+	}
 	preparationDuration := time.Since(metadataStarted).Milliseconds()
 	preRequest.PreparedGroups, preRequest.PreparationLaunches = preparedGroups, preparationLaunches
 	preRequest.PreparationDurationMS = preparationDuration
+	preRequest.QueueDurationMS = queueDurationMS
 	preRequest.CommandStartedAt = commandStarted.Format(time.RFC3339Nano)
 	var identityInputs []string
 	if identityErr == nil {
@@ -1009,6 +1299,30 @@ func runTestRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test run: bounded testing metadata preparation:", identityErr)
 		return proofrun.ExitAdmissionRefused
 	}
+	freshGroups, maxFreshAge := testingFreshGroups(prepared, request)
+	if request.FreshEpisode == "" && len(freshGroups) != 0 {
+		request.FreshEpisode, err = newTestingFreshEpisode()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "metasystem test run: create freshness episode:", err)
+			return proofrun.ExitAdmissionRefused
+		}
+		if maxFreshAge > 0 && request.FreshExpiresAt == "" {
+			request.FreshExpiresAt = commandStarted.Add(maxFreshAge).Format(time.RFC3339Nano)
+		}
+	}
+	if maxFreshAge > 0 && request.FreshExpiresAt == "" {
+		fmt.Fprintln(os.Stderr, "metasystem test run: selected fresh group requires --fresh-expires-at")
+		return proofrun.ExitAdmissionRefused
+	}
+	preRequest.FreshnessEpisode, preRequest.FreshnessExpiresAt = request.FreshEpisode, request.FreshExpiresAt
+	preRequest.FreshGroups = freshGroups
+	if err := bindTestingFreshnessProjection(&preRequest, prepared.Installation); err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test run: project freshness candidate:", err)
+		return proofrun.ExitAdmissionRefused
+	}
+	freshnessProjection := preRequest.FreshnessCandidateProjection
+	freshBinding := testingFreshnessBinding(preRequest, identities, request.FreshEpisode)
+	preRequest.FreshnessBinding = freshBinding
 	admission := proofLaunchAdmission{ControlRoot: controlRoot,
 		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, AuthorityGoalID: request.AuthorityGoalID,
 		CandidateRevision: prepared.AccountingRevision, RetryDecision: request.RetryDecision,
@@ -1017,6 +1331,10 @@ func runTestRun(args []string) int {
 		ScopeClass:                 "selected", CommandClass: "testing", CandidateTree: prepared.CandidateTree, IdentityInputs: append([]string{prepared.ContractDigest,
 			prepared.BaseContractDigest, prepared.PolicyEngineDigest, candidateEngine.Digest, prepared.BehaviorPolicyDigest, planDigest}, identityInputs...), Environment: prepared.Environment,
 		SharedEngine: engine, SharedManifestDigest: manifestDigest, ComponentIdentities: identities,
+		FreshnessEpisode: request.FreshEpisode, FreshnessBinding: freshBinding, FreshnessExpiresAt: request.FreshExpiresAt,
+		FreshGroups:     freshGroups,
+		ForceGroups:     request.ForceGroups,
+		ManagedCapacity: true,
 		// A cadence attempt is the fresh sweep: it never inherits a
 		// reusable-success answer from an earlier run of its goal.
 		RequireDiagnosticHeadroom: request.RequireDiagnosticHeadroom}
@@ -1047,6 +1365,7 @@ func runTestRun(args []string) int {
 		// newest observations say otherwise (a newer failure or a live plan
 		// under another goal). Run afresh instead of stranding the caller.
 		admission.ForceAttempt = true
+		admission.ForceGroups = true
 		attempt, decision, joined, err = admitProofLaunch(admission)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "metasystem test run:", err)
@@ -1065,8 +1384,12 @@ func runTestRun(args []string) int {
 	}
 	prepared.GoalID, prepared.AccountingRevision = attempt.AccountedGoal(), attempt.AccountedRevision()
 	preRequest = testingRunRequest(prepared, "", "", candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
+	preRequest.FreshnessEpisode, preRequest.FreshnessBinding, preRequest.FreshnessExpiresAt = request.FreshEpisode, freshBinding, request.FreshExpiresAt
+	preRequest.FreshGroups = freshGroups
+	preRequest.FreshnessCandidateProjection = freshnessProjection
 	preRequest.PreparedGroups, preRequest.PreparationLaunches = preparedGroups, preparationLaunches
 	preRequest.PreparationDurationMS, preRequest.CommandStartedAt = preparationDuration, commandStarted.Format(time.RFC3339Nano)
+	preRequest.QueueDurationMS = queueDurationMS
 	reusedGroups := map[string]proofrun.GroupResult{}
 	if identityErr == nil {
 		attempts, readErr := proofrun.ReadAttempts(controlRoot)
@@ -1088,23 +1411,20 @@ func runTestRun(args []string) int {
 		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
 	}
 	runRequest := testingRunRequest(prepared, attempt.AttemptID, filepath.Join(pathsRoot, "groups"), candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
+	runRequest.FreshnessEpisode, runRequest.FreshnessBinding, runRequest.FreshnessExpiresAt = request.FreshEpisode, freshBinding, request.FreshExpiresAt
+	runRequest.FreshGroups = freshGroups
+	runRequest.FreshnessCandidateProjection = freshnessProjection
 	runRequest.ProgressPath = filepath.Join(pathsRoot, "progress.jsonl")
 	runRequest.Reused, runRequest.ComponentIdentities = reusedGroups, identities
 	runRequest.PreparedGroups, runRequest.PreparationLaunches = preparedGroups, preparationLaunches
 	runRequest.PreparationDurationMS, runRequest.CommandStartedAt = preparationDuration, preRequest.CommandStartedAt
+	runRequest.QueueDurationMS = queueDurationMS
 	runRequest.EvidenceTimeoutMS, runRequest.EvidenceMaxBytes = limits.evidenceTimeout.Milliseconds(), limits.evidenceMax
 	runRequest.Concurrency = limits.concurrency
 	packetPath, workerResultPath := filepath.Join(pathsRoot, "request.json"), filepath.Join(pathsRoot, "result.json")
-	if err := writePrivateJSON(packetPath, runRequest); err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
-		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
-	}
-	packetDigest, err := fileSHA256(packetPath)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
-		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
-	}
 	deadline, _ := time.Parse(time.RFC3339Nano, attempt.Deadline)
+	nativeContext, cancelNative := context.WithDeadline(context.Background(), deadline)
+	defer cancelNative()
 	var retained *proofrun.TestResult
 	workerEngine := engine
 	if !prepared.FirstTestingTransition {
@@ -1115,20 +1435,51 @@ func runTestRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test run: export run owner:", err)
 		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
 	}
+	producerWaitStarted := time.Now()
+	for _, id := range prepared.Plan.SelectedGroups {
+		if attempt.TestWaits[id] == "" {
+			continue
+		}
+		if _, err := proofrun.WaitForTestProducer(nativeContext, controlRoot, attempt, id); err != nil {
+			fmt.Fprintln(os.Stderr, "metasystem test run: await shared producer:", err)
+			return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
+		}
+	}
+	runRequest.QueueDurationMS += time.Since(producerWaitStarted).Milliseconds()
+	resourceClass, exclusive := testingOwnedResources(prepared, attempt)
+	var nativeLease *proofrun.HostResourceLease
+	if resourceClass != "" {
+		nativeLease, err = proofrun.AcquireHostResources(nativeContext, controlRoot, prepared.ConfPath, resourceClass, exclusive)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "metasystem test run: admit native testing:", err)
+			return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
+		}
+		defer nativeLease.Close()
+		runRequest.QueueDurationMS += nativeLease.Waited().Milliseconds()
+	}
+	if err := writePrivateJSON(packetPath, runRequest); err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
+		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
+	}
+	packetDigest, err := fileSHA256(packetPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
+		return retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, 1)
+	}
 	launchStatus := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "testing", Root: prepared.ProjectRoot,
 		ControlRoot: controlRoot, AttemptID: attempt.AttemptID, JoinedAttempt: joined, Deadline: deadline, ConfPath: prepared.ConfPath,
 		ProgressPath: runRequest.ProgressPath, LogPath: filepath.Join(pathsRoot, "launcher.log"),
 		Banner: "TESTING-CONTRACT plan=" + planDigest, Silence: limits.silence, SectionCap: limits.sectionCap,
 		EvidenceTimeout: limits.evidenceTimeout, EvidenceMax: limits.evidenceMax, Poll: time.Second, TermGrace: 5 * time.Second,
 		KillGrace: time.Second, Command: []string{workerEngine, "test", "worker", "--packet", packetPath, "--packet-sha256", packetDigest, "--result", workerResultPath},
-		Environment: workerEnvironment, Output: os.Stdout, ErrorOutput: os.Stderr,
+		Environment: workerEnvironment, HostResourceFiles: nativeLease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
 		PrepareSuccess: func(completion proofrun.CompletionContext) (json.RawMessage, error) {
 			result, readErr := readTestingWorkerResult(workerResultPath)
 			if readErr != nil {
 				return nil, readErr
 			}
 			retained = &result
-			if request.BatchPrefixReceipt || !testingReceiptWanted(joined, prepared.Plan.Purpose, result.Delivery.Sufficient) {
+			if request.BatchPrefixReceipt || request.BatchAdmission || !testingReceiptWanted(joined, prepared.Plan.Purpose, result.Delivery.Sufficient) {
 				return nil, nil
 			}
 			receipt, payload, prepareErr := landing.PrepareTestingReceiptPayload(prepared.Installation,
@@ -1159,6 +1510,103 @@ func runTestRun(args []string) int {
 		}
 	}
 	return launchStatus
+}
+
+func newTestingFreshEpisode() (string, error) {
+	var token [32]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(token[:]), nil
+}
+
+func testingFreshGroups(prepared testingPreparation, request testingSelectionRequest) (map[string]bool, time.Duration) {
+	selected := make(map[string]bool, len(prepared.Plan.SelectedGroups))
+	for _, id := range prepared.Plan.SelectedGroups {
+		selected[id] = true
+	}
+	fresh := map[string]bool{}
+	var maxAge time.Duration
+	for _, group := range prepared.EffectiveContract.Groups {
+		if !selected[group.ID] {
+			continue
+		}
+		if group.Freshness == "episode" || request.NoReuse || request.Purpose == testpolicy.PurposeCadence {
+			fresh[group.ID] = true
+			if group.FreshnessMaxAgeMS != nil {
+				age := time.Duration(*group.FreshnessMaxAgeMS) * time.Millisecond
+				if maxAge == 0 || age < maxAge {
+					maxAge = age
+				}
+			}
+		}
+	}
+	return fresh, maxAge
+}
+
+func testingOwnedResources(prepared testingPreparation, attempt proofrun.Attempt) (string, []string) {
+	selected := map[string]bool{}
+	for _, id := range prepared.Plan.SelectedGroups {
+		selected[id] = true
+	}
+	class := ""
+	resources := map[string]bool{}
+	for _, group := range prepared.EffectiveContract.Groups {
+		if !selected[group.ID] {
+			continue
+		}
+		if len(attempt.TestInventory) != 0 && attempt.TestOwned[group.ID] == "" {
+			continue
+		}
+		if class == "" {
+			class = "cheap"
+		}
+		if group.Resources.Class != "cheap" || group.Adapter == "go" {
+			class = "heavy"
+		}
+		for _, resource := range group.Resources.Exclusive {
+			resources[resource] = true
+		}
+	}
+	names := make([]string, 0, len(resources))
+	for name := range resources {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return class, names
+}
+
+func bindTestingFreshnessProjection(request *proofrun.TestRunRequest, installation string) error {
+	if request.FreshnessEpisode == "" {
+		return nil
+	}
+	tree, err := landing.ProjectWorkspaceTree(installation, request.CandidateTree)
+	if err != nil {
+		return err
+	}
+	request.FreshnessCandidateProjection = tree
+	return nil
+}
+
+// A supplied episode is reusable only while the decision it names still
+// covers the same candidate, base, plan, and execution inputs.
+func testingFreshnessBinding(request proofrun.TestRunRequest, identities map[string]string, episode string) string {
+	if episode == "" {
+		return ""
+	}
+	candidate := request.CandidateTree
+	if request.FreshnessCandidateProjection != "" {
+		candidate = request.FreshnessCandidateProjection
+	}
+	encoded, _ := json.Marshal(struct {
+		Purpose, Candidate, Base, PolicyBase, Contract, BaseContract, Plan, ExpiresAt string
+		Groups                                                                        map[string]string
+		Environment                                                                   []string
+	}{string(request.Plan.Purpose), candidate, request.BaseCommit, request.PolicyBaseCommit,
+		request.ContractDigest, request.BaseContractDigest,
+		proofrun.TestPlanDigest(request.Contract, request.Plan, candidate), request.FreshnessExpiresAt, identities, request.Environment})
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:])
 }
 
 func testingWorkerEnvironment(environment []string) ([]string, error) {
@@ -1200,6 +1648,16 @@ func runTestWorker(args []string) int {
 		return 2
 	}
 	legacyPolicyProbe := os.Getenv(policyProbeWorkerEnvironment) == "1"
+	if legacyPolicyProbe {
+		if request.Contract.SchemaVersion != 1 || len(request.Contract.Groups) != 1 || request.Contract.Groups[0].ID != "literal" ||
+			len(request.Plan.SelectedGroups) != 1 || request.Plan.SelectedGroups[0] != "literal" ||
+			!strings.HasPrefix(filepath.Base(request.ProjectRoot), "metasystem-policy-probe.") ||
+			filepath.Dir(*resultPath) != request.ProjectRoot {
+			fmt.Fprintln(os.Stderr, "metasystem test worker: unrecognized frozen policy probe")
+			return 3
+		}
+		request.SyntheticProbe = true
+	}
 	if request.CandidateEngine == "" || request.CandidateEngineDigest == "" ||
 		(request.CandidateEngineBuildIdentity == "" && !legacyPolicyProbe) {
 		fmt.Fprintln(os.Stderr, "metasystem test worker: input-bound candidate engine is absent")
@@ -1252,7 +1710,15 @@ func runTestWorker(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
 		return 1
 	}
-	if err := writePrivateJSON(*resultPath, result); err != nil {
+	response := result
+	if request.SyntheticProbe {
+		response, err = frozenNegativeProbeResponse(request, result)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
+			return 1
+		}
+	}
+	if err := writePrivateJSON(*resultPath, response); err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
 		return 1
 	}
@@ -1304,7 +1770,7 @@ func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult
 	if _, err := resolveProofRunLimits(prepared.ConfPath); err != nil {
 		return proofrun.TestResult{}, err
 	}
-	attempts, err := proofrun.ReadAttempts(prepared.Installation)
+	attempts, err := proofrun.ReadAttempts(prepared.proofControlRoot())
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
@@ -1326,6 +1792,19 @@ func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
+	runRequest.FreshnessEpisode = request.FreshEpisode
+	runRequest.FreshnessExpiresAt = request.FreshExpiresAt
+	freshGroups, maxFreshAge := testingFreshGroups(prepared, request)
+	if len(freshGroups) > 0 && request.FreshEpisode == "" ||
+		len(freshGroups) == 0 && request.FreshEpisode != "" ||
+		maxFreshAge > 0 && request.FreshExpiresAt == "" {
+		return proofrun.TestResult{}, fmt.Errorf("selected fresh testing groups require the same explicit episode and expiry used by test run")
+	}
+	runRequest.FreshGroups = freshGroups
+	if err := bindTestingFreshnessProjection(&runRequest, prepared.Installation); err != nil {
+		return proofrun.TestResult{}, err
+	}
+	runRequest.FreshnessBinding = testingFreshnessBinding(runRequest, identities, request.FreshEpisode)
 	return proofrun.ReusedTestResult(proofrun.NewTestResult(runRequest), attempts, identities,
 		prepared.EffectiveContract), nil
 }
@@ -1451,8 +1930,8 @@ func attemptAccountsForCandidate(attempt proofrun.Attempt, goalID string, accoun
 
 func testInputManifestContains(manifest []string, candidate string) bool {
 	for _, declaration := range manifest {
-		prefix := strings.TrimSuffix(declaration, "/**")
-		if candidate == prefix || strings.HasSuffix(declaration, "/**") && strings.HasPrefix(candidate, prefix+"/") {
+		matched, err := pathpattern.MatchManifestEntry(declaration, candidate)
+		if err != nil || matched {
 			return true
 		}
 	}
@@ -1490,7 +1969,7 @@ func retainedCandidateEngineDigest(prepared testingPreparation, attempts []proof
 	if digest != "" {
 		return digest, nil
 	}
-	receiptsRoot := filepath.Dir(landing.TestReceiptPath(prepared.Installation, prepared.CandidateTree))
+	receiptsRoot := filepath.Dir(landing.TestReceiptPath(prepared.proofControlRoot(), prepared.CandidateTree))
 	entries, readErr := os.ReadDir(receiptsRoot)
 	if readErr == nil {
 		for _, entry := range entries {
@@ -1540,7 +2019,7 @@ func checkTestingTools(projectRoot string, contract testpolicy.Contract) error {
 			unavailable = append(unavailable, group.ID+":cwd")
 			continue
 		}
-		environment := proofrun.TestingEnvironment(testingEnvironment(os.Environ()), group.Env)
+		environment := proofrun.GroupTestingEnvironment(testingEnvironment(os.Environ()), group)
 		for _, tool := range group.Tools {
 			if _, err := proofrun.ResolveTestingExecutable(context.Background(), cwd, environment, []string{tool.Executable}); err != nil {
 				unavailable = append(unavailable, group.ID+":"+tool.ID)

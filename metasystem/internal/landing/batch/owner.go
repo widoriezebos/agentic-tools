@@ -212,6 +212,12 @@ func (owner *Owner) Tick(id string) error {
 	return lock.whileHeld(func() error { return owner.launch(id, sample, window) })
 }
 
+// TickOnce releases a queue registration when a caller will not poll again.
+func (owner *Owner) TickOnce(id string) (err error) {
+	defer func() { err = errors.Join(err, owner.release(id)) }()
+	return owner.Tick(id)
+}
+
 func greenTipClearDetail(proof *Proof) string {
 	if proof == nil {
 		return ""

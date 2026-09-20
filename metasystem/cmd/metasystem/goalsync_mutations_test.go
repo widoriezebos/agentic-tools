@@ -1750,6 +1750,10 @@ func TestStewardArmTemporaryWordRequiresContentAndDate(t *testing.T) {
 }
 
 func syncedClaimedGoalFixture(t *testing.T) string {
+	return syncedClaimedGoalFixtureAt(t, time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC))
+}
+
+func syncedClaimedGoalFixtureAt(t *testing.T, now time.Time) string {
 	t.Helper()
 	root := t.TempDir()
 	goalSyncMutationGit(t, root, "init", "-q", "-b", "main")
@@ -1771,9 +1775,9 @@ func syncedClaimedGoalFixture(t *testing.T) string {
 	rootRecord := &goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
 	}
-	openedAt := "2026-08-30T08:00:00Z"
-	claimAt := "2026-08-30T08:05:00Z"
-	approvedAt := "2026-08-30T08:06:00Z"
+	openedAt := now.Add(-time.Hour).Format(time.RFC3339)
+	claimAt := now.Add(-55 * time.Minute).Format(time.RFC3339)
+	approvedAt := now.Add(-54 * time.Minute).Format(time.RFC3339)
 	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2, ReviewRoundLimit: 3}
 	risk := &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture exercises an admitted tier-three goal."}
 	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAZ", "mac-cli", "m1")

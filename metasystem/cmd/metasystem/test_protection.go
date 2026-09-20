@@ -401,6 +401,37 @@ func readFrozenWorkerProbeResult(path string) (proofrun.TestResult, error) {
 	return result, nil
 }
 
+// frozenNegativeProbeResponse is a private response for the old engine's
+// version-one negative corpus. It cannot turn an ordinary worker result into
+// legacy proof evidence: only the one invalid, incomplete synthetic probe is
+// projected, and the normal worker still writes schema two.
+func frozenNegativeProbeResponse(request proofrun.TestRunRequest, result proofrun.TestResult) (proofrun.TestResult, error) {
+	if !request.SyntheticProbe || result.SchemaVersion != proofrun.TestResultSchemaVersion ||
+		len(request.Plan.SelectedGroups) != 1 || request.Plan.SelectedGroups[0] != "literal" ||
+		len(result.SelectedGroups) != 1 || result.SelectedGroups[0] != "literal" ||
+		len(result.RequiredGroups) != 1 || result.RequiredGroups[0] != "literal" ||
+		len(result.Groups) != 1 || result.Groups[0].ID != "literal" ||
+		result.Groups[0].Status != "invalid" || result.Groups[0].CollectionComplete ||
+		result.Groups[0].ReuseAttempt != "" || result.Delivery.Sufficient ||
+		len(request.FreshGroups) != 0 || request.FreshnessEpisode != "" || request.FreshnessBinding != "" || request.FreshnessExpiresAt != "" ||
+		len(result.FreshGroups) != 0 || result.FreshnessEpisode != "" || result.FreshnessBinding != "" || result.FreshnessExpiresAt != "" {
+		return proofrun.TestResult{}, fmt.Errorf("frozen policy probe did not produce exactly one invalid, incomplete negative result")
+	}
+	if err := proofrun.ValidateTestResult(result); err != nil {
+		return proofrun.TestResult{}, fmt.Errorf("frozen policy probe result: %w", err)
+	}
+	legacy := result
+	legacy.SchemaVersion = proofrun.LegacyTestResultSchemaVersion
+	legacy.Groups = append([]proofrun.GroupResult(nil), result.Groups...)
+	legacy.Groups[0].IdentityVersion = 0
+	legacy.Groups[0].ExecutableDigests = nil
+	legacy.Cost.QueueDurationMS = 0
+	if err := proofrun.ValidateTestResult(legacy); err != nil {
+		return proofrun.TestResult{}, fmt.Errorf("frozen policy probe legacy projection: %w", err)
+	}
+	return legacy, nil
+}
+
 func removeTestingGroup(groups []testpolicy.Group, id string) []testpolicy.Group {
 	result := make([]testpolicy.Group, 0, len(groups))
 	for _, group := range groups {

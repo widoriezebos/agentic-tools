@@ -16,6 +16,7 @@ import (
 )
 
 func TestNewTestResultKeepsDigestOnlyIdentityForLegacyPolicyProbe(t *testing.T) {
+	t.Parallel()
 	digestOnly := NewTestResult(TestRunRequest{CandidateEngineDigest: strings.Repeat("a", 64)})
 	if digestOnly.CandidateEngineIdentityVersion != candidateEngineDigestIdentityVersion || digestOnly.CandidateEngineBuildIdentity != "" {
 		t.Fatalf("digest-only candidate identity was not projected as version one: %+v", digestOnly)
@@ -29,6 +30,7 @@ func TestNewTestResultKeepsDigestOnlyIdentityForLegacyPolicyProbe(t *testing.T) 
 }
 
 func TestSectionEnginePreparationPreservesBytesAndNestedSelector(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	cwd := filepath.Join(root, "vendor", "engine with spaces")
 	if err := os.MkdirAll(cwd, 0o700); err != nil {
@@ -365,6 +367,7 @@ esac
 }
 
 func TestCadenceCatchClassesRequireTerminalCompleteGroups(t *testing.T) {
+	t.Parallel()
 	result := TestResult{RequiredGroups: testpolicy.CadenceCatchGroupIDs()}
 	for _, id := range result.RequiredGroups {
 		result.Groups = append(result.Groups, GroupResult{ID: id, Status: "passed", CollectionComplete: true})
@@ -379,6 +382,7 @@ func TestCadenceCatchClassesRequireTerminalCompleteGroups(t *testing.T) {
 }
 
 func TestReusedTestResultComposesAcrossCandidateChangeAndExactRecoveryUsesExecutionIdentity(t *testing.T) {
+	t.Parallel()
 	groupIdentity := strings.Repeat("7", 64)
 	oldTree := strings.Repeat("b", 40)
 	currentTree := strings.Repeat("c", 40)

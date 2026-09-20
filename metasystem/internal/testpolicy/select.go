@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 )
 
 type Purpose string
@@ -90,10 +92,17 @@ func RequireFirstTransition(contract Contract, plan Plan) (Plan, error) {
 		}
 	}
 	sort.Slice(plan.Omissions, func(i, j int) bool { return plan.Omissions[i].Group < plan.Omissions[j].Group })
-	return plan, nil
+	return WithPrerequisiteClosure(contract, plan)
 }
 
 func Select(contract Contract, request SelectionRequest) (Plan, error) {
+	for _, id := range request.Groups {
+		for _, group := range contract.Groups {
+			if group.ID == id && group.PackageSelection != "" {
+				return Plan{}, fmt.Errorf("requested group %s is a Go package selector template; select a concrete package group", id)
+			}
+		}
+	}
 	if request.RequestedMode == "" {
 		request.RequestedMode = ModeAuto
 	}
@@ -126,6 +135,7 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 	}
 	affected := map[string]bool{}
 	var uncertainty []string
+	var fallbackReasons []string
 	for _, path := range request.ChangedPaths {
 		matched := false
 		for _, surface := range contract.Surfaces {
@@ -141,6 +151,7 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 		if !matched {
 			if contract.Fallback != "" {
 				affected[contract.Fallback] = true
+				fallbackReasons = append(fallbackReasons, "surface "+contract.Fallback+" owns changed path "+path+" because no declared path matched")
 			} else {
 				uncertainty = append(uncertainty, "no surface owns changed path "+path)
 			}
@@ -167,6 +178,7 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 	// they scale the landing's cadence weight (gate weight-add --goal), so a
 	// riskier goal brings the deep cadence run sooner (ruling R-3).
 	risk := assessRisk(contract, surfaces, GoalRisk{})
+	risk.Reasons = append(risk.Reasons, fallbackReasons...)
 	if request.GoalRisk != (GoalRisk{}) {
 		risk.Reasons = append(risk.Reasons, fmt.Sprintf("goal risk answers severity=%d novelty=%d exposure=%d accumulation=%d scale cadence weight, not per-landing depth",
 			request.GoalRisk.Severity, request.GoalRisk.Novelty, request.GoalRisk.Exposure, request.GoalRisk.Accumulation))
@@ -249,6 +261,12 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 			if _, ok := groups[id]; !ok {
 				return Plan{}, fmt.Errorf("requested group %s does not exist", id)
 			}
+			if deliveryGroups {
+				// A batch supplement is an admitted delivery obligation,
+				// including its prerequisite closure below. It cannot merely
+				// appear in SelectedGroups and be ignored by sufficiency.
+				required[id] = true
+			}
 			if !selected[id] {
 				explicit[id] = true
 				selected[id] = true
@@ -273,16 +291,119 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 		}
 	}
 	sort.Slice(plan.Omissions, func(i, j int) bool { return plan.Omissions[i].Group < plan.Omissions[j].Group })
+	return WithPrerequisiteClosure(contract, plan)
+}
+
+// WithPrerequisiteClosure includes every prerequisite before the selected
+// dependent's stage. It also closes the delivery requirement set, so a caller
+// cannot satisfy a dependent while omitting the check that admits it.
+func WithPrerequisiteClosure(contract Contract, plan Plan) (Plan, error) {
+	groups := groupMap(contract.Groups)
+	assigned := map[string]bool{}
+	selected := set(plan.SelectedGroups)
+	required := set(plan.RequiredGroups)
+	stages := make([]Stage, 0, len(plan.Stages))
+	for _, stage := range plan.Stages {
+		members := map[string]bool{}
+		active := map[string]bool{}
+		var include func(string) error
+		include = func(id string) error {
+			if active[id] {
+				return fmt.Errorf("testing group prerequisite cycle at %s", id)
+			}
+			group, ok := groups[id]
+			if !ok {
+				return fmt.Errorf("selected testing group %s is absent", id)
+			}
+			active[id] = true
+			defer delete(active, id)
+			for _, dependency := range group.Requires {
+				if !assigned[dependency] {
+					if err := include(dependency); err != nil {
+						return err
+					}
+				}
+				selected[dependency] = true
+				if required[id] {
+					required[dependency] = true
+				}
+			}
+			if !assigned[id] {
+				members[id], assigned[id] = true, true
+			}
+			return nil
+		}
+		for _, id := range stage.Groups {
+			if err := include(id); err != nil {
+				return Plan{}, err
+			}
+		}
+		if len(members) > 0 {
+			stages = append(stages, Stage{ID: stage.ID, Groups: keys(members)})
+		}
+	}
+	for _, id := range plan.SelectedGroups {
+		if !assigned[id] {
+			return Plan{}, fmt.Errorf("selected testing group %s has no execution stage", id)
+		}
+	}
+	for _, id := range plan.RequiredGroups {
+		if _, ok := groups[id]; !ok {
+			return Plan{}, fmt.Errorf("required testing group %s is absent", id)
+		}
+	}
+	var require func(string)
+	require = func(id string) {
+		for _, dependency := range groups[id].Requires {
+			if !required[dependency] {
+				required[dependency] = true
+				require(dependency)
+			}
+		}
+	}
+	for id := range plan.RequiredGroups {
+		require(plan.RequiredGroups[id])
+	}
+	plan.Stages, plan.SelectedGroups, plan.RequiredGroups = stages, keys(selected), keys(required)
+	plan.Omissions = nil
+	for id := range groups {
+		if !selected[id] {
+			plan.Omissions = append(plan.Omissions, Omission{Group: id, Reason: "outside-impact"})
+		}
+	}
+	sort.Slice(plan.Omissions, func(i, j int) bool { return plan.Omissions[i].Group < plan.Omissions[j].Group })
 	return plan, nil
 }
 
-func matchesPath(pattern, path string) bool {
-	pattern, path = strings.TrimPrefix(pattern, "./"), strings.TrimPrefix(path, "./")
-	if strings.HasSuffix(pattern, "/**") {
-		prefix := strings.TrimSuffix(pattern, "**")
-		return strings.HasPrefix(path, prefix)
+// AdmissionPlan returns a diagnostic plan for the selected admission checks.
+// It cannot itself authorize delivery; the complete delivery plan remains the
+// acceptance floor. Legacy contracts run their whole selected plan at join.
+func AdmissionPlan(contract Contract, acceptance Plan) (Plan, error) {
+	if contract.SchemaVersion == SchemaVersion {
+		return acceptance, nil
 	}
-	return pattern == path
+	groups := groupMap(contract.Groups)
+	selected := map[string]bool{}
+	for _, id := range acceptance.SelectedGroups {
+		group, found := groups[id]
+		if !found {
+			return Plan{}, fmt.Errorf("selected testing group %s is absent", id)
+		}
+		if group.Phase == "admission" {
+			selected[id] = true
+		}
+	}
+	admission := acceptance
+	admission.Purpose = PurposeDiagnostic
+	admission.RequestedMode, admission.ExecutedMode = ModeCanary, ModeCanary
+	admission.RequiredGroups, admission.SelectedGroups = keys(selected), keys(selected)
+	admission.Stages = []Stage{{ID: "admission", Groups: keys(selected)}}
+	return WithPrerequisiteClosure(contract, admission)
+}
+
+func matchesPath(pattern, path string) bool {
+	parsed, err := pathpattern.Parse(pattern)
+	return err == nil && parsed.Match(path)
 }
 
 func groupMap(groups []Group) map[string]Group {

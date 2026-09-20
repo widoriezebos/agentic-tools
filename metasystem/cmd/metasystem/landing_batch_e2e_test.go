@@ -16,9 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -66,11 +68,23 @@ func TestBatchLandingLifecycleEndToEnd(t *testing.T) {
 	t.Cleanup(batchE2EProcessEnvironment.Unlock)
 	engine := batchE2ESharedEngine
 	harness := &batchE2EHarness{fixtures: map[string]*batchE2EFixture{}}
-	now := time.Date(2026, 9, 19, 16, 0, 0, 0, time.UTC)
+	// The real prefix runner bounds its native phase by the reserved attempt
+	// deadline. Seed the fixture from the same current clock used by that runner.
+	now := time.Now().UTC().Truncate(time.Second)
 	originalProof, originalDiagnostic := productionBatchProofDependencies, batchDiagnosticLauncher
+	originalOwnerConstruct := batchOwnerConstruct
+	batchOwnerConstruct = func(settings config.BatchLanding, held batchOwnerLease, inputs productionBatchOwnerInputs, clock func() time.Time) (*batch.Owner, error) {
+		inputs.sample = func() proofrun.LoadSample {
+			return proofrun.LoadSample{Sample: hostload.Sample{At: clock().UTC().Format(time.RFC3339Nano), Available: true, Cores: 18}, OverlapKnown: true}
+		}
+		inputs.lockDir = filepath.Join(settings.Root, "artifacts", "agents", "landing-batches", "fixture-proof-lock")
+		inputs.queueDir = filepath.Join(settings.Root, "artifacts", "agents", "landing-batches", "fixture-proof-queue")
+		return originalOwnerConstruct(settings, held, inputs, clock)
+	}
 	originalWait, originalStatus := batchWaitClock, batchStatusNow
 	originalPrefix := batchPrefixReceiptExecutable
 	originalGoalNow, originalCommandHelper, originalLineage := os.Getenv("METASYSTEM_GOAL_NOW"), os.Getenv("GO_WANT_BATCH_E2E_COMMAND"), os.Getenv("METASYSTEM_OWNER_LINEAGE")
+	originalAdmissionDir, originalAdmissionRoot := os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR"), os.Getenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT")
 	productionBatchProofDependencies = originalProof
 	productionBatchProofDependencies.plan = func(root, goalID, tree string, mode testpolicy.Mode) (testpolicy.Plan, error) {
 		if fixture := harness.fixture(root); fixture != nil && fixture.planObserve != nil {
@@ -107,17 +121,20 @@ func TestBatchLandingLifecycleEndToEnd(t *testing.T) {
 	_ = os.Setenv("METASYSTEM_OWNER_LINEAGE", "lineage-goal-b")
 	signal.Ignore(syscall.SIGUSR1)
 	t.Cleanup(func() {
+		batchOwnerConstruct = originalOwnerConstruct
 		productionBatchProofDependencies, batchDiagnosticLauncher = originalProof, originalDiagnostic
 		batchWaitClock, batchStatusNow, batchPrefixReceiptExecutable = originalWait, originalStatus, originalPrefix
 		_ = os.Setenv("METASYSTEM_GOAL_NOW", originalGoalNow)
 		_ = os.Setenv("GO_WANT_BATCH_E2E_COMMAND", originalCommandHelper)
 		_ = os.Setenv("METASYSTEM_OWNER_LINEAGE", originalLineage)
+		_ = os.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", originalAdmissionDir)
+		_ = os.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", originalAdmissionRoot)
 		signal.Reset(syscall.SIGUSR1)
 	})
 	observed, statusFailures := map[string]bool{}, []string{}
 
 	t.Run("two-green", func(t *testing.T) {
-		fixture := newBatchE2EFixture(t, harness, engine, "goal-a", "goal-b")
+		fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b")
 		batchID := fixture.join("goal-a")
 		fixture.joinInto(batchID, "goal-b")
 		observe := func(state string) {
@@ -150,7 +167,7 @@ func TestBatchLandingLifecycleEndToEnd(t *testing.T) {
 	})
 
 	t.Run("eject-red", func(t *testing.T) {
-		fixture := newBatchE2EFixture(t, harness, engine, "goal-a", "goal-b", "goal-c")
+		fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b", "goal-c")
 		fixture.proof = func(request batchProofLaunch, call int) proofrun.TestResult {
 			if call == 1 {
 				return batchE2EProofResult(request, false, []string{"units/goal-b.txt"})
@@ -193,7 +210,7 @@ func TestBatchLandingLifecycleEndToEnd(t *testing.T) {
 	})
 
 	t.Run("trunk-moved", func(t *testing.T) {
-		fixture := newBatchE2EFixture(t, harness, engine, "goal-a", "goal-b")
+		fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b")
 		fixture.proof = func(request batchProofLaunch, _ int) proofrun.TestResult {
 			return batchE2EProofResult(request, true, []string{"app/**"})
 		}
@@ -222,7 +239,11 @@ func TestBatchLandingLifecycleEndToEnd(t *testing.T) {
 	})
 
 	t.Run("withdraw", func(t *testing.T) {
-		fixture := newBatchE2EFixture(t, harness, engine, "goal-a", "goal-b")
+		joinedAt := time.Now().UTC().Truncate(time.Second).Add(-2 * time.Minute)
+		if err := os.Setenv("METASYSTEM_GOAL_NOW", joinedAt.Format(time.RFC3339)); err != nil {
+			t.Fatal(err)
+		}
+		fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b")
 		batchID := fixture.join("goal-a")
 		fixture.joinInto(batchID, "goal-b")
 		withdrawnTip := fixture.remoteBranchTip("goal-b")
@@ -243,11 +264,14 @@ func TestBatchLandingLifecycleEndToEnd(t *testing.T) {
 			t.Fatalf("withdrawn unit = %+v", withdrawn)
 		}
 		fixture.assertState(batchID, batch.StateOpen)
-		if err := os.Setenv("METASYSTEM_GOAL_NOW", fixture.now.Add(2*time.Minute).Format(time.RFC3339)); err != nil {
+		if err := os.Setenv("METASYSTEM_GOAL_NOW", joinedAt.Add(2*time.Minute).Format(time.RFC3339)); err != nil {
 			t.Fatal(err)
 		}
 		fixture.tick(batchID)
 		fixture.assertState(batchID, batch.StateLanding)
+		if proof := fixture.load(batchID).Proof; proof == nil || proof.Window != "expired" {
+			t.Fatalf("remaining unit proof window = %+v, want expired", proof)
+		}
 		fixture.tick(batchID)
 		fixture.assertState(batchID, batch.StateLanded)
 		fixture.assertLandedUnits("goal-a")
@@ -291,9 +315,9 @@ func retainBatchE2ESharedEngine(t *testing.T) {
 	})
 }
 
-func newBatchE2EFixture(t *testing.T, harness *batchE2EHarness, engine *batchE2EEngine, goals ...string) *batchE2EFixture {
+func newBatchE2EFixture(t *testing.T, harness *batchE2EHarness, engine *batchE2EEngine, now time.Time, goals ...string) *batchE2EFixture {
 	t.Helper()
-	fixture := &batchE2EFixture{t: t, seats: map[string]string{}, now: time.Date(2026, 9, 19, 16, 0, 0, 0, time.UTC)}
+	fixture := &batchE2EFixture{t: t, seats: map[string]string{}, now: now}
 	seed := filepath.Join(t.TempDir(), "seed")
 	fixture.origin = filepath.Join(t.TempDir(), "origin.git")
 	batchE2EGit(t, "", "init", "-q", "--bare", fixture.origin)
@@ -308,6 +332,12 @@ func newBatchE2EFixture(t *testing.T, harness *batchE2EHarness, engine *batchE2E
 
 	fixture.landing = filepath.Join(t.TempDir(), "landing")
 	fixture.clone(fixture.landing, "landing")
+	if err := os.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(t.TempDir(), "host-admission")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", fixture.landing); err != nil {
+		t.Fatal(err)
+	}
 	fixture.enrollPolicyEngine(batchE2EGit(t, fixture.landing, "rev-parse", "HEAD"), engine)
 	fixture.holdLanding()
 	for _, goalID := range goals {
@@ -607,8 +637,8 @@ func (fixture *batchE2EFixture) load(batchID string) batch.Record {
 
 func (fixture *batchE2EFixture) assertState(batchID, want string) {
 	fixture.t.Helper()
-	if got := fixture.load(batchID).State; got != want {
-		fixture.t.Fatalf("batch %s state=%s want %s", batchID, got, want)
+	if record := fixture.load(batchID); record.State != want {
+		fixture.t.Fatalf("batch %s state=%s want %s; proof=%+v; units=%+v; history=%+v", batchID, record.State, want, record.Proof, record.Units, record.History)
 	}
 }
 

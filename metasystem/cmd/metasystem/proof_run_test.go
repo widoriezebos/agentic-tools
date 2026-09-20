@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,12 +11,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
@@ -724,7 +727,7 @@ func TestProofRunLimitsDefaultSilentlyWhenOperationalKnobsAreAbsent(t *testing.T
 	}
 }
 
-func workerAuthorizedAttemptFixture(t *testing.T) (string, string, proofrun.Attempt) {
+func workerAuthorizedAttemptFixture(t *testing.T, sectionWorktree ...bool) (string, string, proofrun.Attempt) {
 	t.Helper()
 	controlRoot, _ := proofExtensionGoalFixture(t)
 	controlRoot, err := canonicalProofRoot(controlRoot)
@@ -732,7 +735,28 @@ func workerAuthorizedAttemptFixture(t *testing.T) (string, string, proofrun.Atte
 		t.Fatal(err)
 	}
 	executionRoot := t.TempDir()
-	proofIdentity, err := proofrun.BuildProofIdentity(controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "full", "worker-root", nil, 2)
+	candidateTree := ""
+	commandClass := "worker-root"
+	if len(sectionWorktree) != 0 && sectionWorktree[0] {
+		executionRoot = controlRoot
+		commandClass = "testing"
+		// The production schema-1 worker admits the repository top while a
+		// selected native group runs from an application subtree.
+		application := filepath.Join(controlRoot, "application")
+		if err := os.MkdirAll(application, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(application, "tracked.txt"), []byte("candidate\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, controlRoot, "add", "application/tracked.txt")
+		runGit(t, controlRoot, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "application subtree")
+		candidateTree, err = (gittree.Workspace{Dir: controlRoot}).HeadTree()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	proofIdentity, err := proofrun.BuildProofIdentity(controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "full", commandClass, nil, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -741,7 +765,7 @@ func workerAuthorizedAttemptFixture(t *testing.T) (string, string, proofrun.Atte
 		t.Fatal(err)
 	}
 	attempt, decision, err := proofrun.ReserveLocked(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
-		ControlRoot: controlRoot, ExecutionRoot: executionRoot, GoalID: "standing-validation", GoalRevision: 2,
+		ControlRoot: controlRoot, ExecutionRoot: executionRoot, CandidateTree: candidateTree, GoalID: "standing-validation", GoalRevision: 2,
 		AccountingRevision: 2, CandidateGoalID: "standing-validation", CandidateRevision: 2,
 		ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher,
 		Now: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC),
@@ -751,6 +775,22 @@ func workerAuthorizedAttemptFixture(t *testing.T) (string, string, proofrun.Atte
 	}
 	if decision.Disposition == proofrun.DispositionAdmissionRefused {
 		t.Fatalf("worker-authorized attempt fixture was admission-refused: %+v", decision)
+	}
+	if len(sectionWorktree) != 0 && sectionWorktree[0] {
+		// The installed generation-949 worker retained schema 3 during Stage A.
+		// Keep this authority canary on that exact compatible reader surface.
+		attempt.SchemaVersion = proofrun.CandidateAttemptSchemaVersion
+		path, pathErr := proofrun.AttemptPath(controlRoot, attempt.AttemptID)
+		encoded, encodeErr := json.Marshal(attempt)
+		if pathErr != nil || encodeErr != nil {
+			t.Fatalf("schema-3 attempt fixture: path=%v encode=%v", pathErr, encodeErr)
+		}
+		if err := os.WriteFile(path, encoded, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := proofrun.ReadAttempt(controlRoot, attempt.AttemptID); err != nil {
+			t.Fatalf("schema-3 attempt fixture invalid: %v", err)
+		}
 	}
 	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", controlRoot)
 	t.Setenv("METASYSTEM_PROOF_ATTEMPT", attempt.AttemptID)
@@ -769,6 +809,210 @@ func TestWorkerAuthorizedAcceptsTheAdmittedRoot(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("admitted execution root was not authorized: code=%d stderr=%q", code, stderr)
 	}
+}
+
+func TestWorkerAuthorizedAcceptsOnlyAttemptBoundSectionWorktree(t *testing.T) {
+	sourceDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlRoot, _, attempt := workerAuthorizedAttemptFixture(t, true)
+	detached, err := (gittree.Workspace{Dir: controlRoot}).NewDetachedWorktree(attempt.CandidateTree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer detached.Close()
+	sectionRoot := filepath.Join(detached.Workspace().Dir, "application")
+	t.Chdir(sectionRoot)
+	code, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runProofRunWorkerAuthorized([]string{"--root", sectionRoot})
+	})
+	if code != 3 {
+		t.Fatalf("section without its native process record was authorized: code=%d stderr=%q", code, stderr)
+	}
+	sectionProcess, err := proofrun.ProcessIdentityForPID(int64(os.Getppid()), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := proofrun.Record{Suite: "application-checks", Root: sectionRoot, ControlRoot: controlRoot,
+		AttemptID: attempt.AttemptID, LaunchID: "section-fixture", Launcher: sectionProcess,
+		SuiteProcess: sectionProcess, Watchdog: sectionProcess, Status: proofrun.StatusRunning}
+	recordPath, err := proofrun.ProcessRecordPath(controlRoot, record.AttemptID, record.LaunchID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRecord := func() {
+		t.Helper()
+		encoded, encodeErr := json.Marshal(record)
+		if encodeErr != nil {
+			t.Fatal(encodeErr)
+		}
+		if err := os.MkdirAll(filepath.Dir(recordPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(recordPath, encoded, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeRecord()
+	code, _, stderr = captureCommandOutput(t, false, true, func() int {
+		return runProofRunWorkerAuthorized([]string{"--root", sectionRoot})
+	})
+	if code != 3 {
+		t.Fatalf("section record absent from retained attempt was authorized: code=%d stderr=%q", code, stderr)
+	}
+	attempt.ProcessKeys = append(attempt.ProcessKeys, record.Key())
+	attemptPath, err := proofrun.AttemptPath(controlRoot, attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeAttempt := func() {
+		t.Helper()
+		attemptBytes, encodeErr := json.Marshal(attempt)
+		if encodeErr != nil {
+			t.Fatal(encodeErr)
+		}
+		if err := os.WriteFile(attemptPath, attemptBytes, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAttempt()
+	code, _, stderr = captureCommandOutput(t, false, true, func() int {
+		return runProofRunWorkerAuthorized([]string{"--root", sectionRoot})
+	})
+	if code != 0 || stderr != "" {
+		t.Fatalf("attempt-bound section worktree denied: code=%d stderr=%q", code, stderr)
+	}
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	binaryFixture := pinProofBinaryFixture(t, controlRoot)
+	build := exec.Command("go", "build", "-o", engine, ".")
+	build.Dir = sourceDir
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build candidate section authorization CLI: %v\n%s", err, output)
+	}
+	cli := binaryFixture.command(os.Environ(), engine, "proof-run", "worker-authorized", "--root", sectionRoot)
+	cli.Dir = sectionRoot
+	if output, err := cli.CombinedOutput(); err != nil {
+		t.Fatalf("new candidate CLI denied old schema-3 section worker: %v\n%s", err, output)
+	}
+	// The old worker runs command groups directly. They have no nested suite
+	// record, but still descend from its live, attempt-registered testing suite.
+	record.Root, record.Suite = controlRoot, "testing"
+	writeRecord()
+	commandCLI := binaryFixture.command(os.Environ(), engine, "proof-run", "worker-authorized", "--root", sectionRoot)
+	commandCLI.Dir = sectionRoot
+	if output, err := commandCLI.CombinedOutput(); err != nil {
+		t.Fatalf("new candidate CLI denied old schema-3 direct command worker: %v\n%s", err, output)
+	}
+	record.Root, record.Suite = sectionRoot, "application-checks"
+	writeRecord()
+	denied := func(name, root string) {
+		t.Helper()
+		status, _, detail := captureCommandOutput(t, false, true, func() int {
+			return runProofRunWorkerAuthorized([]string{"--root", root})
+		})
+		if status != 3 {
+			t.Fatalf("%s section authorization = %d, want refusal; stderr=%q", name, status, detail)
+		}
+	}
+	cliDenied := func(name, root string) {
+		t.Helper()
+		command := binaryFixture.command(os.Environ(), engine, "proof-run", "worker-authorized", "--root", root)
+		command.Dir = root
+		output, err := command.CombinedOutput()
+		exit, ok := err.(*exec.ExitError)
+		if !ok || exit.ExitCode() != 3 {
+			t.Fatalf("%s candidate CLI authorization = %v, want refusal 3; output=%s", name, err, output)
+		}
+	}
+	record.Status = proofrun.StatusDone
+	writeRecord()
+	denied("completed section process record", sectionRoot)
+	outer := record
+	outer.Root, outer.Suite, outer.LaunchID, outer.Status = controlRoot, "testing", "outer-fixture", proofrun.StatusRunning
+	outerPath, err := proofrun.ProcessRecordPath(controlRoot, outer.AttemptID, outer.LaunchID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outerBytes, err := json.Marshal(outer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outerPath, outerBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	attempt.ProcessKeys = append(attempt.ProcessKeys, outer.Key())
+	writeAttempt()
+	denied("completed section with live outer testing worker", sectionRoot)
+	record.Status = proofrun.StatusRunning
+	writeRecord()
+	attempt.ProcessKeys = []string{outer.Key()}
+	writeAttempt()
+	denied("unregistered section with live outer testing worker", sectionRoot)
+	attempt.ProcessKeys = append(attempt.ProcessKeys, record.Key())
+	writeAttempt()
+	if err := os.Remove(outerPath); err != nil {
+		t.Fatal(err)
+	}
+	attempt.ProcessKeys = []string{record.Key()}
+	writeAttempt()
+	record.Root = controlRoot
+	writeRecord()
+	denied("section process record for another root", sectionRoot)
+	record.Root = sectionRoot
+	foreignProcess := exec.Command("sleep", "30")
+	if err := foreignProcess.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = foreignProcess.Process.Kill(); _ = foreignProcess.Wait() }()
+	record.SuiteProcess, err = proofrun.ProcessIdentityForPID(int64(foreignProcess.Process.Pid), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRecord()
+	denied("section process record for unrelated process", sectionRoot)
+	record.SuiteProcess = sectionProcess
+	writeRecord()
+	t.Chdir(controlRoot)
+	denied("wrong cwd", sectionRoot)
+	t.Chdir(sectionRoot)
+	foreign := filepath.Join(t.TempDir(), "same-tree-checkout")
+	runGit(t, controlRoot, "worktree", "add", "--detach", foreign, "HEAD")
+	t.Cleanup(func() { runGit(t, controlRoot, "worktree", "remove", "--force", foreign) })
+	t.Chdir(foreign)
+	denied("ordinary same-tree linked checkout", foreign)
+	cliDenied("ordinary same-tree linked checkout", foreign)
+	t.Chdir(sectionRoot)
+	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "forged-attempt")
+	denied("forged attempt locator", sectionRoot)
+	t.Setenv("METASYSTEM_PROOF_ATTEMPT", attempt.AttemptID)
+	conf := filepath.Join(detached.Workspace().Dir, "metasystem.conf")
+	original, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, append(append([]byte(nil), original...), []byte("\n# dirty tracked\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	denied("dirty tracked file", sectionRoot)
+	cliDenied("dirty tracked file", sectionRoot)
+	runGit(t, detached.Workspace().Dir, "add", "metasystem.conf")
+	denied("dirty index", sectionRoot)
+	runGit(t, detached.Workspace().Dir, "reset", "--hard", "HEAD")
+	untracked := filepath.Join(sectionRoot, "untracked-source.go")
+	if err := os.WriteFile(untracked, []byte("package fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	denied("untracked source", sectionRoot)
+	if err := os.Remove(untracked); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, append(append([]byte(nil), original...), []byte("\n# different tree\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, detached.Workspace().Dir, "add", "metasystem.conf")
+	runGit(t, detached.Workspace().Dir, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "different candidate tree")
+	denied("wrong HEAD tree", sectionRoot)
 }
 
 func TestWorkerAuthorizedAcceptsAttemptWitnessSnapshot(t *testing.T) {
@@ -996,9 +1240,12 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 }
 
 func proofExtensionGoalFixture(t *testing.T) (string, time.Time) {
+	return proofExtensionGoalFixtureAt(t, time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC))
+}
+
+func proofExtensionGoalFixtureAt(t *testing.T, now time.Time) (string, time.Time) {
 	t.Helper()
-	root := syncedClaimedGoalFixture(t)
-	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	root := syncedClaimedGoalFixtureAt(t, now)
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\nmetasystem.budget.tier-3=8h/1/1200m/1/3\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1053,7 +1300,7 @@ func TestProofAdmissionExtendsRejudgesAndReserves(t *testing.T) {
 	})
 
 	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" ||
-		attempt.SchemaVersion != proofrun.CandidateAttemptSchemaVersion || attempt.CandidateGoalID != attempt.GoalID ||
+		attempt.SchemaVersion != proofrun.IdentityAttemptSchemaVersion || attempt.CandidateGoalID != attempt.GoalID ||
 		attempt.CandidateRevision != attempt.AccountingRevision || attempt.CandidateTree != strings.Repeat("b", 40) {
 		t.Fatalf("proof admission did not extend and reserve: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
 	}
@@ -1290,7 +1537,19 @@ func TestBatchP2RequiresDiagnosticHeadroom(t *testing.T) {
 func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 	controlRoot := syncedClaimedGoalFixture(t)
 	proofFixture := pinProofBinaryFixture(t, controlRoot)
-	controlRoot, err := filepath.EvalSymlinks(controlRoot)
+	capacityConfig := filepath.Join(controlRoot, "metasystem.conf")
+	capacityBytes, err := os.ReadFile(capacityConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(capacityBytes, []byte(proofrun.AdmissionCapKey+"=4")) {
+		t.Fatal("proof fixture has no pinned host cap to narrow")
+	}
+	capacityBytes = bytes.Replace(capacityBytes, []byte(proofrun.AdmissionCapKey+"=4"), []byte(proofrun.AdmissionCapKey+"=1"), 1)
+	if err := os.WriteFile(capacityConfig, capacityBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	controlRoot, err = filepath.EvalSymlinks(controlRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1310,7 +1569,7 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 	if err := os.WriteFile(goalPath, goal.RenderFile(goalFile), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	goalSyncMutationGit(t, controlRoot, "add", "plans/goals/standing-validation.md")
+	goalSyncMutationGit(t, controlRoot, "add", "plans/goals/standing-validation.md", "metasystem.conf")
 	goalSyncMutationGit(t, controlRoot, "commit", "-qm", "bind command canary stop capability")
 	goalSyncMutationGit(t, controlRoot, "update-ref", goal.LocalLedgerBranch, "HEAD")
 	goalSyncMutationGit(t, controlRoot, "update-ref", goal.AcceptedRef, "HEAD")
@@ -1344,8 +1603,15 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 	count := filepath.Join(t.TempDir(), "child-launches")
-	body := `count=0; test ! -f "$1" || count=$(cat "$1"); count=$((count+1)); printf '%d\n' "$count" >"$1"; test "$count" -gt 1`
-	environment := append(receiptCanaryEnvironment(), "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identities)
+	ready := filepath.Join(t.TempDir(), "retry-child-ready")
+	release := filepath.Join(t.TempDir(), "retry-child-release")
+	body := `count=0; test ! -f "$1" || count=$(cat "$1"); count=$((count+1)); printf '%d\n' "$count" >"$1"; if test "$count" -gt 1; then env -u METASYSTEM_HOST_RESOURCE_FDS "$NESTED_ENGINE" proof-run launch --suite nested-command --root "$NESTED_ROOT" --control-root "$NESTED_CONTROL_ROOT" --goal standing-validation --cap-min 1 --command-class command-retry --conf "$NESTED_CONF" --progress "$NESTED_RESULT.progress" --log "$NESTED_RESULT.log" --banner nested --result "$NESTED_RESULT" -- sh -c "printf 'nested-legacy-tail\\n'" >"$NESTED_RESULT.output" 2>&1 || { cat "$NESTED_RESULT.output" >&2; exit 97; }; printf 'ready\n' >"$2"; while test ! -e "$3"; do sleep .05; done; fi; test "$count" -gt 1`
+	admissionDir := filepath.Join(t.TempDir(), "host-admission")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
+	environment := append(receiptCanaryEnvironment(), "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identities,
+		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
+		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+controlRoot)
 	run := func(root, retry, result string) (int, proofrun.LaunchResult, string) {
 		args := []string{"proof-run", "launch", "--suite", "command-retry", "--root", root, "--control-root", controlRoot,
 			"--goal", "standing-validation", "--cap-min", "1", "--command-class", "command-retry", "--conf", filepath.Join(root, "metasystem.conf"),
@@ -1354,9 +1620,36 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 		if retry != "" {
 			args = append(args, "--retry-decision", retry)
 		}
-		args = append(args, "--", "bash", "-c", body, "fixture", count)
+		args = append(args, "--", "bash", "-c", body, "fixture", count, ready, release)
 		command := proofFixture.command(environment, engine, args...)
-		output, err := command.CombinedOutput()
+		command.Env = append(command.Env, "NESTED_ENGINE="+engine, "NESTED_ROOT="+root,
+			"NESTED_CONTROL_ROOT="+controlRoot, "NESTED_CONF="+filepath.Join(root, "metasystem.conf"),
+			"NESTED_RESULT="+result+".nested.json")
+		var output []byte
+		if retry == "" {
+			output, err = command.CombinedOutput()
+		} else {
+			var buffer bytes.Buffer
+			command.Stdout, command.Stderr = &buffer, &buffer
+			if err = command.Start(); err == nil {
+				defer command.Process.Kill()
+				waitForPublicRouteFile(t, ready)
+				contender, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+				lease, acquireErr := proofrun.AcquireHostResources(contender, controlRoot, capacityConfig, "heavy", nil)
+				cancel()
+				if lease != nil {
+					_ = lease.Close()
+				}
+				if !errors.Is(acquireErr, context.DeadlineExceeded) {
+					t.Fatalf("admitted proof did not hold cap-1 slot: %v", acquireErr)
+				}
+				if writeErr := os.WriteFile(release, []byte("release\n"), 0o600); writeErr != nil {
+					t.Fatal(writeErr)
+				}
+				err = command.Wait()
+			}
+			output = buffer.Bytes()
+		}
 		status := 0
 		if exit, ok := err.(*exec.ExitError); ok {
 			status = exit.ExitCode()
@@ -1375,11 +1668,13 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 	if status != 1 || first.Disposition != proofrun.DispositionFailed || first.AttemptID == "" {
 		t.Fatalf("first diagnosed failure status=%d result=%+v output=%s", status, first, output)
 	}
+	assertHostAdmissionClean(t, admissionDir, 1)
 	secondResult := filepath.Join(t.TempDir(), "second.json")
 	status, second, _ := run(renamedRoot, "", secondResult)
 	if status != proofrun.ExitRetryRequired || second.Disposition != proofrun.DispositionRetryRequired || second.PriorAttempt != first.AttemptID {
 		t.Fatalf("undiagnosed repeat status=%d result=%+v", status, second)
 	}
+	assertHostAdmissionClean(t, admissionDir, 1)
 	evidence := filepath.Join(t.TempDir(), "failure.log")
 	if err := os.WriteFile(evidence, []byte("controlled first child failure\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -1395,6 +1690,19 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 	if status != 0 || third.Disposition != proofrun.DispositionExecuted || third.PriorAttempt != first.AttemptID {
 		t.Fatalf("diagnosed retry status=%d result=%+v output=%s", status, third, output)
 	}
+	nestedData, nestedErr := os.ReadFile(thirdResult + ".nested.json")
+	var nestedResult proofrun.LaunchResult
+	if nestedErr != nil || json.Unmarshal(nestedData, &nestedResult) != nil || nestedResult.Disposition != proofrun.DispositionExecuted || nestedResult.ExitStatus != 0 {
+		t.Fatalf("nested public proof did not execute under the outer cap-1 lease: result=%+v readErr=%v bytes=%s", nestedResult, nestedErr, nestedData)
+	}
+	nestedRun, err := proofrun.ReadLatestProgressRun(thirdResult + ".nested.json.progress")
+	if err != nil || len(nestedRun.Header.LogPaths) != 5 {
+		t.Fatalf("legacy-borrowed public proof lacked durable custody outputs: paths=%v err=%v", nestedRun.Header.LogPaths, err)
+	}
+	nestedOutput, err := os.ReadFile(thirdResult + ".nested.json.output")
+	if err != nil || !bytes.Contains(nestedOutput, []byte("nested-legacy-tail")) {
+		t.Fatalf("legacy-borrowed public tail missing: output=%q err=%v", nestedOutput, err)
+	}
 	launches, err := os.ReadFile(count)
 	if err != nil || strings.TrimSpace(string(launches)) != "2" {
 		t.Fatalf("no-child decision launched work or retry did not execute: launches=%q err=%v", launches, err)
@@ -1404,6 +1712,239 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 		attempts[0].ExecutionRoot == attempts[1].ExecutionRoot {
 		t.Fatalf("command accounting after renamed-root retry: attempts=%+v err=%v", attempts, err)
 	}
+	assertHostAdmissionClean(t, admissionDir, 1)
+}
+
+func assertHostAdmissionClean(t *testing.T, directory string, wantLeases int, allowedStaleManagedPID ...int) {
+	t.Helper()
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		t.Fatalf("read isolated host admission: %v", err)
+	}
+	leases := 0
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "managed-") {
+			if len(allowedStaleManagedPID) != 1 || entry.Name() != fmt.Sprintf("managed-%d.json", allowedStaleManagedPID[0]) {
+				t.Fatalf("unexpected managed proof process marker remained after exit: %s", entry.Name())
+			}
+			continue
+		}
+		if !strings.HasPrefix(entry.Name(), "lease-heavy-") {
+			continue
+		}
+		leases++
+		data, err := os.ReadFile(filepath.Join(directory, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var marker struct {
+			Cleared bool `json:"cleared"`
+		}
+		if json.Unmarshal(data, &marker) != nil || !marker.Cleared {
+			t.Fatalf("resource custody remained dirty after exit: %s: %s", entry.Name(), data)
+		}
+	}
+	if wantLeases > 0 && leases != wantLeases || wantLeases == 0 && leases == 0 {
+		t.Fatalf("host resource leases = %d, want %d", leases, wantLeases)
+	}
+}
+
+func waitForPublicRouteFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("public proof child did not publish %s", filepath.Base(path))
+}
+
+func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(root, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fixture := proofBinaryFixture{t: t}
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	build := exec.Command("go", "build", "-o", engine, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build public legacy canary: %v\n%s", err, output)
+	}
+	admissionDir := filepath.Join(t.TempDir(), "host-admission")
+	result := filepath.Join(t.TempDir(), "result.json")
+	childOutput := filepath.Join(root, "child-ran")
+	environment := append(receiptCanaryEnvironment(),
+		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
+		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
+	holder, err := proofrun.AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Close()
+	command := fixture.command(environment, engine, "proof-run", "launch", "--suite", "legacy-canary",
+		"--root", root, "--conf", conf, "--progress", result+".progress.jsonl", "--log", result+".log",
+		"--banner", "legacy canary", "--result", result, "--", "bash", "-c", `printf 'ran\n' > "$1"`, "fixture", childOutput)
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer command.Process.Kill()
+	finished := make(chan error, 1)
+	go func() { finished <- command.Wait() }()
+	select {
+	case err := <-finished:
+		t.Fatalf("public legacy launch finished behind held cap-1 slot: %v\n%s", err, output.String())
+	case <-time.After(250 * time.Millisecond):
+	}
+	if _, err := os.Stat(childOutput); !os.IsNotExist(err) {
+		t.Fatalf("legacy child ran while host slot held: %v", err)
+	}
+	if err := proofrun.MarkHostResourcesClean(holder.Files()); err != nil {
+		t.Fatal(err)
+	}
+	if err := holder.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatalf("public legacy launch after release: %v\n%s", err, output.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("legacy public launch did not resume after slot release")
+	}
+	if data, err := os.ReadFile(childOutput); err != nil || string(data) != "ran\n" {
+		t.Fatalf("legacy child did not run: data=%q err=%v output=%s", data, err, output.String())
+	}
+	assertHostAdmissionClean(t, admissionDir, 1)
+}
+
+func TestProofRunLegacyPublicLauncherLossHoldsSlotUntilCustodianDrainsChild(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(root, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	if output, err := exec.Command("go", "build", "-o", engine, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build public launcher-loss canary: %v\n%s", err, output)
+	}
+	admissionDir := filepath.Join(t.TempDir(), "host-admission")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
+	environment := append(receiptCanaryEnvironment(), "METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
+		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
+	childPIDPath := filepath.Join(root, "child-pid")
+	result := filepath.Join(t.TempDir(), "result.json")
+	command := (proofBinaryFixture{t: t}).command(environment, engine, "proof-run", "launch", "--suite", "launcher-loss",
+		"--root", root, "--conf", conf, "--progress", result+".progress", "--log", result+".log", "--banner", "launcher-loss",
+		"--result", result, "--", "bash", "-c", `printf '%d\n' "$$" > "$1"; while :; do sleep .05; done`, "fixture", childPIDPath)
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer command.Process.Kill()
+	waitForPublicRouteFile(t, childPIDPath)
+	pidBytes, err := os.ReadFile(childPIDPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childPID, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	childLive := func() bool {
+		actual, state, err := (identity.KernelProber{}).Probe(int64(childPID))
+		return err == nil && state == identity.Alive && !actual.Zombie
+	}
+	if !childLive() {
+		t.Fatalf("public child %d was not alive before launcher loss", childPID)
+	}
+	entries, err := os.ReadDir(admissionDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var markerPath string
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "lease-heavy-") {
+			markerPath = filepath.Join(admissionDir, entry.Name())
+			break
+		}
+	}
+	if markerPath == "" {
+		t.Fatal("public launcher made no heavy custody marker")
+	}
+	marker, err := os.ReadFile(markerPath)
+	if err != nil || !bytes.Contains(marker, []byte(`"cleared":false`)) {
+		t.Fatalf("live public child has no dirty marker: %v %s", err, marker)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	type acquiredResource struct {
+		lease *proofrun.HostResourceLease
+		err   error
+	}
+	acquired := make(chan acquiredResource, 1)
+	go func() {
+		lease, err := proofrun.AcquireHostResources(ctx, root, conf, "heavy", nil)
+		acquired <- acquiredResource{lease, err}
+	}()
+	select {
+	case result := <-acquired:
+		if result.lease != nil {
+			_ = result.lease.Close()
+		}
+		t.Fatalf("contender acquired before launcher loss while child alive: %v", result.err)
+	case <-time.After(250 * time.Millisecond):
+	}
+	if err := command.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = command.Wait()
+	select {
+	case result := <-acquired:
+		if result.err != nil {
+			t.Fatalf("contender stayed blocked after custodian cleanup: %v; launcher output=%s", result.err, output.String())
+		}
+		if childLive() {
+			_ = result.lease.Close()
+			t.Fatal("contender acquired while public child still alive")
+		}
+		if err := proofrun.MarkHostResourcesClean(result.lease.Files()); err != nil {
+			t.Fatal(err)
+		}
+		if err := result.lease.Close(); err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatalf("custodian did not drain launcher-loss child and release slot: %v; launcher output=%s", ctx.Err(), output.String())
+	}
+	if _, err := os.Stat(markerPath); err == nil {
+		marker, readErr := os.ReadFile(markerPath)
+		if readErr != nil || bytes.Contains(marker, []byte(`"cleared":false`)) {
+			t.Fatalf("lost launcher left dirty marker: %v %s", readErr, marker)
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	// A clean old marker can be reclaimed during the contender's retry, so
+	// either one or two clean marker files may remain after the killed owner.
+	assertHostAdmissionClean(t, admissionDir, 0, command.Process.Pid)
 }
 
 func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {

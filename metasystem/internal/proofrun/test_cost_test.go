@@ -19,6 +19,7 @@ func retainedCostFixture(family, tree string, duration int64, counts RecurringLa
 }
 
 func TestRetainedCostProducerBindsRealInputsAndCompleteFacts(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "source.txt"), []byte("source\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -56,6 +57,7 @@ func TestRetainedCostProducerBindsRealInputsAndCompleteFacts(t *testing.T) {
 }
 
 func TestRetainedCostComparisonRequiresSameCompleteScenariosAndRealSavings(t *testing.T) {
+	t.Parallel()
 	beforeCounts := RecurringLaunchCounts{Build: 4, Wait: 8, FullCopiedRegistration: 2, CountsComplete: true}
 	afterCounts := RecurringLaunchCounts{Build: 2, Wait: 3, FullCopiedRegistration: 1, CountsComplete: true}
 	comparison := CostComparison{
@@ -73,6 +75,7 @@ func TestRetainedCostComparisonRequiresSameCompleteScenariosAndRealSavings(t *te
 }
 
 func TestFixtureScenarioSelectionKeepsOrdinaryAndComparisonSets(t *testing.T) {
+	t.Parallel()
 	all, err := FixtureScenarios("dispatcher", "all")
 	if err != nil || len(all) != 10 || all[0] != "dispatch" || all[9] != "seat-refused" {
 		t.Fatalf("ordinary dispatcher scenarios = %v, %v", all, err)

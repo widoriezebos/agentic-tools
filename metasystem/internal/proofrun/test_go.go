@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/doc"
 	"go/parser"
 	"go/token"
 	"io"
@@ -29,6 +30,8 @@ type goEvent struct {
 	Test    string `json:"Test"`
 	Output  string `json:"Output"`
 }
+
+const goPackageBuildIdentity = "package-build"
 
 type goDiscovery struct {
 	Tests        map[string][]string
@@ -61,19 +64,30 @@ type goListPackage struct {
 }
 
 func goArguments(ctx context.Context, group testpolicy.Group, cwd string, environment []string) ([]string, []NativeTestIdentity, goDiscovery, bool, error) {
-	return goArgumentsCached(ctx, group, cwd, environment, nil)
+	return goArgumentsForSchema(ctx, group, cwd, environment, testpolicy.SchemaVersion)
 }
 
 func goArgumentsCached(ctx context.Context, group testpolicy.Group, cwd string, environment []string, cache *goDiscoveryCache) ([]string, []NativeTestIdentity, goDiscovery, bool, error) {
+	return goArgumentsCachedForSchema(ctx, group, cwd, environment, cache, testpolicy.SchemaVersion)
+}
+
+func goArgumentsForSchema(ctx context.Context, group testpolicy.Group, cwd string, environment []string, schemaVersion int) ([]string, []NativeTestIdentity, goDiscovery, bool, error) {
+	return goArgumentsCachedForSchema(ctx, group, cwd, environment, nil, schemaVersion)
+}
+
+func goArgumentsCachedForSchema(ctx context.Context, group testpolicy.Group, cwd string, environment []string, cache *goDiscoveryCache, schemaVersion int) ([]string, []NativeTestIdentity, goDiscovery, bool, error) {
 	all, names, err := testpolicy.GoTests(group)
 	if err != nil {
 		return nil, nil, goDiscovery{}, false, err
 	}
-	discovery, started, err := discoverGoTestsCached(ctx, cwd, environment, group.Packages, cache)
+	discovery, started, err := discoverGoTestsCached(ctx, cwd, environment, group.Packages, group.BuildTags, cache)
 	if err != nil {
 		return nil, nil, discovery, started, err
 	}
 	args := []string{"go", "test", "-json", "-count=1", "-timeout", "0"}
+	if len(group.BuildTags) != 0 {
+		args = append(args, "-tags", strings.Join(group.BuildTags, ","))
+	}
 	if group.Race {
 		args = append(args, "-race")
 	}
@@ -82,9 +96,22 @@ func goArgumentsCached(ctx context.Context, group testpolicy.Group, cwd string, 
 	}
 	var expected []NativeTestIdentity
 	if all {
+		packagesWithTests := map[string]bool{}
 		for name, packages := range discovery.Tests {
 			for _, packageName := range packages {
+				packagesWithTests[packageName] = true
 				expected = append(expected, NativeTestIdentity{Classname: packageName, Name: name, Status: "expected"})
+			}
+		}
+		if schemaVersion == testpolicy.ExecutionContractSchemaVersion {
+			for _, relative := range discovery.Inventory {
+				packageName := discovery.ModulePrefix + relative
+				if relative == strings.TrimSuffix(discovery.ModulePrefix, "/") {
+					packageName = relative
+				}
+				if !packagesWithTests[packageName] {
+					expected = append(expected, NativeTestIdentity{Classname: packageName, Name: goPackageBuildIdentity, Status: "expected"})
+				}
 			}
 		}
 	} else {
@@ -108,18 +135,18 @@ func goArgumentsCached(ctx context.Context, group testpolicy.Group, cwd string, 
 	return args, expected, discovery, started, nil
 }
 
-func discoverGoTestsCached(ctx context.Context, cwd string, environment []string, packages []string, cache *goDiscoveryCache) (goDiscovery, bool, error) {
+func discoverGoTestsCached(ctx context.Context, cwd string, environment []string, packages, buildTags []string, cache *goDiscoveryCache) (goDiscovery, bool, error) {
 	moduleRoot, moduleName, err := nearestGoModule(cwd)
 	if err != nil {
 		return goDiscovery{}, false, err
 	}
-	key := canonicalGoPath(moduleRoot) + "\x00" + digestEnvironment(environment)
+	key := canonicalGoPath(moduleRoot) + "\x00" + digestEnvironment(environment) + "\x00" + strings.Join(buildTags, ",")
 	if cache != nil {
 		if catalog, ok := cache.catalogs[key]; ok {
 			return discoveryFromGoCatalog(catalog, cwd, packages, false)
 		}
 	}
-	catalog, started, err := loadGoPackageCatalog(ctx, moduleRoot, moduleName, environment)
+	catalog, started, err := loadGoPackageCatalog(ctx, moduleRoot, moduleName, environment, buildTags)
 	if err != nil {
 		return goDiscovery{}, started, err
 	}
@@ -132,8 +159,13 @@ func discoverGoTestsCached(ctx context.Context, cwd string, environment []string
 	return discoveryFromGoCatalog(catalog, cwd, packages, started)
 }
 
-func loadGoPackageCatalog(ctx context.Context, moduleRoot, moduleName string, environment []string) (goPackageCatalog, bool, error) {
-	command, err := explicitEnvironmentCommand(ctx, moduleRoot, environment, []string{"go", "list", "-json", "-deps", "-test", "./..."})
+func loadGoPackageCatalog(ctx context.Context, moduleRoot, moduleName string, environment, buildTags []string) (goPackageCatalog, bool, error) {
+	args := []string{"go", "list", "-json", "-deps", "-test"}
+	if len(buildTags) != 0 {
+		args = append(args, "-tags", strings.Join(buildTags, ","))
+	}
+	args = append(args, "./...")
+	command, err := explicitEnvironmentCommand(ctx, moduleRoot, environment, args)
 	if err != nil {
 		return goPackageCatalog{}, false, err
 	}
@@ -250,16 +282,23 @@ func discoveryFromGoCatalog(catalog goPackageCatalog, cwd string, packages []str
 	for name, pkg := range allPackages {
 		if rootPackages[name] {
 			discovery.Inventory = append(discovery.Inventory, strings.TrimPrefix(name, discovery.ModulePrefix))
+			var testFiles []*ast.File
 			for _, fileName := range append(append([]string{}, pkg.TestGoFiles...), pkg.XTestGoFiles...) {
-				file, parseErr := parser.ParseFile(token.NewFileSet(), filepath.Join(pkg.Dir, fileName), nil, 0)
+				file, parseErr := parser.ParseFile(token.NewFileSet(), filepath.Join(pkg.Dir, fileName), nil, parser.ParseComments)
 				if parseErr != nil {
 					return goDiscovery{}, started, fmt.Errorf("parse discovered Go test file %s: %w", fileName, parseErr)
 				}
+				testFiles = append(testFiles, file)
 				for _, declaration := range file.Decls {
 					function, ok := declaration.(*ast.FuncDecl)
 					if ok && function.Recv == nil && goTestName(function.Name.Name) {
 						discovery.Tests[function.Name.Name] = append(discovery.Tests[function.Name.Name], name)
 					}
+				}
+			}
+			for _, example := range doc.Examples(testFiles...) {
+				if example.Output != "" || example.EmptyOutput {
+					discovery.Tests["Example"+example.Name] = append(discovery.Tests["Example"+example.Name], name)
 				}
 			}
 		}
@@ -348,6 +387,10 @@ func nearestGoModule(directory string) (string, string, error) {
 }
 
 func goTestName(name string) bool {
+	if strings.HasPrefix(name, "Fuzz") && len(name) > len("Fuzz") {
+		next := name[len("Fuzz")]
+		return next < 'a' || next > 'z'
+	}
 	if name == "TestMain" || !strings.HasPrefix(name, "Test") || len(name) == len("Test") {
 		return false
 	}
@@ -358,25 +401,31 @@ func goTestName(name string) bool {
 // CheckNativeDiscovery validates the committed native inventories without
 // compiling or executing application tests. Go declarations are parsed from
 // source and section identifiers are compared with the finite selector
-// catalog exposed by the installed plumbing.
-func CheckNativeDiscovery(projectRoot, installation string, contract testpolicy.Contract) error {
+// catalog exposed by the installed plumbing. The base environment must be the
+// same prepared environment used for actual group execution.
+func CheckNativeDiscovery(ctx context.Context, projectRoot, installation string, contract testpolicy.Contract, baseEnvironment []string) error {
 	sectionIDs := map[string]bool{}
 	discoveryCache := &goDiscoveryCache{catalogs: map[string]goPackageCatalog{}}
 	needsSections := false
 	for _, group := range contract.Groups {
+		if group.PackageSelection != "" {
+			continue
+		}
 		if group.Adapter == "section" {
 			needsSections = true
 		}
 	}
 	if needsSections {
 		selector := filepath.Join(installation, "scripts", "agents", "validate-section-selector.sh")
-		command := exec.Command(selector, "catalog")
+		command := exec.CommandContext(ctx, selector, "catalog")
 		command.Env = append([]string(nil), os.Environ()...)
-		output, err := command.Output()
+		var output, stderr bytes.Buffer
+		command.Stdout, command.Stderr = &output, &stderr
+		err := RunResourceCommand(ctx, command, HostResourceLeaseFromContext(ctx))
 		if err != nil {
-			return fmt.Errorf("read section selector catalog: %w", err)
+			return fmt.Errorf("read section selector catalog: %w: %s", err, strings.TrimSpace(stderr.String()))
 		}
-		for _, line := range strings.Split(string(output), "\n") {
+		for _, line := range strings.Split(output.String(), "\n") {
 			id, _, ok := strings.Cut(line, "\t")
 			if ok && id != "" {
 				sectionIDs[id] = true
@@ -384,9 +433,13 @@ func CheckNativeDiscovery(projectRoot, installation string, contract testpolicy.
 		}
 	}
 	for _, group := range contract.Groups {
+		if group.PackageSelection != "" {
+			continue
+		}
 		switch group.Adapter {
 		case "go":
-			_, expected, _, _, err := goArgumentsCached(context.Background(), group, filepath.Join(projectRoot, filepath.FromSlash(group.CWD)), os.Environ(), discoveryCache)
+			environment := GroupTestingEnvironment(baseEnvironment, group)
+			_, expected, _, _, err := goArgumentsCachedForSchema(ctx, group, filepath.Join(projectRoot, filepath.FromSlash(group.CWD)), environment, discoveryCache, contract.SchemaVersion)
 			if err != nil {
 				return fmt.Errorf("testing group %s native discovery: %w", group.ID, err)
 			}
@@ -410,11 +463,27 @@ func CheckNativeDiscovery(projectRoot, installation string, contract testpolicy.
 func parseGoJSON(output []byte, expected []NativeTestIdentity) (observed, missing, unexpected []NativeTestIdentity, complete bool) {
 	terminal := map[string]string{}
 	started := map[string]bool{}
+	expectedNames := map[string]map[string]bool{}
+	for _, item := range expected {
+		if expectedNames[item.Classname] == nil {
+			expectedNames[item.Classname] = map[string]bool{}
+		}
+		expectedNames[item.Classname][item.Name] = true
+	}
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 	for scanner.Scan() {
 		var event goEvent
-		if json.Unmarshal(scanner.Bytes(), &event) != nil || event.Test == "" {
+		if json.Unmarshal(scanner.Bytes(), &event) != nil {
 			continue
+		}
+		if event.Test == "" {
+			if !expectedNames[event.Package][goPackageBuildIdentity] {
+				continue
+			}
+			event.Test = goPackageBuildIdentity
+			if event.Action == "start" {
+				started[event.Package+"\x00"+event.Test] = true
+			}
 		}
 		key := event.Package + "\x00" + event.Test
 		if event.Action == "run" {
@@ -424,16 +493,15 @@ func parseGoJSON(output []byte, expected []NativeTestIdentity) (observed, missin
 			terminal[key] = event.Action
 		}
 	}
-	expectedNames := map[string]map[string]bool{}
-	for _, item := range expected {
-		if expectedNames[item.Classname] == nil {
-			expectedNames[item.Classname] = map[string]bool{}
-		}
-		expectedNames[item.Classname][item.Name] = true
-	}
 	for key, status := range terminal {
 		parts := strings.SplitN(key, "\x00", 2)
-		item := NativeTestIdentity{Report: "go-test-json", Classname: parts[0], Name: parts[1], Status: map[string]string{"pass": "passed", "fail": "failed", "skip": "skipped"}[status]}
+		observedStatus := map[string]string{"pass": "passed", "fail": "failed", "skip": "skipped"}[status]
+		if parts[1] == goPackageBuildIdentity && status == "skip" {
+			// Go's package-level skip is its successful [no test files]
+			// terminal after compilation. The native exit is checked separately.
+			observedStatus = "passed"
+		}
+		item := NativeTestIdentity{Report: "go-test-json", Classname: parts[0], Name: parts[1], Status: observedStatus}
 		if len(expectedNames) > 0 && !goExpectedName(expectedNames, item.Classname, item.Name) {
 			unexpected = append(unexpected, item)
 		} else {

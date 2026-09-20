@@ -45,6 +45,21 @@ func TestReadStartRecordsNoImposedWindow(t *testing.T) {
 	}
 }
 
+// A configured read window is recorded for the selected adapter even though
+// the shipped default imposes no cap.
+func TestReadStartRecordsFourHundredThousandTokenWindow(t *testing.T) {
+	t.Parallel()
+	m, _, _, _ := manager(t)
+	m.Supervisor = childStarter(m)
+	m.Adapters["claude-headless"] = fakeAdapter{}
+	m.Settings = DefaultSettings()
+	m.Settings.ReadWindow = 400000
+	record, err := m.Start(StartSpec{ID: "configured-read-window", Kind: "read", Brief: writeLaunchFile(t, "brief.md", "read\n"), WorkingDirectory: t.TempDir(), DiffFile: writeLaunchFile(t, "change.diff", "")})
+	if err != nil || readInt64(record.AdapterData, "window") != 400000 {
+		t.Fatalf("window=%d record=%+v err=%v", readInt64(record.AdapterData, "window"), record, err)
+	}
+}
+
 func TestWindowReachesTheChildFromTheRecord(t *testing.T) {
 	brief := writeLaunchFile(t, "brief", "hello")
 	data := map[string]json.RawMessage{}

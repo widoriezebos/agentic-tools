@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -317,13 +318,24 @@ func runLandingTestReceipt(args []string) (status int) {
 		return decision.ExitStatus
 	}
 	deadline, _ := time.Parse(time.RFC3339Nano, attempt.Deadline)
+	resourceContext, cancelResource := context.WithDeadline(context.Background(), deadline)
+	defer cancelResource()
+	lease, release, leaseErr := acquireManagedProofLaunch(resourceContext, controlRoot, confPath)
+	if leaseErr != nil {
+		fmt.Fprintln(os.Stderr, "landing test-receipt: admit native proof:", leaseErr)
+		status = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
+		decision.ExitStatus, decision.Disposition = status, proofrun.DispositionAdmissionRefused
+		_ = proofrun.EncodeResult(os.Stderr, *resultPath, decision)
+		return status
+	}
+	defer release()
 	status = proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "landing-receipt", Root: preparation.ExecutionRoot(),
 		ControlRoot: controlRoot, AttemptID: attempt.AttemptID, JoinedAttempt: joined, Deadline: deadline, ConfPath: confPath,
 		ProgressPath: filepath.Join(proofDir, attempt.AttemptID+".progress.jsonl"), LogPath: filepath.Join(proofDir, attempt.AttemptID+".log"),
 		Banner:  "EXPENSIVE SUITE landing-receipt: one admitted execution; retained result controls repeats",
 		Silence: limits.silence, SectionCap: limits.sectionCap,
 		EvidenceTimeout: limits.evidenceTimeout, EvidenceMax: limits.evidenceMax, Poll: time.Second,
-		TermGrace: 5 * time.Second, KillGrace: time.Second, Command: []string{"bash", "-c", *command}, Output: os.Stdout, ErrorOutput: os.Stderr,
+		TermGrace: 5 * time.Second, KillGrace: time.Second, Command: []string{"bash", "-c", *command}, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
 		Environment: executionEnvironment,
 		PrepareSuccess: func(completion proofrun.CompletionContext) (json.RawMessage, error) {
 			current, err := proofrun.ReadAttempt(controlRoot, attempt.AttemptID)

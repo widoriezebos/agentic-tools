@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,12 +16,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -118,12 +121,20 @@ func runProofRunLaunch(args []string) int {
 		return 1
 	}
 	if *goalID == "" && noProofLocatorEnvironment() && legacyProofLaunchAllowed(controlRoot) {
+		lease, release, leaseErr := acquireManagedProofLaunch(context.Background(), controlRoot, *conf)
+		if leaseErr != nil {
+			fmt.Fprintln(os.Stderr, "proof-run launch: admit native proof:", leaseErr)
+			refusal := proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionAdmissionRefused, ExitStatus: proofrun.ExitAdmissionRefused}
+			_ = proofrun.EncodeResult(os.Stderr, *resultPath, refusal)
+			return proofrun.ExitAdmissionRefused
+		}
+		defer release()
 		status := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: *suite, Root: executionRoot, ControlRoot: controlRoot,
 			ConfPath: *conf, ProgressPath: *progress, LogPath: *logPath, TmpPaths: tmpPaths, Banner: *banner,
 			ExpectedSections: expected, TwiceConsulted: repeated, Silence: limits.silence, SectionCap: limits.sectionCap,
 			EvidenceTimeout: limits.evidenceTimeout, EvidenceMax: limits.evidenceMax, Poll: time.Duration(*pollMS) * time.Millisecond,
 			TermGrace: time.Duration(*termGraceMS) * time.Millisecond, KillGrace: time.Duration(*killGraceMS) * time.Millisecond,
-			Command: command, Output: os.Stdout, ErrorOutput: os.Stderr})
+			Command: command, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr})
 		result := proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionExecuted, ExitStatus: status}
 		if status != 0 {
 			result.Disposition = proofrun.DispositionFailed
@@ -155,6 +166,17 @@ func runProofRunLaunch(args []string) int {
 		return decision.ExitStatus
 	}
 	deadline, _ := time.Parse(time.RFC3339Nano, attempt.Deadline)
+	resourceContext, cancelResource := context.WithDeadline(context.Background(), deadline)
+	defer cancelResource()
+	lease, release, leaseErr := acquireManagedProofLaunch(resourceContext, controlRoot, *conf)
+	if leaseErr != nil {
+		fmt.Fprintln(os.Stderr, "proof-run launch: admit native proof:", leaseErr)
+		status := retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
+		decision.ExitStatus, decision.Disposition = status, proofrun.DispositionAdmissionRefused
+		_ = proofrun.EncodeResult(os.Stderr, *resultPath, decision)
+		return status
+	}
+	defer release()
 	var outerTesting *proofrun.TestResult
 	launchStatus := proofrun.LaunchSuite(proofrun.LaunchOptions{
 		Suite: *suite, Root: executionRoot, ControlRoot: controlRoot, AttemptID: attempt.AttemptID, JoinedAttempt: joined,
@@ -165,7 +187,7 @@ func runProofRunLaunch(args []string) int {
 		Poll:      time.Duration(*pollMS) * time.Millisecond,
 		TermGrace: time.Duration(*termGraceMS) * time.Millisecond,
 		KillGrace: time.Duration(*killGraceMS) * time.Millisecond,
-		Command:   command, Output: os.Stdout, ErrorOutput: os.Stderr,
+		Command:   command, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
 		PrepareSuccess: func(completion proofrun.CompletionContext) (json.RawMessage, error) {
 			if joined {
 				return nil, nil
@@ -196,6 +218,21 @@ func runProofRunLaunch(args []string) int {
 		return 1
 	}
 	return launchStatus
+}
+
+// acquireManagedProofLaunch gives an executing public proof one host phase.
+// A retry or reusable decision calls no launcher and takes no phase slot.
+func acquireManagedProofLaunch(ctx context.Context, controlRoot, confPath string) (*proofrun.HostResourceLease, func(), error) {
+	unmark, err := proofrun.MarkManagedProofProcess()
+	if err != nil {
+		return nil, nil, fmt.Errorf("mark host proof launcher managed: %w", err)
+	}
+	lease, err := proofrun.AcquireHostResources(ctx, controlRoot, confPath, "heavy", nil)
+	if err != nil {
+		unmark()
+		return nil, nil, err
+	}
+	return lease, func() { _ = lease.Close(); unmark() }, nil
 }
 
 func runProofRunWorkerAuthorized(args []string) int {
@@ -238,12 +275,128 @@ func runProofRunWorkerAuthorized(args []string) int {
 			return 3
 		}
 	}
-	if canonicalExecution != authorizedRoot && !authorizedWitnessSnapshot(canonicalExecution, authorizedRoot) {
+	if canonicalExecution != authorizedRoot && !authorizedWitnessSnapshot(canonicalExecution, authorizedRoot) &&
+		!authorizedSectionWorktree(canonicalExecution, authorizedRoot, canonicalControl, os.Getenv("METASYSTEM_PROOF_ATTEMPT")) {
 		fmt.Fprintf(os.Stderr, "proof-run worker-authorized: supplied root %q does not match admitted execution root %q\n",
 			canonicalExecution, authorizedRoot)
 		return 3
 	}
 	return 0
+}
+
+// A schema-1 policy worker runs each section in a temporary linked worktree.
+// Its child retains the admitted proof locator, but the section's cwd differs
+// from the attempt execution root. Admit only that registered candidate tree,
+// after AuthenticateWorker has already proved the exact launcher lineage.
+func authorizedSectionWorktree(sectionRoot, executionRoot, controlRoot, attemptID string) bool {
+	if attemptID == "" {
+		return false
+	}
+	actualCWD, err := canonicalProofRoot(".")
+	if err != nil || actualCWD != sectionRoot {
+		return false
+	}
+	attempt, err := proofrun.ReadAttempt(controlRoot, attemptID)
+	if err != nil || attempt.ProofIdentity.CommandClass != "testing" {
+		return false
+	}
+	candidateTree, ok := attempt.CandidateTreeDigest()
+	if !ok {
+		return false
+	}
+	base := gittree.Workspace{Dir: executionRoot}
+	section := gittree.Workspace{Dir: sectionRoot}
+	baseTop, err := base.TopLevel()
+	if err != nil {
+		return false
+	}
+	sectionTop, err := section.TopLevel()
+	if err != nil || sectionTop == baseTop {
+		return false
+	}
+	relative, err := filepath.Rel(baseTop, executionRoot)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return false
+	}
+	candidateRoot := filepath.Join(sectionTop, relative)
+	childPath, err := filepath.Rel(candidateRoot, sectionRoot)
+	if err != nil || childPath == ".." || strings.HasPrefix(childPath, ".."+string(filepath.Separator)) {
+		return false
+	}
+	// NewDetachedWorktree uses a paired random directory and linked worktree
+	// name. A foreign checkout with the same tree is not this worker's section.
+	suffix, named := strings.CutPrefix(filepath.Base(filepath.Dir(sectionTop)), "metasystem-landing-receipt.")
+	if !named || suffix == "" || filepath.Base(sectionTop) != "worktree-"+suffix {
+		return false
+	}
+	if !section.RegisteredDetachedWorktreeOf(base) {
+		return false
+	}
+	// A nested native suite retains its exact-root process record. Direct
+	// command groups have no nested record and remain inside the old testing
+	// worker's recorded suite process; both cases require attempt custody.
+	records, err := proofrun.ReadRecords(controlRoot)
+	if err != nil {
+		return false
+	}
+	sectionLauncher := false
+	sectionRecordAtRoot := false
+	outerTestingWorker := false
+	for _, record := range records {
+		if record.AttemptID != attemptID || record.ControlRoot != controlRoot {
+			continue
+		}
+		recordRoot, canonicalErr := canonicalProofRoot(record.Root)
+		if canonicalErr != nil {
+			continue
+		}
+		if recordRoot == sectionRoot {
+			// A nested native launcher owns this exact root. A completed or
+			// unlisted record must not fall through to the outer worker.
+			sectionRecordAtRoot = true
+		}
+		if record.Status != proofrun.StatusRunning {
+			continue
+		}
+		registered := false
+		for _, key := range attempt.ProcessKeys {
+			if key == record.Key() {
+				registered = true
+				break
+			}
+		}
+		if !registered {
+			continue
+		}
+		if proofrun.AuthenticateAncestor(int64(os.Getppid()), record.SuiteProcess) == nil {
+			if recordRoot == sectionRoot {
+				sectionLauncher = true
+			}
+			if recordRoot == executionRoot && record.Suite == "testing" {
+				outerTestingWorker = true
+			}
+		}
+	}
+	// The old testing worker runs command groups directly under its own live
+	// suite process, without a second section record. Its exact process
+	// ancestry plus the registered clean candidate worktree is the custody
+	// boundary for those commands.
+	if !sectionLauncher && (!outerTestingWorker || sectionRecordAtRoot) {
+		return false
+	}
+	candidate := gittree.Workspace{Dir: candidateRoot}
+	actualTree, err := candidate.HeadTree()
+	if err != nil || actualTree != candidateTree {
+		return false
+	}
+	stagedTree, err := candidate.StagedTree()
+	if err != nil || stagedTree != candidateTree {
+		return false
+	}
+	status, err := section.Status()
+	// Git-ignored generated files do not appear here. Any tracked or
+	// nonignored untracked input could change the section's behavior.
+	return err == nil && len(status) == 0
 }
 
 const proofWitnessExecutionRootEnv = "METASYSTEM_PROOF_EXECUTION_ROOT"
@@ -319,8 +472,12 @@ type proofLaunchAdmission struct {
 	SharedEngine                                                                         string
 	SharedManifestDigest                                                                 string
 	ComponentIdentities                                                                  map[string]string
+	FreshGroups                                                                          map[string]bool
+	FreshnessEpisode, FreshnessBinding, FreshnessExpiresAt                               string
 	BeforePublish                                                                        func(*proofrun.AdmissionRequest)
 	ForceAttempt                                                                         bool
+	ForceGroups                                                                          bool
+	ManagedCapacity                                                                      bool
 	RequireDiagnosticHeadroom                                                            bool
 }
 
@@ -636,7 +793,10 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 				GoalRevision: attempt.GoalRevision, AccountingRevision: attempt.AccountingRevision,
 				CandidateGoalID: attempt.AccountedGoal(), CandidateRevision: attempt.AccountedRevision(),
 				CandidateBudgetEpoch: attempt.AccountedBudgetEpoch(), CandidateTree: candidateTree,
-				RetryDecisionPath: request.RetryDecision, ComponentIdentities: request.ComponentIdentities, ForceAttempt: request.ForceAttempt}
+				RetryDecisionPath: request.RetryDecision, ComponentIdentities: request.ComponentIdentities, ForceAttempt: request.ForceAttempt,
+				SharedComponents: true, ForceGroups: request.ForceGroups, FreshnessEpisode: request.FreshnessEpisode,
+				FreshnessBinding: request.FreshnessBinding, FreshnessExpiresAt: request.FreshnessExpiresAt, Now: now}
+			componentRequest.FreshGroups = request.FreshGroups
 			decision, decided, decisionErr := proofrun.JoinedComponentDecisionLocked(componentRequest)
 			if decisionErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, decisionErr
@@ -644,7 +804,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			if decided {
 				return proofrun.Attempt{}, decision, false, nil
 			}
-			attempt, lockErr = proofrun.BindJoinedTestComponentsLocked(request.ControlRoot, attempt.AttemptID, request.ComponentIdentities)
+			attempt, lockErr = proofrun.BindJoinedTestOwnershipLocked(request.ControlRoot, attempt.AttemptID, componentRequest)
 			if lockErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, lockErr
 			}
@@ -898,7 +1058,12 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		CandidateTree:   candidateTree,
 		ReservedMinutes: uint64(capValue), Identity: proofIdentity, Launcher: launcher, ReservationOwner: reservationOwner,
 		RetryDecisionPath: request.RetryDecision, Now: now,
-		ComponentIdentities: request.ComponentIdentities, ForceAttempt: request.ForceAttempt,
+		ComponentIdentities: request.ComponentIdentities, ForceAttempt: request.ForceAttempt, ForceGroups: request.ForceGroups,
+		SharedComponents: request.CommandClass == "testing" && len(request.ComponentIdentities) > 0,
+		ManagedCapacity:  request.ManagedCapacity,
+		FreshnessEpisode: request.FreshnessEpisode, FreshnessBinding: request.FreshnessBinding,
+		FreshnessExpiresAt: request.FreshnessExpiresAt,
+		FreshGroups:        request.FreshGroups,
 	}
 	decision, noChild, err := proofrun.NoChildDecisionLocked(reservation)
 	if err != nil {
@@ -1452,9 +1617,19 @@ func runProofRunWatchdog(args []string) int {
 	deadlineRaw := flags.String("deadline", "", "absolute proof deadline")
 	watchControlRoot := flags.String("control-root", "", "control root of the attempt whose cancellation intent ends the suite")
 	watchAttempt := flags.String("attempt", "", "attempt whose cancellation intent ends the suite")
+	resourceCustody := flags.Bool("resource-custody", false, "anchor a resource-active process group")
+	custodyParentPID := flags.Int64("custody-parent-pid", 0, "exact launcher pid")
+	custodyParentStarted := flags.Int64("custody-parent-started-at", 0, "exact launcher start second")
+	custodyParentTicks := flags.Int64("custody-parent-start-ticks", 0, "exact launcher start ticks")
+	custodyParentBoot := flags.String("custody-parent-boot-id", "", "exact launcher boot id")
+	custodyParentMicro := flags.Int64("custody-parent-start-micro", 0, "exact launcher start microseconds")
+	custodyControlFD := flags.Int("custody-control-fd", 0, "custody control descriptor")
+	custodyReadyFD := flags.Int("custody-ready-fd", 0, "custody readiness descriptor")
+	custodyMarkerFD := flags.Int("custody-marker-fd", 0, "custody marker descriptor")
+	custodyMarkerPath := flags.String("custody-marker-path", "", "custody marker path")
 	var logs repeatedFlag
 	flags.Var(&logs, "log", "watched output log (repeatable)")
-	if flags.Parse(args) != nil || flags.NArg() != 0 || *conf == "" {
+	if flags.Parse(args) != nil || flags.NArg() != 0 || (!*resourceCustody && *conf == "") {
 		return 2
 	}
 	// Re-read the layered configuration in the sibling process immediately
@@ -1462,9 +1637,11 @@ func runProofRunWatchdog(args []string) int {
 	// launcher resolution and spawn can therefore only refuse, never install
 	// an unlawful operational window. Fixture duration overrides remain the
 	// passed values after this effective-value validation.
-	if _, err := resolveProofRunLimits(*conf); err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run watchdog:", err)
-		return 1
+	if *conf != "" {
+		if _, err := resolveProofRunLimits(*conf); err != nil {
+			fmt.Fprintln(os.Stderr, "proof-run watchdog:", err)
+			return 1
+		}
 	}
 	executable, err := os.Executable()
 	if err != nil {
@@ -1479,7 +1656,7 @@ func runProofRunWatchdog(args []string) int {
 			return 2
 		}
 	}
-	err = proofrun.RunWatchdog(proofrun.WatchdogOptions{
+	options := proofrun.WatchdogOptions{
 		Suite: *suite, Root: *root, ProgressPath: *progress, DonePath: *done, LogPaths: logs,
 		ControlRoot: *watchControlRoot, AttemptID: *watchAttempt,
 		SuiteIdentity:   identity.Ref{Pid: *suitePID, StartedAtSec: *suiteStarted, StartTicks: *suiteTicks, BootID: *suiteBoot},
@@ -1492,9 +1669,49 @@ func runProofRunWatchdog(args []string) int {
 		TermGrace:  time.Duration(*termGraceMS) * time.Millisecond,
 		KillGrace:  time.Duration(*killGraceMS) * time.Millisecond,
 		Executable: executable, Output: os.Stdout, ErrorOutput: os.Stderr,
-	})
+	}
+	if *resourceCustody {
+		err = proofrun.RunResourceCustodian(proofrun.ResourceCustodyOptions{Watchdog: options,
+			Launcher: identity.Ref{Pid: *custodyParentPID, StartedAtSec: *custodyParentStarted,
+				StartedAtUnixMicro: *custodyParentMicro, StartTicks: *custodyParentTicks, BootID: *custodyParentBoot},
+			ControlFD: *custodyControlFD, ReadyFD: *custodyReadyFD,
+			MarkerFD: *custodyMarkerFD, MarkerPath: *custodyMarkerPath, ConfPath: *conf})
+	} else {
+		err = proofrun.RunWatchdog(options)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "suite watchdog:", err)
+		return 1
+	}
+	return 0
+}
+
+func runProofRunCustodyExec(args []string) int {
+	flags := flag.NewFlagSet("proof-run custody-exec", flag.ContinueOnError)
+	readyFD := flags.Int("ready-fd", 0, "readiness descriptor")
+	releaseFD := flags.Int("release-fd", 0, "start barrier descriptor")
+	if flags.Parse(args) != nil || flags.NArg() < 1 || *readyFD < 3 || *releaseFD < 3 {
+		return 2
+	}
+	ready := os.NewFile(uintptr(*readyFD), "custody-exec-ready")
+	release := os.NewFile(uintptr(*releaseFD), "custody-exec-release")
+	if _, err := ready.Write([]byte("ready\n")); err != nil {
+		return 1
+	}
+	_ = ready.Close()
+	var token [1]byte
+	if count, err := release.Read(token[:]); err != nil || count != 1 || token[0] != 1 {
+		return 1
+	}
+	_ = release.Close()
+	command := flags.Args()
+	path, err := exec.LookPath(command[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "proof-run custody-exec:", err)
+		return 1
+	}
+	if err := syscall.Exec(path, command, os.Environ()); err != nil {
+		fmt.Fprintln(os.Stderr, "proof-run custody-exec:", err)
 		return 1
 	}
 	return 0

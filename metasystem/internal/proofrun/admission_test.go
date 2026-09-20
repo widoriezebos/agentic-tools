@@ -371,6 +371,22 @@ type admissionBatteryEvent struct {
 	err      error
 }
 
+// The admission decision itself never waits for the host guard. A caller may
+// submit the same request again after the short competing decision finishes.
+func reserveConcurrentBattery(request AdmissionRequest) (Attempt, LaunchResult, error) {
+	var attempt Attempt
+	var decision LaunchResult
+	var err error
+	for tries := 0; tries < 100; tries++ {
+		attempt, decision, err = ReserveLocked(request)
+		if err != nil || decision.Disposition != DispositionAdmissionRefused || decision.Reason != "host proof admission is busy" {
+			return attempt, decision, err
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return attempt, decision, err
+}
+
 func TestConcurrentTopLevelAttemptsCompleteWithNestedAndJoinedReceipts(t *testing.T) {
 	assertAdmissionHasNoWaitPath(t)
 	now := time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC)
@@ -411,7 +427,7 @@ func TestConcurrentTopLevelAttemptsCompleteWithNestedAndJoinedReceipts(t *testin
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			topAttempt, topDecision, err := ReserveLocked(fixture.request)
+			topAttempt, topDecision, err := reserveConcurrentBattery(fixture.request)
 			events <- admissionBatteryEvent{battery: fixture.name, stage: "top", attempt: topAttempt, decision: topDecision, err: err}
 			if err != nil || topDecision.Disposition != DispositionExecuted {
 				return
@@ -424,7 +440,7 @@ func TestConcurrentTopLevelAttemptsCompleteWithNestedAndJoinedReceipts(t *testin
 			nestedRequest.Launcher = processIdentity(fixture.child.exact, 0)
 			nestedRequest.Identity.CommandClass += "-nested"
 			nestedRequest.Identity.IdentityDigest = nestedRequest.Identity.digest()
-			nestedAttempt, nestedDecision, err := ReserveLocked(nestedRequest)
+			nestedAttempt, nestedDecision, err := reserveConcurrentBattery(nestedRequest)
 			events <- admissionBatteryEvent{battery: fixture.name, stage: "nested", attempt: nestedAttempt, decision: nestedDecision, err: err}
 			if err != nil || nestedDecision.Disposition != DispositionExecuted {
 				return
@@ -507,6 +523,38 @@ func (*unexpectedJoinedDecisionError) Error() string {
 
 func TestAdmissionCapHasNoWaitPath(t *testing.T) {
 	assertAdmissionHasNoWaitPath(t)
+}
+
+func TestHeldHostAdmissionGuardRefusesWithoutAllocatingAttempt(t *testing.T) {
+	previousDirectory := hostAdmissionDirectoryForTest
+	hostAdmissionDirectoryForTest = filepath.Join(t.TempDir(), "host-admission")
+	t.Cleanup(func() { hostAdmissionDirectoryForTest = previousDirectory })
+	directory, err := hostAdmissionDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, acquired, err := tryHostFile(filepath.Join(directory, "admission.lock"))
+	if err != nil || !acquired {
+		t.Fatalf("hold host admission guard: acquired=%t err=%v", acquired, err)
+	}
+	defer guard.Close()
+	request := admissionRequest(t, 0, 0, true, false)
+	request.AttemptID = "held-guard-probe"
+	samples := 0
+	loadSeams.host = func(time.Time) hostload.Sample {
+		samples++
+		return hostload.Sample{Available: true, Cores: 18}
+	}
+	started := time.Now()
+	attempt, decision, err := ReserveLocked(request)
+	if err != nil || decision.Disposition != DispositionAdmissionRefused || decision.ExitStatus != ExitAdmissionRefused ||
+		attempt.AttemptID != "" || time.Since(started) > time.Second || samples != 0 {
+		t.Fatalf("contended admission waited or allocated: attempt=%+v decision=%+v samples=%d err=%v", attempt, decision, samples, err)
+	}
+	attempts, err := ReadAttempts(request.ControlRoot)
+	if err != nil || len(attempts) != 0 {
+		t.Fatalf("contended admission retained partial attempt inventory: attempts=%+v err=%v", attempts, err)
+	}
 }
 
 func assertAdmissionHasNoWaitPath(t *testing.T) {

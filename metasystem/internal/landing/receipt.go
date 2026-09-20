@@ -549,6 +549,12 @@ func validateTestReceiptWorkspace(root string, receipt TestReceipt) error {
 
 func testingIdentityDifferences(current, receipt proofrun.TestResult) []string {
 	different := map[string]bool{}
+	if current.FreshnessEpisode != receipt.FreshnessEpisode || current.FreshnessBinding != receipt.FreshnessBinding ||
+		current.FreshnessExpiresAt != receipt.FreshnessExpiresAt {
+		for _, id := range append(append([]string(nil), current.SelectedGroups...), receipt.SelectedGroups...) {
+			different[id] = true
+		}
+	}
 	if !reflect.DeepEqual(current.SelectedGroups, receipt.SelectedGroups) || !reflect.DeepEqual(current.RequiredGroups, receipt.RequiredGroups) {
 		for _, id := range append(append([]string(nil), current.SelectedGroups...), receipt.SelectedGroups...) {
 			different[id] = true

@@ -72,6 +72,31 @@ func TestAttestationReaderRecordIntegrity(t *testing.T) {
 	}
 }
 
+func TestGLENestedReadCommitUsesProjectPaths(t *testing.T) {
+	t.Parallel()
+	f := newBranchFixture(t)
+	unit := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	record := readerRecord(t, f, unit)
+	installation := filepath.Join(f.root, "metasystem")
+	read, att, err := branch.CommitRead(branch.CommitReadRequest{
+		Repo: installation, Remote: "origin", EndpointTip: f.base, GoalID: "goal-a", Unit: "u1",
+		OpID: "nested-read", CheckClaim: claimAllowed, ReaderRecord: record,
+		GateRunID: "fast-nested", GateTree: unitTree(t, f, unit),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if att.Source.ReaderRecord != record || read == "" {
+		t.Fatalf("read=%q source=%+v", read, att.Source)
+	}
+	if _, err := os.Stat(filepath.Join(f.root, "metasystem", "records", "reads", "goal-a", unit+".json")); err != nil {
+		t.Fatalf("project-relative attestation missing: %v", err)
+	}
+	if _, err := branch.ValidateAttestation(installation, f.base, "goal-a", "u1", unit); err != nil {
+		t.Fatalf("nested read validation: %v", err)
+	}
+}
+
 func TestAttestationRequiresFastGateAndNamesChangedTests(t *testing.T) {
 	t.Parallel()
 	f := newBranchFixture(t)

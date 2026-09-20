@@ -243,7 +243,7 @@ rm -f "$stage/payload.tar"
 # ships source and CI rebuilds, so the pair of scripts and engine can prove
 # its coherence by building. The adoption-time binary copy into gitignored
 # bin/ remains a host convenience, never the delivery.
-payload_allow=".gitattributes .gitignore AGENTS.md CLAUDE.md cmd docs go.mod go.sum internal memory metasystem.conf optional-skills plans records scripts skills testing.json wow.md"
+payload_allow=".gitattributes .gitignore AGENTS.md CLAUDE.md cmd docs go.mod go.sum internal memory metasystem.conf optional-skills plans records scripts skills testing-parallel-ratchet.json testing.json wow.md"
 for entry in "$stage"/* "$stage"/.[!.]*; do
   [[ -e "$entry" || -L "$entry" ]] || continue
   keep=0

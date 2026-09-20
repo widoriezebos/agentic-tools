@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "generation": 1,
+  "entries": [
+    {
+      "id": "arc-goal:verbs-match-intent:602TW9BXPRBJ04Q9NZGSYSHT8K-m1e-c6925449",
+      "kind": "arc-goal",
+      "source": "verbs-match-intent:602TW9BXPRBJ04Q9NZGSYSHT8K-m1e-c6925449",
+      "raisedAt": "2026-09-19T19:03:53Z",
+      "receiptOffset": 445681,
+      "receiptPrefixSha256": "ffd01f910926a3ac1dce1822c2ea680f74c40b316d61d76ffbcc3fdea9c0df5e"
+    }
+  ]
+}

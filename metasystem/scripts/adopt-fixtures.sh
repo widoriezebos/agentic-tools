@@ -575,7 +575,8 @@ if adopt_leg default; then
     || { echo "adopt: code-critique was not registered for claude" >&2; exit 1; }
   [[ -f "$tgt/scripts/agents/dispatch.sh" && -f "$tgt/metasystem.conf" ]] \
     || { echo "adopt: orchestration payload missing" >&2; exit 1; }
-  [[ -f "$tgt/go.mod" && -d "$tgt/internal" && -d "$tgt/cmd" ]] \
+  [[ -f "$tgt/go.mod" && -d "$tgt/internal" && -d "$tgt/cmd" \
+    && -f "$tgt/testing-parallel-ratchet.json" ]] \
     || { echo "adopt: engine source did not ship (D17)" >&2; exit 1; }
   grep -qxF 'metasystem.runtimes=claude' "$tgt/metasystem.conf" \
     || { echo "adopt: default runtime selection was not recorded" >&2; exit 1; }
@@ -905,9 +906,20 @@ if adopt_leg refusals; then
 fi
 
 if adopt_leg default; then
-  rm -rf "$tgt/skills/take-a-step-back"
+  # The runtime audit checks installation placeholders before registered
+  # links. Fill a disposable copy so this leg reaches the dangling-link
+  # refusal without changing the target used by the adoption checks above.
+  pruned_tgt="$tmp/adopt-pruned-skill"
+  mkdir -p "$pruned_tgt"
+  cp -R "$tgt/." "$pruned_tgt"
+  sed 's/<[^>]*>/filled/g' "$pruned_tgt/docs/project-rules.md" >"$pruned_tgt/docs/project-rules.md.new"
+  mv "$pruned_tgt/docs/project-rules.md.new" "$pruned_tgt/docs/project-rules.md"
+  fill_harness_conf "$pruned_tgt/metasystem.conf" "$tmp/adopt-pruned-skill-evidence"
+  fill_harness_testing_contract "$srcrepo/testing.json" "$pruned_tgt/testing.json"
+  rm -rf "$pruned_tgt/skills/take-a-step-back"
   if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
-      bash "$tgt/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
+      harness_fixture_without_outer_proof env -u METASYSTEM_VALIDATE_RELAUNCHED \
+      bash "$pruned_tgt/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
       >"$tmp/dangling.out" 2>&1; then
     echo "adopt: validation missed a dangling registered skill link" >&2
     exit 1

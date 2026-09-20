@@ -15,6 +15,8 @@ import (
 
 const DefaultWaitTimeout = 240 * time.Second
 
+var errLaunchCancelledBeforeChild = errors.New("launch cancelled before child start")
+
 type Command struct {
 	Program, Directory, Stdin, LogPath, StdoutPath string
 	Args, Environment                              []string
@@ -258,13 +260,57 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		return m.failCause(id, "adapter-unavailable", nil)
 	}
 	stateDir, _ := m.Store.StateDir(id)
+	releaseOutputs, err := m.prepareDeclaredOutputs(record, stateDir)
+	if err != nil {
+		return m.failCause(id, "declared-outputs: "+err.Error(), nil)
+	}
+	defer releaseOutputs()
 	command, err := adapter.Command(record, stateDir)
 	if err != nil {
 		return m.failCause(id, "command: "+err.Error(), nil)
 	}
+	paths, err := declaredOutputPaths(record)
+	if err != nil {
+		return m.failCause(id, "declared-outputs: "+err.Error(), nil)
+	}
+	record, err = m.Store.Update(id, func(current *Record) error {
+		if current.Reason == "cancel-requested" || current.State.Terminal() {
+			return errLaunchCancelledBeforeChild
+		}
+		current.OutputOwnerUnproven = len(paths) > 0
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, errLaunchCancelledBeforeChild) {
+			return m.finishCancelledBeforeChild(id, err)
+		}
+		return Record{}, err
+	}
 	child, childRef, err := m.Processes.StartChild(command)
 	if err != nil {
-		failed, writeErr := m.fail(id, "child-start: "+err.Error(), nil)
+		groupProvenDead := childRef.Pid == 0
+		if childRef.Pid != 0 {
+			groupProvenDead = m.endGroup(childRef.Pid) == nil
+		}
+		failed, writeErr := m.Store.Update(id, func(current *Record) error {
+			current.OutputOwnerUnproven = len(paths) > 0 && !groupProvenDead
+			if childRef.Pid != 0 {
+				current.ProcessGroup = &childRef
+			}
+			if current.State.Terminal() {
+				return nil
+			}
+			current.State, current.Reason = Failed, "child-start: "+err.Error()
+			if !groupProvenDead {
+				current.Reason += "; process-group-unproven"
+			}
+			current.FinishedAt = m.Now().UTC().Format(time.RFC3339Nano)
+			if current.Kind == "read" {
+				counts := false
+				current.VerdictCounts = &counts
+			}
+			return nil
+		})
 		if writeErr != nil {
 			return Record{}, writeErr
 		}
@@ -281,9 +327,27 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	})
 	if err != nil {
 		_ = m.Processes.SignalGroup(childRef.Pid, syscall.SIGKILL)
-		return Record{}, err
+		cleanupErr := m.endGroup(childRef.Pid)
+		_, _ = m.Store.Update(id, func(current *Record) error {
+			current.ProcessGroup = &childRef
+			if cleanupErr == nil {
+				current.OutputOwnerUnproven = false
+			}
+			return nil
+		})
+		return Record{}, errors.Join(err, cleanupErr)
+	}
+	if record.Reason == "cancel-requested" {
+		_ = m.Processes.SignalGroup(childRef.Pid, syscall.SIGTERM)
 	}
 	exitCode, waitErr := child.Wait()
+	if cleanupErr := m.endGroup(childRef.Pid); cleanupErr != nil {
+		failed, failErr := m.fail(id, "process-group-unproven: "+cleanupErr.Error(), &exitCode)
+		if failErr != nil {
+			return record, errors.Join(cleanupErr, failErr)
+		}
+		return failed, cleanupErr
+	}
 	latest, _ := m.Store.Read(id)
 	var measurement Measurement
 	var outputs []Output
@@ -295,28 +359,37 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		declared, copyErr = copyDeclaredOutputs(record, stateDir)
 		outputs = append(outputs, declared...)
 	}
-	if cleanupErr := m.endGroup(childRef.Pid); cleanupErr != nil {
-		return record, cleanupErr
-	}
 	record, err = m.Store.Update(id, func(record *Record) error {
+		record.OutputOwnerUnproven = false
 		if record.State.Terminal() {
 			return nil
 		}
 		if record.Reason == "cancel-requested" {
+			record.State, record.Reason = Cancelled, "cancelled"
+			record.FinishedAt = m.Now().UTC().Format(time.RFC3339Nano)
+			if record.Kind == "read" {
+				counts := false
+				record.VerdictCounts = &counts
+			}
 			return nil
 		}
 		record.ExitCode = &exitCode
 		record.FinishedAt = m.Now().UTC().Format(time.RFC3339Nano)
 		record.Measured = measureErr == nil
 		record.Measurement, record.Outputs = measurement, outputs
-		if record.Kind == "read" {
-			counts := measurement.Compactions == 0
-			record.VerdictCounts = &counts
-		}
 		for key, value := range adapterData {
 			record.AdapterData[key] = value
 		}
 		record.State, record.Reason = adapterOutcome(adapter, exitCode, measureErr)
+		if copyErr != nil {
+			record.State, record.Reason = Failed, "declared-output: "+copyErr.Error()
+		} else if record.Kind == "read" && measureErr != nil && record.State == Completed {
+			record.State, record.Reason = Failed, "read-measure: "+measureErr.Error()
+		}
+		if record.Kind == "read" {
+			counts := record.State == Completed && measurement.Compactions == 0
+			record.VerdictCounts = &counts
+		}
 		if record.Reason == "" {
 			for _, problem := range []error{waitErr, measureErr, copyErr} {
 				if problem != nil {
@@ -332,6 +405,25 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	}
 	return record, nil
 }
+func (m *Manager) finishCancelledBeforeChild(id string, cause error) (Record, error) {
+	record, err := m.Store.Update(id, func(current *Record) error {
+		if current.State.Terminal() {
+			return nil
+		}
+		current.State, current.Reason = Cancelled, "cancelled-before-child"
+		current.FinishedAt = m.Now().UTC().Format(time.RFC3339Nano)
+		current.OutputOwnerUnproven = false
+		if current.Kind == "read" {
+			counts := false
+			current.VerdictCounts = &counts
+		}
+		return nil
+	})
+	if err != nil {
+		return Record{}, errors.Join(cause, err)
+	}
+	return record, cause
+}
 func (m *Manager) fail(id, reason string, exit *int) (Record, error) {
 	return m.Store.Update(id, func(record *Record) error {
 		if record.State.Terminal() {
@@ -339,8 +431,8 @@ func (m *Manager) fail(id, reason string, exit *int) (Record, error) {
 		}
 		record.State, record.Reason, record.ExitCode = Failed, reason, exit
 		record.FinishedAt = m.Now().UTC().Format(time.RFC3339Nano)
-		if record.Kind == "read" && record.VerdictCounts == nil {
-			counts := record.Measurement.Compactions == 0
+		if record.Kind == "read" {
+			counts := false
 			record.VerdictCounts = &counts
 		}
 		return nil
@@ -415,7 +507,7 @@ func (m *Manager) Status(id string) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
-	if record.State == Running && m.Prober != nil && refDead(m.Prober, record.Supervisor) && refDead(m.Prober, record.Child) {
+	if (record.State == Running || record.State == Starting && record.Supervisor != nil) && m.Prober != nil && refDead(m.Prober, record.Supervisor) && refDead(m.Prober, record.Child) {
 		return m.fail(id, "supervisor-lost", nil)
 	}
 	return record, nil
@@ -447,11 +539,15 @@ func (m *Manager) Cancel(id string) (Record, error) {
 		_ = m.Processes.SignalGroup(record.ProcessGroup.Pid, syscall.SIGTERM)
 	}
 	m.Sleep(m.Grace)
-	if !m.provenDead(record) && record.ProcessGroup != nil {
-		_ = m.Processes.SignalGroup(record.ProcessGroup.Pid, syscall.SIGKILL)
+	current, err := m.Store.Read(id)
+	if err != nil {
+		return Record{}, err
+	}
+	if !m.provenDead(current) && current.ProcessGroup != nil {
+		_ = m.Processes.SignalGroup(current.ProcessGroup.Pid, syscall.SIGKILL)
 		m.Sleep(m.Grace)
 	}
-	current, err := m.Store.Read(id)
+	current, err = m.Store.Read(id)
 	if err != nil {
 		return Record{}, err
 	}
@@ -523,13 +619,11 @@ func adapterForKind(kind, model string) string {
 	switch kind {
 	case "build", "critique":
 		return "codex-exec"
-	case "design":
+	case "design", "read":
 		if model == "" || strings.HasPrefix(model, "claude-") {
 			return "claude-headless"
 		}
 		return "codex-exec"
-	case "read":
-		return "claude-headless"
 	case "proof":
 		return "plain-exec"
 	default:
@@ -547,27 +641,6 @@ func adapterOutcome(adapter Adapter, exitCode int, measureErr error) (State, str
 		return Completed, ""
 	}
 	return Failed, fmt.Sprintf("exit-%d", exitCode)
-}
-func copyDeclaredOutputs(record Record, stateDir string) ([]Output, error) {
-	var paths []string
-	_ = json.Unmarshal(record.AdapterData["declaredOutputs"], &paths)
-	var outputs []Output
-	for _, source := range paths {
-		if !filepath.IsAbs(source) {
-			source = filepath.Join(record.WorkingDirectory, source)
-		}
-		name := filepath.Base(source)
-		target := filepath.Join(stateDir, "outputs", name)
-		if _, err := atomicfile.CopyFile(source, target, stateDir); err != nil {
-			return outputs, err
-		}
-		info, err := os.Stat(target)
-		if err != nil {
-			return outputs, err
-		}
-		outputs = append(outputs, Output{Path: target, Bytes: info.Size()})
-	}
-	return outputs, nil
 }
 func refDead(prober identity.Prober, ref *identity.Ref) bool {
 	return ref == nil || prober != nil && identity.AliveRef(prober, *ref) == identity.Dead

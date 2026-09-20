@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 type fakeProber struct{ states map[int64]identity.Liveness }
@@ -33,24 +35,46 @@ type fakeProcesses struct {
 	self, child identity.Ref
 	exit        int
 	group       bool
+	groups      map[int64]bool
+	ignoreKill  bool
+	startErr    error
 	signals     []syscall.Signal
+	command     Command
+	onStart     func(Command)
 }
 
 func (p *fakeProcesses) SelfRef() (identity.Ref, error) { return p.self, nil }
-func (p *fakeProcesses) StartChild(Command) (Child, identity.Ref, error) {
+func (p *fakeProcesses) StartChild(command Command) (Child, identity.Ref, error) {
+	p.command = command
+	if p.onStart != nil {
+		p.onStart(command)
+	}
+	if p.startErr != nil {
+		return nil, p.child, p.startErr
+	}
 	return fakeChild{p.exit}, p.child, nil
 }
 func (p *fakeProcesses) SignalGroup(_ int64, signal syscall.Signal) error {
 	p.signals = append(p.signals, signal)
 	if signal == syscall.SIGKILL {
-		p.group = false
-		for pid := range p.probe.states {
-			p.probe.states[pid] = identity.Dead
+		if !p.ignoreKill {
+			p.group = false
+			if p.groups != nil {
+				p.groups[p.child.Pid] = false
+			}
+			for pid := range p.probe.states {
+				p.probe.states[pid] = identity.Dead
+			}
 		}
 	}
 	return nil
 }
-func (p *fakeProcesses) GroupAlive(int64) (bool, error) { return p.group, nil }
+func (p *fakeProcesses) GroupAlive(pgid int64) (bool, error) {
+	if p.groups != nil {
+		return p.groups[pgid], nil
+	}
+	return p.group, nil
+}
 
 type fakeAdapter struct{}
 
@@ -244,6 +268,21 @@ func TestStatusReconcilesALostSupervisor(t *testing.T) {
 	probe.states[10], probe.states[20] = identity.Dead, identity.Dead
 	got, err := m.Status("lost")
 	require(t, err != nil || got.State != Failed || got.Reason != "supervisor-lost", "status=%+v err=%v", got, err)
+}
+
+func TestStatusReconcilesALostStartingSupervisor(t *testing.T) {
+	t.Parallel()
+	m, _, probe, _ := manager(t)
+	seed(t, m, "lost-starting", Starting)
+	supervisor := ref(10)
+	if _, err := m.Store.Update("lost-starting", func(r *Record) error { r.Supervisor = &supervisor; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	probe.states[10] = identity.Dead
+	got, err := m.Status("lost-starting")
+	if err != nil || got.State != Failed || got.Reason != "supervisor-lost" {
+		t.Fatalf("lost starting supervisor status=%+v err=%v", got, err)
+	}
 }
 
 type scan []Process
@@ -474,14 +513,248 @@ func TestCritiqueCopiesTheReportAndRecordsTheExit(t *testing.T) {
 	require(t, err != nil || measurement.MaterialCount != 1 || measurement.Verdict != "VERDICT: revise" || len(outputs) != 1 || !strings.HasPrefix(outputs[0].Path, state+string(os.PathSeparator)), "measure=%+v outputs=%+v err=%v", measurement, outputs, err)
 }
 func TestLaunchOutputsStayUnderTheStateDirectory(t *testing.T) {
-	m, _, _, _ := manager(t)
+	m, processes, _, _ := manager(t)
 	sourceDir := t.TempDir()
 	source := filepath.Join(sourceDir, "result.txt")
-	os.WriteFile(source, []byte("result"), 0o600)
+	os.WriteFile(source, []byte("prior result"), 0o600)
+	processes.onStart = func(Command) {
+		if _, err := os.Stat(source); !os.IsNotExist(err) {
+			t.Errorf("prior output still present when child starts: %v", err)
+		}
+		if err := os.WriteFile(source, []byte("current result"), 0o600); err != nil {
+			t.Error(err)
+		}
+	}
 	record := seed(t, m, "outputs", Starting)
 	setStrings(record.AdapterData, "declaredOutputs", []string{source})
 	m.Store.Update(record.ID, func(r *Record) error { r.AdapterData = record.AdapterData; return nil })
 	got, err := m.Supervise(record.ID)
 	state, _ := m.Store.StateDir(record.ID)
 	require(t, err != nil || len(got.Outputs) != 1 || !strings.HasPrefix(got.Outputs[0].Path, state+string(os.PathSeparator)) || strings.Contains(got.Outputs[0].Path, sourceDir), "outputs=%+v err=%v", got.Outputs, err)
+	current, readErr := os.ReadFile(got.Outputs[0].Path)
+	if readErr != nil || string(current) != "current result" {
+		t.Fatalf("copied output=%q err=%v", current, readErr)
+	}
+}
+
+func TestDeclaredOutputPathIsLockedWhileItsLaunchOwnsIt(t *testing.T) {
+	t.Parallel()
+	m, _, _, _ := manager(t)
+	path := filepath.Join(t.TempDir(), "read.md")
+	record := Record{ID: "output-lock", Kind: "read", AdapterData: map[string]json.RawMessage{}}
+	setStrings(record.AdapterData, "declaredOutputs", []string{path})
+	if err := m.Store.Create(record); err != nil {
+		t.Fatal(err)
+	}
+	stateDir, err := m.Store.StateDir(record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := m.prepareDeclaredOutputs(record, stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := false
+	defer func() {
+		if !released {
+			release()
+		}
+	}()
+	entries, err := os.ReadDir(filepath.Join(m.Store.Root, "declared-output-locks"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("output locks=%v err=%v", entries, err)
+	}
+	second, err := os.OpenFile(filepath.Join(m.Store.Root, "declared-output-locks", entries[0].Name()), os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if err := unix.Flock(int(second.Fd()), unix.LOCK_EX|unix.LOCK_NB); !errors.Is(err, unix.EWOULDBLOCK) {
+		t.Fatalf("overlapping output ownership was allowed: %v", err)
+	}
+	release()
+	released = true
+	if err := unix.Flock(int(second.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		t.Fatalf("output lock was not released: %v", err)
+	}
+	_ = unix.Flock(int(second.Fd()), unix.LOCK_UN)
+}
+
+func TestBusyDeclaredOutputRefusesAndCancelDoesNotStrandSupervisor(t *testing.T) {
+	t.Parallel()
+	m, _, _, _ := manager(t)
+	m.Now = time.Now
+	m.Sleep = time.Sleep
+	m.Grace = time.Millisecond
+	path := filepath.Join(t.TempDir(), "review.md")
+	owner := seed(t, m, "busy-output-owner", Starting)
+	setStrings(owner.AdapterData, "declaredOutputs", []string{path})
+	if _, err := m.Store.Update(owner.ID, func(r *Record) error { r.AdapterData = owner.AdapterData; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	ownerState, _ := m.Store.StateDir(owner.ID)
+	release, err := m.prepareDeclaredOutputs(owner, ownerState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	waiting := seed(t, m, "busy-output-waiter", Starting)
+	setStrings(waiting.AdapterData, "declaredOutputs", []string{path})
+	if _, err := m.Store.Update(waiting.ID, func(r *Record) error { r.AdapterData = waiting.AdapterData; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, superviseErr := m.Supervise(waiting.ID); done <- superviseErr }()
+	if _, err := m.Cancel(waiting.ID); err != nil {
+		// A concurrent supervisor may still be exiting; its terminal status is
+		// checked below instead of relying on this instant's process probe.
+	}
+	select {
+	case superviseErr := <-done:
+		if superviseErr == nil || !strings.Contains(superviseErr.Error(), "declared-output-busy") {
+			t.Fatalf("busy output returned %v", superviseErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("busy output stranded its supervisor")
+	}
+	got, err := m.Status(waiting.ID)
+	if err != nil || !got.State.Terminal() || got.Child != nil {
+		t.Fatalf("busy output status=%+v err=%v", got, err)
+	}
+}
+
+func TestCancelDuringChildHandoffReachesRecordedGroup(t *testing.T) {
+	t.Parallel()
+	m, processes, _, _ := manager(t)
+	processes.group = true
+	path := filepath.Join(t.TempDir(), "review.md")
+	record := seed(t, m, "cancel-handoff", Starting)
+	setStrings(record.AdapterData, "declaredOutputs", []string{path})
+	if _, err := m.Store.Update(record.ID, func(r *Record) error { r.AdapterData = record.AdapterData; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	processes.onStart = func(Command) {
+		if _, err := m.Cancel(record.ID); err == nil {
+			t.Error("cancellation claimed death before the child was recorded")
+		}
+	}
+	got, err := m.Supervise(record.ID)
+	if err != nil || got.State != Cancelled || got.OutputOwnerUnproven || processes.group || len(processes.signals) == 0 {
+		t.Fatalf("handoff cancellation=%+v group=%v signals=%v err=%v", got, processes.group, processes.signals, err)
+	}
+}
+
+func TestUnprovenOutputWriterBlocksSuccessorAcrossManagerRestart(t *testing.T) {
+	t.Parallel()
+	m, processes, _, _ := manager(t)
+	processes.groups = map[int64]bool{20: true, 30: false}
+	processes.ignoreKill = true
+	path := filepath.Join(t.TempDir(), "review.md")
+	first := seed(t, m, "writer-one", Starting)
+	first.Kind = "read"
+	setStrings(first.AdapterData, "declaredOutputs", []string{path})
+	if _, err := m.Store.Update(first.ID, func(r *Record) error {
+		r.Kind, r.AdapterData = first.Kind, first.AdapterData
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Supervise(first.ID); err == nil {
+		t.Fatal("unproven process-group cleanup was accepted")
+	}
+	// The first group can still write. A separate manager models the next
+	// supervisor process after the first process has exited and released flock.
+	other := *m
+	processes.child = ref(30)
+	started := false
+	processes.onStart = func(Command) {
+		started = true
+		if err := os.WriteFile(path, []byte("late prior writer"), 0o600); err != nil {
+			t.Error(err)
+		}
+	}
+	second := seed(t, &other, "writer-two", Starting)
+	second.Kind = "read"
+	setStrings(second.AdapterData, "declaredOutputs", []string{path})
+	if _, err := other.Store.Update(second.ID, func(r *Record) error {
+		r.Kind, r.AdapterData = second.Kind, second.AdapterData
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := other.Supervise(second.ID)
+	if err == nil || !strings.Contains(err.Error(), "declared-output-owner-unproven") || started || got.VerdictIsCounting() || len(got.Outputs) != 0 {
+		t.Fatalf("successor credited unproven writer: record=%+v started=%v err=%v", got, started, err)
+	}
+}
+
+func TestUnrecordedOutputWriterKeepsItsPathClaim(t *testing.T) {
+	t.Parallel()
+	m, processes, _, _ := manager(t)
+	processes.groups = map[int64]bool{20: true, 30: false}
+	processes.ignoreKill = true
+	path := filepath.Join(t.TempDir(), "review.md")
+	first := seed(t, m, "unrecorded-writer", Starting)
+	setStrings(first.AdapterData, "declaredOutputs", []string{path})
+	if _, err := m.Store.Update(first.ID, func(r *Record) error { r.AdapterData = first.AdapterData; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	processes.onStart = func(Command) {
+		_, err := m.Store.Update(first.ID, func(r *Record) error {
+			r.State, r.Reason = Failed, "supervisor lost after child spawn"
+			return nil
+		})
+		if err != nil {
+			t.Error(err)
+		}
+	}
+	if _, err := m.Supervise(first.ID); err == nil {
+		t.Fatal("child recording failure was accepted")
+	}
+	prior, err := m.Store.Read(first.ID)
+	if err != nil || !prior.OutputOwnerUnproven || prior.ProcessGroup == nil || prior.ProcessGroup.Pid != 20 {
+		t.Fatalf("unrecorded writer lost its durable claim: %+v %v", prior, err)
+	}
+	other := *m
+	processes.child = ref(30)
+	processes.onStart = func(Command) { t.Error("successor started behind an unrecorded writer") }
+	second := seed(t, &other, "after-unrecorded-writer", Starting)
+	setStrings(second.AdapterData, "declaredOutputs", []string{path})
+	if _, err := other.Store.Update(second.ID, func(r *Record) error { r.AdapterData = second.AdapterData; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := other.Supervise(second.ID)
+	if err == nil || !strings.Contains(err.Error(), "declared-output-owner-unproven") || got.Child != nil {
+		t.Fatalf("successor accepted unrecorded writer: %+v %v", got, err)
+	}
+}
+
+func TestUnobservableStartedWriterKeepsItsPathClaim(t *testing.T) {
+	t.Parallel()
+	m, processes, _, _ := manager(t)
+	processes.groups = map[int64]bool{20: true, 30: false}
+	processes.ignoreKill = true
+	processes.startErr = errors.New("child identity unavailable after spawn")
+	path := filepath.Join(t.TempDir(), "review.md")
+	first := seed(t, m, "unobservable-writer", Starting)
+	setStrings(first.AdapterData, "declaredOutputs", []string{path})
+	if _, err := m.Store.Update(first.ID, func(r *Record) error { r.AdapterData = first.AdapterData; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.Supervise(first.ID)
+	if err == nil || got.State != Failed || !got.OutputOwnerUnproven || got.ProcessGroup == nil || got.ProcessGroup.Pid != 20 {
+		t.Fatalf("unobservable child lost its path claim: %+v %v", got, err)
+	}
+	processes.startErr = nil
+	processes.child = ref(30)
+	other := *m
+	second := seed(t, &other, "after-unobservable-writer", Starting)
+	setStrings(second.AdapterData, "declaredOutputs", []string{path})
+	if _, err := other.Store.Update(second.ID, func(r *Record) error { r.AdapterData = second.AdapterData; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	got, err = other.Supervise(second.ID)
+	if err == nil || !strings.Contains(err.Error(), "declared-output-owner-unproven") || got.Child != nil {
+		t.Fatalf("successor accepted unobservable writer: %+v %v", got, err)
+	}
 }

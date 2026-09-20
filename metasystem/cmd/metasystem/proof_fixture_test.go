@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -14,7 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -71,6 +69,10 @@ func pinProofBinaryFixture(t *testing.T, root string) proofBinaryFixture {
 }
 
 func (fixture proofBinaryFixture) command(environment []string, executable string, args ...string) *exec.Cmd {
+	return fixture.commandWithHostLoad("0", environment, executable, args...)
+}
+
+func (fixture proofBinaryFixture) commandWithHostLoad(hostLaunchers string, environment []string, executable string, args ...string) *exec.Cmd {
 	fixture.t.Helper()
 	if environment == nil {
 		environment = os.Environ()
@@ -83,7 +85,7 @@ func (fixture proofBinaryFixture) command(environment []string, executable strin
 		}
 	}
 	command := exec.Command(executable, args...)
-	command.Args[0] = proofrun.TestHostLoadCommandName("0")
+	command.Args[0] = proofrun.TestHostLoadCommandName(hostLaunchers)
 	command.Env = isolated
 	return command
 }
@@ -147,9 +149,10 @@ func TestLandingBatchBinaryIgnoresAmbientProofHostLoad(t *testing.T) {
 		t.Fatalf("build metasystem binary: %v\n%s", err, output)
 	}
 
-	startAdmissionBlocker(t, engine, "ambient-admission-blocker")
-
-	root, now := proofExtensionGoalFixture(t)
+	// The binary runs against the real resource clock. Keep the goal's elapsed
+	// budget and its reserved proof deadline live for both admission probes.
+	root, now := proofExtensionGoalFixtureAt(t, time.Now().UTC().Truncate(time.Second))
+	fixture := pinProofBinaryFixture(t, root)
 	caller, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe binary fixture caller: state=%s error=%v", state, err)
@@ -172,11 +175,11 @@ func TestLandingBatchBinaryIgnoresAmbientProofHostLoad(t *testing.T) {
 	run := func(name string, ambient bool) (proofrun.LaunchResult, int, string) {
 		t.Helper()
 		resultPath := filepath.Join(root, name+"-result.json")
-		command := exec.Command(engine, "proof-run", "launch", "--suite", name, "--root", root,
+		command := fixture.commandWithHostLoad("1", os.Environ(), engine, "proof-run", "launch", "--suite", name, "--root", root,
 			"--conf", conf, "--goal", "standing-validation", "--cap-min", "1", "--scope", "full",
 			"--command-class", name, "--progress", filepath.Join(root, name+"-progress.jsonl"),
 			"--log", filepath.Join(root, name+".log"), "--banner", name, "--result", resultPath, "--", "/usr/bin/true")
-		command.Env = append(proofFixtureEnvironmentWithoutHostLoad(os.Environ()),
+		command.Env = append(command.Env,
 			"METASYSTEM_GOAL_NOW="+now.Format(time.RFC3339), "METASYSTEM_OWNER_LINEAGE=m1")
 		if ambient {
 			command.Env = append(command.Env, proofrun.TestHostLoadEnvironment+"=0")
@@ -202,9 +205,8 @@ func TestLandingBatchBinaryIgnoresAmbientProofHostLoad(t *testing.T) {
 	}
 
 	withoutAmbient, withoutStatus, withoutOutput := run("without-ambient-host-load", false)
-	// A second live launcher makes the host count differ on an otherwise idle
-	// machine, proving that this assertion ignores only that ambient count.
-	startAdmissionBlocker(t, engine, "ambient-admission-second-blocker")
+	// The explicit binary-fixture process name supplies one host launcher for
+	// both runs. The ambient variable must not replace that admission sample.
 	withAmbient, withStatus, withOutput := run("with-ambient-host-load", true)
 	if withoutStatus != proofrun.ExitAdmissionRefused || withStatus != proofrun.ExitAdmissionRefused ||
 		withoutAmbient.Disposition != proofrun.DispositionAdmissionRefused ||
@@ -213,59 +215,6 @@ func TestLandingBatchBinaryIgnoresAmbientProofHostLoad(t *testing.T) {
 			withoutAmbient, withoutStatus, withoutOutput, withAmbient, withStatus, withOutput)
 	}
 	compareLaunchResultsIgnoringObserved(t, withoutAmbient, withAmbient)
-}
-
-func startAdmissionBlocker(t *testing.T, engine, name string) {
-	t.Helper()
-	root := t.TempDir()
-	conf := filepath.Join(root, "metasystem.conf")
-	if err := os.WriteFile(conf, []byte(proofrun.AdmissionCapKey+"=0\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	fifo := filepath.Join(root, "release.fifo")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	banner := name + "-starting"
-	blocker := exec.Command(engine, "proof-run", "launch", "--suite", name,
-		"--root", root, "--conf", conf, "--progress", filepath.Join(root, "progress.jsonl"),
-		"--log", filepath.Join(root, "proof.log"), "--banner", banner, "--",
-		"sh", "-c", `printf '%s-ready\n' "$1"; read -r _ <"$2"`, "sh", name, fifo)
-	blocker.Env = proofFixtureEnvironmentWithoutHostLoad(os.Environ())
-	stdout, err := blocker.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stderr bytes.Buffer
-	blocker.Stderr = &stderr
-	if err := blocker.Start(); err != nil {
-		t.Fatal(err)
-	}
-	ready := false
-	defer func() {
-		if !ready {
-			_ = blocker.Process.Kill()
-			_ = blocker.Wait()
-		}
-	}()
-	reader := bufio.NewReader(stdout)
-	if line, err := reader.ReadString('\n'); err != nil || line != banner+"\n" {
-		t.Fatalf("%s banner=%q error=%v stderr=%s", name, line, err, stderr.String())
-	}
-	if line, err := reader.ReadString('\n'); err != nil || line != name+"-ready\n" {
-		t.Fatalf("%s readiness=%q error=%v stderr=%s", name, line, err, stderr.String())
-	}
-	ready = true
-	t.Cleanup(func() {
-		release, openErr := os.OpenFile(fifo, os.O_WRONLY, 0)
-		if openErr == nil {
-			_, _ = release.WriteString("release\n")
-			_ = release.Close()
-		}
-		if waitErr := blocker.Wait(); openErr != nil || waitErr != nil {
-			t.Errorf("release proof blocker %s: open=%v wait=%v stderr=%s", name, openErr, waitErr, stderr.String())
-		}
-	})
 }
 
 func compareLaunchResultsIgnoringObserved(t *testing.T, withoutAmbient, withAmbient proofrun.LaunchResult) {

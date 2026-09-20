@@ -494,6 +494,14 @@ func (runner *UnitRunner) runReadSteps(record *UnitRunRecord, round *UnitRound, 
 		if _, err := runner.startStep(record, round, index, spec); err != nil {
 			return UnitResult{}, false, err
 		}
+		// Split reads share the plan's declared output paths. Complete each
+		// writer before starting the next one so every report belongs to its
+		// own launch and a queued start does not wait behind a long read.
+		if len(plan.Read.Outputs) > 0 {
+			if capped, err := runner.waitStep(record, round, index, deadline); err != nil || capped {
+				return runner.result(*record, round, step, capped), true, err
+			}
+		}
 	}
 	for index := readStart; index < len(round.Steps); index++ {
 		step := &round.Steps[index]

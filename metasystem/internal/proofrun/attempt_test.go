@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,6 +32,10 @@ func candidateAdmission(request AdmissionRequest) AdmissionRequest {
 	}
 	return request
 }
+
+// Fixture reservations share one process-local host guard even when their
+// proof roots differ. Parallel tests serialize only this test fixture seam.
+var fixtureHostAdmissionMu sync.Mutex
 
 func TestWaitAttemptRequiresCommittedTerminal(t *testing.T) {
 	root, proofIdentity := proofAttemptFixture(t, "wait-terminal")
@@ -310,6 +315,7 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	newReservation := append([]byte(nil), data...)
 	var schemaTwo map[string]any
 	if json.Unmarshal(data, &schemaTwo) != nil {
 		t.Fatal("decode schema-3 reservation")
@@ -363,6 +369,45 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 	}
 	if read, err := ReadAttempts(root); err != nil || len(read) != 1 || read[0].TestResult == nil || read[0].TestResult.CandidateEngineDigest != "" {
 		t.Fatalf("old-format delivery result was not readable: attempts=%+v err=%v", read, err)
+	}
+	if err := os.WriteFile(path, newReservation, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result.SchemaVersion = TestResultSchemaVersion
+	if _, err := FinalizeAttemptWithTestResultLocked(root, attempt.AttemptID, TerminalSuccess, 0, "green", nil, &result, now.Add(time.Second)); err != nil {
+		t.Fatalf("schema-4 attempt did not retain schema-2 result: %v", err)
+	}
+	if read, err := ReadAttempt(root, attempt.AttemptID); err != nil || read.SchemaVersion != IdentityAttemptSchemaVersion ||
+		read.TestResult == nil || read.TestResult.SchemaVersion != TestResultSchemaVersion {
+		t.Fatalf("versioned attempt/result did not round-trip: %+v %v", read, err)
+	}
+	versioned, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var future map[string]any
+	if err := json.Unmarshal(versioned, &future); err != nil {
+		t.Fatal(err)
+	}
+	future["schemaVersion"] = float64(IdentityAttemptSchemaVersion + 1)
+	data, _ = json.Marshal(future)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadAttempt(root, attempt.AttemptID); err == nil || !strings.Contains(err.Error(), "unsupported future attempt schema") {
+		t.Fatalf("future attempt schema did not get a named refusal: %v", err)
+	}
+	future["schemaVersion"] = float64(IdentityAttemptSchemaVersion)
+	future["testResult"].(map[string]any)["schemaVersion"] = float64(TestResultSchemaVersion + 1)
+	data, _ = json.Marshal(future)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadAttempt(root, attempt.AttemptID); err == nil || !strings.Contains(err.Error(), "unsupported future test result schema") {
+		t.Fatalf("future test result schema did not get a named refusal: %v", err)
+	}
+	if err := os.WriteFile(path, versioned, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	newFormatWithoutDigest := result
 	newFormatWithoutDigest.CandidateEngineDigest = ""
@@ -503,7 +548,7 @@ func TestAttemptSchemaThreeCarriesTheCandidateTupleAtomically(t *testing.T) {
 		BudgetEpoch: &epoch, CandidateGoalID: "authority", CandidateRevision: 4, CandidateBudgetEpoch: &epoch, CandidateTree: tree,
 		ReservedMinutes: 2, Identity: identity, Launcher: launcher, Now: time.Now().UTC()}
 	attempt, decision, err := ReserveLocked(request)
-	if err != nil || decision.Disposition != DispositionExecuted || attempt.SchemaVersion != CandidateAttemptSchemaVersion ||
+	if err != nil || decision.Disposition != DispositionExecuted || attempt.SchemaVersion != IdentityAttemptSchemaVersion ||
 		attempt.AccountedGoal() != "authority" || attempt.AccountedRevision() != 4 || attempt.CandidateTree != tree ||
 		attempt.AccountedBudgetEpoch() == nil || *attempt.AccountedBudgetEpoch() != epoch {
 		t.Fatalf("schema-3 reservation = %+v decision=%+v err=%v", attempt, decision, err)
@@ -710,6 +755,44 @@ func TestRedAttemptFencesOnlyFailedOrNonterminalComponents(t *testing.T) {
 		if decision, noChild, err := NoChildDecisionLocked(candidateAdmission(component)); err != nil || !noChild || decision.ExitStatus != ExitRetryRequired || decision.PriorAttempt != attempt.AttemptID {
 			t.Fatalf("%s component did not retain its retry fence: decision=%+v noChild=%t err=%v", id, decision, noChild, err)
 		}
+	}
+}
+
+func TestGLEBlockedReservationDoesNotBecomeFailedProducer(t *testing.T) {
+	t.Parallel()
+	fixtureHostAdmissionMu.Lock()
+	previousAdmissionDirectory := hostAdmissionDirectoryForTest
+	hostAdmissionDirectoryForTest = filepath.Join(t.TempDir(), "host-admission")
+	defer func() {
+		hostAdmissionDirectoryForTest = previousAdmissionDirectory
+		fixtureHostAdmissionMu.Unlock()
+	}()
+	root, baseIdentity := proofAttemptFixture(t, "testing")
+	launcher, err := CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	firstTree, repairedTree := strings.Repeat("1", 40), strings.Repeat("2", 40)
+	harnessIdentity, repairedHarnessIdentity := strings.Repeat("a", 64), strings.Repeat("d", 64)
+	dependentIdentity, siblingIdentity := strings.Repeat("b", 64), strings.Repeat("c", 64)
+	first := componentAdmissionRequest(root, baseIdentity, launcher, now, firstTree, "blocked-dependent",
+		map[string]string{"harness": harnessIdentity, "dependent": dependentIdentity, "sibling": siblingIdentity})
+	first.SharedComponents = true
+	failed := retainComponentAttempt(t, first, firstTree, []componentStatus{
+		{"harness", "failed"}, {"dependent", "blocked"}, {"sibling", "passed"}}, now.Add(time.Second))
+	repaired := componentAdmissionRequest(root, baseIdentity, launcher, now.Add(2*time.Second), repairedTree, "repaired-harness",
+		map[string]string{"harness": repairedHarnessIdentity, "dependent": dependentIdentity, "sibling": siblingIdentity})
+	repaired.SharedComponents = true
+	if decision, noChild, err := NoChildDecisionLocked(candidateAdmission(repaired)); err != nil || noChild {
+		t.Fatalf("blocked dependent prevented first native execution after prerequisite repair: decision=%+v noChild=%t err=%v", decision, noChild, err)
+	}
+	unchangedFailure := componentAdmissionRequest(root, baseIdentity, launcher, now.Add(2*time.Second), firstTree, "same-failed-harness",
+		map[string]string{"harness": harnessIdentity})
+	unchangedFailure.SharedComponents = true
+	if decision, noChild, err := NoChildDecisionLocked(candidateAdmission(unchangedFailure)); err != nil || !noChild ||
+		decision.ExitStatus != ExitRetryRequired || decision.PriorAttempt != failed.AttemptID {
+		t.Fatalf("failed native harness lost its retry fence: decision=%+v noChild=%t err=%v", decision, noChild, err)
 	}
 }
 
@@ -941,11 +1024,15 @@ func retainComponentAttempt(t *testing.T, request AdmissionRequest, tree string,
 		case "not-run":
 			group.Status, group.NotRunReason = "not-run", "delivery attempt stopped at the first failed group failed"
 			group.NativeLaunched, group.CollectionComplete, group.NativeExitStatus = false, false, nil
+		case "blocked":
+			result.SchemaVersion = TestResultSchemaVersion
+			group.Status, group.NotRunReason, group.BlockingGroups = "blocked", "prerequisite failed: harness", []string{"harness"}
+			group.NativeLaunched, group.CollectionComplete, group.NativeExitStatus = false, false, nil
 		}
 		result.Groups = append(result.Groups, group)
 		result.SelectedGroups = append(result.SelectedGroups, observed.id)
 		result.RequiredGroups = append(result.RequiredGroups, observed.id)
-		if observed.status != "not-run" {
+		if observed.status != "not-run" && observed.status != "blocked" {
 			result.LaunchCounts.Test++
 		}
 	}

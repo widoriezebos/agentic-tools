@@ -154,8 +154,8 @@ is_carried_two_seat_scenario() {
   esac
 }
 
-prepare_receipt_environment() { # process identity file, registry
-  local identity_file=$1 registry=$2 name value
+prepare_receipt_environment() { # process identity file, registry, fake-runtime checkout
+  local identity_file=$1 registry=$2 checkout=$3 name value
   receipt_environment=()
   for name in GOCACHE GOMODCACHE GOPATH GOROOT HOME LANG LC_ALL PATH SYSTEMROOT TEMP TMP TMPDIR TZ; do
     if value=$(printenv "$name" 2>/dev/null); then
@@ -166,6 +166,8 @@ prepare_receipt_environment() { # process identity file, registry
     "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file"
     "METASYSTEM_SUPERVISION_REGISTRY_HOME=$registry"
     "METASYSTEM_OWNER_LINEAGE=land-receipt-fixture"
+    "METASYSTEM_PROOF_ADMISSION_TEST_DIR=$fixture_isolated_home/host-admission"
+    "METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT=$checkout"
   )
 }
 
@@ -201,7 +203,7 @@ stop_receipt_runner() {
   identity_file=${receipt_runner_identity_files[$index]}
   registry=${receipt_runner_registries[$index]}
   stop_log=${receipt_runner_stop_logs[$index]}
-  prepare_receipt_environment "$identity_file" "$registry"
+  prepare_receipt_environment "$identity_file" "$registry" "$checkout"
   if receipt_env_run "$engine" steward disarm --repo "$checkout" \
       >"$stop_log" 2>&1; then
     stop_rc=0
@@ -240,7 +242,7 @@ select_receipt_runner_environment() { # checkout
   for ((index = ${#receipt_runner_checkouts[@]} - 1; index >= 0; index--)); do
     if [[ "${receipt_runner_checkouts[$index]}" == "$checkout" ]]; then
       prepare_receipt_environment "${receipt_runner_identity_files[$index]}" \
-        "${receipt_runner_registries[$index]}"
+        "${receipt_runner_registries[$index]}" "$checkout"
       return 0
     fi
   done
@@ -805,7 +807,7 @@ arm_receipt_runner() { # checkout, engine
   arm_log=$leg_root/$(basename "$checkout").steward-arm.out
   mkdir -p "$registry"
   printf '{"%s":{"terminal":true}}\n' "$$" >"$identity_file"
-  prepare_receipt_environment "$identity_file" "$registry"
+  prepare_receipt_environment "$identity_file" "$registry" "$checkout"
   if ! receipt_env_run "$engine" steward arm --repo "$checkout" >"$arm_log" 2>&1; then
     echo "land $fixture_scenario fixture: steward arm --repo failed for $checkout" >&2
     sed -n '1,240p' "$arm_log" >&2
@@ -1012,7 +1014,7 @@ if is_carried_scenario; then
 	  || { echo "land carried-crash-local fixture: local recovery unexpectedly has staged bytes" >&2; exit 1; }
 	prepare_receipt_environment \
 	  "$leg_root/process-identities.$(basename "$leg_peer").json" \
-	  "$leg_root/registry.$(basename "$leg_peer")"
+	  "$leg_root/registry.$(basename "$leg_peer")" "$leg_peer"
 	receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now METASYSTEM_OWNER_LINEAGE=land-receipt-fixture-b \
 	  "$leg_peer/bin/metasystem" goal edit --root "$leg_peer" --id fx-b \
 	    --next "Keep the carried recovery word valid across this ledger move." \
@@ -2698,6 +2700,10 @@ fi
 # full-battery receipt and bar-a provenance.
 if [[ "$fixture_scenario" == full-width-chain ]]; then
 make_leg full-width-chain
+# This fake-runtime leg invokes landing test-receipt directly rather than
+# through the sterile receipt runner environment below.
+export METASYSTEM_PROOF_ADMISSION_TEST_DIR="$fixture_isolated_home/host-admission"
+export METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="$leg_local"
 export METASYSTEM_OWNER_LINEAGE=land-receipt-fixture
 full_chain_message=$leg_root/message.txt
 full_chain_missing_output=$leg_root/missing-receipt.out

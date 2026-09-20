@@ -104,6 +104,18 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		argv := []string{"bash", "-c", `set -euo pipefail; source "$1"; tmp=$2; shift 2; "$@"`, "adoption-assertion", filepath.Join(source, "scripts", "adopt-fixture-helpers.sh"), bed, function}
 		return mustRun(source, append(argv, args...)...)
 	}
+	isolateCopiedAdmission := func() {
+		// The copied installation keeps its real Claude/Codex registration
+		// configuration. A separate, config-backed synthetic fixture root
+		// authorizes a private host slot for all its nested audit probes.
+		authorityRoot := t.TempDir()
+		if err := os.WriteFile(filepath.Join(authorityRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		environment = append(environment,
+			"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+filepath.Join(t.TempDir(), "host-admission"),
+			"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+authorityRoot)
+	}
 	runReceiptGit(t, source, "init", "-q", "-b", "main")
 	runReceiptGit(t, source, "config", "user.name", "adoption source")
 	runReceiptGit(t, source, "config", "user.email", "fixture@example.invalid")
@@ -244,6 +256,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 			helper("assert_filled_target_delivery", target, "shared-testing")
 			helper("assert_filled_target_mutations", target)
 		} else {
+			isolateCopiedAdmission()
 			helper("assert_copied_registration_positive", source, target)
 			helper("assert_copied_registration_drift", target)
 			helper("assert_copied_registration_orphan", target)
@@ -257,6 +270,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		t.Fatalf("filled delivery did not consume its own migrated prerequisite: %v\n%s", err, output)
 	}
 	copied := prepare("copied", "claude,codex", true)
+	isolateCopiedAdmission()
 	helper("assert_copied_registration_positive", source, copied)
 	helper("assert_copied_registration_drift", copied)
 }

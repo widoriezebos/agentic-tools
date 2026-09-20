@@ -54,6 +54,9 @@ func ProtectedPolicyChange(paths []string) bool {
 // change.
 func ProtectedContract(base, candidate Contract) Contract {
 	result := cloneContract(base)
+	if candidate.SchemaVersion > result.SchemaVersion {
+		result.SchemaVersion = candidate.SchemaVersion
+	}
 	groupIDs := map[string]int{}
 	for index, group := range result.Groups {
 		groupIDs[group.ID] = index
@@ -92,6 +95,16 @@ func ProtectedContract(base, candidate Contract) Contract {
 	result.Always.Standard = unique(result.Always.Standard, candidate.Always.Standard)
 	result.Unknown = unique(result.Unknown, candidate.Unknown)
 	result.Cadence = unique(result.Cadence, candidate.Cadence)
+	if result.SchemaVersion == ExecutionContractSchemaVersion {
+		for index := range result.Groups {
+			if result.Groups[index].Phase == "" {
+				result.Groups[index].Phase = "acceptance"
+			}
+			if result.Groups[index].EnvironmentMode == "" {
+				result.Groups[index].EnvironmentMode = "inherit"
+			}
+		}
+	}
 	result.ProjectRisk.Severity = max(result.ProjectRisk.Severity, candidate.ProjectRisk.Severity)
 	result.ProjectRisk.Exposure = max(result.ProjectRisk.Exposure, candidate.ProjectRisk.Exposure)
 	if reversibilityRank(candidate.ProjectRisk.Reversibility) > reversibilityRank(result.ProjectRisk.Reversibility) {
@@ -140,6 +153,12 @@ func cloneGroup(value Group) Group {
 		result.CPUBudgetSeconds = &budget
 	}
 	result.Inputs = append([]string(nil), value.Inputs...)
+	result.Requires = append([]string(nil), value.Requires...)
+	result.Resources.Exclusive = append([]string(nil), value.Resources.Exclusive...)
+	if value.FreshnessMaxAgeMS != nil {
+		maxAge := *value.FreshnessMaxAgeMS
+		result.FreshnessMaxAgeMS = &maxAge
+	}
 	result.Outputs = append([]string(nil), value.Outputs...)
 	result.Tools = append([]Tool(nil), value.Tools...)
 	for index := range result.Tools {
@@ -149,6 +168,7 @@ func cloneGroup(value Group) Group {
 	result.Obligations = append([]string(nil), value.Obligations...)
 	result.Platforms = append([]string(nil), value.Platforms...)
 	result.Packages = append([]string(nil), value.Packages...)
+	result.BuildTags = append([]string(nil), value.BuildTags...)
 	result.Tests = append(json.RawMessage(nil), value.Tests...)
 	result.Argv = append([]string(nil), value.Argv...)
 	result.Reports = append([]string(nil), value.Reports...)
@@ -162,11 +182,49 @@ func cloneGroup(value Group) Group {
 
 func mergeProtectedGroup(base, candidate Group) Group {
 	result := cloneGroup(base)
+	result.Requires = unique(base.Requires, candidate.Requires)
+	result.Resources.Exclusive = unique(base.Resources.Exclusive, candidate.Resources.Exclusive)
+	if base.Resources.Class == "" && candidate.Resources.Class == "" {
+		result.Resources.Class = ""
+	} else if base.Resources.Class != "cheap" || candidate.Resources.Class == "heavy" {
+		result.Resources.Class = "heavy"
+	} else {
+		result.Resources.Class = "cheap"
+	}
+	if base.Freshness == "episode" || candidate.Freshness == "episode" {
+		result.Freshness = "episode"
+	} else if candidate.Freshness != "" {
+		result.Freshness = candidate.Freshness
+	}
+	if candidate.FreshnessMaxAgeMS != nil &&
+		(result.FreshnessMaxAgeMS == nil || *candidate.FreshnessMaxAgeMS < *result.FreshnessMaxAgeMS) {
+		maxAge := *candidate.FreshnessMaxAgeMS
+		result.FreshnessMaxAgeMS = &maxAge
+	}
+	if base.Phase == "admission" || candidate.Phase == "admission" {
+		result.Phase = "admission"
+	} else if candidate.Phase != "" {
+		result.Phase = candidate.Phase
+	}
+	if base.EnvironmentMode == "explicit" || candidate.EnvironmentMode == "explicit" {
+		result.EnvironmentMode = "explicit"
+	} else if candidate.EnvironmentMode != "" {
+		result.EnvironmentMode = candidate.EnvironmentMode
+	}
 	result.Inputs = unique(base.Inputs, candidate.Inputs)
 	result.Outputs = unique(base.Outputs, candidate.Outputs)
 	result.Obligations = unique(base.Obligations, candidate.Obligations)
 	result.Platforms = unique(base.Platforms, candidate.Platforms)
 	result.Packages = unique(base.Packages, candidate.Packages)
+	// A tag change can exclude files, so a protected group keeps its original
+	// build constraints. Additional tagged coverage needs a new group ID.
+	result.BuildTags = append([]string(nil), base.BuildTags...)
+	// A protected selector cannot be narrowed into a hand-written package list.
+	// Only exact-tree expansion may produce its concrete package definitions.
+	result.PackageSelection = base.PackageSelection
+	if result.PackageSelection != "" {
+		result.Packages = nil
+	}
 	result.Reports = unique(base.Reports, candidate.Reports)
 	result.ExpectedTests = uniqueExpectedTests(base.ExpectedTests, candidate.ExpectedTests)
 	result.Race = base.Race || candidate.Race

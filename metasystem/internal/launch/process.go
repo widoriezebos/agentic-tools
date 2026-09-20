@@ -76,7 +76,10 @@ func (p OSProcesses) StartChild(spec Command) (Child, identity.Ref, error) {
 		for _, file := range files {
 			file.Close()
 		}
-		return nil, identity.Ref{}, fmt.Errorf("child pid %d is not observable: %s: %w", pid, state, err)
+		// The child has existed even if its exact identity could not be read.
+		// Return its group ID so the launch retains output ownership until the
+		// whole group is proved dead.
+		return nil, identity.Ref{Pid: pid}, fmt.Errorf("child pid %d is not observable: %s: %w", pid, state, err)
 	}
 	return &osChild{command: command, files: files}, exact.Ref(), nil
 }

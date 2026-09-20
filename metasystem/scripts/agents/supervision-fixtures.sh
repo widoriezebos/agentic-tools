@@ -895,7 +895,7 @@ LAND_ENGINE
 	chmod +x "$land_engine"
 	MEASURE_REAL_ENGINE="$measure_engine" MEASURE_BOOT_LOG="$land_sample_log" METASYSTEM_BIN="$land_engine" \
 	  METASYSTEM_OWNER_LINEAGE=wait-measure-lineage \
-	  bash "$measure_root/scripts/agents/land.sh" -m "$tmp/landing-message" --goal "$landing_goal" \
+	  harness_fixture_without_outer_proof bash "$measure_root/scripts/agents/land.sh" -m "$tmp/landing-message" --goal "$landing_goal" \
 	    --direct-fix exact-revert --revert-of "$revert_target" --staged-only --skip-transport \
 	    >"$tmp/landing.out" 2>&1 \
 	  || { echo "wait-measure-fake land.sh failed" >&2; tail -n 80 "$tmp/landing.out" >&2; exit 1; }

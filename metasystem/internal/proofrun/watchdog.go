@@ -19,7 +19,10 @@ import (
 
 type WatchdogOptions struct {
 	Suite string
-	Root  string
+	// CustodyGroup is the live custodian's own group. Stalled-suite cleanup
+	// must drain members without signalling the group leader itself.
+	CustodyGroup int64
+	Root         string
 	// ControlRoot and AttemptID name the attempt whose cancellation intent
 	// ends the suite; empty for a suite that is not attempt-scoped.
 	ControlRoot      string
@@ -288,6 +291,10 @@ func shutdownSupervision(options WatchdogOptions) error {
 // SignalSuiteGroup applies the watchdog's CONT, TERM, then KILL ladder to the
 // recorded suite group. Each signal reauthenticates the suite leader first.
 func SignalSuiteGroup(options WatchdogOptions, prober identity.Prober) error {
+	if options.CustodyGroup > 0 {
+		_, err := drainResourceGroup(options.CustodyGroup, prober, options.KillGrace+options.TermGrace)
+		return err
+	}
 	pgid := -int(options.SuiteIdentity.Pid)
 	if err := SignalAuthenticated(options, prober, options.SuiteIdentity, pgid, syscall.SIGCONT, "suite process group"); err != nil {
 		return fmt.Errorf("continue process group: %w", err)
