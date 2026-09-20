@@ -938,7 +938,6 @@ start_main() {
   if [[ ! -x "$canonical" || ! -x "$ms" ]]; then
     start_finish notice engine-missing
   fi
-  start_write_engine_cache
   start_capture runtime-registry registered_runtimes required-nonempty "$ms" runtime list
   case $'\n'$registered_runtimes$'\n' in
     *$'\n'$runtime$'\n'*) ;;
@@ -1034,6 +1033,14 @@ start_main() {
       start_deferred_identity_read=true
     fi
   fi
+
+  # The cache is written only once the session is known to belong to this
+  # runtime. A session owned by another runtime leaves no file anywhere under
+  # artifacts/agents, and this cache lives there. The cache is best effort on
+  # both sides, written without failing the hook and read only when readable,
+  # so writing it here rather than earlier changes when it appears, not what
+  # any caller can rely on.
+  start_write_engine_cache
 
   start_capture context-contract start_context_decl context-channel "$ms" runtime start-context "$runtime"
   start_context_field=
