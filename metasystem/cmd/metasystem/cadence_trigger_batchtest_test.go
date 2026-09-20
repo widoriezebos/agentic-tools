@@ -28,7 +28,12 @@ func TestCadenceTickSurfacesPlantedDeepOnlyRedWithoutDeepLanding(t *testing.T) {
 	clock := func() time.Time { return clockNow }
 	landingRoot := syncedClaimedGoalFixture(t)
 	origin := filepath.Join(t.TempDir(), "origin.git")
-	goalSyncMutationGit(t, landingRoot, "init", "--bare", origin)
+	// -b main because the seats below are CLONED from this origin. Without it
+	// the initial branch comes from init.defaultBranch, which an isolated git
+	// configuration does not supply, so the origin's HEAD names master while
+	// the push below creates main. git clone then checks out NOTHING and still
+	// exits zero, and the seat has no ledger to read.
+	goalSyncMutationGit(t, landingRoot, "init", "--bare", "-b", "main", origin)
 	goalSyncMutationGit(t, landingRoot, "remote", "add", "origin", origin)
 
 	contract := testpolicy.Contract{SchemaVersion: testpolicy.SchemaVersion,
