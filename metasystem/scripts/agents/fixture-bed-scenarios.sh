@@ -99,6 +99,32 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
   local scenario_cap scenario_started scenario_deadline scenario_elapsed
   local failed_names=() failed_rcs=() failed_logs=()
   shift 3
+  # A bed runs every scenario it owns. That is right for the gate and wrong
+  # for diagnosis: naming the cause of one failing scenario cost the whole
+  # bed, which is how a single silent red turned into repeated hour-long
+  # runs. METASYSTEM_FIXTURE_ONLY narrows a run to the scenarios named in it,
+  # separated by spaces or commas.
+  #
+  # Two properties keep it from becoming a way to report a pass nobody
+  # earned. It refuses a name the bed does not own, because a typo that
+  # selected nothing would otherwise run zero scenarios and exit 0. And it
+  # never prints the bed's success line, because that line states a leg count
+  # this run did not do; a filtered run says plainly that it is not the gate.
+  local -a bed_only=() bed_selected=()
+  local only_raw=${METASYSTEM_FIXTURE_ONLY:-} only_name known
+  if [[ -n "$only_raw" ]]; then
+    IFS=', ' read -r -a bed_only <<<"$only_raw"
+    for only_name in ${bed_only[@]+"${bed_only[@]}"}; do
+      known=0
+      for scenario in "$@"; do
+        if [[ "$scenario" == "$only_name" ]]; then known=1; break; fi
+      done
+      (( known )) || { echo "$bed fixture: no scenario named $only_name" >&2; exit 2; }
+      bed_selected+=("$only_name")
+    done
+    set -- ${bed_selected[@]+"${bed_selected[@]}"}
+    echo "$bed fixture: diagnostic run of ${#bed_selected[@]} named scenario(s), not the bed's gate" >&2
+  fi
   harness_fixture_owner "$fixture_bed_harness_root"
   if [[ ! "${METASYSTEM_FIXTURE_CAP_SCALE_MILLI:-}" =~ ^[1-9][0-9]*$ ]]; then
     harness_fixture_budget_init "$fixture_bed_harness_root"
@@ -231,6 +257,10 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
     exit 1
   fi
   rm -rf "$log_root"
+  if [[ -n "$only_raw" ]]; then
+    echo "$bed fixture: the named scenarios passed; this is a diagnostic selection, not the bed's gate result"
+    exit 0
+  fi
   echo "$success_line"
   exit 0
 }
