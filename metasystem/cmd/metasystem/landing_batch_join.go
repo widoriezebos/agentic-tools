@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -252,6 +254,77 @@ func fetchLandingBaseTree(root string) (string, error) {
 	return (gittree.Workspace{Dir: root}).TreeOf("FETCH_HEAD")
 }
 
+// joinGateStepBound is the wall-clock ceiling for one join gate step. A step is
+// a whole test run, so the ceiling is deliberately generous; its job is not to
+// pace a slow gate but to turn a hung child into a named red. Round 3 of the
+// landing rehearsal sat in exec.Cmd.Wait for 53 minutes because this call had
+// no bound at all, and an armed landing owner runs the same executor.
+var joinGateStepBound = 20 * time.Minute
+
+// joinGateGrandchildGrace bounds how long the output pipes are still read after
+// the step's own process is gone. A descendant that inherited the write end
+// keeps CombinedOutput blocked forever without it, which is a hang the bound
+// above cannot reach because the direct child has already exited.
+var joinGateGrandchildGrace = 15 * time.Second
+
+type gateCommandOutcome struct {
+	Output   []byte
+	ExitCode int
+	TimedOut bool
+	Leaked   bool
+	Err      error
+}
+
+// runBoundedGateCommand runs one gate step in its own process group, under a
+// deadline, and kills the whole group when the deadline passes. Every failure
+// carries whatever the step managed to print, so a red names the step that
+// stalled instead of leaving a silent wait.
+func runBoundedGateCommand(dir string, env []string, args []string, bound, grace time.Duration) gateCommandOutcome {
+	ctx, cancel := context.WithTimeout(context.Background(), bound)
+	defer cancel()
+	command := exec.CommandContext(ctx, args[0], args[1:]...)
+	command.Dir, command.Env = dir, env
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.Cancel = func() error { return killGateProcessGroup(command.Process) }
+	command.WaitDelay = grace
+	output, err := command.CombinedOutput()
+	outcome := gateCommandOutcome{Output: output, TimedOut: ctx.Err() != nil}
+	if command.ProcessState != nil {
+		outcome.ExitCode = command.ProcessState.ExitCode()
+	}
+	switch {
+	case outcome.TimedOut:
+		outcome.Err = err
+	case errors.Is(err, exec.ErrWaitDelay) && outcome.ExitCode == 0:
+		// The step itself passed and only its output pipes outlived it, because
+		// a descendant inherited the write end. That leak is a real defect, but
+		// it is not this step's verdict, so keep the verdict and say so aloud
+		// rather than inventing a red the step did not earn.
+		outcome.Leaked = true
+	default:
+		outcome.Err = err
+	}
+	if outcome.Err != nil && outcome.ExitCode <= 0 {
+		outcome.ExitCode = 1
+	}
+	return outcome
+}
+
+// killGateProcessGroup signals the step's whole group so a relaunching script
+// cannot leave descendants behind. It never signals a group this process is in
+// itself: Setpgid above makes that impossible, and the check holds if the
+// attribute is ever dropped.
+func killGateProcessGroup(process *os.Process) error {
+	if process == nil {
+		return nil
+	}
+	group, err := syscall.Getpgid(process.Pid)
+	if err != nil || group <= 1 || group == syscall.Getpgrp() {
+		return process.Kill()
+	}
+	return syscall.Kill(-group, syscall.SIGKILL)
+}
+
 func productionJoinGate(root string) batch.GateExecutor {
 	return func(tree string, step batch.GateStep) batch.GateStepResult {
 		detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
@@ -270,16 +343,18 @@ func productionJoinGate(root string) batch.GateExecutor {
 			}
 			args[0] = binary
 		}
-		command := exec.Command(args[0], args[1:]...)
-		command.Dir, command.Env = batch.ModuleRoot(detached.Workspace().Dir), gittree.ScrubbedEnviron()
-		output, commandErr := command.CombinedOutput()
-		if commandErr != nil {
-			fmt.Fprintf(os.Stderr, "landing batch join gate %s: %s\n", step.Name, strings.TrimSpace(string(output)))
-			code := 1
-			if command.ProcessState != nil {
-				code = command.ProcessState.ExitCode()
-			}
-			return joinGateFailure(code, output)
+		outcome := runBoundedGateCommand(batch.ModuleRoot(detached.Workspace().Dir), gittree.ScrubbedEnviron(), args, joinGateStepBound, joinGateGrandchildGrace)
+		if outcome.Leaked {
+			fmt.Fprintf(os.Stderr, "landing batch join gate %s: step exited 0 but a descendant still held its output pipes after %s; the group was killed\n", step.Name, joinGateGrandchildGrace)
+		}
+		if outcome.TimedOut {
+			detail := fmt.Sprintf("step exceeded its %s bound and its process group was killed", joinGateStepBound)
+			fmt.Fprintf(os.Stderr, "landing batch join gate %s: %s\n%s\n", step.Name, detail, strings.TrimSpace(string(outcome.Output)))
+			return joinGateFailure(1, []byte(detail+"\n"+strings.TrimSpace(string(outcome.Output))))
+		}
+		if outcome.Err != nil {
+			fmt.Fprintf(os.Stderr, "landing batch join gate %s: %s\n", step.Name, strings.TrimSpace(string(outcome.Output)))
+			return joinGateFailure(outcome.ExitCode, outcome.Output)
 		}
 		digest := sha256.Sum256([]byte(tree + "\x00" + step.Name + "\x00" + strings.Join(step.Args, "\x00")))
 		return batch.GateStepResult{RunID: "join-" + hex.EncodeToString(digest[:8])}
