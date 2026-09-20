@@ -26,18 +26,21 @@ func TestStartStoresModelEffortAndWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if readString(record.AdapterData, "model") != "override" || readString(record.AdapterData, "effort") != "high" || readInt64(record.AdapterData, "window") != 200000 {
+	if readString(record.AdapterData, "model") != "override" || readString(record.AdapterData, "effort") != "high" || readInt64(record.AdapterData, "window") != 0 {
 		t.Fatalf("adapter data=%s", record.AdapterData)
 	}
 }
 
-func TestReadStartRecordsFourHundredThousandTokenWindow(t *testing.T) {
+// The recorded window is 0 by default, which the adapters read as "impose no
+// cap". A lane that needs a window different from its runtime's own puts a
+// positive number in metasystem.conf and it travels through this same field.
+func TestReadStartRecordsNoImposedWindow(t *testing.T) {
 	t.Parallel()
 	m, _, _, _ := manager(t)
 	m.Supervisor = childStarter(m)
 	m.Adapters["claude-headless"] = fakeAdapter{}
 	record, err := m.Start(StartSpec{ID: "read-window", Kind: "read", Brief: writeLaunchFile(t, "brief.md", "read\n"), WorkingDirectory: t.TempDir(), DiffFile: writeLaunchFile(t, "change.diff", "")})
-	if err != nil || readInt64(record.AdapterData, "window") != 400000 {
+	if err != nil || readInt64(record.AdapterData, "window") != 0 {
 		t.Fatalf("window=%d record=%+v err=%v", readInt64(record.AdapterData, "window"), record, err)
 	}
 }
@@ -56,9 +59,9 @@ func TestWindowReachesTheChildFromTheRecord(t *testing.T) {
 		t.Fatalf("claude=%+v err=%v", claude, err)
 	}
 	delete(data, "window")
-	_, err = (ClaudeHeadless{}).Command(Record{Kind: "read", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), `"window"`) {
-		t.Fatalf("missing window error=%v", err)
+	uncapped, err := (ClaudeHeadless{}).Command(Record{Kind: "read", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
+	if err != nil || len(uncapped.Environment) != 0 {
+		t.Fatalf("missing window: environment=%q err=%v", uncapped.Environment, err)
 	}
 }
 

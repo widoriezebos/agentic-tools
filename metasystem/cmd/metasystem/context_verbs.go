@@ -161,15 +161,27 @@ func contextWindow(root string) (contextWindowView, error) {
 	if err != nil {
 		return contextWindowView{}, err
 	}
-	return contextWindowView{Tokens: settings.SeatWindow, Key: launch.SeatWindowKey, Source: windowSource, Ceiling: budget.Ceiling, CeilingKey: config.ContextCeilingTokensKey, CeilingSource: ceilingSource, CeilingAboveWindow: budget.Ceiling > settings.SeatWindow, Shipped: shipped.Tokens, ShippedSource: shipped.Source, ShippedDiffersFromConf: shipped.DiffersFromConf}, nil
+	// ceiling-above-window warns that the handoff ceiling sits past the point
+	// where the harness compacts. With no window imposed, that point belongs to
+	// the runtime and this comparison has nothing to compare, so it must not fire
+	// on every root just because the configured number is 0.
+	return contextWindowView{Tokens: settings.SeatWindow, Key: launch.SeatWindowKey, Source: windowSource, Ceiling: budget.Ceiling, CeilingKey: config.ContextCeilingTokensKey, CeilingSource: ceilingSource, CeilingAboveWindow: settings.SeatWindow > 0 && budget.Ceiling > settings.SeatWindow, Shipped: shipped.Tokens, ShippedSource: shipped.Source, ShippedDiffersFromConf: shipped.DiffersFromConf}, nil
 }
 
 func windowLine(window contextWindowView) string {
-	line := fmt.Sprintf("window: %d tokens (%s, %s); ceiling: %d tokens (%s, %s)", window.Tokens, window.Key, window.Source, window.Ceiling, window.CeilingKey, window.CeilingSource)
+	size := fmt.Sprintf("%d tokens", window.Tokens)
+	if window.Tokens == 0 {
+		size = "none imposed, the runtime's own"
+	}
+	line := fmt.Sprintf("window: %s (%s, %s); ceiling: %d tokens (%s, %s)", size, window.Key, window.Source, window.Ceiling, window.CeilingKey, window.CeilingSource)
 	if window.CeilingAboveWindow {
 		line += "; ceiling-above-window"
 	}
-	line += fmt.Sprintf("; shipped: %d (claude-code-hooks.json)", window.Shipped)
+	if window.Shipped == 0 {
+		line += "; shipped: none (claude-code-hooks.json)"
+	} else {
+		line += fmt.Sprintf("; shipped: %d (claude-code-hooks.json)", window.Shipped)
+	}
 	if window.ShippedDiffersFromConf {
 		line += " shipped-differs-from-conf"
 	}

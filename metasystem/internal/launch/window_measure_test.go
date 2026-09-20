@@ -37,7 +37,10 @@ func TestCodexCommandAppliesRecordedAutoCompactWindow(t *testing.T) {
 	}
 }
 
-func TestCommandsRequirePositiveRecordedWindow(t *testing.T) {
+// Zero and absent both mean NO CAP, and each adapter expresses that by leaving
+// its cap out of the child command entirely rather than by passing a number.
+// A negative window is still a refusal: it can only come from a bug upstream.
+func TestZeroRecordedWindowImposesNoCapAndNegativeRefuses(t *testing.T) {
 	t.Parallel()
 
 	for _, adapter := range []struct {
@@ -57,13 +60,31 @@ func TestCommandsRequirePositiveRecordedWindow(t *testing.T) {
 			for _, window := range []int64{0, -1} {
 				data := map[string]json.RawMessage{}
 				setString(data, "brief", briefPath)
+				setInt64(data, "window", window)
+				command, err := adapter.command(Record{Kind: "build", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
 				if window < 0 {
-					setInt64(data, "window", window)
+					if err == nil || !strings.Contains(err.Error(), `"window"`) {
+						t.Fatalf("window=%d error=%v", window, err)
+					}
+					continue
 				}
-				_, err := adapter.command(Record{Kind: "build", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
-				if err == nil || !strings.Contains(err.Error(), `"window"`) {
-					t.Fatalf("window=%d error=%v", window, err)
+				if err != nil {
+					t.Fatalf("window=0 error=%v", err)
 				}
+				emitted := strings.Join(append(append([]string{}, command.Args...), command.Environment...), " ")
+				if strings.Contains(emitted, "model_auto_compact_token_limit") || strings.Contains(emitted, "CLAUDE_CODE_AUTO_COMPACT_WINDOW") {
+					t.Fatalf("window=0 still capped the child: argv=%q environment=%q", command.Args, command.Environment)
+				}
+			}
+			data := map[string]json.RawMessage{}
+			setString(data, "brief", briefPath)
+			command, err := adapter.command(Record{Kind: "build", WorkingDirectory: t.TempDir(), AdapterData: data}, t.TempDir())
+			if err != nil {
+				t.Fatalf("absent window error=%v", err)
+			}
+			emitted := strings.Join(append(append([]string{}, command.Args...), command.Environment...), " ")
+			if strings.Contains(emitted, "model_auto_compact_token_limit") || strings.Contains(emitted, "CLAUDE_CODE_AUTO_COMPACT_WINDOW") {
+				t.Fatalf("absent window still capped the child: argv=%q environment=%q", command.Args, command.Environment)
 			}
 		})
 	}
@@ -184,7 +205,7 @@ func TestBriefAdmissionSettingExplainsReservedWorkingRoom(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "# The 200000-token seat window reserves about 80000 tokens for tool output and the diff, leaving 120000 for the brief and its inputs.\n" +
+	want := "# No lane imposes a window any more, so this cap is sized against the SMALLEST window a lane actually runs in, which is Codex at model_context_window=258400: a full brief leaves about 138000 tokens for tool output and the diff.\n" +
 		"launch.brief.admitted.tokens=120000"
 	if !strings.Contains(string(data), want) {
 		t.Fatalf("metasystem.conf does not contain the setting basis directly above the setting")

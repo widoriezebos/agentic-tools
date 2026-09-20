@@ -1,6 +1,5 @@
 {
   "_comment": "Claude Code project hooks: session start arms repository supervision, PreToolUse checks the context budget, Stop emits one compact status line backed by an immutable report, and SessionEnd retires this session's announcement.",
-  "autoCompactWindow": 200000,
   "hooks": {
     "SessionStart": [
       {

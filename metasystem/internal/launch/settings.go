@@ -53,8 +53,8 @@ type Settings struct {
 }
 
 var settingDefaults = []Setting{
-	{Key: SeatWindowKey, Value: "200000", Source: "default"}, {Key: BuildWindowKey, Value: "200000", Source: "default"},
-	{Key: DesignWindowKey, Value: "200000", Source: "default"}, {Key: ReadWindowKey, Value: "400000", Source: "default"},
+	{Key: SeatWindowKey, Value: "0", Source: "default"}, {Key: BuildWindowKey, Value: "0", Source: "default"},
+	{Key: DesignWindowKey, Value: "0", Source: "default"}, {Key: ReadWindowKey, Value: "0", Source: "default"},
 	{Key: BuildModelKey, Value: "gpt-5.6-sol", Source: "default"}, {Key: BuildEffortKey, Value: "xhigh", Source: "default"},
 	{Key: DesignModelKey, Value: "claude-fable-5-1", Source: "default"}, {Key: ReadModelKey, Value: "claude-opus-5[1m]", Source: "default"},
 	{Key: WaitCapKey, Value: "240", Source: "default"}, {Key: BriefCapKey, Value: "120000", Source: "default"},
@@ -121,10 +121,24 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool), use
 		}
 		return value, nil
 	}
+	// A window of 0 means NO CAP: the lane inherits whatever context window its
+	// runtime gives that model, and neither adapter emits a cap argument. That
+	// is the only way to express "do not impose a number", which matters
+	// because the right number is per-model and this key is absolute tokens —
+	// 400000 is generous on a 1000000-token Fable lane and impossible on Codex,
+	// whose model_context_window is 258400. A negative stays invalid: that is a
+	// bug, not an intent.
+	windowNumber := func(index int) (int64, error) {
+		value, err := strconv.ParseInt(result.Values[index].Value, 10, 64)
+		if err != nil || value < 0 {
+			return 0, fmt.Errorf("LAUNCH_SETTING_INVALID key=%s", result.Values[index].Key)
+		}
+		return value, nil
+	}
 	var err error
 	targets := []*int64{&result.SeatWindow, &result.BuildWindow, &result.DesignWindow, &result.ReadWindow}
 	for index := range targets {
-		if *targets[index], err = number(index); err != nil {
+		if *targets[index], err = windowNumber(index); err != nil {
 			return Settings{}, err
 		}
 	}

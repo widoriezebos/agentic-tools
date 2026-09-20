@@ -23,9 +23,11 @@ type ClaudeHeadless struct {
 }
 
 func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, error) {
+	// window 0 means no cap: the child keeps Claude Code's own window for its
+	// model. Only a positive value is passed through.
 	window := readInt64(record.AdapterData, "window")
-	if window <= 0 {
-		return Command{}, fmt.Errorf(`AdapterData key "window" must be positive`)
+	if window < 0 {
+		return Command{}, fmt.Errorf(`AdapterData key "window" must not be negative`)
 	}
 	brief, err := os.ReadFile(readString(record.AdapterData, "brief"))
 	if err != nil {
@@ -47,9 +49,13 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 	if session := readString(record.AdapterData, "resumeSession"); session != "" {
 		args = append(args, "--resume", session)
 	}
+	var environment []string
+	if window > 0 {
+		environment = []string{"CLAUDE_CODE_AUTO_COMPACT_WINDOW=" + fmt.Sprint(window)}
+	}
 	return Command{
 		Program: adapter.Binary, Directory: record.WorkingDirectory, Stdin: string(brief), Args: args,
-		Environment: []string{"CLAUDE_CODE_AUTO_COMPACT_WINDOW=" + fmt.Sprint(window)},
+		Environment: environment,
 		StdoutPath:  filepath.Join(stateDir, "result.json"), LogPath: filepath.Join(stateDir, "stderr.log"),
 	}, nil
 }

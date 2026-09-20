@@ -47,9 +47,11 @@ type CodexExec struct {
 }
 
 func (adapter CodexExec) Command(record Record, stateDir string) (Command, error) {
+	// window 0 means no cap: the child keeps Codex's own auto-compact limit for
+	// its model. Only a positive value is passed through.
 	window := readInt64(record.AdapterData, "window")
-	if window <= 0 {
-		return Command{}, fmt.Errorf(`AdapterData key "window" must be positive`)
+	if window < 0 {
+		return Command{}, fmt.Errorf(`AdapterData key "window" must not be negative`)
 	}
 	brief := readString(record.AdapterData, "brief")
 	data, err := os.ReadFile(brief)
@@ -70,11 +72,14 @@ func (adapter CodexExec) Command(record Record, stateDir string) (Command, error
 	if value := readString(record.AdapterData, "effort"); value != "" {
 		effort = value
 	}
+	args := []string{"exec", "-m", model, "-c", "model_reasoning_effort=" + effort, "-C", directory,
+		"-s", "workspace-write", "-o", filepath.Join(stateDir, "last-message.txt")}
+	if window > 0 {
+		args = append(args, "-c", fmt.Sprintf("model_auto_compact_token_limit=%d", window))
+	}
+	args = append(args, "-")
 	return Command{Program: adapter.Binary, Directory: directory, Stdin: string(data),
-		Args: []string{"exec", "-m", model, "-c", "model_reasoning_effort=" + effort, "-C", directory,
-			"-s", "workspace-write", "-o", filepath.Join(stateDir, "last-message.txt"),
-			"-c", fmt.Sprintf("model_auto_compact_token_limit=%d", window), "-"},
-		LogPath: filepath.Join(stateDir, "exec.log")}, nil
+		Args: args, LogPath: filepath.Join(stateDir, "exec.log")}, nil
 }
 func (adapter CodexExec) prepareCritique(record Record) (string, error) {
 	if record.Tag == "" || len(record.Inputs) < 3 {

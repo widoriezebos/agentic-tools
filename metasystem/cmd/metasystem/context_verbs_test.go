@@ -281,6 +281,31 @@ func TestContextStatusNamesTheWindowAndItsSource(t *testing.T) {
 	}
 }
 
+// With no window imposed, the status line says so in words rather than printing
+// a zero, and it does not raise ceiling-above-window: the compaction point
+// belongs to the runtime, so there is nothing for the ceiling to sit above.
+func TestContextStatusSaysNoWindowIsImposed(t *testing.T) {
+	root := contextCommandRoot(t)
+	conf := "launch.seat.window.tokens=0\ncontext.ceiling.tokens=250000\ncontext.handoff.margin.tokens=145000\n"
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeShippedSeatWindow(t, root, 0, false)
+	code, output, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root}) })
+	want := "\nwindow: none imposed, the runtime's own (launch.seat.window.tokens, conf); ceiling: 250000 tokens (context.ceiling.tokens, conf); shipped: none (claude-code-hooks.json)\n"
+	if code != 0 || problem != "" || !strings.Contains(output, want) {
+		t.Fatalf("code=%d output=%q problem=%q", code, output, problem)
+	}
+	code, structured, problem := captureChannelOutput(t, func() int { return runContextStatus([]string{"--root", root, "--json"}) })
+	var decoded contextStatusOutput
+	if err := json.Unmarshal([]byte(structured), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 || problem != "" || decoded.Window.Tokens != 0 || decoded.Window.CeilingAboveWindow || decoded.Window.ShippedDiffersFromConf {
+		t.Fatalf("decoded=%+v code=%d problem=%q", decoded.Window, code, problem)
+	}
+}
+
 func TestContextStatusPrintsTheBudgetLine(t *testing.T) {
 	t.Setenv("METASYSTEM_CONTEXT_CEILING_TOKENS", "")
 	_ = os.Unsetenv("METASYSTEM_CONTEXT_CEILING_TOKENS")

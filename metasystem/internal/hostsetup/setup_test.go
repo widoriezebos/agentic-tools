@@ -75,7 +75,12 @@ func hostHookFixture(t *testing.T, name string) string {
 	return string(contents)
 }
 
-func TestSetupPassesShippedSeatWindowThroughClaudeTransform(t *testing.T) {
+// A fresh checkout must inherit whatever context window Claude Code gives the
+// seat's model. The shipped template carried autoCompactWindow: 200000 until
+// 2026-09-20; setting it capped every seat, and every in-process delegate of
+// that seat, at a number chosen for one model. The transform still carries the
+// template's other top-level keys, which is what keeps this a transform test.
+func TestSetupImposesNoSeatWindowThroughClaudeTransform(t *testing.T) {
 	t.Parallel()
 	repo, _ := hostFixture(t, true)
 	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}); err != nil {
@@ -89,8 +94,11 @@ func TestSetupPassesShippedSeatWindowThroughClaudeTransform(t *testing.T) {
 	if err := json.Unmarshal(data, &settings); err != nil {
 		t.Fatal(err)
 	}
-	if settings["autoCompactWindow"] != float64(200000) {
-		t.Fatalf("generated autoCompactWindow=%v, want 200000", settings["autoCompactWindow"])
+	if window, present := settings["autoCompactWindow"]; present {
+		t.Fatalf("generated autoCompactWindow=%v, want no key at all", window)
+	}
+	if _, present := settings["hooks"]; !present {
+		t.Fatal("the generated Claude settings carry no hooks")
 	}
 	if _, present := settings["_comment"]; present {
 		t.Fatal("the generated Claude settings retained the source comment")

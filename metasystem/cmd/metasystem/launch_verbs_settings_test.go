@@ -24,7 +24,9 @@ func TestLaunchSettingsPrintsEachValueAndSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), tracked, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	writeShippedSeatWindow(t, root, 200000, true)
+	// The tracked conf imposes no seat window, so the shipped Claude settings
+	// match it by carrying no autoCompactWindow at all, and no drift is reported.
+	writeShippedSeatWindow(t, root, 0, false)
 	oldExecutable, oldLookup := launchExecutable, launchLookupEnv
 	launchExecutable = func() (string, error) { return filepath.Join(root, "bin", "metasystem"), nil }
 	launchLookupEnv = func(string) (string, bool) { return "", false }
@@ -34,7 +36,7 @@ func TestLaunchSettingsPrintsEachValueAndSource(t *testing.T) {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if len(lines) != 18 || lines[0] != "launch.seat.window.tokens=200000 source=conf" || lines[15] != "launch.seat.window.shipped=200000 source=scripts/enforcement/claude-code-hooks.json" || lines[16] != "context.ceiling.tokens=250000 source=conf" || lines[17] != "context.handoff.margin.tokens=145000 source=conf" {
+	if len(lines) != 18 || lines[0] != "launch.seat.window.tokens=0 source=conf" || lines[15] != "launch.seat.window.shipped=0 source=absent" || lines[16] != "context.ceiling.tokens=250000 source=conf" || lines[17] != "context.handoff.margin.tokens=145000 source=conf" {
 		t.Fatalf("lines=%q", lines)
 	}
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.window.tokens=210000\n"), 0o600); err != nil {

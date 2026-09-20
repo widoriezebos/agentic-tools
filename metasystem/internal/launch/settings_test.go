@@ -25,7 +25,7 @@ func TestSettingsResolveValueAndSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.BuildWindow != 220000 || settings.DesignModel != "from-local" || settings.ReadWindow != 400000 {
+	if settings.BuildWindow != 220000 || settings.DesignModel != "from-local" || settings.ReadWindow != 0 {
 		t.Fatalf("settings=%+v", settings)
 	}
 	sources := map[string]string{}
@@ -38,7 +38,9 @@ func TestSettingsResolveValueAndSource(t *testing.T) {
 }
 
 func TestSettingsRefuseAMalformedValue(t *testing.T) {
-	for _, test := range []struct{ key, value string }{{WaitCapKey, "nope"}, {BuildModelKey, ""}, {BuildEffortKey, "   "}} {
+	// A window of 0 is the valid way to say "impose no cap"; a negative one is a
+	// bug upstream and stays a refusal at the settings layer, not only at the adapter.
+	for _, test := range []struct{ key, value string }{{WaitCapKey, "nope"}, {BuildModelKey, ""}, {BuildEffortKey, "   "}, {SeatWindowKey, "-1"}, {ReadWindowKey, "nope"}} {
 		conf := filepath.Join(t.TempDir(), "metasystem.conf")
 		if err := os.WriteFile(conf, []byte(test.key+"="+test.value+"\n"), 0o600); err != nil {
 			t.Fatal(err)
