@@ -344,6 +344,7 @@ if [[ "$fixture_scenario" == brain-actor-seam-coverage ]]; then
 cmd/metasystem/brain.go:	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
 cmd/metasystem/census.go:	view, err := classifyVerbCaller(*root, parent)
 cmd/metasystem/dispatch_verbs.go:	caller, err := classifyVerbCaller(*root, int64(os.Getppid()))
+cmd/metasystem/gate_cadence.go:	actor := goal.Actor{Machine: machine, Lineage: landingOwnerLineage}
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the Stop main %q does not match the announced checkout holder %q", mainID, holder.MainId)
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the announced checkout holder could not be resolved: %w", err)
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the checkout holder has no readable main announcement and lineage")
@@ -363,7 +364,7 @@ cmd/metasystem/proof_run.go:	classifiedCaller, err := classifyVerbCaller(request
 cmd/metasystem/proof_run.go:	classifiedCaller, err = classifyVerbCaller(request.ControlRoot, int64(os.Getppid()))
 cmd/metasystem/run.go:		view, err := classifyVerbCaller(root, int64(os.Getpid()))
 cmd/metasystem/run.go:	view, err := classifyVerbCaller(root, callerPid)
-cmd/metasystem/wait_verb.go:	view, err := classifyVerbCaller(stateRoot, callerPID)
+cmd/metasystem/wait_register.go:	view, err := classifyVerbCaller(root, callerPID)
 internal/channel/poll.go:				approved, approveErr := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: a.UserID}, Ulid: a.ApprovalULID, Now: a.At}, []string{q.Goal}, q.Budget, &proof)
 internal/channel/poll.go:		published, err := goal.Answer(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage}, Ulid: a.ULID, Now: a.At}, q.Goal, q.ID, a.Text, wants, goal.AnswerProof{Provider: c.ProviderName, User: a.UserID, Ref: a.Ref.ThreadID + "/" + a.Ref.ID, Step: a.Step})
 internal/channel/poll.go:		published, err := goal.Approve(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage, Human: "wido"}, Ulid: ulid, Now: c.Now}, []string{status.GoalID}, nil, &proof)

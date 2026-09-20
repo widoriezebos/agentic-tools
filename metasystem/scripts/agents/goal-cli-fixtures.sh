@@ -1284,10 +1284,10 @@ DRAFT
   assert_human_word_matrix() { # expected text
     local expected=$1
     assert_brain_goal_refusal "$expected" "$ms" goal approve --root "$clone" --id fix-docs --by Wido --budget box \
-      --temporary-human-word "Wido approves this fixture" --review-by 2026-09-08
+      --fixture-human-authority
     assert_brain_goal_refusal "$expected" "$ms" goal resume --root "$clone" --id fix-docs --by Wido \
       --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 \
-      --temporary-human-word "Wido resumes this fixture" --review-by 2026-09-08
+      --fixture-human-authority
     assert_brain_goal_refusal "$expected" "$ms" goal resume --root "$clone" --id fix-docs --by Wido \
       --elapsed-limit 1d --attempt-limit 2 --reserved-job-minutes-limit 120 --active-job-limit 1 --review-round-limit 3 \
       --approved-ref fixture-answer
@@ -1297,7 +1297,7 @@ DRAFT
       --effect local-write --value-judgment no --reversibility reversible --severe-harm no \
       --unfamiliar-approach no --test-discrimination strong --correlated-assumption-risk no \
       --authority-scope-change no --destructive-reach reversible-local \
-      --temporary-human-word "Wido authorizes this fixture" --review-by 2026-09-08
+      --fixture-human-authority
     assert_brain_goal_refusal "$expected" "$ms" goal steal --root "$clone" --id fix-docs --by Wido
     assert_brain_goal_refusal "$expected" "$ms" goal set-pin --root "$clone" --id fix-docs --pin node --by Wido
     assert_brain_goal_refusal "$expected" "$ms" goal classify-sweep --root "$clone" --draft "$classification_draft" \
@@ -1478,6 +1478,7 @@ run_forgiving_refusal_remedy() { # label, goal id, twin id, long-form command...
 		shift
 	done
 	[[ $# -gt 0 ]] || { echo "$label did not separate its long-form and refused commands" >&2; exit 1; }
+	[[ ${#long_form[@]} -gt 0 ]] || { echo "$label did not name a long-form twin command" >&2; exit 1; }
 	shift
 	set +e
 	"$@" >"$output_file" 2>"$error_file"
@@ -1491,6 +1492,8 @@ run_forgiving_refusal_remedy() { # label, goal id, twin id, long-form command...
 	eval "$remedy" >/dev/null \
 		|| { echo "$label printed a command that did not complete" >&2; cat "$error_file" >&2; exit 1; }
 	read_forgiving_goal "$goal_id" "$tmp/$goal_id-remedy.md"
+	# The guard above makes the empty case unreachable. The + idiom stays only
+	# because oldest-bash-gate.sh is flow-insensitive and flags the plain form.
 	${long_form[@]+"${long_form[@]}"} >/dev/null \
 		|| { echo "$label's long-form twin command did not complete" >&2; exit 1; }
 	read_forgiving_goal "$twin_id" "$tmp/$twin_id-long-form.md"

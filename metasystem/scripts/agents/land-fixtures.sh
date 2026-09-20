@@ -1465,6 +1465,7 @@ make_brain_source_leg() { # name
 # Goals
 
 ## Current goal: ship-widget — Ship the widget
+- Risk: severity=3 novelty=1 exposure=1 accumulation=1 basis="severity 3 holds the goal at tier 3, which is the landing path this fixture exercises; novelty, exposure and accumulation are 1 because the fixture runs in an isolated throwaway checkout that nothing else reads."
 - Origin: main
 - Next step: Let a node finish it.
 LEDGER

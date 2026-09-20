@@ -1437,6 +1437,7 @@ cat >"$budget_dispatch_repo/plans/goals.md" <<'BUDGET_LEDGER'
 # Goals
 
 ## Queued goal: structured-budget — Exercise structured dispatch admission
+- Risk: severity=3 novelty=1 exposure=1 accumulation=1 basis="severity 3 holds the goal at tier 3, which is the admission path this fixture exercises; novelty, exposure and accumulation are 1 because the fixture runs in an isolated throwaway checkout that nothing else reads."
 - Origin: main
 - Next step: Dispatch while the complete tuple remains within its limits.
 BUDGET_LEDGER
