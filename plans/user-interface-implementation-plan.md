@@ -47,6 +47,8 @@ Other states: `blocked` (with the reason and what unblocks it) and `dropped` (wi
 | D15 | Fonts and every other embedded asset are open source. The frontend adds the build-time tools that make sense for the chosen look and for keyboard operation; the proposed set is Tailwind, Radix primitives, a resizable-panels library, and an open icon set. | 2026-09-21 |
 | D16 | Hold for the Astra review: no implementation and no further design work before it is in. It came in on 2026-09-21 and was applied on the human's instruction; see D17. Building still needs the human's explicit go under D13. When that comes, the started `g1-s1` work is continued by Claude on Opus under D12; finishing it with Codex was allowed only if Opus could not continue it, which does not arise, because the build is an ordinary commit on a branch. | 2026-09-21 |
 | D17 | Apply everything the planner agrees with in the [Astra design review](user-interface-design-critique-astra.md), list what it does not agree with, and always give the reason. Done: all eight findings and both alternatives were accepted after each code claim was re-read in source; the [dispositions](user-interface-design-critique-r2.md#dispositions-after-the-astra-review) give the reasons. This settles S1 (the brain is its own process at the fleet's one brain home; the interface is a window onto it) and S2 (a verified session has full human standing; standing is separate from evidence source). | 2026-09-21 |
+| D18 | Nothing coordinates the fleet's seats, and nothing should: the record does. The brain is a joining of the human brain and the agent, a sitting. The seat is always declared; its occupant exists only while a human sits, started by that human's explicit act from the interface or a terminal. No brain acts unattended, so gate 3 needs no wake-up source and no unattended budget model. | 2026-09-21 |
+| D19 | Many humans may take part, each using the interface of the seat they are connected to. "Brain" names the human-facing kind of seat, not a single instance: one per participating human, on that human's host, which is the scope `brain.Declare` already enforces. This revises the S1 resolution under D17 and the disposition of Astra's A5: fleet-wide uniqueness of the brain is no longer a contract to add. The planner's earlier case against several brains assumed one human; what stays singular is the record and the authority rules. Deferred: a fleet-wide registry of humans, and which human may decide what. | 2026-09-21 |
 
 ## Implementation constraints that follow from D1
 
@@ -65,6 +67,22 @@ These bind every slice design. Items marked proposed are Claude's defaults and o
 - Placement, from D8. Go packages under `metasystem/internal/ui/`, the React source in its own directory under `metasystem/` and fenced off from Go tooling, and the built bundle inside the Go package that embeds it. Runtime state follows the engine's existing convention for its own processes, `artifacts/agents/ui/` in the checkout, which is ignored by Git; it holds no source.
 - Process independence, from D9. The server is a detached process in its own session. It is not an engine run, job, or supervised component, it is in none of the families the top-level `stop` ends, and it does not consult the engine's stop fence. Replacing `bin/metasystem` by a rebuild leaves a running server on the build it started with, so `ui status` reports when the running server is older than the executable on disk.
 - `metasystem ui start` is independent of `metasystem up`. It starts no engine, declares no brain, and claims no goal. `metasystem ui stop` stops only the interface server; the top-level `stop` remains the engine's. A `ui status` is expected alongside them.
+
+## Vocabulary
+
+One set of words for the interface, the plans, and conversation. The interface never shows the engine's word `MAIN`.
+
+| Word | Meaning |
+| --- | --- |
+| Node | A machine. One node can host several seats |
+| Seat | A durable position on a node: a checkout that holds one line of work. It persists when nobody occupies it |
+| Occupant, or the seat's session | The live agent session in a seat, replaceable without changing the seat, its claim, or its history. The engine calls it `MAIN` and allows one per checkout through the lease. "The seat takes the goal" is fine in conversation; the interface says "the seat's session" only where the difference matters, such as a revival, a handoff, or an empty seat |
+| Delivery seat | A seat whose occupant claims an approved goal and gets it done by dispatching delegates. Headless |
+| Delegate | A rostered worker the occupant dispatches: implementer, critics, verifier |
+| Brain | The human-facing kind of seat. It shapes the queue, never dispatches, and is fenced from claiming and landing. A fleet has one per participating human |
+| Sitting | The brain's occupant: a human and an agent working together, present only while the human sits |
+| Steward | The machine-local supervisor that keeps a seat's session alive. It decides nothing about the goal |
+| The record | The shared, git-synced ledger, rulings, and channel inbox. It is what coordinates seats and humans; nothing else does |
 
 ## Staying clear of the other agent
 
@@ -89,7 +107,6 @@ From `internal/testenv`, `internal/parallelratchet`, and `docs/architecture.md`.
 
 | ID | Decision | Blocks | Recommendation |
 | --- | --- | --- | --- |
-| D18 | Must a brain also be alive and act on fleet events with nobody present? The master, Astra, and the planner all assume an explicitly started occupant. | Gate 3 slice designs | Assume an explicitly started occupant, the simple case. Unattended turns would need a wake-up source and a budget model of their own, and can be added later without changing the seat or the process split. |
 | D4 | Sign-in system. | Gate 3 | Not yet investigated. |
 | D5 | First ACP provider and its demonstrated isolation envelope. | Gate 3 | Not yet investigated. |
 | D6 | Rendering Markdown documents (goal intent, designs, rulings) needs either a renderer dependency or a small renderer of our own. | `g1-s11` | Show source text in gate 1 and decide when the Project editors are designed at gate 5. |
@@ -171,7 +188,7 @@ One row each until the gate before it is under way. The investigations named her
 
 | Gate | Coarse content | Must precede slicing |
 | --- | --- | --- |
-| 3. Protected human and brain access | In order: the brain process, independently operable at the fleet's one canonical brain home, with the interactive ACP host, the seven MCP tools, the sitting store holding working material until gate 5, budget enforcement, host and provider isolation, and occupancy proven by actually holding the lease; the fleet-wide one-seat contract that terminal and hosted startup both validate; then, in the interface, sign-in and session lifecycle, human and agent request separation, and the Brain dock with context capture, connected to the brain process | D4, D5, D18 |
+| 3. Protected human and brain access | In order: the brain process, independently operable at a human-facing seat and started by the human's explicit act, with the interactive ACP host, the seven MCP tools, the sitting store holding working material until gate 5, budget enforcement, host and provider isolation, and occupancy proven by actually holding the lease; then, in the interface, sign-in and session lifecycle, human and agent request separation, and the Brain dock with context capture, connected to the brain process | D4, D5 |
 | 4. First complete edit | Queued-goal edit through the brain and by hand; result cards; `present`; interrupted outcomes; basis conflicts | Gates 2 and 3 evidenced |
 | 5. Project and planning | Working-material metadata; `DefinitionRefs` and migration; board operations (M2); guided approved-definition revision; split editor; slice-plan owner and revision | Slice-plan owner investigation; document-location investigation |
 | 6. Fleet and evidence | Durable seat inventory; remote observations; `records/fleet-control/` requests and acknowledgments; retained artifact retrieval; goal-to-attempt joins; Application (M1) | Seat inventory, fleet request owner, and evidence retention investigations |
