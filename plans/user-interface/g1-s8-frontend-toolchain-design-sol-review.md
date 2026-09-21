@@ -122,3 +122,54 @@ As written, however, the gate still permits `info` advisories. After G1 is corre
 ## 5. Not checked
 
 I did not run npm, install the dependency tree, generate or inspect the eventual lockfile, run an audit, execute repository scripts or the MetaSystem binary, or contact the interface server. Therefore I could not verify the current advisory result, every transitive package’s lifecycle scripts, the actual one-instance `get-nonce` layout, native optional-package loading on each platform, generated notices, bundle reproducibility, or live CSP behavior.
+
+---
+
+# Round 3, 2026-09-21
+
+On revision 3 at commit `14a29e347`. Two material findings. G2, G3 and G4 confirmed corrected; G1 not, because the gate can be turned off by ambient configuration. The planner verified H2 in source: `scripts/agents/path-class-fixtures.sh` greps the behaviour roots of `scripts/agents/path-classes.txt`, which include `install:internal/`, and exits 1 on a match.
+
+This is the second sweep of the scripts to claim completeness and be wrong. The round-4 brief therefore stops relying on a grep to prove the exclusion complete and adds an empirical guard instead.
+
+## 1. Verdict build after the listed changes another round needed because G1 remains bypassab...
+[codex] Turn completion inferred after the main thread finished and subagent work drained.
+## 1. Verdict
+
+build after the listed changes  
+another round needed because G1 remains bypassable and the scripts sweep missed a verdict-bearing traversal.
+
+## 2. Status of G1 to G4
+
+G1: NOT corrected — the JSON fields are correct and an `info` advisory is refused; `total` and object-key checks are redundant for current npm output but safely fail closed. However, ambient `offline=true` produces a clean zero-vulnerability report without an audit, while `--include=dev` does not override ambient omission of optional or peer dependencies (`plans/user-interface/g1-s8-frontend-toolchain-design.md:73`, `:75`, `:205`).
+
+G2: corrected — verification names the Git-fed pipeline or its owning gate and explicitly forbids `gofmt -l internal cmd` (`plans/user-interface/g1-s8-frontend-toolchain-design.md:208`).
+
+G3: corrected — reasoning from documented [`find` precedence](https://www.gnu.org/software/findutils/manual/html_node/find_html/Combining-Primaries-With-Operators.html), the expression groups as `(directory && node_modules && prune) || (file && name && !test && exec)`; `-exec` belongs only to the file branch. Without the prune, both planted files match and the one-line expectation fails. The script is in the slice and must-not-touch lists (`plans/user-interface/g1-s8-frontend-toolchain-design.md:45`, `:51`, `:187`), and its change selects `section/brain-fixtures` without a `testing.json` edit (`metasystem/testing.json:17`, `:102`).
+
+G4: corrected — by [Bash pipeline and conditional semantics](https://www.gnu.org/software/bash/manual/bash.html), corroborated by read-only probes, a false `[[ -f ]]` with no `else` leaves the `if` and loop successful; empty input runs no `gofmt`; deleted working-tree entries are skipped; NUL-delimited spaces and non-ASCII names survive; unformatted output still reaches the refusal at `metasystem/scripts/agents/go-gate.sh:528`; and `pipefail` propagates a failing `git ls-files` into `gofmt_rc` (`plans/user-interface/g1-s8-frontend-toolchain-design.md:58`, `:63`).
+
+## 3. Findings
+
+H1; MATERIAL; G1 / Audit; ambient npm configuration can turn the mandatory audit into no audit or a partial audit. The command passes npm’s flattened configuration into Arborist and overrides only `audit:true` ([npm audit command](https://github.com/npm/cli/blob/v11.19.1/lib/commands/audit.js#L57-L95)); Arborist returns no report when `offline===true`, leaves its vulnerability map empty, and serializes that as `total: 0` plus `{}` ([AuditReport JSON and offline handling](https://github.com/npm/cli/blob/v11.19.1/workspaces/arborist/lib/audit-report.js#L25-L99), [audit selection](https://github.com/npm/cli/blob/v11.19.1/workspaces/arborist/lib/audit-report.js#L294-L341)). Inference from those sources: `NPM_CONFIG_OFFLINE=true`, `--offline`, or user/global `offline=true` satisfies all four design checks without contacting a registry; npm documents those configuration sources and offline mode ([npm configuration](https://docs.npmjs.com/cli/v11/using-npm/config/)). Separately, `--include=dev` removes only `dev` from the effective omit set; configured `omit=optional` or `omit=peer` survives and Arborist excludes those nodes ([omit construction](https://github.com/npm/cli/blob/v11.19.1/workspaces/config/lib/definitions/definitions.js#L21-L52), [include definition](https://github.com/npm/cli/blob/v11.19.1/workspaces/config/lib/definitions/definitions.js#L967-L980)). What would be built wrong: a frontend bundle could pass after no registry audit, or after auditing less than the intended dependency tree, contradicting “no bypass of any kind” (`plans/user-interface/g1-s8-frontend-toolchain-design.md:75`, `:205`). Direction: force online mode and explicitly neutralize all relevant omit types at the audit invocation, with fixtures proving ambient offline and omit configuration cannot make the gate green.
+
+H2; MATERIAL; Exclusion slice / scripts sweep; `path-class-fixtures.sh` is another verdict-bearing traversal of `internal/`, so the claim that `brain-fixtures.sh` is the only script doing this is false. `TestDeletedListsHaveNoReader` derives behavior roots from the manifest and recursively greps them, exiting 1 on a match (`metasystem/scripts/agents/path-class-fixtures.sh:87`, `:134`); those roots include `cmd/` and `internal/` (`metasystem/scripts/agents/path-classes.txt:15`, `:18`), and the test is invoked unconditionally (`metasystem/scripts/agents/path-class-fixtures.sh:368`, `:374`). It is a real validation section (`metasystem/scripts/validate-metasystem.sh:1185`, `:1191`) and is selected for changes to that script (`metasystem/testing.json:13`, `:108`). A text file under `_app/node_modules` containing one of its three forbidden tokens changes the verdict. What would be built wrong: the exclusion slice would still leave installed dependency content able to refuse validation, contradicting the stated invisibility to every verdict (`plans/user-interface/g1-s8-frontend-toolchain-design.md:39`, `:45`, `:53`). Direction: add `path-class-fixtures.sh` to the exclusion slice and exclude `node_modules` from this recursive grep with a failing-without-the-exclusion fixture; no `testing.json` edit is needed.
+
+H3; NOT MATERIAL; G4 / xargs status; “123 under POSIX” is incorrect. POSIX specifies only a nonzero value in 1–125 when an invoked utility fails ([POSIX `xargs`](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/xargs.html)); GNU and several BSD implementations choose 123, while macOS documents 1 for other errors ([GNU `xargs`](https://man7.org/linux/man-pages/man1/xargs.1.html), [macOS `xargs`](https://man.freebsd.org/cgi/man.cgi?manpath=macOS+10.15.0&query=xargs&sektion=1)). What would be built wrong: nothing, because the gate distinguishes only zero from nonzero (`metasystem/scripts/agents/go-gate.sh:526`, `:529`). Direction: state portable “nonzero”; describe 123 only as an implementation-specific value.
+
+H4; NOT MATERIAL; Known traversals; the four individually recorded traversals are correctly characterized, notwithstanding H2’s incomplete sweep. Instruction inventory adds only `Report` entries while the command’s verdict depends on `Violations` (`metasystem/internal/audit/metasystem.go:129`, `:134`; `metasystem/cmd/metasystem/audit.go:92`, `:101`). Working-unit discovery walks broadly but parses only Git-enumerated files (`metasystem/internal/landing/batch/unitgate.go:102`, `:115`; `:300`, `:354`). `testselect` enters underscore directories (`metasystem/internal/testselect/select.go:158`, `:204`), while repository-wide source search found no production caller and only its test literal (`metasystem/internal/testselect/select_test.go:268`). `fixture-budget.sh` finds the first newer Go file, prints a warning, and returns successfully (`metasystem/scripts/agents/fixture-budget.sh:182`, `:197`). What would be built wrong: nothing from those four traversals. Direction: none beyond H2.
+
+## 4. The author's unverified claims
+
+`xargs` exit 123 — corrected: GNU and several BSDs use 123, but POSIX guarantees only 1–125 and macOS documents 1.
+
+`--include=dev` — corrected: it prevents `dev` from being omitted, including under `NODE_ENV=production`; it does not clear configured `optional` or `peer` omissions.
+
+npm's error stream — corrected: the normal JSON report and buffered JSON endpoint-error object go to stdout, while warning/log text goes to stderr ([audit error handling](https://github.com/npm/cli/blob/v11.19.1/lib/utils/audit-error.js#L17-L34), [display routing](https://github.com/npm/cli/blob/v11.19.1/lib/utils/display.js#L268-L305)); “prints whatever npm wrote” therefore requires preserving both streams.
+
+npm's default `audit-level` — corrected: the configuration default is `null`, but `npm-audit-report` converts that to an effective `low` threshold ([npm documentation](https://docs.npmjs.com/cli/v11/commands/npm-audit/), [reporter default](https://github.com/npm/npm-audit-report/blob/v7.0.0/lib/index.js#L18-L20)); an `info` advisory exits 0 but is caught by the proposed JSON-content checks.
+
+scripts sweep — corrected: false; `path-class-fixtures.sh` is the additional verdict-bearing recursive traversal described in H2.
+
+## 5. Not checked
+
+No npm or npx command, install, audit execution, repository script, MetaSystem binary, or server was run. The eventual dependency tree, live advisory result, generated lockfile and bundle remain unchecked. `plans/user-interface/g1-s9-application-shell-design.md` and `metasystem/metasystem.conf.local` were not read.
