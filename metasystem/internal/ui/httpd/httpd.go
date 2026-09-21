@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
 
 type Info struct {
@@ -22,6 +23,11 @@ type Info struct {
 	EngineBuild      string
 	ExecutableDigest string
 	BundleDigest     string
+	// Describe answers the workspace resource. It is called once per request
+	// rather than read at construction, so an installation whose adoption line
+	// is filled in while the server runs is read without a restart. A nil
+	// Describe is an engine that cannot answer, which the route says.
+	Describe func() (workspace.Workspace, error)
 }
 
 // absentBundleStatement is what a page request gets from an engine built
@@ -35,6 +41,11 @@ const absentBundleStatement = "MetaSystem interface: this executable was built w
 // 404, so a mistyped asset or endpoint says so instead of returning the page
 // with status 200 and leaving the caller to parse HTML as JSON.
 var reservedPrefixes = []string{"/-", "/api", "/assets"}
+
+// workspacePath is the one API route this build answers, matched exactly: what
+// lies beneath it belongs to no resource, so it is a 404 like any other
+// unserved path under a reserved prefix.
+const workspacePath = "/api/workspace"
 
 // The policy allows nothing by default and no source outside this origin: no
 // unsafe-inline, no data:, no host source, no report-uri, no Trusted Types. A
@@ -116,6 +127,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.health(w)
 		return
 	}
+	if r.URL.Path == workspacePath {
+		h.workspace(w)
+		return
+	}
 	h.route(w, r)
 }
 
@@ -188,6 +203,30 @@ func (h *handler) servePage(w http.ResponseWriter) {
 		}
 		_, _ = w.Write(part)
 	}
+}
+
+// workspace answers what this workspace is. A failure is a 500 carrying the
+// reason, not an empty body: the page renders its sections either way and says
+// that the workspace is unknown, and the reason is what a human acts on.
+func (h *handler) workspace(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	if h.info.Describe == nil {
+		writeWorkspaceFailure(w, "this engine was built without a workspace description")
+		return
+	}
+	described, err := h.info.Describe()
+	if err != nil {
+		writeWorkspaceFailure(w, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(described)
+}
+
+func writeWorkspaceFailure(w http.ResponseWriter, reason string) {
+	w.WriteHeader(http.StatusInternalServerError)
+	_ = json.NewEncoder(w).Encode(struct {
+		Error string `json:"error"`
+	}{Error: reason})
 }
 
 func (h *handler) health(w http.ResponseWriter) {

@@ -145,6 +145,7 @@ One line per package; the package doc is the full story.
 | `ui/lifecycle` | the checkout's independent browser server: launch, lock, identity record, status, stop, and restart |
 | `ui/httpd` | loopback browser request checks, response headers, and interface routes |
 | `ui/web` | the embedded interface bundle, its manifest and staleness digest, and the content types and `Accept` rule the server needs |
+| `ui/workspace` | what the workspace in front of a human is: its subject, its self-hosted or adopted mode, and the adoption its installation records |
 | `up` | the session-start arming transaction and its typed aggregate outcome |
 | `usage` | typed usage extraction, the single owner |
 | `validate` | whole-artifact validators and rewrites (incl. conf tailoring) |

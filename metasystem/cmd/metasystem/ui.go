@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
 
 func runUIStart(args []string) int   { return runUI("start", args) }
@@ -121,11 +122,23 @@ func runUI(verb string, args []string) int {
 	case "serve":
 		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer cancel()
+		subject, err := config.UISubject(filepath.Join(roots.Installation, "metasystem.conf"))
+		if err != nil {
+			return refuse(err.Error())
+		}
 		bundleDigest, bundle := interfaceBundle()
-		err := lifecycle.Serve(ctx, lifecycle.Options{
+		err = lifecycle.Serve(ctx, lifecycle.Options{
 			Roots: roots, Listen: listen, EngineBuild: supervise.BuildStamp, Prober: prober,
 			NewHandler: func(bound net.Addr, rec lifecycle.Record) http.Handler {
-				return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest, BundleDigest: bundleDigest}, bound, bundle)
+				return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest, BundleDigest: bundleDigest,
+					Describe: func() (workspace.Workspace, error) {
+						return workspace.Describe(
+							workspace.Roots{Checkout: roots.Checkout, Installation: roots.Installation, StateRoot: roots.StateRoot},
+							workspace.Record{EngineBuild: rec.EngineBuild, StartedAt: rec.StartedAt, ExecutableDigest: rec.ExecutableDigest},
+							subject,
+						)
+					},
+				}, bound, bundle)
 			},
 			Ready: func(address string) {
 				if ready != nil {

@@ -69,6 +69,7 @@ func TestBundleRoutes(t *testing.T) {
 		{name: "asset directory", path: "/assets", accept: "text/html", wantStatus: http.StatusNotFound, wantBody: "404 page not found\n"},
 		{name: "asset outside the content-type table", path: "/assets/notes.bin", accept: "text/html", wantStatus: http.StatusNotFound, wantBody: "404 page not found\n"},
 		{name: "api path", path: "/api/goals", accept: "text/html", wantStatus: http.StatusNotFound, wantBody: "404 page not found\n"},
+		{name: "beneath the workspace route", path: "/api/workspace/goals", accept: "text/html", wantStatus: http.StatusNotFound, wantBody: "404 page not found\n"},
 		{name: "api root", path: "/api", accept: "text/html", wantStatus: http.StatusNotFound, wantBody: "404 page not found\n"},
 		{name: "server prefix", path: "/-", accept: "text/html", wantStatus: http.StatusNotFound, wantBody: "404 page not found\n"},
 		{name: "server prefix beneath", path: "/-/elsewhere", accept: "text/html", wantStatus: http.StatusNotFound, wantBody: "404 page not found\n"},

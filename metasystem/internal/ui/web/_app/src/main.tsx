@@ -6,6 +6,8 @@ import { App } from "./App";
 import { readNonce } from "./nonce";
 import "./fonts.css";
 import "./index.css";
+import "./tokens.css";
+import "./shell/shell.css";
 
 // Before the first render: react-style-singleton, which the dialog's scroll
 // lock mounts, reads this when it appends its <style>, and the policy allows an
