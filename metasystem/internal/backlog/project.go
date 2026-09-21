@@ -260,37 +260,48 @@ func rowOf(f *goal.GoalFile, where string, tree *goal.TreeGoals, horizon goal.Ap
 	if abandoned := f.Abandoned; abandoned != nil {
 		row.Abandoned = &Abandoned{By: abandoned.By, At: abandoned.At, Because: abandoned.Because}
 	}
-	if last, ok := lastVerbOn(f.History); ok {
-		row.LastChangeAt, row.LastVerb = last.At, last.Verb
+	if last, verbIsThisGoal := lastVerbOn(f.History); last.At != "" {
+		row.LastChangeAt = last.At
+		if verbIsThisGoal {
+			row.LastVerb = last.Verb
+		}
 	}
 	return row
 }
 
-// rankFanOut is the reason the engine writes on a history line that records a
-// rank change rather than something done to the goal. All three writers use
-// it: two as "priority-order from=… to=…" (order.go:234, abandon.go:417) and
-// one as "priority-order subject=… from=…" (order.go:146).
+// rankFanOut is the reason all three of the engine's priority writers put on a
+// line whose subject is a rank: "priority-order subject=… from=… to=…" when a
+// re-rank fans out (order.go:146), and "priority-order from=… to=…" when a
+// compaction is merged into an event (order.go:234, abandon.go:417).
 const rankFanOut = "priority-order"
 
-// lastVerbOn is the last line that records something done to THIS goal.
+// lastVerbOn reports the goal's last history line, and whether that line's verb
+// can be trusted to describe this goal.
 //
-// A priority compaction writes its own verb into the history of every goal it
-// re-ranks, so concluding one goal appends a `done` line to dozens of others.
-// Taking the last line whatever it is made 47 of this ledger's 155 live goals
-// report "last done" while queued or parked — a row telling a human their work
-// had finished when it had not started. A rank change is a real event and the
-// record keeps it; it is simply not this goal's latest verb, and the detail
-// page shows both classes separately.
+// It cannot always. A priority compaction writes the operation's own verb into
+// the history of every goal it re-ranks, so concluding one goal appends a
+// `done` line to dozens of others; taking the verb at face value made 47 of
+// this ledger's 155 live goals report "last done" while queued or parked. But
+// the obvious repair — skip back past every priority-order line — is also
+// wrong, because mergePriorityEvent folds the rank reason INTO the subject's
+// own event when the opid matches (order.go:226 to :239). A goal reopened at a
+// new rank gets one line, verb `reopen`, reason `priority-order from=… to=…`.
+// Skipping it would walk back to the older `done` and report a just-reopened
+// goal as finished: the same lie, inverted.
 //
-// A goal whose every line is a fan-out has no verb of its own to report, and
-// the row says nothing rather than borrowing another goal's.
-func lastVerbOn(history []goal.HistoryLine) (goal.HistoryLine, bool) {
-	for i := len(history) - 1; i >= 0; i-- {
-		if !strings.HasPrefix(history[i].Reason, rankFanOut) {
-			return history[i], true
-		}
+// The two cases are indistinguishable from the record. A bystander's line and
+// a merged subject's line carry the same verb shape, the same targets and the
+// same reason grammar; nothing stored says which goal the operation was about.
+// So the row does not guess. When the reason is a rank clause the line's date
+// is still exact — something did happen to this goal then — and only the verb
+// is withheld. Goal detail shows the whole History, where a human can see both
+// the verb and the reason and decide for themselves.
+func lastVerbOn(history []goal.HistoryLine) (line goal.HistoryLine, verbIsThisGoal bool) {
+	if len(history) == 0 {
+		return goal.HistoryLine{}, false
 	}
-	return goal.HistoryLine{}, false
+	last := history[len(history)-1]
+	return last, !strings.HasPrefix(last.Reason, rankFanOut)
 }
 
 // openBlockers lists the dependencies that are not concluded, and names the

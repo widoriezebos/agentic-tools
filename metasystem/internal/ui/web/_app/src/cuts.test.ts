@@ -116,9 +116,45 @@ function reachedThroughADot(source: string, start: number): boolean {
   return back >= 0 && source[back] === "." && source[back - 1] !== ".";
 }
 
-/** True when the name ending here is immediately called. */
-function isCalled(source: string, end: number): boolean {
-  return nextCharacter(source, end) === "(";
+/**
+ * True when a DOTTED member is used rather than read as inert data.
+ *
+ * This fails closed: it names the characters after which nothing can invoke the
+ * value, and treats everything else as use. Sol's F4 found four evasions
+ * against a rule that asked only "is the next character a `(`" -- `?.()`,
+ * `.bind(x)`, a comment between the name and its parentheses, and a
+ * destructured binding. The first three are closed here; the fourth is closed
+ * in isMemberName.
+ *
+ * A dot is the one ambiguous follower: `ledger.fetch.outcome` walks further
+ * into data, while `window.fetch.bind(w)` reaches a way to call the value. So
+ * the name after the dot decides.
+ */
+const INERT_AFTER_A_MEMBER = [",", ";", ")", "}", "]"];
+const INVOKERS = ["bind", "call", "apply"];
+
+function isUsed(source: string, end: number): boolean {
+  const next = nextCharacter(source, end);
+  if (INERT_AFTER_A_MEMBER.includes(next)) {
+    return false;
+  }
+  if (next === "." || next === "?") {
+    const after = source.indexOf(next, end) + (next === "?" ? 2 : 1);
+    if (nextCharacter(source, after) === "(") {
+      return true;
+    }
+    let index = after;
+    while (index < source.length && /\s/.test(source[index])) {
+      index += 1;
+    }
+    let word = "";
+    while (index < source.length && /[A-Za-z_$0-9]/.test(source[index])) {
+      word += source[index];
+      index += 1;
+    }
+    return INVOKERS.includes(word);
+  }
+  return true;
 }
 
 /**
@@ -126,6 +162,12 @@ function isCalled(source: string, end: number): boolean {
  * member of an object or a type and is followed by that member's value. The
  * middle of a conditional (`ready ? fetch : none`) is followed by a colon too,
  * and is a reference, so what comes before the name decides.
+ *
+ * A destructuring pattern looks identical to an object literal from the name
+ * outwards -- `const { fetch: send } = window` binds the global under a new
+ * name, and Sol's F4 showed it escaping as a member. So the brace that opens
+ * the group is found and what precedes IT decides: a binder there makes this a
+ * pattern, which is a reference, not a declaration.
  */
 function isMemberName(source: string, start: number, end: number): boolean {
   if (nextCharacter(source, end) !== ":") {
@@ -135,7 +177,54 @@ function isMemberName(source: string, start: number, end: number): boolean {
   while (back >= 0 && /\s/.test(source[back])) {
     back -= 1;
   }
-  return back < 0 || source[back] === "{" || source[back] === "," || source[back] === ";";
+  if (back < 0) {
+    return true;
+  }
+  if (source[back] === "{") {
+    return !opensABindingPattern(source, back);
+  }
+  if (source[back] === "," || source[back] === ";") {
+    const brace = enclosingBrace(source, back);
+    return brace < 0 || !opensABindingPattern(source, brace);
+  }
+  return false;
+}
+
+/** The unbalanced `{` that opens the group this offset sits in, or -1. */
+function enclosingBrace(source: string, from: number): number {
+  let depth = 0;
+  for (let index = from; index >= 0; index -= 1) {
+    const character = source[index];
+    if (character === "}") {
+      depth += 1;
+    } else if (character === "{") {
+      if (depth === 0) {
+        return index;
+      }
+      depth -= 1;
+    }
+  }
+  return -1;
+}
+
+/** True when the word before this `{` makes it a binding pattern. */
+function opensABindingPattern(source: string, brace: number): boolean {
+  let back = brace - 1;
+  while (back >= 0 && /\s/.test(source[back])) {
+    back -= 1;
+  }
+  if (back < 0) {
+    return false;
+  }
+  // A parameter list destructures too: function f({ fetch }) {}.
+  if (source[back] === "(" || source[back] === ",") {
+    return true;
+  }
+  const end = back + 1;
+  while (back >= 0 && /[A-Za-z_$]/.test(source[back])) {
+    back -= 1;
+  }
+  return ["const", "let", "var"].includes(source.slice(back + 1, end));
 }
 
 function nextCharacter(source: string, from: number): string {
@@ -308,8 +397,8 @@ export function scan(source: string): Scanned {
         name += source[index];
         index += 1;
       }
-      const member = dotted || isMemberName(source, start, index);
-      if (member && !isCalled(source, index)) {
+      const declared = isMemberName(source, start, index);
+      if (declared || (dotted && !isUsed(source, index))) {
         fields.set(name, (fields.get(name) ?? 0) + 1);
       } else {
         identifiers.set(name, (identifiers.get(name) ?? 0) + 1);

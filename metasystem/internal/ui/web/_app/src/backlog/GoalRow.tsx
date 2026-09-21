@@ -52,10 +52,28 @@ export function GoalRow({ row }: { row: Row }) {
       )}
       <p className="ms-goal-history">
         opened {dateAndTime(row.openedAt)}
-        {row.lastVerb !== "" && ` · last ${row.lastVerb} ${dateAndTime(row.lastChangeAt)}`}
+        {lastChange(row)}
       </p>
     </article>
   );
+}
+
+/**
+ * When the record last changed, and what it was, when the record says what it
+ * was. A priority compaction writes the operation's verb into every goal it
+ * re-ranked, and the engine also folds a compaction into a goal's own event,
+ * so a line whose reason is a rank clause may or may not describe this goal.
+ * The server withholds the verb in that case rather than guess; the date is
+ * exact either way, so the row says when without saying what.
+ */
+function lastChange(row: Row): string {
+  if (row.lastChangeAt === "") {
+    return "";
+  }
+  if (row.lastVerb === "") {
+    return ` · last changed ${dateAndTime(row.lastChangeAt)}`;
+  }
+  return ` · last ${row.lastVerb} ${dateAndTime(row.lastChangeAt)}`;
 }
 
 function rankChip(row: Row) {

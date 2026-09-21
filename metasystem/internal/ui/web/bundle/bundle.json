@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:ddb3214b8708900ec0e23f36523f336914909529b8a275cfe4bc17fc260fcb0e",
+  "sourceDigest": "sha256:b4f933dd9fd57ac57ac35cece955ff1d7b60b63b8329c37e452d91dd9e9456d0",
   "source": [
     {
       "path": ".npmrc",
@@ -68,7 +68,7 @@
     },
     {
       "path": "src/backlog/GoalRow.tsx",
-      "sha256": "18a77323b36393fcb2e0f369ad0a49c84c8aeae87fdd17147a23c8497a5b5eb0"
+      "sha256": "c3e98be6f80222467d50e171b8e0489fd45a9db43393d5c41d1420e95328ed26"
     },
     {
       "path": "src/backlog/LaneGroup.tsx",
@@ -120,7 +120,7 @@
     },
     {
       "path": "src/cuts.test.ts",
-      "sha256": "b41dacf4fb7d479a88967e5d248827c0b34907ef823df9b0dcee8cfb1d005711"
+      "sha256": "271eac202bed6874100198f20c2a9dc4e00a400acd2ce1972e092b1b812a3191"
     },
     {
       "path": "src/fonts.css",
@@ -338,7 +338,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "60c2a8a7c1c5c638cf6c137b07d2e71e46038628001af55228bd4839203220fc"
+      "sha256": "4ede71595046dc23f32d31c54f20974c53efb4a0bf94278ea1caadcdf530f65b"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
