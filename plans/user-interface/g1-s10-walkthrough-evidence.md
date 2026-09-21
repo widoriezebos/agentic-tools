@@ -80,14 +80,41 @@ normal text, against the 4.5:1 the design's table requires.
 Zero Content-Security-Policy violations and zero failed requests on every page visited, in
 both themes and at every width. No request left the origin.
 
-## Not established here
+## Every ledger state, rendered
 
-The rendered ledger statements. Five of the six ledger states and four of the five fetch
-outcomes have never been seen on a screen, because provoking them means deleting the
-accepted ref or flipping the sync configuration, which the design reserves for the human's
-word. `read`/`current` is the only pair observed live; the rest are covered by Go tests
-against faked observations, and the app has no DOM harness, so their React rendering is
-held by typecheck over exhaustive unions rather than by a rendering test.
+The gap this note first recorded is now closed, without touching the live ledger. The
+real published bundle was served from a throwaway static server on another port, with
+`/api/backlog` answering faked payloads, and each state was opened in Chromium. This
+exercises the real React, the real CSS and the real typed unions; only the payload is
+synthetic.
+
+All seven forms render, each naming what it observed and what the loop last did, with no
+console error and no unhandled rejection in any of them:
+
+| Form | What the pane says |
+| --- | --- |
+| `absent`, fetch `never` | names the ref, explains that `git clone` and `git fetch` never bring it, and counts the working tree's 155 and 430 as a working-tree fact |
+| `absent`, fetch `running` | the same, plus "Fetching since 00:51:49." |
+| `absent`, fetch `failed` | the same, plus git's own words and the retry time |
+| `no-ledger` | names the tip, says the engine never sets the ref to such a commit, and gives the one terminal step the design sanctions |
+| `broken` | names the unreadable ref and the last tick's words, and asks for repair |
+| `unreadable` | names the tip, says the engine refuses a tree whole, and lists every typed problem one per line |
+| `refused` | carries the engine's own sync-mode sentence and points at the two git config keys |
+
+No rendered statement contains "goal fetch", "does not fetch" or "none read", and the only
+terminal command anywhere is the `no-ledger` `git update-ref -d`, which is O7 and O20
+holding on a screen rather than in a grep.
+
+**One latent ambiguity found, not a defect today.** An empty `fetch.nextAt` renders as
+"The server is stopping, so no fetch is due." But the loop's state before `Run` starts is
+byte-identical to its state after `Run` returns: `outcome: never`, `nextAt` zero. The
+pre-start reading is unreachable over HTTP, because `lifecycle.Serve` calls `Ready` — which
+opens the gate — before it calls `server.Serve`, so no request is answered until the loop
+has been released. The wording is therefore correct today, and it is correct only because
+of that ordering. If the gate ever moved, the page would tell a starting server it was
+stopping. Worth a distinguishing flag if anyone touches the wiring.
+
+## Not established here
 
 Also not run: `scripts/audit.test.ts`, which wedges when several checkouts of this
 repository run it at once — its `npm audit` children sit at 0 % CPU indefinitely. It is
