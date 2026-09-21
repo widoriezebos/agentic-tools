@@ -1,6 +1,6 @@
 # User interface implementation plan
 
-Status: draft for human correction, 2026-09-21. Gate 1 is sliced against a source reading of the engine at commit `94181f05a`. Gate 2 is provisional and gates 3 to 7 are deliberately coarse.
+Status: **on hold for the Astra review (D16)**. Draft for human correction, 2026-09-21. Gate 1 is sliced against a source reading of the engine at commit `94181f05a`. Gate 2 is provisional and gates 3 to 7 are deliberately coarse.
 
 [user-interface-design.md](user-interface-design.md) (the master) owns what is built and why. This file owns how the work is divided, in what order, and what state each slice is in. It never restates or overrides the master. A slice design that finds the master wrong stops and raises an amendment under [Master amendments](#master-amendments); it does not settle the matter locally.
 
@@ -45,6 +45,7 @@ Other states: `blocked` (with the reason and what unblocks it) and `dropped` (wi
 | D13 | No implementation starts, and no builder is dispatched, without the human's explicit go for that step. A review the human names comes first. D11 covers design decisions, never starting work. | 2026-09-21 |
 | D14 | The interface's look and interaction take their inspiration from two modern web applications the human named: the ChatGPT Codex web app and claude.ai. | 2026-09-21 |
 | D15 | Fonts and every other embedded asset are open source. The frontend adds the build-time tools that make sense for the chosen look and for keyboard operation; the proposed set is Tailwind, Radix primitives, a resizable-panels library, and an open icon set. | 2026-09-21 |
+| D16 | Hold. No implementation and no further design work starts until the Astra review is in; that includes the `g1-s18` mockups and any work on the `ui/g1-s1` build. After the review, the started `g1-s1` work may be finished, continued by Claude on Opus under D12; finishing it with Codex is acceptable only if Opus cannot continue it, which does not arise, because the build is an ordinary commit on a branch. | 2026-09-21 |
 
 ## Implementation constraints that follow from D1
 
