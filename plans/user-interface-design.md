@@ -2,6 +2,8 @@
 
 Status: Interface structure, core interactions, and the shared-operation approach for conversation and visual controls are confirmed by the human. The round-one critique has been adjudicated and the structural backend requirements below added; those amendments have not had an independent second review. This document does not authorize implementation or execution. See [critique dispositions](user-interface-design-critique-dispositions.md) for every finding, decision, and reason.
 
+Human authority decision, 2026-09-21: successful sign-in grants human authority in this application. The server distinguishes signed-in human actions from agent actions; ordinary review and confirmation record what the human chose. This replaces the earlier browser-enrollment and per-action code proposal.
+
 ## Purpose
 
 Provide the primary human interface to the MetaSystem through a browser connected to a server component in the Go application.
@@ -107,7 +109,7 @@ Every user-visible object type has an agent-accessible semantic surface for its 
 
 The capability inventory records separately whether the brain may read, propose, or perform each action. Initially, an explicit request permits direct performance only for an owner-authorized, reversible draft or queued-goal edit whose preview changes no approval, claim, budget, priority, other goal, or governing definition of authorized work. The same actor must be permitted to reverse it. All other changes are proposal-first and show their consequences before the required actor acts. This restriction is enforced by the application, including across concurrent changes; a model's description of an edit as harmless is not sufficient.
 
-Agent changes carry the agent's identity and actual authority. A reserved human act requires the separate per-act proof described under [Human acts from the browser](#human-acts-from-the-browser). A cookie or conversational assent alone cannot supply it. Access to the UI does not extend the brain's dispatch, examination, acceptance, or release permissions.
+Agent changes carry the agent's identity and actual authority. A signed-in human can complete a reserved human act through its ordinary UI action, as described under [Human acts from the browser](#human-acts-from-the-browser). Conversational assent is not automatically submitted as an approval. Access to the UI does not extend the brain's dispatch, examination, acceptance, or release permissions.
 
 After a domain operation succeeds, the same application state update refreshes the board, detail view, and conversation's action result. Show whether an action is proposed, submitted, completed, refused, or still unresolved. The agent must not report an edit as applied solely because it prepared a patch or sent a request.
 
@@ -155,7 +157,7 @@ Any future dispatch authority requires an explicit scope and the same enforced b
 | Component | Responsibility |
 | --- | --- |
 | Browser workspace | Persistent Brain dock, shared selection context, result cards and normal artifact views, direct editing, and human decisions |
-| Go server command edge | Trusted request principals, configured clone and endpoints, browser connections, per-act authority, operation correlation, and record synchronization |
+| Go server command edge | Sign-in and trusted request principals, separation of human and agent requests, configured clone and endpoints, browser connections, operation correlation, and record synchronization |
 | Interactive ACP session host, new | Many-turn brain sittings, boot context, streaming, cancellation, bounded usage, resume, and provider capability enforcement; reuse suitable existing ACP transport and normalization code |
 | Application MCP endpoint, new | Bounded semantic tools, scoped brain credentials, checked calls to Go owners, and structured results shared with the browser |
 | Brain agent connected through ACP | Reasoning, explanation, authorized reads and changes, and proposals with references the frontend can display |
@@ -192,7 +194,7 @@ Today the CLI assembles caller classification and fresh human proof from OS ance
 
 | Input | Source and enforced meaning |
 | --- | --- |
-| Browser principal | Server-authenticated enrolled human identity; ordinary session authentication permits only the actions its verified authority supports. Human-reserved acts also require the bound per-act proof below |
+| Browser principal | Human identity established by the application's valid sign-in session; grants human authority for human-originated actions without separate browser enrollment or per-action authentication |
 | Brain principal | Server-issued credential bound to the announced MAIN session, lineage, live lease, project, and brain role; the owner verifies current occupancy and role fences |
 | Execution principal | The addressed node's actual steward or owning worker, with its own lease and operation permissions; the server does not impersonate that worker |
 | Endpoint, machine, clock, operation ID | Resolved or generated by trusted server configuration and the operation owner, never accepted from an arbitrary request body |
@@ -202,19 +204,26 @@ Record the real actor and authority grade in History. An agent request carrying 
 
 ### Human acts from the browser
 
-Required property: the brain or a delegate, using its full granted envelope, and a foreign browser page cannot produce an accepted human-reserved act. An authenticated browser cookie identifies a session; it does not prove deliberate human approval of a particular change.
+Successful sign-in establishes the user's identity and grants human authority for this application's human-facing operations. Account provisioning, first sign-in, sign-out, and account recovery belong to the selected sign-in system. No additional MetaSystem browser enrollment, terminal/channel pairing, authenticator enrollment, or per-action one-time code is required. This closes the special enrollment gap; implementing and configuring normal sign-in remains ordinary application work.
 
-Use the existing independently enrolled human/channel authority as the root for the first integration. Pair a browser session through a fresh challenge answered by the configured human account with a current unused one-time code. The challenge identifies the project, browser session, enrollment generation, and expiry. Replacing or recovering that enrollment requires the same independent authority; the browser and the agent cannot enroll themselves. An existing enrolled terminal is a compatible recovery root, but is not the only permitted root. Pairing is separate from approving work.
+The Go server's authentication boundary validates the session and supplies a trusted human principal to the authority owner. The domain owner still checks the requested operation, current state, and reviewed basis. Signing in makes human actions available; it does not itself approve goals, start execution, or manufacture successful examination. An approval remains an explicit choice of the exact work and budget shown in the form, with no additional authentication step while the session is valid.
 
-For each reserved browser act, the server prepares an expiring, single-use challenge bound to the principal, project, operation ID, exact arguments, reviewed basis/effects digest, subject, and budget where applicable. The human reviews it in the normal form and explicitly submits a fresh one-time code from their authenticator. The authority owner verifies the code, atomically binds its consumption to that challenge, checks replay across the authority's code-use scope, and issues a new browser-proof outcome accepted by the domain owner. A TOTP code alone does not bind an action: that binding, consumption record, expiry, and revalidation are new owner responsibilities. Codes and verifier secrets never enter conversation context or tool results.
+The server preserves the origin of each request through separate human-session and agent-credential paths. It does not trust a client-supplied actor label or a human name in an agent response:
 
-Extend the enumerated authority outcomes and history validation to record browser proof, authority/enrollment identity, challenge identity, and reviewed digest, without recording the code. A human proof is an internal verified value, not deserialized authority supplied by a client. The server's human handler can then reach the shared owner as HUMAN even in the declared brain checkout; the MCP path remains MAIN and cannot relay that proof. A journaled human name or expired challenge cannot authorize recovery of an unperformed act: show the unresolved result, recover any already-published outcome, and otherwise obtain fresh human proof before a new attempt.
+| Request origin | Authority and handling |
+| --- | --- |
+| Human submits an edit or confirms a decision | Use the signed-in human principal and the ordinary checked operation |
+| Agent invokes an operation | Use the scoped brain principal and its permissions, including when the result is routed through the UI |
+| Human explicitly accepts an agent proposal | Submit a human-authorized operation against the reviewed proposal/basis; retain the agent's authorship separately |
+| Agent requests result presentation | Resolve the permitted server-held result in the frontend; grant no mutation or human authority |
 
-The current channel code verifies configured human identity and TOTP, but its secret resolver accepts environment variables, `metasystem.conf.local`, and `metasystem.conf`. Those sources can be visible to a same-user agent. Before enabling browser human acts, protect or migrate the verifier and channel credentials, exclude their source files and environment from agent access, and protect enrollment state, browser credentials, and the challenge store. The enforced envelope below is a dependency of human authority, including for existing delegates. If that custody cannot be established on a host, reserved browser writes stay unavailable; copying today's code alone is insufficient.
+Automatically routing an agent response through a signed-in browser never turns it into a human action. Agent operations execute through the agent-authenticated server tool path; the UI renders their results. Agent-provided prose, scripts, or action descriptions cannot cause a mutation with the browser's human credentials. A reserved action appears as a proposal until the human explicitly uses its normal confirmation control. This requires no extra agent-to-UI authorization protocol.
 
-Bind only to loopback initially; validate Host and Origin, require anti-forgery protection on mutations, and use protected session cookies with no permissive cross-origin policy. Apply the same boundary to browser pairing, challenge submission, and the event stream. Authenticator codes are accepted only by the human path, never by MCP. Concurrent or repeated submits identify the same operation rather than minting a second approval.
+Extend the authority owner's trusted server entry and history validation to recognize an authenticated browser session as human authority, alongside the existing non-browser mechanisms. Record the actual user, authentication source, operation identity, reviewed basis, and proposal authorship where applicable, without recording session secrets. The server's human handler can reach the shared owner as HUMAN in the declared brain checkout; the MCP path remains MAIN. Internal verified principal data cannot be supplied by an arbitrary request body. This backend integration remains necessary because today's CLI establishes authority through process ancestry.
 
-For a project with no independently established authority, the first version remains read-only and shows the missing setup prerequisite. Browser-native first enrollment and recovery without any surviving enrolled root require a separately reviewed bootstrap flow before complete human-operation coverage can be claimed. This is an explicit onboarding gap, not a hidden instruction to type a verb or a self-authenticating form.
+Protect human session credentials, the browser profile, authentication state, and any login-provider secrets from the brain and delegates. Their allowed tools cannot sign in as the human, inspect those credentials, or operate human approval controls. Retain the enforced filesystem/tool/network boundaries below and normal browser protections: loopback binding initially, Host and Origin validation, anti-forgery protection on mutations, and protected cookies with no permissive cross-origin policy. Apply authentication to data reads and event streams as well as mutations. A forged actor field or cross-origin request cannot acquire human authority.
+
+Expired or revoked sessions cannot submit new human actions. Return the human to sign-in, preserve their draft, and revalidate its basis after sign-in. Already accepted operations retain their recorded actor and outcome; sign-out does not revoke approved work or stop the fleet. On interruption, recover the original operation outcome before attempting a mutation again. A journaled human name cannot supply a missing authenticated caller; if a new human submission is needed, use the current signed-in session and ordinary confirmation. Duplicate requests retain the same operation identity. None of this requires repeating authentication for every decision.
 
 ### Clone, publication, and freshness
 
@@ -254,7 +263,7 @@ Keep the tool catalogue bounded: `read`, `query`, `describeOperation`, `preview`
 
 Register this application MCP endpoint with the interactive ACP session under a session-scoped credential. The same server-held tool results feed the agent and the browser. The one-turn driver and an empty MCP list are not adequate interactive hosting by themselves.
 
-The initial brain envelope permits the application tools and curated reads only. It grants no direct writes to records, the server checkout, or server state; no shell/process/environment inspection; and no arbitrary network access. Content reads go through authorized references or a curated snapshot excluding credentials, private transcripts of other roles, and authority state. Allow only the required provider transport and scoped MCP connection. In particular the agent cannot contact the human HTTP endpoints, recover browser cookies, or read the TOTP seed through a file tool, symlink, subprocess, or provider-native workspace tool. Enforce this with actual host/provider isolation; permission prompts or post-write integrity detection alone are insufficient.
+The initial brain envelope permits the application tools and curated reads only. It grants no direct writes to records, the server checkout, or server state; no shell/process/environment inspection; and no arbitrary network access. Content reads go through authorized references or a curated snapshot excluding credentials, private transcripts of other roles, and authority state. Allow only the required provider transport and scoped MCP connection. In particular the agent cannot contact the human HTTP endpoints, operate human confirmation controls, recover browser cookies, or read sign-in credentials through a file tool, symlink, subprocess, or provider-native workspace tool. Enforce this with actual host/provider isolation; permission prompts or post-write integrity detection alone are insufficient.
 
 Claude, Codex, and Devin remain candidates, not verified interchangeable implementations. For the selected provider, record and demonstrate enforcement for filesystem reads/writes, built-in tools, subprocesses, network, secret custody, MCP credentials, cancellation, and session resume. An unsupported provider cannot get mutating brain tools. If even read isolation cannot be enforced, do not launch it against the protected workspace. The same independence check applies to delegates admitted to the host; a protected brain alongside an unrestricted delegate would not establish the human-act property.
 
@@ -262,7 +271,7 @@ Claude, Codex, and Devin remain candidates, not verified interchangeable impleme
 
 The server's brain checkout cannot dispatch, claim, cancel, reap, close, or land work by bypassing the brain fence. For Fleet control, distinguish the browser human's request from execution by the owning node.
 
-The first version observes local state and available replicated records. Local lifecycle controls are enabled only for explicitly enrolled delivery endpoints on the server's machine, through their existing owners and fresh human authority where required. Bind the target to checkout, seat, and current process/session incarnation; revalidate before acting. The server's brain endpoint never substitutes for the target delivery endpoint. Remote lifecycle controls remain visibly unavailable until the following backend exists.
+The first version observes local state and available replicated records. Local lifecycle controls are enabled only for explicitly enrolled delivery endpoints on the server's machine, through their existing owners and signed-in human authority where required. Bind the target to checkout, seat, and current process/session incarnation; revalidate before acting. The server's brain endpoint never substitutes for the target delivery endpoint. Remote lifecycle controls remain visibly unavailable until the following backend exists.
 
 For remote control, choose requests in the existing shared git record, honored by the addressed node's steward. Add a versioned `records/fleet-control/` request and acknowledgment schema owned by fleet control, with request ID, human authority/reference, target machine/seat/incarnation, closed operation and arguments, creation/expiry, and result/evidence references. This extends the record owner; it is not a claim that such requests already exist. Use at-most-once effect handling per request ID and target incarnation, reconciliation before retry, and recheck local permission and preconditions at consumption. A request grants no general remote shell access.
 
@@ -284,7 +293,7 @@ Keep three small responsibilities distinct:
 | Connect a request and result to its caller | Server adapter; identifies the actual actor, request, sitting, and source tab, and delivers the operation result |
 | Choose what to display | Existing frontend routing, data loading, and components; resolves record references into ordinary views |
 
-Browser context supplies the subject being discussed, not authority. Use the principals and per-act proof in [Server as a new command edge](#server-as-a-new-command-edge); both adapters reach the same owner checks.
+Browser context supplies the subject being discussed, not authority. Use the authenticated human and scoped agent principals in [Server as a new command edge](#server-as-a-new-command-edge); both adapters reach the same owner checks and retain their actual request origin.
 
 ### Keep request context and results small
 
@@ -553,7 +562,7 @@ The human can edit an agent's proposal before publication and revise member defi
 
 #### Revise an approved definition
 
-Use a guided compound flow: prepare the proposed definition and its effects; obtain human authority to withdraw approval; confirm withdrawal and any parked standing claim; apply the definition edit; review the new exact definition and budget; obtain a separate fresh approval. A goal may remain unapproved if the human deliberately stops there. An edit must not silently re-approve work.
+Use a guided compound flow: prepare the proposed definition and its effects; the signed-in human confirms withdrawal of approval; confirm withdrawal and any parked standing claim; apply the definition edit; review the new exact definition and budget; the human records a separate approval. These are explicit decisions within the same authenticated session, with no per-step sign-in or code challenge. A goal may remain unapproved if the human deliberately stops there. An edit must not silently re-approve work.
 
 Each step uses its existing checked owner and a distinct operation ID linked to the same revision proposal. Show completed, pending, refused, and unresolved steps. If interrupted after withdrawal, keep “Approval withdrawn; revision incomplete” visible with the real claim/park state; resuming rechecks current state and authority. Do not roll back completed steps or restart seats automatically. Current owner refusals and any additional plan/successor capabilities govern what can proceed.
 
@@ -650,11 +659,11 @@ Where live observations are unavailable, show that limitation explicitly. Record
 
 ### Settings and setup
 
-Settings holds choices that configure the workspace or its infrastructure rather than one piece of work. Its named pages cover runtime installation and capability checks, model and role preferences, channels and connections, human identity and enrollment, execution defaults including brain allocations and per-sitting limits, and evidence storage and retention. A value shows its effective setting and source so a local override cannot look like a project-wide change.
+Settings holds choices that configure the workspace or its infrastructure rather than one piece of work. Its named pages cover runtime installation and capability checks, model and role preferences, channels and connections, sign-in and account management, execution defaults including brain allocations and per-sitting limits, and evidence storage and retention. A value shows its effective setting and source so a local override cannot look like a project-wide change.
 
 Project-specific requirements and assurance belong under Project. A goal's budget belongs in its Definition. A live seat's engine controls belong in Fleet. Those views can link to the applicable setting without moving all configuration into one undifferentiated form.
 
-Use [Human acts from the browser](#human-acts-from-the-browser) for pairing, per-act proof, credential custody, and recovery. The initial flow relies on an independently enrolled authority; Settings states that prerequisite and the read-only limitation when it is absent. Complete browser-native first enrollment and recovery are required for final operation coverage. A terminal panel or a form that merely asserts a human name does not satisfy that requirement.
+Use [Human acts from the browser](#human-acts-from-the-browser) for sign-in, session lifecycle, human/agent request separation, and credential protection. Settings exposes the selected sign-in system's account setup and recovery flow. Once the human has signed in, there is no additional authority-enrollment step or special read-only onboarding restriction. Existing terminal/channel authority mechanisms may remain available for their original workflows; they are not prerequisites for browser use.
 
 ## Complete human operations through the interface
 
@@ -680,7 +689,7 @@ The following map comes from static inspection of `cmd/metasystem/main.go` and t
 | Inspect candidate acceptance and landing, or resolve a held landing | Goal Execution and Evidence; linked decision when required | Public landing and goal-branch operations, held work, carry decisions, and completion operations |
 | Measure execution, cost, context use, and progress | Fleet summaries and run detail; Overview summaries | `metrics report`, public context reporting, run and launch reports, and authoritative status projections |
 | Diagnose stopped work, acknowledge alerts, recover ownership, or repair synchronization | Diagnostics on the affected goal, seat, or connection | Goal recovery/repair/reconcile/fetch, process acknowledgments, health alerts, lease and supervision recovery |
-| Configure runtimes, models, roles, channels, identity, and engine compatibility | Named Settings pages with validation and change preview | `runtime setup/list/self-check`, configuration and launch settings, enrollment, and engine compatibility operations |
+| Configure runtimes, models, roles, channels, identity, and engine compatibility | Named Settings pages with validation and change preview | `runtime setup/list/self-check`, configuration and launch settings, sign-in/account integration, existing non-browser enrollment operations where retained, and engine compatibility operations |
 | Inspect, preserve, export, or retire execution evidence and concluded history | Evidence detail; Settings → Storage and retention for policy | Existing mirror and collection operations, evidence cleanup, and supported goal/run/context pruning |
 | Initialize, migrate, or repair a project's records | Project setup or contextual recovery, with the reviewed changes visible | Goal migration, declaration of no active intent, reconciliation, recovery, and applicable adoption operations |
 
@@ -730,7 +739,7 @@ The split implementation is particularly relevant to the interface: it preserves
 
 Project-specific vision and doctrine are recognized in the adoption documentation. Reuse each project's existing document owner; where working-material metadata is absent, add minimal versioned subject, status, source-reference, and sitting-reference fields in the appropriate existing category: active material in `plans/`, standing explanation in project documentation, living registers in `memory/`, and concluded history in `records/`. Raw sitting transcripts and result correlation belong in the separate protected server-local store described above. Neither storage contract is a claim that its writer already exists.
 
-Backend requirements identified by the critique are the new command edge and authority outcomes; clone lifecycle, fetch and journal recovery integration; owner preparation, basis checks, typed refusals and changed references; canonical `DefinitionRefs` and compatible migration; protected interactive ACP hosting and MCP tools; exclusive brain occupancy; isolated sitting storage and usage accounting; and addressed remote control requests. The editable slice-plan owner, durable fleet inventory/observation aggregation, and retained-evidence joins still require focused owner investigation. Each gate is staged below rather than treated as a small adapter task.
+Backend requirements identified by the critique are the new command edge with authenticated human/agent principals and authority history support; clone lifecycle, fetch and journal recovery integration; owner preparation, basis checks, typed refusals and changed references; canonical `DefinitionRefs` and compatible migration; protected interactive ACP hosting and MCP tools; exclusive brain occupancy; isolated sitting storage and usage accounting; and addressed remote control requests. The editable slice-plan owner, durable fleet inventory/observation aggregation, and retained-evidence joins still require focused owner investigation. Each gate is staged below rather than treated as a small adapter task.
 
 The UI may maintain a rebuildable index of artifact types, identifiers, links, and source versions to support navigation and search. The index must not become a second source of intent, authority, or execution state. Moving from an exploratory note to a design to executable work changes its recorded status and relationships explicitly; appearing under a menu never grants it authority.
 
@@ -775,16 +784,16 @@ Keep this document as the coherent product and architecture design. Implement th
 | Gate | Deliverable | Prerequisites and limit |
 | --- | --- | --- |
 | 1. Readable workspace | Dedicated clone, accepted-tip reads and freshness; stable navigation, Backlog and goal detail, local Fleet, and Decisions over existing records; reference-based context and result views | No model or mutation required. Mark unknown lanes, missing links, and remote coverage honestly. Validate human task walkthroughs before many forms |
-| 2. Shared command foundations | Trusted per-request principals and moved role fences; serialized publication/journal recovery; owner preview, basis checks, typed refusals, and changed references for goal read/edit first | Establish owner contracts and retry/recovery behavior before exposing writes. Audit proof/history format compatibility across readers |
-| 3. Protected human and brain access | Existing-authority browser pairing and per-act challenges; host/agent isolation; one ACP provider's interactive host and bounded MCP tools; exclusive brain occupancy, private sitting store, and budget enforcement | Credential custody and full-envelope enforcement must be demonstrated before browser human acts or mutating brain tools. A read-only sitting can be offered only with verified read isolation |
+| 2. Shared command foundations | Trusted per-request principals and moved role fences; serialized publication/journal recovery; owner preview, basis checks, typed refusals, and changed references for goal read/edit first | Establish owner contracts and retry/recovery behavior before exposing writes. Audit authenticated-session authority/history compatibility across readers |
+| 3. Protected human and brain access | Normal sign-in with human authority, account setup/recovery, session lifecycle and agent/human request separation; host/agent isolation; one ACP provider's interactive host and bounded MCP tools; exclusive brain occupancy, private sitting store, and budget enforcement | Demonstrate server-validated principals and full-envelope isolation. Agent responses routed through the browser must retain agent authority; explicit human acceptance uses the signed-in principal. A read-only sitting still requires verified read isolation |
 | 4. First complete edit | A queued goal is edited through the brain, shown in its ordinary editor, edited by the human, and discussed again; cards, `present`, interrupted outcomes, and basis conflicts work | Gates 2 and 3 must hold. Approved/claimed/parked cases expose their real refusals or proposals; this gate does not claim the whole goal editor |
 | 5. Project and planning | Owned intent/design working material; `DefinitionRefs` migration and approval binding; guided approved-definition revision; split editor and supported slice-plan/revision owner | Build each owner contract before its form. Preserve source history and explicit intermediate states across document, goal, and approval operations |
 | 6. Fleet and evidence | Durable registered-seat inventory, remote observations, node-owned request/acknowledgment control, retained artifact retrieval and goal-to-attempt joins | Local-only controls remain labeled until addressed control is built. Broader evidence coverage cannot be inferred from a timeline or empty remote response |
-| 7. Complete human coverage | Remaining routed operation families, exceptional recovery, browser-native first authority enrollment and recovery, setup and maintenance | Every public human capability has a browser flow, current owner authority, recovery, and an acceptance scenario; gaps are named until complete |
+| 7. Complete human coverage | Remaining routed operation families, exceptional recovery, setup and maintenance | Every public human capability has a browser flow, current owner authority, recovery, and an acceptance scenario; gaps are named until complete |
 
 Sitting isolation and accounting belong before the first live brain, not at the end of an evidence-retention programme. The result-reveal mechanism remains a small addition to ordinary forms and routing; the substantive work in these gates is exposing MetaSystem authority, persistence, and missing domain capabilities safely.
 
-Complete operation coverage is a requirement for the finished interface. Delivery may proceed in coherent stages, but remaining human workflows must be named as unfinished until they have usable browser flows, including enrollment, exceptional decisions, maintenance, and recovery. An initial useful version is not yet complete merely because routine goal execution works.
+Complete operation coverage is a requirement for the finished interface. Delivery may proceed in coherent stages, but remaining human workflows must be named as unfinished until they have usable browser flows, including account setup/recovery, exceptional decisions, and maintenance. An initial useful version is not yet complete merely because routine goal execution works.
 
 Broader visualization, comparative scenario analysis, learning exercises, and additional channels can follow the core interaction and operation coverage. Early layout sketches and representative task walkthroughs should validate the navigation before implementing many forms.
 
@@ -792,6 +801,9 @@ Start with one verified provider integration while keeping provider-specific beh
 
 ## Acceptance scenarios
 
+- A human signs in and can edit goals, approve work, and make other human decisions through normal controls without terminal/channel enrollment or per-action authentication. Each submission still obeys its domain's current-state and reviewed-basis checks.
+- The agent proposes a reserved action and its response reaches the signed-in UI. No human-authorized mutation occurs automatically. Explicit human acceptance records the signed-in user as the deciding actor and retains the agent's proposal authorship.
+- An expired or revoked session cannot submit a new human action. Signing in again preserves the draft and rechecks its basis; previously accepted operations retain their original outcome and are not duplicated.
 - With the engine stopped, the human opens the interface, discusses a design, and saves a draft without starting execution.
 - During a sitting, the agent session ends unexpectedly. A fresh session resumes from saved records with the same facts, decisions, and open questions available.
 - The human moves from a goal to its active seat and then to a finding while the same Brain conversation remains available. The dock exposes the selected and pinned context at each step.
@@ -841,7 +853,7 @@ These are requirements for future implementation verification, not tests run for
 | Finding | Required observation |
 | --- | --- |
 | UID-R1-01 | A form and a brain tool edit record different real actors. A forged human name is refused by the owner; neither actor is inherited from the server's OS parent |
-| UID-R1-02 | With its full granted tools, the brain cannot read authority credentials or complete a human act through MCP or HTTP. Cross-origin requests, consumed codes, expired challenges, and changed approval bases are refused. Successful History records the browser proof and authority identity |
+| UID-R1-02 | A valid sign-in grants human authority with no extra enrollment or per-action code. The brain cannot obtain human credentials or confirmation controls; routing its response through the UI retains agent authority. Explicit human acceptance records both deciding user and proposal author. Forged actor fields, cross-origin mutations, invalid sessions, and changed approval bases are refused |
 | UID-R1-03 | Another clone's valid publication becomes visible after fetch. A pushed unknown blocks all writes through the server clone while reads expose their age. Recovery preserves each journal outcome and never duplicates the mutation |
 | UID-R1-04 | An unreachable remote target leaves a stop requested/unacknowledged, then expired as appropriate, never stopped. The local equivalent reaches the enrolled delivery owner. A successor incarnation cannot consume a predecessor's request |
 | UID-R1-05 | Withdrawal preview names the standing claim that parks. Publication matches reviewed effects when relevant state is unchanged; material drift returns a comparison before publication. Preview itself performs no writes or execution effects |
@@ -858,15 +870,15 @@ These are requirements for future implementation verification, not tests run for
 
 ## Remaining implementation investigations
 
-The command-edge model, initial loopback access, clone ownership, actor classes, challenge approach, transcript placement, tool shape, and presentation signal are decided above. They must not be silently reopened as adapter choices. The following work remains at the relevant delivery gate:
+The command-edge model, initial loopback access, clone ownership, actor classes, sign-in as human authority, human/agent request separation, transcript placement, tool shape, and presentation signal are decided above. They must not be silently reopened as adapter choices. The following work remains at the relevant delivery gate:
 
 - Select the first provider and demonstrate the complete envelope, usage accounting, interactive session, resume, and MCP requirements. No provider interchangeability is claimed yet.
-- Specify and verify browser-proof construction, protected secret custody, enrollment/code-use concurrency, outcome grammar compatibility, and each operation owner's authority boundary. Design first enrollment/recovery with no surviving enrolled root before claiming complete onboarding.
+- Select and integrate the sign-in system's account provisioning/recovery, trusted session validation, expiry and revocation. Verify human/agent request separation, session credential isolation, and authority/history compatibility at each exposed operation owner. There is no separate MetaSystem browser enrollment or per-action authentication mechanism to design.
 - Specify the narrow context/result schemas and owner preparation/refusal APIs for each operation as it is exposed; retain the small tool surface and frontend-owned routing.
 - Identify existing owners for durable seat inventory, remote observations, board phase projection, and retained evidence. Record missing facts instead of manufacturing a complete view.
 - Establish the slice-plan owner, exact dispatch links, and legal successor/regrouping operations; implement the canonical definition-reference migration before promising complete planning fidelity.
 - Specify the fleet request/acknowledgment owner, delivery bounds, authority verification at the target, and incarnation-safe recovery before enabling remote controls.
 - Establish evidence retention/retrieval guarantees and show older incomplete records honestly. Determine project-owned document locations and minimal working-material metadata without duplicating intent.
-- Audit all routed human capabilities and conduct representative walkthroughs for discoverability, keyboard operation, and recovery. A workflow is incomplete while its browser path or authority root is missing.
+- Audit all routed human capabilities and conduct representative walkthroughs for discoverability, keyboard operation, and recovery. A workflow is incomplete while its browser path or integration with the authenticated principal is missing.
 
 These investigations preserve the central relationship: the human and the brain develop understanding and intent together, durable records carry that intent forward, and delivery machinery acts within its recorded authority. Remote browser access and richer UI control remain separate future scope.
