@@ -1,0 +1,90 @@
+{
+  "headings": [
+    {
+      "level": 1,
+      "id": "same-heading",
+      "text": "Same heading"
+    },
+    {
+      "level": 2,
+      "id": "same-heading-1",
+      "text": "Same heading"
+    },
+    {
+      "level": 3,
+      "id": "same-heading-2",
+      "text": "Same heading"
+    },
+    {
+      "level": 2,
+      "id": "a-heading-with-punctuation",
+      "text": "A heading, with punctuation!"
+    },
+    {
+      "level": 2,
+      "id": "já-přece-věřím",
+      "text": "Já přece věřím"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "heading",
+      "level": 1,
+      "id": "same-heading",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "Same heading"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "id": "same-heading-1",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "Same heading"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "id": "same-heading-2",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "Same heading"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "id": "a-heading-with-punctuation",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "A heading, with punctuation"
+        },
+        {
+          "type": "text",
+          "text": "!"
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "id": "já-přece-věřím",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "Já přece věřím"
+        }
+      ]
+    }
+  ]
+}

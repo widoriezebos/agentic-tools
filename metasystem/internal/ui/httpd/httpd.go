@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
@@ -34,6 +36,11 @@ type Info struct {
 	// ref and starts no fetch. A nil Observe is an engine that cannot answer,
 	// which the route says.
 	Observe func() snapshot.Observation
+	// Project answers the thread of intent, per request for the same reason.
+	Project func() (project.Thread, error)
+	// Document answers one document by its checkout-relative id. A
+	// project.ErrNotFound is the route's 404; anything else is a 500.
+	Document func(id string) (project.Document, error)
 }
 
 // absentBundleStatement is what a page request gets from an engine built
@@ -48,10 +55,16 @@ const absentBundleStatement = "MetaSystem interface: this executable was built w
 // with status 200 and leaving the caller to parse HTML as JSON.
 var reservedPrefixes = []string{"/-", "/api", "/assets"}
 
-// workspacePath is the one API route this build answers, matched exactly: what
-// lies beneath it belongs to no resource, so it is a 404 like any other
-// unserved path under a reserved prefix.
-const workspacePath = "/api/workspace"
+// The API routes this build answers. The first two are matched exactly: what
+// lies beneath them belongs to no resource, so it is a 404 like any other
+// unserved path under a reserved prefix. The third is a prefix, because the
+// document's id is the rest of the path; the prefix alone names no document
+// and is a 404 too.
+const (
+	workspacePath  = "/api/workspace"
+	projectPath    = "/api/project"
+	documentPrefix = "/api/documents/"
+)
 
 // The policy allows nothing by default and no source outside this origin: no
 // unsafe-inline, no data:, no host source, no report-uri, no Trusted Types. A
@@ -141,6 +154,14 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.backlog(w)
 		return
 	}
+	if r.URL.Path == projectPath {
+		h.project(w)
+		return
+	}
+	if id, beneath := strings.CutPrefix(r.URL.Path, documentPrefix); beneath && id != "" {
+		h.document(w, id)
+		return
+	}
 	h.route(w, r)
 }
 
@@ -221,22 +242,61 @@ func (h *handler) servePage(w http.ResponseWriter) {
 func (h *handler) workspace(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	if h.info.Describe == nil {
-		writeWorkspaceFailure(w, "this engine was built without a workspace description")
+		writeFailure(w, "this engine was built without a workspace description")
 		return
 	}
 	described, err := h.info.Describe()
 	if err != nil {
-		writeWorkspaceFailure(w, err.Error())
+		writeFailure(w, err.Error())
 		return
 	}
 	_ = json.NewEncoder(w).Encode(described)
 }
 
-func writeWorkspaceFailure(w http.ResponseWriter, reason string) {
+// project answers the thread of intent. A failure is a 500 carrying the
+// reason, for the workspace route's reason: the reason is what a human acts on.
+func (h *handler) project(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	if h.info.Project == nil {
+		writeFailure(w, "this engine was built without a project thread")
+		return
+	}
+	thread, err := h.info.Project()
+	if err != nil {
+		writeFailure(w, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(thread)
+}
+
+// document answers one document. Every refusal the reader makes is the same
+// 404 naming the id, so a caller learns that this checkout serves no document
+// at that id and nothing else about the filesystem.
+func (h *handler) document(w http.ResponseWriter, id string) {
+	w.Header().Set("Content-Type", "application/json")
+	if h.info.Document == nil {
+		writeFailure(w, "this engine was built without a document reader")
+		return
+	}
+	document, err := h.info.Document(id)
+	if err != nil {
+		if errors.Is(err, project.ErrNotFound) {
+			w.WriteHeader(http.StatusNotFound)
+			writeError(w, "no document at "+id)
+			return
+		}
+		writeFailure(w, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(document)
+}
+
+// writeFailure is the 500 every route shares. writeError, which writes the
+// body, lives in backlog.go over an io.Writer, so both spellings of a failing
+// route reach one encoder.
+func writeFailure(w http.ResponseWriter, reason string) {
 	w.WriteHeader(http.StatusInternalServerError)
-	_ = json.NewEncoder(w).Encode(struct {
-		Error string `json:"error"`
-	}{Error: reason})
+	writeError(w, reason)
 }
 
 func (h *handler) health(w http.ResponseWriter) {

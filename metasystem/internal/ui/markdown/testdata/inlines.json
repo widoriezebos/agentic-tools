@@ -1,0 +1,209 @@
+{
+  "headings": [],
+  "blocks": [
+    {
+      "type": "paragraph",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "Plain "
+        },
+        {
+          "type": "emph",
+          "inlines": [
+            {
+              "type": "text",
+              "text": "emph"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " and "
+        },
+        {
+          "type": "strong",
+          "inlines": [
+            {
+              "type": "text",
+              "text": "strong"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " and "
+        },
+        {
+          "type": "strike",
+          "inlines": [
+            {
+              "type": "text",
+              "text": "strike"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " and "
+        },
+        {
+          "type": "code",
+          "text": "code"
+        },
+        {
+          "type": "text",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "A "
+        },
+        {
+          "type": "link",
+          "href": "other/doc.md",
+          "target": "unresolved",
+          "inlines": [
+            {
+              "type": "text",
+              "text": "document link"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", an "
+        },
+        {
+          "type": "link",
+          "href": "https://example.invalid/page",
+          "target": "external",
+          "inlines": [
+            {
+              "type": "text",
+              "text": "external"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", a "
+        },
+        {
+          "type": "link",
+          "href": "#a-heading",
+          "target": "fragment",
+          "inlines": [
+            {
+              "type": "text",
+              "text": "fragment"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": ", and an "
+        },
+        {
+          "type": "link",
+          "href": "mailto:someone@example.invalid",
+          "target": "unresolved",
+          "inlines": [
+            {
+              "type": "text",
+              "text": "odd one"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "An autolink "
+        },
+        {
+          "type": "link",
+          "href": "https://example.invalid/auto",
+          "target": "external",
+          "inlines": [
+            {
+              "type": "text",
+              "text": "https://example.invalid/auto"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "inlines": [
+        {
+          "type": "image",
+          "src": "picture.png",
+          "alt": "alt text"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "A hard break at the end of this line,"
+        },
+        {
+          "type": "break"
+        },
+        {
+          "type": "text",
+          "text": "and the next line after a soft one,\n"
+        },
+        {
+          "type": "text",
+          "text": "continued here."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "Inline "
+        },
+        {
+          "type": "html",
+          "text": "\u003cb\u003e"
+        },
+        {
+          "type": "text",
+          "text": "html"
+        },
+        {
+          "type": "html",
+          "text": "\u003c/b\u003e"
+        },
+        {
+          "type": "text",
+          "text": " here."
+        }
+      ]
+    }
+  ]
+}

@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
@@ -165,6 +166,12 @@ func runUI(verb string, args []string) int {
 						)
 					},
 					Observe: ledger.Observe,
+					Project: func() (project.Thread, error) {
+						return project.ReadThread(projectRoots(roots), time.Now().UTC())
+					},
+					Document: func(id string) (project.Document, error) {
+						return project.Read(projectRoots(roots), id, time.Now().UTC())
+					},
 				}, bound, bundle)
 			},
 			Ready: func(address string) {
@@ -204,4 +211,10 @@ func printUIResult(result lifecycle.Result) int {
 		fmt.Println(line)
 	}
 	return result.Code
+}
+
+// projectRoots carries the lifecycle's three roots to the reader that declares
+// its own triple, which is the conversion this wiring exists for.
+func projectRoots(roots lifecycle.Roots) project.Roots {
+	return project.Roots{Checkout: roots.Checkout, Installation: roots.Installation, StateRoot: roots.StateRoot}
 }

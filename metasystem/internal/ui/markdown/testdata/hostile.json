@@ -1,0 +1,92 @@
+{
+  "headings": [],
+  "blocks": [
+    {
+      "type": "html",
+      "text": "\u003cscript\u003ealert(1)\u003c/script\u003e\n"
+    },
+    {
+      "type": "paragraph",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "A "
+        },
+        {
+          "type": "link",
+          "href": "javascript:alert(1)",
+          "target": "unresolved",
+          "inlines": [
+            {
+              "type": "text",
+              "text": "x"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " link and a "
+        },
+        {
+          "type": "link",
+          "href": "data:text/plain,hello",
+          "target": "unresolved",
+          "inlines": [
+            {
+              "type": "text",
+              "text": "y"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "text": " link."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "inlines": [
+        {
+          "type": "image",
+          "src": "http://example.invalid/pixel.png",
+          "alt": "z"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "An "
+        },
+        {
+          "type": "html",
+          "text": "\u003cimg onerror=\"alert(1)\" src=\"x\"\u003e"
+        },
+        {
+          "type": "text",
+          "text": " inline tag."
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "inlines": [
+        {
+          "type": "html",
+          "text": "\u003ca href=\"javascript:alert(1)\"\u003e"
+        },
+        {
+          "type": "text",
+          "text": "an anchor"
+        },
+        {
+          "type": "html",
+          "text": "\u003c/a\u003e"
+        }
+      ]
+    }
+  ]
+}

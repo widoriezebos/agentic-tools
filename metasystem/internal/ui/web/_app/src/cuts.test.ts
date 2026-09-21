@@ -51,19 +51,45 @@ const LIFECYCLE_EVENTS = ["focus", "online", "offline", "visibilitychange", "pag
 const LIFECYCLE_HANDLERS = ["onfocus", "ononline", "onoffline", "onvisibilitychange", "onpageshow"];
 
 /**
- * Every place this build reaches the network: the file, how many calls it
- * makes, and the resources it names.
+ * Every place this build reaches the network: the file, how many call sites it
+ * has, and the resources it names.
  *
- * This list is appended to and never replaced. A slice that adds a call site
- * adds its line here, so the diff shows a new way to the network as an entry
- * a reviewer reads rather than as a count that quietly went up.
+ * This list is appended to and never replaced. A slice that adds a reader adds
+ * its own row to the one the slice before it left, so the diff shows a new way
+ * to the network as an entry a reviewer reads rather than as a count that
+ * quietly went up, and every earlier call site keeps being counted.
  */
 const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   ["shell/workspace.ts", 1, ["/api/workspace"]],
   ["backlog/api.ts", 1, ["/api/backlog"]],
+  ["project/api.ts", 1, ["/api/project", "/api/documents/"]],
 ];
 
 const HEALTH = "/-/health";
+
+/**
+ * Every way a string could become markup. The document view renders elements
+ * and nothing else: the engine parses Markdown into a typed tree, React builds
+ * the elements, and no HTML string is constructed anywhere under src/.
+ */
+const INJECTION = [
+  "dangerouslySetInnerHTML",
+  "innerHTML",
+  "outerHTML",
+  "insertAdjacentHTML",
+  "DOMParser",
+  "createContextualFragment",
+];
+
+/**
+ * `write` is on the same list, because document.write parses a string as
+ * markup. One file predates the rule and has its own local `write`, which
+ * stores a preference, so it is named here rather than the rule dropped — and
+ * the rule that keeps the carve-out honest is asserted beside it: a file
+ * allowed to say `write` may not also say `document`, so the pair cannot meet.
+ */
+const WRITE = "write";
+const WRITES_A_PREFERENCE = "storage.ts";
 
 /** The second cut's files, which do not exist in this one. */
 const SECOND_CUT = ["shell/ConnectionIndicator.tsx", "shell/Notice.tsx", "shell/health.ts", "shell/events.ts"];
@@ -431,6 +457,17 @@ describe("the first cut", () => {
         });
       }
     }
+  });
+
+  it("builds no markup from a string, under any name", () => {
+    expect(filesNaming(INJECTION)).toEqual([]);
+    expect(stringsMatching((value) => INJECTION.includes(value.trim()))).toEqual([]);
+  });
+
+  it("writes to no document, and the one file that says write says nothing else", () => {
+    expect(filesNaming([WRITE])).toEqual([WRITES_A_PREFERENCE]);
+    expect(scanned.get(WRITES_A_PREFERENCE)?.identifiers.get("document")).toBeUndefined();
+    expect(stringsMatching((value) => value.trim() === WRITE)).toEqual([]);
   });
 
   it("opens no stream, socket, request object, or beacon, under any name", () => {

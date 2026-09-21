@@ -146,6 +146,8 @@ One line per package; the package doc is the full story.
 | `ui/lifecycle` | the checkout's independent browser server: launch, lock, identity record, status, stop, and restart |
 | `ui/httpd` | loopback browser request checks, response headers, and interface routes |
 | `ui/snapshot` | what this checkout's accepted ledger says at one instant, and the server's own loop that keeps the accepted ref at the canonical tip |
+| `ui/markdown` | Markdown parsed into a typed tree the browser renders as elements; no HTML string is produced |
+| `ui/project` | the thread of intent: the catalogue of canonical documents over the three roots, and the anchored, bounded read of one document |
 | `ui/web` | the embedded interface bundle, its manifest and staleness digest, and the content types and `Accept` rule the server needs |
 | `ui/workspace` | what the workspace in front of a human is: its subject, its self-hosted or adopted mode, and the adoption its installation records |
 | `up` | the session-start arming transaction and its typed aggregate outcome |
@@ -161,7 +163,7 @@ it does; this table adds where the decisions live.
 | Family | Backing packages |
 | --- | --- |
 | `up` | `up`, coordinating `lease`, `supervise`, and `steward` |
-| `ui` | `ui/lifecycle`, `ui/httpd`, `ui/snapshot`, `ui/workspace`, `backlog`, `goal`, `config` |
+| `ui` | `ui/lifecycle`, `ui/httpd`, `ui/snapshot`, `ui/workspace`, `ui/project`, `ui/markdown`, `backlog`, `goal`, `config` |
 | `proc` | `identity`, `census` |
 | `config` | `config`, `validate` (tailor) |
 | `validate` | `validate` |

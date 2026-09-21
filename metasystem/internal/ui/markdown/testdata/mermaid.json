@@ -1,0 +1,10 @@
+{
+  "headings": [],
+  "blocks": [
+    {
+      "type": "code",
+      "lang": "mermaid",
+      "text": "graph TD;\n  A--\u003eB;\n"
+    }
+  ]
+}

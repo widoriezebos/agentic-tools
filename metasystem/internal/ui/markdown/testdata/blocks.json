@@ -1,0 +1,267 @@
+{
+  "headings": [
+    {
+      "level": 1,
+      "id": "title",
+      "text": "Title"
+    },
+    {
+      "level": 2,
+      "id": "second-level",
+      "text": "Second level"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "heading",
+      "level": 1,
+      "id": "title",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "Title"
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "A paragraph with text."
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "id": "second-level",
+      "inlines": [
+        {
+          "type": "text",
+          "text": "Second level"
+        }
+      ]
+    },
+    {
+      "type": "quote",
+      "blocks": [
+        {
+          "type": "paragraph",
+          "inlines": [
+            {
+              "type": "text",
+              "text": "A quote paragraph."
+            }
+          ]
+        },
+        {
+          "type": "list",
+          "items": [
+            {
+              "checked": null,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "inlines": [
+                    {
+                      "type": "text",
+                      "text": "a quoted item"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "list",
+      "items": [
+        {
+          "checked": null,
+          "blocks": [
+            {
+              "type": "paragraph",
+              "inlines": [
+                {
+                  "type": "text",
+                  "text": "first item"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "checked": null,
+          "blocks": [
+            {
+              "type": "paragraph",
+              "inlines": [
+                {
+                  "type": "text",
+                  "text": "second item"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "list",
+      "ordered": true,
+      "start": 1,
+      "items": [
+        {
+          "checked": null,
+          "blocks": [
+            {
+              "type": "paragraph",
+              "inlines": [
+                {
+                  "type": "text",
+                  "text": "one"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "checked": null,
+          "blocks": [
+            {
+              "type": "paragraph",
+              "inlines": [
+                {
+                  "type": "text",
+                  "text": "two"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "list",
+      "items": [
+        {
+          "checked": false,
+          "blocks": [
+            {
+              "type": "paragraph",
+              "inlines": [
+                {
+                  "type": "text",
+                  "text": "not done"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "checked": true,
+          "blocks": [
+            {
+              "type": "paragraph",
+              "inlines": [
+                {
+                  "type": "text",
+                  "text": "done"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "align": [
+        "left",
+        "center",
+        "right"
+      ],
+      "head": [
+        [
+          {
+            "type": "text",
+            "text": "Left"
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "text": "Centre"
+          }
+        ],
+        [
+          {
+            "type": "text",
+            "text": "Right"
+          }
+        ]
+      ],
+      "rows": [
+        [
+          [
+            {
+              "type": "text",
+              "text": "a"
+            }
+          ],
+          [
+            {
+              "type": "text",
+              "text": "b"
+            }
+          ],
+          [
+            {
+              "type": "text",
+              "text": "c"
+            }
+          ]
+        ],
+        [
+          [
+            {
+              "type": "text",
+              "text": "d"
+            }
+          ],
+          [
+            {
+              "type": "text",
+              "text": "e"
+            }
+          ],
+          [
+            {
+              "type": "text",
+              "text": "f"
+            }
+          ]
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "go",
+      "text": "fmt.Println(\"hi\")\n"
+    },
+    {
+      "type": "code",
+      "text": "indented code\n"
+    },
+    {
+      "type": "rule"
+    },
+    {
+      "type": "html",
+      "text": "\u003cdiv class=\"raw\"\u003e\n  \u003cspan\u003ea html block\u003c/span\u003e\n\u003c/div\u003e\n"
+    }
+  ]
+}

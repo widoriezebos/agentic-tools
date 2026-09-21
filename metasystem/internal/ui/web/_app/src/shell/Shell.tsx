@@ -22,6 +22,8 @@ import { BacklogPane } from "../backlog/BacklogPane";
 import { Focused } from "../panes/Focused";
 import { NotFoundPane, SectionPane } from "../panes/sections";
 import { SettingsPane } from "../panes/Settings";
+import { DocumentPane } from "../project/DocumentPane";
+import { ProjectPane } from "../project/ProjectPane";
 import { activeSection, HOME_PATH, projectSections } from "../routes";
 import { readDockOpen, readRailExpanded, readTheme, writeDockOpen, writeRailExpanded, writeTheme } from "../storage";
 import { applyTheme, effectiveTheme, systemIsDark, watchSystemTheme, type ThemePreference } from "../theme";
@@ -109,9 +111,13 @@ export function Shell() {
     <Routes>
       <Route path="/" element={<Navigate to={HOME_PATH} replace />} />
       <Route path="/brain" element={<Focused wide={wide} />} />
+      {/* Backlog reads the ledger and Project reads the repository; the other
+          four say which gate brings them. */}
       <Route path="/backlog" element={<BacklogPane />} />
+      <Route path="/project" element={<ProjectPane />} />
+      <Route path="/project/doc/*" element={<DocumentPane />} />
       {projectSections
-        .filter((candidate) => candidate.id !== "backlog")
+        .filter((candidate) => candidate.id !== "backlog" && candidate.id !== "project")
         .map((candidate) => (
           <Route key={candidate.id} path={candidate.path} element={<SectionPane section={candidate} />} />
         ))}

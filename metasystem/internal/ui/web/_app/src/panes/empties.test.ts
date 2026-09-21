@@ -24,11 +24,11 @@ const expected: Empty[] = [
     action: null,
   },
   {
-    id: "project",
+    id: "sittings",
     kind: "not projected",
-    heading: "Project is not projected yet",
-    body: "Intent, architecture, designs, constraints and assurance, open questions, and sittings are in the repository and will be read here.",
-    note: "Arrives with gate 5",
+    heading: "Sittings are not projected yet",
+    body: "A sitting is a human and an agent working together; its working records live in the sitting store the brain process keeps.",
+    note: "Arrives with gate 3",
     link: null,
     action: null,
   },
@@ -107,7 +107,7 @@ const expected: Empty[] = [
  * empty state, because their panes say what they read rather than what has not
  * been built; every other section still has a row above.
  */
-const PROJECTED = ["backlog"];
+const PROJECTED = ["backlog", "project"];
 
 const unprojected = sections.filter((section) => !PROJECTED.includes(section.id));
 
@@ -132,18 +132,22 @@ describe("the empty states", () => {
 
   it("cover every destination that has a pane, and nothing more", () => {
     const covered = empties.map((empty) => empty.id).sort();
-    const wanted = [...unprojected.map((section) => section.id), "subject", "not-found"].sort();
+    const wanted = [...unprojected.map((section) => section.id), "sittings", "subject", "not-found"].sort();
     expect(covered).toEqual(wanted);
     for (const section of unprojected) {
       expect(emptyFor(section.id).id).toBe(section.id);
     }
   });
 
+  // A projected section reads the repository or the ledger, so it has no empty
+  // state of its own. Project keeps one subsection this build does not
+  // project, Sittings, which says so inside the pane and names its gate.
   it("leave a projected section to its own pane", () => {
     for (const id of PROJECTED) {
       expect(empties.map((empty) => empty.id)).not.toContain(id);
       expect(() => emptyFor(id)).toThrow();
     }
+    expect(emptyFor("sittings").heading).toBe("Sittings are not projected yet");
   });
 
   it("are the not-projected kind for every section, with no action of its own", () => {
