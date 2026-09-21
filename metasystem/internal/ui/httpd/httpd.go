@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
@@ -28,6 +29,11 @@ type Info struct {
 	// is filled in while the server runs is read without a restart. A nil
 	// Describe is an engine that cannot answer, which the route says.
 	Describe func() (workspace.Workspace, error)
+	// Observe answers what this workspace's accepted ledger says. It is called
+	// once per request and reads the accepted ref as it stands: it moves no
+	// ref and starts no fetch. A nil Observe is an engine that cannot answer,
+	// which the route says.
+	Observe func() snapshot.Observation
 }
 
 // absentBundleStatement is what a page request gets from an engine built
@@ -129,6 +135,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == workspacePath {
 		h.workspace(w)
+		return
+	}
+	if r.URL.Path == backlogPath {
+		h.backlog(w)
 		return
 	}
 	h.route(w, r)

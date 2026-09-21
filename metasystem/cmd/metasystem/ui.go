@@ -14,10 +14,12 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
@@ -127,6 +129,30 @@ func runUI(verb string, args []string) int {
 			return refuse(err.Error())
 		}
 		bundleDigest, bundle := interfaceBundle()
+
+		// The ledger reader answers requests from the accepted ref as it
+		// stands. Its freshness loop is what carries that ref forward, and it
+		// belongs to the process that owns the checkout: exclusivity is taken
+		// inside Serve, so the loop waits on a gate that only Serve's readiness
+		// opens, and a server refused the checkout fetches nothing. The loop's
+		// own context is cancelled on every path out of this case, including a
+		// listener that fails, and the process waits for a tick in flight to
+		// finish its compare-and-swap before it exits.
+		ledger := snapshot.New(roots.StateRoot, time.Now)
+		owned := snapshot.NewGate()
+		loopContext, stopLoop := context.WithCancel(ctx)
+		defer stopLoop()
+		loopStopped := make(chan struct{})
+		go func() {
+			defer close(loopStopped)
+			if !owned.Wait(loopContext) {
+				return
+			}
+			ledger.Run(loopContext, func(endpoint goal.Endpoint) (goal.AdvanceResult, error) {
+				return goal.FetchAdvanceBounded(endpoint, snapshot.FetchBudget)
+			}, snapshot.WallTimers{})
+		}()
+
 		err = lifecycle.Serve(ctx, lifecycle.Options{
 			Roots: roots, Listen: listen, EngineBuild: supervise.BuildStamp, Prober: prober,
 			NewHandler: func(bound net.Addr, rec lifecycle.Record) http.Handler {
@@ -138,9 +164,11 @@ func runUI(verb string, args []string) int {
 							subject,
 						)
 					},
+					Observe: ledger.Observe,
 				}, bound, bundle)
 			},
 			Ready: func(address string) {
+				owned.Open()
 				if ready != nil {
 					fmt.Fprintln(ready, "ready "+address)
 					_ = ready.Close()
@@ -149,6 +177,8 @@ func runUI(verb string, args []string) int {
 				fmt.Fprintf(os.Stderr, "interface running at http://%s (pid %d)\n", address, os.Getpid())
 			},
 		})
+		stopLoop()
+		<-loopStopped
 		if err != nil {
 			return refuse(lifecycle.ServeFailure(roots.StateRoot, err))
 		}

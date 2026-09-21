@@ -10,6 +10,9 @@
  * send the human to a terminal. So `action: null` here is the rule, not an
  * omission, and no pane claims that anything is absent.
  *
+ * A section this build does project has no row here at all: its pane says what
+ * it read, from the response, rather than what it has not built yet.
+ *
  * A link, where a row has one, is a text link to a surface this build actually
  * serves. Overview has the only one: a human who has just arrived lands there,
  * and About this workspace is this build's one live answer to "what is this".
@@ -49,15 +52,6 @@ export const empties: readonly Empty[] = [
     heading: "Project is not projected yet",
     body: "Intent, architecture, designs, constraints and assurance, open questions, and sittings are in the repository and will be read here.",
     note: "Arrives with gate 5",
-    link: null,
-    action: null,
-  },
-  {
-    id: "backlog",
-    kind: "not projected",
-    heading: "The backlog is not projected yet",
-    body: "Goals exist at the accepted tip. Board, outline, dependencies, list, and one workspace per goal will read them here.",
-    note: "Arrives with g1-s10, the detail view with g1-s11",
     link: null,
     action: null,
   },

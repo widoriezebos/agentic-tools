@@ -1,0 +1,165 @@
+/*
+ * The backlog list's layout.
+ *
+ * Every colour here is a token from tokens.css, which is the only place in the
+ * application a colour is written. Nothing has a minimum width: rows and chips
+ * wrap instead, so a narrow window reads the same list rather than scrolling
+ * sideways. Nothing is truncated, because an intent cut off mid-sentence hides
+ * the one line that says what the work is.
+ */
+
+.ms-backlog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1040px;
+}
+
+.ms-ledger {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ms-ledger-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ms-ledger-line {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+.ms-ledger-stale {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+.ms-lane-index {
+  margin: 0;
+  font-size: 13px;
+  line-height: 22px;
+  color: var(--ms-text-2);
+}
+
+.ms-lane-index-rule {
+  color: var(--ms-text-3);
+}
+
+.ms-lane-anchor {
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-lane-anchor:hover,
+.ms-lane-anchor:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-lane-meaning {
+  margin: -8px 0 16px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-lane-empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+.ms-goal-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.ms-goal-row {
+  padding: 8px 0;
+  border-top: 1px solid var(--ms-border);
+}
+
+.ms-goal-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.ms-goal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.ms-goal-id {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-goal-intent {
+  margin: 0 0 2px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-goal-next {
+  margin: 0 0 2px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+.ms-goal-gaps {
+  margin: 0 0 2px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+.ms-goal-history {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-problems {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  max-width: 480px;
+  text-align: left;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+.ms-backlog-footer {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}

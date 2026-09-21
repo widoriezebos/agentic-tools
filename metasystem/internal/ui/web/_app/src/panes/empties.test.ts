@@ -33,15 +33,6 @@ const expected: Empty[] = [
     action: null,
   },
   {
-    id: "backlog",
-    kind: "not projected",
-    heading: "The backlog is not projected yet",
-    body: "Goals exist at the accepted tip. Board, outline, dependencies, list, and one workspace per goal will read them here.",
-    note: "Arrives with g1-s10, the detail view with g1-s11",
-    link: null,
-    action: null,
-  },
-  {
     id: "fleet",
     kind: "not projected",
     heading: "Fleet is not projected yet",
@@ -111,6 +102,15 @@ const expected: Empty[] = [
  * say that there are none: there are 156 live goals at the accepted tip, and a
  * pane that says otherwise is a lie a human would act on.
  */
+/**
+ * The sections this build projects from the server's answer. They have no
+ * empty state, because their panes say what they read rather than what has not
+ * been built; every other section still has a row above.
+ */
+const PROJECTED = ["backlog"];
+
+const unprojected = sections.filter((section) => !PROJECTED.includes(section.id));
+
 const ABSENCE = [
   "nothing",
   "no goals",
@@ -132,15 +132,22 @@ describe("the empty states", () => {
 
   it("cover every destination that has a pane, and nothing more", () => {
     const covered = empties.map((empty) => empty.id).sort();
-    const wanted = [...sections.map((section) => section.id), "subject", "not-found"].sort();
+    const wanted = [...unprojected.map((section) => section.id), "subject", "not-found"].sort();
     expect(covered).toEqual(wanted);
-    for (const section of sections) {
+    for (const section of unprojected) {
       expect(emptyFor(section.id).id).toBe(section.id);
     }
   });
 
+  it("leave a projected section to its own pane", () => {
+    for (const id of PROJECTED) {
+      expect(empties.map((empty) => empty.id)).not.toContain(id);
+      expect(() => emptyFor(id)).toThrow();
+    }
+  });
+
   it("are the not-projected kind for every section, with no action of its own", () => {
-    for (const section of sections) {
+    for (const section of unprojected) {
       const empty = emptyFor(section.id);
       expect({ id: empty.id, kind: empty.kind }).toEqual({ id: empty.id, kind: "not projected" });
       expect({ id: empty.id, action: empty.action }).toEqual({ id: empty.id, action: null });
