@@ -142,3 +142,63 @@ The phrase “400 at 1,128” applies to the expanded-rail case; a remembered co
 ## 6. Not checked
 
 F10 was not reopened, as instructed. Round-one-confirmed areas outside the stated fixes were not reswept. No implementation, build, tests, browser rendering, scripts, MetaSystem binary, package installation, or running interface server were exercised.
+
+---
+
+# Round 3, 2026-09-21: loop closed
+
+On revision 3 at commit `21a6f9c9c`. Verdict: build as written. J1, J2 and J3 all corrected, no material findings. Three rounds: nine findings, then three, then none.
+
+One non-material finding, L1, becomes an obligation on the builder rather than a fourth round: the cut guard must be token-aware, so that it cannot match its own source or be evaded by an alias or a property-handler spelling, and must not read comments or fixture text as calls.
+
+## 1. Verdict build as written loop closed ## 2. Status of J1, J2 and J3 J1: corrected J2: co...
+[codex] Turn completion inferred after the main thread finished and subagent work drained.
+## 1. Verdict
+
+build as written  
+loop closed
+
+## 2. Status of J1, J2 and J3
+
+J1: corrected  
+J2: corrected  
+J3: corrected
+
+## 3. J1 in detail
+
+The props and units are correct. Numeric `defaultSize`, `minSize`, and `maxSize` are pixels; `groupResizeBehavior` supports `preserve-relative-size` and `preserve-pixel-size`, with relative as the default and at least one relative panel required. The design supplies both behaviors explicitly and keeps the work panel relative. `plans/user-interface/g1-s9-application-shell-design.md:199-201`; pinned 4.13.1 [panel types](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/components/panel/types.ts#L135-L202), [Panel registration](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/components/panel/Panel.tsx#L44-L134).
+
+On a group resize, `preserveFixedPanelSizes` converts the dock’s previous percentage back to pixels, expresses those pixels against the new group, and assigns the remainder to the relative work panel. Constraints are then recomputed from pixels to percentages. `validatePanelGroupLayout` clamps panels in DOM order, accumulates the difference, and offers that difference again in the same order. Because `work` precedes `dock`, work absorbs contraction until its 480 minimum; once it cannot shrink further, dock absorbs the remainder. This is produced by the implementation, not merely stated by the design. [Preservation](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/global/utils/preserveFixedPanelSizes.ts#L4-L81), [constraint conversion](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/global/dom/calculatePanelConstraints.ts#L7-L96), [validation](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/global/utils/validatePanelGroupLayout.ts#L8-L96).
+
+My recomputation:
+
+- At 1,368 expanded, panel room is `1,368 − 240 − 8 = 1,120`: work 720, dock 400.
+- At 1,128 expanded, room is `1,128 − 240 − 8 = 880`: preserving dock 400 leaves work 480.
+- With dock initially 640, shrinking to 880 first proposes work 240 and dock 640. Validation clamps work to 480, then reduces dock to 400.
+- At 1,127 the rail collapses, producing `1,127 − 56 − 8 = 1,063`: dock 400, work 663.
+- The smallest collapsed-wide group is `960 − 56 − 8 = 896`; the smallest expanded-wide group is 880. Therefore the overall wide minimum is 880, greater than `480 + 320 = 800`. The dock may shrink from 640 to 400, but cannot reach its 320 floor while wide. `plans/user-interface/g1-s9-application-shell-design.md:34-46,201,216-218`.
+
+The resize observer calls `updateMountedGroup` without interaction metadata; the state owner consequently emits `isUserInteraction: false`, which `Group` passes to `onLayoutChanged`. The design’s persistence condition therefore ignores window-resize recomputations. [Resize observer](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/global/mountGroup.ts#L46-L103), [metadata default](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/global/mutable-state/groups.ts#L93-L108), [callback propagation](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/components/group/Group.tsx#L309-L355). Upstream’s own pinned test also expects a pixel-preserving group resize to report `isUserInteraction: false`. [Group test](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/components/group/Group.test.tsx#L557-L611).
+
+The walkthrough catches the original defect. Without the dock prop, 720:400 remains proportional at 880, then the dock minimum produces approximately work 560/dock 320—not the required 480/400 at the first 1,368→1,128 step. Its 640→400→widen→reload sequence additionally proves that resize squeezing is not persisted while the earlier user-selected 640 is. `plans/user-interface/g1-s9-application-shell-design.md:246,261`.
+
+## 4. The cut guard
+
+It covers both original failure modes:
+
+- Omission from the second cut is caught by the explicit `events.ts` boundary, the three invalidation cases, and `events.test.ts`. `plans/user-interface/g1-s9-application-shell-design.md:222-224,232,242`.
+- Ordinary leakage into the first cut is caught by the single-call-site assertion, forbidden transport/timer/lifecycle checks, absence of the four second-cut files, and the browser network trace across load, Retry, refocus, offline/online, and two idle minutes. `plans/user-interface/g1-s9-application-shell-design.md:240,246,263`.
+
+It is not an adversarial source-policy proof. Inference: aliases, computed properties such as `globalThis["fetch"]`, `onfocus = …`, or a recursive `setTimeout` can evade a literal implementation. A normally wired second-cut subscription or focus/online refetch would still fail the runtime half; evading both would require conditional or deliberately obscured behavior contrary to the stated implementation.
+
+A naïve raw-text scan could also false-fail on its own test patterns, comments, strings, or an unrelated identifier such as `prefetch(`. A token-aware matcher, or constructed matcher literals while still scanning every file, avoids that without weakening the production assertion. This is implementation-level hardening, not a remaining design choice.
+
+The dependency on `g1-s7` is narrow and honest: exactly the stream path, event shape, and workspace-resource view name. The transport is already fixed as server-sent events; reconnection uses browser `EventSource` behavior. Nothing else is delegated. `plans/user-interface-implementation-plan.md:185`; `plans/user-interface/g1-s9-application-shell-design.md:15,84`.
+
+## 5. Findings
+
+L1; NOT MATERIAL; Verification / cut guard; a naïve raw-substring implementation can self-match or be evaded by aliases and property-handler spellings; evidence: the design specifies textual matches over every file plus a runtime half at `plans/user-interface/g1-s9-application-shell-design.md:240,246,263`; no conforming first-cut product behavior would be built differently, and ordinary manifestations of the original regression remain observable; direction: make the implementation token-aware and include equivalent lifecycle-property and recursive-timer forms without scanning comments or fixture text as executable calls.
+
+## 6. Not checked
+
+No build, test suite, package installation, browser walkthrough, running-server interaction, or repository script was executed. The contrast table, settled layout arithmetic, F1, F2, F5, F6, F7, F9, and F11 were not reopened. The pinned source was read from the extracted 4.13.1 tag archive; its tests were inspected but not run.
