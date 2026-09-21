@@ -331,7 +331,7 @@ var Rows = []Row{
 	{Code: "carry-battery-unverified", Owner: "internal/landing", Site: "carried.go:236", Shape: Question},
 	{Code: "carry-unneeded", Owner: "internal/landing", Site: "carried.go:257", Shape: Question},
 	{Code: "carry-refusal-mismatch", Owner: "internal/landing", Site: "carried.go:182", Shape: Question},
-	{Code: "STOP_SURFACE_GOAL_REFUSED", Owner: "internal/audit", Site: "stopsurface.go:666", Shape: Question},
+	{Code: "STOP_SURFACE_GOAL_REFUSED", Owner: "internal/audit", Site: "stopsurface.go:669", Shape: Question},
 }
 
 var Exclusions = []Exclusion{
