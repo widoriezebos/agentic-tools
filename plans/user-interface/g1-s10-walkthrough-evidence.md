@@ -116,7 +116,14 @@ stopping. Worth a distinguishing flag if anyone touches the wiring.
 
 ## Not established here
 
-Also not run: `scripts/audit.test.ts`, which wedges when several checkouts of this
+The human's half of the walkthrough: deleting the accepted ref on purpose and watching the
+loop recreate it, the `goal.sync-branch` and `goal.sync-remote` flips against a live
+server, and VoiceOver reading each lane heading with its count. The states above were
+rendered from faked payloads, which proves the page renders them; it does not prove the
+server produces them, and only the live provocations do that. The Go tests cover the
+server's side.
+
+Not run: `scripts/audit.test.ts`, which wedges when several checkouts of this
 repository run it at once — its `npm audit` children sit at 0 % CPU indefinitely. It is
 `g1-s8` machinery that this slice does not touch. Everything the slice does touch is in
 the 14 files and 140 tests that pass.
