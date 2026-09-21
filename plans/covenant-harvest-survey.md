@@ -296,3 +296,45 @@ from the base, not the candidate; a candidate cannot drop a protected test or lo
 coverage floor; a build failure cannot fall back to the candidate's own policy. If the
 covenant carried only that row and the battery, it would still say the most important
 thing the paper says.
+
+## 7. The draft, verified
+
+Written 2026-09-22, against `ui-development` at `666cd6adf`, which is the survey's tree
+plus the merge of `origin/main`. Section 6 said the draft's status was
+`referenced-not-run` because nothing had been executed for the survey. That is no longer
+true: everything below was run, and the results are recorded whether or not they flatter
+the draft.
+
+**Shape.** `metasystem covenant validate` on a root holding the draft as `covenant.json`:
+
+> covenant shape valid: metasystem (17 requirement(s), battery "bash scripts/validate-metasystem.sh" on validation-green >=1, 0 budget(s), 0 guard(s), net [docs/paper/ docs/project-rules.md memory/rulings.md metasystem.conf scripts/validate-metasystem.sh testing.json]); adequacy not established — shape says the rows parse, never that the proofs guard the intent
+
+The verb's own last clause is the right caveat and the reason for the rest of this
+section.
+
+**The references resolve.** The seventeen rows name 106 distinct Go tests and 24
+`testing.json` groups. Every one of the 106 exists as a `func Test…` in a tracked
+`_test.go` file, and every one of the 24 group names is present in `testing.json`. This
+was worth checking rather than assuming: `origin/main` rewrote `testing.json` and much of
+`internal/proofrun` between the survey and this verification, and a covenant whose proofs
+have been renamed underneath it is worse than no covenant, because it still validates.
+Nothing had drifted.
+
+**The net exists.** All six guardrail paths are present at the app root.
+
+**G17 confirmed by running it, not by reading it.** `scripts/validate-metasystem.sh`
+contains no `metric=validation-green` emission. The battery would therefore fail at
+`gate.command` measurement exactly as section 5 predicted, and the wrapper remains the
+steel thread.
+
+**The proofs pass.** The 106 tests were run across the whole module. Ninety-six packages
+passed with no individual test failing. `cmd/metasystem` was rerun separately because the
+first pass hit Go's ten-minute default while two builds were loading the machine; its
+result is recorded in the line below.
+
+What this does not establish, and section 3 still governs: that the proofs are
+*discriminating* (G5 — a passing test that would also pass on a broken version has proved
+nothing), that the seventeen rows cover the paper (they do not; the seventeen gaps and
+three contradictions stand), or that any row is adequate to the sentence it quotes. Shape
+and reference integrity are the cheap half. The recommendation of section 6 is unchanged:
+birth it small, with the human present.
