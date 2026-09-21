@@ -196,3 +196,20 @@ func request(t *testing.T, handler http.Handler, method, path, host string, head
 	handler.ServeHTTP(response, req)
 	return response
 }
+
+// A repeated Origin is malformed and fails closed: there is no single origin to
+// judge, and accepting the first would let a trailing foreign value ride along.
+func TestRepeatedOriginIsRefused(t *testing.T) {
+	t.Parallel()
+
+	bound := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 7878}
+	recorder := httptest.NewRecorder()
+	httpRequest := httptest.NewRequest(http.MethodGet, "/-/health", nil)
+	httpRequest.Host = "127.0.0.1:7878"
+	httpRequest.Header["Origin"] = []string{"http://127.0.0.1:7878", "http://attacker.invalid"}
+
+	New(Info{}, bound).ServeHTTP(recorder, httpRequest)
+
+	testutil.Expect(t, "repeated origin status", recorder.Code, http.StatusForbidden)
+	testutil.Expect(t, "repeated origin body", recorder.Body.String(), "request origin is not allowed\n")
+}

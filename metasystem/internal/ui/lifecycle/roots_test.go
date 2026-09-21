@@ -2,9 +2,11 @@ package lifecycle
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
@@ -95,6 +97,10 @@ func TestO4ResolveRootsRefusesForeignCheckout(t *testing.T) {
 			installation := filepath.Join(repository, "metasystem")
 			testutil.Require(t, "create installation", os.MkdirAll(installation, 0o755), nil)
 			foreign := test.repo(t)
+			before := map[string][]string{
+				repository: treeSnapshot(t, "application before", repository),
+				foreign:    treeSnapshot(t, "foreign before", foreign),
+			}
 
 			roots, err := ResolveRoots(foreign, installation)
 
@@ -105,9 +111,12 @@ func TestO4ResolveRootsRefusesForeignCheckout(t *testing.T) {
 			testutil.Expect(t, "mismatch installation", mismatch.Installation, installation)
 			testutil.Expect(t, "mismatch line", err.Error(),
 				"the installation at "+installation+" does not serve the checkout at "+foreign)
-			for _, root := range []string{repository, installation, foreign} {
-				_, statErr := os.Stat(filepath.Join(root, "artifacts"))
-				testutil.Expect(t, "nothing created under "+root, errors.Is(statErr, os.ErrNotExist), true)
+			for _, walk := range []struct{ label, root string }{
+				{"application after", repository},
+				{"foreign after", foreign},
+			} {
+				testutil.Expect(t, "unchanged tree at "+walk.root,
+					treeSnapshot(t, walk.label, walk.root), before[walk.root])
 			}
 		})
 	}
@@ -125,4 +134,30 @@ func rootsTestRepository(t *testing.T, label string) string {
 	canonical, err := filepath.EvalSymlinks(repository)
 	testutil.Require(t, label+" canonical repository", err, nil)
 	return canonical
+}
+
+// treeSnapshot lists every path beneath root, so a test can prove that a call
+// created nothing anywhere rather than that one expected path is absent.
+func treeSnapshot(t *testing.T, label, root string) []string {
+	t.Helper()
+
+	var paths []string
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		suffix := ""
+		if entry.IsDir() {
+			suffix = "/"
+		}
+		paths = append(paths, relative+suffix)
+		return nil
+	})
+	testutil.Require(t, "walk "+label, err, nil)
+	sort.Strings(paths)
+	return paths
 }

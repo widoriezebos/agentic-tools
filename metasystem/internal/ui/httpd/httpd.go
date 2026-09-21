@@ -41,7 +41,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cross-site request is not allowed", http.StatusForbidden)
 		return
 	}
-	if origin, present := headerValue(r.Header, "Origin"); present && !h.originAllowed(origin) {
+	// A request carrying more than one Origin is malformed; no browser sends
+	// that, and there is no single origin to judge, so it fails closed.
+	if origin, present, single := originHeader(r.Header); present && (!single || !h.originAllowed(origin)) {
 		http.Error(w, "request origin is not allowed", http.StatusForbidden)
 		return
 	}
@@ -121,6 +123,16 @@ func fetchSiteAllowed(r *http.Request) bool {
 	return r.Method == http.MethodGet &&
 		r.Header.Get("Sec-Fetch-Mode") == "navigate" &&
 		r.Header.Get("Sec-Fetch-Dest") == "document"
+}
+
+// originHeader reports the request's origin, whether one was sent at all, and
+// whether exactly one was sent.
+func originHeader(header http.Header) (value string, present, single bool) {
+	values, present := header[http.CanonicalHeaderKey("Origin")]
+	if !present || len(values) == 0 {
+		return "", present, false
+	}
+	return values[0], true, len(values) == 1
 }
 
 func headerValue(header http.Header, name string) (string, bool) {
