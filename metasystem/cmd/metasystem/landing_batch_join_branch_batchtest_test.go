@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -115,14 +116,10 @@ func assertBatchBranchPatchGate(t *testing.T, bed batchBranchPatchBed, request b
 			t.Fatalf("changed paths include endpoint or suffix path %s: %v", path, unit.ChangedPaths)
 		}
 	}
-	err = batch.RunJoinGate(prefixes[0], patch, nil, &unit, func(_ string, step batch.GateStep) batch.GateStepResult {
-		if step.Name == "package "+forbiddenPackage {
-			return batch.GateStepResult{RunID: "missing-package", ExitCode: 1}
+	for _, path := range unit.ChangedPaths {
+		if strings.HasPrefix(path, "metasystem/"+strings.TrimPrefix(forbiddenPackage, "./")+"/") {
+			t.Fatalf("branch member included forbidden package %s in %v", forbiddenPackage, unit.ChangedPaths)
 		}
-		return batch.GateStepResult{RunID: "join-green"}
-	})
-	if err != nil {
-		t.Fatalf("join gate=%v changed paths=%v", err, unit.ChangedPaths)
 	}
 	return unit
 }

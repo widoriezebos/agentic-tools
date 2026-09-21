@@ -1059,6 +1059,9 @@ func TestExactReusableTestResultPreservesCommittedOuterOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := BindJoinedTestComponentsLocked(root, attempt.AttemptID, map[string]string{"application": groupIdentity}); err != nil {
+		t.Fatal(err)
+	}
 	result := componentAttemptResult(attempt.AttemptID, "application", groupIdentity, "passed")
 	payload := json.RawMessage(`{"schemaVersion":2,"marker":"byte-exact"}`)
 	if _, err := FinalizeAttemptWithTestResultLocked(root, attempt.AttemptID, TerminalSuccess, 0, "green", payload, &result, now.Add(time.Second)); err != nil {

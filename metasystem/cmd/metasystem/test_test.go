@@ -750,6 +750,9 @@ func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
 func TestBatchPrefixTestingControlRootRetainsAttemptOutsideExecution(t *testing.T) {
 	t.Parallel()
 	controlRoot, executionRoot := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(controlRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	prepared := testingPreparation{Installation: executionRoot, ControlRoot: controlRoot, ProjectRoot: executionRoot}
 	runRequest := testingRunRequest(prepared, "", "", "", strings.Repeat("1", 64), strings.Repeat("2", 40))
 	if runRequest.ControlRoot != controlRoot || runRequest.ProjectRoot != executionRoot {
@@ -763,11 +766,11 @@ func TestBatchPrefixTestingControlRootRetainsAttemptOutsideExecution(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, decision, err := proofrun.ReserveLocked(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
+	attempt, decision, err := proofrun.ReserveLocked(privateProofAdmissionRequest(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
 		ControlRoot: controlRoot, ExecutionRoot: executionRoot, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
 		CandidateGoalID: "goal-a", CandidateRevision: 2, CandidateTree: strings.Repeat("b", 40), ReservedMinutes: 2,
 		Identity: proofIdentity, Launcher: launcher, Now: time.Date(2026, 9, 19, 12, 0, 0, 0, time.UTC),
-	}, "0"))
+	}, "0")))
 	if err != nil || decision.Disposition == proofrun.DispositionAdmissionRefused {
 		t.Fatalf("reserve split-root batch prefix attempt: decision=%+v error=%v", decision, err)
 	}

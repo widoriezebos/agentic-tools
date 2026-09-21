@@ -40,19 +40,22 @@ type batchStatusUnit struct {
 }
 
 type batchStatusView struct {
-	BatchID       string                `json:"batchId"`
-	State         string                `json:"state"`
-	Reason        string                `json:"reason,omitempty"`
-	Owner         string                `json:"owner"`
-	OwnerLiveness string                `json:"ownerLiveness"`
-	Lock          string                `json:"lock"`
-	ProofStatus   string                `json:"proofStatus,omitempty"`
-	Headroom      []batchStatusHeadroom `json:"headroom"`
-	Deadline      string                `json:"deadline,omitempty"`
-	Branch        string                `json:"branch,omitempty"`
-	BranchTip     string                `json:"branchTip,omitempty"`
-	Sample        proofrun.LoadSample   `json:"sample"`
-	Units         []batchStatusUnit     `json:"units"`
+	BatchID           string                `json:"batchId"`
+	State             string                `json:"state"`
+	Reason            string                `json:"reason,omitempty"`
+	Owner             string                `json:"owner"`
+	OwnerLiveness     string                `json:"ownerLiveness"`
+	Lock              string                `json:"lock"`
+	ProofStatus       string                `json:"proofStatus,omitempty"`
+	Headroom          []batchStatusHeadroom `json:"headroom"`
+	LiveHeadroom      []batchStatusHeadroom `json:"liveHeadroom"`
+	CostForecast      *batch.CostForecast   `json:"costForecast,omitempty"`
+	CostSnapshotStale bool                  `json:"costSnapshotStale,omitempty"`
+	Deadline          string                `json:"deadline,omitempty"`
+	Branch            string                `json:"branch,omitempty"`
+	BranchTip         string                `json:"branchTip,omitempty"`
+	Sample            proofrun.LoadSample   `json:"sample"`
+	Units             []batchStatusUnit     `json:"units"`
 }
 
 type batchCadenceStatusView struct {
@@ -118,6 +121,11 @@ func batchRecordStatus(record batch.Record, settings config.BatchLanding, config
 		if _, sealed := record.Seal[unit.GoalID]; sealed {
 			view.Headroom = append(view.Headroom, statusHeadroom(controlRoot, unit.GoalID, batchStatusNow().UTC(), uint64(capMinutes)))
 		}
+	}
+	view.LiveHeadroom = slices.Clone(view.Headroom)
+	if record.CostForecast != nil {
+		view.CostForecast = record.CostForecast
+		view.CostSnapshotStale = !record.CostForecast.Matches(record)
 	}
 	if record.Landing != nil && record.Landing.BranchTip != "" {
 		view.Branch, view.BranchTip = "landing/"+record.BatchID, record.Landing.BranchTip

@@ -3,10 +3,11 @@ package batch
 import (
 	"errors"
 	"fmt"
-	"path"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 )
 
 // DiagnosticRequest is one fresh, charged classification run. Tree is always
@@ -33,11 +34,14 @@ func (refusal *DiagnosticRefusal) Error() string { return refusal.Status }
 
 // RedSeams names the effects outside classification and tree derivation.
 type RedSeams struct {
-	Run        func(DiagnosticRequest) (DiagnosticResult, error)
-	MintOpid   func() (string, error)
-	Ledger     LedgerOwner
-	UpdateNext func(goalID, status string) error
-	BaseCommit string
+	Run func(DiagnosticRequest) (DiagnosticResult, error)
+	// ConfirmFenced re-reads the live accepted ledger and binds a stop fence to
+	// this exact joined, handed-over claim. A runner refusal alone is not proof.
+	ConfirmFenced func(Unit) (string, bool, error)
+	MintOpid      func() (string, error)
+	Ledger        LedgerOwner
+	UpdateNext    func(goalID, status string) error
+	BaseCommit    string
 }
 
 // DiagnoseRed runs the failed groups on the base first, then follows the
@@ -64,20 +68,41 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 		if runErr != nil {
 			var refusal *DiagnosticRefusal
 			if errors.As(runErr, &refusal) {
-				next := "diagnostic refusal: " + refusal.Status
+				status := refusal.Status
+				if seams.ConfirmFenced != nil {
+					reason, fenced, confirmErr := seams.ConfirmFenced(unit)
+					if confirmErr == nil && fenced {
+						return DiagnosticResult{}, true, ReassembleSurvivorsWithReturns(store, id, actor, at,
+							[]ReturnDecision{{GoalID: unit.GoalID, Outcome: UnitEjected, Reason: reason}})
+					}
+					if confirmErr != nil {
+						status += "; live fence verification: " + confirmErr.Error()
+					}
+				}
+				next := "diagnostic refusal: " + status
 				if seams.UpdateNext != nil {
 					if editErr := seams.UpdateNext(authority.GoalID, next); editErr != nil {
 						return DiagnosticResult{}, false, errors.Join(runErr, editErr)
 					}
 				}
-				return DiagnosticResult{}, true, HoldUnclassified(store, id, actor, refusal.Status, next, at)
+				return DiagnosticResult{}, true, HoldUnclassified(store, id, actor, status, next, at)
 			}
 		}
 		return result, false, runErr
 	}
+	hold := func(reason string) error {
+		next := "inspect the diagnostic evidence and ordered member patch composition before returning a unit"
+		if err := HoldUnclassified(store, id, actor, reason, next, at); err != nil {
+			return err
+		}
+		if seams.UpdateNext != nil {
+			return seams.UpdateNext(authority.GoalID, next)
+		}
+		return nil
+	}
 	base, held, err := run(record.BaseTree, authority)
 	if err != nil {
-		return err
+		return hold("base diagnostic unavailable: " + err.Error())
 	}
 	if held {
 		return nil
@@ -90,59 +115,75 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 		named = map[string]bool{prefixGoal: true}
 	}
 	if len(named) == 0 {
-		return holdAndRecordTrunkRed(store, record, actor, DiagnosticResult{AttemptID: record.Proof.AttemptID, Groups: failing}, seams, at)
+		return hold("green base but no failed group can be attributed to a member")
 	}
+	decisions := make([]ReturnDecision, 0, len(named))
 	if len(named) == 1 {
 		for goalID := range named {
-			if err := RequestReturn(store, id, goalID, UnitEjected, diagnosticFailure(base, failing, nil), actor, at); err != nil {
-				return err
+			decisions = append(decisions, ReturnDecision{GoalID: goalID, Outcome: UnitEjected, Reason: diagnosticFailure(base, failing, nil)})
+		}
+	} else {
+		unnamed := slices.DeleteFunc(slices.Clone(joined), func(unit Unit) bool { return named[unit.GoalID] })
+		survivors := slices.Clone(unnamed)
+		if len(unnamed) > 0 {
+			trees, assembleErr := assembleUnits(store.root, record.BaseTree, unnamed)
+			if assembleErr != nil {
+				return hold("unnamed members do not compose: " + assembleErr.Error())
 			}
-		}
-		return ReassembleSurvivors(store, id, actor, at)
-	}
-	unnamed := slices.DeleteFunc(slices.Clone(joined), func(unit Unit) bool { return named[unit.GoalID] })
-	survivors := slices.Clone(unnamed)
-	if len(unnamed) > 0 {
-		trees, assembleErr := assembleUnits(store.root, record.BaseTree, unnamed)
-		if assembleErr != nil {
-			return assembleErr
-		}
-		result, held, runErr := run(trees[len(trees)-1], unnamed[len(unnamed)-1])
-		if held {
-			return nil
-		}
-		if runErr != nil || !result.Green() {
+			result, held, runErr := run(trees[len(trees)-1], unnamed[len(unnamed)-1])
+			if held {
+				return nil
+			}
 			if runErr != nil {
-				return runErr
+				return hold("unnamed diagnostic unavailable: " + runErr.Error())
 			}
-			return HoldUnclassified(store, id, actor, "unnamed diagnostic red", "Gk Next: inspect unnamed diagnostic", at)
+			if !result.Green() {
+				return hold("unnamed diagnostic red")
+			}
+		}
+		for _, unit := range joined {
+			if !named[unit.GoalID] {
+				continue
+			}
+			included := map[string]bool{unit.GoalID: true}
+			for _, survivor := range survivors {
+				included[survivor.GoalID] = true
+			}
+			candidate := slices.DeleteFunc(slices.Clone(joined), func(member Unit) bool { return !included[member.GoalID] })
+			trees, assembleErr := assembleUnits(store.root, record.BaseTree, candidate)
+			if assembleErr != nil {
+				var conflict *assemblyConflict
+				if len(decisions) == 0 || !errors.As(assembleErr, &conflict) || conflict.GoalID != unit.GoalID {
+					return hold("named diagnostic members do not compose: " + assembleErr.Error())
+				}
+				decisions = append(decisions, ReturnDecision{GoalID: unit.GoalID, Outcome: UnitEjected,
+					Reason: "cannot apply after returning " + returnedGoalIDs(decisions) + ": " + assembleErr.Error()})
+				continue
+			}
+			result, held, runErr := run(trees[len(trees)-1], unit)
+			if runErr != nil {
+				return hold("named diagnostic unavailable: " + runErr.Error())
+			}
+			if held {
+				return nil
+			}
+			if result.Green() {
+				survivors = candidate
+				continue
+			}
+			decisions = append(decisions, ReturnDecision{GoalID: unit.GoalID, Outcome: UnitEjected,
+				Reason: diagnosticFailure(result, failing, survivors)})
 		}
 	}
-	for _, unit := range joined {
-		if !named[unit.GoalID] {
-			continue
-		}
-		candidate := append(slices.Clone(survivors), unit)
-		trees, assembleErr := assembleUnits(store.root, record.BaseTree, candidate)
-		if assembleErr != nil {
-			return assembleErr
-		}
-		result, held, runErr := run(trees[len(trees)-1], unit)
-		if runErr != nil {
-			return runErr
-		}
-		if held {
-			return nil
-		}
-		if result.Green() {
-			survivors = candidate
-			continue
-		}
-		if err := RequestReturn(store, id, unit.GoalID, UnitEjected, diagnosticFailure(result, failing, survivors), actor, at); err != nil {
-			return err
-		}
+	return ReassembleSurvivorsWithReturns(store, id, actor, at, decisions)
+}
+
+func returnedGoalIDs(decisions []ReturnDecision) string {
+	ids := make([]string, 0, len(decisions))
+	for _, decision := range decisions {
+		ids = append(ids, decision.GoalID)
 	}
-	return ReassembleSurvivors(store, id, actor, at)
+	return strings.Join(ids, ",")
 }
 
 func joinedUnits(units []Unit) []Unit {
@@ -169,11 +210,18 @@ func namedDiagnosticUnits(units []Unit, failing []RedGroup) map[string]bool {
 }
 
 func diagnosticPathMatches(pattern, changed string) bool {
-	pattern, changed = strings.TrimPrefix(pattern, "metasystem/"), strings.TrimPrefix(changed, "metasystem/")
-	if prefix, ok := strings.CutSuffix(pattern, "/**"); ok {
-		return changed == prefix || strings.HasPrefix(changed, prefix+"/")
+	value, literal, err := pathpattern.ManifestEntry(pattern)
+	if err != nil {
+		return true
 	}
-	matched, _ := path.Match(pattern, changed)
+	value, changed = strings.TrimPrefix(value, "metasystem/"), strings.TrimPrefix(changed, "metasystem/")
+	if literal {
+		return value == changed
+	}
+	matched, err := pathpattern.MatchManifestEntry(value, changed)
+	if err != nil {
+		return true
+	}
 	return matched
 }
 

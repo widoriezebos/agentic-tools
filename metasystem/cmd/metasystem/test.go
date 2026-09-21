@@ -172,7 +172,7 @@ type testingSelectionRequest struct {
 	ExpectedGoalRevision, ExpectedAccountingRevision                                    uint64
 	Mode                                                                                testpolicy.Mode
 	Purpose                                                                             testpolicy.Purpose
-	Groups                                                                              []string
+	Groups, BatchRequirements                                                           []string
 	Carried                                                                             bool
 	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups                          bool
 	BatchPrefixReceipt, BatchTipProof, BatchAdmission                                   bool
@@ -204,6 +204,7 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 	mode := flags.String("mode", "auto", "auto, standard, deep, or diagnostic canary")
 	purpose := flags.String("purpose", "delivery", "delivery, diagnostic, or cadence")
 	groups := flags.String("groups", "", "comma-separated diagnostic groups")
+	batchRequirements := flags.String("batch-requirements", "", "strict JSON batch delivery requirements")
 	jsonOutput := flags.Bool("json", false, "emit structured JSON")
 	flags.BoolVar(&request.PolicyChild, "policy-child", false, "judge policy in the pinned child without re-arming")
 	flags.BoolVar(&request.BatchPrefixReceipt, "batch-prefix", false, "compose delivery evidence for a batch prefix")
@@ -247,6 +248,27 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		}
 	}
 	request.Mode, request.Purpose = testpolicy.Mode(*mode), testpolicy.Purpose(*purpose)
+	requirementsSet, groupsSet := false, false
+	flags.Visit(func(value *flag.Flag) {
+		requirementsSet = requirementsSet || value.Name == "batch-requirements"
+		groupsSet = groupsSet || value.Name == "groups"
+	})
+	if requirementsSet {
+		if !request.BatchPrefixReceipt || request.Purpose != testpolicy.PurposeDelivery || groupsSet {
+			fmt.Fprintln(os.Stderr, "--batch-requirements requires delivery --batch-prefix and cannot be combined with --groups")
+			return request, false, 2
+		}
+		var err error
+		request.BatchRequirements, err = parseBatchRequirements(*batchRequirements)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "invalid --batch-requirements:", err)
+			return request, false, 2
+		}
+	}
+	if request.BatchPrefixReceipt && groupsSet {
+		fmt.Fprintln(os.Stderr, "--groups is diagnostic-only and cannot be combined with --batch-prefix")
+		return request, false, 2
+	}
 	if request.BatchPrefixReceipt && request.Purpose != testpolicy.PurposeDelivery {
 		fmt.Fprintln(os.Stderr, "--batch-prefix requires delivery purpose")
 		return request, false, 2
@@ -305,6 +327,49 @@ func parseTestingSelection(name string, args []string, execution bool) (testingS
 		return request, false, 2
 	}
 	return request, *jsonOutput, 0
+}
+
+// The batch transport carries only exact group IDs. The current protected
+// policy and prerequisite closure are recomputed by the selector.
+func parseBatchRequirements(value string) ([]string, error) {
+	decoder := json.NewDecoder(strings.NewReader(value))
+	opening, err := decoder.Token()
+	if err != nil || opening != json.Delim('{') {
+		return nil, fmt.Errorf("expected an object with a groups array")
+	}
+	key, err := decoder.Token()
+	if err != nil || key != "groups" {
+		return nil, fmt.Errorf("expected only the groups field")
+	}
+	var groups []string
+	if err := decoder.Decode(&groups); err != nil || groups == nil {
+		return nil, fmt.Errorf("groups must be an array of identifiers")
+	}
+	closing, err := decoder.Token()
+	if err != nil || closing != json.Delim('}') {
+		return nil, fmt.Errorf("unexpected batch requirements field")
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, fmt.Errorf("trailing batch requirements content")
+	}
+	seen := map[string]bool{}
+	for _, id := range groups {
+		if id == "" || id != strings.TrimSpace(id) || seen[id] {
+			return nil, fmt.Errorf("groups must contain unique exact identifiers")
+		}
+		seen[id] = true
+	}
+	return groups, nil
+}
+
+func batchRequirementsArgument(groups []string) string {
+	if groups == nil {
+		groups = []string{}
+	}
+	encoded, _ := json.Marshal(struct {
+		Groups []string `json:"groups"`
+	}{Groups: groups})
+	return string(encoded)
 }
 
 const preparationRestartedEnv = "METASYSTEM_PREPARATION_RESTARTED"
@@ -500,12 +565,12 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		}
 	}
 	plan, err := testpolicy.Select(effective, testpolicy.SelectionRequest{ChangedPaths: changedPaths, GoalRisk: risk,
-		RequestedMode: request.Mode, Purpose: request.Purpose, Groups: request.Groups, SupplementDeliveryGroups: request.BatchPrefixReceipt})
+		RequestedMode: request.Mode, Purpose: request.Purpose, Groups: request.Groups})
 	if err != nil {
 		return testingPreparation{}, err
 	}
 	if basePresent && !currentIsPolicyEngine {
-		basePlan, basePlanErr := planWithTrustedPolicyEngine(policyEngine, request, installation, candidateTree)
+		basePlan, basePlanErr := planWithTrustedPolicyEngine(policyEngine, trustedPolicyFloorRequest(request), installation, candidateTree)
 		if basePlanErr != nil {
 			return testingPreparation{}, basePlanErr
 		}
@@ -516,6 +581,12 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 			return testingPreparation{}, mismatch
 		}
 		plan = basePlan.Plan
+	}
+	if len(request.BatchRequirements) > 0 {
+		plan, err = testpolicy.WithBatchRequirements(effective, plan, request.BatchRequirements)
+		if err != nil {
+			return testingPreparation{}, err
+		}
 	}
 	if !basePresent && request.Purpose == testpolicy.PurposeDelivery {
 		plan, err = testpolicy.RequireFirstTransition(effective, plan)
@@ -588,6 +659,12 @@ func compareTrustedPolicyDecision(installation, projectRoot, candidateTree, poli
 		return mismatch
 	}
 	return &preparationBaseMove{ours: policyBaseCommit, engine: decision.PolicyBaseCommit}
+}
+
+func trustedPolicyFloorRequest(request testingSelectionRequest) testingSelectionRequest {
+	request.BatchRequirements = nil
+	request.BatchPrefixReceipt = false
+	return request
 }
 
 func authenticatedPolicyBaseMove(installation, projectRoot, ours, engine string) (bool, error) {
@@ -904,6 +981,10 @@ func (build *candidateEngineBuild) Close() error {
 // The existing build identity covers the tracked engine closure, platform and
 // toolchain. Every cache hit also checks the published bytes before use.
 func prepareCandidateEngine(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string) (*candidateEngineBuild, error) {
+	return prepareCandidateEngineWithColdPreflight(ctx, controlRoot, workspace, installationPrefix, candidateTree, environment, nil)
+}
+
+func prepareCandidateEngineWithColdPreflight(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, beforeColdBuild func() error) (*candidateEngineBuild, error) {
 	buildIdentity, err := candidateEngineBuildIdentity(ctx, workspace, installationPrefix, candidateTree, environment)
 	if err != nil {
 		return nil, err
@@ -938,6 +1019,11 @@ func prepareCandidateEngine(ctx context.Context, controlRoot string, workspace g
 	if cached := validatedCandidateEngine(entry, buildIdentity); cached != nil {
 		cached.QueueDurationMS = cacheWaitMS
 		return cached, nil
+	}
+	if beforeColdBuild != nil {
+		if err := beforeColdBuild(); err != nil {
+			return nil, err
+		}
 	}
 	lease, err := proofrun.AcquireHostResources(ctx, controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", nil)
 	if err != nil {
@@ -1251,11 +1337,17 @@ func runTestRun(args []string) int {
 		return 1
 	}
 	buildContext, cancelBuild := context.WithCancel(context.Background())
-	candidateEngine, err := prepareCandidateEngine(buildContext, controlRoot, gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix,
-		prepared.CandidateTree, inheritedTestingEnvironment(prepared.Environment, os.Environ()))
+	candidateEngine, err := prepareCandidateEngineWithColdPreflight(buildContext, controlRoot, gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix,
+		prepared.CandidateTree, inheritedTestingEnvironment(prepared.Environment, os.Environ()), func() error {
+			return refuseKnownColdBuildBudget(prepared, request)
+		})
 	cancelBuild()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test run:", err)
+		var budgetRefusal *coldBuildBudgetRefusal
+		if errors.As(err, &budgetRefusal) {
+			return proofrun.ExitAdmissionRefused
+		}
 		return 1
 	}
 	defer candidateEngine.Close()
@@ -1990,7 +2082,7 @@ func retainedCandidateEngineDigest(prepared testingPreparation, attempts []proof
 			}
 		}
 	}
-	return "", fmt.Errorf("candidate engine digest is absent from retained evidence for build identity %s; run metasystem test run", buildIdentity)
+	return "", fmt.Errorf("%w for build identity %s; run metasystem test run", errRetainedCandidateEngineAbsent, buildIdentity)
 }
 
 func loadPhysicalTestingContract(root string) (string, testpolicy.Contract, string, error) {

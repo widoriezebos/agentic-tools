@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,11 +14,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
@@ -40,7 +43,7 @@ func candidateProofAdmission(request proofrun.AdmissionRequest) proofrun.Admissi
 	if request.Identity.CommandClass == "testing" && request.CandidateTree == "" {
 		request.CandidateTree = strings.Repeat("b", 40)
 	}
-	return proofrun.WithTestHostLoadSampler(request, "0")
+	return privateProofAdmissionRequest(proofrun.WithTestHostLoadSampler(request, "0"))
 }
 
 func requireProofReservationNotAdmissionRefused(t *testing.T, decision proofrun.LaunchResult) {
@@ -48,6 +51,14 @@ func requireProofReservationNotAdmissionRefused(t *testing.T, decision proofrun.
 	if decision.Disposition == proofrun.DispositionAdmissionRefused {
 		t.Fatalf("proof reservation fixture was admission-refused: %+v", decision)
 	}
+}
+
+func privateProofAdmissionRequest(request proofrun.AdmissionRequest) proofrun.AdmissionRequest {
+	if os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR") == "" && fixtureauth.FixtureModeRoot(request.ControlRoot) {
+		return proofrun.WithTestHostAdmissionDirectory(request,
+			filepath.Join(request.ControlRoot, "artifacts", "agents", "host-admission-fixture"))
+	}
+	return request
 }
 
 func candidateProofLaunchAdmission(request proofLaunchAdmission) proofLaunchAdmission {
@@ -70,6 +81,7 @@ func admitCandidateProofLaunch(t *testing.T, request proofLaunchAdmission) (proo
 			previous(reservation)
 		}
 		*reservation = proofrun.WithTestHostLoadSampler(*reservation, "0")
+		*reservation = privateProofAdmissionRequest(*reservation)
 	}
 	return admitProofLaunch(candidateProofLaunchAdmission(request))
 }
@@ -353,13 +365,13 @@ func TestCandidateGoalTransitionUnderLockIsBeforeOrAfter(t *testing.T) {
 			case "after-publish":
 				proofAdmissionAfterPublish = move
 			}
-			attempt, result, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+			attempt, result, noChild, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 				GoalID: candidate.Id, AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 			})
 			if test.after {
-				if err != nil || result.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
-					t.Fatalf("admission before later rebudget: attempt=%+v result=%+v err=%v", attempt, result, err)
+				if err != nil || noChild || result.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
+					t.Fatalf("admission before later rebudget: attempt=%+v result=%+v noChild=%t err=%v", attempt, result, noChild, err)
 				}
 				moved := rebudgetProofGoalFixture(t, root, candidate.Id, now)
 				stored, readErr := proofrun.ReadAttempt(root, attempt.AttemptID)
@@ -764,12 +776,12 @@ func workerAuthorizedAttemptFixture(t *testing.T, sectionWorktree ...bool) (stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	attempt, decision, err := proofrun.ReserveLocked(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
+	attempt, decision, err := proofrun.ReserveLocked(privateProofAdmissionRequest(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
 		ControlRoot: controlRoot, ExecutionRoot: executionRoot, CandidateTree: candidateTree, GoalID: "standing-validation", GoalRevision: 2,
 		AccountingRevision: 2, CandidateGoalID: "standing-validation", CandidateRevision: 2,
 		ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher,
 		Now: time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC),
-	}, "0"))
+	}, "0")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1605,7 +1617,7 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 	count := filepath.Join(t.TempDir(), "child-launches")
 	ready := filepath.Join(t.TempDir(), "retry-child-ready")
 	release := filepath.Join(t.TempDir(), "retry-child-release")
-	body := `count=0; test ! -f "$1" || count=$(cat "$1"); count=$((count+1)); printf '%d\n' "$count" >"$1"; if test "$count" -gt 1; then env -u METASYSTEM_HOST_RESOURCE_FDS "$NESTED_ENGINE" proof-run launch --suite nested-command --root "$NESTED_ROOT" --control-root "$NESTED_CONTROL_ROOT" --goal standing-validation --cap-min 1 --command-class command-retry --conf "$NESTED_CONF" --progress "$NESTED_RESULT.progress" --log "$NESTED_RESULT.log" --banner nested --result "$NESTED_RESULT" -- sh -c "printf 'nested-legacy-tail\\n'" >"$NESTED_RESULT.output" 2>&1 || { cat "$NESTED_RESULT.output" >&2; exit 97; }; printf 'ready\n' >"$2"; while test ! -e "$3"; do sleep .05; done; fi; test "$count" -gt 1`
+	body := `count=0; test ! -f "$1" || count=$(cat "$1"); count=$((count+1)); printf '%d\n' "$count" >"$1"; if test "$count" -gt 1; then nested_engine=$4; nested_root=$5; nested_control=$6; nested_conf=$7; nested_result=$8; if test -z "$nested_engine"; then printf "nested command argc=%s\n" "$#" >&2; exit 97; fi; env -u METASYSTEM_HOST_RESOURCE_FDS "$nested_engine" proof-run launch --suite nested-command --root "$nested_root" --control-root "$nested_control" --goal standing-validation --cap-min 1 --command-class command-retry --conf "$nested_conf" --progress "$nested_result.progress" --log "$nested_result.log" --banner nested --result "$nested_result" -- sh -c "printf 'nested-legacy-tail\\n'" >"$nested_result.output" 2>&1 || { printf "nested engine=%s argc=%s\n" "$nested_engine" "$#" >&2; cat "$nested_result.output" >&2; exit 97; }; printf 'ready\n' >"$2"; while test ! -e "$3"; do sleep .05; done; fi; test "$count" -gt 1`
 	admissionDir := filepath.Join(t.TempDir(), "host-admission")
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
@@ -1620,11 +1632,9 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 		if retry != "" {
 			args = append(args, "--retry-decision", retry)
 		}
-		args = append(args, "--", "bash", "-c", body, "fixture", count, ready, release)
+		args = append(args, "--", "bash", "-c", body, "fixture", count, ready, release,
+			engine, root, controlRoot, filepath.Join(root, "metasystem.conf"), result+".nested.json")
 		command := proofFixture.command(environment, engine, args...)
-		command.Env = append(command.Env, "NESTED_ENGINE="+engine, "NESTED_ROOT="+root,
-			"NESTED_CONTROL_ROOT="+controlRoot, "NESTED_CONF="+filepath.Join(root, "metasystem.conf"),
-			"NESTED_RESULT="+result+".nested.json")
 		var output []byte
 		if retry == "" {
 			output, err = command.CombinedOutput()
@@ -1633,20 +1643,28 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 			command.Stdout, command.Stderr = &buffer, &buffer
 			if err = command.Start(); err == nil {
 				defer command.Process.Kill()
-				waitForPublicRouteFile(t, ready)
-				contender, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-				lease, acquireErr := proofrun.AcquireHostResources(contender, controlRoot, capacityConfig, "heavy", nil)
+				finished := make(chan error, 1)
+				go func() { finished <- command.Wait() }()
+				waitForPublicRouteFileOrExit(t, ready, finished, func() string { return buffer.String() })
+				probeContext, cancel := context.WithCancel(t.Context())
+				observedWait := false
+				probeContext = proofrun.WithHostResourceWaitObserver(probeContext, func() {
+					observedWait = true
+					cancel()
+				})
+				lease, acquireErr := proofrun.AcquireHostResources(probeContext, controlRoot,
+					capacityConfig, "heavy", nil)
 				cancel()
 				if lease != nil {
 					_ = lease.Close()
 				}
-				if !errors.Is(acquireErr, context.DeadlineExceeded) {
-					t.Fatalf("admitted proof did not hold cap-1 slot: %v", acquireErr)
+				if !observedWait || !errors.Is(acquireErr, context.Canceled) {
+					t.Fatalf("admitted proof did not reach a failed cap-1 scan: observed=%t err=%v", observedWait, acquireErr)
 				}
 				if writeErr := os.WriteFile(release, []byte("release\n"), 0o600); writeErr != nil {
 					t.Fatal(writeErr)
 				}
-				err = command.Wait()
+				err = <-finished
 			}
 			output = buffer.Bytes()
 		}
@@ -1713,6 +1731,7 @@ func TestProofRunCommandTopLevelRetryAcrossRenamedRoots(t *testing.T) {
 		t.Fatalf("command accounting after renamed-root retry: attempts=%+v err=%v", attempts, err)
 	}
 	assertHostAdmissionClean(t, admissionDir, 1)
+
 }
 
 func assertHostAdmissionClean(t *testing.T, directory string, wantLeases int, allowedStaleManagedPID ...int) {
@@ -1750,17 +1769,54 @@ func assertHostAdmissionClean(t *testing.T, directory string, wantLeases int, al
 }
 
 func waitForPublicRouteFile(t *testing.T, path string) {
+	waitForPublicRouteFileOrExit(t, path, nil, nil)
+}
+
+func waitForPublicRouteFileOrExit(t *testing.T, path string, exited <-chan error, output func() string) {
 	t.Helper()
-	deadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(deadline) {
+	deadline, bounded := t.Deadline()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
 		if _, err := os.Stat(path); err == nil {
 			return
 		} else if !os.IsNotExist(err) {
 			t.Fatal(err)
 		}
-		time.Sleep(25 * time.Millisecond)
+		if bounded && !time.Now().Before(deadline) {
+			t.Fatalf("public proof child did not publish %s before test deadline", filepath.Base(path))
+		}
+		select {
+		case exitErr := <-exited:
+			t.Fatalf("public proof exited before publishing %s: %v; output=%s", filepath.Base(path), exitErr, output())
+		case <-t.Context().Done():
+			t.Fatalf("public proof child did not publish %s before test cancellation: %v", filepath.Base(path), t.Context().Err())
+		case <-ticker.C:
+		}
 	}
-	t.Fatalf("public proof child did not publish %s", filepath.Base(path))
+}
+
+type publicCapacityWaitOutput struct {
+	mu      sync.Mutex
+	buffer  bytes.Buffer
+	waiting chan struct{}
+	once    sync.Once
+}
+
+func (w *publicCapacityWaitOutput) Write(data []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	n, err := w.buffer.Write(data)
+	if strings.Contains(w.buffer.String(), proofCapacityWaitLine) {
+		w.once.Do(func() { close(w.waiting) })
+	}
+	return n, err
+}
+
+func (w *publicCapacityWaitOutput) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buffer.String()
 }
 
 func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
@@ -1791,11 +1847,59 @@ func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer holder.Close()
+	// The observer must see a completed failed scan, with both the guard and
+	// partially acquired named resource released before it runs.
+	probeContext, cancelProbe := context.WithCancel(t.Context())
+	observed := 0
+	var probeErr error
+	probeContext = proofrun.WithHostResourceWaitObserver(probeContext, func() {
+		observed++
+		for _, path := range []string{
+			filepath.Join(admissionDir, "admission.lock"),
+			filepath.Join(admissionDir, fmt.Sprintf("resource-%x", sha256.Sum256([]byte("observer-probe")))),
+		} {
+			file, openErr := os.OpenFile(path, os.O_RDWR, 0)
+			if openErr != nil {
+				probeErr = openErr
+				break
+			}
+			lockErr := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+			if lockErr == nil {
+				lockErr = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+			}
+			_ = file.Close()
+			if lockErr != nil {
+				probeErr = fmt.Errorf("observer saw %s locked: %w", filepath.Base(path), lockErr)
+				break
+			}
+		}
+		cancelProbe()
+	})
+	probe, err := proofrun.AcquireHostResources(probeContext, root, conf, "heavy", []string{"observer-probe"})
+	cancelProbe()
+	if probe != nil {
+		_ = probe.Close()
+	}
+	if observed != 1 || probeErr != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("capacity wait observer was not called once after lock release: count=%d callback=%v acquire=%v", observed, probeErr, err)
+	}
+	unblockedCalls := 0
+	unblockedContext := proofrun.WithHostResourceWaitObserver(t.Context(), func() { unblockedCalls++ })
+	unblocked, err := proofrun.AcquireHostResources(unblockedContext, root, conf, "cheap", nil)
+	if err != nil || unblockedCalls != 0 {
+		t.Fatalf("unblocked resource acquisition reported a wait: calls=%d err=%v", unblockedCalls, err)
+	}
+	if err := proofrun.MarkHostResourcesClean(unblocked.Files()); err != nil {
+		t.Fatal(err)
+	}
+	if err := unblocked.Close(); err != nil {
+		t.Fatal(err)
+	}
 	command := fixture.command(environment, engine, "proof-run", "launch", "--suite", "legacy-canary",
 		"--root", root, "--conf", conf, "--progress", result+".progress.jsonl", "--log", result+".log",
 		"--banner", "legacy canary", "--result", result, "--", "bash", "-c", `printf 'ran\n' > "$1"`, "fixture", childOutput)
-	var output bytes.Buffer
-	command.Stdout, command.Stderr = &output, &output
+	output := &publicCapacityWaitOutput{waiting: make(chan struct{})}
+	command.Stdout, command.Stderr = output, output
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -1805,7 +1909,9 @@ func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
 	select {
 	case err := <-finished:
 		t.Fatalf("public legacy launch finished behind held cap-1 slot: %v\n%s", err, output.String())
-	case <-time.After(250 * time.Millisecond):
+	case <-output.waiting:
+	case <-t.Context().Done():
+		t.Fatalf("public legacy launch never reported the failed capacity scan: %v\n%s", t.Context().Err(), output.String())
 	}
 	if _, err := os.Stat(childOutput); !os.IsNotExist(err) {
 		t.Fatalf("legacy child ran while host slot held: %v", err)
@@ -1821,13 +1927,131 @@ func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
 		if err != nil {
 			t.Fatalf("public legacy launch after release: %v\n%s", err, output.String())
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("legacy public launch did not resume after slot release")
+	case <-t.Context().Done():
+		t.Fatalf("legacy public launch did not resume after slot release: %v", t.Context().Err())
 	}
 	if data, err := os.ReadFile(childOutput); err != nil || string(data) != "ran\n" {
 		t.Fatalf("legacy child did not run: data=%q err=%v output=%s", data, err, output.String())
 	}
+	if count := strings.Count(output.String(), proofCapacityWaitLine); count != 1 {
+		t.Fatalf("public capacity wait messages = %d, want one: %s", count, output.String())
+	}
 	assertHostAdmissionClean(t, admissionDir, 1)
+	t.Run("closed_fence_before_admission", func(t *testing.T) {
+		closedRoot := t.TempDir()
+		closedConf := filepath.Join(closedRoot, "metasystem.conf")
+		if err := os.WriteFile(closedConf, []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=1\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(stopfence.TransitionPath(closedRoot)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := stopfence.Write(closedRoot, stopfence.Record{State: stopfence.StateClosed, Phase: stopfence.PhaseStopped,
+			Generation: 1, ChangedAt: "2026-09-20T12:00:00Z", Checkout: closedRoot,
+			By: stopfence.Actor{Verb: "stop", Process: stopfence.Process{Pid: 73}}}); err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"METASYSTEM_PROOF_CONTROL_ROOT", "METASYSTEM_PROOF_ATTEMPT", "METASYSTEM_PROOF_RUN_ROOT",
+			"METASYSTEM_PROOF_RUN_ID", "METASYSTEM_HOOK_DELEGATE_STATE_ROOT", "METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT",
+			"METASYSTEM_HOOK_DELEGATE_JOB"} {
+			t.Setenv(name, "")
+		}
+		// An invalid admission path proves the stopped refusal does not try to
+		// acquire host capacity.
+		t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", "/")
+		resultPath := filepath.Join(closedRoot, "result.json")
+		logPath := filepath.Join(closedRoot, "suite.log")
+		status := runProofRunLaunch([]string{"--suite", "closed", "--root", closedRoot, "--control-root", closedRoot,
+			"--conf", closedConf, "--progress", filepath.Join(closedRoot, "progress.jsonl"), "--log", logPath,
+			"--banner", "closed", "--result", resultPath, "--", "/bin/true"})
+		if status != 1 {
+			t.Fatalf("closed fence status = %d, want failed refusal 1", status)
+		}
+		data, err := os.ReadFile(resultPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result proofrun.LaunchResult
+		if err := json.Unmarshal(data, &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Disposition != proofrun.DispositionFailed || result.ExitStatus != 1 {
+			t.Fatalf("closed fence result = %+v", result)
+		}
+		if _, err := os.Stat(logPath); !os.IsNotExist(err) {
+			t.Fatalf("closed fence reached suite launch: %v", err)
+		}
+	})
+	t.Run("rearmed_generation_cannot_resume_queued_launch", func(t *testing.T) {
+		for _, name := range []string{"METASYSTEM_PROOF_CONTROL_ROOT", "METASYSTEM_PROOF_ATTEMPT", "METASYSTEM_PROOF_RUN_ROOT",
+			"METASYSTEM_PROOF_RUN_ID", "METASYSTEM_HOOK_DELEGATE_STATE_ROOT", "METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT",
+			"METASYSTEM_HOOK_DELEGATE_JOB"} {
+			t.Setenv(name, "")
+		}
+		for _, scenario := range []struct {
+			name     string
+			changeAt int
+			holdSlot bool
+		}{
+			{name: "while_waiting_for_slot", changeAt: 4, holdSlot: true},
+			{name: "at_launcher_handoff", changeAt: 4},
+		} {
+			t.Run(scenario.name, func(t *testing.T) {
+				var holder *proofrun.HostResourceLease
+				if scenario.holdSlot {
+					var err error
+					holder, err = proofrun.AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer holder.Close()
+				}
+				previous := legacyProofFenceRead
+				reads := 0
+				legacyProofFenceRead = func(string) (stopfence.Record, error) {
+					reads++
+					generation := int64(7)
+					if reads >= scenario.changeAt {
+						generation = 9
+						if holder != nil {
+							if err := proofrun.MarkHostResourcesClean(holder.Files()); err != nil {
+								t.Error(err)
+							}
+							if err := holder.Close(); err != nil {
+								t.Error(err)
+							}
+							holder = nil
+						}
+					}
+					return stopfence.Record{SchemaVersion: stopfence.SchemaVersion, State: stopfence.StateOpen,
+						Phase: stopfence.PhaseArmed, Generation: generation}, nil
+				}
+				t.Cleanup(func() { legacyProofFenceRead = previous })
+				resultPath := filepath.Join(t.TempDir(), "result.json")
+				logPath := resultPath + ".log"
+				status := runProofRunLaunch([]string{"--suite", "stale-epoch", "--root", root, "--control-root", root,
+					"--conf", conf, "--progress", resultPath + ".progress", "--log", logPath,
+					"--banner", "stale epoch", "--result", resultPath, "--", "/bin/true"})
+				if status != 1 || reads != scenario.changeAt {
+					t.Fatalf("stale epoch status=%d fence reads=%d, want failed at read %d", status, reads, scenario.changeAt)
+				}
+				data, err := os.ReadFile(resultPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var result proofrun.LaunchResult
+				if err := json.Unmarshal(data, &result); err != nil {
+					t.Fatal(err)
+				}
+				if result.Disposition != proofrun.DispositionFailed || result.ExitStatus != 1 {
+					t.Fatalf("stale epoch result = %+v", result)
+				}
+				if _, err := os.Stat(logPath); !os.IsNotExist(err) {
+					t.Fatalf("stale epoch reached suite launch: %v", err)
+				}
+			})
+		}
+	})
 }
 
 func TestProofRunLegacyPublicLauncherLossHoldsSlotUntilCustodianDrainsChild(t *testing.T) {
@@ -1859,7 +2083,9 @@ func TestProofRunLegacyPublicLauncherLossHoldsSlotUntilCustodianDrainsChild(t *t
 		t.Fatal(err)
 	}
 	defer command.Process.Kill()
-	waitForPublicRouteFile(t, childPIDPath)
+	finished := make(chan error, 1)
+	go func() { finished <- command.Wait() }()
+	waitForPublicRouteFileOrExit(t, childPIDPath, finished, func() string { return output.String() })
 	pidBytes, err := os.ReadFile(childPIDPath)
 	if err != nil {
 		t.Fatal(err)
@@ -1893,15 +2119,19 @@ func TestProofRunLegacyPublicLauncherLossHoldsSlotUntilCustodianDrainsChild(t *t
 	if err != nil || !bytes.Contains(marker, []byte(`"cleared":false`)) {
 		t.Fatalf("live public child has no dirty marker: %v %s", err, marker)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	type acquiredResource struct {
 		lease *proofrun.HostResourceLease
 		err   error
 	}
 	acquired := make(chan acquiredResource, 1)
+	capacityRetried := make(chan struct{})
 	go func() {
-		lease, err := proofrun.AcquireHostResources(ctx, root, conf, "heavy", nil)
+		observedContext := proofrun.WithHostResourceWaitObserver(ctx, func() {
+			close(capacityRetried)
+		})
+		lease, err := proofrun.AcquireHostResources(observedContext, root, conf, "heavy", nil)
 		acquired <- acquiredResource{lease, err}
 	}()
 	select {
@@ -1910,12 +2140,14 @@ func TestProofRunLegacyPublicLauncherLossHoldsSlotUntilCustodianDrainsChild(t *t
 			_ = result.lease.Close()
 		}
 		t.Fatalf("contender acquired before launcher loss while child alive: %v", result.err)
-	case <-time.After(250 * time.Millisecond):
+	case <-capacityRetried:
+	case <-ctx.Done():
+		t.Fatalf("contender never reached capacity retry: %v", ctx.Err())
 	}
 	if err := command.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
-	_ = command.Wait()
+	<-finished
 	select {
 	case result := <-acquired:
 		if result.err != nil {

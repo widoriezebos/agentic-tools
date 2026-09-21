@@ -1,7 +1,6 @@
 package batch
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -96,20 +95,15 @@ func TestWorkingUnitSelectionAcceptsNestedModuleTreeBase(t *testing.T) {
 	}
 }
 
-func TestBatchJoinGateStepsChangedThenSortedDependentsAndBatchTests(t *testing.T) {
+func TestUnitGatePackageStepsChangedThenSortedDependentsAndBatchTests(t *testing.T) {
 	t.Parallel()
 	root, tree := dependencyModuleTree(t)
-	unit := Unit{}
-	var calls []GateStep
-	err := runJoinGateAt(root, tree, gatePatch("base/base.go"), nil, &unit, func(_ string, step GateStep) GateStepResult {
-		calls = append(calls, step)
-		return GateStepResult{RunID: fmt.Sprintf("gate-%d", len(calls))}
-	})
+	selection, err := unitPackagesFromChanges(unitGateModuleRoot(root), tree, patchGateChanges(gatePatch("base/base.go")))
 	if err != nil {
 		t.Fatal(err)
 	}
+	steps := JoinGatePackageSteps(selection)
 	want := [][]string{
-		{"bash", "scripts/agents/go-gate.sh", "--fast"},
 		{"go", "test", "-count=1", "-timeout", "900s", "./base"},
 		{"go", "test", "-count=1", "-timeout", "40m", "./cmd/metasystem"},
 		{"go", "test", "-count=1", "-timeout", "40m", "./direct"},
@@ -118,12 +112,49 @@ func TestBatchJoinGateStepsChangedThenSortedDependentsAndBatchTests(t *testing.T
 		{"go", "test", "-count=1", "-timeout", "40m", "./transitive"},
 		{"go", "test", "-count=1", "-timeout", "40m", "-tags", "batchtest", "./cmd/metasystem"},
 	}
-	if len(calls) != len(want) {
-		t.Fatalf("join gate steps = %v, want %d steps", calls, len(want))
+	if len(steps) != len(want) {
+		t.Fatalf("unit gate steps=%v want %d", steps, len(want))
 	}
 	for index := range want {
-		if !slices.Equal(calls[index].Args, want[index]) {
-			t.Errorf("join gate step %d = %v, want %v", index, calls[index].Args, want[index])
+		if !slices.Equal(steps[index].Args, want[index]) {
+			t.Errorf("step %d=%v want %v", index, steps[index].Args, want[index])
+		}
+	}
+}
+
+func TestUnitGateFailureDetailNamesFailingDependentTests(t *testing.T) {
+	t.Parallel()
+	output := "--- FAIL: TestDirectContract (0.00s)\nFAIL\n"
+	if got := GateFailureDetail(output); !strings.Contains(got, "TestDirectContract") {
+		t.Fatalf("dependent test detail=%q", got)
+	}
+}
+
+func TestBatchJoinGateStepsChangedThenSortedDependentsAndBatchTests(t *testing.T) {
+	t.Parallel()
+	root, base := dependencyModuleTree(t)
+	if err := os.WriteFile(filepath.Join(root, "base", "base.go"), []byte("package base\nconst Changed = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bedGit(t, root, "add", "base/base.go")
+	tree := bedGit(t, root, "write-tree")
+	selection, err := SelectUnitPackages(root, base, tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.Tree != tree || !slices.Equal(selection.Changed, []string{"./base"}) ||
+		!slices.Equal(selection.Dependents, []string{"./cmd/metasystem", "./direct", "./tagged", "./testonly", "./transitive"}) {
+		t.Fatalf("exact-tree package closure=%+v", selection)
+	}
+	steps := JoinGatePackageSteps(selection)
+	want := []string{"package ./base", "dependent package ./cmd/metasystem", "dependent package ./direct",
+		"dependent package ./tagged", "dependent package ./testonly", "dependent package ./transitive", "package ./cmd/metasystem batchtest"}
+	if len(steps) != len(want) {
+		t.Fatalf("package steps=%v want names=%v", steps, want)
+	}
+	for i, name := range want {
+		if steps[i].Name != name {
+			t.Errorf("step %d=%q want %q", i, steps[i].Name, name)
 		}
 	}
 }
@@ -131,18 +162,27 @@ func TestBatchJoinGateStepsChangedThenSortedDependentsAndBatchTests(t *testing.T
 func TestBatchJoinGateRedNamesFailingDependentTests(t *testing.T) {
 	t.Parallel()
 	root, tree := dependencyModuleTree(t)
-	unit := Unit{}
-	err := runJoinGateAt(root, tree, gatePatch("base/base.go"), nil, &unit, func(_ string, step GateStep) GateStepResult {
-		result := GateStepResult{RunID: "green"}
+	selection, err := unitPackagesFromChanges(root, tree, patchGateChanges(gatePatch("base/base.go")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var direct GateStep
+	for _, step := range JoinGatePackageSteps(selection) {
 		if step.Name == "dependent package ./direct" {
-			result.ExitCode = 1
-			result.Detail = "--- FAIL: TestDirectContract (0.00s)\nFAIL\n"
+			direct = step
+			break
 		}
-		return result
-	})
-	if err == nil || !strings.Contains(err.Error(), "BATCH_JOIN_GATE_RED") ||
-		!strings.Contains(err.Error(), "./direct") || !strings.Contains(err.Error(), "TestDirectContract") {
-		t.Fatalf("dependent test refusal = %v", err)
+	}
+	if direct.Name == "" {
+		t.Fatalf("changed base omitted direct dependent: %+v", selection)
+	}
+	output := "--- FAIL: TestDirectContract (0.00s)\nFAIL\texample.invalid/unitgate/direct\t0.01s\n"
+	if detail := GateFailureDetail(output); !strings.Contains(detail, "TestDirectContract") {
+		t.Fatalf("dependent test name was lost: %q", detail)
+	}
+	reds := GateReds(direct, selection.ModulePath, output)
+	if !slices.Equal(reds, []GateRed{{Package: "./direct", Test: "TestDirectContract"}}) {
+		t.Fatalf("dependent refusal attribution=%v", reds)
 	}
 }
 

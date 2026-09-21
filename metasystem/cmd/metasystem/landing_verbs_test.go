@@ -722,12 +722,49 @@ git commit "${commit_args[@]}" --trailer "Landing-Provenance: $provenance" \
 	if err := os.WriteFile(identityTable, []byte(fmt.Sprintf(`{"%d":{"terminal":true}}`, os.Getpid())), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	gitLog := filepath.Join(bed, "git.log")
+	pushCount := filepath.Join(bed, "push-count")
+	wrapperDir := filepath.Join(bed, "wrapper-bin")
+	if err := os.MkdirAll(wrapperDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Build and verify the retained engine under one PATH and one resolved Git.
+	// The wrapper observes commands during receipt creation but activates its
+	// controlled origin move only for the later landing invocation.
+	writeReceiptFixture(t, wrapperDir, "git", `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${CLBM_GIT_LOG:-/dev/null}"
+if [[ ${CLBM_LANDING_PUSH:-0} == 1 && ${1:-} == push ]] && [[ " $* " == *" origin "* ]]; then
+  printf 'push\n' >>"$CLBM_PUSH_COUNT"
+  if [[ ${CLBM_SKIP_MOVE:-0} != 1 && $(wc -l <"$CLBM_PUSH_COUNT" | tr -d ' ') == 1 ]]; then
+    printf 'origin moved\n' >"$CLBM_PEER/peer.txt"
+    "$CLBM_REAL_GIT" -C "$CLBM_PEER" add peer.txt
+    "$CLBM_REAL_GIT" -C "$CLBM_PEER" commit -qm 'controlled origin move'
+    "$CLBM_REAL_GIT" -C "$CLBM_PEER" push -q origin main
+  fi
+fi
+exec "${CLBM_REAL_GIT:-/usr/bin/git}" "$@"
+`)
+	if err := os.Chmod(filepath.Join(wrapperDir, "git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixtureEnvironment := receiptCanaryEnvironment()
+	for index, entry := range fixtureEnvironment {
+		if strings.HasPrefix(entry, "PATH=") {
+			fixtureEnvironment[index] = "PATH=" + wrapperDir + string(os.PathListSeparator) + strings.TrimPrefix(entry, "PATH=")
+		}
+	}
+	fixtureEnvironment = append(fixtureEnvironment, "CLBM_REAL_GIT="+realGit)
 	testReceiptArgs := []string{"landing", "test-receipt", "--root", root}
 	if !omitTree {
 		testReceiptArgs = append(testReceiptArgs, "--tree", candidateTree)
 	}
 	testReceiptArgs = append(testReceiptArgs, "--mode", "auto", "--goal", "landing-goal", "--cap-min", "1")
-	testReceiptCommand := proofFixture.command(receiptCanaryEnvironment(), filepath.Join(root, "bin", "metasystem"), testReceiptArgs...)
+	testReceiptCommand := proofFixture.command(fixtureEnvironment, filepath.Join(root, "bin", "metasystem"), testReceiptArgs...)
 	testReceiptCommand.Env = append(testReceiptCommand.Env, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	if !moveOrigin {
 		started, ok := lease.StartedAt(int64(os.Getpid()), nil)
@@ -766,33 +803,6 @@ git commit "${commit_args[@]}" --trailer "Landing-Provenance: $provenance" \
 	}
 	runReceiptGit(t, top, "reset", "--mixed", "HEAD")
 
-	gitLog := filepath.Join(bed, "git.log")
-	pushCount := filepath.Join(bed, "push-count")
-	wrapperDir := filepath.Join(bed, "wrapper-bin")
-	if err := os.MkdirAll(wrapperDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeReceiptFixture(t, wrapperDir, "git", `#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "$*" >>"${CLBM_GIT_LOG:-/dev/null}"
-if [[ ${1:-} == push ]] && [[ " $* " == *" origin "* ]]; then
-  printf 'push\n' >>"$CLBM_PUSH_COUNT"
-  if [[ ${CLBM_SKIP_MOVE:-0} != 1 && $(wc -l <"$CLBM_PUSH_COUNT" | tr -d ' ') == 1 ]]; then
-    printf 'origin moved\n' >"$CLBM_PEER/peer.txt"
-    "$CLBM_REAL_GIT" -C "$CLBM_PEER" add peer.txt
-    "$CLBM_REAL_GIT" -C "$CLBM_PEER" commit -qm 'controlled origin move'
-    "$CLBM_REAL_GIT" -C "$CLBM_PEER" push -q origin main
-  fi
-fi
-exec "${CLBM_REAL_GIT:-/usr/bin/git}" "$@"
-`)
-	if err := os.Chmod(filepath.Join(wrapperDir, "git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	message := filepath.Join(bed, "message.txt")
 	if err := os.WriteFile(message, []byte("recertified landing race\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -806,13 +816,12 @@ exec "${CLBM_REAL_GIT:-/usr/bin/git}" "$@"
 		script := `while [[ ! -e "$1" ]]; do sleep 0.01; done; shift; "$@"`
 		command := exec.Command("bash", append([]string{"-c", script, "holder", gate}, arguments...)...)
 		command.Dir = root
-		path := wrapperDir + string(os.PathListSeparator) + os.Getenv("PATH")
 		// The landing verifies the retained proof in the environment the
-		// receipt was made in: the receipt canary environment above. An
+		// receipt was made in: the exact fixture environment above. An
 		// ambient GOFLAGS (the race gate exports -mod=readonly to every
-		// test it runs) would otherwise enter the group execution identity
-		// on this side only, and the retained proof would read as missing.
-		env := append(receiptCanaryEnvironment(), "PATH="+path, "METASYSTEM_OWNER_LINEAGE=race-lineage")
+		// test it runs), or a different PATH, would make its build identity
+		// differ from the retained proof.
+		env := append(append([]string(nil), fixtureEnvironment...), "METASYSTEM_OWNER_LINEAGE=race-lineage", "CLBM_LANDING_PUSH=1")
 		env = append(env, extraEnv...)
 		command.Env = env
 		var output bytes.Buffer
@@ -1652,9 +1661,17 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 		"SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	environmentOutput, environmentErr := environmentVerify.CombinedOutput()
 	if exit, ok := environmentErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
-		!strings.Contains(string(environmentOutput), "proof-input-moved-after-receipt: group policy-protection") ||
-		!strings.Contains(string(environmentOutput), "no declared path moved; the environment or a tool identity changed") {
-		t.Fatalf("environment-only identity move lacked its refusal detail: err=%v\n%s", environmentErr, environmentOutput)
+		!strings.Contains(string(environmentOutput), "candidate engine digest is absent from retained evidence for build identity ") ||
+		!strings.Contains(string(environmentOutput), "run metasystem test run") {
+		t.Fatalf("changed build environment reused a prior engine measurement: err=%v\n%s", environmentErr, environmentOutput)
+	}
+	if launches, err := os.ReadFile(launchCount); err != nil || strings.TrimSpace(string(launches)) != "1" {
+		t.Fatalf("changed build environment relaunched native groups: launches=%q err=%v", launches, err)
+	}
+	retainedAfterEnvironment, err := proofrun.ReadAttempts(root)
+	if err != nil || len(retainedAfterEnvironment) != 1 || retainedAfterEnvironment[0].AttemptID != attempts[0].AttemptID ||
+		retainedAfterEnvironment[0].Terminal == nil || retainedAfterEnvironment[0].Terminal.Result != proofrun.TerminalSuccess {
+		t.Fatalf("changed build environment replaced the outer proof owner: attempts=%+v err=%v", retainedAfterEnvironment, err)
 	}
 	writeReceiptFixture(t, root, "scripts/agents/coverage-ratchet.json", `{"floors":{"fixture/application":81.0}}`)
 	runReceiptGit(t, projectRoot, "add", engineDeclaredInput)

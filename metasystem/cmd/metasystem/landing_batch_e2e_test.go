@@ -83,6 +83,7 @@ func TestBatchLandingLifecycleEndToEnd(t *testing.T) {
 	}
 	originalWait, originalStatus := batchWaitClock, batchStatusNow
 	originalPrefix := batchPrefixReceiptExecutable
+	originalPrefixVerify := batchVerifyPrefixEvidence
 	originalGoalNow, originalCommandHelper, originalLineage := os.Getenv("METASYSTEM_GOAL_NOW"), os.Getenv("GO_WANT_BATCH_E2E_COMMAND"), os.Getenv("METASYSTEM_OWNER_LINEAGE")
 	originalAdmissionDir, originalAdmissionRoot := os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR"), os.Getenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT")
 	productionBatchProofDependencies = originalProof
@@ -116,6 +117,7 @@ func TestBatchLandingLifecycleEndToEnd(t *testing.T) {
 	}}
 	batchStatusNow = func() time.Time { return now }
 	batchPrefixReceiptExecutable = func() (string, error) { return engine.path, nil }
+	batchVerifyPrefixEvidence = func(_ string, _ batch.Unit, _ string, _ batch.PrefixDecision) error { return nil }
 	_ = os.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
 	_ = os.Setenv("GO_WANT_BATCH_E2E_COMMAND", "1")
 	_ = os.Setenv("METASYSTEM_OWNER_LINEAGE", "lineage-goal-b")
@@ -123,7 +125,7 @@ func TestBatchLandingLifecycleEndToEnd(t *testing.T) {
 	t.Cleanup(func() {
 		batchOwnerConstruct = originalOwnerConstruct
 		productionBatchProofDependencies, batchDiagnosticLauncher = originalProof, originalDiagnostic
-		batchWaitClock, batchStatusNow, batchPrefixReceiptExecutable = originalWait, originalStatus, originalPrefix
+		batchWaitClock, batchStatusNow, batchPrefixReceiptExecutable, batchVerifyPrefixEvidence = originalWait, originalStatus, originalPrefix, originalPrefixVerify
 		_ = os.Setenv("METASYSTEM_GOAL_NOW", originalGoalNow)
 		_ = os.Setenv("GO_WANT_BATCH_E2E_COMMAND", originalCommandHelper)
 		_ = os.Setenv("METASYSTEM_OWNER_LINEAGE", originalLineage)
@@ -397,11 +399,11 @@ set -euo pipefail
 if (( $# == 0 )); then
   mkdir -p bin
   out=bin/metasystem
-	printf '#!/usr/bin/env bash\nif [[ "${1:-}" == up ]]; then exit 0; fi\nexec "%%s" "$@"\n' %s >"$out"
+	printf '#!/usr/bin/env bash\nif [[ "${1:-}" == up ]]; then exit 0; fi\nexport GO_WANT_BATCH_E2E_COMMAND=1\nexec "%%s" "$@"\n' %s >"$out"
 else
   [[ "$1" == --trimpath && "$2" == --out && -n "${3:-}" ]]
   out=$3
-	printf '#!/usr/bin/env bash\n# candidate commit %%s\nexec "%%s" "$@"\n' "$METASYSTEM_BUILD_STAMP" %s >"$out"
+	printf '#!/usr/bin/env bash\n# candidate commit %%s\nexport GO_WANT_BATCH_E2E_COMMAND=1\nexec "%%s" "$@"\n' "$METASYSTEM_BUILD_STAMP" %s >"$out"
 fi
 chmod +x "$out"
 `, strconv.Quote(engine), strconv.Quote(engine)), 0o755)
@@ -535,7 +537,7 @@ func (fixture *batchE2EFixture) addGoalBranch(root, goalID string) {
 		t.Fatalf("compute %s read subject: present=%t err=%v", goalID, present, err)
 	}
 	job := "critic-" + goalID
-	fixture.writeJSON(filepath.Join(root, "artifacts", "agents", "jobs", job+".json"), map[string]any{"jobId": job, "role": "code-critic", "round": 1, "status": "completed", "chainClosed": true, "findingRegister": []any{}, "findingRegisterRound": 1, "findingRegisterSubjectDigest": subject.Digest(), "closure": map[string]any{"criticRoot": job, "round": 1, "subject": subject, "mechanism": "clean"}})
+	fixture.writeJSON(filepath.Join(root, "artifacts", "agents", "jobs", job+".json"), map[string]any{"jobId": job, "operationId": job + "-reservation", "goalId": goalID, "goalRevision": 2, "capMin": 1, "role": "code-critic", "parentJob": nil, "reviewChainCounted": true, "round": 1, "status": "completed", "chainClosed": true, "findingRegister": []any{}, "findingRegisterRound": 1, "findingRegisterSubjectDigest": subject.Digest(), "closure": map[string]any{"criticRoot": job, "round": 1, "subject": subject, "mechanism": "clean"}})
 	fixture.writeJSON(filepath.Join(root, "artifacts", "agents", job, "rounds", "1", "subject.json"), subject)
 	fixture.writeJSON(filepath.Join(root, "artifacts", "agents", job, "rounds", "1", "return.json"), map[string]any{"jobId": job, "round": 1, "reviewedTree": subject.Tree})
 	if _, _, err := goalbranch.CommitRead(goalbranch.CommitReadRequest{Repo: root, Remote: "origin", EndpointTip: base, GoalID: goalID, Unit: "u1", OpID: "read-" + goalID, RootJob: job, GateRunID: "fast-" + goalID, GateTree: subject.Tree, CheckClaim: func() error { return nil }}); err != nil {

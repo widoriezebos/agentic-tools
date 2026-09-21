@@ -427,7 +427,19 @@ func resolveProductionBatchOwnerInputs(root string) (productionBatchOwnerInputs,
 	if err != nil {
 		return productionBatchOwnerInputs{}, err
 	}
-	return productionBatchOwnerInputs{ledgerOwner: ledgerOwner, machine: machine}, nil
+	lockDir, queueDir, err := batchOwnerFixtureProofLockDirectories(root)
+	if err != nil {
+		return productionBatchOwnerInputs{}, err
+	}
+	return productionBatchOwnerInputs{ledgerOwner: ledgerOwner, machine: machine, lockDir: lockDir, queueDir: queueDir}, nil
+}
+
+func batchOwnerFixtureProofLockDirectories(root string) (string, string, error) {
+	directory, selected, err := proofrun.FixtureHostAdmissionDirectory(root)
+	if err != nil || !selected {
+		return "", "", err
+	}
+	return filepath.Join(directory, "batch-proof-lock"), filepath.Join(directory, "batch-proof-queue"), nil
 }
 
 func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease, inputs productionBatchOwnerInputs, now func() time.Time) (*batch.Owner, error) {
@@ -451,6 +463,9 @@ func newProductionBatchOwner(settings config.BatchLanding, held batchOwnerLease,
 		FetchTree: fetch, ReadClaim: func(_ string, tree, batchID, goalID string) (batch.Claim, error) {
 			return batch.ReadClaimAt(controlRoot, tree, batchID, goalID)
 		}, Returns: returns,
+		ResumeJoinAdmission: func(batchID string, unit batch.Unit) (batch.JoinAdmission, error) {
+			return productionJoinAdmission(settings.Root, batchID, unit)
+		},
 		Rebind: func(batchID, tree string) error {
 			return rebindBatchClaims(settings.Root, batchID, tree, inputs.machine, held.epoch, batch.ReadReturnLedgerGoal, func(root string, args ...string) error {
 				return batchChildRunner(root, landingOwnerLineage, args...)
@@ -531,7 +546,7 @@ func batchOwnerSignals() (<-chan struct{}, <-chan struct{}, func()) {
 	}
 }
 
-func parseBatchOwner(args []string, verb string) (config.BatchLanding, time.Duration, error) {
+func parseBatchOwner(args []string, verb string, clock func() time.Time) (config.BatchLanding, time.Duration, error) {
 	flags := flag.NewFlagSet("landing batch "+verb, flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")
@@ -540,16 +555,16 @@ func parseBatchOwner(args []string, verb string) (config.BatchLanding, time.Dura
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *interval <= 0 {
 		return config.BatchLanding{}, 0, fmt.Errorf("usage: metasystem landing batch %s --root ROOT [--landing-root ROOT --max-wait DURATION]", verb)
 	}
-	now, err := goalCommandNow(*root)
-	if err != nil {
+	if _, err := goalCommandNow(*root); err != nil {
 		return config.BatchLanding{}, 0, err
 	}
-	settings, err := resolveBatchOwnerSettings(*root, *landingRoot, *maxWait, func() time.Time { return now })
+	settings, err := resolveBatchOwnerSettings(*root, *landingRoot, *maxWait, clock)
 	return settings, *interval, err
 }
 
 func runBatchOwner(args []string) (code int) {
-	settings, interval, err := parseBatchOwner(args, "owner")
+	clock := cadenceProductionClock
+	settings, interval, err := parseBatchOwner(args, "owner", clock)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
@@ -570,7 +585,6 @@ func runBatchOwner(args []string) (code int) {
 			code = 1
 		}
 	}()
-	clock := cadenceProductionClock
 	owner, err := batchOwnerConstruct(settings, held, inputs, clock)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

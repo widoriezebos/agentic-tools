@@ -285,6 +285,14 @@ func TestComposeRolePacketCommandEnforcesPacketCap(t *testing.T) {
 
 	t.Run("fresh", func(t *testing.T) {
 		root := newRoot(t)
+		// Hold the fixed guidance bytes stable while exercising the public
+		// command's packet cap and brief staging as the live document grows.
+		if err := os.WriteFile(filepath.Join(root, "docs", "orchestration.md"), bytes.Repeat([]byte("fixture guidance\n"), 128), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.max-inline-input-kb=16\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		briefBody := bytes.Repeat([]byte("b"), 16*1024)
 		brief := filepath.Join(root, "fresh-brief.md")
 		if err := os.WriteFile(brief, briefBody, 0o644); err != nil {
@@ -303,8 +311,8 @@ func TestComposeRolePacketCommandEnforcesPacketCap(t *testing.T) {
 		addFixedBodies(t, root, rawBySlot)
 		record := readRecord(t, composition)
 		packet := verifyPacket(t, root, output, record, rawBySlot, []string{"task-direction"})
-		if len(packet) > 65536 {
-			t.Fatalf("fresh packet has %d bytes, cap is 65536", len(packet))
+		if len(packet) > 16*1024 {
+			t.Fatalf("fresh packet has %d bytes, cap is %d", len(packet), 16*1024)
 		}
 		staged, err := os.ReadFile(filepath.Join(stageDir, "task-direction.md"))
 		if err != nil || !bytes.Equal(staged, briefBody) {

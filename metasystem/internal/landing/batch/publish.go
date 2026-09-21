@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -17,57 +16,8 @@ import (
 )
 
 func PublishJoin(store Store, batchID string, unit Unit, actor string, at time.Time, plan func(string, string, string) (testpolicy.Plan, error), handover func() error) error {
-	return store.locked(func() error {
-		if err := store.updateLocked(batchID, func(record *Record) error {
-			if err := joinRefusal(*record); err != nil {
-				return err
-			}
-			if err := checkMembership(store, batchID, unit.GoalID, unit.Chain); err != nil {
-				return err
-			}
-			live := slices.DeleteFunc(slices.Clone(record.Units), func(existing Unit) bool { return existing.State != UnitJoining && existing.State != UnitJoined })
-			unit.State = UnitJoining
-			live = append(live, unit)
-			prefixes, err := assembleUnits(store.root, record.BaseTree, live)
-			if err != nil {
-				return err
-			}
-			tip := prefixes[len(prefixes)-1]
-			unitPrefixes, err := assembleUnits(store.root, record.BaseTree, []Unit{unit})
-			if err != nil || len(unitPrefixes) != 1 {
-				return fmt.Errorf("select joined unit %s: prefixes=%d: %w", unit.GoalID, len(unitPrefixes), err)
-			}
-			selection, err := planJoinedUnit(store.root, record.BaseTree, unit, unitPrefixes[0], plan)
-			if err != nil {
-				return err
-			}
-			unit.SelectedGroups = slices.Clone(selection.SelectedGroups)
-			record.PrefixTrees, record.TipTree = prefixes, tip
-			recordSelection(record, selection)
-			record.Units = append(record.Units, unit)
-			appendUnitHistory(record, at, "join", actor, unit.GoalID, "", UnitJoining)
-			return nil
-		}); err != nil {
-			return err
-		}
-		if err := store.seams.publish(UnitJoining); err != nil {
-			return err
-		}
-		if err := handover(); err != nil {
-			return err
-		}
-		if err := store.seams.publish("handover"); err != nil {
-			return err
-		}
-		if err := store.updateLocked(batchID, func(record *Record) error {
-			index := len(record.Units) - 1
-			record.Units[index].State = UnitJoined
-			appendUnitHistory(record, at, "join", actor, unit.GoalID, UnitJoining, UnitJoined)
-			return nil
-		}); err != nil {
-			return err
-		}
-		return store.seams.publish(UnitJoined)
+	return PublishJoinWithAdmission(store, batchID, unit, actor, at, plan, handover, func(_ string, unit Unit) (JoinAdmission, error) {
+		return JoinAdmission{Tree: unit.Admission.Tree, Status: "verified"}, nil
 	})
 }
 
@@ -133,6 +83,12 @@ func planJoinedUnit(root, baseTree string, unit Unit, unitTree string, plan func
 	return plan(planningRoot, unit.GoalID, candidate)
 }
 
+// PlanJoinedUnit exposes the existing exact-base selection for the bounded
+// pre-handover cost snapshot. Publication repeats it under the CAS guard.
+func PlanJoinedUnit(root, baseTree string, unit Unit, unitTree string, plan func(string, string, string) (testpolicy.Plan, error)) (testpolicy.Plan, error) {
+	return planJoinedUnit(root, baseTree, unit, unitTree, plan)
+}
+
 func commitForWorkspaceTree(root, tree string) (string, error) {
 	workspace := gittree.Workspace{Dir: root}
 	top, err := workspace.TopLevel()
@@ -194,6 +150,20 @@ func ReconcileJoins(store Store, batchID, tree, actor string, at time.Time, read
 				unit := &record.Units[index]
 				if unit.State != UnitJoining {
 					continue
+				}
+				if unit.Admission != nil {
+					if unit.Admission.Status == "handed-over" {
+						// The admission owner must reconsume or execute evidence;
+						// claim equality alone cannot promote membership.
+						continue
+					}
+					claim, claimErr := read(store.root, tree, batchID, unit.GoalID)
+					if claimErr == nil && claim.Machine == unit.Claim.Machine && claim.Lineage == unit.Claim.Lineage && claim.Revision == unit.Claim.Revision && claim.AccountingRevision == unit.Claim.AccountingRevision {
+						// Handover completed before the joiner crashed while writing
+						// its marker. Resume its proof; never promote it here.
+						unit.Admission.Status = "handed-over"
+						continue
+					}
 				}
 				claim, claimErr := read(store.root, tree, batchID, unit.GoalID)
 				unit.State, unit.Outcome, unit.Failure = UnitReturnPending, UnitEjected, "join-incomplete"

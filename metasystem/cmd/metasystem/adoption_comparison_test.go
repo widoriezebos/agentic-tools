@@ -60,7 +60,8 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		}
 	}
 	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", filepath.Join(bed, "registry"))
-	environment := append(receiptCanaryEnvironment(), "METASYSTEM_OWNER_LINEAGE=adoption-comparison", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+filepath.Join(bed, "registry"))
+	baseEnvironment := append(receiptCanaryEnvironment(), "METASYSTEM_OWNER_LINEAGE=adoption-comparison", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+filepath.Join(bed, "registry"))
+	environment := append([]string(nil), baseEnvironment...)
 	run := func(cwd string, argv ...string) (string, int) {
 		t.Helper()
 		cmd := exec.Command(argv[0], argv[1:]...)
@@ -104,15 +105,15 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		argv := []string{"bash", "-c", `set -euo pipefail; source "$1"; tmp=$2; shift 2; "$@"`, "adoption-assertion", filepath.Join(source, "scripts", "adopt-fixture-helpers.sh"), bed, function}
 		return mustRun(source, append(argv, args...)...)
 	}
-	isolateCopiedAdmission := func() {
-		// The copied installation keeps its real Claude/Codex registration
-		// configuration. A separate, config-backed synthetic fixture root
-		// authorizes a private host slot for all its nested audit probes.
+	isolateFixtureAdmission := func() {
+		// Keep the adopted installation's real runtime configuration. A
+		// separate config-backed synthetic fixture root authorizes a private
+		// host slot for this disposable target's nested proof and audit probes.
 		authorityRoot := t.TempDir()
 		if err := os.WriteFile(filepath.Join(authorityRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		environment = append(environment,
+		environment = append(append([]string(nil), baseEnvironment...),
 			"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+filepath.Join(t.TempDir(), "host-admission"),
 			"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+authorityRoot)
 	}
@@ -179,14 +180,21 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 			helper("prepare_filled_target_covenant", target)
 		}
 		var contract testpolicy.Contract
-		data, err := os.ReadFile(filepath.Join(target, "testing.json"))
-		if err != nil || json.Unmarshal(data, &contract) != nil {
-			t.Fatalf("read filled contract: %v", err)
-		}
 		if name == "filled" {
-			contract.Always.Standard = append(contract.Always.Standard, "section/covenant-evidence-pre-rebuild", "section/covenant-evidence-post-rebuild")
+			// An adopted app owns its tests. Re-running the source engine's
+			// entire cmd suite would recursively launch other adoption beds;
+			// the outer proof already governs that engine source.
+			contract = adoptionAppTestingContract()
+		} else {
+			data, err := os.ReadFile(filepath.Join(target, "testing.json"))
+			if err != nil || json.Unmarshal(data, &contract) != nil {
+				t.Fatalf("read copied contract: %v", err)
+			}
 		}
-		data, err = json.MarshalIndent(contract, "", "  ")
+		if err := contract.Validate(); err != nil {
+			t.Fatalf("adoption testing contract: %v", err)
+		}
+		data, err := json.MarshalIndent(contract, "", "  ")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -225,16 +233,19 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		}
 		if name != "filled" {
 			// The copied target's assertions are registration-only (setup,
-			// digest, drift, orphan) and need the engine built above, not a
-			// delivery proof. Its delivery inputs are the filled target's minus
-			// the covenant sections: the same frozen source, the same contract
-			// filling, the same engine; the filled run already proved them.
-			// Running the delivery leg again here cost 90 to 140 s per bed run
-			// and proved nothing the filled leg had not.
+			// digest, drift, orphan) and use the built engine. The filled
+			// target separately proves its own native application delivery.
 			return target
 		}
 		tree := runReceiptGit(t, target, "write-tree")
+		if name == "filled" {
+			isolateFixtureAdmission()
+		}
 		first := filepath.Join(bed, name+"-first.json")
+		plan := mustRun(target, engine, "test", "plan", "--root", target, "--goal", "adoption-goal", "--tree", tree, "--mode", "auto", "--purpose", "delivery")
+		if !strings.Contains(plan, "groups=adopted-app-go") || strings.Contains(plan, "go-batchtest") {
+			t.Fatalf("adopted app plan selected the wrong tests:\n%s", plan)
+		}
 		mustRun(target, engine, "test", "run", "--root", target, "--goal", "adoption-goal", "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--cap-min", "10", "--result", first)
 		mustRun(target, engine, "test", "verify", "--root", target, "--goal", "adoption-goal", "--tree", tree)
 		repeat := filepath.Join(bed, name+"-repeat.json")
@@ -242,21 +253,28 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		if code != proofrun.ExitReusableSuccess {
 			t.Fatalf("completed prerequisite was not reused: status=%d\n%s", code, output)
 		}
-		var original, reused proofrun.LaunchResult
+		var original, reused proofrun.TestResult
 		firstBytes, e1 := os.ReadFile(first)
 		repeatBytes, e2 := os.ReadFile(repeat)
 		if e1 != nil || e2 != nil || json.Unmarshal(firstBytes, &original) != nil || json.Unmarshal(repeatBytes, &reused) != nil || original.AttemptID == "" || original.AttemptID != reused.AttemptID {
 			t.Fatal("prerequisite reuse lost exact terminal attempt authority")
 		}
+		if len(original.Groups) != 1 || original.Groups[0].ID != "adopted-app-go" ||
+			original.Groups[0].Status != "passed" || !original.Groups[0].NativeLaunched || !original.Groups[0].CollectionComplete ||
+			original.LaunchCounts.Test != 1 || !original.Delivery.Sufficient ||
+			len(original.Groups[0].Observed) != 1 || original.Groups[0].Observed[0].Name != "TestAdoptedAppGreeting" || original.Groups[0].Observed[0].Status != "passed" {
+			t.Fatalf("adopted app proof lacked one real passing Go test: %+v", original)
+		}
 		return target
 	}
+
 	if providedTarget != "" {
 		target := prepare(providedKind, "", false)
 		if providedKind == "filled" {
 			helper("assert_filled_target_delivery", target, "shared-testing")
 			helper("assert_filled_target_mutations", target)
 		} else {
-			isolateCopiedAdmission()
+			isolateFixtureAdmission()
 			helper("assert_copied_registration_positive", source, target)
 			helper("assert_copied_registration_drift", target)
 			helper("assert_copied_registration_orphan", target)
@@ -270,9 +288,31 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		t.Fatalf("filled delivery did not consume its own migrated prerequisite: %v\n%s", err, output)
 	}
 	copied := prepare("copied", "claude,codex", true)
-	isolateCopiedAdmission()
+	isolateFixtureAdmission()
 	helper("assert_copied_registration_positive", source, copied)
 	helper("assert_copied_registration_drift", copied)
+}
+
+func adoptionAppTestingContract() testpolicy.Contract {
+	const groupID = "adopted-app-go"
+	return testpolicy.Contract{
+		SchemaVersion: testpolicy.ExecutionContractSchemaVersion,
+		ProjectRisk:   testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces: []testpolicy.Surface{{
+			ID: "adopted-app", Paths: []string{"src/**", "testing.json", "go.mod", "go.sum"},
+			DependsOn: []string{}, Standard: []string{groupID}, Deep: []string{}, Critical: []string{"adopted-app-output"},
+		}},
+		Groups: []testpolicy.Group{{
+			ID: groupID, Phase: "acceptance", EnvironmentMode: "inherit",
+			Kind: "unit", Adapter: "go", CWD: ".",
+			Inputs: []string{"src/app.go", "src/app_test.go", "go.mod", "go.sum"}, Outputs: []string{},
+			Tools:       []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
+			Obligations: []string{"adopted-app-output"}, Platforms: []string{"any"}, TargetMS: 10000,
+			Packages: []string{"src"}, Tests: json.RawMessage(`["TestAdoptedAppGreeting"]`),
+		}},
+		Always:  testpolicy.Always{Canary: []string{groupID}, Standard: []string{groupID}},
+		Unknown: []string{groupID}, Cadence: []string{groupID},
+	}
 }
 
 func seedAdoptionComparisonGoal(t *testing.T, root string) {

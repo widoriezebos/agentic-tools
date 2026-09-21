@@ -30,9 +30,30 @@ func executeBatchLanding(root, id, actor string, at time.Time) error {
 		return err
 	}
 	if record.Landing == nil || !record.Landing.PushComplete {
-		if err := batch.ComposePrefixReceipts(store, id, actor, at, batch.PrefixReceiptSeams{Execute: func(goalID, tree string, groups []string) (batch.PrefixRunResult, error) {
-			return executeBatchPrefixReceipt(root, id, record, goalID, tree, groups)
-		}}); err != nil {
+		if err := batch.ComposePrefixReceipts(store, id, actor, at, batch.PrefixReceiptSeams{
+			Authorize: func(unit batch.Unit, _ batch.Claim) error {
+				return authorizeBatchMember(root, record, unit)
+			},
+			Plan: func(units []batch.Unit, tree string) (batch.PrefixDecision, error) {
+				return productionPrefixDecision(root, units, tree)
+			},
+			ExecuteDecision: func(goalID, tree string, decision batch.PrefixDecision) (batch.PrefixRunResult, error) {
+				return executeBatchPrefixReceiptWithDecision(root, id, record, goalID, tree, decision)
+			},
+			Verify: func(unit batch.Unit, tree string, decision batch.PrefixDecision) error {
+				return batchVerifyPrefixEvidence(root, unit, tree, decision)
+			},
+		}); err != nil {
+			return err
+		}
+		record, err = store.Load(id)
+		if err != nil {
+			return err
+		}
+		if err := authorizeBatchSeries(root, store, record, actor, at); err != nil {
+			return err
+		}
+		if err := verifyBatchSeries(root, record, record.PrefixTrees); err != nil {
 			return err
 		}
 		baseCommit, err := commitForTree(root, "origin/main", record.BaseTree)
@@ -133,6 +154,12 @@ func batchLandSeams(root, id string, record batch.Record, baseCommit, actor stri
 		Held: func(_, tip string) error {
 			return batchChildRunner(controlRoot, landingOwnerLineage, "landing", "held", "--root", controlRoot, "--base", baseCommit, "--commit", tip, "--remote", "origin", "--ref", "refs/heads/main")
 		},
+		VerifySeries: func(units []batch.Unit, commits map[string]string) error {
+			if err := authorizeBatchSeries(root, batch.NewStore(root, nil), record, actor, time.Now().UTC()); err != nil {
+				return err
+			}
+			return verifyBatchCommittedSeries(root, record, units, commits)
+		},
 		PublishBranch: func(expected, tip string) error {
 			return batch.PublishLandingBranch(root, id, expected, tip)
 		},
@@ -150,7 +177,7 @@ func batchLandSeams(root, id string, record batch.Record, baseCommit, actor stri
 		SeriesOnOrigin: func(origin, tip string) (bool, error) { return batchSeriesOnEndpoint(root, origin, tip) },
 		LeaseBase:      baseCommit,
 		RecoverPush: func(origin, baseTree, tip string) (batch.PushRecovery, error) {
-			return batchLandRecoverPush(root, id, record, baseCommit, origin, baseTree, tip)
+			return batchLandRecoverPush(root, id, record, actor, baseCommit, origin, baseTree, tip)
 		},
 		Reset: func(_ string) error {
 			command := exec.Command("git", "-C", root, "reset", "--hard", baseCommit)
@@ -178,6 +205,8 @@ func finishBatchLanding(root string, store batch.Store, id, actor string, at tim
 }
 
 var batchMovedEndpointPush = batch.LandLandingBranch
+var batchVerifyRebasedSeries = verifyBatchSeries
+var batchAuthorizeRebasedSeries = authorizeBatchSeries
 var batchGoalBranchSweep = goalbranch.Sweep
 var batchRecoveryRearm = rearmBatchTip
 var batchRecoveryGoalNext = func(root, goalID string, at time.Time) (string, error) {
@@ -197,7 +226,7 @@ var batchRecoveryGoalNext = func(root, goalID string, at time.Time) (string, err
 	return "", fmt.Errorf("goal %s is absent from the current ledger", goalID)
 }
 
-func recoverMovedBatchPush(root, id string, record batch.Record, expectedBase, originCommit, baseTree, tip string) (batch.PushRecovery, error) {
+func recoverMovedBatchPush(root, id string, record batch.Record, actor, expectedBase, originCommit, baseTree, tip string) (batch.PushRecovery, error) {
 	controlRoot := batch.ModuleRoot(root)
 	originTree, err := gitOutput(root, "rev-parse", originCommit+"^{tree}")
 	recovery := batch.PushRecovery{Origin: originCommit, BaseTree: originTree}
@@ -236,10 +265,6 @@ func recoverMovedBatchPush(root, id string, record batch.Record, expectedBase, o
 	if err != nil {
 		return recovery, err
 	}
-	rebasedTree, err := gitOutput(root, "rev-parse", "HEAD^{tree}")
-	if err != nil {
-		return recovery, err
-	}
 	if err := batchChildRunner(controlRoot, landingOwnerLineage, "landing", "held", "--root", controlRoot, "--base", originCommit, "--commit", rebasedTip, "--remote", "origin", "--ref", "refs/heads/main"); err != nil {
 		return reopenMovedBatchAfterRecoveryFailure(root, id, tip, originCommit, recovery, fmt.Errorf("rebased landing held: %w", err))
 	}
@@ -247,9 +272,23 @@ func recoverMovedBatchPush(root, id string, record batch.Record, expectedBase, o
 	if len(joined) == 0 {
 		return recovery, fmt.Errorf("rebased landing has no joined authority member")
 	}
-	verifyArgs := batchRebasedVerifyArgs(controlRoot, joined[len(joined)-1].GoalID, rebasedTree, record.Proof.SelectedGroups)
-	if err := batchChildRunner(controlRoot, landingOwnerLineage, verifyArgs...); err != nil {
-		return reopenMovedBatchAfterRecoveryFailure(root, id, tip, originCommit, recovery, fmt.Errorf("rebased landing identity verification: %w", err))
+	finalTrees, err := rebasedPrefixTrees(root, originCommit, rebasedTip, joined)
+	if err != nil {
+		return reopenMovedBatchAfterRecoveryFailure(root, id, tip, originCommit, recovery, err)
+	}
+	if err := batchVerifyRebasedSeries(root, record, finalTrees); err != nil {
+		return reopenMovedBatchAfterRecoveryFailure(root, id, tip, originCommit, recovery, fmt.Errorf("rebased prefix verification: %w", err))
+	}
+	// The first endpoint attempt's authority check cannot authorize this
+	// retry: a member can be fenced or revised while the moved series is
+	// rebased and reproved. A typed refusal returns that member and rebuilds
+	// the survivors before either rebased publication or endpoint push.
+	at, err := goalCommandNow(controlRoot)
+	if err != nil {
+		return recovery, err
+	}
+	if err := batchAuthorizeRebasedSeries(root, batch.NewStore(root, nil), record, actor, at); err != nil {
+		return recovery, err
 	}
 	if err := batch.PublishLandingBranch(root, id, tip, rebasedTip); err != nil {
 		return recovery, err
@@ -336,8 +375,34 @@ func batchProofInputsMoved(record batch.Record, changed []string, installationPr
 	return false
 }
 
-func batchRebasedVerifyArgs(root, goalID, tree string, groups []string) []string {
-	return []string{"test", "verify", "--root", root, "--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--groups", strings.Join(groups, ","), "--batch-prefix"}
+func rebasedPrefixTrees(root, base, tip string, units []batch.Unit) ([]string, error) {
+	output, err := gitOutput(root, "log", "--first-parent", "--reverse", "--format=%T", base+".."+tip)
+	if err != nil {
+		return nil, err
+	}
+	commits := strings.Fields(output)
+	want := 0
+	for _, unit := range units {
+		if len(unit.Builds) == 0 {
+			want++
+		} else {
+			want += len(unit.Builds)
+		}
+	}
+	if len(commits) != want {
+		return nil, fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: rebased series has %d commits, want %d", len(commits), want)
+	}
+	trees := make([]string, 0, len(units))
+	offset := 0
+	for _, unit := range units {
+		if len(unit.Builds) == 0 {
+			offset++
+		} else {
+			offset += len(unit.Builds)
+		}
+		trees = append(trees, commits[offset-1])
+	}
+	return trees, nil
 }
 
 func gitHead(root string) string {
@@ -348,6 +413,10 @@ func gitHead(root string) string {
 var batchPrefixReceiptExecutable = os.Executable
 
 func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tree string, groups []string) (batch.PrefixRunResult, error) {
+	return executeBatchPrefixReceiptWithDecision(root, id, record, goalID, tree, batch.PrefixDecision{Groups: groups})
+}
+
+func executeBatchPrefixReceiptWithDecision(root, id string, record batch.Record, goalID, tree string, decision batch.PrefixDecision) (batch.PrefixRunResult, error) {
 	controlRoot := batch.ModuleRoot(root)
 	var unit batch.Unit
 	for _, candidate := range record.Units {
@@ -367,7 +436,7 @@ func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tre
 	if err != nil {
 		return batch.PrefixRunResult{}, err
 	}
-	args := batchPrefixReceiptArgs(executionRoot, controlRoot, goalID, tree, resultPath, groups, unit.Claim)
+	args := batchPrefixReceiptArgsWithFresh(executionRoot, controlRoot, goalID, tree, resultPath, decision.Groups, unit.Claim, decision.FreshEpisode, decision.FreshExpiresAt)
 	command := exec.Command(binary, args...)
 	command.Dir, command.Env = executionRoot, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
 	output, runErr := command.CombinedOutput()
@@ -377,8 +446,13 @@ func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tre
 		switch code {
 		case "GOAL_REVISION_MOVED":
 			return batch.PrefixRunResult{}, &batch.PrefixRevisionRefusal{Reason: reason}
-		case "BATCH_MEMBER_BUDGET_REFUSED":
+		case "BATCH_MEMBER_BUDGET_REFUSED", "BUDGET_REFUSED":
 			return batch.PrefixRunResult{}, &batch.PrefixBudgetRefusal{Reason: reason}
+		case "CANDIDATE_GOAL_REFUSED":
+			if strings.Contains(reason, "state=fenced") {
+				return batch.PrefixRunResult{}, &batch.PrefixFencedRefusal{Reason: reason}
+			}
+			return batch.PrefixRunResult{}, &batch.PrefixAdmissionRefusal{Code: code, Reason: reason}
 		default:
 			return batch.PrefixRunResult{}, &batch.PrefixAdmissionRefusal{Code: code, Reason: reason}
 		}
@@ -391,12 +465,18 @@ func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tre
 		return batch.PrefixRunResult{}, err
 	}
 	out := batch.PrefixRunResult{AttemptID: result.AttemptID, ResultPath: resultPath, Reused: map[string]string{}}
+	reusableExit := command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitReusableSuccess
 	for _, group := range result.Groups {
-		if group.NativeLaunched {
+		if group.NativeLaunched && !reusableExit {
 			out.Executed = append(out.Executed, group.ID)
 		}
 		if group.ReuseAttempt != "" {
 			out.Reused[group.ID] = group.ReuseAttempt
+		} else if reusableExit && group.NativeLaunched && result.AttemptID != "" {
+			// A no-child reusable result can be the original native result.
+			// Its nativeLaunched field describes that source attempt, not
+			// work launched by this prefix command.
+			out.Reused[group.ID] = result.AttemptID
 		}
 		if group.Status == "failed" {
 			out.Red = append(out.Red, batch.RedGroup{ID: group.ID, Status: group.Status, LogPath: group.LogPath, LogDigest: group.LogDigest, InputManifest: slices.Clone(group.InputManifest)})
@@ -432,8 +512,19 @@ func batchAdmissionRefusalCode(reason string) string {
 }
 
 func batchPrefixReceiptArgs(root, controlRoot, goalID, tree, resultPath string, groups []string, claim batch.Claim) []string {
-	return []string{"test", "run", "--root", root, "--control-root", controlRoot, "--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--groups", strings.Join(groups, ","), "--result", resultPath,
+	return batchPrefixReceiptArgsWithFresh(root, controlRoot, goalID, tree, resultPath, groups, claim, "", "")
+}
+
+func batchPrefixReceiptArgsWithFresh(root, controlRoot, goalID, tree, resultPath string, groups []string, claim batch.Claim, episode, expiresAt string) []string {
+	args := []string{"test", "run", "--root", root, "--control-root", controlRoot, "--goal", goalID, "--tree", tree, "--mode", "auto", "--purpose", "delivery", "--batch-requirements", batchRequirementsArgument(groups), "--result", resultPath,
 		"--expected-goal-revision", fmt.Sprint(claim.Revision), "--expected-accounting-revision", fmt.Sprint(claim.AccountingRevision), "--batch-prefix"}
+	if episode != "" {
+		args = append(args, "--fresh-episode", episode)
+		if expiresAt != "" {
+			args = append(args, "--fresh-expires-at", expiresAt)
+		}
+	}
+	return args
 }
 
 func recoverBatchLanding(root string, store batch.Store, id, actor string, at time.Time) error {

@@ -242,16 +242,24 @@ type AdmissionRequest struct {
 	// ForceAttempt never answers reusable-success: the caller needs a recorded
 	// attempt even when every selected group can reuse exact green evidence.
 	// Live duplicates and retry decisions still apply.
-	ForceAttempt    bool
-	ForceGroups     bool
-	ManagedCapacity bool
-	loadOptions     []loadSampleOption
+	ForceAttempt               bool
+	ForceGroups                bool
+	ManagedCapacity            bool
+	loadOptions                []loadSampleOption
+	testHostAdmissionDirectory string
 }
 
 // WithTestHostLoadSampler gives test code an explicit deterministic sampler
 // without making ambient process state an admission input.
 func WithTestHostLoadSampler(request AdmissionRequest, raw string) AdmissionRequest {
 	request.loadOptions = append(request.loadOptions, withTestHostLoad(raw))
+	return request
+}
+
+// WithTestHostAdmissionDirectory selects a private namespace for a fake-root
+// test request. ReserveLocked checks the root and path before using it.
+func WithTestHostAdmissionDirectory(request AdmissionRequest, directory string) AdmissionRequest {
+	request.testHostAdmissionDirectory = directory
 	return request
 }
 
@@ -763,7 +771,7 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 	if request.ManagedCapacity && (request.Identity.CommandClass != "testing" || !request.SharedComponents) {
 		return Attempt{}, LaunchResult{}, fmt.Errorf("managed capacity requires shared testing admission")
 	}
-	directory, err := hostAdmissionDirectory()
+	directory, err := hostAdmissionDirectoryForRequest(request.ControlRoot, request.testHostAdmissionDirectory)
 	if err != nil {
 		return Attempt{}, LaunchResult{}, err
 	}

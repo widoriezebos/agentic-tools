@@ -1,8 +1,11 @@
 package batch
 
 import (
+	"errors"
 	"fmt"
+	"reflect"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -162,65 +165,185 @@ func FinishProof(store Store, id, actor string, result proofrun.TestResult, laun
 // WithdrawBudgetMember returns the authority member when P2 cannot preserve
 // enough budget for both the tip proof and its mandatory diagnostic.
 func WithdrawBudgetMember(store Store, id, goalID, actor, reason string, at time.Time) error {
-	if err := store.Update(id, func(record *Record) error {
-		if record.State != StateProving || record.Proof == nil || record.Proof.Status != "planned" {
-			return fmt.Errorf("budget withdrawal requires an admitted proof")
-		}
-		if err := requestUnitReturn(record, goalID, UnitWithdrawnBudget, reason, actor, at); err != nil {
-			return err
-		}
-		record.Proof.Status, record.Proof.Failure = "budget-refused", reason
-		record.Transition(StateSealed, at, "prove", actor, "budget-refused "+goalID)
-		return nil
-	}); err != nil {
+	record, err := store.Load(id)
+	if err != nil {
 		return err
 	}
-	return ReassembleSurvivors(store, id, actor, at)
+	if record.State != StateProving || record.Proof == nil || record.Proof.Status != "planned" {
+		return fmt.Errorf("budget withdrawal requires an admitted proof")
+	}
+	return ReassembleSurvivorsWithReturns(store, id, actor, at, []ReturnDecision{{GoalID: goalID, Outcome: UnitWithdrawnBudget, Reason: reason}})
 }
 
 // ReassembleSurvivors derives a new candidate from the still-joined units in
 // original join order. Selection and seal data are intentionally discarded;
 // the new tree must cross seal and proof admission again.
 func ReassembleSurvivors(store Store, id, actor string, at time.Time) error {
+	return ReassembleSurvivorsWithReturns(store, id, actor, at, nil)
+}
+
+// ReturnDecision is a member outcome established before survivor composition.
+// Its return request and the resulting candidate are recorded in one update.
+type ReturnDecision struct {
+	GoalID, Outcome, Reason string
+}
+
+func ReassembleSurvivorsWithReturns(store Store, id, actor string, at time.Time, decisions []ReturnDecision) error {
+	return reassembleSurvivorsOnBase(store, id, actor, at, decisions, "", "")
+}
+
+// reassembleSurvivorsOnBase is the one owner for both returned-member and
+// moved-base composition. A moved base can reveal the first typed conflict;
+// subsequent conflicts are closed in original join order.
+func reassembleSurvivorsOnBase(store Store, id, actor string, at time.Time, decisions []ReturnDecision, newBaseTree, detail string) error {
 	record, err := store.Load(id)
 	if err != nil {
 		return err
 	}
-	survivors := slices.DeleteFunc(slices.Clone(record.Units), func(unit Unit) bool { return unit.State != UnitJoined })
-	if len(survivors) == 0 {
-		if record.Landing != nil {
-			if err := DeleteLandingBranch(store.root, id, record.Landing.publishedTip()); err != nil {
-				return err
-			}
-		}
-		return store.Update(id, func(current *Record) error {
-			current.PrefixTrees, current.SelectedGroups, current.Seal, current.Proof, current.Landing, current.Receipts = nil, nil, nil, nil, nil, nil
-			current.TipTree = current.BaseTree
-			current.Transition(StateDissolved, at, "reassemble", actor, "no survivors")
-			return nil
-		})
+	original := record
+	original.Units, original.History = slices.Clone(record.Units), slices.Clone(record.History)
+	movedBase := newBaseTree != ""
+	if movedBase {
+		record.BaseTree = newBaseTree
 	}
-	prefixes, err := assembleUnits(store.root, record.BaseTree, survivors)
-	if err != nil {
-		return err
-	}
-	branchTip := ""
-	if record.Landing != nil && record.Landing.publishedTip() != "" && slices.ContainsFunc(survivors, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
-		branchTip, err = RebuildLandingBranch(store.root, id, record.BaseTree, record.Landing.publishedTip(), actor, survivors)
-		if err != nil {
+	decisions = slices.Clone(decisions)
+	for _, decision := range decisions {
+		if err := requestUnitReturn(&record, decision.GoalID, decision.Outcome, decision.Reason, actor, at); err != nil {
 			return err
 		}
 	}
-	return store.Update(id, func(current *Record) error {
-		current.PrefixTrees, current.SelectedGroups, current.Seal, current.Proof, current.Landing, current.Receipts = prefixes, nil, nil, nil, nil, nil
-		if branchTip != "" {
-			current.Landing = &LandingProgress{Base: current.BaseTree, BranchTip: branchTip, CandidateTip: branchTip}
+	knownRemoved := func() string {
+		ids := make([]string, 0, len(record.Units))
+		for _, unit := range record.Units {
+			if unit.State == UnitReturnPending || terminalUnitState(unit.State) {
+				ids = append(ids, unit.GoalID)
+			}
 		}
-		current.TipTree = prefixes[len(prefixes)-1]
-		current.ClosedReason = ""
-		current.Transition(StateOpen, at, "reassemble", actor, "survivors")
+		return strings.Join(ids, ",")
+	}
+	hold := func(reason string) error {
+		if len(decisions) == 0 && knownRemoved() == "" {
+			return errors.New(reason)
+		}
+		next := "inspect ordered member composition before returning the named member"
+		return store.Update(id, func(current *Record) error {
+			if !reflect.DeepEqual(*current, original) {
+				return fmt.Errorf("BATCH_REASSEMBLE_MOVED: batch changed before held decision")
+			}
+			if current.Proof == nil {
+				current.Proof = &Proof{}
+			}
+			current.Proof.Status, current.Proof.Failure = "held-unclassified", reason+"; "+next
+			current.Transition(StateHeldUnclassified, at, "reassemble", actor, reason+"; "+next)
+			return nil
+		})
+	}
+	var survivors []Unit
+	var prefixes []string
+	for tries := 0; tries <= len(record.Units); tries++ {
+		survivors = slices.DeleteFunc(slices.Clone(record.Units), func(unit Unit) bool { return unit.State != UnitJoined })
+		if len(survivors) == 0 {
+			break
+		}
+		prefixes, err = assembleUnits(store.root, record.BaseTree, survivors)
+		if err == nil {
+			break
+		}
+		var conflict *assemblyConflict
+		if !errors.As(err, &conflict) || (knownRemoved() == "" && !movedBase) {
+			return hold("survivor composition unclassified: " + err.Error())
+		}
+		found := false
+		for _, unit := range survivors {
+			if unit.GoalID == conflict.GoalID {
+				found = true
+			}
+		}
+		if !found {
+			return hold("survivor composition has no joined owner: " + err.Error())
+		}
+		reason := "cannot apply after returning " + knownRemoved() + ": " + err.Error()
+		if knownRemoved() == "" {
+			reason = "cannot apply on moved base: " + err.Error()
+		}
+		decision := ReturnDecision{GoalID: conflict.GoalID, Outcome: UnitEjected, Reason: reason}
+		if err := requestUnitReturn(&record, decision.GoalID, decision.Outcome, decision.Reason, actor, at); err != nil {
+			return hold("survivor return unavailable: " + err.Error())
+		}
+		decisions = append(decisions, decision)
+	}
+	if len(survivors) != 0 && err != nil {
+		return hold("survivor composition exhausted bounded closure: " + err.Error())
+	}
+	applyReturns := func(current *Record) error {
+		if !reflect.DeepEqual(*current, original) {
+			return fmt.Errorf("BATCH_REASSEMBLE_MOVED: batch changed before survivor decision")
+		}
+		for _, decision := range decisions {
+			if err := requestUnitReturn(current, decision.GoalID, decision.Outcome, decision.Reason, actor, at); err != nil {
+				return err
+			}
+		}
 		return nil
+	}
+	// Prepare the complete record before touching the private ref. The store
+	// lock then covers the full-record comparison, ref lease, and durable write.
+	next := original
+	next.Units, next.History = slices.Clone(original.Units), slices.Clone(original.History)
+	if err := applyReturns(&next); err != nil {
+		return err
+	}
+	next.BaseTree = record.BaseTree
+	next.PrefixTrees, next.SelectedGroups, next.Seal, next.Proof, next.Landing, next.Receipts, next.CostForecast = prefixes, nil, nil, nil, nil, nil, nil
+	if len(survivors) == 0 {
+		next.PrefixTrees = nil
+		next.TipTree = next.BaseTree
+		next.Transition(StateDissolved, at, "reassemble", actor, "no survivors")
+	} else {
+		next.TipTree = prefixes[len(prefixes)-1]
+		next.ClosedReason = ""
+		verb, transitionDetail := "reassemble", "survivors"
+		if movedBase && len(decisions) == 0 {
+			verb, transitionDetail = "trunk-moved", detail
+		}
+		next.Transition(StateOpen, at, verb, actor, transitionDetail)
+	}
+	branchFailure := ""
+	err = store.locked(func() error {
+		current, err := store.Load(id)
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(current, original) {
+			return fmt.Errorf("BATCH_REASSEMBLE_MOVED: batch changed before survivor decision")
+		}
+		if current.Landing != nil && current.Landing.publishedTip() != "" {
+			if len(survivors) == 0 || !slices.ContainsFunc(survivors, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
+				if err := DeleteLandingBranch(store.root, id, current.Landing.publishedTip()); err != nil {
+					branchFailure = "survivor branch cleanup unavailable: " + err.Error()
+					return err
+				}
+			} else {
+				branchTip, err := RebuildLandingBranch(store.root, id, next.BaseTree, current.Landing.publishedTip(), actor, survivors)
+				if err != nil {
+					branchFailure = "survivor branch unavailable: " + err.Error()
+					return err
+				}
+				next.Landing = &LandingProgress{Base: next.BaseTree, BranchTip: branchTip, CandidateTip: branchTip}
+			}
+		}
+		return store.updateLocked(id, func(current *Record) error {
+			if !reflect.DeepEqual(*current, original) {
+				return fmt.Errorf("BATCH_REASSEMBLE_MOVED: batch changed before survivor publication")
+			}
+			*current = next
+			return nil
+		})
 	})
+	if branchFailure != "" {
+		return hold(branchFailure)
+	}
+	return err
 }
 
 // HoldUnclassified preserves a post-P2 diagnostic refusal without assigning

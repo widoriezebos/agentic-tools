@@ -275,7 +275,7 @@ func reexecWithFixedProofLoad(t *testing.T, marker, testName string) bool {
 func TestPrefixReceiptAllowsIdentityReuseAndBindsRevisions(t *testing.T) {
 	args := batchPrefixReceiptArgs("/prefix", "/landing", "goal-a", "tree-a", "result.json", []string{"same", "different"}, batch.Claim{Revision: 7, AccountingRevision: 5})
 	joined := strings.Join(args, " ")
-	if strings.Contains(joined, "--no-reuse") || !strings.Contains(joined, "--root /prefix --control-root /landing") || !strings.Contains(joined, "--purpose delivery --groups same,different") || !strings.Contains(joined, "--batch-prefix") ||
+	if strings.Contains(joined, "--no-reuse") || !strings.Contains(joined, "--root /prefix --control-root /landing") || !strings.Contains(joined, `--purpose delivery --batch-requirements {"groups":["same","different"]}`) || !strings.Contains(joined, "--batch-prefix") ||
 		!strings.Contains(joined, "--expected-goal-revision 7 --expected-accounting-revision 5") {
 		t.Fatalf("prefix receipt argv=%v", args)
 	}
@@ -308,7 +308,7 @@ result=
 while (( $# )); do
   if [[ "$1" == --result ]]; then result=$2; shift 2; else shift; fi
 done
-printf '%s\n' '{"delivery":{"sufficient":true},"groups":[{"id":"same","status":"reused","reuseAttempt":"tip-attempt"}]}' >"$result"
+printf '%s\n' '{"attemptId":"source-attempt","delivery":{"sufficient":true},"groups":[{"id":"same","status":"passed","nativeLaunched":true},{"id":"other","status":"reused","reuseAttempt":"tip-attempt"}]}' >"$result"
 exit 76
 `
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
@@ -320,7 +320,7 @@ exit 76
 	claim := batch.Claim{Machine: "landing", Lineage: "owner", Epoch: 1, Revision: 7, AccountingRevision: 5}
 	record := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateLanding, BaseTree: tree, PrefixTrees: []string{tree, tree}, TipTree: tree,
 		Units: []batch.Unit{{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: batch.UnitJoined}, {GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: batch.UnitJoined}},
-		Proof: &batch.Proof{Status: "green", SelectedGroups: []string{"same"}},
+		Proof: &batch.Proof{Status: "green", SelectedGroups: []string{"same", "other"}},
 	}
 	store := batch.NewStore(root, nil)
 	if err := store.Create(record); err != nil {
@@ -337,7 +337,8 @@ exit 76
 		t.Fatal(err)
 	}
 	receipt := stored.Receipts["goal-a"]
-	if receipt.AttemptID != "" || len(receipt.Executed) != 0 || receipt.Reused["same"] != "tip-attempt" {
+	if receipt.AttemptID != "source-attempt" || len(receipt.Executed) != 0 ||
+		receipt.Reused["same"] != "source-attempt" || receipt.Reused["other"] != "tip-attempt" {
 		t.Fatalf("reusable prefix receipt=%+v", receipt)
 	}
 }
@@ -518,15 +519,28 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 			}
 			originalChild := batchChildRunner
 			originalPush := batchMovedEndpointPush
-			t.Cleanup(func() { batchChildRunner, batchMovedEndpointPush = originalChild, originalPush })
+			originalVerify := batchVerifyRebasedSeries
+			originalAuthorize := batchAuthorizeRebasedSeries
+			t.Cleanup(func() {
+				batchChildRunner, batchMovedEndpointPush, batchVerifyRebasedSeries, batchAuthorizeRebasedSeries = originalChild, originalPush, originalVerify, originalAuthorize
+			})
+			batchAuthorizeRebasedSeries = func(string, batch.Store, batch.Record, string, time.Time) error { return nil } // Transport-only fixture has no accepted goal ledger.
 			var children [][]string
+			verifications := 0
 			pushes, refusedPushes := 0, 0
 			batchChildRunner = func(_ string, _ string, args ...string) error {
 				children = append(children, append([]string(nil), args...))
 				if test.childFailure == "held" && len(args) > 1 && args[0] == "landing" && args[1] == "held" {
 					return errors.New("held refusal")
 				}
-				if test.childFailure == "verify" && len(args) > 1 && args[0] == "test" && args[1] == "verify" {
+				return nil
+			}
+			batchVerifyRebasedSeries = func(_ string, _ batch.Record, trees []string) error {
+				verifications++
+				if len(trees) != 1 {
+					return errors.New("rebased prefix count moved")
+				}
+				if test.childFailure == "verify" {
 					return errors.New("verify refusal")
 				}
 				return nil
@@ -541,6 +555,7 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 			seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }
 			seams.Commit = func(batch.Unit, batch.PrefixReceipt) (string, error) { return tip, nil }
 			seams.Held = func(string, string) error { return nil }
+			seams.VerifySeries = nil // This fixture exercises transport; rebased verification is observed above.
 			seams.Push = func(string, string) error {
 				refusedPushes++
 				return batch.LandLandingBranch(root, record.BatchID, baseCommit, tip)
@@ -559,9 +574,13 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 				if test.childFailure == "held" {
 					wantChildren = 1
 				} else if test.childFailure == "verify" {
-					wantChildren = 2
+					wantChildren = 1
 				}
-				if landed.State != batch.StateOpen && landed.State != batch.StateDissolved || landed.BaseTree != movedTree || landed.Landing != nil || mainTip != movedCommit || len(children) != wantChildren || pushes != 0 || refusedPushes != 1 {
+				wantVerifications := 0
+				if test.childFailure == "verify" {
+					wantVerifications = 1
+				}
+				if landed.State != batch.StateOpen && landed.State != batch.StateDissolved || landed.BaseTree != movedTree || landed.Landing != nil || mainTip != movedCommit || len(children) != wantChildren || verifications != wantVerifications || pushes != 0 || refusedPushes != 1 {
 					t.Fatalf("input move record=%+v main=%s children=%v pushes=%d refused=%d", landed, mainTip, children, pushes, refusedPushes)
 				}
 				if test.name == "selected-input-conflict" && (landed.State != batch.StateDissolved || landed.Units[0].State != batch.UnitReturnPending || landed.Units[0].Outcome != batch.UnitEjected) {
@@ -573,7 +592,7 @@ func TestBatchLandTrunkMovedRebasesOrReopens(t *testing.T) {
 					}
 				}
 			} else {
-				if landed.State != batch.StateLanding || landed.Landing == nil || !landed.Landing.PushComplete || mainTip != landed.Landing.PushedTip || len(children) != 2 || children[0][0] != "landing" || children[1][0] != "test" || children[1][1] != "verify" || pushes != 1 || refusedPushes != 1 {
+				if landed.State != batch.StateLanding || landed.Landing == nil || !landed.Landing.PushComplete || mainTip != landed.Landing.PushedTip || len(children) != 1 || children[0][0] != "landing" || verifications != 1 || pushes != 1 || refusedPushes != 1 {
 					t.Fatalf("disjoint record=%+v main=%s children=%v pushes=%d refused=%d", landed, mainTip, children, pushes, refusedPushes)
 				}
 				if err := exec.Command("git", "--git-dir", origin, "merge-base", "--is-ancestor", movedCommit, landed.Landing.PushedTip).Run(); err != nil {
@@ -633,7 +652,7 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 		return nil
 	}
 	recoveries := 0
-	batchLandRecoverPush = func(_ string, _ string, _ batch.Record, _ string, origin, _ string, _ string) (batch.PushRecovery, error) {
+	batchLandRecoverPush = func(_ string, _ string, _ batch.Record, _ string, _ string, origin, _ string, _ string) (batch.PushRecovery, error) {
 		recoveries++
 		return batch.PushRecovery{Origin: origin}, errors.New("recovery transport unavailable")
 	}
@@ -643,6 +662,7 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 	seams.AppendReceipt = func(batch.Unit, batch.PrefixReceipt) error { return nil }
 	seams.Commit = func(batch.Unit, batch.PrefixReceipt) (string, error) { return tip, nil }
 	seams.Held = func(string, string) error { return nil }
+	seams.VerifySeries = nil // This fixture exercises bounded transport recovery.
 	seams.PublishBranch = func(string, string) error { return nil }
 	seams.Push = func(string, string) error {
 		return &batch.EndpointPushError{Cause: errors.New("stale info"), StaleLease: true, RemoteRejected: true}
@@ -658,14 +678,6 @@ func TestBatchLandProductionSeamsBoundRecoveryAndAbandon(t *testing.T) {
 	}
 	if seams.LeaseBase != baseCommit || recoveries != 3 || treeReads != 1 || abandons != 1 || landed.State != batch.StateOpen || landed.Landing != nil {
 		t.Fatalf("lease=%q recoveries=%d treeReads=%d abandons=%d record=%+v", seams.LeaseBase, recoveries, treeReads, abandons, landed)
-	}
-}
-
-func TestBatchRebasedVerifyUsesIdentityComposition(t *testing.T) {
-	t.Parallel()
-	args := batchRebasedVerifyArgs("/landing", "goal-a", "tree-a", []string{"one", "two"})
-	if got := strings.Join(args, " "); got != "test verify --root /landing --goal goal-a --tree tree-a --mode auto --purpose delivery --groups one,two --batch-prefix" {
-		t.Fatalf("rebased verify argv=%v", args)
 	}
 }
 
@@ -685,7 +697,7 @@ func TestBatchMovedPushRecoveryDoesNotRetryUnchangedOrigin(t *testing.T) {
 		pushes++
 		return nil
 	}
-	recovery, err := recoverMovedBatchPush(root, "01j5x00000000000000000ba21", batch.Record{}, baseCommit, baseCommit, baseTree, tip)
+	recovery, err := recoverMovedBatchPush(root, "01j5x00000000000000000ba21", batch.Record{}, "owner", baseCommit, baseCommit, baseTree, tip)
 	if err != nil {
 		t.Fatal(err)
 	}

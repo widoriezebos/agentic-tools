@@ -15,11 +15,12 @@ import (
 )
 
 type ownershipFixture struct {
-	t        *testing.T
-	root     string
-	identity ProofIdentity
-	launcher ProcessIdentity
-	now      time.Time
+	t            *testing.T
+	root         string
+	identity     ProofIdentity
+	launcher     ProcessIdentity
+	now          time.Time
+	admissionDir string
 }
 
 func newOwnershipFixture(t *testing.T) ownershipFixture {
@@ -57,6 +58,11 @@ func (f ownershipFixture) reserve(goal, plan string, groups map[string]string, e
 	f.t.Helper()
 	fixtureHostAdmissionMu.Lock()
 	defer fixtureHostAdmissionMu.Unlock()
+	if f.admissionDir != "" {
+		previous := hostAdmissionDirectoryForTest
+		hostAdmissionDirectoryForTest = f.admissionDir
+		defer func() { hostAdmissionDirectoryForTest = previous }()
+	}
 	identity := BindIdentityInputs(f.identity, append(append([]string(nil), f.identity.IdentityInputs...), "plan:"+plan))
 	request := candidateAdmission(AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
 		GoalID: goal, GoalRevision: 1, AccountingRevision: 1, ReservedMinutes: 2,
@@ -240,8 +246,12 @@ func TestCachedSourceIsPinnedWithTheMissingSet(t *testing.T) {
 func TestAdmissionSequenceSurvivesWithdrawnReservation(t *testing.T) {
 	t.Parallel()
 	f := newOwnershipFixture(t)
+	f.admissionDir = filepath.Join(t.TempDir(), "host-admission")
 	groups := map[string]string{"check": strings.Repeat("a", 64)}
-	first, _ := f.reserve("goal-a", "withdrawn", groups, "", "", 0)
+	first, firstDecision := f.reserve("goal-a", "withdrawn", groups, "", "", 0)
+	if firstDecision.Disposition != DispositionExecuted {
+		t.Fatalf("first fixture reservation did not execute: %+v", firstDecision)
+	}
 	guard, err := AcquireMutation(f.root)
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +261,10 @@ func TestAdmissionSequenceSurvivesWithdrawnReservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, _ := f.reserve("goal-b", "after-withdrawal", groups, "", "", time.Millisecond)
+	second, secondDecision := f.reserve("goal-b", "after-withdrawal", groups, "", "", time.Millisecond)
+	if secondDecision.Disposition != DispositionExecuted {
+		t.Fatalf("second fixture reservation did not execute: %+v", secondDecision)
+	}
 	if second.TestAdmission != first.TestAdmission+1 {
 		t.Fatalf("durable admission sequence reused %d after withdrawal; second=%d", first.TestAdmission, second.TestAdmission)
 	}

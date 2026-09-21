@@ -967,6 +967,9 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 	}
 	events := []string{}
 	dependencies := productionBatchJoinDependencies()
+	// This fixture owns the join publication boundary; cost forecasts have
+	// separate public tests and must not launch a planner outside its seams.
+	dependencies.costForecast = nil
 	fakeRef := identity.Ref{Pid: 99123, StartedAtSec: 55}
 	dependencies.prober = processRefProber{exact: identity.Exact{Pid: fakeRef.Pid, StartedAt: time.Unix(fakeRef.StartedAtSec, 0)}, state: identity.Alive}
 	dependencies.binding = func(string, string, time.Time) (dispatchcore.GoalBinding, error) {
@@ -989,14 +992,11 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 		events = append(events, "transport")
 		return batch.TransportChain(root, chain)
 	}
-	dependencies.gate = func(_ string, tree string, gotPatch, fixtures []byte, unit *batch.Unit) error {
-		flockFree("gate")
-		events = append(events, "gate")
-		return batch.RunJoinGate(tree, gotPatch, fixtures, unit, func(string, batch.GateStep) batch.GateStepResult {
-			return batch.GateStepResult{RunID: "join-gate"}
-		})
+	dependencies.admissionRun = func(_ string, _ string, unit batch.Unit) (batch.JoinAdmission, error) {
+		flockFree("admission")
+		events = append(events, "admission")
+		return batch.JoinAdmission{Tree: unit.Admission.Tree, Status: "verified", AttemptID: "join-admission"}, nil
 	}
-	dependencies.fixtures = func(string) ([]byte, error) { return nil, nil }
 	dependencies.protectedTests = func(_, baseTree, candidateTree string) error {
 		flockFree("protected tests")
 		events = append(events, "protected-tests")
@@ -1008,13 +1008,13 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 	dependencies.plan = func(string, string, string) (testpolicy.Plan, error) {
 		return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard}, nil
 	}
-	publish := dependencies.publish
-	dependencies.publish = func(store batch.Store, id string, unit batch.Unit, actor string, at time.Time,
-		plan func(string, string, string) (testpolicy.Plan, error), handover func() error) error {
+	publish := dependencies.publishAdmission
+	dependencies.publishAdmission = func(store batch.Store, id string, unit batch.Unit, actor string, at time.Time,
+		plan func(string, string, string) (testpolicy.Plan, error), handover func() error, admission batch.JoinAdmissionRun) error {
 		if got := store.Liveness(fakeRef); got != identity.Alive {
 			t.Fatalf("join store ignored injected prober: %s", got)
 		}
-		return publish(store, id, unit, actor, at, plan, handover)
+		return publish(store, id, unit, actor, at, plan, handover, admission)
 	}
 	dependencies.handover = func(request batchJoinRequest, gotBatch string, source batch.Claim) error {
 		events = append(events, "forward-handover")
@@ -1050,7 +1050,7 @@ func TestLandingBatchJoinVerbPublishesOutsideFlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(record.Units) != 1 || record.Units[0].SeatRoot != seat || record.Units[0].State != batch.UnitJoined || record.BaseTree != base ||
-		strings.Join(events, ",") != "transport,gate,protected-tests,forward-handover,ensure-owner" {
+		strings.Join(events, ",") != "transport,protected-tests,forward-handover,admission,ensure-owner" {
 		t.Fatalf("joined record=%+v events=%v", record, events)
 	}
 }

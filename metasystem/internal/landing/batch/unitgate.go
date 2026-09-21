@@ -1,7 +1,6 @@
 package batch
 
 import (
-	"errors"
 	"fmt"
 	"go/parser"
 	"go/token"
@@ -13,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
 )
 
 // UnitPackages is the package closure that one stacked unit must gate.
@@ -40,20 +40,12 @@ func unitGateModuleRoot(root string) string {
 // SelectUnitPackages computes the changed packages and their transitive
 // reverse dependencies against one exact candidate tree.
 func SelectUnitPackages(moduleRoot, base, tree string) (UnitPackages, error) {
-	workspace := gittree.Workspace{Dir: moduleRoot}
-	baseTree, err := moduleTree(workspace, base)
-	if err != nil {
-		return UnitPackages{}, fmt.Errorf("unit gate base: %w", err)
-	}
-	candidateTree, err := moduleTree(workspace, tree)
-	if err != nil {
-		return UnitPackages{}, fmt.Errorf("unit gate tree: %w", err)
-	}
-	patch, err := workspace.Diff(baseTree, candidateTree)
+	selected, err := gopackages.Select(moduleRoot, base, tree)
 	if err != nil {
 		return UnitPackages{}, err
 	}
-	return unitPackagesFromChanges(moduleRoot, candidateTree, patchGateChanges(patch))
+	return UnitPackages{Tree: selected.Tree, ModulePath: selected.ModulePath,
+		Changed: selected.Changed, Dependents: selected.Dependents}, nil
 }
 
 // SelectWorkingUnitPackages compares base with the current module worktree.
@@ -239,34 +231,7 @@ func unitPackagesFromChanges(moduleRoot, tree string, changes gateChanges) (Unit
 // changed package directly or through another package. Every Go file in the
 // tree participates, including tests and files excluded by build tags.
 func ReverseDependents(moduleRoot, tree string, changed []string) (_ []string, err error) {
-	workspace := gittree.Workspace{Dir: moduleRoot}
-	resolvedTree, err := moduleTree(workspace, tree)
-	if err != nil {
-		return nil, err
-	}
-	goMod, present, err := workspace.FileAt(resolvedTree, "go.mod")
-	if err != nil {
-		return nil, err
-	}
-	if !present {
-		return nil, fmt.Errorf("reverse dependents: tree %s has no go.mod", resolvedTree)
-	}
-	module, err := modulePath(goMod)
-	if err != nil {
-		return nil, err
-	}
-
-	detached, err := workspace.NewDetachedWorktree(resolvedTree)
-	if err != nil {
-		return nil, fmt.Errorf("reverse dependents: materialize tree: %w", err)
-	}
-	defer func() { err = errors.Join(err, detached.Close()) }()
-	imports, err := packageImports(detached.Workspace().Dir, module, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return reverseDependents(module, changed, imports), nil
+	return gopackages.ReverseDependents(moduleRoot, tree, changed)
 }
 
 func reverseDependents(module string, changed []string, imports map[string]map[string]bool) []string {

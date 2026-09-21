@@ -16,11 +16,13 @@ import (
 )
 
 type batchRecordFields struct {
-	BaseTree       string           `json:"baseTree,omitempty"`
-	ClosedReason   string           `json:"closedReason,omitempty"`
-	PrefixTrees    []string         `json:"prefixTrees,omitempty"`
-	SelectedGroups []string         `json:"selectedGroups,omitempty"`
-	Seal           map[string]Claim `json:"seal,omitempty"`
+	BaseTree       string                   `json:"baseTree,omitempty"`
+	ClosedReason   string                   `json:"closedReason,omitempty"`
+	PrefixTrees    []string                 `json:"prefixTrees,omitempty"`
+	SelectedGroups []string                 `json:"selectedGroups,omitempty"`
+	Seal           map[string]Claim         `json:"seal,omitempty"`
+	PrefixEpisodes map[string]PrefixEpisode `json:"prefixEpisodes,omitempty"`
+	CostForecast   *CostForecast            `json:"costForecast,omitempty"`
 }
 
 type assemblyConflict struct {
@@ -86,6 +88,9 @@ func assembleChainUnit(root, base string, unit Unit) (next string, err error) {
 	if output, applyErr := runBatchMergeGit(workspace.Dir, patch, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "apply", "--index", "--3way", "--binary", "--whitespace=nowarn", "-"); applyErr != nil {
 		if contractgit.IsRefusal(applyErr) {
 			return "", applyErr
+		}
+		if !patchCompositionConflict(workspace.Dir, output, applyErr) {
+			return "", fmt.Errorf("apply unit %s: %s: %w", unit.GoalID, strings.TrimSpace(string(output)), applyErr)
 		}
 		paths := exec.Command("git", "-C", workspace.Dir, "diff", "--name-only", "--diff-filter=U", "-z")
 		paths.Env = gittree.ScrubbedEnviron()
@@ -159,7 +164,11 @@ func applyBranchCommit(repo, worktree, commit string) error {
 		if contractgit.IsRefusal(err) {
 			return err
 		}
-		return fmt.Errorf("apply branch commit %s: %s: %w", commit, strings.TrimSpace(string(output)), err)
+		cause := fmt.Errorf("apply branch commit %s: %s: %w", commit, strings.TrimSpace(string(output)), err)
+		if patchCompositionConflict(worktree, output, err) {
+			return &patchApplyConflict{cause: cause}
+		}
+		return cause
 	}
 	after, err := (gittree.Workspace{Dir: worktree}).StagedTree()
 	if err != nil {
@@ -239,6 +248,10 @@ func AssembleBranchMembers(root, base string, members []BranchMember) (prefixes 
 		for _, build := range member.Builds {
 			for _, fold := range build.Folds {
 				if err := applyBranchCommit(root, workspace.Dir, fold.ID); err != nil {
+					var conflict *patchApplyConflict
+					if errors.As(err, &conflict) {
+						return nil, &assemblyConflict{GoalID: member.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "goal "+member.GoalID+" fold does not apply: "+err.Error())}
+					}
 					if contractgit.IsRefusal(err) {
 						return nil, err
 					}
@@ -250,6 +263,10 @@ func AssembleBranchMembers(root, base string, members []BranchMember) (prefixes 
 				return nil, err
 			}
 			if err := applyBranchCommit(root, workspace.Dir, build.Commit); err != nil {
+				var conflict *patchApplyConflict
+				if errors.As(err, &conflict) {
+					return nil, &assemblyConflict{GoalID: member.GoalID, Cause: refuseBatch("BATCH_JOIN_CONFLICT", "goal "+member.GoalID+" build does not apply: "+err.Error())}
+				}
 				if contractgit.IsRefusal(err) {
 					return nil, err
 				}

@@ -419,7 +419,7 @@ func TestBatchJoinPlanningPinsMergeBaseToBatchBase(t *testing.T) {
 }
 
 func TestBatchJoinPublicationHoldsTheFlock(t *testing.T) {
-	for _, point := range []string{UnitJoining, "handover", UnitJoined} {
+	for _, point := range []string{UnitJoining, UnitJoined} {
 		_, store := joinBed(t)
 		token, waiting, events := make(chan struct{}, 1), make(chan struct{}, 1), make(chan string, 8)
 		token <- struct{}{}
@@ -457,8 +457,9 @@ func TestBatchJoinPublicationHoldsTheFlock(t *testing.T) {
 		}
 		tickDone := make(chan error, 1)
 		go func() {
-			tickDone <- ReconcileJoins(store, testBatchID, "unused", "landing+owner", time.Unix(2, 0), nil)
+			err := ReconcileJoins(store, testBatchID, "unused", "landing+owner", time.Unix(2, 0), nil)
 			events <- "tick"
+			tickDone <- err
 		}()
 		select {
 		case <-waiting:
@@ -470,8 +471,18 @@ func TestBatchJoinPublicationHoldsTheFlock(t *testing.T) {
 		close(proceed)
 		must(t, <-joinDone)
 		must(t, <-tickDone)
-		got := []string{<-events, <-events, <-events}
-		witness(t, strings.Join(got, ",") == "release,release,tick" && load(t, store).Units[0].State == UnitJoined, "%s event order=%v", point, got)
+		got := make([]string, 0, 4)
+		releases, ticks := 0, 0
+		for range 4 {
+			event := <-events
+			got = append(got, event)
+			if event == "release" {
+				releases++
+			} else if event == "tick" {
+				ticks++
+			}
+		}
+		witness(t, got[0] == "release" && releases == 3 && ticks == 1 && load(t, store).Units[0].State == UnitJoined, "%s event order=%v", point, got)
 	}
 }
 func TestBatchTickReconcilesAKilledJoinerOnce(t *testing.T) {
@@ -504,6 +515,12 @@ func TestBatchTickReconcilesAKilledJoinerOnce(t *testing.T) {
 		}
 		err := PublishJoin(store, testBatchID, joiningUnit("goal-a", "chain-a"), "seat+goal-a", time.Unix(1, 0), joinPlanMode(testpolicy.ModeStandard), func() error { return nil })
 		witness(t, err == os.ErrProcessDone, "join error=%v", err)
+		// Pre-cutover records had no admission marker and still require the
+		// original claim-based crash reconciliation.
+		must(t, store.Update(testBatchID, func(record *Record) error {
+			record.Units[0].Admission = nil
+			return nil
+		}))
 		must(t, ReconcileJoins(store, testBatchID, bed.base, "landing+owner", time.Unix(2, 0), test.read))
 		must(t, ReconcileJoins(store, testBatchID, bed.base, "landing+owner", time.Unix(2, 0), test.read))
 		record := load(t, store)

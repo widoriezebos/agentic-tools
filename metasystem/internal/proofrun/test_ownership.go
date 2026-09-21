@@ -334,9 +334,16 @@ func validateNativeProducerClaims(attempt Attempt) error {
 }
 
 func newestOwnedObservation(attempts []Attempt, id, identity, episode, binding, expiry string, now time.Time) (ownedObservation, bool) {
+	return newestOwnedObservationWhere(attempts, id, identity, episode, binding, expiry, now, nil)
+}
+
+func newestOwnedObservationWhere(attempts []Attempt, id, identity, episode, binding, expiry string, now time.Time, include func(Attempt) bool) (ownedObservation, bool) {
 	var newest ownedObservation
 	found := false
 	for _, attempt := range attempts {
+		if include != nil && !include(attempt) {
+			continue
+		}
 		if attempt.SchemaVersion == IdentityAttemptSchemaVersion && attempt.Terminal != nil && attempt.TestResult != nil &&
 			len(attempt.TestInventory) != 0 && !admittedTestFreshnessMatches(attempt, *attempt.TestResult) {
 			continue
@@ -426,6 +433,7 @@ func sharedComponentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchRe
 	}
 	allPassed := len(request.ComponentIdentities) > 0
 	var failed *Attempt
+	requestTreeKnown := validTreeDigest(request.CandidateTree)
 	for id, identity := range request.ComponentIdentities {
 		episode, binding := requestGroupFreshness(request, id)
 		expiry := ""
@@ -436,8 +444,19 @@ func sharedComponentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchRe
 		if !found || observation.live || !observation.passed {
 			allPassed = false
 		}
+		// The global newest red vetoes an older pass across trees. Separately,
+		// the latest observation on this candidate (or an unknown legacy tree)
+		// decides whether its own failed producer still needs an accountable
+		// retry. A newer pass on this candidate supersedes its earlier red.
 		if found && observation.failed {
-			copy := observation.attempt
+			scoped, scopedFound := newestOwnedObservationWhere(attempts, id, identity, episode, binding, expiry, request.Now,
+				func(attempt Attempt) bool {
+					return failureBelongsToCandidate(attempt, request.CandidateTree, requestTreeKnown)
+				})
+			if !scopedFound || !scoped.failed {
+				continue
+			}
+			copy := scoped.attempt
 			if failed == nil || copy.TestAdmission > failed.TestAdmission {
 				failed = &copy
 			}

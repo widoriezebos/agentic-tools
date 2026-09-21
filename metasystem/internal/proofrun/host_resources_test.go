@@ -56,12 +56,23 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer first.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	if active, err := activeHostResourceSlots(directory); err != nil || active != 1 {
+		t.Fatalf("holder did not own the only native slot: active=%d err=%v", active, err)
+	}
+	if named, available, err := tryHostFile(hostResourcePath(directory, "fixture-db")); err != nil || available {
+		if named != nil {
+			_ = named.Close()
+		}
+		t.Fatalf("holder did not own the named resource: available=%t err=%v", available, err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	acquired := make(chan *HostResourceLease, 1)
 	errs := make(chan error, 1)
+	retried := make(chan struct{})
+	waitCtx := WithHostResourceWaitObserver(ctx, func() { close(retried) })
 	go func() {
-		next, err := AcquireHostResources(ctx, directory, conf, "heavy", []string{"fixture-db"})
+		next, err := AcquireHostResources(waitCtx, directory, conf, "heavy", []string{"fixture-db"})
 		if err != nil {
 			errs <- err
 			return
@@ -74,7 +85,17 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 		t.Fatal("contender acquired the held native slot")
 	case err := <-errs:
 		t.Fatal(err)
-	case <-time.After(150 * time.Millisecond):
+	case <-retried:
+	case <-ctx.Done():
+		t.Fatal("contender did not reach its first failed capacity scan")
+	}
+	select {
+	case next := <-acquired:
+		_ = next.Close()
+		t.Fatal("contender acquired the held native slot after its failed scan")
+	case err := <-errs:
+		t.Fatal(err)
+	default:
 	}
 	active, err := activeHostResourceSlots(directory)
 	if err != nil || active != 1 {
@@ -88,7 +109,7 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 	}
 	select {
 	case next := <-acquired:
-		if next.Waited() < 100*time.Millisecond {
+		if next.Waited() <= 0 {
 			t.Fatalf("queue time was not recorded: %v", next.Waited())
 		}
 		_ = MarkHostResourcesClean(next.Files())
@@ -98,6 +119,135 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("contender did not acquire after cleanup")
 	}
+	t.Run("caller_fence_closes_while_queued", func(t *testing.T) {
+		checkHostCapacityWaitObservesCallerFence(t, ctx)
+	})
+	t.Run("fixture_census_authority", func(t *testing.T) {
+		previousDirectory, previousReaders, previousOptions := hostAdmissionDirectoryForTest, loadSeams, commandLoadOptions
+		hostAdmissionDirectoryForTest = ""
+		t.Cleanup(func() {
+			hostAdmissionDirectoryForTest, loadSeams, commandLoadOptions = previousDirectory, previousReaders, previousOptions
+		})
+		fakeRoot, realRoot := t.TempDir(), t.TempDir()
+		for _, fixture := range []struct{ root, mode string }{{fakeRoot, "fake"}, {realRoot, "real"}} {
+			if err := os.WriteFile(filepath.Join(fixture.root, "metasystem.conf"), []byte("metasystem.runtimes="+fixture.mode+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		directory := filepath.Join(t.TempDir(), "host-admission")
+		conf := filepath.Join(fakeRoot, "admission.conf")
+		if err := os.WriteFile(conf, []byte(AdmissionCapKey+"=2\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", directory)
+		t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", fakeRoot)
+		realCount, realCalls := 2, 0
+		loadSeams.launchers = func(int64) (int, bool) {
+			realCalls++
+			return realCount, true
+		}
+		commandLoadOptions = []loadSampleOption{withTestHostLoad("0")}
+		t.Run("real_target_uses_real_census", func(t *testing.T) {
+			before := realCalls
+			count, known, err := resourceLegacyLauncherCount(realRoot)
+			if err != nil || !known || count != realCount || realCalls != before+1 {
+				t.Fatalf("unrelated fake fixture masked real target census: count=%d known=%t calls=%d err=%v", count, known, realCalls-before, err)
+			}
+		})
+		t.Run("no_namespace_uses_real_census", func(t *testing.T) {
+			t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", "")
+			before := realCalls
+			count, known, err := resourceLegacyLauncherCount(fakeRoot)
+			if err != nil || !known || count != realCount || realCalls != before+1 {
+				t.Fatalf("unselected fixture masked real census: count=%d known=%t calls=%d err=%v", count, known, realCalls-before, err)
+			}
+		})
+		t.Run("invalid_fixture_count_refuses", func(t *testing.T) {
+			commandLoadOptions = []loadSampleOption{withTestHostLoad("invalid")}
+			lease, err := AcquireHostResources(t.Context(), fakeRoot, conf, "heavy", nil)
+			if lease != nil || err == nil || !strings.Contains(err.Error(), "fixture host launcher count is invalid") {
+				if lease != nil {
+					_ = lease.Close()
+				}
+				t.Fatalf("invalid fixture count admitted or fell back to real census: lease=%v err=%v", lease, err)
+			}
+			if active, err := activeHostResourceSlots(directory); err != nil || active != 0 {
+				t.Fatalf("invalid fixture count retained a slot: active=%d err=%v", active, err)
+			}
+		})
+		t.Run("temporary_symlink_escape_refuses", func(t *testing.T) {
+			parent := t.TempDir()
+			admitted, outside := filepath.Join(parent, "admitted-temp"), filepath.Join(parent, "outside")
+			for _, path := range []string{admitted, outside} {
+				if err := os.Mkdir(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("TMPDIR", admitted)
+			link := filepath.Join(admitted, "escape")
+			if err := os.Symlink(outside, link); err != nil {
+				t.Fatal(err)
+			}
+			selected := filepath.Join(link, ".host-resource-fixture-escape")
+			if _, err := os.Lstat(selected); !os.IsNotExist(err) {
+				t.Fatalf("escape target exists before test: %v", err)
+			}
+			t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", selected)
+			if _, err := hostAdmissionDirectory(); err == nil || !strings.Contains(err.Error(), "temporary path") {
+				t.Fatalf("symlink ancestor escaped temporary admission boundary: %v", err)
+			}
+			if _, err := os.Lstat(selected); !os.IsNotExist(err) {
+				t.Fatalf("rejected symlink escape created a directory outside temp: %v", err)
+			}
+		})
+		t.Run("max_int_fixture_cannot_overflow_cap", func(t *testing.T) {
+			realCount = 0
+			commandLoadOptions = []loadSampleOption{withTestHostLoad("0")}
+			holder, err := AcquireHostResources(t.Context(), fakeRoot, conf, "heavy", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = MarkHostResourcesClean(holder.Files()); _ = holder.Close() }()
+			if active, err := activeHostResourceSlots(directory); err != nil || active != 1 {
+				t.Fatalf("cap-two fixture did not hold one real slot: active=%d err=%v", active, err)
+			}
+			commandLoadOptions = []loadSampleOption{withTestHostLoad(strconv.Itoa(int(^uint(0) >> 1)))}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			observed := make(chan struct{})
+			waitCtx := WithHostResourceWaitObserver(ctx, func() { close(observed) })
+			type outcome struct {
+				lease *HostResourceLease
+				err   error
+			}
+			finished := make(chan outcome, 1)
+			go func() {
+				lease, err := AcquireHostResources(waitCtx, fakeRoot, conf, "heavy", nil)
+				finished <- outcome{lease: lease, err: err}
+			}()
+			select {
+			case <-observed:
+			case result := <-finished:
+				if result.lease != nil {
+					_ = result.lease.Close()
+				}
+				t.Fatalf("MaxInt launcher count did not wait: %+v", result)
+			case <-ctx.Done():
+				t.Fatal("MaxInt launcher count did not reach a failed scan")
+			}
+			if active, err := activeHostResourceSlots(directory); err != nil || active != 1 {
+				t.Fatalf("overflow contender displaced held slot: active=%d err=%v", active, err)
+			}
+			cancel()
+			result := <-finished
+			if result.lease != nil || !errors.Is(result.err, context.Canceled) {
+				if result.lease != nil {
+					_ = result.lease.Close()
+				}
+				t.Fatalf("canceled overflow contender admitted: %+v", result)
+			}
+		})
+	})
 }
 
 func TestHostResourceNestedLeaseRequiresHeldSubset(t *testing.T) {
@@ -203,9 +353,7 @@ func TestHostResourceChildRetainsSlotAfterOwnerDies(t *testing.T) {
 	release := filepath.Join(directory, "release-child")
 	middlePID := filepath.Join(directory, "middle-pid")
 	defer os.WriteFile(release, []byte("release"), 0o600)
-	helperContext, stopHelper := context.WithTimeout(context.Background(), 5*time.Second)
-	defer stopHelper()
-	helper := exec.CommandContext(helperContext, os.Args[0], "-test.run=^TestHostResourceSubprocess$", "--", "hold", directory, conf, ready, release, middlePID)
+	helper := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestHostResourceSubprocess$", "--", "hold", directory, conf, ready, release, middlePID)
 	if output, err := helper.CombinedOutput(); err != nil {
 		t.Fatalf("owner helper: %v: %s", err, output)
 	}
@@ -223,12 +371,17 @@ func TestHostResourceChildRetainsSlotAfterOwnerDies(t *testing.T) {
 	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	if active, err := activeHostResourceSlots(directory); err != nil || active != 1 {
+		t.Fatalf("surviving grandchild did not retain capacity: active=%d err=%v", active, err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	acquired := make(chan *HostResourceLease, 1)
 	errs := make(chan error, 1)
+	retried := make(chan struct{})
+	waitCtx := WithHostResourceWaitObserver(ctx, func() { close(retried) })
 	go func() {
-		next, err := AcquireHostResources(ctx, directory, conf, "heavy", nil)
+		next, err := AcquireHostResources(waitCtx, directory, conf, "heavy", nil)
 		if err != nil {
 			errs <- err
 			return
@@ -241,7 +394,20 @@ func TestHostResourceChildRetainsSlotAfterOwnerDies(t *testing.T) {
 		t.Fatal("killed worker released capacity while its grandchild lived")
 	case err := <-errs:
 		t.Fatal(err)
-	case <-time.After(150 * time.Millisecond):
+	case <-retried:
+	case <-ctx.Done():
+		t.Fatal("contender did not reach its first failed capacity scan")
+	}
+	select {
+	case next := <-acquired:
+		_ = next.Close()
+		t.Fatal("contender acquired capacity while the grandchild retained custody")
+	case err := <-errs:
+		t.Fatal(err)
+	default:
+	}
+	if active, err := activeHostResourceSlots(directory); err != nil || active != 1 {
+		t.Fatalf("contender displaced the surviving grandchild: active=%d err=%v", active, err)
 	}
 	if err := os.WriteFile(release, []byte("release"), 0o600); err != nil {
 		t.Fatal(err)

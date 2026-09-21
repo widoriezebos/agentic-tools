@@ -186,7 +186,7 @@ func TestExplicitGroupsRequireDiagnosticCanaryMode(t *testing.T) {
 		}
 	}
 	plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{"src/output.go"}, RequestedMode: ModeAuto,
-		Purpose: PurposeDelivery, Groups: requested, SupplementDeliveryGroups: true})
+		Purpose: PurposeDelivery, BatchRequirements: requested})
 	if err != nil || plan.Purpose != PurposeDelivery || !reflect.DeepEqual(plan.SelectedGroups, wantSelected) {
 		t.Fatalf("batch prefix delivery selection purpose=%s groups=%v err=%v, want delivery %v", plan.Purpose, plan.SelectedGroups, err, wantSelected)
 	}
@@ -209,8 +209,15 @@ func TestMetaSystemGroupSelectionScenario(t *testing.T) {
 		plan, selectErr := Select(contract, SelectionRequest{ChangedPaths: []string{"internal/testpolicy/select.go"},
 			RequestedMode: mode, Purpose: PurposeDiagnostic, Groups: groups})
 		if mode == ModeCanary {
-			if selectErr != nil || len(plan.SelectedGroups) != 5 {
-				t.Fatalf("canary selected %d of %d groups, err=%v; want 5", len(plan.SelectedGroups), len(contract.Groups), selectErr)
+			want := []string{"policy-canary", "adapter-canary", "command-interface-smoke", "section/adoption-fixtures",
+				"section/watch-background-jobs-fixtures", "fast-static-build", "refusal-register-standard"}
+			if selectErr != nil || len(plan.SelectedGroups) != len(want) {
+				t.Fatalf("canary selected %v of %d groups, err=%v; want %v", plan.SelectedGroups, len(contract.Groups), selectErr, want)
+			}
+			for _, id := range want {
+				if !contains(plan.SelectedGroups, id) {
+					t.Fatalf("canary selection omitted %s: %v", id, plan.SelectedGroups)
+				}
 			}
 			t.Logf("mode=%s selected=%d of %d groups", mode, len(plan.SelectedGroups), len(contract.Groups))
 			continue

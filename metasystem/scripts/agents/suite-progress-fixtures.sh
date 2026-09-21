@@ -108,7 +108,12 @@ harness_fixture_budget_init "$root"
 wait_cap=$(harness_fixture_cap suite-watchdog-wait)
 reap_cap=$(harness_fixture_cap suite-watchdog-reap)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/suite-progress-fixtures.XXXXXX")
+admission_tmp=$tmp
 tmp=$(cd "$tmp" && pwd -P)
+mkdir -p "$admission_tmp/admission-authority"
+printf 'metasystem.runtimes=fake\n' >"$admission_tmp/admission-authority/metasystem.conf"
+export METASYSTEM_PROOF_ADMISSION_TEST_DIR="$admission_tmp/host-admission"
+export METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="$admission_tmp/admission-authority"
 owned_pids=()
 cleanup() {
   local status=$?

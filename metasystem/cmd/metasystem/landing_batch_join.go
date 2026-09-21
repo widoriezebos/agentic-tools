@@ -1,9 +1,7 @@
 package main
 
 import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -13,7 +11,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -23,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -33,27 +31,29 @@ type batchJoinRequest struct {
 }
 
 type batchJoinDependencies struct {
-	binding         func(string, string, time.Time) (dispatchcore.GoalBinding, error)
-	chain           func(string, string, string, uint64) (batch.CertifiedChain, error)
-	base            func(string) (string, error)
-	mint            func() (string, error)
-	transport       func(string, batch.CertifiedChain) error
-	member          func(batchJoinRequest) (batch.BranchMember, []byte, error)
-	transportMember func(batchJoinRequest, batch.BranchMember) error
-	assemble        func(string, string, []batch.Unit) ([]string, error)
-	fixtures        func(string) ([]byte, error)
-	protectedTests  func(string, string, string) error
-	gate            func(string, string, []byte, []byte, *batch.Unit) error
-	plan            func(string, string, string) (testpolicy.Plan, error)
-	publish         func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error) error
-	handover        func(batchJoinRequest, string, batch.Claim) error
-	ensure          func(string) error
-	author          func(string, *goal.GoalFile) (string, string, string, error)
-	prober          identity.Prober
+	binding          func(string, string, time.Time) (dispatchcore.GoalBinding, error)
+	chain            func(string, string, string, uint64) (batch.CertifiedChain, error)
+	base             func(string) (string, error)
+	mint             func() (string, error)
+	transport        func(string, batch.CertifiedChain) error
+	member           func(batchJoinRequest) (batch.BranchMember, []byte, error)
+	transportMember  func(batchJoinRequest, batch.BranchMember) error
+	assemble         func(string, string, []batch.Unit) ([]string, error)
+	protectedTests   func(string, string, string) error
+	admissionRun     func(string, string, batch.Unit) (batch.JoinAdmission, error)
+	plan             func(string, string, string) (testpolicy.Plan, error)
+	publishAdmission func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun) error
+	costForecast     func(string, batch.Record, batch.Unit, time.Time, func(string, string, string) (testpolicy.Plan, error), func(string, string, []batch.Unit) ([]string, error)) (batch.Unit, batch.CostForecast, error)
+	publishForecast  func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun, batch.CostForecast) error
+	handover         func(batchJoinRequest, string, batch.Claim) error
+	ensure           func(string) error
+	author           func(string, *goal.GoalFile) (string, string, string, error)
+	prober           identity.Prober
 }
 
 var batchJoinDependenciesForCommand = productionBatchJoinDependencies
 var batchJoinClock = goalCommandNow
+var batchTreePlanExecutable = os.Executable
 
 func productionBatchJoinDependencies() batchJoinDependencies {
 	return batchJoinDependencies{
@@ -66,16 +66,11 @@ func productionBatchJoinDependencies() batchJoinDependencies {
 		},
 		transport: batch.TransportChain,
 		member:    productionBatchBranchMember, transportMember: transportBatchBranchMember,
-		assemble: batch.AssembleUnits,
-		fixtures: func(root string) ([]byte, error) {
-			return os.ReadFile(filepath.Join(root, "scripts", "agents", "fixture-bed-groups.tsv"))
-		},
-		protectedTests: batch.CheckProtectedTests,
-		gate: func(root, tree string, patch, fixtures []byte, unit *batch.Unit) error {
-			execute := productionJoinGate(root)
-			return batch.RunJoinGateAt(root, tree, patch, fixtures, unit, execute)
-		},
-		plan: productionJoinPlan, publish: batch.PublishJoin,
+		assemble:       batch.AssembleUnits,
+		protectedTests: productionBatchProtectedTests,
+		admissionRun:   productionJoinAdmission,
+		plan:           productionJoinPlan, publishAdmission: batch.PublishJoinWithAdmission,
+		costForecast: prepareProspectiveBatchCost, publishForecast: batch.PublishJoinWithAdmissionForecast,
 		handover: productionForwardHandover, ensure: ensureBatchOwner, author: productionBatchAuthor, prober: identity.KernelProber{},
 	}
 }
@@ -212,13 +207,6 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	if err != nil || len(prefixes) != 1 {
 		return batch.Record{}, fmt.Errorf("prepare join unit tree: prefixes=%d: %w", len(prefixes), err)
 	}
-	fixtureMap, err := dependencies.fixtures(request.SeatRoot)
-	if err != nil {
-		return batch.Record{}, err
-	}
-	if err := dependencies.gate(request.LandingRoot, prefixes[0], patch, fixtureMap, &unit); err != nil {
-		return batch.Record{}, err
-	}
 	if dependencies.protectedTests == nil {
 		return batch.Record{}, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: protected test gate is unavailable")
 	}
@@ -228,16 +216,75 @@ func executeBatchJoin(request batchJoinRequest, dependencies batchJoinDependenci
 	// The candidate was prepared on the open batch's own base, which trunk may have
 	// passed since; only a batch that changed under the preparation refuses.
 	prepared := record
-	record, err = batch.FindOrCreateOpen(store, baseTree, id, actor, request.At)
-	if err != nil {
-		return batch.Record{}, err
-	}
-	if record.BaseTree != prepared.BaseTree {
-		return batch.Record{}, fmt.Errorf("BATCH_JOIN_BASE_MOVED: open batch base changed during preparation")
+	if foundOpen {
+		record, err = batch.FindOrCreateOpen(store, baseTree, id, actor, request.At)
+		if err != nil {
+			return batch.Record{}, err
+		}
+		if record.BaseTree != prepared.BaseTree {
+			return batch.Record{}, fmt.Errorf("BATCH_JOIN_BASE_MOVED: open batch base changed during preparation")
+		}
 	}
 	handover := func() error { return dependencies.handover(request, record.BatchID, unit.Claim) }
-	if err := dependencies.publish(store, record.BatchID, unit, actor, request.At, dependencies.plan, handover); err != nil {
-		return batch.Record{}, err
+	if dependencies.publishAdmission == nil || dependencies.admissionRun == nil {
+		return batch.Record{}, fmt.Errorf("BATCH_JOIN_ADMISSION_UNAVAILABLE: shared admission owner is unavailable")
+	}
+	var cost *batch.CostForecast
+	if dependencies.costForecast != nil {
+		costNow, nowErr := goalCommandNow(batch.ModuleRoot(request.LandingRoot))
+		if nowErr != nil {
+			return batch.Record{}, nowErr
+		}
+		var forecast batch.CostForecast
+		var forecastErr error
+		unit, forecast, forecastErr = dependencies.costForecast(request.LandingRoot, record, unit, costNow, dependencies.plan, dependencies.assemble)
+		if forecastErr != nil {
+			return batch.Record{}, forecastErr
+		}
+		cost = &forecast
+		if refused := forecastCostRefusal(forecast); refused != nil {
+			if len(record.Units) != 0 {
+				if err := batch.CloseAdmissionForCost(store, record.BatchID, actor, costNow, forecast); err != nil {
+					return batch.Record{}, err
+				}
+				if dependencies.ensure != nil {
+					refused = errors.Join(refused, dependencies.ensure(request.LandingRoot))
+				}
+			}
+			return batch.Record{}, refused
+		}
+	}
+	// A refused first member must leave no empty batch. Once its outside-lock
+	// forecast fits, materialize the open record and let the publication CAS
+	// reject any intervening membership or base change before handover.
+	if !foundOpen {
+		record, err = batch.FindOrCreateOpen(store, baseTree, id, actor, request.At)
+		if err != nil {
+			return batch.Record{}, err
+		}
+		if record.BaseTree != prepared.BaseTree {
+			return batch.Record{}, fmt.Errorf("BATCH_JOIN_BASE_MOVED: open batch base changed during preparation")
+		}
+	}
+	runAdmission := func(batchID string, joined batch.Unit) (batch.JoinAdmission, error) {
+		return dependencies.admissionRun(request.LandingRoot, batchID, joined)
+	}
+	var publishErr error
+	if cost != nil {
+		if dependencies.publishForecast == nil {
+			return batch.Record{}, fmt.Errorf("BATCH_JOIN_ADMISSION_UNAVAILABLE: cost-bound publication is unavailable")
+		}
+		publishErr = dependencies.publishForecast(store, record.BatchID, unit, actor, request.At, dependencies.plan, handover, runAdmission, *cost)
+	} else {
+		publishErr = dependencies.publishAdmission(store, record.BatchID, unit, actor, request.At, dependencies.plan, handover, runAdmission)
+	}
+	if publishErr != nil {
+		// A failed admission may already have handed over the goal and
+		// requested its return. The durable owner must still settle custody.
+		if dependencies.ensure != nil {
+			publishErr = errors.Join(publishErr, dependencies.ensure(request.LandingRoot))
+		}
+		return batch.Record{}, publishErr
 	}
 	if err := dependencies.ensure(request.LandingRoot); err != nil {
 		return batch.Record{}, err
@@ -254,159 +301,6 @@ func fetchLandingBaseTree(root string) (string, error) {
 	return (gittree.Workspace{Dir: root}).TreeOf("FETCH_HEAD")
 }
 
-// joinGateStepMargin is how much longer than a step's OWN declared timeout the
-// gate waits before it calls that step hung. A `go test -timeout` expires from
-// inside and prints the offending stack, which diagnoses a stall far better
-// than a kill from outside, so the outer bound must always be the looser of the
-// two deadlines and never the one that fires first.
-var joinGateStepMargin = 5 * time.Minute
-
-// joinGateStepFallbackBound applies only to a step that declares no timeout of
-// its own. Its job is not to pace a slow gate but to turn a hung child into a
-// named red. Round 3 of the landing rehearsal sat in exec.Cmd.Wait for 53
-// minutes because this call had no bound at all, and an armed landing owner
-// runs the same executor.
-var joinGateStepFallbackBound = 20 * time.Minute
-
-// boundForGateStep derives one step's ceiling from the step's own -timeout.
-// A fixed ceiling cannot work here: JoinGatePackageSteps gives a changed
-// package 900s but a dependent package 40m, and both AggregateUnitGateSteps and
-// batchTestStep declare 40m (internal/landing/batch/unitgate.go). Any single
-// number generous enough for a hung child either sits BELOW what most steps are
-// allowed, which kills a step that is still legitimately running and reports it
-// as a red, or sits so far above the short steps that it stops being a bound.
-// Deriving it means the backstop can only ever catch a child that ignored its
-// own deadline, which is exactly the round 3 shape.
-func boundForGateStep(args []string, margin, fallback time.Duration) time.Duration {
-	for i, arg := range args {
-		value := ""
-		switch {
-		case arg == "-timeout" || arg == "--timeout":
-			if i+1 < len(args) {
-				value = args[i+1]
-			}
-		case strings.HasPrefix(arg, "-timeout="):
-			value = strings.TrimPrefix(arg, "-timeout=")
-		case strings.HasPrefix(arg, "--timeout="):
-			value = strings.TrimPrefix(arg, "--timeout=")
-		}
-		if value == "" {
-			continue
-		}
-		declared, err := time.ParseDuration(value)
-		if err != nil || declared <= 0 {
-			continue
-		}
-		return declared + margin
-	}
-	return fallback
-}
-
-// joinGateGrandchildGrace bounds how long the output pipes are still read after
-// the step's own process is gone. A descendant that inherited the write end
-// keeps CombinedOutput blocked forever without it, which is a hang the bound
-// above cannot reach because the direct child has already exited.
-var joinGateGrandchildGrace = 15 * time.Second
-
-type gateCommandOutcome struct {
-	Output   []byte
-	ExitCode int
-	TimedOut bool
-	Leaked   bool
-	Err      error
-}
-
-// runBoundedGateCommand runs one gate step in its own process group, under a
-// deadline, and kills the whole group when the deadline passes. Every failure
-// carries whatever the step managed to print, so a red names the step that
-// stalled instead of leaving a silent wait.
-func runBoundedGateCommand(dir string, env []string, args []string, bound, grace time.Duration) gateCommandOutcome {
-	ctx, cancel := context.WithTimeout(context.Background(), bound)
-	defer cancel()
-	command := exec.CommandContext(ctx, args[0], args[1:]...)
-	command.Dir, command.Env = dir, env
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	command.Cancel = func() error { return killGateProcessGroup(command.Process) }
-	command.WaitDelay = grace
-	output, err := command.CombinedOutput()
-	outcome := gateCommandOutcome{Output: output, TimedOut: ctx.Err() != nil}
-	if command.ProcessState != nil {
-		outcome.ExitCode = command.ProcessState.ExitCode()
-	}
-	switch {
-	case outcome.TimedOut:
-		outcome.Err = err
-	case errors.Is(err, exec.ErrWaitDelay) && outcome.ExitCode == 0:
-		// The step itself passed and only its output pipes outlived it, because
-		// a descendant inherited the write end. That leak is a real defect, but
-		// it is not this step's verdict, so keep the verdict and say so aloud
-		// rather than inventing a red the step did not earn.
-		outcome.Leaked = true
-	default:
-		outcome.Err = err
-	}
-	if outcome.Err != nil && outcome.ExitCode <= 0 {
-		outcome.ExitCode = 1
-	}
-	return outcome
-}
-
-// killGateProcessGroup signals the step's whole group so a relaunching script
-// cannot leave descendants behind. It never signals a group this process is in
-// itself: Setpgid above makes that impossible, and the check holds if the
-// attribute is ever dropped.
-func killGateProcessGroup(process *os.Process) error {
-	if process == nil {
-		return nil
-	}
-	group, err := syscall.Getpgid(process.Pid)
-	if err != nil || group <= 1 || group == syscall.Getpgrp() {
-		return process.Kill()
-	}
-	return syscall.Kill(-group, syscall.SIGKILL)
-}
-
-func productionJoinGate(root string) batch.GateExecutor {
-	return func(tree string, step batch.GateStep) batch.GateStepResult {
-		detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
-		if err != nil {
-			return batch.GateStepResult{ExitCode: 1}
-		}
-		defer detached.Close()
-		args := append([]string(nil), step.Args...)
-		if len(args) == 0 {
-			return batch.GateStepResult{ExitCode: 1}
-		}
-		if args[0] == "bin/metasystem" {
-			binary, executableErr := os.Executable()
-			if executableErr != nil {
-				return batch.GateStepResult{ExitCode: 1}
-			}
-			args[0] = binary
-		}
-		bound := boundForGateStep(args, joinGateStepMargin, joinGateStepFallbackBound)
-		outcome := runBoundedGateCommand(batch.ModuleRoot(detached.Workspace().Dir), gittree.ScrubbedEnviron(), args, bound, joinGateGrandchildGrace)
-		if outcome.Leaked {
-			fmt.Fprintf(os.Stderr, "landing batch join gate %s: step exited 0 but a descendant still held its output pipes after %s; the group was killed\n", step.Name, joinGateGrandchildGrace)
-		}
-		if outcome.TimedOut {
-			detail := fmt.Sprintf("step exceeded its %s bound and its process group was killed", bound)
-			fmt.Fprintf(os.Stderr, "landing batch join gate %s: %s\n%s\n", step.Name, detail, strings.TrimSpace(string(outcome.Output)))
-			return joinGateFailure(1, []byte(detail+"\n"+strings.TrimSpace(string(outcome.Output))))
-		}
-		if outcome.Err != nil {
-			fmt.Fprintf(os.Stderr, "landing batch join gate %s: %s\n", step.Name, strings.TrimSpace(string(outcome.Output)))
-			return joinGateFailure(outcome.ExitCode, outcome.Output)
-		}
-		digest := sha256.Sum256([]byte(tree + "\x00" + step.Name + "\x00" + strings.Join(step.Args, "\x00")))
-		return batch.GateStepResult{RunID: "join-" + hex.EncodeToString(digest[:8])}
-	}
-}
-
-func joinGateFailure(exitCode int, output []byte) batch.GateStepResult {
-	return batch.GateStepResult{ExitCode: exitCode, Detail: strings.TrimSpace(string(output))}
-}
-
 func directoryTreesOverlap(left, right string) bool {
 	contains := func(parent, child string) bool {
 		relative, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(child))
@@ -418,31 +312,103 @@ func directoryTreesOverlap(left, right string) bool {
 	return contains(left, right) || contains(right, left)
 }
 
+// productionBatchProtectedTests asks the testing owner to check base-listed
+// Go tests before join hands the member to the batch owner. The installed
+// contract path and each group's cwd are independent of the repository root.
+func productionBatchProtectedTests(root, baseTree, candidateTree string) error {
+	installationRoot := batch.ModuleRoot(root)
+	installation := gittree.Workspace{Dir: installationRoot}
+	projectRoot, err := installation.TopLevel()
+	if err != nil {
+		return err
+	}
+	prefix, err := installation.Prefix()
+	if err != nil {
+		return err
+	}
+	confPath := filepath.Join(installationRoot, "metasystem.conf")
+	contractRel, present, err := config.ConfLookup(confPath, "testing.contract")
+	if err != nil {
+		return err
+	}
+	if !present {
+		return fmt.Errorf("testing.contract is required in committed metasystem.conf")
+	}
+	if filepath.IsAbs(contractRel) || filepath.ToSlash(filepath.Clean(contractRel)) != contractRel || strings.HasPrefix(contractRel, "../") {
+		return fmt.Errorf("testing.contract must be a relative normalized path")
+	}
+	contractPath := filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), contractRel))
+	workspace := gittree.Workspace{Dir: projectRoot}
+	baseConfigPath := filepath.ToSlash(filepath.Join(strings.TrimSuffix(prefix, "/"), "metasystem.conf"))
+	baseConfig, present, err := workspace.FileAt(baseTree, baseConfigPath)
+	if err != nil {
+		return err
+	}
+	liveConfig, err := os.ReadFile(confPath)
+	if err != nil {
+		return err
+	}
+	if !present || !bytes.Equal(baseConfig, liveConfig) {
+		return fmt.Errorf("base metasystem.conf differs from the installed configuration")
+	}
+	data, present, err := workspace.FileAt(baseTree, contractPath)
+	if err != nil {
+		return err
+	}
+	if !present {
+		return fmt.Errorf("base testing contract %s is absent from tree %s", contractPath, baseTree)
+	}
+	contract, err := testpolicy.Decode(data)
+	if err != nil {
+		return fmt.Errorf("decode base testing contract: %w", err)
+	}
+	if err := proofrun.CheckProtectedGoTests(workspace, baseTree, candidateTree, contract); err != nil {
+		var missing *proofrun.ProtectedGoTestMissing
+		if errors.As(err, &missing) {
+			return fmt.Errorf("BATCH_JOIN_TEST_DROPPED: %w", missing)
+		}
+		return err
+	}
+	return nil
+}
+
 func productionJoinPlan(root, goalID, tree string) (testpolicy.Plan, error) {
 	return productionBatchTreePlan(root, goalID, tree, testpolicy.ModeAuto)
 }
 
 func productionBatchTreePlan(root, goalID, tree string, mode testpolicy.Mode) (_ testpolicy.Plan, err error) {
+	planned, err := productionBatchTreePlanOutput(root, goalID, tree, mode)
+	return planned.Plan, err
+}
+
+func productionBatchTreePlanOutput(root, goalID, tree string, mode testpolicy.Mode) (_ testingPlanOutput, err error) {
+	return productionBatchTreePlanOutputWithGroups(root, goalID, tree, mode, nil)
+}
+
+func productionBatchTreePlanOutputWithGroups(root, goalID, tree string, mode testpolicy.Mode, groups []string) (_ testingPlanOutput, err error) {
 	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
 	if err != nil {
-		return testpolicy.Plan{}, fmt.Errorf("plan batch tree: %w", err)
+		return testingPlanOutput{}, fmt.Errorf("plan batch tree: %w", err)
 	}
 	defer func() { err = errors.Join(err, detached.Close()) }()
 	planningRoot := detached.Workspace().Dir
-	binary, err := os.Executable()
+	binary, err := batchTreePlanExecutable()
 	if err != nil {
-		return testpolicy.Plan{}, err
+		return testingPlanOutput{}, err
 	}
 	command := batchTreePlanCommand(binary, planningRoot, goalID, tree, mode)
+	if len(groups) != 0 {
+		command.Args = append(command.Args, "--batch-prefix", "--batch-requirements", batchRequirementsArgument(groups))
+	}
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return testpolicy.Plan{}, fmt.Errorf("plan joined unit: %s: %w", strings.TrimSpace(string(output)), err)
+		return testingPlanOutput{}, fmt.Errorf("plan joined unit: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 	var planned testingPlanOutput
 	if err := json.Unmarshal(output, &planned); err != nil {
-		return testpolicy.Plan{}, err
+		return testingPlanOutput{}, err
 	}
-	return planned.Plan, nil
+	return planned, nil
 }
 
 func batchTreePlanCommand(binary, planningRoot, goalID, tree string, mode testpolicy.Mode) *exec.Cmd {

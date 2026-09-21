@@ -12,52 +12,54 @@ import (
 )
 
 type ownerSeams struct {
-	now           func() time.Time
-	fetchTree     func() (string, error)
-	readClaim     func(string, string, string, string) (Claim, error)
-	returns       ReturnSeams
-	rebind        func(string, string) error
-	mint          func() (string, error)
-	logRed        func(string, TrunkRedRecordOutcome)
-	baseCommit    func(string) (string, error)
-	runDiagnostic func(string, DiagnosticRequest, Claim) (DiagnosticResult, error)
-	descendsFrom  func(string, string) (bool, error)
-	sample        func() proofrun.LoadSample
-	admission     func(proofrun.LoadSample) proofrun.AdmissionCap
-	launch        func(string, proofrun.LoadSample, string) error
-	lock          func(string) *proofLock
-	after         func(time.Duration) <-chan time.Time
-	report        func(string, error)
-	glob          func(string) ([]string, error)
-	locks         map[string]*proofLock
+	now                 func() time.Time
+	fetchTree           func() (string, error)
+	readClaim           func(string, string, string, string) (Claim, error)
+	resumeJoinAdmission JoinAdmissionRun
+	returns             ReturnSeams
+	rebind              func(string, string) error
+	mint                func() (string, error)
+	logRed              func(string, TrunkRedRecordOutcome)
+	baseCommit          func(string) (string, error)
+	runDiagnostic       func(string, DiagnosticRequest, Claim) (DiagnosticResult, error)
+	descendsFrom        func(string, string) (bool, error)
+	sample              func() proofrun.LoadSample
+	admission           func(proofrun.LoadSample) proofrun.AdmissionCap
+	launch              func(string, proofrun.LoadSample, string) error
+	lock                func(string) *proofLock
+	after               func(time.Duration) <-chan time.Time
+	report              func(string, error)
+	glob                func(string) ([]string, error)
+	locks               map[string]*proofLock
 }
 
 // OwnerOptions names every authority and side effect used by the durable
 // batch owner. Callers must provide an injected clock; tests can substitute
 // every external edge without weakening the production constructor.
 type OwnerOptions struct {
-	Store         Store
-	Settings      config.BatchLanding
-	Actor         string
-	PID           int64
-	LockDir       string
-	QueueDir      string
-	Now           func() time.Time
-	FetchTree     func() (string, error)
-	ReadClaim     func(string, string, string, string) (Claim, error)
-	Returns       ReturnSeams
-	Rebind        func(string, string) error
-	Mint          func() (string, error)
-	LogRed        func(string, TrunkRedRecordOutcome)
-	BaseCommit    func(string) (string, error)
-	RunDiagnostic func(string, DiagnosticRequest, Claim) (DiagnosticResult, error)
-	DescendsFrom  func(string, string) (bool, error)
-	Sample        func() proofrun.LoadSample
-	Admission     func(proofrun.LoadSample) proofrun.AdmissionCap
-	Launch        func(string, proofrun.LoadSample, string) error
-	After         func(time.Duration) <-chan time.Time
-	Report        func(string, error)
-	Glob          func(string) ([]string, error)
+	Store               Store
+	Settings            config.BatchLanding
+	Actor               string
+	PID                 int64
+	LockDir             string
+	QueueDir            string
+	Now                 func() time.Time
+	FetchTree           func() (string, error)
+	ReadClaim           func(string, string, string, string) (Claim, error)
+	ResumeJoinAdmission JoinAdmissionRun
+	Returns             ReturnSeams
+	Rebind              func(string, string) error
+	Mint                func() (string, error)
+	LogRed              func(string, TrunkRedRecordOutcome)
+	BaseCommit          func(string) (string, error)
+	RunDiagnostic       func(string, DiagnosticRequest, Claim) (DiagnosticResult, error)
+	DescendsFrom        func(string, string) (bool, error)
+	Sample              func() proofrun.LoadSample
+	Admission           func(proofrun.LoadSample) proofrun.AdmissionCap
+	Launch              func(string, proofrun.LoadSample, string) error
+	After               func(time.Duration) <-chan time.Time
+	Report              func(string, error)
+	Glob                func(string) ([]string, error)
 }
 
 type Owner struct {
@@ -82,7 +84,7 @@ func NewOwner(options OwnerOptions) (*Owner, error) {
 	}
 	owner := &Owner{store: options.Store, settings: options.Settings, actor: options.Actor}
 	owner.ownerSeams = ownerSeams{
-		now: options.Now, fetchTree: options.FetchTree, readClaim: options.ReadClaim,
+		now: options.Now, fetchTree: options.FetchTree, readClaim: options.ReadClaim, resumeJoinAdmission: options.ResumeJoinAdmission,
 		returns: options.Returns, rebind: options.Rebind, mint: options.Mint, logRed: options.LogRed,
 		baseCommit: options.BaseCommit, runDiagnostic: options.RunDiagnostic, descendsFrom: options.DescendsFrom, sample: options.Sample,
 		admission: options.Admission, launch: options.Launch, after: options.After,
@@ -102,6 +104,19 @@ func (owner *Owner) Tick(id string) error {
 	at := owner.now()
 	if err = ReconcileJoins(owner.store, id, tree, owner.actor, at, owner.readClaim); err != nil {
 		return err
+	}
+	if owner.resumeJoinAdmission != nil {
+		record, loadErr := owner.store.Load(id)
+		if loadErr != nil {
+			return loadErr
+		}
+		for _, unit := range record.Units {
+			if unit.State == UnitJoining && unit.Admission != nil {
+				if err := ResumeJoinAdmission(owner.store, id, unit.GoalID, owner.actor, at, owner.resumeJoinAdmission); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	if err = ReturnUnits(owner.store, id, tree, owner.actor, at, owner.returns); err != nil {
 		return err

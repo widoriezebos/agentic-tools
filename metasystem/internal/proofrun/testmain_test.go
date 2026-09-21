@@ -20,7 +20,8 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	declarations := []testenv.Declaration{}
-	if proofrunSubprocessHelper() || os.Getenv("METASYSTEM_PROOFRUN_TEST_CANDIDATE_ENGINE") == "1" {
+	helperProcess := proofrunSubprocessHelper() || os.Getenv("METASYSTEM_PROOFRUN_TEST_CANDIDATE_ENGINE") == "1"
+	if helperProcess {
 		declarations = testenv.DeclareInheritedControls()
 	}
 	if err := os.Unsetenv("METASYSTEM_PROOFRUN_TEST_CANDIDATE_ENGINE"); err != nil {
@@ -37,7 +38,7 @@ func TestMain(m *testing.M) {
 	// admission guard the same isolation; tests exercising real contention
 	// explicitly replace this directory with their shared fixture directory.
 	admissionRoot := ""
-	if len(declarations) == 0 && os.Getenv(identity.FixtureCustodianEnv) != "1" {
+	if !helperProcess && os.Getenv(identity.FixtureCustodianEnv) != "1" {
 		var err error
 		admissionRoot, err = os.MkdirTemp("", "metasystem-proofrun-admission.")
 		if err != nil {

@@ -22,12 +22,12 @@ const (
 )
 
 type SelectionRequest struct {
-	ChangedPaths             []string
-	GoalRisk                 GoalRisk
-	RequestedMode            Mode
-	Purpose                  Purpose
-	Groups                   []string
-	SupplementDeliveryGroups bool
+	ChangedPaths      []string
+	GoalRisk          GoalRisk
+	RequestedMode     Mode
+	Purpose           Purpose
+	Groups            []string
+	BatchRequirements []string
 }
 
 type Stage struct {
@@ -96,7 +96,7 @@ func RequireFirstTransition(contract Contract, plan Plan) (Plan, error) {
 }
 
 func Select(contract Contract, request SelectionRequest) (Plan, error) {
-	for _, id := range request.Groups {
+	for _, id := range append(append([]string{}, request.Groups...), request.BatchRequirements...) {
 		for _, group := range contract.Groups {
 			if group.ID == id && group.PackageSelection != "" {
 				return Plan{}, fmt.Errorf("requested group %s is a Go package selector template; select a concrete package group", id)
@@ -115,11 +115,16 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 	if request.Purpose != PurposeDelivery && request.Purpose != PurposeDiagnostic && request.Purpose != PurposeCadence {
 		return Plan{}, fmt.Errorf("test purpose must be delivery, diagnostic, or cadence")
 	}
-	deliveryGroups := len(request.Groups) > 0 && request.Purpose == PurposeDelivery && request.SupplementDeliveryGroups
-	if len(request.Groups) > 0 && request.RequestedMode != ModeCanary && !deliveryGroups {
+	if len(request.BatchRequirements) > 0 && request.Purpose != PurposeDelivery {
+		return Plan{}, fmt.Errorf("batch requirements require delivery purpose")
+	}
+	if len(request.BatchRequirements) > 0 && len(request.Groups) > 0 {
+		return Plan{}, fmt.Errorf("diagnostic groups cannot be combined with batch delivery requirements")
+	}
+	if len(request.Groups) > 0 && request.RequestedMode != ModeCanary {
 		return Plan{}, fmt.Errorf("TEST_GROUP_SELECTION_REFUSED: --groups requires diagnostic canary mode; use --mode canary --groups <ids>")
 	}
-	if len(request.Groups) > 0 && !deliveryGroups {
+	if len(request.Groups) > 0 {
 		request.Purpose = PurposeDiagnostic
 	}
 	if request.RequestedMode == ModeCanary && request.Purpose == PurposeDelivery {
@@ -255,28 +260,18 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 			stages = appendStage(stages, "deep", deepStage)
 		}
 	}
-	if request.Purpose != PurposeDelivery || deliveryGroups {
+	if request.Purpose != PurposeDelivery {
 		explicit := map[string]bool{}
 		for _, id := range request.Groups {
 			if _, ok := groups[id]; !ok {
 				return Plan{}, fmt.Errorf("requested group %s does not exist", id)
-			}
-			if deliveryGroups {
-				// A batch supplement is an admitted delivery obligation,
-				// including its prerequisite closure below. It cannot merely
-				// appear in SelectedGroups and be ignored by sufficiency.
-				required[id] = true
 			}
 			if !selected[id] {
 				explicit[id] = true
 				selected[id] = true
 			}
 		}
-		stage := "diagnostic"
-		if deliveryGroups {
-			stage = "delivery-supplement"
-		}
-		stages = appendStage(stages, stage, explicit)
+		stages = appendStage(stages, "diagnostic", explicit)
 	}
 	plan := Plan{Purpose: request.Purpose, RequestedMode: request.RequestedMode, RequiredMode: requiredMode,
 		ExecutedMode: selectedMode, AffectedSurfaces: keys(affected), RequiredGroups: keys(required), SelectedGroups: keys(selected),
@@ -291,6 +286,36 @@ func Select(contract Contract, request SelectionRequest) (Plan, error) {
 		}
 	}
 	sort.Slice(plan.Omissions, func(i, j int) bool { return plan.Omissions[i].Group < plan.Omissions[j].Group })
+	if len(request.BatchRequirements) > 0 {
+		return WithBatchRequirements(contract, plan, request.BatchRequirements)
+	}
+	return WithPrerequisiteClosure(contract, plan)
+}
+
+// WithBatchRequirements adds a batch's admitted groups only after the policy
+// floor has been selected and, when applicable, verified by the trusted base
+// policy engine. The group definitions and prerequisites come from the
+// protected current contract, never from the caller's serialized plan.
+func WithBatchRequirements(contract Contract, plan Plan, requirements []string) (Plan, error) {
+	if plan.Purpose != PurposeDelivery {
+		return Plan{}, fmt.Errorf("batch requirements require delivery purpose")
+	}
+	groups := groupMap(contract.Groups)
+	selected, required := set(plan.SelectedGroups), set(plan.RequiredGroups)
+	explicit, seen := map[string]bool{}, map[string]bool{}
+	for _, id := range requirements {
+		group, ok := groups[id]
+		if !ok || group.PackageSelection != "" || seen[id] {
+			return Plan{}, fmt.Errorf("invalid batch required group %s", id)
+		}
+		seen[id] = true
+		required[id] = true
+		if !selected[id] {
+			selected[id], explicit[id] = true, true
+		}
+	}
+	plan.SelectedGroups, plan.RequiredGroups = keys(selected), keys(required)
+	plan.Stages = appendStage(plan.Stages, "delivery-supplement", explicit)
 	return WithPrerequisiteClosure(contract, plan)
 }
 

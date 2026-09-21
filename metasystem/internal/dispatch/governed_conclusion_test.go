@@ -220,6 +220,17 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 
 	t.Run("proof-reservation-after-admission", func(t *testing.T) {
 		root, revision := governedConclusionBed(t, 60, 3, 1800)
+		conf, err := os.OpenFile(filepath.Join(root, "metasystem.conf"), os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conf.WriteString("metasystem.runtimes=fake\n"); err != nil {
+			_ = conf.Close()
+			t.Fatal(err)
+		}
+		if err := conf.Close(); err != nil {
+			t.Fatal(err)
+		}
 		now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
 		store, prober, nonce := launchConclusionAttempt(t, root, revision, &now)
 		identity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "late-proof",

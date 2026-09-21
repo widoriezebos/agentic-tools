@@ -32,7 +32,28 @@ func newBatchProvenanceBed(t *testing.T, verdict string, branchMember bool) batc
 	batchProvenanceGit(t, "-C", root, "config", "user.name", "Fixture")
 	batchProvenanceGit(t, "-C", root, "config", "user.email", "fixture@example.invalid")
 	batchProvenanceWrite(t, filepath.Join(root, "base.txt"), "base\n", 0o644)
-	batchProvenanceGit(t, "-C", root, "add", "base.txt")
+	batchProvenanceWrite(t, filepath.Join(root, "plans", "goals", "backlog.md"), string(goal.RenderRoot(&goal.RootRecord{
+		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1,
+	})), 0o644)
+	budget, err := goal.NewBudget("100h", 10, 1000, 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened, claimed := "2026-09-18T08:00:00Z", "2026-09-18T09:00:00Z"
+	for index, id := range []string{"goal-a", "goal-chain"} {
+		file := &goal.GoalFile{Id: id, State: goal.StateClaimed, Intent: "land " + id,
+			Origin: goal.OriginHuman, OpenedAt: opened, Revision: 2, Budget: &budget,
+			Claimed: &goal.ClaimRecord{Machine: "landing", Lineage: landingOwnerLineage, At: claimed,
+				Revision: 2, AccountingRevision: 2, EpisodeAt: claimed, EpisodeRevision: 2,
+				HandedOver: goal.HandedOver{FromMachine: "seat", FromLineage: "seat-lineage", FromEpoch: 1, Batch: batchProvenanceTestID}},
+			History: []goal.HistoryLine{
+				{At: opened, Opid: batchE2EOpid(20+index*2, "human", "wido"), Verb: "open", Actor: "human:wido", Keep: -1},
+				{At: claimed, Opid: batchE2EOpid(21+index*2, "landing", landingOwnerLineage), Verb: "claim", Actor: "landing+" + landingOwnerLineage, Keep: -1},
+			},
+		}
+		batchProvenanceWrite(t, filepath.Join(root, "plans", "goals", id+".md"), string(goal.RenderFile(file)), 0o644)
+	}
+	batchProvenanceGit(t, "-C", root, "add", "base.txt", "plans/goals")
 	batchProvenanceGit(t, "-C", root, "commit", "-qm", "base")
 	baseCommit := batchProvenanceGit(t, "-C", root, "rev-parse", "HEAD")
 	baseTree := batchProvenanceGit(t, "-C", root, "rev-parse", "HEAD^{tree}")
@@ -85,7 +106,7 @@ git commit -q "$@" \
 	if _, err := batch.FindOrCreateOpen(store, baseTree, batchProvenanceTestID, landingOwnerLineage, time.Unix(1, 0)); err != nil {
 		t.Fatal(err)
 	}
-	claim := batch.Claim{Machine: "landing", Lineage: landingOwnerLineage, Epoch: 1, Revision: 1, AccountingRevision: 1}
+	claim := batch.Claim{Machine: "seat", Lineage: "seat-lineage", Epoch: 1, Revision: 2, AccountingRevision: 2}
 	unit := batch.Unit{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: batch.UnitJoined, AuthorName: "Approver", AuthorEmail: "approver@example.invalid"}
 	if branchMember {
 		unit.BranchTip = sourceCommit
@@ -96,6 +117,10 @@ git commit -q "$@" \
 	if err := store.Update(batchProvenanceTestID, func(record *batch.Record) error {
 		record.TipTree = sourceTree
 		record.PrefixTrees = []string{sourceTree}
+		record.Seal = map[string]batch.Claim{
+			"goal-a":     {Revision: 2, AccountingRevision: 2},
+			"goal-chain": {Revision: 2, AccountingRevision: 2},
+		}
 		record.Units = append(record.Units, unit)
 		record.Proof = &batch.Proof{Status: "green", AttemptID: "fixture-proof"}
 		record.Transition(batch.StateLanding, time.Unix(2, 0), "prove", landingOwnerLineage, "green")
@@ -104,6 +129,30 @@ git commit -q "$@" \
 		t.Fatal(err)
 	}
 	return batchProvenanceBed{root: root, origin: origin, baseCommit: baseCommit}
+}
+
+// These fixtures exercise the production commit/provenance and endpoint path
+// from an already green batch. Prefix policy/execution is covered separately;
+// replanning it here would turn a synthetic proof into an unrelated native run.
+func landBatchProvenanceBed(t *testing.T, bed batchProvenanceBed) error {
+	t.Helper()
+	store := batch.NewStore(bed.root, nil)
+	record, err := store.Load(batchProvenanceTestID)
+	if err != nil {
+		return err
+	}
+	seams := batchLandSeams(bed.root, batchProvenanceTestID, record, bed.baseCommit, landingOwnerLineage)
+	seams.VerifySeries = func(units []batch.Unit, _ map[string]string) error {
+		if len(units) == 0 || record.Proof == nil || record.Proof.Status != "green" {
+			return errors.New("provenance fixture has no declared green series")
+		}
+		return nil
+	}
+	at := time.Unix(3, 0)
+	if err := batch.LandSeries(store, batchProvenanceTestID, landingOwnerLineage, at, seams); err != nil {
+		return err
+	}
+	return finishBatchLanding(bed.root, store, batchProvenanceTestID, landingOwnerLineage, at)
 }
 
 func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
@@ -132,7 +181,10 @@ func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
 		}
 		batchOwnerRequire = func(batchOwnerLease) error { return nil }
 		batchOwnerTick = func(_ *batch.Owner, id string) error {
-			return executeBatchLanding(bed.root, id, landingOwnerLineage, time.Unix(3, 0))
+			if id != batchProvenanceTestID {
+				return errors.New("provenance fixture received another batch")
+			}
+			return landBatchProvenanceBed(t, bed)
 		}
 		code, _, stderr := captureCommandOutput(t, false, true, func() int {
 			return runBatchTick([]string{"--root", seat, "--landing-root", bed.root, "--max-wait", "1m", "--batch", batchProvenanceTestID})
@@ -167,7 +219,7 @@ func TestBatchBranchCommitRequiresPassingProvenance(t *testing.T) {
 
 	t.Run("pass lands", func(t *testing.T) {
 		bed := newBatchProvenanceBed(t, "pass bar=a", true)
-		if err := executeBatchLanding(bed.root, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
+		if err := landBatchProvenanceBed(t, bed); err != nil {
 			t.Fatal(err)
 		}
 		originTip := batchProvenanceGit(t, "-C", bed.origin, "rev-parse", "refs/heads/main")
@@ -197,7 +249,7 @@ func TestBatchChainCommitKeepsWouldRefuseVerdictBehavior(t *testing.T) {
 	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
 	batchRecoveryRearm = func(string, string) error { return nil }
 	bed := newBatchProvenanceBed(t, "would-refuse code=chain-not-implementation", false)
-	if err := executeBatchLanding(bed.root, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
+	if err := landBatchProvenanceBed(t, bed); err != nil {
 		t.Fatal(err)
 	}
 	originTip := batchProvenanceGit(t, "-C", bed.origin, "rev-parse", "refs/heads/main")
@@ -320,7 +372,7 @@ func TestBatchMixedBranchAndChainMembersLandInBothOrders(t *testing.T) {
 				t.Fatal(err)
 			}
 			batchProvenanceWrite(t, filepath.Join(bed.root, "artifacts", "agents", "landing-batches", batchProvenanceTestID+".json"), string(append(data, '\n')), 0o644)
-			if err := executeBatchLanding(bed.root, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
+			if err := landBatchProvenanceBed(t, bed); err != nil {
 				t.Fatal(err)
 			}
 			tip := batchProvenanceGit(t, "-C", bed.origin, "rev-parse", "refs/heads/main")

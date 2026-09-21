@@ -36,6 +36,10 @@ unset METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
   METASYSTEM_GATE_WITNESS_REUSE_OUT
 
 tmp=$(mktemp -d)
+mkdir -p "$tmp/admission-authority"
+printf 'metasystem.runtimes=fake\n' >"$tmp/admission-authority/metasystem.conf"
+export METASYSTEM_PROOF_ADMISSION_TEST_DIR="$tmp/host-admission"
+export METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="$tmp/admission-authority"
 foreign_controller=
 mid_freeze_pid=
 cleanup() {

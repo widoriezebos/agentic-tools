@@ -69,3 +69,33 @@ func TestFirstTrunkRedHoldUsesLedgerOwnerOpid(t *testing.T) {
 		t.Fatalf("record=%+v error=%v", record, err)
 	}
 }
+
+func TestBatchFencedDiagnosticAuthorityRequiresExactSealedHandover(t *testing.T) {
+	t.Parallel()
+	const batchID = "01j5x00000000000000000ba91"
+	claim := batch.Claim{Machine: "source", Lineage: "source-lineage", Epoch: 3, Revision: 2, AccountingRevision: 2}
+	unit := batch.Unit{GoalID: "goal-b", State: batch.UnitJoined, Claim: claim}
+	record := batch.Record{BatchID: batchID, Seal: map[string]batch.Claim{"goal-b": claim}}
+	file := &goal.GoalFile{State: goal.StateClaimed,
+		Claimed: &goal.ClaimRecord{Machine: "landing", Lineage: landingOwnerLineage, Revision: 2, AccountingRevision: 2,
+			HandedOver: goal.HandedOver{FromMachine: claim.Machine, FromLineage: claim.Lineage, FromEpoch: claim.Epoch, Batch: batchID}},
+		StopFence: &goal.StopFence{StopID: "stop-goal-b-r2"}}
+	projection := goal.Projection{Tree: &goal.TreeGoals{Live: map[string]*goal.GoalFile{"goal-b": file}}}
+	assertFenced := func(want bool) {
+		t.Helper()
+		authority := authorizeBatchMemberInProjection("", time.Unix(1, 0), record, unit, projection)
+		var fenced *batch.PrefixFencedRefusal
+		if errors.As(authority, &fenced) != want {
+			t.Fatalf("fenced authority=%v, want fenced=%t", authority, want)
+		}
+	}
+	assertFenced(true)
+	file.Claimed.Revision++
+	assertFenced(false)
+	file.Claimed.Revision--
+	file.Claimed.HandedOver.Batch = "another-batch"
+	assertFenced(false)
+	file.Claimed.HandedOver.Batch = batchID
+	record.Seal["goal-b"] = batch.Claim{Revision: 9, AccountingRevision: 2}
+	assertFenced(false)
+}

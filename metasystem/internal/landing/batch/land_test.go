@@ -150,6 +150,12 @@ func TestBatchLandingPersistsRecoveryBranchOnSecondRefusal(t *testing.T) {
 
 func TestBatchLandingOpensAfterThreeRecoveryPushRounds(t *testing.T) {
 	bed, store := landingBed(t)
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	if output, err := exec.Command("git", "init", "-q", "--bare", origin).CombinedOutput(); err != nil {
+		t.Fatalf("create recovery origin: %v: %s", err, output)
+	}
+	bedGit(t, bed.root, "remote", "add", "origin", origin)
+	publishedTip := bedGit(t, bed.root, "rev-parse", "HEAD")
 	refusals, originReads := 0, 0
 	seams := greenLandSeams(&[]string{})
 	seams.LeaseBase = testCommit(1)
@@ -164,9 +170,16 @@ func TestBatchLandingOpensAfterThreeRecoveryPushRounds(t *testing.T) {
 		refusals++
 		return staleLeaseRefusal("initial endpoint refusal: stale info")
 	}
+	published := false
 	seams.RecoverPush = func(origin, _, _ string) (PushRecovery, error) {
 		refusals++
-		return PushRecovery{Origin: origin, BaseTree: bed.moved, Tip: fmt.Sprintf("rebased-%d", refusals)}, errors.New("recovery endpoint refusal")
+		if !published {
+			if err := PublishLandingBranch(bed.root, testBatchID, "", publishedTip); err != nil {
+				return PushRecovery{}, err
+			}
+			published = true
+		}
+		return PushRecovery{Origin: origin, BaseTree: bed.moved, Tip: publishedTip}, errors.New("recovery endpoint refusal")
 	}
 	for tick := 0; tick < 4 && load(t, store).State == StateLanding; tick++ {
 		_ = LandSeries(store, testBatchID, "owner", time.Unix(int64(4+tick), 0), seams)
@@ -174,6 +187,9 @@ func TestBatchLandingOpensAfterThreeRecoveryPushRounds(t *testing.T) {
 	record := load(t, store)
 	if refusals != 4 || abandons != 1 || record.State != StateOpen || record.BaseTree != bed.moved || record.Landing != nil {
 		t.Fatalf("refusals=%d record=%+v, want four bounded refusals followed by reopen", refusals, record)
+	}
+	if present, err := remoteLandingBranchPresent(bed.root, testBatchID); err != nil || present {
+		t.Fatalf("bounded recovery left a published candidate branch: present=%v err=%v", present, err)
 	}
 }
 

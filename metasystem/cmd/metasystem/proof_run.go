@@ -35,6 +35,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
+var legacyProofFenceRead = stopfence.Read
+
 func runProofRunLaunch(args []string) int {
 	flags := flag.NewFlagSet("proof-run launch", flag.ContinueOnError)
 	suite := flags.String("suite", "", "suite name")
@@ -121,8 +123,56 @@ func runProofRunLaunch(args []string) int {
 		return 1
 	}
 	if *goalID == "" && noProofLocatorEnvironment() && legacyProofLaunchAllowed(controlRoot) {
-		lease, release, leaseErr := acquireManagedProofLaunch(context.Background(), controlRoot, *conf)
+		// Bind the first open generation before waiting for host capacity. A
+		// stop and rearm during that wait cannot authorize this older launch.
+		fenceClosed := errors.New("proof stop fence closed")
+		var fence stopfence.Record
+		var fenceReadErr error
+		var fenceStaleErr error
+		initialGeneration := int64(-1)
+		readFence := legacyProofFenceRead
+		checkFence := func() error {
+			fence, fenceReadErr = readFence(controlRoot)
+			if fenceReadErr != nil {
+				return fenceReadErr
+			}
+			if fence.State == stopfence.StateClosed {
+				return fenceClosed
+			}
+			if initialGeneration < 0 {
+				initialGeneration = fence.Generation
+			} else if fence.Generation != initialGeneration {
+				fenceStaleErr = fmt.Errorf("proof stop fence generation changed during host admission: %d to %d; retry proof launch", initialGeneration, fence.Generation)
+				return fenceStaleErr
+			}
+			return nil
+		}
+		refuseFence := func() int {
+			if fenceReadErr != nil {
+				fmt.Fprintln(os.Stderr, "suite launcher: read stop fence:", fenceReadErr)
+			} else if fenceStaleErr != nil {
+				fmt.Fprintln(os.Stderr, "suite launcher:", fenceStaleErr)
+			} else {
+				description, descriptionErr := stopfence.ClosedDescription(fence, controlRoot)
+				command, commandErr := stopfence.ClosedCommand(fence, controlRoot)
+				if descriptionErr != nil || commandErr != nil {
+					fmt.Fprintf(os.Stderr, "suite launcher: cannot render stopped refusal: %v %v\n", descriptionErr, commandErr)
+				} else {
+					fmt.Fprintln(os.Stderr, description)
+					fmt.Fprintln(os.Stderr, "at an agent-free terminal, run: "+command)
+				}
+			}
+			_ = proofrun.EncodeResult(os.Stderr, *resultPath, proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionFailed, ExitStatus: 1})
+			return 1
+		}
+		if err := checkFence(); err != nil {
+			return refuseFence()
+		}
+		lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(context.Background(), controlRoot, *conf, checkFence)
 		if leaseErr != nil {
+			if errors.Is(leaseErr, fenceClosed) || fenceReadErr != nil || fenceStaleErr != nil {
+				return refuseFence()
+			}
 			fmt.Fprintln(os.Stderr, "proof-run launch: admit native proof:", leaseErr)
 			refusal := proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionAdmissionRefused, ExitStatus: proofrun.ExitAdmissionRefused}
 			_ = proofrun.EncodeResult(os.Stderr, *resultPath, refusal)
@@ -134,7 +184,15 @@ func runProofRunLaunch(args []string) int {
 			ExpectedSections: expected, TwiceConsulted: repeated, Silence: limits.silence, SectionCap: limits.sectionCap,
 			EvidenceTimeout: limits.evidenceTimeout, EvidenceMax: limits.evidenceMax, Poll: time.Duration(*pollMS) * time.Millisecond,
 			TermGrace: time.Duration(*termGraceMS) * time.Millisecond, KillGrace: time.Duration(*killGraceMS) * time.Millisecond,
-			Command: command, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr})
+			Command: command, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
+			FenceReader: func(string) (stopfence.Record, error) {
+				err := checkFence()
+				if errors.Is(err, fenceClosed) {
+					return fence, nil
+				}
+				return fence, err
+			},
+		})
 		result := proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionExecuted, ExitStatus: status}
 		if status != 0 {
 			result.Disposition = proofrun.DispositionFailed
@@ -223,17 +281,26 @@ func runProofRunLaunch(args []string) int {
 // acquireManagedProofLaunch gives an executing public proof one host phase.
 // A retry or reusable decision calls no launcher and takes no phase slot.
 func acquireManagedProofLaunch(ctx context.Context, controlRoot, confPath string) (*proofrun.HostResourceLease, func(), error) {
+	return acquireManagedProofLaunchWithWaitCheck(ctx, controlRoot, confPath, nil)
+}
+
+func acquireManagedProofLaunchWithWaitCheck(ctx context.Context, controlRoot, confPath string, check func() error) (*proofrun.HostResourceLease, func(), error) {
 	unmark, err := proofrun.MarkManagedProofProcess()
 	if err != nil {
 		return nil, nil, fmt.Errorf("mark host proof launcher managed: %w", err)
 	}
-	lease, err := proofrun.AcquireHostResources(ctx, controlRoot, confPath, "heavy", nil)
+	ctx = proofrun.WithHostResourceWaitObserver(ctx, func() {
+		fmt.Fprintln(os.Stderr, proofCapacityWaitLine)
+	})
+	lease, err := proofrun.AcquireHostResourcesWithWaitCheck(ctx, controlRoot, confPath, "heavy", nil, check)
 	if err != nil {
 		unmark()
 		return nil, nil, err
 	}
 	return lease, func() { _ = lease.Close(); unmark() }, nil
 }
+
+const proofCapacityWaitLine = "proof-run launch: waiting for host proof capacity"
 
 func runProofRunWorkerAuthorized(args []string) int {
 	flags := flag.NewFlagSet("proof-run worker-authorized", flag.ContinueOnError)

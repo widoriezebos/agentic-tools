@@ -149,14 +149,11 @@ func (lease *HostResourceLease) Close() error {
 func hostAdmissionDirectory() (string, error) {
 	path := hostAdmissionDirectoryForTest
 	if path == "" && os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR") != "" {
-		candidate := os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR")
-		fixtureRoot := os.Getenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT")
-		relative, err := filepath.Rel(os.TempDir(), candidate)
-		if err != nil || !filepath.IsAbs(candidate) || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) ||
-			!fixtureauth.FixtureModeRoot(fixtureRoot) {
-			return "", fmt.Errorf("proof admission test directory requires a temporary path and fake-runtime root")
-		}
-		path = candidate
+		// The request owner checks canonical ancestors before creating the
+		// directory, so a temporary symlink cannot redirect fixture admission
+		// into production storage.
+		return hostAdmissionDirectoryForRequest(os.Getenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT"),
+			os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR"))
 	}
 	if path == "" {
 		account, err := user.Current()
@@ -173,6 +170,67 @@ func hostAdmissionDirectory() (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+func hostAdmissionDirectoryForRequest(controlRoot, selected string) (string, error) {
+	if selected == "" {
+		return hostAdmissionDirectory()
+	}
+	temporaryRoot, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		return "", err
+	}
+	// macOS exposes the same temporary tree through /var and /private/var.
+	// Resolve only an existing ancestor, before creating the requested path.
+	ancestor := filepath.Clean(selected)
+	var remainder []string
+	for {
+		if _, statErr := os.Lstat(ancestor); statErr == nil {
+			break
+		} else if !os.IsNotExist(statErr) {
+			return "", statErr
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			return "", fmt.Errorf("proof admission test directory has no existing ancestor")
+		}
+		remainder = append(remainder, filepath.Base(ancestor))
+		ancestor = parent
+	}
+	canonical, err := filepath.EvalSymlinks(ancestor)
+	if err != nil {
+		return "", err
+	}
+	for index := len(remainder) - 1; index >= 0; index-- {
+		canonical = filepath.Join(canonical, remainder[index])
+	}
+	relative, err := filepath.Rel(temporaryRoot, canonical)
+	if err != nil || !filepath.IsAbs(selected) || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) ||
+		!fixtureauth.FixtureModeRoot(controlRoot) {
+		return "", fmt.Errorf("proof admission test directory requires a temporary path and fake-runtime root")
+	}
+	if err := secureHostAdmissionDirectory(selected, 0o700); err != nil {
+		return "", err
+	}
+	return selected, nil
+}
+
+// FixtureHostAdmissionDirectory exposes the already validated, explicitly
+// selected test admission namespace to other host-wide fixture owners. The
+// owned checkout must itself authorize fixture mode; an unrelated fake root
+// may not move a real owner's global lock. Ordinary processes keep production paths.
+func FixtureHostAdmissionDirectory(checkoutRoot string) (string, bool, error) {
+	if os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR") == "" {
+		return "", false, nil
+	}
+	if !fixtureauth.FixtureModeRoot(checkoutRoot) {
+		return "", false, fmt.Errorf("proof admission fixture owner checkout must use the fake runtime")
+	}
+	path, err := hostAdmissionDirectory()
+	if err != nil {
+		return "", false, err
+	}
+	return path, true, nil
 }
 
 func secureHostAdmissionDirectory(path string, maximum os.FileMode) error {
@@ -252,9 +310,17 @@ func closeHostFiles(files []*os.File) {
 	}
 }
 
-func acquireHostGuard(ctx context.Context, directory string) (*os.File, error) {
+func acquireHostGuard(ctx context.Context, directory string, check func() error) (*os.File, error) {
 	path := filepath.Join(directory, "admission.lock")
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if check != nil {
+			if err := check(); err != nil {
+				return nil, err
+			}
+		}
 		file, acquired, err := tryHostFile(path)
 		if err != nil || acquired {
 			return file, err
@@ -521,6 +587,54 @@ func borrowHostResources(directory string, parent Attempt, class string, exclusi
 // admission. The only new state is which currently active phases own slots.
 // A nested authenticated proof child consumes its parent's reservation.
 func AcquireHostResources(ctx context.Context, controlRoot, confPath, class string, exclusive []string) (*HostResourceLease, error) {
+	return AcquireHostResourcesWithWaitCheck(ctx, controlRoot, confPath, class, exclusive, nil)
+}
+
+type hostResourceWaitObserverKey struct{}
+
+// WithHostResourceWaitObserver reports the first failed resource scan after
+// this context is attached. It reports at most once per acquisition, after
+// releasing the admission guard and any partial locks; it does not replay
+// waits that happened before attachment.
+func WithHostResourceWaitObserver(ctx context.Context, observe func()) context.Context {
+	if observe == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, hostResourceWaitObserverKey{}, observe)
+}
+
+func resourceLegacyLauncherCount(controlRoot string) (int, bool, error) {
+	// The existing fixture executable's scripted host count also governs its
+	// resource phase, but only in an explicitly selected temporary admission
+	// namespace owned by this same fake-runtime checkout. Ordinary engines and
+	// production roots still use the real process census.
+	if len(commandLoadOptions) != 0 && fixtureauth.FixtureModeRoot(controlRoot) {
+		_, selected, err := FixtureHostAdmissionDirectory(controlRoot)
+		if err != nil {
+			return 0, false, err
+		}
+		if selected {
+			settings := loadSampleSettings{}
+			for _, option := range commandLoadOptions {
+				option(&settings)
+			}
+			if settings.fixtureSet {
+				_, count, known := testHostLoad(settings.fixtureRaw, time.Now())
+				if !known {
+					return 0, false, fmt.Errorf("fixture host launcher count is invalid")
+				}
+				return count, true, nil
+			}
+		}
+	}
+	count, known := loadSeams.launchers(int64(os.Getpid()))
+	return count, known, nil
+}
+
+// AcquireHostResourcesWithWaitCheck lets the caller end a capacity wait when
+// its own admission authority changes. The check runs before each retry;
+// callers still revalidate authority after acquiring capacity.
+func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPath, class string, exclusive []string, check func() error) (*HostResourceLease, error) {
 	if class != "cheap" && class != "heavy" {
 		return nil, fmt.Errorf("unknown proof resource class %q", class)
 	}
@@ -551,11 +665,17 @@ func AcquireHostResources(ctx context.Context, controlRoot, confPath, class stri
 		return nil, err
 	}
 	started := time.Now()
+	observedWait := false
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		guard, err := acquireHostGuard(ctx, directory)
+		if check != nil {
+			if err := check(); err != nil {
+				return nil, err
+			}
+		}
+		guard, err := acquireHostGuard(ctx, directory, check)
 		if err != nil {
 			return nil, err
 		}
@@ -588,14 +708,19 @@ func AcquireHostResources(ctx context.Context, controlRoot, confPath, class stri
 			files = append(files, file)
 		}
 		if available && class == "heavy" && capacity.Max > 0 {
-			legacy, known := loadSeams.launchers(int64(os.Getpid()))
+			legacy, known, censusErr := resourceLegacyLauncherCount(controlRoot)
 			active, countErr := activeHostResourceSlots(directory)
-			if countErr != nil || !known {
+			if countErr != nil || censusErr != nil || !known {
 				closeHostFiles(files)
 				guard.Close()
-				return nil, fmt.Errorf("host proof admission census is unreadable: %v", countErr)
+				if !known && censusErr == nil {
+					censusErr = errors.New("process rows are unknown")
+				}
+				return nil, fmt.Errorf("host proof admission census is unreadable: %w", errors.Join(censusErr, countErr))
 			}
-			if legacy+active >= capacity.Max {
+			// Compare without adding a fixture-supplied launcher count to
+			// active slots: that sum can overflow before the cap check.
+			if active >= capacity.Max || legacy >= capacity.Max-active {
 				available = false
 			} else {
 				for index := 0; index < capacity.Max; index++ {
@@ -680,6 +805,12 @@ func AcquireHostResources(ctx context.Context, controlRoot, confPath, class stri
 			return &HostResourceLease{files: files, waited: time.Since(started)}, nil
 		}
 		closeHostFiles(files)
+		if !observedWait {
+			if observe, ok := ctx.Value(hostResourceWaitObserverKey{}).(func()); ok {
+				observe()
+			}
+			observedWait = true
+		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()

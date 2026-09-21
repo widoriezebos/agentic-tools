@@ -985,6 +985,13 @@ func watchdogCommand(options LaunchOptions, ref identity.Ref, donePath string, f
 func touchDone(path string) error {
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			// The launcher and custodian can each be first to publish the
+			// completion signal. Only an existing regular marker is equivalent.
+			if info, statErr := os.Lstat(path); statErr == nil && info.Mode().IsRegular() {
+				return nil
+			}
+		}
 		return err
 	}
 	return file.Close()

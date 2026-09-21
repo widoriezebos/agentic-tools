@@ -71,6 +71,7 @@ type LandSeams struct {
 	AppendBuildReceipt func(Unit, BranchBuild, PrefixReceipt) error
 	CommitBuild        func(Unit, BranchBuild, PrefixReceipt) (string, error)
 	Held               func(base, tip string) error
+	VerifySeries       func(units []Unit, commits map[string]string) error
 	PublishBranch      func(expected, tip string) error
 	Push               func(base, tip string) error
 	Reset              func(base string) error
@@ -192,6 +193,17 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 			return false, fmt.Errorf("BATCH_LAND_PUSH_REFUSED: origin %s refused the complete series: %w", recoveryOrigin, pushErr)
 		}
 		recovery, recoveryErr := seams.RecoverPush(recoveryOrigin, record.BaseTree, candidateTip)
+		if recoveryErr != nil {
+			var fenced *PrefixFencedRefusal
+			var revision *PrefixRevisionRefusal
+			var budget *PrefixBudgetRefusal
+			if errors.As(recoveryErr, &fenced) || errors.As(recoveryErr, &revision) || errors.As(recoveryErr, &budget) {
+				// The recovery owner has already requested return and
+				// reassembled survivors. Its old landing progress must not
+				// overwrite the new open or dissolved batch.
+				return false, recoveryErr
+			}
+		}
 		if recovery.Origin == "" {
 			recovery.Origin = recoveryOrigin
 		}
@@ -254,6 +266,11 @@ func LandSeries(store Store, id, actor string, at time.Time, seams LandSeams) er
 		return true, nil
 	}
 	attemptPush := func(candidateTip string) (bool, error) {
+		if seams.VerifySeries != nil {
+			if err := seams.VerifySeries(units, cloneStrings(progress.Commits)); err != nil {
+				return false, fmt.Errorf("BATCH_PREFIX_PROOF_REFUSED: final series: %w", err)
+			}
+		}
 		if seams.Push == nil {
 			return false, fmt.Errorf("BATCH_LAND_UNWIRED: push helper is absent")
 		}
@@ -495,59 +512,7 @@ func reopenLandingCandidate(store Store, id, newBaseTree, actor string, at time.
 	if len(units) == 0 {
 		return fmt.Errorf("BATCH_LAND_STATE_REFUSED: batch %s has no joined units", id)
 	}
-	prefixes, err := assembleUnits(store.root, newBaseTree, units)
-	if err != nil {
-		var conflict *assemblyConflict
-		if !errors.As(err, &conflict) {
-			return err
-		}
-		survivors := slices.DeleteFunc(slices.Clone(units), func(unit Unit) bool { return unit.GoalID == conflict.GoalID })
-		var survivorPrefixes []string
-		if len(survivors) != 0 {
-			survivorPrefixes, err = assembleUnits(store.root, newBaseTree, survivors)
-			if err != nil {
-				return err
-			}
-		}
-		branchTip := ""
-		if record.Landing != nil {
-			if len(survivors) == 0 {
-				if err := DeleteLandingBranch(store.root, id, record.Landing.publishedTip()); err != nil {
-					return err
-				}
-			} else if slices.ContainsFunc(survivors, func(unit Unit) bool { return len(unit.Builds) != 0 }) {
-				branchTip, err = RebuildLandingBranch(store.root, id, newBaseTree, record.Landing.publishedTip(), actor, survivors)
-				if err != nil {
-					return err
-				}
-			}
-		}
-		return store.Update(id, func(current *Record) error {
-			current.BaseTree = newBaseTree
-			if returnErr := requestUnitReturn(current, conflict.GoalID, UnitEjected, conflict.Error(), actor, at); returnErr != nil {
-				return returnErr
-			}
-			current.SelectedGroups, current.Seal, current.Proof, current.Receipts, current.Landing = nil, nil, nil, nil, nil
-			if len(survivors) == 0 {
-				current.PrefixTrees, current.TipTree = nil, newBaseTree
-				current.Transition(StateDissolved, at, "reassemble", actor, "no survivors")
-				return nil
-			}
-			if branchTip != "" {
-				current.Landing = &LandingProgress{Base: newBaseTree, BranchTip: branchTip, CandidateTip: branchTip}
-			}
-			current.PrefixTrees, current.TipTree, current.ClosedReason = survivorPrefixes, survivorPrefixes[len(survivorPrefixes)-1], ""
-			current.Transition(StateOpen, at, "reassemble", actor, "survivors")
-			return nil
-		})
-	}
-	return store.Update(id, func(current *Record) error {
-		current.BaseTree, current.PrefixTrees, current.TipTree = newBaseTree, prefixes, prefixes[len(prefixes)-1]
-		current.SelectedGroups, current.Seal, current.Proof, current.Receipts, current.Landing = nil, nil, nil, nil, nil
-		current.ClosedReason = ""
-		current.Transition(StateOpen, at, "trunk-moved", actor, detail)
-		return nil
-	})
+	return reassembleSurvivorsOnBase(store, id, actor, at, nil, newBaseTree, detail)
 }
 
 func ejectRefusedMember(store Store, id, actor string, at time.Time, base string, unit Unit, err error, reset func(string) error) error {
@@ -560,10 +525,8 @@ func ejectRefusedMember(store Store, id, actor string, at time.Time, base string
 			return errors.Join(refusal, fmt.Errorf("reset: %w", resetErr))
 		}
 	}
-	if returnErr := RequestReturn(store, id, unit.GoalID, UnitEjected, refusal.Error(), actor, at); returnErr != nil {
-		return errors.Join(refusal, returnErr)
-	}
-	if reassembleErr := ReassembleSurvivors(store, id, actor, at); reassembleErr != nil {
+	if reassembleErr := ReassembleSurvivorsWithReturns(store, id, actor, at,
+		[]ReturnDecision{{GoalID: unit.GoalID, Outcome: UnitEjected, Reason: refusal.Error()}}); reassembleErr != nil {
 		return errors.Join(refusal, reassembleErr)
 	}
 	return fmt.Errorf("%w; goal %s was ejected; fix and rejoin it, then re-prove before the next landing", refusal, unit.GoalID)

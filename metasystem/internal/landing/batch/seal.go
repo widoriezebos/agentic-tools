@@ -24,7 +24,15 @@ func ModuleRoot(checkout string) string {
 
 // Seal re-derives the batch at the fetched base, dry-runs every prefix
 // boundary, and freezes member selections and revisions before proof admission.
-func Seal(store Store, id, baseTree, owner string, at time.Time, plan func(string, string, string) (testpolicy.Plan, error), gate GateExecutor) error {
+func Seal(store Store, id, baseTree, owner string, at time.Time, plan func(string, string, string) (testpolicy.Plan, error)) error {
+	return SealWithForecast(store, id, baseTree, owner, at, plan, nil)
+}
+
+// SealWithForecast computes the bounded cost view on the exact prepared
+// series outside the store lock. The same revision guard protects both the
+// selection and its historical forecast before either is published.
+func SealWithForecast(store Store, id, baseTree, owner string, at time.Time, plan func(string, string, string) (testpolicy.Plan, error),
+	forecast func(Record) (CostForecast, error)) error {
 	var snapshot Record
 	if err := store.locked(func() error {
 		record, err := store.Load(id)
@@ -41,20 +49,24 @@ func Seal(store Store, id, baseTree, owner string, at time.Time, plan func(strin
 	}
 	revision := sealRevisionOf(snapshot)
 	candidate := snapshot
-	units, err := prepareSealCandidate(store.root, baseTree, &candidate, assembleUnits)
+	_, err := prepareSealCandidate(store.root, baseTree, &candidate, assembleUnits)
 	if err != nil {
 		return err
 	}
-	gateErr := runSealGate(store.root, candidate.TipTree, units, gate)
-	if gateErr == nil {
-		gateErr = selectSealCandidate(store.root, &candidate, plan)
+	selectionErr := selectSealCandidate(store.root, &candidate, plan)
+	if selectionErr == nil && forecast != nil {
+		var cost CostForecast
+		cost, selectionErr = forecast(candidate)
+		if selectionErr == nil {
+			candidate.CostForecast = &cost
+		}
 	}
 	return store.Update(id, func(current *Record) error {
 		if !reflect.DeepEqual(revision, sealRevisionOf(*current)) {
 			return &SealChangedDuringGateRefusal{BatchID: id}
 		}
-		if gateErr != nil {
-			return gateErr
+		if selectionErr != nil {
+			return selectionErr
 		}
 		current.BaseTree = candidate.BaseTree
 		current.PrefixTrees = slices.Clone(candidate.PrefixTrees)
@@ -62,30 +74,36 @@ func Seal(store Store, id, baseTree, owner string, at time.Time, plan func(strin
 		current.SelectedGroups = slices.Clone(candidate.SelectedGroups)
 		current.ClosedReason = candidate.ClosedReason
 		current.Seal = candidate.Seal
+		current.CostForecast = candidate.CostForecast
 		current.Transition(StateSealed, at, "seal", owner, "")
 		return nil
 	})
 }
 
-// SealChangedDuringGateRefusal means the gate ran on a candidate that is no
-// longer the batch's candidate and therefore cannot seal it.
+// SealChangedDuringGateRefusal preserves the registered refusal code when
+// composition or policy selection ran on a candidate that changed meanwhile.
 type SealChangedDuringGateRefusal struct{ BatchID string }
 
 func (refusal *SealChangedDuringGateRefusal) Error() string {
-	return fmt.Sprintf("BATCH_SEAL_CHANGED_DURING_GATE: batch %s changed during the gate", refusal.BatchID)
+	return fmt.Sprintf("BATCH_SEAL_CHANGED_DURING_GATE: batch %s changed during seal preparation", refusal.BatchID)
 }
 
 type sealMemberRevision struct {
-	GoalID, State, Tree string
+	GoalID, Chain, State, Tree string
+	Claim                      Claim
+	SelectedGroups             []string
 }
 
 type sealRevision struct {
-	BaseTree string
-	Members  []sealMemberRevision
+	BaseTree, ClosedReason string
+	SelectedGroups         []string
+	Members                []sealMemberRevision
+	PrefixEpisodes         []CostForecastEpisode
 }
 
 func sealRevisionOf(record Record) sealRevision {
-	revision := sealRevision{BaseTree: record.BaseTree}
+	revision := sealRevision{BaseTree: record.BaseTree, ClosedReason: record.ClosedReason,
+		SelectedGroups: slices.Clone(record.SelectedGroups)}
 	prefix := 0
 	for _, unit := range record.Units {
 		tree := ""
@@ -95,7 +113,16 @@ func sealRevisionOf(record Record) sealRevision {
 			}
 			prefix++
 		}
-		revision.Members = append(revision.Members, sealMemberRevision{GoalID: unit.GoalID, State: unit.State, Tree: tree})
+		revision.Members = append(revision.Members, sealMemberRevision{GoalID: unit.GoalID, Chain: unit.Chain, State: unit.State,
+			Tree: tree, Claim: unit.Claim, SelectedGroups: slices.Clone(unit.SelectedGroups)})
+	}
+	keys := make([]string, 0, len(record.PrefixEpisodes))
+	for goalID := range record.PrefixEpisodes {
+		keys = append(keys, goalID)
+	}
+	slices.Sort(keys)
+	for _, goalID := range keys {
+		revision.PrefixEpisodes = append(revision.PrefixEpisodes, costForecastEpisode(record, goalID))
 	}
 	return revision
 }
@@ -107,21 +134,6 @@ func sealableRecord(record Record) error {
 	if len(joinedUnits(record.Units)) == 0 {
 		return fmt.Errorf("BATCH_PROOF_STATE_REFUSED: batch %s has no joined units", record.BatchID)
 	}
-	return nil
-}
-
-func sealBatch(root, baseTree, owner string, at time.Time, record *Record, plan func(string, string, string) (testpolicy.Plan, error), gate batchGateExec, assemble func(string, string, []Unit) ([]string, error)) error {
-	units, err := prepareSealCandidate(root, baseTree, record, assemble)
-	if err != nil {
-		return err
-	}
-	if err := runSealGate(root, record.TipTree, units, gate); err != nil {
-		return err
-	}
-	if err := selectSealCandidate(root, record, plan); err != nil {
-		return err
-	}
-	record.Transition(StateSealed, at, "seal", owner, "")
 	return nil
 }
 
@@ -176,41 +188,6 @@ func recordSelection(record *Record, plan testpolicy.Plan) {
 	if plan.RequiredMode == testpolicy.ModeDeep {
 		record.ClosedReason = "deep-ceiling"
 	}
-}
-
-func runSealGate(root, tree string, units []Unit, execute batchGateExec) error {
-	changes := gateChanges{}
-	for _, unit := range units {
-		if len(unit.Builds) != 0 {
-			member, _ := branchMemberOf(unit)
-			patch, err := branchMemberPatch(root, member)
-			if err != nil {
-				return err
-			}
-			mergeGateChanges(changes, patchGateChanges(patch))
-			continue
-		}
-		patch, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "landing-batches", "chains", unit.Chain, "diff.patch"))
-		if err != nil {
-			return err
-		}
-		mergeGateChanges(changes, patchGateChanges(patch))
-	}
-	steps := []gateStep{{Name: "fast gate", Args: []string{"bash", "scripts/agents/go-gate.sh", "--fast"}}}
-	packages, err := changedGoPackages(root, tree, changes)
-	if err != nil {
-		return err
-	}
-	for _, pkg := range packages {
-		steps = append(steps, gateStep{Name: "package " + pkg, Args: []string{"go", "test", "-count=1", "-timeout", "900s", pkg}})
-	}
-	for _, step := range steps {
-		result := execute(tree, step)
-		if result.ExitCode != 0 || result.RunID == "" {
-			return refuseBatch("BATCH_SEAL_GATE_RED", fmt.Sprintf("%s exited %d", step.Name, result.ExitCode))
-		}
-	}
-	return nil
 }
 
 func claimAt(root, tree, batchID, goalID string) (Claim, error) {

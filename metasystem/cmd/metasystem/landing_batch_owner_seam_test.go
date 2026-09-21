@@ -159,6 +159,32 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 	if err := command.Wait(); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("maximum wait advances with the daemon clock", func(t *testing.T) {
+		seat, landing := t.TempDir(), t.TempDir()
+		goalSyncMutationGit(t, landing, "init", "-q", "-b", "main")
+		if err := os.WriteFile(filepath.Join(seat, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		joined := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+		boot := joined.Add(30 * time.Second)
+		t.Setenv("METASYSTEM_GOAL_NOW", boot.Format(time.RFC3339Nano))
+		current := boot
+		previous := cadenceProductionClock
+		cadenceProductionClock = func() time.Time { return current }
+		t.Cleanup(func() { cadenceProductionClock = previous })
+		settings, _, err := parseBatchOwner([]string{"--root", seat, "--landing-root", landing,
+			"--max-wait", "1m", "--interval", "1m"}, "owner", cadenceProductionClock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if settings.MaxWaitElapsed(joined) {
+			t.Fatal("maximum wait elapsed before the daemon's first tick")
+		}
+		current = joined.Add(time.Minute)
+		if !settings.MaxWaitElapsed(joined) {
+			t.Fatal("maximum wait did not elapse when the daemon clock advanced")
+		}
+	})
 }
 
 func TestBatchOwnerManualAcquireCleansFailedAnnouncement(t *testing.T) {

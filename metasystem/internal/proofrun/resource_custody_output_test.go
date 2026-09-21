@@ -548,11 +548,52 @@ printf '{"suite":"writer-failure","section":"over-cap","event":"end","at":"%s","
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	next, err := AcquireHostResources(ctx, root, conf, "heavy", nil)
 	if err != nil {
 		t.Fatalf("public writer failure left capacity held: %v", err)
 	}
 	defer next.Close()
+	t.Run("prior regular done marker", func(t *testing.T) {
+		doneLog := filepath.Join(root, "done-race.log")
+		var publicOut, publicErr bytes.Buffer
+		status := LaunchSuite(LaunchOptions{
+			Suite: "done-race", Root: root, ConfPath: conf,
+			ProgressPath: filepath.Join(root, "done-race.progress.jsonl"), LogPath: doneLog,
+			Banner: "done race fixture", Silence: 10 * time.Second, SectionCap: 10 * time.Second,
+			EvidenceTimeout: 5 * time.Second, EvidenceMax: 1024, Poll: 20 * time.Millisecond,
+			TermGrace: time.Second, KillGrace: time.Second, WatchdogExecutable: engine,
+			// A regular marker exists when the launcher publishes completion,
+			// forcing the same exclusive-create order as custodian-first settlement.
+			Command:           []string{"sh", "-c", `: > "$1"`, "sh", doneLog + ".done"},
+			HostResourceFiles: next.Files(), Output: &publicOut, ErrorOutput: &publicErr,
+		})
+		if status != 0 {
+			t.Fatalf("completed managed suite failed after prior regular done marker: status=%d stdout=%s stderr=%s", status, publicOut.String(), publicErr.String())
+		}
+		if err := next.Close(); err != nil {
+			t.Fatal(err)
+		}
+		released, err := AcquireHostResources(ctx, root, conf, "heavy", nil)
+		if err != nil {
+			t.Fatalf("managed suite retained capacity: %v", err)
+		}
+		defer released.Close()
+		for _, kind := range []string{"directory", "symlink"} {
+			path := filepath.Join(root, "invalid-"+kind+".done")
+			switch kind {
+			case "directory":
+				err = os.Mkdir(path, 0o700)
+			case "symlink":
+				err = os.Symlink(doneLog, path)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := touchDone(path); !errors.Is(err, os.ErrExist) {
+				t.Fatalf("%s done collision accepted: %v", kind, err)
+			}
+		}
+	})
 }

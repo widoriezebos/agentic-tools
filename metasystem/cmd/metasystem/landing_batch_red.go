@@ -48,6 +48,18 @@ func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 		Run: func(request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
 			return batchDiagnosticLauncher(controlRoot, id, request)
 		},
+		ConfirmFenced: func(unit batch.Unit) (string, bool, error) {
+			liveRoot, liveAt, projection, err := batchAuthorityProjection(root)
+			if err != nil {
+				return "", false, err
+			}
+			err = authorizeBatchMemberInProjection(liveRoot, liveAt, record, unit, projection)
+			var fenced *batch.PrefixFencedRefusal
+			if errors.As(err, &fenced) {
+				return fenced.Error(), true, nil
+			}
+			return "", false, nil
+		},
 		MintOpid: func() (string, error) {
 			machine, err := goal.ResolveMachine(controlRoot)
 			if err != nil {

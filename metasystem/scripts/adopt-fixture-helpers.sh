@@ -76,11 +76,21 @@ package main
 
 import "fmt"
 
-func main() {
-	fmt.Println("hello")
-	fmt.Println("metric=greets=0")
-}
+func appOutput() string { return "hello\nmetric=greets=0\n" }
+
+func main() { fmt.Print(appOutput()) }
 APP
+  cat >"$tgt/src/app_test.go" <<'APPTEST'
+package main
+
+import "testing"
+
+func TestAdoptedAppGreeting(t *testing.T) {
+	if got, want := appOutput(), "hello\nmetric=greets=0\n"; got != want {
+		t.Fatalf("app output = %q, want %q", got, want)
+	}
+}
+APPTEST
   cat >"$tgt/covenant.json" <<'COVENANT'
 {
   "schemaVersion": 1,

@@ -1,6 +1,6 @@
 {
   "packages": {
-    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 538,
+    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 536,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/acp": 60,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/adapter": 162,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/atif": 7,
@@ -47,7 +47,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/janitor": 14,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit": 5,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/landing": 85,
-    "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch": 132,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch": 126,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/launch": 72,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/lease": 78,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/lock": 21,
@@ -171,6 +171,11 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
       "test": "TestGLEBatchPortableOwnerLandsRealCommandApplication",
       "reason": "runs the real public owner and transport lifecycle with process-wide batch and admission controls"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestGLEBatchPortableNativeCapacityWaitEjectsElapsedFencedMember",
+      "reason": "runs a real public owner, steward stop, native subprocesses, and process-wide host resource leases"
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
@@ -389,6 +394,11 @@
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestResourceCustodyFailedPublicSuiteOutputStillDrainsLargeChild",
+      "reason": "changes process-wide host admission seams while proving large native child output drains after public sink failure"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
       "test": "TestGLEPrerequisiteFailureBlocksOnlyDependents",
       "reason": "runs native prerequisite commands through shared host resource admission"
     },
@@ -458,9 +468,24 @@
       "reason": "swaps process-wide hostAdmissionDirectoryForTest while holding the host admission file lock"
     },
     {
-      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
-      "test": "TestResourceCustodyFailedPublicSuiteOutputStillDrainsLargeChild",
-      "reason": "changes process-wide host admission seams while proving large native child output drains after public sink failure"
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestBatchCostPrefixGenericBudgetRefusalUsesTypedReturn",
+      "reason": "swaps the package-wide batchPrefixReceiptExecutable seam while exercising typed budget refusal"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnapshot",
+      "reason": "uses the package-wide batch process environment lock and a real public CLI fixture"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestBatchCostPortableEvidenceForecastIsReadOnlyAndWarmsFromRealCommand",
+      "reason": "sets process-wide owner lineage and proof admission fixture environment while invoking public CLI"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestGLEBatchSplitNativeRedReprovesAndPublishesIndependentSurvivor",
+      "reason": "runs in-process public CLI and native proof commands under shared process output and proof admission controls"
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
@@ -471,6 +496,21 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
       "test": "TestCustodiedSuiteWithoutResourceFilesDrainsGrandchildWithoutSlot",
       "reason": "launches a native custodian and live descendant under process-wide admission and stop-fence controls"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestSharedRetryUsesNewestObservationOnRequestedTree",
+      "reason": "writes shared proof attempts and reserves host admission without the package-wide fixture reservation mutex"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
+      "test": "TestSharedCandidatePassSupersedesItsEarlierFailure",
+      "reason": "writes shared proof attempts and reserves host admission without the package-wide fixture reservation mutex"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestGLEBatchPortableOwnerMovedBaseReturnsTwoConflictsAndLandsSurvivor",
+      "reason": "runs public owner and native proof with process-wide owner lineage, proof admission fixture environment, and live host leases"
     }
   ]
 }

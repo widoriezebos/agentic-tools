@@ -27,6 +27,6 @@ func runBatchMergeGit(root string, input []byte, args ...string) ([]byte, error)
 		return nil, err
 	}
 	command := exec.Command("git", full...)
-	command.Env, command.Stdin = gittree.ScrubbedEnviron(), bytes.NewReader(input)
+	command.Env, command.Stdin = gittree.ScrubbedEnviron("LC_ALL=C"), bytes.NewReader(input)
 	return command.CombinedOutput()
 }

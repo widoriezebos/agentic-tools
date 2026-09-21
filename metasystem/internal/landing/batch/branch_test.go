@@ -349,21 +349,13 @@ func TestBatchSealBranchDeletionUsesParentPackage(t *testing.T) {
 	tip := branchCriticRead(t, bed, "goal-a", "delete-package", commit, "critic-goal-a-delete-package", false)
 	member, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tip, GoalID: "goal-a", Last: true})
 	must(t, err)
-	unit := BindBranchMember(Unit{GoalID: "goal-a", ChangedPaths: []string{"metasystem/gone/value.go"}}, member)
 	sealedTree, err := AssembleBranchMembers(bed.root, branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}"), []BranchMember{member})
 	must(t, err)
-	var packages []string
-	err = runSealGate(bed.root, sealedTree[0], []Unit{unit}, func(_ string, step gateStep) gateStepResult {
-		if strings.HasPrefix(step.Name, "package ") {
-			packages = append(packages, strings.TrimPrefix(step.Name, "package "))
-		}
-		if step.Name == "package ./gone" {
-			return gateStepResult{RunID: "missing-package", ExitCode: 1}
-		}
-		return gateStepResult{RunID: "seal-green"}
-	})
+	patch, err := BranchMemberPatch(bed.root, member)
+	must(t, err)
+	packages, err := changedGoPackages(bed.root, sealedTree[0], patchGateChanges(patch))
 	if err != nil || !slices.Contains(packages, "./...") || slices.Contains(packages, "./gone") {
-		t.Fatalf("seal deletion gate=%v packages=%v", err, packages)
+		t.Fatalf("deletion package selection=%v packages=%v", err, packages)
 	}
 }
 
@@ -423,6 +415,36 @@ func TestBatchGoalEjectionRebuildsLeasedLandingBranch(t *testing.T) {
 	must(t, err)
 	if got := branchGit(t, origin, "rev-parse", "refs/heads/landing/"+testBatchID); got != republished {
 		t.Fatalf("republished tip=%s, want %s", got, republished)
+	}
+}
+
+func TestRebuildLandingBranchAfterBaseMoveMatchesSurvivorTree(t *testing.T) {
+	t.Parallel()
+	bed := newGoalBranchBed(t)
+	tipA := buildGoalBranch(t, bed, "goal-a", []string{"1"}, -1)
+	memberA, err := ReadGoalBranch(BranchReadRequest{Repo: bed.root, EndpointTip: bed.base, BranchTip: tipA, GoalID: "goal-a", Last: true})
+	must(t, err)
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	branchGit(t, filepath.Dir(origin), "init", "-q", "--bare", origin)
+	branchGit(t, bed.root, "remote", "add", "origin", origin)
+	branchGit(t, bed.root, "push", "-q", "origin", "main")
+	unit := BindBranchMember(Unit{GoalID: "goal-a", Chain: tipA, State: UnitJoined, AuthorName: "Approver A", AuthorEmail: "a@example.invalid"}, memberA)
+	baseTree := branchGit(t, bed.root, "rev-parse", bed.base+"^{tree}")
+	oldTip, err := RebuildLandingBranch(bed.root, testBatchID, baseTree, "", "owner", []Unit{unit})
+	must(t, err)
+	branchGit(t, bed.root, "switch", "-q", "main")
+	branchWrite(t, bed.root, "metasystem/base-marker.txt", "new accepted base\n")
+	branchGit(t, bed.root, "add", "metasystem/base-marker.txt")
+	branchGit(t, bed.root, "commit", "-qm", "accepted base moved")
+	branchGit(t, bed.root, "push", "-q", "origin", "main")
+	movedTree := branchGit(t, bed.root, "rev-parse", "HEAD^{tree}")
+	want, err := assembleUnits(bed.root, movedTree, []Unit{unit})
+	must(t, err)
+	newTip, err := RebuildLandingBranch(bed.root, testBatchID, movedTree, oldTip, "owner", []Unit{unit})
+	must(t, err)
+	if newTip == oldTip || branchGit(t, origin, "rev-parse", "refs/heads/landing/"+testBatchID) != newTip ||
+		branchGit(t, bed.root, "rev-parse", newTip+"^{tree}") != want[0] {
+		t.Fatalf("moved-base rebuild did not publish the exact survivor tree: old=%s new=%s want=%v", oldTip, newTip, want)
 	}
 }
 

@@ -2,10 +2,49 @@ package testpolicy
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestHostStaticReproofFixturePrerequisites(t *testing.T) {
+	t.Parallel()
+	contract, err := Load(filepath.Join("..", "..", "testing.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := groupMap(contract.Groups)
+	if groups["refusal-register-standard"].Phase != "admission" ||
+		!slices.Contains(groups["fast-static-build"].Requires, "refusal-register-standard") {
+		t.Fatalf("cheap refusal check does not admit fast static build: refusal=%+v build=%+v",
+			groups["refusal-register-standard"], groups["fast-static-build"])
+	}
+	for _, id := range []string{
+		"section/supervision-and-census-fixtures",
+		"section/land-fixtures",
+		"section/adoption-fixtures",
+	} {
+		if !slices.Contains(groups[id].Requires, "fast-static-build") {
+			t.Errorf("%s can launch before fast static proof", id)
+			continue
+		}
+		plan, err := Select(contract, SelectionRequest{RequestedMode: ModeCanary, Purpose: PurposeDiagnostic, Groups: []string{id}})
+		if err != nil {
+			t.Errorf("select %s: %v", id, err)
+			continue
+		}
+		for _, required := range []string{"refusal-register-standard", "fast-static-build", id} {
+			if !slices.Contains(plan.SelectedGroups, required) {
+				t.Errorf("%s selection omits prerequisite %s: %v", id, required, plan.SelectedGroups)
+			}
+		}
+		if slices.Contains(plan.SelectedGroups, "go-affected") {
+			t.Errorf("%s selection unexpectedly gates independent Go groups: %v", id, plan.SelectedGroups)
+		}
+	}
+}
 
 func TestLegacyContractWireOmitsExecutionFields(t *testing.T) {
 	t.Parallel()

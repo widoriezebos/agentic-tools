@@ -509,6 +509,13 @@ func TestJoinedSharedLaunchUsesEngineIdentityForShellCommand(t *testing.T) {
 
 func TestNonJoinedTestingLaunchUsesEngineIdentityForDifferentWorker(t *testing.T) {
 	t.Parallel()
+	fixtureHostAdmissionMu.Lock()
+	previousAdmissionDirectory := hostAdmissionDirectoryForTest
+	hostAdmissionDirectoryForTest = filepath.Join(t.TempDir(), "host-admission")
+	defer func() {
+		hostAdmissionDirectoryForTest = previousAdmissionDirectory
+		fixtureHostAdmissionMu.Unlock()
+	}()
 	root, fixtureIdentity := proofAttemptFixture(t, "testing")
 	conf := filepath.Join(root, "metasystem.conf")
 	engine, err := os.Executable()
@@ -529,10 +536,10 @@ func TestNonJoinedTestingLaunchUsesEngineIdentityForDifferentWorker(t *testing.T
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, _, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
+	attempt, decision, err := ReserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a",
 		GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2, Identity: proofIdentity, Launcher: launcher, Now: now}))
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || decision.Disposition != DispositionExecuted || attempt.AttemptID == "" || decision.AttemptID != attempt.AttemptID {
+		t.Fatalf("nonjoined fixture reservation = attempt %q, decision %+v, err %v", attempt.AttemptID, decision, err)
 	}
 	watchdog := filepath.Join(root, "watchdog.sh")
 	writeExecutable(t, watchdog, `#!/usr/bin/env bash

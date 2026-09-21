@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 )
 
 type redLedger struct {
@@ -119,7 +121,7 @@ func TestBatchOwnerSearch(t *testing.T) {
 		baseRed bool
 	}{
 		{"W12d red base holds trunk red", failing, true},
-		{"W12e no named unit holds trunk red", []RedGroup{{ID: "group", InputManifest: []string{"other/**"}}}, false},
+		{"W12e green base without attribution holds unclassified", []RedGroup{{ID: "group", InputManifest: []string{"other/**"}}}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, store := diagnosingBed(t)
@@ -134,8 +136,12 @@ func TestBatchOwnerSearch(t *testing.T) {
 			})
 			must(t, err)
 			record := load(t, store)
-			if record.State != StateHeldTrunkRed || ledger.calls != 1 || ledger.last.BaseCommit != "base-commit" || slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
-				t.Fatalf("record=%+v ledger calls=%d", record, ledger.calls)
+			if test.baseRed {
+				if record.State != StateHeldTrunkRed || ledger.calls != 1 || ledger.last.BaseCommit != "base-commit" || slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
+					t.Fatalf("record=%+v ledger calls=%d", record, ledger.calls)
+				}
+			} else if record.State != StateHeldUnclassified || ledger.calls != 0 || slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
+				t.Fatalf("unattributed failure was assigned to trunk or member: record=%+v ledger calls=%d", record, ledger.calls)
 			}
 		})
 	}
@@ -244,6 +250,50 @@ func TestBatchDiagnosticRefusalHoldsWithoutEjection(t *testing.T) {
 	}
 }
 
+func TestBatchDiagnosticRefusalRequiresLiveExactFenceBeforeEjection(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name      string
+		confirmed bool
+		readErr   error
+	}{
+		{name: "confirmed exact fence", confirmed: true},
+		{name: "refusal text without live fence"},
+		{name: "unreadable live ledger", readErr: errors.New("accepted ledger unreadable")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, store := diagnosingBed(t)
+			called := 0
+			err := DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "group"}}, "", time.Unix(2, 0), RedSeams{
+				Run: func(DiagnosticRequest) (DiagnosticResult, error) {
+					return DiagnosticResult{}, &DiagnosticRefusal{Status: "CANDIDATE_GOAL_REFUSED state=fenced"}
+				},
+				ConfirmFenced: func(unit Unit) (string, bool, error) {
+					called++
+					if unit.GoalID != "goal-b" {
+						t.Fatalf("diagnostic authority = %s, want goal-b", unit.GoalID)
+					}
+					return "live exact stop fence", test.confirmed, test.readErr
+				},
+			})
+			must(t, err)
+			record := load(t, store)
+			if called != 1 {
+				t.Fatalf("live fence checks = %d, want one", called)
+			}
+			if test.confirmed {
+				if record.State != StateOpen || record.Units[1].State != UnitReturnPending || record.Units[1].Outcome != UnitEjected ||
+					record.Units[1].Failure != "live exact stop fence" || record.Units[0].State != UnitJoined || record.Proof != nil || record.Seal != nil {
+					t.Fatalf("confirmed fence did not reassemble only the survivor: %+v", record)
+				}
+			} else if record.State != StateHeldUnclassified || record.Proof == nil ||
+				slices.ContainsFunc(record.Units, func(unit Unit) bool { return unit.State != UnitJoined }) {
+				t.Fatalf("unconfirmed fence was treated as an ejection: %+v", record)
+			}
+		})
+	}
+}
+
 func TestBatchReopenNeedsNewTree(t *testing.T) {
 	bed, store := diagnosingBed(t)
 	ledger := &redLedger{}
@@ -279,5 +329,16 @@ func TestDiagnosticInputMatchingUsesManifestPathsNotSuffixes(t *testing.T) {
 	}
 	if !diagnosticPathMatches("pkg/**", "pkg/sub/a.go") {
 		t.Fatal("manifest subtree did not name its changed unit")
+	}
+}
+
+func TestGLEPathDiagnosticManifestLiteralAttribution(t *testing.T) {
+	t.Parallel()
+	entry := pathpattern.EncodeLiteral("metasystem/pkg/[literal].go")
+	if !diagnosticPathMatches(entry, "metasystem/pkg/[literal].go") {
+		t.Fatal("discovered literal did not name its changed unit")
+	}
+	if diagnosticPathMatches(entry, "metasystem/pkg/aliteral.go") {
+		t.Fatal("discovered literal matched another filename")
 	}
 }

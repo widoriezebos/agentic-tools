@@ -308,6 +308,9 @@ func TestProofGovernedReservationJoin(t *testing.T) {
 func dispatchProofFixture(t *testing.T, commandClass string) (string, proofrun.ProofIdentity) {
 	t.Helper()
 	root := budgetProjectionRoot(t)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}

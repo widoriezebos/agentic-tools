@@ -189,6 +189,9 @@ func TestDeliveryRetryReusesTheFailedPredecessorsPassedGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := BindJoinedTestComponentsLocked(controlRoot, attempt.AttemptID, identities); err != nil {
+		t.Fatal(err)
+	}
 	// The predecessor: first passed, second failed, third never launched
 	// because the attempt stopped at second.
 	failed := componentAttemptResult(attempt.AttemptID, "first", identities["first"], "passed")

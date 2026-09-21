@@ -35,7 +35,12 @@ func TestMain(m *testing.M) {
 			os.Exit(2)
 		}
 	}
-	if os.Getenv("GO_WANT_BATCH_E2E_COMMAND") == "1" && len(os.Args) > 1 && os.Args[1][0] != '-' {
+	// The managed resource worker re-execs this test binary directly. Its
+	// custody verbs must reach the command dispatcher even when the caller's
+	// fixture-only GO_WANT flag was removed from the inherited environment.
+	resourceCustodyCommand := len(os.Args) > 2 && os.Args[1] == "proof-run" &&
+		(os.Args[2] == "custody-exec" || os.Args[2] == "watchdog")
+	if resourceCustodyCommand || os.Getenv("GO_WANT_BATCH_E2E_COMMAND") == "1" && len(os.Args) > 1 && os.Args[1][0] != '-' {
 		os.Exit(dispatch(os.Args[1:]))
 	}
 	if os.Getenv("METASYSTEM_CONTEXT_COST_PROOF") == "1" {

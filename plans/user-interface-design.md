@@ -1,6 +1,6 @@
 # User Interface Design
 
-Status: Interface structure, core interactions, and the shared-operation approach for conversation and visual controls are confirmed by the human. Supporting implementation decisions remain open. This document does not authorize implementation or execution.
+Status: Interface structure, core interactions, and the shared-operation approach for conversation and visual controls are confirmed by the human. The round-one critique has been adjudicated and the structural backend requirements below added; those amendments have not had an independent second review. This document does not authorize implementation or execution. See [critique dispositions](user-interface-design-critique-dispositions.md) for every finding, decision, and reason.
 
 ## Purpose
 
@@ -36,7 +36,7 @@ Four layout decisions organize the detailed design:
 
 The Brain entry sits above the project sections and remains visible when its dock is collapsed. It is the same agent workspace everywhere, with a focused conversation view and a docked view rather than a different chatbot for each section. Human editing and agent actions use the same records and operations. [Complete human operations through the interface](#complete-human-operations-through-the-interface) defines the requirement that routine work, exceptional decisions, maintenance, and recovery all have usable browser flows.
 
-The agreed mixed visual and conversational interaction uses shared application operations and normal result views. An agent action returns its actual result and affected records; the frontend refreshes or opens their existing views. Implement this without a separate agent-to-UI control mechanism. Richer visual guidance is deferred unless a demonstrated need can be served with existing frontend facilities. See [Show action results in the UI](#show-action-results-in-the-ui) and [Implementation of the shared interaction](#implementation-of-the-shared-interaction).
+The agreed mixed visual and conversational interaction uses shared application operations and normal result views. An agent action returns its actual result and affected records; the frontend refreshes or opens their existing views. A single optional `present(resultID)` signal distinguishes a requested inspection from supporting reads. It uses the existing tool/result path and grants no general browser control. Richer visual guidance is deferred unless existing frontend facilities suffice. See [Implementation of the shared interaction](#implementation-of-the-shared-interaction) for the one shared interaction contract.
 
 ## Basis in the paper
 
@@ -55,6 +55,8 @@ These are the conceptual foundations. The paper also describes capabilities beyo
 The conversational agent occupies the brain role: the agent that works with the human to understand the system, shape intent, and guide priorities.
 
 The brain is a persistent responsibility. An individual agent session is a replaceable occupant of that responsibility. Its continuity comes from recorded intent, decisions, designs, open questions, and work state. Changing provider or replacing an exhausted session must not lose the meaning of the work.
+
+The interactive session occupies the existing declared brain checkout; it is not a second coordinator beside a terminal brain. A sitting with write tools requires a human-authorized brain declaration, the existing brain boot context, and exclusive live occupancy through the session/lease owner. Terminal and browser occupants exclude each other. Several tabs may use the same sitting, and other topics may be retained or inspected, but only one occupant has brain mutation credentials. Without declaration or occupancy, the interface remains readable and states why brain changes are unavailable. Opening a sitting does not implicitly declare a brain or start delivery.
 
 The brain can:
 
@@ -79,7 +81,7 @@ The same interface may present several roles, but it must preserve their separat
 
 The desktop layout has a navigation rail, the selected application view, and a resizable Brain dock. The dock is open by default and can be collapsed without losing the conversation or its context. The fixed Brain entry opens it again or expands it into a focused conversation workspace, with referenced artifacts available beside the discussion. On a narrow screen, the same sitting can switch between conversation and its subject without starting a new session.
 
-The dock contains the conversation, a visible list of shared subjects, current agent activity, and proposed or completed actions. Its header identifies the current sitting and provider, with controls to interrupt a response, resume a sitting, or start another topic. Interrupting a response does not silently cancel an already submitted application operation or a fleet job; their status and controls remain explicit.
+The dock contains the conversation, a visible list of shared subjects, current agent activity, and proposed or completed actions. Its header identifies the current sitting and provider, measured usage and remaining budget, context use, and controls to interrupt, resume, or change topics. Unavailable usage is labeled unknown. Interrupting a response does not silently cancel an already submitted application operation or a fleet job; their status and controls remain explicit. Budget behavior is defined under [Conversation and session lifecycle](#conversation-and-session-lifecycle).
 
 Navigating between Project, Backlog, Fleet, Decisions, Application, and Settings does not replace the conversation. The human can discuss a goal, open the seat working on it, inspect a failed check, and continue the same discussion. Project → Sittings is a filtered view of this shared conversation history, not a second store.
 
@@ -91,6 +93,8 @@ The application supplies structured view context: project, active section and ta
 
 Capture that context with each submitted message so “split this” refers to the selected goal at that moment. Later navigation cannot retarget an operation already being prepared. Pinned subjects remain stable while the human browses elsewhere. A project change is explicit and does not silently apply an earlier instruction in the new project.
 
+File revisions identify what was seen and preserve chronology. A pending edit or decision binds to an owner-computed digest of the fields, references, and consequences actually being reviewed, as defined under [Preparation and decision basis](#preparation-and-decision-basis). An unrelated progress update must not alone invalidate the review.
+
 Selection and “Discuss with Brain” work for goals, lanes, slices, seats, runs, findings, documents, settings, and charts. The agent can query the underlying records when it needs more than the visible page. It distinguishes the selected or visible set from the full query result; a filtered board or paginated list must not be mistaken for the entire backlog.
 
 Share unsaved edits only as explicitly identified draft context, for example when the human selects text and sends it to the conversation. Keep the saved revision distinguishable from the draft. Sensitive setting values need not be sent to discuss their configuration. The human can inspect and remove attached context.
@@ -101,9 +105,9 @@ The browser maintains view context without a model invocation on every navigatio
 
 Every user-visible object type has an agent-accessible semantic surface for its permitted reads and actions. The agent can retrieve a goal, inspect a design, query fleet state, compare evidence, prepare a split, revise a slice proposal, or explain a setting through the same domain owners used by the UI.
 
-The capability inventory records separately whether the brain may read, propose, or perform each action. Shared access to an object does not imply identical human and agent authority. Within its authority, an explicit conversational request can directly initiate an operation without requiring a second request through a form. Where human approval or another role is required, the agent presents the corresponding proposal or decision control with the exact subject and consequence.
+The capability inventory records separately whether the brain may read, propose, or perform each action. Initially, an explicit request permits direct performance only for an owner-authorized, reversible draft or queued-goal edit whose preview changes no approval, claim, budget, priority, other goal, or governing definition of authorized work. The same actor must be permitted to reverse it. All other changes are proposal-first and show their consequences before the required actor acts. This restriction is enforced by the application, including across concurrent changes; a model's description of an edit as harmless is not sufficient.
 
-Agent changes carry the agent's identity and their actual authority. A reserved human act is completed by the authenticated human interaction; the agent cannot press its approval control on the human's behalf. Access to the UI does not extend the brain's dispatch, examination, acceptance, or release permissions.
+Agent changes carry the agent's identity and actual authority. A reserved human act requires the separate per-act proof described under [Human acts from the browser](#human-acts-from-the-browser). A cookie or conversational assent alone cannot supply it. Access to the UI does not extend the brain's dispatch, examination, acceptance, or release permissions.
 
 After a domain operation succeeds, the same application state update refreshes the board, detail view, and conversation's action result. Show whether an action is proposed, submitted, completed, refused, or still unresolved. The agent must not report an edit as applied solely because it prepared a patch or sent a request.
 
@@ -111,23 +115,11 @@ After a domain operation succeeds, the same application state update refreshes t
 
 The required interaction is straightforward: the human asks the agent to do something, the application performs the permitted operation, and the UI shows the confirmed result. The traditional controls and the agent tools are two callers of the same application operations.
 
-For example, the human asks, “Change this goal's wording and show me the result.” The agent calls the goal-edit operation. It returns success with the affected goal and revision. The UI updates the existing goal view and shows a result card in the conversation linked to that revision. The human can immediately make another edit in the normal editor and continue the discussion. Reserved decisions still use their required human action.
+For example, the human asks, “Change this queued goal's wording and show me the result.” The brain prepares the change, the owner establishes that direct performance is permitted, and the edit returns its confirmed record reference. The existing goal editor and the conversation's result card show that revision. The human can edit it directly and continue the discussion.
 
-Use the following flow:
+For an approved goal, the same request instead produces a proposal explaining withdrawal, any parked claim, the edit, and renewed approval; it performs none of those steps automatically. The guided flow is specified under [Revise an approved definition](#revise-an-approved-definition).
 
-1. Attach the selected subject and revision to the human's message.
-2. Let the agent call the same checked application operation that a normal form uses.
-3. Return the actual operation status and references to the affected objects or produced artifacts. Reuse the operation's existing result fields where possible.
-4. Send that result through the server's ordinary conversation and operation update path. The frontend refreshes the relevant data and renders its existing detail view, editor, comparison, or evidence viewer.
-5. Keep a result card and stable “Open result” link in the conversation, including for work completed after the human navigates away.
-
-The frontend owns the mapping from an object or artifact reference to its view. Domain operations and the agent do not need to know browser routes, components, selectors, or page layout. Result cards are rendered from actual tool results, not inferred from the agent's prose. For a proposal, show the existing draft editor and its proposed status; for a saved change, show the confirmed record; for an unresolved operation, show its ongoing status.
-
-“Show me why this failed” follows the same pattern using a read operation: return the relevant finding and artifact references, then show them in the normal Evidence view. “Show the waiting goals” can return a query result for the existing list view. A dedicated tool for each visual component is unnecessary.
-
-After a requested change or proposal completes, show its result in the work area beside the conversation by default when the human is still in the relevant context. A separate “show me” request is unnecessary. Supporting tool reads do not repeatedly change the view; an explicit request to inspect their subject can open it through the same result mechanism. If the human has moved elsewhere or has unsaved edits, preserve their current view and show the result card with its link. This policy belongs to the frontend and uses ordinary navigation and edit protection. It does not require the agent to watch every UI event or acknowledge each rendered frame.
-
-Only the tab participating in the conversation may navigate automatically; other views receive normal data refreshes. A disconnected browser can recover the operation result and its link on reconnection. Display failure never repeats a successful domain mutation. Persist the operation outcome, not a queue of stale navigation commands.
+“Show me why this failed” retrieves finding and artifact references, then uses `present(resultID)` to request their normal Evidence view. Supporting reads alone do not navigate. The frontend's shared routing, edit protection, reconnect, and result policy is defined once under [Implementation of the shared interaction](#implementation-of-the-shared-interaction).
 
 ### Limit the additional machinery
 
@@ -163,8 +155,10 @@ Any future dispatch authority requires an explicit scope and the same enforced b
 | Component | Responsibility |
 | --- | --- |
 | Browser workspace | Persistent Brain dock, shared selection context, result cards and normal artifact views, direct editing, and human decisions |
-| Go server component | Browser connections, identity, sessions, bounded view context, application tools, ordinary result updates, and checked record operations |
-| Agent connected through ACP | Reasoning, explanation, authorized reads and changes, and proposals with references the frontend can display |
+| Go server command edge | Trusted request principals, configured clone and endpoints, browser connections, per-act authority, operation correlation, and record synchronization |
+| Interactive ACP session host, new | Many-turn brain sittings, boot context, streaming, cancellation, bounded usage, resume, and provider capability enforcement; reuse suitable existing ACP transport and normalization code |
+| Application MCP endpoint, new | Bounded semantic tools, scoped brain credentials, checked calls to Go owners, and structured results shared with the browser |
+| Brain agent connected through ACP | Reasoning, explanation, authorized reads and changes, and proposals with references the frontend can display |
 | Authoritative records and application operations | Durable state, history, permissions, and valid transitions |
 | Delivery machinery and seats | Executing authorized work under their assigned roles |
 
@@ -186,13 +180,99 @@ ACP provides the connection to the agent. Application authority remains a respon
 
 Provider differences belong behind an adapter. The browser works with application concepts such as a conversation, proposed change, recorded decision, and operation result. It should not depend on provider-specific transcript formats.
 
-The agent's application tools pass through the server's capability and identity checks. Their structured results are available to both the conversation and the frontend's normal views. The required tool integration is an implementation obligation, not an assumption that ACP or every candidate provider already supplies it unchanged. The initial mixed interface uses no separate agent-to-browser control protocol.
+The existing ACP driver runs a prompt attempt and currently supplies an empty `mcpServers` list. Interactive session hosting and the application tool endpoint therefore require implementation. Reuse the existing connection, stream assembly, cancellation, and history handling where suitable; supplying MCP tools and enforcing the provider envelope are explicit integration gates. The small `present` signal travels on this same tool/result path, with no separate browser-control protocol.
+
+## Server as a new command edge
+
+### Scope and request principals
+
+The first supported access model is one trusted human using a loopback browser and one configured project/brain checkout per server instance. Error-prone agents using all granted tools and a foreign page open in the same browser are in scope. Remote browser access is deferred; it requires a separate access design. The server can observe a replicated fleet without exposing its browser endpoint remotely.
+
+Today the CLI assembles caller classification and fresh human proof from OS ancestry and the calling process environment. A long-lived HTTP server cannot reuse its own parent PID as the identity of every request. The authority and lease owners must gain a trusted server entry path before either mutation adapter is enabled.
+
+| Input | Source and enforced meaning |
+| --- | --- |
+| Browser principal | Server-authenticated enrolled human identity; ordinary session authentication permits only the actions its verified authority supports. Human-reserved acts also require the bound per-act proof below |
+| Brain principal | Server-issued credential bound to the announced MAIN session, lineage, live lease, project, and brain role; the owner verifies current occupancy and role fences |
+| Execution principal | The addressed node's actual steward or owning worker, with its own lease and operation permissions; the server does not impersonate that worker |
+| Endpoint, machine, clock, operation ID | Resolved or generated by trusted server configuration and the operation owner, never accepted from an arbitrary request body |
+| Subject, arguments, expected basis | Request data validated against the closed operation schema and current owner state; never a source of caller authority |
+
+Record the real actor and authority grade in History. An agent request carrying a human name or copied decision reference remains an agent request and is refused when human authority is required. Move the applicable brain fences and caller validation into shared application entry points so neither HTTP nor MCP can bypass checks that currently live in CLI handlers. Audit each additional operation family before exposing it; goal behavior alone does not establish the authority rules for mission, landing, or process owners.
+
+### Human acts from the browser
+
+Required property: the brain or a delegate, using its full granted envelope, and a foreign browser page cannot produce an accepted human-reserved act. An authenticated browser cookie identifies a session; it does not prove deliberate human approval of a particular change.
+
+Use the existing independently enrolled human/channel authority as the root for the first integration. Pair a browser session through a fresh challenge answered by the configured human account with a current unused one-time code. The challenge identifies the project, browser session, enrollment generation, and expiry. Replacing or recovering that enrollment requires the same independent authority; the browser and the agent cannot enroll themselves. An existing enrolled terminal is a compatible recovery root, but is not the only permitted root. Pairing is separate from approving work.
+
+For each reserved browser act, the server prepares an expiring, single-use challenge bound to the principal, project, operation ID, exact arguments, reviewed basis/effects digest, subject, and budget where applicable. The human reviews it in the normal form and explicitly submits a fresh one-time code from their authenticator. The authority owner verifies the code, atomically binds its consumption to that challenge, checks replay across the authority's code-use scope, and issues a new browser-proof outcome accepted by the domain owner. A TOTP code alone does not bind an action: that binding, consumption record, expiry, and revalidation are new owner responsibilities. Codes and verifier secrets never enter conversation context or tool results.
+
+Extend the enumerated authority outcomes and history validation to record browser proof, authority/enrollment identity, challenge identity, and reviewed digest, without recording the code. A human proof is an internal verified value, not deserialized authority supplied by a client. The server's human handler can then reach the shared owner as HUMAN even in the declared brain checkout; the MCP path remains MAIN and cannot relay that proof. A journaled human name or expired challenge cannot authorize recovery of an unperformed act: show the unresolved result, recover any already-published outcome, and otherwise obtain fresh human proof before a new attempt.
+
+The current channel code verifies configured human identity and TOTP, but its secret resolver accepts environment variables, `metasystem.conf.local`, and `metasystem.conf`. Those sources can be visible to a same-user agent. Before enabling browser human acts, protect or migrate the verifier and channel credentials, exclude their source files and environment from agent access, and protect enrollment state, browser credentials, and the challenge store. The enforced envelope below is a dependency of human authority, including for existing delegates. If that custody cannot be established on a host, reserved browser writes stay unavailable; copying today's code alone is insufficient.
+
+Bind only to loopback initially; validate Host and Origin, require anti-forgery protection on mutations, and use protected session cookies with no permissive cross-origin policy. Apply the same boundary to browser pairing, challenge submission, and the event stream. Authenticator codes are accepted only by the human path, never by MCP. Concurrent or repeated submits identify the same operation rather than minting a second approval.
+
+For a project with no independently established authority, the first version remains read-only and shows the missing setup prerequisite. Browser-native first enrollment and recovery without any surviving enrolled root require a separately reviewed bootstrap flow before complete human-operation coverage can be claimed. This is an explicit onboarding gap, not a hidden instruction to type a verb or a self-authenticating form.
+
+### Clone, publication, and freshness
+
+Use a dedicated, server-owned, quiescent brain checkout with a configured canonical remote and record endpoint. It is not a delivery worktree, and requests cannot select arbitrary filesystem roots. Starting the interface does not start the engine, declare the brain, or claim a goal. The human path remains usable while the brain agent is absent.
+
+Read goal state from the owner's validated accepted tip, not incidental worktree bytes. Route mutations through the existing git transaction, canonical publication, and journal owners. Serialize writes within this clone, including relevant local recovery and configuration changes. Different nodes still coordinate through the existing publish/CAS rules; an in-process mutex does not replace them.
+
+Assign the operation ID before submission and durably correlate it to the principal, exact request, sitting, and result. A retry of that request uses the same identity; a changed request requires a new one. Persist enough metadata to retrieve the journal outcome after a server crash. Never derive retry authority from a stored human name. A confirmed local commit alone does not establish successful canonical publication.
+
+Preserve journal outcomes in operation detail:
+
+| Owner outcome | UI meaning |
+| --- | --- |
+| `confirmed` | Publication confirmed; refresh from the validated accepted record |
+| `confirmed-late` | Publication subsequently confirmed by recovery; show the correction to the earlier belief |
+| `lost` | The owner recorded a lost attempt; show its detail and supported recovery, without inventing a generic conflict or retry |
+| `abandoned`, `rejected`, `expired` | Show the distinct terminal reason and permitted next action; retain any later correction |
+| Pushed but outcome unknown | Unresolved publication; never label success or failure merely from a timeout |
+
+A pushed unknown transaction blocks **all further writes through this clone**, not just the initiating card. Show a workspace-level synchronization/recovery banner and keep reads available with their observation time. Use the existing recovery owner to resolve the journal; neither an SSE reconnect nor a new operation ID is a recovery mechanism.
+
+For remote changes, run one non-overlapping fetch/validate/recovery loop: initially every five seconds while a browser is connected, every thirty seconds while idle, with bounded backoff on failure and a manual refresh action. These are configurable freshness defaults, not liveness guarantees. Confirmed local writes trigger immediate refresh; a validated remote tip change triggers the same ordinary UI data invalidation. Serialize maintenance that touches the journal with writes. Display accepted-tip identity, last successful observation, sync delay, and any failed refresh. Browser notifications cannot manufacture remote freshness, and a stale observation cannot establish idle capacity.
+
+### Preparation and decision basis
+
+Four required additions belong to the operation owners: side-effect-free preparation/preview; allowed actions for one subject and caller; typed refusal details with unmet conditions and supported recovery operations; and changed references derived from the owner's actual change set. The current goal owner does not expose these as a complete API, and `PublishResult` does not enumerate affected objects.
+
+Factor each supported operation's computation into a preparation path used by both preview and publication. Preview evaluates the current accepted state without journal writes, pushes, hooks, or execution effects. Do not invoke a side-effectful mutation and merely omit its final push. Keep policy in the owner so, for example, withdrawal previews name the standing claim that will park.
+
+A prepared change returns its effects, affected references, and an owner-defined review basis. Hash the decision-relevant fields, pinned artifact references, arguments, and material consequences; retain file revisions separately for history. The client cannot choose an ignore-fields mask. Intent and its governing design changing invalidate an intent review; an unrelated next-step update does not, unless this particular operation depends on it.
+
+Check the expected basis and recompute the effects **inside** the transaction mutation, including on replay after a publish race. Recheck live permissions and preconditions there as well. If the reviewed basis or material effects changed, return a structured comparison and require renewed review before publishing. If only irrelevant fields changed and the operation remains permitted, preserve those changes and proceed. An unchanged tip is useful evidence, but not a substitute for current authority and lease validation.
+
+### Brain tools and enforceable access
+
+Keep the tool catalogue bounded: `read`, `query`, `describeOperation`, `preview`, `propose`, `perform`, and `present`. Operation names come from a closed capability inventory; discover per-operation argument schemas and permissions on demand through `describeOperation`. `query` can also retrieve allowed actions for a subject and actor. Validate every argument with its named operation's schema. These tools never accept shell text, arbitrary record patches, arbitrary Go function names, or browser routes. `propose` persists tentative working material and cannot confer the proposed authority.
+
+Register this application MCP endpoint with the interactive ACP session under a session-scoped credential. The same server-held tool results feed the agent and the browser. The one-turn driver and an empty MCP list are not adequate interactive hosting by themselves.
+
+The initial brain envelope permits the application tools and curated reads only. It grants no direct writes to records, the server checkout, or server state; no shell/process/environment inspection; and no arbitrary network access. Content reads go through authorized references or a curated snapshot excluding credentials, private transcripts of other roles, and authority state. Allow only the required provider transport and scoped MCP connection. In particular the agent cannot contact the human HTTP endpoints, recover browser cookies, or read the TOTP seed through a file tool, symlink, subprocess, or provider-native workspace tool. Enforce this with actual host/provider isolation; permission prompts or post-write integrity detection alone are insufficient.
+
+Claude, Codex, and Devin remain candidates, not verified interchangeable implementations. For the selected provider, record and demonstrate enforcement for filesystem reads/writes, built-in tools, subprocesses, network, secret custody, MCP credentials, cancellation, and session resume. An unsupported provider cannot get mutating brain tools. If even read isolation cannot be enforced, do not launch it against the protected workspace. The same independence check applies to delegates admitted to the host; a protected brain alongside an unrestricted delegate would not establish the human-act property.
+
+### Node-owned execution control
+
+The server's brain checkout cannot dispatch, claim, cancel, reap, close, or land work by bypassing the brain fence. For Fleet control, distinguish the browser human's request from execution by the owning node.
+
+The first version observes local state and available replicated records. Local lifecycle controls are enabled only for explicitly enrolled delivery endpoints on the server's machine, through their existing owners and fresh human authority where required. Bind the target to checkout, seat, and current process/session incarnation; revalidate before acting. The server's brain endpoint never substitutes for the target delivery endpoint. Remote lifecycle controls remain visibly unavailable until the following backend exists.
+
+For remote control, choose requests in the existing shared git record, honored by the addressed node's steward. Add a versioned `records/fleet-control/` request and acknowledgment schema owned by fleet control, with request ID, human authority/reference, target machine/seat/incarnation, closed operation and arguments, creation/expiry, and result/evidence references. This extends the record owner; it is not a claim that such requests already exist. Use at-most-once effect handling per request ID and target incarnation, reconciliation before retry, and recheck local permission and preconditions at consumption. A request grants no general remote shell access.
+
+Show requested, acknowledged, executing, completed, refused, expired, or unresolved delivery separately from observed seat state. An unreachable seat can leave a stop unacknowledged until expiry; it must never appear stopped because a request was saved. A successor session cannot inherit a stale stop addressed to its predecessor. Existing channel delivery may notify a human, but the durable request and node result establish the outcome. This protocol is needed for fleet control, not for the mixed conversation/result presentation.
 
 ## Implementation of the shared interaction
 
 ### Reuse the application owners
 
-Implement browser request handlers and agent tool handlers as thin adapters to the same Go application operations. Each operation retains its domain's validation, authority checks, concurrency rules, persistence, and outcome. The adapters translate inputs and outputs; they do not reimplement goal transitions or keep their own state machine.
+Implement browser request handlers and agent tool handlers as adapters to the same Go application operations after the command-edge, authority, and preparation changes above. Each operation retains its domain's validation, authority checks, concurrency rules, persistence, and outcome. The HTTP/MCP mapping can be thin; establishing trusted principals and adding missing owner contracts is substantive backend work.
 
 Reuse the existing Go owners and their result types. Where an operation is currently assembled inside a CLI handler, expose that specific orchestration as a callable application function shared by the CLI and the two new adapters. Do this for the capabilities being added rather than restructuring the entire command system in advance. Do not implement agent requests by generating shell commands or simulate button presses to reach the application.
 
@@ -204,7 +284,7 @@ Keep three small responsibilities distinct:
 | Connect a request and result to its caller | Server adapter; identifies the actual actor, request, sitting, and source tab, and delivers the operation result |
 | Choose what to display | Existing frontend routing, data loading, and components; resolves record references into ordinary views |
 
-Browser context supplies the subject being discussed, not authority. The server establishes the actual caller from the authenticated human session or scoped agent credentials. The application then checks what that caller may do. A browser-only human act needs a supported human authority path, as described under Settings and setup; it cannot be implemented by labeling the agent's request as human.
+Browser context supplies the subject being discussed, not authority. Use the principals and per-act proof in [Server as a new command edge](#server-as-a-new-command-edge); both adapters reach the same owner checks.
 
 ### Keep request context and results small
 
@@ -214,22 +294,23 @@ Use the application's current operation result wherever possible. Add only the i
 
 | Information | Meaning |
 | --- | --- |
-| Request identity | Correlates the input, tool execution, conversation entry, and retry of that same request |
+| Request identity | Correlates the input, principal, tool execution, conversation entry, and retry of that same request; retained durably before mutation |
 | Operation identity, when applicable | Links to the existing durable record for a longer or separately tracked operation |
-| Outcome | Actual completed, running, refused, conflict, or unresolved outcome from the operation owner |
+| Outcome | Actual owner outcome, including the journal distinctions above; also expose accepted-tip visibility separately from publication confirmation |
 | Result references | Project-scoped object or artifact kind, stable identifier, and revision when relevant |
-| Changed references | Records or collections the frontend must refresh after a mutation, including affected dependencies |
-| Problem details, when applicable | The unmet condition, current revision for a conflict, and the application's supported recovery options |
+| Changed references | Records or collections derived by the owner from the change set, including affected dependencies; a required owner addition |
+| Reviewed basis and effects | Owner-computed digest and preview used for concurrency and consequence checks, separate from display revisions |
+| Problem details, when applicable | Typed unmet condition, current basis and relevant difference, and supported recovery operations; a required owner addition |
 
 These are required meanings, not a reason to replace all existing response formats with a new universal command framework. A read can return its bounded query data directly. A newly saved proposal returns a proposal reference and remains visibly a proposal; successful draft creation is not approval of the proposed work.
 
-Result references contain domain identity rather than browser routes or component names. The frontend resolves them through its existing navigation helpers. Where an operation affects several objects, show its results together with links to each; do not invent an ordering by asking the model to choose a page.
+Result references contain domain identity rather than browser routes or component names. The frontend resolves them through its navigation helpers. Where an operation affects several objects, show a result group with links to each. `present(resultID)` may select a primary server-held result to inspect; it cannot supply a route or mutate data.
 
 ### Deliver the same result to the agent and the browser
 
 The server receives the structured result directly from the operation owner. It returns that result to the agent's tool call and associates it with the relevant conversation entry. The frontend renders the result card from this server-provided data even if the agent's explanatory response has not finished or its session subsequently ends.
 
-Use ordinary HTTP requests for browser reads and mutations. Reuse the server-to-browser stream carrying conversation output for operation notifications; server-sent events are sufficient if no other transport has already been selected. A mutation result or notification triggers a reload through the normal read operation. Notification delivery is a convenience for freshness, while the read and operation records establish the actual state. The diagnostic flight recorder is not the source of authoritative status.
+Use ordinary HTTP requests for browser reads and mutations, with server-sent events for conversation and operation notifications. A confirmed local publication or validated remote fetch triggers a reload through the normal read operation. Notification delivery is a convenience for freshness; accepted records and operation outcomes establish state. The diagnostic flight recorder is not the source of authoritative status.
 
 When the event stream reconnects, read the relevant current records and any tracked pending operation outcomes. Use existing operation identities and duplicate-request protection; a lost response is not grounds to submit a fresh mutation. Extend the owning operation only where it lacks the required retry behavior. The conversation stores references and enough result metadata to recover its action cards, without becoming a second goal ledger.
 
@@ -241,21 +322,21 @@ The frontend applies a simple policy for the originating tab:
 
 1. Refresh affected saved records and lists after a confirmed mutation. Preserve unsaved editor buffers and show a conflict if their saved basis changed.
 2. Add or update the result card with its actual status and “Open result” link.
-3. For the requested change or proposal, or an explicit inspection request, reveal the result through the ordinary route, detail pane, or editor when the human remains in the source context and has no conflicting unsaved work. Supporting reads supply references without navigating the work area.
+3. Automatically reveal a requested mutation's or saved proposal's result when the human remains in the source context and has no conflicting unsaved work. For reads, reveal only on `present(resultID)` from the participating sitting. It must reference an authorized server-held result of that sitting, and produces a display suggestion on the ordinary tool/result stream. Supporting reads therefore never move the work area on their own. Deduplicate presentation of the same result within the turn.
 4. Otherwise, keep the current view and let the human open the result from the card. Other tabs can refresh their data but never inherit this navigation.
 
 Opening a historical result resolves the referenced revision where available. Show when a newer revision exists rather than silently substituting it for the result under discussion. If a reference is unavailable or its kind has no dedicated renderer yet, retain the outcome and show the ordinary record or artifact detail with the limitation stated; do not generate a new UI from agent prose.
 
-After the human edits the displayed result manually, the normal operation updates the same record. The next chat message supplies its current selection and revision, and subsequent mutations check their expected revisions. No separate synchronization between a chat-owned copy and a UI-owned copy is required, and navigation or rendering does not itself invoke the model.
+After a manual edit, the next chat message supplies its current selection and observed revision, and subsequent mutations check the owner-defined review basis. Reconnection restores cards from operation results and refreshes current records; it does not replay old presentation suggestions. No separate synchronization between a chat-owned copy and a UI-owned copy is required, and navigation or rendering does not itself invoke the model.
 
 ### Build one complete interaction first
 
-Start with one existing goal read and permitted goal edit:
+First validate the read-only projection and navigation, then complete the command-edge, authority, preparation, and protected session prerequisites in [Delivery scope](#delivery-scope). The first **mutating** interaction is one queued-goal read and permitted intent edit:
 
-1. Expose their Go owner through a browser handler and one provider's application-tool adapter, preserving actor identity and existing authority.
+1. Expose their Go owner through the new browser command edge and one verified provider's application-tool adapter, using the established human and brain principals, clone journal, preview, and expected-basis checks.
 2. Build the normal goal editor, selection context, and a reusable result card using their actual responses.
 3. Drive “edit this goal and show me the result” through the agent, then make a manual edit in that same editor and discuss the updated record.
-4. Check a stale edit, a lost response, an agent session ending after success, a disconnected browser, and a completed result arriving after the human navigates elsewhere. Confirm that none duplicates a mutation, loses the recorded outcome, or overwrites unsaved work.
+4. Check a decision-relevant stale edit, a harmless progress update, refusal to directly edit an approved goal, an unknown push, a lost response, an agent ending after success, and a result arriving after navigation or disconnection. None may duplicate a mutation, lose the outcome, bypass review, or overwrite unsaved work. An unknown push blocks clone-wide writes until recovery resolves it.
 5. Apply the same pattern to draft designs, split proposals, slice plans, queries, decisions, and evidence. Add domain capabilities where needed; reuse the interaction pattern instead of adding a UI-control tool for each screen.
 
 This implementation sequence validates the connection before expanding capability coverage. A capability's domain work may be substantial, but showing its result should reuse these same few pieces. A change to page layout or provider must not require changes to goal semantics. If a proposed visual convenience requires a separate control protocol, replayable UI commands, or provider-specific browser automation, leave it out and use the normal result view and link.
@@ -274,7 +355,15 @@ Continuity requires:
 - A clear distinction between completed operations, proposed operations, and operations whose result is still unknown.
 - Enough recorded context for a fresh agent and the human to continue after interruption.
 
-The durable history does not imply that every later actor receives it. In particular, independent examiners must receive the permitted examination context without the design sitting's exploratory reasoning.
+Store raw transcripts, streamed tool detail, and conversation/result correlation in a protected server-local sitting store outside the checkout, disposable execution artifacts, and every delegate read root. The human can inspect it through authorized views. Provider replacement on that server can reuse the permitted sitting history; provider resume must mark replayed history as historical and never reexecute tool calls or presentation suggestions.
+
+Persist selected working material in its existing shared category: proposals and active notes in `plans/`, standing explanation in project documents, living rulings/questions in `memory/`, and concluded records in `records/`. These artifacts carry continuity to another machine; raw transcript replication is not required. A fresh remote brain must be able to resume from this working material alone, with any missing private history stated.
+
+An independent examiner must be unable to read the exploratory transcript, including through an artifact endpoint. Its curated snapshot and authorized reads expose only the permitted brief, exact adopted design/intent, applicable rulings, and examination evidence. Shared exploratory notes do not automatically become examiner input merely because they live in git. Test actual filesystem and tool access, not just the prompt's attachments. The human's full inspection view does not change this boundary.
+
+Each sitting has enforceable spend, token/attempt, wall-time, and context limits, charged against an enclosing brain allocation across provider/session replacements. Show measured use, estimates, remaining authorization, and unavailable measurements distinctly. Reserve a bounded turn allowance before invocation; do not start another paid turn when remaining authorization cannot be established. A provider with unavailable spend accounting needs an enforceable conservative bound or cannot offer that budget mode.
+
+At a spend, attempt, or time limit, stop new model work, retain the latest working records and pending operation identities, and display the reason. Human reading, editing, and operation recovery remain available. Context rollover or provider failover may continue only within the same remaining authorization and configured fallback permission. Exhaustion does not create a fresh budget: paid continuation needs an explicit new grant. Renaming a sitting, starting a replacement session, or changing provider cannot reset its enclosing accounting.
 
 Closing a browser does not cancel authorized work. Reconnecting restores the recorded conversation and current state. Agent availability, server connectivity, and engine state are displayed separately so that one does not imply another.
 
@@ -305,7 +394,7 @@ Recording intent and authorizing execution are distinct actions. A human can com
 
 For an execution approval, the interface presents the exact work and budget being authorized. The server establishes the human's identity and authority independently of the agent's claims. The agent cannot impersonate a human approval through its own tools.
 
-Before a consequential revision is committed, the interface shows its known effects: goals needing revision, approvals that become stale, and active work requiring a safe stop or reconsideration. If the underlying record changes while the human is considering a proposal, the system exposes that change and revalidates the operation against the current version.
+Before a consequential revision is committed, the interface shows its known effects: goals needing revision, approvals requiring explicit withdrawal and renewal, and active work requiring a safe stop or reconsideration. Bind the decision to the owner-computed reviewed fields and consequences. Revalidate within publication; require reconsideration when that basis changes, while preserving unrelated progress updates. An approved intent edit is currently refused until approval is withdrawn; do not promise automatic invalidation as an existing feature.
 
 Ordinary draft editing should remain fluid. Explicit decisions belong at meaningful authority boundaries rather than after every sentence.
 
@@ -347,6 +436,8 @@ Lead with “What needs me?” and “What changed since I last looked?”
 
 Useful entries include a decision blocking several goals, a changed assumption, an examination finding, a newly observed production problem, or completed work with its evidence. Each entry links to the underlying records.
 
+Keep the last-visit marker per human and project in server-local preference state. Losing it changes the Overview's comparison window, never the underlying work history.
+
 Seat activity, tool calls, and logs remain available for investigation. The overview should support a useful visit of a few minutes without requiring the human to read a stream of internal activity.
 
 ### Project: intent and architecture before execution
@@ -382,6 +473,14 @@ Backlog is the workspace for maintaining goal definitions as well as observing p
 The board is the default for day-to-day execution; the outline is the natural planning surface when dividing a large outcome. There is no separate backlog maintained by the brain. Human edits and agent proposals address the same versioned definitions.
 
 The goal editor covers the outcome, constraints, success conditions, linked intent and design, next step, dependencies, priority, grouping, execution limits, and any machine restriction. It supports creating work directly or from Project material, refining a draft, dividing work, changing relationships, and revising earlier decisions. It shows which values are human choices, derived values, or observations from execution. Derived classification is changed through its supported assessment or exception flow, not by overwriting a display field.
+
+The inspected goal edit fields are Intent, Tier, Risk, NextStep, Blocked, and Labels; Why and Evidence describe the edit. Priority, grouping, pinning, and budgets have separate operations. Constraints and success criteria are prose in owned intent/design documents, displayed and edited as such in Definition, not fabricated goal fields or parsed conventions hidden inside Intent.
+
+Add typed `DefinitionRefs` to the canonical goal grammar: reference kind, project/repository identity, canonical document path or ID, and exact immutable source revision. This is a backend schema extension, including split member inputs, validation, serialization, approval digest, and dispatch binding. It supports canonical links to designs and any separate definition document containing constraints and success criteria. No mutable branch name or unversioned URL can stand in for the approved revision. The impact query finds referencing goals directly from these record fields; a rebuildable index may accelerate it but is not required for correctness.
+
+Deploy compatible readers/writers and the required engine floor before emitting the new grammar across the fleet. Preserve legacy records with explicit absent references; migration cannot invent a historical design binding or silently grant a new approval. Adding or adopting a new governing reference on approved work uses withdrawal/review/approval. Editing a source document creates a new version and exposes affected goals; it does not silently retarget their pinned references.
+
+The Definition tab may contain both goal fields and linked document editors, with ownership and save state clear. Save a document revision through its owner, then explicitly adopt its reference through the goal owner. Report each result if this requires multiple transactions; a saved document is not proof that its goal reference or approval changed.
 
 An agent's proposed change appears as an editable before-and-after comparison with its stated reason. The human can accept, adjust, reject with a reason, or ask for a different proposal. Direct human edits require no agent invocation. Draft saving, publishing a definition, and authorizing execution remain distinguishable actions.
 
@@ -424,7 +523,7 @@ Opening a card first shows the current outcome, status, active phase, owner, lat
 | Detail | Contents |
 | --- | --- |
 | Summary | Outcome, current state, ownership, blockers, latest result, and the next expected transition |
-| Definition | Editable outcome, constraints, success criteria, design references, priority, budget, authority, and related decisions |
+| Definition | Goal fields and linked document editors for constraints/success criteria; pinned definition references, priority, budget, authority, and related decisions, with each save's owner and status clear |
 | Plan | Smaller goals, slices, ordering, dependencies, proposal comparisons, and revision of the remaining work |
 | Execution | Seat, delegates, roles, attempts, rounds, time, budgets, and recorded progress |
 | Evidence | Briefs, exact input and design revisions, returns, patches, checks, findings, dispositions, decisions, landings, and retained artifacts |
@@ -448,9 +547,15 @@ Before publishing, show:
 
 Publish through the existing split operation as one checked change. The inspected implementation concludes the parent as decomposed, creates queued members, records the relationship, and redirects dependencies. It does not automatically approve the new members. Preserve the parent and the accepted proposal as accessible history, while the new members appear on the board and under their original outcome in the outline.
 
-Member order in the editor does not become execution order implicitly. Publish scheduling preferences through the supported priority and dependency operations and report their outcome. Rich definition fields that the current split format does not carry must remain linked to their owned artifacts or require an explicit extension to that owner.
+Member order in the editor does not become execution order implicitly. Publish scheduling preferences through the supported priority and dependency operations and report their outcome. Split member references use the `DefinitionRefs` extension above; prose constraints and success criteria remain in their owned documents. Until that extension is available, show its absence explicitly rather than implying the split preserved references that it could not record.
 
 The human can edit an agent's proposal before publication and revise member definitions afterward through the same editor and checked operations. A proposal's authorship never prevents the human from challenging it. Editing definitions with existing approvals must expose the resulting approval changes.
+
+#### Revise an approved definition
+
+Use a guided compound flow: prepare the proposed definition and its effects; obtain human authority to withdraw approval; confirm withdrawal and any parked standing claim; apply the definition edit; review the new exact definition and budget; obtain a separate fresh approval. A goal may remain unapproved if the human deliberately stops there. An edit must not silently re-approve work.
+
+Each step uses its existing checked owner and a distinct operation ID linked to the same revision proposal. Show completed, pending, refused, and unresolved steps. If interrupted after withdrawal, keep “Approval withdrawn; revision incomplete” visible with the real claim/park state; resuming rechecks current state and authority. Do not roll back completed steps or restart seats automatically. Current owner refusals and any additional plan/successor capabilities govern what can proceed.
 
 #### Plan a goal's execution slices
 
@@ -462,7 +567,7 @@ Support adding, splitting, combining, and reordering unstarted slices. Dragging 
 
 Show planned slices alongside their execution state when dispatched: unstarted, underway, waiting, completed, or superseded, as supported by their owning records. A slice can have several delegate attempts and review rounds. Preserve the distinction between the plan, an attempt to carry it out, and evidence that it succeeded.
 
-At dispatch, bind the job to the selected goal revision, design revision, and slice-plan revision. If the agent needs to change the approved plan, it records the proposed change and applies it only within its actual authority. The human can inspect what changed and why. Explicit human constraints remain binding until revised by the appropriate authority; suggestions and delegated implementation freedoms remain visibly distinguishable.
+At dispatch, record the observed goal revision for chronology and bind the job to the approved definition digest, pinned design references, and exact slice-plan revision. A routine progress write cannot substitute a new definition or invalidate that binding. If the execution agent needs to change the approved plan, it records the proposed change and applies it only within its actual authority. The human can inspect what changed and why. Explicit human constraints remain binding until revised by the appropriate authority; suggestions and delegated implementation freedoms remain visibly distinguishable.
 
 The repository has slice admission and a first-slicing marker, but this inspection has not established a complete editable slice-plan owner. Providing that durable plan and its links to dispatched attempts is a required backend capability if no existing owner covers it. A browser-only checklist or reconstruction from job names cannot satisfy the feature.
 
@@ -523,6 +628,8 @@ Use authoritative session, process, claim, and supervision records to establish 
 
 The human should be able to identify stalled progress, unanswered questions, capacity limits, repeated failures, and work that no longer has a live owner. The view distinguishes an observed condition from the brain's diagnosis of it. Fleet controls use checked operations with clear scope: stopping an agent conversation, parking a goal, and stopping an engine are different actions.
 
+Use [Node-owned execution control](#node-owned-execution-control) for the control boundary. Initially start/stop/resume/arm and process lifecycle actions are local-only, against enrolled delivery endpoints; remote observation never implies remote control support. When remote request handling is implemented, the seat detail shows the request's target, authority, age, expiry, acknowledgment, and result separately from the last observed process state. The agent can propose a reserved control; the human authorizes it and the node's owner carries it out.
+
 A durable inventory of registered seats and an aggregation path for remote observations must be verified before claiming fleet-wide coverage. Existing local session announcements alone cannot enumerate every registered but inactive seat. Missing sources appear as explicit coverage gaps.
 
 ### Decisions
@@ -531,7 +638,7 @@ Present a bounded question, relevant evidence, genuine alternatives, and the con
 
 The human can inspect original findings and supporting observations. The brain's retelling must not become the only accessible account of an independent examination.
 
-The inbox includes questions about scope, splits, budgets, exceptions, risks, and execution recovery. Every question links to the affected object, and answering it from that object's page resolves the same inbox entry. Recorded decisions can be searched by subject, author, and effect. Delegations of authority have a dedicated view showing scope, expiry, and withdrawal; granting a delegation is distinct from approving a particular goal.
+The inbox includes questions about scope, splits, budgets, exceptions, risks, and execution recovery. Every question links to the affected object, and answering it from that object's page resolves the same inbox entry. Recorded decisions can be searched by subject, author, and effect. Delegations of authority have a dedicated view showing owner-enforced scope, expiry, and withdrawal; unavailable scopes are not offered as configurable choices. Granting a delegation is distinct from approving a particular goal.
 
 From a recorded decision or refusal, the human can inspect its basis and raise a challenge linked to the original subject. Any resulting revision follows the applicable authority path and preserves the earlier decision and its reasons.
 
@@ -543,11 +650,11 @@ Where live observations are unavailable, show that limitation explicitly. Record
 
 ### Settings and setup
 
-Settings holds choices that configure the workspace or its infrastructure rather than one piece of work. Its named pages cover runtime installation and capability checks, model and role preferences, channels and connections, human identity and enrollment, execution defaults, and evidence storage and retention. A value shows its effective setting and source so a local override cannot look like a project-wide change.
+Settings holds choices that configure the workspace or its infrastructure rather than one piece of work. Its named pages cover runtime installation and capability checks, model and role preferences, channels and connections, human identity and enrollment, execution defaults including brain allocations and per-sitting limits, and evidence storage and retention. A value shows its effective setting and source so a local override cannot look like a project-wide change.
 
 Project-specific requirements and assurance belong under Project. A goal's budget belongs in its Definition. A live seat's engine controls belong in Fleet. Those views can link to the applicable setting without moving all configuration into one undifferentiated form.
 
-Setup and recovery must support browser-native proof of human authority. Where the current implementation requires an enrolled interactive terminal, extending the authority owner to accept an equally explicit authenticated browser act is a backend requirement. Passing the agent's credentials through a form or asking the human to run a terminal verb does not satisfy this design.
+Use [Human acts from the browser](#human-acts-from-the-browser) for pairing, per-act proof, credential custody, and recovery. The initial flow relies on an independently enrolled authority; Settings states that prerequisite and the read-only limitation when it is absent. Complete browser-native first enrollment and recovery are required for final operation coverage. A terminal panel or a form that merely asserts a human name does not satisfy that requirement.
 
 ## Complete human operations through the interface
 
@@ -560,13 +667,13 @@ The following map comes from static inspection of `cmd/metasystem/main.go` and t
 | Establish or revise purpose, constraints, and architecture | Project editors and contextual sitting | Existing document owners, covenant and project configuration operations |
 | Create, edit, order, group, or restrict where goals run | Backlog Definition, board ordering, outline, and dependencies | `goal open/edit/set-next/set-priority/set-arc/detach/set-pin`; classification and obligation operations |
 | Split goals and maintain their execution plan | Backlog Plan: Split into goals, Plan slices, Revise remaining work | `goal split`, recorded decomposition and membership, slice admission; editable slice-plan ownership still to establish |
-| Approve work, withdraw it, or revise its budget | Backlog readiness actions and Definition; linked Decisions item | `goal approve/unapprove/set-budget/extend-budget`, within the caller's authority |
+| Approve work, withdraw it, or revise its budget | Backlog readiness actions and Definition; linked Decisions item | `goal approve/unapprove/budget/extend-budget`, within the caller's authority |
 | Pause, resume, release, transfer, abandon, or reopen work | Backlog item actions, linked from Fleet | `goal park/unpark/resume/release/steal/handover/abandon/reopen`; relevant claim operations |
 | Record exceptional permission, risk acceptance, or recurring obligations | The affected goal or finding and its Decisions record | `goal accept-risk/carry/set-obligation/discharge-review-obligation/read-items` and the applicable authority checks |
 | Delegate authority or withdraw a delegation | Decisions → Delegations | `goal grant/revoke` and the current authority owner's scope and expiry rules |
-| Designate the brain and manage conversation continuity | Fleet seat role and conversation session controls | `brain declare/show/withdraw`, applicable boot, session, and context handoff operations |
-| Start, stop, resume, or inspect execution infrastructure | Fleet machine or seat controls, with scope explicit | Top-level `up/stop/status/arm/health`, session stop, supervision and steward operations |
-| Launch, follow up, cancel, inspect, or acknowledge an authorized run | Goal Execution or Fleet run detail | Public `delegate`, `launch`, `unit`, and `run` workflows, including supported claim and ownership operations |
+| Designate the brain and manage conversation continuity | Fleet seat role and conversation session controls | `brain declare/show/withdraw`, boot and lease/session ownership; terminal/UI brain occupants exclude each other |
+| Start, stop, resume, or inspect execution infrastructure | Fleet machine or seat controls, with target and request/result state explicit | Top-level `up/stop/status/arm/health`, session stop, supervision and steward owners at enrolled local endpoints; remote control requires the new addressed request owner |
+| Launch, follow up, cancel, inspect, or acknowledge an authorized run | Goal Execution or Fleet run detail | Public `delegate`, `launch`, `unit`, and `run` workflows at the owning delivery node, including claim and ownership checks; the brain checkout cannot execute them |
 | Define and run a bounded mission | Goal Execution → execution agreement and run details | Public mission contract validation/sealing and `mission start/resume/status/answer/resolve-taint` |
 | Ask, answer, or withdraw a human question; inspect channel delivery | Decisions and its connected-channel delivery detail | `channel ask/show/close/status`, mission answers, and existing durable answer handling |
 | Inspect or run checks and examine findings | Project → Constraints and assurance; goal Evidence → Checks and reviews | Public `test`, covenant evidence, conformance, validation, and proof-run workflows |
@@ -579,7 +686,7 @@ The following map comes from static inspection of `cmd/metasystem/main.go` and t
 
 An operation that requires an independent worker or custodian remains under that role. For example, the human can request examination and inspect its results; the UI cannot manufacture a clean examination by setting a flag. Existing human authority to authorize acceptance, exceptions, or recovery remains available through its actual checked operation.
 
-The map covers capability groups, not a certification that all browser handlers exist. Before implementation is considered complete, maintain an operation coverage inventory against the actual routed command surface and its subcommands. Each entry must identify its intended caller, public capability, UI location, required fields, authority, preconditions, result, recovery path, and an acceptance scenario. Record the brain's read, propose, and perform permissions separately, and identify the existing view or editor that presents each result. Classify entries as a direct human action, machinery within a human workflow, or genuinely internal/test-only. A human-facing capability cannot be dropped merely because its current entry point looks technical.
+The map covers capability groups, not a certification that all browser handlers exist. Before implementation is considered complete, maintain an operation coverage inventory against the actual routed command surface and its subcommands. Each entry must identify its intended caller, public capability, UI location, required fields and closed argument schema, authority, preconditions, owner preview/basis support, typed result/refusal and recovery path, local/remote support, and an acceptance scenario. Record the brain's read, propose, and perform permissions and material-effect restrictions separately, and identify the existing view or editor that presents each result. Serve the inventory through bounded catalogue queries and `describeOperation`, rather than loading one tool definition per verb into every turn. Classify entries as a direct human action, machinery within a human workflow, or genuinely internal/test-only. A human-facing capability cannot be dropped merely because its current entry point looks technical.
 
 Low-level record mutation, process bookkeeping, adapters, test fixtures, and internal workers execute through their owning workflows. They are not unrestricted forms for bypassing those workflows. Where a capability has no suitable domain operation yet, record the missing backend work explicitly rather than using arbitrary shell execution or direct file mutation as a substitute.
 
@@ -587,9 +694,9 @@ Low-level record mutation, process bookkeeping, adapters, test fixtures, and int
 
 All action surfaces share a small interaction pattern: select the subject, state the intended change, inspect its consequence where material, perform the checked operation, and show the durable result. Common actions keep the form short; more consequential actions reveal the additional information they actually require.
 
-The application supplies current allowed actions and refusal reasons from the owning domain. The browser can help validate inputs, but it does not maintain an independent authority or transition policy. The server repeats the checks against current state at submission and records the actual human or agent actor.
+The required owner extensions in [Preparation and decision basis](#preparation-and-decision-basis) supply allowed actions, preview, typed refusals, and affected references. These are backend work, not currently complete API capabilities. The browser can validate inputs but does not maintain an independent authority or transition policy. Submission rechecks basis, current state, and actual authority inside the owning transaction.
 
-Long operations return an operation identity and display progress, outcome, and evidence. A disconnected tab can reattach to that operation. Bulk actions show scope and per-item results and never imply atomicity that the backend does not provide. Sensitive changes bind to the reviewed versions; stale proposals are returned for reconsideration.
+Long operations return an operation identity and display progress, outcome, and evidence. A disconnected tab can reattach to that operation. Bulk actions show scope and per-item results and never imply atomicity that the backend does not provide. Sensitive changes bind to the reviewed basis; material changes require reconsideration. Node controls additionally show request delivery and acknowledgment; unknown git publication blocks writes at workspace scope.
 
 Translate a refusal into the affected subject, the unmet condition, and available next actions. If a current command error recommends another verb, provide the corresponding contextual recovery action. Requiring the human to copy that command into a terminal is an uncovered workflow, not a finished user experience.
 
@@ -621,7 +728,9 @@ Several foundations exist, but their presence does not establish a complete brow
 
 The split implementation is particularly relevant to the interface: it preserves decomposition history, creates unapproved queued members, and refuses a new goal split once slicing has begun. A complete human planning experience therefore needs both a proposal editor and supported revision/successor workflows. It cannot be implemented as free editing of the rendered hierarchy.
 
-Project-specific vision and doctrine are recognized in the adoption documentation, while a dedicated structured store for sittings, their open questions, and their connection to these artifacts has not been established by this inspection. Before adding storage, identify each project's existing owner. Reuse it where present; where absent, add a minimal versioned artifact in the appropriate existing category: active material in `plans/`, standing explanation in project documentation, living registers in `memory/`, and concluded history in `records/`. This is a proposal for integration, not a claim that every corresponding writer or schema already exists.
+Project-specific vision and doctrine are recognized in the adoption documentation. Reuse each project's existing document owner; where working-material metadata is absent, add minimal versioned subject, status, source-reference, and sitting-reference fields in the appropriate existing category: active material in `plans/`, standing explanation in project documentation, living registers in `memory/`, and concluded history in `records/`. Raw sitting transcripts and result correlation belong in the separate protected server-local store described above. Neither storage contract is a claim that its writer already exists.
+
+Backend requirements identified by the critique are the new command edge and authority outcomes; clone lifecycle, fetch and journal recovery integration; owner preparation, basis checks, typed refusals and changed references; canonical `DefinitionRefs` and compatible migration; protected interactive ACP hosting and MCP tools; exclusive brain occupancy; isolated sitting storage and usage accounting; and addressed remote control requests. The editable slice-plan owner, durable fleet inventory/observation aggregation, and retained-evidence joins still require focused owner investigation. Each gate is staged below rather than treated as a small adapter task.
 
 The UI may maintain a rebuildable index of artifact types, identifiers, links, and source versions to support navigation and search. The index must not become a second source of intent, authority, or execution state. Moving from an exploratory note to a design to executable work changes its recorded status and relationships explicitly; appearing under a menu never grants it authority.
 
@@ -648,7 +757,7 @@ These extend the required editing, impact previews, evidence links, and contextu
 
 ## Delivery scope
 
-Provide six connected capabilities in the first useful version:
+The intended complete interface provides six connected capabilities:
 
 1. A permanent Brain workspace with a docked conversation, explicit shared view context, authorized domain tools, and confirmed results shown through normal application views and conversation result cards.
 2. A Project workspace and resumable sitting beside a live draft, available before any executable goal exists.
@@ -657,7 +766,23 @@ Provide six connected capabilities in the first useful version:
 5. A Fleet view of registered seats and observed activity, with links to goals and delegates and explicit limits on source coverage.
 6. A decision inbox that records explicit human choices against the exact subject and version being decided.
 
-These establish the primary interaction: shape the project, prepare and authorize work, observe execution, investigate its evidence, and revise intent. Fleet inventory, evidence drill-down, and direct human planning are core scope rather than optional later dashboards.
+These establish the primary interaction: shape the project, prepare and authorize work, observe execution, investigate its evidence, and revise intent. Fleet inventory, evidence drill-down, and direct human planning remain required scope. They are not all available from today's backends, so the first deliverable is deliberately smaller.
+
+### Dependency-ordered delivery gates
+
+Keep this document as the coherent product and architecture design. Implement through the following bounded units; a detailed owner contract may be extracted when work reaches it, without requiring a separate satellite document for every finding.
+
+| Gate | Deliverable | Prerequisites and limit |
+| --- | --- | --- |
+| 1. Readable workspace | Dedicated clone, accepted-tip reads and freshness; stable navigation, Backlog and goal detail, local Fleet, and Decisions over existing records; reference-based context and result views | No model or mutation required. Mark unknown lanes, missing links, and remote coverage honestly. Validate human task walkthroughs before many forms |
+| 2. Shared command foundations | Trusted per-request principals and moved role fences; serialized publication/journal recovery; owner preview, basis checks, typed refusals, and changed references for goal read/edit first | Establish owner contracts and retry/recovery behavior before exposing writes. Audit proof/history format compatibility across readers |
+| 3. Protected human and brain access | Existing-authority browser pairing and per-act challenges; host/agent isolation; one ACP provider's interactive host and bounded MCP tools; exclusive brain occupancy, private sitting store, and budget enforcement | Credential custody and full-envelope enforcement must be demonstrated before browser human acts or mutating brain tools. A read-only sitting can be offered only with verified read isolation |
+| 4. First complete edit | A queued goal is edited through the brain, shown in its ordinary editor, edited by the human, and discussed again; cards, `present`, interrupted outcomes, and basis conflicts work | Gates 2 and 3 must hold. Approved/claimed/parked cases expose their real refusals or proposals; this gate does not claim the whole goal editor |
+| 5. Project and planning | Owned intent/design working material; `DefinitionRefs` migration and approval binding; guided approved-definition revision; split editor and supported slice-plan/revision owner | Build each owner contract before its form. Preserve source history and explicit intermediate states across document, goal, and approval operations |
+| 6. Fleet and evidence | Durable registered-seat inventory, remote observations, node-owned request/acknowledgment control, retained artifact retrieval and goal-to-attempt joins | Local-only controls remain labeled until addressed control is built. Broader evidence coverage cannot be inferred from a timeline or empty remote response |
+| 7. Complete human coverage | Remaining routed operation families, exceptional recovery, browser-native first authority enrollment and recovery, setup and maintenance | Every public human capability has a browser flow, current owner authority, recovery, and an acceptance scenario; gaps are named until complete |
+
+Sitting isolation and accounting belong before the first live brain, not at the end of an evidence-retention programme. The result-reveal mechanism remains a small addition to ordinary forms and routing; the substantive work in these gates is exposing MetaSystem authority, persistence, and missing domain capabilities safely.
 
 Complete operation coverage is a requirement for the finished interface. Delivery may proceed in coherent stages, but remaining human workflows must be named as unfinished until they have usable browser flows, including enrollment, exceptional decisions, maintenance, and recovery. An initial useful version is not yet complete merely because routine goal execution works.
 
@@ -686,9 +811,9 @@ Start with one verified provider integration while keeping provider-specific beh
 - Each user-visible object type can be discussed and inspected through agent tools, with its supported proposals and actions available according to the brain's permissions.
 - The human asks why work is blocked. The answer links to the recorded blocker and any pending decision; the underlying status is also directly inspectable.
 - The human records intent without approving execution. The record changes, and no work becomes authorized solely because of that action.
-- A proposal refers to an artifact that changes before submission. The interface exposes the changed basis and requires the decision to address the current version.
+- A proposal's decision-relevant fields or adopted references change before submission. The owner refuses the stale basis and the interface exposes the difference. An unrelated next-step update alone does not invalidate the review.
 - A browser disconnects during a decision operation. Reconnection reveals whether the decision was recorded and does not submit a duplicate.
-- A design created in a sitting proceeds to independent examination by an actor that did not receive the sitting's exploratory context.
+- A design created in a sitting proceeds to independent examination by an actor that cannot read the sitting's exploratory context through its filesystem or tools.
 - The brain becomes unavailable while seats are working. Authorized work and deterministic supervision continue independently.
 - A claim about application behavior distinguishes the intended behavior from what the available implementation or production evidence establishes.
 - A new project has no goals. The human and brain capture intent, architecture alternatives, and open questions, leave the session, and resume without creating executable work.
@@ -709,27 +834,39 @@ Start with one verified provider integration while keeping provider-specific beh
 - Each human-facing operation in the coverage inventory has a structured browser path and a meaningful result. Internal helpers are reachable only through their appropriate workflows, and no required human flow ends with “run this verb.”
 - A task walkthrough beginning with a new project's intent proceeds through architecture, backlog definition, splitting, authorization, fleet execution, and outcome evidence without duplicate records or a change of mental model.
 
-## Decisions still needed before implementation
+### Critique-derived proof obligations
 
-- Which provider and ACP adapter supply the first supported integration, and which session capabilities can actually be relied upon?
-- How does that provider expose the application's domain tools, and how are their actual results shared with the conversation and normal frontend views?
-- Which existing owner result fields and retry protections can be reused directly in the shared-operation implementation, and which require narrow additions?
-- What bounded view-context format covers selections, filters, pinned subjects, draft excerpts, and versions consistently across every section?
-- What is the initial access model: local browser use, remote authenticated use, or both?
-- Which existing Go application operations expose the required reads and writes, and where are capabilities missing?
-- How are sitting records stored and linked to existing authoritative records without creating competing state?
-- How does the browser establish human authority for reserved decisions using the application's existing authority model?
-- What project and fleet scope does one workspace cover, and how are concurrent sittings kept understandable?
-- Which parts of the first version can use current application evidence, and which require additional observations?
-- What current source owns the durable inventory of registered seats, and how will remote observations be aggregated without treating disconnected machines as idle?
-- Which current record relationships support the complete goal-to-delegate-to-evidence drill-down, and which missing links need explicit capture?
-- What retention and remote retrieval guarantees support inspection of completed work, and how will older incomplete records be presented?
-- Which project-owned documents already hold vision, architecture, doctrine, and success criteria, and what minimal metadata is needed to expose them in the proposed navigation?
-- How do the existing operation and phase owners supply the proposed board lanes, including blocked approved work and work waiting to land?
-- What durable owner and version binding support editable slice plans, their dispatch, and revision after execution begins?
-- Which published decomposition changes can use existing member edits, and which require additional checked successor or regrouping operations?
-- How will browser identity satisfy every existing human authority boundary, including enrollment and exceptional repair, without requiring terminal commands?
-- Which public operations or subcommands need new structured APIs, and what coverage inventory will prevent uncommon human workflows from being omitted?
-- Do representative human task walkthroughs confirm that the permanent Brain workspace and the Project, Backlog, Fleet, Decisions, Application, and Settings sections make each action discoverable without knowing the command vocabulary?
+These are requirements for future implementation verification, not tests run for this documentation amendment.
 
-These decisions should refine the implementation while preserving the central relationship: the human and the brain develop understanding and intent together, durable records carry that intent forward, and the delivery machinery acts within its recorded authority.
+| Finding | Required observation |
+| --- | --- |
+| UID-R1-01 | A form and a brain tool edit record different real actors. A forged human name is refused by the owner; neither actor is inherited from the server's OS parent |
+| UID-R1-02 | With its full granted tools, the brain cannot read authority credentials or complete a human act through MCP or HTTP. Cross-origin requests, consumed codes, expired challenges, and changed approval bases are refused. Successful History records the browser proof and authority identity |
+| UID-R1-03 | Another clone's valid publication becomes visible after fetch. A pushed unknown blocks all writes through the server clone while reads expose their age. Recovery preserves each journal outcome and never duplicates the mutation |
+| UID-R1-04 | An unreachable remote target leaves a stop requested/unacknowledged, then expired as appropriate, never stopped. The local equivalent reaches the enrolled delivery owner. A successor incarnation cannot consume a predecessor's request |
+| UID-R1-05 | Withdrawal preview names the standing claim that parks. Publication matches reviewed effects when relevant state is unchanged; material drift returns a comparison before publication. Preview itself performs no writes or execution effects |
+| UID-R1-06 | Rewording an approved goal produces a proposal and no automatic withdrawal/edit/approval; a permitted queued-goal edit succeeds. Interruption after human withdrawal leaves the correct unapproved/parked state visible |
+| UID-R1-07 | The goals affected by a new design revision are discoverable from canonical reference fields without an index or prose parsing. Legacy records do not gain invented bindings, and incompatible readers cannot consume the new format |
+| UID-R1-08 | A next-step change irrelevant to an intent review is preserved and does not block the edit; a changed intent or governing reference does. Publication races rerun the basis check inside the transaction |
+| UID-R1-09 | The chosen provider has usable interactive MCP tools and cannot write around them via files, subprocesses, native tools, or human endpoints. Unsupported envelope capabilities prevent the unsafe integration from being enabled |
+| UID-R1-10 | An undeclared checkout or competing terminal occupant cannot open a writing brain sitting. A permitted sitting uses the declared brain boot context and current exclusive lease |
+| UID-R1-11 | An examiner cannot read raw sitting transcripts or exploratory notes through any granted root or tool. A new brain on another machine resumes from selected shared working material alone |
+| UID-R1-12 | Five supporting reads produce no work-area navigation; one `present` call opens the existing view once in the participating tab when context is still appropriate. It cannot select arbitrary routes or change data |
+| UID-R1-13 | The read-only workspace is useful at gate 1; gates 2 and 3 are evidenced before the first edit. Missing planning, remote control, evidence, and onboarding capabilities remain explicitly unfinished |
+| UID-R1-14 | At the sitting's budget limit no paid continuation starts. A permitted context rollover or provider change consumes the same remaining allocation. Explicitly authorized continuation preserves working material and shows the handover |
+| UID-R1-15 | The initial tool catalogue stays at seven definitions as operation coverage grows; operation schemas load on demand, unsupported operation names are refused, and owner permissions are rechecked |
+
+## Remaining implementation investigations
+
+The command-edge model, initial loopback access, clone ownership, actor classes, challenge approach, transcript placement, tool shape, and presentation signal are decided above. They must not be silently reopened as adapter choices. The following work remains at the relevant delivery gate:
+
+- Select the first provider and demonstrate the complete envelope, usage accounting, interactive session, resume, and MCP requirements. No provider interchangeability is claimed yet.
+- Specify and verify browser-proof construction, protected secret custody, enrollment/code-use concurrency, outcome grammar compatibility, and each operation owner's authority boundary. Design first enrollment/recovery with no surviving enrolled root before claiming complete onboarding.
+- Specify the narrow context/result schemas and owner preparation/refusal APIs for each operation as it is exposed; retain the small tool surface and frontend-owned routing.
+- Identify existing owners for durable seat inventory, remote observations, board phase projection, and retained evidence. Record missing facts instead of manufacturing a complete view.
+- Establish the slice-plan owner, exact dispatch links, and legal successor/regrouping operations; implement the canonical definition-reference migration before promising complete planning fidelity.
+- Specify the fleet request/acknowledgment owner, delivery bounds, authority verification at the target, and incarnation-safe recovery before enabling remote controls.
+- Establish evidence retention/retrieval guarantees and show older incomplete records honestly. Determine project-owned document locations and minimal working-material metadata without duplicating intent.
+- Audit all routed human capabilities and conduct representative walkthroughs for discoverability, keyboard operation, and recovery. A workflow is incomplete while its browser path or authority root is missing.
+
+These investigations preserve the central relationship: the human and the brain develop understanding and intent together, durable records carry that intent forward, and delivery machinery acts within its recorded authority. Remote browser access and richer UI control remain separate future scope.

@@ -917,8 +917,16 @@ if adopt_leg default; then
   fill_harness_conf "$pruned_tgt/metasystem.conf" "$tmp/adopt-pruned-skill-evidence"
   fill_harness_testing_contract "$srcrepo/testing.json" "$pruned_tgt/testing.json"
   rm -rf "$pruned_tgt/skills/take-a-step-back"
+  # This standalone refusal runs inside an outer proof. Give only its nested
+  # launcher a private, config-authorized admission directory; the adopted
+  # target still uses its actual Claude runtime and registration inventory.
+  pruned_admission_root="$tmp/pruned-admission-authority"
+  mkdir -p "$pruned_admission_root"
+  printf 'metasystem.runtimes=fake\n' >"$pruned_admission_root/metasystem.conf"
   if METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY=ready \
       harness_fixture_without_outer_proof env -u METASYSTEM_VALIDATE_RELAUNCHED \
+      METASYSTEM_PROOF_ADMISSION_TEST_DIR="$tmp/pruned-host-admission" \
+      METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="$pruned_admission_root" \
       bash "$pruned_tgt/scripts/agents/validate-section-selector.sh" run runtime-contract-audits \
       >"$tmp/dangling.out" 2>&1; then
     echo "adopt: validation missed a dangling registered skill link" >&2

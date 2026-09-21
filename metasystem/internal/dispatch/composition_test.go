@@ -249,6 +249,14 @@ func TestComposeRolePacketStagesBriefToFitPacketCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := packetFitRoot(t)
+	// Exercise the byte-cap staging rule with fixed fixture guidance. The live
+	// orchestration document grows independently of this packet-size scenario.
+	if err := os.WriteFile(filepath.Join(root, "docs", "orchestration.md"), bytes.Repeat([]byte("fixture guidance\n"), 128), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.max-inline-input-kb=16\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
 		name string
 		body []byte
@@ -277,8 +285,8 @@ func TestComposeRolePacketStagesBriefToFitPacketCap(t *testing.T) {
 			if len(record.References) != 1 || record.References[0].Slot != "task-direction" {
 				t.Fatal("the brief was not staged to fit the complete packet")
 			}
-			if len(packet) > 65536 {
-				t.Fatalf("packet has %d bytes, cap is 65536", len(packet))
+			if len(packet) > 16*1024 {
+				t.Fatalf("packet has %d bytes, cap is %d", len(packet), 16*1024)
 			}
 		})
 	}

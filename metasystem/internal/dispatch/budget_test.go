@@ -194,11 +194,11 @@ func TestConsumptionLensUsesCandidateProofIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, decision, err := proofrun.ReserveLocked(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
+	_, decision, err := proofrun.ReserveLocked(dispatchFixtureProofAdmission(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "authority", GoalRevision: 5, AccountingRevision: 5,
 		CandidateGoalID: "candidate", CandidateRevision: 3, ReservedMinutes: 5,
 		Identity: identity, Launcher: launcher, Now: time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC), AttemptID: "candidate-charge",
-	}, "0"))
+	}, "0")))
 	if err != nil {
 		t.Fatal(err)
 	}

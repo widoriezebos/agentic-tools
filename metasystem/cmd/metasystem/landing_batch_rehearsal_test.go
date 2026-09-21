@@ -67,20 +67,9 @@ func TestBatchLandingRehearsalOnRealOrigin(t *testing.T) {
 	batchE2EProcessEnvironment.Lock()
 	t.Cleanup(batchE2EProcessEnvironment.Unlock)
 
-	// The seed clock must be the clock that actually governs this run, which is
-	// the real one. METASYSTEM_GOAL_NOW is set below and is INERT here:
-	// fixtureauth.ClockProbe.GoalNow (fixtureauth.go:242) returns early unless
-	// the authorization carries fixtureMode, and FixtureModeRoot
-	// (fixtureauth.go:292) reads metasystem.conf, never metasystem.conf.local,
-	// while writeControlConf declares metasystem.runtimes=fake only in the
-	// .local file. Nothing reports that, because the loud path in New()
-	// triggers only when METASYSTEM_FAKE_PROCESS_IDENTITY_FILE is also set and
-	// this rehearsal never sets it. A frozen seed therefore ages against the
-	// real clock: on 2026-09-20 every goal was seeded claimed at
-	// 2026-09-19T15:55:00Z under a 4h elapsed limit, so the landing root
-	// breach-stopped all three seconds after handover and every proof was
-	// refused CANDIDATE_GOAL_REFUSED state=fenced. Seeding from the real clock
-	// keeps the whole run inside one elapsed budget whenever it is run.
+	// The local fake-runtime setting authorizes METASYSTEM_GOAL_NOW. Seed the
+	// goals from the same instant supplied to that clock so their elapsed
+	// budgets describe the rehearsal run rather than an earlier fixed date.
 	run := &batchRehearsalRun{t: t, seats: map[string]string{}, branchTips: map[string]string{}, expectedBlobs: map[string][]byte{}, now: time.Now().UTC().Truncate(time.Second)}
 	run.requireInputs()
 	t.Cleanup(run.report)

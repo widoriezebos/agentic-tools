@@ -71,8 +71,8 @@ if [[ "$fixture_scenario" == batch-conflicting-join-refused ]]; then
 fi
 
 if [[ "$fixture_scenario" == batch-join-static-red-refused ]]; then
-  (cd "$root" && go test -count=1 -run '^TestBatchJoinRefusesRedStep$' ./internal/landing/batch)
-  (cd "$root" && go test -count=1 -run '^TestLandingBatchJoinRefusesRedFastStaticGate$' ./cmd/metasystem)
+  (cd "$root" && go test -count=1 -run '^TestGLEBatchJoinRedAdmissionReturnsMemberBeforeMembership$' ./internal/landing/batch)
+  (cd "$root" && go test -count=1 -run '^TestGoalLandingHostContractRetainsPriorGroupsAndGoGate$' ./cmd/metasystem)
   echo "land batch-join-static-red-refused fixture passed"
   exit 0
 fi
@@ -2028,6 +2028,12 @@ if [[ "$fixture_scenario" == abandonment-route-recertified ]]; then
   # The recertified route is seeded below so it retains the exact conformance
   # records and both the pre-push success and parent-moved refusal controls.
   prepare_abandonment_landing_leg abandonment-recertified
+  [[ -n "$fixture_isolated_home" ]] || { echo "recertified fixture has no isolated admission home" >&2; exit 1; }
+  recert_admission_authority=$fixture_isolated_home/admission-authority
+  mkdir -p "$recert_admission_authority"
+  printf '%s\n' 'metasystem.runtimes=fake' >"$recert_admission_authority/metasystem.conf"
+  export METASYSTEM_PROOF_ADMISSION_TEST_DIR="$fixture_isolated_home/host-admission"
+  export METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="$recert_admission_authority"
   recert_root=abandonment-recertified-root
   recert_critic=abandonment-recertified-critic
   recert_chain=$leg_root/chain

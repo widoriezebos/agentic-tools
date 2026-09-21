@@ -23,7 +23,11 @@ func candidateProofAdmission(request proofrun.AdmissionRequest) proofrun.Admissi
 	if request.Identity.CommandClass == "testing" && request.CandidateTree == "" {
 		request.CandidateTree = strings.Repeat("b", 40)
 	}
-	return proofrun.WithTestHostLoadSampler(request, "0")
+	return dispatchFixtureProofAdmission(proofrun.WithTestHostLoadSampler(request, "0"))
+}
+
+func dispatchFixtureProofAdmission(request proofrun.AdmissionRequest) proofrun.AdmissionRequest {
+	return proofrun.WithTestHostAdmissionDirectory(request, filepath.Join(request.ControlRoot, "artifacts", "agents", "host-admission"))
 }
 
 func requireProofReservationNotAdmissionRefused(t *testing.T, decision proofrun.LaunchResult) {

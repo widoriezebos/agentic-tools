@@ -352,15 +352,26 @@ func TestHCL34PlanExecutesEveryFixture(t *testing.T) {
 		}
 	}
 
-	// The two required negative drives prove that explicit lists cannot lose a
-	// newly added fixture silently.
+	// The two required negative drives prove that explicit named lists cannot
+	// silently claim a newly added fixture. A whole-package group may also be
+	// selected, but it does not make a named inventory complete.
 	for _, negative := range []owner{owners[0], owners[10]} {
 		plan, err := Select(contract, SelectionRequest{ChangedPaths: []string{negative.changed}, RequestedMode: ModeAuto, Purpose: PurposeDelivery})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if hclPlanCovers(contract, plan, negative.pkg, "TestHCL99NegativeInventoryProbe") {
-			t.Errorf("negative inventory probe was unexpectedly covered for %s", negative.changed)
+		selected := set(plan.SelectedGroups)
+		for _, group := range contract.Groups {
+			if !selected[group.ID] || group.Adapter != "go" || !contains(group.Packages, negative.pkg) {
+				continue
+			}
+			all, names, err := GoTests(group)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !all && contains(names, "TestHCL99NegativeInventoryProbe") {
+				t.Errorf("negative inventory probe entered explicit %s inventory for %s", group.ID, negative.changed)
+			}
 		}
 	}
 

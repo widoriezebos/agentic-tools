@@ -184,13 +184,6 @@ func settleResourceWatchdog(watched <-chan error, donePath string, bound time.Du
 	var doneErr error
 	if donePath != "" {
 		doneErr = touchDone(donePath)
-		if errors.Is(doneErr, os.ErrExist) {
-			// The launcher normally publishes done first. A pre-existing
-			// regular marker already provides the same cancellation signal.
-			if info, err := os.Lstat(donePath); err == nil && info.Mode().IsRegular() {
-				doneErr = nil
-			}
-		}
 	}
 	if watched == nil {
 		return doneErr == nil, doneErr

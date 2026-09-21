@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -371,18 +372,18 @@ type admissionBatteryEvent struct {
 	err      error
 }
 
-// The admission decision itself never waits for the host guard. A caller may
-// submit the same request again after the short competing decision finishes.
-func reserveConcurrentBattery(request AdmissionRequest) (Attempt, LaunchResult, error) {
-	var attempt Attempt
-	var decision LaunchResult
-	var err error
-	for tries := 0; tries < 100; tries++ {
-		attempt, decision, err = ReserveLocked(request)
-		if err != nil || decision.Disposition != DispositionAdmissionRefused || decision.Reason != "host proof admission is busy" {
+// The first call competes for the real nonblocking host guard. A busy caller
+// retries only after the competing call has returned and released that guard.
+func reserveConcurrentBattery(request AdmissionRequest, returned chan<- struct{}, competitorReturned, abort <-chan struct{}) (Attempt, LaunchResult, error) {
+	attempt, decision, err := ReserveLocked(request)
+	close(returned)
+	if err == nil && decision.Disposition == DispositionAdmissionRefused && decision.Reason == "host proof admission is busy" {
+		select {
+		case <-competitorReturned:
+		case <-abort:
 			return attempt, decision, err
 		}
-		time.Sleep(time.Millisecond)
+		return ReserveLocked(request)
 	}
 	return attempt, decision, err
 }
@@ -413,21 +414,28 @@ func TestConcurrentTopLevelAttemptsCompleteWithNestedAndJoinedReceipts(t *testin
 	}
 
 	events := make(chan admissionBatteryEvent, 8)
+	startTop := make(chan struct{})
 	nestedReceipts := make(chan struct{})
+	joinedReceipts := make(chan struct{})
 	finish := make(chan struct{})
-	var nestedOnce, finishOnce sync.Once
+	topReturned := []chan struct{}{make(chan struct{}), make(chan struct{})}
+	nestedReturned := []chan struct{}{make(chan struct{}), make(chan struct{})}
+	var nestedOnce, joinedOnce, finishOnce sync.Once
 	var workers sync.WaitGroup
 	defer func() {
 		nestedOnce.Do(func() { close(nestedReceipts) })
+		joinedOnce.Do(func() { close(joinedReceipts) })
 		finishOnce.Do(func() { close(finish) })
 		workers.Wait()
 	}()
-	for _, fixture := range batteries {
+	for index, fixture := range batteries {
 		fixture := fixture
+		index := index
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			topAttempt, topDecision, err := reserveConcurrentBattery(fixture.request)
+			<-startTop
+			topAttempt, topDecision, err := reserveConcurrentBattery(fixture.request, topReturned[index], topReturned[1-index], finish)
 			events <- admissionBatteryEvent{battery: fixture.name, stage: "top", attempt: topAttempt, decision: topDecision, err: err}
 			if err != nil || topDecision.Disposition != DispositionExecuted {
 				return
@@ -440,11 +448,12 @@ func TestConcurrentTopLevelAttemptsCompleteWithNestedAndJoinedReceipts(t *testin
 			nestedRequest.Launcher = processIdentity(fixture.child.exact, 0)
 			nestedRequest.Identity.CommandClass += "-nested"
 			nestedRequest.Identity.IdentityDigest = nestedRequest.Identity.digest()
-			nestedAttempt, nestedDecision, err := reserveConcurrentBattery(nestedRequest)
+			nestedAttempt, nestedDecision, err := reserveConcurrentBattery(nestedRequest, nestedReturned[index], nestedReturned[1-index], finish)
 			events <- admissionBatteryEvent{battery: fixture.name, stage: "nested", attempt: nestedAttempt, decision: nestedDecision, err: err}
 			if err != nil || nestedDecision.Disposition != DispositionExecuted {
 				return
 			}
+			<-joinedReceipts
 
 			componentIdentity := strings.Repeat(fixture.name, 64)
 			joinedRequest := candidateAdmission(AdmissionRequest{ControlRoot: fixture.request.ControlRoot, GoalID: fixture.request.GoalID,
@@ -471,6 +480,7 @@ func TestConcurrentTopLevelAttemptsCompleteWithNestedAndJoinedReceipts(t *testin
 			events <- admissionBatteryEvent{battery: fixture.name, stage: "complete", attempt: topAttempt, err: err}
 		}()
 	}
+	close(startTop)
 
 	seenTop := map[string]bool{}
 	for range batteries {
@@ -490,13 +500,21 @@ func TestConcurrentTopLevelAttemptsCompleteWithNestedAndJoinedReceipts(t *testin
 	census.replace(topA, topB, childA, childB, extra)
 	nestedOnce.Do(func() { close(nestedReceipts) })
 	seenReceipts := map[string]map[string]bool{"a": {}, "b": {}}
-	for count := 0; count < 4; count++ {
+	for count := 0; count < 2; count++ {
 		event := <-events
-		if event.err != nil || event.stage != "nested" && event.stage != "joined" || event.decision.Disposition != DispositionExecuted {
-			t.Fatalf("nested or joined battery event = %+v", event)
-		}
-		if event.stage == "nested" && (event.decision.Disposition != DispositionExecuted || event.attempt.AttemptID == "") {
+		if event.err != nil || event.stage != "nested" || event.decision.Disposition != DispositionExecuted {
 			t.Fatalf("nested battery event = %+v", event)
+		}
+		if event.attempt.AttemptID == "" {
+			t.Fatalf("nested battery event = %+v", event)
+		}
+		seenReceipts[event.battery][event.stage] = true
+	}
+	joinedOnce.Do(func() { close(joinedReceipts) })
+	for count := 0; count < 2; count++ {
+		event := <-events
+		if event.err != nil || event.stage != "joined" || event.decision.Disposition != DispositionExecuted {
+			t.Fatalf("joined battery event = %+v", event)
 		}
 		seenReceipts[event.battery][event.stage] = true
 	}
@@ -545,16 +563,77 @@ func TestHeldHostAdmissionGuardRefusesWithoutAllocatingAttempt(t *testing.T) {
 		samples++
 		return hostload.Sample{Available: true, Cores: 18}
 	}
-	started := time.Now()
 	attempt, decision, err := ReserveLocked(request)
 	if err != nil || decision.Disposition != DispositionAdmissionRefused || decision.ExitStatus != ExitAdmissionRefused ||
-		attempt.AttemptID != "" || time.Since(started) > time.Second || samples != 0 {
-		t.Fatalf("contended admission waited or allocated: attempt=%+v decision=%+v samples=%d err=%v", attempt, decision, samples, err)
+		attempt.AttemptID != "" || samples != 0 {
+		t.Fatalf("contended admission allocated or sampled: attempt=%+v decision=%+v samples=%d err=%v", attempt, decision, samples, err)
 	}
 	attempts, err := ReadAttempts(request.ControlRoot)
 	if err != nil || len(attempts) != 0 {
 		t.Fatalf("contended admission retained partial attempt inventory: attempts=%+v err=%v", attempts, err)
 	}
+	t.Run("abort releases busy peer after competitor exits", func(t *testing.T) {
+		returned := make(chan struct{})
+		competitorReturned := make(chan struct{})
+		abort := make(chan struct{})
+		result := make(chan admissionBatteryEvent, 1)
+		go func() {
+			attempt, decision, err := reserveConcurrentBattery(request, returned, competitorReturned, abort)
+			result <- admissionBatteryEvent{attempt: attempt, decision: decision, err: err}
+		}()
+		<-returned // The real guard has refused this worker's first call.
+		close(abort)
+		event := <-result
+		if event.err != nil || event.decision.Disposition != DispositionAdmissionRefused || event.decision.Reason != "host proof admission is busy" || event.attempt.AttemptID != "" {
+			t.Fatalf("aborted busy worker = %+v", event)
+		}
+	})
+	t.Run("private fake roots retain real independent guards", func(t *testing.T) {
+		fakeRoot := func() string {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return root
+		}
+		firstRoot, secondRoot := fakeRoot(), fakeRoot()
+		firstPath := filepath.Join(firstRoot, "admission")
+		secondPath := filepath.Join(secondRoot, "admission")
+		first, err := hostAdmissionDirectoryForRequest(firstRoot, firstPath)
+		if err != nil || first != firstPath {
+			t.Fatalf("first fixture directory = %q, %v", first, err)
+		}
+		second, err := hostAdmissionDirectoryForRequest(secondRoot, secondPath)
+		if err != nil || second != secondPath || second == first {
+			t.Fatalf("second fixture directory = %q, %v", second, err)
+		}
+		firstGuard, held, err := tryHostFile(filepath.Join(first, "admission.lock"))
+		if err != nil || !held {
+			t.Fatalf("first fixture guard = %t, %v", held, err)
+		}
+		defer firstGuard.Close()
+		contender, held, err := tryHostFile(filepath.Join(first, "admission.lock"))
+		if contender != nil {
+			contender.Close()
+		}
+		if err != nil || held {
+			t.Fatalf("shared fixture domain did not contend: held=%t err=%v", held, err)
+		}
+		secondGuard, held, err := tryHostFile(filepath.Join(second, "admission.lock"))
+		if err != nil || !held {
+			t.Fatalf("independent fixture domain was blocked: held=%t err=%v", held, err)
+		}
+		defer secondGuard.Close()
+		if defaultPath, err := hostAdmissionDirectoryForRequest(firstRoot, ""); err != nil || defaultPath != directory {
+			t.Fatalf("absent selector changed default directory: %q, %v", defaultPath, err)
+		}
+		if _, err := hostAdmissionDirectoryForRequest(request.ControlRoot, filepath.Join(t.TempDir(), "invalid")); err == nil {
+			t.Fatal("nonfake control root selected private admission directory")
+		}
+		if _, err := hostAdmissionDirectoryForRequest(firstRoot, filepath.Join(string(filepath.Separator), "outside-proof-admission")); err == nil {
+			t.Fatal("outside-temp path selected private admission directory")
+		}
+	})
 }
 
 func assertAdmissionHasNoWaitPath(t *testing.T) {
