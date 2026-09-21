@@ -299,11 +299,18 @@ func (p Policy) Includes(projection Projection, name, prefix string) (bool, erro
 	if err != nil || normalized == "" {
 		return false, err
 	}
+	// Content on disk that is not repository content is outside EVERY
+	// projection, not only LANDING: an installed frontend dependency tree
+	// would otherwise join the ENGINE digest and, sitting under a payload
+	// root, the PAYLOAD one too (the gap E1 fell through, g1-s8 revision 2).
+	if matchesAny(p.NonRepositoryPaths, normalized) {
+		return false, nil
+	}
 	switch projection {
 	case Engine:
 		return matchesAny(p.EnginePaths, normalized), nil
 	case Landing:
-		return !matchesAny(p.CoordinationPaths, normalized) && !matchesAny(p.NonRepositoryPaths, normalized), nil
+		return !matchesAny(p.CoordinationPaths, normalized), nil
 	case Payload:
 		return matchesAny(p.PayloadRoots, normalized) && !p.tailored(normalized), nil
 	default:

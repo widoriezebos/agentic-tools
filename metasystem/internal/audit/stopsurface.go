@@ -301,7 +301,10 @@ func discoverStopSurfaceFiles(root string) ([]stopSurfaceFile, error) {
 		}
 		relative = filepath.ToSlash(relative)
 		if entry.IsDir() {
-			if relative == ".git" {
+			// node_modules is skipped by name at any depth, as vendor is
+			// elsewhere: an installed dependency tree is content on disk,
+			// never a stop surface (g1-s8 revision 5).
+			if relative == ".git" || entry.Name() == "node_modules" {
 				return filepath.SkipDir
 			}
 			return nil
