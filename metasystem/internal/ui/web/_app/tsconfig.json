@@ -10,7 +10,13 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "allowJs": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    // "node" types the build-time code only: vite.config.ts, scripts/, and the
+    // test files that read the tree from disk. "vite/client" declares the
+    // asset modules Vite resolves, which is how main.tsx's stylesheet imports
+    // are typed. Neither package ships a byte into bundle/dist: @types/node is
+    // erased at compile time and vite/client is a declaration file.
+    "types": ["node", "vite/client"]
   },
   "include": ["src", "scripts", "vite.config.ts"]
 }

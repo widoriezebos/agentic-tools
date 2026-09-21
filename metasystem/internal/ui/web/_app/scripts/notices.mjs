@@ -19,6 +19,25 @@ const HEADER = [
   "",
 ].join("\n");
 
+/**
+ * Packages whose published tarball carries no licence file, keyed
+ * name@version, with the source the committed copy under licences/ was taken
+ * from. Attribution cannot be dropped for them and must not be invented, so
+ * the text is the project's own, committed beside this script and named here
+ * with where it came from; the notices file says so for every such package. A
+ * package with neither a licence file nor a copy here still refuses the build.
+ *
+ * react-remove-scroll-bar is Radix's scroll-lock path, so it reaches the
+ * bundle; every version it has ever published omits the LICENSE its repository
+ * carries.
+ */
+const SUPPLEMENTED = new Map([
+  [
+    "react-remove-scroll-bar@2.3.8",
+    "https://github.com/theKashey/react-remove-scroll-bar/blob/master/LICENSE",
+  ],
+]);
+
 export function writeNotices(appDir, distDir) {
   const lock = JSON.parse(readFileSync(path.join(appDir, "package-lock.json"), "utf8"));
   const packages = lock.packages ?? {};
@@ -49,6 +68,7 @@ export function writeNotices(appDir, distDir) {
       "-".repeat(76),
       `${entry.name} ${entry.version}`,
       entry.license,
+      ...(entry.source === null ? [] : [`licence text from ${entry.source}; the published package ships none`]),
       "",
       entry.text.trimEnd(),
       "",
@@ -82,11 +102,23 @@ function read(appDir, location, entry) {
   if (license === "") {
     throw new Error(`${location} declares no licence`);
   }
-  const text = licenceText(dir);
-  if (text === null) {
-    throw new Error(`${location} ships no LICENSE or LICENCE file`);
+  const shipped = licenceText(dir);
+  if (shipped !== null) {
+    return { name: manifest.name, version: manifest.version, license, text: shipped, source: null };
   }
-  return { name: manifest.name, version: manifest.version, license, text };
+  const key = `${manifest.name}@${manifest.version}`;
+  const source = SUPPLEMENTED.get(key);
+  const copy = source === undefined ? null : committedText(appDir, key);
+  if (copy === null) {
+    throw new Error(`${location} ships no LICENSE or LICENCE file, and licences/${key}.txt holds no copy of one`);
+  }
+  return { name: manifest.name, version: manifest.version, license, text: copy, source };
+}
+
+/** The committed copy of a licence a package publishes without. */
+function committedText(appDir, key) {
+  const file = path.join(appDir, "licences", `${key.replace("/", "+")}.txt`);
+  return existsSync(file) ? readFileSync(file, "utf8") : null;
 }
 
 function identifier(entry, manifest) {

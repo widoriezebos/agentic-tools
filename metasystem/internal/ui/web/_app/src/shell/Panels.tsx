@@ -1,5 +1,5 @@
-import { Group, Panel, Separator } from "react-resizable-panels";
-import { useRef, useState, type ReactNode } from "react";
+import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
+import { useState, type ReactNode } from "react";
 
 import { viewportWidth } from "./media";
 import {
@@ -26,10 +26,11 @@ import {
  * the stored width survives a trip through a narrow window.
  */
 
-type DockHandle = { getSize: () => { inPixels: number } };
-
 export function Panels({ railWidth, work, dock }: { railWidth: number; work: ReactNode; dock: ReactNode }) {
-  const dockRef = useRef<DockHandle | null>(null);
+  // The library's own hook for the panel handle: it is a RefObject of exactly
+  // the type the Panel's panelRef prop takes, and getSize() reports both the
+  // pixel width and the percentage.
+  const dockRef = usePanelRef();
   const [initialWidth] = useState(() => fitDockWidth(readDockWidth(), viewportWidth(), railWidth));
 
   const save = (_layout: unknown, meta: { isUserInteraction: boolean }) => {
