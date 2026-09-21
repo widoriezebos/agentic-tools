@@ -317,3 +317,33 @@ Obligations the code critique checks by name:
 2. **Task receipts as gate 1 evidence.** `memory/receipts.log` has 227 lines naming a goal, with type, outcome, verify, built-by, and a note: the one durable per-task account that exists today. Reading it at the accepted tip needs a git read of one blob outside the goal subtree, which is a D32 export in `internal/goal` on M5's reasoning (the interface must not run its own git), and a line reader, which does not exist in `internal/receipt` and would be a second owner of the receipt grammar if written here, so it would be an exported reader in a new file there, the `g1-s5`/`g1-s6` precedent. Options: (a) defer, as this design does, naming the log as a `NotProjected` row; (b) a follow-on slice `g1-s11b`, two additive exports, one route field; (c) fold into gate 6's evidence joins. Recommendation: (a) now and (b) soon after, because it is the cheapest real evidence there is and needs no node access; but not in this slice, which already crosses two packages and the resolver.
 3. **`Info.Machine` and the nil-is-500 rule.** As written, a nil or erroring machine resolver answers 200 with `node.message`, because the goal is answerable without it. The alternative is to fold the nickname into `snapshot.Observation` on the `g1-s10` branch, one git read per observation beside `ResolveEndpoint`, which keeps `Info` at two closures and the rule intact but edits `snapshot.go`. Recommendation: as written; the rule is about a route's primary answer, and the reach line degrading to "not known" is the honest behaviour on a machine with no nickname.
 4. **Whether Evidence should show `Decisions` at all before `g1-s12`.** The seven verbs are recorded on the goal and are decision-shaped, but the Decisions slice owns questions and rulings as records of their own, and a `question=` on an `answer` line names a record this build cannot open. Options: (a) as written, the lines shown with `question` as text; (b) omit `Decisions` until `g1-s12` can link them. Recommendation: (a); the lines are the goal's own record, and an unlinked identifier is text, which is the resolver's rule everywhere else.
+
+## Planner's rulings, 2026-09-22
+
+Recorded before Sol's critique returns; a finding there may reopen any of them.
+
+**Open question 1 is settled by fact, and more widely than the design proposed.** The
+`LastVerb` defect was fixed on `ui-development` itself at `4b4afc5df`, not inside this
+slice: `internal/backlog/project.go` gained `lastVerbOn`, which walks back past history
+lines whose `Reason` begins `priority-order`. The first browser walkthrough of the merged
+list confirmed the design's count exactly — 47 of 155 live rows read "last done" while
+queued or parked before the fix and 0 after — and the fix is mutation-checked both ways.
+So this slice inherits a correct `rowOf` and fences `project.go` as it wished. The
+classification belongs to `internal/backlog` rather than to the detail, because the list
+and the page must not disagree about a record, which is the same reason `Detail.Row` is
+`rowOf`.
+
+**The Revision-to-History premise is true but is not an invariant, and the design is
+right to defend against it.** Verified on this ledger: all 155 live records under
+`plans/goals/` and all 430 archived under `records/goals/` have `Revision` exactly equal
+to their History line count, 585 of 585, zero mismatches. But the validator does not
+enforce it. `internal/goal/file.go:611` requires only that History be non-empty, and the
+revision checks at `:835`, `:841`, `:916` and `:997` are one-directional — a *referenced*
+revision may not exceed `len(History)`. A record whose `Revision` exceeded its History
+would validate, and one whose History exceeded its `Revision` would validate too. The
+equality is maintained by the writers, one appended line per bump, not by a rule.
+
+So the design's fallback — a record where they differ gets no revision labels and an
+`Absent` line — is load-bearing rather than defensive decoration, and the builder must
+not simplify it away on the grounds that the ledger satisfies the premise today. The
+labelling is a convenience derived from a convention; the History itself is the record.
