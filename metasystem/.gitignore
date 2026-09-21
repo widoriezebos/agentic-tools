@@ -1,4 +1,5 @@
 artifacts/
 bin/
+/internal/ui/web/_app/node_modules/
 /metasystem
 records/counselor/*.lock

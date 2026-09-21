@@ -78,6 +78,7 @@
     "bin/**",
     "docs/paper/.obsidian/**",
     "docs/paper/rendered/**",
+    "internal/ui/web/_app/node_modules/**",
     "metasystem.conf.local"
   ],
   "witnessSkips": [

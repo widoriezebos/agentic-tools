@@ -146,11 +146,20 @@ func readManifest(root string) (manifest, error) {
 // defeated the goal (measured 2026-08-29: 1h adopt with whole-tree
 // vs the armed class with projection scope).
 func hardExcluded(rel string) bool {
-	first := rel
-	if slash := strings.IndexByte(first, '/'); slash >= 0 {
-		first = first[:slash]
+	components := strings.Split(rel, "/")
+	if first := components[0]; first == "artifacts" || first == "bin" || first == ".git" {
+		return true
 	}
-	return first == "artifacts" || first == "bin" || first == ".git"
+	// An installed dependency tree is content on disk, never repository
+	// content: it is excluded by name at any depth, as vendor is skipped
+	// elsewhere, so a frozen candidate receives no copy of it (g1-s8
+	// revision 5, the exclusion slice).
+	for _, component := range components {
+		if component == "node_modules" {
+			return true
+		}
+	}
+	return false
 }
 
 var enginePolicy, enginePolicyErr = behaviorsurface.Load()

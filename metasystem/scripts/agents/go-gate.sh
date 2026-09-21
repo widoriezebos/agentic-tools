@@ -517,7 +517,25 @@ printf 'go gate: GOTOOLCHAIN: %s\n' "$(go env GOTOOLCHAIN)"
 # or crashing gofmt refuses the gate instead of passing silently
 # (go-production-grade B8).
 gofmt_rc=0
-unformatted=$(gofmt -l internal cmd 2>&1) || gofmt_rc=$?
+# gofmt recurses into every directory and skips only dot-prefixed names, so a
+# directory argument would hand it an installed frontend dependency tree. The
+# list comes from Git instead: every Go file Git sees, tracked or new, never an
+# ignored tree. -z prints each name verbatim and NUL-terminated, so spaces and
+# non-ASCII names survive the whole pipeline. The -f test drops index entries
+# deleted only in the working tree, which --cached still lists and which would
+# make gofmt exit 2 (g1-s8 revision 5, the exclusion slice).
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  unformatted=$(git ls-files -z --cached --others --exclude-standard -- '*.go' \
+    | while IFS= read -r -d '' f; do if [[ -f "$f" ]]; then printf '%s\0' "$f"; fi; done \
+    | xargs -0 -r gofmt -l 2>&1) || gofmt_rc=$?
+else
+  # A frozen witness export (proofrun.Freeze) and the script fixtures that
+  # drive this gate are trees, not repositories, and Git can enumerate
+  # neither. The directory walk is sound exactly there: the export already
+  # drops every node_modules through proofrun's hardExcluded, so the walk
+  # meets no dependency tree.
+  unformatted=$(gofmt -l internal cmd 2>&1) || gofmt_rc=$?
+fi
 # Every static tool runs regardless of earlier reds and the verdicts land
 # as ONE block (Ruling P / commit-gate-collect): a red gofmt no longer
 # hides what vet and staticcheck would have said, so one gate run teaches

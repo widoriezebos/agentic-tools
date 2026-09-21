@@ -154,6 +154,12 @@ func (p Pattern) Expand(root string) ([]string, error) {
 			}
 			return nil
 		}
+		// An installed dependency tree is content on disk, never repository
+		// content, and it is skipped by name at any depth exactly as vendor
+		// is skipped elsewhere (g1-s8 revision 5, the exclusion slice).
+		if item.IsDir() && item.Name() == "node_modules" {
+			return filepath.SkipDir
+		}
 		if item.IsDir() {
 			if current == start && static == len(p.components) && !p.subtree {
 				exactDirectory = true

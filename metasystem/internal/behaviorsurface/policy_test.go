@@ -115,8 +115,11 @@ func TestPolicyClassesAndProjectionBoundaries(t *testing.T) {
 		{"memory/instruction-ledger.md", Tailored, false, true, false},
 		{"memory/README.md", Standard, false, true, true},
 		{"bin/metasystem", NonRepository, false, false, false},
-		{"docs/paper/rendered/paper.pdf", NonRepository, false, false, true},
-		{"docs/paper/.obsidian/workspace.json", NonRepository, false, false, true},
+		// NON_REPOSITORY is content on disk that is not repository content,
+		// so it is outside every projection, PAYLOAD included (g1-s8
+		// revision 5, the exclusion slice): these two lie under docs/**.
+		{"docs/paper/rendered/paper.pdf", NonRepository, false, false, false},
+		{"docs/paper/.obsidian/workspace.json", NonRepository, false, false, false},
 		{".git/index", NonRepository, false, false, false},
 		{"metasystem.conf.local", Tailored, false, false, false},
 		{"skills/verify/SKILL.md", Standard, false, true, true},
