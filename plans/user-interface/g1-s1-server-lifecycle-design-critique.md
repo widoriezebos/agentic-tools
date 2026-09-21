@@ -38,4 +38,17 @@ Non-material findings folded in: the bounded lock wait is now a named technique 
 
 Lesson recorded for later slices: a finding that reverses a premise is verified along its whole chain, from the first cause to the claimed effect, before it is accepted.
 
-Round 3 follows, scoped to N1 to N5.
+## Round 3, 2026-09-21
+
+A fresh critic, scoped to N1 to N5. Verdict: 2 material findings, both accepted. N1 to N5 confirmed as corrected.
+
+On N1 the critic was asked to break the claim along its whole chain, because it had flipped once. It confirmed the filter at `internal/census/run.go:177` and the three argv0-anchored signatures, and then checked every other enumeration in the engine: the mission, job, proof-run, run, and steward stop families read records; the untracked family re-runs the same filtered census; the supervision family requires an owner tag and a `--component` argument in argv (`internal/supervise/arming.go:701`); the janitor selects from registry claims; run owners and announcements are driven by their own records; the mission runner sums a tree rooted at its own pid, and the detached server is reparented away from it; the lease's ancestry walk recognises steward plumbing by its second argument and would walk past the server. Result: nothing in the engine sees the interface server.
+
+| Finding | Problem | Disposition |
+| --- | --- | --- |
+| R1 | The launcher opened the log in a directory only the child created, so the first `ui start` in any checkout would fail at spawn, with no outcome row; and `Read`'s lock probe had no rule for a missing directory, which also left open whether a read-only `status` writes into a checkout | **Accept.** `Launch` and `Serve` create the directory; `Read` and `Stop` create nothing and report `stopped` when the directory or lock file is missing; a cannot-launch outcome row is added |
+| R2 | The listed test "a lock acquired after the bound fired is released" could not be written with the stated seams without a sleep or a poll | **Accept.** The unexported bounded-wait helper returns a completion channel that the in-package test waits on |
+
+Non-material, folded in: the options field is renamed `DigestFunc` so that `ExecutableDigest` names one thing; `LaunchSpec.Executable` is `os.Executable()` resolved by `cmd`; port 0 and `restart` are stated.
+
+**Loop closed at round 3.** Material findings fell from 11 to 5 to 2, and both remaining findings are expressible as tests. They become obligations O1 and O2 in the design's Verification section, which the code critique checks by name. A fourth round would be polishing.

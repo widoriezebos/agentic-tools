@@ -1,6 +1,6 @@
 # g1-s1 Server lifecycle
 
-- Gate 1, author Claude with the human, 2026-09-21. Revision 3, after [critique rounds 1 and 2](g1-s1-server-lifecycle-design-critique.md).
+- Gate 1, author Claude with the human, 2026-09-21. Revision 4, after [critique rounds 1 to 3](g1-s1-server-lifecycle-design-critique.md); the loop is closed, with two obligations for the code critique listed under Verification.
 - Refines the master at commit `94181f05a`: [Component responsibilities](../user-interface-design.md#component-responsibilities), [Scope and request principals](../user-interface-design.md#scope-and-request-principals), the browser protections in [Human acts from the browser](../user-interface-design.md#human-acts-from-the-browser), and [Trustworthy state and interaction](../user-interface-design.md#trustworthy-state-and-interaction).
 - Carries decisions D1, D2, D8, D9, D10, and D11 from the [implementation plan](../user-interface-implementation-plan.md).
 - Contributes to UID-R1-13 and to acceptance scenario 4 (the interface is usable with the engine stopped). It discharges neither alone.
@@ -55,6 +55,7 @@ Every outcome has one line and one exit code. `<address>` is `host:port`; `<reco
 | `start` | already running, record readable | `an interface server already runs for this checkout at http://<address>; stop it with: metasystem ui stop` | 1 |
 | `start` | lock held, no readable record | `an interface server already runs for this checkout (address unknown: <record> is missing or unreadable)` | 1 |
 | `start` | any other `failed <message>` from the child (port in use, unreadable executable) | `<message>` | 1 |
+| `start` | the child could not be launched at all | `cannot launch the interface server: <error>` | 1 |
 | `start` | no readiness line in time, or the pipe closed without one | `the interface server did not become ready; see <log path>` | 1 |
 | `status` | `running` | `interface running at http://<address> (pid <pid>, started <RFC 3339>, build <stamp>)` | 0 |
 | `status` | `running`, executable changed | the line above, then `the executable on disk differs from the one the interface is running; to pick it up: metasystem ui restart` | 0 |
@@ -94,7 +95,7 @@ type Options struct {
     Checkout         string
     Listen           string
     EngineBuild      string
-    ExecutableDigest func() (string, error)            // nil: lifecycle.ExecutableDigest
+    DigestFunc       func() (string, error)            // nil: ExecutableDigest
     NewHandler       func(bound net.Addr, rec Record) http.Handler
     Prober           identity.Prober
     Ready            func(address string)               // once, after the record is published
@@ -128,7 +129,7 @@ func Restart(checkout string, o StopOptions, start func() error) (StopOutcome, *
 func ServeArgs(checkout, metasystemRoot, listen string) []string
 
 type LaunchSpec struct {
-    Executable string
+    Executable string   // os.Executable(), resolved by cmd
     Args       []string // exactly ServeArgs(...)
     Dir        string // the checkout
     LogPath    string
@@ -153,6 +154,8 @@ func New(info Info, bound net.Addr) http.Handler
 ### State on disk
 
 `<checkout>/artifacts/agents/ui/` holds `server.flock`, `server.json`, `server.log`, and `server.log.1`. The directory is ignored by Git. No source or configuration lives there.
+
+**Who creates what.** Only a launch or a server creates anything. `Launch` creates the state directory before it spawns, because the launcher opens the log there. `Serve` creates the directory too, for `serve` run by hand, and creates `server.flock`. `Read` and `Stop` create nothing: they open `server.flock` without creating it, and a missing directory or a missing lock file means `stopped`, since nobody has ever served there. A read-only `status` therefore never writes into a checkout.
 
 **Record rule.** `server.json` is created, replaced, or removed only by a process that holds the exclusive lock on `server.flock`. Everything below follows from it.
 
@@ -181,13 +184,13 @@ Server timeouts: `ReadHeaderTimeout` 10s, `ReadTimeout` 30s, `IdleTimeout` 120s.
 
 ## Behaviour
 
-**Launch** (`lifecycle.Launch`, used by `start` and `restart`). Call `spawn`, then `ReadyLine(readyWait)`, default 10 seconds. The child writes exactly one newline-terminated line to the ready descriptor and closes it: `ready <host:port>` or `failed <message>`. `ready`: `Release` the child and return the address and pid. `failed`: return the message. `ErrReadyTimeout`, `io.EOF`, or any other line: `Kill` the child, which is still the launcher's own never-ready child, and return the not-ready error naming the log. A line cut off before its newline counts as `io.EOF`.
+**Launch** (`lifecycle.Launch`, used by `start` and `restart`). Create the state directory. Call `spawn`; if it fails, return the cannot-launch error. Then `ReadyLine(readyWait)`, default 10 seconds. The child writes exactly one newline-terminated line to the ready descriptor and closes it: `ready <host:port>` or `failed <message>`. `ready`: `Release` the child and return the address and pid. `failed`: return the message. `ErrReadyTimeout`, `io.EOF`, or any other line: `Kill` the child, which is still the launcher's own never-ready child, and return the not-ready error naming the log. A line cut off before its newline counts as `io.EOF`.
 
 **Child arguments.** `ServeArgs` returns exactly `ui serve --repo <checkout> --metasystem-root <root> --listen <address> --ready-fd 3`, with every value already resolved and validated by the launcher. The child therefore resolves nothing differently from its launcher, and a `--listen` or `--metasystem-root` given to `start` or `restart` takes effect.
 
 `ExecSpawn` runs the executable with `Args`, a new session (`Setsid`), standard input from the null device, standard output and error appended to `LogPath`, the checkout as working directory, and the write end of a fresh pipe as the first extra file, which is descriptor 3 in the child. After the child starts, the parent **closes its own copy of the write end**; otherwise the read end never reaches end of file. `ReadyLine` sets a read deadline on the read end, which an `os.Pipe` supports. The parent never rotates or truncates the log.
 
-**Bounded lock wait.** Wherever this design waits for the lock with a bound, a goroutine takes the blocking exclusive `flock` on its own open of `server.flock` and the caller selects between its result and `After(wait)`. If the bound fires first, the caller moves on, and the goroutine, should it acquire the lock later, releases it at once and closes the file, so a late acquisition can never wedge a server. `flock` locks belong to the open file description, so two opens in one process conflict as two processes would, which is what lets the tests below hold a real lock.
+**Bounded lock wait.** Wherever this design waits for the lock with a bound, a goroutine takes the blocking exclusive `flock` on its own open of `server.flock` and the caller selects between its result and `After(wait)`. If the bound fires first, the caller moves on, and the goroutine, should it acquire the lock later, releases it at once and closes the file, so a late acquisition can never wedge a server. The helper is unexported and returns, besides the file and whether it won, a channel that is closed when its goroutine has finished, whether by handing the lock over or by releasing a late one. Production callers ignore the channel; the in-package test of a late acquisition waits on it, so that test needs neither a sleep nor a poll. `flock` locks belong to the open file description, so two opens in one process conflict as two processes would, which is what lets the tests below hold a real lock.
 
 **Serve.**
 1. Validate the address; create the state directory.
@@ -202,7 +205,7 @@ Server timeouts: `ReadHeaderTimeout` 10s, `ReadTimeout` 30s, `IdleTimeout` 120s.
 
 When `serve` was launched with `--ready-fd`, `cmd` writes the ready or failed line there and closes it. A write error is ignored: the launcher may have died, and the server is up regardless and visible to `ui status`. Go does not raise SIGPIPE for that descriptor.
 
-**Read.** Read `server.json`. If it parses and its schema version is 1: alive is `running`; unknown is `uninspectable`, with no file touched. Otherwise, for a missing, dead, or unreadable record, probe the lock without blocking:
+**Read.** Read `server.json`. If it parses and its schema version is 1: alive is `running`; unknown is `uninspectable`, with no file touched. Otherwise, for a missing, dead, or unreadable record, probe the lock without blocking. If the state directory or `server.flock` does not exist, the state is `stopped` and nothing is created. Else:
 
 - Won: nobody serves, because a live server cannot coexist with a won lock. Remove whatever record is there, without probing again, and release. The state is `stale` when the removed record parsed, reporting its pid, else `stopped`.
 - Lost: somebody holds the lock. The state is `unreadable` when the record exists but does not parse or has another schema version, else `busy`. Nothing is touched.
@@ -229,6 +232,7 @@ When `serve` was launched with `--ready-fd`, `cmd` writes the ready or failed li
 | Recorded pid reused by another process | `AliveRef` reports dead; never signalled |
 | `server.json` truncated or of a future schema while a server runs | `unreadable`; nothing is signalled or removed. When nobody holds the lock, the file is removed under the lock |
 | Port already in use | `failed` line naming `--listen` and `ui.listen` |
+| `ui.listen` or `--listen` with port 0 | Every start binds a new free port, so `restart` does not return the same address. Port 0 is for tests and ad hoc use |
 | Two checkouts on one machine | Independent: separate state directories, each with its own configured port |
 | `restart` while the old server ignores SIGTERM | `timeout`, exit 1; no second server is started and the old one is left running |
 | A link on another page opens the interface | Served, by the navigation exemption in check 3 |
@@ -253,7 +257,7 @@ No new Go module dependency.
 
 - Each new package has `testmain_test.go` with `func TestMain(m *testing.M) { os.Exit(testenv.Main(m)) }`. Tests never call `os.Setenv`.
 - Every top-level test and independent subtest calls `t.Parallel()`. A package absent from the parallel ratchet has a ceiling of zero serial tests, and the ratchet file may not be edited.
-- No wall-clock sleeps and no polling loops in tests. Time, waiting, spawning, signalling, and hashing are injected (`Now`, `After`, `Spawn`, `Send`, `Prober`, `ExecutableDigest`); the context ends `Serve`.
+- No wall-clock sleeps and no polling loops in tests. Time, waiting, spawning, signalling, and hashing are injected (`Now`, `After`, `Spawn`, `Send`, `Prober`, `DigestFunc`); the context ends `Serve`.
 - No fixed ports in tests: `127.0.0.1:0`. State under `t.TempDir()`. Assertions with `testutil.Expect` and `testutil.Require`.
 - `cmd/metasystem/ui.go` contains routing, flag parsing, wiring, and printing only.
 
@@ -266,9 +270,14 @@ Go tests to add:
 - `lifecycle`, serve: the record carries the bound port and is removed when the context ends; a leftover record is removed at start; a second `Serve` is refused by the fast path while the first runs; the lock wait expiring gives `AlreadyRunningError` with an empty address.
 - `lifecycle`, read: every state, including that a reader who loses the lock probe removes nothing, and that a record replaced between the read and the probe is left alone.
 - `lifecycle`, stop and restart: every `StopOutcome`, with a fake prober and sender and a real lock held by the test on its own open of `server.flock`. A sender that releases that lock gives `stopped-now` with the record gone and SIGTERM sent exactly once. A sender that does nothing, with `After` firing at once, gives `timeout` with the record untouched; the same with the prober then reporting dead gives `stopped-now` with the record untouched. `busy` followed by `running` is signalled; `busy` twice returns `busy`. A lock acquired after the bound fired is released. `Restart` calls `start` only after `stopped`, `stale`, or `stopped-now`.
-- `lifecycle`, arguments and digest: `ServeArgs` yields the exact argument list; `Serve` fails when the digest function fails; `ExecutableChanged` is false when either digest is empty.
+- `lifecycle`, arguments and digest: `ServeArgs` yields the exact argument list; `Serve` fails when `DigestFunc` fails; `ExecutableChanged` is false when either digest is empty.
 - `lifecycle`, launch, with a fake `Spawn`: `ready`, `failed`, timeout, end of file, a partial line, and an unknown line; the child is killed in the last four and released only on `ready`.
 - `config`: default, flag over committed value, empty flag still wins when set.
+
+Two obligations from critique round 3, which the code critique checks by name:
+
+- **O1, no writes from a read.** `Read` and `Stop` on a checkout with no state directory return `stopped` and create no file or directory; `Launch` creates the state directory before spawning, and a failing `Spawn` yields the cannot-launch error.
+- **O2, late acquisition.** An in-package test holds the lock, runs the bounded wait with `After` firing at once, releases its lock, waits on the helper's completion channel, and then wins a non-blocking probe.
 
 Commands, from `metasystem/`: `go build ./...`; `go vet ./internal/ui/... ./internal/config/ ./cmd/metasystem/`; `go test ./internal/ui/... ./internal/config/`; and the `cmd/metasystem` tests that look families up (`TestUnitFamilyIsRegistered` and its neighbours in `launch_unit_test.go`, `goal_branch_test.go`, `launch_pack_test.go`). Run `bin/metasystem audit parallel-ratchet` without `--update` if it works, and note it if it does not.
 
