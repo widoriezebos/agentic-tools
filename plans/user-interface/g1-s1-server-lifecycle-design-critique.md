@@ -1,0 +1,25 @@
+# g1-s1 Server lifecycle: design critique
+
+Critic: Opus 5, fresh context, not the author. Designer and adjudicator: Claude. Materiality test: would an implementer working from this design build something different, or wrong, because of this finding?
+
+## Round 1, 2026-09-21
+
+Verdict: 11 material findings. All accepted; none refuted. The critic read source only and executed nothing. It verified every code reference in the design; two were off by one line and one named the wrong file.
+
+| Finding | Problem | Disposition |
+| --- | --- | --- |
+| F1 | The design claimed that an UNTRACKED interface server costs only a misleading line in the engine's `stop` output. False. The steward counts UNTRACKED processes (`internal/steward/census.go:74`); with no live worker it returns unknown and notifies instead of reviving (`verdict.go:130`); handoffs are held (`handoff.go:101`); the end-of-turn watchdog lists the process until it is acknowledged (`internal/supervise/watchdog.go:135`). A running interface suppresses automatic revival for the checkout | **Accept.** Verified by the designer in source. The design now states the real consequence. `g1-s17` is rescoped to the census, the steward, the handoff hold, the watchdog, and the `stop` wording, unblocked, and moved to directly after this slice. This slice's build is unchanged; its record already carries the identity the census will match |
+| F2 | `Read` and `Stop` removed a dead record without holding the lock, so a status check racing a new server could delete the new server's record and leave it running but invisible | **Accept.** New rule: the record is created, replaced, or removed only by a process holding the lock. Readers probe the lock without blocking and clean up only when they win it, after re-reading. A lock held with no live record is a new state, `busy` |
+| F3 | `ui stop` had no output or exit code for the stale and uninspectable outcomes, and `Restart` had to branch on a timeout that `Status.State` could not express | **Accept.** `Stop` returns its own outcome type with every case, each with a line and an exit code |
+| F4 | Check 3 refused a top-level navigation from a link on another page, which sends `Sec-Fetch-Site: cross-site` | **Accept.** A GET with `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document` is exempt. The response is not readable by the originating page and framing is denied separately |
+| F5 | The parent rotated `server.log` before launching, so a refused second `start` rotated a live server's log away | **Accept.** The parent never rotates. The child trims the log only after it holds the lock |
+| F6 | The end-of-file branch of the readiness read could not fire unless the parent closed its own copy of the pipe's write end, which the design did not say | **Accept.** Stated. A partial line is treated as no line |
+| F7 | `ui status --json` had no schema | **Accept**, by removal. The simple case comes first (D11); the exit code and the health route cover machine use. It returns when a consumer needs it |
+| F8 | The launch and handshake sat in `cmd/`, against the plan's convention, and were declared untestable | **Accept.** They move to `lifecycle.Launch` behind an injected spawn seam and are tested in process. Only the thin real spawn is left to the walkthrough |
+| F9 | The Host allow-set broke on port 80; `localhost` as a listen host resolves ambiguously; port 0 was not stated as valid | **Accept.** The listen host must be a loopback IP literal, and names including `localhost` are refused. Port 0 is valid. The allowed Host set adds the bare forms when the port is 80 |
+| F10 | `go-build.sh` stamps every dirty tree `dev-<HEAD>-dirty` (`scripts/agents/go-build.sh:75`), so the build-difference line stayed silent during exactly the server development D10 is for | **Accept.** The record carries a SHA-256 of the serving executable; `status` compares it with the executable that was invoked. The stamp is shown for information only |
+| F11 | An unparseable or future-schema record had no defined outcome, and produced the same wedge as F2 | **Accept.** New state `unreadable`, resolved by the same lock probe: removed under the lock when nobody serves, reported and left alone when somebody does |
+
+Non-material findings, folded in because they were free: the `KernelProber` citation; "kill the child" against "no SIGKILL" (the launch may kill its own never-ready child; `stop` never force-kills); `restart --listen` against "the same address" (restart resolves the address exactly as `start` does); the unreadable-record message of `AlreadyRunningError`; `<n>` used for both pid and seconds; a new server taking the lock during a stopper's wait (on timeout the stopper re-proves the original identity and reports stopped when it is dead); the `attention.go` pattern resolving through a different function than the design specifies. Not actioned: the blocked `flock` goroutine on the timeout path is never released, which is harmless because the command exits.
+
+Round 2 follows, scoped to these corrections, their consumers, and the findings above.
