@@ -24,13 +24,13 @@ func StartResult(spec LaunchSpec, spawn Spawn, readyWait time.Duration) Result {
 	return Result{[]string{fmt.Sprintf("interface running at http://%s (pid %d)", address, pid)}, 0}
 }
 
-func StatusResult(checkout string, prober identity.Prober, digest func() (string, error)) Result {
-	status, err := Read(checkout, prober)
+func StatusResult(stateRoot string, prober identity.Prober, digest func() (string, error)) Result {
+	status, err := Read(stateRoot, prober)
 	if err != nil {
 		return failure(err)
 	}
 	if status.State != Running {
-		return Result{[]string{stateLine(checkout, status.State, status.Record)}, 1}
+		return Result{[]string{stateLine(stateRoot, status.State, status.Record)}, 1}
 	}
 	rec := status.Record
 	result := Result{Lines: []string{fmt.Sprintf("interface running at http://%s (pid %d, started %s, build %s)", rec.Address, recordPid(rec), rec.StartedAt, rec.EngineBuild)}}
@@ -46,19 +46,19 @@ func StatusResult(checkout string, prober identity.Prober, digest func() (string
 	return result
 }
 
-func StopResult(checkout string, o StopOptions) Result {
-	outcome, rec, err := Stop(checkout, o)
-	return stopResult(checkout, outcome, rec, o.Wait, err)
+func StopResult(stateRoot string, o StopOptions) Result {
+	outcome, rec, err := Stop(stateRoot, o)
+	return stopResult(stateRoot, outcome, rec, o.Wait, err)
 }
 
-func RestartResult(checkout string, o StopOptions, start func() Result) Result {
+func RestartResult(stateRoot string, o StopOptions, start func() Result) Result {
 	var started *Result
-	outcome, rec, err := Restart(checkout, o, func() error {
+	outcome, rec, err := Restart(stateRoot, o, func() error {
 		result := start()
 		started = &result
 		return nil
 	})
-	result := stopResult(checkout, outcome, rec, o.Wait, err)
+	result := stopResult(stateRoot, outcome, rec, o.Wait, err)
 	if started == nil {
 		return result
 	}
@@ -70,7 +70,7 @@ func RestartResult(checkout string, o StopOptions, start func() Result) Result {
 	return result
 }
 
-func stopResult(checkout string, outcome StopOutcome, rec *Record, wait time.Duration, err error) Result {
+func stopResult(stateRoot string, outcome StopOutcome, rec *Record, wait time.Duration, err error) Result {
 	if err != nil {
 		return failure(err)
 	}
@@ -84,11 +84,11 @@ func stopResult(checkout string, outcome StopOutcome, rec *Record, wait time.Dur
 		if outcome == StopOutcome(Stopped) || outcome == StopOutcome(Stale) {
 			code = 0
 		}
-		return Result{[]string{stateLine(checkout, State(outcome), rec)}, code}
+		return Result{[]string{stateLine(stateRoot, State(outcome), rec)}, code}
 	}
 }
 
-func stateLine(checkout string, state State, rec *Record) string {
+func stateLine(stateRoot string, state State, rec *Record) string {
 	switch state {
 	case Stopped:
 		return "interface not running"
@@ -97,7 +97,7 @@ func stateLine(checkout string, state State, rec *Record) string {
 	case Uninspectable:
 		return fmt.Sprintf("cannot prove pid %d is the interface server; nothing was changed", recordPid(rec))
 	case Unreadable:
-		return fmt.Sprintf("a process holds the interface lock but %s cannot be read; nothing was changed", recordPath(checkout))
+		return fmt.Sprintf("a process holds the interface lock but %s cannot be read; nothing was changed", recordPath(stateRoot))
 	default:
 		return "the interface is starting or stopping; try again"
 	}
@@ -108,10 +108,10 @@ func recordPid(rec *Record) int64 {
 	return ref.Pid
 }
 
-func ServeFailure(checkout string, err error) string {
+func ServeFailure(stateRoot string, err error) string {
 	var running *AlreadyRunningError
 	if errors.As(err, &running) && running.Address == "" {
-		return fmt.Sprintf("an interface server already runs for this checkout (address unknown: %s is missing or unreadable)", recordPath(checkout))
+		return fmt.Sprintf("an interface server already runs for this checkout (address unknown: %s is missing or unreadable)", recordPath(stateRoot))
 	}
 	return err.Error()
 }

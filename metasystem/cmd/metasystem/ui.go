@@ -27,7 +27,7 @@ func runUIRestart(args []string) int { return runUI("restart", args) }
 
 func runUI(verb string, args []string) int {
 	flags := flag.NewFlagSet("ui "+verb, flag.ContinueOnError)
-	repo := flags.String("repo", ".", "checkout path")
+	repo := flags.String("repo", "", "checkout path (default: the checkout that contains the installation)")
 	root := flags.String("metasystem-root", "", "metasystem installation")
 	var listen string
 	var waitSeconds int64 = 15
@@ -53,23 +53,29 @@ func runUI(verb string, args []string) int {
 		ready = os.NewFile(uintptr(readyFD), "interface readiness")
 		defer ready.Close()
 	}
-	reportError := func(err error) int {
-		line := lifecycle.ServeFailure(*repo, err)
+	// A launched child reports its refusal to the launcher, which prints it
+	// unchanged; a human verb prints the same line itself. serve keeps its own
+	// output on standard error, where it logs.
+	refuse := func(line string) int {
 		if ready != nil {
 			fmt.Fprintln(ready, "failed "+line)
 			_ = ready.Close()
+			ready = nil
 		}
-		fmt.Fprintln(os.Stderr, line)
+		if verb == "serve" {
+			fmt.Fprintln(os.Stderr, line)
+		} else {
+			fmt.Println(line)
+		}
 		return 1
 	}
-	checkout, err := upRepositoryScope(*repo)
-	if err != nil {
-		return reportError(err)
-	}
-	*repo = checkout
 	metasystemRoot, err := upMetasystemRoot(*root)
 	if err != nil {
-		return reportError(err)
+		return refuse(err.Error())
+	}
+	roots, err := lifecycle.ResolveRoots(*repo, metasystemRoot)
+	if err != nil {
+		return refuse(err.Error())
 	}
 	if verb == "start" || verb == "serve" || verb == "restart" {
 		listenSet := false
@@ -78,13 +84,13 @@ func runUI(verb string, args []string) int {
 				listenSet = true
 			}
 		})
-		listen, err = config.UIListen(filepath.Join(metasystemRoot, "metasystem.conf"), listen, listenSet)
+		listen, err = config.UIListen(filepath.Join(roots.Installation, "metasystem.conf"), listen, listenSet)
 		if err != nil {
-			return reportError(err)
+			return refuse(err.Error())
 		}
 		listen, err = lifecycle.ValidateListen(listen)
 		if err != nil {
-			return reportError(err)
+			return refuse(err.Error())
 		}
 	}
 	prober := identity.KernelProber{}
@@ -96,25 +102,25 @@ func runUI(verb string, args []string) int {
 		}
 		return lifecycle.StartResult(lifecycle.LaunchSpec{
 			Executable: executable,
-			Args:       lifecycle.ServeArgs(checkout, metasystemRoot, listen),
-			Dir:        checkout,
-			LogPath:    filepath.Join(lifecycle.Dir(checkout), "server.log"),
+			Args:       lifecycle.ServeArgs(roots.Checkout, roots.Installation, listen),
+			Dir:        roots.Checkout,
+			LogPath:    filepath.Join(lifecycle.Dir(roots.StateRoot), "server.log"),
 		}, lifecycle.ExecSpawn, 0)
 	}
 	switch verb {
 	case "start":
 		return printUIResult(start())
 	case "status":
-		return printUIResult(lifecycle.StatusResult(checkout, prober, nil))
+		return printUIResult(lifecycle.StatusResult(roots.StateRoot, prober, nil))
 	case "stop":
-		return printUIResult(lifecycle.StopResult(checkout, stop))
+		return printUIResult(lifecycle.StopResult(roots.StateRoot, stop))
 	case "restart":
-		return printUIResult(lifecycle.RestartResult(checkout, stop, start))
+		return printUIResult(lifecycle.RestartResult(roots.StateRoot, stop, start))
 	case "serve":
 		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer cancel()
 		err := lifecycle.Serve(ctx, lifecycle.Options{
-			Checkout: checkout, Listen: listen, EngineBuild: supervise.BuildStamp, Prober: prober,
+			Roots: roots, Listen: listen, EngineBuild: supervise.BuildStamp, Prober: prober,
 			NewHandler: func(bound net.Addr, rec lifecycle.Record) http.Handler {
 				return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest}, bound)
 			},
@@ -128,7 +134,7 @@ func runUI(verb string, args []string) int {
 			},
 		})
 		if err != nil {
-			return reportError(err)
+			return refuse(lifecycle.ServeFailure(roots.StateRoot, err))
 		}
 		return 0
 	}

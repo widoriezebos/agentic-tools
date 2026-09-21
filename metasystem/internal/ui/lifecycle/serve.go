@@ -19,7 +19,7 @@ import (
 )
 
 type Options struct {
-	Checkout      string
+	Roots         Roots
 	Listen        string
 	EngineBuild   string
 	DigestFunc    func() (string, error)
@@ -94,10 +94,10 @@ func Serve(ctx context.Context, o Options) (result error) {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(Dir(o.Checkout), 0o755); err != nil {
+	if err := os.MkdirAll(Dir(o.Roots.StateRoot), 0o755); err != nil {
 		return err
 	}
-	if rec, err := readRecord(o.Checkout); err == nil {
+	if rec, err := readRecord(o.Roots.StateRoot); err == nil {
 		ref, _ := identity.ParseRef(rec.Process)
 		if identity.AliveRef(o.Prober, ref) == identity.Alive {
 			return &AlreadyRunningError{rec.Address}
@@ -106,22 +106,22 @@ func Serve(ctx context.Context, o Options) (result error) {
 	if o.LockWait == 0 {
 		o.LockWait = 5 * time.Second
 	}
-	f, won, _, err := waitLock(o.Checkout, true, o.LockWait, o.After)
+	f, won, _, err := waitLock(o.Roots.StateRoot, true, o.LockWait, o.After)
 	if err != nil {
 		return err
 	}
 	if !won {
 		refusal := &AlreadyRunningError{}
-		if rec, err := readRecord(o.Checkout); err == nil {
+		if rec, err := readRecord(o.Roots.StateRoot); err == nil {
 			refusal.Address = rec.Address
 		}
 		return refusal
 	}
 	defer releaseLock(f)
-	if err := removeRecord(o.Checkout); err != nil {
+	if err := removeRecord(o.Roots.StateRoot); err != nil {
 		return err
 	}
-	if err := rotateLog(o.Checkout); err != nil {
+	if err := rotateLog(o.Roots.StateRoot); err != nil {
 		return err
 	}
 	self, state, err := o.Prober.Probe(int64(os.Getpid()))
@@ -147,7 +147,7 @@ func Serve(ctx context.Context, o Options) (result error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	rec := Record{1, process, listener.Addr().String(), o.Checkout, o.Now().UTC().Format(time.RFC3339), o.EngineBuild, digest}
+	rec := Record{1, process, listener.Addr().String(), o.Roots.Checkout, o.Roots.Installation, o.Now().UTC().Format(time.RFC3339), o.EngineBuild, digest}
 	server := &http.Server{
 		Handler:           o.NewHandler(listener.Addr(), rec),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -158,10 +158,10 @@ func Serve(ctx context.Context, o Options) (result error) {
 	if err != nil {
 		return err
 	}
-	if _, err := atomicfile.WriteText(recordPath(o.Checkout), string(data)+"\n", o.Checkout); err != nil {
+	if _, err := atomicfile.WriteText(recordPath(o.Roots.StateRoot), string(data)+"\n", o.Roots.StateRoot); err != nil {
 		return err
 	}
-	defer func() { result = errors.Join(result, removeRecord(o.Checkout)) }()
+	defer func() { result = errors.Join(result, removeRecord(o.Roots.StateRoot)) }()
 	if o.Ready != nil {
 		o.Ready(rec.Address)
 	}
@@ -185,8 +185,8 @@ func Serve(ctx context.Context, o Options) (result error) {
 	return nil
 }
 
-func rotateLog(checkout string) error {
-	path := filepath.Join(Dir(checkout), "server.log")
+func rotateLog(stateRoot string) error {
+	path := filepath.Join(Dir(stateRoot), "server.log")
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil

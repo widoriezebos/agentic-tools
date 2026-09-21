@@ -23,20 +23,20 @@ type StopOptions struct {
 	After  func(time.Duration) <-chan time.Time
 }
 
-func Stop(checkout string, o StopOptions) (StopOutcome, *Record, error) {
-	status, err := Read(checkout, o.Prober)
+func Stop(stateRoot string, o StopOptions) (StopOutcome, *Record, error) {
+	status, err := Read(stateRoot, o.Prober)
 	if err != nil {
 		return "", nil, err
 	}
 	if status.State == Busy {
-		f, won, _, err := waitLock(checkout, false, o.Wait, o.After)
+		f, won, _, err := waitLock(stateRoot, false, o.Wait, o.After)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", nil, err
 		}
 		if won {
 			releaseLock(f)
 		}
-		status, err = Read(checkout, o.Prober)
+		status, err = Read(stateRoot, o.Prober)
 		if err != nil {
 			return "", nil, err
 		}
@@ -48,7 +48,7 @@ func Stop(checkout string, o StopOptions) (StopOutcome, *Record, error) {
 	ref, _ := identity.ParseRef(rec.Process)
 	err = identity.SignalExact(o.Prober, ref, syscall.SIGTERM, o.Send)
 	if errors.Is(err, identity.ErrGone) {
-		status, err := readInactive(checkout, nil)
+		status, err := readInactive(stateRoot, nil)
 		return StopOutcome(status.State), status.Record, err
 	}
 	if errors.Is(err, identity.ErrUninspectable) {
@@ -57,13 +57,13 @@ func Stop(checkout string, o StopOptions) (StopOutcome, *Record, error) {
 	if err != nil {
 		return "", rec, err
 	}
-	f, won, _, err := waitLock(checkout, false, o.Wait, o.After)
+	f, won, _, err := waitLock(stateRoot, false, o.Wait, o.After)
 	if err != nil {
 		return "", rec, err
 	}
 	if won {
 		defer releaseLock(f)
-		return StoppedNow, rec, removeRecord(checkout)
+		return StoppedNow, rec, removeRecord(stateRoot)
 	}
 	if identity.AliveRef(o.Prober, ref) == identity.Dead {
 		return StoppedNow, rec, nil
@@ -71,8 +71,8 @@ func Stop(checkout string, o StopOptions) (StopOutcome, *Record, error) {
 	return Timeout, rec, nil
 }
 
-func Restart(checkout string, o StopOptions, start func() error) (StopOutcome, *Record, error) {
-	outcome, rec, err := Stop(checkout, o)
+func Restart(stateRoot string, o StopOptions, start func() error) (StopOutcome, *Record, error) {
+	outcome, rec, err := Stop(stateRoot, o)
 	if err == nil && (outcome == StopOutcome(Stopped) || outcome == StopOutcome(Stale) || outcome == StoppedNow) {
 		err = start()
 	}

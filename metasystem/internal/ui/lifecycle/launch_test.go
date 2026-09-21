@@ -82,9 +82,7 @@ func TestLaunchReadinessOutcomes(t *testing.T) {
 			t.Parallel()
 
 			child := &fakeLaunchChild{line: test.line, readyErr: test.readyErr, pid: 4201}
-			checkout := t.TempDir()
-			logPath := filepath.Join(Dir(checkout), "server.log")
-			spec := LaunchSpec{Dir: checkout, LogPath: logPath}
+			spec := launchTestSpec(t)
 			address, pid, err := Launch(spec, func(LaunchSpec) (Child, error) {
 				return child, nil
 			}, 3*time.Second)
@@ -101,7 +99,7 @@ func TestLaunchReadinessOutcomes(t *testing.T) {
 			testutil.Require(t, "launch returned error", err != nil, true)
 			expectedError := test.wantError
 			if expectedError == notReady {
-				expectedError = "the interface server did not become ready; see " + logPath
+				expectedError = "the interface server did not become ready; see " + spec.LogPath
 			}
 			testutil.Expect(t, "launch error", err.Error(), expectedError)
 		})
@@ -112,9 +110,7 @@ func TestLaunchUsesDefaultReadinessWait(t *testing.T) {
 	t.Parallel()
 
 	child := &fakeLaunchChild{line: "ready 127.0.0.1:49152", pid: 4201}
-	checkout := t.TempDir()
-	spec := LaunchSpec{Dir: checkout, LogPath: filepath.Join(Dir(checkout), "server.log")}
-	_, _, err := Launch(spec, func(LaunchSpec) (Child, error) {
+	_, _, err := Launch(launchTestSpec(t), func(LaunchSpec) (Child, error) {
 		return child, nil
 	}, 0)
 
@@ -125,21 +121,33 @@ func TestLaunchUsesDefaultReadinessWait(t *testing.T) {
 func TestO1LaunchCreatesStateDirectoryBeforeSpawn(t *testing.T) {
 	t.Parallel()
 
-	checkout := t.TempDir()
+	spec := launchTestSpec(t)
 	spawnErr := errors.New("fork unavailable")
 	spawn := func(LaunchSpec) (Child, error) {
-		info, err := os.Stat(Dir(checkout))
+		info, err := os.Stat(filepath.Dir(spec.LogPath))
 		testutil.Require(t, "state directory stat error", err, nil)
 		testutil.Expect(t, "state path is a directory", info.IsDir(), true)
 		return nil, spawnErr
 	}
 
-	address, pid, err := Launch(LaunchSpec{Dir: checkout}, spawn, time.Second)
+	address, pid, err := Launch(spec, spawn, time.Second)
 
 	testutil.Expect(t, "address", address, "")
 	testutil.Expect(t, "pid", pid, 0)
 	testutil.Require(t, "launch returned error", err != nil, true)
 	testutil.Expect(t, "cannot-launch error", err.Error(), "cannot launch the interface server: fork unavailable")
+}
+
+// launchTestSpec runs the child in a checkout while its log, and so the state
+// directory the launcher creates, lives under a state root of its own.
+func launchTestSpec(t *testing.T) LaunchSpec {
+	t.Helper()
+
+	home := t.TempDir()
+	return LaunchSpec{
+		Dir:     filepath.Join(home, "checkout"),
+		LogPath: filepath.Join(Dir(filepath.Join(home, "state")), "server.log"),
+	}
 }
 
 type fakeLaunchChild struct {

@@ -23,11 +23,7 @@ func TestStartResult(t *testing.T) {
 		t.Parallel()
 
 		child := &fakeLaunchChild{line: "ready 127.0.0.1:49152", pid: 4201}
-		checkout := t.TempDir()
-		result := StartResult(LaunchSpec{
-			Dir:     checkout,
-			LogPath: filepath.Join(Dir(checkout), "server.log"),
-		}, func(LaunchSpec) (Child, error) {
+		result := StartResult(resultLaunchSpec(t), func(LaunchSpec) (Child, error) {
 			return child, nil
 		}, time.Second)
 
@@ -41,11 +37,7 @@ func TestStartResult(t *testing.T) {
 		t.Parallel()
 
 		child := &fakeLaunchChild{line: "failed cannot listen on --listen or ui.listen"}
-		checkout := t.TempDir()
-		result := StartResult(LaunchSpec{
-			Dir:     checkout,
-			LogPath: filepath.Join(Dir(checkout), "server.log"),
-		}, func(LaunchSpec) (Child, error) {
+		result := StartResult(resultLaunchSpec(t), func(LaunchSpec) (Child, error) {
 			return child, nil
 		}, time.Second)
 
@@ -58,8 +50,7 @@ func TestStartResult(t *testing.T) {
 	t.Run("spawn failure", func(t *testing.T) {
 		t.Parallel()
 
-		checkout := t.TempDir()
-		result := StartResult(LaunchSpec{Dir: checkout}, func(LaunchSpec) (Child, error) {
+		result := StartResult(resultLaunchSpec(t), func(LaunchSpec) (Child, error) {
 			return nil, errors.New("fork unavailable")
 		}, time.Second)
 
@@ -72,18 +63,28 @@ func TestStartResult(t *testing.T) {
 	t.Run("not ready", func(t *testing.T) {
 		t.Parallel()
 
-		checkout := t.TempDir()
-		logPath := filepath.Join(Dir(checkout), "server.log")
+		spec := resultLaunchSpec(t)
 		child := &fakeLaunchChild{readyErr: ErrReadyTimeout}
-		result := StartResult(LaunchSpec{Dir: checkout, LogPath: logPath}, func(LaunchSpec) (Child, error) {
+		result := StartResult(spec, func(LaunchSpec) (Child, error) {
 			return child, nil
 		}, time.Second)
 
 		testutil.Expect(t, "not-ready result", result, Result{
-			Lines: []string{"the interface server did not become ready; see " + logPath},
+			Lines: []string{"the interface server did not become ready; see " + spec.LogPath},
 			Code:  1,
 		})
 	})
+}
+
+// resultLaunchSpec spawns into a checkout while the log, and so the state
+// directory the launcher creates, lives under a state root of its own.
+func resultLaunchSpec(t *testing.T) LaunchSpec {
+	t.Helper()
+	home := t.TempDir()
+	return LaunchSpec{
+		Dir:     filepath.Join(home, "checkout"),
+		LogPath: filepath.Join(Dir(filepath.Join(home, "state")), "server.log"),
+	}
 }
 
 func TestStatusResultStates(t *testing.T) {
@@ -97,8 +98,8 @@ func TestStatusResultStates(t *testing.T) {
 		{"stopped", Stopped, func(string) string { return "interface not running" }},
 		{"stale", Stale, func(string) string { return "interface not running (stale record from pid 4201 removed)" }},
 		{"uninspectable", Uninspectable, func(string) string { return "cannot prove pid 4201 is the interface server; nothing was changed" }},
-		{"unreadable", Unreadable, func(checkout string) string {
-			return "a process holds the interface lock but " + recordPath(checkout) + " cannot be read; nothing was changed"
+		{"unreadable", Unreadable, func(stateRoot string) string {
+			return "a process holds the interface lock but " + recordPath(stateRoot) + " cannot be read; nothing was changed"
 		}},
 		{"busy", Busy, func(string) string { return "the interface is starting or stopping; try again" }},
 	}
@@ -106,13 +107,13 @@ func TestStatusResultStates(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			checkout, prober := resultStateFixture(t, test.state)
-			result := StatusResult(checkout, prober, func() (string, error) {
+			stateRoot, prober := resultStateFixture(t, test.state)
+			result := StatusResult(stateRoot, prober, func() (string, error) {
 				return "sha256:current", nil
 			})
 
 			testutil.Expect(t, "status result", result, Result{
-				Lines: []string{test.line(checkout)},
+				Lines: []string{test.line(stateRoot)},
 				Code:  1,
 			})
 		})
@@ -147,9 +148,9 @@ func TestStatusResultDigestComparison(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			checkout := t.TempDir()
-			rec, exact := resultTestRecord(t, checkout)
-			result := StatusResult(checkout, resultTestProber{exact: exact, state: identity.Alive}, test.digest)
+			stateRoot := t.TempDir()
+			rec, exact := resultTestRecord(t, stateRoot)
+			result := StatusResult(stateRoot, resultTestProber{exact: exact, state: identity.Alive}, test.digest)
 			expectedLines := []string{
 				"interface running at http://127.0.0.1:49152 (pid 4201, started 2026-09-21T12:34:56Z, build dev-test)",
 			}
@@ -175,19 +176,19 @@ func TestStopResult(t *testing.T) {
 		{"stopped", Stopped, func(string) string { return "interface not running" }, 0},
 		{"stale", Stale, func(string) string { return "interface not running (stale record from pid 4201 removed)" }, 0},
 		{"uninspectable", Uninspectable, func(string) string { return "cannot prove pid 4201 is the interface server; nothing was changed" }, 1},
-		{"unreadable", Unreadable, func(checkout string) string {
-			return "a process holds the interface lock but " + recordPath(checkout) + " cannot be read; nothing was changed"
+		{"unreadable", Unreadable, func(stateRoot string) string {
+			return "a process holds the interface lock but " + recordPath(stateRoot) + " cannot be read; nothing was changed"
 		}, 1},
 	}
 	for _, test := range passive {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			checkout, prober := resultStateFixture(t, test.state)
-			result := StopResult(checkout, StopOptions{Prober: prober, Wait: 15 * time.Second})
+			stateRoot, prober := resultStateFixture(t, test.state)
+			result := StopResult(stateRoot, StopOptions{Prober: prober, Wait: 15 * time.Second})
 
 			testutil.Expect(t, "stop result", result, Result{
-				Lines: []string{test.line(checkout)},
+				Lines: []string{test.line(stateRoot)},
 				Code:  test.code,
 			})
 		})
@@ -196,8 +197,8 @@ func TestStopResult(t *testing.T) {
 	t.Run("busy", func(t *testing.T) {
 		t.Parallel()
 
-		checkout, prober := resultStateFixture(t, Busy)
-		result := StopResult(checkout, StopOptions{
+		stateRoot, prober := resultStateFixture(t, Busy)
+		result := StopResult(stateRoot, StopOptions{
 			Prober: prober,
 			Wait:   15 * time.Second,
 			After:  resultImmediateAfter,
@@ -212,10 +213,10 @@ func TestStopResult(t *testing.T) {
 	t.Run("stopped now", func(t *testing.T) {
 		t.Parallel()
 
-		checkout := t.TempDir()
-		_, exact := resultTestRecord(t, checkout)
-		lock := resultTestLock(t, checkout, true)
-		result := StopResult(checkout, StopOptions{
+		stateRoot := t.TempDir()
+		_, exact := resultTestRecord(t, stateRoot)
+		lock := resultTestLock(t, stateRoot, true)
+		result := StopResult(stateRoot, StopOptions{
 			Prober: resultTestProber{exact: exact, state: identity.Alive},
 			Send: func(int, syscall.Signal) error {
 				return unix.Flock(int(lock.Fd()), unix.LOCK_UN)
@@ -233,10 +234,10 @@ func TestStopResult(t *testing.T) {
 	t.Run("timeout", func(t *testing.T) {
 		t.Parallel()
 
-		checkout := t.TempDir()
-		_, exact := resultTestRecord(t, checkout)
-		resultTestLock(t, checkout, true)
-		result := StopResult(checkout, StopOptions{
+		stateRoot := t.TempDir()
+		_, exact := resultTestRecord(t, stateRoot)
+		resultTestLock(t, stateRoot, true)
+		result := StopResult(stateRoot, StopOptions{
 			Prober: resultTestProber{exact: exact, state: identity.Alive},
 			Send:   func(int, syscall.Signal) error { return nil },
 			Wait:   15 * time.Second,
@@ -259,9 +260,9 @@ func TestRestartResult(t *testing.T) {
 	t.Run("stopped suppresses stop line", func(t *testing.T) {
 		t.Parallel()
 
-		checkout := t.TempDir()
+		stateRoot := t.TempDir()
 		starts := 0
-		result := RestartResult(checkout, StopOptions{Prober: resultTestProber{state: identity.Dead}}, func() Result {
+		result := RestartResult(stateRoot, StopOptions{Prober: resultTestProber{state: identity.Dead}}, func() Result {
 			starts++
 			return startSuccess
 		})
@@ -273,8 +274,8 @@ func TestRestartResult(t *testing.T) {
 	t.Run("stale line precedes start line", func(t *testing.T) {
 		t.Parallel()
 
-		checkout, prober := resultStateFixture(t, Stale)
-		result := RestartResult(checkout, StopOptions{Prober: prober}, func() Result {
+		stateRoot, prober := resultStateFixture(t, Stale)
+		result := RestartResult(stateRoot, StopOptions{Prober: prober}, func() Result {
 			return startSuccess
 		})
 
@@ -290,10 +291,10 @@ func TestRestartResult(t *testing.T) {
 	t.Run("stopped-now line precedes start line", func(t *testing.T) {
 		t.Parallel()
 
-		checkout := t.TempDir()
-		_, exact := resultTestRecord(t, checkout)
-		lock := resultTestLock(t, checkout, true)
-		result := RestartResult(checkout, StopOptions{
+		stateRoot := t.TempDir()
+		_, exact := resultTestRecord(t, stateRoot)
+		lock := resultTestLock(t, stateRoot, true)
+		result := RestartResult(stateRoot, StopOptions{
 			Prober: resultTestProber{exact: exact, state: identity.Alive},
 			Send: func(int, syscall.Signal) error {
 				return unix.Flock(int(lock.Fd()), unix.LOCK_UN)
@@ -315,9 +316,9 @@ func TestRestartResult(t *testing.T) {
 	t.Run("stop refusal does not start", func(t *testing.T) {
 		t.Parallel()
 
-		checkout, prober := resultStateFixture(t, Uninspectable)
+		stateRoot, prober := resultStateFixture(t, Uninspectable)
 		starts := 0
-		result := RestartResult(checkout, StopOptions{Prober: prober}, func() Result {
+		result := RestartResult(stateRoot, StopOptions{Prober: prober}, func() Result {
 			starts++
 			return startSuccess
 		})
@@ -342,8 +343,8 @@ func TestRestartResult(t *testing.T) {
 	t.Run("stale line precedes start failure", func(t *testing.T) {
 		t.Parallel()
 
-		checkout, prober := resultStateFixture(t, Stale)
-		result := RestartResult(checkout, StopOptions{Prober: prober}, func() Result {
+		stateRoot, prober := resultStateFixture(t, Stale)
+		result := RestartResult(stateRoot, StopOptions{Prober: prober}, func() Result {
 			return startFailure
 		})
 
@@ -363,11 +364,11 @@ func TestServeFailure(t *testing.T) {
 	t.Run("unknown address names record", func(t *testing.T) {
 		t.Parallel()
 
-		checkout := t.TempDir()
-		line := ServeFailure(checkout, &AlreadyRunningError{})
+		stateRoot := t.TempDir()
+		line := ServeFailure(stateRoot, &AlreadyRunningError{})
 
 		testutil.Expect(t, "serve failure", line,
-			"an interface server already runs for this checkout (address unknown: "+recordPath(checkout)+" is missing or unreadable)")
+			"an interface server already runs for this checkout (address unknown: "+recordPath(stateRoot)+" is missing or unreadable)")
 	})
 
 	t.Run("known address passes through", func(t *testing.T) {
@@ -400,31 +401,31 @@ func (p resultTestProber) Probe(int64) (identity.Exact, identity.Liveness, error
 
 func resultStateFixture(t *testing.T, state State) (string, identity.Prober) {
 	t.Helper()
-	checkout := t.TempDir()
+	stateRoot := t.TempDir()
 	switch state {
 	case Stopped:
-		return checkout, resultTestProber{state: identity.Dead}
+		return stateRoot, resultTestProber{state: identity.Dead}
 	case Stale:
-		resultTestRecord(t, checkout)
-		resultTestLock(t, checkout, false)
-		return checkout, resultTestProber{state: identity.Dead}
+		resultTestRecord(t, stateRoot)
+		resultTestLock(t, stateRoot, false)
+		return stateRoot, resultTestProber{state: identity.Dead}
 	case Uninspectable:
-		resultTestRecord(t, checkout)
-		return checkout, resultTestProber{state: identity.Unknown, err: errors.New("inspection unavailable")}
+		resultTestRecord(t, stateRoot)
+		return stateRoot, resultTestProber{state: identity.Unknown, err: errors.New("inspection unavailable")}
 	case Unreadable:
-		resultTestLock(t, checkout, true)
-		testutil.Require(t, "write unreadable record", os.WriteFile(recordPath(checkout), []byte("not json\n"), 0o644), nil)
-		return checkout, resultTestProber{state: identity.Dead}
+		resultTestLock(t, stateRoot, true)
+		testutil.Require(t, "write unreadable record", os.WriteFile(recordPath(stateRoot), []byte("not json\n"), 0o644), nil)
+		return stateRoot, resultTestProber{state: identity.Dead}
 	case Busy:
-		resultTestLock(t, checkout, true)
-		return checkout, resultTestProber{state: identity.Dead}
+		resultTestLock(t, stateRoot, true)
+		return stateRoot, resultTestProber{state: identity.Dead}
 	default:
 		testutil.Require(t, "supported fixture state", state, Stopped)
 		return "", nil
 	}
 }
 
-func resultTestRecord(t *testing.T, checkout string) (Record, identity.Exact) {
+func resultTestRecord(t *testing.T, stateRoot string) (Record, identity.Exact) {
 	t.Helper()
 	exact := identity.Exact{Pid: 4201, StartedAt: time.Unix(1_700_000_000, 123_456_000)}
 	if runtime.GOOS == "linux" {
@@ -437,22 +438,23 @@ func resultTestRecord(t *testing.T, checkout string) (Record, identity.Exact) {
 		SchemaVersion:    1,
 		Process:          process,
 		Address:          "127.0.0.1:49152",
-		Checkout:         checkout,
+		Checkout:         "/work/checkout",
+		Installation:     "/work/checkout/metasystem",
 		StartedAt:        "2026-09-21T12:34:56Z",
 		EngineBuild:      "dev-test",
 		ExecutableDigest: "sha256:serving",
 	}
 	data, err := json.Marshal(rec)
 	testutil.Require(t, "marshal result record", err, nil)
-	testutil.Require(t, "create result state directory", os.MkdirAll(Dir(checkout), 0o755), nil)
-	testutil.Require(t, "write result record", os.WriteFile(recordPath(checkout), append(data, '\n'), 0o644), nil)
+	testutil.Require(t, "create result state directory", os.MkdirAll(Dir(stateRoot), 0o755), nil)
+	testutil.Require(t, "write result record", os.WriteFile(recordPath(stateRoot), append(data, '\n'), 0o644), nil)
 	return rec, exact
 }
 
-func resultTestLock(t *testing.T, checkout string, held bool) *os.File {
+func resultTestLock(t *testing.T, stateRoot string, held bool) *os.File {
 	t.Helper()
-	testutil.Require(t, "create lock directory", os.MkdirAll(Dir(checkout), 0o755), nil)
-	lock, err := os.OpenFile(lockPath(checkout), os.O_CREATE|os.O_RDWR, 0o644)
+	testutil.Require(t, "create lock directory", os.MkdirAll(Dir(stateRoot), 0o755), nil)
+	lock, err := os.OpenFile(lockPath(stateRoot), os.O_CREATE|os.O_RDWR, 0o644)
 	testutil.Require(t, "open result lock", err, nil)
 	if held {
 		testutil.Require(t, "hold result lock", unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB), nil)

@@ -14,16 +14,19 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
-func Dir(checkout string) string { return filepath.Join(checkout, "artifacts", "agents", "ui") }
+// Dir is the lifecycle state directory beneath the state root, beside the
+// steward's and the supervision's.
+func Dir(stateRoot string) string { return filepath.Join(stateRoot, "artifacts", "agents", "ui") }
 
-func recordPath(checkout string) string { return filepath.Join(Dir(checkout), "server.json") }
-func lockPath(checkout string) string   { return filepath.Join(Dir(checkout), "server.flock") }
+func recordPath(stateRoot string) string { return filepath.Join(Dir(stateRoot), "server.json") }
+func lockPath(stateRoot string) string   { return filepath.Join(Dir(stateRoot), "server.flock") }
 
 type Record struct {
 	SchemaVersion    int    `json:"schemaVersion"`
 	Process          string `json:"process"`
 	Address          string `json:"address"`
 	Checkout         string `json:"checkout"`
+	Installation     string `json:"installation"`
 	StartedAt        string `json:"startedAt"`
 	EngineBuild      string `json:"engineBuild"`
 	ExecutableDigest string `json:"executableDigest"`
@@ -45,8 +48,8 @@ type Status struct {
 	Record *Record
 }
 
-func readRecord(checkout string) (*Record, error) {
-	data, err := os.ReadFile(recordPath(checkout))
+func readRecord(stateRoot string) (*Record, error) {
+	data, err := os.ReadFile(recordPath(stateRoot))
 	if err != nil {
 		return nil, err
 	}
@@ -63,8 +66,8 @@ func readRecord(checkout string) (*Record, error) {
 	return &rec, nil
 }
 
-func Read(checkout string, prober identity.Prober) (Status, error) {
-	rec, err := readRecord(checkout)
+func Read(stateRoot string, prober identity.Prober) (Status, error) {
+	rec, err := readRecord(stateRoot)
 	if err == nil {
 		ref, _ := identity.ParseRef(rec.Process)
 		switch identity.AliveRef(prober, ref) {
@@ -74,11 +77,11 @@ func Read(checkout string, prober identity.Prober) (Status, error) {
 			return Status{Uninspectable, rec}, nil
 		}
 	}
-	return readInactive(checkout, err)
+	return readInactive(stateRoot, err)
 }
 
-func readInactive(checkout string, recordErr error) (Status, error) {
-	f, won, err := probeLock(checkout)
+func readInactive(stateRoot string, recordErr error) (Status, error) {
+	f, won, err := probeLock(stateRoot)
 	if errors.Is(err, os.ErrNotExist) {
 		return Status{State: Stopped}, nil
 	}
@@ -93,8 +96,8 @@ func readInactive(checkout string, recordErr error) (Status, error) {
 	}
 	defer releaseLock(f)
 	// The record may have changed while we waited; only the lock authorizes removal.
-	rec, _ := readRecord(checkout)
-	if err := removeRecord(checkout); err != nil {
+	rec, _ := readRecord(stateRoot)
+	if err := removeRecord(stateRoot); err != nil {
 		return Status{}, err
 	}
 	if rec != nil {
@@ -103,16 +106,16 @@ func readInactive(checkout string, recordErr error) (Status, error) {
 	return Status{State: Stopped}, nil
 }
 
-func removeRecord(checkout string) error {
-	err := os.Remove(recordPath(checkout))
+func removeRecord(stateRoot string) error {
+	err := os.Remove(recordPath(stateRoot))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	return err
 }
 
-func probeLock(checkout string) (*os.File, bool, error) {
-	f, err := os.OpenFile(lockPath(checkout), os.O_RDWR, 0)
+func probeLock(stateRoot string) (*os.File, bool, error) {
+	f, err := os.OpenFile(lockPath(stateRoot), os.O_RDWR, 0)
 	if err != nil {
 		return nil, false, err
 	}
@@ -134,13 +137,13 @@ func releaseLock(f *os.File) {
 
 // Each waiter owns its open file description. A timed-out waiter must release
 // a later acquisition rather than leave a server blocked behind it.
-func waitLock(checkout string, create bool, wait time.Duration, after func(time.Duration) <-chan time.Time) (*os.File, bool, <-chan struct{}, error) {
+func waitLock(stateRoot string, create bool, wait time.Duration, after func(time.Duration) <-chan time.Time) (*os.File, bool, <-chan struct{}, error) {
 	done := make(chan struct{})
 	flags := os.O_RDWR
 	if create {
 		flags |= os.O_CREATE
 	}
-	f, err := os.OpenFile(lockPath(checkout), flags, 0o644)
+	f, err := os.OpenFile(lockPath(stateRoot), flags, 0o644)
 	if err != nil {
 		close(done)
 		return nil, false, done, err

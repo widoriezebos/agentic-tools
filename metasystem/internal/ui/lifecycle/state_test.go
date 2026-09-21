@@ -27,10 +27,10 @@ func TestReadStates(t *testing.T) {
 	}{
 		{
 			name: "running",
-			prepare: func(t *testing.T, checkout string) (*stateTestProber, Record, []byte) {
-				rec, exact := stateTestRecord(t, "running", checkout, 4101)
-				data := stateTestWriteRecord(t, "running record", checkout, rec)
-				stateTestHoldLock(t, "running lock", checkout)
+			prepare: func(t *testing.T, stateRoot string) (*stateTestProber, Record, []byte) {
+				rec, exact := stateTestRecord(t, "running", stateRoot, 4101)
+				data := stateTestWriteRecord(t, "running record", stateRoot, rec)
+				stateTestHoldLock(t, "running lock", stateRoot)
 				return stateTestProberFor(exact, identity.Alive), rec, data
 			},
 			wantState:  Running,
@@ -39,18 +39,18 @@ func TestReadStates(t *testing.T) {
 		},
 		{
 			name: "stopped",
-			prepare: func(t *testing.T, checkout string) (*stateTestProber, Record, []byte) {
-				stateTestCreateUnlockedLock(t, "stopped", checkout)
+			prepare: func(t *testing.T, stateRoot string) (*stateTestProber, Record, []byte) {
+				stateTestCreateUnlockedLock(t, "stopped", stateRoot)
 				return &stateTestProber{}, Record{}, nil
 			},
 			wantState: Stopped,
 		},
 		{
 			name: "stale",
-			prepare: func(t *testing.T, checkout string) (*stateTestProber, Record, []byte) {
-				rec, exact := stateTestRecord(t, "stale", checkout, 4102)
-				data := stateTestWriteRecord(t, "stale record", checkout, rec)
-				stateTestCreateUnlockedLock(t, "stale lock", checkout)
+			prepare: func(t *testing.T, stateRoot string) (*stateTestProber, Record, []byte) {
+				rec, exact := stateTestRecord(t, "stale", stateRoot, 4102)
+				data := stateTestWriteRecord(t, "stale record", stateRoot, rec)
+				stateTestCreateUnlockedLock(t, "stale lock", stateRoot)
 				return stateTestProberFor(exact, identity.Dead), rec, data
 			},
 			wantState:  Stale,
@@ -58,10 +58,10 @@ func TestReadStates(t *testing.T) {
 		},
 		{
 			name: "uninspectable",
-			prepare: func(t *testing.T, checkout string) (*stateTestProber, Record, []byte) {
-				rec, exact := stateTestRecord(t, "uninspectable", checkout, 4103)
-				data := stateTestWriteRecord(t, "uninspectable record", checkout, rec)
-				stateTestHoldLock(t, "uninspectable lock", checkout)
+			prepare: func(t *testing.T, stateRoot string) (*stateTestProber, Record, []byte) {
+				rec, exact := stateTestRecord(t, "uninspectable", stateRoot, 4103)
+				data := stateTestWriteRecord(t, "uninspectable record", stateRoot, rec)
+				stateTestHoldLock(t, "uninspectable lock", stateRoot)
 				return stateTestProberFor(exact, identity.Unknown), rec, data
 			},
 			wantState:  Uninspectable,
@@ -70,10 +70,10 @@ func TestReadStates(t *testing.T) {
 		},
 		{
 			name: "unreadable",
-			prepare: func(t *testing.T, checkout string) (*stateTestProber, Record, []byte) {
+			prepare: func(t *testing.T, stateRoot string) (*stateTestProber, Record, []byte) {
 				data := []byte("not-json\n")
-				stateTestWriteBytes(t, "unreadable record", checkout, data)
-				stateTestHoldLock(t, "unreadable lock", checkout)
+				stateTestWriteBytes(t, "unreadable record", stateRoot, data)
+				stateTestHoldLock(t, "unreadable lock", stateRoot)
 				return &stateTestProber{}, Record{}, data
 			},
 			wantState: Unreadable,
@@ -81,8 +81,8 @@ func TestReadStates(t *testing.T) {
 		},
 		{
 			name: "busy",
-			prepare: func(t *testing.T, checkout string) (*stateTestProber, Record, []byte) {
-				stateTestHoldLock(t, "busy", checkout)
+			prepare: func(t *testing.T, stateRoot string) (*stateTestProber, Record, []byte) {
+				stateTestHoldLock(t, "busy", stateRoot)
 				return &stateTestProber{}, Record{}, nil
 			},
 			wantState: Busy,
@@ -92,9 +92,9 @@ func TestReadStates(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			checkout := t.TempDir()
-			prober, rec, original := test.prepare(t, checkout)
-			status, err := Read(checkout, prober)
+			stateRoot := t.TempDir()
+			prober, rec, original := test.prepare(t, stateRoot)
+			status, err := Read(stateRoot, prober)
 
 			testutil.Require(t, "read error", err, nil)
 			testutil.Expect(t, "state", status.State, test.wantState)
@@ -104,7 +104,7 @@ func TestReadStates(t *testing.T) {
 			} else {
 				testutil.Expect(t, "status record", status.Record, (*Record)(nil))
 			}
-			data, readErr := os.ReadFile(recordPath(checkout))
+			data, readErr := os.ReadFile(recordPath(stateRoot))
 			if test.wantFile {
 				testutil.Require(t, "record read error", readErr, nil)
 				testutil.Expect(t, "record contents", data, original)
@@ -118,16 +118,16 @@ func TestReadStates(t *testing.T) {
 func TestReadLosingLockProbeLeavesRecordAlone(t *testing.T) {
 	t.Parallel()
 
-	checkout := t.TempDir()
-	rec, exact := stateTestRecord(t, "losing probe", checkout, 4201)
-	original := stateTestWriteRecord(t, "losing probe record", checkout, rec)
-	stateTestHoldLock(t, "losing probe lock", checkout)
+	stateRoot := t.TempDir()
+	rec, exact := stateTestRecord(t, "losing probe", stateRoot, 4201)
+	original := stateTestWriteRecord(t, "losing probe record", stateRoot, rec)
+	stateTestHoldLock(t, "losing probe lock", stateRoot)
 
-	status, err := Read(checkout, stateTestProberFor(exact, identity.Dead))
+	status, err := Read(stateRoot, stateTestProberFor(exact, identity.Dead))
 
 	testutil.Require(t, "read error", err, nil)
 	testutil.Expect(t, "state", status.State, Busy)
-	data, readErr := os.ReadFile(recordPath(checkout))
+	data, readErr := os.ReadFile(recordPath(stateRoot))
 	testutil.Require(t, "record read error", readErr, nil)
 	testutil.Expect(t, "record contents", data, original)
 }
@@ -135,25 +135,25 @@ func TestReadLosingLockProbeLeavesRecordAlone(t *testing.T) {
 func TestReadLeavesReplacementMadeUnderLockAlone(t *testing.T) {
 	t.Parallel()
 
-	checkout := t.TempDir()
-	oldRecord, oldExact := stateTestRecord(t, "old record", checkout, 4301)
-	stateTestWriteRecord(t, "old record", checkout, oldRecord)
-	newRecord, _ := stateTestRecord(t, "replacement", checkout, 4302)
+	stateRoot := t.TempDir()
+	oldRecord, oldExact := stateTestRecord(t, "old record", stateRoot, 4301)
+	stateTestWriteRecord(t, "old record", stateRoot, oldRecord)
+	newRecord, _ := stateTestRecord(t, "replacement", stateRoot, 4302)
 	var replacement []byte
 	prober := &stateTestProber{results: []stateTestProbeResult{{
 		exact: oldExact,
 		state: identity.Dead,
 		before: func() {
-			stateTestHoldLock(t, "replacement lock", checkout)
-			replacement = stateTestWriteRecord(t, "replacement record", checkout, newRecord)
+			stateTestHoldLock(t, "replacement lock", stateRoot)
+			replacement = stateTestWriteRecord(t, "replacement record", stateRoot, newRecord)
 		},
 	}}}
 
-	status, err := Read(checkout, prober)
+	status, err := Read(stateRoot, prober)
 
 	testutil.Require(t, "read error", err, nil)
 	testutil.Expect(t, "state", status.State, Busy)
-	data, readErr := os.ReadFile(recordPath(checkout))
+	data, readErr := os.ReadFile(recordPath(stateRoot))
 	testutil.Require(t, "replacement read error", readErr, nil)
 	testutil.Expect(t, "replacement contents", data, replacement)
 }
@@ -164,25 +164,25 @@ func TestO1ReadAndStopDoNotCreateState(t *testing.T) {
 	t.Run("read", func(t *testing.T) {
 		t.Parallel()
 
-		checkout := t.TempDir()
-		status, err := Read(checkout, &stateTestProber{})
+		stateRoot := t.TempDir()
+		status, err := Read(stateRoot, &stateTestProber{})
 
 		testutil.Require(t, "read error", err, nil)
 		testutil.Expect(t, "read state", status.State, Stopped)
-		_, statErr := os.Stat(Dir(checkout))
+		_, statErr := os.Stat(Dir(stateRoot))
 		testutil.Expect(t, "read state directory absent", errors.Is(statErr, os.ErrNotExist), true)
 	})
 
 	t.Run("stop", func(t *testing.T) {
 		t.Parallel()
 
-		checkout := t.TempDir()
-		outcome, rec, err := Stop(checkout, StopOptions{Prober: &stateTestProber{}})
+		stateRoot := t.TempDir()
+		outcome, rec, err := Stop(stateRoot, StopOptions{Prober: &stateTestProber{}})
 
 		testutil.Require(t, "stop error", err, nil)
 		testutil.Expect(t, "stop outcome", outcome, StopOutcome(Stopped))
 		testutil.Expect(t, "stop record", rec, (*Record)(nil))
-		_, statErr := os.Stat(Dir(checkout))
+		_, statErr := os.Stat(Dir(stateRoot))
 		testutil.Expect(t, "stop state directory absent", errors.Is(statErr, os.ErrNotExist), true)
 	})
 }
@@ -190,9 +190,9 @@ func TestO1ReadAndStopDoNotCreateState(t *testing.T) {
 func TestO2LateLockAcquisitionIsReleased(t *testing.T) {
 	t.Parallel()
 
-	checkout := t.TempDir()
-	holder := stateTestHoldLock(t, "initial holder", checkout)
-	f, won, done, err := waitLock(checkout, false, time.Second, stateTestImmediateAfter)
+	stateRoot := t.TempDir()
+	holder := stateTestHoldLock(t, "initial holder", stateRoot)
+	f, won, done, err := waitLock(stateRoot, false, time.Second, stateTestImmediateAfter)
 
 	testutil.Require(t, "bounded wait error", err, nil)
 	testutil.Expect(t, "bounded wait won", won, false)
@@ -200,7 +200,7 @@ func TestO2LateLockAcquisitionIsReleased(t *testing.T) {
 	holder.Release()
 	<-done
 
-	probe, probeWon, probeErr := probeLock(checkout)
+	probe, probeWon, probeErr := probeLock(stateRoot)
 	testutil.Require(t, "nonblocking probe error", probeErr, nil)
 	testutil.Require(t, "nonblocking probe won", probeWon, true)
 	releaseLock(probe)
@@ -246,7 +246,7 @@ func (p *stateTestProber) Probe(pid int64) (identity.Exact, identity.Liveness, e
 	return result.exact, result.state, result.err
 }
 
-func stateTestRecord(t *testing.T, label, checkout string, pid int64) (Record, identity.Exact) {
+func stateTestRecord(t *testing.T, label, stateRoot string, pid int64) (Record, identity.Exact) {
 	t.Helper()
 
 	exact := stateTestExact(pid)
@@ -256,7 +256,8 @@ func stateTestRecord(t *testing.T, label, checkout string, pid int64) (Record, i
 		SchemaVersion:    1,
 		Process:          process,
 		Address:          "127.0.0.1:0",
-		Checkout:         checkout,
+		Checkout:         "/work/checkout",
+		Installation:     "/work/checkout/metasystem",
 		StartedAt:        "2026-09-21T12:00:00Z",
 		EngineBuild:      "test-build",
 		ExecutableDigest: "sha256:test",
@@ -272,31 +273,31 @@ func stateTestExact(pid int64) identity.Exact {
 	return exact
 }
 
-func stateTestWriteRecord(t *testing.T, label, checkout string, rec Record) []byte {
+func stateTestWriteRecord(t *testing.T, label, stateRoot string, rec Record) []byte {
 	t.Helper()
 
 	data, err := json.Marshal(rec)
 	testutil.Require(t, label+" record marshal error", err, nil)
 	data = append(data, '\n')
-	stateTestWriteBytes(t, label, checkout, data)
+	stateTestWriteBytes(t, label, stateRoot, data)
 	return data
 }
 
-func stateTestWriteBytes(t *testing.T, label, checkout string, data []byte) {
+func stateTestWriteBytes(t *testing.T, label, stateRoot string, data []byte) {
 	t.Helper()
 
-	err := os.MkdirAll(Dir(checkout), 0o755)
+	err := os.MkdirAll(Dir(stateRoot), 0o755)
 	testutil.Require(t, label+" state directory error", err, nil)
-	err = os.WriteFile(recordPath(checkout), data, 0o644)
+	err = os.WriteFile(recordPath(stateRoot), data, 0o644)
 	testutil.Require(t, label+" record write error", err, nil)
 }
 
-func stateTestCreateUnlockedLock(t *testing.T, label, checkout string) {
+func stateTestCreateUnlockedLock(t *testing.T, label, stateRoot string) {
 	t.Helper()
 
-	err := os.MkdirAll(Dir(checkout), 0o755)
+	err := os.MkdirAll(Dir(stateRoot), 0o755)
 	testutil.Require(t, label+" state directory error", err, nil)
-	f, err := os.OpenFile(lockPath(checkout), os.O_RDWR|os.O_CREATE, 0o644)
+	f, err := os.OpenFile(lockPath(stateRoot), os.O_RDWR|os.O_CREATE, 0o644)
 	testutil.Require(t, label+" lock create error", err, nil)
 	testutil.Require(t, label+" lock close error", f.Close(), nil)
 }
@@ -306,12 +307,12 @@ type stateTestLock struct {
 	once sync.Once
 }
 
-func stateTestHoldLock(t *testing.T, label, checkout string) *stateTestLock {
+func stateTestHoldLock(t *testing.T, label, stateRoot string) *stateTestLock {
 	t.Helper()
 
-	err := os.MkdirAll(Dir(checkout), 0o755)
+	err := os.MkdirAll(Dir(stateRoot), 0o755)
 	testutil.Require(t, label+" state directory error", err, nil)
-	f, err := os.OpenFile(lockPath(checkout), os.O_RDWR|os.O_CREATE, 0o644)
+	f, err := os.OpenFile(lockPath(stateRoot), os.O_RDWR|os.O_CREATE, 0o644)
 	testutil.Require(t, label+" lock open error", err, nil)
 	testutil.Require(t, label+" lock acquisition error", unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB), nil)
 	holder := &stateTestLock{file: f}

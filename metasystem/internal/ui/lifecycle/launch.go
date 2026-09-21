@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -42,7 +43,9 @@ type Child interface {
 type Spawn func(LaunchSpec) (Child, error)
 
 func Launch(spec LaunchSpec, spawn Spawn, readyWait time.Duration) (address string, pid int, err error) {
-	if err := os.MkdirAll(Dir(spec.Dir), 0o755); err != nil {
+	// The state directory is the one the log lives in, under the state root; the
+	// launcher opens the log there, so it is created before the child is spawned.
+	if err := os.MkdirAll(filepath.Dir(spec.LogPath), 0o755); err != nil {
 		return "", 0, fmt.Errorf("cannot launch the interface server: %w", err)
 	}
 	child, err := spawn(spec)
