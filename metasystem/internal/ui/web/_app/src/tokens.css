@@ -1,0 +1,86 @@
+/*
+ * The colour table, and the only place in the application a colour is written.
+ *
+ * Warm neutral paper, one accent on neutrals, an ochre marker for the
+ * self-hosted workspace and red kept for what is wrong. Every value was chosen
+ * against the contrast thresholds src/contrast.test.ts asserts from this file:
+ * text needs 4.5:1, non-text 3:1. Nothing here is adjusted by eye.
+ *
+ * There is one light block and one dark block and no media query: public/
+ * theme.js resolves the system preference before the first paint and stamps
+ * data-theme on <html>, so the page never flashes the wrong theme and a human
+ * who overrides the system wins in both directions.
+ */
+
+:root {
+  color-scheme: light;
+
+  --ms-bg: #f7f6f3;
+  --ms-surface: #ffffff;
+  --ms-surface-2: #f1efea;
+  --ms-surface-3: #e9e6df;
+  --ms-border: #ddd9d0;
+  --ms-border-strong: #8a857b;
+  --ms-text: #1f1e1b;
+  --ms-text-2: #5b5850;
+  --ms-text-3: #6b675e;
+  --ms-accent: #3462d9;
+  --ms-accent-hover: #2a55bf;
+  --ms-accent-fg: #ffffff;
+  --ms-marker: #b7791f;
+  --ms-marker-bg: #fbf1dc;
+  --ms-marker-fg: #7a4f0e;
+  --ms-ok: #2e8b57;
+  --ms-danger: #c0392b;
+  --ms-scrim: rgba(31, 30, 27, 0.4);
+  --ms-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --ms-bg: #191917;
+  --ms-surface: #201f1d;
+  --ms-surface-2: #262523;
+  --ms-surface-3: #2e2d2a;
+  --ms-border: #35342f;
+  --ms-border-strong: #7a776f;
+  --ms-text: #eceae4;
+  --ms-text-2: #b4b0a6;
+  --ms-text-3: #9a958b;
+  --ms-accent: #7a9bf5;
+  --ms-accent-hover: #93aef8;
+  --ms-accent-fg: #10131f;
+  --ms-marker: #d9a441;
+  --ms-marker-bg: #3a2e14;
+  --ms-marker-fg: #f0cb7a;
+  --ms-ok: #57b37f;
+  --ms-danger: #e06b5c;
+  --ms-scrim: rgba(0, 0, 0, 0.6);
+  --ms-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/*
+ * The same tokens as Tailwind colours. `inline` matters: the generated utility
+ * carries var(--ms-…) itself rather than a copy of the light value, so the dark
+ * block still governs everything the utilities paint.
+ */
+@theme inline {
+  --color-bg: var(--ms-bg);
+  --color-surface: var(--ms-surface);
+  --color-surface-2: var(--ms-surface-2);
+  --color-surface-3: var(--ms-surface-3);
+  --color-border: var(--ms-border);
+  --color-border-strong: var(--ms-border-strong);
+  --color-text: var(--ms-text);
+  --color-text-2: var(--ms-text-2);
+  --color-text-3: var(--ms-text-3);
+  --color-accent: var(--ms-accent);
+  --color-accent-hover: var(--ms-accent-hover);
+  --color-accent-fg: var(--ms-accent-fg);
+  --color-marker: var(--ms-marker);
+  --color-marker-bg: var(--ms-marker-bg);
+  --color-marker-fg: var(--ms-marker-fg);
+  --color-ok: var(--ms-ok);
+  --color-danger: var(--ms-danger);
+}

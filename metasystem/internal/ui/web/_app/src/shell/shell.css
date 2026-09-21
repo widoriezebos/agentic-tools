@@ -1,0 +1,1013 @@
+/*
+ * The shell's own stylesheet. Every colour here is a token from tokens.css;
+ * no value in this file names a colour, and src/literals.test.ts holds that.
+ *
+ * Sizes are the design's: the rail at 240 and 56, the header at 48, the work
+ * area's 480 minimum, the dock between 320 and 640. They are written as pixels
+ * because the arithmetic that makes the three widths add up is in pixels.
+ */
+
+/*
+ * Layers. The stacking order does not change with the theme, so it is not part
+ * of the theme-paired token table.
+ */
+:root {
+  --ms-z-chrome: 10;
+  --ms-z-scrim: 30;
+  --ms-z-sheet: 31;
+  --ms-z-tooltip: 40;
+}
+
+html {
+  font-size: 14px;
+}
+
+body {
+  margin: 0;
+  background: var(--ms-bg);
+  color: var(--ms-text);
+  font-size: 14px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One focus treatment, everywhere, and no component removes it. */
+:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: 2px;
+}
+
+.ms-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ms-mono {
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* The skip link is first in the DOM and invisible until it is focused. */
+.ms-skip-link {
+  position: absolute;
+  top: -48px;
+  left: 8px;
+  z-index: var(--ms-z-tooltip);
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--ms-surface);
+  border: 1px solid var(--ms-border-strong);
+  color: var(--ms-text);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: top 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-skip-link:focus-visible {
+  top: 8px;
+}
+
+/* ---------------------------------------------------------------- layout -- */
+
+.ms-shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.ms-column {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ms-group {
+  flex: 1;
+  min-height: 0;
+}
+
+.ms-panel-work,
+.ms-panel-dock {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.ms-work {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--ms-bg);
+}
+
+.ms-work:focus {
+  outline: none;
+}
+
+/* ------------------------------------------------------------------ rail -- */
+
+.ms-rail {
+  display: flex;
+  flex-direction: column;
+  width: 240px;
+  flex: 0 0 240px;
+  height: 100%;
+  padding: 8px;
+  box-sizing: border-box;
+  background: var(--ms-surface-2);
+  border-right: 1px solid var(--ms-border);
+  z-index: var(--ms-z-chrome);
+  transition: width 180ms cubic-bezier(0.2, 0, 0, 1), flex-basis 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-rail--collapsed {
+  width: 56px;
+  flex: 0 0 56px;
+}
+
+.ms-rail-toggle-row {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  margin-bottom: 8px;
+}
+
+.ms-rail--sheet {
+  width: 100%;
+  flex: 1;
+  height: auto;
+  padding: 0;
+  border-right: 0;
+  background: transparent;
+}
+
+.ms-rail-sections {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ms-rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ms-rail-rule {
+  height: 1px;
+  margin: 8px 0;
+  background: var(--ms-border);
+  border: 0;
+}
+
+.ms-rail-spacer {
+  flex: 1;
+}
+
+.ms-rail-footer {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  margin-top: 8px;
+}
+
+/* Three 32px controls do not fit across a 40px column, so a collapsed rail
+   stacks them; the row is 32 high wherever the rail is wide enough for it. */
+.ms-rail--collapsed .ms-rail-footer {
+  height: auto;
+}
+
+.ms-rail--collapsed .ms-theme-control {
+  flex-direction: column;
+  height: auto;
+}
+
+.ms-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  padding: 0 7px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  color: var(--ms-text-2);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-rail--collapsed .ms-rail-item {
+  width: 40px;
+}
+
+.ms-rail-item:hover {
+  background: var(--ms-surface-3);
+  color: var(--ms-text);
+}
+
+.ms-rail-item:active {
+  background: var(--ms-border);
+}
+
+.ms-rail-item[aria-current="page"] {
+  background: var(--ms-surface-3);
+  color: var(--ms-text);
+}
+
+.ms-rail-item[aria-current="page"] svg {
+  color: var(--ms-accent);
+}
+
+.ms-rail-item svg {
+  flex: 0 0 auto;
+}
+
+/* ---------------------------------------------------------------- header -- */
+
+.ms-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 48px;
+  flex: 0 0 48px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  background: var(--ms-surface-2);
+  border-bottom: 1px solid var(--ms-border);
+  z-index: var(--ms-z-chrome);
+}
+
+/* The self-hosted mark is a calm constant, so it is ochre and two pixels tall;
+   the conflict wears the same stripe in the colour of something wrong. */
+.ms-header--marked::before,
+.ms-header--conflict::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+}
+
+.ms-header--marked::before {
+  background: var(--ms-marker);
+}
+
+.ms-header--conflict::before {
+  background: var(--ms-danger);
+}
+
+.ms-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ms-header-rule {
+  width: 1px;
+  height: 16px;
+  margin: 0 12px;
+  background: var(--ms-border);
+}
+
+.ms-header-title {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ms-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* -------------------------------------------------------------- identity -- */
+
+.ms-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-identity-lines {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.ms-identity-subject {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ms-identity-subject--conflict {
+  color: var(--ms-danger);
+}
+
+.ms-identity-note {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  white-space: nowrap;
+}
+
+.ms-identity-detail {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-2);
+  white-space: nowrap;
+}
+
+.ms-identity-unknown {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ms-text-2);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------- separator -- */
+
+.ms-separator {
+  position: relative;
+  flex: 0 0 8px;
+  width: 8px;
+  cursor: col-resize;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.ms-separator::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--ms-border-strong);
+  transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1), width 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-separator:hover::after,
+.ms-separator:focus-visible::after,
+.ms-separator:active::after {
+  left: 3px;
+  width: 2px;
+  background: var(--ms-accent);
+}
+
+/* ------------------------------------------------------------------ dock -- */
+
+.ms-dock {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--ms-surface);
+}
+
+.ms-dock-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  flex: 0 0 48px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  background: var(--ms-surface-2);
+  border-bottom: 1px solid var(--ms-border);
+}
+
+.ms-dock-title {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.ms-dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.ms-dock-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--ms-surface);
+}
+
+.ms-dock-statement {
+  flex: 1;
+  min-height: 0;
+}
+
+/* --------------------------------------------------------------- focused -- */
+
+.ms-focused {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.ms-focused-conversation {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 480px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--ms-bg);
+}
+
+.ms-focused-column {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.ms-subject-panel {
+  display: flex;
+  flex-direction: column;
+  width: 400px;
+  flex: 0 0 400px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  box-sizing: border-box;
+  background: var(--ms-surface);
+  border-left: 1px solid var(--ms-border);
+}
+
+.ms-focused--stacked {
+  min-width: 0;
+}
+
+.ms-focused--stacked .ms-focused-column {
+  max-width: none;
+}
+
+.ms-switch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+}
+
+.ms-focus-switch {
+  margin-bottom: 16px;
+}
+
+/* -------------------------------------------------------------- controls -- */
+
+.ms-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  border: 1px solid var(--ms-border-strong);
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-button:hover {
+  background: var(--ms-surface-3);
+}
+
+.ms-button:active {
+  background: var(--ms-border);
+}
+
+.ms-button:disabled {
+  background: var(--ms-surface-2);
+  border-color: var(--ms-border);
+  color: var(--ms-text-3);
+  cursor: default;
+}
+
+.ms-button--primary {
+  border: 0;
+  background: var(--ms-accent);
+  color: var(--ms-accent-fg);
+}
+
+.ms-button--primary:hover,
+.ms-button--primary:active {
+  background: var(--ms-accent-hover);
+}
+
+.ms-button--primary:disabled {
+  background: var(--ms-surface-3);
+  color: var(--ms-text-3);
+}
+
+.ms-button[aria-pressed="true"] {
+  background: var(--ms-surface-3);
+  color: var(--ms-accent);
+}
+
+.ms-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ms-text-2);
+  cursor: pointer;
+  transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-icon-button:hover {
+  background: var(--ms-surface-3);
+  color: var(--ms-text);
+}
+
+.ms-icon-button:active {
+  background: var(--ms-border);
+}
+
+.ms-icon-button:disabled,
+.ms-icon-button[aria-disabled="true"] {
+  color: var(--ms-text-3);
+  background: transparent;
+  cursor: default;
+}
+
+.ms-icon-button[aria-pressed="true"] {
+  background: var(--ms-surface-3);
+  color: var(--ms-accent);
+}
+
+.ms-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  background: var(--ms-surface-3);
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ms-chip--marker {
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+}
+
+.ms-tooltip {
+  max-width: 240px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--ms-text);
+  color: var(--ms-bg);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  box-shadow: var(--ms-shadow);
+  z-index: var(--ms-z-tooltip);
+}
+
+.ms-skeleton {
+  width: 120px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--ms-surface-3);
+  animation: ms-pulse 1200ms ease-in-out infinite;
+}
+
+@keyframes ms-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* ----------------------------------------------------------- empty state -- */
+
+.ms-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 96px;
+}
+
+.ms-empty-icon {
+  color: var(--ms-text-3);
+  margin-bottom: 12px;
+}
+
+.ms-empty-heading {
+  margin: 0 0 8px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-empty-body {
+  margin: 0 0 12px;
+  max-width: 480px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ms-text-2);
+}
+
+.ms-empty-slice {
+  margin: 0 0 16px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-empty-link {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-empty-link:hover,
+.ms-empty-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* -------------------------------------------------------------- composer -- */
+
+.ms-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ms-composer-field {
+  width: 100%;
+  min-height: 72px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  border: 1px solid var(--ms-border-strong);
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 18px;
+  resize: none;
+}
+
+.ms-composer-field::placeholder {
+  color: var(--ms-text-3);
+}
+
+.ms-composer-field:disabled {
+  background: var(--ms-surface-2);
+  border-color: var(--ms-border);
+  color: var(--ms-text-3);
+  cursor: default;
+}
+
+.ms-composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ms-composer-reason {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+/* ----------------------------------------------------------------- cards -- */
+
+.ms-pane-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.ms-card {
+  padding: 24px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-card-title {
+  margin: 0 0 16px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.ms-facts {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 8px 16px;
+  margin: 0;
+}
+
+.ms-fact-name {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-fact-value {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-card-link {
+  display: inline-block;
+  margin-top: 16px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-card-link:hover,
+.ms-card-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* --------------------------------------------------------- error boundary -- */
+
+.ms-error {
+  max-width: 640px;
+  padding: 24px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-error-heading {
+  margin: 0 0 16px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--ms-danger);
+}
+
+.ms-error-detail {
+  margin: 0 0 16px;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--ms-surface-2);
+  color: var(--ms-text-2);
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 18px;
+  overflow-x: auto;
+}
+
+/* ---------------------------------------------------------------- sheets -- */
+
+.ms-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ms-z-scrim);
+  background: var(--ms-scrim);
+  animation: ms-fade-in 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-scrim[data-state="closed"] {
+  animation: ms-fade-out 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-sheet {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: var(--ms-z-sheet);
+  display: flex;
+  flex-direction: column;
+  /* The collapsed rail stays visible beside the dock's sheet. */
+  width: min(400px, calc(100vw - 56px));
+  max-width: 100vw;
+  box-sizing: border-box;
+  background: var(--ms-surface);
+  box-shadow: var(--ms-shadow);
+}
+
+.ms-sheet--right {
+  right: 0;
+  border-left: 1px solid var(--ms-border);
+  animation: ms-slide-from-right 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-sheet--right[data-state="closed"] {
+  animation: ms-slide-to-right 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-sheet--left {
+  left: 0;
+  width: 280px;
+  border-right: 1px solid var(--ms-border);
+  animation: ms-slide-from-left 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-sheet--left[data-state="closed"] {
+  animation: ms-slide-to-left 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  flex: 0 0 48px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  background: var(--ms-surface-2);
+  border-bottom: 1px solid var(--ms-border);
+}
+
+.ms-sheet-title {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.ms-sheet-close {
+  margin-left: auto;
+}
+
+.ms-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ms-sheet-body--rail {
+  padding: 8px;
+}
+
+.ms-sheet-body--dock {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
+
+@keyframes ms-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ms-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes ms-slide-from-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes ms-slide-to-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes ms-slide-from-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes ms-slide-to-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/* ----------------------------------------------------- width and motion -- */
+
+/* Phone: the rail is gone, the menu button opens it, and padding tightens. */
+@media (max-width: 599px) {
+  .ms-work,
+  .ms-focused-conversation {
+    padding: 16px;
+  }
+
+  .ms-sheet--right {
+    width: 100vw;
+  }
+
+  .ms-facts {
+    grid-template-columns: 1fr;
+    gap: 4px 0;
+  }
+}
+
+/*
+ * Under a reduced-motion preference every duration is zero and the skeleton
+ * stands still. Nothing here is decorative enough to be worth an exception.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0ms !important;
+  }
+
+  .ms-skeleton {
+    animation: none;
+    opacity: 1;
+  }
+}

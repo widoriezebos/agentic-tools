@@ -46,7 +46,7 @@ func serveOptions(t *testing.T) Options {
 			return exact, identity.Alive, nil
 		}),
 		NewHandler: func(bound net.Addr, rec Record) http.Handler {
-			return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest}, bound)
+			return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest}, bound, nil)
 		},
 	}
 }
@@ -106,7 +106,7 @@ func TestServePublishesBoundRecordAndShutsDown(t *testing.T) {
 	var health map[string]string
 	testutil.Require(t, "health JSON", json.NewDecoder(response.Body).Decode(&health), nil)
 	testutil.Expect(t, "health payload", health, map[string]string{
-		"status": "ok", "checkout": o.Roots.Checkout, "startedAt": rec.StartedAt, "engineBuild": o.EngineBuild, "executableDigest": rec.ExecutableDigest,
+		"status": "ok", "checkout": o.Roots.Checkout, "startedAt": rec.StartedAt, "engineBuild": o.EngineBuild, "executableDigest": rec.ExecutableDigest, "bundleDigest": "",
 	})
 	for name, value := range map[string]string{
 		"X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Referrer-Policy": "same-origin", "Cross-Origin-Resource-Policy": "same-origin", "Cache-Control": "no-store",

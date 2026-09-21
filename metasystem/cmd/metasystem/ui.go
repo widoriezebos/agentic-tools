@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -17,6 +18,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
 )
 
 func runUIStart(args []string) int   { return runUI("start", args) }
@@ -119,10 +122,23 @@ func runUI(verb string, args []string) int {
 	case "serve":
 		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer cancel()
-		err := lifecycle.Serve(ctx, lifecycle.Options{
+		subject, err := config.UISubject(filepath.Join(roots.Installation, "metasystem.conf"))
+		if err != nil {
+			return refuse(err.Error())
+		}
+		bundleDigest, bundle := interfaceBundle()
+		err = lifecycle.Serve(ctx, lifecycle.Options{
 			Roots: roots, Listen: listen, EngineBuild: supervise.BuildStamp, Prober: prober,
 			NewHandler: func(bound net.Addr, rec lifecycle.Record) http.Handler {
-				return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest}, bound)
+				return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest, BundleDigest: bundleDigest,
+					Describe: func() (workspace.Workspace, error) {
+						return workspace.Describe(
+							workspace.Roots{Checkout: roots.Checkout, Installation: roots.Installation, StateRoot: roots.StateRoot},
+							workspace.Record{EngineBuild: rec.EngineBuild, StartedAt: rec.StartedAt, ExecutableDigest: rec.ExecutableDigest},
+							subject,
+						)
+					},
+				}, bound, bundle)
 			},
 			Ready: func(address string) {
 				if ready != nil {
@@ -139,6 +155,18 @@ func runUI(verb string, args []string) int {
 		return 0
 	}
 	return 2
+}
+
+// interfaceBundle reports the digest of the source the embedded bundle was
+// built from and the bundle itself. The manifest is the publish point: without
+// one this executable carries no bundle, so the handler receives none and says
+// so rather than serving half a build.
+func interfaceBundle() (string, fs.FS) {
+	manifest, err := web.ReadManifest()
+	if err != nil {
+		return "", nil
+	}
+	return manifest.SourceDigest, web.Dist()
 }
 
 func printUIResult(result lifecycle.Result) int {
