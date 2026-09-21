@@ -2,6 +2,8 @@
 
 Reviewer: Codex on `gpt-5.6-sol`, the design reviewer under D12 and D24, read-only, 2026-09-21. Subject: the [slice design](g1-s10-backlog-data-path-design.md) at commit `f98b71003`.
 
+**Revision 2 and the planner's second ruling, 2026-09-21.** All six are answered. The revision takes two additive exports from `internal/goal`, not the one the planner admitted: `ReadValidatedTree` as well as `NewApprovalHorizon`. That is ratified. The single-export alternative would have the interface compose the at-rest validation sequence itself and carry its own copy of the Git steering-variable list, making it a second owner of both — which is precisely the divergence M6 exists to prevent, so admitting one export and refusing the other would have applied the principle to half the problem. Both exports are additive: no existing function changes, and an obligation holds the package's diff to two new files.
+
 Six material findings. The planner's ruling on M6: the slice may add an exported constructor to `internal/goal`, so that the approval horizon keeps one owner. That is a narrow additive change and it is preferable to a mirrored copy that can silently diverge from what claim admission uses. `internal/goal/**` is therefore not absolutely no-touch for this slice; every other package on the list stays.
 
 ## 1. Verdict build after the listed changes Riskiest: the snapshot can present a parseable b...
