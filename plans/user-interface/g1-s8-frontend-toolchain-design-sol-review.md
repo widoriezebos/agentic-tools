@@ -61,3 +61,64 @@ Pin 24.21.0. It is the latest 24.x Active LTS release and is supported through A
 ## 5. Not checked
 
 I did not run npm, install dependencies, generate a lockfile or bundle, execute repository scripts or the MetaSystem binary, start or contact the server, or perform the browser modal walkthrough. Consequently I could not verify actual Vite output reproducibility, the eventual lockfile’s single `get-nonce` instance, generated licence notices, committed bundle integrity, or live CSP behavior; upstream conclusions refer to current source and must be repeated against the exact versions added after E2 is resolved.
+
+---
+
+# Round 2, 2026-09-21
+
+On revision 2 at commit `9b8c05e3f`. Four material findings; E2 to E6 and E12 confirmed corrected, E1 not yet. The planner verified the three concrete ones in source: `scripts/agents/brain-fixtures.sh:338` walks `internal` with `find` and compares against an exact allowlist, and `section/brain-fixtures` is an acceptance surface in `testing.json`; `git ls-files --cached` lists a tracked file that has been deleted only in the working tree; and npm's `info` level sits below `low`, so `--audit-level=low` permits an informational advisory.
+
+## 1. Verdict build after the listed changes sound after the listed changes ## 2. Status of E...
+[codex] Turn completion inferred after the main thread finished and subagent work drained.
+## 1. Verdict
+
+build after the listed changes  
+sound after the listed changes
+
+## 2. Status of E1 to E6 and E12
+
+E1: NOT corrected — the final verification still invokes recursive `gofmt`, another verdict-bearing walker is omitted, and the replacement gofmt pipeline refuses valid unstaged deletions.
+
+E2: corrected
+
+E3: corrected
+
+E4: corrected
+
+E5: corrected
+
+E6: corrected
+
+E12: corrected
+
+## 3. Findings
+
+G1; MATERIAL; The supply-chain gate; `npm audit --audit-level=low` does not implement “refuse on any advisory”: npm defines `info` below `low`, and `audit-level` is the minimum severity producing a nonzero exit, so an informational advisory permits the bundle (`plans/user-interface/g1-s8-frontend-toolchain-design.md:60`, `:160`, `:190`); evidence: [npm audit documentation](https://docs.npmjs.com/cli/v11/commands/npm-audit/); what would be built wrong: a bundle can pass while npm reports a known informational vulnerability, contradicting the human’s requirement; direction: use the threshold that includes `info`, or inspect structured audit output and refuse whenever its advisory count is nonzero.
+
+G2; MATERIAL; E1 / Verification; revision 2 replaces the gate’s recursive gofmt invocation, but its final command list still instructs the builder to run `gofmt -l internal cmd` (`plans/user-interface/g1-s8-frontend-toolchain-design.md:50`, `:193`); Go’s formatter recursively enters every directory and only filters non-Go or dot-prefixed filenames (`/opt/homebrew/Cellar/go/1.27.1/libexec/src/cmd/gofmt/gofmt.go:93`, `:419`); what would be built wrong: verification after dependencies exist again exposes `node_modules` to precisely the traversal the exclusion slice is meant to remove; direction: make the verification command use the new Git-fed boundary or invoke the gate that owns it.
+
+G3; MATERIAL; E1 / Other walkers; `scripts/agents/brain-fixtures.sh` performs `find cmd/metasystem internal`, greps every non-test `.go` file, and compares the result with an exact allowlist, without pruning `node_modules` (`metasystem/scripts/agents/brain-fixtures.sh:338`, `:382`); the section is an actual acceptance/cadence surface (`metasystem/testing.json:102`, `:128`); what would be built wrong: dependency Go source containing one of the searched expressions changes or refuses the fixture verdict, contradicting the claim that such files are invisible to every tool (`plans/user-interface/g1-s8-frontend-toolchain-design.md:38`); direction: add a name-based `node_modules` prune to this scan, with a fixture, and include that script in the exclusion slice’s change boundary.
+
+G4; MATERIAL; E1 / gofmt; `git ls-files --cached` lists every index entry, including a tracked `.go` file deleted only from the working tree, so the proposed pipeline sends a nonexistent path to gofmt (`plans/user-interface/g1-s8-frontend-toolchain-design.md:50`); Git documents `--cached` as all tracked files and unstaged deletion as a separate working-tree state ([git-ls-files documentation](https://git-scm.com/docs/git-ls-files)); read-only probing confirmed gofmt exits 2 for a missing explicit path, and the gate treats a nonzero gofmt status as a refusal (`metasystem/scripts/agents/go-gate.sh:519`, `:526`); what would be built wrong: an ordinary unstaged Go-file deletion cannot pass the gate although the old directory walk omitted the absent file; direction: preserve NUL-safe enumeration while filtering cached entries that are no longer extant regular files.
+
+G5; NOT MATERIAL; E1 / Policy membership and neutrality; the proposed pattern is accepted by the exact-or-`/**` grammar, matches its base and descendants, and `NormalizePath` removes the installation prefix (`metasystem/internal/behaviorsurface/policy.go:147`, `:183`, `:215`); none of the existing non-repository entries newly changes the current ENGINE digest, while the two entries inside PAYLOAD’s `docs/**` root are absent from this checkout (`metasystem/internal/behaviorsurface/policy.v2.json:3`, `:11`, `:76`); current callers all consume `Includes`, and no caller dependency on ENGINE ignoring this list was found (`metasystem/internal/behaviorsurface/policy.go:278`, `:347`, `:442`, `:565`); what would be built wrong: nothing; direction: none.
+
+G6; NOT MATERIAL; E1 / Remaining walkers; two further walks meet the installed tree: the metasystem audit’s repository-root instruction inventory (`metasystem/internal/audit/metasystem.go:129`, `:393`) and working-unit import discovery (`metasystem/internal/landing/batch/unitgate.go:87`, `:300`); the former only adds matching instruction filenames to a report, and the latter filters `.go` files against Git’s allowed set before parsing (`metasystem/internal/landing/batch/unitgate.go:102`, `:322`), so no current semantic change was established; `testselect` also enters underscore directories but remains explicitly acknowledged and has no production caller found by source search (`metasystem/internal/testselect/select.go:158`, `:194`); what would be built wrong: nothing demonstrated; direction: optional name-based pruning would avoid needless traversal but must not block this round.
+
+G7; NOT MATERIAL; E1 / gofmt mechanics; on the current checkout, the old and proposed commands cover the same 1,601 files; generally the old command covers non-dot `.go` files under `internal` and `cmd`, including ignored files, while the new one covers tracked and non-ignored untracked `.go` files anywhere beneath `metasystem/`, including dot-named files and any future Go files outside those two directories; `-z`/`-0` preserves spaces and non-ASCII names, this Darwin platform accepts `xargs -r`, empty input starts no gofmt process, and tracked unformatted files still produce output that makes the gate red (`metasystem/scripts/agents/go-gate.sh:525`); what would be built wrong beyond G4: nothing in the current tree; direction: none beyond correcting G4.
+
+G8; NOT MATERIAL; E3 through E6 and E12; the manifest is removed before typecheck/Vite/notices and published last (`plans/user-interface/g1-s8-frontend-toolchain-design.md:62`); `Dialog.Overlay` is mandatory (`:156`) and upstream 1.1.23 mounts `RemoveScroll` there ([Radix source](https://github.com/radix-ui/primitives/blob/main/packages/react/dialog/src/dialog.tsx)); reserved paths and parsed positive-quality `text/html` are explicit (`:124`–`:126`); text-only newline normalization and canonical manifest ordering are explicit (`:114`–`:116`); independent recomputation reproduced `sha256:f8c8104462398072962c697d4b860b1e76da903a0fa41933ffc541bcbb3e1399`, including the stated raw `d.bin` digest; E12 now correctly defers and requires browser proof (`:90`); what would be built wrong: nothing; direction: none.
+
+## 4. The supply-chain gate
+
+The exact direct pins, committed lockfile, `save-exact=true`, Node check, and `npm ci --ignore-scripts` are coherent. Explicit `npm run` commands still execute with `ignore-scripts=true`; only lifecycle pre/post scripts are suppressed, as npm documents ([npm configuration](https://docs.npmjs.com/cli/v11/using-npm/config/#ignore-scripts)). If a pinned transitive dependency needs an install-time build, the subsequent typecheck, tests, and bundle are intended to refuse; this proves operability only on the platform actually exercised.
+
+The scroll-lock constraints converge on `react-style-singleton` 2.2.3 and `get-nonce ^1.0.0`; direct `get-nonce` 1.0.1 satisfies that range, so one instance is resolvable. The specified lockfile test correctly refuses duplication. Upstream confirms Radix 1.1.23 uses `react-remove-scroll ^2.7.2`, which in turn resolves the stated scroll-lock packages ([Radix manifest](https://github.com/radix-ui/primitives/blob/main/packages/react/dialog/package.json), [react-remove-scroll](https://www.npmjs.com/package/react-remove-scroll), [react-style-singleton](https://www.npmjs.com/package/react-style-singleton), [get-nonce](https://www.npmjs.com/package/get-nonce)).
+
+A transitive advisory with no fix blocks every frontend rebuild until the dependency graph or advisory changes. That is operationally harsh but consistent with the human’s fail-closed requirement; there is deliberately no bypass. Existing committed Go builds remain possible because npm is not part of the deployed or Go-build runtime.
+
+As written, however, the gate still permits `info` advisories. After G1 is corrected, it delivers “no vulnerabilities” only in the practical sense of “no vulnerabilities known to the configured npm registry at audit time,” not an absolute absence of unknown vulnerabilities.
+
+## 5. Not checked
+
+I did not run npm, install the dependency tree, generate or inspect the eventual lockfile, run an audit, execute repository scripts or the MetaSystem binary, or contact the interface server. Therefore I could not verify the current advisory result, every transitive package’s lifecycle scripts, the actual one-instance `get-nonce` layout, native optional-package loading on each platform, generated notices, bundle reproducibility, or live CSP behavior.
