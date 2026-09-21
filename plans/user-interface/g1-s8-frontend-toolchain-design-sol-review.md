@@ -173,3 +173,75 @@ scripts sweep — corrected: false; `path-class-fixtures.sh` is the additional v
 ## 5. Not checked
 
 No npm or npx command, install, audit execution, repository script, MetaSystem binary, or server was run. The eventual dependency tree, live advisory result, generated lockfile and bundle remain unchecked. `plans/user-interface/g1-s9-application-shell-design.md` and `metasystem/metasystem.conf.local` were not read.
+
+---
+
+# Round 4, 2026-09-21
+
+On revision 4 at commit `50a54027b`. H2 and H3 resolved. Four material findings, all judged blocking by the reviewer.
+
+The planner's ruling, made here rather than passed to another round: K2, K3 and K4 are accepted as written. K3 is the most serious of the four, because a guard that passes when both runs are equally broken proves nothing.
+
+K1 is accepted in part. Pinning the registry at the invocation is right and cheap, so it is taken. Defending the gate against an adversary who already controls the npm configuration is not, because that adversary controls what `npm ci` installed in the first place, and an audit of compromised packages against a registry of their choosing is not the defence. The design's "no bypass of any kind" is therefore an overclaim, and the fix is to pin the registry and state the boundary honestly rather than to chase it further.
+
+Round 5 is declared the last design round for this slice. Anything material left after it becomes a named obligation on the builder and is settled in code review.
+
+## 1. Verdict build after the listed changes another round needed because K1–K4 leave the har...
+[codex] Turn completion inferred after the main thread finished and subagent work drained.
+## 1. Verdict
+
+build after the listed changes  
+another round needed because K1–K4 leave the hardened audit and dependency-tree guard materially incomplete.
+
+## 2. Status of H1, H2, H3 and the guard
+
+H1: Not resolved; the flags close offline and omission paths, but ambient registry/proxy configuration can still produce a green empty report, and the peer fixture is not discriminating.
+
+H2: Resolved; both recursive greps need the directory exclusion, the proposed fixture produces two lines without it and one with it, and `internal/` is correctly cited at `:16`.
+
+H3: Resolved; only portable non-zero is relied upon, with 123 correctly described as an implementation-specific choice.
+
+Guard: Not resolved; most planted-tree effects are covered, but the selected test digest cannot see the live poison, identical-red runs can pass the comparison, and the adversarial corpus omits reasonable file classes.
+
+## 3. The guard
+
+The guard directly catches removal of:
+
+- The behavior-surface membership rule through the ENGINE, LANDING, and PAYLOAD digests.
+- The parallel-ratchet skip through `serial_test.go`, which the current scanner parses and inventories ([metasystem/internal/parallelratchet/parallel.go:109](metasystem/internal/parallelratchet/parallel.go#L109)).
+- The stop-surface skip through both planted `_test.go` files ([metasystem/internal/audit/stopsurface.go:289](metasystem/internal/audit/stopsurface.go#L289)).
+- The Git-fed gofmt change through the unformatted and unparsable Go files; the gate treats either non-zero gofmt status or output as red ([metasystem/scripts/agents/go-gate.sh:515](metasystem/scripts/agents/go-gate.sh#L515)).
+- The brain and path-class shell exclusions through their planted tokens. The current path-class scans recurse over the selected roots ([metasystem/scripts/agents/path-class-fixtures.sh:87](metasystem/scripts/agents/path-class-fixtures.sh#L87)).
+- The `.gitignore` rule through `git status --porcelain`, assuming the initial clean-status precondition.
+
+It does not directly catch removal of `pathpattern.Pattern.Expand` or `proofrun.readManifest`. A default test run chooses `workspace.StagedTree()` ([metasystem/cmd/metasystem/test.go:486](metasystem/cmd/metasystem/test.go#L486)); its candidate manifest is computed in a detached checkout of that tree ([metasystem/cmd/metasystem/test.go:1708](metasystem/cmd/metasystem/test.go#L1708), [metasystem/internal/gittree/detached.go:139](metasystem/internal/gittree/detached.go#L139)). The ignored live poison therefore cannot reach either the group-input expansion that calculates `inputDigest` ([metasystem/internal/proofrun/test_build.go:1006](metasystem/internal/proofrun/test_build.go#L1006), [metasystem/internal/proofrun/test_build.go:1780](metasystem/internal/proofrun/test_build.go#L1780)) or the manifest walk ([metasystem/internal/proofrun/manifest.go:64](metasystem/internal/proofrun/manifest.go#L64)). Their dedicated fixtures would fail in both runs if a skip were removed; the proposed equality-only comparison can accept that identical failure.
+
+The four-file metasystem-audit difference is correct. The inventory walks the root, does not follow directory symlinks, and reports matching basenames ([metasystem/internal/audit/metasystem.go:391](metasystem/internal/audit/metasystem.go#L391)). Its names include `wow.md`, `SKILL.md`, generic `AGENT.md`, and runtime instruction names ([metasystem/internal/audit/metasystem.go:503](metasystem/internal/audit/metasystem.go#L503)); the runtime declarations add `AGENTS.md` and `CLAUDE.md` ([metasystem/internal/runtimes/runtimes.go:192](metasystem/internal/runtimes/runtimes.go#L192), [metasystem/internal/runtimes/runtimes.go:251](metasystem/internal/runtimes/runtimes.go#L251)). Of the planted files, exactly `AGENTS.md`, `wow.md`, `SKILL.md`, and `CLAUDE.md` therefore add stdout inventory lines. They do not enter the verdict-bearing audit roots ([metasystem/internal/audit/metasystem.go:30](metasystem/internal/audit/metasystem.go#L30)), so stderr and status should remain unchanged.
+
+A reasonable missing adversary is an executable shell payload—both `*.sh` and an extensionless `bin` entry—with content that would trip a shell/version/static scanner. A hidden configuration file such as `.npmrc` is also missing. This is an inference about plausible unenumerated walkers, but those are common dependency-tree contents and are materially distinct from the planted Go, text, Markdown, JSON, and symlink entries.
+
+## 4. Findings
+
+- **K1; MATERIAL; H1 hardened audit.** The command leaves `registry`, proxy, and TLS trust configuration ambient. npm sends the bulk POST to the configured registry; a configured registry returning an empty advisory object produces no vulnerability entries while dependency metadata is still derived from the local tree, so all five checks can pass. The design acknowledges this at [plans/user-interface/g1-s8-frontend-toolchain-design.md:104](plans/user-interface/g1-s8-frontend-toolchain-design.md#L104), contradicting O9’s “no bypass” requirement at [plans/user-interface/g1-s8-frontend-toolchain-design.md:237](plans/user-interface/g1-s8-frontend-toolchain-design.md#L237). npm configuration priority confirms that command-line settings outrank environment and npmrc settings, but no registry or trust setting is supplied ([npm configuration documentation](https://docs.npmjs.com/cli/v11/using-npm/config/)); the audit implementation uses the configured registry for its POST and calculates dependency totals locally ([npm 11.19.0 audit-report source](https://github.com/npm/cli/blob/v11.19.0/workspaces/arborist/lib/audit-report.js)). A builder following this design would ship an audit gate that ambient configuration can make green without consulting the intended advisory authority. Fix direction: define and pin the trusted registry and network trust boundary at higher priority than ambient configuration, and add a fixture in which an ambient registry returns `{}` and must not make the gate green. **Blocks building.**
+
+- **K2; MATERIAL; H1 audit fixture.** The `omit=peer` case contains no peer-only node, so removing `--include=peer` leaves its request body unchanged; the design admits this at [plans/user-interface/g1-s8-frontend-toolchain-design.md:198](plans/user-interface/g1-s8-frontend-toolchain-design.md#L198). The fixture therefore would not fail without that part of the fix, despite the production reasoning correctly identifying `peer` as one of the three omittable types at [plans/user-interface/g1-s8-frontend-toolchain-design.md:100](plans/user-interface/g1-s8-frontend-toolchain-design.md#L100). A builder would produce a regression test that cannot protect one of the required flags. Fix direction: give the fixture lockfile a peer-only node or assert the exact spawned argument vector independently. **Blocks building.**
+
+- **K3; MATERIAL; dependency-tree guard.** The comparison requires equality of statuses and verdict lines but never explicitly requires the absent-tree run to be green ([plans/user-interface/g1-s8-frontend-toolchain-design.md:82](plans/user-interface/g1-s8-frontend-toolchain-design.md#L82), [plans/user-interface/g1-s8-frontend-toolchain-design.md:84](plans/user-interface/g1-s8-frontend-toolchain-design.md#L84)). Removing the `pathpattern` or `readManifest` skip makes its dedicated fixture fail in both runs, while the selected test’s ignored, staged-tree candidate cannot observe the live poison. Equal red statuses and equal red section lines can therefore satisfy the stated comparison. A builder would implement a guard capable of reporting success over two identically broken validations. Fix direction: require every absent-tree command’s expected successful status and verdict before planting poison, then either construct a candidate tree containing the poison for the test-run comparison or state that these two skips are covered only by their mandatory fixtures. **Blocks building.**
+
+- **K4; MATERIAL; dependency-tree guard corpus.** The planted tree contains no executable shell file and no hidden configuration file ([plans/user-interface/g1-s8-frontend-toolchain-design.md:72](plans/user-interface/g1-s8-frontend-toolchain-design.md#L72)). An unenumerated walker restricted to `*.sh`, executable files, package `bin` entries, or dotfiles would see none of the poison, allowing the guard to support a completeness claim it did not exercise. A builder would construct an insufficient structural test for the exact class of failure the guard replaces search-based completeness claims against. Fix direction: add at least an executable `*.sh`, an extensionless executable `bin` entry, and a hidden configuration file carrying verdict-triggering content. **Blocks building.**
+
+The three earlier corrections are folded in correctly:
+
+- `--include=dev` is described as clearing only `dev`, with all three include values required ([plans/user-interface/g1-s8-frontend-toolchain-design.md:100](plans/user-interface/g1-s8-frontend-toolchain-design.md#L100)).
+- JSON reports and JSON endpoint errors are assigned to stdout and logs to stderr, preserving both on refusal ([plans/user-interface/g1-s8-frontend-toolchain-design.md:98](plans/user-interface/g1-s8-frontend-toolchain-design.md#L98); [npm 11.19.0 display source](https://github.com/npm/cli/blob/v11.19.0/lib/utils/display.js), [audit-error source](https://github.com/npm/cli/blob/v11.19.0/lib/utils/audit-error.js)).
+- A null `audit-level` is read as `low`, and the design consequently relies on JSON counts rather than a threshold ([plans/user-interface/g1-s8-frontend-toolchain-design.md:102](plans/user-interface/g1-s8-frontend-toolchain-design.md#L102); [npm-audit-report source](https://github.com/npm/npm-audit-report/blob/v7.0.0/lib/index.js)).
+
+Node 24.21.0 bundles npm 11.19.0, not 11.19.1 ([Node archive](https://nodejs.org/en/download/archive/v24.21.0)). The relevant audit, configuration, display, and error-handling files are unchanged between the fetched 11.19.0 and 11.19.1 tags, so the earlier version mismatch does not change these conclusions.
+
+H2’s line correction is confirmed: `cmd/`, `internal/`, and `scripts/` are at [metasystem/scripts/agents/path-classes.txt:15](metasystem/scripts/agents/path-classes.txt#L15), [metasystem/scripts/agents/path-classes.txt:16](metasystem/scripts/agents/path-classes.txt#L16), and [metasystem/scripts/agents/path-classes.txt:18](metasystem/scripts/agents/path-classes.txt#L18). The script is listed in both the exclusion slice and must-not-touch boundary at [plans/user-interface/g1-s8-frontend-toolchain-design.md:46](plans/user-interface/g1-s8-frontend-toolchain-design.md#L46) and [plans/user-interface/g1-s8-frontend-toolchain-design.md:219](plans/user-interface/g1-s8-frontend-toolchain-design.md#L219).
+
+The fifth audit check is sound for the specified non-workspace, registry-only lockfile shape and worth keeping as a fail-closed tree-identity backstop. Because it is derived rather than executed, it could refuse the first correct run if npm’s inventory differs from that assumed shape; the design correctly treats that as a finding. It cannot detect an empty successful registry response, omission filtering, a workspace filter, or a different project having the same package count.
+
+## 5. Not checked
+
+No npm command, repository script, metasystem binary, validation, or guard transcript was executed. The derived first-run dependency-count equality, actual request bodies, exact future guard implementation, real installed dependency tree, and platform grep/xargs executions remain unchecked. The prohibited local configuration and concurrently revised G1-S9 design were not read.
