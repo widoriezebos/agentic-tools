@@ -412,19 +412,33 @@ func TestObserveIsSafeFromManyReadersAtOnce(t *testing.T) {
 // that contract.
 func TestSnapshotRunsNoGitOfItsOwn(t *testing.T) {
 	t.Parallel()
+	// The directory is walked and each file parsed on its own: parser.ParseDir
+	// is deprecated for not honouring build tags, and the alternative it names
+	// is a module this repository does not depend on. Reading every .go file
+	// that is not a test is stricter than a tag-aware walk would be, because a
+	// file excluded by a tag is still scanned.
+	entries, err := os.ReadDir(".")
+	testutil.Require(t, "read the package directory", err, nil)
 	set := token.NewFileSet()
-	packages, err := parser.ParseDir(set, ".", func(entry os.FileInfo) bool {
-		return !strings.HasSuffix(entry.Name(), "_test.go")
-	}, parser.ImportsOnly)
-	testutil.Require(t, "parse the package", err, nil)
-	for _, parsed := range packages {
-		for name, file := range parsed.Files {
-			for _, imported := range file.Imports {
-				if imported.Path.Value == `"os/exec"` {
-					t.Fatalf("%s runs commands of its own", name)
-				}
+	scanned := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, parseErr := parser.ParseFile(set, name, nil, parser.ImportsOnly)
+		testutil.Require(t, "parse "+name, parseErr, nil)
+		scanned++
+		for _, imported := range file.Imports {
+			if imported.Path.Value == `"os/exec"` {
+				t.Fatalf("%s runs commands of its own", name)
 			}
 		}
+	}
+	// The scan proves its own reach: a rename that emptied it would otherwise
+	// pass by finding nothing.
+	if scanned == 0 {
+		t.Fatal("the scan read no source file, so it proved nothing")
 	}
 }
 
