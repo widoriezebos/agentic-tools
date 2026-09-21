@@ -292,6 +292,40 @@ func TestLaneOfNamesTheEnrolledTerminalWhenItExpiresAnApproval(t *testing.T) {
 func TestRowCarriesTheRecordsOwnFacts(t *testing.T) {
 	t.Parallel()
 
+	// A priority compaction writes its verb into every goal it re-ranked, so
+	// the last line of a queued goal can say "done". Reporting it would tell a
+	// human their work had finished when it had not started.
+	t.Run("a rank fan-out is not this goal's latest verb", func(t *testing.T) {
+		t.Parallel()
+		file := liveGoal("queued", goal.StateQueued)
+		file.History = []goal.HistoryLine{
+			{At: "2026-09-16T06:44:22Z", Verb: "open"},
+			{At: "2026-09-17T09:00:00Z", Verb: "edit", Reason: "sharpened the outcome"},
+			{At: "2026-09-19T19:04:14Z", Verb: "done", Reason: "priority-order from=1:3 to=1:2"},
+			{At: "2026-09-19T20:35:24Z", Verb: "set-priority", Reason: "priority-order subject=other from=unranked to=1:2"},
+		}
+		tree := treeOf(file)
+		board := Project(tree, goal.NewApprovalHorizon(tree, observedAt), answered(nil, nil, nil, nil))
+
+		testutil.Require(t, "rows", len(board.Rows), 1)
+		testutil.Expect(t, "last verb", board.Rows[0].LastVerb, "edit")
+		testutil.Expect(t, "last change", board.Rows[0].LastChangeAt, "2026-09-17T09:00:00Z")
+	})
+
+	t.Run("a goal whose every line is a fan-out reports no verb of its own", func(t *testing.T) {
+		t.Parallel()
+		file := liveGoal("queued", goal.StateQueued)
+		file.History = []goal.HistoryLine{
+			{At: "2026-09-19T19:04:14Z", Verb: "done", Reason: "priority-order from=1:3 to=1:2"},
+		}
+		tree := treeOf(file)
+		board := Project(tree, goal.NewApprovalHorizon(tree, observedAt), answered(nil, nil, nil, nil))
+
+		testutil.Require(t, "rows", len(board.Rows), 1)
+		testutil.Expect(t, "last verb", board.Rows[0].LastVerb, "")
+		testutil.Expect(t, "last change", board.Rows[0].LastChangeAt, "")
+	})
+
 	t.Run("a parked goal keeps its reason and the state it left", func(t *testing.T) {
 		t.Parallel()
 		file := liveGoal("parked", goal.StateParked)

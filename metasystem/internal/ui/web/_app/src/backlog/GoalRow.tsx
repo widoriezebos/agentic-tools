@@ -5,10 +5,19 @@ import { Chip } from "../shell/controls";
 /**
  * One goal, as the record has it.
  *
- * Nothing is truncated: an intent or a next step is what the human wrote, and
- * a row that cut it off would hide the one sentence that says what the work
- * is. Nothing here is a link and nothing selects, because this build has no
- * goal view to open yet; the identifier is text a human can copy.
+ * Nothing is truncated and nothing is dropped: an intent or a next step is
+ * what the human wrote, and a row that cut it off would hide the one sentence
+ * that says what the work is. But a record here runs to several screens, and
+ * the master's List view is for scanning and comparing, so the intent is
+ * clamped to three lines until the row is opened. The clamp is CSS over the
+ * whole text rather than a shortened string, so find-in-page, selection and a
+ * screen reader still reach every word, and opening the row releases it. The
+ * next step is the record's own continuation and appears with it.
+ *
+ * Nothing here is a link and nothing selects, because this build has no goal
+ * view to open yet; the identifier is text a human can copy. When goal detail
+ * arrives the full record belongs there and this clamp stops being a
+ * compromise.
  */
 export function GoalRow({ row }: { row: Row }) {
   const reasons = reasonsOf(row);
@@ -28,8 +37,12 @@ export function GoalRow({ row }: { row: Row }) {
         {row.decomposed && <Chip>split into goals</Chip>}
         <Chip>rev {row.ref.revision}</Chip>
       </div>
-      <p className="ms-goal-intent">{row.intent}</p>
-      {standing(row) !== "" && <p className="ms-goal-next">{standing(row)}</p>}
+      <details className="ms-goal-record">
+        <summary className="ms-goal-summary">
+          <span className="ms-goal-intent">{row.intent}</span>
+        </summary>
+        {standing(row) !== "" && <p className="ms-goal-next">{standing(row)}</p>}
+      </details>
       {reasons.length > 0 && (
         <ul className="ms-goal-gaps">
           {reasons.map((reason) => (

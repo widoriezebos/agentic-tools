@@ -112,12 +112,57 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * The record, clamped until it is asked for. The marker is the whole summary's
+ * affordance, so it is placed rather than removed: a row must still look
+ * openable.
+ */
+.ms-goal-summary {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ms-goal-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ms-goal-summary::before {
+  content: "";
+  flex: none;
+  width: 0;
+  height: 0;
+  margin-top: 7px;
+  border-left: 4px solid var(--ms-text-3);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 120ms ease;
+}
+
+.ms-goal-record[open] > .ms-goal-summary::before {
+  transform: rotate(90deg) translateX(1px);
+}
+
 .ms-goal-intent {
   margin: 0 0 2px;
   font-size: 14px;
   line-height: 20px;
   color: var(--ms-text);
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+/* Opening the row releases the clamp; no text was ever removed. */
+.ms-goal-record[open] .ms-goal-intent {
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
 }
 
 .ms-goal-next {

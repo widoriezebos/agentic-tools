@@ -1,6 +1,8 @@
 package backlog
 
 import (
+	"strings"
+
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -258,11 +260,37 @@ func rowOf(f *goal.GoalFile, where string, tree *goal.TreeGoals, horizon goal.Ap
 	if abandoned := f.Abandoned; abandoned != nil {
 		row.Abandoned = &Abandoned{By: abandoned.By, At: abandoned.At, Because: abandoned.Because}
 	}
-	if len(f.History) > 0 {
-		last := f.History[len(f.History)-1]
+	if last, ok := lastVerbOn(f.History); ok {
 		row.LastChangeAt, row.LastVerb = last.At, last.Verb
 	}
 	return row
+}
+
+// rankFanOut is the reason the engine writes on a history line that records a
+// rank change rather than something done to the goal. All three writers use
+// it: two as "priority-order from=… to=…" (order.go:234, abandon.go:417) and
+// one as "priority-order subject=… from=…" (order.go:146).
+const rankFanOut = "priority-order"
+
+// lastVerbOn is the last line that records something done to THIS goal.
+//
+// A priority compaction writes its own verb into the history of every goal it
+// re-ranks, so concluding one goal appends a `done` line to dozens of others.
+// Taking the last line whatever it is made 47 of this ledger's 155 live goals
+// report "last done" while queued or parked — a row telling a human their work
+// had finished when it had not started. A rank change is a real event and the
+// record keeps it; it is simply not this goal's latest verb, and the detail
+// page shows both classes separately.
+//
+// A goal whose every line is a fan-out has no verb of its own to report, and
+// the row says nothing rather than borrowing another goal's.
+func lastVerbOn(history []goal.HistoryLine) (goal.HistoryLine, bool) {
+	for i := len(history) - 1; i >= 0; i-- {
+		if !strings.HasPrefix(history[i].Reason, rankFanOut) {
+			return history[i], true
+		}
+	}
+	return goal.HistoryLine{}, false
 }
 
 // openBlockers lists the dependencies that are not concluded, and names the
