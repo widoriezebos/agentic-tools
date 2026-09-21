@@ -437,7 +437,7 @@ func TestProjectPlacesEveryGoalOnce(t *testing.T) {
 
 func TestProjectAnswersAnEmptyTreeWithEmptyCollections(t *testing.T) {
 	t.Parallel()
-	board := Project(nil, goal.ApprovalHorizon{}, Admission{})
+	board := Project(nil, goal.NewApprovalHorizon(nil, observedAt), Admission{})
 	encoded, err := json.Marshal(board)
 	testutil.Require(t, "encode", err, nil)
 	testutil.Expect(t, "the empty board", string(encoded),

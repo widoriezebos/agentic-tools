@@ -18,6 +18,7 @@ import {
 import { Panels } from "./Panels";
 import { Rail } from "./Rail";
 import { Sheet } from "./Sheet";
+import { BacklogPane } from "../backlog/BacklogPane";
 import { Focused } from "../panes/Focused";
 import { NotFoundPane, SectionPane } from "../panes/sections";
 import { SettingsPane } from "../panes/Settings";
@@ -108,9 +109,12 @@ export function Shell() {
     <Routes>
       <Route path="/" element={<Navigate to={HOME_PATH} replace />} />
       <Route path="/brain" element={<Focused wide={wide} />} />
-      {projectSections.map((candidate) => (
-        <Route key={candidate.id} path={candidate.path} element={<SectionPane section={candidate} />} />
-      ))}
+      <Route path="/backlog" element={<BacklogPane />} />
+      {projectSections
+        .filter((candidate) => candidate.id !== "backlog")
+        .map((candidate) => (
+          <Route key={candidate.id} path={candidate.path} element={<SectionPane section={candidate} />} />
+        ))}
       <Route path="/settings" element={<SettingsPane theme={theme} onTheme={chooseTheme} />} />
       <Route path="*" element={<NotFoundPane />} />
     </Routes>

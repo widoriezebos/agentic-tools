@@ -193,6 +193,30 @@ func TestRunTicksAtOnceAndSettlesOnTheIdleCadence(t *testing.T) {
 	<-done
 }
 
+// TestEveryTickResolvesTheEndpointAgain: git configuration changes
+// independently of anything the loop holds, so a tick that reused a resolved
+// endpoint would keep fetching from a remote the checkout no longer names.
+func TestEveryTickResolvesTheEndpointAgain(t *testing.T) {
+	t.Parallel()
+	b, tip := readableBed(t)
+	holder := New(b.root, newClock(fixtureNow).now)
+	timers := newFakeTimers()
+	fetch := &scriptedFetch{answer: currentAt(tip)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := runLoop(holder, ctx, fetch.fetch, timers)
+
+	timer := drain(timers, timers.next())
+	testutil.Expect(t, "the branch the first tick read", fetch.lastEndpoint().Branch, "refs/heads/main")
+
+	b.git("config", "goal.sync-branch", "refs/heads/canonical")
+	drain(timers, timer)
+	testutil.Expect(t, "the branch the second tick read", fetch.lastEndpoint().Branch, "refs/heads/canonical")
+
+	cancel()
+	<-done
+}
+
 // TestObserveSetsTheCadenceAndNothingElse is the whole of a request's effect
 // on the loop: it says a browser is reading, which shortens the wait, and it
 // starts nothing.

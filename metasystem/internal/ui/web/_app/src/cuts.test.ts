@@ -6,11 +6,14 @@ import { describe, expect, it } from "vitest";
 /**
  * The cut guard.
  *
- * The first cut makes one request, GET /api/workspace, on load and on Retry,
- * and nothing else: no event stream, no socket, no XHR, no beacon, no polling
- * timer, and no window event that refetches. The connection indicator, the
- * health poll, the rebuilt-executable notice, and the invalidation
- * subscription are the second cut's, and none of their files exists yet.
+ * This build requests only what a human asked for: each listed call site makes
+ * its listed calls when its view mounts and again on Refresh or Retry, and
+ * nothing else happens on its own. No event stream, no socket, no XHR, no
+ * beacon, no polling timer, and no window event that refetches. Freshness is
+ * the server's: its own loop keeps the accepted ledger current, so the page
+ * never polls to stay up to date. The connection indicator, the health poll,
+ * the rebuilt-executable notice, and the invalidation subscription are the
+ * second cut's, and none of their files exists yet.
  *
  * The guard reads code, not text. Every file is tokenized first: comments are
  * dropped, string and template literals are collected separately from the
@@ -21,6 +24,13 @@ import { describe, expect, it } from "vitest";
  * and is caught too. What the guard cannot see through — a name assembled at
  * runtime — is covered by the string rules below, which refuse the names
  * themselves as literals.
+ *
+ * A name that belongs to some value rather than naming one in scope is a
+ * field, not a global: a response whose payload carries a `fetch` clause is
+ * describing what the server did, and declaring or reading that clause is not
+ * a request. So a name reached through a dot, and a name that opens a member
+ * of an object or a type, are fields. A field that is called
+ * (`window.fetch(…)`) is a call all the same, and is counted.
  *
  * This file is excluded from its own scan, deliberately: it has to write the
  * forbidden names down in order to forbid them. Everything else under src/ is
@@ -40,19 +50,75 @@ const TIMERS = ["setInterval", "setTimeout"];
 const LIFECYCLE_EVENTS = ["focus", "online", "offline", "visibilitychange", "pageshow"];
 const LIFECYCLE_HANDLERS = ["onfocus", "ononline", "onoffline", "onvisibilitychange", "onpageshow"];
 
-const CALL_SITE = "shell/workspace.ts";
-const RESOURCE = "/api/workspace";
+/**
+ * Every place this build reaches the network: the file, how many calls it
+ * makes, and the resources it names.
+ *
+ * This list is appended to and never replaced. A slice that adds a call site
+ * adds its line here, so the diff shows a new way to the network as an entry
+ * a reviewer reads rather than as a count that quietly went up.
+ */
+const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
+  ["shell/workspace.ts", 1, ["/api/workspace"]],
+  ["backlog/api.ts", 1, ["/api/backlog"]],
+];
+
 const HEALTH = "/-/health";
 
 /** The second cut's files, which do not exist in this one. */
 const SECOND_CUT = ["shell/ConnectionIndicator.tsx", "shell/Notice.tsx", "shell/health.ts", "shell/events.ts"];
 
 type Scanned = {
-  /** Every identifier in the code, with how often it occurs. */
+  /**
+   * Every identifier in the code that names a value in scope, with how often
+   * it occurs: a bare name, or a field that is called.
+   */
   identifiers: Map<string, number>;
+  /** Every field read through a dot without being called. */
+  fields: Map<string, number>;
   /** Every string and template chunk, as written. */
   strings: string[];
 };
+
+/** True when the name starting here is reached through a dot. */
+function reachedThroughADot(source: string, start: number): boolean {
+  let back = start - 1;
+  while (back >= 0 && /\s/.test(source[back])) {
+    back -= 1;
+  }
+  // A spread is three dots and reaches nothing.
+  return back >= 0 && source[back] === "." && source[back - 1] !== ".";
+}
+
+/** True when the name ending here is immediately called. */
+function isCalled(source: string, end: number): boolean {
+  return nextCharacter(source, end) === "(";
+}
+
+/**
+ * True when the name between these offsets is a member's own name: it opens a
+ * member of an object or a type and is followed by that member's value. The
+ * middle of a conditional (`ready ? fetch : none`) is followed by a colon too,
+ * and is a reference, so what comes before the name decides.
+ */
+function isMemberName(source: string, start: number, end: number): boolean {
+  if (nextCharacter(source, end) !== ":") {
+    return false;
+  }
+  let back = start - 1;
+  while (back >= 0 && /\s/.test(source[back])) {
+    back -= 1;
+  }
+  return back < 0 || source[back] === "{" || source[back] === "," || source[back] === ";";
+}
+
+function nextCharacter(source: string, from: number): string {
+  let ahead = from;
+  while (ahead < source.length && /\s/.test(source[ahead])) {
+    ahead += 1;
+  }
+  return source[ahead] ?? "";
+}
 
 /** True for the first character of an identifier. */
 function startsIdentifier(character: string): boolean {
@@ -116,6 +182,7 @@ function skipRegex(source: string, index: number): number {
 
 export function scan(source: string): Scanned {
   const identifiers = new Map<string, number>();
+  const fields = new Map<string, number>();
   const strings: string[] = [];
   const templateDepths: number[] = [];
   let braces = 0;
@@ -208,12 +275,19 @@ export function scan(source: string): Scanned {
       continue;
     }
     if (startsIdentifier(character)) {
+      const start = index;
+      const dotted = reachedThroughADot(source, index);
       let name = "";
       while (index < source.length && continuesIdentifier(source[index])) {
         name += source[index];
         index += 1;
       }
-      identifiers.set(name, (identifiers.get(name) ?? 0) + 1);
+      const member = dotted || isMemberName(source, start, index);
+      if (member && !isCalled(source, index)) {
+        fields.set(name, (fields.get(name) ?? 0) + 1);
+      } else {
+        identifiers.set(name, (identifiers.get(name) ?? 0) + 1);
+      }
       afterValue = true;
       continue;
     }
@@ -237,7 +311,7 @@ export function scan(source: string): Scanned {
     index += 1;
   }
 
-  return { identifiers, strings };
+  return { identifiers, fields, strings };
 }
 
 function sourceFiles(): string[] {
@@ -280,7 +354,9 @@ function stringsMatching(objectionable: (value: string) => boolean): string[] {
 
 describe("the scan itself", () => {
   it("reads the whole source tree, and not its own source", () => {
-    expect(files).toContain(CALL_SITE);
+    for (const [file] of CALL_SITES) {
+      expect(files).toContain(file);
+    }
     expect(files).toContain("routes.ts");
     expect(files.length).toBeGreaterThan(10);
     expect(files).not.toContain(GUARD);
@@ -301,6 +377,7 @@ describe("the scan itself", () => {
     const result = scan(fixture);
 
     expect(result.identifiers.get("fetch")).toBe(1);
+    expect(result.fields.get("fetch")).toBeUndefined();
     expect(result.identifiers.get("EventSource")).toBeUndefined();
     expect(result.identifiers.get("setInterval")).toBeUndefined();
     expect(result.identifiers.get("WebSocket")).toBeUndefined();
@@ -308,10 +385,31 @@ describe("the scan itself", () => {
     expect(result.strings).toContain("setInterval");
     expect(result.identifiers.get("count")).toBe(1);
   });
+
+  it("tells a field named after a global from the global itself", () => {
+    const fixture = [
+      "const clause = ledger.fetch;",
+      "const outcome = ledger.fetch.outcome;",
+      "const optional = ledger?.fetch;",
+      "type Ledger = { tip: string; fetch: Clause };",
+      "const payload = { problems: [], fetch: { outcome: 'never' } };",
+      "const spread = { ...fetch };",
+      "const chosen = ready ? fetch : none;",
+      "const called = window.fetch(url);",
+    ].join("\n");
+
+    const result = scan(fixture);
+
+    // Three reads through a dot and two member names are fields. The spread,
+    // the middle of the conditional, and the call through window name the
+    // global itself.
+    expect(result.fields.get("fetch")).toBe(5);
+    expect(result.identifiers.get("fetch")).toBe(3);
+  });
 });
 
 describe("the first cut", () => {
-  it("reaches the network from exactly one place", () => {
+  it("reaches the network from exactly the listed places, each with its count, each naming its resources", () => {
     const sites = new Map<string, number>();
     for (const file of files) {
       const total = NETWORK.reduce((count, name) => count + (scanned.get(file)?.identifiers.get(name) ?? 0), 0);
@@ -320,9 +418,19 @@ describe("the first cut", () => {
       }
     }
 
-    expect([...sites.entries()]).toEqual([[CALL_SITE, 1]]);
-    expect(scanned.get(CALL_SITE)?.identifiers.get("fetch")).toBe(1);
-    expect(scanned.get(CALL_SITE)?.strings).toContain(RESOURCE);
+    expect(Object.fromEntries(sites)).toEqual(
+      Object.fromEntries(CALL_SITES.map(([file, calls]) => [file, calls])),
+    );
+    for (const [file, calls, resources] of CALL_SITES) {
+      expect({ file, fetches: scanned.get(file)?.identifiers.get("fetch") }).toEqual({ file, fetches: calls });
+      for (const resource of resources) {
+        expect({ file, resource, named: scanned.get(file)?.strings.includes(resource) }).toEqual({
+          file,
+          resource,
+          named: true,
+        });
+      }
+    }
   });
 
   it("opens no stream, socket, request object, or beacon, under any name", () => {

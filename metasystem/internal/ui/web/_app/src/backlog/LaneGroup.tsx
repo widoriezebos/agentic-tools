@@ -1,0 +1,63 @@
+import type { Row } from "./api";
+import { shortTip } from "./format";
+import { GoalRow } from "./GoalRow";
+import { anchorFor, type Lane } from "./lanes";
+
+/**
+ * One lane and the goals in it.
+ *
+ * A lane with no goals says so about a named projection -- this tip, this
+ * observation -- rather than about the repository, because a lane can be empty
+ * while the ledger is full. Ready says something else when the claim gate
+ * could not be asked, since an empty Ready would then be a claim this build
+ * cannot make.
+ */
+export function LaneGroup({
+  lane,
+  count,
+  rows,
+  tip,
+  unanswered,
+}: {
+  lane: Lane;
+  count: number;
+  rows: Row[];
+  tip: string;
+  unanswered: string;
+}) {
+  return (
+    <section className="ms-card" id={anchorFor(lane.id)}>
+      <h2 className="ms-card-title">
+        {lane.title} ({count})
+      </h2>
+      <p className="ms-lane-meaning">{lane.meaning}</p>
+      {rows.length === 0 ? (
+        <p className="ms-lane-empty">{emptyLane(lane, tip, unanswered)}</p>
+      ) : (
+        <div className="ms-goal-rows">
+          {rows.map((row) => (
+            <GoalRow key={row.ref.id} row={row} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** The Draft lane carries a statement instead of a count and rows. */
+export function DraftGroup({ lane, statement }: { lane: Lane; statement: string }) {
+  return (
+    <section className="ms-card" id={anchorFor(lane.id)}>
+      <h2 className="ms-card-title">{lane.title}</h2>
+      <p className="ms-lane-meaning">{lane.meaning}</p>
+      <p className="ms-lane-empty">{statement}</p>
+    </section>
+  );
+}
+
+export function emptyLane(lane: Lane, tip: string, unanswered: string): string {
+  if (lane.id === "ready" && unanswered !== "") {
+    return `Ready could not be answered at tip ${shortTip(tip)}: ${unanswered}; the approved goals it would judge are under Unknown.`;
+  }
+  return `No goal is in this lane at tip ${shortTip(tip)}.`;
+}
