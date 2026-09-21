@@ -69,6 +69,8 @@ type supervisorOptions struct {
 	OnVerdict       func(verdict string)
 	Now             func() time.Time
 	NewTicker       func(time.Duration) (<-chan time.Time, func())
+	WaitCommand     func() error
+	OnCancelSelect  func()
 }
 
 type supervisorOutcome struct {
@@ -224,7 +226,7 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 		options.Signal = syscall.Kill
 	}
 	riseSeconds := consumptionRise(options.Limits.ZeroConsumptionWindow).Seconds()
-	finishCustody, err := startResourceCommand(options.Context, command, HostResourceLeaseFromContext(options.Context))
+	finishCustody, signalCustody, rootRef, err := startResourceCommand(options.Context, command, HostResourceLeaseFromContext(options.Context))
 	if err != nil {
 		return supervisorOutcome{WaitErr: err}
 	}
@@ -232,15 +234,18 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 	if source, ok := options.Reader.(interface{ ProgressRuleSuffix() string }); ok {
 		outcome.RuleSuffix = source.ProgressRuleSuffix()
 	}
+	waitCommand := options.WaitCommand
+	if waitCommand == nil {
+		waitCommand = command.Wait
+	}
 	waited := make(chan error, 1)
-	go func() { waited <- errors.Join(command.Wait(), finishCustody()) }()
+	go func() { waited <- waitCommand() }()
 
 	ticks, stopTicker := newTicker(options.SampleInterval)
 	defer stopTicker()
 	lastStageSize := int64(0)
 	zeroCPUStarted, zeroCPUBase := startedAt, float64(0)
 	readerFailures := 0
-	lastMembers := []int{command.Process.Pid}
 	dumpRequested := false
 	dumpCPU := float64(0)
 	dumpStarted := time.Time{}
@@ -259,6 +264,13 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 		if options.OnReading != nil {
 			options.OnReading(reading)
 		}
+	}
+	stopAndWait := func() error {
+		// The still-live pre-birth custodian owns group discovery and exact
+		// signaling. Asking it to finish before waiting lets it close output
+		// held by a descendant without ever adopting a saved numeric group.
+		custodyErr := finishCustody()
+		return errors.Join(<-waited, custodyErr)
 	}
 
 	finishWait := func(waitErr error) supervisorOutcome {
@@ -280,20 +292,29 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 	for {
 		select {
 		case <-options.Context.Done():
-			killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
+			if options.OnCancelSelect != nil {
+				options.OnCancelSelect()
+			}
+			// The pre-birth custodian drains the group even when cancellation arrives
+			// before the first periodic sample discovers a descendant.
 			outcome.Verdict = "cancelled"
 			outcome.Reason = options.Context.Err().Error()
-			return finishWait(<-waited)
+			return finishWait(stopAndWait())
 		case waitErr := <-waited:
 			if options.Context.Err() != nil {
-				killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
 				outcome.Verdict = "cancelled"
 				outcome.Reason = options.Context.Err().Error()
 			}
-			return finishWait(waitErr)
+			return finishWait(errors.Join(waitErr, finishCustody()))
 		case sampledAt := <-ticks:
 			if stageResultGrew(options.StageResultPath, &lastStageSize) {
 				options.Activity.Mark(sampledAt)
+			}
+			// The numeric root is only a lookup key while it still denotes the
+			// exact worker bound to the live custodian. A reaped or uninspectable
+			// root cannot authorize another tree discovery.
+			if identity.AliveRef(options.Prober, rootRef) != identity.Alive {
+				continue
 			}
 			sample, sampleErr := options.Reader.Sample(command.Process.Pid)
 			if sampleErr != nil {
@@ -302,13 +323,9 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 					continue
 				}
 				recordVerdict("invalid", fmt.Sprintf("process reader failed three consecutive samples: %v", sampleErr))
-				killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
-				return finishWait(<-waited)
+				return finishWait(stopAndWait())
 			}
 			readerFailures = 0
-			if len(sample.Members) > 0 {
-				lastMembers = append([]int(nil), sample.Members...)
-			}
 			sampleCPU := sample.CPUSeconds
 			if sample.MemberCPU != nil {
 				sampleCPU = 0
@@ -351,21 +368,21 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 
 			if dumpRequested {
 				if outcome.CPUSeconds-dumpCPU >= riseSeconds {
-					killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
 					outcome.Dump = "dump: not produced, the process kept computing"
-					return finishWait(<-waited)
+					custodyErr := finishCustody()
+					return finishWait(errors.Join(<-waited, custodyErr))
 				}
 				if options.Limits.ZeroConsumptionWindow <= 0 {
-					killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
 					outcome.Dump = "dump: killed while writing"
-					return finishWait(<-waited)
+					custodyErr := finishCustody()
+					return finishWait(errors.Join(<-waited, custodyErr))
 				}
 				quietFor := sampledAt.Sub(dumpStarted)
 				if options.Limits.ZeroConsumptionWindow > 0 && outcome.CPUSeconds-dumpCPU < riseSeconds && quietFor >= options.Limits.ZeroConsumptionWindow &&
 					sampledAt.Sub(options.Activity.Last()) >= options.Limits.ZeroConsumptionWindow {
-					killProcessTree(lastMembers, command.Process.Pid, options.Prober, options.Signal)
 					outcome.Dump = "dump: killed while writing"
-					return finishWait(<-waited)
+					custodyErr := finishCustody()
+					return finishWait(errors.Join(<-waited, custodyErr))
 				}
 				continue
 			}
@@ -391,7 +408,7 @@ func superviseCommand(command *exec.Cmd, options supervisorOptions) supervisorOu
 				}
 			}
 			if outcome.Verdict == "runaway" || outcome.Verdict == "dead" {
-				signalProcessTree(lastMembers, command.Process.Pid, syscall.SIGQUIT, options.Prober, options.Signal)
+				signalCustody(syscall.SIGQUIT, options.Prober, options.Signal)
 				dumpRequested = true
 				dumpCPU = outcome.CPUSeconds
 				dumpStarted = sampledAt
@@ -421,24 +438,6 @@ func stageResultGrew(path string, previous *int64) bool {
 	grew := current > *previous
 	*previous = current
 	return grew
-}
-
-func signalProcessTree(members []int, rootPID int, signal syscall.Signal, prober identity.Prober, sender identity.SignalFunc) {
-	pids := uniqueProcessIDs(members, rootPID)
-	for index := len(pids) - 1; index >= 0; index-- {
-		exact, state, probeErr := prober.Probe(int64(pids[index]))
-		if probeErr == nil && state == identity.Alive && exact.EnvironKnown &&
-			containsExactEnvironmentEntry(exact.Environ, identity.FixtureCustodianEnv+"=1") {
-			continue
-		}
-		if err := sender(pids[index], signal); err != nil && !errors.Is(err, syscall.ESRCH) {
-			continue
-		}
-	}
-}
-
-func killProcessTree(members []int, rootPID int, prober identity.Prober, sender identity.SignalFunc) {
-	signalProcessTree(members, rootPID, syscall.SIGKILL, prober, sender)
 }
 
 func containsExactEnvironmentEntry(environment []string, wanted string) bool {

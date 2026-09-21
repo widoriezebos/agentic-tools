@@ -148,6 +148,10 @@ func cloneContract(value Contract) Contract {
 
 func cloneGroup(value Group) Group {
 	result := value
+	if value.Resources.Workers != nil {
+		workers := *value.Resources.Workers
+		result.Resources.Workers = &workers
+	}
 	if value.CPUBudgetSeconds != nil {
 		budget := *value.CPUBudgetSeconds
 		result.CPUBudgetSeconds = &budget
@@ -191,6 +195,7 @@ func mergeProtectedGroup(base, candidate Group) Group {
 	} else {
 		result.Resources.Class = "cheap"
 	}
+	result.Resources.Workers = strongerWorkerDeclaration(base.Resources.Workers, candidate.Resources.Workers)
 	if base.Freshness == "episode" || candidate.Freshness == "episode" {
 		result.Freshness = "episode"
 	} else if candidate.Freshness != "" {
@@ -257,6 +262,20 @@ func mergeProtectedGroup(base, candidate Group) Group {
 		}
 	}
 	return result
+}
+
+func strongerWorkerDeclaration(base, candidate *int) *int {
+	if base == nil && candidate == nil {
+		return nil
+	}
+	value := 1
+	if base != nil {
+		value = *base
+	}
+	if candidate != nil && (value != 0 && (*candidate == 0 || *candidate > value)) {
+		value = *candidate
+	}
+	return &value
 }
 
 func mergeGoTests(base, candidate json.RawMessage) json.RawMessage {

@@ -111,8 +111,9 @@ func writeValidationAttempt(t *testing.T, root, runID, omitted string) string {
 	if disposition.Disposition == proofrun.DispositionAdmissionRefused {
 		t.Fatalf("validation proof fixture was admission-refused: %+v", disposition)
 	}
-	zero := 0
+	zero, admissionMaximum := 0, 0
 	result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion, AttemptID: attempt.AttemptID,
+		WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion, Workers: 1, AdmissionMaximum: &admissionMaximum,
 		Purpose: testpolicy.PurposeCadence, RequestedMode: testpolicy.ModeDeep, RequiredMode: testpolicy.ModeDeep,
 		ExecutedMode: testpolicy.ModeDeep, ProjectRoot: root, BaseCommit: digest[:40], CandidateTree: digest[:40],
 		PolicyBaseCommit: digest[:40], ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest,
@@ -125,7 +126,8 @@ func writeValidationAttempt(t *testing.T, root, runID, omitted string) string {
 		result.RequiredGroups = append(result.RequiredGroups, id)
 		result.SelectedGroups = append(result.SelectedGroups, id)
 		result.Groups = append(result.Groups, proofrun.GroupResult{ID: id, Kind: "integration", InputDigest: digest,
-			InputManifest: []string{"source/**"}, ExecutionIdentity: digest, CWD: ".", ToolIdentities: map[string]string{},
+			IdentityVersion: proofrun.GroupExecutionIdentityVersion,
+			InputManifest:   []string{"source/**"}, ExecutionIdentity: digest, CWD: ".", ToolIdentities: map[string]string{},
 			ReportDigests: map[string]string{}, Status: "passed", NativeLaunched: true, NativeExitStatus: &zero, CollectionComplete: true})
 	}
 	result.RecomputeDelivery()

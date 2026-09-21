@@ -14,6 +14,8 @@ import (
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
 func TestComposeRolePacketCommandCarriesGoalTier(t *testing.T) {
@@ -508,6 +510,18 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 		t.Fatalf("JSON verdict lost the offer: %+v err=%v output=%s", verdict, err, output)
 	}
 
+	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe budget extension caller: state=%s err=%v", state, err)
+	}
+	if _, err := lease.AnnounceWithPair(root, "budget-extension-main", parent.Pid, parent.StartedAt.Unix(),
+		parent.StartTicks, parent.BootID, "mac-cli", "fake", "m1"); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := lease.ClassifyVerb(root, parent.Pid)
+	if err != nil || holder.Class != lease.ClassMain || !holder.Holder || holder.Announcement == nil || holder.Announcement.OwnerLineage != "m1" {
+		t.Fatalf("budget extension caller is not the m1 MAIN holder: holder=%+v err=%v", holder, err)
+	}
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 	extendArgs := []string{"--root", root, "--id", "standing-validation", "--revision", "2", "--proposed-cap", "1",
 		"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "MECHANICAL"}

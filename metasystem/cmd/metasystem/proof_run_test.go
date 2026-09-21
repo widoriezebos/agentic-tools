@@ -67,7 +67,7 @@ func candidateProofLaunchAdmission(request proofLaunchAdmission) proofLaunchAdmi
 	}
 	if request.BeforePublish == nil {
 		request.BeforePublish = func(reservation *proofrun.AdmissionRequest) {
-			*reservation = proofrun.WithTestHostLoadSampler(*reservation, "0")
+			*reservation = privateProofAdmissionRequest(proofrun.WithTestHostLoadSampler(*reservation, "0"))
 		}
 	}
 	return request
@@ -804,12 +804,12 @@ func workerAuthorizedAttemptFixture(t *testing.T, sectionWorktree ...bool) (stri
 			t.Fatalf("schema-3 attempt fixture invalid: %v", err)
 		}
 	}
-	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", controlRoot)
-	t.Setenv("METASYSTEM_PROOF_ATTEMPT", attempt.AttemptID)
-	t.Setenv("METASYSTEM_PROOF_RECORD_KEY", "")
-	t.Setenv("METASYSTEM_PROOF_CREATION_CLAIM", "")
-	t.Setenv(proofWitnessExecutionRootEnv, "")
-	t.Setenv("METASYSTEM_GATE_WITNESS_WRITE", "")
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_PROOF_CONTROL_ROOT", controlRoot)
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_PROOF_ATTEMPT", attempt.AttemptID)
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_PROOF_RECORD_KEY", "")
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_PROOF_CREATION_CLAIM", "")
+	setOwnedGoGateProcessEnvironment(t, proofWitnessExecutionRootEnv, "")
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_GATE_WITNESS_WRITE", "")
 	return controlRoot, executionRoot, attempt
 }
 
@@ -821,6 +821,264 @@ func TestWorkerAuthorizedAcceptsTheAdmittedRoot(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("admitted execution root was not authorized: code=%d stderr=%q", code, stderr)
 	}
+}
+
+func TestGoGateTestsRefusesUnauthenticatedInvocationBeforeNativeLaunch(t *testing.T) {
+	t.Parallel()
+	if runGoGateCommandTestInOwnedProcess(t) {
+		return
+	}
+	root := t.TempDir()
+	logRoot := filepath.Join(root, "native-logs")
+	for _, name := range []string{"METASYSTEM_PROOF_CONTROL_ROOT", "METASYSTEM_PROOF_ATTEMPT", "METASYSTEM_PROOF_RECORD_KEY", "METASYSTEM_PROOF_CREATION_CLAIM", proofrun.TestWorkersEnvironment} {
+		setOwnedGoGateProcessEnvironment(t, name, "")
+	}
+	code, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runProofRunGoGateTests([]string{"--root", root, "--log-root", logRoot, "--workers", "1"})
+	})
+	if code != 3 || !strings.Contains(stderr, "no proof control root") {
+		t.Fatalf("unauthenticated native gate refusal: code=%d stderr=%q", code, stderr)
+	}
+	if _, err := os.Stat(logRoot); !os.IsNotExist(err) {
+		t.Fatalf("unauthenticated invocation reached native launch: %v", err)
+	}
+}
+
+func TestGoGateTestsRefusesWorkerRequestAboveInheritedAllowanceBeforeNativeLaunch(t *testing.T) {
+	t.Parallel()
+	if runGoGateCommandTestInOwnedProcess(t) {
+		return
+	}
+	_, root, _ := workerAuthorizedAttemptFixture(t)
+	setOwnedGoGateProcessEnvironment(t, proofrun.TestWorkersEnvironment, "1")
+	logRoot := filepath.Join(root, "native-logs")
+	code, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runProofRunGoGateTests([]string{"--root", root, "--log-root", logRoot, "--workers", "8"})
+	})
+	if code != 3 || !strings.Contains(stderr, "requested workers 8 exceed inherited allowance 1") {
+		t.Fatalf("inherited worker ceiling refusal: code=%d stderr=%q", code, stderr)
+	}
+	if _, err := os.Stat(logRoot); !os.IsNotExist(err) {
+		t.Fatalf("over-ceiling invocation reached native launch: %v", err)
+	}
+}
+
+func TestGoGateTestsRefusesForeignRootBeforeNativeLaunch(t *testing.T) {
+	t.Parallel()
+	if runGoGateCommandTestInOwnedProcess(t) {
+		return
+	}
+	foreign, admitted, _ := workerAuthorizedAttemptFixture(t)
+	setOwnedGoGateProcessEnvironment(t, proofrun.TestWorkersEnvironment, "1")
+	logRoot := filepath.Join(foreign, "native-logs")
+	code, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runProofRunGoGateTests([]string{"--root", foreign, "--log-root", logRoot, "--workers", "1"})
+	})
+	if code != 3 || !strings.Contains(stderr, foreign) || !strings.Contains(stderr, admitted) {
+		t.Fatalf("foreign native root refusal: code=%d stderr=%q", code, stderr)
+	}
+	if _, err := os.Stat(logRoot); !os.IsNotExist(err) {
+		t.Fatalf("foreign-root invocation reached native launch: %v", err)
+	}
+}
+
+func TestGoGateTestsAuthenticatedCancellationDrainsNativeChildAndBorrowedLease(t *testing.T) {
+	t.Parallel()
+	if runGoGateCommandTestInOwnedProcess(t) {
+		return
+	}
+	controlRoot, root, attempt := workerAuthorizedAttemptFixture(t)
+	for path, source := range map[string]string{
+		"go.mod":              "module example.invalid/publicgate\n\ngo 1.27\n",
+		"internal/app/app.go": "package app\n",
+		"internal/app/app_test.go": `package app
+import (
+ "os"
+ "strconv"
+ "testing"
+ "time"
+)
+func TestHeldUntilCancellation(t *testing.T) {
+ if err := os.WriteFile(os.Getenv("NATIVE_PID"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil { t.Fatal(err) }
+ if err := os.WriteFile(os.Getenv("NATIVE_READY"), []byte("ready"), 0600); err != nil { t.Fatal(err) }
+ for { time.Sleep(time.Hour) }
+}
+`,
+		"cmd/tool/main.go":      "package main\nfunc main() {}\n",
+		"cmd/tool/main_test.go": "package main\nimport \"testing\"\nfunc TestCommand(t *testing.T) {}\n",
+	} {
+		writeReceiptFixture(t, root, path, source)
+	}
+	admissionDir := filepath.Join(t.TempDir(), "host-admission")
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
+	control, attemptID := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT")
+	if err := os.Unsetenv("METASYSTEM_PROOF_CONTROL_ROOT"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Unsetenv("METASYSTEM_PROOF_ATTEMPT"); err != nil {
+		t.Fatal(err)
+	}
+	hostProbeResource := []string{"go-gate-public-cancellation"}
+	lease, err := proofrun.AcquireHostResources(t.Context(), controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", hostProbeResource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaseOpen := true
+	defer func() {
+		if leaseOpen {
+			_ = lease.Close()
+		}
+	}()
+	if err := os.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", control); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Setenv("METASYSTEM_PROOF_ATTEMPT", attemptID); err != nil {
+		t.Fatal(err)
+	}
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	build := exec.CommandContext(t.Context(), "go", "build", "-o", engine, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build public native runner: %v\n%s", err, output)
+	}
+	ready, nativePIDPath := filepath.Join(t.TempDir(), "native.ready"), filepath.Join(t.TempDir(), "native.pid")
+	logRoot := filepath.Join(t.TempDir(), "native-logs")
+	environment := append(os.Environ(), proofrun.HostResourceFDEnvironment(lease.Files()), proofrun.TestWorkersEnvironment+"=1",
+		"GOFLAGS=-buildvcs=false", "NATIVE_READY="+ready, "NATIVE_PID="+nativePIDPath)
+	command := pinProofBinaryFixture(t, controlRoot).command(environment, engine, "proof-run", "go-gate-tests", "--root", root, "--log-root", logRoot, "--workers", "1")
+	command.Dir = root
+	command.ExtraFiles = append(command.ExtraFiles, lease.Files()...)
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waited := make(chan error, 1)
+	exited := make(chan error, 1)
+	go func() {
+		err := command.Wait()
+		waited <- err
+		exited <- err
+	}()
+	joined := false
+	cancelAndJoin := func() error {
+		if joined {
+			return nil
+		}
+		if command.Process != nil {
+			_ = command.Process.Signal(syscall.SIGTERM)
+		}
+		err := <-waited
+		joined = true
+		return err
+	}
+	t.Cleanup(func() { _ = cancelAndJoin() })
+	waitForPublicRouteFileOrExit(t, ready, exited, func() string { return output.String() })
+	nativePIDBytes, err := os.ReadFile(nativePIDPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativePID, err := strconv.Atoi(strings.TrimSpace(string(nativePIDBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := command.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	waitErr := <-waited
+	joined = true
+	if exit, ok := waitErr.(*exec.ExitError); !ok || exit.ExitCode() == 0 {
+		t.Fatalf("cancelled public native runner exit=%v\n%s", waitErr, output.String())
+	}
+	if err := syscall.Kill(nativePID, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("public runner returned before exact native child %d drained: %v\n%s", nativePID, err, output.String())
+	}
+	if attempt.AttemptID == "" {
+		t.Fatal("authenticated cancellation fixture has no admitted attempt")
+	}
+	if err := os.Unsetenv("METASYSTEM_PROOF_CONTROL_ROOT"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Unsetenv("METASYSTEM_PROOF_ATTEMPT"); err != nil {
+		t.Fatal(err)
+	}
+	type probeResult struct {
+		lease *proofrun.HostResourceLease
+		err   error
+	}
+	probeContext, cancelProbe := context.WithCancel(t.Context())
+	queued := make(chan struct{})
+	var queuedOnce sync.Once
+	probeContext = proofrun.WithHostResourceWaitObserver(probeContext, func() { queuedOnce.Do(func() { close(queued) }) })
+	probeDone := make(chan probeResult, 1)
+	go func() {
+		probe, probeErr := proofrun.AcquireHostResources(probeContext, controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", hostProbeResource)
+		probeDone <- probeResult{lease: probe, err: probeErr}
+	}()
+	probeJoined := false
+	t.Cleanup(func() {
+		cancelProbe()
+		if !probeJoined {
+			result := <-probeDone
+			if result.lease != nil {
+				_ = result.lease.Close()
+			}
+		}
+	})
+	select {
+	case <-queued:
+	case early := <-probeDone:
+		probeJoined = true
+		if early.lease != nil {
+			_ = early.lease.Close()
+		}
+		t.Fatalf("host-capacity probe did not queue behind the held slot: %v", early.err)
+	case <-t.Context().Done():
+		t.Fatalf("host-capacity queue observation was cancelled: %v", context.Cause(t.Context()))
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+	leaseOpen = false
+	probeOutcome := <-probeDone
+	probeJoined = true
+	cancelProbe()
+	if probeOutcome.err != nil {
+		t.Fatalf("borrowed host slot remained held after public return: %v\n%s", probeOutcome.err, output.String())
+	}
+	_ = probeOutcome.lease.Close()
+}
+
+func runGoGateCommandTestInOwnedProcess(t *testing.T) bool {
+	t.Helper()
+	if os.Getenv("GO_WANT_GO_GATE_COMMAND_TEST") == "1" {
+		return false
+	}
+	command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
+	command.Env = append(os.Environ(), "GO_WANT_GO_GATE_COMMAND_TEST=1")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("owned go-gate command test failed: %v\n%s", err, output)
+	}
+	return true
+}
+
+func setOwnedGoGateProcessEnvironment(t *testing.T, name, value string) {
+	t.Helper()
+	if os.Getenv("GO_WANT_GO_GATE_COMMAND_TEST") != "1" {
+		t.Setenv(name, value)
+		return
+	}
+	previous, present := os.LookupEnv(name)
+	if err := os.Setenv(name, value); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if present {
+			_ = os.Setenv(name, previous)
+		} else {
+			_ = os.Unsetenv(name)
+		}
+	})
 }
 
 func TestWorkerAuthorizedAcceptsOnlyAttemptBoundSectionWorktree(t *testing.T) {
@@ -1348,10 +1606,36 @@ func TestNativeDelegateProofAdmissionExtendsItsClaimPairBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTemp(t, jobs, "native-proof.json", record)
+	ambientAncestor, ok := lease.ParentPid(parent.Pid)
+	if !ok {
+		t.Fatal("native delegate fixture has no ambient ancestor")
+	}
+	identities := writeTemp(t, t.TempDir(), "native-proof-identities.json", map[string]any{
+		strconv.FormatInt(ambientAncestor, 10): map[string]any{"terminal": true},
+	})
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", identities)
+	classified, err := classifyVerbCaller(root, parent.Pid)
+	if err != nil || classified.Class != lease.ClassHuman {
+		t.Fatalf("fixture ambient caller classification = %+v, %v; want HUMAN", classified, err)
+	}
+	verified, err := lease.HookDelegate(root, root, "native-proof", parent.Pid)
+	if err != nil || !verified.Delegate || verified.JobID != "native-proof" {
+		t.Fatalf("fixture native delegate custody = %+v, %v", verified, err)
+	}
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_STATE_ROOT", root)
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT", root)
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "native-proof")
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
+	preBinding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
+	if err != nil {
+		t.Fatalf("resolve pre-extension binding: %v", err)
+	}
+	preVerdict, verdictErr := dispatchcore.EvaluateProofAdmissionForDispatch(root, preBinding.GoalID, preBinding.Revision,
+		preBinding.File, preBinding.Revision, 1, now, "implementer", "fresh", dispatchcore.HazardMechanical)
+	if verdictErr != nil || !preVerdict.Refused() || preVerdict.Authority.Extension == nil ||
+		!strings.Contains(strings.Join(dispatchcore.FormatProofAdmission(preVerdict), "; "), "attemptLimit used=1 limit=1") {
+		t.Fatalf("fixture did not begin at exact extendable exhaustion: binding=%+v verdict=%+v err=%v", preBinding, preVerdict, verdictErr)
+	}
 	attempt, decision, joined, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
@@ -1359,6 +1643,17 @@ func TestNativeDelegateProofAdmissionExtendsItsClaimPairBudget(t *testing.T) {
 
 	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("native delegate proof did not extend and reserve: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
+	}
+	binding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
+	if err != nil || binding.File.Budget.AttemptLimit != 2 || binding.File.BudgetExtension == nil ||
+		binding.File.BudgetExtension.AttemptLimitFrom != 1 || binding.File.BudgetExtension.AttemptLimitTo != 2 {
+		t.Fatalf("authoritative post-extension binding = %+v, %v", binding, err)
+	}
+	postVerdict, err := dispatchcore.EvaluateProofAdmissionForDispatch(root, binding.GoalID, binding.Revision,
+		binding.File, binding.Revision, 1, now, "implementer", "fresh", dispatchcore.HazardMechanical)
+	if err != nil || !postVerdict.Refused() || postVerdict.Authority.Extension != nil ||
+		!strings.Contains(strings.Join(dispatchcore.FormatProofAdmission(postVerdict), "; "), "attemptLimit used=2 limit=2") {
+		t.Fatalf("consumed extension did not restore exact exhaustion: verdict=%+v err=%v", postVerdict, err)
 	}
 	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
 	goalRecord := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")

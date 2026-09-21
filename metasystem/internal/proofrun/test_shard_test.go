@@ -40,17 +40,19 @@ func TestFour(t *testing.T)  { if Four() != 4 { t.Fatal("four") } }
 `), 0o644)
 	writeTestResultFile(t, filepath.Join(root, "metasystem", "scripts", "agents", "coverage-ratchet.json"),
 		[]byte(`{"note":"fixture","exempt":{},"floors":{"internal/sharded":90}}`+"\n"), 0o644)
+	writeTestResultFile(t, filepath.Join(root, "metasystem", "scripts", "agents", "coverage-ratchet-linux.json"),
+		[]byte(`{"note":"fixture","exempt":{},"floors":{"internal/sharded":90}}`+"\n"), 0o644)
 	runTestResultGit(t, root, "add", ".")
 	runTestResultGit(t, root, "commit", "-qm", "fixture")
 	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
 	group := testpolicy.Group{ID: "sharded-coverage", Kind: "unit", Adapter: "go", CWD: "metasystem",
-		Inputs:      []string{"metasystem/go.mod", "metasystem/internal/sharded/**", "metasystem/scripts/agents/coverage-ratchet.json"},
+		Inputs:      []string{"metasystem/go.mod", "metasystem/internal/sharded/**", "metasystem/scripts/agents/coverage-ratchet.json", "metasystem/scripts/agents/coverage-ratchet-linux.json"},
 		Tools:       []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
 		Obligations: []string{"sharded-package-coverage"}, Platforms: []string{"any"}, TargetMS: 60000,
 		Packages: []string{"internal/sharded"}, Tests: []byte(`"all"`), Coverage: true, Shards: 2}
 	logRoot := filepath.Join(root, "logs")
 	result := runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, InstallationPrefix: "metasystem", CandidateTree: tree,
-		Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false"), LogRoot: logRoot}, group)
+		Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false"), LogRoot: logRoot, Workers: 2}, group)
 	if result.Status != "passed" || !result.CollectionComplete {
 		t.Fatalf("sharded group result=%+v", result)
 	}
@@ -78,6 +80,20 @@ func TestFour(t *testing.T)  { if Four() != 4 { t.Fatal("four") } }
 	if !result.NativeLaunched || result.CPUSeconds < 0 {
 		t.Fatalf("merged supervision lost the launch: %+v", result)
 	}
+
+	group.ID = "named-shards"
+	group.Tests = []byte(`["TestOne","TestThree","TestFour"]`)
+	group.Coverage = false
+	named := runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, InstallationPrefix: "metasystem", CandidateTree: tree,
+		Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false"), LogRoot: logRoot, Workers: 2}, group)
+	if named.Status != "passed" || !named.CollectionComplete || len(named.Observed) != 3 || len(named.Missing) != 0 || len(named.Unexpected) != 0 {
+		t.Fatalf("named shards did not retain the adapter's selected-set ownership: %+v", named)
+	}
+	for _, shard := range []string{"named-shards.shard-1.log", "named-shards.shard-2.log"} {
+		if _, err := os.Stat(filepath.Join(logRoot, shard)); err != nil {
+			t.Fatalf("named shard log missing: %v", err)
+		}
+	}
 }
 
 // A floor the merged coverage cannot meet fails the sharded group, so the
@@ -102,16 +118,18 @@ func TestAlsoCovered(t *testing.T) { if Covered() != 1 { t.Fatal("covered") } }
 `), 0o644)
 	writeTestResultFile(t, filepath.Join(root, "metasystem", "scripts", "agents", "coverage-ratchet.json"),
 		[]byte(`{"note":"fixture","exempt":{},"floors":{"internal/half":90}}`+"\n"), 0o644)
+	writeTestResultFile(t, filepath.Join(root, "metasystem", "scripts", "agents", "coverage-ratchet-linux.json"),
+		[]byte(`{"note":"fixture","exempt":{},"floors":{"internal/half":90}}`+"\n"), 0o644)
 	runTestResultGit(t, root, "add", ".")
 	runTestResultGit(t, root, "commit", "-qm", "fixture")
 	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
 	group := testpolicy.Group{ID: "sharded-half", Kind: "unit", Adapter: "go", CWD: "metasystem",
-		Inputs:      []string{"metasystem/go.mod", "metasystem/internal/half/**", "metasystem/scripts/agents/coverage-ratchet.json"},
+		Inputs:      []string{"metasystem/go.mod", "metasystem/internal/half/**", "metasystem/scripts/agents/coverage-ratchet.json", "metasystem/scripts/agents/coverage-ratchet-linux.json"},
 		Tools:       []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
 		Obligations: []string{"half-package-coverage"}, Platforms: []string{"any"}, TargetMS: 60000,
 		Packages: []string{"internal/half"}, Tests: []byte(`"all"`), Coverage: true, Shards: 2}
 	result := runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, InstallationPrefix: "metasystem", CandidateTree: tree,
-		Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false"), LogRoot: filepath.Join(root, "logs")}, group)
+		Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false"), LogRoot: filepath.Join(root, "logs"), Workers: 2}, group)
 	if result.Status != "failed" || !strings.Contains(result.NotRunReason, "internal/half") {
 		t.Fatalf("a missed floor did not fail the sharded group: %+v", result)
 	}

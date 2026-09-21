@@ -46,6 +46,8 @@ func TestFlipsOnSecondRun(t *testing.T) {
 	}
 	finding := result.Reruns[0]
 	validation := validSupervisorStatusResult(result.Status, "fixture failed")
+	validation.WorkerPolicyVersion = TestWorkerPolicyVersion
+	validation.Workers = 1
 	validation.Groups[0].Reruns = append([]RerunFinding(nil), result.Reruns...)
 	zero := 0
 	validation.Groups[0].NativeLaunched = true

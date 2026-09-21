@@ -30,6 +30,7 @@ var engineBindingStandardTests = []string{
 	"TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker",
 	"TestFrozenPublicVersionOneProtectionCorpusIsComplete",
 	"TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable",
+	"TestFrozenWorkerProbesTraverseActiveEmptyLegacyAndForgedReuse",
 	"TestFrozenWorkerProbeReaderAcceptsCandidateGroupFields",
 	"TestLandedRearmDecidesFromTheThreeFacts",
 	"TestLandedRearmFactsFailOnARepositoryFailureInsteadOfJudgingHeadUnlanded",

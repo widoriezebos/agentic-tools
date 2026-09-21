@@ -14,11 +14,13 @@ import (
 )
 
 const (
-	LegacyTestResultSchemaVersion        = 1
-	TestResultSchemaVersion              = 2
-	candidateEngineDigestIdentityVersion = 1
-	CandidateEngineIdentitySchemaVersion = 2
-	GroupExecutionIdentityVersion        = 2
+	LegacyTestResultSchemaVersion         = 1
+	PreviousTestResultSchemaVersion       = 2
+	TestResultSchemaVersion               = 3
+	candidateEngineDigestIdentityVersion  = 1
+	CandidateEngineIdentitySchemaVersion  = 2
+	PreviousGroupExecutionIdentityVersion = 2
+	GroupExecutionIdentityVersion         = 3
 )
 
 type NativeTestIdentity struct {
@@ -92,6 +94,10 @@ type LaunchCounts struct {
 	ReusedOther    int  `json:"reusedOther"`
 }
 
+func identityBoundTestResultSchema(version int) bool {
+	return version == PreviousTestResultSchemaVersion || version == TestResultSchemaVersion
+}
+
 func ValidateTestResult(result TestResult) error {
 	if result.SchemaVersion > TestResultSchemaVersion {
 		return fmt.Errorf("unsupported future test result schema %d", result.SchemaVersion)
@@ -103,7 +109,7 @@ func ValidateTestResult(result TestResult) error {
 		result.CandidateEngineIdentityVersion == candidateEngineDigestIdentityVersion && candidateEngineMissing ||
 		result.CandidateEngineIdentityVersion == CandidateEngineIdentitySchemaVersion &&
 			(candidateEngineMissing || !validTreeDigest(result.CandidateEngineBuildIdentity))
-	if (result.SchemaVersion != LegacyTestResultSchemaVersion && result.SchemaVersion != TestResultSchemaVersion) || result.Purpose == "" || result.RequestedMode == "" ||
+	if (result.SchemaVersion != LegacyTestResultSchemaVersion && result.SchemaVersion != PreviousTestResultSchemaVersion && result.SchemaVersion != TestResultSchemaVersion) || result.Purpose == "" || result.RequestedMode == "" ||
 		result.RequiredMode == "" || result.ExecutedMode == "" || result.ProjectRoot == "" || result.BaseCommit == "" ||
 		!validTreeDigest(result.CandidateTree) || !validResultDigest(result.ContractDigest) ||
 		!validResultDigest(result.BaseContractDigest) || !validResultDigest(result.PolicyEngineDigest) ||
@@ -111,6 +117,14 @@ func ValidateTestResult(result TestResult) error {
 		!validResultDigest(result.BehaviorPolicyDigest) || !validResultDigest(result.PlanDigest) ||
 		!result.LaunchCounts.CountsComplete || result.Cost.DeclaredTargetMS <= 0 {
 		return fmt.Errorf("test result has incomplete identity or launch accounting")
+	}
+	if result.SchemaVersion == TestResultSchemaVersion &&
+		(result.WorkerPolicyVersion != TestWorkerPolicyVersion || result.Workers < 1 || result.AdmissionMaximum == nil || *result.AdmissionMaximum < 0) {
+		return fmt.Errorf("test result has incomplete worker policy")
+	}
+	if result.SchemaVersion != TestResultSchemaVersion &&
+		(result.WorkerPolicyVersion != 0 || result.Workers != 0 || result.AdmissionMaximum != nil) {
+		return fmt.Errorf("legacy test result claims unsupported worker policy")
 	}
 	if result.FreshnessEpisode != "" && (!validResultDigest(result.FreshnessEpisode) || !validResultDigest(result.FreshnessBinding)) ||
 		result.FreshnessEpisode == "" && result.FreshnessBinding != "" {
@@ -146,6 +160,10 @@ func ValidateTestResult(result TestResult) error {
 		}
 		if group.IdentityVersion < 0 || group.IdentityVersion > GroupExecutionIdentityVersion {
 			return fmt.Errorf("test result group %s has unsupported execution identity version", group.ID)
+		}
+		if result.SchemaVersion == PreviousTestResultSchemaVersion && group.IdentityVersion > PreviousGroupExecutionIdentityVersion ||
+			result.SchemaVersion == TestResultSchemaVersion && group.IdentityVersion != GroupExecutionIdentityVersion {
+			return fmt.Errorf("test result schema %d conflicts with group %s identity version %d", result.SchemaVersion, group.ID, group.IdentityVersion)
 		}
 		seen[group.ID] = true
 		switch group.Status {
@@ -224,6 +242,9 @@ type TestCost struct {
 
 type TestResult struct {
 	SchemaVersion                  int                       `json:"schemaVersion"`
+	WorkerPolicyVersion            int                       `json:"workerPolicyVersion,omitempty"`
+	Workers                        int                       `json:"workers,omitempty"`
+	AdmissionMaximum               *int                      `json:"admissionMaximum,omitempty"`
 	AttemptID                      string                    `json:"attemptId"`
 	Purpose                        testpolicy.Purpose        `json:"purpose"`
 	RequestedMode                  testpolicy.Mode           `json:"requestedMode"`
@@ -417,11 +438,16 @@ func newestReuseObservation(template TestResult, attempts []Attempt, id, identit
 		}
 		observed := false
 		if source := attempt.TestResult; source != nil && source.JudgeKey == template.JudgeKey && source.BehaviorPolicyDigest == template.BehaviorPolicyDigest {
+			if identityBoundTestResultSchema(source.SchemaVersion) && identityBoundTestResultSchema(template.SchemaVersion) &&
+				source.SchemaVersion != template.SchemaVersion {
+				continue
+			}
 			for _, group := range source.Groups {
 				if group.ID != id || group.ExecutionIdentity != identity || !NativeTestProducer(attempt, group) {
 					continue
 				}
-				if group.IdentityVersion != GroupExecutionIdentityVersion &&
+				if (!identityBoundTestResultSchema(template.SchemaVersion) ||
+					group.IdentityVersion != groupExecutionIdentityVersionForResult(template.SchemaVersion)) &&
 					(source.ContractDigest != template.ContractDigest || source.BaseContractDigest != template.BaseContractDigest) {
 					continue
 				}
@@ -448,6 +474,16 @@ func newestReuseObservation(template TestResult, attempts []Attempt, id, identit
 	return newest, found
 }
 
+func groupExecutionIdentityVersionForResult(schemaVersion int) int {
+	if schemaVersion == TestResultSchemaVersion {
+		return GroupExecutionIdentityVersion
+	}
+	if schemaVersion == PreviousTestResultSchemaVersion {
+		return PreviousGroupExecutionIdentityVersion
+	}
+	return 0
+}
+
 // ExactReusableTestResult returns the original successful outer result when
 // one attempt owns the complete current selection. Keeping its AttemptID is
 // what lets the public receipt command recover the byte-exact payload already
@@ -469,6 +505,8 @@ func ExactReusableTestResult(template TestResult, attempts []Attempt, identities
 			result.CandidateEngineIdentityVersion != template.CandidateEngineIdentityVersion ||
 			result.CandidateEngineBuildIdentity != template.CandidateEngineBuildIdentity ||
 			result.BehaviorPolicyDigest != template.BehaviorPolicyDigest ||
+			result.WorkerPolicyVersion != template.WorkerPolicyVersion || result.Workers != template.Workers ||
+			!reflect.DeepEqual(result.AdmissionMaximum, template.AdmissionMaximum) ||
 			result.Purpose != template.Purpose || result.RequiredMode != template.RequiredMode || result.ExecutedMode != template.ExecutedMode ||
 			!reflect.DeepEqual(result.SelectedGroups, template.SelectedGroups) || !reflect.DeepEqual(result.RequiredGroups, template.RequiredGroups) ||
 			!result.Delivery.Sufficient || ValidateTestResult(*result) != nil {
@@ -520,7 +558,8 @@ func reusedTestResult(template TestResult, attempts []Attempt, identities map[st
 		definition := definitions[id]
 		unrun := func(reason string) GroupResult {
 			return GroupResult{ID: id, Kind: definition.Kind, Obligations: append([]string(nil), definition.Obligations...),
-				InputDigest: result.CandidateTree, InputManifest: append([]string(nil), definition.Inputs...), ExecutionIdentity: identities[id], CWD: definition.CWD, Status: "not-run", NotRunReason: reason,
+				IdentityVersion: groupExecutionIdentityVersionForResult(result.SchemaVersion),
+				InputDigest:     result.CandidateTree, InputManifest: append([]string(nil), definition.Inputs...), ExecutionIdentity: identities[id], CWD: definition.CWD, Status: "not-run", NotRunReason: reason,
 				ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
 		}
 		if policy.ForceGroups {
@@ -605,7 +644,8 @@ func blockUnsatisfiedPrerequisites(result *TestResult, contract testpolicy.Contr
 
 func blockedGroupResult(group GroupResult, blockers []string) GroupResult {
 	return GroupResult{ID: group.ID, Kind: group.Kind, Obligations: append([]string(nil), group.Obligations...),
-		InputDigest: group.InputDigest, InputManifest: append([]string(nil), group.InputManifest...), CWD: group.CWD,
+		IdentityVersion: group.IdentityVersion,
+		InputDigest:     group.InputDigest, InputManifest: append([]string(nil), group.InputManifest...), CWD: group.CWD,
 		ExecutionIdentity: group.ExecutionIdentity, Status: "blocked",
 		NotRunReason:   "prerequisite failed or lacked valid evidence: " + strings.Join(blockers, ","),
 		BlockingGroups: append([]string(nil), blockers...), ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}

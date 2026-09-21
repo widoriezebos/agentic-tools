@@ -101,7 +101,7 @@ func TestGLEExplicitEnvironmentAndDeclaredToolInputs(t *testing.T) {
 	}
 	group := testpolicy.Group{EnvironmentMode: "explicit", Env: map[string]string{"PATH": os.Getenv("PATH"), "TOOL_HOME": external},
 		Inputs: []string{"source.txt"}, ExternalInputs: []testpolicy.ExternalInput{{ID: "tool-config", Path: "${TOOL_HOME}/tool.conf"}}}
-	request := TestRunRequest{Environment: []string{"PATH=/untrusted", "AMBIENT_SECRET=do-not-inherit", "TOOL_HOME=/untrusted"}}
+	request := TestRunRequest{Workers: 1, Environment: []string{"PATH=/untrusted", "AMBIENT_SECRET=do-not-inherit", "TOOL_HOME=/untrusted"}}
 	environment := groupTestEnvironment(request, group)
 	command, err := explicitEnvironmentCommand(context.Background(), root, environment, []string{"/usr/bin/env"})
 	if err != nil {
@@ -148,7 +148,7 @@ func TestGLEExplicitEnvironmentAndDeclaredToolInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	output, err = emptyCommand.Output()
-	if err != nil || len(output) != 0 {
+	if err != nil || string(output) != TestWorkersEnvironment+"=1\n" {
 		t.Fatalf("empty explicit child environment: %q %v", output, err)
 	}
 }

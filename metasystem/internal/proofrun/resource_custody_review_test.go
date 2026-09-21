@@ -57,6 +57,82 @@ func TestResourceCustodySettlesWatchdogBeforeFinalCensus(t *testing.T) {
 	}
 }
 
+func TestResourceCustodyClassifiesExactSuiteTerminalStates(t *testing.T) {
+	t.Parallel()
+	started := time.Unix(1700000000, 123000)
+	suite := identity.Exact{Pid: 77, StartedAt: started}.Ref()
+	for _, specimen := range []struct {
+		name      string
+		exact     identity.Exact
+		state     identity.Liveness
+		probeErr  error
+		wantEnded bool
+		wantError bool
+	}{
+		{name: "live", exact: identity.Exact{Pid: 77, StartedAt: started}, state: identity.Alive},
+		{name: "zombie", exact: identity.Exact{Pid: 77, StartedAt: started, Zombie: true}, state: identity.Alive, wantEnded: true},
+		{name: "exiting", exact: identity.Exact{Pid: 77, StartedAt: started, Exiting: true}, state: identity.Alive, wantEnded: true},
+		{name: "dead", state: identity.Dead, wantEnded: true},
+		{name: "replaced", exact: identity.Exact{Pid: 77, StartedAt: started.Add(time.Second)}, state: identity.Alive, wantEnded: true},
+		{name: "unknown", state: identity.Unknown, probeErr: errors.New("probe denied"), wantError: true},
+	} {
+		t.Run(specimen.name, func(t *testing.T) {
+			ended, err := resourceCustodySuiteEnded(functionIdentityProber(func(int64) (identity.Exact, identity.Liveness, error) {
+				return specimen.exact, specimen.state, specimen.probeErr
+			}), suite)
+			if ended != specimen.wantEnded || (err != nil) != specimen.wantError {
+				t.Fatalf("ended=%t err=%v wantEnded=%t wantError=%t", ended, err, specimen.wantEnded, specimen.wantError)
+			}
+		})
+	}
+}
+
+func TestResourceCustodianStopsDiscoveryBeforeReplacementGroup(t *testing.T) {
+	t.Parallel()
+	clock := time.Unix(1800000000, 0)
+	old := identity.Exact{Pid: 101, StartedAt: time.Unix(1700000000, 0)}
+	replacement := identity.Exact{Pid: 202, StartedAt: time.Unix(1700000100, 0)}
+	oldDead, censuses := false, 0
+	var signaled []int
+	prober := functionIdentityProber(func(pid int64) (identity.Exact, identity.Liveness, error) {
+		switch pid {
+		case old.Pid:
+			if oldDead {
+				return identity.Exact{}, identity.Dead, nil
+			}
+			return old, identity.Alive, nil
+		case replacement.Pid:
+			return replacement, identity.Alive, nil
+		default:
+			return identity.Exact{}, identity.Dead, nil
+		}
+	})
+	observed, err := drainResourceGroupWith(999, prober, time.Second, func(int64) ([]int64, error) {
+		censuses++
+		switch censuses {
+		case 1:
+			return []int64{old.Pid}, nil
+		case 2, 3:
+			return nil, nil
+		default:
+			// A reused numeric group exists only after the old owner completed
+			// its stable empty census. The owner must never make this call.
+			return []int64{replacement.Pid}, nil
+		}
+	}, func(pid int, signal syscall.Signal) error {
+		signaled = append(signaled, pid)
+		if int64(pid) == old.Pid && signal == syscall.SIGKILL {
+			oldDead = true
+		}
+		return nil
+	}, func() time.Time { return clock }, func() { clock = clock.Add(time.Millisecond) })
+	seenReplacement, state, probeErr := prober.Probe(replacement.Pid)
+	if err != nil || !observed || censuses != 3 || len(signaled) != 1 || int64(signaled[0]) != old.Pid ||
+		probeErr != nil || state != identity.Alive || !identity.SameIdentity(seenReplacement, replacement.Ref()) {
+		t.Fatalf("observed=%t censuses=%d signals=%v replacementState=%s probe=%v err=%v", observed, censuses, signaled, state, probeErr, err)
+	}
+}
+
 func TestResourceCustodyRepeatsDetachedFixtureCensusAfterKill(t *testing.T) {
 	prober := identity.KernelProber{}
 	owner, state, err := prober.Probe(int64(os.Getpid()))

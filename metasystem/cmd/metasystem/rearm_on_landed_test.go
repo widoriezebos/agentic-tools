@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -183,7 +184,7 @@ exec "${LANDED_REARM_REAL_GIT:?}" "$@"
 	return context.WithValue(ctx, landedRearmGitCommandContextKey{}, factory)
 }
 
-func stallLandedGitSubcommandOnce(t *testing.T, ctx context.Context, subcommand string) (context.Context, string) {
+func stallLandedGitSubcommandOnce(t *testing.T, ctx context.Context, subcommand string) (context.Context, *os.File, <-chan struct{}) {
 	t.Helper()
 	realGit, err := exec.LookPath("git")
 	if err != nil {
@@ -200,6 +201,11 @@ func stallLandedGitSubcommandOnce(t *testing.T, ctx context.Context, subcommand 
 	if err := syscall.Mkfifo(release, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	startedObserver, err := os.OpenFile(started, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = startedObserver.Close() })
 	script := `#!/usr/bin/env bash
 set -euo pipefail
 for argument in "$@"; do
@@ -224,7 +230,18 @@ exec "${LANDED_REARM_REAL_GIT:?}" "$@"
 			"LANDED_REARM_GIT_RELEASE_FIFO="+release)
 		return command
 	})
-	return context.WithValue(ctx, landedRearmGitCommandContextKey{}, factory), started
+	ctx = context.WithValue(ctx, landedRearmGitCommandContextKey{}, factory)
+	settled := make(chan struct{})
+	var settledOnce sync.Once
+	ctx = context.WithValue(ctx, landedRearmGitCommandSettledContextKey{}, func(command *exec.Cmd) {
+		for _, argument := range command.Args {
+			if argument == subcommand {
+				settledOnce.Do(func() { close(settled) })
+				return
+			}
+		}
+	})
+	return ctx, startedObserver, settled
 }
 
 // newLandedRearmFixture is a checkout with its installation under
@@ -406,18 +423,25 @@ func TestLandedRearmRefusesARepositoryFailureReadingTheLandingRefWithGitDetail(t
 	t.Run("stall", func(t *testing.T) {
 		fixture := newLandedRearmFixture(t)
 		head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
-		ctx, started := stallLandedGitSubcommandOnce(t, context.Background(), "config")
+		ctx, started, settled := stallLandedGitSubcommandOnce(t, context.Background(), "config")
 		clock := newScheduledRearmClock()
 		result := make(chan error, 1)
 		go func() {
 			_, err := readLandedRearmFacts(ctx, clock, 20, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) (bool, error) { return false, nil })
 			result <- err
 		}()
-		if _, err := os.ReadFile(started); err != nil {
+		startedToken := make([]byte, len("started"))
+		if _, err := io.ReadFull(started, startedToken); err != nil {
 			t.Fatal(err)
+		}
+		select {
+		case <-settled:
+			t.Fatal("stalled command settled before its semantic deadline")
+		default:
 		}
 		clock.advance(21 * time.Second)
 		err := <-result
+		<-settled
 		refusal := judgmentRefusal(err, engineCheckoutFacts(fixture.projectRoot), "judging the enrolled engine against the landed tip failed")
 		if err == nil || !errors.Is(err, steward.ErrJudgmentStalled) ||
 			!strings.Contains(refusal.Error(), "cause=judgment-stalled step=read-landing-ref seconds=20") ||
@@ -456,18 +480,25 @@ func TestLandedRearmRefusesARepositoryFailureResolvingCheckoutHeadWithGitDetail(
 	t.Run("stall", func(t *testing.T) {
 		fixture := newLandedRearmFixture(t)
 		head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
-		ctx, started := stallLandedGitSubcommandOnce(t, context.Background(), "HEAD^{commit}")
+		ctx, started, settled := stallLandedGitSubcommandOnce(t, context.Background(), "HEAD^{commit}")
 		clock := newScheduledRearmClock()
 		result := make(chan error, 1)
 		go func() {
 			_, err := readLandedRearmFacts(ctx, clock, 20, fixture.installation, fixture.projectRoot, "metasystem", head, func(string) (bool, error) { return false, nil })
 			result <- err
 		}()
-		if _, err := os.ReadFile(started); err != nil {
+		startedToken := make([]byte, len("started"))
+		if _, err := io.ReadFull(started, startedToken); err != nil {
 			t.Fatal(err)
+		}
+		select {
+		case <-settled:
+			t.Fatal("stalled command settled before its semantic deadline")
+		default:
 		}
 		clock.advance(21 * time.Second)
 		err := <-result
+		<-settled
 		refusal := judgmentRefusal(err, engineCheckoutFacts(fixture.projectRoot), "judging the enrolled engine against the landed tip failed")
 		if err == nil || !errors.Is(err, steward.ErrJudgmentStalled) ||
 			!strings.Contains(refusal.Error(), "cause=judgment-stalled step=resolve-checkout-head seconds=20") ||

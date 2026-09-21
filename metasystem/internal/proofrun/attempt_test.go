@@ -373,9 +373,28 @@ func TestAttemptSchemaTwoAtomicallyRetainsTestingAndReadsSchemaOne(t *testing.T)
 	if err := os.WriteFile(path, newReservation, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result.SchemaVersion = TestResultSchemaVersion
+	result.SchemaVersion = PreviousTestResultSchemaVersion
+	result.Groups[0].IdentityVersion = PreviousGroupExecutionIdentityVersion
 	if _, err := FinalizeAttemptWithTestResultLocked(root, attempt.AttemptID, TerminalSuccess, 0, "green", nil, &result, now.Add(time.Second)); err != nil {
-		t.Fatalf("schema-4 attempt did not retain schema-2 result: %v", err)
+		t.Fatalf("candidate attempt did not upgrade while retaining schema-2 identity evidence: %v", err)
+	}
+	previous, err := ReadAttempt(root, attempt.AttemptID)
+	if err != nil || previous.SchemaVersion != IdentityAttemptSchemaVersion || previous.TestResult == nil || previous.TestResult.SchemaVersion != PreviousTestResultSchemaVersion {
+		t.Fatalf("schema-2 result did not require the identity attempt schema: %+v %v", previous, err)
+	}
+	downgraded := previous
+	downgraded.SchemaVersion = CandidateAttemptSchemaVersion
+	if err := validateAttempt(downgraded); err == nil || !strings.Contains(err.Error(), "requires attempt schema") {
+		t.Fatalf("schema-2 identity evidence accepted a candidate attempt record: %v", err)
+	}
+	if err := os.WriteFile(path, newReservation, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result.SchemaVersion = TestResultSchemaVersion
+	result.Groups[0].IdentityVersion = GroupExecutionIdentityVersion
+	applyCurrentWorkerPolicy(&result)
+	if _, err := FinalizeAttemptWithTestResultLocked(root, attempt.AttemptID, TerminalSuccess, 0, "green", nil, &result, now.Add(time.Second)); err != nil {
+		t.Fatalf("schema-4 attempt did not retain schema-3 result: %v", err)
 	}
 	if read, err := ReadAttempt(root, attempt.AttemptID); err != nil || read.SchemaVersion != IdentityAttemptSchemaVersion ||
 		read.TestResult == nil || read.TestResult.SchemaVersion != TestResultSchemaVersion {
@@ -1026,6 +1045,8 @@ func retainComponentAttempt(t *testing.T, request AdmissionRequest, tree string,
 			group.NativeLaunched, group.CollectionComplete, group.NativeExitStatus = false, false, nil
 		case "blocked":
 			result.SchemaVersion = TestResultSchemaVersion
+			applyCurrentWorkerPolicy(&result)
+			group.IdentityVersion = GroupExecutionIdentityVersion
 			group.Status, group.NotRunReason, group.BlockingGroups = "blocked", "prerequisite failed: harness", []string{"harness"}
 			group.NativeLaunched, group.CollectionComplete, group.NativeExitStatus = false, false, nil
 		}
@@ -1034,6 +1055,11 @@ func retainComponentAttempt(t *testing.T, request AdmissionRequest, tree string,
 		result.RequiredGroups = append(result.RequiredGroups, observed.id)
 		if observed.status != "not-run" && observed.status != "blocked" {
 			result.LaunchCounts.Test++
+		}
+	}
+	if result.SchemaVersion == TestResultSchemaVersion {
+		for index := range result.Groups {
+			result.Groups[index].IdentityVersion = GroupExecutionIdentityVersion
 		}
 	}
 	result.StoppedAtFirstFailure = stoppedAtFirstFailure(result.Groups)

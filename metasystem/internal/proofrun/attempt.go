@@ -518,8 +518,8 @@ func validateAttempt(attempt Attempt) error {
 	if attempt.SchemaVersion == LegacyAttemptSchemaVersion && attempt.TestResult != nil {
 		return fmt.Errorf("legacy proof attempt cannot carry schema-2 testing evidence")
 	}
-	if attempt.TestResult != nil && attempt.TestResult.SchemaVersion == TestResultSchemaVersion && attempt.SchemaVersion != IdentityAttemptSchemaVersion {
-		return fmt.Errorf("test result schema %d requires attempt schema %d", TestResultSchemaVersion, IdentityAttemptSchemaVersion)
+	if attempt.TestResult != nil && identityBoundTestResultSchema(attempt.TestResult.SchemaVersion) && attempt.SchemaVersion != IdentityAttemptSchemaVersion {
+		return fmt.Errorf("test result schema %d requires attempt schema %d", attempt.TestResult.SchemaVersion, IdentityAttemptSchemaVersion)
 	}
 	if attempt.SchemaVersion != IdentityAttemptSchemaVersion && len(attempt.TestFreshGroups) > 0 {
 		return fmt.Errorf("proof attempt schema %d cannot carry fresh group claims", attempt.SchemaVersion)
@@ -1418,11 +1418,11 @@ func FinalizeAttemptWithTestResultLocked(root, id, result string, exitStatus int
 		if err := validateAdmittedTestResult(attempt, copyResult); err != nil {
 			return Attempt{}, err
 		}
-		if copyResult.SchemaVersion == TestResultSchemaVersion {
+		if identityBoundTestResultSchema(copyResult.SchemaVersion) {
 			if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
 				attempt.SchemaVersion = IdentityAttemptSchemaVersion
 			} else if attempt.SchemaVersion != IdentityAttemptSchemaVersion {
-				return Attempt{}, fmt.Errorf("test result schema %d requires candidate attempt schema %d", TestResultSchemaVersion, IdentityAttemptSchemaVersion)
+				return Attempt{}, fmt.Errorf("test result schema %d requires candidate attempt schema %d", copyResult.SchemaVersion, IdentityAttemptSchemaVersion)
 			}
 		}
 		attempt.TestResult = &copyResult
@@ -1483,11 +1483,11 @@ func RecordTestResult(root, id string, result TestResult) (Attempt, error) {
 	if err := validateAdmittedTestResult(attempt, result); err != nil {
 		return Attempt{}, err
 	}
-	if result.SchemaVersion == TestResultSchemaVersion {
+	if identityBoundTestResultSchema(result.SchemaVersion) {
 		if attempt.SchemaVersion == CandidateAttemptSchemaVersion {
 			attempt.SchemaVersion = IdentityAttemptSchemaVersion
 		} else if attempt.SchemaVersion != IdentityAttemptSchemaVersion {
-			return Attempt{}, fmt.Errorf("test result schema %d requires candidate attempt schema %d", TestResultSchemaVersion, IdentityAttemptSchemaVersion)
+			return Attempt{}, fmt.Errorf("test result schema %d requires candidate attempt schema %d", result.SchemaVersion, IdentityAttemptSchemaVersion)
 		}
 	}
 	if len(attempt.PendingTestGroups) > 0 {

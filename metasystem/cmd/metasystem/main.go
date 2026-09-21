@@ -8,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 )
 
@@ -47,6 +48,7 @@ func families() []family {
 				{"run", "admit and execute the recomputed selected test plan", runTestRun},
 				{"verify", "verify sufficient retained proof without launching tests or builds", runTestVerify},
 				{"report", "summarize measured cost from one retained test result", runTestReport},
+				{"worker-capabilities", "report the installed testing worker protocol (internal)", runTestWorkerCapabilities},
 				{"worker", "execute one admitted selected plan (internal)", runTestWorker},
 			},
 		},
@@ -87,6 +89,7 @@ func families() []family {
 				{"coverage-eligible", "decide whether an authenticated worker owns full coverage production", runProofRunCoverageEligible},
 				{"coverage-complete", "commit measured coverage from the authenticated producer", runProofRunCoverageComplete},
 				{"coverage-reuse", "project matching successful full coverage for selected packages", runProofRunCoverageReuse},
+				{"go-gate-tests", "run the full gate's bounded native Go selection", runProofRunGoGateTests},
 				{"fixture-selection", "select the owned fixture scenario set (internal)", runProofRunFixtureSelection},
 			},
 		},
@@ -723,23 +726,47 @@ func main() {
 }
 
 func dispatch(args []string) int {
-	if len(args) == 2 && args[0] == "help" {
-		for _, fam := range families() {
-			if fam.name != args[1] {
-				continue
-			}
-			fmt.Printf("usage: metasystem %s <verb> [flags]\n%s\n", fam.name, fam.summary)
-			for _, v := range fam.verbs {
-				fmt.Printf("  %-14s %s\n", v.name, v.summary)
-			}
-			return 0
-		}
-		fmt.Fprintf(os.Stderr, "metasystem help: unknown family %q\n", args[1])
+	return dispatchWithFamilies(args, os.Stdout, os.Stderr, families())
+}
+
+func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []family) int {
+	if len(args) == 0 {
+		writeUsage(stderr, registered)
 		return 2
 	}
-	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		usage()
+	if args[0] == "help" {
+		if len(args) == 1 {
+			writeUsage(stdout, registered)
+			return 0
+		}
+		if len(args) != 2 {
+			fmt.Fprintln(stderr, "usage: metasystem help [FAMILY]")
+			return 2
+		}
+		for _, fam := range registered {
+			if fam.name == args[1] {
+				writeFamilyHelp(stdout, fam)
+				return 0
+			}
+		}
+		fmt.Fprintf(stderr, "metasystem help: unknown family %q\n", args[1])
 		return 2
+	}
+	if args[0] == "--help" || args[0] == "-h" {
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, "usage: metasystem help [FAMILY]")
+			return 2
+		}
+		writeUsage(stdout, registered)
+		return 0
+	}
+	if len(args) == 2 && (args[1] == "--help" || args[1] == "-h") {
+		for _, fam := range registered {
+			if fam.name == args[0] {
+				writeFamilyHelp(stdout, fam)
+				return 0
+			}
+		}
 	}
 	if args[0] == "up" {
 		return runUp(args[1:])
@@ -768,13 +795,13 @@ func dispatch(args []string) int {
 	if args[0] == "delegate" {
 		return runDelegate(args[1:])
 	}
-	for _, fam := range families() {
+	for _, fam := range registered {
 		if fam.name != args[0] {
 			continue
 		}
 		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "metasystem %s: a verb is required\n", fam.name)
-			usage()
+			fmt.Fprintf(stderr, "metasystem %s: a verb is required\n", fam.name)
+			writeUsage(stderr, registered)
 			return 2
 		}
 		for _, v := range fam.verbs {
@@ -782,39 +809,49 @@ func dispatch(args []string) int {
 				return v.run(args[2:])
 			}
 		}
-		fmt.Fprintf(os.Stderr, "metasystem %s: unknown verb %q\n", fam.name, args[1])
+		fmt.Fprintf(stderr, "metasystem %s: unknown verb %q\n", fam.name, args[1])
 		return 2
 	}
-	fmt.Fprintf(os.Stderr, "metasystem: unknown family %q\n", args[0])
-	usage()
+	fmt.Fprintf(stderr, "metasystem: unknown family %q\n", args[0])
+	writeUsage(stderr, registered)
 	return 2
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, "usage: metasystem <family> <verb> [flags]")
-	fmt.Fprintln(os.Stderr, "       metasystem up [--repo <checkout>] [--pid <pid> --start-time <epoch>]")
-	fmt.Fprintln(os.Stderr, "       metasystem up --print-scheduler-entry [--repo <checkout>]")
-	fmt.Fprintln(os.Stderr, "       metasystem stop [--repo <path>] [--installation <dir>] [--all]")
-	fmt.Fprintln(os.Stderr, "       metasystem status [--repo <path>] [--installation <dir>] [--all]")
-	fmt.Fprintln(os.Stderr, "       metasystem arm [--repo <path>] [--installation <dir>] [--all] [--temporary-human-word <word> --review-by <date>]")
-	fmt.Fprintln(os.Stderr, "       metasystem health --repo <checkout>")
-	fmt.Fprintln(os.Stderr, "       metasystem health acknowledge-alert --episode <id> [--repo <checkout>]")
-	fmt.Fprintln(os.Stderr, "       metasystem watch [--root <checkout>] [--json]")
-	fmt.Fprintln(os.Stderr, "       metasystem watch --job <id> [--root <checkout>] [--poll-ms <milliseconds>]")
-	fmt.Fprintln(os.Stderr, "       metasystem wait (--job <id>|--run <id>|--attempt <id>|--goal <id>|--path <absolute-path> --until <present|absent>|--resume <wait-id>) [--timeout <duration>] [--json]")
-	fmt.Fprintln(os.Stderr, "       metasystem wait register --pid <pid> --label <text> [--job <id>] [--timeout <duration>] [--json]")
-	fmt.Fprintln(os.Stderr, "       metasystem wait register --human --question <text> --timeout <duration> [--json]")
-	fmt.Fprintln(os.Stderr, "       metasystem wait end --wait-id <id> [--json]")
-	fmt.Fprintln(os.Stderr, "       metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <class> [--op <id>]")
-	fmt.Fprintln(os.Stderr, "       metasystem delegate --follow-up <job> --brief <file>")
-	fmt.Fprintln(os.Stderr, "       metasystem delegate --cancel <job>")
-	for _, fam := range families() {
-		fmt.Fprintf(os.Stderr, "  %-10s %s\n", fam.name, fam.summary)
+func writeFamilyHelp(w io.Writer, fam family) {
+	fmt.Fprintf(w, "usage: metasystem %s <verb> [flags]\n%s\n", fam.name, fam.summary)
+	for _, command := range fam.verbs {
+		fmt.Fprintf(w, "  %-14s %s\n", command.name, command.summary)
+	}
+	if len(fam.verbs) > 0 {
+		fmt.Fprintf(w, "example: metasystem %s %s --help (show leaf flags)\n", fam.name, fam.verbs[0].name)
+	}
+}
+
+func writeUsage(w io.Writer, registered []family) {
+	fmt.Fprintln(w, "usage: metasystem <family> <verb> [flags]")
+	fmt.Fprintln(w, "       metasystem up [--repo <checkout>] [--pid <pid> --start-time <epoch>]")
+	fmt.Fprintln(w, "       metasystem up --print-scheduler-entry [--repo <checkout>]")
+	fmt.Fprintln(w, "       metasystem stop [--repo <path>] [--installation <dir>] [--all]")
+	fmt.Fprintln(w, "       metasystem status [--repo <path>] [--installation <dir>] [--all]")
+	fmt.Fprintln(w, "       metasystem arm [--repo <path>] [--installation <dir>] [--all] [--temporary-human-word <word> --review-by <date>]")
+	fmt.Fprintln(w, "       metasystem health --repo <checkout>")
+	fmt.Fprintln(w, "       metasystem health acknowledge-alert --episode <id> [--repo <checkout>]")
+	fmt.Fprintln(w, "       metasystem watch [--root <checkout>] [--json]")
+	fmt.Fprintln(w, "       metasystem watch --job <id> [--root <checkout>] [--poll-ms <milliseconds>]")
+	fmt.Fprintln(w, "       metasystem wait (--job <id>|--run <id>|--attempt <id>|--goal <id>|--path <absolute-path> --until <present|absent>|--resume <wait-id>) [--timeout <duration>] [--json]")
+	fmt.Fprintln(w, "       metasystem wait register --pid <pid> --label <text> [--job <id>] [--timeout <duration>] [--json]")
+	fmt.Fprintln(w, "       metasystem wait register --human --question <text> --timeout <duration> [--json]")
+	fmt.Fprintln(w, "       metasystem wait end --wait-id <id> [--json]")
+	fmt.Fprintln(w, "       metasystem delegate --role <role> --brief <file> --goal <id|none-explicit> --destructive-reach <class> [--op <id>]")
+	fmt.Fprintln(w, "       metasystem delegate --follow-up <job> --brief <file>")
+	fmt.Fprintln(w, "       metasystem delegate --cancel <job>")
+	for _, fam := range registered {
+		fmt.Fprintf(w, "  %-10s %s\n", fam.name, fam.summary)
 		for _, v := range fam.verbs {
 			if fam.name == "job" && (v.name == "claim-launch" || v.name == "claim-occupancy-prepare" || v.name == "compose-role-packet" || v.name == "operation-id") {
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "    %-14s %s\n", v.name, v.summary)
+			fmt.Fprintf(w, "    %-14s %s\n", v.name, v.summary)
 		}
 	}
 }

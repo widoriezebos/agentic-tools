@@ -1336,6 +1336,27 @@ func TestFrozenPublicVersionOneProtectionCorpusIsComplete(t *testing.T) {
 	}
 }
 
+func TestFrozenWorkerProbesTraverseActiveEmptyLegacyAndForgedReuse(t *testing.T) {
+	t.Parallel()
+	request := proofrun.TestRunRequest{Workers: 3, AdmissionMaximum: 5,
+		Plan: testpolicy.Plan{SelectedGroups: []string{"policy-protection"}}}
+	type call struct {
+		id      string
+		workers int
+	}
+	var calls []call
+	err := runFrozenPolicyProtectionCorpusWith(context.Background(), request,
+		func(context.Context, proofrun.TestRunRequest, testpolicy.ProtectionProbeCase) error { return nil },
+		func(_ context.Context, observed proofrun.TestRunRequest, probe testpolicy.ProtectionProbeCase) error {
+			calls = append(calls, call{id: probe.ID, workers: observed.Workers})
+			return nil
+		})
+	want := []call{{id: "emit-zero-tests", workers: 3}, {id: "emit-zero-tests", workers: 0}, {id: "forge-component-reuse", workers: 3}}
+	if err != nil || !reflect.DeepEqual(calls, want) {
+		t.Fatalf("worker probe calls=%v want=%v err=%v", calls, want, err)
+	}
+}
+
 func TestFrozenWorkerProbeReaderAcceptsCandidateGroupFields(t *testing.T) {
 	group := testpolicy.Group{ID: "literal", Kind: "unit", Inputs: []string{"source.txt"}, TargetMS: 1}
 	request := proofrun.TestRunRequest{
@@ -1388,7 +1409,7 @@ func TestFrozenNegativeProbeResponseIsLegacyOnlyForActualInvalidResult(t *testin
 		BaseCommit: strings.Repeat("b", 40), Contract: testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}},
 		Plan: testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard,
 			ExecutedMode: testpolicy.ModeStandard, RequiredGroups: []string{"literal"}, SelectedGroups: []string{"literal"}},
-		CandidateEngineDigest: strings.Repeat("c", 64)}
+		CandidateEngineDigest: strings.Repeat("c", 64), Workers: 1}
 	result := proofrun.NewTestResult(request)
 	result.Groups = []proofrun.GroupResult{{ID: "literal", Kind: "unit", InputManifest: []string{"source.txt"}, Status: "invalid",
 		IdentityVersion: proofrun.GroupExecutionIdentityVersion, ExecutableDigests: map[string]string{"__argv0__": strings.Repeat("d", 64)}}}
@@ -1413,6 +1434,18 @@ func TestFrozenNegativeProbeResponseIsLegacyOnlyForActualInvalidResult(t *testin
 	}
 	if decoded, err := readFrozenWorkerProbeResult(path); err != nil || decoded.SchemaVersion != 1 || decoded.Delivery.Sufficient {
 		t.Fatalf("frozen reader rejected negative v1 response: %+v %v", decoded, err)
+	}
+	legacyRequest := request
+	legacyRequest.Workers, legacyRequest.AdmissionMaximum = 0, 0
+	legacyResult := proofrun.NewTestResult(legacyRequest)
+	legacyResult.Groups = []proofrun.GroupResult{{ID: "literal", Kind: "unit", InputManifest: []string{"source.txt"}, Status: "invalid",
+		IdentityVersion: proofrun.PreviousGroupExecutionIdentityVersion}}
+	legacyResult.RecomputeDelivery()
+	legacyProjection, err := frozenNegativeProbeResponse(legacyRequest, legacyResult)
+	if err != nil || legacyResult.SchemaVersion != proofrun.PreviousTestResultSchemaVersion ||
+		legacyResult.Groups[0].IdentityVersion != proofrun.PreviousGroupExecutionIdentityVersion ||
+		legacyProjection.SchemaVersion != proofrun.LegacyTestResultSchemaVersion || legacyProjection.Groups[0].IdentityVersion != 0 {
+		t.Fatalf("zero-worker frozen probe projection=%+v source=%+v err=%v", legacyProjection, legacyResult, err)
 	}
 	for name, mutate := range map[string]func(*proofrun.TestRunRequest, *proofrun.TestResult){
 		"normal worker": func(r *proofrun.TestRunRequest, _ *proofrun.TestResult) { r.SyntheticProbe = false },
@@ -1652,8 +1685,13 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 		t.Fatal(err)
 	}
 	admissionDir := filepath.Join(t.TempDir(), "host-admission")
+	processTable := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	fixtureEnvironment := append(receiptCanaryEnvironment(),
 		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable,
+		"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
 		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
 		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
 	// Public admission owns the attempt, authenticated worker, input parity,

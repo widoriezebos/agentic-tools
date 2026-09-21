@@ -3,6 +3,7 @@ package proofrun
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -329,32 +330,88 @@ func (prober treeSignalProber) Probe(pid int64) (identity.Exact, identity.Livene
 	return result.exact, result.state, result.err
 }
 
-func TestTreeSignalSparesOnlyAProvedCustodian(t *testing.T) {
-	commands := make([]*exec.Cmd, 7)
-	refs := make([]identity.Ref, len(commands))
-	for index := range commands {
-		command := exec.Command("sleep", "60")
-		if err := command.Start(); err != nil {
-			t.Fatal(err)
+type functionIdentityProber func(int64) (identity.Exact, identity.Liveness, error)
+
+func (prober functionIdentityProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	return prober(pid)
+}
+
+func TestCancellationDrainCoversWaitRaceUnknownAndLateDescendant(t *testing.T) {
+	t.Parallel()
+	const descendant = int64(424242)
+	started := time.Unix(1700000000, 123000)
+	exact := identity.Exact{Pid: descendant, StartedAt: started, EnvironKnown: true}
+	t.Run("unknown identity fails closed", func(t *testing.T) {
+		_, err := drainResourceGroupWith(77, functionIdentityProber(func(int64) (identity.Exact, identity.Liveness, error) {
+			return identity.Exact{}, identity.Unknown, errors.New("identity denied")
+		}), time.Second, func(int64) ([]int64, error) { return []int64{descendant}, nil }, syscall.Kill,
+			time.Now, func() {})
+		if err == nil || !strings.Contains(err.Error(), "uninspectable") {
+			t.Fatalf("unknown identity did not fail closed: %v", err)
 		}
-		commands[index] = command
-		exact, state, err := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
-		if err != nil || state != identity.Alive {
-			_ = command.Process.Kill()
-			_ = command.Wait()
-			t.Fatalf("probe fixture process %d: state=%s err=%v", command.Process.Pid, state, err)
+	})
+	t.Run("denied census fails closed", func(t *testing.T) {
+		_, err := drainResourceGroupWith(77, functionIdentityProber(func(int64) (identity.Exact, identity.Liveness, error) {
+			return exact, identity.Alive, nil
+		}), time.Second, func(int64) ([]int64, error) { return nil, errors.New("census denied") }, syscall.Kill,
+			time.Now, func() {})
+		if err == nil || !strings.Contains(err.Error(), "census denied") {
+			t.Fatalf("denied census did not fail closed: %v", err)
 		}
-		refs[index] = exact.Ref()
-		ref := refs[index]
-		t.Cleanup(func() {
-			_ = identity.SignalExact(identity.KernelProber{}, ref, syscall.SIGKILL)
-			_ = command.Wait()
+	})
+	t.Run("late descendant resets stable empty census", func(t *testing.T) {
+		clock := time.Unix(1800000000, 0)
+		censuses, signals, dead := 0, 0, false
+		prober := functionIdentityProber(func(int64) (identity.Exact, identity.Liveness, error) {
+			if dead {
+				return identity.Exact{}, identity.Dead, nil
+			}
+			return exact, identity.Alive, nil
 		})
+		observed, err := drainResourceGroupWith(77, prober, time.Second, func(int64) ([]int64, error) {
+			censuses++
+			if censuses == 2 {
+				return []int64{descendant}, nil
+			}
+			return nil, nil
+		}, func(pid int, signal syscall.Signal) error {
+			if int64(pid) == descendant && signal == syscall.SIGKILL {
+				signals++
+				dead = true
+			}
+			return nil
+		}, func() time.Time { return clock }, func() { clock = clock.Add(time.Millisecond) })
+		if err != nil || !observed || censuses != 4 || signals != 1 || !dead {
+			t.Fatalf("late descendant drain observed=%t censuses=%d signals=%d dead=%t err=%v", observed, censuses, signals, dead, err)
+		}
+	})
+}
+
+func TestCustodyGroupSignalSparesLeaderAndOnlyUsesExactMembers(t *testing.T) {
+	t.Parallel()
+	assertCustodyGroupSignalSparesLeaderAndOnlyUsesExactMembers(t)
+}
+
+func TestTreeSignalSparesOnlyAProvedCustodian(t *testing.T) {
+	t.Parallel()
+	assertCustodyGroupSignalSparesLeaderAndOnlyUsesExactMembers(t)
+}
+
+func assertCustodyGroupSignalSparesLeaderAndOnlyUsesExactMembers(t *testing.T) {
+	t.Helper()
+	exacts := make([]identity.Exact, 7)
+	refs := make([]identity.Ref, len(exacts))
+	for index := range exacts {
+		exacts[index] = identity.Exact{
+			Pid:       int64(410000 + index),
+			StartedAt: time.Unix(1700000000+int64(index), 0),
+		}
+		refs[index] = exacts[index].Ref()
 	}
 
 	probe := treeSignalProber{}
-	for _, ref := range refs {
-		probe[ref.Pid] = treeSignalProbeResult{exact: identity.Exact{Pid: ref.Pid, StartedAt: time.UnixMicro(ref.StartedAtUnixMicro), StartTicks: ref.StartTicks, BootID: ref.BootID}, state: identity.Alive}
+	for _, exact := range exacts {
+		probe[exact.Pid] = treeSignalProbeResult{exact: exact, state: identity.Alive}
 	}
 	proved := probe[refs[1].Pid]
 	proved.exact.Environ, proved.exact.EnvironKnown = []string{"A=b", identity.FixtureCustodianEnv + "=1"}, true
@@ -379,20 +436,86 @@ func TestTreeSignalSparesOnlyAProvedCustodian(t *testing.T) {
 		received[signal][pid]++
 		return nil
 	}
-	members := make([]int, 0, len(refs)-1)
+	members := make([]int64, 0, len(refs))
+	members = append(members, refs[0].Pid)
 	for _, ref := range refs[1:] {
-		members = append(members, int(ref.Pid))
+		members = append(members, ref.Pid)
+	}
+	groupMembers := func(group int64) ([]int64, error) {
+		if group != refs[0].Pid {
+			t.Fatalf("custody group = %d, want leader %d", group, refs[0].Pid)
+		}
+		return members, nil
 	}
 	for _, signal := range []syscall.Signal{syscall.SIGQUIT, syscall.SIGKILL} {
-		signalProcessTree(members, int(refs[0].Pid), signal, probe, sender)
+		signalResourceGroupWith(refs[0].Pid, refs[0], signal, probe, groupMembers, sender)
+		if received[signal][int(refs[0].Pid)] != 0 {
+			t.Fatalf("custody leader %d received %s", refs[0].Pid, signal)
+		}
 		if received[signal][int(refs[1].Pid)] != 0 {
 			t.Fatalf("proved custodian %d received %s", refs[1].Pid, signal)
 		}
-		for _, ref := range append([]identity.Ref{refs[0]}, refs[2:]...) {
+		for _, ref := range []identity.Ref{refs[4], refs[5], refs[6]} {
 			if received[signal][int(ref.Pid)] != 1 {
 				t.Fatalf("pid %d received %s %d times, want once; all=%v", ref.Pid, signal, received[signal][int(ref.Pid)], received[signal])
 			}
 		}
+		for _, ref := range []identity.Ref{refs[2], refs[3]} {
+			if received[signal][int(ref.Pid)] != 0 {
+				t.Fatalf("unproved pid %d received %s; all=%v", ref.Pid, signal, received[signal])
+			}
+		}
+	}
+}
+
+type replacementDiscoveryReader struct {
+	calls       int
+	replacement int
+}
+
+func (reader *replacementDiscoveryReader) Sample(int) (processTreeSample, error) {
+	reader.calls++
+	return processTreeSample{Members: []int{reader.replacement}}, nil
+}
+
+func TestSupervisorCancellationAfterRootReapDoesNotDiscoverReplacement(t *testing.T) {
+	t.Parallel()
+	engine := buildResourceCustodyEngine(t)
+	ctx, cancel := context.WithCancel(WithResourceCustodyExecutable(context.Background(), engine))
+	defer cancel()
+	command := exec.Command("sh", "-c", "exit 0")
+	reaped := make(chan struct{})
+	releaseWait := make(chan struct{})
+	replacement := identity.Exact{Pid: 424242, StartedAt: time.Unix(1800000000, 0), EnvironKnown: true}
+	reader := &replacementDiscoveryReader{replacement: int(replacement.Pid)}
+	var signals []int
+	options := supervisorOptions{
+		Context: ctx, Limits: supervisorLimits{}, SampleInterval: time.Hour, Reader: reader,
+		Prober: functionIdentityProber(func(pid int64) (identity.Exact, identity.Liveness, error) {
+			if pid == replacement.Pid {
+				return replacement, identity.Alive, nil
+			}
+			return identity.Exact{}, identity.Dead, nil
+		}),
+		Signal: func(pid int, _ syscall.Signal) error {
+			signals = append(signals, pid)
+			return nil
+		},
+		WaitCommand: func() error {
+			err := command.Wait()
+			close(reaped)
+			<-releaseWait
+			return err
+		},
+		OnCancelSelect: func() { close(releaseWait) },
+	}
+	done := make(chan supervisorOutcome, 1)
+	go func() { done <- superviseCommand(command, options) }()
+	<-reaped
+	cancel()
+	outcome := <-done
+	if outcome.Verdict != "cancelled" || reader.calls != 0 || len(signals) != 0 {
+		t.Fatalf("cancelled supervisor outcome=%+v replacement discoveries=%d signals=%v", outcome, reader.calls, signals)
 	}
 }
 
@@ -1325,8 +1448,9 @@ func validSupervisorStatusResult(status, reason string) TestResult {
 		ProjectRoot: "/fixture", BaseCommit: "base", CandidateTree: strings.Repeat("b", 40), ContractDigest: digest,
 		BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest, PlanDigest: digest,
 		RequiredGroups: []string{"group"}, SelectedGroups: []string{"group"}, LaunchCounts: LaunchCounts{CountsComplete: true},
-		Cost: TestCost{DeclaredTargetMS: 1}, Groups: []GroupResult{{ID: "group", Kind: "unit", InputManifest: []string{"source"},
+		Cost: TestCost{DeclaredTargetMS: 1}, Groups: []GroupResult{{ID: "group", Kind: "unit", IdentityVersion: GroupExecutionIdentityVersion, InputManifest: []string{"source"},
 			Status: status, NotRunReason: reason, Obligations: []string{"delivery"}}}}
+	applyCurrentWorkerPolicy(&result)
 	result.RecomputeDelivery()
 	return result
 }

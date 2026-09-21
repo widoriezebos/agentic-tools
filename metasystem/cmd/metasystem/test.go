@@ -52,6 +52,7 @@ type testingPreparation struct {
 	Plan                                                     testpolicy.Plan
 	Environment                                              []string
 	AllGroups                                                bool
+	Workers, AdmissionMaximum                                int
 	UnmatchedInputs                                          []testingUnmatchedInput
 }
 
@@ -72,6 +73,66 @@ type testingPlanOutput struct {
 	Plan               testpolicy.Plan         `json:"plan"`
 	Groups             []testpolicy.Group      `json:"groups"`
 	UnmatchedInputs    []testingUnmatchedInput `json:"unmatchedInputs,omitempty"`
+}
+
+const testWorkerProtocol = "metasystem.test-worker"
+
+var errTestingWorkerPolicyUnsupported = errors.New("TEST_WORKER_POLICY_UNSUPPORTED")
+
+type testingWorkerCapabilities struct {
+	SchemaVersion                 int    `json:"schemaVersion"`
+	Protocol                      string `json:"protocol"`
+	ProtocolVersion               int    `json:"protocolVersion"`
+	TestResultSchemaVersion       int    `json:"testResultSchemaVersion"`
+	GroupExecutionIdentityVersion int    `json:"groupExecutionIdentityVersion"`
+	WorkerPolicyVersion           int    `json:"workerPolicyVersion"`
+}
+
+func currentTestingWorkerCapabilities() testingWorkerCapabilities {
+	return testingWorkerCapabilities{SchemaVersion: 1, Protocol: testWorkerProtocol,
+		ProtocolVersion: proofrun.TestWorkerProtocolVersion, TestResultSchemaVersion: proofrun.TestResultSchemaVersion,
+		GroupExecutionIdentityVersion: proofrun.GroupExecutionIdentityVersion, WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion}
+}
+
+func runTestWorkerCapabilities(args []string) int {
+	if len(args) != 0 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem test worker-capabilities")
+		return 2
+	}
+	if err := writeTestingWorkerCapabilities(os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	return 0
+}
+
+func writeTestingWorkerCapabilities(writer io.Writer) error {
+	return json.NewEncoder(writer).Encode(currentTestingWorkerCapabilities())
+}
+
+func requireTestingWorkerCapabilities(ctx context.Context, engine string, environment []string) error {
+	command := exec.CommandContext(ctx, engine, "test", "worker-capabilities")
+	command.Env = testingEnvironment(environment)
+	data, err := command.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: trusted destination engine %q does not support worker-policy protocol %d (%v: %s); stage, prove, and install the backend compatibility release before enabling testing.workers or resources.workers", errTestingWorkerPolicyUnsupported,
+			engine, proofrun.TestWorkerProtocolVersion, err, strings.TrimSpace(string(data)))
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var capabilities testingWorkerCapabilities
+	if err := decoder.Decode(&capabilities); err != nil {
+		return fmt.Errorf("%w: trusted destination engine %q returned malformed worker capabilities: %v; stage, prove, and install the backend compatibility release first", errTestingWorkerPolicyUnsupported, engine, err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("%w: trusted destination engine %q returned trailing worker capability data; stage, prove, and install the backend compatibility release first", errTestingWorkerPolicyUnsupported, engine)
+	}
+	want := currentTestingWorkerCapabilities()
+	if capabilities != want {
+		return fmt.Errorf("%w: trusted destination engine %q reports incompatible worker capabilities %+v, require %+v; stage, prove, and install the matching backend compatibility release first",
+			errTestingWorkerPolicyUnsupported, engine, capabilities, want)
+	}
+	return nil
 }
 
 func (prepared testingPreparation) proofControlRoot() string {

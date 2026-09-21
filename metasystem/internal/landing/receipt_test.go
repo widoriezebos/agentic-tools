@@ -129,10 +129,11 @@ func TestReadSchemaTwoTestingReceiptSurvivesRegisterAppend(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireProofReservationNotAdmissionRefused(t, decision)
-	zero := 0
+	zero, admissionMaximum := 0, 0
 	digest := strings.Repeat("a", 64)
 	result := proofrun.TestResult{
 		SchemaVersion: proofrun.TestResultSchemaVersion, CandidateEngineIdentityVersion: proofrun.CandidateEngineIdentitySchemaVersion,
+		WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion, Workers: 1, AdmissionMaximum: &admissionMaximum,
 		AttemptID: attempt.AttemptID,
 		Purpose:   testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto,
 		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
@@ -146,7 +147,8 @@ func TestReadSchemaTwoTestingReceiptSurvivesRegisterAppend(t *testing.T) {
 		Cost:         proofrun.TestCost{DeclaredTargetMS: 1},
 		Groups: []proofrun.GroupResult{{
 			ID: "application", Kind: "unit", Obligations: []string{"behavior"}, InputDigest: digest,
-			InputManifest: []string{"source/**"}, ExecutionIdentity: digest, CWD: ".",
+			IdentityVersion: proofrun.GroupExecutionIdentityVersion,
+			InputManifest:   []string{"source/**"}, ExecutionIdentity: digest, CWD: ".",
 			ToolIdentities: map[string]string{}, Status: "passed", NativeLaunched: true,
 			NativeExitStatus: &zero, CollectionComplete: true, ReportDigests: map[string]string{},
 		}},

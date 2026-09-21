@@ -18,6 +18,7 @@ import (
 
 const SchemaVersion = 1
 const ExecutionContractSchemaVersion = 2
+const TestWorkersEnvironment = "METASYSTEM_TEST_WORKERS"
 
 var (
 	identifier      = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
@@ -119,7 +120,7 @@ type Group struct {
 	// intentional declaration rather than the same document as omission.
 	RaceSet     bool `json:"-"`
 	CoverageSet bool `json:"-"`
-	// Shards splits a whole-package go group's discovered tests round-robin
+	// Shards splits a go group's selected discovered tests round-robin
 	// into this many concurrent go test launches inside the one group; zero
 	// or one runs the group as a single launch. Coverage is merged from the
 	// shards' coverage data.
@@ -137,6 +138,10 @@ type Group struct {
 type GroupResources struct {
 	Class     string   `json:"class,omitempty"`
 	Exclusive []string `json:"exclusive,omitempty"`
+	// Workers is the adapter-worker share. Omission means one worker,
+	// explicit zero means the complete attempt allowance, and a positive
+	// value requests that exact share.
+	Workers *int `json:"workers,omitempty"`
 }
 
 type groupWithoutMethods Group
@@ -256,7 +261,7 @@ func (contract Contract) Validate() error {
 			return fmt.Errorf("testing group %s: %w", group.ID, err)
 		}
 		if contract.SchemaVersion == SchemaVersion && (len(group.Requires) > 0 || group.Phase != "" || group.EnvironmentMode != "" || group.PackageSelection != "" || len(group.BuildTags) != 0 ||
-			group.Resources.Class != "" || len(group.Resources.Exclusive) != 0 || group.Freshness != "" || group.FreshnessMaxAgeMS != nil) {
+			group.Resources.Class != "" || len(group.Resources.Exclusive) != 0 || group.Resources.Workers != nil || group.Freshness != "" || group.FreshnessMaxAgeMS != nil) {
 			return fmt.Errorf("testing group %s: execution contract fields require schemaVersion %d", group.ID, ExecutionContractSchemaVersion)
 		}
 		if contract.SchemaVersion == ExecutionContractSchemaVersion && (group.Phase != "admission" && group.Phase != "acceptance") {
@@ -421,6 +426,12 @@ func validateGroup(group Group) error {
 		}
 		seenResources[resource] = true
 	}
+	if group.Resources.Workers != nil && *group.Resources.Workers < 0 {
+		return fmt.Errorf("resource workers must be zero or a positive integer")
+	}
+	if _, reserved := group.Env[TestWorkersEnvironment]; reserved {
+		return fmt.Errorf("environment entry %s is reserved by the test runner", TestWorkersEnvironment)
+	}
 	if group.Freshness != "" && group.Freshness != "reusable" && group.Freshness != "episode" {
 		return fmt.Errorf("freshness must be reusable or episode")
 	}
@@ -485,6 +496,9 @@ func validateGroup(group Group) error {
 	}
 	switch group.Adapter {
 	case "go":
+		if group.Resources.Workers != nil {
+			return fmt.Errorf("resource workers are declared only by command and section adapters")
+		}
 		seenTags := map[string]bool{}
 		for _, tag := range group.BuildTags {
 			if !validGoBuildTag(tag) || seenTags[tag] {
@@ -513,9 +527,6 @@ func validateGroup(group Group) error {
 		}
 		if group.Shards < 0 || group.Shards > 64 {
 			return fmt.Errorf("go shards must be 0 through 64")
-		}
-		if group.Shards > 1 && !allTests {
-			return fmt.Errorf("go shards require tests=all")
 		}
 	case "section":
 		if group.PackageSelection != "" {

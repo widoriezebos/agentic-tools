@@ -151,6 +151,7 @@ var landedRearmGitPins = []string{"-c", "core.useReplaceRefs=false", "-c", "core
 
 type landedRearmGitCommandFactory func(context.Context, ...string) *exec.Cmd
 type landedRearmGitCommandContextKey struct{}
+type landedRearmGitCommandSettledContextKey struct{}
 
 func landedRearmGitCommand(ctx context.Context, args ...string) *exec.Cmd {
 	if factory, ok := ctx.Value(landedRearmGitCommandContextKey{}).(landedRearmGitCommandFactory); ok {
@@ -173,7 +174,11 @@ func landedRearmGitOutputStep(ctx context.Context, clock steward.RearmClock, sec
 		}
 		command.Stdout = steward.RearmProgressWriter(&stdout, progress)
 		command.Stderr = steward.RearmProgressWriter(&stderr, progress)
-		return command.Run()
+		commandErr := command.Run()
+		if observe, ok := stepContext.Value(landedRearmGitCommandSettledContextKey{}).(func(*exec.Cmd)); ok {
+			observe(command)
+		}
+		return commandErr
 	})
 	if err != nil {
 		if errors.Is(err, steward.ErrJudgmentStalled) {
