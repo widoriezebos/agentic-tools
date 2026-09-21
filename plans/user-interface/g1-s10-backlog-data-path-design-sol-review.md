@@ -91,3 +91,46 @@ Before either build starts, settle:
 - `metasystem/metasystem.conf.local` was not read.
 - The running server was not changed or exercised.
 - No proposed implementation exists, so exact serialized response size, browser paint time, closed-toggle latency, and narrow-screen behavior were not executed.
+
+---
+
+# The freshness loop, terminal review, 2026-09-21
+
+On revision 3, scoped to the loop and the rewritten ledger states. Verdict: safe to build with three obligations, all on the builder rather than the design. The no-ref invariant holds and its proof is adequate, all seven ledger situations match source, and `CaptureTip` really does keep the loop off `refs/remotes/*`.
+
+The planner extends its earlier ruling: if a bounded advance requires another additive export from `internal/goal`, take it, on the same reasoning as `ReadValidatedTree`. A timeout the interface implements itself would be a second owner of the transport's lifetime, which is the divergence these rulings exist to prevent.
+
+## Verdict safe to build with the listed obligations ## The six items 1. confirmed; the propo...
+[codex] Turn completion inferred after the main thread finished and subagent work drained.
+## Verdict
+
+safe to build with the listed obligations
+
+## The six items
+
+1. confirmed; the proposed request call graph is read-only and its proof is adequate.
+2. cancellation is incomplete: non-overlap, wake coalescing, and deadline arithmetic hold, but a ready timer may win over cancellation and start one final tick.
+3. not acceptable unbounded; the builder must use a bounded fetch before shipment.
+4. confirmed; all seven ledger situations and the remaining terminal instruction match source.
+5. lifecycle ownership is wrong: CAS prevents partial accepted-ref updates, but the loop can start before server exclusivity and outlive a failed listener.
+6. confirmed; `CaptureTip` passes `--refmap=` with only its per-operation refspec (`metasystem/internal/goal/txn.go:115-150`).
+
+## The no-ref invariant
+
+Inference from the specified implementation: it holds. `ServeHTTP` reaches the backlog observation only (`plans/user-interface/g1-s10-backlog-data-path-design.md:187-203`); `Observe` changes cadence and sends a wake but neither calls nor waits for fetch (`plans/user-interface/g1-s10-backlog-data-path-design.md:162-171`). The mutating entry points are visibly separate: `Project(true)` fetches (`metasystem/internal/goal/project.go:69-82`), `FetchAdvance` validates then advances (`metasystem/internal/goal/fetchadvance.go:30-81`), and `RepairAcceptRemote` is explicitly mutating (`metasystem/internal/goal/accepted.go:16-82`).
+
+The grep rule, fake-fetch counter, and byte-identical `for-each-ref` test, combined with the route test asserting one `Observe`, adequately prove the boundary (`plans/user-interface/g1-s10-backlog-data-path-design.md:272-274,282`). Code review must reject any additional request-reachable goal call not covered by that allowlist.
+
+## Findings
+
+L1; MATERIAL; the loop starts before `lifecycle.Serve`, but exclusivity is acquired inside `Serve`; therefore a second server attempt can perform its immediate tick before being refused, and if the listener fails, `Serve` returns without cancelling the signal context, so waiting for the loop hangs; evidence: design wiring at `plans/user-interface/g1-s10-backlog-data-path-design.md:177,258`, lock acquisition at `metasystem/internal/ui/lifecycle/serve.go:100-120`, listener return at `metasystem/internal/ui/lifecycle/serve.go:168-185`, signal-context lifetime at `metasystem/cmd/metasystem/ui.go:122-155`; builder obligation: start exactly once only after lifecycle ownership is established, cancel a derived loop context on every `Serve` return, and wait; code review checks that `AlreadyRunning` performs zero fetches and listener failure terminates the loop.
+
+L2; MATERIAL; bare `FetchAdvance` can hang forever in `CaptureTip`, making the loop remain `running` and preventing graceful shutdown; evidence: `FetchAdvance` calls `CaptureTip` directly (`metasystem/internal/goal/fetchadvance.go:30-39`), whose fetch uses an unbounded command run (`metasystem/internal/goal/txn.go:81-112,119-150`); builder obligation: use an engine-owned bounded advance that kills the transport process group, cleans its temporary ref, reports `failed`, and enters backoff. Existing bounded machinery demonstrates the required behavior (`metasystem/internal/goal/attention.go:623-719`).
+
+L3; MATERIAL; inference: the specified `select` gives cancellation no priority, so simultaneously ready timer and cancellation channels may select the timer and start a fetch after cancellation; evidence: `plans/user-interface/g1-s10-backlog-data-path-design.md:181-185`; builder obligation: check cancellation immediately before every tick and add a deterministic cancelled-context-plus-ready-timer test asserting zero fetch calls.
+
+The ledger claims hold. Genuine first fetch skips `AcceptanceGates` because the accepted ref does not resolve (`metasystem/internal/goal/fetchadvance.go:48-62`), so foreign-ledger and rewind refusals cannot appear. Missing `backlog.md` is rejected by parsing and validation before creation (`metasystem/internal/goal/validate.go:93-152,672-691`), so `no-ledger` cannot be caused by this loop. Repair also refuses an accepted tip without readable identity (`metasystem/internal/goal/accepted.go:36-56`); deleting that externally created ref is therefore the correct remaining terminal recovery.
+
+## Not checked
+
+No implementation exists. I ran no server, tests, scripts, npm, goal verb, or fetch; I did not read `metasystem.conf.local` or re-review revision 2’s findings. No files were changed.
