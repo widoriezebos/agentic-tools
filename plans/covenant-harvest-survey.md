@@ -329,8 +329,8 @@ steel thread.
 
 **The proofs pass.** The 106 tests were run across the whole module. Ninety-six packages
 passed with no individual test failing. `cmd/metasystem` was rerun separately because the
-first pass hit Go's ten-minute default while two builds were loading the machine; its
-result is recorded in the line below.
+first pass hit Go's ten-minute default while two builds were loading the machine; with
+`-timeout 40m` it passes in 675 s. So all 106 named proofs pass on this tree.
 
 What this does not establish, and section 3 still governs: that the proofs are
 *discriminating* (G5 — a passing test that would also pass on a broken version has proved
