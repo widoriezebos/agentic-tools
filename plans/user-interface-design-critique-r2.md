@@ -4,6 +4,8 @@ Reviewer: Opus 5, fresh context, not the author, no part in round one. Date: 202
 
 This file records the findings and **proposes** dispositions. It does not adjudicate: the master is the owner's document, and the rulings are the human's. Claude, who recorded this and planned the implementation, did not write the master and has not edited it for these findings.
 
+**Rulings, 2026-09-21.** The human ruled: S3 to S10 are accepted as proposed below ("for the rest I follow your recommendations"). S1 (the brain) and S2 (the authority grade) are under discussion with the human and are not ruled; S2's proposal below, a third grade with a per-predicate mapping, is withdrawn, because the human's principle is that a human-reserved act needs a human, and enrollment is one mechanism for establishing that, not the requirement itself. The master is amended in one pass once S1 and S2 are settled.
+
 Verdict: 10 material findings. None blocks gate 1. All ten bear on gates 2 to 7, and S1, S2, S3, S5, and S10 must be ruled before gate 2 or gate 3 can be designed.
 
 ## Standing of the round-one findings

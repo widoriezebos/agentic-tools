@@ -81,7 +81,7 @@ From `internal/testenv`, `internal/parallelratchet`, and `docs/architecture.md`.
 
 | ID | Decision | Blocks | Recommendation |
 | --- | --- | --- | --- |
-| D3 | The second independent review of the master's round-one amendments ran on 2026-09-21: [ten material findings](user-interface-design-critique-r2.md), each with a proposed disposition. The rulings are the human's. | Gate 2 and gate 3 slice designs. S1, S2, S3, S5, and S10 must be ruled first | Accept all ten as proposed. None blocks gate 1. S1 touches `g1-s2`: until it is ruled, the server serves the checkout it is started in, and the dedicated clone waits. |
+| D3 | The second independent review of the master's round-one amendments ran on 2026-09-21: [ten material findings](user-interface-design-critique-r2.md), each with a proposed disposition. The rulings are the human's. | Gate 2 and gate 3 slice designs. S1, S2, S3, S5, and S10 must be ruled first | S3 to S10 ruled by the human on 2026-09-21: accepted as proposed. S1 and S2 under discussion. None blocks gate 1. S1 touches `g1-s2`: until it is ruled, the server serves the checkout it is started in, and the dedicated clone waits. |
 | D4 | Sign-in system. | Gate 3 | Not yet investigated. |
 | D5 | First ACP provider and its demonstrated isolation envelope. | Gate 3 | Not yet investigated. |
 | D6 | Rendering Markdown documents (goal intent, designs, rulings) needs either a renderer dependency or a small renderer of our own. | `g1-s11` | Show source text in gate 1 and decide when the Project editors are designed at gate 5. |
