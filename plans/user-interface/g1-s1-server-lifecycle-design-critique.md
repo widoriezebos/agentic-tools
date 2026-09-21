@@ -52,3 +52,7 @@ On N1 the critic was asked to break the claim along its whole chain, because it 
 Non-material, folded in: the options field is renamed `DigestFunc` so that `ExecutableDigest` names one thing; `LaunchSpec.Executable` is `os.Executable()` resolved by `cmd`; port 0 and `restart` are stated.
 
 **Loop closed at round 3.** Material findings fell from 11 to 5 to 2, and both remaining findings are expressible as tests. They become obligations O1 and O2 in the design's Verification section, which the code critique checks by name. A fourth round would be polishing.
+
+## Astra design review, 2026-09-21
+
+Verdict on this slice design: implement as written. No finding of the [Astra review](../user-interface-design-critique-astra.md) touches it. Building still waits for the human's explicit go.
