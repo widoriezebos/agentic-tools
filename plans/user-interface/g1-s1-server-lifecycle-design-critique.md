@@ -22,4 +22,20 @@ Verdict: 11 material findings. All accepted; none refuted. The critic read sourc
 
 Non-material findings, folded in because they were free: the `KernelProber` citation; "kill the child" against "no SIGKILL" (the launch may kill its own never-ready child; `stop` never force-kills); `restart --listen` against "the same address" (restart resolves the address exactly as `start` does); the unreadable-record message of `AlreadyRunningError`; `<n>` used for both pid and seconds; a new server taking the lock during a stopper's wait (on timeout the stopper re-proves the original identity and reports stopped when it is dead); the `attention.go` pattern resolving through a different function than the design specifies. Not actioned: the blocked `flock` goroutine on the timeout path is never released, which is harmless because the command exits.
 
-Round 2 follows, scoped to these corrections, their consumers, and the findings above.
+## Round 2, 2026-09-21
+
+A fresh critic, scoped to the round 1 corrections and what they introduced. Verdict: 5 material findings, all accepted. It confirmed F2 to F9 and F11 as corrected, F10 as corrected on the writing side only (see N4), and F1 as **not** corrected, because F1 itself was wrong.
+
+| Finding | Problem | Disposition |
+| --- | --- | --- |
+| N1 | Round 1's F1, and revision 2's "known limitation", are false. The census never sees the interface server. It filters the process table through the configured runtime signatures before it classifies anything (`internal/census/run.go:177`, `signature.go:84`), and those signatures match only a command named `claude`, `codex`, `devin`, or `devin-delegate-acp` (`scripts/agents/adapters/claude.sh:224`, `codex.sh:215`, `devin.sh:806`). `bin/metasystem ui serve` is never enumerated, so it is never UNTRACKED and nothing downstream applies | **Accept; F1's disposition is reversed.** The designer verified this in source, including the three signature patterns. In round 1 the designer had checked only the downstream half of F1's chain, the steward's handling of an UNTRACKED process, and not whether the server would ever be classed as one. The design now states that the engine does not see the process, the warning is withdrawn, and `g1-s17` is dropped in the plan |
+| N2 | `Stop` on `busy` could evaluate to `running`, which had no line, no exit code, and no stated control flow | **Accept.** `Stop` dispatches once more after the wait; a `running` found then is signalled; a second `busy` is returned. `StopOutcome` is enumerated and never `running` |
+| N3 | `StopOptions.WaitExit` appeared in no behaviour and, injected, bypassed the lock that record removal depends on | **Accept.** Removed. The only seam is `After`, the timer. Tests hold a real lock, which works because `flock` belongs to the open file description, so removal is always under a lock that was really taken |
+| N4 | Nothing exported a way to compute the current executable's digest, so `cmd` would have duplicated the hashing, and neither side said what a hashing failure does | **Accept.** One exported `lifecycle.ExecutableDigest`. `Serve` fails if it cannot hash. `status` prints a line saying it cannot compare, and still exits 0 |
+| N5 | The child's arguments were never specified, so `--listen` and `--metasystem-root` given to `start` could be silently dropped | **Accept.** `lifecycle.ServeArgs` builds the exact list from values the launcher has already resolved and validated, and it is tested |
+
+Non-material findings folded in: the bounded lock wait is now a named technique with a rule for a late acquisition; a reader that wins the lock removes whatever record is there without probing again; both `start` refusal lines are stated to come from the child; the walkthrough no longer claims the log is byte-identical after a refused start. Not actioned: a second `start` against an uninspectable server costs the full lock wait before refusing; `Wait` can be spent twice on the busy-then-signal path; the parameter order of `NewHandler` and `httpd.New` differs.
+
+Lesson recorded for later slices: a finding that reverses a premise is verified along its whole chain, from the first cause to the claimed effect, before it is accepted.
+
+Round 3 follows, scoped to N1 to N5.
