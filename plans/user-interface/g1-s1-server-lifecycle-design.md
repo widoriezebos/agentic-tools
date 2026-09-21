@@ -1,6 +1,6 @@
 # g1-s1 Server lifecycle
 
-- Gate 1, author Claude with the human, 2026-09-21. Revision 4, after [critique rounds 1 to 3](g1-s1-server-lifecycle-design-critique.md); the loop is closed, with two obligations for the code critique listed under Verification.
+- Gate 1, author Claude with the human, 2026-09-21. Revision 6, after [Sol's design review](g1-s1-server-lifecycle-design-sol-review.md) under the roster. Revision 4 closed [critique rounds 1 to 3](g1-s1-server-lifecycle-design-critique.md). Revision 5 kept the server's state under the Git checkout, against Astra's finding B8; that rested on a false premise about the engine, which Sol exposed, and revision 6 reverses it. Five obligations for the code critique are listed under Verification.
 - Refines the master at commit `94181f05a`: [Component responsibilities](../user-interface-design.md#component-responsibilities), [Scope and request principals](../user-interface-design.md#scope-and-request-principals), the browser protections in [Human acts from the browser](../user-interface-design.md#human-acts-from-the-browser), and [Trustworthy state and interaction](../user-interface-design.md#trustworthy-state-and-interaction).
 - Carries decisions D1, D2, D8, D9, D10, and D11 from the [implementation plan](../user-interface-implementation-plan.md).
 - Contributes to UID-R1-13 and to acceptance scenario 4 (the interface is usable with the engine stopped). It discharges neither alone.
@@ -28,7 +28,7 @@ Not in scope: any view, template, or frontend bundle (`g1-s8`); any read model o
 | Stop fence check and creation claim in the same runner (`readOpenFence`, `stopfence.Creating`) | `internal/steward/runner.go` | The part **not** to copy; see Behaviour |
 | `identity.Ref`, `Exact.Ref()`, `Prober` | `internal/identity/identity.go:25`, `:56`, `:177` | Recorded and live process identity; tests inject a fake `Prober` |
 | `identity.AliveRef`; `identity.SignalExact`, `ErrGone`, `ErrUninspectable`, `SignalFunc`; `EncodeRef`, `ParseRef` | `identity.go:193`; `ref.go:132`, `:121`, `:129`; `ref.go:19`, `:40` | Status and stop. `SignalExact` proves the identity again immediately before signalling |
-| `atomicfile.WriteText(path, text, anchor)` | `internal/atomicfile/atomicfile.go:76` | Publish the record; the anchor is the checkout |
+| `atomicfile.WriteText(path, text, anchor)` | `internal/atomicfile/atomicfile.go:76` | Publish the record; the anchor is the state root |
 | `config.Get(GetParams)`: flag, environment, `.local`, committed, default | `internal/config/resolve.go:112`, `:140` | Resolve `ui.listen`. Never read `metasystem.conf.local` directly; it holds secrets |
 | Key constant, default constant, typed function in one small file | `internal/config/attention.go` | File shape only. It resolves through a different function; `ui.go` uses `config.Get` |
 | `supervise.BuildStamp` | `internal/supervise/disk.go:144` | Shown for information. Read in `cmd/metasystem/ui.go` and passed down, so `internal/ui` does not import `supervise` |
@@ -37,7 +37,7 @@ Not in scope: any view, template, or frontend bundle (`g1-s8`); any read model o
 
 ### Commands
 
-Exit codes: 0 success, 1 refusal or operational failure, 2 usage. Every verb accepts `--repo <path>` (default: the current directory, resolved with `upRepositoryScope`) and `--metasystem-root <path>` (default: derived by `upMetasystemRoot`). `start`, `serve`, and `restart` accept `--listen <host:port>`; `stop` and `restart` accept `--wait-seconds <s>`, default 15. `serve` also accepts `--ready-fd <n>`.
+Exit codes: 0 success, 1 refusal or operational failure, 2 usage. Every verb accepts `--metasystem-root <path>` (default: derived by `upMetasystemRoot` from the executable's own location) and `--repo <path>`. The checkout defaults to the Git top that contains the installation, so the verbs work from any directory; a `--repo` that is given must resolve, through `upRepositoryScope`, to that same Git top. Every verb resolves the three roots once, at entry, with `lifecycle.ResolveRoots`, and refuses a pair that does not belong together. `start`, `serve`, and `restart` accept `--listen <host:port>`; `stop` and `restart` accept `--wait-seconds <s>`, default 15. `serve` also accepts `--ready-fd <n>`.
 
 | Verb | Behaviour |
 | --- | --- |
@@ -51,6 +51,7 @@ Every outcome has one line and one exit code. `<address>` is `host:port`; `<reco
 
 | Verb | Outcome | Line | Exit |
 | --- | --- | --- | --- |
+| every verb | the checkout and the installation do not belong together | `the installation at <installation> does not serve the checkout at <checkout>` | 1 |
 | `start` | ready | `interface running at http://<address> (pid <pid>)` | 0 |
 | `start` | already running, record readable | `an interface server already runs for this checkout at http://<address>; stop it with: metasystem ui stop` | 1 |
 | `start` | lock held, no readable record | `an interface server already runs for this checkout (address unknown: <record> is missing or unreadable)` | 1 |
@@ -78,7 +79,13 @@ Both `start` refusal lines are composed by the child, which is the process that 
 
 ```go
 // package lifecycle
-func Dir(checkout string) string                 // <checkout>/artifacts/agents/ui
+type Roots struct{ Checkout, Installation, StateRoot string }
+// ResolveRoots canonicalizes both paths, requires the installation's Git top
+// to be the checkout, and derives StateRoot with stateroot.RootForInstallation.
+func ResolveRoots(repo, installation string) (Roots, error) // repo "" means the installation's Git top
+type RootsMismatchError struct{ Checkout, Installation string }
+
+func Dir(stateRoot string) string                // <state root>/artifacts/agents/ui
 func ValidateListen(addr string) (string, error) // normalized host:port
 
 type Record struct {
@@ -86,13 +93,14 @@ type Record struct {
     Process          string `json:"process"`          // identity.EncodeRef
     Address          string `json:"address"`          // bound host:port
     Checkout         string `json:"checkout"`
+    Installation     string `json:"installation"`
     StartedAt        string `json:"startedAt"`        // RFC 3339, UTC
     EngineBuild      string `json:"engineBuild"`      // information only
     ExecutableDigest string `json:"executableDigest"` // "sha256:<hex>" of the serving executable
 }
 
 type Options struct {
-    Checkout         string
+    Roots            Roots
     Listen           string
     EngineBuild      string
     DigestFunc       func() (string, error)            // nil: ExecutableDigest
@@ -112,7 +120,7 @@ type Status struct {
     State  State
     Record *Record // set for running, stale, uninspectable
 }
-func Read(checkout string, prober identity.Prober) (Status, error)
+func Read(stateRoot string, prober identity.Prober) (Status, error)
 func ExecutableDigest() (string, error)                       // "sha256:<hex>" of os.Executable(); the one implementation
 func ExecutableChanged(rec Record, currentDigest string) bool // false when either is empty
 
@@ -123,8 +131,8 @@ type StopOptions struct {
     Wait     time.Duration
     After    func(time.Duration) <-chan time.Time // nil: time.After
 }
-func Stop(checkout string, o StopOptions) (StopOutcome, *Record, error)
-func Restart(checkout string, o StopOptions, start func() error) (StopOutcome, *Record, error)
+func Stop(stateRoot string, o StopOptions) (StopOutcome, *Record, error)
+func Restart(stateRoot string, o StopOptions, start func() error) (StopOutcome, *Record, error)
 
 func ServeArgs(checkout, metasystemRoot, listen string) []string
 
@@ -153,7 +161,9 @@ func New(info Info, bound net.Addr) http.Handler
 
 ### State on disk
 
-`<checkout>/artifacts/agents/ui/` holds `server.flock`, `server.json`, `server.log`, and `server.log.1`. The directory is ignored by Git. No source or configuration lives there.
+**Three roots.** The installation is known from the executable's own location, or from `--metasystem-root`. The checkout is the Git top that contains it. The state root is `stateroot.RootForInstallation(installation)`: the installation itself in the self-hosted layout, where the installation is the repository's nested `metasystem/` directory, and the application's repository root for an adopted installation, whether it is vendored beneath the application's repository or sits at its root. This slice's lifecycle state lives under the state root. That is where the engine's own process control points: `resolveProcessScope` and `up` both hand the installation to the steward and the supervision as their root (`cmd/metasystem/process_verbs.go:50` to `:75`, `up.go:201` to `:205`), and the state-root owner already has a kind for the steward's directory (`internal/stateroot/stateroot.go:257`). The lock's identity, and so "one server per workspace", is per state root. `ResolveRoots` is the one place the three are derived and checked, and `serve` derives them again from the same two flags with the same function, so a launcher and its child cannot disagree.
+
+`<state root>/artifacts/agents/ui/` holds `server.flock`, `server.json`, `server.log`, and `server.log.1`. The directory is ignored by Git. No source or configuration lives there.
 
 **Who creates what.** Only a launch or a server creates anything. `Launch` creates the state directory before it spawns, because the launcher opens the log there. `Serve` creates the directory too, for `serve` run by hand, and creates `server.flock`. `Read` and `Stop` create nothing: they open `server.flock` without creating it, and a missing directory or a missing lock file means `stopped`, since nobody has ever served there. A read-only `status` therefore never writes into a checkout.
 
@@ -161,7 +171,7 @@ func New(info Info, bound net.Addr) http.Handler
 
 ### Configuration
 
-`internal/config/ui.go` adds `UIListenKey = "ui.listen"`, `DefaultUIListen = "127.0.0.1:7878"`, and `UIListen(confPath, flag string, flagSet bool) (string, error)`, which resolves the value through `config.Get` and returns it unvalidated. The loopback rule lives in one place, `lifecycle.ValidateListen`, and `cmd/metasystem/ui.go` applies it; `config` does not import `internal/ui`. `metasystem.conf` gains one commented line, `# ui.listen=127.0.0.1:7878`, with a sentence saying a machine sets its own port in the `.local` file.
+`internal/config/ui.go` adds `UIListenKey = "ui.listen"`, `DefaultUIListen = "127.0.0.1:7878"`, and `UIListen(confPath, flag string, flagSet bool) (string, error)`, which resolves the value through `config.Get` and returns it unvalidated. It delegates to an unexported resolver that also takes the environment lookup, `func(string) (string, bool)`, and passes `os.LookupEnv`; tests call the unexported resolver with a lookup that finds nothing, because `config.Get` otherwise reads the ambient environment, the test environment does not clear a listen variable, and tests may not set one. The environment override that `config.Get` derives for the key keeps working. The loopback rule lives in one place, `lifecycle.ValidateListen`, and `cmd/metasystem/ui.go` applies it; `config` does not import `internal/ui`. `metasystem.conf` gains one commented line, `# ui.listen=127.0.0.1:7878`, with a sentence saying a machine sets its own port in the `.local` file.
 
 `ValidateListen` accepts only a loopback IP literal (`net.ParseIP(host).IsLoopback()`) with a numeric port from 0 to 65535. Port 0 asks the kernel for a free port; the record and every printed address carry the bound port. An empty host, a non-loopback IP, and every host name, `localhost` included, are refused without a DNS lookup. The refusal for a name says to use `127.0.0.1`; the others say `remote browser access is not supported yet`.
 
@@ -233,7 +243,11 @@ When `serve` was launched with `--ready-fd`, `cmd` writes the ready or failed li
 | `server.json` truncated or of a future schema while a server runs | `unreadable`; nothing is signalled or removed. When nobody holds the lock, the file is removed under the lock |
 | Port already in use | `failed` line naming `--listen` and `ui.listen` |
 | `ui.listen` or `--listen` with port 0 | Every start binds a new free port, so `restart` does not return the same address. Port 0 is for tests and ad hoc use |
-| Two checkouts on one machine | Independent: separate state directories, each with its own configured port |
+| Self-hosted layout, this repository | State at `metasystem/artifacts/agents/ui/`, beside the steward's and the supervision's |
+| Adopted installation vendored beneath an application's repository | State at `<application>/artifacts/agents/ui/`, not beneath the vendored installation |
+| Adopted installation at the application's repository root | The three roots are one directory |
+| Two checkouts on one machine | Independent, each with its own installation, state root, and configured port. Naming one installation for another checkout is refused by `ResolveRoots`, so two checkouts can never share a lock |
+| `--repo` names a checkout the installation does not live in | Refused with the mismatch line, exit 1; nothing is created |
 | `restart` while the old server ignores SIGTERM | `timeout`, exit 1; no second server is started and the old one is left running |
 | A link on another page opens the interface | Served, by the navigation exemption in check 3 |
 | A script on another page fetches the health route | 403 by check 3 or 4, and unreadable to that page in any case |
@@ -274,14 +288,18 @@ Go tests to add:
 - `lifecycle`, launch, with a fake `Spawn`: `ready`, `failed`, timeout, end of file, a partial line, and an unknown line; the child is killed in the last four and released only on `ready`.
 - `config`: default, flag over committed value, empty flag still wins when set.
 
-Two obligations from critique round 3, which the code critique checks by name:
+Five obligations, which the code critique checks by name. O1 and O2 come from critique round 3, O3 to O5 from Sol's design review:
 
-- **O1, no writes from a read.** `Read` and `Stop` on a checkout with no state directory return `stopped` and create no file or directory; `Launch` creates the state directory before spawning, and a failing `Spawn` yields the cannot-launch error.
+- **O1, no writes from a read.** `Read` and `Stop` on a state root with no interface directory return `stopped` and create no file or directory; `Launch` creates the state directory before spawning, and a failing `Spawn` yields the cannot-launch error.
 - **O2, late acquisition.** An in-package test holds the lock, runs the bounded wait with `After` firing at once, releases its lock, waits on the helper's completion channel, and then wins a non-blocking probe.
+
+- **O3, roots.** A table test builds the three layouts under a temporary directory, self-hosted, vendored adopted, and adopted at the root, and asserts `ResolveRoots` and `Dir` for each: beneath the installation, at the application's root, and the single shared directory.
+- **O4, mismatch.** `ResolveRoots` with a checkout the installation does not live in returns `RootsMismatchError`, and no file or directory has been created.
+- **O5, hermetic configuration.** The default-value test calls the unexported listen resolver with a lookup that finds nothing; a second case shows the environment override winning over the committed value through the same seam.
 
 Commands, from `metasystem/`: `go build ./...`; `go vet ./internal/ui/... ./internal/config/ ./cmd/metasystem/`; `go test ./internal/ui/... ./internal/config/`; and the `cmd/metasystem` tests that look families up (`TestUnitFamilyIsRegistered` and its neighbours in `launch_unit_test.go`, `goal_branch_test.go`, `launch_pack_test.go`). Run `bin/metasystem audit parallel-ratchet` without `--update` if it works, and note it if it does not.
 
-Walkthrough with a real process, by Claude after the code critique: build `bin/metasystem`; `ui start` prints an address; `curl -i` on `/-/health` gives 200 with the five headers; a foreign `Host`, a foreign `Origin`, `Sec-Fetch-Site: cross-site` alone, and a POST give 403, 403, 403, and 405, while `cross-site` with the navigation headers gives 200; a real browser opens the address from a link on another page; a second `ui start` is refused with exit 1 and the running server's log was neither rotated nor truncated, the refusal being appended to it; `ui start --listen 127.0.0.1:0` in a second checkout binds a port other than the configured one; `ui status` exits 0; rebuild, and `ui status` adds the changed-executable line; `ui restart` returns the same address and the line is gone; `ui stop` prints `interface stopped` and the record is gone; `ui status` exits 1; start again, `kill -9` the server, and `ui status` reports and removes the stale record. The engine's own `stop` is not run there.
+Walkthrough with a real process, by Claude after the code critique: build `bin/metasystem`; `ui start` prints an address; `curl -i` on `/-/health` gives 200 with the five headers; a foreign `Host`, a foreign `Origin`, `Sec-Fetch-Site: cross-site` alone, and a POST give 403, 403, 403, and 405, while `cross-site` with the navigation headers gives 200; a real browser opens the address from a link on another page; a second `ui start` is refused with exit 1 and the running server's log was neither rotated nor truncated, the refusal being appended to it; `ui start --listen 127.0.0.1:0` in a second checkout binds a port other than the configured one; `ui status` exits 0; rebuild, and `ui status` adds the changed-executable line; `ui restart` returns the same address and the line is gone; `ui stop` prints `interface stopped` and the record is gone from `metasystem/artifacts/agents/ui/`, which is where it was all along; `ui status --repo /tmp` is refused with the mismatch line; `ui status` exits 1; start again, `kill -9` the server, and `ui status` reports and removes the stale record. The engine's own `stop` is not run there.
 
 What stays outside the in-process tests is `ExecSpawn` alone: the real session, descriptor inheritance, and pipe. The walkthrough covers it.
 
