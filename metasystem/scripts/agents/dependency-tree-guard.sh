@@ -69,10 +69,16 @@ mkdir -p "$absent" "$planted"
 # (Pattern.Expand is reached by neither verb), so its absence costs the guard
 # no walker proof; the fixtures own that. Any other refusal of either verb is
 # a red like any other.
-delivery_probe=1
+# Sol's code review, C1: making the probe optional let an otherwise-green
+# unenrolled checkout plant, run a reduced list, and print PASSED without the
+# delivery transcript or the input-digest comparison. That is false
+# certification. The probe is mandatory; a checkout that cannot run it refuses
+# here, before anything is planted, and says what to do about it.
 if ! git config --get metasystem.goal.machine >/dev/null 2>&1; then
-  delivery_probe=0
+  printf '%s\n' "dependency-tree guard: no machine nickname is enrolled (git config metasystem.goal.machine), so the delivery probe cannot run and the guard cannot certify; enrol one and re-run" >&2
+  exit 1
 fi
+delivery_probe=1
 
 guard_step() { # output directory, step name, command and arguments
   local dir=$1 name=$2

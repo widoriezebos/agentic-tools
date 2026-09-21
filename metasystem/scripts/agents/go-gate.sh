@@ -532,9 +532,16 @@ else
   # A frozen witness export (proofrun.Freeze) and the script fixtures that
   # drive this gate are trees, not repositories, and Git can enumerate
   # neither. The directory walk is sound exactly there: the export already
-  # drops every node_modules through proofrun's hardExcluded, so the walk
-  # meets no dependency tree.
-  unformatted=$(gofmt -l internal cmd 2>&1) || gofmt_rc=$?
+  # drops every node_modules through proofrun's hardExcluded. But a frozen
+  # export is not the only non-repository tree: Sol's code review, X1, points
+  # out that a plain copy of the source without .git, with dependencies
+  # installed, would take this branch and hand gofmt the dependency tree,
+  # so installing dependencies would still change a gate verdict. The walk
+  # therefore prunes the directory by name itself, as the Go walkers do, and
+  # is NUL-safe so that a space or a non-ASCII name survives it.
+  unformatted=$(find internal cmd -type d -name node_modules -prune -o \
+    -type f -name '*.go' -print0 2>/dev/null \
+    | xargs -0 -r gofmt -l 2>&1) || gofmt_rc=$?
 fi
 # Every static tool runs regardless of earlier reds and the verdicts land
 # as ONE block (Ruling P / commit-gate-collect): a red gofmt no longer
