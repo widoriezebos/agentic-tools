@@ -394,12 +394,12 @@ func newestOwnedObservationWhere(attempts []Attempt, id, identity, episode, bind
 	return newest, found
 }
 
-// A schema-2 blocked dependent never launched. Its owned reservation is not
+// An identity-bound blocked dependent never launched. Its owned reservation is not
 // a failed native producer: once its prerequisite is repaired, it must be
 // eligible for a first execution. Legacy not-run reservations retain their
 // conservative retry fence.
 func blockedWithoutNativeProducer(attempt Attempt, id, identity string) bool {
-	if attempt.TestResult == nil || attempt.TestResult.SchemaVersion != TestResultSchemaVersion {
+	if attempt.TestResult == nil || !identityBoundTestResultSchema(attempt.TestResult.SchemaVersion) {
 		return false
 	}
 	for _, group := range attempt.TestResult.Groups {

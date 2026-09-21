@@ -69,7 +69,7 @@ func TestRetainedMetadataReconstructsAcrossUnrelatedContract(t *testing.T) {
 		ExternalInputs: []testpolicy.ExternalInput{{ID: "tool-version", Path: versionPath}},
 		Tools:          []testpolicy.Tool{{ID: "fixture-tool", Executable: toolPath, VersionArgs: []string{"--version"}}}}
 	plan := testpolicy.Plan{SelectedGroups: []string{"a"}}
-	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Contract: testpolicy.Contract{Groups: []testpolicy.Group{group}}, Plan: plan,
+	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: 1, Contract: testpolicy.Contract{Groups: []testpolicy.Group{group}}, Plan: plan,
 		Environment: os.Environ(), ContractDigest: strings.Repeat("a", 64), BaseContractDigest: strings.Repeat("b", 64),
 		JudgeKey: "judge", BehaviorPolicyDigest: strings.Repeat("c", 64)}
 	identities, prepared, launches, err := PrepareGroupExecutionIdentities(context.Background(), request)
@@ -110,6 +110,43 @@ func TestRetainedMetadataReconstructsAcrossUnrelatedContract(t *testing.T) {
 	if got := probeCount(); got != preparedProbeCount {
 		t.Fatalf("read-only revalidation launched version command: calls=%d want=%d", got, preparedProbeCount)
 	}
+	legacyRequest := request
+	legacyRequest.Workers, legacyRequest.AdmissionMaximum = 0, 0
+	legacyIdentities, legacyPrepared, _, err := PrepareGroupExecutionIdentities(context.Background(), legacyRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyMetadata := legacyPrepared["a"]
+	legacyResult := NewTestResult(legacyRequest)
+	legacyResult.Groups = []GroupResult{{ID: "a", IdentityVersion: PreviousGroupExecutionIdentityVersion,
+		ExecutionIdentity: legacyIdentities["a"], InputDigest: legacyMetadata.InputDigest, InputManifest: []string{"source.txt"},
+		EnvironmentDigest: legacyMetadata.EnvironmentDigest, ToolIdentities: legacyMetadata.ToolIdentities,
+		ExecutableDigests: legacyMetadata.ExecutableDigests, Argv: legacyMetadata.Argv, Expected: legacyMetadata.Expected,
+		Status: "passed", NativeLaunched: true, CollectionComplete: true, EndedAt: time.Now().UTC().Format(time.RFC3339Nano)}}
+	legacyAttempt := Attempt{SchemaVersion: IdentityAttemptSchemaVersion, AttemptID: "legacy-bridge",
+		StartedAt:         time.Now().UTC().Add(-time.Second).Format(time.RFC3339Nano),
+		PendingTestGroups: map[string]string{"a": legacyIdentities["a"]},
+		Terminal:          &AttemptTerminal{Result: TerminalSuccess}, TestResult: &legacyResult}
+	legacyRevalidated, err := RevalidateRetainedGroupExecutionIdentities(context.Background(), legacyRequest, []Attempt{legacyAttempt})
+	if err != nil || legacyResult.SchemaVersion != PreviousTestResultSchemaVersion ||
+		legacyResult.Groups[0].IdentityVersion != PreviousGroupExecutionIdentityVersion || legacyRevalidated["a"] != legacyIdentities["a"] {
+		t.Fatalf("current bridge legacy result did not revalidate: result=%+v identities=%v err=%v", legacyResult, legacyRevalidated, err)
+	}
+	legacyReused := ReusedTestResult(legacyResult, []Attempt{legacyAttempt}, legacyIdentities, legacyRequest.Contract)
+	if len(legacyReused.Groups) != 1 || legacyReused.Groups[0].Status != "reused" || legacyReused.Groups[0].ReuseAttempt != legacyAttempt.AttemptID {
+		t.Fatalf("current bridge legacy result did not reuse: %+v", legacyReused)
+	}
+	activeRequest := legacyRequest
+	activeRequest.Workers = 1
+	activeRevalidated, err := RevalidateRetainedGroupExecutionIdentities(context.Background(), activeRequest, []Attempt{legacyAttempt})
+	if err != nil || activeRevalidated["a"] == legacyIdentities["a"] {
+		t.Fatalf("active schema-3 request accepted a schema-2 worker identity: active=%v legacy=%v err=%v", activeRevalidated, legacyIdentities, err)
+	}
+	activeReuse := ReusedTestResult(NewTestResult(activeRequest), []Attempt{legacyAttempt}, legacyIdentities, activeRequest.Contract)
+	if len(activeReuse.Groups) != 1 || activeReuse.Groups[0].Status != "not-run" || activeReuse.Groups[0].NotRunReason != "missing-proof" {
+		t.Fatalf("active schema-3 request reused schema-2 evidence: %+v", activeReuse)
+	}
+	preparedProbeCount = probeCount()
 	result.SchemaVersion = LegacyTestResultSchemaVersion
 	legacy, err := RevalidateRetainedGroupExecutionIdentities(context.Background(), request, []Attempt{attempt})
 	if err != nil || legacy["a"] == identities["a"] {
@@ -148,10 +185,26 @@ func TestCurrentPolicyComposesOnlyRequiredCompatibleObservations(t *testing.T) {
 	identity := strings.Repeat("7", 64)
 	source := componentAttemptResult("old", "a", identity, "passed")
 	source.SchemaVersion = TestResultSchemaVersion
+	applyCurrentWorkerPolicy(&source)
 	source.Groups[0].IdentityVersion = GroupExecutionIdentityVersion
 	source.Groups[0].EndedAt = "2026-09-20T09:00:01Z"
 	source.ContractDigest = strings.Repeat("1", 64)
 	source.BaseContractDigest = strings.Repeat("2", 64)
+	if err := ValidateTestResult(source); err != nil {
+		t.Fatalf("schema-3 result with identity version 3 was refused: %v", err)
+	}
+	wrongVersion := source
+	wrongVersion.Groups = append([]GroupResult(nil), source.Groups...)
+	wrongVersion.Groups[0].IdentityVersion = PreviousGroupExecutionIdentityVersion
+	if err := ValidateTestResult(wrongVersion); err == nil || !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("schema-3 result accepted identity version 2: %v", err)
+	}
+	previous := componentAttemptResult("previous", "a", identity, "passed")
+	previous.SchemaVersion = PreviousTestResultSchemaVersion
+	previous.Groups[0].IdentityVersion = PreviousGroupExecutionIdentityVersion
+	if err := ValidateTestResult(previous); err != nil {
+		t.Fatalf("schema-2 result with identity version 2 became unreadable: %v", err)
+	}
 	old := Attempt{SchemaVersion: IdentityAttemptSchemaVersion, AttemptID: "old", StartedAt: "2026-09-20T09:00:00Z",
 		TestInventory: map[string]string{"a": identity}, TestOwned: map[string]string{"a": identity},
 		Terminal: &AttemptTerminal{Result: TerminalSuccess}, TestResult: &source}

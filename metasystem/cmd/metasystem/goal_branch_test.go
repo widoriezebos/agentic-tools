@@ -898,6 +898,18 @@ func TestGoalBranchTestingContractIncludesReadDependencies(t *testing.T) {
 
 func TestGoalBranchCommitIsTheGuardedCommitWrapper(t *testing.T) {
 	root, _, _ := goalBranchCLIFixture(t, "m1")
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe linked-worktree holder: state=%s err=%v", state, err)
+	}
+	if _, err := lease.AnnounceWithPair(root, "goal-branch-linked-fixture", exact.Pid, exact.StartedAt.Unix(),
+		exact.StartTicks, exact.BootID, "fixture", "fake", "m1"); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := lease.ClassifyVerb(root, exact.Pid)
+	if err != nil || holder.Class != lease.ClassMain || !holder.Holder || holder.Announcement == nil || holder.Announcement.OwnerLineage != "m1" {
+		t.Fatalf("linked-worktree caller is not the m1 MAIN holder: holder=%+v err=%v", holder, err)
+	}
 	bin := filepath.Join(root, "bin")
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)

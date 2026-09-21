@@ -11,9 +11,10 @@ import (
 )
 
 func TestTestReportReadsValidatedResultWithoutExecutingProof(t *testing.T) {
-	zero := 0
+	zero, admissionMaximum := 0, 0
 	digest := strings.Repeat("a", 64)
 	result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion, AttemptID: "attempt-1",
+		WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion, Workers: 1, AdmissionMaximum: &admissionMaximum,
 		Purpose: testpolicy.PurposeDiagnostic, RequestedMode: testpolicy.ModeAuto,
 		RequiredMode: testpolicy.ModeAuto, ExecutedMode: testpolicy.ModeCanary,
 		ProjectRoot: "/project", BaseCommit: strings.Repeat("b", 40), CandidateTree: strings.Repeat("c", 40),
@@ -21,7 +22,7 @@ func TestTestReportReadsValidatedResultWithoutExecutingProof(t *testing.T) {
 		BehaviorPolicyDigest: digest, PlanDigest: digest, SelectedGroups: []string{"unit"},
 		LaunchCounts: proofrun.LaunchCounts{Test: 1, CountsComplete: true},
 		Cost:         proofrun.TestCost{DeclaredTargetMS: 2000, ActualDurationMS: 700, ExecutionDurationMS: 650},
-		Groups: []proofrun.GroupResult{{ID: "unit", Kind: "unit", InputManifest: []string{"src/app.go"},
+		Groups: []proofrun.GroupResult{{ID: "unit", Kind: "unit", InputManifest: []string{"src/app.go"}, IdentityVersion: proofrun.GroupExecutionIdentityVersion,
 			ExecutionIdentity: digest, Status: "passed", NativeLaunched: true, CollectionComplete: true,
 			NativeExitStatus: &zero, DurationMS: 600}}}
 	result.RecomputeDelivery()

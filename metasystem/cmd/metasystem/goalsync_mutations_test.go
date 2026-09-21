@@ -216,6 +216,7 @@ func TestGoalBudgetFindsItsBoxOnEitherSideOfFlags(t *testing.T) {
 
 func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	root, now := proofExtensionGoalFixture(t)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", "")
 	announceProofFixtureHolder(t, root)
 	leasePath := filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
 	leaseBytes, err := os.ReadFile(leasePath)
@@ -261,6 +262,11 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("proof admission after holder rebudget: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
 	}
+	guard := filepath.Join(root, "artifacts", "agents", "host-admission-fixture", "admission.lock")
+	if _, err := os.Stat(guard); err != nil {
+		t.Fatalf("root-scoped proof admission guard: %v", err)
+	}
+
 }
 
 func TestStoppingRequestFallsBackToTerminalGrade(t *testing.T) {

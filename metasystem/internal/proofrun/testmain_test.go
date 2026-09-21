@@ -1,10 +1,15 @@
 package proofrun
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -15,6 +20,41 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("GO_WANT_GO_SHARD_HELPER") == "1" {
+		terminated := shardFixtureTermination()
+		if os.Getenv("GO_SHARD_DESCENDANT") == "1" {
+			<-terminated
+			os.Exit(0)
+		}
+		descendant := exec.Command(os.Args[0])
+		descendant.Env = append(os.Environ(), "GO_SHARD_DESCENDANT=1")
+		if err := descendant.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(96)
+		}
+		stateRoot := os.Getenv("ACTIVE_SHARD_STATE_DIR")
+		pid := os.Getpid()
+		temporary := filepath.Join(stateRoot, fmt.Sprintf(".%d.tmp", pid))
+		ready := filepath.Join(stateRoot, fmt.Sprintf("%d.ready", pid))
+		state := []byte(fmt.Sprintf("child=%d\ndescendant=%d\n", pid, descendant.Process.Pid))
+		if err := os.WriteFile(temporary, state, 0o600); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(97)
+		}
+		if err := os.Rename(temporary, ready); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(97)
+		}
+		fmt.Fprintln(os.Stderr, os.Getenv("ACTIVE_SHARD_DIAGNOSTIC"))
+		<-terminated
+		os.Exit(0)
+	}
+	if custodyExecWitnessEntrypoint() {
+		os.Exit(0)
+	}
+	if code, handled := resourceCustodyTestEntrypoint(); handled {
+		os.Exit(code)
+	}
 	installDeterministicTestLoadReaders()
 	if err := os.Unsetenv(TestHostLoadEnvironment); err != nil {
 		panic(err)
@@ -53,6 +93,97 @@ func TestMain(m *testing.M) {
 		}
 	}
 	os.Exit(code)
+}
+
+func shardFixtureTermination() <-chan os.Signal {
+	terminated := make(chan os.Signal, 1)
+	signal.Notify(terminated, syscall.SIGTERM, os.Interrupt)
+	return terminated
+}
+
+const custodyExecWitnessEnvironment = "METASYSTEM_CUSTODY_EXEC_WITNESS"
+
+type custodyExecWitness struct {
+	Args      []string `json:"args"`
+	Directory string   `json:"directory"`
+	Marker    string   `json:"marker"`
+}
+
+func custodyExecWitnessEntrypoint() bool {
+	destination := os.Getenv(custodyExecWitnessEnvironment)
+	if destination == "" {
+		return false
+	}
+	directory, err := os.Getwd()
+	if err == nil {
+		data, marshalErr := json.Marshal(custodyExecWitness{Args: os.Args, Directory: directory, Marker: os.Getenv("CUSTODY_EXEC_MARKER")})
+		err = marshalErr
+		if err == nil {
+			err = os.WriteFile(destination, data, 0o600)
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "custody exec witness:", err)
+		os.Exit(91)
+	}
+	os.Exit(0)
+	return true
+}
+
+func resourceCustodyTestEntrypoint() (int, bool) {
+	if len(os.Args) < 3 || os.Args[1] != "proof-run" {
+		return 0, false
+	}
+	switch os.Args[2] {
+	case "watchdog":
+		flags := flag.NewFlagSet("proof-run watchdog", flag.ContinueOnError)
+		resourceCustody := flags.Bool("resource-custody", false, "")
+		parentPID := flags.Int64("custody-parent-pid", 0, "")
+		parentStarted := flags.Int64("custody-parent-started-at", 0, "")
+		parentMicro := flags.Int64("custody-parent-start-micro", 0, "")
+		parentTicks := flags.Int64("custody-parent-start-ticks", 0, "")
+		parentBoot := flags.String("custody-parent-boot-id", "", "")
+		controlFD := flags.Int("custody-control-fd", 0, "")
+		readyFD := flags.Int("custody-ready-fd", 0, "")
+		markerFD := flags.Int("custody-marker-fd", 0, "")
+		markerPath := flags.String("custody-marker-path", "", "")
+		if flags.Parse(os.Args[3:]) != nil || flags.NArg() != 0 || !*resourceCustody {
+			return 2, true
+		}
+		err := RunResourceCustodian(ResourceCustodyOptions{Launcher: identity.Ref{Pid: *parentPID,
+			StartedAtSec: *parentStarted, StartedAtUnixMicro: *parentMicro, StartTicks: *parentTicks, BootID: *parentBoot},
+			ControlFD: *controlFD, ReadyFD: *readyFD, MarkerFD: *markerFD, MarkerPath: *markerPath})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "test resource custodian:", err)
+			return 1, true
+		}
+		return 0, true
+	case "custody-exec":
+		flags := flag.NewFlagSet("proof-run custody-exec", flag.ContinueOnError)
+		readyFD := flags.Int("ready-fd", 0, "")
+		releaseFD := flags.Int("release-fd", 0, "")
+		path := flags.String("path", "", "")
+		if flags.Parse(os.Args[3:]) != nil || flags.NArg() < 1 || *readyFD < 3 || *releaseFD < 3 || *path == "" {
+			return 2, true
+		}
+		ready := os.NewFile(uintptr(*readyFD), "custody-exec-ready")
+		release := os.NewFile(uintptr(*releaseFD), "custody-exec-release")
+		if _, err := ready.Write([]byte("ready\n")); err != nil {
+			return 1, true
+		}
+		_ = ready.Close()
+		var token [1]byte
+		if count, err := release.Read(token[:]); err != nil || count != 1 || token[0] != 1 {
+			return 1, true
+		}
+		_ = release.Close()
+		if err := syscall.Exec(*path, flags.Args(), os.Environ()); err != nil {
+			return 1, true
+		}
+		return 0, true
+	default:
+		return 0, false
+	}
 }
 
 func hostResourceCustodyHelperInvocation() bool {

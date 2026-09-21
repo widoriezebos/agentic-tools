@@ -87,7 +87,7 @@ func runPerformanceSchedule(t *testing.T, fail bool) performanceScheduleRun {
 		return GroupResult{ID: group.ID, Kind: group.Kind, Status: status}
 	}
 	t.Cleanup(func() { runStageTestGroup, waitForStageGroups = previous, previousWait })
-	results, _, err := runStageGroups(context.Background(), TestRunRequest{Concurrency: 3}, groups, ids, &progressWriter{}, fail)
+	results, _, err := runStageGroups(context.Background(), TestRunRequest{Workers: 3, Concurrency: 3}, groups, ids, &progressWriter{}, fail)
 	runStageTestGroup, waitForStageGroups = previous, previousWait
 	if err != nil {
 		t.Fatal(err)

@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -302,53 +303,105 @@ func acquireManagedProofLaunchWithWaitCheck(ctx context.Context, controlRoot, co
 
 const proofCapacityWaitLine = "proof-run launch: waiting for host proof capacity"
 
+func runProofRunGoGateTests(args []string) int {
+	flags := flag.NewFlagSet("proof-run go-gate-tests", flag.ContinueOnError)
+	root := pathFlag(flags, "root", "", "metasystem source root")
+	logRoot := pathFlag(flags, "log-root", "", "private native partition log directory")
+	workers := flags.Int("workers", 0, "inherited positive test-worker allowance")
+	if flags.Parse(args) != nil || flags.NArg() != 0 || *root == "" || *logRoot == "" || *workers < 1 {
+		fmt.Fprintln(os.Stderr, "usage: metasystem proof-run go-gate-tests --root DIR --log-root DIR --workers N")
+		return 2
+	}
+	if code, err := authorizeProofWorker(*root); err != nil {
+		fmt.Fprintln(os.Stderr, "proof-run go-gate-tests:", err)
+		return code
+	}
+	inheritedWorkers, err := strconv.Atoi(os.Getenv(proofrun.TestWorkersEnvironment))
+	if err != nil || inheritedWorkers < 1 {
+		fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: authenticated parent supplied no positive test-worker allowance")
+		return 3
+	}
+	if *workers > inheritedWorkers {
+		fmt.Fprintf(os.Stderr, "proof-run go-gate-tests: requested workers %d exceed inherited allowance %d\n", *workers, inheritedWorkers)
+		return 3
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	controlRoot, err := canonicalProofRoot(os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "proof-run go-gate-tests:", err)
+		return 3
+	}
+	lease, err := proofrun.AcquireHostResources(ctx, controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", nil)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: inherit admitted host resources:", err)
+		return 3
+	}
+	defer lease.Close()
+	ctx = proofrun.WithHostResourceLease(ctx, lease)
+	result, status, err := proofrun.RunGoGateTests(ctx, proofrun.GoGateTestRequest{
+		Root: *root, LogRoot: *logRoot, Environment: os.Environ(), Workers: *workers,
+	})
+	if len(result.Output) != 0 {
+		_, _ = os.Stdout.Write(result.Output)
+	}
+	for _, rerun := range result.Reruns {
+		fmt.Fprintf(os.Stderr, "go gate diagnostic rerun: %s.%s first=%s second=%s log=%s\n",
+			rerun.Package, rerun.Test, rerun.First, rerun.Second, rerun.LogPath)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "proof-run go-gate-tests: %v (native log: %s)\n", err, result.LogPath)
+	}
+	return status
+}
+
 func runProofRunWorkerAuthorized(args []string) int {
 	flags := flag.NewFlagSet("proof-run worker-authorized", flag.ContinueOnError)
 	executionRoot := pathFlag(flags, "root", "", "suite execution root")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *executionRoot == "" {
 		return 2
 	}
-	canonicalExecution, err := canonicalProofRoot(*executionRoot)
+	code, err := authorizeProofWorker(*executionRoot)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run worker-authorized:", err)
-		return 2
+	}
+	return code
+}
+
+func authorizeProofWorker(executionRoot string) (int, error) {
+	canonicalExecution, err := canonicalProofRoot(executionRoot)
+	if err != nil {
+		return 2, err
 	}
 	controlRoot := os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT")
 	if controlRoot == "" {
-		fmt.Fprintln(os.Stderr, "proof-run worker-authorized: no proof control root")
-		return 3
+		return 3, fmt.Errorf("no proof control root")
 	}
 	canonicalControl, err := canonicalProofRoot(controlRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run worker-authorized:", err)
-		return 3
+		return 3, err
 	}
 	err = proofrun.AuthenticateWorker(canonicalControl, os.Getenv("METASYSTEM_PROOF_ATTEMPT"),
 		os.Getenv("METASYSTEM_PROOF_RECORD_KEY"), os.Getenv("METASYSTEM_PROOF_CREATION_CLAIM"), int64(os.Getppid()))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run worker-authorized:", err)
-		return 3
+		return 3, err
 	}
 	authorizedRoot := canonicalControl
 	if attemptID := os.Getenv("METASYSTEM_PROOF_ATTEMPT"); attemptID != "" {
 		attempt, readErr := proofrun.ReadAttempt(canonicalControl, attemptID)
 		if readErr != nil {
-			fmt.Fprintln(os.Stderr, "proof-run worker-authorized:", readErr)
-			return 3
+			return 3, readErr
 		}
 		authorizedRoot, err = canonicalProofRoot(attempt.ExecutionRoot)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "proof-run worker-authorized:", err)
-			return 3
+			return 3, err
 		}
 	}
 	if canonicalExecution != authorizedRoot && !authorizedWitnessSnapshot(canonicalExecution, authorizedRoot) &&
 		!authorizedSectionWorktree(canonicalExecution, authorizedRoot, canonicalControl, os.Getenv("METASYSTEM_PROOF_ATTEMPT")) {
-		fmt.Fprintf(os.Stderr, "proof-run worker-authorized: supplied root %q does not match admitted execution root %q\n",
-			canonicalExecution, authorizedRoot)
-		return 3
+		return 3, fmt.Errorf("supplied root %q does not match admitted execution root %q", canonicalExecution, authorizedRoot)
 	}
-	return 0
+	return 0, nil
 }
 
 // A schema-1 policy worker runs each section in a temporary linked worktree.
@@ -1039,6 +1092,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller reclassification failed under admission lock: %w", err)
 	}
 	extensionAuthorized := false
+	extensionCallerClass := classifiedCaller.Class
 	if reservationOwner != nil {
 		runRecord, readErr := (&runpkg.Store{Root: request.ControlRoot}).Read(reservationOwner.RunID)
 		if readErr != nil || runRecord == nil || runRecord.Governed == nil || runRecord.Status != runpkg.StatusRunning ||
@@ -1066,6 +1120,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("native delegate proof custody changed before reservation")
 		}
 		extensionAuthorized = true
+		extensionCallerClass = lease.ClassDelegate
 	} else if classifiedCaller.Class == lease.ClassMain {
 		machine, machineErr := goal.ResolveMachine(request.ControlRoot)
 		if machineErr != nil || !classifiedCaller.Holder || classifiedCaller.ClaimEpoch == nil ||
@@ -1164,15 +1219,26 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			if endpointErr != nil || ulidErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, errors.Join(endpointErr, ulidErr)
 			}
+			offer := verdict.Authority.Extension.GoalOffer()
 			extensionRequest := goal.VerbRequest{Endpoint: endpoint,
 				Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage}, Ulid: ulid, Now: now,
-				CallerClass: classifiedCaller.Class}
-			if _, extendErr := goal.ExtendBudget(extensionRequest, authorityGoalID, verdict.Authority.Extension.GoalOffer()); extendErr != nil {
+				CallerClass: extensionCallerClass}
+			extended, extendErr := goal.ExtendBudget(extensionRequest, authorityGoalID, offer)
+			if extendErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation extend budget: %w", extendErr)
+			}
+			if extended.Outcome != goal.OutcomeConfirmed {
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation extend budget ended %s: %s", extended.Outcome, extended.Detail)
 			}
 			binding, err = dispatchcore.ResolveGoalBinding(request.ControlRoot, authorityGoalID, now)
 			if err != nil || binding.Revision != reservation.GoalRevision {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost its goal binding after budget extension")
+			}
+			marker := binding.File.BudgetExtension
+			if binding.Machine != extensionRequest.Actor.Machine || binding.Lineage != extensionRequest.Actor.Lineage ||
+				marker == nil || marker.AttemptLimitFrom != offer.AttemptLimitFrom || marker.AttemptLimitTo != offer.AttemptLimitTo ||
+				marker.ReservedJobMinutesFrom != offer.ReservedJobMinutesFrom || marker.ReservedJobMinutesTo != offer.ReservedJobMinutesTo {
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation budget extension is not visible on its authoritative claim pair")
 			}
 			projection = dispatchcore.ProjectBudget(request.ControlRoot, binding.File, now)
 			if projection.Status != dispatchcore.BudgetKnown {
@@ -1757,7 +1823,8 @@ func runProofRunCustodyExec(args []string) int {
 	flags := flag.NewFlagSet("proof-run custody-exec", flag.ContinueOnError)
 	readyFD := flags.Int("ready-fd", 0, "readiness descriptor")
 	releaseFD := flags.Int("release-fd", 0, "start barrier descriptor")
-	if flags.Parse(args) != nil || flags.NArg() < 1 || *readyFD < 3 || *releaseFD < 3 {
+	path := flags.String("path", "", "selected executable path")
+	if flags.Parse(args) != nil || flags.NArg() < 1 || *readyFD < 3 || *releaseFD < 3 || *path == "" {
 		return 2
 	}
 	ready := os.NewFile(uintptr(*readyFD), "custody-exec-ready")
@@ -1771,13 +1838,7 @@ func runProofRunCustodyExec(args []string) int {
 		return 1
 	}
 	_ = release.Close()
-	command := flags.Args()
-	path, err := exec.LookPath(command[0])
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run custody-exec:", err)
-		return 1
-	}
-	if err := syscall.Exec(path, command, os.Environ()); err != nil {
+	if err := syscall.Exec(*path, flags.Args(), os.Environ()); err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run custody-exec:", err)
 		return 1
 	}

@@ -22,6 +22,13 @@ const policyProbeWorkerEnvironment = "METASYSTEM_POLICY_PROBE_WORKER"
 // On ordinary landings that worker is the retained destination engine, so the
 // candidate executable cannot delete or relink these literal public-v1 cases.
 func runFrozenPolicyProtectionCorpus(ctx context.Context, request proofrun.TestRunRequest) error {
+	return runFrozenPolicyProtectionCorpusWith(ctx, request, runFrozenSelectionProbe, runFrozenWorkerProbe)
+}
+
+func runFrozenPolicyProtectionCorpusWith(ctx context.Context, request proofrun.TestRunRequest,
+	selectionProbe func(context.Context, proofrun.TestRunRequest, testpolicy.ProtectionProbeCase) error,
+	workerProbe func(context.Context, proofrun.TestRunRequest, testpolicy.ProtectionProbeCase) error,
+) error {
 	if os.Getenv(policyProbeWorkerEnvironment) == "1" || !containsString(request.Plan.SelectedGroups, "policy-protection") {
 		return nil
 	}
@@ -29,9 +36,18 @@ func runFrozenPolicyProtectionCorpus(ctx context.Context, request proofrun.TestR
 		var err error
 		switch probe.ID {
 		case "remove-required-provider", "shrink-dependency-graph", "lower-coverage-floor", "remove-required-test":
-			err = runFrozenSelectionProbe(ctx, request, probe)
-		case "emit-zero-tests", "forge-component-reuse":
-			err = runFrozenWorkerProbe(ctx, request, probe)
+			err = selectionProbe(ctx, request, probe)
+		case "emit-zero-tests":
+			err = workerProbe(ctx, request, probe)
+			if err == nil && proofrun.TestWorkerPolicyActive(request) {
+				// The active request proves current empty-result enforcement. The
+				// additional legacy request preserves backend-first compatibility.
+				legacy := request
+				legacy.Workers, legacy.AdmissionMaximum = 0, 0
+				err = workerProbe(ctx, legacy, probe)
+			}
+		case "forge-component-reuse":
+			err = workerProbe(ctx, request, probe)
 		default:
 			err = fmt.Errorf("unknown frozen probe")
 		}
@@ -352,13 +368,19 @@ func runFrozenWorkerProbe(ctx context.Context, outer proofrun.TestRunRequest, pr
 	request := proofrun.TestRunRequest{ControlRoot: outer.ControlRoot, ProjectRoot: root, CandidateTree: tree, BaseCommit: outer.BaseCommit,
 		PolicyBaseCommit: outer.PolicyBaseCommit, Contract: testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}}, Plan: plan,
 		AttemptID: outer.AttemptID, Environment: outer.Environment, LogRoot: filepath.Join(root, "logs"), PolicyEngine: outer.PolicyEngine,
+		Workers: outer.Workers, AdmissionMaximum: outer.AdmissionMaximum,
 		PolicyEngineDigest: outer.PolicyEngineDigest, JudgeKey: outer.JudgeKey, CandidateEngine: outer.CandidateEngine, CandidateEngineDigest: outer.CandidateEngineDigest,
 		CandidateEngineBuildIdentity: outer.CandidateEngineBuildIdentity,
 		BehaviorPolicyDigest:         outer.BehaviorPolicyDigest, CommandStartedAt: outer.CommandStartedAt}
 	if probe.ID == "forge-component-reuse" {
+		identityVersion := proofrun.PreviousGroupExecutionIdentityVersion
+		if proofrun.TestWorkerPolicyActive(request) {
+			identityVersion = proofrun.GroupExecutionIdentityVersion
+		}
 		request.Reused = map[string]proofrun.GroupResult{"literal": {ID: "literal", Kind: "unit", Obligations: []string{"literal-protection"},
 			InputDigest: strings.Repeat("a", 64), InputManifest: []string{"source.txt"}, ExecutionIdentity: strings.Repeat("b", 64), CWD: ".",
-			Status: "passed", NativeLaunched: true, NativeExitStatus: &zero, CollectionComplete: true, ReuseAttempt: "forged-success",
+			IdentityVersion: identityVersion,
+			Status:          "passed", NativeLaunched: true, NativeExitStatus: &zero, CollectionComplete: true, ReuseAttempt: "forged-success",
 			ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}}
 	}
 	packet, resultPath := filepath.Join(root, "request.json"), filepath.Join(root, "result.json")
@@ -404,9 +426,13 @@ func readFrozenWorkerProbeResult(path string) (proofrun.TestResult, error) {
 // frozenNegativeProbeResponse is a private response for the old engine's
 // version-one negative corpus. It cannot turn an ordinary worker result into
 // legacy proof evidence: only the one invalid, incomplete synthetic probe is
-// projected, and the normal worker still writes schema two.
+// projected, and the normal worker still writes the current result schema.
 func frozenNegativeProbeResponse(request proofrun.TestRunRequest, result proofrun.TestResult) (proofrun.TestResult, error) {
-	if !request.SyntheticProbe || result.SchemaVersion != proofrun.TestResultSchemaVersion ||
+	expectedSchema := proofrun.PreviousTestResultSchemaVersion
+	if proofrun.TestWorkerPolicyActive(request) {
+		expectedSchema = proofrun.TestResultSchemaVersion
+	}
+	if !request.SyntheticProbe || result.SchemaVersion != expectedSchema ||
 		len(request.Plan.SelectedGroups) != 1 || request.Plan.SelectedGroups[0] != "literal" ||
 		len(result.SelectedGroups) != 1 || result.SelectedGroups[0] != "literal" ||
 		len(result.RequiredGroups) != 1 || result.RequiredGroups[0] != "literal" ||
@@ -422,6 +448,7 @@ func frozenNegativeProbeResponse(request proofrun.TestRunRequest, result proofru
 	}
 	legacy := result
 	legacy.SchemaVersion = proofrun.LegacyTestResultSchemaVersion
+	legacy.WorkerPolicyVersion, legacy.Workers, legacy.AdmissionMaximum = 0, 0, nil
 	legacy.Groups = append([]proofrun.GroupResult(nil), result.Groups...)
 	legacy.Groups[0].IdentityVersion = 0
 	legacy.Groups[0].ExecutableDigests = nil

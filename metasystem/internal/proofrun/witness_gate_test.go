@@ -41,6 +41,7 @@ type witnessGateFixture struct {
 type witnessGateRunOptions struct {
 	fallback      string
 	gateStatuses  string
+	diagnostic    string
 	writeWitness  bool
 	writeBinary   bool
 	force         bool
@@ -93,6 +94,17 @@ func TestWitnessGateExecutedFailureIsTerminal(t *testing.T) {
 			fixture.assertScratchEntries()
 		})
 	}
+}
+
+func TestWitnessGateFailureDiagnosticSurvivesSnapshotDeletion(t *testing.T) {
+	t.Parallel()
+	fixture := newWitnessGateFixture(t)
+	const diagnostic = "TestMain durable diagnostic without FAIL or panic prefix"
+	result := fixture.run(witnessGateRunOptions{fallback: "none", gateStatuses: "23", diagnostic: diagnostic})
+	if result.status != 23 || result.launches != 1 || !strings.Contains(result.output, diagnostic) {
+		t.Fatalf("retained parent output lost native diagnostic: status=%d launches=%d\n%s", result.status, result.launches, result.output)
+	}
+	assertNoPublishedWitness(t, result.observation)
 }
 
 func TestWitnessGateForceModeStaysIsolatedAndSingleLaunch(t *testing.T) {
@@ -436,6 +448,7 @@ func witnessGateEnvironment(fixture *witnessGateFixture, options witnessGateRunO
 		"WITNESS_GATE_ARCHIVE_STATUS":      true,
 		"WITNESS_GATE_COUNT_FILE":          true,
 		"WITNESS_GATE_FALLBACK":            true,
+		"WITNESS_GATE_FAILURE_DIAGNOSTIC":  true,
 		"WITNESS_GATE_HELPER":              true,
 		"WITNESS_GATE_REPORT_FILE":         true,
 		"WITNESS_GATE_STATUSES":            true,
@@ -466,6 +479,9 @@ func witnessGateEnvironment(fixture *witnessGateFixture, options witnessGateRunO
 		"WITNESS_GATE_TMP_ROOT="+fixture.scratch,
 		"WITNESS_REAL_TAR="+fixture.realTar,
 	)
+	if options.diagnostic != "" {
+		environment = append(environment, "WITNESS_GATE_FAILURE_DIAGNOSTIC="+options.diagnostic)
+	}
 	if options.writeWitness {
 		environment = append(environment, "WITNESS_GATE_WRITE_WITNESS=1")
 	}
@@ -564,6 +580,9 @@ func witnessGateCommandHelper() int {
 
 	status := witnessGateSelectedStatus(os.Getenv("WITNESS_GATE_STATUSES"), launch)
 	if status != 0 {
+		if diagnostic := os.Getenv("WITNESS_GATE_FAILURE_DIAGNOSTIC"); diagnostic != "" {
+			fmt.Fprintln(os.Stderr, diagnostic)
+		}
 		return status
 	}
 	if os.Getenv("WITNESS_GATE_WRITE_WITNESS") == "1" {

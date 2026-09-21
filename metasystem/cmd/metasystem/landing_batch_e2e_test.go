@@ -560,16 +560,18 @@ func (fixture *batchE2EFixture) writeJSON(path string, value any) {
 }
 
 func batchE2EProofResult(request batchProofLaunch, green bool, manifest []string) proofrun.TestResult {
+	admissionMaximum := 0
 	status := "passed"
 	if !green {
 		status = "failed"
 	}
 	base, _ := exec.Command("git", "-C", request.Root, "rev-parse", "refs/remotes/origin/main").Output()
 	result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion, AttemptID: fmt.Sprintf("batch-e2e-%s", request.BatchID), Purpose: testpolicy.PurposeDelivery,
+		WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion, Workers: 1, AdmissionMaximum: &admissionMaximum,
 		RequestedMode: request.Mode, RequiredMode: request.Mode, ExecutedMode: request.Mode, ProjectRoot: request.Root,
 		BaseCommit: strings.TrimSpace(string(base)), CandidateTree: request.Tree,
 		RequiredGroups: []string{"app-unit"}, SelectedGroups: []string{"app-unit"},
-		Groups:       []proofrun.GroupResult{{ID: "app-unit", Kind: "unit", Obligations: []string{"batch-lifecycle"}, InputManifest: slices.Clone(manifest), Status: status, NativeLaunched: true, CollectionComplete: true}},
+		Groups:       []proofrun.GroupResult{{ID: "app-unit", Kind: "unit", Obligations: []string{"batch-lifecycle"}, InputManifest: slices.Clone(manifest), IdentityVersion: proofrun.GroupExecutionIdentityVersion, Status: status, NativeLaunched: true, CollectionComplete: true}},
 		LaunchCounts: proofrun.LaunchCounts{Test: 1, CountsComplete: true}}
 	result.RecomputeDelivery()
 	return result

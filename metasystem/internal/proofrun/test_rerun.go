@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -60,21 +59,20 @@ func rerunFailedTests(ctx context.Context, request TestRunRequest, group testpol
 func runFailedTestAgain(ctx context.Context, request TestRunRequest, group testpolicy.Group, cwd string, environment []string,
 	limits supervisorLimits, sampleInterval time.Duration, identity NativeTestIdentity, number int, failedLoad LoadSample,
 ) RerunFinding {
+	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
 	logPath := filepath.Join(request.LogRoot, fmt.Sprintf("%s.rerun-%d.log", group.ID, number))
-	argv := []string{"go", "test", "-json", "-count=1", "-timeout", "0"}
-	if len(group.BuildTags) != 0 {
-		argv = append(argv, "-tags", strings.Join(group.BuildTags, ","))
-	}
-	if group.Race {
-		argv = append(argv, "-race")
-	}
+	argv := goNativeTestArguments(group, false)
 	argv = append(argv, "-run", "^"+regexp.QuoteMeta(identity.Name)+"$", identity.Classname)
 
 	var output synchronizedBuffer
 	second := "missing-terminal"
-	command, commandErr := explicitEnvironmentCommand(ctx, cwd, environment, argv)
+	release, acquireErr := acquireTestWorkers(ctx, 1)
+	if acquireErr == nil {
+		defer release()
+	}
+	command, commandErr := explicitEnvironmentCommand(ctx, cwd, overlayTestEnvironment(environment, map[string]string{"GOMAXPROCS": "1"}), argv)
 	logFile, logErr := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if commandErr == nil && logErr == nil {
+	if acquireErr == nil && commandErr == nil && logErr == nil {
 		activity := newOutputActivity(time.Now())
 		tee := &activityWriter{activity: activity, writer: io.MultiWriter(&output, logFile)}
 		command.Stdout, command.Stderr = tee, tee
@@ -93,6 +91,11 @@ func runFailedTestAgain(ctx context.Context, request TestRunRequest, group testp
 		}
 	} else {
 		if logFile != nil {
+			if acquireErr != nil {
+				_, _ = fmt.Fprintf(logFile, "acquire Go test worker: %v\n", acquireErr)
+			} else if commandErr != nil {
+				_, _ = fmt.Fprintf(logFile, "prepare Go test rerun: %v\n", commandErr)
+			}
 			_ = logFile.Close()
 		}
 	}

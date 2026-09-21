@@ -519,15 +519,17 @@ printf 'go gate: GOTOOLCHAIN: %s\n' "$(go env GOTOOLCHAIN)"
 gofmt_rc=0
 # gofmt recurses into every directory and skips only dot-prefixed names, so a
 # directory argument would hand it an installed frontend dependency tree. The
-# list comes from Git instead: every Go file Git sees, tracked or new, never an
-# ignored tree. -z prints each name verbatim and NUL-terminated, so spaces and
-# non-ASCII names survive the whole pipeline. The -f test drops index entries
-# deleted only in the working tree, which --cached still lists and which would
-# make gofmt exit 2 (g1-s8 revision 5, the exclusion slice).
+# list is gathered first instead, and gofmt is invoked exactly once on it.
+gofmt_files=()
+# Every Go file Git sees, tracked or new, never an ignored tree. -z prints each
+# name verbatim and NUL-terminated, so spaces and non-ASCII names survive. The
+# -f test drops index entries deleted only in the working tree, which --cached
+# still lists and which would make gofmt exit 2 (g1-s8 revision 5, the
+# exclusion slice).
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  unformatted=$(git ls-files -z --cached --others --exclude-standard -- '*.go' \
-    | while IFS= read -r -d '' f; do if [[ -f "$f" ]]; then printf '%s\0' "$f"; fi; done \
-    | xargs -0 -r gofmt -l 2>&1) || gofmt_rc=$?
+  while IFS= read -r -d '' f; do
+    if [[ -f "$f" ]]; then gofmt_files+=("$f"); fi
+  done < <(git ls-files -z --cached --others --exclude-standard -- '*.go')
 else
   # A frozen witness export (proofrun.Freeze) and the script fixtures that
   # drive this gate are trees, not repositories, and Git can enumerate
@@ -538,11 +540,29 @@ else
   # installed, would take this branch and hand gofmt the dependency tree,
   # so installing dependencies would still change a gate verdict. The walk
   # therefore prunes the directory by name itself, as the Go walkers do, and
-  # is NUL-safe so that a space or a non-ASCII name survives it.
-  unformatted=$(find internal cmd -type d -name node_modules -prune -o \
-    -type f -name '*.go' -print0 2>/dev/null \
-    | xargs -0 -r gofmt -l 2>&1) || gofmt_rc=$?
+  # is NUL-safe so that a space or a non-ASCII name survives it. A directory
+  # that is simply absent is skipped rather than failing the walk: find exits
+  # nonzero on a missing operand, and under pipefail that status would be
+  # reported as gofmt's own.
+  for gofmt_dir in internal cmd; do
+    if [[ -d "$gofmt_dir" ]]; then
+      while IFS= read -r -d '' f; do
+        gofmt_files+=("$f")
+      done < <(find "$gofmt_dir" -type d -name node_modules -prune -o \
+        -type f -name '*.go' -print0 2>/dev/null)
+    fi
+  done
 fi
+# gofmt is invoked directly, never through xargs, because xargs reports its own
+# 123 for any child failure and would turn "gofmt is missing or crashed" into an
+# indistinguishable status. It is invoked even when the list is empty, so that a
+# missing or crashing gofmt still refuses the gate instead of passing silently
+# (go-production-grade B8); stdin is closed because gofmt with no file operand
+# reads standard input. The list is one invocation: ~1,700 files is some 60 KB of
+# argv against a 1 MB ARG_MAX. The array expansion is written the long way
+# because bash 3.2, which is what macOS ships, treats "${a[@]}" on an empty
+# array as unbound under set -u.
+unformatted=$(gofmt -l -- ${gofmt_files[@]+"${gofmt_files[@]}"} </dev/null 2>&1) || gofmt_rc=$?
 # Every static tool runs regardless of earlier reds and the verdicts land
 # as ONE block (Ruling P / commit-gate-collect): a red gofmt no longer
 # hides what vet and staticcheck would have said, so one gate run teaches

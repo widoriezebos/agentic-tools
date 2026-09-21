@@ -148,16 +148,17 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireProofReservationNotAdmissionRefused(t, decision)
-	zero := 0
+	zero, admissionMaximum := 0, 0
 	digest := strings.Repeat("a", 64)
 	result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion,
+		WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion, Workers: 1, AdmissionMaximum: &admissionMaximum,
 		CandidateEngineIdentityVersion: proofrun.CandidateEngineIdentitySchemaVersion, AttemptID: attempt.AttemptID,
 		Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto, RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
 		ProjectRoot: projectRoot, BaseCommit: head, CandidateTree: tree, PolicyBaseCommit: head,
 		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, CandidateEngineDigest: strings.Repeat("e", 64),
 		CandidateEngineBuildIdentity: strings.Repeat("f", 40), BehaviorPolicyDigest: digest, PlanDigest: digest,
 		RequiredGroups: []string{"application"}, SelectedGroups: []string{"application"}, LaunchCounts: proofrun.LaunchCounts{Test: 1, CountsComplete: true},
-		StartedAt: now.Add(-2 * time.Second).Format(time.RFC3339Nano), Cost: proofrun.TestCost{DeclaredTargetMS: 1}, Groups: []proofrun.GroupResult{{ID: "application", Kind: "unit", Obligations: []string{"behavior"},
+		StartedAt: now.Add(-2 * time.Second).Format(time.RFC3339Nano), Cost: proofrun.TestCost{DeclaredTargetMS: 1}, Groups: []proofrun.GroupResult{{ID: "application", Kind: "unit", Obligations: []string{"behavior"}, IdentityVersion: proofrun.GroupExecutionIdentityVersion,
 			InputDigest: digest, InputManifest: []string{"source/**"}, ExecutionIdentity: digest, CWD: ".", ToolIdentities: map[string]string{},
 			Status: "passed", NativeLaunched: true, NativeExitStatus: &zero, CollectionComplete: true, ReportDigests: map[string]string{}}}}
 	result.RecomputeDelivery()
@@ -534,15 +535,16 @@ func TestSchemaTwoReceiptAcceptsReuseFromAFailedDeliveryPredecessor(t *testing.T
 		requireProofReservationNotAdmissionRefused(t, decision)
 		return attempt.AttemptID
 	}
-	zero, failedExit := 0, 24
+	zero, failedExit, admissionMaximum := 0, 24, 0
 	digest := strings.Repeat("a", 64)
 	group := func(id, status string, exit *int) proofrun.GroupResult {
-		return proofrun.GroupResult{ID: id, Kind: "unit", Obligations: []string{id},
+		return proofrun.GroupResult{ID: id, Kind: "unit", Obligations: []string{id}, IdentityVersion: proofrun.GroupExecutionIdentityVersion,
 			InputDigest: digest, InputManifest: []string{id + "/**"}, ExecutionIdentity: strings.Repeat(id[:1], 64), CWD: ".", ToolIdentities: map[string]string{},
 			Status: status, NativeLaunched: true, NativeExitStatus: exit, CollectionComplete: true, ReportDigests: map[string]string{}}
 	}
 	resultFor := func(attemptID string, purpose testpolicy.Purpose, groups []proofrun.GroupResult) proofrun.TestResult {
 		result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion,
+			WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion, Workers: 1, AdmissionMaximum: &admissionMaximum,
 			CandidateEngineIdentityVersion: proofrun.CandidateEngineIdentitySchemaVersion, AttemptID: attemptID,
 			Purpose: purpose, RequestedMode: testpolicy.ModeAuto, RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
 			ProjectRoot: projectRoot, BaseCommit: head, CandidateTree: tree, PolicyBaseCommit: head,

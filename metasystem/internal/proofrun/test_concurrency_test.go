@@ -72,7 +72,7 @@ func TestStageRunsIndependentGroupsSideBySide(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
-		Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "test-logs"), ProgressPath: progress, Concurrency: 3})
+		Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "test-logs"), ProgressPath: progress, Workers: 3, Concurrency: 3})
 	if err != nil || status != 0 {
 		t.Fatalf("concurrent stage: status=%d err=%v result=%+v", status, err, result.Groups)
 	}

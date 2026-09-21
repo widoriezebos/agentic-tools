@@ -16,8 +16,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -27,6 +27,18 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+)
+
+const (
+	// TestWorkerProtocolVersion is the request/result negotiation protocol
+	// implemented by the worker-capabilities command.
+	TestWorkerProtocolVersion = 1
+	// TestWorkerPolicyVersion identifies the worker-allocation inputs bound
+	// into prepared execution identities and retained results.
+	TestWorkerPolicyVersion = 1
+	// TestWorkersEnvironment is the reserved adapter allowance exported to
+	// native commands. Contract environment declarations cannot replace it.
+	TestWorkersEnvironment = testpolicy.TestWorkersEnvironment
 )
 
 type TestRunRequest struct {
@@ -69,6 +81,13 @@ type TestRunRequest struct {
 	QueueDurationMS              int64
 	EvidenceTimeoutMS            int64
 	EvidenceMaxBytes             int64
+	// Workers is the positive adapter-worker allowance for this attempt.
+	// A zero value is accepted only for legacy direct callers and resolves to
+	// one; production preparation always writes a positive value.
+	Workers int `json:",omitempty"`
+	// AdmissionMaximum reports the separately resolved top-level proof cap.
+	// Zero retains its existing meaning: host admission is unlimited.
+	AdmissionMaximum int `json:",omitempty"`
 	// Concurrency bounds how many groups of one stage run at once; zero or
 	// one runs them in plan order, one after another.
 	Concurrency int
@@ -82,25 +101,115 @@ type TestRunRequest struct {
 // admission and carried into the authenticated worker. Executable bytes are
 // re-hashed there without repeating version helpers.
 type PreparedGroupExecution struct {
-	InputDigest       string               `json:"inputDigest"`
-	EnvironmentDigest string               `json:"environmentDigest"`
-	ToolIdentities    map[string]string    `json:"toolIdentities"`
-	ExecutableDigests map[string]string    `json:"executableDigests"`
-	Argv              []string             `json:"argv"`
-	ImplicitInputs    []string             `json:"implicitInputs,omitempty"`
-	CoverageInventory []string             `json:"coverageInventory,omitempty"`
-	CoverageModule    string               `json:"coverageModule,omitempty"`
-	Expected          []NativeTestIdentity `json:"expected"`
-	Unavailable       string               `json:"unavailable,omitempty"`
+	WorkerPolicyVersion int                  `json:"workerPolicyVersion,omitempty"`
+	Workers             int                  `json:"workers,omitempty"`
+	InputDigest         string               `json:"inputDigest"`
+	EnvironmentDigest   string               `json:"environmentDigest"`
+	ToolIdentities      map[string]string    `json:"toolIdentities"`
+	ExecutableDigests   map[string]string    `json:"executableDigests"`
+	Argv                []string             `json:"argv"`
+	ImplicitInputs      []string             `json:"implicitInputs,omitempty"`
+	CoverageInventory   []string             `json:"coverageInventory,omitempty"`
+	CoverageModule      string               `json:"coverageModule,omitempty"`
+	Expected            []NativeTestIdentity `json:"expected"`
+	Unavailable         string               `json:"unavailable,omitempty"`
+}
+
+// EffectiveTestWorkers resolves the conservative legacy request value.
+func EffectiveTestWorkers(request TestRunRequest) int {
+	if request.Workers > 0 {
+		return request.Workers
+	}
+	return 1
+}
+
+// TestWorkerPolicyActive distinguishes a negotiated request from the
+// schema-less request sent by an older frontend. Zero remains the conservative
+// direct-caller allowance, but it does not claim the negotiated protocol.
+func TestWorkerPolicyActive(request TestRunRequest) bool {
+	return request.Workers > 0
+}
+
+func groupExecutionIdentityVersion(request TestRunRequest) int {
+	if TestWorkerPolicyActive(request) {
+		return GroupExecutionIdentityVersion
+	}
+	return PreviousGroupExecutionIdentityVersion
+}
+
+// EffectiveGroupWorkers resolves a command or section declaration against
+// the authenticated attempt allowance. Go partitions each consume one worker.
+func EffectiveGroupWorkers(request TestRunRequest, group testpolicy.Group) (int, error) {
+	attemptWorkers := EffectiveTestWorkers(request)
+	workers := 1
+	if group.Kind == "performance" {
+		workers = attemptWorkers
+	} else if group.Adapter != "go" && group.Resources.Workers != nil {
+		workers = *group.Resources.Workers
+		if workers == 0 {
+			workers = attemptWorkers
+		}
+	}
+	if workers < 1 || workers > attemptWorkers {
+		return 0, fmt.Errorf("testing group %s requests %d workers from attempt allowance %d", group.ID, workers, attemptWorkers)
+	}
+	return workers, nil
+}
+
+// ValidateTestWorkerRequest refuses malformed authenticated policy before any
+// selected native command can start.
+func ValidateTestWorkerRequest(request TestRunRequest) error {
+	if request.Workers < 0 {
+		return fmt.Errorf("testing attempt workers must be positive")
+	}
+	if request.AdmissionMaximum < 0 {
+		return fmt.Errorf("testing admission maximum cannot be negative")
+	}
+	if !TestWorkerPolicyActive(request) && request.AdmissionMaximum != 0 {
+		return fmt.Errorf("testing admission maximum requires negotiated worker policy")
+	}
+	selected := make(map[string]bool, len(request.Plan.SelectedGroups))
+	for _, id := range request.Plan.SelectedGroups {
+		selected[id] = true
+	}
+	for _, group := range request.Contract.Groups {
+		if len(selected) != 0 && !selected[group.ID] {
+			continue
+		}
+		if _, reserved := group.Env[TestWorkersEnvironment]; reserved {
+			return fmt.Errorf("testing group %s cannot set reserved environment %s", group.ID, TestWorkersEnvironment)
+		}
+		if !TestWorkerPolicyActive(request) && group.Resources.Workers != nil {
+			return fmt.Errorf("testing group %s worker declaration requires negotiated worker policy", group.ID)
+		}
+		workers, err := EffectiveGroupWorkers(request, group)
+		if err != nil {
+			return err
+		}
+		if prepared, ok := request.PreparedGroups[group.ID]; ok {
+			if TestWorkerPolicyActive(request) &&
+				(prepared.WorkerPolicyVersion != TestWorkerPolicyVersion || prepared.Workers != workers) {
+				return fmt.Errorf("testing group %s prepared worker policy differs from request", group.ID)
+			}
+			if !TestWorkerPolicyActive(request) && (prepared.WorkerPolicyVersion != 0 || prepared.Workers != 0) {
+				return fmt.Errorf("testing group %s prepared metadata claims unnegotiated worker policy", group.ID)
+			}
+		}
+	}
+	return nil
 }
 
 func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, error) {
+	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
 	workerStarted := time.Now().UTC()
 	started := workerStarted
 	if parsed, err := time.Parse(time.RFC3339Nano, request.CommandStartedAt); err == nil && !parsed.After(started) {
 		started = parsed
 	}
 	result := NewTestResult(request)
+	if err := ValidateTestWorkerRequest(request); err != nil {
+		return result, 1, err
+	}
 	var admitted Attempt
 	if request.ControlRoot != "" && request.AttemptID != "" {
 		stored, err := ReadAttempt(request.ControlRoot, request.AttemptID)
@@ -194,6 +303,7 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 			if reused, ok := request.Reused[id]; ok {
 				if err := validateRetainedGroupReuse(request.ControlRoot, id, reused); err != nil {
 					reused.Status, reused.CollectionComplete, reused.NativeLaunched = "invalid", false, false
+					reused.IdentityVersion = groupExecutionIdentityVersion(request)
 					reused.NotRunReason, reused.ReuseAttempt = "forged or stale component reuse: "+err.Error(), ""
 					result.Groups = append(result.Groups, reused)
 					if firstStatus == 0 {
@@ -273,6 +383,7 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 }
 
 func runExecutionContractPlan(ctx context.Context, request TestRunRequest, result TestResult, groups map[string]testpolicy.Group, admitted Attempt, started, workerStarted time.Time) (TestResult, int, error) {
+	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
 	progress := &progressWriter{path: request.ProgressPath}
 	completed := map[string]GroupResult{}
 	firstStatus := 0
@@ -302,92 +413,49 @@ func runExecutionContractPlan(ctx context.Context, request TestRunRequest, resul
 			}
 		}
 	}
+	resolve := func(ctx context.Context, id string) (GroupResult, bool, error) {
+		if len(admitted.TestInventory) != 0 {
+			if admitted.TestInventory[id] != request.ComponentIdentities[id] {
+				return GroupResult{}, false, fmt.Errorf("testing worker group %s differs from admitted inventory", id)
+			}
+			if admitted.TestWaits[id] != "" {
+				borrowed, err := WaitForTestProducer(ctx, request.ControlRoot, admitted, id)
+				return borrowed, err == nil, err
+			}
+			if source := admitted.TestSources[id]; source != "" {
+				original, err := nativeSourceGroup(admitted, GroupResult{ID: id,
+					ExecutionIdentity: admitted.TestInventory[id], ReuseAttempt: source})
+				if err != nil || original.Status != "passed" || !original.CollectionComplete {
+					return GroupResult{}, false, fmt.Errorf("admitted source for %s is incomplete: %v", id, err)
+				}
+				original.Status, original.NativeLaunched, original.ReuseAttempt = "reused", false, source
+				return original, true, nil
+			}
+			if admitted.TestOwned[id] == "" {
+				return GroupResult{}, false, fmt.Errorf("testing group %s has no admitted execution owner", id)
+			}
+			return GroupResult{}, false, nil
+		}
+		if reused, ok := request.Reused[id]; ok {
+			if err := validateRetainedGroupReuse(request.ControlRoot, id, reused); err != nil {
+				reused.Status, reused.CollectionComplete, reused.NativeLaunched = "invalid", false, false
+				reused.NotRunReason, reused.ReuseAttempt = "forged or stale component reuse: "+err.Error(), ""
+			} else {
+				reused.Status = "reused"
+			}
+			return reused, true, nil
+		}
+		return GroupResult{}, false, nil
+	}
 	for _, stage := range request.Plan.Stages {
-		pending := append([]string(nil), stage.Groups...)
-		for len(pending) > 0 {
-			if err := ctx.Err(); err != nil {
-				return result, 1, err
-			}
-			var ready, deferred []string
-			for _, id := range pending {
-				group, exists := groups[id]
-				if !exists {
-					return result, 1, fmt.Errorf("selected testing group %s is absent", id)
-				}
-				var blockers []string
-				waiting := false
-				for _, dependency := range group.Requires {
-					if prior, done := completed[dependency]; done {
-						if prior.Status != "passed" && prior.Status != "reused" {
-							blockers = append(blockers, dependency)
-						}
-					} else if slices.Contains(pending, dependency) {
-						waiting = true
-					} else {
-						return result, 1, fmt.Errorf("testing plan omits prerequisite %s for %s", dependency, id)
-					}
-				}
-				if len(blockers) > 0 {
-					add(blockedGroupResult(unlaunchedGroupResult(request, group, "prerequisite blocked"), blockers))
-				} else if waiting {
-					deferred = append(deferred, id)
-				} else {
-					ready = append(ready, id)
-				}
-			}
-			if len(ready) == 0 && len(deferred) > 0 {
-				return result, 1, fmt.Errorf("testing plan has a prerequisite cycle or later-stage prerequisite")
-			}
-			var runnable []string
-			for _, id := range ready {
-				if len(admitted.TestInventory) != 0 {
-					if admitted.TestInventory[id] != request.ComponentIdentities[id] {
-						return result, 1, fmt.Errorf("testing worker group %s differs from admitted inventory", id)
-					}
-					if admitted.TestWaits[id] != "" {
-						borrowed, err := WaitForTestProducer(ctx, request.ControlRoot, admitted, id)
-						if err != nil {
-							return result, 1, err
-						}
-						add(borrowed)
-						continue
-					}
-					if source := admitted.TestSources[id]; source != "" {
-						original, err := nativeSourceGroup(admitted, GroupResult{ID: id,
-							ExecutionIdentity: admitted.TestInventory[id], ReuseAttempt: source})
-						if err != nil || original.Status != "passed" || !original.CollectionComplete {
-							return result, 1, fmt.Errorf("admitted source for %s is incomplete: %v", id, err)
-						}
-						original.Status, original.NativeLaunched, original.ReuseAttempt = "reused", false, source
-						add(original)
-						continue
-					}
-					if admitted.TestOwned[id] == "" {
-						return result, 1, fmt.Errorf("testing group %s has no admitted execution owner", id)
-					}
-					runnable = append(runnable, id)
-					continue
-				}
-				if reused, ok := request.Reused[id]; ok {
-					if err := validateRetainedGroupReuse(request.ControlRoot, id, reused); err != nil {
-						reused.Status, reused.CollectionComplete, reused.NativeLaunched = "invalid", false, false
-						reused.NotRunReason, reused.ReuseAttempt = "forged or stale component reuse: "+err.Error(), ""
-					} else {
-						reused.Status = "reused"
-					}
-					add(reused)
-				} else {
-					runnable = append(runnable, id)
-				}
-			}
-			ran, _, err := runStageGroups(ctx, request, groups, runnable, progress, false)
-			for _, groupResult := range ran {
+		stageResults, _, err := runStageGroupsWithPrerequisites(ctx, request, groups, stage.Groups, progress, completed, resolve)
+		for _, groupResult := range stageResults {
+			if groupResult.ID != "" {
 				add(groupResult)
 			}
-			if err != nil {
-				return result, 1, err
-			}
-			pending = deferred
+		}
+		if err != nil {
+			return result, 1, err
 		}
 	}
 	result.EndedAt, result.DurationMS = resultDuration(started)
@@ -420,7 +488,7 @@ func haltReason(haltedBy string) string {
 // the reason; the shape is the one ValidateTestResult accepts for not-run.
 func unlaunchedGroupResult(request TestRunRequest, group testpolicy.Group, reason string) GroupResult {
 	return GroupResult{ID: group.ID, Kind: group.Kind, Obligations: append([]string(nil), group.Obligations...),
-		IdentityVersion: GroupExecutionIdentityVersion,
+		IdentityVersion: groupExecutionIdentityVersion(request),
 		InputDigest:     request.CandidateTree, InputManifest: append([]string(nil), group.Inputs...), CWD: group.CWD,
 		ExecutionIdentity: request.ComponentIdentities[group.ID],
 		Status:            "not-run", NotRunReason: reason,
@@ -455,54 +523,79 @@ func (w *progressWriter) verdict(group, verdict string) error {
 var runStageTestGroup = runTestGroup
 var waitForStageGroups = (*sync.WaitGroup).Wait
 
-// runStageGroups runs non-performance groups longest-first under the concurrency
-// cap, then runs performance groups longest-first and alone, while preserving
-// plan-ordered results and draining launched work after the stop gate closes.
+type stageGroupResolver func(context.Context, string) (GroupResult, bool, error)
+
+type stageGroupDependenciesContextKey struct{}
+
+type stageGroupDependencies struct {
+	runGroup          func(context.Context, TestRunRequest, testpolicy.Group) GroupResult
+	deliverCompletion func(chan<- stageGroupCompletion, stageGroupCompletion)
+	beforeDispatch    func(string)
+}
+
+func withStageGroupDependencies(ctx context.Context, dependencies stageGroupDependencies) context.Context {
+	return context.WithValue(ctx, stageGroupDependenciesContextKey{}, dependencies)
+}
+
+func stageGroupDependenciesFromContext(ctx context.Context) stageGroupDependencies {
+	dependencies := stageGroupDependencies{
+		runGroup: runStageTestGroup,
+		deliverCompletion: func(completion chan<- stageGroupCompletion, outcome stageGroupCompletion) {
+			completion <- outcome
+		},
+		beforeDispatch: func(string) {},
+	}
+	if injected, ok := ctx.Value(stageGroupDependenciesContextKey{}).(stageGroupDependencies); ok {
+		if injected.runGroup != nil {
+			dependencies.runGroup = injected.runGroup
+		}
+		if injected.deliverCompletion != nil {
+			dependencies.deliverCompletion = injected.deliverCompletion
+		}
+		if injected.beforeDispatch != nil {
+			dependencies.beforeDispatch = injected.beforeDispatch
+		}
+	}
+	return dependencies
+}
+
+type stageGroupCompletion struct {
+	index               int
+	result              GroupResult
+	err                 error
+	stoppedBeforeLaunch bool
+}
+
+// runStageGroups runs an independent stage through the same completion-driven
+// owner used by execution-contract prerequisite stages.
 func runStageGroups(ctx context.Context, request TestRunRequest, groups map[string]testpolicy.Group, ids []string, progress *progressWriter, stopAtFirstFailure bool) ([]GroupResult, string, error) {
+	return runStageGroupsScheduled(ctx, request, groups, ids, progress, stopAtFirstFailure, nil, nil)
+}
+
+// runStageGroupsWithPrerequisites releases same-stage dependents whenever an
+// owned or retained prerequisite reaches a terminal result. Results remain in
+// plan order even though completion order drives subsequent launches.
+func runStageGroupsWithPrerequisites(ctx context.Context, request TestRunRequest, groups map[string]testpolicy.Group, ids []string, progress *progressWriter,
+	completed map[string]GroupResult, resolve stageGroupResolver) ([]GroupResult, string, error) {
+	return runStageGroupsScheduled(ctx, request, groups, ids, progress, false, completed, resolve)
+}
+
+// runStageGroupsScheduled keeps one owner for group concurrency, prerequisite
+// readiness, retained evidence, performance isolation and cancellation drain.
+func runStageGroupsScheduled(ctx context.Context, request TestRunRequest, groups map[string]testpolicy.Group, ids []string, progress *progressWriter,
+	stopAtFirstFailure bool, prior map[string]GroupResult, resolve stageGroupResolver) ([]GroupResult, string, error) {
+	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
+	dependencies := stageGroupDependenciesFromContext(ctx)
 	results := make([]GroupResult, len(ids))
 	if len(ids) == 0 {
 		return results, "", nil
 	}
-	cap := request.Concurrency
-	if cap < 1 {
-		cap = 1
+	groupCap := request.Concurrency
+	if groupCap < 1 {
+		groupCap = 1
 	}
-	if cap > len(ids) {
-		cap = len(ids)
-	}
-	var (
-		wg        sync.WaitGroup
-		errMu     sync.Mutex
-		firstErr  error
-		haltedBy  string
-		slots     = make(chan struct{}, cap)
-		stopped   = make(chan struct{})
-		stoppedMu sync.Once
-	)
-	stop := func(err error) {
-		errMu.Lock()
-		if firstErr == nil {
-			firstErr = err
-		}
-		errMu.Unlock()
-		stoppedMu.Do(func() { close(stopped) })
-	}
-	halt := func(id string) {
-		errMu.Lock()
-		if haltedBy == "" {
-			haltedBy = id
-		}
-		errMu.Unlock()
-		stoppedMu.Do(func() { close(stopped) })
-	}
-	unlaunched := func(id string) GroupResult {
-		errMu.Lock()
-		defer errMu.Unlock()
-		reason := "progress record failed before this group launched"
-		if firstErr == nil && haltedBy != "" {
-			reason = haltReason(haltedBy)
-		}
-		return unlaunchedGroupResult(request, groups[id], reason)
+	if groupCap > len(ids) {
+		groupCap = len(ids)
 	}
 	// Longest first: each group's last measured duration in the retained
 	// attempts (its declared targetMs when nothing was measured) orders the
@@ -519,6 +612,9 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 	}
 	order := make([]int, len(ids))
 	for index := range ids {
+		if _, exists := groups[ids[index]]; !exists {
+			return nil, "", fmt.Errorf("selected testing group %s is absent", ids[index])
+		}
 		order[index] = index
 	}
 	sort.SliceStable(order, func(a, b int) bool {
@@ -529,55 +625,345 @@ func runStageGroups(ctx context.Context, request TestRunRequest, groups map[stri
 		}
 		return weight(ids[order[a]]) > weight(ids[order[b]])
 	})
-	for _, index := range order {
-		id := ids[index]
-		select {
-		case <-stopped:
-			results[index] = unlaunched(id)
-			continue
-		default:
+
+	const (
+		stagePending = iota
+		stageActive
+		stageDone
+	)
+	state := make([]int, len(ids))
+	owned := make([]bool, len(ids))
+	position := make(map[string]int, len(ids))
+	for index, id := range ids {
+		if _, duplicate := position[id]; duplicate {
+			return nil, "", fmt.Errorf("testing stage contains duplicate group %s", id)
 		}
-		waitForExclusiveRun := func() {}
-		if groups[id].Kind == "performance" {
-			waitForExclusiveRun = func() { waitForStageGroups(&wg) }
+		position[id] = index
+	}
+	known := make(map[string]GroupResult, len(prior)+len(ids))
+	for id, groupResult := range prior {
+		known[id] = groupResult
+	}
+
+	remaining, active := len(ids), 0
+	performanceActive := false
+	stopping := false
+	haltedBy := ""
+	var firstErr error
+	completion := make(chan stageGroupCompletion, len(ids))
+	var launched sync.WaitGroup
+	acquireCtx, cancelAcquires := context.WithCancel(ctx)
+	defer cancelAcquires()
+	type stopCause struct {
+		haltedBy string
+		err      error
+	}
+	var stopMu sync.Mutex
+	var stopOnce sync.Once
+	var stopped bool
+	var cause stopCause
+	signalStop := func(next stopCause) {
+		stopOnce.Do(func() {
+			stopMu.Lock()
+			stopped, cause = true, next
+			stopMu.Unlock()
+			cancelAcquires()
+		})
+	}
+	readStop := func() (stopCause, bool) {
+		stopMu.Lock()
+		defer stopMu.Unlock()
+		return cause, stopped
+	}
+	adoptStop := func() {
+		next, ok := readStop()
+		if !ok {
+			return
 		}
-		waitForExclusiveRun()
-		slots <- struct{}{}
-		// The slot may have been freed by the very group whose failure closed
-		// the gate; look again before spending it.
-		select {
-		case <-stopped:
-			<-slots
-			results[index] = unlaunched(id)
-			continue
-		default:
+		stopping = true
+		if haltedBy == "" && next.haltedBy != "" {
+			haltedBy = next.haltedBy
 		}
-		wg.Add(1)
-		go func(index int, id string) {
-			defer wg.Done()
-			defer func() { <-slots }()
-			if err := progress.record(id, "start", "", ""); err != nil {
-				stop(err)
-				results[index] = unlaunchedGroupResult(request, groups[id], "record testing group start: "+err.Error())
+		if firstErr == nil && next.err != nil {
+			firstErr = next.err
+		}
+	}
+	var stoppedBeforeLaunch []int
+
+	finish := func(index int, groupResult GroupResult) {
+		if state[index] == stageDone {
+			return
+		}
+		state[index] = stageDone
+		results[index] = groupResult
+		known[ids[index]] = groupResult
+		remaining--
+	}
+	unlaunched := func(index int) GroupResult {
+		reason := "progress record failed before this group launched"
+		if firstErr == nil && haltedBy != "" {
+			reason = haltReason(haltedBy)
+		}
+		return unlaunchedGroupResult(request, groups[ids[index]], reason)
+	}
+	prerequisites := func(index int) (ready bool, blockers []string, err error) {
+		ready = true
+		for _, dependency := range groups[ids[index]].Requires {
+			if result, done := known[dependency]; done {
+				if result.Status != "passed" && result.Status != "reused" {
+					blockers = append(blockers, dependency)
+				}
+				continue
+			}
+			if _, sameStage := position[dependency]; sameStage {
+				ready = false
+				continue
+			}
+			return false, nil, fmt.Errorf("testing plan omits prerequisite %s for %s", dependency, ids[index])
+		}
+		return ready, blockers, nil
+	}
+	launch := func(index int) {
+		id, group := ids[index], groups[ids[index]]
+		state[index] = stageActive
+		active++
+		if group.Kind == "performance" {
+			performanceActive = true
+		}
+		launched.Add(1)
+		go func() {
+			defer launched.Done()
+			groupCtx := withTestWorkerPool(ctx, EffectiveTestWorkers(request))
+			var release func()
+			if group.Adapter != "go" {
+				workers, err := EffectiveGroupWorkers(request, group)
+				if group.Kind == "performance" {
+					workers = EffectiveTestWorkers(request)
+				}
+				if err == nil {
+					release, err = acquireTestWorkers(acquireCtx, workers)
+				}
+				if err != nil {
+					_, stageStopped := readStop()
+					dependencies.deliverCompletion(completion, stageGroupCompletion{index: index,
+						result: unlaunchedGroupResult(request, group, "acquire testing workers: "+err.Error()),
+						err: func() error {
+							if stageStopped && ctx.Err() == nil {
+								return nil
+							}
+							return err
+						}(), stoppedBeforeLaunch: stageStopped && ctx.Err() == nil})
+					return
+				}
+				defer release()
+			}
+			dependencies.beforeDispatch(id)
+			if _, stageStopped := readStop(); stageStopped {
+				ctxErr := ctx.Err()
+				dependencies.deliverCompletion(completion, stageGroupCompletion{index: index,
+					result: unlaunchedGroupResult(request, group, "testing stage stopped before this group launched"),
+					err:    ctxErr, stoppedBeforeLaunch: ctxErr == nil})
 				return
 			}
-			groupResult := runStageTestGroup(ctx, request, groups[id])
-			results[index] = groupResult
-			if stopAtFirstFailure && groupResult.Status != "passed" && groupResult.Status != "reused" {
-				halt(id)
+			if err := progress.record(id, "start", "", ""); err != nil {
+				signalStop(stopCause{err: err})
+				dependencies.deliverCompletion(completion, stageGroupCompletion{index: index,
+					result: unlaunchedGroupResult(request, group, "record testing group start: "+err.Error()), err: err})
+				return
 			}
+			groupResult := dependencies.runGroup(groupCtx, request, group)
+			var progressErr error
 			if groupResult.Status == "dead" || groupResult.Status == "runaway" {
-				if err := progress.verdict(id, groupResult.Status); err != nil {
-					stop(err)
+				progressErr = progress.verdict(id, groupResult.Status)
+			}
+			if err := progress.record(id, "end", groupResult.Status, groupResult.NotRunReason); progressErr == nil {
+				progressErr = err
+			}
+			if progressErr != nil {
+				signalStop(stopCause{err: progressErr})
+			} else if stopAtFirstFailure && groupResult.Status != "passed" && groupResult.Status != "reused" {
+				signalStop(stopCause{haltedBy: id})
+			}
+			dependencies.deliverCompletion(completion, stageGroupCompletion{index: index, result: groupResult, err: progressErr})
+		}()
+	}
+	consume := func(outcome stageGroupCompletion) {
+		active--
+		if groups[ids[outcome.index]].Kind == "performance" {
+			performanceActive = false
+		}
+		finish(outcome.index, outcome.result)
+		if outcome.stoppedBeforeLaunch {
+			stoppedBeforeLaunch = append(stoppedBeforeLaunch, outcome.index)
+		}
+		if outcome.err != nil {
+			if firstErr == nil {
+				firstErr = outcome.err
+			}
+			signalStop(stopCause{err: outcome.err})
+		}
+		if stopAtFirstFailure && outcome.err == nil && !outcome.stoppedBeforeLaunch && outcome.result.Status != "passed" && outcome.result.Status != "reused" {
+			signalStop(stopCause{haltedBy: ids[outcome.index]})
+		}
+		adoptStop()
+	}
+
+	for remaining > 0 {
+		madeProgress := false
+		adoptStop()
+		if !stopping {
+			if err := ctx.Err(); err != nil {
+				firstErr = err
+				stopping = true
+				signalStop(stopCause{err: err})
+			}
+		}
+		if stopping {
+			for _, index := range order {
+				if state[index] == stagePending {
+					finish(index, unlaunched(index))
+					madeProgress = true
 				}
 			}
-			if err := progress.record(id, "end", groupResult.Status, groupResult.NotRunReason); err != nil {
-				stop(err)
+		} else {
+			// Terminal retained results and prerequisite failures do not consume a
+			// group slot. Re-scan until each result has released all dependents it
+			// can make ready in this scheduling turn.
+			for changed := true; changed; {
+				changed = false
+				for _, index := range order {
+					if state[index] != stagePending {
+						continue
+					}
+					ready, blockers, err := prerequisites(index)
+					if err != nil {
+						if firstErr == nil {
+							firstErr = err
+						}
+						stopping = true
+						signalStop(stopCause{err: err})
+						break
+					}
+					if len(blockers) != 0 {
+						finish(index, blockedGroupResult(unlaunchedGroupResult(request, groups[ids[index]], "prerequisite blocked"), blockers))
+						changed, madeProgress = true, true
+						continue
+					}
+					if !ready || owned[index] || resolve == nil {
+						continue
+					}
+					groupResult, resolved, err := resolve(ctx, ids[index])
+					if err != nil {
+						if firstErr == nil {
+							firstErr = err
+						}
+						stopping = true
+						signalStop(stopCause{err: err})
+						break
+					}
+					if resolved {
+						finish(index, groupResult)
+						changed, madeProgress = true, true
+					} else {
+						owned[index] = true
+					}
+				}
+				if stopping {
+					break
+				}
 			}
-		}(index, id)
-		waitForExclusiveRun()
+		}
+		if stopping {
+			if remaining == 0 {
+				break
+			}
+			if active == 0 {
+				continue
+			}
+			consume(<-completion)
+			continue
+		}
+
+		for active < groupCap && !performanceActive {
+			candidate := -1
+			performance := -1
+			for _, index := range order {
+				if state[index] != stagePending {
+					continue
+				}
+				ready, blockers, err := prerequisites(index)
+				if err != nil {
+					if firstErr == nil {
+						firstErr = err
+					}
+					stopping = true
+					signalStop(stopCause{err: err})
+					break
+				}
+				if !ready || len(blockers) != 0 {
+					continue
+				}
+				if groups[ids[index]].Kind == "performance" {
+					if performance < 0 {
+						performance = index
+					}
+					continue
+				}
+				candidate = index
+				break
+			}
+			if stopping {
+				break
+			}
+			if candidate < 0 && performance >= 0 && active == 0 {
+				candidate = performance
+				waitForStageGroups(&launched)
+			}
+			if candidate < 0 {
+				break
+			}
+			launch(candidate)
+			madeProgress = true
+			if groups[ids[candidate]].Kind == "performance" {
+				waitForStageGroups(&launched)
+				break
+			}
+		}
+		if stopping {
+			continue
+		}
+		if remaining == 0 {
+			break
+		}
+		if active == 0 {
+			if madeProgress {
+				continue
+			}
+			firstErr = fmt.Errorf("testing plan has a prerequisite cycle or later-stage prerequisite")
+			stopping = true
+			signalStop(stopCause{err: firstErr})
+			continue
+		}
+
+		select {
+		case outcome := <-completion:
+			consume(outcome)
+		case <-ctx.Done():
+			if firstErr == nil {
+				firstErr = ctx.Err()
+			}
+			stopping = true
+			signalStop(stopCause{err: firstErr})
+		}
 	}
-	wg.Wait()
+	launched.Wait()
+	adoptStop()
+	if firstErr == nil {
+		firstErr = ctx.Err()
+	}
+	for _, index := range stoppedBeforeLaunch {
+		results[index] = unlaunched(index)
+	}
 	return results, haltedBy, firstErr
 }
 
@@ -613,38 +999,82 @@ func retainedGroupDurations(controlRoot string) map[string]int64 {
 	return durations
 }
 
-// runShardedGoGroup runs one whole-package go group as group.Shards
-// concurrent go test launches, each over a round-robin share of the
-// discovered test names. Every shard writes its own log beside the group's;
+// runShardedGoGroup runs one Go group as isolated go test partitions. An
+// explicit shard count is a ceiling; otherwise the attempt worker allowance
+// is the ceiling. Every partition writes its own log beside the group's;
 // the group log is their concatenation in shard order, which is also what
 // the group's parsers read. The outcome is the merged supervision: any
 // verdict, the first wait error, the summed CPU, the longest silences, and
 // the first nonzero exit. With coverage on, each shard writes coverage data
 // under the group's log directory and the merged per-package percentages
 // come back as go-test-shaped lines for the coverage floors.
-func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group, cwd string, environment []string, expected []NativeTestIdentity,
-	limits supervisorLimits, sampleInterval time.Duration, logPath string, output *synchronizedBuffer) (supervisorOutcome, error, string, error) {
-	seen := map[string]bool{}
-	names := make([]string, 0, len(expected))
-	for _, identity := range expected {
-		if identity.Name == "" || seen[identity.Name] {
-			continue
+type goShardLifecycleHooks struct {
+	prepareCoverage func(index int, directory, groupID string) error
+	openLog         func(path string) (*os.File, error)
+	wrapOutput      func(index int, writer io.Writer) io.Writer
+}
+
+type goShardLifecycleHooksKey struct{}
+
+func prepareGoShardCoverage(ctx context.Context, index int, directory, groupID string) error {
+	if hooks, ok := ctx.Value(goShardLifecycleHooksKey{}).(goShardLifecycleHooks); ok && hooks.prepareCoverage != nil {
+		return hooks.prepareCoverage(index, directory, groupID)
+	}
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return fmt.Errorf("create shard coverage directory: %w", err)
+	}
+	// The test binary writes its counters here only at exit, so for the
+	// shard's whole run the directory would stand empty, and the evidence
+	// collector could sweep it. The marker says a writer is coming; covdata
+	// ignores it.
+	if err := os.WriteFile(filepath.Join(directory, ".pending"), []byte(groupID+"\n"), 0o600); err != nil {
+		return fmt.Errorf("mark shard coverage directory: %w", err)
+	}
+	return nil
+}
+
+func openGoShardLog(ctx context.Context, path string) (*os.File, error) {
+	if hooks, ok := ctx.Value(goShardLifecycleHooksKey{}).(goShardLifecycleHooks); ok && hooks.openLog != nil {
+		return hooks.openLog(path)
+	}
+	return os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+}
+
+type cancelOnWriteError struct {
+	mu     sync.Mutex
+	writer io.Writer
+	cancel context.CancelFunc
+	err    error
+}
+
+func (writer *cancelOnWriteError) Write(data []byte) (int, error) {
+	n, err := writer.writer.Write(data)
+	if err != nil {
+		writer.mu.Lock()
+		if writer.err == nil {
+			writer.err = err
 		}
-		seen[identity.Name] = true
-		names = append(names, identity.Name)
+		writer.mu.Unlock()
+		writer.cancel()
 	}
-	sort.Strings(names)
-	shards := group.Shards
-	if shards > len(names) {
-		shards = len(names)
+	return n, err
+}
+
+func (writer *cancelOnWriteError) Err() error {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	return writer.err
+}
+
+func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group, cwd string, environment []string, expected []NativeTestIdentity,
+	inventory []string, modulePrefix string, limits supervisorLimits, sampleInterval time.Duration, logPath string,
+	output *synchronizedBuffer) (supervisorOutcome, error, string, error) {
+	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
+	ceiling := EffectiveTestWorkers(request)
+	if group.Shards > 0 && group.Shards < ceiling {
+		ceiling = group.Shards
 	}
-	if shards < 1 {
-		shards = 1
-	}
-	partitions := make([][]string, shards)
-	for index, name := range names {
-		partitions[index%shards] = append(partitions[index%shards], name)
-	}
+	partitions := partitionGoTests(expected, inventory, modulePrefix, ceiling)
 	coverageRoot := strings.TrimSuffix(logPath, ".log") + ".coverage"
 	if group.Coverage {
 		if err := os.RemoveAll(coverageRoot); err != nil {
@@ -652,90 +1082,103 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		}
 	}
 	type shardRun struct {
-		outcome supervisorOutcome
-		output  synchronizedBuffer
-		logPath string
-		err     error
+		outcome   supervisorOutcome
+		output    synchronizedBuffer
+		logPath   string
+		closeErr  error
+		launchErr error
 	}
-	runs := make([]shardRun, shards)
+	runs := make([]shardRun, len(partitions))
 	// An error while launching a later shard must not leave the earlier
-	// shards running inside a worktree the caller is about to remove: the
-	// shards share one cancelable context, and the launch loop's failures
-	// cancel it and wait before returning (a critic's finding, 2026-09-12).
+	// shards running inside a worktree the caller is about to remove. The
+	// shards share one cancelable context, and launch-loop failures cancel
+	// it and wait before returning.
 	shardCtx, cancelShards := context.WithCancel(ctx)
 	defer cancelShards()
 	var wg sync.WaitGroup
-	launchFailed := func(err error) (supervisorOutcome, error, string, error) {
-		cancelShards()
-		wg.Wait()
-		return supervisorOutcome{}, nil, "", err
-	}
+	var setupErr error
+	nativeEnvironment := overlayTestEnvironment(environment, map[string]string{"GOMAXPROCS": "1"})
 	for index := range partitions {
-		args := []string{"go", "test", "-json", "-count=1", "-timeout", "0"}
-		if len(group.BuildTags) != 0 {
-			args = append(args, "-tags", strings.Join(group.BuildTags, ","))
-		}
-		if group.Race {
-			args = append(args, "-race")
-		}
-		if group.Coverage {
-			args = append(args, "-cover")
-		}
-		patterns := make([]string, len(partitions[index]))
-		for at, name := range partitions[index] {
+		args := goNativeTestArguments(group, group.Coverage)
+		patterns := make([]string, len(partitions[index].Names))
+		for at, name := range partitions[index].Names {
 			patterns[at] = regexp.QuoteMeta(name)
 		}
-		args = append(args, "-run", "^("+strings.Join(patterns, "|")+")$")
-		for _, pkg := range group.Packages {
-			args = append(args, "./"+strings.TrimPrefix(pkg, "./"))
+		pattern := "^$"
+		if len(patterns) > 0 {
+			pattern = "^(" + strings.Join(patterns, "|") + ")$"
 		}
+		args = append(args, "-run", pattern)
+		args = append(args, partitions[index].Packages...)
 		shardDir := filepath.Join(coverageRoot, fmt.Sprintf("shard-%d", index+1))
 		if group.Coverage {
-			if err := os.MkdirAll(shardDir, 0o700); err != nil {
-				return launchFailed(fmt.Errorf("create shard coverage directory: %w", err))
-			}
-			// The test binary writes its counters here only at exit, so for
-			// the shard's whole run the directory would stand empty, and the
-			// evidence collector sweeps empty directories under artifacts as
-			// confusion (2026-09-11: a collection pass during a sharded run
-			// took every shard directory, and every shard ended "output
-			// directory does not exist"). The marker says a writer is coming;
-			// covdata ignores it.
-			if err := os.WriteFile(filepath.Join(shardDir, ".pending"), []byte(group.ID+"\n"), 0o600); err != nil {
-				return launchFailed(fmt.Errorf("mark shard coverage directory: %w", err))
+			if err := prepareGoShardCoverage(shardCtx, index, shardDir, group.ID); err != nil {
+				setupErr = err
+				cancelShards()
+				break
 			}
 			args = append(args, "-args", "-test.gocoverdir="+shardDir)
 		}
 		runs[index].logPath = fmt.Sprintf("%s.shard-%d.log", strings.TrimSuffix(logPath, ".log"), index+1)
-		command, err := explicitEnvironmentCommand(shardCtx, cwd, environment, args)
-		if err != nil {
-			return launchFailed(err)
-		}
-		logFile, err := os.OpenFile(runs[index].logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-		if err != nil {
-			return launchFailed(fmt.Errorf("create shard log: %w", err))
-		}
 		wg.Add(1)
-		go func(index int, command *exec.Cmd, logFile *os.File) {
+		go func(index int, args []string) {
 			defer wg.Done()
-			activity := newOutputActivity(time.Now())
-			tee := &activityWriter{activity: activity, writer: io.MultiWriter(&runs[index].output, logFile)}
-			command.Stdout, command.Stderr = tee, tee
-			closeInherited, inheritErr := InheritHostResourceLease(command)
-			if inheritErr != nil {
-				runs[index].err = inheritErr
-				_ = logFile.Close()
+			release, err := acquireTestWorkers(shardCtx, 1)
+			if err != nil {
+				runs[index].launchErr = fmt.Errorf("acquire Go test worker: %w", err)
 				cancelShards()
 				return
 			}
+			defer release()
+			command, err := explicitEnvironmentCommand(context.WithoutCancel(shardCtx), cwd, nativeEnvironment, args)
+			if err != nil {
+				runs[index].launchErr = err
+				cancelShards()
+				return
+			}
+			logFile, err := openGoShardLog(shardCtx, runs[index].logPath)
+			if err != nil {
+				runs[index].launchErr = fmt.Errorf("create shard log: %w", err)
+				cancelShards()
+				return
+			}
+			activity := newOutputActivity(time.Now())
+			var outputWriter io.Writer = io.MultiWriter(&runs[index].output, logFile)
+			if hooks, ok := shardCtx.Value(goShardLifecycleHooksKey{}).(goShardLifecycleHooks); ok && hooks.wrapOutput != nil {
+				outputWriter = hooks.wrapOutput(index, outputWriter)
+			}
+			guardedOutput := &cancelOnWriteError{writer: outputWriter, cancel: cancelShards}
+			tee := &activityWriter{activity: activity, writer: guardedOutput}
+			command.Stdout, command.Stderr = tee, tee
+			closeInherited := func() {}
+			if HostResourceLeaseFromContext(shardCtx) == nil {
+				var inheritErr error
+				closeInherited, inheritErr = InheritHostResourceLease(command)
+				if inheritErr != nil {
+					runs[index].launchErr = inheritErr
+					runs[index].closeErr = logFile.Close()
+					cancelShards()
+					return
+				}
+			}
 			runs[index].outcome = superviseCommand(command, supervisorOptions{Context: shardCtx, Limits: limits, SampleInterval: sampleInterval, Activity: activity})
 			closeInherited()
-			runs[index].err = logFile.Close()
-		}(index, command, logFile)
+			runs[index].closeErr = logFile.Close()
+			if err := guardedOutput.Err(); err != nil {
+				runs[index].launchErr = fmt.Errorf("write Go test shard output: %w", err)
+				cancelShards()
+				return
+			}
+			if !runs[index].outcome.Started && runs[index].outcome.WaitErr != nil {
+				runs[index].launchErr = fmt.Errorf("start Go test shard: %w", runs[index].outcome.WaitErr)
+				cancelShards()
+			}
+		}(index, append([]string(nil), args...))
 	}
 	wg.Wait()
 	merged := supervisorOutcome{}
 	var closeErr error
+	launchErr := setupErr
 	for index := range runs {
 		run := &runs[index]
 		merged.Started = merged.Started || run.outcome.Started
@@ -755,16 +1198,18 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		if merged.WaitErr == nil && run.outcome.WaitErr != nil {
 			merged.WaitErr = run.outcome.WaitErr
 		}
-		if closeErr == nil && run.err != nil {
-			closeErr = run.err
+		if closeErr == nil && run.closeErr != nil {
+			closeErr = run.closeErr
+		}
+		if run.launchErr != nil && (launchErr == nil || errors.Is(launchErr, context.Canceled) && !errors.Is(run.launchErr, context.Canceled)) {
+			launchErr = run.launchErr
 		}
 		output.Write(run.output.Bytes())
 	}
 	// The merged percentages are appended to the group's own output before
 	// the log is written and digested, so the retained log carries the
-	// numbers the floor verdict used, not only the shards' partial ones
-	// (a critic's finding, 2026-09-12); the caller receives no separate
-	// merge text.
+	// numbers the floor verdict used, not only the shards' partial ones. The
+	// caller receives no separate merge text.
 	writeLog := func() error {
 		if err := os.WriteFile(logPath, output.Bytes(), 0o600); err != nil {
 			return fmt.Errorf("write group log: %w", err)
@@ -772,8 +1217,8 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		return nil
 	}
 	coverageMerge := ""
-	if group.Coverage && merged.Started {
-		dirs := make([]string, shards)
+	if group.Coverage && merged.Started && launchErr == nil {
+		dirs := make([]string, len(partitions))
 		for index := range dirs {
 			dirs[index] = filepath.Join(coverageRoot, fmt.Sprintf("shard-%d", index+1))
 		}
@@ -814,7 +1259,7 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 	if err := writeLog(); err != nil {
 		return merged, closeErr, "", err
 	}
-	return merged, closeErr, "", nil
+	return merged, closeErr, "", launchErr
 }
 
 func testGroupProgress(path, group, event, status, reason string) error {
@@ -852,6 +1297,46 @@ func validateRetainedGroupReuse(root, id string, reused GroupResult) error {
 	return fmt.Errorf("outer attempt does not own matching complete group evidence")
 }
 
+// assignSupervisorOutcome is the single projection from native supervision
+// into retained group accounting. A process that started remains a launch
+// even when a later setup, output, or wait operation fails. An exit status is
+// retained only when waiting observed either successful exit or an ExitError.
+func assignSupervisorOutcome(result *GroupResult, outcome supervisorOutcome) {
+	if outcome.RuleSuffix != "" {
+		result.ProgressRule += "+" + outcome.RuleSuffix
+	}
+	result.CPUSeconds = outcome.CPUSeconds
+	result.LongestSilentSeconds = outcome.LongestSilentSeconds
+	result.LongestZeroCPUSeconds = outcome.LongestZeroCPUSeconds
+	result.NativeLaunched = outcome.Started
+	result.NativeExitStatus = nil
+	result.Signal = nil
+	if !outcome.Started {
+		if outcome.WaitErr != nil {
+			result.Status = "unavailable"
+			result.NotRunReason = outcome.WaitErr.Error()
+		}
+		return
+	}
+	if outcome.WaitErr == nil {
+		exit := 0
+		result.NativeExitStatus = &exit
+		return
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(outcome.WaitErr, &exitErr) {
+		result.Status = "unavailable"
+		result.NotRunReason = outcome.WaitErr.Error()
+		return
+	}
+	exit := exitErr.ExitCode()
+	result.NativeExitStatus = &exit
+	if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		value := status.Signal().String()
+		result.Signal = &value
+	}
+}
+
 func NewTestResult(request TestRunRequest) TestResult {
 	contractBytes, _ := json.Marshal(request.Contract)
 	contractDigest := request.ContractDigest
@@ -885,7 +1370,17 @@ func NewTestResult(request TestRunRequest) TestResult {
 	if request.CandidateEngineBuildIdentity == "" {
 		candidateEngineIdentityVersion = candidateEngineDigestIdentityVersion
 	}
-	return TestResult{SchemaVersion: TestResultSchemaVersion, AttemptID: request.AttemptID, EngineRearm: request.EngineRearm,
+	schemaVersion := PreviousTestResultSchemaVersion
+	workerPolicyVersion, workers := 0, 0
+	var admissionMaximum *int
+	if TestWorkerPolicyActive(request) {
+		schemaVersion = TestResultSchemaVersion
+		workerPolicyVersion, workers = TestWorkerPolicyVersion, EffectiveTestWorkers(request)
+		resolvedAdmissionMaximum := request.AdmissionMaximum
+		admissionMaximum = &resolvedAdmissionMaximum
+	}
+	return TestResult{SchemaVersion: schemaVersion, AttemptID: request.AttemptID, EngineRearm: request.EngineRearm,
+		WorkerPolicyVersion: workerPolicyVersion, Workers: workers, AdmissionMaximum: admissionMaximum,
 		Purpose: request.Plan.Purpose, RequestedMode: request.Plan.RequestedMode, RequiredMode: request.Plan.RequiredMode,
 		ExecutedMode: request.Plan.ExecutedMode, ProjectRoot: request.ProjectRoot, InstallationPrefix: request.InstallationPrefix,
 		BaseCommit: request.BaseCommit, CandidateTree: request.CandidateTree, PolicyBaseCommit: request.PolicyBaseCommit,
@@ -904,10 +1399,11 @@ func NewTestResult(request TestRunRequest) TestResult {
 }
 
 func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group) (result GroupResult) {
+	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
 	started := time.Now().UTC()
 	limits, sampleInterval := groupSupervisorSettings(group.CPUBudgetSeconds)
 	result = GroupResult{ID: group.ID, Kind: group.Kind, Obligations: append([]string(nil), group.Obligations...),
-		IdentityVersion: GroupExecutionIdentityVersion,
+		IdentityVersion: groupExecutionIdentityVersion(request),
 		InputDigest:     request.CandidateTree, InputManifest: append([]string(nil), group.Inputs...), CWD: group.CWD,
 		ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}, StartedAt: started.Format(time.RFC3339Nano),
 		ProgressRule: progressRule(limits)}
@@ -1122,26 +1618,25 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 	var supervised supervisorOutcome
 	var closeErr error
 	var coverageMerge string
-	if group.Adapter == "go" && group.Shards > 1 {
+	var launchErr error
+	if group.Adapter == "go" {
 		// The group's discovered tests run as concurrent go test launches
 		// inside this one group; their outputs join in shard order, and
 		// whole-package coverage is merged from the shards' coverage data.
-		var launchErr error
-		supervised, closeErr, coverageMerge, launchErr = runShardedGoGroup(ctx, request, group, cwd, environment, expected, limits, sampleInterval, result.LogPath, &output)
-		if launchErr != nil {
-			result.Status = "unavailable"
-			result.NotRunReason = launchErr.Error()
-			result.EndedAt, result.DurationMS = resultDuration(started)
-			return result
-		}
+		supervised, closeErr, coverageMerge, launchErr = runShardedGoGroup(ctx, request, group, cwd, environment, expected,
+			coverageInventory, coverageModule, limits, sampleInterval, result.LogPath, &output)
 	} else {
-		command, commandErr := explicitEnvironmentCommand(ctx, cwd, environment, argv)
+		// The supervisor owns cancellation so it can census and terminate the
+		// complete process tree. exec.CommandContext would kill the root first,
+		// orphaning descendants before that census.
+		command, commandErr := explicitEnvironmentCommand(context.WithoutCancel(ctx), cwd, environment, argv)
 		if commandErr != nil {
 			result.Status = "unavailable"
 			result.NotRunReason = commandErr.Error()
 			result.EndedAt, result.DurationMS = resultDuration(started)
 			return result
 		}
+		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		logFile, err := os.OpenFile(result.LogPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 		if err != nil {
 			result.Status, result.NotRunReason = "invalid", fmt.Sprintf("create group log: %v", err)
@@ -1163,29 +1658,16 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		closeInherited()
 		closeErr = logFile.Close()
 	}
-	if supervised.RuleSuffix != "" {
-		result.ProgressRule += "+" + supervised.RuleSuffix
+	assignSupervisorOutcome(&result, supervised)
+	if launchErr != nil {
+		result.Status = "unavailable"
+		result.NotRunReason = launchErr.Error()
+		result.EndedAt, result.DurationMS = resultDuration(started)
+		return result
 	}
-	result.CPUSeconds = supervised.CPUSeconds
-	result.LongestSilentSeconds = supervised.LongestSilentSeconds
-	result.LongestZeroCPUSeconds = supervised.LongestZeroCPUSeconds
-	result.NativeLaunched = supervised.Started
-	err = supervised.WaitErr
 	exit := 0
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			exit = exitErr.ExitCode()
-			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
-				value := status.Signal().String()
-				result.Signal = &value
-			}
-		} else {
-			result.Status = "unavailable"
-			result.NotRunReason = err.Error()
-			result.NativeLaunched = false
-			result.NativeExitStatus = nil
-		}
+	if result.NativeExitStatus != nil {
+		exit = *result.NativeExitStatus
 	}
 	if closeErr != nil && result.Status == "" {
 		result.Status, result.NotRunReason = "invalid", fmt.Sprintf("close group log: %v", closeErr)
@@ -1198,9 +1680,6 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		}
 	} else if supervised.Verdict == "cancelled" {
 		result.Status, result.NotRunReason = "cancelled", supervised.Reason
-	}
-	if result.Status != "unavailable" {
-		result.NativeExitStatus = &exit
 	}
 	// A native nonzero status is retained above. It is not an adapter parse
 	// error and must not overwrite the structured section/JUnit diagnostics.
@@ -1322,9 +1801,16 @@ func GroupExecutionIdentities(ctx context.Context, request TestRunRequest) (map[
 // while their declared closure is unchanged. It launches no tool, group
 // command, or discovery process.
 func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request TestRunRequest, attempts []Attempt) (map[string]string, error) {
+	if err := ValidateTestWorkerRequest(request); err != nil {
+		return nil, err
+	}
 	groups := make(map[string]testpolicy.Group, len(request.Contract.Groups))
 	for _, group := range request.Contract.Groups {
 		groups[group.ID] = group
+	}
+	expectedResultSchema := PreviousTestResultSchemaVersion
+	if TestWorkerPolicyActive(request) {
+		expectedResultSchema = TestResultSchemaVersion
 	}
 	detached, err := (gittree.Workspace{Dir: request.ProjectRoot}).NewDetachedWorktree(request.CandidateTree)
 	if err != nil {
@@ -1349,12 +1835,12 @@ func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request Tes
 				continue
 			}
 			result := attempt.TestResult
-			if result.SchemaVersion != TestResultSchemaVersion || result.JudgeKey != judgeKeyOf(request) || result.BehaviorPolicyDigest != request.BehaviorPolicyDigest {
+			if result.SchemaVersion != expectedResultSchema || result.JudgeKey != judgeKeyOf(request) || result.BehaviorPolicyDigest != request.BehaviorPolicyDigest {
 				continue
 			}
 			for groupIndex := range result.Groups {
 				source := &result.Groups[groupIndex]
-				if source.ID != id || source.IdentityVersion != GroupExecutionIdentityVersion ||
+				if source.ID != id || source.IdentityVersion != groupExecutionIdentityVersion(request) ||
 					!source.CollectionComplete || (source.Status != "passed" && source.Status != "reused") ||
 					len(source.ExecutableDigests) == 0 || len(source.InputManifest) == 0 {
 					continue
@@ -1410,6 +1896,9 @@ func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request Tes
 // complete selection. It reports only helpers that actually started and uses
 // one immutable candidate bed for all groups.
 func PrepareGroupExecutionIdentities(ctx context.Context, request TestRunRequest) (map[string]string, map[string]PreparedGroupExecution, int, error) {
+	if err := ValidateTestWorkerRequest(request); err != nil {
+		return nil, nil, 0, err
+	}
 	groups := make(map[string]testpolicy.Group, len(request.Contract.Groups))
 	for _, group := range request.Contract.Groups {
 		groups[group.ID] = group
@@ -1439,9 +1928,14 @@ func PrepareGroupExecutionIdentities(ctx context.Context, request TestRunRequest
 		}
 		environmentDigest := digestGroupEnvironment(group, environment)
 		identities[id] = groupExecutionIdentity(request, group, cwd, inputDigest, environmentDigest, toolIdentities, expected)
-		item := PreparedGroupExecution{InputDigest: inputDigest, EnvironmentDigest: environmentDigest,
+		item := PreparedGroupExecution{
+			InputDigest: inputDigest, EnvironmentDigest: environmentDigest,
 			ToolIdentities: toolIdentities, ExecutableDigests: executables, Argv: argv, Expected: expected,
 			ImplicitInputs: implicitInputs, CoverageInventory: coverageInventory, CoverageModule: coverageModule}
+		if TestWorkerPolicyActive(request) {
+			item.WorkerPolicyVersion = TestWorkerPolicyVersion
+			item.Workers, _ = EffectiveGroupWorkers(request, group)
+		}
 		if availabilityErr != nil {
 			item.Unavailable = availabilityErr.Error()
 		}
@@ -1516,8 +2010,30 @@ func groupExecutionIdentity(request TestRunRequest, group testpolicy.Group, cwd,
 	if metaSystemStewardConsumesCandidateEngine(request, group, cwd) {
 		stewardEngine = request.CandidateEngineDigest
 	}
+	if !TestWorkerPolicyActive(request) {
+		identityBytes, _ := json.Marshal(struct {
+			Version              int
+			Group                testpolicy.Group
+			Inputs               string
+			Env                  string
+			Tools                map[string]string
+			Discovery            []NativeTestIdentity
+			Platform             string
+			JudgeKey             string
+			BehaviorPolicyDigest string
+			SectionEngineDigest  string
+			StewardEngineDigest  string `json:",omitempty"`
+			GoSkipVerdictPolicy  string `json:",omitempty"`
+		}{PreviousGroupExecutionIdentityVersion, definition, inputDigest, environmentDigest, toolIdentities, discovery,
+			runtime.GOOS + "/" + runtime.GOARCH, judgeKeyOf(request), request.BehaviorPolicyDigest, sectionEngine,
+			stewardEngine, goSkipVerdictPolicy(request, group)})
+		return digestBytes(identityBytes)
+	}
 	identityBytes, _ := json.Marshal(struct {
 		Version              int
+		WorkerPolicyVersion  int
+		AttemptWorkers       int
+		GroupWorkers         int
 		Group                testpolicy.Group
 		Inputs               string
 		Env                  string
@@ -1529,9 +2045,18 @@ func groupExecutionIdentity(request TestRunRequest, group testpolicy.Group, cwd,
 		SectionEngineDigest  string
 		StewardEngineDigest  string `json:",omitempty"`
 		GoSkipVerdictPolicy  string `json:",omitempty"`
-	}{GroupExecutionIdentityVersion, definition, inputDigest, environmentDigest, toolIdentities, discovery, runtime.GOOS + "/" + runtime.GOARCH,
+	}{GroupExecutionIdentityVersion, TestWorkerPolicyVersion, EffectiveTestWorkers(request), mustEffectiveGroupWorkers(request, group),
+		definition, inputDigest, environmentDigest, toolIdentities, discovery, runtime.GOOS + "/" + runtime.GOARCH,
 		judgeKeyOf(request), request.BehaviorPolicyDigest, sectionEngine, stewardEngine, goSkipVerdictPolicy(request, group)})
 	return digestBytes(identityBytes)
+}
+
+func mustEffectiveGroupWorkers(request TestRunRequest, group testpolicy.Group) int {
+	workers, err := EffectiveGroupWorkers(request, group)
+	if err != nil {
+		return 0
+	}
+	return workers
 }
 
 func metaSystemStewardConsumesCandidateEngine(request TestRunRequest, group testpolicy.Group, cwd string) bool {
@@ -1952,7 +2477,18 @@ func groupTestEnvironment(request TestRunRequest, group testpolicy.Group) []stri
 	if group.Adapter == "section" {
 		environment = dropTestEnvironmentName(environment, "METASYSTEM_BIN")
 	}
-	return environment
+	if !TestWorkerPolicyActive(request) {
+		return environment
+	}
+	workers, err := EffectiveGroupWorkers(request, group)
+	if err != nil {
+		workers = 1
+	}
+	reserved := map[string]string{TestWorkersEnvironment: strconv.Itoa(workers)}
+	if group.Adapter == "go" {
+		reserved["GOMAXPROCS"] = "1"
+	}
+	return overlayTestEnvironment(environment, reserved)
 }
 
 func dropTestEnvironmentName(environment []string, drop string) []string {

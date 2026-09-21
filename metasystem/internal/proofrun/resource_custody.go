@@ -2,6 +2,7 @@ package proofrun
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -139,10 +140,15 @@ func RunResourceCustodian(options ResourceCustodyOptions) error {
 		case <-ticker.C:
 			if options.Launcher.Pid > 0 && identity.AliveRef(prober, options.Launcher) != identity.Alive {
 				reason = fmt.Errorf("resource launcher exact identity was lost")
-			} else if suite.Pid > 0 && identity.AliveRef(prober, suite) != identity.Alive {
-				reason = io.EOF
-			} else if suite.Pid > 0 && options.Watchdog.DonePath != "" && suiteDone(options.Watchdog.DonePath) {
-				reason = io.EOF
+			} else if suite.Pid > 0 {
+				ended, suiteErr := resourceCustodySuiteEnded(prober, suite)
+				if suiteErr != nil {
+					reason = suiteErr
+				} else if ended {
+					reason = io.EOF
+				} else if options.Watchdog.DonePath != "" && suiteDone(options.Watchdog.DonePath) {
+					reason = io.EOF
+				}
 			}
 		}
 	}
@@ -178,6 +184,17 @@ func RunResourceCustodian(options ResourceCustodyOptions) error {
 		reason = errors.Join(reason, fmt.Errorf("declared fixture descendants survived direct worker completion"))
 	}
 	return errors.Join(reason, policyError, drainErr, fixtureErr)
+}
+
+func resourceCustodySuiteEnded(prober identity.Prober, suite identity.Ref) (bool, error) {
+	exact, state, err := prober.Probe(suite.Pid)
+	if err != nil || state == identity.Unknown {
+		return false, fmt.Errorf("resource suite exact identity is uninspectable: %v", err)
+	}
+	if state == identity.Dead {
+		return true, nil
+	}
+	return !identity.SameIdentity(exact, suite) || exact.Zombie || exact.Exiting, nil
 }
 
 func settleResourceWatchdog(watched <-chan error, donePath string, bound time.Duration) (bool, error) {
@@ -267,11 +284,19 @@ func drainCustodyFixtureScans(options ResourceCustodyOptions, prober identity.Pr
 // custodian group. Two complete empty censuses while its leader is still live
 // are required; unknown membership or an uninspectable identity fails closed.
 func drainResourceGroup(group int64, prober identity.Prober, limit time.Duration) (bool, error) {
-	deadline := time.Now().Add(limit)
+	return drainResourceGroupWith(group, prober, limit, custodyGroupMembers, syscall.Kill, time.Now, func() {
+		time.Sleep(50 * time.Millisecond)
+	})
+}
+
+func drainResourceGroupWith(group int64, prober identity.Prober, limit time.Duration,
+	groupMembers func(int64) ([]int64, error), signal identity.SignalFunc, now func() time.Time, pause func(),
+) (bool, error) {
+	deadline := now().Add(limit)
 	observed := false
 	empty := 0
-	for time.Now().Before(deadline) {
-		pids, err := custodyGroupMembers(group)
+	for now().Before(deadline) {
+		pids, err := groupMembers(group)
 		if err != nil {
 			return observed, err
 		}
@@ -281,7 +306,7 @@ func drainResourceGroup(group int64, prober identity.Prober, limit time.Duration
 			if err != nil || state == identity.Unknown {
 				return observed, fmt.Errorf("resource group member %d is uninspectable: %v", pid, err)
 			}
-			if state == identity.Alive && !exact.Zombie {
+			if state == identity.Alive && !exact.Zombie && !exact.Exiting {
 				members = append(members, exact)
 			}
 		}
@@ -290,26 +315,28 @@ func drainResourceGroup(group int64, prober identity.Prober, limit time.Duration
 			if empty >= 2 {
 				return observed, nil
 			}
-			time.Sleep(50 * time.Millisecond)
+			pause()
 			continue
 		}
 		empty = 0
 		observed = true
 		for _, member := range members {
-			if err := identity.SignalExact(prober, member.Ref(), syscall.SIGKILL, syscall.Kill); err != nil && !errors.Is(err, identity.ErrGone) {
+			if err := identity.SignalExact(prober, member.Ref(), syscall.SIGKILL, signal); err != nil && !errors.Is(err, identity.ErrGone) {
 				return observed, fmt.Errorf("stop resource group member %d: %w", member.Pid, err)
 			}
 		}
-		time.Sleep(50 * time.Millisecond)
+		pause()
 	}
 	return observed, fmt.Errorf("resource group %d did not drain within %s", group, limit)
 }
 
 type resourceCustody struct {
-	command *exec.Cmd
-	control *os.File
-	group   int
-	spools  *custodySpools
+	command    *exec.Cmd
+	control    *os.File
+	group      int
+	leader     identity.Ref
+	spools     *custodySpools
+	diagnostic *bytes.Buffer
 }
 
 type custodySpools struct {
@@ -417,7 +444,13 @@ func startResourceCustody(options LaunchOptions, parent identity.Ref, donePath s
 		defer custodyLog.Close()
 		command.Stdout, command.Stderr = custodyLog, custodyLog
 	} else {
-		command.Stdout, command.Stderr = io.Discard, io.Discard
+		diagnostic := &bytes.Buffer{}
+		command.Stdout, command.Stderr = io.Discard, diagnostic
+		defer func() {
+			if command.Process == nil {
+				diagnostic.Reset()
+			}
+		}()
 	}
 	if err := command.Start(); err != nil {
 		cleanPipes()
@@ -452,7 +485,19 @@ func startResourceCustody(options LaunchOptions, parent identity.Ref, donePath s
 		return nil, fmt.Errorf("resource custodian did not become ready")
 	}
 	readyRead.Close()
-	return &resourceCustody{command: command, control: controlWrite, group: command.Process.Pid, spools: spools}, nil
+	leader, state, probeErr := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
+	if probeErr != nil || state != identity.Alive {
+		controlWrite.Close()
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		return nil, fmt.Errorf("resource custodian exact identity unavailable: %v", probeErr)
+	}
+	var diagnostic *bytes.Buffer
+	if buffer, ok := command.Stderr.(*bytes.Buffer); ok {
+		diagnostic = buffer
+	}
+	return &resourceCustody{command: command, control: controlWrite, group: command.Process.Pid,
+		leader: leader.Ref(), spools: spools, diagnostic: diagnostic}, nil
 }
 
 func followCustodySpool(path string, output io.Writer, log *os.File, done <-chan struct{}) error {
@@ -519,10 +564,54 @@ func (custody *resourceCustody) bind(ref identity.Ref) error {
 	return json.NewEncoder(custody.control).Encode(resourceCustodyMessage{Kind: "bind", Suite: ref})
 }
 
+func (custody *resourceCustody) signal(signal syscall.Signal, prober identity.Prober, sender identity.SignalFunc) []identity.Ref {
+	return signalResourceGroupWith(int64(custody.group), custody.leader, signal, prober, custodyGroupMembers, sender)
+}
+
+func signalResourceGroupWith(group int64, leader identity.Ref, signal syscall.Signal, prober identity.Prober,
+	groupMembers func(int64) ([]int64, error), sender identity.SignalFunc,
+) []identity.Ref {
+	if identity.AliveRef(prober, leader) != identity.Alive {
+		return nil
+	}
+	pids, err := groupMembers(group)
+	if err != nil {
+		return nil
+	}
+	refs := make([]identity.Ref, 0, len(pids))
+	for _, pid := range pids {
+		if pid == leader.Pid {
+			continue
+		}
+		exact, state, probeErr := prober.Probe(pid)
+		if probeErr != nil || state != identity.Alive || exact.Zombie || exact.Exiting {
+			continue
+		}
+		if exact.EnvironKnown && containsExactEnvironmentEntry(exact.Environ, identity.FixtureCustodianEnv+"=1") {
+			continue
+		}
+		refs = append(refs, exact.Ref())
+	}
+	if identity.AliveRef(prober, leader) != identity.Alive {
+		return nil
+	}
+	signaled := make([]identity.Ref, 0, len(refs))
+	for index := len(refs) - 1; index >= 0; index-- {
+		if err := identity.SignalExact(prober, refs[index], signal, sender); err != nil && !errors.Is(err, identity.ErrGone) {
+			continue
+		}
+		signaled = append(signaled, refs[index])
+	}
+	return signaled
+}
+
 func (custody *resourceCustody) finish() error {
 	_ = json.NewEncoder(custody.control).Encode(resourceCustodyMessage{Kind: "done"})
 	_ = custody.control.Close()
 	err := custody.command.Wait()
+	if err != nil && custody.diagnostic != nil && strings.TrimSpace(custody.diagnostic.String()) != "" {
+		err = fmt.Errorf("%w: %s", err, strings.TrimSpace(custody.diagnostic.String()))
+	}
 	return errors.Join(err, custody.spools.finish())
 }
 
@@ -546,10 +635,11 @@ func prepareCustodyExec(command *exec.Cmd, engine string) (*custodyBarrier, erro
 	if len(original) == 0 {
 		original = []string{command.Path}
 	}
+	selectedPath := command.Path
 	index := len(command.ExtraFiles)
 	command.Path = engine
 	command.Args = append([]string{engine, "proof-run", "custody-exec", "--ready-fd", strconv.Itoa(3 + index),
-		"--release-fd", strconv.Itoa(4 + index), "--"}, original...)
+		"--release-fd", strconv.Itoa(4 + index), "--path", selectedPath, "--"}, original...)
 	command.ExtraFiles = append(command.ExtraFiles, readyWrite, releaseRead)
 	return &custodyBarrier{ready: readyRead, release: releaseWrite}, nil
 }
@@ -585,20 +675,50 @@ func (barrier *custodyBarrier) close() {
 // same pre-birth custodian as native proof. The caller owns the lease and its
 // output writers; this call returns only after ordinary descendants drain.
 func RunResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostResourceLease) error {
-	finish, err := startResourceCommand(ctx, command, lease)
+	return runResourceCommand(ctx, command, lease, nil)
+}
+
+type resourceCommandCompletion string
+
+const (
+	resourceCommandCompleted resourceCommandCompletion = "completed"
+	resourceCommandCancelled resourceCommandCompletion = "cancelled"
+)
+
+type resourceCommandEvents struct {
+	afterWait func(error)
+	selected  func(resourceCommandCompletion)
+}
+
+func runResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostResourceLease, events *resourceCommandEvents) error {
+	finish, _, _, err := startResourceCommand(ctx, command, lease)
 	if err != nil {
 		return err
 	}
 	waited := make(chan error, 1)
-	go func() { waited <- command.Wait() }()
+	go func() {
+		waitErr := command.Wait()
+		if events != nil && events.afterWait != nil {
+			events.afterWait(waitErr)
+		}
+		waited <- waitErr
+	}()
 	var commandErr error
 	select {
 	case commandErr = <-waited:
-	case <-ctx.Done():
-		if command.Process != nil {
-			_ = command.Process.Kill()
+		if events != nil && events.selected != nil {
+			events.selected(resourceCommandCompleted)
 		}
+	case <-ctx.Done():
+		if events != nil && events.selected != nil {
+			events.selected(resourceCommandCancelled)
+		}
+		custodyErr := finish()
 		commandErr = errors.Join(ctx.Err(), <-waited)
+		if custodyErr != nil && commandErr == nil {
+			return fmt.Errorf("resource command custody: %w", custodyErr)
+		}
+		return errors.Join(commandErr, custodyErr)
 	}
 	custodyErr := finish()
 	if custodyErr != nil && commandErr == nil {
@@ -609,32 +729,38 @@ func RunResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostResou
 
 // startResourceCommand leaves command.Process as the exact worker PID, so the
 // ordinary CPU/output supervisor can continue sampling it. Its finish
-// closure must run after command.Wait, even on a failed or cancelled command.
-func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostResourceLease) (func() error, error) {
+// closure may run before command.Wait to make owned cleanup close inherited
+// output; it must run exactly once on every successful start.
+func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostResourceLease) (func() error, func(syscall.Signal, identity.Prober, identity.SignalFunc) []identity.Ref, identity.Ref, error) {
 	if command == nil {
-		return nil, fmt.Errorf("resource command is nil")
-	}
-	if lease == nil || len(lease.Files()) == 0 {
-		return func() error { return nil }, command.Start()
+		return nil, nil, identity.Ref{}, fmt.Errorf("resource command is nil")
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, identity.Ref{}, err
 	}
 	engine, err := resourceCustodyExecutable(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, identity.Ref{}, err
 	}
 	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
-		return nil, fmt.Errorf("resource launcher identity unavailable: %v", err)
+		return nil, nil, identity.Ref{}, fmt.Errorf("resource launcher identity unavailable: %v", err)
 	}
-	if err := MarkHostResourcesDirty(lease.Files()); err != nil {
-		return nil, err
+	var files []*os.File
+	if lease != nil {
+		files = lease.Files()
 	}
-	custody, err := startResourceCustody(LaunchOptions{WatchdogExecutable: engine}, parent.Ref(), "", lease.Files(), nil)
+	if len(files) != 0 {
+		if err := MarkHostResourcesDirty(files); err != nil {
+			return nil, nil, identity.Ref{}, err
+		}
+	}
+	custody, err := startResourceCustody(LaunchOptions{WatchdogExecutable: engine}, parent.Ref(), "", files, nil)
 	if err != nil {
-		_ = MarkHostResourcesClean(lease.Files())
-		return nil, err
+		if len(files) != 0 {
+			_ = MarkHostResourcesClean(files)
+		}
+		return nil, nil, identity.Ref{}, err
 	}
 	originalPath, originalArgs := command.Path, append([]string(nil), command.Args...)
 	originalExtra := append([]*os.File(nil), command.ExtraFiles...)
@@ -645,25 +771,32 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 			barrier.close()
 		}
 		custodyErr := custody.finish()
-		if custodyErr == nil {
-			custodyErr = MarkHostResourcesClean(lease.Files())
+		if custodyErr == nil && len(files) != 0 {
+			custodyErr = MarkHostResourcesClean(files)
 		}
 		return custodyErr
 	}
 	if err != nil {
-		return nil, errors.Join(err, finish())
+		return nil, nil, identity.Ref{}, errors.Join(err, finish())
 	}
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pgid: custody.group}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, identity.Ref{}, errors.Join(err, finish())
+	}
+	attributes := syscall.SysProcAttr{}
+	if command.SysProcAttr != nil {
+		attributes = *command.SysProcAttr
+	}
+	attributes.Setpgid, attributes.Pgid = true, custody.group
+	command.SysProcAttr = &attributes
 	if err := command.Start(); err != nil {
-		return nil, errors.Join(err, finish())
+		return nil, nil, identity.Ref{}, errors.Join(err, finish())
 	}
 	for _, file := range command.ExtraFiles[len(command.ExtraFiles)-2:] {
 		_ = file.Close()
 	}
-	abort := func(err error) (func() error, error) {
-		_ = command.Process.Kill()
-		_ = command.Wait()
-		return nil, errors.Join(err, finish())
+	abort := func(err error) (func() error, func(syscall.Signal, identity.Prober, identity.SignalFunc) []identity.Ref, identity.Ref, error) {
+		custodyErr := finish()
+		return nil, nil, identity.Ref{}, errors.Join(err, command.Wait(), custodyErr)
 	}
 	if err := barrier.await(); err != nil {
 		return abort(err)
@@ -675,8 +808,11 @@ func startResourceCommand(ctx context.Context, command *exec.Cmd, lease *HostRes
 	if err := custody.bind(exact.Ref()); err != nil {
 		return abort(err)
 	}
+	if err := ctx.Err(); err != nil {
+		return abort(err)
+	}
 	if err := barrier.releaseWork(); err != nil {
 		return abort(err)
 	}
-	return finish, nil
+	return finish, custody.signal, exact.Ref(), nil
 }

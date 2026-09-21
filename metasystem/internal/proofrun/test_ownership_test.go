@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -25,19 +26,28 @@ type ownershipFixture struct {
 
 func newOwnershipFixture(t *testing.T) ownershipFixture {
 	t.Helper()
-	root, identity := proofAttemptFixture(t, "testing")
+	root, _ := proofAttemptFixture(t, "testing")
+	conf := filepath.Join(root, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("dispatch.cap-max=120\nmetasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := BuildProofIdentity(root, conf, "full", "testing", []string{"gate"}, behaviorsurface.SupportedVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
 	launcher, err := CurrentProcessIdentity(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ownershipFixture{t: t, root: root, identity: identity, launcher: launcher, now: time.Now().UTC()}
+	return ownershipFixture{t: t, root: root, identity: identity, launcher: launcher, now: time.Now().UTC(),
+		admissionDir: filepath.Join(root, "artifacts", "agents", "host-admission-fixture")}
 }
 
 func TestRunTestPlanRefusesWrongAdmittedContext(t *testing.T) {
 	t.Parallel()
 	f := newOwnershipFixture(t)
 	component := strings.Repeat("a", 64)
-	attempt, _ := f.reserve("goal-context", "plan-context", map[string]string{"native": component}, "", "", 0)
+	attempt := f.reserveExecuted("goal-context", "plan-context", map[string]string{"native": component}, "", "", 0)
 	for _, check := range []struct {
 		name, tree, root string
 	}{
@@ -56,18 +66,12 @@ func TestRunTestPlanRefusesWrongAdmittedContext(t *testing.T) {
 
 func (f ownershipFixture) reserve(goal, plan string, groups map[string]string, episode, binding string, offset time.Duration) (Attempt, LaunchResult) {
 	f.t.Helper()
-	fixtureHostAdmissionMu.Lock()
-	defer fixtureHostAdmissionMu.Unlock()
-	if f.admissionDir != "" {
-		previous := hostAdmissionDirectoryForTest
-		hostAdmissionDirectoryForTest = f.admissionDir
-		defer func() { hostAdmissionDirectoryForTest = previous }()
-	}
 	identity := BindIdentityInputs(f.identity, append(append([]string(nil), f.identity.IdentityInputs...), "plan:"+plan))
 	request := candidateAdmission(AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
 		GoalID: goal, GoalRevision: 1, AccountingRevision: 1, ReservedMinutes: 2,
 		Identity: identity, Launcher: f.launcher, Now: f.now.Add(offset),
 		ComponentIdentities: groups, SharedComponents: true, FreshnessEpisode: episode, FreshnessBinding: binding})
+	request = WithTestHostAdmissionDirectory(request, f.admissionDir)
 	guard, err := AcquireMutation(f.root)
 	if err != nil {
 		f.t.Fatal(err)
@@ -78,6 +82,15 @@ func (f ownershipFixture) reserve(goal, plan string, groups map[string]string, e
 		f.t.Fatal(err)
 	}
 	return attempt, decision
+}
+
+func (f ownershipFixture) reserveExecuted(goal, plan string, groups map[string]string, episode, binding string, offset time.Duration) Attempt {
+	f.t.Helper()
+	attempt, decision := f.reserve(goal, plan, groups, episode, binding, offset)
+	if decision.Disposition != DispositionExecuted {
+		f.t.Fatalf("fixture reservation did not execute: %+v", decision)
+	}
+	return attempt
 }
 
 func (f ownershipFixture) finish(attempt Attempt, statuses map[string]string, at time.Time) {
@@ -159,7 +172,7 @@ func TestOverlappingReservationsTerminateOnce(t *testing.T) {
 	}
 	// A later consumer can wait on both earlier producers. Neither earlier
 	// producer acquires a wait edge, so the graph terminates in admission order.
-	third, _ := f.reserve("goal-c", "a-c", map[string]string{"a": a, "c": c}, "", "", 2*time.Millisecond)
+	third := f.reserveExecuted("goal-c", "a-c", map[string]string{"a": a, "c": c}, "", "", 2*time.Millisecond)
 	if third.TestWaits["a"] != first.AttemptID || third.TestWaits["c"] != second.AttemptID || len(third.TestOwned) != 0 {
 		t.Fatalf("third ownership: %+v", third)
 	}
@@ -186,9 +199,9 @@ func TestSharedFailureReachesAllWaitersWithoutRetry(t *testing.T) {
 	t.Parallel()
 	f := newOwnershipFixture(t)
 	identity := strings.Repeat("d", 64)
-	producer, _ := f.reserve("goal-a", "producer", map[string]string{"failing": identity}, "", "", 0)
-	first, _ := f.reserve("goal-b", "first", map[string]string{"failing": identity}, "", "", time.Millisecond)
-	second, _ := f.reserve("goal-c", "second", map[string]string{"failing": identity}, "", "", 2*time.Millisecond)
+	producer := f.reserveExecuted("goal-a", "producer", map[string]string{"failing": identity}, "", "", 0)
+	first := f.reserveExecuted("goal-b", "first", map[string]string{"failing": identity}, "", "", time.Millisecond)
+	second := f.reserveExecuted("goal-c", "second", map[string]string{"failing": identity}, "", "", 2*time.Millisecond)
 	f.finish(producer, map[string]string{"failing": "failed"}, f.now.Add(time.Second))
 	for _, consumer := range []Attempt{first, second} {
 		group, err := WaitForTestProducer(context.Background(), f.root, consumer, "failing")
@@ -206,8 +219,8 @@ func TestCancelledConsumerDetachesFromSharedProducer(t *testing.T) {
 	t.Parallel()
 	f := newOwnershipFixture(t)
 	identity := strings.Repeat("e", 64)
-	producer, _ := f.reserve("goal-a", "producer", map[string]string{"test": identity}, "", "", 0)
-	consumer, _ := f.reserve("goal-b", "consumer", map[string]string{"test": identity}, "", "", time.Millisecond)
+	producer := f.reserveExecuted("goal-a", "producer", map[string]string{"test": identity}, "", "", 0)
+	consumer := f.reserveExecuted("goal-b", "consumer", map[string]string{"test": identity}, "", "", time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := WaitForTestProducer(ctx, f.root, consumer, "test"); err != context.Canceled {
@@ -220,12 +233,36 @@ func TestCancelledConsumerDetachesFromSharedProducer(t *testing.T) {
 	f.finish(producer, map[string]string{}, f.now.Add(time.Second))
 }
 
+func TestBlockedWithoutNativeProducerPreservesBothIdentitySchemas(t *testing.T) {
+	t.Parallel()
+	const id = "dependent"
+	identity := strings.Repeat("b", 64)
+	for _, schema := range []int{PreviousTestResultSchemaVersion, TestResultSchemaVersion} {
+		attempt := Attempt{TestResult: &TestResult{SchemaVersion: schema, Groups: []GroupResult{{
+			ID: id, ExecutionIdentity: identity, Status: "blocked",
+		}}}}
+		if !blockedWithoutNativeProducer(attempt, id, identity) {
+			t.Fatalf("schema %d blocked dependent became a failed native producer", schema)
+		}
+		attempt.TestResult.Groups[0].NativeLaunched = true
+		if blockedWithoutNativeProducer(attempt, id, identity) {
+			t.Fatalf("schema %d omitted a true native failure", schema)
+		}
+	}
+	legacy := Attempt{TestResult: &TestResult{SchemaVersion: LegacyTestResultSchemaVersion, Groups: []GroupResult{{
+		ID: id, ExecutionIdentity: identity, Status: "blocked",
+	}}}}
+	if blockedWithoutNativeProducer(legacy, id, identity) {
+		t.Fatal("schema-1 not-run evidence lost its conservative retry fence")
+	}
+}
+
 func TestDistinctPrefixVariantsOwnDistinctAttempts(t *testing.T) {
 	t.Parallel()
 	f := newOwnershipFixture(t)
 	firstIdentity, secondIdentity := strings.Repeat("a", 64), strings.Repeat("b", 64)
-	first, _ := f.reserve("goal-a", "prefix-one", map[string]string{"group": firstIdentity}, "", "", 0)
-	second, _ := f.reserve("goal-b", "prefix-two", map[string]string{"group": secondIdentity}, "", "", time.Millisecond)
+	first := f.reserveExecuted("goal-a", "prefix-one", map[string]string{"group": firstIdentity}, "", "", 0)
+	second := f.reserveExecuted("goal-b", "prefix-two", map[string]string{"group": secondIdentity}, "", "", time.Millisecond)
 	if first.TestOwned["group"] != firstIdentity || second.TestOwned["group"] != secondIdentity || len(second.TestWaits) != 0 {
 		t.Fatalf("different prefix identities shared one producer: first=%+v second=%+v", first, second)
 	}
@@ -235,7 +272,7 @@ func TestCachedSourceIsPinnedWithTheMissingSet(t *testing.T) {
 	t.Parallel()
 	f := newOwnershipFixture(t)
 	x, y := strings.Repeat("a", 64), strings.Repeat("b", 64)
-	producer, _ := f.reserve("goal-a", "prior", map[string]string{"x": x}, "", "", 0)
+	producer := f.reserveExecuted("goal-a", "prior", map[string]string{"x": x}, "", "", 0)
 	f.finish(producer, map[string]string{}, f.now.Add(time.Second))
 	consumer, decision := f.reserve("goal-b", "expanded", map[string]string{"x": x, "y": y}, "", "", 2*time.Second)
 	if decision.Disposition != DispositionExecuted || consumer.TestSources["x"] != producer.AttemptID || consumer.TestOwned["y"] != y || consumer.TestOwned["x"] != "" {
@@ -246,7 +283,6 @@ func TestCachedSourceIsPinnedWithTheMissingSet(t *testing.T) {
 func TestAdmissionSequenceSurvivesWithdrawnReservation(t *testing.T) {
 	t.Parallel()
 	f := newOwnershipFixture(t)
-	f.admissionDir = filepath.Join(t.TempDir(), "host-admission")
 	groups := map[string]string{"check": strings.Repeat("a", 64)}
 	first, firstDecision := f.reserve("goal-a", "withdrawn", groups, "", "", 0)
 	if firstDecision.Disposition != DispositionExecuted {
@@ -275,10 +311,10 @@ func TestFreshEpisodeResumesButRenewsOnBinding(t *testing.T) {
 	f := newOwnershipFixture(t)
 	identity := strings.Repeat("f", 64)
 	groups := map[string]string{"test": identity}
-	ordinary, _ := f.reserve("goal-a", "ordinary", groups, "", "", 0)
+	ordinary := f.reserveExecuted("goal-a", "ordinary", groups, "", "", 0)
 	f.finish(ordinary, map[string]string{}, f.now.Add(time.Second))
 	episode, binding := strings.Repeat("1", 64), strings.Repeat("2", 64)
-	fresh, _ := f.reserve("goal-b", "fresh", groups, episode, binding, 2*time.Second)
+	fresh := f.reserveExecuted("goal-b", "fresh", groups, episode, binding, 2*time.Second)
 	if fresh.TestOwned["test"] != identity {
 		t.Fatalf("cached ordinary pass satisfied fresh episode: %+v", fresh)
 	}
@@ -287,11 +323,11 @@ func TestFreshEpisodeResumesButRenewsOnBinding(t *testing.T) {
 	if decision.Disposition != DispositionReusableSuccess || resume.AttemptID != "" {
 		t.Fatalf("same episode did not reuse terminal native proof: %+v %+v", resume, decision)
 	}
-	changed, _ := f.reserve("goal-d", "changed-base", groups, episode, strings.Repeat("3", 64), 5*time.Second)
+	changed := f.reserveExecuted("goal-d", "changed-base", groups, episode, strings.Repeat("3", 64), 5*time.Second)
 	if changed.TestOwned["test"] != identity {
 		t.Fatalf("changed binding reused old observation: %+v", changed)
 	}
-	newEpisode, _ := f.reserve("goal-e", "new-decision", groups, strings.Repeat("4", 64), binding, 6*time.Second)
+	newEpisode := f.reserveExecuted("goal-e", "new-decision", groups, strings.Repeat("4", 64), binding, 6*time.Second)
 	if newEpisode.TestOwned["test"] != identity {
 		t.Fatalf("new episode reused old observation: %+v", newEpisode)
 	}
@@ -301,7 +337,7 @@ func TestExpiredFreshEpisodeHasNoReusableObservation(t *testing.T) {
 	t.Parallel()
 	f := newOwnershipFixture(t)
 	identity, episode, binding := strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64)
-	attempt, _ := f.reserve("goal-a", "mutable", map[string]string{"mutable": identity}, episode, binding, 0)
+	attempt := f.reserveExecuted("goal-a", "mutable", map[string]string{"mutable": identity}, episode, binding, 0)
 	f.finish(attempt, map[string]string{}, f.now.Add(time.Second))
 	retained, err := ReadAttempt(f.root, attempt.AttemptID)
 	if err != nil {
