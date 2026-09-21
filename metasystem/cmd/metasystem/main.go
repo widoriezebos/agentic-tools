@@ -29,6 +29,17 @@ type family struct {
 func families() []family {
 	return []family{
 		{
+			name:    "ui",
+			summary: "the checkout's browser interface",
+			verbs: []verb{
+				{"start", "start the interface server", runUIStart},
+				{"serve", "serve the interface in the foreground (internal)", runUIServe},
+				{"status", "show the interface server and executable state", runUIStatus},
+				{"stop", "stop the interface server", runUIStop},
+				{"restart", "restart the interface with the executable on disk", runUIRestart},
+			},
+		},
+		{
 			name:    "testing",
 			summary: "semantic maintenance of the testing contract",
 			verbs: []verb{
