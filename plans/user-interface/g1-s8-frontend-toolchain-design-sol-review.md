@@ -245,3 +245,73 @@ The fifth audit check is sound for the specified non-workspace, registry-only lo
 ## 5. Not checked
 
 No npm command, repository script, metasystem binary, validation, or guard transcript was executed. The derived first-run dependency-count equality, actual request bodies, exact future guard implementation, real installed dependency tree, and platform grep/xargs executions remain unchecked. The prohibited local configuration and concurrently revised G1-S9 design were not read.
+
+---
+
+# Round 5, 2026-09-21: closed with obligations
+
+On revision 5 at commit `3cc0f9318`. Verdict: build with the listed obligations. Nothing was judged unsafe to carry into code review.
+
+Revision 5's claim that `Pattern.Expand` is reached live through a delivery test plan is **false**, and the planner verified the refutation in source: a trailing `/**` is parsed into a subtree flag, `HasComponentWildcard` looks for `*` or `?` only within the remaining components (`internal/pathpattern/pattern.go`), so `SnapshotRelevant` takes its non-wildcard subtree branch and never calls `Expand` (`internal/gittree/snapshotscope.go:523` to `:539`). The forced staging still admits ignored files and makes parity refuse, but that proves the subtree declaration, not the skip. The planner had repeated that claim to the human before checking it.
+
+Seven obligations carry to the builder and are checked in code review. Five design rounds: six material findings, then four, two, four, and none unsafe to carry.
+
+## 1. Verdict build with the listed obligations ## 2. Status of K1 to K4 K1 — Buildable as wr...
+[codex] Turn completion inferred after the main thread finished and subagent work drained.
+## 1. Verdict
+
+build with the listed obligations
+
+## 2. Status of K1 to K4
+
+K1 — Buildable as written: the boundary is accurate within the planner’s ruling, states the ambient proxy and TLS exclusions honestly, and the pin-removal control makes the registry fixture non-vacuous ([design:117](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s8-frontend-toolchain-design.md:117), [design:121](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s8-frontend-toolchain-design.md:121), [design:221](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s8-frontend-toolchain-design.md:221)).
+
+K2 — Builder obligation: all five controls are discriminating if npm accepts the synthetic lockfile—the offline control makes no request, the optional/dev/peer controls respectively remove `o`, `d`, and `p`, and removing the registry pin sends the successful empty-report request to the ambient server ([design:219](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s8-frontend-toolchain-design.md:219), [design:221](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s8-frontend-toolchain-design.md:221), [npm load-virtual](https://github.com/npm/cli/blob/v11.19.0/workspaces/arborist/lib/arborist/load-virtual.js#L58-L97), [npm audit selection](https://github.com/npm/cli/blob/v11.19.0/workspaces/arborist/lib/audit-report.js#L294-L358)).
+
+K3 — Builder obligation: the green-first precondition closes the equal-red hole, but the claimed live `Pattern.Expand` chain is false and the `readManifest` reachability characterization is only conditional.
+
+K4 — Builder obligation: the corpus now exercises the important extension, executable-bit, extensionless-bin, `.bin` symlink, nested-tree, dotfile, hidden-directory, YAML, contract-name, malformed-source, and symlink classes, but it should also plant `metasystem.conf`, this repository’s other primary exact-name contract beside `testing.json` ([test.go:424](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/test.go:424), [adopt.sh:336](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/scripts/adopt.sh:336)).
+
+## 3. The Expand chain
+
+Read from source: both `test plan` and `test run` enter `prepareTesting`; delivery preparation calls `checkDeliveryInputParity`, which derives declarations from selected groups and passes them to `SnapshotRelevant` ([test.go:148](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/test.go:148), [test.go:412](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/test.go:412), [test.go:600](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/test.go:600), [test.go:801](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/test.go:801), [test.go:840](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/test.go:840)).
+
+The chain then diverges from the design: parsing `metasystem/internal/**` removes `/**` into the separate `subtree` flag, while `HasComponentWildcard` checks only `*` or `?` inside the remaining components; consequently `SnapshotRelevant` takes its non-wildcard subtree branch at lines 538–539 and never calls `Pattern.Expand` at line 533 ([pattern.go:21](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/pathpattern/pattern.go:21), [pattern.go:102](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/pathpattern/pattern.go:102), [snapshotscope.go:509](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/gittree/snapshotscope.go:509), [snapshotscope.go:523](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/gittree/snapshotscope.go:523), [testing.json:102](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/testing.json:102)). The forced `git add -A -f` still admits ignored poison and makes parity refuse, but that proves the subtree declaration and forced staging, not the `Expand` skip ([snapshotscope.go:569](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/gittree/snapshotscope.go:569)).
+
+The absent-tree checklist covers every command and semantic verdict compared later: status, three digests, both audits, audit stderr, gate verdict, validation section verdicts, plan exit, and test-run group status; because planting follows those checks, an equal-red first pass cannot pass as written ([design:73](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s8-frontend-toolchain-design.md:73), [design:93](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s8-frontend-toolchain-design.md:93), [design:95](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s8-frontend-toolchain-design.md:95)).
+
+`readManifest` is called three times by `Freeze`, and `gate witness-freeze` calls `Freeze`, but the script paths that activate this on a live tree subsequently execute `go-gate.sh` inside the exported tree; therefore “nothing reads the export’s contents” is false if that branch is reached ([freeze.go:18](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/proofrun/freeze.go:18), [gate.go:97](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/gate.go:97), [go-gate.sh:366](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/scripts/agents/go-gate.sh:366), [witness-gate.sh:250](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/scripts/agents/witness-gate.sh:250)). Conversely, the clean witness path explicitly uses `git archive` and does not call `witness-freeze`, so source alone does not prove that the guard actually enters the live `readManifest` path ([witness-gate.sh:103](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/scripts/agents/witness-gate.sh:103)).
+
+The poisoned-candidate alternative is refused under delivery because the candidate must equal the real index; diagnostic purpose avoids that parity check, and its detached-candidate `FullDigest` does call `readManifest`, contrary to the claim that it reaches it nowhere ([test.go:486](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/test.go:486), [test.go:597](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/test.go:597), [test.go:1708](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/test.go:1708), [manifest.go:237](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/internal/proofrun/manifest.go:237)).
+
+`readManifest` may rest fixture-covered only: it is one known walker with a mandatory focused regression fixture, provided code review verifies that removing its skip makes that fixture fail and makes no unsupported guard-coverage claim; `Expand` must receive the same ruling unless an actual component-wildcard live probe and mutation test demonstrate guard coverage.
+
+## 4. Obligations for the builder
+
+1. Implement the guard so every absent-tree command and semantic verdict listed at design line 73 is green before any poison path is created, and have code review map that checklist one-to-one to every command and result compared at lines 93–95.
+
+2. Prove `Pattern.Expand` guard coverage by removing its skip and observing the guard refuse through an actual component-wildcard declaration, or record it as fixture-covered only and prove its focused fixture fails without the skip.
+
+3. Keep `proofrun.readManifest` fixture-covered only unless a transcript plus skip-removal mutation proves a live guard route, and require its focused fixture to fail when the skip is removed.
+
+4. Add a poisoned `metasystem.conf` to the K4 corpus and require the two guard passes to remain identical.
+
+5. Author proposal agreed: record the exact npm version driven and confirm the relied-on npm 11.19.0 behavior rather than assuming the cited 11.19.1 files are unchanged ([design:10](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s8-frontend-toolchain-design.md:10)).
+
+6. Author proposal agreed: code review must verify the guard’s exact `test plan` and diagnostic `test run` argument vectors against `parseTestingSelection` ([design:93](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s8-frontend-toolchain-design.md:93), [test.go:197](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/cmd/metasystem/test.go:197)).
+
+7. Author proposal agreed with correction: retain the delivery-plan transcript, but treat selection of a group declaring `metasystem/internal/**` as proof of forced subtree parity only, not proof that `Pattern.Expand` ran.
+
+8. Author proposal agreed: run the synthetic lockfile fixture and require the production, dev-only, optional-only, and peer-only controls plus the literal spawned argument-vector assertion to pass.
+
+9. Carry the fifth unverified item as an additional obligation: test ambient `workspace`, `workspaces`, and `include-workspace-root` configuration and require either npm refusal or the unchanged exact four-package bulk body, hardening the command if any setting narrows it.
+
+10. Require the ambient-registry control to remove only `--registry=`, observe one bulk POST at the ambient server and none at the pinned server, and observe the empty response produce the otherwise-green report that makes the control discriminating.
+
+## 5. Findings that are NOT safe as obligations, if any
+
+None.
+
+## 6. Not checked
+
+No npm or npx command, installation, repository script, MetaSystem binary, guard, validation, audit, server, or browser walkthrough was run; the actual delivery selection, guard transcript, synthetic-lockfile acceptance, workspace-configuration behavior, generated dependency tree, advisory result, bundle, and CSP behavior remain unexecuted, and `metasystem/metasystem.conf.local` was not read.
