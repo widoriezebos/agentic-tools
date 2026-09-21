@@ -1,0 +1,395 @@
+/*
+ * The reading layout, and the Project pane's rows.
+ *
+ * Every colour here is a token from tokens.css; no value in this file names a
+ * colour, and src/literals.test.ts holds that. The measure is 720px, the same
+ * one the pane stack uses, so a document and a card read at one width.
+ */
+
+.ms-reading {
+  display: block;
+  max-width: 720px;
+}
+
+.ms-reading-back {
+  display: inline-block;
+  margin-bottom: 16px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-reading-back:hover,
+.ms-reading-back:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-reading-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ms-reading-absent {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ms-reading-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 24px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+.ms-reading-outline {
+  margin: 0 0 32px;
+  padding: 12px 16px;
+  border-left: 1px solid var(--ms-border);
+}
+
+.ms-reading-outline-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-reading-outline-row {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ms-reading-outline-row a {
+  color: var(--ms-text-2);
+  text-decoration: none;
+}
+
+.ms-reading-outline-row a:hover,
+.ms-reading-outline-row a:focus-visible {
+  color: var(--ms-accent);
+  text-decoration: underline;
+}
+
+.ms-reading-indent-0 {
+  padding-left: 0;
+}
+
+.ms-reading-indent-1 {
+  padding-left: 16px;
+}
+
+.ms-reading-indent-2 {
+  padding-left: 32px;
+}
+
+/* ------------------------------------------------------------- the article -- */
+
+.ms-md-paragraph {
+  margin: 0 0 16px;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-md-h1 {
+  margin: 0 0 16px;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-md-h2 {
+  margin: 32px 0 16px;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-md-h3 {
+  margin: 24px 0 16px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-md-h4 {
+  margin: 16px 0 16px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-md-list {
+  margin: 0 0 16px;
+  padding-left: 24px;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--ms-text);
+}
+
+.ms-md-item {
+  margin-bottom: 4px;
+}
+
+.ms-md-item > .ms-md-paragraph {
+  margin: 0;
+}
+
+.ms-md-check {
+  margin-right: 8px;
+}
+
+.ms-md-code {
+  margin: 0 0 16px;
+}
+
+.ms-md-code-language,
+.ms-md-code-caption {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-md-pre {
+  margin: 0;
+  padding: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface-2);
+  overflow-x: auto;
+  tab-size: 4;
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text);
+}
+
+.ms-md-inline-code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--ms-surface-2);
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.ms-md-quote {
+  margin: 0 0 16px;
+  padding-left: 12px;
+  border-left: 3px solid var(--ms-border-strong);
+  color: var(--ms-text-2);
+}
+
+.ms-md-rule {
+  margin: 24px 0;
+  border: 0;
+  border-top: 1px solid var(--ms-border);
+}
+
+.ms-md-table-scroll {
+  margin: 0 0 16px;
+  overflow-x: auto;
+}
+
+.ms-md-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text);
+}
+
+.ms-md-table th {
+  background: var(--ms-surface-2);
+  font-weight: 600;
+}
+
+.ms-md-table th,
+.ms-md-table td {
+  padding: 6px 10px;
+  border: 1px solid var(--ms-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.ms-md-left {
+  text-align: left;
+}
+
+.ms-md-center {
+  text-align: center;
+}
+
+.ms-md-right {
+  text-align: right;
+}
+
+.ms-md-link {
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-md-link:hover,
+.ms-md-link:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-md-external {
+  margin-left: 2px;
+  vertical-align: -1px;
+}
+
+.ms-md-unresolved,
+.ms-md-image {
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: var(--ms-text-2);
+}
+
+/* --------------------------------------------------------- the Project pane -- */
+
+.ms-project-read-at {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-project-absent-statement {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ms-text);
+}
+
+.ms-project-absent-lead {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-project-paths,
+.ms-project-documents {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-project-path {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+.ms-project-prose {
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ms-text);
+}
+
+.ms-project-reason {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-danger);
+  overflow-wrap: anywhere;
+}
+
+.ms-project-group {
+  margin-top: 16px;
+}
+
+.ms-project-group-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ms-text-2);
+}
+
+.ms-project-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--ms-border);
+}
+
+.ms-project-row-title {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.ms-project-row-title a {
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-project-row-title a:hover,
+.ms-project-row-title a:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-project-row-path {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+.ms-project-row-date {
+  margin-left: auto;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  white-space: nowrap;
+}
+
+.ms-project-row-reason {
+  flex-basis: 100%;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-danger);
+}
+
+.ms-project-covenant,
+.ms-project-purpose {
+  margin-bottom: 8px;
+}
+
+/*
+ * An empty state inside a card is a statement about one subsection, not a
+ * whole pane, so it does not need the pane's vertical room.
+ */
+.ms-card .ms-empty {
+  padding-top: 16px;
+}
+
+.ms-project-covenant .ms-facts,
+.ms-project-covenant .ms-md-table-scroll {
+  margin-top: 12px;
+}

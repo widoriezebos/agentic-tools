@@ -40,9 +40,45 @@ const TIMERS = ["setInterval", "setTimeout"];
 const LIFECYCLE_EVENTS = ["focus", "online", "offline", "visibilitychange", "pageshow"];
 const LIFECYCLE_HANDLERS = ["onfocus", "ononline", "onoffline", "onvisibilitychange", "onpageshow"];
 
-const CALL_SITE = "shell/workspace.ts";
-const RESOURCE = "/api/workspace";
+/**
+ * Every file that may reach the network, with how many call sites it has and
+ * the resources it names.
+ *
+ * The list is appended to and never replaced: each slice that adds a reader
+ * adds its own row to the one the slice before it left, so the guard keeps
+ * counting every earlier call site as well as the new one.
+ */
+const CALL_SITES: readonly [string, number, string[]][] = [
+  ["shell/workspace.ts", 1, ["/api/workspace"]],
+  ["project/api.ts", 1, ["/api/project", "/api/documents/"]],
+];
+
+const CALL_SITE = CALL_SITES[0][0];
 const HEALTH = "/-/health";
+
+/**
+ * Every way a string could become markup. The document view renders elements
+ * and nothing else: the engine parses Markdown into a typed tree, React builds
+ * the elements, and no HTML string is constructed anywhere under src/.
+ */
+const INJECTION = [
+  "dangerouslySetInnerHTML",
+  "innerHTML",
+  "outerHTML",
+  "insertAdjacentHTML",
+  "DOMParser",
+  "createContextualFragment",
+];
+
+/**
+ * `write` is on the same list, because document.write parses a string as
+ * markup. One file predates the rule and has its own local `write`, which
+ * stores a preference, so it is named here rather than the rule dropped — and
+ * the rule that keeps the carve-out honest is asserted beside it: a file
+ * allowed to say `write` may not also say `document`, so the pair cannot meet.
+ */
+const WRITE = "write";
+const WRITES_A_PREFERENCE = "storage.ts";
 
 /** The second cut's files, which do not exist in this one. */
 const SECOND_CUT = ["shell/ConnectionIndicator.tsx", "shell/Notice.tsx", "shell/health.ts", "shell/events.ts"];
@@ -311,7 +347,7 @@ describe("the scan itself", () => {
 });
 
 describe("the first cut", () => {
-  it("reaches the network from exactly one place", () => {
+  it("reaches the network only from the files on the list", () => {
     const sites = new Map<string, number>();
     for (const file of files) {
       const total = NETWORK.reduce((count, name) => count + (scanned.get(file)?.identifiers.get(name) ?? 0), 0);
@@ -320,9 +356,28 @@ describe("the first cut", () => {
       }
     }
 
-    expect([...sites.entries()]).toEqual([[CALL_SITE, 1]]);
-    expect(scanned.get(CALL_SITE)?.identifiers.get("fetch")).toBe(1);
-    expect(scanned.get(CALL_SITE)?.strings).toContain(RESOURCE);
+    expect([...sites.entries()].sort()).toEqual(CALL_SITES.map(([file, count]) => [file, count]).sort());
+    for (const [file, count, resources] of CALL_SITES) {
+      expect({ file, fetches: scanned.get(file)?.identifiers.get("fetch") }).toEqual({ file, fetches: count });
+      for (const resource of resources) {
+        expect({ file, resource, named: scanned.get(file)?.strings.includes(resource) }).toEqual({
+          file,
+          resource,
+          named: true,
+        });
+      }
+    }
+  });
+
+  it("builds no markup from a string, under any name", () => {
+    expect(filesNaming(INJECTION)).toEqual([]);
+    expect(stringsMatching((value) => INJECTION.includes(value.trim()))).toEqual([]);
+  });
+
+  it("writes to no document, and the one file that says write says nothing else", () => {
+    expect(filesNaming([WRITE])).toEqual([WRITES_A_PREFERENCE]);
+    expect(scanned.get(WRITES_A_PREFERENCE)?.identifiers.get("document")).toBeUndefined();
+    expect(stringsMatching((value) => value.trim() === WRITE)).toEqual([]);
   });
 
   it("opens no stream, socket, request object, or beacon, under any name", () => {

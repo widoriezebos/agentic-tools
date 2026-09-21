@@ -24,11 +24,11 @@ const expected: Empty[] = [
     action: null,
   },
   {
-    id: "project",
+    id: "sittings",
     kind: "not projected",
-    heading: "Project is not projected yet",
-    body: "Intent, architecture, designs, constraints and assurance, open questions, and sittings are in the repository and will be read here.",
-    note: "Arrives with gate 5",
+    heading: "Sittings are not projected yet",
+    body: "A sitting is a human and an agent working together; its working records live in the sitting store the brain process keeps.",
+    note: "Arrives with gate 3",
     link: null,
     action: null,
   },
@@ -111,6 +111,9 @@ const expected: Empty[] = [
  * say that there are none: there are 156 live goals at the accepted tip, and a
  * pane that says otherwise is a lie a human would act on.
  */
+/** The sections this build still answers with an empty state of their own. */
+const unprojected = sections.filter((section) => section.id !== "project");
+
 const ABSENCE = [
   "nothing",
   "no goals",
@@ -132,15 +135,24 @@ describe("the empty states", () => {
 
   it("cover every destination that has a pane, and nothing more", () => {
     const covered = empties.map((empty) => empty.id).sort();
-    const wanted = [...sections.map((section) => section.id), "subject", "not-found"].sort();
+    const wanted = [...unprojected.map((section) => section.id), "sittings", "subject", "not-found"].sort();
     expect(covered).toEqual(wanted);
-    for (const section of sections) {
+    for (const section of unprojected) {
       expect(emptyFor(section.id).id).toBe(section.id);
     }
   });
 
+  // Project is read from the repository in this build, so it has no empty
+  // state of its own; the one subsection of it this build does not project is
+  // Sittings, which says so inside the pane and names the gate that brings it.
+  it("leave Project to the section that reads the repository", () => {
+    expect(empties.map((empty) => empty.id)).not.toContain("project");
+    expect(() => emptyFor("project")).toThrow();
+    expect(emptyFor("sittings").heading).toBe("Sittings are not projected yet");
+  });
+
   it("are the not-projected kind for every section, with no action of its own", () => {
-    for (const section of sections) {
+    for (const section of unprojected) {
       const empty = emptyFor(section.id);
       expect({ id: empty.id, kind: empty.kind }).toEqual({ id: empty.id, kind: "not projected" });
       expect({ id: empty.id, action: empty.action }).toEqual({ id: empty.id, action: null });

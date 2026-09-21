@@ -64,9 +64,19 @@ export function sectionFor(pathname: string): Section | null {
 }
 
 /**
- * The section the router itself matches: this build registers one route per
- * section and nothing beneath, so an address beneath a section matches nothing
- * and is the not-found pane. When a slice nests a view, its route and this
+ * The nested routes this build registers, and the section each belongs to.
+ * The list is here rather than inferred from the section's prefix because the
+ * router registers exactly these: an address beneath a section that is not one
+ * of them matches no route and is the not-found pane, and the header has to
+ * agree with the router about that.
+ */
+export const nestedRoutes: readonly { path: string; sectionId: string }[] = [
+  { path: "/project/doc", sectionId: "project" },
+];
+
+/**
+ * The section the router itself matches: its own path, or a nested route this
+ * build registers beneath it. When a slice nests a view, its route and this
  * match change together.
  */
 export function activeSection(pathname: string): Section | null {
@@ -74,7 +84,14 @@ export function activeSection(pathname: string): Section | null {
   if (normalized === "/" || normalized === "") {
     return activeSection(HOME_PATH);
   }
-  return sections.find((section) => section.path === normalized) ?? null;
+  const exact = sections.find((section) => section.path === normalized);
+  if (exact !== undefined) {
+    return exact;
+  }
+  const nested = nestedRoutes.find(
+    (route) => normalized === route.path || normalized.startsWith(`${route.path}/`),
+  );
+  return nested === undefined ? null : (sections.find((section) => section.id === nested.sectionId) ?? null);
 }
 
 export function pathFor(sectionId: string): string | null {
@@ -84,10 +101,61 @@ export function pathFor(sectionId: string): string | null {
 export type Reference = { kind: string; id?: string };
 
 export function routeFor(reference: Reference): string | null {
-  if (reference.kind !== "section" || reference.id === undefined) {
+  if (reference.id === undefined || reference.id === "") {
     return null;
   }
-  return pathFor(reference.id);
+  if (reference.kind === "section") {
+    return pathFor(reference.id);
+  }
+  if (reference.kind === "document") {
+    return documentPath(reference.id);
+  }
+  return null;
+}
+
+/** Everything beneath this prefix is a document, named by the rest of it. */
+export const DOCUMENT_PREFIX = "/project/doc/";
+
+/**
+ * Where a document is read. The id is a checkout-relative path with "/"
+ * separators, and each segment is encoded on its own, so a separator stays a
+ * separator and everything else survives the address bar.
+ */
+export function documentPath(id: string): string {
+  return (
+    DOCUMENT_PREFIX +
+    id
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/")
+  );
+}
+
+/**
+ * The id an address carries back, decoded a segment at a time.
+ *
+ * It reads the address itself rather than a router parameter, because the
+ * router decodes a parameter for its own purposes and a name holding a per-cent
+ * sign would then be decoded twice; here one encoder and one decoder face each
+ * other, and the round trip is a test.
+ */
+export function documentIdFromPath(pathname: string): string {
+  if (!pathname.startsWith(DOCUMENT_PREFIX)) {
+    return "";
+  }
+  return pathname
+    .slice(DOCUMENT_PREFIX.length)
+    .split("/")
+    .map((segment) => decodeSegment(segment))
+    .join("/");
+}
+
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
 }
 
 /** A pasted path with a trailing slash names the same place as one without. */

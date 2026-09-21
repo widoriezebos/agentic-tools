@@ -21,6 +21,8 @@ import { Sheet } from "./Sheet";
 import { Focused } from "../panes/Focused";
 import { NotFoundPane, SectionPane } from "../panes/sections";
 import { SettingsPane } from "../panes/Settings";
+import { DocumentPane } from "../project/DocumentPane";
+import { ProjectPane } from "../project/ProjectPane";
 import { activeSection, HOME_PATH, projectSections } from "../routes";
 import { readDockOpen, readRailExpanded, readTheme, writeDockOpen, writeRailExpanded, writeTheme } from "../storage";
 import { applyTheme, effectiveTheme, systemIsDark, watchSystemTheme, type ThemePreference } from "../theme";
@@ -108,9 +110,14 @@ export function Shell() {
     <Routes>
       <Route path="/" element={<Navigate to={HOME_PATH} replace />} />
       <Route path="/brain" element={<Focused wide={wide} />} />
-      {projectSections.map((candidate) => (
-        <Route key={candidate.id} path={candidate.path} element={<SectionPane section={candidate} />} />
-      ))}
+      {/* Project reads the repository; the other five say which gate brings them. */}
+      <Route path="/project" element={<ProjectPane />} />
+      <Route path="/project/doc/*" element={<DocumentPane />} />
+      {projectSections
+        .filter((candidate) => candidate.id !== "project")
+        .map((candidate) => (
+          <Route key={candidate.id} path={candidate.path} element={<SectionPane section={candidate} />} />
+        ))}
       <Route path="/settings" element={<SettingsPane theme={theme} onTheme={chooseTheme} />} />
       <Route path="*" element={<NotFoundPane />} />
     </Routes>
