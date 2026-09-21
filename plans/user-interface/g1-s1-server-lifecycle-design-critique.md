@@ -56,3 +56,10 @@ Non-material, folded in: the options field is renamed `DigestFunc` so that `Exec
 ## Astra design review, 2026-09-21
 
 Verdict on this slice design: implement as written. No finding of the [Astra review](../user-interface-design-critique-astra.md) touches it. Building still waits for the human's explicit go.
+
+## Astra's second design review, 2026-09-21
+
+Finding B8: the slice resolved its checkout with `upRepositoryScope` and kept its state under it, while D20 said every home of state is located through the state-root owner, which in the self-hosted layout is the nested installation. The two readings give different lock identities. Astra's verdict was that the slice could no longer be implemented as written.
+
+Disposition: partly agreed. The ambiguity was real and is removed in revision 5 of the design and in the master. The direction of the fix is not the one Astra suggested. The engine keeps two conventions in the self-hosted layout, checked in a template clone in active use: process families, the steward and the supervision, keep lifecycle state under the Git checkout (`cmd/metasystem/up.go:45`, `:169`, `process_verbs.go:52`), while the goal journal, the channel, and jobs keep domain state beneath the installation. The interface server is a process family and was modelled on the steward runner, so its state stays where it was designed, and D20's sentence was narrowed to the subject's state. No behaviour changed, so the design stands as implementable and the existing build still conforms. The human has the last word.
+

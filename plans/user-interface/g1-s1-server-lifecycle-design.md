@@ -1,6 +1,6 @@
 # g1-s1 Server lifecycle
 
-- Gate 1, author Claude with the human, 2026-09-21. Revision 4, after [critique rounds 1 to 3](g1-s1-server-lifecycle-design-critique.md); the loop is closed, with two obligations for the code critique listed under Verification.
+- Gate 1, author Claude with the human, 2026-09-21. Revision 5. Revision 4 closed [critique rounds 1 to 3](g1-s1-server-lifecycle-design-critique.md) with two obligations for the code critique, listed under Verification. Revision 5 adds the "Three roots" paragraph under State on disk, after Astra's second review (B8); it names what was implicit and changes no behaviour.
 - Refines the master at commit `94181f05a`: [Component responsibilities](../user-interface-design.md#component-responsibilities), [Scope and request principals](../user-interface-design.md#scope-and-request-principals), the browser protections in [Human acts from the browser](../user-interface-design.md#human-acts-from-the-browser), and [Trustworthy state and interaction](../user-interface-design.md#trustworthy-state-and-interaction).
 - Carries decisions D1, D2, D8, D9, D10, and D11 from the [implementation plan](../user-interface-implementation-plan.md).
 - Contributes to UID-R1-13 and to acceptance scenario 4 (the interface is usable with the engine stopped). It discharges neither alone.
@@ -152,6 +152,8 @@ func New(info Info, bound net.Addr) http.Handler
 ```
 
 ### State on disk
+
+**Three roots.** `--repo` resolves to the Git checkout: `upRepositoryScope` returns the Git top level. `--metasystem-root` is the installation, known from the executable's own location. The state root, which the installation resolves to and which holds goals and records, is a third thing, and this slice does not use it. In the MetaSystem's own repository the first two differ: the checkout is the repository and the installation is its `metasystem/` directory. In an adopted project they resolve to the same place. This slice's lifecycle state lives under the Git checkout, where the engine's other process families keep theirs (`artifacts/agents/steward`, `artifacts/agents/supervision`), and not beneath the installation, where the goal journal and the channel keep their domain state. The lock's identity, and so "one server per checkout", is per Git checkout. Later slices locate the subject's state through `stateroot.RootForInstallation(installation)`; that rule does not move this directory.
 
 `<checkout>/artifacts/agents/ui/` holds `server.flock`, `server.json`, `server.log`, and `server.log.1`. The directory is ignored by Git. No source or configuration lives there.
 
