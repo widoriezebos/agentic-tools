@@ -144,6 +144,7 @@ One line per package; the package doc is the full story.
 | `turn` | the vocabulary of a mission turn |
 | `ui/lifecycle` | the checkout's independent browser server: launch, lock, identity record, status, stop, and restart |
 | `ui/httpd` | loopback browser request checks, response headers, and interface routes |
+| `ui/web` | the embedded interface bundle, its manifest and staleness digest, and the content types and `Accept` rule the server needs |
 | `up` | the session-start arming transaction and its typed aggregate outcome |
 | `usage` | typed usage extraction, the single owner |
 | `validate` | whole-artifact validators and rewrites (incl. conf tailoring) |

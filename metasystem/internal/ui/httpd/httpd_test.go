@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 )
 
 func TestRequestChecks(t *testing.T) {
@@ -58,7 +59,7 @@ func TestRequestChecks(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			response := request(t, New(Info{}, tc.bound), tc.method, "/", tc.host, tc.headers)
+			response := request(t, New(Info{}, tc.bound, testBundle()), tc.method, "/", tc.host, tc.headers)
 			testutil.Expect(t, "status", response.Code, tc.wantStatus)
 			if tc.wantBody != "" {
 				testutil.Expect(t, "response body", response.Body.String(), tc.wantBody)
@@ -91,7 +92,7 @@ func TestResponsesCarryBrowserSecurityHeaders(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			response := request(t, New(Info{}, bound), http.MethodGet, "/", tc.host, nil)
+			response := request(t, New(Info{}, bound, testBundle()), http.MethodGet, "/", tc.host, nil)
 			for name, want := range wantHeaders {
 				testutil.Expect(t, "header "+name, response.Header().Get(name), want)
 			}
@@ -114,9 +115,10 @@ func TestHealthPayload(t *testing.T) {
 		StartedAt:        "2026-09-21T10:11:12Z",
 		EngineBuild:      "build-stamp",
 		ExecutableDigest: "sha256:0123456789abcdef",
+		BundleDigest:     "sha256:fedcba9876543210",
 	}
 	bound := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 7878}
-	response := request(t, New(info, bound), http.MethodGet, "/-/health", "127.0.0.1:7878", nil)
+	response := request(t, New(info, bound, testBundle()), http.MethodGet, "/-/health", "127.0.0.1:7878", nil)
 	testutil.Require(t, "status", response.Code, http.StatusOK)
 	testutil.Expect(t, "content type", response.Header().Get("Content-Type"), "application/json")
 	var payload struct {
@@ -125,6 +127,7 @@ func TestHealthPayload(t *testing.T) {
 		StartedAt        string `json:"startedAt"`
 		EngineBuild      string `json:"engineBuild"`
 		ExecutableDigest string `json:"executableDigest"`
+		BundleDigest     string `json:"bundleDigest"`
 	}
 	err := json.Unmarshal(response.Body.Bytes(), &payload)
 	testutil.Require(t, "decode health response", err, nil)
@@ -133,20 +136,20 @@ func TestHealthPayload(t *testing.T) {
 	testutil.Expect(t, "started at", payload.StartedAt, info.StartedAt)
 	testutil.Expect(t, "engine build", payload.EngineBuild, info.EngineBuild)
 	testutil.Expect(t, "executable digest", payload.ExecutableDigest, info.ExecutableDigest)
+	testutil.Expect(t, "bundle digest", payload.BundleDigest, info.BundleDigest)
 }
 
 func TestRoutes(t *testing.T) {
 	t.Parallel()
 
-	bound := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 7878}
-	handler := New(Info{}, bound)
+	handler := testHandler(t, testBundle())
 	tests := []struct {
 		name       string
 		path       string
 		wantStatus int
 		wantBody   string
 	}{
-		{name: "root", path: "/", wantStatus: http.StatusOK, wantBody: "MetaSystem interface: no views are installed in this build yet."},
+		{name: "root", path: "/", wantStatus: http.StatusOK, wantBody: strings.Replace(testIndexHTML, web.NoncePlaceholder, testNonce, 1)},
 		{name: "unknown", path: "/missing", wantStatus: http.StatusNotFound, wantBody: "404 page not found\n"},
 	}
 	for _, tc := range tests {
@@ -178,7 +181,7 @@ func TestRefusalsDoNotEchoInput(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			response := request(t, New(Info{}, bound), tc.method, "/", tc.host, tc.headers)
+			response := request(t, New(Info{}, bound, nil), tc.method, "/", tc.host, tc.headers)
 			testutil.Expect(t, "refusal status", response.Code == http.StatusForbidden || response.Code == http.StatusMethodNotAllowed, true)
 			testutil.Expect(t, "offending value echoed", strings.Contains(response.Body.String(), offendingValue), false)
 		})
@@ -208,7 +211,7 @@ func TestRepeatedOriginIsRefused(t *testing.T) {
 	httpRequest.Host = "127.0.0.1:7878"
 	httpRequest.Header["Origin"] = []string{"http://127.0.0.1:7878", "http://attacker.invalid"}
 
-	New(Info{}, bound).ServeHTTP(recorder, httpRequest)
+	New(Info{}, bound, nil).ServeHTTP(recorder, httpRequest)
 
 	testutil.Expect(t, "repeated origin status", recorder.Code, http.StatusForbidden)
 	testutil.Expect(t, "repeated origin body", recorder.Body.String(), "request origin is not allowed\n")
