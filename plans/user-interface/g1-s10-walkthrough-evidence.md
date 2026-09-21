@@ -49,9 +49,9 @@ because nothing stored says which goal the operation was about. Counted live thr
 `/api/backlog`: 47 rows falsely reading "done" before, 0 after; 89 of 155 rows now show
 "last changed <date>" with no verb, which is the true shape of a ledger that has had large
 priority reorderings, and reads as `opened 2026-09-16 08:44 · last changed 2026-09-19 22:35`. The verb histogram
-afterwards is `unapprove 58 · edit 42 · park 32 · open 19 · release 2 · approve 1 ·
+afterwards is `withheld 89 · unapprove 25 · edit 19 · park 12 · open 8 · release 1 ·
 set-budget 1`, which sums to 155 and contains no `set-priority`, every one of those having
-been a fan-out.
+been a rank fan-out rather than a verb on the goal that carried it.
 
 **The list could not be scanned.** Each row printed its record's whole intent, so one goal
 filled four screens and 119 of them were unreadable. The intent is now clamped to three
