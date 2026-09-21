@@ -49,3 +49,42 @@ An agent with checkout tools can directly request the route and can place hidden
 ## 6. Not checked
 
 The sandbox refused `/tmp` creation with `Operation not permitted`, so filesystem experiments could not run; the route does not exist yet, and `metasystem/metasystem.conf.local` was not opened.
+
+---
+
+# Terminal confirmation, 2026-09-21
+
+On revision 2. Verdict: safe to build with the listed obligations. All six items confirmed, one non-material finding: the design says nothing after the first step inspects a pathname, which is literally false because the ownership answer resolves path ancestors. That touches metadata only and never selects, reopens, hashes or parses document bytes, so the code review confirms ownership stays metadata-only rather than the design changing.
+
+## 1. Verdict safe to build with the listed obligations ## 2. The six items 1. Confirmed for ...
+[codex] Turn completion inferred after the main thread finished and subagent work drained.
+## 1. Verdict
+
+safe to build with the listed obligations
+
+## 2. The six items
+
+1. Confirmed for document bytes: one anchored `Root.Open`, descriptor `Stat`, bounded read, then parse/hash closes the race (`root_unix.go:81-109`, `root_openat.go:340-358,382-406,448-486`). The literal “nothing inspects a pathname” is overstated because ownership later resolves path ancestors.
+2. Confirmed. `os.Root` follows only relative, in-root symlinks; `O_NOFOLLOW` triggers its own link resolution (`root.go:34-46`, `root_unix.go:81-99,273-283`). The policy matches the implementation.
+3. Confirmed, conditionally. Darwin passes components unchanged (`root_nonwindows.go:9-10`; `root.go:319-352`), leaving case behavior to the filesystem. The proposed test is discriminating only when its `os.Stat(".GIT/x.md")` probe confirms the mixed-case alias exists (`g1-s21-project-thread-design.md:143,153`).
+4. Confirmed. `LimitReader` returns at most 1,048,577 bytes (`io/io.go:458-481`): exactly 1 MiB is readable; 1 MiB plus one is `too-large`, with the earlier `fstat` size, empty revision, and no blocks (`g1-s21-project-thread-design.md:69-71,143-154`).
+5. Confirmed. The seam is immediately before the target open. Inference: resolve-then-reopen follows either swapped link and fails the first two subtests; moving the hook could evade that proof, but obligation O2d requires code review of its position (`g1-s21-project-thread-design.md:143,155`).
+6. Confirmed, with a test-harness obligation. `ServeHTTP` does not branch on HEAD (`metasystem/internal/ui/httpd/httpd.go:104-134`), and the real server discards writes (`net/http/server.go:377-384`).
+
+## 3. The symlink ruling
+
+The policy is correct. The protected boundary is the namespace reachable beneath the checkout root, not inode provenance. Refusing safe in-root symlinks would add a hand-written traversal without excluding hard-linked content, while `os.Root` already refuses absolute and escaping link targets (`root.go:34-46`; `root_openat.go:459-486`). The wording now matches Go 1.27.
+
+Per-request `OpenRoot` is an appropriate lifetime for this threat model: the configured checkout path is trusted, while mutation beneath it is contained by the request’s root descriptor. A process able to replace the checkout entry in its parent could rebind a later request because `OpenRoot` follows the root name (`root.go:79-84`), but that requires authority outside the checkout boundary; it is not an id-driven escape. Mounts, bind mounts, and `/proc` are likewise explicitly outside `os.Root`’s containment promise (`root.go:45-46`) and count as reachable in-root names under the adopted policy.
+
+All target-open failures become the same 404; size and encoding remain intentionally distinguishable 200 states, and a post-open read failure is a 500 (`g1-s21-project-thread-design.md:68-75`). The catalogue uses the same rooted open and descriptor for metadata and its title read (`g1-s21-project-thread-design.md:115,152`). No outside pathname supplied by the request can be served; hard links and mounted entries have an in-checkout reachable name by policy.
+
+## 4. Findings
+
+F1; NOT MATERIAL; “after step 1 nothing looks at a pathname” is literally false because ownership invokes `OwnerForInstallation`, which calls `EvalSymlinks`; `metasystem/internal/stateroot/owner.go:44-51,73-85,120-136`; this does not select, reopen, hash, or parse document bytes, so it does not block building, but code review must verify ownership remains metadata-only.
+
+F2; NOT MATERIAL; a direct `httptest.ResponseRecorder` retains a HEAD handler’s writes, so it cannot prove server-level body suppression; the existing helper directly invokes the handler (`metasystem/internal/ui/httpd/httpd_test.go:191-200`), while suppression occurs in the server writer (`net/http/server.go:377-384`); builder obligation: exercise HEAD through `httptest.Server`, assert the document callback ran, and add no HEAD short-circuit.
+
+## 5. Not checked
+
+Scratch experiments could not run because `/tmp` creation returned `Operation not permitted`; nothing was created. The proposed implementation and tests do not yet exist. Case-insensitive APFS behavior, mount topology, and non-Darwin implementations were therefore not executed in this run.
