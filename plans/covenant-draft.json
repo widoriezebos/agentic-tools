@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "identity": {
+    "name": "metasystem",
+    "entryPoint": "bin/metasystem",
+    "sourcePaths": ["cmd/**", "internal/**", "scripts/**", "go.mod", "go.sum", "AGENTS.md", "wow.md", "docs/**", "skills/**"]
+  },
+  "requirements": [
+    {
+      "id": "budget-stops-work",
+      "ref": "A budget is enforced: when it is exhausted, the machinery stops, records what it learned and then escalates or closes the attempt according to its authority (docs/paper/05-first-principles.md:63). Resuming needs a fresh complete budget from a human (docs/paper/19-appendix-functional-design.md:213).",
+      "proof": "testing.json group goal-decision-standard: TestBudgetTupleIsCompletePositiveAndCanonical, TestElapsedBreachDurationAppliesGraceAtTheStopBoundary, TestSetBudgetLiftsCompletedFenceInOneTransaction, TestHolderSetBudgetRebindsEpochForProofAdmission; group dispatch-proof-standard: TestProofOnlyGoalStopBatch, TestOrdinaryProofSharesGoalBudget; group mission-decision-standard: TestProjectFences; group section/goal-cli-fixtures"
+    },
+    {
+      "id": "approval-is-a-human-act",
+      "ref": "A claim refuses a goal that no human approved, and approval needs proof that a human gave it, either from the terminal they enrolled or by a verified word over the channel (docs/paper/19-appendix-functional-design.md:137). An edit to an approved item invalidates the approval (19:193).",
+      "proof": "testing.json group goal-full-coverage: TestUnapprovedExecutionPathsRefuseApprovalRequired, TestApprovedGoalClaimsAndPayloadEditsInvalidateBinding; group authority-standard: TestProofRequiresExactAgentFreeEnrolledAncestry, TestProofFailsClosedOnTerminalAndAncestryUncertainty, TestStatusThreadTokenWithValidCodeApprovesMarkedGoal, TestActiveObligationRefusesIncompleteHumanAuthorization, TestDecideFailsClosedWithoutALawfulState; group section/authority-regression-fixtures"
+    },
+    {
+      "id": "channel-word-is-verified",
+      "ref": "The node that committed the reply checks two things: that the sender is the authority's account, and that the one-time code the authority typed is current and unused (docs/paper/19-appendix-functional-design.md:165).",
+      "proof": "testing.json group authority-standard: TestPollRejectsWrongUserNoCodeBadCodeReplay, TestTOTPWindowAndReplay, TestDelayedTOTPReplayRemainsConsumed, TestPollAtomicallyConsumesTOTP, TestInboundCheckpointSurvivesCrashAndDeduplicates, TestPollCrashRecoveryExactlyOnce, TestSecretsScrubbedFromErrors"
+    },
+    {
+      "id": "evidence-binds-to-the-exact-candidate",
+      "ref": "The evidence belongs to the exact candidate that was examined. When the builder revises that candidate, the old results cannot authorize the new one (docs/paper/01-the-shift.md:51; docs/paper/06-proof-over-trust.md:25).",
+      "proof": "testing.json group proof-standard: TestRetryDecisionIgnoresFailuresFromOtherCandidateTrees, TestAttemptRejectsCandidateTreeDisagreement, TestCandidateTreeFieldsMustAgree, TestExactReuseFollowsTheCandidatePair, TestForceAttemptReusesOnlyExactNewestGreenIdentity; group engine-binding-standard: TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity"
+    },
+    {
+      "id": "a-rule-change-never-judges-its-own-case",
+      "ref": "A rule change must never judge its own case (docs/paper/17-self-application.md:3). The self-change needs an older basis that the proposal cannot alter (17:21).",
+      "proof": "testing.json group engine-binding-standard: TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine, TestCandidateEngineBuildFailureCannotFallBackToPolicyEngine, TestTrustedPolicyEngineIsRequiredWithoutBuildingDuringReadOnlySelection, TestProtectedCoverageFloorCannotFallOrDisappear; group policy-protection: TestBasePolicyAndBlackBoxGuardsSurviveCandidateRemovalAndInternalAPIChange; group policy-canary: TestModesDoNotLowerRequiredRisk; group landing-command-standard: TestBatchJoinRefusesDroppedProtectedTest, TestLandingBatchJoinRefusesDroppedListedTest"
+    },
+    {
+      "id": "the-examiner-is-fresh",
+      "ref": "Each new independent examiner receives the materials needed to examine the claim, but not the builder's private reasoning trace or path to the work (docs/paper/06-proof-over-trust.md:41). Every build gets one independent read of the whole build in a fresh context (docs/paper/18-outlook.md:80).",
+      "proof": "testing.json group launch-standard: TestEachRoundReadsFreshWithThePreviousReadAsInput, TestProofRunsBeforeTheRead, TestUnitRunNeverWritesToTheRepository; group goal-decision-standard: TestCommitReadRefusesUnrecordedFastGateRun, TestGoalBranchReadRunsGateDispatchesAndCollectsClosedCritic; group go-affected (internal/dispatch): TestHazardCloseRejectsStaleCriticClosure, TestHazardEvidenceAdmissionAcceptsFreshContextFollowUp"
+    },
+    {
+      "id": "examination-rounds-are-bounded",
+      "ref": "Repeated rounds stop for one of three explicit reasons: a bounded search completes without a new material issue, the judging budget is exhausted and forces escalation, or an open question requires a human ruling (docs/paper/06-proof-over-trust.md:45).",
+      "proof": "testing.json group cap-contract: TestBoundaryAtThreeRounds, TestCritiqueBeforeRoundLimitAllowsContinuation, TestCompletedAndFailedRoundsCountButCancelledDoesNot, TestCritiqueSevereTerminalBoundary, TestCritiqueExhaustionCodeCriticChain; metasystem.conf metasystem.budget.review-round-max"
+    },
+    {
+      "id": "refusals-name-the-fact",
+      "ref": "The refusal must identify the exact candidate, the condition that does not hold and the route by which work may continue (docs/paper/05-first-principles.md:55).",
+      "proof": "testing.json group refusal-register-standard: TestHCL03EveryCodeRowed, TestHCL03EngineCausesEachCarryARemedy, TestHCL03EveryRowReal; group engine-binding-standard: TestEngineRefusalsNameTheirCause, TestDecisionMismatchNamesTheField, TestRefusalQuotesPathFacts"
+    },
+    {
+      "id": "silence-is-detected-and-deadlined",
+      "ref": "Active work needs visible progress, a deadline and a recorded end state (docs/paper/03-the-new-workforce.md:35). Every wait also has a deadline and an owner (docs/paper/09-the-living-system.md:19).",
+      "proof": "testing.json group proof-standard: TestSupervisorLegitimateWaitDeadDumpAndReaderFailures, TestRunawayAndDeadAreFailedDeliveryStatuses, TestLauncherReapsSurvivorsIntoTheVerdict; group launch-standard: TestCancelProvesDeathBeforeItReportsCancelled, TestStatusReconcilesALostSupervisor, TestWaitHonoursTheCapAndReportsTheTerminalState; group wait-stop-standard: TestWaitRegisterHumanNeedsAQuestionAndADeadline, TestLocalWaitOfADeadProcessDoesNotAllowTheStop, TestHumanWaitAllowsTheStopUntilItsDeadline; group runtime-owner-standard: TestCensusLockTakesOverDeadOwner, TestWatchdogDeadAcknowledgedStillShouts; group governed-standard: TestWitnessResolverStallsOnlyWhenAStepIsSilent; group section/supervision-and-census-fixtures"
+    },
+    {
+      "id": "identity-is-checked-at-use",
+      "ref": "An identifier that was accurate once is not authority now (docs/paper/09-the-living-system.md:27).",
+      "proof": "testing.json group batch-buildb-standard: TestSupervisorTakeoverRefusesStaleEpochProof, TestLandingOwnerComponentStopsActingAfterLeaseLoss, TestWorkerAuthorizedRefusesAForeignRoot; group landing-command-standard: TestBatchTickStopsBeforePassAfterLeaseLoss; group runtime-owner-standard: TestDeadOwnerLockReleaseIsFencedByTheRecordedIdentity; group goal-decision-standard: TestCommitRefusesNonHolder, TestAmendRechecksClaimBeforeBranchUpdate, TestLandPushRechecksClaimBeforePush"
+    },
+    {
+      "id": "failure-leaves-a-record",
+      "ref": "A worker may disappear, but the fact that it failed and what it learned must not disappear with it (docs/paper/05-first-principles.md:75). Earlier states remain visible to authorized readers rather than being rewritten (docs/paper/08-memory-and-coordination.md:17).",
+      "proof": "testing.json group launch-standard: TestSuperviseRecordsTheTerminalStateFromTheExitStatus, TestTerminalStateIsFinal, TestRefusedLaunchLeavesNoRecordAndOneRefusalRow; group proof-standard: TestFailThenPassRerunIsAFindingNeverAGreen, TestFailThenFailStaysRedAndNamesBothRuns; group landing-command-standard: TestBatchHistoryIsAppendOnly, TestFastForwardRefusesNonAppendRegisters"
+    },
+    {
+      "id": "handoff-by-record",
+      "ref": "A coordinator keeps a bounded context and hands off by record at a fixed point well before the bound. The handoff note, not the context, carries the state (docs/paper/18-outlook.md:82; docs/paper/08-memory-and-coordination.md:41).",
+      "proof": "testing.json group context-standard: TestHandoffWritesAVerifiedStateFile, TestHandoffPublicationIsExclusiveAndReverified, TestHandoffAcceptsOnlyTheActiveContinuation, TestTurnVerdictAllowsTheStopUnderARecordedHandoff, TestHandoffStateVerifierChecksLessonsNoteOrder; group governed-standard: TestRevivalReapsAProvablyDeadContinuationBeforeComputingTheGuard; group goal-decision-standard: TestGoalHandoverAppliesCompleteFieldTable, TestHandedOverRecordRequiresEveryCoordinate"
+    },
+    {
+      "id": "isolation-by-construction",
+      "ref": "Isolation is a property of the work's surroundings rather than a request that workers avoid colliding (docs/paper/09-the-living-system.md:37).",
+      "proof": "testing.json group proof-standard: TestArchiveAndFrozenContextIdentity, TestDetachedWorktreeHeadArchivesCandidate; group batch-buildcd-standard: TestProofAttemptBinaryLaunchesUseSharedIsolation; group launch-standard: TestUnitRunNeverWritesToTheRepository, TestLaunchOutputsStayUnderTheStateDirectory"
+    },
+    {
+      "id": "a-question-parks-work-at-a-safe-stop",
+      "ref": "The work that raised the question stops, keeps its records and stays ready to resume; other work continues only within recorded permission and while reversal remains possible (docs/paper/13-the-human-role.md:95).",
+      "proof": "testing.json group wait-stop-standard: TestNextStepNamesAPendingHumanWord, TestIdleBacklogContinuationSkipsAGoalWaitingOnAHumanWord, TestIdleBacklogContinuationLeavesAHeldGoalThatWaitsOnAHumanWord, TestHumanWaitAllowsTheStopUntilItsDeadline; group authority-standard: TestAskWritesRecordBeforePosting, TestAskDedupsOpenQuestion"
+    },
+    {
+      "id": "landings-are-batched-under-one-proof",
+      "ref": "Landings are batched, and one proof covers the batch (docs/paper/18-outlook.md:84).",
+      "proof": "testing.json group batch-buildcd-standard: TestBatchLandingTransportRunsWholeSeriesOnce, TestBatchMemberLandsEveryBuildInOrder, TestBatchLandingLifecycleEndToEnd; group landing-command-standard: TestBatchSealFreezesMembership, TestBatchSealRegates"
+    },
+    {
+      "id": "a-run-required-to-fail",
+      "ref": "An examination can include runs that are required to fail, and a tool that reports success on everything is exposed by the case that had to fail (docs/paper/09-the-living-system.md:61).",
+      "proof": "scripts/validate-metasystem.sh section gate-fail-open-tripwire (testing.json group section/gate-fail-open-tripwire): a broken gofmt shim must make scripts/agents/go-gate.sh --fast refuse and name it"
+    },
+    {
+      "id": "examination-duty-follows-hazard-class",
+      "ref": "Dispatch fixes the minimum examination duty from a declared hazard class. The chain's closure gate refuses to close work whose required examination is missing, stale or performed by a session that saw the builder's path (docs/paper/19-appendix-functional-design.md:213).",
+      "proof": "testing.json group go-affected (internal/dispatch): TestHazardConfigurationRefusesAWeakenedMinimum, TestHazardDutiesGateChainCompletion, TestHazardEvidenceMustCoverFinalWorkState, TestMixedHazardChainRetainsBuilderDuties, TestHazardCloseRejectsStaleCriticClosure; group cap-contract: TestCritiqueExhaustionCodeCriticChain"
+    }
+  ],
+  "battery": {
+    "command": "bash scripts/validate-metasystem.sh",
+    "metric": "validation-green",
+    "direction": "max",
+    "threshold": ">=1"
+  },
+  "budgets": [],
+  "guards": [],
+  "guardrails": [
+    "testing.json",
+    "scripts/validate-metasystem.sh",
+    "metasystem.conf",
+    "docs/project-rules.md",
+    "memory/rulings.md",
+    "docs/paper/"
+  ]
+}
