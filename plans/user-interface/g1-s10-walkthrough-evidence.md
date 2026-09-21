@@ -41,8 +41,14 @@ builder predicted from their budgets sitting inside the committed tier boxes and
 
 **The rows reported another goal's verb.** 47 of the 155 live rows read "last done" while
 queued or parked, because a priority compaction writes its verb into the history of every
-goal it re-ranks and the row took the last line whatever it was. Fixed at `4b4afc5df`;
-counted live before and after through `/api/backlog`: 47, then 0. The verb histogram
+goal it re-ranks and the row took the last line whatever it was. Fixed at `4b4afc5df` and then corrected at `67de893fc` after Sol's review found the fix
+wrong in the other direction: the engine also folds a compaction into a goal's OWN event,
+so skipping back past every rank line reported a just-reopened goal as done. The row now
+keeps the date, which is exact, and withholds the verb when the last line is a rank clause,
+because nothing stored says which goal the operation was about. Counted live through
+`/api/backlog`: 47 rows falsely reading "done" before, 0 after; 89 of 155 rows now show
+"last changed <date>" with no verb, which is the true shape of a ledger that has had large
+priority reorderings, and reads as `opened 2026-09-16 08:44 · last changed 2026-09-19 22:35`. The verb histogram
 afterwards is `unapprove 58 · edit 42 · park 32 · open 19 · release 2 · approve 1 ·
 set-budget 1`, which sums to 155 and contains no `set-priority`, every one of those having
 been a fan-out.
