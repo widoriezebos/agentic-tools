@@ -336,10 +336,34 @@ SH
 fi
 
 if [[ "$fixture_scenario" == brain-actor-seam-coverage ]]; then
-	actor_sites=$(cd "$root" && find cmd/metasystem internal -type f -name '*.go' ! -name '*_test.go' \
-		-exec grep -H -E 'goal\.Actor\{|Actor\.Human[[:space:]]*=[^=]|classifyVerbCaller\(|lease\.ClassifyVerbAt\(e\.Root' {} + \
-		| grep -v '^cmd/metasystem/goalsync_mutations.go:[[:space:]]*Endpoint: e, Actor:' \
-		| LC_ALL=C sort)
+	# The scan takes its root so the fixture below can drive it over a planted
+	# tree. node_modules is pruned by name at any depth: an installed frontend
+	# dependency tree carrying a .go file with one of these expressions would
+	# add a line and refuse this scenario, and no dependency's source is a
+	# brain actor seam (g1-s8 revision 5, the exclusion slice).
+	scan_actor_sites() { # directory to scan from
+		(cd "$1" && find cmd/metasystem internal -type d -name node_modules -prune -o \
+			-type f -name '*.go' ! -name '*_test.go' \
+			-exec grep -H -E 'goal\.Actor\{|Actor\.Human[[:space:]]*=[^=]|classifyVerbCaller\(|lease\.ClassifyVerbAt\(e\.Root' {} + \
+			| grep -v '^cmd/metasystem/goalsync_mutations.go:[[:space:]]*Endpoint: e, Actor:' \
+			| LC_ALL=C sort)
+	}
+
+	# The prune has its own verdict: without it the planted dependency file is
+	# a second line and this fixture refuses before the allow-list comparison.
+	seam="$tmp/seam"
+	mkdir -p "$seam/cmd/metasystem" "$seam/internal/x/node_modules/p"
+	printf '%s\n' 'classification, err := classifyVerbCaller(root, 0)' >"$seam/cmd/metasystem/seen.go"
+	printf '%s\n' 'classification, err := classifyVerbCaller(root, 0)' >"$seam/internal/x/node_modules/p/hidden.go"
+	seam_sites=$(scan_actor_sites "$seam")
+	seam_lines=$(printf '%s\n' "$seam_sites" | grep -c '' | tr -d ' ')
+	[[ "$seam_lines" == 1 && "$seam_sites" == 'cmd/metasystem/seen.go:'* ]] || {
+		echo "brain actor seam scan no longer prunes an installed dependency tree" >&2
+		printf '%s\n' "$seam_sites" >&2
+		exit 1
+	}
+
+	actor_sites=$(scan_actor_sites "$root")
 	expected_actor_sites=$(cat <<'ACTOR_SITES'
 cmd/metasystem/brain.go:	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
 cmd/metasystem/census.go:	view, err := classifyVerbCaller(*root, parent)

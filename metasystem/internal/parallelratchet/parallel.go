@@ -120,7 +120,10 @@ func ScanParallelTests(root string) (ParallelInventory, error) {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if path != root && (entry.Name() == ".git" || entry.Name() == "artifacts" || entry.Name() == "vendor") {
+			// node_modules joins vendor by name: an installed dependency
+			// tree is content on disk, never repository content, and its
+			// test files are no part of this ratchet (g1-s8 revision 5).
+			if path != root && (entry.Name() == ".git" || entry.Name() == "artifacts" || entry.Name() == "vendor" || entry.Name() == "node_modules") {
 				return filepath.SkipDir
 			}
 			return nil

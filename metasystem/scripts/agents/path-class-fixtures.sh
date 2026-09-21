@@ -89,6 +89,48 @@ TestDeletedListsHaveNoReader() {
   local -a install_paths=() repo_paths=()
   pattern='register-carriage-'paths'|instruction-bearing-'paths'|neverDirect'Fix
 
+  # Each search takes the directory to search from and the roots to search, so
+  # the fixture below can drive the installation search over a planted tree.
+  # node_modules joins reviews in both greps: an installed frontend dependency
+  # tree whose README or changelog holds one of these tokens would be one grep
+  # line and a refused section (g1-s8 revision 5, the exclusion slice). Both
+  # read $pattern from this function, which is why they are defined here.
+  search_install_readers() { # directory to search from, roots to search
+    local from=$1
+    shift
+    (
+      cd "$from"
+      grep -rnE -I --exclude-dir=reviews --exclude-dir=node_modules --exclude=journey.md "$pattern" -- "$@"
+    )
+  }
+  search_repo_readers() { # directory to search from, roots to search
+    local from=$1
+    shift
+    (
+      cd "$from"
+      grep -rnE -I --exclude-dir=node_modules "$pattern" -- "$@"
+    )
+  }
+
+  # The exclusion carries its own verdict: without it the planted dependency
+  # file is a second line and this fixture refuses before the real search. The
+  # planted tokens are written by concatenation, as $pattern is, so this script
+  # stays clean under its own scan.
+  local readers="$tmp/readers" reader_hits reader_lines
+  mkdir -p "$readers/cmd" "$readers/internal/x/node_modules/p"
+  printf '%s\n' 'neverDirect'Fix >"$readers/cmd/seen.txt"
+  printf '%s\n' 'neverDirect'Fix >"$readers/internal/x/node_modules/p/notes.txt"
+  set +e
+  reader_hits=$(search_install_readers "$readers" cmd internal)
+  search_status=$?
+  set -e
+  reader_lines=$(printf '%s\n' "$reader_hits" | grep -c '' | tr -d ' ')
+  if [[ $search_status -ne 0 || "$reader_lines" != 1 || "$reader_hits" != 'cmd/seen.txt:'* ]]; then
+    echo "TestDeletedListsHaveNoReader: the reader search no longer excludes an installed dependency tree (status $search_status)" >&2
+    printf '%s\n' "$reader_hits" >&2
+    exit 1
+  fi
+
   while IFS= read -r install_key; do
     [[ -e "$root/$install_key" || -L "$root/$install_key" ]] && install_paths+=("$install_key")
   done < <(awk '$2 == "behavior" && $1 ~ /^install:/ {sub(/^install:/, "", $1); print $1}' "$root/scripts/agents/path-classes.txt")
@@ -96,11 +138,15 @@ TestDeletedListsHaveNoReader() {
     [[ -e "$root/../$repo_key" || -L "$root/../$repo_key" ]] && repo_paths+=("$repo_key")
   done < <(awk '$2 == "behavior" && $1 ~ /^repo:/ {sub(/^repo:/, "", $1); print $1}' "$root/scripts/agents/path-classes.txt")
 
+  # An empty root list would leave grep reading stdin; the guarded expansion
+  # is what bash 3.2 under set -u needs, and the count is the refusal that
+  # makes it meaningful.
+  ((${#install_paths[@]} > 0)) || {
+    echo "TestDeletedListsHaveNoReader: no installation behavior root exists on disk" >&2
+    exit 1
+  }
   set +e
-  (
-    cd "$root"
-    grep -rnE -I --exclude-dir=reviews --exclude=journey.md "$pattern" -- "${install_paths[@]}"
-  ) >"$tmp/deleted-install-readers.out"
+  search_install_readers "$root" ${install_paths[@]+"${install_paths[@]}"} >"$tmp/deleted-install-readers.out"
   search_status=$?
   set -e
   if [[ $search_status -eq 0 ]]; then
@@ -116,10 +162,7 @@ TestDeletedListsHaveNoReader() {
   ((${#repo_paths[@]} > 0)) || return 0
 
   set +e
-  (
-    cd "$root/.."
-    grep -rnE -I "$pattern" -- "${repo_paths[@]}"
-  ) >"$tmp/deleted-repo-readers.out"
+  search_repo_readers "$root/.." ${repo_paths[@]+"${repo_paths[@]}"} >"$tmp/deleted-repo-readers.out"
   search_status=$?
   set -e
   if [[ $search_status -eq 0 ]]; then
