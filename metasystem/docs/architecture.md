@@ -142,6 +142,8 @@ One line per package; the package doc is the full story.
 | `stopreport` | immutable Stop-report identity, exact short-alias reservation, publication binding, and verified lookup |
 | `supervise` | the supervision owner lifecycle: watcher, reaper, breaker, wind-down |
 | `turn` | the vocabulary of a mission turn |
+| `ui/lifecycle` | the checkout's independent browser server: launch, lock, identity record, status, stop, and restart |
+| `ui/httpd` | loopback browser request checks, response headers, and interface routes |
 | `up` | the session-start arming transaction and its typed aggregate outcome |
 | `usage` | typed usage extraction, the single owner |
 | `validate` | whole-artifact validators and rewrites (incl. conf tailoring) |
@@ -155,6 +157,7 @@ it does; this table adds where the decisions live.
 | Family | Backing packages |
 | --- | --- |
 | `up` | `up`, coordinating `lease`, `supervise`, and `steward` |
+| `ui` | `ui/lifecycle`, `ui/httpd`, `config` |
 | `proc` | `identity`, `census` |
 | `config` | `config`, `validate` (tailor) |
 | `validate` | `validate` |
