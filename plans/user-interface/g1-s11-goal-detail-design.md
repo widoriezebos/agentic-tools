@@ -347,3 +347,43 @@ So the design's fallback — a record where they differ gets no revision labels 
 `Absent` line — is load-bearing rather than defensive decoration, and the builder must
 not simplify it away on the grounds that the ledger satisfies the premise today. The
 labelling is a convenience derived from a convention; the History itself is the record.
+
+## Planner's rulings on Sol's critique, 2026-09-22
+
+The critique is at [g1-s11-goal-detail-design-sol-review.md](g1-s11-goal-detail-design-sol-review.md).
+Verdict: four design errors to fix before building, two builder obligations, five
+false alarms. The slice stays `designed`; it does not go to a builder until a revision 2
+folds these in.
+
+**Finding 4 is already half-settled, and it settled it against me.** Sol reached
+independently the conclusion the code review reached about `lastVerbOn`: a `HasPrefix`
+test on `priority-order` is not a sound classifier, because an abandonment copies the
+human's reason verbatim and a human may write one that begins with those words. On
+`ui-development` at `67de893fc` the row no longer skips such a line; it keeps the line's
+date, which is exact, and withholds the verb, which it cannot attribute. So the residual
+harm of the prefix test is now a withheld verb rather than a misattributed one — a
+degradation, not a lie — and the detail page shows the whole History either way. Open
+question 1 is closed. The design's own `Classify` must adopt the same posture: it may
+label a line's class as unknown, and must never present a rank clause as this goal's verb.
+
+**Findings 1, 2 and 3 stand and are the revision's work.** The gap taxonomy contradicts
+itself where `NotProjected` is used for things that are simply absent; "no claim, nothing
+is executing" is unsupported, because release clears a claim without consulting job
+activity and the engine's own activity reader reports live jobs on an unclaimed goal; and
+the journey link hardcodes `metasystem/docs/journey.md`, which is wrong in an adopted
+installation where state lives beneath the application repository. The third is the kind
+of error this interface exists to avoid: a link that is confidently wrong about where a
+record lives is worse than a link that is absent.
+
+**Finding 6 corrects me, not just the design.** My ruling on open question 2 accepted the
+design's premise that reading `memory/receipts.log` at the accepted tip would need a new
+`internal/goal` export under D32. It would not: production code already reads that blob at
+the tip through the exported `gittree.Workspace.FileAt`, and parses receipts and
+corrections by goal, type and outcome. So the follow-on is cheaper than either of us
+thought, and D32 is not engaged. That is worth stating plainly, because D32 exists to keep
+exports rare and I nearly spent one on a path that was already open.
+
+**The false alarms confirm two things worth keeping.** No field the six tabs need requires
+an `internal/goal` export, so the slice really does take none. And the Revision-to-History
+premise is not enforced but the design's divergence handling is adequate — which is what
+the ruling above already said, now checked by someone else against the same census.
