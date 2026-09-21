@@ -32,11 +32,14 @@ func FetchAdvance(e Endpoint) (AdvanceResult, error) {
 	if err != nil {
 		return AdvanceResult{}, err
 	}
+	// Armed before the capture: git writes this opid's ref during the fetch, so
+	// a capture that fails partway has already created one. CleanupRefs deletes
+	// both refs and ignores whether they existed.
+	defer CleanupRefs(e, nonce)
 	fetched, err := CaptureTip(e, nonce)
 	if err != nil {
 		return AdvanceResult{}, err
 	}
-	defer CleanupRefs(e, nonce)
 
 	// The sync-mode identity holds BEFORE the already-current
 	// short-circuit: a flipped config must refuse on the very

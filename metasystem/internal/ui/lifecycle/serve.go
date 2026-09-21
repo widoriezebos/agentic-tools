@@ -19,13 +19,17 @@ import (
 )
 
 type Options struct {
-	Roots         Roots
-	Listen        string
-	EngineBuild   string
-	DigestFunc    func() (string, error)
-	NewHandler    func(bound net.Addr, rec Record) http.Handler
-	Prober        identity.Prober
-	Ready         func(address string)
+	Roots       Roots
+	Listen      string
+	EngineBuild string
+	DigestFunc  func() (string, error)
+	NewHandler  func(bound net.Addr, rec Record) http.Handler
+	Prober      identity.Prober
+	Ready       func(address string)
+	// Releasing is Ready's counterpart: it is called once the server has
+	// stopped answering and before this checkout's ownership is given up, so a
+	// caller can end work Ready started while the lock is still held.
+	Releasing     func()
 	LockWait      time.Duration
 	After         func(time.Duration) <-chan time.Time
 	ShutdownGrace time.Duration
@@ -164,6 +168,16 @@ func Serve(ctx context.Context, o Options) (result error) {
 	defer func() { result = errors.Join(result, removeRecord(o.Roots.StateRoot)) }()
 	if o.Ready != nil {
 		o.Ready(rec.Address)
+	}
+	// Releasing runs before the record is removed and before the lock is
+	// dropped, on every path out of this function, because it is registered
+	// after both of those defers and defers run last-registered first. That
+	// ordering is the whole point: whatever Ready started still owns this
+	// checkout, and a caller that only waited after Serve returned would let
+	// the next server take the lock while its predecessor's work was still in
+	// flight.
+	if o.Releasing != nil {
+		defer o.Releasing()
 	}
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(listener) }()

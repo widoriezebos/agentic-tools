@@ -290,3 +290,34 @@ func TestExecutableChanged(t *testing.T) {
 		})
 	}
 }
+
+// F1: work the Ready hook starts must be able to end while this process still
+// owns the checkout. A caller that waited only after Serve returned would have
+// released the lock and removed the record first, so a predecessor's tick could
+// still move the accepted ref after its successor had started. Releasing is the
+// hook that closes that window, and this asserts the ordering rather than the
+// hook's existence: when it runs, the record is still published and the lock is
+// still held, which is what "still owns the checkout" means on disk.
+func TestServeEndsReadysWorkBeforeReleasingTheCheckout(t *testing.T) {
+	t.Parallel()
+	o := serveOptions(t)
+
+	var recordPresentAtRelease, lockHeldAtRelease, ranAtAll bool
+	o.Releasing = func() {
+		ranAtAll = true
+		_, err := readRecord(o.Roots.StateRoot)
+		recordPresentAtRelease = err == nil
+		// A second waiter cannot take the lock while Serve still holds it.
+		_, won, _, lockErr := waitLock(o.Roots.StateRoot, true, 0, nil)
+		lockHeldAtRelease = lockErr == nil && !won
+	}
+
+	_, stop := runTestServer(t, o)
+	stop()
+
+	testutil.Expect(t, "Releasing ran", ranAtAll, true)
+	testutil.Expect(t, "the record was still published", recordPresentAtRelease, true)
+	testutil.Expect(t, "the lock was still held", lockHeldAtRelease, true)
+	_, err := readRecord(o.Roots.StateRoot)
+	testutil.Expect(t, "and the record is gone once Serve has returned", err != nil, true)
+}

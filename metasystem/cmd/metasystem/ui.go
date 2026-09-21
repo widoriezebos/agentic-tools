@@ -183,6 +183,13 @@ func runUI(verb string, args []string) int {
 				}
 				fmt.Fprintf(os.Stderr, "interface running at http://%s (pid %d)\n", address, os.Getpid())
 			},
+			// The loop ends while this process still holds the checkout, so a
+			// tick in flight cannot advance the accepted ref after the next
+			// server has taken the lock.
+			Releasing: func() {
+				stopLoop()
+				<-loopStopped
+			},
 		})
 		stopLoop()
 		<-loopStopped

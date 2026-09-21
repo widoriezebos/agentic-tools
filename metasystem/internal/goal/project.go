@@ -159,11 +159,17 @@ func boundedFetchAdvance(e Endpoint, processTimeout time.Duration) (AdvanceResul
 	if err != nil {
 		return AdvanceResult{}, err
 	}
+	// Cleanup is armed BEFORE the capture, not after it. git creates the
+	// per-operation ref during the fetch, so a capture that fails once the
+	// deadline has killed the transport has already written a ref that nothing
+	// would then remove. CleanupRefs deletes both of this opid's refs and
+	// ignores whether they existed, so arming it early costs nothing on the
+	// paths that never create one.
+	defer CleanupRefs(e, nonce)
 	fetched, err := captureRemoteTipWithinDeadline(e, nonce, processTimeout)
 	if err != nil {
 		return AdvanceResult{}, err
 	}
-	defer CleanupRefs(e, nonce)
 
 	if err := SyncModeGate(e, fetched); err != nil {
 		return AdvanceResult{}, err
