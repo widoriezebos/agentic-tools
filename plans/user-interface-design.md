@@ -434,7 +434,7 @@ Backlog and Fleet present two views of the same execution. Backlog starts with a
 
 Give every object one detail page and every action one primary home. Other views link to that same page or action with the subject already selected. For example, answering a question from a goal, a seat, or the Decisions inbox opens the same decision; it does not create three answers.
 
-Keep the main navigation stable throughout the project. At the beginning, Project is the natural starting point for intent and architecture. During delivery, Backlog and Fleet become more prominent in Overview. Empty sections explain what belongs there and offer an appropriate first action; the application does not grow a different menu as work progresses.
+Keep the main navigation stable throughout the project. At the beginning, Project is the natural starting point for intent and architecture. During delivery, Backlog and Fleet become more prominent in Overview. Empty sections explain what belongs there and offer an appropriate first action; the application does not grow a different menu as work progresses. Two kinds of emptiness are distinguished, because only one of them has a first action. A section whose records do not exist yet offers the action that would create them. A section this build does not project yet is not empty at all: the records may well exist, and the honest statement is that the view is absent and which delivery gate brings it. Such a section offers no action of its own, because every candidate would either mislead or send the human to a terminal, and it may link to what this build does provide.
 
 Use three levels of interaction:
 

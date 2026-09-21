@@ -52,3 +52,93 @@ The most likely requested change is that the default-open 400px Brain dock devot
 
 - No browser, build, package installation, or running-server interaction was performed, so zero CSP violations, no theme flash, actual focus trapping/return, rendered contrast, and layout appearance remain runtime verification obligations.
 - No installed dependency tree exists yet; package conclusions rest on the fetched upstream 4.13.1/current sources rather than a local lockfile artifact.
+
+---
+
+# Round 2, 2026-09-21
+
+On revision 2 at commit `b19bf0cc4`. Eight of eleven findings closed, three material remain. Every row of the contrast table reproduced independently and passes, and the layout arithmetic was recomputed and holds at every stated breakpoint.
+
+## 1. Verdict build after the listed changes another round needed because J1–J3 are material ...
+[codex] Turn completion inferred after the main thread finished and subagent work drained.
+## 1. Verdict
+
+build after the listed changes  
+another round needed because J1–J3 are material
+
+## 2. Status of F1 to F9 and F11
+
+F1: corrected — the reader targets the exact line written by `adopt.sh`; the placeholder is distinct from a lowercase 40-character SHA; `docs/` is included and copied in every successful adoption; and `self-hosted && recorded` catches D20’s copied-marker hazard. The future ownership rule requires one reader to be retired or adopted by the layout owner, which is sufficient. [template:7](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/docs/project-rules.md:7), [adopt.sh:161](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/scripts/adopt.sh:161), [adopt.sh:219](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/scripts/adopt.sh:219), [adopt.sh:246](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/scripts/adopt.sh:246), [adopt.sh:364](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/scripts/adopt.sh:364), [adopt.sh:443](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/scripts/adopt.sh:443), [design:75](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:75), [implementation plan:195](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface-implementation-plan.md:195).
+
+F2: corrected — all static breakpoint and focused-layout minima work; see section 4. [design:34](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:34).
+
+F3: NOT corrected — the scope contradicts itself about whether the event stream is out of scope, and the cut test does not reject the second-cut event subscription or refetch-on-invalidation code; see J3.
+
+F4: NOT corrected — the stated props, callbacks and pixel units exist, but the contract omits the dock’s `groupResizeBehavior`, leaving live window-resize behavior different from the intended pixel-width persistence; see J1. [4.13.1 group types](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/components/group/types.ts), [4.13.1 panel types](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/components/panel/types.ts), [4.13.1 default-layout calculation](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/global/utils/calculateDefaultLayout.ts), [4.13.1 layout validation](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/global/utils/validatePanelGroupLayout.ts).
+
+F5: corrected — the sequential order is internally consistent; disabled native controls are excluded; the skip target is programmatically focusable; and every reason is keyboard-reachable. Radix’s trigger opens on focus and conditionally supplies the tooltip content through `aria-describedby`; an `aria-disabled`, non-`disabled` button remains focusable. [design:156](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:156), [design:168](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:168), [Radix Tooltip source for 1.2.16](https://github.com/radix-ui/primitives/blob/9aebdd4/packages/react/tooltip/src/tooltip.tsx).
+
+F6: corrected — every row reproduces and passes; the three changed tokens are used consistently and no other specified foreground/background pair is omitted. [design:105](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:105), [design:127](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:127), [design:172](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:172).
+
+F7: corrected — the component geometry, tokens, states, overflow and stacking are now sufficient for two builders to produce materially the same first screen; nothing conspicuous remains undefined. [design:172](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:172).
+
+F8: NOT corrected — the wording now distinguishes missing projections from missing records, but nearly every empty section still has no first action despite the master requiring one; see J2.
+
+F9: corrected — the router contract matches g1-s8’s “Serving” rule: exact reserved prefixes and descendants remain server-owned, while only other HTML-accepting paths receive the page. `isReserved` and the route/link exclusions are tested. [g1-s8, “Serving”:135](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s8-frontend-toolchain-design.md:135), [design:58](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:58), [design:232](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:232).
+
+F11: corrected — the separator keys match 4.13.1, and the constructed stylesheet is created on interaction but receives no cursor rule with `disableCursor`; no `<style>` element is introduced. [design:170](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:170), [4.13.1 key handling](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/global/event-handlers/onDocumentKeyDown.ts), [4.13.1 separator](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/components/separator/Separator.tsx), [4.13.1 stylesheet update](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/global/cursor/updateCursorStyle.ts), [4.13.1 cursor rule](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/global/cursor/getCursorStyle.ts).
+
+## 3. The contrast table
+
+Computed independently with WCAG relative luminance from the hexadecimal values in the token table. [design:107](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:107)
+
+| Pair, in documented order | Required | Light | Dark | Result |
+|---|---:|---|---|---|
+| `text` on `bg`, `surface`, `surface-2`, `surface-3` | 4.5 | 15.4242, 16.6694, 14.5062, 13.3744 | 14.6350, 13.6893, 12.7294, 11.4469 | Reproduces; pass |
+| `text-2` on the same four | 4.5 | 6.5723, 7.1029, 6.1811, 5.6989 | 8.1336, 7.6081, 7.0746, 6.3618 | Reproduces; pass |
+| `text-3` on the same four | 4.5 | 5.2138, 5.6347, 4.9035, 4.5209 | 5.9071, 5.5255, 5.1380, 4.6203 | Reproduces; pass |
+| `accent` on `bg`, `surface` | 4.5 | 4.9887, 5.3915 | 6.5684, 6.1440 | Reproduces; pass |
+| `accent` on `surface-2`, `surface-3` | 3.0 | 4.6918, 4.3258 | 5.7132, 5.1376 | Reproduces; pass |
+| `accent-fg` on `accent`, `accent-hover` | 4.5 | 5.3915, 6.6663 | 6.9029, 8.5029 | Reproduces; pass |
+| `marker-fg` on `marker-bg` | 4.5 | 6.3401 | 8.5579 | Reproduces; pass |
+| `marker` on `surface-2` | 3.0 | 3.1682 | 6.8087 | Reproduces; pass |
+| `danger` on `surface-2`, `surface` | 4.5 | 4.7327, 5.4384 | 4.6868, 5.0402 | Reproduces; pass |
+| `ok` on `surface-2` | 3.0 | 3.6942 | 5.9503 | Reproduces; pass |
+| `border-strong` on `bg`, `surface`, `surface-2` | 3.0 | 3.3961, 3.6703, 3.1940 | 3.9369, 3.6825, 3.4243 | Reproduces; pass |
+| `bg` on `text` | 4.5 | 15.4242 | 14.6350 | Reproduces; pass |
+
+No row fails or materially differs from the documented rounded result. Decorative borders, hidden skeletons and disabled controls are explicitly excluded rather than accidentally omitted. [design:129](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:129), [design:146](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:146).
+
+## 4. The layout arithmetic
+
+The contract’s static arithmetic is correct. [design:38](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:38)
+
+| Width and state | Independent calculation | Result |
+|---|---|---|
+| Docked absolute minimum, collapsed rail | `56 + 8 + 480 + 320 = 864` | Fits before the 960 wide breakpoint |
+| Docked default, collapsed rail | `56 + 8 + 480 + 400 = 944` | Fits at 960 |
+| 960, collapsed, default dock | Work `= 960 − 56 − 8 − 400 = 496`; effective dock maximum `= 960 − 56 − 8 − 480 = 416` | Both minima satisfied |
+| 1,127, collapsed, default dock | Work `= 663`; effective maximum `= 583` | Both minima satisfied |
+| 1,128, expanded, default dock | Work `= 1,128 − 240 − 8 − 400 = 480`; effective maximum `= 400` | Exact work minimum |
+| 1,128, collapsed choice | Work with default `= 664`; effective maximum `= 584` | Both minima satisfied |
+| 1,184, collapsed | `56 + 8 + 480 + 640 = 1,184` | Full 640 maximum fits |
+| 1,184, expanded | Effective maximum `= 1,184 − 240 − 8 − 480 = 456` | Work minimum retained |
+| 1,368, expanded | `240 + 8 + 480 + 640 = 1,368` | Full 640 maximum fits |
+| Focused at 960, collapsed | Minimum sum `56 + 480 + 400 = 936`; actual conversation room `504` | 24px spare |
+| Focused at 1,128, expanded | Minimum sum `240 + 480 + 400 = 1,120`; actual conversation room `488` | 8px spare |
+| Compact at 600 | `600 − 56 = 544` for the one-column workspace; dock sheet `min(400, 544) = 400` | Defined behavior fits |
+| Phone below 600 | Rail absent; focused view and dock are full-width one-column surfaces | No competing horizontal minima |
+
+The phrase “400 at 1,128” applies to the expanded-rail case; a remembered collapsed rail permits 584. The formula makes this recoverable and does not create a material ambiguity. Static minima pass; live resizing remains J1.
+
+## 5. Findings
+
+- J1; MATERIAL; State / dock width; the contract specifies the initial pixel size and pre-mount clamp but omits `groupResizeBehavior`, whose default is `preserve-relative-size`. Consequently, when an already-mounted wide window narrows, the dock shrinks proportionally rather than retaining its pixel width until the work panel reaches 480. From an expanded 1,368px viewport, the panels have 1,120px available and begin approximately `720 + 400`; narrowing to 1,128 produces approximately `560 + 320`, rather than the intended `480 + 400`. The pre-mount clamp cannot govern this mounted resize, and the walkthrough does not state the resize history, so its measurements can pass after reload while live behavior remains wrong. [design:199](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:199), [design:236](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:236), [4.13.1 panel types](https://github.com/bvaughn/react-resizable-panels/blob/4.13.1/lib/components/panel/types.ts). The human would see a remembered/default 400px dock collapse to 320px even though 400px still fits. Specify the dock as preserving pixel size, leave at least the work panel relative, state the narrowing priority, and exercise wide-to-wide live resizing.
+
+- J2; MATERIAL; Empty states; truthful wording has been supplied, but Overview, Project, Backlog, Fleet, Decisions, Application, Settings, Brain and Subject all specify `none` as their empty-state action; only Not Found offers an action. [design:88](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:88), [design:90](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:90). The master requires empty sections both to explain their contents and “offer an appropriate first action.” [master:437](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface-design.md:437). Settings has live controls outside its nested empty state, but that does not resolve the other dead ends. The human would enter nearly every destination and have no offered next step. Specify a usable first action for each empty section, or explicitly amend the master requirement.
+
+- J3; MATERIAL; Scope, cuts and verification; the scope names “refetch on invalidation” as second-cut work and then calls “the event stream” out of scope, while the change boundary explicitly includes an event-stream subscription. [design:15](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:15), [design:224](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:224). Behavior specifies only digest changes, and `cuts.test.ts` rejects only `/-/health`, `ConnectionIndicator`, and `Notice`, so an event subscription or invalidation-refetch implementation can enter the first cut without failing the promised guard. [design:216](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:216), [design:232](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:232), [design:253](/Users/wido/LocalStorage/GitHub/agentic-tools-ui/plans/user-interface/g1-s9-application-shell-design.md:253). A builder could either omit the second-cut subscription or accidentally ship it in the first cut while all named checks pass. Reconcile the scope language, add invalidation behavior and verification, and make the cut guard reject the subscription/refetch code.
+
+## 6. Not checked
+
+F10 was not reopened, as instructed. Round-one-confirmed areas outside the stated fixes were not reswept. No implementation, build, tests, browser rendering, scripts, MetaSystem binary, package installation, or running interface server were exercised.
