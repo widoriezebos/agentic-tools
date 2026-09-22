@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
 
 import { failureMessage, loadPane, type DocumentFile, type Pane as PanePayload, type Problem } from "./api";
+import { useReadingRow } from "./outline";
 import {
   briefingFor,
   documentGroups,
-  goalRail,
+  DOCUMENTS_TITLE,
+  kindTitle,
+  pageSections,
+  QUESTIONS_TITLE,
   type BookBriefing,
   type Briefing,
   type DesignRuns,
   type DocumentGroup,
-  type GoalRail,
-  type GoalRow,
+  type PageSection,
   type Row,
 } from "./pane";
 import "./reading.css";
@@ -19,19 +22,27 @@ import { Sheet, type Done, type Request } from "./Sheet";
 import { ACTIONS, type Kind } from "./writing";
 import { Pane } from "../panes/Pane";
 import { documentPath } from "../routes";
-import { useAbout } from "../shell/about";
+import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, Skeleton } from "../shell/controls";
 
 /**
  * Project: a briefing on what this project is, not a list of its files.
  *
- * The left column is the project and then the ledger's goals, which are the
- * project's one subdivision. The main column opens each kind in its own
- * words — the intent index's first paragraph, the doctrine's, a design's —
- * and only then offers the links: the books as tables of contents, the
- * decisions and designs as rows carrying their summaries, the designs grouped
- * so that what governs is open and what is finished is one collapsed run. The
- * right column is what is waiting and what was read.
+ * The left column is what is on this page — the books, the decisions, the
+ * designs, the open questions, the documents — as anchors, with the one being
+ * read marked as the human scrolls. The ledger's goals are not in it: a goal
+ * belongs to the Backlog, and a rail of six hundred of them said that the
+ * project's records were a subdivision of the ledger rather than the other way
+ * round. The main column opens each kind in its own words — the intent index's
+ * first paragraph, the doctrine's, a design's — and only then offers the
+ * links: the books as tables of contents, the decisions and designs as rows
+ * carrying their summaries, the designs grouped so that what governs is open
+ * and what is finished is one collapsed run. The right column is what is
+ * waiting and what was read.
+ *
+ * One goal of the ledger is the same page scoped to it, and it lives under
+ * Backlog: the same briefing, narrowed to the records whose Goals name it,
+ * opening with the ledger's own reason for the goal.
  *
  * Nothing is inferred from a filename, and nothing that is refused is hidden:
  * what the check verb would print is at the top, where a human can act on it.
@@ -42,9 +53,22 @@ type PaneState =
   | { state: "failed"; message: string }
   | { state: "read"; pane: PanePayload };
 
+/** The whole project: every record the checkout carries, by kind. */
 export function ProjectPane() {
+  return <Briefed goal={null} />;
+}
+
+/**
+ * One goal of the ledger, at /backlog/goal/:id. The payload is the project's
+ * own — the same read of /api/project — because what a goal page shows is the
+ * project's records, narrowed to the ones that say they are about this goal.
+ */
+export function GoalPane() {
   const parameters = useParams<{ id?: string }>();
-  const goal = parameters.id ?? null;
+  return <Briefed goal={parameters.id ?? ""} />;
+}
+
+function Briefed({ goal }: { goal: string | null }) {
   const [read, setRead] = useState<PaneState>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -70,7 +94,7 @@ export function ProjectPane() {
   };
 
   return (
-    <Pane title="Project">
+    <Pane title={goal === null ? "Project" : "Backlog"}>
       {read.state === "loading" && <LoadingCards />}
       {read.state === "failed" && <FailureCard message={read.message} onRetry={reload} />}
       {read.state === "read" && <Columns pane={read.pane} goal={goal} onReload={reload} />}
@@ -79,14 +103,23 @@ export function ProjectPane() {
 }
 
 function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | null; onReload: () => void }) {
-  const rail = useMemo(() => goalRail(pane), [pane]);
   const briefing = useMemo(() => briefingFor(pane, goal), [pane, goal]);
+  const sections = useMemo(() => pageSections(briefing), [briefing]);
   const groups = useMemo(() => documentGroups(pane.documents), [pane]);
   const [sheet, setSheet] = useState<Request | null>(null);
   const navigate = useNavigate();
 
   const where = goal ?? "Everything";
-  useAbout(`Project · ${where}`);
+  // The section this page belongs to, which is what the rail's heading names:
+  // the project's own records, or the ledger this goal is one of.
+  const section = goal === null ? "Project" : "Backlog";
+  const page = goal === null ? "Project" : `Backlog · ${goal}`;
+  const current = useReadingRow(sections, goal ?? "");
+
+  // What the drawer says this page is about: the page, and the section of it
+  // being read, from the same outline the rail marks.
+  const here = sections.find((row) => row.id === current);
+  useAbout(aboutLine(page, here?.title ?? ""));
 
   // A created record is opened, because writing it is the point of creating
   // it; anything else read the project again, so the section shows what the
@@ -130,126 +163,144 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
   };
 
   return (
-    <div className="ms-briefing">
-      <GoalsRail rail={rail} />
-      <div className="ms-briefing-main">
-        <p className="ms-project-read-at">
-          Read at {timeOf(pane.readAt)}
-          <Button onClick={onReload}>Reload</Button>
-        </p>
-        {pane.problems.length > 0 && <Problems problems={pane.problems} />}
-        {briefing.goal !== null && <GoalBlock briefing={briefing} />}
-        {briefing.books.map((book) => (
-          <BookBlock key={book.id} book={book} />
-        ))}
-        <Block id="decisions" title="Decisions" count={briefing.decisions.length} action={recordAct("decision")}>
-          {briefing.decisions.length === 0 ? (
-            <Nothing>{recordAct("decision")}</Nothing>
-          ) : (
-            <Rows rows={briefing.decisions} />
-          )}
-        </Block>
-        <Designs designs={briefing.designs} action={recordAct("design")} />
-        <Block id="questions" title="Open questions" count={briefing.questions.length} action={questionAct}>
-          {briefing.questions.length === 0 ? (
-            <Nothing>{questionAct}</Nothing>
-          ) : (
-            <Rows rows={briefing.questions} action={answer} />
-          )}
-        </Block>
-        {goal === null && <Documents groups={groups} total={pane.documents.length} />}
-      </div>
-      <aside className="ms-briefing-aside" aria-label="Beside the briefing">
-        <section className="ms-briefing-note">
-          <h2 className="ms-briefing-note-title">{goal === null ? "Contribute" : `Contribute to ${where}`}</h2>
-          <div className="ms-briefing-contribute">
-            {/* An intent chapter needs a title and nothing else; it joins the
-                index's reading order wherever it was written from. */}
-            <Button onClick={openRecord("intent")}>{ACTIONS.intent.offer}</Button>
-            <Button onClick={openRecord("decision")}>{ACTIONS.decision.offer}</Button>
-            <Button onClick={openRecord("design")}>{ACTIONS.design.offer}</Button>
-            <Button onClick={openQuestion}>Ask a question</Button>
-          </div>
-          <p className="ms-briefing-note-line">
-            Each writes a draft in its own home with a fresh id and{" "}
-            <span className="ms-mono">Status: draft</span>, and opens it. Nothing here accepts anything; status is
-            yours to change on the record.
-          </p>
-        </section>
-        <section className="ms-briefing-note">
-          <h2 className="ms-briefing-note-title">Needs you</h2>
-          {briefing.needsYou.questions === 0 && briefing.needsYou.designs === 0 ? (
-            <p className="ms-briefing-note-line">Nothing is waiting here.</p>
-          ) : (
-            <ul className="ms-briefing-note-list">
-              {briefing.needsYou.questions > 0 && (
-                <li>
-                  <a href="#questions">{count(briefing.needsYou.questions, "open question")}</a>
-                </li>
-              )}
-              {briefing.needsYou.designs > 0 && (
-                <li>
-                  <a href="#designs">{count(briefing.needsYou.designs, "design")} accepted, not yet built</a>
-                </li>
-              )}
-            </ul>
-          )}
-        </section>
-        <section className="ms-briefing-note">
-          <h2 className="ms-briefing-note-title">This checkout</h2>
-          <p className="ms-briefing-note-line">
-            {count(briefing.checkout.records, "record")} in {count(briefing.checkout.homes, "home")} ·{" "}
-            {count(briefing.checkout.goals, "ledger goal")} · {count(briefing.checkout.problems, "problem")}
-          </p>
-          <p className="ms-briefing-note-line">Read at {timeOf(pane.readAt)}</p>
-        </section>
-      </aside>
-      {sheet !== null && (
-        <Sheet
-          request={sheet}
-          goals={pane.goals}
-          onClose={() => {
-            setSheet(null);
-          }}
-          onDone={done}
-        />
+    <>
+      {goal !== null && (
+        <nav className="ms-reader-crumbs" aria-label="Breadcrumb">
+          <span className="ms-reader-crumb">
+            <NavLink to="/backlog">Backlog</NavLink>
+          </span>
+          <span className="ms-reader-crumb">
+            <span className="ms-mono" aria-current="page">
+              {goal}
+            </span>
+          </span>
+        </nav>
       )}
-    </div>
+      <div className="ms-briefing">
+        <PageRail heading={section} sections={sections} current={current} />
+        <div className="ms-briefing-main">
+          <p className="ms-project-read-at">
+            Read at {timeOf(pane.readAt)}
+            <Button onClick={onReload}>Reload</Button>
+          </p>
+          {pane.problems.length > 0 && <Problems problems={pane.problems} />}
+          {briefing.goal !== null && <GoalBlock briefing={briefing} />}
+          {briefing.books.map((book) => (
+            <BookBlock key={book.id} book={book} />
+          ))}
+          <Block
+            id="decisions"
+            title={kindTitle("decision")}
+            count={briefing.decisions.length}
+            action={recordAct("decision")}
+          >
+            {briefing.decisions.length === 0 ? (
+              <Nothing>{recordAct("decision")}</Nothing>
+            ) : (
+              <Rows rows={briefing.decisions} />
+            )}
+          </Block>
+          <Designs designs={briefing.designs} action={recordAct("design")} />
+          <Block id="questions" title={QUESTIONS_TITLE} count={briefing.questions.length} action={questionAct}>
+            {briefing.questions.length === 0 ? (
+              <Nothing>{questionAct}</Nothing>
+            ) : (
+              <Rows rows={briefing.questions} action={answer} />
+            )}
+          </Block>
+          {goal === null && <Documents groups={groups} total={pane.documents.length} />}
+        </div>
+        <aside className="ms-briefing-aside" aria-label="Beside the briefing">
+          <section className="ms-briefing-note">
+            <h2 className="ms-briefing-note-title">{goal === null ? "Contribute" : `Contribute to ${where}`}</h2>
+            <div className="ms-briefing-contribute">
+              {/* An intent chapter needs a title and nothing else; it joins the
+                  index's reading order wherever it was written from. */}
+              <Button onClick={openRecord("intent")}>{ACTIONS.intent.offer}</Button>
+              <Button onClick={openRecord("decision")}>{ACTIONS.decision.offer}</Button>
+              <Button onClick={openRecord("design")}>{ACTIONS.design.offer}</Button>
+              <Button onClick={openQuestion}>Ask a question</Button>
+            </div>
+            <p className="ms-briefing-note-line">
+              Each writes a draft in its own home with a fresh id and{" "}
+              <span className="ms-mono">Status: draft</span>, and opens it. Nothing here accepts anything; status is
+              yours to change on the record.
+            </p>
+          </section>
+          <section className="ms-briefing-note">
+            <h2 className="ms-briefing-note-title">Needs you</h2>
+            {briefing.needsYou.questions === 0 && briefing.needsYou.designs === 0 ? (
+              <p className="ms-briefing-note-line">Nothing is waiting here.</p>
+            ) : (
+              <ul className="ms-briefing-note-list">
+                {briefing.needsYou.questions > 0 && (
+                  <li>
+                    <a href="#questions">{count(briefing.needsYou.questions, "open question")}</a>
+                  </li>
+                )}
+                {briefing.needsYou.designs > 0 && (
+                  <li>
+                    <a href="#designs">{count(briefing.needsYou.designs, "design")} accepted, not yet built</a>
+                  </li>
+                )}
+              </ul>
+            )}
+          </section>
+          <section className="ms-briefing-note">
+            <h2 className="ms-briefing-note-title">This checkout</h2>
+            <p className="ms-briefing-note-line">
+              {count(briefing.checkout.records, "record")} in {count(briefing.checkout.homes, "home")} ·{" "}
+              {count(briefing.checkout.goals, "ledger goal")} · {count(briefing.checkout.problems, "problem")}
+            </p>
+            <p className="ms-briefing-note-line">Read at {timeOf(pane.readAt)}</p>
+          </section>
+        </aside>
+        {sheet !== null && (
+          <Sheet
+            request={sheet}
+            goals={pane.goals}
+            onClose={() => {
+              setSheet(null);
+            }}
+            onDone={done}
+          />
+        )}
+      </div>
+    </>
   );
 }
 
 /**
- * The left column: the project, then the goals. A goal still worked under is a
- * row with the state it stands in; the concluded ones are behind one summary
- * each, because a rail of six hundred closed goals is not a rail.
+ * The left column: what is on this page, and where in it the human is.
+ *
+ * Every row is an anchor to a section of this same page, so the rail moves the
+ * page rather than navigating; the heading names the page itself and is not a
+ * link, because a link to where you already are is a promise that nothing
+ * happens. The mark follows the reader the way the document reader's outline
+ * does, through the same observer and with no timer.
  */
-function GoalsRail({ rail }: { rail: GoalRail }) {
+function PageRail({
+  heading,
+  sections,
+  current,
+}: {
+  heading: string;
+  sections: PageSection[];
+  current: string | null;
+}) {
   return (
-    <nav className="ms-project-goals" aria-label="Goals">
-      <GoalLink row={rail.project} />
-      {rail.live.map((row) => (
-        <GoalLink key={row.id} row={row} />
-      ))}
-      {rail.runs.map((run) => (
-        <details key={run.state} className="ms-project-run">
-          <summary className="ms-project-run-summary">
-            {String(run.rows.length)} {run.state}
-          </summary>
-          {run.rows.map((row) => (
-            <GoalLink key={row.id} row={row} />
-          ))}
-        </details>
-      ))}
+    <nav className="ms-project-outline" aria-label="On this page">
+      <h2 className="ms-reader-rail-title">{heading}</h2>
+      <ul className="ms-reading-outline-list">
+        {sections.map((section) => (
+          <li key={section.id} className="ms-reading-outline-row">
+            <a href={`#${section.id}`} aria-current={section.id === current ? "location" : undefined}>
+              {section.title}
+            </a>
+          </li>
+        ))}
+      </ul>
     </nav>
-  );
-}
-
-function GoalLink({ row }: { row: GoalRow }) {
-  return (
-    <NavLink className="ms-project-goal" to={row.to} end>
-      <span className="ms-project-goal-name">{row.name}</span>
-      {row.state !== "" && <Chip>{row.state}</Chip>}
-    </NavLink>
   );
 }
 
@@ -328,16 +379,72 @@ function GoalBlock({ briefing }: { briefing: Briefing }) {
         <span className="ms-project-count">{goal.count}</span>
         <span className="ms-briefing-act">
           <NavLink className="ms-briefing-link" to="/backlog">
-            Open in Backlog →
+            Open in the Backlog list →
           </NavLink>
         </span>
       </div>
       {goal.found ? (
-        goal.intent !== "" && <p className="ms-briefing-lede">{goal.intent}</p>
+        goal.intent !== "" && <Lede intent={goal.intent} />
       ) : (
         <p className="ms-project-reason">The ledger carries no goal named {goal.id}.</p>
       )}
     </section>
+  );
+}
+
+/**
+ * The ledger's own reason for a goal, as it wrote it — which in this ledger is
+ * a paragraph and not a line.
+ *
+ * It opens at five lines and the whole of it is one button away. The clamp is
+ * CSS over the whole text rather than a shortened string, so find-in-page,
+ * selection and a screen reader reach every word either way, and expanding
+ * releases it where it stands rather than opening anything.
+ *
+ * Whether five lines are fewer than the whole is a question about the rendered
+ * text, so it is measured rather than guessed from the length of the string:
+ * the observer answers again when the column changes width or the font
+ * arrives, and nothing here is on a timer.
+ */
+function Lede({ intent }: { intent: string }) {
+  const [shown, setShown] = useState(false);
+  const [clipped, setClipped] = useState(false);
+  const paragraph = useRef<HTMLParagraphElement | null>(null);
+
+  useEffect(() => {
+    const element = paragraph.current;
+    if (shown || element === null || typeof ResizeObserver !== "function") {
+      return;
+    }
+    const measure = () => {
+      setClipped(element.scrollHeight > element.clientHeight + 1);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [intent, shown]);
+
+  return (
+    <>
+      <p ref={paragraph} className={shown ? "ms-briefing-lede" : "ms-briefing-lede ms-briefing-lede--clamped"}>
+        {intent}
+      </p>
+      {(clipped || shown) && (
+        <button
+          type="button"
+          className="ms-project-act ms-briefing-lede-more"
+          aria-expanded={shown}
+          onClick={() => {
+            setShown((open) => !open);
+          }}
+        >
+          {shown ? "Show less" : "Show all"}
+        </button>
+      )}
+    </>
   );
 }
 
@@ -386,7 +493,7 @@ function BookBlock({ book }: { book: BookBriefing }) {
 function Designs({ designs, action }: { designs: DesignRuns; action: ReactNode }) {
   const total = designs.open.length + designs.runs.reduce((sum, run) => sum + run.rows.length, 0);
   return (
-    <Block id="designs" title="Designs" count={total} action={action}>
+    <Block id="designs" title={kindTitle("design")} count={total} action={action}>
       {total === 0 && <Nothing>{action}</Nothing>}
       {designs.open.length > 0 && <Rows rows={designs.open} />}
       {designs.runs.map((run) => (
@@ -486,7 +593,7 @@ function RecordRow({ row, action }: { row: Row; action?: ReactNode }) {
  */
 function Documents({ groups, total }: { groups: DocumentGroup[]; total: number }) {
   return (
-    <Block id="documents" title="Documents" note={`${String(total)} files, no kind claimed`}>
+    <Block id="documents" title={DOCUMENTS_TITLE} note={`${String(total)} files, no kind claimed`}>
       {groups.length === 0 ? (
         <p className="ms-project-none">Nothing recorded yet.</p>
       ) : (

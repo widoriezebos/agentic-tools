@@ -34,15 +34,11 @@ export type Row = {
   path: string;
 };
 
-/** One row of the left column: the whole project, or one goal of the ledger. */
-export type GoalRow = { id: string | null; name: string; to: string; state: string };
-
 /**
- * The left column: the project first, then the goals the ledger carries. A
- * goal still worked under is a row of its own; a concluded one is inside the
- * run its state names, because a rail of six hundred closed goals is not a rail.
+ * One row of the left column: a section of this page, by the anchor the page
+ * renders it under.
  */
-export type GoalRail = { project: GoalRow; live: GoalRow[]; runs: { state: string; rows: GoalRow[] }[] };
+export type PageSection = { id: string; title: string };
 
 /** One collapsed run of the checkout's other documents. */
 export type DocumentGroup = { id: string; title: string; files: DocumentFile[] };
@@ -99,31 +95,39 @@ const BOOKS: readonly { id: string; kind: string; title: string; word: string }[
 /** The statuses a design is finished in, each collapsed into its own run. */
 export const FINISHED = ["done", "superseded"];
 
-/** The states a goal is still worked under. A goal in none of them is closed. */
-export const LIVE_STATES = ["queued", "approved", "claimed", "parked"];
-
-/** The states a goal ends in, each collapsed into its own run in the rail. */
-export const CONCLUDED_STATES = ["done", "abandoned"];
+/**
+ * What the two sections no kind names are called. The rail and the block read
+ * from the same word, so the anchor and the heading it lands on cannot drift
+ * apart; the other sections take their word from kindTitle.
+ */
+export const QUESTIONS_TITLE = "Open questions";
+export const DOCUMENTS_TITLE = "Documents";
 
 /**
- * The left column: the project itself, then the ledger's goals in the order
- * the payload carries them — live ones first, each in id order. The live ones
- * are rows; the concluded ones are collected into the run their state names.
+ * The left column: this page's own sections, in the order the page renders
+ * them, each naming the anchor it can be reached at.
+ *
+ * It is derived from the briefing rather than written twice, so a section the
+ * payload does not produce — a book on a goal page, the checkout's documents
+ * anywhere but the project — is absent from the outline for the same reason it
+ * is absent from the page. The ledger's goals are not here at all: a goal is
+ * the Backlog's, and the rail of a page is what is on that page.
  */
-export function goalRail(pane: Pane): GoalRail {
-  const rows = pane.goals.map((goal) => goalRow(goal));
-  return {
-    project: { id: null, name: "Project", to: "/project", state: "" },
-    live: rows.filter((row) => LIVE_STATES.includes(row.state)),
-    runs: CONCLUDED_STATES.map((state) => ({
-      state,
-      rows: rows.filter((row) => row.state === state),
-    })).filter((run) => run.rows.length > 0),
-  };
-}
-
-function goalRow(goal: Goal): GoalRow {
-  return { id: goal.id, name: nameOf(goal), to: goalPath(goal.id), state: goal.state };
+export function pageSections(briefing: Briefing): PageSection[] {
+  const rows: PageSection[] = [];
+  if (briefing.goal !== null) {
+    rows.push({ id: "goal", title: briefing.goal.title });
+  }
+  for (const book of briefing.books) {
+    rows.push({ id: book.id, title: book.title });
+  }
+  rows.push({ id: "decisions", title: kindTitle("decision") });
+  rows.push({ id: "designs", title: kindTitle("design") });
+  rows.push({ id: "questions", title: QUESTIONS_TITLE });
+  if (briefing.goal === null) {
+    rows.push({ id: "documents", title: DOCUMENTS_TITLE });
+  }
+  return rows;
 }
 
 /** True when a selection shows this record. A null id is everything. */

@@ -1,5 +1,8 @@
+import { NavLink } from "react-router";
+
 import type { Row } from "./api";
 import { dateAndTime } from "./format";
+import { goalPath } from "../routes";
 import { Chip } from "../shell/controls";
 
 /**
@@ -14,17 +17,18 @@ import { Chip } from "../shell/controls";
  * screen reader still reach every word, and opening the row releases it. The
  * next step is the record's own continuation and appears with it.
  *
- * Nothing here is a link and nothing selects, because this build has no goal
- * view to open yet; the identifier is text a human can copy. When goal detail
- * arrives the full record belongs there and this clamp stops being a
- * compromise.
+ * The identifier is the one link: it opens the goal's own page, which is where
+ * the records about this goal are read. Nothing else here navigates and
+ * nothing selects.
  */
 export function GoalRow({ row }: { row: Row }) {
   const reasons = reasonsOf(row);
   return (
     <article className="ms-goal-row">
       <div className="ms-goal-head">
-        <span className="ms-goal-id ms-mono">{row.ref.id}</span>
+        <NavLink className="ms-goal-id ms-mono" to={goalPath(row.ref.id)}>
+          {row.ref.id}
+        </NavLink>
         <Chip>{row.state}</Chip>
         {row.tier > 0 && <Chip>tier {row.tier}</Chip>}
         {rankChip(row)}

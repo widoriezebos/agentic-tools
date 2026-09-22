@@ -92,9 +92,9 @@ describe("sections", () => {
 
 describe("activeSection", () => {
   // This build registers one route per section, plus the document route nested
-  // beneath Project, so an address beneath any other section matches no route
-  // and is the not-found pane. The header and the rail have to agree with the
-  // router about that.
+  // beneath Project and the goal route nested beneath Backlog, so an address
+  // beneath any other section matches no route and is the not-found pane. The
+  // header and the rail have to agree with the router about that.
   it("matches a section exactly, and nothing beneath it", () => {
     expect(activeSection("/backlog")?.id).toBe("backlog");
     expect(activeSection("/backlog/")?.id).toBe("backlog");
@@ -109,10 +109,13 @@ describe("activeSection", () => {
     expect(activeSection("/project/nothing")).toBeNull();
   });
 
-  it("keeps the header on Project while a goal is selected", () => {
-    expect(activeSection("/project/goal")?.id).toBe("project");
-    expect(activeSection("/project/goal/watch-verb")?.id).toBe("project");
-    expect(sectionFor("/project/goal/watch-verb")?.id).toBe("project");
+  // A goal is the ledger's, and the ledger is the Backlog's: the goal page
+  // lights Backlog, and no address beneath Project names a goal any more.
+  it("keeps the header on Backlog while a goal is open", () => {
+    expect(activeSection("/backlog/goal")?.id).toBe("backlog");
+    expect(activeSection("/backlog/goal/watch-verb")?.id).toBe("backlog");
+    expect(sectionFor("/backlog/goal/watch-verb")?.id).toBe("backlog");
+    expect(activeSection("/project/goal/watch-verb")).toBeNull();
   });
 
   it("registers a nested route for every section that has one", () => {
@@ -150,9 +153,9 @@ describe("routeFor", () => {
   });
 
   it("names a goal by one encoded segment", () => {
-    expect(goalPath("watch-verb")).toBe("/project/goal/watch-verb");
-    expect(goalPath("a b")).toBe("/project/goal/a%20b");
-    expect(goalPath("a/b")).toBe("/project/goal/a%2Fb");
+    expect(goalPath("watch-verb")).toBe("/backlog/goal/watch-verb");
+    expect(goalPath("a b")).toBe("/backlog/goal/a%20b");
+    expect(goalPath("a/b")).toBe("/backlog/goal/a%2Fb");
     expect(isReserved(goalPath("watch-verb"))).toBe(false);
   });
 

@@ -14,7 +14,7 @@ import { Focused } from "../panes/Focused";
 import { NotFoundPane, SectionPane } from "../panes/sections";
 import { SettingsPane } from "../panes/Settings";
 import { DocumentPane } from "../project/DocumentPane";
-import { ProjectPane } from "../project/ProjectPane";
+import { GoalPane, ProjectPane } from "../project/ProjectPane";
 import { activeSection, HOME_PATH, projectSections } from "../routes";
 import { readDockOpen, readRailExpanded, readTheme, writeDockOpen, writeRailExpanded, writeTheme } from "../storage";
 import { applyTheme, effectiveTheme, systemIsDark, watchSystemTheme, type ThemePreference } from "../theme";
@@ -98,10 +98,11 @@ export function Shell() {
       <Route path="/" element={<Navigate to={HOME_PATH} replace />} />
       <Route path="/brain" element={<Focused wide={wide} />} />
       {/* Backlog reads the ledger and Project reads the repository; the other
-          four say which gate brings them. */}
+          four say which gate brings them. One goal is the ledger's, so its page
+          is Backlog's, however much of the project's own records it shows. */}
       <Route path="/backlog" element={<BacklogPane />} />
+      <Route path="/backlog/goal/:id" element={<GoalPane />} />
       <Route path="/project" element={<ProjectPane />} />
-      <Route path="/project/goal/:id" element={<ProjectPane />} />
       <Route path="/project/doc/*" element={<DocumentPane />} />
       {projectSections
         .filter((candidate) => candidate.id !== "backlog" && candidate.id !== "project")

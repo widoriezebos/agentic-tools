@@ -6,7 +6,7 @@ import {
   briefingFor,
   crumbsFor,
   documentGroups,
-  goalRail,
+  pageSections,
   railFor,
   ROOT_GROUP,
   shortID,
@@ -160,25 +160,39 @@ function documentOf(id: string, head: Partial<DocumentPayload["record"]> | null)
   };
 }
 
-describe("the goal rail", () => {
-  it("puts the project first and the goals still worked under as rows", () => {
-    const rail = goalRail(pane);
-
-    expect(rail.project).toEqual({ id: null, name: "Project", to: "/project", state: "" });
-    expect(rail.live).toEqual([
-      { id: "goal-ledger", name: "goal-ledger", to: "/project/goal/goal-ledger", state: "queued" },
-      { id: "interface-shell", name: "interface-shell", to: "/project/goal/interface-shell", state: "claimed" },
+describe("the left rail of the briefing", () => {
+  it("is this page's own sections, in the order the page renders them", () => {
+    expect(pageSections(briefingFor(pane, null))).toEqual([
+      { id: "intent", title: "Intent" },
+      { id: "doctrine", title: "Doctrine" },
+      { id: "decisions", title: "Decisions" },
+      { id: "designs", title: "Designs" },
+      { id: "questions", title: "Open questions" },
+      { id: "documents", title: "Documents" },
     ]);
   });
 
-  it("collapses the concluded goals into one run per state, and leaves out the empty runs", () => {
-    const rail = goalRail(pane);
-
-    expect(rail.runs.map((run) => [run.state, run.rows.map((row) => row.name)])).toEqual([
-      ["done", ["first-release"]],
-      ["abandoned", ["old-idea"]],
+  // A goal page opens with the goal itself and carries neither book, and the
+  // checkout's other Markdown is the project's rather than any goal's. The
+  // rail says exactly what that page has, or it would offer anchors to
+  // sections that are not on it.
+  it("names the goal first on a goal page, and no section that page does not render", () => {
+    expect(pageSections(briefingFor(pane, "interface-shell"))).toEqual([
+      { id: "goal", title: "interface-shell" },
+      { id: "decisions", title: "Decisions" },
+      { id: "designs", title: "Designs" },
+      { id: "questions", title: "Open questions" },
     ]);
-    expect(goalRail({ ...pane, goals: [] }).runs).toEqual([]);
+  });
+
+  // Every row is an anchor on the page, never an address: the ledger's goals
+  // are the Backlog's, and this rail navigates nowhere.
+  it("carries no route at all, on either page", () => {
+    for (const goal of [null, "interface-shell"]) {
+      for (const section of pageSections(briefingFor(pane, goal))) {
+        expect({ id: section.id, slash: section.id.includes("/") }).toEqual({ id: section.id, slash: false });
+      }
+    }
   });
 });
 
@@ -288,14 +302,14 @@ describe("a goal page", () => {
 describe("what a record is about", () => {
   it("names each goal as a link to its own page", () => {
     expect(aboutOf(pane, ["interface-shell", "goal-ledger"])).toEqual([
-      { id: "interface-shell", name: "interface-shell", to: "/project/goal/interface-shell", known: true },
-      { id: "goal-ledger", name: "goal-ledger", to: "/project/goal/goal-ledger", known: true },
+      { id: "interface-shell", name: "interface-shell", to: "/backlog/goal/interface-shell", known: true },
+      { id: "goal-ledger", name: "goal-ledger", to: "/backlog/goal/goal-ledger", known: true },
     ]);
   });
 
   it("still names a goal the ledger does not carry, and says it is not known", () => {
     expect(aboutOf(pane, ["nowhere"])).toEqual([
-      { id: "nowhere", name: "nowhere", to: "/project/goal/nowhere", known: false },
+      { id: "nowhere", name: "nowhere", to: "/backlog/goal/nowhere", known: false },
     ]);
   });
 

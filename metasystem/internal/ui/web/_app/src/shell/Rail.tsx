@@ -1,9 +1,9 @@
 import { PanelLeft } from "lucide-react";
-import { NavLink } from "react-router";
+import { NavLink, useLocation } from "react-router";
 
 import { Hint, IconButton } from "./controls";
 import { ThemeControl } from "./ThemeControl";
-import { projectSections, sections, type Section } from "../routes";
+import { activeSection, projectSections, sections, type Section } from "../routes";
 import type { ThemePreference } from "../theme";
 
 /**
@@ -90,8 +90,15 @@ function RailItem({
   onNavigate?: () => void;
 }) {
   const Icon = section.icon;
+  const location = useLocation();
+  // The rail marks the section the router is in, which is the section the
+  // header names: a view nested beneath a section — a document under Project,
+  // a goal under Backlog — lights its own row rather than none. Everywhere
+  // else the match is exact, so an address beneath a section that matches no
+  // route lights nothing, which is what the header says of it too.
+  const here = activeSection(location.pathname)?.id === section.id;
   const row = (
-    <NavLink className="ms-rail-item" to={section.path} end onClick={onNavigate}>
+    <NavLink className="ms-rail-item" to={section.path} end={!here} onClick={onNavigate}>
       <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
       <span className={expanded ? undefined : "ms-visually-hidden"}>{section.title}</span>
     </NavLink>

@@ -79,7 +79,7 @@ export function sectionFor(pathname: string): Section | null {
  */
 export const nestedRoutes: readonly { path: string; sectionId: string }[] = [
   { path: "/project/doc", sectionId: "project" },
-  { path: "/project/goal", sectionId: "project" },
+  { path: "/backlog/goal", sectionId: "backlog" },
 ];
 
 /**
@@ -124,8 +124,15 @@ export function routeFor(reference: Reference): string | null {
 /** Everything beneath this prefix is a document, named by the rest of it. */
 export const DOCUMENT_PREFIX = "/project/doc/";
 
-/** Everything beneath this prefix is one goal of the ledger. */
-export const GOAL_PREFIX = "/project/goal/";
+/**
+ * Everything beneath this prefix is one goal of the ledger.
+ *
+ * A goal belongs to the Backlog, which is where the ledger is read and worked:
+ * Project is the repository's own records, and a goal page under it made the
+ * ledger look like a second subdivision of the project's documents. The page
+ * is the same page; the address says which section owns it.
+ */
+export const GOAL_PREFIX = "/backlog/goal/";
 
 /** Where one goal is shown. The id is one segment, encoded as one. */
 export function goalPath(id: string): string {

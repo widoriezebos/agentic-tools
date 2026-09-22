@@ -105,11 +105,21 @@
   margin-bottom: 4px;
 }
 
+/*
+ * The identifier opens the goal's own page. It is the row's one link, so it
+ * carries the accent rather than an underline the whole list would wear.
+ */
 .ms-goal-id {
   font-size: 13px;
   line-height: 20px;
-  color: var(--ms-text);
+  color: var(--ms-accent);
+  text-decoration: none;
   overflow-wrap: anywhere;
+}
+
+.ms-goal-id:hover,
+.ms-goal-id:focus-visible {
+  text-decoration: underline;
 }
 
 /*

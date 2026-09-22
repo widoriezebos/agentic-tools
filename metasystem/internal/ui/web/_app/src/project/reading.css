@@ -169,18 +169,26 @@
   color: var(--ms-text-3);
 }
 
-.ms-reader-outline .ms-reading-outline-list {
+/*
+ * An outline of the page being read: the document's headings in the reader's
+ * third column, the briefing's sections in its first. The rule down the side
+ * is what the mark sits on, so both wear it.
+ */
+.ms-reader-outline .ms-reading-outline-list,
+.ms-project-outline .ms-reading-outline-list {
   border-left: 1px solid var(--ms-border);
 }
 
-.ms-reader-outline .ms-reading-outline-row a {
+.ms-reader-outline .ms-reading-outline-row a,
+.ms-project-outline .ms-reading-outline-row a {
   display: block;
   padding: 3px 8px;
   border-left: 2px solid transparent;
   margin-left: -1px;
 }
 
-.ms-reader-outline .ms-reading-outline-row a[aria-current="location"] {
+.ms-reader-outline .ms-reading-outline-row a[aria-current="location"],
+.ms-project-outline .ms-reading-outline-row a[aria-current="location"] {
   border-left-color: var(--ms-accent);
   background: var(--ms-surface-2);
   color: var(--ms-text);
@@ -623,6 +631,28 @@
 }
 
 /*
+ * A goal's intent is a paragraph the ledger wrote, and some of them run to a
+ * screen: five lines open, and Show all releases the rest in place. The clamp
+ * is over the whole text, so every word is still selected, found and read
+ * aloud. line-clamp is the standard property and -webkit-line-clamp is the one
+ * every engine ships today; both are written, with the box display the
+ * prefixed one needs, so the day the prefix goes the clamp stays.
+ */
+.ms-briefing-lede--clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
+  overflow: hidden;
+}
+
+/* The toggle is as wide as its words, on the line beneath the paragraph. */
+.ms-briefing-lede-more {
+  align-self: start;
+  text-align: left;
+}
+
+/*
  * A book reads as a table of contents, in two columns, because a reading order
  * of twenty chapters is a list to scan rather than a list to walk.
  */
@@ -653,53 +683,15 @@
 }
 
 /*
- * The goals: the project, then the live goals as rows, then one run per
- * concluded state. It scrolls on its own so that a ledger of hundreds of goals
- * never pushes the briefing off the screen.
+ * The left column: this page's own sections, as anchors. It stays with the
+ * reading rather than scrolling away, and it is the reader's outline in the
+ * other column of another page, so it is the reader's outline here too.
  */
-.ms-project-goals {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.ms-project-outline {
   position: sticky;
   top: 0;
-  max-height: 100vh;
-  overflow-y: auto;
-}
-
-.ms-project-goal {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--ms-text-2);
-  text-decoration: none;
-}
-
-.ms-project-goal:hover {
-  background: var(--ms-surface-2);
-  color: var(--ms-text);
-}
-
-.ms-project-goal[aria-current="page"] {
-  background: var(--ms-surface-3);
-  color: var(--ms-text);
-  font-weight: 500;
-}
-
-/*
- * A goal's id is one long word, and the rail is narrow: it wraps between words
- * where it can and breaks the word where it cannot, rather than widening the
- * column or being clipped to something two goals share.
- */
-.ms-project-goal-name {
-  flex: 1;
   min-width: 0;
-  overflow-wrap: anywhere;
+  align-self: start;
 }
 
 .ms-project-count {
@@ -1159,7 +1151,10 @@
     grid-column: auto;
   }
 
-  .ms-reader-rail {
+  /* Stacked, the outline is above the reading rather than beside it, so it
+     scrolls with the page instead of standing over it. */
+  .ms-reader-rail,
+  .ms-project-outline {
     position: static;
   }
 
@@ -1170,12 +1165,6 @@
 
 /* Phone: one column, and the path on a line of its own, still unwrapped. */
 @media (max-width: 599px) {
-  .ms-project-goals {
-    position: static;
-    max-height: none;
-    overflow-y: visible;
-  }
-
   .ms-project-row {
     grid-template-columns: minmax(0, 1fr) auto auto;
   }

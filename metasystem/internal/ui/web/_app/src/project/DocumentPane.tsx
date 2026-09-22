@@ -12,7 +12,7 @@ import {
   type Pane as PanePayload,
 } from "./api";
 import { Markdown } from "./Markdown";
-import { currentRow, outlineOf, type OutlineRow } from "./outline";
+import { outlineOf, useReadingRow, type OutlineRow } from "./outline";
 import { aboutOf, crumbsFor, kindTitle, railFor, shortID, type About, type SiblingRail } from "./pane";
 import { dateOf, ownership, timeOf } from "./ProjectPane";
 import "./reading.css";
@@ -554,52 +554,6 @@ function Outline({ rows, current }: { rows: OutlineRow[]; current: string | null
       </ul>
     </aside>
   );
-}
-
-/**
- * Which outline row the reader is in, observed rather than timed.
- *
- * An IntersectionObserver reports each heading as it enters and leaves, and
- * the row is decided from the set of headings on screen, in the document's own
- * order. There is no timer and no scroll handler: the browser tells this hook
- * when something changed, and nothing else wakes it.
- */
-function useReadingRow(rows: OutlineRow[], id: string): string | null {
-  const [current, setCurrent] = useState<string | null>(null);
-
-  useEffect(() => {
-    setCurrent(null);
-    if (rows.length === 0 || typeof IntersectionObserver !== "function") {
-      return;
-    }
-    const visible = new Set<string>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            visible.add(entry.target.id);
-          } else {
-            visible.delete(entry.target.id);
-          }
-        }
-        setCurrent((previous) => currentRow(rows, visible, previous));
-      },
-      // The bottom margin keeps the mark on the section being read rather than
-      // on whichever heading happens to be at the foot of the window.
-      { rootMargin: "0px 0px -60% 0px" },
-    );
-    for (const row of rows) {
-      const heading = globalThis.document.getElementById(row.id);
-      if (heading !== null) {
-        observer.observe(heading);
-      }
-    }
-    return () => {
-      observer.disconnect();
-    };
-  }, [rows, id]);
-
-  return current;
 }
 
 /**
