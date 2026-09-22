@@ -41,6 +41,14 @@ func seed(t *testing.T, roots Roots) string {
 	}
 
 	plant(t, roots.Checkout, state+"docs/architecture.md", "# The engine\n\nProse, and no head, so no kind is claimed.\n")
+	plant(t, roots.Checkout, state+"plans/designs/summaries.md",
+		record("A design that says what it is", "design", "design-summary", "draft", "billing")+
+			"\n## Outcome\n\n"+
+			"| a | b |\n| --- | --- |\n| 1 | 2 |\n\n"+
+			"- a list, which is not prose\n\n"+
+			"The **first** paragraph, with a [link](./ledger.md) and `code`, is the summary.\n"+
+			"It runs to the second line.\n\n"+
+			"A second paragraph nobody reads.\n")
 	plant(t, roots.Checkout, state+"docs/intent/index.md",
 		record("The project's intent", "intent", "intent-index", "accepted", "project")+
 			"\n## Areas\n"+
@@ -103,13 +111,19 @@ func TestPaneCarriesWhatTheRecordsDeclare(t *testing.T) {
 	})
 	testutil.Expect(t, "every record, in path order", recordIDs(pane.Records), []string{
 		"decision-one-binary", "doctrine-budgets", "doctrine-events", "doctrine-index",
-		"intent-index", "design-ledger", "design-reading", "design-interface",
+		"intent-index", "design-ledger", "design-reading", "design-summary", "design-interface",
 	})
 	testutil.Expect(t, "one design's row", recordWithID(pane.Records, "design-reading"), Record{
 		Kind: "design", ID: "design-reading", Status: "draft", Areas: []string{"security"},
 		Title: "The reading pane", Path: "metasystem/plans/designs/pane/reading.md",
 		Home: "metasystem/plans/designs",
 	})
+	// A record's own first words travel with it: the first prose paragraph
+	// after the head, as plain text, whatever the body opens with.
+	testutil.Expect(t, "a record's summary", recordWithID(pane.Records, "design-summary").Summary,
+		"The first paragraph, with a link and code, is the summary. It runs to the second line.")
+	testutil.Expect(t, "a record whose body carries no prose has none",
+		recordWithID(pane.Records, "design-reading").Summary, "")
 	testutil.Expect(t, "the second design home", recordWithID(pane.Records, "design-interface").Home, "plans/designs")
 	testutil.Expect(t, "nothing is refused", pane.Problems, []Problem{})
 }
@@ -128,8 +142,12 @@ func TestPaneCarriesEachBookInReadingOrder(t *testing.T) {
 	testutil.Require(t, "read the pane", err, nil)
 	testutil.Require(t, "intent has an index", pane.Intent.Index != nil, true)
 	testutil.Expect(t, "the intent index", pane.Intent.Index.ID, "intent-index")
+	// A chapter carries its own first words too: a bound document is read for
+	// the paragraph after its title, and a record chapter borrows the summary
+	// already read from the record.
 	testutil.Expect(t, "the intent chapters", pane.Intent.Chapters, []Chapter{
-		{Path: "metasystem/docs/architecture.md", Title: "The engine"},
+		{Path: "metasystem/docs/architecture.md", Title: "The engine",
+			Summary: "Prose, and no head, so no kind is claimed."},
 	})
 	testutil.Require(t, "doctrine has an index", pane.Doctrine.Index != nil, true)
 	testutil.Expect(t, "the doctrine index", pane.Doctrine.Index.Title, "The project's doctrine")
@@ -137,6 +155,7 @@ func TestPaneCarriesEachBookInReadingOrder(t *testing.T) {
 		{ID: "doctrine-events", Title: "Events are the source of truth"},
 		{ID: "doctrine-budgets", Title: "Every run is budgeted"},
 	})
+	testutil.Expect(t, "the schema the summaries arrived in", pane.SchemaVersion, 3)
 	testutil.Expect(t, "the register", pane.Questions, []Question{
 		{ID: "Q-1", Opened: "2026-09-22", Question: "Where does an adopted project's intent live?",
 			Areas: []string{"project"}, Status: "open"},
@@ -224,7 +243,7 @@ func TestPaneReadsTheAdoptedLayoutsOneDesignHome(t *testing.T) {
 	testutil.Require(t, "read the pane", err, nil)
 	testutil.Expect(t, "every design is in the one home", homesOf(pane.Records, "design"), []string{"plans/designs"})
 	testutil.Expect(t, "the designs", recordTitles(pane.Records, "design"),
-		[]string{"The interface", "The ledger", "The reading pane"})
+		[]string{"The interface", "The ledger", "The reading pane", "A design that says what it is"})
 	testutil.Expect(t, "nothing is refused", pane.Problems, []Problem{})
 }
 

@@ -39,7 +39,18 @@ describe("sections", () => {
     ]);
   });
 
-  it("put the six project sections between the Brain and Settings", () => {
+  // The engine keeps the brain verb family, internal/brain and the role
+  // packet; the interface stopped calling the collaborator a brain. So the id
+  // and the path stay, and only the word a human reads changed.
+  it("name the collaborator the Project Partner, over the id and path the kit keeps", () => {
+    const partner = sections[0];
+
+    expect(partner.title).toBe("Project Partner");
+    expect({ id: partner.id, path: partner.path }).toEqual({ id: "brain", path: "/brain" });
+    expect(sections.map((section) => section.title)).not.toContain("Brain");
+  });
+
+  it("put the six project sections between the Project Partner and Settings", () => {
     expect(projectSections.map((section) => section.id)).toEqual([
       "overview",
       "project",

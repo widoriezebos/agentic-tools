@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Heading } from "./api";
-import { DEEPEST_LEVEL, FEWEST_ROWS, outlineOf } from "./outline";
+import { currentRow, DEEPEST_LEVEL, FEWEST_ROWS, outlineOf } from "./outline";
 
 function heading(level: number, text: string): Heading {
   return { level, id: text.toLowerCase().replaceAll(" ", "-"), text };
@@ -47,5 +47,29 @@ describe("the contents of a document", () => {
     const outline = outlineOf([heading(1, "Title"), { level: 2, id: "", text: "" }, heading(2, "First"), heading(2, "Second")]);
 
     expect(outline.map((row) => row.text)).toEqual(["Title", "First", "Second"]);
+  });
+});
+
+describe("the row the reader is in", () => {
+  const outline = outlineOf([heading(1, "Title"), heading(2, "First"), heading(2, "Second"), heading(2, "Third")]);
+
+  it("is the first heading on screen, in the document's order", () => {
+    // An observer reports whatever changed, in whatever order; the document's
+    // order is what decides which of them the reader is in.
+    expect(currentRow(outline, new Set(["third", "second"]), null)).toBe("second");
+    expect(currentRow(outline, new Set(["title"]), null)).toBe("title");
+  });
+
+  it("keeps the mark inside a section longer than the window", () => {
+    expect(currentRow(outline, new Set(), "second")).toBe("second");
+  });
+
+  it("marks nothing before anything has been seen", () => {
+    expect(currentRow(outline, new Set(), null)).toBeNull();
+    expect(currentRow([], new Set(["first"]), null)).toBeNull();
+  });
+
+  it("forgets a row that is not in this document's outline", () => {
+    expect(currentRow(outline, new Set(), "a-heading-of-another-document")).toBeNull();
   });
 });

@@ -343,6 +343,136 @@ func TestReadSwappedBeforeOpen(t *testing.T) {
 	}
 }
 
+// A record is read as facts, not as a bullet list: the head comes back as
+// data, the head lines are gone from the blocks, and the title above them
+// stays where it was so the outline still lands on it.
+func TestReadCarriesARecordsHeadAsData(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	plant(t, roots.Checkout, "metasystem/plans/designs/headed.md",
+		record("A headed design", "design", "design-headed", "accepted", "billing project",
+			"- Cites: design-ledger",
+			"- Affects: decision-one-binary",
+			"- Governs: g1-s22",
+			"- Supersedes: design-reading",
+			"- By: wido")+
+			"\nThe body opens with prose.\n\n- and then a list, which stays\n")
+
+	document, err := Read(roots, "metasystem/plans/designs/headed.md", readAt)
+
+	testutil.Require(t, "read", err, nil)
+	testutil.Require(t, "the head is data", document.Record != nil, true)
+	testutil.Expect(t, "the head", *document.Record, Head{
+		Kind: "design", ID: "design-headed", Status: "accepted",
+		Areas:      []string{"billing", "project"},
+		Cites:      []string{"design-ledger"},
+		Affects:    []string{"decision-one-binary"},
+		Governs:    []string{"g1-s22"},
+		Supersedes: []string{"design-reading"},
+		By:         []string{"wido"},
+	})
+	testutil.Expect(t, "the blocks after the title", blockTypes(document.Blocks),
+		[]string{"heading", "paragraph", "list"})
+	testutil.Expect(t, "the title is still a heading with its id", document.Headings,
+		[]markdown.Heading{{Level: 1, ID: "a-headed-design", Text: "A headed design"}})
+}
+
+// A document that declares no head is answered exactly as it was before: no
+// record, no relationships, and every block it has.
+func TestReadLeavesADocumentThatIsNotARecordAlone(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	plant(t, roots.Checkout, "metasystem/plans/designs/notes.md", "# Notes\n\n- one\n- two\n")
+	plant(t, roots.Checkout, "docs/elsewhere.md", "# Elsewhere\n\n- one\n- two\n")
+
+	for _, id := range []string{"metasystem/plans/designs/notes.md", "docs/elsewhere.md"} {
+		document, err := Read(roots, id, readAt)
+
+		testutil.Require(t, "read "+id, err, nil)
+		testutil.Expect(t, "no record at "+id, document.Record == nil, true)
+		testutil.Expect(t, "nothing references "+id, document.ReferencedBy, []Link{})
+		testutil.Expect(t, "nothing supersedes "+id, document.SupersededBy, []Link{})
+		testutil.Expect(t, "every block at "+id, blockTypes(document.Blocks), []string{"heading", "list"})
+	}
+}
+
+// The half of a reference a record cannot declare itself: who names it, once
+// each, and which of them replaced it.
+func TestReadCarriesWhatReferencesARecord(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	plant(t, roots.Checkout, "metasystem/plans/designs/successor.md",
+		record("The successor", "design", "design-successor", "accepted", "billing",
+			"- Supersedes: design-ledger",
+			"- Cites: design-ledger")+"\nIt replaces the ledger design.\n")
+	plant(t, roots.Checkout, "metasystem/plans/designs/reader.md",
+		record("A reader", "design", "design-reader", "draft", "billing",
+			"- Cites: design-ledger")+"\nIt rests on the ledger design.\n")
+
+	document, err := Read(roots, "metasystem/plans/designs/ledger.md", readAt)
+
+	testutil.Require(t, "read", err, nil)
+	testutil.Expect(t, "referenced by, once each, in path order", document.ReferencedBy, []Link{
+		{ID: "design-reader", Title: "A reader", Path: "metasystem/plans/designs/reader.md", Kind: "design"},
+		{ID: "design-successor", Title: "The successor", Path: "metasystem/plans/designs/successor.md", Kind: "design"},
+	})
+	testutil.Expect(t, "superseded by the one that replaced it", document.SupersededBy, []Link{
+		{ID: "design-successor", Title: "The successor", Path: "metasystem/plans/designs/successor.md", Kind: "design"},
+	})
+}
+
+// A blank line between two bullet lists does not end a list: a record whose
+// body opens with one has a single list block holding the head and the body
+// together. The head's own lines come off the front of it; the body's stay.
+func TestReadKeepsABodyThatOpensWithAList(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	plant(t, roots.Checkout, "metasystem/plans/designs/listed.md",
+		record("A design whose body is a list", "design", "design-listed", "draft", "billing")+
+			"\n- the first thing the body says\n- the second\n")
+
+	document, err := Read(roots, "metasystem/plans/designs/listed.md", readAt)
+
+	testutil.Require(t, "read", err, nil)
+	testutil.Require(t, "it is a record", document.Record != nil, true)
+	testutil.Expect(t, "the title and what is left of the list", blockTypes(document.Blocks),
+		[]string{"heading", "list"})
+	testutil.Expect(t, "the head's four lines are gone", itemTexts(document.Blocks[1]),
+		[]string{"the first thing the body says", "the second"})
+}
+
+// itemTexts is the first line of each item of a list block, flattened enough
+// for a test to read what survived.
+func itemTexts(block markdown.Block) []string {
+	texts := []string{}
+	for _, item := range block.Items {
+		line := ""
+		for _, inner := range item.Blocks {
+			for _, inline := range inner.Inlines {
+				line += inline.Text
+			}
+		}
+		texts = append(texts, line)
+	}
+	return texts
+}
+
+func blockTypes(blocks []markdown.Block) []string {
+	types := []string{}
+	for _, block := range blocks {
+		types = append(types, block.Type)
+	}
+	return types
+}
+
 // The seam is the only difference between read and Read: without a hook they
 // answer the same document.
 func TestReadWithoutAHookIsRead(t *testing.T) {

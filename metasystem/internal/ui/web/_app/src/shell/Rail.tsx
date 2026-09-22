@@ -7,7 +7,7 @@ import { projectSections, sections, type Section } from "../routes";
 import type { ThemePreference } from "../theme";
 
 /**
- * The rail: the Brain above the six project sections, Settings at the foot,
+ * The rail: the Project Partner above the six project sections, Settings at the foot,
  * and the theme control beneath it.
  *
  * Collapsed, a row keeps its label in the DOM and hides it from the screen, so

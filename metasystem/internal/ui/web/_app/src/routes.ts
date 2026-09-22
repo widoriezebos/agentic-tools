@@ -21,9 +21,16 @@ export type Section = {
   icon: SectionIcon;
 };
 
-/** Rail order: the Brain, then the six project sections, then Settings. */
+/**
+ * Rail order: the Project Partner, then the six project sections, then
+ * Settings.
+ *
+ * The id and the path stay `brain`: they are the engine's names for the seat's
+ * process, and the kit keeps them until a deliberate rename. The title is what
+ * a human reads, and the interface stopped calling the collaborator a brain.
+ */
 export const sections: readonly Section[] = [
-  { id: "brain", path: "/brain", title: "Brain", icon: MessageSquare },
+  { id: "brain", path: "/brain", title: "Project Partner", icon: MessageSquare },
   { id: "overview", path: "/overview", title: "Overview", icon: LayoutDashboard },
   { id: "project", path: "/project", title: "Project", icon: BookOpen },
   { id: "backlog", path: "/backlog", title: "Backlog", icon: SquareKanban },

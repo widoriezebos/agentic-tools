@@ -27,8 +27,11 @@ func describedPane() project.Pane {
 		Records: []project.Record{{
 			Kind: "design", ID: "01K5", Status: "accepted", Areas: []string{"interface"},
 			Title: "The pane", Path: "plans/designs/pane.md", Home: "plans/designs",
+			Summary: "The pane over the resolver, and the reader beside it.",
 		}},
-		Intent:    project.Book{Chapters: []project.Chapter{}},
+		Intent: project.Book{Chapters: []project.Chapter{
+			{Path: "docs/paper/01-the-shift.md", Title: "1. The Shift", Summary: "Software is no longer written by hand."},
+		}},
 		Doctrine:  project.Book{Chapters: []project.Chapter{}},
 		Questions: []project.Question{},
 		Problems:  []project.Problem{},
@@ -41,8 +44,17 @@ func describedDocument() project.Document {
 		Kind: "document", ID: "docs/a.md", Title: "A", Revision: "blob:0123456789abcdef",
 		Owner: "app-owned", Path: "/work/repository/docs/a.md", Bytes: 4,
 		ModifiedAt: "2026-09-21T09:00:00Z", ReadAt: "2026-09-21T10:11:12Z", State: "readable",
-		Headings: []markdown.Heading{{Level: 1, ID: "a", Text: "A"}},
-		Blocks:   []markdown.Block{{Type: "heading", Level: 1, ID: "a"}},
+		Record: &project.Head{
+			Kind: "design", ID: "01K5", Status: "accepted", Areas: []string{"interface"},
+			Cites: []string{"01K4"}, Affects: []string{}, Governs: []string{},
+			Supersedes: []string{}, By: []string{},
+		},
+		ReferencedBy: []project.Link{
+			{ID: "01K6", Title: "The reader", Path: "plans/designs/reader.md", Kind: "design"},
+		},
+		SupersededBy: []project.Link{},
+		Headings:     []markdown.Heading{{Level: 1, ID: "a", Text: "A"}},
+		Blocks:       []markdown.Block{{Type: "heading", Level: 1, ID: "a"}},
 	}
 }
 
@@ -65,6 +77,13 @@ func TestProjectPayload(t *testing.T) {
 	var payload project.Pane
 	testutil.Require(t, "decode the response", json.Unmarshal(response.Body.Bytes(), &payload), nil)
 	testutil.Expect(t, "payload", payload, describedPane())
+	// The summaries are the third schema's whole addition, so they are read
+	// back off the wire rather than assumed to have travelled with the rest.
+	testutil.Expect(t, "the schema version", payload.SchemaVersion, 3)
+	testutil.Expect(t, "a record's summary", payload.Records[0].Summary,
+		"The pane over the resolver, and the reader beside it.")
+	testutil.Expect(t, "a chapter's summary", payload.Intent.Chapters[0].Summary,
+		"Software is no longer written by hand.")
 
 	second := request(t, served, http.MethodGet, "/api/project", "127.0.0.1:7878", nil)
 
@@ -90,6 +109,9 @@ func TestDocumentPayload(t *testing.T) {
 	var payload project.Document
 	testutil.Require(t, "decode the response", json.Unmarshal(response.Body.Bytes(), &payload), nil)
 	testutil.Expect(t, "payload", payload, describedDocument())
+	testutil.Require(t, "the head crossed the wire", payload.Record != nil, true)
+	testutil.Expect(t, "the head's status", payload.Record.Status, "accepted")
+	testutil.Expect(t, "what references it", payload.ReferencedBy[0].Title, "The reader")
 }
 
 // The route hands the reader the id the caller wrote, cleaning nothing: the

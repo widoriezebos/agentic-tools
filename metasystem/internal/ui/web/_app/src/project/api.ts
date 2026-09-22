@@ -16,7 +16,11 @@ export type DocumentState = "readable" | "unreadable" | "too-large";
 /** One slug the intent index declares, with the name it reads by. */
 export type Area = { slug: string; name: string };
 
-/** One declared record: what it says it is, and where it lives. */
+/**
+ * One declared record: what it says it is, where it lives, and its own first
+ * words. The summary is a convention rather than a key, so a record that has
+ * none carries the empty string.
+ */
 export type ProjectRecord = {
   kind: string;
   id: string;
@@ -25,13 +29,14 @@ export type ProjectRecord = {
   title: string;
   path: string;
   home: string;
+  summary: string;
 };
 
 /**
  * One line of a book's reading order: a record named by id, or a document
  * bound by its checkout-relative path. Exactly one of the two is carried.
  */
-export type Chapter = { id?: string; path?: string; title: string };
+export type Chapter = { id?: string; path?: string; title: string; summary: string };
 
 /** A book: its index, which is a record of the kind, and its reading order. */
 export type Book = { index: ProjectRecord | null; chapters: Chapter[] };
@@ -91,6 +96,25 @@ export type Block = {
   items?: Item[];
 };
 
+/**
+ * What a record declares about itself, as data rather than as the bullet list
+ * at the top of its text. A document that declares no head carries none.
+ */
+export type RecordHead = {
+  kind: string;
+  id: string;
+  status: string;
+  areas: string[];
+  cites: string[];
+  affects: string[];
+  governs: string[];
+  supersedes: string[];
+  by: string[];
+};
+
+/** One record on the other end of a relationship: enough to show and to open. */
+export type Link = { id: string; title: string; path: string; kind: string };
+
 export type DocumentPayload = {
   kind: string;
   id: string;
@@ -103,6 +127,9 @@ export type DocumentPayload = {
   readAt: string;
   state: DocumentState;
   reason: string;
+  record: RecordHead | null;
+  referencedBy: Link[];
+  supersededBy: Link[];
   headings: Heading[];
   blocks: Block[];
 };

@@ -53,7 +53,7 @@ export function Panels({ railWidth, work, dock }: { railWidth: number; work: Rea
       >
         {work}
       </Panel>
-      <Separator className="ms-separator" aria-label="Resize the Brain dock" />
+      <Separator className="ms-separator" aria-label="Resize the Project Partner dock" />
       <Panel
         id="dock"
         className="ms-panel-dock"

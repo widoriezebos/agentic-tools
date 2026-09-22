@@ -48,8 +48,8 @@ export function Header({
       </div>
       <div className="ms-header-right">
         <IconButton
-          label="Brain dock"
-          hint={focused ? "The conversation is already in focus" : "Brain dock"}
+          label="Project Partner dock"
+          hint={focused ? "The conversation is already in focus" : "Project Partner dock"}
           aria-expanded={dockOpen}
           aria-controls="brain-dock"
           aria-disabled={focused ? true : undefined}

@@ -18,7 +18,7 @@ export function Focused({ wide }: { wide: boolean }) {
     return (
       <div className="ms-focused">
         <main id="content" className="ms-focused-conversation" tabIndex={-1}>
-          <h1 className="ms-visually-hidden">Brain</h1>
+          <h1 className="ms-visually-hidden">Project Partner</h1>
           <Conversation />
         </main>
         <aside className="ms-subject-panel" aria-label="Subject">
@@ -30,7 +30,7 @@ export function Focused({ wide }: { wide: boolean }) {
 
   return (
     <main id="content" className="ms-focused-conversation ms-focused--stacked" tabIndex={-1}>
-      <h1 className="ms-visually-hidden">Brain</h1>
+      <h1 className="ms-visually-hidden">Project Partner</h1>
       <FocusSwitch view={view} onChange={setView} />
       {view === "conversation" ? <Conversation /> : <SubjectStatement />}
     </main>

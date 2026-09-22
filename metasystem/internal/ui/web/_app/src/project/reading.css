@@ -8,7 +8,237 @@
 
 .ms-reading {
   display: block;
+  min-width: 0;
   max-width: 720px;
+}
+
+/*
+ * The reader: the siblings, the column, the outline. The column keeps its
+ * measure and the rails take what is left of the width; below the rail widths
+ * they fall away, the column first and last.
+ */
+.ms-reader {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 720px) 220px;
+  gap: 32px;
+  align-items: start;
+}
+
+.ms-reader-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-reader-crumb::after {
+  content: "\203a";
+  margin-left: 6px;
+  color: var(--ms-text-3);
+}
+
+.ms-reader-crumb:last-child::after {
+  content: none;
+}
+
+.ms-reader-crumb a {
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-reader-crumb a:hover,
+.ms-reader-crumb a:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-reader-crumb [aria-current="page"] {
+  color: var(--ms-text);
+  font-weight: 500;
+}
+
+.ms-reader-rail,
+.ms-reader-outline {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+  align-self: start;
+}
+
+.ms-reader-rail-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-reader-rail-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-reader-rail-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  text-decoration: none;
+}
+
+.ms-reader-rail-row:hover {
+  background: var(--ms-surface-2);
+  color: var(--ms-text);
+}
+
+.ms-reader-rail-row[aria-current="page"] {
+  background: var(--ms-surface-3);
+  color: var(--ms-text);
+  font-weight: 500;
+}
+
+.ms-reader-rail-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-reader-rail-note {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  white-space: nowrap;
+}
+
+.ms-reader-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ms-border);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ms-reader-step {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-reader-step:hover,
+.ms-reader-step:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-reader-step-none {
+  color: var(--ms-text-3);
+}
+
+.ms-reader-outline .ms-reading-outline-list {
+  border-left: 1px solid var(--ms-border);
+}
+
+.ms-reader-outline .ms-reading-outline-row a {
+  display: block;
+  padding: 3px 8px;
+  border-left: 2px solid transparent;
+  margin-left: -1px;
+}
+
+.ms-reader-outline .ms-reading-outline-row a[aria-current="location"] {
+  border-left-color: var(--ms-accent);
+  background: var(--ms-surface-2);
+  color: var(--ms-text);
+}
+
+/* ---------------------------------------------------- a record's facts -- */
+
+.ms-facts-strip {
+  margin: 0 0 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ms-border);
+}
+
+.ms-facts-eyebrow {
+  margin: 0 0 4px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-facts-strip .ms-md-h1 {
+  margin: 0 0 12px;
+}
+
+.ms-facts-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-facts-path {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-facts-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.ms-facts-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ms-facts-link-label {
+  font-weight: 600;
+  color: var(--ms-text-3);
+}
+
+.ms-facts-link-row a {
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-facts-link-row a:hover,
+.ms-facts-link-row a:focus-visible {
+  text-decoration: underline;
 }
 
 .ms-reading-back {
@@ -49,12 +279,6 @@
   line-height: 16px;
   color: var(--ms-text-3);
   overflow-wrap: anywhere;
-}
-
-.ms-reading-outline {
-  margin: 0 0 32px;
-  padding: 12px 16px;
-  border-left: 1px solid var(--ms-border);
 }
 
 .ms-reading-outline-list {
@@ -262,15 +486,152 @@
 /* --------------------------------------------------------- the Project pane -- */
 
 /*
- * Two columns: the area tree, then the selection. Below the phone width they
- * stack, the tree first, because choosing the area is the first act.
+ * Three columns: the area tree, the briefing, and what is waiting beside it.
+ * Below the rail widths they stack, the tree first, because choosing the area
+ * is the first act.
  */
-.ms-project {
+.ms-briefing {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 24px;
+  grid-template-columns: 220px minmax(0, 76ch) 240px;
+  gap: 32px;
   align-items: start;
-  max-width: 1100px;
+}
+
+/*
+ * The main column keeps its measure whatever the width: 76 characters is what
+ * a briefing is read at, and a column wider than that is a column nobody
+ * finishes a line of.
+ */
+.ms-briefing-main {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+  max-width: 76ch;
+}
+
+.ms-briefing-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  position: sticky;
+  top: 0;
+  align-self: start;
+  padding-left: 20px;
+  border-left: 1px solid var(--ms-border);
+}
+
+.ms-briefing-note-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-briefing-note-line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-briefing-note-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.ms-briefing-note-list a {
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-briefing-note-list a:hover,
+.ms-briefing-note-list a:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-briefing-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ms-briefing-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ms-briefing-title {
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-briefing-act {
+  margin-left: auto;
+}
+
+.ms-briefing-link {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-briefing-link:hover,
+.ms-briefing-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* The book's own first paragraph, which is what the book says it is. */
+.ms-briefing-lede {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ms-text-2);
+}
+
+/*
+ * A book reads as a table of contents, in two columns, because a reading order
+ * of twenty chapters is a list to scan rather than a list to walk.
+ */
+.ms-briefing-toc {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  columns: 2;
+  column-gap: 28px;
+}
+
+.ms-briefing-toc-row {
+  break-inside: avoid;
+  padding: 3px 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-briefing-toc-row a {
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-briefing-toc-row a:hover,
+.ms-briefing-toc-row a:focus-visible {
+  text-decoration: underline;
 }
 
 .ms-project-areas {
@@ -324,19 +685,8 @@
   margin-left: 8px;
 }
 
-.ms-project-main {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-
-.ms-project-main .ms-card {
+.ms-briefing-main .ms-card {
   padding: 16px 20px;
-}
-
-.ms-project-main .ms-card-title {
-  margin: 0 0 8px;
 }
 
 .ms-project-read-at {
@@ -455,6 +805,19 @@
   text-align: right;
 }
 
+/*
+ * What the record says it is about, on a line of its own beneath the title and
+ * within the title's column, so the chips and the path keep the row they are
+ * already in.
+ */
+.ms-project-row-summary {
+  grid-column: 1 / 4;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
 .ms-project-run {
   border-top: 1px solid var(--ms-border);
 }
@@ -479,13 +842,60 @@
   font-weight: 500;
 }
 
-/* Phone: one column, and the path on a line of its own, still unwrapped. */
-@media (max-width: 599px) {
-  .ms-project {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
+/*
+ * The aside is the first thing to go: the main column's measure is what the
+ * briefing is, and the dock takes width from the right where the aside sits.
+ * The shell says whether the dock is open, so a docked window drops the aside
+ * a good deal earlier than an undocked one.
+ */
+@media (max-width: 1399px) {
+  .ms-shell[data-docked="true"] .ms-briefing {
+    grid-template-columns: 220px minmax(0, 76ch);
   }
 
+  .ms-shell[data-docked="true"] .ms-briefing-aside,
+  .ms-shell[data-docked="true"] .ms-reader-outline {
+    display: none;
+  }
+
+  .ms-shell[data-docked="true"] .ms-reader {
+    grid-template-columns: 220px minmax(0, 720px);
+  }
+}
+
+@media (max-width: 1199px) {
+  .ms-briefing {
+    grid-template-columns: 220px minmax(0, 76ch);
+  }
+
+  .ms-briefing-aside,
+  .ms-reader-outline {
+    display: none;
+  }
+
+  .ms-reader {
+    grid-template-columns: 220px minmax(0, 720px);
+  }
+}
+
+@media (max-width: 899px) {
+  .ms-briefing,
+  .ms-reader {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .ms-reader-rail {
+    position: static;
+  }
+
+  .ms-briefing-toc {
+    columns: 1;
+  }
+}
+
+/* Phone: one column, and the path on a line of its own, still unwrapped. */
+@media (max-width: 599px) {
   .ms-project-areas {
     position: static;
     flex-direction: row;
@@ -496,7 +906,8 @@
     grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
-  .ms-project-row-path {
+  .ms-project-row-path,
+  .ms-project-row-summary {
     grid-column: 1 / -1;
     text-align: left;
   }

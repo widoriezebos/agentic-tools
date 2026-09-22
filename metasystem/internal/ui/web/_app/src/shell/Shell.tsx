@@ -30,7 +30,7 @@ import { applyTheme, effectiveTheme, systemIsDark, watchSystemTheme, type ThemeP
 import { titleFor, type Identity } from "../title";
 
 /**
- * The shell: a rail, a header, the work area, and the Brain dock.
+ * The shell: a rail, a header, the work area, and the Project Partner dock.
  *
  * Three widths. Wide, from 960, is the whole thing, with the rail expanded
  * only from 1,128 where 240 + 8 + 480 + 400 still fits. Compact keeps the
@@ -129,8 +129,11 @@ export function Shell() {
   const work = <ErrorBoundary>{panes}</ErrorBoundary>;
   const docked = wide && dockChoice && !focused;
 
+  // A pane laid out in three columns has to know that the dock has taken the
+  // width its third column would have used. It is said once, here, as an
+  // attribute, so the panes decide it in CSS rather than by measuring.
   return (
-    <div className="ms-shell">
+    <div className="ms-shell" data-docked={docked ? "true" : "false"}>
       <a className="ms-skip-link" href="#content">
         Skip to content
       </a>
@@ -200,9 +203,9 @@ export function Shell() {
           onOpenChange={setDockSheetOpen}
           id="brain-dock"
           side="right"
-          label="Brain dock"
-          title="Brain"
-          closeLabel="Close the Brain dock"
+          label="Project Partner dock"
+          title="Project Partner"
+          closeLabel="Close the Project Partner dock"
           bodyClassName="ms-sheet-body--dock"
           actions={
             <ExpandButton
@@ -223,7 +226,7 @@ function ExpandButton({ onExpand }: { onExpand: () => void }) {
   const navigate = useNavigate();
   return (
     <IconButton
-      label="Expand the Brain view"
+      label="Expand the Project Partner view"
       onClick={() => {
         onExpand();
         void navigate("/brain");

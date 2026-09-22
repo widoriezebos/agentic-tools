@@ -33,9 +33,10 @@ import (
 type Roots struct{ Checkout, Installation, StateRoot string }
 
 // SchemaVersion is the shape of the project resource the interface reads. It
-// is 2: the first was the catalogue of canonical documents, which guessed a
-// kind from a filename; this one carries what the records declare.
-const SchemaVersion = 2
+// is 3: the first was the catalogue of canonical documents, which guessed a
+// kind from a filename; the second carried what the records declare; this one
+// carries, beside each of them, the record's own first words.
+const SchemaVersion = 3
 
 // Pane is the whole of Project, read once, as it was at readAt.
 type Pane struct {
@@ -56,15 +57,19 @@ type Area struct {
 	Name string `json:"name"`
 }
 
-// Record is one declared document: what it says it is, and where it lives.
+// Record is one declared document: what it says it is, where it lives, and
+// the first words of its own body. The summary is a convention rather than a
+// key — a record whose body opens with a table has none — so it is carried as
+// the empty string rather than as an absence the pane must explain.
 type Record struct {
-	Kind   string   `json:"kind"`
-	ID     string   `json:"id"`
-	Status string   `json:"status"`
-	Areas  []string `json:"areas"`
-	Title  string   `json:"title"`
-	Path   string   `json:"path"`
-	Home   string   `json:"home"`
+	Kind    string   `json:"kind"`
+	ID      string   `json:"id"`
+	Status  string   `json:"status"`
+	Areas   []string `json:"areas"`
+	Title   string   `json:"title"`
+	Path    string   `json:"path"`
+	Home    string   `json:"home"`
+	Summary string   `json:"summary"`
 }
 
 // Book is one of the two indexes and the reading order it names. A home whose
@@ -82,6 +87,9 @@ type Chapter struct {
 	ID    string `json:"id,omitempty"`
 	Path  string `json:"path,omitempty"`
 	Title string `json:"title"`
+	// Summary is the chapter's own first words: the record's, or, for a bound
+	// document, the first paragraph after whatever opens it.
+	Summary string `json:"summary"`
 }
 
 // Question is one row of the register.
@@ -121,8 +129,8 @@ func ReadPane(roots Roots, now time.Time) (Pane, error) {
 		ReadAt:        stamp(now),
 		Areas:         areasOf(read),
 		Records:       recordsOf(read),
-		Intent:        bookOf(read, resolver.KindIntent),
-		Doctrine:      bookOf(read, resolver.KindDoctrine),
+		Intent:        bookOf(roots, read, resolver.KindIntent),
+		Doctrine:      bookOf(roots, read, resolver.KindDoctrine),
 		Questions:     questionsOf(read),
 		Problems:      problemsOf(read),
 	}
@@ -162,19 +170,20 @@ func recordsOf(read *resolver.Project) []Record {
 
 func describe(record resolver.Record) Record {
 	return Record{
-		Kind:   record.Kind,
-		ID:     record.ID,
-		Status: record.Status,
-		Areas:  list(record.Areas),
-		Title:  record.Title,
-		Path:   record.Path,
-		Home:   record.Home,
+		Kind:    record.Kind,
+		ID:      record.ID,
+		Status:  record.Status,
+		Areas:   list(record.Areas),
+		Title:   record.Title,
+		Path:    record.Path,
+		Home:    record.Home,
+		Summary: summaryOf(record.Body),
 	}
 }
 
 // bookOf is one book's index and its reading order. A chapter the index left
 // unnamed is titled by what it binds, so no row in the pane is blank.
-func bookOf(read *resolver.Project, kind string) Book {
+func bookOf(roots Roots, read *resolver.Project, kind string) Book {
 	book := Book{Chapters: []Chapter{}}
 	for _, found := range read.Books {
 		if found.Kind != kind || found.Index == nil {
@@ -183,27 +192,36 @@ func bookOf(read *resolver.Project, kind string) Book {
 		index := describe(*found.Index)
 		book.Index = &index
 		for _, chapter := range found.Chapters {
-			book.Chapters = append(book.Chapters, chapterOf(read, chapter))
+			book.Chapters = append(book.Chapters, chapterOf(roots, read, chapter))
 		}
 		break
 	}
 	return book
 }
 
-func chapterOf(read *resolver.Project, chapter resolver.Chapter) Chapter {
+// chapterOf carries a chapter's title and its own first words. A chapter that
+// names a record borrows the summary already read from it; a chapter that
+// binds a document is read for its first paragraph, once, within the same
+// bound the title read takes.
+func chapterOf(roots Roots, read *resolver.Project, chapter resolver.Chapter) Chapter {
 	out := Chapter{ID: chapter.ID, Path: chapter.Doc, Title: chapter.Title}
-	if out.Title != "" {
-		return out
-	}
 	if chapter.Doc != "" {
-		out.Title = path.Base(chapter.Doc)
+		out.Summary = summaryOfFile(filepath.Join(roots.Checkout, filepath.FromSlash(chapter.Doc)))
+		if out.Title == "" {
+			out.Title = path.Base(chapter.Doc)
+		}
 		return out
 	}
 	if record := read.Record(chapter.ID); record != nil {
-		out.Title = record.Title
+		out.Summary = summaryOf(record.Body)
+		if out.Title == "" {
+			out.Title = record.Title
+		}
 		return out
 	}
-	out.Title = chapter.ID
+	if out.Title == "" {
+		out.Title = chapter.ID
+	}
 	return out
 }
 

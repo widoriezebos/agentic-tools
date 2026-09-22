@@ -85,7 +85,7 @@ export const empties: readonly Empty[] = [
   {
     id: "brain",
     kind: "not projected",
-    heading: "The Brain is not connected in this build",
+    heading: "Your Project Partner is not connected in this build",
     body: "Conversation, shared context, activity, and actions.",
     note: "Arrives with gate 3",
     link: null,
