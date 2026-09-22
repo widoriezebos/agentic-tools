@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 103
+- Revision: 104
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -133,4 +133,5 @@ History:
 - 2026-09-21T03:33:11Z ZE2EPBZC81XWKVMHJZPRRPN9CP-m1e-226b0953 ack actor=human:Wido targets=goal-landing-efficiency displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-20T16:31:05Z ack
 - 2026-09-21T03:33:11Z ZE2EPBZC81XWKVMHJZPRRPN9CP-m1e-226b0953 ack actor=human:Wido targets=goal-landing-efficiency displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-20T18:49:23Z ack
 - 2026-09-21T03:33:11Z ZE2EPBZC81XWKVMHJZPRRPN9CP-m1e-226b0953 ack actor=human:Wido targets=goal-landing-efficiency displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-20T21:54:19Z ack
-Integrity: sha256=dcd5b3cf7c5caa524575e7ae298b2b02b867faaba5a595801acad62a703eb697
+- 2026-09-22T11:27:26Z ETHNG0PHR6PFBGHHAQ7TXFW3NJ-m1e-226b0953 ack actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-22T01:18:20Z ack
+Integrity: sha256=fcdfaa2ffd7629d5520d9f5a31599dddac080b49eed505d1a7ee375c325e0cb1
