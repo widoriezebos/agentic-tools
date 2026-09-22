@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-import { approveGoal, withdrawGoal, type Authority, type Backlog, type Row } from "./api";
+import { actingAs } from "./acting";
+import { approveGoal, BacklogError, withdrawGoal, type Backlog, type Row } from "./api";
 import {
   approveNote,
   blockedFor,
@@ -14,6 +15,7 @@ import {
 } from "./moves";
 import { Panel } from "./Panel";
 import { Button } from "../shell/controls";
+import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
 
 /**
@@ -54,7 +56,9 @@ export function ActSheet({
   const prefill = prefillFor(request.goal, backlog.budgetDefaults, backlog.rows);
   const [draft, setDraft] = useState<BudgetDraft>(() => draftOf(prefill.budget));
   const [reason, setReason] = useState("");
-  const authority: Authority = backlog.authority;
+  const { session, askToSignIn } = useSession();
+  const retried = useRef(false);
+  const authority = actingAs(backlog.authority, session);
   const blocked = blockedFor(request.move, authority.proven, authority.reason, draft);
   const approving = request.move === "approve";
 
@@ -75,6 +79,14 @@ export function ActSheet({
       })
       .catch((error: unknown) => {
         setSending(false);
+        // A server that found no human behind the act says so and says the
+        // remedy is here: the sheet opens, and the act is tried once more
+        // under the session it is signed into.
+        if (error instanceof BacklogError && error.signIn && !retried.current) {
+          retried.current = true;
+          askToSignIn(send);
+          return;
+        }
         setRefusal(failureMessage(error));
       });
   };

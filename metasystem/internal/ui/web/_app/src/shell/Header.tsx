@@ -2,13 +2,14 @@ import { Menu, PanelBottom } from "lucide-react";
 
 import { IconButton } from "./controls";
 import { useWorkspaceState } from "./identity";
+import { SignInControl } from "./SignInControl";
 import { WorkspaceIdentity } from "./WorkspaceIdentity";
 
 /**
  * The header: who this workspace is on the left, where you are in the middle,
- * and the Project Partner's toggle on the right. The drawer along the bottom
- * carries the same toggle; this one is where a keyboard reaches it without
- * crossing the whole page.
+ * and who the server is acting as beside the Project Partner's toggle on the
+ * right. The drawer along the bottom carries the same toggle; this one is
+ * where a keyboard reaches it without crossing the whole page.
  *
  * On the focused view the toggle stays in the sequential order and says why it
  * does nothing, rather than disappearing and taking its explanation with it.
@@ -49,6 +50,7 @@ export function Header({
         <span className="ms-header-title">{sectionTitle}</span>
       </div>
       <div className="ms-header-right">
+        <SignInControl />
         <IconButton
           label="Project Partner drawer"
           hint={focused ? "The conversation is already in focus" : "Project Partner drawer"}

@@ -171,17 +171,24 @@ export type Backlog = {
 export class BacklogError extends Error {
   readonly status: number;
   readonly code: string;
+  /**
+   * Whether the remedy is in this page rather than in a terminal: the server
+   * found no human behind the act and would take a sign-in. The board opens
+   * the sheet on it and retries the act once.
+   */
+  readonly signIn: boolean;
 
-  constructor(resource: string, status: number, reason = "", code = "") {
+  constructor(resource: string, status: number, reason = "", code = "", signIn = false) {
     super(reason === "" ? `${resource} answered ${String(status)}` : reason);
     this.name = "BacklogError";
     this.status = status;
     this.code = code;
+    this.signIn = signIn;
   }
 }
 
 /** What a refusal's body carries, where the server sent one. */
-type Refusal = { error?: string; code?: string };
+type Refusal = { error?: string; code?: string; signIn?: boolean };
 
 /**
  * The one request. A body makes it an act, and an act is a POST of JSON;
@@ -211,7 +218,7 @@ async function request(resource: string, body?: unknown, signal?: AbortSignal): 
 export async function answerOf(resource: string, response: Response): Promise<Backlog> {
   if (!response.ok) {
     const refusal = await reasonOf(response);
-    throw new BacklogError(resource, response.status, refusal.error ?? "", refusal.code ?? "");
+    throw new BacklogError(resource, response.status, refusal.error ?? "", refusal.code ?? "", refusal.signIn === true);
   }
   return (await response.json()) as Backlog;
 }

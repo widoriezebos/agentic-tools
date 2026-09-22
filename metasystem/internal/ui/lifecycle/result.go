@@ -40,6 +40,9 @@ func StatusResult(stateRoot string, prober identity.Prober, digest func() (strin
 	if rec.Authority != "" {
 		result.Lines = append(result.Lines, rec.Authority)
 	}
+	// Who else is acting through this server: one line per browser a human
+	// signed into with the seat's one-time code, with when it stops.
+	result.Lines = append(result.Lines, rec.Sessions...)
 	if digest == nil {
 		digest = ExecutableDigest
 	}

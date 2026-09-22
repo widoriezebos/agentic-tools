@@ -10,6 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 )
 
 // The board's four acts, at the boundary: who may reach them at all, what a
@@ -26,6 +27,11 @@ type acted struct {
 	refusal    error
 	budgetLaw  map[string]goalbudget.Budget
 	authorized AuthorityInfo
+	sessions   *session.Store
+	// hands is the acting session of every act that reached the engine, in
+	// order, with "" for the acts the boot proof carried. It is the one thing
+	// only this layer can prove: which hand the route chose.
+	hands []string
 }
 
 // rankedAt is one re-rank as the route passed it on. The sequence is a
@@ -41,24 +47,37 @@ func (rec *acted) acting() Info {
 	return Info{
 		Observe:   readObservation,
 		Authority: rec.authorized,
-		Approve: func(id string, budget goalbudget.Budget) error {
+		Sessions:  rec.sessions,
+		Approve: func(signed *session.Session, id string, budget goalbudget.Budget) error {
+			rec.hand(signed)
 			rec.approvals = append(rec.approvals, [2]any{id, budget})
 			return rec.refusal
 		},
-		Withdraw: func(id, reason string) error {
+		Withdraw: func(signed *session.Session, id, reason string) error {
+			rec.hand(signed)
 			rec.withdrawn = append(rec.withdrawn, [2]string{id, reason})
 			return rec.refusal
 		},
-		SetPriority: func(id string, priority uint8, sequence *uint64) error {
+		SetPriority: func(signed *session.Session, id string, priority uint8, sequence *uint64) error {
+			rec.hand(signed)
 			rec.ranked = append(rec.ranked, rankedAt{id, priority, sequence})
 			return rec.refusal
 		},
-		Open: func(opened act.Opened) error {
+		Open: func(signed *session.Session, opened act.Opened) error {
+			rec.hand(signed)
 			rec.opened = append(rec.opened, opened)
 			return rec.refusal
 		},
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) { return rec.budgetLaw, nil },
 	}
+}
+
+func (rec *acted) hand(signed *session.Session) {
+	if signed == nil {
+		rec.hands = append(rec.hands, "")
+		return
+	}
+	rec.hands = append(rec.hands, signed.Human)
 }
 
 func (rec *acted) reached() int {
@@ -82,8 +101,9 @@ const wholeIntake = `{"id":"ui-new","intent":"The board opens a goal.","nextStep
 	`"basis":"one change behind an existing seam"}`
 
 type refused struct {
-	Error string `json:"error"`
-	Code  string `json:"code"`
+	Error  string `json:"error"`
+	Code   string `json:"code"`
+	SignIn bool   `json:"signIn"`
 }
 
 func actRefusal(t *testing.T, response *httptest.ResponseRecorder) refused {
@@ -186,9 +206,10 @@ func TestOpenRouteCarriesTheWholeIntakeStatement(t *testing.T) {
 	testutil.Expect(t, "the answer is the backlog", payload["schemaVersion"] != nil, true)
 }
 
-// The server an agent started cannot act as anybody. It answers 403 with what
-// the proof actually found and the one command that repairs it, and the
-// engine is never reached.
+// The server an agent started, that nobody has signed into, cannot act as
+// anybody. It answers 403 with what the boot proof actually found, with the
+// sign-in that needs no terminal, and with the flag that opens the sheet on
+// it; the engine is never reached.
 func TestAnUnprovenServerRefusesBothActsWithTheProofsOwnReason(t *testing.T) {
 	t.Parallel()
 
@@ -205,8 +226,10 @@ func TestAnUnprovenServerRefusesBothActsWithTheProofsOwnReason(t *testing.T) {
 
 		testutil.Require(t, "status for "+path, response.Code, http.StatusForbidden)
 		refusal := actRefusal(t, response)
-		testutil.Expect(t, "the reason for "+path, refusal.Error, agentStarted().Reason)
+		testutil.Expect(t, "the reason for "+path, refusal.Error,
+			agentStarted().Reason+"; and nobody is signed in here: "+signInRemedy)
 		testutil.Expect(t, "the code for "+path, refusal.Code, "unproven")
+		testutil.Expect(t, "the remedy is in the page for "+path, refusal.SignIn, true)
 		testutil.Expect(t, "the engine was not reached for "+path, rec.reached(), 0)
 	}
 }
@@ -226,7 +249,7 @@ func TestAnEngineRefusalComesBackWithItsOwnWordsAndCode(t *testing.T) {
 
 	testutil.Require(t, "status", response.Code, http.StatusConflict)
 	testutil.Expect(t, "the refusal", actRefusal(t, response),
-		refused{"goal waiting has no standing approval to withdraw", "CONFLICT"})
+		refused{Error: "goal waiting has no standing approval to withdraw", Code: "CONFLICT"})
 }
 
 // The budget is the human's, in full. A tuple that is not a budget is the

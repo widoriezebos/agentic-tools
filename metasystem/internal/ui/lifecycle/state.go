@@ -6,11 +6,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -38,6 +40,40 @@ type Record struct {
 	// authority, and an older reader that does not know the key ignores it,
 	// which is why the schema stays 1.
 	Authority string `json:"authority,omitempty"`
+	// Sessions is one line per browser signed into this run, for `ui status`
+	// to print for the reason Authority is here: status runs in another
+	// process and cannot ask the server. It lives and dies with this record,
+	// which is right — a session is one process's observation. What must
+	// outlive the run is the one-time-code floor, and that has a file of its
+	// own; see sessions.go. An older reader ignores the key.
+	Sessions []string `json:"sessions,omitempty"`
+}
+
+// updating serializes this process's rewrites of its own record. One process
+// owns one state root for its whole life — Serve holds the lock until it
+// returns — so a mutex is the whole of the exclusion needed here.
+var updating sync.Mutex
+
+// Update rewrites the running server's record in place. A record that is not
+// there is a server that has not written one yet or has stopped; neither is an
+// error, and neither is recreated here.
+func Update(stateRoot string, apply func(*Record)) error {
+	updating.Lock()
+	defer updating.Unlock()
+	rec, err := readRecord(stateRoot)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	apply(rec)
+	data, err := json.Marshal(rec)
+	if err != nil {
+		return err
+	}
+	_, err = atomicfile.WriteText(recordPath(stateRoot), string(data)+"\n", stateRoot)
+	return err
 }
 
 type State string

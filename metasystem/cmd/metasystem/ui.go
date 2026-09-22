@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
@@ -154,6 +156,22 @@ func runUI(verb string, args []string) int {
 		authority := act.Prove(roots.StateRoot, roots.Installation, act.ParentPID(), authorityNow)
 		fmt.Fprintln(os.Stderr, "interface authority: "+authority.Line())
 
+		// The second way a human's acts reach the ledger: the seat's one-time
+		// code, in a browser. It needs no ancestry and no terminal, so it is
+		// the way in for a server that was started by anything else — and the
+		// way in for the human who walked up to a server they did not start.
+		// How long a session lasts and who it acts as are configuration, read
+		// here, once, like every other ui. key.
+		confPath := filepath.Join(roots.Installation, "metasystem.conf")
+		sessionLifetime, lifetimeErr := config.UISessionHours(confPath)
+		if lifetimeErr != nil {
+			return refuse(lifetimeErr.Error())
+		}
+		configuredHuman, humanErr := config.UIHuman(confPath)
+		if humanErr != nil {
+			return refuse(humanErr.Error())
+		}
+
 		// The ledger reader answers requests from the accepted ref as it
 		// stands. Its freshness loop is what carries that ref forward, and it
 		// belongs to the process that owns the checkout: exclusivity is taken
@@ -191,6 +209,43 @@ func runUI(verb string, args []string) int {
 			Roots: roots, Listen: listen, EngineBuild: supervise.BuildStamp, Prober: prober,
 			Authority: authority.Line(),
 			NewHandler: func(bound net.Addr, rec lifecycle.Record) http.Handler {
+				// Who this seat signs in as, in the order the answer is
+				// trustworthy: the terminal that started this server, the
+				// handle the seat configured, and last the one a browser
+				// named on a seat that had neither, which the record kept.
+				// A client-supplied name never displaces a configured one.
+				// What earlier runs of this checkout's interface left: the
+				// highest one-time-code step any of them accepted, and the
+				// handle a browser named on a seat that configures none. It
+				// is read here, under the lock this server now holds.
+				floor := lifecycle.ReadSessions(roots.StateRoot)
+				sessions := session.New(session.Options{
+					Root:     roots.StateRoot,
+					Human:    firstNamed(authority.Human(), configuredHuman, floor.Human),
+					Lifetime: sessionLifetime,
+					LastStep: floor.LastStep,
+					Secret:   func() (string, error) { return session.Secret(confPath) },
+					Now:      func() time.Time { return time.Now().UTC() },
+					// The floor and the handle go to the file that outlives
+					// this run, because a code spent before a restart is still
+					// spent after one; the live sessions go to this run\'s own
+					// record, which is where `ui status` reads them.
+					Persist: func(snap session.Snapshot) {
+						_ = lifecycle.WriteSessions(roots.StateRoot,
+							lifecycle.SessionFloor{LastStep: snap.LastStep, Human: snap.Human})
+						_ = lifecycle.Update(roots.StateRoot, func(r *lifecycle.Record) { r.Sessions = snap.Lines })
+					},
+				})
+				// acting is the hand one act publishes under: the browser
+				// session that reached the route, or the boot proof when no
+				// session did. A session carries its own proof, so the ledger
+				// records which one it was.
+				acting := func(signed *session.Session) (act.Authority, error) {
+					if signed == nil {
+						return authority, nil
+					}
+					return act.SignedIn(roots.StateRoot, signed.Human, signed.ID, signed.Proof)
+				}
 				return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest, BundleDigest: bundleDigest,
 					Describe: func() (workspace.Workspace, error) {
 						return workspace.Describe(
@@ -231,29 +286,46 @@ func runUI(verb string, args []string) int {
 					Authority: httpd.AuthorityInfo{
 						Proven: authority.Proven(), Human: authority.Human(), Reason: authority.Reason(),
 					},
-					Approve: func(id string, budget goalbudget.Budget) error {
-						if err := authority.Approve(id, budget); err != nil {
+					Sessions: sessions,
+					Approve: func(signed *session.Session, id string, budget goalbudget.Budget) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.Approve(id, budget); err != nil {
 							return err
 						}
 						advance()
 						return nil
 					},
-					Withdraw: func(id, reason string) error {
-						if err := authority.Withdraw(id, reason); err != nil {
+					Withdraw: func(signed *session.Session, id, reason string) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.Withdraw(id, reason); err != nil {
 							return err
 						}
 						advance()
 						return nil
 					},
-					SetPriority: func(id string, priority uint8, sequence *uint64) error {
-						if err := authority.SetPriority(id, priority, sequence); err != nil {
+					SetPriority: func(signed *session.Session, id string, priority uint8, sequence *uint64) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.SetPriority(id, priority, sequence); err != nil {
 							return err
 						}
 						advance()
 						return nil
 					},
-					Open: func(opened act.Opened) error {
-						if err := authority.Open(opened); err != nil {
+					Open: func(signed *session.Session, opened act.Opened) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.Open(opened); err != nil {
 							return err
 						}
 						advance()
@@ -289,6 +361,17 @@ func runUI(verb string, args []string) int {
 		return 0
 	}
 	return 2
+}
+
+// firstNamed is the first of these that names somebody. It is how the seat's
+// three answers about who it is are ordered in one place rather than in three.
+func firstNamed(candidates ...string) string {
+	for _, candidate := range candidates {
+		if named := strings.TrimSpace(candidate); named != "" {
+			return named
+		}
+	}
+	return ""
 }
 
 // interfaceBundle reports the digest of the source the embedded bundle was

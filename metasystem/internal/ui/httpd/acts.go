@@ -9,6 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 )
 
 // The board's four acts.
@@ -25,9 +26,11 @@ import (
 // All four take the same policy every other route takes: the allowed host,
 // the same-site check, the single allowed origin, POST and nothing else, a
 // bounded JSON object with no unknown fields. What they add is the one thing
-// no read route needs: the server's boot-time human proof. Without it they
-// write nothing and answer 403 with what the proof actually found, because
-// the reason is the only thing a human can act on.
+// no read route needs: a human's proof. Two can supply one — the live browser
+// session the request carries, and the server's boot-time observation, in that
+// order, because a human who signed in just now is the one at the keyboard.
+// Without either they write nothing and answer 403 with what both actually
+// found, and with the one thing a human can do about it.
 const (
 	// goalsPath names the collection: a POST to it opens a goal. goalsPrefix
 	// is the same resource with an id beneath it, which is where the acts on
@@ -42,6 +45,13 @@ const (
 	routePriority   = "set-goal-priority"
 	routeOpen       = "open-goal"
 	unprovenRefusal = "this interface cannot act as a human"
+	// expiredRefusal is the one refusal a human fixes without reading
+	// anything: the session ran out while the page stayed open.
+	expiredRefusal = "your session expired; sign in again"
+	// signInRemedy is what an unproven server offers instead of the restart
+	// it used to offer alone. The restart still works and is still named; the
+	// code is the one that needs no terminal.
+	signInRemedy = "sign in with this seat's one-time code to act as yourself"
 )
 
 // AuthorityInfo is what the server's boot-time observation found, as every
@@ -127,7 +137,8 @@ func actID(path, suffix string) (string, bool) {
 }
 
 func (h *handler) approveGoal(w http.ResponseWriter, r *http.Request, id string) {
-	if !h.mayAct(w) {
+	signed, may := h.mayAct(w, r)
+	if !may {
 		return
 	}
 	var body approveBody
@@ -144,40 +155,43 @@ func (h *handler) approveGoal(w http.ResponseWriter, r *http.Request, id string)
 		h.refuseAct(w, &act.Refusal{Kind: act.KindRequest, Code: "budget", Message: err.Error()})
 		return
 	}
-	h.answerAct(w, h.info.Approve(id, budget))
+	h.answerAct(w, h.info.Approve(signed, id, budget))
 }
 
 func (h *handler) withdrawGoal(w http.ResponseWriter, r *http.Request, id string) {
-	if !h.mayAct(w) {
+	signed, may := h.mayAct(w, r)
+	if !may {
 		return
 	}
 	var body withdrawBody
 	if !decode(w, r, &body) {
 		return
 	}
-	h.answerAct(w, h.info.Withdraw(id, body.Reason))
+	h.answerAct(w, h.info.Withdraw(signed, id, body.Reason))
 }
 
 func (h *handler) setGoalPriority(w http.ResponseWriter, r *http.Request, id string) {
-	if !h.mayAct(w) {
+	signed, may := h.mayAct(w, r)
+	if !may {
 		return
 	}
 	var body priorityBody
 	if !decode(w, r, &body) {
 		return
 	}
-	h.answerAct(w, h.info.SetPriority(id, body.Priority, body.Sequence))
+	h.answerAct(w, h.info.SetPriority(signed, id, body.Priority, body.Sequence))
 }
 
 func (h *handler) openGoal(w http.ResponseWriter, r *http.Request) {
-	if !h.mayAct(w) {
+	signed, may := h.mayAct(w, r)
+	if !may {
 		return
 	}
 	var body openBody
 	if !decode(w, r, &body) {
 		return
 	}
-	h.answerAct(w, h.info.Open(act.Opened{
+	h.answerAct(w, h.info.Open(signed, act.Opened{
 		ID: body.ID, Intent: body.Intent, NextStep: body.NextStep,
 		Tier: body.Tier, Why: body.Why, Blocks: body.Blocks, Labels: body.Labels,
 		Risk: goal.RiskRecord{
@@ -187,23 +201,34 @@ func (h *handler) openGoal(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
-// mayAct refuses before a body is read, so an unproven server parses nothing
-// a caller sent. The reason is the proof's own, in full.
-func (h *handler) mayAct(w http.ResponseWriter) bool {
+// mayAct reports the hand this act publishes under, and refuses before a body
+// is read, so a server nothing proves parses nothing a caller sent. A live
+// browser session is that hand; otherwise the boot proof is, and a nil session
+// says so. The reason a refusal carries is both proofs' own, in full.
+func (h *handler) mayAct(w http.ResponseWriter, r *http.Request) (*session.Session, bool) {
 	if h.info.Approve == nil || h.info.Withdraw == nil || h.info.SetPriority == nil || h.info.Open == nil {
 		writeFailure(w, "this engine was built without the backlog's acts")
-		return false
+		return nil, false
+	}
+	signed, liveness := h.signedIn(r)
+	switch liveness {
+	case session.Live:
+		return signed, true
+	case session.Expired:
+		w.WriteHeader(http.StatusForbidden)
+		writeSignInRefusal(w, "expired", expiredRefusal)
+		return nil, false
 	}
 	if h.info.Authority.Proven {
-		return true
+		return nil, true
 	}
 	reason := h.info.Authority.Reason
 	if reason == "" {
 		reason = unprovenRefusal + "; " + act.Restart
 	}
 	w.WriteHeader(http.StatusForbidden)
-	writeActRefusal(w, "unproven", reason)
-	return false
+	writeSignInRefusal(w, "unproven", reason+"; and nobody is signed in here: "+signInRemedy)
+	return nil, false
 }
 
 // answerAct says what the ledger did. A confirmed act answers with the
@@ -252,4 +277,15 @@ func writeActRefusal(w http.ResponseWriter, code, reason string) {
 		Error string `json:"error"`
 		Code  string `json:"code,omitempty"`
 	}{Error: reason, Code: code})
+}
+
+// writeSignInRefusal is the same body with the one flag that says the remedy
+// is in this page rather than in a terminal: the browser opens the sign-in
+// sheet on it, and retries the act once when a human signs in.
+func writeSignInRefusal(w http.ResponseWriter, code, reason string) {
+	_ = json.NewEncoder(w).Encode(struct {
+		Error  string `json:"error"`
+		Code   string `json:"code,omitempty"`
+		SignIn bool   `json:"signIn"`
+	}{Error: reason, Code: code, SignIn: true})
 }

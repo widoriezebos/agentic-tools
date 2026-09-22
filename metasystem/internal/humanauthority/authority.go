@@ -970,6 +970,14 @@ func RecordResumeProof(root, operationID string, proof Proof) error {
 	return recordProof(root, operationID, resumeAction, proof, proof.AuthorizesResume(root))
 }
 
+// RecordSessionProof stores the proof for one act published under a browser
+// session a human signed into. It is the same audit evidence every other act
+// leaves; a session proof carries no secret, so what lands here is the issuer,
+// the handle and the opaque session reference.
+func RecordSessionProof(root, operationID, action string, proof Proof) error {
+	return recordProof(root, operationID, action, proof, proof.SessionValidFor(root))
+}
+
 // RecordCarryProof stores the proof for a carry word after its ledger
 // transaction is confirmed. It never authorizes a later process.
 func RecordCarryProof(root, operationID string, proof Proof) error {

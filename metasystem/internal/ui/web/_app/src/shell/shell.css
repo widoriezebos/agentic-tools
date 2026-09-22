@@ -321,10 +321,14 @@ body {
   text-overflow: ellipsis;
 }
 
+/* The right side is two small controls and who the server acts as; it keeps
+   its width and the left side, which already ellipsises, gives way. Before
+   the identity control lived here there was nothing on this side to squeeze. */
 .ms-header-right {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 0 0 auto;
 }
 
 /* -------------------------------------------------------------- identity -- */
@@ -1156,5 +1160,107 @@ body {
   .ms-skeleton {
     animation: none;
     opacity: 1;
+  }
+}
+
+/* --------------------------------------------------------------- sign in -- */
+
+/* Who the server is acting as, beside the drawer's toggle. The handle and its
+   expiry read as one line; on a phone the expiry is the part that folds away,
+   because the handle is what identifies the act and the clock only qualifies
+   it. */
+
+.ms-signin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-signin-who {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ms-sheet-body--signin {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.ms-signin-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-signin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ms-signin-field label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ms-text-2);
+}
+
+.ms-signin-field input {
+  font: inherit;
+  padding: 6px 8px;
+  color: var(--ms-text);
+  background: var(--ms-surface);
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+}
+
+.ms-signin-field input:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: 1px;
+}
+
+.ms-signin-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-signin-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-signin-refusal {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-danger);
+}
+
+.ms-signin-until {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  white-space: nowrap;
+}
+
+@media (max-width: 599px) {
+  .ms-signin-who {
+    max-width: 80px;
+  }
+
+  /* The clock is the part that folds: the handle is what identifies the act. */
+  .ms-signin-until {
+    display: none;
   }
 }

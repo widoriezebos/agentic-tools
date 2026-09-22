@@ -1,6 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
-import { openGoal, type Backlog } from "./api";
+import { actingAs } from "./acting";
+import { BacklogError, openGoal, type Backlog } from "./api";
 import {
   blockedForOpen,
   derivedTier,
@@ -18,6 +19,7 @@ import {
 } from "./opening";
 import { Panel } from "./Panel";
 import { Button } from "../shell/controls";
+import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
 
 /**
@@ -56,7 +58,9 @@ export function OpenSheet({
   const [risk, setRisk] = useState<Risk>(emptyRisk);
   const [refusal, setRefusal] = useState("");
   const [sending, setSending] = useState(false);
-  const authority = backlog.authority;
+  const { session, askToSignIn } = useSession();
+  const retried = useRef(false);
+  const authority = actingAs(backlog.authority, session);
   const blocked = blockedForOpen(authority.proven, authority.reason, intake, risk);
 
   const send = () => {
@@ -73,6 +77,11 @@ export function OpenSheet({
       })
       .catch((error: unknown) => {
         setSending(false);
+        if (error instanceof BacklogError && error.signIn && !retried.current) {
+          retried.current = true;
+          askToSignIn(send);
+          return;
+        }
         setRefusal(failureMessage(error));
       });
   };

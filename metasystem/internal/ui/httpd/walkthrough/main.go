@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 )
@@ -32,6 +33,13 @@ const agentReason = "the interface was started by an agent process (claude-code)
 func main() {
 	listen := flag.String("listen", "127.0.0.1:7979", "loopback address")
 	proven := flag.Bool("proven", false, "serve as a server that proved its human at boot")
+	// The walkthrough's own one-time-code secret. It is synthetic — the base32
+	// string every TOTP example uses — so the sign-in sheet can be walked
+	// through without a configured seat and without a real secret anywhere
+	// near it. bin/metasystem channel fake code --secret <this> prints the
+	// code it accepts.
+	secret := flag.String("secret", "JBSWY3DPEHPK3PXP", "synthetic one-time-code secret for the sign-in walkthrough")
+	human := flag.String("human", "", "the handle this fixture seat signs in as; empty makes the sheet ask")
 	flag.Parse()
 
 	manifest, err := web.ReadManifest()
@@ -43,19 +51,27 @@ func main() {
 	if *proven {
 		authority = httpd.AuthorityInfo{Proven: true, Human: "Wido"}
 	}
+	sessions := session.New(session.Options{
+		Root: "/walkthrough", Human: *human, Lifetime: 12 * time.Hour,
+		Secret: func() (string, error) { return *secret, nil },
+	})
 	info := httpd.Info{
 		Checkout: "/walkthrough", StartedAt: time.Now().UTC().Format(time.RFC3339),
 		EngineBuild: "walkthrough", BundleDigest: manifest.SourceDigest,
 		Observe:   state.observe,
 		Authority: authority,
-		Approve: func(id string, budget goalbudget.Budget) error {
+		Sessions:  sessions,
+		// The walkthrough's acts ignore the hand that reached them: it has
+		// no ledger to record one in, and the point of this server is the
+		// board rather than the proof.
+		Approve: func(_ *session.Session, id string, budget goalbudget.Budget) error {
 			return state.approve(id, budget)
 		},
-		Withdraw: func(id, reason string) error { return state.withdraw(id, reason) },
-		SetPriority: func(id string, priority uint8, sequence *uint64) error {
+		Withdraw: func(_ *session.Session, id, reason string) error { return state.withdraw(id, reason) },
+		SetPriority: func(_ *session.Session, id string, priority uint8, sequence *uint64) error {
 			return state.setPriority(id, priority, sequence)
 		},
-		Open:    func(opened act.Opened) error { return state.open(opened) },
+		Open:    func(_ *session.Session, opened act.Opened) error { return state.open(opened) },
 		Project: func() (project.Pane, error) { return state.project(), nil },
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 			return map[string]goalbudget.Budget{"3": {

@@ -116,6 +116,34 @@ func Fixture(root, human, lineage string, now time.Time) (Authority, error) {
 	}, nil
 }
 
+// SessionLineage is the lineage every signed-in browser act carries. It is
+// deliberately not the enrolled terminal's: a session is a different hand, and
+// a hand that shared the terminal's lineage would be the terminal's claim
+// holder for every verb that compares the pair.
+const SessionLineage = "browser-session"
+
+// SignedIn is the acting authority for one browser session a human signed
+// into with the seat's one-time code.
+//
+// It carries the session's own proof rather than the boot proof, so the ledger
+// records the session as the hand that acted: its History line names the
+// issuer, the handle and the opaque session reference, and its approval record
+// reads authority=session. The classification is the human class, as the
+// headless fixture authority's is: there is no ancestry to classify, and the
+// thing that was proven is that a human answered a one-time code.
+func SignedIn(root, human, sessionID string, proof humanauthority.Proof) (Authority, error) {
+	if strings.TrimSpace(human) == "" || strings.TrimSpace(sessionID) == "" {
+		return Authority{}, fmt.Errorf("a signed-in session authority names its human and its session")
+	}
+	if !proof.SessionValidFor(root) {
+		return Authority{}, fmt.Errorf("a signed-in session authority requires a freshly minted session proof for this checkout")
+	}
+	return Authority{
+		proven: true, human: human, lineage: SessionLineage, root: root, proof: proof,
+		classification: lease.ClassifyResult{Class: lease.ClassHuman},
+	}, nil
+}
+
 // Unproven builds the refusing authority a server records when its boot
 // observation found no human. The reason is what every route answers with.
 func Unproven(reason string) Authority { return Authority{reason: reason} }
@@ -302,7 +330,13 @@ func (a Authority) settle(request goal.VerbRequest, result goal.PublishResult, p
 		return refuse(KindEngine, string(result.Outcome), detail)
 	}
 	operation := goal.Opid(request.Ulid, request.Actor.Machine, request.Actor.Lineage)
-	if err := humanauthority.RecordProof(a.root, operation, action, a.proof); err != nil {
+	// The evidence beside the act is the proof that carried it, which for a
+	// browser session is a session proof rather than an ancestry.
+	record := humanauthority.RecordProof
+	if a.proof.Outcome == humanauthority.OutcomeSession {
+		record = humanauthority.RecordSessionProof
+	}
+	if err := record(a.root, operation, action, a.proof); err != nil {
 		return refuse(KindFailed, "proof-not-recorded",
 			"the act landed at tip "+result.Tip+", but its authority proof did not: "+err.Error()+"; do not run it again")
 	}

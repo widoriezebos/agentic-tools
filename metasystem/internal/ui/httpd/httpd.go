@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/workspace"
@@ -57,21 +58,27 @@ type Info struct {
 	// cannot change while the server runs: a proof is an observation of an
 	// ancestry that existed at boot, and no later request can make one.
 	Authority AuthorityInfo
+	// Sessions is this server's signed-in browser sessions: the second way a
+	// human's acts reach the ledger, through the seat's one-time code rather
+	// than through the ancestry of the process that started the server. A nil
+	// store is a build that cannot sign anyone in, which the routes say.
+	Sessions *session.Store
 	// The backlog's four acts, each one the human working their own backlog
 	// in their own checkout: admitting work, withdrawing that admission,
 	// placing a goal in a priority band, and opening a new goal at intake.
-	// They publish through the engine in-process under the boot proof; a nil
-	// field is an engine that cannot act, which the route says. An
-	// act.Refusal carries the status the route answers with; anything else is
-	// a 500 carrying its reason.
-	Approve  func(id string, budget goalbudget.Budget) error
-	Withdraw func(id, reason string) error
+	// They publish through the engine in-process under the hand that reached
+	// them: the live browser session where the request carries one, and the
+	// boot proof otherwise. A nil field is an engine that cannot act, which
+	// the route says. An act.Refusal carries the status the route answers
+	// with; anything else is a 500 carrying its reason.
+	Approve  func(signed *session.Session, id string, budget goalbudget.Budget) error
+	Withdraw func(signed *session.Session, id, reason string) error
 	// SetPriority places one goal in a band at a one-based position, or
 	// appends it there when the position is nil. The engine renumbers the
 	// band, so this act is never about one record.
-	SetPriority func(id string, priority uint8, sequence *uint64) error
+	SetPriority func(signed *session.Session, id string, priority uint8, sequence *uint64) error
 	// Open is the human's intake act: one new goal, under origin human.
-	Open func(opened act.Opened) error
+	Open func(signed *session.Session, opened act.Opened) error
 	// BudgetDefaults is the project's budget law by tier, read per request
 	// for the reason the readers are: what the browser prefills from is what
 	// the next read of the configuration will say.
@@ -198,6 +205,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == workspacePath {
 		h.workspace(w)
+		return
+	}
+	if r.URL.Path == sessionPath {
+		h.session(w, r)
 		return
 	}
 	if r.URL.Path == backlogPath {

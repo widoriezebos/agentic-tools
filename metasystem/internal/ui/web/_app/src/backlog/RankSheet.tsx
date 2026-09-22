@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-import { rankGoal, type Backlog, type Row } from "./api";
+import { actingAs } from "./acting";
+import { BacklogError, rankGoal, type Backlog, type Row } from "./api";
 import { claimedConsequence, needsConfirming, rankOf, type Placement } from "./reorder";
 import { Panel } from "./Panel";
 import { Button } from "../shell/controls";
+import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
 
 /**
@@ -41,7 +43,9 @@ export function RankSheet({
   const [sequence, setSequence] = useState(String(placement.sequence));
   const [refusal, setRefusal] = useState("");
   const [sending, setSending] = useState(false);
-  const authority = backlog.authority;
+  const { session, askToSignIn } = useSession();
+  const retried = useRef(false);
+  const authority = actingAs(backlog.authority, session);
   const blocked = blockedForRank(authority.proven, authority.reason, priority, sequence);
 
   const send = () => {
@@ -57,6 +61,11 @@ export function RankSheet({
       })
       .catch((error: unknown) => {
         setSending(false);
+        if (error instanceof BacklogError && error.signIn && !retried.current) {
+          retried.current = true;
+          askToSignIn(send);
+          return;
+        }
         setRefusal(failureMessage(error));
       });
   };

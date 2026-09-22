@@ -1,7 +1,8 @@
-import { useId, useMemo, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router";
 
-import { rankGoal, type Backlog, type Row } from "./api";
+import { actingAs } from "./acting";
+import { BacklogError, rankGoal, type Backlog, type Row } from "./api";
 import {
   anySet,
   arcsOn,
@@ -51,6 +52,7 @@ import { sliceCount, sliceLine, slicePlans, slicesOf, type SlicePlan } from "../
 import { dateOf } from "../project/ProjectPane";
 import { goalPath } from "../routes";
 import { Button, Chip } from "../shell/controls";
+import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
 
 /**
@@ -144,6 +146,11 @@ export function Board({
   const [noted, setNoted] = useState<{ lane: LaneId; line: string } | null>(null);
   const [asking, setAsking] = useState<{ goal: Row; placement: Placement } | null>(null);
   const navigate = useNavigate();
+  // Whether the board may act, and as whom: the browser session where one is
+  // signed in, and the server's own boot proof otherwise.
+  const { session, askToSignIn } = useSession();
+  const acting = actingAs(backlog.authority, session);
+  const retried = useRef(false);
 
   // Every row the payload carries, which is what a relationship is read
   // against: a split member says what it is part of whether or not its parent
@@ -223,9 +230,12 @@ export function Board({
    * asked for it, because the band may have shifted since this page was read.
    */
   const publish = (moved: Row, placement: Placement) => {
-    if (!backlog.authority.proven) {
+    if (!acting.proven) {
       setNoted(null);
-      setRefused({ lane: moved.lane, reason: backlog.authority.reason });
+      setRefused({ lane: moved.lane, reason: acting.reason });
+      askToSignIn(() => {
+        publish(moved, placement);
+      });
       return;
     }
     setRefused(null);
@@ -236,6 +246,13 @@ export function Board({
         onMoved(after);
       })
       .catch((error: unknown) => {
+        if (error instanceof BacklogError && error.signIn && !retried.current) {
+          retried.current = true;
+          askToSignIn(() => {
+            publish(moved, placement);
+          });
+          return;
+        }
         setRefused({ lane: moved.lane, reason: failureMessage(error) });
       });
   };
@@ -286,9 +303,9 @@ export function Board({
 
   return (
     <div className="ms-board-frame">
-      {!backlog.authority.proven && (
+      {!acting.proven && (
         <p className="ms-board-unproven" role="status">
-          {backlog.authority.reason}
+          {acting.reason}
         </p>
       )}
       <FilterBar filters={filters} onChange={onFilters} seats={seatsOn(all)} arcs={arcsOn(all)} />

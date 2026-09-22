@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import "./backlog.css";
+import { actingAs } from "./acting";
 import { ActSheet, type Request } from "./ActSheet";
 import type { Backlog, Ledger, Row } from "./api";
 import { Board, Unplaceable, type Asked } from "./Board";
@@ -24,6 +25,7 @@ import {
   type BacklogView,
 } from "../storage";
 import { Button } from "../shell/controls";
+import { useSession } from "../shell/identity";
 
 /**
  * The backlog, as a board or as a list.
@@ -98,6 +100,10 @@ function Read({
   const [filters, setFilters] = useState<Filters>(() => readBacklogFilters());
   const [reach, setReach] = useState<Window>(() => readDoneWindow());
   const [opening, setOpening] = useState(false);
+  // Intake is offered to whoever the server can act as: the terminal that
+  // started it, or the browser a human signed into.
+  const { session } = useSession();
+  const acting = actingAs(backlog.authority, session);
   const ledger = backlog.ledger;
   const closedCount = backlog.closed.length;
   // The board and the list want opposite things from the pane: the list wants
@@ -122,12 +128,12 @@ function Read({
             List
           </Button>
           {/* Intake is the one act with no card to start from, so it stands
-              beside the switch rather than on the board. An unproven server
-              disables it here and says why in the sheet's own words. */}
+              beside the switch rather than on the board. A server nobody has
+              proved disables it here and says why in the sheet's own words. */}
           <Button
             className="ms-backlog-new"
-            disabled={!backlog.authority.proven}
-            title={backlog.authority.proven ? undefined : backlog.authority.reason}
+            disabled={!acting.proven}
+            title={acting.proven ? undefined : acting.reason}
             onClick={() => { setOpening(true); }}
           >
             New goal

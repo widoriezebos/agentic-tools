@@ -82,6 +82,12 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
     1,
     ["/api/project", "/api/documents/", "/api/project/records", "/api/project/questions", "/status"],
   ],
+  // Who the server is acting as, and the two acts that change it. It is read
+  // beside the workspace and again only when a sign-in or a sign-out answers
+  // with a new one: a session changes when a human changes it, so there is
+  // nothing here to poll for. The three resources are written out in full
+  // rather than composed, so this row names what the file actually requests.
+  ["shell/session.ts", 1, ["/api/session", "/api/session/sign-in", "/api/session/sign-out"]],
 ];
 
 const HEALTH = "/-/health";

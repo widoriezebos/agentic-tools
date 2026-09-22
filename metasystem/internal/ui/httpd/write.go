@@ -63,6 +63,10 @@ func writeRouteOf(path string) (written, bool) {
 		return written{route: routeCreateRecord}, true
 	case questionsPath:
 		return written{route: routeAskQuestion}, true
+	case signInPath:
+		return written{route: routeSignIn}, true
+	case signOutPath:
+		return written{route: routeSignOut}, true
 	}
 	if id, ok := statusID(path, recordsPrefix); ok {
 		return written{route: routeRecordStatus, id: id}, true
@@ -126,6 +130,10 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.setGoalPriority(w, r, route.id)
 	case routeOpen:
 		h.openGoal(w, r)
+	case routeSignIn:
+		h.signIn(w, r)
+	case routeSignOut:
+		h.signOut(w, r)
 	}
 }
 
