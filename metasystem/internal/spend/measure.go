@@ -104,6 +104,16 @@ type Ledger struct {
 	Attribution   Attribution             `json:"attribution"`
 }
 
+// MeasureWork reports the bounded input and cache work performed by one
+// measurement. It deliberately excludes elapsed time: callers use it to
+// prove that a warm measurement resumed from its durable cursors.
+type MeasureWork struct {
+	JobRecordsRead        int
+	TranscriptBytesRead   int64
+	TranscriptLinesParsed int
+	CacheWrites           int
+}
+
 type pricedMeasurement struct {
 	goal, machine, day, runtime, model string
 	tokens                             Tokens
@@ -121,6 +131,19 @@ func Path(repoRoot string, now time.Time) string {
 // record independently, builds both machine-day and lifetime goal scopes, and
 // publishes the daily ledger only when its content changed.
 func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
+	return measure(repoRoot, machine, now, nil)
+}
+
+// MeasureWithWork performs the same measurement and returns its deterministic
+// work accounting. The accounting is observational and does not alter cache
+// or ledger semantics.
+func MeasureWithWork(repoRoot, machine string, now time.Time) (Ledger, MeasureWork, error) {
+	var work MeasureWork
+	ledger, err := measure(repoRoot, machine, now, &work)
+	return ledger, work, err
+}
+
+func measure(repoRoot, machine string, now time.Time, work *MeasureWork) (Ledger, error) {
 	now = now.UTC()
 	settings, err := config.ReadSpendSettings(filepath.Join(repoRoot, "metasystem.conf"))
 	if err != nil {
@@ -160,6 +183,9 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 		}
 		measurement := cached.Measurement
 		if !cacheHit {
+			if work != nil {
+				work.JobRecordsRead++
+			}
 			measurement = jobUsageAt(repoRoot, recordPath)
 		}
 		if measurement.Record == nil {
@@ -227,12 +253,15 @@ func Measure(repoRoot, machine string, now time.Time) (Ledger, error) {
 		}
 	}
 	if jobCacheDirty {
+		if work != nil {
+			work.CacheWrites++
+		}
 		if err := writeSpendCache(jobCachePath, jobCache); err != nil {
 			jobCacheWriteFailures++
 		}
 	}
 
-	seatRows, seat, seatUnmeasured, calls, err := readSeat(repoRoot, machine, now, readerJobIndex, settings)
+	seatRows, seat, seatUnmeasured, calls, err := readSeat(repoRoot, machine, now, readerJobIndex, settings, work)
 	if err != nil {
 		return Ledger{}, err
 	}

@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
@@ -95,6 +96,7 @@ type TestRunRequest struct {
 	// purposes already collect every selected group.
 	AllGroups   bool `json:",omitempty"`
 	loadOptions []loadSampleOption
+	now         func() time.Time
 }
 
 // PreparedGroupExecution is immutable metadata collected once before
@@ -199,11 +201,39 @@ func ValidateTestWorkerRequest(request TestRunRequest) error {
 	return nil
 }
 
+func testRequestNow(request TestRunRequest) time.Time {
+	if request.now != nil {
+		return request.now().UTC()
+	}
+	return time.Now().UTC()
+}
+
+func testRequestClock(request TestRunRequest) (func() time.Time, bool, error) {
+	if request.ControlRoot == "" {
+		return func() time.Time { return time.Now().UTC() }, false, nil
+	}
+	authorization, err := fixtureauth.New(request.ControlRoot)
+	if err != nil {
+		return nil, false, err
+	}
+	if fixtureNow, ok, err := authorization.Clock().GoalNow(); err != nil {
+		return nil, false, err
+	} else if ok {
+		return func() time.Time { return fixtureNow }, true, nil
+	}
+	return func() time.Time { return time.Now().UTC() }, false, nil
+}
+
 func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, error) {
 	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
+	clock, _, err := testRequestClock(request)
+	if err != nil {
+		return TestResult{}, 1, fmt.Errorf("testing semantic clock: %w", err)
+	}
+	request.now = clock
 	workerStarted := time.Now().UTC()
 	started := workerStarted
-	if parsed, err := time.Parse(time.RFC3339Nano, request.CommandStartedAt); err == nil && !parsed.After(started) {
+	if parsed, parseErr := time.Parse(time.RFC3339Nano, request.CommandStartedAt); parseErr == nil && !parsed.After(workerStarted) {
 		started = parsed
 	}
 	result := NewTestResult(request)
@@ -243,6 +273,12 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 		return runExecutionContractPlan(ctx, request, result, groups, admitted, started, workerStarted)
 	}
 	firstStatus := 0
+	finalizeOperationalError := func(runErr error) (TestResult, int, error) {
+		if len(result.Groups) == 0 {
+			return result, 1, runErr
+		}
+		return finalizeTestPlanResult(request, result, groups, started, workerStarted, runErr), 1, runErr
+	}
 	progress := &progressWriter{path: request.ProgressPath}
 	// Delivery normally stops launching at the first failure and records the
 	// rest as not run (R-96-m1e). A caller collecting a complete failure set
@@ -259,12 +295,12 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 			}
 			if len(admitted.TestInventory) != 0 {
 				if admitted.TestInventory[id] != request.ComponentIdentities[id] {
-					return result, 1, fmt.Errorf("testing worker group %s differs from admitted inventory", id)
+					return finalizeOperationalError(fmt.Errorf("testing worker group %s differs from admitted inventory", id))
 				}
 				if admitted.TestWaits[id] != "" {
 					borrowed, waitErr := WaitForTestProducer(ctx, request.ControlRoot, admitted, id)
 					if waitErr != nil {
-						return result, 1, waitErr
+						return finalizeOperationalError(waitErr)
 					}
 					result.Groups = append(result.Groups, borrowed)
 					if borrowed.Status != "reused" {
@@ -286,9 +322,9 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 					continue
 				}
 				if source := admitted.TestSources[id]; source != "" {
-					original, sourceErr := nativeSourceGroup(admitted, GroupResult{ID: id, ExecutionIdentity: admitted.TestInventory[id], ReuseAttempt: source})
+					original, sourceErr := nativeSourceGroup(admitted, GroupResult{ID: id, ExecutionIdentity: admitted.TestInventory[id], ReuseAttempt: source}, testRequestNow(request))
 					if sourceErr != nil || original.Status != "passed" || !original.CollectionComplete {
-						return result, 1, fmt.Errorf("admitted source for %s is incomplete: %v", id, sourceErr)
+						return finalizeOperationalError(fmt.Errorf("admitted source for %s is incomplete: %v", id, sourceErr))
 					}
 					original.Status, original.NativeLaunched, original.ReuseAttempt = "reused", false, source
 					result.Groups = append(result.Groups, original)
@@ -325,7 +361,7 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 				continue
 			}
 			if len(admitted.TestInventory) != 0 {
-				return result, 1, fmt.Errorf("testing group %s has no retained source for its admitted inventory", id)
+				return finalizeOperationalError(fmt.Errorf("testing group %s has no retained source for its admitted inventory", id))
 			}
 			runnable = append(runnable, id)
 		}
@@ -367,15 +403,10 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 			}
 		}
 		if progressErr != nil {
-			return result, 1, progressErr
+			return finalizeTestPlanResult(request, result, groups, started, workerStarted, progressErr), 1, progressErr
 		}
 	}
-	result.EndedAt, result.DurationMS = resultDuration(started)
-	result.Cost.ActualDurationMS, result.Cost.ChildDurationMS = result.DurationMS, result.ChildDurationMS
-	result.Cost.ExecutionDurationMS = time.Since(workerStarted).Milliseconds()
-	result.Cost.ReusedLaunches = result.LaunchCounts.ReusedTest + result.LaunchCounts.ReusedBuild + result.LaunchCounts.ReusedOther
-	result.StoppedAtFirstFailure = stoppedAtFirstFailure(result.Groups)
-	result.RecomputeDelivery()
+	result = finalizeTestPlanResult(request, result, groups, started, workerStarted, nil)
 	if request.Plan.Purpose == testpolicy.PurposeDelivery && !result.Delivery.Sufficient && firstStatus == 0 {
 		firstStatus = 1
 	}
@@ -424,7 +455,7 @@ func runExecutionContractPlan(ctx context.Context, request TestRunRequest, resul
 			}
 			if source := admitted.TestSources[id]; source != "" {
 				original, err := nativeSourceGroup(admitted, GroupResult{ID: id,
-					ExecutionIdentity: admitted.TestInventory[id], ReuseAttempt: source})
+					ExecutionIdentity: admitted.TestInventory[id], ReuseAttempt: source}, testRequestNow(request))
 				if err != nil || original.Status != "passed" || !original.CollectionComplete {
 					return GroupResult{}, false, fmt.Errorf("admitted source for %s is incomplete: %v", id, err)
 				}
@@ -455,18 +486,45 @@ func runExecutionContractPlan(ctx context.Context, request TestRunRequest, resul
 			}
 		}
 		if err != nil {
-			return result, 1, err
+			return finalizeTestPlanResult(request, result, groups, started, workerStarted, err), 1, err
 		}
 	}
-	result.EndedAt, result.DurationMS = resultDuration(started)
-	result.Cost.ActualDurationMS, result.Cost.ChildDurationMS = result.DurationMS, result.ChildDurationMS
-	result.Cost.ExecutionDurationMS = time.Since(workerStarted).Milliseconds()
-	result.Cost.ReusedLaunches = result.LaunchCounts.ReusedTest + result.LaunchCounts.ReusedBuild + result.LaunchCounts.ReusedOther
-	result.RecomputeDelivery()
+	result = finalizeTestPlanResult(request, result, groups, started, workerStarted, nil)
 	if request.Plan.Purpose == testpolicy.PurposeDelivery && !result.Delivery.Sufficient && firstStatus == 0 {
 		firstStatus = 1
 	}
 	return result, firstStatus, nil
+}
+
+// finalizeTestPlanResult is the one projection from a completed or
+// operationally interrupted plan into a result that can cross the worker
+// boundary. An interruption records every later selected group as not run;
+// it never invents a launch or replaces the outcomes already drained from
+// the scheduler.
+func finalizeTestPlanResult(request TestRunRequest, result TestResult, groups map[string]testpolicy.Group, started, workerStarted time.Time, runErr error) TestResult {
+	if runErr != nil {
+		seen := make(map[string]bool, len(result.Groups))
+		for _, groupResult := range result.Groups {
+			seen[groupResult.ID] = true
+		}
+		reason := "testing plan stopped after operational error: " + runErr.Error()
+		result.Uncertainty = append(result.Uncertainty, reason)
+		for _, id := range request.Plan.SelectedGroups {
+			group, exists := groups[id]
+			if seen[id] || !exists {
+				continue
+			}
+			result.Groups = append(result.Groups, unlaunchedGroupResult(request, group, reason))
+			seen[id] = true
+		}
+	}
+	result.EndedAt, result.DurationMS = resultDuration(request, started)
+	result.Cost.ActualDurationMS, result.Cost.ChildDurationMS = result.DurationMS, result.ChildDurationMS
+	result.Cost.ExecutionDurationMS = time.Since(workerStarted).Milliseconds()
+	result.Cost.ReusedLaunches = result.LaunchCounts.ReusedTest + result.LaunchCounts.ReusedBuild + result.LaunchCounts.ReusedOther
+	result.StoppedAtFirstFailure = stoppedAtFirstFailure(result.Groups)
+	result.RecomputeDelivery()
+	return result
 }
 
 func stoppedAtFirstFailure(groups []GroupResult) bool {
@@ -1097,7 +1155,10 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 	defer cancelShards()
 	var wg sync.WaitGroup
 	var setupErr error
-	nativeEnvironment := overlayTestEnvironment(environment, map[string]string{"GOMAXPROCS": "1"})
+	nativeEnvironment := overlayTestEnvironment(environment, map[string]string{
+		"GOMAXPROCS":           "1",
+		TestWorkersEnvironment: "1",
+	})
 	for index := range partitions {
 		args := goNativeTestArguments(group, group.Coverage)
 		patterns := make([]string, len(partitions[index].Names))
@@ -1338,6 +1399,16 @@ func assignSupervisorOutcome(result *GroupResult, outcome supervisorOutcome) {
 }
 
 func NewTestResult(request TestRunRequest) TestResult {
+	return newTestResult(request, testRequestNow(request))
+}
+
+// NewTestResultAt constructs a reusable-result template at the caller's
+// admitted semantic time. It changes no serialized request schema.
+func NewTestResultAt(request TestRunRequest, now time.Time) TestResult {
+	return newTestResult(request, now.UTC())
+}
+
+func newTestResult(request TestRunRequest, semanticNow time.Time) TestResult {
 	contractBytes, _ := json.Marshal(request.Contract)
 	contractDigest := request.ContractDigest
 	if contractDigest == "" {
@@ -1393,19 +1464,20 @@ func NewTestResult(request TestRunRequest) TestResult {
 		FreshnessExpiresAt: request.FreshnessExpiresAt, FreshGroups: cloneFreshGroups(request.FreshGroups),
 		RequiredGroups: append([]string(nil), request.Plan.RequiredGroups...), SelectedGroups: append([]string(nil), request.Plan.SelectedGroups...),
 		Omissions: append([]testpolicy.Omission(nil), request.Plan.Omissions...), Uncertainty: append([]string(nil), request.Plan.Uncertainty...),
-		LaunchCounts: LaunchCounts{Other: request.PreparationLaunches, CountsComplete: true}, StartedAt: request.CommandStartedAt,
+		LaunchCounts: LaunchCounts{Other: request.PreparationLaunches, CountsComplete: true}, StartedAt: semanticNow.Format(time.RFC3339Nano),
 		Cost: TestCost{DeclaredTargetMS: targetMS, PreparationDurationMS: request.PreparationDurationMS,
-			QueueDurationMS: request.QueueDurationMS}}
+			QueueDurationMS: request.QueueDurationMS}, semanticNow: semanticNow}
 }
 
 func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group) (result GroupResult) {
 	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
-	started := time.Now().UTC()
+	started := time.Now()
+	startedAt := testRequestNow(request)
 	limits, sampleInterval := groupSupervisorSettings(group.CPUBudgetSeconds)
 	result = GroupResult{ID: group.ID, Kind: group.Kind, Obligations: append([]string(nil), group.Obligations...),
 		IdentityVersion: groupExecutionIdentityVersion(request),
 		InputDigest:     request.CandidateTree, InputManifest: append([]string(nil), group.Inputs...), CWD: group.CWD,
-		ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}, StartedAt: started.Format(time.RFC3339Nano),
+		ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}, StartedAt: startedAt.Format(time.RFC3339Nano),
 		ProgressRule: progressRule(limits)}
 	defer func() {
 		if group.Adapter == "section" && result.NotRunReason == "" && result.NativeExitStatus != nil &&
@@ -1464,7 +1536,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 	if err != nil {
 		result.Status = "invalid"
 		result.NotRunReason = err.Error()
-		result.EndedAt, result.DurationMS = resultDuration(started)
+		result.EndedAt, result.DurationMS = resultDuration(request, started)
 		return result
 	}
 	defer func() {
@@ -1503,7 +1575,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 	if err != nil {
 		result.Status = "invalid"
 		result.NotRunReason = err.Error()
-		result.EndedAt, result.DurationMS = resultDuration(started)
+		result.EndedAt, result.DurationMS = resultDuration(request, started)
 		return result
 	}
 	result.InputDigest = inputDigest
@@ -1550,13 +1622,13 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 	if availabilityErr != nil {
 		result.Status = "unavailable"
 		result.NotRunReason = availabilityErr.Error()
-		result.EndedAt, result.DurationMS = resultDuration(started)
+		result.EndedAt, result.DurationMS = resultDuration(request, started)
 		return result
 	}
 	if err := prepareGroupOutputs(root, group); err != nil {
 		result.Status = "invalid"
 		result.NotRunReason = err.Error()
-		result.EndedAt, result.DurationMS = resultDuration(started)
+		result.EndedAt, result.DurationMS = resultDuration(request, started)
 		return result
 	}
 	sectionReport := ""
@@ -1566,7 +1638,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			engine, err := prepareSectionEngine(cwd, request.CandidateEngine, request.CandidateEngineDigest)
 			if err != nil {
 				result.Status, result.NotRunReason = "invalid", err.Error()
-				result.EndedAt, result.DurationMS = resultDuration(started)
+				result.EndedAt, result.DurationMS = resultDuration(request, started)
 				return result
 			}
 			environment = overlayTestEnvironment(environment, map[string]string{
@@ -1581,7 +1653,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			engine, err := prepareSectionEngine(cwd, request.CandidateEngine, request.CandidateEngineDigest)
 			if err != nil {
 				result.Status, result.NotRunReason = "invalid", err.Error()
-				result.EndedAt, result.DurationMS = resultDuration(started)
+				result.EndedAt, result.DurationMS = resultDuration(request, started)
 				return result
 			}
 			// Readiness follows the verified immutable input-bound artifact.
@@ -1599,19 +1671,19 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		if err := os.MkdirAll(filepath.Dir(sectionReport), 0o700); err != nil {
 			result.Status = "invalid"
 			result.NotRunReason = fmt.Sprintf("create section result parent: %v", err)
-			result.EndedAt, result.DurationMS = resultDuration(started)
+			result.EndedAt, result.DurationMS = resultDuration(request, started)
 			return result
 		}
 	}
 	if err := os.MkdirAll(request.LogRoot, 0o700); err != nil {
 		result.Status, result.NotRunReason = "invalid", fmt.Sprintf("create group log directory: %v", err)
-		result.EndedAt, result.DurationMS = resultDuration(started)
+		result.EndedAt, result.DurationMS = resultDuration(request, started)
 		return result
 	}
 	result.LogPath = filepath.Join(request.LogRoot, group.ID+".log")
 	if err := os.MkdirAll(filepath.Dir(result.LogPath), 0o700); err != nil {
 		result.Status, result.NotRunReason = "invalid", fmt.Sprintf("create group log parent: %v", err)
-		result.EndedAt, result.DurationMS = resultDuration(started)
+		result.EndedAt, result.DurationMS = resultDuration(request, started)
 		return result
 	}
 	var output synchronizedBuffer
@@ -1633,14 +1705,14 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		if commandErr != nil {
 			result.Status = "unavailable"
 			result.NotRunReason = commandErr.Error()
-			result.EndedAt, result.DurationMS = resultDuration(started)
+			result.EndedAt, result.DurationMS = resultDuration(request, started)
 			return result
 		}
 		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		logFile, err := os.OpenFile(result.LogPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 		if err != nil {
 			result.Status, result.NotRunReason = "invalid", fmt.Sprintf("create group log: %v", err)
-			result.EndedAt, result.DurationMS = resultDuration(started)
+			result.EndedAt, result.DurationMS = resultDuration(request, started)
 			return result
 		}
 		activity := newOutputActivity(time.Now())
@@ -1649,7 +1721,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		closeInherited, inheritErr := InheritHostResourceLease(command)
 		if inheritErr != nil {
 			result.Status, result.NotRunReason = "invalid", inheritErr.Error()
-			result.EndedAt, result.DurationMS = resultDuration(started)
+			result.EndedAt, result.DurationMS = resultDuration(request, started)
 			_ = logFile.Close()
 			return result
 		}
@@ -1662,7 +1734,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 	if launchErr != nil {
 		result.Status = "unavailable"
 		result.NotRunReason = launchErr.Error()
-		result.EndedAt, result.DurationMS = resultDuration(started)
+		result.EndedAt, result.DurationMS = resultDuration(request, started)
 		return result
 	}
 	exit := 0
@@ -1766,7 +1838,7 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 			result.NotRunReason = fmt.Sprintf("group inputs changed during execution: before %s, after %s", inputDigest, afterDigest)
 		}
 	}
-	result.EndedAt, result.DurationMS = resultDuration(started)
+	result.EndedAt, result.DurationMS = resultDuration(request, started)
 	return result
 }
 
@@ -1827,6 +1899,7 @@ func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request Tes
 		environment := groupTestEnvironment(request, group)
 		cwd := filepath.Join(root, filepath.FromSlash(group.CWD))
 		var newest *Attempt
+		ambiguous := false
 		for index := range attempts {
 			attempt := attempts[index]
 			// A later result for a changed definition cannot hide compatible
@@ -1880,12 +1953,20 @@ func RevalidateRetainedGroupExecutionIdentities(ctx context.Context, request Tes
 					continue
 				}
 				identity := groupExecutionIdentity(request, group, cwd, inputDigest, source.EnvironmentDigest, source.ToolIdentities, source.Expected)
-				if identity == source.ExecutionIdentity && (newest == nil || newerAttempt(newest, attempt).AttemptID == attempt.AttemptID) {
-					identities[id], newest = identity, newerAttempt(newest, attempt)
+				if identity == source.ExecutionIdentity {
+					selected, tied := newerAttempt(newest, attempt)
+					if tied {
+						ambiguous = true
+						identities[id] = ""
+					} else if newest == nil || selected.AttemptID == attempt.AttemptID {
+						ambiguous = false
+						identities[id] = identity
+					}
+					newest = selected
 				}
 			}
 		}
-		if identities[id] == "" {
+		if ambiguous || identities[id] == "" {
 			identities[id] = digestBytes([]byte("missing-retained-metadata\x00" + id + "\x00" + request.CandidateTree))
 		}
 	}

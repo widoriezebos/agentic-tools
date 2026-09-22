@@ -12,11 +12,7 @@
 # fallback decides whether a gate runs at all, so ambient or mistyped
 # state must die loudly, never silently suppress it. On success it
 # exports
-# METASYSTEM_GATE_WITNESS{,_ROOT,_RUN,_EXPORT}, refreshes bin/metasystem
 # from the proven snapshot, and leaves $witness_state set — the CALLER
-# owns removing that directory at exit. A clean tree retains the HEAD-archive
-# proof path. A dirty tree is copied into a private frozen export and the gate
-# runs only there; a source change during that copy voids arming loudly. Seed,
 # force, and delivery runs remain ineligible. A witness that existed at entry
 # is consumed or refused; it is never replaced in place.
 
@@ -67,58 +63,34 @@ if [[ -n "$witness_input" ]]; then
   fi
   return 0 2>/dev/null || exit 0
 fi
-# The historical cleanliness decision stays first. A clean source follows the
-# byte-for-byte existing HEAD archive branch below; only a proven dirty result
-# may enter the new freeze branch.
-witness_prefix_status=0
-witness_prefix=$(git -C "$root" rev-parse --show-prefix 2>/dev/null) || witness_prefix_status=$?
-witness_git_root=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null) || witness_prefix_status=$?
-witness_roots_bytes=
-witness_clean_check_ok=0
-if [[ $witness_prefix_status == 0 ]]; then
-  if witness_roots_bytes=$(
-    {
-      git -C "$witness_git_root" diff --no-renames --name-only -z HEAD -- &&
-      git -C "$witness_git_root" ls-files --others --exclude-standard --full-name -z &&
-      git -C "$witness_git_root" ls-files --others -i --exclude-standard --full-name -z
-    } | go run ./cmd/metasystem behavior-surface select \
-          --projection ENGINE --prefix "$witness_prefix" --nul \
-      | wc -c
-  ); then
-    witness_clean_check_ok=1
-    witness_roots_clean=1
-  else
-    witness_roots_clean=0
-  fi
-else
-  witness_roots_clean=0
-fi
-[[ "${witness_roots_bytes//[[:space:]]/}" == 0 ]] || witness_roots_clean=0
 witness_common_eligible=0
 if (( ! ${delivery_contract:-0} )) \
   && [[ "${METASYSTEM_COVERAGE_RATCHET_SEED:-0}" != 1 && "${METASYSTEM_GATE_FORCE:-0}" != 1 ]]; then
   witness_common_eligible=1
 fi
 
-if (( witness_common_eligible && witness_roots_clean )); then
-  # This is the established clean-tree path. It intentionally does not call
-  # witness-freeze, alter the toolchain environment, or change witness bytes.
+if (( witness_common_eligible )); then
+  if [[ " ${GOFLAGS:-} " =~ [[:space:]]-(modfile|overlay)(=|[[:space:]]) ]]; then
+    echo "witness gate arming voided: GOFLAGS may not contain -modfile or -overlay" >&2
+    return 1 2>/dev/null || exit 1
+  fi
   witness_prepared=1
-  witness_state=
-  witness_snap=
-  if ! witness_state=$(mktemp -d); then
+  witness_freeze_output=
+  if ! witness_freeze_output=$(go run ./cmd/metasystem gate witness-freeze --root "$root"); then
     witness_prepared=0
   fi
-  if (( witness_prepared )) && ! chmod 700 "$witness_state"; then
+  witness_freeze_snapshot=
+  IFS=$'\t' read -r witness_manifest_digest witness_snap witness_freeze_snapshot <<<"$witness_freeze_output"
+  if [[ ! "$witness_manifest_digest" =~ ^[a-f0-9]{64}$ || ! -d "$witness_snap" || ! -d "$witness_freeze_snapshot" ]]; then
+    [[ -z "$witness_freeze_snapshot" ]] \
+      || go run ./cmd/metasystem gate witness-freeze --cleanup "$witness_freeze_snapshot" >/dev/null 2>&1 \
+      || true
     witness_prepared=0
   fi
   if (( witness_prepared )); then
-    if ! witness_snap=$(mktemp -d); then
+    if ! witness_state=$(mktemp -d) || ! chmod 700 "$witness_state"; then
       witness_prepared=0
     fi
-  fi
-  if (( witness_prepared )) && ! chmod 700 "$witness_snap"; then
-    witness_prepared=0
   fi
   witness_run="run-$$-$RANDOM"
   witness_controller_pid=$$
@@ -133,144 +105,18 @@ if (( witness_common_eligible && witness_roots_clean )); then
       witness_prepared=0
     fi
   fi
-  if (( witness_prepared )); then
-    if ! witness_toplevel=$(git rev-parse --show-toplevel); then
-      witness_prepared=0
-    fi
-  fi
-  if (( witness_prepared )); then
-    witness_prefix=${root#"$witness_toplevel"}; witness_prefix=${witness_prefix#/}
-    witness_snapshot_archive=$witness_state/snapshot.tar
-    if [[ -n "$witness_prefix" ]]; then
-      if ! (
-        git -C "$witness_toplevel" archive "HEAD:$witness_prefix" >"$witness_snapshot_archive" || exit $?
-        tar -xf "$witness_snapshot_archive" -C "$witness_snap" || exit $?
-        rm -f "$witness_snapshot_archive"
-      ); then
-        witness_prepared=0
-      fi
-    elif ! (
-      git -C "$witness_toplevel" archive HEAD >"$witness_snapshot_archive" || exit $?
-      tar -xf "$witness_snapshot_archive" -C "$witness_snap" || exit $?
-      rm -f "$witness_snapshot_archive"
-    ); then
-      witness_prepared=0
-    fi
-  fi
-
   if (( ! witness_prepared )); then
     echo "witness gate preparation did not complete" >&2
     [[ -z "$witness_state" ]] || rm -rf "$witness_state" || true
-    [[ -z "$witness_snap" ]] || rm -rf "$witness_snap" || true
     witness_state=
+    [[ -z "$witness_freeze_snapshot" || ! -d "$witness_freeze_snapshot" ]] \
+      || go run ./cmd/metasystem gate witness-freeze --cleanup "$witness_freeze_snapshot" >/dev/null 2>&1 \
+      || true
     witness_fallback_rc=0
     if [[ "${WITNESS_GATE_FALLBACK:-plain}" == plain ]]; then
       bash scripts/agents/go-gate.sh || witness_fallback_rc=$?
     fi
     return "$witness_fallback_rc" 2>/dev/null || exit "$witness_fallback_rc"
-  fi
-
-  witness_gate_rc=0
-  ( cd "$witness_snap" \
-      && METASYSTEM_PROOF_EXECUTION_ROOT="$root" \
-         METASYSTEM_GATE_WITNESS_WRITE="$witness_state/witness.json" \
-         METASYSTEM_GATE_WITNESS_RUN="$witness_run" \
-         METASYSTEM_GATE_WITNESS_CONTROLLER_PID="$witness_controller_pid" \
-         METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT="$witness_controller_started_at" \
-         METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS="$witness_controller_start_ticks" \
-         METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID="$witness_controller_boot_id" \
-         bash scripts/agents/go-gate.sh ) || witness_gate_rc=$?
-  if (( witness_gate_rc != 0 )); then
-    rm -rf "$witness_state" || true
-    rm -rf "$witness_snap" || true
-    witness_state=
-    if (( witness_gate_rc == 3 )); then
-      # Exit 3 is the gate's own refusal (the snapshot's tree shape or
-      # toolchain, never a test): environmental, so the plain gate answers.
-      echo "witness gate refused in its clean snapshot (reason above); falling back to the plain gate" >&2
-      witness_fallback_rc=0
-      if [[ "${WITNESS_GATE_FALLBACK:-plain}" == plain ]]; then
-        bash scripts/agents/go-gate.sh || witness_fallback_rc=$?
-      else
-        witness_fallback_rc=$witness_gate_rc
-      fi
-      return "$witness_fallback_rc" 2>/dev/null || exit "$witness_fallback_rc"
-    fi
-    # A test failure or a coverage-ratchet refusal inside the snapshot is a
-    # deterministic answer; re-running everything would only repeat it.
-    echo "witness gate failed in its clean snapshot (exit $witness_gate_rc): the red above is the answer, no fallback" >&2
-    return "$witness_gate_rc" 2>/dev/null || exit "$witness_gate_rc"
-  fi
-  if [[ ! -f "$witness_state/witness.json" ]]; then
-    echo "witness gate completed without publishing witness evidence" >&2
-    rm -rf "$witness_state" || true
-    rm -rf "$witness_snap" || true
-    witness_state=
-    return 1 2>/dev/null || exit 1
-  fi
-
-  # Clean roots mean the snapshot's binary IS this tree's binary.
-  # Stage beside the target and rename over it (go-build.sh's
-  # documented pattern): cp over the live inode poisons macOS's
-  # code-signature cache and later execs die SIGKILL — exactly the
-  # silent suite death this line caused on 2026-08-16.
-  witness_publish_rc=0
-  witness_stage="bin/.metasystem.witness.$$"
-  mkdir -p bin || witness_publish_rc=$?
-  if (( witness_publish_rc == 0 )); then
-    cp "$witness_snap/bin/metasystem" "$witness_stage" || witness_publish_rc=$?
-  fi
-  if (( witness_publish_rc == 0 )); then
-    mv -f "$witness_stage" bin/metasystem || witness_publish_rc=$?
-  fi
-  if (( witness_publish_rc != 0 )); then
-    echo "witness gate completed but the proven binary could not be published" >&2
-    rm -f "$witness_stage" || true
-    rm -rf "$witness_state" || true
-    rm -rf "$witness_snap" || true
-    witness_state=
-    return "$witness_publish_rc" 2>/dev/null || exit "$witness_publish_rc"
-  fi
-  export METASYSTEM_GATE_WITNESS="$witness_state/witness.json"
-  export METASYSTEM_GATE_WITNESS_ROOT="$witness_state"
-  export METASYSTEM_GATE_WITNESS_RUN="$witness_run"
-  echo "gate witness armed for this run's nested validations"
-  rm -rf "$witness_snap" || true
-  return 0 2>/dev/null || exit 0
-elif (( witness_common_eligible && witness_clean_check_ok )); then
-  # Frozen proof runs discard ambient build flags, force read-only module
-  # selection, and keep GOMODCACHE inherited. The shared module cache is safe:
-  # go.sum inside the frozen tree pins module bytes by hash, while readonly mode
-  # forbids resolving a different dependency set. Alternate modfiles and Go
-  # overlays would replace frozen inputs, so they refuse before any export.
-  if [[ " ${GOFLAGS:-} " =~ [[:space:]]-(modfile|overlay)(=|[[:space:]]) ]]; then
-    echo "witness gate arming voided: GOFLAGS may not contain -modfile or -overlay" >&2
-    return 1 2>/dev/null || exit 1
-  fi
-  witness_freeze_output=
-  if ! witness_freeze_output=$(go run ./cmd/metasystem gate witness-freeze --root "$root"); then
-    echo "witness gate arming voided: the dirty tree could not be frozen consistently" >&2
-    return 1 2>/dev/null || exit 1
-  fi
-  read -r witness_manifest_digest witness_snap <<<"$witness_freeze_output"
-  if [[ ! "$witness_manifest_digest" =~ ^[a-f0-9]{64}$ || ! -d "$witness_snap" ]]; then
-    [[ -z "$witness_snap" ]] || rm -rf "$(dirname "$witness_snap")"
-    echo "witness gate arming voided: witness-freeze returned an invalid digest or export path" >&2
-    return 1 2>/dev/null || exit 1
-  fi
-  witness_state=$(dirname "$witness_snap")
-  witness_run="run-$$-$RANDOM"
-  witness_controller_pid=$$
-  witness_controller_started_at=
-  witness_controller_start_ticks=
-  witness_controller_boot_id=
-  if read -r witness_controller_started_at witness_controller_start_ticks witness_controller_boot_id \
-      < <(go run ./cmd/metasystem proc started-at --pid $$ --emit pair); then
-    [[ "$witness_controller_boot_id" == - ]] && witness_controller_boot_id=
-  else
-    rm -rf "$witness_state"; witness_state=
-    echo "witness gate arming voided: the live controller identity could not be read" >&2
-    return 1 2>/dev/null || exit 1
   fi
   witness_gate_rc=0
   ( cd "$witness_snap" \
@@ -284,22 +130,57 @@ elif (( witness_common_eligible && witness_clean_check_ok )); then
          METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS="$witness_controller_start_ticks" \
          METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID="$witness_controller_boot_id" \
          bash scripts/agents/go-gate.sh ) || witness_gate_rc=$?
-  if [[ "$witness_gate_rc" == 0 && -f "$witness_state/witness.json" ]]; then
-    mkdir -p bin \
-      && cp "$witness_snap/bin/metasystem" "bin/.metasystem.witness.$$" \
-      && mv -f "bin/.metasystem.witness.$$" bin/metasystem
-    export METASYSTEM_GATE_WITNESS="$witness_state/witness.json"
-    export METASYSTEM_GATE_WITNESS_ROOT="$witness_state"
-    export METASYSTEM_GATE_WITNESS_RUN="$witness_run"
-    export METASYSTEM_GATE_WITNESS_EXPORT="$witness_snap"
-    echo "gate witness armed from frozen dirty export $witness_snap"
-    echo "gate witness armed for this run's nested validations"
-  else
-    echo "witness gate did not complete in its frozen dirty tree" >&2
+  if (( witness_gate_rc != 0 )); then
     rm -rf "$witness_state"; witness_state=
-    [[ "$witness_gate_rc" != 0 ]] || witness_gate_rc=1
+    [[ ! -d "$witness_freeze_snapshot" ]] \
+      || go run ./cmd/metasystem gate witness-freeze --cleanup "$witness_freeze_snapshot" >/dev/null 2>&1 \
+      || true
+    if (( witness_gate_rc == 3 )); then
+      echo "witness gate refused in its frozen project (reason above); falling back to the plain gate" >&2
+      witness_fallback_rc=0
+      if [[ "${WITNESS_GATE_FALLBACK:-plain}" == plain ]]; then
+        bash scripts/agents/go-gate.sh || witness_fallback_rc=$?
+      else
+        witness_fallback_rc=$witness_gate_rc
+      fi
+      return "$witness_fallback_rc" 2>/dev/null || exit "$witness_fallback_rc"
+    fi
+    echo "witness gate failed in its frozen project (exit $witness_gate_rc): the red above is the answer, no fallback" >&2
     return "$witness_gate_rc" 2>/dev/null || exit "$witness_gate_rc"
   fi
+  if [[ ! -f "$witness_state/witness.json" ]]; then
+    echo "witness gate completed without publishing witness evidence" >&2
+    rm -rf "$witness_state"; witness_state=
+    go run ./cmd/metasystem gate witness-freeze --cleanup "$witness_freeze_snapshot" >/dev/null 2>&1 || true
+    return 1 2>/dev/null || exit 1
+  fi
+  witness_publish_rc=0
+  witness_stage="bin/.metasystem.witness.$$"
+  mkdir -p bin || witness_publish_rc=$?
+  if (( witness_publish_rc == 0 )); then
+    cp "$witness_snap/bin/metasystem" "$witness_stage" || witness_publish_rc=$?
+  fi
+  if (( witness_publish_rc == 0 )); then
+    mv -f "$witness_stage" bin/metasystem || witness_publish_rc=$?
+  fi
+  if (( witness_publish_rc != 0 )); then
+    echo "witness gate completed but the proven binary could not be published" >&2
+    rm -f "$witness_stage" || true
+    rm -rf "$witness_state"; witness_state=
+    go run ./cmd/metasystem gate witness-freeze --cleanup "$witness_freeze_snapshot" >/dev/null 2>&1 || true
+    return "$witness_publish_rc" 2>/dev/null || exit "$witness_publish_rc"
+  fi
+  if ! go run ./cmd/metasystem gate witness-freeze --cleanup "$witness_freeze_snapshot"; then
+    echo "witness gate completed but its frozen project could not be released" >&2
+    rm -rf "$witness_state"; witness_state=
+    return 1 2>/dev/null || exit 1
+  fi
+  export METASYSTEM_GATE_WITNESS="$witness_state/witness.json"
+  export METASYSTEM_GATE_WITNESS_ROOT="$witness_state"
+  export METASYSTEM_GATE_WITNESS_RUN="$witness_run"
+  unset METASYSTEM_GATE_WITNESS_EXPORT
+  echo "gate witness armed from complete frozen project"
+  echo "gate witness armed for this run's nested validations"
 else
   if [[ "${WITNESS_GATE_FALLBACK:-plain}" == plain ]]; then
     bash scripts/agents/go-gate.sh

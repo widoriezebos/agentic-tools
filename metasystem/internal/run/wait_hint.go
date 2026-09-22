@@ -46,7 +46,6 @@ type HintDelivery struct {
 	Delivered int
 }
 
-var notifyWaitersBootClock = identity.BootClock
 var waitHintEvents = &events.Emitter{Component: "run", Pid: int64(os.Getpid())}
 
 func waiterHintPath(rowPath, nonce string) string {
@@ -149,8 +148,16 @@ func (receiver *fifoHintReceiver) Close() error {
 
 // NotifyWaiters delivers a nonblocking hint to matching live registrations.
 // It deliberately does not report missing readers as failure: the ten-second
-// source reread remains the correctness path.
-func NotifyWaiters(root string, hint WaitHint) (HintDelivery, error) {
+// source reread remains the correctness path. An optional clock binds a boot
+// sample to this publication without changing the clock used by other calls.
+func NotifyWaiters(root string, hint WaitHint, clocks ...func() (string, time.Duration, error)) (HintDelivery, error) {
+	if len(clocks) > 1 || (len(clocks) == 1 && clocks[0] == nil) {
+		return HintDelivery{}, fmt.Errorf("wait publication accepts at most one boot clock")
+	}
+	bootClock := identity.BootClock
+	if len(clocks) == 1 {
+		bootClock = clocks[0]
+	}
 	if hint.Kind != "job" && hint.Kind != "attempt" && hint.Kind != "goal" {
 		return HintDelivery{}, fmt.Errorf("wait hint kind must be job, attempt, or goal")
 	}
@@ -186,7 +193,7 @@ func NotifyWaiters(root string, hint WaitHint) (HintDelivery, error) {
 		}
 		_ = unix.Close(fd)
 	}
-	publishedBootID, publishedBootElapsed, clockErr := notifyWaitersBootClock()
+	publishedBootID, publishedBootElapsed, clockErr := bootClock()
 	if clockErr != nil {
 		publishedBootID, publishedBootElapsed = "", 0
 	}

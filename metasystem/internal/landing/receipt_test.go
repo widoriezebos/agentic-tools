@@ -483,7 +483,18 @@ func TestCreateTestReceiptChecksOutWholeTreeAtRepositoryRoot(t *testing.T) {
 
 func TestCreateTestReceiptRemovesIsolatedWorktreeAfterSignal(t *testing.T) {
 	if os.Getenv("LANDING_RECEIPT_SIGNAL_HELPER") == "1" {
-		_, err := CreateTestReceipt(
+		ready, err := os.OpenFile(os.Getenv("LANDING_RECEIPT_SIGNAL_PROBE"), os.O_WRONLY, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ready.WriteString(os.TempDir() + "\n"); err != nil {
+			_ = ready.Close()
+			t.Fatal(err)
+		}
+		if err := ready.Close(); err != nil {
+			t.Fatal(err)
+		}
+		_, err = CreateTestReceipt(
 			os.Getenv("LANDING_RECEIPT_SIGNAL_ROOT"),
 			os.Getenv("LANDING_RECEIPT_SIGNAL_TREE"),
 			`printf '%s\n' "$PWD" > "$LANDING_RECEIPT_SIGNAL_PROBE"; exec bash -c 'read -r _' < "$LANDING_RECEIPT_SIGNAL_HOLD"`,
@@ -542,7 +553,16 @@ func TestCreateTestReceiptRemovesIsolatedWorktreeAfterSignal(t *testing.T) {
 			_ = helper.Wait()
 		}
 	})
-	isolatedRoot, err := bufio.NewReader(ready).ReadString('\n')
+	readyReader := bufio.NewReader(ready)
+	childTemp, err := readyReader.ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	childTemp = strings.TrimSpace(childTemp)
+	if childTemp == "" {
+		t.Fatal("signal helper exposed an empty temporary root")
+	}
+	isolatedRoot, err := readyReader.ReadString('\n')
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -550,7 +570,7 @@ func TestCreateTestReceiptRemovesIsolatedWorktreeAfterSignal(t *testing.T) {
 	if isolatedRoot == "" {
 		t.Fatal("signal helper exposed an empty isolated root")
 	}
-	resolvedTemp, err := filepath.EvalSymlinks(os.TempDir())
+	resolvedTemp, err := filepath.EvalSymlinks(childTemp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -560,7 +580,7 @@ func TestCreateTestReceiptRemovesIsolatedWorktreeAfterSignal(t *testing.T) {
 	}
 	relativeToTemp, err := filepath.Rel(resolvedTemp, resolvedIsolatedRoot)
 	if err != nil || relativeToTemp == ".." || strings.HasPrefix(relativeToTemp, ".."+string(filepath.Separator)) {
-		t.Fatalf("isolated root %q is not under the system temporary directory", isolatedRoot)
+		t.Fatalf("isolated root %q is not under the signal helper temporary root %q", isolatedRoot, childTemp)
 	}
 	if err := helper.Process.Signal(os.Interrupt); err != nil {
 		t.Fatal(err)

@@ -59,6 +59,7 @@ cat >"$tmp/drive.sh" <<EOF
 set -euo pipefail
 mode=\$1 dir=\$2
 export STUB_CAS_LOG="\$dir/cas.log"; : >"\$STUB_CAS_LOG"
+if [[ -n \${DRIVER_EVENT_FIFO:-} ]]; then exec 7>"\$DRIVER_EVENT_FIFO"; fi
 job=f4fix; record="\$dir/job.json"; round_dir="\$dir"; log="\$dir/job.log"; heartbeat="\$dir/hb"
 ms="\${DRIVER_MS:-$ms_real}"; dispatch="$tmp/stub-dispatch.sh"
 requested_model=m; requested_session=; session_id=; effective="\$dir/eff.json"; echo '{}' >"\$effective"
@@ -68,6 +69,25 @@ case "\$mode" in
   standdown)         handshake_done=1; printf '{"jobId":"f4fix","status":"running","handshakeDeadline":5}\n' >"\$record" ;;
 esac
 source "$source_root/scripts/agents/adapters/runtime-common.sh"
+if [[ \$mode == standdown ]]; then
+  eval "\$(declare -f check_record_deadlines | sed '1s/check_record_deadlines/original_check_record_deadlines/')"
+  check_record_deadlines() {
+    original_check_record_deadlines "\$@"
+    : >"\$dir/deadline-checked"
+    printf 'deadline-checked\n' >&7
+  }
+fi
+if [[ \$mode == survivor ]]; then
+  eval "\$(declare -f enforce_expired_deadline | sed '1s/enforce_expired_deadline/original_enforce_expired_deadline/')"
+  enforce_expired_deadline() {
+    local rc
+    original_enforce_expired_deadline "\$@"; rc=\$?
+    if grep -q "sweep left the kill domain unproven" "\$log" 2>/dev/null; then
+      printf 'unproven-domain-published\n' >&7
+    fi
+    return "\$rc"
+  }
+fi
 sleep 30 & child=\$!
 echo "\$child" >"\$dir/child.pid"
 METASYSTEM_HEARTBEAT_INTERVAL_MS=50 wait_for_cli "\$child"
@@ -87,22 +107,17 @@ run_driver() { # mode, dir, extra env as KEY=VALUE...
   set +m
 }
 
-wait_driver() { # cap seconds; returns the driver's rc
-  local cap=$1 rc
-  local deadline=$((SECONDS + cap))
-  while kill -0 "$driver_pid" 2>/dev/null; do
-    (( SECONDS < deadline )) || { echo "driver did not settle within ${cap}s" >&2; return 99; }
-    sleep 0.1
-  done
+wait_driver() { # returns the direct driver's actual status
+  local rc
   set +e; wait "$driver_pid"; rc=$?; set -e
   driver_pid=
-  return $rc
+  return "$rc"
 }
 
 # ADPT-DL-001: an expired cap kills the child and lands running->timeout
 # exactly once, and the supervisor's turn ends there.
 d="$tmp/cap"; run_driver cap "$d"
-wait_driver 15 || { echo "ADPT-DL-001: enforcement did not settle cleanly" >&2; exit 1; }
+wait_driver || { echo "ADPT-DL-001: enforcement did not settle cleanly" >&2; exit 1; }
 child_pid=$(cat "$d/child.pid")
 kill -0 "$child_pid" 2>/dev/null && { echo "ADPT-DL-001: the child survived cap enforcement" >&2; exit 1; }
 child_pid=
@@ -116,7 +131,7 @@ pass_fixture ADPT-DL-001
 # ADPT-DL-002: an expired handshake deadline (no session ever recorded)
 # lands pending->failed through the handshake_timeout path.
 d="$tmp/handshake"; run_driver handshake "$d"
-wait_driver 15 || { echo "ADPT-DL-002: enforcement did not settle cleanly" >&2; exit 1; }
+wait_driver || { echo "ADPT-DL-002: enforcement did not settle cleanly" >&2; exit 1; }
 child_pid=$(cat "$d/child.pid")
 kill -0 "$child_pid" 2>/dev/null && { echo "ADPT-DL-002: the child survived handshake enforcement" >&2; exit 1; }
 child_pid=
@@ -126,14 +141,18 @@ pass_fixture ADPT-DL-002
 
 # ADPT-DL-003: a won handshake stands down BEFORE any signal — zero CAS,
 # zero signals, the wait continues undisturbed.
-d="$tmp/standdown"; run_driver standdown "$d"
-sleep 1
+d="$tmp/standdown"; event_fifo="$d/driver-event.fifo"; mkdir -p "$d"; mkfifo "$event_fifo"
+run_driver standdown "$d" DRIVER_EVENT_FIFO="$event_fifo"
+IFS= read -r driver_event <"$event_fifo" \
+  || { wait_driver || true; echo "ADPT-DL-003: the driver exited before checking the won handshake" >&2; exit 1; }
+[[ "$driver_event" == deadline-checked && -f "$d/deadline-checked" ]] \
+  || { echo "ADPT-DL-003: the deadline monitor published an invalid completed check" >&2; exit 1; }
 child_pid=$(cat "$d/child.pid" 2>/dev/null || true)
 [[ -n "$child_pid" ]] && kill -0 "$child_pid" 2>/dev/null \
   || { echo "ADPT-DL-003: the child should still be running under a won handshake" >&2; exit 1; }
 [[ ! -s "$d/cas.log" ]] || { echo "ADPT-DL-003: a won handshake attempted a CAS: $(cat "$d/cas.log")" >&2; exit 1; }
 kill "$child_pid" 2>/dev/null || true; child_pid=
-wait_driver 10 || true
+wait_driver || true
 [[ -f "$d/normal-return" ]] || { echo "ADPT-DL-003: the wait did not return normally after the child ended" >&2; exit 1; }
 pass_fixture ADPT-DL-003
 
@@ -141,7 +160,7 @@ pass_fixture ADPT-DL-003
 # CAS loses (rc 3) and the turn still settles with exactly one attempt —
 # one record, one verdict, no retry storm.
 d="$tmp/race"; run_driver race "$d" STUB_CAS_LOSES=1
-wait_driver 15 || { echo "ADPT-DL-004: the lost-CAS path did not settle cleanly" >&2; exit 1; }
+wait_driver || { echo "ADPT-DL-004: the lost-CAS path did not settle cleanly" >&2; exit 1; }
 child_pid=$(cat "$d/child.pid")
 kill -0 "$child_pid" 2>/dev/null && { echo "ADPT-DL-004: the child survived" >&2; exit 1; }
 child_pid=
@@ -152,12 +171,13 @@ pass_fixture ADPT-DL-004
 # ADPT-DL-005: a kill domain that cannot be proven dead (a phantom member
 # survives every sweep) leaves the record NONTERMINAL: no CAS, the decline
 # said in the log, the wait still standing.
-d="$tmp/survivor"; run_driver survivor "$d" DRIVER_MS="$tmp/phantom-ms.sh"
-deadline=$((SECONDS + 20))
-until grep -q "sweep left the kill domain unproven" "$d/job.log" 2>/dev/null; do
-  (( SECONDS < deadline )) || { echo "ADPT-DL-005: the unproven domain was never declared" >&2; exit 1; }
-  sleep 0.2
-done
+d="$tmp/survivor"; event_fifo="$d/driver-event.fifo"; mkdir -p "$d"; mkfifo "$event_fifo"
+run_driver survivor "$d" DRIVER_MS="$tmp/phantom-ms.sh" DRIVER_EVENT_FIFO="$event_fifo"
+IFS= read -r driver_event <"$event_fifo" \
+  || { wait_driver || true; echo "ADPT-DL-005: the driver exited before declaring the unproven domain" >&2; exit 1; }
+[[ "$driver_event" == unproven-domain-published ]] \
+  && grep -q "sweep left the kill domain unproven" "$d/job.log" 2>/dev/null \
+  || { echo "ADPT-DL-005: the unproven domain publication was invalid" >&2; exit 1; }
 [[ ! -s "$d/cas.log" ]] || { echo "ADPT-DL-005: an unproven domain still landed a CAS: $(cat "$d/cas.log")" >&2; exit 1; }
 child_pid=$(cat "$d/child.pid" 2>/dev/null || true)
 kill -KILL "$driver_pid" 2>/dev/null || true; wait "$driver_pid" 2>/dev/null || true; driver_pid=

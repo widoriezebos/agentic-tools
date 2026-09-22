@@ -58,9 +58,7 @@ func (adapter CodexExec) Command(record Record, stateDir string) (Command, error
 	if err != nil {
 		return Command{}, err
 	}
-	if diff := readString(record.AdapterData, "readDiff"); diff != "" {
-		data = append(data, []byte("\nDiff: "+diff+"\n")...)
-	}
+	data = appendReadPacket(data, record)
 	directory := record.WorkingDirectory
 	if record.Kind == "critique" {
 		directory, err = adapter.prepareCritique(record)

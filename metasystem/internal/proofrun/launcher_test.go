@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestWaitAttemptAfterDrain(t *testing.T) {
@@ -33,21 +35,9 @@ func TestWaitAttemptAfterDrain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := exec.Command("sleep", "60")
-	if err := worker.Start(); err != nil {
-		t.Fatal(err)
-	}
-	workerPID := worker.Process.Pid
-	t.Cleanup(func() {
-		if worker.ProcessState == nil {
-			_ = worker.Process.Kill()
-			_ = worker.Wait()
-		}
-	})
-	if err := worker.Process.Kill(); err != nil {
-		t.Fatal(err)
-	}
-	if err := worker.Wait(); err == nil {
+	worker := testutil.StartHeldProcess(t, exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :"))
+	workerPID := worker.Command.Process.Pid
+	if err := worker.Kill(); err == nil {
 		t.Fatal("fixture worker unexpectedly exited successfully after it was killed")
 	}
 	if exact, state, probeErr := (identity.KernelProber{}).Probe(int64(workerPID)); probeErr != nil || state != identity.Dead {
@@ -70,6 +60,24 @@ func TestWaitAttemptAfterDrain(t *testing.T) {
 type testCreationClaim struct {
 	mu     sync.Mutex
 	closed bool
+}
+
+type releasingCreationClaim struct {
+	CreationClaim
+	release *os.File
+	root    string
+	suite   string
+}
+
+func (c *releasingCreationClaim) Close() error {
+	if err := c.CreationClaim.Close(); err != nil {
+		return err
+	}
+	if _, err := ReadRecord(c.root, c.suite); err != nil {
+		return fmt.Errorf("read published record before worker release: %w", err)
+	}
+	_, err := c.release.Write([]byte{'x'})
+	return err
 }
 
 func (c *testCreationClaim) Path() string { return "fixture-creation-claim" }
@@ -142,6 +150,33 @@ printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n
 	run, err := ReadLatestProgressRun(progress)
 	if err != nil || len(run.Events) != 2 || len(run.Header.TmpPaths) != 1 {
 		t.Fatalf("progress run = %+v, %v", run, err)
+	}
+}
+
+func TestLaunchSuiteRejectsZeroChildWithoutNormalFullProgress(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	watchdog := filepath.Join(root, "watchdog.sh")
+	writeExecutable(t, watchdog, `#!/usr/bin/env bash
+done_path=
+while (($#)); do
+  if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
+done
+while [[ ! -e "$done_path" ]]; do sleep 0.01; done
+`)
+	var errors bytes.Buffer
+	result := LaunchSuite(LaunchOptions{
+		Suite: "validate-metasystem", Root: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+		ProgressPath: filepath.Join(root, "progress.jsonl"), LogPath: filepath.Join(root, "suite.log"),
+		Banner: "normal validation fixture", ExpectedSections: []string{"static-placeholder-scan", "go-engine-gate"},
+		Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
+		Poll: 10 * time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
+		WatchdogExecutable: watchdog, Command: []string{"sh", "-c", "exit 0"}, ErrorOutput: &errors,
+	})
+	if result != 1 || !strings.Contains(errors.String(), "suite progress structure is incomplete") ||
+		!strings.Contains(errors.String(), "static-placeholder-scan has 0 starts and 0 ends") ||
+		!strings.Contains(errors.String(), "go-engine-gate has 0 starts and 0 ends") {
+		t.Fatalf("zero child result=%d errors=%q", result, errors.String())
 	}
 }
 
@@ -314,6 +349,81 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 	if identity.AliveRef(identity.KernelProber{}, record.SuiteProcess.Ref()) != identity.Dead ||
 		identity.AliveRef(identity.KernelProber{}, record.Watchdog.Ref()) != identity.Dead {
 		t.Fatalf("creator-race children survived: %+v", record)
+	}
+}
+
+func TestLaunchSuiteSecondFenceErrorUsesPhysicalStopClock(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	watchdog := filepath.Join(root, "watchdog.sh")
+	writeExecutable(t, watchdog, `#!/usr/bin/env bash
+done_path=
+while (($#)); do
+  if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
+done
+while [[ ! -e "$done_path" ]]; do sleep 0.01; done
+`)
+	ready := filepath.Join(root, "suite-ready")
+	if err := syscall.Mkfifo(ready, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	claim := &testCreationClaim{}
+	reads := 0
+	var signals []syscall.Signal
+	var problems bytes.Buffer
+	fixed := time.Date(2026, 9, 21, 9, 0, 0, 0, time.UTC)
+	result := LaunchSuite(LaunchOptions{
+		Suite: "second-fence-error", Root: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+		ProgressPath: filepath.Join(root, "progress.jsonl"), LogPath: filepath.Join(root, "suite.log"),
+		Banner: "physical stop clock fixture", Silence: time.Second, SectionCap: time.Second,
+		EvidenceTimeout: time.Second, EvidenceMax: 1, Poll: time.Millisecond,
+		TermGrace: 5 * time.Millisecond, KillGrace: time.Second, WatchdogExecutable: watchdog,
+		Command:     []string{"bash", "-c", `trap '' TERM; printf 'ready\n' >"$1"; exec tail -f /dev/null`, "fixture", ready},
+		ErrorOutput: &problems, Now: func() time.Time { return fixed },
+		FenceReader: func(string) (stopfence.Record, error) {
+			reads++
+			if reads == 1 {
+				return stopfence.Record{State: stopfence.StateOpen, Phase: stopfence.PhaseArmed, Generation: 9}, nil
+			}
+			file, err := os.Open(ready)
+			if err != nil {
+				return stopfence.Record{}, err
+			}
+			defer file.Close()
+			line, err := io.ReadAll(file)
+			if err != nil || string(line) != "ready\n" {
+				return stopfence.Record{}, fmt.Errorf("suite readiness=%q err=%v", line, err)
+			}
+			return stopfence.Record{}, errors.New("controlled second fence read failure")
+		},
+		ClaimCreator: func(_ string, _ string, _ int64, _ identity.Ref) (CreationClaim, error) {
+			return claim, nil
+		},
+		Signal: func(target int, signal syscall.Signal) error {
+			signals = append(signals, signal)
+			return syscall.Kill(target, signal)
+		},
+	})
+	if result != 1 || reads != 2 || !claim.isClosed() || !strings.Contains(problems.String(), "controlled second fence read failure") {
+		t.Fatalf("result=%d reads=%d claimClosed=%t signals=%v errors=%q", result, reads, claim.isClosed(), signals, problems.String())
+	}
+	termAt, killAt := -1, -1
+	for index, signal := range signals {
+		if signal == syscall.SIGTERM && termAt < 0 {
+			termAt = index
+		}
+		if signal == syscall.SIGKILL && killAt < 0 {
+			killAt = index
+		}
+	}
+	if termAt < 0 || killAt <= termAt {
+		t.Fatalf("TERM-resistant suite did not reach ordered TERM/KILL escalation: %v", signals)
+	}
+	record, err := ReadRecord(root, "second-fence-error")
+	if err != nil || record.Status != StatusDone ||
+		identity.AliveRef(identity.KernelProber{}, record.SuiteProcess.Ref()) != identity.Dead ||
+		identity.AliveRef(identity.KernelProber{}, record.Watchdog.Ref()) != identity.Dead {
+		t.Fatalf("second-fence cleanup record=%+v err=%v", record, err)
 	}
 }
 
@@ -740,8 +850,22 @@ func TestLaunchSuiteAuthenticatesLegacyWorker(t *testing.T) {
 			fmt.Fprintln(os.Stderr, "legacy child inherited a contradictory proof locator")
 			os.Exit(97)
 		}
-		err := AuthenticateWorker(os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT"),
-			os.Getenv("METASYSTEM_PROOF_RECORD_KEY"), os.Getenv("METASYSTEM_PROOF_CREATION_CLAIM"), int64(os.Getppid()))
+		release, err := os.Open(os.Getenv("LEGACY_PROOF_RELEASE"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(97)
+		}
+		var released [1]byte
+		if _, err := io.ReadFull(release, released[:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(97)
+		}
+		if _, err := os.Stat(os.Getenv("METASYSTEM_PROOF_CREATION_CLAIM")); !os.IsNotExist(err) {
+			fmt.Fprintln(os.Stderr, "creation claim survived worker release:", err)
+			os.Exit(97)
+		}
+		err = AuthenticateWorker(os.Getenv("METASYSTEM_PROOF_CONTROL_ROOT"), os.Getenv("METASYSTEM_PROOF_ATTEMPT"),
+			os.Getenv("METASYSTEM_PROOF_RECORD_KEY"), os.Getenv("METASYSTEM_PROOF_CREATION_CLAIM"), int64(os.Getpid()))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(97)
@@ -759,6 +883,15 @@ func TestLaunchSuiteAuthenticatesLegacyWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	marker := filepath.Join(root, "artifacts", "legacy-worker-authorized")
+	releasePath := filepath.Join(root, "artifacts", "legacy-worker-release.fifo")
+	if err := syscall.Mkfifo(releasePath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	release, err := os.OpenFile(releasePath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = release.Close() })
 	watchdog := filepath.Join(root, "artifacts", "legacy-worker-watchdog.sh")
 	writeExecutable(t, watchdog, `#!/usr/bin/env bash
 done_path=
@@ -770,6 +903,7 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 	t.Setenv("GO_WANT_LEGACY_PROOF_WORKER", "1")
 	t.Setenv("LEGACY_PROOF_WORKER_MARKER", marker)
 	t.Setenv("LEGACY_PROOF_EXPECTED_ROOT", root)
+	t.Setenv("LEGACY_PROOF_RELEASE", releasePath)
 	// Model the exact environment in which the full validator runs package
 	// tests. The legacy launcher must replace every enclosing proof locator
 	// with the context it owns.
@@ -784,7 +918,14 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 		ProgressPath: filepath.Join(root, "artifacts", "legacy.progress.jsonl"), LogPath: filepath.Join(root, "artifacts", "legacy.log"),
 		Banner: "legacy worker fixture", Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
 		Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second, WatchdogExecutable: watchdog,
-		Command: []string{os.Args[0], "-test.run=^TestLaunchSuiteAuthenticatesLegacyWorker$"}, ErrorOutput: os.Stderr})
+		Command: []string{os.Args[0], "-test.run=^TestLaunchSuiteAuthenticatesLegacyWorker$"}, ErrorOutput: os.Stderr,
+		ClaimCreator: func(root, verb string, generation int64, ref identity.Ref) (CreationClaim, error) {
+			claim, err := stopfence.Creating(root, verb, generation, ref)
+			if err != nil {
+				return nil, err
+			}
+			return &releasingCreationClaim{CreationClaim: claim, release: release, root: root, suite: "legacy-worker-launch"}, nil
+		}})
 	if result != 0 {
 		t.Fatalf("legacy worker launch exit=%d", result)
 	}

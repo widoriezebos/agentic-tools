@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
-	"time"
 )
 
 // The cross-platform enumeration contract:
@@ -170,14 +169,18 @@ func TestProcessCwdMatchesWorkingDirectory(t *testing.T) {
 	}
 }
 
-func TestProbeSelfIsAliveAndRecent(t *testing.T) {
-	exact, state, err := (KernelProber{}).Probe(int64(os.Getpid()))
+func TestProbeSelfHasStableNativeIdentity(t *testing.T) {
+	prober := KernelProber{}
+	self := int64(os.Getpid())
+	exact, state, err := prober.Probe(self)
 	if err != nil || state != Alive {
 		t.Fatalf("Probe(self) = (%v, %v)", state, err)
 	}
-	age := time.Since(exact.StartedAt)
-	if age < 0 || age > 24*time.Hour {
-		t.Fatalf("self start time implausible: %v ago", age)
+	start, startState, startErr := prober.ReadStart(self)
+	birth, birthOK := ProcessBirth(self)
+	if startErr != nil || startState != Alive || !SameIdentity(start, exact.Ref()) ||
+		!birthOK || birth.IsZero() || !start.Ref().NativeExact() || !exact.Ref().NativeExact() {
+		t.Fatalf("self identity mismatch: probe=%+v start=%+v/%s/%v birth=%s/%v", exact.Ref(), start.Ref(), startState, startErr, birth, birthOK)
 	}
 }
 

@@ -49,7 +49,12 @@ func forecastTestingSelection(root string, selection costSelection, proofCapMinu
 	if err != nil {
 		return costSelectionEvidence{}, err
 	}
-	if _, err := resolveProofRunLimits(prepared.ConfPath); err != nil {
+	commandClock, _, err := goalCommandClock(prepared.proofControlRoot())
+	if err != nil {
+		return costSelectionEvidence{}, err
+	}
+	semanticNow := commandClock()
+	if _, err := resolveTestingPreparationWorkerPolicy(&prepared); err != nil {
 		return costSelectionEvidence{}, err
 	}
 	attempts, err := proofrun.ReadAttempts(prepared.proofControlRoot())
@@ -90,7 +95,7 @@ func forecastTestingSelection(root string, selection costSelection, proofCapMinu
 		}
 	}
 	run.FreshnessBinding = testingFreshnessBinding(run, identities, selection.FreshEpisode)
-	template := proofrun.NewTestResult(run)
+	template := proofrun.NewTestResultAt(run, semanticNow)
 	reused := proofrun.ReusedTestResult(template, attempts, identities, prepared.EffectiveContract)
 	evidence := costSelectionEvidence{Request: batch.CostForecastRequest{ID: selection.ID, Kind: selection.Kind,
 		Tree: selection.Tree, ChargeGoal: selection.GoalID, SelectedGroups: slices.Clone(prepared.Plan.SelectedGroups)}}

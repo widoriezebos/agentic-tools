@@ -49,11 +49,13 @@ brain_fake_server_pid=
 brain_fake_server_dir=
 proof_grade_holder_pid=
 proof_grade_holder_pid_file=
+proof_grade_holder_ready_file=
 proof_grade_holder_start=
 proof_grade_holder_command=
 proof_grade_holder_session_pid=
 proof_grade_holder_session_start=
 proof_grade_holder_keeper_pid=
+proof_grade_holder_keeper_ready_file=
 proof_grade_holder_keeper_start=
 cleanup() {
   local status=$? keep command current_start cleanup_cap cleanup_started holder_unproven_cleanup= keeper_cleanup= session_cleanup=
@@ -668,34 +670,41 @@ if [[ "$fixture_scenario" == proof-grades ]]; then
   # The holder is a signed fake-runtime sibling, never an ancestor of the
   # pseudo-terminal shell. The clone keeps every real runtime signature so
   # the agent assertions exercise the same signature set as production.
+  export PROOF_GRADE_MS=$ms
   proof_grade_holder_command=$tmp/metasystem-fake-agent
   cat >"$proof_grade_holder_command" <<'PROOF_GRADE_HOLDER_COMMAND'
 #!/bin/bash
-exec -a metasystem-fake-agent /bin/sleep "$1"
+exec -a metasystem-fake-agent "$PROOF_GRADE_MS" util hold \
+  --tag proof-grade-holder --ready-file "$PROOF_GRADE_HOLDER_READY_FILE"
 PROOF_GRADE_HOLDER_COMMAND
   chmod +x "$proof_grade_holder_command"
   proof_grade_holder_pid_file=$tmp/proof-grade-holder.pid
+  proof_grade_holder_ready_file=$tmp/proof-grade-holder.ready
   proof_grade_holder_script=$tmp/proof-grade-holder.sh
   cat >"$proof_grade_holder_script" <<'PROOF_GRADE_HOLDER'
 #!/usr/bin/env bash
 set -euo pipefail
 trap '' HUP
 printf '%s\n' "$$" >"$PROOF_GRADE_HOLDER_PID_FILE"
-exec "$PROOF_GRADE_HOLDER_COMMAND" 300
+exec "$PROOF_GRADE_HOLDER_COMMAND"
 PROOF_GRADE_HOLDER
   chmod +x "$proof_grade_holder_script"
   export PROOF_GRADE_HOLDER_COMMAND=$proof_grade_holder_command
   export PROOF_GRADE_HOLDER_PID_FILE=$proof_grade_holder_pid_file
+  export PROOF_GRADE_HOLDER_READY_FILE=$proof_grade_holder_ready_file
   proof_grade_holder_keeper_pid_file=$tmp/proof-grade-input-keeper.pid
+  proof_grade_holder_keeper_ready_file=$tmp/proof-grade-input-keeper.ready
   proof_grade_holder_keeper_script=$tmp/proof-grade-input-keeper.sh
   cat >"$proof_grade_holder_keeper_script" <<'PROOF_GRADE_KEEPER'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$$" >"$PROOF_GRADE_KEEPER_PID_FILE"
-exec -a proof-grade-input-keeper /bin/sleep 600
+exec -a proof-grade-input-keeper "$PROOF_GRADE_MS" util hold \
+  --tag proof-grade-input-keeper --ready-file "$PROOF_GRADE_KEEPER_READY_FILE"
 PROOF_GRADE_KEEPER
   chmod +x "$proof_grade_holder_keeper_script"
   export PROOF_GRADE_KEEPER_PID_FILE=$proof_grade_holder_keeper_pid_file
+  export PROOF_GRADE_KEEPER_READY_FILE=$proof_grade_holder_keeper_ready_file
   case "$(uname -s)" in
     Darwin) /bin/bash "$proof_grade_holder_keeper_script" | /usr/bin/script -q /dev/null /bin/bash "$proof_grade_holder_script" >"$tmp/proof-grade-holder.log" 2>&1 & ;;
     Linux) /bin/bash "$proof_grade_holder_keeper_script" | /usr/bin/script -q --return -c "exec /bin/bash '$proof_grade_holder_script'" /dev/null >"$tmp/proof-grade-holder.log" 2>&1 & ;;
@@ -710,13 +719,13 @@ PROOF_GRADE_KEEPER
   }
   proof_grade_holder_wait_cap=$(harness_fixture_cap mission-process-wait)
   proof_grade_holder_wait_started=$(date +%s)
-  while [[ ! -s "$proof_grade_holder_keeper_pid_file" ]] &&
+  while [[ ! -s "$proof_grade_holder_keeper_pid_file" || ! -s "$proof_grade_holder_keeper_ready_file" ]] &&
       kill -0 "$proof_grade_holder_session_pid" 2>/dev/null &&
       (( $(date +%s) - proof_grade_holder_wait_started < proof_grade_holder_wait_cap )); do
     sleep 0.1
   done
-  [[ -s "$proof_grade_holder_keeper_pid_file" ]] || {
-    echo "proof-grade input keeper did not start within ${proof_grade_holder_wait_cap}s" >&2
+  [[ -s "$proof_grade_holder_keeper_pid_file" && -s "$proof_grade_holder_keeper_ready_file" ]] || {
+    echo "proof-grade input keeper did not arm its fixture leash within ${proof_grade_holder_wait_cap}s" >&2
     cat "$tmp/proof-grade-holder.log" >&2
     exit 1
   }
@@ -727,17 +736,19 @@ PROOF_GRADE_KEEPER
     cat "$tmp/proof-grade-holder.log" >&2
     exit 1
   }
-  while [[ ! -s "$proof_grade_holder_pid_file" ]] &&
+  harness_fixture_hold_pid "$proof_grade_holder_keeper_pid"
+  while [[ ! -s "$proof_grade_holder_pid_file" || ! -s "$proof_grade_holder_ready_file" ]] &&
       kill -0 "$proof_grade_holder_session_pid" 2>/dev/null &&
       (( $(date +%s) - proof_grade_holder_wait_started < proof_grade_holder_wait_cap )); do
     sleep 0.1
   done
-  [[ -s "$proof_grade_holder_pid_file" ]] || {
-    echo "proof-grade holder did not start within ${proof_grade_holder_wait_cap}s" >&2
+  [[ -s "$proof_grade_holder_pid_file" && -s "$proof_grade_holder_ready_file" ]] || {
+    echo "proof-grade holder did not arm its fixture leash within ${proof_grade_holder_wait_cap}s" >&2
     cat "$tmp/proof-grade-holder.log" >&2
     exit 1
   }
   proof_grade_holder_pid=$(cat "$proof_grade_holder_pid_file")
+  harness_fixture_hold_pid "$proof_grade_holder_pid"
   proof_grade_holder_ready=
   while (( $(date +%s) - proof_grade_holder_wait_started < proof_grade_holder_wait_cap )); do
     proof_grade_holder_start=$("$ms" proc started-at --pid "$proof_grade_holder_pid" 2>/dev/null || true)
@@ -769,7 +780,6 @@ PROOF_GRADE_KEEPER
 exec -a metasystem-fake-agent /bin/bash "$@"
 PROOF_GRADE_AGENT_SHELL
   chmod +x "$tmp/agent-shell/metasystem-fake-agent"
-  export PROOF_GRADE_MS=$ms
   export PROOF_GRADE_CLONE=$clone
   export PROOF_GRADE_ARC_CLONE=$proof_grade_arc_clone
   export PROOF_GRADE_AGENT_SHELL=$tmp/agent-shell/metasystem-fake-agent
@@ -1369,13 +1379,25 @@ DRAFT
     --risk severity=1,novelty=1,exposure=1,accumulation=1 --basis "fixture verified channel answer" >/dev/null
   brain_fake_server_dir=$tmp/brain-channel-fake
   mkdir -p "$brain_fake_server_dir"
-  "$ms" channel fake serve --dir "$brain_fake_server_dir" >"$tmp/brain-channel-server.log" 2>&1 &
+  brain_fake_ready_fifo=$tmp/brain-channel-server.ready
+  mkfifo "$brain_fake_ready_fifo"
+  "$ms" channel fake serve --dir "$brain_fake_server_dir" --ready-fd 3 \
+    3>"$brain_fake_ready_fifo" >"$tmp/brain-channel-server.log" 2>&1 &
   brain_fake_server_pid=$!
-  deadline=$((SECONDS + 30))
-  while [[ ! -s "$brain_fake_server_dir/base-url" ]]; do
-    (( SECONDS < deadline )) || { echo "brain channel fake did not start within 30 seconds" >&2; exit 1; }
-    sleep 0.05
-  done
+  brain_fake_ready_address=
+  if ! IFS= read -r brain_fake_ready_address <"$brain_fake_ready_fifo"; then
+    if wait "$brain_fake_server_pid"; then brain_fake_server_status=0; else brain_fake_server_status=$?; fi
+    brain_fake_server_pid=
+    echo "brain channel fake exited before readiness (status $brain_fake_server_status); log follows:" >&2
+    cat "$tmp/brain-channel-server.log" >&2
+    exit 1
+  fi
+  rm -f "$brain_fake_ready_fifo"
+  [[ -n "$brain_fake_ready_address" && "$brain_fake_ready_address" == "$(<"$brain_fake_server_dir/base-url")" ]] || {
+    echo "brain channel fake readiness did not match its published base-url" >&2
+    cat "$tmp/brain-channel-server.log" >&2
+    exit 1
+  }
   secret=JBSWY3DPEHPK3PXP
   cat >>"$clone/metasystem.conf.local" <<CONF
 channel.destination.fleet.adapter=fake

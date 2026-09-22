@@ -35,6 +35,9 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 	if result.CandidateTree != tree {
 		return TestReceipt{}, nil, fmt.Errorf("testing result proves tree %s, not receipt tree %s", result.CandidateTree, tree)
 	}
+	if completedAt.IsZero() {
+		return TestReceipt{}, nil, fmt.Errorf("testing receipt preparation requires the terminal completion time")
+	}
 	workspace := gittree.Workspace{Dir: result.ProjectRoot}
 	indexBefore, worktreeBefore, err := testingReceiptPosture(installationRoot, result)
 	indexBeforeMatches, indexBeforeErr := testingReceiptIndexMatches(installationRoot, tree, indexBefore)
@@ -42,7 +45,7 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 		changed, _ := workspace.ChangedPaths(tree, worktreeBefore)
 		return TestReceipt{}, nil, fmt.Errorf("testing receipt candidate moved before preparation: index=%s worktree=%s expected=%s changed=%v cause=%v", indexBefore, worktreeBefore, tree, changed, errors.Join(err, indexBeforeErr))
 	}
-	ids, err := validateTestingAttemptOwners(installationRoot, result, true)
+	ids, err := validateTestingAttemptOwnersAt(installationRoot, result, true, completedAt)
 	if err != nil {
 		return TestReceipt{}, nil, err
 	}
@@ -51,24 +54,21 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 	if err != nil || indexAfterErr != nil || !indexAfterMatches || worktreeAfter != tree {
 		return TestReceipt{}, nil, fmt.Errorf("testing receipt candidate moved during preparation")
 	}
-	if completedAt.IsZero() {
-		return TestReceipt{}, nil, fmt.Errorf("testing receipt preparation requires the terminal completion time")
-	}
 	copyResult := result
 	publicationMS := time.Since(publicationStarted).Milliseconds()
 	if publicationMS < 1 {
 		publicationMS = 1
 	}
 	copyResult.Cost.PublicationDurationMS += publicationMS
-	terminalPreparation := time.Now().UTC()
-	if started, parseErr := time.Parse(time.RFC3339Nano, copyResult.StartedAt); parseErr == nil && !started.After(terminalPreparation) {
-		copyResult.EndedAt = terminalPreparation.Format(time.RFC3339Nano)
-		copyResult.DurationMS = terminalPreparation.Sub(started).Milliseconds()
+	terminalPreparation := completedAt.UTC()
+	if started, parseErr := time.Parse(time.RFC3339Nano, copyResult.StartedAt); copyResult.DurationMS == 0 && parseErr == nil && !started.After(terminalPreparation) {
+		copyResult.DurationMS = terminalPreparation.Sub(started).Milliseconds() + publicationMS
 		copyResult.Cost.ActualDurationMS = copyResult.DurationMS
 	} else {
 		copyResult.Cost.ActualDurationMS += publicationMS
 		copyResult.DurationMS += publicationMS
 	}
+	copyResult.EndedAt = terminalPreparation.Format(time.RFC3339Nano)
 	workspaceTree, err := ProjectWorkspaceTree(installationRoot, tree)
 	if err != nil {
 		return TestReceipt{}, nil, fmt.Errorf("testing receipt workspace projection: %w", err)
@@ -105,7 +105,13 @@ func testingReceiptIndexMatches(installationRoot, receiptTree, indexTree string)
 // executing another command. It remains the multi-attempt composition path;
 // an executed sufficient outer attempt instead publishes its committed bytes.
 func CreateTestingReceipt(installationRoot, tree string, result proofrun.TestResult) (TestReceipt, error) {
-	receipt, _, err := PrepareTestingReceiptPayload(installationRoot, tree, result, time.Now().UTC())
+	return CreateTestingReceiptAt(installationRoot, tree, result, time.Now().UTC())
+}
+
+// CreateTestingReceiptAt composes a receipt at the caller's current semantic
+// time. That instant is both the composition event and the owner-expiry check.
+func CreateTestingReceiptAt(installationRoot, tree string, result proofrun.TestResult, now time.Time) (TestReceipt, error) {
+	receipt, _, err := PrepareTestingReceiptPayload(installationRoot, tree, result, now.UTC())
 	if err != nil {
 		return TestReceipt{}, err
 	}
@@ -127,7 +133,9 @@ func testingContractEnabled(root string) bool {
 	return err == nil && present && value != ""
 }
 
-func validateTestingAttemptOwners(installationRoot string, result proofrun.TestResult, allowCurrentLive bool) ([]string, error) {
+// validateTestingAttemptOwnersAt uses one observation time for every producer
+// so a caller can make the validity boundary explicit.
+func validateTestingAttemptOwnersAt(installationRoot string, result proofrun.TestResult, allowCurrentLive bool, now time.Time) ([]string, error) {
 	attemptIDs := map[string]bool{}
 	for _, group := range result.Groups {
 		freshGroup := proofrun.TestGroupFresh(result, group.ID)
@@ -159,7 +167,7 @@ func validateTestingAttemptOwners(installationRoot string, result proofrun.TestR
 			}
 			if attempt.FreshnessExpiresAt != "" {
 				expires, err := time.Parse(time.RFC3339Nano, attempt.FreshnessExpiresAt)
-				if err != nil || !expires.After(time.Now().UTC()) {
+				if err != nil || !expires.After(now) {
 					return nil, fmt.Errorf("testing group %s native producer has expired", group.ID)
 				}
 			}

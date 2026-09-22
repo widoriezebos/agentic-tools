@@ -980,12 +980,40 @@ func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 		"waiting": budgetedQueuedGoal("waiting", "2026-08-23T00:00:00Z"),
 	})
 	t.Run("fetch failure", func(t *testing.T) {
-		t.Parallel()
 		store := &Store{Root: root}
+		fetchStarted := make(chan struct{})
+		releaseFetch := make(chan struct{})
+		released := false
+		defer func() {
+			if !released {
+				close(releaseFetch)
+			}
+		}()
+		store.projectionDeps.deadline = make(chan time.Time)
 		store.projectionDeps.fetch = func(Endpoint) (AdvanceResult, error) {
+			close(fetchStarted)
+			<-releaseFetch
 			return AdvanceResult{}, errors.New("canonical remote unavailable")
 		}
-		verdict, err := store.TurnVerdict(ScanResult{}, "fetch-failure", "", "main-1")
+		type verdictAnswer struct {
+			verdict Verdict
+			err     error
+		}
+		answered := make(chan verdictAnswer, 1)
+		go func() {
+			verdict, err := store.TurnVerdict(ScanResult{}, "fetch-failure", "", "main-1")
+			answered <- verdictAnswer{verdict: verdict, err: err}
+		}()
+		<-fetchStarted
+		select {
+		case answer := <-answered:
+			t.Fatalf("remote-error verdict returned before delayed fetch release: %+v %v", answer.verdict, answer.err)
+		default:
+		}
+		close(releaseFetch)
+		released = true
+		answer := <-answered
+		verdict, err := answer.verdict, answer.err
 		if err != nil || !verdict.ShouldBlock || verdict.BlockSource == nil || *verdict.BlockSource != "uncertainty" ||
 			!strings.Contains(verdict.Display, "canonical remote unavailable") {
 			t.Fatalf("a fresh-ledger failure must return a structured block: %+v %v", verdict, err)
@@ -996,7 +1024,6 @@ func TestFreshLedgerFailureAndFetchTimeoutBlockTheStop(t *testing.T) {
 	})
 
 	t.Run("fetch timeout", func(t *testing.T) {
-		t.Parallel()
 		store := &Store{Root: root}
 		deadline := make(chan time.Time)
 		releaseFetch := make(chan struct{})

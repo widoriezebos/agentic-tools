@@ -83,7 +83,8 @@ harness_fixture_bed_leg "$fixture_scenario"
 if [[ "$fixture_scenario" == start-exit-audit ]]; then
 harness_fixture_bed_leg start-exit-audit
 env -u METASYSTEM_BIN GOCACHE="${GOCACHE:-/tmp/metasystem-hook-start-go-cache}" \
-  go test -count=1 ./internal/audit \
+  bash -c 'source "$1/scripts/agents/fixture-budget.sh"; shift; harness_fixture_go_test "$@"' \
+    bash "$root" "$root" -count=1 ./internal/audit \
     -run '^(TestEngineSkewStartFixtureOnBash32|TestHookStartDeclaredOutcomeMatrixOnBash32|TestHookStartContextOutcomeShapesOnBash32|TestHookStartBuiltinJSONEncoderOnBash32|TestHookStartIntentionalFullPathFixturesOnBash32|TestHookStartFailureBranchFixturesOnBash32|TestHookStartPostPreparationFixturesOnBash32|TestHookStartExitTrapReportsUnexpectedTerminationOnBash32|TestHookStartSignalsUseOwnedStatusesOnBash32|TestHookStartLastResortUsesStderrWhenStdoutIsClosed|TestHookStartBash32ArrayCanaryCoversEmptyAndPopulatedValues)$'
 exit 0
 fi
@@ -129,6 +130,13 @@ hook_process_pid=
 hook_process_path=
 brain_fake_pid=
 brain_fake_path=
+held_resolver_release=
+held_resolver_pid=
+held_resolver_ref=
+held_worker_release=
+held_worker_pid=
+held_worker_ref=
+held_worker_dir=
 missing_engine_expected=$(degraded_stop_form allowed engine-missing)
 stop_hook_process() {
   local command stop_deadline
@@ -154,6 +162,26 @@ stop_hook_process() {
   hook_process_path=
 }
 cleanup() {
+  if [[ -n "$held_resolver_release" ]]; then
+    : >"$held_resolver_release" 2>/dev/null || true
+    held_resolver_deadline=$((SECONDS + 5))
+    while [[ -n "$held_resolver_pid" && -n "$held_resolver_ref" ]] &&
+        held_resolver_current=$("$ms" proc ref --pid "$held_resolver_pid" 2>/dev/null) &&
+        [[ "$held_resolver_current" == "$held_resolver_ref" ]] &&
+        (( SECONDS < held_resolver_deadline )); do
+      /bin/sleep 0.05
+    done
+  fi
+  if [[ -n "$held_worker_release" ]]; then
+    : >"$held_worker_release" 2>/dev/null || true
+    held_worker_deadline=$((SECONDS + 5))
+    while [[ -n "$held_worker_pid" && -n "$held_worker_ref" ]] &&
+        held_worker_current=$("$ms" proc ref --pid "$held_worker_pid" 2>/dev/null) &&
+        [[ "$held_worker_current" == "$held_worker_ref" ]] &&
+        (( SECONDS < held_worker_deadline )); do
+      /bin/sleep 0.05
+    done
+  fi
   stop_hook_process || true
   if [[ -n "$brain_fake_pid" ]] && kill -0 "$brain_fake_pid" 2>/dev/null; then
     brain_fake_command=$(ps -p "$brain_fake_pid" -o command= 2>/dev/null || true)
@@ -494,13 +522,25 @@ harness_fixture_bed_leg brain-session-start
 
 brain_fake_path=$tmp/brain-fake
 mkdir -p "$brain_fake_path"
-"$ms" channel fake serve --dir "$brain_fake_path" >"$tmp/brain-fake.log" 2>&1 &
+brain_fake_ready_fifo=$tmp/brain-fake.ready
+mkfifo "$brain_fake_ready_fifo"
+"$ms" channel fake serve --dir "$brain_fake_path" --ready-fd 3 \
+  3>"$brain_fake_ready_fifo" >"$tmp/brain-fake.log" 2>&1 &
 brain_fake_pid=$!
-brain_fake_deadline=$((SECONDS + 30))
-while [[ ! -s "$brain_fake_path/base-url" ]]; do
-  (( SECONDS < brain_fake_deadline )) || { echo "brain hook fake channel did not start" >&2; exit 1; }
-  sleep 0.05
-done
+brain_fake_ready_address=
+if ! IFS= read -r brain_fake_ready_address <"$brain_fake_ready_fifo"; then
+  if wait "$brain_fake_pid"; then brain_fake_status=0; else brain_fake_status=$?; fi
+  brain_fake_pid=
+  echo "brain hook fake channel exited before readiness (status $brain_fake_status); log follows:" >&2
+  cat "$tmp/brain-fake.log" >&2
+  exit 1
+fi
+rm -f "$brain_fake_ready_fifo"
+[[ -n "$brain_fake_ready_address" && "$brain_fake_ready_address" == "$(<"$brain_fake_path/base-url")" ]] || {
+  echo "brain hook fake channel readiness did not match its published base-url" >&2
+  cat "$tmp/brain-fake.log" >&2
+  exit 1
+}
 cat >>"$brain_repo/metasystem.conf.local" <<BRAIN_CHANNEL
 channel.destination.fleet.adapter=fake
 channel.destination.fleet.fake.dir=$brain_fake_path
@@ -753,7 +793,16 @@ cat >"$brain_failure_engine" <<'BRAIN_FAILURE_ENGINE'
 if [[ ${1:-} == brain && ${2:-} == boot ]]; then
   case ${METASYSTEM_BRAIN_FAILURE_MODE:?} in
     exit) echo 'fixture boot exit' >&2; exit 1 ;;
-    sleep) sleep 4; exit 0 ;;
+    sleep)
+      printf '%s\n' "$$" >"${METASYSTEM_BRAIN_FAILURE_ENTERED:?}"
+      wait_started=$SECONDS
+      while [[ ! -e "${METASYSTEM_BRAIN_FAILURE_RELEASE:?}" ]] &&
+          (( SECONDS - wait_started < METASYSTEM_BRAIN_FAILURE_HANG_CAP_SEC )); do
+        sleep 0.05
+      done
+      [[ -e "$METASYSTEM_BRAIN_FAILURE_RELEASE" ]] \
+        || { echo 'fixture boot release never arrived' >&2; exit 70; }
+      exit 0 ;;
     invalid) echo 'not json'; exit 0 ;;
   esac
   fi
@@ -771,13 +820,30 @@ BRAIN_FAILURE_ENGINE
 chmod +x "$brain_failure_engine"
 brain_arming_log=$tmp/brain-failure-arming.log
 for failure_mode in exit sleep invalid; do
+  brain_failure_entered=$tmp/brain-failure-$failure_mode.entered
+  brain_failure_release=$tmp/brain-failure-$failure_mode.release
   METASYSTEM_BIN=$brain_failure_engine METASYSTEM_BRAIN_REAL_ENGINE=$ms \
     METASYSTEM_BRAIN_BOOT_DEADLINE_MS=500 \
     METASYSTEM_BRAIN_FAILURE_MODE=$failure_mode METASYSTEM_SUPERVISION_REGISTRY_HOME=$brain_registry \
     METASYSTEM_BRAIN_FIXTURE_PID=$$ METASYSTEM_BRAIN_FIXTURE_STARTED=$brain_fixture_started \
     METASYSTEM_BRAIN_ARMING_LOG=$brain_arming_log \
+    METASYSTEM_BRAIN_FAILURE_ENTERED=$brain_failure_entered \
+    METASYSTEM_BRAIN_FAILURE_RELEASE=$brain_failure_release \
+    METASYSTEM_BRAIN_FAILURE_HANG_CAP_SEC=$hook_evidence_cap \
     bash "$brain_repo/scripts/agents/supervision-hook.sh" claude start <"$tmp/brain-start.json" \
-      >"$tmp/brain-failure-$failure_mode.out" 2>"$tmp/brain-failure-$failure_mode.err"
+      >"$tmp/brain-failure-$failure_mode.out" 2>"$tmp/brain-failure-$failure_mode.err" &
+  brain_failure_pid=$!
+  if [[ "$failure_mode" == sleep ]]; then
+    brain_failure_wait_deadline=$((SECONDS + hook_evidence_cap))
+    while [[ ! -s "$brain_failure_entered" ]] && kill -0 "$brain_failure_pid" 2>/dev/null &&
+        (( SECONDS < brain_failure_wait_deadline )); do
+      sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+    done
+    [[ -s "$brain_failure_entered" && ! -e "$brain_failure_release" ]] \
+      || { echo "brain boot controlled failure did not publish readiness" >&2; exit 1; }
+    : >"$brain_failure_release"
+  fi
+  wait "$brain_failure_pid"
   failure_out=$tmp/brain-failure-$failure_mode.out
   [[ $(wc -l <"$failure_out" | tr -d ' ') -eq 1 ]] \
     && grep -Fq 'Metasystem brain boot failed' "$failure_out" \
@@ -1715,7 +1781,14 @@ if [[ ${1:-} == steward && ${2:-} == hook-attempt ]]; then
     fi
     previous=$argument
   done
-  sleep 1
+  printf '%s\n' "$hook_pid" >"${METASYSTEM_COORDINATE_WORKER_ENTERED:?}"
+  coordinate_started=$SECONDS
+  while [[ ! -e "${METASYSTEM_COORDINATE_WORKER_RELEASE:?}" ]] &&
+      (( SECONDS - coordinate_started < METASYSTEM_COORDINATE_HANG_CAP_SEC )); do
+    /bin/sleep 0.05
+  done
+  [[ -e "$METASYSTEM_COORDINATE_WORKER_RELEASE" ]] \
+    || { echo "deadline coordinate fixture release never arrived" >&2; exit 70; }
   kill -KILL "$hook_pid"
   exit 137
 fi
@@ -1728,9 +1801,27 @@ printf '{"session_id":"deadline-coordinate\\u000a%s","cwd":"%s","hook_event_name
   "$coordinate_injected_root" "$line_root" >"$tmp/coordinate-payload.json"
 coordinate_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
 coordinate_rc=0
+coordinate_worker_entered=$tmp/coordinate-worker.entered
+coordinate_worker_release=$tmp/coordinate-worker.release
 METASYSTEM_BIN="$coordinate_engine" METASYSTEM_COORDINATE_REAL_ENGINE="$ms" \
+  METASYSTEM_COORDINATE_WORKER_ENTERED="$coordinate_worker_entered" \
+  METASYSTEM_COORDINATE_WORKER_RELEASE="$coordinate_worker_release" \
+  METASYSTEM_COORDINATE_HANG_CAP_SEC="$hook_evidence_cap" \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
-    <"$tmp/coordinate-payload.json" >"$tmp/coordinate.out" 2>"$tmp/coordinate.err" || coordinate_rc=$?
+    <"$tmp/coordinate-payload.json" >"$tmp/coordinate.out" 2>"$tmp/coordinate.err" &
+hook_process_pid=$!
+hook_process_path=$line_root/scripts/agents/supervision-hook.sh
+coordinate_wait_deadline=$((SECONDS + hook_evidence_cap))
+while [[ ! -s "$coordinate_worker_entered" ]] && kill -0 "$hook_process_pid" 2>/dev/null &&
+    (( SECONDS < coordinate_wait_deadline )); do
+  /bin/sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+[[ -s "$coordinate_worker_entered" ]] \
+  || { echo "deadline coordinate fixture did not observe worker entry" >&2; exit 1; }
+: >"$coordinate_worker_release"
+wait "$hook_process_pid" || coordinate_rc=$?
+hook_process_pid=
+hook_process_path=
 (( coordinate_rc == 0 )) \
   || { echo "deadline coordinate fixture returned $coordinate_rc" >&2; cat "$tmp/coordinate.err" >&2; exit 1; }
 coordinate_expected=$(degraded_stop_form allowed unreadable-output)
@@ -1752,7 +1843,33 @@ slow_resolution_engine=$tmp/slow-resolution-engine
 cat >"$slow_resolution_engine" <<'SH'
 #!/usr/bin/env bash
 if [[ ${1:-} == path && ${2:-} == state-root ]]; then
-  sleep 2
+  printf '%s\n' "$$" >"${METASYSTEM_SLOW_RESOLUTION_ENTERED:?}"
+  wait_started=$SECONDS
+  while [[ ! -e "${METASYSTEM_SLOW_RESOLUTION_RELEASE:?}" ]] &&
+      (( SECONDS - wait_started < METASYSTEM_SLOW_RESOLUTION_HANG_CAP_SEC )); do
+    sleep 0.05
+  done
+  [[ -e "$METASYSTEM_SLOW_RESOLUTION_RELEASE" ]] \
+    || { echo "slow resolution fixture release never arrived" >&2; exit 70; }
+fi
+if [[ ${1:-} == json && ${2:-} == get && -n ${METASYSTEM_SLOW_RESOLUTION_WAITED:-} ]]; then
+  slow_result=$("${METASYSTEM_SLOW_RESOLUTION_REAL_ENGINE:?}" "$@") || exit $?
+  printf '%s\n' "$slow_result"
+  slow_previous=
+  slow_field=
+  for slow_argument in "$@"; do
+    if [[ $slow_previous == --field ]]; then
+      slow_field=$slow_argument
+      break
+    fi
+    slow_previous=$slow_argument
+  done
+  if [[ $slow_field == state ]]; then
+    [[ $slow_result == worker-completed ]] \
+      || { echo "slow resolution fixture observed parent wait state $slow_result" >&2; exit 70; }
+    : >"$METASYSTEM_SLOW_RESOLUTION_WAITED"
+  fi
+  exit 0
 fi
 exec "${METASYSTEM_SLOW_RESOLUTION_REAL_ENGINE:?}" "$@"
 SH
@@ -1763,26 +1880,47 @@ printf '{"session_id":"slow-resolution-runtime","cwd":"%s","hook_event_name":"St
 slow_resolution_expected=$(degraded_stop_form allowed unreadable-output)
 for slow_resolution_case in malformed runtime; do
   slow_resolution_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
-  slow_resolution_started=$SECONDS
   slow_resolution_rc=0
+  slow_resolution_entered=$tmp/slow-resolution-$slow_resolution_case.entered
+  slow_resolution_waited=$tmp/slow-resolution-$slow_resolution_case.worker-waited
+  slow_resolution_release=$tmp/slow-resolution-$slow_resolution_case.release
   if [[ $slow_resolution_case == malformed ]]; then
     METASYSTEM_BIN="$slow_resolution_engine" METASYSTEM_SLOW_RESOLUTION_REAL_ENGINE="$ms" \
+      METASYSTEM_SLOW_RESOLUTION_ENTERED="$slow_resolution_entered" \
+      METASYSTEM_SLOW_RESOLUTION_WAITED="$slow_resolution_waited" \
+      METASYSTEM_SLOW_RESOLUTION_RELEASE="$slow_resolution_release" \
+      METASYSTEM_SLOW_RESOLUTION_HANG_CAP_SEC="$hook_evidence_cap" \
       bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
         <"$tmp/slow-resolution-malformed.json" \
         >"$tmp/slow-resolution-$slow_resolution_case.out" \
-        2>"$tmp/slow-resolution-$slow_resolution_case.err" || slow_resolution_rc=$?
+        2>"$tmp/slow-resolution-$slow_resolution_case.err" &
   else
     METASYSTEM_BIN="$slow_resolution_engine" METASYSTEM_SLOW_RESOLUTION_REAL_ENGINE="$ms" \
+      METASYSTEM_SLOW_RESOLUTION_ENTERED="$slow_resolution_entered" \
+      METASYSTEM_SLOW_RESOLUTION_WAITED="$slow_resolution_waited" \
+      METASYSTEM_SLOW_RESOLUTION_RELEASE="$slow_resolution_release" \
+      METASYSTEM_SLOW_RESOLUTION_HANG_CAP_SEC="$hook_evidence_cap" \
       bash "$line_root/scripts/agents/supervision-hook.sh" fixture-unknown-runtime stop \
         <"$tmp/slow-resolution-runtime.json" \
         >"$tmp/slow-resolution-$slow_resolution_case.out" \
-        2>"$tmp/slow-resolution-$slow_resolution_case.err" || slow_resolution_rc=$?
+        2>"$tmp/slow-resolution-$slow_resolution_case.err" &
   fi
-  slow_resolution_elapsed=$((SECONDS - slow_resolution_started))
+  hook_process_pid=$!
+  hook_process_path=$line_root/scripts/agents/supervision-hook.sh
+  slow_resolution_wait_deadline=$((SECONDS + hook_evidence_cap))
+  while { [[ ! -s "$slow_resolution_entered" ]] || [[ ! -e "$slow_resolution_waited" ]]; } &&
+      kill -0 "$hook_process_pid" 2>/dev/null &&
+      (( SECONDS < slow_resolution_wait_deadline )); do
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  [[ -s "$slow_resolution_entered" && -e "$slow_resolution_waited" && ! -e "$slow_resolution_release" ]] \
+    || { echo "slow resolution $slow_resolution_case fixture did not acknowledge worker failure at the parent wait boundary" >&2; exit 1; }
+  : >"$slow_resolution_release"
+  wait "$hook_process_pid" || slow_resolution_rc=$?
+  hook_process_pid=
+  hook_process_path=
   (( slow_resolution_rc == 0 )) \
     || { echo "slow resolution $slow_resolution_case fixture returned $slow_resolution_rc" >&2; exit 1; }
-  (( slow_resolution_elapsed >= 1 && slow_resolution_elapsed < 10 )) \
-    || { echo "slow resolution $slow_resolution_case fixture did not wait only for the resolver: ${slow_resolution_elapsed}s" >&2; exit 1; }
   [[ $(<"$tmp/slow-resolution-$slow_resolution_case.out") == "$slow_resolution_expected" ]] \
     || { echo "slow resolution $slow_resolution_case fixture lost its fixed degraded allowance" >&2; cat "$tmp/slow-resolution-$slow_resolution_case.out" >&2; exit 1; }
   if grep -Fq '"decision":"block"' "$tmp/slow-resolution-$slow_resolution_case.out"; then
@@ -1793,6 +1931,247 @@ for slow_resolution_case in malformed runtime; do
     | grep -Fq 'stop response outcome=invalid-worker-output-allow' \
     || { echo "slow resolution $slow_resolution_case fixture did not log under the resolved installation" >&2; exit 1; }
 done
+
+# A resolver whose exact custody cannot be proved remains owned by its
+# fixture. The parent logs the typed refusal and publishes its response without
+# signalling or waiting for that still-held process.
+harness_fixture_bed_leg resolver-cleanup-refusal
+refused_cleanup_engine=$tmp/refused-cleanup-engine
+cat >"$refused_cleanup_engine" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == path && ${2:-} == state-root ]]; then
+  printf '%s\n' "$$" >"${METASYSTEM_REFUSED_RESOLVER_ENTERED:?}"
+  refused_started=$SECONDS
+  while [[ ! -e "${METASYSTEM_REFUSED_RESOLVER_RELEASE:?}" ]] &&
+      (( SECONDS - refused_started < METASYSTEM_REFUSED_RESOLVER_HANG_CAP_SEC )); do
+    /bin/sleep 0.05
+  done
+  [[ -e "$METASYSTEM_REFUSED_RESOLVER_RELEASE" ]] \
+    || { echo "refused resolver fixture release never arrived" >&2; exit 70; }
+fi
+if [[ ${1:-} == hooks && ${2:-} == stop-deadline-cleanup && " $* " == *' --pid '* ]]; then
+  refused_previous=
+  refused_pid=
+  for refused_argument in "$@"; do
+    if [[ $refused_previous == --pid ]]; then
+      refused_pid=$refused_argument
+      break
+    fi
+    refused_previous=$refused_argument
+  done
+  [[ $refused_pid =~ ^[1-9][0-9]*$ ]] || exit 70
+  "${METASYSTEM_REFUSED_RESOLVER_REAL_ENGINE:?}" proc ref --pid "$refused_pid" \
+    >"${METASYSTEM_REFUSED_RESOLVER_REF:?}" || exit 70
+  printf '%s\n' "$refused_pid" >"${METASYSTEM_REFUSED_RESOLVER_CLEANUP:?}"
+  printf '%s\n' '{"state":"worker-unverifiable","termSent":false,"killSent":false}'
+  exit 0
+fi
+exec "${METASYSTEM_REFUSED_RESOLVER_REAL_ENGINE:?}" "$@"
+SH
+chmod +x "$refused_cleanup_engine"
+held_resolver_release=$tmp/refused-resolver.release
+refused_resolver_entered=$tmp/refused-resolver.entered
+refused_resolver_cleanup=$tmp/refused-resolver.cleanup
+refused_resolver_ref=$tmp/refused-resolver.ref
+refused_resolver_output=$tmp/refused-resolver.out
+refused_resolver_error=$tmp/refused-resolver.err
+METASYSTEM_BIN="$refused_cleanup_engine" \
+  METASYSTEM_REFUSED_RESOLVER_REAL_ENGINE="$ms" \
+  METASYSTEM_REFUSED_RESOLVER_ENTERED="$refused_resolver_entered" \
+  METASYSTEM_REFUSED_RESOLVER_CLEANUP="$refused_resolver_cleanup" \
+  METASYSTEM_REFUSED_RESOLVER_REF="$refused_resolver_ref" \
+  METASYSTEM_REFUSED_RESOLVER_RELEASE="$held_resolver_release" \
+  METASYSTEM_REFUSED_RESOLVER_HANG_CAP_SEC="$hook_evidence_cap" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/slow-resolution-malformed.json" >"$refused_resolver_output" 2>"$refused_resolver_error" &
+hook_process_pid=$!
+hook_process_path=$line_root/scripts/agents/supervision-hook.sh
+refused_wait_deadline=$((SECONDS + hook_evidence_cap))
+while { [[ ! -s "$refused_resolver_entered" ]] || [[ ! -s "$refused_resolver_cleanup" ]] ||
+    kill -0 "$hook_process_pid" 2>/dev/null; } && (( SECONDS < refused_wait_deadline )); do
+  /bin/sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+[[ -s "$refused_resolver_entered" && -s "$refused_resolver_cleanup" ]] \
+  || { echo "resolver cleanup-refusal fixture did not reach its held cleanup boundary" >&2; exit 1; }
+if kill -0 "$hook_process_pid" 2>/dev/null; then
+  echo "resolver cleanup-refusal fixture blocked the parent response" >&2
+  exit 1
+fi
+refused_hook_rc=0
+wait "$hook_process_pid" || refused_hook_rc=$?
+hook_process_pid=
+hook_process_path=
+(( refused_hook_rc == 0 )) \
+  || { echo "resolver cleanup-refusal fixture returned $refused_hook_rc" >&2; exit 1; }
+held_resolver_pid=$(<"$refused_resolver_cleanup")
+held_resolver_ref=$(<"$refused_resolver_ref")
+held_resolver_current=$("$ms" proc ref --pid "$held_resolver_pid" 2>/dev/null) \
+  || { echo "resolver cleanup-refusal fixture lost the resolver before fixture teardown" >&2; exit 1; }
+[[ "$held_resolver_current" == "$held_resolver_ref" ]] \
+  || { echo "resolver cleanup-refusal fixture observed a replaced resolver" >&2; exit 1; }
+grep -Fq "stop deadline: resolver $held_resolver_pid cleanup refused; custody remains unverified" \
+  "$refused_resolver_error" \
+  || { echo "resolver cleanup-refusal fixture omitted the custody refusal log" >&2; exit 1; }
+refused_expected=$(degraded_stop_form allowed unreadable-output condition-log-failed no-resolved-checkout)
+[[ $(<"$refused_resolver_output") == "$refused_expected" ]] \
+  || { echo "resolver cleanup-refusal fixture lost the parent allowance" >&2; cat "$refused_resolver_output" >&2; exit 1; }
+: >"$held_resolver_release"
+refused_gone_deadline=$((SECONDS + 5))
+while held_resolver_current=$("$ms" proc ref --pid "$held_resolver_pid" 2>/dev/null) &&
+    [[ "$held_resolver_current" == "$held_resolver_ref" ]] &&
+    (( SECONDS < refused_gone_deadline )); do
+  /bin/sleep 0.05
+done
+if held_resolver_current=$("$ms" proc ref --pid "$held_resolver_pid" 2>/dev/null) &&
+    [[ "$held_resolver_current" == "$held_resolver_ref" ]]; then
+  echo "resolver cleanup-refusal fixture teardown left its exact resolver alive" >&2
+  exit 1
+fi
+held_resolver_release=
+held_resolver_pid=
+held_resolver_ref=
+
+# Signal delivery without a terminal probe leaves the exact worker in fixture
+# custody. The parent publishes its response while the worker remains held,
+# and the fixture releases that worker only after observing the retained
+# evidence directory and diagnostic.
+harness_fixture_bed_leg worker-kill-without-terminal-acknowledgement
+held_worker_engine=$tmp/held-worker-engine
+cat >"$held_worker_engine" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == steward && ${2:-} == hook-attempt ]]; then
+  held_pid=
+  held_previous=
+  for held_argument in "$@"; do
+    if [[ $held_previous == --pid ]]; then
+      held_pid=$held_argument
+      break
+    fi
+    held_previous=$held_argument
+  done
+  [[ $held_pid =~ ^[1-9][0-9]*$ ]] || exit 70
+  "${METASYSTEM_HELD_WORKER_REAL_ENGINE:?}" proc ref --pid "$held_pid" \
+    >"${METASYSTEM_HELD_WORKER_REF:?}" || exit 70
+  printf '%s\n' "$held_pid" >"${METASYSTEM_HELD_WORKER_PID:?}"
+  : >"${METASYSTEM_HELD_WORKER_ENTERED:?}"
+  held_started=$SECONDS
+  while [[ ! -e "${METASYSTEM_HELD_WORKER_RELEASE:?}" ]] &&
+      (( SECONDS - held_started < METASYSTEM_HELD_WORKER_HANG_CAP_SEC )); do
+    /bin/sleep 0.05
+  done
+  [[ -e "$METASYSTEM_HELD_WORKER_RELEASE" ]] \
+    || { echo "held worker fixture release never arrived" >&2; exit 70; }
+fi
+if [[ ${1:-} == hooks && ${2:-} == stop-deadline-wait ]]; then
+  held_started=$SECONDS
+  while [[ ! -e "${METASYSTEM_HELD_WORKER_ENTERED:?}" ]] &&
+      (( SECONDS - held_started < METASYSTEM_HELD_WORKER_HANG_CAP_SEC )); do
+    /bin/sleep 0.05
+  done
+  [[ -e "$METASYSTEM_HELD_WORKER_ENTERED" ]] \
+    || { echo "held worker fixture did not reach hook-attempt" >&2; exit 70; }
+  : >"${METASYSTEM_STOP_DEADLINE_EVENT:?}"
+fi
+if [[ ${1:-} == hooks && ${2:-} == stop-deadline-cleanup && " $* " == *' --wait-result '* ]]; then
+  held_previous=
+  held_wait_result=
+  for held_argument in "$@"; do
+    if [[ $held_previous == --wait-result ]]; then
+      held_wait_result=$held_argument
+      break
+    fi
+    held_previous=$held_argument
+  done
+  [[ -n $held_wait_result ]] || exit 70
+  dirname -- "$held_wait_result" >"${METASYSTEM_HELD_WORKER_DIR:?}"
+  printf '%s\n' '{"state":"kill-sent","termSent":true,"killSent":true}'
+  exit 0
+fi
+exec "${METASYSTEM_HELD_WORKER_REAL_ENGINE:?}" "$@"
+SH
+chmod +x "$held_worker_engine"
+held_worker_release=$tmp/held-worker.release
+held_worker_entered=$tmp/held-worker.entered
+held_worker_pid_file=$tmp/held-worker.pid
+held_worker_ref_file=$tmp/held-worker.ref
+held_worker_dir_file=$tmp/held-worker.dir
+held_worker_event=$tmp/held-worker.event
+held_worker_output=$tmp/held-worker.out
+held_worker_error=$tmp/held-worker.err
+printf '%s\n' 'metasystem.runtimes=fake' >"$line_root/metasystem.conf.local"
+printf '{"session_id":"held-worker","cwd":"%s","hook_event_name":"Stop"}\n' \
+  "$line_root" >"$tmp/held-worker-payload.json"
+METASYSTEM_BIN="$held_worker_engine" \
+  METASYSTEM_HELD_WORKER_REAL_ENGINE="$ms" \
+  METASYSTEM_HELD_WORKER_ENTERED="$held_worker_entered" \
+  METASYSTEM_HELD_WORKER_PID="$held_worker_pid_file" \
+  METASYSTEM_HELD_WORKER_REF="$held_worker_ref_file" \
+  METASYSTEM_HELD_WORKER_DIR="$held_worker_dir_file" \
+  METASYSTEM_HELD_WORKER_RELEASE="$held_worker_release" \
+  METASYSTEM_HELD_WORKER_HANG_CAP_SEC="$hook_evidence_cap" \
+  METASYSTEM_STOP_DEADLINE_EVENT="$held_worker_event" \
+  METASYSTEM_STOP_DEADLINE_BUDGET_SEC=4 \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
+    <"$tmp/held-worker-payload.json" >"$held_worker_output" 2>"$held_worker_error" &
+hook_process_pid=$!
+hook_process_path=$line_root/scripts/agents/supervision-hook.sh
+held_parent_deadline=$((SECONDS + hook_evidence_cap))
+while { [[ ! -s "$held_worker_pid_file" ]] || [[ ! -s "$held_worker_dir_file" ]] ||
+    kill -0 "$hook_process_pid" 2>/dev/null; } && (( SECONDS < held_parent_deadline )); do
+  if ! kill -0 "$hook_process_pid" 2>/dev/null &&
+      { [[ ! -s "$held_worker_pid_file" ]] || [[ ! -s "$held_worker_ref_file" ]] ||
+        [[ ! -s "$held_worker_dir_file" ]]; }; then
+    held_parent_rc=0
+    wait "$hook_process_pid" || held_parent_rc=$?
+    hook_process_pid=
+    hook_process_path=
+    [[ ! -s "$held_worker_pid_file" ]] || held_worker_pid=$(<"$held_worker_pid_file")
+    [[ ! -s "$held_worker_ref_file" ]] || held_worker_ref=$(<"$held_worker_ref_file")
+    echo "held worker fixture parent exited $held_parent_rc before cleanup acknowledgement" >&2
+    cat "$held_worker_error" >&2
+    exit 1
+  fi
+  /bin/sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+[[ -s "$held_worker_pid_file" && -s "$held_worker_ref_file" && -s "$held_worker_dir_file" ]] \
+  || { echo "held worker fixture did not reach cleanup" >&2; exit 1; }
+if kill -0 "$hook_process_pid" 2>/dev/null; then
+  echo "held worker fixture blocked the parent response after KILL delivery" >&2
+  exit 1
+fi
+held_parent_rc=0
+wait "$hook_process_pid" || held_parent_rc=$?
+hook_process_pid=
+hook_process_path=
+(( held_parent_rc == 0 )) \
+  || { echo "held worker fixture parent returned $held_parent_rc" >&2; exit 1; }
+held_worker_pid=$(<"$held_worker_pid_file")
+held_worker_ref=$(<"$held_worker_ref_file")
+held_worker_dir=$(<"$held_worker_dir_file")
+held_worker_current=$("$ms" proc ref --pid "$held_worker_pid" 2>/dev/null) \
+  || { echo "held worker fixture lost the worker before release" >&2; exit 1; }
+[[ "$held_worker_current" == "$held_worker_ref" && -d "$held_worker_dir" ]] \
+  || { echo "held worker fixture lost exact custody or retained evidence" >&2; exit 1; }
+grep -Fq "stop deadline: worker $held_worker_pid cleanup sent KILL without terminal acknowledgement; custody retained; not waiting" \
+  "$held_worker_error" \
+  || { echo "held worker fixture omitted its nonterminal cleanup diagnostic" >&2; cat "$held_worker_error" >&2; exit 1; }
+: >"$held_worker_release"
+held_gone_deadline=$((SECONDS + hook_evidence_cap))
+while held_worker_current=$("$ms" proc ref --pid "$held_worker_pid" 2>/dev/null) &&
+    [[ "$held_worker_current" == "$held_worker_ref" ]] && (( SECONDS < held_gone_deadline )); do
+  /bin/sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+if held_worker_current=$("$ms" proc ref --pid "$held_worker_pid" 2>/dev/null) &&
+    [[ "$held_worker_current" == "$held_worker_ref" ]]; then
+  echo "held worker fixture release left its exact worker alive" >&2
+  exit 1
+fi
+rm -rf "$held_worker_dir"
+held_worker_release=
+held_worker_pid=
+held_worker_ref=
+held_worker_dir=
+printf '%s\n' 'worker cleanup witness passed: response-before-terminal-ack retained-custody exact-worker-gone'
 
 exit 0
 fi
@@ -1866,6 +2245,7 @@ if [[ "$fixture_scenario" == deadline-* ]]; then
 # on its own shortly after the deadline, so the fixture leaves no long-running
 # process and the parent can close the exact attempt it stopped.
 harness_fixture_bed_leg deadline-primary-log-baseline
+printf '%s\n' 'metasystem.runtimes=fake' >"$line_root/metasystem.conf.local"
 bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
   >"$tmp/deadline-baseline.out" 2>"$tmp/deadline-baseline.err" \
   || { echo "supervision hook deadline baseline Stop failed" >&2; cat "$tmp/deadline-baseline.err" >&2; exit 1; }
@@ -1874,19 +2254,85 @@ bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-pay
 deadline_engine=$tmp/deadline-engine
 cat >"$deadline_engine" <<'SH'
 #!/usr/bin/env bash
+if [[ ${1:-} == util && ${2:-} == bootclock && -n ${METASYSTEM_DEADLINE_BOOT_SAMPLE_FILE:-} ]]; then
+  boot_sample=$("${METASYSTEM_DEADLINE_REAL_ENGINE:?}" "$@") || exit $?
+  printf '%s\n' "$boot_sample" >"$METASYSTEM_DEADLINE_BOOT_SAMPLE_FILE"
+  printf '%s\n' "$boot_sample"
+  exit 0
+fi
+if [[ ${1:-} == hooks && ${2:-} == stop-deadline-wait ]]; then
+  if [[ -n ${METASYSTEM_DEADLINE_BOOT_BOUNDARY_FILE:-} ]]; then
+    boundary_boot_id=
+    boundary_origin=
+    boundary_deadline=
+    boundary_timeout=
+    boundary_previous=
+    for boundary_argument in "$@"; do
+      case "$boundary_previous" in
+        --boot-id) boundary_boot_id=$boundary_argument ;;
+        --origin-boot-ns) boundary_origin=$boundary_argument ;;
+        --deadline-boot-ns) boundary_deadline=$boundary_argument ;;
+        --timeout-sec) boundary_timeout=$boundary_argument ;;
+      esac
+      boundary_previous=$boundary_argument
+    done
+    printf '%s %s %s %s\n' "$boundary_boot_id" "$boundary_origin" \
+      "$boundary_deadline" "$boundary_timeout" >"$METASYSTEM_DEADLINE_BOOT_BOUNDARY_FILE"
+  fi
+  wait_started=$SECONDS
+  while [[ ! -e "${METASYSTEM_DEADLINE_ENTERED_FILE:?}" ]] &&
+      (( SECONDS - wait_started < METASYSTEM_DEADLINE_EVENT_HANG_CAP_SEC )); do
+    sleep 0.05
+  done
+  [[ -e "$METASYSTEM_DEADLINE_ENTERED_FILE" ]] \
+    || { echo "deadline fixture worker never published readiness" >&2; exit 70; }
+  : >"${METASYSTEM_STOP_DEADLINE_EVENT:?}"
+fi
 if [[ ${METASYSTEM_DEADLINE_RECORD_FAILURE:-0} == 1 &&
       ${1:-} == report && ${2:-} == stop-block ]]; then
   exit 3
+fi
+if [[ ${METASYSTEM_DEADLINE_PUBLISH_DURING_CLEANUP:-0} == 1 &&
+      ${1:-} == hooks && ${2:-} == stop-deadline-cleanup ]]; then
+	race_wait_result=
+	race_previous=
+	for race_argument in "$@"; do
+	  if [[ "$race_previous" == --wait-result ]]; then
+	    race_wait_result=$race_argument
+	    break
+	  fi
+	  race_previous=$race_argument
+	done
+	if [[ -n "$race_wait_result" ]]; then
+	  race_worker=$("${METASYSTEM_DEADLINE_REAL_ENGINE:?}" json get \
+	    --file "$race_wait_result" --field worker.Pid) || exit $?
+	  : >"${METASYSTEM_DEADLINE_RELEASE_FILE:?}"
+	  race_started=$SECONDS
+	  while kill -0 "$race_worker" 2>/dev/null &&
+	      [[ $(ps -o state= -p "$race_worker" 2>/dev/null | tr -d '[:space:]') != Z* ]] &&
+	      (( SECONDS - race_started < METASYSTEM_DEADLINE_EVENT_HANG_CAP_SEC )); do
+	    sleep 0.05
+	  done
+	  race_state=$(ps -o state= -p "$race_worker" 2>/dev/null | tr -d '[:space:]')
+	  if kill -0 "$race_worker" 2>/dev/null && [[ "$race_state" != Z* ]]; then
+	    echo "deadline fixture worker did not publish and exit before cleanup" >&2
+	    exit 70
+	  fi
+	fi
 fi
 if [[ ${1:-} == steward && ${2:-} == hook-attempt ]]; then
   "${METASYSTEM_DEADLINE_REAL_ENGINE:?}" "$@" || exit $?
   hook_parent=$PPID
   release_file=${METASYSTEM_DEADLINE_RELEASE_FILE:?}
+  printf '%s\n' "$$" >"${METASYSTEM_DEADLINE_ENTERED_FILE:?}"
   delay_started=$SECONDS
   while [[ ! -e "$release_file" ]] && kill -0 "$hook_parent" 2>/dev/null &&
       (( SECONDS - delay_started < 61 )); do
     sleep 0.05
   done
+	if [[ -e "$release_file" && ${METASYSTEM_DEADLINE_PUBLISH_DURING_CLEANUP:-0} == 1 ]]; then
+		exit 0
+	fi
   if kill -0 "$hook_parent" 2>/dev/null; then
     [[ ! -e "$release_file" ]] || { echo "supervision hook deadline fixture released while its hook worker was alive" >&2; exit 70; }
     echo "supervision hook deadline fixture delay ceiling reached (elapsed: $((SECONDS - delay_started))s; cap: 61s)" >&2
@@ -1900,24 +2346,74 @@ chmod +x "$deadline_engine"
 deadline_expected=$(degraded_stop_form allowed deadline-expired)
 if [[ "$fixture_scenario" == deadline-expiry ]]; then
 harness_fixture_bed_leg deadline-expiry-and-repeat
-# The worker window is at least ten times the worst observed head time before the first asserted
-# engine call; the tail allowance is + 30 seconds.
 deadline_budget_sec=20
-deadline_worker_floor=$((deadline_budget_sec - 3))
-deadline_elapsed_limit=$((deadline_budget_sec + 30))
 deadline_release_file=$tmp/deadline-expiry.release
-deadline_started=$SECONDS
-deadline_rc=0
+deadline_entered_file=$tmp/deadline-expiry.entered
+deadline_event_file=$tmp/deadline-expiry.event
+rm -f "$deadline_entered_file" "$deadline_event_file"
+
+# The worker publishes and exits after the first output check but before exact
+# cleanup probes it. Cleanup must classify the zombie as gone without a signal,
+# then the parent reaps it and returns the real published verdict.
+deadline_race_payload=$tmp/deadline-publish-race-payload.json
+deadline_race_entered=$tmp/deadline-publish-race.entered
+deadline_race_event=$tmp/deadline-publish-race.event
+deadline_race_release=$tmp/deadline-publish-race.release
+printf '{"session_id":"deadline-publish-race","cwd":"%s","hook_event_name":"Stop"}\n' \
+  "$line_root" >"$deadline_race_payload"
+deadline_race_rc=0
 METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+  METASYSTEM_DEADLINE_RELEASE_FILE="$deadline_race_release" \
+  METASYSTEM_DEADLINE_ENTERED_FILE="$deadline_race_entered" \
+  METASYSTEM_DEADLINE_EVENT_HANG_CAP_SEC="$hook_evidence_cap" \
+  METASYSTEM_DEADLINE_PUBLISH_DURING_CLEANUP=1 \
+  METASYSTEM_STOP_DEADLINE_EVENT="$deadline_race_event" \
+  METASYSTEM_STOP_DEADLINE_BUDGET_SEC="$deadline_budget_sec" \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$deadline_race_payload" \
+    >"$tmp/deadline-publish-race.out" 2>"$tmp/deadline-publish-race.err" || deadline_race_rc=$?
+(( deadline_race_rc == 0 )) \
+  || { echo "deadline publication race returned $deadline_race_rc" >&2; cat "$tmp/deadline-publish-race.err" >&2; exit 1; }
+deadline_race_decision=$("$ms" json get --file "$tmp/deadline-publish-race.out" --field decision 2>/dev/null || true)
+deadline_race_reason=$("$ms" json get --file "$tmp/deadline-publish-race.out" --field reason 2>/dev/null || true)
+deadline_race_message=$("$ms" json get --file "$tmp/deadline-publish-race.out" --field systemMessage 2>/dev/null || true)
+{ [[ "$deadline_race_decision" == block && -n "$deadline_race_reason" ]] ||
+  [[ -z "$deadline_race_decision" && -z "$deadline_race_reason" && -n "$deadline_race_message" ]]; } \
+  || { echo "deadline publication race lost the worker's final verdict" >&2; cat "$tmp/deadline-publish-race.out" "$tmp/deadline-publish-race.err" >&2; exit 1; }
+if grep -Fq 'stop deadline expired' "$tmp/deadline-publish-race.out"; then
+  echo "deadline publication race substituted the degraded deadline allowance" >&2
+  exit 1
+fi
+
+deadline_total_bin=$tmp/deadline-total-bin
+deadline_total_state=$tmp/deadline-total-date.state
+deadline_real_date=$(command -v date)
+mkdir -p "$deadline_total_bin"
+cat >"$deadline_total_bin/date" <<'SH'
+#!/usr/bin/env bash
+if [[ ${1:-} == -u && ${2:-} == +%s && -z ${METASYSTEM_STOP_DEADLINE_PARENT:-} ]]; then
+  if [[ ! -e "${METASYSTEM_DEADLINE_TOTAL_DATE_STATE:?}" ]]; then
+    : >"$METASYSTEM_DEADLINE_TOTAL_DATE_STATE"
+    printf '%s\n' 1000
+  else
+    printf '%s\n' 1017
+  fi
+  exit 0
+fi
+exec "${METASYSTEM_DEADLINE_REAL_DATE:?}" "$@"
+SH
+chmod +x "$deadline_total_bin/date"
+deadline_rc=0
+PATH="$deadline_total_bin:$PATH" METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+  METASYSTEM_DEADLINE_TOTAL_DATE_STATE="$deadline_total_state" METASYSTEM_DEADLINE_REAL_DATE="$deadline_real_date" \
   METASYSTEM_DEADLINE_RELEASE_FILE="$deadline_release_file" \
+  METASYSTEM_DEADLINE_ENTERED_FILE="$deadline_entered_file" \
+  METASYSTEM_DEADLINE_EVENT_HANG_CAP_SEC="$hook_evidence_cap" \
+  METASYSTEM_STOP_DEADLINE_EVENT="$deadline_event_file" \
   METASYSTEM_STOP_DEADLINE_BUDGET_SEC="$deadline_budget_sec" \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
     >"$tmp/deadline.out" 2>"$tmp/deadline.err" || deadline_rc=$?
-deadline_elapsed=$((SECONDS - deadline_started))
 (( deadline_rc == 0 )) \
   || { echo "supervision hook deadline fixture did not exit successfully: $deadline_rc" >&2; exit 1; }
-(( deadline_elapsed < deadline_elapsed_limit )) \
-  || { echo "supervision hook deadline fixture exceeded its injected budget margin: ${deadline_elapsed}s" >&2; exit 1; }
 [[ $(<"$tmp/deadline.out") == "$deadline_expected" ]] \
   || { echo "supervision hook deadline fixture did not emit its fixed degraded timeout" >&2; cat "$tmp/deadline.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/deadline.out"; then
@@ -1926,9 +2422,8 @@ fi
 deadline_trail_elapsed=$(sed -n \
   's/^.*stop response outcome=deadline-expired-allow elapsed=\([0-9][0-9]*\)s$/\1/p' \
   "$line_root/artifacts/agents/supervision/hooks.log" | tail -1)
-[[ "$deadline_trail_elapsed" =~ ^[0-9]+$ ]] \
-  && (( deadline_trail_elapsed >= deadline_worker_floor && deadline_trail_elapsed < deadline_elapsed_limit )) \
-  || { echo "supervision hook deadline fixture did not log its elapsed deadline refusal" >&2; exit 1; }
+[[ "$deadline_trail_elapsed" == 17 ]] \
+  || { echo "supervision hook deadline fixture did not retain the 17-second total launch-to-cleanup measurement" >&2; exit 1; }
 grep -Fq 'stop-condition infrastructure stop-deadline-expired stop-deadline ' \
   "$line_root/artifacts/agents/supervision/hooks.log" \
   || { echo "supervision hook deadline fixture omitted its condition line" >&2; exit 1; }
@@ -1937,12 +2432,16 @@ grep -Fq 'stop-condition infrastructure stop-deadline-expired stop-deadline ' \
 deadline_last_stop_elapsed=$(sed -n 's/^.*"lastStopElapsedSec": \([0-9][0-9]*\).*$/\1/p' "$hook_evidence" | tail -1)
 deadline_stop_elapsed=$(sed -n 's/^.*"stopElapsedSec": \([0-9][0-9]*\).*$/\1/p' "$hook_evidence" | tail -1)
 [[ "$deadline_last_stop_elapsed" =~ ^[0-9]+$ && "$deadline_stop_elapsed" =~ ^[0-9]+$ ]] \
-  && (( deadline_last_stop_elapsed >= deadline_worker_floor && deadline_last_stop_elapsed < deadline_elapsed_limit )) \
-  && (( deadline_stop_elapsed >= deadline_worker_floor && deadline_stop_elapsed < deadline_elapsed_limit )) \
+  && [[ "$deadline_last_stop_elapsed" == "$deadline_trail_elapsed" \
+     && "$deadline_stop_elapsed" == "$deadline_trail_elapsed" ]] \
   || { echo "supervision hook deadline fixture did not retain the elapsed expiry measurement" >&2; exit 1; }
 deadline_second_rc=0
+rm -f "$deadline_entered_file" "$deadline_event_file"
 METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
   METASYSTEM_DEADLINE_RELEASE_FILE="$deadline_release_file" \
+  METASYSTEM_DEADLINE_ENTERED_FILE="$deadline_entered_file" \
+  METASYSTEM_DEADLINE_EVENT_HANG_CAP_SEC="$hook_evidence_cap" \
+  METASYSTEM_STOP_DEADLINE_EVENT="$deadline_event_file" \
   METASYSTEM_STOP_DEADLINE_BUDGET_SEC="$deadline_budget_sec" \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
     >"$tmp/deadline-second.out" 2>"$tmp/deadline-second.err" || deadline_second_rc=$?
@@ -1957,6 +2456,99 @@ deadline_record="$line_root/artifacts/agents/supervision/stop-refusals/line-fixt
 grep -Fq '"cause": "stop deadline expired"' "$deadline_record" \
   && grep -Fq '"count": 2' "$deadline_record" \
   || { echo "repeated deadline overrun lost its recorded cause or occurrence count" >&2; cat "$deadline_record" >&2; exit 1; }
+
+# Installation lookup is inside the worker budget. The lookup stays held until
+# the fixture releases it, after which the boot boundary records no fresh
+# worker window. Shell tracing also records that the fallback expiry was built
+# from the same pre-lookup origin.
+deadline_setup_bin=$tmp/deadline-setup-bin
+deadline_setup_real_git=$(command -v git)
+deadline_setup_entered=$tmp/deadline-setup.entered
+deadline_setup_release=$tmp/deadline-setup.release
+deadline_setup_once=$tmp/deadline-setup.once
+deadline_setup_trace=$tmp/deadline-setup.trace
+deadline_setup_bash_env=$tmp/deadline-setup.bash-env
+deadline_setup_sample=$tmp/deadline-setup.sample
+deadline_setup_boundary=$tmp/deadline-setup.boundary
+deadline_setup_worker_entered=$tmp/deadline-setup-worker.entered
+deadline_setup_worker_release=$tmp/deadline-setup-worker.release
+deadline_setup_event=$tmp/deadline-setup.event
+mkdir -p "$deadline_setup_bin"
+cat >"$deadline_setup_bin/git" <<'SH'
+#!/usr/bin/env bash
+if [[ -z ${METASYSTEM_STOP_DEADLINE_PARENT:-} ]] &&
+    mkdir "${METASYSTEM_DEADLINE_SETUP_ONCE:?}" 2>/dev/null; then
+  : >"${METASYSTEM_DEADLINE_SETUP_ENTERED:?}"
+  setup_started=$SECONDS
+  while [[ ! -e "${METASYSTEM_DEADLINE_SETUP_RELEASE:?}" ]] &&
+      (( SECONDS - setup_started < METASYSTEM_DEADLINE_SETUP_HANG_CAP_SEC )); do
+    /bin/sleep 0.05
+  done
+  [[ -e "$METASYSTEM_DEADLINE_SETUP_RELEASE" ]] \
+    || { echo "deadline setup fixture release never arrived" >&2; exit 70; }
+fi
+exec "${METASYSTEM_DEADLINE_SETUP_REAL_GIT:?}" "$@"
+SH
+chmod +x "$deadline_setup_bin/git"
+cat >"$deadline_setup_bash_env" <<'SH'
+if [[ ${METASYSTEM_DEADLINE_SETUP_TRACE:-0} == 1 && -z ${METASYSTEM_STOP_DEADLINE_PARENT:-} ]]; then
+  PS4='+ '
+  set -x
+fi
+SH
+deadline_setup_rc=0
+PATH="$deadline_setup_bin:$PATH" BASH_ENV="$deadline_setup_bash_env" \
+  METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
+  METASYSTEM_DEADLINE_SETUP_TRACE=1 \
+  METASYSTEM_DEADLINE_SETUP_REAL_GIT="$deadline_setup_real_git" \
+  METASYSTEM_DEADLINE_SETUP_ENTERED="$deadline_setup_entered" \
+  METASYSTEM_DEADLINE_SETUP_RELEASE="$deadline_setup_release" \
+  METASYSTEM_DEADLINE_SETUP_ONCE="$deadline_setup_once" \
+  METASYSTEM_DEADLINE_SETUP_HANG_CAP_SEC="$hook_evidence_cap" \
+  METASYSTEM_DEADLINE_BOOT_SAMPLE_FILE="$deadline_setup_sample" \
+  METASYSTEM_DEADLINE_BOOT_BOUNDARY_FILE="$deadline_setup_boundary" \
+  METASYSTEM_DEADLINE_RELEASE_FILE="$deadline_setup_worker_release" \
+  METASYSTEM_DEADLINE_ENTERED_FILE="$deadline_setup_worker_entered" \
+  METASYSTEM_DEADLINE_EVENT_HANG_CAP_SEC="$hook_evidence_cap" \
+  METASYSTEM_STOP_DEADLINE_EVENT="$deadline_setup_event" \
+  METASYSTEM_STOP_DEADLINE_BUDGET_SEC=4 \
+  bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
+    >"$tmp/deadline-setup.out" 2>"$deadline_setup_trace" &
+hook_process_pid=$!
+hook_process_path=$line_root/scripts/agents/supervision-hook.sh
+deadline_setup_wait=$((SECONDS + hook_evidence_cap))
+while [[ ! -e "$deadline_setup_entered" ]] && kill -0 "$hook_process_pid" 2>/dev/null &&
+    (( SECONDS < deadline_setup_wait )); do
+  /bin/sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+[[ -e "$deadline_setup_entered" ]] \
+  || { echo "deadline setup fixture did not enter installation lookup" >&2; exit 1; }
+/bin/sleep 2
+: >"$deadline_setup_release"
+wait "$hook_process_pid" || deadline_setup_rc=$?
+hook_process_pid=
+hook_process_path=
+(( deadline_setup_rc == 0 )) \
+  || { echo "deadline setup fixture returned $deadline_setup_rc" >&2; tail -n 80 "$deadline_setup_trace" >&2; exit 1; }
+[[ -s "$deadline_setup_sample" && -s "$deadline_setup_boundary" ]] \
+  || { echo "deadline setup fixture omitted its boot sample or boundary" >&2; exit 1; }
+read -r setup_boot_id setup_sample_ns setup_sample_extra <"$deadline_setup_sample"
+read -r boundary_boot_id boundary_origin_ns boundary_deadline_ns boundary_timeout_sec \
+  <"$deadline_setup_boundary"
+[[ -n "$setup_boot_id" && -z "$setup_sample_extra" && "$setup_sample_ns" =~ ^[0-9]+$ &&
+    "$boundary_boot_id" == "$setup_boot_id" && "$boundary_origin_ns" =~ ^[0-9]+$ &&
+    "$boundary_deadline_ns" =~ ^[0-9]+$ && "$boundary_timeout_sec" == 1 &&
+    $((boundary_deadline_ns - boundary_origin_ns)) -eq 1000000000 &&
+    "$boundary_deadline_ns" -le "$setup_sample_ns" ]] \
+  || { echo "deadline setup fixture granted a fresh boot-clock worker window" >&2; cat "$deadline_setup_sample" "$deadline_setup_boundary" >&2; exit 1; }
+setup_shell_origin=$(sed -n 's/^+ deadline_started=\([0-9][0-9]*\)$/\1/p' "$deadline_setup_trace" | head -1)
+setup_shell_elapsed=$(sed -n 's/^+ deadline_setup_elapsed=\([0-9][0-9]*\)$/\1/p' "$deadline_setup_trace" | head -1)
+setup_shell_expiry=$(sed -n 's/^+ deadline_expires=\([0-9][0-9]*\)$/\1/p' "$deadline_setup_trace" | head -1)
+[[ "$setup_shell_origin" =~ ^[0-9]+$ && "$setup_shell_elapsed" =~ ^[0-9]+$ &&
+    "$setup_shell_expiry" =~ ^[0-9]+$ && "$setup_shell_elapsed" -ge 1 &&
+    $((setup_shell_expiry - setup_shell_origin)) -eq 1 ]] \
+  || { echo "deadline setup fixture did not preserve the fallback origin" >&2; tail -n 100 "$deadline_setup_trace" >&2; exit 1; }
+printf '%s\n' 'deadline setup budget witness passed: setup-consumed fallback-origin-preserved'
 
 deadline_budget_engine=$tmp/deadline-budget-engine
 cat >"$deadline_budget_engine" <<'SH'
@@ -2078,9 +2670,14 @@ printf '{"session_id":"deadline-record-failure","cwd":"%s","hook_event_name":"St
   "$line_root" >"$tmp/deadline-record-failure-payload.json"
 deadline_record_failure_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
 deadline_record_failure_rc=0
+deadline_record_failure_entered=$tmp/deadline-record-failure.entered
+deadline_record_failure_event=$tmp/deadline-record-failure.event
 METASYSTEM_BIN="$prefix_engine" METASYSTEM_PREFIX_DEADLINE_ENGINE="$deadline_engine" \
   METASYSTEM_DEADLINE_REAL_ENGINE="$ms" METASYSTEM_DEADLINE_RECORD_FAILURE=1 \
   METASYSTEM_DEADLINE_RELEASE_FILE="$tmp/deadline-record-failure.release" \
+  METASYSTEM_DEADLINE_ENTERED_FILE="$deadline_record_failure_entered" \
+  METASYSTEM_DEADLINE_EVENT_HANG_CAP_SEC="$hook_evidence_cap" \
+  METASYSTEM_STOP_DEADLINE_EVENT="$deadline_record_failure_event" \
   METASYSTEM_STOP_DEADLINE_BUDGET_SEC=20 \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
     <"$tmp/deadline-record-failure-payload.json" \
@@ -2110,9 +2707,14 @@ if [[ "$fixture_scenario" == deadline-log-failure ]]; then
 harness_fixture_bed_leg deadline-condition-log-failure
 chmod 0444 "$line_root/artifacts/agents/supervision/hooks.log"
 deadline_prefix_rc=0
+deadline_log_failure_entered=$tmp/deadline-log-failure.entered
+deadline_log_failure_event=$tmp/deadline-log-failure.event
 METASYSTEM_BIN="$prefix_engine" METASYSTEM_PREFIX_DEADLINE_ENGINE="$deadline_engine" \
   METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
   METASYSTEM_DEADLINE_RELEASE_FILE="$tmp/deadline-log-failure.release" \
+  METASYSTEM_DEADLINE_ENTERED_FILE="$deadline_log_failure_entered" \
+  METASYSTEM_DEADLINE_EVENT_HANG_CAP_SEC="$hook_evidence_cap" \
+  METASYSTEM_STOP_DEADLINE_EVENT="$deadline_log_failure_event" \
   METASYSTEM_STOP_DEADLINE_BUDGET_SEC=20 \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop <"$tmp/line-payload.json" \
     >"$tmp/deadline-prefix.out" 2>"$tmp/deadline-prefix.err" || deadline_prefix_rc=$?
@@ -2128,11 +2730,11 @@ deadline_prefix_expected=$(degraded_stop_form allowed deadline-expired condition
 exit 0
 fi
 
-# A restricted host may prove that the worker still exists without exposing
-# its command line. The parent must keep the Stop deadline but must not signal
-# or wait for a process whose ownership it cannot verify.
+# A restricted command-line view cannot hide the kernel identity of the
+# parent's own worker. The typed owner must still use that exact identity and
+# clean the worker without trusting ps output.
 if [[ "$fixture_scenario" == deadline-restricted-process ]]; then
-harness_fixture_bed_leg deadline-unverifiable-worker
+harness_fixture_bed_leg deadline-kernel-identity-worker
 empty_ps_dir=$tmp/empty-ps-shim
 empty_ps_deadline_root=$tmp/empty-ps-deadline
 mkdir -p "$empty_ps_dir" "$empty_ps_deadline_root"
@@ -2144,25 +2746,23 @@ chmod +x "$empty_ps_dir/ps"
 printf '{"session_id":"empty-ps-deadline-fixture","cwd":"%s","hook_event_name":"Stop"}\n' \
   "$line_root" >"$tmp/empty-ps-deadline-payload.json"
 empty_ps_log_start=$(wc -l <"$line_root/artifacts/agents/supervision/hooks.log")
-# The worker window is at least ten times the worst observed head time before the first asserted
-# engine call; the tail allowance is + 30 seconds.
 empty_ps_budget_sec=20
-empty_ps_elapsed_limit=$((empty_ps_budget_sec + 30))
 empty_ps_release_file=$tmp/deadline-restricted-process.release
-empty_ps_started=$SECONDS
+empty_ps_entered_file=$tmp/deadline-restricted-process.entered
+empty_ps_event_file=$tmp/deadline-restricted-process.event
 empty_ps_rc=0
 PATH="$empty_ps_dir:$PATH" TMPDIR="$empty_ps_deadline_root" \
   METASYSTEM_BIN="$deadline_engine" METASYSTEM_DEADLINE_REAL_ENGINE="$ms" \
   METASYSTEM_DEADLINE_RELEASE_FILE="$empty_ps_release_file" \
+  METASYSTEM_DEADLINE_ENTERED_FILE="$empty_ps_entered_file" \
+  METASYSTEM_DEADLINE_EVENT_HANG_CAP_SEC="$hook_evidence_cap" \
+  METASYSTEM_STOP_DEADLINE_EVENT="$empty_ps_event_file" \
   METASYSTEM_STOP_DEADLINE_BUDGET_SEC="$empty_ps_budget_sec" \
   bash "$line_root/scripts/agents/supervision-hook.sh" claude stop \
     <"$tmp/empty-ps-deadline-payload.json" \
     >"$tmp/empty-ps-deadline.out" 2>"$tmp/empty-ps-deadline.err" || empty_ps_rc=$?
-empty_ps_elapsed=$((SECONDS - empty_ps_started))
 (( empty_ps_rc == 0 )) \
   || { echo "empty-ps supervision hook deadline fixture returned $empty_ps_rc" >&2; exit 1; }
-(( empty_ps_elapsed < empty_ps_elapsed_limit )) \
-  || { echo "empty-ps supervision hook deadline fixture exceeded its injected budget margin: ${empty_ps_elapsed}s" >&2; exit 1; }
 [[ $(<"$tmp/empty-ps-deadline.out") == "$deadline_expected" ]] \
   || { echo "empty-ps supervision hook deadline fixture did not emit its fixed degraded timeout" >&2; cat "$tmp/empty-ps-deadline.out" >&2; exit 1; }
 if grep -Fq '"decision":"block"' "$tmp/empty-ps-deadline.out"; then
@@ -2171,30 +2771,56 @@ fi
 sed -n "$((empty_ps_log_start + 1)),\$p" "$line_root/artifacts/agents/supervision/hooks.log" \
   | grep -Fq 'stop response outcome=deadline-expired-allow' \
   || { echo "empty-ps supervision hook deadline fixture did not log its deadline refusal" >&2; exit 1; }
-empty_ps_worker=$(sed -n 's/^stop deadline: worker \([0-9][0-9]*\) left running, command line unverifiable$/\1/p' \
-  "$tmp/empty-ps-deadline.err" | tail -1)
-[[ "$empty_ps_worker" =~ ^[0-9]+$ ]] \
-  || { echo "empty-ps supervision hook deadline fixture did not identify its unverifiable live worker" >&2; cat "$tmp/empty-ps-deadline.err" >&2; exit 1; }
-empty_ps_deadline_dirs=("$empty_ps_deadline_root"/metasystem-stop-deadline.*)
-(( ${#empty_ps_deadline_dirs[@]} == 1 )) && [[ -d "${empty_ps_deadline_dirs[0]}" ]] \
-  || { echo "empty-ps supervision hook deadline fixture did not retain exactly one worker directory" >&2; exit 1; }
-touch "$empty_ps_release_file"
-hook_process_pid=$empty_ps_worker
-hook_process_path=$line_root/scripts/agents/supervision-hook.sh
-empty_ps_worker_deadline=$((SECONDS + 70))
-while kill -0 "$empty_ps_worker" 2>/dev/null; do
-  if (( SECONDS >= empty_ps_worker_deadline )); then
-    stop_hook_process || true
-    echo "empty-ps supervision hook deadline fixture worker remained alive past its seventy-second cleanup ceiling" >&2
-    exit 1
+! grep -Fq 'left running, command line unverifiable' "$tmp/empty-ps-deadline.err" \
+  || { echo "empty-ps supervision hook deadline fixture ignored the exact kernel identity" >&2; exit 1; }
+empty_ps_deadline_count=$(find "$empty_ps_deadline_root" -maxdepth 1 -type d \
+  -name 'metasystem-stop-deadline.*' | wc -l | tr -d ' ')
+if (( empty_ps_deadline_count == 1 )); then
+  empty_ps_deadline_dir=$(find "$empty_ps_deadline_root" -maxdepth 1 -type d \
+    -name 'metasystem-stop-deadline.*' -print)
+  empty_ps_wait_result=$empty_ps_deadline_dir/deadline-wait.json
+  empty_ps_cleanup_result=$empty_ps_deadline_dir/deadline-cleanup.json
+  empty_ps_wait_state=$("$ms" json get --file "$empty_ps_wait_result" --field state) \
+    || { echo "empty-ps supervision hook deadline fixture retained an invalid wait result" >&2; exit 1; }
+  empty_ps_worker_pid=$("$ms" json get --file "$empty_ps_wait_result" --field worker.Pid) \
+    || { echo "empty-ps supervision hook deadline fixture retained no worker pid" >&2; exit 1; }
+  empty_ps_worker_micro=$("$ms" json get --file "$empty_ps_wait_result" --field worker.StartedAtUnixMicro) \
+    || { echo "empty-ps supervision hook deadline fixture retained no worker microsecond identity" >&2; exit 1; }
+  empty_ps_worker_ticks=$("$ms" json get --file "$empty_ps_wait_result" --field worker.StartTicks) \
+    || { echo "empty-ps supervision hook deadline fixture retained no worker tick identity" >&2; exit 1; }
+  empty_ps_worker_boot=$("$ms" json get --file "$empty_ps_wait_result" --field worker.BootID) \
+    || { echo "empty-ps supervision hook deadline fixture retained no worker boot identity" >&2; exit 1; }
+  [[ "$empty_ps_wait_state" == deadline-reached && "$empty_ps_worker_pid" =~ ^[1-9][0-9]*$ ]] \
+    || { echo "empty-ps supervision hook deadline fixture retained the wrong wait state or worker pid" >&2; exit 1; }
+  if [[ "$empty_ps_worker_micro" =~ ^[1-9][0-9]*$ && "$empty_ps_worker_ticks" == 0 && -z "$empty_ps_worker_boot" ]]; then
+    empty_ps_worker_ref="pid=$empty_ps_worker_pid;micro=$empty_ps_worker_micro"
+  elif [[ "$empty_ps_worker_micro" == 0 && "$empty_ps_worker_ticks" =~ ^[1-9][0-9]*$ && -n "$empty_ps_worker_boot" ]]; then
+    empty_ps_worker_ref="pid=$empty_ps_worker_pid;ticks=$empty_ps_worker_ticks;boot=$empty_ps_worker_boot"
+  else
+    echo "empty-ps supervision hook deadline fixture retained an ambiguous worker identity" >&2; exit 1
   fi
-  sleep 0.05
-done
-hook_process_pid=
-hook_process_path=
-grep -Fq 'supervision hook: emitted the health line but could not record completion' \
-  "${empty_ps_deadline_dirs[0]}/stderr" \
-  || { echo "empty-ps supervision hook deadline fixture did not prove the unsignalled worker continued after the parent returned" >&2; cat "${empty_ps_deadline_dirs[0]}/stderr" >&2; exit 1; }
+  [[ $(<"$empty_ps_cleanup_result") == '{"state":"kill-sent","termSent":true,"killSent":true}' ]] \
+    || { echo "empty-ps supervision hook deadline fixture retained the wrong cleanup result" >&2; exit 1; }
+  grep -Fqx "stop deadline: worker $empty_ps_worker_pid cleanup sent KILL without terminal acknowledgement; custody retained; not waiting" \
+    "$tmp/empty-ps-deadline.err" \
+    || { echo "empty-ps supervision hook deadline fixture omitted its retained-custody diagnostic" >&2; exit 1; }
+  empty_ps_terminal_deadline=$((SECONDS + hook_evidence_cap))
+  while true; do
+    if harness_fixture_exact_process_gone "$ms" "$empty_ps_worker_pid" "$empty_ps_worker_ref"; then
+      break
+    else
+      empty_ps_gone_rc=$?
+    fi
+    (( empty_ps_gone_rc == 1 )) \
+      || { echo "empty-ps supervision hook deadline fixture could not inspect its exact worker" >&2; exit 1; }
+    (( SECONDS < empty_ps_terminal_deadline )) \
+      || { echo "empty-ps supervision hook deadline fixture exact worker did not become terminal" >&2; exit 1; }
+    /bin/sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  rm -rf "$empty_ps_deadline_dir"
+elif (( empty_ps_deadline_count != 0 )); then
+  echo "empty-ps supervision hook deadline fixture retained multiple worker directories" >&2; exit 1
+fi
 exit 0
 fi
 fi

@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/slack"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/telegram"
 )
 
@@ -118,6 +119,20 @@ func assertRequestParked[T any](t *testing.T, done <-chan T) {
 	}
 }
 
+func controlledRequestContext(t *testing.T) func(context.Context, time.Duration) (context.Context, context.CancelFunc) {
+	t.Helper()
+	return func(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+		if timeout != 30*time.Second {
+			t.Errorf("adapter request timeout = %s, want 30s default", timeout)
+		}
+		ctx, cancel := context.WithCancel(parent)
+		if _, ok := ctx.Deadline(); ok {
+			t.Error("controlled adapter request retained a physical deadline")
+		}
+		return ctx, cancel
+	}
+}
+
 func appendLine(t *testing.T, dir, line string) {
 	t.Helper()
 	f, err := os.OpenFile(filepath.Join(dir, "replies.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
@@ -167,17 +182,37 @@ func journalRows(t *testing.T, dir string) []map[string]any {
 }
 
 func TestTelegramFaceSharesTheCounter(t *testing.T) {
-	before := time.Now().Add(-time.Minute)
-	ctx, dir, stop := serverBed(t)
+	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	parked := make(chan fake.WaitPoint, 1)
+	ctx, dir, stop := serverBedWithHooks(t, fake.ServeHooks{Now: func() time.Time { return now }, Parked: parked})
 	defer stop()
-	p, d, err := fake.TelegramProvider(dir)
+	ctx = telegram.WithRequestContext(ctx, controlledRequestContext(t))
+	p, d, err := fake.TelegramProvider(dir, "semantic-time")
 	if err != nil {
 		t.Fatal(err)
 	}
-	posted, err := p.Post(ctx, d, "question", nil)
-	if err != nil {
+	release := filepath.Join(dir, "release-telegram-timestamp")
+	t.Cleanup(func() { _ = os.WriteFile(release, []byte("release\n"), 0o644) })
+	writeControl(t, dir, map[string]any{"pauseBefore": []map[string]any{{"listener": "semantic-time", "method": "sendMessage", "until": release}}})
+	type postResult struct {
+		ref channel.MessageRef
+		err error
+	}
+	postedResult := make(chan postResult, 1)
+	go func() {
+		ref, postErr := p.Post(ctx, d, "question", nil)
+		postedResult <- postResult{ref: ref, err: postErr}
+	}()
+	waitForPark(t, parked, fake.PauseWait)
+	assertRequestParked(t, postedResult)
+	if err := os.WriteFile(release, []byte("release\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	postedCall := <-postedResult
+	if postedCall.err != nil {
+		t.Fatal(postedCall.err)
+	}
+	posted := postedCall.ref
 	appendLine(t, dir, fmt.Sprintf(`{"face":"telegram","reply_to":%s,"user":7001,"text":"answer"}`, posted.ID))
 	got, _, err := p.Receive(ctx, d, []channel.MessageRef{posted}, "")
 	if err != nil || len(got) != 1 {
@@ -188,30 +223,59 @@ func TestTelegramFaceSharesTheCounter(t *testing.T) {
 	if replyID <= postID {
 		t.Fatalf("reply %d did not sort after post %d", replyID, postID)
 	}
-	if got[0].SentAt.Before(before) || got[0].SentAt.After(time.Now().Add(time.Minute)) {
-		t.Fatalf("reply timestamp %s is not current", got[0].SentAt)
+	if !got[0].SentAt.Equal(now) {
+		t.Fatalf("reply timestamp = %s, want %s", got[0].SentAt, now)
 	}
 }
 
 func TestSlackReplyUsesCurrentTimestampAndKeepsThreadRoot(t *testing.T) {
-	ctx, dir, stop := serverBed(t)
+	now := time.Date(2030, 1, 2, 3, 4, 5, 123456000, time.UTC)
+	wantRootTimestamp := fmt.Sprintf("%d.123456", now.Unix())
+	wantReplyTimestamp := fmt.Sprintf("%d.123457", now.Unix())
+	parked := make(chan fake.WaitPoint, 1)
+	ctx, dir, stop := serverBedWithHooks(t, fake.ServeHooks{Now: func() time.Time { return now }, Parked: parked})
 	defer stop()
+	ctx = slack.WithRequestContext(ctx, controlledRequestContext(t))
 	p, d, err := fake.Provider(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := p.Post(ctx, d, "question", nil)
-	if err != nil {
+	release := filepath.Join(dir, "release-slack-timestamp")
+	t.Cleanup(func() { _ = os.WriteFile(release, []byte("release\n"), 0o644) })
+	writeControl(t, dir, map[string]any{"pauseBefore": []map[string]any{{"method": "chat.postMessage", "until": release}}})
+	type postResult struct {
+		ref channel.MessageRef
+		err error
+	}
+	rootResult := make(chan postResult, 1)
+	go func() {
+		ref, postErr := p.Post(ctx, d, "question", nil)
+		rootResult <- postResult{ref: ref, err: postErr}
+	}()
+	waitForPark(t, parked, fake.PauseWait)
+	assertRequestParked(t, rootResult)
+	if err := os.WriteFile(release, []byte("release\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	rootCall := <-rootResult
+	if rootCall.err != nil {
+		t.Fatal(rootCall.err)
+	}
+	root := rootCall.ref
+	if root.ID != wantRootTimestamp {
+		t.Fatalf("root protocol timestamp = %q, want %q", root.ID, wantRootTimestamp)
+	}
 	appendLine(t, dir, fmt.Sprintf(`{"thread_ts":%q,"user":"UWIDO","text":"answer"}`, root.ID))
-	before := time.Now().Add(-time.Minute)
 	got, _, err := p.Receive(ctx, d, []channel.MessageRef{root}, "")
 	if err != nil || len(got) != 1 {
 		t.Fatal(got, err)
 	}
-	if got[0].SentAt.Before(before) || got[0].SentAt.After(time.Now().Add(time.Minute)) {
-		t.Fatalf("reply timestamp %s is not current", got[0].SentAt)
+	if got[0].Ref.ID != wantReplyTimestamp {
+		t.Fatalf("reply protocol timestamp = %q, want %q", got[0].Ref.ID, wantReplyTimestamp)
+	}
+	wantReplyTime := now.Add(time.Microsecond)
+	if !got[0].SentAt.Equal(wantReplyTime) {
+		t.Fatalf("reply timestamp = %s, want %s", got[0].SentAt, wantReplyTime)
 	}
 	if got[0].ThreadID != root.ID || got[0].Ref.ThreadID != root.ID {
 		t.Fatalf("reply thread = %q, reference thread = %q, want root %q", got[0].ThreadID, got[0].Ref.ThreadID, root.ID)

@@ -256,7 +256,12 @@ func runMissionFenceReserve(name string, reserve bool) func([]string) int {
 			fmt.Fprintln(os.Stderr, "invalid mission job reservation")
 			return 2
 		}
-		if err := mission.CheckOrReserve(*repo, *missionID, *job, *capMin, reserve); err != nil {
+		commandClock, _, err := goalCommandClock(*repo)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		if err := mission.CheckOrReserveWithClock(*repo, *missionID, *job, *capMin, reserve, commandClock); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
@@ -275,7 +280,12 @@ func runMissionFenceReserveCycle(args []string) int {
 		fmt.Fprintln(os.Stderr, "invalid mission id")
 		return 2
 	}
-	if err := mission.ReserveCycle(*repo, *missionID); err != nil {
+	commandClock, _, err := goalCommandClock(*repo)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := mission.ReserveCycleWithClock(*repo, *missionID, commandClock); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -312,7 +322,12 @@ func runMissionFenceAuthorizeCap(args []string) int {
 		fmt.Fprintln(os.Stderr, "invalid mission cap authorization request")
 		return 2
 	}
-	result, err := mission.AuthorizeCap(*repo, *missionID, *job, *runtime, *model, *aliasSource, requestedPtr)
+	commandClock, _, err := goalCommandClock(*repo)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	result, err := mission.AuthorizeCapWithClock(*repo, *missionID, *job, *runtime, *model, *aliasSource, requestedPtr, commandClock)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -352,7 +367,12 @@ func runMissionFenceReleaseJob(args []string) int {
 		fmt.Fprintln(os.Stderr, "fence-release-job requires --repo, --mission and --job")
 		return 2
 	}
-	if err := mission.ReleaseJob(*repo, *missionID, *job); err != nil {
+	commandClock, _, err := goalCommandClock(*repo)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := mission.ReleaseJobWithClock(*repo, *missionID, *job, commandClock); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

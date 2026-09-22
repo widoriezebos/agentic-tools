@@ -43,7 +43,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(frozen.Root)) })
+	t.Cleanup(func() { _ = frozen.Close() })
 	source = frozen.Root
 	bed, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -60,7 +60,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		}
 	}
 	t.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", filepath.Join(bed, "registry"))
-	baseEnvironment := append(receiptCanaryEnvironment(), "METASYSTEM_OWNER_LINEAGE=adoption-comparison", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+filepath.Join(bed, "registry"))
+	baseEnvironment := append(receiptCanaryEnvironment(), "GOFLAGS=-mod=readonly", "METASYSTEM_OWNER_LINEAGE=adoption-comparison", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+filepath.Join(bed, "registry"))
 	environment := append([]string(nil), baseEnvironment...)
 	run := func(cwd string, argv ...string) (string, int) {
 		t.Helper()
@@ -117,12 +117,17 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 			"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+filepath.Join(t.TempDir(), "host-admission"),
 			"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+authorityRoot)
 	}
-	runReceiptGit(t, source, "init", "-q", "-b", "main")
-	runReceiptGit(t, source, "config", "user.name", "adoption source")
-	runReceiptGit(t, source, "config", "user.email", "fixture@example.invalid")
+	gitProbe := exec.Command("git", "-C", source, "rev-parse", "--is-inside-work-tree")
+	if err := gitProbe.Run(); err != nil {
+		runReceiptGit(t, source, "init", "-q", "-b", "main")
+		runReceiptGit(t, source, "config", "user.name", "adoption source")
+		runReceiptGit(t, source, "config", "user.email", "fixture@example.invalid")
+	}
 	runReceiptGit(t, source, "config", "metasystem.goal.machine", "fixture-machine")
 	runReceiptGit(t, source, "add", ".")
-	runReceiptGit(t, source, "commit", "-qm", "exact comparison source")
+	if status := strings.TrimSpace(runReceiptGit(t, source, "status", "--porcelain")); status != "" {
+		runReceiptGit(t, source, "-c", "user.name=adoption source", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "exact comparison source")
+	}
 	if providedTarget == "" {
 		commit := runReceiptGit(t, source, "rev-parse", "HEAD")
 		mustRun(source, "go", "build", "-buildvcs=false", "-ldflags", "-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+commit, "-o", filepath.Join(source, "bin", "metasystem"), "./cmd/metasystem")

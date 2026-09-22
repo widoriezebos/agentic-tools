@@ -19,7 +19,7 @@ if [[ -n "$stage_results_requested" && "$stage_results_writer" != 1 ]]; then
 fi
 
 usage() {
-  echo "Usage: scripts/validate-metasystem.sh [--delegate-scope|--delivery-contract|--enumerate --report <path>]" >&2
+  echo "Usage: scripts/validate-metasystem.sh [--delegate-scope|--delivery-contract|--enumerate --report <path>|--checkout-execution-guard-fixture <absolute-control-path>]" >&2
 }
 
 delegate_scope=0
@@ -27,6 +27,7 @@ delivery_contract=0
 delivery_reuse=0
 enumeration_section=
 enumerate_mode=0
+checkout_guard_fixture=
 case ${1:-} in
   '') ;;
   --delegate-scope) [[ $# -eq 1 ]] || { usage; exit 2; }; delegate_scope=1 ;;
@@ -50,9 +51,27 @@ case ${1:-} in
       || { usage; exit 2; }
     enumeration_section=$2
     ;;
+  --checkout-execution-guard-fixture)
+    [[ $# -eq 2 && "$2" == /* ]] || { usage; exit 2; }
+    checkout_guard_fixture=$2
+    ;;
   -h|--help) usage; exit 0 ;;
   *) usage; exit 2 ;;
 esac
+if [[ -n "${METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE:-}" \
+  && -z "$checkout_guard_fixture" ]]; then
+  echo "validate metasystem: checkout guard fixture control requires the explicit bounded fixture argument" >&2
+  exit 2
+fi
+if [[ -n "$checkout_guard_fixture" \
+  && -n "${METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE:-}" \
+  && "$METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE" != "$checkout_guard_fixture" ]]; then
+  echo "validate metasystem: checkout guard fixture argument does not match the worker control" >&2
+  exit 2
+fi
+if [[ -n "$checkout_guard_fixture" ]]; then
+  export METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$checkout_guard_fixture"
+fi
 
 enumeration_progress_driver=0
 if [[ -n "$enumeration_section" \
@@ -132,6 +151,10 @@ static_placeholder_scan_section() {
 # A known initialization refusal precedes proof admission and engine compilation.
 static_placeholder_scan_section
 
+# Admission and the full Go coverage producer must identify the same module
+# resolution policy before either process captures the execution context.
+export GOFLAGS=-mod=readonly
+
 # The entry process launches the suite into a separate process group beside
 # its watchdog. A stopped suite therefore cannot stop its own custodian.
 suite_progress_path="$root/artifacts/agents/supervision/suite-progress.jsonl"
@@ -150,6 +173,11 @@ if [[ "${METASYSTEM_VALIDATE_RELAUNCHED:-0}" == 1 ]]; then
     exit 1
   fi
   unset METASYSTEM_VALIDATE_RELAUNCHED
+fi
+checkout_guard_fixture_owns_progress=0
+if [[ -n "$checkout_guard_fixture" \
+  && "${METASYSTEM_SUITE_PROGRESS_TMP_OWNER:-}" == validate-metasystem ]]; then
+  checkout_guard_fixture_owns_progress=1
 fi
 if (( ! suite_progress_worker )); then
   suite_progress_run="$(date -u +%Y%m%dT%H%M%SZ)-$$-$RANDOM"
@@ -178,7 +206,11 @@ if (( ! suite_progress_worker )); then
     selector_args=(--selector "$suite_selector" --enumerated)
   else
     selector_args=(--selector "$suite_selector")
-    [[ -z "$enumeration_section" ]] || selector_args+=(--selected "$enumeration_section")
+    if [[ -n "$checkout_guard_fixture" ]]; then
+      selector_args+=(--selected checkout-execution-guard-fixture)
+    elif [[ -n "$enumeration_section" ]]; then
+      selector_args+=(--selected "$enumeration_section")
+    fi
   fi
   exec "${suite_launcher_command[@]}" proof-run launch \
     --suite validate-metasystem --root "$root" --conf "$root/metasystem.conf" \
@@ -193,6 +225,7 @@ if (( ! suite_progress_worker )); then
       METASYSTEM_SUITE_PROGRESS_TMP="$suite_progress_tmp" \
       METASYSTEM_SUITE_PROGRESS_TMP_OWNER=validate-metasystem \
       METASYSTEM_SUITE_PROGRESS_LOG="$suite_progress_log" \
+      METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$checkout_guard_fixture" \
       METASYSTEM_VALIDATION_STAGE_RESULTS_OUT="$stage_results_requested" \
       METASYSTEM_VALIDATION_STAGE_RESULTS_WRITER="$stage_results_writer" \
       METASYSTEM_ENUMERATION_ENGINE_DEPENDENCY="$enumeration_engine_dependency" \
@@ -391,12 +424,24 @@ run_section() { # section id, named need, command and arguments
 source scripts/agents/checkout-execution-guard.sh
 checkout_execution_guard_acquire "validate-metasystem.sh"
 trap 'suite_progress_finish; [[ -z "${witness_state:-}" ]] || rm -rf "$witness_state"; rm -rf "$stage_work"; checkout_execution_guard_release || true' EXIT
-if [[ -n "${METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE:-}" ]]; then
-  checkout_execution_guard_fixture_wait
-  checkout_execution_guard_release
+if [[ -n "$checkout_guard_fixture" ]]; then
+  fixture_section=checkout-execution-guard-fixture
+  if (( checkout_guard_fixture_owns_progress )); then
+    section_selected "$fixture_section"
+  fi
+  run_section "$fixture_section" needs-nothing checkout_execution_guard_fixture_wait
+  fixture_rc=0
+  [[ "$last_section_status" != fail ]] || fixture_rc=$last_section_rc
+  if (( checkout_guard_fixture_owns_progress )); then
+    suite_progress_finish
+  fi
+  checkout_execution_guard_release || {
+    release_rc=$?
+    (( fixture_rc != 0 )) || fixture_rc=$release_rc
+  }
   rm -rf "$stage_work"
   trap - EXIT
-  exit 0
+  exit "$fixture_rc"
 fi
 if section_selected static-placeholder-scan; then
   run_section static-placeholder-scan needs-nothing static_placeholder_scan_section

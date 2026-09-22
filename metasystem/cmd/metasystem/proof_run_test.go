@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -35,6 +37,105 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
+
+func TestCoverageReuseVerbRefusesChangedParentProjectInput(t *testing.T) {
+	t.Parallel()
+	project := t.TempDir()
+	root := filepath.Join(project, "tools", "metasystem")
+	writeTestingFixtureFile(t, filepath.Join(project, ".gitattributes"), []byte("testing.json merge=metasystem-testing\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\ndispatch.cap-max=120\n"), 0o600)
+	writeTestingFixtureFile(t, filepath.Join(root, "internal", "proofrun", "stub.go"), []byte("package proofrun\n"), 0o600)
+	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
+		writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600)
+	}
+	testingFixtureGit(t, project, "init", "-q", "-b", "main")
+	testingFixtureGit(t, project, "add", ".")
+	testingFixtureGit(t, project, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "base")
+	root, err := canonicalPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err = canonicalPath(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proofIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"),
+		"full", "coverage-reuse-public", []string{"gate"}, behaviorsurface.SupportedVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	request := candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root,
+		ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
+		ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: now})
+	request = proofrun.WithTestHostAdmissionDirectory(request, filepath.Join(t.TempDir(), "host-admission"))
+	attempt, decision, err := proofrun.ReserveLocked(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireProofReservationNotAdmissionRefused(t, decision)
+	baselineName := "coverage-ratchet.json"
+	if runtime.GOOS == "linux" {
+		baselineName = "coverage-ratchet-linux.json"
+	}
+	baseline := filepath.Join(root, "scripts", "agents", baselineName)
+	begin := proofrun.CoverageBeginOptions{ControlRoot: root, ExecutionRoot: root, AttemptID: attempt.AttemptID,
+		BaselinePath: baseline, ProducerClass: "full", ProducerPID: int64(os.Getpid()), CallerPID: int64(os.Getpid())}
+	if err := proofrun.BeginCoverage(begin); err != nil {
+		t.Fatal(err)
+	}
+	evidenceRoot := t.TempDir()
+	coverageLog, packages := filepath.Join(evidenceRoot, "coverage.log"), filepath.Join(evidenceRoot, "packages.txt")
+	const module = "example.invalid/metasystem/"
+	writeTestingFixtureFile(t, coverageLog, []byte("ok  "+module+"internal/proofrun 0.1s coverage: 85.0% of statements\n"), 0o600)
+	writeTestingFixtureFile(t, packages, []byte(module+"internal/proofrun\n"), 0o600)
+	if _, err := proofrun.CompleteCoverage(proofrun.CoverageCompleteOptions{CoverageBeginOptions: begin,
+		CoverageLog: coverageLog, PackageInventory: packages, ModulePrefix: module}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := proofrun.FinalizeAttempt(root, attempt.AttemptID, proofrun.TerminalSuccess, 0,
+		"green", []byte(`{"receipt":true}`), now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"--root", root, "--control-root", root, "--baseline", baseline, "--package", "internal/proofrun"}
+	overlapOutput := newFreezeOverlapWriter()
+	type freezeResult struct {
+		code   int
+		stderr string
+	}
+	freezeDone := make(chan freezeResult, 1)
+	go func() {
+		var stderr bytes.Buffer
+		freezeDone <- freezeResult{runGateWitnessFreezeWithWriters([]string{"--root", root}, overlapOutput, &stderr), stderr.String()}
+	}()
+	select {
+	case <-overlapOutput.started:
+	case result := <-freezeDone:
+		t.Fatalf("freeze CLI exited before controlled output overlap: code=%d stderr=%q", result.code, result.stderr)
+	}
+	coverageCode := runProofRunCoverageReuse(args)
+	close(overlapOutput.release)
+	result := <-freezeDone
+	fields := strings.Split(strings.TrimSpace(overlapOutput.String()), "\t")
+	if result.code != 0 || result.stderr != "" || len(fields) != 3 || strings.Contains(overlapOutput.String(), "coverage reuse:") {
+		t.Fatalf("overlapped freeze CLI code=%d stdout=%q stderr=%q", result.code, overlapOutput.String(), result.stderr)
+	}
+	var cleanupOut, cleanupErr bytes.Buffer
+	if code := runGateWitnessFreezeWithWriters([]string{"--cleanup", fields[2]}, &cleanupOut, &cleanupErr); code != 0 || cleanupOut.Len() != 0 || cleanupErr.Len() != 0 {
+		t.Fatalf("overlapped freeze cleanup code=%d stdout=%q stderr=%q", code, cleanupOut.String(), cleanupErr.String())
+	}
+	if coverageCode != 0 {
+		t.Fatalf("coverage-reuse before parent mutation exited %d", coverageCode)
+	}
+	writeTestingFixtureFile(t, filepath.Join(project, ".gitattributes"), []byte("changed parent input\n"), 0o644)
+	if code := runProofRunCoverageReuse(args); code != 3 {
+		t.Fatalf("coverage-reuse after parent mutation exited %d, want stale-proof status 3", code)
+	}
+}
 
 func candidateProofAdmission(request proofrun.AdmissionRequest) proofrun.AdmissionRequest {
 	request.CandidateGoalID = request.GoalID
@@ -1230,17 +1331,58 @@ func TestWorkerAuthorizedAcceptsOnlyAttemptBoundSectionWorktree(t *testing.T) {
 	writeRecord()
 	denied("section process record for another root", sectionRoot)
 	record.Root = sectionRoot
-	foreignProcess := exec.Command("sleep", "30")
-	if err := foreignProcess.Start(); err != nil {
+	foreignReadyRead, foreignReadyWrite, err := os.Pipe()
+	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = foreignProcess.Process.Kill(); _ = foreignProcess.Wait() }()
+	foreignReleaseRead, foreignReleaseWrite, err := os.Pipe()
+	if err != nil {
+		_ = foreignReadyRead.Close()
+		_ = foreignReadyWrite.Close()
+		t.Fatal(err)
+	}
+	foreignProcess := exec.Command("/bin/sh", "-c", "printf 'ready\\n' >&3; IFS= read -r _ <&4")
+	foreignProcess.ExtraFiles = []*os.File{foreignReadyWrite, foreignReleaseRead}
+	if err := foreignProcess.Start(); err != nil {
+		_ = foreignReadyRead.Close()
+		_ = foreignReadyWrite.Close()
+		_ = foreignReleaseRead.Close()
+		_ = foreignReleaseWrite.Close()
+		t.Fatal(err)
+	}
+	_ = foreignReadyWrite.Close()
+	_ = foreignReleaseRead.Close()
+	foreignDone := make(chan error, 1)
+	go func() { foreignDone <- foreignProcess.Wait() }()
+	foreignJoined := false
+	t.Cleanup(func() {
+		_ = foreignReleaseWrite.Close()
+		if !foreignJoined {
+			_ = foreignProcess.Process.Kill()
+			<-foreignDone
+		}
+	})
+	foreignReady, readyErr := bufio.NewReader(foreignReadyRead).ReadString('\n')
+	_ = foreignReadyRead.Close()
+	if readyErr != nil || foreignReady != "ready\n" {
+		t.Fatalf("foreign process readiness=%q err=%v", foreignReady, readyErr)
+	}
 	record.SuiteProcess, err = proofrun.ProcessIdentityForPID(int64(foreignProcess.Process.Pid), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeRecord()
 	denied("section process record for unrelated process", sectionRoot)
+	if _, err := foreignReleaseWrite.Write([]byte("release\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := foreignReleaseWrite.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-foreignDone; err != nil {
+		t.Fatalf("join foreign process: %v", err)
+	}
+	foreignJoined = true
 	record.SuiteProcess = sectionProcess
 	writeRecord()
 	t.Chdir(controlRoot)
@@ -1337,6 +1479,7 @@ func TestSelectedSectionsReadsTwiceConsultedDataFromSelector(t *testing.T) {
 	script := `#!/usr/bin/env bash
 case "$1" in
   list) printf 'first\tfirst section\nrepeat\trepeated section\n' ;;
+  fixture) [[ "$2" == hidden ]] && printf 'hidden\tfixture-only section\n' ;;
   twice) printf 'repeat\n' ;;
   *) exit 2 ;;
 esac
@@ -1367,12 +1510,256 @@ esac
 	if len(sections) != 1 || sections[0] != "first" || len(repeated) != 0 {
 		t.Fatalf("non-repeated selected selector data = %v, %v", sections, repeated)
 	}
+	sections, repeated, err = selectedSections(selector, "hidden", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) != 1 || sections[0] != "hidden" || len(repeated) != 0 {
+		t.Fatalf("fixture-only selected selector data = %v, %v", sections, repeated)
+	}
+	if _, _, err = selectedSections(selector, "undeclared", false); err == nil || !strings.Contains(err.Error(), "absent from the selector and bounded fixture declarations") {
+		t.Fatalf("undeclared selected section error = %v", err)
+	}
 	sections, repeated, err = selectedSections(selector, "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(sections, ",") != "first,repeat" || len(repeated) != 0 {
 		t.Fatalf("enumerated selector data = %v, %v", sections, repeated)
+	}
+}
+
+func TestValidationSelectorDeclaresGuardFixtureOutsideNormalSelection(t *testing.T) {
+	t.Parallel()
+	selector := filepath.Join("..", "..", "scripts", "agents", "validate-section-selector.sh")
+	listed, err := exec.Command("bash", selector, "list").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(listed), "checkout-execution-guard-fixture") {
+		t.Fatalf("normal validation selection contains the bounded guard fixture:\n%s", listed)
+	}
+	sections, repeated, err := selectedSections(selector, "checkout-execution-guard-fixture", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) != 1 || sections[0] != "checkout-execution-guard-fixture" || len(repeated) != 0 {
+		t.Fatalf("guard fixture selection = %v, %v", sections, repeated)
+	}
+}
+
+type authenticatedGuardInvocation struct {
+	command       *exec.Cmd
+	output        bytes.Buffer
+	executionRoot string
+	progress      string
+	result        string
+	admission     string
+}
+
+func newAuthenticatedGuardInvocation(t *testing.T, workspace gittree.Workspace, tree, engine string, now time.Time) *authenticatedGuardInvocation {
+	t.Helper()
+	detached, err := workspace.NewDetachedWorktree(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := detached.Close(); err != nil {
+			t.Errorf("close authenticated guard execution checkout: %v", err)
+		}
+	})
+	executionRoot, err := filepath.EvalSymlinks(detached.Workspace().Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(executionRoot, "metasystem.conf.local")); !os.IsNotExist(err) {
+		t.Fatalf("private execution checkout contains ignored local configuration: %v", err)
+	}
+	pinProofBinaryFixture(t, executionRoot)
+
+	controlRoot, _ := proofExtensionGoalFixtureAt(t, now)
+	caller, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe authenticated guard fixture caller: state=%s err=%v", state, err)
+	}
+	if _, err := lease.AnnounceWithPair(controlRoot, "fixture-events-proof-main", caller.Pid,
+		caller.StartedAt.Unix(), caller.StartTicks, caller.BootID, "fixture-events-proof", "fake", "m1"); err != nil {
+		t.Fatal(err)
+	}
+	canonicalControl, err := filepath.EvalSymlinks(controlRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canonicalControl == executionRoot {
+		t.Fatal("authenticated guard control and execution roots are not independent")
+	}
+
+	private := filepath.Join(executionRoot, "artifacts", "fixture-events-authenticated-guard")
+	tmp := filepath.Join(private, "tmp")
+	progress := filepath.Join(executionRoot, "artifacts", "agents", "supervision", "suite-progress.jsonl")
+	for _, directory := range []string{private, tmp, filepath.Dir(progress)} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outerScript := filepath.Join(private, "authenticated-outer.sh")
+	outerBody := `#!/usr/bin/env bash
+set -euo pipefail
+progress=$1
+root=$2
+engine=$3
+work=$4
+at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+printf '{"suite":"validate-metasystem","section":"gate-fence-fixtures","event":"start","at":"%s","depth":0}\n' "$at" >>"$progress"
+env METASYSTEM_SUITE_PROGRESS_ACTIVE=1 \
+  METASYSTEM_SUITE_PROGRESS_ROOT="$root" \
+  METASYSTEM_SUITE_PROGRESS_DEPTH=0 \
+  METASYSTEM_SUITE_PROGRESS_TMP="$work" \
+  METASYSTEM_SUITE_PROGRESS_TMP_OWNER= \
+  METASYSTEM_BIN="$engine" \
+  bash "$root/scripts/agents/checkout-execution-guard-fixtures.sh"
+at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+printf '{"suite":"validate-metasystem","section":"gate-fence-fixtures","event":"end","at":"%s","depth":0}\n' "$at" >>"$progress"
+`
+	if err := testexec.WriteFile(outerScript, []byte(outerBody), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	admissionDir := filepath.Join(private, "host-admission")
+	resultPath := filepath.Join(private, "result.json")
+	environment := append(receiptCanaryEnvironment(),
+		"METASYSTEM_GOAL_NOW="+now.Format(time.RFC3339),
+		"METASYSTEM_OWNER_LINEAGE=m1",
+		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
+		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+controlRoot)
+	command := (proofBinaryFixture{t: t}).command(environment, engine, "proof-run", "launch",
+		"--suite", "validate-metasystem", "--root", executionRoot, "--control-root", controlRoot,
+		"--goal", "standing-validation", "--cap-min", "1", "--scope", "selected",
+		"--command-class", "fixture-events-authenticated-guard", "--conf", filepath.Join(executionRoot, "metasystem.conf"),
+		"--progress", progress, "--log", filepath.Join(private, "outer.log"),
+		"--tmp", tmp, "--banner", "authenticated checkout guard fixture",
+		"--selector", filepath.Join(executionRoot, "scripts", "agents", "validate-section-selector.sh"),
+		"--selected", "gate-fence-fixtures", "--result", resultPath,
+		"--", outerScript, progress, executionRoot, engine, tmp)
+	run := &authenticatedGuardInvocation{
+		command:       command,
+		executionRoot: executionRoot,
+		progress:      progress,
+		result:        resultPath,
+		admission:     admissionDir,
+	}
+	command.Stdout = &run.output
+	command.Stderr = &run.output
+	return run
+}
+
+func (run *authenticatedGuardInvocation) assertCompleted(t *testing.T) {
+	t.Helper()
+	if !bytes.Contains(run.output.Bytes(), []byte("checkout execution guard fixtures passed")) {
+		t.Fatalf("authenticated public fixture omitted its terminal marker:\n%s", run.output.Bytes())
+	}
+	resultBytes, err := os.ReadFile(run.result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result proofrun.LaunchResult
+	if err := json.Unmarshal(resultBytes, &result); err != nil || result.Disposition != proofrun.DispositionExecuted || result.ExitStatus != 0 {
+		t.Fatalf("authenticated outer result=%+v decode=%v bytes=%s", result, err, resultBytes)
+	}
+	progressRun, err := proofrun.ReadLatestProgressRun(run.progress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := proofrun.AssertSectionProgress(progressRun, "validate-metasystem", []string{"gate-fence-fixtures"}, nil); err != nil {
+		t.Fatalf("outer progress certification: %v; events=%+v", err, progressRun.Events)
+	}
+	if len(progressRun.Events) != 2 {
+		t.Fatalf("authenticated fixture appended events outside the outer section: %+v", progressRun.Events)
+	}
+	assertHostAdmissionClean(t, run.admission, 1)
+}
+
+func TestAuthenticatedOuterProofKeepsGuardFixtureControlOutOfOuterProgress(t *testing.T) {
+	t.Parallel()
+	sourceRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := os.Getenv("METASYSTEM_FIXTURE_EVENTS_BINARY")
+	if engine == "" {
+		engine = filepath.Join(t.TempDir(), "metasystem")
+		build := exec.Command("go", "build", "-p=1", "-o", engine, "./cmd/metasystem")
+		build.Dir = sourceRoot
+		if output, buildErr := build.CombinedOutput(); buildErr != nil {
+			t.Fatalf("build authenticated guard fixture engine: %v\n%s", buildErr, output)
+		}
+	}
+	if info, statErr := os.Stat(engine); statErr != nil || info.Mode()&0o111 == 0 {
+		t.Fatalf("authenticated guard fixture engine is not executable: %s: %v", engine, statErr)
+	}
+
+	callerProgress := filepath.Join(sourceRoot, "artifacts", "agents", "supervision", "suite-progress.jsonl")
+	callerBytes, callerReadErr := os.ReadFile(callerProgress)
+	callerExisted := callerReadErr == nil
+	if callerReadErr != nil && !os.IsNotExist(callerReadErr) {
+		t.Fatal(callerReadErr)
+	}
+
+	workspace := gittree.Workspace{Dir: sourceRoot}
+	tree, err := workspace.Snapshot("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	runs := []*authenticatedGuardInvocation{
+		newAuthenticatedGuardInvocation(t, workspace, tree, engine, now),
+		newAuthenticatedGuardInvocation(t, workspace, tree, engine, now),
+	}
+	if runs[0].executionRoot == runs[1].executionRoot {
+		t.Fatalf("concurrent execution roots are not distinct: %s", runs[0].executionRoot)
+	}
+	firstProgress, err := filepath.EvalSymlinks(filepath.Dir(runs[0].progress))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondProgress, err := filepath.EvalSymlinks(filepath.Dir(runs[1].progress))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Join(firstProgress, filepath.Base(runs[0].progress)) == filepath.Join(secondProgress, filepath.Base(runs[1].progress)) {
+		t.Fatalf("concurrent progress journals are not distinct: %s", runs[0].progress)
+	}
+
+	started := 0
+	for _, run := range runs {
+		if err := run.command.Start(); err != nil {
+			for _, active := range runs[:started] {
+				_ = active.command.Process.Kill()
+				_ = active.command.Wait()
+			}
+			t.Fatalf("start authenticated outer guard fixture: %v", err)
+		}
+		started++
+	}
+	runErrors := make([]error, len(runs))
+	for i, run := range runs {
+		runErrors[i] = run.command.Wait()
+	}
+
+	afterCallerBytes, afterCallerReadErr := os.ReadFile(callerProgress)
+	afterCallerExisted := afterCallerReadErr == nil
+	if afterCallerReadErr != nil && !os.IsNotExist(afterCallerReadErr) {
+		t.Fatal(afterCallerReadErr)
+	}
+	if callerExisted != afterCallerExisted || !bytes.Equal(callerBytes, afterCallerBytes) {
+		t.Fatalf("authenticated guard fixtures changed their caller's progress journal: existed %t -> %t, bytes %x -> %x",
+			callerExisted, afterCallerExisted, sha256.Sum256(callerBytes), sha256.Sum256(afterCallerBytes))
+	}
+	for i, runErr := range runErrors {
+		if runErr != nil {
+			t.Fatalf("authenticated outer guard fixture %d: %v\n%s", i+1, runErr, runs[i].output.Bytes())
+		}
+		runs[i].assertCompleted(t)
 	}
 }
 
@@ -1506,6 +1893,71 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 	}
 	if _, err := proofrun.FinalizeAttempt(root, attempt.AttemptID, proofrun.TerminalFailed, 1, "deadline canary cleanup", nil, time.Now().UTC()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestProofDeadlineUsesAbsoluteSemanticBoundary(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)
+	deadline := now.Add(time.Minute)
+	parsed, check, err := proofDeadline(deadline.Format(time.RFC3339Nano), func() time.Time { return now })
+	if err != nil || !parsed.Equal(deadline) || check == nil {
+		t.Fatalf("before deadline parsed=%s check=%v err=%v", parsed, check != nil, err)
+	}
+	now = deadline.Add(-time.Nanosecond)
+	if err := check(); err != nil {
+		t.Fatalf("deadline-minus-one-nanosecond refused: %v", err)
+	}
+	for _, at := range []time.Time{deadline, deadline.Add(time.Nanosecond)} {
+		now = at
+		if err := check(); err == nil {
+			t.Fatalf("semantic time %s crossed deadline %s without refusal", at, deadline)
+		}
+	}
+}
+
+func testProofResourceWaitUsesSemanticDeadline(t *testing.T) {
+	t.Helper()
+	for _, testCase := range []struct {
+		name string
+		at   time.Duration
+		pass bool
+	}{{"before", -time.Nanosecond, true}, {"at", 0, false}, {"after", time.Nanosecond, false}} {
+		t.Run("resource-"+testCase.name, func(t *testing.T) {
+			root := t.TempDir()
+			conf := filepath.Join(root, "metasystem.conf")
+			if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=1\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			admissionDir := filepath.Join(t.TempDir(), "host-admission")
+			t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
+			t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
+			holder, err := proofrun.AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = holder.Close() })
+			now := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+			deadline := now.Add(time.Minute)
+			_, check, err := proofDeadline(deadline.Format(time.RFC3339Nano), func() time.Time { return now })
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := proofrun.WithHostResourceWaitObserver(t.Context(), func() {
+				now = deadline.Add(testCase.at)
+				_ = holder.Close()
+			})
+			lease, err := proofrun.AcquireHostResourcesWithWaitCheck(ctx, root, conf, "heavy", nil, check)
+			if testCase.pass {
+				if err != nil || lease == nil {
+					t.Fatalf("resource acquisition before deadline: lease=%v err=%v", lease, err)
+				}
+				_ = proofrun.MarkHostResourcesClean(lease.Files())
+				_ = lease.Close()
+			} else if err == nil || lease != nil || !strings.Contains(err.Error(), "has passed at semantic time") {
+				t.Fatalf("resource acquisition at offset %s: lease=%v err=%v", testCase.at, lease, err)
+			}
+		})
 	}
 }
 
@@ -2648,23 +3100,29 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 // under a watchdog stub and commits through the given terminal commit. The
 // fixture's 2026-08-30 goal dates are inert here: the commit's binding reads
 // committed fields only, and nothing on this path reads METASYSTEM_GOAL_NOW.
-func terminalCommitFixture(t *testing.T) (string, proofrun.Attempt, func([]string, func(proofrun.CompletionContext, json.RawMessage) error) (int, string)) {
+func terminalCommitFixture(t *testing.T, existing ...proofrun.Attempt) (string, proofrun.Attempt, func([]string, func(proofrun.CompletionContext, json.RawMessage) error) (int, string)) {
 	t.Helper()
-	root, _ := proofExtensionGoalFixture(t)
-	proofIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "terminal-commit", nil, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	launcher, err := proofrun.CurrentProcessIdentity(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
-		GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 30,
-		Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()}))
-
-	if err != nil || decision.Disposition != proofrun.DispositionExecuted {
-		t.Fatalf("reserve = %+v, %+v, %v", attempt, decision, err)
+	var root string
+	var attempt proofrun.Attempt
+	if len(existing) != 0 {
+		attempt, root = existing[0], existing[0].ControlRoot
+	} else {
+		root, _ = proofExtensionGoalFixture(t)
+		proofIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "terminal-commit", nil, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		launcher, err := proofrun.CurrentProcessIdentity(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decision proofrun.LaunchResult
+		attempt, decision, err = proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: root, ExecutionRoot: root,
+			GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 30,
+			Identity: proofIdentity, Launcher: launcher, Now: time.Now().UTC()}))
+		if err != nil || decision.Disposition != proofrun.DispositionExecuted {
+			t.Fatalf("reserve = %+v, %+v, %v", attempt, decision, err)
+		}
 	}
 	deadline, err := time.Parse(time.RFC3339Nano, attempt.Deadline)
 	if err != nil {
@@ -2855,5 +3313,285 @@ func TestATestingWorkerThatWroteNoResultEndsItsAttemptFailedWithTheFileNamed(t *
 	stored, err = proofrun.ReadAttempt(root, attempt.AttemptID)
 	if err != nil || stored.Terminal != nil {
 		t.Fatalf("a refused success commit still wrote a terminal: attempt=%+v err=%v", stored, err)
+	}
+}
+
+func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.T) {
+	t.Parallel()
+	if runGoGateCommandTestInOwnedProcess(t) {
+		return
+	}
+	processTable := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_CENSUS_PROCESS_FILE", processTable)
+	controlRoot, root, attempt := workerAuthorizedAttemptFixture(t, true)
+	progressDirectory := filepath.Join(root, "artifacts", "retained-progress")
+	progressPath := filepath.Join(progressDirectory, "events.jsonl")
+	if err := os.MkdirAll(progressDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	redA := `mkdir -p reports-red-a; printf '%s\n' '<testsuite><testcase classname="fixture" name="red-a"><failure message="red-a"/></testcase></testsuite>' > reports-red-a/tests.xml; printf 'RAW-RED-A\n' >&2; exit 7`
+	redB := fmt.Sprintf(`mkdir -p reports-red-b; printf '%%s\n' '<testsuite><testcase classname="fixture" name="red-b"><failure message="red-b"/></testcase></testsuite>' > reports-red-b/tests.xml; printf 'RAW-RED-B\n' >&2; until grep -q '"section":"red-a".*"event":"end"' %s; do sleep 0.01; done; mv %s %s; printf 'closed\n' > %s; exit 8`,
+		strconv.Quote(progressPath), strconv.Quote(progressDirectory), strconv.Quote(progressDirectory+"-closed"), strconv.Quote(progressDirectory))
+	group := func(id, script string) testpolicy.Group {
+		return testpolicy.Group{ID: id, Kind: "component", Adapter: "command", CWD: ".", Phase: "acceptance", EnvironmentMode: "inherit",
+			Resources: testpolicy.GroupResources{Class: "cheap"}, Freshness: "reusable", Inputs: []string{"application/tracked.txt"},
+			Outputs: []string{"reports-" + id}, Obligations: []string{id}, Platforms: []string{"any"}, TargetMS: 1000,
+			Argv: []string{"sh", "-c", script}, Reports: []string{"reports-" + id}, Format: "junit-xml",
+			ExpectedTests: []testpolicy.ExpectedTest{{Report: "reports-" + id + "/tests.xml", Classname: "fixture", Name: id}}}
+	}
+	contract := testpolicy.Contract{SchemaVersion: testpolicy.ExecutionContractSchemaVersion,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces:    []testpolicy.Surface{{ID: "app", Paths: []string{"application/**"}, Standard: []string{"red-a", "red-b", "later"}}},
+		Groups:      []testpolicy.Group{group("red-a", redA), group("red-b", redB), group("later", "exit 99")},
+		Always:      testpolicy.Always{Canary: []string{"red-a", "red-b"}, Standard: []string{"later"}}, Unknown: []string{"red-a"}}
+	if err := contract.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard,
+		ExecutedMode: testpolicy.ModeStandard, RequiredGroups: []string{"red-a", "red-b", "later"}, SelectedGroups: []string{"red-a", "red-b", "later"},
+		Stages: []testpolicy.Stage{{ID: "canary", Groups: []string{"red-a", "red-b"}}, {ID: "standard", Groups: []string{"later"}}}}
+	engine, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	engineDigest, err := fileSHA256(engine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := proofrun.TestRunRequest{ControlRoot: controlRoot, ProjectRoot: root, CandidateTree: attempt.CandidateTree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
+		Contract: contract, Plan: plan, AttemptID: attempt.AttemptID, Environment: gittree.ScrubbedEnviron(), LogRoot: filepath.Join(root, "artifacts", "retained-logs"),
+		ProgressPath: progressPath, PolicyEngine: engine, PolicyEngineDigest: engineDigest, CandidateEngine: engine, CandidateEngineDigest: engineDigest,
+		CandidateEngineBuildIdentity: attempt.CandidateTree, Workers: 2, AdmissionMaximum: 0, Concurrency: 2}
+	identities, prepared, launches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ComponentIdentities, request.PreparedGroups, request.PreparationLaunches = identities, prepared, launches
+	packetPath, resultPath := filepath.Join(root, "artifacts", "retained-request.json"), filepath.Join(root, "artifacts", "retained-result.json")
+	if err := writePrivateJSON(packetPath, request); err != nil {
+		t.Fatal(err)
+	}
+	packetDigest, err := fileSHA256(packetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runTestWorker([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath})
+	})
+	result, err := readTestingWorkerResult(resultPath)
+	if err != nil {
+		t.Fatalf("worker did not persist its unsuccessful result: %v\nstderr=%s", err, stderr)
+	}
+	if !strings.Contains(stderr, "record testing group red-b end") || result.Delivery.Sufficient || result.LaunchCounts.Test != 2 || !result.LaunchCounts.CountsComplete {
+		t.Fatalf("worker lost the operational error or physical accounting: stderr=%q counts=%+v delivery=%+v", stderr, result.LaunchCounts, result.Delivery)
+	}
+	byID := map[string]proofrun.GroupResult{}
+	for _, observed := range result.Groups {
+		byID[observed.ID] = observed
+	}
+	for _, id := range []string{"red-a", "red-b"} {
+		observed := byID[id]
+		if observed.Status != "failed" || !observed.NativeLaunched || observed.ExecutionIdentity != identities[id] || observed.InputDigest == "" ||
+			len(observed.Observed) != 1 || observed.Observed[0].Name != id || observed.Observed[0].Status != "failed" {
+			t.Fatalf("completed native failure %s was not retained: %+v", id, observed)
+		}
+		logged, readErr := os.ReadFile(observed.LogPath)
+		if readErr != nil || !strings.Contains(string(logged), "RAW-RED-") {
+			t.Fatalf("completed native failure %s lost raw output: err=%v output=%q", id, readErr, logged)
+		}
+	}
+	if later := byID["later"]; later.Status != "not-run" || later.NativeLaunched || later.ExecutionIdentity != identities["later"] || later.NotRunReason == "" {
+		t.Fatalf("later selected group invented coverage or lost identity: %+v", later)
+	}
+
+	greenProgressDirectory := filepath.Join(root, "artifacts", "retained-green-progress")
+	greenProgressPath := filepath.Join(greenProgressDirectory, "events.jsonl")
+	if err := os.MkdirAll(greenProgressDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	greenScript := fmt.Sprintf(`mkdir -p reports-green; printf '%%s\n' '<testsuite><testcase classname="fixture" name="green"/></testsuite>' > reports-green/tests.xml; printf 'RAW-GREEN\n' >&2; mv %s %s; printf 'closed\n' > %s`,
+		strconv.Quote(greenProgressDirectory), strconv.Quote(greenProgressDirectory+"-closed"), strconv.Quote(greenProgressDirectory))
+	greenContract := contract
+	greenContract.Surfaces[0].Standard, greenContract.Groups = []string{"green"}, []testpolicy.Group{group("green", greenScript)}
+	greenContract.Always, greenContract.Unknown = testpolicy.Always{Canary: []string{"green"}}, []string{"green"}
+	if err := greenContract.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	greenPlan := plan
+	greenPlan.RequiredGroups, greenPlan.SelectedGroups = []string{"green"}, []string{"green"}
+	greenPlan.Stages = []testpolicy.Stage{{ID: "canary", Groups: []string{"green"}}}
+	greenRequest := request
+	greenRequest.Contract, greenRequest.Plan, greenRequest.ProgressPath = greenContract, greenPlan, greenProgressPath
+	greenIdentities, greenPrepared, greenLaunches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), greenRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	greenRequest.ComponentIdentities, greenRequest.PreparedGroups, greenRequest.PreparationLaunches = greenIdentities, greenPrepared, greenLaunches
+	greenPacketPath, greenResultPath := filepath.Join(root, "artifacts", "retained-green-request.json"), filepath.Join(root, "artifacts", "retained-green-result.json")
+	if err := writePrivateJSON(greenPacketPath, greenRequest); err != nil {
+		t.Fatal(err)
+	}
+	greenPacketDigest, err := fileSHA256(greenPacketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	greenCode, _, greenStderr := captureCommandOutput(t, false, true, func() int {
+		return runTestWorker([]string{"--packet", greenPacketPath, "--packet-sha256", greenPacketDigest, "--result", greenResultPath})
+	})
+	greenResult, err := readTestingWorkerResult(greenResultPath)
+	if err != nil {
+		t.Fatalf("worker did not persist its all-pass operational result: %v\nstderr=%s", err, greenStderr)
+	}
+	if validationErr := proofrun.ValidateTestResult(greenResult); validationErr != nil || greenCode == 0 ||
+		!strings.Contains(greenStderr, "record testing group green end") || greenResult.Delivery.Sufficient ||
+		len(greenResult.Delivery.FailingGroups) != 0 || len(greenResult.Delivery.MissingGroups) != 0 || len(greenResult.Uncertainty) != 1 ||
+		len(greenResult.Groups) != 1 || greenResult.Groups[0].Status != "passed" || !greenResult.Groups[0].NativeLaunched ||
+		greenResult.Groups[0].ExecutionIdentity != greenIdentities["green"] || greenResult.LaunchCounts.Test != 1 {
+		t.Fatalf("worker all-pass operational result is not exact: code=%d validation=%v stderr=%q result=%+v", greenCode, validationErr, greenStderr, greenResult)
+	}
+
+	producerPath, err := proofrun.AttemptPath(controlRoot, attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyGroup := func(id, script string) testpolicy.Group {
+		return testpolicy.Group{ID: id, Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"application/tracked.txt"},
+			Outputs: []string{"reports-" + id}, Obligations: []string{id}, Platforms: []string{"any"}, TargetMS: 1000,
+			Argv: []string{"sh", "-c", script}, Reports: []string{"reports-" + id}, Format: "junit-xml",
+			ExpectedTests: []testpolicy.ExpectedTest{{Report: "reports-" + id + "/tests.xml", Classname: "fixture", Name: id}}}
+	}
+	firstScript := fmt.Sprintf(`mkdir -p reports-first; printf '%%s\n' '<testsuite><testcase classname="fixture" name="first"/></testsuite>' > reports-first/tests.xml; printf 'RETAINED-SOURCE-INVALIDATION-EVENT\n' >&2; rm %s`, strconv.Quote(producerPath))
+	earlierScript := `mkdir -p reports-earlier; printf '%s\n' '<testsuite><testcase classname="fixture" name="earlier"/></testsuite>' > reports-earlier/tests.xml`
+	laterScript := `mkdir -p reports-later; printf '%s\n' '<testsuite><testcase classname="fixture" name="later"/></testsuite>' > reports-later/tests.xml`
+	legacyContract := testpolicy.Contract{SchemaVersion: testpolicy.SchemaVersion,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces:    []testpolicy.Surface{{ID: "app", Paths: []string{"application/**"}, Standard: []string{"earlier", "first", "later"}}},
+		Groups:      []testpolicy.Group{legacyGroup("earlier", earlierScript), legacyGroup("first", firstScript), legacyGroup("later", laterScript)},
+		Always:      testpolicy.Always{Canary: []string{"earlier"}, Standard: []string{"first", "later"}}, Unknown: []string{"earlier"}}
+	if err := legacyContract.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	legacyPlan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard,
+		ExecutedMode: testpolicy.ModeStandard, RequiredGroups: []string{"earlier", "first", "later"}, SelectedGroups: []string{"earlier", "first", "later"},
+		Stages: []testpolicy.Stage{{ID: "canary", Groups: []string{"earlier"}}, {ID: "standard", Groups: []string{"first"}}, {ID: "retained", Groups: []string{"later"}}}}
+	legacyRequest := request
+	legacyRequest.Contract, legacyRequest.Plan, legacyRequest.ProgressPath = legacyContract, legacyPlan, ""
+	legacyRequest.LogRoot = filepath.Join(root, "artifacts", "retained-source-logs")
+	legacyIdentities, legacyPrepared, legacyLaunches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), legacyRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyRequest.ComponentIdentities, legacyRequest.PreparedGroups, legacyRequest.PreparationLaunches = legacyIdentities, legacyPrepared, legacyLaunches
+	mutation, err := proofrun.AcquireMutation(controlRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	producer, err := proofrun.BindJoinedTestOwnershipLocked(controlRoot, attempt.AttemptID, proofrun.AdmissionRequest{
+		ControlRoot: controlRoot, ComponentIdentities: map[string]string{"earlier": legacyIdentities["earlier"], "later": legacyIdentities["later"]}, Now: time.Date(2026, 9, 18, 12, 0, 1, 0, time.UTC)})
+	mutation.Release()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceRequest := legacyRequest
+	sourceRequest.AttemptID = producer.AttemptID
+	sourceRequest.Plan.RequiredGroups, sourceRequest.Plan.SelectedGroups = []string{"earlier", "later"}, []string{"earlier", "later"}
+	sourceRequest.Plan.Stages = []testpolicy.Stage{{ID: "canary", Groups: []string{"earlier"}}, {ID: "standard", Groups: []string{"later"}}}
+	sourceRequest.ComponentIdentities = map[string]string{"earlier": legacyIdentities["earlier"], "later": legacyIdentities["later"]}
+	sourceResult, sourceCode, sourceErr := proofrun.RunTestPlan(context.Background(), sourceRequest)
+	if sourceErr != nil || sourceCode != 0 || !sourceResult.Delivery.Sufficient || len(sourceResult.Groups) != 2 ||
+		!sourceResult.Groups[0].NativeLaunched || !sourceResult.Groups[1].NativeLaunched {
+		t.Fatalf("retained source producer did not pass natively: code=%d err=%v result=%+v", sourceCode, sourceErr, sourceResult)
+	}
+	mutation, err = proofrun.AcquireMutation(controlRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = proofrun.FinalizeAttemptWithTestResultLocked(controlRoot, producer.AttemptID, proofrun.TerminalSuccess, 0, "retained source fixture", nil,
+		&sourceResult, time.Date(2026, 9, 18, 12, 0, 2, 0, time.UTC))
+	mutation.Release()
+	if err != nil {
+		t.Fatal(err)
+	}
+	consumerNow := time.Now().UTC()
+	consumer, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: controlRoot, ExecutionRoot: root,
+		CandidateTree: attempt.CandidateTree, GoalID: "standing-validation", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 2,
+		Identity: attempt.ProofIdentity, Launcher: attempt.Launcher, Now: consumerNow,
+		ComponentIdentities: legacyIdentities, SharedComponents: true}))
+	if err != nil || decision.Disposition != proofrun.DispositionExecuted || consumer.TestOwned["first"] == "" ||
+		consumer.TestSources["earlier"] != producer.AttemptID || consumer.TestSources["later"] != producer.AttemptID || len(consumer.TestInventory) != 3 {
+		t.Fatalf("retained source consumer admission: attempt=%+v decision=%+v err=%v", consumer, decision, err)
+	}
+	legacyRequest.AttemptID = consumer.AttemptID
+	legacyPacketPath := filepath.Join(root, "artifacts", "retained-source-request.json")
+	legacyResultPath := filepath.Join(root, "artifacts", "retained-source-result.json")
+	if err := writePrivateJSON(legacyPacketPath, legacyRequest); err != nil {
+		t.Fatal(err)
+	}
+	legacyPacketDigest, err := fileSHA256(legacyPacketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_PROOF_ATTEMPT", consumer.AttemptID)
+	legacyCode, _, legacyStderr := captureCommandOutput(t, false, true, func() int {
+		return runTestWorker([]string{"--packet", legacyPacketPath, "--packet-sha256", legacyPacketDigest, "--result", legacyResultPath})
+	})
+	legacyResult, err := readTestingWorkerResult(legacyResultPath)
+	if err != nil {
+		t.Fatalf("worker did not publish the later-stage retained-source failure: %v\nstderr=%s", err, legacyStderr)
+	}
+	if validationErr := proofrun.ValidateTestResult(legacyResult); validationErr != nil || legacyCode == 0 ||
+		!strings.Contains(legacyStderr, "admitted source for later is incomplete") || strings.Contains(legacyStderr, "operational result was not retained") ||
+		legacyResult.Delivery.Sufficient || len(legacyResult.Uncertainty) != 1 || legacyResult.LaunchCounts.Test != 1 || legacyResult.LaunchCounts.ReusedTest != 1 || len(legacyResult.Groups) != 3 ||
+		legacyResult.Groups[0].ID != "earlier" || legacyResult.Groups[0].Status != "reused" || legacyResult.Groups[0].ReuseAttempt != producer.AttemptID ||
+		legacyResult.Groups[1].ID != "first" || legacyResult.Groups[1].Status != "passed" || !legacyResult.Groups[1].NativeLaunched ||
+		legacyResult.Groups[1].NativeExitStatus == nil || *legacyResult.Groups[1].NativeExitStatus != 0 || !legacyResult.Groups[1].CollectionComplete ||
+		len(legacyResult.Groups[1].Observed) != 1 || legacyResult.Groups[1].Observed[0].Status != "passed" ||
+		legacyResult.Groups[2].ID != "later" || legacyResult.Groups[2].Status != "not-run" || legacyResult.Groups[2].NativeLaunched ||
+		legacyResult.Groups[2].ExecutionIdentity != legacyIdentities["later"] || !strings.Contains(legacyResult.Groups[2].NotRunReason, "admitted source for later is incomplete") {
+		t.Fatalf("later-stage source failure lost native evidence or became green: code=%d validation=%v stderr=%q result=%+v", legacyCode, validationErr, legacyStderr, legacyResult)
+	}
+	legacyLog, err := os.ReadFile(legacyResult.Groups[1].LogPath)
+	if err != nil || !strings.Contains(string(legacyLog), "RETAINED-SOURCE-INVALIDATION-EVENT") {
+		t.Fatalf("earlier native pass lost its retained log: err=%v output=%q", err, legacyLog)
+	}
+
+	terminalRoot, terminalAttempt, launch := terminalCommitFixture(t)
+	var retained *proofrun.TestResult
+	status, launcherErrors := launch([]string{"false"}, testingTerminalCommit(resultPath, &retained))
+	stored, readErr := proofrun.ReadAttempt(terminalRoot, terminalAttempt.AttemptID)
+	if readErr != nil || retained == nil || stored.TestResult == nil {
+		t.Fatalf("terminal result is absent: retained=%+v stored=%+v read=%v", retained, stored, readErr)
+	}
+	wantJSON, wantJSONErr := json.Marshal(result)
+	storedWant := result
+	storedWant.AttemptID = terminalAttempt.AttemptID
+	storedWantJSON, storedWantJSONErr := json.Marshal(storedWant)
+	retainedJSON, retainedJSONErr := json.Marshal(retained)
+	storedJSON, storedJSONErr := json.Marshal(stored.TestResult)
+	if wantJSONErr != nil || storedWantJSONErr != nil || retainedJSONErr != nil || storedJSONErr != nil {
+		t.Fatalf("encode retained terminal result: want=%v stored-want=%v retained=%v stored=%v", wantJSONErr, storedWantJSONErr, retainedJSONErr, storedJSONErr)
+	}
+	if status != 1 || stored.Terminal == nil || stored.Terminal.Result != proofrun.TerminalFailed ||
+		stored.TestResult == nil || stored.TestResult.Delivery.Sufficient || stored.TestResult.LaunchCounts.Test != 2 || len(stored.TestResult.Groups) != 3 ||
+		!bytes.Equal(retainedJSON, wantJSON) || !bytes.Equal(storedJSON, storedWantJSON) ||
+		strings.Contains(launcherErrors, "worker left no usable result") {
+		t.Fatalf("terminal did not retain the worker result: status=%d errors=%q retained=%+v stored=%+v read=%v", status, launcherErrors, retained, stored, readErr)
+	}
+
+	_, _, legacyLaunch := terminalCommitFixture(t, consumer)
+	var legacyRetained *proofrun.TestResult
+	status, launcherErrors = legacyLaunch([]string{"false"}, testingTerminalCommit(legacyResultPath, &legacyRetained))
+	legacyStored, readErr := proofrun.ReadAttempt(controlRoot, consumer.AttemptID)
+	if status != 1 || readErr != nil || legacyRetained == nil || legacyStored.Terminal == nil || legacyStored.Terminal.Result != proofrun.TerminalFailed ||
+		legacyStored.TestResult == nil || len(legacyStored.TestInventory) != 3 || legacyStored.TestOwned["first"] == "" || len(legacyStored.TestResult.Groups) != 3 ||
+		legacyStored.TestResult.Groups[0].ID != "earlier" || legacyStored.TestResult.Groups[0].Status != "not-run" || legacyStored.TestResult.Groups[0].ReuseAttempt != "" ||
+		legacyStored.TestResult.Groups[1].ID != "first" || legacyStored.TestResult.Groups[1].Status != "passed" || !legacyStored.TestResult.Groups[1].NativeLaunched ||
+		legacyStored.TestResult.Groups[1].LogDigest != legacyResult.Groups[1].LogDigest || legacyStored.TestResult.Groups[1].NativeExitStatus == nil ||
+		*legacyStored.TestResult.Groups[1].NativeExitStatus != 0 || legacyStored.TestResult.LaunchCounts.Test != 1 || legacyStored.TestResult.Delivery.Sufficient ||
+		len(legacyStored.TestResult.Uncertainty) != 2 || strings.Contains(launcherErrors, "worker left no usable result") {
+		t.Fatalf("terminal did not retain the later-stage source failure: status=%d errors=%q retained=%+v stored=%+v read=%v", status, launcherErrors, legacyRetained, legacyStored, readErr)
 	}
 }

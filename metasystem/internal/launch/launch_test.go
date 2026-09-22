@@ -4,11 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -39,6 +42,7 @@ type fakeProcesses struct {
 	ignoreKill  bool
 	startErr    error
 	signals     []syscall.Signal
+	groupChecks int
 	command     Command
 	onStart     func(Command)
 }
@@ -70,6 +74,7 @@ func (p *fakeProcesses) SignalGroup(_ int64, signal syscall.Signal) error {
 	return nil
 }
 func (p *fakeProcesses) GroupAlive(pgid int64) (bool, error) {
+	p.groupChecks++
 	if p.groups != nil {
 		return p.groups[pgid], nil
 	}
@@ -161,16 +166,130 @@ func TestLaunchStartReturnsAfterTheChildIsRecorded(t *testing.T) {
 }
 func TestLaunchStartFailureLeavesNoProcess(t *testing.T) {
 	m, processes, probe, _ := manager(t)
+	m.StartCap = time.Minute
 	m.Supervisor = fakeStarter{func(id string) {
 		m.Store.Update(id, func(r *Record) error {
 			supervisor := ref(10)
 			r.Supervisor, r.State, r.Reason = &supervisor, Failed, "child-start: missing executable"
 			return nil
 		})
-		probe.states[10] = identity.Dead
 	}}
+	m.Sleep = func(time.Duration) { probe.states[10] = identity.Dead }
 	record, err := m.Start(StartSpec{ID: "start-failed", Kind: "build", Brief: brief(t), WorkingDirectory: t.TempDir()})
-	require(t, err == nil || record.State != Failed || record.Child != nil || processes.group, "failed start left process: %+v err=%v", record, err)
+	require(t, err == nil || err.Error() != "child-start: missing executable" || record.State != Failed || record.Reason != "child-start: missing executable" || record.Child != nil || processes.group || processes.groupChecks != 0, "failed start left process: %+v group checks=%d err=%v", record, processes.groupChecks, err)
+}
+
+type terminalOSStarter struct {
+	starter OSSupervisorStarter
+	store   Store
+}
+
+func (s terminalOSStarter) StartSupervisor(id, stateDir string) (identity.Ref, error) {
+	ref, err := s.starter.StartSupervisor(id, stateDir)
+	if err != nil {
+		return identity.Ref{}, err
+	}
+	_, err = s.store.Update(id, func(record *Record) error {
+		record.Supervisor = &ref
+		record.State = Failed
+		record.Reason = "command: controlled helper exited before ready"
+		return nil
+	})
+	if err != nil {
+		return ref, err
+	}
+	return ref, nil
+}
+
+func controlledSupervisorHelper(t *testing.T) (string, func() error) {
+	t.Helper()
+	directory := t.TempDir()
+	gate := filepath.Join(directory, "release.fifo")
+	if err := unix.Mkfifo(gate, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	helper := filepath.Join(directory, "supervisor-helper")
+	contents := "#!/bin/sh\nread ignored < " + "'" + strings.ReplaceAll(gate, "'", "'\\''") + "'\nexit 0\n"
+	if err := testexec.WriteFile(helper, []byte(contents), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return helper, func() error {
+		file, err := os.OpenFile(gate, os.O_WRONLY, 0)
+		if err != nil {
+			return err
+		}
+		if _, err = file.WriteString("exit\n"); err != nil {
+			_ = file.Close()
+			return err
+		}
+		return file.Close()
+	}
+}
+
+func TestExitedSupervisorIsReapedAndReturnsItsTerminalFailure(t *testing.T) {
+	t.Parallel()
+	helper, release := controlledSupervisorHelper(t)
+	m, processes, _, _ := manager(t)
+	waiting, released := make(chan struct{}), make(chan struct{})
+	var firstSleep sync.Once
+	m.Sleep = func(time.Duration) {
+		firstSleep.Do(func() {
+			close(waiting)
+			<-released
+		})
+		runtime.Gosched()
+	}
+	m.StartCap = time.Minute
+	m.Prober = identity.KernelProber{}
+	m.Supervisor = terminalOSStarter{
+		starter: OSSupervisorStarter{Executable: helper, Prober: m.Prober},
+		store:   m.Store,
+	}
+	result := make(chan struct {
+		record Record
+		err    error
+	}, 1)
+	briefPath := brief(t)
+	worktree := t.TempDir()
+	go func() {
+		record, err := m.Start(StartSpec{ID: "exited-supervisor", Kind: "build", Brief: briefPath, WorkingDirectory: worktree})
+		result <- struct {
+			record Record
+			err    error
+		}{record, err}
+	}()
+	select {
+	case got := <-result:
+		t.Fatalf("start returned before the controlled supervisor exit: record=%+v err=%v", got.record, got.err)
+	case <-waiting:
+	case <-t.Context().Done():
+		t.Fatal("start did not reach the supervisor wait before the hang guard expired")
+	}
+	releaseResult := make(chan error, 1)
+	go func() { releaseResult <- release() }()
+	select {
+	case err := <-releaseResult:
+		if err != nil {
+			t.Fatal(err)
+		}
+		close(released)
+	case <-t.Context().Done():
+		t.Fatal("controlled supervisor release did not complete before the hang guard expired")
+	}
+	select {
+	case got := <-result:
+		if got.err == nil || got.err.Error() != "command: controlled helper exited before ready" || got.record.State != Failed || got.record.Reason != got.err.Error() {
+			t.Fatalf("record=%+v err=%v", got.record, got.err)
+		}
+		if got.record.Supervisor == nil || identity.AliveRef(identity.KernelProber{}, *got.record.Supervisor) != identity.Dead {
+			t.Fatalf("supervisor was not reaped: %+v", got.record.Supervisor)
+		}
+		if processes.groupChecks != 0 || len(processes.signals) != 0 {
+			t.Fatalf("ready timeout path used: group checks=%d signals=%v", processes.groupChecks, processes.signals)
+		}
+	case <-t.Context().Done():
+		t.Fatalf("start did not return after the controlled supervisor exit; group checks=%d", processes.groupChecks)
+	}
 }
 func TestSuperviseRecordsTheTerminalStateFromTheExitStatus(t *testing.T) {
 	for _, row := range []struct {
@@ -604,18 +723,33 @@ func TestBusyDeclaredOutputRefusesAndCancelDoesNotStrandSupervisor(t *testing.T)
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)
+	claimed := make(chan struct{})
+	releaseClaim := make(chan struct{})
+	m.supervisorClaimed = func(record Record) {
+		if record.ID != waiting.ID || record.Supervisor == nil {
+			t.Errorf("supervisor claim was not durable: %+v", record)
+		}
+		close(claimed)
+		<-releaseClaim
+	}
 	go func() { _, superviseErr := m.Supervise(waiting.ID); done <- superviseErr }()
+	select {
+	case <-claimed:
+	case <-t.Context().Done():
+		t.Fatal("supervisor did not publish its durable claim before the hang guard expired")
+	}
 	if _, err := m.Cancel(waiting.ID); err != nil {
 		// A concurrent supervisor may still be exiting; its terminal status is
 		// checked below instead of relying on this instant's process probe.
 	}
+	close(releaseClaim)
 	select {
 	case superviseErr := <-done:
 		if superviseErr == nil || !strings.Contains(superviseErr.Error(), "declared-output-busy") {
 			t.Fatalf("busy output returned %v", superviseErr)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("busy output stranded its supervisor")
+	case <-t.Context().Done():
+		t.Fatal("busy output stranded its supervisor before the hang guard expired")
 	}
 	got, err := m.Status(waiting.ID)
 	if err != nil || !got.State.Terminal() || got.Child != nil {

@@ -277,18 +277,47 @@ func TestWaitPathWaitsOnlyThroughTheInjectedClock(t *testing.T) {
 		}
 		return fakePathInfo{name: filepath.Base(path), size: 1, mode: 0o600, modTime: clock.now}, nil
 	}
-	realStart := time.Now()
-	result := (&Store{Root: t.TempDir(), Prober: waitTestProber{live: true}}).Wait(
-		context.Background(), pathWaitRequest(path, "present", time.Minute), clock.options(stat),
-	)
+	observationStarted := make(chan struct{})
+	releaseObservation := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(releaseObservation)
+		}
+	}()
+	options := clock.options(stat)
+	first := true
+	options.Observe = func(_ context.Context, selector WaitSelector, _ WaiterTarget, _ string) (SourceObservation, error) {
+		if first {
+			first = false
+			close(observationStarted)
+			<-releaseObservation
+		}
+		// The waiter owns its production operation deadline. This controlled
+		// semantic-clock proof uses only the test's outer termination context.
+		return ObservePath(t.Context(), selector, stat)
+	}
+	root := t.TempDir()
+	resultReady := make(chan WaitResult, 1)
+	go func() {
+		resultReady <- (&Store{Root: root, Prober: waitTestProber{live: true}}).Wait(
+			t.Context(), pathWaitRequest(path, "present", time.Minute), options,
+		)
+	}()
+	<-observationStarted
+	select {
+	case result := <-resultReady:
+		t.Fatalf("path wait returned before delayed observation release: %+v", result)
+	default:
+	}
+	close(releaseObservation)
+	released = true
+	result := <-resultReady
 	if result.ExitCode != ExitGreen || observations != 4 {
 		t.Fatalf("fake-clock result=%+v observations=%d", result, observations)
 	}
 	if len(clock.sleeps) != 2 || clock.sleeps[0] != 10*time.Second || clock.sleeps[1] != 10*time.Second {
 		t.Fatalf("unrecorded or unexpected pauses: %v", clock.sleeps)
-	}
-	if elapsed := time.Since(realStart); elapsed >= time.Second {
-		t.Fatalf("path wait used wall time: %s", elapsed)
 	}
 }
 

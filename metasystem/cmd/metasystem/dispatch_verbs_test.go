@@ -6,16 +6,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestComposeRolePacketCommandCarriesGoalTier(t *testing.T) {
@@ -435,6 +438,44 @@ func TestGoalRevisionAdmissionCommandMarksThenEnforcesWithExplicitDispatchContex
 	}
 }
 
+func testStopProofCancelCommandKeepsFrozenInstantFixtureOnly(t *testing.T) {
+	production := t.TempDir()
+	if err := os.WriteFile(filepath.Join(production, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixture := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fixture, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	frozen := time.Date(2026, 9, 19, 8, 0, 58, 0, time.UTC)
+	t.Setenv("METASYSTEM_GOAL_NOW", frozen.Format(time.RFC3339))
+
+	var productionCalls, fixtureCalls int
+	cancel := func(root, stopID, attemptID string) error {
+		productionCalls++
+		if root != production || stopID != "stop" || attemptID != "attempt" {
+			t.Fatalf("production cancellation arguments = %q %q %q", root, stopID, attemptID)
+		}
+		return nil
+	}
+	cancelAt := func(root, stopID, attemptID string, observedAt time.Time) error {
+		fixtureCalls++
+		if root != fixture || stopID != "stop" || attemptID != "attempt" || !observedAt.Equal(frozen) {
+			t.Fatalf("fixture cancellation arguments = %q %q %q %s", root, stopID, attemptID, observedAt)
+		}
+		return nil
+	}
+	if err := cancelStopProofFromCommand(production, "stop", "attempt", cancel, cancelAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := cancelStopProofFromCommand(fixture, "stop", "attempt", cancel, cancelAt); err != nil {
+		t.Fatal(err)
+	}
+	if productionCalls != 1 || fixtureCalls != 1 {
+		t.Fatalf("cancellation consumers: production=%d fixture=%d, want one each", productionCalls, fixtureCalls)
+	}
+}
+
 func TestGoalRevisionAdmissionCommandRefusesExhaustedCodeCriticClass(t *testing.T) {
 	root := syncedClaimedGoalFixture(t)
 	amendSyncedGoalFixture(t, root, "critic class admission fixture", func(file *goal.GoalFile) {
@@ -627,6 +668,137 @@ func TestCommandTaggedProcessScannerUsesAuthorizedCompleteFixtureTable(t *testin
 	if !result.Complete() || result.EnumerationError != "" || len(result.Tagged) != 0 {
 		t.Fatalf("complete empty fixture table = %+v", result)
 	}
+}
+
+func TestCensusFreshCommandUsesOnlyRootAuthorizedClock(t *testing.T) {
+	t.Parallel()
+
+	const helper = "GO_WANT_CENSUS_FRESH_CLOCK_HELPER"
+	switch os.Getenv(helper) {
+	case "body":
+		runCensusFreshCommandClockBody(t)
+	case "":
+		command := exec.Command(commandTestExecutable(t), "-test.run=^TestCensusFreshCommandUsesOnlyRootAuthorizedClock$", "-test.count=1")
+		command.Env = censusFreshCommandClockEnvironment("body")
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("isolated census clock witness failed: %v\n%s", err, output)
+		}
+	default:
+		t.Fatalf("unknown census clock helper role %q", os.Getenv(helper))
+	}
+}
+
+func runCensusFreshCommandClockBody(t *testing.T) {
+	t.Helper()
+
+	fixedNow := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	setCensusFreshCommandClock(t, fixedNow.Format(time.RFC3339))
+
+	makeInputs := func(runtime string, completedAt time.Time) (string, string, string) {
+		t.Helper()
+		root := t.TempDir()
+		for _, rel := range []string{
+			"scripts/agents/arm-supervision.sh",
+			"scripts/agents/dispatch.sh",
+			"bin/metasystem",
+			"scripts/agents/adapters/runtime-common.sh",
+			"scripts/watch-background-jobs.sh",
+		} {
+			path := filepath.Join(root, rel)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("census clock fixture\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if runtime == "fake" {
+			adapter := filepath.Join(root, "scripts", "agents", "adapters", "fake.sh")
+			if err := testexec.WriteFile(adapter, []byte("#!/bin/sh\nprintf 'match ^fixture$\\n'\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes="+runtime+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		fingerprint, err := census.Fingerprint(root, root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		state := writeTemp(t, root, "state.json", map[string]any{"generation": 1})
+		stateBytes, err := os.ReadFile(state)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256(stateBytes)
+		verdict := writeTemp(t, root, "census.json", map[string]any{
+			"schemaVersion": 2, "writer": "watch-background-jobs.sh", "verdict": "SUCCESS",
+			"completedAtEpoch": completedAt.Unix(), "intervalSec": 10, "fingerprint": fingerprint,
+			"counts": map[string]any{}, "inventory": []any{}, "diagnostics": []any{}, "errors": []any{},
+			"generation": 1, "stateDigest": fmt.Sprintf("%x", digest),
+		})
+		return root, state, verdict
+	}
+	run := func(root, state, verdict string, includeRoot bool) int {
+		args := []string{"--verdict", verdict, "--state", state, "--repo", root}
+		if includeRoot {
+			args = append(args, "--root", root)
+		}
+		return runDispatchCensusFresh(args)
+	}
+	assertStale := func(label, root, state, verdict string, includeRoot bool) {
+		t.Helper()
+		stderr, code := captureStderr(t, func() int { return run(root, state, verdict, includeRoot) })
+		if code != 1 || !strings.Contains(stderr, "census verdict is stale") {
+			t.Fatalf("%s trusted unauthorized fixture clock: exit=%d stderr=%q", label, code, stderr)
+		}
+	}
+
+	root, state, verdict := makeInputs("", fixedNow)
+	assertStale("rootless command", root, state, verdict, false)
+	root, state, verdict = makeInputs("", fixedNow)
+	assertStale("production root", root, state, verdict, true)
+	root, state, verdict = makeInputs("fake", fixedNow)
+	if code := run(root, state, verdict, true); code != 0 {
+		t.Fatalf("fake root ignored authorized fixture clock: exit=%d", code)
+	}
+
+	setCensusFreshCommandClock(t, "not-a-time")
+	stderr, code := captureStderr(t, func() int { return run(root, state, verdict, true) })
+	if code != 1 || !strings.Contains(stderr, "census clock cannot be resolved") ||
+		!strings.Contains(stderr, "METASYSTEM_GOAL_NOW must be an RFC3339 timestamp") {
+		t.Fatalf("invalid authorized clock was not explicit: exit=%d stderr=%q", code, stderr)
+	}
+}
+
+func setCensusFreshCommandClock(t *testing.T, value string) {
+	t.Helper()
+	original, present := os.LookupEnv("METASYSTEM_GOAL_NOW")
+	t.Cleanup(func() {
+		if present {
+			_ = os.Setenv("METASYSTEM_GOAL_NOW", original)
+		} else {
+			_ = os.Unsetenv("METASYSTEM_GOAL_NOW")
+		}
+	})
+	if err := os.Setenv("METASYSTEM_GOAL_NOW", value); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func censusFreshCommandClockEnvironment(role string) []string {
+	replaced := map[string]bool{
+		"GO_WANT_CENSUS_FRESH_CLOCK_HELPER": true,
+		"METASYSTEM_GOAL_NOW":               true,
+	}
+	environment := make([]string, 0, len(os.Environ())+1)
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if !replaced[name] {
+			environment = append(environment, entry)
+		}
+	}
+	return append(environment, "GO_WANT_CENSUS_FRESH_CLOCK_HELPER="+role)
 }
 
 // writeTemp writes a JSON file and returns its path.

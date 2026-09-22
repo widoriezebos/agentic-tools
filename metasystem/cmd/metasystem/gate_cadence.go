@@ -45,6 +45,18 @@ var cadenceTick = runProductionCadenceTick
 var cadenceBuildIdentity = candidateEngineBuildIdentity
 var cadenceRetainedEngineDigest = retainedCandidateEngineDigest
 
+type cadenceRevalidationDependencies struct {
+	prepare        func(testingSelectionRequest) (testingPreparation, error)
+	readAttempts   func(string) ([]proofrun.Attempt, error)
+	buildIdentity  func(context.Context, gittree.Workspace, string, string, []string) (string, error)
+	retainedDigest func(testingPreparation, []proofrun.Attempt, string, bool) (string, error)
+}
+
+func productionCadenceRevalidationDependencies() cadenceRevalidationDependencies {
+	return cadenceRevalidationDependencies{prepare: prepareTestingForCommand, readAttempts: proofrun.ReadAttempts,
+		buildIdentity: cadenceBuildIdentity, retainedDigest: cadenceRetainedEngineDigest}
+}
+
 func runGateCadenceTick(args []string) int {
 	flags := flag.NewFlagSet("gate cadence-tick", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "configured landing-owner checkout")
@@ -209,18 +221,25 @@ func runProductionCadenceTick(root string, held batchOwnerLease, clock func() ti
 }
 
 func revalidateCadence(root string, prepared testingPreparation, trunk gaterun.CadenceTrunk, deepOnly []string) (gaterun.CadenceRevalidation, error) {
+	return revalidateCadenceWith(root, prepared, trunk, deepOnly, productionCadenceRevalidationDependencies())
+}
+
+func revalidateCadenceWith(root string, prepared testingPreparation, trunk gaterun.CadenceTrunk, deepOnly []string, dependencies cadenceRevalidationDependencies) (gaterun.CadenceRevalidation, error) {
 	if prepared.CandidateTree != trunk.Tree {
 		var err error
-		prepared, err = prepareTestingForCommand(cadencePreparationRequest(root, trunk.Tree))
+		prepared, err = dependencies.prepare(cadencePreparationRequest(root, trunk.Tree))
 		if err != nil {
 			return gaterun.CadenceRevalidation{}, err
 		}
 	}
-	attempts, err := proofrun.ReadAttempts(prepared.Installation)
+	if _, err := resolveTestingPreparationWorkerPolicy(&prepared); err != nil {
+		return gaterun.CadenceRevalidation{}, err
+	}
+	attempts, err := dependencies.readAttempts(prepared.Installation)
 	if err != nil {
 		return gaterun.CadenceRevalidation{}, err
 	}
-	buildIdentity, digest, exactEngine, err := cadenceCandidateEngineIdentity(prepared, trunk, attempts)
+	buildIdentity, digest, exactEngine, err := cadenceCandidateEngineIdentityWith(prepared, trunk, attempts, dependencies)
 	if err != nil {
 		return gaterun.CadenceRevalidation{}, err
 	}
@@ -248,12 +267,16 @@ func revalidateCadence(root string, prepared testingPreparation, trunk gaterun.C
 }
 
 func cadenceCandidateEngineIdentity(prepared testingPreparation, trunk gaterun.CadenceTrunk, attempts []proofrun.Attempt) (string, string, bool, error) {
+	return cadenceCandidateEngineIdentityWith(prepared, trunk, attempts, productionCadenceRevalidationDependencies())
+}
+
+func cadenceCandidateEngineIdentityWith(prepared testingPreparation, trunk gaterun.CadenceTrunk, attempts []proofrun.Attempt, dependencies cadenceRevalidationDependencies) (string, string, bool, error) {
 	environment := inheritedTestingEnvironment(prepared.Environment, os.Environ())
-	buildIdentity, err := cadenceBuildIdentity(context.Background(), gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix, trunk.Tree, environment)
+	buildIdentity, err := dependencies.buildIdentity(context.Background(), gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix, trunk.Tree, environment)
 	if err != nil {
 		return "", "", false, err
 	}
-	digest, retainedErr := cadenceRetainedEngineDigest(prepared, attempts, buildIdentity, false)
+	digest, retainedErr := dependencies.retainedDigest(prepared, attempts, buildIdentity, false)
 	if retainedErr == nil {
 		return buildIdentity, digest, true, nil
 	}

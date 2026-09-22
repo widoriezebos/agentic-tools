@@ -338,10 +338,16 @@ func PreviewHealth(repoRoot string, now time.Time, prober identity.Prober) Healt
 // PreviewHealthAt reads durable health state from repoRoot and installed
 // configuration and adapters from metasystemRoot.
 func PreviewHealthAt(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober) HealthVerdict {
+	return previewHealthAtWithMeasure(repoRoot, metasystemRoot, now, prober, measureSpend)
+}
+
+type spendMeasureFunc func(string, string, time.Time) (spend.Ledger, error)
+
+func previewHealthAtWithMeasure(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, measure spendMeasureFunc) HealthVerdict {
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
-	roles, spendObservation := evaluateHealthRoles(repoRoot, metasystemRoot, now.UTC(), prober, true)
+	roles, spendObservation := evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot, now.UTC(), prober, true, measure)
 	if stopped, err := healthStopped(repoRoot, now.UTC(), roles, spendObservation, HealthObservationState{}); err == nil && stopped != nil {
 		return *stopped
 	}
@@ -402,9 +408,13 @@ func healthStopped(repoRoot string, now time.Time, roles []RoleVerdict, spend Sp
 }
 
 func evaluateHealthRoles(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool) ([]RoleVerdict, SpendObservation) {
+	return evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot, now, prober, currentHookAttempt, measureSpend)
+}
+
+func evaluateHealthRolesWithMeasure(repoRoot, metasystemRoot string, now time.Time, prober identity.Prober, currentHookAttempt bool, measure spendMeasureFunc) ([]RoleVerdict, SpendObservation) {
 	state, stateErr := readHealthObject(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "state.json"))
 	spendStarted := time.Now()
-	spendRole, spendObservation := checkSpendFence(repoRoot, now)
+	spendRole, spendObservation := checkSpendFenceWithMeasure(repoRoot, now, measure)
 	spendRole.DurationMillis = elapsedRoleMillis(spendStarted)
 	timed := func(check func() RoleVerdict) RoleVerdict {
 		started := time.Now()
@@ -447,11 +457,15 @@ func elapsedRoleMillis(started time.Time) int64 {
 var measureSpend = spend.Measure
 
 func checkSpendFence(repoRoot string, now time.Time) (RoleVerdict, SpendObservation) {
+	return checkSpendFenceWithMeasure(repoRoot, now, measureSpend)
+}
+
+func checkSpendFenceWithMeasure(repoRoot string, now time.Time, measure spendMeasureFunc) (RoleVerdict, SpendObservation) {
 	machine := "this machine"
 	if enrolled, err := goal.ResolveMachine(repoRoot); err == nil {
 		machine = enrolled
 	}
-	ledger, err := measureSpend(repoRoot, machine, now)
+	ledger, err := measure(repoRoot, machine, now)
 	remedy := fmt.Sprintf("raise spend.ceiling.<scope>.<ceiling> in metasystem.conf on Wido's recorded word (R-60-m1); alert mode refuses nothing; see %s",
 		filepath.ToSlash(filepath.Join("artifacts", "agents", "steward", "spend", now.UTC().Format("2006-01-02")+".json")))
 	if err != nil {

@@ -169,19 +169,18 @@ fake_record_build_cache_path() { # workspace, round directory
 }
 
 supervise() { # verb and remaining args
-  local verb=$1 gate_poll heartbeat_sleep; shift
+  local verb=$1 gate_poll_ms heartbeat_sleep gate_rc=0; shift
   parse_supervisor_args "$@"
   record="$jobs/$job.json"
   "$ms" job launch-capability-consume --root "$root" --job "$job" \
     --capability "$launch_capability" --adapter-verb "$verb" \
     --instance-tag "$instance_tag" --supervisor-pid "$$" || exit 1
-  gate_poll=$(fixture_milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-10}")
+  gate_poll_ms=${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-10}
+  fixture_milliseconds_to_sleep "$gate_poll_ms" >/dev/null
   heartbeat_sleep=$(fixture_milliseconds_to_sleep "${METASYSTEM_HEARTBEAT_INTERVAL_MS:-200}")
-  gate_deadline=$(( $(date +%s) + ${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10} ))
-  while [[ ! -e "$gate" ]]; do
-    (( $(date +%s) <= gate_deadline )) || { echo "start gate never opened: $gate" >&2; exit 1; }
-    sleep "$gate_poll"
-  done
+	"$ms" adapter wait-start-gate --root "$root" --path "$gate" \
+    --timeout-sec "${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10}" --poll-ms "$gate_poll_ms" || gate_rc=$?
+  (( gate_rc == 0 )) || { echo "start gate never opened: $gate" >&2; exit 1; }
   round=$(field "$record" round)
   root_job=$("$ms" adapter root-job --jobs "$jobs" --job "$job")
   round_dir="$agents/$root_job/rounds/$round"

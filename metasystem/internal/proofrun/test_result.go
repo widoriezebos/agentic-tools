@@ -283,6 +283,7 @@ type TestResult struct {
 	ChildDurationMS                int64                     `json:"childDurationMs"`
 	Cost                           TestCost                  `json:"cost"`
 	Delivery                       DeliveryJudgment          `json:"delivery"`
+	semanticNow                    time.Time
 }
 
 // FailingGroupSetComplete reports whether the result contains the terminal
@@ -375,21 +376,20 @@ func ReusedTestResultExcluding(template TestResult, attempts []Attempt, identiti
 // records rank by the group's own end, then by the attempt's start.
 type reuseObservation struct {
 	attemptID string
+	attempt   Attempt
 	at        time.Time
 	started   time.Time
 	live      bool
 	passed    bool
+	ambiguous bool
 	group     GroupResult
 }
 
-func (observation reuseObservation) newerThan(other reuseObservation) bool {
-	if observation.live != other.live {
-		return observation.live
-	}
-	if !observation.at.Equal(other.at) {
-		return observation.at.After(other.at)
-	}
-	return observation.started.After(other.started)
+func (observation reuseObservation) orderAgainst(other reuseObservation) testingAttemptOrder {
+	return compareTestingAttemptObservations(
+		testingAttemptObservation{attempt: other.attempt, live: other.live, at: other.at, started: other.started},
+		testingAttemptObservation{attempt: observation.attempt, live: observation.live, at: observation.at, started: observation.started},
+	)
 }
 
 // newestReuseObservation scans every attempt on the seat for the newest
@@ -405,8 +405,18 @@ func newestReuseObservation(template TestResult, attempts []Attempt, id, identit
 	incompleteFound := false
 	found := false
 	consider := func(observation reuseObservation) {
-		if !found || observation.newerThan(newest) {
+		if !found {
 			newest, found = observation, true
+			return
+		}
+		switch observation.orderAgainst(newest) {
+		case testingAttemptNewer:
+			newest = observation
+		case testingAttemptAmbiguous:
+			newest.ambiguous = true
+			newest.attemptID = ""
+			newest.passed = false
+			newest.group = GroupResult{}
 		}
 	}
 	if identity == "" {
@@ -426,13 +436,13 @@ func newestReuseObservation(template TestResult, attempts []Attempt, id, identit
 		}
 		if ownerEpisode != "" && attempt.FreshnessExpiresAt != "" {
 			expires, err := time.Parse(time.RFC3339Nano, attempt.FreshnessExpiresAt)
-			if err != nil || !expires.After(time.Now().UTC()) {
+			if err != nil || !expires.After(testResultNow(template)) {
 				continue
 			}
 		}
 		if attempt.Terminal == nil {
 			if ownsTestComponent(attempt, id, identity) {
-				consider(reuseObservation{attemptID: attempt.AttemptID, started: started, live: true})
+				consider(reuseObservation{attemptID: attempt.AttemptID, attempt: attempt, started: started, live: true})
 			}
 			continue
 		}
@@ -455,16 +465,24 @@ func newestReuseObservation(template TestResult, attempts []Attempt, id, identit
 				if err != nil {
 					at = started
 				}
-				consider(reuseObservation{attemptID: attempt.AttemptID, at: at, started: started, group: group,
+				consider(reuseObservation{attemptID: attempt.AttemptID, attempt: attempt, at: at, started: started, group: group,
 					passed: (group.Status == "passed" || group.Status == "reused") && group.CollectionComplete})
 				observed = true
 			}
 		}
 		if !observed && ownsTestComponent(attempt, id, identity) {
 			at, _ := time.Parse(time.RFC3339Nano, attempt.Terminal.At)
-			candidate := reuseObservation{attemptID: attempt.AttemptID, at: at, started: started}
-			if !incompleteFound || candidate.newerThan(incomplete) {
+			candidate := reuseObservation{attemptID: attempt.AttemptID, attempt: attempt, at: at, started: started}
+			if !incompleteFound {
 				incomplete, incompleteFound = candidate, true
+			} else {
+				switch candidate.orderAgainst(incomplete) {
+				case testingAttemptNewer:
+					incomplete = candidate
+				case testingAttemptAmbiguous:
+					incomplete.ambiguous = true
+					incomplete.attemptID = ""
+				}
 			}
 		}
 	}
@@ -491,6 +509,7 @@ func groupExecutionIdentityVersionForResult(schemaVersion int) int {
 // path and intentionally has no synthetic outer owner.
 func ExactReusableTestResult(template TestResult, attempts []Attempt, identities map[string]string, goalID string, accountingRevision uint64) (TestResult, bool) {
 	var newest *Attempt
+	ambiguous := false
 	for index := range attempts {
 		attempt := attempts[index]
 		if goalID == "" || accountingRevision == 0 || attempt.AccountedGoal() != goalID || attempt.AccountedRevision() != accountingRevision ||
@@ -532,10 +551,16 @@ func ExactReusableTestResult(template TestResult, attempts []Attempt, identities
 			}
 		}
 		if matches {
-			newest = newerAttempt(newest, attempt)
+			selected, tied := newerAttempt(newest, attempt)
+			if tied {
+				ambiguous = true
+			} else if newest == nil || selected.AttemptID == attempt.AttemptID {
+				ambiguous = false
+			}
+			newest = selected
 		}
 	}
-	if newest == nil {
+	if newest == nil || ambiguous {
 		return TestResult{}, false
 	}
 	return *newest.TestResult, true
@@ -549,7 +574,7 @@ func reusedTestResult(template TestResult, attempts []Attempt, identities map[st
 	result.LaunchCounts = LaunchCounts{Other: preparationLaunches, CountsComplete: true}
 	result.DurationMS, result.ChildDurationMS = result.Cost.PreparationDurationMS, 0
 	result.Cost.ActualDurationMS, result.Cost.ChildDurationMS = result.Cost.PreparationDurationMS, 0
-	result.EndedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	result.EndedAt = testResultNow(result).Format(time.RFC3339Nano)
 	definitions := map[string]testpolicy.Group{}
 	for _, group := range contract.Groups {
 		definitions[group.ID] = group
@@ -651,9 +676,15 @@ func blockedGroupResult(group GroupResult, blockers []string) GroupResult {
 		BlockingGroups: append([]string(nil), blockers...), ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
 }
 
-func resultDuration(start time.Time) (string, int64) {
-	end := time.Now().UTC()
-	return end.Format(time.RFC3339Nano), end.Sub(start).Milliseconds()
+func testResultNow(result TestResult) time.Time {
+	if !result.semanticNow.IsZero() {
+		return result.semanticNow.UTC()
+	}
+	return time.Now().UTC()
+}
+
+func resultDuration(request TestRunRequest, physicalStart time.Time) (string, int64) {
+	return testRequestNow(request).Format(time.RFC3339Nano), time.Since(physicalStart).Milliseconds()
 }
 
 // GovernedTestResult returns only the newest testing attempt owned by a
@@ -683,13 +714,23 @@ func LatestGovernedTestResult(root, runID string) (Attempt, TestResult, error) {
 		return Attempt{}, TestResult{}, err
 	}
 	var newest *Attempt
+	ambiguous := false
 	for _, attempt := range attempts {
 		if attempt.ReservationOwner != nil && attempt.ReservationOwner.RunID == runID {
-			newest = newerAttempt(newest, attempt)
+			selected, tied := newerAttempt(newest, attempt)
+			if tied {
+				ambiguous = true
+			} else if newest == nil || selected.AttemptID == attempt.AttemptID {
+				ambiguous = false
+			}
+			newest = selected
 		}
 	}
 	if newest == nil {
 		return Attempt{}, TestResult{}, fmt.Errorf("governed run %s has no testing attempt", runID)
+	}
+	if ambiguous {
+		return Attempt{}, TestResult{}, fmt.Errorf("governed run %s has ambiguous duplicate testing admission %d", runID, newest.TestAdmission)
 	}
 	if newest.Terminal == nil || newest.TestResult == nil {
 		return *newest, TestResult{}, fmt.Errorf("newest governed testing attempt %s has no terminal structured result", newest.AttemptID)

@@ -16,9 +16,7 @@ import (
 )
 
 var (
-	waitRegisterProber    identity.Prober = identity.KernelProber{}
-	waitRegisterNow                       = func() time.Time { return time.Now().UTC() }
-	waitRegisterBootClock                 = identity.BootClock
+	waitRegisterProber identity.Prober = identity.KernelProber{}
 )
 
 type resolvedWaitCaller struct {
@@ -64,6 +62,16 @@ func printRegisteredWait(row metarun.Waiter, jsonOutput bool) {
 		return
 	}
 	fmt.Printf("registered %s wait %s until %s\n", row.Kind, row.WaitID, row.Deadline)
+}
+
+func waitRegisterOptions(root string) (metarun.WaitOptions, error) {
+	clock, _, err := goalCommandClock(root)
+	if err != nil {
+		return metarun.WaitOptions{}, err
+	}
+	return metarun.WaitOptions{Now: clock, BootClock: func() (string, time.Duration, error) {
+		return goalCommandBootClock(root)
+	}}, nil
 }
 
 func runWaitRegister(args []string) int {
@@ -112,6 +120,11 @@ func runWaitRegister(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return metarun.ExitWaiterIO
 	}
+	options, err := waitRegisterOptions(stateRoot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return metarun.ExitWaiterIO
+	}
 	resolved, code, err := resolveWaitCaller(stateRoot, waitCallerPID())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -128,7 +141,7 @@ func runWaitRegister(args []string) int {
 		Kind: kind, Pid: *pid, Label: *label, Question: *question, JobID: *jobID,
 		Owner: resolved.owner, RuntimeSession: resolved.runtimeSession, Runtime: resolved.view.Announcement.Runtime,
 		Timeout: *timeout, OpenWorkSignature: openWorkSignature,
-	}, metarun.WaitOptions{Now: waitRegisterNow, BootClock: waitRegisterBootClock})
+	}, options)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return metarun.WaiterExitCode(err)
@@ -153,13 +166,18 @@ func runWaitEnd(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return metarun.ExitWaiterIO
 	}
+	options, err := waitRegisterOptions(stateRoot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return metarun.ExitWaiterIO
+	}
 	resolved, code, err := resolveWaitCaller(stateRoot, waitCallerPID())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return code
 	}
 	row, err := (&metarun.Store{Root: stateRoot}).EndDetachedWait(*waitID, resolved.owner, resolved.runtimeSession,
-		metarun.WaitOptions{Now: waitRegisterNow, BootClock: waitRegisterBootClock})
+		options)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return metarun.WaiterExitCode(err)

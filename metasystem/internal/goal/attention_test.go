@@ -369,7 +369,58 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 			return "blocking", false, nil
 		},
 	}
-	saved := store.Wait(context.Background(), metarun.WaitRequest{Selector: selector, Owner: owner, RuntimeSession: "runtime-replay-observer", Timeout: time.Hour}, options)
+	withoutGitOperationDeadline := waitGitContextFunc(func(parent context.Context, _ time.Duration, _ []string) (context.Context, context.CancelFunc) {
+		return context.WithCancel(parent)
+	})
+	nonTimeoutOptions := options
+	nonTimeoutOptions.Observe = func(readCtx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, floor string) (metarun.SourceObservation, error) {
+		dependencies := waitDependencies(readCtx)
+		dependencies.withTimeout = withoutGitOperationDeadline
+		dependencies.withFetchTimeout = withoutGitOperationDeadline
+		// Replay semantics are independent of production operation deadlines.
+		// The test context remains the unsuccessful outer termination path.
+		outerCtx := withWaitGitDependencies(t.Context(), dependencies)
+		return ObserveLedgerForWait(outerCtx, waiterClone, selected, pinned, floor, owner.OwnerLineage)
+	}
+	fetchStarted := make(chan struct{})
+	releaseFetch := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(releaseFetch)
+		}
+	}()
+	delayedOptions := nonTimeoutOptions
+	delayedOptions.Observe = func(readCtx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, floor string) (metarun.SourceObservation, error) {
+		dependencies := waitDependencies(readCtx)
+		dependencies.withTimeout = withoutGitOperationDeadline
+		dependencies.withFetchTimeout = withoutGitOperationDeadline
+		realRunner := dependencies.run
+		if realRunner == nil {
+			realRunner = runAttentionGit
+		}
+		dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
+			if len(args) > 0 && args[0] == "fetch" {
+				close(fetchStarted)
+				<-releaseFetch
+			}
+			return realRunner(gitCtx, root, stdin, args...)
+		}
+		return ObserveLedgerForWait(withWaitGitDependencies(t.Context(), dependencies), waiterClone, selected, pinned, floor, owner.OwnerLineage)
+	}
+	savedResult := make(chan metarun.WaitResult, 1)
+	go func() {
+		savedResult <- store.Wait(t.Context(), metarun.WaitRequest{Selector: selector, Owner: owner, RuntimeSession: "runtime-replay-observer", Timeout: time.Hour}, delayedOptions)
+	}()
+	<-fetchStarted
+	select {
+	case result := <-savedResult:
+		t.Fatalf("saved replay returned before delayed fetch release: %+v", result)
+	default:
+	}
+	close(releaseFetch)
+	released = true
+	saved := <-savedResult
 	if saved.ExitCode != metarun.ExitGreen || saved.LedgerTip != answered.Tip {
 		t.Fatalf("save real answer result: %+v", saved)
 	}
@@ -387,9 +438,6 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 	}
 
 	realRunner := attentionGitRun(runAttentionGit)
-	realContext := waitGitContextFunc(func(parent context.Context, _ time.Duration, _ []string) (context.Context, context.CancelFunc) {
-		return context.WithCancel(parent)
-	})
 
 	t.Run("before rewinding the ledger", func(t *testing.T) {
 		t.Run("later accepted changes replay the saved answer from its event floor", func(t *testing.T) {
@@ -401,7 +449,7 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 				}
 				return realRunner(gitCtx, root, stdin, args...)
 			}}
-			replayed := store.ResumeWait(withWaitGitDependencies(context.Background(), dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
+			replayed := store.ResumeWait(withWaitGitDependencies(t.Context(), dependencies), saved.WaitID, owner, owner.SessionId, 0, nonTimeoutOptions)
 			if replayed.ExitCode != metarun.ExitGreen {
 				t.Fatalf("replay after later accepted changes: %+v", replayed)
 			}
@@ -433,8 +481,9 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 						return newSpentDeadlineContext(parent), func() {}
 					}
 				}
-				return realContext(parent, budget, args)
+				return withoutGitOperationDeadline(parent, budget, args)
 			}
+			dependencies.withFetchTimeout = withoutGitOperationDeadline
 			runnerReads := 0
 			dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
 				if len(args) > 0 && args[0] == "ls-tree" {
@@ -450,7 +499,11 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 				}
 				return realRunner(gitCtx, root, stdin, args...)
 			}
-			replayed := store.ResumeWait(withWaitGitDependencies(context.Background(), dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
+			failureOptions := nonTimeoutOptions
+			failureOptions.Observe = func(readCtx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, floor string) (metarun.SourceObservation, error) {
+				return ObserveLedgerForWait(withWaitGitDependencies(t.Context(), waitDependencies(readCtx)), waiterClone, selected, pinned, floor, owner.OwnerLineage)
+			}
+			replayed := store.ResumeWait(withWaitGitDependencies(t.Context(), dependencies), saved.WaitID, owner, owner.SessionId, 0, failureOptions)
 			if replayed.ExitCode != metarun.ExitWaiterIO || replayed.SourceOutcome != "transport-failure" || runnerReads != 3 {
 				t.Fatalf("budget-exhausted replay=%+v intervening reads=%d", replayed, runnerReads)
 			}
@@ -460,25 +513,37 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 			t.Parallel()
 			reached := make(chan struct{})
 			runnerReads := 0
-			dependencies := waitGitDependencies{run: func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
-				if len(args) > 0 && args[0] == "ls-tree" {
-					runnerReads++
-					if runnerReads == 3 {
-						close(reached)
-						<-gitCtx.Done()
-						return "", gitCtx.Err()
+			dependencies := waitGitDependencies{
+				withTimeout:      withoutGitOperationDeadline,
+				withFetchTimeout: withoutGitOperationDeadline,
+				run: func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
+					if len(args) > 0 && args[0] == "ls-tree" {
+						runnerReads++
+						if runnerReads == 3 {
+							close(reached)
+							<-gitCtx.Done()
+							return "", gitCtx.Err()
+						}
 					}
-				}
-				return realRunner(gitCtx, root, stdin, args...)
-			}}
-			ctx, cancel := context.WithCancel(context.Background())
+					return realRunner(gitCtx, root, stdin, args...)
+				}}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
 			cancelled := make(chan struct{})
 			go func() {
-				<-reached
-				cancel()
+				select {
+				case <-reached:
+					cancel()
+				case <-ctx.Done():
+				}
 				close(cancelled)
 			}()
-			replayed := store.ResumeWait(withWaitGitDependencies(ctx, dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
+			cancellationOptions := nonTimeoutOptions
+			cancellationOptions.Observe = func(readCtx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, floor string) (metarun.SourceObservation, error) {
+				return ObserveLedgerForWait(withWaitGitDependencies(ctx, waitDependencies(readCtx)), waiterClone, selected, pinned, floor, owner.OwnerLineage)
+			}
+			replayed := store.ResumeWait(withWaitGitDependencies(ctx, dependencies), saved.WaitID, owner, owner.SessionId, 0, cancellationOptions)
+			cancel()
 			<-cancelled
 			if replayed.ExitCode != metarun.ExitInterrupted || replayed.SourceOutcome != "interrupted" || runnerReads != 3 {
 				t.Fatalf("cancelled replay=%+v intervening reads=%d", replayed, runnerReads)
@@ -488,7 +553,7 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 
 	t.Run("rewinding away the answer invalidates the saved evidence", func(t *testing.T) {
 		mustGit(t, publisher, "push", "-q", "--force", "origin", cursor+":refs/heads/main")
-		replayed := store.ResumeWait(context.Background(), saved.WaitID, owner, owner.SessionId, 0, options)
+		replayed := store.ResumeWait(t.Context(), saved.WaitID, owner, owner.SessionId, 0, nonTimeoutOptions)
 		if replayed.ExitCode != metarun.ExitNoRecord || replayed.SourceOutcome != "invalid-source" {
 			t.Fatalf("rewound saved evidence replay=%+v", replayed)
 		}

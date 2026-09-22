@@ -20,6 +20,25 @@ const (
 
 type Adapter struct{ client *http.Client }
 
+type requestContextFunc func(context.Context, time.Duration) (context.Context, context.CancelFunc)
+type requestContextKey struct{}
+
+// WithRequestContext lets one call own its request lifetime while retaining
+// the adapter's configured timeout selection.
+func WithRequestContext(ctx context.Context, create func(context.Context, time.Duration) (context.Context, context.CancelFunc)) context.Context {
+	if create == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, requestContextKey{}, requestContextFunc(create))
+}
+
+func requestContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if create, ok := ctx.Value(requestContextKey{}).(requestContextFunc); ok {
+		return create(ctx, timeout)
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
 func New(client *http.Client) *Adapter {
 	if client == nil {
 		client = http.DefaultClient
@@ -69,7 +88,7 @@ func (a *Adapter) request(ctx context.Context, dest channel.DestinationConfig, m
 	if timeout <= 0 {
 		timeout = defaultHTTPTimeout
 	}
-	requestCtx, cancel := context.WithTimeout(ctx, timeout)
+	requestCtx, cancel := requestContext(ctx, timeout)
 	defer cancel()
 	payload, err := json.Marshal(body)
 	if err != nil {

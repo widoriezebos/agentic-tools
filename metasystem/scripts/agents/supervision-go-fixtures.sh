@@ -10,7 +10,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
-bin="$root/bin/metasystem"
+bin=${METASYSTEM_BIN:-$root/bin/metasystem}
 [[ -x "$bin" ]] || { echo "go supervision fixtures: binary absent; run the go gate first" >&2; exit 1; }
 
 # Caps come from their single declared owner (script-fixtures-017): the
@@ -25,23 +25,82 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-go-supervision.XXXXXX")
 # pkill -f "gofix-" reached ANY process on the machine whose command
 # mentioned the string — another checkout's fixture run included.
 fixture_tag="gofix-$$"
+failure_dir=${METASYSTEM_FIXTURE_FAILURE_DIR:-$root/artifacts/agents/fixture-failures/supervision-go-$(date -u +%Y%m%dT%H%M%SZ)-$$}
+
+preserve_failure_diagnostics() {
+  local scenario repo destination source
+  mkdir -p "$failure_dir"
+  [[ -z "${registry:-}" || ! -f "$registry" ]] || cp "$registry" "$failure_dir/registry.jsonl"
+  for scenario in establish purpose purpose.gone superseded breaker; do
+    repo="$tmp/$scenario"
+    destination="$failure_dir/$scenario"
+    for source in \
+      "$repo/owner.out" \
+      "$repo/artifacts/agents/supervision/owner.ndjson" \
+      "$repo/artifacts/agents/supervision/state.json" \
+      "$repo/artifacts/agents/supervision/last-census.json"; do
+      [[ ! -f "$source" ]] || {
+        mkdir -p "$destination"
+        cp "$source" "$destination/${source##*/}"
+      }
+    done
+  done
+  printf 'go supervision fixture diagnostics retained: %s\n' "$failure_dir" >&2
+}
+
 cleanup() {
-  # Kill only what THIS run launched; the tag carries our pid.
-  pkill -f "$fixture_tag-" 2>/dev/null || true
+  local status=$?
+  trap - EXIT
+  if (( status != 0 )); then
+    preserve_failure_diagnostics || true
+  fi
+  # Kill only what THIS run launched; the tag carries our pid. TERM lets the
+  # owner perform its ordinary teardown; KILL is the bounded backstop when the
+  # host cannot enumerate enough process identity for that teardown.
+  pkill -TERM -f "$fixture_tag-" 2>/dev/null || true
+  pkill -KILL -f "$fixture_tag-" 2>/dev/null || true
+  rm -rf "$tmp" 2>/dev/null || true
   rm -rf "$tmp"
+  exit "$status"
 }
 trap cleanup EXIT
 
 fail() { echo "go supervision fixture failed: $1" >&2; exit 1; }
 
+# The standing watcher separates repository state from its installation root.
+# Supply the smallest real installation its fingerprint and fake-runtime
+# signature require, and an authorized empty process universe. The scenario
+# repositories below stay independent state/scope roots.
+fixture_root="$tmp/fixture-install"
+mkdir -p "$fixture_root/bin"
+printf '%s\n' 'metasystem.runtimes=fake' 'watch.interval-sec=1' >"$fixture_root/metasystem.conf"
+cp "$bin" "$fixture_root/bin/metasystem"
+for dependency in \
+  scripts/agents/arm-supervision.sh \
+  scripts/agents/dispatch.sh \
+  scripts/agents/adapters/runtime-common.sh \
+  scripts/agents/adapters/fake.sh \
+  scripts/watch-background-jobs.sh; do
+  mkdir -p "$fixture_root/${dependency%/*}"
+  cp "$root/$dependency" "$fixture_root/$dependency"
+done
+process_fixture="$tmp/processes.json"
+printf '[]\n' >"$process_fixture"
+export METASYSTEM_CENSUS_PROCESS_FILE="$process_fixture"
+watcher_cap=$("$bin" supervise derive-ceiling --conf "$fixture_root/metasystem.conf")
+
 # arm launches the owner the way arm-supervision.sh will: create the lock
 # dir, launch the owner with a start gate, publish owner.json naming its
 # pid, signal the gate. Echoes the owner pid.
 arm() { # repo, tag, registry, interval
-  local repo=$1 tag=$2 registry=$3 interval=$4 pid start gate
+  local repo=$1 tag=$2 registry=$3 interval=$4 pid start gate fingerprint
   mkdir -p "$repo/artifacts/agents/supervision/lock.d"
   gate="$repo/artifacts/agents/supervision/start.gate"
+  fingerprint=$("$bin" supervise fingerprint --root "$fixture_root" --repo "$repo") \
+    || fail "cannot compute owner fingerprint"
   "$bin" supervise owner --repo "$repo" --tag "$tag" --interval "$interval" \
+    --metasystem-root "$fixture_root" --scope "$repo" \
+    --fingerprint "$fingerprint" --watcher-cap "$watcher_cap" \
     --registry "$registry" --gate "$gate" >"$repo/owner.out" 2>&1 &
   pid=$!
   start=$("$bin" proc started-at --pid "$pid") || fail "cannot read owner start time"
@@ -76,6 +135,20 @@ state_ready() { # state file
   [[ "$("$bin" json strip --file "$tmp/state-components.json" --key watcher --key reaper --key landing-owner 2>/dev/null)" == '{}' ]] || return 1
 }
 
+census_generation_one() { # census file
+  [[ "$("$bin" json get --file "$1" --field generation 2>/dev/null)" == 1 ]] || return 1
+  [[ "$("$bin" json get --file "$1" --field scanSeq 2>/dev/null)" =~ ^[1-9][0-9]*$ ]] || return 1
+  return 0
+}
+
+census_generation_one_at_least() { # census file, minimum scan sequence
+  local sequence
+  census_generation_one "$1" || return 1
+  sequence=$("$bin" json get --file "$1" --field scanSeq 2>/dev/null) || return 1
+  (( sequence >= $2 )) || return 1
+  return 0
+}
+
 # last_owner_exit prints the newest registry "exited" event for an owner
 # tag; an exited line that fails to parse fails the caller's check.
 last_owner_exit() { # registry, ownerTag
@@ -94,10 +167,11 @@ repo1="$tmp/establish"; mkdir -p "$repo1"
 owner1=$(arm "$repo1" "$fixture_tag-establish" "$registry" 1)
 wait_until "$owner_wait" "state published with components" \
   state_ready "$repo1/artifacts/agents/supervision/state.json"
-# Stability: after several intervals the generation is still 1 (no churn).
-# A literal on purpose: this is an assertion window, not a wait ceiling —
-# cap scaling applies to ceilings only (script-fixtures-017).
-sleep 3
+census1="$repo1/artifacts/agents/supervision/last-census.json"
+wait_until "$owner_wait" "generation-one census publication" census_generation_one "$census1"
+initial_scan_seq=$("$bin" json get --file "$census1" --field scanSeq)
+wait_until "$owner_wait" "two later generation-one census publications" \
+  census_generation_one_at_least "$census1" "$((initial_scan_seq + 2))"
 gens=$(grep -o '"generation":[0-9]*' "$registry" | sort -u | tr '\n' ' ')
 [[ "$gens" == '"generation":1 ' ]] || fail "owner churned generations: $gens"
 kill "$owner1" 2>/dev/null || true

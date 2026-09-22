@@ -1,17 +1,59 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
+
+func TestMissionFenceCommandUsesAuthorizedSemanticClock(t *testing.T) {
+	t.Parallel()
+	if runGoGateCommandTestInOwnedProcess(t) {
+		return
+	}
+	root := missionFenceFixture(t, true)
+	missionID := "semantic-clock"
+	missionDir := filepath.Join(root, "artifacts", "agents", "missions", missionID)
+	if err := os.MkdirAll(missionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "plans"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	contractBytes := []byte("```mission\nfence.wall-clock-hours=1\nfence.cycles=2\nfence.jobs=2\nfence.concurrency=2\nfence.job-cap-min=1\n```\n")
+	contractPath := filepath.Join(root, "plans", "mission-"+missionID+".contract.md")
+	if err := os.WriteFile(contractPath, contractBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	frozen := time.Date(2026, time.September, 20, 0, 0, 0, 0, time.UTC)
+	fences := fmt.Sprintf("{\"schemaVersion\":1,\"missionId\":%q,\"startedAt\":%q,\"cycles\":0,\"reservations\":{},\"approvedContractSha256\":%q}\n",
+		missionID, frozen.Format(time.RFC3339), fmt.Sprintf("%x", sha256.Sum256(contractBytes)))
+	if err := os.WriteFile(filepath.Join(missionDir, "fences.json"), []byte(fences), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	setOwnedGoGateProcessEnvironment(t, goalNowEnvironment, frozen.Format(time.RFC3339))
+	args := []string{"--repo", root, "--mission", missionID, "--job", "clock-job", "--cap-min", "1"}
+	if output, code := captureMissionStderr(t, func() int { return runMissionFenceReserve("fence-check", false)(args) }); code != 0 {
+		t.Fatalf("frozen semantic instant returned code %d: %s", code, output)
+	}
+
+	setOwnedGoGateProcessEnvironment(t, goalNowEnvironment, frozen.Add(time.Hour).Format(time.RFC3339))
+	output, code := captureMissionStderr(t, func() int { return runMissionFenceReserve("fence-check", false)(args) })
+	if code != 1 || !strings.Contains(output, "mission fence refused job (wall-clock-hours)") {
+		t.Fatalf("advanced semantic instant returned code %d: %s", code, output)
+	}
+}
 
 func captureMissionStderr(t *testing.T, run func() int) (string, int) {
 	t.Helper()
@@ -45,7 +87,7 @@ func missionFenceFixture(t *testing.T, terminal bool) string {
 	if err := os.WriteFile(table, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", table)
 	return root
 }
 

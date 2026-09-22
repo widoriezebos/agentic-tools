@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -91,22 +92,51 @@ func TestHostResourceNestedCompletionCannotClearLostOuterCustody(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	processFile := filepath.Join(directory, "processes.json")
+	if err := os.WriteFile(processFile, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ackPath := filepath.Join(directory, "nested-complete.pipe")
+	if err := syscall.Mkfifo(ackPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ackPipe, err := os.OpenFile(ackPath, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ackPipe.Close()
+	releasePath := filepath.Join(directory, "grandchild-release.pipe")
+	if err := syscall.Mkfifo(releasePath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	releasePipe, err := os.OpenFile(releasePath, os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = releasePipe.Close() })
+	acknowledged := make(chan error, 1)
+	go func() {
+		var ack [1]byte
+		_, readErr := io.ReadFull(ackPipe, ack[:])
+		if readErr == nil && ack[0] != 1 {
+			readErr = fmt.Errorf("unexpected nested completion acknowledgement %d", ack[0])
+		}
+		acknowledged <- readErr
+	}()
 	log, err := os.Create(filepath.Join(directory, "nested-custody-helper.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer log.Close()
-	launcher := exec.Command(os.Args[0], "-test.run=^TestHostResourceNestedCustodySubprocess$", "--", "launcher", directory, conf, engine)
-	launcher.Env = append(os.Environ(), "METASYSTEM_NESTED_CUSTODY_HELPER=1")
+	launcher := exec.Command(os.Args[0], "-test.run=^TestHostResourceNestedCustodySubprocess$", "--", "launcher", directory, conf, engine, processFile, ackPath)
+	launcher.Env = append(os.Environ(), "METASYSTEM_NESTED_CUSTODY_HELPER=1", "METASYSTEM_CENSUS_PROCESS_FILE="+processFile,
+		"METASYSTEM_NESTED_CUSTODY_RELEASE="+releasePath)
 	launcher.Stdout, launcher.Stderr = log, log
 	if err := launcher.Start(); err != nil {
 		t.Fatal(err)
 	}
 	prober := identity.KernelProber{}
-	launcherExact, state, err := prober.Probe(int64(launcher.Process.Pid))
-	if err != nil || state != identity.Alive {
-		t.Fatalf("probe launcher: %v (%s)", err, state)
-	}
+	var launcherExact identity.Exact
 	var worker, grandchild, custodian identity.Ref
 	launcherWaited := false
 	t.Cleanup(func() {
@@ -125,10 +155,25 @@ func TestHostResourceNestedCompletionCannotClearLostOuterCustody(t *testing.T) {
 			_ = launcher.Wait()
 		}
 	})
-	waitCustodyFile(t, filepath.Join(directory, "nested.done"), 12*time.Second)
-	waitCustodyFile(t, filepath.Join(directory, "grandchild.ready"), 3*time.Second)
-	worker = waitCustodyRef(t, prober, filepath.Join(directory, "worker.pid"), 3*time.Second)
-	grandchild = waitCustodyRef(t, prober, filepath.Join(directory, "grandchild.pid"), 3*time.Second)
+	launcherExact, state, err := prober.Probe(int64(launcher.Process.Pid))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe launcher: %v (%s)", err, state)
+	}
+	select {
+	case err := <-acknowledged:
+		if err != nil {
+			t.Fatalf("read nested completion acknowledgement: %v", err)
+		}
+	case <-t.Context().Done():
+		t.Fatalf("nested completion was not acknowledged: %v", t.Context().Err())
+	}
+	nestedDone, err := os.ReadFile(filepath.Join(directory, "nested.done"))
+	if err != nil || string(nestedDone) != "done" {
+		t.Fatalf("nested completion acknowledgement lacks durable evidence: data=%q err=%v", nestedDone, err)
+	}
+	waitCustodyFile(t, filepath.Join(directory, "grandchild.ready"), 0)
+	worker = waitCustodyRef(t, prober, filepath.Join(directory, "worker.pid"), 0)
+	grandchild = waitCustodyRef(t, prober, filepath.Join(directory, "grandchild.pid"), 0)
 	controlRootBytes, err := os.ReadFile(filepath.Join(directory, "control-root"))
 	if err != nil {
 		t.Fatal(err)
@@ -179,15 +224,40 @@ func TestHostResourceNestedCompletionCannotClearLostOuterCustody(t *testing.T) {
 	assertDirty("after outer custody loss")
 	refuse := func(stage string) {
 		t.Helper()
-		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		contender, acquireErr := AcquireHostResources(ctx, directory, conf, "heavy", []string{"fixture-db"})
-		if contender != nil {
-			_ = contender.Close()
+		type outcome struct {
+			lease *HostResourceLease
+			err   error
+		}
+		finished := make(chan outcome, 1)
+		observed := make(chan struct{})
+		waitCtx := WithHostResourceWaitObserver(ctx, func() { close(observed) })
+		go func() {
+			contender, acquireErr := AcquireHostResources(waitCtx, directory, conf, "heavy", []string{"fixture-db"})
+			finished <- outcome{lease: contender, err: acquireErr}
+		}()
+		select {
+		case <-observed:
+		case result := <-finished:
+			if result.lease != nil {
+				_ = result.lease.Close()
+			}
+			t.Fatalf("%s: contender returned before an occupied-slot scan: %v", stage, result.err)
+		case <-t.Context().Done():
+			t.Fatalf("%s: contender did not reach an occupied-slot scan: %v", stage, t.Context().Err())
+		}
+		if active, activeErr := activeHostResourceSlots(directory); activeErr != nil || active < 1 {
+			t.Fatalf("%s: dirty outer phase did not occupy its slot: active=%d err=%v", stage, active, activeErr)
+		}
+		cancel()
+		result := <-finished
+		if result.lease != nil {
+			_ = result.lease.Close()
 			t.Fatalf("%s: contender acquired an uncleared outer phase", stage)
 		}
-		if !errors.Is(acquireErr, context.DeadlineExceeded) {
-			t.Fatalf("%s: expected bounded refusal for dirty phase, got %v", stage, acquireErr)
+		if !errors.Is(result.err, context.Canceled) {
+			t.Fatalf("%s: controlled cancellation returned %v", stage, result.err)
 		}
 	}
 	refuse("live no-descriptor descendant")
@@ -197,6 +267,8 @@ func TestHostResourceNestedCompletionCannotClearLostOuterCustody(t *testing.T) {
 	if err := identity.SignalExact(prober, grandchild, syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
+	waitCustodyTerminal(t, prober, grandchild)
+	assertDirty("after exact descendant death")
 	refuse("after descendant death without proven cleanup")
 }
 
@@ -211,10 +283,15 @@ func TestHostResourceNestedCustodySubprocess(t *testing.T) {
 			break
 		}
 	}
-	if separator < 0 || len(os.Args)-separator != 5 {
+	if separator < 0 || len(os.Args)-separator != 7 {
 		t.Fatal("invalid nested custody helper arguments")
 	}
 	mode, directory, conf, engine := os.Args[separator+1], os.Args[separator+2], os.Args[separator+3], os.Args[separator+4]
+	processFile, ackPath := os.Args[separator+5], os.Args[separator+6]
+	releasePath := os.Getenv("METASYSTEM_NESTED_CUSTODY_RELEASE")
+	if releasePath == "" {
+		t.Fatal("nested custody release descriptor path is unavailable")
+	}
 	hostAdmissionDirectoryForTest = directory
 	loadSeams.launchers = func(int64) (int, bool) { return 0, true }
 	if mode == "launcher" {
@@ -239,9 +316,10 @@ func TestHostResourceNestedCustodySubprocess(t *testing.T) {
 			EvidenceTimeout: time.Second, EvidenceMax: 1024, Poll: 20 * time.Millisecond,
 			TermGrace: 20 * time.Millisecond, KillGrace: 20 * time.Millisecond,
 			WatchdogExecutable: engine,
-			Command:            []string{os.Args[0], "-test.run=^TestHostResourceNestedCustodySubprocess$", "--", "worker", directory, conf, engine},
-			Environment:        append(os.Environ(), "METASYSTEM_NESTED_CUSTODY_HELPER=1"),
-			HostResourceFiles:  lease.Files(), Output: os.Stdout, ErrorOutput: os.Stderr})
+			Command:            []string{os.Args[0], "-test.run=^TestHostResourceNestedCustodySubprocess$", "--", "worker", directory, conf, engine, processFile, ackPath},
+			Environment: append(os.Environ(), "METASYSTEM_NESTED_CUSTODY_HELPER=1", "METASYSTEM_CENSUS_PROCESS_FILE="+processFile,
+				"METASYSTEM_NESTED_CUSTODY_RELEASE="+releasePath),
+			HostResourceFiles: lease.Files(), Output: os.Stdout, ErrorOutput: os.Stderr})
 		if code == 0 {
 			t.Fatal("outer worker unexpectedly completed")
 		}
@@ -265,6 +343,7 @@ func TestHostResourceNestedCustodySubprocess(t *testing.T) {
 		EvidenceTimeout: time.Second, EvidenceMax: 1024, Poll: 20 * time.Millisecond,
 		TermGrace: 20 * time.Millisecond, KillGrace: 20 * time.Millisecond,
 		WatchdogExecutable: engine, Command: []string{"sh", "-c", "exit 0"},
+		Environment:       append(os.Environ(), "METASYSTEM_CENSUS_PROCESS_FILE="+processFile),
 		HostResourceFiles: lease.Files(), Output: os.Stdout, ErrorOutput: os.Stderr})
 	if code != 0 {
 		t.Fatalf("nested proof did not complete: %d", code)
@@ -272,19 +351,37 @@ func TestHostResourceNestedCustodySubprocess(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "nested.done"), []byte("done"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	ackPipe, err := os.OpenFile(ackPath, os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ackPipe.Write([]byte{1}); err != nil {
+		_ = ackPipe.Close()
+		t.Fatal(err)
+	}
+	if err := ackPipe.Close(); err != nil {
+		t.Fatal(err)
+	}
 	devnull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer devnull.Close()
-	grandchild := exec.Command("sleep", "60")
+	readyPath := filepath.Join(directory, "grandchild.ready")
+	grandchild := exec.Command("sh", "-c", `exec 3<"$1"; printf ready >"$2"; exec cat <&3`, "sh", releasePath, readyPath)
 	grandchild.Stdin, grandchild.Stdout, grandchild.Stderr = devnull, devnull, devnull
 	if err := grandchild.Start(); err != nil {
 		t.Fatal(err)
 	}
+	grandchildWaited := false
+	t.Cleanup(func() {
+		if !grandchildWaited {
+			_ = grandchild.Process.Kill()
+			_ = grandchild.Wait()
+		}
+	})
 	for name, data := range map[string]string{
 		"worker.pid": strconv.Itoa(os.Getpid()), "grandchild.pid": strconv.Itoa(grandchild.Process.Pid),
-		"grandchild.ready": fmt.Sprintf("%d", grandchild.Process.Pid),
 	} {
 		if err := os.WriteFile(filepath.Join(directory, name), []byte(data), 0o600); err != nil {
 			t.Fatal(err)
@@ -334,15 +431,40 @@ func TestHostResourceBorrowerCannotCleanOuterDirtyMarker(t *testing.T) {
 	if err := outer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	contender, acquireErr := AcquireHostResources(ctx, directory, conf, "heavy", nil)
-	if contender != nil {
-		_ = contender.Close()
+	type outcome struct {
+		lease *HostResourceLease
+		err   error
+	}
+	finished := make(chan outcome, 1)
+	observed := make(chan struct{})
+	waitCtx := WithHostResourceWaitObserver(ctx, func() { close(observed) })
+	go func() {
+		contender, acquireErr := AcquireHostResources(waitCtx, directory, conf, "heavy", nil)
+		finished <- outcome{lease: contender, err: acquireErr}
+	}()
+	select {
+	case <-observed:
+	case result := <-finished:
+		if result.lease != nil {
+			_ = result.lease.Close()
+		}
+		t.Fatalf("contender returned before scanning the dirty outer marker: %v", result.err)
+	case <-t.Context().Done():
+		t.Fatalf("contender did not scan the dirty outer marker: %v", t.Context().Err())
+	}
+	if active, activeErr := activeHostResourceSlots(directory); activeErr != nil || active != 1 {
+		t.Fatalf("dirty outer marker did not occupy its slot: active=%d err=%v", active, activeErr)
+	}
+	cancel()
+	result := <-finished
+	if result.lease != nil {
+		_ = result.lease.Close()
 		t.Fatal("contender acquired after dirty outer custody was lost")
 	}
-	if !errors.Is(acquireErr, context.DeadlineExceeded) {
-		t.Fatalf("dirty outer marker refusal: %v", acquireErr)
+	if !errors.Is(result.err, context.Canceled) {
+		t.Fatalf("dirty outer marker controlled cancellation: %v", result.err)
 	}
 }
 
@@ -353,9 +475,7 @@ func TestHostResourceLockedEmptyMarkerRefusesAdmission(t *testing.T) {
 		t.Fatalf("lock empty marker: acquired=%v err=%v", acquired, err)
 	}
 	defer marker.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancel()
-	lease, err := AcquireHostResources(ctx, directory, conf, "heavy", nil)
+	lease, err := AcquireHostResources(t.Context(), directory, conf, "heavy", nil)
 	if lease != nil {
 		_ = lease.Close()
 		t.Fatal("locked empty marker was ignored")

@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 const (
@@ -75,7 +76,7 @@ func TestProcCustodianProcessBoundaries(t *testing.T) {
 
 type procCustodianProcess struct {
 	command        *exec.Cmd
-	owner          *exec.Cmd
+	owner          *testutil.HeldProcess
 	output         *os.File
 	watchWriter    *os.File
 	done           chan struct{}
@@ -85,12 +86,8 @@ type procCustodianProcess struct {
 
 func startProcCustodianProcess(t *testing.T, extraFiles []*os.File, nonblocking, tagged, groupLeader bool) *procCustodianProcess {
 	t.Helper()
-	owner := exec.Command("sleep", "30")
-	if err := owner.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = owner.Process.Kill(); _, _ = owner.Process.Wait() })
-	exact, state, err := (identity.KernelProber{}).Probe(int64(owner.Process.Pid))
+	owner := testutil.StartHeldProcess(t, exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :"))
+	exact, state, err := (identity.KernelProber{}).Probe(int64(owner.Command.Process.Pid))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe custodian owner: state=%s err=%v", state, err)
 	}
@@ -149,8 +146,7 @@ func (process *procCustodianProcess) cleanup() {
 	if process.watchWriter != nil {
 		_ = process.watchWriter.Close()
 	}
-	_ = process.owner.Process.Kill()
-	_, _ = process.owner.Process.Wait()
+	_ = process.owner.Release()
 	process.startWait()
 	<-process.done
 	_ = process.output.Close()

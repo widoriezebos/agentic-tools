@@ -53,11 +53,16 @@ func runChannelStatus(args []string) int {
 	if f.Parse(args) != nil {
 		return 2
 	}
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	machine, err := goal.ResolveMachine(*root)
 	if err != nil {
 		machine = "this machine"
 	}
-	text, approvalGoal, err := channel.ComposeStatusReport(channel.ReportConfig{RepoRoot: *root, Machine: machine, Now: time.Now()})
+	text, approvalGoal, err := channel.ComposeStatusReport(channel.ReportConfig{RepoRoot: *root, Machine: machine, Now: now})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -83,14 +88,14 @@ func runChannelStatus(args []string) int {
 			fmt.Fprintln(os.Stderr, e)
 			return 1
 		}
-		state := channel.StatusState{LastPost: time.Now().UTC(), ContentDigest: channel.Digest(text), Ref: ref, GoalID: approvalGoal}
+		state := channel.StatusState{LastPost: now.UTC(), ContentDigest: channel.Digest(text), Ref: ref, GoalID: approvalGoal}
 		if e = channel.SaveStatusState(*root, state); e != nil {
 			fmt.Fprintln(os.Stderr, e)
 			return 1
 		}
 		brainState := brain.Read(*root, goal.ExistingLedgerIdentity(*root))
 		if brainState.State == brain.Declared {
-			postedAt := time.Now().UTC()
+			postedAt := now.UTC()
 			if e = brain.WriteStatus(*root, *brainState.Record, postedAt); e != nil {
 				fmt.Fprintln(os.Stderr, e)
 				return 1
@@ -175,7 +180,12 @@ func runChannelAsk(args []string) int {
 	if !cursorExists {
 		ledgerCursor = ""
 	}
-	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: *root, Goal: *id, Kind: *kind, Machine: machine, Lineage: lineage, Facts: facts, Options: opts, Recommendation: *recommend, Wants: *wants, Budget: proposedBudget, Provider: l.Provider, Destination: l.Destination, Now: time.Now(), LedgerCursor: ledgerCursor})
+	now, e := goalCommandNow(*root)
+	if e != nil {
+		fmt.Fprintln(os.Stderr, e)
+		return 1
+	}
+	q, e := channel.Ask(channel.AskRequest{Context: ctx, RepoRoot: *root, Goal: *id, Kind: *kind, Machine: machine, Lineage: lineage, Facts: facts, Options: opts, Recommendation: *recommend, Wants: *wants, Budget: proposedBudget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
 	if e != nil {
 		fmt.Fprintln(os.Stderr, e)
 		return 1
@@ -272,16 +282,20 @@ func runChannelWait(args []string) int {
 	}
 	nextPoll := time.Time{}
 	poll := func(ctx context.Context) error {
-		now := time.Now()
-		if *pollSeconds == 0 || (!nextPoll.IsZero() && now.Before(nextPoll)) {
+		pollAt := time.Now()
+		if *pollSeconds == 0 || (!nextPoll.IsZero() && pollAt.Before(nextPoll)) {
 			return errChannelPollNotDue
 		}
-		nextPoll = now.Add(time.Duration(*pollSeconds) * time.Second)
+		nextPoll = pollAt.Add(time.Duration(*pollSeconds) * time.Second)
+		now, nowErr := goalCommandNow(*root)
+		if nowErr != nil {
+			return nowErr
+		}
 		_, pollErr := channel.Poll(ctx, channel.PollConfig{
 			RepoRoot: *root, Destination: "fleet", ProviderName: loaded.Adapter,
 			HumanUserID: loaded.HumanUserID, TOTPSecret: loaded.TOTPSecret,
 			Machine: machine, Lineage: lineage, Provider: loaded.Provider,
-			DestinationConfig: loaded.Destination, Now: time.Now(), MaxDispositions: 5,
+			DestinationConfig: loaded.Destination, Now: now, MaxDispositions: 5,
 		})
 		return pollErr
 	}
@@ -332,7 +346,12 @@ func runChannelPoll(args []string) int {
 		return 1
 	}
 	defer cancel()
-	r, err := channel.Poll(ctx, channel.PollConfig{RepoRoot: *root, Destination: "fleet", ProviderName: l.Adapter, HumanUserID: l.HumanUserID, TOTPSecret: l.TOTPSecret, Machine: machine, Lineage: lineage, Provider: l.Provider, DestinationConfig: l.Destination, Now: time.Now()})
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	r, err := channel.Poll(ctx, channel.PollConfig{RepoRoot: *root, Destination: "fleet", ProviderName: l.Adapter, HumanUserID: l.HumanUserID, TOTPSecret: l.TOTPSecret, Machine: machine, Lineage: lineage, Provider: l.Provider, DestinationConfig: l.Destination, Now: now})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -360,14 +379,77 @@ func runChannelClose(args []string) int {
 	return 0
 }
 func runChannelFakeServe(args []string) int {
+	return runChannelFakeServeWithDependencies(args, defaultFixtureLifetimeDependencies(), channelFake.ServeReady)
+}
+
+func runChannelFakeServeWithDependencies(args []string, deps fixtureLifetimeDependencies, serve func(context.Context, string, chan<- string) error) int {
 	f := flag.NewFlagSet("channel fake-serve", flag.ContinueOnError)
 	dir := f.String("dir", "", "state directory")
+	maxSecondsText := f.String("max-seconds", "0", "terminal lifetime when no owner leash closes")
+	readyFD := f.Int("ready-fd", 0, "inherited descriptor that receives the listening address")
 	if f.Parse(args) != nil || *dir == "" {
 		return 2
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	if err := channelFake.Serve(ctx, *dir); err != nil {
+	maxSeconds, err := strconv.ParseInt(*maxSecondsText, 10, 64)
+	if err != nil || maxSeconds < 0 {
+		fmt.Fprintln(os.Stderr, "channel fake serve: --max-seconds must be a non-negative integer of seconds")
+		return 2
+	}
+	signalContext, stopSignal := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignal()
+	ctx, stopLifetime, err := fixtureLifetimeContext(signalContext, maxSeconds, deps)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "channel fake serve:", err)
+		return 2
+	}
+	defer stopLifetime()
+	if *readyFD == 0 {
+		if err := serve(ctx, *dir, nil); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
+	if *readyFD < 3 {
+		fmt.Fprintln(os.Stderr, "channel fake serve: --ready-fd must name an inherited descriptor")
+		return 2
+	}
+	readyFile := os.NewFile(uintptr(*readyFD), "channel-fake-ready")
+	if readyFile == nil {
+		fmt.Fprintln(os.Stderr, "channel fake serve: readiness descriptor is unavailable")
+		return 2
+	}
+	info, statErr := readyFile.Stat()
+	if statErr != nil || info.Mode()&os.ModeNamedPipe == 0 {
+		_ = readyFile.Close()
+		fmt.Fprintln(os.Stderr, "channel fake serve: readiness descriptor must be a pipe")
+		return 2
+	}
+	ready := make(chan string, 1)
+	served := make(chan error, 1)
+	go func() { served <- serve(ctx, *dir, ready) }()
+	select {
+	case address := <-ready:
+		_, err = fmt.Fprintln(readyFile, address)
+		closeErr := readyFile.Close()
+		if err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			stopLifetime()
+			<-served
+			fmt.Fprintln(os.Stderr, "channel fake serve: publish readiness:", err)
+			return 1
+		}
+	case err = <-served:
+		_ = readyFile.Close()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
+	if err := <-served; err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

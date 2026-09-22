@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 // A marker registered by the asking process itself, or by any of its
@@ -31,15 +32,8 @@ func TestFenceExemptsOwnChain(t *testing.T) {
 // A live foreign process's marker blocks the fence and names its gate.
 func TestFenceBlocksForeignLiveRun(t *testing.T) {
 	root := t.TempDir()
-	foreign := exec.Command("sleep", "60")
-	if err := foreign.Start(); err != nil {
-		t.Fatalf("start foreign process: %v", err)
-	}
-	defer func() {
-		_ = foreign.Process.Kill()
-		_, _ = foreign.Process.Wait()
-	}()
-	pid := int64(foreign.Process.Pid)
+	foreign := testutil.StartHeldProcess(t, exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :"))
+	pid := int64(foreign.Command.Process.Pid)
 	if _, err := Register(root, pid, "foreign-gate"); err != nil {
 		t.Fatalf("register foreign: %v", err)
 	}
@@ -53,19 +47,16 @@ func TestFenceBlocksForeignLiveRun(t *testing.T) {
 // a marker only counts while its exact process is alive.
 func TestFencePrunesDeadAndUnparsableMarkers(t *testing.T) {
 	root := t.TempDir()
-	foreign := exec.Command("sleep", "60")
-	if err := foreign.Start(); err != nil {
-		t.Fatalf("start foreign process: %v", err)
-	}
-	pid := int64(foreign.Process.Pid)
+	foreign := testutil.StartHeldProcess(t, exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :"))
+	pid := int64(foreign.Command.Process.Pid)
 	if _, err := Register(root, pid, "dying-gate"); err != nil {
 		t.Fatalf("register foreign: %v", err)
 	}
-	if err := foreign.Process.Kill(); err != nil {
+	if err := foreign.Command.Process.Kill(); err != nil {
 		t.Fatalf("kill foreign process: %v", err)
 	}
-	if _, err := foreign.Process.Wait(); err != nil {
-		t.Fatalf("wait foreign process: %v", err)
+	if err := foreign.Command.Wait(); err == nil {
+		t.Fatal("killed foreign process exited successfully")
 	}
 	garbage := filepath.Join(markerDir(root), "garbage.json")
 	if err := os.WriteFile(garbage, []byte("not json\n"), 0o644); err != nil {

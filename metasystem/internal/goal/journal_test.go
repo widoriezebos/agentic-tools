@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func testIntentFor(verb string) Intent {
@@ -109,11 +110,8 @@ func TestPushedBlocksOwnCloneMutations(t *testing.T) {
 // owner to it, so this test process is NOT the owner.
 func spawnForeignOwner(t *testing.T, root, opid string) *exec.Cmd {
 	t.Helper()
-	cmd := exec.Command("/bin/sleep", "120")
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	held := testutil.StartHeldProcess(t, exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :"))
+	cmd := held.Command
 	e, err := ReadEntry(root, opid)
 	if err != nil {
 		t.Fatal(err)
@@ -257,15 +255,16 @@ func TestTheOneRecoveryRule(t *testing.T) {
 
 func TestDeadlineReadsTheEntryStamp(t *testing.T) {
 	t.Parallel()
-	e := Entry{Deadline: time.Now().Add(-time.Second).UTC().Format(time.RFC3339)}
-	if !PastDeadline(e, time.Now()) {
+	now := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
+	e := Entry{Deadline: now.Add(-time.Second).Format(time.RFC3339)}
+	if !PastDeadline(e, now) {
 		t.Fatal("a passed stamp is past")
 	}
-	e.Deadline = time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
-	if PastDeadline(e, time.Now()) {
+	e.Deadline = now.Add(time.Hour).Format(time.RFC3339)
+	if PastDeadline(e, now) {
 		t.Fatal("a future stamp is not past")
 	}
-	if PastDeadline(Entry{}, time.Now()) {
+	if PastDeadline(Entry{}, now) {
 		t.Fatal("no stamp, no expiry — created entries have no deadline")
 	}
 }

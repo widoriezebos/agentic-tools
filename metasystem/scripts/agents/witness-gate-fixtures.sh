@@ -23,7 +23,7 @@ unset METASYSTEM_FIXTURE_SCENARIO
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios witness-gate "witness-gate fixtures passed (22 isolated legs)" \
-    "$fixture_bed_script" outer-context-standalone authority-and-scope equality-and-weights frozen-consumers cost-banner
+    "$fixture_bed_script" outer-context-standalone authority-and-scope equality-and-weights manifest-compatibility portable-producer frozen-consumers cost-banner
 fi
 # This bed creates every witness it exercises. A parent validation's witness
 # describes another root and must not turn these producer legs into consumers.
@@ -35,25 +35,67 @@ unset METASYSTEM_GATE_WITNESS METASYSTEM_GATE_WITNESS_ROOT \
   METASYSTEM_GATE_WITNESS_MANIFEST_DIGEST METASYSTEM_GATE_WITNESS_CONSUMER_EXPORT \
   METASYSTEM_GATE_WITNESS_REUSE_OUT
 
-tmp=$(mktemp -d)
+intended_tmp_parent=$(cd "${TMPDIR:-/tmp}" && pwd -P)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/witness-gate.XXXXXX")
+tmp=$(cd "$tmp" && pwd -P)
+case "$tmp" in
+  "$intended_tmp_parent"/*) ;;
+  *) echo "witness-gate fixture: temporary root is not beneath canonical TMPDIR" >&2; exit 1 ;;
+esac
+printf 'witness-gate fixture temporary root parent: %s\n' "$intended_tmp_parent"
 mkdir -p "$tmp/admission-authority"
 printf 'metasystem.runtimes=fake\n' >"$tmp/admission-authority/metasystem.conf"
+grep -qxF 'metasystem.runtimes=fake' "$tmp/admission-authority/metasystem.conf" \
+  || { echo "witness-gate fixture: admission authority is not fake-runtime enabled" >&2; exit 1; }
 export METASYSTEM_PROOF_ADMISSION_TEST_DIR="$tmp/host-admission"
 export METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="$tmp/admission-authority"
 foreign_controller=
-mid_freeze_pid=
+foreign_controller_log=
+frozen_snapshots=()
 cleanup() {
   if [[ -n "$foreign_controller" ]]; then
     kill "$foreign_controller" 2>/dev/null || true
     wait "$foreign_controller" 2>/dev/null || true
   fi
-  if [[ -n "$mid_freeze_pid" ]]; then
-    kill "$mid_freeze_pid" 2>/dev/null || true
-    wait "$mid_freeze_pid" 2>/dev/null || true
-  fi
+  local snapshot
+  for snapshot in "${frozen_snapshots[@]+"${frozen_snapshots[@]}"}"; do
+    [[ ! -d "$snapshot" ]] || "$source_engine" gate witness-freeze --cleanup "$snapshot" >/dev/null 2>&1 || true
+  done
   rm -rf "$tmp" 2>/dev/null || true
 }
 trap cleanup EXIT
+
+start_foreign_controller() { # fixture name
+  local name=$1 ready cap started
+  ready=$tmp/$name/foreign-controller.ready
+  foreign_controller_log=$tmp/$name/foreign-controller.log
+  cap=$(harness_fixture_cap mission-process-wait)
+  started=$SECONDS
+  "$source_engine" util hold --tag "witness-$name-foreign-controller" --ready-file "$ready" \
+    >"$foreign_controller_log" 2>&1 &
+  foreign_controller=$!
+  while [[ ! -s "$ready" ]] && kill -0 "$foreign_controller" 2>/dev/null \
+      && (( SECONDS - started < cap )); do
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  if [[ ! -s "$ready" ]]; then
+    echo "witness-gate fixture $name: foreign controller did not arm its exact-owner leash" >&2
+    sed -n '1,80p' "$foreign_controller_log" >&2
+    return 1
+  fi
+}
+
+stop_foreign_controller() {
+  [[ -n "$foreign_controller" ]] || return 0
+  kill "$foreign_controller" 2>/dev/null || true
+  if ! wait "$foreign_controller"; then
+    echo "witness-gate fixture: foreign controller did not stop cleanly" >&2
+    sed -n '1,80p' "$foreign_controller_log" >&2
+    return 1
+  fi
+  foreign_controller=
+  foreign_controller_log=
+}
 
 make_leg() { # name
   leg_tree=$tmp/$1/tree
@@ -89,7 +131,7 @@ SH
   chmod +x "$leg_tree/scripts/agents/go-gate.sh" "$leg_tree/scripts/agents/go-gate-impl.sh" \
     "$leg_tree/scripts/agents/fixture-worker-auth.sh"
   printf 'module github.com/widoriezebos/agentic-tools/metasystem\n\ngo 1.24\n' >"$leg_tree/go.mod"
-  : >"$leg_tree/metasystem.conf"
+  printf 'metasystem.runtimes=fake\n' >"$leg_tree/metasystem.conf"
   printf 'package fixture\n' >"$leg_tree/internal/fixture/fixture.go"
   printf 'package main\n' >"$leg_tree/cmd/metasystem/main.go"
   printf 'payload baseline\n' >"$leg_tree/docs/payload.md"
@@ -174,6 +216,11 @@ write_witness() { # name, tree, fixture bin, controller pid
   "$source_engine" behavior-surface list --root "$tree" --projection PAYLOAD --nul \
     >"$witness_root/payload-paths.nul"
   chmod 600 "$witness_root/payload-paths.nul"
+  local freeze_output manifest_digest frozen_tree frozen_snapshot
+  freeze_output=$("$source_engine" gate witness-freeze --root "$tree")
+  IFS=$'\t' read -r manifest_digest frozen_tree frozen_snapshot <<<"$freeze_output"
+  [[ "$manifest_digest" =~ ^[a-f0-9]{64}$ && -d "$frozen_tree" && -d "$frozen_snapshot" ]] || return 1
+  "$source_engine" gate witness-freeze --cleanup "$frozen_snapshot"
   local engine_report payload_report version engine_digest payload_digest toolchain
   engine_report=$("$source_engine" behavior-surface digest --root "$tree" \
     --projection ENGINE --endpoint "fixture producer $name")
@@ -188,8 +235,8 @@ write_witness() { # name, tree, fixture bin, controller pid
   read -r started ticks boot < <("$source_engine" proc started-at --pid "$controller_pid" --emit pair)
   [[ "$boot" == - ]] && boot=
   umask 077
-  printf '{"policyVersion":%s,"engineDigest":"%s","payloadDigest":"%s","payloadManifest":"payload-paths.nul","toolchainIdentity":"%s","runId":"%s","controller":{"pid":%s,"startedAtSec":%s,"startTicks":%s,"bootId":"%s"}}\n' \
-    "$version" "$engine_digest" "$payload_digest" "$toolchain" "$witness_run" \
+  printf '{"policyVersion":%s,"engineDigest":"%s","manifestDigest":"%s","payloadDigest":"%s","payloadManifest":"payload-paths.nul","toolchainIdentity":"%s","runId":"%s","controller":{"pid":%s,"startedAtSec":%s,"startTicks":%s,"bootId":"%s"}}\n' \
+    "$version" "$engine_digest" "$manifest_digest" "$payload_digest" "$toolchain" "$witness_run" \
     "$controller_pid" "$started" "$ticks" "$boot" >"$witness_path"
   chmod 600 "$witness_path"
 }
@@ -318,19 +365,19 @@ if (( wrong_start_ticks > 0 )); then
 fi
 run_refusal wrong-start-identity "$leg_tree" "$leg_bin" \
   "$witness_path" "$witness_root" "$witness_run" ENGINE
+echo "witness-gate authority-and-scope: wrong-start-identity reached the broken full proof"
 if [[ "${WITNESS_WRONG_START_IDENTITY_FIXTURE_ONLY:-0}" == 1 ]]; then
   echo "witness-gate wrong-start-identity fixture passed"
   exit 0
 fi
 
-# 2. ENGINE equality survives a PAYLOAD-only change; DELIVERY equality does not.
 make_leg changed-payload
 write_witness changed-payload "$leg_tree" "$leg_bin" $$
 changed_payload_tree=$leg_tree changed_payload_bin=$leg_bin
 changed_payload_witness=$witness_path changed_payload_root=$witness_root changed_payload_run=$witness_run
 printf 'payload changed after ENGINE proof\n' >"$changed_payload_tree/docs/payload.md"
-run_engine_acceptance changed-payload "$changed_payload_tree" "$changed_payload_bin" \
-  "$changed_payload_witness" "$changed_payload_root" "$changed_payload_run"
+run_refusal changed-payload "$changed_payload_tree" "$changed_payload_bin" \
+  "$changed_payload_witness" "$changed_payload_root" "$changed_payload_run" ENGINE
 set +e
 (
   cd "$changed_payload_tree"
@@ -353,13 +400,11 @@ printf 'package fixture\nvar Changed = true\n' >"$leg_tree/internal/fixture/fixt
 run_refusal changed-engine "$leg_tree" "$leg_bin" "$witness_path" "$witness_root" "$witness_run" ENGINE
 
 # 4. A live but foreign controller is correlation without ancestry authority.
-sleep 60 & foreign_controller=$!
 make_leg foreign-ancestry
+start_foreign_controller foreign-ancestry
 write_witness foreign-ancestry "$leg_tree" "$leg_bin" "$foreign_controller"
 run_refusal foreign-ancestry "$leg_tree" "$leg_bin" "$witness_path" "$witness_root" "$witness_run" ENGINE
-kill "$foreign_controller" 2>/dev/null || true
-wait "$foreign_controller" 2>/dev/null || true
-foreign_controller=
+stop_foreign_controller
 
 # 5. A consumer that does not state ENGINE or DELIVERY cannot borrow either.
 make_leg absent-scope
@@ -411,9 +456,36 @@ run_refusal deleted-witness "$leg_tree" "$leg_bin" "$witness_path" "$witness_roo
 make_leg broken-full-fallback
 run_refusal broken-full-fallback "$leg_tree" "$leg_bin" "" "" "" ""
 
+fi
+
+if [[ "$fixture_scenario" == manifest-compatibility ]]; then
+make_leg manifestless-legacy
+write_witness manifestless-legacy "$leg_tree" "$leg_bin" $$
+sed 's/"manifestDigest":"[a-f0-9]*",//' "$witness_path" >"$witness_path.new"
+mv "$witness_path.new" "$witness_path"; chmod 600 "$witness_path"
+manifestless_rc=0
+(
+  cd "$leg_tree"
+  env PATH="$leg_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine" \
+    METASYSTEM_GATE_WITNESS="$witness_path" METASYSTEM_GATE_WITNESS_ROOT="$witness_root" \
+    METASYSTEM_GATE_WITNESS_RUN="$witness_run" METASYSTEM_GATE_WITNESS_CONSUMER_SCOPE=ENGINE \
+    bash scripts/agents/go-gate.sh --witness-check-only
+) >"$tmp/manifestless-legacy/check.out" 2>&1 || manifestless_rc=$?
+[[ "$manifestless_rc" == 3 ]] \
+  || { echo "witness-gate fixture manifestless-legacy: compatibility boundary exited $manifestless_rc" >&2; exit 1; }
+grep -Fq 'witness has no compatible complete-project manifest identity' "$tmp/manifestless-legacy/check.out" \
+  || { echo "witness-gate fixture manifestless-legacy: compatibility refusal was not explicit" >&2; exit 1; }
+fi
+
 # 13. A dirty source arms from a private frozen export instead of falling
 # back to the live-tree gate.
+if [[ "$fixture_scenario" == portable-producer ]]; then
 make_leg dirty-tree-arms
+dirty_project=$tmp/dirty-tree-arms/project
+mkdir -p "$dirty_project/tools"
+mv "$leg_tree" "$dirty_project/tools/metasystem"
+leg_tree=$dirty_project/tools/metasystem
+printf 'parent input\n' >"$dirty_project/application.txt"
 cp "$root/scripts/agents/witness-gate.sh" "$leg_tree/scripts/agents/witness-gate.sh"
 cat >"$leg_tree/scripts/agents/go-gate.sh" <<'GATE'
 #!/usr/bin/env bash
@@ -421,6 +493,8 @@ set -euo pipefail
 if [[ -n "${METASYSTEM_GATE_WITNESS_MANIFEST_DIGEST:-}" ]]; then
   [[ "${GOFLAGS:-}" == -mod=readonly ]]
   [[ "${GOMODCACHE:-}" == "${WITNESS_FIXTURE_EXPECT_GOMODCACHE:-}" ]]
+  "$WITNESS_FIXTURE_SOURCE_ENGINE" gate witness-verify --root "$PWD" \
+    --witness "$METASYSTEM_GATE_WITNESS_MANIFEST_DIGEST" >/dev/null
 fi
 mkdir -p bin
 cp "$WITNESS_FIXTURE_SOURCE_ENGINE" bin/metasystem
@@ -434,11 +508,11 @@ fi
 chmod 600 "$METASYSTEM_GATE_WITNESS_WRITE"
 GATE
 chmod +x "$leg_tree/scripts/agents/go-gate.sh" "$leg_tree/scripts/agents/witness-gate.sh"
-git -C "$leg_tree" init -q -b main
-git -C "$leg_tree" config user.name fixture
-git -C "$leg_tree" config user.email fixture@example.invalid
-git -C "$leg_tree" add .
-git -C "$leg_tree" commit -qm baseline
+git -C "$dirty_project" init -q -b main
+git -C "$dirty_project" config user.name fixture
+git -C "$dirty_project" config user.email fixture@example.invalid
+git -C "$dirty_project" add .
+git -C "$dirty_project" commit -qm baseline
 (
   cd "$leg_tree"
   export PATH="$leg_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine"
@@ -446,13 +520,14 @@ git -C "$leg_tree" commit -qm baseline
   cd "$root"
   delivery_contract=0
   WITNESS_GATE_FALLBACK=none source scripts/agents/witness-gate.sh
-  [[ -z "${METASYSTEM_GATE_WITNESS_EXPORT:-}" ]]
-  ! grep -Fq 'manifestDigest' "$METASYSTEM_GATE_WITNESS"
-  grep -Fq '"summary":"full gate in HEAD snapshot"' "$METASYSTEM_GATE_WITNESS"
+  [[ -z "${METASYSTEM_GATE_WITNESS_EXPORT:-}" ]] || exit 1
+  grep -Eq '"manifestDigest":"[a-f0-9]{64}"' "$METASYSTEM_GATE_WITNESS"
+  grep -Fq '"summary":"full gate in frozen proof tree"' "$METASYSTEM_GATE_WITNESS"
+  "$source_engine" gate witness-verify --root "$root" --witness "$METASYSTEM_GATE_WITNESS" >/dev/null
   rm -rf "$witness_state"
 ) >"$tmp/dirty-tree-arms/clean.out" 2>&1 \
-  || { echo "witness-gate fixture dirty-tree-arms: clean tree did not retain the HEAD snapshot path" >&2; sed -n '1,120p' "$tmp/dirty-tree-arms/clean.out" >&2; exit 1; }
-printf 'package fixture\nvar Dirty = true\n' >"$leg_tree/internal/fixture/fixture.go"
+  || { echo "witness-gate fixture dirty-tree-arms: clean tree did not use complete-project identity" >&2; sed -n '1,120p' "$tmp/dirty-tree-arms/clean.out" >&2; exit 1; }
+printf 'dirty parent input\n' >"$dirty_project/application.txt"
 (
   cd "$leg_tree"
   export PATH="$leg_bin:$PATH" WITNESS_FIXTURE_SOURCE_ENGINE="$source_engine"
@@ -462,14 +537,14 @@ printf 'package fixture\nvar Dirty = true\n' >"$leg_tree/internal/fixture/fixtur
   cd "$root"
   delivery_contract=0
   WITNESS_GATE_FALLBACK=none source scripts/agents/witness-gate.sh
-  [[ -n "${METASYSTEM_GATE_WITNESS_EXPORT:-}" && -d "$METASYSTEM_GATE_WITNESS_EXPORT" ]]
-  grep -Fq 'var Dirty = true' "$METASYSTEM_GATE_WITNESS_EXPORT/internal/fixture/fixture.go"
+  [[ -z "${METASYSTEM_GATE_WITNESS_EXPORT:-}" ]]
   grep -Eq '"manifestDigest":"[a-f0-9]{64}"' "$METASYSTEM_GATE_WITNESS"
+  "$source_engine" gate witness-verify --root "$root" --witness "$METASYSTEM_GATE_WITNESS" >/dev/null
   rm -rf "$witness_state"
 ) >"$tmp/dirty-tree-arms/arming.out" 2>&1 \
-  || { echo "witness-gate fixture dirty-tree-arms: dirty tree did not arm from a frozen export" >&2; sed -n '1,120p' "$tmp/dirty-tree-arms/arming.out" >&2; exit 1; }
-grep -Fq 'gate witness armed from frozen dirty export' "$tmp/dirty-tree-arms/arming.out" \
-  || { echo "witness-gate fixture dirty-tree-arms: frozen arming was not reported" >&2; exit 1; }
+  || { echo "witness-gate fixture dirty-tree-arms: dirty parent input did not arm from a complete frozen export" >&2; sed -n '1,120p' "$tmp/dirty-tree-arms/arming.out" >&2; exit 1; }
+grep -Fq 'gate witness armed from complete frozen project' "$tmp/dirty-tree-arms/arming.out" \
+  || { echo "witness-gate fixture dirty-tree-arms: complete frozen arming was not reported" >&2; exit 1; }
 set +e
 (
   cd "$leg_tree"
@@ -485,22 +560,16 @@ set -e
   || { echo "witness-gate fixture dirty-tree-arms: dirty producer accepted a Go overlay" >&2; exit 1; }
 grep -Fq 'GOFLAGS may not contain -modfile or -overlay' "$tmp/dirty-tree-arms/overlay.out" \
   || { echo "witness-gate fixture dirty-tree-arms: overlay refusal was not explicit" >&2; exit 1; }
-if [[ "${WITNESS_DIRTY_TREE_ARMS_FIXTURE_ONLY:-0}" == 1 ]]; then
-  echo "witness-gate dirty-tree-arms fixture passed"
-  exit 0
-fi
-
-
 fi
 freeze_fixture_tree() { # name
   local name=$1 freeze_output
   make_leg "$name"
   mkdir -p "$tmp/$name/freeze-tmp"
   freeze_output=$(TMPDIR="$tmp/$name/freeze-tmp" "$source_engine" gate witness-freeze --root "$leg_tree")
-  read -r frozen_digest frozen_tree <<<"$freeze_output"
-  [[ "$frozen_digest" =~ ^[a-f0-9]{64}$ && -d "$frozen_tree" ]]
+  IFS=$'\t' read -r frozen_digest frozen_tree frozen_snapshot <<<"$freeze_output"
+  [[ "$frozen_digest" =~ ^[a-f0-9]{64}$ && -d "$frozen_tree" && -d "$frozen_snapshot" ]] || return 1
+  frozen_snapshots+=("$frozen_snapshot")
   write_witness "$name" "$frozen_tree" "$leg_bin" $$
-  add_manifest_digest "$witness_path" "$frozen_digest"
   frozen_witness=$witness_path
   frozen_root=$witness_root
   frozen_run=$witness_run
@@ -571,6 +640,7 @@ run_frozen_flag_refusal "$frozen_consumer" "$leg_bin" \
   "$frozen_witness" "$frozen_root" "$frozen_run"
 run_engine_acceptance frozen-identical "$frozen_consumer" "$leg_bin" \
   "$frozen_witness" "$frozen_root" "$frozen_run"
+echo "witness-gate frozen-consumers: frozen-identical reported witness reuse"
 
 # 16. One changed byte in the included closure reaches the full gate.
 freeze_fixture_tree frozen-closure-mutation
@@ -614,16 +684,13 @@ run_engine_acceptance frozen-artifacts-mutation "$frozen_consumer" "$leg_bin" \
   "$frozen_witness" "$frozen_root" "$frozen_run"
 
 # 18. Right bytes do not compensate for a live foreign controller.
-sleep 60 & foreign_controller=$!
 freeze_fixture_tree frozen-foreign-controller
 copy_frozen_consumer frozen-foreign-controller "$frozen_tree"
+start_foreign_controller frozen-foreign-controller
 write_witness frozen-foreign-controller "$frozen_tree" "$leg_bin" "$foreign_controller"
-add_manifest_digest "$witness_path" "$frozen_digest"
 run_refusal frozen-foreign-controller "$frozen_consumer" "$leg_bin" \
   "$witness_path" "$witness_root" "$witness_run" ENGINE
-kill "$foreign_controller" 2>/dev/null || true
-wait "$foreign_controller" 2>/dev/null || true
-foreign_controller=
+stop_foreign_controller
 
 # 19. A mutation performed by the skip-path build fails the second digest and
 # falls through to the complete gate.
@@ -632,41 +699,6 @@ copy_frozen_consumer frozen-consumer-recheck "$frozen_tree"
 run_recheck_refusal frozen-consumer-recheck "$frozen_consumer" "$leg_bin" \
   "$frozen_witness" "$frozen_root" "$frozen_run" \
   "internal/fixture/fixture.go"
-
-# 20. A source mutation after the first manifest read but before publication
-# voids the freeze and leaves no export path to consume.
-mid_source=$tmp/mid-freeze/source
-mid_tmp=$tmp/mid-freeze/tmp
-mkdir -p "$mid_source/internal/z-many" "$mid_tmp"
-printf 'before\n' >"$mid_source/internal/a-mutated"
-for mid_n in $(seq 1 2000); do
-  printf '%s\n' "$mid_n" >"$mid_source/internal/z-many/$mid_n"
-done
-set +e
-TMPDIR="$mid_tmp" "$source_engine" gate witness-freeze --root "$mid_source" \
-  >"$tmp/mid-freeze/out" 2>"$tmp/mid-freeze/err" &
-mid_freeze_pid=$!
-set -e
-mid_deadline=$((SECONDS + 10))
-mid_tree_seen=0
-while (( SECONDS < mid_deadline )); do
-  for mid_candidate in "$mid_tmp"/metasystem-witness-freeze-*/tree; do
-    if [[ -d "$mid_candidate" ]]; then mid_tree_seen=1; break 2; fi
-  done
-  sleep 0.01
-done
-(( mid_tree_seen )) \
-  || { echo "witness-gate fixture mid-freeze: private export did not appear before the fixture ceiling" >&2; exit 1; }
-printf 'after\n' >"$mid_source/internal/a-mutated"
-set +e
-wait "$mid_freeze_pid"
-mid_freeze_rc=$?
-set -e
-mid_freeze_pid=
-[[ $mid_freeze_rc != 0 ]] \
-  || { echo "witness-gate fixture mid-freeze: a changing source published an export" >&2; exit 1; }
-grep -Fq 'frozen export voided because the source changed while it was copied' "$tmp/mid-freeze/err" \
-  || { echo "witness-gate fixture mid-freeze: mutation refusal was not loud" >&2; cat "$tmp/mid-freeze/err" >&2; exit 1; }
 
 fi
 

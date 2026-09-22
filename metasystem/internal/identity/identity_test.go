@@ -25,8 +25,14 @@ func TestProbeSelf(t *testing.T) {
 	if exact.Pid != self {
 		t.Fatalf("wrong pid: %d", exact.Pid)
 	}
-	if exact.StartedAt.After(time.Now()) || exact.StartedAt.Before(time.Now().Add(-24*time.Hour)) {
-		t.Fatalf("implausible start time: %v", exact.StartedAt)
+	start, startState, startErr := prober.ReadStart(self)
+	birth, birthOK := ProcessBirth(self)
+	if startErr != nil || startState != Alive || !SameIdentity(start, exact.Ref()) ||
+		!birthOK || birth.IsZero() || !start.Ref().NativeExact() {
+		t.Fatalf("self identity changed across readers: probe=%+v start=%+v/%s/%v birth=%s/%v", exact.Ref(), start.Ref(), startState, startErr, birth, birthOK)
+	}
+	if !exact.Ref().NativeExact() {
+		t.Fatalf("self identity is not native-exact: %+v", exact.Ref())
 	}
 	if exact.StartedAt.Nanosecond() == 0 {
 		t.Log("start time has whole-second resolution — sub-second exactness not observed (legal, but worth seeing)")

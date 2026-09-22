@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
@@ -556,6 +557,82 @@ func TestBatchCostPortableEvidenceForecastIsReadOnlyAndWarmsFromRealCommand(t *t
 	redStatus := readStatus("newer-red")
 	if redStatus.LiveHeadroom[0].AttemptsLeft != liveStatus.LiveHeadroom[0].AttemptsLeft {
 		t.Fatalf("finalizing newer red attempt changed reservation headroom: live=%+v red=%+v", liveStatus.LiveHeadroom, redStatus.LiveHeadroom)
+	}
+}
+
+func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T) {
+	batchE2EProcessEnvironment.Lock()
+	t.Cleanup(batchE2EProcessEnvironment.Unlock)
+	now := time.Now().UTC().Truncate(time.Second)
+	t.Setenv(goalNowEnvironment, now.Format(time.RFC3339Nano))
+	processTable := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processTable)
+	fixture := newPortableProofFixture(t)
+	fixture.writeEpisodeContract()
+	tree := fixture.commit("declare forecast freshness observation")
+	// Detached prefix commits bind freshness. Use the authorized fixture instant
+	// so the run, forecast, and verifier materialize the same candidate commit.
+	t.Setenv("GIT_AUTHOR_DATE", now.Format(time.RFC3339Nano))
+	t.Setenv("GIT_COMMITTER_DATE", now.Format(time.RFC3339Nano))
+	detached, err := (gittree.Workspace{Dir: fixture.root}).NewDetachedWorktree(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := detached.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	executionRoot := batch.ModuleRoot(detached.Workspace().Dir)
+	episode := strings.Repeat("6", 64)
+	expiresAt := now.Add(time.Hour)
+	expires := expiresAt.Format(time.RFC3339Nano)
+	base := []string{"--root", executionRoot, "--control-root", fixture.root, "--goal", "portable", "--tree", tree,
+		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-a"}),
+		"--fresh-episode", episode, "--fresh-expires-at", expires}
+	fixture.requireCommand(append([]string{"test", "run"}, base...)...)
+	selection := costSelection{ID: "tip:fresh", Kind: "tip", Tree: tree, GoalID: "portable", Requirements: []string{"app-a"},
+		FreshEpisode: episode, FreshExpiresAt: expires}
+	verification := testingSelectionRequest{Root: executionRoot, ControlRoot: fixture.root, GoalID: "portable", Tree: tree,
+		Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchPrefixReceipt: true,
+		BatchRequirements: []string{"app-a"}, FreshEpisode: episode, FreshExpiresAt: expires}
+	for _, boundary := range []struct {
+		name     string
+		at       time.Time
+		reusable bool
+	}{
+		{name: "expiry-minus-one-nanosecond", at: expiresAt.Add(-time.Nanosecond), reusable: true},
+		{name: "exact-expiry", at: expiresAt},
+		{name: "expiry-plus-one-nanosecond", at: expiresAt.Add(time.Nanosecond)},
+	} {
+		t.Run(boundary.name, func(t *testing.T) {
+			t.Setenv(goalNowEnvironment, boundary.at.Format(time.RFC3339Nano))
+			forecast, forecastErr := forecastTestingSelection(fixture.root, selection, 2)
+			verified, verifyErr := verifyRetainedTesting(verification)
+			if boundary.reusable {
+				if forecastErr != nil || len(forecast.Groups) != 1 || forecast.Groups[0].GroupID != "app-a" ||
+					forecast.Groups[0].Status != "reusable" || forecast.Groups[0].Reason != "" ||
+					verifyErr != nil || !verified.Delivery.Sufficient {
+					t.Fatalf("freshness boundary %s forecast=%+v forecastErr=%v verified=%+v verifyErr=%v",
+						boundary.at, forecast, forecastErr, verified.Delivery, verifyErr)
+				}
+				return
+			}
+			if forecastErr != nil {
+				t.Fatalf("expired forecast returned an unrelated error at %s: %v", boundary.at, forecastErr)
+			}
+			if len(forecast.Groups) != 1 || forecast.Groups[0].GroupID != "app-a" ||
+				forecast.Groups[0].Status != "missing" || forecast.Groups[0].Reason != "missing-proof" {
+				t.Fatalf("expired forecast did not report app-a freshness expiry at %s: %+v", boundary.at, forecast)
+			}
+			const expired = "freshness episode has expired; renew the proof decision"
+			if verifyErr == nil || verifyErr.Error() != expired {
+				t.Fatalf("retained verification returned the wrong expiry error at %s: %v", boundary.at, verifyErr)
+			}
+		})
 	}
 }
 

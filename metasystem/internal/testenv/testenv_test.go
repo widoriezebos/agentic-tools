@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -82,6 +83,103 @@ func TestPrepareClearsAmbientControlsPinsRegistryAndRestoresDeclarations(t *test
 	cleaned = true
 	if _, err := os.Stat(registryHome); !os.IsNotExist(err) {
 		t.Fatalf("registry home survived cleanup: %v", err)
+	}
+}
+
+func TestProcessNamespaceOwnsHomeAndRuntimeButKeepsGoCaches(t *testing.T) {
+	t.Parallel()
+	const helperMode = "TESTENV_PROCESS_NAMESPACE_HELPER_MODE"
+	if mode := os.Getenv(helperMode); mode != "" {
+		verifyProcessNamespaceGoConsumer(t, mode)
+		return
+	}
+	for _, mode := range []string{"unset", "empty", "nonempty"} {
+		mode := mode
+		t.Run(mode, func(t *testing.T) {
+			base := t.TempDir()
+			environment := processNamespaceCacheCaseEnvironment(os.Environ(), mode, base)
+			disableGoTelemetryForFixture(t, environment)
+			expected := readGoCacheEnvironment(t, environment)
+			command := exec.Command(os.Args[0], "-test.run=^TestProcessNamespaceOwnsHomeAndRuntimeButKeepsGoCaches$", "-test.count=1")
+			command.Env = append(environment,
+				helperMode+"="+mode,
+				"TESTENV_EXPECT_GOCACHE="+expected["GOCACHE"],
+				"TESTENV_EXPECT_GOMODCACHE="+expected["GOMODCACHE"],
+				"TESTENV_EXPECT_GOPATH="+expected["GOPATH"],
+				"TESTENV_PREPARE_HOME="+base,
+			)
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("namespace helper %s: %v\n%s", mode, err, output)
+			}
+		})
+	}
+}
+
+func processNamespaceCacheCaseEnvironment(environment []string, mode, base string) []string {
+	filtered := make([]string, 0, len(environment)+8)
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "GOCACHE", "GOMODCACHE", "GOPATH", "GOTOOLCHAIN", "GOPROXY", "HOME", "XDG_CACHE_HOME", "TESTENV_PROCESS_NAMESPACE_HELPER_MODE", "TEST_TELEMETRY_DIR":
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	filtered = append(filtered,
+		"HOME="+base,
+		"GOTOOLCHAIN=local",
+		"GOPROXY=off",
+		"TEST_TELEMETRY_DIR="+filepath.Join(base, "go-telemetry"),
+	)
+	switch mode {
+	case "empty":
+		filtered = append(filtered, "GOCACHE=", "GOMODCACHE=", "GOPATH=")
+	case "nonempty":
+		filtered = append(filtered,
+			"GOCACHE="+filepath.Join(base, "shared-go-build"),
+			"GOMODCACHE="+filepath.Join(base, "shared-go-modules"),
+			"GOPATH="+filepath.Join(base, "shared-go-path"),
+		)
+	}
+	return filtered
+}
+
+func disableGoTelemetryForFixture(t *testing.T, environment []string) {
+	t.Helper()
+	command := exec.Command("go", "telemetry", "off")
+	command.Env = environment
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("disable fixture Go telemetry: %v\n%s", err, output)
+	}
+}
+
+func readGoCacheEnvironment(t *testing.T, environment []string) map[string]string {
+	t.Helper()
+	command := exec.Command("go", "env", "-json", "GOCACHE", "GOMODCACHE", "GOPATH")
+	command.Env = environment
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("read effective Go cache environment: %v\n%s", err, output)
+	}
+	values := make(map[string]string)
+	if err := json.Unmarshal(output, &values); err != nil {
+		t.Fatalf("decode effective Go cache environment: %v\n%s", err, output)
+	}
+	return values
+}
+
+func verifyProcessNamespaceGoConsumer(t *testing.T, mode string) {
+	t.Helper()
+	home, temporary := os.Getenv("HOME"), os.Getenv("TMPDIR")
+	if mode == "" || home == "" || home == os.Getenv("TESTENV_PREPARE_HOME") || filepath.Dir(home) != filepath.Dir(temporary) {
+		t.Fatalf("helper HOME %q was not isolated from %q", os.Getenv("HOME"), os.Getenv("TESTENV_PREPARE_HOME"))
+	}
+	actual := readGoCacheEnvironment(t, os.Environ())
+	for _, name := range []string{"GOCACHE", "GOMODCACHE", "GOPATH"} {
+		want := os.Getenv("TESTENV_EXPECT_" + name)
+		if os.Getenv(name) != want || actual[name] != want {
+			t.Errorf("%s after namespace = environment %q go-consumer %q, want pre-isolation effective value %q", name, os.Getenv(name), actual[name], want)
+		}
 	}
 }
 
@@ -464,8 +562,15 @@ func TestHelperProcessReusesAuthenticatedParentRegistryHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run abrupt helper: %v\n%s", err, output)
 	}
-	if got := strings.TrimSpace(string(output)); got != parentHome {
-		t.Fatalf("helper registry home = %q, want parent home %q", got, parentHome)
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) != 3 || lines[0] != parentHome {
+		t.Fatalf("helper namespace report = %q, want registry %q plus HOME and TMPDIR", lines, parentHome)
+	}
+	if lines[1] == os.Getenv("HOME") || !strings.HasPrefix(lines[1], parentHome+string(filepath.Separator)) {
+		t.Fatalf("helper HOME = %q, want its own directory below %q", lines[1], parentHome)
+	}
+	if !strings.HasPrefix(lines[2], parentHome+string(filepath.Separator)) || filepath.Dir(lines[1]) != filepath.Dir(lines[2]) {
+		t.Fatalf("helper HOME/TMPDIR = %q/%q, want one private process namespace", lines[1], lines[2])
 	}
 	if entries, err := os.ReadDir(scratch); err != nil || len(entries) != 0 {
 		t.Fatalf("helper left entries in its TMPDIR: entries=%v err=%v", entries, err)
@@ -506,6 +611,8 @@ func TestRegistryOwnerProcess(t *testing.T) {
 	fmt.Fprintln(os.Stdout, os.Getenv(supervisionRegistryHome))
 	switch mode {
 	case "exit":
+		fmt.Fprintln(os.Stdout, os.Getenv("HOME"))
+		fmt.Fprintln(os.Stdout, os.Getenv("TMPDIR"))
 		os.Exit(0)
 	case "wait":
 		_, _ = io.Copy(io.Discard, os.Stdin)

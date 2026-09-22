@@ -31,24 +31,43 @@ func spawnTaggedGroup(t *testing.T, tag string, termImmune bool) *taggedTestGrou
 	}
 	lifetimeRead, lifetimeWrite, err := os.Pipe()
 	if err != nil {
+		readyRead.Close()
+		readyWrite.Close()
+		t.Fatal(err)
+	}
+	releaseRead, releaseWrite, err := os.Pipe()
+	if err != nil {
+		readyRead.Close()
+		readyWrite.Close()
+		lifetimeRead.Close()
+		lifetimeWrite.Close()
 		t.Fatal(err)
 	}
 	// The trailing no-op keeps Bash from replacing the positioned, tagged
 	// leader with its final external command. Its child writes readiness only
 	// after inheriting the leader's TERM disposition. Both inherit the lifetime
-	// writer, so EOF proves the whole group has exited.
-	script := `bash -c 'printf x >&3; exec 3>&-; exec sleep 600' & wait; :`
+	// writer, so EOF proves the whole group has exited; the release pipe keeps
+	// the child blocked without making its lifetime depend on elapsed time.
+	script := `bash -c 'printf x >&3; exec 3>&-; IFS= read -r _ <&5' & wait; :`
 	if termImmune {
-		script = `trap "" TERM; bash -c 'printf x >&3; exec 3>&-; exec sleep 600' & wait; :`
+		script = `trap "" TERM; bash -c 'printf x >&3; exec 3>&-; IFS= read -r _ <&5' & wait; :`
 	}
 	cmd := exec.Command("bash", "-c", script, "metasystem", "util", "hold", "--tag", tag)
-	cmd.ExtraFiles = []*os.File{readyWrite, lifetimeWrite}
+	cmd.ExtraFiles = []*os.File{readyWrite, lifetimeWrite, releaseRead}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
+		readyRead.Close()
+		readyWrite.Close()
+		lifetimeRead.Close()
+		lifetimeWrite.Close()
+		releaseRead.Close()
+		releaseWrite.Close()
 		t.Fatal(err)
 	}
+	leaderPID := cmd.Process.Pid
 	readyWrite.Close()
 	lifetimeWrite.Close()
+	releaseRead.Close()
 	// Reap concurrently: an unreaped leader is a zombie that keeps its
 	// group technically alive after the kill, which is this harness's
 	// artifact, not the wind-down's failure (the same rule the older
@@ -56,24 +75,42 @@ func spawnTaggedGroup(t *testing.T, tag string, termImmune bool) *taggedTestGrou
 	waited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(waited) }()
 	t.Cleanup(func() {
-		select {
-		case <-waited:
-		default:
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			<-waited
-		}
+		releaseWrite.Close()
+		<-waited
 		_, _ = io.Copy(io.Discard, lifetimeRead)
 		lifetimeRead.Close()
 		readyRead.Close()
 	})
 	ready := []byte{0}
 	if _, err := io.ReadFull(readyRead, ready); err != nil || ready[0] != 'x' {
-		t.Fatalf("tagged test owner pid %d did not publish readiness: byte=%q err=%v", cmd.Process.Pid, ready, err)
+		t.Fatalf("tagged test owner pid %d did not publish readiness: byte=%q err=%v", leaderPID, ready, err)
 	}
-	if !taggedGroupLeader(cmd.Process.Pid, tag) {
-		t.Fatalf("ready tagged test owner pid %d was not a positioned group leader", cmd.Process.Pid)
+	if !taggedGroupLeader(leaderPID, tag) {
+		t.Fatalf("ready tagged test owner pid %d was not a positioned group leader", leaderPID)
 	}
 	return &taggedTestGroup{cmd: cmd, waited: waited, lifetimeRead: lifetimeRead}
+}
+
+func TestTaggedGroupCleanupReleasesBothTermVariants(t *testing.T) {
+	t.Parallel()
+	for _, termImmune := range []bool{false, true} {
+		name := "TERM-honouring"
+		if termImmune {
+			name = "TERM-immune"
+		}
+		var group *taggedTestGroup
+		if !t.Run(name, func(t *testing.T) {
+			tag := fmt.Sprintf("metasystem-job-cleanup-%d-%t", os.Getpid(), termImmune)
+			group = spawnTaggedGroup(t, tag, termImmune)
+		}) {
+			continue
+		}
+		select {
+		case <-group.waited:
+		default:
+			t.Errorf("cleanup returned before the %s group leader was reaped", name)
+		}
+	}
 }
 
 func taggedGroupLeader(pid int, tag string) bool {

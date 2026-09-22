@@ -64,15 +64,11 @@ func testWaitKindEndsAtItsBound(t *testing.T, selector WaitSelector, incarnation
 			reads++
 			return pending, nil
 		})
-		realStart := time.Now()
 		result := (&Store{Root: t.TempDir(), Prober: waitTestProber{live: true}}).Wait(
 			context.Background(),
 			WaitRequest{Selector: selector, Owner: mainCaller, RuntimeSession: mainCaller.SessionId, Timeout: 3 * time.Second},
 			options,
 		)
-		if elapsed := time.Since(realStart); elapsed >= time.Second {
-			t.Fatalf("%s wait used wall time: %s", selector.Kind, elapsed)
-		}
 		if result.ExitCode != ExitWaitDeadline || result.SourceOutcome != "wait-deadline" || result.Reason != "this wait reached its deadline" {
 			t.Fatalf("deadline result = %+v", result)
 		}

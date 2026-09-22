@@ -33,6 +33,8 @@ var clock = time.Now
 func nowUTC() time.Time   { return clock().UTC() }
 func fenceNowISO() string { return nowUTC().Format("2006-01-02T15:04:05Z") }
 
+func fenceISOAt(now time.Time) string { return now.UTC().Format("2006-01-02T15:04:05Z") }
+
 var terminalJobStatus = map[string]bool{
 	"completed": true, "failed": true, "timeout": true, "cancelled": true,
 }
@@ -145,6 +147,10 @@ func verifiedContractValues(repo, mission string, fences map[string]any) (map[st
 // loadFences reads the mission's fence counters, seeding them from the lease
 // start time on first use, and validates their shape.
 func loadFences(repo, mission string) (map[string]any, error) {
+	return loadFencesAt(repo, mission, nowUTC())
+}
+
+func loadFencesAt(repo, mission string, now time.Time) (map[string]any, error) {
 	dir, path, _ := fencePaths(repo, mission)
 	var value map[string]any
 	if _, err := os.Stat(path); err == nil {
@@ -153,7 +159,7 @@ func loadFences(repo, mission string) (map[string]any, error) {
 			return nil, fmt.Errorf("mission fence counters are unreadable: %v", err)
 		}
 	} else {
-		started := fenceNowISO()
+		started := fenceISOAt(now)
 		leasePath := filepath.Join(dir, "lease.json")
 		if _, err := os.Stat(leasePath); err == nil {
 			lease, err := readJSONObjectFile(leasePath)
@@ -191,7 +197,7 @@ func loadFences(repo, mission string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mission fence start time is invalid")
 	}
-	if started.Sub(nowUTC()).Seconds() > 5 {
+	if started.Sub(now.UTC()).Seconds() > 5 {
 		return nil, fmt.Errorf("mission fence start time is in the future")
 	}
 	return value, nil
@@ -225,10 +231,10 @@ func activeReservations(repo string, fences map[string]any) []string {
 // violations lists the fences a proposed action would breach. reserve selects
 // which fences apply: "cycle" checks only wall-clock and cycles; "job" and
 // "authorized-job" add jobs and concurrency; "job" also checks the per-job cap.
-func violations(repo string, values map[string]string, fences map[string]any, capMin *int, reserve string) []string {
+func violationsAt(repo string, values map[string]string, fences map[string]any, capMin *int, reserve string, now time.Time) []string {
 	var result []string
 	started, _ := parseTimestamp(fences["startedAt"].(string))
-	elapsedHours := nowUTC().Sub(started).Seconds() / 3600
+	elapsedHours := now.UTC().Sub(started).Seconds() / 3600
 	wall, _ := strconv.ParseFloat(values["fence.wall-clock-hours"], 64)
 	if elapsedHours >= wall {
 		result = append(result, "wall-clock-hours")
@@ -369,6 +375,11 @@ func sortedKeysOfSet(set map[string]bool) []string {
 // CheckOrReserve checks the job fences and, when reserve is set and clear,
 // records the job's reservation.
 func CheckOrReserve(repo, mission, job string, capMin int, reserve bool) error {
+	return CheckOrReserveWithClock(repo, mission, job, capMin, reserve, nowUTC)
+}
+
+// CheckOrReserveWithClock applies the job fences using a caller-owned clock.
+func CheckOrReserveWithClock(repo, mission, job string, capMin int, reserve bool, clock func() time.Time) error {
 	dir, path, lockPath := fencePaths(repo, mission)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -378,7 +389,7 @@ func CheckOrReserve(repo, mission, job string, capMin int, reserve bool) error {
 		return err
 	}
 	defer lock.release()
-	fences, err := loadFences(repo, mission)
+	fences, err := loadFencesAt(repo, mission, clock())
 	if err != nil {
 		return err
 	}
@@ -386,7 +397,8 @@ func CheckOrReserve(repo, mission, job string, capMin int, reserve bool) error {
 	if err != nil {
 		return err
 	}
-	if found := violations(repo, values, fences, &capMin, "job"); len(found) > 0 {
+	now := clock().UTC()
+	if found := violationsAt(repo, values, fences, &capMin, "job", now); len(found) > 0 {
 		ask, askErr := writeBatchedAsk(repo, mission, found)
 		return fenceRefusal("job", found, ask, askErr)
 	}
@@ -395,7 +407,7 @@ func CheckOrReserve(repo, mission, job string, capMin int, reserve bool) error {
 		if _, exists := reservations[job]; exists {
 			return fmt.Errorf("mission fence reservation already exists for job: %s", job)
 		}
-		reservations[job] = map[string]any{"reservedAt": fenceNowISO(), "capMin": capMin}
+		reservations[job] = map[string]any{"reservedAt": fenceISOAt(now), "capMin": capMin}
 		return atomicWriteJSON(path, fences)
 	}
 	return nil
@@ -409,6 +421,11 @@ func CheckOrReserve(repo, mission, job string, capMin int, reserve bool) error {
 // also closes the reserve-before-setup window in which a doomed dispatch
 // holds a concurrency slot it will never use.
 func ReleaseJob(repo, mission, job string) error {
+	return ReleaseJobWithClock(repo, mission, job, nowUTC)
+}
+
+// ReleaseJobWithClock validates the fence record using a caller-owned clock.
+func ReleaseJobWithClock(repo, mission, job string, clock func() time.Time) error {
 	dir, path, lockPath := fencePaths(repo, mission)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -418,7 +435,7 @@ func ReleaseJob(repo, mission, job string) error {
 		return err
 	}
 	defer lock.release()
-	fences, err := loadFences(repo, mission)
+	fences, err := loadFencesAt(repo, mission, clock())
 	if err != nil {
 		return err
 	}
@@ -432,6 +449,11 @@ func ReleaseJob(repo, mission, job string) error {
 
 // ReserveCycle checks the cycle fences and records a cycle.
 func ReserveCycle(repo, mission string) error {
+	return ReserveCycleWithClock(repo, mission, nowUTC)
+}
+
+// ReserveCycleWithClock applies the cycle fences using a caller-owned clock.
+func ReserveCycleWithClock(repo, mission string, clock func() time.Time) error {
 	dir, path, lockPath := fencePaths(repo, mission)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -441,7 +463,7 @@ func ReserveCycle(repo, mission string) error {
 		return err
 	}
 	defer lock.release()
-	fences, err := loadFences(repo, mission)
+	fences, err := loadFencesAt(repo, mission, clock())
 	if err != nil {
 		return err
 	}
@@ -449,7 +471,8 @@ func ReserveCycle(repo, mission string) error {
 	if err != nil {
 		return err
 	}
-	if found := violations(repo, values, fences, nil, "cycle"); len(found) > 0 {
+	now := clock().UTC()
+	if found := violationsAt(repo, values, fences, nil, "cycle", now); len(found) > 0 {
 		ask, askErr := writeBatchedAsk(repo, mission, found)
 		return fenceRefusal("cycle", found, ask, askErr)
 	}
@@ -462,6 +485,11 @@ func ReserveCycle(repo, mission string) error {
 // deadline against the mission's remaining wall clock, and records the
 // reservation. It returns the authorization result.
 func AuthorizeCap(repo, mission, job, runtime, model, aliasSource string, requested *int) (map[string]any, error) {
+	return AuthorizeCapWithClock(repo, mission, job, runtime, model, aliasSource, requested, nowUTC)
+}
+
+// AuthorizeCapWithClock computes authorization and deadlines using a caller-owned clock.
+func AuthorizeCapWithClock(repo, mission, job, runtime, model, aliasSource string, requested *int, clock func() time.Time) (map[string]any, error) {
 	dir, path, lockPath := fencePaths(repo, mission)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -471,7 +499,7 @@ func AuthorizeCap(repo, mission, job, runtime, model, aliasSource string, reques
 		return nil, err
 	}
 	defer lock.release()
-	fences, err := loadFences(repo, mission)
+	fences, err := loadFencesAt(repo, mission, clock())
 	if err != nil {
 		return nil, err
 	}
@@ -508,11 +536,12 @@ func AuthorizeCap(repo, mission, job, runtime, model, aliasSource string, reques
 	if requested != nil {
 		capMin = int64(*requested)
 	}
-	if found := violations(repo, values, fences, nil, "authorized-job"); len(found) > 0 {
+	now := clock().UTC()
+	if found := violationsAt(repo, values, fences, nil, "authorized-job", now); len(found) > 0 {
 		ask, askErr := writeBatchedAsk(repo, mission, found)
 		return nil, fenceRefusal("job", found, ask, askErr)
 	}
-	launch := nowUTC().Truncate(time.Second)
+	launch := now.UTC().Truncate(time.Second)
 	started, _ := parseTimestamp(fences["startedAt"].(string))
 	wall, _ := strconv.ParseFloat(values["fence.wall-clock-hours"], 64)
 	missionEnd := started.Add(time.Duration(wall * 3600 * float64(time.Second)))
@@ -543,7 +572,7 @@ func AuthorizeCap(repo, mission, job, runtime, model, aliasSource string, reques
 		return nil, fmt.Errorf("mission fence reservation already exists for job: %s", job)
 	}
 	reservations[job] = map[string]any{
-		"reservedAt": fenceNowISO(), "capMin": capMin, "capDeadline": deadline,
+		"reservedAt": fenceISOAt(now), "capMin": capMin, "capDeadline": deadline,
 		"runtime": runtime, "model": model, "source": source,
 	}
 	if err := atomicWriteJSON(path, fences); err != nil {

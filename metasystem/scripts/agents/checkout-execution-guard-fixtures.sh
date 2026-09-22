@@ -40,8 +40,11 @@ fixture_cap=$(harness_fixture_cap checkout-execution-guard)
 engine=${METASYSTEM_BIN:-$root/bin/metasystem}
 script="$root/scripts/agents/checkout-execution-guard-fixtures.sh"
 tmp=$(mktemp -d)
+evidence_started="$tmp/evidence-started"
+touch "$evidence_started"
 owned_pids=()
 fixture_completed=0
+wait_evidence_printed=0
 
 cleanup() {
   local status=$? pid
@@ -53,31 +56,61 @@ cleanup() {
       wait "$pid" 2>/dev/null || true
     fi
   done
-  rm -rf "$tmp"
   if (( status == 0 && ! fixture_completed )); then
     status=1
   fi
+  if (( status != 0 )); then
+    print_wait_evidence
+  fi
+  rm -rf "$tmp"
   exit "$status"
 }
 trap cleanup EXIT
 
 print_wait_evidence() {
-  local evidence
+  local evidence suite_log suite_log_root
+  (( wait_evidence_printed == 0 )) || return 0
+  wait_evidence_printed=1
   for evidence in "$tmp"/*.out "$tmp"/*.err; do
-    [[ -s "$evidence" ]] || continue
+    [[ -f "$evidence" ]] || continue
     echo "--- $evidence ---" >&2
-    tail -5 "$evidence" >&2
+    tail -n 40 "$evidence" >&2
   done
+  suite_log_root="$root/artifacts/agents/supervision/suite-logs"
+  [[ -d "$suite_log_root" ]] || return 0
+  while IFS= read -r -d '' suite_log; do
+    echo "--- $suite_log ---" >&2
+    tail -n 40 "$suite_log" >&2
+  done < <(find "$suite_log_root" -type f -name 'validate-*.log' \
+    -newer "$evidence_started" -print0 2>/dev/null)
+}
+
+wait_with_evidence() { # pid, child name
+  local pid=$1 name=$2 status
+  set +e
+  wait "$pid"
+  status=$?
+  set -e
+  if (( status != 0 )); then
+    echo "$name child $pid exited with status $status" >&2
+    print_wait_evidence
+  fi
+  return "$status"
 }
 
 wait_for_file() { # path, fixture name, optional producer pid
-  local path=$1 name=$2 producer_pid=${3:-} deadline=$((SECONDS + fixture_cap))
+  local path=$1 name=$2 producer_pid=${3:-} deadline=$((SECONDS + fixture_cap)) producer_status
   while [[ ! -e "$path" ]]; do
     if [[ -n "$producer_pid" ]] && ! kill -0 "$producer_pid" 2>/dev/null; then
       [[ -e "$path" ]] && return 0
-      echo "$name producer $producer_pid exited before writing $path" >&2
+      set +e
+      wait "$producer_pid"
+      producer_status=$?
+      set -e
+      (( producer_status != 0 )) || producer_status=1
+      echo "$name producer $producer_pid exited with status $producer_status before writing $path" >&2
       print_wait_evidence
-      return 1
+      return "$producer_status"
     fi
     (( SECONDS < deadline )) \
       || { echo "$name timed out after ${fixture_cap}s waiting for $path" >&2
@@ -148,8 +181,8 @@ write_control "$suite_control" "$tmp/suite-first-suite.ready" "$tmp/suite-first-
 write_control "$dispatch_control" "$tmp/suite-first-dispatch.ready" "$tmp/suite-first-dispatch.release"
 "${borrowed_validation_progress_env[@]}" METASYSTEM_BIN="$engine" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$suite_first_guard_root" \
-  METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$suite_control" \
-  "$root/scripts/validate-metasystem.sh" >"$tmp/suite-first-suite.out" 2>"$tmp/suite-first-suite.err" &
+  "$root/scripts/validate-metasystem.sh" --checkout-execution-guard-fixture "$suite_control" \
+  >"$tmp/suite-first-suite.out" 2>"$tmp/suite-first-suite.err" &
 suite_pid=$!; owned_pids+=("$suite_pid")
 wait_for_file "$tmp/suite-first-suite.ready" "suite-first validation" "$suite_pid"
 METASYSTEM_BIN="$engine" METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$suite_first_guard_root" \
@@ -165,7 +198,7 @@ wait_for_file "$tmp/suite-first-dispatch.attempted" "suite-first dispatch acquis
 touch "$tmp/suite-first-suite.release"
 wait_for_file "$tmp/suite-first-dispatch.ready" "suite-first dispatch" "$dispatch_pid"
 touch "$tmp/suite-first-dispatch.release"
-wait "$suite_pid"
+wait_with_evidence "$suite_pid" "suite-first validation"
 wait "$dispatch_pid"
 
 # Dispatch first: the same production entrypoints in reverse order prove the
@@ -184,8 +217,8 @@ dispatch_pid=$!; owned_pids+=("$dispatch_pid")
 wait_for_file "$tmp/dispatch-first-dispatch.ready" "dispatch-first dispatch" "$dispatch_pid"
 "${borrowed_validation_progress_env[@]}" METASYSTEM_BIN="$engine" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$dispatch_first_guard_root" \
-  METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$suite_control" \
-  "$root/scripts/validate-metasystem.sh" >"$tmp/dispatch-first-suite.out" 2>"$tmp/dispatch-first-suite.err" &
+  "$root/scripts/validate-metasystem.sh" --checkout-execution-guard-fixture "$suite_control" \
+  >"$tmp/dispatch-first-suite.out" 2>"$tmp/dispatch-first-suite.err" &
 suite_pid=$!; owned_pids+=("$suite_pid")
 wait_for_file "$tmp/dispatch-first-suite.attempted" "dispatch-first validation acquisition" "$suite_pid"
 [[ ! -e "$tmp/dispatch-first-suite.ready" ]] \
@@ -194,7 +227,7 @@ touch "$tmp/dispatch-first-dispatch.release"
 wait_for_file "$tmp/dispatch-first-suite.ready" "dispatch-first validation" "$suite_pid"
 touch "$tmp/dispatch-first-suite.release"
 wait "$dispatch_pid"
-wait "$suite_pid"
+wait_with_evidence "$suite_pid" "dispatch-first validation"
 
 # A validation fixture spawns the actual dispatch verb from inside its own
 # process chain against a guard the fixture itself holds. Exact ancestry lets
@@ -209,25 +242,23 @@ write_control "$nested_suite_control" "$tmp/nested-suite.ready" "$tmp/nested-sui
   "$nested_dispatch_control" "$brief"
 "${borrowed_validation_progress_env[@]}" METASYSTEM_BIN="$engine" \
   METASYSTEM_CHECKOUT_EXECUTION_GUARD_ROOT="$nested_guard_root" \
-  METASYSTEM_CHECKOUT_EXECUTION_GUARD_FIXTURE="$nested_suite_control" \
-  "$root/scripts/validate-metasystem.sh" >"$tmp/nested-suite.out" 2>"$tmp/nested-suite.err" &
+  "$root/scripts/validate-metasystem.sh" --checkout-execution-guard-fixture "$nested_suite_control" \
+  >"$tmp/nested-suite.out" 2>"$tmp/nested-suite.err" &
 suite_pid=$!; owned_pids+=("$suite_pid")
 wait_for_file "$tmp/nested-suite.ready" "nested validation"
 wait_for_file "$tmp/nested-dispatch.ready" "nested dispatch ancestry join"
 wait_for_file "$tmp/nested-detached.ready" "nested detached dispatch member"
 touch "$tmp/nested-suite.release"
-wait "$suite_pid"
+wait_with_evidence "$suite_pid" "nested validation"
 
 # The suite and dispatch entry processes are now gone, but the registered
-# detached wrapper still owns execution. A foreign contender remains queued
-# until that member exits and runs its release path.
+# detached wrapper still owns execution. The public flow releases that member
+# before requiring the foreign contender to enter; the exact blocked-acquire
+# event is asserted by TestExecutionGuardRegistersSpawnedMemberUntilLastRelease.
 "$script" __contender "$engine" "$nested_guard_root" "post-suite contender" \
   "$tmp/nested-contender.ready" "$tmp/nested-contender.release" "$fixture_cap" \
   >"$tmp/nested-contender.out" 2>"$tmp/nested-contender.err" &
 nested_contender_pid=$!; owned_pids+=("$nested_contender_pid")
-sleep 0.2
-[[ ! -e "$tmp/nested-contender.ready" ]] \
-  || { echo "nested detached dispatch lost the guard when its suite exited" >&2; exit 1; }
 touch "$tmp/nested-detached.release"
 wait_for_file "$tmp/nested-contender.ready" "post-suite contender"
 touch "$tmp/nested-contender.release"
@@ -238,8 +269,10 @@ if ! git -C "$root" rev-parse --show-toplevel >/dev/null 2>&1; then
   echo "checkout execution guard fixtures: root is not a git repository; dispatch-entrypoint legs skipped"
 fi
 
-# Two contenders wait on one holder. Killing it permits exactly one fenced
-# stale cleanup and one first entrant; the other remains queued until release.
+# Two contenders wait on one holder. The native guard test observes both
+# blocked acquisitions and proves the second remains blocked by the first.
+# This public flow retains stale cleanup and ordered release through the real
+# command boundary without using a quiet interval as evidence.
 race_root="$tmp/dead-holder-race"
 "$script" __holder "$engine" "$race_root" "dead suite holder" \
   "$tmp/race-holder.ready" "$tmp/race-holder.release" "$fixture_cap" \
@@ -262,9 +295,6 @@ while [[ ! -e "$tmp/race-one.ready" && ! -e "$tmp/race-two.ready" ]]; do
   sleep 0.05
 done
 if [[ -e "$tmp/race-one.ready" ]]; then first=one; second=two; else first=two; second=one; fi
-sleep 0.2
-[[ ! -e "$tmp/race-$second.ready" ]] \
-  || { echo "dead-holder race admitted two contenders" >&2; exit 1; }
 touch "$tmp/race-$first.release"
 wait_for_file "$tmp/race-$second.ready" "dead-holder race second contender"
 touch "$tmp/race-$second.release"

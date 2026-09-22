@@ -7,12 +7,107 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
+
+func TestDefaultTestingWorkersSharesCapturedCapacityAcrossAdmission(t *testing.T) {
+	t.Parallel()
+	for _, specimen := range []struct {
+		gomax, admission, want int
+	}{
+		{gomax: 1, admission: 8, want: 1},
+		{gomax: 18, admission: 3, want: 6},
+		{gomax: 7, admission: 0, want: 7},
+		{gomax: 0, admission: 0, want: 1},
+	} {
+		if got := defaultTestingWorkers(specimen.gomax, specimen.admission); got != specimen.want {
+			t.Errorf("default workers gomax=%d admission=%d got=%d want=%d", specimen.gomax, specimen.admission, got, specimen.want)
+		}
+	}
+}
+
+func TestTestingWorkersAcceptsLargeExplicitValueAndReportsAdmission(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("testing.workers=4096\n"+proofrun.AdmissionCapKey+"=0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	limits, err := resolveProofRunLimitsWithEnvironment(conf, func(string) (string, bool) { return "", false })
+	if err != nil || limits.workers != 4096 || limits.admissionMaximum != 0 {
+		t.Fatalf("resolved limits=%+v err=%v", limits, err)
+	}
+	if problems, err := proofRunConfigProblems(conf); err != nil || len(problems) != 0 {
+		t.Fatalf("large explicit worker value problems=%v err=%v", problems, err)
+	}
+	for _, value := range []string{"0", "-1", "many"} {
+		if err := os.WriteFile(conf, []byte("testing.workers="+value+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := resolveProofRunLimitsWithEnvironment(conf, func(string) (string, bool) { return "", false }); err == nil || !strings.Contains(err.Error(), "testing.workers must be a positive integer") {
+			t.Fatalf("invalid workers %q error=%v", value, err)
+		}
+	}
+}
+
+func TestInheritedTestingWorkerCeilingCapsConfiguredAllowanceAndRejectsMalformedValues(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("testing.workers=4\n"+proofrun.AdmissionCapKey+"=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	limits, err := resolveProofRunLimitsWithEnvironment(conf, func(string) (string, bool) { return "1", true })
+	if err != nil || limits.workers != 1 {
+		t.Fatalf("nested workers=%d want=1 err=%v", limits.workers, err)
+	}
+	request := testingRunRequest(testingPreparation{Workers: limits.workers, AdmissionMaximum: limits.admissionMaximum}, "", "", "", "", "")
+	result := proofrun.NewTestResult(request)
+	if request.Workers != 1 || result.Workers != 1 || result.WorkerPolicyVersion != proofrun.TestWorkerPolicyVersion {
+		t.Fatalf("nested resolved allowance did not bind request/result: request=%+v result=%+v", request, result)
+	}
+	for _, malformed := range []string{"0", "-1", "many"} {
+		t.Run(malformed, func(t *testing.T) {
+			t.Parallel()
+			if _, err := resolveProofRunLimitsWithEnvironment(conf, func(string) (string, bool) { return malformed, true }); err == nil || !strings.Contains(err.Error(), "inherited "+proofrun.TestWorkersEnvironment+" must be a positive integer") {
+				t.Fatalf("malformed inherited ceiling %q error=%v", malformed, err)
+			}
+		})
+	}
+}
+
+func TestResolvedTestWorkerEnvironmentReplacesAmbientAuthority(t *testing.T) {
+	t.Parallel()
+	environment := resolvedTestWorkerEnvironment([]string{"PATH=/bin", proofrun.TestWorkersEnvironment + "=999", "VALUE=kept"}, 5)
+	found := 0
+	for _, entry := range environment {
+		if strings.HasPrefix(entry, proofrun.TestWorkersEnvironment+"=") {
+			found++
+			if entry != proofrun.TestWorkersEnvironment+"=5" {
+				t.Fatalf("worker environment=%q", entry)
+			}
+		}
+	}
+	if found != 1 || !strings.Contains(strings.Join(environment, "\n"), "VALUE=kept") {
+		t.Fatalf("resolved environment=%v", environment)
+	}
+}
+
+func TestTestingRunRequestCarriesResolvedWorkerPolicy(t *testing.T) {
+	t.Parallel()
+	request := testingRunRequest(testingPreparation{Workers: 8, AdmissionMaximum: 3}, "", "", "", "", "")
+	if request.Workers != 8 || request.AdmissionMaximum != 3 {
+		t.Fatalf("testing request workers=%d admission=%d", request.Workers, request.AdmissionMaximum)
+	}
+	result := proofrun.NewTestResult(request)
+	if result.SchemaVersion != proofrun.TestResultSchemaVersion || result.WorkerPolicyVersion != proofrun.TestWorkerPolicyVersion ||
+		result.Workers != 8 || result.AdmissionMaximum == nil || *result.AdmissionMaximum != 3 {
+		t.Fatalf("testing result did not bind resolved worker policy: %+v", result)
+	}
+}
 
 func TestWorkerCapabilitiesCommandReportsExactProtocol(t *testing.T) {
 	t.Parallel()
@@ -142,5 +237,18 @@ func TestWorkerPolicyWireStaysLegacyUntilNegotiated(t *testing.T) {
 	data, err = json.Marshal(activated)
 	if err != nil || !strings.Contains(string(data), `"Workers":1`) || !strings.Contains(string(data), `"workerPolicyVersion":1`) {
 		t.Fatalf("negotiated request omitted worker policy: %s err=%v", data, err)
+	}
+}
+
+func TestConfiguredTopLevelWorkerOverrideRemainsUncappedWithoutInheritedCeiling(t *testing.T) {
+	t.Parallel()
+	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	const want = 4096
+	if err := os.WriteFile(conf, []byte("testing.workers="+strconv.Itoa(want)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	limits, err := resolveProofRunLimitsWithEnvironment(conf, func(string) (string, bool) { return "", false })
+	if err != nil || limits.workers != want {
+		t.Fatalf("top-level explicit workers=%d want=%d err=%v", limits.workers, want, err)
 	}
 }

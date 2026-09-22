@@ -139,24 +139,57 @@ func TestResourceCustodyRepeatsDetachedFixtureCensusAfterKill(t *testing.T) {
 	if err != nil || state != identity.Alive {
 		t.Fatalf("owner probe: %v (%s)", err, state)
 	}
-	start := func() (*exec.Cmd, identity.Ref) {
+	type heldFixture struct {
+		command *exec.Cmd
+		release *os.File
+		joined  bool
+	}
+	start := func() (*heldFixture, identity.Ref) {
 		t.Helper()
-		command := exec.Command("sleep", "60")
-		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		if err := command.Start(); err != nil {
+		readyReader, readyWriter, err := os.Pipe()
+		if err != nil {
 			t.Fatal(err)
 		}
+		releaseReader, releaseWriter, err := os.Pipe()
+		if err != nil {
+			_ = readyReader.Close()
+			_ = readyWriter.Close()
+			t.Fatal(err)
+		}
+		command := exec.Command("sh", "-c", `printf R >&3; exec cat <&4`)
+		command.ExtraFiles = []*os.File{readyWriter, releaseReader}
+		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if err := command.Start(); err != nil {
+			_ = readyReader.Close()
+			_ = readyWriter.Close()
+			_ = releaseReader.Close()
+			_ = releaseWriter.Close()
+			t.Fatal(err)
+		}
+		subject := &heldFixture{command: command, release: releaseWriter}
+		t.Cleanup(func() {
+			_ = subject.release.Close()
+			if !subject.joined {
+				_ = subject.command.Wait()
+				subject.joined = true
+			}
+		})
+		_ = readyWriter.Close()
+		_ = releaseReader.Close()
+		var ready [1]byte
+		_, readyErr := io.ReadFull(readyReader, ready[:])
+		closeErr := readyReader.Close()
+		if readyErr != nil || closeErr != nil || ready[0] != 'R' {
+			t.Fatalf("fixture readiness=%q read=%v close=%v", ready, readyErr, closeErr)
+		}
 		exact, state, err := prober.Probe(int64(command.Process.Pid))
-		if err != nil || state != identity.Alive {
-			_ = command.Process.Kill()
-			_ = command.Wait()
+		if err != nil || state != identity.Alive || !exact.Ref().NativeExact() {
 			t.Fatalf("fixture probe: %v (%s)", err, state)
 		}
-		t.Cleanup(func() { _ = command.Process.Kill(); _ = command.Wait() })
-		return command, exact.Ref()
+		return subject, exact.Ref()
 	}
-	_, first := start()
-	_, late := start()
+	firstSubject, first := start()
+	lateSubject, late := start()
 	fixture := func(ref identity.Ref) identity.FixtureSurvivor {
 		return identity.FixtureSurvivor{Class: identity.FixtureSurvivorCertain, Ref: ref,
 			Key: identity.FixtureKey{Owner: owner.Ref()}}
@@ -175,9 +208,22 @@ func TestResourceCustodyRepeatsDetachedFixtureCensusAfterKill(t *testing.T) {
 				return nil, nil
 			}
 		})
-	if err != nil || !observed || passes < 4 || liveCustodyRef(prober, first) || liveCustodyRef(prober, late) {
-		t.Fatalf("fixture drain observed=%t passes=%d err=%v firstLive=%t lateLive=%t", observed, passes, err,
-			liveCustodyRef(prober, first), liveCustodyRef(prober, late))
+	if err != nil || !observed || passes < 4 {
+		t.Fatalf("fixture drain observed=%t passes=%d err=%v", observed, passes, err)
+	}
+	for name, subject := range map[string]*heldFixture{"first": firstSubject, "late": lateSubject} {
+		waitErr := subject.command.Wait()
+		subject.joined = true
+		if waitErr == nil {
+			t.Fatalf("%s fixture exited without the production custody signal", name)
+		}
+	}
+	for name, ref := range map[string]identity.Ref{"first": first, "late": late} {
+		exact, state, probeErr := prober.Probe(ref.Pid)
+		if probeErr != nil || state == identity.Unknown || state == identity.Alive && identity.SameIdentity(exact, ref) {
+			t.Fatalf("%s fixture was not reaped after custody drain: state=%s same-identity=%t err=%v", name,
+				state, identity.SameIdentity(exact, ref), probeErr)
+		}
 	}
 	passes = 0
 	_, err = drainCustodyFixtureScans(ResourceCustodyOptions{Launcher: owner.Ref()}, prober,
@@ -316,9 +362,7 @@ func main(){
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	next, err := AcquireHostResources(ctx, root, conf, "heavy", nil)
+	next, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
 	if err != nil {
 		t.Fatalf("clean fixture left capacity held: %v", err)
 	}

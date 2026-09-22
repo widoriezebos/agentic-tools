@@ -59,6 +59,7 @@ type Manager struct {
 	StartCap          time.Duration
 	Settings          Settings
 	SettingsError     error
+	supervisorClaimed func(Record)
 }
 
 func (m *Manager) resolvedSettings() (Settings, error) {
@@ -254,6 +255,9 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	})
 	if err != nil {
 		return Record{}, err
+	}
+	if m.supervisorClaimed != nil {
+		m.supervisorClaimed(record)
 	}
 	adapter := m.Adapters[record.Adapter]
 	if adapter == nil {

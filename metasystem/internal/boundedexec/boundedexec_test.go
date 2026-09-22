@@ -3,12 +3,12 @@ package boundedexec
 import (
 	"bufio"
 	"errors"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -64,8 +64,8 @@ func TestRunKillsAHangingCommand(t *testing.T) {
 	expiry := make(chan time.Time, 1)
 	expiry <- time.Time{}
 	var waits []time.Duration
-	command := exec.Command("sleep", "60")
-	err := RunWithDeadline(command, bound, "the sleeping command", func(wait time.Duration) <-chan time.Time {
+	fixture := newPipeHeldCommand(t, "cat <&3 >/dev/null")
+	err := fixture.runWithDeadline(bound, "the sleeping command", func(wait time.Duration) <-chan time.Time {
 		waits = append(waits, wait)
 		return expiry
 	})
@@ -75,8 +75,8 @@ func TestRunKillsAHangingCommand(t *testing.T) {
 	if !strings.Contains(err.Error(), "the sleeping command") {
 		t.Fatalf("the failure does not name the operation: %v", err)
 	}
-	if command.ProcessState == nil || command.ProcessState.Success() {
-		t.Fatalf("the expired command was not reaped after being killed: %v", command.ProcessState)
+	if fixture.command.ProcessState == nil || fixture.command.ProcessState.Success() {
+		t.Fatalf("the expired command was not reaped after being killed: %v", fixture.command.ProcessState)
 	}
 	assertDeadlineWaits(t, waits, bound.Limit)
 }
@@ -84,39 +84,69 @@ func TestRunKillsAHangingCommand(t *testing.T) {
 // A script's children must die with it: the group is signalled, not just the
 // direct child.
 func TestRunKillsTheWholeProcessGroup(t *testing.T) {
-	dir := t.TempDir()
-	script := filepath.Join(dir, "spawn.sh")
-	if err := testexec.WriteFile(script, []byte(
-		"#!/bin/sh\nsleep 60 &\necho ready\nwait\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	readPipe, writePipe, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = readPipe.Close()
-		_ = writePipe.Close()
-	})
-	deadline := make(chan time.Time)
-	command := exec.Command("/bin/sh", script)
-	command.Stdout = writePipe
-	done := make(chan error, 1)
-	var waits []time.Duration
-	go func() {
-		defer writePipe.Close()
-		done <- RunWithDeadline(command, FixedBound(300*time.Millisecond, "exec.local-timeout-sec"), "the spawning script", func(duration time.Duration) <-chan time.Time {
-			waits = append(waits, duration)
+	t.Run("start failure releases readiness pipe", func(t *testing.T) {
+		fixture := newPipeHeldCommand(t, "cat <&3 & echo ready; wait")
+		reader := fixture.captureOutput(t)
+		fixture.command.Path = filepath.Join(t.TempDir(), "missing-command")
+		deadline := make(chan time.Time)
+		done := fixture.startWithDeadline(FixedBound(300*time.Millisecond, "exec.local-timeout-sec"), "the missing command", func(time.Duration) <-chan time.Time {
 			return deadline
 		})
-	}()
-	reader := bufio.NewReader(readPipe)
-	ready, err := reader.ReadString('\n')
+		ready, err := fixture.readReady(reader)
+		if ready != "" || !errors.Is(err, io.EOF) {
+			t.Fatalf("readiness after failed start = %q, %v; want EOF", ready, err)
+		}
+		startErr := fixture.waitForStart()
+		if !errors.Is(startErr, os.ErrNotExist) {
+			t.Fatalf("start error = %v, want nonexistent executable", startErr)
+		}
+		select {
+		case <-fixture.completed:
+		default:
+			t.Fatal("failed-start readiness cleanup returned before joining the runner")
+		}
+		if runErr := <-done; !errors.Is(runErr, os.ErrNotExist) {
+			t.Fatalf("failed-start result = %v, want nonexistent executable", runErr)
+		}
+	})
+
+	t.Run("early readiness failure joins cleanup", func(t *testing.T) {
+		fixture := newPipeHeldCommand(t, "cat <&3 & echo ready; wait")
+		deadline := make(chan time.Time)
+		done := fixture.startWithDeadline(FixedBound(300*time.Millisecond, "exec.local-timeout-sec"), "the spawning script", func(time.Duration) <-chan time.Time {
+			return deadline
+		})
+		readinessErr := errors.New("injected readiness failure")
+		_, err := fixture.readReady(bufio.NewReader(errorReader{err: readinessErr}))
+		if !errors.Is(err, readinessErr) {
+			t.Fatalf("readiness error = %v, want %v", err, readinessErr)
+		}
+		select {
+		case <-fixture.completed:
+		default:
+			t.Fatal("early readiness cleanup returned before joining the runner")
+		}
+		if runErr := <-done; errors.Is(runErr, ErrTimedOut) {
+			t.Fatalf("early readiness cleanup result = %v, want release before timeout", runErr)
+		}
+	})
+
+	deadline := make(chan time.Time)
+	fixture := newPipeHeldCommand(t, "cat <&3 & echo ready; wait")
+	reader := fixture.captureOutput(t)
+	var waits []time.Duration
+	done := fixture.startWithDeadline(FixedBound(300*time.Millisecond, "exec.local-timeout-sec"), "the spawning script", func(duration time.Duration) <-chan time.Time {
+		waits = append(waits, duration)
+		return deadline
+	})
+	ready, err := fixture.readReady(reader)
 	if err != nil || ready != "ready\n" {
 		t.Fatalf("the spawning script did not report its child ready: line %q, error %v", ready, err)
 	}
-	if err := writePipe.Close(); err != nil {
-		t.Fatalf("release parent pipe writer: %v", err)
+	// Pipe readiness is an OS event; this channel also proves Cmd.Start has
+	// returned before the runner can close the parent's readiness writer.
+	if err := fixture.waitForStart(); err != nil {
+		t.Fatalf("the spawning script did not start: %v", err)
 	}
 	deadline <- time.Time{}
 	remaining, err := io.ReadAll(reader)
@@ -140,7 +170,7 @@ func TestRunTimeoutMatchesTheSentinel(t *testing.T) {
 	expiry := make(chan time.Time, 1)
 	expiry <- time.Time{}
 	var waits []time.Duration
-	err := RunWithDeadline(exec.Command("sleep", "60"), bound, "the sleeping command", func(wait time.Duration) <-chan time.Time {
+	err := newPipeHeldCommand(t, "cat <&3 >/dev/null").runWithDeadline(bound, "the held command", func(wait time.Duration) <-chan time.Time {
 		waits = append(waits, wait)
 		return expiry
 	})
@@ -171,7 +201,7 @@ func TestTimeoutErrorNamesItsOwnKey(t *testing.T) {
 	expiry := make(chan time.Time, 1)
 	expiry <- time.Time{}
 	var waits []time.Duration
-	err := RunWithDeadline(exec.Command("sleep", "60"), bound, "the tuned command", func(wait time.Duration) <-chan time.Time {
+	err := newPipeHeldCommand(t, "cat <&3 >/dev/null").runWithDeadline(bound, "the tuned command", func(wait time.Duration) <-chan time.Time {
 		waits = append(waits, wait)
 		return expiry
 	})
@@ -189,4 +219,126 @@ func assertDeadlineWaits(t *testing.T, got []time.Duration, bound time.Duration)
 	if len(got) != 2 || got[0] != bound || got[1] != killGraceWindow {
 		t.Fatalf("deadline waits = %v, want [%s %s]", got, bound, killGraceWindow)
 	}
+}
+
+func TestPipeHeldCommandCleanupBeforeRunnerLaunch(t *testing.T) {
+	t.Parallel()
+	fixture := newPipeHeldCommand(t, "cat <&3 >/dev/null")
+
+	// Setup can fail after the held-input pipe is allocated but before the
+	// runner is launched. Exercise the same cleanup registered by the fixture.
+	fixture.cleanup()
+	if _, err := fixture.holder.Write([]byte("released")); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("write to cleaned-up holder = %v, want closed descriptor", err)
+	}
+	if _, err := fixture.reader.Stat(); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("stat cleaned-up reader = %v, want closed descriptor", err)
+	}
+}
+
+type pipeHeldCommand struct {
+	command        *exec.Cmd
+	reader         *os.File
+	holder         *os.File
+	startOrFailure chan struct{}
+	completed      chan struct{}
+	result         chan error
+	outputWriter   *os.File
+	startErr       error
+	runnerLaunched bool
+	cleanupOnce    sync.Once
+}
+
+func newPipeHeldCommand(t *testing.T, script string) *pipeHeldCommand {
+	t.Helper()
+	reader, holder, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("/bin/sh", "-c", script)
+	command.ExtraFiles = []*os.File{reader}
+	fixture := &pipeHeldCommand{
+		command: command, reader: reader, holder: holder,
+		startOrFailure: make(chan struct{}), completed: make(chan struct{}), result: make(chan error, 1),
+	}
+	t.Cleanup(fixture.cleanup)
+	return fixture
+}
+
+func (fixture *pipeHeldCommand) captureOutput(t *testing.T) *bufio.Reader {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.command.Stdout = writer
+	fixture.outputWriter = writer
+	t.Cleanup(func() {
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+	return bufio.NewReader(reader)
+}
+
+func (fixture *pipeHeldCommand) startWithDeadline(bound Bound, what string, deadline func(time.Duration) <-chan time.Time) <-chan error {
+	fixture.runnerLaunched = true
+	go func() {
+		acknowledged := false
+		result := RunWithDeadline(fixture.command, bound, what, func(wait time.Duration) <-chan time.Time {
+			if !acknowledged {
+				acknowledged = true
+				close(fixture.startOrFailure)
+			}
+			return deadline(wait)
+		})
+		if !acknowledged {
+			fixture.startErr = result
+			close(fixture.startOrFailure)
+		}
+		if fixture.outputWriter != nil {
+			_ = fixture.outputWriter.Close()
+		}
+		fixture.result <- result
+		close(fixture.completed)
+	}()
+	return fixture.result
+}
+
+func (fixture *pipeHeldCommand) runWithDeadline(bound Bound, what string, deadline func(time.Duration) <-chan time.Time) error {
+	return <-fixture.startWithDeadline(bound, what, deadline)
+}
+
+func (fixture *pipeHeldCommand) waitForStart() error {
+	<-fixture.startOrFailure
+	return fixture.startErr
+}
+
+func (fixture *pipeHeldCommand) readReady(reader *bufio.Reader) (string, error) {
+	ready, err := reader.ReadString('\n')
+	if err != nil {
+		fixture.cleanup()
+	}
+	return ready, err
+}
+
+func (fixture *pipeHeldCommand) cleanup() {
+	fixture.cleanupOnce.Do(func() {
+		if !fixture.runnerLaunched {
+			_ = fixture.holder.Close()
+			_ = fixture.reader.Close()
+			return
+		}
+		<-fixture.startOrFailure
+		_ = fixture.holder.Close()
+		<-fixture.completed
+		_ = fixture.reader.Close()
+	})
+}
+
+type errorReader struct {
+	err error
+}
+
+func (reader errorReader) Read([]byte) (int, error) {
+	return 0, reader.err
 }

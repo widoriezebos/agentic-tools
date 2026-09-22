@@ -193,6 +193,42 @@ func (f *ProcessFixture) Record(pid int) { f.record(pid, false) }
 
 func (f *ProcessFixture) Hold(pid int) { f.record(pid, true) }
 
+// HoldOwnedChildren adds every currently live, certainly owned descendant to
+// the fixture's exact-identity cleanup set. Installed entrypoints use this
+// after their readiness boundary because they create detached descendants
+// whose PIDs are not returned to the caller.
+func (f *ProcessFixture) HoldOwnedChildren() error {
+	survivors, err := f.scan(f.key)
+	if err != nil {
+		return fmt.Errorf("scan process fixture survivors: %w", err)
+	}
+	recorded := make(map[identity.Ref]bool, len(f.refs))
+	for _, ref := range f.refs {
+		recorded[ref] = true
+	}
+	for _, survivor := range survivors {
+		if recorded[survivor.Ref] {
+			continue
+		}
+		if survivor.Class != identity.FixtureSurvivorCertain {
+			return fmt.Errorf("fixture child ownership is unproven: pid=%d exe=%q argv=%q", survivor.Ref.Pid, survivor.Exe, survivor.Argv)
+		}
+		exact, state, probeErr := f.prober.Probe(survivor.Ref.Pid)
+		if probeErr == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, survivor.Ref) || exact.Zombie)) {
+			continue
+		}
+		if probeErr != nil || state != identity.Alive || !identity.SameIdentity(exact, survivor.Ref) || !exact.Ref().NativeExact() {
+			return fmt.Errorf("fixture child identity is unproven: ref=%+v state=%s err=%v", survivor.Ref, state, probeErr)
+		}
+		ref := exact.Ref()
+		f.refs = append(f.refs, ref)
+		f.held[ref] = true
+		recorded[ref] = true
+		f.appendRecord('+', ref)
+	}
+	return nil
+}
+
 // WaitForNoUnrecordedChildren waits until the fixture key names only children recorded by this fixture.
 func (f *ProcessFixture) WaitForNoUnrecordedChildren(ctx context.Context) error {
 	recorded := make(map[string]bool, len(f.refs))

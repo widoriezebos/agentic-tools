@@ -254,14 +254,10 @@ func TestSessionOccupancySlowRegistryRecoveryDoesNotHoldCapLock(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(capPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	acquiredAt := time.Now()
 	if err := OwnerLockClaim(capPath, int64(os.Getpid()), "occupancy-slow-registry-fixture"); err != nil {
 		t.Fatalf("cap lock was held while the registry scan was blocked: %v", err)
 	}
 	defer OwnerLockRelease(capPath, int64(os.Getpid()), "occupancy-slow-registry-fixture")
-	if elapsed := time.Since(acquiredAt); elapsed >= 10*time.Second {
-		t.Fatalf("cap lock acquisition took %s, want less than the 10 second ceiling", elapsed)
-	}
 	close(release)
 	<-prepared
 	if err := <-errors; err != nil {

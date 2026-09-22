@@ -96,7 +96,7 @@ fixture_bed_parent_cleanup() {
 
 run_fixture_bed_scenarios() { # bed name, success line, script, scenario names...
   local bed=$1 success_line=$2 script=$3 log_root scenario capability log rc index=0
-  local scenario_cap scenario_started scenario_deadline scenario_elapsed
+  local scenario_cap scenario_started scenario_deadline scenario_elapsed scenario_namespace scenario_pid group_reaped
   local failed_names=() failed_rcs=() failed_logs=()
   shift 3
   # A bed runs every scenario it owns. That is right for the gate and wrong
@@ -141,22 +141,35 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
   if [[ -n "$fixture_bed_prepare_hook" ]]; then
     "$fixture_bed_prepare_hook" "$log_root"
   fi
-  # Scenarios are independent children with their own temp roots, so a bed
-  # runs up to METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY of them side by side
-  # (default: the cores divided by six, at least one, at most three; a bed's
-  # scenarios spawn stewards, runners and fake adapters, so the cap is about
-  # process trees, not cores). Each child keeps its own ceiling; its log is
-  # printed whole when it ends, so the section log stays one scenario at a
-  # time even though the work overlapped.
-  local scenario_slots cores
-  scenario_slots=${METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY:-}
-  if [[ ! "$scenario_slots" =~ ^[1-9][0-9]*$ ]]; then
-    cores=$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 1)
-    [[ "$cores" =~ ^[1-9][0-9]*$ ]] || cores=1
-    scenario_slots=$((cores / 6))
-    (( scenario_slots >= 1 )) || scenario_slots=1
-    (( scenario_slots <= 3 )) || scenario_slots=3
+  # The public proof adapter owns worker allocation. This runner consumes that
+  # allocation without consulting machine-wide CPU counts, then gives each
+  # independent scenario exactly one worker. The historical fixture-specific
+  # value remains only as a lower optional ceiling and can never multiply the
+  # inherited allowance.
+  local worker_allowance scenario_slots requested_slots
+  worker_allowance=${METASYSTEM_TEST_WORKERS:-1}
+  [[ "$worker_allowance" =~ ^[1-9][0-9]*$ ]] \
+    || { echo "$bed fixture: METASYSTEM_TEST_WORKERS must be a positive integer" >&2; exit 2; }
+  scenario_slots=$worker_allowance
+  requested_slots=${METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY:-}
+  if [[ -n "$requested_slots" ]]; then
+    [[ "$requested_slots" =~ ^[1-9][0-9]*$ ]] \
+      || { echo "$bed fixture: METASYSTEM_FIXTURE_SCENARIO_CONCURRENCY must be a positive integer" >&2; exit 2; }
+    (( requested_slots >= scenario_slots )) || scenario_slots=$requested_slots
   fi
+
+  # Mutable state is private per scenario. Go's content-addressed module and
+  # build caches remain shared: they are concurrency-safe and avoiding a cold
+  # cache per scenario is part of the fixture runtime contract.
+  local -a fixture_shared_cache_environment=()
+  local cache_name cache_value
+  for cache_name in GOMODCACHE GOCACHE GOPATH; do
+    cache_value=${!cache_name:-}
+    if [[ -z "$cache_value" ]] && command -v go >/dev/null 2>&1; then
+      cache_value=$(go env "$cache_name" 2>/dev/null || true)
+    fi
+    [[ -z "$cache_value" ]] || fixture_shared_cache_environment+=("$cache_name=$cache_value")
+  done
   local -a queued=("$@")
   local queued_at=0 total=$#
   local -a live_pids=() live_names=() live_logs=() live_started=() live_deadlines=()
@@ -168,9 +181,28 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
       harness_fixture_key "$bed-$scenario"
       log=$log_root/$queued_at.log
       capability=$("$fixture_bed_mint_capability" "$log_root" "$queued_at" "$scenario")
+      scenario_namespace=$log_root/$queued_at.namespace
+      mkdir -p "$scenario_namespace/home" "$scenario_namespace/registry" \
+        "$scenario_namespace/proof-admission" "$scenario_namespace/queue" \
+        "$scenario_namespace/endpoints" "$scenario_namespace/executables" \
+        "$scenario_namespace/tmp"
+      chmod 700 "$scenario_namespace" "$scenario_namespace/home" \
+        "$scenario_namespace/registry" "$scenario_namespace/proof-admission" \
+        "$scenario_namespace/queue" "$scenario_namespace/endpoints" \
+        "$scenario_namespace/executables" "$scenario_namespace/tmp"
       echo "$bed fixture scenario started: $scenario" >&2
       set -m
-      METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" \
+      env ${fixture_shared_cache_environment[@]+"${fixture_shared_cache_environment[@]}"} \
+        HOME="$scenario_namespace/home" \
+        TMPDIR="$scenario_namespace/tmp" \
+        METASYSTEM_SUPERVISION_REGISTRY_HOME="$scenario_namespace/registry" \
+        METASYSTEM_PROOF_ADMISSION_TEST_DIR="$scenario_namespace/proof-admission" \
+        METASYSTEM_FIXTURE_NAMESPACE="$scenario_namespace" \
+        METASYSTEM_FIXTURE_QUEUE_ROOT="$scenario_namespace/queue" \
+        METASYSTEM_FIXTURE_ENDPOINT_ROOT="$scenario_namespace/endpoints" \
+        METASYSTEM_FIXTURE_EXECUTABLE_ROOT="$scenario_namespace/executables" \
+        METASYSTEM_TEST_WORKERS=1 \
+        METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" \
         METASYSTEM_FIXTURE_BED=$bed \
         METASYSTEM_FIXTURE_SCENARIO_NAME=$scenario \
         METASYSTEM_FIXTURE_LEG_FILE=$log.leg \
@@ -193,16 +225,30 @@ run_fixture_bed_scenarios() { # bed name, success line, script, scenario names..
       fi
       scenario=${live_names[$slot]}
       log=${live_logs[$slot]}
-      if kill -0 "${live_pids[$slot]}" 2>/dev/null; then
+      scenario_pid=${live_pids[$slot]}
+      group_reaped=0
+      fixture_bed_parent_scenario=$scenario
+      if kill -0 "$scenario_pid" 2>/dev/null; then
         scenario_elapsed=$((SECONDS - live_started[slot]))
         echo "$bed fixture scenario exceeded its ceiling: $scenario (elapsed ${scenario_elapsed}s, scaled cap ${scenario_cap}s)" >&2
-        fixture_bed_reap_group "${live_pids[$slot]}" || true
+        fixture_bed_reap_group "$scenario_pid" || true
+        group_reaped=1
         rc=124
       else
         set +e
-        wait "${live_pids[$slot]}"
+        wait "$scenario_pid"
         rc=$?
         set -e
+      fi
+      # A red leader may exit while a child remains in its process group. Reap
+      # that group before judging or launching more work so concurrent failures
+      # cannot leave load behind for another scenario.
+      if (( ! group_reaped )) && fixture_bed_process_set_alive "$scenario_pid"; then
+        if ! fixture_bed_reap_group "$scenario_pid"; then
+          printf '%s fixture scenario %s left a process alive after its leader exited\n' \
+            "$bed" "$scenario" >>"$log"
+          (( rc != 0 )) || rc=125
+        fi
       fi
       if (( rc != 0 )) && [[ ! -d "$log.failure" ]]; then
         leg=unnamed

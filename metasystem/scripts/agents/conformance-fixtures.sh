@@ -101,12 +101,12 @@ new_case() { # name
   printf '%s\n' '1|1970-01-01T00:00:01Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=seed|built_by=coordinator|critique_waived=none|waiver_stream=none|note=seed' \
     >"$controller/memory/receipts.log"
   printf '#!/usr/bin/env bash\nprintf "base\\n"\n' >"$controller/scripts/tool.sh"
-  cat >"$controller/metasystem.conf" <<'CONF'
+  cat >"$controller/metasystem.conf" <<CONF
 metasystem.version=1
 metasystem.runtimes=fake
 role.default.runtime=fake
 role.default.model.fake=fixture-default
-evidence.root=/tmp/metasystem-conformance-fixture-evidence
+evidence.root=$case_root/evidence
 retro.max-age-days=100000
 CONF
   git -C "$controller" init -q -b main

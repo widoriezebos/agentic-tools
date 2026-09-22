@@ -158,6 +158,6 @@ func (s OSSupervisorStarter) StartSupervisor(id, stateDir string) (identity.Ref,
 		_, _ = command.Process.Wait()
 		return identity.Ref{}, fmt.Errorf("supervisor pid %d is not observable: %s: %w", pid, state, err)
 	}
-	_ = command.Process.Release()
+	go func() { _ = command.Wait() }()
 	return exact.Ref(), nil
 }

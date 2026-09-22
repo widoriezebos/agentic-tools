@@ -283,7 +283,16 @@ func writeDevinAdapter(t *testing.T, root string) {
 // reads; the intermediate's COMMAND is overridden through the fixture.
 func grandchild(t *testing.T) (int64, int64) {
 	t.Helper()
-	cmd := exec.Command("/bin/sh", "-c", "sleep 120 & printf '%s\\n' \"$!\"; wait")
+	reader, holder, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = reader.Close()
+		_ = holder.Close()
+	})
+	cmd := exec.Command("/bin/sh", "-c", "cat <&3 >/dev/null & printf '%s\\n' \"$!\"; wait")
+	cmd.ExtraFiles = []*os.File{reader}
 	ready, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -23,8 +24,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	usagecore "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
@@ -384,15 +383,12 @@ func TestWaitInstalledRunCommand(t *testing.T) {
 	}
 	originalCallerPID := waitCallerPID
 	waitCallerPID = func() int64 { return self }
-	originalBootClock := waitBootClock
-	waitBootClock = func() (string, time.Duration, error) { return "boot-command", time.Hour, nil }
 	originalAdapterPath := waitAdapterPathForRuntime
 	waitAdapterPathForRuntime = func(string, string) (string, error) {
 		return filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "adapters", "fake.sh"))
 	}
 	t.Cleanup(func() {
 		waitCallerPID = originalCallerPID
-		waitBootClock = originalBootClock
 		waitAdapterPathForRuntime = originalAdapterPath
 	})
 	code, output, problem := 0, "", ""
@@ -593,10 +589,8 @@ func TestWaitMeasureVerb(t *testing.T) {
 	}
 
 	duplicateRoot := t.TempDir()
-	bootID, bootElapsed, err := identity.BootClock()
-	if err != nil || bootElapsed < 5*time.Second {
-		t.Fatalf("boot clock = %s/%s err=%v", bootID, bootElapsed, err)
-	}
+	bootID, bootElapsed := "boot-duplicate", 10*time.Second
+	publicationClock := func() (string, time.Duration, error) { return bootID, bootElapsed, nil }
 	publicationID := "job:job-duplicate:operation:r1:started:completed"
 	jobReturn := map[string]string{
 		"waitId": strings.Repeat("c", 32), "nonce": strings.Repeat("d", 32), "kind": "job", "targetId": "job-duplicate", "runtime": "codex", "mode": "register", "state": "ready",
@@ -609,9 +603,12 @@ func TestWaitMeasureVerb(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 2 {
-		args := []string{"--root", duplicateRoot, "--job", "job-duplicate", "--publication-id", publicationID, "--began-boot-nanos", strconv.FormatInt((bootElapsed - 3*time.Second).Nanoseconds(), 10), "--boot-id", bootID}
-		if _, code := captureStdout(t, func() int { return runWaitNotify(args) }); code != 0 {
-			t.Fatalf("duplicate notify exit=%d", code)
+		_, err := metarun.NotifyWaiters(duplicateRoot, metarun.WaitHint{
+			Kind: "job", TargetID: "job-duplicate", PublicationID: publicationID,
+			BeganBootNanos: (bootElapsed - 3*time.Second).Nanoseconds(), BeganBootID: bootID,
+		}, publicationClock)
+		if err != nil {
+			t.Fatalf("duplicate notify: %v", err)
 		}
 	}
 	stream, err := os.ReadFile(filepath.Join(duplicateRoot, "artifacts", "agents", "events.jsonl"))
@@ -629,8 +626,8 @@ func TestWaitMeasureVerb(t *testing.T) {
 		}
 		began, beganErr := strconv.ParseInt(fmt.Sprint(event["beganBootNanos"]), 10, 64)
 		published, publishedErr := strconv.ParseInt(fmt.Sprint(event["publishedBootNanos"]), 10, 64)
-		if beganErr != nil || publishedErr != nil || began >= published {
-			t.Fatalf("publication did not follow its began sample: began=%v/%v published=%v/%v", began, beganErr, published, publishedErr)
+		if beganErr != nil || publishedErr != nil || began != (bootElapsed-3*time.Second).Nanoseconds() || published != bootElapsed.Nanoseconds() || event["beganBootId"] != bootID || event["publishedBootId"] != bootID || began >= published {
+			t.Fatalf("raw publication clock mismatch: began=%v/%v/%v published=%v/%v/%v", began, event["beganBootId"], beganErr, published, event["publishedBootId"], publishedErr)
 		}
 		publicationCount++
 	}
@@ -810,15 +807,27 @@ type pendingWaitVerdictCommandOptions struct {
 	writeWaiter bool
 }
 
-func pendingWaitVerdictCommandFixture(t *testing.T, root, runtimeName string) (string, string) {
-	t.Helper()
-	return pendingWaitVerdictCommandFixtureWithOptions(t, root, runtimeName, pendingWaitVerdictCommandOptions{
-		jobStatus: "pending-setup", writeWaiter: true,
-	})
+type pendingWaitCommandFixture struct {
+	session      string
+	mainID       string
+	ownerLineage string
 }
 
-func pendingWaitVerdictCommandFixtureWithOptions(t *testing.T, root, runtimeName string, options pendingWaitVerdictCommandOptions) (string, string) {
+func pendingWaitVerdictCommandFixture(t *testing.T, root, runtimeName string) (string, string) {
 	t.Helper()
+	fixture := pendingWaitVerdictCommandFixtureWithOptions(t, root, runtimeName, pendingWaitVerdictCommandOptions{
+		jobStatus: "pending-setup", writeWaiter: true,
+	})
+	return fixture.session, fixture.mainID
+}
+
+func pendingWaitVerdictCommandFixtureWithOptions(t *testing.T, root, runtimeName string, options pendingWaitVerdictCommandOptions) pendingWaitCommandFixture {
+	t.Helper()
+	fixtureNow := time.Now().UTC().Truncate(time.Second)
+	fixtureBootElapsed := 2 * time.Hour
+	t.Setenv("METASYSTEM_GOAL_NOW", fixtureNow.Format(time.RFC3339))
+	t.Setenv("METASYSTEM_GOAL_BOOT_ID", "wait-verdict-fixture-boot")
+	t.Setenv("METASYSTEM_GOAL_BOOT_NANOS", strconv.FormatInt(fixtureBootElapsed.Nanoseconds(), 10))
 	for _, name := range []string{"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"} {
 		value, present := os.LookupEnv(name)
 		if err := os.Unsetenv(name); err != nil {
@@ -869,11 +878,13 @@ func pendingWaitVerdictCommandFixtureWithOptions(t *testing.T, root, runtimeName
 	processRef := exact.Ref()
 	session := "wait-stop-" + runtimeName
 	lineage := "wait-stop-lineage"
+	fixture := pendingWaitCommandFixture{session: session, ownerLineage: lineage}
 	announcement, err := lease.AnnounceWithPair(root, session, self, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "wait-stop-fixture", runtimeName, lineage)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mainID := announcedMainID(t, announcement)
+	fixture.mainID = mainID
 	holder, err := lease.CurrentHolder(root)
 	if err != nil {
 		t.Fatal(err)
@@ -887,7 +898,7 @@ func pendingWaitVerdictCommandFixtureWithOptions(t *testing.T, root, runtimeName
 	}
 	target := metarun.WaiterTarget{OperationID: operationID}
 	if options.jobStatus == "pending" {
-		startedAt := time.Now().UTC().Add(-time.Second).Format(time.RFC3339Nano)
+		startedAt := fixtureNow.Add(-time.Second).Format(time.RFC3339Nano)
 		job["mainId"], job["round"], job["startedAt"] = mainID, 1, startedAt
 		target.Round, target.StartedAt = 1, startedAt
 	}
@@ -896,13 +907,13 @@ func pendingWaitVerdictCommandFixtureWithOptions(t *testing.T, root, runtimeName
 		t.Fatal(err)
 	}
 	if !options.writeWaiter {
-		return session, mainID
+		return fixture
 	}
 	signature, err := report.OpenWorkSignature(context.Background(), root)
 	if err != nil || signature == "" {
 		t.Fatalf("read fixture open-work signature: %q %v", signature, err)
 	}
-	bootID, elapsed, err := identity.BootClock()
+	bootID, elapsed, err := goalCommandBootClock(root)
 	if err != nil || bootID == "" {
 		t.Fatalf("read fixture boot clock: %q %s %v", bootID, elapsed, err)
 	}
@@ -934,7 +945,7 @@ func pendingWaitVerdictCommandFixtureWithOptions(t *testing.T, root, runtimeName
 	if err := os.WriteFile(metarun.WaiterPath(root, row.Kind, row.TargetID, row.OwnerDigest), append(rowData, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return session, mainID
+	return fixture
 }
 
 type installedHookResult struct {
@@ -1009,6 +1020,10 @@ if [ "${1:-}" = up ]; then
   printf ' %s' "$@" >> "${METASYSTEM_WAIT_UP_COMMAND_FILE:?}"
   printf '\n' >> "${METASYSTEM_WAIT_UP_COMMAND_FILE:?}"
 fi
+if [ "${1:-}" = health ]; then
+  printf '%s\n' '{"schemaVersion":1,"exitCode":0,"line":"HEALTH healthy — ","interventions":[],"verdict":{"schema":1,"observedAt":"2026-09-18T10:00:00Z","observation":1,"aggregate":"healthy","roles":[],"shouldAlert":false,"findingDigest":""}}'
+  exit 0
+fi
 exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 `
 	if err := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
@@ -1017,64 +1032,99 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 	return hook, canonical, wrapper
 }
 
-func reapPendingWaitFixtureChildren(t *testing.T, fixture *testutil.ProcessFixture, canonical, root string) {
+type installedWaitFixture struct {
+	*testutil.ProcessFixture
+	ownerLineage string
+}
+
+func newInstalledWaitFixture(t *testing.T, ownerLineage string) *installedWaitFixture {
 	t.Helper()
-	cleanupEnvironment := func() []string {
+	return &installedWaitFixture{ProcessFixture: testutil.Fixture(t), ownerLineage: ownerLineage}
+}
+
+func (fixture *installedWaitFixture) ownerEnvironment(base []string) []string {
+	environment := make([]string, 0, len(base)+1)
+	for _, value := range base {
+		if !strings.HasPrefix(value, "METASYSTEM_OWNER_LINEAGE=") {
+			environment = append(environment, value)
+		}
+	}
+	return append(environment, "METASYSTEM_OWNER_LINEAGE="+fixture.ownerLineage)
+}
+
+func (fixture *installedWaitFixture) Env(base []string) []string {
+	return fixture.ProcessFixture.Env(fixture.ownerEnvironment(base))
+}
+
+func TestInstalledWaitFixtureReplacesInheritedOwnerLineage(t *testing.T) {
+	t.Parallel()
+	fixture := installedWaitFixture{ownerLineage: "wait-stop-lineage"}
+	environment := fixture.ownerEnvironment([]string{
+		"PATH=/fixture/bin",
+		"METASYSTEM_OWNER_LINEAGE=diagnostic-hostile-lineage",
+	})
+	var lineages []string
+	for _, value := range environment {
+		if strings.HasPrefix(value, "METASYSTEM_OWNER_LINEAGE=") {
+			lineages = append(lineages, value)
+		}
+	}
+	if len(lineages) != 1 || lineages[0] != "METASYSTEM_OWNER_LINEAGE="+fixture.ownerLineage {
+		t.Fatalf("installed wait environment owner lineages=%q", lineages)
+	}
+}
+
+func runRecordedInstalledWaitCommand(fixture *installedWaitFixture, command *exec.Cmd) ([]byte, error) {
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	if err := command.Start(); err != nil {
+		return output.Bytes(), err
+	}
+	fixture.Record(command.Process.Pid)
+	err := command.Wait()
+	if holdErr := fixture.HoldOwnedChildren(); holdErr != nil {
+		err = errors.Join(err, holdErr)
+	}
+	return append([]byte(nil), output.Bytes()...), err
+}
+
+func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFixture, canonical, root string) func() error {
+	t.Helper()
+	stopped := false
+	stop := func() error {
+		if stopped {
+			return nil
+		}
 		environment := make([]string, 0, len(os.Environ())+1)
 		for _, value := range os.Environ() {
 			if !strings.HasPrefix(value, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=") {
 				environment = append(environment, value)
 			}
 		}
-		return fixture.Env(append(environment, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=250"))
-	}
-	run := func(arguments ...string) func(context.Context) error {
-		return func(ctx context.Context) error {
-			command := exec.CommandContext(ctx, canonical, arguments...)
-			command.Env = cleanupEnvironment()
-			output, err := command.CombinedOutput()
-			if err != nil || ctx.Err() != nil {
-				return fmt.Errorf("context=%v run=%v output=%s", ctx.Err(), err, output)
+		environment = fixture.Env(append(environment, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=1"))
+		var failures []error
+		for _, arguments := range [][]string{
+			{"up", "--metasystem-root", root, "--repo", root, "--shutdown"},
+			{"steward", "disarm", "--repo", root},
+		} {
+			command := exec.Command(canonical, arguments...)
+			command.Env = environment
+			output, err := runRecordedInstalledWaitCommand(fixture, command)
+			if err != nil {
+				failures = append(failures, fmt.Errorf("%s: %w: %s", strings.Join(arguments, " "), err, output))
 			}
-			return nil
 		}
+		if len(failures) == 0 {
+			stopped = true
+		}
+		return errors.Join(failures...)
 	}
-	testenv.ReapFixtureProcessGroups(t, []testenv.FixtureProcessGroup{
-		{
-			Verb: "steward run",
-			Resolve: func() (int, bool, error) {
-				runner, present := steward.LiveRunner(root)
-				return int(runner.Pid), present, nil
-			},
-		},
-		{
-			Verb: "supervise owner",
-			Resolve: func() (int, bool, error) {
-				owner, err := supervise.ReadArmingOwner(root)
-				if os.IsNotExist(err) {
-					return 0, false, nil
-				}
-				if err != nil {
-					return 0, false, err
-				}
-				ref := identity.Ref{
-					Pid: owner.Pid, StartedAtSec: owner.PidStartedAt,
-					StartTicks: owner.PidStartTicks, BootID: owner.BootID,
-				}
-				switch state := identity.AliveTaggedRef(identity.KernelProber{}, ref, owner.InstanceTag); state {
-				case identity.Alive:
-					return int(owner.Pid), true, nil
-				case identity.Dead:
-					return 0, false, nil
-				default:
-					return 0, false, fmt.Errorf("supervision owner pid=%d identity is %s", owner.Pid, state)
-				}
-			},
-		},
-	},
-		testenv.FixtureCleanup{Verb: "up --shutdown", Run: run("up", "--metasystem-root", root, "--repo", root, "--shutdown")},
-		testenv.FixtureCleanup{Verb: "steward disarm", Run: run("steward", "disarm", "--repo", root)},
-	)
+	t.Cleanup(func() {
+		if err := stop(); err != nil {
+			t.Errorf("stop installed supervision: %v", err)
+		}
+	})
+	return stop
 }
 
 func pendingWaitHookEnvironment(wrapper, canonical, now string) []string {
@@ -1087,6 +1137,7 @@ func pendingWaitHookEnvironment(wrapper, canonical, now string) []string {
 			strings.HasPrefix(value, "METASYSTEM_FAKE_AGENT_ANCESTOR_PID=") ||
 			strings.HasPrefix(value, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=") ||
 			strings.HasPrefix(value, "METASYSTEM_CENSUS_PROCESS_FILE=") ||
+			strings.HasPrefix(value, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=") ||
 			strings.HasPrefix(value, "METASYSTEM_GOAL_NOW=") {
 			continue
 		}
@@ -1097,6 +1148,7 @@ func pendingWaitHookEnvironment(wrapper, canonical, now string) []string {
 		"METASYSTEM_WAIT_REAL_ENGINE="+canonical,
 		"METASYSTEM_WAIT_UP_COMMAND_FILE="+wrapper+".up-command",
 		"METASYSTEM_FAKE_AGENT_ANCESTOR_PID="+fmt.Sprint(os.Getpid()),
+		"METASYSTEM_FIXTURE_CAP_SCALE_MILLI=1",
 	)
 	if now != "" {
 		environment = append(environment, "METASYSTEM_GOAL_NOW="+now)
@@ -1104,7 +1156,7 @@ func pendingWaitHookEnvironment(wrapper, canonical, now string) []string {
 	return environment
 }
 
-func runPendingWaitHook(t *testing.T, fixture *testutil.ProcessFixture, hook, wrapper, canonical, event, payload, label, now string) installedHookResult {
+func runPendingWaitHook(t *testing.T, fixture *installedWaitFixture, hook, wrapper, canonical, event, payload, label, now string) installedHookResult {
 	t.Helper()
 	outputDir := t.TempDir()
 	stdoutPath := filepath.Join(outputDir, label+".stdout")
@@ -1122,7 +1174,19 @@ func runPendingWaitHook(t *testing.T, fixture *testutil.ProcessFixture, hook, wr
 	command.Env = fixture.Env(pendingWaitHookEnvironment(wrapper, canonical, now))
 	command.Stdin = strings.NewReader(payload)
 	command.Stdout, command.Stderr = stdout, stderr
-	runErr := command.Run()
+	startErr := command.Start()
+	if startErr == nil {
+		fixture.Record(command.Process.Pid)
+	}
+	var runErr error
+	if startErr != nil {
+		runErr = startErr
+	} else {
+		runErr = command.Wait()
+	}
+	if holdErr := fixture.HoldOwnedChildren(); holdErr != nil {
+		runErr = errors.Join(runErr, holdErr)
+	}
 	closeStdoutErr, closeStderrErr := stdout.Close(), stderr.Close()
 	stdoutData, stdoutErr := os.ReadFile(stdoutPath)
 	stderrData, stderrErr := os.ReadFile(stderrPath)
@@ -1272,22 +1336,16 @@ func writeWaiterFixture(t *testing.T, root string, row metarun.Waiter) {
 
 func proveFixtureProcessOwnership(t *testing.T, pid int, instanceTag string) error {
 	t.Helper()
-	outputPath := filepath.Join(t.TempDir(), "process-command.txt")
-	output, err := os.Create(outputPath)
-	if err != nil {
-		return err
+	exact, state, err := (identity.KernelProber{}).Probe(int64(pid))
+	if err != nil || state != identity.Alive {
+		return fmt.Errorf("process %d ownership identity is %s: %w", pid, state, err)
 	}
-	command := exec.Command("ps", "-p", fmt.Sprint(pid), "-o", "command=")
-	command.Stdout = output
-	command.Stderr = output
-	runErr := command.Run()
-	closeErr := output.Close()
-	data, readErr := os.ReadFile(outputPath)
-	if runErr != nil || closeErr != nil || readErr != nil {
-		return fmt.Errorf("process ownership proof failed: run=%v close=%v read=%v", runErr, closeErr, readErr)
+	owned := exact.ExeKnown && filepath.Base(exact.Exe) == instanceTag
+	for _, word := range exact.Argv {
+		owned = owned || filepath.Base(word) == instanceTag
 	}
-	if !strings.Contains(string(data), instanceTag) {
-		return fmt.Errorf("process %d command %q does not carry fixture tag %q", pid, strings.TrimSpace(string(data)), instanceTag)
+	if !owned {
+		return fmt.Errorf("process %d executable=%q argv=%q does not carry fixture tag %q", pid, exact.Exe, exact.Argv, instanceTag)
 	}
 	return nil
 }
@@ -1415,14 +1473,14 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 func TestRegisteredLocalAndHumanWaitsInstalledVerdicts(t *testing.T) {
 	candidate := os.Getenv("METASYSTEM_WAIT_BINARY")
 	if candidate == "" {
-		return
+		t.Fatal("METASYSTEM_WAIT_BINARY is required for the installed wait-verdict proof")
 	}
 	binary := testutil.InstalledWaitBinary(t, candidate)
 	root := t.TempDir()
-	fixture := testutil.Fixture(t)
-	session, _ := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{jobStatus: "pending"})
+	commandFixture := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{jobStatus: "pending"})
+	fixture := newInstalledWaitFixture(t, commandFixture.ownerLineage)
+	session := commandFixture.session
 	hook, canonical, wrapper := installPendingWaitHookFixture(t, root, binary)
-	reapPendingWaitFixtureChildren(t, fixture, canonical, root)
 	wrapperSource := `#!/bin/sh
 if [ "${1:-}" = up ]; then printf '%s\n' 'up outcome=already-healthy'; exit 0; fi
 if [ "${1:-}" = health ]; then
@@ -1460,6 +1518,7 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 	t.Cleanup(stopChild)
 
 	register := exec.Command(canonical, "wait", "register", "--root", root, "--pid", fmt.Sprint(child.Process.Pid), "--label", "installed local build", "--job", "wait-stop-job", "--timeout", "1h", "--json")
+	register.Env = fixture.Env(os.Environ())
 	registerOutput, err := register.CombinedOutput()
 	var local metarun.Waiter
 	if err != nil || json.Unmarshal(registerOutput, &local) != nil || local.Kind != "local" {
@@ -1469,7 +1528,7 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 	artifact := filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts", session+".txt")
 	liveArtifact, artifactErr := os.ReadFile(artifact)
 	if strings.Contains(liveHook.stdout, `"decision":"block"`) || artifactErr != nil || !strings.Contains(string(liveArtifact), "WAITING: installed local build") {
-		t.Fatalf("live registered local wait did not allow Stop: stdout=%s stderr=%s", liveHook.stdout, liveHook.stderr)
+		t.Fatalf("live registered local wait did not allow Stop: stdout=%s stderr=%s artifactErr=%v artifact=%s", liveHook.stdout, liveHook.stderr, artifactErr, liveArtifact)
 	}
 
 	stopChild()
@@ -1480,6 +1539,7 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 	}
 
 	humanCommand := exec.Command(canonical, "wait", "register", "--root", root, "--human", "--question", "May the installed run stop?", "--timeout", "1h", "--json")
+	humanCommand.Env = fixture.Env(os.Environ())
 	humanOutput, err := humanCommand.CombinedOutput()
 	var human metarun.Waiter
 	if err != nil || json.Unmarshal(humanOutput, &human) != nil || human.Kind != "human" {
@@ -1492,31 +1552,63 @@ exec "${METASYSTEM_WAIT_REAL_ENGINE:?}" "$@"
 	}
 }
 
+func TestPendingWaitOldPhysicalObservationUsesSemanticClock(t *testing.T) {
+	root := t.TempDir()
+	session, mainID := pendingWaitVerdictCommandFixture(t, root, "fake")
+	rows, err := pendingWaiterRows(root)
+	if err != nil || len(rows) != 1 || rows[0].Pid != int64(os.Getpid()) {
+		t.Fatalf("process-owned waiter rows=%+v err=%v", rows, err)
+	}
+	row := rows[0]
+	delayedObservation := time.Now().UTC().Add(-time.Minute)
+	row.RegisteredAt = delayedObservation.Add(-time.Second).Format(time.RFC3339Nano)
+	row.LastObservedAt = delayedObservation.Format(time.RFC3339Nano)
+	row.Deadline = delayedObservation.Add(time.Minute).Format(time.RFC3339Nano)
+	writeWaiterFixture(t, root, row)
+	if time.Since(delayedObservation) <= 30*time.Second {
+		t.Fatal("fixture did not separate physical and semantic observation time")
+	}
+	t.Setenv(goalNowEnvironment, delayedObservation.Add(30*time.Second).Format(time.RFC3339Nano))
+	assertRegisteredWaitVerdict(t, pendingWaitVerdict(t, root, session, mainID),
+		fmt.Sprintf("WAITING: registered wait %s covers job wait-stop-job until %s", row.WaitID, row.Deadline))
+}
+
 func TestPendingWaitFromChildShell(t *testing.T) {
 	candidate := os.Getenv("METASYSTEM_WAIT_BINARY")
 	if candidate == "" {
-		t.Skip("METASYSTEM_WAIT_BINARY is not set")
+		t.Fatal("METASYSTEM_WAIT_BINARY is required for the installed child-wait proof")
 	}
 	binary := testutil.InstalledWaitBinary(t, candidate)
 	root := t.TempDir()
-	fixture := testutil.Fixture(t)
-	_, mainID := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{
+	commandFixture := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{
 		jobStatus: "pending", writeWaiter: false,
 	})
+	fixture := newInstalledWaitFixture(t, commandFixture.ownerLineage)
+	mainID := commandFixture.mainID
 	runtimeSession := "8d91c146-8460-4bf1-9a48-04bc577c3aa4"
 	hook, canonical, wrapper := installPendingWaitHookFixture(t, root, binary)
-	reapPendingWaitFixtureChildren(t, fixture, canonical, root)
-
+	stopSupervision := installPendingWaitSupervisionCleanup(t, fixture, canonical, root)
+	startNow, err := goalCommandNow(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	startPayload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"source":"clear"}`, runtimeSession, root)
-	startHook := runPendingWaitHook(t, fixture, hook, wrapper, canonical, "start", startPayload, "associated-start", "")
+	startHook := runPendingWaitHook(t, fixture, hook, wrapper, canonical, "start", startPayload, "associated-start", startNow.Format(time.RFC3339Nano))
+	if !strings.Contains(startHook.upCommand, " up ") ||
+		!strings.Contains(startHook.upCommand, "--runtime-session "+runtimeSession) ||
+		!strings.Contains(startHook.upCommand, "--start-source clear") {
+		t.Fatalf("installed SessionStart did not propagate association arguments: up=%q stdout=%s stderr=%s", startHook.upCommand, startHook.stdout, startHook.stderr)
+	}
 	announcements := lease.AnnouncementsFor(root, int64(os.Getpid()))
 	if len(announcements) != 1 || announcements[0].MainId != mainID ||
 		announcements[0].RuntimeSession != runtimeSession || announcements[0].SessionId == runtimeSession {
-		t.Fatalf("hook-associated announcement=%+v main=%s runtime-session=%s up-command=%s hook-stdout=%s hook-stderr=%s",
-			announcements, mainID, runtimeSession, startHook.upCommand, startHook.stdout, startHook.stderr)
+		t.Fatalf("associated announcement=%+v main=%s runtime-session=%s", announcements, mainID, runtimeSession)
 	}
 	if rows, err := pendingWaiterRows(root); err != nil || len(rows) != 0 {
 		t.Fatalf("fixture or SessionStart wrote a waiter row: rows=%+v err=%v", rows, err)
+	}
+	if err := stopSupervision(); err != nil {
+		t.Fatalf("stop installed supervision after association proof: %v", err)
 	}
 
 	childOutputDir := t.TempDir()
@@ -1578,6 +1670,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 			return err
 		}
 		notify := exec.Command(binary, "wait", "notify", "--root", root, "--job", "wait-stop-job")
+		notify.Env = fixture.Env(os.Environ())
 		notify.Stdout, notify.Stderr = notifyStdout, notifyStderr
 		notifyErr := notify.Run()
 		closeNotifyStdoutErr, closeNotifyStderrErr := notifyStdout.Close(), notifyStderr.Close()
@@ -1646,7 +1739,12 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 		t.Fatalf("the Stop gate wrote or replaced a waiter row: rows=%+v err=%v", rows, rowsErr)
 	}
 
-	assertRegisteredWaitVerdict(t, pendingWaitVerdict(t, root, runtimeSession, mainID), waitingLine)
+	registeredVerdict := pendingWaitVerdict(t, root, runtimeSession, mainID)
+	if registeredVerdict.ShouldBlock {
+		diagnostic, _ := os.ReadFile(filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts", runtimeSession+".txt"))
+		t.Logf("associated wait diagnostic: row=%+v artifact=%s", row, diagnostic)
+	}
+	assertRegisteredWaitVerdict(t, registeredVerdict, waitingLine)
 	beforeAllow := strings.Count(string(logData), "stop response decision=allow")
 	allowedPayload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop"}`, runtimeSession, root)
 	allowedHook := runPendingWaitHook(t, fixture, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop", pendingWaitFixtureNow(t, root, row.WaitID))
@@ -1672,7 +1770,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	beforeAllow = strings.Count(string(logData), "stop response decision=allow")
 	t.Setenv("METASYSTEM_GOAL_NOW", "2099-01-01T00:00:00Z")
 	allowedHook = runPendingWaitHook(t, fixture, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop-with-hostile-rows", pendingWaitFixtureNow(t, root, row.WaitID))
-	t.Setenv("METASYSTEM_GOAL_NOW", "")
+	t.Setenv("METASYSTEM_GOAL_NOW", pendingWaitFixtureNow(t, root, row.WaitID))
 	if strings.Contains(allowedHook.stdout, `"decision":"block"`) {
 		t.Fatalf("hostile rows changed the associated Stop: stdout=%s stderr=%s", allowedHook.stdout, allowedHook.stderr)
 	}
@@ -1763,7 +1861,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	dead.Pid, dead.PidStartedAt = int64(sleeper.Process.Pid), sleeperExact.StartedAt.Unix()
 	dead.PidStartedAtMicro, dead.PidStartTicks, dead.BootID = sleeperExact.StartedAt.UnixMicro(), sleeperExact.StartTicks, sleeperExact.BootID
 	writeWaiterFixture(t, root, dead)
-	runPendingWaitHook(t, fixture, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop-with-dead-waiter", "")
+	runPendingWaitHook(t, fixture, hook, wrapper, canonical, "stop", allowedPayload, "associated-stop-with-dead-waiter", pendingWaitFixtureNow(t, root, row.WaitID))
 	logData, err = os.ReadFile(hookLog)
 	if err != nil {
 		t.Fatalf("associated dead-waiter Stop hook log=%s err=%v", logData, err)
@@ -1801,9 +1899,58 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 
 func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 	root := t.TempDir()
-	predecessor := exec.Command("sleep", "60")
-	if err := predecessor.Start(); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
 		t.Fatal(err)
+	}
+	stableNow := time.Date(2026, 9, 13, 11, 0, 0, 0, time.UTC)
+	stableBootElapsed := 48 * time.Hour
+	t.Setenv(goalNowEnvironment, stableNow.Format(time.RFC3339))
+	t.Setenv(goalBootIDEnvironment, "fixture-boot")
+	t.Setenv(goalBootNanosEnvironment, strconv.FormatInt(stableBootElapsed.Nanoseconds(), 10))
+	beforeOptions, err := waitRegisterOptions(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeNow := beforeOptions.Now()
+	bootID, elapsed, err := beforeOptions.BootClock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseRead, releaseWrite, err := os.Pipe()
+	if err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		t.Fatal(err)
+	}
+	predecessor := exec.Command("/bin/sh", "-c", "printf 'ready\\n' >&3; IFS= read -r _ <&4")
+	predecessor.ExtraFiles = []*os.File{readyWrite, releaseRead}
+	if err := predecessor.Start(); err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		_ = releaseRead.Close()
+		_ = releaseWrite.Close()
+		t.Fatal(err)
+	}
+	_ = readyWrite.Close()
+	_ = releaseRead.Close()
+	predecessorDone := make(chan error, 1)
+	go func() { predecessorDone <- predecessor.Wait() }()
+	predecessorJoined := false
+	t.Cleanup(func() {
+		_ = releaseWrite.Close()
+		if !predecessorJoined {
+			_ = predecessor.Process.Kill()
+			<-predecessorDone
+		}
+	})
+	ready, readyErr := bufio.NewReader(readyRead).ReadString('\n')
+	_ = readyRead.Close()
+	if readyErr != nil || ready != "ready\n" {
+		t.Fatalf("predecessor readiness=%q err=%v", ready, readyErr)
 	}
 	predecessorPID := int64(predecessor.Process.Pid)
 	predecessorExact, state, err := (identity.KernelProber{}).Probe(predecessorPID)
@@ -1817,12 +1964,6 @@ func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	oldMain := announcedMainID(t, oldPath)
-	bootID, elapsed, err := identity.BootClock()
-	if err != nil {
-		_ = predecessor.Process.Kill()
-		t.Fatal(err)
-	}
-	now := time.Now().UTC()
 	waitID, nonce := strings.Repeat("c", 32), strings.Repeat("d", 32)
 	epoch := int64(1)
 	row := metarun.Waiter{
@@ -1830,7 +1971,7 @@ func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 		Pid: predecessorPID, PidStartedAt: predecessorExact.StartedAt.Unix(), PidStartTicks: predecessorExact.StartTicks, BootID: predecessorExact.BootID,
 		Session: "old-session", MainId: oldMain, OwnerLineage: oldMain, ClaimEpoch: &epoch, RuntimeSession: "old-session",
 		Selector: metarun.WaitSelector{Kind: "job", TargetID: "job-takeover"}, Target: metarun.WaiterTarget{OperationID: "reserve-takeover", StartedAt: "2026-09-13T10:00:00Z", Round: 2},
-		RegisteredAt: now.Add(-time.Minute).Format(time.RFC3339Nano), Deadline: now.Add(time.Hour).Format(time.RFC3339Nano), DeadlineBootID: bootID,
+		RegisteredAt: beforeNow.Add(-time.Minute).Format(time.RFC3339Nano), Deadline: beforeNow.Add(time.Hour).Format(time.RFC3339Nano), DeadlineBootID: bootID,
 		BootDeadlineNanos: (elapsed + time.Hour).Nanoseconds(), RemainingNanos: time.Hour.Nanoseconds(), LastObservedBootNanos: elapsed.Nanoseconds(), OpenWorkSignature: report.Scan(root).OpenWorkSignature(), State: "pending", Delivery: "blocking",
 	}
 	if err := os.MkdirAll(metarun.WaitersDir(root), 0o755); err != nil {
@@ -1851,7 +1992,10 @@ func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 	if err := predecessor.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
-	_ = predecessor.Wait()
+	if err := <-predecessorDone; err == nil {
+		t.Fatal("killed predecessor exited successfully")
+	}
+	predecessorJoined = true
 	self := int64(os.Getpid())
 	selfExact, state, err := (identity.KernelProber{}).Probe(self)
 	if err != nil || state != identity.Alive {
@@ -1874,5 +2018,14 @@ func TestWaitLeaseTakeoverRepairsAndResumes(t *testing.T) {
 	decodeErr := json.Unmarshal([]byte(output), &result)
 	if code != 0 || problem != "" || decodeErr != nil || result.WaitID == waitID || result.PointerRepaired {
 		t.Fatalf("takeover resume code=%d output=%q problem=%q result=%+v err=%v", code, output, problem, result, decodeErr)
+	}
+	afterOptions, err := waitRegisterOptions(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterBootID, afterElapsed, err := afterOptions.BootClock()
+	if err != nil || afterOptions.Now() != beforeNow || afterBootID != bootID || afterElapsed != elapsed {
+		t.Fatalf("resume crossed semantic clocks: now=%s/%s boot=%s/%s elapsed=%s/%s err=%v",
+			beforeNow, afterOptions.Now(), bootID, afterBootID, elapsed, afterElapsed, err)
 	}
 }

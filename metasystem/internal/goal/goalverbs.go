@@ -47,12 +47,13 @@ func (c Caller) origin() string {
 	return OriginMain
 }
 
-// Store binds one checkout for verb execution. Prober, Now, and sleep are
-// seams for tests; nil means kernel and wall clock.
+// Store binds one checkout for verb execution. Prober, Now, BootClock, and
+// sleep are seams for tests; nil means kernel and wall clock.
 type Store struct {
 	Root            string
 	Prober          identity.Prober
 	Now             func() time.Time
+	BootClock       func() (string, time.Duration, error)
 	sleep           func(time.Duration)
 	verdictDeps     turnVerdictDependencies
 	projectionDeps  projectionDependencies

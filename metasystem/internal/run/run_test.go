@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 type fakeProber struct {
@@ -233,12 +234,9 @@ func TestDrainingFreezesVerdict(t *testing.T) {
 	// real setsid sleep whose group has a live member — the sleep
 	// itself. The leader identity we RECORD is a fake dead pid, but the
 	// pgid we record is the sleep's live group).
-	sleeper := exec.Command("/bin/sleep", "30")
-	sleeper.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := sleeper.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer sleeper.Process.Kill()
+	sleeperCommand := exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :")
+	sleeperCommand.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	sleeper := testutil.StartHeldProcess(t, sleeperCommand)
 	nonce := launchOne(t, s, "drain-run")
 	prober.verdicts[201] = identity.Alive
 	prober.starts[201] = 5000
@@ -250,7 +248,7 @@ func TestDrainingFreezesVerdict(t *testing.T) {
 	// own writer would violate CAS; use Adopt? Adopt changes generation.
 	// Simplest: kill the leader and point the group at the sleeper's).
 	record, _ := s.Read("drain-run")
-	pg := int64(sleeper.Process.Pid)
+	pg := int64(sleeper.Command.Process.Pid)
 	record.Pgid = &pg
 	if err := s.write(record); err != nil {
 		t.Fatal(err)
@@ -478,20 +476,17 @@ func TestHungFlagAndRegisterPattern(t *testing.T) {
 	// never a red guess. The leader must be a REAL process (Register
 	// reads the kernel pgid), so spawn a sleeper in its own group — the
 	// Mac's coincidental pid 999 hid this until the Linux gate refused.
-	sleeper := exec.Command("/bin/sleep", "30")
-	sleeper.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := sleeper.Start(); err != nil {
-		t.Fatal(err)
-	}
-	sleeperPid := int64(sleeper.Process.Pid)
+	sleeperCommand := exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :")
+	sleeperCommand.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	sleeper := testutil.StartHeldProcess(t, sleeperCommand)
+	sleeperPid := int64(sleeper.Command.Process.Pid)
 	prober.verdicts[sleeperPid] = identity.Alive
 	prober.starts[sleeperPid] = 9000
 	os.WriteFile(filepath.Join(s.Root, "nm.log"), []byte("no verdict here\n"), 0o644)
 	if err := s.Register(mainCaller, LaunchParams{Id: "nomatch-run", Kind: "custom", Log: filepath.Join(s.Root, "nm.log")}, sleeperPid, "NEVER$"); err != nil {
 		t.Fatal(err)
 	}
-	sleeper.Process.Kill()
-	sleeper.Wait()
+	_ = sleeper.Kill()
 	prober.verdicts[sleeperPid] = identity.Dead
 	result, _ = s.Assess("nomatch-run")
 	if result.To == StatusDraining {
@@ -668,13 +663,10 @@ func TestPatternEvidenceSymlinkSwap(t *testing.T) {
 	prober := fakeProber{verdicts: map[int64]identity.Liveness{}, starts: map[int64]int64{}}
 	s.Prober = prober
 
-	sleeper := exec.Command("/bin/sleep", "30")
-	sleeper.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := sleeper.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { sleeper.Process.Kill(); sleeper.Wait() }()
-	pid := int64(sleeper.Process.Pid)
+	sleeperCommand := exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :")
+	sleeperCommand.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	sleeper := testutil.StartHeldProcess(t, sleeperCommand)
+	pid := int64(sleeper.Command.Process.Pid)
 	prober.verdicts[pid] = identity.Alive
 	prober.starts[pid] = 9000
 
@@ -694,8 +686,7 @@ func TestPatternEvidenceSymlinkSwap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sleeper.Process.Kill()
-	sleeper.Wait()
+	_ = sleeper.Kill()
 	prober.verdicts[pid] = identity.Dead
 	result, err := s.Assess("swap-run")
 	if err != nil {

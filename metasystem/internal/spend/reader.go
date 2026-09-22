@@ -42,6 +42,7 @@ type readerCursor struct {
 	repoRoot, toplevel string
 	now                time.Time
 	info               os.FileInfo
+	work               *MeasureWork
 }
 type readerJob struct {
 	path, id, sessionID, resumedSessionID, role, runtime, startedAt string

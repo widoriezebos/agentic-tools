@@ -187,20 +187,75 @@ func resourceCustodyTestEntrypoint() (int, bool) {
 }
 
 func hostResourceCustodyHelperInvocation() bool {
-	args := os.Args
-	if os.Getenv("METASYSTEM_HOST_CUSTODY_HELPER") != "1" || len(args) != 10 ||
+	return hostResourceCustodyHelperArgs(os.Args, os.Getenv("METASYSTEM_HOST_CUSTODY_HELPER"))
+}
+
+func hostResourceCustodyHelperArgs(args []string, helperMode string) bool {
+	return hostResourceCustodyHelperArgsUnder(args, helperMode, os.TempDir())
+}
+
+func hostResourceCustodyHelperArgsUnder(args []string, helperMode, temporaryRoot string) bool {
+	if helperMode != "1" || len(args) != 11 ||
 		args[1] != "-test.run=^TestGLEHostResourceCustodyProcessHelper$" || args[2] != "--" || args[3] != "launcher" {
 		return false
 	}
 	root := args[4]
-	relative, err := filepath.Rel(os.TempDir(), root)
+	relative, err := filepath.Rel(temporaryRoot, root)
 	return err == nil && filepath.IsAbs(root) && relative != "." && relative != ".." &&
 		!strings.HasPrefix(relative, ".."+string(filepath.Separator)) && fixtureauth.FixtureModeRoot(root)
 }
 
+func TestHostResourceCustodyHelperInvocation(t *testing.T) {
+	t.Parallel()
+	newRoot := func(parent, config string) string {
+		root, err := os.MkdirTemp(parent, "custody-helper.")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(root) })
+		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(config), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+	layoutRoot := t.TempDir()
+	temporaryRoot, ordinaryParent := filepath.Join(layoutRoot, "controlled-temp"), filepath.Join(layoutRoot, "checkout")
+	for _, parent := range []string{temporaryRoot, ordinaryParent} {
+		if err := os.MkdirAll(parent, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fixtureRoot, nonFixtureRoot := newRoot(temporaryRoot, "metasystem.runtimes=fake\n"), newRoot(temporaryRoot, "")
+	nonTemporaryRoot := newRoot(ordinaryParent, "metasystem.runtimes=fake\n")
+	exact := []string{"proofrun.test", "-test.run=^TestGLEHostResourceCustodyProcessHelper$", "--", "launcher", fixtureRoot, "conf", "engine", "worker", "grandchild", "ready", "release"}
+	invoked := func(args []string, mode string) bool {
+		return hostResourceCustodyHelperArgsUnder(args, mode, temporaryRoot)
+	}
+	if !invoked(exact, "1") || !hostResourceCustodyHelperArgs(exact, "1") {
+		t.Fatal("exact helper invocation was refused")
+	}
+	cases := []struct {
+		name string
+		edit func([]string) []string
+	}{
+		{"old arity", func(args []string) []string { return args[:10] }},
+		{"extra argument", func(args []string) []string { return append(args, "extra") }},
+		{"wrong test name", func(args []string) []string { args[1] = "-test.run=wrong"; return args }},
+		{"wrong mode", func(args []string) []string { args[3] = "worker"; return args }},
+		{"non-temporary root", func(args []string) []string { args[4] = nonTemporaryRoot; return args }},
+		{"non-fixture root", func(args []string) []string { args[4] = nonFixtureRoot; return args }},
+	}
+	for _, test := range cases {
+		args := append([]string(nil), exact...)
+		if invoked(test.edit(args), "1") {
+			t.Errorf("%s: malformed helper invocation was accepted", test.name)
+		}
+	}
+}
+
 func hostResourceNestedCustodyHelperInvocation() bool {
 	args := os.Args
-	if os.Getenv("METASYSTEM_NESTED_CUSTODY_HELPER") != "1" || len(args) != 7 ||
+	if os.Getenv("METASYSTEM_NESTED_CUSTODY_HELPER") != "1" || len(args) != 9 ||
 		args[1] != "-test.run=^TestHostResourceNestedCustodySubprocess$" || args[2] != "--" ||
 		(args[3] != "launcher" && args[3] != "worker") {
 		return false

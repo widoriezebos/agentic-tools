@@ -66,7 +66,7 @@ adapter_milliseconds_to_sleep() { # positive integer milliseconds
 }
 
 prepare_supervision() { # dispatch|follow-up and supervisor args
-  local gate_poll role schema_version
+  local gate_poll_ms gate_rc=0 role schema_version
   adapter_verb=$1
   shift
   parse_supervisor_args "$@" || return 2
@@ -82,15 +82,14 @@ prepare_supervision() { # dispatch|follow-up and supervisor args
   # Provider children, resumes, and secondary delivery-repair children inherit
   # them; a hook still verifies current process ancestry against exact custody.
   initialize_hook_delegate_context "$root" "$job" || return 2
-  gate_poll=$(adapter_milliseconds_to_sleep "${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-10}") || return 2
+  gate_poll_ms=${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-10}
+  adapter_milliseconds_to_sleep "$gate_poll_ms" >/dev/null || return 2
   # Capped like every host's wait (script-adapters-11): a dispatcher that
   # dies before opening the gate must not leave an immortal supervisor
   # sleeping forever with no heartbeat and no handshake deadline.
-  gate_deadline=$(( $(date +%s) + ${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10} ))
-  while [[ ! -e "$gate" ]]; do
-    (( $(date +%s) <= gate_deadline )) || { echo "start gate never opened: $gate" >&2; return 1; }
-    sleep "$gate_poll"
-  done
+	"$ms" adapter wait-start-gate --root "$root" --path "$gate" \
+    --timeout-sec "${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10}" --poll-ms "$gate_poll_ms" || gate_rc=$?
+  (( gate_rc == 0 )) || { echo "start gate never opened: $gate" >&2; return 1; }
   round=$(field "$record" round)
   root_job=$(root_job_id "$job")
   round_dir="$agents/$root_job/rounds/$round"

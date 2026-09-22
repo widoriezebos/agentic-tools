@@ -275,6 +275,56 @@ func TestStopSurfaceDiscoversAssertionsOutsideTheOldList(t *testing.T) {
 	}
 }
 
+func TestStopSurfaceUsesGitCandidateInventoryInNestedInstallation(t *testing.T) {
+	t.Parallel()
+	repository := t.TempDir()
+	installation := filepath.Join(repository, "application", "metasystem")
+	if err := os.MkdirAll(installation, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := &stopSurfaceFixture{t: t, root: installation}
+	fixture.git("init", "-q", "-b", "main", repository)
+	fixture.git("config", "--local", "user.name", "Stop Surface Fixture")
+	fixture.git("config", "--local", "user.email", "stop-surface@invalid")
+	fixture.git("config", "--local", "commit.gpgsign", "false")
+	fixture.write(".gitignore", "artifacts/\nignored-source/\n")
+	fixture.write("internal/base_stop_test.go", goStopSurfaceFixture("internal", "base := Verdict{ShouldBlock: true}\n"))
+	fixture.write("ignored-source/tracked_stop_test.go", goStopSurfaceFixture("ignoredsource", "tracked := Verdict{BlockSource: source}\n"))
+	fixture.git("add", "-f", "ignored-source/tracked_stop_test.go")
+	fixture.commit("base")
+
+	fixture.write("internal/new_stop_test.go", goStopSurfaceFixture("internal", "candidate := Verdict{CountSpent: true}\n"))
+	for index := 0; index < 256; index++ {
+		path := fmt.Sprintf("artifacts/agents/worktrees/copy-%03d/internal/copied_stop_test.go", index)
+		fixture.write(path, goStopSurfaceFixture("copied", "generated := Verdict{IdleRefusal: true}\n"))
+	}
+
+	files, err := discoverStopSurfaceFiles(installation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFiles := []stopSurfaceFile{
+		{Kind: "go", Path: "ignored-source/tracked_stop_test.go"},
+		{Kind: "go", Path: "internal/base_stop_test.go"},
+		{Kind: "go", Path: "internal/new_stop_test.go"},
+	}
+	if !slices.Equal(files, wantFiles) {
+		generated := 0
+		for _, file := range files {
+			if strings.HasPrefix(file.Path, "artifacts/") {
+				generated++
+			}
+		}
+		t.Fatalf("candidate inventory has %d files including %d generated copies, want exactly %#v", len(files), generated, wantFiles)
+	}
+
+	result := fixture.audit(stopSurfaceTestOptions())
+	wantAdded := []StopSurfaceLine{{File: "internal/new_stop_test.go", Line: "candidate := Verdict{CountSpent: true}"}}
+	if result.Refused() || !slices.Equal(result.Added, wantAdded) || len(result.Moved) != 0 || len(result.Removed) != 0 || len(result.Problems) != 0 {
+		t.Fatalf("nested installation result = %#v, want only additions %#v", result, wantAdded)
+	}
+}
+
 const (
 	hookWireBlockAssertion = `if strings.Contains(out, "\"decision\":\"block\"") {}`
 	hookWireAllowAssertion = `if strings.Contains(out, "\"decision\":\"allow\"") {}`

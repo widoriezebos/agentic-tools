@@ -29,9 +29,16 @@ func (p waitRegisterFixtureProber) Probe(pid int64) (identity.Exact, identity.Li
 	return p.exact, p.state, p.err
 }
 
-func waitRegisterCommandFixture(t *testing.T) (string, int64, string) {
+func waitRegisterCommandFixture(t *testing.T) (string, int64, string, time.Time) {
 	t.Helper()
 	root := t.TempDir()
+	now := time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(goalNowEnvironment, now.Format(time.RFC3339Nano))
+	t.Setenv(goalBootIDEnvironment, "system-boot")
+	t.Setenv(goalBootNanosEnvironment, fmt.Sprint((2 * time.Hour).Nanoseconds()))
 	self := int64(os.Getpid())
 	exact, state, err := (identity.KernelProber{}).Probe(self)
 	if err != nil || state != identity.Alive {
@@ -43,16 +50,14 @@ func waitRegisterCommandFixture(t *testing.T) (string, int64, string) {
 	}
 	mainID := announcedMainID(t, announcement)
 	originalPID, originalSignature := waitCallerPID, waitOpenWorkSignature
-	originalNow, originalBoot, originalProber := waitRegisterNow, waitRegisterBootClock, waitRegisterProber
+	originalProber := waitRegisterProber
 	waitCallerPID = func() int64 { return self }
 	waitOpenWorkSignature = func(_ context.Context, _ string) (string, error) { return strings.Repeat("a", 64), nil }
-	waitRegisterNow = func() time.Time { return time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC) }
-	waitRegisterBootClock = func() (string, time.Duration, error) { return "system-boot", 2 * time.Hour, nil }
 	t.Cleanup(func() {
 		waitCallerPID, waitOpenWorkSignature = originalPID, originalSignature
-		waitRegisterNow, waitRegisterBootClock, waitRegisterProber = originalNow, originalBoot, originalProber
+		waitRegisterProber = originalProber
 	})
-	return root, self, mainID
+	return root, self, mainID, now
 }
 
 func registeredRows(t *testing.T, root string) []metarun.Waiter {
@@ -77,7 +82,7 @@ func registeredRows(t *testing.T, root string) []metarun.Waiter {
 }
 
 func TestWaitRegisterLocalRecordsTheTrackedProcess(t *testing.T) {
-	root, _, mainID := waitRegisterCommandFixture(t)
+	root, _, mainID, now := waitRegisterCommandFixture(t)
 	tracked := int64(8123)
 	waitRegisterProber = waitRegisterFixtureProber{
 		exact: identity.Exact{Pid: tracked, StartedAt: time.Unix(5000, 0), StartTicks: 77, BootID: "process-boot"},
@@ -95,7 +100,7 @@ func TestWaitRegisterLocalRecordsTheTrackedProcess(t *testing.T) {
 		row.RegisteredBootID != "system-boot" || row.Label != "compile release" || row.JobID != "job-a" ||
 		row.MainId != mainID || row.OwnerDigest != metarun.OwnerDigest(mainID) || row.ClaimEpoch == nil ||
 		row.Session != "runtime-register" || row.RuntimeSession != "runtime-register" ||
-		row.Deadline != waitRegisterNow().Add(4*time.Hour).Format(time.RFC3339Nano) {
+		row.Deadline != now.Add(4*time.Hour).Format(time.RFC3339Nano) {
 		t.Fatalf("registered row=%+v", row)
 	}
 
@@ -140,14 +145,14 @@ func TestWaitRegisterHumanNeedsAQuestionAndADeadline(t *testing.T) {
 			}
 		})
 	}
-	root, _, mainID := waitRegisterCommandFixture(t)
+	root, _, mainID, now := waitRegisterCommandFixture(t)
 	code, output, problem := captureCommandOutput(t, true, true, func() int {
 		return runWait([]string{"register", "--root", root, "--human", "--question", "Proceed with release?", "--timeout", "2h", "--json"})
 	})
 	var row metarun.Waiter
 	if err := json.Unmarshal([]byte(output), &row); err != nil || code != 0 || problem != "" ||
 		row.Kind != "human" || row.Delivery != "human" || row.Question != "Proceed with release?" ||
-		row.Pid != 0 || row.MainId != mainID || row.Deadline != waitRegisterNow().Add(2*time.Hour).Format(time.RFC3339Nano) {
+		row.Pid != 0 || row.MainId != mainID || row.Deadline != now.Add(2*time.Hour).Format(time.RFC3339Nano) {
 		t.Fatalf("human registration code=%d stdout=%q stderr=%q row=%+v err=%v", code, output, problem, row, err)
 	}
 }

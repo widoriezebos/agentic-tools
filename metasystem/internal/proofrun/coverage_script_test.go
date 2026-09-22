@@ -123,11 +123,13 @@ func TestFullScriptWrappersPreserveOwnerStatusAndIgnoreAmbientProgress(t *testin
 			writeEntrypointHelperWrapper(t, engineWrapper, "engine")
 			writeEntrypointHelperWrapper(t, filepath.Join(helperDir, "go"), "go")
 			count := filepath.Join(root, "launch-count")
+			admittedFlags := filepath.Join(root, "admitted-go-flags")
 			command := exec.Command("bash", filepath.Join(root, test.relative))
 			command.Dir = root
 			command.Env = append(filteredCoverageScriptEnvironment(),
 				"GO_WANT_PROOF_ENTRYPOINT_HELPER=1", "PROOF_ENTRYPOINT_HELPER="+coverageScriptExecutable(t),
 				"PROOF_ENTRYPOINT_STATUS="+strconv.Itoa(test.status), "PROOF_ENTRYPOINT_LAUNCH_COUNT="+count,
+				"PROOF_ENTRYPOINT_GOFLAGS_OUT="+admittedFlags, "GOFLAGS=-mod=mod",
 				"METASYSTEM_SUITE_PROGRESS_ACTIVE=1", "METASYSTEM_SUITE_PROGRESS_ROOT="+root,
 				"PATH="+helperDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 			output, err := command.CombinedOutput()
@@ -137,6 +139,12 @@ func TestFullScriptWrappersPreserveOwnerStatusAndIgnoreAmbientProgress(t *testin
 			raw, err := os.ReadFile(count)
 			if err != nil || strings.TrimSpace(string(raw)) != "1" {
 				t.Fatalf("ambient progress bypassed or recursively relaunched wrapper: launches=%q err=%v output:\n%s", raw, err, output)
+			}
+			if !test.fixtureBudget {
+				flags, readErr := os.ReadFile(admittedFlags)
+				if readErr != nil || string(flags) != "-mod=readonly" {
+					t.Fatalf("proof admitted Go flags %q, want the full gate's -mod=readonly; err=%v", flags, readErr)
+				}
 			}
 		})
 	}
@@ -453,6 +461,11 @@ func TestProofScriptEntrypointHelper(t *testing.T) {
 		fmt.Println("entrypoint fixture banner")
 		os.Exit(0)
 	case strings.HasPrefix(joined, "proof-run launch "):
+		if path := os.Getenv("PROOF_ENTRYPOINT_GOFLAGS_OUT"); path != "" {
+			if err := os.WriteFile(path, []byte(os.Getenv("GOFLAGS")), 0o600); err != nil {
+				os.Exit(97)
+			}
+		}
 		path := os.Getenv("PROOF_ENTRYPOINT_LAUNCH_COUNT")
 		launches := 1
 		if raw, err := os.ReadFile(path); err == nil {

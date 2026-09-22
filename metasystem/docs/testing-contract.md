@@ -17,6 +17,11 @@ generated `reports/` in `.gitignore`:
 #!/bin/sh
 set -eu
 id=$1 input=$2 report=$3
+: "${METASYSTEM_TEST_WORKERS:?the test runner must declare its worker allowance}"
+[ "$METASYSTEM_TEST_WORKERS" -eq 1 ] || {
+  printf 'this single-case adapter received %s workers, want 1\n' "$METASYSTEM_TEST_WORKERS" >&2
+  exit 2
+}
 mkdir -p "$report"
 IFS= read -r value < "$input"
 if [ "$value" = ready ]; then
@@ -87,7 +92,60 @@ that its produced artifact is an input: declare that consumed path separately.
 
 `resources.class` is `cheap` or `heavy`; `resources.exclusive` lists named
 shared resources a group actually holds, such as a fixture database. These
-claims use the bounded local execution owner. `freshness: reusable` permits a
+claims use the bounded local execution owner. For `command` and `section`
+adapters, `resources.workers` declares the adapter's worker share: omission is
+one worker, explicit zero is the complete attempt allowance, and a positive
+integer is that exact share. A share larger than the attempt allowance is
+refused before the native command starts. Go groups do not declare this field;
+the Go adapter allocates one worker to each isolated native partition.
+Performance groups always consume the complete attempt allowance so the
+scheduler reservation, prepared identity, result, and exported environment
+describe the same allocation. Their declaration is still protected and bound
+into identity, even though it cannot reduce the performance reservation.
+
+`shards` may partition either `tests: "all"` or an explicit list of named Go
+tests. The existing Go adapter remains the sole discovery, partition, report,
+and `TestMain` owner. Whole-package coverage still requires `tests: "all"`.
+
+The engine exports the effective share as the reserved
+`METASYSTEM_TEST_WORKERS` environment variable after constructing either an
+inherited or explicit group environment. A contract cannot set that name. An
+application adapter must consume it by setting its framework's process or
+worker limit; merely receiving or forwarding the variable does not prove that
+internal work is bounded. A nested standard runner treats a nonempty inherited
+value as a cooperative ceiling: its resolved allowance is
+`min(testing.workers-or-default, METASYSTEM_TEST_WORKERS)`. Thus a parent
+allowance of one still caps a child whose committed setting is four. A
+malformed or non-positive inherited value is refused. The variable
+communicates a runner decision; it is neither a host lease nor additional
+authentication or security authority.
+
+`testing.workers` in `metasystem.conf` is the positive total allowance for one
+attempt. For a top-level invocation with no inherited ceiling, an explicit
+value overrides the computed default and has no arbitrary machine-size cap.
+When it is absent, the engine captures `runtime.GOMAXPROCS(0)` once and divides
+it by the resolved `proof.admission.top-level-max`, treating unlimited
+admission (`0`) as a divisor of one and flooring the result at one. Nested
+invocations apply the inherited ceiling after either resolution. This does not
+change or claim an operating-system-wide CPU limit. `testing.concurrency`
+continues to mean the maximum number of active test groups. Structured results
+report the worker policy version, final attempt allowance, and admission
+maximum separately; an admission maximum of zero is reported as unlimited.
+
+Before trusted policy-plan execution, package expansion, candidate-engine
+construction, native preparation, proof reservation, or admission, `test run`
+asks the trusted destination worker for `metasystem test worker-capabilities`.
+The response binds the capability schema, protocol
+version, result schema, execution-identity version, and worker-policy version.
+An unknown verb, malformed response, or mismatch is unsupported and refuses
+the run with `TEST_WORKER_POLICY_UNSUPPORTED`; it never authorizes switching
+execution to the untrusted candidate engine. Roll out the backend capability
+and compatibility machinery under the existing frontend first, install that
+trusted backend, and only then activate worker settings and declarations. This
+is the supported two-step dependency, not a promise of arbitrary old/new
+interoperability.
+
+`freshness: reusable` permits a
 matching retained result; `episode` requires new evidence for a new decision
 while allowing exact resume within its retained episode. Optional positive
 `freshnessMaxAgeMs` limits an episode's lifetime. A caller resuming an episode

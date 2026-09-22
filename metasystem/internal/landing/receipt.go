@@ -80,7 +80,7 @@ func TestReceiptPath(root, tree string) string {
 // callback has checked both projections and removed the scratch worktree.
 type ReceiptPreparation struct {
 	root, tree, command string
-	detached            *gittree.DetachedWorktree
+	frozen              *proofrun.FrozenExport
 	candidate           gittree.Workspace
 	identity            string
 	indexBefore         string
@@ -110,18 +110,18 @@ func PrepareTestReceipt(root, tree, command string) (*ReceiptPreparation, error)
 	if indexBefore != tree || worktreeBefore != identity {
 		return nil, fmt.Errorf("test receipt refused: supplied tree %s differs from the real index tree %s or working-tree projection %s", tree, indexBefore, worktreeBefore)
 	}
-	detached, err := workspace.NewDetachedWorktree(tree)
+	frozen, err := proofrun.FreezeCandidate(root, tree)
 	if err != nil {
 		return nil, fmt.Errorf("prepare isolated candidate: %w", err)
 	}
-	candidate := detached.Workspace()
+	candidate := gittree.Workspace{Dir: frozen.Root}
 	candidateIndex, candidateWorktree, err := receiptPosture(candidate)
 	if err != nil || candidateIndex != tree || candidateWorktree != identity {
-		_ = detached.Close()
+		_ = frozen.Close()
 		return nil, fmt.Errorf("test receipt refused: isolated candidate differs from supplied tree %s", tree)
 	}
 	evidenceTimeout, evidenceMax := receiptEvidenceLimits(root)
-	return &ReceiptPreparation{root: root, tree: tree, command: command, detached: detached,
+	return &ReceiptPreparation{root: root, tree: tree, command: command, frozen: &frozen,
 		candidate: candidate, identity: identity, indexBefore: candidateIndex, worktreeBefore: candidateWorktree,
 		evidenceTimeout: evidenceTimeout, evidenceMax: evidenceMax}, nil
 }
@@ -142,7 +142,7 @@ func (preparation *ReceiptPreparation) Close() error {
 	_, _, err := proofrun.PreserveDetachedSuiteFailures(preparation.root, preparation.candidate.Dir,
 		"landing-receipt", preparation.evidenceTimeout, preparation.evidenceMax)
 	if err == nil {
-		err = preparation.detached.Close()
+		err = preparation.frozen.Close()
 	}
 	preparation.closeErr = err
 	return err
@@ -195,6 +195,12 @@ func (preparation *ReceiptPreparation) Complete(attempt proofrun.Attempt, comple
 // PublishCommittedReceipt restores the canonical projection only from the
 // exact payload atomically committed with a successful retained attempt.
 func PublishCommittedReceipt(root, attemptID, acceptedIndexTree string) (TestReceipt, error) {
+	return PublishCommittedReceiptAt(root, attemptID, acceptedIndexTree, time.Now().UTC())
+}
+
+// PublishCommittedReceiptAt validates freshness at publication time while
+// projecting the exact bytes committed by the successful attempt.
+func PublishCommittedReceiptAt(root, attemptID, acceptedIndexTree string, now time.Time) (TestReceipt, error) {
 	if !treeOID.MatchString(acceptedIndexTree) {
 		return TestReceipt{}, fmt.Errorf("committed delivery receipt requires the accepted index tree")
 	}
@@ -221,9 +227,10 @@ func PublishCommittedReceipt(root, attemptID, acceptedIndexTree string) (TestRec
 			!reflect.DeepEqual(*attempt.TestResult, *receipt.Testing) {
 			return TestReceipt{}, fmt.Errorf("committed schema-2 delivery receipt contradicts its proof attempt: %v", decodeErr)
 		}
-		ownerIDs, ownerErr := validateTestingAttemptOwners(root, *receipt.Testing, false)
-		if ownerErr != nil || !reflect.DeepEqual(ownerIDs, receipt.AttemptIDs) {
-			return TestReceipt{}, fmt.Errorf("committed schema-2 delivery receipt has invalid outer owners: %v", ownerErr)
+		_, timeErr := time.Parse(time.RFC3339Nano, receipt.Time)
+		ownerIDs, ownerErr := validateTestingAttemptOwnersAt(root, *receipt.Testing, false, now.UTC())
+		if timeErr != nil || ownerErr != nil || !reflect.DeepEqual(ownerIDs, receipt.AttemptIDs) {
+			return TestReceipt{}, fmt.Errorf("committed schema-2 delivery receipt has invalid outer owners: %v", errors.Join(timeErr, ownerErr))
 		}
 		indexTree, worktreeTree, postureErr := testingReceiptPosture(root, *receipt.Testing)
 		if postureErr != nil || indexTree != acceptedIndexTree || worktreeTree != receipt.Tree {
@@ -591,6 +598,10 @@ func receiptIdentity(workspace gittree.Workspace, tree string) (string, error) {
 }
 
 func readTestReceipt(params ObserveParams) (TestReceipt, error) {
+	now := params.Now.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
 	if params.TestReceipt == "" {
 		return TestReceipt{}, fmt.Errorf("tier-1 requires --test-receipt")
 	}
@@ -656,12 +667,10 @@ func readTestReceipt(params ObserveParams) (TestReceipt, error) {
 		if err := proofrun.ValidateTestResult(*receipt.Testing); err != nil || !receipt.Testing.Delivery.Sufficient || receipt.Testing.CandidateTree != receipt.ProvedTree {
 			return TestReceipt{}, fmt.Errorf("schema-2 test receipt is not sufficient: %v", err)
 		}
-		attemptIDs, err := validateTestingAttemptOwners(params.RepoRoot, *receipt.Testing, false)
-		if err != nil || !reflect.DeepEqual(attemptIDs, receipt.AttemptIDs) {
-			return TestReceipt{}, fmt.Errorf("schema-2 test receipt attempt ownership is invalid: %v", err)
-		}
-		if _, err := time.Parse(time.RFC3339Nano, receipt.Time); err != nil {
-			return TestReceipt{}, fmt.Errorf("test receipt time is malformed")
+		_, timeErr := time.Parse(time.RFC3339Nano, receipt.Time)
+		attemptIDs, err := validateTestingAttemptOwnersAt(params.RepoRoot, *receipt.Testing, false, now)
+		if timeErr != nil || err != nil || !reflect.DeepEqual(attemptIDs, receipt.AttemptIDs) {
+			return TestReceipt{}, fmt.Errorf("schema-2 test receipt attempt ownership is invalid: %v", errors.Join(timeErr, err))
 		}
 		for _, observed := range []string{receipt.Binding.IndexTreeBefore, receipt.Binding.WorktreeTreeBefore,
 			receipt.Binding.IndexTreeAfter, receipt.Binding.WorktreeTreeAfter} {
@@ -728,7 +737,7 @@ func readTestReceipt(params ObserveParams) (TestReceipt, error) {
 			_, found, reuseErr := proofrun.ReusableCoverageForAttempt(params.RepoRoot, params.RepoRoot, baseline,
 				attempt.AttemptID, receipt.Coverage.PackageInventory)
 			if reuseErr != nil || !found {
-				return TestReceipt{}, fmt.Errorf("canonical validator coverage no longer matches current engine, toolchain, platform, policy, or floors")
+				return TestReceipt{}, fmt.Errorf("canonical validator coverage no longer matches current project inputs, engine, toolchain, platform, policy, or floors")
 			}
 		}
 	}

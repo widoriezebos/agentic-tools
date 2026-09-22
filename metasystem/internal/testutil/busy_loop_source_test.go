@@ -30,13 +30,21 @@ func TestFixtureSourcesHaveNoBareBusyLoop(t *testing.T) {
 	if findings := shellBusyLoops(positive); len(findings) != 1 {
 		t.Fatalf("positive parser specimen findings = %#v, want one", findings)
 	}
-	if findings := shellBusyLoops("while true; do sleep 1; done"); len(findings) != 0 {
-		t.Fatalf("negative parser specimen findings = %#v, want none", findings)
+	for _, negative := range []string{
+		"while true; do sleep 1; done",
+		"while true; do /bin/sleep 1; done",
+		"until ready; do /usr/bin/read answer; done",
+	} {
+		if findings := shellBusyLoops(negative); len(findings) != 0 {
+			t.Fatalf("negative parser specimen for %q findings = %#v, want none", negative, findings)
+		}
 	}
 	for _, positive := range []string{
 		"while [[ 1 ]]; do " + ":" + "; done",
 		"until ready; do " + ":" + "; done",
 		"for ((;;)); do " + ":" + "; done",
+		"while :; do /bin/" + "sleeper 1; done",
+		"while :; do ./" + "sleep-until 1; done",
 	} {
 		if findings := shellBusyLoops(positive); len(findings) != 1 {
 			t.Fatalf("shell parser findings for %q = %#v, want one", positive, findings)
@@ -97,26 +105,9 @@ func TestFixtureSourcesHaveNoBareBusyLoop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	allowed := map[string]string{
-		"scripts/agents/supervision-fixtures.sh:3707": "the loop advances a completed-invocation counter, exits when output appears, and refuses at its fixed budget",
-	}
-	used := make(map[string]bool, len(allowed))
 	var unexpected []string
 	for _, finding := range findings {
-		site := finding.site()
-		if _, ok := allowed[site]; ok {
-			used[site] = true
-			continue
-		}
-		unexpected = append(unexpected, site+" "+finding.kind)
-	}
-	for site, reason := range allowed {
-		if reason == "" {
-			t.Errorf("bare-loop allow-list entry %s needs a reason", site)
-		}
-		if !used[site] {
-			t.Errorf("stale bare-loop allow-list entry %s: %s", site, reason)
-		}
+		unexpected = append(unexpected, finding.site()+" "+finding.kind)
 	}
 	if len(unexpected) != 0 {
 		sort.Strings(unexpected)
@@ -349,7 +340,7 @@ func joinShellTokens(tokens []shellToken) string {
 
 func shellRangeBlocks(tokens []shellToken) bool {
 	for _, token := range tokens {
-		switch token.text {
+		switch filepath.Base(token.text) {
 		case "sleep", "wait", "read", "select":
 			return true
 		}

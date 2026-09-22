@@ -5,6 +5,7 @@ package identity
 import (
 	"encoding/binary"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,14 +107,38 @@ func TestParentPidMatchesGroundTruth(t *testing.T) {
 		t.Fatalf("ParentPid(self) = %d, want os.Getppid() = %d (offset wrong?)", got, want)
 	}
 
-	child := exec.Command("/bin/sleep", "30")
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseRead, releaseWrite, err := os.Pipe()
+	if err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		t.Fatal(err)
+	}
+	child := exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :")
+	child.Stdin = releaseRead
+	child.ExtraFiles = []*os.File{readyWrite}
 	if err := child.Start(); err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		_ = releaseRead.Close()
+		_ = releaseWrite.Close()
 		t.Fatalf("could not spawn a child to test against: %v", err)
 	}
+	_ = readyWrite.Close()
+	_ = releaseRead.Close()
 	defer func() {
-		_ = child.Process.Kill()
+		_ = releaseWrite.Close()
 		_ = child.Wait()
 	}()
+	var ready [1]byte
+	if _, err := io.ReadFull(readyRead, ready[:]); err != nil || ready[0] != 'x' {
+		_ = readyRead.Close()
+		t.Fatalf("child readiness=%q err=%v", ready, err)
+	}
+	_ = readyRead.Close()
 	got, ok = ParentPid(int64(child.Process.Pid))
 	if !ok {
 		t.Fatal("ParentPid could not read our spawned child's parent")

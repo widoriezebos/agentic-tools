@@ -118,6 +118,9 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 		files["ready-after-wait"] = budgetedQueuedGoal("ready-after-wait", "2026-08-23T00:00:01Z")
 	}
 	root := servingBed(t, "bed-m1", files)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Date(2026, 8, 23, 2, 0, 0, 0, time.UTC)
 	bootElapsed := 2 * time.Hour
 	prober := idleFixtureProber{
@@ -173,6 +176,7 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 				Platform: "fixture/fixture", Toolchain: strings.Repeat("3", 64),
 			}, "full", "fixture", []string{"gate"}, 1)
 			deadline := now.Add(10 * time.Minute)
+			admissionDirectory := filepath.Join(root, "artifacts", "agents", "host-admission")
 			admissionRequest := proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
 				ControlRoot: root, ExecutionRoot: root, GoalID: pendingWaitGoalID,
 				GoalRevision: 2, AccountingRevision: 2, CandidateGoalID: pendingWaitGoalID, CandidateRevision: 2, ReservedMinutes: 10,
@@ -184,9 +188,18 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 					Deadline: deadline.Format(time.RFC3339Nano),
 				},
 			}, "0")
+			admissionRequest = proofrun.WithTestHostAdmissionDirectory(admissionRequest, admissionDirectory)
 			attempt, result, reserveErr := proofrun.ReserveLocked(admissionRequest)
 			if reserveErr != nil || result.Disposition != proofrun.DispositionExecuted {
 				t.Fatalf("reserve pending attempt: result=%+v err=%v", result, reserveErr)
+			}
+			privateTemp := os.Getenv("TMPDIR")
+			actualTemp, tempErr := filepath.EvalSymlinks(privateTemp)
+			actualAdmission, admissionErr := filepath.EvalSymlinks(admissionDirectory)
+			relative, relativeErr := filepath.Rel(actualTemp, actualAdmission)
+			if privateTemp == "" || tempErr != nil || admissionErr != nil || relativeErr != nil || relative == "." ||
+				relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				t.Fatalf("proof admission path %q is not under current TMPDIR %q", actualAdmission, actualTemp)
 			}
 			target = metarun.WaiterTarget{ProofDigest: attempt.ProofIdentity.IdentityDigest}
 		}

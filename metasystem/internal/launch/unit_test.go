@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/refusal"
@@ -357,6 +358,7 @@ func TestDiffCoversUntrackedFilesAndLeavesTheIndexAlone(t *testing.T) {
 }
 
 func TestLargeDiffIsReadPerDirectory(t *testing.T) {
+	t.Parallel()
 	diff := "diff --git a/a/x.go b/a/x.go\n--- a/a/x.go\n+++ b/a/x.go\n+x\ndiff --git a/b/y.go b/b/y.go\n--- a/b/y.go\n+++ b/b/y.go\n+y\n"
 	fixture := newUnitFixture(t, diff)
 	fixture.manager.Settings.ReadSplitLines = 1
@@ -372,6 +374,35 @@ func TestLargeDiffIsReadPerDirectory(t *testing.T) {
 	}
 	if !slices.Equal(reads, []string{"read:a", "read:b"}) {
 		t.Fatalf("reads=%v", reads)
+	}
+	fullDiff := filepath.Join(result.Record.Rounds[0].Directory, "worktree.diff")
+	data, err := os.ReadFile(fullDiff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantHash := fmt.Sprintf("%x", sha256.Sum256(data))
+	for _, step := range result.Record.Rounds[0].Steps {
+		if !strings.HasPrefix(step.Name, "read:") {
+			continue
+		}
+		launched, err := fixture.manager.Store.Read(step.LaunchID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		other := map[string]string{"a": "b", "b": "a"}[step.Package]
+		packet := readString(launched.AdapterData, "unitReadPacket")
+		command, commandErr := (ClaudeHeadless{}).Command(launched, filepath.Join(fixture.manager.Store.Root, launched.ID))
+		for _, exact := range []string{
+			"Full candidate diff: " + fullDiff,
+			"Full candidate SHA-256: " + wantHash,
+			"Selected package: " + step.Package,
+			"Other package coverage: " + other + " (separate unit read steps)",
+			"Diff: " + filepath.Join(fixture.manager.Store.Root, launched.ID, "read.diff"),
+		} {
+			if commandErr != nil || !strings.Contains(command.Stdin, exact) {
+				t.Fatalf("step=%+v packet=%q stdin=%q missing=%q err=%v", step, packet, command.Stdin, exact, commandErr)
+			}
+		}
 	}
 }
 
@@ -480,6 +511,7 @@ func TestFollowUpStartsTheNextRoundOnTheSameWorktree(t *testing.T) {
 }
 
 func TestProofThatMovesTheRepositoryEndsTheRound(t *testing.T) {
+	t.Parallel()
 	for _, row := range []struct {
 		name, moved string
 		effect      func(*testing.T, string)
@@ -490,14 +522,52 @@ func TestProofThatMovesTheRepositoryEndsTheRound(t *testing.T) {
 			runGit(t, repo, "commit", "-m", "proof commit")
 		}},
 		{"ref", "refs", func(t *testing.T, repo string) { runGit(t, repo, "update-ref", "refs/heads/x", "HEAD") }},
-		{"index", "index", func(t *testing.T, repo string) {
+		{"staged-blob-and-path", "index", func(t *testing.T, repo string) {
 			writeFile(t, filepath.Join(repo, "staged"), "new\n")
 			runGit(t, repo, "add", "staged")
 		}},
+		{"staged-mode", "index", func(t *testing.T, repo string) {
+			if err := os.Chmod(filepath.Join(repo, "tracked"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			runGit(t, repo, "add", "tracked")
+		}},
+		{"staged-rename", "index", func(t *testing.T, repo string) { runGit(t, repo, "mv", "tracked", "renamed") }},
+		{"unmerged-stages", "index", func(t *testing.T, repo string) { setConflictStages(t, repo, "tracked") }},
+		{"assume-unchanged", "index", func(t *testing.T, repo string) { runGit(t, repo, "update-index", "--assume-unchanged", "tracked") }},
+		{"skip-worktree", "index", func(t *testing.T, repo string) { runGit(t, repo, "update-index", "--skip-worktree", "tracked") }},
+		{"intent-to-add", "index", func(t *testing.T, repo string) {
+			writeFile(t, filepath.Join(repo, "intent"), "")
+			runGit(t, repo, "add", "-N", "intent")
+		}},
+		{"resolve-undo", "index", func(t *testing.T, repo string) {
+			setConflictStages(t, repo, "tracked")
+			runGit(t, repo, "add", "tracked")
+			if output := runGit(t, repo, "ls-files", "--resolve-undo", "--", "tracked"); output == "" {
+				t.Fatal("fixture did not create resolve-undo state")
+			}
+		}},
 		{"tree", "tree", func(t *testing.T, repo string) { writeFile(t, filepath.Join(repo, "tracked"), "changed\n") }},
+		{"stat-cache-refresh", "", func(t *testing.T, repo string) {
+			before := indexFileDigest(t, repo)
+			bumpTrackedMtime(t, repo)
+			runGitEnv(t, repo, []string{"GIT_OPTIONAL_LOCKS=1"}, "status", "--short")
+			if after := indexFileDigest(t, repo); after == before {
+				t.Fatal("git status did not rewrite the fixture index cache")
+			}
+		}},
+		{"optional-locks-read", "", func(t *testing.T, repo string) {
+			before := indexFileDigest(t, repo)
+			bumpTrackedMtime(t, repo)
+			runGitEnv(t, repo, []string{"GIT_OPTIONAL_LOCKS=0"}, "status", "--short")
+			if after := indexFileDigest(t, repo); after != before {
+				t.Fatal("GIT_OPTIONAL_LOCKS=0 rewrote the fixture index")
+			}
+		}},
 		{"none", "", nil},
 	} {
 		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
 			fixture, repo := newGitUnitFixture(t)
 			fixture.starter.onStart = func(record Record) error {
 				if record.Kind == "proof" && row.effect != nil {
@@ -509,9 +579,9 @@ func TestProofThatMovesTheRepositoryEndsTheRound(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if row.effect == nil {
+			if row.moved == "" {
 				if result.Record.Rounds[0].Outcome != "green" {
-					t.Fatalf("outcome=%s", result.Record.Rounds[0].Outcome)
+					t.Fatalf("record=%+v", result.Record)
 				}
 				return
 			}
@@ -522,6 +592,98 @@ func TestProofThatMovesTheRepositoryEndsTheRound(t *testing.T) {
 				if strings.HasPrefix(step.Name, "read") && (step.State != StepSkipped || !strings.HasPrefix(step.Reason, "proof-wrote:") || !strings.Contains(step.Reason, row.moved)) {
 					t.Fatalf("read step=%+v", step)
 				}
+			}
+		})
+	}
+}
+
+func TestRepositorySnapshotIgnoresIndexCacheRefresh(t *testing.T) {
+	t.Parallel()
+	fixture, repo := newGitUnitFixture(t)
+	before, err := fixture.runner.snapshotRepository(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawBefore := indexFileDigest(t, repo)
+	bumpTrackedMtime(t, repo)
+	runGitEnv(t, repo, []string{"GIT_OPTIONAL_LOCKS=1"}, "status", "--short")
+	if rawAfter := indexFileDigest(t, repo); rawAfter == rawBefore {
+		t.Fatal("git status did not rewrite the fixture index cache")
+	}
+	after, err := fixture.runner.snapshotRepository(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed := before.changed(after); len(changed) != 0 {
+		t.Fatalf("cache refresh changed repository snapshot: %v", changed)
+	}
+}
+
+func TestNestedWorktreeProtectsRepositoryWideIndexState(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name   string
+		moved  bool
+		effect func(*testing.T, string, string)
+	}{
+		{"staged-sibling", true, func(t *testing.T, repo, _ string) {
+			writeFile(t, filepath.Join(repo, "staged-sibling"), "new\n")
+			runGit(t, repo, "add", "staged-sibling")
+		}},
+		{"assume-unchanged-sibling", true, func(t *testing.T, repo, _ string) {
+			runGit(t, repo, "update-index", "--assume-unchanged", "tracked")
+		}},
+		{"root-stat-cache-refresh", false, func(t *testing.T, repo, _ string) {
+			before := indexFileDigest(t, repo)
+			bumpTrackedMtime(t, repo)
+			runGitEnv(t, repo, []string{"GIT_OPTIONAL_LOCKS=1"}, "status", "--short")
+			if after := indexFileDigest(t, repo); after == before {
+				t.Fatal("root status did not rewrite the fixture index cache")
+			}
+		}},
+		{"nested-stat-cache-refresh", false, func(t *testing.T, repo, nested string) {
+			before := indexFileDigest(t, repo)
+			path := filepath.Join(nested, "tracked")
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			changed := info.ModTime().Add(24 * time.Hour)
+			if err := os.Chtimes(path, changed, changed); err != nil {
+				t.Fatal(err)
+			}
+			runGitEnv(t, nested, []string{"GIT_OPTIONAL_LOCKS=1"}, "status", "--short")
+			if after := indexFileDigest(t, repo); after == before {
+				t.Fatal("nested status did not rewrite the fixture index cache")
+			}
+		}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			fixture, repo := newGitUnitFixture(t)
+			nested := filepath.Join(repo, "nested")
+			if err := os.Mkdir(nested, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(nested, "tracked"), "original\n")
+			runGit(t, repo, "add", "nested/tracked")
+			runGit(t, repo, "commit", "-m", "add nested worktree")
+			setUnitPlanWorktree(t, &fixture, nested)
+			fixture.starter.onStart = func(record Record) error {
+				if record.Kind == "proof" {
+					row.effect(t, repo, nested)
+				}
+				return nil
+			}
+			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if row.moved && result.Record.Rounds[0].Outcome != "proof-wrote" {
+				t.Fatalf("repository-wide index mutation was not detected: %+v", result.Record)
+			}
+			if !row.moved && result.Record.Rounds[0].Outcome != "green" {
+				t.Fatalf("harmless cache refresh stopped the read: %+v", result.Record)
 			}
 		})
 	}
@@ -545,7 +707,7 @@ func TestUnitRunNeverWritesToTheRepository(t *testing.T) {
 	}
 	git := fixture.runner.Git.(*recordingOSGit)
 	for index, call := range git.calls {
-		if !slices.Contains([]string{"symbolic-ref", "rev-parse", "for-each-ref", "ls-files", "add", "diff"}, call[0]) {
+		if !slices.Contains([]string{"symbolic-ref", "rev-parse", "for-each-ref", "ls-files", "diff-index", "add", "diff"}, call[0]) {
 			t.Fatalf("git call=%v", call)
 		}
 		if call[0] == "add" && !envOutside(git.envs[index], first.Record.Worktree) {
@@ -583,6 +745,29 @@ func newGitUnitFixture(t *testing.T) (unitFixture, string) {
 	fixture.runner.Git = &recordingOSGit{}
 	fixture.worktree = repo
 	return fixture, repo
+}
+
+func setUnitPlanWorktree(t *testing.T, fixture *unitFixture, worktree string) {
+	t.Helper()
+	data, err := os.ReadFile(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan UnitPlan
+	if err := json.Unmarshal(data, &plan); err != nil {
+		t.Fatal(err)
+	}
+	plan.Worktree = worktree
+	plan.Base = strings.TrimSpace(runGit(t, worktree, "rev-parse", "HEAD"))
+	plan.Proof[0].Dir = worktree
+	data, err = json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.plan, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fixture.worktree = worktree
 }
 
 func initializeGoalRepository(t *testing.T, directory, goal string) {
@@ -642,6 +827,37 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+func setConflictStages(t *testing.T, repo, path string) {
+	t.Helper()
+	oid := strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD:"+path))
+	zero := strings.Repeat("0", len(oid))
+	input := fmt.Sprintf("0 %s\t%s\n100644 %s 1\t%s\n100644 %s 2\t%s\n100644 %s 3\t%s\n", zero, path, oid, path, oid, path, oid, path)
+	runGitInput(t, repo, input, "update-index", "--index-info")
+}
+
+func bumpTrackedMtime(t *testing.T, repo string) {
+	t.Helper()
+	path := filepath.Join(repo, "tracked")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := info.ModTime().Add(24 * time.Hour)
+	if err := os.Chtimes(path, changed, changed); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func indexFileDigest(t *testing.T, repo string) string {
+	t.Helper()
+	path := strings.TrimSpace(runGit(t, repo, "rev-parse", "--path-format=absolute", "--git-path", "index"))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(data))
+}
+
 func stepNamed(t *testing.T, round UnitRound, name string) UnitStep {
 	t.Helper()
 	for _, step := range round.Steps {
@@ -663,8 +879,26 @@ func envOutside(env []string, worktree string) bool {
 }
 func runGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
+	return runGitEnv(t, dir, nil, args...)
+}
+
+func runGitEnv(t *testing.T, dir string, environment []string, args ...string) string {
+	t.Helper()
 	command := exec.Command("git", args...)
 	command.Dir = dir
+	command.Env = childEnvironment(os.Environ(), environment)
+	out, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, out)
+	}
+	return string(out)
+}
+
+func runGitInput(t *testing.T, dir, input string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", args...)
+	command.Dir = dir
+	command.Stdin = strings.NewReader(input)
 	out, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, out)

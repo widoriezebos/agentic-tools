@@ -4,14 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/slack"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
 
 func bed(t *testing.T) (context.Context, context.CancelFunc, channel.Provider, channel.DestinationConfig, string) {
 	t.Helper()
@@ -52,6 +62,47 @@ func TestPostRootAndThreaded(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(dir, "journal.jsonl"))
 	if strings.Count(string(b), `"method":"chat.postMessage"`) != 2 || !strings.Contains(string(b), "thread_ts") {
 		t.Fatal(string(b))
+	}
+}
+
+func TestPostAppliesRequestDeadline(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name       string
+		configured time.Duration
+		want       time.Duration
+	}{
+		{name: "default", want: 30 * time.Second},
+		{name: "configured", configured: 24 * time.Hour, want: 24 * time.Hour},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			started := time.Now()
+			var calls int
+			client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				calls++
+				observedAt := time.Now()
+				deadline, ok := request.Context().Deadline()
+				if !ok {
+					t.Errorf("request has no deadline")
+				} else if deadline.Before(started.Add(test.want)) || deadline.After(observedAt.Add(test.want)) {
+					t.Errorf("request deadline = %s, want creation time plus %s", deadline, test.want)
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Status:     "200 OK",
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(`{"ok":true,"ts":"1.000001"}`)),
+					Request:    request,
+				}, nil
+			})}
+			d := channel.DestinationConfig{ChannelID: "channel", Token: "token", APIBase: "https://slack.invalid", HTTPTimeout: test.configured}
+			if _, err := slack.New(client).Post(context.Background(), d, "question", nil); err != nil {
+				t.Fatal(err)
+			}
+			if calls != 1 {
+				t.Fatalf("transport calls = %d, want 1", calls)
+			}
+		})
 	}
 }
 func TestReceivePagesAndFiltersByCursor(t *testing.T) {

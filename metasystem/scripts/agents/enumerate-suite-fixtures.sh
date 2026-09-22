@@ -8,7 +8,7 @@ trap 'rm -rf "$tmp"' EXIT
 # The selector is the suite's section ledger. A guarded section that is not in
 # that ledger would disappear from enumeration; a stale ledger row would pass
 # without running any section body.
-sed -n 's/.*section_selected \([a-z0-9-]*\).*/\1/p' \
+sed -n 's/.*section_selected \([a-z0-9][a-z0-9-]*\).*/\1/p' \
   "$root/scripts/validate-metasystem.sh" | sort -u >"$tmp/guarded-sections"
 bash "$root/scripts/agents/validate-section-selector.sh" catalog \
   | cut -f1 | sort -u >"$tmp/selected-sections"

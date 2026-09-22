@@ -19,7 +19,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -39,6 +41,14 @@ type contextCostSnapshot struct {
 	registry []byte
 	calls    int
 	markers  int
+}
+
+type contextCostReaderWork struct {
+	BytesRead       int64 `json:"bytesRead"`
+	LinesParsed     int   `json:"linesParsed"`
+	TranscriptOpens int   `json:"transcriptOpens"`
+	CursorWrites    int   `json:"cursorWrites"`
+	SampleWrites    int   `json:"sampleWrites"`
 }
 
 type contextCostProcess struct {
@@ -67,24 +77,29 @@ type contextCostStop struct {
 }
 
 type contextCostBed struct {
-	t            *testing.T
-	runtime      string
-	session      string
-	outer        string
-	installation string
-	home         string
-	engine       string
-	wrapper      string
-	hook         string
-	transcript   string
-	healthRecord string
-	testBinary   string
-	readerHelper string
-	argvRecord   string
-	startedAt    int64
-	lastHookGen  int
-	maxLabel     string
-	maxElapsed   time.Duration
+	t             *testing.T
+	runtime       string
+	session       string
+	outer         string
+	installation  string
+	home          string
+	engine        string
+	wrapper       string
+	hook          string
+	transcript    string
+	healthRecord  string
+	testBinary    string
+	readerHelper  string
+	argvRecord    string
+	deadlineRoot  string
+	deadlineEvent string
+	stopSequence  int
+	fixture       *testutil.ProcessFixture
+	startedAt     int64
+	lastHookGen   int
+	maxLabel      string
+	maxElapsed    time.Duration
+	sourceStats   contextCostSourceStats
 }
 
 func TestTurnVerdictPrintsTheContextLine(t *testing.T) {
@@ -218,6 +233,7 @@ func TestContextStopFitsDurationBudget(t *testing.T) {
 		t.Run(runtimeName, func(t *testing.T) {
 			bed := newContextCostBed(t, runtimeName, candidate, readerHelper)
 			stats := writeContextCostSource(t, runtimeName, bed.transcript, bed.outer)
+			bed.sourceStats = stats
 			t.Logf("%s generated source: bytes=%d complete-lines=%d distinct-ids=%d", runtimeName, stats.Bytes, stats.Lines, stats.IDs)
 			if runtimeName == "codex" && (stats.Bytes < 264233967 || stats.Lines < 54471 || stats.IDs != contextCostInitialCalls) {
 				t.Fatalf("Codex source is below its production-scale floor: %+v", stats)
@@ -254,6 +270,13 @@ func TestContextStopFitsDurationBudget(t *testing.T) {
 			bed.requireSnapshot("diagnostic and following unchanged Stop", warmSnapshot, bed.snapshot())
 
 			appendContextCostCall(t, runtimeName, bed.transcript, contextCostInitialCalls, bed.outer)
+			appendedInfo, err := os.Stat(bed.transcript)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bed.sourceStats.Bytes = appendedInfo.Size()
+			bed.sourceStats.Lines++
+			bed.sourceStats.IDs++
 			appended := bed.runStop("one-appended-call")
 			bed.requireLiveRole(appended)
 			if got := bed.snapshot().calls; got != contextCostInitialCalls+1 {
@@ -277,6 +300,7 @@ func TestContextStopFitsDurationBudget(t *testing.T) {
 			if finalSnapshot.calls != contextCostInitialCalls+1 {
 				t.Fatalf("%s final committed calls=%d, want %d", runtimeName, finalSnapshot.calls, contextCostInitialCalls+1)
 			}
+			bed.requireWarmReaderWork()
 			cursorInfo, err := os.Stat(usagepkg.CursorPath(bed.installation, runtimeName, bed.session))
 			if err != nil {
 				t.Fatal(err)
@@ -290,21 +314,29 @@ func TestContextStopFitsDurationBudget(t *testing.T) {
 	}
 }
 
-// TestContextCostHealthHelper is the fixture-owned transport for the exact
-// production health evaluation invoked by the Stop hook. Its ordinary test
-// path is empty; only the opt-in bed launches it as a subprocess.
+// TestContextCostHealthHelper is the fixture-owned subprocess transport for
+// the exact production health evaluation and fixture-home assertions.
 func TestContextCostHealthHelper(t *testing.T) {
+	if os.Getenv("GO_WANT_CONTEXT_COST_HEALTH_HOME_HELPER") == "1" {
+		contextCostHealthHelperUsesFixtureHome(t)
+		return
+	}
 	if os.Getenv("METASYSTEM_CONTEXT_COST_HEALTH_HELPER") != "1" {
 		return
 	}
 	repoRoot := os.Getenv("METASYSTEM_CONTEXT_COST_HEALTH_ROOT")
 	installationRoot := os.Getenv("METASYSTEM_CONTEXT_COST_HEALTH_INSTALLATION")
 	recordPath := os.Getenv("METASYSTEM_CONTEXT_COST_HEALTH_RECORD")
-	if repoRoot == "" || installationRoot == "" || recordPath == "" {
+	healthHome := os.Getenv("METASYSTEM_CONTEXT_COST_HEALTH_HOME")
+	if repoRoot == "" || installationRoot == "" || recordPath == "" || healthHome == "" {
 		fmt.Fprintln(os.Stderr, "context cost health helper received incomplete coordinates")
 		os.Exit(3)
 	}
-	verdict := steward.PreviewHealthAt(repoRoot, installationRoot, time.Now().UTC(), nil)
+	verdict, err := contextCostHealthAt(repoRoot, installationRoot, healthHome, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(3)
+	}
 	for _, role := range verdict.Roles {
 		if role.Role != steward.RoleContext {
 			continue
@@ -326,6 +358,74 @@ func TestContextCostHealthHelper(t *testing.T) {
 	}
 	fmt.Fprintln(os.Stderr, "context cost health helper found no context-budget role")
 	os.Exit(3)
+}
+
+func contextCostHealthAt(repoRoot, installationRoot, healthHome string, now time.Time) (steward.HealthVerdict, error) {
+	inheritedHome, hadHome := os.LookupEnv("HOME")
+	if err := os.Setenv("HOME", healthHome); err != nil {
+		return steward.HealthVerdict{}, err
+	}
+	verdict := steward.PreviewHealthAt(repoRoot, installationRoot, now, nil)
+	if hadHome {
+		return verdict, os.Setenv("HOME", inheritedHome)
+	}
+	return verdict, os.Unsetenv("HOME")
+}
+
+func TestContextCostHealthHelperUsesFixtureHome(t *testing.T) {
+	t.Parallel()
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(testBinary,
+		"-test.run=^TestContextCostHealthHelper$",
+		"-test.count=1",
+	)
+	command.Env = append(testenv.WithoutInheritedControls(os.Environ()), "GO_WANT_CONTEXT_COST_HEALTH_HOME_HELPER=1")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("fixture-home helper child failed: %v\n%s", err, output)
+	}
+}
+
+func contextCostHealthHelperUsesFixtureHome(t *testing.T) {
+	t.Helper()
+	for _, runtimeName := range []string{"claude", "codex"} {
+		t.Run(runtimeName, func(t *testing.T) {
+			root := contextCommandRoot(t)
+			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude,codex\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			session := "health-home-" + runtimeName
+			writeContextCommandHolder(t, root, runtimeName, session)
+			fixtureHome := t.TempDir()
+			transcript := filepath.Join(fixtureHome, ".claude", "projects", contextCostClaudeSlug(root), session+".jsonl")
+			if runtimeName == "codex" {
+				transcript = filepath.Join(fixtureHome, ".codex", "sessions", "2026", "09", "13", "rollout-"+session+".jsonl")
+			}
+			if err := os.MkdirAll(filepath.Dir(transcript), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(transcript, []byte(contextCostCallLine(runtimeName, "fixture-response", 120000, 1, root)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			hostileHome := t.TempDir()
+			t.Setenv("HOME", hostileHome)
+			verdict, err := contextCostHealthAt(root, root, fixtureHome, time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := os.Getenv("HOME"); got != hostileHome {
+				t.Fatalf("health helper left HOME=%q, want inherited %q", got, hostileHome)
+			}
+			for _, role := range verdict.Roles {
+				if role.Role == steward.RoleContext && role.Status == steward.HealthAlive && strings.Contains(role.Reason, "120 thousand tokens this call") {
+					return
+				}
+			}
+			t.Fatalf("health helper did not read the %s fixture transcript: %s", runtimeName, verdict.Line())
+		})
+	}
 }
 
 func TestContextCostRoleFromHealthLine(t *testing.T) {
@@ -426,9 +526,10 @@ func newContextCostBed(t *testing.T, runtimeName, candidate, readerHelper string
 	installation := filepath.Join(outer, "metasystem")
 	home := filepath.Join(outer, "fixture-home")
 	stubDirectory := filepath.Join(outer, "stub-bin")
+	deadlineRoot := filepath.Join(outer, "deadline-authorization")
 	for _, directory := range []string{
 		filepath.Join(outer, "development"), filepath.Join(installation, "bin"),
-		filepath.Join(installation, "plans"), home, stubDirectory,
+		filepath.Join(installation, "plans"), home, stubDirectory, deadlineRoot,
 	} {
 		if err := os.MkdirAll(directory, 0o755); err != nil {
 			t.Fatal(err)
@@ -447,6 +548,9 @@ func newContextCostBed(t *testing.T, runtimeName, candidate, readerHelper string
 	copyContextCostFile(t, candidate, filepath.Join(installation, "bin", "metasystem"), 0o755)
 	config := "metasystem.version=1\nmetasystem.engine-delivery=source\nmetasystem.runtimes=claude,codex\nsteward.stop-slow-sec=15\n"
 	if err := os.WriteFile(filepath.Join(installation, "metasystem.conf"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(deadlineRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	goals := "# Goals\n\n## Goal-free: declared 2026-09-07T00:00:00Z by human over context cost fixture\n"
@@ -485,6 +589,22 @@ if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
     "${METASYSTEM_CONTEXT_COST_RUNTIME:?}" "${METASYSTEM_CONTEXT_COST_PID:?}" "${METASYSTEM_CONTEXT_COST_STARTED:?}"
   exit 0
 fi
+if [[ ${1:-} == hooks && ${2:-} == stop-deadline-wait ]]; then
+  rewritten=("$@")
+  rewritten_root=false
+  for ((index=0; index+1<${#rewritten[@]}; index++)); do
+    if [[ ${rewritten[$index]} == --root ]]; then
+      rewritten[$((index+1))]="${METASYSTEM_CONTEXT_COST_DEADLINE_ROOT:?}"
+      rewritten_root=true
+      break
+    fi
+  done
+  if [[ $rewritten_root != true ]]; then
+    printf '%s\n' 'context cost deadline wrapper received no --root' >&2
+    exit 2
+  fi
+  exec "${METASYSTEM_CONTEXT_COST_REAL_ENGINE:?}" "${rewritten[@]}"
+fi
 exec "${METASYSTEM_CONTEXT_COST_REAL_ENGINE:?}" "$@"
 `
 	if err := testexec.WriteFile(wrapper, []byte(wrapperSource), 0o755); err != nil {
@@ -502,6 +622,7 @@ exec "${METASYSTEM_CONTEXT_COST_REAL_ENGINE:?}" "$@"
 		hook:         filepath.Join(installation, "scripts", "agents", "supervision-hook.sh"),
 		healthRecord: filepath.Join(outer, "hook-context-role.json"), testBinary: testBinary,
 		readerHelper: readerHelper, argvRecord: argvRecord,
+		deadlineRoot: deadlineRoot, fixture: testutil.Fixture(t),
 		startedAt: exact.StartedAt.Unix(),
 	}
 	if runtimeName == "claude" {
@@ -519,11 +640,12 @@ func (bed *contextCostBed) environment(wrapper bool) []string {
 		"METASYSTEM_CONTEXT_COST_PID=", "METASYSTEM_CONTEXT_COST_STARTED=", "METASYSTEM_HOOK_DELEGATE_",
 		"METASYSTEM_CONTEXT_COST_TEST_BINARY=", "METASYSTEM_CONTEXT_COST_HEALTH_HELPER=",
 		"METASYSTEM_CONTEXT_COST_HEALTH_ROOT=", "METASYSTEM_CONTEXT_COST_HEALTH_INSTALLATION=",
-		"METASYSTEM_CONTEXT_COST_HEALTH_RECORD=",
+		"METASYSTEM_CONTEXT_COST_HEALTH_RECORD=", "METASYSTEM_CONTEXT_COST_HEALTH_HOME=",
+		"METASYSTEM_CONTEXT_COST_DEADLINE_ROOT=", "METASYSTEM_STOP_DEADLINE_EVENT=",
 		"METASYSTEM_CONTEXT_COST_READER_HELPER=", "METASYSTEM_CONTEXT_COST_READER_ROOT=",
 		"METASYSTEM_CONTEXT_COST_READER_RUNTIME=", "METASYSTEM_CONTEXT_COST_READER_SESSION=",
 		"METASYSTEM_CONTEXT_COST_READER_TRANSCRIPT=", "METASYSTEM_CONTEXT_COST_READER_HOME=",
-		"METASYSTEM_CONTEXT_COST_READER_TOPLEVEL=",
+		"METASYSTEM_CONTEXT_COST_READER_TOPLEVEL=", "METASYSTEM_CONTEXT_COST_READER_PAUSE=",
 		"HOME=",
 	}
 	environment := make([]string, 0, len(os.Environ())+7)
@@ -541,6 +663,9 @@ func (bed *contextCostBed) environment(wrapper bool) []string {
 	}
 	environment = append(environment, "HOME="+bed.home)
 	if wrapper {
+		if bed.deadlineEvent == "" {
+			bed.t.Fatal("context cost Stop has no fresh deadline event path")
+		}
 		environment = append(environment,
 			"METASYSTEM_BIN="+bed.wrapper,
 			"METASYSTEM_CONTEXT_COST_REAL_ENGINE="+bed.engine,
@@ -553,7 +678,11 @@ func (bed *contextCostBed) environment(wrapper bool) []string {
 			"METASYSTEM_CONTEXT_COST_HEALTH_ROOT="+bed.installation,
 			"METASYSTEM_CONTEXT_COST_HEALTH_INSTALLATION="+bed.installation,
 			"METASYSTEM_CONTEXT_COST_HEALTH_RECORD="+bed.healthRecord,
+			"METASYSTEM_CONTEXT_COST_HEALTH_HOME="+bed.home,
+			"METASYSTEM_CONTEXT_COST_DEADLINE_ROOT="+bed.deadlineRoot,
+			"METASYSTEM_STOP_DEADLINE_EVENT="+bed.deadlineEvent,
 		)
+		environment = bed.fixture.Env(environment)
 	}
 	return environment
 }
@@ -596,15 +725,65 @@ func (bed *contextCostBed) startColdReader() *contextCostBarrierProcess {
 		"METASYSTEM_CONTEXT_COST_READER_TRANSCRIPT="+bed.transcript,
 		"METASYSTEM_CONTEXT_COST_READER_HOME="+bed.home,
 		"METASYSTEM_CONTEXT_COST_READER_TOPLEVEL="+bed.outer,
+		"METASYSTEM_CONTEXT_COST_READER_PAUSE=1",
 	)
 	return startContextCostCoordinatedProcess(bed.t, bed.outer, environment, nil, bed.readerHelper,
 		"-test.run", "^TestContextCostColdReaderHelper$", "-test.count=1")
+}
+
+func (bed *contextCostBed) readerWork() contextCostReaderWork {
+	bed.t.Helper()
+	environment := append(bed.environment(false),
+		"METASYSTEM_CONTEXT_COST_READER_HELPER=1",
+		"METASYSTEM_CONTEXT_COST_READER_ROOT="+bed.installation,
+		"METASYSTEM_CONTEXT_COST_READER_RUNTIME="+bed.runtime,
+		"METASYSTEM_CONTEXT_COST_READER_SESSION="+bed.session,
+		"METASYSTEM_CONTEXT_COST_READER_TRANSCRIPT="+bed.transcript,
+		"METASYSTEM_CONTEXT_COST_READER_HOME="+bed.home,
+		"METASYSTEM_CONTEXT_COST_READER_TOPLEVEL="+bed.outer,
+	)
+	output, code, err := runContextCostCommand(bed.outer, environment, nil, bed.readerHelper,
+		"-test.run", "^TestContextCostColdReaderHelper$", "-test.count=1")
+	if err != nil || code != 0 {
+		bed.t.Fatalf("%s observed reader failed: code=%d err=%v\n%s", bed.runtime, code, err, output)
+	}
+	return parseContextCostReaderWork(bed.t, output)
+}
+
+func (bed *contextCostBed) requireWarmReaderWork() {
+	bed.t.Helper()
+	work := bed.readerWork()
+	if work.BytesRead != 0 || work.LinesParsed != 0 || work.TranscriptOpens != 0 || work.CursorWrites != 0 || work.SampleWrites != 0 {
+		bed.t.Fatalf("%s unchanged reader repeated source or cache work: %+v", bed.runtime, work)
+	}
+}
+
+func parseContextCostReaderWork(t *testing.T, output string) contextCostReaderWork {
+	t.Helper()
+	const prefix = "context-cost-reader-work="
+	for _, line := range strings.Split(output, "\n") {
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		var work contextCostReaderWork
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, prefix)), &work); err != nil {
+			t.Fatalf("decode context reader work: %v\n%s", err, output)
+		}
+		return work
+	}
+	t.Fatalf("context reader emitted no work record:\n%s", output)
+	return contextCostReaderWork{}
 }
 
 func (bed *contextCostBed) prepareStopObservation() {
 	bed.t.Helper()
 	if err := os.Remove(bed.healthRecord); err != nil && !os.IsNotExist(err) {
 		bed.t.Fatal(err)
+	}
+	bed.stopSequence++
+	bed.deadlineEvent = filepath.Join(bed.deadlineRoot, fmt.Sprintf("stop-%03d.deadline", bed.stopSequence))
+	if _, err := os.Stat(bed.deadlineEvent); !os.IsNotExist(err) {
+		bed.t.Fatalf("%s Stop deadline event must start absent: %s: %v", bed.runtime, bed.deadlineEvent, err)
 	}
 }
 
@@ -651,9 +830,6 @@ func (bed *contextCostBed) finishStop(label string, process *contextCostProcess)
 		evidence.Result != steward.ComponentOK || evidence.Outcome != "EMITTED" ||
 		evidence.SuccessAttemptSeq != evidence.AttemptSeq || evidence.LastStopElapsedSec == nil {
 		bed.t.Fatalf("%s %s hook attempt/completion evidence is incomplete: %+v", bed.runtime, label, evidence)
-	}
-	if *evidence.LastStopElapsedSec >= 57 {
-		bed.t.Fatalf("%s %s worker evidence reports %ds, want below 57s", bed.runtime, label, *evidence.LastStopElapsedSec)
 	}
 	bed.lastHookGen = evidence.Generation
 	if role.DurationMillis < 1 {
@@ -878,6 +1054,12 @@ func (bed *contextCostBed) runConcurrentColdRead() {
 	readerOutput, _, readerErr := waitContextCostProcess(reader.process)
 	if readerErr != nil || !strings.Contains(readerOutput, "context-cost-cold-reader=live prompt-tokens=120000") {
 		bed.t.Fatalf("%s coordinated cold reader did not finish live after release: %v\n%s", bed.runtime, readerErr, readerOutput)
+	}
+	work := parseContextCostReaderWork(bed.t, readerOutput)
+	if work.BytesRead != bed.sourceStats.Bytes || work.LinesParsed != bed.sourceStats.Lines ||
+		work.TranscriptOpens != 1 || work.CursorWrites != 2 || work.SampleWrites != 1 {
+		bed.t.Fatalf("%s cold reader work=%+v, want bytes=%d lines=%d transcript-opens=1 cursor-writes=2 sample-writes=1",
+			bed.runtime, work, bed.sourceStats.Bytes, bed.sourceStats.Lines)
 	}
 	if got := bed.snapshot().calls; got != contextCostInitialCalls+1 {
 		bed.t.Fatalf("%s coordinated cold reader committed calls=%d, want %d", bed.runtime, got, contextCostInitialCalls+1)

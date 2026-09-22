@@ -341,6 +341,9 @@ type turnVerdictDependencies struct {
 }
 
 func (s *Store) turnBootClock() func() (string, time.Duration, error) {
+	if s.BootClock != nil {
+		return s.BootClock
+	}
 	if s.verdictDeps.bootClock != nil {
 		return s.verdictDeps.bootClock
 	}

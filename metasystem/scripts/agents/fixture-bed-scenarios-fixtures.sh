@@ -24,8 +24,8 @@ fixture_check_failed() { # description
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
   run_fixture_bed_scenarios fixture-bed-scenarios \
-    "fixture-bed-scenarios fixtures passed (27 isolated scenarios)" \
-    "$fixture_bed_script" budget-standalone budget-inherited ceiling-reaps-group signal-reaps-group \
+    "fixture-bed-scenarios fixtures passed (28 isolated scenarios)" \
+    "$fixture_bed_script" budget-standalone budget-inherited ceiling-reaps-group ceiling-expiry-mutation signal-reaps-group \
     hang-leash \
     command-substitution-failure collects-every-failure \
     assert-keeps-going-under-errexit assert-finish-exits-from-count \
@@ -45,8 +45,8 @@ harness_fixture_bed_leg "$fixture_scenario"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-fixture-bed-scenarios.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
-write_inner_bed() { # destination
-  local destination=$1
+write_inner_bed() { # destination, optional controlled scheduler clock
+  local destination=$1 controlled_clock=${2:-false}
   cat >"$destination" <<'INNER'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -70,6 +70,69 @@ fi
 root=${FIXTURE_BED_SOURCE_ROOT:?}
 source "$root/scripts/agents/fixture-budget.sh"
 source "$root/scripts/agents/fixture-bed-scenarios.sh"
+INNER
+  if [[ "$controlled_clock" == true ]]; then
+    cat >>"$destination" <<'INNER_CLOCK'
+# These wrappers exist only in the generated fixture program and are not
+# exported. The scheduler clock moves on its first liveness probe, after the
+# deadline and descendants both exist; the reaper clock moves separately only
+# after its TERM deadline exists.
+fixture_bed_scheduler_clock_advanced=0
+fixture_bed_reaper_clock_advanced=0
+kill() {
+  local caller=${FUNCNAME[1]:-} ready_until
+  if [[ "$caller" == run_fixture_bed_scenarios && $fixture_bed_scheduler_clock_advanced -eq 0 ]]; then
+    [[ ${#live_deadlines[@]} -eq 1 ]] \
+      || { echo "controlled fixture-bed scheduler expected one live deadline" >&2; return 1; }
+    ready_until=$((SECONDS + $(harness_fixture_cap suite-watchdog-reap)))
+    while { [[ ! -s "${FIXTURE_BED_CHILD_PID_FILE:?}" ]] ||
+        [[ ! -s "${FIXTURE_BED_GRANDCHILD_PID_FILE:?}" ]]; } &&
+        (( SECONDS < ready_until )); do
+      /bin/sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+    done
+    [[ -s "$FIXTURE_BED_CHILD_PID_FILE" && -s "$FIXTURE_BED_GRANDCHILD_PID_FILE" ]] \
+      || { echo "controlled fixture-bed scheduler did not observe child readiness" >&2; return 1; }
+    SECONDS=${live_deadlines[0]}
+    IFS= read -r fixture_bed_ready_child <"$FIXTURE_BED_CHILD_PID_FILE"
+    IFS= read -r fixture_bed_ready_grandchild <"$FIXTURE_BED_GRANDCHILD_PID_FILE"
+    if (( SECONDS < live_deadlines[0] )); then
+      if [[ ${FIXTURE_BED_EXPECT_EXPIRY_MUTATION:-0} == 1 ]]; then
+        fixture_bed_ready_child_ref=$(harness_fixture_engine_call proc ref --pid "$fixture_bed_ready_child") \
+          || { echo "controlled fixture-bed scheduler lost the child identity" >&2; return 1; }
+        fixture_bed_ready_grandchild_ref=$(harness_fixture_engine_call proc ref --pid "$fixture_bed_ready_grandchild") \
+          || { echo "controlled fixture-bed scheduler lost the grandchild identity" >&2; return 1; }
+        printf 'missing-expiry %s %s %s %s\n' "$fixture_bed_ready_child" "$fixture_bed_ready_child_ref" \
+          "$fixture_bed_ready_grandchild" "$fixture_bed_ready_grandchild_ref" \
+          >"${FIXTURE_BED_EXPIRY_MUTATION_WITNESS:?}"
+        fixture_bed_scheduler_clock_advanced=1
+        fixture_bed_reap_group "$fixture_bed_ready_child" \
+          2>>"${FIXTURE_BED_EXPIRY_MUTATION_WITNESS:?}" || true
+        echo "controlled fixture-bed scheduler rejected missing expiry" >&2
+        return 1
+      fi
+      echo "controlled fixture-bed scheduler did not apply its initialized expiry" >&2
+      return 1
+    fi
+    printf '%s %s %s %s\n' "$fixture_bed_ready_child" "$fixture_bed_ready_grandchild" \
+      "$SECONDS" "${live_deadlines[0]}" >"${FIXTURE_BED_SCHEDULER_READY_FILE:?}"
+    fixture_bed_scheduler_clock_advanced=1
+  fi
+  builtin kill "$@"
+}
+sleep() {
+  local caller=${FUNCNAME[1]:-}
+  if [[ "$caller" == fixture_bed_reap_group && $fixture_bed_reaper_clock_advanced -eq 0 ]]; then
+    [[ ${deadline:-} =~ ^[0-9]+$ ]] \
+      || { echo "controlled fixture-bed reaper found no initialized TERM deadline" >&2; return 1; }
+    SECONDS=$deadline
+    fixture_bed_reaper_clock_advanced=1
+    return 0
+  fi
+  /bin/sleep "$@"
+}
+INNER_CLOCK
+  fi
+  cat >>"$destination" <<'INNER'
 fixture_bed_publish_custodian_log() {
   [[ -z "${FIXTURE_BED_CUSTODIAN_LOG_FILE:-}" ]] \
     || printf '%s\n' "$harness_fixture_custodian_log" >"$FIXTURE_BED_CUSTODIAN_LOG_FILE"
@@ -96,11 +159,12 @@ case "$fixture_scenario" in
     printf '%s\n' "$METASYSTEM_FIXTURE_CAP_SCALE_MILLI"
     ;;
   hang)
+    harness_fixture_bed_leg hang
+    trap 'exit 143' TERM
     printf '%s\n' "$$" >"${FIXTURE_BED_CHILD_PID_FILE:?}"
-    bash -c 'trap "" TERM; exec 3<"$METASYSTEM_FIXTURE_LEASH"; read -r _ <&3' \
+    bash -c 'trap "" TERM; printf "%s\n" "$$" >"$FIXTURE_BED_GRANDCHILD_PID_FILE"; exec 3<"$METASYSTEM_FIXTURE_LEASH"; read -r _ <&3' \
       bash "METASYSTEM_FIXTURE_OWNER=$METASYSTEM_FIXTURE_OWNER" &
     fixture_grandchild_pid=$!
-    printf '%s\n' "$fixture_grandchild_pid" >"${FIXTURE_BED_GRANDCHILD_PID_FILE:?}"
     exec 3<"$METASYSTEM_FIXTURE_LEASH"
     read -r _ <&3
     ;;
@@ -1164,12 +1228,15 @@ if [[ "$fixture_scenario" == ceiling-reaps-group ]]; then
   output=$tmp/ceiling.out
   child_file=$tmp/child.pid
   grandchild_file=$tmp/grandchild.pid
-  write_inner_bed "$inner"
+  scheduler_ready_file=$tmp/scheduler-ready
+  write_inner_bed "$inner" true
   set +e
-  METASYSTEM_BED_SCENARIO_FIXTURE_TIMEOUT_SEC=1 \
+  env -u METASYSTEM_FIXTURE_ONLY \
+    METASYSTEM_BED_SCENARIO_FIXTURE_TIMEOUT_SEC=1 \
     FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=hang \
     FIXTURE_BED_CHILD_PID_FILE="$child_file" \
     FIXTURE_BED_GRANDCHILD_PID_FILE="$grandchild_file" \
+    FIXTURE_BED_SCHEDULER_READY_FILE="$scheduler_ready_file" \
     "$inner" "$harness_fixture_tag" >"$output" 2>&1
   inner_rc=$?
   set -e
@@ -1178,13 +1245,75 @@ if [[ "$fixture_scenario" == ceiling-reaps-group ]]; then
     sed -n '1,200p' "$output" >&2
     exit 1
   }
+  [[ -s "$child_file" && -s "$grandchild_file" ]] \
+    || { echo "fixture-bed-scenarios ceiling fixture did not observe both ready descendants" >&2; exit 1; }
   child_pid=$(<"$child_file")
   grandchild_pid=$(<"$grandchild_file")
+  [[ -s "$scheduler_ready_file" ]] \
+    || { echo "fixture-bed-scenarios ceiling fixture did not record the controlled initial scan" >&2; exit 1; }
+  read -r scheduler_child scheduler_grandchild scheduler_now scheduler_deadline <"$scheduler_ready_file"
+  [[ "$scheduler_child" == "$child_pid" && "$scheduler_grandchild" == "$grandchild_pid" &&
+      "$scheduler_now" =~ ^[0-9]+$ && "$scheduler_deadline" =~ ^[0-9]+$ &&
+      "$scheduler_now" -ge "$scheduler_deadline" ]] \
+    || { echo "fixture-bed-scenarios ceiling fixture did not expire after both descendants were ready" >&2; exit 1; }
   grep -Eq '^fixture-bed-inner fixture scenario exceeded its ceiling: hang \(elapsed [0-9]+s, scaled cap [0-9]+s\)$' "$output"
+  grep -Fq 'fixture-bed-inner fixture scenario hang failed while serving leg hang with status 124' "$output"
+  grep -Fqx -- '- hang (rc=124)' "$output"
   grep -Fqx "group $child_pid: TERM sent" "$output"
   grep -Fqx "group $child_pid: alive after 5s grace; KILL sent" "$output"
   grep -Fqx "group $child_pid: empty" "$output"
   assert_no_group_survivor "$child_pid" "$grandchild_pid"
+  exit 0
+fi
+
+if [[ "$fixture_scenario" == ceiling-expiry-mutation ]]; then
+  mutation_root=$tmp/expiry-mutation-root
+  mutation_script=$mutation_root/scripts/agents/fixture-bed-scenarios-fixtures.sh
+  mutation_output=$tmp/expiry-mutation.out
+  mutation_witness=$tmp/expiry-mutation.witness
+  mutation_source=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
+  mkdir -p "$mutation_root/scripts/agents" "$mutation_root/bin"
+  cp "$mutation_source" "$mutation_script"
+  ln -s "$root/scripts/agents/fixture-budget.sh" "$mutation_root/scripts/agents/fixture-budget.sh"
+  ln -s "$root/scripts/agents/fixture-bed-scenarios.sh" "$mutation_root/scripts/agents/fixture-bed-scenarios.sh"
+  ln -s "$root/scripts/agents/fixture-assert.sh" "$mutation_root/scripts/agents/fixture-assert.sh"
+  ln -s "$root/bin/metasystem" "$mutation_root/bin/metasystem"
+  ln -s "$root/metasystem.conf" "$mutation_root/metasystem.conf"
+  mutation_count=$(grep -Fxc '    SECONDS=${live_deadlines[0]}' "$mutation_script" || true)
+  [[ "$mutation_count" -eq 1 ]] \
+    || { echo "fixture-bed-scenarios mutation expected exactly one expiry assignment, found $mutation_count" >&2; exit 1; }
+  sed '/^    SECONDS=${live_deadlines\[0\]}$/d' "$mutation_script" >"$mutation_script.next"
+  mv "$mutation_script.next" "$mutation_script"
+  chmod +x "$mutation_script"
+  mutation_count_after=$(grep -Fxc '    SECONDS=${live_deadlines[0]}' "$mutation_script" || true)
+  [[ "$mutation_count_after" -eq 0 ]] \
+    || { echo "fixture-bed-scenarios mutation left $mutation_count_after expiry assignments" >&2; exit 1; }
+  mutation_outer_rc=0
+  set +e
+  env -u METASYSTEM_FIXTURE_OWNER -u METASYSTEM_FIXTURE_ATTEMPT \
+    METASYSTEM_FIXTURE_ONLY=ceiling-reaps-group \
+    FIXTURE_BED_EXPECT_EXPIRY_MUTATION=1 \
+    FIXTURE_BED_EXPIRY_MUTATION_WITNESS="$mutation_witness" \
+    "$mutation_script" >"$mutation_output" 2>&1
+  mutation_outer_rc=$?
+  set -e
+  [[ "$mutation_outer_rc" -ne 0 ]] \
+    || { echo "fixture-bed-scenarios expiry mutation unexpectedly passed" >&2; cat "$mutation_output" >&2; exit 1; }
+  [[ -s "$mutation_witness" ]] \
+    || { echo "fixture-bed-scenarios expiry mutation omitted descendant custody" >&2; cat "$mutation_output" >&2; exit 1; }
+  mutation_witness_body=$(<"$mutation_witness")
+  mutation_witness_line_count=$(awk 'END { print NR }' "$mutation_witness")
+  read -r mutation_reason mutation_child mutation_child_ref mutation_grandchild mutation_grandchild_ref mutation_extra \
+    <<<"$mutation_witness_body"
+  [[ "$mutation_witness_line_count" -eq 4 && "$mutation_reason" == missing-expiry && -z "$mutation_extra" &&
+      "$mutation_witness_body" == "$(printf 'missing-expiry %s %s %s %s\ngroup %s: TERM sent\ngroup %s: alive after 5s grace; KILL sent\ngroup %s: empty' \
+        "$mutation_child" "$mutation_child_ref" "$mutation_grandchild" "$mutation_grandchild_ref" \
+        "$mutation_child" "$mutation_child" "$mutation_child")" ]] \
+    || { echo "fixture-bed-scenarios expiry mutation wrote invalid durable cleanup evidence" >&2; exit 1; }
+  wait_fixture_ref_gone "expiry mutation child" "$mutation_child" "$mutation_child_ref"
+  wait_fixture_ref_gone "expiry mutation grandchild" "$mutation_grandchild" "$mutation_grandchild_ref"
+  printf 'expiry mutation witness: mutation_count=%s mutation_count_after=%s outer_status=%s missing-expiry child=%s grandchild=%s descendants=gone\n' \
+    "$mutation_count" "$mutation_count_after" "$mutation_outer_rc" "$mutation_child" "$mutation_grandchild"
   exit 0
 fi
 
@@ -1194,7 +1323,8 @@ if [[ "$fixture_scenario" == signal-reaps-group ]]; then
   child_file=$tmp/child.pid
   grandchild_file=$tmp/grandchild.pid
   write_inner_bed "$inner"
-    FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=hang \
+    env -u METASYSTEM_FIXTURE_ONLY \
+      FIXTURE_BED_SOURCE_ROOT="$root" FIXTURE_BED_INNER_SCENARIOS=hang \
     FIXTURE_BED_CHILD_PID_FILE="$child_file" \
     FIXTURE_BED_GRANDCHILD_PID_FILE="$grandchild_file" \
     "$inner" "$harness_fixture_tag" >"$output" 2>&1 &

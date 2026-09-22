@@ -50,6 +50,7 @@ var transcriptBytesRead func(int)
 
 type observedTranscriptReader struct {
 	reader io.Reader
+	work   *MeasureWork
 }
 
 func (r observedTranscriptReader) Read(buffer []byte) (int, error) {
@@ -57,10 +58,13 @@ func (r observedTranscriptReader) Read(buffer []byte) (int, error) {
 	if count > 0 && transcriptBytesRead != nil {
 		transcriptBytesRead(count)
 	}
+	if count > 0 && r.work != nil {
+		r.work.TranscriptBytesRead += int64(count)
+	}
 	return count, err
 }
 
-func readSeat(repoRoot, machine string, now time.Time, jobs readerJobs, settings config.SpendSettings) ([]pricedMeasurement, SeatSummary, []UnmeasuredEntry, map[string]attributionCall, error) {
+func readSeat(repoRoot, machine string, now time.Time, jobs readerJobs, settings config.SpendSettings, work *MeasureWork) ([]pricedMeasurement, SeatSummary, []UnmeasuredEntry, map[string]attributionCall, error) {
 	seat := SeatSummary{CodexUnmeasured: true}
 	visitedCursorPaths := map[string]bool{}
 	var unmeasured []UnmeasuredEntry
@@ -114,7 +118,7 @@ func readSeat(repoRoot, machine string, now time.Time, jobs readerJobs, settings
 		if legacyOwned {
 			scanJobs.referencedSessions = map[string]bool{}
 		}
-		result := registered.scan(file, readerCursor{repoRoot: repoRoot, toplevel: file.toplevel, now: now, info: info}, scanJobs)
+		result := registered.scan(file, readerCursor{repoRoot: repoRoot, toplevel: file.toplevel, now: now, info: info, work: work}, scanJobs)
 		if result.cacheWriteFailed && !legacyOwned {
 			seat.CacheWriteFailures++
 		}
@@ -312,7 +316,7 @@ func scanClaudeTranscript(file transcriptFile, cursor readerCursor, jobs readerJ
 	dayEligible := !cursor.info.ModTime().Before(cursor.now.Add(-48 * time.Hour))
 	var metadata transcriptMetadata
 	calls, invalid, foreign, cacheWriteFailed, err := readTranscriptCursor(
-		cursor.repoRoot, file.path, cursor.info, cursor.toplevel, dayEligible, jobs.referencedSessions, jobDigest(jobs), &metadata,
+		cursor.repoRoot, file.path, cursor.info, cursor.toplevel, dayEligible, jobs.referencedSessions, jobDigest(jobs), &metadata, cursor.work,
 	)
 	unmeasured := make([]UnmeasuredEntry, 0, len(invalid))
 	for _, request := range invalid {
@@ -335,7 +339,7 @@ type transcriptMetadata struct {
 	kindMissing bool
 }
 
-func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel string, dayEligible bool, delegates map[string]bool, jobsDigest string, metadata *transcriptMetadata) (map[string]transcriptRequest, []transcriptRequest, bool, bool, error) {
+func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel string, dayEligible bool, delegates map[string]bool, jobsDigest string, metadata *transcriptMetadata, work *MeasureWork) (map[string]transcriptRequest, []transcriptRequest, bool, bool, error) {
 	cachePath := transcriptCursorPath(repoRoot, path)
 	cache, valid := loadTranscriptCursor(cachePath, path)
 	valid = valid && cache.JobDigest == jobsDigest
@@ -369,9 +373,9 @@ func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel stri
 		return nil, nil, false, false, fmt.Errorf("cannot read Claude transcript %s from offset %d: %w", path, cache.Offset, err)
 	}
 	remaining := info.Size() - cache.Offset
-	reader := io.MultiReader(bytes.NewReader(cache.Tail), io.LimitReader(observedTranscriptReader{reader: file}, remaining))
+	reader := io.MultiReader(bytes.NewReader(cache.Tail), io.LimitReader(observedTranscriptReader{reader: file, work: work}, remaining))
 	cache.Tail = nil
-	foreign, err := scanTranscriptCursor(&cache, reader, path, toplevel, delegates)
+	foreign, err := scanTranscriptCursor(&cache, reader, path, toplevel, delegates, work)
 	if err != nil {
 		return nil, nil, false, false, fmt.Errorf("cannot scan Claude transcript %s: %w", path, err)
 	}
@@ -383,6 +387,9 @@ func readTranscriptCursor(repoRoot, path string, info os.FileInfo, toplevel stri
 		cache.Invalid = []cachedTranscriptRequest{}
 		cache.Tail = nil
 		cache.Starters = []turnStarter{}
+	}
+	if work != nil {
+		work.CacheWrites++
 	}
 	cacheWriteFailed := writeSpendCache(cachePath, cache) != nil
 	if foreign {
@@ -431,7 +438,7 @@ func pruneTranscriptCursors(repoRoot string, visited map[string]bool) int {
 
 const maxTranscriptLineBytes = 32 * 1024 * 1024
 
-func scanTranscriptCursor(cache *transcriptCursorCache, reader io.Reader, path, toplevel string, delegates map[string]bool) (bool, error) {
+func scanTranscriptCursor(cache *transcriptCursorCache, reader io.Reader, path, toplevel string, delegates map[string]bool, work *MeasureWork) (bool, error) {
 	buffered := bufio.NewReader(reader)
 	for {
 		line, err := buffered.ReadBytes('\n')
@@ -440,6 +447,9 @@ func scanTranscriptCursor(cache *transcriptCursorCache, reader io.Reader, path, 
 		}
 		if err == nil {
 			cache.Line++
+			if work != nil {
+				work.TranscriptLinesParsed++
+			}
 			if applyTranscriptLine(cache, bytes.TrimSuffix(line, []byte{'\n'}), path, cache.Line, toplevel, delegates) {
 				return true, nil
 			}
@@ -449,6 +459,9 @@ func scanTranscriptCursor(cache *transcriptCursorCache, reader io.Reader, path, 
 			return false, err
 		}
 		if len(line) > 0 {
+			if work != nil {
+				work.TranscriptLinesParsed++
+			}
 			cache.Tail = append([]byte(nil), line...)
 			snapshot := cloneTranscriptCursor(*cache)
 			foreign := applyTranscriptLine(&snapshot, line, path, cache.Line+1, toplevel, delegates)

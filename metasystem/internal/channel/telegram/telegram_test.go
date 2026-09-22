@@ -268,36 +268,46 @@ func TestConfirmRequestShapeAndEmptyCursor(t *testing.T) {
 }
 
 func TestReceiveAppliesRequestDeadline(t *testing.T) {
-	const requestTimeout = 24 * time.Hour
-	started := time.Now()
-	var calls int
-	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		calls++
-		observedAt := time.Now()
-		deadline, ok := request.Context().Deadline()
-		if !ok {
-			t.Errorf("request %s has no deadline", request.URL.Path)
-		} else if deadline.Before(started.Add(requestTimeout)) || deadline.After(observedAt.Add(requestTimeout)) {
-			t.Errorf("request %s deadline = %s, want creation time plus %s", request.URL.Path, deadline, requestTimeout)
-		}
-		if strings.HasSuffix(request.URL.Path, "/getMe") {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Status:     "200 OK",
-				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":{"id":1}}`)),
-				Request:    request,
-			}, nil
-		}
-		return nil, context.DeadlineExceeded
-	})}
-	d := channel.DestinationConfig{ChannelID: "1", Token: "token", APIBase: "https://telegram.invalid", HTTPTimeout: requestTimeout}
-	_, _, err := telegram.New(client).Receive(context.Background(), d, nil, "")
-	if err == nil || !channel.IsKind(err, channel.ReceiveFailed) || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
-		t.Fatal(err)
-	}
-	if calls != 2 {
-		t.Fatalf("transport calls = %d, want credential and update requests", calls)
+	for _, test := range []struct {
+		name       string
+		configured time.Duration
+		want       time.Duration
+	}{
+		{name: "default", want: 30 * time.Second},
+		{name: "configured", configured: 24 * time.Hour, want: 24 * time.Hour},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			started := time.Now()
+			var calls int
+			client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				calls++
+				observedAt := time.Now()
+				deadline, ok := request.Context().Deadline()
+				if !ok {
+					t.Errorf("request %s has no deadline", request.URL.Path)
+				} else if deadline.Before(started.Add(test.want)) || deadline.After(observedAt.Add(test.want)) {
+					t.Errorf("request %s deadline = %s, want creation time plus %s", request.URL.Path, deadline, test.want)
+				}
+				if strings.HasSuffix(request.URL.Path, "/getMe") {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Status:     "200 OK",
+						Header:     make(http.Header),
+						Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":{"id":1}}`)),
+						Request:    request,
+					}, nil
+				}
+				return nil, context.DeadlineExceeded
+			})}
+			d := channel.DestinationConfig{ChannelID: "1", Token: "token", APIBase: "https://telegram.invalid", HTTPTimeout: test.configured}
+			_, _, err := telegram.New(client).Receive(context.Background(), d, nil, "")
+			if err == nil || !channel.IsKind(err, channel.ReceiveFailed) || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+				t.Fatal(err)
+			}
+			if calls != 2 {
+				t.Fatalf("transport calls = %d, want credential and update requests", calls)
+			}
+		})
 	}
 }
 

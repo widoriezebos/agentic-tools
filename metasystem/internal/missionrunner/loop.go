@@ -1791,7 +1791,7 @@ func (e *Engine) oneCycle(statePath, ledger string, state map[string]any, leaseP
 // cycleReserveAndBuildTurn reserves the cycle against the fences, reads the
 // contract, allocates the turn, and publishes the pending turn record.
 func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool, error) {
-	if err := mission.ReserveCycle(e.Root, e.Mission); err != nil {
+	if err := mission.ReserveCycleWithClock(e.Root, e.Mission, e.now); err != nil {
 		final, ferr := e.parkState(c.statePath, c.ledger, "fence", e.Mission)
 		return final, true, ferr
 	}
