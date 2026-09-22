@@ -11,13 +11,18 @@ A design is attacked before it is built, and the loop ends the moment further cr
 
 The critic attacks; the designer adjudicates; neither does the other's job. A critic reports findings only; it never rewrites the design, and refuting the design's premise is encouraged, not out of scope. The designer answers every finding with a disposition; silently dropping one is a defect. The critic may be another agent, a fresh-context session, or a human; what matters is that it did not write the design it is attacking.
 
+## Step 1 Before Anything
+
+The critic's first question, answered before any other finding: does the design name **step 1** — what exists and is usable after one slice — and list what it defers? A design that does not is not complete enough to attack; the critique returns that single finding and stops. This is the human's standing law (R-121, 2026-09-22): every design is first the design of the smallest thing that works, whatever the size of the ask, and iteration is a separate decision taken after step 1 has value. The rest of this skill runs inside that anchor.
+
 ## The Materiality Criterion
 
 Apply this test to every finding, and give it to the critic verbatim so findings arrive pre-sorted; the criterion binds the critic, not just the adjudicator:
 
-> Would an implementer working from this design build something DIFFERENT, or WRONG, because of this finding?
+> Would an implementer working from this design build **step 1** DIFFERENT, or WRONG, because of this finding?
 
-- **Material: report it, adjudicate it, keep the loop alive.** It changes a contract, schema, or interface; changes control flow or an outcome mapping; changes what a test asserts; changes a named owner; reveals a false premise the design was built on; or leaves the implementer a genuine choice to guess at.
+- **Material: report it, adjudicate it, keep the loop alive.** It changes a contract, schema, or interface step 1 builds; changes control flow or an outcome mapping in it; changes what one of its tests asserts; changes a named owner; reveals a false premise it was built on; or leaves the implementer a genuine choice to guess at.
+- **Outside step 1: record it in the design's deferred list, do not action it, never let it keep the loop alive.** A hole step 1 does not open — a scale the first slice does not reach, a failure no user can yet trigger, a second decision-maker who does not yet exist — is real and is not material; it goes to the deferred list with the field it will build on. A loop without this anchor converges on a power plant: the memory-system design (`plans/memory-system-r6.md` in the host repository, 2026-09-22) took three rounds of 16, 12 and 11 findings and 470 lines before the human cut it to 110 lines and two four-hour slices, and every one of those findings had been material under the unanchored test.
 - **Not material: record it, do not action it, never let it block.** The document contradicts itself in prose while the implementation is unambiguous; counts, arithmetic, naming, ordering; restating something stated elsewhere; anything an implementer would resolve identically either way.
 
 Require the critic's verdict line to count only material findings.
@@ -105,7 +110,7 @@ Refutations carry the same burden of proof as the findings they answer. Record t
 
 When the same class of finding recurs across rounds ("section X contradicts row Y", again and again), stop patching instances. Rewrite the accreted artifact in a single pass and let the next round attack the rewrite. A long design patched in place accumulates contradictions faster than a loop can remove them, and the loop degenerates into finding the previous round's patch seams.
 
-The same discipline applies to machinery grown under critique pressure: when successive rounds add mechanism to satisfy the critic and the material count still rises, stop answering with machinery and invert the question — name the requirement the smaller design fails. Every mechanism added to appease a finding is itself new attack surface, so the loop can climb its own ladder indefinitely: the backlog-sync design accreted proof envelopes, semantic replay, and anchor chains across three rounds while findings rose from nine to fourteen, and converged three rounds after the scope reduction put the smaller design on the table (D118).
+The same discipline applies to machinery grown under critique pressure: when successive rounds add mechanism to satisfy the critic and the material count still rises, stop answering with machinery and invert the question — name the requirement the smaller design fails. Every mechanism added to appease a finding is itself new attack surface, so the loop can climb its own ladder indefinitely: the backlog-sync design accreted proof envelopes, semantic replay, and anchor chains across three rounds while findings rose from nine to fourteen, and converged three rounds after the scope reduction put the smaller design on the table (D118). The step-1 anchor above is the standing form of that inversion: when the count rises, ask what step 1 needs, not what the critic can imagine.
 
 ## Expect the Returns to Diminish
 

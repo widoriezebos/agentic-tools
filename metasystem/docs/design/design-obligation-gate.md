@@ -12,6 +12,10 @@ Answer inline before calling any change complete; no file or matrix is required:
 
 If any answer is weak, fix or report it. Escalate to the full matrix only on the triggers below.
 
+## Design Completeness (every design)
+
+A design is complete enough to critique or to build only when it names **step 1** — what exists and is usable after one slice — and lists what it defers, each deferred item with the step-1 field or home it will build on. A design that answers a large request with the whole answer is not complete; it is the design of the cathedral, and R-121 (2026-09-22) rules that the smallest thing that works is designed and built first, and that iterating is a separate decision taken after step 1 has value. The critique loop's first question checks this (`skills/design-critique/SKILL.md`, Step 1 Before Anything), and a finding is material there only if it changes what step 1 builds.
+
 ## Milestone Check (declared milestones only)
 
 At a declared milestone (merging to the integration branch, closing a plan, ending a multi-session stream), recompute the shared testing contract from the actual goal, destination policy and whole-project candidate. Run its required selection once in your own environment and consume the sufficient retained result with `test verify`, in addition to the focused checks above. A low-risk milestone may finish with standard evidence; deep and cadence groups run only when the contract requires them, while the standing validator remains the broader backstop. A delegate's green run proves its environment, not yours. This named question justifies the selected expense; there is no blanket full-suite prerequisite between milestones.

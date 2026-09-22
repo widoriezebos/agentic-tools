@@ -117,6 +117,15 @@ Strong signals that the design needs correction:
 
 ## Implementation Slicing
 
+A design is first the design of the smallest thing that works. Whatever the
+size of the ask, the first design delivered is step 1 — what exists and is
+usable after one slice — with a short list of what is deferred and the field
+or home each deferred item will build on. Iterating is a separate decision,
+taken after step 1 has value (R-121, 2026-09-22; the memory-system design
+that prompted it grew to 470 lines and three critique rounds before it was
+cut to 110 lines and two slices). A mechanism for a hole nobody has fallen
+into yet is not part of step 1.
+
 When a design divides implementation into units, a unit is one coherent
 section of the design: the files, behavior and tests that one builder produces
 in one job, normally 600 to 1,500 changed lines (additions plus deletions
