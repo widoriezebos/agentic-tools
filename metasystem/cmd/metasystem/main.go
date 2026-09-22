@@ -534,6 +534,17 @@ func families() []family {
 			},
 		},
 		{
+			name:    "project",
+			summary: "the project's memory: intent, doctrine, decisions, designs and open questions, declared in their records",
+			verbs: []verb{
+				{"id", "print a fresh ULID for a new record", runProjectID},
+				{"list", "list the records of one kind, narrowed by area or status", runProjectList},
+				{"show", "show one record by id, its references, and what references it", runProjectShow},
+				{"tree", "the declared areas, each with counts by kind and status", runProjectTree},
+				{"check", "refuse every fault in the homes, anchored at its file and line", runProjectCheck},
+			},
+		},
+		{
 			name:    "channel",
 			summary: "fleet status and authenticated question threads",
 			verbs: []verb{

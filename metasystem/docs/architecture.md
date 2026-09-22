@@ -135,6 +135,7 @@ One line per package; the package doc is the full story.
 | `lock` | the supervision registry's acquisition discipline |
 | `mission` | mission lifecycle decisions: ledger, fences, state, ask/answer |
 | `missionrunner` | the engine that launches and drives mission cycles |
+| `project` | the project's declared memory: records that say what they are, the homes they live in, the books and the questions register they form, and the refusals a check owes |
 | `receipt` | the task-receipt ledger and retro cadence |
 | `registry` | the machine-wide supervision registry contract |
 | `report` | turn-end report decisions plus the improvement-mode frontier ledger |
