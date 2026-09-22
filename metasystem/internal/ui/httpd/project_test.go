@@ -19,15 +19,20 @@ var errFailed = errors.New("the checkout could not be opened")
 
 func loopback() *net.TCPAddr { return &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 7878} }
 
-func describedThread() project.Thread {
-	return project.Thread{
+func describedPane() project.Pane {
+	return project.Pane{
 		SchemaVersion: project.SchemaVersion,
 		ReadAt:        "2026-09-21T10:11:12Z",
-		Subsections: []project.Subsection{{
-			ID: "intent", Title: "Intent", State: "not-recorded",
-			LookedFor: []string{"/work/repository/covenant.json"},
-			Groups:    []project.Group{},
+		Areas:         []project.Area{{Slug: "interface", Name: "The browser workspace"}},
+		Records: []project.Record{{
+			Kind: "design", ID: "01K5", Status: "accepted", Areas: []string{"interface"},
+			Title: "The pane", Path: "plans/designs/pane.md", Home: "plans/designs",
 		}},
+		Intent:    project.Book{Chapters: []project.Chapter{}},
+		Doctrine:  project.Book{Chapters: []project.Chapter{}},
+		Questions: []project.Question{},
+		Problems:  []project.Problem{},
+		Documents: []project.File{{Path: "docs/a.md", Title: "A"}},
 	}
 }
 
@@ -41,15 +46,15 @@ func describedDocument() project.Document {
 	}
 }
 
-// The thread is answered per request, so a document written while the server
-// runs is read without a restart.
+// The pane is answered per request, so a record written while the server runs
+// is read without a restart.
 func TestProjectPayload(t *testing.T) {
 	t.Parallel()
 
 	calls := 0
-	info := Info{Project: func() (project.Thread, error) {
+	info := Info{Project: func() (project.Pane, error) {
 		calls++
-		return describedThread(), nil
+		return describedPane(), nil
 	}}
 	served := New(info, loopback(), testBundle())
 
@@ -57,9 +62,9 @@ func TestProjectPayload(t *testing.T) {
 
 	testutil.Require(t, "status", response.Code, http.StatusOK)
 	testutil.Expect(t, "content type", response.Header().Get("Content-Type"), "application/json")
-	var payload project.Thread
+	var payload project.Pane
 	testutil.Require(t, "decode the response", json.Unmarshal(response.Body.Bytes(), &payload), nil)
-	testutil.Expect(t, "payload", payload, describedThread())
+	testutil.Expect(t, "payload", payload, describedPane())
 
 	second := request(t, served, http.MethodGet, "/api/project", "127.0.0.1:7878", nil)
 
@@ -145,15 +150,15 @@ func TestDocumentRefusalsAndFailures(t *testing.T) {
 			wantError:  "this engine was built without a document reader",
 		},
 		{
-			name:       "no thread at all",
+			name:       "no pane at all",
 			info:       Info{},
 			path:       "/api/project",
 			wantStatus: http.StatusInternalServerError,
-			wantError:  "this engine was built without a project thread",
+			wantError:  "this engine was built without a project reader",
 		},
 		{
-			name:       "a thread that fails",
-			info:       Info{Project: func() (project.Thread, error) { return project.Thread{}, errFailed }},
+			name:       "a pane that fails",
+			info:       Info{Project: func() (project.Pane, error) { return project.Pane{}, errFailed }},
 			path:       "/api/project",
 			wantStatus: http.StatusInternalServerError,
 			wantError:  "the checkout could not be opened",
@@ -174,7 +179,7 @@ func TestDocumentRefusalsAndFailures(t *testing.T) {
 	}
 }
 
-// What lies beneath the thread, and the document prefix with no id, belong to
+// What lies beneath the pane, and the document prefix with no id, belong to
 // no resource: they are the same 404 as any other unserved reserved path, and
 // neither reaches a reader.
 func TestUnservedPathsBeneathTheNewRoutes(t *testing.T) {
@@ -186,7 +191,7 @@ func TestUnservedPathsBeneathTheNewRoutes(t *testing.T) {
 
 			reached := 0
 			info := Info{
-				Project:  func() (project.Thread, error) { reached++; return describedThread(), nil },
+				Project:  func() (project.Pane, error) { reached++; return describedPane(), nil },
 				Document: func(string) (project.Document, error) { reached++; return describedDocument(), nil },
 			}
 
@@ -216,7 +221,7 @@ func TestHeadOnTheNewRoutesIsTheGetWithoutABody(t *testing.T) {
 			}))
 			defer server.Close()
 			handler = New(Info{
-				Project:  func() (project.Thread, error) { reads++; return describedThread(), nil },
+				Project:  func() (project.Pane, error) { reads++; return describedPane(), nil },
 				Document: func(string) (project.Document, error) { reads++; return describedDocument(), nil },
 			}, server.Listener.Addr(), testBundle())
 
@@ -248,7 +253,7 @@ func TestTheNewRoutesCarryTheSameHeaders(t *testing.T) {
 	t.Parallel()
 
 	info := Info{
-		Project:  func() (project.Thread, error) { return describedThread(), nil },
+		Project:  func() (project.Pane, error) { return describedPane(), nil },
 		Document: func(string) (project.Document, error) { return describedDocument(), nil },
 	}
 	served := New(info, loopback(), testBundle())

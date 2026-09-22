@@ -24,15 +24,6 @@ const expected: Empty[] = [
     action: null,
   },
   {
-    id: "sittings",
-    kind: "not projected",
-    heading: "Sittings are not projected yet",
-    body: "A sitting is a human and an agent working together; its working records live in the sitting store the brain process keeps.",
-    note: "Arrives with gate 3",
-    link: null,
-    action: null,
-  },
-  {
     id: "fleet",
     kind: "not projected",
     heading: "Fleet is not projected yet",
@@ -132,7 +123,7 @@ describe("the empty states", () => {
 
   it("cover every destination that has a pane, and nothing more", () => {
     const covered = empties.map((empty) => empty.id).sort();
-    const wanted = [...unprojected.map((section) => section.id), "sittings", "subject", "not-found"].sort();
+    const wanted = [...unprojected.map((section) => section.id), "subject", "not-found"].sort();
     expect(covered).toEqual(wanted);
     for (const section of unprojected) {
       expect(emptyFor(section.id).id).toBe(section.id);
@@ -140,14 +131,13 @@ describe("the empty states", () => {
   });
 
   // A projected section reads the repository or the ledger, so it has no empty
-  // state of its own. Project keeps one subsection this build does not
-  // project, Sittings, which says so inside the pane and names its gate.
+  // state of its own: its pane says what it read, and an empty part of it says
+  // so in one line rather than in a card.
   it("leave a projected section to its own pane", () => {
     for (const id of PROJECTED) {
       expect(empties.map((empty) => empty.id)).not.toContain(id);
       expect(() => emptyFor(id)).toThrow();
     }
-    expect(emptyFor("sittings").heading).toBe("Sittings are not projected yet");
   });
 
   it("are the not-projected kind for every section, with no action of its own", () => {

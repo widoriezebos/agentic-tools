@@ -36,8 +36,9 @@ type Info struct {
 	// ref and starts no fetch. A nil Observe is an engine that cannot answer,
 	// which the route says.
 	Observe func() snapshot.Observation
-	// Project answers the thread of intent, per request for the same reason.
-	Project func() (project.Thread, error)
+	// Project answers what the project's records declare, per request for the
+	// same reason.
+	Project func() (project.Pane, error)
 	// Document answers one document by its checkout-relative id. A
 	// project.ErrNotFound is the route's 404; anything else is a 500.
 	Document func(id string) (project.Document, error)
@@ -253,20 +254,21 @@ func (h *handler) workspace(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(described)
 }
 
-// project answers the thread of intent. A failure is a 500 carrying the
-// reason, for the workspace route's reason: the reason is what a human acts on.
+// project answers the project's declared memory. A failure is a 500 carrying
+// the reason, for the workspace route's reason: the reason is what a human
+// acts on.
 func (h *handler) project(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	if h.info.Project == nil {
-		writeFailure(w, "this engine was built without a project thread")
+		writeFailure(w, "this engine was built without a project reader")
 		return
 	}
-	thread, err := h.info.Project()
+	pane, err := h.info.Project()
 	if err != nil {
 		writeFailure(w, err.Error())
 		return
 	}
-	_ = json.NewEncoder(w).Encode(thread)
+	_ = json.NewEncoder(w).Encode(pane)
 }
 
 // document answers one document. Every refusal the reader makes is the same

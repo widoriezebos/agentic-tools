@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   activeSection,
+  areaPath,
   documentIdFromPath,
   documentPath,
   HOME_PATH,
@@ -97,6 +98,12 @@ describe("activeSection", () => {
     expect(activeSection("/project/nothing")).toBeNull();
   });
 
+  it("keeps the header on Project while an area is selected", () => {
+    expect(activeSection("/project/area")?.id).toBe("project");
+    expect(activeSection("/project/area/interface")?.id).toBe("project");
+    expect(sectionFor("/project/area/interface")?.id).toBe("project");
+  });
+
   it("registers a nested route for every section that has one", () => {
     for (const route of nestedRoutes) {
       expect(pathFor(route.sectionId)).not.toBeNull();
@@ -129,6 +136,13 @@ describe("reserved prefixes", () => {
 describe("routeFor", () => {
   it("resolves a section reference", () => {
     expect(routeFor({ kind: "section", id: "fleet" })).toBe("/fleet");
+  });
+
+  it("names an area by one encoded segment", () => {
+    expect(areaPath("interface")).toBe("/project/area/interface");
+    expect(areaPath("a b")).toBe("/project/area/a%20b");
+    expect(areaPath("a/b")).toBe("/project/area/a%2Fb");
+    expect(isReserved(areaPath("interface"))).toBe(false);
   });
 
   it("resolves a document reference, one encoded segment at a time", () => {

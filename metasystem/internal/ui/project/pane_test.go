@@ -1,0 +1,328 @@
+package project
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+)
+
+// The adapter's fixtures are whole small projects written into the two layouts
+// the checkout fixtures already build: a one-page intent book declaring two
+// areas, a doctrine book whose reading order names a record and binds a
+// document, one decision, three designs across the two homes, a register, and
+// enough Markdown carrying no head to prove that the rest of the checkout is
+// still listed by path.
+//
+// The record helper is the resolver's, written out again here rather than
+// imported: a package's tests are not an API, and a fixture that drifted from
+// the one it copied would be a fault this pane could not see.
+
+func record(title, kind, id, status, areas string, extra ...string) string {
+	head := []string{
+		"- Kind: " + kind,
+		"- Id: " + id,
+		"- Status: " + status,
+		"- Areas: " + areas,
+	}
+	head = append(head, extra...)
+	return "# " + title + "\n\n" + strings.Join(head, "\n") + "\n"
+}
+
+// seed writes the project into one layout. state is the checkout-relative
+// prefix of the state root, which is the nested installation in the
+// self-hosted layout and nothing at all in an adopted one.
+func seed(t *testing.T, roots Roots) string {
+	t.Helper()
+	state := ""
+	if roots.StateRoot != roots.Checkout {
+		state = relativeTo(t, roots.Checkout, roots.StateRoot) + "/"
+	}
+
+	plant(t, roots.Checkout, state+"docs/architecture.md", "# The engine\n\nProse, and no head, so no kind is claimed.\n")
+	plant(t, roots.Checkout, state+"docs/intent/index.md",
+		record("The project's intent", "intent", "intent-index", "accepted", "project")+
+			"\n## Areas\n"+
+			"- billing — Billing and invoicing\n"+
+			"- security — Security and identity\n"+
+			"\n## Chapters\n"+
+			"- doc:"+state+"docs/architecture.md — The engine\n")
+	plant(t, roots.Checkout, state+"docs/doctrine/index.md",
+		record("The project's doctrine", "doctrine", "doctrine-index", "accepted", "project")+
+			"\n## Chapters\n"+
+			"- doctrine-events — Events are the source of truth\n"+
+			"- doctrine-budgets\n")
+	plant(t, roots.Checkout, state+"docs/doctrine/events.md",
+		record("Events are the source of truth", "doctrine", "doctrine-events", "accepted", "billing"))
+	plant(t, roots.Checkout, state+"docs/doctrine/chapters/budgets.md",
+		record("Every run is budgeted", "doctrine", "doctrine-budgets", "draft", "security project"))
+	plant(t, roots.Checkout, state+"docs/decisions/0001-one-binary.md",
+		record("One binary", "decision", "decision-one-binary", "accepted", "project"))
+	plant(t, roots.Checkout, state+"plans/designs/ledger.md",
+		record("The ledger", "design", "design-ledger", "done", "billing"))
+	plant(t, roots.Checkout, state+"plans/designs/pane/reading.md",
+		record("The reading pane", "design", "design-reading", "draft", "security"))
+	plant(t, roots.Checkout, "plans/designs/interface.md",
+		record("The interface", "design", "design-interface", "accepted", "project billing"))
+	plant(t, roots.Checkout, state+"memory/questions.md",
+		"# Open questions\n\n"+
+			"| id | opened | question | areas | status |\n"+
+			"| --- | --- | --- | --- | --- |\n"+
+			"| Q-1 | 2026-09-22 | Where does an adopted project's intent live? | project | open |\n"+
+			"| Q-2 | 2026-09-22 | Who accepts a decision? | billing | answered: decision-one-binary |\n")
+	return state
+}
+
+func relativeTo(t *testing.T, base, target string) string {
+	t.Helper()
+	relative, err := filepath.Rel(base, target)
+	if err != nil {
+		t.Fatalf("relate %s to %s: %v", target, base, err)
+	}
+	return filepath.ToSlash(relative)
+}
+
+// What the records declare is what the pane carries: the areas in the order
+// the intent index declares them, every record with its home, and the two
+// books in reading order.
+func TestPaneCarriesWhatTheRecordsDeclare(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+
+	pane, err := ReadPane(roots, readAt)
+
+	testutil.Require(t, "read the pane", err, nil)
+	testutil.Expect(t, "the schema version", pane.SchemaVersion, SchemaVersion)
+	testutil.Expect(t, "read at", pane.ReadAt, "2026-09-21T10:11:12Z")
+	testutil.Expect(t, "the declared areas", pane.Areas, []Area{
+		{Slug: "billing", Name: "Billing and invoicing"},
+		{Slug: "security", Name: "Security and identity"},
+	})
+	testutil.Expect(t, "every record, in path order", recordIDs(pane.Records), []string{
+		"decision-one-binary", "doctrine-budgets", "doctrine-events", "doctrine-index",
+		"intent-index", "design-ledger", "design-reading", "design-interface",
+	})
+	testutil.Expect(t, "one design's row", recordWithID(pane.Records, "design-reading"), Record{
+		Kind: "design", ID: "design-reading", Status: "draft", Areas: []string{"security"},
+		Title: "The reading pane", Path: "metasystem/plans/designs/pane/reading.md",
+		Home: "metasystem/plans/designs",
+	})
+	testutil.Expect(t, "the second design home", recordWithID(pane.Records, "design-interface").Home, "plans/designs")
+	testutil.Expect(t, "nothing is refused", pane.Problems, []Problem{})
+}
+
+// A book is its index and its reading order: a chapter names a record by id or
+// binds a document by path, and a chapter the index left unnamed is titled by
+// what it names rather than left blank.
+func TestPaneCarriesEachBookInReadingOrder(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+
+	pane, err := ReadPane(roots, readAt)
+
+	testutil.Require(t, "read the pane", err, nil)
+	testutil.Require(t, "intent has an index", pane.Intent.Index != nil, true)
+	testutil.Expect(t, "the intent index", pane.Intent.Index.ID, "intent-index")
+	testutil.Expect(t, "the intent chapters", pane.Intent.Chapters, []Chapter{
+		{Path: "metasystem/docs/architecture.md", Title: "The engine"},
+	})
+	testutil.Require(t, "doctrine has an index", pane.Doctrine.Index != nil, true)
+	testutil.Expect(t, "the doctrine index", pane.Doctrine.Index.Title, "The project's doctrine")
+	testutil.Expect(t, "the doctrine chapters", pane.Doctrine.Chapters, []Chapter{
+		{ID: "doctrine-events", Title: "Events are the source of truth"},
+		{ID: "doctrine-budgets", Title: "Every run is budgeted"},
+	})
+	testutil.Expect(t, "the register", pane.Questions, []Question{
+		{ID: "Q-1", Opened: "2026-09-22", Question: "Where does an adopted project's intent live?",
+			Areas: []string{"project"}, Status: "open"},
+		{ID: "Q-2", Opened: "2026-09-22", Question: "Who accepts a decision?",
+			Areas: []string{"billing"}, Status: "answered: decision-one-binary"},
+	})
+}
+
+// A broken record is shown, not hidden: it keeps its row, and the refusal the
+// check verb would print is carried beside it, anchored at its line.
+func TestPaneShowsARecordTheCheckRefuses(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	state := seed(t, roots)
+	plant(t, roots.Checkout, state+"plans/designs/broken.md",
+		record("A design with an area nobody declared", "design", "design-broken", "accepted", "nowhere"))
+
+	pane, err := ReadPane(roots, readAt)
+
+	testutil.Require(t, "read the pane", err, nil)
+	testutil.Expect(t, "the broken record is listed", recordWithID(pane.Records, "design-broken").Title,
+		"A design with an area nobody declared")
+	testutil.Expect(t, "the refusal", pane.Problems, []Problem{{
+		Path:    "metasystem/plans/designs/broken.md",
+		Line:    6,
+		Message: "the area nowhere is declared by no intent index",
+	}})
+}
+
+// The rest of the checkout's Markdown is listed by path, with no kind claimed:
+// every file the reading route would serve, titled by its first heading or by
+// its name, and nothing beneath a segment that route refuses.
+func TestPaneListsTheCheckoutsOtherMarkdownByPath(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	plant(t, roots.Checkout, "notes/untitled.md", "Prose with no heading at all.\n")
+	plant(t, roots.Checkout, "notes/README.txt", "Not Markdown.\n")
+	plant(t, roots.Checkout, "node_modules/left/out.md", "# Left out\n")
+	plant(t, roots.Checkout, "artifacts/left-out.md", "# Left out\n")
+	plant(t, roots.Checkout, "bin/left-out.md", "# Left out\n")
+	plant(t, roots.Checkout, ".hidden/left-out.md", "# Left out\n")
+	makeDirectory(t, filepath.Join(roots.Checkout, "notes", "elsewhere"))
+	link(t, filepath.Join(roots.Checkout, "notes", "untitled.md"),
+		filepath.Join(roots.Checkout, "notes", "elsewhere", "linked.md"))
+
+	pane, err := ReadPane(roots, readAt)
+
+	testutil.Require(t, "read the pane", err, nil)
+	testutil.Expect(t, "a document titled by its heading",
+		fileWithPath(pane.Documents, "development/metasystem-design.md").Title, "The design")
+	testutil.Expect(t, "a document with no heading",
+		fileWithPath(pane.Documents, "notes/untitled.md").Title, "untitled.md")
+	testutil.Expect(t, "a record is a document by path too",
+		fileWithPath(pane.Documents, "plans/designs/interface.md").Title, "The interface")
+	testutil.Expect(t, "what the reading route refuses is not listed", refusedPaths(pane.Documents), []string{})
+	testutil.Expect(t, "nothing but Markdown", notMarkdown(pane.Documents), []string{})
+	testutil.Expect(t, "a link is not offered", fileWithPath(pane.Documents, "notes/elsewhere/linked.md"), File{})
+
+	// Every path listed is a path the route answers, which is the whole of
+	// what "offer them by path" promises.
+	for _, file := range pane.Documents {
+		document, readErr := Read(roots, file.Path, readAt)
+		if readErr != nil {
+			t.Fatalf("the route refuses a listed document %q: %v", file.Path, readErr)
+		}
+		if document.Title != file.Title {
+			t.Fatalf("the listing and the route disagree about %q: %q and %q", file.Path, file.Title, document.Title)
+		}
+	}
+}
+
+// An adopted workspace has one design home, its own, and the pane says so
+// rather than inventing a second.
+func TestPaneReadsTheAdoptedLayoutsOneDesignHome(t *testing.T) {
+	t.Parallel()
+
+	roots := adoptedFixture(t)
+	seed(t, roots)
+
+	pane, err := ReadPane(roots, readAt)
+
+	testutil.Require(t, "read the pane", err, nil)
+	testutil.Expect(t, "every design is in the one home", homesOf(pane.Records, "design"), []string{"plans/designs"})
+	testutil.Expect(t, "the designs", recordTitles(pane.Records, "design"),
+		[]string{"The interface", "The ledger", "The reading pane"})
+	testutil.Expect(t, "nothing is refused", pane.Problems, []Problem{})
+}
+
+// A project with no book at all says so: no index, no chapters, and no
+// refusal, because a project declares the homes it uses.
+func TestPaneCarriesNoBookWhereNoneIsDeclared(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+
+	pane, err := ReadPane(roots, readAt)
+
+	testutil.Require(t, "read the pane", err, nil)
+	testutil.Expect(t, "no intent index", pane.Intent, Book{Chapters: []Chapter{}})
+	testutil.Expect(t, "no doctrine index", pane.Doctrine, Book{Chapters: []Chapter{}})
+	testutil.Expect(t, "no areas", pane.Areas, []Area{})
+	testutil.Expect(t, "no records", pane.Records, []Record{})
+	testutil.Expect(t, "no questions", pane.Questions, []Question{})
+	testutil.Expect(t, "the checkout's Markdown is still listed",
+		fileWithPath(pane.Documents, "development/metasystem-design.md").Title, "The design")
+}
+
+func recordIDs(records []Record) []string {
+	collected := []string{}
+	for _, record := range records {
+		collected = append(collected, record.ID)
+	}
+	return collected
+}
+
+func recordWithID(records []Record, id string) Record {
+	for _, record := range records {
+		if record.ID == id {
+			return record
+		}
+	}
+	return Record{}
+}
+
+func recordTitles(records []Record, kind string) []string {
+	collected := []string{}
+	for _, record := range records {
+		if record.Kind == kind {
+			collected = append(collected, record.Title)
+		}
+	}
+	return collected
+}
+
+func homesOf(records []Record, kind string) []string {
+	collected := []string{}
+	for _, record := range records {
+		if record.Kind == kind && !contains(collected, record.Home) {
+			collected = append(collected, record.Home)
+		}
+	}
+	return collected
+}
+
+func fileWithPath(files []File, path string) File {
+	for _, file := range files {
+		if file.Path == path {
+			return file
+		}
+	}
+	return File{}
+}
+
+// refusedPaths are the listed paths the reading route would refuse: a segment
+// it never serves through, or a directory hidden from a listing.
+func refusedPaths(files []File) []string {
+	collected := []string{}
+	for _, file := range files {
+		for _, segment := range strings.Split(file.Path, "/") {
+			if refusedSegment(segment) || strings.HasPrefix(segment, ".") {
+				collected = append(collected, file.Path)
+				break
+			}
+		}
+	}
+	return collected
+}
+
+func notMarkdown(files []File) []string {
+	collected := []string{}
+	for _, file := range files {
+		if !strings.HasSuffix(file.Path, ".md") {
+			collected = append(collected, file.Path)
+		}
+	}
+	return collected
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}

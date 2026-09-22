@@ -33,7 +33,7 @@ func runUIRestart(args []string) int { return runUI("restart", args) }
 
 func runUI(verb string, args []string) int {
 	flags := flag.NewFlagSet("ui "+verb, flag.ContinueOnError)
-	repo := flags.String("repo", "", "checkout path (default: the checkout that contains the installation)")
+	repo := pathFlag(flags, "repo", "", "checkout path (default: the checkout that contains the installation)")
 	root := flags.String("metasystem-root", "", "metasystem installation")
 	var listen string
 	var waitSeconds int64 = 15
@@ -166,8 +166,8 @@ func runUI(verb string, args []string) int {
 						)
 					},
 					Observe: ledger.Observe,
-					Project: func() (project.Thread, error) {
-						return project.ReadThread(projectRoots(roots), time.Now().UTC())
+					Project: func() (project.Pane, error) {
+						return project.ReadPane(projectRoots(roots), time.Now().UTC())
 					},
 					Document: func(id string) (project.Document, error) {
 						return project.Read(projectRoots(roots), id, time.Now().UTC())

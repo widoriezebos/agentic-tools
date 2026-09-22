@@ -148,7 +148,7 @@ One line per package; the package doc is the full story.
 | `ui/httpd` | loopback browser request checks, response headers, and interface routes |
 | `ui/snapshot` | what this checkout's accepted ledger says at one instant, and the server's own loop that keeps the accepted ref at the canonical tip |
 | `ui/markdown` | Markdown parsed into a typed tree the browser renders as elements; no HTML string is produced |
-| `ui/project` | the thread of intent: the catalogue of canonical documents over the three roots, and the anchored, bounded read of one document |
+| `ui/project` | the Project pane over the `project` resolver's answer, the rest of the checkout's Markdown by path, and the anchored, bounded read of one document |
 | `ui/web` | the embedded interface bundle, its manifest and staleness digest, and the content types and `Accept` rule the server needs |
 | `ui/workspace` | what the workspace in front of a human is: its subject, its self-hosted or adopted mode, and the adoption its installation records |
 | `up` | the session-start arming transaction and its typed aggregate outcome |

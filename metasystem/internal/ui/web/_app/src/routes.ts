@@ -72,6 +72,7 @@ export function sectionFor(pathname: string): Section | null {
  */
 export const nestedRoutes: readonly { path: string; sectionId: string }[] = [
   { path: "/project/doc", sectionId: "project" },
+  { path: "/project/area", sectionId: "project" },
 ];
 
 /**
@@ -115,6 +116,14 @@ export function routeFor(reference: Reference): string | null {
 
 /** Everything beneath this prefix is a document, named by the rest of it. */
 export const DOCUMENT_PREFIX = "/project/doc/";
+
+/** Everything beneath this prefix is one declared area of the project. */
+export const AREA_PREFIX = "/project/area/";
+
+/** Where one area is shown. The slug is one segment, encoded as one. */
+export function areaPath(slug: string): string {
+  return AREA_PREFIX + encodeURIComponent(slug);
+}
 
 /**
  * Where a document is read. The id is a checkout-relative path with "/"

@@ -8,56 +8,53 @@
  * written under any other name fails the guard rather than the review.
  */
 
-const THREAD = "/api/project";
+const PANE = "/api/project";
 const DOCUMENTS = "/api/documents/";
 
-export type SubsectionState = "recorded" | "not-recorded" | "not-projected";
 export type DocumentState = "readable" | "unreadable" | "too-large";
 
-/** One document in the catalogue, named the way the resolver names it. */
-export type DocumentEntry = {
+/** One slug the intent index declares, with the name it reads by. */
+export type Area = { slug: string; name: string };
+
+/** One declared record: what it says it is, and where it lives. */
+export type ProjectRecord = {
   kind: string;
   id: string;
+  status: string;
+  areas: string[];
   title: string;
-  owner: string;
-  bytes: number;
-  modifiedAt: string;
-  state: DocumentState;
-  reason: string;
-};
-
-export type Group = { id: string; title: string; documents: DocumentEntry[] };
-
-export type CovenantIdentity = { name: string; entryPoint: string; sourcePaths: string[] };
-export type Requirement = { id: string; ref: string; proof: string };
-export type Battery = { command: string; metric: string; direction: string; threshold: string };
-export type Budget = { metric: string; bound: number; direction: string };
-export type Guard = { name: string; command: string; cadence: number; floor: number };
-
-export type Covenant = {
   path: string;
-  error?: string;
-  identity?: CovenantIdentity;
-  requirements?: Requirement[];
-  battery?: Battery;
-  budgets?: Budget[];
-  guards?: Guard[];
-  guardrails?: string[];
+  home: string;
 };
 
-export type Purpose = { path: string; text: string };
+/**
+ * One line of a book's reading order: a record named by id, or a document
+ * bound by its checkout-relative path. Exactly one of the two is carried.
+ */
+export type Chapter = { id?: string; path?: string; title: string };
 
-export type Subsection = {
-  id: string;
-  title: string;
-  state: SubsectionState;
-  lookedFor: string[];
-  covenant: Covenant | null;
-  purpose: Purpose | null;
-  groups: Group[];
+/** A book: its index, which is a record of the kind, and its reading order. */
+export type Book = { index: ProjectRecord | null; chapters: Chapter[] };
+
+export type Question = { id: string; opened: string; question: string; areas: string[]; status: string };
+
+/** One refusal the check verb would print, anchored where a human can act. */
+export type Problem = { path: string; line: number; message: string };
+
+/** One of the checkout's other documents, by path, with no kind claimed. */
+export type DocumentFile = { path: string; title: string };
+
+export type Pane = {
+  schemaVersion: number;
+  readAt: string;
+  areas: Area[];
+  records: ProjectRecord[];
+  intent: Book;
+  doctrine: Book;
+  questions: Question[];
+  problems: Problem[];
+  documents: DocumentFile[];
 };
-
-export type Thread = { schemaVersion: number; readAt: string; subsections: Subsection[] };
 
 export type Heading = { level: number; id: string; text: string };
 
@@ -134,8 +131,8 @@ async function getJSON<T>(resource: string, signal?: AbortSignal): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function loadThread(signal?: AbortSignal): Promise<Thread> {
-  return getJSON<Thread>(THREAD, signal);
+export async function loadPane(signal?: AbortSignal): Promise<Pane> {
+  return getJSON<Pane>(PANE, signal);
 }
 
 export async function loadDocument(id: string, signal?: AbortSignal): Promise<DocumentPayload> {

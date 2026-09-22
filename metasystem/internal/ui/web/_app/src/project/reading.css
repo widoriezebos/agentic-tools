@@ -261,6 +261,84 @@
 
 /* --------------------------------------------------------- the Project pane -- */
 
+/*
+ * Two columns: the area tree, then the selection. Below the phone width they
+ * stack, the tree first, because choosing the area is the first act.
+ */
+.ms-project {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  max-width: 1100px;
+}
+
+.ms-project-areas {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 0;
+}
+
+.ms-project-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  text-decoration: none;
+}
+
+.ms-project-area:hover {
+  background: var(--ms-surface-2);
+  color: var(--ms-text);
+}
+
+.ms-project-area[aria-current="page"] {
+  background: var(--ms-surface-3);
+  color: var(--ms-text);
+  font-weight: 500;
+}
+
+.ms-project-area-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.ms-project-area-count,
+.ms-project-count {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+  color: var(--ms-text-3);
+  white-space: nowrap;
+}
+
+/* In a heading the count is a quiet number beside the name, not part of it. */
+.ms-card-title .ms-project-count {
+  margin-left: 8px;
+}
+
+.ms-project-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.ms-project-main .ms-card {
+  padding: 16px 20px;
+}
+
+.ms-project-main .ms-card-title {
+  margin: 0 0 8px;
+}
+
 .ms-project-read-at {
   display: flex;
   align-items: center;
@@ -271,39 +349,27 @@
   color: var(--ms-text-3);
 }
 
-.ms-project-absent-statement {
-  margin: 0 0 8px;
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--ms-text);
+.ms-project-none {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-3);
 }
 
-.ms-project-absent-lead {
-  margin: 0 0 4px;
+.ms-project-note {
+  margin: 0 0 8px;
   font-size: 12px;
   line-height: 16px;
   color: var(--ms-text-3);
 }
 
-.ms-project-paths,
-.ms-project-documents {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
+/* The reading view's own two lines: where a document is, and why it cannot be
+   read. Both are prose rather than a row, so both may wrap where they must. */
 .ms-project-path {
   font-size: 12px;
   line-height: 16px;
   color: var(--ms-text-3);
   overflow-wrap: anywhere;
-}
-
-.ms-project-prose {
-  margin: 0 0 4px;
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--ms-text);
 }
 
 .ms-project-reason {
@@ -314,32 +380,51 @@
   overflow-wrap: anywhere;
 }
 
-.ms-project-group {
-  margin-top: 16px;
+.ms-project-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.ms-project-group-title {
-  margin: 0 0 4px;
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 600;
-  color: var(--ms-text-2);
-}
-
-.ms-project-row {
+.ms-project-problem {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
+  gap: 4px 8px;
+  padding: 2px 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-danger);
+}
+
+.ms-project-problem-at {
+  font-size: 12px;
+}
+
+/*
+ * A row is a grid, never a wrapping line: the title takes what is left, the
+ * chips take what they need, and the path is clipped at its end with the whole
+ * of it in the title attribute. Nothing here breaks a word.
+ */
+.ms-project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px 8px;
+  min-height: 28px;
   padding: 4px 0;
   border-bottom: 1px solid var(--ms-border);
 }
 
+.ms-project-row:last-child {
+  border-bottom: 0;
+}
+
 .ms-project-row-title {
+  min-width: 0;
   font-size: 14px;
   line-height: 20px;
   font-weight: 500;
+  color: var(--ms-text);
 }
 
 .ms-project-row-title a {
@@ -352,44 +437,67 @@
   text-decoration: underline;
 }
 
+.ms-project-row-status,
+.ms-project-row-areas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .ms-project-row-path {
-  flex: 1;
   min-width: 0;
   font-size: 12px;
   line-height: 16px;
   color: var(--ms-text-3);
-  overflow-wrap: anywhere;
-}
-
-.ms-project-row-date {
-  margin-left: auto;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--ms-text-3);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
 }
 
-.ms-project-row-reason {
-  flex-basis: 100%;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--ms-danger);
+.ms-project-run {
+  border-top: 1px solid var(--ms-border);
 }
 
-.ms-project-covenant,
-.ms-project-purpose {
-  margin-bottom: 8px;
+.ms-project-run-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  cursor: pointer;
 }
 
-/*
- * An empty state inside a card is a statement about one subsection, not a
- * whole pane, so it does not need the pane's vertical room.
- */
-.ms-card .ms-empty {
-  padding-top: 16px;
+.ms-project-run-summary:hover {
+  color: var(--ms-text);
 }
 
-.ms-project-covenant .ms-facts,
-.ms-project-covenant .ms-md-table-scroll {
-  margin-top: 12px;
+.ms-project-run[open] .ms-project-run-summary {
+  color: var(--ms-text);
+  font-weight: 500;
+}
+
+/* Phone: one column, and the path on a line of its own, still unwrapped. */
+@media (max-width: 599px) {
+  .ms-project {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .ms-project-areas {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .ms-project-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .ms-project-row-path {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
 }

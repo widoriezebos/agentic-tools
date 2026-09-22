@@ -47,15 +47,6 @@ export const empties: readonly Empty[] = [
     action: null,
   },
   {
-    id: "sittings",
-    kind: "not projected",
-    heading: "Sittings are not projected yet",
-    body: "A sitting is a human and an agent working together; its working records live in the sitting store the brain process keeps.",
-    note: "Arrives with gate 3",
-    link: null,
-    action: null,
-  },
-  {
     id: "fleet",
     kind: "not projected",
     heading: "Fleet is not projected yet",
