@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
@@ -50,6 +51,22 @@ type Info struct {
 	SetStatus         func(id, status string) (project.Written, error)
 	AskQuestion       func(project.NewQuestion) (project.Asked, error)
 	SetQuestionStatus func(id, status string) (project.Asked, error)
+	// Authority is what this server's one boot-time human-authority
+	// observation found. It is a value rather than a function because it
+	// cannot change while the server runs: a proof is an observation of an
+	// ancestry that existed at boot, and no later request can make one.
+	Authority AuthorityInfo
+	// The backlog's two acts, each one the human approving or withdrawing
+	// their own goal in their own checkout. They publish through the engine
+	// in-process under the boot proof; a nil field is an engine that cannot
+	// act, which the route says. An act.Refusal carries the status the route
+	// answers with; anything else is a 500 carrying its reason.
+	Approve  func(id string, budget goalbudget.Budget) error
+	Withdraw func(id, reason string) error
+	// BudgetDefaults is the project's budget law by tier, read per request
+	// for the reason the readers are: what the browser prefills from is what
+	// the next read of the configuration will say.
+	BudgetDefaults func() (map[string]goalbudget.Budget, error)
 }
 
 // absentBundleStatement is what a page request gets from an engine built

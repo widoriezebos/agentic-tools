@@ -34,6 +34,12 @@ func StatusResult(stateRoot string, prober identity.Prober, digest func() (strin
 	}
 	rec := status.Record
 	result := Result{Lines: []string{fmt.Sprintf("interface running at http://%s (pid %d, started %s, build %s)", rec.Address, recordPid(rec), rec.StartedAt, rec.EngineBuild)}}
+	// Whether this server can act as the human is the second thing to know
+	// about it, so it is the second line. A record written before this build
+	// carries none, and says nothing rather than guessing.
+	if rec.Authority != "" {
+		result.Lines = append(result.Lines, rec.Authority)
+	}
 	if digest == nil {
 		digest = ExecutableDigest
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
 
@@ -20,15 +21,32 @@ const backlogPath = "/api/backlog"
 const backlogSchemaVersion = 1
 
 type backlogPayload struct {
-	SchemaVersion int                  `json:"schemaVersion"`
-	ObservedAt    string               `json:"observedAt"`
-	Ledger        ledgerPayload        `json:"ledger"`
-	Admission     admissionPayload     `json:"admission"`
-	WorkingTree   workingTreePayload   `json:"workingTree"`
-	Counts        map[backlog.Lane]int `json:"counts"`
-	Draft         backlog.DraftGap     `json:"draft"`
-	Rows          []backlog.Row        `json:"rows"`
-	Closed        []backlog.Row        `json:"closed"`
+	SchemaVersion int                `json:"schemaVersion"`
+	ObservedAt    string             `json:"observedAt"`
+	Ledger        ledgerPayload      `json:"ledger"`
+	Admission     admissionPayload   `json:"admission"`
+	WorkingTree   workingTreePayload `json:"workingTree"`
+	// Authority says, before a human drags anything, whether a drop on this
+	// board would act. It is the server's one boot-time observation, fixed
+	// for its life, so every request gets the same answer.
+	Authority authorityPayload `json:"authority"`
+	// BudgetDefaults is the project's budget law by tier, which is where the
+	// approval sheet prefills from. An empty map is a project whose law
+	// could not be read, and the sheet then asks for all five limits.
+	BudgetDefaults map[string]goalbudget.Budget `json:"budgetDefaults"`
+	Counts         map[backlog.Lane]int         `json:"counts"`
+	Draft          backlog.DraftGap             `json:"draft"`
+	Rows           []backlog.Row                `json:"rows"`
+	Closed         []backlog.Row                `json:"closed"`
+}
+
+// authorityPayload is what the board is told about this server's standing. It
+// never carries the proof: a proof is an in-process observation, and nothing
+// outside this process can be handed one.
+type authorityPayload struct {
+	Proven bool   `json:"proven"`
+	Human  string `json:"human"`
+	Reason string `json:"reason"`
 }
 
 type ledgerPayload struct {
@@ -81,7 +99,26 @@ func (h *handler) backlog(w http.ResponseWriter) {
 		writeError(w, "this engine was built without a ledger reader")
 		return
 	}
-	_ = json.NewEncoder(w).Encode(backlogOf(h.info.Observe()))
+	_ = json.NewEncoder(w).Encode(h.backlogPayload())
+}
+
+// backlogPayload is the whole resource: what the accepted ledger says, what
+// this server may do to it, and the budget law an approval prefills from. The
+// two act routes answer with it too, so a board that moves a card is moving
+// it because the ledger moved.
+func (h *handler) backlogPayload() backlogPayload {
+	payload := backlogOf(h.info.Observe())
+	payload.Authority = authorityPayload{
+		Proven: h.info.Authority.Proven,
+		Human:  h.info.Authority.Human,
+		Reason: h.info.Authority.Reason,
+	}
+	if h.info.BudgetDefaults != nil {
+		if defaults, err := h.info.BudgetDefaults(); err == nil && defaults != nil {
+			payload.BudgetDefaults = defaults
+		}
+	}
+	return payload
 }
 
 func writeError(w io.Writer, reason string) {
@@ -105,11 +142,12 @@ func backlogOf(observation snapshot.Observation) backlogPayload {
 			Problems:          problemLines(observation.Problems),
 			Fetch:             fetchOf(observation.Fetch),
 		},
-		WorkingTree: workingTreePayload{LiveFiles: observation.LiveFiles, ArchivedFiles: observation.ArchivedFiles},
-		Counts:      map[backlog.Lane]int{},
-		Draft:       backlog.DraftGap{Statement: backlog.DraftStatement},
-		Rows:        []backlog.Row{},
-		Closed:      []backlog.Row{},
+		WorkingTree:    workingTreePayload{LiveFiles: observation.LiveFiles, ArchivedFiles: observation.ArchivedFiles},
+		BudgetDefaults: map[string]goalbudget.Budget{},
+		Counts:         map[backlog.Lane]int{},
+		Draft:          backlog.DraftGap{Statement: backlog.DraftStatement},
+		Rows:           []backlog.Row{},
+		Closed:         []backlog.Row{},
 	}
 	// An age needs a commit time. Without one the tree's age is unknown,
 	// which is not the same as fresh, so nothing is claimed about it.

@@ -30,6 +30,14 @@ type Record struct {
 	StartedAt        string `json:"startedAt"`
 	EngineBuild      string `json:"engineBuild"`
 	ExecutableDigest string `json:"executableDigest"`
+	// Authority is the one line this server's boot-time human-authority
+	// observation produced. It is written here and nowhere else because
+	// `ui status` runs in another process entirely and has no way to ask the
+	// server: the observation is a fact of this run, so this run records it.
+	// It is evidence, never a credential — nothing reads it back as
+	// authority, and an older reader that does not know the key ignores it,
+	// which is why the schema stays 1.
+	Authority string `json:"authority,omitempty"`
 }
 
 type State string

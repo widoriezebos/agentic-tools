@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 )
 
 // PhaseNotRecorded is what the projection says where the master's lane
@@ -79,33 +80,38 @@ type Fence struct {
 // own facts, and every gap the record leaves open.
 type Row struct {
 	Ref          `json:"ref"`
-	Where        string     `json:"where"`
-	Lane         Lane       `json:"lane"`
-	Phase        string     `json:"phase"`
-	State        string     `json:"state"`
-	Intent       string     `json:"intent"`
-	NextStep     string     `json:"nextStep"`
-	Concluded    string     `json:"concluded"`
-	Origin       string     `json:"origin"`
-	Priority     uint8      `json:"priority"`
-	Sequence     uint64     `json:"sequence"`
-	Tier         uint8      `json:"tier"`
-	Labels       []string   `json:"labels"`
-	Arc          string     `json:"arc"`
-	Pinned       string     `json:"pinned"`
-	BlockedBy    []string   `json:"blockedBy"`
-	OpenBlockers []string   `json:"openBlockers"`
-	Approved     *Approval  `json:"approved,omitempty"`
-	Claim        *Claim     `json:"claim,omitempty"`
-	Waiting      *Waiting   `json:"waiting,omitempty"`
-	Abandoned    *Abandoned `json:"abandoned,omitempty"`
-	Fence        *Fence     `json:"fence,omitempty"`
-	Sliced       bool       `json:"sliced"`
-	Decomposed   bool       `json:"decomposed"`
-	OpenedAt     string     `json:"openedAt"`
-	LastChangeAt string     `json:"lastChangeAt"`
-	LastVerb     string     `json:"lastVerb"`
-	Gaps         []string   `json:"gaps"`
+	Where        string    `json:"where"`
+	Lane         Lane      `json:"lane"`
+	Phase        string    `json:"phase"`
+	State        string    `json:"state"`
+	Intent       string    `json:"intent"`
+	NextStep     string    `json:"nextStep"`
+	Concluded    string    `json:"concluded"`
+	Origin       string    `json:"origin"`
+	Priority     uint8     `json:"priority"`
+	Sequence     uint64    `json:"sequence"`
+	Tier         uint8     `json:"tier"`
+	Labels       []string  `json:"labels"`
+	Arc          string    `json:"arc"`
+	Pinned       string    `json:"pinned"`
+	BlockedBy    []string  `json:"blockedBy"`
+	OpenBlockers []string  `json:"openBlockers"`
+	Approved     *Approval `json:"approved,omitempty"`
+	// Budget is the complete limit tuple the goal's record carries, where it
+	// carries one. It is here because the approval sheet prefills from it:
+	// the machinery never invents a budget, so the one the record already
+	// holds is the only one a human can be offered without being asked.
+	Budget       *goalbudget.Budget `json:"budget,omitempty"`
+	Claim        *Claim             `json:"claim,omitempty"`
+	Waiting      *Waiting           `json:"waiting,omitempty"`
+	Abandoned    *Abandoned         `json:"abandoned,omitempty"`
+	Fence        *Fence             `json:"fence,omitempty"`
+	Sliced       bool               `json:"sliced"`
+	Decomposed   bool               `json:"decomposed"`
+	OpenedAt     string             `json:"openedAt"`
+	LastChangeAt string             `json:"lastChangeAt"`
+	LastVerb     string             `json:"lastVerb"`
+	Gaps         []string           `json:"gaps"`
 }
 
 // DraftGap says why the Draft lane carries no rows and no count.
@@ -230,6 +236,10 @@ func rowOf(f *goal.GoalFile, where string, tree *goal.TreeGoals, horizon goal.Ap
 		Gaps:         append([]string{}, gaps...),
 	}
 	row.Gaps = append(row.Gaps, unknown...)
+	if f.Budget != nil {
+		budget := *f.Budget
+		row.Budget = &budget
+	}
 	if approval := f.Approved; approval != nil {
 		expired, why := f.ApprovalExpired(horizon)
 		row.Approved = &Approval{

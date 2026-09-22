@@ -38,6 +38,8 @@ function absentPayload(): Backlog {
     },
     admission: { answered: false, message: "" },
     workingTree: { liveFiles: 155, archivedFiles: 430 },
+    authority: { proven: true, human: "Wido", reason: "" },
+    budgetDefaults: {},
     counts: {},
     draft: { statement: "plans/goals-drafts/ has no reader in the engine" },
     rows: [],
@@ -53,19 +55,35 @@ describe("the backlog response", () => {
       headers: { "Content-Type": "application/json" },
     });
 
-    await expect(answerOf(response)).resolves.toEqual(payload);
+    await expect(answerOf("/api/backlog", response)).resolves.toEqual(payload);
   });
 
-  it("is a refusal naming the status when the engine could not answer", async () => {
+  it("is a refusal carrying the engine's own words when it could not answer", async () => {
     const response = new Response('{"error":"this engine was built without a ledger reader"}', { status: 500 });
 
-    await expect(answerOf(response)).rejects.toThrow("/api/backlog answered 500");
+    await expect(answerOf("/api/backlog", response)).rejects.toThrow(
+      "this engine was built without a ledger reader",
+    );
   });
 
-  it("names any other unsuccessful status just as plainly", async () => {
+  it("names the status where the engine explained nothing", async () => {
     for (const status of [404, 503]) {
       const response = new Response("", { status });
-      await expect(answerOf(response)).rejects.toThrow(`/api/backlog answered ${String(status)}`);
+      await expect(answerOf("/api/backlog", response)).rejects.toThrow(
+        `/api/backlog answered ${String(status)}`,
+      );
     }
+  });
+
+  // An act's refusal carries the engine's own sentence and the code it
+  // refused under, because that pair is the whole of what a human acts on.
+  it("carries an act refusal's own words and code", async () => {
+    const response = new Response('{"error":"goal g1 is claimed","code":"CONFLICT"}', { status: 409 });
+
+    await expect(answerOf("/api/backlog/goals/g1/withdraw", response)).rejects.toMatchObject({
+      message: "goal g1 is claimed",
+      code: "CONFLICT",
+      status: 409,
+    });
   });
 });

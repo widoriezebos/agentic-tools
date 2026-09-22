@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BACKLOG_VIEW_KEY,
   DOCK_KEY,
   RAIL_KEY,
+  readBacklogView,
   readDockOpen,
   readRailExpanded,
   readTheme,
+  writeBacklogView,
   writeDockOpen,
   writeRailExpanded,
   type Store,
@@ -34,34 +37,57 @@ const throwing: Store = {
 };
 
 describe("the stored view state", () => {
-  it("reads the three keys", () => {
+  it("reads the four keys", () => {
     const written = store({
       [THEME_KEY]: "dark",
       [RAIL_KEY]: "collapsed",
       [DOCK_KEY]: "closed",
+      [BACKLOG_VIEW_KEY]: "list",
     });
 
     expect(readTheme(written)).toBe("dark");
     expect(readRailExpanded(written)).toBe(false);
     expect(readDockOpen(written)).toBe(false);
+    expect(readBacklogView(written)).toBe("list");
   });
 
   // The drawer is closed until a human opens it: only the word it was opened
-  // under opens it again.
+  // under opens it again. The board is the Backlog's default the other way
+  // round: it is the day-to-day surface, so only the word "list" leaves it.
   it("defaults where nothing is stored", () => {
     const empty = store({});
 
     expect(readTheme(empty)).toBe("system");
     expect(readRailExpanded(empty)).toBe(true);
     expect(readDockOpen(empty)).toBe(false);
+    expect(readBacklogView(empty)).toBe("board");
   });
 
   it("defaults where something invalid is stored", () => {
-    const nonsense = store({ [THEME_KEY]: "{}", [RAIL_KEY]: "maybe", [DOCK_KEY]: "ajar" });
+    const nonsense = store({
+      [THEME_KEY]: "{}",
+      [RAIL_KEY]: "maybe",
+      [DOCK_KEY]: "ajar",
+      [BACKLOG_VIEW_KEY]: "outline",
+    });
 
     expect(readTheme(nonsense)).toBe("system");
     expect(readRailExpanded(nonsense)).toBe(true);
     expect(readDockOpen(nonsense)).toBe(false);
+    expect(readBacklogView(nonsense)).toBe("board");
+  });
+
+  it("remembers the Backlog's view the way the shell remembers the drawer", () => {
+    const written = store({});
+
+    writeBacklogView("list", written);
+
+    expect(written.getItem(BACKLOG_VIEW_KEY)).toBe("list");
+    expect(readBacklogView(written)).toBe("list");
+
+    writeBacklogView("board", written);
+
+    expect(readBacklogView(written)).toBe("board");
   });
 
   it("opens the drawer for a browser that was left with it open", () => {
@@ -90,6 +116,10 @@ describe("the stored view state", () => {
     expect(readTheme(throwing)).toBe("system");
     expect(readRailExpanded(throwing)).toBe(true);
     expect(readDockOpen(throwing)).toBe(false);
+    expect(readBacklogView(throwing)).toBe("board");
+    expect(() => {
+      writeBacklogView("list", throwing);
+    }).not.toThrow();
     expect(() => {
       writeRailExpanded(false, throwing);
     }).not.toThrow();

@@ -97,7 +97,8 @@ func TestBacklogPayload(t *testing.T) {
 
 	payload := decodeBacklog(t, response.Result())
 	testutil.Expect(t, "the payload's field names", keysOf(payload), []string{
-		"admission", "closed", "counts", "draft", "ledger", "observedAt", "rows", "schemaVersion", "workingTree",
+		"admission", "authority", "budgetDefaults", "closed", "counts", "draft",
+		"ledger", "observedAt", "rows", "schemaVersion", "workingTree",
 	})
 
 	var schemaVersion int

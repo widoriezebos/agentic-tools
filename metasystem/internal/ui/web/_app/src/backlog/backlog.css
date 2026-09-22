@@ -218,3 +218,395 @@
   line-height: 16px;
   color: var(--ms-text-3);
 }
+
+/* ------------------------------------------------------------- the board -- */
+
+/*
+ * The backlog as a board: one column per lane, the columns scrolling
+ * independently and the board scrolling sideways when the window is narrow,
+ * so the page itself never does. Every colour here is a token from
+ * tokens.css, which is the only place in the application a colour is written.
+ */
+
+.ms-backlog-views {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+}
+
+.ms-board-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.ms-board-unproven {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ms-marker);
+  border-radius: 8px;
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.ms-board {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.ms-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 0 0 248px;
+  max-height: 70vh;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid var(--ms-border);
+  border-radius: 10px;
+  background: var(--ms-surface-2);
+}
+
+/* A column a dragged card may be dropped on, and one it may not. */
+.ms-column--target {
+  border-color: var(--ms-accent);
+  background: var(--ms-surface-3);
+}
+
+.ms-column--closed {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+/*
+ * The column the dragged card came from is neither: dimming the card's own
+ * column would say the card cannot be where it already is. Dropping it back
+ * is still answered, in the column head, with that sentence.
+ */
+.ms-column--home {
+  border-style: dotted;
+}
+
+.ms-column-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ms-column-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-column-count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ms-text-3);
+}
+
+.ms-column-closed {
+  margin: 0;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--ms-text-3);
+}
+
+.ms-column-refusal {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-danger);
+  overflow-wrap: anywhere;
+}
+
+.ms-column-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  min-height: 24px;
+}
+
+.ms-column-empty {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+.ms-card-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface);
+  cursor: grab;
+}
+
+.ms-card-goal:active {
+  cursor: grabbing;
+}
+
+/*
+ * The identifier is the card's one link and has the row to itself: a goal id
+ * squeezed beside a control breaks a character at a time, and the id is the
+ * one thing on a card a human matches against their terminal.
+ */
+.ms-card-id {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-accent);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.ms-card-id:hover,
+.ms-card-id:focus-visible {
+  text-decoration: underline;
+}
+
+/*
+ * The keyboard's way to the same two moves. It is small because a column is
+ * narrow, and it is a real button because the whole flow has to work without
+ * a mouse.
+ */
+.ms-card-moves {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.ms-card-move {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
+  white-space: normal;
+}
+
+.ms-card-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+}
+
+.ms-card-menu .ms-card-move {
+  height: auto;
+  min-height: 24px;
+  padding: 3px 8px;
+}
+
+/*
+ * The intent, clamped to three lines. Nothing is removed: the whole text is
+ * in the element, so find-in-page, selection and a screen reader still reach
+ * every word, and the goal's own page shows it entire.
+ */
+.ms-card-intent {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.ms-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ms-card-standing {
+  margin: 0;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+/* -------------------------------------------------------- the act sheet -- */
+
+.ms-act-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ms-z-scrim);
+  background: var(--ms-scrim);
+}
+
+.ms-act-sheet {
+  position: fixed;
+  z-index: var(--ms-z-sheet);
+  top: 8vh;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(60ch, calc(100vw - 32px));
+  max-height: 84vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 20px;
+  border: 1px solid var(--ms-border);
+  border-radius: 10px;
+  background: var(--ms-surface);
+  box-shadow: var(--ms-shadow);
+}
+
+.ms-act-sheet:focus {
+  outline: none;
+}
+
+.ms-act-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  line-height: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-act-title {
+  margin: 4px 0 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.ms-act-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+}
+
+.ms-act-goal-id {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+.ms-act-goal-intent {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+.ms-act-unproven {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ms-marker);
+  border-radius: 8px;
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+  font-size: 12px;
+  line-height: 17px;
+  overflow-wrap: anywhere;
+}
+
+.ms-act-source {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+.ms-act-budget {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ms-act-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.ms-act-field label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ms-text-2);
+}
+
+.ms-act-field input {
+  height: 32px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 6px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+}
+
+.ms-act-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-act-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ms-act-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+.ms-act-refusal {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-danger);
+  overflow-wrap: anywhere;
+}

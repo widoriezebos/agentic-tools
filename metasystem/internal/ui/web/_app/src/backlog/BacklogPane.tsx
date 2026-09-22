@@ -1,7 +1,9 @@
 import { useState } from "react";
 
 import "./backlog.css";
+import { ActSheet, type Request } from "./ActSheet";
 import type { Backlog, Ledger, Row } from "./api";
+import { Board, type Asked } from "./Board";
 import { clockTime, shortTip } from "./format";
 import { DraftGroup, LaneGroup } from "./LaneGroup";
 import { anchorFor, closedLanes, openLanes, type LaneId } from "./lanes";
@@ -9,19 +11,25 @@ import { LedgerLine } from "./LedgerLine";
 import { Statement } from "./Statement";
 import { useBacklog } from "./state";
 import { Pane } from "../panes/Pane";
+import { readBacklogView, writeBacklogView, type BacklogView } from "../storage";
 import { Button } from "../shell/controls";
 
 /**
- * The backlog as a list by lane.
+ * The backlog, as a board or as a list.
  *
  * Every goal at the accepted tip appears once, in the lane the server placed
- * it in, with what the record says and what it does not. Concluded work sits
- * behind one toggle, because 430 records would otherwise bury the 155 that are
- * live. Freshness belongs to the server: this page reads when it mounts and
- * when a human asks, and says what the last fetch found either way.
+ * it in, with what the record says and what it does not. The board is the
+ * day-to-day surface and carries the two acts; the list is for scanning and
+ * comparing, and is unchanged. Which one a human last chose is remembered the
+ * way the shell remembers its drawer.
+ *
+ * Concluded work sits behind one toggle either way, because 430 records would
+ * otherwise bury the 155 that are live. Freshness belongs to the server: this
+ * page reads when it mounts and when a human asks, and says what the last
+ * fetch found either way.
  */
 export function BacklogPane() {
-  const { backlog, refresh } = useBacklog();
+  const { backlog, refresh, moved } = useBacklog();
 
   if (backlog.state === "loading") {
     return (
@@ -49,20 +57,65 @@ export function BacklogPane() {
 
   return (
     <Pane title="Backlog">
-      <Read backlog={backlog.backlog} onRefresh={refresh} />
+      <Read backlog={backlog.backlog} onRefresh={refresh} onMoved={moved} />
     </Pane>
   );
 }
 
-function Read({ backlog, onRefresh }: { backlog: Backlog; onRefresh: () => void }) {
+function Read({
+  backlog,
+  onRefresh,
+  onMoved,
+}: {
+  backlog: Backlog;
+  onRefresh: () => void;
+  onMoved: (moved: Backlog) => void;
+}) {
   const [closedShown, setClosedShown] = useState(false);
+  const [view, setView] = useState<BacklogView>(() => readBacklogView());
+  const [asked, setAsked] = useState<Request | null>(null);
   const ledger = backlog.ledger;
   const closedCount = backlog.closed.length;
+
+  const choose = (chosen: BacklogView) => {
+    setView(chosen);
+    writeBacklogView(chosen);
+  };
 
   return (
     <div className="ms-backlog">
       <LedgerLine ledger={ledger} observedAt={backlog.observedAt} onRefresh={onRefresh} />
-      {ledger.state === "read" ? (
+      {ledger.state === "read" && (
+        <p className="ms-backlog-views" role="group" aria-label="How the backlog is read">
+          <Button aria-pressed={view === "board"} onClick={() => { choose("board"); }}>
+            Board
+          </Button>
+          <Button aria-pressed={view === "list"} onClick={() => { choose("list"); }}>
+            List
+          </Button>
+        </p>
+      )}
+      {ledger.state === "read" && view === "board" && (
+        <Board
+          backlog={backlog}
+          closedShown={closedShown}
+          onToggleClosed={() => { setClosedShown((shown) => !shown); }}
+          onAct={(act: Asked) => { setAsked({ move: act.move, goal: act.goal }); }}
+        />
+      )}
+      {asked !== null && (
+        <ActSheet
+          request={asked}
+          backlog={backlog}
+          onClose={() => { setAsked(null); }}
+          onDone={(after) => {
+            setAsked(null);
+            onMoved(after);
+          }}
+        />
+      )}
+      {ledger.state !== "read" && <LedgerStatement backlog={backlog} />}
+      {ledger.state === "read" && view === "list" && (
         <>
           <p className="ms-lane-index">
             {openLanes.map((lane, position) => (
@@ -104,11 +157,9 @@ function Read({ backlog, onRefresh }: { backlog: Backlog; onRefresh: () => void 
               />
             ))}
           <p className="ms-backlog-footer">
-            Board, outline, dependencies, filters, and goal detail arrive with g1-s10 and g1-s11.
+            The outline, dependencies, filters, and goal detail arrive with g1-s10 and g1-s11.
           </p>
         </>
-      ) : (
-        <LedgerStatement backlog={backlog} />
       )}
     </div>
   );

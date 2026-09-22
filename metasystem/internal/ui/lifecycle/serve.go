@@ -25,7 +25,12 @@ type Options struct {
 	DigestFunc  func() (string, error)
 	NewHandler  func(bound net.Addr, rec Record) http.Handler
 	Prober      identity.Prober
-	Ready       func(address string)
+	// Authority is the one line the caller's boot-time human-authority
+	// observation produced. It is carried into the record so that `ui
+	// status`, which runs in another process, can say whether this server
+	// can act as the human. Serve neither makes nor checks the observation.
+	Authority string
+	Ready     func(address string)
 	// Releasing is Ready's counterpart: it is called once the server has
 	// stopped answering and before this checkout's ownership is given up, so a
 	// caller can end work Ready started while the lock is still held.
@@ -151,7 +156,12 @@ func Serve(ctx context.Context, o Options) (result error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	rec := Record{1, process, listener.Addr().String(), o.Roots.Checkout, o.Roots.Installation, o.Now().UTC().Format(time.RFC3339), o.EngineBuild, digest}
+	rec := Record{
+		SchemaVersion: 1, Process: process, Address: listener.Addr().String(),
+		Checkout: o.Roots.Checkout, Installation: o.Roots.Installation,
+		StartedAt: o.Now().UTC().Format(time.RFC3339), EngineBuild: o.EngineBuild,
+		ExecutableDigest: digest, Authority: o.Authority,
+	}
 	server := &http.Server{
 		Handler:           o.NewHandler(listener.Addr(), rec),
 		ReadHeaderTimeout: 10 * time.Second,

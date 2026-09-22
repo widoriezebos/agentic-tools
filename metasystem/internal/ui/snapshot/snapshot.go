@@ -73,6 +73,11 @@ type Holder struct {
 	root string
 	now  func() time.Time
 
+	// advancing serializes the read-side advance itself, so the loop's tick
+	// and a request's Advance can never run one over the other. It is never
+	// held while mu is.
+	advancing sync.Mutex
+
 	mu sync.Mutex
 	// held is the one commit whose read is kept: its validated tree, or its
 	// refusal, both immutable facts of that tip.

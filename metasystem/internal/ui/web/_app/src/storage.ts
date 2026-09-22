@@ -1,7 +1,7 @@
 import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 /**
- * The three keys this build remembers, and nothing else.
+ * The four keys this build remembers, and nothing else.
  *
  * Every access is wrapped: a browser with site data blocked throws on the very
  * first read, and view state is never worth an error a human has to read. An
@@ -22,6 +22,12 @@ import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 export const RAIL_KEY = "ms.ui.rail";
 export const DOCK_KEY = "ms.ui.dock";
+/**
+ * Which way the Backlog is read. The board is the default, because the master
+ * makes it the day-to-day surface and because the two acts are on it; a human
+ * who chose the list gets the list back.
+ */
+export const BACKLOG_VIEW_KEY = "ms.ui.backlog.view";
 
 /** The part of the browser's storage this build uses. */
 export type Store = {
@@ -82,4 +88,15 @@ export function readDockOpen(store: Store | null = browserStore()): boolean {
 
 export function writeDockOpen(open: boolean, store: Store | null = browserStore()): void {
   write(DOCK_KEY, open ? "open" : "closed", store);
+}
+
+/** How the Backlog is read: the board unless a human chose the list. */
+export type BacklogView = "board" | "list";
+
+export function readBacklogView(store: Store | null = browserStore()): BacklogView {
+  return read(BACKLOG_VIEW_KEY, store) === "list" ? "list" : "board";
+}
+
+export function writeBacklogView(view: BacklogView, store: Store | null = browserStore()): void {
+  write(BACKLOG_VIEW_KEY, view, store);
 }

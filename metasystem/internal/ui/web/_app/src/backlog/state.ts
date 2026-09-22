@@ -10,6 +10,11 @@ import { failureMessage } from "../shell/workspace";
  * mid-read leaves no state behind to arrive later. A backlog that cannot be
  * read is a state, not an error boundary: the rail and the header work either
  * way, and the reason is what a human acts on.
+ *
+ * An act answers with the backlog as the ledger then stood, and `moved` is
+ * how that answer becomes what the page shows. It is not a second read and it
+ * is not optimism: the server carried this clone's accepted ref forward
+ * before it answered, so a card that moves is a card the ledger moved.
  */
 
 export type BacklogState =
@@ -17,7 +22,11 @@ export type BacklogState =
   | { state: "failed"; message: string }
   | { state: "known"; backlog: Backlog };
 
-export function useBacklog(): { backlog: BacklogState; refresh: () => void } {
+export function useBacklog(): {
+  backlog: BacklogState;
+  refresh: () => void;
+  moved: (after: Backlog) => void;
+} {
   const [backlog, setBacklog] = useState<BacklogState>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -42,5 +51,9 @@ export function useBacklog(): { backlog: BacklogState; refresh: () => void } {
     setAttempt((previous) => previous + 1);
   }, []);
 
-  return { backlog, refresh };
+  const moved = useCallback((after: Backlog) => {
+    setBacklog({ state: "known", backlog: after });
+  }, []);
+
+  return { backlog, refresh, moved };
 }

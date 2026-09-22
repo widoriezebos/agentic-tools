@@ -10,13 +10,16 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
@@ -131,6 +134,26 @@ func runUI(verb string, args []string) int {
 		}
 		bundleDigest, bundle := interfaceBundle()
 
+		// The one human-authority observation this process will ever make.
+		//
+		// It is taken here, before anything is served, because here is the
+		// only moment this process has an ancestry that reaches the human:
+		// `ui start` spawns the server and then waits for its readiness
+		// line, so the launcher is still this process's parent, and the
+		// launcher was run from the human's own terminal. The server itself
+		// is started with setsid and so has no controlling terminal of its
+		// own to walk from, which is why the walk starts at the parent —
+		// exactly as the command edge's own human verbs walk from theirs.
+		// Afterwards the launcher exits and nothing can be proven again; the
+		// object is kept in memory for this server's life, and no later
+		// request re-reads or re-parses it.
+		authorityNow, nowErr := act.Now(roots.StateRoot)
+		if nowErr != nil {
+			return refuse(nowErr.Error())
+		}
+		authority := act.Prove(roots.StateRoot, roots.Installation, act.ParentPID(), authorityNow)
+		fmt.Fprintln(os.Stderr, "interface authority: "+authority.Line())
+
 		// The ledger reader answers requests from the accepted ref as it
 		// stands. Its freshness loop is what carries that ref forward, and it
 		// belongs to the process that owns the checkout: exclusivity is taken
@@ -154,8 +177,19 @@ func runUI(verb string, args []string) int {
 			}, snapshot.WallTimers{})
 		}()
 
+		// advance carries this clone's accepted ref forward at once, which a
+		// human act needs and a cadence cannot give: the act has landed on
+		// the canonical branch, and the board must not move the card until
+		// this clone has accepted it.
+		advance := func() {
+			ledger.Advance(func(endpoint goal.Endpoint) (goal.AdvanceResult, error) {
+				return goal.FetchAdvanceBounded(endpoint, snapshot.FetchBudget)
+			})
+		}
+
 		err = lifecycle.Serve(ctx, lifecycle.Options{
 			Roots: roots, Listen: listen, EngineBuild: supervise.BuildStamp, Prober: prober,
+			Authority: authority.Line(),
 			NewHandler: func(bound net.Addr, rec lifecycle.Record) http.Handler {
 				return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest, BundleDigest: bundleDigest,
 					Describe: func() (workspace.Workspace, error) {
@@ -188,6 +222,31 @@ func runUI(verb string, args []string) int {
 					},
 					SetQuestionStatus: func(id, status string) (project.Asked, error) {
 						return project.SetQuestionStatus(projectRoots(roots), id, status)
+					},
+					// The backlog's two acts. Each one publishes through the
+					// engine in-process under the boot proof, and then
+					// carries this clone's accepted ref forward, so the
+					// payload the route answers with is the ledger as it now
+					// stands rather than as it stood before the act.
+					Authority: httpd.AuthorityInfo{
+						Proven: authority.Proven(), Human: authority.Human(), Reason: authority.Reason(),
+					},
+					Approve: func(id string, budget goalbudget.Budget) error {
+						if err := authority.Approve(id, budget); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
+					Withdraw: func(id, reason string) error {
+						if err := authority.Withdraw(id, reason); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
+					BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
+						return tierBudgets(roots.Installation)
 					},
 				}, bound, bundle)
 			},
@@ -235,6 +294,26 @@ func printUIResult(result lifecycle.Result) int {
 		fmt.Println(line)
 	}
 	return result.Code
+}
+
+// tierBudgets is the project's budget law, by tier, as the approval sheet
+// prefills from it. The law answers for every tier it knows; a configuration
+// that cannot be read answers for none, and the sheet then asks the human for
+// all five limits rather than showing a number nobody chose.
+func tierBudgets(installation string) (map[string]goalbudget.Budget, error) {
+	set, err := config.LoadTierBoxSet(filepath.Join(installation, "metasystem.conf"))
+	if err != nil {
+		return nil, err
+	}
+	budgets := map[string]goalbudget.Budget{}
+	for tier := uint8(1); tier <= 3; tier++ {
+		box, boxErr := set.TierBox(tier)
+		if boxErr != nil {
+			continue
+		}
+		budgets[strconv.Itoa(int(tier))] = box
+	}
+	return budgets, nil
 }
 
 // projectRoots carries the lifecycle's three roots to the reader that declares

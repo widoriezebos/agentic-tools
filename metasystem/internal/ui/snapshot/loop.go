@@ -135,9 +135,22 @@ func (h *Holder) Run(ctx context.Context, fetch Fetch, timers Timers) {
 				h.stop()
 				return
 			}
-			h.tick(fetch)
+			h.Advance(fetch)
 		}
 	}
+}
+
+// Advance runs one pass of the read-side advance now and waits for it.
+//
+// It exists for the one caller that cannot wait for a cadence: a human act
+// published through this server has landed on the canonical branch, and the
+// board must not move the card until this clone's accepted ref carries it.
+// The loop's own ticks go through here too, so the invariant that only one
+// advance is ever in flight survives a request arriving mid-tick.
+func (h *Holder) Advance(fetch Fetch) {
+	h.advancing.Lock()
+	defer h.advancing.Unlock()
+	h.tick(fetch)
 }
 
 // tick runs one advance inline, so a second can never start while one is in
