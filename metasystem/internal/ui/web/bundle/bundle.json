@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:a3576d09b3407c9e09786d023876acb8db28f6d82e57eb255c37269bab878aad",
+  "sourceDigest": "sha256:19e9157f17bb2254783a5813c3dea958331b8bc4731ccd24e8e75b0c036516f3",
   "source": [
     {
       "path": ".npmrc",
@@ -68,11 +68,11 @@
     },
     {
       "path": "src/backlog/BacklogPane.tsx",
-      "sha256": "37ff0fe07e6769758b94c60d592ba8d5f4276ac6b696a388e3f05befc7c05a9a"
+      "sha256": "b7d8f180aeb832b31fe4638785469c11f4ed6572f7220f84ad891bfe200c6e0c"
     },
     {
       "path": "src/backlog/Board.tsx",
-      "sha256": "889dba8baf0e8e350ef85fa033bfeaa2535e600f0d66a8557e7a50f1022209d3"
+      "sha256": "c19ecc59bfe1a3579b59768c2876099b86acd6639863f2e6d6b3e8de0900ba01"
     },
     {
       "path": "src/backlog/GoalRow.tsx",
@@ -100,7 +100,7 @@
     },
     {
       "path": "src/backlog/backlog.css",
-      "sha256": "3967ad2716de1be46f29b5284564e193c2f7eae7c04bdcdabc4f27c5d39c6404"
+      "sha256": "92d84c551881105119e089146c079f3359a00b1e1b2475544ef014dd4cec3530"
     },
     {
       "path": "src/backlog/format.test.ts",
@@ -284,7 +284,7 @@
     },
     {
       "path": "src/shell/Shell.tsx",
-      "sha256": "2c5775d06f090589c1e6468c51a6f34d5e4e28b4e0f156d0c287640590b9bb4d"
+      "sha256": "50a8607269cc08e4dbef246299e1cdaac78b367bd5d8519cf8bffe57f3801135"
     },
     {
       "path": "src/shell/ThemeControl.tsx",
@@ -316,7 +316,7 @@
     },
     {
       "path": "src/shell/shell.css",
-      "sha256": "02ad8c660b16e7c0b9a54cfeedcc693fc8aaf8256017221178b37795cf58d965"
+      "sha256": "f59340352e423498b300f882272b27b9437a7a213ae7fab344012f2a7cac404a"
     },
     {
       "path": "src/shell/workspace.ts",
@@ -374,11 +374,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "f86cf4acab9bdf1d73b2c2bf11744d4b0731f56cb8660f0f3432bfdc128c4cc1"
+      "sha256": "2d891c8c38b0fbd41b55e670abcfe7a7b1ec993ffb6162515eaeb731425cd582"
     },
     {
       "path": "assets/index.js",
-      "sha256": "dc9fbb83e9bfa3f9e8bbc0b2bb5c28bcb7ab6c4ba4c9b955d9fb5ce7d6454d6f"
+      "sha256": "879e52891d4072528a9622d4f55d9d2e2b6930fecad3320f14981977a78b41bf"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

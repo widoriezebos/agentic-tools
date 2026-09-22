@@ -17,6 +17,11 @@ import { Button, Chip } from "../shell/controls";
  * and dims the rest, each of which says in its own head what the move there
  * would have meant and that this build does not publish it.
  *
+ * A lane holding nothing is collapsed rather than dropped: it keeps its head,
+ * its count and the one line that says why it is empty, and gives the rest of
+ * its width to the lanes that have work in them. It is still a drop target,
+ * and still answers a drag the way a wide lane does.
+ *
  * The drag is the browser's own: draggable cards, dragstart, dragover, drop.
  * No dependency is involved, nothing is animated, and a drop changes nothing
  * on its own: it opens the sheet, and only the ledger's answer moves a card.
@@ -137,7 +142,7 @@ function Column({
 }) {
   return (
     <section
-      className={`ms-column ms-column--${standing}`}
+      className={`ms-column ms-column--${standing}${rows.length === 0 ? " ms-column--collapsed" : ""}`}
       role="listitem"
       aria-label={`${lane.title}, ${String(count)}`}
       onDragOver={(event: DragEvent<HTMLElement>) => {

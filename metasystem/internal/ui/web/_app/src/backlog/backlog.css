@@ -15,6 +15,17 @@
   max-width: 1040px;
 }
 
+/*
+ * The board reads across rather than down, so it takes the work area whole:
+ * the measure that keeps the list readable would leave a third of the window
+ * empty beside seven lanes, and the height is what lets each lane scroll on
+ * its own instead of the page scrolling past all of them.
+ */
+.ms-backlog--board {
+  max-width: none;
+  height: 100%;
+}
+
 .ms-ledger {
   display: flex;
   align-items: flex-start;
@@ -226,6 +237,13 @@
  * independently and the board scrolling sideways when the window is narrow,
  * so the page itself never does. Every colour here is a token from
  * tokens.css, which is the only place in the application a colour is written.
+ *
+ * The board takes its height from the work area rather than from the window
+ * or from its own content: .ms-backlog--board is as tall as the pane, the
+ * frame and the board fill what the ledger line leaves, and the lanes stretch
+ * to that. The frame, the board and the lanes each carry min-height: 0,
+ * because a flex item that may not shrink below its content cannot hand a
+ * scrollbar to the box inside it.
  */
 
 .ms-backlog-views {
@@ -239,7 +257,9 @@
   flex-direction: column;
   gap: 12px;
   align-items: flex-start;
+  flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 
 .ms-board-unproven {
@@ -259,22 +279,41 @@
   gap: 12px;
   align-items: stretch;
   width: 100%;
+  flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow-x: auto;
   padding-bottom: 8px;
 }
 
+/*
+ * A lane is 248 wide and does not shrink. A goal id in this ledger runs to
+ * forty characters, and a lane narrow enough to break one across four lines
+ * stops being a column of work and becomes a column of hyphens; when seven of
+ * them do not fit, the board scrolls sideways inside itself and the page does
+ * not move. The height is the board's, not a fraction of the window's, so the
+ * cards scroll inside the lane and the lane always reaches the drawer.
+ */
 .ms-column {
   display: flex;
   flex-direction: column;
   gap: 8px;
   flex: 0 0 248px;
-  max-height: 70vh;
+  min-height: 0;
   box-sizing: border-box;
   padding: 10px;
   border: 1px solid var(--ms-border);
   border-radius: 10px;
   background: var(--ms-surface-2);
+}
+
+/*
+ * A lane holding nothing needs room for its title, its count and the one line
+ * that says why it is empty, and no more: the width it gives up is width the
+ * lanes with work in them get.
+ */
+.ms-column--collapsed {
+  flex: 0 0 160px;
 }
 
 /* A column a dragged card may be dropped on, and one it may not. */
@@ -340,6 +379,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
   overflow-y: auto;
   min-height: 24px;
 }
@@ -370,7 +410,9 @@
 /*
  * The identifier is the card's one link and has the row to itself: a goal id
  * squeezed beside a control breaks a character at a time, and the id is the
- * one thing on a card a human matches against their terminal.
+ * one thing on a card a human matches against their terminal. It is also the
+ * only line on a card that breaks inside a word: an id is a token, not prose,
+ * and the forty-character ones have nowhere else to break.
  */
 .ms-card-id {
   font-size: 12px;
@@ -424,16 +466,17 @@
 }
 
 /*
- * The intent, clamped to three lines. Nothing is removed: the whole text is
- * in the element, so find-in-page, selection and a screen reader still reach
- * every word, and the goal's own page shows it entire.
+ * The intent, clamped to three lines and wrapping the way a sentence does:
+ * it is prose, so it breaks between words, not inside them. Nothing is
+ * removed: the whole text is in the element, so find-in-page, selection and a
+ * screen reader still reach every word, and the goal's own page shows it
+ * entire.
  */
 .ms-card-intent {
   margin: 0;
   font-size: 13px;
   line-height: 18px;
   color: var(--ms-text);
-  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -447,6 +490,11 @@
   gap: 4px;
 }
 
+/*
+ * What holds the card. It breaks inside a word for the same reason the id
+ * line does and for no other: "blocked by" is followed by goal ids, and an id
+ * that cannot break would run out of the card.
+ */
 .ms-card-standing {
   margin: 0;
   font-size: 11px;

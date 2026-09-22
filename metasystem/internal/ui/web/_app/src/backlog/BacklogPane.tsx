@@ -76,6 +76,10 @@ function Read({
   const [asked, setAsked] = useState<Request | null>(null);
   const ledger = backlog.ledger;
   const closedCount = backlog.closed.length;
+  // The board and the list want opposite things from the pane: the list wants
+  // a measure to read down, the board wants the whole work area to read
+  // across and the height that lets its lanes scroll on their own.
+  const boarding = ledger.state === "read" && view === "board";
 
   const choose = (chosen: BacklogView) => {
     setView(chosen);
@@ -83,7 +87,7 @@ function Read({
   };
 
   return (
-    <div className="ms-backlog">
+    <div className={boarding ? "ms-backlog ms-backlog--board" : "ms-backlog"}>
       <LedgerLine ledger={ledger} observedAt={backlog.observedAt} onRefresh={onRefresh} />
       {ledger.state === "read" && (
         <p className="ms-backlog-views" role="group" aria-label="How the backlog is read">
@@ -95,7 +99,7 @@ function Read({
           </Button>
         </p>
       )}
-      {ledger.state === "read" && view === "board" && (
+      {boarding && (
         <Board
           backlog={backlog}
           closedShown={closedShown}

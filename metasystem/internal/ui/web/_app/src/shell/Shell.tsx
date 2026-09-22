@@ -131,7 +131,7 @@ export function Shell() {
             onTheme={chooseTheme}
           />
         )}
-        <div className="ms-column">
+        <div className="ms-shell-column">
           <Header
             sectionTitle={sectionTitle}
             onMenu={

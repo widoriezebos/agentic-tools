@@ -83,7 +83,13 @@ body {
   overflow: hidden;
 }
 
-.ms-column {
+/*
+ * Everything beside the rail: the header, the work area and the drawer, in one
+ * column that is as tall as the shell. The name is the shell's own, because a
+ * bare .ms-column is a word another stylesheet will claim for its own columns —
+ * the board's lanes did, and the two rules landed on each other's elements.
+ */
+.ms-shell-column {
   display: flex;
   flex: 1;
   flex-direction: column;
