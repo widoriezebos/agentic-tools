@@ -434,41 +434,64 @@
 }
 
 /*
- * The keyboard's way to the same two moves. It is small because a column is
- * narrow, and it is a real button because the whole flow has to work without
- * a mouse.
+ * The acts on a card, where the card was asked about them.
+ *
+ * There is no control on a card, so nothing here is laid out on one: the menu
+ * is fixed to the viewport at the two coordinates the gesture supplied, which
+ * also takes it out of the lane's own scrolling box rather than clipping it
+ * against the column it belongs to.
+ *
+ * A card is a tab stop, and its focus ring is the shell's, so the keyboard
+ * can see which card the menu would be about before it opens one.
  */
-.ms-card-moves {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+.ms-card-goal:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: 2px;
 }
 
-.ms-card-move {
-  height: 24px;
-  padding: 0 8px;
-  font-size: 12px;
-  line-height: 16px;
-  text-align: left;
-  white-space: normal;
+.ms-card-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ms-z-scrim);
 }
 
-.ms-card-menu {
+.ms-card-popup {
+  position: fixed;
+  top: var(--ms-menu-y, 0);
+  left: var(--ms-menu-x, 0);
+  z-index: var(--ms-z-sheet);
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 6px;
+  align-items: stretch;
+  min-width: 168px;
+  padding: 4px;
   border: 1px solid var(--ms-border);
   border-radius: 8px;
+  background: var(--ms-surface);
+  box-shadow: var(--ms-shadow);
+}
+
+.ms-card-popup-item {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ms-card-popup-item:hover {
   background: var(--ms-surface-2);
 }
 
-.ms-card-menu .ms-card-move {
-  height: auto;
-  min-height: 24px;
-  padding: 3px 8px;
+.ms-card-popup-item:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: -2px;
 }
 
 /*

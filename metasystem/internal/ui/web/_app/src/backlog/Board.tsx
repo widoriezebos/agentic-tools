@@ -1,5 +1,5 @@
-import { useId, useMemo, useState, type DragEvent, type ReactNode } from "react";
-import { NavLink } from "react-router";
+import { useId, useMemo, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { NavLink, useNavigate } from "react-router";
 
 import { rankGoal, type Backlog, type Row } from "./api";
 import {
@@ -32,7 +32,9 @@ import {
   UNPLACEABLE,
   type LaneId,
 } from "./lanes";
-import { moveFor, refusalFor, targetsFrom, transitions } from "./moves";
+import { CardMenu } from "./CardMenu";
+import { offersFor, opensMenu, type At, type OfferId } from "./menu";
+import { moveFor, refusalFor, targetsFrom } from "./moves";
 import { RankSheet } from "./RankSheet";
 import {
   inRankOrder,
@@ -81,8 +83,13 @@ import { failureMessage } from "../shell/workspace";
  * No dependency is involved, nothing is animated, and a drop changes nothing
  * on its own: it opens the sheet, and only the ledger's answer moves a card.
  *
- * Everything the mouse can do, the keyboard can do: each card carries a Move
- * button offering the same transitions and opening the same sheet.
+ * Dragging is the way. No card carries a control of any kind: a board is a
+ * hundred cards, and a button on each of them is a hundred buttons competing
+ * with the work they are about. The acts are in a menu that is not there until
+ * it is asked for, by the pointer's own gesture or by Shift+F10 and the Menu
+ * key, and it lists what that card can actually do in the lane it is in and
+ * nothing else. So everything the mouse can do, the keyboard can do, and the
+ * board still shows only work.
  */
 
 /** What the board asks the pane to open. */
@@ -136,6 +143,7 @@ export function Board({
   // for: the two differ whenever the band shifted under the request.
   const [noted, setNoted] = useState<{ lane: LaneId; line: string } | null>(null);
   const [asking, setAsking] = useState<{ goal: Row; placement: Placement } | null>(null);
+  const navigate = useNavigate();
 
   // Every row the payload carries, which is what a relationship is read
   // against: a split member says what it is part of whether or not its parent
@@ -310,6 +318,9 @@ export function Board({
             onDropOn={dropOnCard}
             onAct={onAct}
             onStep={step}
+            onOpen={(row) => {
+              void navigate(goalPath(row.ref.id));
+            }}
             onChooseRank={(row) => {
               setAsking({ goal: row, placement: { priority: row.priority, sequence: row.sequence } });
             }}
@@ -566,6 +577,7 @@ function Column({
   onAct,
   onStep,
   onChooseRank,
+  onOpen,
 }: {
   column: BoardColumn;
   all: readonly Row[];
@@ -582,6 +594,7 @@ function Column({
   onAct: (asked: Asked) => void;
   onStep: (row: Row, direction: "up" | "down") => void;
   onChooseRank: (row: Row) => void;
+  onOpen: (row: Row) => void;
 }) {
   const rows = column.rows;
   const shown = statement === "" ? String(rows.length) : "—";
@@ -633,6 +646,7 @@ function Column({
             onAct={onAct}
             onStep={onStep}
             onChooseRank={onChooseRank}
+            onOpen={onOpen}
           />
         ))}
       </div>
@@ -650,6 +664,7 @@ function Card({
   onAct,
   onStep,
   onChooseRank,
+  onOpen,
 }: {
   row: Row;
   all: readonly Row[];
@@ -661,8 +676,12 @@ function Card({
   onAct: (asked: Asked) => void;
   onStep: (row: Row, direction: "up" | "down") => void;
   onChooseRank: (row: Row) => void;
+  onOpen: (row: Row) => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
+  // Where the menu was asked for, or null when it was not asked for at all.
+  // Nothing on the card opens it: the pointer's own gesture does, and so do
+  // the two keystrokes that mean the same thing without one.
+  const [menuAt, setMenuAt] = useState<At | null>(null);
   // Which half of this card the pointer is over, so a drop lands where the
   // line says it will rather than where the card happens to be.
   const [edge, setEdge] = useState<Side | null>(null);
@@ -670,21 +689,60 @@ function Card({
   // pointer is down on something inside it that is not a handle.
   const [grabbable, setGrabbable] = useState(true);
   if (isParent(row)) {
+    // A goal a split retired offers no act: it is a historical record, and its
+    // links are what there is to do with it. Right-clicking it gets the
+    // browser's own menu, which is the honest answer to "what can I do here".
     return <SplitCard row={row} members={membersOf(row, all)} />;
   }
-  const moves = transitions.filter((transition) => transition.from === row.lane);
   const standing = blockerOf(row);
+
+  /** What each row of the menu does when it is chosen. */
+  const choose = (id: OfferId) => {
+    switch (id) {
+      case "approve":
+      case "withdraw":
+        onAct({ move: id, goal: row });
+        return;
+      case "up":
+      case "down":
+        onStep(row, id === "up" ? "up" : "down");
+        return;
+      case "rank":
+        onChooseRank(row);
+        return;
+      case "open":
+        onOpen(row);
+    }
+  };
   const parent = parentOf(row, all);
   const arc = arcOn(row, all);
   return (
     <article
       className={`ms-card-goal${edge === null ? "" : ` ms-card-goal--${edge}`}`}
       draggable={grabbable}
+      // The card is a tab stop so that the keyboard can reach the acts the
+      // pointer reaches: there is no button to tab to, because there is no
+      // button.
+      tabIndex={0}
       onMouseUp={() => {
         setGrabbable(true);
       }}
       onMouseLeave={() => {
         setGrabbable(true);
+      }}
+      onContextMenu={(event: MouseEvent<HTMLElement>) => {
+        event.preventDefault();
+        setMenuAt({ x: event.clientX, y: event.clientY });
+      }}
+      onKeyDown={(event: ReactKeyboardEvent<HTMLElement>) => {
+        if (!opensMenu(event.key, event.shiftKey)) {
+          return;
+        }
+        event.preventDefault();
+        // No pointer said where, so the card says where: its own top-left
+        // corner, which is where a menu about this card belongs.
+        const box = event.currentTarget.getBoundingClientRect();
+        setMenuAt({ x: box.left + 8, y: box.top + 8 });
       }}
       onDragStart={(event: DragEvent<HTMLElement>) => {
         // The id travels as plain text so a drop outside this board carries
@@ -741,77 +799,19 @@ function Card({
       {arc !== "" && <p className="ms-card-lineage">arc {arc}</p>}
       <Slices plan={plan} onGrabbable={setGrabbable} />
       {standing !== "" && <p className="ms-card-standing">{standing}</p>}
-      {/* The keyboard's way to everything the mouse can do to this card, last
-          because the record comes first: a card is read before it is moved.
-          The two lane moves are what a drag between columns does; the three
-          beneath them are what a drag inside one does, which no keyboard can
-          perform by dragging. */}
-      {(moves.length > 0 || ranked(row)) && (
-        <div className="ms-card-moves">
-          <Button
-            className="ms-card-move"
-            aria-expanded={menuOpen}
-            aria-haspopup="menu"
-            onClick={() => {
-              setMenuOpen((open) => !open);
-            }}
-          >
-            Move…
-          </Button>
-          {menuOpen && (
-            <div className="ms-card-menu" role="menu" aria-label={`Move ${row.ref.id}`}>
-              {moves.map((transition) => (
-                <Button
-                  key={transition.to}
-                  role="menuitem"
-                  className="ms-card-move"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onAct({ move: transition.move, goal: row });
-                  }}
-                >
-                  To {laneTitle(transition.to)} ({transition.verb})
-                </Button>
-              ))}
-              {ranked(row) && (
-                <>
-                  <Button
-                    role="menuitem"
-                    className="ms-card-move"
-                    disabled={stepFor(row, "up", all) === null}
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onStep(row, "up");
-                    }}
-                  >
-                    Move up
-                  </Button>
-                  <Button
-                    role="menuitem"
-                    className="ms-card-move"
-                    disabled={stepFor(row, "down", all) === null}
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onStep(row, "down");
-                    }}
-                  >
-                    Move down
-                  </Button>
-                  <Button
-                    role="menuitem"
-                    className="ms-card-move"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onChooseRank(row);
-                    }}
-                  >
-                    Set priority…
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+      {menuAt !== null && (
+        <CardMenu
+          at={menuAt}
+          label={`Acts on ${row.ref.id}`}
+          offers={offersFor(row, all)}
+          onClose={() => {
+            setMenuAt(null);
+          }}
+          onChoose={(id) => {
+            setMenuAt(null);
+            choose(id);
+          }}
+        />
       )}
     </article>
   );
@@ -912,11 +912,6 @@ function SplitCard({ row, members }: { row: Row; members: Row[] }) {
 function sideOf(event: DragEvent<HTMLElement>): Side {
   const box = event.currentTarget.getBoundingClientRect();
   return event.clientY < box.top + box.height / 2 ? "above" : "below";
-}
-
-/** True when this goal is in a priority band, and so has a rank to change. */
-function ranked(row: Row): boolean {
-  return row.where === "live" && row.priority > 0 && row.sequence > 0;
 }
 
 /** A count and the word for it, pluralised the one way English needs here. */
