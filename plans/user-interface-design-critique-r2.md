@@ -1,6 +1,6 @@
 # User interface design: second independent review
 
-Reviewer: Opus 5, fresh context, not the author, no part in round one. Date: 2026-09-21. Subject: [user-interface-design.md](user-interface-design.md) at commit `cb08ac9b5`, scoped to the amendments made after [round one](user-interface-design-critique.md) and its [dispositions](user-interface-design-critique-dispositions.md), because delivery gates 2 and 3 are built on them. The reviewer read source only and executed nothing.
+Reviewer: Opus 5, fresh context, not the author, no part in round one. Date: 2026-09-21. Subject: [user-interface-design.md](designs/user-interface-design.md) at commit `cb08ac9b5`, scoped to the amendments made after [round one](user-interface-design-critique.md) and its [dispositions](user-interface-design-critique-dispositions.md), because delivery gates 2 and 3 are built on them. The reviewer read source only and executed nothing.
 
 This file records the findings and **proposes** dispositions. It does not adjudicate: the master is the owner's document, and the rulings are the human's. Claude, who recorded this and planned the implementation, did not write the master and has not edited it for these findings.
 

@@ -4,7 +4,7 @@ Verdict: **15 material findings** (4 HIGH, 9 MEDIUM, 2 LOW).
 
 | | |
 | --- | --- |
-| Design reviewed | `plans/user-interface-design.md`, all 736 lines, sha256 `4c172f38adee2da9af83266fc226032163e86f8bb9fe2e6198769de0b6d7adea` |
+| Design reviewed | `plans/designs/user-interface-design.md`, all 736 lines, sha256 `4c172f38adee2da9af83266fc226032163e86f8bb9fe2e6198769de0b6d7adea` |
 | Source read at | `7ebb8e308f0210cb66632774f3564a53a0273de2`; every cited file is unmodified in the working tree |
 | Written | 2026-09-20 22:50 CEST, by Fable 5.1 on m1e, which did not write the design |
 | Evidence | Every `file:line` below was **read** in this session. Nothing was built, run or tested. Counterexamples are reasoned, not reproduced. |

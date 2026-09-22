@@ -1,5 +1,9 @@
 # g1-s21 Project: the thread of intent, read-only
 
+- Kind: design
+- Id: 01M348YTJ2688CC90GYDBYGJB5
+- Status: done
+
 - Gate 1, state `designed`, revision 2, author Claude on Fable as a D23 delegate, 2026-09-21. Full pipeline: a Go dependency and a data contract.
 - Revision 2, 2026-09-21, after [Sol's review of the document route](g1-s21-project-thread-design-sol-review.md): the reading boundary is one anchored open through `os.Root` with `fstat` and a bounded read on the opened descriptor (F1, F3), the refused segments fold case (F2), and the route's breadth, HEAD, hard links, and the shared cut-guard allowlist are recorded; nothing else changed.
 - Refines the [master](../user-interface-design.md) at `ui-development` commit `6715daf01`: Project `:473` to `:490`, Rules `:433` to `:449`, Workspace identity `:451` to `:461`, Existing homes `:737` to `:767`, Trustworthy state `:769` to `:777`, `DefinitionRefs` `:509` to `:511`, gates 3 and 5 `:811`, `:813`, scenario 29 `:855`. Plan: D31 `:50`, D6 `:130`, step 4 `:156`, conventions `:112` to `:121`, must-not-touch `:108`.

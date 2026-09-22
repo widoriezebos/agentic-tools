@@ -36,7 +36,7 @@ section by section, `metasystem.conf`, the mission covenant gate
 (`internal/missionrunner/covenantgate.go`), the contract grammar
 (`internal/contract/contract.go`, `measure.go`), the wall (`internal/mission/guardrails.go`,
 `internal/missionrunner/wall.go`, `internal/validate/authorization.go`), the master
-design's Project section (`plans/user-interface-design.md:473-490`), and the record the
+design's Project section (`plans/designs/user-interface-design.md:473-490`), and the record the
 paper's chapter 18 cites (`records/misc/delivery-process-reset-2026-09-17.md`).
 
 **How a commitment was told from an argument.** A passage counts as a commitment when
@@ -123,7 +123,7 @@ Three kinds: **missing proof** (the software does it, nothing demonstrates it),
 | G13 `intent-is-versioned-and-revisable` | "intent is versioned rather than declared once... The change must be explicit, authorized and traceable". | 02:49; 05:29 | not checkable as stated | Goal revisions exist (`internal/goalrevision`; `TestBudgetEpisodeRevisionTransitions`, `TestApprovalEpisodeRevisionGrammar`) and an edit invalidates approval (row 2). But the paper's intent record (outcome, constraints, freedoms, observations, rulings) is not a software structure; a goal's intent is one line. The Project thread design is where this is going. |
 | G14 `least-authority-per-role` | "each task receives only the information, resources and actions needed for that task." | 09:41; 08:29 | missing proof | `metasystem.conf:132-136` declares `dispatch.permissions.<role>` (critic, none, workspace); `TestExpandPermissions` (internal/dispatch/decisions_test.go:291) exercises expansion. No test demonstrates that a critic-permissioned job cannot write. |
 | G15 `appeal-reaches-another-person` | "an affected person must be able to reach another responsible authority, not the mechanism that made the disputed classification." | 13:67; 18:49 | not checkable | Organizational, not software. Belongs in the Project's Constraints as prose. |
-| G16 `intent-record-precedes-checks` | "Only then does the builder turn it into checks"; "The sitting proposes; only records rule." | 01:45; 15:19 | not checkable as stated | The sittings machinery is design (`plans/user-interface/g1-s21-project-thread-design.md`). Nothing today refuses a check whose expected result has no recorded ruling behind it. |
+| G16 `intent-record-precedes-checks` | "Only then does the builder turn it into checks"; "The sitting proposes; only records rule." | 01:45; 15:19 | not checkable as stated | The sittings machinery is design (`plans/designs/user-interface/g1-s21-project-thread-design.md`). Nothing today refuses a check whose expected result has no recorded ruling behind it. |
 | G17 `battery-measures` | The battery "must actually measure: it emits `metric=<id>=<value>`". | inception SKILL.md:162; `internal/contract/measure.go:188` | missing proof | No script in this repository emits the metric grammar except fixtures (`scripts/adopt-fixtures.sh:962`, `scripts/agents/mission-fixtures.sh:113`). `scripts/validate-metasystem.sh` prints a verdict line, not a metric. The draft names it as the battery anyway (section 5) and this wrapper is the steel thread. |
 
 Contradictions between the paper and the software today:
@@ -156,7 +156,7 @@ Contradictions between the paper and the software today:
 A covenant is rows, a battery, bounds, guards and a net. Most of the paper is not
 that shape, and forcing it in would produce exactly the floating intent the type warns
 about. Where the rest belongs, using the master design's Project subsections
-(`plans/user-interface-design.md:479-484`):
+(`plans/designs/user-interface-design.md:479-484`):
 
 - **Intent.** The thesis (01:9, 01:23), the five activities (02:21), the principles as a
   set (chapter 5), the four protections that "must not be lost" (18:49), and the

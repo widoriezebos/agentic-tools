@@ -55,7 +55,7 @@ Non-material, folded in: the options field is renamed `DigestFunc` so that `Exec
 
 ## Astra design review, 2026-09-21
 
-Verdict on this slice design: implement as written. No finding of the [Astra review](../user-interface-design-critique-astra.md) touches it. Building still waits for the human's explicit go.
+Verdict on this slice design: implement as written. No finding of the [Astra review](../../user-interface-design-critique-astra.md) touches it. Building still waits for the human's explicit go.
 
 ## Astra's second design review, 2026-09-21
 

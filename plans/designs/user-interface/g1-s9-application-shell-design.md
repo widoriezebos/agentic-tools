@@ -1,5 +1,9 @@
 # g1-s9 Application shell
 
+- Kind: design
+- Id: 01M348YTJ26D23C5903WBVR23E
+- Status: done
+
 - Gate 1, state `designed`, **revision 3**, author Claude on Fable as a D23 delegate, 2026-09-21. Revision 3 closes Sol's round 2, J1 to J3 ([review](g1-s9-application-shell-design-sol-review.md), Round 2): the dock keeps its pixel width across a live window resize (`groupResizeBehavior`, the giving-way order, a wide-to-wide walkthrough step); every empty state names its kind under the master's two-kind rule; the second cut's invalidation subscription is scoped, specified, tested, and refused by the cut guard. The contrast table, the layout arithmetic, and the eight closed findings are untouched. Revision 2 applied Sol's nine material findings and F11: adoption reader, layout arithmetic, explicit cuts, dock persistence per the 4.13.1 API, keyboard contract, contrast tokens, component states, honest empty states, reserved paths, separator keys.
 - Refines the [master](../user-interface-design.md) at `ui-development` commit `479c1ba54`: Agreed interface structure (`:19` to `:43`), The embedded agent workspace (`:84` to `:108`), The browser workspace (`:419` to `:449`), Workspace identity (`:451` to `:461`), the sections (`:463` to `:689`); and, for the empty-state rule, Rules for an intuitive structure at `:437` as the planner settled it at `5279a9d0c` (M9).
 - Depends on `g1-s8`, `g1-s1` revision 6 (merged), D1, D11, D14, D15, D20, D21, D27, D28. The visible half of delivery step 2 (plan `:147`), `g1-s18` folded in. Contributes to scenarios 45 and 15.
