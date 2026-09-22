@@ -29,8 +29,10 @@ func TestAnUnprovenServerWritesNothingAndSaysWhy(t *testing.T) {
 	testutil.Expect(t, "nothing is proven", authority.Proven(), false)
 
 	for name, err := range map[string]error{
-		"approve":  authority.Approve("g-1", box()),
-		"withdraw": authority.Withdraw("g-1", "changed my mind"),
+		"approve":      authority.Approve("g-1", box()),
+		"withdraw":     authority.Withdraw("g-1", "changed my mind"),
+		"set-priority": authority.SetPriority("g-1", 2, nil),
+		"open":         authority.Open(opening("g-2")),
 	} {
 		refusal, ok := err.(*Refusal)
 		if !ok {
@@ -185,6 +187,176 @@ func TestTheProofIsRecordedBesideTheActItAuthorized(t *testing.T) {
 }
 
 /* ------------------------------------------------------ the fixture bed -- */
+
+// opening is a complete intake statement: the engine derives the rigor tier
+// from the four risk answers and refuses an open without them and their basis.
+func opening(id string) Opened {
+	return Opened{
+		ID: id, Intent: "Make " + id + " work end to end.",
+		NextStep: "Take " + id + " to a working end state; the approach is yours.",
+		Risk: goal.RiskRecord{
+			Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1,
+			Basis: "one well-understood change behind an existing seam",
+		},
+	}
+}
+
+// A re-rank is never about one record: the engine inserts the goal at the
+// requested one-based position and renumbers the whole band behind it.
+func TestSetPriorityPlacesAGoalAndRenumbersTheBandAsTheHuman(t *testing.T) {
+	t.Parallel()
+	root := ledger(t)
+	for _, id := range []string{"ui-one", "ui-two", "ui-three"} {
+		openGoal(t, root, id)
+	}
+	authority := provenFor(t, root)
+	// A goal the fixture opened carries no rank at all, so the band is built
+	// here: the first two land in order, and the third is the one that moves.
+	const band = uint8(2)
+	for at, id := range []string{"ui-one", "ui-two"} {
+		if err := authority.SetPriority(id, band, sequence(uint64(at+1))); err != nil {
+			t.Fatalf("building the band at %s: %v", id, err)
+		}
+	}
+
+	if err := authority.SetPriority("ui-three", band, sequence(1)); err != nil {
+		t.Fatalf("set-priority: %v", err)
+	}
+
+	testutil.Expect(t, "the goal is first in the band", rank(t, root, "ui-three"), ranked{band, 1})
+	testutil.Expect(t, "the goal behind it moved down", rank(t, root, "ui-one"), ranked{band, 2})
+	testutil.Expect(t, "and so did the one behind that", rank(t, root, "ui-two"), ranked{band, 3})
+
+	file := readGoal(t, root, "ui-three")
+	last := file.History[len(file.History)-1]
+	testutil.Expect(t, "the re-rank is the human's own line", last.Actor, "human:Wido")
+	testutil.Expect(t, "and it is the verb the terminal writes", last.Verb, "set-priority")
+	if !strings.Contains(last.Reason, "requested-sequence=1") {
+		t.Fatalf("the reason does not carry the requested position: %q", last.Reason)
+	}
+}
+
+// The engine refuses a position outside the destination band rather than
+// clamping it, so nothing in the interface clamps one either.
+func TestSetPriorityCarriesTheEnginesRefusalOfAnImpossiblePosition(t *testing.T) {
+	t.Parallel()
+	root := ledger(t)
+	openGoal(t, root, "ui-one")
+	authority := provenFor(t, root)
+	const band = uint8(2)
+	if err := authority.SetPriority("ui-one", band, sequence(1)); err != nil {
+		t.Fatalf("building the band: %v", err)
+	}
+
+	err := authority.SetPriority("ui-one", band, sequence(9))
+
+	refusal, ok := err.(*Refusal)
+	if !ok {
+		t.Fatalf("refusal = %v, want an act.Refusal", err)
+	}
+	testutil.Expect(t, "the ledger refused it", refusal.Kind, KindEngine)
+	if !strings.Contains(refusal.Message, "outside the current destination range") {
+		t.Fatalf("the refusal is not the engine's own: %q", refusal.Message)
+	}
+	testutil.Expect(t, "and nothing moved", rank(t, root, "ui-one"), ranked{band, 1})
+}
+
+func TestSetPriorityRefusesARankThatIsNotOneBeforeItReachesTheLedger(t *testing.T) {
+	t.Parallel()
+	authority := provenFor(t, ledger(t))
+
+	for name, err := range map[string]error{
+		"no goal":       authority.SetPriority("  ", 2, nil),
+		"band 0":        authority.SetPriority("ui-one", 0, nil),
+		"band 4":        authority.SetPriority("ui-one", 4, nil),
+		"position zero": authority.SetPriority("ui-one", 2, sequence(0)),
+	} {
+		refusal, ok := err.(*Refusal)
+		if !ok {
+			t.Fatalf("%s refusal = %v, want an act.Refusal", name, err)
+		}
+		testutil.Expect(t, name+" is the request's own fault", refusal.Kind, KindRequest)
+	}
+}
+
+// The intake act, written as the human: origin human, the tier the risk
+// answers derive, and the History line a terminal open writes.
+func TestOpenCreatesAQueuedGoalAsTheHuman(t *testing.T) {
+	t.Parallel()
+	root := ledger(t)
+	authority := provenFor(t, root)
+
+	if err := authority.Open(opening("ui-new")); err != nil {
+		t.Fatalf("open: %v", err)
+	}
+
+	file := readGoal(t, root, "ui-new")
+	testutil.Expect(t, "the goal is queued", file.State, goal.StateQueued)
+	testutil.Expect(t, "the origin is the human's intake", file.Origin, goal.OriginHuman)
+	testutil.Expect(t, "the intent is the human's own", file.Intent, "Make ui-new work end to end.")
+	testutil.Expect(t, "the tier is the one the risk answers derive", file.Tier, uint8(1))
+	if file.Risk == nil {
+		t.Fatal("the goal carries no risk record")
+	}
+	testutil.Expect(t, "the basis is recorded", file.Risk.Basis, "one well-understood change behind an existing seam")
+	testutil.Expect(t, "the open is the human's own line", file.History[0].Actor, "human:Wido")
+	testutil.Expect(t, "and it is the verb the terminal writes", file.History[0].Verb, "open")
+}
+
+func TestOpenRefusesAnIncompleteIntakeBeforeItReachesTheLedger(t *testing.T) {
+	t.Parallel()
+	authority := provenFor(t, ledger(t))
+
+	blank := func(change func(*Opened)) error {
+		asked := opening("ui-new")
+		change(&asked)
+		return authority.Open(asked)
+	}
+	for name, err := range map[string]error{
+		"no id":        blank(func(o *Opened) { o.ID = " " }),
+		"no intent":    blank(func(o *Opened) { o.Intent = "" }),
+		"no next step": blank(func(o *Opened) { o.NextStep = "" }),
+		"no basis":     blank(func(o *Opened) { o.Risk.Basis = "" }),
+		"no severity":  blank(func(o *Opened) { o.Risk.Severity = 0 }),
+		"tier 4":       blank(func(o *Opened) { o.Tier = 4 }),
+	} {
+		refusal, ok := err.(*Refusal)
+		if !ok {
+			t.Fatalf("%s refusal = %v, want an act.Refusal", name, err)
+		}
+		testutil.Expect(t, name+" is the request's own fault", refusal.Kind, KindRequest)
+	}
+}
+
+// The engine has the last word on an id: opening the same goal twice is the
+// ledger's refusal, not this package's.
+func TestOpenCarriesTheEnginesRefusalOfAnIdItAlreadyHas(t *testing.T) {
+	t.Parallel()
+	root := ledger(t)
+	openGoal(t, root, "ui-one")
+	authority := provenFor(t, root)
+
+	err := authority.Open(opening("ui-one"))
+
+	refusal, ok := err.(*Refusal)
+	if !ok {
+		t.Fatalf("refusal = %v, want an act.Refusal", err)
+	}
+	testutil.Expect(t, "the ledger refused it", refusal.Kind, KindEngine)
+}
+
+type ranked struct {
+	priority uint8
+	sequence uint64
+}
+
+func rank(t *testing.T, root, id string) ranked {
+	t.Helper()
+	file := readGoal(t, root, id)
+	return ranked{file.Priority, file.Sequence}
+}
+
+func sequence(at uint64) *uint64 { return &at }
 
 func provenFor(t *testing.T, root string) Authority {
 	t.Helper()

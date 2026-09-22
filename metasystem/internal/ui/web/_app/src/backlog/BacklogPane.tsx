@@ -9,6 +9,7 @@ import { clockTime, shortTip } from "./format";
 import { DraftGroup, LaneGroup } from "./LaneGroup";
 import { anchorFor, closedLanes, openLanes, UNPLACEABLE, type LaneId } from "./lanes";
 import { LedgerLine } from "./LedgerLine";
+import { OpenSheet } from "./OpenSheet";
 import { Statement } from "./Statement";
 import { useBacklog } from "./state";
 import { Pane } from "../panes/Pane";
@@ -88,6 +89,7 @@ function Read({
   // human changes one.
   const [filters, setFilters] = useState<Filters>(() => readBacklogFilters());
   const [reach, setReach] = useState<Window>(() => readDoneWindow());
+  const [opening, setOpening] = useState(false);
   const ledger = backlog.ledger;
   const closedCount = backlog.closed.length;
   // The board and the list want opposite things from the pane: the list wants
@@ -111,7 +113,28 @@ function Read({
           <Button aria-pressed={view === "list"} onClick={() => { choose("list"); }}>
             List
           </Button>
+          {/* Intake is the one act with no card to start from, so it stands
+              beside the switch rather than on the board. An unproven server
+              disables it here and says why in the sheet's own words. */}
+          <Button
+            className="ms-backlog-new"
+            disabled={!backlog.authority.proven}
+            title={backlog.authority.proven ? undefined : backlog.authority.reason}
+            onClick={() => { setOpening(true); }}
+          >
+            New goal
+          </Button>
         </p>
+      )}
+      {opening && (
+        <OpenSheet
+          backlog={backlog}
+          onClose={() => { setOpening(false); }}
+          onDone={(after) => {
+            setOpening(false);
+            onMoved(after);
+          }}
+        />
       )}
       {boarding && (
         <Board
@@ -119,6 +142,7 @@ function Read({
           closedShown={closedShown}
           onToggleClosed={() => { setClosedShown((shown) => !shown); }}
           onAct={(act: Asked) => { setAsked({ move: act.move, goal: act.goal }); }}
+          onMoved={onMoved}
           filters={filters}
           onFilters={(chosen) => { setFilters(chosen); writeBacklogFilters(chosen); }}
           window={reach}

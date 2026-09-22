@@ -14,11 +14,13 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
@@ -49,6 +51,10 @@ func main() {
 			return state.approve(id, budget)
 		},
 		Withdraw: func(id, reason string) error { return state.withdraw(id, reason) },
+		SetPriority: func(id string, priority uint8, sequence *uint64) error {
+			return state.setPriority(id, priority, sequence)
+		},
+		Open: func(opened act.Opened) error { return state.open(opened) },
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 			return map[string]goalbudget.Budget{"3": {
 				ElapsedLimit: "8h", AttemptLimit: 10, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3,
@@ -222,6 +228,88 @@ func (l *ledger) approve(id string, budget goalbudget.Budget) error {
 		Authority: goal.ApprovalAuthorityProven, Revision: file.Revision,
 	}
 	return nil
+}
+
+// setPriority re-ranks the way internal/goal/order.go does, because the point
+// of the walkthrough is to see what the engine's own renumbering looks like on
+// a board: the destination band is the live goals at that priority without
+// this one, a requested position outside 1..len+1 is refused outright rather
+// than clamped, and inserting renumbers the whole band — and the band the goal
+// left, when it changed priority.
+func (l *ledger) setPriority(id string, priority uint8, sequence *uint64) error {
+	file := l.tree.Live[id]
+	if file == nil {
+		return fmt.Errorf("goal %s is not live", id)
+	}
+	from := file.Priority
+	destination := l.band(priority, id)
+	position := uint64(len(destination) + 1)
+	if sequence != nil {
+		position = *sequence
+	} else if from == priority {
+		position = file.Sequence
+	}
+	if maximum := uint64(len(destination) + 1); position < 1 || position > maximum {
+		return fmt.Errorf("goal %s sequence %d is outside the current destination range 1..%d for priority %d",
+			id, position, maximum, priority)
+	}
+	if from == priority && file.Sequence == position {
+		return fmt.Errorf("the requested priority and sequence already hold")
+	}
+	if from != 0 && from != priority {
+		number(l.tree.Live, from, l.band(from, id))
+	}
+	at := int(position - 1)
+	destination = append(destination, "")
+	copy(destination[at+1:], destination[at:])
+	destination[at] = id
+	number(l.tree.Live, priority, destination)
+	return nil
+}
+
+// band is the ids at one priority, in sequence order, without the one named.
+func (l *ledger) band(priority uint8, without string) []string {
+	ids := []string{}
+	for id, file := range l.tree.Live {
+		if file.Priority == priority && id != without {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return l.tree.Live[ids[i]].Sequence < l.tree.Live[ids[j]].Sequence })
+	return ids
+}
+
+func number(live map[string]*goal.GoalFile, priority uint8, ids []string) {
+	for at, id := range ids {
+		live[id].Priority, live[id].Sequence = priority, uint64(at+1)
+	}
+}
+
+// open creates the queued goal the intake act creates, refusing the two
+// things the engine refuses first: an id that is taken, and risk answers that
+// are not four answers with a basis. The new goal is appended to priority 3,
+// because a goal nobody has ranked is not urgent and the engine appends.
+func (l *ledger) open(opened act.Opened) error {
+	if l.tree.Exists(opened.ID) {
+		return fmt.Errorf("goal %s already exists", opened.ID)
+	}
+	if err := opened.Risk.Validate(); err != nil {
+		return err
+	}
+	tier := opened.Tier
+	if tier == 0 {
+		tier = opened.Risk.DerivedTier()
+	}
+	risk := opened.Risk
+	file := walkthroughGoal(opened.ID, goal.StateQueued, opened.Intent)
+	file.Origin = goal.OriginHuman
+	file.NextStep = opened.NextStep
+	file.Tier = tier
+	file.Labels = opened.Labels
+	file.Risk = &risk
+	file.Priority, file.Sequence = 0, 0
+	l.tree.Live[opened.ID] = file
+	return l.setPriority(opened.ID, 3, nil)
 }
 
 func (l *ledger) withdraw(id, reason string) error {

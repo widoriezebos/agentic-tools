@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
@@ -56,13 +57,21 @@ type Info struct {
 	// cannot change while the server runs: a proof is an observation of an
 	// ancestry that existed at boot, and no later request can make one.
 	Authority AuthorityInfo
-	// The backlog's two acts, each one the human approving or withdrawing
-	// their own goal in their own checkout. They publish through the engine
-	// in-process under the boot proof; a nil field is an engine that cannot
-	// act, which the route says. An act.Refusal carries the status the route
-	// answers with; anything else is a 500 carrying its reason.
+	// The backlog's four acts, each one the human working their own backlog
+	// in their own checkout: admitting work, withdrawing that admission,
+	// placing a goal in a priority band, and opening a new goal at intake.
+	// They publish through the engine in-process under the boot proof; a nil
+	// field is an engine that cannot act, which the route says. An
+	// act.Refusal carries the status the route answers with; anything else is
+	// a 500 carrying its reason.
 	Approve  func(id string, budget goalbudget.Budget) error
 	Withdraw func(id, reason string) error
+	// SetPriority places one goal in a band at a one-based position, or
+	// appends it there when the position is nil. The engine renumbers the
+	// band, so this act is never about one record.
+	SetPriority func(id string, priority uint8, sequence *uint64) error
+	// Open is the human's intake act: one new goal, under origin human.
+	Open func(opened act.Opened) error
 	// BudgetDefaults is the project's budget law by tier, read per request
 	// for the reason the readers are: what the browser prefills from is what
 	// the next read of the configuration will say.

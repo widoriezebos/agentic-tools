@@ -834,3 +834,83 @@
 .ms-card-lineage a:focus-visible {
   text-decoration: underline;
 }
+
+/* -------------------------------------------- re-ranking, and new work -- */
+
+/*
+ * The edge a drop will land on. It is a border rather than an inserted
+ * element, so nothing in the lane moves while a card is in the air and the
+ * cards below do not jump as the pointer crosses each of them.
+ */
+.ms-card-goal--above {
+  border-top: 2px solid var(--ms-accent);
+}
+
+.ms-card-goal--below {
+  border-bottom: 2px solid var(--ms-accent);
+}
+
+/*
+ * Where the ledger put a goal after a re-rank, under the head of the lane it
+ * was re-ranked in. It is the ledger's answer and not the request: the band
+ * may have shifted since the page was read, and the two are worth telling
+ * apart.
+ */
+.ms-column-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-ok-fg);
+  overflow-wrap: anywhere;
+}
+
+.ms-backlog-new {
+  margin-left: auto;
+}
+
+/* The rule a field is written under, beside the field rather than in a manual. */
+.ms-act-rule {
+  margin: 0;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--ms-text-3);
+}
+
+/* What an act does, and does not do, to work a seat already holds. */
+.ms-act-consequence {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ms-marker);
+  border-radius: 8px;
+  background: var(--ms-marker-bg);
+  color: var(--ms-marker-fg);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+/* A select in a sheet reads as its inputs do. */
+.ms-act-field select {
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.ms-act-field select:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: 1px;
+}
+
+/*
+ * The intake sheet asks for more than an approval does, so the panel scrolls
+ * inside itself rather than growing past the window.
+ */
+.ms-act-sheet {
+  max-height: 86vh;
+  overflow-y: auto;
+}

@@ -1,7 +1,9 @@
 // Package act is the interface server's human hand on the ledger.
 //
-// Two verbs reach it, and they are the two a human performs on a queued or an
-// approved goal: goal approve and goal unapprove. Nothing here shells out. A
+// Four verbs reach it, and every one of them is a verb a human performs on
+// their own backlog: goal approve and goal unapprove admit and withdraw work,
+// goal set-priority places a goal in a band and orders it there, and goal
+// open is the intake act that creates one. Nothing here shells out. A
 // child of this server has no terminal in its ancestry and would be refused
 // by the very check that makes these acts a human's, so the engine is called
 // in-process, through the same internal/goal request path the command edge
@@ -197,6 +199,91 @@ func (a Authority) Withdraw(id, because string) error {
 	}
 	result, publishErr := goal.Unapprove(request, id, because, &a.proof)
 	return a.settle(request, result, publishErr, "goal unapprove")
+}
+
+// SetPriority publishes goal set-priority for one goal: the band it is to be
+// in, and where in that band it stands.
+//
+// The sequence is a position within the destination band, one-based, and the
+// engine refuses one outside `1..len(band)+1` rather than clamping it — which
+// is why nothing is clamped here either. Inserting renumbers every goal at or
+// after that position, in the band the goal leaves as well as the one it
+// joins, so this verb is never about one record. A nil sequence appends,
+// which is what the engine does when the command edge is given no --sequence.
+//
+// Nothing here reports where the goal landed: PublishResult carries the tip
+// and the outcome and no rank. The caller reads the board again, which the
+// act routes answer with, and finds the goal at whatever the ledger made of
+// the request.
+func (a Authority) SetPriority(id string, priority uint8, sequence *uint64) error {
+	if strings.TrimSpace(id) == "" {
+		return refuse(KindRequest, "no-goal", "a re-rank names one live goal")
+	}
+	if priority < 1 || priority > 3 {
+		return refuse(KindRequest, "priority", "a priority is 1, 2, or 3")
+	}
+	if sequence != nil && *sequence < 1 {
+		return refuse(KindRequest, "sequence", "a sequence is a one-based position within the priority")
+	}
+	request, err := a.request()
+	if err != nil {
+		return err
+	}
+	result, publishErr := goal.SetPriority(request, id, priority, sequence, &a.proof)
+	return a.settle(request, result, publishErr, "goal set-priority")
+}
+
+// Opened is one goal as a human stated it at intake.
+//
+// Every field is one the verb takes, and there is no field here the verb does
+// not take. In particular there is no priority and no arc: `goal open` has no
+// flag for either (cmd/metasystem/goalsync_mutations.go:1716), and a sheet
+// that offered them would be promising a record this act cannot write. The
+// risk answers and their basis are not optional decoration — the engine
+// derives the rigor tier from them and refuses an open without them.
+type Opened struct {
+	ID       string
+	Intent   string
+	NextStep string
+	// Tier overrides the tier the risk answers derive. Zero takes the derived
+	// one, which is the usual case; anything else needs Why.
+	Tier   uint8
+	Why    string
+	Blocks string
+	Labels []string
+	Risk   goal.RiskRecord
+}
+
+// Open publishes goal open for one new goal, under origin `human`.
+//
+// The origin is not the caller's to choose. This server acts as the enrolled
+// human and as nobody else, so every goal it opens is the human's own intake
+// act and carries the origin that says so; a seat's open is confined to the
+// blocker of its claimed goal and is not something a browser performs.
+func (a Authority) Open(opened Opened) error {
+	if strings.TrimSpace(opened.ID) == "" {
+		return refuse(KindRequest, "no-goal", "a new goal is named by one id")
+	}
+	if strings.TrimSpace(opened.Intent) == "" {
+		return refuse(KindRequest, "no-intent", "a goal's intent says what done looks like, in one line")
+	}
+	if strings.TrimSpace(opened.NextStep) == "" {
+		return refuse(KindRequest, "no-next-step",
+			"a goal's next step states intent, constraints and freedoms, never a script of the how")
+	}
+	if err := opened.Risk.Validate(); err != nil {
+		return refuse(KindRequest, "risk", "the risk answers are not complete: "+err.Error())
+	}
+	if opened.Tier > 3 {
+		return refuse(KindRequest, "tier", "a rigor tier is 1, 2, or 3")
+	}
+	request, err := a.request()
+	if err != nil {
+		return err
+	}
+	result, publishErr := goal.OpenRisked(request, opened.ID, opened.Intent, goal.OriginHuman,
+		opened.NextStep, opened.Blocks, opened.Risk, opened.Tier, opened.Why, nil, &a.proof, opened.Labels...)
+	return a.settle(request, result, publishErr, "goal open")
 }
 
 // settle turns one publication into the answer a route gives, and records the

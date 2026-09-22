@@ -20,11 +20,16 @@
  */
 
 import type { LaneId } from "./lanes";
+import type { NewGoal } from "./opening";
 
 const BACKLOG = "/api/backlog";
+/** The collection: a body posted here opens a goal. */
+const OPEN = "/api/backlog/goals";
+/** The same resource with one goal beneath it, where the acts on one live. */
 const GOALS = "/api/backlog/goals/";
 const APPROVE = "/approve";
 const WITHDRAW = "/withdraw";
+const PRIORITY = "/priority";
 
 /** What could be read of the accepted ledger. */
 export type LedgerState = "read" | "absent" | "no-ledger" | "broken" | "unreadable" | "refused";
@@ -236,4 +241,18 @@ export async function approveGoal(id: string, budget: Budget): Promise<Backlog> 
 /** goal unapprove, for one goal, with the reason the human gave. */
 export async function withdrawGoal(id: string, reason: string): Promise<Backlog> {
   return request(`${GOALS}${encodeURIComponent(id)}${WITHDRAW}`, { reason });
+}
+
+/**
+ * goal set-priority, for one goal: the band, and the one-based position in
+ * it. A null sequence appends, which is what the engine does when the command
+ * edge is given no --sequence, and is a different request from position 1.
+ */
+export async function rankGoal(id: string, priority: number, sequence: number | null): Promise<Backlog> {
+  return request(`${GOALS}${encodeURIComponent(id)}${PRIORITY}`, { priority, sequence });
+}
+
+/** goal open, for one new goal, under origin human. */
+export async function openGoal(asked: NewGoal): Promise<Backlog> {
+  return request(OPEN, asked);
 }

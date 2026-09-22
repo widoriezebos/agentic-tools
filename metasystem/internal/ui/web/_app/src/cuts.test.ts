@@ -61,12 +61,17 @@ const LIFECYCLE_HANDLERS = ["onfocus", "ononline", "onoffline", "onvisibilitycha
  */
 const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   ["shell/workspace.ts", 1, ["/api/workspace"]],
-  // The board's two acts join the backlog's one read at the call site it
+  // The board's four acts join the backlog's one read at the call site it
   // already had: an act is the same request with a body, so there is still
-  // exactly one place in this build that reaches the network from here. Both
-  // act routes name a goal by its id between the prefix and their own suffix,
-  // which is why the two suffixes are listed on their own.
-  ["backlog/api.ts", 1, ["/api/backlog", "/api/backlog/goals/", "/approve", "/withdraw"]],
+  // exactly one place in this build that reaches the network from here. Three
+  // of the act routes name a goal by its id between the prefix and their own
+  // suffix, which is why those suffixes are listed on their own; the fourth
+  // opens a goal and so names the collection, which has no id in it at all.
+  [
+    "backlog/api.ts",
+    1,
+    ["/api/backlog", "/api/backlog/goals", "/api/backlog/goals/", "/approve", "/withdraw", "/priority"],
+  ],
   // The Project section's four writes join its two reads at the one call site
   // it already had: a write is the same request with a body, so there is still
   // exactly one place in this build that reaches the network from here. The

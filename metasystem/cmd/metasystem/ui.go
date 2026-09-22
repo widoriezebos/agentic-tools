@@ -223,8 +223,8 @@ func runUI(verb string, args []string) int {
 					SetQuestionStatus: func(id, status string) (project.Asked, error) {
 						return project.SetQuestionStatus(projectRoots(roots), id, status)
 					},
-					// The backlog's two acts. Each one publishes through the
-					// engine in-process under the boot proof, and then
+					// The backlog's four acts. Each one publishes through
+					// the engine in-process under the boot proof, and then
 					// carries this clone's accepted ref forward, so the
 					// payload the route answers with is the ledger as it now
 					// stands rather than as it stood before the act.
@@ -240,6 +240,20 @@ func runUI(verb string, args []string) int {
 					},
 					Withdraw: func(id, reason string) error {
 						if err := authority.Withdraw(id, reason); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
+					SetPriority: func(id string, priority uint8, sequence *uint64) error {
+						if err := authority.SetPriority(id, priority, sequence); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
+					Open: func(opened act.Opened) error {
+						if err := authority.Open(opened); err != nil {
 							return err
 						}
 						advance()

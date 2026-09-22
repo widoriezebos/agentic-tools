@@ -70,7 +70,7 @@ func writeRouteOf(path string) (written, bool) {
 	if id, ok := statusID(path, questionsPrefix); ok {
 		return written{route: routeQuestionStatus, id: id}, true
 	}
-	// The backlog's two acts are writes under the same policy, and are
+	// The backlog's four acts are writes under the same policy, and are
 	// routed here so that the method, the host, the site and the origin are
 	// judged for them exactly as they are for the Project's four.
 	return actRouteOf(path)
@@ -122,6 +122,10 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.approveGoal(w, r, route.id)
 	case routeWithdraw:
 		h.withdrawGoal(w, r, route.id)
+	case routePriority:
+		h.setGoalPriority(w, r, route.id)
+	case routeOpen:
+		h.openGoal(w, r)
 	}
 }
 
