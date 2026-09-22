@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { DocumentPayload, Pane, ProjectRecord } from "./api";
 import {
-  areaRows,
+  aboutOf,
   briefingFor,
   crumbsFor,
   documentGroups,
+  goalRail,
   railFor,
   ROOT_GROUP,
   shortID,
@@ -17,16 +18,16 @@ import {
  * What the briefing shows, and what the reader shows around one document,
  * from one payload.
  *
- * The fixture is the shape the server answers: two declared areas, two books
- * whose reading order names records and binds documents, a decision, four
- * designs across the statuses, two questions, one refusal, and a few documents
- * that declare nothing.
+ * The fixture is the shape the server answers: four ledger goals, two of them
+ * still worked under, two books whose reading order names records and binds
+ * documents, a decision, four designs across the statuses, two questions, one
+ * refusal, and a few documents that declare nothing.
  */
 
 function record(fields: Partial<ProjectRecord> & Pick<ProjectRecord, "kind" | "id" | "path">): ProjectRecord {
   return {
     status: "accepted",
-    areas: [],
+    goals: [],
     title: fields.id,
     home: "plans/designs",
     summary: "",
@@ -35,60 +36,66 @@ function record(fields: Partial<ProjectRecord> & Pick<ProjectRecord, "kind" | "i
 }
 
 const intentIndex = record({
-  kind: "intent", id: "intent-index", areas: ["project"], title: "The project's intent",
+  kind: "intent", id: "intent-index", title: "The project's intent",
   path: "metasystem/docs/intent/index.md", home: "metasystem/docs/intent",
   summary: "Engineering after the shift: governing production, not building it.",
 });
 
 const doctrineIndex = record({
-  kind: "doctrine", id: "doctrine-index", areas: ["project"], title: "The doctrine",
+  kind: "doctrine", id: "doctrine-index", title: "The doctrine",
   path: "metasystem/docs/doctrine/index.md", home: "metasystem/docs/doctrine",
   summary: "A machine for letting agents build software unattended.",
 });
 
 const pane: Pane = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   readAt: "2026-09-22T10:11:12Z",
-  areas: [
-    { slug: "interface", name: "The browser workspace" },
-    { slug: "goals", name: "The goal ledger" },
+  // The order the server answers in: the live goals first, each in id order,
+  // then the concluded ones.
+  goals: [
+    { id: "goal-ledger", title: "goal-ledger", state: "queued",
+      intent: "The ledger is the one source of open work" },
+    { id: "interface-shell", title: "interface-shell", state: "claimed",
+      intent: "The browser is the seat a human takes" },
+    { id: "first-release", title: "first-release", state: "done", intent: "The first release shipped" },
+    { id: "old-idea", title: "old-idea", state: "abandoned", intent: "An idea nobody pursued" },
   ],
   records: [
     intentIndex,
     record({
-      kind: "intent", id: "intent-interface", areas: ["interface"], title: "What the interface is for",
+      kind: "intent", id: "intent-interface", goals: ["interface-shell"], title: "What the interface is for",
       path: "metasystem/docs/intent/interface.md", home: "metasystem/docs/intent",
       summary: "The browser is the seat a human takes.",
     }),
     doctrineIndex,
     record({
-      kind: "doctrine", id: "doctrine-events", areas: ["goals"], title: "Events are the source of truth",
+      kind: "doctrine", id: "doctrine-events", goals: ["goal-ledger"], title: "Events are the source of truth",
       path: "metasystem/docs/doctrine/events.md", home: "metasystem/docs/doctrine",
     }),
     record({
-      kind: "doctrine", id: "doctrine-loose", status: "draft", areas: ["interface"],
+      kind: "doctrine", id: "doctrine-loose", status: "draft", goals: ["interface-shell"],
       title: "A chapter the index does not name", path: "metasystem/docs/doctrine/loose.md",
       home: "metasystem/docs/doctrine",
     }),
     record({
-      kind: "decision", id: "decision-one", areas: ["goals"], title: "One binary",
+      kind: "decision", id: "decision-one", goals: ["goal-ledger"], title: "One binary",
       path: "metasystem/docs/decisions/0001.md", home: "metasystem/docs/decisions",
       summary: "The engine ships as one Go binary.",
     }),
     record({
-      kind: "design", id: "design-pane", areas: ["interface"], title: "The Project pane",
+      kind: "design", id: "design-pane", goals: ["interface-shell"], title: "The Project pane",
       path: "plans/designs/pane.md", summary: "The pane over the resolver.",
     }),
     record({
-      kind: "design", id: "design-briefing", status: "draft", areas: ["interface"],
+      kind: "design", id: "design-briefing", status: "draft", goals: ["interface-shell"],
       title: "The briefing", path: "plans/designs/briefing.md",
     }),
     record({
-      kind: "design", id: "design-ledger", status: "done", areas: ["goals", "interface"],
+      kind: "design", id: "design-ledger", status: "done", goals: ["goal-ledger", "interface-shell"],
       title: "The ledger", path: "metasystem/plans/designs/ledger.md", home: "metasystem/plans/designs",
     }),
     record({
-      kind: "design", id: "design-old", status: "superseded", areas: ["interface"],
+      kind: "design", id: "design-old", status: "superseded", goals: ["interface-shell"],
       title: "The old thread", path: "plans/designs/old.md",
     }),
   ],
@@ -107,8 +114,8 @@ const pane: Pane = {
     ],
   },
   questions: [
-    { id: "Q-1", opened: "2026-09-22", question: "Where does intent live?", areas: ["interface"], status: "open" },
-    { id: "Q-2", opened: "2026-09-22", question: "Who accepts?", areas: ["goals"], status: "answered: decision-one" },
+    { id: "Q-1", opened: "2026-09-22", question: "Where does intent live?", goals: ["interface-shell"], status: "open" },
+    { id: "Q-2", opened: "2026-09-22", question: "Who accepts?", goals: ["goal-ledger"], status: "answered: decision-one" },
   ],
   problems: [{ path: "metasystem/docs/intent/index.md", line: 12, message: "the chapter names nothing" }],
   documents: [
@@ -133,15 +140,6 @@ function book(id: string) {
   return found;
 }
 
-/** One of the two books, scoped to an area. */
-function scoped(slug: string, id: string) {
-  const found = briefingFor(pane, slug).areaBooks.find((candidate) => candidate.id === id);
-  if (found === undefined) {
-    throw new Error(`no book ${id} under ${slug}`);
-  }
-  return found;
-}
-
 /** One document as the reading route answers it, with or without a head. */
 function documentOf(id: string, head: Partial<DocumentPayload["record"]> | null): DocumentPayload {
   return {
@@ -152,7 +150,7 @@ function documentOf(id: string, head: Partial<DocumentPayload["record"]> | null)
       head === null
         ? null
         : {
-            kind: "design", id: "", status: "accepted", areas: [], cites: [], affects: [],
+            kind: "design", id: "", status: "accepted", goals: [], cites: [], affects: [],
             governs: [], supersedes: [], by: [], ...head,
           },
     referencedBy: [],
@@ -162,13 +160,25 @@ function documentOf(id: string, head: Partial<DocumentPayload["record"]> | null)
   };
 }
 
-describe("the area tree", () => {
-  it("puts the whole project first and counts what each area names", () => {
-    expect(areaRows(pane)).toEqual([
-      { slug: null, name: "Project", to: "/project", count: 10 },
-      { slug: "interface", name: "The browser workspace", to: "/project/area/interface", count: 6 },
-      { slug: "goals", name: "The goal ledger", to: "/project/area/goals", count: 3 },
+describe("the goal rail", () => {
+  it("puts the project first and the goals still worked under as rows", () => {
+    const rail = goalRail(pane);
+
+    expect(rail.project).toEqual({ id: null, name: "Project", to: "/project", state: "" });
+    expect(rail.live).toEqual([
+      { id: "goal-ledger", name: "goal-ledger", to: "/project/goal/goal-ledger", state: "queued" },
+      { id: "interface-shell", name: "interface-shell", to: "/project/goal/interface-shell", state: "claimed" },
     ]);
+  });
+
+  it("collapses the concluded goals into one run per state, and leaves out the empty runs", () => {
+    const rail = goalRail(pane);
+
+    expect(rail.runs.map((run) => [run.state, run.rows.map((row) => row.name)])).toEqual([
+      ["done", ["first-release"]],
+      ["abandoned", ["old-idea"]],
+    ]);
+    expect(goalRail({ ...pane, goals: [] }).runs).toEqual([]);
   });
 });
 
@@ -215,7 +225,7 @@ describe("the briefing", () => {
     ]);
   });
 
-  it("carries each row's own first words beside its title", () => {
+  it("carries each row's own first words beside its title, and no chip but its status", () => {
     expect(briefingFor(pane, null).decisions).toEqual([
       {
         key: "metasystem/docs/decisions/0001.md",
@@ -223,7 +233,6 @@ describe("the briefing", () => {
         to: "/project/doc/metasystem/docs/decisions/0001.md",
         summary: "The engine ships as one Go binary.",
         status: "accepted",
-        areas: ["goals"],
         path: "metasystem/docs/decisions/0001.md",
       },
     ]);
@@ -233,70 +242,87 @@ describe("the briefing", () => {
     const briefing = briefingFor(pane, null);
 
     expect(briefing.needsYou).toEqual({ questions: 1, designs: 1 });
-    expect(briefing.checkout).toEqual({ records: 10, homes: 5, areas: 2, problems: 1 });
+    expect(briefing.checkout).toEqual({ records: 10, homes: 5, goals: 4, problems: 1 });
   });
 });
 
-describe("an area page", () => {
-  it("opens by naming the area and counting what names it", () => {
-    expect(briefingFor(pane, "interface").area).toEqual({
-      slug: "interface",
-      name: "The browser workspace",
-      declared: true,
+describe("a goal page", () => {
+  it("opens with the goal's own id, state and intent, from the ledger", () => {
+    expect(briefingFor(pane, "interface-shell").goal).toEqual({
+      id: "interface-shell",
+      title: "interface-shell",
+      state: "claimed",
+      intent: "The browser is the seat a human takes",
+      found: true,
       count: 6,
     });
-    expect(briefingFor(pane, "nowhere").area?.declared).toBe(false);
   });
 
-  it("does not repeat a project-wide book, and scopes each to the area", () => {
-    expect(briefingFor(pane, "interface").books).toEqual([]);
-    expect(titles(scoped("interface", "intent").rows)).toEqual(["2. The seat"]);
-    expect(titles(scoped("interface", "doctrine").rows)).toEqual(["A chapter the index does not name"]);
-    expect(titles(scoped("goals", "doctrine").rows)).toEqual(["Events are the source of truth"]);
+  it("says so when the ledger carries no such goal, rather than inventing one", () => {
+    expect(briefingFor(pane, "nowhere").goal).toEqual({
+      id: "nowhere", title: "nowhere", state: "", intent: "", found: false, count: 0,
+    });
   });
 
-  it("says in one line when the area has no chapter, rather than Nothing recorded", () => {
-    const intent = scoped("goals", "intent");
-
-    expect(intent.rows).toEqual([]);
-    expect(intent.none).toBe("No intent chapter for The goal ledger yet; the project-wide intent applies.");
+  it("carries no book at all: the intent and the doctrine are the project's", () => {
+    expect(briefingFor(pane, "interface-shell").books).toEqual([]);
+    expect(briefingFor(pane, null).books.map((one) => one.id)).toEqual(["intent", "doctrine"]);
   });
 
-  it("leaves the area chip off every row, because every row is in this area", () => {
-    const briefing = briefingFor(pane, "interface");
-
-    for (const row of [...briefing.decisions, ...briefing.designs.open, ...briefing.questions]) {
-      expect({ title: row.title, areas: row.areas }).toEqual({ title: row.title, areas: [] });
-    }
-    expect(briefingFor(pane, null).designs.open[0].areas).toEqual(["interface"]);
+  it("narrows every section to the records whose goals name it", () => {
+    expect(titles(briefingFor(pane, "goal-ledger").decisions)).toEqual(["One binary"]);
+    expect(briefingFor(pane, "interface-shell").decisions).toEqual([]);
+    expect(titles(briefingFor(pane, "interface-shell").questions)).toEqual(["Where does intent live?"]);
+    expect(titles(briefingFor(pane, "interface-shell").designs.open)).toEqual(["The Project pane", "The briefing"]);
+    // A record about two goals is shown under both, because it is about both.
+    expect(titles(briefingFor(pane, "goal-ledger").designs.runs[0].rows)).toEqual(["The ledger"]);
+    expect(titles(briefingFor(pane, "interface-shell").designs.runs[0].rows)).toEqual(["The ledger"]);
   });
 
-  it("narrows every section to the records that name the area", () => {
-    expect(titles(briefingFor(pane, "goals").decisions)).toEqual(["One binary"]);
-    expect(briefingFor(pane, "interface").decisions).toEqual([]);
-    expect(titles(briefingFor(pane, "interface").questions)).toEqual(["Where does intent live?"]);
-    expect(titles(briefingFor(pane, "interface").designs.open)).toEqual(["The Project pane", "The briefing"]);
+  it("shows a record about the whole project on the project page and on no goal page", () => {
+    expect(titles(briefingFor(pane, null).questions)).toEqual(["Where does intent live?", "Who accepts?"]);
+    expect(titles(briefingFor(pane, "first-release").designs.open)).toEqual([]);
+  });
+});
+
+describe("what a record is about", () => {
+  it("names each goal as a link to its own page", () => {
+    expect(aboutOf(pane, ["interface-shell", "goal-ledger"])).toEqual([
+      { id: "interface-shell", name: "interface-shell", to: "/project/goal/interface-shell", known: true },
+      { id: "goal-ledger", name: "goal-ledger", to: "/project/goal/goal-ledger", known: true },
+    ]);
+  });
+
+  it("still names a goal the ledger does not carry, and says it is not known", () => {
+    expect(aboutOf(pane, ["nowhere"])).toEqual([
+      { id: "nowhere", name: "nowhere", to: "/project/goal/nowhere", known: false },
+    ]);
+  });
+
+  it("says nothing for a record about the project as a whole", () => {
+    expect(aboutOf(pane, [])).toEqual([]);
   });
 });
 
 describe("the trail above a document", () => {
-  it("names the area, the kind and the title of a record", () => {
-    const document = documentOf("plans/designs/pane.md", { kind: "design", id: "design-pane", areas: ["interface"] });
+  it("names the section, the kind and the title of a record", () => {
+    const document = documentOf("plans/designs/pane.md", {
+      kind: "design", id: "design-pane", goals: ["interface-shell"],
+    });
 
     expect(crumbsFor(pane, document)).toEqual([
       { label: "Project", to: "/project" },
-      { label: "The browser workspace", to: "/project/area/interface" },
       { label: "Designs", to: null },
       { label: "plans/designs/pane.md", to: null },
     ]);
   });
 
-  it("says Everything for a record that names no declared area", () => {
+  it("reads the same for a record about the project as a whole", () => {
     const document = documentOf("metasystem/docs/decisions/0001.md", {
-      kind: "decision", id: "decision-one", areas: ["project"],
+      kind: "decision", id: "decision-one", goals: [],
     });
 
-    expect(crumbsFor(pane, document)[1]).toEqual({ label: "Everything", to: "/project" });
+    expect(crumbsFor(pane, document)[1]).toEqual({ label: "Decisions", to: null });
   });
 
   it("names the book a bound chapter belongs to", () => {
@@ -331,10 +357,12 @@ describe("the left rail", () => {
     expect(rail?.next?.title).toBe("2. The seat");
   });
 
-  it("reads a record among the records of its kind in its areas", () => {
-    const rail = railFor(pane, documentOf("plans/designs/pane.md", { kind: "design", id: "design-pane", areas: ["interface"] }));
+  it("reads a record among the records of its own kind, whatever it is about", () => {
+    const rail = railFor(pane, documentOf("plans/designs/pane.md", {
+      kind: "design", id: "design-pane", goals: ["interface-shell"],
+    }));
 
-    expect(rail?.title).toBe("Designs · The browser workspace");
+    expect(rail?.title).toBe("Designs");
     expect(rail?.siblings.map((sibling) => sibling.title)).toEqual([
       "The Project pane",
       "The briefing",
@@ -345,28 +373,17 @@ describe("the left rail", () => {
     expect(rail?.next?.title).toBe("The briefing");
   });
 
-  it("reads a record that names no declared area among every record of its kind", () => {
+  it("reads the one record of its kind among itself", () => {
     const rail = railFor(pane, documentOf("metasystem/docs/decisions/0001.md", {
-      kind: "decision", id: "decision-one", areas: ["project"],
+      kind: "decision", id: "decision-one", goals: ["goal-ledger"],
     }));
 
     // The only decision in the checkout. The rail still says what this is read
     // among, marks it, and offers nowhere to step: a record with no siblings
     // keeps its region, or the reading would slide into the rail's column.
-    expect(rail?.title).toBe("Decisions · Everything");
+    expect(rail?.title).toBe("Decisions");
     expect(rail?.siblings.map((sibling) => sibling.title)).toEqual(["One binary"]);
     expect(rail?.siblings.map((sibling) => sibling.current)).toEqual([true]);
-    expect(rail?.previous).toBeNull();
-    expect(rail?.next).toBeNull();
-  });
-
-  it("reads the one record of its kind in its area among itself", () => {
-    const rail = railFor(pane, documentOf("metasystem/docs/decisions/0001.md", {
-      kind: "decision", id: "decision-one", areas: ["goals"],
-    }));
-
-    expect(rail?.title).toBe("Decisions · The goal ledger");
-    expect(rail?.siblings.map((sibling) => sibling.title)).toEqual(["One binary"]);
     expect(rail?.previous).toBeNull();
     expect(rail?.next).toBeNull();
   });

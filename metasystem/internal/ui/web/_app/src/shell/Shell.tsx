@@ -101,7 +101,7 @@ export function Shell() {
           four say which gate brings them. */}
       <Route path="/backlog" element={<BacklogPane />} />
       <Route path="/project" element={<ProjectPane />} />
-      <Route path="/project/area/:slug" element={<ProjectPane />} />
+      <Route path="/project/goal/:id" element={<ProjectPane />} />
       <Route path="/project/doc/*" element={<DocumentPane />} />
       {projectSections
         .filter((candidate) => candidate.id !== "backlog" && candidate.id !== "project")

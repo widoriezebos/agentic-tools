@@ -9,8 +9,8 @@ import (
 )
 
 // The adapter's fixtures are whole small projects written into the two layouts
-// the checkout fixtures already build: a one-page intent book declaring two
-// areas, a doctrine book whose reading order names a record and binds a
+// the checkout fixtures already build: a ledger of three goals, a one-page
+// intent book, a doctrine book whose reading order names a record and binds a
 // document, one decision, three designs across the two homes, a register, and
 // enough Markdown carrying no head to prove that the rest of the checkout is
 // still listed by path.
@@ -19,15 +19,23 @@ import (
 // imported: a package's tests are not an API, and a fixture that drifted from
 // the one it copied would be a fault this pane could not see.
 
-func record(title, kind, id, status, areas string, extra ...string) string {
+func record(title, kind, id, status, goals string, extra ...string) string {
 	head := []string{
 		"- Kind: " + kind,
 		"- Id: " + id,
 		"- Status: " + status,
-		"- Areas: " + areas,
+	}
+	if goals != "" {
+		head = append(head, "- Goals: "+goals)
 	}
 	head = append(head, extra...)
 	return "# " + title + "\n\n" + strings.Join(head, "\n") + "\n"
+}
+
+// goalFile is one goal of the ledger as the ledger writes it: only the heading,
+// the state and the intent are read from it here.
+func goalFile(id, state, intent string) string {
+	return "# " + id + "\n\n- State: " + state + "\n- Intent: " + intent + "\n"
 }
 
 // seed writes the project into one layout. state is the checkout-relative
@@ -40,9 +48,17 @@ func seed(t *testing.T, roots Roots) string {
 		state = relativeTo(t, roots.Checkout, roots.StateRoot) + "/"
 	}
 
+	plant(t, roots.Checkout, state+"plans/goals/backlog.md", "# backlog\n\n- SyncMode: local\n")
+	plant(t, roots.Checkout, state+"plans/goals/ledger-sync.md",
+		goalFile("ledger-sync", "queued", "The ledger syncs on every landing"))
+	plant(t, roots.Checkout, state+"plans/goals/reading-pane.md",
+		goalFile("reading-pane", "approved", "The pane reads a document as a chapter"))
+	plant(t, roots.Checkout, state+"records/goals/two-homes.md",
+		goalFile("two-homes", "done", "Designs live in two homes"))
+
 	plant(t, roots.Checkout, state+"docs/architecture.md", "# The engine\n\nProse, and no head, so no kind is claimed.\n")
 	plant(t, roots.Checkout, state+"plans/designs/summaries.md",
-		record("A design that says what it is", "design", "design-summary", "draft", "billing")+
+		record("A design that says what it is", "design", "design-summary", "draft", "ledger-sync")+
 			"\n## Outcome\n\n"+
 			"| a | b |\n| --- | --- |\n| 1 | 2 |\n\n"+
 			"- a list, which is not prose\n\n"+
@@ -50,35 +66,32 @@ func seed(t *testing.T, roots Roots) string {
 			"It runs to the second line.\n\n"+
 			"A second paragraph nobody reads.\n")
 	plant(t, roots.Checkout, state+"docs/intent/index.md",
-		record("The project's intent", "intent", "intent-index", "accepted", "project")+
-			"\n## Areas\n"+
-			"- billing — Billing and invoicing\n"+
-			"- security — Security and identity\n"+
+		record("The project's intent", "intent", "intent-index", "accepted", "")+
 			"\n## Chapters\n"+
 			"- doc:"+state+"docs/architecture.md — The engine\n")
 	plant(t, roots.Checkout, state+"docs/doctrine/index.md",
-		record("The project's doctrine", "doctrine", "doctrine-index", "accepted", "project")+
+		record("The project's doctrine", "doctrine", "doctrine-index", "accepted", "")+
 			"\n## Chapters\n"+
 			"- doctrine-events — Events are the source of truth\n"+
 			"- doctrine-budgets\n")
 	plant(t, roots.Checkout, state+"docs/doctrine/events.md",
-		record("Events are the source of truth", "doctrine", "doctrine-events", "accepted", "billing"))
+		record("Events are the source of truth", "doctrine", "doctrine-events", "accepted", "ledger-sync"))
 	plant(t, roots.Checkout, state+"docs/doctrine/chapters/budgets.md",
-		record("Every run is budgeted", "doctrine", "doctrine-budgets", "draft", "security project"))
+		record("Every run is budgeted", "doctrine", "doctrine-budgets", "draft", "reading-pane"))
 	plant(t, roots.Checkout, state+"docs/decisions/0001-one-binary.md",
-		record("One binary", "decision", "decision-one-binary", "accepted", "project"))
+		record("One binary", "decision", "decision-one-binary", "accepted", ""))
 	plant(t, roots.Checkout, state+"plans/designs/ledger.md",
-		record("The ledger", "design", "design-ledger", "done", "billing"))
+		record("The ledger", "design", "design-ledger", "done", "ledger-sync"))
 	plant(t, roots.Checkout, state+"plans/designs/pane/reading.md",
-		record("The reading pane", "design", "design-reading", "draft", "security"))
+		record("The reading pane", "design", "design-reading", "draft", "reading-pane"))
 	plant(t, roots.Checkout, "plans/designs/interface.md",
-		record("The interface", "design", "design-interface", "accepted", "project billing"))
+		record("The interface", "design", "design-interface", "accepted", "ledger-sync two-homes"))
 	plant(t, roots.Checkout, state+"memory/questions.md",
 		"# Open questions\n\n"+
-			"| id | opened | question | areas | status |\n"+
+			"| id | opened | question | goals | status |\n"+
 			"| --- | --- | --- | --- | --- |\n"+
-			"| Q-1 | 2026-09-22 | Where does an adopted project's intent live? | project | open |\n"+
-			"| Q-2 | 2026-09-22 | Who accepts a decision? | billing | answered: decision-one-binary |\n")
+			"| Q-1 | 2026-09-22 | Where does an adopted project's intent live? |  | open |\n"+
+			"| Q-2 | 2026-09-22 | Who accepts a decision? | ledger-sync | answered: decision-one-binary |\n")
 	return state
 }
 
@@ -91,8 +104,8 @@ func relativeTo(t *testing.T, base, target string) string {
 	return filepath.ToSlash(relative)
 }
 
-// What the records declare is what the pane carries: the areas in the order
-// the intent index declares them, every record with its home, and the two
+// What the records declare is what the pane carries: the ledger's goals, live
+// ones first, every record with its home and the goals it is about, and the two
 // books in reading order.
 func TestPaneCarriesWhatTheRecordsDeclare(t *testing.T) {
 	t.Parallel()
@@ -105,19 +118,24 @@ func TestPaneCarriesWhatTheRecordsDeclare(t *testing.T) {
 	testutil.Require(t, "read the pane", err, nil)
 	testutil.Expect(t, "the schema version", pane.SchemaVersion, SchemaVersion)
 	testutil.Expect(t, "read at", pane.ReadAt, "2026-09-21T10:11:12Z")
-	testutil.Expect(t, "the declared areas", pane.Areas, []Area{
-		{Slug: "billing", Name: "Billing and invoicing"},
-		{Slug: "security", Name: "Security and identity"},
+	testutil.Expect(t, "the ledger's goals, live ones first", pane.Goals, []Goal{
+		{ID: "ledger-sync", Title: "ledger-sync", State: "queued",
+			Intent: "The ledger syncs on every landing"},
+		{ID: "reading-pane", Title: "reading-pane", State: "approved",
+			Intent: "The pane reads a document as a chapter"},
+		{ID: "two-homes", Title: "two-homes", State: "done", Intent: "Designs live in two homes"},
 	})
 	testutil.Expect(t, "every record, in path order", recordIDs(pane.Records), []string{
 		"decision-one-binary", "doctrine-budgets", "doctrine-events", "doctrine-index",
 		"intent-index", "design-ledger", "design-reading", "design-summary", "design-interface",
 	})
 	testutil.Expect(t, "one design's row", recordWithID(pane.Records, "design-reading"), Record{
-		Kind: "design", ID: "design-reading", Status: "draft", Areas: []string{"security"},
+		Kind: "design", ID: "design-reading", Status: "draft", Goals: []string{"reading-pane"},
 		Title: "The reading pane", Path: "metasystem/plans/designs/pane/reading.md",
 		Home: "metasystem/plans/designs",
 	})
+	testutil.Expect(t, "a record about the project as a whole names no goal",
+		recordWithID(pane.Records, "decision-one-binary").Goals, []string{})
 	// A record's own first words travel with it: the first prose paragraph
 	// after the head, as plain text, whatever the body opens with.
 	testutil.Expect(t, "a record's summary", recordWithID(pane.Records, "design-summary").Summary,
@@ -155,12 +173,12 @@ func TestPaneCarriesEachBookInReadingOrder(t *testing.T) {
 		{ID: "doctrine-events", Title: "Events are the source of truth"},
 		{ID: "doctrine-budgets", Title: "Every run is budgeted"},
 	})
-	testutil.Expect(t, "the schema the summaries arrived in", pane.SchemaVersion, 3)
+	testutil.Expect(t, "the schema the goals arrived in", pane.SchemaVersion, 4)
 	testutil.Expect(t, "the register", pane.Questions, []Question{
 		{ID: "Q-1", Opened: "2026-09-22", Question: "Where does an adopted project's intent live?",
-			Areas: []string{"project"}, Status: "open"},
+			Goals: []string{}, Status: "open"},
 		{ID: "Q-2", Opened: "2026-09-22", Question: "Who accepts a decision?",
-			Areas: []string{"billing"}, Status: "answered: decision-one-binary"},
+			Goals: []string{"ledger-sync"}, Status: "answered: decision-one-binary"},
 	})
 }
 
@@ -172,17 +190,17 @@ func TestPaneShowsARecordTheCheckRefuses(t *testing.T) {
 	roots := selfHostedFixture(t)
 	state := seed(t, roots)
 	plant(t, roots.Checkout, state+"plans/designs/broken.md",
-		record("A design with an area nobody declared", "design", "design-broken", "accepted", "nowhere"))
+		record("A design about a goal the ledger does not have", "design", "design-broken", "accepted", "nowhere"))
 
 	pane, err := ReadPane(roots, readAt)
 
 	testutil.Require(t, "read the pane", err, nil)
 	testutil.Expect(t, "the broken record is listed", recordWithID(pane.Records, "design-broken").Title,
-		"A design with an area nobody declared")
+		"A design about a goal the ledger does not have")
 	testutil.Expect(t, "the refusal", pane.Problems, []Problem{{
 		Path:    "metasystem/plans/designs/broken.md",
 		Line:    6,
-		Message: "the area nowhere is declared by no intent index",
+		Message: "the goal nowhere is not in the ledger",
 	}})
 }
 
@@ -259,7 +277,7 @@ func TestPaneCarriesNoBookWhereNoneIsDeclared(t *testing.T) {
 	testutil.Require(t, "read the pane", err, nil)
 	testutil.Expect(t, "no intent index", pane.Intent, Book{Chapters: []Chapter{}})
 	testutil.Expect(t, "no doctrine index", pane.Doctrine, Book{Chapters: []Chapter{}})
-	testutil.Expect(t, "no areas", pane.Areas, []Area{})
+	testutil.Expect(t, "no goals", pane.Goals, []Goal{})
 	testutil.Expect(t, "no records", pane.Records, []Record{})
 	testutil.Expect(t, "no questions", pane.Questions, []Question{})
 	testutil.Expect(t, "the checkout's Markdown is still listed",

@@ -23,7 +23,7 @@ import (
 // Three rules hold for every write:
 //
 //   - No path comes from the caller. A route takes an id, a title it turns
-//     into a slug of its own making, and areas the intent index declares; the
+//     into a slug of its own making, and goals the ledger carries; the
 //     directory is the resolver's own home for the kind. Nothing a caller
 //     sends can name a file.
 //   - Nothing is written that the resolver would then refuse. What is about to
@@ -60,13 +60,16 @@ func refuse(kind RefusalKind, message string) *Refusal {
 	return &Refusal{Kind: kind, Message: message}
 }
 
-// NewRecord is what a human asked for: a kind, a title, the areas it belongs
-// to, and the records it rests on or touches. Everything else — the id, the
+// NewRecord is what a human asked for: a kind, a title, the ledger goals it is
+// about, and the records it rests on or touches. Everything else — the id, the
 // status, the file name, the home, the body — is this package's to decide.
+//
+// Goals are optional: a record that names none is about the project as a whole,
+// which is what the memory system's grammar says a head with no Goals line is.
 type NewRecord struct {
 	Kind    string   `json:"kind"`
 	Title   string   `json:"title"`
-	Areas   []string `json:"areas"`
+	Goals   []string `json:"goals"`
 	Affects []string `json:"affects"`
 	Cites   []string `json:"cites"`
 }
@@ -74,7 +77,7 @@ type NewRecord struct {
 // NewQuestion is one row of the register, before it has an id or a date.
 type NewQuestion struct {
 	Question string   `json:"question"`
-	Areas    []string `json:"areas"`
+	Goals    []string `json:"goals"`
 }
 
 // Written is what a write produced: the record as the pane shapes it, the
@@ -140,12 +143,9 @@ func CreateRecord(roots Roots, asked NewRecord, now time.Time) (Written, error) 
 	if err != nil {
 		return Written{}, err
 	}
-	areas, refusal := declaredAreas(read, asked.Areas)
+	goals, refusal := ledgerGoals(read, asked.Goals)
 	if refusal != nil {
 		return Written{}, refusal
-	}
-	if len(areas) == 0 {
-		return Written{}, refuse(RefusalBad, "a record names at least one declared area")
 	}
 
 	home, found := homeFor(roots, asked.Kind)
@@ -189,7 +189,7 @@ func CreateRecord(roots Roots, asked NewRecord, now time.Time) (Written, error) 
 		return Written{}, refuse(RefusalExists, "the id "+id+" is already declared")
 	}
 
-	text := page(title, asked.Kind, id, areas, asked.Cites, asked.Affects, body)
+	text := page(title, asked.Kind, id, goals, asked.Cites, asked.Affects, body)
 	if problems := wouldRefuse(read, relative, text); len(problems) > 0 {
 		return Written{}, &Refusal{
 			Kind:     RefusalBad,
@@ -282,7 +282,7 @@ func AskQuestion(roots Roots, asked NewQuestion, now time.Time) (Asked, error) {
 	if err != nil {
 		return Asked{}, err
 	}
-	areas, refusal := declaredAreas(read, asked.Areas)
+	goals, refusal := ledgerGoals(read, asked.Goals)
 	if refusal != nil {
 		return Asked{}, refusal
 	}
@@ -296,7 +296,7 @@ func AskQuestion(roots Roots, asked NewQuestion, now time.Time) (Asked, error) {
 	}
 	id = "Q-" + id
 	row := "| " + id + " | " + now.Format(time.DateOnly) + " | " + text + " | " +
-		strings.Join(areas, " ") + " | " + resolver.QuestionOpen + " |"
+		strings.Join(goals, " ") + " | " + resolver.QuestionOpen + " |"
 
 	if err := within(roots.StateRoot, register.Path); err != nil {
 		return Asked{}, err
@@ -366,16 +366,23 @@ func SetQuestionStatus(roots Roots, id, status string) (Asked, error) {
 /* ------------------------------------------------------------ the page -- */
 
 // page is the record as it will be written: the title, the head the memory
-// system's grammar requires, the references the caller named, and the kind's
-// own empty sections. The optional keys are written in the resolver's own
-// order, so two records made here never disagree about where a key goes.
-func page(title, kind, id string, areas, cites, affects, sections []string) string {
+// system's grammar requires, the goals it is about where it names any, the
+// references the caller named, and the kind's own empty sections. The optional
+// keys are written in the resolver's own order, so two records made here never
+// disagree about where a key goes.
+//
+// A record about the project as a whole carries no Goals line at all, because
+// that is how the grammar says it: an empty line would be a key declaring
+// nothing.
+func page(title, kind, id string, goals, cites, affects, sections []string) string {
 	var out strings.Builder
 	out.WriteString("# " + title + "\n\n")
 	out.WriteString("- Kind: " + kind + "\n")
 	out.WriteString("- Id: " + id + "\n")
 	out.WriteString("- Status: " + resolver.StatusDraft + "\n")
-	out.WriteString("- Areas: " + strings.Join(areas, " ") + "\n")
+	if len(goals) > 0 {
+		out.WriteString("- Goals: " + strings.Join(goals, " ") + "\n")
+	}
 	if references := cleaned(cites); len(references) > 0 {
 		out.WriteString("- Cites: " + strings.Join(references, " ") + "\n")
 	}
@@ -491,7 +498,7 @@ func appendRow(text, row string) string {
 
 // registerColumns is the register's one table, by its columns, in the order the
 // grammar writes them.
-var registerColumns = []string{"id", "opened", "question", "areas", "status"}
+var registerColumns = []string{"id", "opened", "question", "goals", "status"}
 
 func sameColumns(line string) bool {
 	cells := strings.Split(strings.TrimSuffix(strings.TrimPrefix(line, "|"), "|"), "|")
@@ -513,7 +520,7 @@ func withStatusCell(line, status string) (string, bool) {
 		return "", false
 	}
 	segments := strings.Split(line, "|")
-	// A row is "" | id | opened | question | areas | status | "": seven
+	// A row is "" | id | opened | question | goals | status | "": seven
 	// segments around five cells. The status cell is the fifth of them.
 	if len(segments) < len(registerColumns)+2 {
 		return "", false
@@ -550,7 +557,6 @@ func wouldRefuse(read *resolver.Project, relative, text string) []Problem {
 		return []Problem{{Path: relative, Line: 1, Message: "this text does not declare itself a record"}}
 	}
 	refusals := problemsOfResolver(problems)
-	declared := read.DeclaredAreas()
 	if !includes(resolver.Kinds, record.Kind) {
 		refusals = append(refusals, Problem{Path: relative, Line: record.HeadLine,
 			Message: "the kind " + record.Kind + " is not one of " + strings.Join(resolver.Kinds, ", ")})
@@ -559,10 +565,10 @@ func wouldRefuse(read *resolver.Project, relative, text string) []Problem {
 		refusals = append(refusals, Problem{Path: relative, Line: record.HeadLine,
 			Message: "the status " + record.Status + " is not one of " + strings.Join(resolver.Statuses, ", ")})
 	}
-	for _, area := range record.Areas {
-		if !declared[area] {
+	for _, id := range record.Goals {
+		if !read.HasGoal(id) {
 			refusals = append(refusals, Problem{Path: relative, Line: record.HeadLine,
-				Message: "the area " + area + " is declared by no intent index"})
+				Message: "the goal " + id + " is not in the ledger"})
 		}
 	}
 	if first := read.Record(record.ID); first != nil && first.Path != relative {
@@ -580,23 +586,23 @@ func problemsOfResolver(problems []resolver.Problem) []Problem {
 	return refusals
 }
 
-// declaredAreas is the areas a caller named, each declared by the intent index,
-// each once, in the order they were named.
-func declaredAreas(read *resolver.Project, asked []string) ([]string, *Refusal) {
-	declared := read.DeclaredAreas()
-	areas, seen := []string{}, map[string]bool{}
-	for _, area := range asked {
-		area = strings.TrimSpace(area)
-		if area == "" || seen[area] {
+// ledgerGoals is the goals a caller named, each carried by the ledger, each
+// once, in the order they were named. Naming none is naming the project as a
+// whole, which is a thing to write and not a thing to refuse.
+func ledgerGoals(read *resolver.Project, asked []string) ([]string, *Refusal) {
+	goals, seen := []string{}, map[string]bool{}
+	for _, id := range asked {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
 			continue
 		}
-		if !declared[area] {
-			return nil, refuse(RefusalBad, "the area "+quoted(area)+" is declared by no intent index")
+		if !read.HasGoal(id) {
+			return nil, refuse(RefusalBad, "the goal "+quoted(id)+" is not in the ledger")
 		}
-		seen[area] = true
-		areas = append(areas, area)
+		seen[id] = true
+		goals = append(goals, id)
 	}
-	return areas, nil
+	return goals, nil
 }
 
 /* ----------------------------------------------------------- the re-reads -- */
@@ -628,7 +634,7 @@ func askedQuestion(roots Roots, id string) (Asked, error) {
 			ID:       question.ID,
 			Opened:   question.Opened,
 			Question: question.Text,
-			Areas:    list(question.Areas),
+			Goals:    list(question.Goals),
 			Status:   question.Status,
 		}}, nil
 	}

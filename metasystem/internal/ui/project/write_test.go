@@ -40,7 +40,7 @@ func refusalOf(t *testing.T, err error) *Refusal {
 }
 
 // Each kind lands in its own home at the state root, with a fresh id, a draft
-// status, the areas that were asked for and the kind's own empty sections —
+// status, the goals that were asked for and the kind's own empty sections —
 // and the resolver reads every one of them back as the record it claims to be.
 func TestCreateRecordWritesEachKindInItsHome(t *testing.T) {
 	t.Parallel()
@@ -59,7 +59,7 @@ func TestCreateRecordWritesEachKindInItsHome(t *testing.T) {
 			seed(t, roots)
 
 			written, err := CreateRecord(roots, NewRecord{
-				Kind: kind.kind, Title: "The Project Partner is a drawer", Areas: []string{"billing"},
+				Kind: kind.kind, Title: "The Project Partner is a drawer", Goals: []string{"ledger-sync"},
 				Affects: []string{"design-ledger"},
 			}, wroteAt)
 
@@ -69,7 +69,7 @@ func TestCreateRecordWritesEachKindInItsHome(t *testing.T) {
 				written.Absolute, filepath.Join(roots.Checkout, filepath.FromSlash(written.Path)))
 			testutil.Expect(t, "the kind", written.Record.Kind, kind.kind)
 			testutil.Expect(t, "the status", written.Record.Status, "draft")
-			testutil.Expect(t, "the areas", written.Record.Areas, []string{"billing"})
+			testutil.Expect(t, "the goals", written.Record.Goals, []string{"ledger-sync"})
 			testutil.Expect(t, "the title", written.Record.Title, "The Project Partner is a drawer")
 			testutil.Expect(t, "the home", written.Record.Home, kind.home)
 			testutil.Expect(t, "an id was minted", written.Record.ID != "", true)
@@ -78,7 +78,7 @@ func TestCreateRecordWritesEachKindInItsHome(t *testing.T) {
 			testutil.Expect(t, "the title line", strings.HasPrefix(on, "# The Project Partner is a drawer\n\n"), true)
 			testutil.Expect(t, "the head names the id", strings.Contains(on, "- Id: "+written.Record.ID+"\n"), true)
 			testutil.Expect(t, "the head is a draft", strings.Contains(on, "- Status: draft\n"), true)
-			testutil.Expect(t, "the head names the areas", strings.Contains(on, "- Areas: billing\n"), true)
+			testutil.Expect(t, "the head names the goals", strings.Contains(on, "- Goals: ledger-sync\n"), true)
 			testutil.Expect(t, "the head carries what it affects",
 				strings.Contains(on, "- Affects: design-ledger\n"), true)
 			for _, section := range kind.sections {
@@ -106,7 +106,7 @@ func TestCreateIntentChapterListsItInTheIndex(t *testing.T) {
 	before := fileAt(t, roots, "metasystem/docs/intent/index.md")
 
 	written, err := CreateRecord(roots, NewRecord{
-		Kind: "intent", Title: "Who this is for", Areas: []string{"billing"},
+		Kind: "intent", Title: "Who this is for",
 	}, wroteAt)
 
 	testutil.Require(t, "write the chapter", err, nil)
@@ -147,7 +147,7 @@ func TestCreateRecordRefusesADuplicateFileName(t *testing.T) {
 
 	roots := selfHostedFixture(t)
 	seed(t, roots)
-	asked := NewRecord{Kind: "decision", Title: "One binary", Areas: []string{"billing"}}
+	asked := NewRecord{Kind: "decision", Title: "One binary", Goals: []string{"ledger-sync"}}
 	first, err := CreateRecord(roots, asked, wroteAt)
 	testutil.Require(t, "create the first", err, nil)
 	on := fileAt(t, roots, first.Path)
@@ -161,23 +161,44 @@ func TestCreateRecordRefusesADuplicateFileName(t *testing.T) {
 	testutil.Expect(t, "the first record is untouched", fileAt(t, roots, first.Path), on)
 }
 
-// An area no intent index declares is refused, and nothing is written.
-func TestCreateRecordRefusesAnUndeclaredArea(t *testing.T) {
+// A goal the ledger does not have is refused, and nothing is written.
+func TestCreateRecordRefusesAGoalTheLedgerDoesNotHave(t *testing.T) {
 	t.Parallel()
 
 	roots := selfHostedFixture(t)
 	seed(t, roots)
 
 	_, err := CreateRecord(roots, NewRecord{
-		Kind: "decision", Title: "Somewhere else", Areas: []string{"billing", "logistics"},
+		Kind: "decision", Title: "Somewhere else", Goals: []string{"ledger-sync", "logistics"},
 	}, wroteAt)
 
 	refusal := refusalOf(t, err)
 	testutil.Expect(t, "the refusal", refusal.Kind, RefusalBad)
-	testutil.Expect(t, "the reason names the area", refusal.Message,
-		`the area "logistics" is declared by no intent index`)
+	testutil.Expect(t, "the reason names the goal", refusal.Message,
+		`the goal "logistics" is not in the ledger`)
 	_, statErr := os.Stat(filepath.Join(roots.Checkout, "metasystem/docs/decisions/somewhere-else.md"))
 	testutil.Expect(t, "nothing was written", os.IsNotExist(statErr), true)
+}
+
+// A record about the project as a whole names no goal, and carries no Goals
+// line at all: an empty key would declare nothing, and the grammar says a head
+// without one is about the whole.
+func TestCreateRecordMayNameNoGoalAtAll(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+
+	written, err := CreateRecord(roots, NewRecord{Kind: "decision", Title: "About the whole"}, wroteAt)
+
+	testutil.Require(t, "create the decision", err, nil)
+	testutil.Expect(t, "the goals it names", written.Record.Goals, []string{})
+	on := fileAt(t, roots, written.Path)
+	testutil.Expect(t, "the head carries no Goals line", strings.Contains(on, "- Goals:"), false)
+
+	pane, err := ReadPane(roots, readAt)
+	testutil.Require(t, "read the pane", err, nil)
+	testutil.Expect(t, "the project refuses nothing", pane.Problems, []Problem{})
 }
 
 // The kinds this surface does not create, and the requests it cannot make a
@@ -194,20 +215,17 @@ func TestCreateRecordRefusesWhatItCannotWrite(t *testing.T) {
 		reason string
 	}{
 		{"doctrine is not created here",
-			NewRecord{Kind: "doctrine", Title: "Events", Areas: []string{"billing"}},
+			NewRecord{Kind: "doctrine", Title: "Events", Goals: []string{"ledger-sync"}},
 			`the kind "doctrine" is not one of intent, decision, design`},
 		{"an unknown kind",
-			NewRecord{Kind: "note", Title: "Events", Areas: []string{"billing"}},
+			NewRecord{Kind: "note", Title: "Events", Goals: []string{"ledger-sync"}},
 			`the kind "note" is not one of intent, decision, design`},
 		{"no title",
-			NewRecord{Kind: "decision", Title: "   ", Areas: []string{"billing"}},
+			NewRecord{Kind: "decision", Title: "   ", Goals: []string{"ledger-sync"}},
 			"a record needs a title"},
 		{"a title that is no file name",
-			NewRecord{Kind: "decision", Title: "!!!", Areas: []string{"billing"}},
+			NewRecord{Kind: "decision", Title: "!!!", Goals: []string{"ledger-sync"}},
 			`the title "!!!" yields no file name`},
-		{"no area",
-			NewRecord{Kind: "decision", Title: "Events", Areas: []string{}},
-			"a record names at least one declared area"},
 	} {
 		t.Run(refused.what, func(t *testing.T) {
 			_, err := CreateRecord(roots, refused.asked, wroteAt)
@@ -275,19 +293,19 @@ func TestAskQuestionAppendsARow(t *testing.T) {
 	before := fileAt(t, roots, "metasystem/memory/questions.md")
 
 	asked, err := AskQuestion(roots, NewQuestion{
-		Question: "Where does an adopted application's doctrine live?", Areas: []string{"billing", "security"},
+		Question: "Where does an adopted application's doctrine live?", Goals: []string{"ledger-sync", "reading-pane"},
 	}, wroteAt)
 
 	testutil.Require(t, "ask", err, nil)
 	testutil.Expect(t, "the status", asked.Question.Status, "open")
 	testutil.Expect(t, "the date", asked.Question.Opened, "2026-09-22")
-	testutil.Expect(t, "the areas", asked.Question.Areas, []string{"billing", "security"})
+	testutil.Expect(t, "the goals", asked.Question.Goals, []string{"ledger-sync", "reading-pane"})
 	testutil.Expect(t, "the id is minted with the register's prefix",
 		strings.HasPrefix(asked.Question.ID, "Q-"), true)
 
 	after := fileAt(t, roots, "metasystem/memory/questions.md")
 	row := "| " + asked.Question.ID + " | 2026-09-22 | Where does an adopted application's doctrine live? " +
-		"| billing security | open |\n"
+		"| ledger-sync reading-pane | open |\n"
 	testutil.Expect(t, "the row is the table's last", strings.HasSuffix(after, row), true)
 	testutil.Expect(t, "every other row is untouched", strings.Replace(after, row, "", 1), before)
 }
@@ -302,14 +320,14 @@ func TestAskQuestionCreatesTheRegister(t *testing.T) {
 	testutil.Require(t, "remove the register",
 		os.Remove(filepath.Join(roots.Checkout, "metasystem/memory/questions.md")), nil)
 
-	asked, err := AskQuestion(roots, NewQuestion{Question: "Who accepts?", Areas: []string{"billing"}}, wroteAt)
+	asked, err := AskQuestion(roots, NewQuestion{Question: "Who accepts?", Goals: []string{"ledger-sync"}}, wroteAt)
 
 	testutil.Require(t, "ask", err, nil)
 	on := fileAt(t, roots, "metasystem/memory/questions.md")
-	testutil.Expect(t, "the header", strings.Contains(on, "| id | opened | question | areas | status |\n"), true)
+	testutil.Expect(t, "the header", strings.Contains(on, "| id | opened | question | goals | status |\n"), true)
 	testutil.Expect(t, "the rule", strings.Contains(on, "| --- | --- | --- | --- | --- |\n"), true)
 	testutil.Expect(t, "the row", strings.HasSuffix(on,
-		"| "+asked.Question.ID+" | 2026-09-22 | Who accepts? | billing | open |\n"), true)
+		"| "+asked.Question.ID+" | 2026-09-22 | Who accepts? | ledger-sync | open |\n"), true)
 
 	pane, err := ReadPane(roots, readAt)
 	testutil.Require(t, "read the pane", err, nil)
@@ -332,7 +350,7 @@ func TestAskQuestionRefusesWhatWouldBreakTheRow(t *testing.T) {
 		{"no words", "   ", "a question needs words"},
 	} {
 		t.Run(refused.what, func(t *testing.T) {
-			_, err := AskQuestion(roots, NewQuestion{Question: refused.question, Areas: []string{"billing"}}, wroteAt)
+			_, err := AskQuestion(roots, NewQuestion{Question: refused.question, Goals: []string{"ledger-sync"}}, wroteAt)
 
 			refusal := refusalOf(t, err)
 			testutil.Expect(t, "the refusal", refusal.Kind, RefusalBad)
@@ -409,7 +427,7 @@ func TestThePageIsWrittenByteForByte(t *testing.T) {
 	seed(t, roots)
 
 	written, err := CreateRecord(roots, NewRecord{
-		Kind: "decision", Title: "One binary", Areas: []string{"billing"},
+		Kind: "decision", Title: "One binary", Goals: []string{"ledger-sync"},
 		Cites: []string{"design-ledger"}, Affects: []string{"design-reading"},
 	}, wroteAt)
 
@@ -420,7 +438,7 @@ func TestThePageIsWrittenByteForByte(t *testing.T) {
 		"- Kind: decision",
 		"- Id: " + written.Record.ID,
 		"- Status: draft",
-		"- Areas: billing",
+		"- Goals: ledger-sync",
 		"- Cites: design-ledger",
 		"- Affects: design-reading",
 		"",
@@ -443,7 +461,7 @@ func TestDesignsAreWrittenInTheStateRootsHome(t *testing.T) {
 	seed(t, roots)
 
 	written, err := CreateRecord(roots, NewRecord{
-		Kind: "design", Title: "A new design", Areas: []string{"billing"},
+		Kind: "design", Title: "A new design", Goals: []string{"ledger-sync"},
 	}, wroteAt)
 
 	testutil.Require(t, "create the design", err, nil)
@@ -464,7 +482,7 @@ func TestAHomeThatIsNotThereYetIsMade(t *testing.T) {
 		os.RemoveAll(filepath.Join(roots.Checkout, "docs", "decisions")), nil)
 
 	written, err := CreateRecord(roots, NewRecord{
-		Kind: "decision", Title: "The first decision", Areas: []string{"billing"},
+		Kind: "decision", Title: "The first decision", Goals: []string{"ledger-sync"},
 	}, wroteAt)
 
 	testutil.Require(t, "create the first decision", err, nil)
@@ -481,11 +499,11 @@ func TestAnAdoptedProjectWritesInItsOwnHomes(t *testing.T) {
 	seed(t, roots)
 
 	written, err := CreateRecord(roots, NewRecord{
-		Kind: "decision", Title: "One binary, please", Areas: []string{"security"},
+		Kind: "decision", Title: "One binary, please", Goals: []string{"reading-pane"},
 	}, wroteAt)
 
 	testutil.Require(t, "create the decision", err, nil)
 	testutil.Expect(t, "the path", written.Path, "docs/decisions/one-binary-please.md")
-	testutil.Expect(t, "the head names the area",
-		strings.Contains(fileAt(t, roots, written.Path), "- Areas: security\n"), true)
+	testutil.Expect(t, "the head names the goal",
+		strings.Contains(fileAt(t, roots, written.Path), "- Goals: reading-pane\n"), true)
 }

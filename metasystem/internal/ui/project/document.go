@@ -52,7 +52,7 @@ type Head struct {
 	Kind       string   `json:"kind"`
 	ID         string   `json:"id"`
 	Status     string   `json:"status"`
-	Areas      []string `json:"areas"`
+	Goals      []string `json:"goals"`
 	Cites      []string `json:"cites"`
 	Affects    []string `json:"affects"`
 	Governs    []string `json:"governs"`
@@ -226,7 +226,7 @@ func declared(document *Document, roots Roots, id string) {
 		Kind:       found.Kind,
 		ID:         found.ID,
 		Status:     found.Status,
-		Areas:      list(found.Areas),
+		Goals:      list(found.Goals),
 		Cites:      list(found.Cites),
 		Affects:    list(found.Affects),
 		Governs:    list(found.Governs),

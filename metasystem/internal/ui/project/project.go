@@ -33,16 +33,18 @@ import (
 type Roots struct{ Checkout, Installation, StateRoot string }
 
 // SchemaVersion is the shape of the project resource the interface reads. It
-// is 3: the first was the catalogue of canonical documents, which guessed a
-// kind from a filename; the second carried what the records declare; this one
-// carries, beside each of them, the record's own first words.
-const SchemaVersion = 3
+// is 4: the first was the catalogue of canonical documents, which guessed a
+// kind from a filename; the second carried what the records declare; the third
+// carried, beside each of them, the record's own first words; this one carries
+// the ledger's goals where the third carried the intent index's areas, which
+// are gone.
+const SchemaVersion = 4
 
 // Pane is the whole of Project, read once, as it was at readAt.
 type Pane struct {
 	SchemaVersion int        `json:"schemaVersion"`
 	ReadAt        string     `json:"readAt"`
-	Areas         []Area     `json:"areas"`
+	Goals         []Goal     `json:"goals"`
 	Records       []Record   `json:"records"`
 	Intent        Book       `json:"intent"`
 	Doctrine      Book       `json:"doctrine"`
@@ -51,10 +53,13 @@ type Pane struct {
 	Documents     []File     `json:"documents"`
 }
 
-// Area is one slug the intent index declares, with the name it reads by.
-type Area struct {
-	Slug string `json:"slug"`
-	Name string `json:"name"`
+// Goal is one goal of the ledger: the project's one subdivision, named by its
+// ledger id, with where it stands and why it is open.
+type Goal struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	Intent string `json:"intent"`
 }
 
 // Record is one declared document: what it says it is, where it lives, and
@@ -65,7 +70,7 @@ type Record struct {
 	Kind    string   `json:"kind"`
 	ID      string   `json:"id"`
 	Status  string   `json:"status"`
-	Areas   []string `json:"areas"`
+	Goals   []string `json:"goals"`
 	Title   string   `json:"title"`
 	Path    string   `json:"path"`
 	Home    string   `json:"home"`
@@ -97,7 +102,7 @@ type Question struct {
 	ID       string   `json:"id"`
 	Opened   string   `json:"opened"`
 	Question string   `json:"question"`
-	Areas    []string `json:"areas"`
+	Goals    []string `json:"goals"`
 	Status   string   `json:"status"`
 }
 
@@ -127,7 +132,7 @@ func ReadPane(roots Roots, now time.Time) (Pane, error) {
 	pane := Pane{
 		SchemaVersion: SchemaVersion,
 		ReadAt:        stamp(now),
-		Areas:         areasOf(read),
+		Goals:         goalsOf(read),
 		Records:       recordsOf(read),
 		Intent:        bookOf(roots, read, resolver.KindIntent),
 		Doctrine:      bookOf(roots, read, resolver.KindDoctrine),
@@ -142,20 +147,22 @@ func ReadPane(roots Roots, now time.Time) (Pane, error) {
 	return pane, nil
 }
 
-// areasOf is the declared areas in declared order. A slug declared twice is
-// one area, and the project as a whole is not one of them: the pane's own
-// first row is everything, which is what naming it would mean.
-func areasOf(read *resolver.Project) []Area {
-	areas := []Area{}
-	seen := map[string]bool{}
-	for _, area := range read.Areas {
-		if area.Slug == resolver.ProjectArea || seen[area.Slug] {
-			continue
-		}
-		seen[area.Slug] = true
-		areas = append(areas, Area{Slug: area.Slug, Name: area.Name})
+// goalsOf is the ledger's goals in the order the tree places them: the live
+// ones first, each in id order, then the concluded ones. The counts the tree
+// carries are the verb's; the pane counts what it shows, from the records it
+// was given.
+func goalsOf(read *resolver.Project) []Goal {
+	tree, _ := read.Tree()
+	goals := make([]Goal, 0, len(tree))
+	for _, one := range tree {
+		goals = append(goals, Goal{
+			ID:     one.Goal.ID,
+			Title:  one.Goal.Title,
+			State:  one.Goal.State,
+			Intent: one.Goal.Intent,
+		})
 	}
-	return areas
+	return goals
 }
 
 // recordsOf is every record the resolver listed, in its order, whether or not
@@ -173,7 +180,7 @@ func describe(record resolver.Record) Record {
 		Kind:    record.Kind,
 		ID:      record.ID,
 		Status:  record.Status,
-		Areas:   list(record.Areas),
+		Goals:   list(record.Goals),
 		Title:   record.Title,
 		Path:    record.Path,
 		Home:    record.Home,
@@ -232,7 +239,7 @@ func questionsOf(read *resolver.Project) []Question {
 			ID:       question.ID,
 			Opened:   question.Opened,
 			Question: question.Text,
-			Areas:    list(question.Areas),
+			Goals:    list(question.Goals),
 			Status:   question.Status,
 		})
 	}

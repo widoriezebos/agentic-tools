@@ -20,8 +20,12 @@ const STATUS = "/status";
 
 export type DocumentState = "readable" | "unreadable" | "too-large";
 
-/** One slug the intent index declares, with the name it reads by. */
-export type Area = { slug: string; name: string };
+/**
+ * One goal of the ledger: the project's one subdivision, named by its ledger
+ * id, with where it stands and why it is open. The title is the goal file's own
+ * heading, which in this ledger is the id itself.
+ */
+export type Goal = { id: string; title: string; state: string; intent: string };
 
 /**
  * One declared record: what it says it is, where it lives, and its own first
@@ -32,7 +36,8 @@ export type ProjectRecord = {
   kind: string;
   id: string;
   status: string;
-  areas: string[];
+  /** The ledger goals this record is about; empty is the project as a whole. */
+  goals: string[];
   title: string;
   path: string;
   home: string;
@@ -48,7 +53,7 @@ export type Chapter = { id?: string; path?: string; title: string; summary: stri
 /** A book: its index, which is a record of the kind, and its reading order. */
 export type Book = { index: ProjectRecord | null; chapters: Chapter[] };
 
-export type Question = { id: string; opened: string; question: string; areas: string[]; status: string };
+export type Question = { id: string; opened: string; question: string; goals: string[]; status: string };
 
 /** One refusal the check verb would print, anchored where a human can act. */
 export type Problem = { path: string; line: number; message: string };
@@ -59,7 +64,7 @@ export type DocumentFile = { path: string; title: string };
 export type Pane = {
   schemaVersion: number;
   readAt: string;
-  areas: Area[];
+  goals: Goal[];
   records: ProjectRecord[];
   intent: Book;
   doctrine: Book;
@@ -111,7 +116,7 @@ export type RecordHead = {
   kind: string;
   id: string;
   status: string;
-  areas: string[];
+  goals: string[];
   cites: string[];
   affects: string[];
   governs: string[];
@@ -217,9 +222,9 @@ export async function loadDocument(id: string, signal?: AbortSignal): Promise<Do
  * server's to decide, and none of it is in this object: there is no path here
  * because no path travels.
  */
-export type NewRecord = { kind: string; title: string; areas: string[]; affects?: string[]; cites?: string[] };
+export type NewRecord = { kind: string; title: string; goals: string[]; affects?: string[]; cites?: string[] };
 
-export type NewQuestion = { question: string; areas: string[] };
+export type NewQuestion = { question: string; goals: string[] };
 
 /** What a write produced, re-read through the resolver before it answered. */
 export type Written = { record: ProjectRecord; path: string; absolute: string };

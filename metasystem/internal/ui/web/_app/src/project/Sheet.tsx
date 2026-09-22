@@ -6,8 +6,8 @@ import {
   failureMessage,
   setQuestionStatus,
   setRecordStatus,
-  type Area,
   type Asked,
+  type Goal,
   type Written,
 } from "./api";
 import {
@@ -43,9 +43,9 @@ import { Button } from "../shell/controls";
 
 /** What the sheet was opened to do. */
 export type Request =
-  | { mode: "record"; kind: Kind; area: string | null }
+  | { mode: "record"; kind: Kind; goal: string | null }
   | { mode: "status"; id: string; title: string; path: string; status: string }
-  | { mode: "question"; area: string | null }
+  | { mode: "question"; goal: string | null }
   | { mode: "answer"; id: string; question: string };
 
 /** What it did, for the caller to act on. */
@@ -59,18 +59,15 @@ export type Done =
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/** The area every project has and no intent index declares. */
-const WHOLE = "project";
-
 export function Sheet({
   request,
-  areas,
+  goals,
   onClose,
   onDone,
 }: {
   request: Request;
-  /** The declared areas, in the order the intent index declares them. */
-  areas: Area[];
+  /** The ledger's goals, live ones first, as the pane carries them. */
+  goals: Goal[];
   onClose: () => void;
   onDone: (done: Done) => void;
 }) {
@@ -146,13 +143,13 @@ export function Sheet({
         onKeyDown={keys}
       >
         {request.mode === "record" && (
-          <RecordForm request={request} areas={areas} sending={sending} onClose={onClose} onSend={send} />
+          <RecordForm request={request} goals={goals} sending={sending} onClose={onClose} onSend={send} />
         )}
         {request.mode === "status" && (
           <StatusForm request={request} sending={sending} onClose={onClose} onSend={send} />
         )}
         {request.mode === "question" && (
-          <QuestionForm request={request} areas={areas} sending={sending} onClose={onClose} onSend={send} />
+          <QuestionForm request={request} goals={goals} sending={sending} onClose={onClose} onSend={send} />
         )}
         {request.mode === "answer" && (
           <AnswerForm request={request} sending={sending} onClose={onClose} onSend={send} />
@@ -214,24 +211,24 @@ function Foot({
 }
 
 /**
- * A new record: the title, the areas, and the page as it will be written. The
- * page is read-only — it is what the fields make, not a second place to type —
- * and it changes as the fields change.
+ * A new record: the title, the goals it is about, and the page as it will be
+ * written. The page is read-only — it is what the fields make, not a second
+ * place to type — and it changes as the fields change.
  */
 function RecordForm({
   request,
-  areas,
+  goals,
   sending,
   onClose,
   onSend,
 }: {
-  request: { kind: Kind; area: string | null };
-  areas: Area[];
+  request: { kind: Kind; goal: string | null };
+  goals: Goal[];
   sending: boolean;
   onClose: () => void;
   onSend: Send;
 }) {
-  const [draft, setDraft] = useState<Draft>(() => emptyDraft(request.kind, request.area));
+  const [draft, setDraft] = useState<Draft>(() => emptyDraft(request.kind, request.goal));
   const blocked = incomplete(draft);
   const action = ACTIONS[draft.kind];
   return (
@@ -248,12 +245,12 @@ function RecordForm({
           }}
         />
       </div>
-      <Areas
+      <Goals
         name="record"
-        areas={areas}
-        chosen={draft.areas}
+        goals={goals}
+        chosen={draft.goals}
         onChange={(chosen) => {
-          setDraft({ ...draft, areas: chosen });
+          setDraft({ ...draft, goals: chosen });
         }}
       />
       <div className="ms-writing-field">
@@ -335,19 +332,19 @@ function StatusForm({
 /** A question: one row of the register, open, dated by the server. */
 function QuestionForm({
   request,
-  areas,
+  goals,
   sending,
   onClose,
   onSend,
 }: {
-  request: { area: string | null };
-  areas: Area[];
+  request: { goal: string | null };
+  goals: Goal[];
   sending: boolean;
   onClose: () => void;
   onSend: Send;
 }) {
   const [question, setQuestion] = useState("");
-  const [chosen, setChosen] = useState<string[]>(request.area === null ? [] : [request.area]);
+  const [chosen, setChosen] = useState<string[]>(request.goal === null ? [] : [request.goal]);
   const blocked = blockedQuestion(question);
   return (
     <>
@@ -363,7 +360,7 @@ function QuestionForm({
           }}
         />
       </div>
-      <Areas name="question" areas={areas} chosen={chosen} onChange={setChosen} />
+      <Goals name="question" goals={goals} chosen={chosen} onChange={setChosen} />
       <Foot
         confirm="Ask"
         note="Appends a row to memory/questions.md with a fresh id, today's date, and status open."
@@ -373,7 +370,7 @@ function QuestionForm({
         onConfirm={() => {
           onSend(async () => ({
             mode: "question",
-            asked: await askQuestion({ question: question.trim(), areas: chosen }),
+            asked: await askQuestion({ question: question.trim(), goals: chosen }),
           }));
         }}
       />
@@ -439,43 +436,47 @@ function AnswerForm({
 }
 
 /**
- * The areas, as checkboxes over what the intent index declares, plus the one
- * area no index declares: the project as a whole. A record belongs to as many
- * as it belongs to, which is why these are not a select.
+ * The goals, as a multiple select over what the ledger carries, live ones
+ * first, each labelled by its id and where it stands.
+ *
+ * It is a select and not a row of checkboxes because a real ledger carries
+ * hundreds of goals: a list of that many checkboxes would be the sheet. It is
+ * multiple because a record may be about more than one, and choosing none is a
+ * record about the project as a whole, which is why nothing here is required.
  */
-function Areas({
+function Goals({
   name,
-  areas,
+  goals,
   chosen,
   onChange,
 }: {
   name: string;
-  areas: Area[];
+  goals: Goal[];
   chosen: string[];
   onChange: (chosen: string[]) => void;
 }) {
-  const rows = [...areas, { slug: WHOLE, name: "The project as a whole" }];
+  const field = `ms-writing-${name}-goals`;
   return (
-    <fieldset className="ms-writing-areas">
-      <legend className="ms-writing-label">Areas</legend>
-      {rows.map((area) => (
-        <label key={area.slug} className="ms-writing-area" htmlFor={`ms-writing-${name}-${area.slug}`}>
-          <input
-            id={`ms-writing-${name}-${area.slug}`}
-            type="checkbox"
-            checked={chosen.includes(area.slug)}
-            onChange={(event) => {
-              onChange(
-                event.target.checked
-                  ? [...chosen, area.slug]
-                  : chosen.filter((candidate) => candidate !== area.slug),
-              );
-            }}
-          />
-          <span>{area.name === "" ? area.slug : area.name}</span>
-          <span className="ms-mono ms-writing-slug">{area.slug}</span>
-        </label>
-      ))}
-    </fieldset>
+    <div className="ms-writing-field">
+      <label className="ms-writing-label" htmlFor={field}>
+        Goals — optional; none is the project as a whole
+      </label>
+      <select
+        id={field}
+        className="ms-writing-goals"
+        multiple
+        size={goals.length < 8 ? Math.max(goals.length, 2) : 8}
+        value={chosen}
+        onChange={(event) => {
+          onChange([...event.target.selectedOptions].map((option) => option.value));
+        }}
+      >
+        {goals.map((goal) => (
+          <option key={goal.id} value={goal.id}>
+            {goal.id} · {goal.state}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

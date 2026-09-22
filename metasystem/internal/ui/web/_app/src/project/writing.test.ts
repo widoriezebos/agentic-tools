@@ -12,7 +12,7 @@ import { fileFor, incomplete, noteFor, pageFor, slugOf, type Draft } from "./wri
  */
 
 function draft(over: Partial<Draft> = {}): Draft {
-  return { kind: "decision", title: "One binary", areas: ["interface"], affects: [], cites: [], ...over };
+  return { kind: "decision", title: "One binary", goals: ["ledger-sync"], affects: [], cites: [], ...over };
 }
 
 describe("the file name a title yields", () => {
@@ -40,7 +40,7 @@ describe("the page as it will be written", () => {
    */
   it("is the head the grammar requires, the references, and the kind's own sections", () => {
     expect(
-      pageFor(draft({ kind: "decision", title: "One binary", areas: ["billing"], cites: ["design-ledger"], affects: ["design-reading"] })),
+      pageFor(draft({ kind: "decision", title: "One binary", goals: ["ledger-sync"], cites: ["design-ledger"], affects: ["design-reading"] })),
     ).toBe(
       [
         "# One binary",
@@ -48,7 +48,7 @@ describe("the page as it will be written", () => {
         "- Kind: decision",
         "- Id: (a fresh id, minted when this is written)",
         "- Status: draft",
-        "- Areas: billing",
+        "- Goals: ledger-sync",
         "- Cites: design-ledger",
         "- Affects: design-reading",
         "",
@@ -65,6 +65,13 @@ describe("the page as it will be written", () => {
   it("leaves a key out rather than declaring it empty", () => {
     expect(pageFor(draft())).not.toContain("Cites");
     expect(pageFor(draft())).not.toContain("Affects");
+  });
+
+  it("writes no Goals line at all for a record about the project as a whole", () => {
+    expect(pageFor(draft({ goals: [] }))).not.toContain("Goals");
+    expect(pageFor(draft({ goals: ["ledger-sync", "reading-pane"] }))).toContain(
+      "- Goals: ledger-sync reading-pane\n",
+    );
   });
 
   it("gives each kind its own empty sections", () => {
@@ -96,7 +103,7 @@ describe("what the sheet says it will do", () => {
 });
 
 describe("what a draft needs before it can be written", () => {
-  it("is nothing, when it has a title and an area", () => {
+  it("is nothing, when it has a title", () => {
     expect(incomplete(draft())).toBe("");
   });
 
@@ -108,7 +115,7 @@ describe("what a draft needs before it can be written", () => {
     expect(incomplete(draft({ title: "!!!" }))).toContain("yields no file name");
   });
 
-  it("is an area", () => {
-    expect(incomplete(draft({ areas: [] }))).toBe("A record names at least one area.");
+  it("is not a goal: a record about the project as a whole names none", () => {
+    expect(incomplete(draft({ goals: [] }))).toBe("");
   });
 });

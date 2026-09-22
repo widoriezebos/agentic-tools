@@ -83,35 +83,41 @@ function trimHyphens(value: string): string {
 }
 
 /** A draft of a record, as the sheet holds it while a human fills it in. */
-export type Draft = { kind: Kind; title: string; areas: string[]; affects: string[]; cites: string[] };
+export type Draft = { kind: Kind; title: string; goals: string[]; affects: string[]; cites: string[] };
 
-export function emptyDraft(kind: Kind, area: string | null): Draft {
-  return { kind, title: "", areas: area === null ? [] : [area], affects: [], cites: [] };
+/**
+ * A draft of one kind, about one goal where the page it was opened from is a
+ * goal's, and about the project as a whole otherwise. Goals are optional
+ * throughout: a record that names none is about the whole.
+ */
+export function emptyDraft(kind: Kind, goal: string | null): Draft {
+  return { kind, title: "", goals: goal === null ? [] : [goal], affects: [], cites: [] };
 }
 
 export function asked(draft: Draft): NewRecord {
   return {
     kind: draft.kind,
     title: draft.title.trim().replace(/\s+/g, " "),
-    areas: draft.areas,
+    goals: draft.goals,
     affects: draft.affects,
     cites: draft.cites,
   };
 }
 
 /**
- * The page as it will be written. The head's order is the memory system's:
- * the four required keys, then the references, in the order the resolver reads
- * them.
+ * The page as it will be written. The head's order is the memory system's: the
+ * three required keys, then the goals where the record names any, then the
+ * references, in the order the resolver reads them.
+ *
+ * A record about the project as a whole carries no Goals line at all, because
+ * an empty key would declare nothing — the server writes it the same way.
  */
 export function pageFor(draft: Draft): string {
   const title = draft.title.trim().replace(/\s+/g, " ");
-  const head = [
-    `- Kind: ${draft.kind}`,
-    `- Id: ${MINTED}`,
-    "- Status: draft",
-    `- Areas: ${draft.areas.join(" ")}`,
-  ];
+  const head = [`- Kind: ${draft.kind}`, `- Id: ${MINTED}`, "- Status: draft"];
+  if (draft.goals.length > 0) {
+    head.push(`- Goals: ${draft.goals.join(" ")}`);
+  }
   if (draft.cites.length > 0) {
     head.push(`- Cites: ${draft.cites.join(" ")}`);
   }
@@ -151,9 +157,6 @@ export function incomplete(draft: Draft): string {
   }
   if (slugOf(draft.title) === "") {
     return "This title yields no file name; it needs a letter or a digit.";
-  }
-  if (draft.areas.length === 0) {
-    return "A record names at least one area.";
   }
   return "";
 }

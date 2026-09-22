@@ -13,7 +13,7 @@ import {
 } from "./api";
 import { Markdown } from "./Markdown";
 import { currentRow, outlineOf, type OutlineRow } from "./outline";
-import { crumbsFor, kindTitle, nameOf, railFor, shortID, type SiblingRail } from "./pane";
+import { aboutOf, crumbsFor, kindTitle, railFor, shortID, type About, type SiblingRail } from "./pane";
 import { dateOf, ownership, timeOf } from "./ProjectPane";
 import "./reading.css";
 import { Sheet, type Done, type Request } from "./Sheet";
@@ -29,13 +29,13 @@ import { titleFor, type Identity } from "../title";
  * One document, read as a chapter of a book rather than as a file.
  *
  * A record's head is a strip of facts at the top — what it is, where it
- * stands, what it rests on and what rests on it — and not four bullet lines in
- * the text, because a human reading a design is reading prose and the head is
- * not prose. The left rail is what this document is read among: the book's
- * chapters in reading order, or the records of its kind in its areas — which
- * may be this record alone — with previous and next at the foot where there is
- * anywhere to step. The right rail is the outline, and it marks where the
- * reader is as they scroll.
+ * stands, which goals it is about, what it rests on and what rests on it — and
+ * not four bullet lines in the text, because a human reading a design is
+ * reading prose and the head is not prose. The left rail is what this document
+ * is read among: the book's chapters in reading order, or the records of its
+ * own kind — which may be this record alone — with previous and next at the
+ * foot where there is anywhere to step. The right rail is the outline, and it
+ * marks where the reader is as they scroll.
  *
  * The three are three columns, each naming the one it is in, so a rail with
  * nothing to show leaves its column empty rather than moving the reading into
@@ -78,9 +78,9 @@ export function DocumentPane() {
   }, [id, attempt]);
 
   // The rails are the project's own structure: which book this belongs to,
-  // which records are its siblings, what the areas are called. They are read
-  // once beside the document, and a project that cannot be read leaves the
-  // document readable without them rather than failing the page.
+  // which records are its siblings, what the ledger calls its goals. They are
+  // read once beside the document, and a project that cannot be read leaves
+  // the document readable without them rather than failing the page.
   useEffect(() => {
     const aborter = new AbortController();
     loadPane(aborter.signal)
@@ -246,7 +246,7 @@ function Read({
       {sheet !== null && (
         <Sheet
           request={sheet}
-          areas={pane?.areas ?? []}
+          goals={pane?.goals ?? []}
           onClose={() => {
             setSheet(null);
           }}
@@ -286,8 +286,8 @@ function PlainFacts({
 }
 
 /**
- * A record's head, as facts: what kind it is and where it belongs above the
- * title, where it stands and where it lives beneath it, and the records it
+ * A record's head, as facts: what kind it is above the title, where it stands
+ * and where it lives beneath it, which goals it is about, and the records it
  * rests on and that rest on it as links.
  */
 function RecordFacts({
@@ -307,21 +307,14 @@ function RecordFacts({
   if (head === null) {
     return null;
   }
-  const areas = head.areas.map((area) => (pane === null ? area : nameOf(pane, area)));
   return (
     <header className="ms-facts-strip">
-      <p className="ms-facts-eyebrow">
-        {kindTitle(head.kind)}
-        {areas.length > 0 && ` · ${areas.join(", ")}`}
-      </p>
+      <p className="ms-facts-eyebrow">{kindTitle(head.kind)}</p>
       <h1 className="ms-md-h1" id={lead ?? undefined}>
         {document.title}
       </h1>
       <p className="ms-facts-line">
         <Status status={head.status} onChange={onStatusChange} />
-        {head.areas.map((area) => (
-          <Chip key={area}>{area}</Chip>
-        ))}
         {head.id !== "" && (
           <span className="ms-mono" title={head.id}>
             {shortID(head.id)}
@@ -430,12 +423,17 @@ function FileActions({ path }: { path: string }) {
   );
 }
 
-/** What this record names, and what names it. A relationship is a link. */
+/**
+ * What this record is about, what it names, and what names it. A relationship
+ * is a link, and so is a goal: the About line leads to the goal's own page,
+ * where the designs, decisions and questions about it are gathered.
+ */
 function Relationships({ document, pane }: { document: DocumentPayload; pane: PanePayload | null }) {
   const head = document.record;
   if (head === null) {
     return null;
   }
+  const about = aboutOf(pane, head.goals);
   const lists: { label: string; links: RecordLink[] }[] = [
     { label: "Rests on", links: byID(pane, head.cites) },
     { label: "Affects", links: byID(pane, head.affects) },
@@ -443,11 +441,12 @@ function Relationships({ document, pane }: { document: DocumentPayload; pane: Pa
     { label: "Superseded by", links: document.supersededBy },
     { label: "Referenced by", links: document.referencedBy },
   ].filter((list) => list.links.length > 0);
-  if (lists.length === 0) {
+  if (lists.length === 0 && about.length === 0) {
     return null;
   }
   return (
     <div className="ms-facts-links">
+      {about.length > 0 && <AboutRow about={about} />}
       {lists.map((list) => (
         <p key={list.label} className="ms-facts-link-row">
           <span className="ms-facts-link-label">{list.label}</span>
@@ -465,6 +464,20 @@ function Relationships({ document, pane }: { document: DocumentPayload; pane: Pa
         </p>
       ))}
     </div>
+  );
+}
+
+/** The goals a record is about, each a link to its own page. */
+function AboutRow({ about }: { about: About[] }) {
+  return (
+    <p className="ms-facts-link-row">
+      <span className="ms-facts-link-label">About</span>
+      {about.map((goal) => (
+        <NavLink key={goal.id} className="ms-mono" to={goal.to}>
+          {goal.name}
+        </NavLink>
+      ))}
+    </p>
   );
 }
 

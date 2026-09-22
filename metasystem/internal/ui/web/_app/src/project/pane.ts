@@ -3,11 +3,12 @@ import type {
   Chapter,
   DocumentFile,
   DocumentPayload,
+  Goal,
   Pane,
   ProjectRecord,
   Question,
 } from "./api";
-import { areaPath, documentPath } from "../routes";
+import { documentPath, goalPath } from "../routes";
 
 /**
  * What the briefing shows, and what the reader shows around one document,
@@ -15,7 +16,7 @@ import { areaPath, documentPath } from "../routes";
  *
  * The rules are here rather than in the components so that the ones worth
  * arguing about are readable and tested: what a book's own words are, which
- * records an area shows, how designs group by status, which records are a
+ * records a goal shows, how designs group by status, which records are a
  * record's siblings, and where previous and next go. Nothing here fetches, and
  * nothing here invents a row the payload did not carry.
  */
@@ -29,13 +30,19 @@ export type Row = {
   /** The record's own first words, or "" where it has none. */
   summary: string;
   status: string;
-  areas: string[];
   /** The checkout-relative path, shown in mono and never wrapped. */
   path: string;
 };
 
-/** One row of the left column: everything, or one declared area. */
-export type AreaRow = { slug: string | null; name: string; to: string; count: number };
+/** One row of the left column: the whole project, or one goal of the ledger. */
+export type GoalRow = { id: string | null; name: string; to: string; state: string };
+
+/**
+ * The left column: the project first, then the goals the ledger carries. A
+ * goal still worked under is a row of its own; a concluded one is inside the
+ * run its state names, because a rail of six hundred closed goals is not a rail.
+ */
+export type GoalRail = { project: GoalRow; live: GoalRow[]; runs: { state: string; rows: GoalRow[] }[] };
 
 /** One collapsed run of the checkout's other documents. */
 export type DocumentGroup = { id: string; title: string; files: DocumentFile[] };
@@ -55,28 +62,27 @@ export type BookBriefing = {
   chapters: TocEntry[];
 };
 
-/** A book under one area: the chapters that name it, and nothing else. */
-export type AreaBook = { id: string; title: string; rows: Row[]; none: string };
-
 /** The designs: what governs, open; what is finished, in one run each. */
 export type DesignRuns = { open: Row[]; runs: { status: string; rows: Row[] }[] };
 
-/** The block an area page opens with: what this area is, in the index's word. */
-export type AreaBriefing = { slug: string; name: string; declared: boolean; count: number };
+/**
+ * The block a goal page opens with: the goal's own id, its state and the
+ * ledger's own reason for it. A goal the ledger does not carry is said to be
+ * missing rather than invented.
+ */
+export type GoalBriefing = { id: string; title: string; state: string; intent: string; found: boolean; count: number };
 
 /** The aside's first block: what in this scope is waiting for a human. */
 export type NeedsYou = { questions: number; designs: number };
 
 /** The aside's second block: the size and health of what was read. */
-export type CheckoutFacts = { records: number; homes: number; areas: number; problems: number };
+export type CheckoutFacts = { records: number; homes: number; goals: number; problems: number };
 
 export type Briefing = {
-  /** The area this briefing is scoped to, or null for the whole project. */
-  area: AreaBriefing | null;
-  /** The two books, opened in full. Empty under an area. */
+  /** The goal this briefing is scoped to, or null for the whole project. */
+  goal: GoalBriefing | null;
+  /** The two books, opened in full. Empty under a goal: they are the project's. */
   books: BookBriefing[];
-  /** The two books scoped to one area. Empty for the whole project. */
-  areaBooks: AreaBook[];
   decisions: Row[];
   designs: DesignRuns;
   questions: Row[];
@@ -93,55 +99,64 @@ const BOOKS: readonly { id: string; kind: string; title: string; word: string }[
 /** The statuses a design is finished in, each collapsed into its own run. */
 export const FINISHED = ["done", "superseded"];
 
+/** The states a goal is still worked under. A goal in none of them is closed. */
+export const LIVE_STATES = ["queued", "approved", "claimed", "parked"];
+
+/** The states a goal ends in, each collapsed into its own run in the rail. */
+export const CONCLUDED_STATES = ["done", "abandoned"];
+
 /**
- * The left column: the whole project first, then each declared area in the
- * order the intent index declares it, each with the number of records that
- * name it. A record naming two areas is counted under both, because it is in
- * both.
+ * The left column: the project itself, then the ledger's goals in the order
+ * the payload carries them — live ones first, each in id order. The live ones
+ * are rows; the concluded ones are collected into the run their state names.
  */
-export function areaRows(pane: Pane): AreaRow[] {
-  const rows: AreaRow[] = [
-    { slug: null, name: "Project", to: "/project", count: pane.records.length },
-  ];
-  for (const area of pane.areas) {
-    rows.push({
-      slug: area.slug,
-      name: nameOf(pane, area.slug),
-      to: areaPath(area.slug),
-      count: pane.records.filter((record) => record.areas.includes(area.slug)).length,
-    });
-  }
-  return rows;
+export function goalRail(pane: Pane): GoalRail {
+  const rows = pane.goals.map((goal) => goalRow(goal));
+  return {
+    project: { id: null, name: "Project", to: "/project", state: "" },
+    live: rows.filter((row) => LIVE_STATES.includes(row.state)),
+    runs: CONCLUDED_STATES.map((state) => ({
+      state,
+      rows: rows.filter((row) => row.state === state),
+    })).filter((run) => run.rows.length > 0),
+  };
 }
 
-/** True when a selection shows this record. A null slug is everything. */
-function selected(areas: string[], slug: string | null): boolean {
-  return slug === null || areas.includes(slug);
+function goalRow(goal: Goal): GoalRow {
+  return { id: goal.id, name: nameOf(goal), to: goalPath(goal.id), state: goal.state };
 }
 
-/** The name the intent index gave a slug, or the slug where it gave none. */
-export function nameOf(pane: Pane, slug: string): string {
-  const area = pane.areas.find((candidate) => candidate.slug === slug);
-  return area === undefined || area.name === "" ? slug : area.name;
+/** True when a selection shows this record. A null id is everything. */
+function selected(goals: string[], id: string | null): boolean {
+  return id === null || goals.includes(id);
+}
+
+/** What a goal reads by: its own title where the ledger has one, else its id. */
+export function nameOf(goal: Goal): string {
+  return goal.title === "" ? goal.id : goal.title;
+}
+
+/** The goal this id names, or null where the ledger does not carry it. */
+export function goalWithID(pane: Pane, id: string): Goal | null {
+  return pane.goals.find((candidate) => candidate.id === id) ?? null;
 }
 
 /**
- * The briefing: the whole project, or one area of it.
+ * The briefing: the whole project, or one goal of it.
  *
  * For the project the two books open with their own first paragraph and their
- * reading order. For an area they do not open at all — a project-wide book
- * repeated under every area says nothing — and instead each lists only the
- * chapters that name the area, or says in one line that there are none and
- * that the project-wide book applies.
+ * reading order. A goal page carries neither: the intent and the doctrine are
+ * the project's, and repeating them under every goal would say nothing. What a
+ * goal page carries is its own intent, from the ledger, and then the decisions,
+ * designs and open questions whose Goals name it.
  */
-export function briefingFor(pane: Pane, slug: string | null): Briefing {
-  const decisions = recordRows(pane, "decision", slug);
-  const designs = designRuns(pane, slug);
-  const questions = questionRows(pane, slug);
+export function briefingFor(pane: Pane, id: string | null): Briefing {
+  const decisions = recordRows(pane, "decision", id);
+  const designs = designRuns(pane, id);
+  const questions = questionRows(pane, id);
   return {
-    area: slug === null ? null : areaBriefing(pane, slug),
-    books: slug === null ? BOOKS.map((book) => bookBriefing(pane, book.id, book.kind, book.title)) : [],
-    areaBooks: slug === null ? [] : BOOKS.map((book) => areaBook(pane, book, slug)),
+    goal: id === null ? null : goalBriefing(pane, id),
+    books: id === null ? BOOKS.map((book) => bookBriefing(pane, book.id, book.kind, book.title)) : [],
     decisions,
     designs,
     questions,
@@ -154,19 +169,19 @@ export function briefingFor(pane: Pane, slug: string | null): Briefing {
     checkout: {
       records: pane.records.length,
       homes: new Set(pane.records.map((record) => record.home)).size,
-      areas: pane.areas.length,
+      goals: pane.goals.length,
       problems: pane.problems.length,
     },
   };
 }
 
-function areaBriefing(pane: Pane, slug: string): AreaBriefing {
-  return {
-    slug,
-    name: nameOf(pane, slug),
-    declared: pane.areas.some((area) => area.slug === slug),
-    count: pane.records.filter((record) => record.areas.includes(slug)).length,
-  };
+function goalBriefing(pane: Pane, id: string): GoalBriefing {
+  const goal = goalWithID(pane, id);
+  const count = pane.records.filter((record) => record.goals.includes(id)).length;
+  if (goal === null) {
+    return { id, title: id, state: "", intent: "", found: false, count };
+  }
+  return { id, title: nameOf(goal), state: goal.state, intent: goal.intent, found: true, count };
 }
 
 /**
@@ -225,54 +240,12 @@ function tocEntry(pane: Pane, chapter: Chapter, position: number): TocEntry {
 }
 
 /**
- * One book under one area: the chapters of it that are records naming the
- * area, in reading order, and then the records of its kind the index does not
- * name. A bound document declares no area, so it belongs to the book rather
- * than to any part of it and is not repeated here.
- */
-function areaBook(pane: Pane, book: { id: string; kind: string; title: string; word: string }, slug: string): AreaBook {
-  const source: Book = book.id === "intent" ? pane.intent : pane.doctrine;
-  const rows: Row[] = [];
-  const named = new Set<string>();
-  const index = source.index;
-  if (index !== null) {
-    named.add(index.id);
-    if (selected(index.areas, slug)) {
-      rows.push(rowOf(index, "index", slug));
-    }
-  }
-  for (const [position, chapter] of source.chapters.entries()) {
-    if (chapter.id === undefined) {
-      continue;
-    }
-    named.add(chapter.id);
-    const record = recordWithID(pane, chapter.id);
-    if (record === null || !selected(record.areas, slug)) {
-      continue;
-    }
-    const row = rowOf(record, `chapter-${String(position)}`, slug);
-    rows.push(chapter.title === "" ? row : { ...row, title: chapter.title });
-  }
-  for (const record of pane.records) {
-    if (record.kind === book.kind && !named.has(record.id) && selected(record.areas, slug)) {
-      rows.push(rowOf(record, record.path, slug));
-    }
-  }
-  return {
-    id: book.id,
-    title: `${book.title} for this area`,
-    rows,
-    none: `No ${book.word} chapter for ${nameOf(pane, slug)} yet; the project-wide ${book.word} applies.`,
-  };
-}
-
-/**
  * The designs, grouped by what they are for: what is being written and what
  * governs stays open; what shipped and what was replaced go into one collapsed
  * run each, so a briefing is what is live rather than what has accumulated.
  */
-function designRuns(pane: Pane, slug: string | null): DesignRuns {
-  const designs = recordRows(pane, "design", slug);
+function designRuns(pane: Pane, goal: string | null): DesignRuns {
+  const designs = recordRows(pane, "design", goal);
   return {
     open: designs.filter((row) => !FINISHED.includes(row.status)),
     runs: FINISHED.map((status) => ({ status, rows: designs.filter((row) => row.status === status) })).filter(
@@ -281,39 +254,34 @@ function designRuns(pane: Pane, slug: string | null): DesignRuns {
   };
 }
 
-function recordRows(pane: Pane, kind: string, slug: string | null): Row[] {
+function recordRows(pane: Pane, kind: string, goal: string | null): Row[] {
   return pane.records
-    .filter((record) => record.kind === kind && selected(record.areas, slug))
-    .map((record) => rowOf(record, record.path, slug));
+    .filter((record) => record.kind === kind && selected(record.goals, goal))
+    .map((record) => rowOf(record, record.path));
 }
 
-/**
- * One row. Inside an area page the area chips are left off: every row there is
- * in that area, and a chip that says so on every line says nothing.
- */
-function rowOf(record: ProjectRecord, key: string, slug: string | null): Row {
+/** One row: what it is called, where it stands, and where it lives. */
+function rowOf(record: ProjectRecord, key: string): Row {
   return {
     key,
     title: record.title,
     to: documentPath(record.path),
     summary: record.summary,
     status: record.status,
-    areas: slug === null ? record.areas : [],
     path: record.path,
   };
 }
 
-/** A question reads as a row too: its text, where it stands, and its areas. */
-function questionRows(pane: Pane, slug: string | null): Row[] {
+/** A question reads as a row too: its text and where it stands. */
+function questionRows(pane: Pane, goal: string | null): Row[] {
   return pane.questions
-    .filter((question: Question) => selected(question.areas, slug))
+    .filter((question: Question) => selected(question.goals, goal))
     .map((question) => ({
       key: question.id === "" ? question.question : question.id,
       title: question.question,
       to: null,
       summary: "",
       status: question.status,
-      areas: slug === null ? question.areas : [],
       path: "",
     }));
 }
@@ -353,9 +321,20 @@ export function kindTitle(kind: string): string {
   return KIND_TITLES[kind] ?? "Documents";
 }
 
-/** What a record names of the areas the intent index actually declares. */
-function declaredAreas(pane: Pane, areas: string[]): string[] {
-  return areas.filter((area) => pane.areas.some((declared) => declared.slug === area));
+/** One goal a record is about, as a link to that goal's own page. */
+export type About = { id: string; name: string; to: string; known: boolean };
+
+/**
+ * What a record says it is about, as links. A goal the ledger does not carry is
+ * shown as the id it is and still opens its page, which says the ledger does
+ * not have it — the check verb refuses that record in the same breath, and
+ * hiding the name would hide the thing to act on.
+ */
+export function aboutOf(pane: Pane | null, goals: string[]): About[] {
+  return goals.map((id) => {
+    const goal = pane === null ? null : goalWithID(pane, id);
+    return { id, name: goal === null ? id : nameOf(goal), to: goalPath(id), known: goal !== null };
+  });
 }
 
 /** The book whose reading order names this document, or null. */
@@ -375,9 +354,13 @@ function bookOf(pane: Pane, document: DocumentPayload): { id: string; title: str
 }
 
 /**
- * The trail above a document: the section, where it belongs, what kind it is,
- * and what it is called. A chapter bound into a book is named by its book
- * instead, because that is the only place it belongs.
+ * The trail above a document: the section, what kind it is, and what it is
+ * called. A chapter bound into a book is named by its book instead, because
+ * that is the only place it belongs.
+ *
+ * The goals a record is about are not a step of the trail: a record may be
+ * about several, and the About line beneath the title names all of them as
+ * links rather than one of them as a place this document lives.
  */
 export function crumbsFor(pane: Pane | null, document: DocumentPayload): Crumb[] {
   const crumbs: Crumb[] = [{ label: "Project", to: "/project" }];
@@ -393,12 +376,6 @@ export function crumbsFor(pane: Pane | null, document: DocumentPayload): Crumb[]
     }
     return [...crumbs, { label: "Documents", to: null }, { label: document.title, to: null }];
   }
-  const areas = declaredAreas(pane, head.areas);
-  crumbs.push(
-    areas.length === 0
-      ? { label: "Everything", to: "/project" }
-      : { label: nameOf(pane, areas[0]), to: areaPath(areas[0]) },
-  );
   crumbs.push({ label: kindTitle(head.kind), to: null });
   return [...crumbs, { label: document.title, to: null }];
 }
@@ -408,15 +385,15 @@ export function crumbsFor(pane: Pane | null, document: DocumentPayload): Crumb[]
  *
  * A chapter of a book — bound or a record of its own — is read among the
  * book's chapters, in reading order, because that is the order it was written
- * to be read in. Every other record is read among the records of its kind in
- * its own areas, or, where it names no declared area, among every record of
- * its kind. A document that declares nothing has no siblings and no rail.
+ * to be read in. Every other record is read among the records of its own kind:
+ * the designs among the designs, the decisions among the decisions. A document
+ * that declares nothing has no siblings and no rail.
  *
- * A record that is the only one of its kind in its areas keeps its rail all
- * the same, naming itself and nothing else, with no previous and no next. The
- * rail says what this document is read among, and "the only decision in
- * billing" is an answer; a rail that vanished would leave the reader with one
- * region fewer and no way to know why.
+ * A record that is the only one of its kind keeps its rail all the same,
+ * naming itself and nothing else, with no previous and no next. The rail says
+ * what this document is read among, and "the only decision" is an answer; a
+ * rail that vanished would leave the reader with one region fewer and no way
+ * to know why.
  */
 export function railFor(pane: Pane, document: DocumentPayload): SiblingRail | null {
   const bound = bookOf(pane, document);
@@ -462,15 +439,10 @@ function kindRail(pane: Pane, document: DocumentPayload): SiblingRail | null {
   if (head === null) {
     return null;
   }
-  const areas = declaredAreas(pane, head.areas);
   const siblings = pane.records
-    .filter(
-      (record) =>
-        record.kind === head.kind && (areas.length === 0 || record.areas.some((area) => areas.includes(area))),
-    )
+    .filter((record) => record.kind === head.kind)
     .map((record) => siblingOf(record.path, record.title, record.status, document));
-  const where = areas.length === 0 ? "Everything" : areas.map((area) => nameOf(pane, area)).join(", ");
-  return { title: `${kindTitle(head.kind)} · ${where}`, siblings, previous: null, next: null };
+  return { title: kindTitle(head.kind), siblings, previous: null, next: null };
 }
 
 function siblingOf(path: string, title: string, note: string, document: DocumentPayload, key?: string): Sibling {

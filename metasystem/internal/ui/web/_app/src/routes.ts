@@ -79,7 +79,7 @@ export function sectionFor(pathname: string): Section | null {
  */
 export const nestedRoutes: readonly { path: string; sectionId: string }[] = [
   { path: "/project/doc", sectionId: "project" },
-  { path: "/project/area", sectionId: "project" },
+  { path: "/project/goal", sectionId: "project" },
 ];
 
 /**
@@ -124,12 +124,12 @@ export function routeFor(reference: Reference): string | null {
 /** Everything beneath this prefix is a document, named by the rest of it. */
 export const DOCUMENT_PREFIX = "/project/doc/";
 
-/** Everything beneath this prefix is one declared area of the project. */
-export const AREA_PREFIX = "/project/area/";
+/** Everything beneath this prefix is one goal of the ledger. */
+export const GOAL_PREFIX = "/project/goal/";
 
-/** Where one area is shown. The slug is one segment, encoded as one. */
-export function areaPath(slug: string): string {
-  return AREA_PREFIX + encodeURIComponent(slug);
+/** Where one goal is shown. The id is one segment, encoded as one. */
+export function goalPath(id: string): string {
+  return GOAL_PREFIX + encodeURIComponent(id);
 }
 
 /**

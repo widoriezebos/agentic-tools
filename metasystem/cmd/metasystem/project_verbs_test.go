@@ -15,8 +15,8 @@ import (
 )
 
 // projectFixture is a self-hosted checkout carrying a small declared project:
-// an intent book declaring one area, a decision, and two designs, one of them
-// at the checkout root's own second design home.
+// a ledger of two goals, an intent book, a decision, and two designs, one of
+// them at the checkout root's own second design home.
 func projectFixture(t *testing.T) string {
 	t.Helper()
 
@@ -47,20 +47,27 @@ func projectFixture(t *testing.T) string {
 	}
 	write("development/metasystem-design.md", "# The metasystem's design\n")
 
+	// The ledger the records are about: one live goal, one concluded, and the
+	// root record, which sits among the goal files and is not a goal.
+	write("metasystem/plans/goals/backlog.md", "# backlog\n\n- SyncMode: local\n")
+	write("metasystem/plans/goals/billing-run.md",
+		"# billing-run\n\n- State: queued\n- Intent: Billing runs nightly, and says what it did\n")
+	write("metasystem/records/goals/shipped.md",
+		"# shipped\n\n- State: done\n- Intent: The first release shipped\n")
+
 	write("metasystem/docs/intent/index.md",
-		"# The project's intent\n\n- Kind: intent\n- Id: intent-index\n- Status: accepted\n- Areas: project\n"+
-			"\n## Areas\n- billing — Billing and invoicing\n")
+		"# The project's intent\n\n- Kind: intent\n- Id: intent-index\n- Status: accepted\n")
 	write("metasystem/docs/decisions/0001-one-binary.md",
-		"# One binary\n\n- Kind: decision\n- Id: decision-one-binary\n- Status: accepted\n- Areas: project\n")
+		"# One binary\n\n- Kind: decision\n- Id: decision-one-binary\n- Status: accepted\n")
 	write("metasystem/plans/designs/ledger.md",
-		"# The ledger\n\n- Kind: design\n- Id: design-ledger\n- Status: done\n- Areas: billing\n"+
+		"# The ledger\n\n- Kind: design\n- Id: design-ledger\n- Status: done\n- Goals: billing-run\n"+
 			"- Affects: decision-one-binary\n")
 	write("plans/designs/interface.md",
-		"# The interface\n\n- Kind: design\n- Id: design-interface\n- Status: draft\n- Areas: billing\n"+
+		"# The interface\n\n- Kind: design\n- Id: design-interface\n- Status: draft\n- Goals: billing-run\n"+
 			"- Cites: design-ledger\n")
 	write("metasystem/memory/questions.md",
-		"# Open questions\n\n| id | opened | question | areas | status |\n| --- | --- | --- | --- | --- |\n"+
-			"| Q-1 | 2026-09-22 | Where does intent live? | project | open |\n")
+		"# Open questions\n\n| id | opened | question | goals | status |\n| --- | --- | --- | --- | --- |\n"+
+			"| Q-1 | 2026-09-22 | Where does intent live? |  | open |\n")
 	return filepath.Join(canonical, "metasystem")
 }
 
@@ -95,24 +102,24 @@ func TestProjectListVerbNarrows(t *testing.T) {
 	if code != 0 || problem != "" {
 		t.Fatalf("project list design = code %d, stderr %q", code, problem)
 	}
-	want := "design\tdesign-ledger\tdone\tbilling\tThe ledger\tmetasystem/plans/designs/ledger.md\n" +
-		"design\tdesign-interface\tdraft\tbilling\tThe interface\tplans/designs/interface.md\n"
+	want := "design\tdesign-ledger\tdone\tbilling-run\tThe ledger\tmetasystem/plans/designs/ledger.md\n" +
+		"design\tdesign-interface\tdraft\tbilling-run\tThe interface\tplans/designs/interface.md\n"
 	if out != want {
 		t.Fatalf("project list design printed\n%q\nwant\n%q", out, want)
 	}
 
 	_, out, _ = runProjectVerb(projectList, []string{"--root", root, "design", "--status", "draft"})
-	if out != "design\tdesign-interface\tdraft\tbilling\tThe interface\tplans/designs/interface.md\n" {
+	if out != "design\tdesign-interface\tdraft\tbilling-run\tThe interface\tplans/designs/interface.md\n" {
 		t.Fatalf("--status did not narrow: %q", out)
 	}
-	_, out, _ = runProjectVerb(projectList, []string{"--root", root, "decision", "--area", "billing"})
+	_, out, _ = runProjectVerb(projectList, []string{"--root", root, "decision", "--goal", "billing-run"})
 	if out != "" {
-		t.Fatalf("--area did not narrow: %q", out)
+		t.Fatalf("--goal did not narrow: %q", out)
 	}
 	// The register's rows list under the fifth kind, as the pages do under
 	// their four.
 	_, out, _ = runProjectVerb(projectList, []string{"--root", root, "question"})
-	if out != "question\tQ-1\topen\tproject\tWhere does intent live?\tmetasystem/memory/questions.md\n" {
+	if out != "question\tQ-1\topen\t\tWhere does intent live?\tmetasystem/memory/questions.md\n" {
 		t.Fatalf("project list question printed %q", out)
 	}
 	if code, _, _ := runProjectVerb(projectList, []string{"--root", root, "policy"}); code != 2 {
@@ -134,7 +141,7 @@ func TestProjectShowVerbNamesBothHalvesOfAReference(t *testing.T) {
 	if code != 0 || problem != "" {
 		t.Fatalf("project show = code %d, stderr %q", code, problem)
 	}
-	want := "One binary\nkind: decision\nid: decision-one-binary\nstatus: accepted\nareas: project\n" +
+	want := "One binary\nkind: decision\nid: decision-one-binary\nstatus: accepted\ngoals: \n" +
 		"path: metasystem/docs/decisions/0001-one-binary.md\nhome: metasystem/docs/decisions\n" +
 		"referenced by: design-ledger affects metasystem/plans/designs/ledger.md\n"
 	if out != want {
@@ -160,14 +167,36 @@ func TestProjectTreeVerbCountsEveryBucket(t *testing.T) {
 	if code != 0 || problem != "" {
 		t.Fatalf("project tree = code %d, stderr %q", code, problem)
 	}
-	want := "billing — Billing and invoicing\n" +
+	want := "billing-run — queued — Billing runs nightly, and says what it did\n" +
 		"  kinds: intent 0, doctrine 0, decision 0, design 2, question 0\n" +
 		"  status: draft 1, accepted 0, superseded 0, done 1, open 0, answered 0, withdrawn 0\n" +
+		"shipped — done — The first release shipped\n" +
+		"  kinds: intent 0, doctrine 0, decision 0, design 0, question 0\n" +
+		"  status: draft 0, accepted 0, superseded 0, done 0, open 0, answered 0, withdrawn 0\n" +
 		"project\n" +
 		"  kinds: intent 1, doctrine 0, decision 1, design 0, question 1\n" +
 		"  status: draft 0, accepted 2, superseded 0, done 0, open 1, answered 0, withdrawn 0\n"
 	if out != want {
 		t.Fatalf("project tree printed\n%q\nwant\n%q", out, want)
+	}
+}
+
+// A goal's intent is a paragraph in this ledger, and the tree is a shape: the
+// line carries at most a hundred characters of it, the ellipsis included.
+func TestProjectTreeVerbTruncatesALongIntent(t *testing.T) {
+	t.Parallel()
+
+	root := projectFixture(t)
+	long := strings.Repeat("the reason this goal is open, at length, ", 6)
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "billing-run.md"),
+		[]byte("# billing-run\n\n- State: queued\n- Intent: "+long+"\n"), 0o644); err != nil {
+		t.Fatalf("write the long intent: %v", err)
+	}
+	_, out, _ := runProjectVerb(projectTree, []string{"--root", root})
+	first := strings.SplitN(out, "\n", 2)[0]
+	intent := strings.TrimPrefix(first, "billing-run — queued — ")
+	if len([]rune(intent)) != 100 || !strings.HasSuffix(intent, "…") {
+		t.Fatalf("the truncated intent was %q, of %d characters", intent, len([]rune(intent)))
 	}
 }
 
@@ -179,13 +208,13 @@ func TestProjectCheckVerbPassesAndRefuses(t *testing.T) {
 	if code != 0 || problem != "" {
 		t.Fatalf("project check = code %d, stderr %q", code, problem)
 	}
-	if out != "project check passed: 4 record(s) in 6 home(s), 1 declared area(s), 1 question(s)\n" {
+	if out != "project check passed: 4 record(s) in 6 home(s), 1 question(s), 2 ledger goal(s)\n" {
 		t.Fatalf("project check's summary line was %q", out)
 	}
 
 	fault := filepath.Join(filepath.Dir(root), "metasystem", "docs", "decisions", "0002-shipping.md")
 	if err := os.WriteFile(fault,
-		[]byte("# A shipping decision\n\n- Kind: decision\n- Id: decision-shipping\n- Status: draft\n- Areas: shipping\n"),
+		[]byte("# A shipping decision\n\n- Kind: decision\n- Id: decision-shipping\n- Status: draft\n- Goals: shipping\n"),
 		0o644); err != nil {
 		t.Fatalf("write the fault: %v", err)
 	}
@@ -193,7 +222,7 @@ func TestProjectCheckVerbPassesAndRefuses(t *testing.T) {
 	if code != 1 || problem != "" {
 		t.Fatalf("a fault must refuse: code %d, stderr %q", code, problem)
 	}
-	if out != "metasystem/docs/decisions/0002-shipping.md:6: the area shipping is declared by no intent index\n" {
+	if out != "metasystem/docs/decisions/0002-shipping.md:6: the goal shipping is not in the ledger\n" {
 		t.Fatalf("project check printed %q", out)
 	}
 }

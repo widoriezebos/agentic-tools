@@ -23,9 +23,10 @@ func describedPane() project.Pane {
 	return project.Pane{
 		SchemaVersion: project.SchemaVersion,
 		ReadAt:        "2026-09-21T10:11:12Z",
-		Areas:         []project.Area{{Slug: "interface", Name: "The browser workspace"}},
+		Goals: []project.Goal{{ID: "g1-s22", Title: "g1-s22", State: "claimed",
+			Intent: "The Project section briefs, reads and takes a contribution"}},
 		Records: []project.Record{{
-			Kind: "design", ID: "01K5", Status: "accepted", Areas: []string{"interface"},
+			Kind: "design", ID: "01K5", Status: "accepted", Goals: []string{"g1-s22"},
 			Title: "The pane", Path: "plans/designs/pane.md", Home: "plans/designs",
 			Summary: "The pane over the resolver, and the reader beside it.",
 		}},
@@ -45,7 +46,7 @@ func describedDocument() project.Document {
 		Owner: "app-owned", Path: "/work/repository/docs/a.md", Bytes: 4,
 		ModifiedAt: "2026-09-21T09:00:00Z", ReadAt: "2026-09-21T10:11:12Z", State: "readable",
 		Record: &project.Head{
-			Kind: "design", ID: "01K5", Status: "accepted", Areas: []string{"interface"},
+			Kind: "design", ID: "01K5", Status: "accepted", Goals: []string{"g1-s22"},
 			Cites: []string{"01K4"}, Affects: []string{}, Governs: []string{},
 			Supersedes: []string{}, By: []string{},
 		},
@@ -77,9 +78,12 @@ func TestProjectPayload(t *testing.T) {
 	var payload project.Pane
 	testutil.Require(t, "decode the response", json.Unmarshal(response.Body.Bytes(), &payload), nil)
 	testutil.Expect(t, "payload", payload, describedPane())
-	// The summaries are the third schema's whole addition, so they are read
-	// back off the wire rather than assumed to have travelled with the rest.
-	testutil.Expect(t, "the schema version", payload.SchemaVersion, 3)
+	// The goals are the fourth schema's whole addition, and the summaries were
+	// the third's, so both are read back off the wire rather than assumed to
+	// have travelled with the rest.
+	testutil.Expect(t, "the schema version", payload.SchemaVersion, 4)
+	testutil.Expect(t, "the ledger's goals", payload.Goals[0].ID, "g1-s22")
+	testutil.Expect(t, "a record's goals", payload.Records[0].Goals, []string{"g1-s22"})
 	testutil.Expect(t, "a record's summary", payload.Records[0].Summary,
 		"The pane over the resolver, and the reader beside it.")
 	testutil.Expect(t, "a chapter's summary", payload.Intent.Chapters[0].Summary,

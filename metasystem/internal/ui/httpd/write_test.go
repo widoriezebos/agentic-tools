@@ -69,7 +69,7 @@ func (rec *recorder) reached() int {
 func writtenRecord() project.Written {
 	return project.Written{
 		Record: project.Record{
-			Kind: "decision", ID: "01K7", Status: "draft", Areas: []string{"interface"},
+			Kind: "decision", ID: "01K7", Status: "draft", Goals: []string{"g1-s22"},
 			Title: "The Project Partner is a drawer", Path: "metasystem/docs/decisions/the-drawer.md",
 			Home: "metasystem/docs/decisions", Summary: "",
 		},
@@ -81,7 +81,7 @@ func writtenRecord() project.Written {
 func askedQuestion(status string) project.Asked {
 	return project.Asked{Question: project.Question{
 		ID: "Q-01K8", Opened: "2026-09-22", Question: "Who accepts a decision?",
-		Areas: []string{"interface"}, Status: status,
+		Goals: []string{"g1-s22"}, Status: status,
 	}}
 }
 
@@ -121,7 +121,7 @@ func TestCreateRecordRoute(t *testing.T) {
 	served := New(rec.writing(), loopback(), testBundle())
 
 	response := post(t, served, "/api/project/records",
-		`{"kind":"decision","title":"The Project Partner is a drawer","areas":["interface"],"affects":["01K5"]}`, nil)
+		`{"kind":"decision","title":"The Project Partner is a drawer","goals":["g1-s22"],"affects":["01K5"]}`, nil)
 
 	testutil.Require(t, "status", response.Code, http.StatusOK)
 	testutil.Expect(t, "content type", response.Header().Get("Content-Type"), "application/json")
@@ -130,7 +130,7 @@ func TestCreateRecordRoute(t *testing.T) {
 	testutil.Expect(t, "the payload", written, writtenRecord())
 	testutil.Expect(t, "what the writer was asked for", rec.records, []project.NewRecord{{
 		Kind: "decision", Title: "The Project Partner is a drawer",
-		Areas: []string{"interface"}, Affects: []string{"01K5"},
+		Goals: []string{"g1-s22"}, Affects: []string{"01K5"},
 	}})
 }
 
@@ -158,14 +158,14 @@ func TestQuestionRoutes(t *testing.T) {
 	served := New(rec.writing(), loopback(), testBundle())
 
 	asked := post(t, served, "/api/project/questions",
-		`{"question":"Who accepts a decision?","areas":["interface"]}`, nil)
+		`{"question":"Who accepts a decision?","goals":["g1-s22"]}`, nil)
 
 	testutil.Require(t, "ask status", asked.Code, http.StatusOK)
 	var body project.Asked
 	testutil.Require(t, "decode the question", json.Unmarshal(asked.Body.Bytes(), &body), nil)
 	testutil.Expect(t, "the row", body, askedQuestion("open"))
 	testutil.Expect(t, "what the writer was asked for", rec.questions,
-		[]project.NewQuestion{{Question: "Who accepts a decision?", Areas: []string{"interface"}}})
+		[]project.NewQuestion{{Question: "Who accepts a decision?", Goals: []string{"g1-s22"}}})
 
 	answered := post(t, served, "/api/project/questions/Q-01K8/status",
 		`{"status":"answered: 01K7"}`, nil)
@@ -186,7 +186,7 @@ func TestRefusalsCarryTheirStatus(t *testing.T) {
 		err    error
 		status int
 	}{
-		{"a bad request", &project.Refusal{Kind: project.RefusalBad, Message: `the area "logistics" is declared by no intent index`}, http.StatusBadRequest},
+		{"a bad request", &project.Refusal{Kind: project.RefusalBad, Message: `the goal "logistics" is not in the ledger`}, http.StatusBadRequest},
 		{"an id nothing declares", &project.Refusal{Kind: project.RefusalAbsent, Message: "no record declares the id 01K9"}, http.StatusNotFound},
 		{"a file that is already there", &project.Refusal{Kind: project.RefusalExists, Message: "a file already lives at metasystem/docs/decisions/one-binary.md"}, http.StatusConflict},
 	} {
@@ -196,7 +196,7 @@ func TestRefusalsCarryTheirStatus(t *testing.T) {
 			served := New(rec.writing(), loopback(), testBundle())
 
 			response := post(t, served, "/api/project/records",
-				`{"kind":"decision","title":"One binary","areas":["logistics"]}`, nil)
+				`{"kind":"decision","title":"One binary","goals":["logistics"]}`, nil)
 
 			testutil.Expect(t, "status", response.Code, refused.status)
 			testutil.Expect(t, "the reason", refusalBody(t, "the refusal", response).Error, refused.err.Error())
@@ -211,7 +211,7 @@ func TestARefusedRecordCarriesItsProblems(t *testing.T) {
 	t.Parallel()
 
 	problems := []project.Problem{
-		{Path: "metasystem/docs/decisions/one.md", Line: 3, Message: "the area logistics is declared by no intent index"},
+		{Path: "metasystem/docs/decisions/one.md", Line: 3, Message: "the goal logistics is not in the ledger"},
 	}
 	rec := &recorder{refusal: &project.Refusal{
 		Kind: project.RefusalBad, Message: "the record this would write is one the project refuses", Problems: problems,
@@ -219,7 +219,7 @@ func TestARefusedRecordCarriesItsProblems(t *testing.T) {
 	served := New(rec.writing(), loopback(), testBundle())
 
 	response := post(t, served, "/api/project/records",
-		`{"kind":"decision","title":"One","areas":["logistics"]}`, nil)
+		`{"kind":"decision","title":"One","goals":["logistics"]}`, nil)
 
 	testutil.Expect(t, "status", response.Code, http.StatusBadRequest)
 	testutil.Expect(t, "the problems", refusalBody(t, "the refusal", response).Problems, problems)
@@ -272,7 +272,7 @@ func TestTheWriteRoutesKeepTheReadRoutesPolicy(t *testing.T) {
 			rec := &recorder{}
 			served := New(rec.writing(), loopback(), testBundle())
 			req := httptest.NewRequest(http.MethodPost, "http://example.invalid/api/project/records",
-				strings.NewReader(`{"kind":"decision","title":"One binary","areas":["interface"]}`))
+				strings.NewReader(`{"kind":"decision","title":"One binary","goals":["g1-s22"]}`))
 			req.Host = refused.host
 			for name, value := range refused.headers {
 				req.Header.Set(name, value)

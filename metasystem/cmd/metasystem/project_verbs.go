@@ -53,11 +53,11 @@ func projectID(args []string, stdout, stderr io.Writer) int {
 func projectList(args []string, stdout, stderr io.Writer) int {
 	flags := projectFlags("list", stderr)
 	root := pathFlag(flags, "root", ".", "a path at or below the metasystem installation")
-	area := flags.String("area", "", "only records naming this area")
+	goal := flags.String("goal", "", "only records about this ledger goal")
 	status := flags.String("status", "", "only records with this status")
 	kind, ok := projectSubject(flags, args)
 	if !ok {
-		fmt.Fprintln(stderr, "usage: metasystem project list KIND [--root DIR] [--area SLUG] [--status STATUS]")
+		fmt.Fprintln(stderr, "usage: metasystem project list KIND [--root DIR] [--goal ID] [--status STATUS]")
 		return 2
 	}
 	if !oneOf(project.QueryKinds, kind) {
@@ -72,16 +72,16 @@ func projectList(args []string, stdout, stderr io.Writer) int {
 	if read == nil {
 		return code
 	}
-	for _, record := range read.List(kind, project.ListOptions{Area: *area, Status: *status}) {
+	for _, record := range read.List(kind, project.ListOptions{Goal: *goal, Status: *status}) {
 		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			record.Kind, record.ID, record.Status, strings.Join(record.Areas, " "), record.Title, record.Path)
+			record.Kind, record.ID, record.Status, strings.Join(record.Goals, " "), record.Title, record.Path)
 	}
 	return 0
 }
 
-// projectShow prints one record: what it declares, where it lives, what it
-// names, and what names it — the half of a reference the record cannot
-// declare itself.
+// projectShow prints one record: what it declares, which goals it is about,
+// where it lives, what it names, and what names it — the half of a reference
+// the record cannot declare itself.
 func projectShow(args []string, stdout, stderr io.Writer) int {
 	flags := projectFlags("show", stderr)
 	root := pathFlag(flags, "root", ".", "a path at or below the metasystem installation")
@@ -103,7 +103,7 @@ func projectShow(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "kind: "+record.Kind)
 	fmt.Fprintln(stdout, "id: "+record.ID)
 	fmt.Fprintln(stdout, "status: "+record.Status)
-	fmt.Fprintln(stdout, "areas: "+strings.Join(record.Areas, " "))
+	fmt.Fprintln(stdout, "goals: "+strings.Join(record.Goals, " "))
 	fmt.Fprintln(stdout, "path: "+record.Path)
 	fmt.Fprintln(stdout, "home: "+record.Home)
 	for _, key := range []string{"Cites", "Affects", "Governs", "By", "Supersedes", "Answers"} {
@@ -118,8 +118,9 @@ func projectShow(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// projectTree prints the declared areas, each with what it holds, and the
-// project bucket last: what belongs to the whole rather than to a part.
+// projectTree prints the ledger's goals, each with what the project holds
+// about it, and the project-wide bucket last: what belongs to the whole rather
+// than to one goal.
 func projectTree(args []string, stdout, stderr io.Writer) int {
 	flags := projectFlags("tree", stderr)
 	root := pathFlag(flags, "root", ".", "a path at or below the metasystem installation")
@@ -134,18 +135,37 @@ func projectTree(args []string, stdout, stderr io.Writer) int {
 	if read == nil {
 		return code
 	}
-	areas, whole := read.Tree()
-	for _, area := range areas {
-		heading := area.Area.Slug
-		if area.Area.Name != "" {
-			heading += " — " + area.Area.Name
-		}
-		fmt.Fprintln(stdout, heading)
-		projectCounts(stdout, area.Counts)
+	goals, whole := read.Tree()
+	for _, one := range goals {
+		fmt.Fprintln(stdout, projectGoalHeading(one.Goal))
+		projectCounts(stdout, one.Counts)
 	}
-	fmt.Fprintln(stdout, project.ProjectArea)
+	fmt.Fprintln(stdout, project.WholeProject)
 	projectCounts(stdout, whole)
 	return 0
+}
+
+// projectIntentWidth is how much of a goal's intent one line of the tree
+// carries. An intent is a paragraph in this ledger; the tree is a shape, and a
+// shape that wrapped over five lines per goal would not be one.
+const projectIntentWidth = 100
+
+// projectGoalHeading is one goal's line: its id, where it stands, and why it
+// is open, in that order and separated the way the indexes separate a name
+// from what reads it.
+func projectGoalHeading(one project.Goal) string {
+	return one.ID + " — " + one.State + " — " + projectTruncate(one.Intent, projectIntentWidth)
+}
+
+// projectTruncate keeps at most width characters, the ellipsis included, so
+// the line is bounded whatever the ledger wrote. Characters are counted as
+// runes: a truncation that split one would print a byte that is not a letter.
+func projectTruncate(value string, width int) string {
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	return string(runes[:width-1]) + "…"
 }
 
 func projectCounts(stdout io.Writer, counts project.Counts) {
@@ -184,8 +204,8 @@ func projectCheck(args []string, stdout, stderr io.Writer) int {
 	if len(read.Problems) > 0 {
 		return 1
 	}
-	fmt.Fprintf(stdout, "project check passed: %d record(s) in %d home(s), %d declared area(s), %d question(s)\n",
-		len(read.Records), len(read.Homes), len(read.Areas), len(read.Questions))
+	fmt.Fprintf(stdout, "project check passed: %d record(s) in %d home(s), %d question(s), %d ledger goal(s)\n",
+		len(read.Records), len(read.Homes), len(read.Questions), len(read.Goals))
 	return 0
 }
 

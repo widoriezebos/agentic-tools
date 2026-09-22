@@ -504,9 +504,9 @@
 /* --------------------------------------------------------- the Project pane -- */
 
 /*
- * Three columns: the area tree, the briefing, and what is waiting beside it.
- * Below the rail widths they stack, the tree first, because choosing the area
- * is the first act.
+ * Three columns: the goals, the briefing, and what is waiting beside it.
+ * Below the rail widths they stack, the goals first, because choosing what the
+ * briefing is about is the first act.
  */
 .ms-briefing {
   display: grid;
@@ -652,15 +652,22 @@
   text-decoration: underline;
 }
 
-.ms-project-areas {
+/*
+ * The goals: the project, then the live goals as rows, then one run per
+ * concluded state. It scrolls on its own so that a ledger of hundreds of goals
+ * never pushes the briefing off the screen.
+ */
+.ms-project-goals {
   display: flex;
   flex-direction: column;
   gap: 2px;
   position: sticky;
   top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
 }
 
-.ms-project-area {
+.ms-project-goal {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -673,23 +680,28 @@
   text-decoration: none;
 }
 
-.ms-project-area:hover {
+.ms-project-goal:hover {
   background: var(--ms-surface-2);
   color: var(--ms-text);
 }
 
-.ms-project-area[aria-current="page"] {
+.ms-project-goal[aria-current="page"] {
   background: var(--ms-surface-3);
   color: var(--ms-text);
   font-weight: 500;
 }
 
-.ms-project-area-name {
+/*
+ * A goal's id is one long word, and the rail is narrow: it wraps between words
+ * where it can and breaks the word where it cannot, rather than widening the
+ * column or being clipped to something two goals share.
+ */
+.ms-project-goal-name {
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.ms-project-area-count,
 .ms-project-count {
   font-size: 12px;
   line-height: 16px;
@@ -806,7 +818,7 @@
 }
 
 .ms-project-row-status,
-.ms-project-row-areas {
+.ms-project-row-act {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -1067,32 +1079,21 @@
   white-space: pre-wrap;
 }
 
-.ms-writing-areas {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 4px 16px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.ms-writing-areas legend {
-  padding: 0;
-  margin-bottom: 4px;
-}
-
-.ms-writing-area {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  line-height: 20px;
-  cursor: pointer;
-}
-
-.ms-writing-slug {
-  font-size: 11px;
-  color: var(--ms-text-3);
+/*
+ * The goals, as a list to choose from. It is a select because a ledger carries
+ * hundreds of them, and it keeps the monospace of an id so that two goals that
+ * differ in one character can be told apart.
+ */
+.ms-writing-goals {
+  width: 100%;
+  padding: 4px;
+  border-radius: 6px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .ms-writing-foot {
@@ -1169,10 +1170,10 @@
 
 /* Phone: one column, and the path on a line of its own, still unwrapped. */
 @media (max-width: 599px) {
-  .ms-project-areas {
+  .ms-project-goals {
     position: static;
-    flex-direction: row;
-    flex-wrap: wrap;
+    max-height: none;
+    overflow-y: visible;
   }
 
   .ms-project-row {

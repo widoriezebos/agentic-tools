@@ -24,26 +24,12 @@ const (
 const AnsweredPrefix = QuestionAnswered + ":"
 
 // registerHeader is the one table the register holds, by its columns.
-var registerHeader = []string{"id", "opened", "question", "areas", "status"}
+var registerHeader = []string{"id", "opened", "question", "goals", "status"}
 
-// dashes are the separators an index line may put between a slug or an id and
-// the name that reads it. The design writes an em dash; an en dash is the same
+// dashes are the separators an index line may put between an id and the name
+// that reads it. The design writes an em dash; an en dash is the same
 // intent typed differently, and is read the same way.
 var dashes = []string{"—", "–"}
-
-// parseAreas reads the `## Areas` list: the one place areas are declared, flat,
-// a slug and a name. A line with no name declares the slug alone.
-func parseAreas(body []string, firstLine int) []Area {
-	var areas []Area
-	for _, entry := range section(body, firstLine, "Areas") {
-		slug, name := splitOnDash(entry.text)
-		if slug == "" {
-			continue
-		}
-		areas = append(areas, Area{Slug: slug, Name: name, Line: entry.line})
-	}
-	return areas
-}
 
 // parseChapters reads the `## Chapters` list: reading order, by record id or by
 // bound document.
@@ -131,7 +117,7 @@ func parseQuestions(text string) []Question {
 			ID:     cell(cells, 0),
 			Opened: cell(cells, 1),
 			Text:   cell(cells, 2),
-			Areas:  strings.Fields(cell(cells, 3)),
+			Goals:  strings.Fields(cell(cells, 3)),
 			Status: cell(cells, 4),
 			Line:   index + 1,
 		})

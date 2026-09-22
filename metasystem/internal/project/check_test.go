@@ -32,8 +32,7 @@ func TestCheckPassesWithNoRecordsAtAll(t *testing.T) {
 
 	testutil.Expect(t, "the refusals an empty project carries", problemLines(read.Problems), []string{})
 	testutil.Expect(t, "the records an empty project declares", len(read.Records), 0)
-	testutil.Expect(t, "the areas an empty project declares", read.DeclaredAreas(),
-		map[string]bool{ProjectArea: true})
+	testutil.Expect(t, "the goals an empty checkout's ledger carries", read.Goals, []Goal(nil))
 }
 
 // Every refusal the check owes, one fault at a time, each anchored at the file
@@ -53,7 +52,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 			name: "a duplicate id",
 			fault: func(f *fixture) (string, string) {
 				f.write(f.state+"docs/decisions/0003-again.md",
-					record("One binary, again", "decision", "decision-one-binary", "draft", "project"))
+					record("One binary, again", "decision", "decision-one-binary", "draft", ""))
 				return f.state + "docs/decisions/0003-again.md", "- Id:"
 			},
 			want: "the id decision-one-binary is already declared by metasystem/docs/decisions/0001-one-binary.md",
@@ -62,7 +61,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 			name: "a head missing a required key",
 			fault: func(f *fixture) (string, string) {
 				f.write(f.state+"docs/decisions/0003-headless.md",
-					"# A decision with no status\n\n- Kind: decision\n- Id: decision-no-status\n- Areas: project\n")
+					"# A decision with no status\n\n- Kind: decision\n- Id: decision-no-status\n")
 				return f.state + "docs/decisions/0003-headless.md", "- Kind:"
 			},
 			want: "the head does not declare Status",
@@ -71,7 +70,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 			name: "a required key declared empty",
 			fault: func(f *fixture) (string, string) {
 				f.write(f.state+"docs/decisions/0003-empty.md",
-					"# A decision with an empty id\n\n- Kind: decision\n- Id:\n- Status: draft\n- Areas: project\n")
+					"# A decision with an empty id\n\n- Kind: decision\n- Id:\n- Status: draft\n")
 				return f.state + "docs/decisions/0003-empty.md", "- Kind:"
 			},
 			want: "the head does not declare Id",
@@ -80,7 +79,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 			name: "an unknown kind",
 			fault: func(f *fixture) (string, string) {
 				f.write(f.state+"docs/decisions/0003-policy.md",
-					record("A policy", "policy", "decision-policy", "draft", "project"))
+					record("A policy", "policy", "decision-policy", "draft", ""))
 				return f.state + "docs/decisions/0003-policy.md", "- Kind:"
 			},
 			want: "the kind policy is not one of intent, doctrine, decision, design",
@@ -89,19 +88,27 @@ func TestCheckRefusesEachFault(t *testing.T) {
 			name: "an unknown status",
 			fault: func(f *fixture) (string, string) {
 				f.write(f.state+"docs/decisions/0003-pending.md",
-					record("A pending decision", "decision", "decision-pending", "pending", "project"))
+					record("A pending decision", "decision", "decision-pending", "pending", ""))
 				return f.state + "docs/decisions/0003-pending.md", "- Status:"
 			},
 			want: "the status pending is not one of draft, accepted, superseded, done",
 		},
 		{
-			name: "an undeclared area",
+			name: "a goal the ledger does not have",
 			fault: func(f *fixture) (string, string) {
 				f.write(f.state+"docs/decisions/0003-shipping.md",
 					record("A shipping decision", "decision", "decision-shipping", "draft", "shipping"))
-				return f.state + "docs/decisions/0003-shipping.md", "- Areas:"
+				return f.state + "docs/decisions/0003-shipping.md", "- Goals:"
 			},
-			want: "the area shipping is declared by no intent index",
+			want: "the goal shipping is not in the ledger",
+		},
+		{
+			name: "a register row naming a goal the ledger does not have",
+			fault: func(f *fixture) (string, string) {
+				f.appendToRegister("| Q-6 | 2026-09-22 | A question about nothing | shipping | open |\n")
+				return f.state + "memory/questions.md", "Q-6"
+			},
+			want: "the goal shipping is not in the ledger",
 		},
 		{
 			name: "a chapter id that names nothing",
@@ -130,7 +137,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 		{
 			name: "a register row with no id",
 			fault: func(f *fixture) (string, string) {
-				f.appendToRegister("|  | 2026-09-22 | A question nobody numbered | project | open |\n")
+				f.appendToRegister("|  | 2026-09-22 | A question nobody numbered |  | open |\n")
 				return f.state + "memory/questions.md", "A question nobody numbered"
 			},
 			want: "the row declares no id",
@@ -138,7 +145,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 		{
 			name: "a register row with an unknown status",
 			fault: func(f *fixture) (string, string) {
-				f.appendToRegister("| Q-4 | 2026-09-22 | A question in limbo | project | pondering |\n")
+				f.appendToRegister("| Q-4 | 2026-09-22 | A question in limbo |  | pondering |\n")
 				return f.state + "memory/questions.md", "Q-4"
 			},
 			want: "the status pondering is not open, answered: <reference>, or withdrawn",
@@ -146,7 +153,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 		{
 			name: "an answer that names nothing",
 			fault: func(f *fixture) (string, string) {
-				f.appendToRegister("| Q-5 | 2026-09-22 | A question answered by nothing | project | answered: |\n")
+				f.appendToRegister("| Q-5 | 2026-09-22 | A question answered by nothing |  | answered: |\n")
 				return f.state + "memory/questions.md", "Q-5"
 			},
 			want: "the status answered: is not open, answered: <reference>, or withdrawn",
@@ -155,7 +162,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 			name: "a register row taking a page's id",
 			fault: func(f *fixture) (string, string) {
 				f.write(f.state+"docs/decisions/0003-numbered.md",
-					record("A decision numbered like a question", "decision", "Q-1", "draft", "project"))
+					record("A decision numbered like a question", "decision", "Q-1", "draft", ""))
 				return f.state + "memory/questions.md", "Q-1"
 			},
 			want: "the id Q-1 is already declared by metasystem/docs/decisions/0003-numbered.md",
@@ -163,7 +170,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 		{
 			name: "two register rows with one id",
 			fault: func(f *fixture) (string, string) {
-				f.appendToRegister("| Q-1 | 2026-09-22 | A question numbered twice | project | open |\n")
+				f.appendToRegister("| Q-1 | 2026-09-22 | A question numbered twice |  | open |\n")
 				return f.state + "memory/questions.md", "numbered twice"
 			},
 			want: "the id Q-1 is already declared by metasystem/memory/questions.md",
@@ -173,7 +180,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 			fault: func(f *fixture) (string, string) {
 				f.write(f.state+"docs/decisions/0003-broken.md",
 					"# A broken head\n\n- Kind: decision\n- this line declares nothing\n"+
-						"- Id: decision-broken\n- Status: draft\n- Areas: project\n")
+						"- Id: decision-broken\n- Status: draft\n")
 				return f.state + "docs/decisions/0003-broken.md", "declares nothing"
 			},
 			want: "the head line is not a `- Key: value` declaration: - this line declares nothing",
@@ -183,7 +190,7 @@ func TestCheckRefusesEachFault(t *testing.T) {
 			fault: func(f *fixture) (string, string) {
 				f.write(f.state+"docs/decisions/0003-twice.md",
 					"# A head that says it twice\n\n- Kind: decision\n- Id: decision-twice\n"+
-						"- Status: draft\n- Status: accepted\n- Areas: project\n")
+						"- Status: draft\n- Status: accepted\n")
 				return f.state + "docs/decisions/0003-twice.md", "- Status: accepted"
 			},
 			want: "the head declares Status twice; it is already declared on line 5",
@@ -284,9 +291,9 @@ func TestARegisterThatLeavesItsHomeIsRefused(t *testing.T) {
 	f.seed()
 	target := filepath.Join(filepath.Dir(f.checkout), "questions.md")
 	mustNot(t, os.WriteFile(target, []byte("# Elsewhere\n\n"+
-		"| id | opened | question | areas | status |\n"+
+		"| id | opened | question | goals | status |\n"+
 		"| --- | --- | --- | --- | --- |\n"+
-		"| Q-9 | 2026-09-22 | A question from outside | project | open |\n"), 0o644),
+		"| Q-9 | 2026-09-22 | A question from outside |  | open |\n"), 0o644),
 		"write the register outside the checkout")
 	register := f.state + "memory/questions.md"
 	mustNot(t, os.Remove(filepath.Join(f.checkout, filepath.FromSlash(register))), "remove the register")
@@ -322,7 +329,7 @@ func (f *fixture) link(target, rel string) {
 func (f *fixture) appendToDoctrineIndex(line string) {
 	f.t.Helper()
 	f.write(f.state+"docs/doctrine/index.md",
-		record("The project's doctrine", "doctrine", "doctrine-index", "accepted", "project")+
+		record("The project's doctrine", "doctrine", "doctrine-index", "accepted", "")+
 			"\n## Chapters\n"+
 			"- doctrine-events — Events are the source of truth\n"+
 			"- doctrine-budgets — Every run is budgeted\n"+
@@ -336,10 +343,10 @@ func (f *fixture) appendToRegister(row string) {
 	f.t.Helper()
 	f.write(f.state+"memory/questions.md",
 		"# Open questions\n\n"+
-			"| id | opened | question | areas | status |\n"+
+			"| id | opened | question | goals | status |\n"+
 			"| --- | --- | --- | --- | --- |\n"+
-			"| Q-1 | 2026-09-22 | Where does an adopted application's intent live? | project | open |\n"+
-			"| Q-2 | 2026-09-22 | Who accepts a decision? | billing | answered: decision-one-binary |\n"+
-			"| Q-3 | 2026-09-22 | Do designs move when they conclude? | security | withdrawn |\n"+
+			"| Q-1 | 2026-09-22 | Where does an adopted application's intent live? |  | open |\n"+
+			"| Q-2 | 2026-09-22 | Who accepts a decision? | ledger-sync | answered: decision-one-binary |\n"+
+			"| Q-3 | 2026-09-22 | Do designs move when they conclude? | reading-pane | withdrawn |\n"+
 			row)
 }

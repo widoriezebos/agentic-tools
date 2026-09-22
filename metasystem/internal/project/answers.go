@@ -13,9 +13,9 @@ import (
 // a record answered names it there.
 var referencedByKeys = []string{"Cites", "Affects", "Supersedes", "Answers"}
 
-// ListOptions narrows a listing to one area, one status, or both. An empty
+// ListOptions narrows a listing to one goal, one status, or both. An empty
 // field narrows nothing.
-type ListOptions struct{ Area, Status string }
+type ListOptions struct{ Goal, Status string }
 
 // questionRecords are the register's rows in the shape every query answers in:
 // a question is a record of the question kind, titled by what it asks, standing
@@ -29,7 +29,7 @@ func (p *Project) questionRecords() []Record {
 			Kind:     KindQuestion,
 			ID:       question.ID,
 			Status:   question.State(),
-			Areas:    question.Areas,
+			Goals:    question.Goals,
 			Title:    question.Text,
 			Path:     register,
 			Home:     register,
@@ -57,7 +57,7 @@ func (p *Project) List(kind string, options ListOptions) []Record {
 		if options.Status != "" && record.Status != options.Status {
 			continue
 		}
-		if options.Area != "" && !contains(record.Areas, options.Area) {
+		if options.Goal != "" && !contains(record.Goals, options.Goal) {
 			continue
 		}
 		listed = append(listed, record)
@@ -125,36 +125,41 @@ func (c *Counts) add(record Record) {
 	}
 }
 
-// AreaCounts is one declared area with what it holds.
-type AreaCounts struct {
-	Area   Area
+// GoalCounts is one goal of the ledger with what the project holds about it.
+type GoalCounts struct {
+	Goal   Goal
 	Counts Counts
 }
 
-// Tree is the declared areas in the order the intent index declares them, and
-// the project bucket last: what belongs to the whole rather than to a part. A
-// record naming two areas is counted under both, because it is in both, and a
-// question is counted beside the records, because a question is one of the
-// things an area holds.
-func (p *Project) Tree() ([]AreaCounts, Counts) {
-	tree := make([]AreaCounts, 0, len(p.Areas))
-	seen := map[string]bool{}
-	for _, area := range p.Areas {
-		if area.Slug == ProjectArea || seen[area.Slug] {
+// Tree is the ledger's goals — the live ones first, each in id order — and the
+// project-wide bucket last: what belongs to the whole rather than to one goal.
+// A record naming two goals is counted under both, because it is about both,
+// and a question is counted beside the records, because a question is one of
+// the things a goal holds.
+//
+// A record naming a goal the ledger does not have is counted under no goal and
+// is not counted as project-wide either: the check refuses that record by name,
+// and counting it somewhere would be inventing a place for it.
+func (p *Project) Tree() ([]GoalCounts, Counts) {
+	tree := make([]GoalCounts, 0, len(p.Goals))
+	at := map[string]int{}
+	for _, one := range p.Goals {
+		if _, seen := at[one.ID]; seen {
 			continue
 		}
-		seen[area.Slug] = true
-		tree = append(tree, AreaCounts{Area: area, Counts: newCounts()})
+		at[one.ID] = len(tree)
+		tree = append(tree, GoalCounts{Goal: one, Counts: newCounts()})
 	}
 	whole := newCounts()
 	for _, record := range p.queried() {
-		for index := range tree {
-			if contains(record.Areas, tree[index].Area.Slug) {
+		if len(record.Goals) == 0 {
+			whole.add(record)
+			continue
+		}
+		for _, id := range record.Goals {
+			if index, known := at[id]; known {
 				tree[index].Counts.add(record)
 			}
-		}
-		if contains(record.Areas, ProjectArea) {
-			whole.add(record)
 		}
 	}
 	return tree, whole
@@ -167,7 +172,6 @@ func (p *Project) Tree() ([]AreaCounts, Counts) {
 // alike: an id is unique across the project, so the second declaration of one
 // is refused at its own line whichever of the two it is.
 func (p *Project) check() {
-	declared := p.DeclaredAreas()
 	declaredAt := map[string]string{}
 	for _, record := range p.Records {
 		if record.ID != "" {
@@ -186,17 +190,16 @@ func (p *Project) check() {
 			p.problem(record.Path, record.line("Status"),
 				"the status "+record.Status+" is not one of draft, accepted, superseded, done")
 		}
-		for _, area := range record.Areas {
-			if !declared[area] {
-				p.problem(record.Path, record.line("Areas"),
-					"the area "+area+" is declared by no intent index")
+		for _, id := range record.Goals {
+			if !p.HasGoal(id) {
+				p.problem(record.Path, record.line(goalsKey), "the goal "+id+" is not in the ledger")
 			}
 		}
 	}
 	for _, book := range p.Books {
 		p.checkChapters(book)
 	}
-	p.checkQuestions(declared, declaredAt)
+	p.checkQuestions(declaredAt)
 }
 
 // checkChapters reads a book's reading order: every id names a record of the
@@ -255,7 +258,7 @@ func isSeparator(r rune) bool { return r == '/' || r == '\\' }
 // taking an id the project already declares names something else's identity,
 // and a row whose status is none of the three says nothing about where the
 // question stands.
-func (p *Project) checkQuestions(declared map[string]bool, declaredAt map[string]string) {
+func (p *Project) checkQuestions(declaredAt map[string]string) {
 	register := p.registerRel()
 	for _, question := range p.Questions {
 		if question.ID == "" {
@@ -270,9 +273,9 @@ func (p *Project) checkQuestions(declared map[string]bool, declaredAt map[string
 			p.problem(register, question.Line,
 				"the status "+quoteEmpty(question.Status)+" is not open, answered: <reference>, or withdrawn")
 		}
-		for _, area := range question.Areas {
-			if !declared[area] {
-				p.problem(register, question.Line, "the area "+area+" is declared by no intent index")
+		for _, id := range question.Goals {
+			if !p.HasGoal(id) {
+				p.problem(register, question.Line, "the goal "+id+" is not in the ledger")
 			}
 		}
 	}

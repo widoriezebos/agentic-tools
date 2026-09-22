@@ -53,7 +53,7 @@ func newFixture(t *testing.T, selfHosted bool) *fixture {
 		// A design beneath an adopted installation is not a home: the state
 		// root is the application's repository, and only the self-hosted layout
 		// reads a second one.
-		f.write(installation+"/plans/designs/decoy.md", record("Never read", "design", "design-decoy", "draft", "project"))
+		f.write(installation+"/plans/designs/decoy.md", record("Never read", "design", "design-decoy", "draft", ""))
 	}
 
 	roots, err := ResolveRoots(filepath.Join(canonical, installation))
@@ -101,71 +101,105 @@ func (f *fixture) lineOf(rel, substring string) int {
 	return 0
 }
 
-// record is a whole small record: a title, a head, and nothing else.
-func record(title, kind, id, status, areas string, extra ...string) string {
+// record is a whole small record: a title, a head, and nothing else. A record
+// about the project as a whole names no goals, and carries no Goals line at
+// all, because that is how the grammar spells it.
+func record(title, kind, id, status, goals string, extra ...string) string {
 	head := []string{
 		"- Kind: " + kind,
 		"- Id: " + id,
 		"- Status: " + status,
-		"- Areas: " + areas,
+	}
+	if goals != "" {
+		head = append(head, "- Goals: "+goals)
 	}
 	head = append(head, extra...)
 	return "# " + title + "\n\n" + strings.Join(head, "\n") + "\n"
 }
 
-// seed writes the whole fixture project: a one-page intent book declaring two
-// areas, a doctrine book whose reading order is two chapters and one bound
-// document, two decisions with one in a subdirectory, three designs, and a
-// register of three questions.
+// goalFile is one goal of the ledger as the ledger writes it. Only the heading,
+// the state and the intent are read from here, so the rest of a real goal file
+// is left out.
+func goalFile(id, state, intent string) string {
+	return "# " + id + "\n\n- State: " + state + "\n- Intent: " + intent + "\n"
+}
+
+// seedLedger writes the goal ledger the records are about: two live goals, one
+// concluded one, and the root record, which sits among the goal files and is
+// not a goal.
+func (f *fixture) seedLedger() {
+	f.t.Helper()
+
+	f.write(f.state+"plans/goals/backlog.md", "# backlog\n\n- SyncMode: local\n")
+	f.write(f.state+"plans/goals/ledger-sync.md",
+		goalFile("ledger-sync", "queued", "The ledger syncs on every landing"))
+	f.write(f.state+"plans/goals/reading-pane.md",
+		goalFile("reading-pane", "approved", "The pane reads a document as a chapter"))
+	f.write(f.state+"records/goals/two-homes.md",
+		goalFile("two-homes", "done", "Designs live in two homes, and the reader reads both"))
+}
+
+// seed writes the whole fixture project: the ledger, a one-page intent book, a
+// doctrine book whose reading order is two chapters and one bound document, two
+// decisions with one in a subdirectory, three designs, and a register of three
+// questions. Every record says which goals it is about, or says nothing and is
+// about the whole.
 func (f *fixture) seed() {
 	f.t.Helper()
+
+	f.seedLedger()
 
 	f.write(f.state+"docs/architecture.md", "# The engine\n\nProse, and no head, so no kind is claimed.\n")
 
 	f.write(f.state+"docs/intent/index.md",
-		record("The project's intent", "intent", "intent-index", "accepted", "project")+
-			"\n## Areas\n"+
-			"- billing — Billing and invoicing\n"+
-			"- security — Security and identity\n")
+		record("The project's intent", "intent", "intent-index", "accepted", ""))
 
 	f.write(f.state+"docs/doctrine/index.md",
-		record("The project's doctrine", "doctrine", "doctrine-index", "accepted", "project")+
+		record("The project's doctrine", "doctrine", "doctrine-index", "accepted", "")+
 			"\n## Chapters\n"+
 			"- doctrine-events — Events are the source of truth\n"+
 			"- doctrine-budgets — Every run is budgeted\n"+
 			fmt.Sprintf("- doc:%sdocs/architecture.md — The engine\n", f.state))
 	f.write(f.state+"docs/doctrine/events.md",
-		record("Events are the source of truth", "doctrine", "doctrine-events", "accepted", "billing",
+		record("Events are the source of truth", "doctrine", "doctrine-events", "accepted", "ledger-sync",
 			"- Cites: intent-index"))
 	f.write(f.state+"docs/doctrine/chapters/budgets.md",
-		record("Every run is budgeted", "doctrine", "doctrine-budgets", "draft", "security project"))
+		record("Every run is budgeted", "doctrine", "doctrine-budgets", "draft", "reading-pane"))
 
 	f.write(f.state+"docs/decisions/README.md", "# Decisions\n\nProse, and no head.\n")
 	f.write(f.state+"docs/decisions/0001-one-binary.md",
-		record("One binary", "decision", "decision-one-binary", "accepted", "project",
+		record("One binary", "decision", "decision-one-binary", "accepted", "",
 			"- Cites: doctrine-events", "- By: wido"))
 	f.write(f.state+"docs/decisions/archive/0002-two-homes.md",
-		record("Two design homes", "decision", "decision-two-homes", "superseded", "billing",
+		record("Two design homes", "decision", "decision-two-homes", "superseded", "ledger-sync",
 			"- Supersedes: decision-one-binary"))
 
 	f.write(f.state+"plans/designs/ledger.md",
-		record("The ledger", "design", "design-ledger", "done", "billing",
+		record("The ledger", "design", "design-ledger", "done", "ledger-sync",
 			"- Affects: decision-one-binary", "- Governs: goal-17"))
 	f.write(f.state+"plans/designs/pane/reading.md",
-		record("The reading pane", "design", "design-reading", "draft", "security"))
+		record("The reading pane", "design", "design-reading", "draft", "reading-pane"))
 	// The checkout's own plans/designs: a second home in the self-hosted layout,
 	// and the one design home in an adopted one.
 	f.write("plans/designs/interface.md",
-		record("The interface", "design", "design-interface", "accepted", "project billing",
+		record("The interface", "design", "design-interface", "accepted", "ledger-sync two-homes",
 			"- Cites: design-ledger"))
 
 	f.write(f.state+"memory/questions.md",
 		"# Open questions\n\n"+
-			"| id | opened | question | areas | status |\n"+
+			"| id | opened | question | goals | status |\n"+
 			"| --- | --- | --- | --- | --- |\n"+
-			"| Q-1 | 2026-09-22 | Where does an adopted application's intent live? | project | open |\n"+
-			"| Q-2 | 2026-09-22 | Who accepts a decision? | billing | answered: decision-one-binary |\n"+
-			"| Q-3 | 2026-09-22 | Do designs move when they conclude? | security | withdrawn |\n")
+			"| Q-1 | 2026-09-22 | Where does an adopted application's intent live? |  | open |\n"+
+			"| Q-2 | 2026-09-22 | Who accepts a decision? | ledger-sync | answered: decision-one-binary |\n"+
+			"| Q-3 | 2026-09-22 | Do designs move when they conclude? | reading-pane | withdrawn |\n")
+}
+
+func goalIDs(goals []Goal) []string {
+	collected := make([]string, 0, len(goals))
+	for _, one := range goals {
+		collected = append(collected, one.ID)
+	}
+	return collected
 }
 
 func ids(records []Record) []string {
@@ -240,10 +274,14 @@ func TestHomesFollowTheLayout(t *testing.T) {
 				"doctrine-budgets", "doctrine-events", "doctrine-index", "intent-index",
 			})
 			testutil.Expect(t, "the refusals a seeded project carries", problemLines(read.Problems), []string{})
-			testutil.Expect(t, "the declared areas", []string{read.Areas[0].Slug, read.Areas[1].Slug},
-				[]string{"billing", "security"})
-			testutil.Expect(t, "the area names", []string{read.Areas[0].Name, read.Areas[1].Name},
-				[]string{"Billing and invoicing", "Security and identity"})
+			testutil.Expect(t, "the ledger's goals, live ones first", goalIDs(read.Goals),
+				[]string{"ledger-sync", "reading-pane", "two-homes"})
+			testutil.Expect(t, "where each goal stands",
+				[]string{read.Goals[0].State, read.Goals[1].State, read.Goals[2].State},
+				[]string{"queued", "approved", "done"})
+			testutil.Expect(t, "a goal's own intent", read.Goals[0].Intent,
+				"The ledger syncs on every landing")
+			testutil.Expect(t, "the root record is no goal", read.HasGoal("backlog"), false)
 			testutil.Expect(t, "the questions", len(read.Questions), 3)
 		})
 	}
@@ -264,7 +302,6 @@ func TestBooksCarryTheirReadingOrder(t *testing.T) {
 	testutil.Expect(t, "a one-page book has no chapters", intent.Chapters, []Chapter(nil))
 	testutil.Expect(t, "the intent index's id", intent.Index.ID, "intent-index")
 	testutil.Expect(t, "the doctrine book's kind", doctrine.Kind, KindDoctrine)
-	testutil.Expect(t, "the doctrine book declares no areas", doctrine.Areas, []Area(nil))
 	testutil.Expect(t, "the reading order", []string{
 		doctrine.Chapters[0].ID, doctrine.Chapters[1].ID, doctrine.Chapters[2].Doc,
 	}, []string{"doctrine-events", "doctrine-budgets", "metasystem/docs/architecture.md"})
@@ -291,8 +328,8 @@ func TestADocumentWithNoHeadIsNotARecord(t *testing.T) {
 	testutil.Expect(t, "the refusals a headless document raises", problemLines(read.Problems), []string{})
 }
 
-// list answers by kind, and narrows by area and by status.
-func TestListNarrowsByAreaAndStatus(t *testing.T) {
+// list answers by kind, and narrows by goal and by status.
+func TestListNarrowsByGoalAndStatus(t *testing.T) {
 	t.Parallel()
 
 	f := newFixture(t, true)
@@ -301,12 +338,12 @@ func TestListNarrowsByAreaAndStatus(t *testing.T) {
 
 	testutil.Expect(t, "every design, in path order", ids(read.List(KindDesign, ListOptions{})),
 		[]string{"design-ledger", "design-reading", "design-interface"})
-	testutil.Expect(t, "the designs of one area", ids(read.List(KindDesign, ListOptions{Area: "billing"})),
+	testutil.Expect(t, "the designs about one goal", ids(read.List(KindDesign, ListOptions{Goal: "ledger-sync"})),
 		[]string{"design-ledger", "design-interface"})
 	testutil.Expect(t, "the designs of one status", ids(read.List(KindDesign, ListOptions{Status: StatusDraft})),
 		[]string{"design-reading"})
-	testutil.Expect(t, "an area and a status together",
-		ids(read.List(KindDesign, ListOptions{Area: "billing", Status: StatusAccepted})),
+	testutil.Expect(t, "a goal and a status together",
+		ids(read.List(KindDesign, ListOptions{Goal: "ledger-sync", Status: StatusAccepted})),
 		[]string{"design-interface"})
 	testutil.Expect(t, "the doctrine", ids(read.List(KindDoctrine, ListOptions{})),
 		[]string{"doctrine-budgets", "doctrine-events", "doctrine-index"})
@@ -345,37 +382,41 @@ func TestReferencedByReadsTheOtherHalf(t *testing.T) {
 		read.Record("design-ledger").References("Governs"), []string{"goal-17"})
 }
 
-// The tree counts a record under every area it names, counts the register's
-// questions beside them, and keeps the project bucket for what belongs to the
-// whole rather than to a part.
+// The tree counts a record under every goal it names, counts the register's
+// questions beside them, and keeps the project-wide bucket for what names no
+// goal at all.
 func TestTreeCountsByKindAndStatus(t *testing.T) {
 	t.Parallel()
 
 	f := newFixture(t, true)
 	f.seed()
 	read := f.read()
-	areas, whole := read.Tree()
+	goals, whole := read.Tree()
 
-	testutil.Require(t, "the declared areas counted", len(areas), 2)
-	testutil.Expect(t, "the first area", areas[0].Area.Slug, "billing")
-	testutil.Expect(t, "billing by kind", areas[0].Counts.Kind,
+	testutil.Require(t, "the ledger's goals counted", len(goals), 3)
+	testutil.Expect(t, "the goals, live ones first",
+		[]string{goals[0].Goal.ID, goals[1].Goal.ID, goals[2].Goal.ID},
+		[]string{"ledger-sync", "reading-pane", "two-homes"})
+	testutil.Expect(t, "ledger-sync by kind", goals[0].Counts.Kind,
 		map[string]int{KindIntent: 0, KindDoctrine: 1, KindDecision: 1, KindDesign: 2, KindQuestion: 1})
-	testutil.Expect(t, "billing by status", areas[0].Counts.Status,
+	testutil.Expect(t, "ledger-sync by status", goals[0].Counts.Status,
 		map[string]int{StatusDraft: 0, StatusAccepted: 2, StatusSuperseded: 1, StatusDone: 1,
 			QuestionOpen: 0, QuestionAnswered: 1, QuestionWithdrawn: 0})
-	testutil.Expect(t, "billing in all", areas[0].Counts.Total, 5)
-	testutil.Expect(t, "the second area", areas[1].Area.Slug, "security")
-	testutil.Expect(t, "security by kind", areas[1].Counts.Kind,
+	testutil.Expect(t, "ledger-sync in all", goals[0].Counts.Total, 5)
+	testutil.Expect(t, "reading-pane by kind", goals[1].Counts.Kind,
 		map[string]int{KindIntent: 0, KindDoctrine: 1, KindDecision: 0, KindDesign: 1, KindQuestion: 1})
-	testutil.Expect(t, "security by status", areas[1].Counts.Status,
+	testutil.Expect(t, "reading-pane by status", goals[1].Counts.Status,
 		map[string]int{StatusDraft: 2, StatusAccepted: 0, StatusSuperseded: 0, StatusDone: 0,
 			QuestionOpen: 0, QuestionAnswered: 0, QuestionWithdrawn: 1})
-	testutil.Expect(t, "the project bucket by kind", whole.Kind,
-		map[string]int{KindIntent: 1, KindDoctrine: 2, KindDecision: 1, KindDesign: 1, KindQuestion: 1})
-	testutil.Expect(t, "the project bucket by status", whole.Status,
-		map[string]int{StatusDraft: 1, StatusAccepted: 4, StatusSuperseded: 0, StatusDone: 0,
+	// A record naming two goals is counted under both, because it is about both.
+	testutil.Expect(t, "a concluded goal counts what names it", goals[2].Counts.Kind,
+		map[string]int{KindIntent: 0, KindDoctrine: 0, KindDecision: 0, KindDesign: 1, KindQuestion: 0})
+	testutil.Expect(t, "the project-wide bucket by kind", whole.Kind,
+		map[string]int{KindIntent: 1, KindDoctrine: 1, KindDecision: 1, KindDesign: 0, KindQuestion: 1})
+	testutil.Expect(t, "the project-wide bucket by status", whole.Status,
+		map[string]int{StatusDraft: 0, StatusAccepted: 3, StatusSuperseded: 0, StatusDone: 0,
 			QuestionOpen: 1, QuestionAnswered: 0, QuestionWithdrawn: 0})
-	testutil.Expect(t, "the project bucket in all", whole.Total, 6)
+	testutil.Expect(t, "the project-wide bucket in all", whole.Total, 4)
 }
 
 // The register is read as it is written: three rows, three statuses, and an
@@ -393,7 +434,8 @@ func TestRegisterReadsItsThreeStatuses(t *testing.T) {
 	testutil.Expect(t, "the statuses",
 		[]string{read.Questions[0].Status, read.Questions[1].Status, read.Questions[2].Status},
 		[]string{"open", "answered: decision-one-binary", "withdrawn"})
-	testutil.Expect(t, "the areas a row names", read.Questions[1].Areas, []string{"billing"})
+	testutil.Expect(t, "the goals a row names", read.Questions[1].Goals, []string{"ledger-sync"})
+	testutil.Expect(t, "a row about the whole names none", read.Questions[0].Goals, []string{})
 	testutil.Expect(t, "the question itself", read.Questions[0].Text,
 		"Where does an adopted application's intent live?")
 	testutil.Expect(t, "the line a row sits on", read.Questions[0].Line, 5)
@@ -407,7 +449,7 @@ func TestHeadKeepsUnknownKeysAndReadsTheRest(t *testing.T) {
 	f := newFixture(t, true)
 	f.seed()
 	f.write(f.state+"docs/decisions/0003-revised.md",
-		record("A revised decision", "decision", "decision-revised", "draft", "project",
+		record("A revised decision", "decision", "decision-revised", "draft", "ledger-sync",
 			"- Revision: 3, because the first two were wrong", "- Cites: intent-index decision-one-binary"))
 	read := f.read()
 
@@ -489,8 +531,8 @@ func TestQuestionsAnswerEveryQuery(t *testing.T) {
 
 	testutil.Expect(t, "every question, in register order", ids(read.List(KindQuestion, ListOptions{})),
 		[]string{"Q-1", "Q-2", "Q-3"})
-	testutil.Expect(t, "the questions of one area",
-		ids(read.List(KindQuestion, ListOptions{Area: "billing"})), []string{"Q-2"})
+	testutil.Expect(t, "the questions about one goal",
+		ids(read.List(KindQuestion, ListOptions{Goal: "ledger-sync"})), []string{"Q-2"})
 	testutil.Expect(t, "the questions of one status",
 		ids(read.List(KindQuestion, ListOptions{Status: QuestionOpen})), []string{"Q-1"})
 	testutil.Expect(t, "an answered question, however the row wrote it",
@@ -510,23 +552,42 @@ func TestQuestionsAnswerEveryQuery(t *testing.T) {
 
 // The index of a book is a record of the book's own kind. An index.md that
 // declares another kind is no book at all: it stays a readable record of what
-// it does declare, and the areas it names are declared by nothing.
+// it does declare, and its reading order is read by nothing.
 func TestAnIndexOfAnotherKindIsNoBook(t *testing.T) {
 	t.Parallel()
 
 	f := newFixture(t, true)
 	f.write(f.state+"docs/intent/index.md",
-		record("The project's intent", "design", "intent-index", "accepted", "project")+
-			"\n## Areas\n- billing — Billing and invoicing\n")
+		record("The project's intent", "design", "intent-index", "accepted", "")+
+			"\n## Chapters\n- intent-users — Users\n")
 	read := f.read()
 
 	testutil.Expect(t, "the books a wrong-kind index forms", len(read.Books), 0)
-	testutil.Expect(t, "the areas a wrong-kind index declares", read.Areas, []Area(nil))
-	testutil.Expect(t, "the areas anything may name", read.DeclaredAreas(),
-		map[string]bool{ProjectArea: true})
 	testutil.Expect(t, "the record it is all the same",
 		ids(read.List(KindDesign, ListOptions{})), []string{"intent-index"})
 	testutil.Expect(t, "the refusals it raises", problemLines(read.Problems), []string{})
+}
+
+// The goals a record may name are the ledger's, live or concluded, and nothing
+// else: a Goals line naming what the ledger does not have is refused at the
+// line that names it.
+func TestAGoalsLineNamesTheLedgersGoals(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, true)
+	f.seed()
+	read := f.read()
+
+	testutil.Expect(t, "a live goal", read.HasGoal("ledger-sync"), true)
+	testutil.Expect(t, "a concluded goal", read.HasGoal("two-homes"), true)
+	testutil.Expect(t, "a goal the ledger does not have", read.HasGoal("shipping"), false)
+	testutil.Expect(t, "which goals are still worked under",
+		[]bool{read.Goals[0].Live(), read.Goals[1].Live(), read.Goals[2].Live()},
+		[]bool{true, true, false})
+	testutil.Expect(t, "what a record about the whole names", read.Record("intent-index").Goals,
+		[]string{})
+	testutil.Expect(t, "what a record about two goals names", read.Record("design-interface").Goals,
+		[]string{"ledger-sync", "two-homes"})
 }
 
 // A name that begins with a dot is a name like any other: a draft and a
@@ -537,9 +598,9 @@ func TestADotPrefixedNameIsARecordLikeAnyOther(t *testing.T) {
 	f := newFixture(t, true)
 	f.seed()
 	f.write(f.state+"plans/designs/.draft.md",
-		record("A draft", "design", "design-draft", "draft", "billing"))
+		record("A draft", "design", "design-draft", "draft", "ledger-sync"))
 	f.write(f.state+"plans/designs/.team/security.md",
-		record("A team's design", "design", "design-team", "draft", "security"))
+		record("A team's design", "design", "design-team", "draft", "reading-pane"))
 	read := f.read()
 
 	testutil.Expect(t, "the designs a dot no longer hides", ids(read.List(KindDesign, ListOptions{})),

@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
  * What the page is about, said once, where the drawer can read it.
  *
  * The Project Partner's drawer names the page above it, and only the page
- * knows what that is: which area is selected, which record is open, which
+ * knows what that is: which goal is selected, which record is open, which
  * heading is being read. A pane says it here as it renders and takes it back
  * when it leaves, and the drawer falls back to the section's own name — so a
  * pane that says nothing still has a context line, and no pane can leave a

@@ -11,9 +11,15 @@ import (
 // with a word and a colon.
 var headLinePattern = regexp.MustCompile(`^- ([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$`)
 
-// requiredKeys are the four a head must declare. A key present with an empty
+// requiredKeys are the three a head must declare. A key present with an empty
 // value has declared nothing, so it is missing.
-var requiredKeys = []string{"Kind", "Id", "Status", "Areas"}
+var requiredKeys = []string{"Kind", "Id", "Status"}
+
+// goalsKey is the one optional key this package validates: it names goals of
+// the ledger, which either has them or does not, so a name it does not carry
+// is a refusal rather than a reference to something unwritten. A head with no
+// Goals line is about the project as a whole.
+const goalsKey = "Goals"
 
 // referenceKeys are the optional keys a head may declare, parsed as plain
 // whitespace-separated references and intentionally unvalidated: a reference
@@ -38,7 +44,7 @@ type Record struct {
 	Kind   string
 	ID     string
 	Status string
-	Areas  []string
+	Goals  []string // the ledger goals this record is about; none is the whole
 	Title  string
 	Path   string // checkout-relative
 	Home   string // checkout-relative home the record was found in
@@ -162,7 +168,7 @@ func parseRecord(path, text string) (Record, []Problem, bool) {
 	record.Kind = values[foldKey("Kind")]
 	record.ID = values[foldKey("Id")]
 	record.Status = values[foldKey("Status")]
-	record.Areas = strings.Fields(values[foldKey("Areas")])
+	record.Goals = strings.Fields(values[foldKey(goalsKey)])
 	for _, key := range referenceKeys {
 		references := strings.Fields(values[foldKey(key)])
 		switch key {

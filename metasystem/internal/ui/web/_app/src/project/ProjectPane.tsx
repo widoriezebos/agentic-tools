@@ -3,15 +3,15 @@ import { NavLink, useNavigate, useParams } from "react-router";
 
 import { failureMessage, loadPane, type DocumentFile, type Pane as PanePayload, type Problem } from "./api";
 import {
-  areaRows,
   briefingFor,
   documentGroups,
-  nameOf,
-  type AreaBook,
+  goalRail,
   type BookBriefing,
   type Briefing,
   type DesignRuns,
   type DocumentGroup,
+  type GoalRail,
+  type GoalRow,
   type Row,
 } from "./pane";
 import "./reading.css";
@@ -25,8 +25,9 @@ import { Button, Chip, Skeleton } from "../shell/controls";
 /**
  * Project: a briefing on what this project is, not a list of its files.
  *
- * The left column is the area tree. The main column opens each kind in its
- * own words — the intent index's first paragraph, the doctrine's, a design's —
+ * The left column is the project and then the ledger's goals, which are the
+ * project's one subdivision. The main column opens each kind in its own
+ * words — the intent index's first paragraph, the doctrine's, a design's —
  * and only then offers the links: the books as tables of contents, the
  * decisions and designs as rows carrying their summaries, the designs grouped
  * so that what governs is open and what is finished is one collapsed run. The
@@ -42,8 +43,8 @@ type PaneState =
   | { state: "read"; pane: PanePayload };
 
 export function ProjectPane() {
-  const parameters = useParams<{ slug?: string }>();
-  const slug = parameters.slug ?? null;
+  const parameters = useParams<{ id?: string }>();
+  const goal = parameters.id ?? null;
   const [read, setRead] = useState<PaneState>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -72,19 +73,19 @@ export function ProjectPane() {
     <Pane title="Project">
       {read.state === "loading" && <LoadingCards />}
       {read.state === "failed" && <FailureCard message={read.message} onRetry={reload} />}
-      {read.state === "read" && <Columns pane={read.pane} slug={slug} onReload={reload} />}
+      {read.state === "read" && <Columns pane={read.pane} goal={goal} onReload={reload} />}
     </Pane>
   );
 }
 
-function Columns({ pane, slug, onReload }: { pane: PanePayload; slug: string | null; onReload: () => void }) {
-  const areas = useMemo(() => areaRows(pane), [pane]);
-  const briefing = useMemo(() => briefingFor(pane, slug), [pane, slug]);
+function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | null; onReload: () => void }) {
+  const rail = useMemo(() => goalRail(pane), [pane]);
+  const briefing = useMemo(() => briefingFor(pane, goal), [pane, goal]);
   const groups = useMemo(() => documentGroups(pane.documents), [pane]);
   const [sheet, setSheet] = useState<Request | null>(null);
   const navigate = useNavigate();
 
-  const where = slug === null ? "Everything" : nameOf(pane, slug);
+  const where = goal ?? "Everything";
   useAbout(`Project · ${where}`);
 
   // A created record is opened, because writing it is the point of creating
@@ -101,12 +102,12 @@ function Columns({ pane, slug, onReload }: { pane: PanePayload; slug: string | n
 
   // The same four actions appear in three places — the aside, a block's head,
   // and an empty block's one line — so each is written once and used where it
-  // belongs. On an area page they carry that area, already chosen.
+  // belongs. On a goal page they carry that goal, already chosen.
   const openRecord = (kind: Kind) => () => {
-    setSheet({ mode: "record", kind, area: slug });
+    setSheet({ mode: "record", kind, goal });
   };
   const openQuestion = () => {
-    setSheet({ mode: "question", area: slug });
+    setSheet({ mode: "question", goal });
   };
   const recordAct = (kind: Kind) => <Act label={ACTIONS[kind].offer} onAct={openRecord(kind)} />;
   const questionAct = <Act label="Ask a question" onAct={openQuestion} />;
@@ -130,30 +131,16 @@ function Columns({ pane, slug, onReload }: { pane: PanePayload; slug: string | n
 
   return (
     <div className="ms-briefing">
-      <nav className="ms-project-areas" aria-label="Areas">
-        {areas.map((area) => (
-          <NavLink key={area.slug ?? "project"} className="ms-project-area" to={area.to} end>
-            <span className="ms-project-area-name">{area.name}</span>
-            <span className="ms-project-area-count">{area.count}</span>
-          </NavLink>
-        ))}
-      </nav>
+      <GoalsRail rail={rail} />
       <div className="ms-briefing-main">
         <p className="ms-project-read-at">
           Read at {timeOf(pane.readAt)}
           <Button onClick={onReload}>Reload</Button>
         </p>
         {pane.problems.length > 0 && <Problems problems={pane.problems} />}
-        {briefing.area !== null && <AreaBlock briefing={briefing} />}
+        {briefing.goal !== null && <GoalBlock briefing={briefing} />}
         {briefing.books.map((book) => (
           <BookBlock key={book.id} book={book} />
-        ))}
-        {briefing.areaBooks.map((book) => (
-          <AreaBookBlock
-            key={book.id}
-            book={book}
-            action={book.id === "intent" && slug !== null ? recordAct("intent") : null}
-          />
         ))}
         <Block id="decisions" title="Decisions" count={briefing.decisions.length} action={recordAct("decision")}>
           {briefing.decisions.length === 0 ? (
@@ -170,15 +157,15 @@ function Columns({ pane, slug, onReload }: { pane: PanePayload; slug: string | n
             <Rows rows={briefing.questions} action={answer} />
           )}
         </Block>
-        <Documents groups={groups} total={pane.documents.length} />
+        {goal === null && <Documents groups={groups} total={pane.documents.length} />}
       </div>
       <aside className="ms-briefing-aside" aria-label="Beside the briefing">
         <section className="ms-briefing-note">
-          <h2 className="ms-briefing-note-title">{slug === null ? "Contribute" : `Contribute to ${where}`}</h2>
+          <h2 className="ms-briefing-note-title">{goal === null ? "Contribute" : `Contribute to ${where}`}</h2>
           <div className="ms-briefing-contribute">
-            {/* An intent chapter belongs to an area, and is offered where one
-                is selected; the project's own intent is its index. */}
-            {slug !== null && <Button onClick={openRecord("intent")}>{ACTIONS.intent.offer}</Button>}
+            {/* An intent chapter needs a title and nothing else; it joins the
+                index's reading order wherever it was written from. */}
+            <Button onClick={openRecord("intent")}>{ACTIONS.intent.offer}</Button>
             <Button onClick={openRecord("decision")}>{ACTIONS.decision.offer}</Button>
             <Button onClick={openRecord("design")}>{ACTIONS.design.offer}</Button>
             <Button onClick={openQuestion}>Ask a question</Button>
@@ -212,7 +199,7 @@ function Columns({ pane, slug, onReload }: { pane: PanePayload; slug: string | n
           <h2 className="ms-briefing-note-title">This checkout</h2>
           <p className="ms-briefing-note-line">
             {count(briefing.checkout.records, "record")} in {count(briefing.checkout.homes, "home")} ·{" "}
-            {count(briefing.checkout.areas, "area")} · {count(briefing.checkout.problems, "problem")}
+            {count(briefing.checkout.goals, "ledger goal")} · {count(briefing.checkout.problems, "problem")}
           </p>
           <p className="ms-briefing-note-line">Read at {timeOf(pane.readAt)}</p>
         </section>
@@ -220,7 +207,7 @@ function Columns({ pane, slug, onReload }: { pane: PanePayload; slug: string | n
       {sheet !== null && (
         <Sheet
           request={sheet}
-          areas={pane.areas}
+          goals={pane.goals}
           onClose={() => {
             setSheet(null);
           }}
@@ -228,6 +215,41 @@ function Columns({ pane, slug, onReload }: { pane: PanePayload; slug: string | n
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The left column: the project, then the goals. A goal still worked under is a
+ * row with the state it stands in; the concluded ones are behind one summary
+ * each, because a rail of six hundred closed goals is not a rail.
+ */
+function GoalsRail({ rail }: { rail: GoalRail }) {
+  return (
+    <nav className="ms-project-goals" aria-label="Goals">
+      <GoalLink row={rail.project} />
+      {rail.live.map((row) => (
+        <GoalLink key={row.id} row={row} />
+      ))}
+      {rail.runs.map((run) => (
+        <details key={run.state} className="ms-project-run">
+          <summary className="ms-project-run-summary">
+            {String(run.rows.length)} {run.state}
+          </summary>
+          {run.rows.map((row) => (
+            <GoalLink key={row.id} row={row} />
+          ))}
+        </details>
+      ))}
+    </nav>
+  );
+}
+
+function GoalLink({ row }: { row: GoalRow }) {
+  return (
+    <NavLink className="ms-project-goal" to={row.to} end>
+      <span className="ms-project-goal-name">{row.name}</span>
+      {row.state !== "" && <Chip>{row.state}</Chip>}
+    </NavLink>
   );
 }
 
@@ -287,23 +309,35 @@ function Block({
   );
 }
 
-/** The area page opens by saying which area this is, in the index's own word. */
-function AreaBlock({ briefing }: { briefing: Briefing }) {
-  const area = briefing.area;
-  if (area === null) {
+/**
+ * The goal page opens with the goal itself: its id above the title, the
+ * ledger's own reason for it as the lede, where it stands, and the way through
+ * to the Backlog, which is where a goal is worked rather than read about.
+ */
+function GoalBlock({ briefing }: { briefing: Briefing }) {
+  const goal = briefing.goal;
+  if (goal === null) {
     return null;
   }
   return (
-    <Block id="area" title={area.name} count={area.count}>
-      {area.declared ? (
-        <p className="ms-briefing-lede">
-          One of the areas the intent index declares, as <span className="ms-mono">{area.slug}</span>. Everything
-          below names it.
-        </p>
+    <section className="ms-briefing-block" id="goal">
+      <p className="ms-facts-eyebrow ms-mono">{goal.id}</p>
+      <div className="ms-briefing-head">
+        <h2 className="ms-briefing-title">{goal.title}</h2>
+        {goal.state !== "" && <Chip>{goal.state}</Chip>}
+        <span className="ms-project-count">{goal.count}</span>
+        <span className="ms-briefing-act">
+          <NavLink className="ms-briefing-link" to="/backlog">
+            Open in Backlog →
+          </NavLink>
+        </span>
+      </div>
+      {goal.found ? (
+        goal.intent !== "" && <p className="ms-briefing-lede">{goal.intent}</p>
       ) : (
-        <p className="ms-project-reason">No area named {area.slug} is declared by the intent index.</p>
+        <p className="ms-project-reason">The ledger carries no goal named {goal.id}.</p>
       )}
-    </Block>
+    </section>
   );
 }
 
@@ -343,25 +377,6 @@ function BookBlock({ book }: { book: BookBriefing }) {
             </li>
           ))}
         </ul>
-      )}
-    </Block>
-  );
-}
-
-/**
- * A book under one area: only the chapters that name it, or one honest line
- * saying there are none and that the project-wide book applies. A project-wide
- * book is not repeated under every area.
- */
-function AreaBookBlock({ book, action }: { book: AreaBook; action: ReactNode }) {
-  return (
-    <Block id={book.id} title={book.title} count={book.rows.length} action={action}>
-      {book.rows.length === 0 ? (
-        <p className="ms-project-none">
-          {book.none} {action}
-        </p>
-      ) : (
-        <Rows rows={book.rows} />
       )}
     </Block>
   );
@@ -455,12 +470,7 @@ function RecordRow({ row, action }: { row: Row; action?: ReactNode }) {
         {row.to === null ? row.title : <NavLink to={row.to}>{row.title}</NavLink>}
       </span>
       <span className="ms-project-row-status">{row.status !== "" && <Chip>{row.status}</Chip>}</span>
-      <span className="ms-project-row-areas">
-        {row.areas.map((area) => (
-          <Chip key={area}>{area}</Chip>
-        ))}
-        {action}
-      </span>
+      <span className="ms-project-row-act">{action}</span>
       <span className="ms-mono ms-project-row-path" title={row.path}>
         {row.path}
       </span>
@@ -522,7 +532,7 @@ function DocumentRow({ file }: { file: DocumentFile }) {
         <NavLink to={documentPath(file.path)}>{file.title}</NavLink>
       </span>
       <span className="ms-project-row-status" />
-      <span className="ms-project-row-areas" />
+      <span className="ms-project-row-act" />
       <span className="ms-mono ms-project-row-path" title={file.path}>
         {file.path}
       </span>

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:86587f7b6e6ae5f76bd847e72c4de78d4672c494aa8f93e3051625e091995452",
+  "sourceDigest": "sha256:abfdd303d3999649bfa37cae3b9f0f4d88895f9829ab0a9a3c6a5b9b55135f33",
   "source": [
     {
       "path": ".npmrc",
@@ -176,7 +176,7 @@
     },
     {
       "path": "src/project/DocumentPane.tsx",
-      "sha256": "23b92405063cfba7584eec15134071a7ed5cb13f1d4ad4318364af1e81a728d6"
+      "sha256": "33e03c76bf5f8920770f61946e712ba98b01bd0196484cace5d54efd191fb614"
     },
     {
       "path": "src/project/Markdown.tsx",
@@ -184,15 +184,15 @@
     },
     {
       "path": "src/project/ProjectPane.tsx",
-      "sha256": "b15fd51cae8eb922834f6b478430fe07550abad3aac0e1931a7beb24356610ce"
+      "sha256": "96f1a052ea9dc6f75d1d3bc1480e5ab5227f4520ca602ee79f3559aabca4d2eb"
     },
     {
       "path": "src/project/Sheet.tsx",
-      "sha256": "baeda0efbff5a4a1654cb243de7720e425e7cc288c339fb2a86c16cefbf34a3b"
+      "sha256": "19fa560d5e0d5efcda4feaf43fa3493ad2cbdc0b4db173e2bc5f8fffcf20fea5"
     },
     {
       "path": "src/project/api.ts",
-      "sha256": "acbe59002a822ee09bb4f3282194aa389c2aab0d0d1e04a2054e3889f89402e2"
+      "sha256": "32960558f4638712d77e53a59f159d6a3d27a2a70ced9ec667c213c5b833fc0e"
     },
     {
       "path": "src/project/links.test.ts",
@@ -212,31 +212,31 @@
     },
     {
       "path": "src/project/pane.test.ts",
-      "sha256": "30fac332da21968de028d05f084050c0ed06eb3cd17f5ce64e8c7a4e977f95f1"
+      "sha256": "b70d6cb165d373ca3397018a0864f530d2c3712d5a000888c7c8292850696ab0"
     },
     {
       "path": "src/project/pane.ts",
-      "sha256": "f6150623f264273822f6ed77deab9ed539900b65320f4a1a23e9ddaf78c99ea4"
+      "sha256": "07cd70316afe08479cf295f1ce07b252019dd9a1e0dcb2687e764c0551058584"
     },
     {
       "path": "src/project/reading.css",
-      "sha256": "d815a5a49a5b89c5abfdc6561d84c73d448385da45ef17843f5e4c39eed6c534"
+      "sha256": "6b5c28db231bea8d62df7bdd6cea93b3aa86e9d2cc3305911a5168629e4f0ca9"
     },
     {
       "path": "src/project/writing.test.ts",
-      "sha256": "2414b3f5936718caa3192a06d3f8f8aa86c5bd9a5349a91778f4d78cc09cbcc4"
+      "sha256": "dcb67c09029691c3b593dde9485830838fcc9ef43bfa69b72d7396b96129284d"
     },
     {
       "path": "src/project/writing.ts",
-      "sha256": "7d7451a40928ddf8320ab9e63ec5c75942f3b7fc41cf9d4084b7737092daf252"
+      "sha256": "eeaa2e021bac40c301287eab8c6057a5f3f24129de52bf5e35dfd46c433b30c7"
     },
     {
       "path": "src/routes.test.ts",
-      "sha256": "64c0a064042a97a608b057e9c3f255abb7d7e4b2b981fffb2c6c0350f7dfcaad"
+      "sha256": "007ca2fb4014c9e9429fff983d9a7981d49303db75e9507a11608c3b255f9161"
     },
     {
       "path": "src/routes.ts",
-      "sha256": "3f51a257c92e2692131876f468a7e298eb6956bc805119d36c7b4040e8e0d817"
+      "sha256": "a5c65e4dc3938f758cc7e6beff1bd2edaff538bf55a051699bf2315c9e4e1ba9"
     },
     {
       "path": "src/shell/Composer.tsx",
@@ -268,7 +268,7 @@
     },
     {
       "path": "src/shell/Shell.tsx",
-      "sha256": "53c646601a4c847728f630255b439969760fbf76bb87662380ef5cd709220b6d"
+      "sha256": "6aa0eafc27ec51153d899c256cbc4a03ed00d22c4e6b8e433aa225b6cdba9360"
     },
     {
       "path": "src/shell/ThemeControl.tsx",
@@ -284,7 +284,7 @@
     },
     {
       "path": "src/shell/about.tsx",
-      "sha256": "eb6c2e9c00bfb246bec6b754b9aa58fbbf2abf026452e52b1075456fb2277fa3"
+      "sha256": "47866cf59f7e9f3b89042d828aa2850d805a6e96b1a367489c457285c4f2f4ae"
     },
     {
       "path": "src/shell/controls.tsx",
@@ -358,11 +358,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "2935d326ac2417707f56d589ce301157beb37bd2c0af36e2945e67d8193ba014"
+      "sha256": "0e9e7755718111914487cc4772fcfae8e5aa49c986672a5eac38f50b23e1d943"
     },
     {
       "path": "assets/index.js",
-      "sha256": "c3aac01aa75d9d897783bc749378b76a11396acc1ecbf109f3a92ec702f1d430"
+      "sha256": "9f3b47ef000661920eace3909a95abeffb7093faef0fbdf7672dd32cf938a482"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

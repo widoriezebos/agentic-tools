@@ -58,9 +58,9 @@ const (
 	StatusDone       = "done"
 )
 
-// ProjectArea is the one area no index declares: everything that belongs to the
-// project as a whole rather than to a part of it.
-const ProjectArea = "project"
+// WholeProject names the one bucket no goal declares: everything that belongs
+// to the project as a whole rather than to one goal of it.
+const WholeProject = "project"
 
 // Kinds is what a head may declare, in reading order rather than alphabetical
 // order: intent, then the doctrine that serves it, then the decisions, then
@@ -91,13 +91,6 @@ type Home struct {
 	Register bool   // the one questions table
 }
 
-// Area is one slug the intent index declares, with the name it reads by.
-type Area struct {
-	Slug string
-	Name string
-	Line int // in the intent index
-}
-
 // Chapter is one line of a book's reading order: a record of the book's kind
 // named by id, or an existing document named by its checkout-relative path and
 // left unchanged where it is.
@@ -108,13 +101,12 @@ type Chapter struct {
 	Line  int
 }
 
-// Book is a home whose index.md is a record of the kind, carrying the areas
-// (the intent index only) and the reading order.
+// Book is a home whose index.md is a record of the kind, carrying the reading
+// order it names.
 type Book struct {
 	Kind     string
 	Home     string // checkout-relative
 	Index    *Record
-	Areas    []Area
 	Chapters []Chapter
 }
 
@@ -124,7 +116,7 @@ type Question struct {
 	ID     string
 	Opened string
 	Text   string
-	Areas  []string
+	Goals  []string
 	Status string
 	Line   int
 }
@@ -148,7 +140,7 @@ type Project struct {
 	Records   []Record
 	Books     []Book
 	Questions []Question
-	Areas     []Area
+	Goals     []Goal
 	Problems  []Problem
 }
 
@@ -257,6 +249,7 @@ func Read(roots Roots) (*Project, error) {
 	}
 	sort.SliceStable(read.Records, func(i, j int) bool { return read.Records[i].Path < read.Records[j].Path })
 	read.readBooks()
+	read.readGoals()
 	read.check()
 	sort.SliceStable(read.Problems, func(i, j int) bool {
 		left, right := read.Problems[i], read.Problems[j]
@@ -350,11 +343,10 @@ func (p *Project) readWithin(root *os.Root, name, rel string) ([]byte, bool) {
 	return data, true
 }
 
-// readBooks reads the index of each book home: the areas it declares (the
-// intent index alone) and the reading order it names. The index of a book is a
-// record of the book's own kind, so a home whose index.md is absent, carries no
-// head, or declares another kind is no book at all and declares no areas — the
-// file stays a readable record of whatever kind it does declare.
+// readBooks reads the index of each book home for the reading order it names.
+// The index of a book is a record of the book's own kind, so a home whose
+// index.md is absent, carries no head, or declares another kind is no book at
+// all — the file stays a readable record of whatever kind it does declare.
 func (p *Project) readBooks() {
 	for _, home := range p.Homes {
 		if !home.Book {
@@ -365,10 +357,6 @@ func (p *Project) readBooks() {
 			continue
 		}
 		book := Book{Kind: home.Kind, Home: home.Rel, Index: index}
-		if home.Kind == KindIntent {
-			book.Areas = parseAreas(index.Body, index.BodyLine)
-			p.Areas = append(p.Areas, book.Areas...)
-		}
 		book.Chapters = parseChapters(index.Body, index.BodyLine)
 		p.Books = append(p.Books, book)
 	}
@@ -433,16 +421,6 @@ func (p *Project) registerRel() string {
 		}
 	}
 	return ""
-}
-
-// DeclaredAreas are the areas a record may name: the intent index's own list,
-// plus the project as a whole.
-func (p *Project) DeclaredAreas() map[string]bool {
-	declared := map[string]bool{ProjectArea: true}
-	for _, area := range p.Areas {
-		declared[area.Slug] = true
-	}
-	return declared
 }
 
 func (p *Project) problem(path string, line int, message string) {

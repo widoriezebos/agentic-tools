@@ -90,7 +90,7 @@ func statusID(path, prefix string) (string, bool) {
 type recordBody struct {
 	Kind    string   `json:"kind"`
 	Title   string   `json:"title"`
-	Areas   []string `json:"areas"`
+	Goals   []string `json:"goals"`
 	Affects []string `json:"affects"`
 	Cites   []string `json:"cites"`
 }
@@ -101,7 +101,7 @@ type statusBody struct {
 
 type questionBody struct {
 	Question string   `json:"question"`
-	Areas    []string `json:"areas"`
+	Goals    []string `json:"goals"`
 }
 
 func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
@@ -129,7 +129,7 @@ func (h *handler) createRecord(w http.ResponseWriter, r *http.Request) {
 	}
 	answer(w, func() (any, error) {
 		return h.info.CreateRecord(project.NewRecord{
-			Kind: body.Kind, Title: body.Title, Areas: body.Areas, Affects: body.Affects, Cites: body.Cites,
+			Kind: body.Kind, Title: body.Title, Goals: body.Goals, Affects: body.Affects, Cites: body.Cites,
 		})
 	})
 }
@@ -156,7 +156,7 @@ func (h *handler) askQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	answer(w, func() (any, error) {
-		return h.info.AskQuestion(project.NewQuestion{Question: body.Question, Areas: body.Areas})
+		return h.info.AskQuestion(project.NewQuestion{Question: body.Question, Goals: body.Goals})
 	})
 }
 

@@ -352,7 +352,7 @@ func TestReadCarriesARecordsHeadAsData(t *testing.T) {
 	roots := selfHostedFixture(t)
 	seed(t, roots)
 	plant(t, roots.Checkout, "metasystem/plans/designs/headed.md",
-		record("A headed design", "design", "design-headed", "accepted", "billing project",
+		record("A headed design", "design", "design-headed", "accepted", "ledger-sync two-homes",
 			"- Cites: design-ledger",
 			"- Affects: decision-one-binary",
 			"- Governs: g1-s22",
@@ -366,7 +366,7 @@ func TestReadCarriesARecordsHeadAsData(t *testing.T) {
 	testutil.Require(t, "the head is data", document.Record != nil, true)
 	testutil.Expect(t, "the head", *document.Record, Head{
 		Kind: "design", ID: "design-headed", Status: "accepted",
-		Areas:      []string{"billing", "project"},
+		Goals:      []string{"ledger-sync", "two-homes"},
 		Cites:      []string{"design-ledger"},
 		Affects:    []string{"decision-one-binary"},
 		Governs:    []string{"g1-s22"},
