@@ -1,6 +1,9 @@
 package project
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
@@ -149,6 +152,23 @@ func TestCheckRefusesEachFault(t *testing.T) {
 			want: "the status answered: is not open, answered: <reference>, or withdrawn",
 		},
 		{
+			name: "a register row taking a page's id",
+			fault: func(f *fixture) (string, string) {
+				f.write(f.state+"docs/decisions/0003-numbered.md",
+					record("A decision numbered like a question", "decision", "Q-1", "draft", "project"))
+				return f.state + "memory/questions.md", "Q-1"
+			},
+			want: "the id Q-1 is already declared by metasystem/docs/decisions/0003-numbered.md",
+		},
+		{
+			name: "two register rows with one id",
+			fault: func(f *fixture) (string, string) {
+				f.appendToRegister("| Q-1 | 2026-09-22 | A question numbered twice | project | open |\n")
+				return f.state + "memory/questions.md", "numbered twice"
+			},
+			want: "the id Q-1 is already declared by metasystem/memory/questions.md",
+		},
+		{
 			name: "a head line that is not a declaration",
 			fault: func(f *fixture) (string, string) {
 				f.write(f.state+"docs/decisions/0003-broken.md",
@@ -199,6 +219,102 @@ func TestARefusalDoesNotHideTheRest(t *testing.T) {
 	testutil.Expect(t, "the designs still list", ids(read.List(KindDesign, ListOptions{})),
 		[]string{"design-ledger", "design-reading", "design-interface"})
 	testutil.Expect(t, "the faulty record is still read", read.Record("decision-shipping") != nil, true)
+}
+
+// A bound chapter names a document this checkout holds, and nothing else: a
+// parent step out of it, a symlink pointing out of it, and a directory are all
+// refused, whatever is at the other end.
+func TestAChapterMustNameAFileInsideTheCheckout(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		fault func(f *fixture) (rel, anchor string)
+		want  string
+	}{
+		{
+			name: "a chapter that steps out of the checkout",
+			fault: func(f *fixture) (string, string) {
+				f.outsideDocument()
+				f.appendToDoctrineIndex("- doc:../outside.md — Outside\n")
+				return f.state + "docs/doctrine/index.md", "../outside.md"
+			},
+			want: "the chapter binds ../outside.md, which is not in this checkout",
+		},
+		{
+			name: "a chapter bound to a symlink that leaves the checkout",
+			fault: func(f *fixture) (string, string) {
+				f.link(f.outsideDocument(), f.state+"docs/linked.md")
+				f.appendToDoctrineIndex("- doc:" + f.state + "docs/linked.md — Linked\n")
+				return f.state + "docs/doctrine/index.md", "docs/linked.md"
+			},
+			want: "the chapter binds metasystem/docs/linked.md, which is not in this checkout",
+		},
+		{
+			name: "a chapter bound to a directory",
+			fault: func(f *fixture) (string, string) {
+				f.appendToDoctrineIndex("- doc:" + f.state + "docs/intent — The intent\n")
+				return f.state + "docs/doctrine/index.md", "docs/intent —"
+			},
+			want: "the chapter binds metasystem/docs/intent, which is not in this checkout",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(t, true)
+			f.seed()
+			rel, anchor := test.fault(f)
+			read := f.read()
+
+			testutil.Expect(t, "the one refusal the binding raises", problemLines(read.Problems),
+				[]string{rel + ":" + itoa(f.lineOf(rel, anchor)) + ": " + test.want})
+		})
+	}
+}
+
+// The register is read from inside its own home. A questions.md that is a
+// symlink to a file outside it is refused where it stands rather than followed,
+// and the rows at the other end are no part of this project.
+func TestARegisterThatLeavesItsHomeIsRefused(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, true)
+	f.seed()
+	target := filepath.Join(filepath.Dir(f.checkout), "questions.md")
+	mustNot(t, os.WriteFile(target, []byte("# Elsewhere\n\n"+
+		"| id | opened | question | areas | status |\n"+
+		"| --- | --- | --- | --- | --- |\n"+
+		"| Q-9 | 2026-09-22 | A question from outside | project | open |\n"), 0o644),
+		"write the register outside the checkout")
+	register := f.state + "memory/questions.md"
+	mustNot(t, os.Remove(filepath.Join(f.checkout, filepath.FromSlash(register))), "remove the register")
+	f.link(target, register)
+	read := f.read()
+
+	testutil.Expect(t, "the questions a register outside its home declares", len(read.Questions), 0)
+	testutil.Require(t, "the refusals it raises", len(read.Problems), 1)
+	testutil.Expect(t, "where the refusal is anchored", read.Problems[0].Path, register)
+	testutil.Expect(t, "what the refusal says",
+		strings.HasPrefix(read.Problems[0].Message, "cannot be read:"), true)
+}
+
+// outsideDocument writes one Markdown file beside the checkout, which is where
+// a test puts what the containment must not bind.
+func (f *fixture) outsideDocument() string {
+	f.t.Helper()
+	path := filepath.Join(filepath.Dir(f.checkout), "outside.md")
+	mustNot(f.t, os.WriteFile(path, []byte("# Outside\n"), 0o644), "write the outside document")
+	return path
+}
+
+// link puts a symlink in the checkout, at a checkout-relative name.
+func (f *fixture) link(target, rel string) {
+	f.t.Helper()
+	name := filepath.Join(f.checkout, filepath.FromSlash(rel))
+	mustNot(f.t, os.MkdirAll(filepath.Dir(name), 0o755), "create the directory for "+rel)
+	mustNot(f.t, os.Symlink(target, name), "link "+rel)
 }
 
 // appendToDoctrineIndex adds one line to the book's reading order, leaving the

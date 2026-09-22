@@ -532,8 +532,8 @@ func questionStatus(status string) bool {
 	switch {
 	case status == resolver.QuestionOpen, status == resolver.QuestionWithdrawn:
 		return true
-	case strings.HasPrefix(status, resolver.QuestionAnswered):
-		return strings.TrimSpace(strings.TrimPrefix(status, resolver.QuestionAnswered)) != ""
+	case strings.HasPrefix(status, resolver.AnsweredPrefix):
+		return strings.TrimSpace(strings.TrimPrefix(status, resolver.AnsweredPrefix)) != ""
 	}
 	return false
 }

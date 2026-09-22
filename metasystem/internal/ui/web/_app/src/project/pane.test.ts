@@ -350,8 +350,25 @@ describe("the left rail", () => {
       kind: "decision", id: "decision-one", areas: ["project"],
     }));
 
-    // One decision is no rail at all: a list of one names no neighbours.
-    expect(rail).toBeNull();
+    // The only decision in the checkout. The rail still says what this is read
+    // among, marks it, and offers nowhere to step: a record with no siblings
+    // keeps its region, or the reading would slide into the rail's column.
+    expect(rail?.title).toBe("Decisions · Everything");
+    expect(rail?.siblings.map((sibling) => sibling.title)).toEqual(["One binary"]);
+    expect(rail?.siblings.map((sibling) => sibling.current)).toEqual([true]);
+    expect(rail?.previous).toBeNull();
+    expect(rail?.next).toBeNull();
+  });
+
+  it("reads the one record of its kind in its area among itself", () => {
+    const rail = railFor(pane, documentOf("metasystem/docs/decisions/0001.md", {
+      kind: "decision", id: "decision-one", areas: ["goals"],
+    }));
+
+    expect(rail?.title).toBe("Decisions · The goal ledger");
+    expect(rail?.siblings.map((sibling) => sibling.title)).toEqual(["One binary"]);
+    expect(rail?.previous).toBeNull();
+    expect(rail?.next).toBeNull();
   });
 
   it("gives a document that declares nothing no rail", () => {

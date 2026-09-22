@@ -10,12 +10,18 @@ import (
 // how a paper becomes a project's intent without moving a byte.
 const DocPrefix = "doc:"
 
-// The statuses a question row carries. An answer names what answered it.
+// The statuses a question row carries, as everything that counts a question
+// counts it. An answer names what answered it, so the register writes the word
+// with a colon and the reference after it; the word is the status.
 const (
 	QuestionOpen      = "open"
-	QuestionAnswered  = "answered:"
+	QuestionAnswered  = "answered"
 	QuestionWithdrawn = "withdrawn"
 )
+
+// AnsweredPrefix is how the register spells an answer: the word, a colon, and
+// what answered the question.
+const AnsweredPrefix = QuestionAnswered + ":"
 
 // registerHeader is the one table the register holds, by its columns.
 var registerHeader = []string{"id", "opened", "question", "areas", "status"}
@@ -184,10 +190,30 @@ func questionStatusValid(status string) bool {
 	switch {
 	case status == QuestionOpen, status == QuestionWithdrawn:
 		return true
-	case strings.HasPrefix(status, QuestionAnswered):
-		return strings.TrimSpace(strings.TrimPrefix(status, QuestionAnswered)) != ""
+	case strings.HasPrefix(status, AnsweredPrefix):
+		return strings.TrimSpace(strings.TrimPrefix(status, AnsweredPrefix)) != ""
 	}
 	return false
+}
+
+// State is the word this question stands under, whatever the row wrote after
+// it: an answer is answered. A status the register does not carry stands as it
+// was written, so what the check refuses is also what a listing shows.
+func (q Question) State() string {
+	if strings.HasPrefix(q.Status, AnsweredPrefix) {
+		return QuestionAnswered
+	}
+	return q.Status
+}
+
+// Answers is what an answered row names as having answered it, and nothing for
+// a row that names nothing. It is the one reference a question carries, and no
+// head declares it: the register's status column does.
+func (q Question) Answers() []string {
+	if !strings.HasPrefix(q.Status, AnsweredPrefix) {
+		return nil
+	}
+	return strings.Fields(strings.TrimPrefix(q.Status, AnsweredPrefix))
 }
 
 func itoa(value int) string { return strconv.Itoa(value) }

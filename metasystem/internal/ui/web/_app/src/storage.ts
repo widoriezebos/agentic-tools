@@ -12,6 +12,12 @@ import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
  * bottom now, it is open or closed rather than open at some width, and it is
  * the same preference about the same collaborator, so it keeps the key a
  * browser already has a value under.
+ *
+ * The drawer is closed until a human opens it. A panel that took two fifths of
+ * the work area on every first load took it from the one thing the work area
+ * is for, and took it for a collaborator who is not connected yet; the bar
+ * along the bottom says the Project Partner is there, and opening it is the
+ * human's to ask for and this build's to remember.
  */
 
 export const RAIL_KEY = "ms.ui.rail";
@@ -71,7 +77,7 @@ export function writeRailExpanded(expanded: boolean, store: Store | null = brows
 }
 
 export function readDockOpen(store: Store | null = browserStore()): boolean {
-  return read(DOCK_KEY, store) !== "closed";
+  return read(DOCK_KEY, store) === "open";
 }
 
 export function writeDockOpen(open: boolean, store: Store | null = browserStore()): void {

@@ -46,12 +46,14 @@ describe("the stored view state", () => {
     expect(readDockOpen(written)).toBe(false);
   });
 
+  // The drawer is closed until a human opens it: only the word it was opened
+  // under opens it again.
   it("defaults where nothing is stored", () => {
     const empty = store({});
 
     expect(readTheme(empty)).toBe("system");
     expect(readRailExpanded(empty)).toBe(true);
-    expect(readDockOpen(empty)).toBe(true);
+    expect(readDockOpen(empty)).toBe(false);
   });
 
   it("defaults where something invalid is stored", () => {
@@ -59,13 +61,24 @@ describe("the stored view state", () => {
 
     expect(readTheme(nonsense)).toBe("system");
     expect(readRailExpanded(nonsense)).toBe(true);
-    expect(readDockOpen(nonsense)).toBe(true);
+    expect(readDockOpen(nonsense)).toBe(false);
+  });
+
+  it("opens the drawer for a browser that was left with it open", () => {
+    const opened = store({ [DOCK_KEY]: "open" });
+
+    expect(readDockOpen(opened)).toBe(true);
   });
 
   // The drawer is remembered under the key the dock used, so a browser that
-  // already carries a closed dock opens with a closed drawer.
+  // already carries an open dock opens with an open drawer.
   it("remembers the drawer under the key the dock left behind", () => {
     const written = store({});
+
+    writeDockOpen(true, written);
+
+    expect(written.getItem(DOCK_KEY)).toBe("open");
+    expect(readDockOpen(written)).toBe(true);
 
     writeDockOpen(false, written);
 
@@ -76,7 +89,7 @@ describe("the stored view state", () => {
   it("reads and writes a store that throws without surfacing an error", () => {
     expect(readTheme(throwing)).toBe("system");
     expect(readRailExpanded(throwing)).toBe(true);
-    expect(readDockOpen(throwing)).toBe(true);
+    expect(readDockOpen(throwing)).toBe(false);
     expect(() => {
       writeRailExpanded(false, throwing);
     }).not.toThrow();
@@ -86,7 +99,7 @@ describe("the stored view state", () => {
   });
 
   it("reads and writes nothing at all where there is no store", () => {
-    expect(readDockOpen(null)).toBe(true);
+    expect(readDockOpen(null)).toBe(false);
     expect(() => {
       writeDockOpen(false, null);
     }).not.toThrow();

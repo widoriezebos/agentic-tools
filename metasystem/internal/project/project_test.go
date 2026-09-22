@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
@@ -319,8 +320,10 @@ func TestListNarrowsByAreaAndStatus(t *testing.T) {
 }
 
 // show's other half: a record cannot declare what names it, so the reader walks
-// Cites, Affects and Supersedes to find out. Governs names goal ids and By names
-// whoever accepted the record, so neither makes one record reference another.
+// Cites, Affects and Supersedes to find out, and the register besides — a
+// question answered by a record names it there. Governs names goal ids and By
+// names whoever accepted the record, so neither makes one record reference
+// another.
 func TestReferencedByReadsTheOtherHalf(t *testing.T) {
 	t.Parallel()
 
@@ -331,6 +334,7 @@ func TestReferencedByReadsTheOtherHalf(t *testing.T) {
 	testutil.Expect(t, "what references the first decision", read.ReferencedBy("decision-one-binary"),
 		[]Reference{
 			{ID: "decision-two-homes", Path: "metasystem/docs/decisions/archive/0002-two-homes.md", Key: "Supersedes"},
+			{ID: "Q-2", Path: "metasystem/memory/questions.md", Key: "Answers"},
 			{ID: "design-ledger", Path: "metasystem/plans/designs/ledger.md", Key: "Affects"},
 		})
 	testutil.Expect(t, "what references the ledger design", read.ReferencedBy("design-ledger"),
@@ -341,8 +345,9 @@ func TestReferencedByReadsTheOtherHalf(t *testing.T) {
 		read.Record("design-ledger").References("Governs"), []string{"goal-17"})
 }
 
-// The tree counts a record under every area it names, and keeps the project
-// bucket for what belongs to the whole rather than to a part.
+// The tree counts a record under every area it names, counts the register's
+// questions beside them, and keeps the project bucket for what belongs to the
+// whole rather than to a part.
 func TestTreeCountsByKindAndStatus(t *testing.T) {
 	t.Parallel()
 
@@ -354,20 +359,23 @@ func TestTreeCountsByKindAndStatus(t *testing.T) {
 	testutil.Require(t, "the declared areas counted", len(areas), 2)
 	testutil.Expect(t, "the first area", areas[0].Area.Slug, "billing")
 	testutil.Expect(t, "billing by kind", areas[0].Counts.Kind,
-		map[string]int{KindIntent: 0, KindDoctrine: 1, KindDecision: 1, KindDesign: 2})
+		map[string]int{KindIntent: 0, KindDoctrine: 1, KindDecision: 1, KindDesign: 2, KindQuestion: 1})
 	testutil.Expect(t, "billing by status", areas[0].Counts.Status,
-		map[string]int{StatusDraft: 0, StatusAccepted: 2, StatusSuperseded: 1, StatusDone: 1})
-	testutil.Expect(t, "billing in all", areas[0].Counts.Total, 4)
+		map[string]int{StatusDraft: 0, StatusAccepted: 2, StatusSuperseded: 1, StatusDone: 1,
+			QuestionOpen: 0, QuestionAnswered: 1, QuestionWithdrawn: 0})
+	testutil.Expect(t, "billing in all", areas[0].Counts.Total, 5)
 	testutil.Expect(t, "the second area", areas[1].Area.Slug, "security")
 	testutil.Expect(t, "security by kind", areas[1].Counts.Kind,
-		map[string]int{KindIntent: 0, KindDoctrine: 1, KindDecision: 0, KindDesign: 1})
+		map[string]int{KindIntent: 0, KindDoctrine: 1, KindDecision: 0, KindDesign: 1, KindQuestion: 1})
 	testutil.Expect(t, "security by status", areas[1].Counts.Status,
-		map[string]int{StatusDraft: 2, StatusAccepted: 0, StatusSuperseded: 0, StatusDone: 0})
+		map[string]int{StatusDraft: 2, StatusAccepted: 0, StatusSuperseded: 0, StatusDone: 0,
+			QuestionOpen: 0, QuestionAnswered: 0, QuestionWithdrawn: 1})
 	testutil.Expect(t, "the project bucket by kind", whole.Kind,
-		map[string]int{KindIntent: 1, KindDoctrine: 2, KindDecision: 1, KindDesign: 1})
+		map[string]int{KindIntent: 1, KindDoctrine: 2, KindDecision: 1, KindDesign: 1, KindQuestion: 1})
 	testutil.Expect(t, "the project bucket by status", whole.Status,
-		map[string]int{StatusDraft: 1, StatusAccepted: 4, StatusSuperseded: 0, StatusDone: 0})
-	testutil.Expect(t, "the project bucket in all", whole.Total, 5)
+		map[string]int{StatusDraft: 1, StatusAccepted: 4, StatusSuperseded: 0, StatusDone: 0,
+			QuestionOpen: 1, QuestionAnswered: 0, QuestionWithdrawn: 0})
+	testutil.Expect(t, "the project bucket in all", whole.Total, 6)
 }
 
 // The register is read as it is written: three rows, three statuses, and an
@@ -414,19 +422,129 @@ func TestHeadKeepsUnknownKeysAndReadsTheRest(t *testing.T) {
 	testutil.Expect(t, "the title", revised.Title, "A revised decision")
 }
 
-// An id is any non-empty string, and minting one is the engine's own ULID.
-func TestNewIDMintsTheEnginesULIDShape(t *testing.T) {
+// An id is any non-empty string, and minting one is a ULID: the millisecond it
+// was minted in, then eighty bits of randomness, in twenty-six Crockford
+// characters a standard decoder reads back.
+func TestNewIDMintsAULID(t *testing.T) {
 	t.Parallel()
 
+	minted := time.Date(2026, 9, 22, 10, 11, 12, 345_000_000, time.UTC)
+	predictable, err := newID(minted, zeroes{})
+	testutil.Require(t, "mint an id from a known instant", err, nil)
 	first, err := NewID()
 	testutil.Require(t, "mint an id", err, nil)
 	second, err := NewID()
 	testutil.Require(t, "mint a second id", err, nil)
 
 	testutil.Expect(t, "the length of a minted id", len(first), 26)
-	testutil.Expect(t, "two minted ids differ", first == second, false)
 	testutil.Expect(t, "a minted id is Crockford base32 throughout",
-		strings.Trim(first, "0123456789ABCDEFGHJKMNPQRSTVWXYZ"), "")
+		strings.Trim(first, ulidAlphabet), "")
+	testutil.Expect(t, "two minted ids differ", first == second, false)
+	// Twenty-six random characters would put three in four above 7, which a
+	// decoder reads as a 128-bit overflow: the first character carries the
+	// timestamp's top three bits and nothing else.
+	testutil.Expect(t, "the first character of a minted id", first[0] <= '7', true)
+	testutil.Expect(t, "the timestamp a minted id carries", ulidMillis(t, predictable),
+		minted.UnixMilli())
+	testutil.Expect(t, "what eighty zero bits of randomness spell",
+		predictable[10:], "0000000000000000")
+	testutil.Expect(t, "the clock's own id is stamped now",
+		time.Since(time.UnixMilli(ulidMillis(t, first))) < time.Minute, true)
+}
+
+// zeroes is randomness a test can predict, so a minted id is its timestamp and
+// the sixteen characters eighty zero bits spell.
+type zeroes struct{}
+
+func (zeroes) Read(into []byte) (int, error) {
+	for index := range into {
+		into[index] = 0
+	}
+	return len(into), nil
+}
+
+// ulidMillis decodes the timestamp the way any reader of a ULID does: the
+// first ten characters, five bits each, are the milliseconds it was minted in.
+func ulidMillis(t *testing.T, id string) int64 {
+	t.Helper()
+	var milliseconds int64
+	for _, character := range []byte(id[:10]) {
+		value := strings.IndexByte(ulidAlphabet, character)
+		if value < 0 {
+			t.Fatalf("%q is not a Crockford base32 character", string(character))
+		}
+		milliseconds = milliseconds<<5 | int64(value)
+	}
+	return milliseconds
+}
+
+// A question is the fifth kind, and answers every query the four do: it lists,
+// it shows by its id, and the record that answered it is named by it.
+func TestQuestionsAnswerEveryQuery(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, true)
+	f.seed()
+	read := f.read()
+
+	testutil.Expect(t, "every question, in register order", ids(read.List(KindQuestion, ListOptions{})),
+		[]string{"Q-1", "Q-2", "Q-3"})
+	testutil.Expect(t, "the questions of one area",
+		ids(read.List(KindQuestion, ListOptions{Area: "billing"})), []string{"Q-2"})
+	testutil.Expect(t, "the questions of one status",
+		ids(read.List(KindQuestion, ListOptions{Status: QuestionOpen})), []string{"Q-1"})
+	testutil.Expect(t, "an answered question, however the row wrote it",
+		ids(read.List(KindQuestion, ListOptions{Status: QuestionAnswered})), []string{"Q-2"})
+
+	answered := read.Record("Q-2")
+	testutil.Require(t, "a question shows by its id", answered != nil, true)
+	testutil.Expect(t, "what a question is", answered.Kind, KindQuestion)
+	testutil.Expect(t, "where an answered question stands", answered.Status, QuestionAnswered)
+	testutil.Expect(t, "what a question is titled by", answered.Title, "Who accepts a decision?")
+	testutil.Expect(t, "where a question lives", answered.Path, "metasystem/memory/questions.md")
+	testutil.Expect(t, "what answered it", answered.References("Answers"), []string{"decision-one-binary"})
+	testutil.Expect(t, "the question in what it answered",
+		read.ReferencedBy("decision-one-binary")[1],
+		Reference{ID: "Q-2", Path: "metasystem/memory/questions.md", Key: "Answers"})
+}
+
+// The index of a book is a record of the book's own kind. An index.md that
+// declares another kind is no book at all: it stays a readable record of what
+// it does declare, and the areas it names are declared by nothing.
+func TestAnIndexOfAnotherKindIsNoBook(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, true)
+	f.write(f.state+"docs/intent/index.md",
+		record("The project's intent", "design", "intent-index", "accepted", "project")+
+			"\n## Areas\n- billing — Billing and invoicing\n")
+	read := f.read()
+
+	testutil.Expect(t, "the books a wrong-kind index forms", len(read.Books), 0)
+	testutil.Expect(t, "the areas a wrong-kind index declares", read.Areas, []Area(nil))
+	testutil.Expect(t, "the areas anything may name", read.DeclaredAreas(),
+		map[string]bool{ProjectArea: true})
+	testutil.Expect(t, "the record it is all the same",
+		ids(read.List(KindDesign, ListOptions{})), []string{"intent-index"})
+	testutil.Expect(t, "the refusals it raises", problemLines(read.Problems), []string{})
+}
+
+// A name that begins with a dot is a name like any other: a draft and a
+// directory of drafts are records, read with the rest of their home.
+func TestADotPrefixedNameIsARecordLikeAnyOther(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, true)
+	f.seed()
+	f.write(f.state+"plans/designs/.draft.md",
+		record("A draft", "design", "design-draft", "draft", "billing"))
+	f.write(f.state+"plans/designs/.team/security.md",
+		record("A team's design", "design", "design-team", "draft", "security"))
+	read := f.read()
+
+	testutil.Expect(t, "the designs a dot no longer hides", ids(read.List(KindDesign, ListOptions{})),
+		[]string{"design-draft", "design-team", "design-ledger", "design-reading", "design-interface"})
+	testutil.Expect(t, "the refusals they raise", problemLines(read.Problems), []string{})
 }
 
 func pathsOf(records []Record) []string {

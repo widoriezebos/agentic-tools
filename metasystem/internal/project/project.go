@@ -1,7 +1,7 @@
-// Package project reads the project's declared memory: its intent, its
-// doctrine, its decisions, its designs, and its open questions, each in the one
-// home the memory-system design gives it, each declaring what it is in a short
-// head at the top of the file.
+// Package project is a read-only reader of the project's declared memory: its
+// intent, its doctrine, its decisions, its designs, and its open questions,
+// each in the one home it has, each declaring what it is in a short head at
+// the top of the file, and the questions in one register of rows.
 //
 // Nothing here writes, and nothing here infers a kind from a filename: a
 // document that carries no head is not a record and is not listed. The homes
@@ -12,32 +12,41 @@
 //
 // Read answers once and carries both: what parsed, and every refusal the check
 // verb prints. A project with problems still lists, shows and counts.
+//
+// Nothing here is read from outside the homes: an entry opens inside the home
+// that holds it and a bound document inside the checkout, so no symlink and no
+// parent step reaches a byte the project does not contain.
 package project
 
 import (
+	"crypto/rand"
+	"encoding/binary"
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
-// Roots names the three directories this package reads from. It is declared
-// here, rather than imported from the interface's lifecycle slice, for the
-// reason that slice's own comment gives: taking its types closes an import
-// loop.
+// Roots names the three directories this package reads from. They are declared
+// here rather than taken from the interface's own package: this package is
+// read by that one, and importing its types back would close an import loop.
 type Roots struct{ Checkout, Installation, StateRoot string }
 
-// The four kinds a record declares itself to be.
+// The four kinds a head declares itself to be, and the fifth no head declares:
+// a question is a row of the register rather than a document with a head.
 const (
 	KindIntent   = "intent"
 	KindDoctrine = "doctrine"
 	KindDecision = "decision"
 	KindDesign   = "design"
+	KindQuestion = "question"
 )
 
 // The four statuses a record carries. Status is maintained by hand, as every
@@ -53,12 +62,24 @@ const (
 // project as a whole rather than to a part of it.
 const ProjectArea = "project"
 
-// Kinds is reading order rather than alphabetical order: intent, then the
-// doctrine that serves it, then the decisions, then the designs.
+// Kinds is what a head may declare, in reading order rather than alphabetical
+// order: intent, then the doctrine that serves it, then the decisions, then
+// the designs.
 var Kinds = []string{KindIntent, KindDoctrine, KindDecision, KindDesign}
+
+// QueryKinds is every kind a query answers about: the four a head declares,
+// then the questions, which are rows and not pages.
+var QueryKinds = append(append([]string(nil), Kinds...), KindQuestion)
 
 // Statuses is the life of a record, in the order it is lived.
 var Statuses = []string{StatusDraft, StatusAccepted, StatusSuperseded, StatusDone}
+
+// QuestionStatuses is the life of a question, in the order it is lived.
+var QuestionStatuses = []string{QuestionOpen, QuestionAnswered, QuestionWithdrawn}
+
+// QueryStatuses is every status a query answers about and every tally has a
+// row for: a record's four, then a question's three.
+var QueryStatuses = append(append([]string(nil), Statuses...), QuestionStatuses...)
 
 // Home is one place the resolver looks: a directory holding records of one
 // kind, or the single file the questions register lives in.
@@ -178,10 +199,45 @@ func Homes(roots Roots) []Home {
 // checkout that carries it.
 func SelfHosted(roots Roots) bool { return roots.StateRoot != roots.Checkout }
 
-// NewID mints a fresh identity for a record, in the engine's one ULID shape.
+// ulidAlphabet is Crockford's base32: ten digits and twenty-two letters, with
+// I, L, O and U left out so that no two characters can be misread for each
+// other.
+const ulidAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+// NewID mints a fresh identity for a record: a ULID, which is a 48-bit
+// millisecond timestamp followed by 80 bits of randomness, written as 26
+// Crockford base32 characters. Two ids minted in one millisecond differ in
+// their randomness, and two minted a millisecond apart sort in the order they
+// were minted.
+//
 // An id is any non-empty string the project keeps unique; this is for those who
 // would rather not invent one.
-func NewID() (string, error) { return goal.NewOperationULID() }
+func NewID() (string, error) { return newID(time.Now(), rand.Reader) }
+
+// newID is NewID with the instant and the randomness a test can supply.
+func newID(now time.Time, entropy io.Reader) (string, error) {
+	var raw [16]byte
+	binary.BigEndian.PutUint64(raw[:8], uint64(now.UnixMilli())<<16)
+	if _, err := io.ReadFull(entropy, raw[6:]); err != nil {
+		return "", fmt.Errorf("mint a project id: %w", err)
+	}
+	return encodeULID(raw), nil
+}
+
+// encodeULID reads the sixteen bytes as one 128-bit number and writes it five
+// bits at a time, least significant last. Twenty-six characters carry 130
+// bits, so the first one carries only the top three: a ULID never begins above
+// 7, and a decoder that read an eighth value there would see an overflow.
+func encodeULID(raw [16]byte) string {
+	high, low := binary.BigEndian.Uint64(raw[:8]), binary.BigEndian.Uint64(raw[8:])
+	id := make([]byte, 26)
+	for index := len(id) - 1; index >= 0; index-- {
+		id[index] = ulidAlphabet[low&0x1f]
+		low = low>>5 | high<<59
+		high >>= 5
+	}
+	return string(id)
+}
 
 // Read reads every home once. An unreadable file is a problem anchored at that
 // file rather than an error, so one bad page never hides the rest of the
@@ -217,30 +273,35 @@ func Read(roots Roots) (*Project, error) {
 
 // readRecords walks one home. Subdirectories are read, which is what "any file
 // name" and "subdirectories allowed" mean, and is also how a book's chapters may
-// sit anywhere beneath it. A directory that is not there is not a problem: a
-// project declares the homes it uses.
+// sit anywhere beneath it; a name that begins with a dot is a name like any
+// other. A directory that is not there is not a problem: a project declares the
+// homes it uses.
+//
+// The walk is bounded by the home: entries are listed and opened through it, so
+// a symlink whose target lies outside does not open and a directory the walk
+// would otherwise descend is not followed out.
 func (p *Project) readRecords(home Home) error {
-	walk := func(path string, entry fs.DirEntry, walkErr error) error {
+	root, err := os.OpenRoot(home.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	walk := func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if os.IsNotExist(walkErr) {
 				return nil
 			}
 			return walkErr
 		}
-		name := entry.Name()
-		if strings.HasPrefix(name, ".") && path != home.Path {
-			if entry.IsDir() {
-				return fs.SkipDir
-			}
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
 			return nil
 		}
-		if entry.IsDir() || !strings.HasSuffix(name, ".md") {
-			return nil
-		}
-		rel := relative(p.Roots.Checkout, path)
-		data, err := os.ReadFile(path)
-		if err != nil {
-			p.problem(rel, 1, "cannot be read: "+err.Error())
+		rel := relative(p.Roots.Checkout, filepath.Join(home.Path, filepath.FromSlash(name)))
+		data, read := p.readWithin(root, name, rel)
+		if !read {
 			return nil
 		}
 		record, problems, isRecord := parseRecord(rel, string(data))
@@ -252,22 +313,55 @@ func (p *Project) readRecords(home Home) error {
 		p.Problems = append(p.Problems, problems...)
 		return nil
 	}
-	if err := filepath.WalkDir(home.Path, walk); err != nil && !os.IsNotExist(err) {
+	if err := fs.WalkDir(root.FS(), ".", walk); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
 }
 
+// readWithin reads one entry of a home, and never a byte from outside it. A
+// name that does not open inside the home — a symlink whose target left it, a
+// parent step — is refused where it was found, and so is anything that is not
+// a regular file. An absent file is absent rather than refused.
+func (p *Project) readWithin(root *os.Root, name, rel string) ([]byte, bool) {
+	file, err := root.Open(filepath.FromSlash(name))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false
+		}
+		p.problem(rel, 1, "cannot be read: "+err.Error())
+		return nil, false
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		p.problem(rel, 1, "cannot be read: "+err.Error())
+		return nil, false
+	}
+	if !info.Mode().IsRegular() {
+		p.problem(rel, 1, "cannot be read: it is not a regular file")
+		return nil, false
+	}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		p.problem(rel, 1, "cannot be read: "+err.Error())
+		return nil, false
+	}
+	return data, true
+}
+
 // readBooks reads the index of each book home: the areas it declares (the
-// intent index alone) and the reading order it names. A home whose index.md is
-// absent or carries no head is no book at all, and declares no areas.
+// intent index alone) and the reading order it names. The index of a book is a
+// record of the book's own kind, so a home whose index.md is absent, carries no
+// head, or declares another kind is no book at all and declares no areas — the
+// file stays a readable record of whatever kind it does declare.
 func (p *Project) readBooks() {
 	for _, home := range p.Homes {
 		if !home.Book {
 			continue
 		}
 		index := p.recordAtPath(path.Join(home.Rel, "index.md"))
-		if index == nil {
+		if index == nil || index.Kind != home.Kind {
 			continue
 		}
 		book := Book{Kind: home.Kind, Home: home.Rel, Index: index}
@@ -280,15 +374,22 @@ func (p *Project) readBooks() {
 	}
 }
 
-// readRegister reads the one questions table. An absent register is an absent
-// register, not a refusal.
+// readRegister reads the one questions table, from inside the directory that
+// holds it and nowhere else. An absent register is an absent register, not a
+// refusal; a register that is not a regular file of its own home is refused
+// rather than followed.
 func (p *Project) readRegister(home Home) error {
-	data, err := os.ReadFile(home.Path)
+	root, err := os.OpenRoot(filepath.Dir(home.Path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		p.problem(home.Rel, 1, "cannot be read: "+err.Error())
+		return nil
+	}
+	defer func() { _ = root.Close() }()
+	data, read := p.readWithin(root, filepath.Base(home.Path), home.Rel)
+	if !read {
 		return nil
 	}
 	p.Questions = parseQuestions(string(data))
@@ -304,14 +405,34 @@ func (p *Project) recordAtPath(rel string) *Record {
 	return nil
 }
 
-// Record returns the record with this id, or nil.
+// Record returns the record with this id, or nil. A question is a record too:
+// the id it is asked under names its row the way a head's id names a page.
 func (p *Project) Record(id string) *Record {
 	for index := range p.Records {
 		if p.Records[index].ID == id {
 			return &p.Records[index]
 		}
 	}
+	if id == "" {
+		return nil
+	}
+	questions := p.questionRecords()
+	for index := range questions {
+		if questions[index].ID == id {
+			return &questions[index]
+		}
+	}
 	return nil
+}
+
+// registerRel is where the questions live, the way every answer names it.
+func (p *Project) registerRel() string {
+	for _, home := range p.Homes {
+		if home.Register {
+			return home.Rel
+		}
+	}
+	return ""
 }
 
 // DeclaredAreas are the areas a record may name: the intent index's own list,

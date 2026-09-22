@@ -15,6 +15,10 @@ import { BrainStatement } from "../panes/Brain";
  * way to open it. Opening lifts a panel over the foot of the page; the page
  * above keeps its width and keeps scrolling.
  *
+ * It arrives closed. The bar is the whole of what an unasked-for collaborator
+ * owes the page; the panel is what a human opens, and what this build then
+ * remembers for them.
+ *
  * The element id and the class names are the kit's own, and stay; what a human
  * reads says Project Partner.
  */

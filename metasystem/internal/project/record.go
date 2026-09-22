@@ -15,9 +15,14 @@ var headLinePattern = regexp.MustCompile(`^- ([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)
 // value has declared nothing, so it is missing.
 var requiredKeys = []string{"Kind", "Id", "Status", "Areas"}
 
-// referenceKeys are the optional keys, parsed as plain whitespace-separated
-// references and otherwise unvalidated: what they name may not exist yet, and
-// step 1 does not pretend to know.
+// referenceKeys are the optional keys a head may declare, parsed as plain
+// whitespace-separated references and intentionally unvalidated: a reference
+// may name something nobody has written yet, and a reader that refused it
+// would be refusing the project's own order of work.
+//
+// Answers is not among them. It is the register's reference, taken from a
+// question row's status, and a head that writes it is writing a key this
+// package keeps and reads nothing from.
 var referenceKeys = []string{"Cites", "Affects", "Governs", "By", "Supersedes"}
 
 // Field is one head line as it was written. Unknown keys are kept here, in the
@@ -43,6 +48,7 @@ type Record struct {
 	Governs    []string
 	By         []string
 	Supersedes []string
+	Answers    []string // a question's own, from the register rather than a head
 
 	Head     []Field  // every head line, unknown keys included
 	HeadLine int      // where the head begins, and where a missing key is anchored
@@ -66,6 +72,8 @@ func (r Record) References(key string) []string {
 		return r.By
 	case "Supersedes":
 		return r.Supersedes
+	case "Answers":
+		return r.Answers
 	}
 	return nil
 }

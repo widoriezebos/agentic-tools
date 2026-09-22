@@ -20,7 +20,7 @@ import { Sheet, type Done, type Request } from "./Sheet";
 import { STATUSES } from "./writing";
 import { Pane } from "../panes/Pane";
 import { documentIdFromPath, documentPath } from "../routes";
-import { useAbout } from "../shell/about";
+import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, Skeleton } from "../shell/controls";
 import { useWorkspaceState, type WorkspaceState } from "../shell/identity";
 import { titleFor, type Identity } from "../title";
@@ -32,9 +32,14 @@ import { titleFor, type Identity } from "../title";
  * stands, what it rests on and what rests on it — and not four bullet lines in
  * the text, because a human reading a design is reading prose and the head is
  * not prose. The left rail is what this document is read among: the book's
- * chapters in reading order, or the records of its kind in its areas, with
- * previous and next at the foot. The right rail is the outline, and it marks
- * where the reader is as they scroll.
+ * chapters in reading order, or the records of its kind in its areas — which
+ * may be this record alone — with previous and next at the foot where there is
+ * anywhere to step. The right rail is the outline, and it marks where the
+ * reader is as they scroll.
+ *
+ * The three are three columns, each naming the one it is in, so a rail with
+ * nothing to show leaves its column empty rather than moving the reading into
+ * it.
  *
  * A document that declares no head is answered exactly as it was before: the
  * same facts line, the same blocks, and no rails it has no siblings for.
@@ -196,9 +201,10 @@ function Read({
   const [sheet, setSheet] = useState<Request | null>(null);
 
   // What the drawer says this page is about: the record, and the section of it
-  // being read, from the outline the reader already follows.
+  // being read, from the outline the reader already follows. The first heading
+  // of a document is its own title, which the line says once.
   const heading = outline.find((row) => row.id === current);
-  useAbout(heading === undefined ? document.title : `${document.title} · ${heading.text}`);
+  useAbout(aboutLine(document.title, heading?.text ?? ""));
 
   const done = (result: Done) => {
     setSheet(null);
@@ -496,22 +502,26 @@ function SiblingsRail({ rail }: { rail: SiblingRail }) {
           </li>
         ))}
       </ul>
-      <div className="ms-reader-steps">
-        {rail.previous === null ? (
-          <span className="ms-reader-step-none">← no previous</span>
-        ) : (
-          <NavLink className="ms-reader-step" to={rail.previous.to}>
-            ← {rail.previous.title}
-          </NavLink>
-        )}
-        {rail.next === null ? (
-          <span className="ms-reader-step-none">no next →</span>
-        ) : (
-          <NavLink className="ms-reader-step" to={rail.next.to}>
-            {rail.next.title} →
-          </NavLink>
-        )}
-      </div>
+      {/* Where there is neither a previous nor a next there is nowhere to
+          step, and two lines saying so would be the whole foot of the rail. */}
+      {(rail.previous !== null || rail.next !== null) && (
+        <div className="ms-reader-steps">
+          {rail.previous === null ? (
+            <span className="ms-reader-step-none">← no previous</span>
+          ) : (
+            <NavLink className="ms-reader-step" to={rail.previous.to}>
+              ← {rail.previous.title}
+            </NavLink>
+          )}
+          {rail.next === null ? (
+            <span className="ms-reader-step-none">no next →</span>
+          ) : (
+            <NavLink className="ms-reader-step" to={rail.next.to}>
+              {rail.next.title} →
+            </NavLink>
+          )}
+        </div>
+      )}
     </nav>
   );
 }

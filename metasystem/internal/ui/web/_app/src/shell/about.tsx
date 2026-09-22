@@ -24,6 +24,22 @@ export function AboutProvider({ children }: { children: ReactNode }) {
   return <AboutContext.Provider value={value}>{children}</AboutContext.Provider>;
 }
 
+/**
+ * What the page is about, said once: the page, and the part of it being read.
+ *
+ * A document's outline opens with the document's own title, so the part being
+ * read is the whole of it until the reader has scrolled past the first
+ * heading. Naming both would say the same thing twice, so a part that is the
+ * page — and a page no part has been read of yet — is the page alone.
+ */
+export function aboutLine(page: string, part: string): string {
+  const read = part.trim();
+  if (read === "" || read === page.trim()) {
+    return page;
+  }
+  return `${page} · ${read}`;
+}
+
 /** A pane says what it is about, for as long as it is on screen. */
 export function useAbout(about: string): void {
   const { describe } = useContext(AboutContext);

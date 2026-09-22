@@ -4,21 +4,53 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // referencedByKeys are the keys that make one record a reference to another.
 // Governs names goal ids and By names whoever accepted the record, so neither
-// belongs in what references what.
-var referencedByKeys = []string{"Cites", "Affects", "Supersedes"}
+// belongs in what references what. Answers is the register's own: the question
+// a record answered names it there.
+var referencedByKeys = []string{"Cites", "Affects", "Supersedes", "Answers"}
 
 // ListOptions narrows a listing to one area, one status, or both. An empty
 // field narrows nothing.
 type ListOptions struct{ Area, Status string }
 
-// List is every record of one kind, in path order, narrowed as asked.
+// questionRecords are the register's rows in the shape every query answers in:
+// a question is a record of the question kind, titled by what it asks, standing
+// under the word its status carries, and living in the register rather than in
+// a page of its own.
+func (p *Project) questionRecords() []Record {
+	register := p.registerRel()
+	records := make([]Record, 0, len(p.Questions))
+	for _, question := range p.Questions {
+		records = append(records, Record{
+			Kind:     KindQuestion,
+			ID:       question.ID,
+			Status:   question.State(),
+			Areas:    question.Areas,
+			Title:    question.Text,
+			Path:     register,
+			Home:     register,
+			Answers:  question.Answers(),
+			HeadLine: question.Line,
+		})
+	}
+	return records
+}
+
+// queried is everything a query answers about: the pages the homes declare,
+// then the register's rows.
+func (p *Project) queried() []Record {
+	return append(append([]Record(nil), p.Records...), p.questionRecords()...)
+}
+
+// List is every record of one kind, in path order, narrowed as asked. The
+// questions list in the order the register holds them.
 func (p *Project) List(kind string, options ListOptions) []Record {
 	var listed []Record
-	for _, record := range p.Records {
+	for _, record := range p.queried() {
 		if record.Kind != kind {
 			continue
 		}
@@ -41,10 +73,11 @@ type Reference struct {
 }
 
 // ReferencedBy is every record whose Cites, Affects or Supersedes names this
-// id — the half of a reference the referenced record cannot declare itself.
+// id, and every question answered by it — the half of a reference the
+// referenced record cannot declare itself.
 func (p *Project) ReferencedBy(id string) []Reference {
 	var references []Reference
-	for _, record := range p.Records {
+	for _, record := range p.queried() {
 		if record.ID == id {
 			continue
 		}
@@ -73,10 +106,10 @@ type Counts struct {
 
 func newCounts() Counts {
 	counts := Counts{Kind: map[string]int{}, Status: map[string]int{}}
-	for _, kind := range Kinds {
+	for _, kind := range QueryKinds {
 		counts.Kind[kind] = 0
 	}
-	for _, status := range Statuses {
+	for _, status := range QueryStatuses {
 		counts.Status[status] = 0
 	}
 	return counts
@@ -100,7 +133,9 @@ type AreaCounts struct {
 
 // Tree is the declared areas in the order the intent index declares them, and
 // the project bucket last: what belongs to the whole rather than to a part. A
-// record naming two areas is counted under both, because it is in both.
+// record naming two areas is counted under both, because it is in both, and a
+// question is counted beside the records, because a question is one of the
+// things an area holds.
 func (p *Project) Tree() ([]AreaCounts, Counts) {
 	tree := make([]AreaCounts, 0, len(p.Areas))
 	seen := map[string]bool{}
@@ -112,7 +147,7 @@ func (p *Project) Tree() ([]AreaCounts, Counts) {
 		tree = append(tree, AreaCounts{Area: area, Counts: newCounts()})
 	}
 	whole := newCounts()
-	for _, record := range p.Records {
+	for _, record := range p.queried() {
 		for index := range tree {
 			if contains(record.Areas, tree[index].Area.Slug) {
 				tree[index].Counts.add(record)
@@ -127,16 +162,20 @@ func (p *Project) Tree() ([]AreaCounts, Counts) {
 
 // check collects every refusal. It runs once, over what was read, so the same
 // answer serves the check verb and the pane.
+//
+// One index holds every id the project declares, pages and register rows
+// alike: an id is unique across the project, so the second declaration of one
+// is refused at its own line whichever of the two it is.
 func (p *Project) check() {
 	declared := p.DeclaredAreas()
-	firstByID := map[string]Record{}
+	declaredAt := map[string]string{}
 	for _, record := range p.Records {
 		if record.ID != "" {
-			if first, duplicate := firstByID[record.ID]; duplicate {
+			if first, duplicate := declaredAt[record.ID]; duplicate {
 				p.problem(record.Path, record.line("Id"),
-					"the id "+record.ID+" is already declared by "+first.Path)
+					"the id "+record.ID+" is already declared by "+first)
 			} else {
-				firstByID[record.ID] = record
+				declaredAt[record.ID] = record.Path
 			}
 		}
 		if record.Kind != "" && !contains(Kinds, record.Kind) {
@@ -157,7 +196,7 @@ func (p *Project) check() {
 	for _, book := range p.Books {
 		p.checkChapters(book)
 	}
-	p.checkQuestions(declared)
+	p.checkQuestions(declared, declaredAt)
 }
 
 // checkChapters reads a book's reading order: every id names a record of the
@@ -166,7 +205,7 @@ func (p *Project) checkChapters(book Book) {
 	index := book.Index.Path
 	for _, chapter := range book.Chapters {
 		if chapter.Doc != "" {
-			if _, err := os.Stat(filepath.Join(p.Roots.Checkout, filepath.FromSlash(chapter.Doc))); err != nil {
+			if !p.holds(chapter.Doc) {
 				p.problem(index, chapter.Line, "the chapter binds "+chapter.Doc+", which is not in this checkout")
 			}
 			continue
@@ -183,19 +222,49 @@ func (p *Project) checkChapters(book Book) {
 	}
 }
 
-// checkQuestions reads the register: a row with no id names nothing, and a row
-// whose status is none of the three says nothing about where the question
-// stands.
-func (p *Project) checkQuestions(declared map[string]bool) {
-	register := ""
-	for _, home := range p.Homes {
-		if home.Register {
-			register = home.Rel
+// holds reports whether a bound chapter names a document in this checkout: a
+// regular file, reached from the checkout root, by a path that is not absolute
+// and steps out of nothing.
+//
+// The path is judged in both separators' spellings before it is resolved, and
+// resolved inside the checkout afterwards, so neither `../outside.md` nor a
+// symlink pointing out of the checkout binds a byte the project does not have.
+func (p *Project) holds(doc string) bool {
+	if doc == "" || filepath.IsAbs(doc) || strings.HasPrefix(doc, "/") || strings.HasPrefix(doc, `\`) {
+		return false
+	}
+	for _, segment := range strings.FieldsFunc(doc, isSeparator) {
+		if segment == ".." {
+			return false
 		}
 	}
+	root, err := os.OpenRoot(p.Roots.Checkout)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = root.Close() }()
+	info, err := root.Stat(filepath.FromSlash(doc))
+	return err == nil && info.Mode().IsRegular()
+}
+
+// isSeparator reads a path in both spellings: a checkout written on Windows
+// separates with a backslash, and a parent step is a parent step either way.
+func isSeparator(r rune) bool { return r == '/' || r == '\\' }
+
+// checkQuestions reads the register: a row with no id names nothing, a row
+// taking an id the project already declares names something else's identity,
+// and a row whose status is none of the three says nothing about where the
+// question stands.
+func (p *Project) checkQuestions(declared map[string]bool, declaredAt map[string]string) {
+	register := p.registerRel()
 	for _, question := range p.Questions {
 		if question.ID == "" {
 			p.problem(register, question.Line, "the row declares no id")
+		} else if first, duplicate := declaredAt[question.ID]; duplicate {
+			p.problem(register, question.Line,
+				"the id "+question.ID+" is already declared by "+first)
+		} else {
+			declaredAt[question.ID] = register
 		}
 		if !questionStatusValid(question.Status) {
 			p.problem(register, question.Line,

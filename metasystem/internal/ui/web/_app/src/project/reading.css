@@ -16,12 +16,30 @@
  * The reader: the siblings, the column, the outline. The column keeps its
  * measure and the rails take what is left of the width; below the rail widths
  * they fall away, the column first and last.
+ *
+ * Three tracks, and every region names the one it is in. Placed by order
+ * instead, a page whose rail or outline had nothing to show would slide the
+ * reading into the rail's 220 pixels and put what was left where the reading
+ * belongs — so a record with no siblings would be read in a gutter. A region
+ * that is not rendered leaves its track empty and moves nothing.
  */
 .ms-reader {
   display: grid;
   grid-template-columns: 220px minmax(0, 720px) 220px;
   gap: 32px;
   align-items: start;
+}
+
+.ms-reader-rail {
+  grid-column: 1;
+}
+
+.ms-reader > .ms-reading {
+  grid-column: 2;
+}
+
+.ms-reader-outline {
+  grid-column: 3;
 }
 
 .ms-reader-crumbs {
@@ -1130,6 +1148,14 @@
   .ms-reader {
     grid-template-columns: minmax(0, 1fr);
     gap: 20px;
+  }
+
+  /* One track, so no region names a column: a second one named here would be
+     a second one created. */
+  .ms-reader-rail,
+  .ms-reader > .ms-reading,
+  .ms-reader-outline {
+    grid-column: auto;
   }
 
   .ms-reader-rail {

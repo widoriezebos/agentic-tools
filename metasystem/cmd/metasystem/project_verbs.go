@@ -1,9 +1,9 @@
 package main
 
 // The project family: a read-only window on the project's own memory — the
-// intent, the doctrine, the decisions, the designs and the open questions that
-// declare themselves in their heads, in the homes the memory-system design
-// gives them. Nothing here writes, and nothing here decides: the one reader
+// intent, the doctrine, the decisions and the designs that declare themselves
+// in their heads, each in its home, and the open questions the register holds
+// as rows. Nothing here writes, and nothing here decides: the one reader
 // answers, and these verbs print what it answered.
 //
 // Each verb is a thin wrapper over a function that takes its streams, so the
@@ -60,12 +60,12 @@ func projectList(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: metasystem project list KIND [--root DIR] [--area SLUG] [--status STATUS]")
 		return 2
 	}
-	if !oneOf(project.Kinds, kind) {
-		fmt.Fprintf(stderr, "metasystem project list: %q is not one of %s\n", kind, strings.Join(project.Kinds, ", "))
+	if !oneOf(project.QueryKinds, kind) {
+		fmt.Fprintf(stderr, "metasystem project list: %q is not one of %s\n", kind, strings.Join(project.QueryKinds, ", "))
 		return 2
 	}
-	if *status != "" && !oneOf(project.Statuses, *status) {
-		fmt.Fprintf(stderr, "metasystem project list: %q is not one of %s\n", *status, strings.Join(project.Statuses, ", "))
+	if *status != "" && !oneOf(project.QueryStatuses, *status) {
+		fmt.Fprintf(stderr, "metasystem project list: %q is not one of %s\n", *status, strings.Join(project.QueryStatuses, ", "))
 		return 2
 	}
 	read, code := projectRead(*root, stderr)
@@ -106,7 +106,7 @@ func projectShow(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "areas: "+strings.Join(record.Areas, " "))
 	fmt.Fprintln(stdout, "path: "+record.Path)
 	fmt.Fprintln(stdout, "home: "+record.Home)
-	for _, key := range []string{"Cites", "Affects", "Governs", "By", "Supersedes"} {
+	for _, key := range []string{"Cites", "Affects", "Governs", "By", "Supersedes", "Answers"} {
 		if references := record.References(key); len(references) > 0 {
 			fmt.Fprintln(stdout, strings.ToLower(key)+": "+strings.Join(references, " "))
 		}
@@ -149,8 +149,8 @@ func projectTree(args []string, stdout, stderr io.Writer) int {
 }
 
 func projectCounts(stdout io.Writer, counts project.Counts) {
-	fmt.Fprintln(stdout, "  kinds: "+projectTally(project.Kinds, counts.Kind))
-	fmt.Fprintln(stdout, "  status: "+projectTally(project.Statuses, counts.Status))
+	fmt.Fprintln(stdout, "  kinds: "+projectTally(project.QueryKinds, counts.Kind))
+	fmt.Fprintln(stdout, "  status: "+projectTally(project.QueryStatuses, counts.Status))
 }
 
 func projectTally(order []string, counts map[string]int) string {

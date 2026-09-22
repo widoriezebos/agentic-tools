@@ -411,11 +411,17 @@ export function crumbsFor(pane: Pane | null, document: DocumentPayload): Crumb[]
  * to be read in. Every other record is read among the records of its kind in
  * its own areas, or, where it names no declared area, among every record of
  * its kind. A document that declares nothing has no siblings and no rail.
+ *
+ * A record that is the only one of its kind in its areas keeps its rail all
+ * the same, naming itself and nothing else, with no previous and no next. The
+ * rail says what this document is read among, and "the only decision in
+ * billing" is an answer; a rail that vanished would leave the reader with one
+ * region fewer and no way to know why.
  */
 export function railFor(pane: Pane, document: DocumentPayload): SiblingRail | null {
   const bound = bookOf(pane, document);
   const rail = bound === null ? kindRail(pane, document) : bookRail(pane, bound, document);
-  if (rail === null || rail.siblings.length < 2) {
+  if (rail === null) {
     return null;
   }
   const at = rail.siblings.findIndex((sibling) => sibling.current);

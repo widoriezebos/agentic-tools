@@ -109,6 +109,12 @@ func TestProjectListVerbNarrows(t *testing.T) {
 	if out != "" {
 		t.Fatalf("--area did not narrow: %q", out)
 	}
+	// The register's rows list under the fifth kind, as the pages do under
+	// their four.
+	_, out, _ = runProjectVerb(projectList, []string{"--root", root, "question"})
+	if out != "question\tQ-1\topen\tproject\tWhere does intent live?\tmetasystem/memory/questions.md\n" {
+		t.Fatalf("project list question printed %q", out)
+	}
 	if code, _, _ := runProjectVerb(projectList, []string{"--root", root, "policy"}); code != 2 {
 		t.Fatalf("an unknown kind must be usage: code %d", code)
 	}
@@ -155,11 +161,11 @@ func TestProjectTreeVerbCountsEveryBucket(t *testing.T) {
 		t.Fatalf("project tree = code %d, stderr %q", code, problem)
 	}
 	want := "billing — Billing and invoicing\n" +
-		"  kinds: intent 0, doctrine 0, decision 0, design 2\n" +
-		"  status: draft 1, accepted 0, superseded 0, done 1\n" +
+		"  kinds: intent 0, doctrine 0, decision 0, design 2, question 0\n" +
+		"  status: draft 1, accepted 0, superseded 0, done 1, open 0, answered 0, withdrawn 0\n" +
 		"project\n" +
-		"  kinds: intent 1, doctrine 0, decision 1, design 0\n" +
-		"  status: draft 0, accepted 2, superseded 0, done 0\n"
+		"  kinds: intent 1, doctrine 0, decision 1, design 0, question 1\n" +
+		"  status: draft 0, accepted 2, superseded 0, done 0, open 1, answered 0, withdrawn 0\n"
 	if out != want {
 		t.Fatalf("project tree printed\n%q\nwant\n%q", out, want)
 	}
