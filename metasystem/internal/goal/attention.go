@@ -973,7 +973,8 @@ func acceptedHumanAct(row HistoryLine) bool {
 		return true
 	}
 	switch row.AuthorityOutcome {
-	case AuthorityOutcomeAuthenticatedChannelWord, AuthorityOutcomeVerifiedChannelAnswer, AuthorityOutcomeTemporaryHumanWord, AuthorityOutcomeHumanAuthorityProven:
+	case AuthorityOutcomeAuthenticatedChannelWord, AuthorityOutcomeVerifiedChannelAnswer, AuthorityOutcomeTemporaryHumanWord,
+		AuthorityOutcomeHumanAuthorityProven, AuthorityOutcomeSignedInSession:
 		return true
 	}
 	return false

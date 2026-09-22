@@ -1400,7 +1400,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			f.NormApproval = approval
 			touchDisplaced(f, r, "set-budget", []string{id}, displaced)
 			f.History[len(f.History)-1].Resumed = resumedStopID
-			recordApprovalRelay(f, proof, temporary)
+			recordApprovalProof(f, proof, temporary)
 			if entry != nil {
 				recordAttorney(f, entry.ID)
 			}

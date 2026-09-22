@@ -392,6 +392,9 @@ func approvalProofClass(root string, proof *humanauthority.Proof) (authority, re
 	if proof.ValidFor(root) {
 		return ApprovalAuthorityProven, "", false, nil
 	}
+	if proof.SessionValidFor(root) {
+		return ApprovalAuthoritySession, "", false, nil
+	}
 	if proof.AuthorizesResume(root) && proof.TemporaryResumeFor(root) {
 		return ApprovalAuthorityRelayed, proof.ReviewBy, true, nil
 	}
@@ -418,6 +421,14 @@ func recordApprovalProof(f *GoalFile, proof *humanauthority.Proof, temporary boo
 		h.ChannelRef = proof.ChannelRef
 		h.ChannelContext = proof.ChannelContext
 		h.ChannelStep = proof.ChannelStep
+		return
+	}
+	if proof != nil && proof.Outcome == humanauthority.OutcomeSession {
+		h := &f.History[len(f.History)-1]
+		h.AuthorityOutcome = AuthorityOutcomeSignedInSession
+		h.ChannelProvider = proof.ChannelProvider
+		h.ChannelUser = proof.ChannelUser
+		h.ChannelRef = proof.ChannelRef
 	}
 }
 
@@ -798,7 +809,7 @@ func ApproveSweep(r VerbRequest, confirm string, proof *humanauthority.Proof) (P
 				}
 				touch(f, r, "approve", []string{id})
 				f.History[len(f.History)-1].Reason = "sweep"
-				recordApprovalRelay(f, proof, temporary)
+				recordApprovalProof(f, proof, temporary)
 				bindApproval(f, r, authority, reviewBy)
 				changes = append(changes, Change{Path: livePath(id), Content: RenderFile(f)})
 			}

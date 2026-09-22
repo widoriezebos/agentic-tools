@@ -39,10 +39,14 @@ const (
 	OutcomeTemporary       = "TEMPORARY_HUMAN_WORD"
 	OutcomeChannel         = "AUTHENTICATED_CHANNEL_WORD"
 	OutcomeVerifiedChannel = "VERIFIED_CHANNEL_ANSWER"
-	TemporaryWordRuling    = governance.TemporaryGoalAuthorityRuling
-	reviewByDateLayout     = "2006-01-02"
-	GradeTerminal          = "terminal"
-	GradeEnrolled          = "enrolled"
+	// OutcomeSession marks a browser session a human signed into with the
+	// channel's one-time code. It is human authority for the goal acts that
+	// admit it; it is not enrolled-terminal ancestry and never passes Valid.
+	OutcomeSession      = governance.AuthorityOutcomeSignedInSession
+	TemporaryWordRuling = governance.TemporaryGoalAuthorityRuling
+	reviewByDateLayout  = "2006-01-02"
+	GradeTerminal       = "terminal"
+	GradeEnrolled       = "enrolled"
 )
 
 // ProcessRef is the stable birth identity recorded in enrollments and proofs.
@@ -271,6 +275,45 @@ func AuthenticatedChannelProof(root string, recorded governance.RecordedChannelA
 		return Proof{}, err
 	}
 	return Proof{Schema: 1, CheckedAt: now.UTC(), Outcome: OutcomeChannel, ChannelProvider: recorded.Provider, ChannelUser: recorded.UserID, ChannelRef: recorded.MessageRef, ChannelStep: recorded.Step, observedRoot: filepath.Clean(abs), observed: true}, nil
+}
+
+// SignedInSessionProof binds a browser session a human signed into to the
+// checkout root the serving process observed. No session secret enters the
+// proof: the issuer, the human's handle, and an opaque session reference are
+// the whole record, and each must survive one whitespace-separated History
+// key unchanged.
+func SignedInSessionProof(root string, user, sessionRef, issuer string, now time.Time) (Proof, error) {
+	if now.IsZero() {
+		return Proof{}, fmt.Errorf("a signed-in session proof requires a non-zero observation time")
+	}
+	for _, field := range []struct{ name, value string }{
+		{"issuer", issuer}, {"user", user}, {"session reference", sessionRef},
+	} {
+		if field.value == "" || strings.ContainsAny(field.value, " \t\r\n") {
+			return Proof{}, fmt.Errorf("a signed-in session proof requires a %s with no whitespace", field.name)
+		}
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return Proof{}, err
+	}
+	return Proof{Schema: 1, CheckedAt: now.UTC(), Outcome: OutcomeSession,
+		ChannelProvider: issuer, ChannelUser: user, ChannelRef: sessionRef,
+		observedRoot: filepath.Clean(abs), observed: true}, nil
+}
+
+// SessionValidFor reports whether this is a freshly minted signed-in session
+// proof bound to that root. Parsed proof JSON has no authority, and a session
+// proof carries none of the relay or channel-thread facts.
+func (p Proof) SessionValidFor(root string) bool {
+	abs, err := filepath.Abs(root)
+	if err != nil || !p.observed || p.observedRoot != filepath.Clean(abs) || p.Schema != 1 ||
+		p.Outcome != OutcomeSession || p.CheckedAt.IsZero() || p.FixtureOnly {
+		return false
+	}
+	return p.ChannelProvider != "" && p.ChannelUser != "" && p.ChannelRef != "" &&
+		p.ChannelContext == "" && p.ChannelStep == 0 && p.ReviewBy == "" &&
+		p.TemporaryHumanWord == "" && p.Departure == "" && p.Grade == ""
 }
 
 // TemporaryResumeFor reports whether a resume is using the temporary proof

@@ -96,6 +96,10 @@ const (
 	AuthorityOutcomeAuthenticatedChannelWord = "AUTHENTICATED_CHANNEL_WORD"
 	AuthorityOutcomeVerifiedChannelAnswer    = "VERIFIED_CHANNEL_ANSWER"
 	AuthorityOutcomeHumanAuthorityProven     = "HUMAN_AUTHORITY_PROVEN"
+	// AuthorityOutcomeSignedInSession marks a human act carried by a browser
+	// session the human signed into with the channel's one-time code. The
+	// line names the issuer, the handle, and the opaque session reference.
+	AuthorityOutcomeSignedInSession = "SIGNED_IN_SESSION"
 	// AuthorityOutcomePowerOfAttorney marks a seat's act under a recorded,
 	// scoped, expiring delegation; the line's ruling names the entry.
 	AuthorityOutcomePowerOfAttorney = "POWER_OF_ATTORNEY"

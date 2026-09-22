@@ -247,6 +247,9 @@ const (
 	ApprovalAuthorityProven  = "proven"
 	ApprovalAuthorityRelayed = "relayed"
 	ApprovalAuthorityChannel = "channel"
+	// ApprovalAuthoritySession marks the human's own act carried by a
+	// browser session they signed into with the channel's one-time code.
+	ApprovalAuthoritySession = "session"
 	// ApprovalAuthorityAttorney marks a seat's own act under a recorded
 	// power of attorney: by is the seat actor and the bound history line
 	// names the entry.
@@ -866,6 +869,11 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 		if a.ReviewBy != "" || event.AuthorityOutcome != AuthorityOutcomeVerifiedChannelAnswer || event.ChannelContext == "" {
 			return fmt.Errorf("channel authority does not match its verified answer facts")
 		}
+	case ApprovalAuthoritySession:
+		if a.ReviewBy != "" || event.AuthorityOutcome != AuthorityOutcomeSignedInSession ||
+			event.ChannelProvider == "" || event.ChannelUser == "" || event.ChannelRef == "" {
+			return fmt.Errorf("session authority does not name its signed-in session on the History event")
+		}
 	case ApprovalAuthorityAttorney:
 		if a.ReviewBy != "" || event.AuthorityOutcome != AuthorityOutcomePowerOfAttorney || event.AuthorityRuling == "" {
 			return fmt.Errorf("attorney authority does not name its power of attorney entry on the History event")
@@ -874,7 +882,7 @@ func (f *GoalFile) ValidateApprovalRecord() error {
 		if raise && a.ReviewBy == "" {
 			break
 		}
-		return fmt.Errorf("authority %q is not proven|relayed|channel", a.Authority)
+		return fmt.Errorf("authority %q is not proven|relayed|channel|session", a.Authority)
 	}
 	if f.Budget == nil {
 		return fmt.Errorf("record requires a complete Budget")
@@ -2096,6 +2104,7 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 		return h, fmt.Errorf("timestamp %q is not RFC3339", h.At)
 	}
 	channelAuthority := h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord || h.AuthorityOutcome == AuthorityOutcomeVerifiedChannelAnswer
+	sessionAuthority := h.AuthorityOutcome == AuthorityOutcomeSignedInSession
 	provenAuthority := h.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven
 	if h.AuthorityOutcome == AuthorityOutcomePowerOfAttorney {
 		if strings.HasPrefix(h.Actor, "human:") || h.AuthorityReviewBy != "" || h.TemporaryHumanWord != "" || !validOpidShape(h.AuthorityRuling) {
@@ -2110,6 +2119,10 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 		}
 	} else if seenKeys["authorityGeneration"] {
 		return h, fmt.Errorf("authorityGeneration requires HUMAN_AUTHORITY_PROVEN")
+	} else if sessionAuthority {
+		if !strings.HasPrefix(h.Actor, "human:") || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
+			return h, fmt.Errorf("SIGNED_IN_SESSION requires a human actor and no relay fields")
+		}
 	} else if !channelAuthority {
 		if err := validateRecordedTemporaryAuthority(h.AuthorityOutcome, h.AuthorityReviewBy, h.AuthorityRuling, h.TemporaryHumanWord); err != nil {
 			return h, fmt.Errorf("recorded temporary authority: %v", err)
@@ -2134,6 +2147,11 @@ func ParseHistoryLine(line string) (HistoryLine, error) {
 		}
 		if channelCount != wantCount || h.AuthorityReviewBy != "" || h.AuthorityRuling != "" || h.TemporaryHumanWord != "" {
 			return h, fmt.Errorf("channel authority requires provider, user, reference, step, and the context required by its proof class")
+		}
+	} else if sessionAuthority {
+		if h.ChannelProvider == "" || h.ChannelUser == "" || h.ChannelRef == "" ||
+			h.ChannelContext != "" || h.ChannelStep != 0 {
+			return h, fmt.Errorf("SIGNED_IN_SESSION requires channelProvider, channelUser, and channelRef, and carries no channel context or step")
 		}
 	} else if channelCount != 0 {
 		return h, fmt.Errorf("channel proof keys require a channel authority outcome")
@@ -2209,7 +2227,8 @@ func RenderHistoryLine(h HistoryLine) string {
 	if h.Keep >= 0 {
 		fmt.Fprintf(&b, " keep=%d", h.Keep)
 	}
-	if h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord || h.AuthorityOutcome == AuthorityOutcomeVerifiedChannelAnswer {
+	if h.AuthorityOutcome == AuthorityOutcomeAuthenticatedChannelWord || h.AuthorityOutcome == AuthorityOutcomeVerifiedChannelAnswer ||
+		h.AuthorityOutcome == AuthorityOutcomeSignedInSession {
 		fmt.Fprintf(&b, " authorityOutcome=%s", h.AuthorityOutcome)
 	} else if h.AuthorityOutcome == AuthorityOutcomeHumanAuthorityProven {
 		fmt.Fprintf(&b, " authorityOutcome=%s authorityGeneration=%d", h.AuthorityOutcome, h.AuthorityGeneration)
@@ -2226,6 +2245,8 @@ func RenderHistoryLine(h HistoryLine) string {
 		if h.ChannelContext != "" {
 			b.WriteString(" channelContext=" + h.ChannelContext)
 		}
+	} else if h.AuthorityOutcome == AuthorityOutcomeSignedInSession {
+		fmt.Fprintf(&b, " channelProvider=%s channelUser=%s channelRef=%s", h.ChannelProvider, h.ChannelUser, h.ChannelRef)
 	}
 	if h.ApprovedRef != "" {
 		b.WriteString(" approvedRef=" + h.ApprovedRef)

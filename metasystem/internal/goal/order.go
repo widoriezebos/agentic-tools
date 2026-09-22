@@ -60,8 +60,8 @@ func SetPriority(r VerbRequest, id string, priority uint8, sequence *uint64, pro
 	if r.Actor.Human == "" {
 		return PublishResult{}, fmt.Errorf("set-priority is a human act and names its human (--by)")
 	}
-	if proof == nil || !proof.ValidFor(r.Endpoint.Root) {
-		return PublishResult{}, fmt.Errorf("set-priority requires freshly observed enrolled-terminal human authority")
+	if proof == nil || !(proof.ValidFor(r.Endpoint.Root) || proof.SessionValidFor(r.Endpoint.Root)) {
+		return PublishResult{}, fmt.Errorf("set-priority requires freshly observed enrolled-terminal human authority or a signed-in browser session")
 	}
 	if priority < 1 || priority > 3 {
 		return PublishResult{}, fmt.Errorf("set-priority priority %d is not 1, 2, or 3", priority)

@@ -68,6 +68,7 @@ const (
 	AuthorityOutcomeVerifiedChannelAnswer    = governance.AuthorityOutcomeVerifiedChannelAnswer
 	AuthorityOutcomePowerOfAttorney          = governance.AuthorityOutcomePowerOfAttorney
 	AuthorityOutcomeHumanAuthorityProven     = governance.AuthorityOutcomeHumanAuthorityProven
+	AuthorityOutcomeSignedInSession          = governance.AuthorityOutcomeSignedInSession
 	TemporaryGoalAuthorityRuling             = governance.TemporaryGoalAuthorityRuling
 )
 
