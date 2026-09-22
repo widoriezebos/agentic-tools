@@ -1,6 +1,6 @@
 # tests-parallel-and-deterministic
 
-- State: claimed
+- State: parked
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="Test scheduling and isolation protect every application landing; false greens can admit defects, the concurrency owners already exist, and broad shared-state changes affect the complete suite."
 - Tier: 3
 - Intent: Make every test safe for parallel execution, with configurable concurrency based on available CPU cores and deterministic outcomes on slow or loaded supported hosts.
@@ -8,12 +8,11 @@
 - Next step: Wido replaced this broad intent with successor finish-test-repairs-and-integrate: Finish these repairs, verify them with targeted tests, complete final validation, then push/integrate. Finish the five already running repair units under their existing bindings, retain outputs, then park this goal as superseded and claim the successor within remaining authorized allowance. Preserve all work/evidence; no new scope. Linux compatible Git preflight now passes.
 - ReadItem: id=c1-native-delegate-budget-read-1-1 read=c1-native-delegate-budget-read-1 state=accepted addedAt=2026-09-21T12:11:17Z changedAt=2026-09-21T12:15:57Z closingReference="A one-line discrepancy in builder prose is not a product defect: independent read verified exact tree f648c06b and diff602316e3, actual54 lines stays below250. Acceptance dispositions record the corrected count; source and runtime proof unchanged." text="N-1: builder prose counted53 changed lines; exact reviewed diff has54. Correct count recorded in acceptance dispositions; source/hash and250-line boundary unchanged; no product fix required."
 - OpenedAt: 2026-09-21T03:36:50Z
-- Revision: 24
+- Revision: 25
 - Budget: elapsedLimit=5d2h attemptLimit=14 reservedJobMinutesLimit=720 activeJobLimit=8 reviewRoundLimit=3
 - BudgetExceptions: 5
 - Approved: by=human:Wido at=2026-09-22T11:19:20Z revision=13 opid=91ZNWW86BRWXQ80X7VAVEXRDY9-m1e-5a8337cd authority=proven digest=c846783d7d729316b0fdfdc7d3a7a3165636892ddfba94afb3b9ef25b262f71d episode=13
-- Claimed: machine=m1e lineage=main-1789893000-16595-1a7a6a at=2026-09-22T11:19:20Z revision=13 accountingRevision=13 episodeAt=2026-09-21T03:36:57Z episodeRevision=3
-- StopCapability: generation=13 revision=13 machine=m1e claimEpoch=3 fenceEpoch=0
+- Parked: by=human:Wido at=2026-09-22T17:29:01Z because=Superseded by finish-test-repairs-and-integrate after its already-bound correction units terminated. Retain implementation and evidence; the original broad goal is not claimed completed.
 
 History:
 - 2026-09-21T03:36:50Z E8NGT9NQ58VWERY27EW0GATBKS-m1e-226b0953 open actor=human:Wido targets=tests-parallel-and-deterministic
@@ -40,4 +39,5 @@ History:
 - 2026-09-22T16:27:29Z 5CRMVKNHAEEPJGFGBQMBYJT3EN-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic
 - 2026-09-22T16:31:58Z R3JCCYQJZVXFASE9XTJZ0ZP9HY-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic
 - 2026-09-22T16:37:59Z A10FDGERWBE606NARD9YF1H9TG-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic
-Integrity: sha256=3039fd14aa2cef0ddfca98a15850f5fc9137b90c8aadaf92b11d3cfcb3b37e3b
+- 2026-09-22T17:29:01Z 5HX4VB12YRNZ9915J0FFGGBGAV-m1e-226b0953 park actor=human:Wido targets=tests-parallel-and-deterministic reason=Superseded by finish-test-repairs-and-integrate after its already-bound correction units terminated. Retain implementation and evidence; the original broad goal is not claimed completed.
+Integrity: sha256=6af4b54d43c7804396269e6528abe1c2504330e3a045eda439c6173fdeea89dd
