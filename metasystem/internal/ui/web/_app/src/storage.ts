@@ -1,7 +1,7 @@
 import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 /**
- * The five keys this build remembers, and nothing else.
+ * The seven keys this build remembers, and nothing else.
  *
  * Every access is wrapped: a browser with site data blocked throws on the very
  * first read, and view state is never worth an error a human has to read. An
@@ -36,6 +36,20 @@ export const DOCK_HEIGHT_KEY = "ms.ui.dock.height";
  * who chose the list gets the list back.
  */
 export const BACKLOG_VIEW_KEY = "ms.ui.backlog.view";
+/**
+ * Which tab of a page was last open. The two pages with tabs keep one key
+ * each, because they are two different readings: a human working through the
+ * project's designs and a human checking a goal's open questions are not
+ * asking the same page for the same thing, and one key would have each of
+ * them reopening the other's tab.
+ *
+ * What is stored is the tab's own name, which the address uses too. A name
+ * the page has no tab for reads as no preference at all, which is what
+ * happens when a page's sections change under a browser that remembers one of
+ * the old ones.
+ */
+export const PROJECT_TAB_KEY = "ms.ui.project.tab";
+export const GOAL_TAB_KEY = "ms.ui.goal.tab";
 
 /**
  * What the drawer is worth, in the work area's own height.
@@ -146,4 +160,25 @@ export function readBacklogView(store: Store | null = browserStore()): BacklogVi
 
 export function writeBacklogView(view: BacklogView, store: Store | null = browserStore()): void {
   write(BACKLOG_VIEW_KEY, view, store);
+}
+
+/**
+ * The tab a page was last left on, as the name it was stored under, or null.
+ * Whether that name is still a tab of the page is the page's question, and it
+ * is asked where the page's own tabs are known.
+ */
+export function readProjectTab(store: Store | null = browserStore()): string | null {
+  return read(PROJECT_TAB_KEY, store);
+}
+
+export function writeProjectTab(tab: string, store: Store | null = browserStore()): void {
+  write(PROJECT_TAB_KEY, tab, store);
+}
+
+export function readGoalTab(store: Store | null = browserStore()): string | null {
+  return read(GOAL_TAB_KEY, store);
+}
+
+export function writeGoalTab(tab: string, store: Store | null = browserStore()): void {
+  write(GOAL_TAB_KEY, tab, store);
 }

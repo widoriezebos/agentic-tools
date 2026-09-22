@@ -10,6 +10,7 @@ import {
   railFor,
   ROOT_GROUP,
   shortID,
+  tabForKind,
   type Row,
   type TocEntry,
 } from "./pane";
@@ -172,27 +173,46 @@ describe("what is on the page, as the strip of tabs names it", () => {
     ]);
   });
 
-  // A goal page opens with the goal itself and carries neither book, and the
-  // checkout's other Markdown is the project's rather than any goal's. The
-  // strip says exactly what that page has, or it would offer anchors to
-  // sections that are not on it.
-  it("names the goal first on a goal page, and no section that page does not render", () => {
+  // A goal page carries neither book, and the checkout's other Markdown is
+  // the project's rather than any goal's. The strip says exactly what that
+  // page has, or it would offer a tab onto nothing. The goal itself is not a
+  // tab: it is what the page is about, and it stands above the strip.
+  it("carries only the goal's own sections on a goal page, and not the goal", () => {
     expect(pageSections(briefingFor(pane, "interface-shell"))).toEqual([
-      { id: "goal", title: "interface-shell" },
       { id: "decisions", title: "Decisions" },
       { id: "designs", title: "Designs" },
       { id: "questions", title: "Open questions" },
     ]);
   });
 
-  // Every tab is an anchor on the page, never an address: the ledger's goals
-  // are the Backlog's, and this strip navigates nowhere.
-  it("carries no route at all, on either page", () => {
+  // A tab's name is one segment of the address, so it is one segment: a name
+  // with a separator in it would be a second segment and a route nobody
+  // registered.
+  it("names every tab in one segment, on either page", () => {
     for (const goal of [null, "interface-shell"]) {
       for (const section of pageSections(briefingFor(pane, goal))) {
-        expect({ id: section.id, slash: section.id.includes("/") }).toEqual({ id: section.id, slash: false });
+        expect({ id: section.id, segments: section.id.split("/").length }).toEqual({ id: section.id, segments: 1 });
+        expect({ id: section.id, encoded: encodeURIComponent(section.id) }).toEqual({
+          id: section.id,
+          encoded: section.id,
+        });
       }
     }
+  });
+
+  // The action that writes a record and the tab that shows it read from one
+  // table, so the aside cannot send a human to a tab the strip does not have.
+  it("puts every kind a human can write on a tab the page carries", () => {
+    const ids = pageSections(briefingFor(pane, null)).map((section) => section.id);
+
+    for (const kind of ["intent", "decision", "design"]) {
+      expect({ kind, tab: tabForKind(kind), carried: ids.includes(tabForKind(kind)) }).toEqual({
+        kind,
+        tab: tabForKind(kind),
+        carried: true,
+      });
+    }
+    expect(tabForKind("nothing")).toBe("");
   });
 });
 

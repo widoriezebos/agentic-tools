@@ -35,8 +35,8 @@ export type Row = {
 };
 
 /**
- * One tab of the strip under the header: a section of this page, by the
- * anchor the page renders it under.
+ * One tab of the strip under the header: a section of this page, by the name
+ * the address opens it under.
  */
 export type PageSection = { id: string; title: string };
 
@@ -97,37 +97,59 @@ export const FINISHED = ["done", "superseded"];
 
 /**
  * What the two sections no kind names are called. The tab and the block read
- * from the same word, so the anchor and the heading it lands on cannot drift
+ * from the same word, so the strip and the heading beneath it cannot drift
  * apart; the other sections take their word from kindTitle.
  */
 export const QUESTIONS_TITLE = "Open questions";
 export const DOCUMENTS_TITLE = "Documents";
 
+/** What those two sections are called in the address, and in the strip. */
+export const QUESTIONS_TAB = "questions";
+export const DOCUMENTS_TAB = "documents";
+
 /**
  * The strip under the header: this page's own sections, in the order the page
- * renders them, each naming the anchor it can be reached at.
+ * offers them, each named by the word the address opens it under.
  *
  * It is derived from the briefing rather than written twice, so a section the
  * payload does not produce — a book on a goal page, the checkout's documents
- * anywhere but the project — is absent from the outline for the same reason it
+ * anywhere but the project — is absent from the strip for the same reason it
  * is absent from the page. The ledger's goals are not here at all: a goal is
  * the Backlog's, and the tabs of a page are what is on that page.
+ *
+ * The goal itself is not a tab either. It is what a goal page is about rather
+ * than one of the things on it, so it stands above the strip where the page's
+ * own title would, and every tab beneath it is scoped to it.
  */
 export function pageSections(briefing: Briefing): PageSection[] {
   const rows: PageSection[] = [];
-  if (briefing.goal !== null) {
-    rows.push({ id: "goal", title: briefing.goal.title });
-  }
   for (const book of briefing.books) {
     rows.push({ id: book.id, title: book.title });
   }
-  rows.push({ id: "decisions", title: kindTitle("decision") });
-  rows.push({ id: "designs", title: kindTitle("design") });
-  rows.push({ id: "questions", title: QUESTIONS_TITLE });
+  rows.push({ id: tabForKind("decision"), title: kindTitle("decision") });
+  rows.push({ id: tabForKind("design"), title: kindTitle("design") });
+  rows.push({ id: QUESTIONS_TAB, title: QUESTIONS_TITLE });
   if (briefing.goal === null) {
-    rows.push({ id: "documents", title: DOCUMENTS_TITLE });
+    rows.push({ id: DOCUMENTS_TAB, title: DOCUMENTS_TITLE });
   }
   return rows;
+}
+
+/**
+ * The tab a kind's records are on, so that an action offered beside the
+ * reading lands where what it creates will appear, and so that the strip and
+ * the action cannot name that tab differently. A kind this page has no
+ * section for answers with the empty string, which no strip carries.
+ */
+const KIND_TABS: Readonly<Record<string, string>> = {
+  intent: "intent",
+  doctrine: "doctrine",
+  decision: "decisions",
+  design: "designs",
+};
+
+export function tabForKind(kind: string): string {
+  return KIND_TABS[kind] ?? "";
 }
 
 /** True when a selection shows this record. A null id is everything. */

@@ -5,15 +5,21 @@ import {
   DEFAULT_DOCK_HEIGHT,
   DOCK_HEIGHT_KEY,
   DOCK_KEY,
+  GOAL_TAB_KEY,
+  PROJECT_TAB_KEY,
   RAIL_KEY,
   readBacklogView,
   readDockHeight,
   readDockOpen,
+  readGoalTab,
+  readProjectTab,
   readRailExpanded,
   readTheme,
   writeBacklogView,
   writeDockHeight,
   writeDockOpen,
+  writeGoalTab,
+  writeProjectTab,
   writeRailExpanded,
   type Store,
 } from "./storage";
@@ -41,13 +47,15 @@ const throwing: Store = {
 };
 
 describe("the stored view state", () => {
-  it("reads the five keys", () => {
+  it("reads the seven keys", () => {
     const written = store({
       [THEME_KEY]: "dark",
       [RAIL_KEY]: "collapsed",
       [DOCK_KEY]: "closed",
       [DOCK_HEIGHT_KEY]: "55.5",
       [BACKLOG_VIEW_KEY]: "list",
+      [PROJECT_TAB_KEY]: "designs",
+      [GOAL_TAB_KEY]: "questions",
     });
 
     expect(readTheme(written)).toBe("dark");
@@ -55,6 +63,8 @@ describe("the stored view state", () => {
     expect(readDockOpen(written)).toBe(false);
     expect(readDockHeight(written)).toBe(55.5);
     expect(readBacklogView(written)).toBe("list");
+    expect(readProjectTab(written)).toBe("designs");
+    expect(readGoalTab(written)).toBe("questions");
   });
 
   // The drawer is closed until a human opens it: only the word it was opened
@@ -68,6 +78,8 @@ describe("the stored view state", () => {
     expect(readDockOpen(empty)).toBe(false);
     expect(readDockHeight(empty)).toBe(DEFAULT_DOCK_HEIGHT);
     expect(readBacklogView(empty)).toBe("board");
+    expect(readProjectTab(empty)).toBeNull();
+    expect(readGoalTab(empty)).toBeNull();
   });
 
   it("defaults where something invalid is stored", () => {
@@ -127,8 +139,16 @@ describe("the stored view state", () => {
     expect(readDockOpen(throwing)).toBe(false);
     expect(readDockHeight(throwing)).toBe(DEFAULT_DOCK_HEIGHT);
     expect(readBacklogView(throwing)).toBe("board");
+    expect(readProjectTab(throwing)).toBeNull();
+    expect(readGoalTab(throwing)).toBeNull();
     expect(() => {
       writeBacklogView("list", throwing);
+    }).not.toThrow();
+    expect(() => {
+      writeProjectTab("designs", throwing);
+    }).not.toThrow();
+    expect(() => {
+      writeGoalTab("designs", throwing);
     }).not.toThrow();
     expect(() => {
       writeRailExpanded(false, throwing);
@@ -142,6 +162,11 @@ describe("the stored view state", () => {
   });
 
   it("reads and writes nothing at all where there is no store", () => {
+    expect(readProjectTab(null)).toBeNull();
+    expect(readGoalTab(null)).toBeNull();
+    expect(() => {
+      writeProjectTab("designs", null);
+    }).not.toThrow();
     expect(readDockOpen(null)).toBe(false);
     expect(readDockHeight(null)).toBe(DEFAULT_DOCK_HEIGHT);
     expect(() => {
@@ -170,5 +195,33 @@ describe("the stored view state", () => {
     expect(readDockHeight(store({ [DOCK_HEIGHT_KEY]: "99" }))).toBe(90);
     expect(readDockHeight(store({ [DOCK_HEIGHT_KEY]: "0" }))).toBe(10);
     expect(readDockHeight(store({ [DOCK_HEIGHT_KEY]: "-20" }))).toBe(DEFAULT_DOCK_HEIGHT);
+  });
+
+  // The two pages with tabs keep a key each: a human working through the
+  // project's designs and a human checking a goal's open questions are not
+  // asking for the same tab, and one key would have each reopening the
+  // other's.
+  it("remembers the tab of each page under its own key", () => {
+    const written = store({});
+
+    writeProjectTab("designs", written);
+    writeGoalTab("questions", written);
+
+    expect(written.getItem(PROJECT_TAB_KEY)).toBe("designs");
+    expect(written.getItem(GOAL_TAB_KEY)).toBe("questions");
+    expect(readProjectTab(written)).toBe("designs");
+    expect(readGoalTab(written)).toBe("questions");
+
+    writeProjectTab("documents", written);
+
+    expect(readProjectTab(written)).toBe("documents");
+    expect(readGoalTab(written)).toBe("questions");
+  });
+
+  // Whether a stored name is still a tab of the page is the page's question,
+  // asked where the page's own tabs are known; the store answers with what it
+  // was given and invents nothing.
+  it("answers with the stored tab name, whatever it is", () => {
+    expect(readProjectTab(store({ [PROJECT_TAB_KEY]: "nonsense" }))).toBe("nonsense");
   });
 });

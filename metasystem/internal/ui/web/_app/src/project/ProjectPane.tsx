@@ -2,14 +2,16 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
 
 import { failureMessage, loadPane, type DocumentFile, type Pane as PanePayload, type Problem } from "./api";
-import { useReadingRow } from "./outline";
 import {
   briefingFor,
   documentGroups,
+  DOCUMENTS_TAB,
   DOCUMENTS_TITLE,
   kindTitle,
   pageSections,
+  QUESTIONS_TAB,
   QUESTIONS_TITLE,
+  tabForKind,
   type BookBriefing,
   type Briefing,
   type DesignRuns,
@@ -21,31 +23,41 @@ import "./reading.css";
 import { Sheet, type Done, type Request } from "./Sheet";
 import { ACTIONS, type Kind } from "./writing";
 import { Pane } from "../panes/Pane";
-import { documentPath } from "../routes";
+import { Tabs, tabShown, type Tab } from "../panes/Tabs";
+import { documentPath, goalPath, projectPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, Skeleton } from "../shell/controls";
+import { readGoalTab, readProjectTab, writeGoalTab, writeProjectTab } from "../storage";
 
 /**
  * Project: a briefing on what this project is, not a list of its files.
  *
  * The strip under the header is what is on this page — the books, the
- * decisions, the designs, the open questions, the documents — as anchors, with
- * the one being read marked as the human scrolls. The ledger's goals are not
- * in it: a goal belongs to the Backlog, and a rail of six hundred of them said
- * that the project's records were a subdivision of the ledger rather than the
- * other way round. The main column opens each kind in its own words — the intent index's
- * first paragraph, the doctrine's, a design's — and only then offers the
- * links: the books as tables of contents, the decisions and designs as rows
- * carrying their summaries, the designs grouped so that what governs is open
- * and what is finished is one collapsed run, in the width the outline used to
- * take. The right column is what is waiting and what was read.
+ * decisions, the designs, the open questions, the documents — as tabs, one
+ * section open at a time. It was an index into a page that carried all six at
+ * once, and an index is what a document gets: a briefing is six answers to
+ * six different questions, and a human asking what was decided should not
+ * have to scroll past the whole intent to find out. The ledger's goals are
+ * not in the strip: a goal belongs to the Backlog, and a rail of six hundred
+ * of them said that the project's records were a subdivision of the ledger
+ * rather than the other way round. Each tab opens its kind in its own words —
+ * the intent index's first paragraph, the doctrine's, a design's — and only
+ * then offers the links: the books as tables of contents, the decisions and
+ * designs as rows carrying their summaries, the designs grouped so that what
+ * governs is open and what is finished is one collapsed run. The right column
+ * is what is waiting and what was read, and it stands beside every tab.
+ *
+ * Which tab is open is in the address, so a section of the project is a place
+ * that can be sent to somebody and reloaded, and the browser remembers the
+ * last one so that coming back to Project comes back to where the human was.
  *
  * One goal of the ledger is the same page scoped to it, and it lives under
- * Backlog: the same briefing, narrowed to the records whose Goals name it,
- * opening with the ledger's own reason for the goal.
+ * Backlog: the same tabs, narrowed to the records whose Goals name it, under
+ * the ledger's own reason for the goal.
  *
  * Nothing is inferred from a filename, and nothing that is refused is hidden:
- * what the check verb would print is at the top, where a human can act on it.
+ * what the check verb would print is above the strip, on every tab, where a
+ * human can act on it.
  */
 
 type PaneState =
@@ -108,15 +120,45 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
   const groups = useMemo(() => documentGroups(pane.documents), [pane]);
   const [sheet, setSheet] = useState<Request | null>(null);
   const navigate = useNavigate();
+  const parameters = useParams<{ tab?: string }>();
+
+  // The remembered tab is read once, as the tab this page opens on where the
+  // address names none. From there the address says which tab is open, and
+  // the store is written rather than read.
+  const [remembered] = useState(() => (goal === null ? readProjectTab() : readGoalTab()));
 
   const where = goal ?? "Everything";
   const page = goal === null ? "Project" : `Backlog · ${goal}`;
-  const current = useReadingRow(sections, goal ?? "");
+  const open = tabShown(sections, parameters.tab, remembered);
 
-  // What the drawer says this page is about: the page, and the section of it
-  // being read, from the same outline the tabs mark.
-  const here = sections.find((row) => row.id === current);
+  // What the drawer says this page is about: the page, and the tab of it that
+  // is open, which is the only section on the screen.
+  const here = sections.find((section) => section.id === open);
   useAbout(aboutLine(page, here?.title ?? ""));
+
+  // Opening a tab is going somewhere: the address carries it, so a section of
+  // the project can be sent to somebody and survives a reload. What the
+  // browser remembers is written here, where a human chose it, and never from
+  // an address they were merely sent.
+  const select = (id: string) => {
+    if (goal === null) {
+      writeProjectTab(id);
+      void navigate(projectPath(id));
+      return;
+    }
+    writeGoalTab(id);
+    void navigate(goalPath(goal, id));
+  };
+
+  // An action offered beside the reading opens the tab what it creates will
+  // appear on, so that writing a decision leaves the human looking at the
+  // decisions. A tab this page does not carry — the intent chapter offered
+  // under a goal — moves nothing.
+  const show = (tab: string) => {
+    if (tab !== open && sections.some((section) => section.id === tab)) {
+      select(tab);
+    }
+  };
 
   // A created record is opened, because writing it is the point of creating
   // it; anything else read the project again, so the section shows what the
@@ -134,9 +176,11 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
   // and an empty block's one line — so each is written once and used where it
   // belongs. On a goal page they carry that goal, already chosen.
   const openRecord = (kind: Kind) => () => {
+    show(tabForKind(kind));
     setSheet({ mode: "record", kind, goal });
   };
   const openQuestion = () => {
+    show(QUESTIONS_TAB);
     setSheet({ mode: "question", goal });
   };
   const recordAct = (kind: Kind) => <Act label={ACTIONS[kind].offer} onAct={openRecord(kind)} />;
@@ -159,6 +203,51 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
     );
   };
 
+  // The section behind each tab, by the name the strip and the address call
+  // it. The strip's order is pageSections' own, so a section the payload does
+  // not produce is absent from both the strip and this.
+  const sectionOf = (id: string): ReactNode => {
+    const book = briefing.books.find((candidate) => candidate.id === id);
+    if (book !== undefined) {
+      return <BookBlock book={book} />;
+    }
+    if (id === tabForKind("decision")) {
+      return (
+        <Block title={kindTitle("decision")} count={briefing.decisions.length} action={recordAct("decision")}>
+          {briefing.decisions.length === 0 ? (
+            <Nothing>{recordAct("decision")}</Nothing>
+          ) : (
+            <Rows rows={briefing.decisions} />
+          )}
+        </Block>
+      );
+    }
+    if (id === tabForKind("design")) {
+      return <Designs designs={briefing.designs} action={recordAct("design")} />;
+    }
+    if (id === QUESTIONS_TAB) {
+      return (
+        <Block title={QUESTIONS_TITLE} count={briefing.questions.length} action={questionAct}>
+          {briefing.questions.length === 0 ? (
+            <Nothing>{questionAct}</Nothing>
+          ) : (
+            <Rows rows={briefing.questions} action={answer} />
+          )}
+        </Block>
+      );
+    }
+    if (id === DOCUMENTS_TAB) {
+      return <Documents groups={groups} total={pane.documents.length} />;
+    }
+    return null;
+  };
+
+  const tabs: Tab[] = sections.map((section: PageSection) => ({
+    id: section.id,
+    title: section.title,
+    panel: sectionOf(section.id),
+  }));
+
   return (
     <>
       {goal !== null && (
@@ -173,40 +262,26 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
           </span>
         </nav>
       )}
-      <PageTabs sections={sections} current={current} />
+      {/* What was read, what the records refuse, and what a goal page is
+          about stand above the strip: none of them is a section of the page,
+          and a refusal on one tab of six would be a refusal hidden on the
+          other five. */}
+      <div className="ms-briefing-preamble">
+        <p className="ms-project-read-at">
+          Read at {timeOf(pane.readAt)}
+          <Button onClick={onReload}>Reload</Button>
+        </p>
+        {pane.problems.length > 0 && <Problems problems={pane.problems} />}
+        {briefing.goal !== null && <GoalBlock briefing={briefing} />}
+      </div>
       <div className="ms-briefing">
-        <div className="ms-briefing-main">
-          <p className="ms-project-read-at">
-            Read at {timeOf(pane.readAt)}
-            <Button onClick={onReload}>Reload</Button>
-          </p>
-          {pane.problems.length > 0 && <Problems problems={pane.problems} />}
-          {briefing.goal !== null && <GoalBlock briefing={briefing} />}
-          {briefing.books.map((book) => (
-            <BookBlock key={book.id} book={book} />
-          ))}
-          <Block
-            id="decisions"
-            title={kindTitle("decision")}
-            count={briefing.decisions.length}
-            action={recordAct("decision")}
-          >
-            {briefing.decisions.length === 0 ? (
-              <Nothing>{recordAct("decision")}</Nothing>
-            ) : (
-              <Rows rows={briefing.decisions} />
-            )}
-          </Block>
-          <Designs designs={briefing.designs} action={recordAct("design")} />
-          <Block id="questions" title={QUESTIONS_TITLE} count={briefing.questions.length} action={questionAct}>
-            {briefing.questions.length === 0 ? (
-              <Nothing>{questionAct}</Nothing>
-            ) : (
-              <Rows rows={briefing.questions} action={answer} />
-            )}
-          </Block>
-          {goal === null && <Documents groups={groups} total={pane.documents.length} />}
-        </div>
+        <Tabs
+          label={goal === null ? "The project" : `The goal ${goal}`}
+          tabs={tabs}
+          selected={open}
+          onSelect={select}
+          panelClassName="ms-briefing-main"
+        />
         <aside className="ms-briefing-aside" aria-label="Beside the briefing">
           <section className="ms-briefing-note">
             <h2 className="ms-briefing-note-title">{goal === null ? "Contribute" : `Contribute to ${where}`}</h2>
@@ -232,12 +307,22 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
               <ul className="ms-briefing-note-list">
                 {briefing.needsYou.questions > 0 && (
                   <li>
-                    <a href="#questions">{count(briefing.needsYou.questions, "open question")}</a>
+                    <Act
+                      label={count(briefing.needsYou.questions, "open question")}
+                      onAct={() => {
+                        show(QUESTIONS_TAB);
+                      }}
+                    />
                   </li>
                 )}
                 {briefing.needsYou.designs > 0 && (
                   <li>
-                    <a href="#designs">{count(briefing.needsYou.designs, "design")} accepted, not yet built</a>
+                    <Act
+                      label={`${count(briefing.needsYou.designs, "design")} accepted, not yet built`}
+                      onAct={() => {
+                        show(tabForKind("design"));
+                      }}
+                    />
                   </li>
                 )}
               </ul>
@@ -268,35 +353,6 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
 }
 
 /**
- * What is on this page, and where in it the human is: a strip of tabs under
- * the header, above the reading rather than beside it.
- *
- * It was a column, and a column of six rows cost the reading a fifth of the
- * width to say six words. Across the top it costs one line, and the main
- * column takes the width back. Every tab is an anchor to a section of this
- * same page, so the strip moves the page rather than navigating; it stays
- * under the header as the page scrolls, and the mark follows the reader the
- * way the document reader's outline does, through the same observer and with
- * no timer. Narrower than its tabs, the strip scrolls sideways rather than
- * wrapping into a block that would push the reading down the page.
- */
-function PageTabs({ sections, current }: { sections: PageSection[]; current: string | null }) {
-  return (
-    <nav className="ms-page-tabs" aria-label="On this page">
-      <ul className="ms-page-tabs-list">
-        {sections.map((section) => (
-          <li key={section.id} className="ms-page-tab">
-            <a href={`#${section.id}`} aria-current={section.id === current ? "location" : undefined}>
-              {section.title}
-            </a>
-          </li>
-        ))}
-      </ul>
-    </nav>
-  );
-}
-
-/**
  * One action, where a human is already looking. It is a button because it acts
  * rather than navigates, and it reads as a link because in an empty state it
  * is the only thing on the line.
@@ -323,16 +379,21 @@ function count(of: number, word: string): string {
   return `${String(of)} ${word}${of === 1 ? "" : "s"}`;
 }
 
-/** One block of the briefing: a heading, a quiet count, and one action. */
+/**
+ * One block of the briefing: a heading, a quiet count, and one action.
+ *
+ * It carries no anchor any more. A tab shows one section and hides the rest,
+ * so there is nothing on this page to jump to: the address names the tab, and
+ * an id that no link could use would be an id that says the page still
+ * scrolls between its sections.
+ */
 function Block({
-  id,
   title,
   count: total,
   note,
   action,
   children,
 }: {
-  id: string;
   title: string;
   count?: number;
   note?: string;
@@ -340,7 +401,7 @@ function Block({
   children: ReactNode;
 }) {
   return (
-    <section className="ms-briefing-block" id={id}>
+    <section className="ms-briefing-block">
       <div className="ms-briefing-head">
         <h2 className="ms-briefing-title">{title}</h2>
         {total !== undefined && <span className="ms-project-count">{total}</span>}
@@ -363,7 +424,7 @@ function GoalBlock({ briefing }: { briefing: Briefing }) {
     return null;
   }
   return (
-    <section className="ms-briefing-block" id="goal">
+    <section className="ms-briefing-block">
       <p className="ms-facts-eyebrow ms-mono">{goal.id}</p>
       <div className="ms-briefing-head">
         <h2 className="ms-briefing-title">{goal.title}</h2>
@@ -448,7 +509,6 @@ function Lede({ intent }: { intent: string }) {
 function BookBlock({ book }: { book: BookBriefing }) {
   return (
     <Block
-      id={book.id}
       title={book.title}
       note={`${book.status === "" ? "no index" : book.status} · ${String(book.chapters.length)} chapters`}
       action={
@@ -485,7 +545,7 @@ function BookBlock({ book }: { book: BookBriefing }) {
 function Designs({ designs, action }: { designs: DesignRuns; action: ReactNode }) {
   const total = designs.open.length + designs.runs.reduce((sum, run) => sum + run.rows.length, 0);
   return (
-    <Block id="designs" title={kindTitle("design")} count={total} action={action}>
+    <Block title={kindTitle("design")} count={total} action={action}>
       {total === 0 && <Nothing>{action}</Nothing>}
       {designs.open.length > 0 && <Rows rows={designs.open} />}
       {designs.runs.map((run) => (
@@ -585,7 +645,7 @@ function RecordRow({ row, action }: { row: Row; action?: ReactNode }) {
  */
 function Documents({ groups, total }: { groups: DocumentGroup[]; total: number }) {
   return (
-    <Block id="documents" title={DOCUMENTS_TITLE} note={`${String(total)} files, no kind claimed`}>
+    <Block title={DOCUMENTS_TITLE} note={`${String(total)} files, no kind claimed`}>
       {groups.length === 0 ? (
         <p className="ms-project-none">Nothing recorded yet.</p>
       ) : (

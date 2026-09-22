@@ -76,11 +76,31 @@ export function sectionFor(pathname: string): Section | null {
  * router registers exactly these: an address beneath a section that is not one
  * of them matches no route and is the not-found pane, and the header has to
  * agree with the router about that.
+ *
+ * A route naming a segment with a colon takes exactly one segment there and
+ * ends: /project/designs is the Project page opened on its designs, and
+ * /project/designs/anything is not a route at all. A route written without
+ * one owns everything beneath it, which is what the document reader and the
+ * goal page are.
  */
 export const nestedRoutes: readonly { path: string; sectionId: string }[] = [
   { path: "/project/doc", sectionId: "project" },
+  { path: "/project/:tab", sectionId: "project" },
   { path: "/backlog/goal", sectionId: "backlog" },
 ];
+
+/** True when one of the nested routes above matches this address. */
+function matchesNested(route: string, pathname: string): boolean {
+  if (!route.includes(":")) {
+    return pathname === route || pathname.startsWith(`${route}/`);
+  }
+  const wanted = route.split("/");
+  const given = pathname.split("/");
+  return (
+    wanted.length === given.length &&
+    wanted.every((segment, at) => (segment.startsWith(":") ? given[at] !== "" : segment === given[at]))
+  );
+}
 
 /**
  * The section the router itself matches: its own path, or a nested route this
@@ -96,9 +116,7 @@ export function activeSection(pathname: string): Section | null {
   if (exact !== undefined) {
     return exact;
   }
-  const nested = nestedRoutes.find(
-    (route) => normalized === route.path || normalized.startsWith(`${route.path}/`),
-  );
+  const nested = nestedRoutes.find((route) => matchesNested(route.path, normalized));
   return nested === undefined ? null : (sections.find((section) => section.id === nested.sectionId) ?? null);
 }
 
@@ -134,9 +152,29 @@ export const DOCUMENT_PREFIX = "/project/doc/";
  */
 export const GOAL_PREFIX = "/backlog/goal/";
 
-/** Where one goal is shown. The id is one segment, encoded as one. */
-export function goalPath(id: string): string {
-  return GOAL_PREFIX + encodeURIComponent(id);
+/**
+ * Where one goal is shown, and on which of its tabs. The id is one segment,
+ * encoded as one; the tab is the segment after it.
+ */
+export function goalPath(id: string, tab?: string): string {
+  return withTab(GOAL_PREFIX + encodeURIComponent(id), tab);
+}
+
+/**
+ * Where the Project page is, and which of its tabs is open.
+ *
+ * The tab is in the address because a section of the project is a place: a
+ * human sends a colleague the doctrine, or reloads on the designs they were
+ * reading, and both need the address to say which. An address naming no tab
+ * has asked for nothing, and the page opens on the tab that browser was last
+ * left on.
+ */
+export function projectPath(tab?: string): string {
+  return withTab("/project", tab);
+}
+
+function withTab(at: string, tab: string | undefined): string {
+  return tab === undefined || tab === "" ? at : `${at}/${encodeURIComponent(tab)}`;
 }
 
 /**

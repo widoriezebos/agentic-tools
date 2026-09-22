@@ -508,86 +508,35 @@
 /* --------------------------------------------------------- the Project pane -- */
 
 /*
- * Two columns: the briefing, and what is waiting beside it. What is on the
- * page used to be a third, on the left; it is the strip of tabs above now, so
- * the reading starts where that column did.
+ * What stands above the strip, and so on every tab: when the page was read,
+ * what the records refuse, and what a goal page is about. None of them is a
+ * section of the page, and a refusal parked on one tab of six would be a
+ * refusal hidden on the other five.
+ */
+.ms-briefing-preamble {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 76ch;
+  margin-bottom: 20px;
+}
+
+/*
+ * The open tab, and what is waiting beside it. The strip runs across both
+ * columns, because it is what the whole page is; the section it opens keeps
+ * the reading's measure, and the aside stands beside every tab.
  */
 .ms-briefing {
   display: grid;
   grid-template-columns: minmax(0, 76ch) 240px;
-  gap: 32px;
+  gap: 20px 32px;
   align-items: start;
 }
 
-/*
- * The tabs: what is on this page, on one line under the header. The strip
- * stays there as the page scrolls, so the section being read is always named
- * and every other section is always one click away; narrower than its tabs it
- * scrolls sideways rather than wrapping, because a strip that grows to three
- * lines pushes the reading off the screen it was meant to introduce.
- */
-.ms-page-tabs {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  margin: 0 0 20px;
-  background: var(--ms-bg);
-  border-bottom: 1px solid var(--ms-border);
+.ms-briefing > .ms-tabs-strip {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
 }
-
-/*
- * A strip stuck to the top of the work area stops at the work area's own
- * padding, and the band above it is where the page would scroll through. It
- * is the strip's background too, so the reading passes behind the strip
- * rather than through the gap over it.
- */
-.ms-page-tabs::before {
-  content: "";
-  position: absolute;
-  top: -24px;
-  right: 0;
-  left: 0;
-  height: 24px;
-  background: var(--ms-bg);
-}
-
-.ms-page-tabs-list {
-  display: flex;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow-x: auto;
-}
-
-.ms-page-tab {
-  flex: 0 0 auto;
-}
-
-.ms-page-tab a {
-  display: block;
-  padding: 8px 12px;
-  border-bottom: 2px solid transparent;
-  color: var(--ms-text-2);
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 500;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.ms-page-tab a:hover,
-.ms-page-tab a:focus-visible {
-  color: var(--ms-accent);
-}
-
-/* The section being read wears the mark the outline's rows wear: the accent,
-   on the edge the strip runs along. */
-.ms-page-tab a[aria-current="location"] {
-  border-bottom-color: var(--ms-accent);
-  color: var(--ms-text);
-}
-
 
 /*
  * The main column keeps its measure whatever the width: 76 characters is what
@@ -641,27 +590,21 @@
   line-height: 20px;
 }
 
-.ms-briefing-note-list a {
-  color: var(--ms-accent);
-  text-decoration: none;
+/* What is waiting opens the tab it is waiting on, so it acts rather than
+   navigates; it still reads at the note's own size. */
+.ms-briefing-note-list .ms-project-act {
+  font-size: inherit;
+  line-height: inherit;
+  text-align: left;
 }
 
-.ms-briefing-note-list a:hover,
-.ms-briefing-note-list a:focus-visible {
-  text-decoration: underline;
-}
-
-/*
- * A tab lands its section under the strip rather than behind it: the strip is
- * the work area's own padding plus its one line, and a heading scrolled to the
- * top of the work area would otherwise arrive beneath it.
- */
+/* One section of the briefing. Nothing scrolls to it any more: a tab shows it
+   and hides the others, so it needs no room kept under the strip. */
 .ms-briefing-block {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  scroll-margin-top: 64px;
 }
 
 .ms-briefing-head {

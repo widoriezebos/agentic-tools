@@ -1,0 +1,75 @@
+/* ----------------------------------------------------------------- tabs -- */
+
+/*
+ * The strip: what is on this page, on one line under the header. It stays
+ * there as the page scrolls, so the section being read is always named and
+ * every other section is always one click away; narrower than its tabs it
+ * scrolls sideways rather than wrapping, because a strip that grows to three
+ * lines pushes the reading off the screen it was meant to introduce.
+ */
+.ms-tabs-strip {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 20px;
+  background: var(--ms-bg);
+  border-bottom: 1px solid var(--ms-border);
+}
+
+/*
+ * A strip stuck to the top of the work area stops at the work area's own
+ * padding, and the band above it is where the page would scroll through. It
+ * is the strip's background too, so the reading passes behind the strip
+ * rather than through the gap over it.
+ */
+.ms-tabs-strip::before {
+  content: "";
+  position: absolute;
+  top: -24px;
+  right: 0;
+  left: 0;
+  height: 24px;
+  background: var(--ms-bg);
+}
+
+.ms-tabs-list {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+/*
+ * A tab is a button: it opens a section of the page it is already on, and a
+ * link that navigates nowhere is a link that lies about what it will do.
+ */
+.ms-tab {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ms-text-2);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ms-tab:hover {
+  color: var(--ms-accent);
+}
+
+/* The open section wears the mark the outline's rows wear: the accent, on the
+   edge the strip runs along. */
+.ms-tab[aria-selected="true"] {
+  border-bottom-color: var(--ms-accent);
+  color: var(--ms-text);
+}
+
+/* The panel is a tab stop of its own, and it keeps the one focus treatment
+   this application has: a section reached by the keyboard says so. */
+.ms-tabs-panel {
+  min-width: 0;
+}

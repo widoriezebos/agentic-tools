@@ -9,6 +9,7 @@ import {
   isReserved,
   nestedRoutes,
   pathFor,
+  projectPath,
   projectSections,
   routeFor,
   sectionFor,
@@ -106,7 +107,17 @@ describe("activeSection", () => {
     expect(activeSection("/project")?.id).toBe("project");
     expect(activeSection("/project/doc")?.id).toBe("project");
     expect(activeSection("/project/doc/docs/architecture.md")?.id).toBe("project");
-    expect(activeSection("/project/nothing")).toBeNull();
+  });
+
+  // One segment beneath Project is a tab of the Project page, whatever it
+  // says: the page answers a tab it does not have with its first one, so the
+  // router matches it and the header has to as well. Two segments are not a
+  // tab and match nothing.
+  it("keeps the header on Project while a tab of it is open", () => {
+    expect(activeSection("/project/designs")?.id).toBe("project");
+    expect(activeSection("/project/nothing")?.id).toBe("project");
+    expect(activeSection("/project/designs/")?.id).toBe("project");
+    expect(activeSection("/project/nothing/deeper")).toBeNull();
   });
 
   // A goal is the ledger's, and the ledger is the Backlog's: the goal page
@@ -114,6 +125,7 @@ describe("activeSection", () => {
   it("keeps the header on Backlog while a goal is open", () => {
     expect(activeSection("/backlog/goal")?.id).toBe("backlog");
     expect(activeSection("/backlog/goal/watch-verb")?.id).toBe("backlog");
+    expect(activeSection("/backlog/goal/watch-verb/designs")?.id).toBe("backlog");
     expect(sectionFor("/backlog/goal/watch-verb")?.id).toBe("backlog");
     expect(activeSection("/project/goal/watch-verb")).toBeNull();
   });
@@ -157,6 +169,29 @@ describe("routeFor", () => {
     expect(goalPath("a b")).toBe("/backlog/goal/a%20b");
     expect(goalPath("a/b")).toBe("/backlog/goal/a%2Fb");
     expect(isReserved(goalPath("watch-verb"))).toBe(false);
+  });
+
+  // A tab is a place, so it is a segment of the address; an address naming no
+  // tab is the page itself, which opens on the tab that browser remembers.
+  it("names the tab a page is opened on, and leaves it out where there is none", () => {
+    expect(projectPath()).toBe("/project");
+    expect(projectPath("")).toBe("/project");
+    expect(projectPath("designs")).toBe("/project/designs");
+    expect(projectPath("questions")).toBe("/project/questions");
+    expect(goalPath("watch-verb", "designs")).toBe("/backlog/goal/watch-verb/designs");
+    expect(goalPath("a/b", "questions")).toBe("/backlog/goal/a%2Fb/questions");
+    expect(goalPath("watch-verb", "")).toBe("/backlog/goal/watch-verb");
+  });
+
+  // Every address a tab is reached at is one the router matches and the
+  // header lights, which is the whole reason the tab is in the address.
+  it("answers a tab's address with the section that owns it", () => {
+    for (const tab of ["intent", "doctrine", "decisions", "designs", "questions", "documents"]) {
+      expect({ tab, section: activeSection(projectPath(tab))?.id }).toEqual({ tab, section: "project" });
+      expect({ tab, section: sectionFor(projectPath(tab))?.id }).toEqual({ tab, section: "project" });
+      expect({ tab, reserved: isReserved(projectPath(tab)) }).toEqual({ tab, reserved: false });
+      expect({ tab, section: activeSection(goalPath("watch-verb", tab))?.id }).toEqual({ tab, section: "backlog" });
+    }
   });
 
   it("resolves a document reference, one encoded segment at a time", () => {

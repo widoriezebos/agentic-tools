@@ -148,10 +148,17 @@ export function Shell() {
       <Route path="/brain" element={<Focused wide={wide} />} />
       {/* Backlog reads the ledger and Project reads the repository; the other
           four say which gate brings them. One goal is the ledger's, so its page
-          is Backlog's, however much of the project's own records it shows. */}
+          is Backlog's, however much of the project's own records it shows.
+
+          Both those pages are read a tab at a time, and the tab is the last
+          segment of the address so that it can be sent to somebody and
+          survives a reload. It is optional rather than a second route,
+          because two routes would be two matches and a page that remounted —
+          and refetched, and forgot what was open in it — every time a human
+          moved between its own tabs. */}
       <Route path="/backlog" element={<BacklogPane />} />
-      <Route path="/backlog/goal/:id" element={<GoalPane />} />
-      <Route path="/project" element={<ProjectPane />} />
+      <Route path="/backlog/goal/:id/:tab?" element={<GoalPane />} />
+      <Route path="/project/:tab?" element={<ProjectPane />} />
       <Route path="/project/doc/*" element={<DocumentPane />} />
       {projectSections
         .filter((candidate) => candidate.id !== "backlog" && candidate.id !== "project")
