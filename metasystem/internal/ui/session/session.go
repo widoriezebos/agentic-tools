@@ -2,16 +2,22 @@
 //
 // A human signs in with the same one-time code the channel already asks them
 // for: the seat's TOTP secret, six digits, verified through the channel's own
-// VerifyTOTP with the channel's own replay rule. What a successful sign-in
-// mints is not a credential the browser can act with on its own — it is an
-// opaque session identifier held in an HttpOnly cookie, and beside it, in this
-// process's memory, the humanauthority proof that identifier stands for. The
-// proof never leaves the process and the secret never enters the proof.
+// VerifyTOTP with the channel's own replay rule.
 //
-// The step a code was accepted at is durable: it is handed back to the server's
-// own state record through Persist, and handed in again through LastStep when
-// the server starts, so a code accepted before a restart cannot be replayed
-// after one.
+// A session has two names, and the distinction is the whole of its security.
+// The BEARER is what the cookie holds and what this store is keyed by; holding
+// it is being signed in. The REFERENCE is the session's public name: the proof
+// carries it, the ledger's History records it, the authority artifact records
+// it, and `ui status` prints it. The ledger is read by every seat in the fleet
+// and by anyone with the checkout, so a bearer written into it would be a
+// credential published to everybody; the reference authorizes nothing, which
+// is why it is the one that travels.
+//
+// The replay floor is durable and fails closed. A code is accepted only after
+// the step it was minted from has been recorded as spent, so a seat that
+// cannot write the floor — a full disk, a read-only checkout, an unreadable
+// floor file — refuses to sign anybody in rather than accepting a code it
+// could accept again after a restart.
 package session
 
 import (
@@ -38,7 +44,7 @@ const SecretKey = "channel.human.totp-secret"
 // Issuer is what the ledger records as the provider of a session proof.
 const Issuer = "browser"
 
-// Cookie is the name the session identifier travels under.
+// Cookie is the name the bearer travels under.
 const Cookie = "ms_session"
 
 // The refusal codes a sign-in answers with, each one a different thing for a
@@ -46,10 +52,13 @@ const Cookie = "ms_session"
 const (
 	// CodeInvalid is a code this seat's secret does not produce now.
 	CodeInvalid = "invalid-code"
-	// CodeReplayed is a code from a step this server already accepted.
+	// CodeReplayed is a code from a step this seat already spent.
 	CodeReplayed = "replayed-code"
 	// CodeUnconfigured is a seat with no one-time-code secret at all.
 	CodeUnconfigured = "no-secret"
+	// CodeUnrecorded is a seat that cannot record a code as spent, and so
+	// cannot accept one.
+	CodeUnrecorded = "floor-not-recorded"
 	// CodeThrottled is a client that has failed too often to keep guessing.
 	CodeThrottled = "too-many-attempts"
 	// CodeHandle is a sign-in that named no usable handle.
@@ -64,6 +73,10 @@ const (
 	Cooling  = time.Minute
 )
 
+// unrecordable opens every refusal that comes of a floor this seat cannot
+// read or write. The cause follows it.
+const unrecordable = "this seat cannot record the code as spent: "
+
 // Refusal is one sign-in that was not made, in the words a human acts on.
 type Refusal struct {
 	Code    string
@@ -74,18 +87,24 @@ func (r *Refusal) Error() string { return r.Message }
 
 func refuse(code, message string) *Refusal { return &Refusal{Code: code, Message: message} }
 
-// Session is one signed-in browser, and the proof its acts carry.
+// Session is one signed-in browser, as everything but the cookie sees it.
+//
+// There is no bearer in it. SignIn hands the bearer back separately, once, to
+// the one caller that has to set the cookie; nothing that is recorded, logged
+// or rendered is ever holding it.
 type Session struct {
-	ID        string
+	// Reference is this session's public name. It is in the proof, in the
+	// ledger, and in `ui status`, and it authorizes nothing.
+	Reference string
 	Human     string
 	CreatedAt time.Time
 	Until     time.Time
 	// Proof is the in-process observation this session stands for. It is
-	// bound to this checkout and carries no secret.
+	// bound to this checkout and carries no secret and no bearer.
 	Proof humanauthority.Proof
 }
 
-// Liveness is what a cookie found.
+// Liveness is what a bearer found.
 type Liveness int
 
 const (
@@ -97,20 +116,13 @@ const (
 	Live
 )
 
-// Snapshot is what the store hands back for the server's state record: the
-// replay floor, the remembered handle, and one line per live session.
-type Snapshot struct {
-	LastStep int64
-	Human    string
-	Lines    []string
-}
-
 // Options is everything a store needs that it cannot decide for itself.
 type Options struct {
 	// Root is the checkout the minted proofs are bound to.
 	Root string
-	// Human is the handle this seat already knows: the boot proof's derived
-	// name, or the configured one. Empty means the sheet asks once.
+	// Human is the handle this seat already knew before any browser named
+	// one: the boot proof's derived name, the configured one, or the one an
+	// earlier run recorded. Empty means the sheet asks once.
 	Human string
 	// Lifetime is how long a session lasts from the moment it is signed into.
 	Lifetime time.Duration
@@ -119,23 +131,30 @@ type Options struct {
 	Secret func() (string, error)
 	// Now is the server's clock.
 	Now func() time.Time
-	// LastStep is the replay floor restored from the state record.
-	LastStep int64
-	// Persist carries a changed floor, handle or session set back to the
-	// state record. It may be nil in a build that keeps no record.
-	Persist func(Snapshot)
+	// Floor reads the durable replay floor and the handle an earlier sign-in
+	// recorded. It is read per sign-in, so a floor file that becomes readable
+	// again is picked up without a restart — and a floor that cannot be read
+	// refuses the sign-in rather than quietly becoming zero. A nil Floor is a
+	// seat with no durable floor, which signs nobody in.
+	Floor func() (lastStep int64, human string, err error)
+	// Record writes the floor and the handle durably. It is called before a
+	// session exists, and a sign-in whose floor it refuses mints nothing.
+	Record func(lastStep int64, human string) error
+	// Lines carries the live session lines to this run's own record, for `ui
+	// status` to print. It is evidence rather than a rule: nothing about
+	// admission depends on it, so nothing here fails when it does.
+	Lines func([]string)
 	// Random fills a slice with unguessable bytes. It may be nil, which takes
 	// crypto/rand.
 	Random func([]byte) error
 }
 
-// Store is one server's sessions.
+// Store is one server's sessions, keyed by bearer.
 type Store struct {
 	options  Options
 	mutex    sync.Mutex
 	sessions map[string]*Session
 	human    string
-	lastStep int64
 	failures map[string]*attempts
 }
 
@@ -157,8 +176,7 @@ func New(options Options) *Store {
 	return &Store{
 		options:  options,
 		sessions: map[string]*Session{},
-		human:    options.Human,
-		lastStep: options.LastStep,
+		human:    strings.TrimSpace(options.Human),
 		failures: map[string]*attempts{},
 	}
 }
@@ -171,75 +189,102 @@ func (s *Store) Human() string {
 	return s.human
 }
 
-// Configured reports whether the handle came from the seat rather than from a
-// browser. A configured handle is never replaced by one a client supplies.
+// Configured reports whether this seat already knew a handle before any
+// browser named one. A handle a client supplies never displaces it.
 func (s *Store) Configured() bool { return strings.TrimSpace(s.options.Human) != "" }
 
-// SignIn verifies one code and mints one session. client is what the failures
+// SignIn verifies one code and mints one session, returning the session and,
+// separately, the bearer the cookie is to hold. client is what the failures
 // are counted against; asked is the handle the sheet supplied, which is used
-// only when this seat has none of its own.
-func (s *Store) SignIn(client, code, asked string) (*Session, error) {
+// only where nothing else has named one.
+func (s *Store) SignIn(client, code, asked string) (*Session, string, error) {
 	now := s.options.Now().UTC()
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	if window, held := s.failures[client]; held && now.Before(window.until) {
-		return nil, refuse(CodeThrottled, fmt.Sprintf("too many codes were refused from here; try again in %d seconds",
+		return nil, "", refuse(CodeThrottled, fmt.Sprintf("too many codes were refused from here; try again in %d seconds",
 			int64(window.until.Sub(now)/time.Second)+1))
 	}
 	secret, err := s.secret()
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	// The floor is read before the code is even looked at, because a seat
+	// that cannot read it cannot tell a fresh code from a spent one, and
+	// answering a fresh-looking code would be answering a guess. A seat that
+	// could not write it either refuses here, for the same reason.
+	if s.options.Record == nil {
+		return nil, "", refuse(CodeUnrecorded, unrecordable+"this seat keeps no durable floor")
+	}
+	floor, recorded, floorErr := s.floor()
+	if floorErr != nil {
+		return nil, "", refuse(CodeUnrecorded, unrecordable+floorErr.Error())
+	}
+	if recorded = strings.TrimSpace(recorded); recorded != "" && !s.Configured() {
+		// A handle an earlier sign-in bound outlives this process, and no
+		// later sign-in takes a different name under it.
+		s.human = recorded
 	}
 	handle, err := s.handle(asked)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	step, ok := channel.VerifyTOTP(secret, code, now)
 	if !ok {
 		s.failed(client, now)
-		return nil, refuse(CodeInvalid, "the code is not valid now")
+		return nil, "", refuse(CodeInvalid, "the code is not valid now")
 	}
 	// The channel's replay rule: a step is spent once. A step at or below the
 	// floor is spent whether it was spent in this process or before a restart,
 	// which is why the floor is durable.
-	if step <= s.lastStep {
+	if step <= floor {
 		s.failed(client, now)
-		return nil, refuse(CodeReplayed, "that code was already used")
+		return nil, "", refuse(CodeReplayed, "that code was already used")
 	}
-	id, err := s.mint()
+	// The floor moves before the session exists. A code this seat cannot
+	// record as spent is a code it does not accept: recording after minting
+	// would leave a failed write looking exactly like an accepted code that
+	// can be presented again after a restart.
+	if err := s.options.Record(step, handle); err != nil {
+		return nil, "", refuse(CodeUnrecorded, unrecordable+err.Error())
+	}
+	bearer, err := s.mint()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	proof, err := humanauthority.SignedInSessionProof(s.options.Root, handle, id, Issuer, now)
+	reference, err := s.mint()
 	if err != nil {
-		return nil, refuse(CodeHandle, err.Error())
+		return nil, "", err
 	}
-	session := &Session{ID: id, Human: handle, CreatedAt: now, Until: now.Add(s.options.Lifetime), Proof: proof}
-	s.sessions[id] = session
-	s.lastStep = step
+	proof, err := humanauthority.SignedInSessionProof(s.options.Root, handle, reference, Issuer, now)
+	if err != nil {
+		return nil, "", refuse(CodeHandle, err.Error())
+	}
+	session := &Session{Reference: reference, Human: handle, CreatedAt: now, Until: now.Add(s.options.Lifetime), Proof: proof}
+	s.sessions[bearer] = session
 	s.human = handle
 	delete(s.failures, client)
-	s.persist(now)
-	return session, nil
+	s.report(now)
+	return session, bearer, nil
 }
 
 // Lookup reports what one cookie value names. An expired session is forgotten
 // here rather than left to be found again.
-func (s *Store) Lookup(id string) (*Session, Liveness) {
-	if id == "" {
+func (s *Store) Lookup(bearer string) (*Session, Liveness) {
+	if bearer == "" {
 		return nil, Absent
 	}
 	now := s.options.Now().UTC()
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	session, held := s.sessions[id]
+	session, held := s.sessions[bearer]
 	if !held {
 		return nil, Absent
 	}
 	if !now.Before(session.Until) {
-		delete(s.sessions, id)
-		s.persist(now)
+		delete(s.sessions, bearer)
+		s.report(now)
 		return nil, Expired
 	}
 	return session, Live
@@ -247,33 +292,28 @@ func (s *Store) Lookup(id string) (*Session, Liveness) {
 
 // SignOut forgets one session. A cookie that names no session is not an error:
 // signing out twice is signing out.
-func (s *Store) SignOut(id string) {
-	if id == "" {
+func (s *Store) SignOut(bearer string) {
+	if bearer == "" {
 		return
 	}
 	now := s.options.Now().UTC()
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	if _, held := s.sessions[id]; !held {
+	if _, held := s.sessions[bearer]; !held {
 		return
 	}
-	delete(s.sessions, id)
-	s.persist(now)
+	delete(s.sessions, bearer)
+	s.report(now)
 }
 
-// Lines is one line per live session, for `ui status` to print.
+// Lines is one line per live session, for `ui status` to print. Each names the
+// session's reference, which is what the ledger records too, so a line here
+// and an act there can be read as the same session.
 func (s *Store) Lines() []string {
 	now := s.options.Now().UTC()
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	return s.lines(now)
-}
-
-// LastStep is the replay floor as it now stands.
-func (s *Store) LastStep() int64 {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	return s.lastStep
 }
 
 func (s *Store) lines(now time.Time) []string {
@@ -282,17 +322,27 @@ func (s *Store) lines(now time.Time) []string {
 		if !now.Before(session.Until) {
 			continue
 		}
-		lines = append(lines, "signed in: "+session.Human+" until "+session.Until.Format(time.RFC3339))
+		lines = append(lines, "signed in: "+session.Human+" ("+session.Reference+") until "+session.Until.Format(time.RFC3339))
 	}
 	sort.Strings(lines)
 	return lines
 }
 
-func (s *Store) persist(now time.Time) {
-	if s.options.Persist == nil {
+// report hands this run's own record the live session lines. Nothing about
+// admission depends on them, so a caller that cannot write them loses evidence
+// rather than a rule, and the sign-in that produced them stands.
+func (s *Store) report(now time.Time) {
+	if s.options.Lines == nil {
 		return
 	}
-	s.options.Persist(Snapshot{LastStep: s.lastStep, Human: s.human, Lines: s.lines(now)})
+	s.options.Lines(s.lines(now))
+}
+
+func (s *Store) floor() (int64, string, error) {
+	if s.options.Floor == nil {
+		return 0, "", fmt.Errorf("this seat keeps no durable floor")
+	}
+	return s.options.Floor()
 }
 
 func (s *Store) failed(client string, now time.Time) {
@@ -328,7 +378,8 @@ const unconfigured = "this seat has no one-time-code secret: set " + SecretKey +
 
 // handle decides the name this sign-in acts under. A seat that knows its human
 // never takes one from a browser; a seat that does not asks once and keeps the
-// answer.
+// answer, here and in the floor file, so the second sign-in cannot be somebody
+// else.
 func (s *Store) handle(asked string) (string, error) {
 	if s.human != "" {
 		return s.human, nil

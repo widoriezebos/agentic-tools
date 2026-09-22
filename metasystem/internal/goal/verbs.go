@@ -1578,6 +1578,10 @@ func Grant(r VerbRequest, proof *humanauthority.Proof, tiers []uint8, verbs []st
 			})
 			t.Root.Revision++
 			t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "grant", Actor: r.Actor.historyActor(), Keep: -1, Reason: reason})
+			// The root record's History is parsed and rendered by the same
+			// two functions a goal file's is, so a session grant names its
+			// session with the same three keys and no new one.
+			recordSessionAuthority(&t.Root.History[len(t.Root.History)-1], proof)
 			return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}, nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
@@ -1620,6 +1624,7 @@ func Revoke(r VerbRequest, proof *humanauthority.Proof, id string) (PublishResul
 				entry.RevokedBy = r.Actor.historyActor()
 				t.Root.Revision++
 				t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "revoke", Actor: r.Actor.historyActor(), Keep: -1, Reason: "entry " + id})
+				recordSessionAuthority(&t.Root.History[len(t.Root.History)-1], proof)
 				return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}, nil
 			}
 			return nil, fmt.Errorf("no power of attorney %s is recorded", id)

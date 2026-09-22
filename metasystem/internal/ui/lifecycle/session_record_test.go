@@ -22,13 +22,13 @@ func TestUpdateRewritesTheRunningRecord(t *testing.T) {
 	before, _ := resultTestRecord(t, stateRoot)
 
 	err := Update(stateRoot, func(rec *Record) {
-		rec.Sessions = []string{"signed in: Wido until 2026-09-22T21:00:00Z"}
+		rec.Sessions = []string{"signed in: Wido (8Rk2QpLm) until 2026-09-22T21:00:00Z"}
 	})
 	testutil.Require(t, "update the record", err, nil)
 
 	after, readErr := readRecord(stateRoot)
 	testutil.Require(t, "read it back", readErr, nil)
-	testutil.Expect(t, "the signed-in sessions", after.Sessions, []string{"signed in: Wido until 2026-09-22T21:00:00Z"})
+	testutil.Expect(t, "the signed-in sessions", after.Sessions, []string{"signed in: Wido (8Rk2QpLm) until 2026-09-22T21:00:00Z"})
 	testutil.Expect(t, "and nothing else moved", after.Address, before.Address)
 	testutil.Expect(t, "the schema is unchanged", after.SchemaVersion, 1)
 }
@@ -59,8 +59,8 @@ func TestStatusPrintsTheSignedInSessions(t *testing.T) {
 	testutil.Require(t, "record the sessions", Update(stateRoot, func(rec *Record) {
 		rec.Authority = "acting as human:Wido — proven at the enrolled terminal"
 		rec.Sessions = []string{
-			"signed in: Wido until 2026-09-22T21:00:00Z",
-			"signed in: Sol until 2026-09-22T22:00:00Z",
+			"signed in: Wido (8Rk2QpLm) until 2026-09-22T21:00:00Z",
+			"signed in: Sol (Qw7Zx1Nv) until 2026-09-22T22:00:00Z",
 		}
 	}), nil)
 
@@ -70,8 +70,8 @@ func TestStatusPrintsTheSignedInSessions(t *testing.T) {
 	testutil.Expect(t, "status result", result, Result{Lines: []string{
 		"interface running at http://127.0.0.1:49152 (pid 4201, started 2026-09-21T12:34:56Z, build dev-test)",
 		"acting as human:Wido — proven at the enrolled terminal",
-		"signed in: Wido until 2026-09-22T21:00:00Z",
-		"signed in: Sol until 2026-09-22T22:00:00Z",
+		"signed in: Wido (8Rk2QpLm) until 2026-09-22T21:00:00Z",
+		"signed in: Sol (Qw7Zx1Nv) until 2026-09-22T22:00:00Z",
 	}, Code: 0})
 }
 
@@ -82,8 +82,9 @@ func TestTheOneTimeCodeFloorOutlivesTheRunThatWroteIt(t *testing.T) {
 	t.Parallel()
 	stateRoot := t.TempDir()
 
-	testutil.Expect(t, "a checkout that signed nobody in", ReadSessions(stateRoot),
-		SessionFloor{SchemaVersion: 1})
+	empty, err := ReadSessions(stateRoot)
+	testutil.Require(t, "a checkout that signed nobody in", err, nil)
+	testutil.Expect(t, "starts at zero", empty, SessionFloor{SchemaVersion: 1})
 
 	testutil.Require(t, "record a spent code", WriteSessions(stateRoot,
 		SessionFloor{LastStep: 58_000_000, Human: "Wido"}), nil)
@@ -91,7 +92,8 @@ func TestTheOneTimeCodeFloorOutlivesTheRunThatWroteIt(t *testing.T) {
 	// go with the process that observed them.
 	testutil.Require(t, "the run ends", removeRecord(stateRoot), nil)
 
-	floor := ReadSessions(stateRoot)
+	floor, readErr := ReadSessions(stateRoot)
+	testutil.Require(t, "read the floor back", readErr, nil)
 	testutil.Expect(t, "the floor the next run may not go below", floor.LastStep, int64(58_000_000))
 	testutil.Expect(t, "the handle it still knows", floor.Human, "Wido")
 	testutil.Expect(t, "the schema it was written under", floor.SchemaVersion, 1)
@@ -109,12 +111,16 @@ func TestTheFloorNeverMovesBackwards(t *testing.T) {
 	if err == nil {
 		t.Fatal("the floor was lowered")
 	}
-	testutil.Expect(t, "the floor stands", ReadSessions(stateRoot).LastStep, int64(58_000_000))
+	stood, readErr := ReadSessions(stateRoot)
+	testutil.Require(t, "read the floor back", readErr, nil)
+	testutil.Expect(t, "the floor stands", stood.LastStep, int64(58_000_000))
 }
 
-// A floor file that is not this schema, or not readable at all, is a checkout
-// that has signed nobody in rather than a server that refuses to start.
-func TestAnUnreadableFloorReadsAsNobodySignedIn(t *testing.T) {
+// A floor file that is there and cannot be read is an error, NOT a floor of
+// zero. Reading it as zero would turn a corrupt file — or one a newer build
+// wrote — into permission to spend every code this seat ever accepted again.
+// What the caller does with the error is refuse to sign anybody in.
+func TestAnUnreadableFloorIsRefusedRatherThanReadAsZero(t *testing.T) {
 	t.Parallel()
 	for name, content := range map[string]string{
 		"not json":       "{",
@@ -127,7 +133,16 @@ func TestAnUnreadableFloorReadsAsNobodySignedIn(t *testing.T) {
 			testutil.Require(t, "write the floor",
 				os.WriteFile(sessionsPath(stateRoot), []byte(content), 0o644), nil)
 
-			testutil.Expect(t, "what it reads as", ReadSessions(stateRoot), SessionFloor{SchemaVersion: 1})
+			floor, err := ReadSessions(stateRoot)
+			if err == nil {
+				t.Fatalf("an unreadable floor read as %+v", floor)
+			}
+			testutil.Expect(t, "and no floor came back", floor, SessionFloor{})
+			// And a write over it is refused too, rather than silently
+			// replacing a floor nobody could compare against.
+			if writeErr := WriteSessions(stateRoot, SessionFloor{LastStep: 1}); writeErr == nil {
+				t.Fatal("a write replaced a floor that could not be read")
+			}
 		})
 	}
 }

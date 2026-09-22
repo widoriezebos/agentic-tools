@@ -644,7 +644,7 @@ func TestPriorityRace(t *testing.T) {
 		})
 		requestA := priorityVerbReq(a, "01J5X000000000000000000V10", "mac-a")
 		requestB := priorityVerbReq(b, "01J5X000000000000000000V20", "mac-b")
-		held := setPriorityRequest(requestA, "d", 1, sequencePointer(1))
+		held := setPriorityRequest(requestA, "d", 1, sequencePointer(1), nil)
 		attempts := 0
 		injected := false
 		held.BeforePush = func(attempt int) error {
@@ -653,7 +653,7 @@ func TestPriorityRace(t *testing.T) {
 				return nil
 			}
 			injected = true
-			result, err := Publish(endpointFor(b), setPriorityRequest(requestB, "e", 1, sequencePointer(1)))
+			result, err := Publish(endpointFor(b), setPriorityRequest(requestB, "e", 1, sequencePointer(1), nil))
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				return fmt.Errorf("competing insertion did not publish: %+v %v", result, err)
 			}
@@ -676,14 +676,14 @@ func TestPriorityRace(t *testing.T) {
 		})
 		requestA := priorityVerbReq(a, "01J5X000000000000000000V30", "mac-a")
 		requestB := priorityVerbReq(b, "01J5X000000000000000000V40", "mac-b")
-		held := setPriorityRequest(requestA, "target", 1, sequencePointer(2))
+		held := setPriorityRequest(requestA, "target", 1, sequencePointer(2), nil)
 		injected := false
 		held.BeforePush = func(int) error {
 			if injected {
 				return nil
 			}
 			injected = true
-			result, err := Publish(endpointFor(b), setPriorityRequest(requestB, "target", 1, sequencePointer(1)))
+			result, err := Publish(endpointFor(b), setPriorityRequest(requestB, "target", 1, sequencePointer(1), nil))
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				return fmt.Errorf("first same-target edit did not publish: %+v %v", result, err)
 			}
@@ -705,7 +705,7 @@ func TestPriorityRace(t *testing.T) {
 			rankedGoal("a", 1, 1), rankedGoal("b", 1, 2), vGoal("target", StateQueued),
 		})
 		requestA := priorityVerbReq(a, "01J5X000000000000000000V50", "mac-a")
-		held := setPriorityRequest(requestA, "target", 1, sequencePointer(3))
+		held := setPriorityRequest(requestA, "target", 1, sequencePointer(3), nil)
 		injected := false
 		held.BeforePush = func(int) error {
 			if injected {
@@ -735,7 +735,7 @@ func TestPriorityRace(t *testing.T) {
 		a, b := priorityRaceBed(t, []*GoalFile{rankedGoal("peer", 1, 1), target})
 		rankRequest := priorityVerbReq(a, "01J5X000000000000000000V70", "mac-a")
 		claimVerb := verbReq(b, "01J5X000000000000000000V80", "mac-b")
-		held := setPriorityRequest(rankRequest, "target", 1, sequencePointer(1))
+		held := setPriorityRequest(rankRequest, "target", 1, sequencePointer(1), nil)
 		attempts := 0
 		injected := false
 		var publishedClaim ClaimRecord
@@ -784,7 +784,7 @@ func TestPriorityRace(t *testing.T) {
 				return nil
 			}
 			injected = true
-			result, err := Publish(endpointFor(a), setPriorityRequest(rankRequest, "target", 1, sequencePointer(1)))
+			result, err := Publish(endpointFor(a), setPriorityRequest(rankRequest, "target", 1, sequencePointer(1), nil))
 			if err != nil || result.Outcome != OutcomeConfirmed {
 				return fmt.Errorf("competing priority edit did not publish: %+v %v", result, err)
 			}
@@ -847,7 +847,7 @@ func TestPriorityRecovery(t *testing.T) {
 		t.Parallel()
 		a, b := priorityRaceBed(t, []*GoalFile{rankedGoal("a", 1, 1), vGoal("target", StateQueued)})
 		request := priorityVerbReq(b, "01J5X000000000000000000W20", "mac-b")
-		publish := setPriorityRequest(request, "target", 1, sequencePointer(2))
+		publish := setPriorityRequest(request, "target", 1, sequencePointer(2), nil)
 		result, err := Publish(endpointFor(b), publish)
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("publish rank before recovery loses its journal: %+v %v", result, err)

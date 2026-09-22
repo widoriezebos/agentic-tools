@@ -423,13 +423,25 @@ func recordApprovalProof(f *GoalFile, proof *humanauthority.Proof, temporary boo
 		h.ChannelStep = proof.ChannelStep
 		return
 	}
-	if proof != nil && proof.Outcome == humanauthority.OutcomeSession {
-		h := &f.History[len(f.History)-1]
-		h.AuthorityOutcome = AuthorityOutcomeSignedInSession
-		h.ChannelProvider = proof.ChannelProvider
-		h.ChannelUser = proof.ChannelUser
-		h.ChannelRef = proof.ChannelRef
+	recordSessionAuthority(&f.History[len(f.History)-1], proof)
+}
+
+// recordSessionAuthority names the signed-in session on one History line: the
+// outcome and the three channel keys, and nothing else. It is a no-op for
+// every other proof class, so a verb may call it unconditionally.
+//
+// Every verb a session can perform calls it, because a line that does not say
+// which hand made the act leaves the ledger unable to answer the question the
+// outcome exists for. The keys are the ones the channel path already writes;
+// a session has no thread, so it writes no channelStep and no channelContext.
+func recordSessionAuthority(h *HistoryLine, proof *humanauthority.Proof) {
+	if proof == nil || proof.Outcome != humanauthority.OutcomeSession {
+		return
 	}
+	h.AuthorityOutcome = AuthorityOutcomeSignedInSession
+	h.ChannelProvider = proof.ChannelProvider
+	h.ChannelUser = proof.ChannelUser
+	h.ChannelRef = proof.ChannelRef
 }
 
 func refuseRelayedAfterFleetEnrollment(t *TreeGoals, temporary bool) error {
@@ -704,7 +716,7 @@ func Unapprove(r VerbRequest, id, because string, proof *humanauthority.Proof) (
 			f.Approved, f.Budget, f.NormApproval, f.Episode = nil, nil, nil, nil
 			touchDisplaced(f, r, "unapprove", []string{id}, displaced)
 			f.History[len(f.History)-1].Reason = because
-			recordApprovalRelay(f, proof, temporary)
+			recordApprovalProof(f, proof, temporary)
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
 		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },

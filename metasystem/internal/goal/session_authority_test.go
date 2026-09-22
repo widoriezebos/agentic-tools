@@ -33,21 +33,10 @@ func parsedSessionProofForTest(t *testing.T, root string, now time.Time) *humana
 	return &parsed
 }
 
-func assertSessionApproval(t *testing.T, file *GoalFile) HistoryLine {
+// assertSessionLine checks one History line names its signed-in session with
+// the outcome and the three channel keys, and writes no key beside them.
+func assertSessionLine(t *testing.T, event HistoryLine) {
 	t.Helper()
-	if file == nil || file.Approved == nil {
-		t.Fatalf("no approval record: %+v", file)
-	}
-	if ApprovalAuthoritySession != "session" || AuthorityOutcomeSignedInSession != "SIGNED_IN_SESSION" {
-		t.Fatalf("the written values drifted: authority=%q outcome=%q", ApprovalAuthoritySession, AuthorityOutcomeSignedInSession)
-	}
-	if file.Approved.Authority != ApprovalAuthoritySession {
-		t.Fatalf("approval authority = %q, want session", file.Approved.Authority)
-	}
-	if file.Approved.ReviewBy != "" {
-		t.Fatalf("a signed-in session approval carried a review date: %+v", file.Approved)
-	}
-	event := file.History[file.Approved.Revision-1]
 	if event.AuthorityOutcome != AuthorityOutcomeSignedInSession {
 		t.Fatalf("History outcome = %q, want SIGNED_IN_SESSION", event.AuthorityOutcome)
 	}
@@ -68,6 +57,24 @@ func assertSessionApproval(t *testing.T, file *GoalFile) HistoryLine {
 			t.Fatalf("History line %q wrote %q; a session act uses existing keys only", line, forbidden)
 		}
 	}
+}
+
+func assertSessionApproval(t *testing.T, file *GoalFile) HistoryLine {
+	t.Helper()
+	if file == nil || file.Approved == nil {
+		t.Fatalf("no approval record: %+v", file)
+	}
+	if ApprovalAuthoritySession != "session" || AuthorityOutcomeSignedInSession != "SIGNED_IN_SESSION" {
+		t.Fatalf("the written values drifted: authority=%q outcome=%q", ApprovalAuthoritySession, AuthorityOutcomeSignedInSession)
+	}
+	if file.Approved.Authority != ApprovalAuthoritySession {
+		t.Fatalf("approval authority = %q, want session", file.Approved.Authority)
+	}
+	if file.Approved.ReviewBy != "" {
+		t.Fatalf("a signed-in session approval carried a review date: %+v", file.Approved)
+	}
+	event := file.History[file.Approved.Revision-1]
+	assertSessionLine(t, event)
 	if parsed, problems := ParseFile(RenderFile(file)); parsed == nil || len(problems) != 0 {
 		t.Fatalf("ParseFile of the written session approval reported %v", problems)
 	}
@@ -135,12 +142,13 @@ func TestUnapproveUnderASignedInSessionWithdrawsApproval(t *testing.T) {
 	if file.Approved != nil || file.Budget != nil || file.State != StateQueued {
 		t.Fatalf("approval survived the session unapprove: %+v", file)
 	}
-	// Unapprove records no authority outcome for any proof class that is
-	// not a relayed word; the session act follows the channel act here.
+	// The withdrawal names the hand that made it. Its class is recoverable
+	// from nowhere else: the approval record that carried it is gone.
 	last := file.History[len(file.History)-1]
-	if last.Verb != "unapprove" || last.AuthorityOutcome != "" || last.ChannelProvider != "" {
-		t.Fatalf("unapprove wrote authority facts it never wrote before: %+v", last)
+	if last.Verb != "unapprove" {
+		t.Fatalf("the last verb is %q", last.Verb)
 	}
+	assertSessionLine(t, last)
 	if parsed, problems := ParseFile(RenderFile(file)); parsed == nil || len(problems) != 0 {
 		t.Fatalf("ParseFile after a session unapprove reported %v", problems)
 	}
@@ -163,6 +171,68 @@ func TestSetPriorityUnderASignedInSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertPriorityOrder(t, tree, []string{"a", "c", "b"})
+
+	// A re-rank renumbers the band, so it is never about one record: every
+	// line this one act wrote names the same hand, and every file it wrote
+	// reads back clean.
+	moved := 0
+	for _, id := range []string{"a", "b", "c"} {
+		file := tree.Live[id]
+		last := file.History[len(file.History)-1]
+		if last.Verb != "set-priority" {
+			continue
+		}
+		moved++
+		assertSessionLine(t, last)
+		if parsed, problems := ParseFile(RenderFile(file)); parsed == nil || len(problems) != 0 {
+			t.Fatalf("ParseFile of re-ranked goal %s reported %v", id, problems)
+		}
+	}
+	if moved < 2 {
+		t.Fatalf("an insert renumbered %d goals, want at least two", moved)
+	}
+}
+
+// Granting and revoking a power of attorney are human acts too, and the root
+// record's History is parsed and rendered by the same two functions a goal
+// file's is — so a session grant names its session with the same three keys
+// and no new one.
+func TestGrantAndRevokeUnderASignedInSessionNameTheSession(t *testing.T) {
+	t.Parallel()
+	_, root := oneClone(t)
+	seedLedger(t, root)
+	granting := verbReq(root, "01J5X00000000000000000SG10", "mac-a")
+	granting.Actor.Human = "Wido"
+	expires := granting.Now.UTC().AddDate(0, 0, 2).Format("2006-01-02")
+
+	granted, err := Grant(granting, sessionProofForTest(t, root, granting.Now), []uint8{1}, []string{"approve"}, expires)
+	if err != nil || granted.Outcome != OutcomeConfirmed {
+		t.Fatalf("grant under a signed-in session: %+v %v", granted, err)
+	}
+	tree, err := loadTree(root, granted.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := tree.Root.PowerOfAttorney[len(tree.Root.PowerOfAttorney)-1]
+	assertSessionLine(t, tree.Root.History[len(tree.Root.History)-1])
+	if parsed, problems := ParseRoot(RenderRoot(tree.Root)); parsed == nil || len(problems) != 0 {
+		t.Fatalf("ParseRoot after a session grant reported %v", problems)
+	}
+
+	revoking := verbReq(root, "01J5X00000000000000000SG20", "mac-a")
+	revoking.Actor.Human = "Wido"
+	revoked, err := Revoke(revoking, sessionProofForTest(t, root, revoking.Now), entry.ID)
+	if err != nil || revoked.Outcome != OutcomeConfirmed {
+		t.Fatalf("revoke under a signed-in session: %+v %v", revoked, err)
+	}
+	after, err := loadTree(root, revoked.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSessionLine(t, after.Root.History[len(after.Root.History)-1])
+	if parsed, problems := ParseRoot(RenderRoot(after.Root)); parsed == nil || len(problems) != 0 {
+		t.Fatalf("ParseRoot after a session revoke reported %v", problems)
+	}
 }
 
 func TestTierOverrideOnOpenUnderASignedInSession(t *testing.T) {

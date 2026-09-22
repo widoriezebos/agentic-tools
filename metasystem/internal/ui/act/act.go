@@ -131,12 +131,19 @@ const SessionLineage = "browser-session"
 // reads authority=session. The classification is the human class, as the
 // headless fixture authority's is: there is no ancestry to classify, and the
 // thing that was proven is that a human answered a one-time code.
-func SignedIn(root, human, sessionID string, proof humanauthority.Proof) (Authority, error) {
-	if strings.TrimSpace(human) == "" || strings.TrimSpace(sessionID) == "" {
+func SignedIn(root, human, sessionRef string, proof humanauthority.Proof) (Authority, error) {
+	if strings.TrimSpace(human) == "" || strings.TrimSpace(sessionRef) == "" {
 		return Authority{}, fmt.Errorf("a signed-in session authority names its human and its session")
 	}
 	if !proof.SessionValidFor(root) {
 		return Authority{}, fmt.Errorf("a signed-in session authority requires a freshly minted session proof for this checkout")
+	}
+	// The name and the session are not the caller's to assert. They are what
+	// the proof was minted for, and they are what the ledger records, so a
+	// caller that supplied either of them differently would be publishing
+	// under a name the proof does not carry.
+	if proof.ChannelUser != human || proof.ChannelRef != sessionRef {
+		return Authority{}, fmt.Errorf("a signed-in session authority must name the human and the session its proof was minted for")
 	}
 	return Authority{
 		proven: true, human: human, lineage: SessionLineage, root: root, proof: proof,

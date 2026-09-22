@@ -2,6 +2,7 @@ package httpd
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,17 +27,35 @@ var routeNow = time.Date(2026, 9, 22, 9, 0, 0, 0, time.UTC)
 type signing struct {
 	store *session.Store
 	at    time.Time
+	// The floor, in memory, with a way to break it the way a full disk does.
+	floor      int64
+	remembered string
+	writeErr   error
+	readErr    error
 }
 
 func newSigning(t *testing.T, human string, secret func() (string, error)) *signing {
 	t.Helper()
-	held := &signing{at: routeNow}
+	held := &signing{at: routeNow, remembered: human}
 	held.store = session.New(session.Options{
 		Root:     t.TempDir(),
 		Human:    human,
 		Lifetime: 12 * time.Hour,
 		Secret:   secret,
 		Now:      func() time.Time { return held.at },
+		Floor: func() (int64, string, error) {
+			if held.readErr != nil {
+				return 0, "", held.readErr
+			}
+			return held.floor, held.remembered, nil
+		},
+		Record: func(lastStep int64, named string) error {
+			if held.writeErr != nil {
+				return held.writeErr
+			}
+			held.floor, held.remembered = lastStep, named
+			return nil
+		},
 	})
 	return held
 }
@@ -120,6 +139,43 @@ func TestSignInWithTheSeatsCodeMintsALockedDownCookie(t *testing.T) {
 	testutil.Expect(t, "signed in", answer.SignedIn, true)
 	testutil.Expect(t, "how", answer.Source, "code")
 	testutil.Expect(t, "until", answer.Until, routeNow.Add(12*time.Hour).Format(time.RFC3339))
+
+	// The cookie holds the bearer and the bearer is in nothing else: not in
+	// the answer, not in what `ui status` prints, and not in the proof the
+	// ledger records.
+	if strings.Contains(response.Body.String(), cookie.Value) {
+		t.Fatalf("the answer carries the bearer: %s", response.Body.String())
+	}
+	lines := held.store.Lines()
+	if len(lines) != 1 || strings.Contains(lines[0], cookie.Value) {
+		t.Fatalf("what ui status prints carries the bearer: %v", lines)
+	}
+	signed, liveness := held.store.Lookup(cookie.Value)
+	testutil.Require(t, "the cookie names a live session", liveness, session.Live)
+	testutil.Expect(t, "the proof names the reference", signed.Proof.ChannelRef, signed.Reference)
+	if signed.Reference == cookie.Value {
+		t.Fatal("the reference the ledger records is the cookie's own value")
+	}
+	if !strings.Contains(lines[0], signed.Reference) {
+		t.Fatalf("the status line does not name the reference: %q", lines[0])
+	}
+}
+
+// A seat that cannot record a code as spent refuses to accept one, and says
+// so as a seat problem rather than as a wrong code.
+func TestASeatThatCannotRecordTheFloorRefusesToSignAnybodyIn(t *testing.T) {
+	t.Parallel()
+	held := newSigning(t, "Wido", workingSecret)
+	held.writeErr = errors.New("no space left on device")
+	rec := &acted{authorized: agentStarted(), sessions: held.store}
+	served := New(rec.acting(), loopback(), testBundle())
+
+	response := post(t, served, signInPath, `{"code":"`+routeCode(t, routeNow)+`"}`, nil)
+
+	testutil.Require(t, "status", response.Code, http.StatusServiceUnavailable)
+	testutil.Expect(t, "the reason", actRefusal(t, response).Error,
+		"this seat cannot record the code as spent: no space left on device")
+	testutil.Expect(t, "no cookie was set", len(response.Result().Cookies()), 0)
 }
 
 // A code that is not this seat's, and a code this seat already accepted, are

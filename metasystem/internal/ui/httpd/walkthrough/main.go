@@ -51,9 +51,19 @@ func main() {
 	if *proven {
 		authority = httpd.AuthorityInfo{Proven: true, Human: "Wido"}
 	}
+	// The fixture's floor is in memory and says so: there is no checkout
+	// under this server to keep one in, and a walkthrough that refused to
+	// sign anybody in would walk nobody through anything.
+	var floor int64
+	var remembered = *human
 	sessions := session.New(session.Options{
 		Root: "/walkthrough", Human: *human, Lifetime: 12 * time.Hour,
 		Secret: func() (string, error) { return *secret, nil },
+		Floor:  func() (int64, string, error) { return floor, remembered, nil },
+		Record: func(lastStep int64, named string) error {
+			floor, remembered = lastStep, named
+			return nil
+		},
 	})
 	info := httpd.Info{
 		Checkout: "/walkthrough", StartedAt: time.Now().UTC().Format(time.RFC3339),

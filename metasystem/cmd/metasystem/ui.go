@@ -212,28 +212,43 @@ func runUI(verb string, args []string) int {
 				// Who this seat signs in as, in the order the answer is
 				// trustworthy: the terminal that started this server, the
 				// handle the seat configured, and last the one a browser
-				// named on a seat that had neither, which the record kept.
-				// A client-supplied name never displaces a configured one.
-				// What earlier runs of this checkout's interface left: the
-				// highest one-time-code step any of them accepted, and the
-				// handle a browser named on a seat that configures none. It
-				// is read here, under the lock this server now holds.
-				floor := lifecycle.ReadSessions(roots.StateRoot)
+				// named on a seat that had neither, which an earlier run
+				// recorded. A client-supplied name never displaces any of
+				// them.
+				//
+				// This read seeds that last answer and nothing else, which is
+				// why its error is dropped: it only decides whether the sheet
+				// asks for a name. The floor the same file carries is read
+				// again on every sign-in, where the same failure refuses the
+				// sign-in rather than being guessed at.
+				seeded, _ := lifecycle.ReadSessions(roots.StateRoot)
 				sessions := session.New(session.Options{
 					Root:     roots.StateRoot,
-					Human:    firstNamed(authority.Human(), configuredHuman, floor.Human),
+					Human:    firstNamed(authority.Human(), configuredHuman, seeded.Human),
 					Lifetime: sessionLifetime,
-					LastStep: floor.LastStep,
 					Secret:   func() (string, error) { return session.Secret(confPath) },
 					Now:      func() time.Time { return time.Now().UTC() },
-					// The floor and the handle go to the file that outlives
-					// this run, because a code spent before a restart is still
-					// spent after one; the live sessions go to this run\'s own
-					// record, which is where `ui status` reads them.
-					Persist: func(snap session.Snapshot) {
-						_ = lifecycle.WriteSessions(roots.StateRoot,
-							lifecycle.SessionFloor{LastStep: snap.LastStep, Human: snap.Human})
-						_ = lifecycle.Update(roots.StateRoot, func(r *lifecycle.Record) { r.Sessions = snap.Lines })
+					// The floor outlives this run, because a code spent before
+					// a restart is still spent after one. Reading it is part
+					// of admitting a code and writing it is part of accepting
+					// one: a seat that cannot do either signs nobody in.
+					Floor: func() (int64, string, error) {
+						read, err := lifecycle.ReadSessions(roots.StateRoot)
+						if err != nil {
+							return 0, "", err
+						}
+						return read.LastStep, read.Human, nil
+					},
+					Record: func(lastStep int64, human string) error {
+						return lifecycle.WriteSessions(roots.StateRoot,
+							lifecycle.SessionFloor{LastStep: lastStep, Human: human})
+					},
+					// The live sessions go to this run's own record, which is
+					// where `ui status` reads them. They are evidence, so a
+					// record that cannot be written loses a line rather than
+					// a sign-in.
+					Lines: func(lines []string) {
+						_ = lifecycle.Update(roots.StateRoot, func(r *lifecycle.Record) { r.Sessions = lines })
 					},
 				})
 				// acting is the hand one act publishes under: the browser
@@ -244,7 +259,7 @@ func runUI(verb string, args []string) int {
 					if signed == nil {
 						return authority, nil
 					}
-					return act.SignedIn(roots.StateRoot, signed.Human, signed.ID, signed.Proof)
+					return act.SignedIn(roots.StateRoot, signed.Human, signed.Reference, signed.Proof)
 				}
 				return httpd.New(httpd.Info{Checkout: rec.Checkout, StartedAt: rec.StartedAt, EngineBuild: rec.EngineBuild, ExecutableDigest: rec.ExecutableDigest, BundleDigest: bundleDigest,
 					Describe: func() (workspace.Workspace, error) {

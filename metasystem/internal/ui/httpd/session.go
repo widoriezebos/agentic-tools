@@ -19,11 +19,16 @@ import (
 // a human reaches their own backlog from a browser — with the seat's one-time
 // code, the same six digits the fleet channel asks for.
 //
-// What the browser holds afterwards is an opaque identifier in an HttpOnly
+// What the browser holds afterwards is the session's bearer in an HttpOnly
 // cookie, and nothing else: no name, no proof, no secret. The proof that
-// identifier stands for lives in this process, and the cookie is how a request
+// bearer stands for lives in this process, and the cookie is how a request
 // names it. SameSite=Strict, beside the same-site and origin checks every
 // other route takes, is why a page on another origin cannot spend it.
+//
+// The bearer is not what the ledger records. A session act names the
+// session's REFERENCE — a second random value, minted beside the bearer and
+// carrying no power — because History is read by every seat in the fleet, and
+// a bearer written there would be a credential handed to all of them.
 const (
 	sessionPath  = "/api/session"
 	signInPath   = "/api/session/sign-in"
@@ -61,7 +66,7 @@ type sessionState struct {
 	Source string `json:"source"`
 }
 
-// cookieOf reads the session identifier a request carries, or "" for none.
+// cookieOf reads the bearer a request carries, or "" for none.
 func cookieOf(r *http.Request) string {
 	carried, err := r.Cookie(session.Cookie)
 	if err != nil || carried == nil {
@@ -121,7 +126,7 @@ func (h *handler) signIn(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	signed, err := h.info.Sessions.SignIn(clientOf(r), body.Code, body.Human)
+	signed, bearer, err := h.info.Sessions.SignIn(clientOf(r), body.Code, body.Human)
 	if err != nil {
 		var refusal *session.Refusal
 		if errors.As(err, &refusal) {
@@ -134,7 +139,7 @@ func (h *handler) signIn(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     session.Cookie,
-		Value:    signed.ID,
+		Value:    bearer,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
@@ -169,15 +174,16 @@ func (h *handler) signOut(w http.ResponseWriter, r *http.Request) {
 
 // signInStatus says what a human can do about a refused sign-in: 401 for a
 // code that did not prove anything, 429 for a client that has to wait, 503 for
-// a seat that cannot verify a code at all, and 400 for a request that was
-// wrong.
+// a seat that cannot verify a code or record one as spent, and 400 for a
+// request that was wrong. The two 503s are both "nothing you typed was
+// wrong; this seat cannot do its part".
 func signInStatus(code string) int {
 	switch code {
 	case session.CodeInvalid, session.CodeReplayed:
 		return http.StatusUnauthorized
 	case session.CodeThrottled:
 		return http.StatusTooManyRequests
-	case session.CodeUnconfigured:
+	case session.CodeUnconfigured, session.CodeUnrecorded:
 		return http.StatusServiceUnavailable
 	default:
 		return http.StatusBadRequest

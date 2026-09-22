@@ -69,10 +69,14 @@ func SetPriority(r VerbRequest, id string, priority uint8, sequence *uint64, pro
 	if sequence != nil && *sequence == 0 {
 		return PublishResult{}, fmt.Errorf("set-priority sequence is one-based and must be positive")
 	}
-	return Publish(r.Endpoint, setPriorityRequest(r, id, priority, sequence))
+	return Publish(r.Endpoint, setPriorityRequest(r, id, priority, sequence, proof))
 }
 
-func setPriorityRequest(r VerbRequest, id string, priority uint8, sequence *uint64) PublishRequest {
+// setPriorityRequest carries the proof into the mutation because the act's
+// History lines have to say which hand made them. A re-rank is never about one
+// record — the engine renumbers the whole band — so every line this
+// publication appends is a line of this one act and names the same hand.
+func setPriorityRequest(r VerbRequest, id string, priority uint8, sequence *uint64, proof *humanauthority.Proof) PublishRequest {
 	args := map[string]string{"priority": strconv.FormatUint(uint64(priority), 10)}
 	if sequence != nil {
 		args["sequence"] = strconv.FormatUint(*sequence, 10)
@@ -142,6 +146,7 @@ func setPriorityRequest(r VerbRequest, id string, priority uint8, sequence *uint
 			changes := make([]Change, 0, len(changed))
 			for _, change := range changed {
 				touch(change.File, r, "set-priority", targets)
+				recordSessionAuthority(&change.File.History[len(change.File.History)-1], proof)
 				change.File.History[len(change.File.History)-1].Reason = fmt.Sprintf(
 					"priority-order subject=%s from=%s to=%s requested-sequence=%s",
 					id, renderRank(change.Before), renderRank(change.After), requestWord,
