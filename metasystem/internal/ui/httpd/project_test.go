@@ -24,11 +24,13 @@ func describedPane() project.Pane {
 		SchemaVersion: project.SchemaVersion,
 		ReadAt:        "2026-09-21T10:11:12Z",
 		Goals: []project.Goal{{ID: "g1-s22", Title: "g1-s22", State: "claimed",
-			Intent: "The Project section briefs, reads and takes a contribution"}},
+			Intent: "The Project section briefs, reads and takes a contribution",
+			Sliced: &project.Sliced{At: "2026-09-20T08:00:00Z", Machine: "m1e", Lineage: "coordinator"}}},
 		Records: []project.Record{{
 			Kind: "design", ID: "01K5", Status: "accepted", Goals: []string{"g1-s22"},
 			Title: "The pane", Path: "plans/designs/pane.md", Home: "plans/designs",
 			Summary: "The pane over the resolver, and the reader beside it.",
+			Slices:  []string{"The payload carries the boundary", "The tab reads it"},
 		}},
 		Intent: project.Book{Chapters: []project.Chapter{
 			{Path: "docs/paper/01-the-shift.md", Title: "1. The Shift", Summary: "Software is no longer written by hand."},
@@ -78,14 +80,17 @@ func TestProjectPayload(t *testing.T) {
 	var payload project.Pane
 	testutil.Require(t, "decode the response", json.Unmarshal(response.Body.Bytes(), &payload), nil)
 	testutil.Expect(t, "payload", payload, describedPane())
-	// The goals are the fourth schema's whole addition, and the summaries were
-	// the third's, so both are read back off the wire rather than assumed to
-	// have travelled with the rest.
-	testutil.Expect(t, "the schema version", payload.SchemaVersion, 4)
+	// The slice plan is the fifth schema's whole addition, the goals were the
+	// fourth's and the summaries the third's, so each is read back off the
+	// wire rather than assumed to have travelled with the rest.
+	testutil.Expect(t, "the schema version", payload.SchemaVersion, 5)
 	testutil.Expect(t, "the ledger's goals", payload.Goals[0].ID, "g1-s22")
 	testutil.Expect(t, "a record's goals", payload.Records[0].Goals, []string{"g1-s22"})
 	testutil.Expect(t, "a record's summary", payload.Records[0].Summary,
 		"The pane over the resolver, and the reader beside it.")
+	testutil.Expect(t, "a goal's slicing boundary", payload.Goals[0].Sliced.Machine, "m1e")
+	testutil.Expect(t, "a design's slices", payload.Records[0].Slices,
+		[]string{"The payload carries the boundary", "The tab reads it"})
 	testutil.Expect(t, "a chapter's summary", payload.Intent.Chapters[0].Summary,
 		"Software is no longer written by hand.")
 

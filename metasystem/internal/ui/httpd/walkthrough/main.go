@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/web"
 )
@@ -54,7 +55,8 @@ func main() {
 		SetPriority: func(id string, priority uint8, sequence *uint64) error {
 			return state.setPriority(id, priority, sequence)
 		},
-		Open: func(opened act.Opened) error { return state.open(opened) },
+		Open:    func(opened act.Opened) error { return state.open(opened) },
+		Project: func() (project.Pane, error) { return state.project(), nil },
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 			return map[string]goalbudget.Budget{"3": {
 				ElapsedLimit: "8h", AttemptLimit: 10, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3,
@@ -228,6 +230,66 @@ func (l *ledger) approve(id string, budget goalbudget.Budget) error {
 		Authority: goal.ApprovalAuthorityProven, Revision: file.Revision,
 	}
 	return nil
+}
+
+// project is the canned Project pane the goal page reads. It carries what a
+// goal page is about — the ledger's goals, one of them sliced, and two designs
+// that name a goal, one of which records a slice plan and one of which does
+// not — so the Slices tab can be driven with something in it and with nothing
+// in it.
+func (l *ledger) project() project.Pane {
+	goals := []project.Goal{}
+	for _, id := range []string{"g1-s15", "g1-s12", "g1-s13"} {
+		file := l.tree.Live[id]
+		if file == nil {
+			continue
+		}
+		one := project.Goal{ID: id, Title: id, State: file.State, Intent: file.Intent}
+		if id == "g1-s15" {
+			one.Sliced = &project.Sliced{
+				At: "2026-09-21T08:30:00Z", Machine: "m1e", Lineage: "coordinator",
+			}
+		}
+		goals = append(goals, one)
+	}
+	return project.Pane{
+		SchemaVersion: project.SchemaVersion,
+		ReadAt:        time.Now().UTC().Format(time.RFC3339),
+		Goals:         goals,
+		Records: []project.Record{
+			{
+				Kind: "design", ID: "design-decisions", Status: "accepted", Goals: []string{"g1-s15"},
+				Title: "The Decisions section", Path: "plans/designs/decisions.md", Home: "plans/designs",
+				Summary: "How a question is answered from the browser.",
+				Slices: []string{
+					"The register is read and shown with its open questions first",
+					"Answering one publishes through the project writer",
+					"A question a human asks arrives in the same register",
+				},
+			},
+			{
+				Kind: "design", ID: "design-board", Status: "accepted", Goals: []string{"g1-s12"},
+				Title: "The backlog board", Path: "plans/designs/board.md", Home: "plans/designs",
+				Summary: "The board, and the acts on it.",
+				Slices: []string{
+					"The lanes read the projection",
+					"A drop between lanes publishes the verb it names",
+				},
+			},
+			// A design that governs a goal and records no plan, so the tab has
+			// a goal to say "no slice plan is recorded" about.
+			{
+				Kind: "design", ID: "design-goal-page", Status: "draft", Goals: []string{"g1-s13"},
+				Title: "The goal page", Path: "plans/designs/goal-page.md", Home: "plans/designs",
+				Summary: "What one goal's page shows.", Slices: []string{},
+			},
+		},
+		Intent:    project.Book{Chapters: []project.Chapter{}},
+		Doctrine:  project.Book{Chapters: []project.Chapter{}},
+		Questions: []project.Question{},
+		Problems:  []project.Problem{},
+		Documents: []project.File{},
+	}
 }
 
 // setPriority re-ranks the way internal/goal/order.go does, because the point

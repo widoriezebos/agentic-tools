@@ -62,6 +62,26 @@ export type BookBriefing = {
 export type DesignRuns = { open: Row[]; runs: { status: string; rows: Row[] }[] };
 
 /**
+ * One goal's slice plan, as the records that have one record it.
+ *
+ * There is no slice-plan owner in the engine: the repository has slice
+ * admission and a first-slicing marker, and the master says a browser-only
+ * checklist cannot stand in for the missing owner. So this is a read of two
+ * things that do exist — the goal's own slicing boundary, and the list each
+ * governing design writes under a Slices heading — and it is read-only for
+ * exactly that reason.
+ */
+export type SlicePlan = {
+  /** When slicing started and which seat started it, or null. */
+  started: { at: string; machine: string; lineage: string } | null;
+  /** Each design that lists slices, with what it lists and where it is. */
+  designs: { key: string; title: string; to: string; status: string; slices: string[] }[];
+};
+
+/** What the tab says when no governing design records a plan. */
+export const NO_SLICE_PLAN = "No slice plan is recorded; the slice-plan owner arrives with gate 5 (master)";
+
+/**
  * The block a goal page opens with: the goal's own id, its state and the
  * ledger's own reason for it. A goal the ledger does not carry is said to be
  * missing rather than invented.
@@ -82,6 +102,8 @@ export type Briefing = {
   decisions: Row[];
   designs: DesignRuns;
   questions: Row[];
+  /** The goal's slice plan. Null for the project, which has no one plan. */
+  slices: SlicePlan | null;
   needsYou: NeedsYou;
   checkout: CheckoutFacts;
 };
@@ -102,10 +124,12 @@ export const FINISHED = ["done", "superseded"];
  */
 export const QUESTIONS_TITLE = "Open questions";
 export const DOCUMENTS_TITLE = "Documents";
+export const SLICES_TITLE = "Slices";
 
-/** What those two sections are called in the address, and in the strip. */
+/** What those sections are called in the address, and in the strip. */
 export const QUESTIONS_TAB = "questions";
 export const DOCUMENTS_TAB = "documents";
+export const SLICES_TAB = "slices";
 
 /**
  * The strip under the header: this page's own sections, in the order the page
@@ -131,6 +155,11 @@ export function pageSections(briefing: Briefing): PageSection[] {
   rows.push({ id: QUESTIONS_TAB, title: QUESTIONS_TITLE });
   if (briefing.goal === null) {
     rows.push({ id: DOCUMENTS_TAB, title: DOCUMENTS_TITLE });
+  } else {
+    // Slices are a goal's and only a goal's: the project as a whole has no
+    // one plan, and a tab that showed every design's list at once would be a
+    // list of lists rather than a plan.
+    rows.push({ id: SLICES_TAB, title: SLICES_TITLE });
   }
   return rows;
 }
@@ -186,6 +215,7 @@ export function briefingFor(pane: Pane, id: string | null): Briefing {
     decisions,
     designs,
     questions,
+    slices: id === null ? null : slicePlan(pane, id),
     needsYou: {
       questions: questions.filter((row) => row.status === "open").length,
       // An accepted design is one whose work has not shipped: shipping it is
@@ -199,6 +229,81 @@ export function briefingFor(pane: Pane, id: string | null): Briefing {
       problems: pane.problems.length,
     },
   };
+}
+
+/**
+ * One goal's slice plan.
+ *
+ * A design governs this goal when its own Goals line names it — the same
+ * selection every other section of a goal page makes — and it records a plan
+ * when it wrote one under a Slices heading. A design that governs the goal and
+ * lists nothing is not part of the plan and is not listed as an empty one:
+ * there is nothing recorded there to read.
+ */
+export function slicePlan(pane: Pane, id: string): SlicePlan {
+  const goal = goalWithID(pane, id);
+  return {
+    started: goal?.sliced ?? null,
+    designs: pane.records
+      .filter((record) => record.kind === "design" && record.goals.includes(id) && record.slices.length > 0)
+      .map((record) => ({
+        key: record.path,
+        title: record.title,
+        to: documentPath(record.path),
+        status: record.status,
+        slices: record.slices,
+      })),
+  };
+}
+
+/** How many slices the whole plan records, across every design that has one. */
+export function sliceCount(plan: SlicePlan): number {
+  return plan.designs.reduce((total, design) => total + design.slices.length, 0);
+}
+
+/**
+ * The plans for a set of goals, built once.
+ *
+ * The board asks for one per card, and the same derivation answers the goal
+ * page's tab: there is one rule for what a goal's slice plan is, and both
+ * surfaces read it rather than each deriving its own.
+ */
+export function slicePlans(pane: Pane, ids: readonly string[]): Map<string, SlicePlan> {
+  return new Map(ids.map((id) => [id, slicePlan(pane, id)]));
+}
+
+/**
+ * The one line a card carries about its slices: what is planned, and when
+ * slicing began, with whichever of the two is known.
+ *
+ * There is no execution state in it, per slice or in total, and that is not an
+ * omission. The ledger records that slicing started and nothing finer; a
+ * slice's state would have to be read out of prose somebody wrote in a design
+ * or a next step, and inventing "done" or "underway" from prose is exactly the
+ * reconstruction the master refuses. The honest label for a slice's state is
+ * none.
+ */
+export function sliceLine(count: number, startedAt: string): string {
+  const parts: string[] = [];
+  if (count > 0) {
+    parts.push(`${String(count)} slice${count === 1 ? "" : "s"} planned`);
+  }
+  if (startedAt !== "") {
+    parts.push(`slicing started ${startedAt}`);
+  }
+  return parts.join(" · ");
+}
+
+/** Every slice of a plan, each with the design that lists it. */
+export function slicesOf(plan: SlicePlan): { key: string; text: string; title: string; to: string }[] {
+  return plan.designs.flatMap((design) =>
+    design.slices.map((text, at) => ({
+      key: `${design.key}-${String(at)}`,
+      text,
+      title: design.title,
+      to: design.to,
+    })),
+  );
 }
 
 function goalBriefing(pane: Pane, id: string): GoalBriefing {

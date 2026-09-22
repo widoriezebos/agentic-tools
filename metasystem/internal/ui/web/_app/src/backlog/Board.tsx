@@ -44,6 +44,9 @@ import {
   type Side,
 } from "./reorder";
 import { arcOn, isParent, membersOf, parentOf } from "./split";
+import type { Pane as ProjectPayload } from "../project/api";
+import { sliceCount, sliceLine, slicePlans, slicesOf, type SlicePlan } from "../project/pane";
+import { dateOf } from "../project/ProjectPane";
 import { goalPath } from "../routes";
 import { Button, Chip } from "../shell/controls";
 import { failureMessage } from "../shell/workspace";
@@ -106,6 +109,7 @@ export function Board({
   onToggleClosed,
   onAct,
   onMoved,
+  plans,
   filters,
   onFilters,
   window: reach,
@@ -117,6 +121,8 @@ export function Board({
   onAct: (asked: Asked) => void;
   /** The ledger as it stands after a re-rank this board published itself. */
   onMoved: (after: Backlog) => void;
+  /** The project's records, or null where they could not be read. */
+  plans: ProjectPayload | null;
   filters: Filters;
   onFilters: (filters: Filters) => void;
   /** How far back Done reaches, in days, or null for every recorded one. */
@@ -137,6 +143,13 @@ export function Board({
   const all = useMemo(() => [...backlog.rows, ...backlog.closed], [backlog]);
   const shown = useMemo(() => all.filter((row) => matches(row, filters)), [all, filters]);
   const now = useMemo(() => observedAt(backlog), [backlog]);
+  // One plan per goal on the board, built once from the project's records:
+  // the same derivation the goal page's Slices tab reads, so the card and the
+  // tab cannot say different things about the same goal.
+  const sliced = useMemo(
+    () => (plans === null ? new Map() : slicePlans(plans, all.map((row) => row.ref.id))),
+    [plans, all],
+  );
 
   // A lane reads in the order the engine ranks work in — priority, then
   // sequence — because that is the order the chip on each card claims and the
@@ -278,6 +291,7 @@ export function Board({
             key={column.key}
             column={column}
             all={all}
+            sliced={sliced}
             statement={column.lane === "draft" ? backlog.draft.statement : ""}
             standing={standingFor(dragging, column.lane)}
             refusal={refused !== null && refused.lane === column.lane ? refused.reason : ""}
@@ -540,6 +554,7 @@ export function Unplaceable({ rows }: { rows: Row[] }) {
 function Column({
   column,
   all,
+  sliced,
   statement,
   standing,
   refusal,
@@ -554,6 +569,7 @@ function Column({
 }: {
   column: BoardColumn;
   all: readonly Row[];
+  sliced: Map<string, SlicePlan>;
   statement: string;
   standing: Standing;
   refusal: string;
@@ -610,6 +626,7 @@ function Column({
             key={row.ref.id}
             row={row}
             all={all}
+            plan={sliced.get(row.ref.id) ?? null}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
             onDropOn={onDropOn}
@@ -626,6 +643,7 @@ function Column({
 function Card({
   row,
   all,
+  plan,
   onDragStart,
   onDragEnd,
   onDropOn,
@@ -635,6 +653,8 @@ function Card({
 }: {
   row: Row;
   all: readonly Row[];
+  /** This goal's slice plan, or null where the project could not be read. */
+  plan: SlicePlan | null;
   onDragStart: (row: Row) => void;
   onDragEnd: () => void;
   onDropOn: (target: Row, side: Side) => void;
@@ -646,6 +666,9 @@ function Card({
   // Which half of this card the pointer is over, so a drop lands where the
   // line says it will rather than where the card happens to be.
   const [edge, setEdge] = useState<Side | null>(null);
+  // Whether the card is a drag handle right now. It stops being one while the
+  // pointer is down on something inside it that is not a handle.
+  const [grabbable, setGrabbable] = useState(true);
   if (isParent(row)) {
     return <SplitCard row={row} members={membersOf(row, all)} />;
   }
@@ -656,7 +679,13 @@ function Card({
   return (
     <article
       className={`ms-card-goal${edge === null ? "" : ` ms-card-goal--${edge}`}`}
-      draggable
+      draggable={grabbable}
+      onMouseUp={() => {
+        setGrabbable(true);
+      }}
+      onMouseLeave={() => {
+        setGrabbable(true);
+      }}
       onDragStart={(event: DragEvent<HTMLElement>) => {
         // The id travels as plain text so a drop outside this board carries
         // something meaningful rather than an internal handle.
@@ -710,6 +739,7 @@ function Card({
         </p>
       )}
       {arc !== "" && <p className="ms-card-lineage">arc {arc}</p>}
+      <Slices plan={plan} onGrabbable={setGrabbable} />
       {standing !== "" && <p className="ms-card-standing">{standing}</p>}
       {/* The keyboard's way to everything the mouse can do to this card, last
           because the record comes first: a card is read before it is moved.
@@ -784,6 +814,62 @@ function Card({
         </div>
       )}
     </article>
+  );
+}
+
+/**
+ * What a card says about its slices: one line, opening in place to the list.
+ *
+ * The line carries what is recorded and nothing more — how many slices the
+ * governing designs plan, and when slicing started — with whichever of the two
+ * the records answer. There is no state beside a slice and there is not going
+ * to be one until something owns a slice plan: the ledger records that slicing
+ * began and nothing finer, and reading "done" or "underway" out of prose
+ * somebody wrote in a design or a next step is the reconstruction the master
+ * refuses. Each slice links to the design that lists it, which is where its
+ * state is discussed by the only thing qualified to discuss it.
+ *
+ * It is closed until it is opened, because a card is read before it is opened,
+ * and the summary stops a drag rather than starting one: a human reaching for
+ * the disclosure is not reaching for the card.
+ */
+function Slices({ plan, onGrabbable }: { plan: SlicePlan | null; onGrabbable: (may: boolean) => void }) {
+  if (plan === null) {
+    return null;
+  }
+  const line = sliceLine(sliceCount(plan), plan.started === null ? "" : dateOf(plan.started.at));
+  if (line === "") {
+    return null;
+  }
+  const slices = slicesOf(plan);
+  return (
+    <details
+      className="ms-card-slices"
+      // A drag that begins on the disclosure is a drag nobody asked for, and
+      // it cannot be refused where it is felt: the browser fires dragstart on
+      // the draggable element, which is the card, not on the child the pointer
+      // was over, so preventing it here would prevent an event that never
+      // arrives. What works is taking the handle away before the browser looks
+      // for one — the card stops being draggable while the pointer is down on
+      // this summary, and becomes draggable again when it is released.
+      onMouseDown={() => {
+        onGrabbable(false);
+      }}
+    >
+      <summary className="ms-card-slices-line">{line}</summary>
+      {slices.length > 0 && (
+        <ul className="ms-card-slices-list">
+          {slices.map((slice) => (
+            <li key={slice.key}>
+              <span>{slice.text}</span>{" "}
+              <NavLink className="ms-card-slices-design" to={slice.to} title={slice.title}>
+                {slice.title}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
   );
 }
 

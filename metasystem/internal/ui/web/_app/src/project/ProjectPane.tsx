@@ -8,9 +8,13 @@ import {
   DOCUMENTS_TAB,
   DOCUMENTS_TITLE,
   kindTitle,
+  NO_SLICE_PLAN,
   pageSections,
   QUESTIONS_TAB,
   QUESTIONS_TITLE,
+  sliceCount,
+  SLICES_TAB,
+  SLICES_TITLE,
   tabForKind,
   type BookBriefing,
   type Briefing,
@@ -18,6 +22,7 @@ import {
   type DocumentGroup,
   type PageSection,
   type Row,
+  type SlicePlan,
 } from "./pane";
 import "./reading.css";
 import { Sheet, type Done, type Request } from "./Sheet";
@@ -238,6 +243,9 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
     }
     if (id === DOCUMENTS_TAB) {
       return <Documents groups={groups} total={pane.documents.length} />;
+    }
+    if (id === SLICES_TAB && briefing.slices !== null) {
+      return <Slices plan={briefing.slices} />;
     }
     return null;
   };
@@ -556,6 +564,55 @@ function Designs({ designs, action }: { designs: DesignRuns; action: ReactNode }
           <Rows rows={run.rows} />
         </details>
       ))}
+    </Block>
+  );
+}
+
+/**
+ * A goal's slice plan, read and not edited.
+ *
+ * Two things are recorded and both are shown: the goal's own slicing boundary,
+ * which says when the pre-reservation happened and which seat made it, and the
+ * list each governing design wrote under its Slices heading, as it wrote it,
+ * with a link to the design it came from. Nothing here is editable, and that
+ * is the point rather than an omission: the repository has slice admission and
+ * a first-slicing marker and no editable slice-plan owner, and the master is
+ * explicit that a browser-only checklist cannot stand in for the missing one.
+ * So the tab says what is recorded, names the design that recorded it, and
+ * says plainly when nothing is.
+ */
+function Slices({ plan }: { plan: SlicePlan }) {
+  return (
+    <Block title={SLICES_TITLE} count={sliceCount(plan)}>
+      {plan.started === null ? (
+        <p className="ms-project-note">Slicing has not started on this goal.</p>
+      ) : (
+        <p className="ms-project-note">
+          Slicing started {dateOf(plan.started.at)}, by <span className="ms-mono">{plan.started.machine}</span>
+          {plan.started.lineage === "" ? "" : ` (${plan.started.lineage})`}. Once it has, the goal can only advance
+          through a split.
+        </p>
+      )}
+      {plan.designs.length === 0 ? (
+        <p className="ms-project-none">{NO_SLICE_PLAN}</p>
+      ) : (
+        plan.designs.map((design) => (
+          <section key={design.key} className="ms-slice-run">
+            <div className="ms-briefing-head">
+              <h3 className="ms-slice-design">
+                <NavLink to={design.to}>{design.title}</NavLink>
+              </h3>
+              {design.status !== "" && <Chip>{design.status}</Chip>}
+              <span className="ms-project-count">{design.slices.length}</span>
+            </div>
+            <ol className="ms-slice-list">
+              {design.slices.map((slice, at) => (
+                <li key={`${design.key}-${String(at)}`}>{slice}</li>
+              ))}
+            </ol>
+          </section>
+        ))
+      )}
     </Block>
   );
 }

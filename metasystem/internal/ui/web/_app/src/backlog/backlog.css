@@ -816,6 +816,45 @@
   text-decoration: underline;
 }
 
+/*
+ * What a card says about its slices. It is one line until it is opened, and
+ * the cursor says so: a human reaching for the disclosure is not reaching for
+ * the card, and the card is a grab handle everywhere else.
+ */
+.ms-card-slices {
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.ms-card-slices-line {
+  cursor: pointer;
+  color: var(--ms-text-3);
+}
+
+.ms-card-slices-line:hover {
+  color: var(--ms-text-2);
+}
+
+.ms-card-slices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding-left: 14px;
+  color: var(--ms-text-2);
+}
+
+.ms-card-slices-design {
+  color: var(--ms-accent);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.ms-card-slices-design:hover,
+.ms-card-slices-design:focus-visible {
+  text-decoration: underline;
+}
+
 /* Where a card came from: its split's parent, or the arc it is planned in. */
 .ms-card-lineage {
   margin: 0;

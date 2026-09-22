@@ -33,12 +33,13 @@ import (
 type Roots struct{ Checkout, Installation, StateRoot string }
 
 // SchemaVersion is the shape of the project resource the interface reads. It
-// is 4: the first was the catalogue of canonical documents, which guessed a
+// is 5: the first was the catalogue of canonical documents, which guessed a
 // kind from a filename; the second carried what the records declare; the third
-// carried, beside each of them, the record's own first words; this one carries
-// the ledger's goals where the third carried the intent index's areas, which
-// are gone.
-const SchemaVersion = 4
+// carried, beside each of them, the record's own first words; the fourth
+// carried the ledger's goals where the third carried the intent index's areas,
+// which are gone; this one carries what a goal's slice plan is read out of —
+// the goal's own slicing boundary, and the slices each design lists.
+const SchemaVersion = 5
 
 // Pane is the whole of Project, read once, as it was at readAt.
 type Pane struct {
@@ -60,6 +61,18 @@ type Goal struct {
 	Title  string `json:"title"`
 	State  string `json:"state"`
 	Intent string `json:"intent"`
+	// Sliced is when slicing started on this goal and which seat started it,
+	// where the record carries the boundary at all. It is absent rather than
+	// zeroed, because "slicing has not started" and "slicing started at the
+	// zero instant" are not the same statement.
+	Sliced *Sliced `json:"sliced,omitempty"`
+}
+
+// Sliced is the goal's own `- Sliced:` line, as a reader of the plan needs it.
+type Sliced struct {
+	At      string `json:"at"`
+	Machine string `json:"machine"`
+	Lineage string `json:"lineage"`
 }
 
 // Record is one declared document: what it says it is, where it lives, and
@@ -75,6 +88,12 @@ type Record struct {
 	Path    string   `json:"path"`
 	Home    string   `json:"home"`
 	Summary string   `json:"summary"`
+	// Slices are the list items this record writes under a Slices heading, as
+	// written, and nothing is taken from them. The repository has slice
+	// admission and a first-slicing marker but no editable slice-plan owner,
+	// so a design's own list is the whole of what is recorded; carrying it is
+	// a read, never a claim that this is a plan the engine knows about.
+	Slices []string `json:"slices"`
 }
 
 // Book is one of the two indexes and the reading order it names. A home whose
@@ -155,12 +174,16 @@ func goalsOf(read *resolver.Project) []Goal {
 	tree, _ := read.Tree()
 	goals := make([]Goal, 0, len(tree))
 	for _, one := range tree {
-		goals = append(goals, Goal{
+		carried := Goal{
 			ID:     one.Goal.ID,
 			Title:  one.Goal.Title,
 			State:  one.Goal.State,
 			Intent: one.Goal.Intent,
-		})
+		}
+		if sliced := one.Goal.Sliced; sliced != nil {
+			carried.Sliced = &Sliced{At: sliced.At, Machine: sliced.Machine, Lineage: sliced.Lineage}
+		}
+		goals = append(goals, carried)
 	}
 	return goals
 }
@@ -185,7 +208,64 @@ func describe(record resolver.Record) Record {
 		Path:    record.Path,
 		Home:    record.Home,
 		Summary: summaryOf(record.Body),
+		Slices:  slicesIn(record.Body),
 	}
+}
+
+// sliceHeading is the heading a design writes its slice plan under.
+const sliceHeading = "slices"
+
+// slicesIn reads the list items under a Slices heading of a record's body.
+//
+// It is a read and nothing more: each item's text, as written, with no meaning
+// taken from it. The repository has slice admission and a first-slicing marker
+// and no editable slice-plan owner, so what a design wrote is the whole of
+// what is recorded, and showing it as the design wrote it is the only honest
+// reading available until that owner exists.
+//
+// The heading matches at any level, because a design that nests its plan under
+// a section is still recording one, and the section ends at the next heading of
+// any level — so a plan whose items live under sub-headings is read as far as
+// the first of them and no further, which is the same boundary the resolver's
+// own chapter reader draws. Indentation is stripped before an item is
+// recognized, so a nested item is an item.
+func slicesIn(body []string) []string {
+	slices := []string{}
+	inside := false
+	for _, line := range body {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") {
+			inside = strings.EqualFold(strings.TrimSpace(strings.TrimLeft(trimmed, "#")), sliceHeading)
+			continue
+		}
+		if !inside {
+			continue
+		}
+		if item, is := listItem(trimmed); is {
+			slices = append(slices, item)
+		}
+	}
+	return slices
+}
+
+// listItem reports the text of a Markdown list item, bulleted or numbered.
+func listItem(line string) (string, bool) {
+	for _, marker := range []string{"- ", "* ", "+ "} {
+		if rest, found := strings.CutPrefix(line, marker); found {
+			return strings.TrimSpace(rest), true
+		}
+	}
+	digits := 0
+	for digits < len(line) && line[digits] >= '0' && line[digits] <= '9' {
+		digits++
+	}
+	if digits == 0 || digits+1 >= len(line) {
+		return "", false
+	}
+	if (line[digits] == '.' || line[digits] == ')') && line[digits+1] == ' ' {
+		return strings.TrimSpace(line[digits+2:]), true
+	}
+	return "", false
 }
 
 // bookOf is one book's index and its reading order. A chapter the index left

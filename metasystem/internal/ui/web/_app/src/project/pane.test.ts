@@ -6,10 +6,16 @@ import {
   briefingFor,
   crumbsFor,
   documentGroups,
+  NO_SLICE_PLAN,
   pageSections,
   railFor,
   ROOT_GROUP,
   shortID,
+  sliceCount,
+  sliceLine,
+  slicePlan,
+  slicePlans,
+  slicesOf,
   tabForKind,
   type Row,
   type TocEntry,
@@ -32,6 +38,7 @@ function record(fields: Partial<ProjectRecord> & Pick<ProjectRecord, "kind" | "i
     title: fields.id,
     home: "plans/designs",
     summary: "",
+    slices: [],
     ...fields,
   };
 }
@@ -49,7 +56,7 @@ const doctrineIndex = record({
 });
 
 const pane: Pane = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   readAt: "2026-09-22T10:11:12Z",
   // The order the server answers in: the live goals first, each in id order,
   // then the concluded ones.
@@ -57,7 +64,8 @@ const pane: Pane = {
     { id: "goal-ledger", title: "goal-ledger", state: "queued",
       intent: "The ledger is the one source of open work" },
     { id: "interface-shell", title: "interface-shell", state: "claimed",
-      intent: "The browser is the seat a human takes" },
+      intent: "The browser is the seat a human takes",
+      sliced: { at: "2026-09-18T08:00:00Z", machine: "m1e", lineage: "coordinator" } },
     { id: "first-release", title: "first-release", state: "done", intent: "The first release shipped" },
     { id: "old-idea", title: "old-idea", state: "abandoned", intent: "An idea nobody pursued" },
   ],
@@ -86,6 +94,7 @@ const pane: Pane = {
     record({
       kind: "design", id: "design-pane", goals: ["interface-shell"], title: "The Project pane",
       path: "plans/designs/pane.md", summary: "The pane over the resolver.",
+      slices: ["The payload carries the boundary", "The tab reads it"],
     }),
     record({
       kind: "design", id: "design-briefing", status: "draft", goals: ["interface-shell"],
@@ -94,6 +103,7 @@ const pane: Pane = {
     record({
       kind: "design", id: "design-ledger", status: "done", goals: ["goal-ledger", "interface-shell"],
       title: "The ledger", path: "metasystem/plans/designs/ledger.md", home: "metasystem/plans/designs",
+      slices: ["The accepted ref is fetched on a loop"],
     }),
     record({
       kind: "design", id: "design-old", status: "superseded", goals: ["interface-shell"],
@@ -182,6 +192,7 @@ describe("what is on the page, as the strip of tabs names it", () => {
       { id: "decisions", title: "Decisions" },
       { id: "designs", title: "Designs" },
       { id: "questions", title: "Open questions" },
+      { id: "slices", title: "Slices" },
     ]);
   });
 
@@ -460,5 +471,96 @@ describe("the documents", () => {
         files: [{ path: "metasystem/plans/g1-s1.md", title: "A historical design" }],
       },
     ]);
+  });
+});
+
+describe("a goal's slice plan", () => {
+  // Two records that already exist, and no third: the goal's own slicing
+  // boundary, and the list each governing design wrote. There is no
+  // slice-plan owner in the engine, which is why this is a read.
+  it("is the goal's boundary and the slices each governing design lists", () => {
+    const plan = slicePlan(pane, "interface-shell");
+
+    expect(plan.started).toEqual({ at: "2026-09-18T08:00:00Z", machine: "m1e", lineage: "coordinator" });
+    expect(plan.designs.map((design) => design.title)).toEqual(["The Project pane", "The ledger"]);
+    expect(plan.designs[0].slices).toEqual(["The payload carries the boundary", "The tab reads it"]);
+    expect(plan.designs[0].to).toBe("/project/doc/plans/designs/pane.md");
+    expect(plan.designs[0].status).toBe("accepted");
+    expect(sliceCount(plan)).toBe(3);
+  });
+
+  // A design that governs the goal and wrote no Slices section is not part of
+  // the plan: there is nothing recorded there to read, and listing it as an
+  // empty plan would say the design chose to record none.
+  it("leaves out a governing design that recorded no slices", () => {
+    expect(slicePlan(pane, "interface-shell").designs.map((design) => design.title)).not.toContain("The briefing");
+  });
+
+  it("is empty, and started nowhere, for a goal nobody sliced or planned", () => {
+    const plan = slicePlan(pane, "goal-ledger");
+
+    expect(plan.started).toBeNull();
+    // design-ledger names this goal too, and lists a slice under it.
+    expect(plan.designs.map((design) => design.title)).toEqual(["The ledger"]);
+    expect(slicePlan(pane, "old-idea")).toEqual({ started: null, designs: [] });
+    expect(sliceCount(slicePlan(pane, "old-idea"))).toBe(0);
+  });
+
+  // The line the tab shows when nothing is recorded names the gap and where
+  // its owner comes from, rather than implying a plan that is merely empty.
+  it("names the missing owner in one line", () => {
+    expect(NO_SLICE_PLAN).toBe("No slice plan is recorded; the slice-plan owner arrives with gate 5 (master)");
+  });
+
+  // The whole project has no one plan: a tab showing every design's list at
+  // once would be a list of lists.
+  it("belongs to a goal page and not to the project", () => {
+    expect(briefingFor(pane, null).slices).toBeNull();
+    expect(briefingFor(pane, "interface-shell").slices).not.toBeNull();
+  });
+
+  // One derivation answers the card and the tab, so the two cannot say
+  // different things about the same goal.
+  it("is built once for a whole board of cards", () => {
+    const plans = slicePlans(pane, ["interface-shell", "goal-ledger", "old-idea"]);
+
+    expect([...plans.keys()]).toEqual(["interface-shell", "goal-ledger", "old-idea"]);
+    expect(plans.get("interface-shell")).toEqual(slicePlan(pane, "interface-shell"));
+    expect(plans.get("old-idea")).toEqual({ started: null, designs: [] });
+  });
+
+  // Whichever parts are known, and nothing when neither is. No state per
+  // slice and none in total: the ledger records that slicing began and
+  // nothing finer, and reading one out of prose is a reconstruction.
+  it("says on a card what is planned and when slicing began, and nothing else", () => {
+    expect(sliceLine(3, "18/09/2026")).toBe("3 slices planned · slicing started 18/09/2026");
+    expect(sliceLine(1, "18/09/2026")).toBe("1 slice planned · slicing started 18/09/2026");
+    expect(sliceLine(3, "")).toBe("3 slices planned");
+    expect(sliceLine(0, "18/09/2026")).toBe("slicing started 18/09/2026");
+    expect(sliceLine(0, "")).toBe("");
+  });
+
+  it("flattens a plan into slices that each name the design listing them", () => {
+    expect(slicesOf(slicePlan(pane, "interface-shell"))).toEqual([
+      {
+        key: "plans/designs/pane.md-0",
+        text: "The payload carries the boundary",
+        title: "The Project pane",
+        to: "/project/doc/plans/designs/pane.md",
+      },
+      {
+        key: "plans/designs/pane.md-1",
+        text: "The tab reads it",
+        title: "The Project pane",
+        to: "/project/doc/plans/designs/pane.md",
+      },
+      {
+        key: "metasystem/plans/designs/ledger.md-0",
+        text: "The accepted ref is fetched on a loop",
+        title: "The ledger",
+        to: "/project/doc/metasystem/plans/designs/ledger.md",
+      },
+    ]);
+    expect(slicesOf(slicePlan(pane, "old-idea"))).toEqual([]);
   });
 });

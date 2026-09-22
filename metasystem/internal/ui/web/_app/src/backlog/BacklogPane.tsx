@@ -11,8 +11,9 @@ import { anchorFor, closedLanes, openLanes, UNPLACEABLE, type LaneId } from "./l
 import { LedgerLine } from "./LedgerLine";
 import { OpenSheet } from "./OpenSheet";
 import { Statement } from "./Statement";
-import { useBacklog } from "./state";
+import { useBacklog, useSlicePlans } from "./state";
 import { Pane } from "../panes/Pane";
+import type { Pane as ProjectPayload } from "../project/api";
 import {
   readBacklogFilters,
   readBacklogView,
@@ -39,7 +40,11 @@ import { Button } from "../shell/controls";
  * fetch found either way.
  */
 export function BacklogPane() {
-  const { backlog, refresh, moved } = useBacklog();
+  const { backlog, refresh, moved, attempt } = useBacklog();
+  // What the checkout's design records say about each goal's slices, read
+  // beside the ledger and refreshed with it. A project that cannot be read
+  // leaves the cards without their slice line and changes nothing else.
+  const plans = useSlicePlans(attempt);
 
   if (backlog.state === "loading") {
     return (
@@ -67,17 +72,20 @@ export function BacklogPane() {
 
   return (
     <Pane title="Backlog">
-      <Read backlog={backlog.backlog} onRefresh={refresh} onMoved={moved} />
+      <Read backlog={backlog.backlog} plans={plans} onRefresh={refresh} onMoved={moved} />
     </Pane>
   );
 }
 
 function Read({
   backlog,
+  plans,
   onRefresh,
   onMoved,
 }: {
   backlog: Backlog;
+  /** The project's records, or null where they could not be read. */
+  plans: ProjectPayload | null;
   onRefresh: () => void;
   onMoved: (moved: Backlog) => void;
 }) {
@@ -143,6 +151,7 @@ function Read({
           onToggleClosed={() => { setClosedShown((shown) => !shown); }}
           onAct={(act: Asked) => { setAsked({ move: act.move, goal: act.goal }); }}
           onMoved={onMoved}
+          plans={plans}
           filters={filters}
           onFilters={(chosen) => { setFilters(chosen); writeBacklogFilters(chosen); }}
           window={reach}

@@ -849,6 +849,44 @@
   border-top: 1px solid var(--ms-border);
 }
 
+/*
+ * One design's slice plan, as the design wrote it. It is a reading and not an
+ * editor: the repository has no slice-plan owner yet, so nothing here is a
+ * control, and the list reads as the numbered list it is in the design.
+ */
+.ms-slice-run {
+  padding-top: 12px;
+  border-top: 1px solid var(--ms-border);
+}
+
+.ms-slice-design {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.ms-slice-design a {
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-slice-design a:hover,
+.ms-slice-design a:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-slice-list {
+  margin: 8px 0 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ms-text);
+}
+
 .ms-project-run-summary {
   display: flex;
   align-items: center;

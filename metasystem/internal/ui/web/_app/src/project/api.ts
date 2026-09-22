@@ -25,7 +25,18 @@ export type DocumentState = "readable" | "unreadable" | "too-large";
  * id, with where it stands and why it is open. The title is the goal file's own
  * heading, which in this ledger is the id itself.
  */
-export type Goal = { id: string; title: string; state: string; intent: string };
+export type Goal = {
+  id: string;
+  title: string;
+  state: string;
+  intent: string;
+  /**
+   * When slicing started on this goal and which seat started it, where the
+   * record carries the boundary. Absent rather than zeroed: "slicing has not
+   * started" and "slicing started at the zero instant" are not one statement.
+   */
+  sliced?: { at: string; machine: string; lineage: string };
+};
 
 /**
  * One declared record: what it says it is, where it lives, and its own first
@@ -42,6 +53,12 @@ export type ProjectRecord = {
   path: string;
   home: string;
   summary: string;
+  /**
+   * The list items this record writes under a Slices heading, as written.
+   * Nothing is taken from them: there is no slice-plan owner in the engine
+   * yet, so a design's own list is the whole of what is recorded.
+   */
+  slices: string[];
 };
 
 /**

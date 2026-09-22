@@ -132,7 +132,7 @@ func TestPaneCarriesWhatTheRecordsDeclare(t *testing.T) {
 	testutil.Expect(t, "one design's row", recordWithID(pane.Records, "design-reading"), Record{
 		Kind: "design", ID: "design-reading", Status: "draft", Goals: []string{"reading-pane"},
 		Title: "The reading pane", Path: "metasystem/plans/designs/pane/reading.md",
-		Home: "metasystem/plans/designs",
+		Home: "metasystem/plans/designs", Slices: []string{},
 	})
 	testutil.Expect(t, "a record about the project as a whole names no goal",
 		recordWithID(pane.Records, "decision-one-binary").Goals, []string{})
@@ -173,7 +173,7 @@ func TestPaneCarriesEachBookInReadingOrder(t *testing.T) {
 		{ID: "doctrine-events", Title: "Events are the source of truth"},
 		{ID: "doctrine-budgets", Title: "Every run is budgeted"},
 	})
-	testutil.Expect(t, "the schema the goals arrived in", pane.SchemaVersion, 4)
+	testutil.Expect(t, "the schema the slice plan arrived in", pane.SchemaVersion, 5)
 	testutil.Expect(t, "the register", pane.Questions, []Question{
 		{ID: "Q-1", Opened: "2026-09-22", Question: "Where does an adopted project's intent live?",
 			Goals: []string{}, Status: "open"},
@@ -343,6 +343,57 @@ func refusedPaths(files []File) []string {
 		}
 	}
 	return collected
+}
+
+// The slice plan is read out of two records that already exist: the goal's own
+// slicing boundary, and the list a governing design writes under a Slices
+// heading. Neither is a structure the engine owns — there is no slice-plan
+// owner yet — so what is carried is what was written, and nothing else.
+func TestPaneReadsTheSlicePlanOutOfTheRecordsThatHaveOne(t *testing.T) {
+	t.Parallel()
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	state := relativeTo(t, roots.Checkout, roots.StateRoot) + "/"
+
+	plant(t, roots.Checkout, state+"plans/goals/sliced-goal.md",
+		"# sliced-goal\n\n- State: claimed\n- Intent: The board reads a slice plan\n"+
+			"- Sliced: machine=m1e lineage=coordinator revision=4 at=2026-09-18T08:00:00Z\n")
+	plant(t, roots.Checkout, state+"plans/designs/sliced.md",
+		record("A design that plans its slices", "design", "design-sliced", "accepted", "sliced-goal")+
+			"\nProse that is not a slice.\n\n"+
+			"## Slices\n\n"+
+			"- The payload carries the boundary\n"+
+			"* The tab reads it\n"+
+			"1. The design's list is shown as written\n"+
+			"  - an indented item is still an item\n\n"+
+			"## Verification\n\n"+
+			"- not a slice, because the section ended\n")
+
+	pane, err := ReadPane(roots, readAt)
+	testutil.Require(t, "read the pane", err, nil)
+
+	testutil.Expect(t, "the goal's slicing boundary", goalWithID(pane.Goals, "sliced-goal").Sliced,
+		&Sliced{At: "2026-09-18T08:00:00Z", Machine: "m1e", Lineage: "coordinator"})
+	testutil.Expect(t, "a goal nobody sliced carries none",
+		goalWithID(pane.Goals, "ledger-sync").Sliced == nil, true)
+	testutil.Expect(t, "the design's slices, as written",
+		recordWithID(pane.Records, "design-sliced").Slices, []string{
+			"The payload carries the boundary",
+			"The tab reads it",
+			"The design's list is shown as written",
+			"an indented item is still an item",
+		})
+	testutil.Expect(t, "a design with no such section lists none",
+		recordWithID(pane.Records, "design-summary").Slices, []string{})
+}
+
+func goalWithID(goals []Goal, id string) Goal {
+	for _, one := range goals {
+		if one.ID == id {
+			return one
+		}
+	}
+	return Goal{}
 }
 
 func notMarkdown(files []File) []string {

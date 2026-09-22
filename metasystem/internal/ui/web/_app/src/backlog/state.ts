@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { loadBacklog, type Backlog } from "./api";
+import { loadPane, type Pane } from "../project/api";
 import { failureMessage } from "../shell/workspace";
 
 /**
@@ -26,6 +27,8 @@ export function useBacklog(): {
   backlog: BacklogState;
   refresh: () => void;
   moved: (after: Backlog) => void;
+  /** Which read this is, so what is read beside the ledger refreshes with it. */
+  attempt: number;
 } {
   const [backlog, setBacklog] = useState<BacklogState>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -55,5 +58,40 @@ export function useBacklog(): {
     setBacklog({ state: "known", backlog: after });
   }, []);
 
-  return { backlog, refresh, moved };
+  return { backlog, refresh, moved, attempt };
+}
+
+/**
+ * The project's records, for the one thing the board wants from them: what
+ * each card's slice plan says.
+ *
+ * It is a second read rather than a field of the backlog, because the two
+ * resources answer different questions and are paid for differently. The slice
+ * plan is read out of the checkout's design records, which means walking the
+ * homes; folding that into the backlog payload would make every approval,
+ * withdrawal and re-rank pay for a filesystem walk in order to answer with a
+ * board. So the board reads it once when it mounts, beside the ledger.
+ *
+ * A project that cannot be read is not an error here and is not shown as one:
+ * the board is the ledger's, and the slice plan is a reading beside it. The
+ * cards simply carry no slice line, and everything else works.
+ */
+export function useSlicePlans(attempt: number): Pane | null {
+  const [pane, setPane] = useState<Pane | null>(null);
+
+  useEffect(() => {
+    const aborter = new AbortController();
+    loadPane(aborter.signal)
+      .then((read) => {
+        setPane(read);
+      })
+      .catch(() => {
+        setPane(null);
+      });
+    return () => {
+      aborter.abort();
+    };
+  }, [attempt]);
+
+  return pane;
 }

@@ -44,6 +44,18 @@ type Goal struct {
 	Intent string // the goal's own Intent line
 	Where  string // GoalLive or GoalConcluded
 	Path   string // checkout-relative
+	// Sliced is the goal's own `- Sliced:` line, where it carries one.
+	Sliced *Slicing
+}
+
+// Slicing is the irreversible pre-reservation boundary a goal file records:
+// when slicing started, and which seat started it. Once it is present the goal
+// can only advance through a split, which is why a reader of the plan wants to
+// know whether it has happened and when.
+type Slicing struct {
+	At      string
+	Machine string
+	Lineage string
 }
 
 // LiveStates are the states a goal is still worked under, in the order the
@@ -94,14 +106,18 @@ func (p *Project) goalsIn(relative, where string) []Goal {
 		if title == "" {
 			title = id
 		}
-		goals = append(goals, Goal{
+		one := Goal{
 			ID:     id,
 			Title:  title,
 			State:  read.State,
 			Intent: normalizeSpace(read.Intent),
 			Where:  where,
 			Path:   relative + "/" + name,
-		})
+		}
+		if sliced := read.Sliced; sliced != nil {
+			one.Sliced = &Slicing{At: sliced.At, Machine: sliced.Machine, Lineage: sliced.Lineage}
+		}
+		goals = append(goals, one)
 	}
 	sort.SliceStable(goals, func(i, j int) bool { return goals[i].ID < goals[j].ID })
 	return goals
