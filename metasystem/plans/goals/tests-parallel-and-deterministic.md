@@ -5,10 +5,10 @@
 - Tier: 3
 - Intent: Make every test safe for parallel execution, with configurable concurrency based on available CPU cores and deterministic outcomes on slow or loaded supported hosts.
 - Origin: human
-- Next step: Nine-worker Mac full i is running on private candidate6028723f; actual nine simultaneous test runners observed in retained native JSON. Three worker-policy fixtures failed because ambient METASYSTEM_TESTING_WORKERS=9 reaches fixture config. Linux full h passed staticcheck but refuses authenticated record-only legacy native entry; root and Sol traced unconditional attempt lease borrowing. Prepare one bounded Sol unit to preserve legacy inherited descriptors and scrub only top-level worker preference in existing testenv, retaining inherited quota. Collect all remaining Mac native results. Next focused repair/read, required full/selected proof, single publication/install, final ordinary-command application witness. No new machinery or human answer pending; scope stays parallel speed and required test scope.
+- Next step: All native-entry/test-isolation repairs accepted after canonical focused proof and counting independent land verdict. Final tree9f1867a9 is running Mac governed full cadence9 (46 groups/44 sections) and Linux ordinary fullj3, private candidatea9e64f13. See plans handoff and rollout/parallel-final-proof-20260922. Observe overlap, completeness, coverage and cleanup; after both green, run delivery using matching cadence component evidence, verify, publish/install, final generic app witness. Future Linux validation is selective by concrete portability risk or Wido request; current runner/process goal retains full Linux. No new machinery or human answer pending.
 - ReadItem: id=c1-native-delegate-budget-read-1-1 read=c1-native-delegate-budget-read-1 state=accepted addedAt=2026-09-21T12:11:17Z changedAt=2026-09-21T12:15:57Z closingReference="A one-line discrepancy in builder prose is not a product defect: independent read verified exact tree f648c06b and diff602316e3, actual54 lines stays below250. Acceptance dispositions record the corrected count; source and runtime proof unchanged." text="N-1: builder prose counted53 changed lines; exact reviewed diff has54. Correct count recorded in acceptance dispositions; source/hash and250-line boundary unchanged; no product fix required."
 - OpenedAt: 2026-09-21T03:36:50Z
-- Revision: 20
+- Revision: 21
 - Budget: elapsedLimit=5d2h attemptLimit=14 reservedJobMinutesLimit=720 activeJobLimit=8 reviewRoundLimit=3
 - BudgetExceptions: 5
 - Approved: by=human:Wido at=2026-09-22T11:19:20Z revision=13 opid=91ZNWW86BRWXQ80X7VAVEXRDY9-m1e-5a8337cd authority=proven digest=c846783d7d729316b0fdfdc7d3a7a3165636892ddfba94afb3b9ef25b262f71d episode=13
@@ -36,4 +36,5 @@ History:
 - 2026-09-22T14:04:53Z NWBRVYC425Y4H7KWKVGRD89323-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic
 - 2026-09-22T14:43:43Z 61YW7FDTFG20DA1MFEWX2Q8PNM-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic
 - 2026-09-22T15:05:40Z GJTHK963ZHYBYYKMC6KBDN4PV4-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic
-Integrity: sha256=22be7dc6d748ca1642fb9ef8cbd2ad93d36039dc0409de07ef7b32ec143a0205
+- 2026-09-22T15:42:18Z PPZ5PPNENC3BG8G3PMGFPCGHV3-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic
+Integrity: sha256=f0ee7fb805610e9aa4f7d11887c733b69ba38323716060ea93901c4bb30208c4
