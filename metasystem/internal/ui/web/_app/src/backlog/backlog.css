@@ -664,3 +664,173 @@
   color: var(--ms-danger);
   overflow-wrap: anywhere;
 }
+
+/* ------------------------------------------ narrowing, and what cannot be -- */
+
+/*
+ * The filter bar sits between the view switch and the lanes, because that is
+ * where it acts: it narrows the board and nothing above it. It wraps rather
+ * than scrolls, so a narrow window stacks the five controls instead of hiding
+ * the last of them past an edge.
+ */
+.ms-board-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.ms-board-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ms-board-filter label {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-2);
+}
+
+.ms-board-find,
+.ms-board-select {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ms-board-find {
+  width: 180px;
+  max-width: 100%;
+}
+
+.ms-board-find:focus-visible,
+.ms-board-select:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: 1px;
+}
+
+/* The Done lane's reach, in its own head, under the title. */
+.ms-column-reach {
+  gap: 4px;
+}
+
+.ms-column-reach .ms-board-select {
+  height: 22px;
+}
+
+.ms-column-reach-unit {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+/*
+ * The goals this build cannot place. It is one line until it is opened, and
+ * it is nothing at all when there are none, which is the usual board.
+ */
+.ms-board-unplaceable {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+}
+
+.ms-board-unplaceable-line {
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-2);
+}
+
+.ms-board-unplaceable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-board-unplaceable-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ms-board-unplaceable-why {
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------ a split, on its parent -- */
+
+/*
+ * A goal a split retired. It is dashed rather than solid because it is not a
+ * card of work: nothing can be dragged from it and nothing acts on it, and
+ * the border says so before the text does.
+ */
+.ms-card-goal--split {
+  border-style: dashed;
+  cursor: default;
+}
+
+.ms-card-split {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ms-text-2);
+}
+
+.ms-card-members {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ms-card-members a {
+  color: var(--ms-accent);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.ms-card-members a:hover,
+.ms-card-members a:focus-visible {
+  text-decoration: underline;
+}
+
+/* Where a card came from: its split's parent, or the arc it is planned in. */
+.ms-card-lineage {
+  margin: 0;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+.ms-card-lineage a {
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-card-lineage a:hover,
+.ms-card-lineage a:focus-visible {
+  text-decoration: underline;
+}

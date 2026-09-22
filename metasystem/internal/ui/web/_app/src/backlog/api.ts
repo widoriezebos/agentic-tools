@@ -101,6 +101,13 @@ export type Row = {
   sliced: boolean;
   decomposed: boolean;
   openedAt: string;
+  /**
+   * When this goal's own conclusion was recorded, or "" where nothing
+   * recorded one. It is the goal's History speaking, not its state, which is
+   * why a goal can be done and carry no date: the Done lane's window says so
+   * rather than guessing.
+   */
+  doneAt: string;
   lastChangeAt: string;
   lastVerb: string;
   gaps: string[];

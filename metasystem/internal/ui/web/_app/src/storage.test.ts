@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import { ANY, DEFAULT_WINDOW, named, noFilters, NONE } from "./backlog/filters";
 import {
+  BACKLOG_ARC_KEY,
+  BACKLOG_DONE_KEY,
+  BACKLOG_PRIORITY_KEY,
+  BACKLOG_SEAT_KEY,
+  BACKLOG_TEXT_KEY,
+  BACKLOG_TIER_KEY,
   BACKLOG_VIEW_KEY,
   DEFAULT_DOCK_HEIGHT,
   DOCK_HEIGHT_KEY,
@@ -8,16 +15,20 @@ import {
   GOAL_TAB_KEY,
   PROJECT_TAB_KEY,
   RAIL_KEY,
+  readBacklogFilters,
   readBacklogView,
   readDockHeight,
   readDockOpen,
+  readDoneWindow,
   readGoalTab,
   readProjectTab,
   readRailExpanded,
   readTheme,
+  writeBacklogFilters,
   writeBacklogView,
   writeDockHeight,
   writeDockOpen,
+  writeDoneWindow,
   writeGoalTab,
   writeProjectTab,
   writeRailExpanded,
@@ -47,7 +58,7 @@ const throwing: Store = {
 };
 
 describe("the stored view state", () => {
-  it("reads the seven keys", () => {
+  it("reads the thirteen keys", () => {
     const written = store({
       [THEME_KEY]: "dark",
       [RAIL_KEY]: "collapsed",
@@ -56,6 +67,12 @@ describe("the stored view state", () => {
       [BACKLOG_VIEW_KEY]: "list",
       [PROJECT_TAB_KEY]: "designs",
       [GOAL_TAB_KEY]: "questions",
+      [BACKLOG_TEXT_KEY]: "ledger",
+      [BACKLOG_PRIORITY_KEY]: "1",
+      [BACKLOG_TIER_KEY]: "3",
+      [BACKLOG_SEAT_KEY]: named("m1e"),
+      [BACKLOG_ARC_KEY]: NONE,
+      [BACKLOG_DONE_KEY]: "7",
     });
 
     expect(readTheme(written)).toBe("dark");
@@ -65,6 +82,14 @@ describe("the stored view state", () => {
     expect(readBacklogView(written)).toBe("list");
     expect(readProjectTab(written)).toBe("designs");
     expect(readGoalTab(written)).toBe("questions");
+    expect(readBacklogFilters(written)).toEqual({
+      text: "ledger",
+      priority: "1",
+      tier: "3",
+      seat: named("m1e"),
+      arc: NONE,
+    });
+    expect(readDoneWindow(written)).toBe(7);
   });
 
   // The drawer is closed until a human opens it: only the word it was opened
@@ -80,6 +105,8 @@ describe("the stored view state", () => {
     expect(readBacklogView(empty)).toBe("board");
     expect(readProjectTab(empty)).toBeNull();
     expect(readGoalTab(empty)).toBeNull();
+    expect(readBacklogFilters(empty)).toEqual(noFilters);
+    expect(readDoneWindow(empty)).toBe(DEFAULT_WINDOW);
   });
 
   it("defaults where something invalid is stored", () => {
@@ -89,6 +116,9 @@ describe("the stored view state", () => {
       [DOCK_KEY]: "ajar",
       [DOCK_HEIGHT_KEY]: "half",
       [BACKLOG_VIEW_KEY]: "outline",
+      [BACKLOG_PRIORITY_KEY]: "4",
+      [BACKLOG_TIER_KEY]: "high",
+      [BACKLOG_DONE_KEY]: "yesterday",
     });
 
     expect(readTheme(nonsense)).toBe("system");
@@ -96,6 +126,9 @@ describe("the stored view state", () => {
     expect(readDockOpen(nonsense)).toBe(false);
     expect(readDockHeight(nonsense)).toBe(DEFAULT_DOCK_HEIGHT);
     expect(readBacklogView(nonsense)).toBe("board");
+    expect(readBacklogFilters(nonsense).priority).toBe(ANY);
+    expect(readBacklogFilters(nonsense).tier).toBe(ANY);
+    expect(readDoneWindow(nonsense)).toBe(DEFAULT_WINDOW);
   });
 
   it("remembers the Backlog's view the way the shell remembers the drawer", () => {
@@ -223,5 +256,54 @@ describe("the stored view state", () => {
   // was given and invents nothing.
   it("answers with the stored tab name, whatever it is", () => {
     expect(readProjectTab(store({ [PROJECT_TAB_KEY]: "nonsense" }))).toBe("nonsense");
+  });
+
+  // Five independent answers under five keys: clearing the text is not a
+  // change of mind about the seat, and a value an older build never wrote is
+  // read as no preference rather than throwing the other four away.
+  it("remembers each filter under its own key, and reads a missing one as any", () => {
+    const written = store({});
+
+    writeBacklogFilters({ text: "ledger", priority: "2", tier: "", seat: NONE, arc: named("harvest") }, written);
+
+    expect(written.getItem(BACKLOG_TEXT_KEY)).toBe("ledger");
+    expect(written.getItem(BACKLOG_PRIORITY_KEY)).toBe("2");
+    expect(written.getItem(BACKLOG_TIER_KEY)).toBe("");
+    expect(written.getItem(BACKLOG_SEAT_KEY)).toBe(NONE);
+    expect(written.getItem(BACKLOG_ARC_KEY)).toBe(named("harvest"));
+    expect(readBacklogFilters(written)).toEqual({
+      text: "ledger",
+      priority: "2",
+      tier: "",
+      seat: NONE,
+      arc: named("harvest"),
+    });
+
+    expect(readBacklogFilters(store({ [BACKLOG_TEXT_KEY]: "ledger" }))).toEqual({ ...noFilters, text: "ledger" });
+  });
+
+  // "all" is stored as a word and read back as null, which is a window this
+  // build offers and not a window it failed to find.
+  it("remembers every window the Done lane offers, including all", () => {
+    const written = store({});
+
+    writeDoneWindow(null, written);
+
+    expect(written.getItem(BACKLOG_DONE_KEY)).toBe("all");
+    expect(readDoneWindow(written)).toBeNull();
+
+    writeDoneWindow(30, written);
+
+    expect(written.getItem(BACKLOG_DONE_KEY)).toBe("30");
+    expect(readDoneWindow(written)).toBe(30);
+  });
+
+  it("keeps the board's narrowing out of a store that refuses to keep it", () => {
+    expect(readBacklogFilters(throwing)).toEqual(noFilters);
+    expect(readDoneWindow(throwing)).toBe(DEFAULT_WINDOW);
+    expect(() => {
+      writeBacklogFilters(noFilters, throwing);
+      writeDoneWindow(null, throwing);
+    }).not.toThrow();
   });
 });

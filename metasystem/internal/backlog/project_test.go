@@ -517,9 +517,9 @@ func TestRowFieldNames(t *testing.T) {
 	testutil.Require(t, "decode", json.Unmarshal(encoded, &decoded), nil)
 	testutil.Expect(t, "row field names", keysOf(decoded), []string{
 		"abandoned", "approved", "arc", "blockedBy", "claim", "concluded", "decomposed",
-		"fence", "gaps", "intent", "labels", "lane", "lastChangeAt", "lastVerb", "nextStep",
-		"openBlockers", "openedAt", "origin", "phase", "pinned", "priority", "ref", "sequence",
-		"sliced", "state", "tier", "waiting", "where",
+		"doneAt", "fence", "gaps", "intent", "labels", "lane", "lastChangeAt", "lastVerb",
+		"nextStep", "openBlockers", "openedAt", "origin", "phase", "pinned", "priority", "ref",
+		"sequence", "sliced", "state", "tier", "waiting", "where",
 	})
 
 	var identity map[string]json.RawMessage
@@ -544,6 +544,45 @@ func TestRowOmitsEveryAbsentRecord(t *testing.T) {
 	testutil.Expect(t, "empty lists serialize as lists",
 		[]string{string(decoded["labels"]), string(decoded["blockedBy"]), string(decoded["openBlockers"])},
 		[]string{"[]", "[]", "[]"})
+}
+
+// TestRowDatesTheGoalsOwnConclusion pins what doneAt reads and what it refuses
+// to read. The bystander case is the one worth the test: a priority compaction
+// writes the operation's own verb onto goals it merely re-ranked, and a reader
+// that believed those lines would date a queued goal's conclusion from a
+// stranger's.
+func TestRowDatesTheGoalsOwnConclusion(t *testing.T) {
+	t.Parallel()
+
+	concluded := liveGoal("concluded", goal.StateDone)
+	concluded.History = append(concluded.History,
+		goal.HistoryLine{At: "2026-08-30T00:00:00Z", Opid: "op-done", Verb: "done", Actor: "m1+coordinator"})
+
+	reopened := liveGoal("reopened", goal.StateDone)
+	reopened.History = append(reopened.History,
+		goal.HistoryLine{At: "2026-08-26T00:00:00Z", Opid: "op-done-1", Verb: "done", Actor: "m1+coordinator"},
+		goal.HistoryLine{At: "2026-08-27T00:00:00Z", Opid: "op-reopen", Verb: "reopen", Actor: "m1+coordinator"},
+		goal.HistoryLine{At: "2026-08-31T00:00:00Z", Opid: "op-done-2", Verb: "done", Actor: "m1+coordinator"})
+
+	bystander := liveGoal("bystander", goal.StateQueued)
+	bystander.History = append(bystander.History, goal.HistoryLine{
+		At: "2026-08-30T00:00:00Z", Opid: "op-done", Verb: "done", Actor: "m1+coordinator",
+		Reason: "priority-order subject=concluded from=2:4 to=2:3 requested-sequence=append",
+	})
+
+	never := liveGoal("never", goal.StateQueued)
+
+	tree := treeOf(concluded, reopened, bystander, never)
+	board := Project(tree, goal.NewApprovalHorizon(tree, observedAt), answered(nil, nil, nil, nil))
+
+	dated := map[string]string{}
+	for _, row := range append(append([]Row{}, board.Rows...), board.Closed...) {
+		dated[row.ID] = row.DoneAt
+	}
+	testutil.Expect(t, "the goal's own conclusion", dated["concluded"], "2026-08-30T00:00:00Z")
+	testutil.Expect(t, "the later of two conclusions", dated["reopened"], "2026-08-31T00:00:00Z")
+	testutil.Expect(t, "a rank fan-out dates nothing", dated["bystander"], "")
+	testutil.Expect(t, "no conclusion recorded", dated["never"], "")
 }
 
 func ids(rows []Row) []string {

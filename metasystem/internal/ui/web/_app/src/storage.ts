@@ -1,7 +1,17 @@
+import {
+  ANY,
+  DEFAULT_WINDOW,
+  noFilters,
+  rankOf,
+  WINDOWS,
+  windowTitle,
+  type Filters,
+  type Window,
+} from "./backlog/filters";
 import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 /**
- * The seven keys this build remembers, and nothing else.
+ * The thirteen keys this build remembers, and nothing else.
  *
  * Every access is wrapped: a browser with site data blocked throws on the very
  * first read, and view state is never worth an error a human has to read. An
@@ -50,6 +60,30 @@ export const BACKLOG_VIEW_KEY = "ms.ui.backlog.view";
  */
 export const PROJECT_TAB_KEY = "ms.ui.project.tab";
 export const GOAL_TAB_KEY = "ms.ui.goal.tab";
+
+/**
+ * What the board is narrowed to, one key per field rather than one key
+ * holding an encoded object.
+ *
+ * A filter set is five independent answers, and a human who clears the text
+ * has not changed their mind about the seat. Five plain values also mean
+ * every key in this file is a string a person can read in their browser's
+ * storage inspector and recognize, which an encoded blob is not, and that a
+ * value written by an older build is read field by field rather than thrown
+ * away whole.
+ *
+ * Every one of them is validated on the way out: a priority that is not one
+ * of the three, or a window that is not one this build offers, reads as no
+ * preference rather than as a board showing nothing.
+ */
+export const BACKLOG_TEXT_KEY = "ms.ui.backlog.filter.text";
+export const BACKLOG_PRIORITY_KEY = "ms.ui.backlog.filter.priority";
+export const BACKLOG_TIER_KEY = "ms.ui.backlog.filter.tier";
+export const BACKLOG_SEAT_KEY = "ms.ui.backlog.filter.seat";
+export const BACKLOG_ARC_KEY = "ms.ui.backlog.filter.arc";
+
+/** How far back the Done lane reaches, in days, or "all". */
+export const BACKLOG_DONE_KEY = "ms.ui.backlog.done";
 
 /**
  * What the drawer is worth, in the work area's own height.
@@ -181,4 +215,46 @@ export function readGoalTab(store: Store | null = browserStore()): string | null
 
 export function writeGoalTab(tab: string, store: Store | null = browserStore()): void {
   write(GOAL_TAB_KEY, tab, store);
+}
+
+/**
+ * What the board was last narrowed to.
+ *
+ * The seat and the arc are kept as written, because what they name is the
+ * ledger's and this file has no way to know whether a seat still holds
+ * anything; the board answers that by offering the remembered value only
+ * while something on it carries that name, and a filter naming nothing shows
+ * an empty lane with the "clear" link beside it rather than silently
+ * widening. The two ranks are checked here, because this build knows all
+ * three of them.
+ */
+export function readBacklogFilters(store: Store | null = browserStore()): Filters {
+  return {
+    text: read(BACKLOG_TEXT_KEY, store) ?? noFilters.text,
+    priority: rankOf(read(BACKLOG_PRIORITY_KEY, store)),
+    tier: rankOf(read(BACKLOG_TIER_KEY, store)),
+    seat: read(BACKLOG_SEAT_KEY, store) ?? ANY,
+    arc: read(BACKLOG_ARC_KEY, store) ?? ANY,
+  };
+}
+
+export function writeBacklogFilters(filters: Filters, store: Store | null = browserStore()): void {
+  write(BACKLOG_TEXT_KEY, filters.text, store);
+  write(BACKLOG_PRIORITY_KEY, filters.priority, store);
+  write(BACKLOG_TIER_KEY, filters.tier, store);
+  write(BACKLOG_SEAT_KEY, filters.seat, store);
+  write(BACKLOG_ARC_KEY, filters.arc, store);
+}
+
+/** How far back the Done lane reaches, or the default where nothing valid is stored. */
+export function readDoneWindow(store: Store | null = browserStore()): Window {
+  const stored = read(BACKLOG_DONE_KEY, store);
+  // The position, not the value: "all" is null, and a null found is a window
+  // this build offers rather than a window it did not find.
+  const at = WINDOWS.findIndex((candidate) => windowTitle(candidate) === stored);
+  return at < 0 ? DEFAULT_WINDOW : WINDOWS[at];
+}
+
+export function writeDoneWindow(days: Window, store: Store | null = browserStore()): void {
+  write(BACKLOG_DONE_KEY, windowTitle(days), store);
 }

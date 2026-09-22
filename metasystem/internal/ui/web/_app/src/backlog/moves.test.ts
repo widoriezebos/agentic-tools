@@ -46,6 +46,7 @@ function row(id: string, tier: number, over: Partial<Row> = {}): Row {
     sliced: false,
     decomposed: false,
     openedAt: "2026-09-01T00:00:00Z",
+    doneAt: "",
     lastChangeAt: "",
     lastVerb: "",
     gaps: [],

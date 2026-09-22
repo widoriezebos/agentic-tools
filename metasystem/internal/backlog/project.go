@@ -101,17 +101,22 @@ type Row struct {
 	// carries one. It is here because the approval sheet prefills from it:
 	// the machinery never invents a budget, so the one the record already
 	// holds is the only one a human can be offered without being asked.
-	Budget       *goalbudget.Budget `json:"budget,omitempty"`
-	Claim        *Claim             `json:"claim,omitempty"`
-	Waiting      *Waiting           `json:"waiting,omitempty"`
-	Abandoned    *Abandoned         `json:"abandoned,omitempty"`
-	Fence        *Fence             `json:"fence,omitempty"`
-	Sliced       bool               `json:"sliced"`
-	Decomposed   bool               `json:"decomposed"`
-	OpenedAt     string             `json:"openedAt"`
-	LastChangeAt string             `json:"lastChangeAt"`
-	LastVerb     string             `json:"lastVerb"`
-	Gaps         []string           `json:"gaps"`
+	Budget     *goalbudget.Budget `json:"budget,omitempty"`
+	Claim      *Claim             `json:"claim,omitempty"`
+	Waiting    *Waiting           `json:"waiting,omitempty"`
+	Abandoned  *Abandoned         `json:"abandoned,omitempty"`
+	Fence      *Fence             `json:"fence,omitempty"`
+	Sliced     bool               `json:"sliced"`
+	Decomposed bool               `json:"decomposed"`
+	OpenedAt   string             `json:"openedAt"`
+	// DoneAt is when this goal's own conclusion was written, from its
+	// History, and the empty string where nothing recorded one. A reader
+	// showing the work of the last few days needs the date the conclusion
+	// happened, and the state alone does not carry it.
+	DoneAt       string   `json:"doneAt"`
+	LastChangeAt string   `json:"lastChangeAt"`
+	LastVerb     string   `json:"lastVerb"`
+	Gaps         []string `json:"gaps"`
 }
 
 // DraftGap says why the Draft lane carries no rows and no count.
@@ -233,6 +238,7 @@ func rowOf(f *goal.GoalFile, where string, tree *goal.TreeGoals, horizon goal.Ap
 		Sliced:       f.Sliced != nil,
 		Decomposed:   decomposed(tree, f.Id),
 		OpenedAt:     f.OpenedAt,
+		DoneAt:       doneAt(f.History),
 		Gaps:         append([]string{}, gaps...),
 	}
 	row.Gaps = append(row.Gaps, unknown...)
@@ -284,6 +290,31 @@ func rowOf(f *goal.GoalFile, where string, tree *goal.TreeGoals, horizon goal.Ap
 // re-rank fans out (order.go:146), and "priority-order from=… to=…" when a
 // compaction is merged into an event (order.go:234, abandon.go:417).
 const rankFanOut = "priority-order"
+
+// verbDone is the History verb a conclusion writes. The engine writes it as a
+// literal and declares no constant for it, so the one this projection matches
+// against is named here rather than spelled out at the comparison.
+const verbDone = "done"
+
+// doneAt is when this goal was concluded, as its own History records it, and
+// the empty string where nothing recorded a conclusion.
+//
+// It takes the last such line rather than the first, because a goal that was
+// reopened and concluded again carries two and the later one is the one that
+// holds. It skips a line whose reason is a rank clause for exactly the reason
+// lastVerbOn gives: a priority compaction writes the operation's own verb into
+// the History of every goal it re-ranks, so a `done` line can be a bystander's
+// line that dates a stranger's conclusion. Reading it as this goal's would put
+// a queued goal in the Done lane's last-day window.
+func doneAt(history []goal.HistoryLine) string {
+	at := ""
+	for _, line := range history {
+		if line.Verb == verbDone && !strings.HasPrefix(line.Reason, rankFanOut) {
+			at = line.At
+		}
+	}
+	return at
+}
 
 // lastVerbOn reports the goal's last history line, and whether that line's verb
 // can be trusted to describe this goal.

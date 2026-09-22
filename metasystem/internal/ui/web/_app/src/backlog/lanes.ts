@@ -74,13 +74,49 @@ export const lanes: readonly Lane[] = [
   },
 ];
 
-/** The lanes whose goals have left the live ledger, behind the closed toggle. */
+/** The lanes whose goals have left the live ledger. */
 export const closedLaneIds: readonly LaneId[] = ["done", "abandoned"];
 
-/** The lanes a live goal can be in, plus the one that carries no rows. */
-export const openLanes: readonly Lane[] = lanes.filter((lane) => !closedLaneIds.includes(lane.id));
+/**
+ * The lane a record this build cannot place lands in.
+ *
+ * It is a lane in the projection and a column nowhere. A column headed
+ * Unknown asked a human to read an empty box on every board in order to learn
+ * nothing, and on the rare board where it was not empty it offered the one
+ * thing a lane cannot offer: work to be moved out of it. What the board says
+ * instead is one line above the lanes, carrying the count and, opened, the
+ * goals with the reason each one carries. Nothing is hidden and nothing is a
+ * column.
+ */
+export const UNPLACEABLE: LaneId = "unknown";
+
+/** The lanes a live goal can be in. Each one is a column of the board. */
+export const openLanes: readonly Lane[] = lanes.filter(
+  (lane) => !closedLaneIds.includes(lane.id) && lane.id !== UNPLACEABLE,
+);
 
 export const closedLanes: readonly Lane[] = lanes.filter((lane) => closedLaneIds.includes(lane.id));
+
+/** The concluded lane the board always carries, read through a date window. */
+export const DONE: LaneId = "done";
+
+/** The concluded lane that stays behind the closed-items toggle. */
+export const ABANDONED: LaneId = "abandoned";
+
+export function laneTitle(id: LaneId): string {
+  return laneFor(id)?.title ?? id;
+}
+
+/**
+ * What the board calls the column a split parent stands in.
+ *
+ * It is not a lane. A goal retired by decomposition is `done` in the ledger
+ * and is not a delivered outcome, and the master refuses to let the board say
+ * it is one; so the board reads those records out of Done and stands them
+ * here, under their members, with the closed items.
+ */
+export const SPLIT_TITLE = "Split into goals";
+export const SPLIT_MEANING = "A goal retired by decomposition, shown as its members rather than as a delivered outcome.";
 
 export function laneFor(id: string): Lane | null {
   return lanes.find((lane) => lane.id === id) ?? null;

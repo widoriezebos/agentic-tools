@@ -3,15 +3,24 @@ import { useState } from "react";
 import "./backlog.css";
 import { ActSheet, type Request } from "./ActSheet";
 import type { Backlog, Ledger, Row } from "./api";
-import { Board, type Asked } from "./Board";
+import { Board, Unplaceable, type Asked } from "./Board";
+import type { Filters, Window } from "./filters";
 import { clockTime, shortTip } from "./format";
 import { DraftGroup, LaneGroup } from "./LaneGroup";
-import { anchorFor, closedLanes, openLanes, type LaneId } from "./lanes";
+import { anchorFor, closedLanes, openLanes, UNPLACEABLE, type LaneId } from "./lanes";
 import { LedgerLine } from "./LedgerLine";
 import { Statement } from "./Statement";
 import { useBacklog } from "./state";
 import { Pane } from "../panes/Pane";
-import { readBacklogView, writeBacklogView, type BacklogView } from "../storage";
+import {
+  readBacklogFilters,
+  readBacklogView,
+  readDoneWindow,
+  writeBacklogFilters,
+  writeBacklogView,
+  writeDoneWindow,
+  type BacklogView,
+} from "../storage";
 import { Button } from "../shell/controls";
 
 /**
@@ -74,6 +83,11 @@ function Read({
   const [closedShown, setClosedShown] = useState(false);
   const [view, setView] = useState<BacklogView>(() => readBacklogView());
   const [asked, setAsked] = useState<Request | null>(null);
+  // What the board is narrowed to, and how far back Done reaches. Both are
+  // read once, as what this browser was last left on, and written wherever a
+  // human changes one.
+  const [filters, setFilters] = useState<Filters>(() => readBacklogFilters());
+  const [reach, setReach] = useState<Window>(() => readDoneWindow());
   const ledger = backlog.ledger;
   const closedCount = backlog.closed.length;
   // The board and the list want opposite things from the pane: the list wants
@@ -105,6 +119,10 @@ function Read({
           closedShown={closedShown}
           onToggleClosed={() => { setClosedShown((shown) => !shown); }}
           onAct={(act: Asked) => { setAsked({ move: act.move, goal: act.goal }); }}
+          filters={filters}
+          onFilters={(chosen) => { setFilters(chosen); writeBacklogFilters(chosen); }}
+          window={reach}
+          onWindow={(days) => { setReach(days); writeDoneWindow(days); }}
         />
       )}
       {asked !== null && (
@@ -132,6 +150,11 @@ function Read({
               </span>
             ))}
           </p>
+          {/* Unknown is no lane and no group, here as on the board: the goals
+              this build cannot place are named in one line with the reason
+              each carries, so that removing the column removed a box and not
+              a goal. */}
+          <Unplaceable rows={rowsIn(backlog.rows, UNPLACEABLE)} />
           {openLanes.map((lane) =>
             lane.id === "draft" ? (
               <DraftGroup key={lane.id} lane={lane} statement={backlog.draft.statement} />

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { anchorFor, closedLaneIds, laneFor, lanes, openLanes, type Lane } from "./lanes";
+import { anchorFor, closedLaneIds, laneFor, lanes, laneTitle, openLanes, UNPLACEABLE, type Lane } from "./lanes";
 
 /**
  * The lanes, word for word.
@@ -67,7 +67,7 @@ describe("the lanes", () => {
     expect(lanes[lanes.length - 1].id).toBe("unknown");
   });
 
-  it("put the concluded lanes behind the toggle and leave the rest in the index", () => {
+  it("name the concluded lanes, and give the live ones their columns", () => {
     expect(closedLaneIds).toEqual(["done", "abandoned"]);
     expect(openLanes.map((lane) => lane.id)).toEqual([
       "draft",
@@ -76,8 +76,23 @@ describe("the lanes", () => {
       "in-progress",
       "review",
       "waiting",
-      "unknown",
     ]);
+  });
+
+  // The lane still exists, because a goal this build cannot place must still
+  // have somewhere to be. What was removed is the column: the board says the
+  // count in one line above the lanes and opens it to the reasons.
+  it("keep unknown as a lane and offer it as no column", () => {
+    expect(UNPLACEABLE).toBe("unknown");
+    expect(laneFor(UNPLACEABLE)).not.toBeNull();
+    expect(openLanes.map((lane) => lane.id)).not.toContain(UNPLACEABLE);
+    expect(closedLaneIds).not.toContain(UNPLACEABLE);
+  });
+
+  it("title a lane by its id, and fall back to the id for a name that is not one", () => {
+    expect(laneTitle("ready")).toBe("Ready for Work");
+    expect(laneTitle("unknown")).toBe("Unknown");
+    expect(laneTitle("nowhere" as Lane["id"])).toBe("nowhere");
   });
 
   it("name a lane, and answer null for a name that is not one", () => {
