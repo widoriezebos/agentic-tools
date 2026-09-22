@@ -1,21 +1,12 @@
-import { Maximize2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
+import { Navigate, Route, Routes, useLocation } from "react-router";
 
-import { Dock, DockSheetBody } from "./Dock";
+import { AboutProvider } from "./about";
+import { Drawer } from "./Drawer";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Header } from "./Header";
-import { IconButton } from "./controls";
 import { useWorkspaceState, type WorkspaceState } from "./identity";
-import {
-  PHONE_QUERY,
-  RAIL_QUERY,
-  RAIL_WIDTH_COLLAPSED,
-  RAIL_WIDTH_EXPANDED,
-  useMediaQuery,
-  WIDE_QUERY,
-} from "./media";
-import { Panels } from "./Panels";
+import { PHONE_QUERY, RAIL_QUERY, useMediaQuery, WIDE_QUERY } from "./media";
 import { Rail } from "./Rail";
 import { Sheet } from "./Sheet";
 import { BacklogPane } from "../backlog/BacklogPane";
@@ -30,12 +21,18 @@ import { applyTheme, effectiveTheme, systemIsDark, watchSystemTheme, type ThemeP
 import { titleFor, type Identity } from "../title";
 
 /**
- * The shell: a rail, a header, the work area, and the Project Partner dock.
+ * The shell: a rail, a header, the work area, and the Project Partner drawer
+ * along the bottom of it.
  *
- * Three widths. Wide, from 960, is the whole thing, with the rail expanded
- * only from 1,128 where 240 + 8 + 480 + 400 still fits. Compact keeps the
- * collapsed rail and turns the dock into a sheet. The phone hides the rail
- * behind the menu button and gives the dock the whole width.
+ * The drawer is why the work area has one column again. As a panel on the
+ * right it took four hundred pixels from the content at every width, and the
+ * briefing's aside and the reader's outline went first; along the bottom it
+ * takes forty-eight pixels and gives them back, and the same layout serves
+ * every width. Two widths remain, and they are the rail's: expanded from
+ * 1,128, collapsed below that, and on a phone behind the menu button.
+ *
+ * The focused view at /brain is the conversation in full, and shows no drawer:
+ * the conversation is already in front of the human.
  */
 export function Shell() {
   const location = useLocation();
@@ -44,16 +41,14 @@ export function Shell() {
   const railFits = useMediaQuery(RAIL_QUERY);
 
   const [railChoice, setRailChoice] = useState(() => readRailExpanded());
-  const [dockChoice, setDockChoice] = useState(() => readDockOpen());
+  const [drawerOpen, setDrawerOpen] = useState(() => readDockOpen());
   const [theme, setTheme] = useState<ThemePreference>(() => readTheme());
   const [systemDark, setSystemDark] = useState(() => systemIsDark());
   const [railSheetOpen, setRailSheetOpen] = useState(false);
-  const [dockSheetOpen, setDockSheetOpen] = useState(false);
 
   // The rail's stored choice applies only where an expanded rail fits; below
   // that the rail is collapsed and the choice is left untouched.
   const railExpanded = railFits && railChoice;
-  const railWidth = railExpanded ? RAIL_WIDTH_EXPANDED : RAIL_WIDTH_COLLAPSED;
 
   const section = activeSection(location.pathname);
   const focused = section?.id === "brain";
@@ -70,16 +65,14 @@ export function Shell() {
     document.title = titleFor(sectionTitle, identityOf(workspace));
   }, [sectionTitle, workspace]);
 
-  // A sheet belongs to one width. Crossing into another closes it rather than
-  // leaving a modal layer over a layout that no longer has it.
+  // The rail's sheet belongs to the phone. Crossing out of it closes the
+  // sheet rather than leaving a modal layer over a layout that has no rail in
+  // a sheet at all.
   useEffect(() => {
     if (!phone) {
       setRailSheetOpen(false);
     }
-    if (wide) {
-      setDockSheetOpen(false);
-    }
-  }, [phone, wide]);
+  }, [phone]);
 
   const chooseTheme = (preference: ThemePreference) => {
     setTheme(preference);
@@ -92,19 +85,12 @@ export function Shell() {
     writeRailExpanded(next);
   };
 
-  const toggleDock = () => {
-    if (wide) {
-      const next = !dockChoice;
-      setDockChoice(next);
-      writeDockOpen(next);
-      return;
-    }
-    setDockSheetOpen((open) => !open);
-  };
-
-  const closeDock = () => {
-    setDockChoice(false);
-    writeDockOpen(false);
+  // Open or closed is remembered the way the dock's was, under the key the
+  // dock used: it is the same preference about the same collaborator.
+  const toggleDrawer = () => {
+    const next = !drawerOpen;
+    setDrawerOpen(next);
+    writeDockOpen(next);
   };
 
   const panes = (
@@ -127,113 +113,73 @@ export function Shell() {
     </Routes>
   );
   const work = <ErrorBoundary>{panes}</ErrorBoundary>;
-  const docked = wide && dockChoice && !focused;
+  const drawn = drawerOpen && !focused;
 
-  // A pane laid out in three columns has to know that the dock has taken the
-  // width its third column would have used. It is said once, here, as an
-  // attribute, so the panes decide it in CSS rather than by measuring.
   return (
-    <div className="ms-shell" data-docked={docked ? "true" : "false"}>
-      <a className="ms-skip-link" href="#content">
-        Skip to content
-      </a>
-      {!phone && (
-        <Rail
-          expanded={railExpanded}
-          toggleable={railFits}
-          onToggle={toggleRail}
-          theme={theme}
-          onTheme={chooseTheme}
-        />
-      )}
-      <div className="ms-column">
-        <Header
-          sectionTitle={sectionTitle}
-          onMenu={
-            phone
-              ? () => {
-                  setRailSheetOpen(true);
-                }
-              : undefined
-          }
-          dockOpen={wide ? dockChoice && !focused : dockSheetOpen}
-          onDockToggle={toggleDock}
-          focused={focused}
-        />
-        {docked ? (
-          <Panels
-            railWidth={railWidth}
-            work={work}
-            dock={
-              <ErrorBoundary>
-                <Dock onClose={closeDock} />
-              </ErrorBoundary>
-            }
-          />
-        ) : (
-          work
-        )}
-      </div>
-      {phone && (
-        <Sheet
-          open={railSheetOpen}
-          onOpenChange={setRailSheetOpen}
-          side="left"
-          label="Sections"
-          title="Sections"
-          closeLabel="Close the sections"
-          bodyClassName="ms-sheet-body--rail"
-        >
+    <AboutProvider>
+      <div className="ms-shell">
+        <a className="ms-skip-link" href="#content">
+          Skip to content
+        </a>
+        {!phone && (
           <Rail
-            inSheet
-            expanded
-            toggleable={false}
+            expanded={railExpanded}
+            toggleable={railFits}
             onToggle={toggleRail}
             theme={theme}
             onTheme={chooseTheme}
-            onNavigate={() => {
-              setRailSheetOpen(false);
-            }}
           />
-        </Sheet>
-      )}
-      {!wide && !focused && (
-        <Sheet
-          open={dockSheetOpen}
-          onOpenChange={setDockSheetOpen}
-          id="brain-dock"
-          side="right"
-          label="Project Partner dock"
-          title="Project Partner"
-          closeLabel="Close the Project Partner dock"
-          bodyClassName="ms-sheet-body--dock"
-          actions={
-            <ExpandButton
-              onExpand={() => {
-                setDockSheetOpen(false);
+        )}
+        <div className="ms-column">
+          <Header
+            sectionTitle={sectionTitle}
+            onMenu={
+              phone
+                ? () => {
+                    setRailSheetOpen(true);
+                  }
+                : undefined
+            }
+            dockOpen={drawn}
+            onDockToggle={toggleDrawer}
+            focused={focused}
+          />
+          {focused ? (
+            work
+          ) : (
+            <div className="ms-workarea" data-open={drawn ? "true" : "false"}>
+              {work}
+              <ErrorBoundary>
+                <Drawer open={drawn} about={sectionTitle} onToggle={toggleDrawer} />
+              </ErrorBoundary>
+            </div>
+          )}
+        </div>
+        {phone && (
+          <Sheet
+            open={railSheetOpen}
+            onOpenChange={setRailSheetOpen}
+            side="left"
+            label="Sections"
+            title="Sections"
+            closeLabel="Close the sections"
+            bodyClassName="ms-sheet-body--rail"
+          >
+            <Rail
+              inSheet
+              expanded
+              toggleable={false}
+              onToggle={toggleRail}
+              theme={theme}
+              onTheme={chooseTheme}
+              onNavigate={() => {
+                setRailSheetOpen(false);
               }}
             />
-          }
-        >
-          <DockSheetBody />
-        </Sheet>
-      )}
-    </div>
-  );
-}
-
-function ExpandButton({ onExpand }: { onExpand: () => void }) {
-  const navigate = useNavigate();
-  return (
-    <IconButton
-      label="Expand the Project Partner view"
-      onClick={() => {
-        onExpand();
-        void navigate("/brain");
-      }}
-    >
-      <Maximize2 size={16} strokeWidth={1.75} aria-hidden="true" />
-    </IconButton>
+          </Sheet>
+        )}
+      </div>
+    </AboutProvider>
   );
 }
 

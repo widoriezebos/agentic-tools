@@ -78,6 +78,15 @@ func (r Record) line(key string) int {
 	return r.HeadLine
 }
 
+// ParseRecord reads one Markdown file's text exactly as Read reads a file it
+// walked: the record it declares, every refusal in its head, and whether the
+// text is a record at all.
+//
+// It opens nothing and keeps nothing, and it is here so that a writer can put
+// the bytes it is about to publish through the same parser that will read them
+// back, and refuse before writing rather than leave a refused record on disk.
+func ParseRecord(path, text string) (Record, []Problem, bool) { return parseRecord(path, text) }
+
 // parseRecord reads one Markdown file. The last return says whether the file is
 // a record at all: a title, a blank line, and a head line. A document that is
 // none of these is not listed and is not refused — the rest of the checkout's

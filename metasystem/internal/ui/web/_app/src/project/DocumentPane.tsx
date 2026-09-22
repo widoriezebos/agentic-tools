@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { NavLink, useLocation } from "react-router";
 
 import {
+  encodeSegments,
   failureMessage,
   isNotFound,
   loadDocument,
@@ -15,8 +16,11 @@ import { currentRow, outlineOf, type OutlineRow } from "./outline";
 import { crumbsFor, kindTitle, nameOf, railFor, shortID, type SiblingRail } from "./pane";
 import { dateOf, ownership, timeOf } from "./ProjectPane";
 import "./reading.css";
+import { Sheet, type Done, type Request } from "./Sheet";
+import { STATUSES } from "./writing";
 import { Pane } from "../panes/Pane";
 import { documentIdFromPath, documentPath } from "../routes";
+import { useAbout } from "../shell/about";
 import { Button, Chip, Skeleton } from "../shell/controls";
 import { useWorkspaceState, type WorkspaceState } from "../shell/identity";
 import { titleFor, type Identity } from "../title";
@@ -110,10 +114,21 @@ export function DocumentPane() {
     setAttempt((previous) => previous + 1);
   };
 
+  // A status change rewrites one line of the file, so the strip is updated in
+  // place from what the server read back rather than by fetching the whole
+  // document again.
+  const restated = (status: string) => {
+    setDocument((state) =>
+      state.state === "read" && state.document.record !== null
+        ? { state: "read", document: { ...state.document, record: { ...state.document.record, status } } }
+        : state,
+    );
+  };
+
   return (
     <Pane title={name === "" ? "Project" : name}>
       {document.state === "read" ? (
-        <Read document={document.document} pane={pane} onReload={retry} />
+        <Read document={document.document} pane={pane} onReload={retry} onStatus={restated} />
       ) : (
         <div className="ms-reader">
           <article className="ms-reading">
@@ -166,16 +181,31 @@ function Read({
   document,
   pane,
   onReload,
+  onStatus,
 }: {
   document: DocumentPayload;
   pane: PanePayload | null;
   onReload: () => void;
+  onStatus: (status: string) => void;
 }) {
   const outline = useMemo(() => outlineOf(document.headings), [document]);
   const crumbs = useMemo(() => crumbsFor(pane, document), [pane, document]);
   const rail = useMemo(() => (pane === null ? null : railFor(pane, document)), [pane, document]);
   const current = useReadingRow(outline, document.id);
   const lead = leadingTitleId(document);
+  const [sheet, setSheet] = useState<Request | null>(null);
+
+  // What the drawer says this page is about: the record, and the section of it
+  // being read, from the outline the reader already follows.
+  const heading = outline.find((row) => row.id === current);
+  useAbout(heading === undefined ? document.title : `${document.title} · ${heading.text}`);
+
+  const done = (result: Done) => {
+    setSheet(null);
+    if (result.mode === "status") {
+      onStatus(result.written.record.status);
+    }
+  };
 
   return (
     <>
@@ -192,13 +222,31 @@ function Read({
           {document.record === null ? (
             <PlainFacts document={document} lead={lead} onReload={onReload} />
           ) : (
-            <RecordFacts document={document} pane={pane} lead={lead} onReload={onReload} />
+            <RecordFacts
+              document={document}
+              pane={pane}
+              lead={lead}
+              onReload={onReload}
+              onStatusChange={(status) => {
+                setSheet({ mode: "status", id: document.record?.id ?? "", title: document.title, path: document.id, status });
+              }}
+            />
           )}
           {document.state !== "readable" && <p className="ms-project-reason">{document.reason}</p>}
           <Markdown blocks={lead === null ? document.blocks : document.blocks.slice(1)} from={document.id} />
         </article>
         {outline.length > 0 && <Outline rows={outline} current={current} />}
       </div>
+      {sheet !== null && (
+        <Sheet
+          request={sheet}
+          areas={pane?.areas ?? []}
+          onClose={() => {
+            setSheet(null);
+          }}
+          onDone={done}
+        />
+      )}
     </>
   );
 }
@@ -220,6 +268,7 @@ function PlainFacts({
       </h1>
       <p className="ms-reading-facts">
         <span className="ms-mono">{document.path}</span>
+        <FileActions path={document.path} />
         <Chip>{ownership(document.owner)}</Chip>
         <span>changed {dateOf(document.modifiedAt)}</span>
         <span>read at {timeOf(document.readAt)}</span>
@@ -240,11 +289,13 @@ function RecordFacts({
   pane,
   lead,
   onReload,
+  onStatusChange,
 }: {
   document: DocumentPayload;
   pane: PanePayload | null;
   lead: string | null;
   onReload: () => void;
+  onStatusChange: (status: string) => void;
 }) {
   const head = document.record;
   if (head === null) {
@@ -261,7 +312,7 @@ function RecordFacts({
         {document.title}
       </h1>
       <p className="ms-facts-line">
-        {head.status !== "" && <Chip>{head.status}</Chip>}
+        <Status status={head.status} onChange={onStatusChange} />
         {head.areas.map((area) => (
           <Chip key={area}>{area}</Chip>
         ))}
@@ -273,6 +324,7 @@ function RecordFacts({
         <span className="ms-mono ms-facts-path" title={document.path}>
           {document.path}
         </span>
+        <FileActions path={document.path} />
         <span>
           changed {dateOf(document.modifiedAt)} · read at {timeOf(document.readAt)}
         </span>
@@ -280,6 +332,95 @@ function RecordFacts({
       </p>
       <Relationships document={document} pane={pane} />
     </header>
+  );
+}
+
+/**
+ * Status, as the one control the reader can change.
+ *
+ * Choosing a status does not write it: it opens the sheet with the line that
+ * would be rewritten, and the write happens when a human confirms it there.
+ * So the select is controlled by the record's own status and goes back to it
+ * if the sheet is cancelled, and never shows a status the file does not carry.
+ *
+ * A status the grammar does not carry is shown and not offered: this is a
+ * reader, and a select that silently replaced a refused value would hide the
+ * one thing the check verb is complaining about.
+ */
+function Status({ status, onChange }: { status: string; onChange: (status: string) => void }) {
+  if (status === "") {
+    return null;
+  }
+  if (!STATUSES.includes(status)) {
+    return <Chip>{status}</Chip>;
+  }
+  return (
+    <span className="ms-facts-status">
+      <label className="ms-visually-hidden" htmlFor="ms-facts-status">
+        Status
+      </label>
+      <select
+        id="ms-facts-status"
+        className="ms-status-select"
+        data-status={status}
+        value={status}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+      >
+        {STATUSES.map((candidate) => (
+          <option key={candidate} value={candidate}>
+            {candidate}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
+/**
+ * The two ways out of the browser and into the file: its absolute path on the
+ * clipboard, and the editor opened on it.
+ *
+ * The confirmation is a CSS animation on an element that is remounted for each
+ * copy, so a second copy says so again; there is no timer anywhere in this
+ * build, and a confirmation that needed one would be the first.
+ */
+function FileActions({ path }: { path: string }) {
+  const [copies, setCopies] = useState(0);
+  const [refused, setRefused] = useState(false);
+
+  const copy = () => {
+    try {
+      void navigator.clipboard.writeText(path).then(
+        () => {
+          setRefused(false);
+          setCopies((previous) => previous + 1);
+        },
+        () => {
+          setRefused(true);
+        },
+      );
+    } catch {
+      setRefused(true);
+    }
+  };
+
+  return (
+    <span className="ms-facts-file">
+      <button type="button" className="ms-project-act" onClick={copy}>
+        Copy path
+      </button>
+      {copies > 0 && (
+        <span key={copies} className="ms-facts-copied" role="status">
+          Copied
+        </span>
+      )}
+      {refused && <span className="ms-project-reason">This browser did not allow the copy.</span>}
+      <a className="ms-project-act" href={`vscode://file/${encodeSegments(path)}`}>
+        Open in editor
+      </a>
+    </span>
   );
 }
 

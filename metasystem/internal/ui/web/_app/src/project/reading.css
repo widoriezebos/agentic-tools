@@ -842,27 +842,274 @@
   font-weight: 500;
 }
 
+/* ------------------------------------------------------------ contributing -- */
+
 /*
- * The aside is the first thing to go: the main column's measure is what the
- * briefing is, and the dock takes width from the right where the aside sits.
- * The shell says whether the dock is open, so a docked window drops the aside
- * a good deal earlier than an undocked one.
+ * An action, where a human is already looking: in a block's head, on the one
+ * line of an empty section, and beside a record's path. It is a button, and it
+ * reads as a link, because on an empty section's line it is the only thing
+ * there and a button would be a second object in a sentence.
  */
-@media (max-width: 1399px) {
-  .ms-shell[data-docked="true"] .ms-briefing {
-    grid-template-columns: 220px minmax(0, 76ch);
-  }
+.ms-project-act {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ms-accent);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+}
 
-  .ms-shell[data-docked="true"] .ms-briefing-aside,
-  .ms-shell[data-docked="true"] .ms-reader-outline {
-    display: none;
-  }
+.ms-project-act:hover,
+.ms-project-act:focus-visible {
+  text-decoration: underline;
+}
 
-  .ms-shell[data-docked="true"] .ms-reader {
-    grid-template-columns: 220px minmax(0, 720px);
+.ms-briefing-contribute {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ms-briefing-contribute .ms-button {
+  justify-content: flex-start;
+}
+
+/* Status, as the one control the reader can change, coloured by its value. */
+.ms-facts-status {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ms-status-select {
+  height: 20px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: var(--ms-surface-3);
+  color: var(--ms-text-2);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ms-status-select[data-status="accepted"] {
+  background: var(--ms-accent);
+  color: var(--ms-accent-fg);
+}
+
+.ms-status-select[data-status="done"] {
+  background: var(--ms-ok-bg);
+  color: var(--ms-ok-fg);
+}
+
+.ms-status-select[data-status="superseded"] {
+  background: var(--ms-surface-2);
+  color: var(--ms-text-3);
+}
+
+.ms-facts-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/*
+ * The copy's confirmation. It fades itself out over two seconds, and the
+ * element is remounted for each copy, so a second copy says so again without a
+ * timer — this build sets none. It ends hidden rather than transparent, so it
+ * leaves the reading order as well as the screen.
+ */
+.ms-facts-copied {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-ok-fg);
+  animation: ms-confirm 2000ms linear forwards;
+}
+
+@keyframes ms-confirm {
+  0%,
+  70% {
+    opacity: 1;
+    visibility: visible;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
   }
 }
 
+/*
+ * A confirmation that vanished instantly would be a confirmation nobody read,
+ * so it keeps its two seconds under a reduced-motion preference; it fades and
+ * never moves, which is what the preference is about.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .ms-facts-copied {
+    animation-duration: 2000ms !important;
+  }
+}
+
+/* ------------------------------------------------------------- the sheet -- */
+
+.ms-writing-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--ms-z-scrim);
+  background: var(--ms-scrim);
+}
+
+/*
+ * The sheet opens over the main column rather than beside it: a contribution
+ * is the one thing happening while it is open, and the page behind it is the
+ * context it was started from.
+ */
+.ms-writing-sheet {
+  position: fixed;
+  z-index: var(--ms-z-sheet);
+  top: 8vh;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(76ch, calc(100vw - 32px));
+  max-height: 84vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 20px;
+  border: 1px solid var(--ms-border);
+  border-radius: 10px;
+  background: var(--ms-surface);
+  box-shadow: var(--ms-shadow);
+}
+
+.ms-writing-sheet:focus {
+  outline: none;
+}
+
+.ms-writing-title {
+  margin: 4px 0 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.ms-writing-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-writing-field label,
+.ms-writing-label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ms-text-2);
+}
+
+.ms-writing-field input,
+.ms-writing-field select {
+  height: 32px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  border: 1px solid var(--ms-border-strong);
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.ms-writing-field input::placeholder {
+  color: var(--ms-text-3);
+}
+
+/* The page as it will be written: read-only, and the same bytes as the file. */
+.ms-writing-page {
+  margin: 0;
+  max-height: 34vh;
+  overflow: auto;
+  padding: 12px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface-2);
+  color: var(--ms-text-2);
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+}
+
+.ms-writing-areas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ms-writing-areas legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+.ms-writing-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.ms-writing-slug {
+  font-size: 11px;
+  color: var(--ms-text-3);
+}
+
+.ms-writing-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-writing-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-writing-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-writing-refusal {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-danger);
+}
+
+/*
+ * The aside is the first thing to go: the main column's measure is what the
+ * briefing is. It goes at one width now rather than two — the Project Partner
+ * is a drawer along the bottom and takes no width from the right, so there is
+ * no longer a docked window that has to drop it earlier.
+ */
 @media (max-width: 1199px) {
   .ms-briefing {
     grid-template-columns: 220px minmax(0, 76ch);

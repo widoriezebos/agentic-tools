@@ -42,6 +42,14 @@ type Info struct {
 	// Document answers one document by its checkout-relative id. A
 	// project.ErrNotFound is the route's 404; anything else is a 500.
 	Document func(id string) (project.Document, error)
+	// The Project section's four writes, each one the human editing their own
+	// checkout on loopback. A project.Refusal carries the status the route
+	// answers with; anything else is a 500 carrying its reason. A nil field is
+	// an engine that cannot write, which the route says.
+	CreateRecord      func(project.NewRecord) (project.Written, error)
+	SetStatus         func(id, status string) (project.Written, error)
+	AskQuestion       func(project.NewQuestion) (project.Asked, error)
+	SetQuestionStatus func(id, status string) (project.Asked, error)
 }
 
 // absentBundleStatement is what a page request gets from an engine built
@@ -56,11 +64,12 @@ const absentBundleStatement = "MetaSystem interface: this executable was built w
 // with status 200 and leaving the caller to parse HTML as JSON.
 var reservedPrefixes = []string{"/-", "/api", "/assets"}
 
-// The API routes this build answers. The first two are matched exactly: what
-// lies beneath them belongs to no resource, so it is a 404 like any other
+// The API routes this build reads from. The first two are matched exactly:
+// what lies beneath them belongs to no resource, so it is a 404 like any other
 // unserved path under a reserved prefix. The third is a prefix, because the
 // document's id is the rest of the path; the prefix alone names no document
-// and is a 404 too.
+// and is a 404 too. The four routes this build writes through are in write.go,
+// with the policy they share with these.
 const (
 	workspacePath  = "/api/workspace"
 	projectPath    = "/api/project"
@@ -123,7 +132,17 @@ func readPage(bundle fs.FS) [][]byte {
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	setResponseHeaders(w.Header())
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+	// A write route takes POST and a read route takes GET and HEAD. The method
+	// is judged before anything else, exactly as it was before the writes
+	// existed, so a request with the wrong verb learns which verb the resource
+	// takes and nothing else about this server.
+	route, isWrite := writeRouteOf(r.URL.Path)
+	if isWrite && r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !isWrite && r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -143,6 +162,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isWrite {
+		h.write(w, r, route)
+		return
+	}
 	if r.URL.Path == "/-/health" {
 		h.health(w)
 		return

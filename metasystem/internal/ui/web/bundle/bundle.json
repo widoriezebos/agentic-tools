@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:3b9399161c3736dfb564845615dd5930d1fb24cce4bc30df73127f4b2bae0af2",
+  "sourceDigest": "sha256:f5bbce6c0f1c8b2e704608c39184dea2e0990b9b98ac7099a7bbb0e71aed43ee",
   "source": [
     {
       "path": ".npmrc",
@@ -116,11 +116,11 @@
     },
     {
       "path": "src/contrast.test.ts",
-      "sha256": "9f86e4764ca756236e2fe998d14e933a8b752cd4e4f08c0757e35ee74cbf6ca0"
+      "sha256": "da889de9e304d8a1ef54e6f619c720e4722ba262437bf348e9cf789ba15f5805"
     },
     {
       "path": "src/cuts.test.ts",
-      "sha256": "271eac202bed6874100198f20c2a9dc4e00a400acd2ce1972e092b1b812a3191"
+      "sha256": "6c39b4b6420717a46504212e210e95faf4892425e3809517d249e6f663334869"
     },
     {
       "path": "src/fonts.css",
@@ -176,7 +176,7 @@
     },
     {
       "path": "src/project/DocumentPane.tsx",
-      "sha256": "9ea31841345efbc0c18058c6d4eb436b55a9110feee09fea6bdb68cdb141c3b5"
+      "sha256": "0764dce48df29a1a4bc880f00412b1e115a95cebdff782990cfed15fad6f1475"
     },
     {
       "path": "src/project/Markdown.tsx",
@@ -184,11 +184,15 @@
     },
     {
       "path": "src/project/ProjectPane.tsx",
-      "sha256": "9bd09fe6aedad52d7e1ce7afc61ee498342ea1d073ffa5449dff77a6b59e733c"
+      "sha256": "b15fd51cae8eb922834f6b478430fe07550abad3aac0e1931a7beb24356610ce"
+    },
+    {
+      "path": "src/project/Sheet.tsx",
+      "sha256": "baeda0efbff5a4a1654cb243de7720e425e7cc288c339fb2a86c16cefbf34a3b"
     },
     {
       "path": "src/project/api.ts",
-      "sha256": "67c7edb3bce9205750063a13a8d03b0667b8cf6585e3edcc40f4c10ff5649545"
+      "sha256": "acbe59002a822ee09bb4f3282194aa389c2aab0d0d1e04a2054e3889f89402e2"
     },
     {
       "path": "src/project/links.test.ts",
@@ -216,7 +220,15 @@
     },
     {
       "path": "src/project/reading.css",
-      "sha256": "234e01a3bdb0c90ebb5530e53badb0fd324ee26096ece72990fc89e44b6cbfe5"
+      "sha256": "5db1b247627a9f3425166c301aa32544427dca14f6a776601573e325aa4b2258"
+    },
+    {
+      "path": "src/project/writing.test.ts",
+      "sha256": "2414b3f5936718caa3192a06d3f8f8aa86c5bd9a5349a91778f4d78cc09cbcc4"
+    },
+    {
+      "path": "src/project/writing.ts",
+      "sha256": "7d7451a40928ddf8320ab9e63ec5c75942f3b7fc41cf9d4084b7737092daf252"
     },
     {
       "path": "src/routes.test.ts",
@@ -231,8 +243,8 @@
       "sha256": "02ecd6fc7d396c15d361e88e1bfb12d11fcc7c60678fcfcb1d2380f4a884ec3b"
     },
     {
-      "path": "src/shell/Dock.tsx",
-      "sha256": "af11ee48796b833f8fe8bc9499b1bb16f2198f689e930e1411b8d656dab09a45"
+      "path": "src/shell/Drawer.tsx",
+      "sha256": "75b0f3779facfbd6b271746d51abee025353fea921967a1b6ed28e833eb3857a"
     },
     {
       "path": "src/shell/ErrorBoundary.tsx",
@@ -244,11 +256,7 @@
     },
     {
       "path": "src/shell/Header.tsx",
-      "sha256": "d4e9a7ef3b46fe9ffbc2d6eb3c1f367506ebc9d47d9ffb5163fb782f324a2e0f"
-    },
-    {
-      "path": "src/shell/Panels.tsx",
-      "sha256": "472ccb27fc1e98a4d61ce8abf679fd8fc7e4e62713e17ae741b5daeb8b52e6c3"
+      "sha256": "05d75a9f87d9c9bac50b591a180d587de3dfa686157f98e255082fd29042f40e"
     },
     {
       "path": "src/shell/Rail.tsx",
@@ -256,11 +264,11 @@
     },
     {
       "path": "src/shell/Sheet.tsx",
-      "sha256": "62f6f7f0926584705f1b922d59ca3f7ba0d218078f723e8504918ac2c598bd33"
+      "sha256": "dcbeea404154e60dfe5cd786c79ea2cec67dea09bef8129bbf7574636cd3c924"
     },
     {
       "path": "src/shell/Shell.tsx",
-      "sha256": "8073b4f353b357bf851647a6c75b1658aa86af8dfaba091b876fc0044a066952"
+      "sha256": "53c646601a4c847728f630255b439969760fbf76bb87662380ef5cd709220b6d"
     },
     {
       "path": "src/shell/ThemeControl.tsx",
@@ -269,6 +277,10 @@
     {
       "path": "src/shell/WorkspaceIdentity.tsx",
       "sha256": "3aa548ff3a72fa4bdd7e25a100768ed7324c6608d410aa433900324935d7349a"
+    },
+    {
+      "path": "src/shell/about.tsx",
+      "sha256": "bef0f6ff5bdfd0ed4688c27674f9d486bee0a107f6e808bb0c5da57dab0420e5"
     },
     {
       "path": "src/shell/controls.tsx",
@@ -280,11 +292,11 @@
     },
     {
       "path": "src/shell/media.ts",
-      "sha256": "dbd493d8cd0653edae074db168f015c3409fc1af03977670535e0f5efcb94b63"
+      "sha256": "b0457bebf99eeadbdd1c108d23ad6d379c31e601d9dc1b0e21dcb9961c53dc11"
     },
     {
       "path": "src/shell/shell.css",
-      "sha256": "61a24407588539d631f149891f1866855ceb03413e701d9984af45b3e1da2e54"
+      "sha256": "02ad8c660b16e7c0b9a54cfeedcc693fc8aaf8256017221178b37795cf58d965"
     },
     {
       "path": "src/shell/workspace.ts",
@@ -292,11 +304,11 @@
     },
     {
       "path": "src/storage.test.ts",
-      "sha256": "34a1a2532ec908f110af2bca4ee2a424878d460a41db97307104559092fc3eb7"
+      "sha256": "195164fd8c983cad17ff0a1f306fdcf5f3cabf5fe7fbb27a0a4f6f66369d9faa"
     },
     {
       "path": "src/storage.ts",
-      "sha256": "7bdd73f869f440f2e1b95e4ad5d56ba9c73323a6c245de1f61a7c6ca8f7ed3d5"
+      "sha256": "11351c7db7298a65c352e3764b9e2a43da22eb2cba36f6d8e0d6329d2dfe9bb4"
     },
     {
       "path": "src/theme.test.ts",
@@ -320,11 +332,11 @@
     },
     {
       "path": "src/tokens.css",
-      "sha256": "d68aae60d68ab7accfddaa9d32e76e4f73ceb130a715304d608b25e4dba35c4d"
+      "sha256": "b8329d8f7de6d869b26bd5b2efbd4c88334f08084e744b59e26c907f3ce45793"
     },
     {
       "path": "src/tokens.test.ts",
-      "sha256": "65a176e55126d01e6e0f8f436c2bbff678a186d4c6cc133c157a5ac97d7bbb3b"
+      "sha256": "cad457fd01d3dc04c6888a075d0d764f82e13c072e6fac10f678fc19a957644c"
     },
     {
       "path": "tsconfig.json",
@@ -342,11 +354,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "e350d6ad6c883d18bc23b9c8c285fd3ec2879859f7f0647dc60fcfc9fca6961f"
+      "sha256": "d611a49157803dab3ca7413527b81fcf72085322b631b08d0b4f60b105026d76"
     },
     {
       "path": "assets/index.js",
-      "sha256": "1def2ec8cc5ebb41492730e089c1f625d05aa5823249bdf33aef243a40e15c9c"
+      "sha256": "9e7b24c99f33f0ffcc373994a64943e63b104cb6c1a774072894da54816ab710"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

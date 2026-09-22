@@ -5,11 +5,15 @@ import type { ReactNode } from "react";
 import { IconButton } from "./controls";
 
 /**
- * A modal sheet: the rail from the left on a phone, the dock from the right
- * below 960. Radix owns the hard parts — the focus trap, the return of focus
- * to whatever opened it, Escape, and the scrim — and its scroll lock appends
- * the one inline style the page's policy allows, through the nonce main.tsx
- * sets before the first render.
+ * A modal sheet from the edge of the window: the rail from the left on a
+ * phone, which is the one this build opens. Radix owns the hard parts — the
+ * focus trap, the return of focus to whatever opened it, Escape, and the scrim
+ * — and its scroll lock appends the one inline style the page's policy allows,
+ * through the nonce main.tsx sets before the first render.
+ *
+ * The Project Partner used to open from the right here, and is a drawer along
+ * the bottom now; the side stays a parameter because a sheet from either edge
+ * is one component, and the next thing to need one may come from the right.
  */
 export function Sheet({
   open,

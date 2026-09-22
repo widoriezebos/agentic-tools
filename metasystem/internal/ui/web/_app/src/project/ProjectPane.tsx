@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { NavLink, useParams } from "react-router";
+import { NavLink, useNavigate, useParams } from "react-router";
 
 import { failureMessage, loadPane, type DocumentFile, type Pane as PanePayload, type Problem } from "./api";
 import {
   areaRows,
   briefingFor,
   documentGroups,
+  nameOf,
   type AreaBook,
   type BookBriefing,
   type Briefing,
@@ -14,8 +15,11 @@ import {
   type Row,
 } from "./pane";
 import "./reading.css";
+import { Sheet, type Done, type Request } from "./Sheet";
+import { ACTIONS, type Kind } from "./writing";
 import { Pane } from "../panes/Pane";
 import { documentPath } from "../routes";
+import { useAbout } from "../shell/about";
 import { Button, Chip, Skeleton } from "../shell/controls";
 
 /**
@@ -77,6 +81,52 @@ function Columns({ pane, slug, onReload }: { pane: PanePayload; slug: string | n
   const areas = useMemo(() => areaRows(pane), [pane]);
   const briefing = useMemo(() => briefingFor(pane, slug), [pane, slug]);
   const groups = useMemo(() => documentGroups(pane.documents), [pane]);
+  const [sheet, setSheet] = useState<Request | null>(null);
+  const navigate = useNavigate();
+
+  const where = slug === null ? "Everything" : nameOf(pane, slug);
+  useAbout(`Project · ${where}`);
+
+  // A created record is opened, because writing it is the point of creating
+  // it; anything else read the project again, so the section shows what the
+  // file now says rather than what it said before the write.
+  const done = (result: Done) => {
+    setSheet(null);
+    if (result.mode === "record") {
+      void navigate(documentPath(result.written.path));
+      return;
+    }
+    onReload();
+  };
+
+  // The same four actions appear in three places — the aside, a block's head,
+  // and an empty block's one line — so each is written once and used where it
+  // belongs. On an area page they carry that area, already chosen.
+  const openRecord = (kind: Kind) => () => {
+    setSheet({ mode: "record", kind, area: slug });
+  };
+  const openQuestion = () => {
+    setSheet({ mode: "question", area: slug });
+  };
+  const recordAct = (kind: Kind) => <Act label={ACTIONS[kind].offer} onAct={openRecord(kind)} />;
+  const questionAct = <Act label="Ask a question" onAct={openQuestion} />;
+
+  /** Answering is offered on an open question, and on nothing else. */
+  const answer = (row: Row): ReactNode => {
+    const question = pane.questions.find((candidate) => candidate.id !== "" && candidate.id === row.key);
+    if (question === undefined || question.status !== "open") {
+      return null;
+    }
+    return (
+      <Button
+        onClick={() => {
+          setSheet({ mode: "answer", id: question.id, question: question.question });
+        }}
+      >
+        Answer
+      </Button>
+    );
+  };
 
   return (
     <div className="ms-briefing">
@@ -99,26 +149,46 @@ function Columns({ pane, slug, onReload }: { pane: PanePayload; slug: string | n
           <BookBlock key={book.id} book={book} />
         ))}
         {briefing.areaBooks.map((book) => (
-          <AreaBookBlock key={book.id} book={book} />
+          <AreaBookBlock
+            key={book.id}
+            book={book}
+            action={book.id === "intent" && slug !== null ? recordAct("intent") : null}
+          />
         ))}
-        <Block id="decisions" title="Decisions" count={briefing.decisions.length}>
+        <Block id="decisions" title="Decisions" count={briefing.decisions.length} action={recordAct("decision")}>
           {briefing.decisions.length === 0 ? (
-            <p className="ms-project-none">Nothing recorded yet.</p>
+            <Nothing>{recordAct("decision")}</Nothing>
           ) : (
             <Rows rows={briefing.decisions} />
           )}
         </Block>
-        <Designs designs={briefing.designs} />
-        <Block id="questions" title="Open questions" count={briefing.questions.length}>
+        <Designs designs={briefing.designs} action={recordAct("design")} />
+        <Block id="questions" title="Open questions" count={briefing.questions.length} action={questionAct}>
           {briefing.questions.length === 0 ? (
-            <p className="ms-project-none">Nothing recorded yet.</p>
+            <Nothing>{questionAct}</Nothing>
           ) : (
-            <Rows rows={briefing.questions} />
+            <Rows rows={briefing.questions} action={answer} />
           )}
         </Block>
         <Documents groups={groups} total={pane.documents.length} />
       </div>
       <aside className="ms-briefing-aside" aria-label="Beside the briefing">
+        <section className="ms-briefing-note">
+          <h2 className="ms-briefing-note-title">{slug === null ? "Contribute" : `Contribute to ${where}`}</h2>
+          <div className="ms-briefing-contribute">
+            {/* An intent chapter belongs to an area, and is offered where one
+                is selected; the project's own intent is its index. */}
+            {slug !== null && <Button onClick={openRecord("intent")}>{ACTIONS.intent.offer}</Button>}
+            <Button onClick={openRecord("decision")}>{ACTIONS.decision.offer}</Button>
+            <Button onClick={openRecord("design")}>{ACTIONS.design.offer}</Button>
+            <Button onClick={openQuestion}>Ask a question</Button>
+          </div>
+          <p className="ms-briefing-note-line">
+            Each writes a draft in its own home with a fresh id and{" "}
+            <span className="ms-mono">Status: draft</span>, and opens it. Nothing here accepts anything; status is
+            yours to change on the record.
+          </p>
+        </section>
         <section className="ms-briefing-note">
           <h2 className="ms-briefing-note-title">Needs you</h2>
           {briefing.needsYou.questions === 0 && briefing.needsYou.designs === 0 ? (
@@ -147,7 +217,39 @@ function Columns({ pane, slug, onReload }: { pane: PanePayload; slug: string | n
           <p className="ms-briefing-note-line">Read at {timeOf(pane.readAt)}</p>
         </section>
       </aside>
+      {sheet !== null && (
+        <Sheet
+          request={sheet}
+          areas={pane.areas}
+          onClose={() => {
+            setSheet(null);
+          }}
+          onDone={done}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * One action, where a human is already looking. It is a button because it acts
+ * rather than navigates, and it reads as a link because in an empty state it
+ * is the only thing on the line.
+ */
+function Act({ label, onAct }: { label: string; onAct: () => void }) {
+  return (
+    <button type="button" className="ms-project-act" onClick={onAct}>
+      {label}
+    </button>
+  );
+}
+
+/** An empty section says so, and says what to do about it, on one line. */
+function Nothing({ children }: { children: ReactNode }) {
+  return (
+    <p className="ms-project-none">
+      Nothing recorded yet. {children}
+    </p>
   );
 }
 
@@ -178,7 +280,7 @@ function Block({
         <h2 className="ms-briefing-title">{title}</h2>
         {total !== undefined && <span className="ms-project-count">{total}</span>}
         {note !== undefined && note !== "" && <span className="ms-project-count">{note}</span>}
-        {action !== undefined && <span className="ms-briefing-act">{action}</span>}
+        {action !== undefined && action !== null && <span className="ms-briefing-act">{action}</span>}
       </div>
       {children}
     </section>
@@ -251,20 +353,26 @@ function BookBlock({ book }: { book: BookBriefing }) {
  * saying there are none and that the project-wide book applies. A project-wide
  * book is not repeated under every area.
  */
-function AreaBookBlock({ book }: { book: AreaBook }) {
+function AreaBookBlock({ book, action }: { book: AreaBook; action: ReactNode }) {
   return (
-    <Block id={book.id} title={book.title} count={book.rows.length}>
-      {book.rows.length === 0 ? <p className="ms-project-none">{book.none}</p> : <Rows rows={book.rows} />}
+    <Block id={book.id} title={book.title} count={book.rows.length} action={action}>
+      {book.rows.length === 0 ? (
+        <p className="ms-project-none">
+          {book.none} {action}
+        </p>
+      ) : (
+        <Rows rows={book.rows} />
+      )}
     </Block>
   );
 }
 
 /** The designs: what governs, open; what is finished, in one run each. */
-function Designs({ designs }: { designs: DesignRuns }) {
+function Designs({ designs, action }: { designs: DesignRuns; action: ReactNode }) {
   const total = designs.open.length + designs.runs.reduce((sum, run) => sum + run.rows.length, 0);
   return (
-    <Block id="designs" title="Designs" count={total}>
-      {total === 0 && <p className="ms-project-none">Nothing recorded yet.</p>}
+    <Block id="designs" title="Designs" count={total} action={action}>
+      {total === 0 && <Nothing>{action}</Nothing>}
       {designs.open.length > 0 && <Rows rows={designs.open} />}
       {designs.runs.map((run) => (
         <details key={run.status} className="ms-project-run">
@@ -324,11 +432,11 @@ function Problems({ problems }: { problems: Problem[] }) {
   );
 }
 
-function Rows({ rows }: { rows: Row[] }) {
+function Rows({ rows, action }: { rows: Row[]; action?: (row: Row) => ReactNode }) {
   return (
     <ul className="ms-project-rows">
       {rows.map((row) => (
-        <RecordRow key={row.key} row={row} />
+        <RecordRow key={row.key} row={row} action={action?.(row)} />
       ))}
     </ul>
   );
@@ -340,7 +448,7 @@ function Rows({ rows }: { rows: Row[] }) {
  * itself in a tooltip, so a long path never breaks the row across the screen a
  * character at a time.
  */
-function RecordRow({ row }: { row: Row }) {
+function RecordRow({ row, action }: { row: Row; action?: ReactNode }) {
   return (
     <li className="ms-project-row">
       <span className="ms-project-row-title">
@@ -351,6 +459,7 @@ function RecordRow({ row }: { row: Row }) {
         {row.areas.map((area) => (
           <Chip key={area}>{area}</Chip>
         ))}
+        {action}
       </span>
       <span className="ms-mono ms-project-row-path" title={row.path}>
         {row.path}

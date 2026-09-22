@@ -62,6 +62,7 @@ const pairs: { front: string; back: string; needs: number; where: string }[] = [
   { front: "danger", back: "surface-2", needs: TEXT, where: "the identity conflict" },
   { front: "danger", back: "surface", needs: TEXT, where: "an error boundary's heading" },
   { front: "ok", back: "surface-2", needs: NON_TEXT, where: "the connected dot" },
+  { front: "ok-fg", back: "ok-bg", needs: TEXT, where: "a done record's status chip" },
   { front: "border-strong", back: "bg", needs: NON_TEXT, where: "the separator's resting line" },
   { front: "border-strong", back: "surface", needs: NON_TEXT, where: "an input boundary" },
   { front: "border-strong", back: "surface-2", needs: NON_TEXT, where: "a button in the header" },

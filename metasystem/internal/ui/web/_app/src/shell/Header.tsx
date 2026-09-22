@@ -1,4 +1,4 @@
-import { Menu, PanelRight } from "lucide-react";
+import { Menu, PanelBottom } from "lucide-react";
 
 import { IconButton } from "./controls";
 import { useWorkspaceState } from "./identity";
@@ -6,7 +6,9 @@ import { WorkspaceIdentity } from "./WorkspaceIdentity";
 
 /**
  * The header: who this workspace is on the left, where you are in the middle,
- * and the dock's toggle on the right.
+ * and the Project Partner's toggle on the right. The drawer along the bottom
+ * carries the same toggle; this one is where a keyboard reaches it without
+ * crossing the whole page.
  *
  * On the focused view the toggle stays in the sequential order and says why it
  * does nothing, rather than disappearing and taking its explanation with it.
@@ -48,8 +50,8 @@ export function Header({
       </div>
       <div className="ms-header-right">
         <IconButton
-          label="Project Partner dock"
-          hint={focused ? "The conversation is already in focus" : "Project Partner dock"}
+          label="Project Partner drawer"
+          hint={focused ? "The conversation is already in focus" : "Project Partner drawer"}
           aria-expanded={dockOpen}
           aria-controls="brain-dock"
           aria-disabled={focused ? true : undefined}
@@ -60,7 +62,7 @@ export function Header({
             onDockToggle();
           }}
         >
-          <PanelRight size={16} strokeWidth={1.75} aria-hidden="true" />
+          <PanelBottom size={16} strokeWidth={1.75} aria-hidden="true" />
         </IconButton>
       </div>
     </header>

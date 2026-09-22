@@ -62,7 +62,16 @@ const LIFECYCLE_HANDLERS = ["onfocus", "ononline", "onoffline", "onvisibilitycha
 const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   ["shell/workspace.ts", 1, ["/api/workspace"]],
   ["backlog/api.ts", 1, ["/api/backlog"]],
-  ["project/api.ts", 1, ["/api/project", "/api/documents/"]],
+  // The Project section's four writes join its two reads at the one call site
+  // it already had: a write is the same request with a body, so there is still
+  // exactly one place in this build that reaches the network from here. The
+  // two status routes name an id between their prefix and the suffix both
+  // share, which is why "/status" is listed on its own.
+  [
+    "project/api.ts",
+    1,
+    ["/api/project", "/api/documents/", "/api/project/records", "/api/project/questions", "/status"],
+  ],
 ];
 
 const HEALTH = "/-/health";

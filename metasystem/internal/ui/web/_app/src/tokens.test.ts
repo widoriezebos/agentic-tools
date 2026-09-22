@@ -30,6 +30,8 @@ const COLOUR_TOKENS = [
   "marker-bg",
   "marker-fg",
   "ok",
+  "ok-bg",
+  "ok-fg",
   "danger",
   "scrim",
   "shadow",

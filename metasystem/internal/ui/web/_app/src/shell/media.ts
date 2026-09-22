@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
 
 /**
- * The three widths. Media queries lay the shell out; this hook drives the
- * behaviour that differs rather than the appearance — which panel exists at
- * all, and whether the dock is a panel or a sheet.
+ * The widths. Media queries lay the shell out; this hook drives the behaviour
+ * that differs rather than the appearance — whether the rail is beside the
+ * work or in a sheet behind the menu button, and whether the focused
+ * conversation has room for its subject panel.
+ *
+ * There is no width at which the Project Partner is somewhere else: it is a
+ * drawer along the bottom at every one of them.
  */
 
 export const WIDE_QUERY = "(min-width: 960px)";
 export const PHONE_QUERY = "(max-width: 599px)";
-/** The rail expands only where 240 + 8 + 480 + 400 still fits. */
+/** The rail expands only where 240 beside a full work area still fits. */
 export const RAIL_QUERY = "(min-width: 1128px)";
-
-export const RAIL_WIDTH_EXPANDED = 240;
-export const RAIL_WIDTH_COLLAPSED = 56;
 
 function query(text: string): MediaQueryList | null {
   try {
@@ -46,13 +47,4 @@ export function useMediaQuery(text: string): boolean {
     };
   }, [text]);
   return matched;
-}
-
-/** The viewport's width, or the wide threshold where there is no window. */
-export function viewportWidth(): number {
-  try {
-    return globalThis.innerWidth || 960;
-  } catch {
-    return 960;
-  }
 }
