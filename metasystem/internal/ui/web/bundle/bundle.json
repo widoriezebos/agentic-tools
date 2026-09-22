@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:19e9157f17bb2254783a5813c3dea958331b8bc4731ccd24e8e75b0c036516f3",
+  "sourceDigest": "sha256:45cc859ee5e2983f71911b47dfdf9c25d69a9b3c173c2c0f64208a9a9c81e233",
   "source": [
     {
       "path": ".npmrc",
@@ -100,7 +100,7 @@
     },
     {
       "path": "src/backlog/backlog.css",
-      "sha256": "92d84c551881105119e089146c079f3359a00b1e1b2475544ef014dd4cec3530"
+      "sha256": "2875e32c27ce3eab482b28de588dee215c0d6125078137d25eda5cbe956acd48"
     },
     {
       "path": "src/backlog/format.test.ts",
@@ -168,7 +168,7 @@
     },
     {
       "path": "src/panes/Focused.tsx",
-      "sha256": "9c74f6d3c3f9bc11917cad9695be26797ee0a28d8036491110621c5d25bc2bc9"
+      "sha256": "bd35e808c089e1523a61fc4f056900e540932d2f0a72e527588d545fa0b984f3"
     },
     {
       "path": "src/panes/Pane.tsx",
@@ -200,7 +200,7 @@
     },
     {
       "path": "src/project/ProjectPane.tsx",
-      "sha256": "72dea7d2efb1c46887560380b80c3021dbbafd88248a001ded33286b15f3f276"
+      "sha256": "5c915307b626346ca4c70fb1c6bee438d6fc03415358b896ee5dd0ab90ee3481"
     },
     {
       "path": "src/project/Sheet.tsx",
@@ -228,15 +228,15 @@
     },
     {
       "path": "src/project/pane.test.ts",
-      "sha256": "db57af50501a2041a578cede4f5f6c1e78e45d2116ce0f60e2762780b425082b"
+      "sha256": "91c590d96173b9cf03d2e35b050bf30addbebe2d5f9ac98973d3e67a41336ea5"
     },
     {
       "path": "src/project/pane.ts",
-      "sha256": "5991bd4aad729ade49625fc0d6b98043b83895547b1ef55273e34128055f72c7"
+      "sha256": "e9b3f6ac099cc17ec2334be974e98ff71b65fecc2c25a6b8a709714ff1d41b8e"
     },
     {
       "path": "src/project/reading.css",
-      "sha256": "69e523533b9874175643e59c9d45b2461dbc375117ccdc2aaa1ec36335ef10cf"
+      "sha256": "9e6a73726984b5705f8bfe6c8bbad766e832103f9a2b38a6469b319e91eaf1e5"
     },
     {
       "path": "src/project/writing.test.ts",
@@ -256,11 +256,11 @@
     },
     {
       "path": "src/shell/Composer.tsx",
-      "sha256": "02ecd6fc7d396c15d361e88e1bfb12d11fcc7c60678fcfcb1d2380f4a884ec3b"
+      "sha256": "fe4ce803d84df08c6e21344c38a24d71f5e580297cde5488f6fa8bf368485807"
     },
     {
       "path": "src/shell/Drawer.tsx",
-      "sha256": "0f27ed50870629577d66c74e1c6b226029323fe4a1a555abbb612ee23d922610"
+      "sha256": "f8ff9c5baf51649d059bc42a8e08bc0720aba1260d109a981bc69e4690c0ae50"
     },
     {
       "path": "src/shell/ErrorBoundary.tsx",
@@ -284,7 +284,7 @@
     },
     {
       "path": "src/shell/Shell.tsx",
-      "sha256": "50a8607269cc08e4dbef246299e1cdaac78b367bd5d8519cf8bffe57f3801135"
+      "sha256": "8bffad4e23b1f6394dc5bb73522d07f460ddab33f19c5017ee8b2fd21ebe0897"
     },
     {
       "path": "src/shell/ThemeControl.tsx",
@@ -316,7 +316,7 @@
     },
     {
       "path": "src/shell/shell.css",
-      "sha256": "f59340352e423498b300f882272b27b9437a7a213ae7fab344012f2a7cac404a"
+      "sha256": "29e766bfef2835a7d3e8a3e96aab41834193233d758ba906240bd2d96d3a5370"
     },
     {
       "path": "src/shell/workspace.ts",
@@ -324,11 +324,11 @@
     },
     {
       "path": "src/storage.test.ts",
-      "sha256": "ac8a5513783faa3032423b61f2c97c1e26e159022d285c50fa4a95361507964a"
+      "sha256": "758384e7f705cf6695670e8f55fc430c1945b44be1d5d631f414fc6aead88882"
     },
     {
       "path": "src/storage.ts",
-      "sha256": "6e07a008d197db600d4ff6e0a907714a199db44667c91f561eed0f423fbe9c65"
+      "sha256": "4b834fcfd737c7fcc3ef123c7a2b45850d35e670b8595d54f3faf176e6552e69"
     },
     {
       "path": "src/theme.test.ts",
@@ -374,11 +374,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "2d891c8c38b0fbd41b55e670abcfe7a7b1ec993ffb6162515eaeb731425cd582"
+      "sha256": "7cbba5882db904198c94224b220cc458beb089a13338e9a81b1c72e9859a5c5d"
     },
     {
       "path": "assets/index.js",
-      "sha256": "879e52891d4072528a9622d4f55d9d2e2b6930fecad3320f14981977a78b41bf"
+      "sha256": "92fffbe12788aa25597ab7ba3a3bb06ac5fd56e5b4a742bb4af6cae5dc47c81f"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

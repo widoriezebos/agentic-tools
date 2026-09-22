@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Group, Panel, Separator, type Layout, type LayoutChangedMeta } from "react-resizable-panels";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 
 import { AboutProvider } from "./about";
-import { Drawer } from "./Drawer";
+import { Drawer, type Caret } from "./Drawer";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Header } from "./Header";
 import { useWorkspaceState, type WorkspaceState } from "./identity";
@@ -16,7 +17,19 @@ import { SettingsPane } from "../panes/Settings";
 import { DocumentPane } from "../project/DocumentPane";
 import { GoalPane, ProjectPane } from "../project/ProjectPane";
 import { activeSection, HOME_PATH, projectSections } from "../routes";
-import { readDockOpen, readRailExpanded, readTheme, writeDockOpen, writeRailExpanded, writeTheme } from "../storage";
+import {
+  DEFAULT_DOCK_HEIGHT,
+  MINIMUM_DOCK_HEIGHT,
+  MINIMUM_WORK_HEIGHT,
+  readDockHeight,
+  readDockOpen,
+  readRailExpanded,
+  readTheme,
+  writeDockHeight,
+  writeDockOpen,
+  writeRailExpanded,
+  writeTheme,
+} from "../storage";
 import { applyTheme, effectiveTheme, systemIsDark, watchSystemTheme, type ThemePreference } from "../theme";
 import { titleFor, type Identity } from "../title";
 
@@ -31,9 +44,19 @@ import { titleFor, type Identity } from "../title";
  * every width. Two widths remain, and they are the rail's: expanded from
  * 1,128, collapsed below that, and on a phone behind the menu button.
  *
+ * How much of the height an open drawer takes is the human's, through the
+ * divider between the two, and is remembered. The work area is the group's
+ * one panel while the drawer is closed, which is why the bar sits outside the
+ * group: a divider to drag against a drawer that is only a bar would be a
+ * handle for nothing.
+ *
  * The focused view at /brain is the conversation in full, and shows no drawer:
  * the conversation is already in front of the human.
  */
+
+/** The panels the divider sits between, named so their layout can be read. */
+const WORK_PANEL = "work";
+const DRAWER_PANEL = "partner";
 export function Shell() {
   const location = useLocation();
   const wide = useMediaQuery(WIDE_QUERY);
@@ -45,6 +68,17 @@ export function Shell() {
   const [theme, setTheme] = useState<ThemePreference>(() => readTheme());
   const [systemDark, setSystemDark] = useState(() => systemIsDark());
   const [railSheetOpen, setRailSheetOpen] = useState(false);
+  // What the human has written to their Project Partner, and where the caret
+  // belongs once the drawer has opened or closed around it. Both are the
+  // shell's because the bar's field and the panel's are two elements for one
+  // sentence, and opening replaces the one with the other.
+  const [draft, setDraft] = useState("");
+  const [caret, setCaret] = useState<Caret>("none");
+
+  // The stored height is read once, as the layout this group opens with; from
+  // there the group owns the arithmetic and a drag is what changes it.
+  const [openedAt] = useState(() => readDockHeight());
+  const layout = useMemo(() => ({ [WORK_PANEL]: 100 - openedAt, [DRAWER_PANEL]: openedAt }), [openedAt]);
 
   // The rail's stored choice applies only where an expanded rail fits; below
   // that the rail is collapsed and the choice is left untouched.
@@ -87,10 +121,25 @@ export function Shell() {
 
   // Open or closed is remembered the way the dock's was, under the key the
   // dock used: it is the same preference about the same collaborator.
-  const toggleDrawer = () => {
-    const next = !drawerOpen;
+  const setDrawer = (next: boolean, goes: Caret) => {
     setDrawerOpen(next);
+    setCaret(goes);
     writeDockOpen(next);
+  };
+
+  // From the header, whose button is not replaced and keeps the caret itself.
+  const toggleDrawer = () => {
+    setDrawer(!drawerOpen, "none");
+  };
+
+  // Only a human's own drag is remembered. A mount, a window resize, or a
+  // layout the library recomputed carries isUserInteraction false and writes
+  // nothing, so the stored height survives a trip through a short window.
+  const remember = (next: Layout, meta: LayoutChangedMeta) => {
+    const height = next[DRAWER_PANEL];
+    if (meta.isUserInteraction && Number.isFinite(height)) {
+      writeDockHeight(height);
+    }
   };
 
   const panes = (
@@ -115,6 +164,29 @@ export function Shell() {
   );
   const work = <ErrorBoundary>{panes}</ErrorBoundary>;
   const drawn = drawerOpen && !focused;
+  const drawer = (
+    <ErrorBoundary>
+      <Drawer
+        open={drawn}
+        about={sectionTitle}
+        draft={draft}
+        caret={caret}
+        onDraft={setDraft}
+        onCompose={(written) => {
+          setDraft(written);
+          if (!drawn) {
+            setDrawer(true, "panel");
+          }
+        }}
+        onToggle={() => {
+          setDrawer(!drawn, "toggle");
+        }}
+        onEscape={() => {
+          setDrawer(false, "toggle");
+        }}
+      />
+    </ErrorBoundary>
+  );
 
   return (
     <AboutProvider>
@@ -148,11 +220,40 @@ export function Shell() {
           {focused ? (
             work
           ) : (
-            <div className="ms-workarea" data-open={drawn ? "true" : "false"}>
-              {work}
-              <ErrorBoundary>
-                <Drawer open={drawn} about={sectionTitle} onToggle={toggleDrawer} />
-              </ErrorBoundary>
+            <div className="ms-workarea">
+              <Group
+                id="workarea"
+                className="ms-workarea-group"
+                orientation="vertical"
+                defaultLayout={layout}
+                onLayoutChanged={remember}
+              >
+                <Panel id={WORK_PANEL} className="ms-work-panel" minSize={MINIMUM_WORK_HEIGHT}>
+                  {work}
+                </Panel>
+                {drawn && (
+                  <>
+                    {/* The library's own double-click puts the panel back to
+                        its default size; remembering that is this build's. */}
+                    <Separator
+                      className="ms-drawer-grip"
+                      aria-label="Resize the Project Partner"
+                      onDoubleClick={() => {
+                        writeDockHeight(DEFAULT_DOCK_HEIGHT);
+                      }}
+                    />
+                    <Panel
+                      id={DRAWER_PANEL}
+                      className="ms-drawer-panel-host"
+                      minSize={MINIMUM_DOCK_HEIGHT}
+                      defaultSize={`${String(DEFAULT_DOCK_HEIGHT)}%`}
+                    >
+                      {drawer}
+                    </Panel>
+                  </>
+                )}
+              </Group>
+              {!drawn && drawer}
             </div>
           )}
         </div>

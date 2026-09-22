@@ -170,25 +170,21 @@
 }
 
 /*
- * An outline of the page being read: the document's headings in the reader's
- * third column, the briefing's sections in its first. The rule down the side
- * is what the mark sits on, so both wear it.
+ * An outline of the document being read, in the reader's third column. The
+ * rule down the side is what the mark sits on.
  */
-.ms-reader-outline .ms-reading-outline-list,
-.ms-project-outline .ms-reading-outline-list {
+.ms-reader-outline .ms-reading-outline-list {
   border-left: 1px solid var(--ms-border);
 }
 
-.ms-reader-outline .ms-reading-outline-row a,
-.ms-project-outline .ms-reading-outline-row a {
+.ms-reader-outline .ms-reading-outline-row a {
   display: block;
   padding: 3px 8px;
   border-left: 2px solid transparent;
   margin-left: -1px;
 }
 
-.ms-reader-outline .ms-reading-outline-row a[aria-current="location"],
-.ms-project-outline .ms-reading-outline-row a[aria-current="location"] {
+.ms-reader-outline .ms-reading-outline-row a[aria-current="location"] {
   border-left-color: var(--ms-accent);
   background: var(--ms-surface-2);
   color: var(--ms-text);
@@ -512,16 +508,86 @@
 /* --------------------------------------------------------- the Project pane -- */
 
 /*
- * Three columns: the goals, the briefing, and what is waiting beside it.
- * Below the rail widths they stack, the goals first, because choosing what the
- * briefing is about is the first act.
+ * Two columns: the briefing, and what is waiting beside it. What is on the
+ * page used to be a third, on the left; it is the strip of tabs above now, so
+ * the reading starts where that column did.
  */
 .ms-briefing {
   display: grid;
-  grid-template-columns: 220px minmax(0, 76ch) 240px;
+  grid-template-columns: minmax(0, 76ch) 240px;
   gap: 32px;
   align-items: start;
 }
+
+/*
+ * The tabs: what is on this page, on one line under the header. The strip
+ * stays there as the page scrolls, so the section being read is always named
+ * and every other section is always one click away; narrower than its tabs it
+ * scrolls sideways rather than wrapping, because a strip that grows to three
+ * lines pushes the reading off the screen it was meant to introduce.
+ */
+.ms-page-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 20px;
+  background: var(--ms-bg);
+  border-bottom: 1px solid var(--ms-border);
+}
+
+/*
+ * A strip stuck to the top of the work area stops at the work area's own
+ * padding, and the band above it is where the page would scroll through. It
+ * is the strip's background too, so the reading passes behind the strip
+ * rather than through the gap over it.
+ */
+.ms-page-tabs::before {
+  content: "";
+  position: absolute;
+  top: -24px;
+  right: 0;
+  left: 0;
+  height: 24px;
+  background: var(--ms-bg);
+}
+
+.ms-page-tabs-list {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+}
+
+.ms-page-tab {
+  flex: 0 0 auto;
+}
+
+.ms-page-tab a {
+  display: block;
+  padding: 8px 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--ms-text-2);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ms-page-tab a:hover,
+.ms-page-tab a:focus-visible {
+  color: var(--ms-accent);
+}
+
+/* The section being read wears the mark the outline's rows wear: the accent,
+   on the edge the strip runs along. */
+.ms-page-tab a[aria-current="location"] {
+  border-bottom-color: var(--ms-accent);
+  color: var(--ms-text);
+}
+
 
 /*
  * The main column keeps its measure whatever the width: 76 characters is what
@@ -536,13 +602,15 @@
   max-width: 76ch;
 }
 
+/* It stands under the strip of tabs rather than behind it, which is the one
+   thing on the page that is already there when it arrives. */
 .ms-briefing-aside {
   display: flex;
   flex-direction: column;
   gap: 20px;
   min-width: 0;
   position: sticky;
-  top: 0;
+  top: 48px;
   align-self: start;
   padding-left: 20px;
   border-left: 1px solid var(--ms-border);
@@ -583,11 +651,17 @@
   text-decoration: underline;
 }
 
+/*
+ * A tab lands its section under the strip rather than behind it: the strip is
+ * the work area's own padding plus its one line, and a heading scrolled to the
+ * top of the work area would otherwise arrive beneath it.
+ */
 .ms-briefing-block {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+  scroll-margin-top: 64px;
 }
 
 .ms-briefing-head {
@@ -680,18 +754,6 @@
 .ms-briefing-toc-row a:hover,
 .ms-briefing-toc-row a:focus-visible {
   text-decoration: underline;
-}
-
-/*
- * The left column: this page's own sections, as anchors. It stays with the
- * reading rather than scrolling away, and it is the reader's outline in the
- * other column of another page, so it is the reader's outline here too.
- */
-.ms-project-outline {
-  position: sticky;
-  top: 0;
-  min-width: 0;
-  align-self: start;
 }
 
 .ms-project-count {
@@ -1123,7 +1185,7 @@
  */
 @media (max-width: 1199px) {
   .ms-briefing {
-    grid-template-columns: 220px minmax(0, 76ch);
+    grid-template-columns: minmax(0, 76ch);
   }
 
   .ms-briefing-aside,
@@ -1151,10 +1213,9 @@
     grid-column: auto;
   }
 
-  /* Stacked, the outline is above the reading rather than beside it, so it
-     scrolls with the page instead of standing over it. */
-  .ms-reader-rail,
-  .ms-project-outline {
+  /* Stacked, the reader's rail is above the reading rather than beside it, so
+     it scrolls with the page instead of standing over it. */
+  .ms-reader-rail {
     position: static;
   }
 

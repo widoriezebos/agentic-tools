@@ -287,18 +287,22 @@
 }
 
 /*
- * A lane is 248 wide and does not shrink. A goal id in this ledger runs to
- * forty characters, and a lane narrow enough to break one across four lines
- * stops being a column of work and becomes a column of hyphens; when seven of
- * them do not fit, the board scrolls sideways inside itself and the page does
- * not move. The height is the board's, not a fraction of the window's, so the
- * cards scroll inside the lane and the lane always reaches the drawer.
+ * A lane takes an equal share of the board and never goes under 240. A goal id
+ * in this ledger runs to forty characters, and a lane narrow enough to break
+ * one across four lines stops being a column of work and becomes a column of
+ * hyphens; when the minima no longer fit, the board scrolls sideways inside
+ * itself and the page does not move. Above that width the lanes grow with the
+ * window instead of leaving a field of empty paper beside a fixed board.
+ *
+ * The height is the board's, not a fraction of the window's, so the cards
+ * scroll inside the lane and the lane always reaches the drawer.
  */
 .ms-column {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  flex: 0 0 248px;
+  flex: 1 1 0;
+  min-width: 240px;
   min-height: 0;
   box-sizing: border-box;
   padding: 10px;
@@ -309,11 +313,13 @@
 
 /*
  * A lane holding nothing needs room for its title, its count and the one line
- * that says why it is empty, and no more: the width it gives up is width the
- * lanes with work in them get.
+ * that says why it is empty, and no more: it keeps its 160 whatever the board
+ * is given, and the width it gives up is width the lanes with work in them
+ * share out between themselves.
  */
 .ms-column--collapsed {
   flex: 0 0 160px;
+  min-width: 160px;
 }
 
 /* A column a dragged card may be dropped on, and one it may not. */

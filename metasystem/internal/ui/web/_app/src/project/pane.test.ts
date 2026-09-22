@@ -160,7 +160,7 @@ function documentOf(id: string, head: Partial<DocumentPayload["record"]> | null)
   };
 }
 
-describe("the left rail of the briefing", () => {
+describe("what is on the page, as the strip of tabs names it", () => {
   it("is this page's own sections, in the order the page renders them", () => {
     expect(pageSections(briefingFor(pane, null))).toEqual([
       { id: "intent", title: "Intent" },
@@ -174,7 +174,7 @@ describe("the left rail of the briefing", () => {
 
   // A goal page opens with the goal itself and carries neither book, and the
   // checkout's other Markdown is the project's rather than any goal's. The
-  // rail says exactly what that page has, or it would offer anchors to
+  // strip says exactly what that page has, or it would offer anchors to
   // sections that are not on it.
   it("names the goal first on a goal page, and no section that page does not render", () => {
     expect(pageSections(briefingFor(pane, "interface-shell"))).toEqual([
@@ -185,8 +185,8 @@ describe("the left rail of the briefing", () => {
     ]);
   });
 
-  // Every row is an anchor on the page, never an address: the ledger's goals
-  // are the Backlog's, and this rail navigates nowhere.
+  // Every tab is an anchor on the page, never an address: the ledger's goals
+  // are the Backlog's, and this strip navigates nowhere.
   it("carries no route at all, on either page", () => {
     for (const goal of [null, "interface-shell"]) {
       for (const section of pageSections(briefingFor(pane, goal))) {

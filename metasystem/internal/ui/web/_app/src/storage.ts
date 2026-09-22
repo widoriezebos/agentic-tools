@@ -1,7 +1,7 @@
 import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 /**
- * The four keys this build remembers, and nothing else.
+ * The five keys this build remembers, and nothing else.
  *
  * Every access is wrapped: a browser with site data blocked throws on the very
  * first read, and view state is never worth an error a human has to read. An
@@ -11,7 +11,8 @@ import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
  * The dock's key outlived the dock: the Project Partner is a drawer along the
  * bottom now, it is open or closed rather than open at some width, and it is
  * the same preference about the same collaborator, so it keeps the key a
- * browser already has a value under.
+ * browser already has a value under. The height beside it is the same family
+ * of preference under the same family of key.
  *
  * The drawer is closed until a human opens it. A panel that took two fifths of
  * the work area on every first load took it from the one thing the work area
@@ -23,11 +24,35 @@ import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 export const RAIL_KEY = "ms.ui.rail";
 export const DOCK_KEY = "ms.ui.dock";
 /**
+ * How tall the open drawer stands, as a percentage of the work area rather
+ * than a count of pixels: the window is resized more often than the drawer is,
+ * and a share of the height survives that where a pixel count does not. It is
+ * the unit the panel group itself lays out in, so nothing converts anything.
+ */
+export const DOCK_HEIGHT_KEY = "ms.ui.dock.height";
+/**
  * Which way the Backlog is read. The board is the default, because the master
  * makes it the day-to-day surface and because the two acts are on it; a human
  * who chose the list gets the list back.
  */
 export const BACKLOG_VIEW_KEY = "ms.ui.backlog.view";
+
+/**
+ * What the drawer is worth, in the work area's own height.
+ *
+ * Two fifths is what an opened drawer takes, and what double-clicking the
+ * divider gives back. The two minima are pixels because they are about what
+ * fits: a conversation panel shorter than its composer and one line of
+ * messages is not a panel, and a work area shorter than a heading and a row is
+ * not a work area.
+ */
+export const DEFAULT_DOCK_HEIGHT = 40;
+export const MINIMUM_DOCK_HEIGHT = 160;
+export const MINIMUM_WORK_HEIGHT = 200;
+
+/** The share of the height the drawer may be dragged to, at either end. */
+const SHORTEST = 10;
+const TALLEST = 90;
 
 /** The part of the browser's storage this build uses. */
 export type Store = {
@@ -88,6 +113,28 @@ export function readDockOpen(store: Store | null = browserStore()): boolean {
 
 export function writeDockOpen(open: boolean, store: Store | null = browserStore()): void {
   write(DOCK_KEY, open ? "open" : "closed", store);
+}
+
+/**
+ * The stored height, clamped to the share the drawer may ever have. A value
+ * that is not a plain number is not a height at all, so it reads as the
+ * default rather than as zero; the panel group clamps it again to the two
+ * pixel minima, which is where a short window is answered.
+ */
+export function clampDockHeight(value: string | null): number {
+  if (value === null || !/^\d+(\.\d+)?$/.test(value.trim())) {
+    return DEFAULT_DOCK_HEIGHT;
+  }
+  return Math.min(Math.max(Number.parseFloat(value.trim()), SHORTEST), TALLEST);
+}
+
+export function readDockHeight(store: Store | null = browserStore()): number {
+  return clampDockHeight(read(DOCK_HEIGHT_KEY, store));
+}
+
+/** A tenth of a per cent is under a pixel here; nothing finer is remembered. */
+export function writeDockHeight(height: number, store: Store | null = browserStore()): void {
+  write(DOCK_HEIGHT_KEY, String(Math.round(height * 10) / 10), store);
 }
 
 /** How the Backlog is read: the board unless a human chose the list. */

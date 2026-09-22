@@ -2,13 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   BACKLOG_VIEW_KEY,
+  DEFAULT_DOCK_HEIGHT,
+  DOCK_HEIGHT_KEY,
   DOCK_KEY,
   RAIL_KEY,
   readBacklogView,
+  readDockHeight,
   readDockOpen,
   readRailExpanded,
   readTheme,
   writeBacklogView,
+  writeDockHeight,
   writeDockOpen,
   writeRailExpanded,
   type Store,
@@ -37,17 +41,19 @@ const throwing: Store = {
 };
 
 describe("the stored view state", () => {
-  it("reads the four keys", () => {
+  it("reads the five keys", () => {
     const written = store({
       [THEME_KEY]: "dark",
       [RAIL_KEY]: "collapsed",
       [DOCK_KEY]: "closed",
+      [DOCK_HEIGHT_KEY]: "55.5",
       [BACKLOG_VIEW_KEY]: "list",
     });
 
     expect(readTheme(written)).toBe("dark");
     expect(readRailExpanded(written)).toBe(false);
     expect(readDockOpen(written)).toBe(false);
+    expect(readDockHeight(written)).toBe(55.5);
     expect(readBacklogView(written)).toBe("list");
   });
 
@@ -60,6 +66,7 @@ describe("the stored view state", () => {
     expect(readTheme(empty)).toBe("system");
     expect(readRailExpanded(empty)).toBe(true);
     expect(readDockOpen(empty)).toBe(false);
+    expect(readDockHeight(empty)).toBe(DEFAULT_DOCK_HEIGHT);
     expect(readBacklogView(empty)).toBe("board");
   });
 
@@ -68,12 +75,14 @@ describe("the stored view state", () => {
       [THEME_KEY]: "{}",
       [RAIL_KEY]: "maybe",
       [DOCK_KEY]: "ajar",
+      [DOCK_HEIGHT_KEY]: "half",
       [BACKLOG_VIEW_KEY]: "outline",
     });
 
     expect(readTheme(nonsense)).toBe("system");
     expect(readRailExpanded(nonsense)).toBe(true);
     expect(readDockOpen(nonsense)).toBe(false);
+    expect(readDockHeight(nonsense)).toBe(DEFAULT_DOCK_HEIGHT);
     expect(readBacklogView(nonsense)).toBe("board");
   });
 
@@ -116,6 +125,7 @@ describe("the stored view state", () => {
     expect(readTheme(throwing)).toBe("system");
     expect(readRailExpanded(throwing)).toBe(true);
     expect(readDockOpen(throwing)).toBe(false);
+    expect(readDockHeight(throwing)).toBe(DEFAULT_DOCK_HEIGHT);
     expect(readBacklogView(throwing)).toBe("board");
     expect(() => {
       writeBacklogView("list", throwing);
@@ -126,12 +136,39 @@ describe("the stored view state", () => {
     expect(() => {
       writeDockOpen(false, throwing);
     }).not.toThrow();
+    expect(() => {
+      writeDockHeight(60, throwing);
+    }).not.toThrow();
   });
 
   it("reads and writes nothing at all where there is no store", () => {
     expect(readDockOpen(null)).toBe(false);
+    expect(readDockHeight(null)).toBe(DEFAULT_DOCK_HEIGHT);
     expect(() => {
       writeDockOpen(false, null);
     }).not.toThrow();
+    expect(() => {
+      writeDockHeight(60, null);
+    }).not.toThrow();
+  });
+
+  // The divider writes a share of the work area's height, which arrives from
+  // the panel group with more precision than a pixel is worth: a tenth of a
+  // per cent is under a pixel on any window this runs in.
+  it("remembers the drawer's height to a tenth of a per cent", () => {
+    const written = store({});
+
+    writeDockHeight(37.4321, written);
+
+    expect(written.getItem(DOCK_HEIGHT_KEY)).toBe("37.4");
+    expect(readDockHeight(written)).toBe(37.4);
+  });
+
+  // A height outside what the drawer may ever be is not the drawer's height:
+  // the whole window and a sliver are both answers to a question nobody asked.
+  it("keeps a stored height inside what the drawer may be", () => {
+    expect(readDockHeight(store({ [DOCK_HEIGHT_KEY]: "99" }))).toBe(90);
+    expect(readDockHeight(store({ [DOCK_HEIGHT_KEY]: "0" }))).toBe(10);
+    expect(readDockHeight(store({ [DOCK_HEIGHT_KEY]: "-20" }))).toBe(DEFAULT_DOCK_HEIGHT);
   });
 });

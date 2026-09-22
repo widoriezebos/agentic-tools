@@ -1,8 +1,9 @@
 import { ChevronDown, ChevronUp, Maximize2 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 
 import { useAboutLine } from "./about";
-import { COMPOSER_REASON } from "./Composer";
+import { Composer, COMPOSER_LABEL, COMPOSER_REASON } from "./Composer";
 import { Chip, IconButton } from "./controls";
 import { BrainStatement } from "../panes/Brain";
 
@@ -15,6 +16,16 @@ import { BrainStatement } from "../panes/Brain";
  * way to open it. Opening lifts a panel over the foot of the page; the page
  * above keeps its width and keeps scrolling.
  *
+ * The panel is the conversation itself: what the Partner has said, which in
+ * this build is the one statement that it is not connected, and the composer
+ * at the foot of it where the old dock had it. The context line travels with
+ * the composer — closed, it is in the bar beside the field; open, it is the
+ * panel's own header, over the messages it is the context for.
+ *
+ * The bar's field is one line and the panel's is not. Reaching the one-line
+ * field opens the panel, which is where the writing happens, and the sentence
+ * and the caret go with it.
+ *
  * It arrives closed. The bar is the whole of what an unasked-for collaborator
  * owes the page; the panel is what a human opens, and what this build then
  * remembers for them.
@@ -22,18 +33,56 @@ import { BrainStatement } from "../panes/Brain";
  * The element id and the class names are the kit's own, and stay; what a human
  * reads says Project Partner.
  */
+
+/**
+ * Where the caret belongs once the drawer has opened or closed.
+ *
+ * Opening and closing replace the whole drawer, so whatever had the caret is
+ * gone by the time the new one is on screen and the shell has to say where it
+ * goes: to the panel's composer for a human who was already writing, and back
+ * to the toggle for one who pressed it or pressed Escape. Nowhere is the first
+ * render, where nothing has been touched yet.
+ */
+export type Caret = "none" | "toggle" | "panel";
+
 export function Drawer({
   open,
   about,
+  draft,
+  caret,
+  onDraft,
+  onCompose,
   onToggle,
+  onEscape,
 }: {
   open: boolean;
   /** The section's own name, where the pane on screen says nothing. */
   about: string;
+  /** What the human has written, kept by the shell so both fields share it. */
+  draft: string;
+  caret: Caret;
+  onDraft: (draft: string) => void;
+  /** Writing in the closed bar: the drawer opens and the writing goes on. */
+  onCompose: (draft: string) => void;
   onToggle: () => void;
+  onEscape: () => void;
 }) {
   const navigate = useNavigate();
   const line = useAboutLine(about);
+  const toggle = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (caret === "toggle") {
+      toggle.current?.focus();
+    }
+  }, [caret]);
+
+  const context = (
+    <span className="ms-drawer-about">
+      about: <b>{line}</b>
+    </span>
+  );
+
   return (
     <aside className="ms-drawer" aria-label="Project Partner" data-open={open ? "true" : "false"}>
       <div className="ms-drawer-bar">
@@ -41,25 +90,33 @@ export function Drawer({
           <span className="ms-drawer-title">Project Partner</span>
           <Chip>unavailable until gate 3</Chip>
         </span>
-        <label className="ms-visually-hidden" htmlFor="drawer-composer">
-          Message to your Project Partner
-        </label>
-        <input
-          id="drawer-composer"
-          className="ms-drawer-field"
-          type="text"
-          placeholder="Message to your Project Partner"
-          aria-describedby="drawer-reason"
-          disabled
-        />
-        {/* The chip says it on screen; the field names the whole sentence,
-            which is what a human who cannot see the chip needs to hear. */}
-        <span className="ms-visually-hidden" id="drawer-reason">
-          {COMPOSER_REASON}
-        </span>
-        <span className="ms-drawer-about">
-          about: <b>{line}</b>
-        </span>
+        {!open && (
+          <>
+            <label className="ms-visually-hidden" htmlFor="drawer-composer">
+              {COMPOSER_LABEL}
+            </label>
+            <input
+              id="drawer-composer"
+              className="ms-drawer-field"
+              type="text"
+              placeholder={COMPOSER_LABEL}
+              aria-describedby="drawer-reason"
+              value={draft}
+              onChange={(event) => {
+                onCompose(event.target.value);
+              }}
+              onFocus={() => {
+                onCompose(draft);
+              }}
+            />
+            {/* The chip says it on screen; the field names the whole sentence,
+                which is what a human who cannot see the chip needs to hear. */}
+            <span className="ms-visually-hidden" id="drawer-reason">
+              {COMPOSER_REASON}
+            </span>
+            {context}
+          </>
+        )}
         <span className="ms-drawer-actions">
           <IconButton
             label="Expand the Project Partner view"
@@ -71,6 +128,7 @@ export function Drawer({
           </IconButton>
           <button
             type="button"
+            ref={toggle}
             className="ms-drawer-toggle"
             aria-expanded={open}
             aria-controls="brain-dock"
@@ -85,8 +143,20 @@ export function Drawer({
           </button>
         </span>
       </div>
+      {/* The panel is the element the toggle says it controls, so it is here
+          whether or not it is shown; what is in it belongs to an open drawer,
+          and a composer nobody can see is a composer that must never be given
+          the caret. */}
       <div className="ms-drawer-panel" id="brain-dock" hidden={!open}>
-        <BrainStatement />
+        {open && (
+          <>
+            <div className="ms-drawer-head">{context}</div>
+            <div className="ms-drawer-messages">
+              <BrainStatement />
+            </div>
+            <Composer draft={draft} onDraft={onDraft} onEscape={onEscape} takeCaret={caret === "panel"} />
+          </>
+        )}
       </div>
     </aside>
   );

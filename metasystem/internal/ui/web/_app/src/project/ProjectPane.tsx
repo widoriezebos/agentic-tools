@@ -28,17 +28,17 @@ import { Button, Chip, Skeleton } from "../shell/controls";
 /**
  * Project: a briefing on what this project is, not a list of its files.
  *
- * The left column is what is on this page — the books, the decisions, the
- * designs, the open questions, the documents — as anchors, with the one being
- * read marked as the human scrolls. The ledger's goals are not in it: a goal
- * belongs to the Backlog, and a rail of six hundred of them said that the
- * project's records were a subdivision of the ledger rather than the other way
- * round. The main column opens each kind in its own words — the intent index's
+ * The strip under the header is what is on this page — the books, the
+ * decisions, the designs, the open questions, the documents — as anchors, with
+ * the one being read marked as the human scrolls. The ledger's goals are not
+ * in it: a goal belongs to the Backlog, and a rail of six hundred of them said
+ * that the project's records were a subdivision of the ledger rather than the
+ * other way round. The main column opens each kind in its own words — the intent index's
  * first paragraph, the doctrine's, a design's — and only then offers the
  * links: the books as tables of contents, the decisions and designs as rows
  * carrying their summaries, the designs grouped so that what governs is open
- * and what is finished is one collapsed run. The right column is what is
- * waiting and what was read.
+ * and what is finished is one collapsed run, in the width the outline used to
+ * take. The right column is what is waiting and what was read.
  *
  * One goal of the ledger is the same page scoped to it, and it lives under
  * Backlog: the same briefing, narrowed to the records whose Goals name it,
@@ -110,14 +110,11 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
   const navigate = useNavigate();
 
   const where = goal ?? "Everything";
-  // The section this page belongs to, which is what the rail's heading names:
-  // the project's own records, or the ledger this goal is one of.
-  const section = goal === null ? "Project" : "Backlog";
   const page = goal === null ? "Project" : `Backlog · ${goal}`;
   const current = useReadingRow(sections, goal ?? "");
 
   // What the drawer says this page is about: the page, and the section of it
-  // being read, from the same outline the rail marks.
+  // being read, from the same outline the tabs mark.
   const here = sections.find((row) => row.id === current);
   useAbout(aboutLine(page, here?.title ?? ""));
 
@@ -176,8 +173,8 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
           </span>
         </nav>
       )}
+      <PageTabs sections={sections} current={current} />
       <div className="ms-briefing">
-        <PageRail heading={section} sections={sections} current={current} />
         <div className="ms-briefing-main">
           <p className="ms-project-read-at">
             Read at {timeOf(pane.readAt)}
@@ -271,29 +268,24 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
 }
 
 /**
- * The left column: what is on this page, and where in it the human is.
+ * What is on this page, and where in it the human is: a strip of tabs under
+ * the header, above the reading rather than beside it.
  *
- * Every row is an anchor to a section of this same page, so the rail moves the
- * page rather than navigating; the heading names the page itself and is not a
- * link, because a link to where you already are is a promise that nothing
- * happens. The mark follows the reader the way the document reader's outline
- * does, through the same observer and with no timer.
+ * It was a column, and a column of six rows cost the reading a fifth of the
+ * width to say six words. Across the top it costs one line, and the main
+ * column takes the width back. Every tab is an anchor to a section of this
+ * same page, so the strip moves the page rather than navigating; it stays
+ * under the header as the page scrolls, and the mark follows the reader the
+ * way the document reader's outline does, through the same observer and with
+ * no timer. Narrower than its tabs, the strip scrolls sideways rather than
+ * wrapping into a block that would push the reading down the page.
  */
-function PageRail({
-  heading,
-  sections,
-  current,
-}: {
-  heading: string;
-  sections: PageSection[];
-  current: string | null;
-}) {
+function PageTabs({ sections, current }: { sections: PageSection[]; current: string | null }) {
   return (
-    <nav className="ms-project-outline" aria-label="On this page">
-      <h2 className="ms-reader-rail-title">{heading}</h2>
-      <ul className="ms-reading-outline-list">
+    <nav className="ms-page-tabs" aria-label="On this page">
+      <ul className="ms-page-tabs-list">
         {sections.map((section) => (
-          <li key={section.id} className="ms-reading-outline-row">
+          <li key={section.id} className="ms-page-tab">
             <a href={`#${section.id}`} aria-current={section.id === current ? "location" : undefined}>
               {section.title}
             </a>

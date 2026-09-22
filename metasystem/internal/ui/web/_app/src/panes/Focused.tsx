@@ -37,13 +37,19 @@ export function Focused({ wide }: { wide: boolean }) {
   );
 }
 
+/**
+ * The conversation in full: what the Partner has said, and the composer under
+ * it. The draft is this view's own — the drawer is not on screen here, so
+ * there is nothing for it to be carried between.
+ */
 function Conversation() {
+  const [draft, setDraft] = useState("");
   return (
     <div className="ms-focused-column">
       <div className="ms-dock-statement">
         <BrainStatement />
       </div>
-      <Composer />
+      <Composer draft={draft} onDraft={setDraft} />
     </div>
   );
 }

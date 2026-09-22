@@ -35,8 +35,8 @@ export type Row = {
 };
 
 /**
- * One row of the left column: a section of this page, by the anchor the page
- * renders it under.
+ * One tab of the strip under the header: a section of this page, by the
+ * anchor the page renders it under.
  */
 export type PageSection = { id: string; title: string };
 
@@ -96,7 +96,7 @@ const BOOKS: readonly { id: string; kind: string; title: string; word: string }[
 export const FINISHED = ["done", "superseded"];
 
 /**
- * What the two sections no kind names are called. The rail and the block read
+ * What the two sections no kind names are called. The tab and the block read
  * from the same word, so the anchor and the heading it lands on cannot drift
  * apart; the other sections take their word from kindTitle.
  */
@@ -104,14 +104,14 @@ export const QUESTIONS_TITLE = "Open questions";
 export const DOCUMENTS_TITLE = "Documents";
 
 /**
- * The left column: this page's own sections, in the order the page renders
- * them, each naming the anchor it can be reached at.
+ * The strip under the header: this page's own sections, in the order the page
+ * renders them, each naming the anchor it can be reached at.
  *
  * It is derived from the briefing rather than written twice, so a section the
  * payload does not produce — a book on a goal page, the checkout's documents
  * anywhere but the project — is absent from the outline for the same reason it
  * is absent from the page. The ledger's goals are not here at all: a goal is
- * the Backlog's, and the rail of a page is what is on that page.
+ * the Backlog's, and the tabs of a page are what is on that page.
  */
 export function pageSections(briefing: Briefing): PageSection[] {
   const rows: PageSection[] = [];
