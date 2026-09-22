@@ -5,10 +5,10 @@
 - Tier: 3
 - Intent: Make every test safe for parallel execution, with configurable concurrency based on available CPU cores and deterministic outcomes on slow or loaded supported hosts.
 - Origin: human
-- Next step: Finish three active Sol repair units for cadence fixture references, frozen witness root handoff and Linux fixture portability; consume bounded Linux output/cleanup and VM Git diagnostics, run focused native canaries, then reuse matching proof and finish required platform validation before publication. Both last suites are terminal red; no full-suite retry before diagnosed repairs. No human answer is pending.
+- Next step: Complete five active Sol repair units: cadence references/fixtures, authenticated frozen-root handoff, Linux fixture portability, runtime output and child cleanup, deterministic platform fixtures. Confirm compatible Git in guest; consume focused native Linux canaries and independent reads, compose only accepted fixes, then reuse matching proof and finish platform validation/publication. No full-suite retry before repairs; no human answer pending.
 - ReadItem: id=c1-native-delegate-budget-read-1-1 read=c1-native-delegate-budget-read-1 state=accepted addedAt=2026-09-21T12:11:17Z changedAt=2026-09-21T12:15:57Z closingReference="A one-line discrepancy in builder prose is not a product defect: independent read verified exact tree f648c06b and diff602316e3, actual54 lines stays below250. Acceptance dispositions record the corrected count; source and runtime proof unchanged." text="N-1: builder prose counted53 changed lines; exact reviewed diff has54. Correct count recorded in acceptance dispositions; source/hash and250-line boundary unchanged; no product fix required."
 - OpenedAt: 2026-09-21T03:36:50Z
-- Revision: 22
+- Revision: 23
 - Budget: elapsedLimit=5d2h attemptLimit=14 reservedJobMinutesLimit=720 activeJobLimit=8 reviewRoundLimit=3
 - BudgetExceptions: 5
 - Approved: by=human:Wido at=2026-09-22T11:19:20Z revision=13 opid=91ZNWW86BRWXQ80X7VAVEXRDY9-m1e-5a8337cd authority=proven digest=c846783d7d729316b0fdfdc7d3a7a3165636892ddfba94afb3b9ef25b262f71d episode=13
@@ -38,4 +38,5 @@ History:
 - 2026-09-22T15:05:40Z GJTHK963ZHYBYYKMC6KBDN4PV4-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic
 - 2026-09-22T15:42:18Z PPZ5PPNENC3BG8G3PMGFPCGHV3-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic
 - 2026-09-22T16:27:29Z 5CRMVKNHAEEPJGFGBQMBYJT3EN-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic
-Integrity: sha256=85e3b1eda56fe6f63ba1507e15f9f3b537ea8a23de331311d37559bfc4fa4c51
+- 2026-09-22T16:31:58Z R3JCCYQJZVXFASE9XTJZ0ZP9HY-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic
+Integrity: sha256=400ddd874a88ebb8b0ea31e8d8b8c0abe25e6d1da0b40e329083dc6b952515ec
