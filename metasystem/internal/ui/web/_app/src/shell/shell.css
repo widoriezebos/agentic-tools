@@ -1276,3 +1276,311 @@ body {
     display: none;
   }
 }
+
+/* -------------------------------------------------------- notifications -- */
+
+/*
+ * The steward's notifications: the bell and its count in the header, the
+ * history in a sheet from the right, and what has just arrived stacked at the
+ * bottom right above the drawer.
+ *
+ * The eight seconds a toast stands for is a CSS animation rather than a timer,
+ * because the page sets no timers: the animation's end is what removes it, and
+ * the hover and focus rules below are how a message cannot leave while it is
+ * being read. The reduced-motion block at the end keeps those eight seconds
+ * and drops the movement, which is why it is written out rather than left to
+ * the blanket rule above.
+ */
+
+.ms-bell {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/*
+ * The count sits on the bell's shoulder. It is outside the button so that it
+ * carries its own name — inside, a button's own label would swallow it and a
+ * screen reader would never hear the number.
+ */
+.ms-bell-count {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--ms-accent);
+  color: var(--ms-accent-fg);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.ms-sheet-body--notifications {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.ms-notifications-empty,
+.ms-notifications-problem {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text-2);
+}
+
+.ms-notifications-problem {
+  color: var(--ms-danger);
+}
+
+.ms-notifications-day {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The day is a label over its rows, not a title competing with the sheet's.
+   It scrolls with them: a heading pinned to the top of a padded scroller lets
+   the row behind it show in the padding above, and a day is a label, not a
+   thing to keep on screen. */
+.ms-notifications-heading {
+  margin: 0;
+  padding: 4px 0;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-notifications-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-notification {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface-2);
+}
+
+/* The row a toast was clicked to reach, so the click lands somewhere visible. */
+.ms-notification--focused {
+  border-color: var(--ms-accent);
+}
+
+.ms-notification-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-notification-time {
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+/* The message in full: a notification a human half-read is the reason this
+   panel exists, and a truncated copy of it would send them back to the log. */
+.ms-notification-message {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+/* The delivery gate, made visible. */
+.ms-notification-undelivered,
+.ms-toast-undelivered {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+.ms-notifications-more {
+  display: flex;
+  justify-content: center;
+}
+
+/*
+ * The stack. It stands above the drawer's bar rather than over it, because the
+ * bar is a control and a toast that covered it would take the composer away;
+ * and beneath the scrim, because opening the panel is reading these messages
+ * and the panel says the same thing in full.
+ */
+.ms-toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 64px;
+  z-index: var(--ms-z-chrome);
+  display: flex;
+  /* Newest on top. The stack is pinned at the bottom, so a new toast grows it
+     upwards and leaves the ones already standing exactly where they were. */
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+}
+
+.ms-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 8px 8px 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 8px;
+  background: var(--ms-surface);
+  box-shadow: var(--ms-shadow);
+}
+
+/*
+ * How long a toast lives, and the two ways it can spend that time.
+ *
+ * A standing toast is an alert or a handoff: it enters and then waits, because
+ * somebody has to answer it. A fading toast is the steward narrating: the one
+ * animation carries it in, holds it still, and fades it out, and its end is
+ * what removes it — one animation, one animationend, no timer anywhere.
+ */
+.ms-toast {
+  --toast-life: 8000ms;
+  --toast-enter: 180ms;
+}
+
+.ms-toast--standing {
+  animation: ms-toast-in var(--toast-enter) cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-toast--fading {
+  animation: ms-toast-life var(--toast-life) linear forwards;
+}
+
+/* Reading pauses the clock, and so does putting the keyboard in it: a message
+   must not leave while it is being read or while its close control is focused. */
+.ms-toasts:hover .ms-toast--fading,
+.ms-toasts:focus-within .ms-toast--fading {
+  animation-play-state: paused;
+}
+
+/* The body is the whole row and opens the panel at this message; it is a
+   button rather than the div so that a keyboard reaches it. */
+.ms-toast-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ms-toast-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-toast-message {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text);
+  overflow-wrap: anywhere;
+}
+
+@keyframes ms-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Enter, stand, leave — as one animation, so one end means one removal. */
+@keyframes ms-toast-life {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  3% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  92% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* The same eight seconds with nothing moving, for the block below. */
+@keyframes ms-toast-life-still {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 599px) {
+  .ms-toasts {
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+}
+
+/*
+ * Reduced motion keeps the timing and drops the movement.
+ *
+ * The blanket rule earlier in this file zeroes every duration, which for a
+ * toast would mean its life ended the instant it began — the animation is what
+ * removes it, so zero seconds is zero seconds on screen. These two rules are
+ * the exception: the fading toast still takes its eight seconds and simply
+ * does not move, and the standing toast, which only ever animated its entry,
+ * stops animating at all.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .ms-toast--fading {
+    animation-name: ms-toast-life-still;
+    animation-duration: var(--toast-life) !important;
+  }
+
+  .ms-toast--standing {
+    animation: none;
+  }
+}

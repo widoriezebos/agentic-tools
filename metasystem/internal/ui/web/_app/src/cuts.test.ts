@@ -8,12 +8,21 @@ import { describe, expect, it } from "vitest";
  *
  * This build requests only what a human asked for: each listed call site makes
  * its listed calls when its view mounts and again on Refresh or Retry, and
- * nothing else happens on its own. No event stream, no socket, no XHR, no
- * beacon, no polling timer, and no window event that refetches. Freshness is
- * the server's: its own loop keeps the accepted ledger current, so the page
- * never polls to stay up to date. The connection indicator, the health poll,
- * the rebuilt-executable notice, and the invalidation subscription are the
- * second cut's, and none of their files exists yet.
+ * nothing else happens on its own. No socket, no XHR, no beacon, no polling
+ * timer, and no window event that refetches. Freshness is the server's: its
+ * own loop keeps the accepted ledger current, so the page never polls to stay
+ * up to date. The connection indicator, the health poll, the rebuilt-executable
+ * notice, and the invalidation subscription are the second cut's, and none of
+ * their files exists yet.
+ *
+ * There is one event stream, and it is the one exception this guard carries.
+ * The steward's notifications are not something a human asks for: they are the
+ * steward speaking, at a moment nobody on this side chose, and the only ways
+ * to learn of one are to be told or to keep asking. Being told is one stream,
+ * opened once, that the browser reconnects by itself; asking is the poll this
+ * whole guard exists to prevent. So EventSource is allowed in exactly one
+ * file, for exactly one resource, and the rule that it is allowed nowhere else
+ * is asserted rather than relaxed.
  *
  * The guard reads code, not text. Every file is tokenized first: comments are
  * dropped, string and template literals are collected separately from the
@@ -99,7 +108,21 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // nothing here to poll for. The three resources are written out in full
   // rather than composed, so this row names what the file actually requests.
   ["shell/session.ts", 1, ["/api/session", "/api/session/sign-in", "/api/session/sign-out"]],
+  // The steward's notification history. One read on load, one more when a
+  // human presses "Load older", both through the one request below; what
+  // arrives after the load arrives on the stream named beside this list,
+  // which is why there is no second read here and no timer anywhere.
+  ["notifications/api.ts", 1, ["/api/notifications"]],
 ];
+
+/**
+ * The one place this build opens an event stream, and the one resource it
+ * opens. Both are asserted below: the file, so no second file can open one,
+ * and the resource, so this one cannot quietly become a stream over something
+ * else.
+ */
+const STREAM_SITE = "notifications/stream.ts";
+const STREAM_RESOURCE = "/api/notifications/stream";
 
 const HEALTH = "/-/health";
 
@@ -569,9 +592,11 @@ describe("the first cut", () => {
       }
     }
 
-    expect(Object.fromEntries(sites)).toEqual(
-      Object.fromEntries(CALL_SITES.map(([file, calls]) => [file, calls])),
-    );
+    // The stream site reaches the network once and by another name, so it is
+    // counted here and its own rules are asserted below.
+    const expected = new Map(CALL_SITES.map(([file, calls]): [string, number] => [file, calls]));
+    expected.set(STREAM_SITE, (expected.get(STREAM_SITE) ?? 0) + 1);
+    expect(Object.fromEntries(sites)).toEqual(Object.fromEntries(expected));
     for (const [file, calls, resources] of CALL_SITES) {
       expect({ file, fetches: scanned.get(file)?.identifiers.get("fetch") }).toEqual({ file, fetches: calls });
       for (const resource of resources) {
@@ -595,8 +620,16 @@ describe("the first cut", () => {
     expect(stringsMatching((value) => value.trim() === WRITE)).toEqual([]);
   });
 
-  it("opens no stream, socket, request object, or beacon, under any name", () => {
-    expect(filesNaming(["EventSource"])).toEqual([]);
+  it("opens one stream, in one file, for one resource, and no other", () => {
+    expect(filesNaming(["EventSource"])).toEqual([STREAM_SITE]);
+    expect(scanned.get(STREAM_SITE)?.identifiers.get("EventSource")).toBe(1);
+    expect(scanned.get(STREAM_SITE)?.strings).toContain(STREAM_RESOURCE);
+    // The one file that may open a stream may not also fetch: a file with
+    // both would be a second reader hiding behind the exception.
+    expect(scanned.get(STREAM_SITE)?.identifiers.get("fetch")).toBeUndefined();
+  });
+
+  it("opens no socket, request object, or beacon, under any name", () => {
     expect(filesNaming(["WebSocket"])).toEqual([]);
     expect(filesNaming(["XMLHttpRequest"])).toEqual([]);
     expect(filesNaming(["sendBeacon"])).toEqual([]);

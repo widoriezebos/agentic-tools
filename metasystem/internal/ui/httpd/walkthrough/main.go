@@ -9,6 +9,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -17,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
@@ -42,6 +44,11 @@ func main() {
 	// code it accepts.
 	secret := flag.String("secret", "JBSWY3DPEHPK3PXP", "synthetic one-time-code secret for the sign-in walkthrough")
 	human := flag.String("human", "", "the handle this fixture seat signs in as; empty makes the sheet ask")
+	// How often the fixture steward says something new. The notification
+	// panel reads a journal, and a journal that never grows shows only its
+	// history; this is what makes the live path — the stream, the toasts, the
+	// bell's count — something a human can stand in front of and watch.
+	notifyEvery := flag.Duration("notify-every", 0, "append a fixture notification this often; zero appends none")
 	flag.Parse()
 
 	manifest, err := web.ReadManifest()
@@ -74,12 +81,20 @@ func main() {
 			return nil
 		},
 	})
+	// The steward's journal, planted with a dozen entries across the four
+	// sources — including one the notifier refused, which is the delivery gate
+	// made visible — and then, with -notify-every, grown while the server runs.
+	journal := fixtureJournal(checkout)
+	if *notifyEvery > 0 {
+		go appendFixtureNotifications(journal, *notifyEvery)
+	}
 	info := httpd.Info{
 		Checkout: "/walkthrough", StartedAt: time.Now().UTC().Format(time.RFC3339),
 		EngineBuild: "walkthrough", BundleDigest: manifest.SourceDigest,
-		Observe:   state.observe,
-		Authority: authority,
-		Sessions:  sessions,
+		NotificationJournal: journal,
+		Observe:             state.observe,
+		Authority:           authority,
+		Sessions:            sessions,
 		// The walkthrough's acts ignore the hand that reached them: it has
 		// no ledger to record one in, and the point of this server is the
 		// board rather than the proof.
@@ -512,4 +527,131 @@ func (l *ledger) withdraw(id, reason string) error {
 	file.Approved, file.Budget = nil, nil
 	_ = reason
 	return nil
+}
+
+// The walkthrough's notification journal.
+//
+// A dozen entries across the four sources and across three days, so the
+// panel's day headings have something to head and its rows have something to
+// differ by, and two of them undelivered, so the line a human most needs to
+// see — the steward tried and the channel refused — is on the page rather
+// than described in a design.
+//
+// It is written into the walkthrough's own throwaway checkout, under the path
+// the steward would have written it to, and read through the same package the
+// engine reads the real one with.
+func fixtureJournal(checkout string) string {
+	path := filepath.Join(checkout, "artifacts", "agents", "steward", "notifications.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		log.Fatalf("cannot make the walkthrough journal: %v", err)
+	}
+	now := time.Now().UTC()
+	planted := []struct {
+		ago       time.Duration
+		source    string
+		ref       string
+		message   string
+		delivered bool
+		problem   string
+	}{
+		{50 * time.Hour, "steward", "", "steward: the runner is armed and ticking", true, ""},
+		{49 * time.Hour, "verdict", "verdict-stalled-alive", "steward: seat m1e+coordinator is stalled but alive \u2014 reviving", true, ""},
+		{48 * time.Hour, "steward", "", "steward: reaped 3 finished workers", true, ""},
+		{27 * time.Hour, "alert", "alert-9f2c1a7b4e6d8035-1", "HEALTH unhealthy \u2014 the repository watcher is dead", true, ""},
+		{26 * time.Hour, "steward", "", "steward: the repository watcher was restarted", true, ""},
+		{25*time.Hour + 30*time.Minute, "handoff", "handoff-500000000000000a", "steward: seat m2a+implementer is handing g1-s19 back \u2014 your turn", true, ""},
+		{5 * time.Hour, "steward", "", "steward: the accepted ledger advanced to c5d517f", true, ""},
+		{4 * time.Hour, "alert", "alert-3b71c0de95a24f18-1", "HEALTH unhealthy \u2014 the steward runner is stale", false,
+			"notification not delivered: exit status 1 (osascript is not permitted to send notifications)"},
+		{3*time.Hour + 20*time.Minute, "alert", "alert-3b71c0de95a24f18-1", "HEALTH unhealthy \u2014 the steward runner is stale", true, ""},
+		{2 * time.Hour, "verdict", "verdict-budget-spent", "steward: g1-s14 has spent its elapsed budget \u2014 the seat is paused", true, ""},
+		{40 * time.Minute, "steward", "", "steward: a question is waiting for you on g1-s15", true, ""},
+		{6 * time.Minute, "handoff", "handoff-500000000000000b", "steward: seat m1e+coordinator is handing g1-s12 back \u2014 your turn", false,
+			"notification not delivered: exit status 127 (terminal-notifier: command not found)"},
+	}
+	lines := []string{}
+	for index, entry := range planted {
+		at := now.Add(-entry.ago)
+		record := map[string]any{
+			"id":        fixtureNotificationID(at, index),
+			"at":        at.Format(time.RFC3339),
+			"message":   entry.message,
+			"source":    entry.source,
+			"delivered": entry.delivered,
+		}
+		if entry.ref != "" {
+			record["ref"] = entry.ref
+		}
+		if !entry.delivered {
+			record["error"] = entry.problem
+		}
+		encoded, err := json.Marshal(record)
+		if err != nil {
+			log.Fatalf("cannot write the walkthrough journal: %v", err)
+		}
+		lines = append(lines, string(encoded))
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		log.Fatalf("cannot write the walkthrough journal: %v", err)
+	}
+	fmt.Println("journal " + path)
+	return path
+}
+
+// appendFixtureNotifications grows the journal while the server runs, so the
+// stream, the toasts and the bell's count can be watched rather than imagined.
+// The sources rotate, and every fourth one is undelivered.
+func appendFixtureNotifications(path string, every time.Duration) {
+	sources := []string{"steward", "alert", "handoff", "verdict"}
+	messages := []string{
+		"steward: the accepted ledger advanced",
+		"HEALTH unhealthy \u2014 the hook has not run in 40 minutes",
+		"steward: seat m2a+implementer is handing g1-s20a back \u2014 your turn",
+		"steward: g1-s13 has spent its attempt budget",
+	}
+	for count := 0; ; count++ {
+		time.Sleep(every)
+		at := time.Now().UTC()
+		source := sources[count%len(sources)]
+		record := map[string]any{
+			"id":        fixtureNotificationID(at, count),
+			"at":        at.Format(time.RFC3339),
+			"message":   messages[count%len(messages)],
+			"source":    source,
+			"delivered": count%4 != 3,
+		}
+		if count%4 == 3 {
+			record["error"] = "notification not delivered: exit status 1"
+		}
+		encoded, err := json.Marshal(record)
+		if err != nil {
+			continue
+		}
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			continue
+		}
+		_, _ = file.Write(append(encoded, '\n'))
+		_ = file.Close()
+	}
+}
+
+// fixtureNotificationID writes an identity the interface can sort: the same
+// Crockford base32 encoding of a millisecond timestamp the steward mints, with
+// the sequence where the randomness would be, so a walkthrough's ids are
+// stable and ordered rather than random.
+func fixtureNotificationID(at time.Time, sequence int) string {
+	const alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+	value := uint64(at.UnixMilli())
+	id := make([]byte, 26)
+	for index := 25; index >= 0; index-- {
+		if index >= 10 {
+			id[index] = alphabet[uint64(sequence)&0x1f]
+			sequence >>= 5
+			continue
+		}
+		id[index] = alphabet[value&0x1f]
+		value >>= 5
+	}
+	return string(id)
 }

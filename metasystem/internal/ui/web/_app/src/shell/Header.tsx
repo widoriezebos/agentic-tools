@@ -6,12 +6,18 @@ import { SignInControl } from "./SignInControl";
 import { WorkspaceIdentity } from "./WorkspaceIdentity";
 import { Help } from "../help/Help";
 import type { HelpId } from "../help/terms";
+import { NotificationsBell } from "../notifications/Bell";
 
 /**
  * The header: who this workspace is on the left, where you are in the middle,
- * and who the server is acting as beside the Project Partner's toggle on the
- * right. The drawer along the bottom carries the same toggle; this one is
- * where a keyboard reaches it without crossing the whole page.
+ * and, on the right, what the steward has said, who the server is acting as,
+ * and the Project Partner's toggle. The drawer along the bottom carries the
+ * same toggle; this one is where a keyboard reaches it without crossing the
+ * whole page.
+ *
+ * The bell comes first in that cluster because it is the only control there
+ * that changes on its own: the other two say what is already true, and this
+ * one is where something new arrives.
  *
  * The section's name carries the help for the section: it is the one place
  * every page names what it is, so it is where "what is this for" belongs.
@@ -64,6 +70,7 @@ export function Header({
         </span>
       </div>
       <div className="ms-header-right">
+        <NotificationsBell />
         <SignInControl />
         <IconButton
           label="Project Partner drawer"

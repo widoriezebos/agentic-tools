@@ -11,7 +11,7 @@ import {
 import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 /**
- * The thirteen keys this build remembers, and nothing else.
+ * The fourteen keys this build remembers, and nothing else.
  *
  * Every access is wrapped: a browser with site data blocked throws on the very
  * first read, and view state is never worth an error a human has to read. An
@@ -84,6 +84,17 @@ export const BACKLOG_ARC_KEY = "ms.ui.backlog.filter.arc";
 
 /** How far back the Done lane reaches, in days, or "all". */
 export const BACKLOG_DONE_KEY = "ms.ui.backlog.done";
+
+/**
+ * The newest notification this viewer has seen.
+ *
+ * It is a per-viewer convenience of exactly the kind this file is for: what is
+ * unread is what sorts above it, and a browser with site data blocked counts
+ * everything as unread rather than failing. The server keeps no such mark —
+ * two people at two browsers on the same workspace have read different things,
+ * and a mark the server held would be one of them overwriting the other.
+ */
+export const NOTIFICATIONS_SEEN_KEY = "ms.ui.notifications.seen";
 
 /**
  * What the drawer is worth, in the work area's own height.
@@ -257,4 +268,13 @@ export function readDoneWindow(store: Store | null = browserStore()): Window {
 
 export function writeDoneWindow(days: Window, store: Store | null = browserStore()): void {
   write(BACKLOG_DONE_KEY, windowTitle(days), store);
+}
+
+/** The newest notification this viewer has seen, or null for none. */
+export function readNotificationsSeen(store: Store | null = browserStore()): string | null {
+  return read(NOTIFICATIONS_SEEN_KEY, store);
+}
+
+export function writeNotificationsSeen(id: string, store: Store | null = browserStore()): void {
+  write(NOTIFICATIONS_SEEN_KEY, id, store);
 }

@@ -92,6 +92,13 @@ type Info struct {
 	// for the reason the readers are: what the browser prefills from is what
 	// the next read of the configuration will say.
 	BudgetDefaults func() (map[string]goalbudget.Budget, error)
+	// NotificationJournal is the file the steward appends one line to for
+	// every notification it attempts to deliver. It is a path rather than a
+	// reader because the two routes that serve it read it differently — a
+	// page of it, and everything appended after a point — and both readings
+	// are the notifications package's. An empty path is an engine with no
+	// journal, which those routes say.
+	NotificationJournal string
 }
 
 // absentBundleStatement is what a page request gets from an engine built
@@ -222,6 +229,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == backlogPath {
 		h.backlog(w)
+		return
+	}
+	if r.URL.Path == notificationsPath {
+		h.notifications(w, r)
+		return
+	}
+	// The stream is a read like any other and takes the same checks above;
+	// what is different is that it does not end when the response is written.
+	if r.URL.Path == notificationsStreamPath {
+		h.notificationStream(w, r)
 		return
 	}
 	if r.URL.Path == projectPath {

@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
@@ -358,6 +359,11 @@ func runUI(verb string, args []string) int {
 					BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 						return tierBudgets(roots.Installation)
 					},
+					// The steward's notification journal, in this checkout.
+					// The steward writes it as a side effect of reaching the
+					// operator; the interface reads it and nothing else of
+					// the steward's, and never writes to it.
+					NotificationJournal: steward.NotificationJournalPath(roots.Checkout),
 				}, bound, bundle)
 			},
 			Ready: func(address string) {

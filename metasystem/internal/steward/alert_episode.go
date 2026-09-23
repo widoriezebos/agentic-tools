@@ -469,7 +469,12 @@ func submitEpisode(repoRoot string, episode *AlertEpisode, now time.Time) error 
 		}
 	}
 
-	transportErr := Deliver(repoRoot, episode.Message)
+	// The alert names itself in the journal: source alert, and the episode
+	// id the acknowledgment verb takes, so the interface's row and the
+	// episode on disk are the same event.
+	transportErr := DeliverNotice(repoRoot, Notice{
+		Message: episode.Message, Source: NoticeAlert, Ref: episode.EpisodeID,
+	})
 	completedAt := time.Now().UTC()
 	if len(episode.Attempts) < attempt.Sequence || episode.Attempts[attempt.Sequence-1].Result != TransportPending {
 		return fmt.Errorf("alert episode %s transport attempt changed before completion", episode.EpisodeID)

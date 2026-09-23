@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:333061cf1c432e62a5c5046ba8fc271e5af847623a6f8dfc04ebd276f1164cfe",
+  "sourceDigest": "sha256:b364a61c78a92a752d4982374e79181e2e18d1a02671a4e93a94172d555610c4",
   "source": [
     {
       "path": ".npmrc",
@@ -60,7 +60,7 @@
     },
     {
       "path": "src/App.tsx",
-      "sha256": "d91d83dd41660593f271c56cda75b5a545620d85ce127c11100022b2283f3b8c"
+      "sha256": "cfe511a8d8911712fae3b62f016618449c2652a6aa14548651fa6ab9a611449b"
     },
     {
       "path": "src/backlog/ActSheet.tsx",
@@ -200,7 +200,7 @@
     },
     {
       "path": "src/cuts.test.ts",
-      "sha256": "60f3ebbf9d719b7ff68a72d51576b29b43f9c5fe01834ee9037b0fa5164a6880"
+      "sha256": "f951c76b9a127cb1bdc2d7cc9e472bd1c710e003524a4966054238919786dce3"
     },
     {
       "path": "src/fonts.css",
@@ -241,6 +241,38 @@
     {
       "path": "src/nonce.ts",
       "sha256": "33883cf8c5bd94e1c9add287158fabf65d5e53ffd08e88c433c090f6e2d8ddf7"
+    },
+    {
+      "path": "src/notifications/Bell.tsx",
+      "sha256": "33e313b3fdba5d6f5051cb27d369a23f497068bcf9d1246d664ba7ac26a4c5e4"
+    },
+    {
+      "path": "src/notifications/Panel.tsx",
+      "sha256": "ab682e94b1e45631df6d769b5ad2a24aa2a7fc127bf56d9aebc439a642f8fce8"
+    },
+    {
+      "path": "src/notifications/Toasts.tsx",
+      "sha256": "7aca5698a26b69ca6845e739b01bb7c5ca8c853d74883388d6196a2aa9b5630d"
+    },
+    {
+      "path": "src/notifications/api.ts",
+      "sha256": "760ea744ae9dca062e78be89e9fd57df54dfbf62949f40c073799d0e72a23976"
+    },
+    {
+      "path": "src/notifications/notifications.test.ts",
+      "sha256": "3320157c66aaae157be2bac21569a8b8de82cd9ada4652341589138d9070fb68"
+    },
+    {
+      "path": "src/notifications/notifications.ts",
+      "sha256": "e81972d043936be74a9539b9214c99d27471fbc9560dcd7f838b910d00dd0181"
+    },
+    {
+      "path": "src/notifications/store.tsx",
+      "sha256": "f1a1daf77bc129847f6f494976b47e8f2b8f60ad5a446eb493d0403398e6d94f"
+    },
+    {
+      "path": "src/notifications/stream.ts",
+      "sha256": "43784d8c0badc20a62610c3f0aad977d23e04f44294428defcca3d46a571f581"
     },
     {
       "path": "src/panes/Brain.tsx",
@@ -384,7 +416,7 @@
     },
     {
       "path": "src/shell/Header.tsx",
-      "sha256": "fb0f260e6e37c881daf566a6b699b2c3d7cb2184c3fe4fac50a2b5fb6db358ea"
+      "sha256": "55814facba9aa402cb4cbd5c68bbf15a30622ea2ad4374200d024a96a5115597"
     },
     {
       "path": "src/shell/Rail.tsx",
@@ -396,7 +428,7 @@
     },
     {
       "path": "src/shell/Shell.tsx",
-      "sha256": "1bdd0664e3f7ba6c3971f9728f09d296e6a253d7122ff36fe1969e4c9c2d835e"
+      "sha256": "7057f3d0b93c84ca582df94d8c3a02f0d545a8d866af564d61cae0e986a07ef6"
     },
     {
       "path": "src/shell/SignInControl.tsx",
@@ -444,7 +476,7 @@
     },
     {
       "path": "src/shell/shell.css",
-      "sha256": "c2c9f64b6edc9e23b684b86ede68248cbaa16b81f41b76f75221074d47b18f27"
+      "sha256": "4f426755ef79394896185f7c604e934eeb1178ca9f837fef581726a1c1eb9bdc"
     },
     {
       "path": "src/shell/workspace.ts",
@@ -456,7 +488,7 @@
     },
     {
       "path": "src/storage.ts",
-      "sha256": "75af48ed2eef0bff8469061946f5dd752e7ba8842b2b84f17448074baf3ddcb8"
+      "sha256": "e26c66292b18ceb13cde77a60af226a90c8918ad976f4da838649c03adf60d48"
     },
     {
       "path": "src/theme.test.ts",
@@ -476,7 +508,7 @@
     },
     {
       "path": "src/title.ts",
-      "sha256": "362ba9e3a8f6be1e3df5a6b4a9654edcc61bac0d9fb2f32abfd42a0fec09eaa9"
+      "sha256": "a6e2e458b09672868c537c0d846d4f8c500acaa03d49ad4e9bb2914aa228218c"
     },
     {
       "path": "src/tokens.css",
@@ -502,11 +534,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "edd2d7478d3aa6ed7e554caedcc14d487c4d9994f0e5eb3586bd9c1e56e177ca"
+      "sha256": "a3c3580b37d992907754a73d66e2174120bcdee5ac58c4af7ec81626b4b1b768"
     },
     {
       "path": "assets/index.js",
-      "sha256": "52648e3e0ee9c85feea3937f34ff16481280b4fbfa35c81b024afc3f05b0853c"
+      "sha256": "597143f5ea04d6ca0ea9452ac8ea8ed67f3dd56f069f72164510fce77dee66c3"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
