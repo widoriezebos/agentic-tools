@@ -1,6 +1,7 @@
 package overview
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -543,4 +544,19 @@ func TestFirstSentence(t *testing.T) {
 func changedAt(record project.Record, at string) project.Record {
 	record.ChangedAt = at
 	return record
+}
+
+func TestLedeIsTheFirstSentenceAndNeverLong(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ in, want string }{
+		{"Finish these repairs. Then push.", "Finish these repairs."},
+		{"One line with no stop", "One line with no stop"},
+		{"Spread   over\nlines. Next.", "Spread over lines."},
+		{strings.Repeat("word ", 40) + "end", strings.TrimRight(strings.Repeat("word ", 28), " ") + "…"},
+	}
+	for _, c := range cases {
+		if got := lede(c.in); got != c.want {
+			t.Errorf("lede(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
 }

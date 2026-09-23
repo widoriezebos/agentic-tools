@@ -221,3 +221,13 @@
     gap: 20px;
   }
 }
+
+/* A row is one thing, not a paragraph: a title longer than two lines is cut,
+   and the whole of it is one click away. */
+.ms-overview-item .ms-overview-link,
+.ms-overview-row .ms-overview-link {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

@@ -496,7 +496,7 @@ func concludedSince(rows, closed []backlog.Row, since time.Time) Group {
 	// a chip repeating its own heading is a chip that says nothing.
 	return group(len(done), take(done, longList), func(row backlog.Row) Item {
 		return Item{
-			ID: row.ID, Title: row.Intent, Note: row.Concluded, At: row.DoneAt,
+			ID: row.ID, Title: lede(row.Intent), Note: row.Concluded, At: row.DoneAt,
 			Where: Where{Kind: WhereGoal, ID: row.ID},
 		}
 	})
@@ -522,7 +522,7 @@ func movedSince(rows []backlog.Row, since time.Time) Group {
 	sort.SliceStable(moved, func(i, j int) bool { return moved[i].LastChangeAt > moved[j].LastChangeAt })
 	return group(len(moved), take(moved, longList), func(row backlog.Row) Item {
 		return Item{
-			ID: row.ID, Title: row.Intent, Note: row.LastVerb, At: row.LastChangeAt,
+			ID: row.ID, Title: lede(row.Intent), Note: row.LastVerb, At: row.LastChangeAt,
 			Where: Where{Kind: WhereGoal, ID: row.ID},
 		}
 	})
@@ -580,7 +580,7 @@ func inProgress(rows []backlog.Row) []Claimed {
 		if row.Lane != backlog.LaneInProgress {
 			continue
 		}
-		one := Claimed{ID: row.ID, Title: row.Intent, Phase: row.Phase}
+		one := Claimed{ID: row.ID, Title: lede(row.Intent), Phase: row.Phase}
 		if row.Claim != nil {
 			one.Seat = Seat{Machine: row.Claim.Machine, Lineage: row.Claim.Lineage}
 			one.At = row.Claim.At
@@ -639,7 +639,7 @@ func waiting(rows []backlog.Row) Waiting {
 		return left < right
 	})
 	oldest := held[0]
-	block.ID, block.Title, block.Since = oldest.ID, oldest.Intent, since(oldest)
+	block.ID, block.Title, block.Since = oldest.ID, lede(oldest.Intent), since(oldest)
 	block.Reason = reasonFor(oldest)
 	return block
 }
@@ -897,7 +897,7 @@ func countDone(goals []string, states map[string]string) int {
 func goalItem(note string) func(backlog.Row) Item {
 	return func(row backlog.Row) Item {
 		return Item{
-			ID: row.ID, Title: row.Intent, Note: note, At: row.OpenedAt,
+			ID: row.ID, Title: lede(row.Intent), Note: note, At: row.OpenedAt,
 			Where: Where{Kind: WhereGoal, ID: row.ID},
 		}
 	}
@@ -969,4 +969,31 @@ func stamp(at time.Time) string {
 		return ""
 	}
 	return at.UTC().Format(time.RFC3339)
+}
+
+// ledeRunes is how much of a goal's intent a row shows. A ledger goal with no
+// heading of its own is known by its intent, which here runs to paragraphs;
+// a row is one line, so it carries the first sentence, and no more than this.
+const ledeRunes = 140
+
+// lede is the first sentence of a text, cut at a sentence end and then at the
+// last word boundary before ledeRunes, with an ellipsis where it was cut. The
+// whole text is one click away on the goal's page.
+func lede(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if at := strings.Index(text, ". "); at >= 0 {
+		text = text[:at+1]
+	}
+	runes := []rune(text)
+	if len(runes) <= ledeRunes {
+		return text
+	}
+	cut := ledeRunes
+	for cut > 0 && runes[cut] != ' ' {
+		cut--
+	}
+	if cut == 0 {
+		cut = ledeRunes
+	}
+	return strings.TrimRight(string(runes[:cut]), " ,;:") + "…"
 }
