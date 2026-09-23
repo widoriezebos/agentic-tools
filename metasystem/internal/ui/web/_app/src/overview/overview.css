@@ -87,11 +87,12 @@
   color: var(--ms-text-3);
 }
 
+/* A blocker's words are a fact about the work, not an error on this page. */
 .ms-overview-reason {
   margin: 0 0 12px;
   font-size: 13px;
   line-height: 18px;
-  color: var(--ms-danger);
+  color: var(--ms-text-3);
   overflow-wrap: anywhere;
 }
 

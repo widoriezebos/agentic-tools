@@ -226,3 +226,13 @@ func overviewPage(t *testing.T, served http.Handler, what string) overview.Page 
 	testutil.Require(t, what+": decode the response", json.Unmarshal(response.Body.Bytes(), &page), nil)
 	return page
 }
+
+func TestHumanDurationSpeaksLikeAPerson(t *testing.T) {
+	t.Parallel()
+	cases := map[time.Duration]string{30 * time.Minute: "30 minutes", 2 * time.Hour: "2 hours", 90 * time.Minute: "1 hour 30 minutes", 45 * time.Second: "45 seconds", time.Minute: "1 minute"}
+	for d, want := range cases {
+		if got := humanDuration(d); got != want {
+			t.Errorf("humanDuration(%s) = %q, want %q", d, got, want)
+		}
+	}
+}

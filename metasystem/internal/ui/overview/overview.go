@@ -640,7 +640,7 @@ func waiting(rows []backlog.Row) Waiting {
 	})
 	oldest := held[0]
 	block.ID, block.Title, block.Since = oldest.ID, lede(oldest.Intent), since(oldest)
-	block.Reason = reasonFor(oldest)
+	block.Reason = lede(reasonFor(oldest))
 	return block
 }
 

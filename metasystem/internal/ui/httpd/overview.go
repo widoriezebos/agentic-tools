@@ -15,6 +15,7 @@ package httpd
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
@@ -158,5 +159,29 @@ func ledgerStatement(read ledgerPayload, judged overview.Ledger) string {
 }
 
 func staleAfter(read ledgerPayload) string {
-	return (time.Duration(read.StaleAfterSeconds) * time.Second).String()
+	return humanDuration(time.Duration(read.StaleAfterSeconds) * time.Second)
+}
+
+// humanDuration says a duration the way a person would: "30 minutes",
+// "2 hours", "1 hour 30 minutes", "45 seconds". Go's own form, "30m0s", is
+// for logs.
+func humanDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	hours, minutes, seconds := int(d/time.Hour), int(d%time.Hour/time.Minute), int(d%time.Minute/time.Second)
+	unit := func(n int, word string) string {
+		if n == 1 {
+			return "1 " + word
+		}
+		return strconv.Itoa(n) + " " + word + "s"
+	}
+	switch {
+	case hours > 0 && minutes > 0:
+		return unit(hours, "hour") + " " + unit(minutes, "minute")
+	case hours > 0:
+		return unit(hours, "hour")
+	case minutes > 0:
+		return unit(minutes, "minute")
+	default:
+		return unit(seconds, "second")
+	}
 }
