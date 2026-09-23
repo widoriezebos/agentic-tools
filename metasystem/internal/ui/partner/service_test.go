@@ -28,8 +28,11 @@ func TestATurnIsAdmittedStreamedAndWrittenDown(t *testing.T) {
 	testutil.Expect(t, "with a turn", turn != "", true)
 
 	beats := collect(t, events, partner.EventDone)
-	testutil.Expect(t, "the activity line", beats[0].Kind, partner.EventActivity)
-	testutil.Expect(t, "then the text", beats[1].Kind, partner.EventText)
+	// The page the human was looking at is the first thing the answer was read
+	// from, and it is a beat of its own before anything the Partner chose.
+	testutil.Expect(t, "the page is looked at first", beats[0].Kind, partner.EventLook)
+	testutil.Expect(t, "the activity line", beats[1].Kind, partner.EventActivity)
+	testutil.Expect(t, "then the text", beats[2].Kind, partner.EventText)
 	testutil.Expect(t, "the sequence starts at one", beats[0].Seq, 1)
 	testutil.Expect(t, "and counts up", beats[1].Seq, 2)
 	testutil.Expect(t, "every beat names its turn", beats[0].Turn, turn)
@@ -146,9 +149,10 @@ func TestAFreshSessionIsGivenTheHistoryAndSaysHowMuch(t *testing.T) {
 	_, err = service.Submit(context.Background(), "Wido", "key-2", "and now?", partner.Page{Section: "Backlog"})
 	testutil.Require(t, "admitted again", err, nil)
 	beats := collect(t, events, partner.EventDone)
-	testutil.Expect(t, "the first beat is the activity line", beats[0].Kind, partner.EventActivity)
+	testutil.Expect(t, "the page is looked at first", beats[0].Kind, partner.EventLook)
+	testutil.Expect(t, "then the activity line", beats[1].Kind, partner.EventActivity)
 	testutil.Expect(t, "it says a fresh session was opened",
-		strings.Contains(beats[0].Text, "a fresh one was opened and given the last 2 messages"), true)
+		strings.Contains(beats[1].Text, "a fresh one was opened and given the last 2 messages"), true)
 }
 
 // An empty question is not a turn.

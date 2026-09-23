@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:07ca10d9506ea2039336b03d763b46b66b33d5b4371b65555c8a9b30399501ce",
+  "sourceDigest": "sha256:e634382a06444286291d89271748c7dfd24411af2c5a6129205dba4fe40b6d04",
   "source": [
     {
       "path": ".npmrc",
@@ -244,7 +244,7 @@
     },
     {
       "path": "src/help/terms.test.ts",
-      "sha256": "c13d76a4804ec8a1cdaa06d550f868da5d7956d12087b4cbc935ebdf5afd0b1d"
+      "sha256": "579a0fce543dc17c7ef9502b3db5c34d190d955ccdc47b2a250868ec8063001d"
     },
     {
       "path": "src/help/terms.ts",

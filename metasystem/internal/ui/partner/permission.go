@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/acp"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
 
 // The permission point: the backstop above the runtime's own read-only
@@ -33,11 +34,71 @@ type permissionRequest struct {
 		ToolCallID string `json:"toolCallId"`
 		Title      string `json:"title"`
 		Kind       string `json:"kind"`
-		Locations  []struct {
+		// Name is the tool's own name where the runtime carries one. An MCP
+		// tool has no checkout path and no read kind, so this is the only
+		// field that can say which tool it is.
+		Name string `json:"name"`
+		// Meta is where Claude's adapter puts the same name again, beside the
+		// server that serves it.
+		Meta struct {
+			ClaudeCode struct {
+				ToolName  string `json:"toolName"`
+				MCPServer struct {
+					Name string `json:"name"`
+				} `json:"mcpServer"`
+			} `json:"claudeCode"`
+		} `json:"_meta"`
+		Locations []struct {
 			Path string `json:"path"`
 		} `json:"locations"`
 	} `json:"toolCall"`
 	Options []acp.PermissionOption `json:"options"`
+}
+
+// The one named exception, and how a runtime spells it.
+//
+// The interface's own tool server is handed to the session at session/new, and
+// its calls arrive here looking like nothing this point could classify: kind
+// "other", no location, and a title that is the tool's name. That is not a
+// runtime misbehaving — it is what an application tool looks like — so the
+// point names the exception rather than widening the rule around it: a call
+// whose tool name is this server's, followed by one of the eight operations,
+// is admitted, and everything else is refused exactly as before.
+//
+// The separators below are every way a runtime has been seen to join a server
+// to a tool. Claude presents mcp__metasystem__board; the prefix is stripped
+// first so that the server's own name is what is matched, never a substring of
+// somebody else's.
+var toolSeparators = []string{"__", ".", "/", ":", "-"}
+
+var mcpPrefixes = []string{"mcp__", "mcp.", "mcp:", "mcp/"}
+
+// toolOperation answers which of this server's operations a request names, out
+// of every field a runtime might carry the name in.
+func toolOperation(names ...string) (string, bool) {
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		for _, prefix := range mcpPrefixes {
+			if strings.HasPrefix(name, prefix) {
+				name = name[len(prefix):]
+				break
+			}
+		}
+		for _, separator := range toolSeparators {
+			prefix := uitools.ServerName + separator
+			if !strings.HasPrefix(name, prefix) {
+				continue
+			}
+			operation := name[len(prefix):]
+			if uitools.Names(operation) {
+				return operation, true
+			}
+		}
+	}
+	return "", false
 }
 
 // decision is what the point decided about one request, and the sentence the
@@ -62,6 +123,20 @@ func judge(params json.RawMessage, sessionID, checkout string) decision {
 		return refusal(request.Options, "a permission request for another session")
 	}
 	what := describe(request.ToolCall.Title, request.ToolCall.Kind)
+	// The named exception, before the classification, because the exception is
+	// exactly the shape the classification cannot read.
+	if operation, named := toolOperation(
+		request.ToolCall.Name,
+		request.ToolCall.Meta.ClaudeCode.ToolName,
+		request.ToolCall.Title,
+	); named {
+		answer := acp.MapVerdict(acp.VerdictAllow, request.Options)
+		if answer.Outcome != "selected" {
+			return refusal(request.Options, what)
+		}
+		return decision{answer: answer, allowed: true,
+			activity: "Allowed a read through the interface's own tools: " + operation}
+	}
 	if request.ToolCall.Kind != "read" {
 		return refusal(request.Options, what)
 	}

@@ -20,8 +20,11 @@ package partner
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
 
 // Runtime is one admitted agent runtime, resolved for one checkout.
@@ -50,6 +53,77 @@ type Runtime struct {
 	// Install is the line a human runs when the command is not there. Only
 	// the two adapters have one; Devin is installed as a CLI, not by us.
 	Install string
+	// Tools is the interface's own read tools, handed to the session at
+	// session/new. Nil hands none, which is the walkthrough's canned server
+	// and nothing else.
+	Tools *ToolServer
+}
+
+// ToolServer is the one tool server this Partner is given: the engine itself,
+// over stdio, answering the eight read operations from the same readers the
+// pages are composed from.
+//
+// It is handed over through the protocol's own tool-server hand-off rather
+// than configured into the runtime, because the runtime's configuration is the
+// read-only contract and must not be the place a tool arrives. Claude's
+// adapter merges what session/new names into its own server map; Codex's
+// adapter takes stdio servers; Devin's release notes name the same hand-off.
+// Every one of them starts the command below itself and closes it with the
+// session.
+type ToolServer struct {
+	// Name is what the server is called on the wire, which is also how a
+	// runtime composes the tool names it presents to the model.
+	Name string
+	// Command and Args are the process the runtime starts.
+	Command string
+	Args    []string
+	// Env is what this seat adds to that process's environment, as NAME=value.
+	Env []string
+}
+
+// ToolsFor names the tool server for one checkout: this executable, with the
+// hidden verb that serves the interface's read tools over stdio.
+//
+// It is this executable rather than a configured path because the tools ARE
+// the engine: a second binary could answer a different ledger than the pages
+// do, and the whole point of the hand-off is that it cannot.
+func ToolsFor(checkout, installation string) (*ToolServer, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("this seat cannot name its own executable, so the Partner gets no read tools: %w", err)
+	}
+	// Both roots are named, because the runtime starts this process from
+	// whatever directory it happens to be in: a tool server that derived its
+	// installation from its own working directory would be a tool server that
+	// worked in a test and failed the moment an adapter started it.
+	return &ToolServer{
+		Name:    uitools.ServerName,
+		Command: executable,
+		Args:    []string{"ui", "tools", "--root", checkout, "--metasystem-root", installation},
+	}, nil
+}
+
+// wire is the tool server as session/new carries it: a stdio server, with no
+// `type` member at all, which is the shape every adapter reads as stdio.
+func (t *ToolServer) wire() []any {
+	if t == nil {
+		return []any{}
+	}
+	env := make([]any, 0, len(t.Env))
+	for _, entry := range t.Env {
+		name, value, found := strings.Cut(entry, "=")
+		if !found {
+			continue
+		}
+		env = append(env, map[string]any{"name": name, "value": value})
+	}
+	args := make([]any, 0, len(t.Args))
+	for _, argument := range t.Args {
+		args = append(args, argument)
+	}
+	return []any{map[string]any{
+		"name": t.Name, "command": t.Command, "args": args, "env": env,
+	}}
 }
 
 // Names are the runtimes this slice admits. A fourth is a new file and a new

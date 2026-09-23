@@ -1,0 +1,182 @@
+[
+  {
+    "id": "intent",
+    "term": "Intent",
+    "text": "Why this project exists and what it must and must not become. It is the standing answer to what we are building and for whom. Every goal serves it, and when it changes, the change is written here first."
+  },
+  {
+    "id": "doctrine",
+    "term": "Doctrine",
+    "text": "The rules every design is held to, decided once so nobody argues them again per goal: the architecture, the principles, the shape of the code. A design that breaks doctrine is either wrong or a proposal to change doctrine."
+  },
+  {
+    "id": "decisions",
+    "term": "Decisions",
+    "text": "Choices that were made, and the reasons, kept so later work can rely on them instead of deciding again. One page per decision. A decision that is overturned is superseded, never deleted."
+  },
+  {
+    "id": "designs",
+    "term": "Designs",
+    "text": "How a piece of work will be built, written before it is built. A design says what the work does and does not do. When the work ships, the design's status becomes done."
+  },
+  {
+    "id": "design-work",
+    "term": "Work",
+    "text": "The goals this design names, with their ledger states. When every one has landed, the design can be marked done."
+  },
+  {
+    "id": "questions",
+    "term": "Open questions",
+    "text": "What nobody has answered yet. One row per question, with when it was opened and, once settled, what answered it."
+  },
+  {
+    "id": "documents",
+    "term": "Documents",
+    "text": "The rest of the checkout's Markdown, listed by path. Nothing here declares what kind of record it is, so read it as writing, not as a record."
+  },
+  {
+    "id": "slices",
+    "term": "Slices",
+    "text": "The pieces a goal is built in, each small enough to ship on its own, listed by the design that governs it. The first slice is the smallest thing that works."
+  },
+  {
+    "id": "goal-decisions",
+    "term": "Decisions for this goal",
+    "text": "The decisions whose Goals line names this goal. Project-wide decisions live under Project."
+  },
+  {
+    "id": "goal-designs",
+    "term": "Designs for this goal",
+    "text": "The designs whose Goals line names this goal, with the slices each one planned."
+  },
+  {
+    "id": "goal-questions",
+    "term": "Open questions for this goal",
+    "text": "The questions opened about this goal that nobody has answered yet."
+  },
+  {
+    "id": "overview",
+    "term": "Overview",
+    "text": "What needs you, and what changed since you last looked, with links to the records behind it."
+  },
+  {
+    "id": "overview-needs-you",
+    "term": "Needs you",
+    "text": "What is waiting on you and nobody else: work nobody has authorized, questions nobody has answered, drafts nobody has accepted, designs whose work has all landed, and what the steward addressed to you. When there is none of it, the page says so."
+  },
+  {
+    "id": "overview-changed",
+    "term": "Since your last visit",
+    "text": "What happened while you were away, measured from the end of your last visit rather than from your last page load. Coming back and refreshing during a visit never narrows the window, so nothing slips past between two reads."
+  },
+  {
+    "id": "overview-work",
+    "term": "Work now",
+    "text": "What the fleet is doing at this moment: what a seat has claimed, what it would take next, what is held and why, and how the lanes stand. Every count opens the board."
+  },
+  {
+    "id": "overview-memory",
+    "term": "The project's memory",
+    "text": "What this project has written down: its intent and its doctrine, the decisions it has made, the designs governing work, and the questions still open. Each count opens the part of Project it belongs to."
+  },
+  {
+    "id": "overview-health",
+    "term": "Health",
+    "text": "Whether the machinery itself is sound: this checkout's ledger against the canonical tip, what the records check refuses, and any message the steward could not deliver. One line when all three answered."
+  },
+  {
+    "id": "project",
+    "term": "Project",
+    "text": "The project's memory: its intent, doctrine, decisions, designs and open questions, each a record the checkout carries, and the documents around them."
+  },
+  {
+    "id": "backlog",
+    "term": "Backlog",
+    "text": "The goals, as a board. A goal moves from To Do through Ready for Work, In Progress and Review to Done. Drag a card to approve or withdraw it, or to change its priority."
+  },
+  {
+    "id": "fleet",
+    "term": "Fleet",
+    "text": "The machines and seats working on this project: their sessions, jobs and health, with when each was last observed."
+  },
+  {
+    "id": "decisions-section",
+    "term": "Decisions",
+    "text": "What the machinery is asking you to rule on: questions from every seat, approvals, delegations. Your answer is recorded with your name as the authority."
+  },
+  {
+    "id": "application",
+    "term": "Application",
+    "text": "What has been built and released, and the evidence that it works."
+  },
+  {
+    "id": "partner",
+    "term": "Project Partner",
+    "text": "The agent you work with across this whole interface. Ask it about anything you see. It reads the same records you do and can write with you."
+  },
+  {
+    "id": "lane-draft",
+    "term": "Draft",
+    "text": "A goal someone wrote down that has not been through intake yet. It is not on the board's path until it is."
+  },
+  {
+    "id": "lane-todo",
+    "term": "To Do",
+    "text": "Goals nobody has authorized yet. A goal here may be waiting on intake or on a human's approval. Drag it to Ready for Work to approve it."
+  },
+  {
+    "id": "lane-ready",
+    "term": "Ready for Work",
+    "text": "Approved goals a seat may claim right now, in priority order. Drag one back to To Do to withdraw the approval."
+  },
+  {
+    "id": "lane-progress",
+    "term": "In Progress",
+    "text": "Goals a seat has claimed and is working on."
+  },
+  {
+    "id": "lane-review",
+    "term": "Review and Verification",
+    "text": "Work that is built and being checked before it lands."
+  },
+  {
+    "id": "lane-waiting",
+    "term": "Waiting",
+    "text": "Work a blocker holds, with the reason and the state it waits from."
+  },
+  {
+    "id": "lane-done",
+    "term": "Done",
+    "text": "Goals that landed, with what they concluded. The selector chooses how many days back to show."
+  },
+  {
+    "id": "lane-abandoned",
+    "term": "Abandoned",
+    "text": "Work that was dropped, with the recorded reason."
+  },
+  {
+    "id": "lane-split",
+    "term": "Split into goals",
+    "text": "A goal that was split into smaller goals. It stands here beside the goals it became, not in Done, because it was never delivered as one piece."
+  },
+  {
+    "id": "priority",
+    "term": "Priority",
+    "text": "A band and a position in it, shown as band:position. Band 1 comes before band 2, and inside a band the lower position comes first. Seats claim from the top of Ready for Work."
+  },
+  {
+    "id": "tier",
+    "term": "Tier",
+    "text": "How much proof a goal owes before it lands, 1 to 3, set by the worse of its risk answers on severity and novelty. Tier 3 is the most demanding."
+  },
+  {
+    "id": "seat",
+    "term": "Seat",
+    "text": "The machine and session that claimed the goal."
+  },
+  {
+    "id": "arc",
+    "term": "Arc",
+    "text": "The larger line of work a goal belongs to, named so related goals can be seen together."
+  }
+]

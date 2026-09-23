@@ -10,6 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/uitools"
 )
 
 // What the Partner is told, every turn.
@@ -85,21 +86,95 @@ You do not write, you do not run commands, and you do not act: tools that
 would write or execute are not available to you, and a request for one is
 refused before it runs. When you cannot see something, say so rather than
 guessing; when you are unsure whether what you read is what the human sees,
-say that too. The ledger of goals is not in the files you can read; what you
-are told here about goals is the whole of what you know about them.`
+say that too.
 
-// Compose builds the whole context block for one turn.
-func Compose(facts Facts, page Page, human string, now time.Time) string {
+The ledger of goals is not in the files you can read. What you are told below
+about the page is what the human is looking at right now; to read anything
+else — another goal, a document, the records, the open questions, the landing
+page, the steward's journal, or a search across all of them — call this
+workspace's own read tools. Every one of their results names the reading it
+was of and says how much of the whole it supplied; when one carries a cursor,
+call it again with that cursor rather than answering from half of it.`
+
+// Seen is the page, composed once, for the three things that must not
+// disagree about it: the sheet that shows a human what the Partner will be
+// given, the turn that is given it, and the stamp the answer wears.
+//
+// Astra's first finding is what this type answers. The page renders from one
+// reading of the ledger and the server composes from another, and the two can
+// be minutes apart; a preview composed from the second, shown beside a card
+// drawn from the first, is a preview that certifies the wrong page. So the
+// capture names what the human's page rendered from, this composition names
+// what the server read, and where they differ the block says both.
+type Seen struct {
+	// Label is the one line the chip shows: where the human is, in words.
+	Label string
+	// Source is what the server read, stamped: the accepted tip and the moment
+	// it was observed, or a file's revision as it stands.
+	Source string
+	// Displayed is what the page said it rendered from, where it said so and
+	// it differs from Source. Empty means the two agree, or the page did not
+	// say.
+	Displayed string
+	// Supplied and Total are the rows of the page this block carries and the
+	// rows the page is showing. They are equal when nothing was left out.
+	Supplied, Total int
+	// Block is "what the human sees now", whole.
+	Block string
+}
+
+// Stamp is what an answer wears: what the Partner was given, in one clause.
+func (s Seen) Stamp() string {
+	if s.Displayed == "" {
+		return "Saw: " + s.Source
+	}
+	return "Saw: " + s.Source + "; the page had rendered from " + s.Displayed
+}
+
+// See composes the page for one capture. It is the whole of what the sheet
+// shows and the whole of what the turn carries.
+func See(facts Facts, page Page, now time.Time) Seen {
 	observed := snapshot.Observation{}
 	if facts.Observe != nil {
 		observed = facts.Observe()
 	}
+	block, supplied, total := seenLines(facts, observed, page)
+	seen := Seen{
+		Label:    pageLine(page),
+		Source:   sourceOf(observed, page, now),
+		Supplied: supplied,
+		Total:    total,
+		Block:    block,
+	}
+	if displayed := displayedSource(page); displayed != "" && displayed != seen.Source {
+		seen.Displayed = displayed
+	}
+	return seen
+}
+
+// Compose builds the whole context block for one turn.
+func Compose(facts Facts, page Page, human string, now time.Time) string {
+	return ComposeSeen(See(facts, page, now), page, human)
+}
+
+// ComposeSeen is the same block from a composition already made, so the turn
+// and the sheet beside it are one reading rather than two.
+func ComposeSeen(seen Seen, page Page, human string) string {
 	var built strings.Builder
 	built.WriteString(standingRule)
-	built.WriteString("\n\nWhere the human is\n")
+	built.WriteString("\n\n" + vocabulary())
+	built.WriteString("\nWhere the human is\n")
 	built.WriteString(whereLines(page))
-	built.WriteString("\n" + seenHeading(observed, now) + "\n")
-	built.WriteString(seenLines(facts, observed, page))
+	built.WriteString("\nWhat the human sees now, from " + seen.Source + "\n")
+	if seen.Displayed != "" {
+		built.WriteString("- The page itself had rendered from " + seen.Displayed +
+			", so what the human is looking at is that reading and what follows is this one.\n")
+	}
+	if seen.Total > 0 {
+		built.WriteString(fmt.Sprintf("- %d of %d rows supplied; ask the %s tools for the rest, which take a cursor.\n",
+			seen.Supplied, seen.Total, uitools.ServerName))
+	}
+	built.WriteString(seen.Block)
 	if named := strings.TrimSpace(human); named != "" {
 		built.WriteString("\nThe human you are talking to is " + named +
 			". That name is attribution and nothing else: it grants you no authority, and nothing you say becomes a human's decision.\n")
@@ -107,32 +182,92 @@ func Compose(facts Facts, page Page, human string, now time.Time) string {
 	return built.String()
 }
 
-// seenHeading marks the block, and marks it with the revision the page is
-// showing: everything the Partner reads afterwards is its own read of the
-// checkout, and the two are not the same thing.
-func seenHeading(observed snapshot.Observation, now time.Time) string {
+// sourceOf stamps this composition with the reading it was made from: the
+// file, for the one page whose facts are in the checkout, and the accepted tip
+// for every other.
+func sourceOf(observed snapshot.Observation, page Page, now time.Time) string {
+	if page.Kind == KindDocument && page.Subject != "" {
+		return page.Subject + " as it stands"
+	}
 	if observed.Tip == "" {
-		return "What the human sees now (this seat could not read an accepted ledger)"
+		return "no accepted ledger this seat could read"
 	}
 	at := observed.ObservedAt
 	if at.IsZero() {
 		at = now
 	}
-	return fmt.Sprintf("What the human sees now, from the accepted tip %s observed %s",
-		observed.Tip, at.UTC().Format(time.RFC3339))
+	return fmt.Sprintf("the accepted tip %s, observed %s", observed.Tip, at.UTC().Format(time.RFC3339))
 }
 
-// seenLines is the page itself, from the server's own readers.
-func seenLines(facts Facts, observed snapshot.Observation, page Page) string {
+// displayedSource is the same stamp for what the page said it rendered from.
+func displayedSource(page Page) string {
+	if page.Kind == KindDocument && page.Subject != "" {
+		if page.Revision == "" {
+			return ""
+		}
+		return page.Subject + " as it stands"
+	}
+	if strings.TrimSpace(page.Tip) == "" {
+		return ""
+	}
+	at := strings.TrimSpace(page.ObservedAt)
+	if at == "" {
+		return "the accepted tip " + page.Tip
+	}
+	return "the accepted tip " + page.Tip + ", observed " + at
+}
+
+// seenLines is the page itself, from the server's own readers, with the rows
+// it carries and the rows the page is showing.
+//
+// A chosen passage goes first and whole. It is the one thing in this block the
+// human pointed at, and a bound that cut it would be the bound throwing away
+// the subject in order to fit the context.
+func seenLines(facts Facts, observed snapshot.Observation, page Page) (string, int, int) {
+	block, supplied, total := pageLines(facts, observed, page)
+	if quote := strings.TrimSpace(page.Quote); quote != "" {
+		return quoteLines(page) + block, supplied, total
+	}
+	return block, supplied, total
+}
+
+// quoteLines is the selected passage, with where it came from.
+func quoteLines(page Page) string {
+	from := strings.TrimSpace(page.QuoteFrom)
+	if from == "" {
+		from = page.Path
+	}
+	if revision := strings.TrimSpace(page.QuoteRevision); revision != "" {
+		from += ", revision " + revision
+	}
+	if anchor := strings.TrimSpace(page.QuoteAnchor); anchor != "" {
+		from += ", under " + anchor
+	}
+	return "- The human selected this passage, from " + from + ":\n" +
+		quoted(page.Quote) + "\n"
+}
+
+// quoted marks a passage off from everything around it, so a document that
+// happens to be written in list items cannot be read as this block's own.
+func quoted(passage string) string {
+	var built strings.Builder
+	for _, line := range strings.Split(strings.TrimRight(passage, "\n"), "\n") {
+		built.WriteString("  > " + line + "\n")
+	}
+	return built.String()
+}
+
+func pageLines(facts Facts, observed snapshot.Observation, page Page) (string, int, int) {
 	switch {
 	case page.Kind == KindDocument:
-		return bounded(documentLines(facts, page))
+		return bounded(documentLines(facts, page)), 0, 0
 	case page.Kind == KindGoal:
-		return bounded(goalLines(observed, page))
+		return bounded(goalLines(observed, page)), 0, 0
 	case page.Section == "Overview":
-		return bounded(overviewLines(facts))
+		return bounded(overviewLines(facts)), 0, 0
 	case page.Section == "Project":
-		return bounded(projectLines(facts, page))
+		block, supplied, total := projectLines(facts, page)
+		return bounded(block), supplied, total
 	default:
 		return boardLines(observed, page)
 	}
@@ -163,7 +298,9 @@ func whereLines(page Page) string {
 	}
 	write("Section", page.Section)
 	write("Address", page.Path)
+	write("View", page.View)
 	write("Tab", page.Tab)
+	write("Done reaches back", page.Window)
 	if page.Subject != "" {
 		kind := page.Kind
 		if kind == "" {
@@ -194,12 +331,12 @@ func whereLines(page Page) string {
 // The page says which goals are on screen because only the page knows: the
 // filters, the ordering and the Done window are the browser's. The facts are
 // this server's because only this server has them.
-func boardLines(observed snapshot.Observation, page Page) string {
+func boardLines(observed snapshot.Observation, page Page) (string, int, int) {
 	if observed.Tip == "" && observed.State == "" {
-		return "- This build has no ledger reader, so what the page shows cannot be described.\n"
+		return "- This build has no ledger reader, so what the page shows cannot be described.\n", 0, 0
 	}
 	if observed.State != snapshot.StateRead || observed.Tree == nil {
-		return "- The accepted ledger could not be read: " + observed.Message + "\n"
+		return "- The accepted ledger could not be read: " + observed.Message + "\n", 0, 0
 	}
 	board := backlog.Project(observed.Tree, observed.Horizon, observed.Admission)
 	rows := map[string]backlog.Row{}
@@ -208,7 +345,7 @@ func boardLines(observed snapshot.Observation, page Page) string {
 	}
 	if len(page.Lanes) == 0 {
 		return laneCounts(board) +
-			"- The page did not say which goals it is showing, so these are the counts and not the rows.\n"
+			"- The page did not say which goals it is showing, so these are the counts and not the rows.\n", 0, 0
 	}
 
 	var built strings.Builder
@@ -233,9 +370,9 @@ func boardLines(observed snapshot.Observation, page Page) string {
 	}
 	if left := shown - named; left > 0 {
 		built.WriteString("- " + strconv.Itoa(left) +
-			" more goals are on the board than are named here; ask for a lane by name and what is named above is what I know.\n")
+			" more goals are on the board than are named here; the board tool reads the rest, and takes a cursor.\n")
 	}
-	return built.String()
+	return built.String(), named, shown
 }
 
 // laneTitle is what the page calls the lane, and its id where it called it
@@ -441,17 +578,17 @@ func overviewLines(facts Facts) string {
 // projectLines is the records the open tab lists, named by the page and read
 // here: a tab is the browser's own selection, and what each record is is this
 // server's.
-func projectLines(facts Facts, page Page) string {
+func projectLines(facts Facts, page Page) (string, int, int) {
 	if facts.Project == nil {
-		return "- This build has no project reader, so what the page shows cannot be described.\n"
+		return "- This build has no project reader, so what the page shows cannot be described.\n", 0, 0
 	}
 	pane, err := facts.Project()
 	if err != nil {
-		return "- The project's records could not be read: " + err.Error() + "\n"
+		return "- The project's records could not be read: " + err.Error() + "\n", 0, 0
 	}
 	if len(page.Records) == 0 {
 		return "- The page did not say which records this tab lists.\n" +
-			"- The checkout declares " + strconv.Itoa(len(pane.Records)) + " records in all.\n"
+			"- The checkout declares " + strconv.Itoa(len(pane.Records)) + " records in all.\n", 0, 0
 	}
 	byPath := map[string]project.Record{}
 	for _, record := range pane.Records {
@@ -462,12 +599,15 @@ func projectLines(facts Facts, page Page) string {
 		question[asked.ID] = asked
 	}
 	var built strings.Builder
+	named := 0
 	built.WriteString("- The records this tab is listing (" + strconv.Itoa(len(page.Records)) + "):\n")
 	for at, key := range page.Records {
 		if at >= maxListed {
-			built.WriteString("  - and " + strconv.Itoa(len(page.Records)-maxListed) + " more\n")
+			built.WriteString("  - and " + strconv.Itoa(len(page.Records)-maxListed) +
+				" more; the records tool reads the rest, and takes a cursor.\n")
 			break
 		}
+		named++
 		if record, known := byPath[key]; known {
 			line := record.Title
 			if record.Status != "" {
@@ -485,7 +625,7 @@ func projectLines(facts Facts, page Page) string {
 		}
 		built.WriteString("  - " + key + " — this server's own read of the project does not carry it\n")
 	}
-	return built.String()
+	return built.String(), named, len(page.Records)
 }
 
 // documentLines is a document's own revision, its record head, and its

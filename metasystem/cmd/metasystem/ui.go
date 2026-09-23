@@ -229,6 +229,15 @@ func runUI(verb string, args []string) int {
 				partnerRefusal = admitErr.Error()
 				fmt.Fprintln(os.Stderr, "interface Partner: "+partnerRefusal)
 			} else {
+				// The interface's own read tools, handed to the session at
+				// session/new. A seat that cannot name its own executable gets
+				// a Partner that reads the page and nothing beyond it, which is
+				// the previous slice's Partner rather than no Partner at all.
+				if tools, toolsErr := partner.ToolsFor(roots.Checkout, roots.Installation); toolsErr != nil {
+					fmt.Fprintln(os.Stderr, "interface Partner: "+toolsErr.Error())
+				} else {
+					admitted.Tools = tools
+				}
 				host := partner.NewHost(admitted, roots.Checkout,
 					filepath.Join(roots.StateRoot, filepath.FromSlash(partner.Relative), "wire.jsonl"))
 				partnerService = partner.NewService(admitted, host,

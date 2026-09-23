@@ -203,7 +203,7 @@ func TestPartnerEventsRideTheOneStreamWithNoIdOfTheirOwn(t *testing.T) {
 	testutil.Require(t, "accepted", accepted.Code, http.StatusAccepted)
 
 	var kinds []string
-	for at := 0; at < 3; at++ {
+	for at := 0; at < 4; at++ {
 		id, name, data := stream.event(t)
 		testutil.Expect(t, "the event type is the Partner's "+strconv.Itoa(at), name, "partner")
 		testutil.Expect(t, "and it carries no id of its own "+strconv.Itoa(at), id, "")
@@ -215,7 +215,7 @@ func TestPartnerEventsRideTheOneStreamWithNoIdOfTheirOwn(t *testing.T) {
 		}
 	}
 	testutil.Expect(t, "the beats in order", kinds,
-		[]string{partner.EventActivity, partner.EventText, partner.EventDone})
+		[]string{partner.EventLook, partner.EventActivity, partner.EventText, partner.EventDone})
 }
 
 func turnOf(t *testing.T, response *httptest.ResponseRecorder) string {

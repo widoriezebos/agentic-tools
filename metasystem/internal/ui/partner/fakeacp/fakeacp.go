@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,6 +43,14 @@ type Script struct {
 	// with this tool title and kind.
 	Permission     string
 	PermissionKind string
+	// Reads are the tool calls this server makes and completes, in order. They
+	// are what a Partner with read tools does, on the wire: a tool_call, then a
+	// tool_call_update carrying the result and the status it ended in.
+	Reads []Read
+	// AskFor, when set, is one permission request for a named tool — the shape
+	// an application tool has, which carries no path and no read kind — so the
+	// permission point's named exception can be driven end to end.
+	AskFor string
 	// Pause is how long the server waits between chunks, so a walkthrough can
 	// stop a turn and reload a page while one is still streaming.
 	Pause time.Duration
@@ -51,13 +60,50 @@ type Script struct {
 	Words string
 }
 
+// Read is one tool call this server makes: what it is called, what came back,
+// and whether it ended as a completion or a failure.
+type Read struct {
+	Title  string
+	Result string
+	// Failed makes the completion a failure rather than a completion.
+	Failed bool
+}
+
+// Servers are the tool servers the client handed over at session/new, as this
+// server saw them. A test reads it to prove the hand-off happened.
+type Servers struct {
+	mu    sync.Mutex
+	named []string
+}
+
+// Named is every tool server the client handed over, by name.
+func (s *Servers) Named() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string{}, s.named...)
+}
+
+func (s *Servers) add(name string) {
+	s.mu.Lock()
+	s.named = append(s.named, name)
+	s.mu.Unlock()
+}
+
 // Open answers an endpoint opener the host can be built on.
 func Open(script Script) func(context.Context) (partner.Endpoint, error) {
+	opener, _ := OpenWatched(script)
+	return opener
+}
+
+// OpenWatched is the same opener with the tool servers the client handed over,
+// which is the one thing about session/new a test cannot see from the outside.
+func OpenWatched(script Script) (func(context.Context) (partner.Endpoint, error), *Servers) {
+	handed := &Servers{}
 	return func(context.Context) (partner.Endpoint, error) {
 		clientReads, serverWrites := io.Pipe()
 		serverReads, clientWrites := io.Pipe()
 		server := &server{
-			script: script, out: serverWrites,
+			script: script, out: serverWrites, handed: handed,
 			permission: make(chan json.RawMessage, 1),
 			wake:       make(chan struct{}, 1),
 		}
@@ -78,7 +124,7 @@ func Open(script Script) func(context.Context) (partner.Endpoint, error) {
 			},
 			Words: func() string { return script.Words },
 		}, nil
-	}
+	}, handed
 }
 
 // SessionID is the session every fake server opens, so a test can name it.
@@ -87,6 +133,7 @@ const SessionID = "fake-session"
 type server struct {
 	script  Script
 	out     io.Writer
+	handed  *Servers
 	writing sync.Mutex
 
 	cancelled atomic.Bool
@@ -157,6 +204,7 @@ func (s *server) dispatch(in frame) {
 			"authMethods":       []any{},
 		})
 	case "session/new":
+		s.remember(in.Params)
 		result := map[string]any{"sessionId": SessionID}
 		if s.script.Models != nil {
 			options := make([]map[string]any, 0, len(s.script.Models))
@@ -197,6 +245,51 @@ func (s *server) prompt(id json.RawMessage) {
 				"title": s.script.Activity, "kind": "read", "status": "pending",
 			},
 		})
+	}
+	for at, read := range s.script.Reads {
+		id := "read-" + strconv.Itoa(at)
+		s.notify("session/update", map[string]any{
+			"sessionId": SessionID,
+			"update": map[string]any{
+				"sessionUpdate": "tool_call", "toolCallId": id,
+				"title": read.Title, "kind": "other", "status": "pending",
+			},
+		})
+		status := "completed"
+		if read.Failed {
+			status = "failed"
+		}
+		s.notify("session/update", map[string]any{
+			"sessionId": SessionID,
+			"update": map[string]any{
+				"sessionUpdate": "tool_call_update", "toolCallId": id, "status": status,
+				"content": []map[string]any{{
+					"type":    "content",
+					"content": map[string]any{"type": "text", "text": read.Result},
+				}},
+			},
+		})
+		if s.script.Pause > 0 {
+			s.sleep(s.script.Pause)
+		}
+	}
+	if s.script.AskFor != "" {
+		s.request(map[string]any{
+			"sessionId": SessionID,
+			"toolCall": map[string]any{
+				"toolCallId": "call-tool", "title": s.script.AskFor, "kind": "other",
+				"name":  s.script.AskFor,
+				"_meta": map[string]any{"claudeCode": map[string]any{"toolName": s.script.AskFor}},
+			},
+			"options": []map[string]any{
+				{"optionId": "yes", "kind": "allow_once", "name": "Allow"},
+				{"optionId": "no", "kind": "reject_once", "name": "Refuse"},
+			},
+		})
+		select {
+		case <-s.permission:
+		case <-time.After(10 * time.Second):
+		}
 	}
 	if s.script.Permission != "" {
 		kind := s.script.PermissionKind
@@ -264,6 +357,25 @@ func (s *server) tripped() {
 	select {
 	case s.wake <- struct{}{}:
 	default:
+	}
+}
+
+// remember records the tool servers session/new handed over.
+func (s *server) remember(params json.RawMessage) {
+	if s.handed == nil {
+		return
+	}
+	var opened struct {
+		MCPServers []struct {
+			Name    string `json:"name"`
+			Command string `json:"command"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(params, &opened); err != nil {
+		return
+	}
+	for _, server := range opened.MCPServers {
+		s.handed.add(server.Name)
 	}
 }
 
