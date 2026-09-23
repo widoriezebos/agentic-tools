@@ -423,7 +423,7 @@ export function healthPills(health: Health, now: Date): Pill[] {
   return [
     {
       id: LEDGER,
-      words: ledger === null ? `synced ${minuteTime(health.syncedAt)}` : ledgerWords(ledger, health.syncedAt, now),
+      words: ledger === null ? `synced ${minuteTime(health.syncedAt)}` : ledgerWords(ledger),
       tone: ledger === null ? "ok" : ledgerTone(ledger),
       where: ledger?.where ?? null,
     },
@@ -443,23 +443,28 @@ export function healthPills(health: Health, now: Date): Pill[] {
 }
 
 /**
- * A fetch that did not happen and a ledger that has fallen behind are two
- * different things to a human: one is a machine that cannot reach the
- * canonical branch, the other is a branch that has moved on. The engine's
- * words for the first always name the fetch, which is the one thing they have
- * in common, and the second is said as the gap itself, which is the fact a
- * human is actually reading for.
+ * The ledger pill says what the engine said, in two or three words, and
+ * measures nothing of its own: the engine judges the accepted tip's age and
+ * whether it is at the canonical tip, and the time this page last synced is a
+ * different fact, so a gap measured from it would put a number beside the
+ * wrong sentence. A fetch that did not happen is a machine that cannot reach
+ * the canonical branch; a tip that is behind or old is a branch that moved on.
  */
 function namesAFetch(title: string): boolean {
   return /\bfetch(es|ed|ing)?\b/i.test(title);
 }
 
-function ledgerWords(problem: Item, syncedAt: string, now: Date): string {
+function ledgerWords(problem: Item): string {
   if (namesAFetch(problem.title)) {
     return "fetch failed";
   }
-  const gap = gapWords(syncedAt, now);
-  return gap === "" ? "out of date" : `${gap} behind`;
+  if (/canonical tip/i.test(problem.title)) {
+    return "behind the tip";
+  }
+  if (/older than/i.test(problem.title)) {
+    return "ledger stale";
+  }
+  return "ledger attention";
 }
 
 function ledgerTone(problem: Item): Tone {

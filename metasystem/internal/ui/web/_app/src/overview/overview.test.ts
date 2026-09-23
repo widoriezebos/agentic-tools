@@ -307,14 +307,14 @@ describe("the health pills", () => {
     expect(healthPills(health([], at(0, 14, 36)), now).every((pill) => pill.where === null)).toBe(true);
   });
 
-  it("says a ledger that has fallen behind as the gap itself", () => {
+  it("says a ledger that has fallen behind in the engine's own terms, measuring nothing", () => {
     const stale = health(
       [item("", "the accepted ledger is older than 30 minutes and has not been advanced", "ledger", "", "backlog")],
       at(0, 14, 7),
     );
-    expect(healthPills(stale, now)[0]).toMatchObject({ words: "30 minutes behind", tone: "warn" });
+    expect(healthPills(stale, now)[0]).toMatchObject({ words: "ledger stale", tone: "warn" });
     const older = health([item("", "the accepted ledger is not at the canonical tip", "ledger", "", "backlog")], at(0, 11, 22));
-    expect(healthPills(older, now)[0].words).toBe("3 hours 15 minutes behind");
+    expect(healthPills(older, now)[0].words).toBe("behind the tip");
   });
 
   it("says a fetch that did not happen as a failure rather than as a gap", () => {
@@ -326,9 +326,9 @@ describe("the health pills", () => {
     expect(healthPills(failed, now)[0].where).toEqual({ kind: "backlog", id: "" });
   });
 
-  it("says it is out of date rather than inventing a gap it cannot measure", () => {
+  it("says the same words whether or not the page knows when it last synced", () => {
     const undated = health([item("", "the accepted ledger is not at the canonical tip", "ledger", "", "backlog")], "");
-    expect(healthPills(undated, now)[0].words).toBe("out of date");
+    expect(healthPills(undated, now)[0].words).toBe("behind the tip");
   });
 
   it("counts the records the check refused, and opens the first of them", () => {
