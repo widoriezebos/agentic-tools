@@ -34,10 +34,15 @@ export function Looked({ looked }: { looked: readonly Look[] }) {
     <details className="ms-partner-meta">
       <summary className="ms-partner-meta-line">
         {saw !== "" && <span className="ms-partner-meta-part">{saw}</span>}
-        <span className="ms-partner-meta-part">
-          Looked at {counted} {counted === 1 ? "thing" : "things"}
-          {failed > 0 && `, and ${failed === 1 ? "one read failed" : `${String(failed)} reads failed`}`}
-        </span>
+        {/* An answer that read nothing beyond the page says only what it saw;
+            "Looked at 0 things" beside every plain answer would be noise. The
+            page's own entry is still behind the line. */}
+        {chosen.length > 0 && (
+          <span className="ms-partner-meta-part">
+            Looked at {counted} {counted === 1 ? "thing" : "things"}
+            {failed > 0 && `, and ${failed === 1 ? "one read failed" : `${String(failed)} reads failed`}`}
+          </span>
+        )}
       </summary>
       <ul className="ms-partner-looked-list">
         {looked.map((look, at) => (
