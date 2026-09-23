@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M37QJM3F6W43TDPD8RKR2DB5
-- Status: accepted
+- Status: done
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 2, 2026-09-23, Claude on Fable, after Astra's critique of revision 1 ([g1-s29-astra-critique.md](g1-s29-astra-critique.md): nine material findings, "build after listed changes", every one a missing contract rather than a wrong idea; all nine are the contracts below). Revision 1 was on Wido's ask: "how do we bring this to the next level, where I can ask the agent about what I see on screen (and the agent can see that too)" and his ruling on the UX proposal: "so that is what we will do. Design this, get it critiqued by astra but do not get distracted from the UX design, and then implement." Builds on g1-s28, where the Partner reads and explains and is told a snapshot of the page a question was sent from.
@@ -39,6 +39,10 @@ You never have to describe what you are looking at, and you can always see what 
 - **Read tools.** The interface server offers the Partner's session its read tools at session open, through the protocol's own tool-server hand-off (contract 9): `board(filters)`, `goal(id)`, `document(id)`, `records(kind)`, `questions()`, `overview()`, `notifications(limit)`, `search(text)`, each answering from the same readers the pages use, bounded in size with a cursor for the rest, and each call becoming a line in what it read (contract 2). The Partner can then look beyond the page it was asked from. The read-only rule and the sandbox of g1-s28 are unchanged; the tools read and nothing else.
 - **Vocabulary.** The standing rule carries the interface's help texts, so the Partner speaks of tiers, lanes and arcs as the interface does.
 - **The snapshot** of g1-s28 stays the Partner's account of "what the human sees now"; the tools are how it sees more.
+
+## Built, 2026-09-23
+
+Commits `2a326e201` (the Partner can look: the tool server, the looked list, the vocabulary) and `d5831d759` (the page). One finding for the record: Claude's adapter auto-allows calls to the handed-over tool server without a permission request, so the permission rule is a backstop that runtime does not exercise; it is proven with the fake server. The tool server is the engine itself, `metasystem ui tools`, over stdio.
 
 ## Later, when it hurts
 
