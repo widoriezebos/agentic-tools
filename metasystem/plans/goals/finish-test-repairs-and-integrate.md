@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: Finish these repairs, verify them with targeted tests, complete final validation, then push/integrate.
 - Origin: human
-- Next step: WAITING ON THE HUMAN for the pending elapsed allowance extension from 4h6m to 6h6m; all other budget members unchanged. Coverage report repair is independently accepted, all four focused proofs pass, and the exact seven-file patch is staged with the reviewed Darwin baseline. New validation is refused ADMISSION_CLOSED_ELAPSED. After approval, freeze final source and perform only remaining targeted/selected/Linux validation, then commit/push, install and run the installed public witness. Evidence and exact next commands: plans/handoff-test-parallelism-and-determinism.md and external coordination/final-delivery-minimal-route-successor.md.
+- Next step: Resume delivery under Wido instruction to fix the machinery stop and finish. Accepted repairs and Darwin baseline are staged; clean candidate at external rollout/parallel-delivery-candidate-20260922-report-final. Build candidate engine, run final targeted audit/proofrun and selected delivery with reuse, finish required Linux validation and three remaining Mac bodies, then commit/push/install and verify the installed public command. Reuse retained valid Mac native evidence; no whole Mac rerun for reporting.
 - OpenedAt: 2026-09-22T16:37:11Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=6h6m attemptLimit=5 reservedJobMinutesLimit=623 activeJobLimit=8 reviewRoundLimit=3
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-09-23T05:59:38Z revision=6 opid=YMR0W4BPR61GZ080R2B0YGHY30-m1e-226b0953 authority=proven digest=42f3c66b2ba4dc9eec776ba202a537f1a8ead4a5844e1a172221e31302fea52a episode=6
@@ -21,4 +21,5 @@ History:
 - 2026-09-22T21:49:18Z DQPZR6EYWCZDKTSE6C2CY55DFR-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=finish-test-repairs-and-integrate
 - 2026-09-22T23:45:05Z G35WQVDKDMNKYVXPWRFT1JY61C-m1e-43182c96 breach-stop actor=m1e+goal-stop-custodian targets=finish-test-repairs-and-integrate
 - 2026-09-23T05:59:38Z YMR0W4BPR61GZ080R2B0YGHY30-m1e-226b0953 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate resumed=stop-finish-test-repairs-and-integrate-r3-f1
-Integrity: sha256=692c6da1ede10a8af86f0eca131461318c3833179840cea5648cdc1acae0ae56
+- 2026-09-23T06:00:22Z R06B0S8ECQTMP4M7BHG71VW4QB-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=finish-test-repairs-and-integrate
+Integrity: sha256=13f6faccce98c0e849cf6f5f7cefc7ae5000820279cc7a8f5d45338ead1c9556
