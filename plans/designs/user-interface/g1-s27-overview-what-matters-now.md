@@ -1,0 +1,38 @@
+# g1-s27 Overview: what matters now
+
+- Kind: design
+- Id: 01M375RPSQF8K5A6K88FACNP3G
+- Status: accepted
+- Cites: 01M34HS374KF1RSS3EWKBGD2WE
+
+Revision 1, 2026-09-23, Claude on Fable, on Wido's ask: "Let's build a project overview. This is to be a landing page of sorts ... come in from the UX perspective. What would you expect to see here? Design it and implement it." The master design's rule for the section is the design's spine: lead with "What needs me?" and "What changed since I last looked?", every entry linking to its record, a useful visit of a few minutes without reading a stream of activity, and a last-visit marker kept per human in server-local preference state.
+
+## Outcome
+
+Overview is the page a human lands on when they come back to the project. In one screen, top to bottom in importance, it answers: what needs me, what changed while I was away, what is being worked on now, what the project's memory holds, and whether anything is wrong. Every number is a link to the place where the thing is done. When nothing needs the human, it says so plainly; a calm page is the good outcome, not an empty one.
+
+## The page
+
+Two columns at desk width, one column at phone width, in this order:
+
+1. **Needs you.** The primary block. Rows, each a count and the first three items with links, only for what is non-zero: goals awaiting your approval (To Do, not approved, by priority; each links to its page); open questions (most recent first); drafts awaiting acceptance (records with `Status: draft`); designs whose work has all landed but are not marked done (from g1-s26); alerts and handoffs from the steward in the last seven days (they open the notifications panel); and, when nothing proves a human on this seat, one row "Sign in to act". Empty: "Nothing needs you."
+2. **Since your last visit.** The window is named: "since yesterday 18:02", or "in the last 24 hours" on a first visit. Goals concluded, goals that moved (the ledger's last verb and time), records changed (kind chip, title), and the count of steward messages, each list capped at five with "and N more →" to its section. Empty: "Nothing changed since your last visit."
+3. **Work now.** In Progress goals with seat, phase and since; Next up, the first three of Ready for Work by rank; Waiting with its count and the oldest blocker's reason; and a lane strip, To Do · Ready · In Progress · Review · Waiting · Done today, every count a link that lands on the board.
+4. **The project's memory.** Intent with its chapter count and the vision's first sentence; Doctrine with its chapters; Decisions (n, k draft); Designs (n, k done, and "m of n goals done" for the ones in flight); Open questions. Each links to its tab.
+5. **Health.** One calm line when all is well: "Ledger synced 14:37 · records check clean". Otherwise the problems, each linking to its place: sync stale or failed, record refusals, steward messages that macOS did not deliver.
+
+Each block title carries a help icon. The page has the refresh icon in the header's section cluster, like the others, and no timer.
+
+## The last visit
+
+A visit is a span of looking, not a click. The server keeps, per human and checkout, in `artifacts/agents/ui/visits.json`: when they were last seen, when the current visit began, and when the previous visit ended. A read more than thirty minutes after the last one begins a new visit; the "since" the page shows is the end of the previous visit, so pressing Refresh during a visit never narrows the window. The human is the session's, else the boot proof's, else the configured `ui.human`, else the seat itself. Losing the file changes only the comparison window.
+
+## Data
+
+One route, `GET /api/overview`, composes the page on the server from what it already reads: the project records (which gain `changedAt`, the file's modification time), the backlog projection (lanes, last change and verb, claims, waiting), the notifications journal, the session, and the records check. The page is one read, one shape, and the composition rules are tested on the server.
+
+## Later, when it hurts
+
+- Fleet summaries and cost on the page, when Fleet is projected.
+- Examination findings and production problems as entries, when the Application section exists.
+- A per-human marker keyed by an encoded identity rather than the handle.
