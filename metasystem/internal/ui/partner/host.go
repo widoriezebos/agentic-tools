@@ -62,10 +62,19 @@ type Update struct {
 	Look *Look
 }
 
-// The three update kinds.
+// The four update kinds.
+//
+// Doing and activity are different things, and the difference is what makes
+// the conversation quiet. Doing is what the Partner is at THIS moment — one
+// line, replaced by the next, kept nowhere — and a tool call is doing
+// something. Activity is what a human has to be told and must still be able to
+// read afterwards: a refusal, a session that had to be opened fresh. Nothing
+// says a thing twice: a tool call becomes a look when it completes, and the
+// line that announced it goes.
 const (
 	UpdateText     = "text"
 	UpdateActivity = "activity"
+	UpdateDoing    = "doing"
 	UpdateLook     = "look"
 )
 
@@ -83,6 +92,10 @@ type Look struct {
 	// look, and is still listed.
 	Outcome string `json:"outcome"`
 	Excerpt string `json:"excerpt,omitempty"`
+	// Page marks the one reading the Partner did not choose: the page the
+	// human was looking at. It is listed first and separately, and it is not
+	// one of the things the count says the Partner looked at.
+	Page bool `json:"page,omitempty"`
 }
 
 // The three outcomes a look can have.
@@ -92,8 +105,9 @@ const (
 	LookFailed  = "failed"
 )
 
-// Counted reports whether this look is one of the N the page counts.
-func (l Look) Counted() bool { return l.Outcome != LookFailed }
+// Counted reports whether this look is one of the N the page counts: a read
+// the Partner chose that actually happened.
+func (l Look) Counted() bool { return !l.Page && l.Outcome != LookFailed }
 
 // maxExcerpt is how much of one read the conversation keeps. It is what a
 // human checks an answer against, not the read itself: the whole of it went to
@@ -770,7 +784,7 @@ func (l *live) tool(started bool, body toolCall) {
 			l.callsMu.Unlock()
 		}
 		if what != "" {
-			l.emit(Update{Kind: UpdateActivity, Text: what})
+			l.emit(Update{Kind: UpdateDoing, Text: what})
 		}
 		return
 	}

@@ -1112,3 +1112,53 @@
     outline-color: var(--ms-accent);
   }
 }
+
+/* ----------------------------------------------------- asking about a thing -- */
+
+/*
+ * The mark a goal link in an answer puts on the one card it names, for as long
+ * as the pointer or the caret is on the link.
+ *
+ * It is the landing's own ring without the fade: a landing announces an
+ * arrival and goes, and a hover has to last exactly as long as the hover.
+ */
+.ms-goal-ringed {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* A lane's one control: it is a thing to ask about, and it has no menu. */
+.ms-column-ask,
+.ms-card-ask,
+.ms-overview-ask {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: var(--ms-surface);
+  color: var(--ms-text-3);
+  font-size: 11px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.ms-column-ask:hover,
+.ms-card-ask:hover,
+.ms-overview-ask:hover {
+  border-color: var(--ms-accent);
+  color: var(--ms-text);
+}
+
+/*
+ * On an Overview row the act stands out of the way until it is wanted: the row
+ * itself is the link, and a control on every line would compete with it.
+ */
+.ms-overview-ask {
+  opacity: 0;
+}
+
+.ms-overview-line:hover .ms-overview-ask,
+.ms-overview-ask:focus-visible {
+  opacity: 1;
+}

@@ -35,10 +35,11 @@ type Event struct {
 	Look *Look `json:"look,omitempty"`
 }
 
-// The six event kinds.
+// The seven event kinds.
 const (
 	EventText     = "text"
 	EventActivity = "activity"
+	EventDoing    = "doing"
 	EventLook     = "look"
 	EventDone     = "done"
 	EventError    = "error"
@@ -62,6 +63,10 @@ type Snapshot struct {
 	// the page can join live events to it without a gap or a duplicate.
 	PartialSeq int      `json:"partialSeq"`
 	Activity   []string `json:"activity"`
+	// Doing is what the running turn is at this moment, in one line. It is
+	// replaced by the next thing and kept nowhere: what was read is the looked
+	// list, and what a human has to be told is the activity.
+	Doing string `json:"doing"`
 	// Looked is what the running turn has read so far, so a reload mid-answer
 	// shows the list rather than starting it over.
 	Looked []Look `json:"looked"`
@@ -111,6 +116,7 @@ type turn struct {
 	seq      int
 	text     strings.Builder
 	activity []string
+	doing    string
 	looked   []Look
 	stopping bool
 	// done closes when the turn has been written down and its terminal event
@@ -223,12 +229,20 @@ func (s *Service) Snapshot(human string, limit int) (Snapshot, error) {
 		answer.Partial = running.text.String()
 		answer.PartialSeq = running.seq
 		answer.Activity = append([]string{}, running.activity...)
+		answer.Doing = running.doing
 		answer.Looked = append([]Look{}, running.looked...)
 	}
 	s.mu.Unlock()
 	answer.Messages = conversation.Messages(limit)
 	answer.Index = IndexOf(s.reading())
 	return answer, nil
+}
+
+// See composes what the Partner would be given for one capture, without
+// sending anything. It is the sheet's own answer, through the composer the
+// turn uses, so the two cannot be two readings of the same page.
+func (s *Service) See(page Page, now time.Time) Seen {
+	return See(s.reading(), page, now.UTC())
 }
 
 // Busy is the refusal a second send gets while a turn runs.
@@ -343,6 +357,7 @@ func lookedAtPage(seen Seen) *Look {
 		excerpt = excerpt[:maxExcerpt] + "…"
 	}
 	return &Look{
+		Page:    true,
 		What:    "The page you were looking at — " + seen.Label,
 		Source:  source,
 		Outcome: outcome,
@@ -365,6 +380,8 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 			s.record(running, Event{Kind: EventText, Text: update.Text})
 		case UpdateActivity:
 			s.record(running, Event{Kind: EventActivity, Text: update.Text})
+		case UpdateDoing:
+			s.record(running, Event{Kind: EventDoing, Text: update.Text})
 		case UpdateLook:
 			if update.Look != nil {
 				s.record(running, Event{Kind: EventLook, Look: update.Look})
@@ -435,6 +452,8 @@ func (s *Service) record(running *turn, event Event) {
 		running.text.WriteString(event.Text)
 	case EventActivity:
 		running.activity = append(running.activity, event.Text)
+	case EventDoing:
+		running.doing = event.Text
 	case EventLook:
 		if event.Look != nil {
 			running.looked = append(running.looked, *event.Look)

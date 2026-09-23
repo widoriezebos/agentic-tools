@@ -91,6 +91,7 @@ function markup(): string {
       <TooltipPrimitive.Provider>
         <Board
           backlog={backlog}
+          view="board"
           closedShown={false}
           onToggleClosed={() => undefined}
           onAct={() => undefined}

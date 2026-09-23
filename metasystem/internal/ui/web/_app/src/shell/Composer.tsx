@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { Button } from "./controls";
+import { insertAt } from "../partner/composing";
 import { usePartner } from "../partner/store";
 
 /**
@@ -15,6 +16,12 @@ import { usePartner } from "../partner/store";
  * panel's are two elements for one sentence, and the focused page is a third.
  * A refusal keeps it, so a question the server could not take is still there
  * to send again.
+ *
+ * Two things come in through the store rather than through a prop, because
+ * the thing that needs them is not this component's parent. Ask on a card
+ * takes the caret here, from wherever it was; and a suggestion chip pressed
+ * while something is half-written inserts its words at this field's own
+ * cursor, which only this field knows.
  */
 
 export const COMPOSER_LABEL = "Message to your Project Partner";
@@ -35,7 +42,7 @@ export function Composer({
    */
   takeCaret?: boolean;
 }) {
-  const { draft, setDraft, send, busy, sending, store } = usePartner();
+  const { draft, setDraft, send, busy, sending, store, wanted, offerInsert, returnFocus } = usePartner();
   const field = useRef<HTMLTextAreaElement | null>(null);
   const unavailable = store.state === "unavailable";
 
@@ -47,6 +54,43 @@ export function Composer({
     element.focus();
     element.setSelectionRange(element.value.length, element.value.length);
   }, [takeCaret]);
+
+  // Ask, and Cmd/Ctrl+J, ask for the caret by counting. The first render is
+  // not one of them, so a page that opens with the drawer open does not steal
+  // the caret from whatever the human was reading.
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    const element = field.current;
+    if (element === null) {
+      return;
+    }
+    element.focus();
+    element.setSelectionRange(element.value.length, element.value.length);
+  }, [wanted]);
+
+  // How a suggestion goes in when there is already a draft: at the cursor,
+  // where the human left it. The registration is taken back when this
+  // composer leaves, so the other one is not written into.
+  useEffect(() => {
+    offerInsert((words: string) => {
+      const element = field.current;
+      if (element === null) {
+        setDraft(insertAt(draft, draft.length, draft.length, words).text);
+        return;
+      }
+      const written = insertAt(element.value, element.selectionStart, element.selectionEnd, words);
+      setDraft(written.text);
+      element.focus();
+      element.setSelectionRange(written.caret, written.caret);
+    });
+    return () => {
+      offerInsert(null);
+    };
+  }, [offerInsert, setDraft, draft]);
 
   return (
     <div className="ms-composer">
@@ -65,9 +109,13 @@ export function Composer({
           setDraft(event.target.value);
         }}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && onEscape !== undefined) {
+          if (event.key === "Escape") {
             event.preventDefault();
-            onEscape();
+            // Escape goes back to where Ask came from, where it came from
+            // one; otherwise it closes the drawer, which is what it did
+            // before there was anywhere else to go.
+            returnFocus();
+            onEscape?.();
             return;
           }
           if (event.key === "Enter" && !event.shiftKey) {

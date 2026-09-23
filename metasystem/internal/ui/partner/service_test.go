@@ -31,7 +31,7 @@ func TestATurnIsAdmittedStreamedAndWrittenDown(t *testing.T) {
 	// The page the human was looking at is the first thing the answer was read
 	// from, and it is a beat of its own before anything the Partner chose.
 	testutil.Expect(t, "the page is looked at first", beats[0].Kind, partner.EventLook)
-	testutil.Expect(t, "the activity line", beats[1].Kind, partner.EventActivity)
+	testutil.Expect(t, "then what it is doing", beats[1].Kind, partner.EventDoing)
 	testutil.Expect(t, "then the text", beats[2].Kind, partner.EventText)
 	testutil.Expect(t, "the sequence starts at one", beats[0].Seq, 1)
 	testutil.Expect(t, "and counts up", beats[1].Seq, 2)
@@ -45,7 +45,9 @@ func TestATurnIsAdmittedStreamedAndWrittenDown(t *testing.T) {
 	testutil.Expect(t, "with its page context", snapshot.Messages[0].Page.Section, "Backlog")
 	testutil.Expect(t, "the answer", snapshot.Messages[1].Text, "Two goals are ready.")
 	testutil.Expect(t, "its outcome", snapshot.Messages[1].Outcome, partner.OutcomeComplete)
-	testutil.Expect(t, "and what it did", snapshot.Messages[1].Activity, []string{"Read plans/goals/backlog.md"})
+	// A tool call is a thing it was doing, not a line the answer keeps: what it
+	// read is the looked list, and saying it twice would be saying it twice.
+	testutil.Expect(t, "the answer keeps no activity of its own", len(snapshot.Messages[1].Activity), 0)
 }
 
 // The same key twice is the same turn once, so a retry after a lost answer

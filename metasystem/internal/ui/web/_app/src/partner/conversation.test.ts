@@ -33,6 +33,9 @@ const snapshot: Snapshot = {
   partial: "",
   partialSeq: 0,
   activity: null,
+  doing: "",
+  looked: null,
+  index: null,
   readOnly: "tools limited to Read, Glob and Grep",
   messages: null,
 };
@@ -71,6 +74,8 @@ describe("the conversation", () => {
       seq: 3,
       text: "half an ",
       activity: ["Read plans/goals/backlog.md"],
+      doing: "",
+      looked: [],
     });
   });
 
@@ -190,6 +195,8 @@ describe("the conversation", () => {
       seq: 2,
       text: "Two goals ",
       activity: ["Read plans/goals/backlog.md"],
+      doing: "",
+      looked: [],
     });
     expect(store.messages.map((message) => message.role)).toEqual(["human"]);
   });

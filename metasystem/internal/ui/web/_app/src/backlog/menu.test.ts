@@ -61,8 +61,18 @@ const ids = (of: Row) => offersFor(of, all).map((offer) => offer.id);
 
 describe("what a card offers", () => {
   it("names the lane's own verb, the steps its band allows, and the goal", () => {
-    expect(labels(middle)).toEqual(["Approve…", "Move up", "Move down", "Set priority…", "Open goal"]);
-    expect(labels(approved)).toEqual(["Withdraw approval…", "Move up", "Move down", "Set priority…", "Open goal"]);
+    expect(labels(middle)).toEqual(["Ask about this", "Approve…", "Move up", "Move down", "Set priority…", "Open goal"]);
+    expect(labels(approved)).toEqual([
+      "Ask about this", "Withdraw approval…", "Move up", "Move down", "Set priority…", "Open goal",
+    ]);
+  });
+
+  // Asking is first on every card, because it is the one act every object
+  // offers and the one a human reaches for before they know what else is here.
+  it("offers asking about the thing first, whatever else the card can do", () => {
+    for (const card of all) {
+      expect({ id: card.ref.id, first: ids(card)[0] }).toEqual({ id: card.ref.id, first: "ask" });
+    }
   });
 
   // An end of the band has nowhere to step, so the step is not listed. The
@@ -70,8 +80,8 @@ describe("what a card offers", () => {
   // A band runs across the lanes, so the goal with nowhere to step down is
   // the last of the band and not the last card of any column.
   it("leaves out a step the band has nowhere to take", () => {
-    expect(ids(first)).toEqual(["approve", "down", "rank", "open"]);
-    expect(ids(last)).toEqual(["approve", "up", "down", "rank", "open"]);
+    expect(ids(first)).toEqual(["ask", "approve", "down", "rank", "open"]);
+    expect(ids(last)).toEqual(["ask", "approve", "up", "down", "rank", "open"]);
     expect(ids(held)).not.toContain("down");
   });
 
@@ -80,13 +90,13 @@ describe("what a card offers", () => {
   // is the sheet's to say, not the menu's.
   it("offers a re-rank on claimed work and no lane move", () => {
     // Last in the band, so no step down either.
-    expect(ids(held)).toEqual(["up", "rank", "open"]);
+    expect(ids(held)).toEqual(["ask", "up", "rank", "open"]);
   });
 
   // A concluded goal is in no band and has no verb from its lane, so all it
   // can do is be opened — which every card can do.
   it("offers only the goal itself where nothing else is possible", () => {
-    expect(ids(concluded)).toEqual(["open"]);
+    expect(ids(concluded)).toEqual(["ask", "open"]);
     expect(ranked(concluded)).toBe(false);
     expect(ranked(middle)).toBe(true);
   });

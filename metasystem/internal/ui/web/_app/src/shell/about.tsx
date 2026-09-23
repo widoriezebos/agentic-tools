@@ -28,6 +28,27 @@ export type Subject = {
   revision?: string;
   /** The tab of the page that is open. */
   tab?: string;
+  /** Which reading of the section is open, where it has more than one. */
+  view?: string;
+  /**
+   * The reading this page rendered from: the accepted tip it drew its rows
+   * out of, and the moment the server observed it.
+   *
+   * They travel because the server composes its own reading a moment later,
+   * and the two can be minutes apart. A sheet that showed the server's reading
+   * beside a card drawn from this one would certify the wrong page, so the
+   * capture carries the page's and the block says both where they differ.
+   */
+  tip?: string;
+  observedAt?: string;
+  /** How far back the Done lane reached, as the page spells it. */
+  window?: string;
+  /**
+   * The address this page returns to: its path with the view, filters, window
+   * and tab it is showing. It is composed here, by the page that owns its own
+   * address grammar, and kept with every question asked from it.
+   */
+  returnTo?: string;
   /** What the page is narrowed to, as the page spells it. */
   filters?: string[];
   /**

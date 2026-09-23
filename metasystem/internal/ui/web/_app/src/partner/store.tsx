@@ -1,20 +1,25 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router";
 
-import { isBusy, loadPartner, PartnerError, sendTurn, stopTurn } from "./api";
-import { keyFor, pageOf } from "./asking";
+import { isBusy, loadPartner, PartnerError, sendTurn, stopTurn, type Page } from "./api";
+import { captureOf, readingMoved } from "./capture";
+import { chipped, insertAt } from "./composing";
+import { keyFor } from "./asking";
 import { busy, emptyStore, loaded, received, refused, retrying, unavailable, asked, type Store } from "./conversation";
+import type { Chosen } from "./subject";
 import { onPartnerEvent, onStreamOpen } from "../notifications/stream";
-import { useSubject } from "../shell/about";
+import { useAboutLine, useSubject } from "../shell/about";
 
 /**
  * The conversation, held once for the whole page.
  *
- * There is one conversation, one draft and one running turn, and the drawer
- * and the focused page both read them from here. That is not tidiness: the two
- * are two views of one exchange, and the shell used to keep one draft while
- * the focused page kept another, so expanding the drawer stranded whatever was
- * half-written in it.
+ * There is one conversation, one draft, one running turn and one subject, and
+ * the drawer and the focused page both read them from here. That is not
+ * tidiness: the two are two views of one exchange, and the shell used to keep
+ * one draft while the focused page kept another, so expanding the drawer
+ * stranded whatever was half-written in it. The subject is here for the same
+ * reason and one more: "this" has to keep meaning the same thing while a human
+ * navigates, and a subject derived from the mounted pane disappears with it.
  *
  * The transcript is read when the page loads and again on every reconnect of
  * the one stream, and at no other time. Everything between arrives as beats on
@@ -39,9 +44,36 @@ type Partner = {
   stop: () => void;
   /** True while a send is in flight, so Send cannot be pressed twice. */
   sending: boolean;
+
+  /** The subject a human chose, or null while the subject follows the page. */
+  chosen: Chosen | null;
+  /** Make this the subject and take the caret to the composer. */
+  ask: (chosen: Chosen) => void;
+  /** Clear the chosen subject, which is what the chip's × does. */
+  clearChosen: () => void;
+  /**
+   * The capture the next question would carry, composed from the page as it
+   * stands. It is what the "Seeing:" sheet asks about and what Send sends.
+   */
+  capture: Page;
+  /** True when the page's reading has moved since the last question. */
+  moved: boolean;
+  /** Take the next capture from the page as it stands now, and send nothing. */
+  refresh: () => void;
+  /**
+   * A suggested question. With an empty composer it sends; with a draft
+   * present it inserts its words at the cursor and sends nothing.
+   */
+  suggest: (text: string) => void;
+  /** The composer says how to insert at its cursor while it is on screen. */
+  offerInsert: (insert: ((text: string) => void) | null) => void;
+  /** How many times the composer has been asked for; the shell watches it. */
+  wanted: number;
+  /** Put the caret back where Ask took it from. */
+  returnFocus: () => void;
 };
 
-const PartnerContext = createContext<Partner>({
+const nothing: Partner = {
   store: emptyStore,
   busy: false,
   draft: "",
@@ -49,7 +81,19 @@ const PartnerContext = createContext<Partner>({
   send: () => {},
   stop: () => {},
   sending: false,
-});
+  chosen: null,
+  ask: () => {},
+  clearChosen: () => {},
+  capture: { section: "", path: "" },
+  moved: false,
+  refresh: () => {},
+  suggest: () => {},
+  offerInsert: () => {},
+  wanted: 0,
+  returnFocus: () => {},
+};
+
+const PartnerContext = createContext<Partner>(nothing);
 
 export function usePartner(): Partner {
   return useContext(PartnerContext);
@@ -59,11 +103,24 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const [store, setStore] = useState<Store>(emptyStore);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  // The subject a human chose. It survives navigation, and it is cleared by
+  // its own chip and by choosing another — never by arriving somewhere else.
+  const [chosen, setChosen] = useState<Chosen | null>(null);
+  // The capture the last question was sent with, which is what "the page has
+  // moved since" is measured against. Refresh replaces it with the page as it
+  // stands, which prepares the next capture and changes no stamp.
+  const [baseline, setBaseline] = useState<Page | null>(null);
+  const [wanted, setWanted] = useState(0);
   // The key this draft was minted with. It survives a refusal, so pressing
   // Send again after a 503 is the same turn rather than a second one.
   const key = useRef("");
+  // Where Ask took the caret from, so Escape can put it back.
+  const cameFrom = useRef<HTMLElement | null>(null);
+  // How the composer on screen inserts at its own cursor.
+  const insert = useRef<((text: string) => void) | null>(null);
   const location = useLocation();
   const subject = useSubject();
+  const label = useAboutLine("");
 
   const read = useCallback((signal?: AbortSignal) => {
     loadPartner(signal)
@@ -98,10 +155,15 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     read();
   }), [read]);
 
-  // Where the human is, as the question carries it. It is composed here
-  // because it belongs to the moment of asking: navigating afterwards cannot
-  // retarget a question that has already been sent.
-  const about = useMemo(() => pageOf(location.pathname, subject), [location.pathname, subject]);
+  // The capture: the page as it stands, with whatever subject is in force. It
+  // is composed here because it belongs to the moment of asking, and it is
+  // what the sheet shows, what the question carries, and what the message
+  // keeps — one composition rather than three.
+  const capture = useMemo(
+    () => captureOf({ pathname: location.pathname, page: subject, chosen, label }),
+    [location.pathname, subject, chosen, label],
+  );
+  const moved = useMemo(() => readingMoved(baseline, subject), [baseline, subject]);
 
   const running = busy(store);
   const send = useCallback((written?: string) => {
@@ -113,13 +175,14 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     const minted = key.current;
     setSending(true);
     setStore(retrying);
-    sendTurn(minted, text, about)
+    sendTurn(minted, text, capture)
       .then((accepted) => {
         // Accepted: the draft goes, the key goes with it, and the question is
         // on screen before the first beat arrives.
         key.current = "";
         setDraft("");
-        setStore((held) => asked(held, accepted.turn, minted, text, about, new Date().toISOString()));
+        setBaseline(capture);
+        setStore((held) => asked(held, accepted.turn, minted, text, capture, new Date().toISOString()));
       })
       .catch((error: unknown) => {
         // Refused: the draft stays, and so does the key, so pressing Send
@@ -133,7 +196,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         setSending(false);
       });
-  }, [draft, running, sending, about]);
+  }, [draft, running, sending, capture]);
 
   const turn = store.live.turn;
   const stop = useCallback(() => {
@@ -149,9 +212,65 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       });
   }, [turn]);
 
+  /**
+   * Ask about this: the thing becomes the subject, the drawer opens, and the
+   * caret goes to the composer. Where it came from is remembered, because
+   * Escape from the composer belongs back on the card it was opened from.
+   */
+  const ask = useCallback((next: Chosen) => {
+    const active = globalThis.document.activeElement;
+    cameFrom.current = active instanceof HTMLElement ? active : null;
+    setChosen(next);
+    setWanted((at) => at + 1);
+  }, []);
+
+  const clearChosen = useCallback(() => {
+    setChosen(null);
+  }, []);
+
+  const returnFocus = useCallback(() => {
+    const source = cameFrom.current;
+    cameFrom.current = null;
+    source?.focus();
+  }, []);
+
+  const refresh = useCallback(() => {
+    setBaseline(capture);
+  }, [capture]);
+
+  /**
+   * A suggestion respects the draft. With an empty composer the chip is the
+   * question and sends; with something half-written in it the chip's words go
+   * in at the cursor and nothing is sent, because the sentence a human was
+   * composing is theirs.
+   */
+  const suggest = useCallback((text: string) => {
+    if (chipped(draft) === "send") {
+      send(text);
+      return;
+    }
+    const at = insert.current;
+    if (at === null) {
+      // No composer is on screen to take a cursor, so the words go on the end,
+      // which is where a caret nobody has placed would be.
+      setDraft((held) => insertAt(held, held.length, held.length, text).text);
+      return;
+    }
+    at(text);
+  }, [draft, send]);
+
+  const offerInsert = useCallback((at: ((text: string) => void) | null) => {
+    insert.current = at;
+  }, []);
+
   const value = useMemo(
-    () => ({ store, busy: running, draft, setDraft, send, stop, sending }),
-    [store, running, draft, send, stop, sending],
+    () => ({
+      store, busy: running, draft, setDraft, send, stop, sending,
+      chosen, ask, clearChosen, capture, moved, refresh, suggest, offerInsert,
+      wanted, returnFocus,
+    }),
+    [store, running, draft, send, stop, sending, chosen, ask, clearChosen,
+      capture, moved, refresh, suggest, offerInsert, wanted, returnFocus],
   );
 
   return <PartnerContext.Provider value={value}>{children}</PartnerContext.Provider>;

@@ -55,6 +55,8 @@ import { OpenSheet } from "../backlog/OpenSheet";
 import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
 import { documentIdFromPath, documentPath } from "../routes";
+import { ASK_REVISION, ASK_SOURCE, ASK_SURFACE } from "../partner/AskSelection";
+import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
 import { useWorkspaceState, type WorkspaceState } from "../shell/identity";
@@ -313,6 +315,10 @@ function Read({
     title: document.title,
     revision: document.revision,
     tab: heading?.text,
+    // Where a question asked here returns to: this document, at the heading
+    // the reader was on. A passage that has moved lands at the top of the
+    // document and says so, rather than at whatever is under that anchor now.
+    returnTo: current === "" ? documentPath(document.id) : `${documentPath(document.id)}#${current}`,
   });
 
   // A change typed here exists nowhere else, so the browser is asked to say so
@@ -484,7 +490,13 @@ function Read({
       </nav>
       <div className="ms-reader">
         {rail !== null && <SiblingsRail rail={rail} />}
-        <article className="ms-reading">
+        {/* A reading surface: selected prose here is a subject, with this
+            document and the revision it was read at. The editor below is not
+            one — only saved text is ever shared. */}
+        <article
+          className="ms-reading"
+          {...{ [ASK_SURFACE]: "document", [ASK_SOURCE]: document.id, [ASK_REVISION]: document.revision }}
+        >
           {editor === null ? (
             <>
               {document.record === null ? (
@@ -709,7 +721,7 @@ function PlainFacts({
       </h1>
       <p className="ms-reading-facts">
         <span className="ms-mono">{document.path}</span>
-        <FileActions path={document.path} onEdit={onEdit} onNewGoal={null} busy="" />
+        <FileActions path={document.path} document={document} onEdit={onEdit} onNewGoal={null} busy="" />
         <Chip>{ownership(document.owner)}</Chip>
         <span>changed {dateOf(document.modifiedAt)}</span>
         {document.revision !== "" && <span className="ms-mono">{shortRevision(document.revision)}</span>}
@@ -769,6 +781,7 @@ function RecordFacts({
         </span>
         <FileActions
           path={document.path}
+          document={document}
           onEdit={onEdit}
           onNewGoal={working === null ? null : working.onNewGoal}
           busy={working?.busy ?? ""}
@@ -905,11 +918,14 @@ function Status({ status, onChange }: { status: string; onChange: (status: strin
  */
 function FileActions({
   path,
+  document: read,
   onEdit,
   onNewGoal,
   busy,
 }: {
   path: string;
+  /** The record this row acts on, which is also what Ask makes the subject. */
+  document: DocumentPayload;
   onEdit: (() => void) | null;
   /** Open a goal for this design, where the record is one. */
   onNewGoal: (() => void) | null;
@@ -918,6 +934,7 @@ function FileActions({
 }) {
   const [copies, setCopies] = useState(0);
   const [refused, setRefused] = useState(false);
+  const { ask } = usePartner();
 
   const copy = () => {
     try {
@@ -937,6 +954,24 @@ function FileActions({
 
   return (
     <span className="ms-facts-file">
+      {/* Ask is first, because it is the one act every record offers. */}
+      <button
+        type="button"
+        className="ms-project-act"
+        onClick={() => {
+          ask({
+            kind: "record",
+            id: read.id,
+            title: read.title === "" ? read.id : read.title,
+            source: `${read.id} as it stands, revision ${read.revision}`,
+            summary: summaryOf(read),
+            to: documentPath(read.id),
+            revision: read.revision,
+          });
+        }}
+      >
+        Ask
+      </button>
       {onEdit !== null && (
         <button type="button" className="ms-project-act" onClick={onEdit}>
           Edit
@@ -1130,4 +1165,20 @@ function identityOf(workspace: WorkspaceState): Identity {
   }
   const described = workspace.workspace;
   return { state: "known", subject: described.subject, mode: described.mode, conflict: described.conflict };
+}
+
+/**
+ * What a record's own head says about it, in one line, so a chip and a pinned
+ * panel say the same thing the page does.
+ */
+function summaryOf(read: DocumentPayload): string {
+  const head = read.record;
+  if (head === null) {
+    return read.id;
+  }
+  const said = [head.kind, head.status].filter((part) => part !== "");
+  if (head.goals.length > 0) {
+    said.push(`goals ${head.goals.join(", ")}`);
+  }
+  return said.join(" · ");
 }

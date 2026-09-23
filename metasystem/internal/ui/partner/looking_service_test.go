@@ -34,6 +34,7 @@ func TestWhatAnAnswerWasReadFromIsAListWithOutcomes(t *testing.T) {
 
 	testutil.Expect(t, "the page is first", strings.HasPrefix(looked[0].What, "The page you were looking at"), true)
 	testutil.Expect(t, "and is a read", looked[0].Outcome, partner.LookRead)
+	testutil.Expect(t, "marked as the one reading the Partner did not choose", looked[0].Page, true)
 
 	testutil.Expect(t, "then the document", looked[1].What, "document(plans/designs/g1-s26.md)")
 	testutil.Expect(t, "from the file as it stands", looked[1].Source, "plans/designs/g1-s26.md as it stands, revision r7")
@@ -54,7 +55,9 @@ func TestWhatAnAnswerWasReadFromIsAListWithOutcomes(t *testing.T) {
 			counted++
 		}
 	}
-	testutil.Expect(t, "and the count leaves the failure out", counted, 3)
+	// The page is listed first and separately, and neither it nor the read that
+	// did not happen is one of the things the count says it looked at.
+	testutil.Expect(t, "and the count leaves out the page and the failure", counted, 2)
 }
 
 // A look reaches the page as it happens, so a human watching the drawer sees

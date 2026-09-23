@@ -23,30 +23,64 @@ import (
 // itself, which is the seam's own escape hatch for a client that opens its own
 // endpoint.
 
-// The canned answer, in the pieces it streams in. It is about the fixture
-// board, because that is what the walkthrough's pages show.
+// The canned answer, in the pieces it streams in.
+//
+// It names goals this fixture's own ledger carries and a record its own
+// checkout holds, because that is what makes the answer's links real: the page
+// resolves a name against the conversation's index, and a name no ledger
+// carries is text. So the walkthrough can be stood in front of to see a link
+// ring the card it names.
 var fakeAnswer = []string{
-	"Two goals are in **Ready for Work**.\n\n",
-	"- `running` — claimed by `m1e`, so it is being worked now.\n",
-	"- `waiting` — queued behind an approval that has not been given.\n\n",
+	"It is in **To Do** because nobody has authorised it yet.\n\n",
+	"- `g1-s18` carries no approval, so no seat may claim it.\n",
+	"- `g1-s12` is ahead of it in the same band.\n\n",
 	"The board reads the accepted ledger, ",
 	"so this is the tree at the tip the page shows ",
 	"rather than whatever the working tree holds.\n\n",
 	"### What I would look at next\n\n",
-	"`waiting` has been queued since it was opened. ",
+	"The design at plans/designs/reading.md is what governs this work. ",
 	"Its next step is written down, so the only thing missing is a human's admission.\n",
 }
 
-func fakePartner(checkout string) *partner.Service {
+// What the fake server reads on the way, in the tool server's own shape: one
+// read whole and one that left rows behind, so the drawer's "Looked at 2
+// things" and its outcomes can be stood in front of.
+var fakeReads = []fakeacp.Read{
+	{
+		Title: "document(plans/designs/reading.md)",
+		Result: "Source: plans/designs/reading.md as it stands, revision blob:7f31c0\n" +
+			"Supplied: 412 of 412\n\n" +
+			"- Kind: design\n- Status: draft\n\n# The reading pane\n\n" +
+			"A document is read as a chapter of a book rather than as a file.\n",
+	},
+	{
+		Title: "board(filters: waiting)",
+		Result: "Source: the accepted tip 6984cde, observed 2026-09-23T17:54:00Z\n" +
+			"Supplied: 2 of 5\n" +
+			"More remains: call this tool again with cursor \"2\".\n\n" +
+			"- waiting: waiting · Do waiting. · tier 2 · parked\n" +
+			"- ready: running · Do running. · tier 3 · 2:6 · claimed · seat m1e\n",
+	},
+}
+
+func fakePartner(checkout string, facts partner.Facts) *partner.Service {
 	runtime := partner.Runtime{
 		Name:  "fake",
 		Model: "fake-1",
 		ReadOnly: "a canned server that reads nothing and writes nothing; " +
 			"every request it makes is refused by the permission point",
+		// The hand-off, as the walkthrough shows it: the fake server records
+		// what session/new gave it and answers from a script, so nothing here
+		// starts a process.
+		Tools: &partner.ToolServer{
+			Name: "metasystem", Command: "bin/metasystem",
+			Args: []string{"ui", "tools", "--root", checkout},
+		},
 	}
 	host := partner.NewHostOn(runtime, checkout, fakeacp.Open(fakeacp.Script{
 		Models:         []string{"fake-1"},
-		Activity:       "Read plans/goals/backlog.md",
+		Reads:          fakeReads,
+		AskFor:         "mcp__metasystem__board",
 		Permission:     "Write plans/goals/waiting.md",
 		PermissionKind: "edit",
 		Chunks:         fakeAnswer,
@@ -56,7 +90,7 @@ func fakePartner(checkout string) *partner.Service {
 		func(human string) (*partner.Conversation, error) {
 			return partner.OpenConversation(checkout, human)
 		},
-		partner.Facts{}, time.Now)
+		facts, time.Now)
 	log.Printf("Project Partner: fake runtime, conversations under %s", checkout)
 	return service
 }

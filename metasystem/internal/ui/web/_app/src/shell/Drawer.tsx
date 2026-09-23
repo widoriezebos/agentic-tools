@@ -2,10 +2,11 @@ import { ChevronDown, ChevronUp, Maximize2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 
-import { useAboutLine } from "./about";
 import { Composer, COMPOSER_HINT, COMPOSER_LABEL } from "./Composer";
 import { IconButton } from "./controls";
 import { Help } from "../help/Help";
+import { Chips } from "../partner/Chips";
+import { Seeing } from "../partner/Seeing";
 import { Transcript } from "../partner/Transcript";
 import { usePartner } from "../partner/store";
 
@@ -49,15 +50,12 @@ export type Caret = "none" | "toggle" | "panel";
 
 export function Drawer({
   open,
-  about,
   caret,
   onCompose,
   onToggle,
   onEscape,
 }: {
   open: boolean;
-  /** The section's own name, where the pane on screen says nothing. */
-  about: string;
   caret: Caret;
   /** Writing in the closed bar: the drawer opens and the writing goes on. */
   onCompose: () => void;
@@ -65,9 +63,11 @@ export function Drawer({
   onEscape: () => void;
 }) {
   const navigate = useNavigate();
-  const line = useAboutLine(about);
   const toggle = useRef<HTMLButtonElement | null>(null);
-  const { draft, setDraft, busy } = usePartner();
+  const { draft, setDraft, busy, store } = usePartner();
+  // A conversation nobody has started yet is the first minute: the page's own
+  // three questions, and the one sentence that teaches the gesture.
+  const first = store.messages.length === 0;
 
   useEffect(() => {
     if (caret === "toggle") {
@@ -75,11 +75,6 @@ export function Drawer({
     }
   }, [caret]);
 
-  const context = (
-    <span className="ms-drawer-about">
-      about: <b>{line}</b>
-    </span>
-  );
 
   return (
     <aside className="ms-drawer" aria-label="Project Partner" data-open={open ? "true" : "false"}>
@@ -106,7 +101,7 @@ export function Drawer({
               }}
               onFocus={onCompose}
             />
-            {context}
+            <Seeing />
           </>
         )}
         <span className="ms-drawer-actions">
@@ -142,10 +137,13 @@ export function Drawer({
       <div className="ms-drawer-panel" id="brain-dock" hidden={!open}>
         {open && (
           <>
-            <div className="ms-drawer-head">{context}</div>
+            <div className="ms-drawer-head">
+              <Seeing />
+            </div>
             <div className="ms-drawer-messages">
               <Transcript />
             </div>
+            <Chips first={first} />
             <Composer onEscape={onEscape} takeCaret={caret === "panel"} />
           </>
         )}

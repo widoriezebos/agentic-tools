@@ -140,7 +140,7 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // stream — and nothing here renders Markdown either: a complete answer goes
   // through the reader's own preview route, which is project/api.ts's call
   // site and not a second one.
-  ["partner/api.ts", 1, ["/api/partner", "/api/partner/turns", "/stop"]],
+  ["partner/api.ts", 1, ["/api/partner", "/api/partner/turns", "/api/partner/seeing", "/stop"]],
 ];
 
 /**

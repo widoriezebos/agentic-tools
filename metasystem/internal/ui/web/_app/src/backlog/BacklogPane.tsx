@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import "./backlog.css";
@@ -11,6 +11,7 @@ import { clockTime, shortTip } from "./format";
 import { DraftGroup, LaneGroup } from "./LaneGroup";
 import { anchorFor, closedLanes, shownLanes, UNPLACEABLE, type LaneId } from "./lanes";
 import { OpenSheet } from "./OpenSheet";
+import { appliedLine, askedFor, returnAddress, type Asked as Arrival } from "./returning";
 import { landingFor, placementOf, SHOWN, type Landing } from "./showing";
 import { Statement } from "./Statement";
 import { useBacklog, useSlicePlans } from "./state";
@@ -18,7 +19,6 @@ import { syncOf } from "./sync";
 import { BoardToolbar } from "./Toolbar";
 import { Pane } from "../panes/Pane";
 import type { Pane as ProjectPayload } from "../project/api";
-import { SHOWN_GOAL } from "../routes";
 import {
   readBacklogFilters,
   readBacklogView,
@@ -70,7 +70,11 @@ export function BacklogPane() {
   // it has been answered, so that a reload is this page rather than that
   // arrival a second time.
   const [address, setAddress] = useSearchParams();
-  const asked = address.get(SHOWN_GOAL) ?? "";
+  // What this arrival asked for: the goal a goal page linked to, and the view,
+  // filters and window a message chip carries back from the capture a question
+  // was asked with. Both are read once and dropped from the address, so a
+  // reload is this page rather than that arrival a second time.
+  const asked = useMemo(() => askedFor(address), [address]);
 
   if (backlog.state === "loading") {
     return (
@@ -104,6 +108,7 @@ export function BacklogPane() {
         onRefresh={refresh}
         onMoved={moved}
         asked={asked}
+        arrival={address.toString()}
         onLanded={() => {
           setAddress({}, { replace: true });
         }}
@@ -118,6 +123,7 @@ function Read({
   onRefresh,
   onMoved,
   asked,
+  arrival,
   onLanded,
 }: {
   backlog: Backlog;
@@ -126,7 +132,14 @@ function Read({
   onRefresh: () => void;
   onMoved: (moved: Backlog) => void;
   /** The goal the address asked this page to show, or "" for none. */
-  asked: string;
+  asked: Arrival;
+  /**
+   * The address's own query, as it stands. It is what tells a page already on
+   * the Backlog that a NEW arrival has come in: a message chip clicked from
+   * the drawer changes the address without remounting this pane, and an
+   * arrival answered only on mount would leave that chip doing nothing.
+   */
+  arrival: string;
   /** Said once the landing has been made, so the address can drop the goal. */
   onLanded: () => void;
 }) {
@@ -136,7 +149,9 @@ function Read({
   // address asked for a goal that would otherwise be out of sight. None of it
   // is written back, because a landing changes what this page is showing and
   // not what this browser prefers.
-  const [opened] = useState(() => opensOn(ledger.state === "read" ? asked : "", backlog));
+  const [opened, setOpened] = useState(() =>
+    opensOn(ledger.state === "read" ? asked : { ...asked, goal: "" }, backlog),
+  );
   const [closedShown, setClosedShown] = useState(opened.closedShown);
   const [view, setView] = useState<BacklogView>(opened.view);
   const [acting, setActing] = useState<Request | null>(null);
@@ -187,6 +202,13 @@ function Read({
   useAbout(aboutLine("Backlog", view === "board" ? "board" : "list"), {
     filters: narrowed,
     lanes: onScreen,
+    view,
+    // The reading this page rendered from, so a question says what the human
+    // was looking at rather than what the server read a moment later.
+    tip: ledger.tip,
+    observedAt: backlog.observedAt,
+    window: windowTitle(reach) === "all" ? "every recorded conclusion" : `${windowTitle(reach)} days`,
+    returnTo: returnAddress(view, narrowing_, reach),
   });
 
   // Where the goal is, once it has been rendered. A layout effect is after
@@ -230,6 +252,30 @@ function Read({
     }
   }, []);
 
+  // A later arrival, on a page that is already here. The address is answered
+  // once per query it carries: answering it drops the query, which is what
+  // makes a reload this page rather than that arrival a second time, and the
+  // same chip pressed again is a new arrival because the query comes back.
+  const answered = useRef(arrival);
+  useEffect(() => {
+    if (arrival === "") {
+      answered.current = "";
+      return;
+    }
+    if (arrival === answered.current) {
+      return;
+    }
+    answered.current = arrival;
+    const next = opensOn(ledger.state === "read" ? asked : { ...asked, goal: "" }, backlog);
+    setOpened(next);
+    setView(next.view);
+    setFilters(next.filters);
+    setReach(next.reach);
+    setClosedShown(next.closedShown);
+    setShowing(next.showing);
+    onLanded();
+  }, [arrival]);
+
   const choose = (chosen: BacklogView) => {
     setView(chosen);
     writeBacklogView(chosen);
@@ -270,6 +316,14 @@ function Read({
           {note}
         </p>
       ))}
+      {/* What a message chip's own return applied, and what it could not: a
+          board that quietly showed today's filters as the old ones would be
+          the one thing the critique refuses. */}
+      {opened.applied !== "" && (
+        <p className="ms-board-showing" role="status">
+          {opened.applied}
+        </p>
+      )}
       {opening && (
         <OpenSheet
           backlog={backlog}
@@ -283,6 +337,7 @@ function Read({
       {boarding && (
         <Board
           backlog={backlog}
+          view={view}
           closedShown={closedShown}
           onToggleClosed={() => { setClosedShown((shown) => !shown); }}
           onAct={(act: Asked) => { setActing({ move: act.move, goal: act.goal }); }}
@@ -330,6 +385,8 @@ function Read({
                 count={countOf(backlog, lane.id)}
                 rows={rowsIn(backlog.rows, lane.id)}
                 tip={ledger.tip}
+                observedAt={backlog.observedAt}
+                returnTo={returnAddress(view, narrowing_, reach)}
                 unanswered={backlog.admission.answered ? "" : backlog.admission.message}
                 showing={showing}
                 onFaded={() => { setShowing(""); }}
@@ -354,6 +411,8 @@ function Read({
                 count={countOf(backlog, lane.id)}
                 rows={rowsIn(backlog.closed, lane.id)}
                 tip={ledger.tip}
+                observedAt={backlog.observedAt}
+                returnTo={returnAddress(view, narrowing_, reach)}
                 unanswered=""
                 showing={showing}
                 onFaded={() => { setShowing(""); }}
@@ -390,27 +449,33 @@ type Opening = {
   /** True when the address asked for a goal and this page answered. */
   landed: boolean;
   landing: Landing;
+  /** What a message chip's return applied, in one line, or "". */
+  applied: string;
 };
 
-function opensOn(asked: string, backlog: Backlog): Opening {
-  const view = readBacklogView();
-  const filters = readBacklogFilters();
-  const reach = readDoneWindow();
+function opensOn(asked: Arrival, backlog: Backlog): Opening {
+  // What this browser was last left on, which is what an arrival that asks for
+  // nothing opens on — and what an arrival that asks for something is applied
+  // over, for this one arrival only.
+  const view = asked.view ?? readBacklogView();
+  const filters = asked.filters ?? readBacklogFilters();
+  const reach = asked.reach ?? readDoneWindow();
   const asItWasLeft: Opening = {
     view,
     filters,
     reach,
     closedShown: false,
     showing: "",
-    landed: false,
+    landed: asked.applied.length > 0,
     landing: { notes: [] },
+    applied: appliedLine(asked, ""),
   };
-  if (asked === "") {
+  if (asked.goal === "") {
     return asItWasLeft;
   }
-  const placement = placementOf([...backlog.rows, ...backlog.closed], asked, observedAt(backlog), view);
+  const placement = placementOf([...backlog.rows, ...backlog.closed], asked.goal, observedAt(backlog), view);
   const landing = landingFor(
-    asked,
+    asked.goal,
     placement,
     reach,
     // Both views open with concluded work put away, so that is what a landing
@@ -427,9 +492,15 @@ function opensOn(asked: string, backlog: Backlog): Opening {
     // build offers; absent is the landing leaving the selector alone.
     reach: landing.doneDays === undefined ? reach : landing.doneDays,
     closedShown: landing.openClosed === true,
-    showing: placement.where === "missing" ? "" : asked,
+    showing: placement.where === "missing" ? "" : asked.goal,
     landed: true,
     landing,
+    // A subject that is no longer there is said, never silently replaced by
+    // whatever this board happens to hold today.
+    applied: appliedLine(
+      asked,
+      placement.where === "missing" ? `${asked.goal} is no longer on this board.` : "",
+    ),
   };
 }
 

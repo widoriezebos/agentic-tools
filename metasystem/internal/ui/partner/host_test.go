@@ -43,18 +43,25 @@ func TestTheHostRefusesAPermissionRequestAndSaysSo(t *testing.T) {
 	})
 	_, err := host.Ready(context.Background())
 	testutil.Require(t, "ready", err, nil)
-	var activity []string
+	// What the Partner is doing at a moment and what a human has to be told
+	// are two beats, deliberately: the first is replaced by the next and kept
+	// nowhere, and the second is read again afterwards.
+	var activity, doing []string
 	result, err := host.Prompt(context.Background(), "write something", func(update partner.Update) {
-		if update.Kind == partner.UpdateActivity {
+		switch update.Kind {
+		case partner.UpdateActivity:
 			activity = append(activity, update.Text)
+		case partner.UpdateDoing:
+			doing = append(doing, update.Text)
 		}
 	})
 	testutil.Require(t, "prompted", err, nil)
 	testutil.Expect(t, "the turn completes", result.Outcome, partner.OutcomeComplete)
-	testutil.Require(t, "two activity lines", len(activity), 2)
-	testutil.Expect(t, "the tool call", activity[0], "Read plans/goals/backlog.md")
-	testutil.Expect(t, "the refusal", strings.HasPrefix(activity[1], "Refused: the Partner reads this checkout"), true)
-	testutil.Expect(t, "and what was asked for", strings.Contains(activity[1], "Write a file (edit)"), true)
+	testutil.Require(t, "one thing it was doing", len(doing), 1)
+	testutil.Expect(t, "the tool call", doing[0], "Read plans/goals/backlog.md")
+	testutil.Require(t, "one activity line", len(activity), 1)
+	testutil.Expect(t, "the refusal", strings.HasPrefix(activity[0], "Refused: the Partner reads this checkout"), true)
+	testutil.Expect(t, "and what was asked for", strings.Contains(activity[0], "Write a file (edit)"), true)
 }
 
 // Stop cancels through the protocol and waits for the cancelled prompt's own

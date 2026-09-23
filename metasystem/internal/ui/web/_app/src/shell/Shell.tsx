@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Group, Panel, Separator, type Layout, type LayoutChangedMeta } from "react-resizable-panels";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 
@@ -15,7 +15,8 @@ import { BacklogPane } from "../backlog/BacklogPane";
 import { sectionHelp } from "../help/terms";
 import { useNotifications } from "../notifications/store";
 import { OverviewPane } from "../overview/OverviewPane";
-import { PartnerProvider } from "../partner/store";
+import { AskSelection } from "../partner/AskSelection";
+import { PartnerProvider, usePartner } from "../partner/store";
 import { Focused } from "../panes/Focused";
 import { NotFoundPane, SectionPane } from "../panes/sections";
 import { SettingsPane } from "../panes/Settings";
@@ -63,6 +64,23 @@ import { titleFor, type Identity } from "../title";
 const WORK_PANEL = "work";
 const DRAWER_PANEL = "partner";
 export function Shell() {
+  return (
+    <AboutProvider>
+      {/* The conversation stands above the drawer and the focused page, and
+          below the page's own context: it reads what the pane says it is about
+          so a question carries it. */}
+      <PartnerProvider>
+        {/* The section's refresh is offered by whichever pane is on screen and
+            shown in the header, so the provider has to stand above both. */}
+        <RefreshProvider>
+          <Frame />
+        </RefreshProvider>
+      </PartnerProvider>
+    </AboutProvider>
+  );
+}
+
+function Frame() {
   const location = useLocation();
   const phone = useMediaQuery(PHONE_QUERY);
   const railFits = useMediaQuery(RAIL_QUERY);
@@ -77,6 +95,10 @@ export function Shell() {
   // the panel's and the focused page's are three elements for one sentence,
   // and the store is what all three read it from.
   const [caret, setCaret] = useState<Caret>("none");
+  // Ask on a card, and Cmd/Ctrl+J, ask for the composer by counting. The
+  // drawer opens for them, because a composer nobody can see is a composer
+  // that must never be given the caret.
+  const { wanted } = usePartner();
 
   // The stored height is read once, as the layout this group opens with; from
   // there the group owns the arithmetic and a drag is what changes it.
@@ -97,6 +119,21 @@ export function Shell() {
   const { unread } = useNotifications();
 
   useEffect(() => watchSystemTheme(setSystemDark), []);
+
+  // Opening for an Ask. The first render is not one: a page that opens with
+  // the drawer closed keeps it closed until somebody asks for it.
+  const asked = useRef(0);
+  useEffect(() => {
+    if (wanted === asked.current) {
+      return;
+    }
+    asked.current = wanted;
+    if (wanted > 0) {
+      setDrawerOpen(true);
+      setCaret("panel");
+      writeDockOpen(true);
+    }
+  }, [wanted]);
 
   useEffect(() => {
     applyTheme(document.documentElement, effectiveTheme(theme, systemDark));
@@ -139,6 +176,13 @@ export function Shell() {
     setDrawer(!drawerOpen, "none");
   };
 
+  // The shortcut's own way in: open the drawer and put the caret in it.
+  const wantComposer = useCallback(() => {
+    setDrawerOpen(true);
+    setCaret("panel");
+    writeDockOpen(true);
+  }, []);
+
   // Only a human's own drag is remembered. A mount, a window resize, or a
   // layout the library recomputed carries isUserInteraction false and writes
   // nothing, so the stored height survives a trip through a short window.
@@ -148,6 +192,26 @@ export function Shell() {
       writeDockHeight(height);
     }
   };
+
+  // Cmd/Ctrl+J focuses the composer from any page. It is refused while a
+  // modal is open, because a shortcut that moved the caret out of a sheet
+  // would take it somewhere the sheet's own focus trap forbids.
+  useEffect(() => {
+    const pressed = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "j" || !(event.metaKey || event.ctrlKey) || event.altKey) {
+        return;
+      }
+      if (globalThis.document.querySelector("[role='dialog'], [role='menu']") !== null) {
+        return;
+      }
+      event.preventDefault();
+      wantComposer();
+    };
+    globalThis.document.addEventListener("keydown", pressed);
+    return () => {
+      globalThis.document.removeEventListener("keydown", pressed);
+    };
+  }, [wantComposer]);
 
   const panes = (
     <Routes>
@@ -189,7 +253,6 @@ export function Shell() {
     <ErrorBoundary>
       <Drawer
         open={drawn}
-        about={sectionTitle}
         caret={caret}
         onCompose={() => {
           if (!drawn) {
@@ -207,14 +270,7 @@ export function Shell() {
   );
 
   return (
-    <AboutProvider>
-      {/* The conversation stands above the drawer and the focused page, and
-          below the page's own context: it reads what the pane says it is about
-          so a question carries it. */}
-      <PartnerProvider>
-        {/* The section's refresh is offered by whichever pane is on screen and
-            shown in the header, so the provider has to stand above both. */}
-        <RefreshProvider>
+    <>
         <div className="ms-shell">
           <a className="ms-skip-link" href="#content">
             Skip to content
@@ -307,9 +363,11 @@ export function Shell() {
             </Sheet>
           )}
         </div>
-        </RefreshProvider>
-      </PartnerProvider>
-    </AboutProvider>
+      {/* Selected prose is a subject, wherever the interface renders prose.
+          It is mounted once, above every pane, because a selection is the
+          page's and not any one pane's. */}
+      <AskSelection />
+    </>
   );
 }
 

@@ -25,12 +25,14 @@ import (
 // The turn's own beats do not come back on these routes. They ride the page's
 // one event stream, under their own event type, in notifications.go.
 const (
-	partnerPath      = "/api/partner"
-	partnerTurnsPath = "/api/partner/turns"
-	partnerTurnsPre  = "/api/partner/turns/"
-	stopSuffix       = "/stop"
-	routePartnerTurn = "partner-turn"
-	routePartnerStop = "partner-stop"
+	partnerPath        = "/api/partner"
+	partnerTurnsPath   = "/api/partner/turns"
+	partnerTurnsPre    = "/api/partner/turns/"
+	partnerSeeingPath  = "/api/partner/seeing"
+	stopSuffix         = "/stop"
+	routePartnerTurn   = "partner-turn"
+	routePartnerStop   = "partner-stop"
+	routePartnerSeeing = "partner-seeing"
 )
 
 // partnerMessages is how much of the transcript the read route carries. A
@@ -50,6 +52,12 @@ type turnBody struct {
 func partnerRouteOf(path string) (written, bool) {
 	if path == partnerTurnsPath {
 		return written{route: routePartnerTurn}, true
+	}
+	// Composing what the next question will carry is a POST because it sends a
+	// capture, and it is a read: nothing is admitted, nothing is remembered,
+	// and the Partner is told nothing by it.
+	if path == partnerSeeingPath {
+		return written{route: routePartnerSeeing}, true
 	}
 	if id, ok := idBetween(path, partnerTurnsPre, stopSuffix); ok {
 		return written{route: routePartnerStop, id: id}, true
@@ -179,6 +187,43 @@ func (h *handler) partnerTurn(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusBadRequest)
 	writeActRefusal(w, "request", err.Error())
+}
+
+// seeingBody is one capture, asked about rather than sent.
+type seeingBody struct {
+	About partner.Page `json:"about"`
+}
+
+// partnerSeeing composes what the Partner will be given for this capture.
+//
+// It goes through the same composer the turn's own block goes through, which
+// is the whole point: a sheet composed a second way would be a second account
+// of the same page, and the human would be reading a rehearsal rather than the
+// thing. It speaks of the NEXT question — nothing is sent, nothing is
+// remembered, and no answer's stamp changes because somebody opened it.
+func (h *handler) partnerSeeing(w http.ResponseWriter, r *http.Request) {
+	if h.info.Partner == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		writeActRefusal(w, "partner", h.partnerRefusal())
+		return
+	}
+	var body seeingBody
+	if !decodeDocument(w, r, &body) {
+		return
+	}
+	seen := h.info.Partner.See(body.About, h.now())
+	_ = json.NewEncoder(w).Encode(struct {
+		Label     string `json:"label"`
+		Source    string `json:"source"`
+		Displayed string `json:"displayed"`
+		Supplied  int    `json:"supplied"`
+		Total     int    `json:"total"`
+		Block     string `json:"block"`
+	}{
+		Label: seen.Label, Source: seen.Source, Displayed: seen.Displayed,
+		Supplied: seen.Supplied, Total: seen.Total,
+		Block: partner.ComposeSeen(seen, body.About, ""),
+	})
 }
 
 // partnerStop stops the running turn. It answers the snapshot, so the page
