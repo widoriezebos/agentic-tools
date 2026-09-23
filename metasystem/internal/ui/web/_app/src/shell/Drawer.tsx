@@ -5,7 +5,6 @@ import { useNavigate } from "react-router";
 import { Composer, COMPOSER_HINT, COMPOSER_LABEL } from "./Composer";
 import { IconButton } from "./controls";
 import { Help } from "../help/Help";
-import { Chips } from "../partner/Chips";
 import { Seeing } from "../partner/Seeing";
 import { Transcript } from "../partner/Transcript";
 import { usePartner } from "../partner/store";
@@ -19,11 +18,13 @@ import { usePartner } from "../partner/store";
  * way to open it. Opening lifts a panel over the foot of the page; the page
  * above keeps its width and keeps scrolling.
  *
- * The panel is the conversation itself — what the human asked, what the
- * Partner answered, and what it did on the way — with the composer at the foot
- * of it where the old dock had it. The context line travels with the composer:
- * closed, it is in the bar beside the field; open, it is the panel's own
- * header, over the messages it is the context for.
+ * The panel is the conversation itself — what the human asked and what the
+ * Partner answered, in one column at one measure — with the composer card at
+ * the foot of it where the old dock had it. The context line travels with the
+ * composer: closed, it is in the bar beside the field; open, it is the card's
+ * own first row, over the field it is the context for. The panel has no header
+ * of its own, because a line saying what the next question carries belongs to
+ * the next question and not to the messages above it.
  *
  * The bar's field is one line and the panel's is not. Reaching the one-line
  * field opens the panel, which is where the writing happens, and the sentence
@@ -64,10 +65,7 @@ export function Drawer({
 }) {
   const navigate = useNavigate();
   const toggle = useRef<HTMLButtonElement | null>(null);
-  const { draft, setDraft, busy, store } = usePartner();
-  // A conversation nobody has started yet is the first minute: the page's own
-  // three questions, and the one sentence that teaches the gesture.
-  const first = store.messages.length === 0;
+  const { draft, setDraft, busy } = usePartner();
 
   useEffect(() => {
     if (caret === "toggle") {
@@ -137,13 +135,9 @@ export function Drawer({
       <div className="ms-drawer-panel" id="brain-dock" hidden={!open}>
         {open && (
           <>
-            <div className="ms-drawer-head">
-              <Seeing />
-            </div>
             <div className="ms-drawer-messages">
               <Transcript />
             </div>
-            <Chips first={first} />
             <Composer onEscape={onEscape} takeCaret={caret === "panel"} />
           </>
         )}

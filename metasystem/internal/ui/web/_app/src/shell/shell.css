@@ -392,10 +392,18 @@ body {
 
 /* ---------------------------------------------------------------- drawer -- */
 
+/*
+ * The one column is written down rather than left implicit: an `auto` track is
+ * sized by what is in it, so a row inside the panel that will not wrap would
+ * widen the drawer past the window instead of being cut. The track is the
+ * drawer's width and everything in it fits or is cut.
+ */
 .ms-drawer {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
+  min-width: 0;
   border-top: 1px solid var(--ms-border);
   background: var(--ms-surface);
 }
@@ -541,32 +549,31 @@ body {
 }
 
 /*
- * The panel: what the page is about, then what has been said, then where to
- * write. The messages are the one row that scrolls, so the composer stays at
- * the foot of the panel however long the conversation grows — which is where
- * the dock had it, and where a human looks for it.
+ * The panel: what has been said, then where to write. The messages are the one
+ * row that scrolls, so the composer card stays at the foot of the panel however
+ * long the conversation grows — which is where the dock had it, and where a
+ * human looks for it.
+ *
+ * There is no header row any more. What the next question will carry is the
+ * card's own first row: it belongs to the question, not to the answers above
+ * it, and a line of its own over the transcript was one of the four alignments
+ * this slice took away.
  */
 .ms-drawer-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
+  min-width: 0;
   padding: 12px 16px 16px;
   border-top: 1px solid var(--ms-border);
   background: var(--ms-surface);
 }
 
-.ms-drawer-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--ms-border);
-}
-
 .ms-drawer-messages {
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
-  padding-top: 8px;
 }
 
 /*
@@ -611,14 +618,18 @@ body {
   background: var(--ms-bg);
 }
 
+/*
+ * The focused conversation keeps the same measure the drawer's does, and keeps
+ * it against the page's own gutter: a column centred in the window and a column
+ * centred in a drawer are two different left edges for one conversation.
+ */
 .ms-focused-column {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   width: 100%;
-  max-width: 720px;
-  margin: 0 auto;
 }
 
 .ms-subject-panel {
@@ -852,26 +863,63 @@ body {
 
 /* -------------------------------------------------------------- composer -- */
 
+/*
+ * One card, and everything a human touches is in it: what the next question
+ * will carry, the questions worth asking, the field, and the row that says how
+ * to send and sends. Twelve pixels inside it, at the edges and between the
+ * rows, so the four of them read as one object. Its measure is the
+ * conversation's, declared once in partner.css.
+ */
 .ms-composer {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  min-width: 0;
   margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--ms-border);
+  border-radius: 10px;
+  background: var(--ms-surface);
 }
 
+/* The slim top row: the words open the sheet, the subject stands beside them. */
+.ms-composer-seeing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-composer-seeing b {
+  font-weight: 500;
+  color: var(--ms-text-2);
+}
+
+/*
+ * The field: the sans face a question is written in, one line to begin with and
+ * six at the most. `field-sizing` is what grows it, so nothing measures the
+ * text and nothing writes a height into the element.
+ */
 .ms-composer-field {
   width: 100%;
-  min-height: 72px;
-  padding: 8px 12px;
   box-sizing: border-box;
-  border-radius: 6px;
+  field-sizing: content;
+  min-height: 38px;
+  max-height: 148px;
+  padding: 8px 10px;
+  border-radius: 8px;
   border: 1px solid var(--ms-border-strong);
   background: var(--ms-surface);
   color: var(--ms-text);
-  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-  line-height: 18px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 22px;
   resize: none;
+  overflow-y: auto;
 }
 
 .ms-composer-field::placeholder {
@@ -896,6 +944,37 @@ body {
   font-size: 12px;
   line-height: 16px;
   color: var(--ms-text-3);
+}
+
+/* Send is small here: the card is already the thing the eye goes to. */
+.ms-composer-foot .ms-button {
+  height: 28px;
+  padding: 0 12px;
+  flex: none;
+}
+
+/*
+ * On a phone the row stays one line and the long half of it is cut, because a
+ * card that spends three of its rows saying what the question will carry is a
+ * card with no conversation above it. The whole line is in the sheet the row
+ * opens, so nothing is lost by cutting it here.
+ */
+@media (max-width: 599px) {
+  .ms-composer-seeing {
+    flex-wrap: nowrap;
+  }
+
+  .ms-composer-seeing .ms-seeing-chip {
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ms-composer-seeing .ms-partner-subject-chip,
+  .ms-composer-seeing .ms-seeing-refresh {
+    flex: none;
+  }
 }
 
 /* ----------------------------------------------------------------- cards -- */

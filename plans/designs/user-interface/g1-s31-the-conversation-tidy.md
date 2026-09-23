@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M37Z5QMVNDMH0MYCF8AXY2B8
-- Status: accepted
+- Status: done
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 1, 2026-09-23, Claude on Fable, on Wido's review of the Partner's drawer: "the layout of the text and the questions that I can click on is a bit messy. It just doesn't look tidy ... make that just a bit more tight, elegant, more intuitive, easier to adjust, easier on the eyes." A presentation slice over g1-s28 and g1-s29: nothing the Partner does changes; how the conversation looks and reads does. Not sent to Astra: it changes no behaviour.

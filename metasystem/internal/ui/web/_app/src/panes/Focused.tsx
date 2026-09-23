@@ -1,4 +1,3 @@
-import { Chips } from "../partner/Chips";
 import { PinnedSubject } from "../partner/Pinned";
 import { Transcript } from "../partner/Transcript";
 import { Composer } from "../shell/Composer";
@@ -27,7 +26,6 @@ export function Focused() {
           <div className="ms-dock-statement">
             <Transcript />
           </div>
-          <Chips />
           <Composer />
         </div>
       </div>

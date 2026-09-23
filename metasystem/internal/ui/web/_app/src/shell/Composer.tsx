@@ -1,16 +1,27 @@
+import { Square } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import { Button } from "./controls";
+import { showsSuggestions, Suggestions } from "../partner/Chips";
 import { insertAt } from "../partner/composing";
+import { SeeingRow } from "../partner/Seeing";
 import { usePartner } from "../partner/store";
 
 /**
- * Where a human writes to their Project Partner.
+ * Where a human writes to their Project Partner: one card, and everything they
+ * touch is in it.
+ *
+ * Top to bottom it is what the next question will carry, the questions worth
+ * asking, the field, and the one row that says how to send and sends. It was
+ * four things at four alignments — a line above the transcript, two chips
+ * floating in it, a hint of its own and a button in the far corner — and the
+ * card is what makes them one object: the eye goes there to act, and nowhere
+ * else.
  *
  * Enter sends and Shift+Enter is a newline, which is what every conversation
- * does and what a human will try first. Send is disabled while a turn is
- * running and while a send is in flight, so one question is one turn; Stop is
- * in the transcript, beside the answer it would end.
+ * does and what a human will try first. Stop takes Send's place while a turn
+ * runs, so the one control that ends a turn is where the one control that
+ * starts a turn was, rather than beside the answer it would end.
  *
  * The draft is the store's, not this component's: the bar's field and the
  * panel's are two elements for one sentence, and the focused page is a third.
@@ -19,7 +30,7 @@ import { usePartner } from "../partner/store";
  *
  * Two things come in through the store rather than through a prop, because
  * the thing that needs them is not this component's parent. Ask on a card
- * takes the caret here, from wherever it was; and a suggestion chip pressed
+ * takes the caret here, from wherever it was; and a suggestion pill pressed
  * while something is half-written inserts its words at this field's own
  * cursor, which only this field knows.
  */
@@ -27,6 +38,8 @@ import { usePartner } from "../partner/store";
 export const COMPOSER_LABEL = "Message to your Project Partner";
 /** The hint in the empty box: an invitation to type, not the name of the box. */
 export const COMPOSER_HINT = "Ask your Project Partner, or think out loud…";
+/** How a question is sent, said once, under the field that sends it. */
+export const COMPOSER_KEYS = "Enter to send · Shift+Enter for a new line";
 
 export function Composer({
   onEscape,
@@ -42,7 +55,7 @@ export function Composer({
    */
   takeCaret?: boolean;
 }) {
-  const { draft, setDraft, send, busy, sending, store, wanted, offerInsert, returnFocus } = usePartner();
+  const { draft, setDraft, send, stop, busy, sending, store, wanted, offerInsert, returnFocus } = usePartner();
   const field = useRef<HTMLTextAreaElement | null>(null);
   const unavailable = store.state === "unavailable";
 
@@ -94,12 +107,15 @@ export function Composer({
 
   return (
     <div className="ms-composer">
+      <SeeingRow />
+      {showsSuggestions(draft) && <Suggestions />}
       <label className="ms-visually-hidden" htmlFor="composer">
         {COMPOSER_LABEL}
       </label>
       <textarea
         id="composer"
         ref={field}
+        rows={1}
         className="ms-composer-field"
         placeholder={COMPOSER_HINT}
         aria-describedby="composer-reason"
@@ -129,17 +145,28 @@ export function Composer({
       />
       <div className="ms-composer-foot">
         <span className="ms-composer-reason" id="composer-reason">
-          {busy ? "Answering…" : "Enter sends, Shift+Enter starts a line."}
+          {COMPOSER_KEYS}
         </span>
-        <Button
-          primary
-          disabled={busy || sending || unavailable || draft.trim() === ""}
-          onClick={() => {
-            send();
-          }}
-        >
-          Send
-        </Button>
+        {busy ? (
+          <Button
+            onClick={() => {
+              stop();
+            }}
+          >
+            <Square size={14} strokeWidth={1.75} aria-hidden="true" />
+            Stop
+          </Button>
+        ) : (
+          <Button
+            primary
+            disabled={sending || unavailable || draft.trim() === ""}
+            onClick={() => {
+              send();
+            }}
+          >
+            Send
+          </Button>
+        )}
       </div>
     </div>
   );

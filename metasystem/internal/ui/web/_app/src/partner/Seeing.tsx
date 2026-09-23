@@ -2,44 +2,71 @@ import { useEffect, useState } from "react";
 
 import { seeing, type Seeing as Composed } from "./api";
 import { seeingLine } from "./capture";
+import { SubjectChip } from "./Chips";
 import { usePartner } from "./store";
+import { effectiveSubject } from "./subject";
 import { Sheet } from "../shell/Sheet";
+import { useSubject } from "../shell/about";
 
 /**
  * What the Partner will see, said in one line and opened in full.
  *
- * The chip speaks of the NEXT question and says so: "Will see". An answer's
- * own stamp speaks of what was given and says "Saw". Astra's first finding is
+ * The line speaks of the NEXT question and says so: "Seeing". An answer's own
+ * meta line speaks of what was given and says "Saw". Astra's first finding is
  * the reason the two are different words — clicking Refresh must not read as
  * "the Partner has now been told", and an answer already given must not change
  * its stamp because the board moved afterwards.
  *
  * The sheet shows the block the server composes from this capture, through the
  * same composer the turn's own block goes through. It is a read: opening it
- * sends nothing and the Partner is told nothing by it.
+ * sends nothing and the Partner is told nothing by it. The forty-character
+ * hash and the ISO instant an answer's meta line shortens are in there, whole.
  */
+
+/** The one line, as the closed drawer's bar shows it. */
 export function Seeing() {
-  const { capture, moved, refresh } = usePartner();
   const [open, setOpen] = useState(false);
   return (
     <span className="ms-drawer-about">
-      <button
-        type="button"
-        className="ms-seeing-chip"
-        aria-haspopup="dialog"
-        onClick={() => {
+      <SeeingButton
+        onOpen={() => {
           setOpen(true);
         }}
-      >
-        <span className="ms-seeing-what">Seeing:</span>
-        <b>{seeingLine(capture)}</b>
-      </button>
+      />
+      {open && (
+        <SeeingSheet
+          onClose={() => {
+            setOpen(false);
+          }}
+        />
+      )}
+    </span>
+  );
+}
+
+/**
+ * The composer card's top row: what the next question will carry, the subject
+ * it is about with the × that gives it back to the page, and the offer to take
+ * the page's reading again where it has moved on.
+ *
+ * It is the card's own first row rather than a line of its own above the
+ * transcript, because everything a human touches belongs to one object.
+ */
+export function SeeingRow() {
+  const { chosen, clearChosen, moved, refresh } = usePartner();
+  const page = useSubject();
+  const subject = effectiveSubject(chosen, page);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="ms-composer-seeing">
+      <SeeingButton
+        onOpen={() => {
+          setOpen(true);
+        }}
+      />
+      {subject !== null && <SubjectChip subject={subject} onClear={chosen === null ? null : clearChosen} />}
       {moved && (
-        <button
-          type="button"
-          className="ms-seeing-refresh"
-          onClick={refresh}
-        >
+        <button type="button" className="ms-seeing-refresh" onClick={refresh}>
           Refresh what it sees
         </button>
       )}
@@ -50,7 +77,18 @@ export function Seeing() {
           }}
         />
       )}
-    </span>
+    </div>
+  );
+}
+
+/** The words themselves, which open the sheet wherever they stand. */
+function SeeingButton({ onOpen }: { onOpen: () => void }) {
+  const { capture } = usePartner();
+  return (
+    <button type="button" className="ms-seeing-chip" aria-haspopup="dialog" onClick={onOpen}>
+      <span className="ms-seeing-what">Seeing:</span>
+      <b>{seeingLine(capture)}</b>
+    </button>
   );
 }
 
