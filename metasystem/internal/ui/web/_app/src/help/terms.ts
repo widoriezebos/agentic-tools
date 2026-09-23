@@ -155,7 +155,7 @@ export const HELP: Record<HelpId, Term> = {
   // would have to guess at.
   "lane-split": {
     term: "Split into goals",
-    text: "A goal retired by decomposition, standing here under the goals it became rather than in Done as a delivered outcome.",
+    text: "A goal that was split into smaller goals. It stands here beside the goals it became, not in Done, because it was never delivered as one piece.",
   },
   priority: {
     term: "Priority",

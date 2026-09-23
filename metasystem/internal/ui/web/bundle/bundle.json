@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:76fad6166c69912076beaa7e12df321b9c088e89fd89e33e966664c1859ad33e",
+  "sourceDigest": "sha256:06ed4d18f93fb93aa5032768625611c8daedb5adcc83d837b89337b4ad31fbe7",
   "source": [
     {
       "path": ".npmrc",
@@ -220,7 +220,7 @@
     },
     {
       "path": "src/help/terms.ts",
-      "sha256": "45ef22294f5c3648e39966a50c474c601ef03978d02952d082ca8c01aae2af8d"
+      "sha256": "7142f2d21fcc216fc2db9f02b2e89294f179aaf630a79113eb4344e9539f1167"
     },
     {
       "path": "src/index.css",
@@ -486,7 +486,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "061c3e5ccb047839bf344ae84604d2d438b96bbbb5532aedcaa4c12705c5a2a0"
+      "sha256": "287a8d06e98720483d94cf54b8d4ca4b9f716170e51a714b0c81679ccc8d4a58"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
