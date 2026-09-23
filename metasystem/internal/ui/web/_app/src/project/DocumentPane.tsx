@@ -1,16 +1,29 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { NavLink, useLocation } from "react-router";
 
 import {
+  editDocument,
   encodeSegments,
   failureMessage,
   isNotFound,
   loadDocument,
   loadPane,
+  previewDocument,
+  ResourceError,
   type DocumentPayload,
   type Link as RecordLink,
   type Pane as PanePayload,
+  type Problem,
 } from "./api";
+import {
+  dirty,
+  next,
+  opening,
+  savedAt,
+  statusOf,
+  type Editor,
+  type Outcome,
+} from "./editing";
 import { Markdown } from "./Markdown";
 import { outlineOf, useReadingRow, type OutlineRow } from "./outline";
 import { aboutOf, crumbsFor, kindTitle, railFor, shortID, type About, type SiblingRail } from "./pane";
@@ -130,10 +143,22 @@ export function DocumentPane() {
     );
   };
 
+  // A save answers with the document as it now reads from disk, so the page is
+  // replaced with what the server read back rather than with what was typed.
+  const rewritten = (payload: DocumentPayload) => {
+    setDocument({ state: "read", document: payload });
+  };
+
   return (
     <Pane title={name === "" ? "Project" : name}>
       {document.state === "read" ? (
-        <Read document={document.document} pane={pane} onReload={retry} onStatus={restated} />
+        <Read
+          document={document.document}
+          pane={pane}
+          onReload={retry}
+          onStatus={restated}
+          onSaved={rewritten}
+        />
       ) : (
         <div className="ms-reader">
           <article className="ms-reading">
@@ -187,11 +212,13 @@ function Read({
   pane,
   onReload,
   onStatus,
+  onSaved,
 }: {
   document: DocumentPayload;
   pane: PanePayload | null;
   onReload: () => void;
   onStatus: (status: string) => void;
+  onSaved: (payload: DocumentPayload) => void;
 }) {
   const outline = useMemo(() => outlineOf(document.headings), [document]);
   const crumbs = useMemo(() => crumbsFor(pane, document), [pane, document]);
@@ -199,6 +226,9 @@ function Read({
   const current = useReadingRow(outline, document.id);
   const lead = leadingTitleId(document);
   const [sheet, setSheet] = useState<Request | null>(null);
+  // The editor, while one is open, and what the last save is remembered as.
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [saved, setSaved] = useState("");
 
   // What the drawer says this page is about: the record, and the section of it
   // being read, from the outline the reader already follows. The first heading
@@ -206,10 +236,85 @@ function Read({
   const heading = outline.find((row) => row.id === current);
   useAbout(aboutLine(document.title, heading?.text ?? ""));
 
+  // A change typed here exists nowhere else, so the browser is asked to say so
+  // before the page goes. The guard is armed only while there is something to
+  // lose, and it is the one window event in this build.
+  const unsaved = editor !== null && dirty(editor);
+  useEffect(() => {
+    if (!unsaved) {
+      return;
+    }
+    const guard = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    globalThis.addEventListener("beforeunload", guard);
+    return () => {
+      globalThis.removeEventListener("beforeunload", guard);
+    };
+  }, [unsaved]);
+
+  // Every answer lands on the editor as it stands rather than on the one the
+  // request was made from, so nothing typed while waiting is thrown away by a
+  // reply, and a reply to an editor that has closed lands nowhere.
+  const answered = (outcome: Outcome) => {
+    setEditor((state) => (state === null ? state : next(state, outcome)));
+  };
+
+  const save = () => {
+    if (editor === null || editor.pending) {
+      return;
+    }
+    const sending = next(editor, { kind: "sending", saying: "Saving…" });
+    setEditor(sending);
+    editDocument(document.id, sending.source, sending.revision)
+      .then((payload) => {
+        setEditor(null);
+        setSaved(savedAt(new Date()));
+        onSaved(payload);
+      })
+      .catch((error: unknown) => {
+        answered(refused(error));
+      });
+  };
+
+  const render = () => {
+    if (editor === null || editor.pending || editor.mode === "preview") {
+      return;
+    }
+    const sending = next(editor, { kind: "sending", saying: "Rendering…" });
+    setEditor(sending);
+    previewDocument(sending.source)
+      .then((preview) => {
+        answered({ kind: "rendered", blocks: preview.blocks });
+      })
+      .catch((error: unknown) => {
+        answered(refused(error));
+      });
+  };
+
+  // Leaving with changes asks first; leaving without them is not a question.
+  const leave = () => {
+    if (editor === null) {
+      return;
+    }
+    if (dirty(editor)) {
+      setSheet({ mode: "discard", path: document.id });
+      return;
+    }
+    setEditor(null);
+  };
+
+  const open = () => {
+    setEditor(opening(document.source, document.revision));
+  };
+
   const done = (result: Done) => {
     setSheet(null);
     if (result.mode === "status") {
       onStatus(result.written.record.status);
+    }
+    if (result.mode === "discard") {
+      setEditor(null);
     }
   };
 
@@ -225,21 +330,47 @@ function Read({
       <div className="ms-reader">
         {rail !== null && <SiblingsRail rail={rail} />}
         <article className="ms-reading">
-          {document.record === null ? (
-            <PlainFacts document={document} lead={lead} onReload={onReload} />
+          {editor === null ? (
+            <>
+              {document.record === null ? (
+                <PlainFacts
+                  document={document}
+                  lead={lead}
+                  saved={saved}
+                  onReload={onReload}
+                  onEdit={editable(document) ? open : null}
+                />
+              ) : (
+                <RecordFacts
+                  document={document}
+                  pane={pane}
+                  lead={lead}
+                  saved={saved}
+                  onReload={onReload}
+                  onEdit={editable(document) ? open : null}
+                  onStatusChange={(status) => {
+                    setSheet({ mode: "status", id: document.record?.id ?? "", title: document.title, path: document.id, status });
+                  }}
+                />
+              )}
+              {document.state !== "readable" && <p className="ms-project-reason">{document.reason}</p>}
+              <Markdown blocks={lead === null ? document.blocks : document.blocks.slice(1)} from={document.id} />
+            </>
           ) : (
-            <RecordFacts
-              document={document}
-              pane={pane}
-              lead={lead}
-              onReload={onReload}
-              onStatusChange={(status) => {
-                setSheet({ mode: "status", id: document.record?.id ?? "", title: document.title, path: document.id, status });
+            <Editing
+              editor={editor}
+              from={document.id}
+              onType={(source) => {
+                answered({ kind: "typed", source });
               }}
+              onSource={() => {
+                answered({ kind: "source" });
+              }}
+              onPreview={render}
+              onSave={save}
+              onCancel={leave}
             />
           )}
-          {document.state !== "readable" && <p className="ms-project-reason">{document.reason}</p>}
-          <Markdown blocks={lead === null ? document.blocks : document.blocks.slice(1)} from={document.id} />
         </article>
         {outline.length > 0 && <Outline rows={outline} current={current} />}
       </div>
@@ -257,15 +388,169 @@ function Read({
   );
 }
 
+/**
+ * A document can be edited here when there is text to edit: a file that was
+ * too large to read to its end, or that is not text at all, carries no source,
+ * and an editor over nothing would save nothing over the file.
+ */
+function editable(document: DocumentPayload): boolean {
+  return document.state === "readable";
+}
+
+/** A refusal, as the outcome the editor answers to. */
+function refused(error: unknown): Outcome {
+  const resource = error instanceof ResourceError ? error : null;
+  return {
+    kind: "refused",
+    status: resource?.status ?? 0,
+    said: failureMessage(error),
+    problems: resource?.problems ?? [],
+  };
+}
+
+/**
+ * The editor, in the reading column and in the article's place.
+ *
+ * The article becomes this while it is open, so there is one thing to do: the
+ * facts strip, the status control and the file actions are not there to be
+ * clicked past. Above the text is the whole of the bar — what is showing, the
+ * two acts, and one line saying where things stand.
+ *
+ * The preview renders through the same component the reader renders with, in
+ * the same styles, because a preview in a second set of styles is a preview of
+ * a different page.
+ */
+function Editing({
+  editor,
+  from,
+  onType,
+  onSource,
+  onPreview,
+  onSave,
+  onCancel,
+}: {
+  editor: Editor;
+  from: string;
+  onType: (source: string) => void;
+  onSource: () => void;
+  onPreview: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  // The two shortcuts an editor is expected to have, taken on the way up from
+  // whatever holds focus, so they work in the text and on the bar alike.
+  const keys = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onCancel();
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      onSave();
+    }
+  };
+
+  return (
+    <div className="ms-editing" onKeyDown={keys}>
+      <div className="ms-editor-bar">
+        <div className="ms-editor-modes" role="group" aria-label="What the editor shows">
+          <button
+            type="button"
+            className="ms-editor-mode"
+            aria-pressed={editor.mode === "source"}
+            disabled={editor.pending}
+            onClick={onSource}
+          >
+            Write
+          </button>
+          <button
+            type="button"
+            className="ms-editor-mode"
+            aria-pressed={editor.mode === "preview"}
+            disabled={editor.pending}
+            onClick={onPreview}
+          >
+            Preview
+          </button>
+        </div>
+        <Button primary disabled={editor.pending} onClick={onSave}>
+          Save
+        </Button>
+        <Button disabled={editor.pending} onClick={onCancel}>
+          Cancel
+        </Button>
+        <span className="ms-editor-status" role="status">
+          {statusOf(editor)}
+        </span>
+      </div>
+      {editor.problems.length > 0 && <Problems problems={editor.problems} />}
+      {editor.mode === "source" ? (
+        <Source source={editor.source} onType={onType} />
+      ) : (
+        <Markdown blocks={editor.blocks} from={from} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The text itself. It is sized to what it holds, so the page scrolls and the
+ * box does not: there is no timer measuring it and no scroll-height loop, only
+ * a browser that grows a field to its content and a floor for the ones that
+ * do not.
+ *
+ * Focus enters it when it appears, which is when the editor opens and again
+ * when the preview is left, so a human who came back to write is writing.
+ */
+function Source({ source, onType }: { source: string; onType: (source: string) => void }) {
+  const box = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    box.current?.focus();
+  }, []);
+  return (
+    <textarea
+      ref={box}
+      className="ms-editor"
+      aria-label="The document, as Markdown"
+      spellCheck
+      value={source}
+      onChange={(event) => {
+        onType(event.target.value);
+      }}
+    />
+  );
+}
+
+/**
+ * What the project refused the save over, above the text, each anchored at the
+ * line a human has to go and fix.
+ */
+function Problems({ problems }: { problems: Problem[] }) {
+  return (
+    <ul className="ms-editor-problems">
+      {problems.map((problem, index) => (
+        <li key={`${problem.path}-${String(problem.line)}-${String(index)}`}>
+          <span className="ms-mono">line {problem.line}</span> {problem.message}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** The facts line a document that declares nothing has always carried. */
 function PlainFacts({
   document,
   lead,
+  saved,
   onReload,
+  onEdit,
 }: {
   document: DocumentPayload;
   lead: string | null;
+  saved: string;
   onReload: () => void;
+  onEdit: (() => void) | null;
 }) {
   return (
     <>
@@ -274,12 +559,13 @@ function PlainFacts({
       </h1>
       <p className="ms-reading-facts">
         <span className="ms-mono">{document.path}</span>
-        <FileActions path={document.path} />
+        <FileActions path={document.path} onEdit={onEdit} />
         <Chip>{ownership(document.owner)}</Chip>
         <span>changed {dateOf(document.modifiedAt)}</span>
         <span>read at {timeOf(document.readAt)}</span>
         {document.revision !== "" && <span className="ms-mono">{shortRevision(document.revision)}</span>}
         <Button onClick={onReload}>Reload</Button>
+        {saved !== "" && <span role="status">{saved}</span>}
       </p>
     </>
   );
@@ -294,13 +580,17 @@ function RecordFacts({
   document,
   pane,
   lead,
+  saved,
   onReload,
+  onEdit,
   onStatusChange,
 }: {
   document: DocumentPayload;
   pane: PanePayload | null;
   lead: string | null;
+  saved: string;
   onReload: () => void;
+  onEdit: (() => void) | null;
   onStatusChange: (status: string) => void;
 }) {
   const head = document.record;
@@ -323,11 +613,12 @@ function RecordFacts({
         <span className="ms-mono ms-facts-path" title={document.path}>
           {document.path}
         </span>
-        <FileActions path={document.path} />
+        <FileActions path={document.path} onEdit={onEdit} />
         <span>
           changed {dateOf(document.modifiedAt)} · read at {timeOf(document.readAt)}
         </span>
         <Button onClick={onReload}>Reload</Button>
+        {saved !== "" && <span role="status">{saved}</span>}
       </p>
       <Relationships document={document} pane={pane} />
     </header>
@@ -378,14 +669,18 @@ function Status({ status, onChange }: { status: string; onChange: (status: strin
 }
 
 /**
- * The two ways out of the browser and into the file: its absolute path on the
- * clipboard, and the editor opened on it.
+ * What can be done with the file: edited here, its absolute path put on the
+ * clipboard, or opened in a local editor.
  *
- * The confirmation is a CSS animation on an element that is remounted for each
- * copy, so a second copy says so again; there is no timer anywhere in this
+ * Edit is first because it is the one that stays on the page. A document this
+ * interface could not read to its end has no Edit: there is nothing to open an
+ * editor over, and the other two still work on a file this build will not show.
+ *
+ * The copy confirmation is a CSS animation on an element that is remounted for
+ * each copy, so a second copy says so again; there is no timer anywhere in this
  * build, and a confirmation that needed one would be the first.
  */
-function FileActions({ path }: { path: string }) {
+function FileActions({ path, onEdit }: { path: string; onEdit: (() => void) | null }) {
   const [copies, setCopies] = useState(0);
   const [refused, setRefused] = useState(false);
 
@@ -407,6 +702,11 @@ function FileActions({ path }: { path: string }) {
 
   return (
     <span className="ms-facts-file">
+      {onEdit !== null && (
+        <button type="button" className="ms-project-act" onClick={onEdit}>
+          Edit
+        </button>
+      )}
       <button type="button" className="ms-project-act" onClick={copy}>
         Copy path
       </button>

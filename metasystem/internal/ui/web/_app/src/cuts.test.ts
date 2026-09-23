@@ -76,11 +76,22 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // it already had: a write is the same request with a body, so there is still
   // exactly one place in this build that reaches the network from here. The
   // two status routes name an id between their prefix and the suffix both
-  // share, which is why "/status" is listed on its own.
+  // share, which is why "/status" is listed on its own. Editing a document in
+  // place adds two more resources to the same call site and no second call
+  // site: the save names a document by the read route's own id with "/edit"
+  // after it, and the render names its own path and no document at all.
   [
     "project/api.ts",
     1,
-    ["/api/project", "/api/documents/", "/api/project/records", "/api/project/questions", "/status"],
+    [
+      "/api/project",
+      "/api/documents/",
+      "/api/project/records",
+      "/api/project/questions",
+      "/status",
+      "/edit",
+      "/api/documents/preview",
+    ],
   ],
   // Who the server is acting as, and the two acts that change it. It is read
   // beside the workspace and again only when a sign-in or a sign-out answers

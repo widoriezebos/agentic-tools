@@ -46,14 +46,16 @@ export type Request =
   | { mode: "record"; kind: Kind; goal: string | null }
   | { mode: "status"; id: string; title: string; path: string; status: string }
   | { mode: "question"; goal: string | null }
-  | { mode: "answer"; id: string; question: string };
+  | { mode: "answer"; id: string; question: string }
+  | { mode: "discard"; path: string };
 
 /** What it did, for the caller to act on. */
 export type Done =
   | { mode: "record"; written: Written }
   | { mode: "status"; written: Written }
   | { mode: "question"; asked: Asked }
-  | { mode: "answer"; asked: Asked };
+  | { mode: "answer"; asked: Asked }
+  | { mode: "discard" };
 
 /** Everything that can hold focus inside the panel, in the order it is met. */
 const FOCUSABLE =
@@ -154,6 +156,7 @@ export function Sheet({
         {request.mode === "answer" && (
           <AnswerForm request={request} sending={sending} onClose={onClose} onSend={send} />
         )}
+        {request.mode === "discard" && <DiscardForm request={request} onClose={onClose} onDone={onDone} />}
         {refusal !== "" && (
           <p className="ms-writing-refusal" role="alert">
             {refusal}
@@ -186,6 +189,7 @@ function Foot({
   sending,
   onConfirm,
   onClose,
+  cancel = "Cancel",
   secondary,
 }: {
   confirm: string;
@@ -194,6 +198,8 @@ function Foot({
   sending: boolean;
   onConfirm: () => void;
   onClose: () => void;
+  /** What the way out is called, where "Cancel" is not what it does. */
+  cancel?: string;
   secondary?: ReactNode;
 }) {
   return (
@@ -202,7 +208,7 @@ function Foot({
         <Button primary disabled={blocked !== "" || sending} onClick={onConfirm}>
           {confirm}
         </Button>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose}>{cancel}</Button>
         {secondary}
       </div>
       <p className="ms-writing-note">{blocked === "" ? note : blocked}</p>
@@ -430,6 +436,41 @@ function AnswerForm({
             Withdraw
           </Button>
         }
+      />
+    </>
+  );
+}
+
+/**
+ * Leaving an editor with changes in it.
+ *
+ * It is the one sheet that asks rather than proposes: nothing is written
+ * either way, and what is at stake is text that exists nowhere else. So it
+ * writes nothing, reaches no network, and answers the caller directly — the
+ * panel, the focus and the Escape are what it borrows.
+ */
+function DiscardForm({
+  request,
+  onClose,
+  onDone,
+}: {
+  request: { path: string };
+  onClose: () => void;
+  onDone: (done: Done) => void;
+}) {
+  return (
+    <>
+      <Head eyebrow="Unsaved changes" title="Discard your changes?" />
+      <Foot
+        confirm="Discard"
+        note={`The changes you made to ${request.path} are not written anywhere, and closing the editor loses them.`}
+        blocked=""
+        sending={false}
+        cancel="Keep editing"
+        onClose={onClose}
+        onConfirm={() => {
+          onDone({ mode: "discard" });
+        }}
       />
     </>
   );

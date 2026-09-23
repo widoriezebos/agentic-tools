@@ -293,6 +293,15 @@ func runUI(verb string, args []string) int {
 					SetQuestionStatus: func(id, status string) (project.Asked, error) {
 						return project.SetQuestionStatus(projectRoots(roots), id, status)
 					},
+					// Editing one document in place. It is the same checkout
+					// and the same boundary the read goes through, and it is
+					// answered with the document read again from disk.
+					EditDocument: func(id, source, revision string) (project.Document, error) {
+						return project.EditDocument(projectRoots(roots), id, source, revision, time.Now().UTC())
+					},
+					PreviewDocument: func(source string) (project.Preview, error) {
+						return project.PreviewDocument(source)
+					},
 					// The backlog's four acts. Each one publishes through
 					// the engine in-process under the boot proof, and then
 					// carries this clone's accepted ref forward, so the

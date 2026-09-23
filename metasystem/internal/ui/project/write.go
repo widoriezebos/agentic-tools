@@ -25,7 +25,10 @@ import (
 //   - No path comes from the caller. A route takes an id, a title it turns
 //     into a slug of its own making, and goals the ledger carries; the
 //     directory is the resolver's own home for the kind. Nothing a caller
-//     sends can name a file.
+//     sends can name a file. The one write that does take a name — editing a
+//     document in place, in edit.go — takes the read route's own id and goes
+//     through the read route's own boundary, which is why it lives beside the
+//     read rather than here.
 //   - Nothing is written that the resolver would then refuse. What is about to
 //     be written is put through the resolver's own parser and through the same
 //     checks the check verb makes, and a refusal carries those problems and
@@ -34,15 +37,29 @@ import (
 //     caller is answered with is what the pane will see, not what this package
 //     believes it wrote.
 
-// RefusalKind is why a write was refused, in the three shapes a caller can act
-// on: the request was wrong, what it named is not there, or what it would
-// create already exists. The route turns each into its status.
+// RefusalKind is why a write was refused, in the shapes a caller can act on:
+// the request was wrong, what it named is not there, what it would create
+// already exists, the file moved under it, it carries more than this surface
+// will, or the project itself refuses what it would have written. The route
+// turns each into its status.
 type RefusalKind string
 
 const (
 	RefusalBad    RefusalKind = "bad"
 	RefusalAbsent RefusalKind = "absent"
 	RefusalExists RefusalKind = "exists"
+	// RefusalStale is a write over a file that is no longer the file the
+	// caller read. It is not a failure of the request: it is two humans, or a
+	// human and an agent, editing one file, and the only safe answer is to say
+	// so rather than to decide whose bytes win.
+	RefusalStale RefusalKind = "stale"
+	// RefusalTooLarge is more text than this surface reads back, so saving it
+	// would write a file the reader could no longer open.
+	RefusalTooLarge RefusalKind = "too-large"
+	// RefusalProject is a well-formed request the project itself refuses: the
+	// check verb's own problems over the text that would have been saved. The
+	// request is not wrong, the record is, which is why it has its own kind.
+	RefusalProject RefusalKind = "project"
 )
 
 // Refusal is a write this package declined to make. Problems are the check

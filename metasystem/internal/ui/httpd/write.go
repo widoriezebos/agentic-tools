@@ -1,6 +1,7 @@
 package httpd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -24,19 +25,32 @@ import (
 // No route takes a path. A record is created in the home its kind names, under
 // a file name this server derives from the title; a status names a record by
 // its id; a question names a row by its id. There is nothing in any body that
-// reaches the filesystem as a name.
+// reaches the filesystem as a name. The edit route below is the one that names
+// a document, and it names it with the read route's own id, in the read
+// route's own prefix: a name it will write to is a name the read serves.
 const (
 	recordsPath     = "/api/project/records"
 	recordsPrefix   = "/api/project/records/"
 	questionsPath   = "/api/project/questions"
 	questionsPrefix = "/api/project/questions/"
 	statusSuffix    = "/status"
+	// The document's own two writes, under the prefix it is read from. The
+	// preview path is exact and names no document: no id this server serves
+	// ends without ".md", so nothing is shadowed by it.
+	previewPath = documentPrefix + "preview"
+	editSuffix  = "/edit"
 )
 
 // maxWriteBody is what a write route reads. The bodies are a title, a handful
 // of ids and a sentence; a megabyte of them is not a mistake this server
 // carries into memory.
 const maxWriteBody = 64 << 10
+
+// maxDocumentBody is what the two document routes read. A document is bounded
+// at a mebibyte, and JSON escaping can spend several bytes on one of them, so
+// the body is given room for the worst of that and no more. A body past it is
+// answered 413, because what is wrong with it is its size.
+const maxDocumentBody = 8 << 20
 
 // written names one of the four routes, with the id the path carried where the
 // route takes one.
@@ -45,12 +59,14 @@ type written struct {
 	id    string
 }
 
-// The four routes, by name.
+// The four routes, by name, and the document's two.
 const (
 	routeCreateRecord   = "create-record"
 	routeRecordStatus   = "record-status"
 	routeAskQuestion    = "ask-question"
 	routeQuestionStatus = "question-status"
+	routeEditDocument   = "edit-document"
+	routePreviewSource  = "preview-source"
 )
 
 // writeRouteOf reports which write route a path names, if any. The two status
@@ -67,6 +83,8 @@ func writeRouteOf(path string) (written, bool) {
 		return written{route: routeSignIn}, true
 	case signOutPath:
 		return written{route: routeSignOut}, true
+	case previewPath:
+		return written{route: routePreviewSource}, true
 	}
 	if id, ok := statusID(path, recordsPrefix); ok {
 		return written{route: routeRecordStatus, id: id}, true
@@ -74,10 +92,29 @@ func writeRouteOf(path string) (written, bool) {
 	if id, ok := statusID(path, questionsPrefix); ok {
 		return written{route: routeQuestionStatus, id: id}, true
 	}
+	if id, ok := editID(path); ok {
+		return written{route: routeEditDocument, id: id}, true
+	}
 	// The backlog's four acts are writes under the same policy, and are
 	// routed here so that the method, the host, the site and the origin are
 	// judged for them exactly as they are for the Project's four.
 	return actRouteOf(path)
+}
+
+// editID reports which document a path names for editing. The id is the whole
+// of the path between the prefix and the suffix, separators included, because
+// a document's id is a checkout-relative path; an empty id names no document
+// and is no route.
+func editID(path string) (string, bool) {
+	rest, beneath := strings.CutPrefix(path, documentPrefix)
+	if !beneath {
+		return "", false
+	}
+	id, ends := strings.CutSuffix(rest, editSuffix)
+	if !ends || id == "" {
+		return "", false
+	}
+	return id, true
 }
 
 func statusID(path, prefix string) (string, bool) {
@@ -111,6 +148,18 @@ type questionBody struct {
 	Goals    []string `json:"goals"`
 }
 
+// The document's two bodies. An edit carries the whole file as it was typed
+// and the revision it was opened at; a preview carries only the text, because
+// it is rendered and never written.
+type editBody struct {
+	Source   string `json:"source"`
+	Revision string `json:"revision"`
+}
+
+type previewBody struct {
+	Source string `json:"source"`
+}
+
 func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 	w.Header().Set("Content-Type", "application/json")
 	switch route.route {
@@ -122,6 +171,10 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.askQuestion(w, r)
 	case routeQuestionStatus:
 		h.questionStatus(w, r, route.id)
+	case routeEditDocument:
+		h.editDocument(w, r, route.id)
+	case routePreviewSource:
+		h.previewSource(w, r)
 	case routeApprove:
 		h.approveGoal(w, r, route.id)
 	case routeWithdraw:
@@ -191,11 +244,67 @@ func (h *handler) questionStatus(w http.ResponseWriter, r *http.Request, id stri
 	answer(w, func() (any, error) { return h.info.SetQuestionStatus(id, body.Status) })
 }
 
+// editDocument saves one document, and answers the document as it now reads
+// from disk so the page re-renders from the file rather than from the request.
+func (h *handler) editDocument(w http.ResponseWriter, r *http.Request, id string) {
+	if h.info.EditDocument == nil {
+		writeFailure(w, "this engine was built without a project writer")
+		return
+	}
+	var body editBody
+	if !decodeDocument(w, r, &body) {
+		return
+	}
+	answerDocument(w, id, func() (any, error) { return h.info.EditDocument(id, body.Source, body.Revision) })
+}
+
+// previewSource renders what is being typed. It names no document and writes
+// nothing, so there is no id here and no refusal but the request's own.
+func (h *handler) previewSource(w http.ResponseWriter, r *http.Request) {
+	if h.info.PreviewDocument == nil {
+		writeFailure(w, "this engine was built without a document reader")
+		return
+	}
+	var body previewBody
+	if !decodeDocument(w, r, &body) {
+		return
+	}
+	answer(w, func() (any, error) { return h.info.PreviewDocument(body.Source) })
+}
+
 // decode reads one JSON object from a bounded body, and reports whether the
 // route may go on. A body that is not one object, or that carries a second
 // value after it, is a bad request and is answered here.
 func decode(w http.ResponseWriter, r *http.Request, into any) bool {
 	reader := json.NewDecoder(io.LimitReader(r.Body, maxWriteBody+1))
+	reader.DisallowUnknownFields()
+	if err := reader.Decode(into); err != nil {
+		writeRefusal(w, http.StatusBadRequest, "the request body is not the JSON object this route takes: "+err.Error(), nil)
+		return false
+	}
+	if reader.More() {
+		writeRefusal(w, http.StatusBadRequest, "the request body carries more than one JSON value", nil)
+		return false
+	}
+	return true
+}
+
+// decodeDocument is decode over a body that may carry a whole document.
+//
+// The bytes are taken first and counted, because a body past the bound is
+// refused for its size and not for its shape: a caller that sent a megabyte
+// too much is told so, rather than being told its JSON did not parse.
+func decodeDocument(w http.ResponseWriter, r *http.Request, into any) bool {
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxDocumentBody+1))
+	if err != nil {
+		writeRefusal(w, http.StatusBadRequest, "the request body could not be read: "+err.Error(), nil)
+		return false
+	}
+	if len(body) > maxDocumentBody {
+		writeRefusal(w, http.StatusRequestEntityTooLarge, "the request body is larger than this route carries", nil)
+		return false
+	}
+	reader := json.NewDecoder(bytes.NewReader(body))
 	reader.DisallowUnknownFields()
 	if err := reader.Decode(into); err != nil {
 		writeRefusal(w, http.StatusBadRequest, "the request body is not the JSON object this route takes: "+err.Error(), nil)
@@ -226,12 +335,40 @@ func answer(w http.ResponseWriter, write func() (any, error)) {
 	writeFailure(w, err.Error())
 }
 
+// answerDocument is answer with the document route's own 404 in front of it,
+// so an id this checkout does not serve is refused by the write exactly as the
+// read refuses it: the same sentence, naming the id and nothing else.
+func answerDocument(w http.ResponseWriter, id string, write func() (any, error)) {
+	payload, err := write()
+	if err == nil {
+		_ = json.NewEncoder(w).Encode(payload)
+		return
+	}
+	if errors.Is(err, project.ErrNotFound) {
+		w.WriteHeader(http.StatusNotFound)
+		writeError(w, "no document at "+id)
+		return
+	}
+	var refusal *project.Refusal
+	if errors.As(err, &refusal) {
+		writeRefusal(w, statusOf(refusal.Kind), refusal.Message, refusal.Problems)
+		return
+	}
+	writeFailure(w, err.Error())
+}
+
 func statusOf(kind project.RefusalKind) int {
 	switch kind {
 	case project.RefusalAbsent:
 		return http.StatusNotFound
-	case project.RefusalExists:
+	case project.RefusalExists, project.RefusalStale:
 		return http.StatusConflict
+	case project.RefusalTooLarge:
+		return http.StatusRequestEntityTooLarge
+	case project.RefusalProject:
+		// The request was well formed and the project refuses what it says:
+		// unprocessable, with the check verb's problems in the body.
+		return http.StatusUnprocessableEntity
 	default:
 		return http.StatusBadRequest
 	}
