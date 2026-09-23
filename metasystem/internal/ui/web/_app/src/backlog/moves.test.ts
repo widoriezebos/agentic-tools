@@ -205,23 +205,16 @@ describe("the tuple a sheet makes", () => {
 describe("why the sheet's own button is disabled", () => {
   const whole = draftOf(budget("4h"));
 
-  it("is the proof's own reason when the server cannot act as the human", () => {
-    const reason = "the interface was started by an agent process (claude-code); start it from your own terminal with bin/metasystem ui restart to act as yourself";
-
-    expect(blockedFor("approve", false, reason, whole)).toBe(reason);
-    expect(blockedFor("withdraw", false, reason, emptyBudgetDraft)).toBe(reason);
+  // Proof is no longer a reason to disable an act. A server that has found
+  // no human behind this browser says so above the fields, the press goes to
+  // the route all the same, and the sign-in the route asks for is a sheet
+  // this page opens and an act it retries.
+  it("is the incomplete budget, and nothing about proof", () => {
+    expect(blockedFor("approve", emptyBudgetDraft)).toContain("complete budget");
   });
 
-  it("says so plainly where the server offered no reason at all", () => {
-    expect(blockedFor("withdraw", false, "", whole)).toBe("This interface cannot act as a human.");
-  });
-
-  it("is the incomplete budget once the server is proven", () => {
-    expect(blockedFor("approve", true, "", emptyBudgetDraft)).toContain("complete budget");
-  });
-
-  it("is nothing at all for a proven server with a whole budget", () => {
-    expect(blockedFor("approve", true, "", whole)).toBe("");
-    expect(blockedFor("withdraw", true, "", emptyBudgetDraft)).toBe("");
+  it("is nothing at all for a whole budget, and nothing at all to withdraw", () => {
+    expect(blockedFor("approve", whole)).toBe("");
+    expect(blockedFor("withdraw", emptyBudgetDraft)).toBe("");
   });
 });

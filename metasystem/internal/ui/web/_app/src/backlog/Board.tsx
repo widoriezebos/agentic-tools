@@ -3,31 +3,14 @@ import { NavLink, useNavigate } from "react-router";
 
 import { actingAs } from "./acting";
 import { BacklogError, rankGoal, type Backlog, type Row } from "./api";
-import {
-  anySet,
-  arcsOn,
-  concludedWithin,
-  matches,
-  named,
-  nameOf,
-  noFilters,
-  seatsOn,
-  windowTitle,
-  WINDOWS,
-  ANY,
-  NONE,
-  RANKS,
-  type Filters,
-  type Rank,
-  type Window,
-} from "./filters";
+import { concludedWithin, matches, windowTitle, WINDOWS, type Filters, type Window } from "./filters";
 import { dateAndTime } from "./format";
 import {
   ABANDONED,
   DONE,
   laneFor,
   laneTitle,
-  openLanes,
+  shownLanes,
   SPLIT_HELP,
   SPLIT_TITLE,
   UNPLACEABLE,
@@ -66,16 +49,19 @@ import { failureMessage } from "../shell/workspace";
  * and dims the rest, each of which says in its own head what the move there
  * would have meant and that this build does not publish it.
  *
- * Three things are not columns. Unknown is not: a record this build cannot
- * place is named in one line above the lanes, with the reason it carries,
- * rather than in a box that is empty on every board but one. Concluded work
- * is not a wall: Done reaches back as far as the human asks it to, a day by
- * default, and the rest are one select away. And a goal retired by a split is
- * not a delivered outcome, so it stands with the closed items as its members
- * rather than in Done as a result.
+ * Four things are not columns. Unknown is not: a record this build cannot
+ * place is a disclosure under the lanes, with the reason each one carries,
+ * rather than a box that is empty on every board but one. Draft is not,
+ * while nothing reads drafts: a column that could only say so took a seventh
+ * of the board to say it. Concluded work is not a wall: Done reaches back as
+ * far as the human asks it to, a day by default, and the rest are one select
+ * away. And a goal retired by a split is not a delivered outcome, so it
+ * stands with the closed items as its members rather than in Done as a
+ * result.
  *
- * The filter bar narrows every lane at once, and each lane's count is the
- * count of what that lane is showing. A count that did not follow its own
+ * The board is lanes and nothing else. What it is narrowed to, and whether
+ * the page is current, are the toolbar's, one row above; each lane's count is
+ * the count of what that lane is showing. A count that did not follow its own
  * column would be the one number here a human could not trust.
  *
  * A lane holding nothing is collapsed rather than dropped: it keeps its head,
@@ -122,7 +108,6 @@ export function Board({
   onMoved,
   plans,
   filters,
-  onFilters,
   window: reach,
   onWindow,
 }: {
@@ -134,8 +119,8 @@ export function Board({
   onMoved: (after: Backlog) => void;
   /** The project's records, or null where they could not be read. */
   plans: ProjectPayload | null;
+  /** What the toolbar has narrowed every lane to. */
   filters: Filters;
-  onFilters: (filters: Filters) => void;
   /** How far back Done reaches, in days, or null for every recorded one. */
   window: Window;
   onWindow: (days: Window) => void;
@@ -178,7 +163,7 @@ export function Board({
   const closed = [...inLane(ABANDONED), ...parents];
 
   const columns: BoardColumn[] = [
-    ...openLanes.map((lane) => ({
+    ...shownLanes.map((lane) => ({
       key: lane.id,
       title: lane.title,
       help: lane.help,
@@ -305,13 +290,6 @@ export function Board({
 
   return (
     <div className="ms-board-frame">
-      {!acting.proven && (
-        <p className="ms-board-unproven" role="status">
-          {acting.reason}
-        </p>
-      )}
-      <FilterBar filters={filters} onChange={onFilters} seats={seatsOn(all)} arcs={arcsOn(all)} />
-      <Unplaceable rows={inLane(UNPLACEABLE)} />
       <div className="ms-board" role="list">
         {columns.map((column) => (
           <Column
@@ -346,9 +324,16 @@ export function Board({
           />
         ))}
       </div>
-      <Button aria-pressed={closedShown} onClick={onToggleClosed}>
-        {closedShown ? "Hide" : "Show"} closed items ({closed.length})
-      </Button>
+      {/* What stands under the board: the work that is over, and the records
+          this build could not place. Both are disclosures of the same kind,
+          because both are things a human opens now and then rather than
+          things the board is about. */}
+      <div className="ms-board-below">
+        <Button aria-pressed={closedShown} onClick={onToggleClosed}>
+          {closedShown ? "Hide" : "Show"} closed items ({closed.length})
+        </Button>
+        <Unplaceable rows={inLane(UNPLACEABLE)} />
+      </div>
       {asking !== null && (
         <RankSheet
           goal={asking.goal}
@@ -392,150 +377,6 @@ function standingFor(dragging: Dragging | null, lane: LaneId): Standing {
   return targetsFrom(dragging.lane).includes(lane) ? "target" : "closed";
 }
 
-/* ------------------------------------------------------------ the filters -- */
-
-/**
- * What the board is narrowed to, said in one bar above the lanes.
- *
- * The seat and the arc offer what is on this board rather than what the fleet
- * or the plan could hold: a select offering a seat no card carries offers an
- * empty board. A value the browser remembered that nothing on the board
- * carries any more is offered all the same, as itself, so that a lane showing
- * nothing shows why and "clear" is one press away — a filter that widened
- * itself would be the board deciding what a human meant.
- */
-function FilterBar({
-  filters,
-  onChange,
-  seats,
-  arcs,
-}: {
-  filters: Filters;
-  onChange: (filters: Filters) => void;
-  seats: string[];
-  arcs: string[];
-}) {
-  const text = useId();
-  return (
-    <div className="ms-board-filters" role="group" aria-label="Narrow the board">
-      <div className="ms-board-filter">
-        <label htmlFor={text}>Find</label>
-        <input
-          id={text}
-          type="search"
-          className="ms-board-find"
-          value={filters.text}
-          placeholder="id or intent"
-          onChange={(event) => {
-            onChange({ ...filters, text: event.target.value });
-          }}
-        />
-      </div>
-      {/* Four of the five filters narrow the board by something this project
-          worked out for itself — a band and a position, a tier of proof, the
-          seat that claimed it, the arc it belongs to — so each label says
-          what it is narrowing by. Find narrows by the words on the card and
-          needs no explaining. */}
-      <Choose
-        label="Priority"
-        help="priority"
-        value={filters.priority}
-        options={RANKS.map((rank) => ({ value: rank, title: rank }))}
-        onChange={(value) => {
-          onChange({ ...filters, priority: value as Rank });
-        }}
-      />
-      <Choose
-        label="Tier"
-        help="tier"
-        value={filters.tier}
-        options={RANKS.map((rank) => ({ value: rank, title: rank }))}
-        onChange={(value) => {
-          onChange({ ...filters, tier: value as Rank });
-        }}
-      />
-      <Choose
-        label="Seat"
-        help="seat"
-        value={filters.seat}
-        options={[{ value: NONE, title: "unassigned" }, ...offered(seats, filters.seat)]}
-        onChange={(value) => {
-          onChange({ ...filters, seat: value });
-        }}
-      />
-      <Choose
-        label="Arc"
-        help="arc"
-        value={filters.arc}
-        options={[{ value: NONE, title: "none" }, ...offered(arcs, filters.arc)]}
-        onChange={(value) => {
-          onChange({ ...filters, arc: value });
-        }}
-      />
-      {anySet(filters) && (
-        <button
-          type="button"
-          className="ms-project-act"
-          onClick={() => {
-            onChange(noFilters);
-          }}
-        >
-          clear
-        </button>
-      )}
-    </div>
-  );
-}
-
-/**
- * The named values a select offers: what is on the board, plus whatever is
- * chosen, so that a choice is never silently dropped from the list that
- * explains it.
- */
-function offered(present: string[], chosen: string): { value: string; title: string }[] {
-  const name = nameOf(chosen);
-  const names = name !== null && !present.includes(name) ? [...present, name] : present;
-  return names.map((value) => ({ value: named(value), title: value }));
-}
-
-function Choose({
-  label,
-  help,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  /** The term the label names, where the label is one of this project's own. */
-  help?: HelpId;
-  value: string;
-  options: { value: string; title: string }[];
-  onChange: (value: string) => void;
-}) {
-  const named_ = useId();
-  return (
-    <div className="ms-board-filter">
-      <label htmlFor={named_}>{label}</label>
-      {help !== undefined && <Help id={help} />}
-      <select
-        id={named_}
-        className="ms-board-select"
-        value={value}
-        onChange={(event) => {
-          onChange(event.target.value);
-        }}
-      >
-        <option value={ANY}>any</option>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.title}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
 /** How far back Done reaches, in the lane's own head. */
 function Reach({ days, onChange }: { days: Window; onChange: (days: Window) => void }) {
   const named_ = useId();
@@ -563,11 +404,15 @@ function Reach({ days, onChange }: { days: Window; onChange: (days: Window) => v
 }
 
 /**
- * The goals this build cannot place, above the lanes.
+ * The goals this build cannot place, under the lanes.
  *
- * It is a line and not a column, and it is nothing at all when the bucket is
- * empty. Opened, it names each goal with the reason the projection recorded
- * and opens it, because the reason is the only thing a human can act on.
+ * It is a disclosure and not a column, and it is nothing at all when the
+ * bucket is empty, which is almost every board. It stood above the lanes and
+ * took a band of the work area from the work in order to say nothing; it
+ * stands beside the closed items now, and says the same thing to whoever
+ * opens it. Opened, it names each goal with the reason the projection
+ * recorded and opens it, because the reason is the only thing a human can act
+ * on.
  */
 export function Unplaceable({ rows }: { rows: Row[] }) {
   if (rows.length === 0) {

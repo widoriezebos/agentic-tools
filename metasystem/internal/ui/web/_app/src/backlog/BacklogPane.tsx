@@ -1,18 +1,18 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import "./backlog.css";
-import { actingAs } from "./acting";
 import { ActSheet, type Request } from "./ActSheet";
 import type { Backlog, Ledger, Row } from "./api";
 import { Board, Unplaceable, type Asked } from "./Board";
-import type { Filters, Window } from "./filters";
+import { arcsOn, seatsOn, type Filters, type Window } from "./filters";
 import { clockTime, shortTip } from "./format";
 import { DraftGroup, LaneGroup } from "./LaneGroup";
-import { anchorFor, closedLanes, openLanes, UNPLACEABLE, type LaneId } from "./lanes";
-import { LedgerLine } from "./LedgerLine";
+import { anchorFor, closedLanes, shownLanes, UNPLACEABLE, type LaneId } from "./lanes";
 import { OpenSheet } from "./OpenSheet";
 import { Statement } from "./Statement";
 import { useBacklog, useSlicePlans } from "./state";
+import { syncOf } from "./sync";
+import { BoardToolbar } from "./Toolbar";
 import { Pane } from "../panes/Pane";
 import type { Pane as ProjectPayload } from "../project/api";
 import {
@@ -25,7 +25,6 @@ import {
   type BacklogView,
 } from "../storage";
 import { Button } from "../shell/controls";
-import { useSession } from "../shell/identity";
 
 /**
  * The backlog, as a board or as a list.
@@ -40,6 +39,13 @@ import { useSession } from "../shell/identity";
  * otherwise bury the 155 that are live. Freshness belongs to the server: this
  * page reads when it mounts and when a human asks, and says what the last
  * fetch found either way.
+ *
+ * One toolbar stands between the top of the work area and the work, and
+ * nothing else does. What the last read found is a chip in it; the report is
+ * that chip's tooltip; and a line appears under the toolbar only when
+ * something is actually wrong. The goals this build cannot place moved below
+ * the lanes, beside the closed items, where a disclosure that is empty on
+ * almost every board costs the work no room.
  */
 export function BacklogPane() {
   const { backlog, refresh, moved, attempt } = useBacklog();
@@ -52,7 +58,7 @@ export function BacklogPane() {
     return (
       <Pane title="Backlog">
         <div className="ms-backlog">
-          <LedgerLine ledger={null} observedAt="" onRefresh={refresh} />
+          <BoardToolbar reading={null} narrowing={null} sync={null} observedAt="" onRefresh={refresh} />
         </div>
       </Pane>
     );
@@ -100,12 +106,16 @@ function Read({
   const [filters, setFilters] = useState<Filters>(() => readBacklogFilters());
   const [reach, setReach] = useState<Window>(() => readDoneWindow());
   const [opening, setOpening] = useState(false);
-  // Intake is offered to whoever the server can act as: the terminal that
-  // started it, or the browser a human signed into.
-  const { session } = useSession();
-  const acting = actingAs(backlog.authority, session);
   const ledger = backlog.ledger;
   const closedCount = backlog.closed.length;
+  // Whether the page is reading a current ledger, which the chip says in four
+  // words and the banner says in a sentence when it is not.
+  const sync = syncOf(ledger, backlog.observedAt);
+  // What the selects offer is what this board carries, so both are read from
+  // every row the payload holds rather than from what the fleet could hold.
+  const all = useMemo(() => [...backlog.rows, ...backlog.closed], [backlog]);
+  const seats = useMemo(() => seatsOn(all), [all]);
+  const arcs = useMemo(() => arcsOn(all), [all]);
   // The board and the list want opposite things from the pane: the list wants
   // a measure to read down, the board wants the whole work area to read
   // across and the height that lets its lanes scroll on their own.
@@ -116,28 +126,30 @@ function Read({
     writeBacklogView(chosen);
   };
 
+  const narrow = (chosen: Filters) => {
+    setFilters(chosen);
+    writeBacklogFilters(chosen);
+  };
+
   return (
     <div className={boarding ? "ms-backlog ms-backlog--board" : "ms-backlog"}>
-      <LedgerLine ledger={ledger} observedAt={backlog.observedAt} onRefresh={onRefresh} />
-      {ledger.state === "read" && (
-        <p className="ms-backlog-views" role="group" aria-label="How the backlog is read">
-          <Button aria-pressed={view === "board"} onClick={() => { choose("board"); }}>
-            Board
-          </Button>
-          <Button aria-pressed={view === "list"} onClick={() => { choose("list"); }}>
-            List
-          </Button>
-          {/* Intake is the one act with no card to start from, so it stands
-              beside the switch rather than on the board. A server nobody has
-              proved disables it here and says why in the sheet's own words. */}
-          <Button
-            className="ms-backlog-new"
-            disabled={!acting.proven}
-            title={acting.proven ? undefined : acting.reason}
-            onClick={() => { setOpening(true); }}
-          >
-            New goal
-          </Button>
+      <BoardToolbar
+        reading={
+          ledger.state === "read"
+            ? { view, onView: choose, onNew: () => { setOpening(true); } }
+            : null
+        }
+        narrowing={boarding ? { filters, onFilters: narrow, seats, arcs } : null}
+        sync={sync}
+        observedAt={backlog.observedAt}
+        onRefresh={onRefresh}
+      />
+      {/* A ledger that did not project says so in its own statement below, so
+          the banner is for the one wrong this page can otherwise only whisper:
+          a read that worked and a fetch that did not. */}
+      {sync.state === "wrong" && ledger.state === "read" && (
+        <p className="ms-board-problem" role="status">
+          {sync.wrong}
         </p>
       )}
       {opening && (
@@ -159,7 +171,6 @@ function Read({
           onMoved={onMoved}
           plans={plans}
           filters={filters}
-          onFilters={(chosen) => { setFilters(chosen); writeBacklogFilters(chosen); }}
           window={reach}
           onWindow={(days) => { setReach(days); writeDoneWindow(days); }}
         />
@@ -179,7 +190,7 @@ function Read({
       {ledger.state === "read" && view === "list" && (
         <>
           <p className="ms-lane-index">
-            {openLanes.map((lane, position) => (
+            {shownLanes.map((lane, position) => (
               <span key={lane.id}>
                 {position > 0 && <span className="ms-lane-index-rule"> · </span>}
                 <a className="ms-lane-anchor" href={`#${anchorFor(lane.id)}`}>
@@ -189,12 +200,7 @@ function Read({
               </span>
             ))}
           </p>
-          {/* Unknown is no lane and no group, here as on the board: the goals
-              this build cannot place are named in one line with the reason
-              each carries, so that removing the column removed a box and not
-              a goal. */}
-          <Unplaceable rows={rowsIn(backlog.rows, UNPLACEABLE)} />
-          {openLanes.map((lane) =>
+          {shownLanes.map((lane) =>
             lane.id === "draft" ? (
               <DraftGroup key={lane.id} lane={lane} statement={backlog.draft.statement} />
             ) : (
@@ -208,9 +214,16 @@ function Read({
               />
             ),
           )}
-          <Button aria-pressed={closedShown} onClick={() => { setClosedShown((shown) => !shown); }}>
-            {closedShown ? "Hide" : "Show"} closed items ({closedCount})
-          </Button>
+          {/* Unknown is no lane and no group, here as on the board: the goals
+              this build cannot place stand under the work with the closed
+              items, named with the reason each carries, so that what the
+              build could not place costs the work it could no room. */}
+          <div className="ms-backlog-below">
+            <Button aria-pressed={closedShown} onClick={() => { setClosedShown((shown) => !shown); }}>
+              {closedShown ? "Hide" : "Show"} closed items ({closedCount})
+            </Button>
+            <Unplaceable rows={rowsIn(backlog.rows, UNPLACEABLE)} />
+          </div>
           {closedShown &&
             closedLanes.map((lane) => (
               <LaneGroup

@@ -46,7 +46,7 @@ export function RankSheet({
   const { session, askToSignIn } = useSession();
   const retried = useRef(false);
   const authority = actingAs(backlog.authority, session);
-  const blocked = blockedForRank(authority.proven, authority.reason, priority, sequence);
+  const blocked = blockedForRank(priority, sequence);
 
   const send = () => {
     if (blocked !== "") {
@@ -136,11 +136,12 @@ function note(goal: Row): string {
     : `Publishes goal set-priority for ${goal.ref.id}, and renumbers the band behind it.`;
 }
 
-/** Why the button is disabled, or the empty string when it is not. */
-export function blockedForRank(proven: boolean, reason: string, priority: string, sequence: string): string {
-  if (!proven) {
-    return reason === "" ? "This interface cannot act as a human." : reason;
-  }
+/**
+ * Why the button is disabled, or the empty string when it is not. Proof is
+ * not a reason: the act asks, and a server with no human behind it answers
+ * with the sign-in this page opens and the act it then retries.
+ */
+export function blockedForRank(priority: string, sequence: string): string {
   if (!["1", "2", "3"].includes(priority)) {
     return "A priority is 1, 2, or 3.";
   }

@@ -120,15 +120,14 @@ export function goalOf(intake: Intake, risk: Risk): NewGoal {
 /**
  * Why the sheet's own button is disabled, or the empty string when it is not.
  *
- * A server that cannot act as the human says so first and in the route's own
- * words, so the reason is read before the press rather than after. The rest
- * are the human's own to fix, and each one names the field rather than saying
- * that something is missing.
+ * Nothing about proof is here. A server that has found no human behind this
+ * browser says so above the fields, and the act is still offered: the route
+ * answers such a press with the sign-in this page can open, and the sheet
+ * sends the same act again once a human is behind it. What is left is the
+ * human's own to fix, and each reason names the field rather than saying that
+ * something is missing.
  */
-export function blockedForOpen(proven: boolean, reason: string, intake: Intake, risk: Risk): string {
-  if (!proven) {
-    return reason === "" ? "This interface cannot act as a human." : reason;
-  }
+export function blockedForOpen(intake: Intake, risk: Risk): string {
   if (intake.id.trim() === "") {
     return "A goal is named by one id, which is how every other record and every seat refers to it.";
   }

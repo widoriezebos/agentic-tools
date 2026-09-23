@@ -31,7 +31,19 @@ export function dateAndTime(stamp: string): string {
   if (at === null) {
     return UNKNOWN;
   }
-  return `${String(at.getFullYear())}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  return `${String(at.getFullYear())}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${minuteTime(stamp)}`;
+}
+
+/**
+ * The local clock to the minute, for a time read at a glance rather than
+ * compared. Seconds are noise in a chip that says when a page last read.
+ */
+export function minuteTime(stamp: string): string {
+  const at = parse(stamp);
+  if (at === null) {
+    return UNKNOWN;
+  }
+  return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
 /** The local clock to the second, for times that are seconds apart. */

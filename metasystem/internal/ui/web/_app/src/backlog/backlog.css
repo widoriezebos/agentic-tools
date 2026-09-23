@@ -8,10 +8,16 @@
  * the one line that says what the work is.
  */
 
+/*
+ * The pane begins with its toolbar, so nothing is added above it: the first
+ * row sits at the work area's own top padding, and the lanes follow one gap
+ * later rather than five bands later.
+ */
 .ms-backlog {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  margin: 0;
   max-width: 1040px;
 }
 
@@ -24,37 +30,6 @@
 .ms-backlog--board {
   max-width: none;
   height: 100%;
-}
-
-.ms-ledger {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.ms-ledger-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.ms-ledger-line {
-  margin: 0;
-  font-size: 13px;
-  line-height: 18px;
-  color: var(--ms-text-2);
-  overflow-wrap: anywhere;
-}
-
-.ms-ledger-stale {
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--ms-text-3);
-  overflow-wrap: anywhere;
 }
 
 .ms-lane-index {
@@ -240,16 +215,85 @@
  *
  * The board takes its height from the work area rather than from the window
  * or from its own content: .ms-backlog--board is as tall as the pane, the
- * frame and the board fill what the ledger line leaves, and the lanes stretch
- * to that. The frame, the board and the lanes each carry min-height: 0,
- * because a flex item that may not shrink below its content cannot hand a
- * scrollbar to the box inside it.
+ * frame and the board fill what the toolbar leaves, and the lanes stretch to
+ * that. The frame, the board and the lanes each carry min-height: 0, because
+ * a flex item that may not shrink below its content cannot hand a scrollbar
+ * to the box inside it.
  */
 
-.ms-backlog-views {
+/*
+ * The toolbar: the one row between the top of the work area and the work.
+ *
+ * It reads left to right in the order it is used — how the backlog is read,
+ * what it is narrowed to — and the controls that act are pushed to the far
+ * end, where a hand looks for them. It wraps rather than scrolls: at a
+ * phone's width the switch keeps the first line, the filters take one of
+ * their own, and the far end takes the last.
+ */
+.ms-board-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  width: 100%;
+}
+
+.ms-board-views {
   display: flex;
   gap: 6px;
+}
+
+.ms-board-toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/*
+ * Whether this page is reading a current ledger.
+ *
+ * At rest it is muted text and no border: being current is the usual answer,
+ * and the usual answer does not need a box. Old wears the marker, wrong wears
+ * the danger colour, and only those two are meant to catch an eye.
+ */
+.ms-sync {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  white-space: nowrap;
+  border-radius: 4px;
+}
+
+.ms-sync:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: 2px;
+}
+
+.ms-sync--stale {
+  color: var(--ms-marker-fg);
+}
+
+.ms-sync--wrong {
+  color: var(--ms-danger);
+  font-weight: 500;
+}
+
+/*
+ * The one line the toolbar puts on the page, and only for something a human
+ * can do something about: a read that worked and a fetch that did not.
+ */
+.ms-board-problem {
   margin: 0;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--ms-danger);
+  border-radius: 8px;
+  color: var(--ms-danger);
+  font-size: 13px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 
 .ms-board-frame {
@@ -260,18 +304,6 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
-}
-
-.ms-board-unproven {
-  margin: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--ms-marker);
-  border-radius: 8px;
-  background: var(--ms-marker-bg);
-  color: var(--ms-marker-fg);
-  font-size: 13px;
-  line-height: 18px;
-  overflow-wrap: anywhere;
 }
 
 .ms-board {
@@ -695,29 +727,40 @@
 /* ------------------------------------------ narrowing, and what cannot be -- */
 
 /*
- * The filter bar sits between the view switch and the lanes, because that is
- * where it acts: it narrows the board and nothing above it. It wraps rather
- * than scrolls, so a narrow window stacks the five controls instead of hiding
- * the last of them past an edge.
+ * The filters sit in the toolbar, beside the switch, because that is where
+ * they act: they narrow the board and nothing above it. The basis is what
+ * the five controls want on one line; below that the whole group wraps to a
+ * line of its own rather than hiding the last of them past an edge.
  */
 .ms-board-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  width: 100%;
+  gap: 8px;
+  flex: 1 1 560px;
+  min-width: 0;
 }
 
 .ms-board-filter {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .ms-board-filter label {
   font-size: 12px;
   line-height: 16px;
   color: var(--ms-text-2);
+}
+
+/*
+ * A select is as wide as its widest option, and an arc or a seat is named by
+ * whoever named it: one long name would push the toolbar onto a second line
+ * for every board. The cap is on the control, not on the name — the list
+ * opens at its own width, and nothing is renamed to fit a row.
+ */
+.ms-board-select {
+  max-width: 150px;
 }
 
 .ms-board-find,
@@ -734,7 +777,7 @@
 }
 
 .ms-board-find {
-  width: 180px;
+  width: 120px;
   max-width: 100%;
 }
 
@@ -760,31 +803,53 @@
 }
 
 /*
- * The goals this build cannot place. It is one line until it is opened, and
- * it is nothing at all when there are none, which is the usual board.
+ * What stands under the board: the closed items, and the goals this build
+ * cannot place. The two are the same kind of thing — a disclosure a human
+ * opens now and then — so they stand in one row and read as one pair.
+ */
+.ms-board-below,
+.ms-backlog-below {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/*
+ * The goals this build cannot place. It is one control until it is opened,
+ * and it is nothing at all when there are none, which is the usual board. It
+ * wears the button's own border and height so that the pair under the board
+ * reads as a pair.
  */
 .ms-board-unplaceable {
-  width: 100%;
   box-sizing: border-box;
-  padding: 6px 10px;
-  border: 1px solid var(--ms-border);
-  border-radius: 8px;
-  background: var(--ms-surface-2);
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 6px;
+  background: var(--ms-surface);
 }
 
 .ms-board-unplaceable-line {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 12px;
   cursor: pointer;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--ms-text-2);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--ms-text);
+}
+
+.ms-board-unplaceable[open] .ms-board-unplaceable-line {
+  border-bottom: 1px solid var(--ms-border);
 }
 
 .ms-board-unplaceable-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin: 6px 0 0;
-  padding: 0;
+  margin: 0;
+  padding: 8px 12px;
   list-style: none;
 }
 
@@ -928,10 +993,6 @@
   line-height: 16px;
   color: var(--ms-ok-fg);
   overflow-wrap: anywhere;
-}
-
-.ms-backlog-new {
-  margin-left: auto;
 }
 
 /* The rule a field is written under, beside the field rather than in a manual. */

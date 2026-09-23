@@ -59,7 +59,7 @@ export function ActSheet({
   const { session, askToSignIn } = useSession();
   const retried = useRef(false);
   const authority = actingAs(backlog.authority, session);
-  const blocked = blockedFor(request.move, authority.proven, authority.reason, draft);
+  const blocked = blockedFor(request.move, draft);
   const approving = request.move === "approve";
 
   const send = () => {

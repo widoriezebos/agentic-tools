@@ -19,8 +19,10 @@ import { blockedForRank } from "./RankSheet";
  *
  * The disabled states are the point: a human reads why the button is off
  * before they press it, and every reason names the field rather than saying
- * that something is missing. The unproven server's reason outranks all of
- * them, because no amount of filling in fixes it.
+ * that something is missing. None of them is about proof: a server that has
+ * found no human behind this browser says so above the fields and takes the
+ * press all the same, because the route answers it with a sign-in this page
+ * can open and an act it can send again.
  */
 
 const whole: Intake = {
@@ -34,8 +36,6 @@ const whole: Intake = {
 };
 
 const answered: Risk = { severity: "1", novelty: "2", exposure: "1", accumulation: "3", basis: "one seam" };
-
-const agentStarted = "the interface was started by an agent process (claude-code)";
 
 describe("the derived tier", () => {
   // Severity and novelty derive it; exposure and accumulation scale the proof
@@ -85,30 +85,29 @@ describe("what travels to the open route", () => {
 });
 
 describe("why the open button is disabled", () => {
-  it("is nothing at all when the statement is complete and the server can act", () => {
-    expect(blockedForOpen(true, "", whole, answered)).toBe("");
+  it("is nothing at all when the statement is complete", () => {
+    expect(blockedForOpen(whole, answered)).toBe("");
   });
 
-  // No amount of filling in fixes a server that cannot act as anybody, so its
-  // reason is first and is the route's own.
-  it("is the proof's own reason first, whatever else is missing", () => {
-    expect(blockedForOpen(false, agentStarted, emptyIntake, emptyRisk)).toBe(agentStarted);
-    expect(blockedForOpen(false, "", whole, answered)).toBe("This interface cannot act as a human.");
+  // Proof is no longer a reason to disable the act, so an empty sheet's
+  // first answer is the first field rather than a sentence about the server.
+  it("answers an empty sheet with its first field", () => {
+    expect(blockedForOpen(emptyIntake, emptyRisk)).toMatch(/named by one id/);
   });
 
   it("names the field that is missing, one at a time, in the order they are asked", () => {
-    expect(blockedForOpen(true, "", { ...whole, id: " " }, answered)).toMatch(/named by one id/);
-    expect(blockedForOpen(true, "", { ...whole, intent: "" }, answered)).toMatch(/what done looks like/);
-    expect(blockedForOpen(true, "", { ...whole, nextStep: "" }, answered)).toMatch(/never a script/);
-    expect(blockedForOpen(true, "", whole, { ...answered, basis: "  " })).toMatch(/basis is one line/);
+    expect(blockedForOpen({ ...whole, id: " " }, answered)).toMatch(/named by one id/);
+    expect(blockedForOpen({ ...whole, intent: "" }, answered)).toMatch(/what done looks like/);
+    expect(blockedForOpen({ ...whole, nextStep: "" }, answered)).toMatch(/never a script/);
+    expect(blockedForOpen(whole, { ...answered, basis: "  " })).toMatch(/basis is one line/);
   });
 
   // The engine requires a why for an overridden tier, so the sheet asks for
   // one rather than letting the act be refused after it is sent.
   it("asks why for a tier the risk answers did not derive", () => {
     const overridden = { ...whole, tier: "3" as const };
-    expect(blockedForOpen(true, "", overridden, answered)).toMatch(/derive tier 2/);
-    expect(blockedForOpen(true, "", { ...overridden, why: "it touches the ledger" }, answered)).toBe("");
+    expect(blockedForOpen(overridden, answered)).toMatch(/derive tier 2/);
+    expect(blockedForOpen({ ...overridden, why: "it touches the ledger" }, answered)).toBe("");
   });
 });
 
@@ -122,20 +121,16 @@ describe("what the sheet promises", () => {
 
 describe("why the set-priority button is disabled", () => {
   it("takes a band and either a position or nothing at all", () => {
-    expect(blockedForRank(true, "", "2", "5")).toBe("");
-    expect(blockedForRank(true, "", "2", "")).toBe("");
-    expect(blockedForRank(true, "", "2", "  ")).toBe("");
+    expect(blockedForRank("2", "5")).toBe("");
+    expect(blockedForRank("2", "")).toBe("");
+    expect(blockedForRank("2", "  ")).toBe("");
   });
 
   it("refuses a band that is not one and a position that is not a position", () => {
-    expect(blockedForRank(true, "", "4", "1")).toMatch(/1, 2, or 3/);
-    expect(blockedForRank(true, "", "", "1")).toMatch(/1, 2, or 3/);
-    expect(blockedForRank(true, "", "2", "0")).toMatch(/whole number from 1/);
-    expect(blockedForRank(true, "", "2", "last")).toMatch(/whole number from 1/);
-    expect(blockedForRank(true, "", "2", "-1")).toMatch(/whole number from 1/);
-  });
-
-  it("is the proof's own reason first", () => {
-    expect(blockedForRank(false, agentStarted, "2", "1")).toBe(agentStarted);
+    expect(blockedForRank("4", "1")).toMatch(/1, 2, or 3/);
+    expect(blockedForRank("", "1")).toMatch(/1, 2, or 3/);
+    expect(blockedForRank("2", "0")).toMatch(/whole number from 1/);
+    expect(blockedForRank("2", "last")).toMatch(/whole number from 1/);
+    expect(blockedForRank("2", "-1")).toMatch(/whole number from 1/);
   });
 });

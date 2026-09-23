@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { anchorFor, closedLaneIds, laneFor, lanes, laneTitle, openLanes, SPLIT_HELP, UNPLACEABLE, type Lane } from "./lanes";
+import {
+  anchorFor,
+  closedLaneIds,
+  DRAFT,
+  DRAFTS_READ,
+  laneFor,
+  lanes,
+  laneTitle,
+  openLanes,
+  shownLanes,
+  SPLIT_HELP,
+  UNPLACEABLE,
+  type Lane,
+} from "./lanes";
 import { HELP } from "../help/terms";
 
 /**
@@ -46,9 +59,28 @@ describe("the lanes", () => {
     ]);
   });
 
+  // Draft is a lane with no reader behind it: the projection has none for
+  // plans/goals-drafts/, so a Draft column could only ever say so, in a
+  // seventh of the board. The lane stays in the table and comes back the day
+  // a reader does; what this build shows begins with To Do.
+  it("shows the lanes that have a reader, which is every one but Draft", () => {
+    expect(DRAFTS_READ).toBe(false);
+    expect(shownLanes.map((lane) => lane.id)).toEqual(["to-do", "ready", "in-progress", "review", "waiting"]);
+    expect(shownLanes.map((lane) => lane.id)).not.toContain(DRAFT);
+    expect(lanes.map((lane) => lane.id)).toContain(DRAFT);
+    expect(laneFor(DRAFT)?.title).toBe("Draft");
+  });
+
+  it("keeps the shown lanes in the order work moves, and takes them from the open ones", () => {
+    expect(shownLanes.every((lane) => openLanes.includes(lane))).toBe(true);
+    expect(shownLanes.map((lane) => lane.id)).toEqual(
+      openLanes.filter((lane) => lane.id !== DRAFT).map((lane) => lane.id),
+    );
+  });
+
   // The lane still exists, because a goal this build cannot place must still
   // have somewhere to be. What was removed is the column: the board says the
-  // count in one line above the lanes and opens it to the reasons.
+  // count in one disclosure under the lanes and opens it to the reasons.
   it("keep unknown as a lane and offer it as no column", () => {
     expect(UNPLACEABLE).toBe("unknown");
     expect(laneFor(UNPLACEABLE)).not.toBeNull();
