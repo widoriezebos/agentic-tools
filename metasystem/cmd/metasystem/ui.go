@@ -240,6 +240,9 @@ func runUI(verb string, args []string) int {
 						Document: func(id string) (project.Document, error) {
 							return project.Read(projectRoots(roots), id, time.Now().UTC())
 						},
+						Project: func() (project.Pane, error) {
+							return project.ReadPane(projectRoots(roots), time.Now().UTC())
+						},
 					}, func() time.Time { return time.Now().UTC() })
 				partnerService.Announce(func(busy bool) {
 					_ = lifecycle.Update(roots.StateRoot, func(r *lifecycle.Record) {

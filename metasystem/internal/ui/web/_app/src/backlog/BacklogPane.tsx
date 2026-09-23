@@ -5,7 +5,8 @@ import "./backlog.css";
 import { ActSheet, type Request } from "./ActSheet";
 import type { Backlog, Ledger, Row } from "./api";
 import { Board, observedAt, Unplaceable, type Asked } from "./Board";
-import { ANY, arcsOn, NONE, noFilters, seatsOn, type Filters, type Window } from "./filters";
+import { boardColumns } from "./columns";
+import { ANY, arcsOn, NONE, noFilters, seatsOn, windowTitle, type Filters, type Window } from "./filters";
 import { clockTime, shortTip } from "./format";
 import { DraftGroup, LaneGroup } from "./LaneGroup";
 import { anchorFor, closedLanes, shownLanes, UNPLACEABLE, type LaneId } from "./lanes";
@@ -29,6 +30,13 @@ import {
 } from "../storage";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button } from "../shell/controls";
+
+/**
+ * How many goals of one lane travel with a question. It is the server's own
+ * ceiling too, so sending more would only be bytes nobody reads; the lane's
+ * whole count travels beside them, and the server says how many were left out.
+ */
+const LANE_ROWS = 25;
 
 /**
  * The backlog, as a board or as a list.
@@ -160,8 +168,26 @@ function Read({
   // with a question asked from it: the board, and what it is narrowed to. A
   // filtered board is not the backlog, and the Partner is told which it is
   // looking at rather than left to assume.
-  const narrowed = useMemo(() => narrowing(view === "board" ? filters : noFilters), [view, filters]);
-  useAbout(aboutLine("Backlog", view === "board" ? "board" : "list"), { filters: narrowed });
+  const narrowing_ = view === "board" ? filters : noFilters;
+  const narrowed = useMemo(() => narrowing(narrowing_, reach), [narrowing_, reach]);
+  // And the lanes themselves, from the same function the board renders from,
+  // capped at what one context carries. The goals are not in any file — the
+  // board is the accepted ledger commit — so a Partner that is not told them
+  // cannot answer a question about them at all.
+  const onScreen = useMemo(
+    () =>
+      boardColumns(backlog, narrowing_, reach, closedShown, observedAt(backlog)).map((column) => ({
+        id: column.key,
+        title: column.title,
+        total: column.rows.length,
+        goals: column.rows.slice(0, LANE_ROWS).map((row) => row.ref.id),
+      })),
+    [backlog, narrowing_, reach, closedShown],
+  );
+  useAbout(aboutLine("Backlog", view === "board" ? "board" : "list"), {
+    filters: narrowed,
+    lanes: onScreen,
+  });
 
   // Where the goal is, once it has been rendered. A layout effect is after
   // the render and before the paint, so the first frame a human sees is
@@ -517,8 +543,12 @@ export function lastTick(ledger: Ledger): string {
  * is not narrowed at all. It is what the Partner is told, so that an answer
  * about "the board" is an answer about the rows a human can actually see.
  */
-export function narrowing(filters: Filters): string[] {
+export function narrowing(filters: Filters, reach: Window): string[] {
   const said: string[] = [];
+  // Done is narrowed by a window rather than by a filter, and it narrows what
+  // the lane holds exactly as the filters do. A Partner told the rows and not
+  // the window would read an empty Done lane as an empty Done lane.
+  said.push(reach === null ? "Done reaches back over every recorded conclusion" : `Done reaches back ${windowTitle(reach)}`);
   if (filters.text.trim() !== "") {
     said.push(`text contains "${filters.text.trim()}"`);
   }

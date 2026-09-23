@@ -54,8 +54,28 @@ type Page struct {
 	Revision string `json:"revision,omitempty"`
 	// Filters is what the page was narrowed to, as the page spells it.
 	Filters []string `json:"filters,omitempty"`
+	// Lanes is the board as the page is showing it: one entry per lane on
+	// screen, in the board's own order, with the goals the page's filters and
+	// its Done window left in it. Only the page knows this — the filters, the
+	// ordering and the window are the browser's — and only the server knows
+	// what each of those goals is, so the page names them and the server
+	// reads them.
+	Lanes []Lane `json:"lanes,omitempty"`
+	// Records is what the open project tab is listing, by the key the page
+	// lists it under: a record's checkout-relative path, or a question's id.
+	Records []string `json:"records,omitempty"`
 	// Label is the line the drawer showed, which is what the human read.
 	Label string `json:"label,omitempty"`
+}
+
+// Lane is one column of the board as the page is showing it.
+type Lane struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	// Total is how many goals the lane holds after the page's filters, which
+	// is what its header counts; Goals names the first of them.
+	Total int      `json:"total"`
+	Goals []string `json:"goals,omitempty"`
 }
 
 // Message is one line of the transcript.

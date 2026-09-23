@@ -832,3 +832,32 @@ function groupOf(path: string): string {
   const segments = path.split("/");
   return segments.slice(0, Math.min(2, segments.length - 1)).join("/");
 }
+
+/**
+ * What one tab of this page is listing, by the key each row is listed under.
+ *
+ * It travels with a question asked from the page, so the Project Partner is
+ * told which records are on the screen rather than left to guess from a tab's
+ * name. The keys are the rows' own — a record's checkout-relative path, a
+ * question's id — because the server reads what each one is from its own read
+ * of the project, and a title the page sent would be the page's word for it.
+ */
+export function listedIn(briefing: Briefing, tab: string): string[] {
+  const book = briefing.books.find((candidate) => candidate.id === tab);
+  if (book !== undefined) {
+    return book.chapters.map((chapter) => chapter.key);
+  }
+  if (tab === tabForKind("decision")) {
+    return briefing.decisions.map((row) => row.key);
+  }
+  if (tab === tabForKind("design")) {
+    return [
+      ...briefing.designs.open.map((row) => row.key),
+      ...briefing.designs.runs.flatMap((run) => run.rows.map((row) => row.key)),
+    ];
+  }
+  if (tab === QUESTIONS_TAB) {
+    return briefing.questions.map((row) => row.key);
+  }
+  return [];
+}

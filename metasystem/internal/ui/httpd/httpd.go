@@ -195,13 +195,20 @@ func newHandler(info Info, bound net.Addr, bundle fs.FS, nonce func() string) *h
 		// answering for some paths and not others.
 		bundle = nil
 	}
-	return &handler{
+	handler := &handler{
 		info:         info,
 		allowedHosts: allowedHosts(bound),
 		dist:         bundle,
 		page:         page,
 		nonce:        nonce,
 	}
+	// The Partner is told what the landing page shows from this server's own
+	// composition of it, which needs the journal and the seat's standing as
+	// well as the two readers the Partner was built with.
+	if info.Partner != nil {
+		info.Partner.SeesOverview(handler.partnerOverview)
+	}
+	return handler
 }
 
 // readPage reads index.html once, at construction, and splits it on the nonce

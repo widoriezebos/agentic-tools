@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 )
 
 // The Partner, as the server's routes see it: one runtime, one host, one
@@ -144,6 +146,25 @@ func (s *Service) conversation(human string) (*Conversation, error) {
 // Runtime is what this seat admitted.
 func (s *Service) Runtime() Runtime { return s.runtime }
 
+// SeesOverview gives the conversation the landing page as the server composes
+// it. It is set rather than passed in at construction because composing that
+// page needs the steward's journal and the seat's own standing as well as the
+// two readers this service is built with, and those belong to the interface
+// server rather than to the Partner.
+func (s *Service) SeesOverview(read func() (overview.Page, error)) {
+	s.mu.Lock()
+	s.facts.Overview = read
+	s.mu.Unlock()
+}
+
+// reading is the readers as they stand, copied under the lock because one of
+// them is set after construction.
+func (s *Service) reading() Facts {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.facts
+}
+
 // Announce sets what this service tells the seat's record when a turn starts
 // and ends, and says the idle state at once.
 func (s *Service) Announce(say func(busy bool)) {
@@ -272,7 +293,7 @@ func (s *Service) Submit(ctx context.Context, human, key, text string, page Page
 		return "", err
 	}
 
-	prompt := Compose(s.facts, page, human, now) + "\n\n"
+	prompt := Compose(s.reading(), page, human, now) + "\n\n"
 	if given > 0 {
 		prompt += history + "\n\n"
 		s.record(running, Event{Kind: EventActivity, Text: freshLine(given)})

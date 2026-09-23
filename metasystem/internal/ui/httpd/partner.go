@@ -6,7 +6,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 )
@@ -52,6 +55,44 @@ func partnerRouteOf(path string) (written, bool) {
 		return written{route: routePartnerStop, id: id}, true
 	}
 	return written{}, false
+}
+
+// partnerOverview is the landing page as this server composes it, for the
+// context a turn asked from Overview carries. It is the route's own
+// composition with one difference: it does not record a visit. Reading the
+// page IS the visit, and a Partner turn is not a human looking at it — moving
+// the human's marker here would shorten the window their next visit compares
+// against. So the window is a day, which is what a first visit reads over, and
+// only the parts that do not depend on it are told.
+func (h *handler) partnerOverview() (overview.Page, error) {
+	if h.info.Project == nil || h.info.Observe == nil {
+		return overview.Page{}, errors.New("this engine was built without the landing page's readers")
+	}
+	pane, err := h.info.Project()
+	if err != nil {
+		return overview.Page{}, err
+	}
+	journal := []notifications.Notice{}
+	if h.info.NotificationJournal != "" {
+		read, journalErr := notifications.Page(h.info.NotificationJournal, notifications.DefaultLimit, "")
+		if journalErr != nil {
+			return overview.Page{}, journalErr
+		}
+		journal = read
+	}
+	now := h.now()
+	board := backlogOf(h.info.Observe())
+	return overview.Compose(overview.Inputs{
+		Project: pane,
+		Rows:    board.Rows,
+		Closed:  board.Closed,
+		Counts:  board.Counts,
+		Ledger:  ledgerFor(board),
+		Journal: journal,
+		Human:   overview.Standing{Proven: h.info.Authority.Proven},
+		Since:   now.Add(-24 * time.Hour),
+		First:   true,
+	}, now), nil
 }
 
 // partnerHuman is whose conversation a request is about: the human signed in

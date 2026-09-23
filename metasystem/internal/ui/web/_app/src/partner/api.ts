@@ -19,6 +19,9 @@ const TURNS = "/api/partner/turns";
 /** Stopping the running turn: the turn's id, with this after it. */
 const STOP = "/stop";
 
+/** One column of the board as the page is showing it. */
+export type Lane = { id: string; title: string; total: number; goals: string[] };
+
 /** Where a human was when they asked, as the page knows it. */
 export type Page = {
   section: string;
@@ -29,6 +32,10 @@ export type Page = {
   title?: string;
   revision?: string;
   filters?: string[];
+  /** The board as the page is showing it, lane by lane, after its filters. */
+  lanes?: Lane[];
+  /** What the open project tab lists, by each row's own key. */
+  records?: string[];
   label?: string;
 };
 

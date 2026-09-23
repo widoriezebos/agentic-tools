@@ -9,6 +9,7 @@ import {
   DOCUMENTS_TAB,
   DOCUMENTS_TITLE,
   kindTitle,
+  listedIn,
   newActionFor,
   NO_SLICE_PLAN,
   nothingLine,
@@ -148,9 +149,15 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
   // given the row the board shows rather than the page's label. The project's
   // own page is about no one record, and says only which tab is open.
   const here2 = here?.title ?? "";
+  // And what that tab is listing, by each row's own key, so the Partner is
+  // told the records on the screen rather than the name of the tab they are
+  // on. What each one is, the server reads for itself.
+  const listed = useMemo(() => listedIn(briefing, open), [briefing, open]);
   useAbout(
     aboutLine(page, here2),
-    goal === null ? { tab: here2 } : { kind: "goal", subject: goal, title: goal, tab: here2 },
+    goal === null
+      ? { tab: here2, records: listed }
+      : { kind: "goal", subject: goal, title: goal, tab: here2, records: listed },
   );
 
   // Opening a tab is going somewhere: the address carries it, so a section of

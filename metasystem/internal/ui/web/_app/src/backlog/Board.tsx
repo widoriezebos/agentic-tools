@@ -3,32 +3,15 @@ import { NavLink, useNavigate } from "react-router";
 
 import { actingAs } from "./acting";
 import { BacklogError, rankGoal, type Backlog, type Row } from "./api";
-import { concludedWithin, matches, windowTitle, WINDOWS, type Filters, type Window } from "./filters";
+import { boardBelow, boardColumns } from "./columns";
+import { windowTitle, WINDOWS, type Filters, type Window } from "./filters";
 import { dateAndTime } from "./format";
-import {
-  ABANDONED,
-  DONE,
-  laneFor,
-  laneTitle,
-  shownLanes,
-  SPLIT_HELP,
-  SPLIT_TITLE,
-  UNPLACEABLE,
-  type LaneId,
-} from "./lanes";
+import { DONE, laneFor, SPLIT_HELP, type LaneId } from "./lanes";
 import { CardMenu } from "./CardMenu";
 import { offersFor, opensMenu, type At, type OfferId } from "./menu";
 import { moveFor, refusalFor, targetsFrom } from "./moves";
 import { RankSheet } from "./RankSheet";
-import {
-  inRankOrder,
-  landedNote,
-  needsConfirming,
-  placementFor,
-  stepFor,
-  type Placement,
-  type Side,
-} from "./reorder";
+import { landedNote, needsConfirming, placementFor, stepFor, type Placement, type Side } from "./reorder";
 import { SHOWN } from "./showing";
 import { arcOn, isParent, membersOf, parentOf } from "./split";
 import { Help } from "../help/Help";
@@ -150,7 +133,6 @@ export function Board({
   // against: a split member says what it is part of whether or not its parent
   // passes the filter, and a parent counts all of its members.
   const all = useMemo(() => [...backlog.rows, ...backlog.closed], [backlog]);
-  const shown = useMemo(() => all.filter((row) => matches(row, filters)), [all, filters]);
   const now = useMemo(() => observedAt(backlog), [backlog]);
   // One plan per goal on the board, built once from the project's records:
   // the same derivation the goal page's Slices tab reads, so the card and the
@@ -160,44 +142,21 @@ export function Board({
     [plans, all],
   );
 
-  // A lane reads in the order the engine ranks work in — priority, then
-  // sequence — because that is the order the chip on each card claims and the
-  // order a drag inside the lane rearranges. Goals with no rank sort after
-  // them by id, which is where the engine's own frontier puts them.
-  const inLane = (lane: LaneId) => inRankOrder(shown.filter((row) => row.lane === lane));
-  const parents = shown.filter(isParent);
-  const delivered = inLane(DONE).filter((row) => !isParent(row) && concludedWithin(row, reach, now));
-  const closed = [...inLane(ABANDONED), ...parents];
+  // What stands under the board, from the same reading the columns are.
+  const below = useMemo(() => boardBelow(backlog, filters), [backlog, filters]);
 
-  const columns: BoardColumn[] = [
-    ...shownLanes.map((lane) => ({
-      key: lane.id,
-      title: lane.title,
-      help: lane.help,
-      lane: lane.id,
-      rows: lane.id === "draft" ? [] : inLane(lane.id),
-    })),
-    {
-      key: DONE,
-      title: laneTitle(DONE),
-      help: laneFor(DONE)?.help ?? null,
-      lane: DONE,
-      rows: delivered,
-      head: <Reach days={reach} onChange={onWindow} />,
-    },
-  ];
-  if (closedShown) {
-    columns.push(
-      {
-        key: ABANDONED,
-        title: laneTitle(ABANDONED),
-        help: laneFor(ABANDONED)?.help ?? null,
-        lane: ABANDONED,
-        rows: inLane(ABANDONED),
-      },
-      { key: "split", title: SPLIT_TITLE, help: SPLIT_HELP, lane: DONE, rows: parents },
-    );
-  }
+  // What the board shows, lane by lane, from the one function that decides it.
+  // The pane composes the Project Partner's context from the same call, so the
+  // goals a question carries are the goals on the screen it was asked from.
+  const columns: BoardColumn[] = useMemo(
+    () =>
+      boardColumns(backlog, filters, reach, closedShown, now).map((column) => ({
+        ...column,
+        help: column.key === "split" ? SPLIT_HELP : (laneFor(column.key)?.help ?? null),
+        head: column.key === DONE ? <Reach days={reach} onChange={onWindow} /> : undefined,
+      })),
+    [backlog, filters, reach, closedShown, now, onWindow],
+  );
 
   const drop = (lane: LaneId) => {
     if (dragging === null) {
@@ -339,9 +298,9 @@ export function Board({
           things the board is about. */}
       <div className="ms-board-below">
         <Button aria-pressed={closedShown} onClick={onToggleClosed}>
-          {closedShown ? "Hide" : "Show"} closed items ({closed.length})
+          {closedShown ? "Hide" : "Show"} closed items ({below.closed.length})
         </Button>
-        <Unplaceable rows={inLane(UNPLACEABLE)} />
+        <Unplaceable rows={below.unplaceable} />
       </div>
       {asking !== null && (
         <RankSheet

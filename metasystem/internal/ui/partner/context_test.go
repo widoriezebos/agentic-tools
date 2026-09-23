@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -47,11 +48,11 @@ func TestAGoalsContextCarriesTheRowAsTheBoardShowsIt(t *testing.T) {
 	testutil.Expect(t, "which tab", strings.Contains(composed, "- Tab: Plan"), true)
 	testutil.Expect(t, "which goal", strings.Contains(composed, "- Goal: waiting — Do waiting"), true)
 	testutil.Expect(t, "what the human sees now", strings.Contains(composed, "What the human sees now"), true)
-	testutil.Expect(t, "the displayed revision", strings.Contains(composed,
-		"- Displayed revision: the accepted ledger at "+observedTip+", observed 2026-09-23T11:29:55Z"), true)
 	testutil.Expect(t, "the row's lane", strings.Contains(composed, "- Lane: "), true)
-	testutil.Expect(t, "the row's intent", strings.Contains(composed, "- Intent: Do waiting"), true)
+	testutil.Expect(t, "the row's intent", strings.Contains(composed, "- Intent: Do waiting."), true)
 	testutil.Expect(t, "the row's next step", strings.Contains(composed, "- Next step: Start waiting."), true)
+	testutil.Expect(t, "and the goals beside it in its lane",
+		strings.Contains(composed, "- The other goals in waiting (1): waiting-two"), true)
 }
 
 // A goal the accepted ledger does not carry is said to be missing rather than
@@ -64,19 +65,79 @@ func TestAGoalTheLedgerDoesNotCarryIsNamedAsMissing(t *testing.T) {
 		"The accepted ledger carries no goal ghost"), true)
 }
 
-// The board's page carries the accepted tip, the lane counts, and the fact
-// that a filtered board is not the whole backlog.
-func TestTheBoardsContextNamesItsFiltersAndItsCounts(t *testing.T) {
+// The board's page carries the rows the human is looking at, lane by lane, in
+// the page's own order — because the goals are in the accepted ledger commit
+// and in no file the Partner can read, so a context without them is a context
+// that cannot answer "which goals are in Ready for Work?".
+func TestTheBoardsContextCarriesTheRowsOnScreen(t *testing.T) {
 	t.Parallel()
 	composed := Compose(readingFacts(), Page{
 		Section: "Backlog", Path: "/backlog",
-		Filters: []string{"priority=2", "seat=m1e"},
+		Filters: []string{"priority=2", "Done reaches back 1 day"},
+		Lanes: []Lane{
+			{ID: "ready", Title: "Ready for Work", Total: 1, Goals: []string{"ready-one"}},
+			{ID: "in-progress", Title: "In Progress", Total: 1, Goals: []string{"running"}},
+			{ID: "waiting", Title: "Waiting", Total: 2, Goals: []string{"waiting", "waiting-two"}},
+		},
 	}, "Wido", composedAt)
-	testutil.Expect(t, "the filters are named", strings.Contains(composed, "- Filters: priority=2; seat=m1e"), true)
-	testutil.Expect(t, "the lanes are counted", strings.Contains(composed, "- Lanes on the board:"), true)
-	testutil.Expect(t, "and the subset is named", strings.Contains(composed,
-		"The board is filtered, so what the human sees is a subset of these counts."), true)
-	testutil.Expect(t, "the displayed revision", strings.Contains(composed, observedTip), true)
+	testutil.Expect(t, "the filters are named", strings.Contains(composed,
+		"- Filters: priority=2; Done reaches back 1 day"), true)
+	testutil.Expect(t, "the lanes are named in the page's order",
+		strings.Index(composed, "Ready for Work (1)") < strings.Index(composed, "In Progress (1)"), true)
+	testutil.Expect(t, "an approved goal's row",
+		strings.Contains(composed, "- ready-one · Do ready-one. · tier 2 · 1:3 · approved"), true)
+	testutil.Expect(t, "a claimed goal names its seat",
+		strings.Contains(composed, "- running · Do running. · tier 3 · 2:6 · claimed · seat m1e"), true)
+	testutil.Expect(t, "a waiting goal names why",
+		strings.Contains(composed, "waiting: The census format is being decided."), true)
+	testutil.Expect(t, "nothing was left out", strings.Contains(composed, "more goals are on the board"), false)
+}
+
+// Only so many rows of one lane travel, and what did not is counted rather
+// than dropped in silence.
+func TestTheBoardsContextCapsALaneAndSaysWhatItLeftOut(t *testing.T) {
+	t.Parallel()
+	deep := make([]string, 0, 40)
+	for at := 0; at < 40; at++ {
+		deep = append(deep, "filler-"+strconv.Itoa(at))
+	}
+	composed := Compose(readingFacts(), Page{
+		Section: "Backlog", Path: "/backlog",
+		Lanes: []Lane{{ID: "to-do", Title: "To Do", Total: 400, Goals: deep}},
+	}, "Wido", composedAt)
+	testutil.Expect(t, "the lane's whole count is named", strings.Contains(composed, "To Do (400)"), true)
+	testutil.Expect(t, "only the cap is named", strings.Count(composed, "- filler-"), maxLaneRows)
+	testutil.Expect(t, "and the rest are counted",
+		strings.Contains(composed, "- 375 more goals are on the board than are named here"), true)
+}
+
+// A page that named no rows is told so, rather than given the whole ledger's
+// counts as though they were what is on the screen.
+func TestTheBoardsContextSaysWhenThePageNamedNoRows(t *testing.T) {
+	t.Parallel()
+	composed := Compose(readingFacts(), Page{Section: "Backlog", Path: "/backlog"}, "Wido", composedAt)
+	testutil.Expect(t, "it counts the lanes instead",
+		strings.Contains(composed, "- Goals per lane at the accepted tip:"), true)
+	testutil.Expect(t, "and says which it is",
+		strings.Contains(composed, "The page did not say which goals it is showing"), true)
+}
+
+// The standing rule says the one thing a Partner cannot find out for itself:
+// the goals are not in the files.
+func TestTheStandingRuleSaysTheLedgerIsNotInTheFiles(t *testing.T) {
+	t.Parallel()
+	composed := Compose(readingFacts(), Page{Section: "Backlog"}, "Wido", composedAt)
+	testutil.Expect(t, "it says so", strings.Contains(composed,
+		"The ledger of goals is not in the files you can read; what you\nare told here about goals is the whole of what you know about them."), true)
+}
+
+// The block is marked with the revision it is a snapshot of, so what the
+// Partner reads afterwards is distinguishable from what it was told.
+func TestTheBlockIsMarkedWithTheTipItWasReadAt(t *testing.T) {
+	t.Parallel()
+	composed := Compose(readingFacts(), Page{Section: "Backlog"}, "Wido", composedAt)
+	testutil.Expect(t, "the heading names both", strings.Contains(composed,
+		"What the human sees now, from the accepted tip "+observedTip+" observed 2026-09-23T11:29:55Z"), true)
 }
 
 // A document's page carries the revision the page displayed, its head, and its
@@ -163,15 +224,43 @@ func readObservation() snapshot.Observation {
 		Done:      map[string]*goal.GoalFile{},
 		Abandoned: map[string]*goal.GoalFile{},
 	}
-	tree.Live["waiting"] = &goal.GoalFile{
-		Id: "waiting", State: goal.StateQueued, Intent: "Do waiting", Origin: "main",
-		NextStep: "Start waiting.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 9,
-	}
+	tree.Live["waiting"] = waitingGoal("waiting")
+	tree.Live["waiting-two"] = waitingGoal("waiting-two")
+	tree.Live["running"] = claimedGoal()
+	tree.Live["ready-one"] = approvedGoal()
 	horizon := goal.NewApprovalHorizon(tree, observedAt)
 	return snapshot.Observation{
 		ObservedAt: observedAt, State: snapshot.StateRead, Tip: observedTip,
 		Tree: tree, Horizon: horizon, SyncMode: goal.SyncLocal,
 		Admission: backlog.Admit(goal.Projection{Tree: tree, Horizon: horizon}),
+	}
+}
+
+func waitingGoal(id string) *goal.GoalFile {
+	return &goal.GoalFile{
+		Id: id, State: goal.StateParked, Intent: "Do " + id + ".", Origin: "main",
+		NextStep: "Start " + id + ".", OpenedAt: "2026-08-23T00:00:00Z", Revision: 9,
+		Parked: &goal.ParkRecord{
+			By: "human:wido", At: "2026-09-20T09:00:00Z",
+			Because: "The census format is being decided. It has been for a week.",
+		},
+	}
+}
+
+func claimedGoal() *goal.GoalFile {
+	return &goal.GoalFile{
+		Id: "running", State: goal.StateClaimed, Intent: "Do running. And then more.",
+		Origin: "main", NextStep: "Keep going.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 9,
+		Tier: 3, Priority: 2, Sequence: 6,
+		Claimed: &goal.ClaimRecord{Machine: "m1e", Lineage: "coordinator", At: "2026-09-20T09:00:00Z"},
+	}
+}
+
+func approvedGoal() *goal.GoalFile {
+	return &goal.GoalFile{
+		Id: "ready-one", State: goal.StateApproved, Intent: "Do ready-one. With care.",
+		Origin: "main", NextStep: "Take it.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 9,
+		Tier: 2, Priority: 1, Sequence: 3,
 	}
 }
 

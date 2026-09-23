@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 /**
  * What the page is about, said once, where the drawer and the Partner can read
@@ -30,6 +30,32 @@ export type Subject = {
   tab?: string;
   /** What the page is narrowed to, as the page spells it. */
   filters?: string[];
+  /**
+   * The board as this page is showing it: one entry per lane on screen, in the
+   * board's order, with the goals its filters and its Done window left in it.
+   *
+   * It travels because the goals are not in any file. The board is built from
+   * the accepted ledger commit, which the engine loads out of git, so a
+   * Partner told only where the human is would look for them in the checkout,
+   * not find them, and say so. Only this page knows what is on screen; only
+   * the server knows what each of those goals is. So the page names them and
+   * the server reads them.
+   */
+  lanes?: Lane[];
+  /**
+   * What the open project tab is listing, by the key the page lists it under:
+   * a record's checkout-relative path, or a question's id.
+   */
+  records?: string[];
+};
+
+/** One column of the board as the page is showing it. */
+export type Lane = {
+  id: string;
+  title: string;
+  /** How many the lane holds after the filters; goals names the first of them. */
+  total: number;
+  goals: string[];
 };
 
 type About = {
@@ -44,15 +70,19 @@ const AboutContext = createContext<About>({ about: null, subject: empty, describ
 
 export function AboutProvider({ children }: { children: ReactNode }) {
   const [said, setSaid] = useState<{ about: string | null; subject: Subject }>({ about: null, subject: empty });
+  // describe never changes identity, and that is the whole of why this works.
+  // A pane says what it is about from an effect, and that effect depends on
+  // describe; a describe rebuilt whenever the value changed made the effect
+  // run again, and its own cleanup then said the page was about nothing. The
+  // page ended up describing itself and immediately taking it back, so the
+  // context a question carried was empty — which is exactly what a live
+  // Partner reported: it was given a lane's count and no goals at all.
+  const describe = useCallback((about: string | null, subject: Subject) => {
+    setSaid({ about, subject });
+  }, []);
   const value = useMemo(
-    () => ({
-      about: said.about,
-      subject: said.subject,
-      describe: (about: string | null, subject: Subject) => {
-        setSaid({ about, subject });
-      },
-    }),
-    [said],
+    () => ({ about: said.about, subject: said.subject, describe }),
+    [said, describe],
   );
   return <AboutContext.Provider value={value}>{children}</AboutContext.Provider>;
 }

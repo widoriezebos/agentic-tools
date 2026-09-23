@@ -34,6 +34,15 @@ export function pageOf(pathname: string, subject: Subject): Page {
   if (subject.filters !== undefined && subject.filters.length > 0) {
     page.filters = subject.filters;
   }
+  // The board's own rows. They travel because they are nowhere else: the
+  // goals are in the accepted ledger commit, not in the checkout's files, so
+  // a Partner not told them cannot answer a question about them at all.
+  if (subject.lanes !== undefined && subject.lanes.length > 0) {
+    page.lanes = subject.lanes;
+  }
+  if (subject.records !== undefined && subject.records.length > 0) {
+    page.records = subject.records;
+  }
   return page;
 }
 
