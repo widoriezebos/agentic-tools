@@ -34,7 +34,7 @@ const expected: Lane[] = [
   { id: "waiting", title: "Waiting", help: "lane-waiting" },
   { id: "done", title: "Done", help: "lane-done" },
   { id: "abandoned", title: "Abandoned", help: "lane-abandoned" },
-  { id: "unknown", title: "Unknown", help: null },
+  { id: "unknown", title: "Unknown", help: "lane-unknown" },
 ];
 
 describe("the lanes", () => {
@@ -114,19 +114,17 @@ describe("the lanes", () => {
   });
 
   // Every column head carries a help icon, so every lane that is a column
-  // names a term that exists. Unknown is the one lane that is no column, and
-  // it names none.
-  it("name a term the help register carries, for every lane that is a column", () => {
+  // names a term that exists. Unknown is no column, and names one all the
+  // same: the board discloses what landed there, and the interface manifest
+  // has to be able to say what being there means.
+  it("name a term the help register carries, for every lane", () => {
     for (const lane of lanes) {
-      if (lane.id === UNPLACEABLE) {
-        expect({ id: lane.id, help: lane.help }).toEqual({ id: lane.id, help: null });
-        continue;
-      }
-      expect({ id: lane.id, known: lane.help !== null && Object.hasOwn(HELP, lane.help) }).toEqual({
+      expect({ id: lane.id, known: Object.hasOwn(HELP, lane.help) }).toEqual({
         id: lane.id,
         known: true,
       });
     }
+    expect(laneFor(UNPLACEABLE)?.help).toBe("lane-unknown");
   });
 
   // The split column is the board's and not the lanes': a goal retired by

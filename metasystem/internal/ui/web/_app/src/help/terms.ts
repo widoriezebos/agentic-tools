@@ -36,6 +36,7 @@ export type HelpId =
   | "fleet"
   | "decisions-section"
   | "application"
+  | "settings"
   | "partner"
   | "lane-draft"
   | "lane-todo"
@@ -46,6 +47,7 @@ export type HelpId =
   | "lane-done"
   | "lane-abandoned"
   | "lane-split"
+  | "lane-unknown"
   | "priority"
   | "tier"
   | "seat"
@@ -143,9 +145,13 @@ export const HELP: Record<HelpId, Term> = {
     term: "Application",
     text: "What has been built and released, and the evidence that it works.",
   },
+  settings: {
+    term: "Settings",
+    text: "This workspace's own configuration rather than the project's records: which agent answers as the Project Partner, who is signed in, how the interface looks, and where this checkout is. Only the appearance can be changed from here in this build.",
+  },
   partner: {
     term: "Project Partner",
-    text: "The agent you work with across this whole interface. Ask it about anything you see. It reads the same records you do and can write with you.",
+    text: "The agent you work with across this whole interface. Ask it about anything you see. It reads the same records you do and explains them; it does not write and it does not act.",
   },
   "lane-draft": {
     term: "Draft",
@@ -187,6 +193,14 @@ export const HELP: Record<HelpId, Term> = {
     term: "Split into goals",
     text: "A goal that was split into smaller goals. It stands here beside the goals it became, not in Done, because it was never delivered as one piece.",
   },
+  // Unknown is a place in the projection and a column nowhere. It still needs
+  // a sentence: the board discloses what landed there, and a human — or the
+  // Partner reading the interface's own manifest — has to be able to find out
+  // what being there means.
+  "lane-unknown": {
+    term: "Unknown",
+    text: "A goal record this build cannot place in any lane. It is disclosed under the board with the reason it carries, never hidden and never a column of its own.",
+  },
   priority: {
     term: "Priority",
     text: "A band and a position in it, shown as band:position. Band 1 comes before band 2, and inside a band the lower position comes first. Seats claim from the top of Ready for Work.",
@@ -225,6 +239,30 @@ export function sectionHelp(id: string | undefined): HelpId | null {
     return null;
   }
   return SECTION_HELP[id] ?? null;
+}
+
+/**
+ * The term that says what a section is, for a reader that needs one for every
+ * section rather than only for the six the header explains.
+ *
+ * The header's control is above; this is the same register, extended by the
+ * two sections the header leaves alone: the Project Partner is explained on
+ * its own drawer, and Settings is the workspace's own configuration. A reader
+ * that has to describe the whole interface — the manifest the Partner is
+ * given — needs a sentence for those two as well, and it is this one rather
+ * than a second account written for it.
+ */
+const SECTION_TERM: Readonly<Record<string, HelpId>> = {
+  ...SECTION_HELP,
+  brain: "partner",
+  settings: "settings",
+};
+
+export function sectionTerm(id: string | undefined): HelpId | null {
+  if (id === undefined) {
+    return null;
+  }
+  return SECTION_TERM[id] ?? null;
 }
 
 /** What a term says, where a surface shows the sentence rather than an icon. */

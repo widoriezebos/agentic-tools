@@ -440,6 +440,12 @@ func runUI(verb string, args []string) int {
 					Partner:           partnerService,
 					PartnerConfigured: partnerRuntime != "",
 					PartnerRefusal:    partnerRefusal,
+					// What this interface is made of, joined from the half the
+					// bundle carries and the half this seat resolves. It is
+					// the same join the Partner's own tool server answers
+					// from, so the page and the Partner cannot be told two
+					// different things about this build.
+					Interface: describeInterface(roots),
 				}, bound, bundle)
 			},
 			Ready: func(address string) {

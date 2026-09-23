@@ -1,0 +1,465 @@
+{
+  "schemaVersion": 1,
+  "sections": [
+    {
+      "id": "brain",
+      "title": "Project Partner",
+      "path": "/brain",
+      "purpose": "The agent you work with across this whole interface. Ask it about anything you see. It reads the same records you do and explains them; it does not write and it does not act.",
+      "shows": "The conversation with the Partner in full, with the subject under discussion pinned beside it.",
+      "projected": true,
+      "availability": "This build projects Project Partner: the page reads the workspace and says what it read."
+    },
+    {
+      "id": "overview",
+      "title": "Overview",
+      "path": "/overview",
+      "purpose": "What needs you, and what changed since you last looked, with links to the records behind it.",
+      "shows": "What needs you, what changed since your last visit, what the fleet is working on now, and one line of health.",
+      "projected": true,
+      "availability": "This build projects Overview: the page reads the workspace and says what it read."
+    },
+    {
+      "id": "project",
+      "title": "Project",
+      "path": "/project",
+      "purpose": "The project's memory: its intent, doctrine, decisions, designs and open questions, each a record the checkout carries, and the documents around them.",
+      "shows": "The project's records a kind at a time — intent, doctrine, decisions, designs, open questions and the checkout's other documents — and any one of them opened for reading.",
+      "projected": true,
+      "availability": "This build projects Project: the page reads the workspace and says what it read."
+    },
+    {
+      "id": "backlog",
+      "title": "Backlog",
+      "path": "/backlog",
+      "purpose": "The goals, as a board. A goal moves from To Do through Ready for Work, In Progress and Review to Done. Drag a card to approve or withdraw it, or to change its priority.",
+      "shows": "The goals as a board, lane by lane, with the closed items behind a disclosure and one goal opened on its own page.",
+      "projected": true,
+      "availability": "This build projects Backlog: the page reads the workspace and says what it read."
+    },
+    {
+      "id": "fleet",
+      "title": "Fleet",
+      "path": "/fleet",
+      "purpose": "The machines and seats working on this project: their sessions, jobs and health, with when each was last observed.",
+      "shows": "A row per machine and seat, with its sessions, the jobs it is running, its last census and its health, each stamped with when it was observed.",
+      "projected": false,
+      "availability": "This build does not project Fleet. This machine's sessions, jobs, census, and health are recorded and will be shown with observation times and gaps. Arrives with g1-s13."
+    },
+    {
+      "id": "decisions",
+      "title": "Decisions",
+      "path": "/decisions",
+      "purpose": "What the machinery is asking you to rule on: questions from every seat, approvals, delegations. Your answer is recorded with your name as the authority.",
+      "shows": "A list of what is waiting on a human, with what is being asked, which seat asked it, and what answering it would do.",
+      "projected": false,
+      "availability": "This build does not project Decisions. Questions from every seat, approvals, delegations, and rulings are in the ledger and will be read here. Arrives with g1-s12."
+    },
+    {
+      "id": "application",
+      "title": "Application",
+      "path": "/application",
+      "purpose": "What has been built and released, and the evidence that it works.",
+      "shows": "What has been released, with the evidence for each claim and where that evidence was produced.",
+      "projected": false,
+      "availability": "This build does not project Application. Implemented and released behaviour and its evidence are recorded and will be shown here. Arrives with gate 6."
+    },
+    {
+      "id": "settings",
+      "title": "Settings",
+      "path": "/settings",
+      "purpose": "This workspace's own configuration rather than the project's records: which agent answers as the Project Partner, who is signed in, how the interface looks, and where this checkout is. Only the appearance can be changed from here in this build.",
+      "shows": "This workspace's own identity, the appearance control, and the settings pages themselves.",
+      "projected": false,
+      "availability": "This build does not project Settings. Pages for runtimes and models, connections and channels, identity and authority, execution defaults, and storage and retention will be read and changed here. Arrives with gate 7."
+    }
+  ],
+  "lanes": [
+    {
+      "id": "draft",
+      "title": "Draft",
+      "purpose": "A goal someone wrote down that has not been through intake yet. It is not on the board's path until it is.",
+      "shown": false
+    },
+    {
+      "id": "to-do",
+      "title": "To Do",
+      "purpose": "Goals nobody has authorized yet. A goal here may be waiting on intake or on a human's approval. Drag it to Ready for Work to approve it.",
+      "shown": true
+    },
+    {
+      "id": "ready",
+      "title": "Ready for Work",
+      "purpose": "Approved goals a seat may claim right now, in priority order. Drag one back to To Do to withdraw the approval.",
+      "shown": true
+    },
+    {
+      "id": "in-progress",
+      "title": "In Progress",
+      "purpose": "Goals a seat has claimed and is working on.",
+      "shown": true
+    },
+    {
+      "id": "review",
+      "title": "Review and Verification",
+      "purpose": "Work that is built and being checked before it lands.",
+      "shown": true
+    },
+    {
+      "id": "waiting",
+      "title": "Waiting",
+      "purpose": "Work a blocker holds, with the reason and the state it waits from.",
+      "shown": true
+    },
+    {
+      "id": "done",
+      "title": "Done",
+      "purpose": "Goals that landed, with what they concluded. The selector chooses how many days back to show.",
+      "shown": false
+    },
+    {
+      "id": "abandoned",
+      "title": "Abandoned",
+      "purpose": "Work that was dropped, with the recorded reason.",
+      "shown": false
+    },
+    {
+      "id": "unknown",
+      "title": "Unknown",
+      "purpose": "A goal record this build cannot place in any lane. It is disclosed under the board with the reason it carries, never hidden and never a column of its own.",
+      "shown": false
+    }
+  ],
+  "terms": [
+    {
+      "id": "intent",
+      "term": "Intent",
+      "text": "Why this project exists and what it must and must not become. It is the standing answer to what we are building and for whom. Every goal serves it, and when it changes, the change is written here first."
+    },
+    {
+      "id": "doctrine",
+      "term": "Doctrine",
+      "text": "The rules every design is held to, decided once so nobody argues them again per goal: the architecture, the principles, the shape of the code. A design that breaks doctrine is either wrong or a proposal to change doctrine."
+    },
+    {
+      "id": "decisions",
+      "term": "Decisions",
+      "text": "Choices that were made, and the reasons, kept so later work can rely on them instead of deciding again. One page per decision. A decision that is overturned is superseded, never deleted."
+    },
+    {
+      "id": "designs",
+      "term": "Designs",
+      "text": "How a piece of work will be built, written before it is built. A design says what the work does and does not do. When the work ships, the design's status becomes done."
+    },
+    {
+      "id": "design-work",
+      "term": "Work",
+      "text": "The goals this design names, with their ledger states. When every one has landed, the design can be marked done."
+    },
+    {
+      "id": "questions",
+      "term": "Open questions",
+      "text": "What nobody has answered yet. One row per question, with when it was opened and, once settled, what answered it."
+    },
+    {
+      "id": "documents",
+      "term": "Documents",
+      "text": "The rest of the checkout's Markdown, listed by path. Nothing here declares what kind of record it is, so read it as writing, not as a record."
+    },
+    {
+      "id": "slices",
+      "term": "Slices",
+      "text": "The pieces a goal is built in, each small enough to ship on its own, listed by the design that governs it. The first slice is the smallest thing that works."
+    },
+    {
+      "id": "goal-decisions",
+      "term": "Decisions for this goal",
+      "text": "The decisions whose Goals line names this goal. Project-wide decisions live under Project."
+    },
+    {
+      "id": "goal-designs",
+      "term": "Designs for this goal",
+      "text": "The designs whose Goals line names this goal, with the slices each one planned."
+    },
+    {
+      "id": "goal-questions",
+      "term": "Open questions for this goal",
+      "text": "The questions opened about this goal that nobody has answered yet."
+    },
+    {
+      "id": "overview",
+      "term": "Overview",
+      "text": "What needs you, and what changed since you last looked, with links to the records behind it."
+    },
+    {
+      "id": "overview-needs-you",
+      "term": "Needs you",
+      "text": "What is waiting on you and nobody else: work nobody has authorized, questions nobody has answered, drafts nobody has accepted, designs whose work has all landed, and what the steward addressed to you. When there is none of it, the page says so."
+    },
+    {
+      "id": "overview-changed",
+      "term": "Since your last visit",
+      "text": "What happened while you were away, measured from the end of your last visit rather than from your last page load. Coming back and refreshing during a visit never narrows the window, so nothing slips past between two reads."
+    },
+    {
+      "id": "overview-work",
+      "term": "Work now",
+      "text": "What the fleet is doing at this moment: what a seat has claimed, what it would take next, what is held and why, and how the lanes stand. Every count opens the board."
+    },
+    {
+      "id": "overview-memory",
+      "term": "The project's memory",
+      "text": "What this project has written down: its intent and its doctrine, the decisions it has made, the designs governing work, and the questions still open. Each count opens the part of Project it belongs to."
+    },
+    {
+      "id": "overview-health",
+      "term": "Health",
+      "text": "Whether the machinery itself is sound: this checkout's ledger against the canonical tip, what the records check refuses, and any message the steward could not deliver. One line when all three answered."
+    },
+    {
+      "id": "project",
+      "term": "Project",
+      "text": "The project's memory: its intent, doctrine, decisions, designs and open questions, each a record the checkout carries, and the documents around them."
+    },
+    {
+      "id": "backlog",
+      "term": "Backlog",
+      "text": "The goals, as a board. A goal moves from To Do through Ready for Work, In Progress and Review to Done. Drag a card to approve or withdraw it, or to change its priority."
+    },
+    {
+      "id": "fleet",
+      "term": "Fleet",
+      "text": "The machines and seats working on this project: their sessions, jobs and health, with when each was last observed."
+    },
+    {
+      "id": "decisions-section",
+      "term": "Decisions",
+      "text": "What the machinery is asking you to rule on: questions from every seat, approvals, delegations. Your answer is recorded with your name as the authority."
+    },
+    {
+      "id": "application",
+      "term": "Application",
+      "text": "What has been built and released, and the evidence that it works."
+    },
+    {
+      "id": "settings",
+      "term": "Settings",
+      "text": "This workspace's own configuration rather than the project's records: which agent answers as the Project Partner, who is signed in, how the interface looks, and where this checkout is. Only the appearance can be changed from here in this build."
+    },
+    {
+      "id": "partner",
+      "term": "Project Partner",
+      "text": "The agent you work with across this whole interface. Ask it about anything you see. It reads the same records you do and explains them; it does not write and it does not act."
+    },
+    {
+      "id": "lane-draft",
+      "term": "Draft",
+      "text": "A goal someone wrote down that has not been through intake yet. It is not on the board's path until it is."
+    },
+    {
+      "id": "lane-todo",
+      "term": "To Do",
+      "text": "Goals nobody has authorized yet. A goal here may be waiting on intake or on a human's approval. Drag it to Ready for Work to approve it."
+    },
+    {
+      "id": "lane-ready",
+      "term": "Ready for Work",
+      "text": "Approved goals a seat may claim right now, in priority order. Drag one back to To Do to withdraw the approval."
+    },
+    {
+      "id": "lane-progress",
+      "term": "In Progress",
+      "text": "Goals a seat has claimed and is working on."
+    },
+    {
+      "id": "lane-review",
+      "term": "Review and Verification",
+      "text": "Work that is built and being checked before it lands."
+    },
+    {
+      "id": "lane-waiting",
+      "term": "Waiting",
+      "text": "Work a blocker holds, with the reason and the state it waits from."
+    },
+    {
+      "id": "lane-done",
+      "term": "Done",
+      "text": "Goals that landed, with what they concluded. The selector chooses how many days back to show."
+    },
+    {
+      "id": "lane-abandoned",
+      "term": "Abandoned",
+      "text": "Work that was dropped, with the recorded reason."
+    },
+    {
+      "id": "lane-split",
+      "term": "Split into goals",
+      "text": "A goal that was split into smaller goals. It stands here beside the goals it became, not in Done, because it was never delivered as one piece."
+    },
+    {
+      "id": "lane-unknown",
+      "term": "Unknown",
+      "text": "A goal record this build cannot place in any lane. It is disclosed under the board with the reason it carries, never hidden and never a column of its own."
+    },
+    {
+      "id": "priority",
+      "term": "Priority",
+      "text": "A band and a position in it, shown as band:position. Band 1 comes before band 2, and inside a band the lower position comes first. Seats claim from the top of Ready for Work."
+    },
+    {
+      "id": "tier",
+      "term": "Tier",
+      "text": "How much proof a goal owes before it lands, 1 to 3, set by the worse of its risk answers on severity and novelty. Tier 3 is the most demanding."
+    },
+    {
+      "id": "seat",
+      "term": "Seat",
+      "text": "The machine and session that claimed the goal."
+    },
+    {
+      "id": "arc",
+      "term": "Arc",
+      "text": "The larger line of work a goal belongs to, named so related goals can be seen together."
+    }
+  ],
+  "questions": [
+    {
+      "subject": "goal",
+      "questions": [
+        {
+          "text": "Why is it here?",
+          "scope": "this goal's own record at the accepted tip: its lane, its state, and what put it there"
+        },
+        {
+          "text": "What would move it?",
+          "scope": "this goal's blockers, approval and next step"
+        },
+        {
+          "text": "What does its design say?",
+          "scope": "the designs whose Goals line names this goal"
+        }
+      ]
+    },
+    {
+      "subject": "design",
+      "questions": [
+        {
+          "text": "Has its work shipped?",
+          "scope": "the goals this design names, and where each one stands at the accepted tip"
+        },
+        {
+          "text": "What does it leave out?",
+          "scope": "this design's own text, as it stands in the checkout"
+        },
+        {
+          "text": "Which goals does it name?",
+          "scope": "this design's Goals line"
+        }
+      ]
+    },
+    {
+      "subject": "decision",
+      "questions": [
+        {
+          "text": "What did it decide, and why?",
+          "scope": "this decision's own text, as it stands in the checkout"
+        }
+      ]
+    },
+    {
+      "subject": "lane",
+      "questions": [
+        {
+          "text": "What is in here, and why?",
+          "scope": "the rows this lane is showing, after the board's filters"
+        }
+      ]
+    },
+    {
+      "subject": "board",
+      "questions": [
+        {
+          "text": "What needs me here?",
+          "scope": "the rows on this board that nobody has authorised, after its filters"
+        },
+        {
+          "text": "What changed today?",
+          "scope": "since local midnight, through the changes this server knows"
+        },
+        {
+          "text": "What is next up?",
+          "scope": "Ready for Work, in priority order"
+        }
+      ]
+    },
+    {
+      "subject": "overview",
+      "questions": [
+        {
+          "text": "What needs me here?",
+          "scope": "the Needs-you set on this page"
+        },
+        {
+          "text": "What changed today?",
+          "scope": "since local midnight, through the changes this server knows"
+        },
+        {
+          "text": "What is next up?",
+          "scope": "Ready for Work, in priority order"
+        }
+      ]
+    },
+    {
+      "subject": "document",
+      "questions": [
+        {
+          "text": "Summarise this",
+          "scope": "this document's own text, as it stands in the checkout"
+        },
+        {
+          "text": "What does it rest on?",
+          "scope": "the records this one cites, and the records that cite it"
+        }
+      ]
+    },
+    {
+      "subject": "record",
+      "questions": [
+        {
+          "text": "Summarise this",
+          "scope": "this record's own text, as it stands in the checkout"
+        },
+        {
+          "text": "What does it rest on?",
+          "scope": "the records this one cites, and the records that cite it"
+        }
+      ]
+    },
+    {
+      "subject": "passage",
+      "questions": [
+        {
+          "text": "What does this mean?",
+          "scope": "the passage you selected, and the document it came from"
+        },
+        {
+          "text": "What does it rest on?",
+          "scope": "the records the document it came from cites"
+        }
+      ]
+    },
+    {
+      "subject": "project",
+      "questions": [
+        {
+          "text": "What is in this tab?",
+          "scope": "the records this tab is listing"
+        },
+        {
+          "text": "What changed today?",
+          "scope": "since local midnight, through the changes this server knows"
+        }
+      ]
+    }
+  ]
+}

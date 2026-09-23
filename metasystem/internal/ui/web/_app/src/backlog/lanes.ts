@@ -30,11 +30,12 @@ export type Lane = {
   id: LaneId;
   title: string;
   /**
-   * The term that says what a goal in this lane is, or null for the lane that
-   * is never a head: Unknown is a place in the projection and a column
-   * nowhere, so there is nothing for a help icon to stand beside.
+   * The term that says what a goal in this lane is. Every lane has one,
+   * including the one that is never a column head: Unknown is a place in the
+   * projection that the board discloses beneath the lanes, and a place a
+   * record can land in needs a sentence saying what landing there means.
    */
-  help: HelpId | null;
+  help: HelpId;
 };
 
 export const lanes: readonly Lane[] = [
@@ -46,7 +47,7 @@ export const lanes: readonly Lane[] = [
   { id: "waiting", title: "Waiting", help: "lane-waiting" },
   { id: "done", title: "Done", help: "lane-done" },
   { id: "abandoned", title: "Abandoned", help: "lane-abandoned" },
-  { id: "unknown", title: "Unknown", help: null },
+  { id: "unknown", title: "Unknown", help: "lane-unknown" },
 ];
 
 /** The lanes whose goals have left the live ledger. */

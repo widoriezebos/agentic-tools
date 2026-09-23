@@ -71,6 +71,12 @@ func toolReaders(roots lifecycle.Roots) uitools.Readers {
 	return uitools.Readers{
 		Now:     now,
 		Observe: ledger.Observe,
+		// What this interface is made of, and what this kit's own words mean.
+		// Both are composed here, in the engine, from the owners that hold
+		// them: the bundle this executable carries, the configuration this
+		// seat resolves, the resolver's homes, and the kit's own documents.
+		Interface: describeInterface(roots),
+		Kit:       uitools.Kit{Root: roots.Installation, Commands: commandCatalogue},
 		Document: func(id string) (project.Document, error) {
 			return project.Read(projectRoots(roots), id, now())
 		},

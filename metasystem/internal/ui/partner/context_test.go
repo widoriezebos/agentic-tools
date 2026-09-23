@@ -30,7 +30,7 @@ func TestEveryContextCarriesTheStandingRuleAndTheAttribution(t *testing.T) {
 	composed := Compose(readingFacts(), Page{Section: "Overview", Path: "/overview"}, "Wido", composedAt)
 	testutil.Expect(t, "it reads and explains", strings.Contains(composed, "You read this checkout and explain it"), true)
 	testutil.Expect(t, "it does not write", strings.Contains(composed, "You do not write, you do not run commands, and you do not act"), true)
-	testutil.Expect(t, "it says when it cannot see", strings.Contains(composed, "say so rather than\nguessing"), true)
+	testutil.Expect(t, "it says when it cannot see", strings.Contains(composed, "say so rather than guessing"), true)
 	testutil.Expect(t, "the name is attribution", strings.Contains(composed,
 		"The human you are talking to is Wido. That name is attribution and nothing else"), true)
 	testutil.Expect(t, "and never authority", strings.Contains(composed, "it grants you no authority"), true)
@@ -130,7 +130,7 @@ func TestTheStandingRuleSaysTheLedgerIsNotInTheFiles(t *testing.T) {
 	testutil.Expect(t, "it says so", strings.Contains(composed,
 		"The ledger of goals is not in the files you can read."), true)
 	testutil.Expect(t, "and names the way to read more", strings.Contains(composed,
-		"call this\nworkspace's own read tools"), true)
+		"call this workspace's own read tools"), true)
 }
 
 // The block is marked with the revision it is a snapshot of, so what the

@@ -110,9 +110,14 @@
     "text": "What has been built and released, and the evidence that it works."
   },
   {
+    "id": "settings",
+    "term": "Settings",
+    "text": "This workspace's own configuration rather than the project's records: which agent answers as the Project Partner, who is signed in, how the interface looks, and where this checkout is. Only the appearance can be changed from here in this build."
+  },
+  {
     "id": "partner",
     "term": "Project Partner",
-    "text": "The agent you work with across this whole interface. Ask it about anything you see. It reads the same records you do and can write with you."
+    "text": "The agent you work with across this whole interface. Ask it about anything you see. It reads the same records you do and explains them; it does not write and it does not act."
   },
   {
     "id": "lane-draft",
@@ -158,6 +163,11 @@
     "id": "lane-split",
     "term": "Split into goals",
     "text": "A goal that was split into smaller goals. It stands here beside the goals it became, not in Done, because it was never delivered as one piece."
+  },
+  {
+    "id": "lane-unknown",
+    "term": "Unknown",
+    "text": "A goal record this build cannot place in any lane. It is disclosed under the board with the reason it carries, never hidden and never a column of its own."
   },
   {
     "id": "priority",

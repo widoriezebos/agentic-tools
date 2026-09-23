@@ -80,21 +80,36 @@ const (
 // could read the checkout, a Partner looked for the goals in the files, did not
 // find them, and said so at length; it had no way to know that what it was
 // given about them was all there was.
+// What this Partner may do here, and what it may not, in one phrase each.
+//
+// They are one fact with one owner. The standing rule below is composed from
+// them, and the interface's own manifest is given them, so that "can you edit
+// this with me?" is answered the same way by the Partner, by the tool that
+// describes the interface, and by the page that offers the conversation.
+const (
+	// Reads is everything this Partner may read.
+	Reads = "the page the human is looking at, the ledger's goals, the project's records and documents, the steward's journal, what this interface itself is made of, and this kit's own glossary, verbs and rulings"
+	// Refused is everything it may not do, whatever it is asked.
+	Refused = "writing a file, editing one, acting on the backlog, running a command, and the network"
+)
+
 const standingRule = `You are the Project Partner for this MetaSystem workspace.
-You read this checkout and explain it to the human you are talking to.
-You do not write, you do not run commands, and you do not act: tools that
-would write or execute are not available to you, and a request for one is
-refused before it runs. When you cannot see something, say so rather than
-guessing; when you are unsure whether what you read is what the human sees,
-say that too.
+You read this checkout and explain it to the human you are talking to. What you
+may read is ` + Reads + `.
+You do not write, you do not run commands, and you do not act: ` + Refused + `
+are all refused to you. Tools that would write or execute are not available,
+and a request for one is refused before it runs. When you cannot see something,
+say so rather than guessing; when you are unsure whether what you read is what
+the human sees, say that too.
 
 The ledger of goals is not in the files you can read. What you are told below
 about the page is what the human is looking at right now; to read anything
 else — another goal, a document, the records, the open questions, the landing
-page, the steward's journal, or a search across all of them — call this
-workspace's own read tools. Every one of their results names the reading it
-was of and says how much of the whole it supplied; when one carries a cursor,
-call it again with that cursor rather than answering from half of it.`
+page, the steward's journal, what this interface is made of, or this kit's own
+meanings — call this workspace's own read tools. Every one of their results
+names the reading it was of and says how much of the whole it supplied; when
+one carries a cursor, call it again with that cursor rather than answering from
+half of it.`
 
 // Seen is the page, composed once, for the three things that must not
 // disagree about it: the sheet that shows a human what the Partner will be
@@ -160,9 +175,33 @@ func Compose(facts Facts, page Page, human string, now time.Time) string {
 // ComposeSeen is the same block from a composition already made, so the turn
 // and the sheet beside it are one reading rather than two.
 func ComposeSeen(seen Seen, page Page, human string) string {
+	return ComposeOpening(seen, page, human, "")
+}
+
+// Opening is what the FIRST prompt of a session carries beyond the standing
+// rule: how to answer here, from the kit's own skill, and a map of the
+// project's memory read at a named moment.
+//
+// It is the first prompt's and not every turn's for two reasons. The skill
+// does not change between turns, and a map re-read every turn would be a
+// promise that it is current, which is exactly what it must not be. A session
+// that is lost and reopened is a first prompt again, so a recovered
+// conversation is given both again, freshly read.
+func Opening(facts Facts, now time.Time) (string, MemoryIndex) {
+	index := Memory(facts, now)
+	return skillBlock() + "\n" + index.Block, index
+}
+
+// ComposeOpening is the turn's block with the session's own opening material
+// between the standing rule and the page. An empty opening is a later prompt
+// of a session that has already been given it.
+func ComposeOpening(seen Seen, page Page, human, opening string) string {
 	var built strings.Builder
 	built.WriteString(standingRule)
 	built.WriteString("\n\n" + vocabulary())
+	if strings.TrimSpace(opening) != "" {
+		built.WriteString("\n" + opening)
+	}
 	built.WriteString("\nWhere the human is\n")
 	built.WriteString(whereLines(page))
 	built.WriteString("\nWhat the human sees now, from " + seen.Source + "\n")

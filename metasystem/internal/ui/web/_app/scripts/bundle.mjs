@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { compareBytewise, sha256Hex, sourceDigest } from "./digest.mjs";
+import { writeInterface } from "./interface.mjs";
 import { writeNotices } from "./notices.mjs";
 
 /**
@@ -185,6 +186,11 @@ async function main() {
   run(binary("tsc"), ["--noEmit"]);
   run(binary("vite"), ["build"]);
   writeNotices(APP_DIR, DIST_DIR);
+  // The interface's own half of the manifest, composed from the registers the
+  // pages render from. It is written into the served tree before the files are
+  // digested, so it is one of them: a bundle carrying a stale manifest is a
+  // stale bundle, and the currentness check already says so.
+  const { file: interfaceFile } = await writeInterface(APP_DIR, DIST_DIR);
 
   const { digest, files: source } = sourceDigest(APP_DIR);
   const manifest = {
@@ -200,6 +206,7 @@ async function main() {
     },
   };
   writeFileSync(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
+  process.stdout.write(`wrote ${interfaceFile}\n`);
   process.stdout.write(`wrote ${MANIFEST} for ${manifest.files.length} files, source ${digest}\n`);
 }
 

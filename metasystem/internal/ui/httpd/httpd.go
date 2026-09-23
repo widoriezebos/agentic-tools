@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/manifest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
@@ -138,6 +139,14 @@ type Info struct {
 	// PartnerRefusal is why a configured runtime was not admitted, in the
 	// admission's own words, which the Partner routes answer 503 with.
 	PartnerRefusal string
+	// Interface joins the interface's two halves: the one the bundle carries
+	// and the one this engine composes for this seat. It is called per
+	// request for the reason the readers are — a setting changed while the
+	// server runs is read without a restart — and it is given rather than
+	// built here because the Project Partner's own tool server composes the
+	// same join in another process, from the same owners. A nil Interface is
+	// an engine that cannot describe itself, which the route says.
+	Interface func() (manifest.Manifest, error)
 }
 
 // absentBundleStatement is what a page request gets from an engine built
@@ -289,6 +298,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == projectPath {
 		h.project(w)
+		return
+	}
+	if r.URL.Path == interfacePath {
+		h.describe(w)
 		return
 	}
 	if r.URL.Path == overviewPath {

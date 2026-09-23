@@ -151,6 +151,36 @@ func Catalogue() []Tool {
 				"cursor": cursorProperty,
 			}, []string{"text"}),
 		},
+		{
+			Name: OpInterface,
+			Description: "What this interface is made of, from its own sources: every section with what it is for, " +
+				"what its page shows and whether this build projects it; the lanes and which are shown; the help terms; " +
+				"the questions this interface suggests; the acts and the hand each needs; the ui. settings with their " +
+				"defaults and what this seat resolves them to; where this checkout keeps each kind of record; and the " +
+				"runtimes this build admits. Ask it before saying what a page, a term, a setting or a lane is. " +
+				"Bounded; name a part and page within it.",
+			InputSchema: schema(map[string]any{
+				"part": map[string]any{
+					"type":        "string",
+					"description": "Which part to read: summary, sections, lanes, terms, questions, acts, settings, records or runtimes. Omit it for the summary.",
+				},
+				"cursor": cursorProperty,
+			}, nil),
+		},
+		{
+			Name: OpKit,
+			Description: "What the metasystem itself means, from the kit's own owners: the glossary's definition of a " +
+				"term, one of the engine's verbs and what it does, a standing human ruling, or the route that says " +
+				"where a workflow is written down. Ask it for a concept, a command, a ruling id or a way of working. " +
+				"It explains rules; what this workspace's goals actually are comes from the board, goal and search tools.",
+			InputSchema: schema(map[string]any{
+				"topic": map[string]any{
+					"type":        "string",
+					"description": "A term, a verb, a ruling id or a way of working. Omit it to see what this tool can answer from.",
+				},
+				"cursor": cursorProperty,
+			}, nil),
+		},
 	}
 }
 
@@ -166,7 +196,9 @@ func schema(properties map[string]any, required []string) map[string]any {
 // initialize. They say the one thing the tool descriptions cannot: that these
 // readings are the same ones the human's pages are composed from.
 const Instructions = "These tools read this MetaSystem workspace exactly as its browser interface does: " +
-	"the board from the accepted ledger tip, a document from the checkout as it stands. " +
+	"the board from the accepted ledger tip, a document from the checkout as it stands, " +
+	"the interface's own manifest from the build that made it and the settings this seat resolves, " +
+	"and the kit's own meanings from the glossary, command catalogue, rulings register and routes that own them. " +
 	"Every result names the source it read from and says how much of the whole it supplied; " +
 	"when a result carries a cursor, call the same tool again with it to read the rest. " +
 	"Nothing here writes."

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { empties, emptyFor, type Empty } from "./empties";
-import { sections } from "../routes";
+import { projectedSections, unprojectedSections } from "../routes";
 
 /**
  * What every pane says, word for word.
@@ -45,7 +45,7 @@ const expected: Empty[] = [
     id: "settings",
     kind: "not projected",
     heading: "Settings pages are not built yet",
-    body: "Runtimes and models, connections and channels, identity and authority, execution defaults, storage and retention.",
+    body: "Pages for runtimes and models, connections and channels, identity and authority, execution defaults, and storage and retention will be read and changed here.",
     note: "Arrives with gate 7",
     link: null,
     action: null,
@@ -70,10 +70,14 @@ const expected: Empty[] = [
  * The sections this build projects from the server's answer. They have no
  * empty state, because their panes say what they read rather than what has not
  * been built; every other section still has a row above.
+ *
+ * Which ones they are is read from the section table rather than written here
+ * again: the table is what routes a section to its pane, so a section that
+ * starts projecting stops needing an empty row in the same edit.
  */
-const PROJECTED = ["overview", "backlog", "project", "brain"];
+const PROJECTED = projectedSections.map((section) => section.id);
 
-const unprojected = sections.filter((section) => !PROJECTED.includes(section.id));
+const unprojected = unprojectedSections;
 
 const ABSENCE = [
   "nothing",

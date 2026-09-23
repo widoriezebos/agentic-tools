@@ -105,6 +105,11 @@ type Service struct {
 	current       *turn
 	watchers      map[int]chan Event
 	nextID        int
+	// indexedAt is when the live session's map of the project's memory was
+	// read. A fresh session is given the map; every later prompt of that
+	// session is given this moment instead, so the Partner knows how old its
+	// map is without being handed a new one that would look current.
+	indexedAt time.Time
 }
 
 // turn is the running turn's state, which the snapshot reads and the events
@@ -328,7 +333,27 @@ func (s *Service) Submit(ctx context.Context, human, key, text string, page Page
 	seen := See(s.reading(), page, now)
 	s.record(running, Event{Kind: EventLook, Look: lookedAtPage(seen)})
 
-	prompt := ComposeSeen(seen, page, human) + "\n\n"
+	// The first prompt of a session carries how to answer here and a map of
+	// the project's memory; a later prompt of the same session carries the
+	// moment that map was read. A session that was lost and reopened is a
+	// first prompt again, and is given both again, read afresh.
+	opening := ""
+	if fresh {
+		composed, index := Opening(s.reading(), now)
+		opening = composed
+		s.mu.Lock()
+		s.indexedAt = index.At
+		s.mu.Unlock()
+	} else {
+		s.mu.Lock()
+		indexedAt := s.indexedAt
+		s.mu.Unlock()
+		if !indexedAt.IsZero() {
+			opening = Returning(indexedAt)
+		}
+	}
+
+	prompt := ComposeOpening(seen, page, human, opening) + "\n\n"
 	if given > 0 {
 		prompt += history + "\n\n"
 		s.record(running, Event{Kind: EventActivity, Text: freshLine(given)})

@@ -19,6 +19,25 @@ export type Section = {
   path: string;
   title: string;
   icon: SectionIcon;
+  /**
+   * What this section's page puts on the screen, in one sentence.
+   *
+   * It is not what the section is for — the help register says that — and it
+   * is not whether this build has it: `projected` says that. Three statements
+   * about one section that a reader must be able to tell apart, so each has
+   * its own field and its own owner.
+   */
+  shows: string;
+  /**
+   * Whether this build renders this section's own view.
+   *
+   * It is the one answer to that question. The shell routes the sections that
+   * project to their panes and the rest to the pane that says which gate
+   * brings them; the empty register covers exactly the ones that do not; and
+   * the interface manifest tells the Project Partner the same thing, so a
+   * human asking where to look is never sent to a placeholder.
+   */
+  projected: boolean;
 };
 
 /**
@@ -35,15 +54,75 @@ export type Section = {
  * section actually is: the place a human rules on what the machinery asks.
  */
 export const sections: readonly Section[] = [
-  { id: "brain", path: "/brain", title: "Project Partner", icon: MessageSquare },
-  { id: "overview", path: "/overview", title: "Overview", icon: LayoutDashboard },
-  { id: "project", path: "/project", title: "Project", icon: BookOpen },
-  { id: "backlog", path: "/backlog", title: "Backlog", icon: SquareKanban },
-  { id: "fleet", path: "/fleet", title: "Fleet", icon: Server },
-  { id: "decisions", path: "/decisions", title: "Decisions", icon: Gavel },
-  { id: "application", path: "/application", title: "Application", icon: Package },
-  { id: "settings", path: "/settings", title: "Settings", icon: Settings },
+  {
+    id: "brain",
+    path: "/brain",
+    title: "Project Partner",
+    icon: MessageSquare,
+    shows: "The conversation with the Partner in full, with the subject under discussion pinned beside it.",
+    projected: true,
+  },
+  {
+    id: "overview",
+    path: "/overview",
+    title: "Overview",
+    icon: LayoutDashboard,
+    shows: "What needs you, what changed since your last visit, what the fleet is working on now, and one line of health.",
+    projected: true,
+  },
+  {
+    id: "project",
+    path: "/project",
+    title: "Project",
+    icon: BookOpen,
+    shows: "The project's records a kind at a time — intent, doctrine, decisions, designs, open questions and the checkout's other documents — and any one of them opened for reading.",
+    projected: true,
+  },
+  {
+    id: "backlog",
+    path: "/backlog",
+    title: "Backlog",
+    icon: SquareKanban,
+    shows: "The goals as a board, lane by lane, with the closed items behind a disclosure and one goal opened on its own page.",
+    projected: true,
+  },
+  {
+    id: "fleet",
+    path: "/fleet",
+    title: "Fleet",
+    icon: Server,
+    shows: "A row per machine and seat, with its sessions, the jobs it is running, its last census and its health, each stamped with when it was observed.",
+    projected: false,
+  },
+  {
+    id: "decisions",
+    path: "/decisions",
+    title: "Decisions",
+    icon: Gavel,
+    shows: "A list of what is waiting on a human, with what is being asked, which seat asked it, and what answering it would do.",
+    projected: false,
+  },
+  {
+    id: "application",
+    path: "/application",
+    title: "Application",
+    icon: Package,
+    shows: "What has been released, with the evidence for each claim and where that evidence was produced.",
+    projected: false,
+  },
+  {
+    id: "settings",
+    path: "/settings",
+    title: "Settings",
+    icon: Settings,
+    shows: "This workspace's own identity, the appearance control, and the settings pages themselves.",
+    projected: false,
+  },
 ];
+
+/** The sections this build renders a view of, and the sections it does not. */
+export const projectedSections: readonly Section[] = sections.filter((section) => section.projected);
+export const unprojectedSections: readonly Section[] = sections.filter((section) => !section.projected);
 
 /** The six project sections: the rail's middle group, between two rules. */
 export const projectSections: readonly Section[] = sections.filter(
