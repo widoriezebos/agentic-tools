@@ -5,9 +5,9 @@
 - Tier: 3
 - Intent: Finish these repairs, verify them with targeted tests, complete final validation, then push/integrate.
 - Origin: human
-- Next step: Resume delivery under Wido instruction to fix the machinery stop and finish. Accepted repairs and Darwin baseline are staged; clean candidate at external rollout/parallel-delivery-candidate-20260922-report-final. Build candidate engine, run final targeted audit/proofrun and selected delivery with reuse, finish required Linux validation and three remaining Mac bodies, then commit/push/install and verify the installed public command. Reuse retained valid Mac native evidence; no whole Mac rerun for reporting.
+- Next step: Wido redirected this same goal on 23 September: stop the Git-maintenance workaround and replace real Git in behavior tests with per-test mocks/stubs, retaining only explained narrow Git adapter integration tests. Implement the bounded design in plans/test-suite-redesign.md through Sol units: shared strict stub, goal repository fake, then remaining consumers; prove migrated tests with Git denied, preserve parallel/race/coverage behavior, complete required validation, commit/push/install and verify. No new goal. Earlier final-validation ETA is superseded.
 - OpenedAt: 2026-09-22T16:37:11Z
-- Revision: 11
+- Revision: 12
 - Budget: elapsedLimit=2d4h attemptLimit=19 reservedJobMinutesLimit=800 activeJobLimit=8 reviewRoundLimit=3
 - BudgetExceptions: 5
 - Approved: by=human:Wido at=2026-09-23T11:45:40Z revision=11 opid=43WN4GGSZX9SW5864M1D4Z9SMP-m1e-226b0953 authority=proven digest=b652d610a6691203898843e022be84f48c4503ad3e437694c342f78ebc738471 episode=11
@@ -26,4 +26,5 @@ History:
 - 2026-09-23T08:35:55Z 6KHZWK1YSNZ9XYVJZR7YMJGKRJ-m1e-226b0953 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate
 - 2026-09-23T10:02:41Z SDWABF5TYJQRDRE7QBQSAWMEN3-m1e-226b0953 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate
 - 2026-09-23T11:45:40Z 43WN4GGSZX9SW5864M1D4Z9SMP-m1e-226b0953 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate
-Integrity: sha256=400f145bf6efe56b5886388281aa4ca18bcdc8563c05824e8f2d4b3d8b97d6e3
+- 2026-09-23T12:27:30Z F0P32927BA623M0J01FQ77E9TB-m1e-226b0953 edit actor=m1e+main-1789893000-16595-1a7a6a targets=finish-test-repairs-and-integrate
+Integrity: sha256=99d8bdcc3051ca2a8237dbc9af79cd555c0e50b0f4c361dbc99f343c2c39c85e
