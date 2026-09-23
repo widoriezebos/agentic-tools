@@ -185,7 +185,7 @@ func TestHandoffNoticeAuthorizationIsRecheckedBeforeDelivery(t *testing.T) {
 
 	previousDeliver := deliverNotification
 	var deliveryCalls atomic.Int32
-	deliverNotification = func(_, _ string) error {
+	deliverNotification = func(_ string, _ Notice) error {
 		deliveryCalls.Add(1)
 		return nil
 	}
@@ -229,7 +229,7 @@ func TestHandoffNoticeDeliveryDoesNotReacquireArbitration(t *testing.T) {
 	}
 
 	previousDeliver := deliverNotification
-	deliverNotification = func(_, _ string) error { return nil }
+	deliverNotification = func(_ string, _ Notice) error { return nil }
 	t.Cleanup(func() { deliverNotification = previousDeliver })
 
 	arbitration, err := AcquireArbitration(root)
@@ -272,7 +272,7 @@ func TestHandoffNoticeDeliveryUsesTheInitialQueueSnapshot(t *testing.T) {
 
 	previousDeliver := deliverNotification
 	var deliveryCalls atomic.Int32
-	deliverNotification = func(_, _ string) error {
+	deliverNotification = func(_ string, _ Notice) error {
 		deliveryCalls.Add(1)
 		return nil
 	}
@@ -290,7 +290,7 @@ func TestHandoffNoticeDeliveryUsesTheInitialQueueSnapshot(t *testing.T) {
 func TestHandoffNoticeDeliveryRequiresLiveAuthorization(t *testing.T) {
 	previousDeliver := deliverNotification
 	var deliveryCalls atomic.Int32
-	deliverNotification = func(_, _ string) error {
+	deliverNotification = func(_ string, _ Notice) error {
 		deliveryCalls.Add(1)
 		return nil
 	}

@@ -11,7 +11,24 @@ export type Identity =
   | { state: "unknown" }
   | { state: "known"; subject: string; mode: "self-hosted" | "adopted"; conflict: boolean };
 
-export function titleFor(sectionTitle: string, identity: Identity): string {
+/**
+ * What is waiting, in front of everything else.
+ *
+ * A tab that is not the one in front is a strip of text a few characters wide,
+ * and the count has to survive being cut off there — so it leads, the way a
+ * mail client's does, and it is the whole of what the title says about
+ * notifications. Nothing unread adds nothing: a title that always carried a
+ * bracket would teach a human to stop reading the front of it.
+ */
+export function unreadPrefix(unread: number): string {
+  return unread > 0 ? `(${String(unread)}) ` : "";
+}
+
+export function titleFor(sectionTitle: string, identity: Identity, unread = 0): string {
+  return unreadPrefix(unread) + subjectTitle(sectionTitle, identity);
+}
+
+function subjectTitle(sectionTitle: string, identity: Identity): string {
   if (identity.state === "loading") {
     return FALLBACK_TITLE;
   }

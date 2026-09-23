@@ -12,6 +12,7 @@ import { Rail } from "./Rail";
 import { Sheet } from "./Sheet";
 import { BacklogPane } from "../backlog/BacklogPane";
 import { sectionHelp } from "../help/terms";
+import { useNotifications } from "../notifications/store";
 import { Focused } from "../panes/Focused";
 import { NotFoundPane, SectionPane } from "../panes/sections";
 import { SettingsPane } from "../panes/Settings";
@@ -89,6 +90,10 @@ export function Shell() {
   const focused = section?.id === "brain";
   const sectionTitle = section?.title ?? "Not found";
   const { workspace } = useWorkspaceState();
+  // What the steward has said and nobody has read. It leads the tab title,
+  // because a human with six workspaces open reads the title bar first and a
+  // count that is only in the header is a count they will not see.
+  const { unread } = useNotifications();
 
   useEffect(() => watchSystemTheme(setSystemDark), []);
 
@@ -97,8 +102,8 @@ export function Shell() {
   }, [theme, systemDark]);
 
   useEffect(() => {
-    document.title = titleFor(sectionTitle, identityOf(workspace));
-  }, [sectionTitle, workspace]);
+    document.title = titleFor(sectionTitle, identityOf(workspace), unread);
+  }, [sectionTitle, workspace, unread]);
 
   // The rail's sheet belongs to the phone. Crossing out of it closes the
   // sheet rather than leaving a modal layer over a layout that has no rail in
