@@ -1,50 +1,11 @@
-import type { Page } from "./api";
-import { activeSection } from "../routes";
-import type { Subject } from "../shell/about";
-
 /**
- * What a question carries with it, and the key it is asked under.
+ * The key one send is asked under.
  *
- * Both are here rather than in the provider because both are decisions rather
- * than wiring: where the human was is captured at the moment of asking, so
- * navigating afterwards cannot retarget a question already sent; and the key
- * survives a refusal, so pressing Send again is the same turn rather than a
- * second one.
+ * It is here rather than in the provider because it is a decision rather than
+ * wiring: the key survives a refusal, so pressing Send again is the same turn
+ * rather than a second one. What a question carries is capture.ts's, which is
+ * the other half of what used to live here.
  */
-
-/** Where the human is, as the server needs it: the page, and its subject. */
-export function pageOf(pathname: string, subject: Subject): Page {
-  const section = activeSection(pathname);
-  const page: Page = { section: section?.title ?? "", path: pathname };
-  if (subject.tab !== undefined && subject.tab !== "") {
-    page.tab = subject.tab;
-  }
-  if (subject.kind !== undefined && subject.kind !== "") {
-    page.kind = subject.kind;
-  }
-  if (subject.subject !== undefined && subject.subject !== "") {
-    page.subject = subject.subject;
-  }
-  if (subject.title !== undefined && subject.title !== "") {
-    page.title = subject.title;
-  }
-  if (subject.revision !== undefined && subject.revision !== "") {
-    page.revision = subject.revision;
-  }
-  if (subject.filters !== undefined && subject.filters.length > 0) {
-    page.filters = subject.filters;
-  }
-  // The board's own rows. They travel because they are nowhere else: the
-  // goals are in the accepted ledger commit, not in the checkout's files, so
-  // a Partner not told them cannot answer a question about them at all.
-  if (subject.lanes !== undefined && subject.lanes.length > 0) {
-    page.lanes = subject.lanes;
-  }
-  if (subject.records !== undefined && subject.records.length > 0) {
-    page.records = subject.records;
-  }
-  return page;
-}
 
 /**
  * The key one send is asked under: the one already held where a previous send

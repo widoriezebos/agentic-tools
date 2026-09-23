@@ -54,17 +54,65 @@ var (
 
 // Update is one beat of a turn as it happens.
 type Update struct {
-	// Kind is text or activity: the answer itself, or what the Partner is
-	// doing while it composes one.
+	// Kind is text, activity or look: the answer itself, what the Partner is
+	// doing while it composes one, and one completed read with its outcome.
 	Kind string
 	Text string
+	// Look is set on a look and nowhere else.
+	Look *Look
 }
 
-// The two update kinds.
+// The four update kinds.
+//
+// Doing and activity are different things, and the difference is what makes
+// the conversation quiet. Doing is what the Partner is at THIS moment — one
+// line, replaced by the next, kept nowhere — and a tool call is doing
+// something. Activity is what a human has to be told and must still be able to
+// read afterwards: a refusal, a session that had to be opened fresh. Nothing
+// says a thing twice: a tool call becomes a look when it completes, and the
+// line that announced it goes.
 const (
 	UpdateText     = "text"
 	UpdateActivity = "activity"
+	UpdateDoing    = "doing"
+	UpdateLook     = "look"
 )
+
+// Look is one thing the Partner read, with its completion.
+//
+// A count is not an account: "looked at three things" can hide a failed read
+// and a partial one behind a number that sounds like success. So a look names
+// what was read, the reading it was of — the accepted tip and the moment it
+// was observed, or a file's revision as it stands — how it ended, and enough
+// of what came back to check it against.
+type Look struct {
+	What   string `json:"what"`
+	Source string `json:"source,omitempty"`
+	// Outcome is read, partial or failed. A failed read is never counted as a
+	// look, and is still listed.
+	Outcome string `json:"outcome"`
+	Excerpt string `json:"excerpt,omitempty"`
+	// Page marks the one reading the Partner did not choose: the page the
+	// human was looking at. It is listed first and separately, and it is not
+	// one of the things the count says the Partner looked at.
+	Page bool `json:"page,omitempty"`
+}
+
+// The three outcomes a look can have.
+const (
+	LookRead    = "read"
+	LookPartial = "partial"
+	LookFailed  = "failed"
+)
+
+// Counted reports whether this look is one of the N the page counts: a read
+// the Partner chose that actually happened.
+func (l Look) Counted() bool { return !l.Page && l.Outcome != LookFailed }
+
+// maxExcerpt is how much of one read the conversation keeps. It is what a
+// human checks an answer against, not the read itself: the whole of it went to
+// the Partner, and the Partner is the thing being checked.
+const maxExcerpt = 1200
 
 // Result is how one turn ended.
 type Result struct {
@@ -163,6 +211,12 @@ type live struct {
 	// between turns reaches nobody rather than the wrong turn.
 	sinkMu sync.Mutex
 	sink   func(Update)
+
+	// calls is what each running tool call is called, by its id. A completion
+	// carries the id and often nothing else, and "what was read" is the title
+	// the call started with.
+	callsMu sync.Mutex
+	calls   map[string]string
 }
 
 // NewHost builds a host for one runtime and checkout, spawning the runtime's
@@ -217,6 +271,7 @@ func (h *Host) open(ctx context.Context) (*live, error) {
 	session := &live{
 		endpoint: endpoint, closed: make(chan struct{}),
 		fence: make(chan struct{}), fenced: make(chan struct{}),
+		calls: map[string]string{},
 	}
 	session.conn = acp.NewConn(endpoint.Reader, endpoint.Writer, endpoint.Journal)
 	go session.pump(h.checkout)
@@ -260,7 +315,11 @@ func (h *Host) handshake(ctx context.Context, session *live) error {
 			"the Partner's runtime speaks ACP %d and this client speaks 1", initialized.ProtocolVersion)}
 	}
 
-	params := map[string]any{"cwd": h.checkout, "mcpServers": []any{}}
+	// The one tool server this session is given, through the protocol's own
+	// hand-off. It is named here rather than in the runtime's configuration
+	// because the configuration is the read-only contract: a tool that arrives
+	// through it would be a tool the contract cannot speak about.
+	params := map[string]any{"cwd": h.checkout, "mcpServers": h.runtime.Tools.wire()}
 	if h.runtime.SessionMeta != nil {
 		params["_meta"] = h.runtime.SessionMeta
 	}
@@ -651,28 +710,139 @@ func (l *live) update(params json.RawMessage) {
 	if named := l.session(); named != "" && envelope.SessionID != named {
 		return
 	}
-	var body struct {
-		Kind    string `json:"sessionUpdate"`
-		Title   string `json:"title"`
-		Status  string `json:"status"`
+	var named struct {
+		Kind string `json:"sessionUpdate"`
+	}
+	if err := json.Unmarshal(envelope.Update, &named); err != nil {
+		return
+	}
+	// The three shapes are parsed separately, and deliberately. A tool call's
+	// content is an array of blocks and a message chunk's is one block, so one
+	// struct over both reads neither: the array fails to unmarshal into the
+	// object and the whole update is dropped — which is how the completion of
+	// every tool call went missing before this slice.
+	switch named.Kind {
+	case "agent_message_chunk":
+		var body struct {
+			Content struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		}
+		if err := json.Unmarshal(envelope.Update, &body); err != nil {
+			return
+		}
+		if body.Content.Type == "text" && body.Content.Text != "" {
+			l.emit(Update{Kind: UpdateText, Text: body.Content.Text})
+		}
+	case "tool_call", "tool_call_update":
+		var body toolCall
+		if err := json.Unmarshal(envelope.Update, &body); err != nil {
+			return
+		}
+		l.tool(named.Kind == "tool_call", body)
+	}
+}
+
+// toolCall is the part of a tool call, and of its later completion, this host
+// reads: what it is, what it asked for, how it ended, and what came back.
+type toolCall struct {
+	ToolCallID string `json:"toolCallId"`
+	Title      string `json:"title"`
+	Kind       string `json:"kind"`
+	Status     string `json:"status"`
+	// Name is the tool's own name where the runtime carries one, which is how
+	// a call to the interface's tool server is told from any other.
+	Name     string          `json:"name"`
+	RawInput json.RawMessage `json:"rawInput"`
+	Meta     struct {
+		ClaudeCode struct {
+			ToolName string `json:"toolName"`
+		} `json:"claudeCode"`
+	} `json:"_meta"`
+	Content []struct {
+		Type    string `json:"type"`
 		Content struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
-	}
-	if err := json.Unmarshal(envelope.Update, &body); err != nil {
+	} `json:"content"`
+}
+
+// tool folds one tool call and its completion into what the page shows: a
+// muted line while it runs, and a look when it ends.
+func (l *live) tool(started bool, body toolCall) {
+	id := strings.TrimSpace(body.ToolCallID)
+	what := strings.TrimSpace(body.Title)
+	if started {
+		if what == "" {
+			what = strings.TrimSpace(body.Name)
+		}
+		if id != "" {
+			l.callsMu.Lock()
+			l.calls[id] = what
+			l.callsMu.Unlock()
+		}
+		if what != "" {
+			l.emit(Update{Kind: UpdateDoing, Text: what})
+		}
 		return
 	}
-	switch body.Kind {
-	case "agent_message_chunk":
-		if body.Content.Type == "text" && body.Content.Text != "" {
-			l.emit(Update{Kind: UpdateText, Text: body.Content.Text})
-		}
-	case "tool_call":
-		if title := strings.TrimSpace(body.Title); title != "" {
-			l.emit(Update{Kind: UpdateActivity, Text: title})
+	if what == "" && id != "" {
+		l.callsMu.Lock()
+		what = l.calls[id]
+		l.callsMu.Unlock()
+	}
+	switch body.Status {
+	case "completed", "failed":
+	default:
+		// A call that is still running says nothing new: what it is was said
+		// when it started, and how it ended is what a look is.
+		return
+	}
+	if id != "" {
+		l.callsMu.Lock()
+		delete(l.calls, id)
+		l.callsMu.Unlock()
+	}
+	l.emit(Update{Kind: UpdateLook, Look: lookAt(what, body)})
+}
+
+// lookAt reads one completion into a look. The source and the outcome are the
+// tool server's own words where it answered: it stamps every result with what
+// it read from and says how much of the whole it supplied, so neither has to
+// be inferred here.
+func lookAt(what string, body toolCall) *Look {
+	text := ""
+	for _, block := range body.Content {
+		if block.Type == "content" && block.Content.Type == "text" {
+			text += block.Content.Text
 		}
 	}
+	look := &Look{What: what, Outcome: LookRead}
+	if look.What == "" {
+		look.What = "an unnamed tool call"
+	}
+	if body.Status == "failed" {
+		look.Outcome = LookFailed
+	}
+	for _, line := range strings.Split(text, "\n") {
+		switch {
+		case strings.HasPrefix(line, "Source: "):
+			look.Source = strings.TrimSpace(strings.TrimPrefix(line, "Source: "))
+		case strings.HasPrefix(line, "Outcome: this read failed"):
+			look.Outcome = LookFailed
+		case strings.HasPrefix(line, "More remains:"):
+			if look.Outcome == LookRead {
+				look.Outcome = LookPartial
+			}
+		}
+	}
+	look.Excerpt = text
+	if len(look.Excerpt) > maxExcerpt {
+		look.Excerpt = look.Excerpt[:maxExcerpt] + "…"
+	}
+	return look
 }
 
 // answer applies the permission point to one server request. Anything that is

@@ -38,6 +38,7 @@ func families() []family {
 				{"status", "show the interface server and executable state", runUIStatus},
 				{"stop", "stop the interface server", runUIStop},
 				{"restart", "restart the interface with the executable on disk", runUIRestart},
+				{"tools", "serve the interface's read tools to the Project Partner over stdio (internal)", runUITools},
 			},
 		},
 		{

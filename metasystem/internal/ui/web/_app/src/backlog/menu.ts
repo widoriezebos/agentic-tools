@@ -26,13 +26,14 @@ import { stepFor } from "./reorder";
 /** What one row of the menu is: which act, and what it is called. */
 export type Offer = { id: OfferId; label: string };
 
-export type OfferId = "approve" | "withdraw" | "up" | "down" | "rank" | "open";
+export type OfferId = "ask" | "approve" | "withdraw" | "up" | "down" | "rank" | "open";
 
 /**
  * What each act is called where a human chooses it. An ellipsis means a sheet
  * opens and nothing is published yet; its absence means the act is made.
  */
 const LABELS: Record<OfferId, string> = {
+  ask: "Ask about this",
   approve: "Approve…",
   withdraw: "Withdraw approval…",
   up: "Move up",
@@ -54,7 +55,10 @@ export function ranked(row: Row): boolean {
  * so comes last.
  */
 export function offersFor(row: Row, all: readonly Row[]): Offer[] {
-  const offered: OfferId[] = [];
+  // Asking about the thing is first, on every surface, because it is the one
+  // act every object offers and the one a human reaches for without knowing
+  // what else this card can do.
+  const offered: OfferId[] = ["ask"];
   for (const transition of transitions) {
     if (transition.from === row.lane) {
       offered.push(transition.move);

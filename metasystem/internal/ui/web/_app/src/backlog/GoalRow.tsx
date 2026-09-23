@@ -1,8 +1,14 @@
+import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import { NavLink } from "react-router";
 
 import type { Row } from "./api";
+import { CardMenu } from "./CardMenu";
 import { dateAndTime } from "./format";
+import { offersFor, opensMenu, type At, type OfferId } from "./menu";
 import { SHOWN } from "./showing";
+import { goalSubject } from "./subjects";
+import { GOAL_ATTRIBUTE } from "../partner/ringing";
+import { usePartner } from "../partner/store";
 import { goalPath } from "../routes";
 import { Chip } from "../shell/controls";
 
@@ -26,13 +32,68 @@ import { Chip } from "../shell/controls";
  * mark the board's card wears, so that arriving from a link lands on the goal
  * rather than at the top of a list of four hundred.
  */
-export function GoalRow({ row, shown, onFaded }: { row: Row; shown: boolean; onFaded: () => void }) {
+export function GoalRow({
+  row,
+  shown,
+  onFaded,
+  tip,
+  observedAt,
+  at,
+}: {
+  row: Row;
+  shown: boolean;
+  onFaded: () => void;
+  /** The reading this row was drawn from, which a subject is stamped with. */
+  tip: string;
+  observedAt: string;
+  /** This list, with this goal named: where a message chip goes back to. */
+  at: string;
+}) {
   const reasons = reasonsOf(row);
+  // The list gains the board's own menu, on the same two gestures. Only one
+  // of its offers is a list act — asking about the row — because the others
+  // are the board's drags, which this view does not carry; naming them here
+  // would promise a gesture the list has not got.
+  const [menuAt, setMenuAt] = useState<At | null>(null);
+  const { ask } = usePartner();
+  const choose = (id: OfferId) => {
+    if (id === "ask") {
+      ask(goalSubject(row, tip, observedAt, at));
+    }
+  };
   return (
     <article
       className={shown ? `ms-goal-row ${SHOWN}` : "ms-goal-row"}
       onAnimationEnd={shown ? onFaded : undefined}
+      {...{ [GOAL_ATTRIBUTE]: row.ref.id }}
+      tabIndex={0}
+      onContextMenu={(event: MouseEvent<HTMLElement>) => {
+        event.preventDefault();
+        setMenuAt({ x: event.clientX, y: event.clientY });
+      }}
+      onKeyDown={(event: KeyboardEvent<HTMLElement>) => {
+        if (!opensMenu(event.key, event.shiftKey)) {
+          return;
+        }
+        event.preventDefault();
+        const box = event.currentTarget.getBoundingClientRect();
+        setMenuAt({ x: box.left + 8, y: box.top + 8 });
+      }}
     >
+      {menuAt !== null && (
+        <CardMenu
+          at={menuAt}
+          label={`Acts on ${row.ref.id}`}
+          offers={offersFor(row, [row]).filter((offer) => offer.id === "ask")}
+          onClose={() => {
+            setMenuAt(null);
+          }}
+          onChoose={(id) => {
+            setMenuAt(null);
+            choose(id);
+          }}
+        />
+      )}
       <div className="ms-goal-head">
         <NavLink className="ms-goal-id ms-mono" to={goalPath(row.ref.id)}>
           {row.ref.id}

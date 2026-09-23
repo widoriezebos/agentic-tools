@@ -37,6 +37,9 @@ import { showLabel } from "../backlog/showing";
 import { Pane } from "../panes/Pane";
 import { Tabs, tabShown, type Tab } from "../panes/Tabs";
 import { backlogPath, documentPath, goalPath, projectPath } from "../routes";
+import { CardMenu } from "../backlog/CardMenu";
+import { opensMenu, type At } from "../backlog/menu";
+import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
 import { readBacklogView, readGoalTab, readProjectTab, writeGoalTab, writeProjectTab } from "../storage";
@@ -156,8 +159,8 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
   useAbout(
     aboutLine(page, here2),
     goal === null
-      ? { tab: here2, records: listed }
-      : { kind: "goal", subject: goal, title: goal, tab: here2, records: listed },
+      ? { tab: here2, records: listed, returnTo: projectPath(open) }
+      : { kind: "goal", subject: goal, title: goal, tab: here2, records: listed, returnTo: goalPath(goal, open) },
   );
 
   // Opening a tab is going somewhere: the address carries it, so a section of
@@ -718,8 +721,50 @@ function Rows({ rows, action }: { rows: Row[]; action?: (row: Row) => ReactNode 
  * character at a time.
  */
 function RecordRow({ row, action }: { row: Row; action?: ReactNode }) {
+  // The board's own menu, on a record's row: right-click, Shift+F10 and the
+  // Menu key, with the one act a listing offers. A row is a thing to ask
+  // about, and a listing that offered it as a button on every line would be a
+  // control per row competing with the records they are about.
+  const [menuAt, setMenuAt] = useState<At | null>(null);
+  const { ask } = usePartner();
   return (
-    <li className="ms-project-row">
+    <li
+      className="ms-project-row"
+      tabIndex={0}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenuAt({ x: event.clientX, y: event.clientY });
+      }}
+      onKeyDown={(event) => {
+        if (!opensMenu(event.key, event.shiftKey)) {
+          return;
+        }
+        event.preventDefault();
+        const box = event.currentTarget.getBoundingClientRect();
+        setMenuAt({ x: box.left + 8, y: box.top + 8 });
+      }}
+    >
+      {menuAt !== null && (
+        <CardMenu
+          at={menuAt}
+          label={`Acts on ${row.title}`}
+          offers={[{ id: "ask", label: "Ask about this" }]}
+          onClose={() => {
+            setMenuAt(null);
+          }}
+          onChoose={() => {
+            setMenuAt(null);
+            ask({
+              kind: "record",
+              id: row.path,
+              title: row.title,
+              source: "the checkout's records as they stand",
+              summary: [row.status, row.note, row.summary].filter((part) => part !== "").join(" · "),
+              to: row.to ?? undefined,
+            });
+          }}
+        />
+      )}
       <span className="ms-project-row-title">
         {row.to === null ? row.title : <NavLink to={row.to}>{row.title}</NavLink>}
       </span>

@@ -14,6 +14,10 @@ import { RankSheet } from "./RankSheet";
 import { landedNote, needsConfirming, placementFor, stepFor, type Placement, type Side } from "./reorder";
 import { SHOWN } from "./showing";
 import { arcOn, isParent, membersOf, parentOf } from "./split";
+import { goalSubject, laneSubject } from "./subjects";
+import { GOAL_ATTRIBUTE } from "../partner/ringing";
+import { usePartner } from "../partner/store";
+import { returnAddress } from "./returning";
 import { Help } from "../help/Help";
 import type { HelpId } from "../help/terms";
 import type { Pane as ProjectPayload } from "../project/api";
@@ -96,8 +100,11 @@ export function Board({
   onWindow,
   showing,
   onFaded,
+  view,
 }: {
   backlog: Backlog;
+  /** Which reading of the Backlog is open, which a subject returns to. */
+  view: "board" | "list";
   closedShown: boolean;
   onToggleClosed: () => void;
   onAct: (asked: Asked) => void;
@@ -144,6 +151,11 @@ export function Board({
 
   // What stands under the board, from the same reading the columns are.
   const below = useMemo(() => boardBelow(backlog, filters), [backlog, filters]);
+  // The reading every subject taken from this board is stamped with. It is the
+  // page's own, captured with the subject, so the pinned panel and the
+  // question cannot describe two different boards.
+  const tip = backlog.ledger.tip;
+  const observed = backlog.observedAt;
 
   // What the board shows, lane by lane, from the one function that decides it.
   // The pane composes the Project Partner's context from the same call, so the
@@ -289,6 +301,11 @@ export function Board({
             }}
             showing={showing}
             onFaded={onFaded}
+            tip={tip}
+            observedAt={observed}
+            view={view}
+            filters={filters}
+            window={reach}
           />
         ))}
       </div>
@@ -425,9 +442,20 @@ function Column({
   onOpen,
   showing,
   onFaded,
+  tip,
+  observedAt,
+  view,
+  filters,
+  window: reach,
 }: {
   column: BoardColumn;
   all: readonly Row[];
+  /** The reading this board was drawn from, which a subject is stamped with. */
+  tip: string;
+  observedAt: string;
+  view: "board" | "list";
+  filters: Filters;
+  window: Window;
   sliced: Map<string, SlicePlan>;
   statement: string;
   standing: Standing;
@@ -448,6 +476,7 @@ function Column({
 }) {
   const rows = column.rows;
   const shown = statement === "" ? String(rows.length) : "—";
+  const { ask } = usePartner();
   return (
     <section
       className={`ms-column ms-column--${standing}${rows.length === 0 ? " ms-column--collapsed" : ""}`}
@@ -472,6 +501,18 @@ function Column({
           {column.title}
           <span className="ms-column-count">{shown}</span>
           {column.help !== null && <Help id={column.help} />}
+          {/* A lane is a thing to ask about too, and a lane header has no
+              menu of its own, so this is the one control it carries. */}
+          <button
+            type="button"
+            className="ms-column-ask"
+            aria-label={`Ask about ${column.title}`}
+            onClick={() => {
+              ask(laneSubject(column.title, rows, tip, observedAt, returnAddress(view, filters, reach)));
+            }}
+          >
+            Ask
+          </button>
         </h2>
         {column.head}
         {standing === "closed" && <p className="ms-column-closed">not a target</p>}
@@ -504,6 +545,9 @@ function Column({
             onOpen={onOpen}
             shown={row.ref.id === showing}
             onFaded={onFaded}
+            tip={tip}
+            observedAt={observedAt}
+            at={returnAddress(view, filters, reach, row.ref.id)}
           />
         ))}
       </div>
@@ -524,9 +568,17 @@ function Card({
   onOpen,
   shown,
   onFaded,
+  tip,
+  observedAt,
+  at,
 }: {
   row: Row;
   all: readonly Row[];
+  /** The reading this card was drawn from, which a subject is stamped with. */
+  tip: string;
+  observedAt: string;
+  /** This board, with this goal named: where a message chip goes back to. */
+  at: string;
   /** This goal's slice plan, or null where the project could not be read. */
   plan: SlicePlan | null;
   onDragStart: (row: Row) => void;
@@ -551,17 +603,31 @@ function Card({
   // Whether the card is a drag handle right now. It stops being one while the
   // pointer is down on something inside it that is not a handle.
   const [grabbable, setGrabbable] = useState(true);
+  const { ask } = usePartner();
   if (isParent(row)) {
     // A goal a split retired offers no act: it is a historical record, and its
     // links are what there is to do with it. Right-clicking it gets the
     // browser's own menu, which is the honest answer to "what can I do here".
-    return <SplitCard row={row} members={membersOf(row, all)} shown={shown} onFaded={onFaded} />;
+    return (
+      <SplitCard
+        row={row}
+        members={membersOf(row, all)}
+        shown={shown}
+        onFaded={onFaded}
+        onAsk={() => {
+          ask(goalSubject(row, tip, observedAt, at));
+        }}
+      />
+    );
   }
   const standing = blockerOf(row);
 
   /** What each row of the menu does when it is chosen. */
   const choose = (id: OfferId) => {
     switch (id) {
+      case "ask":
+        ask(goalSubject(row, tip, observedAt, at));
+        return;
       case "approve":
       case "withdraw":
         onAct({ move: id, goal: row });
@@ -582,6 +648,9 @@ function Card({
   return (
     <article
       className={`ms-card-goal${edge === null ? "" : ` ms-card-goal--${edge}`}${shown ? ` ${SHOWN}` : ""}`}
+      // Which goal this card is, so a link in an answer can mark the one card
+      // it names and nothing else.
+      {...{ [GOAL_ATTRIBUTE]: row.ref.id }}
       // The ring fades by a CSS animation and its end is what takes the class
       // off, so nothing here is on a timer. The handler is only attached to
       // the one card that has a ring, so no other card is listening.
@@ -753,17 +822,23 @@ function SplitCard({
   members,
   shown,
   onFaded,
+  onAsk,
 }: {
   row: Row;
   members: Row[];
   shown: boolean;
   onFaded: () => void;
+  onAsk: () => void;
 }) {
   return (
     <article
       className={shown ? `ms-card-goal ms-card-goal--split ${SHOWN}` : "ms-card-goal ms-card-goal--split"}
       onAnimationEnd={shown ? onFaded : undefined}
+      {...{ [GOAL_ATTRIBUTE]: row.ref.id }}
     >
+      <button type="button" className="ms-card-ask" onClick={onAsk}>
+        Ask about this
+      </button>
       <NavLink className="ms-card-id ms-mono" to={goalPath(row.ref.id)}>
         {row.ref.id}
       </NavLink>

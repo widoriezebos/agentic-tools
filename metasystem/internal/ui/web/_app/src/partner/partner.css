@@ -95,3 +95,414 @@
 .ms-partner-answer > :last-child {
   margin-bottom: 0;
 }
+
+/* ------------------------------------------------- what it was read from -- */
+
+/*
+ * Quiet, because it is not the answer. One line while the turn runs, and a
+ * disclosure under it when the turn is over: what was read, from where, and
+ * how it ended. The outcomes wear the colours the rest of the interface uses
+ * for the same three things.
+ */
+.ms-partner-looked {
+  font-size: 12px;
+  color: var(--ms-text-3);
+}
+
+.ms-partner-looked-line {
+  cursor: pointer;
+  list-style: none;
+  padding: 2px 0;
+}
+
+.ms-partner-looked-line::-webkit-details-marker {
+  display: none;
+}
+
+.ms-partner-looked-line::before {
+  content: "▸ ";
+}
+
+.ms-partner-looked[open] > .ms-partner-looked-line::before {
+  content: "▾ ";
+}
+
+.ms-partner-looked-list {
+  margin: 4px 0 0;
+  padding: 0 0 0 14px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-partner-looked-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.ms-partner-looked-what {
+  color: var(--ms-text-2);
+}
+
+.ms-partner-looked-source {
+  color: var(--ms-text-3);
+}
+
+.ms-partner-outcome {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--ms-border);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ms-text-3);
+}
+
+.ms-partner-outcome--read {
+  border-color: var(--ms-ok);
+  color: var(--ms-ok-fg);
+  background: var(--ms-ok-bg);
+}
+
+.ms-partner-outcome--partial {
+  border-color: var(--ms-marker);
+  color: var(--ms-marker-fg);
+  background: var(--ms-marker-bg);
+}
+
+.ms-partner-outcome--failed {
+  border-color: var(--ms-danger);
+  color: var(--ms-danger);
+}
+
+.ms-partner-excerpt {
+  flex-basis: 100%;
+}
+
+.ms-partner-excerpt-line {
+  cursor: pointer;
+  color: var(--ms-text-3);
+}
+
+.ms-partner-excerpt-body {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface-2);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+/* The stamp: what this answer was given, in the past tense. */
+.ms-partner-stamp {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ms-text-3);
+}
+
+/* ----------------------------------------------- what a question was from -- */
+
+.ms-partner-asked-from {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 2px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: var(--ms-surface);
+  color: var(--ms-text-3);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ms-partner-asked-from:hover {
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text-2);
+}
+
+/* A name in an answer that points at one thing. */
+.ms-partner-mention {
+  color: var(--ms-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ------------------------------------------------- subject and suggestions -- */
+
+.ms-partner-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.ms-partner-subject-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 999px;
+  background: var(--ms-surface-2);
+  font-size: 12px;
+}
+
+.ms-partner-subject-what {
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-partner-subject-source {
+  color: var(--ms-text-3);
+}
+
+.ms-partner-subject-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ms-text-3);
+  cursor: pointer;
+}
+
+.ms-partner-subject-clear:hover {
+  background: var(--ms-surface-3);
+  color: var(--ms-text);
+}
+
+.ms-partner-quote {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--ms-border-strong);
+  background: var(--ms-surface-2);
+  color: var(--ms-text-2);
+  font-size: 12px;
+  max-height: 96px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.ms-partner-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ms-partner-suggestion {
+  padding: 3px 10px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: var(--ms-surface);
+  color: var(--ms-text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ms-partner-suggestion:hover:not(:disabled) {
+  border-color: var(--ms-accent);
+  color: var(--ms-text);
+}
+
+.ms-partner-suggestion:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ms-partner-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ms-text-3);
+}
+
+/* --------------------------------------------------------- what it sees -- */
+
+.ms-seeing-chip {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ms-seeing-chip:hover b {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ms-seeing-what {
+  color: var(--ms-text-3);
+  padding-right: 4px;
+}
+
+.ms-seeing-refresh {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ms-text-3);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.ms-seeing-note,
+.ms-seeing-source {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--ms-text-3);
+}
+
+.ms-seeing-block {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface-2);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.ms-sheet-body--seeing {
+  display: block;
+}
+
+/* ------------------------------------------------------- the pinned thing -- */
+
+.ms-focused-frame {
+  display: flex;
+  gap: 16px;
+  min-height: 0;
+  height: 100%;
+}
+
+.ms-partner-pinned {
+  flex: 0 0 260px;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+  font-size: 12px;
+}
+
+.ms-partner-pinned-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ms-partner-pinned-kind {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-partner-pinned-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-partner-pinned-link {
+  color: var(--ms-accent);
+}
+
+.ms-partner-pinned-id,
+.ms-partner-pinned-source {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ms-text-3);
+}
+
+.ms-partner-pinned-summary {
+  margin: 0;
+  color: var(--ms-text-2);
+  line-height: 1.5;
+}
+
+.ms-partner-pinned-quote {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--ms-border-strong);
+  color: var(--ms-text-2);
+  max-height: 160px;
+  overflow: auto;
+}
+
+.ms-partner-pinned-none {
+  margin: 0;
+  color: var(--ms-text-3);
+  line-height: 1.5;
+}
+
+/*
+ * The conversation beside the pinned thing: the column takes what is left and
+ * scrolls on its own, so the chips and the composer stay at the foot rather
+ * than being pushed down the page by a long exchange.
+ */
+.ms-focused-frame > .ms-focused-column {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ms-focused-frame .ms-dock-statement {
+  overflow-y: auto;
+}
+
+@media (max-width: 720px) {
+  .ms-focused-frame {
+    flex-direction: column;
+  }
+
+  .ms-partner-pinned {
+    flex: none;
+    width: 100%;
+  }
+
+  .ms-focused-conversation {
+    padding: 16px;
+  }
+}
+
+/* ------------------------------------------------------- Ask a selection -- */
+
+.ms-ask-selection {
+  position: fixed;
+  left: var(--ms-ask-x, 0);
+  top: var(--ms-ask-y, 0);
+  transform: translate(-50%, calc(-100% - 8px));
+  z-index: var(--ms-z-tooltip);
+  padding: 3px 12px;
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 999px;
+  background: var(--ms-surface);
+  box-shadow: 0 2px 8px var(--ms-shadow);
+  color: var(--ms-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ms-ask-selection:hover {
+  border-color: var(--ms-accent);
+}

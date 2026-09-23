@@ -128,7 +128,9 @@ func TestTheStandingRuleSaysTheLedgerIsNotInTheFiles(t *testing.T) {
 	t.Parallel()
 	composed := Compose(readingFacts(), Page{Section: "Backlog"}, "Wido", composedAt)
 	testutil.Expect(t, "it says so", strings.Contains(composed,
-		"The ledger of goals is not in the files you can read; what you\nare told here about goals is the whole of what you know about them."), true)
+		"The ledger of goals is not in the files you can read."), true)
+	testutil.Expect(t, "and names the way to read more", strings.Contains(composed,
+		"call this\nworkspace's own read tools"), true)
 }
 
 // The block is marked with the revision it is a snapshot of, so what the
@@ -137,7 +139,7 @@ func TestTheBlockIsMarkedWithTheTipItWasReadAt(t *testing.T) {
 	t.Parallel()
 	composed := Compose(readingFacts(), Page{Section: "Backlog"}, "Wido", composedAt)
 	testutil.Expect(t, "the heading names both", strings.Contains(composed,
-		"What the human sees now, from the accepted tip "+observedTip+" observed 2026-09-23T11:29:55Z"), true)
+		"What the human sees now, from the accepted tip "+observedTip+", observed 2026-09-23T11:29:55Z"), true)
 }
 
 // A document's page carries the revision the page displayed, its head, and its

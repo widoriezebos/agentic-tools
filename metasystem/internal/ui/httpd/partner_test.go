@@ -203,7 +203,7 @@ func TestPartnerEventsRideTheOneStreamWithNoIdOfTheirOwn(t *testing.T) {
 	testutil.Require(t, "accepted", accepted.Code, http.StatusAccepted)
 
 	var kinds []string
-	for at := 0; at < 3; at++ {
+	for at := 0; at < 4; at++ {
 		id, name, data := stream.event(t)
 		testutil.Expect(t, "the event type is the Partner's "+strconv.Itoa(at), name, "partner")
 		testutil.Expect(t, "and it carries no id of its own "+strconv.Itoa(at), id, "")
@@ -215,7 +215,44 @@ func TestPartnerEventsRideTheOneStreamWithNoIdOfTheirOwn(t *testing.T) {
 		}
 	}
 	testutil.Expect(t, "the beats in order", kinds,
-		[]string{partner.EventActivity, partner.EventText, partner.EventDone})
+		[]string{partner.EventLook, partner.EventDoing, partner.EventText, partner.EventDone})
+}
+
+// What the Partner will see, for one capture, through the same composer the
+// turn's own block goes through — and it sends nothing: the conversation is
+// exactly as it was afterwards.
+func TestWhatThePartnerWillSeeIsComposedAndSendsNothing(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	runtime := partner.Runtime{Name: "fake"}
+	host := partner.NewHostOn(runtime, root, fakeacp.Open(fakeacp.Script{Chunks: []string{"an answer"}}))
+	t.Cleanup(host.Close)
+	service := partner.NewService(runtime, host,
+		func(human string) (*partner.Conversation, error) { return partner.OpenConversation(root, human) },
+		partner.Facts{}, nil)
+	served := New(Info{Authority: proven(), Partner: service, PartnerConfigured: true}, loopback(), testBundle())
+
+	body := `{"about":{"section":"Backlog","path":"/backlog","view":"board","tip":"0000old","observedAt":"2026-09-23T11:00:00Z"}}`
+	answer := post(t, served, partnerSeeingPath, body, nil)
+	testutil.Require(t, "composed", answer.Code, http.StatusOK)
+	var seen struct {
+		Label     string `json:"label"`
+		Source    string `json:"source"`
+		Displayed string `json:"displayed"`
+		Block     string `json:"block"`
+	}
+	testutil.Require(t, "decodes", json.Unmarshal(answer.Body.Bytes(), &seen), nil)
+	testutil.Expect(t, "it names where the human is", seen.Label, "Backlog")
+	testutil.Expect(t, "the page's own reading is named",
+		seen.Displayed, "the accepted tip 0000old, observed 2026-09-23T11:00:00Z")
+	testutil.Expect(t, "the block is the turn's own", strings.Contains(seen.Block, "Where the human is"), true)
+	testutil.Expect(t, "with the standing rule in front of it",
+		strings.Contains(seen.Block, "You read this checkout and explain it"), true)
+	// It is a read: nothing was admitted and nothing was written down.
+	snapshot, err := service.Snapshot("Wido", 100)
+	testutil.Require(t, "read back", err, nil)
+	testutil.Expect(t, "nothing was sent", len(snapshot.Messages), 0)
+	testutil.Expect(t, "and nothing is running", snapshot.Busy, false)
 }
 
 func turnOf(t *testing.T, response *httptest.ResponseRecorder) string {

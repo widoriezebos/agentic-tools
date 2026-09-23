@@ -16,17 +16,33 @@
 
 const PARTNER = "/api/partner";
 const TURNS = "/api/partner/turns";
+/** What the Partner will be given for the next question, from a capture. */
+const SEEING = "/api/partner/seeing";
 /** Stopping the running turn: the turn's id, with this after it. */
 const STOP = "/stop";
 
 /** One column of the board as the page is showing it. */
 export type Lane = { id: string; title: string; total: number; goals: string[] };
 
-/** Where a human was when they asked, as the page knows it. */
+/**
+ * The capture: what the page was showing at the moment a question was sent.
+ *
+ * It is one value for four things — the sheet that shows what the Partner will
+ * be given, the question that carries it, the message that keeps it, and the
+ * chip that returns to it — so none of them can be a different reading of the
+ * same page. src/partner/capture.ts composes it.
+ */
 export type Page = {
   section: string;
   path: string;
   tab?: string;
+  /** Which reading of the section was open: the board or the list. */
+  view?: string;
+  /** The reading the page rendered from, which is not the server's own. */
+  tip?: string;
+  observedAt?: string;
+  /** How far back the Done lane reached, as the page spells it. */
+  window?: string;
   kind?: string;
   subject?: string;
   title?: string;
@@ -37,6 +53,49 @@ export type Page = {
   /** What the open project tab lists, by each row's own key. */
   records?: string[];
   label?: string;
+  /** A selected passage, whole, with where it came from. */
+  quote?: string;
+  quoteFrom?: string;
+  quoteRevision?: string;
+  quoteAnchor?: string;
+  /** The address this capture returns to, composed by the page that made it. */
+  return?: string;
+};
+
+/**
+ * One thing the Partner read, with how it ended.
+ *
+ * A count is not an account: "looked at three things" can hide a failed read
+ * behind a number that sounds like success. So each entry names what was read,
+ * the reading it was of, whether it was read whole, in part or not at all, and
+ * enough of what came back to check the answer against.
+ */
+export type Look = {
+  what: string;
+  source?: string;
+  outcome: "read" | "partial" | "failed";
+  excerpt?: string;
+  /** True on the page the human was looking at, which is not one of the N. */
+  page?: boolean;
+};
+
+/** What the conversation can point at, for the links in an answer. */
+export type Index = {
+  goals: string[] | null;
+  records: IndexedRecord[] | null;
+};
+
+export type IndexedRecord = { id?: string; path: string; title?: string; kind?: string };
+
+/** What the server will be given for the next question, composed from a capture. */
+export type Seeing = {
+  label: string;
+  source: string;
+  /** The page's own reading, where it differs from the server's. */
+  displayed: string;
+  supplied: number;
+  total: number;
+  block: string;
 };
 
 export type Outcome = "complete" | "stopped" | "failed" | "refused";
@@ -50,6 +109,8 @@ export type Message = {
   outcome?: Outcome;
   detail?: string;
   activity?: string[];
+  /** What this answer was read from: the page first, then every tool call. */
+  looked?: Look[] | null;
   key?: string;
   page?: Page;
 };
@@ -64,11 +125,17 @@ export type Snapshot = {
   partial: string;
   partialSeq: number;
   activity: string[] | null;
+  /** What the running turn is at, in one line, kept nowhere afterwards. */
+  doing: string;
+  /** What the running turn has read so far. */
+  looked: Look[] | null;
+  /** The goals and records an answer's names can be resolved against. */
+  index: Index | null;
   readOnly: string;
   messages: Message[] | null;
 };
 
-export type EventKind = "text" | "activity" | "done" | "error" | "stopped";
+export type EventKind = "text" | "activity" | "doing" | "look" | "done" | "error" | "stopped";
 
 /** One beat of a running turn, as the stream carries it. */
 export type PartnerEvent = {
@@ -77,6 +144,8 @@ export type PartnerEvent = {
   kind: EventKind;
   text: string;
   at: string;
+  /** One completed read, on a look beat and nowhere else. */
+  look?: Look;
 };
 
 /**
@@ -144,6 +213,18 @@ export async function loadPartner(signal?: AbortSignal): Promise<Snapshot> {
  */
 export async function sendTurn(key: string, text: string, about: Page): Promise<{ turn: string }> {
   return request<{ turn: string }>(TURNS, { key, text, about });
+}
+
+/**
+ * What the Partner will be given for this capture.
+ *
+ * It is composed by the server, through the same composer the turn's own block
+ * goes through, so the sheet is the block rather than a second rendering of
+ * it. It speaks of the NEXT question: nothing has been sent, and reading this
+ * sends nothing.
+ */
+export async function seeing(about: Page): Promise<Seeing> {
+  return request<Seeing>(SEEING, { about });
 }
 
 /** Stop the running turn, and read back what it settled as. */

@@ -27,16 +27,20 @@ import (
 type Event struct {
 	Turn string `json:"turn"`
 	Seq  int    `json:"seq"`
-	// Kind is text, activity, done, error or stopped.
+	// Kind is text, activity, look, done, error or stopped.
 	Kind string `json:"kind"`
 	Text string `json:"text"`
 	At   string `json:"at"`
+	// Look is one completed read, on a look beat and nowhere else.
+	Look *Look `json:"look,omitempty"`
 }
 
-// The five event kinds.
+// The seven event kinds.
 const (
 	EventText     = "text"
 	EventActivity = "activity"
+	EventDoing    = "doing"
+	EventLook     = "look"
 	EventDone     = "done"
 	EventError    = "error"
 	EventStopped  = "stopped"
@@ -59,6 +63,18 @@ type Snapshot struct {
 	// the page can join live events to it without a gap or a duplicate.
 	PartialSeq int      `json:"partialSeq"`
 	Activity   []string `json:"activity"`
+	// Doing is what the running turn is at this moment, in one line. It is
+	// replaced by the next thing and kept nowhere: what was read is the looked
+	// list, and what a human has to be told is the activity.
+	Doing string `json:"doing"`
+	// Looked is what the running turn has read so far, so a reload mid-answer
+	// shows the list rather than starting it over.
+	Looked []Look `json:"looked"`
+	// Index is what the conversation can point at: the goals the accepted tip
+	// carries and the records the checkout declares. It is read here, with the
+	// conversation, because the page has no other reader for it and an answer
+	// that names a goal has to be able to link it.
+	Index Index `json:"index"`
 	// ReadOnly is what makes this runtime read-only, in its own words.
 	ReadOnly string    `json:"readOnly"`
 	Messages []Message `json:"messages"`
@@ -100,6 +116,8 @@ type turn struct {
 	seq      int
 	text     strings.Builder
 	activity []string
+	doing    string
+	looked   []Look
 	stopping bool
 	// done closes when the turn has been written down and its terminal event
 	// published. Stop waits for it, so the snapshot the stop route answers
@@ -211,10 +229,20 @@ func (s *Service) Snapshot(human string, limit int) (Snapshot, error) {
 		answer.Partial = running.text.String()
 		answer.PartialSeq = running.seq
 		answer.Activity = append([]string{}, running.activity...)
+		answer.Doing = running.doing
+		answer.Looked = append([]Look{}, running.looked...)
 	}
 	s.mu.Unlock()
 	answer.Messages = conversation.Messages(limit)
+	answer.Index = IndexOf(s.reading())
 	return answer, nil
+}
+
+// See composes what the Partner would be given for one capture, without
+// sending anything. It is the sheet's own answer, through the composer the
+// turn uses, so the two cannot be two readings of the same page.
+func (s *Service) See(page Page, now time.Time) Seen {
+	return See(s.reading(), page, now.UTC())
 }
 
 // Busy is the refusal a second send gets while a turn runs.
@@ -293,7 +321,14 @@ func (s *Service) Submit(ctx context.Context, human, key, text string, page Page
 		return "", err
 	}
 
-	prompt := Compose(s.reading(), page, human, now) + "\n\n"
+	// The page is composed once, and the same composition is three things: what
+	// the turn is given, what the answer's stamp names, and the first entry in
+	// what this answer was read from. A snapshot recomposed for the stamp would
+	// be a second reading of a moving ledger.
+	seen := See(s.reading(), page, now)
+	s.record(running, Event{Kind: EventLook, Look: lookedAtPage(seen)})
+
+	prompt := ComposeSeen(seen, page, human) + "\n\n"
 	if given > 0 {
 		prompt += history + "\n\n"
 		s.record(running, Event{Kind: EventActivity, Text: freshLine(given)})
@@ -303,6 +338,31 @@ func (s *Service) Submit(ctx context.Context, human, key, text string, page Page
 	s.said(true)
 	go s.run(running, conversation, prompt)
 	return id, nil
+}
+
+// lookedAtPage is the page itself, as the first entry in what an answer was
+// read from. It is listed separately from everything the Partner went on to
+// read, because it is the one reading it did not choose.
+func lookedAtPage(seen Seen) *Look {
+	outcome := LookRead
+	if seen.Total > 0 && seen.Supplied < seen.Total {
+		outcome = LookPartial
+	}
+	source := seen.Source
+	if seen.Displayed != "" {
+		source += "; the page had rendered from " + seen.Displayed
+	}
+	excerpt := seen.Block
+	if len(excerpt) > maxExcerpt {
+		excerpt = excerpt[:maxExcerpt] + "…"
+	}
+	return &Look{
+		Page:    true,
+		What:    "The page you were looking at — " + seen.Label,
+		Source:  source,
+		Outcome: outcome,
+		Excerpt: excerpt,
+	}
 }
 
 // freshLine says what a fresh session was given, so a human can see why the
@@ -320,6 +380,12 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 			s.record(running, Event{Kind: EventText, Text: update.Text})
 		case UpdateActivity:
 			s.record(running, Event{Kind: EventActivity, Text: update.Text})
+		case UpdateDoing:
+			s.record(running, Event{Kind: EventDoing, Text: update.Text})
+		case UpdateLook:
+			if update.Look != nil {
+				s.record(running, Event{Kind: EventLook, Look: update.Look})
+			}
 		}
 	})
 	if err != nil {
@@ -342,11 +408,12 @@ func (s *Service) run(running *turn, conversation *Conversation, prompt string) 
 	s.mu.Lock()
 	text := running.text.String()
 	activity := append([]string{}, running.activity...)
+	looked := append([]Look{}, running.looked...)
 	s.mu.Unlock()
 
 	answered := Message{ID: mintTurn(), Turn: running.id, Role: RolePartner, Text: text,
 		At: s.now().UTC().Format(time.RFC3339), Outcome: result.Outcome,
-		Detail: result.Detail, Activity: activity}
+		Detail: result.Detail, Activity: activity, Looked: looked}
 	_ = conversation.Append(answered)
 
 	// Nothing is running BEFORE the terminal beat goes out, deliberately. A
@@ -385,6 +452,12 @@ func (s *Service) record(running *turn, event Event) {
 		running.text.WriteString(event.Text)
 	case EventActivity:
 		running.activity = append(running.activity, event.Text)
+	case EventDoing:
+		running.doing = event.Text
+	case EventLook:
+		if event.Look != nil {
+			running.looked = append(running.looked, *event.Look)
+		}
 	}
 	watchers := make([]chan Event, 0, len(s.watchers))
 	for _, watcher := range s.watchers {

@@ -602,7 +602,9 @@ body {
   display: flex;
   flex: 1;
   flex-direction: column;
-  min-width: 480px;
+  /* A measure, until the window is narrower than one: a phone has no 480
+     pixels to give, and a fixed floor there is a page that scrolls sideways. */
+  min-width: min(480px, 100%);
   min-height: 0;
   overflow-y: auto;
   padding: 24px;

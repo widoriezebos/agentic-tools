@@ -1,4 +1,4 @@
-import type { Message, Outcome, PartnerEvent, Page, Snapshot } from "./api";
+import type { Index, Look, Message, Outcome, PartnerEvent, Page, Snapshot } from "./api";
 
 /**
  * The conversation, as one value the drawer and the focused page both read.
@@ -25,9 +25,13 @@ export type Live = {
   seq: number;
   text: string;
   activity: string[];
+  /** What the turn is at this moment, in one line, kept nowhere afterwards. */
+  doing: string;
+  /** What this answer has been read from so far, in the order it was read. */
+  looked: Look[];
 };
 
-export const nothingRunning: Live = { turn: "", seq: 0, text: "", activity: [] };
+export const nothingRunning: Live = { turn: "", seq: 0, text: "", activity: [], doing: "", looked: [] };
 
 export type State = "loading" | "ready" | "unavailable";
 
@@ -39,6 +43,8 @@ export type Store = {
   readOnly: string;
   messages: Message[];
   live: Live;
+  /** What an answer's names can be resolved against, from the same snapshot. */
+  index: Index;
   /**
    * The last refusal, verbatim, and the line that installs the runtime where
    * the server gave one. It is shown as a Partner message in the danger
@@ -56,6 +62,7 @@ export const emptyStore: Store = {
   readOnly: "",
   messages: [],
   live: nothingRunning,
+  index: { goals: [], records: [] },
   refusal: "",
   install: "",
 };
@@ -87,12 +94,15 @@ export function loaded(store: Store, snapshot: Snapshot): Store {
     human: snapshot.human,
     readOnly: snapshot.readOnly,
     messages,
+    index: snapshot.index ?? { goals: [], records: [] },
     live: running
       ? {
           turn: snapshot.turn,
           seq: snapshot.partialSeq,
           text: snapshot.partial,
           activity: snapshot.activity ?? [],
+          doing: snapshot.doing,
+          looked: snapshot.looked ?? [],
         }
       : nothingRunning,
   };
@@ -123,6 +133,12 @@ export function received(store: Store, event: PartnerEvent): Store {
       return { ...store, live: { ...live, text: live.text + event.text } };
     case "activity":
       return { ...store, live: { ...live, activity: [...live.activity, event.text] } };
+    case "doing":
+      return { ...store, live: { ...live, doing: event.text } };
+    case "look":
+      return event.look === undefined
+        ? { ...store, live }
+        : { ...store, live: { ...live, looked: [...live.looked, event.look] } };
     case "done":
       return settled(store, live, "complete", event);
     case "stopped":
@@ -150,6 +166,7 @@ function settled(store: Store, live: Live, outcome: Outcome, event: PartnerEvent
     outcome,
     detail: event.text,
     activity: live.activity,
+    looked: live.looked,
   };
   return { ...store, messages: [...store.messages, answered], live: nothingRunning };
 }

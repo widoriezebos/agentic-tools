@@ -215,6 +215,8 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.signOut(w, r)
 	case routePartnerTurn:
 		h.partnerTurn(w, r)
+	case routePartnerSeeing:
+		h.partnerSeeing(w, r)
 	case routePartnerStop:
 		h.partnerStop(w, r, route.id)
 	}

@@ -2,7 +2,9 @@ import type { Row } from "./api";
 import { shortTip } from "./format";
 import { GoalRow } from "./GoalRow";
 import { anchorFor, type Lane } from "./lanes";
+import { laneSubject } from "./subjects";
 import { helpText } from "../help/terms";
+import { usePartner } from "../partner/store";
 
 /**
  * One lane and the goals in it.
@@ -18,6 +20,8 @@ export function LaneGroup({
   count,
   rows,
   tip,
+  observedAt,
+  returnTo,
   unanswered,
   showing,
   onFaded,
@@ -26,16 +30,31 @@ export function LaneGroup({
   count: number;
   rows: Row[];
   tip: string;
+  /** When the reading these rows were drawn from was observed. */
+  observedAt: string;
+  /** Where this list returns to, which a lane subject carries. */
+  returnTo: string;
   unanswered: string;
   /** The goal a link sent this page to show, while its ring is up, or "". */
   showing: string;
   /** Said when that ring's animation ends, which is what takes it down. */
   onFaded: () => void;
 }) {
+  const { ask } = usePartner();
   return (
     <section className="ms-card" id={anchorFor(lane.id)}>
       <h2 className="ms-card-title">
         {lane.title} ({count})
+        <button
+          type="button"
+          className="ms-column-ask"
+          aria-label={`Ask about ${lane.title}`}
+          onClick={() => {
+            ask(laneSubject(lane.title, rows, tip, observedAt, returnTo));
+          }}
+        >
+          Ask
+        </button>
       </h2>
       {/* The list has room for the sentence itself, so it says it rather than
           offering the icon that would open it. It is the same sentence the
@@ -46,7 +65,15 @@ export function LaneGroup({
       ) : (
         <div className="ms-goal-rows">
           {rows.map((row) => (
-            <GoalRow key={row.ref.id} row={row} shown={row.ref.id === showing} onFaded={onFaded} />
+            <GoalRow
+              key={row.ref.id}
+              row={row}
+              shown={row.ref.id === showing}
+              onFaded={onFaded}
+              tip={tip}
+              observedAt={observedAt}
+              at={returnTo}
+            />
           ))}
         </div>
       )}

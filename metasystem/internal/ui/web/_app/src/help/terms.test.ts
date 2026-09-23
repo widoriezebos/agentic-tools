@@ -121,3 +121,27 @@ describe("a term read as a sentence", () => {
     }
   });
 });
+
+describe("the vocabulary the Project Partner is given", () => {
+  /**
+   * The register is the source, and the Partner speaks from a copy of it.
+   *
+   * The Go side cannot import TypeScript, so the register is generated beside
+   * the package that embeds it, and this is what keeps the two in step: adding
+   * a term, rewording one, or deleting one fails here, with the file named,
+   * rather than leaving a Partner explaining a vocabulary the interface has
+   * stopped using.
+   *
+   * This is the smallest of the three ways the design left open. A JSON in the
+   * built bundle would have meant a build step and a served asset; handing the
+   * texts from the page with the first turn would have meant a payload on the
+   * wire and a page that can silently stop sending them.
+   */
+  const CARRIED = path.resolve(SRC, "..", "..", "..", "partner", "vocabulary.json");
+
+  it("is the register, term for term", () => {
+    const projected = Object.entries(HELP).map(([id, value]) => ({ id, term: value.term, text: value.text }));
+    const carried: unknown = JSON.parse(readFileSync(CARRIED, "utf8"));
+    expect(carried).toEqual(projected);
+  });
+});

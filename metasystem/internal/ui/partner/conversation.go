@@ -35,14 +35,30 @@ const (
 	RolePartner = "partner"
 )
 
-// Page is where a human was when they asked, as the page itself knows it. It
-// is the human's message's own context and is kept with it, so an earlier
-// "this goal" still names the goal it meant when the history is replayed into
-// a fresh session.
+// Page is the capture: what the page was showing at the moment a question was
+// sent, as the page itself knows it.
+//
+// One capture answers four things that used to be answered separately and
+// could therefore disagree: what the sheet shows before the question goes,
+// what the question carries, what the message keeps, and where the message's
+// own chip takes a human back to weeks later. The page composes it once, when
+// Send is pressed; navigating afterwards cannot retarget a question already
+// sent, and nothing recomposes it.
 type Page struct {
 	Section string `json:"section"`
 	Path    string `json:"path"`
 	Tab     string `json:"tab,omitempty"`
+	// View is which reading of the section was open, where the section has
+	// more than one: the board or the list.
+	View string `json:"view,omitempty"`
+	// Tip and ObservedAt are the reading the page rendered from. They are the
+	// page's, not this server's: the server composes from its own reading a
+	// moment later, and where the two differ the block and the stamp say both
+	// rather than certifying the newer one as what the human saw.
+	Tip        string `json:"tip,omitempty"`
+	ObservedAt string `json:"observedAt,omitempty"`
+	// Window is how far back the Done lane reached, as the page spells it.
+	Window string `json:"window,omitempty"`
 	// Subject is the identity of what the page is about: a goal id, or a
 	// document id. Kind says which.
 	Kind    string `json:"kind,omitempty"`
@@ -66,6 +82,20 @@ type Page struct {
 	Records []string `json:"records,omitempty"`
 	// Label is the line the drawer showed, which is what the human read.
 	Label string `json:"label,omitempty"`
+	// Quote is the passage a human selected, whole, with where it came from:
+	// the document's id and the revision it was read at, or the page. Only
+	// saved text travels; an unsaved edit never does.
+	Quote         string `json:"quote,omitempty"`
+	QuoteFrom     string `json:"quoteFrom,omitempty"`
+	QuoteRevision string `json:"quoteRevision,omitempty"`
+	// QuoteAnchor is the heading the passage sits under, which is what a
+	// message chip returns to when the passage itself has moved.
+	QuoteAnchor string `json:"quoteAnchor,omitempty"`
+	// Return is the address this capture takes a human back to, composed by
+	// the page that made it: the path with the view, filters, window, tab and
+	// subject it was showing. The page owns its own address grammar, so the
+	// server keeps the string rather than reassembling one.
+	Return string `json:"return,omitempty"`
 }
 
 // Lane is one column of the board as the page is showing it.
@@ -92,6 +122,10 @@ type Message struct {
 	Detail string `json:"detail,omitempty"`
 	// Activity is what the Partner did on the way, including every refusal.
 	Activity []string `json:"activity,omitempty"`
+	// Looked is what this answer was read from, in the order it was read: the
+	// page the human was looking at first, as its own entry, and then every
+	// tool call with its completion. It is on a Partner's message only.
+	Looked []Look `json:"looked,omitempty"`
 	// Key is the client-minted turn key, on a human's message only. It is
 	// what makes a retry after a lost answer the same turn rather than a
 	// second one, and it is kept in the file so a restart cannot forget it.

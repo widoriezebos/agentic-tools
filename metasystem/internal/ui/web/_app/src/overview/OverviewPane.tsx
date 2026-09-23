@@ -47,6 +47,7 @@ import type { HelpId } from "../help/terms";
 import { useNotifications } from "../notifications/store";
 import { Pane } from "../panes/Pane";
 import { backlogPath, projectPath } from "../routes";
+import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, Hint, Skeleton } from "../shell/controls";
 import { useSession } from "../shell/identity";
@@ -111,7 +112,7 @@ export function OverviewPane() {
   // in its tooltip, which is where every other page's refresh says it.
   const hint = read.state === "read" ? `Read at ${minuteTime(read.page.readAt)} · Refresh` : "Refresh";
   useOffersRefresh(reload, hint);
-  useAbout(aboutLine("Overview", ""));
+  useAbout(aboutLine("Overview", ""), { returnTo: "/overview" });
 
   return (
     <Pane title="Overview">
@@ -474,8 +475,45 @@ function ItemLine({ item }: { item: Item }) {
         <span className="ms-overview-row-title">{item.title === "" ? item.id : item.title}</span>
         {when !== "" && <span className="ms-mono ms-overview-row-tail">{when}</span>}
       </Where>
+      <AskAbout item={item} note={when} />
     </li>
   );
+}
+
+/**
+ * Ask, at the end of an Overview row.
+ *
+ * The row itself still navigates — it is the link, and that is what a human
+ * presses — so this stands after it, out of the way until the pointer or the
+ * caret is on the row. It is a button rather than a menu because an Overview
+ * row is not a card: it has one act, and a menu for one act is a menu.
+ */
+function AskAbout({ item, note }: { item: Item; note: string }) {
+  const { ask } = usePartner();
+  return (
+    <button
+      type="button"
+      className="ms-overview-ask"
+      onClick={() => {
+        ask({
+          kind: "overview",
+          id: item.id,
+          title: item.title === "" ? item.id : item.title,
+          source: "the landing page as this server composed it",
+          summary: [item.note, note].filter((part) => part !== "").join(" · "),
+          to: destinationOf(item),
+        });
+      }}
+    >
+      Ask
+    </button>
+  );
+}
+
+/** Where an item opens, where this build has an address for it. */
+function destinationOf(item: Item): string | undefined {
+  const destination = destinationFor(item.where);
+  return destination.kind === "link" ? destination.to : undefined;
 }
 
 /**

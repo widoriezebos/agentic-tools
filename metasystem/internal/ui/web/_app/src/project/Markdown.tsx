@@ -1,5 +1,5 @@
 import { ExternalLink } from "lucide-react";
-import { Fragment, type ReactNode } from "react";
+import { createContext, Fragment, useContext, type ReactNode } from "react";
 import { NavLink } from "react-router";
 
 import type { Block, Cell, Inline, Item } from "./api";
@@ -24,8 +24,38 @@ import "./reading.css";
 
 export const HTML_CAPTION = "HTML in the source is shown, not run";
 
-export function Markdown({ blocks, from }: { blocks: Block[]; from: string }) {
-  return <Blocks blocks={blocks} from={from} />;
+/**
+ * How a run of plain text is rendered.
+ *
+ * A document renders its words as words, which is the default and the only
+ * thing the reader ever needed. An answer renders them through a resolver that
+ * turns the goals and records this workspace carries into links — still
+ * elements, still built by React, still no HTML string anywhere on the path.
+ */
+export type RenderText = (words: string) => ReactNode;
+
+const asWritten: RenderText = (words) => words;
+
+const TextContext = createContext<RenderText>(asWritten);
+
+export function Markdown({
+  blocks,
+  from,
+  renderText,
+}: {
+  blocks: Block[];
+  from: string;
+  /** How plain text is rendered; omitted, it is rendered as written. */
+  renderText?: RenderText;
+}) {
+  if (renderText === undefined) {
+    return <Blocks blocks={blocks} from={from} />;
+  }
+  return (
+    <TextContext.Provider value={renderText}>
+      <Blocks blocks={blocks} from={from} />
+    </TextContext.Provider>
+  );
 }
 
 function Blocks({ blocks, from }: { blocks: Block[]; from: string }) {
@@ -185,9 +215,10 @@ function Inlines({ inlines, from }: { inlines: Inline[]; from: string }) {
 
 function InlineNode({ inline, from }: { inline: Inline; from: string }): ReactNode {
   const children = <Inlines inlines={inline.inlines ?? []} from={from} />;
+  const renderText = useContext(TextContext);
   switch (inline.type) {
     case "text":
-      return inline.text ?? "";
+      return renderText(inline.text ?? "");
     case "emph":
       return <em>{children}</em>;
     case "strong":
@@ -195,7 +226,9 @@ function InlineNode({ inline, from }: { inline: Inline; from: string }): ReactNo
     case "strike":
       return <s>{children}</s>;
     case "code":
-      return <code className="ms-md-inline-code">{inline.text ?? ""}</code>;
+      // Inline code is where an answer writes an id, so it is prose for the
+      // resolver's purposes: a name inside it links exactly as one outside it.
+      return <code className="ms-md-inline-code">{renderText(inline.text ?? "")}</code>;
     case "break":
       return <br />;
     case "html":

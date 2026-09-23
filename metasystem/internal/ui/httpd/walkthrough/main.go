@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -186,7 +187,15 @@ func main() {
 		if *partnerRuntime != "fake" {
 			log.Fatalf("-partner takes fake, not %q", *partnerRuntime)
 		}
-		service := fakePartner(checkout)
+		// The Partner reads what the pages read, so the "Seeing:" sheet shows
+		// this fixture's own board rather than an empty block.
+		service := fakePartner(checkout, partner.Facts{
+			Observe: state.observe,
+			Project: func() (project.Pane, error) { return state.project(), nil },
+			Document: func(id string) (project.Document, error) {
+				return project.Read(roots, id, time.Now().UTC())
+			},
+		})
 		info.Partner = service
 		info.PartnerConfigured = true
 		defer service.Close()
