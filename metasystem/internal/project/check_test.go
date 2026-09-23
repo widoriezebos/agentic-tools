@@ -211,6 +211,68 @@ func TestCheckRefusesEachFault(t *testing.T) {
 	}
 }
 
+// The Goals line belongs to the kinds that can be about one goal, and to no
+// others.
+//
+// The intent is what the project is for and the doctrine is how it is shaped:
+// both are the project's own, so a chapter of either is about the whole by
+// definition and a Goals line there declares a narrowing that does not exist.
+// Wido, 2026-09-23: "specifying a goal at the level of intent is really weird
+// ... linking goals there is 1. not logical, 2. cumbersome at best."
+func TestGoalsBelongToEveryKindButTheTwoBooks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		kind    string
+		rel     string
+		refused bool
+	}{
+		{name: "an intent chapter", kind: KindIntent, rel: "docs/intent/users.md", refused: true},
+		{name: "a doctrine chapter", kind: KindDoctrine, rel: "docs/doctrine/scope.md", refused: true},
+		{name: "a decision", kind: KindDecision, rel: "docs/decisions/0003-scoped.md"},
+		{name: "a design", kind: KindDesign, rel: "plans/designs/scoped.md"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(t, true)
+			f.seed()
+			rel := f.state + test.rel
+			f.write(rel, record("Scoped to one goal", test.kind, "record-scoped", "draft", "ledger-sync"))
+			read := f.read()
+
+			want := []string{}
+			if test.refused {
+				want = []string{rel + ":" + itoa(f.lineOf(rel, "- Goals:")) + ": " + GoalsRefused}
+			}
+			testutil.Expect(t, "the refusals the record raises", problemLines(read.Problems), want)
+			testutil.Expect(t, "the record is read all the same", read.Record("record-scoped") != nil, true)
+		})
+	}
+}
+
+// A register row's goals are the row's own, and a question about one goal is
+// the ordinary case: the refusal above is about the two books and nothing else.
+func TestARegisterRowMayNameAGoal(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, true)
+	f.seed()
+	read := f.read()
+
+	testutil.Expect(t, "the refusals a register naming goals raises", problemLines(read.Problems), []string{})
+	var scoped *Question
+	for index := range read.Questions {
+		if read.Questions[index].ID == "Q-2" {
+			scoped = &read.Questions[index]
+		}
+	}
+	testutil.Require(t, "the row is read", scoped != nil, true)
+	testutil.Expect(t, "the goals the row names", scoped.Goals, []string{"ledger-sync"})
+}
+
 // A refusal never hides what parsed: the rest of the project still lists and
 // still counts while one page is wrong.
 func TestARefusalDoesNotHideTheRest(t *testing.T) {

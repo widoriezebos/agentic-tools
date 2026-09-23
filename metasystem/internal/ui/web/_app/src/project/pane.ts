@@ -8,6 +8,7 @@ import type {
   ProjectRecord,
   Question,
 } from "./api";
+import { ACTIONS, ASK, type Kind } from "./writing";
 import type { HelpId } from "../help/terms";
 import { documentPath, goalPath } from "../routes";
 
@@ -193,6 +194,83 @@ const KIND_TABS: Readonly<Record<string, string>> = {
 
 export function tabForKind(kind: string): string {
   return KIND_TABS[kind] ?? "";
+}
+
+/**
+ * The one act a tab offers: what the button is called, and which kind it
+ * writes. A null kind is the register's own act, which has no kind because a
+ * question is a row rather than a page.
+ */
+export type NewAction = { label: string; kind: Kind | null };
+
+/**
+ * The act at the trailing end of the strip, on the tab that is open.
+ *
+ * There is one, and it belongs to what is being read: on Decisions it writes a
+ * decision, on Doctrine a chapter of the doctrine. A column of four buttons
+ * standing beside every tab offered three things the reader was not looking at
+ * and, at project level, offered to file them under a goal — which is the
+ * confusion this replaces.
+ *
+ * Documents and Slices offer nothing: the first is the checkout's other
+ * Markdown, which this surface does not write, and the second is read out of
+ * the designs that record a plan, which is where a slice is added.
+ */
+export function newActionFor(tab: string): NewAction | null {
+  switch (tab) {
+    case tabForKind("intent"):
+      return { label: ACTIONS.intent.offer, kind: "intent" };
+    case tabForKind("doctrine"):
+      return { label: ACTIONS.doctrine.offer, kind: "doctrine" };
+    case tabForKind("decision"):
+      return { label: ACTIONS.decision.offer, kind: "decision" };
+    case tabForKind("design"):
+      return { label: ACTIONS.design.offer, kind: "design" };
+    case QUESTIONS_TAB:
+      return { label: ASK, kind: null };
+    default:
+      return null;
+  }
+}
+
+/** What the strip's refresh control is called, for anyone who sees an icon. */
+export const REFRESH = "Refresh";
+
+/**
+ * What stands at the trailing end of the strip on one tab, in the order it is
+ * met: the act this tab offers, where it has one, and then the refresh.
+ *
+ * The refresh is on every tab, because reading the checkout again is a thing
+ * to do whichever section is open. It used to be a button on a line of its own
+ * above the strip, which put it at the very top of the scrolling region where
+ * the work area's own edge clipped it; the strip is sticky, so here it stays
+ * on the screen instead. Nothing refetches on its own: this control and a
+ * fresh mount are the only two ways this pane reads again.
+ */
+export function stripActions(tab: string): { newAction: NewAction | null; refresh: string } {
+  return { newAction: newActionFor(tab), refresh: REFRESH };
+}
+
+/** What each tab has none of, in the words its own empty section says it in. */
+const NOTHING: Readonly<Record<string, string>> = {
+  intent: "chapters",
+  doctrine: "chapters",
+  decisions: "decisions",
+  designs: "designs",
+  [QUESTIONS_TAB]: "open questions",
+};
+
+/**
+ * What an empty tab says, which is what it has none of rather than that
+ * something is missing. On a goal page it says so of that goal: a project with
+ * four hundred decisions and none about this goal has not "recorded nothing".
+ */
+export function nothingLine(tab: string, goal: boolean): string {
+  const word = NOTHING[tab];
+  if (word === undefined) {
+    return "";
+  }
+  return goal ? `No ${word} about this goal yet.` : `No ${word} yet.`;
 }
 
 /** True when a selection shows this record. A null id is everything. */

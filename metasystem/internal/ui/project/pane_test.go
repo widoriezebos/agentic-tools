@@ -74,10 +74,12 @@ func seed(t *testing.T, roots Roots) string {
 			"\n## Chapters\n"+
 			"- doctrine-events — Events are the source of truth\n"+
 			"- doctrine-budgets\n")
+	// Neither chapter names a goal, and neither may: the doctrine is the
+	// project's own, so a chapter of it is about the whole by definition.
 	plant(t, roots.Checkout, state+"docs/doctrine/events.md",
-		record("Events are the source of truth", "doctrine", "doctrine-events", "accepted", "ledger-sync"))
+		record("Events are the source of truth", "doctrine", "doctrine-events", "accepted", ""))
 	plant(t, roots.Checkout, state+"docs/doctrine/chapters/budgets.md",
-		record("Every run is budgeted", "doctrine", "doctrine-budgets", "draft", "reading-pane"))
+		record("Every run is budgeted", "doctrine", "doctrine-budgets", "draft", ""))
 	plant(t, roots.Checkout, state+"docs/decisions/0001-one-binary.md",
 		record("One binary", "decision", "decision-one-binary", "accepted", ""))
 	plant(t, roots.Checkout, state+"plans/designs/ledger.md",

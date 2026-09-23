@@ -190,6 +190,9 @@ func (p *Project) check() {
 			p.problem(record.Path, record.line("Status"),
 				"the status "+record.Status+" is not one of draft, accepted, superseded, done")
 		}
+		if BookKind(record.Kind) && len(record.Goals) > 0 {
+			p.problem(record.Path, record.line(goalsKey), GoalsRefused)
+		}
 		for _, id := range record.Goals {
 			if !p.HasGoal(id) {
 				p.problem(record.Path, record.line(goalsKey), "the goal "+id+" is not in the ledger")

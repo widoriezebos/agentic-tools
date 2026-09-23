@@ -160,11 +160,14 @@ func (f *fixture) seed() {
 			"- doctrine-events — Events are the source of truth\n"+
 			"- doctrine-budgets — Every run is budgeted\n"+
 			fmt.Sprintf("- doc:%sdocs/architecture.md — The engine\n", f.state))
+	// Neither chapter names a goal, and neither may: the doctrine is the
+	// project's own, so a chapter of it is about the whole by definition and
+	// the check refuses a Goals line there.
 	f.write(f.state+"docs/doctrine/events.md",
-		record("Events are the source of truth", "doctrine", "doctrine-events", "accepted", "ledger-sync",
+		record("Events are the source of truth", "doctrine", "doctrine-events", "accepted", "",
 			"- Cites: intent-index"))
 	f.write(f.state+"docs/doctrine/chapters/budgets.md",
-		record("Every run is budgeted", "doctrine", "doctrine-budgets", "draft", "reading-pane"))
+		record("Every run is budgeted", "doctrine", "doctrine-budgets", "draft", ""))
 
 	f.write(f.state+"docs/decisions/README.md", "# Decisions\n\nProse, and no head.\n")
 	f.write(f.state+"docs/decisions/0001-one-binary.md",
@@ -397,26 +400,28 @@ func TestTreeCountsByKindAndStatus(t *testing.T) {
 	testutil.Expect(t, "the goals, live ones first",
 		[]string{goals[0].Goal.ID, goals[1].Goal.ID, goals[2].Goal.ID},
 		[]string{"ledger-sync", "reading-pane", "two-homes"})
+	// No goal counts a chapter of either book: those are the project's own, so
+	// they are counted in the project-wide bucket and nowhere else.
 	testutil.Expect(t, "ledger-sync by kind", goals[0].Counts.Kind,
-		map[string]int{KindIntent: 0, KindDoctrine: 1, KindDecision: 1, KindDesign: 2, KindQuestion: 1})
+		map[string]int{KindIntent: 0, KindDoctrine: 0, KindDecision: 1, KindDesign: 2, KindQuestion: 1})
 	testutil.Expect(t, "ledger-sync by status", goals[0].Counts.Status,
-		map[string]int{StatusDraft: 0, StatusAccepted: 2, StatusSuperseded: 1, StatusDone: 1,
+		map[string]int{StatusDraft: 0, StatusAccepted: 1, StatusSuperseded: 1, StatusDone: 1,
 			QuestionOpen: 0, QuestionAnswered: 1, QuestionWithdrawn: 0})
-	testutil.Expect(t, "ledger-sync in all", goals[0].Counts.Total, 5)
+	testutil.Expect(t, "ledger-sync in all", goals[0].Counts.Total, 4)
 	testutil.Expect(t, "reading-pane by kind", goals[1].Counts.Kind,
-		map[string]int{KindIntent: 0, KindDoctrine: 1, KindDecision: 0, KindDesign: 1, KindQuestion: 1})
+		map[string]int{KindIntent: 0, KindDoctrine: 0, KindDecision: 0, KindDesign: 1, KindQuestion: 1})
 	testutil.Expect(t, "reading-pane by status", goals[1].Counts.Status,
-		map[string]int{StatusDraft: 2, StatusAccepted: 0, StatusSuperseded: 0, StatusDone: 0,
+		map[string]int{StatusDraft: 1, StatusAccepted: 0, StatusSuperseded: 0, StatusDone: 0,
 			QuestionOpen: 0, QuestionAnswered: 0, QuestionWithdrawn: 1})
 	// A record naming two goals is counted under both, because it is about both.
 	testutil.Expect(t, "a concluded goal counts what names it", goals[2].Counts.Kind,
 		map[string]int{KindIntent: 0, KindDoctrine: 0, KindDecision: 0, KindDesign: 1, KindQuestion: 0})
 	testutil.Expect(t, "the project-wide bucket by kind", whole.Kind,
-		map[string]int{KindIntent: 1, KindDoctrine: 1, KindDecision: 1, KindDesign: 0, KindQuestion: 1})
+		map[string]int{KindIntent: 1, KindDoctrine: 3, KindDecision: 1, KindDesign: 0, KindQuestion: 1})
 	testutil.Expect(t, "the project-wide bucket by status", whole.Status,
-		map[string]int{StatusDraft: 0, StatusAccepted: 3, StatusSuperseded: 0, StatusDone: 0,
+		map[string]int{StatusDraft: 1, StatusAccepted: 4, StatusSuperseded: 0, StatusDone: 0,
 			QuestionOpen: 1, QuestionAnswered: 0, QuestionWithdrawn: 0})
-	testutil.Expect(t, "the project-wide bucket in all", whole.Total, 4)
+	testutil.Expect(t, "the project-wide bucket in all", whole.Total, 6)
 }
 
 // The register is read as it is written: three rows, three statuses, and an

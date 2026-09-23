@@ -6,9 +6,12 @@ import {
   briefingFor,
   crumbsFor,
   documentGroups,
+  newActionFor,
   NO_SLICE_PLAN,
+  nothingLine,
   pageSections,
   railFor,
+  REFRESH,
   ROOT_GROUP,
   shortID,
   sliceCount,
@@ -16,6 +19,7 @@ import {
   slicePlan,
   slicePlans,
   slicesOf,
+  stripActions,
   tabForKind,
   type Row,
   type TocEntry,
@@ -214,11 +218,11 @@ describe("what is on the page, as the strip of tabs names it", () => {
   });
 
   // The action that writes a record and the tab that shows it read from one
-  // table, so the aside cannot send a human to a tab the strip does not have.
+  // table, so no act can be offered on a tab the strip does not have.
   it("puts every kind a human can write on a tab the page carries", () => {
     const ids = pageSections(briefingFor(pane, null)).map((section) => section.id);
 
-    for (const kind of ["intent", "decision", "design"]) {
+    for (const kind of ["intent", "doctrine", "decision", "design"]) {
       expect({ kind, tab: tabForKind(kind), carried: ids.includes(tabForKind(kind)) }).toEqual({
         kind,
         tab: tabForKind(kind),
@@ -226,6 +230,70 @@ describe("what is on the page, as the strip of tabs names it", () => {
       });
     }
     expect(tabForKind("nothing")).toBe("");
+  });
+});
+
+/**
+ * The strip's trailing cluster, which is where contributing now happens.
+ *
+ * It replaced a column of four buttons that stood beside every tab and offered
+ * three things the reader was not looking at. There is one act, it belongs to
+ * the tab that is open, and the refresh stands beside it on every tab.
+ */
+describe("the one act at the trailing end of the strip", () => {
+  it("is named by the tab that is open", () => {
+    expect(newActionFor("intent")).toEqual({ label: "New chapter", kind: "intent" });
+    expect(newActionFor("doctrine")).toEqual({ label: "New chapter", kind: "doctrine" });
+    expect(newActionFor("decisions")).toEqual({ label: "New decision", kind: "decision" });
+    expect(newActionFor("designs")).toEqual({ label: "New design", kind: "design" });
+    expect(newActionFor("questions")).toEqual({ label: "New question", kind: null });
+  });
+
+  // Documents is the checkout's other Markdown, which this surface does not
+  // write, and a slice is added in the design that lists it.
+  it("is nothing at all on Documents, on Slices, and on a name no page carries", () => {
+    expect(newActionFor("documents")).toBeNull();
+    expect(newActionFor("slices")).toBeNull();
+    expect(newActionFor("nothing-at-all")).toBeNull();
+  });
+
+  it("stands beside a refresh the strip carries on every tab of either page", () => {
+    for (const goal of [null, "interface-shell"]) {
+      for (const section of pageSections(briefingFor(pane, goal))) {
+        const actions = stripActions(section.id);
+        expect({ tab: section.id, refresh: actions.refresh }).toEqual({ tab: section.id, refresh: REFRESH });
+        expect({ tab: section.id, writes: actions.newAction !== null }).toEqual({
+          tab: section.id,
+          writes: section.id !== "documents" && section.id !== "slices",
+        });
+      }
+    }
+  });
+});
+
+/**
+ * An empty tab says what it has none of, in its own scope. "Nothing recorded
+ * yet" was said on every empty tab of every page, which told a human on a goal
+ * page that a project of four hundred decisions had recorded none.
+ */
+describe("what an empty tab says", () => {
+  it("says what this tab has none of", () => {
+    expect(nothingLine("intent", false)).toBe("No chapters yet.");
+    expect(nothingLine("doctrine", false)).toBe("No chapters yet.");
+    expect(nothingLine("decisions", false)).toBe("No decisions yet.");
+    expect(nothingLine("designs", false)).toBe("No designs yet.");
+    expect(nothingLine("questions", false)).toBe("No open questions yet.");
+  });
+
+  it("says it of the goal on a goal page", () => {
+    expect(nothingLine("decisions", true)).toBe("No decisions about this goal yet.");
+    expect(nothingLine("designs", true)).toBe("No designs about this goal yet.");
+    expect(nothingLine("questions", true)).toBe("No open questions about this goal yet.");
+  });
+
+  it("says nothing where the tab offers no act", () => {
+    expect(nothingLine("documents", false)).toBe("");
+    expect(nothingLine("slices", true)).toBe("");
   });
 });
 

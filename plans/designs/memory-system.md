@@ -3,7 +3,7 @@
 - Kind: design
 - Id: 01M348YTJ2EY11F37Y5KBVNSER
 - Status: accepted
-- Revision: 8, 2026-09-22, on Wido's ruling of the same afternoon — areas are removed: goals are the only subdivision, and per goal the Project section shows its intent, its designs, its decisions and its open questions; revision 7 was: structure first, the smallest thing that already works in the interface, nothing that blocks a hole nobody has fallen into yet. Revisions 1 to 6 and Astra's three rounds are records of how the structure was found: [revision 6](../memory-system-r6.md), [round 1](../memory-system-critique-astra.md), [round 2](../memory-system-critique-astra-r2.md), [round 3](../memory-system-critique-astra-r3.md). Everything they settled that step 1 does not need is in section 6, to be built when it hurts, on top of the same fields.
+- Revision: 9, 2026-09-23, on Wido's ruling: intent and doctrine never name goals — they are the project's own, so `check` and the write route refuse a `Goals` line on either (rule 1 and section 4); revision 8 was: 2026-09-22, on Wido's ruling of the same afternoon — areas are removed: goals are the only subdivision, and per goal the Project section shows its intent, its designs, its decisions and its open questions; revision 7 was: structure first, the smallest thing that already works in the interface, nothing that blocks a hole nobody has fallen into yet. Revisions 1 to 6 and Astra's three rounds are records of how the structure was found: [revision 6](../memory-system-r6.md), [round 1](../memory-system-critique-astra.md), [round 2](../memory-system-critique-astra-r2.md), [round 3](../memory-system-critique-astra-r3.md). Everything they settled that step 1 does not need is in section 6, to be built when it hurts, on top of the same fields.
 
 Paths are relative to the checkout root. `<root>` is the state root the engine resolves; in this checkout that is `metasystem/`, and the host's `plans/` at the checkout root is read as a second home for designs.
 
@@ -26,7 +26,7 @@ A record is a Markdown file whose first line is its title and whose head is a sh
 
 - `Id` is any string unique across the project and never changed; `metasystem project id` prints a fresh ULID for those who want one. References to a record use its id, so the file may be renamed or moved.
 - `Status` is maintained by hand, as every ADR log does it. `done` is for a design whose work shipped.
-- `Goals` names goals by their ledger id (`plans/goals/<id>.md`, concluded ones under `records/goals/`); a record with no `Goals` line is about the project as a whole.
+- `Goals` names goals by their ledger id (`plans/goals/<id>.md`, concluded ones under `records/goals/`); a record with no `Goals` line is about the project as a whole. Never on intent or doctrine, which are the project's own: what it is for and how it is shaped are about the whole by definition, and `check` refuses a `Goals` line there (Wido, 2026-09-23).
 - Optional, unvalidated in step 1, kept as plain references for the pane to show: `Cites:`, `Affects:`, `By:` (who accepted it), `Supersedes:`.
 
 The body is free prose. Unknown keys are kept and ignored.
@@ -73,7 +73,7 @@ Everything else stays where it is: `covenant.json`, `docs/covenant-evidence.md`,
 - `metasystem project list <kind> [--goal <id>] [--status <s>]` — `question` is a kind here too, read from the register
 - `metasystem project show <id>` — the record, its home, its status, its areas, its references, and what references it
 - `metasystem project tree` — the ledger's goals (live ones from `plans/goals/`, concluded ones from `records/goals/`), each with its state and counts of the records about it by kind and status, then the project-wide bucket
-- `metasystem project check` — refuses: a duplicate id (pages and question rows share one id space); a head missing a required key; a head line that is not `- Key: value`; a key declared twice; an unknown kind or status; a `Goals` line naming a goal the ledger does not have; a chapter id or path that does not exist, or a chapter record of another kind than its book; a chapter path that is not a regular file inside the checkout; a register row without an id or with an unknown status
+- `metasystem project check` — refuses: a duplicate id (pages and question rows share one id space); a head missing a required key; a head line that is not `- Key: value`; a key declared twice; an unknown kind or status; a `Goals` line naming a goal the ledger does not have; a `Goals` line on an intent or doctrine record at all ("an intent or doctrine record names goals"), which the write route refuses in the same words; a chapter id or path that does not exist, or a chapter record of another kind than its book; a chapter path that is not a regular file inside the checkout; a register row without an id or with an unknown status
 - `metasystem project id` — a fresh ULID
 
 It imports `stateroot` and nothing of the UI. `internal/ui/project` becomes a thin adapter over it and the catalogue table is deleted. Tests: temporary repositories with a one-page book, a book with chapters and a bound document, two areas, three designs in two homes, and every refusal above.

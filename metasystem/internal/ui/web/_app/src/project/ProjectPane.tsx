@@ -1,3 +1,4 @@
+import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useNavigate, useParams } from "react-router";
 
@@ -8,30 +9,34 @@ import {
   DOCUMENTS_TAB,
   DOCUMENTS_TITLE,
   kindTitle,
+  newActionFor,
   NO_SLICE_PLAN,
+  nothingLine,
   pageSections,
   QUESTIONS_TAB,
   QUESTIONS_TITLE,
   sliceCount,
   SLICES_TAB,
   SLICES_TITLE,
+  stripActions,
   tabForKind,
   type BookBriefing,
   type Briefing,
   type DesignRuns,
   type DocumentGroup,
+  type NewAction,
   type PageSection,
   type Row,
   type SlicePlan,
 } from "./pane";
 import "./reading.css";
 import { Sheet, type Done, type Request } from "./Sheet";
-import { ACTIONS, type Kind } from "./writing";
+import { type Scope } from "./writing";
 import { Pane } from "../panes/Pane";
 import { Tabs, tabShown, type Tab } from "../panes/Tabs";
 import { documentPath, goalPath, projectPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
-import { Button, Chip, Skeleton } from "../shell/controls";
+import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
 import { readGoalTab, readProjectTab, writeGoalTab, writeProjectTab } from "../storage";
 
 /**
@@ -132,7 +137,6 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
   // the store is written rather than read.
   const [remembered] = useState(() => (goal === null ? readProjectTab() : readGoalTab()));
 
-  const where = goal ?? "Everything";
   const page = goal === null ? "Project" : `Backlog · ${goal}`;
   const open = tabShown(sections, parameters.tab, remembered);
 
@@ -155,10 +159,8 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
     void navigate(goalPath(goal, id));
   };
 
-  // An action offered beside the reading opens the tab what it creates will
-  // appear on, so that writing a decision leaves the human looking at the
-  // decisions. A tab this page does not carry — the intent chapter offered
-  // under a goal — moves nothing.
+  // What is waiting opens the tab it is waiting on, so that a human who takes
+  // it up is looking at it. A tab this page does not carry moves nothing.
   const show = (tab: string) => {
     if (tab !== open && sections.some((section) => section.id === tab)) {
       select(tab);
@@ -177,19 +179,36 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
     onReload();
   };
 
-  // The same four actions appear in three places — the aside, a block's head,
-  // and an empty block's one line — so each is written once and used where it
-  // belongs. On a goal page they carry that goal, already chosen.
-  const openRecord = (kind: Kind) => () => {
-    show(tabForKind(kind));
-    setSheet({ mode: "record", kind, goal });
-  };
-  const openQuestion = () => {
-    show(QUESTIONS_TAB);
-    setSheet({ mode: "question", goal });
-  };
-  const recordAct = (kind: Kind) => <Act label={ACTIONS[kind].offer} onAct={openRecord(kind)} />;
-  const questionAct = <Act label="Ask a question" onAct={openQuestion} />;
+  // What a contribution written from this page is about: this goal, or the
+  // project as a whole. It comes from the page and is read to the human in the
+  // sheet rather than asked of them — a column of actions that offered to file
+  // a project-level record under a goal was asking the one question the page
+  // it stood on had already answered.
+  const scope: Scope = briefing.goal === null ? null : { id: briefing.goal.id, title: briefing.goal.title };
+
+  // The one act a tab offers, as the button at the trailing end of the strip
+  // and again under an empty section's sentence. It is built here, once, from
+  // the tab's own name, so the two copies cannot come to say different things.
+  const newButton = (act: NewAction | null): ReactNode =>
+    act === null ? null : (
+      <Button
+        onClick={() => {
+          setSheet(act.kind === null ? { mode: "question", scope } : { mode: "record", kind: act.kind, scope });
+        }}
+      >
+        {act.label}
+      </Button>
+    );
+
+  /** What an empty tab says, with the one thing to do about it under it. */
+  const nothing = (tab: string) => (
+    <Nothing line={nothingLine(tab, goal !== null)}>{newButton(newActionFor(tab))}</Nothing>
+  );
+
+  // The strip's trailing cluster: what this tab writes, and the refresh, which
+  // every tab carries. The refresh says when the page was read in its tooltip,
+  // which is where the sentence it replaced said it.
+  const trailing = stripActions(open);
 
   /** Answering is offered on an open question, and on nothing else. */
   const answer = (row: Row): ReactNode => {
@@ -214,30 +233,22 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
   const sectionOf = (id: string): ReactNode => {
     const book = briefing.books.find((candidate) => candidate.id === id);
     if (book !== undefined) {
-      return <BookBlock book={book} />;
+      return <BookBlock book={book} nothing={nothing(id)} />;
     }
     if (id === tabForKind("decision")) {
       return (
-        <Block title={kindTitle("decision")} count={briefing.decisions.length} action={recordAct("decision")}>
-          {briefing.decisions.length === 0 ? (
-            <Nothing>{recordAct("decision")}</Nothing>
-          ) : (
-            <Rows rows={briefing.decisions} />
-          )}
+        <Block title={kindTitle("decision")} count={briefing.decisions.length}>
+          {briefing.decisions.length === 0 ? nothing(id) : <Rows rows={briefing.decisions} />}
         </Block>
       );
     }
     if (id === tabForKind("design")) {
-      return <Designs designs={briefing.designs} action={recordAct("design")} />;
+      return <Designs designs={briefing.designs} nothing={nothing(id)} />;
     }
     if (id === QUESTIONS_TAB) {
       return (
-        <Block title={QUESTIONS_TITLE} count={briefing.questions.length} action={questionAct}>
-          {briefing.questions.length === 0 ? (
-            <Nothing>{questionAct}</Nothing>
-          ) : (
-            <Rows rows={briefing.questions} action={answer} />
-          )}
+        <Block title={QUESTIONS_TITLE} count={briefing.questions.length}>
+          {briefing.questions.length === 0 ? nothing(id) : <Rows rows={briefing.questions} action={answer} />}
         </Block>
       );
     }
@@ -271,43 +282,37 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
           </span>
         </nav>
       )}
-      {/* What was read, what the records refuse, and what a goal page is
-          about stand above the strip: none of them is a section of the page,
-          and a refusal on one tab of six would be a refusal hidden on the
-          other five. */}
-      <div className="ms-briefing-preamble">
-        <p className="ms-project-read-at">
-          Read at {timeOf(pane.readAt)}
-          <Button onClick={onReload}>Reload</Button>
-        </p>
-        {pane.problems.length > 0 && <Problems problems={pane.problems} />}
-        {briefing.goal !== null && <GoalBlock briefing={briefing} />}
-      </div>
+      {/* What the records refuse and what a goal page is about stand above the
+          strip: neither is a section of the page, and a refusal on one tab of
+          six would be a refusal hidden on the other five. When there is
+          neither, there is no band here at all. */}
+      {(pane.problems.length > 0 || briefing.goal !== null) && (
+        <div className="ms-briefing-preamble">
+          {pane.problems.length > 0 && <Problems problems={pane.problems} />}
+          {briefing.goal !== null && <GoalBlock briefing={briefing} />}
+        </div>
+      )}
       <div className="ms-briefing">
         <Tabs
           label={goal === null ? "The project" : `The goal ${goal}`}
           tabs={tabs}
           selected={open}
           onSelect={select}
+          action={
+            <>
+              {newButton(trailing.newAction)}
+              <IconButton
+                label={trailing.refresh}
+                hint={`Read at ${timeOf(pane.readAt)} · ${trailing.refresh}`}
+                onClick={onReload}
+              >
+                <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
+              </IconButton>
+            </>
+          }
           panelClassName="ms-briefing-main"
         />
         <aside className="ms-briefing-aside" aria-label="Beside the briefing">
-          <section className="ms-briefing-note">
-            <h2 className="ms-briefing-note-title">{goal === null ? "Contribute" : `Contribute to ${where}`}</h2>
-            <div className="ms-briefing-contribute">
-              {/* An intent chapter needs a title and nothing else; it joins the
-                  index's reading order wherever it was written from. */}
-              <Button onClick={openRecord("intent")}>{ACTIONS.intent.offer}</Button>
-              <Button onClick={openRecord("decision")}>{ACTIONS.decision.offer}</Button>
-              <Button onClick={openRecord("design")}>{ACTIONS.design.offer}</Button>
-              <Button onClick={openQuestion}>Ask a question</Button>
-            </div>
-            <p className="ms-briefing-note-line">
-              Each writes a draft in its own home with a fresh id and{" "}
-              <span className="ms-mono">Status: draft</span>, and opens it. Nothing here accepts anything; status is
-              yours to change on the record.
-            </p>
-          </section>
           <section className="ms-briefing-note">
             <h2 className="ms-briefing-note-title">Needs you</h2>
             {briefing.needsYou.questions === 0 && briefing.needsYou.designs === 0 ? (
@@ -349,7 +354,6 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
         {sheet !== null && (
           <Sheet
             request={sheet}
-            goals={pane.goals}
             onClose={() => {
               setSheet(null);
             }}
@@ -374,12 +378,21 @@ function Act({ label, onAct }: { label: string; onAct: () => void }) {
   );
 }
 
-/** An empty section says so, and says what to do about it, on one line. */
-function Nothing({ children }: { children: ReactNode }) {
+/**
+ * An empty section says what it has none of, and offers the one thing to do
+ * about it underneath.
+ *
+ * "Nothing recorded yet" was said on every empty tab of every page, which told
+ * a human on a goal page that a project of four hundred decisions had recorded
+ * none. What is empty here is this tab, in this scope, and the sentence says
+ * which.
+ */
+function Nothing({ line, children }: { line: string; children?: ReactNode }) {
   return (
-    <p className="ms-project-none">
-      Nothing recorded yet. {children}
-    </p>
+    <div className="ms-project-nothing">
+      <p className="ms-project-none">{line}</p>
+      {children}
+    </div>
   );
 }
 
@@ -515,7 +528,7 @@ function Lede({ intent }: { intent: string }) {
  * as a table of contents. The titles are the index's own, which is why they
  * carry their numbers here and nothing numbers them again.
  */
-function BookBlock({ book }: { book: BookBriefing }) {
+function BookBlock({ book, nothing }: { book: BookBriefing; nothing: ReactNode }) {
   return (
     <Block
       title={book.title}
@@ -530,7 +543,7 @@ function BookBlock({ book }: { book: BookBriefing }) {
     >
       {book.lede !== "" && <p className="ms-briefing-lede">{book.lede}</p>}
       {book.chapters.length === 0 ? (
-        <p className="ms-project-none">Nothing recorded yet.</p>
+        nothing
       ) : (
         <ul className="ms-briefing-toc">
           {book.chapters.map((chapter) => (
@@ -551,11 +564,11 @@ function BookBlock({ book }: { book: BookBriefing }) {
 }
 
 /** The designs: what governs, open; what is finished, in one run each. */
-function Designs({ designs, action }: { designs: DesignRuns; action: ReactNode }) {
+function Designs({ designs, nothing }: { designs: DesignRuns; nothing: ReactNode }) {
   const total = designs.open.length + designs.runs.reduce((sum, run) => sum + run.rows.length, 0);
   return (
-    <Block title={kindTitle("design")} count={total} action={action}>
-      {total === 0 && <Nothing>{action}</Nothing>}
+    <Block title={kindTitle("design")} count={total}>
+      {total === 0 && nothing}
       {designs.open.length > 0 && <Rows rows={designs.open} />}
       {designs.runs.map((run) => (
         <details key={run.status} className="ms-project-run">

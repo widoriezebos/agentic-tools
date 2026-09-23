@@ -111,24 +111,29 @@ type Asked struct {
 	Question Question `json:"question"`
 }
 
-// The kinds this surface creates. Doctrine is not among them: a doctrine
-// chapter is how the project is shaped, and shaping it is not a thing to do
-// from a form.
+// The kinds this surface creates, each with the empty sections its page opens
+// with. Doctrine is among them: a doctrine chapter is how the project is
+// shaped, and the page that reads the doctrine is the page to write one from —
+// it is a draft in a book like an intent chapter, and accepting it is still a
+// status somebody changes on the record.
 var templates = map[string][]string{
 	resolver.KindIntent:   {"Users", "Outcomes", "Constraints", "Open questions"},
+	resolver.KindDoctrine: {"Context", "Doctrine", "Consequences"},
 	resolver.KindDecision: {"Context", "Decision", "Consequences"},
 	resolver.KindDesign:   {"Outcome", "Scope", "What changes", "Verification"},
 }
 
-// CreatableKinds is the three, in reading order, for a caller that offers them.
-var CreatableKinds = []string{resolver.KindIntent, resolver.KindDecision, resolver.KindDesign}
+// CreatableKinds is the four, in reading order, for a caller that offers them.
+var CreatableKinds = []string{
+	resolver.KindIntent, resolver.KindDoctrine, resolver.KindDecision, resolver.KindDesign,
+}
 
 // slugLimit is how long a file name this surface makes. A title longer than
 // that is a title; the file name is only how the record is found on disk, and
 // the record is found by its id everywhere else.
 const slugLimit = 60
 
-// chaptersHeading is the list an intent chapter joins.
+// chaptersHeading is the list a chapter of either book joins.
 const chaptersHeading = "Chapters"
 
 // CreateRecord writes one draft record in its kind's home at the state root and
@@ -139,8 +144,9 @@ const chaptersHeading = "Chapters"
 // them, and a record written from an application's interface belongs to the
 // application's state root.
 //
-// An intent chapter is also listed in the intent index's reading order, because
-// a chapter no index names is a chapter nobody reads.
+// A chapter of either book — the intent or the doctrine — is also listed in
+// that book's index, in its reading order, because a chapter no index names is
+// a chapter nobody reads.
 func CreateRecord(roots Roots, asked NewRecord, now time.Time) (Written, error) {
 	body, creatable := templates[asked.Kind]
 	if !creatable {
@@ -187,14 +193,15 @@ func CreateRecord(roots Roots, asked NewRecord, now time.Time) (Written, error) 
 		return Written{}, fmt.Errorf("cannot look at %s: %w", relative, err)
 	}
 
-	// An intent chapter that cannot be listed is not written at all, so the
-	// index and the chapter never disagree about what exists.
+	// A chapter that cannot be listed is not written at all, so the index and
+	// the chapter never disagree about what exists.
 	index := ""
-	if asked.Kind == resolver.KindIntent {
+	if resolver.BookKind(asked.Kind) {
 		index = filepath.Join(home.Path, "index.md")
 		if _, err := os.Stat(index); err != nil {
 			return Written{}, refuse(RefusalBad,
-				"this project has no intent index at "+path.Join(home.Rel, "index.md")+", so a chapter cannot be listed")
+				"this project has no "+asked.Kind+" index at "+path.Join(home.Rel, "index.md")+
+					", so a chapter cannot be listed")
 		}
 	}
 
@@ -220,7 +227,8 @@ func CreateRecord(roots Roots, asked NewRecord, now time.Time) (Written, error) 
 	}
 	if index != "" {
 		if err := listChapter(index, roots.Checkout, id, title); err != nil {
-			return Written{}, fmt.Errorf("%s was written, but the intent index could not list it: %w", relative, err)
+			return Written{}, fmt.Errorf("%s was written, but the %s index could not list it: %w",
+				relative, asked.Kind, err)
 		}
 	}
 	return writtenRecord(roots, id, relative, absolute)
@@ -438,7 +446,7 @@ func slug(title string) string {
 
 /* ------------------------------------------------------- the index and the register -- */
 
-// listChapter appends one chapter to the intent index's reading order, in the
+// listChapter appends one chapter to a book index's reading order, in the
 // shape the index parser reads: an id, an em dash, and the title. A `##
 // Chapters` list that is not there is started at the end of the file.
 func listChapter(index, anchor, id, title string) error {
@@ -581,6 +589,10 @@ func wouldRefuse(read *resolver.Project, relative, text string) []Problem {
 	if !includes(resolver.Statuses, record.Status) {
 		refusals = append(refusals, Problem{Path: relative, Line: record.HeadLine,
 			Message: "the status " + record.Status + " is not one of " + strings.Join(resolver.Statuses, ", ")})
+	}
+	if resolver.BookKind(record.Kind) && len(record.Goals) > 0 {
+		refusals = append(refusals, Problem{Path: relative, Line: record.HeadLine,
+			Message: resolver.GoalsRefused})
 	}
 	for _, id := range record.Goals {
 		if !read.HasGoal(id) {

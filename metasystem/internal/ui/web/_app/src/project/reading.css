@@ -716,16 +716,6 @@
   padding: 16px 20px;
 }
 
-.ms-project-read-at {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--ms-text-3);
-}
-
 .ms-project-none {
   margin: 0;
   font-size: 13px;
@@ -933,14 +923,17 @@
   text-decoration: underline;
 }
 
-.ms-briefing-contribute {
-  display: grid;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.ms-briefing-contribute .ms-button {
-  justify-content: flex-start;
+/*
+ * An empty section: what it has none of, and the one thing to do about it
+ * under the sentence rather than on the end of it. The button is the strip's
+ * own, so a human who has read the sentence is offered the same act they would
+ * have found above it.
+ */
+.ms-project-nothing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
 }
 
 /* Status, as the one control the reader can change, coloured by its value. */
@@ -1220,20 +1213,16 @@
 }
 
 /*
- * The goals, as a list to choose from. It is a select because a ledger carries
- * hundreds of them, and it keeps the monospace of an id so that two goals that
- * differ in one character can be told apart.
+ * What the contribution will be about, on the first line of the sheet. It is a
+ * sentence and not a field: the scope is the page this was opened from, so
+ * there is nothing here to choose and nothing here to get wrong.
  */
-.ms-writing-goals {
-  width: 100%;
-  padding: 4px;
-  border-radius: 6px;
-  border: 1px solid var(--ms-border);
-  background: var(--ms-surface);
-  color: var(--ms-text);
-  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+.ms-writing-about {
+  margin: 0;
   font-size: 12px;
   line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
 }
 
 .ms-writing-foot {

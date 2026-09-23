@@ -8,6 +8,9 @@
  * lines pushes the reading off the screen it was meant to introduce.
  */
 .ms-tabs-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   position: sticky;
   top: 0;
   z-index: 1;
@@ -35,7 +38,23 @@
 .ms-tabs-list {
   display: flex;
   gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow-x: auto;
+}
+
+/*
+ * The trailing cluster: what the open tab writes, and the refresh every tab
+ * carries. It keeps its width while the tabs scroll sideways beside it,
+ * because the act on a narrow screen is the thing a human came to the tab to
+ * do, and a button that scrolls out of the strip is a button nobody finds.
+ */
+.ms-tabs-action {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
 }
 
 /*

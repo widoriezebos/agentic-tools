@@ -358,11 +358,22 @@ func (l *ledger) approve(id string, budget goalbudget.Budget) error {
 	return nil
 }
 
+// walkthroughTitles are the headings the fixture's goal files carry. A ledger
+// whose goal file is titled by its id reads by that id; these are titled, so
+// the sheet's About line has both halves to show.
+var walkthroughTitles = map[string]string{
+	"g1-s15": "The Decisions section",
+	"g1-s12": "The backlog board",
+	"g1-s13": "The goal page",
+}
+
 // project is the canned Project pane the goal page reads. It carries what a
-// goal page is about — the ledger's goals, one of them sliced, and two designs
-// that name a goal, one of which records a slice plan and one of which does
-// not — so the Slices tab can be driven with something in it and with nothing
-// in it.
+// goal page is about — the ledger's goals, one of them sliced, two designs that
+// name a goal, one of which records a slice plan and one of which does not, and
+// two decisions, one about the project as a whole and one about a goal — so the
+// Slices tab can be driven with something in it and with nothing in it, and the
+// Decisions tab with rows on both pages. Nothing is planted in the two books or
+// in the register, so the tabs that have nothing say so and offer their act.
 func (l *ledger) project() project.Pane {
 	goals := []project.Goal{}
 	for _, id := range []string{"g1-s15", "g1-s12", "g1-s13"} {
@@ -370,7 +381,7 @@ func (l *ledger) project() project.Pane {
 		if file == nil {
 			continue
 		}
-		one := project.Goal{ID: id, Title: id, State: file.State, Intent: file.Intent}
+		one := project.Goal{ID: id, Title: walkthroughTitles[id], State: file.State, Intent: file.Intent}
 		if id == "g1-s15" {
 			one.Sliced = &project.Sliced{
 				At: "2026-09-21T08:30:00Z", Machine: "m1e", Lineage: "coordinator",
@@ -408,6 +419,22 @@ func (l *ledger) project() project.Pane {
 				Kind: "design", ID: "design-goal-page", Status: "draft", Goals: []string{"g1-s13"},
 				Title: "The goal page", Path: "plans/designs/goal-page.md", Home: "plans/designs",
 				Summary: "What one goal's page shows.", Slices: []string{},
+			},
+			// Two decisions: one about the project as a whole, which is what a
+			// head with no Goals line means, and one about a goal, so the
+			// Decisions tab has rows on the Project page and on a goal's.
+			{
+				Kind: "decision", ID: "decision-one-binary", Status: "accepted", Goals: []string{},
+				Title: "One binary", Path: "docs/decisions/0001-one-binary.md", Home: "docs/decisions",
+				Summary: "The engine ships as one executable, and the interface is served from it.",
+				Slices:  []string{},
+			},
+			{
+				Kind: "decision", ID: "decision-answering", Status: "draft", Goals: []string{"g1-s15"},
+				Title: "A question is answered by a record", Path: "docs/decisions/0002-answering.md",
+				Home:    "docs/decisions",
+				Summary: "Answering names the record that answered it, and the row keeps the name.",
+				Slices:  []string{},
 			},
 		},
 		Intent:    project.Book{Chapters: []project.Chapter{}},

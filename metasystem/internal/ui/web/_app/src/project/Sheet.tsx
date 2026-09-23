@@ -7,20 +7,22 @@ import {
   setQuestionStatus,
   setRecordStatus,
   type Asked,
-  type Goal,
   type Written,
 } from "./api";
 import {
   ACTIONS,
   asked as askedOf,
-  emptyDraft,
+  ASK,
   incomplete,
   noteFor,
   pageFor,
+  scopeGoals,
+  startDraft,
   statusNote,
   STATUSES,
   type Draft,
   type Kind,
+  type Scope,
 } from "./writing";
 import { Button } from "../shell/controls";
 
@@ -41,11 +43,15 @@ import { Button } from "../shell/controls";
  * own sentence, shown in the sheet, with the fields still filled in.
  */
 
-/** What the sheet was opened to do. */
+/**
+ * What the sheet was opened to do. The two acts that write something new carry
+ * the scope of the page they were opened from, which is what they will be
+ * about; it is read to the human and never offered as a choice.
+ */
 export type Request =
-  | { mode: "record"; kind: Kind; goal: string | null }
+  | { mode: "record"; kind: Kind; scope: Scope }
   | { mode: "status"; id: string; title: string; path: string; status: string }
-  | { mode: "question"; goal: string | null }
+  | { mode: "question"; scope: Scope }
   | { mode: "answer"; id: string; question: string }
   | { mode: "discard"; path: string };
 
@@ -63,13 +69,10 @@ const FOCUSABLE =
 
 export function Sheet({
   request,
-  goals,
   onClose,
   onDone,
 }: {
   request: Request;
-  /** The ledger's goals, live ones first, as the pane carries them. */
-  goals: Goal[];
   onClose: () => void;
   onDone: (done: Done) => void;
 }) {
@@ -145,13 +148,13 @@ export function Sheet({
         onKeyDown={keys}
       >
         {request.mode === "record" && (
-          <RecordForm request={request} goals={goals} sending={sending} onClose={onClose} onSend={send} />
+          <RecordForm request={request} sending={sending} onClose={onClose} onSend={send} />
         )}
         {request.mode === "status" && (
           <StatusForm request={request} sending={sending} onClose={onClose} onSend={send} />
         )}
         {request.mode === "question" && (
-          <QuestionForm request={request} goals={goals} sending={sending} onClose={onClose} onSend={send} />
+          <QuestionForm request={request} sending={sending} onClose={onClose} onSend={send} />
         )}
         {request.mode === "answer" && (
           <AnswerForm request={request} sending={sending} onClose={onClose} onSend={send} />
@@ -217,29 +220,30 @@ function Foot({
 }
 
 /**
- * A new record: the title, the goals it is about, and the page as it will be
+ * A new record: what it is about, its title, and the page as it will be
  * written. The page is read-only — it is what the fields make, not a second
  * place to type — and it changes as the fields change.
  */
 function RecordForm({
   request,
-  goals,
   sending,
   onClose,
   onSend,
 }: {
-  request: { kind: Kind; goal: string | null };
-  goals: Goal[];
+  request: { kind: Kind; scope: Scope };
   sending: boolean;
   onClose: () => void;
   onSend: Send;
 }) {
-  const [draft, setDraft] = useState<Draft>(() => emptyDraft(request.kind, request.goal));
+  const [draft, setDraft] = useState<Draft>(() => startDraft(request.kind, request.scope));
   const blocked = incomplete(draft);
   const action = ACTIONS[draft.kind];
   return (
     <>
       <Head eyebrow={action.eyebrow} title={action.offer} />
+      {/* What it will be about is the draft's own, not the page's: a chapter
+          of a book carries no goal even where the page has one. */}
+      <About scope={draft.goals.length === 0 ? null : request.scope} />
       <div className="ms-writing-field">
         <label htmlFor="ms-writing-record-title">Title</label>
         <input
@@ -251,14 +255,6 @@ function RecordForm({
           }}
         />
       </div>
-      <Goals
-        name="record"
-        goals={goals}
-        chosen={draft.goals}
-        onChange={(chosen) => {
-          setDraft({ ...draft, goals: chosen });
-        }}
-      />
       <div className="ms-writing-field">
         <span className="ms-writing-label" id="ms-writing-page">
           The page, as it will be written
@@ -338,23 +334,21 @@ function StatusForm({
 /** A question: one row of the register, open, dated by the server. */
 function QuestionForm({
   request,
-  goals,
   sending,
   onClose,
   onSend,
 }: {
-  request: { goal: string | null };
-  goals: Goal[];
+  request: { scope: Scope };
   sending: boolean;
   onClose: () => void;
   onSend: Send;
 }) {
   const [question, setQuestion] = useState("");
-  const [chosen, setChosen] = useState<string[]>(request.goal === null ? [] : [request.goal]);
   const blocked = blockedQuestion(question);
   return (
     <>
-      <Head eyebrow="Ask a question" title="Ask a question" />
+      <Head eyebrow="Ask a question" title={ASK} />
+      <About scope={request.scope} />
       <div className="ms-writing-field">
         <label htmlFor="ms-writing-question">Question</label>
         <input
@@ -366,7 +360,6 @@ function QuestionForm({
           }}
         />
       </div>
-      <Goals name="question" goals={goals} chosen={chosen} onChange={setChosen} />
       <Foot
         confirm="Ask"
         note="Appends a row to memory/questions.md with a fresh id, today's date, and status open."
@@ -376,7 +369,7 @@ function QuestionForm({
         onConfirm={() => {
           onSend(async () => ({
             mode: "question",
-            asked: await askQuestion({ question: question.trim(), goals: chosen }),
+            asked: await askQuestion({ question: question.trim(), goals: scopeGoals(request.scope) }),
           }));
         }}
       />
@@ -477,47 +470,30 @@ function DiscardForm({
 }
 
 /**
- * The goals, as a multiple select over what the ledger carries, live ones
- * first, each labelled by its id and where it stands.
+ * What this contribution will be about, on the first line, read rather than
+ * chosen.
  *
- * It is a select and not a row of checkboxes because a real ledger carries
- * hundreds of goals: a list of that many checkboxes would be the sheet. It is
- * multiple because a record may be about more than one, and choosing none is a
- * record about the project as a whole, which is why nothing here is required.
+ * It was a multiple select over the whole ledger. A picker there asked a human
+ * standing on one page to say again, in a list of six hundred goals, what the
+ * address they were reading already said — and let them say something else,
+ * which is a record filed under a goal nobody was looking at. At project level
+ * it was worse than redundant: naming a goal from the page about the whole
+ * project is the one thing that page cannot mean.
  */
-function Goals({
-  name,
-  goals,
-  chosen,
-  onChange,
-}: {
-  name: string;
-  goals: Goal[];
-  chosen: string[];
-  onChange: (chosen: string[]) => void;
-}) {
-  const field = `ms-writing-${name}-goals`;
+function About({ scope }: { scope: Scope }) {
   return (
-    <div className="ms-writing-field">
-      <label className="ms-writing-label" htmlFor={field}>
-        Goals — optional; none is the project as a whole
-      </label>
-      <select
-        id={field}
-        className="ms-writing-goals"
-        multiple
-        size={goals.length < 8 ? Math.max(goals.length, 2) : 8}
-        value={chosen}
-        onChange={(event) => {
-          onChange([...event.target.selectedOptions].map((option) => option.value));
-        }}
-      >
-        {goals.map((goal) => (
-          <option key={goal.id} value={goal.id}>
-            {goal.id} · {goal.state}
-          </option>
-        ))}
-      </select>
-    </div>
+    <p className="ms-writing-about">
+      About:{" "}
+      {scope === null ? (
+        "this project"
+      ) : (
+        <>
+          {/* A ledger whose goal file has no heading of its own reads by its
+              id, and "g1-s15 — g1-s15" says it twice. */}
+          <span className="ms-mono">{scope.id}</span>
+          {scope.title !== scope.id && <> — {scope.title}</>}
+        </>
+      )}
+    </p>
   );
 }
