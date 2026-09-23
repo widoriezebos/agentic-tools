@@ -5,7 +5,7 @@ import "./backlog.css";
 import { ActSheet, type Request } from "./ActSheet";
 import type { Backlog, Ledger, Row } from "./api";
 import { Board, observedAt, Unplaceable, type Asked } from "./Board";
-import { arcsOn, noFilters, seatsOn, type Filters, type Window } from "./filters";
+import { ANY, arcsOn, NONE, noFilters, seatsOn, type Filters, type Window } from "./filters";
 import { clockTime, shortTip } from "./format";
 import { DraftGroup, LaneGroup } from "./LaneGroup";
 import { anchorFor, closedLanes, shownLanes, UNPLACEABLE, type LaneId } from "./lanes";
@@ -27,6 +27,7 @@ import {
   writeDoneWindow,
   type BacklogView,
 } from "../storage";
+import { aboutLine, useAbout } from "../shell/about";
 import { Button } from "../shell/controls";
 
 /**
@@ -154,6 +155,13 @@ function Read({
   // a measure to read down, the board wants the whole work area to read
   // across and the height that lets its lanes scroll on their own.
   const boarding = ledger.state === "read" && view === "board";
+
+  // What the drawer says this page is about, and what the Partner is given
+  // with a question asked from it: the board, and what it is narrowed to. A
+  // filtered board is not the backlog, and the Partner is told which it is
+  // looking at rather than left to assume.
+  const narrowed = useMemo(() => narrowing(view === "board" ? filters : noFilters), [view, filters]);
+  useAbout(aboutLine("Backlog", view === "board" ? "board" : "list"), { filters: narrowed });
 
   // Where the goal is, once it has been rendered. A layout effect is after
   // the render and before the paint, so the first frame a human sees is
@@ -502,4 +510,29 @@ export function lastTick(ledger: Ledger): string {
     case "failed":
       return `failed at ${clockTime(loop.finishedAt)}: ${loop.message}`;
   }
+}
+
+/**
+ * What the board is narrowed to, as the page spells it, and nothing where it
+ * is not narrowed at all. It is what the Partner is told, so that an answer
+ * about "the board" is an answer about the rows a human can actually see.
+ */
+export function narrowing(filters: Filters): string[] {
+  const said: string[] = [];
+  if (filters.text.trim() !== "") {
+    said.push(`text contains "${filters.text.trim()}"`);
+  }
+  if (filters.priority !== ANY) {
+    said.push(`priority ${filters.priority}`);
+  }
+  if (filters.tier !== ANY) {
+    said.push(`tier ${filters.tier}`);
+  }
+  if (filters.seat !== ANY) {
+    said.push(filters.seat === NONE ? "held by no seat" : `seat ${filters.seat}`);
+  }
+  if (filters.arc !== ANY) {
+    said.push(filters.arc === NONE ? "in no arc" : `arc ${filters.arc}`);
+  }
+  return said;
 }

@@ -103,6 +103,12 @@ func writeRouteOf(path string) (written, bool) {
 	if id, ok := editID(path); ok {
 		return written{route: routeEditDocument, id: id}, true
 	}
+	// The Partner's two writes take the same policy: one admits a turn, one
+	// stops the running one. They are acts of the human at the keyboard, not
+	// of the agent, and they carry no ledger authority of any kind.
+	if route, ok := partnerRouteOf(path); ok {
+		return route, true
+	}
 	// The backlog's four acts are writes under the same policy, and are
 	// routed here so that the method, the host, the site and the origin are
 	// judged for them exactly as they are for the Project's four.
@@ -207,6 +213,10 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.signIn(w, r)
 	case routeSignOut:
 		h.signOut(w, r)
+	case routePartnerTurn:
+		h.partnerTurn(w, r)
+	case routePartnerStop:
+		h.partnerStop(w, r, route.id)
 	}
 }
 

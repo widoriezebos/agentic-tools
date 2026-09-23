@@ -47,6 +47,12 @@ type Record struct {
 	// outlive the run is the one-time-code floor, and that has a file of its
 	// own; see sessions.go. An older reader ignores the key.
 	Sessions []string `json:"sessions,omitempty"`
+	// Partner is one line about the Project Partner on this seat: which
+	// runtime and model it runs, and whether a turn is running right now. It
+	// is here for the reason Authority and Sessions are — `ui status` runs in
+	// another process and cannot ask the server — and it is rewritten as a
+	// turn starts and ends. An older reader ignores the key.
+	Partner string `json:"partner,omitempty"`
 }
 
 // updating serializes this process's rewrites of its own record. One process

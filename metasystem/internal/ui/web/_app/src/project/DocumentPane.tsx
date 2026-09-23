@@ -304,7 +304,16 @@ function Read({
   // being read, from the outline the reader already follows. The first heading
   // of a document is its own title, which the line says once.
   const heading = outline.find((row) => row.id === current);
-  useAbout(aboutLine(document.title, heading?.text ?? ""));
+  // The subject beside it is what the Partner is given: the document's own id
+  // and the revision this page is displaying, so an answer is about the file
+  // as it was read here rather than as it stands on disk a minute later.
+  useAbout(aboutLine(document.title, heading?.text ?? ""), {
+    kind: "document",
+    subject: document.id,
+    title: document.title,
+    revision: document.revision,
+    tab: heading?.text,
+  });
 
   // A change typed here exists nowhere else, so the browser is asked to say so
   // before the page goes. The guard is armed only while there is something to

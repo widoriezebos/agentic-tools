@@ -3,10 +3,11 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 
 import { useAboutLine } from "./about";
-import { Composer, COMPOSER_HINT, COMPOSER_LABEL, COMPOSER_REASON } from "./Composer";
-import { Chip, IconButton } from "./controls";
+import { Composer, COMPOSER_HINT, COMPOSER_LABEL } from "./Composer";
+import { IconButton } from "./controls";
 import { Help } from "../help/Help";
-import { BrainStatement } from "../panes/Brain";
+import { Transcript } from "../partner/Transcript";
+import { usePartner } from "../partner/store";
 
 /**
  * The Project Partner, as a drawer along the bottom of the work area.
@@ -17,11 +18,11 @@ import { BrainStatement } from "../panes/Brain";
  * way to open it. Opening lifts a panel over the foot of the page; the page
  * above keeps its width and keeps scrolling.
  *
- * The panel is the conversation itself: what the Partner has said, which in
- * this build is the one statement that it is not connected, and the composer
- * at the foot of it where the old dock had it. The context line travels with
- * the composer — closed, it is in the bar beside the field; open, it is the
- * panel's own header, over the messages it is the context for.
+ * The panel is the conversation itself — what the human asked, what the
+ * Partner answered, and what it did on the way — with the composer at the foot
+ * of it where the old dock had it. The context line travels with the composer:
+ * closed, it is in the bar beside the field; open, it is the panel's own
+ * header, over the messages it is the context for.
  *
  * The bar's field is one line and the panel's is not. Reaching the one-line
  * field opens the panel, which is where the writing happens, and the sentence
@@ -49,9 +50,7 @@ export type Caret = "none" | "toggle" | "panel";
 export function Drawer({
   open,
   about,
-  draft,
   caret,
-  onDraft,
   onCompose,
   onToggle,
   onEscape,
@@ -59,18 +58,16 @@ export function Drawer({
   open: boolean;
   /** The section's own name, where the pane on screen says nothing. */
   about: string;
-  /** What the human has written, kept by the shell so both fields share it. */
-  draft: string;
   caret: Caret;
-  onDraft: (draft: string) => void;
   /** Writing in the closed bar: the drawer opens and the writing goes on. */
-  onCompose: (draft: string) => void;
+  onCompose: () => void;
   onToggle: () => void;
   onEscape: () => void;
 }) {
   const navigate = useNavigate();
   const line = useAboutLine(about);
   const toggle = useRef<HTMLButtonElement | null>(null);
+  const { draft, setDraft, busy } = usePartner();
 
   useEffect(() => {
     if (caret === "toggle") {
@@ -90,7 +87,6 @@ export function Drawer({
         <span className="ms-drawer-who">
           <span className="ms-drawer-title">Project Partner</span>
           <Help id="partner" />
-          <Chip>unavailable until gate 3</Chip>
         </span>
         {!open && (
           <>
@@ -102,20 +98,14 @@ export function Drawer({
               className="ms-drawer-field"
               type="text"
               placeholder={COMPOSER_HINT}
-              aria-describedby="drawer-reason"
               value={draft}
+              disabled={busy}
               onChange={(event) => {
-                onCompose(event.target.value);
+                setDraft(event.target.value);
+                onCompose();
               }}
-              onFocus={() => {
-                onCompose(draft);
-              }}
+              onFocus={onCompose}
             />
-            {/* The chip says it on screen; the field names the whole sentence,
-                which is what a human who cannot see the chip needs to hear. */}
-            <span className="ms-visually-hidden" id="drawer-reason">
-              {COMPOSER_REASON}
-            </span>
             {context}
           </>
         )}
@@ -154,9 +144,9 @@ export function Drawer({
           <>
             <div className="ms-drawer-head">{context}</div>
             <div className="ms-drawer-messages">
-              <BrainStatement />
+              <Transcript />
             </div>
-            <Composer draft={draft} onDraft={onDraft} onEscape={onEscape} takeCaret={caret === "panel"} />
+            <Composer onEscape={onEscape} takeCaret={caret === "panel"} />
           </>
         )}
       </div>

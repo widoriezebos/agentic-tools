@@ -70,6 +70,11 @@ func main() {
 	// seconds is a current board, and this is how that is stood in front of.
 	lastChange := flag.Duration("last-change", time.Minute,
 		"how long ago the accepted tip was committed, which is a fact and never a warning")
+	// The Project Partner, from a canned ACP server. `fake` is not an admitted
+	// runtime and never will be: it is this walkthrough's own server, in this
+	// process, over a pipe, so the drawer can be driven end to end without an
+	// agent, a key, or a network.
+	partnerRuntime := flag.String("partner", "", "serve a Project Partner from the canned ACP server: fake")
 	flag.Parse()
 	if *freshness != string(snapshot.FreshnessCurrent) &&
 		*freshness != string(snapshot.FreshnessBehind) &&
@@ -177,6 +182,16 @@ func main() {
 			}}, nil
 		},
 	}
+	if *partnerRuntime != "" {
+		if *partnerRuntime != "fake" {
+			log.Fatalf("-partner takes fake, not %q", *partnerRuntime)
+		}
+		service := fakePartner(checkout)
+		info.Partner = service
+		info.PartnerConfigured = true
+		defer service.Close()
+	}
+
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
 		log.Fatal(err)

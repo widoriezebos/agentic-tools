@@ -133,6 +133,14 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // composed on the server from what that server already reads, so there is
   // one resource here and not five.
   ["overview/api.ts", 1, ["/api/overview"]],
+  // The Project Partner. Three requests through one call site: the
+  // conversation, read when the page loads and again on every reconnect of the
+  // one stream below; a send, when a human presses Send; and a stop, when they
+  // press Stop. Nothing here polls — the turn's own beats arrive on that
+  // stream — and nothing here renders Markdown either: a complete answer goes
+  // through the reader's own preview route, which is project/api.ts's call
+  // site and not a second one.
+  ["partner/api.ts", 1, ["/api/partner", "/api/partner/turns", "/stop"]],
 ];
 
 /**

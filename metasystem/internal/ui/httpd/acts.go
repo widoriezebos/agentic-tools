@@ -52,6 +52,10 @@ const (
 	// it used to offer alone. The restart still works and is still named; the
 	// code is the one that needs no terminal.
 	signInRemedy = "sign in with this seat's one-time code to act as yourself"
+	// partnerNeedsSignIn is what a cookie-less act is told on a seat that runs
+	// a Partner. It says the rule and the remedy in one sentence, and the
+	// browser opens the sign-in sheet on it exactly as it does for the others.
+	partnerNeedsSignIn = "a Partner runs on this seat, so acts need a signed-in human; " + signInRemedy
 )
 
 // AuthorityInfo is what the server's boot-time observation found, as every
@@ -217,6 +221,19 @@ func (h *handler) mayAct(w http.ResponseWriter, r *http.Request) (*session.Sessi
 	case session.Expired:
 		w.WriteHeader(http.StatusForbidden)
 		writeSignInRefusal(w, "expired", expiredRefusal)
+		return nil, false
+	}
+	// The boot proof is the second hand this server can act under, and it is
+	// the one an agent on this machine could reach: a local process sends a
+	// request with no cookie, the HTTP checks pass because a non-browser
+	// sends no Origin and no Sec-Fetch-Site, and the act publishes under the
+	// human who started the server. That was tolerable while nothing on this
+	// seat could send such a request. A Partner runtime can, so from the
+	// moment one is configured the boot proof stops answering for acts and
+	// every act needs a signed-in human.
+	if h.info.PartnerConfigured {
+		w.WriteHeader(http.StatusForbidden)
+		writeSignInRefusal(w, "partner", partnerNeedsSignIn)
 		return nil, false
 	}
 	if h.info.Authority.Proven {

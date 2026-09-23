@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -210,6 +211,46 @@ func runUI(verb string, args []string) int {
 			})
 		}
 
+		// The Project Partner, where this seat named one. Naming a runtime is
+		// what turns it on; it is also what closes the boot proof's path to
+		// the act routes, so the flag travels to the handler whether or not
+		// the runtime could be admitted. An admission that refuses is not a
+		// server that refuses to start: the pages still read, and the
+		// Partner's own routes answer 503 with the refusal's own words.
+		partnerRuntime, partnerModel, partnerCommand, partnerErr := config.UIPartner(confPath)
+		if partnerErr != nil {
+			return refuse(partnerErr.Error())
+		}
+		var partnerService *partner.Service
+		partnerRefusal := ""
+		if partnerRuntime != "" {
+			admitted, admitErr := partner.Admit(partnerRuntime, strings.Fields(partnerCommand), partnerModel, roots.Checkout)
+			if admitErr != nil {
+				partnerRefusal = admitErr.Error()
+				fmt.Fprintln(os.Stderr, "interface Partner: "+partnerRefusal)
+			} else {
+				host := partner.NewHost(admitted, roots.Checkout,
+					filepath.Join(roots.StateRoot, filepath.FromSlash(partner.Relative), "wire.jsonl"))
+				partnerService = partner.NewService(admitted, host,
+					func(human string) (*partner.Conversation, error) {
+						return partner.OpenConversation(roots.StateRoot, human)
+					},
+					partner.Facts{
+						Observe: ledger.Observe,
+						Document: func(id string) (project.Document, error) {
+							return project.Read(projectRoots(roots), id, time.Now().UTC())
+						},
+					}, func() time.Time { return time.Now().UTC() })
+				partnerService.Announce(func(busy bool) {
+					_ = lifecycle.Update(roots.StateRoot, func(r *lifecycle.Record) {
+						r.Partner = partnerLine(admitted, busy)
+					})
+				})
+				defer partnerService.Close()
+				fmt.Fprintln(os.Stderr, "interface Partner: "+partnerLine(admitted, false))
+			}
+		}
+
 		err = lifecycle.Serve(ctx, lifecycle.Options{
 			Roots: roots, Listen: listen, EngineBuild: supervise.BuildStamp, Prober: prober,
 			Authority: authority.Line(),
@@ -381,6 +422,12 @@ func runUI(verb string, args []string) int {
 					Visit: func(human string, now time.Time) (time.Time, bool, error) {
 						return overview.Visit(roots.StateRoot, human, now)
 					},
+					// The Project Partner. The flag travels whether or not the
+					// runtime was admitted, because it decides the act routes'
+					// policy and not only the Partner's own.
+					Partner:           partnerService,
+					PartnerConfigured: partnerRuntime != "",
+					PartnerRefusal:    partnerRefusal,
 				}, bound, bundle)
 			},
 			Ready: func(address string) {
@@ -408,6 +455,20 @@ func runUI(verb string, args []string) int {
 		return 0
 	}
 	return 2
+}
+
+// partnerLine is the one line `ui status` prints about the Partner: which
+// runtime answers on this seat, which model it runs, and whether it is
+// answering right now.
+func partnerLine(runtime partner.Runtime, busy bool) string {
+	line := "Project Partner: " + runtime.Name
+	if runtime.Model != "" {
+		line += " (" + runtime.Model + ")"
+	}
+	if busy {
+		return line + ", answering"
+	}
+	return line + ", idle"
 }
 
 // firstNamed is the first of these that names somebody. It is how the seat's

@@ -10,6 +10,18 @@
  * the life of the page, and src/cuts.test.ts names this file and this resource
  * as the only place it may be opened.
  *
+ * The Project Partner's beats ride the same connection, under their own event
+ * type. They are the same kind of thing for the same reason — the Partner
+ * speaks while it composes an answer, and the alternative is polling for the
+ * rest of a sentence — and a second stream would be a second reconnection
+ * policy over the same page. They carry no id of their own, deliberately: the
+ * browser sends the last id it saw back as Last-Event-ID and the server
+ * resumes the notification journal from it, so a Partner id there would name
+ * something that journal cannot find and the reconnect would lose every
+ * notification in between. The Partner joins its beats to the conversation's
+ * snapshot instead, by turn and sequence, which is what the open listener
+ * below is for.
+ *
  * Nothing here retries. EventSource reconnects on its own when the connection
  * drops, and sends back the id of the last event it received; the server reads
  * that as Last-Event-ID and resumes from it. A retry loop of our own would be
@@ -18,11 +30,45 @@
  */
 
 import type { Notification } from "./notifications";
+import type { PartnerEvent } from "../partner/api";
 
 const STREAM = "/api/notifications/stream";
 
-/** The event the server names each notification with. */
+/** The two events the server names on this stream. */
 const EVENT = "notification";
+const PARTNER = "partner";
+
+/**
+ * The listeners that are not the notification store's.
+ *
+ * They are held here, beside the connection, rather than passed in, because
+ * there is one connection and more than one thing on the page that reads from
+ * it: the Partner's conversation is held in its own store, above the drawer
+ * and the focused page, and it must not depend on which provider happens to
+ * open the connection.
+ */
+const partnerListeners = new Set<(event: PartnerEvent) => void>();
+const openListeners = new Set<() => void>();
+
+/** Listen for the Partner's beats. The returned function stops listening. */
+export function onPartnerEvent(listener: (event: PartnerEvent) => void): () => void {
+  partnerListeners.add(listener);
+  return () => {
+    partnerListeners.delete(listener);
+  };
+}
+
+/**
+ * Listen for the connection opening, which happens once on load and again on
+ * every reconnect. It is what the Partner re-reads its conversation on: a
+ * reconnect means beats may have been missed, and the snapshot is the truth.
+ */
+export function onStreamOpen(listener: () => void): () => void {
+  openListeners.add(listener);
+  return () => {
+    openListeners.delete(listener);
+  };
+}
 
 /**
  * Open the stream. `arrived` is called once per notification, in the order
@@ -47,9 +93,32 @@ export function openNotificationStream(arrived: (notification: Notification) => 
     }
     arrived(notification);
   };
+  const partner = (event: MessageEvent<string>) => {
+    let beat: PartnerEvent;
+    try {
+      beat = JSON.parse(event.data) as PartnerEvent;
+    } catch {
+      return;
+    }
+    if (typeof beat.turn !== "string" || beat.turn === "" || typeof beat.seq !== "number") {
+      return;
+    }
+    for (const held of partnerListeners) {
+      held(beat);
+    }
+  };
+  const opened = () => {
+    for (const held of openListeners) {
+      held();
+    }
+  };
   source.addEventListener(EVENT, listener as EventListener);
+  source.addEventListener(PARTNER, partner as EventListener);
+  source.addEventListener("open", opened);
   return () => {
     source.removeEventListener(EVENT, listener as EventListener);
+    source.removeEventListener(PARTNER, partner as EventListener);
+    source.removeEventListener("open", opened);
     source.close();
   };
 }

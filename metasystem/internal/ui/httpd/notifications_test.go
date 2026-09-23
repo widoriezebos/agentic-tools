@@ -171,7 +171,14 @@ type opened struct {
 // as it is produced rather than buffered into a recorder.
 func streamed(t *testing.T, path string, lastEventID string) *opened {
 	t.Helper()
-	served := httptest.NewServer(New(Info{NotificationJournal: path}, loopback(), testBundle()))
+	return streamedFrom(t, Info{NotificationJournal: path}, lastEventID)
+}
+
+// streamedFrom is streamed over a server this test composed itself, which is
+// how the Partner's half of the one stream is opened.
+func streamedFrom(t *testing.T, info Info, lastEventID string) *opened {
+	t.Helper()
+	served := httptest.NewServer(New(info, loopback(), testBundle()))
 	ctx, cancel := context.WithCancel(context.Background())
 	asked, err := http.NewRequestWithContext(ctx, http.MethodGet, served.URL+notificationsStreamPath, nil)
 	if err != nil {

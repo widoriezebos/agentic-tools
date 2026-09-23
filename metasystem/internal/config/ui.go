@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,6 +20,21 @@ const (
 	// UIHumanKey is the handle this seat signs in as when no enrolled
 	// terminal started the server. Unset, the sign-in sheet asks once.
 	UIHumanKey = "ui.human"
+	// UIPartnerRuntimeKey names which agent answers as the Project Partner:
+	// claude, codex or devin. Unset — the default — is a seat with no
+	// Partner, which is deliberate: configuring one also closes the boot
+	// proof's path to the act routes, and no seat should have that happen to
+	// it because a default changed under it.
+	UIPartnerRuntimeKey = "ui.partner.runtime"
+	// UIPartnerModelKey is the model the Partner's session runs. Unset is the
+	// runtime's own default for that runtime; a model the runtime cannot
+	// select refuses the turn with the runtime's own words.
+	UIPartnerModelKey = "ui.partner.model"
+	// UIPartnerCommandPrefix is where a seat says how to start one runtime's
+	// ACP server, as a command line: ui.partner.command.claude,
+	// ui.partner.command.codex, ui.partner.command.devin. Unset is the
+	// runtime's published entry point on PATH.
+	UIPartnerCommandPrefix = "ui.partner.command."
 )
 
 // UIListen resolves the interface listen address and returns it unvalidated;
@@ -111,6 +127,50 @@ func uiHuman(confPath string, lookupEnv func(string) (string, bool)) (string, er
 	})
 	if err != nil {
 		return "", fmt.Errorf("resolve %s: %w", UIHumanKey, err)
+	}
+	return value, nil
+}
+
+// UIPartner resolves the Partner's three settings: which runtime answers,
+// which model it runs, and the command that starts that runtime's ACP server.
+// An empty runtime is a seat with no Partner, and the other two are then not
+// read at all — a seat that named no Partner has no command to resolve.
+func UIPartner(confPath string) (runtime, model, command string, err error) {
+	return uiPartner(confPath, os.LookupEnv)
+}
+
+func uiPartner(confPath string, lookupEnv func(string) (string, bool)) (string, string, string, error) {
+	runtime, err := uiPartnerValue(confPath, UIPartnerRuntimeKey, lookupEnv)
+	if err != nil {
+		return "", "", "", err
+	}
+	runtime = strings.TrimSpace(runtime)
+	if runtime == "" {
+		return "", "", "", nil
+	}
+	model, err := uiPartnerValue(confPath, UIPartnerModelKey, lookupEnv)
+	if err != nil {
+		return "", "", "", err
+	}
+	command, err := uiPartnerValue(confPath, UIPartnerCommandPrefix+runtime, lookupEnv)
+	if err != nil {
+		return "", "", "", err
+	}
+	return runtime, strings.TrimSpace(model), strings.TrimSpace(command), nil
+}
+
+// uiPartnerValue reads one ui.partner. key the way every other ui. key is
+// read, defaulting to empty.
+func uiPartnerValue(confPath, key string, lookupEnv func(string) (string, bool)) (string, error) {
+	value, _, err := Get(GetParams{
+		Key:        key,
+		Default:    "",
+		DefaultSet: true,
+		ConfPath:   confPath,
+		LookupEnv:  lookupEnv,
+	})
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", key, err)
 	}
 	return value, nil
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -124,6 +125,19 @@ type Info struct {
 	// Now is this server's clock, so that a test can say when a page was
 	// composed. A nil Now is time.Now, which is what every run uses.
 	Now func() time.Time
+	// Partner is the Project Partner's conversation owner, or nil on a seat
+	// that admitted no runtime. The three Partner routes and the Partner half
+	// of the event stream read it; nothing else does.
+	Partner *partner.Service
+	// PartnerConfigured says that ui.partner.runtime names a runtime on this
+	// seat, whether or not the runtime could be admitted. It is separate from
+	// Partner because it decides something else: a seat with a Partner on it
+	// no longer admits a cookie-less act, and a Partner that failed to start
+	// is still a Partner that a local process could have started.
+	PartnerConfigured bool
+	// PartnerRefusal is why a configured runtime was not admitted, in the
+	// admission's own words, which the Partner routes answer 503 with.
+	PartnerRefusal string
 }
 
 // absentBundleStatement is what a page request gets from an engine built
@@ -272,6 +286,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == overviewPath {
 		h.overview(w, r)
+		return
+	}
+	if r.URL.Path == partnerPath {
+		h.partner(w, r)
 		return
 	}
 	if id, beneath := strings.CutPrefix(r.URL.Path, documentPrefix); beneath && id != "" {

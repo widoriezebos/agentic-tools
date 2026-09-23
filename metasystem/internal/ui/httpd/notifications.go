@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 )
 
 // The two resources, matched exactly: what lies beneath them belongs to no
@@ -156,6 +157,17 @@ func (h *handler) notificationStream(w http.ResponseWriter, r *http.Request) {
 		})
 	}()
 
+	// The Partner's beats ride this same stream, under their own event type
+	// and with no id of their own. There is one stream per page by rule, and
+	// the alternative to sharing it is a second one — which the cut guard
+	// refuses and which would be a second reconnection policy besides.
+	var partnerEvents <-chan partner.Event
+	if h.info.Partner != nil {
+		events, stop := h.info.Partner.Subscribe()
+		defer stop()
+		partnerEvents = events
+	}
+
 	beat := time.NewTicker(notificationHeartbeat)
 	defer beat.Stop()
 	for {
@@ -167,6 +179,14 @@ func (h *handler) notificationStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if !writeNotices(w, flusher, notices) {
+				return
+			}
+		case event, open := <-partnerEvents:
+			if !open {
+				partnerEvents = nil
+				continue
+			}
+			if !writePartnerEvent(w, flusher, event) {
 				return
 			}
 		case <-beat.C:

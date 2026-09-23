@@ -51,24 +51,6 @@ const expected: Empty[] = [
     action: null,
   },
   {
-    id: "brain",
-    kind: "not projected",
-    heading: "Your Project Partner is not connected in this build",
-    body: "Conversation, shared context, activity, and actions.",
-    note: "Arrives with gate 3",
-    link: null,
-    action: null,
-  },
-  {
-    id: "subject",
-    kind: "not projected",
-    heading: "No subject selected",
-    body: "The subject panel will show the artifact under discussion.",
-    note: "Arrives with gate 3",
-    link: null,
-    action: null,
-  },
-  {
     id: "not-found",
     kind: "not a section",
     heading: "No page at this address",
@@ -89,7 +71,7 @@ const expected: Empty[] = [
  * empty state, because their panes say what they read rather than what has not
  * been built; every other section still has a row above.
  */
-const PROJECTED = ["overview", "backlog", "project"];
+const PROJECTED = ["overview", "backlog", "project", "brain"];
 
 const unprojected = sections.filter((section) => !PROJECTED.includes(section.id));
 
@@ -114,7 +96,7 @@ describe("the empty states", () => {
 
   it("cover every destination that has a pane, and nothing more", () => {
     const covered = empties.map((empty) => empty.id).sort();
-    const wanted = [...unprojected.map((section) => section.id), "subject", "not-found"].sort();
+    const wanted = [...unprojected.map((section) => section.id), "not-found"].sort();
     expect(covered).toEqual(wanted);
     for (const section of unprojected) {
       expect(emptyFor(section.id).id).toBe(section.id);

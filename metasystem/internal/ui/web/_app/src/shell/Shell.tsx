@@ -7,7 +7,7 @@ import { Drawer, type Caret } from "./Drawer";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Header } from "./Header";
 import { useWorkspaceState, type WorkspaceState } from "./identity";
-import { PHONE_QUERY, RAIL_QUERY, useMediaQuery, WIDE_QUERY } from "./media";
+import { PHONE_QUERY, RAIL_QUERY, useMediaQuery } from "./media";
 import { Rail } from "./Rail";
 import { RefreshProvider } from "./refresh";
 import { Sheet } from "./Sheet";
@@ -15,6 +15,7 @@ import { BacklogPane } from "../backlog/BacklogPane";
 import { sectionHelp } from "../help/terms";
 import { useNotifications } from "../notifications/store";
 import { OverviewPane } from "../overview/OverviewPane";
+import { PartnerProvider } from "../partner/store";
 import { Focused } from "../panes/Focused";
 import { NotFoundPane, SectionPane } from "../panes/sections";
 import { SettingsPane } from "../panes/Settings";
@@ -63,7 +64,6 @@ const WORK_PANEL = "work";
 const DRAWER_PANEL = "partner";
 export function Shell() {
   const location = useLocation();
-  const wide = useMediaQuery(WIDE_QUERY);
   const phone = useMediaQuery(PHONE_QUERY);
   const railFits = useMediaQuery(RAIL_QUERY);
 
@@ -72,11 +72,10 @@ export function Shell() {
   const [theme, setTheme] = useState<ThemePreference>(() => readTheme());
   const [systemDark, setSystemDark] = useState(() => systemIsDark());
   const [railSheetOpen, setRailSheetOpen] = useState(false);
-  // What the human has written to their Project Partner, and where the caret
-  // belongs once the drawer has opened or closed around it. Both are the
-  // shell's because the bar's field and the panel's are two elements for one
-  // sentence, and opening replaces the one with the other.
-  const [draft, setDraft] = useState("");
+  // Where the caret belongs once the drawer has opened or closed around it.
+  // The draft itself belongs to the conversation store now: the bar's field,
+  // the panel's and the focused page's are three elements for one sentence,
+  // and the store is what all three read it from.
   const [caret, setCaret] = useState<Caret>("none");
 
   // The stored height is read once, as the layout this group opens with; from
@@ -153,7 +152,7 @@ export function Shell() {
   const panes = (
     <Routes>
       <Route path="/" element={<Navigate to={HOME_PATH} replace />} />
-      <Route path="/brain" element={<Focused wide={wide} />} />
+      <Route path="/brain" element={<Focused />} />
       {/* Backlog reads the ledger and Project reads the repository; the other
           four say which gate brings them. One goal is the ledger's, so its page
           is Backlog's, however much of the project's own records it shows.
@@ -191,11 +190,8 @@ export function Shell() {
       <Drawer
         open={drawn}
         about={sectionTitle}
-        draft={draft}
         caret={caret}
-        onDraft={setDraft}
-        onCompose={(written) => {
-          setDraft(written);
+        onCompose={() => {
           if (!drawn) {
             setDrawer(true, "panel");
           }
@@ -212,9 +208,13 @@ export function Shell() {
 
   return (
     <AboutProvider>
-      {/* The section's refresh is offered by whichever pane is on screen and
-          shown in the header, so the provider has to stand above both. */}
-      <RefreshProvider>
+      {/* The conversation stands above the drawer and the focused page, and
+          below the page's own context: it reads what the pane says it is about
+          so a question carries it. */}
+      <PartnerProvider>
+        {/* The section's refresh is offered by whichever pane is on screen and
+            shown in the header, so the provider has to stand above both. */}
+        <RefreshProvider>
         <div className="ms-shell">
           <a className="ms-skip-link" href="#content">
             Skip to content
@@ -307,7 +307,8 @@ export function Shell() {
             </Sheet>
           )}
         </div>
-      </RefreshProvider>
+        </RefreshProvider>
+      </PartnerProvider>
     </AboutProvider>
   );
 }

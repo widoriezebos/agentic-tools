@@ -21,6 +21,11 @@
  *
  * Not found is neither kind. An address that matches nothing has one honest
  * next step, so it keeps its action.
+ *
+ * The Project Partner's two rows are gone. It is connected now: the drawer and
+ * the focused page render a real conversation, so the section says what it
+ * read like every other projected one, and the subject panel that was going to
+ * hold a pinned artifact is not in this slice at all.
  */
 
 export type EmptyKind = "not projected" | "not a section";
@@ -72,24 +77,6 @@ export const empties: readonly Empty[] = [
     heading: "Settings pages are not built yet",
     body: "Runtimes and models, connections and channels, identity and authority, execution defaults, storage and retention.",
     note: "Arrives with gate 7",
-    link: null,
-    action: null,
-  },
-  {
-    id: "brain",
-    kind: "not projected",
-    heading: "Your Project Partner is not connected in this build",
-    body: "Conversation, shared context, activity, and actions.",
-    note: "Arrives with gate 3",
-    link: null,
-    action: null,
-  },
-  {
-    id: "subject",
-    kind: "not projected",
-    heading: "No subject selected",
-    body: "The subject panel will show the artifact under discussion.",
-    note: "Arrives with gate 3",
     link: null,
     action: null,
   },

@@ -1,0 +1,97 @@
+/*
+ * The conversation, in the drawer and in the focused view.
+ *
+ * One set of rules for both, because they are two sizes of one thing. Colour
+ * comes from the tokens and from nowhere else; nothing here is a hex value and
+ * nothing here is a style attribute.
+ */
+
+.ms-partner-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-bottom: 8px;
+}
+
+.ms-partner-said {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-partner-said--human {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+}
+
+.ms-partner-who {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ms-text-3);
+}
+
+.ms-partner-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ms-text);
+  white-space: pre-wrap;
+}
+
+.ms-partner-activity {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ms-text-3);
+  font-style: italic;
+}
+
+.ms-partner-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ms-text-3);
+}
+
+.ms-partner-failed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ms-danger);
+}
+
+.ms-partner-install {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ms-border);
+  border-radius: 6px;
+  background: var(--ms-surface-2);
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.ms-partner-stop {
+  display: flex;
+  padding-top: 4px;
+}
+
+/*
+ * A complete answer is the reader's own elements, so it takes the reader's own
+ * rhythm — at the transcript's size rather than the document page's.
+ */
+.ms-partner-answer {
+  font-size: 14px;
+}
+
+.ms-partner-answer > :first-child {
+  margin-top: 0;
+}
+
+.ms-partner-answer > :last-child {
+  margin-bottom: 0;
+}

@@ -356,3 +356,67 @@ func TestAnEngineWithoutTheActsSaysSo(t *testing.T) {
 	testutil.Require(t, "status", response.Code, http.StatusInternalServerError)
 	testutil.Expect(t, "the reason", actRefusal(t, response).Error, "this engine was built without the backlog's acts")
 }
+
+// A seat that runs a Partner stops admitting a cookie-less act, however good
+// its boot proof is. That proof is the one an agent on this machine could
+// reach — a local process sends a request with no cookie, and a non-browser
+// sends no Origin and no Sec-Fetch-Site — so from the moment a Partner runs
+// here, an act needs a signed-in human and nothing else will do.
+func TestASeatWithAPartnerRefusesACookielessActEvenWithABootProof(t *testing.T) {
+	t.Parallel()
+
+	for path, body := range map[string]string{
+		"/api/backlog/goals/waiting/approve":  wholeBudget,
+		"/api/backlog/goals/waiting/withdraw": `{"reason":"no"}`,
+		"/api/backlog/goals/waiting/priority": `{"priority":2,"sequence":3}`,
+		"/api/backlog/goals":                  wholeIntake,
+	} {
+		rec := &acted{authorized: proven()}
+		info := rec.acting()
+		info.PartnerConfigured = true
+		served := New(info, loopback(), testBundle())
+
+		response := post(t, served, path, body, nil)
+
+		testutil.Require(t, "status for "+path, response.Code, http.StatusForbidden)
+		refusal := actRefusal(t, response)
+		testutil.Expect(t, "the reason for "+path, refusal.Error, partnerNeedsSignIn)
+		testutil.Expect(t, "the code for "+path, refusal.Code, "partner")
+		testutil.Expect(t, "the remedy is in the page for "+path, refusal.SignIn, true)
+		testutil.Expect(t, "the engine was not reached for "+path, rec.reached(), 0)
+	}
+}
+
+// A signed-in human still acts on a seat that runs a Partner: what closed is
+// the path no human is at the end of.
+func TestASignedInHumanStillActsOnASeatWithAPartner(t *testing.T) {
+	t.Parallel()
+
+	signing := newSigning(t, "Wido", workingSecret)
+	rec := &acted{authorized: proven(), sessions: signing.store}
+	info := rec.acting()
+	info.PartnerConfigured = true
+	served := New(info, loopback(), testBundle())
+
+	signedIn := post(t, served, signInPath,
+		`{"code":"`+routeCode(t, routeNow)+`","human":""}`, nil)
+	testutil.Require(t, "signed in", signedIn.Code, http.StatusOK)
+
+	response := post(t, served, "/api/backlog/goals/waiting/approve", wholeBudget,
+		carrying(mintedCookie(t, signedIn).Value))
+	testutil.Require(t, "status", response.Code, http.StatusOK)
+	testutil.Expect(t, "the act published under the human at the keyboard", rec.hands, []string{"Wido"})
+}
+
+// A seat with no Partner keeps the boot proof's path exactly as it was.
+func TestASeatWithNoPartnerKeepsTheBootProofsPath(t *testing.T) {
+	t.Parallel()
+
+	rec := &acted{authorized: proven()}
+	served := New(rec.acting(), loopback(), testBundle())
+
+	response := post(t, served, "/api/backlog/goals/waiting/approve", wholeBudget, nil)
+
+	testutil.Require(t, "status", response.Code, http.StatusOK)
+	testutil.Expect(t, "the boot proof carried it", rec.hands, []string{""})
+}

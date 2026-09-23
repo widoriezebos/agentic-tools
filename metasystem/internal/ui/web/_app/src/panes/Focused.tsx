@@ -1,55 +1,27 @@
-import { useState } from "react";
-
-import { BrainStatement, SubjectStatement } from "./Brain";
+import { Transcript } from "../partner/Transcript";
 import { Composer } from "../shell/Composer";
-import { FocusSwitch, type FocusedView } from "../shell/FocusSwitch";
 
 /**
- * The focused conversation at /brain.
+ * The focused conversation at /brain: the whole exchange, in one column, with
+ * the composer under it. The drawer is not shown here — the conversation is
+ * already in front of the human — and there is no second draft: the store
+ * holds one, so expanding into this view carries whatever was half-written in
+ * the drawer rather than stranding it there.
  *
- * Wide: the conversation beside a fixed subject panel, the dock hidden because
- * the conversation is already in front of the human. Narrower: one column, and
- * a switch, which always opens on the conversation.
+ * There is no subject panel yet. Pinning a subject, and sending a selection to
+ * the conversation, are the next slice's; a panel that could only say it was
+ * empty would be a third of the width spent on a sentence.
  */
-export function Focused({ wide }: { wide: boolean }) {
-  const [view, setView] = useState<FocusedView>("conversation");
-
-  if (wide) {
-    return (
-      <div className="ms-focused">
-        <main id="content" className="ms-focused-conversation" tabIndex={-1}>
-          <h1 className="ms-visually-hidden">Project Partner</h1>
-          <Conversation />
-        </main>
-        <aside className="ms-subject-panel" aria-label="Subject">
-          <SubjectStatement />
-        </aside>
-      </div>
-    );
-  }
-
+export function Focused() {
   return (
-    <main id="content" className="ms-focused-conversation ms-focused--stacked" tabIndex={-1}>
+    <main id="content" className="ms-focused-conversation" tabIndex={-1}>
       <h1 className="ms-visually-hidden">Project Partner</h1>
-      <FocusSwitch view={view} onChange={setView} />
-      {view === "conversation" ? <Conversation /> : <SubjectStatement />}
-    </main>
-  );
-}
-
-/**
- * The conversation in full: what the Partner has said, and the composer under
- * it. The draft is this view's own — the drawer is not on screen here, so
- * there is nothing for it to be carried between.
- */
-function Conversation() {
-  const [draft, setDraft] = useState("");
-  return (
-    <div className="ms-focused-column">
-      <div className="ms-dock-statement">
-        <BrainStatement />
+      <div className="ms-focused-column">
+        <div className="ms-dock-statement">
+          <Transcript />
+        </div>
+        <Composer />
       </div>
-      <Composer draft={draft} onDraft={setDraft} />
-    </div>
+    </main>
   );
 }

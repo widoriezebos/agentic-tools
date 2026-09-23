@@ -43,6 +43,11 @@ func StatusResult(stateRoot string, prober identity.Prober, digest func() (strin
 	// Who else is acting through this server: one line per browser a human
 	// signed into with the seat's one-time code, with when it stops.
 	result.Lines = append(result.Lines, rec.Sessions...)
+	// The Project Partner, where one is configured: which runtime answers on
+	// this seat, and whether it is answering right now.
+	if rec.Partner != "" {
+		result.Lines = append(result.Lines, rec.Partner)
+	}
 	if digest == nil {
 		digest = ExecutableDigest
 	}

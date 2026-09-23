@@ -144,7 +144,14 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
   // What the drawer says this page is about: the page, and the tab of it that
   // is open, which is the only section on the screen.
   const here = sections.find((section) => section.id === open);
-  useAbout(aboutLine(page, here?.title ?? ""));
+  // A goal's page is about that goal, by its ledger id, so the Partner is
+  // given the row the board shows rather than the page's label. The project's
+  // own page is about no one record, and says only which tab is open.
+  const here2 = here?.title ?? "";
+  useAbout(
+    aboutLine(page, here2),
+    goal === null ? { tab: here2 } : { kind: "goal", subject: goal, title: goal, tab: here2 },
+  );
 
   // Opening a tab is going somewhere: the address carries it, so a section of
   // the project can be sent to somebody and survives a reload. What the
