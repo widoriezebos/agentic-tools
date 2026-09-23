@@ -1,8 +1,8 @@
-import { AlertTriangle, Square } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router";
 
-import type { Look, Message, Page } from "./api";
+import type { Message, Page } from "./api";
 import { chipOf } from "./capture";
 import { Looked } from "./Looked";
 import { namesIn, runsIn, type Names } from "./references";
@@ -11,10 +11,17 @@ import { usePartner } from "./store";
 import "./partner.css";
 import { previewDocument, type Block } from "../project/api";
 import { Markdown } from "../project/Markdown";
-import { Button } from "../shell/controls";
 
 /**
  * The conversation, as a human reads it.
+ *
+ * One column, one measure, two voices. A question is a block in the surface
+ * colour against the right edge, at most two thirds of the measure, with the
+ * page it was asked from as a tiny label under it; an answer is plain prose in
+ * the reading face, at the size the document pages are read at, with no box
+ * around it — an answer is read, not received. Under each answer stands one
+ * muted line saying what it was given and what it looked at, and nothing else
+ * stands between two turns.
  *
  * An answer arrives in pieces, so while it is arriving it is shown as plain
  * paragraphs: there is no half-parsed Markdown that is worth showing, and a
@@ -25,12 +32,10 @@ import { Button } from "../shell/controls";
  * nothing it writes can become markup: there is no HTML string anywhere on
  * this path.
  *
- * Three things stand around each exchange. A human's message wears the capture
- * it was asked from, so "these" still names something weeks later and clicking
- * it goes back to the board that made it mean that. An answer says what it was
- * read from — the page first, then every tool call, with its outcome — and
- * what it was given, in a stamp that speaks of the past. And the names in an
- * answer become links, where and only where they point at one thing.
+ * A human's message wears the capture it was asked from, so "these" still names
+ * something weeks later and clicking it goes back to the board that made it
+ * mean that. And the names in an answer become links, where and only where they
+ * point at one thing.
  */
 
 /** How far back the transcript is rendered through the reader's route.
@@ -42,32 +47,85 @@ import { Button } from "../shell/controls";
  */
 const RENDERED = 25;
 
+/**
+ * How near the end counts as being at it. A line of prose is under this, so a
+ * human who has read to the bottom is followed down rather than offered a pill
+ * for the pixel they are short of.
+ */
+const AT_END = 24;
+
 export function Transcript() {
   const { store } = usePartner();
   const messages = store.messages;
   const firstRendered = Math.max(0, messages.length - RENDERED);
-  const foot = useRef<HTMLDivElement | null>(null);
+  const column = useRef<HTMLDivElement | null>(null);
+  // Whether the human is reading the end of the conversation. It is the
+  // scroller's own answer, kept in a ref because what matters is where they
+  // were before the new words arrived, not where the new words have left them.
+  const following = useRef(true);
+  const [behind, setBehind] = useState(false);
   // Every name this workspace answers to, built once per index rather than
   // once per answer: the conversation re-renders on every beat.
   const names = useMemo(() => namesIn(store.index), [store.index]);
-  // The newest words are the ones a human is reading, so the conversation
-  // follows them down as they arrive. It is the scroller's own scrollTop and
-  // not scrollIntoView, which would move every scrollable ancestor and carry
-  // the work area off the screen with it.
+
+  // Where the human is in the conversation, from the scroller itself. It is
+  // the only thing that clears the pill: no timer takes it away.
   useEffect(() => {
-    const scroller = scrollerOf(foot.current);
+    const scroller = scrollerOf(column.current);
+    if (scroller === null) {
+      return;
+    }
+    const scrolled = () => {
+      const end = atEnd(scroller);
+      following.current = end;
+      if (end) {
+        setBehind(false);
+      }
+    };
+    scroller.addEventListener("scroll", scrolled, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", scrolled);
+    };
+  }, []);
+
+  // The newest words are the ones a human at the end is reading, so the
+  // conversation follows them down as they arrive. It is the scroller's own
+  // scrollTop and not scrollIntoView, which would move every scrollable
+  // ancestor and carry the work area off the screen with it. A human who has
+  // scrolled up is left where they are, and told there is more below.
+  useEffect(() => {
+    const scroller = scrollerOf(column.current);
+    if (scroller === null) {
+      return;
+    }
+    if (following.current) {
+      scroller.scrollTop = scroller.scrollHeight;
+      return;
+    }
+    setBehind(true);
+  }, [messages.length, store.live.text, store.live.doing, store.live.looked.length, store.refusal]);
+
+  const toEnd = () => {
+    const scroller = scrollerOf(column.current);
     if (scroller !== null) {
       scroller.scrollTop = scroller.scrollHeight;
     }
-  }, [messages.length, store.live.text, store.live.doing, store.live.looked.length, store.refusal]);
+    following.current = true;
+    setBehind(false);
+  };
+
   return (
-    <div className="ms-partner-transcript">
+    <div ref={column} className="ms-conversation ms-partner-transcript">
       {messages.map((message, index) => (
         <Said key={message.id} message={message} rendered={index >= firstRendered} names={names} />
       ))}
       {store.live.turn !== "" && <Running />}
       {store.refusal !== "" && <Refusal reason={store.refusal} install={store.install} />}
-      <div ref={foot} className="ms-partner-foot" />
+      {behind && (
+        <button type="button" className="ms-partner-latest" onClick={toEnd}>
+          Latest ↓
+        </button>
+      )}
     </div>
   );
 }
@@ -77,7 +135,7 @@ function scrollerOf(from: Element | null): HTMLElement | null {
   let at = from?.parentElement ?? null;
   while (at !== null) {
     const overflow = globalThis.getComputedStyle(at).overflowY;
-    if ((overflow === "auto" || overflow === "scroll") && at.scrollHeight > at.clientHeight) {
+    if (overflow === "auto" || overflow === "scroll") {
       return at;
     }
     at = at.parentElement;
@@ -85,52 +143,38 @@ function scrollerOf(from: Element | null): HTMLElement | null {
   return null;
 }
 
+/** True while the scroller is showing the end of what is in it. */
+function atEnd(scroller: HTMLElement): boolean {
+  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= AT_END;
+}
+
 function Said({ message, rendered, names }: { message: Message; rendered: boolean; names: Names }) {
   if (message.role === "human") {
     return (
       <div className="ms-partner-said ms-partner-said--human">
-        <p className="ms-partner-who">You</p>
-        <Paragraphs text={message.text} />
+        <p className="ms-visually-hidden">You</p>
+        <div className="ms-partner-bubble">
+          <Paragraphs text={message.text} />
+        </div>
         {message.page !== undefined && <AskedFrom capture={message.page} />}
       </div>
     );
   }
   const failed = message.outcome === "failed" || message.outcome === "refused";
-  const looked = message.looked ?? [];
   return (
-    <div className="ms-partner-said">
-      <p className="ms-partner-who">Project Partner</p>
-      <Looked looked={looked} />
-      {(message.activity ?? []).map((line, index) => (
-        <Activity key={index} line={line} />
-      ))}
+    <div className="ms-partner-said ms-partner-said--partner">
+      <p className="ms-visually-hidden">Project Partner</p>
       {message.text !== "" &&
         (rendered ? <Answer text={message.text} names={names} /> : <Paragraphs text={message.text} />)}
-      <Stamp looked={looked} />
       {message.outcome === "stopped" && <p className="ms-partner-note">Stopped.</p>}
       {failed && <p className="ms-partner-failed">{message.detail ?? "The turn did not finish."}</p>}
+      <Looked looked={message.looked ?? []} />
     </div>
   );
 }
 
 /**
- * What the answer was given, in the past tense.
- *
- * "Seeing:" on the chip says what the NEXT question will carry; this says what
- * this one did. They are different words on purpose: an answer already given
- * must not appear to change because the board moved afterwards, and pressing
- * Refresh must not read as if the Partner had been told something.
- */
-function Stamp({ looked }: { looked: readonly Look[] }) {
-  const page = looked[0];
-  if (page === undefined || page.source === undefined || page.source === "") {
-    return null;
-  }
-  return <p className="ms-partner-stamp">Saw: {page.source}</p>;
-}
-
-/**
- * The capture a question was asked from, as a chip that goes back to it.
+ * The capture a question was asked from, as a label that goes back to it.
  *
  * Clicking it opens that page with the view, filters, window and tab the
  * capture carries, through the board's own landing; the page then says what it
@@ -157,32 +201,30 @@ function AskedFrom({ capture }: { capture: Page }) {
   );
 }
 
-/** The turn that is running: what it has read, what it has said, and Stop. */
+/**
+ * The turn that is running.
+ *
+ * Until the first words arrive, the answer's place holds one italic line saying
+ * what the Partner is doing now, under a pulse a reduced-motion preference
+ * turns off. What it looked at is an account of a turn that is over, so the
+ * list waits for the end of it; Stop is in the composer, where every other
+ * thing a human presses is.
+ */
 function Running() {
-  const { store, stop } = usePartner();
+  const { store } = usePartner();
   const live = store.live;
-  const doing = live.doing;
-  return (
-    <div className="ms-partner-said">
-      <p className="ms-partner-who">Project Partner</p>
-      {/* While it works, one line says what it is doing now; the list of what
-          it read is what stands here when the turn is over. */}
-      {doing !== "" && <Activity line={doing} />}
-      {live.text === "" ? (
-        <p className="ms-partner-note">Thinking…</p>
-      ) : (
+  if (live.text !== "") {
+    return (
+      <div className="ms-partner-said ms-partner-said--partner">
+        <p className="ms-visually-hidden">Project Partner</p>
         <Paragraphs text={live.text} />
-      )}
-      <div className="ms-partner-stop">
-        <Button
-          onClick={() => {
-            stop();
-          }}
-        >
-          <Square size={14} strokeWidth={1.75} aria-hidden="true" />
-          Stop
-        </Button>
       </div>
+    );
+  }
+  return (
+    <div className="ms-partner-said ms-partner-said--partner">
+      <p className="ms-visually-hidden">Project Partner</p>
+      <p className="ms-partner-working">{live.doing === "" ? "Thinking…" : live.doing}</p>
     </div>
   );
 }
@@ -190,8 +232,8 @@ function Running() {
 /** A refusal, in the server's own words, with the line that installs it. */
 function Refusal({ reason, install }: { reason: string; install: string }) {
   return (
-    <div className="ms-partner-said">
-      <p className="ms-partner-who">Project Partner</p>
+    <div className="ms-partner-said ms-partner-said--partner">
+      <p className="ms-visually-hidden">Project Partner</p>
       <p className="ms-partner-failed">
         <AlertTriangle size={14} strokeWidth={1.75} aria-hidden="true" />
         {reason}
@@ -203,10 +245,6 @@ function Refusal({ reason, install }: { reason: string; install: string }) {
       )}
     </div>
   );
-}
-
-export function Activity({ line }: { line: string }) {
-  return <p className="ms-partner-activity">{line}</p>;
 }
 
 /**

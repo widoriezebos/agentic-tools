@@ -193,7 +193,7 @@ function readingOf(capture: Page): string {
     return "";
   }
   const at = clockOf(capture.observedAt ?? "");
-  return at === "" ? `tip ${tip.slice(0, 7)}` : `tip ${tip.slice(0, 7)}, ${at}`;
+  return at === "" ? `tip ${shortTip(tip)}` : `tip ${shortTip(tip)}, ${at}`;
 }
 
 /** The time of day an instant was observed at, in this browser's own clock. */
@@ -206,6 +206,84 @@ export function clockOf(at: string): string {
     return "";
   }
   return when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+/* ----------------------------------------------------- a stamp, shortened -- */
+
+/**
+ * What an answer was given, read back into its parts.
+ *
+ * The server writes it as one sentence — "the accepted tip 6984cde…, observed
+ * 2026-09-23T17:54:00Z", with the page's own reading after a semicolon where
+ * the two differed. An answer's meta line has room for the short tip and the
+ * clock and for nothing else; the sentence itself stays whole in the Looked
+ * list's own entry and in the Seeing sheet, so shortening it here loses
+ * nothing.
+ *
+ * A source that is no tip at all — a document read as it stands — carries no
+ * hash and no instant, and travels through as it was written.
+ */
+export type Stamp = { tip: string; at: string; what: string };
+
+const TIP = "the accepted tip ";
+const OBSERVED = ", observed ";
+
+export function stampOf(source: string): Stamp {
+  const head = source.split(";")[0].trim();
+  if (!head.startsWith(TIP)) {
+    return { tip: "", at: "", what: head };
+  }
+  const rest = head.slice(TIP.length);
+  const at = rest.indexOf(OBSERVED);
+  if (at < 0) {
+    return { tip: rest.trim(), at: "", what: "" };
+  }
+  return { tip: rest.slice(0, at).trim(), at: rest.slice(at + OBSERVED.length).trim(), what: "" };
+}
+
+/** How much of a reading a human says out loud: seven characters. */
+export const TIP_LENGTH = 7;
+
+export function shortTip(tip: string): string {
+  return tip.slice(0, TIP_LENGTH);
+}
+
+/**
+ * When something happened, in this browser's own clock: the time of day, with
+ * the date before it only where it was not today.
+ *
+ * Almost everything a conversation stamps happened minutes ago, and a date on
+ * every line of it is a date nobody reads; a date on the one line that needs
+ * one is read.
+ */
+export function whenOf(at: string, now: Date = new Date()): string {
+  const clock = clockOf(at);
+  if (clock === "") {
+    return "";
+  }
+  const when = new Date(at);
+  const today =
+    when.getFullYear() === now.getFullYear() &&
+    when.getMonth() === now.getMonth() &&
+    when.getDate() === now.getDate();
+  if (today) {
+    return clock;
+  }
+  return `${when.toLocaleDateString(undefined, { day: "numeric", month: "short" })}, ${clock}`;
+}
+
+/**
+ * The first half of an answer's meta line: what it was given, short enough to
+ * stand beside what it looked at.
+ */
+export function sawLine(source: string, now: Date = new Date()): string {
+  const stamp = stampOf(source);
+  if (stamp.tip === "") {
+    return stamp.what === "" ? "" : `Saw ${stamp.what}`;
+  }
+  const said = `Saw tip ${shortTip(stamp.tip)}`;
+  const when = whenOf(stamp.at, now);
+  return when === "" ? said : `${said} · ${when}`;
 }
 
 /**
