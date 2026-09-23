@@ -253,6 +253,7 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
   const tabs: Tab[] = sections.map((section: PageSection) => ({
     id: section.id,
     title: section.title,
+    help: section.help,
     panel: sectionOf(section.id),
   }));
 

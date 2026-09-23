@@ -1,6 +1,8 @@
 import { useId, useRef, type KeyboardEvent, type ReactNode } from "react";
 
 import "./tabs.css";
+import { Help } from "../help/Help";
+import type { HelpId } from "../help/terms";
 
 /**
  * Tabs: one section of a page, and only one, at a time.
@@ -23,8 +25,15 @@ import "./tabs.css";
  * what to show and says when a human asked for another.
  */
 
-/** One tab: what it is called, and the section it opens. */
-export type Tab = { id: string; title: string; panel: ReactNode };
+/**
+ * One tab: what it is called, the section it opens, and the term beside it.
+ *
+ * A tab's name is one of the words this project uses in its own way —
+ * Doctrine, Slices — so the strip carries the explanation of each. The help is
+ * a button and cannot nest inside the tab's own button, so the two stand side
+ * by side in a wrapper the strip's semantics see straight through.
+ */
+export type Tab = { id: string; title: string; panel: ReactNode; help?: HelpId };
 
 /**
  * Where a key takes the focus, as an index into the strip, or null for a key
@@ -117,6 +126,12 @@ export function Tabs({
   // as the selection: the tab that arrives is the tab that is open, which is
   // what makes a strip of six sections one press wide rather than six.
   const move = (event: KeyboardEvent<HTMLDivElement>) => {
+    // The arrows belong to the tabs. The help icons stand in the strip too,
+    // and an arrow pressed while one of them has the caret must not change
+    // which section is open.
+    if (!(event.target instanceof Element) || event.target.getAttribute("role") !== "tab") {
+      return;
+    }
     const next = tabAfter(event.key, at < 0 ? 0 : at, tabs.length);
     if (next === null) {
       return;
@@ -131,30 +146,37 @@ export function Tabs({
     <>
       <div className="ms-tabs-strip">
         <div className="ms-tabs-list" role="tablist" aria-label={label} onKeyDown={move}>
+          {/* The wrapper is presentation and nothing else: the strip still
+              owns tabs, and the help beside each one is a button that could
+              not have been nested inside it. Only the open tab's help is in
+              the Tab order, so the strip costs the keyboard one extra stop
+              rather than one per section. */}
           {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              id={tabId(tab.id)}
-              className="ms-tab"
-              aria-selected={tab.id === open.id}
-              aria-controls={panelId(tab.id)}
-              tabIndex={tab.id === open.id ? 0 : -1}
-              ref={(element) => {
-                if (element !== null) {
-                  buttons.current.set(tab.id, element);
-                }
-                return () => {
-                  buttons.current.delete(tab.id);
-                };
-              }}
-              onClick={() => {
-                onSelect(tab.id);
-              }}
-            >
-              {tab.title}
-            </button>
+            <span key={tab.id} role="presentation" className="ms-tab-slot">
+              <button
+                type="button"
+                role="tab"
+                id={tabId(tab.id)}
+                className="ms-tab"
+                aria-selected={tab.id === open.id}
+                aria-controls={panelId(tab.id)}
+                tabIndex={tab.id === open.id ? 0 : -1}
+                ref={(element) => {
+                  if (element !== null) {
+                    buttons.current.set(tab.id, element);
+                  }
+                  return () => {
+                    buttons.current.delete(tab.id);
+                  };
+                }}
+                onClick={() => {
+                  onSelect(tab.id);
+                }}
+              >
+                {tab.title}
+              </button>
+              {tab.help !== undefined && <Help id={tab.help} tabIndex={tab.id === open.id ? 0 : -1} />}
+            </span>
           ))}
         </div>
       </div>

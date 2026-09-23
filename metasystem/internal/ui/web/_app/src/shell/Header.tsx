@@ -4,6 +4,8 @@ import { IconButton } from "./controls";
 import { useWorkspaceState } from "./identity";
 import { SignInControl } from "./SignInControl";
 import { WorkspaceIdentity } from "./WorkspaceIdentity";
+import { Help } from "../help/Help";
+import type { HelpId } from "../help/terms";
 
 /**
  * The header: who this workspace is on the left, where you are in the middle,
@@ -11,17 +13,26 @@ import { WorkspaceIdentity } from "./WorkspaceIdentity";
  * right. The drawer along the bottom carries the same toggle; this one is
  * where a keyboard reaches it without crossing the whole page.
  *
+ * The section's name carries the help for the section: it is the one place
+ * every page names what it is, so it is where "what is this for" belongs.
+ * Settings and the focused conversation have none — a workspace's own
+ * configuration is not one of the project's structures, and the conversation
+ * explains itself on its own drawer.
+ *
  * On the focused view the toggle stays in the sequential order and says why it
  * does nothing, rather than disappearing and taking its explanation with it.
  */
 export function Header({
   sectionTitle,
+  help,
   onMenu,
   dockOpen,
   onDockToggle,
   focused,
 }: {
   sectionTitle: string;
+  /** The term that explains this section, or null where it has none. */
+  help: HelpId | null;
   /** Present on the phone, where the rail lives in a sheet. */
   onMenu?: () => void;
   dockOpen: boolean;
@@ -47,7 +58,10 @@ export function Header({
         )}
         <WorkspaceIdentity />
         <span className="ms-header-rule" aria-hidden="true" />
-        <span className="ms-header-title">{sectionTitle}</span>
+        <span className="ms-header-name">
+          <span className="ms-header-title">{sectionTitle}</span>
+          {help !== null && <Help id={help} />}
+        </span>
       </div>
       <div className="ms-header-right">
         <SignInControl />

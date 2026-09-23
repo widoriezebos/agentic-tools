@@ -312,6 +312,15 @@ body {
   background: var(--ms-border);
 }
 
+/* The section's name and the question mark that explains it, as one thing:
+   the name gives way when the header is narrow, and the help does not. */
+.ms-header-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .ms-header-title {
   font-size: 16px;
   line-height: 24px;
@@ -1138,7 +1147,10 @@ body {
     padding: 0 12px;
   }
 
+  /* The help goes with the name it explains: a question mark beside nothing
+     is a question mark about nothing. */
   .ms-drawer-bar .ms-drawer-about,
+  .ms-drawer-who .ms-help,
   .ms-drawer-title {
     display: none;
   }

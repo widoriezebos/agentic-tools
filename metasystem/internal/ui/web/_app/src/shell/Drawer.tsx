@@ -5,6 +5,7 @@ import { useNavigate } from "react-router";
 import { useAboutLine } from "./about";
 import { Composer, COMPOSER_LABEL, COMPOSER_REASON } from "./Composer";
 import { Chip, IconButton } from "./controls";
+import { Help } from "../help/Help";
 import { BrainStatement } from "../panes/Brain";
 
 /**
@@ -88,6 +89,7 @@ export function Drawer({
       <div className="ms-drawer-bar">
         <span className="ms-drawer-who">
           <span className="ms-drawer-title">Project Partner</span>
+          <Help id="partner" />
           <Chip>unavailable until gate 3</Chip>
         </span>
         {!open && (

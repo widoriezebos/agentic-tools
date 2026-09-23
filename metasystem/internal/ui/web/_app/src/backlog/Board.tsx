@@ -28,7 +28,7 @@ import {
   laneFor,
   laneTitle,
   openLanes,
-  SPLIT_MEANING,
+  SPLIT_HELP,
   SPLIT_TITLE,
   UNPLACEABLE,
   type LaneId,
@@ -47,6 +47,8 @@ import {
   type Side,
 } from "./reorder";
 import { arcOn, isParent, membersOf, parentOf } from "./split";
+import { Help } from "../help/Help";
+import type { HelpId } from "../help/terms";
 import type { Pane as ProjectPayload } from "../project/api";
 import { sliceCount, sliceLine, slicePlans, slicesOf, type SlicePlan } from "../project/pane";
 import { dateOf } from "../project/ProjectPane";
@@ -110,7 +112,7 @@ type Dragging = { id: string; lane: LaneId };
  * delivered. Both carry `lane: "done"`, because that is what a drop on either
  * would be asking about, and the drop rules answer the lane.
  */
-type BoardColumn = { key: string; title: string; meaning: string; lane: LaneId; rows: Row[]; head?: ReactNode };
+type BoardColumn = { key: string; title: string; help: HelpId | null; lane: LaneId; rows: Row[]; head?: ReactNode };
 
 export function Board({
   backlog,
@@ -179,14 +181,14 @@ export function Board({
     ...openLanes.map((lane) => ({
       key: lane.id,
       title: lane.title,
-      meaning: lane.meaning,
+      help: lane.help,
       lane: lane.id,
       rows: lane.id === "draft" ? [] : inLane(lane.id),
     })),
     {
       key: DONE,
       title: laneTitle(DONE),
-      meaning: laneFor(DONE)?.meaning ?? "",
+      help: laneFor(DONE)?.help ?? null,
       lane: DONE,
       rows: delivered,
       head: <Reach days={reach} onChange={onWindow} />,
@@ -197,11 +199,11 @@ export function Board({
       {
         key: ABANDONED,
         title: laneTitle(ABANDONED),
-        meaning: laneFor(ABANDONED)?.meaning ?? "",
+        help: laneFor(ABANDONED)?.help ?? null,
         lane: ABANDONED,
         rows: inLane(ABANDONED),
       },
-      { key: "split", title: SPLIT_TITLE, meaning: SPLIT_MEANING, lane: DONE, rows: parents },
+      { key: "split", title: SPLIT_TITLE, help: SPLIT_HELP, lane: DONE, rows: parents },
     );
   }
 
@@ -429,8 +431,14 @@ function FilterBar({
           }}
         />
       </div>
+      {/* Four of the five filters narrow the board by something this project
+          worked out for itself — a band and a position, a tier of proof, the
+          seat that claimed it, the arc it belongs to — so each label says
+          what it is narrowing by. Find narrows by the words on the card and
+          needs no explaining. */}
       <Choose
         label="Priority"
+        help="priority"
         value={filters.priority}
         options={RANKS.map((rank) => ({ value: rank, title: rank }))}
         onChange={(value) => {
@@ -439,6 +447,7 @@ function FilterBar({
       />
       <Choose
         label="Tier"
+        help="tier"
         value={filters.tier}
         options={RANKS.map((rank) => ({ value: rank, title: rank }))}
         onChange={(value) => {
@@ -447,6 +456,7 @@ function FilterBar({
       />
       <Choose
         label="Seat"
+        help="seat"
         value={filters.seat}
         options={[{ value: NONE, title: "unassigned" }, ...offered(seats, filters.seat)]}
         onChange={(value) => {
@@ -455,6 +465,7 @@ function FilterBar({
       />
       <Choose
         label="Arc"
+        help="arc"
         value={filters.arc}
         options={[{ value: NONE, title: "none" }, ...offered(arcs, filters.arc)]}
         onChange={(value) => {
@@ -489,11 +500,14 @@ function offered(present: string[], chosen: string): { value: string; title: str
 
 function Choose({
   label,
+  help,
   value,
   options,
   onChange,
 }: {
   label: string;
+  /** The term the label names, where the label is one of this project's own. */
+  help?: HelpId;
   value: string;
   options: { value: string; title: string }[];
   onChange: (value: string) => void;
@@ -502,6 +516,7 @@ function Choose({
   return (
     <div className="ms-board-filter">
       <label htmlFor={named_}>{label}</label>
+      {help !== undefined && <Help id={help} />}
       <select
         id={named_}
         className="ms-board-select"
@@ -631,9 +646,14 @@ function Column({
       }}
     >
       <header className="ms-column-head">
-        <h2 className="ms-column-title" title={column.meaning}>
+        {/* What a lane means used to be the browser's own tooltip on this
+            heading, which only a mouse could reach and which said nothing to
+            a keyboard or a finger. The help icon says the same thing to all
+            three, and stopping its press keeps the column's drag intact. */}
+        <h2 className="ms-column-title">
           {column.title}
           <span className="ms-column-count">{shown}</span>
+          {column.help !== null && <Help id={column.help} />}
         </h2>
         {column.head}
         {standing === "closed" && <p className="ms-column-closed">not a target</p>}

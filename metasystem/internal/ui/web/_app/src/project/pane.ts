@@ -8,6 +8,7 @@ import type {
   ProjectRecord,
   Question,
 } from "./api";
+import type { HelpId } from "../help/terms";
 import { documentPath, goalPath } from "../routes";
 
 /**
@@ -36,9 +37,14 @@ export type Row = {
 
 /**
  * One tab of the strip under the header: a section of this page, by the name
- * the address opens it under.
+ * the address opens it under, and the term that explains it.
+ *
+ * The same four words head both pages, and they do not mean the same thing on
+ * both: Decisions under Project is everything this project has decided, and
+ * Decisions on a goal page is the handful whose Goals line names that goal. So
+ * the explanation is chosen where the strip is built, not from the tab's name.
  */
-export type PageSection = { id: string; title: string };
+export type PageSection = { id: string; title: string; help?: HelpId };
 
 /** One collapsed run of the checkout's other documents. */
 export type DocumentGroup = { id: string; title: string; files: DocumentFile[] };
@@ -131,6 +137,9 @@ export const QUESTIONS_TAB = "questions";
 export const DOCUMENTS_TAB = "documents";
 export const SLICES_TAB = "slices";
 
+/** The term that explains each book. A book with none carries no help. */
+const BOOK_HELP: Readonly<Record<string, HelpId>> = { intent: "intent", doctrine: "doctrine" };
+
 /**
  * The strip under the header: this page's own sections, in the order the page
  * offers them, each named by the word the address opens it under.
@@ -147,19 +156,24 @@ export const SLICES_TAB = "slices";
  */
 export function pageSections(briefing: Briefing): PageSection[] {
   const rows: PageSection[] = [];
+  const goal = briefing.goal !== null;
   for (const book of briefing.books) {
-    rows.push({ id: book.id, title: book.title });
+    rows.push({ id: book.id, title: book.title, help: BOOK_HELP[book.id] });
   }
-  rows.push({ id: tabForKind("decision"), title: kindTitle("decision") });
-  rows.push({ id: tabForKind("design"), title: kindTitle("design") });
-  rows.push({ id: QUESTIONS_TAB, title: QUESTIONS_TITLE });
+  rows.push({
+    id: tabForKind("decision"),
+    title: kindTitle("decision"),
+    help: goal ? "goal-decisions" : "decisions",
+  });
+  rows.push({ id: tabForKind("design"), title: kindTitle("design"), help: goal ? "goal-designs" : "designs" });
+  rows.push({ id: QUESTIONS_TAB, title: QUESTIONS_TITLE, help: goal ? "goal-questions" : "questions" });
   if (briefing.goal === null) {
-    rows.push({ id: DOCUMENTS_TAB, title: DOCUMENTS_TITLE });
+    rows.push({ id: DOCUMENTS_TAB, title: DOCUMENTS_TITLE, help: "documents" });
   } else {
     // Slices are a goal's and only a goal's: the project as a whole has no
     // one plan, and a tab that showed every design's list at once would be a
     // list of lists rather than a plan.
-    rows.push({ id: SLICES_TAB, title: SLICES_TITLE });
+    rows.push({ id: SLICES_TAB, title: SLICES_TITLE, help: "slices" });
   }
   return rows;
 }

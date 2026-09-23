@@ -39,6 +39,21 @@
 }
 
 /*
+ * A tab and the question mark that explains it, side by side. It is one item
+ * of the strip to the eye and to the flexbox, and nothing to the semantics:
+ * the tablist still owns the tab, and the help is a button beside it.
+ */
+.ms-tab-slot {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.ms-tab-slot .ms-tab {
+  padding-right: 6px;
+}
+
+/*
  * A tab is a button: it opens a section of the page it is already on, and a
  * link that navigates nowhere is a link that lies about what it will do.
  */

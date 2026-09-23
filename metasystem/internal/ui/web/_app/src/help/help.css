@@ -1,0 +1,67 @@
+/* ----------------------------------------------------------------- help -- */
+
+/*
+ * The question mark beside a name, and the explanation it opens.
+ *
+ * The icon is quiet until it is wanted: muted, borderless, no background of
+ * its own, so a row of names reads as names rather than as a row of buttons.
+ * It takes the accent when it is hovered or when its explanation is pinned,
+ * and it keeps the one focus ring this application has.
+ */
+.ms-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  align-self: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ms-text-3);
+  cursor: pointer;
+  transition: color 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ms-help:hover {
+  color: var(--ms-accent);
+}
+
+.ms-help[aria-expanded="true"] {
+  color: var(--ms-accent);
+}
+
+/*
+ * The explanation is a paragraph, not a label, so it is a card rather than the
+ * inverted chip a tooltip wears: 22rem is about fifty characters a line, which
+ * is where a four-sentence explanation stops being a wall. Both themes read it
+ * from the same tokens, so neither has a colour the other does not.
+ */
+.ms-help-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 22rem;
+  padding: 10px 12px;
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 8px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  box-shadow: var(--ms-shadow);
+  z-index: var(--ms-z-tooltip);
+}
+
+.ms-help-term {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+.ms-help-text {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}

@@ -174,12 +174,12 @@ function documentOf(id: string, head: Partial<DocumentPayload["record"]> | null)
 describe("what is on the page, as the strip of tabs names it", () => {
   it("is this page's own sections, in the order the page renders them", () => {
     expect(pageSections(briefingFor(pane, null))).toEqual([
-      { id: "intent", title: "Intent" },
-      { id: "doctrine", title: "Doctrine" },
-      { id: "decisions", title: "Decisions" },
-      { id: "designs", title: "Designs" },
-      { id: "questions", title: "Open questions" },
-      { id: "documents", title: "Documents" },
+      { id: "intent", title: "Intent", help: "intent" },
+      { id: "doctrine", title: "Doctrine", help: "doctrine" },
+      { id: "decisions", title: "Decisions", help: "decisions" },
+      { id: "designs", title: "Designs", help: "designs" },
+      { id: "questions", title: "Open questions", help: "questions" },
+      { id: "documents", title: "Documents", help: "documents" },
     ]);
   });
 
@@ -188,11 +188,13 @@ describe("what is on the page, as the strip of tabs names it", () => {
   // page has, or it would offer a tab onto nothing. The goal itself is not a
   // tab: it is what the page is about, and it stands above the strip.
   it("carries only the goal's own sections on a goal page, and not the goal", () => {
+    // The four names are the project's own, and none of them means the same
+    // thing here: each tab's help says it is scoped to this goal.
     expect(pageSections(briefingFor(pane, "interface-shell"))).toEqual([
-      { id: "decisions", title: "Decisions" },
-      { id: "designs", title: "Designs" },
-      { id: "questions", title: "Open questions" },
-      { id: "slices", title: "Slices" },
+      { id: "decisions", title: "Decisions", help: "goal-decisions" },
+      { id: "designs", title: "Designs", help: "goal-designs" },
+      { id: "questions", title: "Open questions", help: "goal-questions" },
+      { id: "slices", title: "Slices", help: "slices" },
     ]);
   });
 

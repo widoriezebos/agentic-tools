@@ -11,6 +11,7 @@ import { PHONE_QUERY, RAIL_QUERY, useMediaQuery, WIDE_QUERY } from "./media";
 import { Rail } from "./Rail";
 import { Sheet } from "./Sheet";
 import { BacklogPane } from "../backlog/BacklogPane";
+import { sectionHelp } from "../help/terms";
 import { Focused } from "../panes/Focused";
 import { NotFoundPane, SectionPane } from "../panes/sections";
 import { SettingsPane } from "../panes/Settings";
@@ -213,6 +214,7 @@ export function Shell() {
         <div className="ms-shell-column">
           <Header
             sectionTitle={sectionTitle}
+            help={sectionHelp(section?.id)}
             onMenu={
               phone
                 ? () => {

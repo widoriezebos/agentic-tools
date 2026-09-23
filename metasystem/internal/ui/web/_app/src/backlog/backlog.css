@@ -348,11 +348,14 @@
   gap: 4px;
 }
 
+/* The lane's name on the left, and the count with the question mark that
+   explains the lane on the right. The auto margin makes the pair one group at
+   the end of the line, which space-between alone could not: three items would
+   have put the count in the middle of the head. */
 .ms-column-title {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   font-size: 13px;
   line-height: 18px;
@@ -361,6 +364,7 @@
 }
 
 .ms-column-count {
+  margin-left: auto;
   font-size: 12px;
   font-weight: 400;
   color: var(--ms-text-3);

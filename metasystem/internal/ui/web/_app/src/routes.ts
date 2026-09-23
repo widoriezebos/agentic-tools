@@ -1,4 +1,4 @@
-import { BookOpen, CircleHelp, LayoutDashboard, MessageSquare, Package, Server, Settings, SquareKanban } from "lucide-react";
+import { BookOpen, Gavel, LayoutDashboard, MessageSquare, Package, Server, Settings, SquareKanban } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 
 /**
@@ -28,6 +28,11 @@ export type Section = {
  * The id and the path stay `brain`: they are the engine's names for the seat's
  * process, and the kit keeps them until a deliberate rename. The title is what
  * a human reads, and the interface stopped calling the collaborator a brain.
+ *
+ * Decisions is a gavel. It wore the circled question mark until the help
+ * control took that mark for its own — one mark cannot mean both "ask me what
+ * this is" and "a section of this workspace" — and the gavel is what the
+ * section actually is: the place a human rules on what the machinery asks.
  */
 export const sections: readonly Section[] = [
   { id: "brain", path: "/brain", title: "Project Partner", icon: MessageSquare },
@@ -35,7 +40,7 @@ export const sections: readonly Section[] = [
   { id: "project", path: "/project", title: "Project", icon: BookOpen },
   { id: "backlog", path: "/backlog", title: "Backlog", icon: SquareKanban },
   { id: "fleet", path: "/fleet", title: "Fleet", icon: Server },
-  { id: "decisions", path: "/decisions", title: "Decisions", icon: CircleHelp },
+  { id: "decisions", path: "/decisions", title: "Decisions", icon: Gavel },
   { id: "application", path: "/application", title: "Application", icon: Package },
   { id: "settings", path: "/settings", title: "Settings", icon: Settings },
 ];

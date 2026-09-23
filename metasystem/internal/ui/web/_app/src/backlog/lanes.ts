@@ -1,3 +1,5 @@
+import type { HelpId } from "../help/terms";
+
 /**
  * The lanes, in the order work moves through them.
  *
@@ -6,6 +8,11 @@
  * only what each lane is called and what being in it means. Unknown is last
  * and is never dropped, because a record this build cannot place must still be
  * visible with its reason.
+ *
+ * What being in a lane means used to be a sentence written here and shown as
+ * the browser's own tooltip on the column head — a sentence nothing but a
+ * mouse could reach. The sentences moved to the help register, where every
+ * other explanation in this interface is, and the lane names the term.
  */
 
 export type LaneId =
@@ -22,56 +29,24 @@ export type LaneId =
 export type Lane = {
   id: LaneId;
   title: string;
-  /** One sentence: what a goal in this lane is. */
-  meaning: string;
+  /**
+   * The term that says what a goal in this lane is, or null for the lane that
+   * is never a head: Unknown is a place in the projection and a column
+   * nowhere, so there is nothing for a help icon to stand beside.
+   */
+  help: HelpId | null;
 };
 
 export const lanes: readonly Lane[] = [
-  {
-    id: "draft",
-    title: "Draft",
-    meaning: "A persisted goal proposal that has not passed intake.",
-  },
-  {
-    id: "to-do",
-    title: "To Do",
-    meaning: "A goal that has not been authorized for execution, with its intake or approval gaps visible.",
-  },
-  {
-    id: "ready",
-    title: "Ready for Work",
-    meaning: "An approved goal the claim gate would admit right now.",
-  },
-  {
-    id: "in-progress",
-    title: "In Progress",
-    meaning: "Claimed work being executed.",
-  },
-  {
-    id: "review",
-    title: "Review and Verification",
-    meaning: "Claimed work that is built and waiting to land.",
-  },
-  {
-    id: "waiting",
-    title: "Waiting",
-    meaning: "Work an authoritative blocker holds, with the reason and the state it waits from.",
-  },
-  {
-    id: "done",
-    title: "Done",
-    meaning: "A recorded completed goal, with what it concluded.",
-  },
-  {
-    id: "abandoned",
-    title: "Abandoned",
-    meaning: "Work dropped with the recorded reason.",
-  },
-  {
-    id: "unknown",
-    title: "Unknown",
-    meaning: "A goal this build cannot place, with the reason on the row.",
-  },
+  { id: "draft", title: "Draft", help: "lane-draft" },
+  { id: "to-do", title: "To Do", help: "lane-todo" },
+  { id: "ready", title: "Ready for Work", help: "lane-ready" },
+  { id: "in-progress", title: "In Progress", help: "lane-progress" },
+  { id: "review", title: "Review and Verification", help: "lane-review" },
+  { id: "waiting", title: "Waiting", help: "lane-waiting" },
+  { id: "done", title: "Done", help: "lane-done" },
+  { id: "abandoned", title: "Abandoned", help: "lane-abandoned" },
+  { id: "unknown", title: "Unknown", help: null },
 ];
 
 /** The lanes whose goals have left the live ledger. */
@@ -116,7 +91,7 @@ export function laneTitle(id: LaneId): string {
  * here, under their members, with the closed items.
  */
 export const SPLIT_TITLE = "Split into goals";
-export const SPLIT_MEANING = "A goal retired by decomposition, shown as its members rather than as a delivered outcome.";
+export const SPLIT_HELP: HelpId = "lane-split";
 
 export function laneFor(id: string): Lane | null {
   return lanes.find((lane) => lane.id === id) ?? null;
