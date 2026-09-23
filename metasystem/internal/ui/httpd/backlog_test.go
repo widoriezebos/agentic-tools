@@ -50,12 +50,20 @@ func readObservation() snapshot.Observation {
 		State: snapshot.StateRead, Tip: "c5d517f427e35e19c2944ab9aefee4d9c9cd9e6c",
 		CommittedAt: committedAt, Tree: tree, Horizon: horizon, SyncMode: goal.SyncLocal,
 		Admission: backlog.Admit(goal.Projection{Root: "/work/repository/metasystem", Tree: tree, Horizon: horizon}),
-		Fetch: snapshot.FetchState{
-			Outcome:   snapshot.OutcomeCurrent,
-			StartedAt: observedAt.Add(-2 * time.Second), FinishedAt: observedAt.Add(-time.Second),
-			Tip: "c5d517f427e35e19c2944ab9aefee4d9c9cd9e6c", Detail: "already at the canonical tip",
-			Failures: 0, Cadence: snapshot.CadenceConnected, NextAt: observedAt.Add(5 * time.Second),
-		},
+		Fetch:     landedFetch(),
+	}
+}
+
+// landedFetch is a freshness loop whose last look landed a second ago, on the
+// tip this clone has accepted: the state everything else is a departure from.
+func landedFetch() snapshot.FetchState {
+	return snapshot.FetchState{
+		Outcome:   snapshot.OutcomeCurrent,
+		StartedAt: observedAt.Add(-2 * time.Second), FinishedAt: observedAt.Add(-time.Second),
+		Tip: "c5d517f427e35e19c2944ab9aefee4d9c9cd9e6c", Detail: "already at the canonical tip",
+		SucceededAt:  observedAt.Add(-time.Second),
+		SucceededTip: "c5d517f427e35e19c2944ab9aefee4d9c9cd9e6c",
+		Failures:     0, Cadence: snapshot.CadenceConnected, NextAt: observedAt.Add(5 * time.Second),
 	}
 }
 
@@ -112,14 +120,19 @@ func TestBacklogPayload(t *testing.T) {
 	var ledger map[string]json.RawMessage
 	testutil.Require(t, "decode the ledger", json.Unmarshal(payload["ledger"], &ledger), nil)
 	testutil.Expect(t, "the ledger's field names", keysOf(ledger), []string{
-		"committedAt", "fetch", "message", "problems", "stale", "staleAfterSeconds", "state", "stateRoot", "syncMode", "tip",
+		"committedAt", "fetch", "freshness", "message", "problems", "stale", "staleAfterSeconds", "state", "stateRoot", "syncMode", "tip",
 	})
 
 	var fetch map[string]json.RawMessage
 	testutil.Require(t, "decode the fetch clause", json.Unmarshal(ledger["fetch"], &fetch), nil)
 	testutil.Expect(t, "the fetch clause's field names", keysOf(fetch), []string{
-		"cadence", "detail", "failures", "finishedAt", "message", "nextAt", "outcome", "startedAt", "tip",
+		"cadence", "detail", "failures", "finishedAt", "message", "nextAt", "outcome", "startedAt",
+		"succeededAt", "succeededTip", "tip",
 	})
+
+	var freshness map[string]json.RawMessage
+	testutil.Require(t, "decode the freshness", json.Unmarshal(ledger["freshness"], &freshness), nil)
+	testutil.Expect(t, "the freshness's field names", keysOf(freshness), []string{"detail", "since", "state"})
 
 	var admission map[string]json.RawMessage
 	testutil.Require(t, "decode the admission", json.Unmarshal(payload["admission"], &admission), nil)
@@ -167,7 +180,9 @@ func TestBacklogCarriesTheLedgersOwnFacts(t *testing.T) {
 	testutil.Expect(t, "the fetch clause", payload.Ledger.Fetch, fetchPayload{
 		Outcome: "current", StartedAt: "2026-09-21T19:05:10Z", FinishedAt: "2026-09-21T19:05:11Z",
 		Tip: "c5d517f427e35e19c2944ab9aefee4d9c9cd9e6c", Detail: "already at the canonical tip",
-		Failures: 0, Cadence: "connected", NextAt: "2026-09-21T19:05:17Z",
+		SucceededAt:  "2026-09-21T19:05:11Z",
+		SucceededTip: "c5d517f427e35e19c2944ab9aefee4d9c9cd9e6c",
+		Failures:     0, Cadence: "connected", NextAt: "2026-09-21T19:05:17Z",
 	})
 	testutil.Expect(t, "admission", payload.Admission, admissionPayload{Answered: true})
 	testutil.Expect(t, "live rows", len(payload.Rows), 2)
@@ -180,34 +195,189 @@ func TestBacklogCarriesTheLedgersOwnFacts(t *testing.T) {
 	testutil.Expect(t, "the draft statement", payload.Draft.Statement, backlog.DraftStatement)
 }
 
-func TestBacklogSaysWhenTheTreeIsOld(t *testing.T) {
+// The freshness rule: this interface judges how current it is by its own
+// fetch loop, and by nothing else.
+//
+// The commit's age is deliberately absent from every case below. A tree
+// nobody has committed to for three hours is a quiet project, and a warning
+// about it is a warning Refresh cannot clear, because no fetch can make the
+// last commit younger.
+func TestFreshnessIsJudgedByTheFetchLoop(t *testing.T) {
 	t.Parallel()
 
-	t.Run("an accepted tree older than the threshold", func(t *testing.T) {
+	cases := []struct {
+		name    string
+		shape   func(*snapshot.Observation)
+		state   snapshot.Freshness
+		since   string
+		detail  string
+		wantAge bool
+	}{
+		{
+			name:   "a look that landed a second ago on the accepted tip",
+			shape:  func(*snapshot.Observation) {},
+			state:  snapshot.FreshnessCurrent,
+			since:  "2026-09-21T19:05:11Z",
+			detail: "already at the canonical tip",
+		},
+		{
+			name: "an accepted tree older than the threshold, which is not a freshness at all",
+			shape: func(observation *snapshot.Observation) {
+				observation.CommittedAt = observation.ObservedAt.Add(-3 * time.Hour)
+			},
+			state:   snapshot.FreshnessCurrent,
+			since:   "2026-09-21T19:05:11Z",
+			detail:  "already at the canonical tip",
+			wantAge: true,
+		},
+		{
+			name: "a loop that has never landed a look",
+			shape: func(observation *snapshot.Observation) {
+				observation.Fetch = snapshot.FetchState{Outcome: snapshot.OutcomeNever, Cadence: snapshot.CadenceConnected}
+			},
+			state:  snapshot.FreshnessBehind,
+			detail: "no fetch of the canonical branch has completed on this clone yet",
+		},
+		{
+			name: "a look that landed longer ago than the threshold",
+			shape: func(observation *snapshot.Observation) {
+				observation.Fetch.SucceededAt = observation.ObservedAt.Add(-90 * time.Minute)
+			},
+			state:  snapshot.FreshnessBehind,
+			since:  "2026-09-21T17:35:12Z",
+			detail: "the last fetch of the canonical branch landed more than 30 minutes ago",
+		},
+		{
+			name: "a look that found a tip this clone has not caught up with",
+			shape: func(observation *snapshot.Observation) {
+				observation.Fetch.SucceededTip = "9f3c1ab7d20e4c5f8a1b2c3d4e5f60718293a4b5"
+			},
+			state:  snapshot.FreshnessBehind,
+			since:  "2026-09-21T19:05:11Z",
+			detail: "the last fetch found the canonical branch at 9f3c1ab and this clone has accepted c5d517f",
+		},
+		{
+			name: "a look that failed, with how many failed before it",
+			shape: func(observation *snapshot.Observation) {
+				observation.Fetch.Outcome = snapshot.OutcomeFailed
+				observation.Fetch.Tip, observation.Fetch.Detail = "", ""
+				observation.Fetch.Message = "ssh: connect: host unreachable"
+				observation.Fetch.Failures = 3
+			},
+			state:  snapshot.FreshnessFailed,
+			since:  "2026-09-21T19:05:11Z",
+			detail: "ssh: connect: host unreachable (3 fetches in a row have failed)",
+		},
+		{
+			name: "one look that failed, which says the cause and counts nothing",
+			shape: func(observation *snapshot.Observation) {
+				observation.Fetch.Outcome = snapshot.OutcomeFailed
+				observation.Fetch.Message = "ssh: connect: host unreachable"
+				observation.Fetch.Failures = 1
+			},
+			state:  snapshot.FreshnessFailed,
+			since:  "2026-09-21T19:05:11Z",
+			detail: "ssh: connect: host unreachable",
+		},
+	}
+
+	for _, one := range cases {
+		t.Run(one.name, func(t *testing.T) {
+			t.Parallel()
+
+			observation := readObservation()
+			one.shape(&observation)
+			served := servedBacklog(t, func() snapshot.Observation { return observation })
+
+			var payload backlogPayload
+			response := request(t, served, http.MethodGet, "/api/backlog", "127.0.0.1:7878", nil)
+			testutil.Require(t, "decode", json.Unmarshal(response.Body.Bytes(), &payload), nil)
+
+			testutil.Expect(t, "the freshness", payload.Ledger.Freshness, freshnessPayload{
+				State: one.state, Since: one.since, Detail: one.detail,
+			})
+			// The alias every reader written against the old shape still
+			// parses: not current, whatever the reason.
+			testutil.Expect(t, "stale, which mirrors the state",
+				payload.Ledger.Stale, one.state != snapshot.FreshnessCurrent)
+			if one.wantAge {
+				testutil.Expect(t, "the commit's age, reported and never warned about",
+					payload.Ledger.CommittedAt, "2026-09-21T16:05:12Z")
+			}
+		})
+	}
+}
+
+// A tick in flight is not a clone that has never fetched: the look that
+// landed before it is still the last thing this clone knows.
+func TestAFetchInFlightKeepsTheFreshnessTheLastLookLeft(t *testing.T) {
+	t.Parallel()
+
+	observation := readObservation()
+	observation.Fetch.Outcome = snapshot.OutcomeRunning
+	observation.Fetch.FinishedAt = time.Time{}
+	served := servedBacklog(t, func() snapshot.Observation { return observation })
+
+	var payload backlogPayload
+	response := request(t, served, http.MethodGet, "/api/backlog", "127.0.0.1:7878", nil)
+	testutil.Require(t, "decode", json.Unmarshal(response.Body.Bytes(), &payload), nil)
+
+	testutil.Expect(t, "the state", payload.Ledger.Freshness.State, snapshot.FreshnessCurrent)
+	testutil.Expect(t, "measured from the look that landed", payload.Ledger.Freshness.Since, "2026-09-21T19:05:11Z")
+}
+
+// Refresh asks whether this clone is current now, so it looks and then
+// observes: an answer composed from a loop that last looked half a cadence
+// ago would be an answer about a moment that has passed.
+func TestRefreshLooksBeforeItObserves(t *testing.T) {
+	t.Parallel()
+
+	t.Run("the ask that carries the query", func(t *testing.T) {
 		t.Parallel()
-		observation := readObservation()
-		observation.CommittedAt = observation.ObservedAt.Add(-3 * time.Hour)
-		served := servedBacklog(t, func() snapshot.Observation { return observation })
 
-		var payload backlogPayload
-		response := request(t, served, http.MethodGet, "/api/backlog", "127.0.0.1:7878", nil)
-		testutil.Require(t, "decode", json.Unmarshal(response.Body.Bytes(), &payload), nil)
+		order := []string{}
+		bound := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 7878}
+		served := New(Info{
+			Observe: func() snapshot.Observation {
+				order = append(order, "observe")
+				return readObservation()
+			},
+			Fetch: func() { order = append(order, "fetch") },
+		}, bound, testBundle())
 
-		testutil.Expect(t, "stale", payload.Ledger.Stale, true)
+		response := request(t, served, http.MethodGet, "/api/backlog?fetch=1", "127.0.0.1:7878", nil)
+
+		testutil.Expect(t, "status", response.Code, http.StatusOK)
+		testutil.Expect(t, "what the request did, in order", order, []string{"fetch", "observe"})
 	})
 
-	t.Run("a commit time git could not report", func(t *testing.T) {
+	t.Run("every other read, which observes and starts nothing", func(t *testing.T) {
 		t.Parallel()
-		observation := readObservation()
-		observation.CommittedAt = time.Time{}
-		served := servedBacklog(t, func() snapshot.Observation { return observation })
 
-		var payload backlogPayload
+		order := []string{}
+		bound := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 7878}
+		served := New(Info{
+			Observe: func() snapshot.Observation {
+				order = append(order, "observe")
+				return readObservation()
+			},
+			Fetch: func() { order = append(order, "fetch") },
+		}, bound, testBundle())
+
 		response := request(t, served, http.MethodGet, "/api/backlog", "127.0.0.1:7878", nil)
-		testutil.Require(t, "decode", json.Unmarshal(response.Body.Bytes(), &payload), nil)
 
-		testutil.Expect(t, "committed at", payload.Ledger.CommittedAt, "")
-		testutil.Expect(t, "stale", payload.Ledger.Stale, false)
+		testutil.Expect(t, "status", response.Code, http.StatusOK)
+		testutil.Expect(t, "what the request did", order, []string{"observe"})
+	})
+
+	t.Run("a build that cannot look, which still answers", func(t *testing.T) {
+		t.Parallel()
+
+		served := servedBacklog(t, readObservation)
+
+		response := request(t, served, http.MethodGet, "/api/backlog?fetch=1", "127.0.0.1:7878", nil)
+
+		testutil.Expect(t, "status", response.Code, http.StatusOK)
 	})
 }
 

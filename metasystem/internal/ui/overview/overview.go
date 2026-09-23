@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
 
 // SchemaVersion is the shape of the overview resource a reader parses.
@@ -264,27 +265,34 @@ type Memory struct {
 // Health is one calm line, or the problems.
 type Health struct {
 	OK bool `json:"ok"`
-	// SyncedAt is when the last fetch finished, in RFC3339, which is what the
+	// SyncedAt is when the last fetch landed, in RFC3339, which is what the
 	// calm line names. The page writes the clock time in the reader's own
 	// locale, so the instant travels rather than the words.
 	SyncedAt string `json:"syncedAt"`
-	Problems Group  `json:"problems"`
+	// Freshness is the ledger pill's state — "current", "behind" or "failed"
+	// — so that the page says which of the three it is from what was judged
+	// rather than by reading the problem's sentence back.
+	Freshness snapshot.Freshness `json:"freshness"`
+	Problems  Group              `json:"problems"`
 }
 
 // Ledger is what the backlog's own statement says about the accepted ledger,
-// reduced to the three facts this page judges health on. It is a value rather
-// than the observation itself so that Compose stays a function over data and
-// the route is the one place that reads a running engine.
+// reduced to the facts this page judges health on. It is a value rather than
+// the observation itself so that Compose stays a function over data and the
+// route is the one place that reads a running engine.
 type Ledger struct {
-	// AtTip is the statement's own answer: the tree was read, and it is not
-	// older than the staleness threshold.
+	// Freshness is what the interface's own fetch loop was judged to be:
+	// "current", "behind" or "failed". It is the word the pill says, so the
+	// page never has to read a sentence back to find out which of the three
+	// it is looking at.
+	Freshness snapshot.Freshness
+	// AtTip is the statement's own answer: the tree was read, and this
+	// interface's freshness is current.
 	AtTip bool
-	// Fetched is whether the last fetch of the canonical branch succeeded.
-	Fetched bool
-	// SyncedAt is when that fetch finished.
+	// SyncedAt is when the last fetch that landed finished.
 	SyncedAt time.Time
-	// Statement is the engine's own words for what is wrong, where the two
-	// above say something is.
+	// Statement is the engine's own words for what is wrong, where AtTip says
+	// something is.
 	Statement string
 }
 
@@ -775,7 +783,7 @@ func designs(pane project.Pane) Designs {
 // behind.
 func health(in Inputs, now time.Time) Health {
 	problems := []Item{}
-	if !in.Ledger.AtTip || !in.Ledger.Fetched {
+	if !in.Ledger.AtTip {
 		problems = append(problems, Item{
 			Title: ledgerProblem(in.Ledger), Note: "ledger",
 			Where: Where{Kind: WhereBacklog},
@@ -794,9 +802,10 @@ func health(in Inputs, now time.Time) Health {
 		})
 	}
 	return Health{
-		OK:       len(problems) == 0,
-		SyncedAt: stamp(in.Ledger.SyncedAt),
-		Problems: Group{Count: len(problems), Items: take(problems, longList)},
+		OK:        len(problems) == 0,
+		SyncedAt:  stamp(in.Ledger.SyncedAt),
+		Freshness: in.Ledger.Freshness,
+		Problems:  Group{Count: len(problems), Items: take(problems, longList)},
 	}
 }
 
@@ -807,10 +816,13 @@ func ledgerProblem(ledger Ledger) string {
 	if ledger.Statement != "" {
 		return ledger.Statement
 	}
-	if !ledger.Fetched {
-		return "the last fetch of the canonical branch did not succeed"
+	switch ledger.Freshness {
+	case snapshot.FreshnessFailed:
+		return "the last fetch of the canonical branch failed"
+	case snapshot.FreshnessBehind:
+		return "the last fetch of the canonical branch has not landed lately"
 	}
-	return "the accepted ledger is not at the canonical tip"
+	return "the accepted ledger could not be read"
 }
 
 func anchor(problem project.Problem) string {

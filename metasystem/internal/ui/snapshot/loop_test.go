@@ -183,6 +183,8 @@ func TestRunTicksAtOnceAndSettlesOnTheIdleCadence(t *testing.T) {
 	testutil.Expect(t, "detail", state.Detail, "already at the canonical tip")
 	testutil.Expect(t, "started at", state.StartedAt, fixtureNow)
 	testutil.Expect(t, "finished at", state.FinishedAt, fixtureNow)
+	testutil.Expect(t, "when the look landed", state.SucceededAt, fixtureNow)
+	testutil.Expect(t, "the tip it landed on", state.SucceededTip, tip)
 	testutil.Expect(t, "failures", state.Failures, 0)
 	testutil.Expect(t, "cadence", state.Cadence, CadenceIdle)
 	testutil.Expect(t, "next at", state.NextAt, fixtureNow.Add(idleInterval))
@@ -387,6 +389,44 @@ func TestFailingTicksBackOffAndOneSuccessResets(t *testing.T) {
 		cancel()
 		<-done
 	})
+}
+
+// The last look that landed outlives the looks after it. A reader asking how
+// fresh this clone is is asking when it last heard from the canonical branch,
+// and a failure that erased that instant would make an hour of failures
+// indistinguishable from a clone that has never fetched at all.
+func TestTheLastLookThatLandedOutlivesTheOnesAfterIt(t *testing.T) {
+	t.Parallel()
+
+	b, tip := readableBed(t)
+	at := newClock(fixtureNow)
+	holder := New(b.root, at.now)
+	timers := newFakeTimers()
+	fetch := &scriptedFetch{answer: func(call int) (goal.AdvanceResult, error) {
+		if call == 1 {
+			return goal.AdvanceResult{Tip: tip, Detail: "already at the canonical tip"}, nil
+		}
+		return goal.AdvanceResult{}, fmt.Errorf("git fetch: the remote does not answer")
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := runLoop(holder, ctx, fetch.fetch, timers)
+
+	timer := timers.next()
+	timer = drain(timers, timer)
+	landed := fetchState(holder)
+	testutil.Require(t, "the first look landed", landed.Outcome, OutcomeCurrent)
+
+	drain(timers, timer)
+	failed := fetchState(holder)
+
+	testutil.Expect(t, "the outcome after the failure", failed.Outcome, OutcomeFailed)
+	testutil.Expect(t, "the failed tick reports no tip", failed.Tip, "")
+	testutil.Expect(t, "when the last look landed", failed.SucceededAt, landed.SucceededAt)
+	testutil.Expect(t, "the tip it landed on", failed.SucceededTip, tip)
+
+	cancel()
+	<-done
 }
 
 func TestNextDue(t *testing.T) {

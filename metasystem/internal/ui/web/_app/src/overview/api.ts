@@ -74,7 +74,19 @@ export type Memory = {
   questions: number;
 };
 
-export type Health = { ok: boolean; syncedAt: string; problems: Group };
+/**
+ * How current the server judged its own fetch loop to be. It is the same
+ * judgement the board's sync chip carries, made once on the server, so the
+ * two surfaces cannot disagree about the same loop.
+ */
+export type FreshnessState = "current" | "behind" | "failed";
+
+export type Health = {
+  ok: boolean;
+  syncedAt: string;
+  freshness: FreshnessState;
+  problems: Group;
+};
 
 export type Page = {
   schemaVersion: number;

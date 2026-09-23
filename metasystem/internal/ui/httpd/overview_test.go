@@ -54,6 +54,7 @@ func overviewObservation() snapshot.Observation {
 		Fetch: snapshot.FetchState{
 			Outcome: snapshot.OutcomeCurrent, FinishedAt: overviewNow.Add(-time.Second),
 			Tip: "c5d517f", Detail: "already at the canonical tip",
+			SucceededAt: overviewNow.Add(-time.Second), SucceededTip: "c5d517f",
 		},
 	}
 }
@@ -89,6 +90,78 @@ func TestOverviewPayload(t *testing.T) {
 		{ID: "review"}, {ID: "waiting"}, {ID: overview.LaneDoneToday},
 	})
 	testutil.Expect(t, "health", page.Health.OK, true)
+}
+
+// The page's health is judged on the same freshness the board's chip is: one
+// rule, derived once, so that Overview and the Backlog cannot say different
+// things about the same fetch loop.
+func TestOverviewHealthReadsTheSameFreshnessTheBoardDoes(t *testing.T) {
+	t.Parallel()
+
+	for _, one := range []struct {
+		name  string
+		shape func(*snapshot.Observation)
+		state snapshot.Freshness
+		title string
+		ok    bool
+	}{
+		{
+			name:  "a look that landed on the accepted tip",
+			shape: func(*snapshot.Observation) {},
+			state: snapshot.FreshnessCurrent,
+			ok:    true,
+		},
+		{
+			name: "an accepted commit three hours old, which is no problem at all",
+			shape: func(observation *snapshot.Observation) {
+				observation.CommittedAt = observation.ObservedAt.Add(-3 * time.Hour)
+			},
+			state: snapshot.FreshnessCurrent,
+			ok:    true,
+		},
+		{
+			name: "a loop that has not landed a look for longer than the threshold",
+			shape: func(observation *snapshot.Observation) {
+				observation.Fetch.SucceededAt = observation.ObservedAt.Add(-2 * time.Hour)
+			},
+			state: snapshot.FreshnessBehind,
+			title: "the last fetch of the canonical branch landed more than 30 minutes ago",
+		},
+		{
+			name: "a loop whose last look failed",
+			shape: func(observation *snapshot.Observation) {
+				observation.Fetch.Outcome = snapshot.OutcomeFailed
+				observation.Fetch.Tip, observation.Fetch.Detail = "", ""
+				observation.Fetch.Message = "ssh: connect: host unreachable"
+				observation.Fetch.Failures = 2
+			},
+			state: snapshot.FreshnessFailed,
+			title: "ssh: connect: host unreachable (2 fetches in a row have failed)",
+		},
+	} {
+		t.Run(one.name, func(t *testing.T) {
+			t.Parallel()
+
+			info, _ := overviewInfo(t)
+			observation := overviewObservation()
+			one.shape(&observation)
+			info.Observe = func() snapshot.Observation { return observation }
+			served := New(info, loopback(), testBundle())
+
+			page := overviewPage(t, served, "the read")
+
+			testutil.Expect(t, "the freshness the pill says", page.Health.Freshness, one.state)
+			testutil.Expect(t, "health", page.Health.OK, one.ok)
+			if one.ok {
+				return
+			}
+			testutil.Require(t, "how many problems", page.Health.Problems.Count, 1)
+			testutil.Expect(t, "the problem's title is the freshness detail",
+				page.Health.Problems.Items[0].Title, one.title)
+			testutil.Expect(t, "where it is fixed",
+				page.Health.Problems.Items[0].Where, overview.Where{Kind: overview.WhereBacklog})
+		})
+	}
 }
 
 // A second read inside the visit is answered over the same window, because

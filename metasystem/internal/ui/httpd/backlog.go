@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
@@ -53,8 +54,16 @@ type ledgerPayload struct {
 	State string `json:"state"`
 	Tip   string `json:"tip"`
 	// CommittedAt is the accepted commit's committer time, which is the age
-	// of the tree; nothing records when this clone accepted it.
-	CommittedAt       string       `json:"committedAt"`
+	// of the tree; nothing records when this clone accepted it. It is a fact
+	// the chip reports and never a warning: a repository nobody has committed
+	// to since breakfast is a quiet repository, not a broken one.
+	CommittedAt string `json:"committedAt"`
+	// Freshness is this interface's own judgement of its fetch loop, which is
+	// the only freshness a human here can act on.
+	Freshness freshnessPayload `json:"freshness"`
+	// Stale is Freshness.State != "current", kept for one release so that a
+	// reader written against the old shape still parses. Nothing in this
+	// build reads it.
 	Stale             bool         `json:"stale"`
 	StaleAfterSeconds int          `json:"staleAfterSeconds"`
 	SyncMode          string       `json:"syncMode"`
@@ -62,6 +71,16 @@ type ledgerPayload struct {
 	Message           string       `json:"message"`
 	Problems          []string     `json:"problems"`
 	Fetch             fetchPayload `json:"fetch"`
+}
+
+// freshnessPayload is the one judgement three readers share: the board's sync
+// chip, the board's ledger statement, and the Overview's health pill. Since
+// is the instant the state is measured from — the last fetch that landed, or
+// the failure itself — and Detail is why, in the engine's own words.
+type freshnessPayload struct {
+	State  snapshot.Freshness `json:"state"`
+	Since  string             `json:"since"`
+	Detail string             `json:"detail"`
 }
 
 type fetchPayload struct {
@@ -74,6 +93,10 @@ type fetchPayload struct {
 	Failures   int    `json:"failures"`
 	Cadence    string `json:"cadence"`
 	NextAt     string `json:"nextAt"`
+	// SucceededAt and SucceededTip are the last look that landed, which a
+	// running tick and a failure both leave standing.
+	SucceededAt  string `json:"succeededAt"`
+	SucceededTip string `json:"succeededTip"`
 }
 
 type admissionPayload struct {
@@ -88,16 +111,31 @@ type workingTreePayload struct {
 	ArchivedFiles *int `json:"archivedFiles"`
 }
 
+// fetchQuery is what the board's Refresh adds to the read. Refresh is a human
+// asking "is this current now", and an answer composed from a loop that last
+// looked half a cadence ago is an answer about a moment that has passed. So
+// the ask runs one look first and then observes, and what the human reads is
+// the truth of the instant they pressed it. Every other read of this resource
+// — the mount, an act's answer, the Overview's composition — observes and
+// starts nothing, exactly as before.
+const fetchQuery = "fetch"
+
 // backlog answers what the accepted ledger says. Every ledger state answers
 // 200, including the ones that carry no rows: the workspace answered, and the
 // answer is why the ledger cannot be read. A 500 is for an engine that cannot
 // answer at all.
-func (h *handler) backlog(w http.ResponseWriter) {
+func (h *handler) backlog(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if h.info.Observe == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		writeError(w, "this engine was built without a ledger reader")
 		return
+	}
+	// The look is bounded by the loop's own budget, so a hung transport ends
+	// this request rather than holding it open: the caller is the same
+	// process's loop machinery, and it kills what it started.
+	if h.info.Fetch != nil && r.URL.Query().Has(fetchQuery) {
+		h.info.Fetch()
 	}
 	_ = json.NewEncoder(w).Encode(h.backlogPayload())
 }
@@ -149,11 +187,8 @@ func backlogOf(observation snapshot.Observation) backlogPayload {
 		Rows:           []backlog.Row{},
 		Closed:         []backlog.Row{},
 	}
-	// An age needs a commit time. Without one the tree's age is unknown,
-	// which is not the same as fresh, so nothing is claimed about it.
-	if !observation.CommittedAt.IsZero() {
-		payload.Ledger.Stale = observation.ObservedAt.Sub(observation.CommittedAt) > goal.StaleThreshold
-	}
+	payload.Ledger.Freshness = freshnessOf(observation)
+	payload.Ledger.Stale = payload.Ledger.Freshness.State != snapshot.FreshnessCurrent
 	if observation.State != snapshot.StateRead {
 		return payload
 	}
@@ -169,16 +204,85 @@ func backlogOf(observation snapshot.Observation) backlogPayload {
 
 func fetchOf(state snapshot.FetchState) fetchPayload {
 	return fetchPayload{
-		Outcome:    string(state.Outcome),
-		StartedAt:  stamp(state.StartedAt),
-		FinishedAt: stamp(state.FinishedAt),
-		Tip:        state.Tip,
-		Detail:     state.Detail,
-		Message:    state.Message,
-		Failures:   state.Failures,
-		Cadence:    state.Cadence,
-		NextAt:     stamp(state.NextAt),
+		Outcome:      string(state.Outcome),
+		StartedAt:    stamp(state.StartedAt),
+		FinishedAt:   stamp(state.FinishedAt),
+		Tip:          state.Tip,
+		Detail:       state.Detail,
+		Message:      state.Message,
+		Failures:     state.Failures,
+		Cadence:      state.Cadence,
+		NextAt:       stamp(state.NextAt),
+		SucceededAt:  stamp(state.SucceededAt),
+		SucceededTip: state.SucceededTip,
 	}
+}
+
+// freshnessOf judges this interface's freshness by its own fetch loop, and by
+// nothing else.
+//
+// The threshold is the engine's, applied to the fetch rather than to the
+// commit. The two are different questions: a commit's age says how busy the
+// project has been, and a fetch's age says whether this clone has looked
+// lately. Only the second is something the human in front of this page can
+// change, so only the second is ever reported as a warning — a quiet ledger
+// is current, and Refresh leaves it that way.
+//
+// The failure is answered first because it is the loudest fact the loop has:
+// a clone that cannot reach the canonical branch is not merely behind, and
+// saying "behind" for it would hide the cause a human has to fix.
+func freshnessOf(observation snapshot.Observation) freshnessPayload {
+	loop := observation.Fetch
+	if loop.Outcome == snapshot.OutcomeFailed {
+		return freshnessPayload{
+			State: snapshot.FreshnessFailed, Since: stamp(loop.FinishedAt),
+			Detail: failureDetail(loop),
+		}
+	}
+	landed := stamp(loop.SucceededAt)
+	switch {
+	case loop.SucceededAt.IsZero():
+		return freshnessPayload{
+			State:  snapshot.FreshnessBehind,
+			Detail: "no fetch of the canonical branch has completed on this clone yet",
+		}
+	case observation.ObservedAt.Sub(loop.SucceededAt) > goal.StaleThreshold:
+		return freshnessPayload{
+			State: snapshot.FreshnessBehind, Since: landed,
+			Detail: "the last fetch of the canonical branch landed more than " +
+				humanDuration(goal.StaleThreshold) + " ago",
+		}
+	case loop.SucceededTip != "" && observation.Tip != "" && observation.Tip != loop.SucceededTip:
+		return freshnessPayload{
+			State: snapshot.FreshnessBehind, Since: landed,
+			Detail: "the last fetch found the canonical branch at " + shortTip(loop.SucceededTip) +
+				" and this clone has accepted " + shortTip(observation.Tip),
+		}
+	}
+	return freshnessPayload{State: snapshot.FreshnessCurrent, Since: landed, Detail: loop.Detail}
+}
+
+// failureDetail is the loop's own message with the count of failures behind
+// it, because one refused fetch and an hour of refused fetches are different
+// situations and the message alone cannot tell them apart.
+func failureDetail(loop snapshot.FetchState) string {
+	message := loop.Message
+	if message == "" {
+		message = "the fetch of the canonical branch failed"
+	}
+	if loop.Failures <= 1 {
+		return message
+	}
+	return message + " (" + strconv.Itoa(loop.Failures) + " fetches in a row have failed)"
+}
+
+// shortTip is the object name a human compares by eye, as every other reader
+// of a tip in this interface writes it.
+func shortTip(tip string) string {
+	if len(tip) > 7 {
+		return tip[:7]
+	}
+	return tip
 }
 
 // stamp writes an instant a reader can parse, and an empty string for an

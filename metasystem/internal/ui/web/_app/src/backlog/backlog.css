@@ -254,8 +254,9 @@
  * Whether this page is reading a current ledger.
  *
  * At rest it is muted text and no border: being current is the usual answer,
- * and the usual answer does not need a box. Old wears the marker, wrong wears
- * the danger colour, and only those two are meant to catch an eye.
+ * and the usual answer does not need a box. A loop that has not heard from
+ * the canonical branch lately wears the marker, wrong wears the danger
+ * colour, and only those two are meant to catch an eye.
  */
 .ms-sync {
   font-size: 12px;
@@ -270,7 +271,7 @@
   outline-offset: 2px;
 }
 
-.ms-sync--stale {
+.ms-sync--behind {
   color: var(--ms-marker-fg);
 }
 

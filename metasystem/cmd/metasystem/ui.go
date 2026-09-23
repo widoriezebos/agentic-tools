@@ -200,7 +200,10 @@ func runUI(verb string, args []string) int {
 		// advance carries this clone's accepted ref forward at once, which a
 		// human act needs and a cadence cannot give: the act has landed on
 		// the canonical branch, and the board must not move the card until
-		// this clone has accepted it.
+		// this clone has accepted it. The board's Refresh needs the same
+		// thing for the opposite reason — nothing has been published and a
+		// human is asking whether this clone is current now — so it runs one
+		// look through here too, bounded by the same budget.
 		advance := func() {
 			ledger.Advance(func(endpoint goal.Endpoint) (goal.AdvanceResult, error) {
 				return goal.FetchAdvanceBounded(endpoint, snapshot.FetchBudget)
@@ -272,6 +275,7 @@ func runUI(verb string, args []string) int {
 						)
 					},
 					Observe: ledger.Observe,
+					Fetch:   advance,
 					Project: func() (project.Pane, error) {
 						return project.ReadPane(projectRoots(roots), time.Now().UTC())
 					},

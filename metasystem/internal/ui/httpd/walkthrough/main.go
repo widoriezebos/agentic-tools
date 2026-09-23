@@ -57,7 +57,25 @@ func main() {
 	// design done, and plants a journal the steward delivered — which is the
 	// whole of "nothing needs you" and "one line of health".
 	calm := flag.Bool("calm", false, "serve a workspace with nothing waiting, which is the page's good outcome")
+	// What this fixture's freshness loop is doing. The interface judges its
+	// own freshness by that loop, so the chip's three states and the health
+	// pill's three states are all reachable by saying what the loop last did:
+	// a look that landed a second ago, a look that has not landed for two
+	// hours, and a look that failed three times running.
+	freshness := flag.String("freshness", string(snapshot.FreshnessCurrent),
+		"what this fixture's fetch loop last did: current, behind or failed")
+	// How long ago the accepted tip was committed. It is a fixture knob
+	// because it is the fact the interface used to warn about and no longer
+	// does: a quiet week of commits with a loop that is looking every five
+	// seconds is a current board, and this is how that is stood in front of.
+	lastChange := flag.Duration("last-change", time.Minute,
+		"how long ago the accepted tip was committed, which is a fact and never a warning")
 	flag.Parse()
+	if *freshness != string(snapshot.FreshnessCurrent) &&
+		*freshness != string(snapshot.FreshnessBehind) &&
+		*freshness != string(snapshot.FreshnessFailed) {
+		log.Fatalf("-freshness takes current, behind or failed, not %q", *freshness)
+	}
 
 	manifest, err := web.ReadManifest()
 	if err != nil {
@@ -65,6 +83,8 @@ func main() {
 	}
 	state := newLedger(*calm)
 	state.calm = *calm
+	state.freshness = snapshot.Freshness(*freshness)
+	state.lastChange = *lastChange
 	// A checkout with one document in it, so the document reader and the
 	// in-place editor have something real to open: the editor writes to disk,
 	// reads it back, and answers what is there, and a walkthrough over a
@@ -103,8 +123,13 @@ func main() {
 		EngineBuild: "walkthrough", BundleDigest: manifest.SourceDigest,
 		NotificationJournal: journal,
 		Observe:             state.observe,
-		Authority:           authority,
-		Sessions:            sessions,
+		// What the board's Refresh runs before it observes. This fixture has
+		// no remote to reach, so the look is recorded rather than made: what
+		// it proves in a browser is that pressing Refresh runs one and that
+		// the state a human then reads is the state that look left behind.
+		Fetch:     state.fetch,
+		Authority: authority,
+		Sessions:  sessions,
 		// The walkthrough's acts ignore the hand that reached them: it has
 		// no ledger to record one in, and the point of this server is the
 		// board rather than the proof.
@@ -180,6 +205,14 @@ type ledger struct {
 	// register closed, and the finished design marked done. It changes what
 	// the Project pane answers and nothing about how it is answered.
 	calm bool
+	// freshness is what this fixture's fetch loop last did, which is what the
+	// interface judges its own freshness by. looks counts the Refreshes that
+	// ran one, so the walkthrough can show that pressing Refresh looks.
+	freshness snapshot.Freshness
+	looks     int
+	// lastChange is how old the accepted commit is. It reaches the board as a
+	// fact in the chip's tooltip and nothing else judges it.
+	lastChange time.Duration
 }
 
 // The fixture checkout's four documents.
@@ -483,18 +516,54 @@ func (l *ledger) observe() snapshot.Observation {
 	horizon := goal.NewApprovalHorizon(l.tree, now)
 	return snapshot.Observation{
 		ObservedAt: now, StateRoot: "/walkthrough", State: snapshot.StateRead,
-		Tip: "c5d517f427e35e19c2944ab9aefee4d9c9cd9e6c", CommittedAt: now.Add(-time.Minute),
+		Tip: "c5d517f427e35e19c2944ab9aefee4d9c9cd9e6c", CommittedAt: now.Add(-l.lastChange),
 		Tree: l.tree, Horizon: horizon, SyncMode: goal.SyncLocal,
 		// The claim gate cannot be asked about a tree with no repository
 		// behind it, so the walkthrough answers it directly: every approved
 		// goal is one a seat could claim.
 		Admission: l.admission(),
-		Fetch: snapshot.FetchState{
-			Outcome: snapshot.OutcomeCurrent, StartedAt: now.Add(-2 * time.Second), FinishedAt: now.Add(-time.Second),
-			Tip: "c5d517f427e35e19c2944ab9aefee4d9c9cd9e6c", Detail: "already at the canonical tip",
-			Cadence: snapshot.CadenceConnected, NextAt: now.Add(5 * time.Second),
-		},
+		Fetch:     l.loop(now),
 	}
+}
+
+// fetch is the look the board's Refresh runs before it observes. There is no
+// remote under this fixture, so the look is recorded and the loop stays what
+// the flag said it was: a fixture that healed itself on the first Refresh
+// could not show the two states a Refresh does not cure.
+func (l *ledger) fetch() {
+	l.looks++
+	fmt.Printf("refresh ran a fetch (%d so far)\n", l.looks)
+}
+
+// loop is what this fixture's freshness loop last did. The three answers are
+// the three the interface judges: a look that landed a second ago on the tip
+// this clone has accepted, a look that has not landed for two hours, and a
+// look that failed three times running.
+func (l *ledger) loop(now time.Time) snapshot.FetchState {
+	const tip = "c5d517f427e35e19c2944ab9aefee4d9c9cd9e6c"
+	landed := snapshot.FetchState{
+		Outcome: snapshot.OutcomeCurrent, StartedAt: now.Add(-2 * time.Second), FinishedAt: now.Add(-time.Second),
+		Tip: tip, Detail: "already at the canonical tip",
+		SucceededAt: now.Add(-time.Second), SucceededTip: tip,
+		Cadence: snapshot.CadenceConnected, NextAt: now.Add(5 * time.Second),
+	}
+	switch l.freshness {
+	case snapshot.FreshnessBehind:
+		behind := now.Add(-2 * time.Hour)
+		landed.StartedAt, landed.FinishedAt, landed.SucceededAt = behind.Add(-time.Second), behind, behind
+		landed.NextAt = now.Add(5 * time.Second)
+		return landed
+	case snapshot.FreshnessFailed:
+		landed.Outcome = snapshot.OutcomeFailed
+		landed.StartedAt, landed.FinishedAt = now.Add(-31*time.Second), now.Add(-30*time.Second)
+		landed.Tip, landed.Detail = "", ""
+		landed.Message = "ssh: connect to host ledger.example.org port 22: Operation timed out"
+		landed.Failures = 3
+		landed.SucceededAt = now.Add(-9 * time.Minute)
+		landed.NextAt = now.Add(40 * time.Second)
+		return landed
+	}
+	return landed
 }
 
 func (l *ledger) admission() backlog.Admission {

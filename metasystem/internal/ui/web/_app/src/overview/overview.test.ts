@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Changed, Group, Health, Item, Page } from "./api";
+import type { Changed, FreshnessState, Group, Health, Item, Page } from "./api";
 import {
   blockAnchor,
   blockOrder,
@@ -96,15 +96,16 @@ function page(over: Partial<Page> = {}): Page {
       designs: { total: 0, done: 0, inFlight: 0, progress: [] },
       questions: 0,
     },
-    health: { ok: true, syncedAt: at(0, 14, 36), problems: { count: 0, items: [] } },
+    health: { ok: true, syncedAt: at(0, 14, 36), freshness: "current", problems: { count: 0, items: [] } },
     ...over,
   };
 }
 
-function health(problems: Item[], syncedAt: string): Health {
+function health(problems: Item[], syncedAt: string, freshness: FreshnessState = "current"): Health {
   return {
     ok: problems.length === 0,
     syncedAt,
+    freshness,
     problems: { count: problems.length, items: problems },
   };
 }
@@ -307,28 +308,47 @@ describe("the health pills", () => {
     expect(healthPills(health([], at(0, 14, 36)), now).every((pill) => pill.where === null)).toBe(true);
   });
 
-  it("says a ledger that has fallen behind in the engine's own terms, measuring nothing", () => {
-    const stale = health(
-      [item("", "the accepted ledger is older than 30 minutes and has not been advanced", "ledger", "", "backlog")],
+  // The words come from the state the server judged, not from the sentence it
+  // wrote: reword the sentence and the pill must still say the same word.
+  it("says a fetch loop that has not landed lately in one word, from the state", () => {
+    const behind = health(
+      [item("", "the last fetch of the canonical branch landed more than 30 minutes ago", "ledger", "", "backlog")],
       at(0, 14, 7),
+      "behind",
     );
-    expect(healthPills(stale, now)[0]).toMatchObject({ words: "ledger stale", tone: "warn" });
-    const older = health([item("", "the accepted ledger is not at the canonical tip", "ledger", "", "backlog")], at(0, 11, 22));
-    expect(healthPills(older, now)[0].words).toBe("behind the tip");
+    expect(healthPills(behind, now)[0]).toMatchObject({ words: "behind", tone: "warn" });
+    const ahead = health(
+      [item("", "the last fetch found the canonical branch at 9f3c1ab and this clone has accepted 2ef5d8d", "ledger", "", "backlog")],
+      at(0, 11, 22),
+      "behind",
+    );
+    expect(healthPills(ahead, now)[0].words).toBe("behind");
   });
 
-  it("says a fetch that did not happen as a failure rather than as a gap", () => {
+  it("says a fetch that failed as a failure rather than as a gap", () => {
     const failed = health(
-      [item("", "the last fetch of the canonical branch did not succeed", "ledger", "", "backlog")],
+      [item("", "ssh: connect: host unreachable (3 fetches in a row have failed)", "ledger", "", "backlog")],
       at(0, 9, 0),
+      "failed",
     );
     expect(healthPills(failed, now)[0]).toMatchObject({ words: "fetch failed", tone: "bad" });
     expect(healthPills(failed, now)[0].where).toEqual({ kind: "backlog", id: "" });
   });
 
   it("says the same words whether or not the page knows when it last synced", () => {
-    const undated = health([item("", "the accepted ledger is not at the canonical tip", "ledger", "", "backlog")], "");
-    expect(healthPills(undated, now)[0].words).toBe("behind the tip");
+    const undated = health([item("", "the last fetch has not landed lately", "ledger", "", "backlog")], "", "behind");
+    expect(healthPills(undated, now)[0].words).toBe("behind");
+  });
+
+  // A ledger that does not project at all is a problem while the fetch loop
+  // is current: the loop is fine and the tree it found is not.
+  it("asks for attention where the loop is current and the ledger still refused", () => {
+    const refused = health(
+      [item("", "the accepted tip carries no backlog", "ledger", "", "backlog")],
+      at(0, 14, 36),
+      "current",
+    );
+    expect(healthPills(refused, now)[0]).toMatchObject({ words: "ledger attention", tone: "warn" });
   });
 
   it("counts the records the check refused, and opens the first of them", () => {

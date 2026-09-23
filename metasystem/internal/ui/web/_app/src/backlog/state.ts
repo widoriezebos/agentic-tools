@@ -35,7 +35,11 @@ export function useBacklog(): {
 
   useEffect(() => {
     const aborter = new AbortController();
-    loadBacklog(aborter.signal)
+    // The mount observes; every read after it is a Refresh, and a Refresh
+    // asks the server to look at the canonical branch before it answers. That
+    // is what makes "is this current" a question about now rather than about
+    // whenever the server's own loop last looked.
+    loadBacklog(aborter.signal, attempt > 0)
       .then((read) => {
         setBacklog({ state: "known", backlog: read });
       })

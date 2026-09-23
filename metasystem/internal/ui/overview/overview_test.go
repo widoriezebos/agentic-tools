@@ -9,6 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
 
 // The composition rules, one test per rule the design states.
@@ -108,7 +109,7 @@ func busy() Inputs {
 		},
 		Closed:  []backlog.Row{},
 		Counts:  map[backlog.Lane]int{backlog.LaneToDo: 2, backlog.LaneReady: 1, backlog.LaneInProgress: 1},
-		Ledger:  Ledger{AtTip: true, Fetched: true, SyncedAt: now.Add(-time.Minute)},
+		Ledger:  Ledger{Freshness: snapshot.FreshnessCurrent, AtTip: true, SyncedAt: now.Add(-time.Minute)},
 		Journal: []notifications.Notice{},
 		Human:   Standing{Proven: true},
 		Since:   visitedYesterday,
@@ -473,7 +474,7 @@ func TestEveryFailingQuestionIsReported(t *testing.T) {
 	t.Parallel()
 
 	page := composed(t, func(in *Inputs) {
-		in.Ledger = Ledger{AtTip: false, Fetched: false, Statement: "the remote does not answer"}
+		in.Ledger = Ledger{Freshness: snapshot.FreshnessFailed, AtTip: false, Statement: "the remote does not answer"}
 		in.Project.Problems = []project.Problem{
 			{Path: "plans/designs/board.md", Line: 4, Message: "Status: proposed is not a status"},
 		}
@@ -498,16 +499,61 @@ func TestEveryFailingQuestionIsReported(t *testing.T) {
 	testutil.Expect(t, "where it is read", items[2].Where, Where{Kind: WhereNotification, ID: "n1"})
 }
 
-func TestAFetchThatHasNotSucceededIsSaidPlainlyWhereTheLedgerSaysNothing(t *testing.T) {
+// The page says which of the three freshness states it is looking at, so the
+// pill can read the word rather than read the sentence back.
+func TestHealthCarriesTheFreshnessItWasJudgedOn(t *testing.T) {
 	t.Parallel()
 
-	page := composed(t, func(in *Inputs) {
-		in.Ledger = Ledger{AtTip: true, Fetched: false}
-	})
+	for _, one := range []struct {
+		name  string
+		state snapshot.Freshness
+	}{
+		{name: "current", state: snapshot.FreshnessCurrent},
+		{name: "behind", state: snapshot.FreshnessBehind},
+		{name: "failed", state: snapshot.FreshnessFailed},
+	} {
+		t.Run(one.name, func(t *testing.T) {
+			t.Parallel()
 
-	testutil.Require(t, "how many problems", page.Health.Problems.Count, 1)
-	testutil.Expect(t, "what it says", page.Health.Problems.Items[0].Title,
-		"the last fetch of the canonical branch did not succeed")
+			page := composed(t, func(in *Inputs) {
+				in.Ledger = Ledger{Freshness: one.state, AtTip: one.state == snapshot.FreshnessCurrent}
+			})
+
+			testutil.Expect(t, "the freshness the page was judged on", page.Health.Freshness, one.state)
+		})
+	}
+}
+
+// A freshness that is not current is a problem even where nothing wrote a
+// sentence about it: a reader told something is wrong must be told what.
+func TestAFreshnessWithNoSentenceIsStillSaidPlainly(t *testing.T) {
+	t.Parallel()
+
+	for _, one := range []struct {
+		name     string
+		state    snapshot.Freshness
+		sentence string
+	}{
+		{
+			name: "a loop that has not landed lately", state: snapshot.FreshnessBehind,
+			sentence: "the last fetch of the canonical branch has not landed lately",
+		},
+		{
+			name: "a loop whose last look failed", state: snapshot.FreshnessFailed,
+			sentence: "the last fetch of the canonical branch failed",
+		},
+	} {
+		t.Run(one.name, func(t *testing.T) {
+			t.Parallel()
+
+			page := composed(t, func(in *Inputs) {
+				in.Ledger = Ledger{Freshness: one.state, AtTip: false}
+			})
+
+			testutil.Require(t, "how many problems", page.Health.Problems.Count, 1)
+			testutil.Expect(t, "what it says", page.Health.Problems.Items[0].Title, one.sentence)
+		})
+	}
 }
 
 /* ----------------------------------------------------------- the whole -- */

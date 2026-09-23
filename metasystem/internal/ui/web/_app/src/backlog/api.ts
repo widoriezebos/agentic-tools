@@ -23,6 +23,8 @@ import type { LaneId } from "./lanes";
 import type { NewGoal } from "./opening";
 
 const BACKLOG = "/api/backlog";
+/** What Refresh adds to the read: look once, then answer. */
+const LOOK = "?fetch=1";
 /** The collection: a body posted here opens a goal. */
 const OPEN = "/api/backlog/goals";
 /** The same resource with one goal beneath it, where the acts on one live. */
@@ -128,12 +130,31 @@ export type FetchClause = {
   failures: number;
   cadence: string;
   nextAt: string;
+  /** When the last fetch that landed finished, and the tip it found. */
+  succeededAt: string;
+  succeededTip: string;
 };
+
+/**
+ * How current this interface is, judged by the server from its own fetch loop
+ * and carried here whole. The page never recomputes it: the three words below
+ * are the three the server said, and `since` is the instant it measured from
+ * — the last fetch that landed, or the failure itself.
+ */
+export type FreshnessState = "current" | "behind" | "failed";
+
+export type Freshness = { state: FreshnessState; since: string; detail: string };
 
 export type Ledger = {
   state: LedgerState;
   tip: string;
+  /** When the accepted tip was committed: the last change to the project. */
   committedAt: string;
+  freshness: Freshness;
+  /**
+   * `freshness.state !== "current"`, kept for one release so that a reader
+   * written against the old shape still parses. Nothing here reads it.
+   */
   stale: boolean;
   staleAfterSeconds: number;
   syncMode: string;
@@ -232,8 +253,16 @@ async function reasonOf(response: Response): Promise<Refusal> {
   }
 }
 
-export async function loadBacklog(signal?: AbortSignal): Promise<Backlog> {
-  return request(BACKLOG, undefined, signal);
+/**
+ * The read.
+ *
+ * `looking` is what Refresh adds: the server runs one fetch of the canonical
+ * branch and then observes, so the answer is about the instant a human
+ * pressed the button rather than about the loop's last cadence. The read a
+ * pane makes when it mounts leaves it off and starts nothing.
+ */
+export async function loadBacklog(signal?: AbortSignal, looking = false): Promise<Backlog> {
+  return request(looking ? `${BACKLOG}${LOOK}` : BACKLOG, undefined, signal);
 }
 
 /**

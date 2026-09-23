@@ -40,6 +40,14 @@ type Info struct {
 	// ref and starts no fetch. A nil Observe is an engine that cannot answer,
 	// which the route says.
 	Observe func() snapshot.Observation
+	// Fetch carries this clone's accepted ref forward now, through the
+	// freshness loop's own machinery and under the loop's own budget, and
+	// returns when that one look has finished. It is what the board's Refresh
+	// runs before observing, so that "is this current" is answered about the
+	// instant a human asked rather than about the loop's last cadence. A nil
+	// Fetch is a build whose Refresh only re-observes, which is what every
+	// other read of this resource does anyway.
+	Fetch func()
 	// Project answers what the project's records declare, per request for the
 	// same reason.
 	Project func() (project.Pane, error)
@@ -245,7 +253,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == backlogPath {
-		h.backlog(w)
+		h.backlog(w, r)
 		return
 	}
 	if r.URL.Path == notificationsPath {

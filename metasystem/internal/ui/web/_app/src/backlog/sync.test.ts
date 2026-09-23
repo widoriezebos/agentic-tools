@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { FetchClause, Ledger } from "./api";
-import { clockTime, minuteTime } from "./format";
+import type { FetchClause, Freshness, Ledger } from "./api";
+import { clockTime, dateAndTime, minuteTime } from "./format";
 import { syncOf } from "./sync";
 
 /**
@@ -9,9 +9,14 @@ import { syncOf } from "./sync";
  *
  * What the chip says is a function of the payload and nothing else, so it is
  * tested as one. The point of each case is which voice it uses: quiet for the
- * usual answer, the marker for a tip the server itself calls old, and the
- * danger colour with a line on the page for the two things a human can do
- * something about.
+ * usual answer, the marker for a fetch loop the server says has not heard
+ * from the canonical branch lately, and the danger colour with a line on the
+ * page for the two things a human can do something about.
+ *
+ * The accepted commit's age appears in exactly one assertion below, and it is
+ * an assertion that nothing raises its voice about it. That is the rule: a
+ * tree nobody has committed to since breakfast is quiet, not stale, and
+ * Refresh cannot make a commit younger.
  *
  * Every time below is rendered rather than written out, because a wall clock
  * is the machine's own: an assertion that only held where it was written
@@ -21,29 +26,38 @@ import { syncOf } from "./sync";
 const OBSERVED = "2026-09-23T10:30:03Z";
 const FINISHED = "2026-09-23T10:29:41Z";
 const NEXT = "2026-09-23T10:34:41Z";
+const COMMITTED = "2026-09-23T08:14:00Z";
+const TIP = "2ef5d8d9c1b4a70f3e2d1c0b9a8f7e6d5c4b3a29";
 
 function fetched(over: Partial<FetchClause> = {}): FetchClause {
   return {
     outcome: "current",
     startedAt: "2026-09-23T10:29:40Z",
     finishedAt: FINISHED,
-    tip: "",
+    tip: TIP,
     detail: "already at the canonical tip",
     message: "",
     failures: 0,
     cadence: "5m",
     nextAt: NEXT,
+    succeededAt: FINISHED,
+    succeededTip: TIP,
     ...over,
   };
+}
+
+function current(): Freshness {
+  return { state: "current", since: FINISHED, detail: "already at the canonical tip" };
 }
 
 function ledger(over: Partial<Ledger> = {}): Ledger {
   return {
     state: "read",
-    tip: "2ef5d8d9c1b4a70f3e2d1c0b9a8f7e6d5c4b3a29",
-    committedAt: "2026-09-23T10:12:00Z",
+    tip: TIP,
+    committedAt: COMMITTED,
+    freshness: current(),
     stale: false,
-    staleAfterSeconds: 3600,
+    staleAfterSeconds: 1800,
     syncMode: "",
     stateRoot: "",
     message: "",
@@ -68,51 +82,104 @@ describe("a ledger that is current", () => {
   // The two lines that stood above the board are the tooltip now, fact for
   // fact: a human who wants the report asks for it and gets all of it.
   it("carries the whole report where it is asked for", () => {
-    expect(sync.report).toContain("Accepted tip 2ef5d8d, committed");
+    expect(sync.report).toContain("Accepted tip 2ef5d8d");
     expect(sync.report).toContain(`observed ${clockTime(OBSERVED)}`);
     expect(sync.report).toContain(`fetched ${clockTime(FINISHED)}, already at the canonical tip`);
     expect(sync.report).toContain(`next fetch ${clockTime(NEXT)}`);
   });
+
+  // The one place the accepted commit's age is still said, and it is said as
+  // a fact rather than as an alarm.
+  it("reports when the project last changed, and raises no voice about it", () => {
+    const quiet = syncOf(ledger({ committedAt: "2026-09-21T08:14:00Z" }), OBSERVED);
+    expect(quiet.report).toContain(`last change ${dateAndTime("2026-09-21T08:14:00Z")}`);
+    expect(quiet.state).toBe("rest");
+    expect(quiet.wrong).toBe("");
+  });
 });
 
-describe("a tip the server calls old", () => {
-  const sync = syncOf(ledger({ stale: true, committedAt: "2026-09-23T08:12:00Z" }), OBSERVED);
+describe("a fetch loop that has not heard from the canonical branch lately", () => {
+  const since = "2026-09-23T09:58:00Z";
+  const sync = syncOf(
+    ledger({
+      freshness: {
+        state: "behind",
+        since,
+        detail: "the last fetch of the canonical branch landed more than 30 minutes ago",
+      },
+    }),
+    OBSERVED,
+  );
 
-  it("says how far behind it is, in the chip itself", () => {
-    expect(sync.state).toBe("stale");
-    expect(sync.line).toBe(`Synced ${minuteTime(OBSERVED)} · 2 h behind`);
+  it("says since when, in the chip itself", () => {
+    expect(sync.state).toBe("behind");
+    expect(sync.line).toBe(`Behind since ${minuteTime(since)}`);
   });
 
-  // Old is not broken: a repository nobody has committed to for a day is a
-  // quiet repository, and the age sentence is in the report for whoever asks.
-  it("puts no line on the page, and says why it is old in the report", () => {
+  // Behind is not broken: the loop looks again on its own, and the server's
+  // reason is in the report for whoever asks.
+  it("puts no line on the page, and says why in the report", () => {
     expect(sync.wrong).toBe("");
-    expect(sync.report).toContain("The accepted tip is 2 h old; the last fetch found the canonical branch at this tip.");
+    expect(sync.report).toContain(
+      `Behind since ${clockTime(since)}: the last fetch of the canonical branch landed more than 30 minutes ago.`,
+    );
+  });
+
+  it("names no instant where no fetch has ever landed", () => {
+    const never = syncOf(
+      ledger({
+        freshness: { state: "behind", since: "", detail: "no fetch of the canonical branch has completed on this clone yet" },
+      }),
+      OBSERVED,
+    );
+    expect(never.line).toBe("Behind");
+    expect(never.report).toContain("Behind: no fetch of the canonical branch has completed on this clone yet.");
+  });
+
+  it("says the canonical tip it has not caught up with, in the server's words", () => {
+    const ahead = syncOf(
+      ledger({
+        freshness: {
+          state: "behind",
+          since,
+          detail: "the last fetch found the canonical branch at 9f3c1ab and this clone has accepted 2ef5d8d",
+        },
+      }),
+      OBSERVED,
+    );
+    expect(ahead.state).toBe("behind");
+    expect(ahead.report).toContain("the last fetch found the canonical branch at 9f3c1ab");
   });
 });
 
-/** A ledger whose loop last failed, with the message the server gave. */
-function failing(message: string, nextAt = NEXT): Ledger {
-  const loop = fetched({ outcome: "failed", message, nextAt });
-  return { ...ledger(), fetch: loop };
+/** A ledger whose loop last failed, with the message and the count the server gave. */
+function failing(detail: string, nextAt = NEXT): Ledger {
+  const loop = fetched({ outcome: "failed", message: detail, failures: 3, nextAt, tip: "", detail: "" });
+  return { ...ledger(), freshness: { state: "failed", since: FINISHED, detail }, fetch: loop };
 }
 
 describe("a fetch that failed", () => {
-  const sync = syncOf(failing("ssh: connect: host unreachable"), OBSERVED);
+  const detail = "ssh: connect: host unreachable (3 fetches in a row have failed)";
+  const sync = syncOf(failing(detail), OBSERVED);
 
   it("is wrong, and says so where the chip stands", () => {
     expect(sync.state).toBe("wrong");
-    expect(sync.line).toBe(`Sync failed ${minuteTime(FINISHED)}`);
+    expect(sync.line).toBe(`Fetch failed ${minuteTime(FINISHED)}`);
   });
 
-  it("puts one line on the page, with the reason and what to do", () => {
+  it("puts one line on the page, with the reason, the count and what to do", () => {
     expect(sync.wrong).toContain("ssh: connect: host unreachable");
+    expect(sync.wrong).toContain("3 fetches in a row have failed");
     expect(sync.wrong).toContain(`tries again at ${clockTime(NEXT)}`);
     expect(sync.wrong).toContain("Refresh");
   });
 
+  it("carries the same sentence in the report", () => {
+    expect(sync.report).toContain(`Fetch failed ${clockTime(FINISHED)}: ${detail}.`);
+  });
+
   it("says the server is stopping rather than promising a retry that is not due", () => {
-    expect(syncOf(failing("host unreachable", ""), OBSERVED).wrong).toContain("The server is stopping");
+    expect(syncOf(failing(detail, ""), OBSERVED).wrong).toContain("The server is stopping");
   });
 });
 

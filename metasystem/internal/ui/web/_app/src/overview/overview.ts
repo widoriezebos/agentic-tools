@@ -1,4 +1,4 @@
-import type { Changed, Group, Health, Item, Lane, NeedsYou, Page, Where } from "./api";
+import type { Changed, FreshnessState, Group, Health, Item, Lane, NeedsYou, Page, Where } from "./api";
 import { laneFor } from "../backlog/lanes";
 import { dateAndTime, minuteTime } from "../backlog/format";
 import { backlogPath, documentPath, goalPath, projectPath } from "../routes";
@@ -423,8 +423,8 @@ export function healthPills(health: Health, now: Date): Pill[] {
   return [
     {
       id: LEDGER,
-      words: ledger === null ? `synced ${minuteTime(health.syncedAt)}` : ledgerWords(ledger),
-      tone: ledger === null ? "ok" : ledgerTone(ledger),
+      words: ledger === null ? `synced ${minuteTime(health.syncedAt)}` : ledgerWords(health.freshness),
+      tone: ledger === null ? "ok" : ledgerTone(health.freshness),
       where: ledger?.where ?? null,
     },
     {
@@ -443,32 +443,31 @@ export function healthPills(health: Health, now: Date): Pill[] {
 }
 
 /**
- * The ledger pill says what the engine said, in two or three words, and
- * measures nothing of its own: the engine judges the accepted tip's age and
- * whether it is at the canonical tip, and the time this page last synced is a
- * different fact, so a gap measured from it would put a number beside the
- * wrong sentence. A fetch that did not happen is a machine that cannot reach
- * the canonical branch; a tip that is behind or old is a branch that moved on.
+ * The ledger pill says what the server judged, in two or three words, and
+ * measures nothing of its own.
+ *
+ * It reads the state rather than the sentence. The words used to be found by
+ * matching the problem's title against patterns — a title naming a fetch was
+ * a failure, a title saying "older than" was staleness — which made the pill
+ * a second reader of prose the server never wrote for it: reword the
+ * sentence, and the pill silently drops to "ledger attention". The server now
+ * says which of the three states it judged and the pill says the word for it.
+ * A problem while the freshness is current is a ledger that did not project
+ * at all, which is attention rather than a fetch.
  */
-function namesAFetch(title: string): boolean {
-  return /\bfetch(es|ed|ing)?\b/i.test(title);
+function ledgerWords(state: FreshnessState): string {
+  switch (state) {
+    case "failed":
+      return "fetch failed";
+    case "behind":
+      return "behind";
+    default:
+      return "ledger attention";
+  }
 }
 
-function ledgerWords(problem: Item): string {
-  if (namesAFetch(problem.title)) {
-    return "fetch failed";
-  }
-  if (/canonical tip/i.test(problem.title)) {
-    return "behind the tip";
-  }
-  if (/older than/i.test(problem.title)) {
-    return "ledger stale";
-  }
-  return "ledger attention";
-}
-
-function ledgerTone(problem: Item): Tone {
-  return namesAFetch(problem.title) ? "bad" : "warn";
+function ledgerTone(state: FreshnessState): Tone {
+  return state === "failed" ? "bad" : "warn";
 }
 
 /**

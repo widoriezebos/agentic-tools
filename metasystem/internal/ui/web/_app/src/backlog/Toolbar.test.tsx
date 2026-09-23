@@ -20,24 +20,29 @@ import type { FetchClause, Ledger } from "./api";
 
 const OBSERVED = "2026-09-23T10:30:03Z";
 
+const FINISHED = "2026-09-23T10:29:41Z";
+
 const clause: FetchClause = {
   outcome: "current",
   startedAt: "2026-09-23T10:29:40Z",
-  finishedAt: "2026-09-23T10:29:41Z",
+  finishedAt: FINISHED,
   tip: "",
   detail: "already at the canonical tip",
   message: "",
   failures: 0,
   cadence: "5m",
   nextAt: "2026-09-23T10:34:41Z",
+  succeededAt: FINISHED,
+  succeededTip: "2ef5d8d9c1b4a70f3e2d1c0b9a8f7e6d5c4b3a29",
 };
 
 const ledger: Ledger = {
   state: "read",
   tip: "2ef5d8d9c1b4a70f3e2d1c0b9a8f7e6d5c4b3a29",
   committedAt: "2026-09-23T10:12:00Z",
+  freshness: { state: "current", since: FINISHED, detail: "already at the canonical tip" },
   stale: false,
-  staleAfterSeconds: 3600,
+  staleAfterSeconds: 1800,
   syncMode: "",
   stateRoot: "",
   message: "",
@@ -132,20 +137,32 @@ describe("the toolbar", () => {
 });
 
 describe("the chip", () => {
-  it("is muted at rest, wears the marker when old, and the danger colour when wrong", () => {
+  it("is muted at rest, wears the marker when behind, and the danger colour when wrong", () => {
     expect(board()).toContain("ms-sync--rest");
+    const behind: Ledger = {
+      ...ledger,
+      freshness: {
+        state: "behind",
+        since: "2026-09-23T09:58:00Z",
+        detail: "the last fetch of the canonical branch landed more than 30 minutes ago",
+      },
+    };
     const old = markupOf(
       <BoardToolbar
         reading={null}
         narrowing={null}
-        sync={syncOf({ ...ledger, stale: true, committedAt: "2026-09-23T08:12:00Z" }, OBSERVED)}
+        sync={syncOf(behind, OBSERVED)}
         observedAt={OBSERVED}
         onRefresh={() => undefined}
       />,
     );
-    expect(old).toContain("ms-sync--stale");
-    expect(old).toContain("2 h behind");
-    const broken: Ledger = { ...ledger, fetch: { ...clause, outcome: "failed", message: "host unreachable" } };
+    expect(old).toContain("ms-sync--behind");
+    expect(old).toContain("Behind since");
+    const broken: Ledger = {
+      ...ledger,
+      freshness: { state: "failed", since: FINISHED, detail: "host unreachable" },
+      fetch: { ...clause, outcome: "failed", message: "host unreachable" },
+    };
     const wrong = markupOf(
       <BoardToolbar
         reading={null}

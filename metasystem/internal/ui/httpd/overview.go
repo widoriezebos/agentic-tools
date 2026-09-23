@@ -28,11 +28,6 @@ import (
 // reserved prefix.
 const overviewPath = "/api/overview"
 
-// The fetch outcomes that mean this clone's accepted ledger is current with
-// the canonical branch. Everything else — never fetched, in flight, failed —
-// is something the page says rather than something it hides.
-var fetchSucceeded = []snapshot.Outcome{snapshot.OutcomeAdvanced, snapshot.OutcomeCurrent}
-
 // overview answers the landing page.
 //
 // Every part of it is required: a page missing its records or its ledger would
@@ -114,52 +109,40 @@ func (h *handler) visit(human string, now time.Time) (time.Time, bool) {
 	return since, first
 }
 
-// ledgerFor reduces the board's own statement to the three facts the page
-// judges health on, so that Overview and the Backlog cannot disagree about
-// whether the ledger is where it should be: both read the same projection.
+// ledgerFor reduces the board's own statement to the facts the page judges
+// health on, so that Overview and the Backlog cannot disagree about whether
+// the ledger is where it should be: both read the same projection, and both
+// read the one freshness judgement backlogOf made.
+//
+// SyncedAt is the last fetch that landed rather than the last fetch that
+// started, because that is the instant the calm line claims about: a tick in
+// flight has no finish yet, and dating the page from a look that has not
+// answered would be dating it from nothing.
 func ledgerFor(board backlogPayload) overview.Ledger {
 	ledger := overview.Ledger{
-		AtTip:   board.Ledger.State == string(snapshot.StateRead) && !board.Ledger.Stale,
-		Fetched: succeeded(board.Ledger.Fetch.Outcome),
+		Freshness: board.Ledger.Freshness.State,
+		AtTip: board.Ledger.State == string(snapshot.StateRead) &&
+			board.Ledger.Freshness.State == snapshot.FreshnessCurrent,
 	}
-	if at, err := time.Parse(time.RFC3339, board.Ledger.Fetch.FinishedAt); err == nil {
+	if at, err := time.Parse(time.RFC3339, board.Ledger.Fetch.SucceededAt); err == nil {
 		ledger.SyncedAt = at
 	}
-	ledger.Statement = ledgerStatement(board.Ledger, ledger)
+	ledger.Statement = ledgerStatement(board.Ledger)
 	return ledger
 }
 
-func succeeded(outcome string) bool {
-	for _, named := range fetchSucceeded {
-		if outcome == string(named) {
-			return true
-		}
-	}
-	return false
-}
-
 // ledgerStatement is the engine's own words for what is wrong, in the order a
-// human can act on them: what the last fetch said, then what the ledger reader
-// said, then the staleness the projection computed. An empty answer leaves the
-// composing package to say the plain thing.
-func ledgerStatement(read ledgerPayload, judged overview.Ledger) string {
-	if !judged.Fetched && read.Fetch.Message != "" {
-		return read.Fetch.Message
+// human can act on them: what this interface's freshness found about its own
+// fetch loop, then what the ledger reader found in the tree it read. An empty
+// answer leaves the composing package to say the plain thing.
+func ledgerStatement(read ledgerPayload) string {
+	if read.Freshness.State != snapshot.FreshnessCurrent && read.Freshness.Detail != "" {
+		return read.Freshness.Detail
 	}
 	if read.Message != "" {
 		return read.Message
 	}
-	if read.Stale {
-		return "the accepted ledger is older than " + staleAfter(read) + " and has not been advanced"
-	}
-	if !judged.Fetched {
-		return "the last fetch of the canonical branch has not succeeded (" + read.Fetch.Outcome + ")"
-	}
 	return ""
-}
-
-func staleAfter(read ledgerPayload) string {
-	return humanDuration(time.Duration(read.StaleAfterSeconds) * time.Second)
 }
 
 // humanDuration says a duration the way a person would: "30 minutes",

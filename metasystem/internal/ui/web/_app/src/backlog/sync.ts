@@ -1,29 +1,38 @@
 import type { Ledger } from "./api";
-import { ageBetween, clockTime, dateAndTime, minuteTime, shortTip } from "./format";
+import { clockTime, dateAndTime, minuteTime, shortTip } from "./format";
 
 /**
  * Whether this page is reading a current ledger, said in as few words as
  * being current deserves.
  *
- * The whole report — which tip, when it was committed, when this page read
- * it, what the server's fetch loop last found, when it looks again, and how
- * old the tip is — used to be two lines above the board, ahead of the work
- * and read every time by a human who had no question about it. It is one
- * chip now, and the report is its tooltip: a human who wants the detail asks
- * for it, and nobody reads it by accident.
+ * The whole report — which tip, when the project last changed, when this page
+ * read it, what the server's fetch loop last found, when it looks again — used
+ * to be two lines above the board, ahead of the work and read every time by a
+ * human who had no question about it. It is one chip now, and the report is
+ * its tooltip: a human who wants the detail asks for it, and nobody reads it
+ * by accident.
  *
- * Status that is fine is quiet. The chip raises its voice twice and no other
- * time: an accepted tip the server already calls old, and something actually
- * wrong — a fetch that failed, or a ledger that does not project. Only the
- * second puts a line on the page, because only the second is something a
- * human can do anything about.
+ * What the chip judges is the server's fetch loop and nothing else. The
+ * accepted commit's age used to raise the chip's voice, and that was a
+ * warning nobody could clear: Refresh asks the server to look again, and no
+ * amount of looking makes the last commit younger, so the board told a human
+ * something was wrong and then refused to stop telling them. A repository
+ * nobody has committed to since breakfast is a quiet repository. The commit's
+ * time is still in the report, as "last change", where it is a fact rather
+ * than an alarm.
+ *
+ * So the chip raises its voice twice and no other time: a loop that has not
+ * heard from the canonical branch lately, and something actually wrong — a
+ * fetch that failed, or a ledger that does not project. Only the second puts
+ * a line on the page, because only the second is something a human can do
+ * anything about.
  *
  * Nothing here counts. Every time is the response's own, and the page sets no
  * timer, so a chip that says 10:30 says what the last read found rather than
  * what a clock has since made of it.
  */
 
-export type SyncState = "rest" | "stale" | "wrong";
+export type SyncState = "rest" | "behind" | "wrong";
 
 export type Sync = {
   state: SyncState;
@@ -51,16 +60,12 @@ export function syncOf(ledger: Ledger | null, observedAt: string): Sync {
   if (ledger.state !== "read") {
     return { state: "wrong", line: brokenLine(ledger), report, wrong: brokenReason(ledger) };
   }
-  if (ledger.fetch.outcome === "failed") {
-    return { state: "wrong", line: `Sync failed ${minuteTime(ledger.fetch.finishedAt)}`, report, wrong: fetchFailure(ledger) };
+  const { state, since } = ledger.freshness;
+  if (state === "failed") {
+    return { state: "wrong", line: `Fetch failed ${minuteTime(since)}`, report, wrong: fetchFailure(ledger) };
   }
-  if (ledger.stale) {
-    return {
-      state: "stale",
-      line: `Synced ${minuteTime(observedAt)} · ${ageBetween(ledger.committedAt, observedAt)} behind`,
-      report,
-      wrong: "",
-    };
+  if (state === "behind") {
+    return { state: "behind", line: behindLine(ledger), report, wrong: "" };
   }
   return { state: "rest", line: `Synced ${minuteTime(observedAt)} · ${shortTip(ledger.tip)}`, report, wrong: "" };
 }
@@ -68,15 +73,17 @@ export function syncOf(ledger: Ledger | null, observedAt: string): Sync {
 /**
  * The report the chip carries: every fact the two lines above the board
  * carried, in the order they carried them, so that asking for the detail
- * gives the same answer reading it always did.
+ * gives the same answer reading it always did — and, at the end, the one
+ * sentence saying how current the server believes it is.
  */
 export function reportOf(ledger: Ledger, observedAt: string): string {
   const tip =
     ledger.tip === ""
       ? "No accepted tip in this clone"
-      : `Accepted tip ${shortTip(ledger.tip)}, committed ${dateAndTime(ledger.committedAt)}`;
+      : `Accepted tip ${shortTip(ledger.tip)}, last change ${dateAndTime(ledger.committedAt)}`;
   const read = `${tip} · observed ${clockTime(observedAt)} · ${fetchClause(ledger)}.`;
-  return ledger.stale ? `${read} ${staleLine(ledger, observedAt)}` : read;
+  const freshness = freshnessLine(ledger);
+  return freshness === "" ? read : `${read} ${freshness}`;
 }
 
 /** What the loop last did, and when it looks again. */
@@ -100,21 +107,31 @@ export function fetchClause(ledger: Ledger): string {
 }
 
 /**
- * Why an old tip is old. A tree that has not moved is not by itself a
- * problem; what the human needs is what the last look at the canonical branch
- * found, which is the difference between a quiet repository and a broken one.
+ * How current the server judged itself to be, in the same terms the chip uses
+ * and with the server's own reason after them. A ledger that is current says
+ * nothing here: the fetch clause above has already said when it last looked
+ * and what it found.
  */
-export function staleLine(ledger: Ledger, observedAt: string): string {
-  const age = `The accepted tip is ${ageBetween(ledger.committedAt, observedAt)} old`;
-  switch (ledger.fetch.outcome) {
+export function freshnessLine(ledger: Ledger): string {
+  const { state, since, detail } = ledger.freshness;
+  switch (state) {
     case "current":
-    case "advanced":
-      return `${age}; the last fetch found the canonical branch at this tip.`;
+      return "";
+    case "behind":
+      return since === "" ? `Behind: ${detail}.` : `Behind since ${clockTime(since)}: ${detail}.`;
     case "failed":
-      return `${age}; the last fetch failed: ${ledger.fetch.message}.`;
-    default:
-      return `${age}; no fetch has completed yet.`;
+      return `Fetch failed ${clockTime(since)}: ${detail}.`;
   }
+}
+
+/**
+ * The chip's words for a loop that has not heard from the canonical branch
+ * lately. A clone that has never fetched has no instant to be behind since,
+ * and naming one it does not have would be worse than naming none.
+ */
+function behindLine(ledger: Ledger): string {
+  const since = ledger.freshness.since;
+  return since === "" ? "Behind" : `Behind since ${minuteTime(since)}`;
 }
 
 /** A fetch that failed, and what a human can do about it from here. */
@@ -124,7 +141,7 @@ function fetchFailure(ledger: Ledger): string {
     loop.nextAt === ""
       ? "The server is stopping, so nothing will fetch again"
       : `The server tries again at ${clockTime(loop.nextAt)}`;
-  return `The last fetch failed at ${clockTime(loop.finishedAt)}: ${loop.message}. ${again}; Refresh asks for the accepted tip as it stands now.`;
+  return `The last fetch failed at ${clockTime(ledger.freshness.since)}: ${ledger.freshness.detail}. ${again}; Refresh looks again now.`;
 }
 
 /** The chip's word for a ledger that did not project. */

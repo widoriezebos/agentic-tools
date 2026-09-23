@@ -57,6 +57,27 @@ const (
 	OutcomeFailed Outcome = "failed"
 )
 
+// Freshness is what this interface's own fetch loop was judged to be. It is
+// the loop's freshness and never the accepted commit's: the loop is the only
+// one of the two a human at this page can do anything about, and a warning
+// nothing anyone does can clear is a warning that teaches a reader to ignore
+// warnings.
+type Freshness string
+
+const (
+	// FreshnessCurrent is a loop whose last look landed, inside the engine's
+	// staleness threshold, on the tip this clone has accepted. A repository
+	// nobody has committed to since breakfast is current: quiet is not
+	// behind.
+	FreshnessCurrent Freshness = "current"
+	// FreshnessBehind is a loop that has not landed a look for longer than
+	// that threshold, or one that found a tip this clone has not caught up
+	// with.
+	FreshnessBehind Freshness = "behind"
+	// FreshnessFailed is a loop whose last look ended in a failure.
+	FreshnessFailed Freshness = "failed"
+)
+
 // FetchState is what the loop last did and when it will look again. Every
 // observation carries it, so a reader can always tell a stale tip from a
 // broken one.
@@ -69,6 +90,14 @@ type FetchState struct {
 	Message    string
 	Failures   int
 	Cadence    string
+	// SucceededAt is when the last tick that actually landed finished, and
+	// SucceededTip is the canonical tip it found. They outlive a tick that is
+	// still running and a tick that failed, because how fresh this clone is
+	// depends on the last look that landed rather than on the last look: a
+	// fetch in flight would otherwise read as a clone that has never fetched,
+	// and a failure would erase the hour it was current before it.
+	SucceededAt  time.Time
+	SucceededTip string
 	// NextAt is when the next tick is due. It is zero while no loop is
 	// running, which says the server is stopping rather than promising a
 	// fetch nobody will make.
@@ -185,10 +214,12 @@ func (h *Holder) tick(fetch Fetch) {
 		h.fetch.Outcome = OutcomeAdvanced
 		h.fetch.Tip, h.fetch.Detail, h.fetch.Message = result.Tip, result.Detail, ""
 		h.fetch.Failures = 0
+		h.fetch.SucceededAt, h.fetch.SucceededTip = finished, result.Tip
 	default:
 		h.fetch.Outcome = OutcomeCurrent
 		h.fetch.Tip, h.fetch.Detail, h.fetch.Message = result.Tip, result.Detail, ""
 		h.fetch.Failures = 0
+		h.fetch.SucceededAt, h.fetch.SucceededTip = finished, result.Tip
 	}
 	h.armLocked(finished)
 }

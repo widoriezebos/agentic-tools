@@ -126,10 +126,16 @@ export function BoardToolbar({
  *
  * At rest it is muted and says only when this page read and which tip it
  * read: a human who wanted more asks the chip, and the tooltip carries the
- * whole report. Old wears the marker colour and says how far behind the tip
- * is, which is the one fact the short line cannot leave out. Wrong wears the
- * danger colour, and the pane puts a line under the toolbar saying what to
- * do, because that is the only state anything can be done about.
+ * whole report. Behind wears the marker colour and says since when the
+ * server last heard from the canonical branch, which is the one fact the
+ * short line cannot leave out. Wrong wears the danger colour, and the pane
+ * puts a line under the toolbar saying what to do, because that is the only
+ * state anything can be done about.
+ *
+ * All three are the server's judgement of its own fetch loop, carried here
+ * whole. The chip measures nothing: a chip that measured the accepted
+ * commit's age would wear the marker over a quiet week and never take it off,
+ * however often a human pressed Refresh.
  */
 export function SyncChip({ sync }: { sync: Sync }) {
   return (

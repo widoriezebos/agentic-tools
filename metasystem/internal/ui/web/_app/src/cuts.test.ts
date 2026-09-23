@@ -76,10 +76,21 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // of the act routes name a goal by its id between the prefix and their own
   // suffix, which is why those suffixes are listed on their own; the fourth
   // opens a goal and so names the collection, which has no id in it at all.
+  // The query is Refresh's and nobody else's: it asks the server to fetch the
+  // canonical branch once before it answers. It is the same resource and the
+  // same call site — a read a human asked for, not a read anything repeats.
   [
     "backlog/api.ts",
     1,
-    ["/api/backlog", "/api/backlog/goals", "/api/backlog/goals/", "/approve", "/withdraw", "/priority"],
+    [
+      "/api/backlog",
+      "?fetch=1",
+      "/api/backlog/goals",
+      "/api/backlog/goals/",
+      "/approve",
+      "/withdraw",
+      "/priority",
+    ],
   ],
   // The Project section's writes join its two reads at the one call site it
   // already had: a write is the same request with a body, so there is still
