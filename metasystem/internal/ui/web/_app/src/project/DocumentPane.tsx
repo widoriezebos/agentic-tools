@@ -377,7 +377,6 @@ function Read({
       {sheet !== null && (
         <Sheet
           request={sheet}
-          goals={pane?.goals ?? []}
           onClose={() => {
             setSheet(null);
           }}

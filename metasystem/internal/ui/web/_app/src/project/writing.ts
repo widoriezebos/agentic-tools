@@ -15,10 +15,19 @@ import type { NewRecord } from "./api";
  * reaches.
  */
 
-/** The three kinds a human creates here. Doctrine is not one of them. */
-const KINDS = ["decision", "design", "intent"] as const;
+/** The four kinds a human creates here, each in a home the resolver names. */
+const KINDS = ["decision", "design", "intent", "doctrine"] as const;
 
 export type Kind = (typeof KINDS)[number];
+
+/**
+ * The two kinds that are books of the project itself.
+ *
+ * A chapter of either is about the whole by definition — the intent is what
+ * the project is for and the doctrine is how it is shaped — so neither ever
+ * names a goal, whatever page it was written from.
+ */
+const BOOKS: readonly Kind[] = ["intent", "doctrine"];
 
 /** The four statuses a record carries, in the order they are lived. */
 export const STATUSES = ["draft", "accepted", "superseded", "done"];
@@ -26,6 +35,7 @@ export const STATUSES = ["draft", "accepted", "superseded", "done"];
 /** What each kind opens with, empty, for a human to write into. */
 const SECTIONS: Readonly<Record<Kind, string[]>> = {
   intent: ["Users", "Outcomes", "Constraints", "Open questions"],
+  doctrine: ["Context", "Doctrine", "Consequences"],
   decision: ["Context", "Decision", "Consequences"],
   design: ["Outcome", "Scope", "What changes", "Verification"],
 };
@@ -33,16 +43,30 @@ const SECTIONS: Readonly<Record<Kind, string[]>> = {
 /** The home each kind is written in, relative to the project's state root. */
 const HOMES: Readonly<Record<Kind, string>> = {
   intent: "docs/intent",
+  doctrine: "docs/doctrine",
   decision: "docs/decisions",
   design: "plans/designs",
 };
 
-/** What each action is called, where it is offered and where it is confirmed. */
+/**
+ * What each action is called, where it is offered and where it is confirmed.
+ *
+ * One label per kind, worn by the strip's trailing button, by an empty
+ * section's invitation and by the sheet both of them open, so what a human
+ * clicked and what they are then looking at are called the same thing. The
+ * eyebrow says which book or which home it lands in, which is what the label
+ * leaves out. "Write the intent chapter" is gone: it named one chapter as if
+ * there were one to write, on a page that already carries fourteen.
+ */
 export const ACTIONS: Readonly<Record<Kind, { offer: string; eyebrow: string; confirm: string }>> = {
-  decision: { offer: "Record a decision", eyebrow: "New record · Decision", confirm: "Create draft" },
+  decision: { offer: "New decision", eyebrow: "New record · Decision", confirm: "Create draft" },
   design: { offer: "New design", eyebrow: "New record · Design", confirm: "Create draft" },
-  intent: { offer: "Write the intent chapter", eyebrow: "New record · Intent", confirm: "Create draft" },
+  intent: { offer: "New chapter", eyebrow: "New chapter · Intent", confirm: "Create draft" },
+  doctrine: { offer: "New chapter", eyebrow: "New chapter · Doctrine", confirm: "Create draft" },
 };
+
+/** What asking is called. A question has no kind, so it has no row above. */
+export const ASK = "New question";
 
 /** The id line's stand-in, which says what will be there instead of guessing. */
 const MINTED = "(a fresh id, minted when this is written)";
@@ -86,12 +110,38 @@ function trimHyphens(value: string): string {
 export type Draft = { kind: Kind; title: string; goals: string[]; affects: string[]; cites: string[] };
 
 /**
- * A draft of one kind, about one goal where the page it was opened from is a
- * goal's, and about the project as a whole otherwise. Goals are optional
- * throughout: a record that names none is about the whole.
+ * What a contribution is about: the goal whose page it is written from, or the
+ * project as a whole, which is what the Project page is.
+ *
+ * It comes from the page and never from a field. A record's scope is where the
+ * human was standing when they wrote it, so a picker would ask them to say
+ * again, in a list of six hundred goals, what the address already said — and
+ * would let them say something else, which is a record filed under a goal
+ * nobody was reading.
  */
-export function emptyDraft(kind: Kind, goal: string | null): Draft {
-  return { kind, title: "", goals: goal === null ? [] : [goal], affects: [], cites: [] };
+export type Scope = { id: string; title: string } | null;
+
+/** The goals a scope names: the goal whose page it is, or none at all. */
+export function scopeGoals(scope: Scope): string[] {
+  return scope === null ? [] : [scope.id];
+}
+
+/**
+ * A draft of one kind, about whatever the page it was opened from is about.
+ * Goals are optional throughout: a record that names none is about the whole.
+ */
+export function startDraft(kind: Kind, scope: Scope): Draft {
+  return { kind, title: "", goals: goalsOf(kind, scope), affects: [], cites: [] };
+}
+
+/**
+ * The goals a draft carries: the page's own, except on the two books, whose
+ * chapters are the project's by definition. The check verb refuses a Goals
+ * line there and so does the write route, so a sheet that composed one would
+ * be promising a page the server will not write.
+ */
+function goalsOf(kind: Kind, scope: Scope): string[] {
+  return BOOKS.includes(kind) ? [] : scopeGoals(scope);
 }
 
 export function asked(draft: Draft): NewRecord {
@@ -140,8 +190,7 @@ export function fileFor(draft: Draft): string {
  * read the consequence rather than trusted the button.
  */
 export function noteFor(draft: Draft): string {
-  const chapter =
-    draft.kind === "intent" ? " It is listed in the intent index's reading order." : "";
+  const chapter = BOOKS.includes(draft.kind) ? ` It is listed in the ${draft.kind} index's reading order.` : "";
   return `Writes ${fileFor(draft)} with a fresh id and Status: draft, then opens it.${chapter}`;
 }
 

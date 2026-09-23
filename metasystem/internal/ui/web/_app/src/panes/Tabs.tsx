@@ -1,4 +1,4 @@
-import { useId, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
 
 import "./tabs.css";
 import { Help } from "../help/Help";
@@ -100,6 +100,7 @@ export function Tabs({
   tabs,
   selected,
   onSelect,
+  action,
   panelClassName,
 }: {
   /** What the strip is, for anyone who cannot see that it is a strip. */
@@ -107,17 +108,48 @@ export function Tabs({
   tabs: readonly Tab[];
   selected: string;
   onSelect: (id: string) => void;
+  /**
+   * The one act the open tab offers, at the trailing end of the strip.
+   *
+   * It stands outside the tablist, which is what it is: a tab chooses what is
+   * read and this writes something new, and a control inside the list would be
+   * a tab the arrows landed on that opened no section. Outside it, it is one
+   * ordinary tab stop after the strip's own.
+   */
+  action?: ReactNode;
   /** What the page calls its reading column, where the panel is that column. */
   panelClassName?: string;
 }) {
   const named = useId();
   const buttons = useRef(new Map<string, HTMLButtonElement>());
+  const list = useRef<HTMLDivElement | null>(null);
+
+  const at = tabs.findIndex((tab) => tab.id === selected);
+  const openID = tabs.length === 0 ? "" : tabs[at < 0 ? 0 : at].id;
+
+  // A strip narrower than its tabs scrolls sideways, and the tab that is open
+  // is the one that has to be on the screen: it arrives from an address
+  // somebody was sent, or after the arrows moved it, and neither should leave
+  // it over the edge. Only the strip's own scroll moves; the page does not.
+  useEffect(() => {
+    const strip = list.current;
+    const button = buttons.current.get(openID);
+    if (strip === null || button === undefined) {
+      return;
+    }
+    const left = button.offsetLeft;
+    const right = left + button.offsetWidth;
+    if (left < strip.scrollLeft) {
+      strip.scrollLeft = left;
+    } else if (right > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = right - strip.clientWidth;
+    }
+  }, [openID]);
 
   if (tabs.length === 0) {
     return null;
   }
 
-  const at = tabs.findIndex((tab) => tab.id === selected);
   const open = tabs[at < 0 ? 0 : at];
   const tabId = (id: string) => `${named}-tab-${id}`;
   const panelId = (id: string) => `${named}-panel-${id}`;
@@ -145,7 +177,7 @@ export function Tabs({
   return (
     <>
       <div className="ms-tabs-strip">
-        <div className="ms-tabs-list" role="tablist" aria-label={label} onKeyDown={move}>
+        <div className="ms-tabs-list" role="tablist" aria-label={label} ref={list} onKeyDown={move}>
           {/* The wrapper is presentation and nothing else: the strip still
               owns tabs, and the help beside each one is a button that could
               not have been nested inside it. Only the open tab's help is in
@@ -179,6 +211,7 @@ export function Tabs({
             </span>
           ))}
         </div>
+        {action !== undefined && action !== null && <div className="ms-tabs-action">{action}</div>}
       </div>
       {/* The panel is a tab stop of its own: a section whose rows are all
           links would be reachable without it, and one that is a paragraph

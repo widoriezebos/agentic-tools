@@ -6,6 +6,8 @@
 - Cites: 01M348YTJ2EY11F37Y5KBVNSER 01M348YTJ290F6VMX6TWV1M1WZ
 - Supersedes: 01M348YTJ2688CC90GYDBYGJB5
 
+Revision 2, 2026-09-23, on Wido's ruling: the Contribute column becomes one contextual New action in the tab strip; a record's scope comes from the page it is written from; intent and doctrine never name goals.
+
 Revision 1, 2026-09-22, Claude on Fable, after Wido's review of step 1 in the browser: "a bunch of documents filtered and ordered somehow; open one and it is a huge text blob; I can contribute nothing" — and his placement of the Brain along the bottom. The clickable mockup, built from this checkout's real record, is the design's picture; this page is its contract. Step 1 (the memory system, sections 2–4) is the structure it reads; this step adds no kind, no home and no field.
 
 ## Outcome

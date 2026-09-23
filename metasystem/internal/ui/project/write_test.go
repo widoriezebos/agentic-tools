@@ -42,16 +42,26 @@ func refusalOf(t *testing.T, err error) *Refusal {
 // Each kind lands in its own home at the state root, with a fresh id, a draft
 // status, the goals that were asked for and the kind's own empty sections —
 // and the resolver reads every one of them back as the record it claims to be.
+//
+// The two books take no goals at all, because a chapter of either is the
+// project's own: they are written from the Project page, which is about the
+// whole, and the check verb refuses a Goals line on them.
 func TestCreateRecordWritesEachKindInItsHome(t *testing.T) {
 	t.Parallel()
 
 	for _, kind := range []struct {
 		kind, home string
+		goals      []string
 		sections   []string
 	}{
-		{"decision", "metasystem/docs/decisions", []string{"## Context", "## Decision", "## Consequences"}},
-		{"design", "metasystem/plans/designs", []string{"## Outcome", "## Scope", "## What changes", "## Verification"}},
-		{"intent", "metasystem/docs/intent", []string{"## Users", "## Outcomes", "## Constraints", "## Open questions"}},
+		{"decision", "metasystem/docs/decisions", []string{"ledger-sync"},
+			[]string{"## Context", "## Decision", "## Consequences"}},
+		{"design", "metasystem/plans/designs", []string{"ledger-sync"},
+			[]string{"## Outcome", "## Scope", "## What changes", "## Verification"}},
+		{"intent", "metasystem/docs/intent", []string{},
+			[]string{"## Users", "## Outcomes", "## Constraints", "## Open questions"}},
+		{"doctrine", "metasystem/docs/doctrine", []string{},
+			[]string{"## Context", "## Doctrine", "## Consequences"}},
 	} {
 		t.Run(kind.kind, func(t *testing.T) {
 			t.Parallel()
@@ -59,7 +69,7 @@ func TestCreateRecordWritesEachKindInItsHome(t *testing.T) {
 			seed(t, roots)
 
 			written, err := CreateRecord(roots, NewRecord{
-				Kind: kind.kind, Title: "The Project Partner is a drawer", Goals: []string{"ledger-sync"},
+				Kind: kind.kind, Title: "The Project Partner is a drawer", Goals: kind.goals,
 				Affects: []string{"design-ledger"},
 			}, wroteAt)
 
@@ -69,7 +79,7 @@ func TestCreateRecordWritesEachKindInItsHome(t *testing.T) {
 				written.Absolute, filepath.Join(roots.Checkout, filepath.FromSlash(written.Path)))
 			testutil.Expect(t, "the kind", written.Record.Kind, kind.kind)
 			testutil.Expect(t, "the status", written.Record.Status, "draft")
-			testutil.Expect(t, "the goals", written.Record.Goals, []string{"ledger-sync"})
+			testutil.Expect(t, "the goals", written.Record.Goals, kind.goals)
 			testutil.Expect(t, "the title", written.Record.Title, "The Project Partner is a drawer")
 			testutil.Expect(t, "the home", written.Record.Home, kind.home)
 			testutil.Expect(t, "an id was minted", written.Record.ID != "", true)
@@ -78,7 +88,8 @@ func TestCreateRecordWritesEachKindInItsHome(t *testing.T) {
 			testutil.Expect(t, "the title line", strings.HasPrefix(on, "# The Project Partner is a drawer\n\n"), true)
 			testutil.Expect(t, "the head names the id", strings.Contains(on, "- Id: "+written.Record.ID+"\n"), true)
 			testutil.Expect(t, "the head is a draft", strings.Contains(on, "- Status: draft\n"), true)
-			testutil.Expect(t, "the head names the goals", strings.Contains(on, "- Goals: ledger-sync\n"), true)
+			testutil.Expect(t, "the head names the goals it was given",
+				strings.Contains(on, "- Goals: ledger-sync\n"), len(kind.goals) > 0)
 			testutil.Expect(t, "the head carries what it affects",
 				strings.Contains(on, "- Affects: design-ledger\n"), true)
 			for _, section := range kind.sections {
@@ -123,6 +134,81 @@ func TestCreateIntentChapterListsItInTheIndex(t *testing.T) {
 	testutil.Expect(t, "the book reads it as a chapter",
 		pane.Intent.Chapters[len(pane.Intent.Chapters)-1].Title, "Who this is for")
 	testutil.Expect(t, "the project refuses nothing", pane.Problems, []Problem{})
+}
+
+// A doctrine chapter is written exactly as an intent chapter is: in the
+// doctrine's own home, and bound into the doctrine index's reading order.
+//
+// Doctrine used to be the one kind this surface would not create, on the
+// ground that shaping the project is not a thing to do from a form. It is a
+// draft either way, and the page that reads the doctrine is the page to write
+// one from; accepting it is still a status somebody changes on the record.
+func TestCreateDoctrineChapterListsItInItsOwnIndex(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	before := fileAt(t, roots, "metasystem/docs/doctrine/index.md")
+
+	written, err := CreateRecord(roots, NewRecord{Kind: "doctrine", Title: "Every run is budgeted twice"}, wroteAt)
+
+	testutil.Require(t, "write the chapter", err, nil)
+	testutil.Expect(t, "the path", written.Path, "metasystem/docs/doctrine/every-run-is-budgeted-twice.md")
+	testutil.Expect(t, "the home", written.Record.Home, "metasystem/docs/doctrine")
+	testutil.Expect(t, "the goals it names", written.Record.Goals, []string{})
+
+	after := fileAt(t, roots, "metasystem/docs/doctrine/index.md")
+	entry := "- " + written.Record.ID + " — Every run is budgeted twice"
+	testutil.Expect(t, "the index lists the chapter", strings.Contains(after, entry+"\n"), true)
+	testutil.Expect(t, "the chapter joins the end of the reading order",
+		strings.Contains(after, "- doctrine-budgets\n"+entry), true)
+	testutil.Expect(t, "nothing else in the index moved",
+		strings.Replace(after, entry+"\n", "", 1), before)
+
+	pane, err := ReadPane(roots, readAt)
+	testutil.Require(t, "read the pane", err, nil)
+	testutil.Expect(t, "the book reads it as a chapter",
+		pane.Doctrine.Chapters[len(pane.Doctrine.Chapters)-1].Title, "Every run is budgeted twice")
+	testutil.Expect(t, "the project refuses nothing", pane.Problems, []Problem{})
+}
+
+// A chapter of either book is the project's own, so the write route refuses a
+// Goals line on one in the check verb's own words, and writes nothing.
+//
+// Wido, 2026-09-23: "when writing project level intent ... specifying a goal
+// at the level of intent is really weird."
+func TestCreateRecordRefusesGoalsOnAChapterOfEitherBook(t *testing.T) {
+	t.Parallel()
+
+	for _, kind := range []struct{ kind, home string }{
+		{"intent", "metasystem/docs/intent"},
+		{"doctrine", "metasystem/docs/doctrine"},
+	} {
+		t.Run(kind.kind, func(t *testing.T) {
+			t.Parallel()
+			roots := selfHostedFixture(t)
+			seed(t, roots)
+			index := fileAt(t, roots, kind.home+"/index.md")
+
+			_, err := CreateRecord(roots, NewRecord{
+				Kind: kind.kind, Title: "Scoped to one goal", Goals: []string{"ledger-sync"},
+			}, wroteAt)
+
+			refusal := refusalOf(t, err)
+			testutil.Expect(t, "the refusal", refusal.Kind, RefusalBad)
+			testutil.Expect(t, "the reason", refusal.Message, "the record this would write is one the project refuses")
+			testutil.Require(t, "the problems it carries", len(refusal.Problems), 1)
+			testutil.Expect(t, "the problem the check verb would print", refusal.Problems[0].Message,
+				"an intent or doctrine record names goals")
+			testutil.Expect(t, "where it is anchored", refusal.Problems[0].Path,
+				kind.home+"/scoped-to-one-goal.md")
+
+			_, statErr := os.Stat(filepath.Join(roots.Checkout,
+				filepath.FromSlash(kind.home+"/scoped-to-one-goal.md")))
+			testutil.Expect(t, "no file was written", os.IsNotExist(statErr), true)
+			testutil.Expect(t, "the index was not touched", fileAt(t, roots, kind.home+"/index.md"), index)
+		})
+	}
 }
 
 // A title yields one file name: lower case, hyphens for everything else, runs
@@ -214,12 +300,9 @@ func TestCreateRecordRefusesWhatItCannotWrite(t *testing.T) {
 		asked  NewRecord
 		reason string
 	}{
-		{"doctrine is not created here",
-			NewRecord{Kind: "doctrine", Title: "Events", Goals: []string{"ledger-sync"}},
-			`the kind "doctrine" is not one of intent, decision, design`},
 		{"an unknown kind",
 			NewRecord{Kind: "note", Title: "Events", Goals: []string{"ledger-sync"}},
-			`the kind "note" is not one of intent, decision, design`},
+			`the kind "note" is not one of intent, doctrine, decision, design`},
 		{"no title",
 			NewRecord{Kind: "decision", Title: "   ", Goals: []string{"ledger-sync"}},
 			"a record needs a title"},

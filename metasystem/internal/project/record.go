@@ -21,6 +21,19 @@ var requiredKeys = []string{"Kind", "Id", "Status"}
 // Goals line is about the project as a whole.
 const goalsKey = "Goals"
 
+// GoalsRefused is what a head is told when it names goals on a kind that
+// cannot be about one. The intent and the doctrine are the project's own —
+// what it is for and how it is shaped — so a chapter of either is about the
+// whole by definition, and a Goals line there would narrow a book that has no
+// narrower scope to be in.
+const GoalsRefused = "an intent or doctrine record names goals"
+
+// BookKind is the two kinds that are books of the project itself. They are the
+// kinds the homes mark Book, said here as a question about a kind alone, which
+// is what the head grammar asks and what a writer asks before it composes a
+// head it would then be refused for.
+func BookKind(kind string) bool { return kind == KindIntent || kind == KindDoctrine }
+
 // referenceKeys are the optional keys a head may declare, parsed as plain
 // whitespace-separated references and intentionally unvalidated: a reference
 // may name something nobody has written yet, and a reader that refused it
