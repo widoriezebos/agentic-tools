@@ -32,12 +32,13 @@ import {
 import "./reading.css";
 import { Sheet, type Done, type Request } from "./Sheet";
 import { type Scope } from "./writing";
+import { showLabel } from "../backlog/showing";
 import { Pane } from "../panes/Pane";
 import { Tabs, tabShown, type Tab } from "../panes/Tabs";
-import { documentPath, goalPath, projectPath } from "../routes";
+import { backlogPath, documentPath, goalPath, projectPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
-import { readGoalTab, readProjectTab, writeGoalTab, writeProjectTab } from "../storage";
+import { readBacklogView, readGoalTab, readProjectTab, writeGoalTab, writeProjectTab } from "../storage";
 
 /**
  * Project: a briefing on what this project is, not a list of its files.
@@ -439,8 +440,17 @@ function Block({
  * The goal page opens with the goal itself: its id above the title, the
  * ledger's own reason for it as the lede, where it stands, and the way through
  * to the Backlog, which is where a goal is worked rather than read about.
+ *
+ * The way through shows this goal. It used to open the Backlog and nothing
+ * else — the board came up wherever it opens, and the goal a human had just
+ * been reading about was in a lane off to the right or behind a window that
+ * did not reach it. It names what it does, in the view this browser is going
+ * to get, and the Backlog does it on arrival.
  */
 function GoalBlock({ briefing }: { briefing: Briefing }) {
+  // Which view the Backlog will open in, read the way that page reads it:
+  // once, as what this browser was last left on.
+  const [view] = useState(() => readBacklogView());
   const goal = briefing.goal;
   if (goal === null) {
     return null;
@@ -453,8 +463,8 @@ function GoalBlock({ briefing }: { briefing: Briefing }) {
         {goal.state !== "" && <Chip>{goal.state}</Chip>}
         <span className="ms-project-count">{goal.count}</span>
         <span className="ms-briefing-act">
-          <NavLink className="ms-briefing-link" to="/backlog">
-            Open in the Backlog list →
+          <NavLink className="ms-briefing-link" to={backlogPath(goal.id)}>
+            {showLabel(view)}
           </NavLink>
         </span>
       </div>

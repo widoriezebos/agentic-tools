@@ -19,12 +19,18 @@ export function LaneGroup({
   rows,
   tip,
   unanswered,
+  showing,
+  onFaded,
 }: {
   lane: Lane;
   count: number;
   rows: Row[];
   tip: string;
   unanswered: string;
+  /** The goal a link sent this page to show, while its ring is up, or "". */
+  showing: string;
+  /** Said when that ring's animation ends, which is what takes it down. */
+  onFaded: () => void;
 }) {
   return (
     <section className="ms-card" id={anchorFor(lane.id)}>
@@ -40,7 +46,7 @@ export function LaneGroup({
       ) : (
         <div className="ms-goal-rows">
           {rows.map((row) => (
-            <GoalRow key={row.ref.id} row={row} />
+            <GoalRow key={row.ref.id} row={row} shown={row.ref.id === showing} onFaded={onFaded} />
           ))}
         </div>
       )}

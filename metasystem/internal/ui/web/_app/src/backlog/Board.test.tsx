@@ -96,6 +96,8 @@ function markup(): string {
           filters={noFilters}
           window={1}
           onWindow={() => undefined}
+          showing=""
+          onFaded={() => undefined}
         />
       </TooltipPrimitive.Provider>
     </MemoryRouter>,

@@ -29,6 +29,7 @@ import {
   type Placement,
   type Side,
 } from "./reorder";
+import { SHOWN } from "./showing";
 import { arcOn, isParent, membersOf, parentOf } from "./split";
 import { Help } from "../help/Help";
 import type { HelpId } from "../help/terms";
@@ -110,6 +111,8 @@ export function Board({
   filters,
   window: reach,
   onWindow,
+  showing,
+  onFaded,
 }: {
   backlog: Backlog;
   closedShown: boolean;
@@ -124,6 +127,10 @@ export function Board({
   /** How far back Done reaches, in days, or null for every recorded one. */
   window: Window;
   onWindow: (days: Window) => void;
+  /** The goal a link sent this page to show, while its ring is up, or "". */
+  showing: string;
+  /** Said when that ring's animation ends, which is what takes it down. */
+  onFaded: () => void;
 }) {
   const [dragging, setDragging] = useState<Dragging | null>(null);
   const [refused, setRefused] = useState<{ lane: LaneId; reason: string } | null>(null);
@@ -321,6 +328,8 @@ export function Board({
             onChooseRank={(row) => {
               setAsking({ goal: row, placement: { priority: row.priority, sequence: row.sequence } });
             }}
+            showing={showing}
+            onFaded={onFaded}
           />
         ))}
       </div>
@@ -359,7 +368,7 @@ export function Board({
  * last day" has to mean the last day of the thing being read; a browser whose
  * clock is a day out would otherwise empty the lane or fill it.
  */
-function observedAt(backlog: Backlog): Date {
+export function observedAt(backlog: Backlog): Date {
   const at = new Date(backlog.observedAt);
   return Number.isNaN(at.getTime()) ? new Date() : at;
 }
@@ -455,6 +464,8 @@ function Column({
   onStep,
   onChooseRank,
   onOpen,
+  showing,
+  onFaded,
 }: {
   column: BoardColumn;
   all: readonly Row[];
@@ -472,6 +483,9 @@ function Column({
   onStep: (row: Row, direction: "up" | "down") => void;
   onChooseRank: (row: Row) => void;
   onOpen: (row: Row) => void;
+  /** The goal a link sent this page to show, while its ring is up, or "". */
+  showing: string;
+  onFaded: () => void;
 }) {
   const rows = column.rows;
   const shown = statement === "" ? String(rows.length) : "—";
@@ -529,6 +543,8 @@ function Column({
             onStep={onStep}
             onChooseRank={onChooseRank}
             onOpen={onOpen}
+            shown={row.ref.id === showing}
+            onFaded={onFaded}
           />
         ))}
       </div>
@@ -547,6 +563,8 @@ function Card({
   onStep,
   onChooseRank,
   onOpen,
+  shown,
+  onFaded,
 }: {
   row: Row;
   all: readonly Row[];
@@ -559,6 +577,10 @@ function Card({
   onStep: (row: Row, direction: "up" | "down") => void;
   onChooseRank: (row: Row) => void;
   onOpen: (row: Row) => void;
+  /** True while this is the card a link sent the page to show. */
+  shown: boolean;
+  /** Said when the ring's animation ends, which is what takes it down. */
+  onFaded: () => void;
 }) {
   // Where the menu was asked for, or null when it was not asked for at all.
   // Nothing on the card opens it: the pointer's own gesture does, and so do
@@ -574,7 +596,7 @@ function Card({
     // A goal a split retired offers no act: it is a historical record, and its
     // links are what there is to do with it. Right-clicking it gets the
     // browser's own menu, which is the honest answer to "what can I do here".
-    return <SplitCard row={row} members={membersOf(row, all)} />;
+    return <SplitCard row={row} members={membersOf(row, all)} shown={shown} onFaded={onFaded} />;
   }
   const standing = blockerOf(row);
 
@@ -600,7 +622,11 @@ function Card({
   const arc = arcOn(row, all);
   return (
     <article
-      className={`ms-card-goal${edge === null ? "" : ` ms-card-goal--${edge}`}`}
+      className={`ms-card-goal${edge === null ? "" : ` ms-card-goal--${edge}`}${shown ? ` ${SHOWN}` : ""}`}
+      // The ring fades by a CSS animation and its end is what takes the class
+      // off, so nothing here is on a timer. The handler is only attached to
+      // the one card that has a ring, so no other card is listening.
+      onAnimationEnd={shown ? onFaded : undefined}
       draggable={grabbable}
       // The card is a tab stop so that the keyboard can reach the acts the
       // pointer reaches: there is no button to tab to, because there is no
@@ -763,9 +789,22 @@ function Slices({ plan, onGrabbable }: { plan: SlicePlan | null; onGrabbable: (m
  * because its underlying state is done. What it is, is its members, and each
  * of them opens.
  */
-function SplitCard({ row, members }: { row: Row; members: Row[] }) {
+function SplitCard({
+  row,
+  members,
+  shown,
+  onFaded,
+}: {
+  row: Row;
+  members: Row[];
+  shown: boolean;
+  onFaded: () => void;
+}) {
   return (
-    <article className="ms-card-goal ms-card-goal--split">
+    <article
+      className={shown ? `ms-card-goal ms-card-goal--split ${SHOWN}` : "ms-card-goal ms-card-goal--split"}
+      onAnimationEnd={shown ? onFaded : undefined}
+    >
       <NavLink className="ms-card-id ms-mono" to={goalPath(row.ref.id)}>
         {row.ref.id}
       </NavLink>

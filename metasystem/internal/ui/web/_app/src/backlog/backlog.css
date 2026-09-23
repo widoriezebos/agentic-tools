@@ -1041,3 +1041,73 @@
   max-height: 86vh;
   overflow-y: auto;
 }
+
+/* -------------------------------------------- landing on one goal -- */
+
+/*
+ * What a landing had to change in order to show the goal it was sent for:
+ * that Done was widened, that the closed items were opened, that the filters
+ * were cleared, or that no card carries the id at all.
+ *
+ * It stands above the lanes and stays there, because what it says stays true
+ * for as long as the board does: a Done selector reading thirty days that no
+ * human set is owed the sentence that says who set it.
+ */
+.ms-board-showing {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The goal itself, for two seconds.
+ *
+ * It is an outline rather than a border or a shadow so that a ring appearing
+ * around a card moves nothing around it — a lane whose cards all shifted by
+ * two pixels on arrival would be answering "where is my goal" by moving
+ * everything else. The fade is the animation, and the animation's own end is
+ * what takes the class off; this build sets no timer anywhere and does not
+ * start here.
+ */
+.ms-goal-shown {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+  animation: ms-showing 2000ms linear forwards;
+}
+
+@keyframes ms-showing {
+  0%,
+  60% {
+    outline-color: var(--ms-accent);
+  }
+  100% {
+    outline-color: transparent;
+  }
+}
+
+/*
+ * A ring that vanished instantly would be a ring nobody saw, and the blanket
+ * reduced-motion rule zeroes every duration in this application — which here
+ * would mean the mark ended the same frame it began, since the animation's
+ * end is what removes it. So the two seconds are kept and the fade is
+ * dropped: the ring stands, still, for exactly as long, which is what the
+ * preference is actually about.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .ms-goal-shown {
+    animation-name: ms-showing-still;
+    animation-duration: 2000ms !important;
+  }
+}
+
+@keyframes ms-showing-still {
+  from {
+    outline-color: var(--ms-accent);
+  }
+  to {
+    outline-color: var(--ms-accent);
+  }
+}

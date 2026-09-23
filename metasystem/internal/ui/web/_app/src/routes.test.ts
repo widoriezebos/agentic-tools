@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   activeSection,
+  backlogPath,
   goalPath,
   documentIdFromPath,
   documentPath,
@@ -169,6 +170,18 @@ describe("routeFor", () => {
     expect(goalPath("a b")).toBe("/backlog/goal/a%20b");
     expect(goalPath("a/b")).toBe("/backlog/goal/a%2Fb");
     expect(isReserved(goalPath("watch-verb"))).toBe(false);
+  });
+
+  // A goal is not a place on the Backlog, so it is a query rather than a
+  // segment: the Backlog is the place, and this says which goal the arrival
+  // is about. The section that owns the address is the Backlog either way.
+  it("names the goal the Backlog should land on, where one is named", () => {
+    expect(backlogPath()).toBe("/backlog");
+    expect(backlogPath("")).toBe("/backlog");
+    expect(backlogPath("g1-s23")).toBe("/backlog?goal=g1-s23");
+    expect(backlogPath("a b")).toBe("/backlog?goal=a%20b");
+    expect(backlogPath("a/b")).toBe("/backlog?goal=a%2Fb");
+    expect(sectionFor("/backlog")?.id).toBe("backlog");
   });
 
   // A tab is a place, so it is a segment of the address; an address naming no

@@ -166,6 +166,25 @@ export function goalPath(id: string, tab?: string): string {
 }
 
 /**
+ * The query the Backlog lands on a goal from.
+ *
+ * A goal is not a place on the Backlog, so it is not a segment of the
+ * address: the Backlog is the place, and this says which goal this one
+ * arrival is about. The page shows that goal and then drops the query, so a
+ * reload is the Backlog rather than the landing again — which is also why the
+ * query never has to be in the section table above.
+ */
+export const SHOWN_GOAL = "goal";
+
+/** Where the Backlog is, and the goal it should land on where one is named. */
+export function backlogPath(goal?: string): string {
+  if (goal === undefined || goal === "") {
+    return "/backlog";
+  }
+  return `/backlog?${SHOWN_GOAL}=${encodeURIComponent(goal)}`;
+}
+
+/**
  * Where the Project page is, and which of its tabs is open.
  *
  * The tab is in the address because a section of the project is a place: a

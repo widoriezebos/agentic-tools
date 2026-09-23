@@ -2,6 +2,7 @@ import { NavLink } from "react-router";
 
 import type { Row } from "./api";
 import { dateAndTime } from "./format";
+import { SHOWN } from "./showing";
 import { goalPath } from "../routes";
 import { Chip } from "../shell/controls";
 
@@ -20,11 +21,18 @@ import { Chip } from "../shell/controls";
  * The identifier is the one link: it opens the goal's own page, which is where
  * the records about this goal are read. Nothing else here navigates and
  * nothing selects.
+ *
+ * A row the page was sent to show wears the ring for two seconds, the same
+ * mark the board's card wears, so that arriving from a link lands on the goal
+ * rather than at the top of a list of four hundred.
  */
-export function GoalRow({ row }: { row: Row }) {
+export function GoalRow({ row, shown, onFaded }: { row: Row; shown: boolean; onFaded: () => void }) {
   const reasons = reasonsOf(row);
   return (
-    <article className="ms-goal-row">
+    <article
+      className={shown ? `ms-goal-row ${SHOWN}` : "ms-goal-row"}
+      onAnimationEnd={shown ? onFaded : undefined}
+    >
       <div className="ms-goal-head">
         <NavLink className="ms-goal-id ms-mono" to={goalPath(row.ref.id)}>
           {row.ref.id}
