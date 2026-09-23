@@ -1,3 +1,4 @@
+import { RefreshCw } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { NavLink, useLocation } from "react-router";
 
@@ -43,6 +44,7 @@ import {
   type About,
   type DesignWork,
   type SiblingRail,
+  REFRESH,
 } from "./pane";
 import { dateOf, ownership, timeOf } from "./ProjectPane";
 import "./reading.css";
@@ -54,7 +56,7 @@ import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
 import { documentIdFromPath, documentPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
-import { Button, Chip, Skeleton } from "../shell/controls";
+import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
 import { useWorkspaceState, type WorkspaceState } from "../shell/identity";
 import { titleFor, type Identity } from "../title";
 
@@ -701,9 +703,10 @@ function PlainFacts({
         <FileActions path={document.path} onEdit={onEdit} onNewGoal={null} busy="" />
         <Chip>{ownership(document.owner)}</Chip>
         <span>changed {dateOf(document.modifiedAt)}</span>
-        <span>read at {timeOf(document.readAt)}</span>
         {document.revision !== "" && <span className="ms-mono">{shortRevision(document.revision)}</span>}
-        <Button onClick={onReload}>Reload</Button>
+        <IconButton label={REFRESH} hint={`Read at ${timeOf(document.readAt)} · ${REFRESH}`} onClick={onReload}>
+          <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
+        </IconButton>
         {saved !== "" && <span role="status">{saved}</span>}
       </p>
     </>
@@ -762,9 +765,11 @@ function RecordFacts({
           busy={working?.busy ?? ""}
         />
         <span>
-          changed {dateOf(document.modifiedAt)} · read at {timeOf(document.readAt)}
+          changed {dateOf(document.modifiedAt)}
         </span>
-        <Button onClick={onReload}>Reload</Button>
+        <IconButton label={REFRESH} hint={`Read at ${timeOf(document.readAt)} · ${REFRESH}`} onClick={onReload}>
+          <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
+        </IconButton>
         {saved !== "" && <span role="status">{saved}</span>}
       </p>
       {working !== null && <Work working={working} status={head.status} />}
@@ -956,7 +961,9 @@ function Relationships({ document, pane }: { document: DocumentPayload; pane: Pa
   if (head === null) {
     return null;
   }
-  const about = aboutOf(pane, head.goals);
+  // A design lists the goals it names under Work, with their states; the
+  // About row would be the same ids again without them.
+  const about = head.kind === "design" ? [] : aboutOf(pane, head.goals);
   const lists: { label: string; links: RecordLink[] }[] = [
     { label: "Rests on", links: byID(pane, head.cites) },
     { label: "Affects", links: byID(pane, head.affects) },

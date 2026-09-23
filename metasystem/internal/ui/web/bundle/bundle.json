@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:d0b1be51fdf2ea9fa8c55a7b7249035a71bed6285a628ea57ce15b27bdd33ada",
+  "sourceDigest": "sha256:3a00699b0206bf053191c6ad537d17cf60e2d5c60b3bb8e6529d0ba0531722ae",
   "source": [
     {
       "path": ".npmrc",
@@ -332,7 +332,7 @@
     },
     {
       "path": "src/project/DocumentPane.tsx",
-      "sha256": "2a6344047e451a4623eaca1ce6162c6010165d9db10da3960e2d7e092d8ccbca"
+      "sha256": "d0abe9b43ec1317282b9f1c51843dc34ed3badb7a030219a5848234c473efb42"
     },
     {
       "path": "src/project/Editor.tsx",
@@ -554,7 +554,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "1c32483c3dff7e3c4280ff63367ab479c72524f81ee41c185d466cb039ba29bc"
+      "sha256": "aaa1c2baa2a81b33999e0cd4ad893b3b6df586295dc74eb33bbaede2903b5891"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
