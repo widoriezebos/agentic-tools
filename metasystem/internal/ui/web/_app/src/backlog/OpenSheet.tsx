@@ -61,7 +61,7 @@ export function OpenSheet({
   const { session, askToSignIn } = useSession();
   const retried = useRef(false);
   const authority = actingAs(backlog.authority, session);
-  const blocked = blockedForOpen(authority.proven, authority.reason, intake, risk);
+  const blocked = blockedForOpen(intake, risk);
 
   const send = () => {
     if (blocked !== "") {

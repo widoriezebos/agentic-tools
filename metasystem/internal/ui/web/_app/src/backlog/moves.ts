@@ -205,20 +205,13 @@ function whole(value: string): number | null {
 /**
  * Why the sheet's own button is disabled, or the empty string when it is not.
  *
- * A server that cannot act as the human says so here, in the same words the
- * route would answer with, so the human reads the reason before they press
- * rather than after. An incomplete budget is the other reason, and it is the
- * human's own to fix.
+ * Nothing about proof is here. A server that has found no human behind this
+ * browser says so above the fields, and the act is still offered: the route
+ * answers such a press with the sign-in this page can open, and the sheet
+ * sends the same act again once a human is behind it. An incomplete budget is
+ * the one reason left, and it is the human's own to fix.
  */
-export function blockedFor(
-  move: Move,
-  proven: boolean,
-  reason: string,
-  draft: BudgetDraft,
-): string {
-  if (!proven) {
-    return reason === "" ? "This interface cannot act as a human." : reason;
-  }
+export function blockedFor(move: Move, draft: BudgetDraft): string {
   if (move === "approve" && budgetOf(draft) === null) {
     return "An approval carries the complete budget: an elapsed limit such as 4h, and positive attempt, reserved-minute and active-job limits, with the review rounds.";
   }

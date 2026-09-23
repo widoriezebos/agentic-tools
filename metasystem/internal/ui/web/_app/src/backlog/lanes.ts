@@ -59,9 +59,9 @@ export const closedLaneIds: readonly LaneId[] = ["done", "abandoned"];
  * Unknown asked a human to read an empty box on every board in order to learn
  * nothing, and on the rare board where it was not empty it offered the one
  * thing a lane cannot offer: work to be moved out of it. What the board says
- * instead is one line above the lanes, carrying the count and, opened, the
- * goals with the reason each one carries. Nothing is hidden and nothing is a
- * column.
+ * instead is one disclosure under the lanes, beside the closed items,
+ * carrying the count and, opened, the goals with the reason each one carries.
+ * Nothing is hidden and nothing is a column.
  */
 export const UNPLACEABLE: LaneId = "unknown";
 
@@ -71,6 +71,26 @@ export const openLanes: readonly Lane[] = lanes.filter(
 );
 
 export const closedLanes: readonly Lane[] = lanes.filter((lane) => closedLaneIds.includes(lane.id));
+
+/** The lane whose records this build has no reader for yet. */
+export const DRAFT: LaneId = "draft";
+
+/**
+ * Whether anything reads drafts. The projection has no reader for
+ * plans/goals-drafts/, so the Draft lane could only ever say that it does
+ * not, in a column as wide as the lanes that carry work.
+ */
+export const DRAFTS_READ = false;
+
+/**
+ * The lanes this build actually shows.
+ *
+ * A lane with nothing behind it is not a lane a human is missing: Draft held
+ * one sentence saying the engine has no reader, and it held it first, before
+ * every lane that does carry work. The lane stays in the table above and
+ * comes back here the day a reader does.
+ */
+export const shownLanes: readonly Lane[] = openLanes.filter((lane) => DRAFTS_READ || lane.id !== DRAFT);
 
 /** The concluded lane the board always carries, read through a date window. */
 export const DONE: LaneId = "done";
