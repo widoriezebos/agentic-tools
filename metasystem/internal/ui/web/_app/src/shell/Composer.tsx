@@ -17,6 +17,8 @@ import { Button } from "./controls";
 export const COMPOSER_REASON = "Your Project Partner is not connected in this build.";
 
 export const COMPOSER_LABEL = "Message to your Project Partner";
+/** The hint in the empty box: an invitation to type, not the name of the box. */
+export const COMPOSER_HINT = "Ask your Project Partner, or think out loud…";
 
 export function Composer({
   draft,
@@ -56,7 +58,7 @@ export function Composer({
         id="composer"
         ref={field}
         className="ms-composer-field"
-        placeholder={COMPOSER_LABEL}
+        placeholder={COMPOSER_HINT}
         aria-describedby="composer-reason"
         value={draft}
         onChange={(event) => {

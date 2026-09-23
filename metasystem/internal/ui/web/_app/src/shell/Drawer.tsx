@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 
 import { useAboutLine } from "./about";
-import { Composer, COMPOSER_LABEL, COMPOSER_REASON } from "./Composer";
+import { Composer, COMPOSER_HINT, COMPOSER_LABEL, COMPOSER_REASON } from "./Composer";
 import { Chip, IconButton } from "./controls";
 import { Help } from "../help/Help";
 import { BrainStatement } from "../panes/Brain";
@@ -101,7 +101,7 @@ export function Drawer({
               id="drawer-composer"
               className="ms-drawer-field"
               type="text"
-              placeholder={COMPOSER_LABEL}
+              placeholder={COMPOSER_HINT}
               aria-describedby="drawer-reason"
               value={draft}
               onChange={(event) => {
