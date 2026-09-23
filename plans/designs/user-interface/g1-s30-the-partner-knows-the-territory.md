@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M37RK7DZ74773VR9DBFZ838A
-- Status: accepted
+- Status: done
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 2, 2026-09-23, Claude on Fable, after Astra's critique of revision 1 ([g1-s30-astra-critique.md](g1-s30-astra-critique.md): six material findings, "build after listed changes", all six taken below). Revision 1 was on Wido's question "Is the project partner an expert on both the metasystem and also the UI? If not; what supporting system for the agent do we need to get in place to make this possible and easy to maintain/extend?" and his ruling "write the design, get it critiqued by astra and then build it". Builds on g1-s28 (the Partner reads and explains) and g1-s29 (it is told what the human sees and can look further).
@@ -23,6 +23,10 @@ Knowledge is kept where it is true. The interface describes itself from its own 
 4. **Two kinds of check.** Deterministic: the fake ACP server records the prompt it was sent and the tools it was offered; tests assert that the first prompt carries the index, the skill and the standing rule, that `interface()` and `kit()` are advertised, and that removing any of them fails; the `interface()` result says an unprojected section is not available and says the Partner cannot write. By hand, before a release: a script under the walkthrough asks a real runtime a dozen questions through the production path (a term, a lane, an act, a verb, a ruling, an unavailable section, "can you edit this") and keeps the question, the answer, the runtime and model, the sources read and the tip; a human reads it for contradictions, unsupported claims and wrong citations. It is smoke, not certification, and says so.
 
 To add a section, a term, a setting, a record kind or a skill, a maintainer touches its owner and nothing written for the Partner: the route and its help text; the help register; the Go configuration owner; the resolver's kind and home; the skill and its `wow.md` route.
+
+## Built, 2026-09-23
+
+Commit `95a319587`. The section table gained `projected` and `shows` because nothing owned them; two help terms were added (`settings`, `lane-unknown`) because the generator refuses a source with no description; the Partner's own help text no longer promises writing. The smoke run against Claude answered all twelve questions; it showed that a runtime's interim progress notes are streamed as answer text ("I'm still reading…"), a blemish from g1-s28's stream handling to take next.
 
 ## Later, when it hurts
 
