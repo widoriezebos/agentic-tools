@@ -295,8 +295,12 @@ export async function previewDocument(source: string): Promise<Preview> {
   return request<Preview>(PREVIEW, { source });
 }
 
-/** Each segment is encoded on its own, so the separators stay separators. */
-export function encodeSegments(id: string): string {
+/**
+ * Each segment is encoded on its own, so the separators stay separators. It is
+ * this file's own: the one caller outside it was the link that handed a path to
+ * a local editor, and this page edits the document itself now.
+ */
+function encodeSegments(id: string): string {
   return id
     .split("/")
     .map((segment) => encodeURIComponent(segment))

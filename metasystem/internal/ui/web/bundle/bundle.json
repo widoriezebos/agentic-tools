@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:4aaef29229b94ad9b9a943f5a393e15bf9aad9840559cc125276ac695fa8f669",
+  "sourceDigest": "sha256:dcd4282bb3c12cbd7071bd2df6d5400366a6a2656126ac6c5c7244e7ff389882",
   "source": [
     {
       "path": ".npmrc",
@@ -20,11 +20,11 @@
     },
     {
       "path": "package-lock.json",
-      "sha256": "111abafce5b1bd3ddfe77ec58311a5cbcd57c003d0aa4c218fcf203df8268934"
+      "sha256": "3163adf7336c78fa0c2e82b21cbbec1caaea72b1251d4767a264ab3c008de169"
     },
     {
       "path": "package.json",
-      "sha256": "7ac8f840d7ff3b41f713f729be343edca44058baf8eaca96103a981b5624c297"
+      "sha256": "1857fe429e21a60ebad52b04a0cc8d5b72f31aeb3957805b854bd7a5fdbcb65f"
     },
     {
       "path": "public/theme.js",
@@ -284,7 +284,11 @@
     },
     {
       "path": "src/project/DocumentPane.tsx",
-      "sha256": "9a60fdbfb5178157f1f8e1911c8b13d7943ca4503cf288c0b2001a972d14d235"
+      "sha256": "62bf3a0f25847854aceca140d0d5926cad59f020bf470a33065683dbf955126d"
+    },
+    {
+      "path": "src/project/Editor.tsx",
+      "sha256": "0e5afa471e68fa60389838a80bc0d2a6bf303a3510c88b9d9e9b4a4ff9f6320c"
     },
     {
       "path": "src/project/Markdown.tsx",
@@ -300,7 +304,7 @@
     },
     {
       "path": "src/project/api.ts",
-      "sha256": "7ad77bb37d845954bfddced2fb5e88fe9fd48b7f801ad58f50f4aeacdd941de7"
+      "sha256": "9d6ef80c9a11a30e0961ef1e00b149cd4d0cb3704dfe405f9308ba50f2d71a1f"
     },
     {
       "path": "src/project/editing.test.ts",
@@ -336,7 +340,15 @@
     },
     {
       "path": "src/project/reading.css",
-      "sha256": "76f8708fd2b9c2c71f5ad71b0f2e3ee009cfcb89f6da51a9b5e46195451df139"
+      "sha256": "1e8d47b0f0e33c9b4600a8ce385351bd52dfd3c89a792266f9fed295f98f8d6e"
+    },
+    {
+      "path": "src/project/styling.test.ts",
+      "sha256": "1ea920e56f8a18884f7ed46a331eadbc25e87f75701bf3f782595c6e20e616f3"
+    },
+    {
+      "path": "src/project/styling.ts",
+      "sha256": "311e6deb4d64a9593f81c715244fe0181bb658feb1e0df140d4efb450e9365b3"
     },
     {
       "path": "src/project/writing.test.ts",
@@ -486,15 +498,15 @@
   "files": [
     {
       "path": "THIRD-PARTY-NOTICES.txt",
-      "sha256": "bcfd52719a30d87fb873561c64649dd5409c789cb54a008d2b5580d9d2585ec0"
+      "sha256": "b38823a5354f25a8a983dfe31ae59a3103b58ebccd415dca3cb4cb36fcd557b9"
     },
     {
       "path": "assets/index.css",
-      "sha256": "007ca1b838bdcdb0be828193f4fafd04030492b51867dfbdd1ce49c027571156"
+      "sha256": "edd2d7478d3aa6ed7e554caedcc14d487c4d9994f0e5eb3586bd9c1e56e177ca"
     },
     {
       "path": "assets/index.js",
-      "sha256": "943bce8d48bf387b46e82f04a2a213002d85d38eba9737d101cd058a1ce41ba9"
+      "sha256": "bf310b214fdac0e06277aec48b8851007f1857eb0f9fba57818f59fcb1cb3fd2"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

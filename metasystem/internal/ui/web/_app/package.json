@@ -14,8 +14,14 @@
     "check:modal": "node scripts/modal-check.mjs"
   },
   "dependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.13",
     "@fontsource-variable/inter": "5.3.0",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@lezer/highlight": "1.2.3",
     "@radix-ui/react-dialog": "1.1.23",
     "@radix-ui/react-tooltip": "1.2.16",
     "get-nonce": "1.0.1",

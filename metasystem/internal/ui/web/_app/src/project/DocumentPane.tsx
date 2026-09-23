@@ -1,9 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { NavLink, useLocation } from "react-router";
 
 import {
   editDocument,
-  encodeSegments,
   failureMessage,
   isNotFound,
   loadDocument,
@@ -21,9 +20,10 @@ import {
   opening,
   savedAt,
   statusOf,
-  type Editor,
+  type Editor as EditorState,
   type Outcome,
 } from "./editing";
+import { Editor } from "./Editor";
 import { Markdown } from "./Markdown";
 import { outlineOf, useReadingRow, type OutlineRow } from "./outline";
 import { aboutOf, crumbsFor, kindTitle, railFor, shortID, type About, type SiblingRail } from "./pane";
@@ -227,7 +227,7 @@ function Read({
   const lead = leadingTitleId(document);
   const [sheet, setSheet] = useState<Request | null>(null);
   // The editor, while one is open, and what the last save is remembered as.
-  const [editor, setEditor] = useState<Editor | null>(null);
+  const [editor, setEditor] = useState<EditorState | null>(null);
   const [saved, setSaved] = useState("");
 
   // What the drawer says this page is about: the record, and the section of it
@@ -429,7 +429,7 @@ function Editing({
   onSave,
   onCancel,
 }: {
-  editor: Editor;
+  editor: EditorState;
   from: string;
   onType: (source: string) => void;
   onSource: () => void;
@@ -438,8 +438,15 @@ function Editing({
   onCancel: () => void;
 }) {
   // The two shortcuts an editor is expected to have, taken on the way up from
-  // whatever holds focus, so they work in the text and on the bar alike.
+  // whatever holds focus, so they work on the bar and over the preview as well
+  // as in the text. The text itself binds them inside CodeMirror, which is the
+  // only place that can keep the browser's own Mod-s from opening a save
+  // dialog; when that binding has answered it has already said so by
+  // preventing the default, and this one stands down rather than acting twice.
   const keys = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented) {
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       onCancel();
@@ -486,39 +493,11 @@ function Editing({
       </div>
       {editor.problems.length > 0 && <Problems problems={editor.problems} />}
       {editor.mode === "source" ? (
-        <Source source={editor.source} onType={onType} />
+        <Editor value={editor.source} onChange={onType} onSave={onSave} onCancel={onCancel} autoFocus />
       ) : (
         <Markdown blocks={editor.blocks} from={from} />
       )}
     </div>
-  );
-}
-
-/**
- * The text itself. It is sized to what it holds, so the page scrolls and the
- * box does not: there is no timer measuring it and no scroll-height loop, only
- * a browser that grows a field to its content and a floor for the ones that
- * do not.
- *
- * Focus enters it when it appears, which is when the editor opens and again
- * when the preview is left, so a human who came back to write is writing.
- */
-function Source({ source, onType }: { source: string; onType: (source: string) => void }) {
-  const box = useRef<HTMLTextAreaElement | null>(null);
-  useEffect(() => {
-    box.current?.focus();
-  }, []);
-  return (
-    <textarea
-      ref={box}
-      className="ms-editor"
-      aria-label="The document, as Markdown"
-      spellCheck
-      value={source}
-      onChange={(event) => {
-        onType(event.target.value);
-      }}
-    />
   );
 }
 
@@ -669,12 +648,15 @@ function Status({ status, onChange }: { status: string; onChange: (status: strin
 }
 
 /**
- * What can be done with the file: edited here, its absolute path put on the
- * clipboard, or opened in a local editor.
+ * What can be done with the file: edited here, or its absolute path put on the
+ * clipboard.
  *
- * Edit is first because it is the one that stays on the page. A document this
- * interface could not read to its end has no Edit: there is nothing to open an
- * editor over, and the other two still work on a file this build will not show.
+ * Edit is first because it is the one that does the work. The link that handed
+ * the file to a local editor is gone: the editor is on this page now, and a
+ * second way out of it was a way to two unsaved copies of the same document. A
+ * document this interface could not read to its end has no Edit — there is
+ * nothing to open an editor over — and the copy still works on a file this
+ * build will not show.
  *
  * The copy confirmation is a CSS animation on an element that is remounted for
  * each copy, so a second copy says so again; there is no timer anywhere in this
@@ -716,9 +698,6 @@ function FileActions({ path, onEdit }: { path: string; onEdit: (() => void) | nu
         </span>
       )}
       {refused && <span className="ms-project-reason">This browser did not allow the copy.</span>}
-      <a className="ms-project-act" href={`vscode://file/${encodeSegments(path)}`}>
-        Open in editor
-      </a>
     </span>
   );
 }

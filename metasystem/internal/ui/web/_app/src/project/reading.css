@@ -1096,25 +1096,23 @@
 }
 
 /*
- * The text. It grows with what it holds, so the page is what scrolls: the
- * min-height is the floor for a browser that does not size a field to its
- * content, and there is no measuring anywhere.
+ * The text, which is a CodeMirror view rather than a field. What it is made of
+ * — the ground, the caret, the type scale of the Markdown it styles as it is
+ * typed — is in src/project/styling.ts, because the widget writes its own
+ * stylesheet at runtime and a rule here would be arguing with it. What is left
+ * is where it sits: the reading column's whole width, and a floor so an empty
+ * document is still a place to write rather than one line.
+ *
+ * It grows with what it holds and the work area is what scrolls, which is what
+ * the text area did: CodeMirror is given no height, so it is as tall as the
+ * document in it, and the floor is the only measurement here.
  */
 .ms-editor {
-  field-sizing: content;
-  box-sizing: border-box;
   width: 100%;
+}
+
+.ms-editor .cm-editor {
   min-height: 60vh;
-  padding: 12px;
-  border: 1px solid var(--ms-border-strong);
-  border-radius: 6px;
-  background: var(--ms-surface);
-  color: var(--ms-text);
-  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-  line-height: 20px;
-  tab-size: 4;
-  resize: vertical;
 }
 
 /* What the project refused the save over, above the text a human has to fix. */
