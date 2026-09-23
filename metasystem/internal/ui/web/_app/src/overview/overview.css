@@ -1,0 +1,223 @@
+/*
+ * Overview: two columns of blocks at desk width, one at phone width.
+ *
+ * The blocks are the briefing's house style — a title, the term that explains
+ * it, and rows under it — because they are the same kind of object and a
+ * second style for them would teach a human two vocabularies for one page.
+ * What is different is the layout: the briefing shows one section at a time
+ * behind a strip of tabs, and this page shows all five at once, because the
+ * whole point of it is the one screen.
+ *
+ * Every colour is a token. Nothing here animates, and nothing moves on its own.
+ */
+
+.ms-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 24px 32px;
+  align-items: start;
+  max-width: 1100px;
+}
+
+.ms-overview-column {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.ms-overview-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px 20px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-overview-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-overview-title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--ms-text);
+}
+
+/* The window line under "Since your last visit", and anything else that
+   qualifies a block's title rather than being one of its rows. */
+.ms-overview-note {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-overview-subtitle {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+/* The calm sentence: the good outcome, said plainly and not as an absence. */
+.ms-overview-calm {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text-2);
+}
+
+/* One part of a block that has nothing in it, where the block as a whole does. */
+.ms-overview-none {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-overview-reason {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-danger);
+  overflow-wrap: anywhere;
+}
+
+.ms-overview-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ms-overview-row {
+  min-width: 0;
+}
+
+.ms-overview-row-head {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+/* The intent index's first sentence, under the count it belongs to. */
+.ms-overview-lede {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-overview-items {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* One item: its name, and the one fact beside it, on a line that wraps rather
+   than one that clips — a design's title is prose and a seat is not. */
+.ms-overview-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-overview-item-note {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-overview-line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
+.ms-overview-reason,
+.ms-overview-line .ms-overview-reason {
+  overflow-wrap: anywhere;
+}
+
+/* The lane strip: every count a way onto the board. It wraps at a narrow
+   width rather than scrolling, because six short links are a paragraph. */
+.ms-overview-strip {
+  margin: 6px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--ms-border);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--ms-text-3);
+}
+
+.ms-overview-strip-rule {
+  color: var(--ms-text-3);
+}
+
+.ms-overview-link {
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-overview-link:hover,
+.ms-overview-link:focus-visible {
+  text-decoration: underline;
+}
+
+/*
+ * An act, where a human is already looking: the steward's messages and the
+ * sign-in sheet are a panel and a sheet rather than addresses, so they are
+ * buttons, and they read as links because in a row of links a button would be
+ * a second kind of object saying the same kind of thing.
+ */
+.ms-overview-act {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ms-accent);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ms-overview-act:hover,
+.ms-overview-act:focus-visible {
+  text-decoration: underline;
+}
+
+/*
+ * One column below the desk. The order is the document's own — what needs you,
+ * what changed, work, memory, health — which is the design's order top to
+ * bottom, so the stacked page reads the way the two-column one is read.
+ */
+@media (max-width: 1099px) {
+  .ms-overview {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+}

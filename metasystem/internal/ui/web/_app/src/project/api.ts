@@ -61,6 +61,13 @@ export type ProjectRecord = {
   home: string;
   summary: string;
   /**
+   * When this record's file was last written, from the filesystem. It is not
+   * something the record declares — no head carries a revision date — and a
+   * file the server could not stat carries the empty string rather than an
+   * instant nobody observed.
+   */
+  changedAt: string;
+  /**
    * The list items this record writes under a Slices heading, as written.
    * Nothing is taken from them: there is no slice-plan owner in the engine
    * yet, so a design's own list is the whole of what is recorded.

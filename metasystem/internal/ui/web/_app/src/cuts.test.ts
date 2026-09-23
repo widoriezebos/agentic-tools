@@ -116,6 +116,12 @@ const CALL_SITES: readonly (readonly [string, number, readonly string[]])[] = [
   // arrives after the load arrives on the stream named beside this list,
   // which is why there is no second read here and no timer anywhere.
   ["notifications/api.ts", 1, ["/api/notifications"]],
+  // The landing page. One read when the pane mounts and one more when a human
+  // presses the section's refresh in the header, both through the one request
+  // below. The page holds no timer and no second reader: everything on it is
+  // composed on the server from what that server already reads, so there is
+  // one resource here and not five.
+  ["overview/api.ts", 1, ["/api/overview"]],
 ];
 
 /**

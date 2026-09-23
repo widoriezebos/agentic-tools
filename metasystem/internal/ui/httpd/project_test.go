@@ -80,10 +80,11 @@ func TestProjectPayload(t *testing.T) {
 	var payload project.Pane
 	testutil.Require(t, "decode the response", json.Unmarshal(response.Body.Bytes(), &payload), nil)
 	testutil.Expect(t, "payload", payload, describedPane())
-	// The slice plan is the fifth schema's whole addition, the goals were the
-	// fourth's and the summaries the third's, so each is read back off the
-	// wire rather than assumed to have travelled with the rest.
-	testutil.Expect(t, "the schema version", payload.SchemaVersion, 5)
+	// When a record last changed is the sixth schema's whole addition, the
+	// slice plan was the fifth's, the goals the fourth's and the summaries
+	// the third's, so each is read back off the wire rather than assumed to
+	// have travelled with the rest.
+	testutil.Expect(t, "the schema version", payload.SchemaVersion, 6)
 	testutil.Expect(t, "the ledger's goals", payload.Goals[0].ID, "g1-s22")
 	testutil.Expect(t, "a record's goals", payload.Records[0].Goals, []string{"g1-s22"})
 	testutil.Expect(t, "a record's summary", payload.Records[0].Summary,

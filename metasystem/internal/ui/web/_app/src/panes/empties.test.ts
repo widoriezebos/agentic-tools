@@ -15,15 +15,6 @@ import { sections } from "../routes";
 
 const expected: Empty[] = [
   {
-    id: "overview",
-    kind: "not projected",
-    heading: "Overview is not projected yet",
-    body: "This build does not read the records. Overview will show what needs you and what changed since your last visit, linked to its records.",
-    note: "Arrives with g1-s14",
-    link: { label: "About this workspace", to: "/settings" },
-    action: null,
-  },
-  {
     id: "fleet",
     kind: "not projected",
     heading: "Fleet is not projected yet",
@@ -98,7 +89,7 @@ const expected: Empty[] = [
  * empty state, because their panes say what they read rather than what has not
  * been built; every other section still has a row above.
  */
-const PROJECTED = ["backlog", "project"];
+const PROJECTED = ["overview", "backlog", "project"];
 
 const unprojected = sections.filter((section) => !PROJECTED.includes(section.id));
 
@@ -156,10 +147,10 @@ describe("the empty states", () => {
     }
   });
 
-  it("offer one link, from Overview, to a surface this build serves", () => {
-    const linked = empties.filter((empty) => empty.link !== null);
-    expect(linked.map((empty) => empty.id)).toEqual(["overview"]);
-    expect(linked[0].link).toEqual({ label: "About this workspace", to: "/settings" });
+  // Overview carried the one link, to About this workspace, because it could
+  // say nothing of its own. It reads the records now, so no row offers one.
+  it("offer no link, now that the one section that did reads its own records", () => {
+    expect(empties.filter((empty) => empty.link !== null)).toEqual([]);
   });
 
   it("offer one action, on the pane that is not a section", () => {

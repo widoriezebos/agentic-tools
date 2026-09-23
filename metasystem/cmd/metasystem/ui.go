@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -367,6 +368,15 @@ func runUI(verb string, args []string) int {
 					// operator; the interface reads it and nothing else of
 					// the steward's, and never writes to it.
 					NotificationJournal: steward.NotificationJournalPath(roots.Checkout),
+					// The landing page's last-visit marker, beside this
+					// server's own lifecycle state. It is the one thing the
+					// interface writes for itself rather than for the
+					// ledger: preference state about when a human last
+					// looked, which no verb reads and losing which changes a
+					// comparison window and nothing else.
+					Visit: func(human string, now time.Time) (time.Time, bool, error) {
+						return overview.Visit(roots.StateRoot, human, now)
+					},
 				}, bound, bundle)
 			},
 			Ready: func(address string) {

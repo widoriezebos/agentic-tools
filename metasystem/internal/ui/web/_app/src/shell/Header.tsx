@@ -1,7 +1,8 @@
-import { Menu, PanelBottom } from "lucide-react";
+import { Menu, PanelBottom, RefreshCw } from "lucide-react";
 
 import { IconButton } from "./controls";
 import { useWorkspaceState } from "./identity";
+import { useSectionRefresh } from "./refresh";
 import { SignInControl } from "./SignInControl";
 import { WorkspaceIdentity } from "./WorkspaceIdentity";
 import { Help } from "../help/Help";
@@ -25,6 +26,11 @@ import { NotificationsBell } from "../notifications/Bell";
  * configuration is not one of the project's structures, and the conversation
  * explains itself on its own drawer.
  *
+ * A section whose page has no strip of its own offers its refresh here, in the
+ * same cluster, so the icon sits beside the name of the thing it re-reads. A
+ * section that offers none shows none: an icon that read nothing would be a
+ * control a human presses to watch nothing happen.
+ *
  * On the focused view the toggle stays in the sequential order and says why it
  * does nothing, rather than disappearing and taking its explanation with it.
  */
@@ -46,6 +52,7 @@ export function Header({
   focused: boolean;
 }) {
   const { workspace } = useWorkspaceState();
+  const refresh = useSectionRefresh();
   const known = workspace.state === "known" ? workspace.workspace : null;
   const classes = ["ms-header"];
   if (known?.conflict === true) {
@@ -67,6 +74,11 @@ export function Header({
         <span className="ms-header-name">
           <span className="ms-header-title">{sectionTitle}</span>
           {help !== null && <Help id={help} />}
+          {refresh !== null && (
+            <IconButton label="Refresh" hint={refresh.hint} onClick={refresh.reread}>
+              <RefreshCw size={16} strokeWidth={1.75} aria-hidden="true" />
+            </IconButton>
+          )}
         </span>
       </div>
       <div className="ms-header-right">

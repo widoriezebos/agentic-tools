@@ -13,9 +13,11 @@
  * A section this build does project has no row here at all: its pane says what
  * it read, from the response, rather than what it has not built yet.
  *
- * A link, where a row has one, is a text link to a surface this build actually
- * serves. Overview has the only one: a human who has just arrived lands there,
- * and About this workspace is this build's one live answer to "what is this".
+ * No row offers a link any more. Overview had the only one — a human who had
+ * just arrived landed on a page that could say nothing, so it sent them to
+ * About this workspace — and Overview now reads the records and answers for
+ * itself. The field stays, because a section that is still to come may want
+ * one, and a row that offers nothing offers null.
  *
  * Not found is neither kind. An address that matches nothing has one honest
  * next step, so it keeps its action.
@@ -37,15 +39,6 @@ export type Empty = {
 };
 
 export const empties: readonly Empty[] = [
-  {
-    id: "overview",
-    kind: "not projected",
-    heading: "Overview is not projected yet",
-    body: "This build does not read the records. Overview will show what needs you and what changed since your last visit, linked to its records.",
-    note: "Arrives with g1-s14",
-    link: { label: "About this workspace", to: "/settings" },
-    action: null,
-  },
   {
     id: "fleet",
     kind: "not projected",

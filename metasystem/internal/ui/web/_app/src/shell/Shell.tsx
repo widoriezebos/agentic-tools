@@ -9,10 +9,12 @@ import { Header } from "./Header";
 import { useWorkspaceState, type WorkspaceState } from "./identity";
 import { PHONE_QUERY, RAIL_QUERY, useMediaQuery, WIDE_QUERY } from "./media";
 import { Rail } from "./Rail";
+import { RefreshProvider } from "./refresh";
 import { Sheet } from "./Sheet";
 import { BacklogPane } from "../backlog/BacklogPane";
 import { sectionHelp } from "../help/terms";
 import { useNotifications } from "../notifications/store";
+import { OverviewPane } from "../overview/OverviewPane";
 import { Focused } from "../panes/Focused";
 import { NotFoundPane, SectionPane } from "../panes/sections";
 import { SettingsPane } from "../panes/Settings";
@@ -166,8 +168,15 @@ export function Shell() {
       <Route path="/backlog/goal/:id/:tab?" element={<GoalPane />} />
       <Route path="/project/:tab?" element={<ProjectPane />} />
       <Route path="/project/doc/*" element={<DocumentPane />} />
+      {/* Overview reads the project, the ledger and the journal at once, and
+          is where "/" lands, so it is a route of its own rather than one of
+          the sections that say which gate brings them. */}
+      <Route path="/overview" element={<OverviewPane />} />
       {projectSections
-        .filter((candidate) => candidate.id !== "backlog" && candidate.id !== "project")
+        .filter(
+          (candidate) =>
+            candidate.id !== "backlog" && candidate.id !== "project" && candidate.id !== "overview",
+        )
         .map((candidate) => (
           <Route key={candidate.id} path={candidate.path} element={<SectionPane section={candidate} />} />
         ))}
@@ -203,98 +212,102 @@ export function Shell() {
 
   return (
     <AboutProvider>
-      <div className="ms-shell">
-        <a className="ms-skip-link" href="#content">
-          Skip to content
-        </a>
-        {!phone && (
-          <Rail
-            expanded={railExpanded}
-            toggleable={railFits}
-            onToggle={toggleRail}
-            theme={theme}
-            onTheme={chooseTheme}
-          />
-        )}
-        <div className="ms-shell-column">
-          <Header
-            sectionTitle={sectionTitle}
-            help={sectionHelp(section?.id)}
-            onMenu={
-              phone
-                ? () => {
-                    setRailSheetOpen(true);
-                  }
-                : undefined
-            }
-            dockOpen={drawn}
-            onDockToggle={toggleDrawer}
-            focused={focused}
-          />
-          {focused ? (
-            work
-          ) : (
-            <div className="ms-workarea">
-              <Group
-                id="workarea"
-                className="ms-workarea-group"
-                orientation="vertical"
-                defaultLayout={layout}
-                onLayoutChanged={remember}
-              >
-                <Panel id={WORK_PANEL} className="ms-work-panel" minSize={MINIMUM_WORK_HEIGHT}>
-                  {work}
-                </Panel>
-                {drawn && (
-                  <>
-                    {/* The library's own double-click puts the panel back to
-                        its default size; remembering that is this build's. */}
-                    <Separator
-                      className="ms-drawer-grip"
-                      aria-label="Resize the Project Partner"
-                      onDoubleClick={() => {
-                        writeDockHeight(DEFAULT_DOCK_HEIGHT);
-                      }}
-                    />
-                    <Panel
-                      id={DRAWER_PANEL}
-                      className="ms-drawer-panel-host"
-                      minSize={MINIMUM_DOCK_HEIGHT}
-                      defaultSize={`${String(DEFAULT_DOCK_HEIGHT)}%`}
-                    >
-                      {drawer}
-                    </Panel>
-                  </>
-                )}
-              </Group>
-              {!drawn && drawer}
-            </div>
-          )}
-        </div>
-        {phone && (
-          <Sheet
-            open={railSheetOpen}
-            onOpenChange={setRailSheetOpen}
-            side="left"
-            label="Sections"
-            title="Sections"
-            closeLabel="Close the sections"
-            bodyClassName="ms-sheet-body--rail"
-          >
+      {/* The section's refresh is offered by whichever pane is on screen and
+          shown in the header, so the provider has to stand above both. */}
+      <RefreshProvider>
+        <div className="ms-shell">
+          <a className="ms-skip-link" href="#content">
+            Skip to content
+          </a>
+          {!phone && (
             <Rail
-              inSheet
-              expanded
-              toggleable={false}
+              expanded={railExpanded}
+              toggleable={railFits}
               onToggle={toggleRail}
               theme={theme}
               onTheme={chooseTheme}
-              onNavigate={() => {
-                setRailSheetOpen(false);
-              }}
             />
-          </Sheet>
-        )}
-      </div>
+          )}
+          <div className="ms-shell-column">
+            <Header
+              sectionTitle={sectionTitle}
+              help={sectionHelp(section?.id)}
+              onMenu={
+                phone
+                  ? () => {
+                      setRailSheetOpen(true);
+                    }
+                  : undefined
+              }
+              dockOpen={drawn}
+              onDockToggle={toggleDrawer}
+              focused={focused}
+            />
+            {focused ? (
+              work
+            ) : (
+              <div className="ms-workarea">
+                <Group
+                  id="workarea"
+                  className="ms-workarea-group"
+                  orientation="vertical"
+                  defaultLayout={layout}
+                  onLayoutChanged={remember}
+                >
+                  <Panel id={WORK_PANEL} className="ms-work-panel" minSize={MINIMUM_WORK_HEIGHT}>
+                    {work}
+                  </Panel>
+                  {drawn && (
+                    <>
+                      {/* The library's own double-click puts the panel back to
+                          its default size; remembering that is this build's. */}
+                      <Separator
+                        className="ms-drawer-grip"
+                        aria-label="Resize the Project Partner"
+                        onDoubleClick={() => {
+                          writeDockHeight(DEFAULT_DOCK_HEIGHT);
+                        }}
+                      />
+                      <Panel
+                        id={DRAWER_PANEL}
+                        className="ms-drawer-panel-host"
+                        minSize={MINIMUM_DOCK_HEIGHT}
+                        defaultSize={`${String(DEFAULT_DOCK_HEIGHT)}%`}
+                      >
+                        {drawer}
+                      </Panel>
+                    </>
+                  )}
+                </Group>
+                {!drawn && drawer}
+              </div>
+            )}
+          </div>
+          {phone && (
+            <Sheet
+              open={railSheetOpen}
+              onOpenChange={setRailSheetOpen}
+              side="left"
+              label="Sections"
+              title="Sections"
+              closeLabel="Close the sections"
+              bodyClassName="ms-sheet-body--rail"
+            >
+              <Rail
+                inSheet
+                expanded
+                toggleable={false}
+                onToggle={toggleRail}
+                theme={theme}
+                onTheme={chooseTheme}
+                onNavigate={() => {
+                  setRailSheetOpen(false);
+                }}
+              />
+            </Sheet>
+          )}
+        </div>
+      </RefreshProvider>
     </AboutProvider>
   );
 }

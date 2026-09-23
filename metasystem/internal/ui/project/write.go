@@ -779,7 +779,7 @@ func writtenRecord(roots Roots, id, relative, absolute string) (Written, error) 
 	if record == nil {
 		return Written{}, fmt.Errorf("%s was written, but the resolver does not read a record with the id %s back from it", relative, id)
 	}
-	return Written{Record: describe(*record), Path: record.Path, Absolute: absolute}, nil
+	return Written{Record: describe(roots, *record), Path: record.Path, Absolute: absolute}, nil
 }
 
 func askedQuestion(roots Roots, id string) (Asked, error) {

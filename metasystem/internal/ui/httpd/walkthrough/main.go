@@ -26,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
@@ -49,23 +50,31 @@ func main() {
 	// history; this is what makes the live path — the stream, the toasts, the
 	// bell's count — something a human can stand in front of and watch.
 	notifyEvery := flag.Duration("notify-every", 0, "append a fixture notification this often; zero appends none")
+	// The calm workspace. Overview's good outcome is a page that says nothing
+	// needs you, and a fixture that can only show the busy one can only show
+	// half of what the section is for. Calm proves its human, admits every
+	// goal, accepts every draft, closes the register, marks the finished
+	// design done, and plants a journal the steward delivered — which is the
+	// whole of "nothing needs you" and "one line of health".
+	calm := flag.Bool("calm", false, "serve a workspace with nothing waiting, which is the page's good outcome")
 	flag.Parse()
 
 	manifest, err := web.ReadManifest()
 	if err != nil {
 		log.Fatalf("this executable carries no bundle: %v", err)
 	}
-	state := newLedger()
+	state := newLedger(*calm)
+	state.calm = *calm
 	// A checkout with one document in it, so the document reader and the
 	// in-place editor have something real to open: the editor writes to disk,
 	// reads it back, and answers what is there, and a walkthrough over a
 	// canned payload would prove none of that.
-	checkout := fixtureCheckout()
+	checkout := fixtureCheckout(*calm)
 	fmt.Println("checkout " + checkout)
 	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
 	state.roots = roots
 	authority := httpd.AuthorityInfo{Reason: agentReason}
-	if *proven {
+	if *proven || *calm {
 		authority = httpd.AuthorityInfo{Proven: true, Human: "Wido"}
 	}
 	// The fixture's floor is in memory and says so: there is no checkout
@@ -85,7 +94,7 @@ func main() {
 	// The steward's journal, planted with a dozen entries across the four
 	// sources — including one the notifier refused, which is the delivery gate
 	// made visible — and then, with -notify-every, grown while the server runs.
-	journal := fixtureJournal(checkout)
+	journal := fixtureJournal(checkout, *calm)
 	if *notifyEvery > 0 {
 		go appendFixtureNotifications(journal, *notifyEvery)
 	}
@@ -130,6 +139,13 @@ func main() {
 			return project.AddGoal(roots, id, goal, time.Now().UTC())
 		},
 		PreviewDocument: project.PreviewDocument,
+		// The landing page's marker, over the fixture checkout, through the
+		// same package the engine wires: a walkthrough that kept the visit in
+		// memory would never show the second visit's window, which is the
+		// whole of what the rule is for.
+		Visit: func(human string, now time.Time) (time.Time, bool, error) {
+			return overview.Visit(checkout, human, now)
+		},
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 			return map[string]goalbudget.Budget{"3": {
 				ElapsedLimit: "8h", AttemptLimit: 10, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3,
@@ -160,6 +176,10 @@ type ledger struct {
 	// made them, so the Project pane carries them beside the canned ones and a
 	// design that names one can show where it stands.
 	opened []string
+	// calm is the workspace with nothing waiting: every draft accepted, the
+	// register closed, and the finished design marked done. It changes what
+	// the Project pane answers and nothing about how it is answered.
+	calm bool
 }
 
 // The fixture checkout's four documents.
@@ -247,7 +267,16 @@ The rail, the header and the work area are one shell every section is read in.
 // resolver reads: a configuration file, an agents directory, a one-goal
 // ledger, and a design home. It is thrown away with the temporary directory,
 // so a walkthrough that saves over a file changes nothing a human keeps.
-func fixtureCheckout() string {
+func fixtureCheckout(calm bool) string {
+	// The calm workspace's finished design is marked done on disk, because
+	// the two designs below are read back from the file rather than from the
+	// pane: a design whose goals have all landed and which nobody has closed
+	// is exactly what Overview says needs a human, so the calm fixture closes
+	// it where the busy one leaves it open.
+	landed := walkthroughLandedText
+	if calm {
+		landed = strings.Replace(landed, "- Status: accepted", "- Status: done", 1)
+	}
 	directory, err := os.MkdirTemp("", "metasystem-walkthrough-")
 	if err != nil {
 		log.Fatalf("cannot make the walkthrough checkout: %v", err)
@@ -268,7 +297,7 @@ func fixtureCheckout() string {
 		{walkthroughDocument, walkthroughText},
 		{walkthroughRecord, walkthroughHead},
 		{walkthroughPartly, walkthroughPartlyText},
-		{walkthroughLanded, walkthroughLandedText},
+		{walkthroughLanded, landed},
 	} {
 		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -289,7 +318,7 @@ func fixtureCheckout() string {
 // planning arc, a split with its members and its retired parent, conclusions
 // at three different ages so the Done lane's window has something to do, an
 // abandoned goal, and one record whose state this build cannot place.
-func newLedger() *ledger {
+func newLedger(calm bool) *ledger {
 	tree := &goal.TreeGoals{
 		Root:      &goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "2", SyncMode: goal.SyncLocal, Revision: 1},
 		Live:      map[string]*goal.GoalFile{},
@@ -321,9 +350,30 @@ func newLedger() *ledger {
 	ready.Budget = &goalbudget.Budget{ElapsedLimit: "4h", AttemptLimit: 6, ReservedJobMinutesLimit: 720, ActiveJobLimit: 1, ReviewRoundLimit: 2}
 
 	claimed := add(ranked(walkthroughGoal("g1-s15", goal.StateClaimed, "The Decisions section answers a question"), 2, 6))
-	claimed.Claimed = &goal.ClaimRecord{Machine: "m1e", Lineage: "coordinator", At: "2026-09-21T08:00:00Z"}
+	claimed.Claimed = &goal.ClaimRecord{Machine: "m1e", Lineage: "coordinator", At: stampedAgo(5 * time.Hour)}
 	second := add(ranked(walkthroughGoal("g1-s19", goal.StateClaimed, "The document reader anchors a heading"), 2, 7))
-	second.Claimed = &goal.ClaimRecord{Machine: "m2a", Lineage: "implementer", At: "2026-09-21T10:00:00Z"}
+	second.Claimed = &goal.ClaimRecord{Machine: "m2a", Lineage: "implementer", At: stampedAgo(90 * time.Minute)}
+
+	// Built and waiting to land, which is the Review lane; and held by a
+	// park, which is Waiting with a reason and a stamp. Without these two the
+	// lane strip has two empty counts and the Waiting block has nothing to
+	// name, and neither is a shape a walkthrough should leave untried.
+	landing := add(ranked(walkthroughGoal("g1-s21", goal.StateClaimed, "The Overview reads what needs a human"), 2, 10))
+	landing.Claimed = &goal.ClaimRecord{Machine: "m1e", Lineage: "coordinator", At: stampedAgo(7 * time.Hour)}
+	landing.Landing = &goal.LandingRecord{At: stampedAgo(35 * time.Minute)}
+
+	parked := add(ranked(walkthroughGoal("g1-s22", goal.StateParked, "The Fleet section reads the census"), 2, 11))
+	parked.Parked = &goal.ParkRecord{
+		By: "human:Wido", At: stampedAgo(30 * time.Hour),
+		Because: "the census format is still being decided",
+	}
+
+	// Two goals the ledger wrote to inside the day, so that what changed
+	// since the last visit has rows rather than a sentence saying nothing
+	// did. The stamps are relative to this process's clock for the reason the
+	// conclusions below are.
+	touch(claimed, "claim", 5*time.Hour)
+	touch(second, "claim", 90*time.Minute)
 
 	// A planning arc, which is an arc and not a split.
 	add(arced(ranked(walkthroughGoal("harvest-1", goal.StateQueued, "Harvest the covenant survey's findings"), 3, 1), "covenant-harvest"))
@@ -353,7 +403,49 @@ func newLedger() *ledger {
 	// something to say and can be opened.
 	add(ranked(walkthroughGoal("g1-s99", "surveying", "A state this build has no lane for"), 3, 3))
 
+	if calm {
+		admitEverything(tree)
+	}
 	return &ledger{tree: tree}
+}
+
+// admitEverything is the calm workspace's ledger: every queued goal carries a
+// human's approval, so nothing in To Do is waiting on one. It is the one
+// change calm makes to the tree — the work itself, and every other lane, is
+// the same fixture.
+func admitEverything(tree *goal.TreeGoals) {
+	for _, file := range tree.Live {
+		if file.State != goal.StateQueued {
+			continue
+		}
+		file.State = goal.StateApproved
+		file.Approved = &goal.ApprovalRecord{
+			By: "human:Wido", At: stampedAgo(26 * time.Hour),
+			Authority: goal.ApprovalAuthorityProven, Revision: file.Revision,
+		}
+		file.Budget = &goalbudget.Budget{
+			ElapsedLimit: "4h", AttemptLimit: 6, ReservedJobMinutesLimit: 720,
+			ActiveJobLimit: 1, ReviewRoundLimit: 2,
+		}
+	}
+}
+
+// stampedAgo is an instant this long before this process started, written the
+// way a record writes one. The fixture stamps relative to its own clock for
+// the reason the conclusions do: a date written down drifts out of every
+// window the day after it is written, and the walkthrough then shows an empty
+// block where the design says there is something to read.
+func stampedAgo(ago time.Duration) string {
+	return time.Now().UTC().Add(-ago).Format(time.RFC3339)
+}
+
+// touch appends the History line the ledger writes when something happens to a
+// goal, which is what "changed since your last visit" reads.
+func touch(file *goal.GoalFile, verb string, ago time.Duration) *goal.GoalFile {
+	file.History = append(file.History, goal.HistoryLine{
+		At: stampedAgo(ago), Opid: "op-" + verb + "-" + file.Id, Verb: verb, Actor: "m1e+coordinator",
+	})
+	return file
 }
 
 func walkthroughGoal(id, state, intent string) *goal.GoalFile {
@@ -487,7 +579,7 @@ func (l *ledger) project() project.Pane {
 		}
 		goals = append(goals, one)
 	}
-	return project.Pane{
+	pane := project.Pane{
 		SchemaVersion: project.SchemaVersion,
 		ReadAt:        time.Now().UTC().Format(time.RFC3339),
 		Goals:         goals,
@@ -495,7 +587,8 @@ func (l *ledger) project() project.Pane {
 			{
 				Kind: "design", ID: "design-decisions", Status: "accepted", Goals: []string{"g1-s15"},
 				Title: "The Decisions section", Path: "plans/designs/decisions.md", Home: "plans/designs",
-				Summary: "How a question is answered from the browser.",
+				Summary:   "How a question is answered from the browser.",
+				ChangedAt: stampedAgo(3 * time.Hour),
 				Slices: []string{
 					"The register is read and shown with its open questions first",
 					"Answering one publishes through the project writer",
@@ -505,7 +598,8 @@ func (l *ledger) project() project.Pane {
 			{
 				Kind: "design", ID: "design-board", Status: "accepted", Goals: []string{"g1-s12"},
 				Title: "The backlog board", Path: "plans/designs/board.md", Home: "plans/designs",
-				Summary: "The board, and the acts on it.",
+				Summary:   "The board, and the acts on it.",
+				ChangedAt: stampedAgo(9 * 24 * time.Hour),
 				Slices: []string{
 					"The lanes read the projection",
 					"A drop between lanes publishes the verb it names",
@@ -517,6 +611,7 @@ func (l *ledger) project() project.Pane {
 				Kind: "design", ID: "design-goal-page", Status: "draft", Goals: []string{"g1-s13"},
 				Title: "The goal page", Path: "plans/designs/goal-page.md", Home: "plans/designs",
 				Summary: "What one goal's page shows.", Slices: []string{},
+				ChangedAt: stampedAgo(80 * time.Minute),
 			},
 			// The two readings of a design's work: one part of the way there,
 			// and one whose goals have all landed, which is the one that is
@@ -524,14 +619,16 @@ func (l *ledger) project() project.Pane {
 			l.asItReads(project.Record{
 				Kind: "design", ID: "design-reader", Status: "accepted", Goals: []string{"g1-s9", "g1-s13"},
 				Title: "The document reader", Path: walkthroughPartly, Home: "plans/designs",
-				Summary: "A document is read among its siblings, with its outline beside it.",
-				Slices:  []string{},
+				Summary:   "A document is read among its siblings, with its outline beside it.",
+				ChangedAt: stampedAgo(6 * 24 * time.Hour),
+				Slices:    []string{},
 			}),
 			l.asItReads(project.Record{
 				Kind: "design", ID: "design-shell", Status: "accepted", Goals: []string{"g1-s9", "g1-s10"},
 				Title: "The application shell", Path: walkthroughLanded, Home: "plans/designs",
-				Summary: "The rail, the header and the work area are one shell every section is read in.",
-				Slices:  []string{},
+				Summary:   "The rail, the header and the work area are one shell every section is read in.",
+				ChangedAt: stampedAgo(20 * time.Hour),
+				Slices:    []string{},
 			}),
 			// Two decisions: one about the project as a whole, which is what a
 			// head with no Goals line means, and one about a goal, so the
@@ -539,21 +636,67 @@ func (l *ledger) project() project.Pane {
 			{
 				Kind: "decision", ID: "decision-one-binary", Status: "accepted", Goals: []string{},
 				Title: "One binary", Path: "docs/decisions/0001-one-binary.md", Home: "docs/decisions",
-				Summary: "The engine ships as one executable, and the interface is served from it.",
-				Slices:  []string{},
+				Summary:   "The engine ships as one executable, and the interface is served from it.",
+				ChangedAt: stampedAgo(31 * 24 * time.Hour),
+				Slices:    []string{},
 			},
 			{
 				Kind: "decision", ID: "decision-answering", Status: "draft", Goals: []string{"g1-s15"},
 				Title: "A question is answered by a record", Path: "docs/decisions/0002-answering.md",
-				Home:    "docs/decisions",
-				Summary: "Answering names the record that answered it, and the row keeps the name.",
-				Slices:  []string{},
+				Home:      "docs/decisions",
+				Summary:   "Answering names the record that answered it, and the row keeps the name.",
+				ChangedAt: stampedAgo(50 * time.Minute),
+				Slices:    []string{},
 			},
 		},
-		Intent:    project.Book{Chapters: []project.Chapter{}},
-		Doctrine:  project.Book{Chapters: []project.Chapter{}},
-		Questions: []project.Question{},
-		Problems:  []project.Problem{},
+		// The two books, with an index each, so the memory block has a
+		// chapter count to show and a sentence to open with. They are canned
+		// like the rest of this pane: what Overview reads out of them is a
+		// number and a first sentence, and both are here.
+		Intent: project.Book{
+			Index: &project.Record{
+				Kind: "intent", ID: "intent-index", Status: "accepted",
+				Title: "Intent", Path: "plans/intent/index.md", Home: "plans/intent",
+				Summary: "The MetaSystem is the machinery a human runs a fleet of agents with. It exists so that one person can hold the intent while the work is done by many hands.",
+				Goals:   []string{}, Slices: []string{},
+			},
+			Chapters: []project.Chapter{
+				{ID: "intent-shift", Title: "1. The shift", Summary: "Software is no longer written by hand."},
+				{ID: "intent-human", Title: "2. What the human keeps", Summary: "Intent, approval and judgement stay with the person."},
+				{Path: "docs/paper/03-the-fleet.md", Title: "3. The fleet", Summary: "Many seats, one ledger, one accepted tip."},
+			},
+		},
+		Doctrine: project.Book{
+			Index: &project.Record{
+				Kind: "doctrine", ID: "doctrine-index", Status: "accepted",
+				Title: "Doctrine", Path: "plans/doctrine/index.md", Home: "plans/doctrine",
+				Summary: "The rules every design is held to, decided once.",
+				Goals:   []string{}, Slices: []string{},
+			},
+			Chapters: []project.Chapter{
+				{ID: "doctrine-owners", Title: "1. One owner per answer", Summary: "Nothing is derived twice."},
+				{ID: "doctrine-refusal", Title: "2. Refuse visibly", Summary: "A gap is named, never filled in."},
+			},
+		},
+		Questions: []project.Question{
+			{
+				ID: "q-census", Opened: stampedAgo(2 * time.Hour), Status: "open",
+				Question: "Does the census belong to Fleet or to Settings?", Goals: []string{"g1-s22"},
+			},
+			{
+				ID: "q-window", Opened: stampedAgo(3 * 24 * time.Hour), Status: "open",
+				Question: "How far back should the Done lane reach by default?", Goals: []string{},
+			},
+			{
+				ID: "q-naming", Opened: stampedAgo(11 * 24 * time.Hour), Status: "open",
+				Question: "Is \"seat\" the word a human outside this project would use?", Goals: []string{},
+			},
+			{
+				ID: "q-bundle", Opened: stampedAgo(40 * 24 * time.Hour), Status: "answered",
+				Question: "Is the bundle committed or built on demand?", Goals: []string{"g1-s8"},
+			},
+		},
+		Problems: []project.Problem{},
 		Documents: []project.File{
 			{Path: walkthroughDocument, Title: "Reading and editing in place"},
 			{Path: walkthroughRecord, Title: "The reading pane"},
@@ -561,6 +704,32 @@ func (l *ledger) project() project.Pane {
 			{Path: walkthroughLanded, Title: "The application shell"},
 		},
 	}
+	if l.calm {
+		return settled(pane)
+	}
+	return pane
+}
+
+// settled is the calm workspace's records: every draft accepted and the
+// register closed. Nothing else changes — the same designs, the same books,
+// the same documents — so what the calm page proves is the wording of "nothing
+// needs you" rather than a second fixture.
+func settled(pane project.Pane) project.Pane {
+	records := make([]project.Record, 0, len(pane.Records))
+	for _, record := range pane.Records {
+		if record.Status == "draft" {
+			record.Status = "accepted"
+		}
+		records = append(records, record)
+	}
+	pane.Records = records
+	questions := make([]project.Question, 0, len(pane.Questions))
+	for _, question := range pane.Questions {
+		question.Status = "answered"
+		questions = append(questions, question)
+	}
+	pane.Questions = questions
+	return pane
 }
 
 // asItReads is one canned row with the head its own file carries right now.
@@ -705,20 +874,34 @@ func (l *ledger) withdraw(id, reason string) error {
 // It is written into the walkthrough's own throwaway checkout, under the path
 // the steward would have written it to, and read through the same package the
 // engine reads the real one with.
-func fixtureJournal(checkout string) string {
+// plantedNotice is one line of the fixture journal, written relative to this
+// process's clock.
+type plantedNotice struct {
+	ago       time.Duration
+	source    string
+	ref       string
+	message   string
+	delivered bool
+	problem   string
+}
+
+// calmNotices is the journal of a steward that did its work and reached the
+// operator every time: nothing addressed to a human, and nothing the channel
+// refused. It is what the calm workspace's health line is composed from.
+var calmNotices = []plantedNotice{
+	{31 * time.Hour, "steward", "", "steward: the runner is armed and ticking", true, ""},
+	{20 * time.Hour, "steward", "", "steward: reaped 2 finished workers", true, ""},
+	{9 * time.Hour, "verdict", "verdict-budget-kept", "steward: g1-s14 is inside its elapsed budget", true, ""},
+	{2 * time.Hour, "steward", "", "steward: the accepted ledger advanced to c5d517f", true, ""},
+}
+
+func fixtureJournal(checkout string, calm bool) string {
 	path := filepath.Join(checkout, "artifacts", "agents", "steward", "notifications.jsonl")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		log.Fatalf("cannot make the walkthrough journal: %v", err)
 	}
 	now := time.Now().UTC()
-	planted := []struct {
-		ago       time.Duration
-		source    string
-		ref       string
-		message   string
-		delivered bool
-		problem   string
-	}{
+	planted := []plantedNotice{
 		{50 * time.Hour, "steward", "", "steward: the runner is armed and ticking", true, ""},
 		{49 * time.Hour, "verdict", "verdict-stalled-alive", "steward: seat m1e+coordinator is stalled but alive \u2014 reviving", true, ""},
 		{48 * time.Hour, "steward", "", "steward: reaped 3 finished workers", true, ""},
@@ -733,6 +916,9 @@ func fixtureJournal(checkout string) string {
 		{40 * time.Minute, "steward", "", "steward: a question is waiting for you on g1-s15", true, ""},
 		{6 * time.Minute, "handoff", "handoff-500000000000000b", "steward: seat m1e+coordinator is handing g1-s12 back \u2014 your turn", false,
 			"notification not delivered: exit status 127 (terminal-notifier: command not found)"},
+	}
+	if calm {
+		planted = calmNotices
 	}
 	lines := []string{}
 	for index, entry := range planted {

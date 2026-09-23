@@ -26,6 +26,11 @@ export type HelpId =
   | "goal-designs"
   | "goal-questions"
   | "overview"
+  | "overview-needs-you"
+  | "overview-changed"
+  | "overview-work"
+  | "overview-memory"
+  | "overview-health"
   | "project"
   | "backlog"
   | "fleet"
@@ -97,6 +102,26 @@ export const HELP: Record<HelpId, Term> = {
   overview: {
     term: "Overview",
     text: "What needs you, and what changed since you last looked, with links to the records behind it.",
+  },
+  "overview-needs-you": {
+    term: "Needs you",
+    text: "What is waiting on you and nobody else: work nobody has authorized, questions nobody has answered, drafts nobody has accepted, designs whose work has all landed, and what the steward addressed to you. When there is none of it, the page says so.",
+  },
+  "overview-changed": {
+    term: "Since your last visit",
+    text: "What happened while you were away, measured from the end of your last visit rather than from your last page load. Coming back and refreshing during a visit never narrows the window, so nothing slips past between two reads.",
+  },
+  "overview-work": {
+    term: "Work now",
+    text: "What the fleet is doing at this moment: what a seat has claimed, what it would take next, what is held and why, and how the lanes stand. Every count opens the board.",
+  },
+  "overview-memory": {
+    term: "The project's memory",
+    text: "What this project has written down: its intent and its doctrine, the decisions it has made, the designs governing work, and the questions still open. Each count opens the part of Project it belongs to.",
+  },
+  "overview-health": {
+    term: "Health",
+    text: "Whether the machinery itself is sound: this checkout's ledger against the canonical tip, what the records check refuses, and any message the steward could not deliver. One line when all three answered.",
   },
   project: {
     term: "Project",

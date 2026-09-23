@@ -46,6 +46,7 @@ function record(fields: Partial<ProjectRecord> & Pick<ProjectRecord, "kind" | "i
     title: fields.id,
     home: "plans/designs",
     summary: "",
+    changedAt: "2026-09-20T08:30:00Z",
     slices: [],
     ...fields,
   };
@@ -64,7 +65,7 @@ const doctrineIndex = record({
 });
 
 const pane: Pane = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   readAt: "2026-09-22T10:11:12Z",
   // The order the server answers in: the live goals first, each in id order,
   // then the concluded ones.

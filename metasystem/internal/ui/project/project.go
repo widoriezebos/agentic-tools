@@ -33,13 +33,15 @@ import (
 type Roots struct{ Checkout, Installation, StateRoot string }
 
 // SchemaVersion is the shape of the project resource the interface reads. It
-// is 5: the first was the catalogue of canonical documents, which guessed a
+// is 6: the first was the catalogue of canonical documents, which guessed a
 // kind from a filename; the second carried what the records declare; the third
 // carried, beside each of them, the record's own first words; the fourth
 // carried the ledger's goals where the third carried the intent index's areas,
-// which are gone; this one carries what a goal's slice plan is read out of —
-// the goal's own slicing boundary, and the slices each design lists.
-const SchemaVersion = 5
+// which are gone; the fifth carried what a goal's slice plan is read out of —
+// the goal's own slicing boundary, and the slices each design lists; this one
+// carries when each record's file was last written, which is what a reader
+// asking "what changed since I last looked" compares against.
+const SchemaVersion = 6
 
 // Pane is the whole of Project, read once, as it was at readAt.
 type Pane struct {
@@ -88,6 +90,13 @@ type Record struct {
 	Path    string   `json:"path"`
 	Home    string   `json:"home"`
 	Summary string   `json:"summary"`
+	// ChangedAt is when this record's file was last written, from the
+	// filesystem, in RFC3339. It is the file's own modification time and
+	// nothing the record declares: a record carries no revision date, and a
+	// reader asking what changed since their last visit has nothing else to
+	// compare. A file this process cannot stat carries the empty string
+	// rather than an instant nobody observed.
+	ChangedAt string `json:"changedAt"`
 	// Slices are the list items this record writes under a Slices heading, as
 	// written, and nothing is taken from them. The repository has slice
 	// admission and a first-slicing marker but no editable slice-plan owner,
@@ -152,7 +161,7 @@ func ReadPane(roots Roots, now time.Time) (Pane, error) {
 		SchemaVersion: SchemaVersion,
 		ReadAt:        stamp(now),
 		Goals:         goalsOf(read),
-		Records:       recordsOf(read),
+		Records:       recordsOf(roots, read),
 		Intent:        bookOf(roots, read, resolver.KindIntent),
 		Doctrine:      bookOf(roots, read, resolver.KindDoctrine),
 		Questions:     questionsOf(read),
@@ -190,26 +199,45 @@ func goalsOf(read *resolver.Project) []Goal {
 
 // recordsOf is every record the resolver listed, in its order, whether or not
 // it carries a refusal.
-func recordsOf(read *resolver.Project) []Record {
+func recordsOf(roots Roots, read *resolver.Project) []Record {
 	records := make([]Record, 0, len(read.Records))
 	for _, record := range read.Records {
-		records = append(records, describe(record))
+		records = append(records, describe(roots, record))
 	}
 	return records
 }
 
-func describe(record resolver.Record) Record {
+func describe(roots Roots, record resolver.Record) Record {
 	return Record{
-		Kind:    record.Kind,
-		ID:      record.ID,
-		Status:  record.Status,
-		Goals:   list(record.Goals),
-		Title:   record.Title,
-		Path:    record.Path,
-		Home:    record.Home,
-		Summary: summaryOf(record.Body),
-		Slices:  slicesIn(record.Body),
+		Kind:      record.Kind,
+		ID:        record.ID,
+		Status:    record.Status,
+		Goals:     list(record.Goals),
+		Title:     record.Title,
+		Path:      record.Path,
+		Home:      record.Home,
+		Summary:   summaryOf(record.Body),
+		Slices:    slicesIn(record.Body),
+		ChangedAt: changedAt(roots, record.Path),
 	}
+}
+
+// changedAt is when a record's file was last written, as the filesystem says.
+//
+// It is one stat per record, on a read that already opened and parsed every
+// one of them, so it costs nothing measurable. A file that cannot be stat'd —
+// removed between the resolver's read and this one, or on a filesystem that
+// refuses — carries no instant rather than a zero one: "this record changed at
+// the beginning of the epoch" is a sentence no reader should be shown.
+func changedAt(roots Roots, relative string) string {
+	if relative == "" {
+		return ""
+	}
+	info, err := os.Stat(filepath.Join(roots.Checkout, filepath.FromSlash(relative)))
+	if err != nil {
+		return ""
+	}
+	return stamp(info.ModTime().UTC())
 }
 
 // sliceHeading is the heading a design writes its slice plan under.
@@ -276,7 +304,7 @@ func bookOf(roots Roots, read *resolver.Project, kind string) Book {
 		if found.Kind != kind || found.Index == nil {
 			continue
 		}
-		index := describe(*found.Index)
+		index := describe(roots, *found.Index)
 		book.Index = &index
 		for _, chapter := range found.Chapters {
 			book.Chapters = append(book.Chapters, chapterOf(roots, read, chapter))

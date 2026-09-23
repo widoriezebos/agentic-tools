@@ -1,9 +1,11 @@
 package project
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
@@ -131,7 +133,10 @@ func TestPaneCarriesWhatTheRecordsDeclare(t *testing.T) {
 		"decision-one-binary", "doctrine-budgets", "doctrine-events", "doctrine-index",
 		"intent-index", "design-ledger", "design-reading", "design-summary", "design-interface",
 	})
-	testutil.Expect(t, "one design's row", recordWithID(pane.Records, "design-reading"), Record{
+	// The row without its change time, which is the filesystem's answer and
+	// so is asserted on its own below rather than written into a fixture that
+	// would have to be re-stamped on every checkout.
+	testutil.Expect(t, "one design's row", undated(recordWithID(pane.Records, "design-reading")), Record{
 		Kind: "design", ID: "design-reading", Status: "draft", Goals: []string{"reading-pane"},
 		Title: "The reading pane", Path: "metasystem/plans/designs/pane/reading.md",
 		Home: "metasystem/plans/designs", Slices: []string{},
@@ -175,7 +180,7 @@ func TestPaneCarriesEachBookInReadingOrder(t *testing.T) {
 		{ID: "doctrine-events", Title: "Events are the source of truth"},
 		{ID: "doctrine-budgets", Title: "Every run is budgeted"},
 	})
-	testutil.Expect(t, "the schema the slice plan arrived in", pane.SchemaVersion, 5)
+	testutil.Expect(t, "the schema the change time arrived in", pane.SchemaVersion, 6)
 	testutil.Expect(t, "the register", pane.Questions, []Question{
 		{ID: "Q-1", Opened: "2026-09-22", Question: "Where does an adopted project's intent live?",
 			Goals: []string{}, Status: "open"},
@@ -448,6 +453,12 @@ func notMarkdown(files []File) []string {
 	return collected
 }
 
+// undated is a record without the change time its file gave it.
+func undated(record Record) Record {
+	record.ChangedAt = ""
+	return record
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
@@ -455,4 +466,28 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// A record carries when its file was last written, because that is what a
+// reader asking "what changed since I last looked" compares against. It is the
+// filesystem's answer and nothing the record declares: no head carries a
+// revision date, and inventing one would be inventing a fact.
+func TestPaneCarriesWhenEachRecordWasLastWritten(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	state := seed(t, roots)
+	planted := plant(t, roots.Checkout, state+"plans/designs/dated.md",
+		record("A design written at a known instant", "design", "design-dated", "draft", ""))
+	written := time.Date(2026, 9, 20, 8, 30, 0, 0, time.UTC)
+	testutil.Require(t, "stamping the file", os.Chtimes(planted, written, written), nil)
+
+	pane, err := ReadPane(roots, readAt)
+
+	testutil.Require(t, "read the pane", err, nil)
+	testutil.Expect(t, "when the record was last written",
+		recordWithID(pane.Records, "design-dated").ChangedAt, written.Format(time.RFC3339))
+	for _, one := range pane.Records {
+		testutil.Expect(t, "every record is dated: "+one.ID, one.ChangedAt != "", true)
+	}
 }

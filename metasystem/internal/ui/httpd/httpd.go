@@ -13,6 +13,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/act"
@@ -104,6 +105,17 @@ type Info struct {
 	// are the notifications package's. An empty path is an engine with no
 	// journal, which those routes say.
 	NotificationJournal string
+	// Visit records that a human is looking at the landing page and answers
+	// the window it compares against: the end of their previous visit, or a
+	// day back on a first one. It is a function rather than a root because
+	// the marker is the overview package's own file and this package never
+	// opens it. A nil Visit is a build that keeps no marker, which the route
+	// answers as a first visit rather than as a refusal — the marker is
+	// preference state, and losing it changes a window and nothing else.
+	Visit func(human string, now time.Time) (since time.Time, first bool, err error)
+	// Now is this server's clock, so that a test can say when a page was
+	// composed. A nil Now is time.Now, which is what every run uses.
+	Now func() time.Time
 }
 
 // absentBundleStatement is what a page request gets from an engine built
@@ -248,6 +260,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == projectPath {
 		h.project(w)
+		return
+	}
+	if r.URL.Path == overviewPath {
+		h.overview(w, r)
 		return
 	}
 	if id, beneath := strings.CutPrefix(r.URL.Path, documentPrefix); beneath && id != "" {
