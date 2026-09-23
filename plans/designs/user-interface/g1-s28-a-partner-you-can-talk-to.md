@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M37EX4M5VVXQBPH137CTM89V
-- Status: accepted
+- Status: done
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 3, 2026-09-23, Claude on Fable, after Astra's critique of revision 2 ([g1-s28-astra-critique.md](g1-s28-astra-critique.md): six material findings, "build after listed changes"), every one accepted below, and amended the same day on Astra's confirmation round (two text gaps: inherited approvals and network in the read-only contract; page context kept with replayed history), which found nothing else. Revision 2 came after Wido's two rulings: "Both claude and codex I'm told have a separate server component that will do acp for them ... we should definitely factor that in" and "we must have the design for this critiqued by Astra first before we implement". Revision 1 wrapped Claude and Codex behind the seam through their command lines; revision 2 drops those emulators, because every runtime has an ACP server. Revision 1 was on Wido's ask: "I want to get started on that one so that we have an integrated agent that we can discuss anything, including what is visible on the UI ... make sure it is agent independent (i.e. supports claude, codex and devin and some future agent). Get me the smallest thing that works now." The master design's "The brain" and its integration table are the target: an ACP session host, an MCP endpoint of bounded tools, proposals that become sheets, shared selection. This is step 1 of that, and nothing in it has to be undone to get there.
@@ -36,6 +36,10 @@ One conversation per human per checkout (the session's human, else the boot proo
 **Delivery.** The page's one event stream carries Partner events as their own event type with no `id:` field, so `Last-Event-ID` stays the notifications journal's cursor and a reconnect replays notifications only; Partner text never becomes a toast. On every reconnect the page re-reads the conversation's snapshot and joins live events to it by turn id and sequence, dropping duplicates. The drawer and the focused page share one conversation state and one draft.
 
 **The page.** The drawer's panel and the focused page render the transcript, the answer streaming in as plain paragraphs and, when complete, rendered through the reader's own inert Markdown renderer; a muted activity line while the Partner works; a Stop control in the composer's place while a turn runs. The "unavailable" chip goes.
+
+## Built, 2026-09-23
+
+Commit `52f714a69`. Two things the build settled that the text above did not: the Codex and Devin adapters' own read-only presets still let the session write the checkout without asking, so every runtime is started inside the operating system's sandbox with file writes under the checkout denied (`internal/ui/partner/confine.go`); where no such sandbox exists, Codex and Devin are refused by name and Claude, whose adapter keeps the contract itself, is still admitted. And `ui.partner.runtime` defaults to empty, not `claude`: a configured Partner requires a signed-in human for every act, and that must be a seat's own choice. The adapters are `@agentclientprotocol/claude-agent-acp` and `@agentclientprotocol/codex-acp`, the successors of the packages named above.
 
 ## Later, when it hurts
 
