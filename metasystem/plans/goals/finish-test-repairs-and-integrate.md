@@ -7,12 +7,12 @@
 - Origin: human
 - Next step: Resume delivery under Wido instruction to fix the machinery stop and finish. Accepted repairs and Darwin baseline are staged; clean candidate at external rollout/parallel-delivery-candidate-20260922-report-final. Build candidate engine, run final targeted audit/proofrun and selected delivery with reuse, finish required Linux validation and three remaining Mac bodies, then commit/push/install and verify the installed public command. Reuse retained valid Mac native evidence; no whole Mac rerun for reporting.
 - OpenedAt: 2026-09-22T16:37:11Z
-- Revision: 10
-- Budget: elapsedLimit=2d3h attemptLimit=15 reservedJobMinutesLimit=623 activeJobLimit=8 reviewRoundLimit=3
-- BudgetExceptions: 4
-- Approved: by=human:Wido at=2026-09-23T10:02:41Z revision=10 opid=SDWABF5TYJQRDRE7QBQSAWMEN3-m1e-226b0953 authority=proven digest=8175683f9d1163e82785cb305eaa6bc5113f80621d2b00bd7ceb2e1e20aa9fa2 episode=10
-- Claimed: machine=m1e lineage=main-1789893000-16595-1a7a6a at=2026-09-23T10:02:41Z revision=10 accountingRevision=10 episodeAt=2026-09-22T17:29:09Z episodeRevision=3
-- StopCapability: generation=10 revision=10 machine=m1e claimEpoch=3 fenceEpoch=0
+- Revision: 11
+- Budget: elapsedLimit=2d4h attemptLimit=19 reservedJobMinutesLimit=800 activeJobLimit=8 reviewRoundLimit=3
+- BudgetExceptions: 5
+- Approved: by=human:Wido at=2026-09-23T11:45:40Z revision=11 opid=43WN4GGSZX9SW5864M1D4Z9SMP-m1e-226b0953 authority=proven digest=b652d610a6691203898843e022be84f48c4503ad3e437694c342f78ebc738471 episode=11
+- Claimed: machine=m1e lineage=main-1789893000-16595-1a7a6a at=2026-09-23T11:45:40Z revision=11 accountingRevision=11 episodeAt=2026-09-22T17:29:09Z episodeRevision=3
+- StopCapability: generation=11 revision=11 machine=m1e claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-09-22T16:37:11Z BPWZD876FT92J8N278RKRXMM1S-m1e-32fbf0db open actor=human:Wido targets=finish-test-repairs-and-integrate
@@ -25,4 +25,5 @@ History:
 - 2026-09-23T06:01:53Z HXVR04XQ2BVXJF6RMB357RTWD8-m1e-226b0953 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate
 - 2026-09-23T08:35:55Z 6KHZWK1YSNZ9XYVJZR7YMJGKRJ-m1e-226b0953 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate
 - 2026-09-23T10:02:41Z SDWABF5TYJQRDRE7QBQSAWMEN3-m1e-226b0953 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate
-Integrity: sha256=fc8ecef5920eed5326447cb0ff1b428350f18d6e2c161153202fc498cbc2ed18
+- 2026-09-23T11:45:40Z 43WN4GGSZX9SW5864M1D4Z9SMP-m1e-226b0953 set-budget actor=human:Wido targets=finish-test-repairs-and-integrate
+Integrity: sha256=400f145bf6efe56b5886388281aa4ca18bcdc8563c05824e8f2d4b3d8b97d6e3
