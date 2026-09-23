@@ -76,7 +76,20 @@ func main() {
 	// process, over a pipe, so the drawer can be driven end to end without an
 	// agent, a key, or a network.
 	partnerRuntime := flag.String("partner", "", "serve a Project Partner from the canned ACP server: fake")
+	// The by-hand check before a release. It serves nothing: it asks a real
+	// runtime a dozen questions through the production path, over a temporary
+	// copy of this walkthrough's fixture checkout with this kit's own
+	// documents in it, and writes what came back for a human to read.
+	smoke := flag.String("smoke", "", "ask a real runtime the release questions and write the answers: claude, codex or devin")
+	smokeModel := flag.String("smoke-model", "", "the model the smoke run asks for; empty is the runtime's own default")
+	smokeEngine := flag.String("smoke-engine", "bin/metasystem", "the metasystem executable that serves the Partner's read tools")
+	smokeKit := flag.String("smoke-kit", ".", "the metasystem installation whose glossary, rulings, routes and skills the fixture copies")
+	smokeOut := flag.String("smoke-out", "partner-smoke.md", "where the smoke run writes its answers")
 	flag.Parse()
+	if *smoke != "" {
+		runSmoke(*smoke, *smokeModel, *smokeEngine, *smokeKit, *smokeOut)
+		return
+	}
 	if *freshness != string(snapshot.FreshnessCurrent) &&
 		*freshness != string(snapshot.FreshnessBehind) &&
 		*freshness != string(snapshot.FreshnessFailed) {

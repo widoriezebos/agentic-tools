@@ -75,7 +75,7 @@ export const empties: readonly Empty[] = [
     id: "settings",
     kind: "not projected",
     heading: "Settings pages are not built yet",
-    body: "Runtimes and models, connections and channels, identity and authority, execution defaults, storage and retention.",
+    body: "Pages for runtimes and models, connections and channels, identity and authority, execution defaults, and storage and retention will be read and changed here.",
     note: "Arrives with gate 7",
     link: null,
     action: null,

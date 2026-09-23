@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -69,11 +70,18 @@ type Read struct {
 	Failed bool
 }
 
-// Servers are the tool servers the client handed over at session/new, as this
-// server saw them. A test reads it to prove the hand-off happened.
+// Servers is what the client actually sent this server: the tool servers it
+// handed over at session/new, and the prompts it sent afterwards.
+//
+// It is what makes a test of composition possible. A scripted answer proves
+// nothing about what the Partner was told — the fake would stream the same
+// words with no index, no skill and no tools — so the assertions are made
+// against this record of the wire instead, where a missing input is a missing
+// substring rather than an answer that still passes.
 type Servers struct {
-	mu    sync.Mutex
-	named []string
+	mu      sync.Mutex
+	named   []string
+	prompts []string
 }
 
 // Named is every tool server the client handed over, by name.
@@ -83,9 +91,34 @@ func (s *Servers) Named() []string {
 	return append([]string{}, s.named...)
 }
 
+// Prompts is every prompt the client sent, whole, in order.
+func (s *Servers) Prompts() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string{}, s.prompts...)
+}
+
+// First is the first prompt of the session, and whether there was one. A test
+// that asserted against an empty string would pass for a session that was
+// never prompted at all.
+func (s *Servers) First() (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.prompts) == 0 {
+		return "", false
+	}
+	return s.prompts[0], true
+}
+
 func (s *Servers) add(name string) {
 	s.mu.Lock()
 	s.named = append(s.named, name)
+	s.mu.Unlock()
+}
+
+func (s *Servers) asked(prompt string) {
+	s.mu.Lock()
+	s.prompts = append(s.prompts, prompt)
 	s.mu.Unlock()
 }
 
@@ -227,6 +260,7 @@ func (s *server) dispatch(in frame) {
 		s.cancelled.Store(true)
 		s.tripped()
 	case "session/prompt":
+		s.heard(in.Params)
 		go s.prompt(in.ID)
 	default:
 		s.fail(in.ID, "the fake server does not answer "+in.Method)
@@ -358,6 +392,28 @@ func (s *server) tripped() {
 	case s.wake <- struct{}{}:
 	default:
 	}
+}
+
+// heard records the prompt the client sent, whole, joining the text blocks the
+// protocol carries it in.
+func (s *server) heard(params json.RawMessage) {
+	if s.handed == nil {
+		return
+	}
+	var sent struct {
+		Prompt []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"prompt"`
+	}
+	if err := json.Unmarshal(params, &sent); err != nil {
+		return
+	}
+	parts := make([]string, 0, len(sent.Prompt))
+	for _, block := range sent.Prompt {
+		parts = append(parts, block.Text)
+	}
+	s.handed.asked(strings.Join(parts, ""))
 }
 
 // remember records the tool servers session/new handed over.

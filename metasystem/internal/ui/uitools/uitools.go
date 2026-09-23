@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/backlog"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/manifest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/overview"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
@@ -40,9 +41,14 @@ import (
 // presents them as mcp__metasystem__board — composes that prefix from this.
 const ServerName = "metasystem"
 
-// The eight operations. They are named here, once, because two things depend
+// The ten operations. They are named here, once, because two things depend
 // on the same list: the tool catalogue this server publishes, and the
 // permission rule that admits calls to it.
+//
+// Eight read this workspace. The last two read what the workspace is made of:
+// the interface's own manifest, and the kit's own glossary, verbs, rulings and
+// routes. They answer from owners rather than from anything written for the
+// Partner, which is what keeps one account of each fact.
 const (
 	OpBoard         = "board"
 	OpGoal          = "goal"
@@ -52,16 +58,18 @@ const (
 	OpOverview      = "overview"
 	OpNotifications = "notifications"
 	OpSearch        = "search"
+	OpInterface     = "interface"
+	OpKit           = "kit"
 )
 
 // Operations is every operation this server answers, in the order the
 // catalogue lists them.
 var Operations = []string{
 	OpBoard, OpGoal, OpDocument, OpRecords, OpQuestions,
-	OpOverview, OpNotifications, OpSearch,
+	OpOverview, OpNotifications, OpSearch, OpInterface, OpKit,
 }
 
-// Names reports whether a bare operation name is one of the eight.
+// Names reports whether a bare operation name is one this server answers.
 func Names(operation string) bool {
 	for _, known := range Operations {
 		if known == operation {
@@ -137,6 +145,14 @@ type Readers struct {
 	Overview func() (overview.Page, error)
 	Notices  func(limit int, before string) ([]notifications.Notice, error)
 	Now      func() time.Time
+	// Interface composes what this interface is made of: the half the bundle
+	// carries joined to the half this seat resolves. A nil composer is a build
+	// that cannot describe itself, which the result says.
+	Interface func() (manifest.Manifest, error)
+	// Kit is where this kit's own knowledge lives: the glossary AGENTS.md
+	// points at, the rulings register, the routes, and the command catalogue
+	// the binary routes with.
+	Kit Kit
 }
 
 func (r Readers) now() time.Time {
@@ -166,6 +182,10 @@ func (r Readers) Answer(operation string, args Args) Result {
 		return r.notifications(args.Number("limit", notifications.DefaultLimit), args.Cursor())
 	case OpSearch:
 		return r.search(args.Text("text"), args.Cursor())
+	case OpInterface:
+		return r.describe(args.Text("part"), args.Cursor())
+	case OpKit:
+		return r.kit(args.Text("topic"), args.Cursor())
 	default:
 		return Result{Problem: "this server answers " + strings.Join(Operations, ", ") + ", not " + operation}
 	}
@@ -515,6 +535,32 @@ func (r Readers) search(text, cursor string) Result {
 		return Result{Problem: "neither the ledger nor the project could be read: " + problem + "; " + paneProblem}
 	}
 	return paged(strings.Join(sources, "; and "), lines, cursor)
+}
+
+// describe is the interface's own manifest, one part at a time.
+//
+// The whole of it is longer than one bounded result, and a manifest cut in
+// half is a manifest that teaches half an interface. So a reader names a part
+// — the sections, the lanes, the terms, the suggested questions, the acts, the
+// settings, the record kinds, the runtimes — and pages within it; naming none
+// answers the summary, which says what the parts are and what the Partner may
+// itself do here.
+func (r Readers) describe(part, cursor string) Result {
+	if r.Interface == nil {
+		return Result{Problem: "this build cannot describe its own interface"}
+	}
+	described, err := r.Interface()
+	if err != nil {
+		return Result{Problem: err.Error()}
+	}
+	source := "this build's own interface: the half the bundle carries joined to the half this seat resolves, read " +
+		r.now().Format(time.RFC3339)
+	lines, known := described.Lines(part)
+	if !known {
+		return Result{Source: source, Problem: "this manifest has the parts " +
+			strings.Join(manifest.Parts, ", ") + ", not " + part}
+	}
+	return paged(source, lines, cursor)
 }
 
 /* ------------------------------------------------------------- the bound -- */

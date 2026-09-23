@@ -235,11 +235,13 @@ function Frame() {
           is where "/" lands, so it is a route of its own rather than one of
           the sections that say which gate brings them. */}
       <Route path="/overview" element={<OverviewPane />} />
+      {/* The sections this build does not project. Which they are is the
+          section table's own field, so the routes, the empty register and
+          what the Partner is told about availability cannot disagree.
+          Settings is not among them here because it has a route of its own:
+          its pane carries two live cards above the same empty state. */}
       {projectSections
-        .filter(
-          (candidate) =>
-            candidate.id !== "backlog" && candidate.id !== "project" && candidate.id !== "overview",
-        )
+        .filter((candidate) => !candidate.projected)
         .map((candidate) => (
           <Route key={candidate.id} path={candidate.path} element={<SectionPane section={candidate} />} />
         ))}
