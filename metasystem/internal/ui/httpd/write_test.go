@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/markdown"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 )
 
@@ -24,8 +25,16 @@ type recorder struct {
 	questions []project.NewQuestion
 	statuses  [][2]string
 	answers   [][2]string
-	refusal   error
+	// The document's two: what a save was asked to write, and what a preview
+	// was asked to render.
+	edits    []edited
+	previews []string
+	refusal  error
 }
+
+// edited is one save as it reached the writer: which document, the text, and
+// the revision the caller said it was holding.
+type edited struct{ id, source, revision string }
 
 func (rec *recorder) writing() Info {
 	return Info{
@@ -59,11 +68,37 @@ func (rec *recorder) writing() Info {
 			}
 			return askedQuestion(status), nil
 		},
+		EditDocument: func(id, source, revision string) (project.Document, error) {
+			rec.edits = append(rec.edits, edited{id: id, source: source, revision: revision})
+			if rec.refusal != nil {
+				return project.Document{}, rec.refusal
+			}
+			return savedDocument(id, source), nil
+		},
+		PreviewDocument: func(source string) (project.Preview, error) {
+			rec.previews = append(rec.previews, source)
+			if rec.refusal != nil {
+				return project.Preview{}, rec.refusal
+			}
+			return project.Preview{Blocks: []markdown.Block{{Type: "paragraph"}}}, nil
+		},
 	}
 }
 
 func (rec *recorder) reached() int {
-	return len(rec.records) + len(rec.questions) + len(rec.statuses) + len(rec.answers)
+	return len(rec.records) + len(rec.questions) + len(rec.statuses) + len(rec.answers) +
+		len(rec.edits) + len(rec.previews)
+}
+
+// savedDocument is the document a save answers with: the read of what is now
+// on disk, which at this layer is whatever the writer was handed.
+func savedDocument(id, source string) project.Document {
+	return project.Document{
+		Kind: "document", ID: id, Title: "The ledger", Source: source,
+		Revision: "blob:0000000000000000000000000000000000000002",
+		Owner:    "project", Path: "/work/repository/" + id, State: "readable",
+		Blocks: []markdown.Block{{Type: "heading", Level: 1, Text: "The ledger"}},
+	}
 }
 
 func writtenRecord() project.Written {

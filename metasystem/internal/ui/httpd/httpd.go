@@ -53,6 +53,15 @@ type Info struct {
 	SetStatus         func(id, status string) (project.Written, error)
 	AskQuestion       func(project.NewQuestion) (project.Asked, error)
 	SetQuestionStatus func(id, status string) (project.Asked, error)
+	// EditDocument saves one document by the id the read route serves it
+	// under, against the revision the caller was given. A
+	// project.ErrNotFound is the read route's own 404; a project.Refusal
+	// carries the status it deserves; anything else is a 500.
+	EditDocument func(id, source, revision string) (project.Document, error)
+	// PreviewDocument renders what is being typed, through the same parser
+	// the read route renders a file with. It opens nothing and writes
+	// nothing, which is why it names no document.
+	PreviewDocument func(source string) (project.Preview, error)
 	// Authority is what this server's one boot-time human-authority
 	// observation found. It is a value rather than a function because it
 	// cannot change while the server runs: a proof is an observation of an

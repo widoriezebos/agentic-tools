@@ -5,10 +5,11 @@
  * The two reads are made once per page view and again on Reload, and nowhere
  * else: no stream, no socket, no timer, and no window event refetches either
  * of them. The four writes are made when a human confirms one, and never on
- * their own. All six go through the one request below, so there is a single
- * place where this build reaches the network; src/cuts.test.ts holds that by
- * counting call sites, so a second request written under any other name fails
- * the guard rather than the review.
+ * their own; the save and the render below are made when a human asks for
+ * them, in an editor they opened. All eight go through the one request below,
+ * so there is a single place where this build reaches the network;
+ * src/cuts.test.ts holds that by counting call sites, so a second request
+ * written under any other name fails the guard rather than the review.
  */
 
 const PANE = "/api/project";
@@ -17,6 +18,10 @@ const RECORDS = "/api/project/records";
 const QUESTIONS = "/api/project/questions";
 /** The suffix both status routes share; the id is the segment before it. */
 const STATUS = "/status";
+/** Saving one document: the read route's own id, with this after it. */
+const EDIT = "/edit";
+/** Rendering what is being typed. It names no document, and writes nothing. */
+const PREVIEW = "/api/documents/preview";
 
 export type DocumentState = "readable" | "unreadable" | "too-large";
 
@@ -149,6 +154,13 @@ export type DocumentPayload = {
   id: string;
   title: string;
   revision: string;
+  /**
+   * The file as it was read, byte for byte. It is what the editor opens, and
+   * the revision above is what a save of it has to carry back. Only a
+   * readable document carries it: there is no text to edit in a file that was
+   * too large to read to its end, or that is not text at all.
+   */
+  source: string;
   owner: string;
   path: string;
   bytes: number;
@@ -262,6 +274,25 @@ export async function askQuestion(asked: NewQuestion): Promise<Asked> {
 
 export async function setQuestionStatus(id: string, status: string): Promise<Asked> {
   return request<Asked>(`${QUESTIONS}/${encodeURIComponent(id)}${STATUS}`, { status });
+}
+
+/* ------------------------------------------ editing one document in place -- */
+
+/** What a render answers with: the blocks, and nothing a file would carry. */
+export type Preview = { blocks: Block[] };
+
+/**
+ * Save one document. The revision is the one the read handed over, and a file
+ * that no longer hashes to it is refused with 409 rather than written over.
+ * The answer is the document as it now reads from disk.
+ */
+export async function editDocument(id: string, source: string, revision: string): Promise<DocumentPayload> {
+  return request<DocumentPayload>(`${DOCUMENTS}${encodeSegments(id)}${EDIT}`, { source, revision });
+}
+
+/** Render what is being typed, through the engine's own parser. */
+export async function previewDocument(source: string): Promise<Preview> {
+  return request<Preview>(PREVIEW, { source });
 }
 
 /** Each segment is encoded on its own, so the separators stay separators. */

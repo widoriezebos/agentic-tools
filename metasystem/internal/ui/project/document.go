@@ -76,11 +76,19 @@ type Link struct {
 // twice — once as facts and once as a bullet list — would be showing the same
 // four lines in two voices. A file that declares no head carries none of this
 // and is answered exactly as it was before.
+//
+// Source is the file as it was read, byte for byte, and it is what an editor
+// opens: the blocks are a rendering and cannot be typed back into a file, so a
+// human editing this document in the browser edits Source. Only a readable
+// document carries it — a file that is too large was not read to its end, and
+// a file that is not text has no text to edit — and Revision is what a save of
+// it must still match.
 type Document struct {
 	Kind       string `json:"kind"`
 	ID         string `json:"id"`
 	Title      string `json:"title"`
 	Revision   string `json:"revision"`
+	Source     string `json:"source"`
 	Owner      string `json:"owner"`
 	Path       string `json:"path"`
 	Bytes      int64  `json:"bytes"`
@@ -188,6 +196,10 @@ func read(roots Roots, id string, now time.Time, beforeOpen func()) (Document, e
 	// document has none, and lends the field to the ownership oracle so that an
 	// "unknown" owner is never shown without saying why.
 	document.Reason = ownerReason
+	// The bytes that were read, as text, which is what an editor opens. It is
+	// the same read the revision was taken over, so a save that carries both
+	// carries a pair that belonged to one another.
+	document.Source = string(data)
 	parsed := markdown.Parse(data)
 	classify(parsed.Blocks, id)
 	document.Headings = parsed.Headings

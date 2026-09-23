@@ -154,7 +154,7 @@ function book(id: string) {
 /** One document as the reading route answers it, with or without a head. */
 function documentOf(id: string, head: Partial<DocumentPayload["record"]> | null): DocumentPayload {
   return {
-    kind: "document", id, title: id, revision: "", owner: "app-owned", path: `/work/${id}`,
+    kind: "document", id, title: id, revision: "", source: "", owner: "app-owned", path: `/work/${id}`,
     bytes: 0, modifiedAt: "2026-09-22T09:00:00Z", readAt: "2026-09-22T10:11:12Z",
     state: "readable", reason: "",
     record:

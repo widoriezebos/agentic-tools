@@ -1021,6 +1021,113 @@
   }
 }
 
+/* ------------------------------------------------------------ the editor -- */
+
+/*
+ * Editing in place: the article becomes this, in the same column and at the
+ * same measure, so the text is typed where it is read.
+ */
+.ms-editing {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The whole of the bar: what is showing, the two acts, and one line. It wraps
+   rather than scrolls, so at a phone's width the status line drops under the
+   buttons instead of pushing them off the side. */
+.ms-editor-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The segmented toggle: two buttons in one outline, the pressed one filled. */
+.ms-editor-modes {
+  display: inline-flex;
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ms-editor-mode {
+  appearance: none;
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  background: var(--ms-surface);
+  color: var(--ms-text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ms-editor-mode + .ms-editor-mode {
+  border-left: 1px solid var(--ms-border-strong);
+}
+
+.ms-editor-mode[aria-pressed="true"] {
+  background: var(--ms-accent);
+  color: var(--ms-accent-fg);
+}
+
+/*
+ * Hover is written per state rather than once, because a hover rule that
+ * matched both would out-specify the pressed one and paint the chosen half of
+ * the toggle as though it were not chosen — which is exactly what it did.
+ */
+.ms-editor-mode[aria-pressed="false"]:hover:not(:disabled) {
+  background: var(--ms-surface-2);
+}
+
+.ms-editor-mode[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--ms-accent-hover);
+}
+
+.ms-editor-mode:disabled {
+  cursor: default;
+}
+
+.ms-editor-status {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+/*
+ * The text. It grows with what it holds, so the page is what scrolls: the
+ * min-height is the floor for a browser that does not size a field to its
+ * content, and there is no measuring anywhere.
+ */
+.ms-editor {
+  field-sizing: content;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 60vh;
+  padding: 12px;
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 6px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 20px;
+  tab-size: 4;
+  resize: vertical;
+}
+
+/* What the project refused the save over, above the text a human has to fix. */
+.ms-editor-problems {
+  margin: 0;
+  padding: 12px 12px 12px 28px;
+  border: 1px solid var(--ms-danger);
+  border-radius: 6px;
+  color: var(--ms-danger);
+  font-size: 13px;
+  line-height: 20px;
+}
+
 /* ------------------------------------------------------------- the sheet -- */
 
 .ms-writing-scrim {

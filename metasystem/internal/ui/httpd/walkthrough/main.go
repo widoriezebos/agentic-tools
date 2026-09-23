@@ -14,6 +14,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -47,6 +49,13 @@ func main() {
 		log.Fatalf("this executable carries no bundle: %v", err)
 	}
 	state := newLedger()
+	// A checkout with one document in it, so the document reader and the
+	// in-place editor have something real to open: the editor writes to disk,
+	// reads it back, and answers what is there, and a walkthrough over a
+	// canned payload would prove none of that.
+	checkout := fixtureCheckout()
+	fmt.Println("checkout " + checkout)
+	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
 	authority := httpd.AuthorityInfo{Reason: agentReason}
 	if *proven {
 		authority = httpd.AuthorityInfo{Proven: true, Human: "Wido"}
@@ -83,6 +92,15 @@ func main() {
 		},
 		Open:    func(_ *session.Session, opened act.Opened) error { return state.open(opened) },
 		Project: func() (project.Pane, error) { return state.project(), nil },
+		// The document reader and the in-place editor, over the fixture
+		// checkout, through the same package the engine wires.
+		Document: func(id string) (project.Document, error) {
+			return project.Read(roots, id, time.Now().UTC())
+		},
+		EditDocument: func(id, source, revision string) (project.Document, error) {
+			return project.EditDocument(roots, id, source, revision, time.Now().UTC())
+		},
+		PreviewDocument: project.PreviewDocument,
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 			return map[string]goalbudget.Budget{"3": {
 				ElapsedLimit: "8h", AttemptLimit: 10, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3,
@@ -102,6 +120,88 @@ func main() {
 // way the engine would: an approval moves a goal to approved, a withdrawal
 // returns it to queued. Everything else refuses.
 type ledger struct{ tree *goal.TreeGoals }
+
+// The fixture checkout's two documents.
+//
+// One is plain: it declares no head, so the editor can be walked through over
+// a file the resolver has nothing to say about, and it carries one of each
+// block the reader renders so the preview has something to show. The other is
+// a record in a real home, over a real ledger goal, so that saving a head the
+// project refuses can be walked through as well — which is the one refusal
+// with something to show on the page.
+const (
+	walkthroughDocument = "docs/reading.md"
+	walkthroughRecord   = "plans/designs/reading.md"
+	walkthroughText     = `# Reading and editing in place
+
+A document is read here as a chapter of a book rather than as a file, and from
+this slice it is edited here too: the article becomes a text area holding the
+source, and the save refuses to write over a file that changed underneath.
+
+## What the editor is
+
+- A plain text area over the Markdown, in the monospace face.
+- A preview, rendered by the engine through the same parser the reader uses.
+- A save that carries the revision the file was opened at.
+
+## What it is not
+
+There is no toolbar of formatting buttons and no second, richer editing
+surface. The text is the document:
+
+    - Kind: design
+    - Status: draft
+
+Editing the words is editing the file.
+`
+	walkthroughHead = `# The reading pane
+
+- Kind: design
+- Id: design-reading
+- Status: draft
+- Goals: reading-pane
+
+## Outcome
+
+A document is read as a chapter of a book rather than as a file.
+
+## Verification
+
+Change the status above to something the grammar does not carry, and the save
+is refused with the problem the check verb would print.
+`
+)
+
+// fixtureCheckout makes the walkthrough's own checkout in a temporary
+// directory and plants the two documents above in it, in a layout the
+// resolver reads: a configuration file, an agents directory, a one-goal
+// ledger, and a design home. It is thrown away with the temporary directory,
+// so a walkthrough that saves over a file changes nothing a human keeps.
+func fixtureCheckout() string {
+	directory, err := os.MkdirTemp("", "metasystem-walkthrough-")
+	if err != nil {
+		log.Fatalf("cannot make the walkthrough checkout: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(directory, "scripts", "agents"), 0o755); err != nil {
+		log.Fatalf("cannot make the walkthrough checkout: %v", err)
+	}
+	for _, planted := range []struct{ relative, text string }{
+		{"metasystem.conf", ""},
+		{"plans/goals/backlog.md", "# backlog\n\n- SyncMode: local\n"},
+		{"plans/goals/reading-pane.md", "# reading-pane\n\n- State: approved\n- Intent: The pane reads a document as a chapter\n"},
+		{walkthroughDocument, walkthroughText},
+		{walkthroughRecord, walkthroughHead},
+	} {
+		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			log.Fatalf("cannot make the walkthrough checkout: %v", err)
+		}
+		if err := os.WriteFile(full, []byte(planted.text), 0o644); err != nil {
+			log.Fatalf("cannot plant %s: %v", planted.relative, err)
+		}
+	}
+	return directory
+}
 
 // newLedger builds the canned tree.
 //
@@ -314,7 +414,10 @@ func (l *ledger) project() project.Pane {
 		Doctrine:  project.Book{Chapters: []project.Chapter{}},
 		Questions: []project.Question{},
 		Problems:  []project.Problem{},
-		Documents: []project.File{},
+		Documents: []project.File{
+			{Path: walkthroughDocument, Title: "Reading and editing in place"},
+			{Path: walkthroughRecord, Title: "The reading pane"},
+		},
 	}
 }
 
