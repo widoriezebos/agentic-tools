@@ -23,14 +23,14 @@ func TestDesignAdapterFollowsTheResolvedModel(t *testing.T) {
 		want        string
 	}{
 		{name: "Codex from settings", kind: "design", useSettings: true, settings: "gpt-6-astra", want: "codex-exec"},
-		{name: "Claude from settings", kind: "design", useSettings: true, settings: "claude-opus-5[1m]", want: "claude-headless"},
+		{name: "Claude from settings", kind: "design", useSettings: true, settings: "claude-opus-5-5[1m]", want: "claude-headless"},
 		{name: "empty model", kind: "design", useSettings: true, want: "claude-headless"},
 		{name: "default design", kind: "design", want: "claude-headless"},
-		{name: "adapter data overrides settings", kind: "design", useSettings: true, settings: "claude-opus-5[1m]", adapterData: "gpt-6-astra", want: "codex-exec"},
-		{name: "spec overrides adapter data", kind: "design", useSettings: true, settings: "gpt-6-astra", adapterData: "gpt-6-astra", model: "claude-opus-5[1m]", want: "claude-headless"},
+		{name: "adapter data overrides settings", kind: "design", useSettings: true, settings: "claude-opus-5-5[1m]", adapterData: "gpt-6-astra", want: "codex-exec"},
+		{name: "spec overrides adapter data", kind: "design", useSettings: true, settings: "gpt-6-astra", adapterData: "gpt-6-astra", model: "claude-opus-5-5[1m]", want: "claude-headless"},
 		{name: "read defaults to Claude", kind: "read", want: "claude-headless"},
-		{name: "read uses configured Codex model", kind: "read", useSettings: true, settings: "gpt-5.6-sol", want: "codex-exec"},
-		{name: "read uses explicit Codex model", kind: "read", model: "gpt-5.6-sol", want: "codex-exec"},
+		{name: "read uses configured Codex model", kind: "read", useSettings: true, settings: "gpt-6-sol", want: "codex-exec"},
+		{name: "read uses explicit Codex model", kind: "read", model: "gpt-6-sol", want: "codex-exec"},
 	}
 	for index, row := range cases {
 		row := row
@@ -89,7 +89,7 @@ func TestSolReadCommandAndCollectedVerdict(t *testing.T) {
 			data := map[string]json.RawMessage{}
 			setString(data, "brief", briefPath)
 			setString(data, "readDiff", diffPath)
-			setString(data, "model", "gpt-5.6-sol")
+			setString(data, "model", "gpt-6-sol")
 			setString(data, "effort", "xhigh")
 			setInt64(data, "window", 0)
 			setStrings(data, "declaredOutputs", []string{"read.md"})
@@ -133,7 +133,7 @@ func TestSolReadCommandAndCollectedVerdict(t *testing.T) {
 				t.Fatalf("collected read=%+v err=%v", got, err)
 			}
 			if processes.command.Program != "codex" || !strings.Contains(processes.command.Stdin, "Diff: "+diffPath) || !strings.Contains(processes.command.Stdin, "Review the unit.") ||
-				!reflect.DeepEqual(processes.command.Args[0:4], []string{"exec", "-m", "gpt-5.6-sol", "-c"}) || strings.Contains(strings.Join(processes.command.Args, " "), "model_auto_compact_token_limit") {
+				!reflect.DeepEqual(processes.command.Args[0:4], []string{"exec", "-m", "gpt-6-sol", "-c"}) || strings.Contains(strings.Join(processes.command.Args, " "), "model_auto_compact_token_limit") {
 				t.Fatalf("Codex read command=%+v", processes.command)
 			}
 			if len(got.Outputs) != 1 || !strings.HasSuffix(got.Outputs[0].Path, "read.md") {
@@ -153,7 +153,7 @@ func TestSolReadRejectsAnUnchangedPriorVerdict(t *testing.T) {
 	}
 	data := map[string]json.RawMessage{}
 	setString(data, "brief", writeLaunchFile(t, "brief.md", "Review the unit.\n"))
-	setString(data, "model", "gpt-5.6-sol")
+	setString(data, "model", "gpt-6-sol")
 	setStrings(data, "declaredOutputs", []string{reportPath})
 	record := Record{ID: "stale-read", Kind: "read", Adapter: "codex-exec", WorkingDirectory: workingDirectory,
 		StartedAt: m.Now().Format(time.RFC3339Nano), State: Starting, AdapterData: data}
