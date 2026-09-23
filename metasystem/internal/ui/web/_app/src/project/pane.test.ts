@@ -5,7 +5,10 @@ import {
   aboutOf,
   briefingFor,
   crumbsFor,
+  designNote,
+  designWork,
   documentGroups,
+  marksDone,
   newActionFor,
   NO_SLICE_PLAN,
   nothingLine,
@@ -21,6 +24,7 @@ import {
   slicesOf,
   stripActions,
   tabForKind,
+  workLine,
   type Row,
   type TocEntry,
 } from "./pane";
@@ -348,6 +352,9 @@ describe("the briefing", () => {
         to: "/project/doc/metasystem/docs/decisions/0001.md",
         summary: "The engine ships as one Go binary.",
         status: "accepted",
+        // Only a design says anything about the work it names; a decision
+        // names no work, so its row carries no clause.
+        note: "",
         path: "metasystem/docs/decisions/0001.md",
       },
     ]);
@@ -397,6 +404,105 @@ describe("a goal page", () => {
   it("shows a record about the whole project on the project page and on no goal page", () => {
     expect(titles(briefingFor(pane, null).questions)).toEqual(["Where does intent live?", "Who accepts?"]);
     expect(titles(briefingFor(pane, "first-release").designs.open)).toEqual([]);
+  });
+});
+
+/**
+ * A design's own words against the ledger's own states.
+ *
+ * The fixture is a ledger of three goals — one still worked under, two that
+ * landed — and four designs over them: one part of the way there, one whose
+ * work is all in, one that named no work at all, and one that already says it
+ * is done.
+ */
+describe("what a design's work has done", () => {
+  const ledger: Pane = {
+    ...pane,
+    goals: [
+      { id: "live-one", title: "live-one", state: "claimed", intent: "Still being worked" },
+      { id: "landed-one", title: "landed-one", state: "done", intent: "Landed first" },
+      { id: "landed-two", title: "landed-two", state: "done", intent: "Landed second" },
+    ],
+    records: [
+      record({
+        kind: "design", id: "design-part", title: "Part of the way",
+        goals: ["landed-one", "landed-two", "live-one"], path: "plans/designs/part.md",
+      }),
+      record({
+        kind: "design", id: "design-landed", title: "All of it in",
+        goals: ["landed-one", "landed-two"], path: "plans/designs/landed.md",
+      }),
+      record({ kind: "design", id: "design-standing", title: "A standing design", path: "plans/designs/standing.md" }),
+      record({
+        kind: "design", id: "design-shipped", status: "done", title: "Already done",
+        goals: ["landed-one"], path: "plans/designs/shipped.md",
+      }),
+    ],
+  };
+
+  it("counts the goals a design names that have landed", () => {
+    expect(workLine(designWork(ledger, ["landed-one", "landed-two", "live-one"]))).toBe("2 of 3 goals done");
+    expect(workLine(designWork(ledger, ["live-one"]))).toBe("0 of 1 goal done");
+  });
+
+  it("says so as a whole once every one of them is in", () => {
+    expect(workLine(designWork(ledger, ["landed-one", "landed-two"]))).toBe("all 2 goals done");
+    expect(workLine(designWork(ledger, ["landed-one"]))).toBe("all 1 goal done");
+  });
+
+  it("derives nothing from a design that names no goals", () => {
+    const work = designWork(ledger, []);
+    expect(work).toEqual({ goals: [], done: 0, landed: false });
+    expect(workLine(work)).toBe("");
+    expect(marksDone(work, "accepted")).toBe(false);
+  });
+
+  it("names each goal as a link to its own page, with the ledger's word for it", () => {
+    expect(designWork(ledger, ["landed-one"]).goals).toEqual([
+      { id: "landed-one", name: "landed-one", to: "/backlog/goal/landed-one", state: "done", done: true },
+    ]);
+  });
+
+  it("counts a goal the ledger does not carry as work that has not landed", () => {
+    const work = designWork(ledger, ["landed-one", "nowhere"]);
+    expect(workLine(work)).toBe("1 of 2 goals done");
+    expect(work.goals.map((goal) => [goal.id, goal.state, goal.done])).toEqual([
+      ["landed-one", "done", true],
+      ["nowhere", "", false],
+    ]);
+    expect(marksDone(work, "accepted")).toBe(false);
+  });
+
+  it("reads them in the ledger's order, with the ones it does not carry last", () => {
+    expect(designWork(ledger, ["nowhere", "landed-two", "live-one"]).goals.map((goal) => goal.id)).toEqual([
+      "live-one",
+      "landed-two",
+      "nowhere",
+    ]);
+  });
+
+  it("offers to mark a design done only when it named work, all of it landed, and it has not said so", () => {
+    expect(marksDone(designWork(ledger, ["landed-one", "landed-two"]), "accepted")).toBe(true);
+    expect(marksDone(designWork(ledger, ["landed-one", "live-one"]), "accepted")).toBe(false);
+    expect(marksDone(designWork(ledger, ["landed-one"]), "done")).toBe(false);
+  });
+
+  it("puts the count on the design's row, and nothing on a standing or a done one", () => {
+    const designs = briefingFor(ledger, null).designs;
+    expect(designs.open.map((row) => [row.title, row.note])).toEqual([
+      ["Part of the way", "2 of 3 goals done"],
+      ["All of it in", "all 2 goals done"],
+      ["A standing design", ""],
+    ]);
+    expect(designs.runs.map((run) => run.rows.map((row) => [row.title, row.note]))).toEqual([
+      [["Already done", ""]],
+    ]);
+  });
+
+  it("says nothing on a kind that names no work of its own", () => {
+    expect(designNote(ledger, record({ kind: "decision", id: "d", path: "docs/decisions/1.md", goals: ["live-one"] }))).toBe(
+      "",
+    );
   });
 });
 

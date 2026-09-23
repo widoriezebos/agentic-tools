@@ -231,6 +231,72 @@
   white-space: nowrap;
 }
 
+/*
+ * The work a design names, between the facts and the relationships: the goals
+ * it governs, each with the ledger's own word for where it stands, and the one
+ * sentence that follows from all of them being done. It is a reading of the
+ * ledger rather than a control panel, so the only control in it is the one act
+ * the reading earns.
+ */
+.ms-facts-work {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.ms-facts-work-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-facts-work-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-facts-work-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ms-facts-work-row a {
+  color: var(--ms-accent);
+  text-decoration: none;
+}
+
+.ms-facts-work-row a:hover,
+.ms-facts-work-row a:focus-visible {
+  text-decoration: underline;
+}
+
+.ms-facts-work-landed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text-2);
+}
+
 .ms-facts-links {
   display: flex;
   flex-direction: column;
@@ -808,7 +874,18 @@
 .ms-project-row-act {
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
   gap: 4px;
+}
+
+/* How much of the work a design names has landed: a reading of the ledger
+   beside the status a human types, and quieter than it, because the status is
+   the claim and this is only the evidence for it. */
+.ms-project-row-note {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  white-space: nowrap;
 }
 
 .ms-project-row-path {

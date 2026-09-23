@@ -267,6 +267,38 @@ func TestPaneReadsTheAdoptedLayoutsOneDesignHome(t *testing.T) {
 	testutil.Expect(t, "nothing is refused", pane.Problems, []Problem{})
 }
 
+// Every goal a record can name is in the pane, concluded ones included, each
+// with the state its ledger file declares.
+//
+// The pane is where a reader finds out whether the work a design names has
+// landed, and a goal that landed is in records/goals rather than plans/goals.
+// A payload that carried only the live ones would show a shipped design as a
+// design naming a goal nobody has heard of.
+func TestPaneCarriesConcludedGoalsWithTheirState(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	state := relativeTo(t, roots.Checkout, roots.StateRoot) + "/"
+	plant(t, roots.Checkout, state+"records/goals/dropped.md",
+		goalFile("dropped", "abandoned", "An idea nobody pursued"))
+
+	pane, err := ReadPane(roots, readAt)
+
+	testutil.Require(t, "read the pane", err, nil)
+	testutil.Expect(t, "a concluded goal is carried", goalWithID(pane.Goals, "two-homes"),
+		Goal{ID: "two-homes", Title: "two-homes", State: "done", Intent: "Designs live in two homes"})
+	testutil.Expect(t, "a goal concluded another way carries that state",
+		goalWithID(pane.Goals, "dropped").State, "abandoned")
+	testutil.Expect(t, "the live goals come first, then the concluded ones in id order",
+		goalIDs(pane.Goals), []string{"ledger-sync", "reading-pane", "dropped", "two-homes"})
+	// The design that names the concluded goal is the pane's other half of
+	// this: a reader works out that its work landed from these two together.
+	testutil.Expect(t, "the design that names it", recordWithID(pane.Records, "design-interface").Goals,
+		[]string{"ledger-sync", "two-homes"})
+	testutil.Expect(t, "a Goals line naming a concluded goal is not refused", pane.Problems, []Problem{})
+}
+
 // A project with no book at all says so: no index, no chapters, and no
 // refusal, because a project declares the homes it uses.
 func TestPaneCarriesNoBookWhereNoneIsDeclared(t *testing.T) {
@@ -387,6 +419,14 @@ func TestPaneReadsTheSlicePlanOutOfTheRecordsThatHaveOne(t *testing.T) {
 		})
 	testutil.Expect(t, "a design with no such section lists none",
 		recordWithID(pane.Records, "design-summary").Slices, []string{})
+}
+
+func goalIDs(goals []Goal) []string {
+	collected := []string{}
+	for _, one := range goals {
+		collected = append(collected, one.ID)
+	}
+	return collected
 }
 
 func goalWithID(goals []Goal, id string) Goal {

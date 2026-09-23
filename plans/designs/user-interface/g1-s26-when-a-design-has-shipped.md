@@ -2,10 +2,12 @@
 
 - Kind: design
 - Id: 01M36T7VYK7NPNX4EPRDK8MXSB
-- Status: accepted
+- Status: done
 - Cites: 01M348YTJ2EY11F37Y5KBVNSER
 
 Revision 1, 2026-09-23, Claude on Fable, proposed on Wido's question: "At project level designs, how do we know that the design has shipped? ... there is a loose connection between this project level design and the goals that come from it. I don't think that's a hard association." Accepted by Wido the same day: "ok, approved. go".
+
+Built as one slice, 2026-09-23.
 
 ## What is true today
 

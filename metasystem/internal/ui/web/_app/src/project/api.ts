@@ -4,9 +4,9 @@
  *
  * The two reads are made once per page view and again on Reload, and nowhere
  * else: no stream, no socket, no timer, and no window event refetches either
- * of them. The four writes are made when a human confirms one, and never on
+ * of them. The five writes are made when a human confirms one, and never on
  * their own; the save and the render below are made when a human asks for
- * them, in an editor they opened. All eight go through the one request below,
+ * them, in an editor they opened. All nine go through the one request below,
  * so there is a single place where this build reaches the network;
  * src/cuts.test.ts holds that by counting call sites, so a second request
  * written under any other name fails the guard rather than the review.
@@ -18,6 +18,8 @@ const RECORDS = "/api/project/records";
 const QUESTIONS = "/api/project/questions";
 /** The suffix both status routes share; the id is the segment before it. */
 const STATUS = "/status";
+/** Naming one more ledger goal on a record; the id is the segment before it. */
+const GOALS = "/goals";
 /** Saving one document: the read route's own id, with this after it. */
 const EDIT = "/edit";
 /** Rendering what is being typed. It names no document, and writes nothing. */
@@ -243,7 +245,7 @@ export async function loadDocument(id: string, signal?: AbortSignal): Promise<Do
   return request<DocumentPayload>(DOCUMENTS + encodeSegments(id), undefined, signal);
 }
 
-/* -------------------------------------------------------- the four writes -- */
+/* -------------------------------------------------------- the five writes -- */
 
 /**
  * What a human asked the interface to create. Everything else about the
@@ -274,6 +276,15 @@ export async function askQuestion(asked: NewQuestion): Promise<Asked> {
 
 export async function setQuestionStatus(id: string, status: string): Promise<Asked> {
   return request<Asked>(`${QUESTIONS}/${encodeURIComponent(id)}${STATUS}`, { status });
+}
+
+/**
+ * Name one more ledger goal on a record's head. The goal is one the machine
+ * just minted, never one a human typed, and the answer is the document as it
+ * now reads from disk so the page re-renders from the file.
+ */
+export async function addRecordGoal(id: string, goal: string): Promise<DocumentPayload> {
+  return request<DocumentPayload>(`${RECORDS}/${encodeURIComponent(id)}${GOALS}`, { add: goal });
 }
 
 /* ------------------------------------------ editing one document in place -- */

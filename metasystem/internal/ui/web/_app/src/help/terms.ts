@@ -18,6 +18,7 @@ export type HelpId =
   | "doctrine"
   | "decisions"
   | "designs"
+  | "design-work"
   | "questions"
   | "documents"
   | "slices"
@@ -64,6 +65,10 @@ export const HELP: Record<HelpId, Term> = {
   designs: {
     term: "Designs",
     text: "How a piece of work will be built, written before it is built. A design says what the work does and does not do. When the work ships, the design's status becomes done.",
+  },
+  "design-work": {
+    term: "Work",
+    text: "The goals this design names, with their ledger states. When every one has landed, the design can be marked done.",
   },
   questions: {
     term: "Open questions",

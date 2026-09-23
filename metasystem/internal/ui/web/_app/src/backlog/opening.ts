@@ -53,6 +53,16 @@ export const emptyIntake: Intake = {
   blocks: "",
 };
 
+/**
+ * The intake a sheet opens on when something already knows what the goal is
+ * for: a design's own title, where the goal is being opened from that design's
+ * page. It is a starting point and nothing more — the human edits the line
+ * freely, and the rest of the intake is as empty as it ever was.
+ */
+export function intakeFor(intent: string): Intake {
+  return { ...emptyIntake, intent: intent.trim() };
+}
+
 export const emptyRisk: Risk = {
   severity: "1",
   novelty: "1",

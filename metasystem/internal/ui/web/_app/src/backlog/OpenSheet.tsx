@@ -5,9 +5,9 @@ import { BacklogError, openGoal, type Backlog } from "./api";
 import {
   blockedForOpen,
   derivedTier,
-  emptyIntake,
   emptyRisk,
   goalOf,
+  intakeFor,
   INTENT_RULE,
   NEXT_STEP_RULE,
   openNote,
@@ -46,15 +46,23 @@ import { failureMessage } from "../shell/workspace";
  */
 export function OpenSheet({
   backlog,
+  intent = "",
   onClose,
   onDone,
 }: {
   backlog: Backlog;
+  /**
+   * What the intent line opens with, where whatever opened the sheet already
+   * knows what the goal is for. A design's own page passes its title; the
+   * board passes nothing and the line starts empty, as it always did. Either
+   * way it is a first draft — the human writes what done looks like.
+   */
+  intent?: string;
   onClose: () => void;
   /** The ledger as it stands after the act, which is what shows the card. */
   onDone: (opened: Backlog, id: string) => void;
 }) {
-  const [intake, setIntake] = useState<Intake>(emptyIntake);
+  const [intake, setIntake] = useState<Intake>(() => intakeFor(intent));
   const [risk, setRisk] = useState<Risk>(emptyRisk);
   const [refusal, setRefusal] = useState("");
   const [sending, setSending] = useState(false);

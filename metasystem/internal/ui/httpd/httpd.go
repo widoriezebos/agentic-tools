@@ -45,7 +45,7 @@ type Info struct {
 	// Document answers one document by its checkout-relative id. A
 	// project.ErrNotFound is the route's 404; anything else is a 500.
 	Document func(id string) (project.Document, error)
-	// The Project section's four writes, each one the human editing their own
+	// The Project section's five writes, each one the human editing their own
 	// checkout on loopback. A project.Refusal carries the status the route
 	// answers with; anything else is a 500 carrying its reason. A nil field is
 	// an engine that cannot write, which the route says.
@@ -53,6 +53,11 @@ type Info struct {
 	SetStatus         func(id, status string) (project.Written, error)
 	AskQuestion       func(project.NewQuestion) (project.Asked, error)
 	SetQuestionStatus func(id, status string) (project.Asked, error)
+	// AddRecordGoal names one more ledger goal on one record's head, and
+	// answers the document as it now reads from disk. It is the machine
+	// writing the association a human would otherwise type: a goal opened
+	// from a design's page is named on that design by its own id.
+	AddRecordGoal func(id, goal string) (project.Document, error)
 	// EditDocument saves one document by the id the read route serves it
 	// under, against the revision the caller was given. A
 	// project.ErrNotFound is the read route's own 404; a project.Refusal

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useState, type KeyboardEvent } fro
 import { NavLink, useLocation } from "react-router";
 
 import {
+  addRecordGoal,
   editDocument,
   failureMessage,
   isNotFound,
@@ -9,6 +10,7 @@ import {
   loadPane,
   previewDocument,
   ResourceError,
+  setRecordStatus,
   type DocumentPayload,
   type Link as RecordLink,
   type Pane as PanePayload,
@@ -26,11 +28,29 @@ import {
 import { Editor } from "./Editor";
 import { Markdown } from "./Markdown";
 import { outlineOf, useReadingRow, type OutlineRow } from "./outline";
-import { aboutOf, crumbsFor, kindTitle, railFor, shortID, type About, type SiblingRail } from "./pane";
+import {
+  aboutOf,
+  crumbsFor,
+  designWork,
+  DESIGN_DONE,
+  kindTitle,
+  MARK_DONE,
+  marksDone,
+  railFor,
+  shortID,
+  WORK_LANDED,
+  WORK_TITLE,
+  type About,
+  type DesignWork,
+  type SiblingRail,
+} from "./pane";
 import { dateOf, ownership, timeOf } from "./ProjectPane";
 import "./reading.css";
 import { Sheet, type Done, type Request } from "./Sheet";
 import { STATUSES } from "./writing";
+import { loadBacklog, type Backlog } from "../backlog/api";
+import { OpenSheet } from "../backlog/OpenSheet";
+import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
 import { documentIdFromPath, documentPath } from "../routes";
 import { aboutLine, useAbout } from "../shell/about";
@@ -63,6 +83,25 @@ type DocumentState =
   | { state: "absent" }
   | { state: "failed"; message: string }
   | { state: "read"; document: DocumentPayload };
+
+/** What the act that opens a goal from a design's own page is called. */
+const NEW_GOAL = "New goal for this design";
+
+/**
+ * What a design's page offers about the work it names: the reading of it, the
+ * two acts, and whichever of them is in flight. It is one object rather than
+ * five props because it is one thing — this design's work — and because
+ * anything but a design carries none of it.
+ */
+type WorkActions = {
+  work: DesignWork;
+  /** The act in flight, by its own label, or "" when nothing is. */
+  busy: string;
+  /** What either act was refused with, in the server's own words, or "". */
+  refusal: string;
+  onMarkDone: () => void;
+  onNewGoal: () => void;
+};
 
 export function DocumentPane() {
   const location = useLocation();
@@ -149,6 +188,24 @@ export function DocumentPane() {
     setDocument({ state: "read", document: payload });
   };
 
+  // A goal opened from this page joins the ledger the moment it lands, and the
+  // states the Work section shows come from the project rather than from the
+  // document. So the project is read again beside the document the write
+  // answered with — once, because a human asked for it, which is the only
+  // reason anything in this build reads again.
+  const reread = () => {
+    loadPane()
+      .then((answered) => {
+        setPane(answered);
+      })
+      .catch((error: unknown) => {
+        // The document reads without the project, so a pane that could not be
+        // read again is left standing rather than dropped: the rails and the
+        // work keep what they already had.
+        void error;
+      });
+  };
+
   return (
     <Pane title={name === "" ? "Project" : name}>
       {document.state === "read" ? (
@@ -158,6 +215,7 @@ export function DocumentPane() {
           onReload={retry}
           onStatus={restated}
           onSaved={rewritten}
+          onReread={reread}
         />
       ) : (
         <div className="ms-reader">
@@ -213,12 +271,15 @@ function Read({
   onReload,
   onStatus,
   onSaved,
+  onReread,
 }: {
   document: DocumentPayload;
   pane: PanePayload | null;
   onReload: () => void;
   onStatus: (status: string) => void;
   onSaved: (payload: DocumentPayload) => void;
+  /** Read the project again, without disturbing the document being read. */
+  onReread: () => void;
 }) {
   const outline = useMemo(() => outlineOf(document.headings), [document]);
   const crumbs = useMemo(() => crumbsFor(pane, document), [pane, document]);
@@ -229,6 +290,13 @@ function Read({
   // The editor, while one is open, and what the last save is remembered as.
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saved, setSaved] = useState("");
+  // The design's own work: the goals it names, the sheet that opens one more,
+  // whichever of the two acts is in flight, and what either was refused with.
+  const head = document.record;
+  const work = useMemo(() => designWork(pane, head === null ? [] : head.goals), [pane, head]);
+  const [goalSheet, setGoalSheet] = useState<Backlog | null>(null);
+  const [busy, setBusy] = useState("");
+  const [refusal, setRefusal] = useState("");
 
   // What the drawer says this page is about: the record, and the section of it
   // being read, from the outline the reader already follows. The first heading
@@ -308,6 +376,82 @@ function Read({
     setEditor(opening(document.source, document.revision));
   };
 
+  /**
+   * Mark done writes the one word a human would otherwise have chosen in the
+   * select above, through the route that select already writes through. It is
+   * one click because the evidence for it is on the screen beside it: every
+   * goal this design named is done, and the reader can see that it is.
+   */
+  const markDone = () => {
+    if (head === null || busy !== "") {
+      return;
+    }
+    setBusy(MARK_DONE);
+    setRefusal("");
+    setRecordStatus(head.id, DESIGN_DONE)
+      .then((written) => {
+        setBusy("");
+        onStatus(written.record.status);
+      })
+      .catch((error: unknown) => {
+        setBusy("");
+        setRefusal(failureMessage(error));
+      });
+  };
+
+  /**
+   * A goal for this design opens the board's own intake sheet from here, with
+   * the intent it starts on taken from the design's title. The backlog the
+   * sheet needs is read when a human asks for the sheet and never before: this
+   * page has no board on it, and nothing here polls for one.
+   */
+  const askForAGoal = () => {
+    if (busy !== "") {
+      return;
+    }
+    setBusy(NEW_GOAL);
+    setRefusal("");
+    loadBacklog()
+      .then((backlog) => {
+        setBusy("");
+        setGoalSheet(backlog);
+      })
+      .catch((error: unknown) => {
+        setBusy("");
+        setRefusal(failureMessage(error));
+      });
+  };
+
+  /**
+   * The association, written by the machine: the goal the sheet just opened is
+   * named on this design by its own id, and the page re-renders from the file
+   * the server read back. A goal that opened and could not be named says so
+   * with its id — the goal is in the ledger either way, and the human needs to
+   * know which one to name by hand.
+   */
+  const nameTheGoal = (id: string) => {
+    if (head === null) {
+      return;
+    }
+    setBusy(NEW_GOAL);
+    setRefusal("");
+    addRecordGoal(head.id, id)
+      .then((payload) => {
+        setBusy("");
+        onSaved(payload);
+        onReread();
+      })
+      .catch((error: unknown) => {
+        setBusy("");
+        setRefusal(`The goal ${id} was opened. Naming it on this design failed: ${failureMessage(error)}`);
+      });
+  };
+
+  const working: WorkActions | null =
+    head === null || head.kind !== "design"
+      ? null
+      : { work, busy, refusal, onMarkDone: markDone, onNewGoal: askForAGoal };
+
   const done = (result: Done) => {
     setSheet(null);
     if (result.mode === "status") {
@@ -346,6 +490,7 @@ function Read({
                   pane={pane}
                   lead={lead}
                   saved={saved}
+                  working={working}
                   onReload={onReload}
                   onEdit={editable(document) ? open : null}
                   onStatusChange={(status) => {
@@ -381,6 +526,22 @@ function Read({
             setSheet(null);
           }}
           onDone={done}
+        />
+      )}
+      {/* The board's own intake sheet, opened from here. It carries the sign-in
+          path it already had, so a server that cannot act as a human asks for
+          one and sends the same act again. */}
+      {goalSheet !== null && (
+        <OpenSheet
+          backlog={goalSheet}
+          intent={document.title}
+          onClose={() => {
+            setGoalSheet(null);
+          }}
+          onDone={(_opened, id) => {
+            setGoalSheet(null);
+            nameTheGoal(id);
+          }}
         />
       )}
     </>
@@ -537,7 +698,7 @@ function PlainFacts({
       </h1>
       <p className="ms-reading-facts">
         <span className="ms-mono">{document.path}</span>
-        <FileActions path={document.path} onEdit={onEdit} />
+        <FileActions path={document.path} onEdit={onEdit} onNewGoal={null} busy="" />
         <Chip>{ownership(document.owner)}</Chip>
         <span>changed {dateOf(document.modifiedAt)}</span>
         <span>read at {timeOf(document.readAt)}</span>
@@ -559,6 +720,7 @@ function RecordFacts({
   pane,
   lead,
   saved,
+  working,
   onReload,
   onEdit,
   onStatusChange,
@@ -567,6 +729,8 @@ function RecordFacts({
   pane: PanePayload | null;
   lead: string | null;
   saved: string;
+  /** What this design says about its own work, or null for any other kind. */
+  working: WorkActions | null;
   onReload: () => void;
   onEdit: (() => void) | null;
   onStatusChange: (status: string) => void;
@@ -591,15 +755,79 @@ function RecordFacts({
         <span className="ms-mono ms-facts-path" title={document.path}>
           {document.path}
         </span>
-        <FileActions path={document.path} onEdit={onEdit} />
+        <FileActions
+          path={document.path}
+          onEdit={onEdit}
+          onNewGoal={working === null ? null : working.onNewGoal}
+          busy={working?.busy ?? ""}
+        />
         <span>
           changed {dateOf(document.modifiedAt)} · read at {timeOf(document.readAt)}
         </span>
         <Button onClick={onReload}>Reload</Button>
         {saved !== "" && <span role="status">{saved}</span>}
       </p>
+      {working !== null && <Work working={working} status={head.status} />}
+      {/* The refusal stands outside the section, because the act that opens a
+          goal is offered on a design that has no Work section to put it in. */}
+      {working !== null && working.refusal !== "" && (
+        <p className="ms-project-reason" role="status">
+          {working.refusal}
+        </p>
+      )}
       <Relationships document={document} pane={pane} />
     </header>
+  );
+}
+
+/**
+ * What a design says its work is, and whether that work has landed.
+ *
+ * The link between a design and the work it governs runs one way: the design's
+ * head names ledger goals, and a goal names no design. So this is a reading of
+ * the design's own words against the ledger's own states, derived on every
+ * read and stored nowhere — the goals it named, where each of them stands, and
+ * the one sentence that follows from all of them being done.
+ *
+ * A design that names no goals has no section here at all. That is the
+ * standing design — the master, the interface design — which is amended rather
+ * than finished, and which would otherwise be asked forever to conclude work
+ * it never claimed.
+ *
+ * Marking it done is still a human's word. The button writes the status a
+ * human would have chosen in the select above it, and it is one press because
+ * the evidence is on the screen beside it rather than in another pane.
+ */
+function Work({ working, status }: { working: WorkActions; status: string }) {
+  const { work } = working;
+  if (work.goals.length === 0) {
+    return null;
+  }
+  return (
+    <section className="ms-facts-work" aria-label={WORK_TITLE}>
+      <h2 className="ms-facts-work-title">
+        {WORK_TITLE}
+        <Help id="design-work" />
+      </h2>
+      <ul className="ms-facts-work-list">
+        {work.goals.map((goal) => (
+          <li key={goal.id} className="ms-facts-work-row">
+            <NavLink className="ms-mono" to={goal.to}>
+              {goal.name}
+            </NavLink>
+            {goal.state === "" ? <Chip>not in the ledger</Chip> : <Chip>{goal.state}</Chip>}
+          </li>
+        ))}
+      </ul>
+      {marksDone(work, status) && (
+        <p className="ms-facts-work-landed">
+          <span>{WORK_LANDED}</span>
+          <Button primary disabled={working.busy !== ""} onClick={working.onMarkDone}>
+            {MARK_DONE}
+          </Button>
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -661,7 +889,19 @@ function Status({ status, onChange }: { status: string; onChange: (status: strin
  * each copy, so a second copy says so again; there is no timer anywhere in this
  * build, and a confirmation that needed one would be the first.
  */
-function FileActions({ path, onEdit }: { path: string; onEdit: (() => void) | null }) {
+function FileActions({
+  path,
+  onEdit,
+  onNewGoal,
+  busy,
+}: {
+  path: string;
+  onEdit: (() => void) | null;
+  /** Open a goal for this design, where the record is one. */
+  onNewGoal: (() => void) | null;
+  /** What is already in flight, by its own label, or "". */
+  busy: string;
+}) {
   const [copies, setCopies] = useState(0);
   const [refused, setRefused] = useState(false);
 
@@ -686,6 +926,11 @@ function FileActions({ path, onEdit }: { path: string; onEdit: (() => void) | nu
       {onEdit !== null && (
         <button type="button" className="ms-project-act" onClick={onEdit}>
           Edit
+        </button>
+      )}
+      {onNewGoal !== null && (
+        <button type="button" className="ms-project-act" disabled={busy !== ""} onClick={onNewGoal}>
+          {NEW_GOAL}
         </button>
       )}
       <button type="button" className="ms-project-act" onClick={copy}>

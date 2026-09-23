@@ -6,6 +6,7 @@ import {
   emptyIntake,
   emptyRisk,
   goalOf,
+  intakeFor,
   labelsOf,
   openNote,
   overridesTier,
@@ -116,6 +117,25 @@ describe("what the sheet promises", () => {
     expect(openNote("Wido")).toContain("human:Wido");
     expect(openNote("")).toContain("the enrolled human");
     expect(openNote("Wido")).toContain("opening it authorizes nothing");
+  });
+});
+
+describe("the intake a sheet opens on", () => {
+  it("starts on the intent it was given and on nothing else", () => {
+    expect(intakeFor("  The design's own title  ")).toEqual({
+      ...emptyIntake,
+      intent: "The design's own title",
+    });
+  });
+
+  it("is the empty intake where nothing knows what the goal is for", () => {
+    expect(intakeFor("")).toEqual(emptyIntake);
+  });
+
+  // A pre-filled intent is a first draft and not an act: the button is still
+  // off until a human has written the rest of what the verb requires.
+  it("does not on its own make the act sendable", () => {
+    expect(blockedForOpen(intakeFor("The design's own title"), emptyRisk)).not.toBe("");
   });
 });
 

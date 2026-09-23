@@ -63,6 +63,7 @@ func main() {
 	checkout := fixtureCheckout()
 	fmt.Println("checkout " + checkout)
 	roots := project.Roots{Checkout: checkout, Installation: checkout, StateRoot: checkout}
+	state.roots = roots
 	authority := httpd.AuthorityInfo{Reason: agentReason}
 	if *proven {
 		authority = httpd.AuthorityInfo{Proven: true, Human: "Wido"}
@@ -115,6 +116,19 @@ func main() {
 		EditDocument: func(id, source, revision string) (project.Document, error) {
 			return project.EditDocument(roots, id, source, revision, time.Now().UTC())
 		},
+		// The two writes a design's own page makes, over the fixture checkout
+		// and through the same package the engine wires: marking a design done
+		// rewrites its Status line, and naming a goal on it rewrites its Goals
+		// line. The goals the fixture ledger carries are the ones planted in
+		// it; a goal this server's own intake act just opened lives in the
+		// canned tree rather than in that ledger, so naming it is refused —
+		// which is the path the page says the goal is not lost on.
+		SetStatus: func(id, status string) (project.Written, error) {
+			return project.SetStatus(roots, id, status)
+		},
+		AddRecordGoal: func(id, goal string) (project.Document, error) {
+			return project.AddGoal(roots, id, goal, time.Now().UTC())
+		},
 		PreviewDocument: project.PreviewDocument,
 		BudgetDefaults: func() (map[string]goalbudget.Budget, error) {
 			return map[string]goalbudget.Budget{"3": {
@@ -134,19 +148,38 @@ func main() {
 // ledger is the canned tree the board reads, and the two acts change it the
 // way the engine would: an approval moves a goal to approved, a withdrawal
 // returns it to queued. Everything else refuses.
-type ledger struct{ tree *goal.TreeGoals }
+//
+// roots is the fixture checkout beneath it. The Project pane is canned, but
+// two of the designs in it are real files this server's own writes change, so
+// their head is read from disk rather than remembered: marking one done on its
+// page has to show up in the listing the next read of it makes.
+type ledger struct {
+	tree  *goal.TreeGoals
+	roots project.Roots
+	// opened are the goals this server's own intake act made, in the order it
+	// made them, so the Project pane carries them beside the canned ones and a
+	// design that names one can show where it stands.
+	opened []string
+}
 
-// The fixture checkout's two documents.
+// The fixture checkout's four documents.
 //
 // One is plain: it declares no head, so the editor can be walked through over
 // a file the resolver has nothing to say about, and it carries one of each
-// block the reader renders so the preview has something to show. The other is
+// block the reader renders so the preview has something to show. The second is
 // a record in a real home, over a real ledger goal, so that saving a head the
 // project refuses can be walked through as well — which is the one refusal
 // with something to show on the page.
+//
+// The last two are the two readings of a design's work. One names a goal that
+// landed and a goal that has not, so its page counts what is in and offers
+// nothing; the other names only goals that landed, so its page says so and
+// offers the one act that follows.
 const (
 	walkthroughDocument = "docs/reading.md"
 	walkthroughRecord   = "plans/designs/reading.md"
+	walkthroughPartly   = "plans/designs/reader.md"
+	walkthroughLanded   = "plans/designs/shell.md"
 	walkthroughText     = `# Reading and editing in place
 
 A document is read here as a chapter of a book rather than as a file, and from
@@ -185,6 +218,28 @@ A document is read as a chapter of a book rather than as a file.
 Change the status above to something the grammar does not carry, and the save
 is refused with the problem the check verb would print.
 `
+	walkthroughPartlyText = `# The document reader
+
+- Kind: design
+- Id: design-reader
+- Status: accepted
+- Goals: g1-s9 g1-s13
+
+## Outcome
+
+A document is read among its siblings, with its outline beside it.
+`
+	walkthroughLandedText = `# The application shell
+
+- Kind: design
+- Id: design-shell
+- Status: accepted
+- Goals: g1-s9 g1-s10
+
+## Outcome
+
+The rail, the header and the work area are one shell every section is read in.
+`
 )
 
 // fixtureCheckout makes the walkthrough's own checkout in a temporary
@@ -204,8 +259,16 @@ func fixtureCheckout() string {
 		{"metasystem.conf", ""},
 		{"plans/goals/backlog.md", "# backlog\n\n- SyncMode: local\n"},
 		{"plans/goals/reading-pane.md", "# reading-pane\n\n- State: approved\n- Intent: The pane reads a document as a chapter\n"},
+		// The two goals that landed live where the ledger keeps concluded
+		// work, so the resolver validates the two designs below against the
+		// same two homes the pane reads them out of.
+		{"plans/goals/g1-s13.md", "# g1-s13\n\n- State: queued\n- Intent: The goal page reads the whole record\n"},
+		{"records/goals/g1-s9.md", "# g1-s9\n\n- State: done\n- Intent: The application shell, the rail and the header\n"},
+		{"records/goals/g1-s10.md", "# g1-s10\n\n- State: done\n- Intent: The backlog's data path and the list\n"},
 		{walkthroughDocument, walkthroughText},
 		{walkthroughRecord, walkthroughHead},
+		{walkthroughPartly, walkthroughPartlyText},
+		{walkthroughLanded, walkthroughLandedText},
 	} {
 		full := filepath.Join(directory, filepath.FromSlash(planted.relative))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -380,6 +443,26 @@ var walkthroughTitles = map[string]string{
 	"g1-s15": "The Decisions section",
 	"g1-s12": "The backlog board",
 	"g1-s13": "The goal page",
+	"g1-s9":  "The application shell",
+	"g1-s10": "The backlog's data path",
+}
+
+// paneGoals are the goals the Project pane carries, in the order the ledger
+// lists them: the live ones first, then the ones that concluded. The concluded
+// ones are here because a design's work is read out of them — a payload that
+// carried only live goals would show a shipped design as a design naming a
+// goal nobody has heard of.
+var paneGoals = []string{"g1-s15", "g1-s12", "g1-s13", "g1-s9", "g1-s10"}
+
+// goalFile is one goal of the fixture tree, live or concluded.
+func (l *ledger) goalFile(id string) *goal.GoalFile {
+	if file := l.tree.Live[id]; file != nil {
+		return file
+	}
+	if file := l.tree.Done[id]; file != nil {
+		return file
+	}
+	return l.tree.Abandoned[id]
 }
 
 // project is the canned Project pane the goal page reads. It carries what a
@@ -391,8 +474,8 @@ var walkthroughTitles = map[string]string{
 // in the register, so the tabs that have nothing say so and offer their act.
 func (l *ledger) project() project.Pane {
 	goals := []project.Goal{}
-	for _, id := range []string{"g1-s15", "g1-s12", "g1-s13"} {
-		file := l.tree.Live[id]
+	for _, id := range append(append([]string{}, paneGoals...), l.opened...) {
+		file := l.goalFile(id)
 		if file == nil {
 			continue
 		}
@@ -435,6 +518,21 @@ func (l *ledger) project() project.Pane {
 				Title: "The goal page", Path: "plans/designs/goal-page.md", Home: "plans/designs",
 				Summary: "What one goal's page shows.", Slices: []string{},
 			},
+			// The two readings of a design's work: one part of the way there,
+			// and one whose goals have all landed, which is the one that is
+			// offered the act that follows.
+			l.asItReads(project.Record{
+				Kind: "design", ID: "design-reader", Status: "accepted", Goals: []string{"g1-s9", "g1-s13"},
+				Title: "The document reader", Path: walkthroughPartly, Home: "plans/designs",
+				Summary: "A document is read among its siblings, with its outline beside it.",
+				Slices:  []string{},
+			}),
+			l.asItReads(project.Record{
+				Kind: "design", ID: "design-shell", Status: "accepted", Goals: []string{"g1-s9", "g1-s10"},
+				Title: "The application shell", Path: walkthroughLanded, Home: "plans/designs",
+				Summary: "The rail, the header and the work area are one shell every section is read in.",
+				Slices:  []string{},
+			}),
 			// Two decisions: one about the project as a whole, which is what a
 			// head with no Goals line means, and one about a goal, so the
 			// Decisions tab has rows on the Project page and on a goal's.
@@ -459,8 +557,26 @@ func (l *ledger) project() project.Pane {
 		Documents: []project.File{
 			{Path: walkthroughDocument, Title: "Reading and editing in place"},
 			{Path: walkthroughRecord, Title: "The reading pane"},
+			{Path: walkthroughPartly, Title: "The document reader"},
+			{Path: walkthroughLanded, Title: "The application shell"},
 		},
 	}
+}
+
+// asItReads is one canned row with the head its own file carries right now.
+//
+// The rest of this pane is invented, but these rows stand for files on disk
+// that this server's own writes rewrite, and a listing that kept saying what
+// the file said at boot would make a write that worked look like one that did
+// not. A file that cannot be read leaves the row as it was written here.
+func (l *ledger) asItReads(record project.Record) project.Record {
+	document, err := project.Read(l.roots, record.Path, time.Now().UTC())
+	if err != nil || document.Record == nil {
+		return record
+	}
+	record.Status = document.Record.Status
+	record.Goals = document.Record.Goals
+	return record
 }
 
 // setPriority re-ranks the way internal/goal/order.go does, because the point
@@ -542,7 +658,29 @@ func (l *ledger) open(opened act.Opened) error {
 	file.Risk = &risk
 	file.Priority, file.Sequence = 0, 0
 	l.tree.Live[opened.ID] = file
-	return l.setPriority(opened.ID, 3, nil)
+	if err := l.setPriority(opened.ID, 3, nil); err != nil {
+		return err
+	}
+	l.plantGoal(opened.ID, opened.Intent)
+	return nil
+}
+
+// plantGoal writes the goal into the fixture checkout's own ledger as well.
+//
+// This server carries two of them: the canned tree the board reads, and the
+// checkout the project writer writes into. They are one ledger everywhere
+// else, so an intake that wrote to only the first would make the design page's
+// own append fail against a rule — a Goals line names a goal the ledger has —
+// that the real engine would have satisfied. Failing to plant it is not an
+// error here: the goal is open on the board either way, and the page says what
+// it could not name.
+func (l *ledger) plantGoal(id, intent string) {
+	if l.roots.StateRoot == "" || strings.ContainsAny(id, `/\`) {
+		return
+	}
+	full := filepath.Join(l.roots.StateRoot, "plans", "goals", id+".md")
+	_ = os.WriteFile(full, []byte("# "+id+"\n\n- State: queued\n- Intent: "+intent+"\n"), 0o644)
+	l.opened = append(l.opened, id)
 }
 
 func (l *ledger) withdraw(id, reason string) error {

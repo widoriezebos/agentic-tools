@@ -277,7 +277,7 @@ func runUI(verb string, args []string) int {
 					Document: func(id string) (project.Document, error) {
 						return project.Read(projectRoots(roots), id, time.Now().UTC())
 					},
-					// The four writes, in the human's own checkout. Each one
+					// The five writes, in the human's own checkout. Each one
 					// reads the homes, writes one file atomically, and reads
 					// them again, per request, for the reason the readers do:
 					// what the browser is answered with is what the next read
@@ -287,6 +287,9 @@ func runUI(verb string, args []string) int {
 					},
 					SetStatus: func(id, status string) (project.Written, error) {
 						return project.SetStatus(projectRoots(roots), id, status)
+					},
+					AddRecordGoal: func(id, goal string) (project.Document, error) {
+						return project.AddGoal(projectRoots(roots), id, goal, time.Now().UTC())
 					},
 					AskQuestion: func(asked project.NewQuestion) (project.Asked, error) {
 						return project.AskQuestion(projectRoots(roots), asked, time.Now())

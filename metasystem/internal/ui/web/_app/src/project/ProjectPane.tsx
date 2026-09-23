@@ -699,7 +699,10 @@ function RecordRow({ row, action }: { row: Row; action?: ReactNode }) {
       <span className="ms-project-row-title">
         {row.to === null ? row.title : <NavLink to={row.to}>{row.title}</NavLink>}
       </span>
-      <span className="ms-project-row-status">{row.status !== "" && <Chip>{row.status}</Chip>}</span>
+      <span className="ms-project-row-status">
+        {row.status !== "" && <Chip>{row.status}</Chip>}
+        {row.note !== "" && <span className="ms-project-row-note">{row.note}</span>}
+      </span>
       <span className="ms-project-row-act">{action}</span>
       <span className="ms-mono ms-project-row-path" title={row.path}>
         {row.path}

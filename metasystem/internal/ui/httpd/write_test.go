@@ -29,7 +29,10 @@ type recorder struct {
 	// was asked to render.
 	edits    []edited
 	previews []string
-	refusal  error
+	// named is every goal a record was asked to name, as the pair the route
+	// carried: the record's id from the path, and the goal from the body.
+	named   [][2]string
+	refusal error
 }
 
 // edited is one save as it reached the writer: which document, the text, and
@@ -53,6 +56,13 @@ func (rec *recorder) writing() Info {
 			written := writtenRecord()
 			written.Record.Status = status
 			return written, nil
+		},
+		AddRecordGoal: func(id, goal string) (project.Document, error) {
+			rec.named = append(rec.named, [2]string{id, goal})
+			if rec.refusal != nil {
+				return project.Document{}, rec.refusal
+			}
+			return namedDocument(goal), nil
 		},
 		AskQuestion: func(asked project.NewQuestion) (project.Asked, error) {
 			rec.questions = append(rec.questions, asked)
@@ -87,7 +97,18 @@ func (rec *recorder) writing() Info {
 
 func (rec *recorder) reached() int {
 	return len(rec.records) + len(rec.questions) + len(rec.statuses) + len(rec.answers) +
-		len(rec.edits) + len(rec.previews)
+		len(rec.edits) + len(rec.previews) + len(rec.named)
+}
+
+// namedDocument is what naming a goal answers with: the document as it now
+// reads from disk, which at this layer is the head carrying the goal that was
+// just written into it.
+func namedDocument(goal string) project.Document {
+	return project.Document{
+		Kind: "document", ID: "plans/designs/the-design.md", Title: "The design",
+		Path: "/work/repository/plans/designs/the-design.md", State: "readable",
+		Record: &project.Head{Kind: "design", ID: "01K7", Status: "accepted", Goals: []string{goal}},
+	}
 }
 
 // savedDocument is the document a save answers with: the read of what is now
@@ -184,6 +205,77 @@ func TestRecordStatusRoute(t *testing.T) {
 	testutil.Require(t, "decode", json.Unmarshal(response.Body.Bytes(), &written), nil)
 	testutil.Expect(t, "the record's status", written.Record.Status, "accepted")
 	testutil.Expect(t, "what the writer was asked for", rec.statuses, [][2]string{{"01K7", "accepted"}})
+}
+
+// Naming a goal on a record carries the record's id in the path and the
+// goal's in the body, and answers the document as it now reads from disk, so
+// the page re-renders from the file rather than from the request.
+func TestRecordGoalsRoute(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	served := New(rec.writing(), loopback(), testBundle())
+
+	response := post(t, served, "/api/project/records/01K7/goals", `{"add":"g1-s26"}`, nil)
+
+	testutil.Require(t, "status", response.Code, http.StatusOK)
+	testutil.Expect(t, "content type", response.Header().Get("Content-Type"), "application/json")
+	var document project.Document
+	testutil.Require(t, "decode", json.Unmarshal(response.Body.Bytes(), &document), nil)
+	testutil.Expect(t, "the payload", document, namedDocument("g1-s26"))
+	testutil.Expect(t, "what the writer was asked for", rec.named, [][2]string{{"01K7", "g1-s26"}})
+}
+
+// The goals route refuses what every other write route refuses, with the
+// status a caller acts on: a goal the ledger does not carry is a bad request,
+// and a goal the head already names is a conflict.
+func TestRecordGoalsRefusals(t *testing.T) {
+	t.Parallel()
+
+	for _, refused := range []struct {
+		what   string
+		err    error
+		status int
+	}{
+		{"a goal the ledger does not carry",
+			&project.Refusal{Kind: project.RefusalBad, Message: `the goal "logistics" is not in the ledger`},
+			http.StatusBadRequest},
+		{"a goal the head already names",
+			&project.Refusal{Kind: project.RefusalExists, Message: "plans/designs/the-design.md already names the goal g1-s26"},
+			http.StatusConflict},
+		{"a chapter of a book",
+			&project.Refusal{Kind: project.RefusalBad, Message: "an intent or doctrine record names goals"},
+			http.StatusBadRequest},
+		{"an id nothing declares",
+			&project.Refusal{Kind: project.RefusalAbsent, Message: "no record declares the id 01K9"},
+			http.StatusNotFound},
+	} {
+		t.Run(refused.what, func(t *testing.T) {
+			t.Parallel()
+			rec := &recorder{refusal: refused.err}
+			served := New(rec.writing(), loopback(), testBundle())
+
+			response := post(t, served, "/api/project/records/01K7/goals", `{"add":"g1-s26"}`, nil)
+
+			testutil.Expect(t, "status", response.Code, refused.status)
+			testutil.Expect(t, "the reason", refusalBody(t, "the refusal", response).Error, refused.err.Error())
+		})
+	}
+}
+
+// A cross-site request to the goals route writes nothing, exactly as it writes
+// nothing to the four routes that were here before it.
+func TestTheGoalsRouteKeepsThePolicy(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	served := New(rec.writing(), loopback(), testBundle())
+
+	response := post(t, served, "/api/project/records/01K7/goals", `{"add":"g1-s26"}`,
+		map[string]string{"Sec-Fetch-Site": "cross-site"})
+
+	testutil.Expect(t, "status", response.Code, http.StatusForbidden)
+	testutil.Expect(t, "the writer was not reached", rec.reached(), 0)
 }
 
 func TestQuestionRoutes(t *testing.T) {
@@ -333,7 +425,7 @@ func TestEachRouteNamesTheVerbItTakes(t *testing.T) {
 	served := New(info, loopback(), testBundle())
 
 	for _, path := range []string{
-		"/api/project/records", "/api/project/records/01K7/status",
+		"/api/project/records", "/api/project/records/01K7/status", "/api/project/records/01K7/goals",
 		"/api/project/questions", "/api/project/questions/Q-1/status",
 	} {
 		response := request(t, served, http.MethodGet, path, "127.0.0.1:7878", nil)
@@ -360,6 +452,9 @@ func TestAPathThatIsNoWriteRoute(t *testing.T) {
 		"/api/project/records/01K7",
 		"/api/project/records/01K7/status/extra",
 		"/api/project/records/a/b/status",
+		"/api/project/records//goals",
+		"/api/project/records/a/b/goals",
+		"/api/project/records/01K7/goals/extra",
 		"/api/project/questions//status",
 	} {
 		response := post(t, served, path, `{"status":"accepted"}`, nil)
@@ -376,10 +471,10 @@ func TestAnEngineWithoutAWriter(t *testing.T) {
 	served := New(Info{}, loopback(), testBundle())
 
 	for _, path := range []string{
-		"/api/project/records", "/api/project/records/01K7/status",
+		"/api/project/records", "/api/project/records/01K7/status", "/api/project/records/01K7/goals",
 		"/api/project/questions", "/api/project/questions/Q-1/status",
 	} {
-		response := post(t, served, path, `{"status":"accepted","kind":"decision","question":"a"}`, nil)
+		response := post(t, served, path, `{"status":"accepted","kind":"decision","question":"a","add":"g1"}`, nil)
 		testutil.Expect(t, path+" status", response.Code, http.StatusInternalServerError)
 		testutil.Expect(t, path+" reason", refusalBody(t, path, response).Error,
 			"this engine was built without a project writer")

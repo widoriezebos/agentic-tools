@@ -11,7 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/project"
 )
 
-// The Project section's write surface: four POST routes, on loopback, in the
+// The Project section's write surface: five POST routes, on loopback, in the
 // human's own checkout.
 //
 // Every one of them goes through the same policy the read routes go through —
@@ -24,16 +24,20 @@ import (
 //
 // No route takes a path. A record is created in the home its kind names, under
 // a file name this server derives from the title; a status names a record by
-// its id; a question names a row by its id. There is nothing in any body that
-// reaches the filesystem as a name. The edit route below is the one that names
-// a document, and it names it with the read route's own id, in the read
-// route's own prefix: a name it will write to is a name the read serves.
+// its id; a question names a row by its id; a goal named on a record is a
+// ledger id in a body. There is nothing in any body that reaches the
+// filesystem as a name. The edit route below is the one that names a document,
+// and it names it with the read route's own id, in the read route's own
+// prefix: a name it will write to is a name the read serves.
 const (
 	recordsPath     = "/api/project/records"
 	recordsPrefix   = "/api/project/records/"
 	questionsPath   = "/api/project/questions"
 	questionsPrefix = "/api/project/questions/"
 	statusSuffix    = "/status"
+	// recordGoalsSuffix is where the machine writes the association a human
+	// would otherwise type: a ledger goal named on the record the path names.
+	recordGoalsSuffix = "/goals"
 	// The document's own two writes, under the prefix it is read from. The
 	// preview path is exact and names no document: no id this server serves
 	// ends without ".md", so nothing is shadowed by it.
@@ -59,20 +63,21 @@ type written struct {
 	id    string
 }
 
-// The four routes, by name, and the document's two.
+// The five routes, by name, and the document's two.
 const (
 	routeCreateRecord   = "create-record"
 	routeRecordStatus   = "record-status"
+	routeRecordGoals    = "record-goals"
 	routeAskQuestion    = "ask-question"
 	routeQuestionStatus = "question-status"
 	routeEditDocument   = "edit-document"
 	routePreviewSource  = "preview-source"
 )
 
-// writeRouteOf reports which write route a path names, if any. The two status
-// routes carry an id between a prefix and a suffix; an empty id names no
-// record and no row, so it is no route and falls through to the 404 every
-// unserved path under a reserved prefix gets.
+// writeRouteOf reports which write route a path names, if any. The three
+// routes beneath a collection carry an id between a prefix and a suffix; an
+// empty id names no record and no row, so it is no route and falls through to
+// the 404 every unserved path under a reserved prefix gets.
 func writeRouteOf(path string) (written, bool) {
 	switch path {
 	case recordsPath:
@@ -86,10 +91,13 @@ func writeRouteOf(path string) (written, bool) {
 	case previewPath:
 		return written{route: routePreviewSource}, true
 	}
-	if id, ok := statusID(path, recordsPrefix); ok {
+	if id, ok := idBetween(path, recordsPrefix, statusSuffix); ok {
 		return written{route: routeRecordStatus, id: id}, true
 	}
-	if id, ok := statusID(path, questionsPrefix); ok {
+	if id, ok := idBetween(path, recordsPrefix, recordGoalsSuffix); ok {
+		return written{route: routeRecordGoals, id: id}, true
+	}
+	if id, ok := idBetween(path, questionsPrefix, statusSuffix); ok {
 		return written{route: routeQuestionStatus, id: id}, true
 	}
 	if id, ok := editID(path); ok {
@@ -117,19 +125,22 @@ func editID(path string) (string, bool) {
 	return id, true
 }
 
-func statusID(path, prefix string) (string, bool) {
+// idBetween is the one segment a path carries between a collection's prefix
+// and one act's suffix. An id that is empty, or that carries a separator and
+// so names something deeper than one member, is no route.
+func idBetween(path, prefix, suffix string) (string, bool) {
 	rest, beneath := strings.CutPrefix(path, prefix)
 	if !beneath {
 		return "", false
 	}
-	id, ends := strings.CutSuffix(rest, statusSuffix)
+	id, ends := strings.CutSuffix(rest, suffix)
 	if !ends || id == "" || strings.Contains(id, "/") {
 		return "", false
 	}
 	return id, true
 }
 
-// The bodies the four routes read. A field a route does not take is not read,
+// The bodies the five routes read. A field a route does not take is not read,
 // and a body that is not an object at all is a bad request.
 type recordBody struct {
 	Kind    string   `json:"kind"`
@@ -141,6 +152,13 @@ type recordBody struct {
 
 type statusBody struct {
 	Status string `json:"status"`
+}
+
+// recordGoalsBody names one ledger goal to add to the record the path names.
+// It is one goal rather than a list because it is one act: a goal was just
+// opened, and this is where it is written down.
+type recordGoalsBody struct {
+	Add string `json:"add"`
 }
 
 type questionBody struct {
@@ -167,6 +185,8 @@ func (h *handler) write(w http.ResponseWriter, r *http.Request, route written) {
 		h.createRecord(w, r)
 	case routeRecordStatus:
 		h.recordStatus(w, r, route.id)
+	case routeRecordGoals:
+		h.recordGoals(w, r, route.id)
 	case routeAskQuestion:
 		h.askQuestion(w, r)
 	case routeQuestionStatus:
@@ -216,6 +236,22 @@ func (h *handler) recordStatus(w http.ResponseWriter, r *http.Request, id string
 		return
 	}
 	answer(w, func() (any, error) { return h.info.SetStatus(id, body.Status) })
+}
+
+// recordGoals names one more ledger goal on a record, and answers the document
+// as it now reads from disk, so the page re-renders from the file rather than
+// from the request. The id in the path is a record's, never a file's: what is
+// rewritten is the head of the record that declares it.
+func (h *handler) recordGoals(w http.ResponseWriter, r *http.Request, id string) {
+	if h.info.AddRecordGoal == nil {
+		writeFailure(w, "this engine was built without a project writer")
+		return
+	}
+	var body recordGoalsBody
+	if !decode(w, r, &body) {
+		return
+	}
+	answer(w, func() (any, error) { return h.info.AddRecordGoal(id, body.Add) })
 }
 
 func (h *handler) askQuestion(w http.ResponseWriter, r *http.Request) {

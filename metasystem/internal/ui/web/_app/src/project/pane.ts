@@ -32,6 +32,12 @@ export type Row = {
   /** The record's own first words, or "" where it has none. */
   summary: string;
   status: string;
+  /**
+   * One quiet clause beside the status, or "" where the row has none. A
+   * design's is how much of the work it names has landed; nothing else has one
+   * yet.
+   */
+  note: string;
   /** The checkout-relative path, shown in mono and never wrapped. */
   path: string;
 };
@@ -386,6 +392,114 @@ export function sliceLine(count: number, startedAt: string): string {
   return parts.join(" · ");
 }
 
+/* ----------------------------------------- what a design's work has done -- */
+
+/** One goal a design names, as the design's own page shows it. */
+export type NamedGoal = {
+  id: string;
+  name: string;
+  to: string;
+  /** The ledger's own word, or "" where the ledger does not carry this goal. */
+  state: string;
+  done: boolean;
+};
+
+/**
+ * What a design's Goals line says about whether its work has landed.
+ *
+ * The link runs one way — a design names goals, and a goal names no design —
+ * so this is the whole of what can be read: the states of the goals the design
+ * itself named. It is derived on every read and stored nowhere, because a
+ * conclusion that was derived and then stored would be two answers to one
+ * question.
+ */
+export type DesignWork = {
+  goals: NamedGoal[];
+  done: number;
+  /** True when it names at least one goal and every one of them is concluded. */
+  landed: boolean;
+};
+
+/** The ledger state a goal that landed carries. */
+export const GOAL_DONE = "done";
+
+/** The status a design carries once its work has shipped. */
+export const DESIGN_DONE = "done";
+
+/** What the design's page calls the section, and what it says when it is full. */
+export const WORK_TITLE = "Work";
+export const WORK_LANDED = "All the work this design names has landed.";
+export const MARK_DONE = "Mark done";
+
+/**
+ * The goals a design names, each with where the ledger says it stands.
+ *
+ * They are shown in ledger order — the payload's own, which is the live goals
+ * first and the concluded ones after them — because that is the order every
+ * other listing of goals in this interface uses, and a design's head is a set
+ * rather than a sequence. A goal the ledger does not carry has no place in
+ * that order, so it keeps the place the head gave it, at the end, and counts
+ * as not done: the check verb refuses that record in the same breath, and
+ * calling its work landed would be inventing a conclusion.
+ */
+export function designWork(pane: Pane | null, goals: readonly string[]): DesignWork {
+  const placed = goals.map((id) => {
+    const at = pane === null ? -1 : pane.goals.findIndex((candidate) => candidate.id === id);
+    const goal = at < 0 || pane === null ? null : pane.goals[at];
+    const state = goal === undefined || goal === null ? "" : goal.state;
+    return {
+      at: at < 0 ? Number.MAX_SAFE_INTEGER : at,
+      goal: {
+        id,
+        name: goal === undefined || goal === null ? id : nameOf(goal),
+        to: goalPath(id),
+        state,
+        done: state === GOAL_DONE,
+      },
+    };
+  });
+  const named = [...placed].sort((left, right) => left.at - right.at).map((entry) => entry.goal);
+  const done = named.filter((goal) => goal.done).length;
+  return { goals: named, done, landed: named.length > 0 && done === named.length };
+}
+
+/**
+ * The one quiet clause a design carries about its work: how much of what it
+ * named has landed. A design that names no goals says nothing — a standing
+ * design is never nagged about work it never claimed — and the count reads as
+ * a whole once every goal is in.
+ */
+export function workLine(work: DesignWork): string {
+  const total = work.goals.length;
+  if (total === 0) {
+    return "";
+  }
+  const word = total === 1 ? "goal" : "goals";
+  return work.landed ? `all ${String(total)} ${word} done` : `${String(work.done)} of ${String(total)} ${word} done`;
+}
+
+/**
+ * What one record's row says beside its status. Only a design has one, and a
+ * design that is already done has none: its own status has said it, and a
+ * count beside that would be saying it twice.
+ */
+export function designNote(pane: Pane, record: ProjectRecord): string {
+  if (record.kind !== "design" || record.status === DESIGN_DONE) {
+    return "";
+  }
+  return workLine(designWork(pane, record.goals));
+}
+
+/**
+ * True when the design's page offers to mark it done: it named work, all of
+ * that work has landed, and the design does not already say so. The status
+ * stays a human word — this is the evidence put in front of them, and the act
+ * is still theirs.
+ */
+export function marksDone(work: DesignWork, status: string): boolean {
+  return work.landed && status !== DESIGN_DONE;
+}
+
 /** Every slice of a plan, each with the design that lists it. */
 export function slicesOf(plan: SlicePlan): { key: string; text: string; title: string; to: string }[] {
   return plan.designs.flatMap((design) =>
@@ -480,17 +594,18 @@ function designRuns(pane: Pane, goal: string | null): DesignRuns {
 function recordRows(pane: Pane, kind: string, goal: string | null): Row[] {
   return pane.records
     .filter((record) => record.kind === kind && selected(record.goals, goal))
-    .map((record) => rowOf(record, record.path));
+    .map((record) => rowOf(pane, record, record.path));
 }
 
 /** One row: what it is called, where it stands, and where it lives. */
-function rowOf(record: ProjectRecord, key: string): Row {
+function rowOf(pane: Pane, record: ProjectRecord, key: string): Row {
   return {
     key,
     title: record.title,
     to: documentPath(record.path),
     summary: record.summary,
     status: record.status,
+    note: designNote(pane, record),
     path: record.path,
   };
 }
@@ -505,6 +620,7 @@ function questionRows(pane: Pane, goal: string | null): Row[] {
       to: null,
       summary: "",
       status: question.status,
+      note: "",
       path: "",
     }));
 }

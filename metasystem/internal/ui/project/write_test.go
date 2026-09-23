@@ -590,3 +590,133 @@ func TestAnAdoptedProjectWritesInItsOwnHomes(t *testing.T) {
 	testutil.Expect(t, "the head names the goal",
 		strings.Contains(fileAt(t, roots, written.Path), "- Goals: reading-pane\n"), true)
 }
+
+/* ------------------------------------ the association, made by the machine -- */
+
+// A goal opened from a design's own page is named on that design by the
+// machine: the Goals line gains one id, after the ones the head already wrote,
+// and every other line of the head comes back byte for byte.
+func TestAddGoalAppendsToTheGoalsLineAndTouchesNothingElse(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	path := "metasystem/plans/designs/pane/reading.md"
+	before := fileAt(t, roots, path)
+
+	document, err := AddGoal(roots, "design-reading", "two-homes", readAt)
+
+	testutil.Require(t, "name the goal", err, nil)
+	testutil.Expect(t, "the answer is the document as it now reads", document.Path,
+		filepath.Join(roots.Checkout, filepath.FromSlash(path)))
+	testutil.Expect(t, "the head the reader is answered with",
+		document.Record.Goals, []string{"reading-pane", "two-homes"})
+	after := fileAt(t, roots, path)
+	testutil.Expect(t, "the Goals line is the one line that changed",
+		strings.Replace(after, "- Goals: reading-pane two-homes\n", "- Goals: reading-pane\n", 1), before)
+	testutil.Expect(t, "the head's other lines are byte-identical",
+		headLinesOf(after, "Goals"), headLinesOf(before, "Goals"))
+	testutil.Expect(t, "the line count is the same",
+		strings.Count(after, "\n"), strings.Count(before, "\n"))
+}
+
+// A head that declares no goals is given a Goals line where the grammar writes
+// one — under the three required keys — and nothing above or below it moves.
+func TestAddGoalWritesAGoalsLineWhereTheHeadDeclaresNone(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+	path := "metasystem/docs/decisions/0001-one-binary.md"
+	before := fileAt(t, roots, path)
+	testutil.Require(t, "the head declares no goals", strings.Contains(before, "Goals"), false)
+
+	document, err := AddGoal(roots, "decision-one-binary", "ledger-sync", readAt)
+
+	testutil.Require(t, "name the goal", err, nil)
+	testutil.Expect(t, "the head the reader is answered with", document.Record.Goals, []string{"ledger-sync"})
+	after := fileAt(t, roots, path)
+	testutil.Expect(t, "the line is written under Status", after,
+		strings.Replace(before, "- Status: accepted\n", "- Status: accepted\n- Goals: ledger-sync\n", 1))
+	testutil.Expect(t, "the head's other lines are byte-identical",
+		headLinesOf(after, "Goals"), headLinesOf(before, "Goals"))
+}
+
+// The four refusals, each leaving the file exactly as it was: a goal the
+// ledger does not carry, a goal the head already names, a chapter of a book,
+// and an id nothing declares.
+func TestAddGoalRefusals(t *testing.T) {
+	t.Parallel()
+
+	for _, refused := range []struct {
+		what, id, goal, path string
+		kind                 RefusalKind
+		message              string
+	}{
+		{
+			what: "a goal the ledger does not carry", id: "design-reading", goal: "logistics",
+			path: "metasystem/plans/designs/pane/reading.md", kind: RefusalBad,
+			message: `the goal "logistics" is not in the ledger`,
+		},
+		{
+			what: "a goal the head already names", id: "design-reading", goal: "reading-pane",
+			path: "metasystem/plans/designs/pane/reading.md", kind: RefusalExists,
+			message: "metasystem/plans/designs/pane/reading.md already names the goal reading-pane",
+		},
+		{
+			what: "a chapter of a book", id: "intent-index", goal: "ledger-sync",
+			path: "metasystem/docs/intent/index.md", kind: RefusalBad,
+			message: "an intent or doctrine record names goals",
+		},
+		{
+			what: "an id nothing declares", id: "design-nothing", goal: "ledger-sync",
+			path: "metasystem/plans/designs/pane/reading.md", kind: RefusalAbsent,
+			message: "no record declares the id design-nothing",
+		},
+	} {
+		t.Run(refused.what, func(t *testing.T) {
+			t.Parallel()
+			roots := selfHostedFixture(t)
+			seed(t, roots)
+			before := fileAt(t, roots, refused.path)
+
+			_, err := AddGoal(roots, refused.id, refused.goal, readAt)
+
+			refusal := refusalOf(t, err)
+			testutil.Expect(t, "the kind", refusal.Kind, refused.kind)
+			testutil.Expect(t, "the reason", refusal.Message, refused.message)
+			testutil.Expect(t, "nothing was written", fileAt(t, roots, refused.path), before)
+		})
+	}
+}
+
+// A concluded goal is a goal: the ledger carries it under records/goals, the
+// resolver validates a Goals line against both homes, and a design that names
+// it is a design whose work has landed.
+func TestAddGoalNamesAConcludedGoal(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	seed(t, roots)
+
+	document, err := AddGoal(roots, "design-summary", "two-homes", readAt)
+
+	testutil.Require(t, "name the concluded goal", err, nil)
+	testutil.Expect(t, "the head names both", document.Record.Goals, []string{"ledger-sync", "two-homes"})
+	pane, err := ReadPane(roots, readAt)
+	testutil.Require(t, "read the pane back", err, nil)
+	testutil.Expect(t, "the project refuses nothing", pane.Problems, []Problem{})
+}
+
+// headLinesOf is a record's head as its lines, without the one named: what
+// "every other line is byte-identical" is asserted over.
+func headLinesOf(text, without string) []string {
+	kept := []string{}
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "- "+without+":") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return kept
+}
