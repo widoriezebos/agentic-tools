@@ -1,62 +1,162 @@
 /*
- * Overview: two columns of blocks at desk width, one at phone width.
+ * Overview: a strip of numbers across the top, then two columns of blocks at
+ * desk width and one at phone width.
  *
- * The blocks are the briefing's house style — a title, the term that explains
- * it, and rows under it — because they are the same kind of object and a
- * second style for them would teach a human two vocabularies for one page.
- * What is different is the layout: the briefing shows one section at a time
- * behind a strip of tabs, and this page shows all five at once, because the
- * whole point of it is the one screen.
+ * The page is read by number and navigated by number, so the figures are the
+ * largest thing on it and everything under them is one line per thing: a row
+ * is a flex line with a title that ellipsises and a time or a count pinned to
+ * the right in the muted mono face, and the row itself is the link rather than
+ * a blue sentence inside it. Blocks are told apart by the space between them
+ * and by their eyebrows — there is no box around each one, because five boxes
+ * on one screen is five borders competing with the words inside them.
  *
- * Every colour is a token. Nothing here animates, and nothing moves on its own.
+ * Every colour is a token. Nothing here animates, and nothing moves on its own:
+ * the one thing that changes is the disclosure chevron, which turns when its
+ * details element is open and does not travel to get there.
  */
 
 .ms-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1100px;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------ the glance -- */
+
+/*
+ * Six tiles across the top. Three per row at phone width is the design's own
+ * count, and auto-fit with a floor of 140 reaches it: a 400px viewport less
+ * the work area's padding leaves room for three and not four.
+ */
+.ms-overview-glance {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-overview-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+  color: var(--ms-text-2);
+  text-decoration: none;
+}
+
+.ms-overview-tile:hover {
+  border-color: var(--ms-border-strong);
+}
+
+/* The number, and the one word that stands where a number would. Tabular
+   figures keep six tiles reading as a row of numbers rather than six
+   differently wide words. */
+.ms-overview-figure {
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ms-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The tile that answers in a word rather than in a figure. It is smaller than
+   a number because a word is longer than one, and a tile a human compares by
+   eye must not be the one tile whose answer is cut off. */
+.ms-overview-figure--word {
+  font-size: 19px;
+  line-height: 32px;
+}
+
+.ms-overview-figure-label {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * What a figure or a dot means, as the design names it rather than as a
+ * colour. The marker family is this palette's only warning: its foreground is
+ * the one of the pair that carries text, and the marker itself is the dot,
+ * which is non-text and wants the more saturated of the two.
+ */
+.ms-overview-figure.ms-overview-tone-accent {
+  color: var(--ms-accent);
+}
+
+.ms-overview-figure.ms-overview-tone-warn {
+  color: var(--ms-marker-fg);
+}
+
+.ms-overview-figure.ms-overview-tone-ok {
+  color: var(--ms-ok-fg);
+}
+
+.ms-overview-figure.ms-overview-tone-bad {
+  color: var(--ms-danger);
+}
+
+/* ------------------------------------------------------------- the blocks -- */
+
+.ms-overview-columns {
   display: grid;
   grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
   gap: 24px 32px;
   align-items: start;
-  max-width: 1100px;
+  min-width: 0;
 }
 
 .ms-overview-column {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
   min-width: 0;
 }
 
 .ms-overview-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
-  padding: 16px 20px;
-  border-radius: 8px;
-  border: 1px solid var(--ms-border);
-  background: var(--ms-surface);
+  scroll-margin-top: 16px;
 }
 
 .ms-overview-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
+/* The eyebrow: the same small capitals the reading view gives the name of a
+   group of facts, so a block's title is read as a label and not as a heading
+   competing with the numbers above it. */
 .ms-overview-title {
   margin: 0;
-  font-size: 15px;
-  line-height: 22px;
+  font-size: 11px;
+  line-height: 16px;
   font-weight: 600;
-  color: var(--ms-text);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
 }
 
-/* The window line under "Since your last visit", and anything else that
+/* The window line beside "Since your last visit", and anything else that
    qualifies a block's title rather than being one of its rows. */
 .ms-overview-note {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 16px;
   color: var(--ms-text-3);
 }
@@ -66,28 +166,34 @@
   font-size: 11px;
   line-height: 16px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--ms-text-3);
 }
 
 /* The calm sentence: the good outcome, said plainly and not as an absence. */
 .ms-overview-calm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
   font-size: 13px;
   line-height: 20px;
   color: var(--ms-text-2);
 }
 
+.ms-overview-calm-icon {
+  flex: none;
+  color: var(--ms-ok);
+}
+
 /* One part of a block that has nothing in it, where the block as a whole does. */
 .ms-overview-none {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 18px;
   color: var(--ms-text-3);
 }
 
-/* A blocker's words are a fact about the work, not an error on this page. */
+/* A failure's words are the server's, and they wrap rather than clip. */
 .ms-overview-reason {
   margin: 0 0 12px;
   font-size: 13px;
@@ -96,120 +202,498 @@
   overflow-wrap: anywhere;
 }
 
-.ms-overview-rows {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
+/* ---------------------------------------------------------------- a row -- */
 
+/*
+ * One line, and the whole of it is the link.
+ *
+ * The negative margin lets the pressable area reach past the text without
+ * indenting the column: a row's title starts where the block's title starts,
+ * and the highlight it takes on hover is wider than the words.
+ */
 .ms-overview-row {
-  min-width: 0;
-}
-
-.ms-overview-row-head {
-  margin: 0;
-  font-size: 13px;
-  line-height: 20px;
-  font-weight: 500;
-}
-
-/* The intent index's first sentence, under the count it belongs to. */
-.ms-overview-lede {
-  margin: 2px 0 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--ms-text-2);
-}
-
-.ms-overview-items {
-  margin: 2px 0 0;
-  padding: 0;
-  list-style: none;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* One item: its name, and the one fact beside it, on a line that wraps rather
-   than one that clips — a design's title is prose and a seat is not. */
-.ms-overview-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 8px;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
+  margin: 0 -6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: var(--ms-text-2);
   font-size: 12px;
   line-height: 18px;
-  color: var(--ms-text-2);
-}
-
-.ms-overview-item-note {
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--ms-text-3);
-}
-
-.ms-overview-line {
-  margin: 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--ms-text-2);
-}
-
-.ms-overview-reason,
-.ms-overview-line .ms-overview-reason {
-  overflow-wrap: anywhere;
-}
-
-/* The lane strip: every count a way onto the board. It wraps at a narrow
-   width rather than scrolling, because six short links are a paragraph. */
-.ms-overview-strip {
-  margin: 6px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--ms-border);
-  font-size: 12px;
-  line-height: 20px;
-  color: var(--ms-text-3);
-}
-
-.ms-overview-strip-rule {
-  color: var(--ms-text-3);
-}
-
-.ms-overview-link {
-  color: var(--ms-accent);
+  text-align: left;
   text-decoration: none;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
 }
 
-.ms-overview-link:hover,
-.ms-overview-link:focus-visible {
-  text-decoration: underline;
+.ms-overview-row:hover {
+  background: var(--ms-surface-2);
+  color: var(--ms-text);
 }
 
 /*
- * An act, where a human is already looking: the steward's messages and the
- * sign-in sheet are a panel and a sheet rather than addresses, so they are
- * buttons, and they read as links because in a row of links a button would be
- * a second kind of object saying the same kind of thing.
+ * A button shrinks to fit what is written in it, which is the one thing a row
+ * must not do: a row is as wide as its column and its title is what gives way.
+ * The extra twelve pixels are the negative margin above, given back.
  */
-.ms-overview-act {
+button.ms-overview-row {
+  width: calc(100% + 12px);
+  box-sizing: border-box;
+}
+
+/* A row that opens nothing is not pressable and does not pretend to be. */
+span.ms-overview-row {
+  cursor: default;
+}
+
+span.ms-overview-row:hover {
+  background: none;
+  color: var(--ms-text-2);
+}
+
+/* The one thing on the row that may be long, and the only one that gives way. */
+.ms-overview-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The instant at the head of a timeline row: the same width on every row, so
+   the chips beside them line up into a column. */
+.ms-overview-row-when {
+  flex: none;
+  min-width: 42px;
+  font-size: 11px;
+  color: var(--ms-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The count or the time at the end of a row, right where a reader's eye
+   returns to. It never takes more than its share of a narrow row. */
+.ms-overview-row-tail {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ms-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.ms-overview-lines {
+  margin: 0;
   padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ms-overview-line {
+  min-width: 0;
+}
+
+/* The way through to the rest of a capped list, and the way onto the board. */
+.ms-overview-more {
+  display: inline-block;
+  padding: 3px 0;
   border: 0;
   background: none;
-  color: var(--ms-accent);
   font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-accent);
   text-align: left;
   text-decoration: none;
   cursor: pointer;
 }
 
-.ms-overview-act:hover,
-.ms-overview-act:focus-visible {
+.ms-overview-more:hover,
+.ms-overview-more:focus-visible {
   text-decoration: underline;
 }
+
+.ms-overview-foot {
+  margin: 2px 0 0;
+}
+
+/* ----------------------------------------------------------- needs you -- */
+
+.ms-overview-kinds {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ms-overview-kind {
+  min-width: 0;
+}
+
+.ms-overview-disclosure {
+  min-width: 0;
+}
+
+/*
+ * A kind is a native disclosure: the browser owns the open state and tells a
+ * screen reader about it, and nothing here has to be kept in step with it. The
+ * default marker is removed in both spellings, because the chevron that
+ * replaces it is at the other end of the row.
+ */
+.ms-overview-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-text);
+}
+
+.ms-overview-summary::-webkit-details-marker {
+  display: none;
+}
+
+.ms-overview-summary:hover {
+  background: var(--ms-surface-2);
+}
+
+.ms-overview-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  background: var(--ms-surface-3);
+  color: var(--ms-text);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ms-overview-kind-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-overview-chevron {
+  flex: none;
+  color: var(--ms-text-3);
+}
+
+/* Open is a quarter turn and nothing else: no transition, so there is nothing
+   in flight and nothing to interrupt. */
+.ms-overview-disclosure[open] .ms-overview-chevron {
+  transform: rotate(90deg);
+}
+
+/* The items under an opened kind stand in from its badge, so the list reads as
+   belonging to the row above it. */
+.ms-overview-disclosure .ms-overview-lines {
+  padding-left: 30px;
+}
+
+/* Signing in is an act rather than a place, so it is a button — and it reads
+   like the rows around it, because in a list of things to do a second kind of
+   object saying the same kind of thing is noise. */
+.ms-overview-signin {
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--ms-accent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ms-overview-signin:hover {
+  background: var(--ms-surface-2);
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------- what changed -- */
+
+/* The four counts, read as a shape rather than as a sentence. */
+.ms-overview-counts {
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------- work -- */
+
+.ms-overview-cards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/*
+ * A claimed goal is the one thing on this page with two lines, because it is
+ * the one thing with two facts: what is being worked on, and by whom since
+ * when. The card is what keeps the pair together in a column of single lines.
+ */
+.ms-overview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+}
+
+.ms-overview-card .ms-overview-row {
+  margin: -3px -6px;
+}
+
+.ms-overview-card-id {
+  flex: none;
+  font-size: 11px;
+  color: var(--ms-text-3);
+}
+
+.ms-overview-card-facts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+.ms-overview-card-since {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ms-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Next up is a rank, so it is numbered, and the numbers are the list's own
+ * markers. The list stays a block: a flex container blockifies its children
+ * and the markers go with them.
+ */
+.ms-overview-ranked {
+  margin: 0;
+  padding: 0 0 0 22px;
+  min-width: 0;
+  /* The reset takes every list's markers away; this one wants its own back. */
+  list-style: decimal;
+}
+
+.ms-overview-ranked > li::marker {
+  color: var(--ms-text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* What is held is one line, and the blocker's words are its tooltip. */
+.ms-overview-held {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ms-text-3);
+}
+
+.ms-overview-held-rule {
+  color: var(--ms-text-3);
+}
+
+.ms-overview-held-goal {
+  color: var(--ms-text-2);
+  text-decoration: none;
+}
+
+.ms-overview-held-goal:hover,
+.ms-overview-held-goal:focus-visible {
+  color: var(--ms-text);
+  text-decoration: underline;
+}
+
+/* ---------------------------------------------------------------- pills -- */
+
+.ms-overview-pills {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms-overview-pill-item {
+  min-width: 0;
+}
+
+.ms-overview-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+  color: var(--ms-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.ms-overview-pill--link:hover {
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text);
+}
+
+/* Two or three words, and the one part of a pill that gives way. */
+.ms-overview-pill-words {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ms-overview-pill-count {
+  color: var(--ms-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The dot says what state the pill is in. It is non-text, so it takes the more
+ * saturated half of each pair; a lane has no colour of its own in this build,
+ * so its dot is the muted token and the lane's name is what tells it apart.
+ */
+.ms-overview-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ms-text-3);
+}
+
+.ms-overview-dot.ms-overview-tone-accent {
+  background: var(--ms-accent);
+}
+
+.ms-overview-dot.ms-overview-tone-ok {
+  background: var(--ms-ok);
+}
+
+.ms-overview-dot.ms-overview-tone-warn {
+  background: var(--ms-marker);
+}
+
+.ms-overview-dot.ms-overview-tone-bad {
+  background: var(--ms-danger);
+}
+
+/* --------------------------------------------------------------- memory -- */
+
+/*
+ * Five tiles. They are laid out by what fits rather than by a count, so the
+ * grid is the same rule in the narrow right-hand column, on a stacked page,
+ * and on a phone: as many as will go, each one no narrower than its own word.
+ */
+.ms-overview-memory {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-overview-memory-item {
+  min-width: 0;
+}
+
+.ms-overview-memory-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  height: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ms-border);
+  background: var(--ms-surface);
+  text-decoration: none;
+}
+
+.ms-overview-memory-tile:hover {
+  border-color: var(--ms-border-strong);
+}
+
+.ms-overview-memory-icon {
+  color: var(--ms-text-3);
+}
+
+.ms-overview-memory-figure {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ms-text);
+}
+
+.ms-overview-memory-word {
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--ms-text-2);
+}
+
+.ms-overview-memory-note {
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--ms-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------ the widths -- */
 
 /*
  * One column below the desk. The order is the document's own — what needs you,
@@ -217,18 +701,30 @@
  * bottom, so the stacked page reads the way the two-column one is read.
  */
 @media (max-width: 1099px) {
-  .ms-overview {
+  .ms-overview-columns {
     grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
+    gap: 28px;
   }
 }
 
-/* A row is one thing, not a paragraph: a title longer than two lines is cut,
-   and the whole of it is one click away. */
-.ms-overview-item .ms-overview-link,
-.ms-overview-row .ms-overview-link {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+/* Three tiles per row below the tablet, which is the design's own count at
+   phone width and the widest a figure and its label read well in. */
+@media (max-width: 780px) {
+  .ms-overview-glance {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ms-overview-figure {
+    font-size: 22px;
+    line-height: 28px;
+  }
+
+  .ms-overview-figure--word {
+    font-size: 16px;
+    line-height: 28px;
+  }
+
+  .ms-overview-tile {
+    padding: 10px 12px;
+  }
 }

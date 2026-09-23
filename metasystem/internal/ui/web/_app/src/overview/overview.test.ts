@@ -1,23 +1,29 @@
 import { describe, expect, it } from "vitest";
 
-import type { Group } from "./api";
+import type { Changed, Group, Health, Item, Page } from "./api";
 import {
+  blockAnchor,
   blockOrder,
+  changedCounts,
   columns,
   destinationFor,
   DONE_TODAY,
-  healthLine,
+  glance,
+  healthPills,
   laneName,
   laneStrip,
   moreLine,
+  needsKinds,
   plural,
-  progressLine,
+  seeAll,
+  timeline,
   whenLine,
   windowLine,
 } from "./overview";
 
 /**
- * The sentences the Overview says, and the destinations it offers.
+ * The numbers the Overview is read by, the sentences it says, and the
+ * destinations it offers.
  *
  * Every instant below is built in the machine's own time zone, because that is
  * what a human reads: a fixture written as a UTC string would say a different
@@ -46,6 +52,309 @@ function group(count: number, shown: number): Group {
     })),
   };
 }
+
+function item(id: string, title: string, note: string, when: string, kind = "goal"): Item {
+  return { id, title, note, at: when, where: { kind, id } };
+}
+
+function noChange(): Changed {
+  return {
+    concluded: { count: 0, items: [] },
+    moved: { count: 0, items: [] },
+    records: { count: 0, items: [] },
+    messages: 0,
+    total: 0,
+  };
+}
+
+function page(over: Partial<Page> = {}): Page {
+  return {
+    schemaVersion: 1,
+    readAt: at(0, 14, 37),
+    since: at(1, 18, 2),
+    first: false,
+    needsYou: {
+      approvals: { count: 0, items: [] },
+      questions: { count: 0, items: [] },
+      drafts: { count: 0, items: [] },
+      designs: { count: 0, items: [] },
+      alerts: { count: 0, items: [] },
+      signIn: false,
+      total: 0,
+    },
+    changed: noChange(),
+    work: {
+      inProgress: [],
+      next: [],
+      waiting: { count: 0, id: "", title: "", reason: "", since: "" },
+      lanes: [],
+    },
+    memory: {
+      intent: { chapters: 0, summary: "" },
+      doctrine: { chapters: 0, summary: "" },
+      decisions: { total: 0, drafts: 0 },
+      designs: { total: 0, done: 0, inFlight: 0, progress: [] },
+      questions: 0,
+    },
+    health: { ok: true, syncedAt: at(0, 14, 36), problems: { count: 0, items: [] } },
+    ...over,
+  };
+}
+
+function health(problems: Item[], syncedAt: string): Health {
+  return {
+    ok: problems.length === 0,
+    syncedAt,
+    problems: { count: problems.length, items: problems },
+  };
+}
+
+describe("the glance strip", () => {
+  const busy = page({
+    needsYou: { ...page().needsYou, total: 4 },
+    changed: { ...noChange(), messages: 3, total: 9 },
+    work: {
+      inProgress: [{ id: "g1-s27", title: "Overview", seat: { machine: "m1", lineage: "e" }, phase: "build", at: "" }],
+      next: [item("g1-s28", "Next", "ready", "")],
+      waiting: { count: 2, id: "g1-s9", title: "Held", reason: "the fence", since: at(3, 9, 0) },
+      lanes: [
+        { id: "to-do", count: 6 },
+        { id: "ready", count: 11 },
+        { id: "in-progress", count: 1 },
+        { id: "review", count: 0 },
+        { id: "waiting", count: 2 },
+        { id: DONE_TODAY, count: 3 },
+      ],
+    },
+  });
+
+  it("is the six numbers the page is read by, in the design's order", () => {
+    expect(glance(busy).map((tile) => [tile.label, tile.value])).toEqual([
+      ["Needs you", "4"],
+      ["In progress", "1"],
+      ["Next up", "11"],
+      ["Waiting", "2"],
+      ["Since your visit", "9"],
+      ["Health", "ok"],
+    ]);
+  });
+
+  // The server sends three of Ready for Work to list and the lane's whole
+  // count to count by. A tile that said "1" beside a lane of eleven would be
+  // counting the list instead of the work.
+  it("counts Next up by the lane and not by the three goals it lists", () => {
+    expect(busy.work.next.length).toBe(1);
+    expect(glance(busy)[2].value).toBe("11");
+  });
+
+  it("marks what needs a human only while something does", () => {
+    expect(glance(busy)[0].tone).toBe("accent");
+    expect(glance(page())[0].tone).toBe("plain");
+    expect(glance(page())[0].value).toBe("0");
+  });
+
+  it("says health in a word, and warns only when it is not ok", () => {
+    expect(glance(page())[5]).toMatchObject({ value: "ok", tone: "plain", word: true });
+    const unwell = page({ health: health([item("", "the fetch failed", "ledger", "", "backlog")], at(0, 12, 0)) });
+    expect(glance(unwell)[5]).toMatchObject({ value: "attention", tone: "warn", word: true });
+    // Health is the only one of the six that answers in a word.
+    expect(glance(busy).filter((tile) => tile.word).map((tile) => tile.id)).toEqual(["health"]);
+  });
+
+  it("lands three tiles on this page and three on the board", () => {
+    const tiles = glance(busy);
+    expect(tiles.filter((tile) => tile.anchor).map((tile) => tile.to)).toEqual([
+      `#${blockAnchor("needs-you")}`,
+      `#${blockAnchor("changed")}`,
+      `#${blockAnchor("health")}`,
+    ]);
+    expect(tiles.filter((tile) => !tile.anchor).map((tile) => tile.to)).toEqual(["/backlog", "/backlog", "/backlog"]);
+  });
+
+  it("anchors every block it names on the block's own id", () => {
+    for (const id of blockOrder) {
+      expect(blockAnchor(id)).toBe(`overview-${id}`);
+    }
+  });
+});
+
+describe("what needs a human", () => {
+  it("is one row per kind, in the design's order, and only where there is one", () => {
+    const needs = {
+      ...page().needsYou,
+      approvals: group(2, 2),
+      drafts: group(1, 1),
+      alerts: group(5, 3),
+      total: 8,
+    };
+    expect(needsKinds(needs).map((kind) => [kind.id, kind.group.count])).toEqual([
+      ["approvals", 2],
+      ["drafts", 1],
+      ["alerts", 5],
+    ]);
+  });
+
+  it("sends every kind but the steward's messages to an address", () => {
+    const needs = {
+      ...page().needsYou,
+      approvals: group(1, 1),
+      questions: group(1, 1),
+      drafts: group(1, 1),
+      designs: group(1, 1),
+      alerts: group(1, 1),
+      total: 5,
+    };
+    expect(needsKinds(needs).map((kind) => kind.to)).toEqual([
+      "/backlog",
+      "/project/questions",
+      "/project/designs",
+      "/project/designs",
+      null,
+    ]);
+  });
+
+  it("is nothing at all when nothing is waiting", () => {
+    expect(needsKinds(page().needsYou)).toEqual([]);
+  });
+});
+
+describe("the timeline", () => {
+  const changed: Changed = {
+    concluded: { count: 1, items: [item("g1-s20", "The board reads the ledger", "shipped it", at(0, 11, 0))] },
+    moved: {
+      count: 3,
+      items: [
+        item("g1-s27", "The Overview at a glance", "claimed", at(0, 14, 10)),
+        item("g1-s28", "The next one", "", at(0, 9, 30)),
+      ],
+    },
+    records: {
+      count: 2,
+      items: [
+        item("plans/a.md", "A design", "design", at(0, 13, 0), "document"),
+        item("plans/b.md", "A decision", "decision", at(1, 20, 0), "document"),
+      ],
+    },
+    messages: 4,
+    total: 10,
+  };
+
+  it("merges the three lists newest first", () => {
+    expect(timeline(changed).map((entry) => entry.title)).toEqual([
+      "The Overview at a glance",
+      "A design",
+      "The board reads the ledger",
+      "The next one",
+      "A decision",
+    ]);
+  });
+
+  it("says what happened rather than which list it came from", () => {
+    expect(timeline(changed).map((entry) => entry.chip)).toEqual([
+      "claimed",
+      "design",
+      "landed",
+      "moved",
+      "decision",
+    ]);
+  });
+
+  it("caps the list, and an entry nothing dated never leads it", () => {
+    expect(timeline(changed, 2).map((entry) => entry.title)).toEqual(["The Overview at a glance", "A design"]);
+    const undated: Changed = {
+      ...noChange(),
+      moved: { count: 2, items: [item("g1-a", "Undated", "", ""), item("g1-b", "Dated", "", at(0, 8, 0))] },
+      total: 2,
+    };
+    expect(timeline(undated).map((entry) => entry.title)).toEqual(["Dated", "Undated"]);
+  });
+
+  it("counts every kind, zero or not, in the same four places", () => {
+    expect(changedCounts(changed)).toBe("3 moved · 1 landed · 2 records · 4 messages");
+    expect(changedCounts(noChange())).toBe("0 moved · 0 landed · 0 records · 0 messages");
+  });
+
+  it("offers the board while a goal change is hidden, and the records after that", () => {
+    expect(seeAll(changed, timeline(changed))).toBe("/backlog");
+    const records: Changed = {
+      ...noChange(),
+      records: { count: 9, items: [item("plans/a.md", "A design", "design", at(0, 13, 0), "document")] },
+      total: 9,
+    };
+    expect(seeAll(records, timeline(records))).toBe("/project/designs");
+  });
+
+  it("offers nothing where the timeline is showing all of it", () => {
+    const small: Changed = {
+      ...noChange(),
+      concluded: { count: 1, items: [item("g1-s20", "Landed", "", at(0, 11, 0))] },
+      total: 1,
+    };
+    expect(seeAll(small, timeline(small))).toBeNull();
+  });
+});
+
+describe("the health pills", () => {
+  it("says the three sources in the same three places when all is well", () => {
+    expect(healthPills(health([], at(0, 14, 36)), now).map((pill) => [pill.id, pill.words, pill.tone])).toEqual([
+      ["ledger", "synced 14:36", "ok"],
+      ["records", "check clean", "ok"],
+      ["deliveries", "all delivered", "ok"],
+    ]);
+  });
+
+  it("offers nowhere to go from a pill that is fine", () => {
+    expect(healthPills(health([], at(0, 14, 36)), now).every((pill) => pill.where === null)).toBe(true);
+  });
+
+  it("says a ledger that has fallen behind as the gap itself", () => {
+    const stale = health(
+      [item("", "the accepted ledger is older than 30 minutes and has not been advanced", "ledger", "", "backlog")],
+      at(0, 14, 7),
+    );
+    expect(healthPills(stale, now)[0]).toMatchObject({ words: "30 minutes behind", tone: "warn" });
+    const older = health([item("", "the accepted ledger is not at the canonical tip", "ledger", "", "backlog")], at(0, 11, 22));
+    expect(healthPills(older, now)[0].words).toBe("3 hours 15 minutes behind");
+  });
+
+  it("says a fetch that did not happen as a failure rather than as a gap", () => {
+    const failed = health(
+      [item("", "the last fetch of the canonical branch did not succeed", "ledger", "", "backlog")],
+      at(0, 9, 0),
+    );
+    expect(healthPills(failed, now)[0]).toMatchObject({ words: "fetch failed", tone: "bad" });
+    expect(healthPills(failed, now)[0].where).toEqual({ kind: "backlog", id: "" });
+  });
+
+  it("says it is out of date rather than inventing a gap it cannot measure", () => {
+    const undated = health([item("", "the accepted ledger is not at the canonical tip", "ledger", "", "backlog")], "");
+    expect(healthPills(undated, now)[0].words).toBe("out of date");
+  });
+
+  it("counts the records the check refused, and opens the first of them", () => {
+    const refused = health(
+      [
+        item("plans/a.md", "a heading nothing follows", "plans/a.md:12", "", "document"),
+        item("plans/b.md", "a goal that is not a goal", "plans/b.md:3", "", "document"),
+      ],
+      at(0, 14, 36),
+    );
+    const pills = healthPills(refused, now);
+    expect(pills[1]).toMatchObject({ words: "2 refusals", tone: "bad" });
+    expect(pills[1].where).toEqual({ kind: "document", id: "plans/a.md" });
+    // A refusal is not the ledger's problem, and the ledger pill still says
+    // the ledger: the three questions are asked separately.
+    expect(pills[0].words).toBe("synced 14:36");
+  });
+
+  it("counts the messages that reached nobody, and opens the first of them", () => {
+    const lost = health([item("n-4", "the channel refused it", "the steward's words", at(0, 13, 0), "notification")], at(0, 14, 36));
+    const pills = healthPills(lost, now);
+    expect(pills[2]).toMatchObject({ words: "1 undelivered", tone: "bad" });
+    expect(pills[2].where).toEqual({ kind: "notification", id: "n-4" });
+    expect(pills[1].words).toBe("check clean");
+  });
+});
 
 describe("the window line", () => {
   it("says the day it looked back over on a first visit", () => {
@@ -87,14 +396,6 @@ describe("when a row's fact happened", () => {
   it("says nothing where nothing recorded an instant", () => {
     expect(whenLine("", now)).toBe("");
     expect(whenLine("the other day", now)).toBe("");
-  });
-});
-
-describe("a design in flight", () => {
-  it("says how many of the goals it names have landed", () => {
-    expect(progressLine(2, 3)).toBe("2 of 3 goals done");
-    expect(progressLine(0, 1)).toBe("0 of 1 goal done");
-    expect(progressLine(4, 4)).toBe("4 of 4 goals done");
   });
 });
 
@@ -192,15 +493,5 @@ describe("where a row opens", () => {
   it("offers nothing for a reference this build has no surface for", () => {
     expect(destinationFor({ kind: "seat", id: "m1e" })).toEqual({ kind: "none" });
     expect(destinationFor({ kind: "goal", id: "" })).toEqual({ kind: "none" });
-  });
-});
-
-describe("the calm health line", () => {
-  it("names when the ledger last caught up and that the records answered", () => {
-    expect(healthLine(at(0, 14, 36))).toBe("Ledger synced 14:36 · records check clean");
-  });
-
-  it("says the instant is not known rather than an epoch", () => {
-    expect(healthLine("")).toBe("Ledger synced unknown · records check clean");
   });
 });
