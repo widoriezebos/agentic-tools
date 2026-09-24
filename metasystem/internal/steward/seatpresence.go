@@ -53,15 +53,22 @@ func seatPresenceNamespace(repoRoot string) string {
 // and the tick continues.
 func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int, now time.Time) SeatPresenceReport {
 	report := SeatPresenceReport{}
-	state, _, stateErr := seat.LoadPublicationState(repoRoot)
-	if stateErr != nil {
-		// A torn publication state is not a reason to stop publishing; the
-		// state is rewritten below and health says unknown until it is.
-		state = seat.PublicationState{}
+	// The manual verb calls this same component with no runner context. That
+	// is settled FIRST and before anything that can write publication state,
+	// because a command process must not be able to move the health verdict
+	// of the machine whose runner is the only lawful publisher.
+	manual := runner == nil
+	if manual {
+		report = seatPresenceSkip(report, seat.SkipManualTick)
 	}
 	transport, err := seat.NewGit(repoRoot)
 	if err != nil {
-		return seatPresenceFailed(repoRoot, state, report, "the goal endpoint is unreadable: "+err.Error(), now)
+		detail := "the goal endpoint is unreadable: " + err.Error()
+		if manual {
+			report.Detail = detail
+			return report
+		}
+		return seatPresenceFailed(repoRoot, report, detail, now)
 	}
 
 	var problems []string
@@ -79,10 +86,11 @@ func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int
 	machine, enrolled := seat.Machine(repoRoot)
 	var mine *seat.Record
 	switch {
+	case manual:
+		// Already settled above; a manual tick reads and notices, and
+		// publishes nothing.
 	case !enrolled:
 		report = seatPresenceSkip(report, seat.SkipNoNickname)
-	case runner == nil:
-		report = seatPresenceSkip(report, seat.SkipManualTick)
 	case generation < 1:
 		report = seatPresenceSkip(report, seat.SkipUnarmed)
 	default:
@@ -103,7 +111,13 @@ func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int
 	}
 
 	// A manual tick writes no publication state and changes no verdict.
-	if report.Reason != seat.SkipManualTick {
+	if !manual {
+		state, _, stateErr := seat.LoadPublicationState(repoRoot)
+		if stateErr != nil {
+			// A torn publication state is not a reason to stop publishing:
+			// it is rewritten here and health says unknown until it is.
+			state = seat.PublicationState{}
+		}
 		switch report.Outcome {
 		case seat.OutcomePublished:
 			state = seat.RecordPublished(state, machine, seat.Rung(report.Rung), seatTickSeconds(runner), report.Detail, now)
@@ -137,8 +151,9 @@ func seatPresenceSkip(report SeatPresenceReport, reason string) SeatPresenceRepo
 	return report
 }
 
-func seatPresenceFailed(repoRoot string, state seat.PublicationState, report SeatPresenceReport, detail string, now time.Time) SeatPresenceReport {
+func seatPresenceFailed(repoRoot string, report SeatPresenceReport, detail string, now time.Time) SeatPresenceReport {
 	report.Outcome, report.Detail = seat.OutcomeFailed, detail
+	state, _, _ := seat.LoadPublicationState(repoRoot)
 	state = seat.RecordFailed(state, detail, now)
 	if err := seat.SavePublicationState(repoRoot, state); err != nil {
 		report.Detail += "; publication state unwritten: " + err.Error()

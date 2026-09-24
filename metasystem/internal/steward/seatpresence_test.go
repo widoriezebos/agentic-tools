@@ -30,16 +30,14 @@ func TestATickWithNoRunnerContextPublishesNoPresence(t *testing.T) {
 	t.Parallel()
 	root := seatPresenceRoot(t)
 	report := RunSeatPresence(root, nil, 4, seatFixtureClock)
-	if report.Outcome != seat.OutcomeSkipped {
-		t.Fatalf("report = %+v; want a skipped outcome", report)
+	if report.Outcome != seat.OutcomeSkipped || report.Reason != seat.SkipManualTick {
+		t.Fatalf("report = %+v; want the manual-tick skip", report)
 	}
-	if report.Reason != seat.SkipNoNickname && report.Reason != seat.SkipManualTick {
-		t.Fatalf("report reason = %q", report.Reason)
-	}
-	// A manual tick writes no publication state and so changes no verdict.
+	// A manual tick writes no publication state and so changes no verdict,
+	// whatever else about the checkout would have stopped a publish.
 	if _, readable, err := seat.LoadPublicationState(root); err != nil {
 		t.Fatal(err)
-	} else if readable && report.Reason == seat.SkipManualTick {
+	} else if readable {
 		t.Fatal("a manual tick wrote publication state")
 	}
 }
