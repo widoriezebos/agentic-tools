@@ -24,7 +24,7 @@ func TestEveryWriteRouteIsAnActWithAHand(t *testing.T) {
 		routeCreateRecord, routeRecordStatus, routeRecordGoals, routeAskQuestion,
 		routeQuestionStatus, routeEditDocument, routePreviewSource,
 		routeSignIn, routeSignOut,
-		routeApprove, routeWithdraw, routePriority, routeOpen,
+		routeApprove, routeWithdraw, routePriority, routeOpen, routeBlock, routeUnblock,
 		routePartnerTurn, routePartnerStop, routePartnerSeeing,
 	}
 	described := map[string]manifest.Act{}
@@ -50,7 +50,7 @@ func TestTheLedgerActsNameTheHandMayActRequires(t *testing.T) {
 	t.Parallel()
 	for _, act := range Acts() {
 		switch act.ID {
-		case routeApprove, routeWithdraw, routePriority, routeOpen:
+		case routeApprove, routeWithdraw, routePriority, routeOpen, routeBlock, routeUnblock:
 			testutil.Expect(t, act.ID+" needs a signed-in human",
 				strings.Contains(act.Requires, "a signed-in human"), true)
 			testutil.Expect(t, act.ID+" names the one exception",

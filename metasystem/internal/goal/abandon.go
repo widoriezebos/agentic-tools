@@ -526,15 +526,18 @@ func repairAbandonedBlockerPark(tree *TreeGoals, file *GoalFile, repointedTo str
 	if file.State != StateParked || file.Parked == nil || file.Parked.Blocker == "" {
 		return false
 	}
+	// The marker moves to an edge that is still open; the reason is not the
+	// marker but the whole of what the goal is still waiting for, so it is
+	// written from the list rather than from the one name chosen here.
 	if repointedTo != "" && contains(file.Blocked, repointedTo) && depState(tree, repointedTo) != StateDone {
 		file.Parked.Blocker = repointedTo
-		file.Parked.Because = "blocked by " + repointedTo + "; returns when it is done"
+		refreshParkReason(tree, file)
 		return false
 	}
 	for _, blocker := range file.Blocked {
 		if depState(tree, blocker) != StateDone {
 			file.Parked.Blocker = blocker
-			file.Parked.Because = "blocked by " + blocker + "; returns when it is done"
+			refreshParkReason(tree, file)
 			return false
 		}
 	}

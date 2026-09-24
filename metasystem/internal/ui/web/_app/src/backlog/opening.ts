@@ -39,8 +39,15 @@ export type Intake = {
   why: string;
   /** Space- or comma-separated, as typed; the empty string is no labels. */
   labels: string;
-  /** The goal this one unblocks, where a human is opening a blocker. */
-  blocks: string;
+  /**
+   * The goals this one unblocks: each of them parks until this one is done.
+   * It is a list because the relation is one — one defect can hold several
+   * goals up — and a field that took one id would have been asking a human to
+   * open the same goal twice.
+   */
+  blocks: string[];
+  /** The goals this one waits for: it parks until every one of them is done. */
+  blockedBy: string[];
 };
 
 export const emptyIntake: Intake = {
@@ -50,7 +57,8 @@ export const emptyIntake: Intake = {
   tier: "",
   why: "",
   labels: "",
-  blocks: "",
+  blocks: [],
+  blockedBy: [],
 };
 
 /**
@@ -101,7 +109,8 @@ export type NewGoal = {
   nextStep: string;
   tier: number;
   why: string;
-  blocks: string;
+  blocks: string[];
+  blockedBy: string[];
   labels: string[];
   severity: number;
   novelty: number;
@@ -117,7 +126,8 @@ export function goalOf(intake: Intake, risk: Risk): NewGoal {
     nextStep: intake.nextStep.trim(),
     tier: intake.tier === "" ? 0 : Number(intake.tier),
     why: intake.why.trim(),
-    blocks: intake.blocks.trim(),
+    blocks: [...intake.blocks],
+    blockedBy: [...intake.blockedBy],
     labels: labelsOf(intake.labels),
     severity: Number(risk.severity),
     novelty: Number(risk.novelty),
@@ -152,6 +162,39 @@ export function blockedForOpen(intake: Intake, risk: Risk): string {
   }
   if (overridesTier(intake, risk) && intake.why.trim() === "") {
     return `The risk answers derive tier ${String(derivedTier(risk))}; choosing another one is recorded with why.`;
+  }
+  return "";
+}
+
+/**
+ * What each of the two dependency pickers is for, in one sentence.
+ *
+ * They are two directions of one relation and read almost the same, so each
+ * says who ends up waiting: the goals chosen under Blocks wait for this one,
+ * and this one waits for the goals chosen under Blocked by. Naming the waiter
+ * in both is what keeps a human from filling in the wrong field and finding
+ * out when the board parks the wrong card.
+ */
+export const BLOCKS_RULE = "The chosen goals wait for this one.";
+export const BLOCKED_BY_RULE = "This goal waits for the chosen ones and parks until they are done.";
+
+/**
+ * Which picker an engine refusal is about, or "" when it is about neither.
+ *
+ * The engine refuses an open when one of the goals it would have parked
+ * cannot be parked - a breach-stopped claim is the case that exists today -
+ * and the refusal names that goal. A sentence naming a goal belongs under the
+ * field where that goal was chosen, two disclosures down, rather than in the
+ * foot where a human would read it without knowing which of two fields to
+ * look at. Blocks is checked first because it is the only direction the
+ * engine parks other goals for.
+ */
+export function whichFieldRefused(said: string, intake: Intake): "blocks" | "blockedBy" | "" {
+  if (intake.blocks.some((id) => said.includes(id))) {
+    return "blocks";
+  }
+  if (intake.blockedBy.some((id) => said.includes(id))) {
+    return "blockedBy";
   }
   return "";
 }

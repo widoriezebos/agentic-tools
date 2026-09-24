@@ -340,7 +340,12 @@ func openApprovedClaimedWriterGoal(t *testing.T, endpoint goal.Endpoint, proof *
 		result, err = goal.Open(open, "bounded", "Preserve the episode.", goal.OriginMain, "Exercise real writers.")
 	} else {
 		budget = goal.Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1}
-		result, err = goal.OpenRisked(open, "bounded", "Preserve the legacy episode.", goal.OriginHuman, "Exercise real writers.", "", *risk, 0, "", &budget, nil)
+		// A human-origin open is a person's act, and a person is a name with
+		// a proof behind it: the origin alone never made one.
+		opening := open
+		opening.Actor.Human = "Wido"
+		opening.Authority = proof
+		result, err = goal.OpenRisked(opening, "bounded", "Preserve the legacy episode.", goal.OriginHuman, "Exercise real writers.", nil, nil, *risk, 0, "", &budget, proof)
 	}
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("open writer goal: %+v %v", result, err)

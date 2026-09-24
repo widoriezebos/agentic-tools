@@ -148,6 +148,28 @@ func verbReq(root, ulid, machine string) VerbRequest {
 	return request
 }
 
+// asPerson is the same fixture request made a person's: the name that says
+// who is acting, and the proof the engine reads instead of the name.
+//
+// An open under --origin human needs both. The origin is a word the caller
+// supplies and the name is a flag it types; only the proof is a thing a seat
+// cannot write down, so only the proof decides whose open this is. It returns
+// a copy, because most of these beds reuse the same request for the seat acts
+// that follow.
+func asPerson(t *testing.T, root string, request VerbRequest) VerbRequest {
+	t.Helper()
+	request.Actor.Human = "Wido"
+	// A signed-in session, because it is an admitted class that needs nothing
+	// of the checkout but the checkout itself: these beds differ in what they
+	// declare, and which class proves the person is not what they are about.
+	proof, err := humanauthority.SignedInSessionProof(root, "Wido", "sess-01J5XFIXTURE", "browser", request.Now)
+	if err != nil {
+		t.Fatalf("mint a signed-in session proof: %v", err)
+	}
+	request.Authority = &proof
+	return request
+}
+
 func goalHumanProof(t *testing.T, root string, now time.Time) *humanauthority.Proof {
 	t.Helper()
 	authorization, err := fixtureauth.New(root)
@@ -2037,32 +2059,42 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	}
 	// A seat open without its blocker is refused with the ruling before anything publishes.
 	before := acceptedTip(t, a)
-	if _, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB02", "mac-a"), "stray-idea", "An improvement that blocks nothing.", OriginMain, "Do it.", "", risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "R-93-m1e") || !strings.Contains(err.Error(), "--blocks") {
+	if _, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB02", "mac-a"), "stray-idea", "An improvement that blocks nothing.", OriginMain, "Do it.", nil, nil, risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "R-93-m1e") || !strings.Contains(err.Error(), "--blocks") {
 		t.Fatalf("a seat open without --blocks is refused with the ruling: %v", err)
 	}
 	if acceptedTip(t, a) != before {
 		t.Fatal("the refused open moved the ledger")
 	}
-	// A person's open needs no blocker.
-	if res, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB03", "mac-a"), "person-asked", "What the person asked for.", OriginHuman, "Do it.", "", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("a human-origin open is unchanged: %+v %v", res, err)
+	// --origin human is a word the caller supplies, not a person: without a
+	// proof behind it the open is a seat's and is refused as one, before
+	// anything about the goal is read and with nothing published.
+	if _, err := OpenRisked(namedOnly(a, "01J5X00000000000000000SB0M", "mac-a"), "claims-to-be-asked", "An open that says it is a person's.", OriginHuman, "Do it.", nil, nil, risk, 0, "", &budget, nil); err == nil || !strings.Contains(err.Error(), "R-93-m1e") {
+		t.Fatalf("a name and an origin opened as a person: %v", err)
+	}
+	if acceptedTip(t, a) != before {
+		t.Fatal("the refused human-origin open moved the ledger")
+	}
+	// A person's open - name and proof - needs no blocker.
+	asked := personReq(a, "01J5X00000000000000000SB03", "mac-a")
+	if res, err := OpenRisked(asked, "person-asked", "What the person asked for.", OriginHuman, "Do it.", nil, nil, risk, 0, "", &budget, goalHumanProof(t, a, asked.Now)); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("a proven person's open is unchanged: %+v %v", res, err)
 	}
 	// --blocks names live work.
-	if res, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB04", "mac-a"), "blocker-of-nothing", "Blocks a goal that is not there.", OriginMain, "Fix.", "no-such-goal", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not live") {
+	if res, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB04", "mac-a"), "blocker-of-nothing", "Blocks a goal that is not there.", OriginMain, "Fix.", []string{"no-such-goal"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not live") {
 		t.Fatalf("--blocks names live work only: %+v %v", res, err)
 	}
 	// A seat names only the goal it holds: another seat's claim and an
 	// unclaimed goal are both refused, whatever their origin.
-	if res, err := OpenRisked(verbReq(b, "01J5X00000000000000000SB05", "mac-b"), "foreign-fix", "mac-b blocks mac-a's work.", OriginMain, "Fix.", "current-work", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not this seat's claim") {
+	if res, err := OpenRisked(verbReq(b, "01J5X00000000000000000SB05", "mac-b"), "foreign-fix", "mac-b blocks mac-a's work.", OriginMain, "Fix.", []string{"current-work"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not this seat's claim") {
 		t.Fatalf("a seat cannot park another pair's claim through --blocks: %+v %v", res, err)
 	}
-	if res, err := OpenRisked(verbReq(b, "01J5X00000000000000000SB0K", "mac-b"), "idle-fix", "An idle seat blocks a queued goal.", OriginMain, "Fix.", "person-asked", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not this seat's claim") {
+	if res, err := OpenRisked(verbReq(b, "01J5X00000000000000000SB0K", "mac-b"), "idle-fix", "An idle seat blocks a queued goal.", OriginMain, "Fix.", []string{"person-asked"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "not this seat's claim") {
 		t.Fatalf("a seat cannot park a goal it does not hold through --blocks: %+v %v", res, err)
 	}
 	// The seat opens the defect that blocks its claimed goal: one publish
 	// opens the blocker and parks the blocked goal, claim cleared, edge and
 	// blocker recorded, approval kept.
-	res, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB06", "mac-a"), "fix-the-defect", "The defect that blocks current-work.", OriginMain, "Fix it.", "current-work", risk, 0, "", &budget, nil)
+	res, err := OpenRisked(verbReq(a, "01J5X00000000000000000SB06", "mac-a"), "fix-the-defect", "The defect that blocks current-work.", OriginMain, "Fix it.", []string{"current-work"}, nil, risk, 0, "", &budget, nil)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --blocks: %+v %v", res, err)
 	}
@@ -2124,13 +2156,13 @@ func TestSeatOpenNamesItsBlockerAndTheParkReturnsOnDone(t *testing.T) {
 	if res, err := Open(verbReq(b, "01J5X00000000000000000SB0C", "mac-b"), "twice-blocked", "Queued work two defects hold.", OriginHuman, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open twice-blocked: %+v %v", res, err)
 	}
-	person := verbReq(b, "01J5X00000000000000000SB0D", "mac-b")
-	person.Actor.Human = "Wido"
-	if res, err := OpenRisked(person, "first-fix", "First defect.", OriginHuman, "Fix.", "twice-blocked", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
+	person := personReq(b, "01J5X00000000000000000SB0D", "mac-b")
+	proven := goalHumanProof(t, b, person.Now)
+	if res, err := OpenRisked(person, "first-fix", "First defect.", OriginHuman, "Fix.", []string{"twice-blocked"}, nil, risk, 0, "", &budget, proven); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("a person's --blocks parks an unclaimed goal: %+v %v", res, err)
 	}
 	person.Ulid = "01J5X00000000000000000SB0E"
-	res, err = OpenRisked(person, "second-fix", "Second defect.", OriginHuman, "Fix.", "twice-blocked", risk, 0, "", &budget, nil)
+	res, err = OpenRisked(person, "second-fix", "Second defect.", OriginHuman, "Fix.", []string{"twice-blocked"}, nil, risk, 0, "", &budget, proven)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("second blocker: %+v %v", res, err)
 	}

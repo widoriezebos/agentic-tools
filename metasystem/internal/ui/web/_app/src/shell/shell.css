@@ -1875,7 +1875,16 @@ body {
   text-overflow: ellipsis;
 }
 
-/* What was chosen, in place of the field that chose it. */
+/* The goals that were chosen, above the field that is still there to choose
+   more. They wrap, because three ids and three intents do not fit on one. */
+.ms-pick-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* One goal that was chosen: its id, what it is for, and a way out. */
 .ms-pick-chosen {
   display: inline-flex;
   align-items: center;

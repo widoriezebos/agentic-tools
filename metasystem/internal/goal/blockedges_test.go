@@ -1,0 +1,1089 @@
+package goal
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+)
+
+// The relation a goal file already carried both ways gains the verbs that
+// write it: an open that blocks several goals, an open that waits for
+// several, and goal block and goal unblock on goals that already exist.
+//
+// Every test here writes through the real verbs onto a fixture ledger and
+// reads the published tree back, because what these verbs are about is what
+// the record says afterwards: which goals park, which park lifts, which
+// marker the park carries, and which hand was allowed to write it.
+
+func edgeRisk() RiskRecord {
+	return RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}
+}
+
+// personReq is the enrolled human at the keyboard: the same request a seat
+// makes, with the name that says who is acting. It is only half of a person's
+// act — personProof beside it is the other half, and the half that counts.
+func personReq(root, ulid, machine string) VerbRequest {
+	request := verbReq(root, ulid, machine)
+	request.Actor.Human = "Wido"
+	return request
+}
+
+// channelProofForTest is a provider-verified answer bound to this checkout:
+// the proof class the approval gate admits beside the enrolled terminal and
+// the signed-in session, and the one the early lift must also admit.
+func channelProofForTest(t *testing.T, root string, now time.Time) *humanauthority.Proof {
+	t.Helper()
+	proof, err := humanauthority.VerifiedChannelAnswerProof(root, governance.RecordedChannelAuthority{
+		Outcome:  governance.AuthorityOutcomeVerifiedChannelAnswer,
+		Provider: "slack", UserID: "UWIDO", MessageRef: "1/2", ContextID: "thread-1", Step: 42,
+	}, now)
+	if err != nil {
+		t.Fatalf("mint a verified channel answer proof: %v", err)
+	}
+	return &proof
+}
+
+// namedOnly is the request an agent makes when it types a person's name into
+// --by with nothing to back it. Every rule here must read it as a seat.
+func namedOnly(root, ulid, machine string) VerbRequest {
+	return personReq(root, ulid, machine)
+}
+
+// personProof is what makes the name above a person rather than a string an
+// agent typed: a freshly observed proof the approval gate admits, bound to
+// this checkout. Every verb that widens a seat's reach reads this and not the
+// name, so a test that leaves it out is testing the agent's path.
+func personProof(t *testing.T, root string) *humanauthority.Proof {
+	t.Helper()
+	return goalHumanProof(t, root, verbReq(root, "01J5X00000000000000000ZZZZ", "mac-a").Now)
+}
+
+// assertFilesParse reads every file the tree holds back through the parser.
+// A verb that writes a record the reader refuses has written a ledger nobody
+// can open, which is worse than the refusal it avoided.
+func assertFilesParse(t *testing.T, tree *TreeGoals) {
+	t.Helper()
+	for _, set := range []map[string]*GoalFile{tree.Live, tree.Done, tree.Abandoned} {
+		for _, id := range sortedGoalIds(set) {
+			if _, problems := ParseFile(RenderFile(set[id])); len(problems) != 0 {
+				t.Fatalf("goal %s does not parse after the act: %v", id, problems)
+			}
+		}
+	}
+}
+
+// liveGoalForEdges opens one goal through the compatibility entry point,
+// which takes no blocker and so models neither a seat's open nor a person's.
+func liveGoalForEdges(t *testing.T, root, ulid, id, origin string) {
+	t.Helper()
+	if result, err := Open(verbReq(root, ulid, "mac-a"), id, "Work called "+id+".", origin, "Do "+id+"."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open %s: %+v %v", id, result, err)
+	}
+}
+
+// concludeForEdges takes one live goal all the way to done, which is the only
+// thing that satisfies an edge.
+func concludeForEdges(t *testing.T, root, ulidClaim, ulidDone, id string) PublishResult {
+	t.Helper()
+	budget := testBudget()
+	if result, err := claimApprovedForTest(t, verbReq(root, ulidClaim, "mac-a"), id, budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim %s: %+v %v", id, result, err)
+	}
+	result, err := Done(verbReq(root, ulidDone, "mac-a"), id, "Finished "+id+".")
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("done %s: %+v %v", id, result, err)
+	}
+	return result
+}
+
+// An open names every goal it unblocks, and each of them parks in the one
+// publish with the new goal recorded as its blocker.
+func TestOpenBlocksSeveralGoalsInOnePublish(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BK00", "holds-one", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BK01", "holds-two", OriginHuman)
+
+	result, err := OpenRisked(personReq(root, "01J5X00000000000000000BK02", "mac-a"), "one-fix",
+		"The defect both goals wait for.", OriginHuman, "Fix it.",
+		[]string{"holds-one,holds-two"}, nil, edgeRisk(), 0, "", &budget, personProof(t, root))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocks two goals: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"holds-one", "holds-two"} {
+		held := tree.Live[id]
+		if held.State != StateParked || held.Parked == nil || held.Parked.Blocker != "one-fix" ||
+			strings.Join(held.Blocked, ",") != "one-fix" {
+			t.Fatalf("goal %s did not park behind the one open: state=%s parked=%+v blocked=%v", id, held.State, held.Parked, held.Blocked)
+		}
+		if last := held.History[len(held.History)-1]; last.Verb != "park" || last.Opid != tree.Live["one-fix"].History[0].Opid {
+			t.Fatalf("goal %s did not park on the open's own operation: %+v", id, last)
+		}
+	}
+	opened := tree.Live["one-fix"]
+	if opened.State != StateQueued || opened.Parked != nil || len(opened.Blocked) != 0 {
+		t.Fatalf("the goal that blocks waits for nothing itself: %+v", opened)
+	}
+	if got := strings.Join(opened.History[0].Targets, ","); got != "one-fix,holds-one,holds-two" {
+		t.Fatalf("the open's history names every goal it touched: %s", got)
+	}
+	assertFilesParse(t, tree)
+}
+
+// One fenced target refuses the whole open: the claim teardown a blocker park
+// runs is the same one that will not clear a breach stop, and nothing of the
+// open publishes (S37-05).
+func TestOpenBlocksRefusesAFencedTargetAndPublishesNothing(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BF00", "plain-work", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BF01", "fenced-work", OriginHuman)
+
+	claim := verbReq(root, "01J5X00000000000000000BF02", "mac-a")
+	claim.ClaimEpoch = 9
+	if result, err := claimApprovedForTest(t, claim, "fenced-work", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim the goal that will be fenced: %+v %v", result, err)
+	}
+	projection, err := Project(endpointFor(root), true, claim.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed := projection.Tree.Live["fenced-work"]
+	stop := CloseStopRequest{
+		VerbRequest: VerbRequest{
+			Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
+			Ulid: "01J5X00000000000000000BF03", Now: claim.Now.Add(time.Minute), ClaimEpoch: 9,
+		},
+		GoalID: "fenced-work", StopID: "stop-fenced-work-r3-f1",
+		Reason: StopReasonElapsedLimit, Capability: *claimed.StopCapability,
+	}
+	if result, err := CloseStop(stop); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("breach-stop the claim: %+v %v", result, err)
+	}
+
+	before := acceptedTip(t, root)
+	result, err := OpenRisked(personReq(root, "01J5X00000000000000000BF04", "mac-a"), "two-fix",
+		"A defect two goals wait for.", OriginHuman, "Fix it.",
+		[]string{"plain-work", "fenced-work"}, nil, edgeRisk(), 0, "", &budget, personProof(t, root))
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "breach-stopped") {
+		t.Fatalf("a fenced target did not refuse the open: %+v %v", result, err)
+	}
+	if acceptedTip(t, root) != before {
+		t.Fatal("the refused open moved the ledger")
+	}
+	tree, err := loadTree(root, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.Live["two-fix"] != nil {
+		t.Fatal("the refused open published its own goal")
+	}
+	if held := tree.Live["plain-work"]; held.State == StateParked || len(held.Blocked) != 0 {
+		t.Fatalf("the refused open parked the target it reached first: %+v", held)
+	}
+}
+
+// An open may also name the goals it waits for. It parks at once, with the
+// marker on the first named blocker and the reason naming them all, and
+// returns only when the last of them is done.
+func TestOpenBlockedByManyParksAtOnceAndReturnsWhenTheLastIsDone(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BB00", "dep-a", OriginMain)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BB01", "dep-b", OriginMain)
+
+	result, err := OpenRisked(personReq(root, "01J5X00000000000000000BB02", "mac-a"), "waiter",
+		"Work that waits for two.", OriginHuman, "Wait.",
+		nil, []string{"dep-a", "dep-b"}, edgeRisk(), 0, "", &budget, personProof(t, root))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocked-by two goals: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiter := tree.Live["waiter"]
+	if waiter.State != StateParked || waiter.Parked == nil || waiter.Parked.Blocker != "dep-a" ||
+		strings.Join(waiter.Blocked, ",") != "dep-a,dep-b" {
+		t.Fatalf("the opened goal did not park behind both: state=%s parked=%+v blocked=%v", waiter.State, waiter.Parked, waiter.Blocked)
+	}
+	if !strings.Contains(waiter.Parked.Because, "blocked by dep-a, dep-b") || !strings.Contains(waiter.Parked.Because, "they are done") {
+		t.Fatalf("the park's reason does not name both goals: %q", waiter.Parked.Because)
+	}
+	assertFilesParse(t, tree)
+
+	first := concludeForEdges(t, root, "01J5X00000000000000000BB03", "01J5X00000000000000000BB04", "dep-a")
+	tree, err = loadTree(root, first.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held := tree.Live["waiter"]; held.State != StateParked {
+		t.Fatalf("one blocker of two did not lift the park, and must not: %s", held.State)
+	}
+	second := concludeForEdges(t, root, "01J5X00000000000000000BB05", "01J5X00000000000000000BB06", "dep-b")
+	tree, err = loadTree(root, second.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	returned := tree.Live["waiter"]
+	if returned.State != StateQueued || returned.Parked != nil || strings.Join(returned.Blocked, ",") != "dep-a,dep-b" {
+		t.Fatalf("the last blocker did not return the goal with its edges kept: state=%s parked=%+v blocked=%v", returned.State, returned.Parked, returned.Blocked)
+	}
+	assertFilesParse(t, tree)
+}
+
+// A blocker that finished before the open is a satisfied edge: it is recorded
+// and it parks nothing, because the completion this park would wait for has
+// already happened (S37-06).
+func TestOpenBlockedByASatisfiedBlockerParksNothing(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BS00", "already-done", OriginMain)
+	concludeForEdges(t, root, "01J5X00000000000000000BS01", "01J5X00000000000000000BS02", "already-done")
+
+	result, err := OpenRisked(personReq(root, "01J5X00000000000000000BS03", "mac-a"), "later-work",
+		"Work behind finished work.", OriginHuman, "Start it.",
+		nil, []string{"already-done"}, edgeRisk(), 0, "", &budget, personProof(t, root))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocked-by a done goal: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := tree.Live["later-work"]
+	if later.State != StateQueued || later.Parked != nil || strings.Join(later.Blocked, ",") != "already-done" {
+		t.Fatalf("a satisfied edge parked the new goal: state=%s parked=%+v blocked=%v", later.State, later.Parked, later.Blocked)
+	}
+	assertFilesParse(t, tree)
+}
+
+// goal block writes the same edge on a goal that already exists, through the
+// same path: the claim is cleared, the displaced claimant is recorded, and
+// the park carries its marker.
+func TestBlockParksALiveGoalAndRecordsTheDisplacement(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BC00", "held-work", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BC01", "new-blocker", OriginMain)
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000BC02", "mac-b"), "held-work", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("another pair claims the goal: %+v %v", result, err)
+	}
+
+	// A seat reaches only the goal it holds: naming a stranger's claim is the
+	// refusal the open already gives (S37-01).
+	if result, err := Block(verbReq(root, "01J5X00000000000000000BC03", "mac-a"), "held-work", "new-blocker", nil); err != nil ||
+		result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not this seat's claim") {
+		t.Fatalf("a seat blocked a goal it does not hold: %+v %v", result, err)
+	}
+
+	result, err := Block(personReq(root, "01J5X00000000000000000BC04", "mac-a"), "held-work", "new-blocker", personProof(t, root))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("goal block: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := tree.Live["held-work"]
+	if held.State != StateParked || held.Parked == nil || held.Parked.Blocker != "new-blocker" ||
+		held.Claimed != nil || strings.Join(held.Blocked, ",") != "new-blocker" {
+		t.Fatalf("goal block did not park and clear the claim: state=%s parked=%+v claimed=%+v blocked=%v", held.State, held.Parked, held.Claimed, held.Blocked)
+	}
+	if !strings.HasPrefix(held.Parked.Displaced, "mac-b+") {
+		t.Fatalf("the displaced claimant is not recorded: %q", held.Parked.Displaced)
+	}
+	// The verb the line carries is this verb's own name: an open's park says
+	// "park" because the open is the operation, and goal block says "block".
+	if last := held.History[len(held.History)-1]; last.Verb != "block" || last.Displaced != held.Parked.Displaced {
+		t.Fatalf("the park's history line does not name goal block and its displacement: %+v", last)
+	}
+	// The same edge twice is nothing to do rather than a second revision.
+	if result, err := Block(personReq(root, "01J5X00000000000000000BC05", "mac-a"), "held-work", "new-blocker", personProof(t, root)); err != nil ||
+		result.Outcome != OutcomeAbandoned {
+		t.Fatalf("a repeated block wrote a revision: %+v %v", result, err)
+	}
+	assertFilesParse(t, tree)
+}
+
+// Removing a satisfied edge from a park that still waits for live work keeps
+// the park and rebinds its marker, because a marker outside BlockedBy is a
+// record the reader refuses and a cleared one never returns (S37-03).
+func TestUnblockOfASatisfiedEdgeRebindsTheMarkerAndKeepsThePark(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BR00", "dep-1", OriginMain)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BR01", "dep-2", OriginMain)
+	if result, err := OpenRisked(personReq(root, "01J5X00000000000000000BR02", "mac-a"), "rebound",
+		"Work behind two.", OriginHuman, "Wait.", nil, []string{"dep-1", "dep-2"}, edgeRisk(), 0, "", &budget, personProof(t, root)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocked-by: %+v %v", result, err)
+	}
+	concludeForEdges(t, root, "01J5X00000000000000000BR03", "01J5X00000000000000000BR04", "dep-1")
+
+	result, err := Unblock(personReq(root, "01J5X00000000000000000BR05", "mac-a"), "rebound", "dep-1", personProof(t, root))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("unblock a satisfied edge: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stood := tree.Live["rebound"]
+	if stood.State != StateParked || stood.Parked == nil || stood.Parked.Blocker != "dep-2" ||
+		strings.Join(stood.Blocked, ",") != "dep-2" {
+		t.Fatalf("the park did not stand on the remaining blocker: state=%s parked=%+v blocked=%v", stood.State, stood.Parked, stood.Blocked)
+	}
+	if !strings.Contains(stood.Parked.Because, "blocked by dep-2") {
+		t.Fatalf("the park's reason was not repaired with the marker: %q", stood.Parked.Because)
+	}
+	if last := stood.History[len(stood.History)-1]; last.Verb != "unblock" || !strings.Contains(last.Reason, "drops dep-1") {
+		t.Fatalf("the removal is not in the history as its own verb: %+v", last)
+	}
+	assertFilesParse(t, tree)
+}
+
+// Removing the last unsatisfied edge of a dependency-created park returns the
+// goal, because the park's own condition is satisfied the moment the edge is
+// gone. It is an early lift, so it is a person's act with a proof.
+func TestUnblockOfTheLastUnsatisfiedEdgeReturnsTheGoal(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BN00", "dep-x", OriginMain)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BN01", "dep-y", OriginMain)
+	if result, err := OpenRisked(personReq(root, "01J5X00000000000000000BN02", "mac-a"), "released",
+		"Work behind two.", OriginHuman, "Wait.", nil, []string{"dep-x", "dep-y"}, edgeRisk(), 0, "", &budget, personProof(t, root)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocked-by: %+v %v", result, err)
+	}
+	concludeForEdges(t, root, "01J5X00000000000000000BN03", "01J5X00000000000000000BN04", "dep-x")
+
+	request := personReq(root, "01J5X00000000000000000BN05", "mac-a")
+	result, err := Unblock(request, "released", "dep-y", goalHumanProof(t, root, request.Now))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("unblock the last unsatisfied edge: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	returned := tree.Live["released"]
+	if returned.State != StateQueued || returned.Parked != nil || strings.Join(returned.Blocked, ",") != "dep-x" {
+		t.Fatalf("the goal did not return with its satisfied edge kept: state=%s parked=%+v blocked=%v", returned.State, returned.Parked, returned.Blocked)
+	}
+	if last := returned.History[len(returned.History)-1]; last.Verb != "unblock" || !strings.Contains(last.Reason, "the park lifts") {
+		t.Fatalf("the return is not said in the history: %+v", last)
+	}
+	assertFilesParse(t, tree)
+}
+
+// A person's own pause is not a dependency's. It carries no marker, so it
+// survives both the blocker's completion and the edge's removal, and goal
+// unpark is still the only thing that lifts it (S37-02).
+func TestUnblockOnAnOrdinaryParkRemovesTheEdgeAndLeavesThePark(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BP00", "paused", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BP01", "side-fix", OriginMain)
+
+	park := personReq(root, "01J5X00000000000000000BP02", "mac-a")
+	park.Authority = testHumanAuthority(t, root, park.Now)
+	if result, err := Park(park, "paused", "the shape of the answer is still being decided"); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a person's park: %+v %v", result, err)
+	}
+	if result, err := Block(personReq(root, "01J5X00000000000000000BP03", "mac-a"), "paused", "side-fix", personProof(t, root)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("block a goal that is already paused: %+v %v", result, err)
+	}
+	done := concludeForEdges(t, root, "01J5X00000000000000000BP04", "01J5X00000000000000000BP05", "side-fix")
+	tree, err := loadTree(root, done.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held := tree.Live["paused"]; held.State != StateParked || held.Parked == nil || held.Parked.Blocker != "" {
+		t.Fatalf("the blocker's completion lifted a person's pause: state=%s parked=%+v", held.State, held.Parked)
+	}
+
+	result, err := Unblock(personReq(root, "01J5X00000000000000000BP06", "mac-a"), "paused", "side-fix", personProof(t, root))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("unblock on an ordinary park: %+v %v", result, err)
+	}
+	tree, err = loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stood := tree.Live["paused"]
+	if stood.State != StateParked || stood.Parked == nil || stood.Parked.Blocker != "" || len(stood.Blocked) != 0 {
+		t.Fatalf("removing the edge lifted a person's pause: state=%s parked=%+v blocked=%v", stood.State, stood.Parked, stood.Blocked)
+	}
+	if !strings.Contains(stood.Parked.Because, "still being decided") {
+		t.Fatalf("the person's own reason was rewritten: %q", stood.Parked.Because)
+	}
+	assertFilesParse(t, tree)
+}
+
+// An early unblock is a person's act, admitted by the approval gate, so the
+// signed-in session reaches it and its provenance lands on the line.
+func TestEarlyUnblockNeedsAHumanAndRecordsItsSessionProvenance(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BE00", "dep-live", OriginMain)
+	if result, err := OpenRisked(personReq(root, "01J5X00000000000000000BE01", "mac-a"), "waits",
+		"Work behind live work.", OriginHuman, "Wait.", nil, []string{"dep-live"}, edgeRisk(), 0, "", &budget, personProof(t, root)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocked-by: %+v %v", result, err)
+	}
+	before := acceptedTip(t, root)
+
+	if result, err := Unblock(verbReq(root, "01J5X00000000000000000BE02", "mac-a"), "waits", "dep-live", nil); err != nil ||
+		result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "early lift and a human act") {
+		t.Fatalf("a seat ran an early unblock: %+v %v", result, err)
+	}
+	// A name with nothing behind it is a seat, so it is refused as a seat is:
+	// the early lift is not a thing a --by can talk its way into.
+	if result, err := Unblock(namedOnly(root, "01J5X00000000000000000BE03", "mac-a"), "waits", "dep-live", nil); err != nil ||
+		result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "early lift and a human act") {
+		t.Fatalf("a name without a proof ran an early unblock: %+v %v", result, err)
+	}
+	if acceptedTip(t, root) != before {
+		t.Fatal("a refused early unblock moved the ledger")
+	}
+
+	request := personReq(root, "01J5X00000000000000000BE04", "mac-a")
+	result, err := Unblock(request, "waits", "dep-live", sessionProofForTest(t, root, request.Now))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a signed-in session could not run an early unblock: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifted := tree.Live["waits"]
+	if lifted.State != StateQueued || lifted.Parked != nil || len(lifted.Blocked) != 0 {
+		t.Fatalf("the early unblock did not return the goal: state=%s parked=%+v blocked=%v", lifted.State, lifted.Parked, lifted.Blocked)
+	}
+	last := lifted.History[len(lifted.History)-1]
+	if last.Verb != "unblock" {
+		t.Fatalf("the act is not recorded under its own verb: %+v", last)
+	}
+	assertSessionLine(t, last)
+	assertFilesParse(t, tree)
+}
+
+// A seat's open reaches only the goal it holds, whichever of the named goals
+// that is: naming one it holds never authorises the others (S37-01).
+func TestSeatOpenBlocksRefusesAGoalItDoesNotHold(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BM00", "mine", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BM01", "theirs", OriginHuman)
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000BM02", "mac-a"), "mine", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("the seat claims its goal: %+v %v", result, err)
+	}
+	before := acceptedTip(t, root)
+	result, err := OpenRisked(verbReq(root, "01J5X00000000000000000BM03", "mac-a"), "seat-fix",
+		"The defect that blocks two goals.", OriginMain, "Fix it.",
+		[]string{"mine", "theirs"}, nil, edgeRisk(), 0, "", &budget, nil)
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not this seat's claim") {
+		t.Fatalf("a seat parked a goal it does not hold: %+v %v", result, err)
+	}
+	if acceptedTip(t, root) != before {
+		t.Fatal("the refused seat open moved the ledger")
+	}
+	tree, err := loadTree(root, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held := tree.Live["mine"]; held.State != StateClaimed {
+		t.Fatalf("the refused open parked the goal the seat does hold: %s", held.State)
+	}
+}
+
+// A seat removes an edge from the goal it holds and from no other. It is the
+// rule its open and its block already carry, read from the other end: naming
+// one goal it claims never authorises another, in either direction (S37-01).
+func TestSeatUnblockReachesOnlyTheGoalItHolds(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BW00", "seat-work", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BW01", "other-work", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BW02", "settled", OriginMain)
+	concludeForEdges(t, root, "01J5X00000000000000000BW03", "01J5X00000000000000000BW04", "settled")
+
+	// A satisfied edge on each: the done goal holds neither up, and the two
+	// records differ only in who holds them.
+	for _, edge := range []struct{ ulid, id string }{
+		{"01J5X00000000000000000BW05", "seat-work"},
+		{"01J5X00000000000000000BW06", "other-work"},
+	} {
+		if result, err := Block(personReq(root, edge.ulid, "mac-a"), edge.id, "settled", personProof(t, root)); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("record the satisfied edge on %s: %+v %v", edge.id, result, err)
+		}
+	}
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000BW07", "mac-a"), "seat-work", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("the seat claims its goal: %+v %v", result, err)
+	}
+
+	// The goal it does not hold is refused by name, in the shape its block
+	// refusal has, and nothing publishes.
+	before := acceptedTip(t, root)
+	result, err := Unblock(verbReq(root, "01J5X00000000000000000BW08", "mac-a"), "other-work", "settled", nil)
+	if err != nil || result.Outcome != OutcomeRejected ||
+		!strings.Contains(result.Detail, "not this seat's claim") ||
+		!strings.Contains(result.Detail, "a seat removes an edge only from the goal it holds") {
+		t.Fatalf("a seat removed an edge from a goal it does not hold: %+v %v", result, err)
+	}
+	if acceptedTip(t, root) != before {
+		t.Fatal("the refused seat unblock moved the ledger")
+	}
+	tree, err := loadTree(root, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held := tree.Live["other-work"]; strings.Join(held.Blocked, ",") != "settled" {
+		t.Fatalf("the refused unblock changed the record: %v", held.Blocked)
+	}
+
+	// Its own claim, with a satisfied edge, is the one case it may run.
+	result, err = Unblock(verbReq(root, "01J5X00000000000000000BW09", "mac-a"), "seat-work", "settled", nil)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a seat could not drop a satisfied edge from its own claim: %+v %v", result, err)
+	}
+	tree, err = loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine := tree.Live["seat-work"]
+	if len(mine.Blocked) != 0 || mine.State != StateClaimed || mine.Claimed == nil {
+		t.Fatalf("the seat's own claim did not drop the edge and keep its claim: state=%s blocked=%v claimed=%+v", mine.State, mine.Blocked, mine.Claimed)
+	}
+	if last := mine.History[len(mine.History)-1]; last.Verb != "unblock" || !strings.Contains(last.Reason, "drops settled") {
+		t.Fatalf("the seat's removal is not in the history as its own verb: %+v", last)
+	}
+	assertFilesParse(t, tree)
+}
+
+// A name is not a person. The command edge carries any --by into the actor,
+// so a rule that read the name would let a seat write on a record it holds
+// nothing of by typing a person's name beside its own act.
+func TestANameWithoutAProofIsASeatOnBothEdgeVerbs(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BX00", "strangers-work", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BX01", "the-defect", OriginMain)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BX02", "finished", OriginMain)
+	concludeForEdges(t, root, "01J5X00000000000000000BX03", "01J5X00000000000000000BX04", "finished")
+	if result, err := Block(personReq(root, "01J5X00000000000000000BX05", "mac-a"), "strangers-work", "finished", personProof(t, root)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("the person records a satisfied edge to remove later: %+v %v", result, err)
+	}
+
+	cases := []struct {
+		name string
+		run  func(VerbRequest) (PublishResult, error)
+	}{
+		{
+			name: "block",
+			run: func(r VerbRequest) (PublishResult, error) {
+				return Block(r, "strangers-work", "the-defect", nil)
+			},
+		},
+		{
+			name: "unblock",
+			run: func(r VerbRequest) (PublishResult, error) {
+				return Unblock(r, "strangers-work", "finished", nil)
+			},
+		},
+	}
+	for index, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			before := acceptedTip(t, root)
+			ulid := fmt.Sprintf("01J5X00000000000000000BX1%d", index)
+			result, err := test.run(namedOnly(root, ulid, "mac-a"))
+			if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not this seat's claim") {
+				t.Fatalf("a name without a proof wrote an edge on a stranger's goal: %+v %v", result, err)
+			}
+			if acceptedTip(t, root) != before {
+				t.Fatal("the refused act moved the ledger")
+			}
+		})
+	}
+}
+
+// An open's multi-target reach is the same rule: a seat naming a person's
+// name and a person's origin is still a seat, and is bound to the goal it
+// holds for every target it names.
+func TestANameWithoutAProofIsASeatOnAMultiTargetOpen(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BY00", "mine-to-hold", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BY01", "not-mine", OriginHuman)
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000BY02", "mac-a"), "mine-to-hold", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("the seat claims its goal: %+v %v", result, err)
+	}
+
+	before := acceptedTip(t, root)
+	result, err := OpenRisked(namedOnly(root, "01J5X00000000000000000BY03", "mac-a"), "named-fix",
+		"An open that calls itself a person's.", OriginHuman, "Fix it.",
+		[]string{"mine-to-hold", "not-mine"}, nil, edgeRisk(), 0, "", &budget, nil)
+	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not this seat's claim") {
+		t.Fatalf("a name and an origin parked a goal the seat does not hold: %+v %v", result, err)
+	}
+	if acceptedTip(t, root) != before {
+		t.Fatal("the refused open moved the ledger")
+	}
+
+	// A seat opening with --origin human and no --blocks at all is refused
+	// for the blocker it did not name, because the origin never made it a
+	// person (S37-02).
+	if _, err := OpenRisked(namedOnly(root, "01J5X00000000000000000BY04", "mac-a"), "unblocked-fix",
+		"An open with no blocker at all.", OriginHuman, "Fix it.",
+		nil, []string{"not-mine"}, edgeRisk(), 0, "", &budget, nil); err == nil ||
+		!strings.Contains(err.Error(), "R-93-m1e") || !strings.Contains(err.Error(), "--blocks") {
+		t.Fatalf("a seat opened as a person because it typed the origin: %v", err)
+	}
+	if acceptedTip(t, root) != before {
+		t.Fatal("the refused seat open moved the ledger")
+	}
+}
+
+// The early lift is admitted by the approval gate approve uses, so a verified
+// channel answer reaches it as well as a signed-in session, and its
+// provenance lands on the History line the way an approval's does.
+//
+// The answer's handle is an account on somebody else's service and the act is
+// recorded under the name the person is called here, and the two differ —
+// which is the ordinary case and not a substitution. Nothing in this
+// repository maps one to the other, so the channel class settles that a
+// person acted and not which, and the name stands. A comparison here would
+// refuse every channel act whose author is not named after their Slack id.
+func TestEarlyUnblockIsAdmittedByAVerifiedChannelAnswer(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BZ00", "dep-channel", OriginMain)
+	if result, err := OpenRisked(personReq(root, "01J5X00000000000000000BZ01", "mac-a"), "waits-channel",
+		"Work behind live work.", OriginHuman, "Wait.", nil, []string{"dep-channel"}, edgeRisk(), 0, "", &budget, personProof(t, root)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocked-by: %+v %v", result, err)
+	}
+
+	request := personReq(root, "01J5X00000000000000000BZ02", "mac-a")
+	answered := channelProofForTest(t, root, request.Now)
+	if answered.ChannelUser == request.Actor.Human {
+		t.Fatal("the fixture must name the account and the person differently, or it proves nothing")
+	}
+	result, err := Unblock(request, "waits-channel", "dep-channel", answered)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a verified channel answer could not run an early unblock: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := tree.Live["waits-channel"].History[len(tree.Live["waits-channel"].History)-1]
+	if last.Verb != "unblock" || last.AuthorityOutcome != AuthorityOutcomeVerifiedChannelAnswer ||
+		last.ChannelProvider != "slack" || last.ChannelUser != "UWIDO" || last.ChannelRef != "1/2" {
+		t.Fatalf("the channel answer's provenance is not on the line: %+v", last)
+	}
+	// Both halves are on the record and neither was rewritten to match the
+	// other: the account that answered, and the person it is recorded under.
+	if last.Actor != "human:Wido" {
+		t.Fatalf("the act is not recorded under the person who made it: %q", last.Actor)
+	}
+	assertFilesParse(t, tree)
+}
+
+// A dependency park's reason is derived from the goals it is still waiting
+// for, so it is written again wherever that list changes — including when one
+// of them finishes and the park does not lift. A reason that still named a
+// finished goal would be the record contradicting its own list (S37-06).
+func TestAParksReasonNamesOnlyWhatItIsStillWaitingFor(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000C000", "first-dep", OriginMain)
+	liveGoalForEdges(t, root, "01J5X00000000000000000C001", "second-dep", OriginMain)
+	if result, err := OpenRisked(personReq(root, "01J5X00000000000000000C002", "mac-a"), "still-waiting",
+		"Work behind one, then two.", OriginHuman, "Wait.", nil, []string{"first-dep"}, edgeRisk(), 0, "", &budget, personProof(t, root)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocked-by one: %+v %v", result, err)
+	}
+
+	// The second edge lands on a park that already stands; the reason is
+	// written again, naming both.
+	result, err := Block(personReq(root, "01J5X00000000000000000C003", "mac-a"), "still-waiting", "second-dep", personProof(t, root))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("add the second edge: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if because := tree.Live["still-waiting"].Parked.Because; !strings.Contains(because, "first-dep, second-dep") {
+		t.Fatalf("the reason did not take in the edge that was just added: %q", because)
+	}
+
+	// The first finishes. The park does not lift, and the reason stops
+	// naming a goal that is done.
+	done := concludeForEdges(t, root, "01J5X00000000000000000C004", "01J5X00000000000000000C005", "first-dep")
+	tree, err = loadTree(root, done.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := tree.Live["still-waiting"]
+	if held.State != StateParked || held.Parked == nil {
+		t.Fatalf("the park lifted on one blocker of two: state=%s parked=%+v", held.State, held.Parked)
+	}
+	if held.Parked.Because != blockedBecause([]string{"second-dep"}) {
+		t.Fatalf("the reason still names a goal that is done: %q", held.Parked.Because)
+	}
+	// The marker stays where it is: its edge is still in the list, and only
+	// a disappearing edge rebinds it (S37-03).
+	if held.Parked.Blocker != "first-dep" || strings.Join(held.Blocked, ",") != "first-dep,second-dep" {
+		t.Fatalf("the completion moved the marker or the list: parked=%+v blocked=%v", held.Parked, held.Blocked)
+	}
+	if last := held.History[len(held.History)-1]; last.Verb != "edit" || !strings.Contains(last.Reason, "first-dep is done") {
+		t.Fatalf("the rewritten reason is not in the history: %+v", last)
+	}
+	assertFilesParse(t, tree)
+}
+
+// An edge a seat wrote replays, because it needed no proof and the seat rule
+// is judged again at the replay. An edge a person wrote journals their name,
+// and a stored name is never a credential, so recovery refuses it and the
+// person runs it again.
+func TestRecoveryReplaysASeatsEdgesAndRefusesAJournaledName(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000C100", "seat-goal", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000C101", "closed-dep", OriginMain)
+	concludeForEdges(t, root, "01J5X00000000000000000C102", "01J5X00000000000000000C103", "closed-dep")
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000C104", "mac-a"), "seat-goal", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("the seat claims its goal: %+v %v", result, err)
+	}
+
+	// A seat's block, stranded: it carries no name, so it rebuilds and lands.
+	blocked := Opid("01J5X00000000000000000C105", "mac-a", "lin-1")
+	strandEntry(t, root, blocked, PhaseCreated, Intent{
+		Verb: "block", Targets: []string{"seat-goal", "closed-dep"},
+		Args: map[string]string{"blocker": "closed-dep"},
+	})
+	if _, err := Recover(endpointFor(root)); err != nil {
+		t.Fatal(err)
+	}
+	projection, err := Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held := projection.Tree.Live["seat-goal"]; strings.Join(held.Blocked, ",") != "closed-dep" {
+		t.Fatalf("the replayed block did not land: %v", held.Blocked)
+	}
+	if entry, err := ReadEntry(root, blocked); err != nil || entry.Outcome != OutcomeConfirmed {
+		t.Fatalf("the replayed block did not confirm: %+v %v", entry, err)
+	}
+
+	// A seat's satisfied unblock, stranded: the same, in reverse.
+	unblocked := Opid("01J5X00000000000000000C106", "mac-a", "lin-1")
+	strandEntry(t, root, unblocked, PhaseCreated, Intent{
+		Verb: "unblock", Targets: []string{"seat-goal", "closed-dep"},
+		Args: map[string]string{"blocker": "closed-dep"},
+	})
+	if _, err := Recover(endpointFor(root)); err != nil {
+		t.Fatal(err)
+	}
+	projection, err = Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held := projection.Tree.Live["seat-goal"]; len(held.Blocked) != 0 {
+		t.Fatalf("the replayed unblock did not land: %v", held.Blocked)
+	}
+	if entry, err := ReadEntry(root, unblocked); err != nil || entry.Outcome != OutcomeConfirmed {
+		t.Fatalf("the replayed unblock did not confirm: %+v %v", entry, err)
+	}
+
+	// A person's block, stranded: the journal kept their name and nothing
+	// that proves it, so the replay is refused rather than run as a seat.
+	named := Opid("01J5X00000000000000000C107", "mac-a", "lin-1")
+	strandEntry(t, root, named, PhaseCreated, Intent{
+		Verb: "block", Targets: []string{"seat-goal", "closed-dep"},
+		Args: map[string]string{"blocker": "closed-dep", "by": "Wido"},
+	})
+	if _, err := Recover(endpointFor(root)); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := ReadEntry(root, named)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "cannot be replayed from journal text") {
+		t.Fatalf("a journaled name replayed as a person: %+v", entry)
+	}
+	projection, err = Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held := projection.Tree.Live["seat-goal"]; len(held.Blocked) != 0 {
+		t.Fatalf("the refused replay changed the record: %v", held.Blocked)
+	}
+}
+
+// A proof admits one person. An act attributed to somebody else is worse than
+// an unproven one, because the record would read as theirs, so the name and
+// the proof are bound and a mismatch is refused by name on every edge verb.
+func TestANameThatIsNotTheProofsIsRefusedOnEveryEdgeVerb(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000C200", "someones-work", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000C201", "a-defect", OriginMain)
+
+	// The proof is Wido's session; the act says Bob made it.
+	asBob := func(ulid string) (VerbRequest, *humanauthority.Proof) {
+		request := verbReq(root, ulid, "mac-a")
+		request.Actor.Human = "Bob"
+		return request, sessionProofForTest(t, root, request.Now)
+	}
+
+	before := acceptedTip(t, root)
+	bobOpen, wido := asBob("01J5X00000000000000000C202")
+	if _, err := OpenRisked(bobOpen, "bobs-fix", "An open attributed to Bob.", OriginHuman, "Fix it.",
+		nil, nil, edgeRisk(), 0, "", &budget, wido); err == nil ||
+		!strings.Contains(err.Error(), "the proof names Wido") || !strings.Contains(err.Error(), "attributed to Bob") {
+		t.Fatalf("an open under somebody else's proof: %v", err)
+	}
+	bobBlock, wido := asBob("01J5X00000000000000000C203")
+	if _, err := Block(bobBlock, "someones-work", "a-defect", wido); err == nil ||
+		!strings.Contains(err.Error(), "the proof names Wido") {
+		t.Fatalf("a block under somebody else's proof: %v", err)
+	}
+	if acceptedTip(t, root) != before {
+		t.Fatal("a refused substitution moved the ledger")
+	}
+
+	// The same proof, under the name it names, acts.
+	request := personReq(root, "01J5X00000000000000000C205", "mac-a")
+	if result, err := Block(request, "someones-work", "a-defect", sessionProofForTest(t, root, request.Now)); err != nil ||
+		result.Outcome != OutcomeConfirmed {
+		t.Fatalf("the proof's own person could not act: %+v %v", result, err)
+	}
+
+	// And the edge it wrote cannot be removed in somebody else's name.
+	written := acceptedTip(t, root)
+	bobUnblock, wido := asBob("01J5X00000000000000000C206")
+	if result, err := Unblock(bobUnblock, "someones-work", "a-defect", wido); err != nil ||
+		result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "the proof names Wido") {
+		t.Fatalf("an unblock under somebody else's proof: %+v %v", result, err)
+	}
+	if acceptedTip(t, root) != written {
+		t.Fatal("a refused unblock moved the ledger")
+	}
+}
+
+// --origin human is a word the caller supplies. A seat that types it opens a
+// goal it could not afterwards conclude, because concluding a human-origin
+// goal is a person's act — so what lands is the origin the hand supports.
+func TestASeatsOpenIsStoredAsASeatsWhateverOriginItAsksFor(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000C300", "seat-holds", OriginHuman)
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000C301", "mac-a"), "seat-holds", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("the seat claims its goal: %+v %v", result, err)
+	}
+
+	// A seat naming human origin, with a blocker it holds, opens as a seat.
+	result, err := OpenRisked(namedOnly(root, "01J5X00000000000000000C302", "mac-a"), "seat-fix",
+		"A defect the seat found.", OriginHuman, "Fix it.",
+		[]string{"seat-holds"}, nil, edgeRisk(), 0, "", &budget, nil)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a seat's open naming the goal it holds: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened := tree.Live["seat-fix"]; opened.Origin != OriginMain {
+		t.Fatalf("a seat's open was stored as the person's: %q", opened.Origin)
+	}
+	// And the seat can finish what it opened, which is the whole point.
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000C303", "mac-a"), "seat-fix", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim the seat's own goal: %+v %v", result, err)
+	}
+	if result, err := Done(verbReq(root, "01J5X00000000000000000C304", "mac-a"), "seat-fix", "Fixed."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a seat could not conclude the goal it opened: %+v %v", result, err)
+	}
+
+	// A person's open, proof and all, keeps the origin it asked for.
+	person := personReq(root, "01J5X00000000000000000C305", "mac-a")
+	result, err = OpenRisked(person, "persons-work", "What the person asked for.", OriginHuman, "Do it.",
+		nil, nil, edgeRisk(), 0, "", &budget, personProof(t, root))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a person's open: %+v %v", result, err)
+	}
+	tree, err = loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened := tree.Live["persons-work"]; opened.Origin != OriginHuman {
+		t.Fatalf("a proven person's open lost its origin: %q", opened.Origin)
+	}
+}
+
+// The reason a park carries is what it is still waiting for, at the moment it
+// is written. A blocker that was already done when the goal opened was never
+// part of the wait.
+func TestAnOpensParkNamesOnlyTheBlockersThatAreNotDone(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000C400", "already-closed", OriginMain)
+	liveGoalForEdges(t, root, "01J5X00000000000000000C401", "still-open", OriginMain)
+	concludeForEdges(t, root, "01J5X00000000000000000C402", "01J5X00000000000000000C403", "already-closed")
+
+	result, err := OpenRisked(personReq(root, "01J5X00000000000000000C404", "mac-a"), "behind-both",
+		"Work behind one done and one live.", OriginHuman, "Wait.",
+		nil, []string{"already-closed", "still-open"}, edgeRisk(), 0, "", &budget, personProof(t, root))
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocked-by one done and one live: %+v %v", result, err)
+	}
+	tree, err := loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiting := tree.Live["behind-both"]
+	if waiting.State != StateParked || waiting.Parked == nil {
+		t.Fatalf("the live blocker did not park the goal: state=%s parked=%+v", waiting.State, waiting.Parked)
+	}
+	if waiting.Parked.Because != blockedBecause([]string{"still-open"}) {
+		t.Fatalf("the park's reason names a blocker that was already done: %q", waiting.Parked.Because)
+	}
+	if strings.Join(waiting.Blocked, ",") != "already-closed,still-open" {
+		t.Fatalf("the satisfied edge was not kept: %v", waiting.Blocked)
+	}
+	assertFilesParse(t, tree)
+}
+
+// A recovered open rebuilds the same mutation, which means both directions of
+// its dependencies and not whichever one the old argument carried (S37-09).
+func TestRecoveryReplaysAnOpenCarryingBothLists(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BJ00", "held-by-n", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BJ01", "needed-by-n", OriginMain)
+	// The stranded open is the seat's own, so it names the goal that seat
+	// holds: recovery replays the actor the entry carries and the seat rule
+	// is judged again, exactly as it was live.
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000BJ03", "mac-a"), "held-by-n", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("the seat claims the goal its blocker will name: %+v %v", result, err)
+	}
+
+	opid := Opid("01J5X00000000000000000BJ02", "mac-a", "lin-1")
+	strandEntry(t, root, opid, PhaseCreated, Intent{
+		Verb: "open", Targets: []string{"n", "held-by-n", "needed-by-n"},
+		Args: map[string]string{
+			"intent": "The dead owner's blocker.", "origin": "main", "next": "Finish it.",
+			"blocks": "held-by-n", "blockedBy": "needed-by-n",
+		},
+	})
+	if _, err := Recover(endpointFor(root)); err != nil {
+		t.Fatal(err)
+	}
+	projection, err := Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed := projection.Tree.Live["n"]
+	if replayed == nil || replayed.State != StateParked || replayed.Parked == nil ||
+		replayed.Parked.Blocker != "needed-by-n" || strings.Join(replayed.Blocked, ",") != "needed-by-n" {
+		t.Fatalf("the replayed open lost the goals it waits for: %+v", replayed)
+	}
+	if held := projection.Tree.Live["held-by-n"]; held.State != StateParked || strings.Join(held.Blocked, ",") != "n" {
+		t.Fatalf("the replayed open lost the goals that wait for it: state=%s blocked=%v", held.State, held.Blocked)
+	}
+	if replayed.History[0].Opid != opid {
+		t.Fatalf("the replay did not carry the original operation: %s", replayed.History[0].Opid)
+	}
+	assertFilesParse(t, projection.Tree)
+}
+
+// A stored human name is not a credential: a recovered unblock that carries
+// one is refused and the person runs it again from the boundary.
+func TestRecoveryRefusesAJournaledUnblock(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BV00", "dep-r", OriginMain)
+	if result, err := OpenRisked(personReq(root, "01J5X00000000000000000BV01", "mac-a"), "waits-r",
+		"Work behind live work.", OriginHuman, "Wait.", nil, []string{"dep-r"}, edgeRisk(), 0, "", &budget, personProof(t, root)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open --blocked-by: %+v %v", result, err)
+	}
+	opid := Opid("01J5X00000000000000000BV02", "mac-a", "lin-1")
+	strandEntry(t, root, opid, PhaseCreated, Intent{
+		Verb: "unblock", Targets: []string{"waits-r", "dep-r"},
+		Args: map[string]string{"blocker": "dep-r", "by": "Wido"},
+	})
+	reports, err := Recover(endpointFor(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, report := range reports {
+		if report.Opid == opid {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("recovery did not visit the stranded unblock: %+v", reports)
+	}
+	entry, err := ReadEntry(root, opid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "cannot be replayed from journal text") {
+		t.Fatalf("a journaled unblock was replayed: %+v", entry)
+	}
+	projection, err := Project(endpointFor(root), true, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held := projection.Tree.Live["waits-r"]; held.State != StateParked || len(held.Blocked) != 1 {
+		t.Fatalf("the refused replay changed the record: state=%s blocked=%v", held.State, held.Blocked)
+	}
+}

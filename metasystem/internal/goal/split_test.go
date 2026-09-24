@@ -633,7 +633,7 @@ func TestSplitMovesABlockerParkToTheFirstMember(t *testing.T) {
 	if res, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000SP01", "mac-a"), "held", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim held: %+v %v", res, err)
 	}
-	if res, err := OpenRisked(verbReq(root, "01J5X00000000000000000SP02", "mac-a"), "split-parent", "A large blocker.", OriginMain, "Decompose it.", "held", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := OpenRisked(verbReq(root, "01J5X00000000000000000SP02", "mac-a"), "split-parent", "A large blocker.", OriginMain, "Decompose it.", []string{"held"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open the blocker: %+v %v", res, err)
 	}
 	members := testMembers("split-parent")

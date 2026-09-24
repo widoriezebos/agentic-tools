@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { answerOf, type Backlog } from "./api";
+import { answerOf, edgeAct, type Backlog } from "./api";
 
 /**
  * What the server's response means.
@@ -88,5 +88,40 @@ describe("the backlog response", () => {
       code: "CONFLICT",
       status: 409,
     });
+  });
+});
+
+/**
+ * What the two edge acts send.
+ *
+ * The path is the goal that WAITS and the body is the goal it waits for, on
+ * both routes and whichever end of the relation the page acted from. That is
+ * the one thing these acts decide, so it is the one thing asserted here; that
+ * the request is then made is the one call site the cut guard counts.
+ */
+describe("the two edge acts", () => {
+  it("names the goal that waits in the path and the goal it waits for in the body", () => {
+    expect(edgeAct("waits-one", "the-blocker", "block")).toEqual({
+      resource: "/api/backlog/goals/waits-one/block",
+      body: { blocker: "the-blocker" },
+    });
+    expect(edgeAct("waits-one", "the-blocker", "unblock")).toEqual({
+      resource: "/api/backlog/goals/waits-one/unblock",
+      body: { blocker: "the-blocker" },
+    });
+  });
+
+  // A "Holds" row on this goal's page is an act on the OTHER goal: it is that
+  // goal that waits, and this one that it waits for. One route pair, read
+  // from either end.
+  it("acts on the other goal when the relation is read the other way round", () => {
+    expect(edgeAct("the-dependent", "this-goal", "unblock")).toEqual({
+      resource: "/api/backlog/goals/the-dependent/unblock",
+      body: { blocker: "this-goal" },
+    });
+  });
+
+  it("escapes an id that would otherwise change the path", () => {
+    expect(edgeAct("a/b", "c", "block").resource).toBe("/api/backlog/goals/a%2Fb/block");
   });
 });

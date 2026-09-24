@@ -617,6 +617,89 @@ func TestHandJoinIntoForeignClaimedArcLandsQueued(t *testing.T) {
 
 // A blocker concluded by hand at reconcile lifts the park its open
 // recorded, exactly as the done verb does.
+// A hand edit is a door into the same record the verbs write, so it is held
+// to the same rules. Dropping a blocker that is not done is the early lift
+// whichever door it comes through, and a name in --by with nothing behind it
+// is not a person on this one either.
+func TestReconcileHoldsAHandEditedEdgeToTheUnblockRule(t *testing.T) {
+	t.Parallel()
+	_, a, _ := twoClones(t)
+	seedLedger(t, a)
+	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}
+	budget := testBudget()
+	if res, err := Open(verbReq(a, "01J5X00000000000000000HE00", "mac-a"), "waiting-work", "The goal that waits.", OriginHuman, "Wait."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open the goal that waits: %+v %v", res, err)
+	}
+	person := personReq(a, "01J5X00000000000000000HE01", "mac-a")
+	res, err := OpenRisked(person, "first-blocker", "The first defect.", OriginHuman, "Fix.",
+		[]string{"waiting-work"}, nil, risk, 0, "", &budget, personProof(t, a))
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open the first blocker: %+v %v", res, err)
+	}
+	second := personReq(a, "01J5X00000000000000000HE02", "mac-a")
+	res, err = OpenRisked(second, "second-blocker", "The second defect.", OriginHuman, "Fix.",
+		[]string{"waiting-work"}, nil, risk, 0, "", &budget, personProof(t, a))
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open the second blocker: %+v %v", res, err)
+	}
+	materialize(t, a, res.Tip)
+
+	// The hand edit drops the second blocker, which is not done.
+	path := filepath.Join(a, "plans", "goals", "waiting-work.md")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(raw), "- BlockedBy: first-blocker, second-blocker", "- BlockedBy: first-blocker", 1)
+	if edited == string(raw) {
+		t.Fatalf("the fixture does not carry both edges:\n%s", raw)
+	}
+	if err := os.WriteFile(path, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A name with nothing behind it is refused, and the edge is named.
+	before := acceptedTip(t, a)
+	named := humanReconcileReq(a, "01J5X00000000000000000HE10")
+	reconciled, err := Reconcile(named)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconciled.Publish.Outcome == OutcomeConfirmed ||
+		!strings.Contains(reconciled.Publish.Detail, "second-blocker") ||
+		!strings.Contains(reconciled.Publish.Detail, "early lift and a human act") {
+		t.Fatalf("a hand edit dropped an unfinished blocker with no proof: %+v", reconciled.Publish)
+	}
+	if acceptedTip(t, a) != before {
+		t.Fatal("the refused reconcile moved the ledger")
+	}
+
+	// The same edit under a proof the approval gate admits lands, and the
+	// park is repaired from the list the edit left.
+	proven := humanReconcileReq(a, "01J5X00000000000000000HE11")
+	proven.Actor.Human = "Wido"
+	proven.Authority = sessionProofForTest(t, a, proven.Now)
+	reconciled, err = Reconcile(proven)
+	if err != nil || reconciled.Publish.Outcome != OutcomeConfirmed {
+		t.Fatalf("a proven hand edit was refused: %+v %v", reconciled, err)
+	}
+	tree, err := loadTree(a, reconciled.Publish.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held := tree.Live["waiting-work"]
+	if strings.Join(held.Blocked, ",") != "first-blocker" {
+		t.Fatalf("the edited list did not land: %v", held.Blocked)
+	}
+	if held.State != StateParked || held.Parked == nil || held.Parked.Blocker != "first-blocker" ||
+		held.Parked.Because != blockedBecause([]string{"first-blocker"}) {
+		t.Fatalf("the park was not repaired from the list the edit left: state=%s parked=%+v", held.State, held.Parked)
+	}
+	if problems := ValidateTree(tree); len(problems) != 0 {
+		t.Fatalf("the reconciled tree does not validate: %v", problems)
+	}
+}
+
 func TestHandDoneOfABlockerLiftsItsPark(t *testing.T) {
 	t.Parallel()
 	_, a, _ := twoClones(t)
@@ -629,7 +712,7 @@ func TestHandDoneOfABlockerLiftsItsPark(t *testing.T) {
 	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000HD01", "mac-a"), "held", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim held: %+v %v", res, err)
 	}
-	res, err := OpenRisked(verbReq(a, "01J5X00000000000000000HD02", "mac-a"), "fixer", "The blocker.", OriginMain, "Fix.", "held", risk, 0, "", &budget, nil)
+	res, err := OpenRisked(verbReq(a, "01J5X00000000000000000HD02", "mac-a"), "fixer", "The blocker.", OriginMain, "Fix.", []string{"held"}, nil, risk, 0, "", &budget, nil)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open the blocker: %+v %v", res, err)
 	}

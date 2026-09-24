@@ -118,6 +118,30 @@ export function laneFor(id: string): Lane | null {
   return lanes.find((lane) => lane.id === id) ?? null;
 }
 
+/**
+ * What a goal is waiting for, as a sentence rather than a list.
+ *
+ * "blocked by A, B" reads as a state the goal is in; "waiting for A and B to
+ * be done" reads as the thing that has to happen, which is what a human
+ * looking at a Waiting card is trying to find out. The last comma becomes an
+ * "and" for the same reason: ids separated by commas are a list, and a
+ * sentence is what says that every one of them has to finish.
+ */
+export function waitingFor(blockers: readonly string[]): string {
+  if (blockers.length === 0) {
+    return "";
+  }
+  return `waiting for ${andList(blockers)} to be done`;
+}
+
+/** A, B and C: the list as English writes it. */
+export function andList(named: readonly string[]): string {
+  if (named.length <= 1) {
+    return named.join("");
+  }
+  return `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`;
+}
+
 /** The in-page anchor the lane index links to. */
 export function anchorFor(id: LaneId): string {
   return `lane-${id}`;

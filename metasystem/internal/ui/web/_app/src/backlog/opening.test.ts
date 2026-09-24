@@ -16,6 +16,7 @@ import {
   slugFrom,
   tierLine,
   unopenable,
+  whichFieldRefused,
   SCORES,
   type Intake,
   type Risk,
@@ -40,7 +41,8 @@ const whole: Intake = {
   tier: "",
   why: "",
   labels: "ui board",
-  blocks: "",
+  blocks: [],
+  blockedBy: [],
 };
 
 const answered: Risk = { severity: "1", novelty: "2", exposure: "1", accumulation: "3", basis: "one seam" };
@@ -80,7 +82,8 @@ describe("what travels to the open route", () => {
       nextStep: "Take it to a working end state; the approach is yours.",
       tier: 0,
       why: "",
-      blocks: "",
+      blocks: [],
+      blockedBy: [],
       labels: ["ui", "board"],
       severity: 1,
       novelty: 2,
@@ -89,6 +92,32 @@ describe("what travels to the open route", () => {
       basis: "one seam",
     });
     expect(goalOf({ ...whole, tier: "3", why: "it touches the ledger" }, answered).tier).toBe(3);
+  });
+
+  // Both directions travel as lists, in the order a human chose them: the
+  // first goal named on the blocked-by side is the one the engine's park
+  // takes its marker from, so a body that sorted them would be changing the
+  // record.
+  it("carries both directions of the relation, in the order they were chosen", () => {
+    const asked = goalOf({ ...whole, blocks: ["beta", "alpha"], blockedBy: ["gamma"] }, answered);
+    expect(asked.blocks).toEqual(["beta", "alpha"]);
+    expect(asked.blockedBy).toEqual(["gamma"]);
+  });
+});
+
+describe("which picker an engine refusal is about", () => {
+  // A goal that cannot be parked is refused by name. The sentence belongs
+  // under the field that named that goal, two disclosures down, rather than
+  // in the foot.
+  it("is the picker that named the goal the refusal names", () => {
+    const asked: Intake = { ...whole, blocks: ["fenced-work"], blockedBy: ["gamma"] };
+    expect(whichFieldRefused("goal fenced-work is breach-stopped by stop-1", asked)).toBe("blocks");
+    expect(whichFieldRefused("goal gamma is not live", asked)).toBe("blockedBy");
+  });
+
+  it("is neither when the refusal names no chosen goal", () => {
+    expect(whichFieldRefused("the ledger could not be read", whole)).toBe("");
+    expect(whichFieldRefused("goal ui-new already exists", { ...whole, blocks: ["alpha"] })).toBe("");
   });
 });
 

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Chip } from "./controls";
 
 /**
- * A field that must hold a goal the ledger already carries, so it is never
+ * A field that must hold goals the ledger already carries, so it is never
  * free text.
  *
  * A human typing an id into a box is a human guessing: the guess is checked
@@ -14,6 +14,13 @@ import { Chip } from "./controls";
  * recognises the one they mean rather than spelling it. What they chose stays
  * on screen as a chip, because a field that shows an id and means a goal is a
  * field that can be misread.
+ *
+ * It holds several goals rather than one. The relation it writes is a
+ * relation between sets — one defect can hold several goals up, and one goal
+ * can wait for several — so the field that states it takes several, and a
+ * goal already chosen leaves the list rather than being offered twice. The
+ * input stays where it is under the chips: choosing does not end the field,
+ * because the usual second act after naming a goal is naming another.
  *
  * The pattern is the ARIA combobox, written by hand: Radix has no combobox,
  * and a listbox of buttons announced as a list of buttons is a control that
@@ -67,21 +74,24 @@ export function firstWords(intent: string): string {
  * nothing: an id is lowercase and an intent is a sentence, and a human typing
  * either is typing what they remember.
  *
- * The goal being opened is never among them. A goal cannot unblock itself,
- * and a list that offers the thing being created is a list offering a record
- * that does not exist yet.
+ * Two kinds of goal are never among them. The goal being opened, because a
+ * goal cannot block itself and a list offering the record being created is
+ * offering a record that does not exist yet; and a goal already chosen,
+ * because choosing it again would say nothing and the chip above already
+ * says it.
  */
 export function matching(
   goals: readonly PickableGoal[],
   typed: string,
-  exclude = "",
+  exclude: string | readonly string[] = "",
 ): readonly PickableGoal[] {
+  const excluded = new Set(typeof exclude === "string" ? [exclude] : exclude);
   const words = typed
     .toLowerCase()
     .split(/\s+/)
     .filter((word) => word !== "");
   return goals.filter((goal) => {
-    if (goal.id === exclude || goal.id === "") {
+    if (excluded.has(goal.id) || goal.id === "") {
       return false;
     }
     const searched = `${goal.id} ${goal.intent}`.toLowerCase();
@@ -108,20 +118,25 @@ export function noSuchGoal(typed: string): string {
  * already ended, a line that matches nothing at all, and a line that matches
  * something a human has not chosen yet. The third is the sheet's own addition
  * rather than the design's: a half-typed line with the act pressed would
- * otherwise be sent as no blocker at all, which is a typed intent silently
- * dropped, and this field exists precisely so that nothing about a blocker is
- * silent. An empty field is not one of the three — no blocker is the common
- * case and always was.
+ * otherwise be sent as no goal at all, which is a typed intent silently
+ * dropped, and this field exists precisely so that nothing about a dependency
+ * is silent. An empty field is not one of the three — no dependency is the
+ * common case and always was.
+ *
+ * A goal that has ended names itself, because with several chips on screen
+ * "already done" alone would not say which one.
  */
 export function pickRefusal(
-  chosen: string,
+  chosen: readonly string[],
   typed: string,
   goals: readonly PickableGoal[],
-  exclude = "",
+  exclude: string | readonly string[] = "",
 ): string {
-  if (chosen !== "") {
-    const goal = goals.find((candidate) => candidate.id === chosen);
-    return goal === undefined ? "" : CONCLUDED_REFUSAL[goal.concluded];
+  for (const id of chosen) {
+    const goal = goals.find((candidate) => candidate.id === id);
+    if (goal !== undefined && goal.concluded !== "") {
+      return `${id} is ${CONCLUDED_REFUSAL[goal.concluded]}`;
+    }
   }
   const wanted = typed.trim();
   if (wanted === "") {
@@ -159,8 +174,8 @@ export function GoalPicker({
   /** The field's id, which the label points at and the list is named from. */
   id: string;
   goals: readonly PickableGoal[];
-  /** The goal that is chosen, as its id, or "" while none is. */
-  chosen: string;
+  /** The goals that are chosen, as their ids, in the order they were chosen. */
+  chosen: readonly string[];
   /** A goal that cannot be among the options: the one being opened. */
   exclude?: string;
   placeholder?: string;
@@ -168,37 +183,34 @@ export function GoalPicker({
    * The choice and what the field refuses, together, because the form that
    * holds this field has to know both to know whether it can be sent.
    */
-  onChoose: (id: string, refusal: string) => void;
+  onChoose: (chosen: string[], refusal: string) => void;
 }) {
   const [typed, setTyped] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const field = useRef<HTMLInputElement | null>(null);
-  const clear = useRef<HTMLButtonElement | null>(null);
-  const list = useRef<HTMLUListElement | null>(null);
   /** Whether the last change was a human's, which is when focus should move. */
   const moved = useRef(false);
+  const list = useRef<HTMLUListElement | null>(null);
 
-  const options = matching(goals, typed, exclude);
+  const hidden = [exclude, ...chosen].filter((name) => name !== "");
+  const options = matching(goals, typed, hidden);
   const at = Math.min(active, Math.max(options.length - 1, 0));
   const listed = open && options.length > 0;
   const listId = `${id}-list`;
 
-  // Choosing replaces the input with a chip and clearing puts it back, so the
-  // caret has to follow: to the × that clears, and back to the field that
-  // types. It follows a human's own change and never a render, which is what
-  // the flag is for — a sheet that opened on a goal already chosen would
-  // otherwise take the caret off the first field a human has to fill in.
+  // Choosing and clearing both leave the caret in the field, because the field
+  // is still there: the usual act after naming a goal is naming another, and
+  // the usual act after removing one is putting a different one in its place.
+  // It follows a human's own change and never a render, which is what the flag
+  // is for — a sheet that opened on goals already chosen would otherwise take
+  // the caret off the first field a human has to fill in.
   useEffect(() => {
     if (!moved.current) {
       return;
     }
     moved.current = false;
-    if (chosen === "") {
-      field.current?.focus();
-    } else {
-      clear.current?.focus();
-    }
+    field.current?.focus();
   }, [chosen]);
 
   // A list that opens near the foot of a sheet whose body scrolls is a list
@@ -216,8 +228,8 @@ export function GoalPicker({
     }
   }, [listed, at, options.length]);
 
-  const say = (picked: string, line: string) => {
-    onChoose(picked, pickRefusal(picked, line, goals, exclude));
+  const say = (picked: string[], line: string) => {
+    onChoose(picked, pickRefusal(picked, line, goals, [exclude, ...picked].filter((name) => name !== "")));
   };
 
   const choose = (goal: PickableGoal) => {
@@ -225,15 +237,18 @@ export function GoalPicker({
     setTyped("");
     setOpen(false);
     setActive(0);
-    say(goal.id, "");
+    say([...chosen, goal.id], "");
   };
 
-  const clearChoice = () => {
+  const drop = (dropped: string) => {
     moved.current = true;
     setTyped("");
     setOpen(false);
     setActive(0);
-    say("", "");
+    say(
+      chosen.filter((name) => name !== dropped),
+      "",
+    );
   };
 
   const keys = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -261,43 +276,43 @@ export function GoalPicker({
     if (event.key === "Enter" && listed) {
       event.preventDefault();
       choose(options[at]);
+      return;
+    }
+    // Backspace on an empty line takes the last chip back, which is what a
+    // field of chips has always done and what a human tries first.
+    if (event.key === "Backspace" && typed === "" && chosen.length > 0) {
+      event.preventDefault();
+      drop(chosen[chosen.length - 1]);
     }
   };
 
-  if (chosen !== "") {
-    const goal = goals.find((candidate) => candidate.id === chosen);
-    return (
-      <div className="ms-pick">
-        <span className="ms-pick-chosen">
-          <span className="ms-mono">{chosen}</span>
-          <span className="ms-pick-dot" aria-hidden="true">
-            ·
-          </span>
-          <span className="ms-pick-words">{firstWords(goal?.intent ?? "")}</span>
-          <button
-            id={id}
-            type="button"
-            className="ms-pick-clear"
-            aria-label={`Clear ${chosen}`}
-            ref={clear}
-            onClick={clearChoice}
-            onKeyDown={(event) => {
-              if (event.key !== "Backspace") {
-                return;
-              }
-              event.preventDefault();
-              clearChoice();
-            }}
-          >
-            <X size={12} strokeWidth={2} aria-hidden="true" />
-          </button>
-        </span>
-      </div>
-    );
-  }
-
   return (
     <div className="ms-pick">
+      {chosen.length > 0 && (
+        <div className="ms-pick-chips">
+          {chosen.map((picked) => (
+            <span className="ms-pick-chosen" key={picked}>
+              <span className="ms-mono">{picked}</span>
+              <span className="ms-pick-dot" aria-hidden="true">
+                ·
+              </span>
+              <span className="ms-pick-words">
+                {firstWords(goals.find((candidate) => candidate.id === picked)?.intent ?? "")}
+              </span>
+              <button
+                type="button"
+                className="ms-pick-clear"
+                aria-label={`Clear ${picked}`}
+                onClick={() => {
+                  drop(picked);
+                }}
+              >
+                <X size={12} strokeWidth={2} aria-hidden="true" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <input
         id={id}
         type="text"
@@ -321,7 +336,7 @@ export function GoalPicker({
           setTyped(event.target.value);
           setOpen(true);
           setActive(0);
-          say("", event.target.value);
+          say([...chosen], event.target.value);
         }}
         onKeyDown={keys}
       />

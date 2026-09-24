@@ -713,7 +713,7 @@ func TestOwnPairLeavesKeepTheEpisodeOnEveryPath(t *testing.T) {
 	}
 	heldFirst := *tree.Live["held-h"].Claimed
 	blockAt := t0.Add(7 * time.Hour)
-	if res, err := OpenRisked(landingReq(a, "01J5X00000000000000000NK12", "mac-a", blockAt), "fix-h", "The defect that blocks held-h.", OriginMain, "Fix it.", "held-h", risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := OpenRisked(landingReq(a, "01J5X00000000000000000NK12", "mac-a", blockAt), "fix-h", "The defect that blocks held-h.", OriginMain, "Fix it.", []string{"held-h"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --blocks: %+v %v", res, err)
 	}
 	tree, err = loadTree(a, acceptedTip(t, a))

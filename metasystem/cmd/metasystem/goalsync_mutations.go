@@ -939,13 +939,13 @@ func runGoalReadItemsList(args []string) int {
 type syncFlags struct {
 	root, by, id, intent, next, origin, because, conclude, arc, pin, members string
 	goal, branch, to                                                         string
-	blocks, under, tiers, verbs, expires, verified                           string
+	blocker, under, tiers, verbs, expires, verified                          string
 	lineage, digest, elapsedLimit, approvedRef, temporaryWord, reviewBy      string
 	budgetBox, confirm, risk, basis, evidence                                string
 	finding, chain, why, test, implementationChain, artifact, result, critic string
 	attemptLimit, reservedJobMinutesLimit, activeJobLimit, reviewRoundLimit  int64
 	tier                                                                     uint
-	labels, unlabels, ids                                                    repeatedStrings
+	labels, unlabels, ids, blocks, blockedBy                                 repeatedStrings
 	claim, refreshOnly, sweep, fixtureHumanAuthority                         bool
 	keep                                                                     int
 }
@@ -1012,7 +1012,9 @@ func parseSyncFlagValues(name string, args []string) (*syncFlags, error) {
 	fs.StringVar(&f.intent, "intent", "", "one-line intent")
 	fs.StringVar(&f.next, "next", "", "the next step")
 	fs.StringVar(&f.origin, "origin", "main", "creation provenance: human|main")
-	fs.StringVar(&f.blocks, "blocks", "", "the live goal this open unblocks: it parks with this blocker in the same publish and returns when the blocker is done (a seat's open, origin main, requires it)")
+	fs.Var(&f.blocks, "blocks", "the live goals this open unblocks (repeatable, or comma-separated): each parks with this blocker in the same publish and returns when every blocker it waits for is done (a seat's open, origin main, requires it, and reaches only the goal it holds)")
+	fs.Var(&f.blockedBy, "blocked-by", "the goals this open waits for (repeatable, or comma-separated): it parks at once unless every one of them is already done")
+	fs.StringVar(&f.blocker, "blocker", "", "block and unblock: the goal on the other end of the edge (--id names the goal that waits)")
 	fs.StringVar(&f.under, "under", "", "act under a recorded power of attorney entry (approve, set-budget and unpark): the seat's own act, no --by and no proof")
 	if name == "unpark" {
 		fs.StringVar(&f.verified, "verified", "", "with --under: what the seat verified holds now, one line, recorded beside the park's reason")
@@ -1053,11 +1055,11 @@ func parseSyncFlagValues(name string, args []string) (*syncFlags, error) {
 		fs.BoolVar(&f.sweep, "sweep", false, "preview or confirm the grandfather approval sweep")
 		fs.StringVar(&f.confirm, "confirm", "", "sha256 from the exact sweep listing")
 	}
-	if name == "budget" || name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" {
+	if name == "budget" || name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "unblock" {
 		fs.StringVar(&f.temporaryWord, "temporary-human-word", "", "recorded relayed words presented as the human's; provenance is not verified; resumes TEMPORARILY")
 		fs.StringVar(&f.reviewBy, "review-by", "", "recorded re-approval date supplied with the relay (required with --temporary-human-word)")
 	}
-	if name == "budget" || name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "park" || name == "reopen" {
+	if name == "budget" || name == "resume" || name == "approve" || name == "unapprove" || name == "set-budget" || name == "accept-risk" || name == "open" || name == "edit" || name == "grant" || name == "revoke" || name == "park" || name == "reopen" || name == "unblock" {
 		fs.BoolVar(&f.fixtureHumanAuthority, "fixture-human-authority", false, "fixture-only enrolled-human proof; accepted only for an exact fake-runtime root")
 	}
 	fs.Var(&f.labels, "label", "label token (repeatable)")
@@ -1068,8 +1070,11 @@ func parseSyncFlagValues(name string, args []string) (*syncFlags, error) {
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
-	if name != "open" && f.blocks != "" {
-		return nil, fmt.Errorf("goal %s does not take --blocks", name)
+	if name != "open" && (len(f.blocks) > 0 || len(f.blockedBy) > 0) {
+		return nil, fmt.Errorf("goal %s does not take --blocks or --blocked-by", name)
+	}
+	if name != "block" && name != "unblock" && f.blocker != "" {
+		return nil, fmt.Errorf("goal %s does not take --blocker; the edge verbs are goal block and goal unblock", name)
 	}
 	if name != "approve" && name != "set-budget" && name != "unpark" && f.under != "" {
 		return nil, fmt.Errorf("goal %s does not take --under; a power of attorney covers approve, set-budget and unpark", name)
@@ -1730,8 +1735,11 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			fmt.Fprintln(os.Stderr, riskErr)
 			return 2, true
 		}
+		// The open's own hand is proved whenever the command claims a person,
+		// not only when it lowers a tier: the engine decides whose open this
+		// is from the proof, and --origin human is a word anyone can type.
 		var proof *humanauthority.Proof
-		if f.tier != 0 && uint8(f.tier) < risk.DerivedTier() {
+		if claimsAHuman(f) || f.tier != 0 && uint8(f.tier) < risk.DerivedTier() {
 			proven, proofErr := proveGoalHumanAuthority("open", f, humanauthority.ProveOrTemporaryGoalAuthority)
 			if proofErr != nil {
 				fmt.Fprintln(os.Stderr, proofErr)
@@ -1757,7 +1765,7 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			fmt.Fprintln(os.Stderr, budgetErr)
 			return 2, true
 		}
-		res, err := goal.OpenRisked(req, f.id, f.intent, f.origin, f.next, f.blocks, risk, uint8(f.tier), f.why, budget, proof, f.labels...)
+		res, err := goal.OpenRisked(req, f.id, f.intent, f.origin, f.next, f.blocks, f.blockedBy, risk, uint8(f.tier), f.why, budget, proof, f.labels...)
 		return printSyncResult(res, err), true
 	case "park":
 		if !need(f.id, "id") || !need(f.because, "because") {
@@ -1853,6 +1861,15 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			}
 			printJSON(map[string]any{"outcome": "confirmed", "skipped": skipped})
 			return 0, true
+		}
+		// Reconcile is the hand-edit path and always names its human, but
+		// most of what it republishes needs no proof: an intent reworded, a
+		// next step rewritten. So the proof is taken where it can be taken
+		// and the session runs either way; the edits that do need one — a
+		// blocker removed before it is done — ask for it themselves and name
+		// the edge when it is missing.
+		if proven, _, proofErr := provenGoalRequest("reconcile", f, humanauthority.ProveOrTemporaryGoalAuthority); proofErr == nil {
+			req = proven
 		}
 		res, err := goal.Reconcile(req)
 		if err != nil {
@@ -2003,6 +2020,116 @@ func proveGoalHumanAuthority(name string, f *syncFlags, prove goalAuthorityProve
 
 func proveEnrolledGoalHumanAuthority(root string, pid int64, reader humanauthority.Reader, _, _ string, now time.Time) (humanauthority.Proof, error) {
 	return humanauthority.Prove(root, pid, reader, now)
+}
+
+// runGoalBlock writes one edge: goal block --id X --blocker G says X waits
+// for G. It is not a human-only verb - a seat records the edge on the goal it
+// holds, exactly as its open already does - so it takes the ordinary request
+// and lets the engine judge the actor.
+// claimsAHuman reports that this command is presenting itself as a person's
+// act. A --by alone is exactly that presentation and not the act, so a
+// command that claims one proves one: the engine reads the proof and never
+// the name, and a name that could not be proved is refused here rather than
+// being carried in as a seat with a person's word attached to it.
+func claimsAHuman(f *syncFlags) bool {
+	return f.by != "" || f.fixtureHumanAuthority || f.temporaryWord != ""
+}
+
+// provenGoalRequest assembles the request a goal verb runs under, with the
+// human proof where the command claims a person and without one otherwise.
+func provenGoalRequest(name string, f *syncFlags, prove goalAuthorityProver) (goal.VerbRequest, *humanauthority.Proof, error) {
+	if !claimsAHuman(f) {
+		request, err := syncReq(name, f.root, f.by, f.lineage)
+		return request, nil, err
+	}
+	classification, err := classifyGoalAuthorityFirst(name, f)
+	if err != nil {
+		return goal.VerbRequest{}, nil, err
+	}
+	proof, err := proveGoalHumanAuthority(name, f, prove)
+	if err != nil {
+		return goal.VerbRequest{}, nil, err
+	}
+	if err := resolveGoalHuman(f, proof); err != nil {
+		return goal.VerbRequest{}, nil, err
+	}
+	request, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	return request, &proof, err
+}
+
+func runGoalBlock(args []string) int {
+	return runGoalBlockWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+// runGoalBlockWithAuthority writes one edge. It is not a human-only verb — a
+// seat records an edge on the goal it holds, exactly as its open already does
+// — but a --by beside it is a person's claim, and a person's claim is proved
+// before the engine sees it.
+func runGoalBlockWithAuthority(args []string, prove goalAuthorityProver) int {
+	f, ok := parseSyncFlags("block", args)
+	if !ok {
+		return 2
+	}
+	if !converted(f.root) {
+		fmt.Fprintln(os.Stderr, "goal block works the synced backlog; this checkout still carries the legacy ledger")
+		return 1
+	}
+	if f.id == "" || f.blocker == "" {
+		fmt.Fprintln(os.Stderr, "goal block needs --id <the goal that waits> and --blocker <the goal it waits for>")
+		return 2
+	}
+	req, proof, err := provenGoalRequest("block", f, prove)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	res, runErr := goal.Block(req, f.id, f.blocker, proof)
+	if runErr == nil && res.Outcome == goal.OutcomeConfirmed && proof != nil {
+		operation := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
+		if recordErr := recordGoalApprovalProof(f.root, operation, "goal block", *proof); recordErr != nil {
+			fmt.Fprintln(os.Stderr, "the act landed at tip "+res.Tip+", but its authority proof did not: "+recordErr.Error()+"; do not run it again")
+			return 1
+		}
+	}
+	return printSyncResult(res, runErr)
+}
+
+func runGoalUnblock(args []string) int {
+	return runGoalUnblockWithAuthority(args, humanauthority.ProveOrTemporaryGoalAuthority)
+}
+
+// runGoalUnblockWithAuthority removes one edge. Removing an edge whose
+// blocker is not done is an early lift and a person's act, so a --by is
+// proved before the verb runs and the proof travels with it; without one the
+// engine refuses the early case by name and takes the ordinary one, which is
+// an edge a completed goal no longer needs.
+func runGoalUnblockWithAuthority(args []string, prove goalAuthorityProver) int {
+	f, ok := parseSyncFlags("unblock", args)
+	if !ok {
+		return 2
+	}
+	if !converted(f.root) {
+		fmt.Fprintln(os.Stderr, "goal unblock works the synced backlog; this checkout still carries the legacy ledger")
+		return 1
+	}
+	if f.id == "" || f.blocker == "" {
+		fmt.Fprintln(os.Stderr, "goal unblock needs --id <the goal that waits> and --blocker <the goal it no longer waits for>")
+		return 2
+	}
+	req, proof, err := provenGoalRequest("unblock", f, prove)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	res, runErr := goal.Unblock(req, f.id, f.blocker, proof)
+	if runErr == nil && res.Outcome == goal.OutcomeConfirmed && proof != nil {
+		operation := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
+		if recordErr := recordGoalApprovalProof(f.root, operation, "goal unblock", *proof); recordErr != nil {
+			fmt.Fprintln(os.Stderr, "the act landed at tip "+res.Tip+", but its authority proof did not: "+recordErr.Error()+"; do not run it again")
+			return 1
+		}
+	}
+	return printSyncResult(res, runErr)
 }
 
 func runGoalSetPriority(args []string) int {

@@ -42,6 +42,7 @@ function row(id: string, tier: number, over: Partial<Row> = {}): Row {
     arc: "",
     pinned: "",
     blockedBy: [],
+    holds: [],
     openBlockers: [],
     sliced: false,
     decomposed: false,

@@ -35,6 +35,7 @@ function row(over: Partial<Row> = {}): Row {
     arc: "",
     pinned: "",
     blockedBy: [],
+    holds: [],
     openBlockers: [],
     sliced: false,
     decomposed: false,

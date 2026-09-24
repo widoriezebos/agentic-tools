@@ -1,6 +1,6 @@
 /**
- * The backlog resource and its two acts, and the second place this build
- * talks to the server.
+ * The backlog resource and its acts, and the second place this build talks to
+ * the server.
  *
  * The read is made when the pane mounts and again on Refresh, and nowhere
  * else: no stream, no socket, no timer, and no window event refetches it.
@@ -32,6 +32,9 @@ const GOALS = "/api/backlog/goals/";
 const APPROVE = "/approve";
 const WITHDRAW = "/withdraw";
 const PRIORITY = "/priority";
+/** The two edge acts. The id before them is always the goal that WAITS. */
+const BLOCK = "/block";
+const UNBLOCK = "/unblock";
 
 /** What could be read of the accepted ledger. */
 export type LedgerState = "read" | "absent" | "no-ledger" | "broken" | "unreadable" | "refused";
@@ -98,6 +101,13 @@ export type Row = {
   pinned: string;
   blockedBy: string[];
   openBlockers: string[];
+  /**
+   * The goals that wait for this one: the other direction of the same
+   * relation. No record stores it — a goal's file says what it waits for and
+   * never what waits for it — so the server computes it from the whole tree
+   * and this is the only place it can be read.
+   */
+  holds: string[];
   approved?: Approval;
   /** The tuple the record carries, where it carries one. */
   budget?: Budget;
@@ -291,4 +301,40 @@ export async function rankGoal(id: string, priority: number, sequence: number | 
 /** goal open, for one new goal, under origin human. */
 export async function openGoal(asked: NewGoal): Promise<Backlog> {
   return request(OPEN, asked);
+}
+
+/**
+ * Where one edge act goes and what it says.
+ *
+ * `dependent` is the goal that WAITS and `blocker` the goal it waits for,
+ * whichever end of the relation the page acted from: a row under "Holds" on
+ * G's page removes G from X's list, so it is called with X as the dependent.
+ * There is one mutation on the server and one shape here, rather than a
+ * mirrored pair that could drift apart.
+ *
+ * It is a value rather than a request so that what travels can be read
+ * without reaching the network: this build makes exactly the calls it says it
+ * makes, and a test that stubbed one to look at it would be adding a way to
+ * the network in order to prove there is only one.
+ */
+export function edgeAct(
+  dependent: string,
+  blocker: string,
+  act: "block" | "unblock",
+): { resource: string; body: { blocker: string } } {
+  return {
+    resource: `${GOALS}${encodeURIComponent(dependent)}${act === "block" ? BLOCK : UNBLOCK}`,
+    body: { blocker },
+  };
+}
+
+/** goal block and goal unblock, for one edge of the blocked relation. */
+export async function blockGoal(dependent: string, blocker: string): Promise<Backlog> {
+  const act = edgeAct(dependent, blocker, "block");
+  return request(act.resource, act.body);
+}
+
+export async function unblockGoal(dependent: string, blocker: string): Promise<Backlog> {
+  const act = edgeAct(dependent, blocker, "unblock");
+  return request(act.resource, act.body);
 }

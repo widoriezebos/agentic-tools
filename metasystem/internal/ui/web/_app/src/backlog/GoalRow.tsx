@@ -4,6 +4,7 @@ import { NavLink } from "react-router";
 import type { Row } from "./api";
 import { CardMenu } from "./CardMenu";
 import { dateAndTime } from "./format";
+import { waitingFor } from "./lanes";
 import { offersFor, opensMenu, type At, type OfferId } from "./menu";
 import { SHOWN } from "./showing";
 import { goalSubject } from "./subjects";
@@ -187,14 +188,17 @@ export function reasonsOf(row: Row): string[] {
     lines.push(`stopped ${dateAndTime(row.fence.closedAt)}: ${row.fence.reason}`);
   }
   const waiting = row.waiting;
+  // A dependency-created park carries a marker, and its reason is written from
+  // the blockers themselves; the line below already says what it waits for, so
+  // this one says who paused it and when and leaves the rest to that. A
+  // person's own park carries no marker and their reason is theirs.
+  const dependency = waiting !== undefined && waiting.blocker !== "";
   if (waiting !== undefined && waiting.since !== "") {
-    lines.push(`parked by ${waiting.by} since ${dateAndTime(waiting.since)}, from ${waiting.from}: ${waiting.reason}`);
-  }
-  if (waiting !== undefined && waiting.blocker !== "") {
-    lines.push(`opened to block ${waiting.blocker}`);
+    const paused = `parked by ${waiting.by} since ${dateAndTime(waiting.since)}, from ${waiting.from}`;
+    lines.push(dependency ? paused : `${paused}: ${waiting.reason}`);
   }
   if (row.openBlockers.length > 0) {
-    lines.push(`blocked by ${row.openBlockers.join(", ")} (open)`);
+    lines.push(waitingFor(row.openBlockers));
   }
   if (row.abandoned !== undefined) {
     lines.push(`dropped by ${row.abandoned.by} ${dateAndTime(row.abandoned.at)}`);

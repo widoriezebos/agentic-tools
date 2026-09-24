@@ -287,9 +287,12 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 				// A park the parent's own open recorded now waits on the arc:
 				// the marker moves to the first member so it stays inside
 				// BlockedBy, and the return still needs every member done.
+				// The reason follows the list it is written from, or it would
+				// go on naming a parent that has just been retired.
 				if dependent.Parked != nil && dependent.Parked.Blocker == parentID {
 					dependent.Parked.Blocker = memberIDs[0]
 				}
+				refreshParkReason(t, dependent)
 				touch(dependent, r, "split", targets)
 				changes = append(changes, Change{Path: livePath(id), Content: RenderFile(dependent)})
 			}

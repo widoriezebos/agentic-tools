@@ -33,7 +33,17 @@ import {
 import "./reading.css";
 import { Sheet, type Done, type Request } from "./Sheet";
 import { type Scope } from "./writing";
+import {
+  BacklogError,
+  blockGoal,
+  loadBacklog,
+  unblockGoal,
+  type Backlog,
+  type Row as GoalRow,
+} from "../backlog/api";
+import { laneTitle } from "../backlog/lanes";
 import { showLabel } from "../backlog/showing";
+import { Help } from "../help/Help";
 import { Pane } from "../panes/Pane";
 import { Tabs, tabShown, type Tab } from "../panes/Tabs";
 import { backlogPath, documentPath, goalPath, projectPath } from "../routes";
@@ -42,6 +52,9 @@ import { opensMenu, type At } from "../backlog/menu";
 import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
+import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
+import { useSession } from "../shell/identity";
+import { failureMessage as actFailureMessage } from "../shell/workspace";
 import { readBacklogView, readGoalTab, readProjectTab, writeGoalTab, writeProjectTab } from "../storage";
 
 /**
@@ -98,6 +111,20 @@ export function GoalPane() {
 function Briefed({ goal }: { goal: string | null }) {
   const [read, setRead] = useState<PaneState>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
+  /**
+   * The ledger, read on a goal's page and nowhere else.
+   *
+   * The project payload knows a goal's id, its state and the reason it is
+   * open; the relation between goals is the ledger's and lives in the board's
+   * own payload. A goal page shows both directions of it, so it reads that
+   * payload too. The project's own page does not, because it is about no one
+   * goal and would be reading a board it never shows.
+   *
+   * A backlog that could not be read is not a failed page: the records this
+   * page is about are still there, so the dependency block says what it could
+   * not read and the rest of the page stands.
+   */
+  const [ledger, setLedger] = useState<Backlog | null>(null);
 
   useEffect(() => {
     const aborter = new AbortController();
@@ -115,6 +142,25 @@ function Briefed({ goal }: { goal: string | null }) {
     };
   }, [attempt]);
 
+  useEffect(() => {
+    if (goal === null) {
+      return;
+    }
+    const aborter = new AbortController();
+    loadBacklog(aborter.signal)
+      .then((answered) => {
+        setLedger(answered);
+      })
+      .catch(() => {
+        if (!aborter.signal.aborted) {
+          setLedger(null);
+        }
+      });
+    return () => {
+      aborter.abort();
+    };
+  }, [goal, attempt]);
+
   const reload = () => {
     setRead({ state: "loading" });
     setAttempt((previous) => previous + 1);
@@ -124,12 +170,34 @@ function Briefed({ goal }: { goal: string | null }) {
     <Pane title={goal === null ? "Project" : "Backlog"}>
       {read.state === "loading" && <LoadingCards />}
       {read.state === "failed" && <FailureCard message={read.message} onRetry={reload} />}
-      {read.state === "read" && <Columns pane={read.pane} goal={goal} onReload={reload} />}
+      {read.state === "read" && (
+        <Columns
+          pane={read.pane}
+          goal={goal}
+          ledger={ledger}
+          onLedger={setLedger}
+          onReload={reload}
+        />
+      )}
     </Pane>
   );
 }
 
-function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | null; onReload: () => void }) {
+function Columns({
+  pane,
+  goal,
+  ledger,
+  onLedger,
+  onReload,
+}: {
+  pane: PanePayload;
+  goal: string | null;
+  /** The board as it stands, on a goal's page; null where it was not read. */
+  ledger: Backlog | null;
+  /** The board after an edge act, which answers with the ledger it left. */
+  onLedger: (backlog: Backlog) => void;
+  onReload: () => void;
+}) {
   const briefing = useMemo(() => briefingFor(pane, goal), [pane, goal]);
   const sections = useMemo(() => pageSections(briefing), [briefing]);
   const groups = useMemo(() => documentGroups(pane.documents), [pane]);
@@ -308,6 +376,7 @@ function Columns({ pane, goal, onReload }: { pane: PanePayload; goal: string | n
         <div className="ms-briefing-preamble">
           {pane.problems.length > 0 && <Problems problems={pane.problems} />}
           {briefing.goal !== null && <GoalBlock briefing={briefing} />}
+          {goal !== null && <Dependencies goal={goal} ledger={ledger} onLedger={onLedger} />}
         </div>
       )}
       <div className="ms-briefing">
@@ -492,6 +561,192 @@ function GoalBlock({ briefing }: { briefing: Briefing }) {
       )}
     </section>
   );
+}
+
+/**
+ * Both directions of the blocked relation, on the goal's own page.
+ *
+ * "Waits for" is what the record says: the goals in this one's BlockedBy.
+ * "Holds" is the same relation read the other way — the goals whose own lists
+ * name this one — which no record stores and the server computes. They are
+ * shown together because a human asking "why is this parked" and a human
+ * asking "what am I holding up" are the same human on the same page, and a
+ * page that answered only the first would send them to look for the second by
+ * reading four hundred other goals.
+ *
+ * Each row says where that goal stands and links to it, because an id alone
+ * answers neither question. A goal the board does not carry is said to be
+ * unknown rather than left looking live.
+ *
+ * Both acts go through the one route pair, and the path id is always the goal
+ * that waits: removing a row under "Holds" on this page is an unblock on that
+ * other goal, with this one as its blocker. They go through the ordinary act
+ * path, so a 403 opens the sign-in sheet and the act is sent again.
+ */
+function Dependencies({
+  goal,
+  ledger,
+  onLedger,
+}: {
+  goal: string;
+  ledger: Backlog | null;
+  onLedger: (backlog: Backlog) => void;
+}) {
+  const [adding, setAdding] = useState<"waits" | "holds" | null>(null);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [refusal, setRefusal] = useState("");
+  const [sending, setSending] = useState(false);
+  const { askToSignIn } = useSession();
+  const retried = useRef(false);
+
+  if (ledger === null) {
+    return null;
+  }
+  const rows = [...ledger.rows, ...ledger.closed];
+  const mine = rows.find((row) => row.ref.id === goal);
+  if (mine === undefined) {
+    return null;
+  }
+  const pickable: PickableGoal[] = rows.map((row) => ({
+    id: row.ref.id,
+    intent: row.intent,
+    lane: laneTitle(row.lane),
+    concluded: row.lane === "done" || row.lane === "abandoned" ? row.lane : "",
+  }));
+
+  /** One act, with the sign-in retry every act on this board carries. */
+  const run = (act: () => Promise<Backlog>) => {
+    setSending(true);
+    setRefusal("");
+    act()
+      .then((answered) => {
+        setSending(false);
+        setAdding(null);
+        setChosen([]);
+        onLedger(answered);
+      })
+      .catch((error: unknown) => {
+        setSending(false);
+        if (error instanceof BacklogError && error.signIn && !retried.current) {
+          retried.current = true;
+          askToSignIn(() => {
+            run(act);
+          });
+          return;
+        }
+        setRefusal(actFailureMessage(error));
+      });
+  };
+
+  const add = (side: "waits" | "holds") => {
+    const picked = chosen.at(0);
+    if (picked === undefined) {
+      return;
+    }
+    run(() => (side === "waits" ? blockGoal(goal, picked) : blockGoal(picked, goal)));
+  };
+
+  const list = (side: "waits" | "holds", named: readonly string[]) => (
+    <div className="ms-edges-side">
+      <h3 className="ms-edges-title">
+        {side === "waits" ? "Waits for" : "Holds"}
+        <Help id={side === "waits" ? "waits-for" : "holds"} />
+      </h3>
+      {named.length === 0 ? (
+        <p className="ms-project-note">
+          {side === "waits" ? "This goal waits for nothing." : "No goal waits for this one."}
+        </p>
+      ) : (
+        <ul className="ms-edges-list">
+          {named.map((id) => (
+            <li className="ms-edges-row" key={id}>
+              <NavLink className="ms-edges-id ms-mono" to={goalPath(id)}>
+                {id}
+              </NavLink>
+              <Chip>{standingOf(rows, id)}</Chip>
+              <button
+                type="button"
+                className="ms-act-link"
+                disabled={sending}
+                onClick={() => {
+                  run(() => (side === "waits" ? unblockGoal(goal, id) : unblockGoal(id, goal)));
+                }}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {adding === side ? (
+        <div className="ms-edges-add">
+          <GoalPicker
+            id={`ms-edges-${side}`}
+            goals={pickable}
+            chosen={chosen}
+            exclude={goal}
+            placeholder="e.g. refund-queue"
+            onChoose={(picked) => {
+              // One edge per act: the field keeps the goal named last, so a
+              // second choice replaces the first rather than queueing a
+              // second request behind it.
+              setChosen(picked.slice(-1));
+            }}
+          />
+          <Button
+            disabled={chosen.length === 0 || sending}
+            onClick={() => {
+              add(side);
+            }}
+          >
+            Add
+          </Button>
+          <button
+            type="button"
+            className="ms-act-link"
+            onClick={() => {
+              setAdding(null);
+              setChosen([]);
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="ms-act-link"
+          onClick={() => {
+            setAdding(side);
+            setChosen([]);
+            setRefusal("");
+          }}
+        >
+          {side === "waits" ? "Wait for a goal…" : "Hold a goal up…"}
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <section className="ms-briefing-block ms-edges">
+      <div className="ms-edges-sides">
+        {list("waits", mine.blockedBy)}
+        {list("holds", mine.holds)}
+      </div>
+      {refusal !== "" && (
+        <p className="ms-act-refuse" role="alert">
+          {refusal}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** Where one named goal stands, or that the board does not carry it. */
+function standingOf(rows: readonly GoalRow[], id: string): string {
+  const row = rows.find((candidate) => candidate.ref.id === id);
+  return row === undefined ? "unknown to the ledger" : row.state;
 }
 
 /**

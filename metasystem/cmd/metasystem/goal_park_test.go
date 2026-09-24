@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -20,15 +21,40 @@ func TestGoalParkFlagRegistrationDoesNotPanic(t *testing.T) {
 	_ = runGoalPark([]string{"--root", root, "--id", "nope", "--because", "x"})
 }
 
-// --blocks belongs to goal open alone: every other verb refuses it at the
-// flag edge, and open carries it to the verb.
+// --blocks and --blocked-by belong to goal open alone: every other verb
+// refuses them at the flag edge, and open carries both to the verb. Each is
+// repeatable and each takes a comma-separated line, because a human naming
+// three goals should not have to learn which of the two spellings this
+// command prefers.
 func TestOnlyGoalOpenTakesBlocks(t *testing.T) {
 	if _, ok := parseSyncFlags("park", []string{"--root", t.TempDir(), "--id", "x", "--because", "y", "--blocks", "z"}); ok {
 		t.Fatal("goal park accepted --blocks")
 	}
-	f, ok := parseSyncFlags("open", []string{"--root", t.TempDir(), "--id", "x", "--blocks", "z"})
-	if !ok || f.blocks != "z" {
-		t.Fatalf("goal open carries --blocks: ok=%v blocks=%q", ok, f.blocks)
+	if _, ok := parseSyncFlags("park", []string{"--root", t.TempDir(), "--id", "x", "--because", "y", "--blocked-by", "z"}); ok {
+		t.Fatal("goal park accepted --blocked-by")
+	}
+	f, ok := parseSyncFlags("open", []string{
+		"--root", t.TempDir(), "--id", "x", "--blocks", "z,y", "--blocks", "w", "--blocked-by", "a,b",
+	})
+	if !ok || strings.Join(f.blocks, "|") != "z,y|w" || strings.Join(f.blockedBy, "|") != "a,b" {
+		t.Fatalf("goal open carries both directions: ok=%v blocks=%v blockedBy=%v", ok, f.blocks, f.blockedBy)
+	}
+}
+
+// --blocker belongs to the two edge verbs, and to nothing else.
+func TestOnlyBlockAndUnblockTakeTheBlockerFlag(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for _, name := range []string{"open", "park", "unpark"} {
+		if _, ok := parseSyncFlags(name, []string{"--root", root, "--id", "x", "--because", "y", "--blocker", "g"}); ok {
+			t.Fatalf("goal %s accepted --blocker", name)
+		}
+	}
+	for _, name := range []string{"block", "unblock"} {
+		f, ok := parseSyncFlags(name, []string{"--root", root, "--id", "x", "--blocker", "g"})
+		if !ok || f.id != "x" || f.blocker != "g" {
+			t.Fatalf("goal %s carries --id and --blocker: ok=%v %+v", name, ok, f)
+		}
 	}
 }
 

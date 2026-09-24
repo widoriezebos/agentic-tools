@@ -364,7 +364,7 @@ func runUI(verb string, args []string) int {
 					PreviewDocument: func(source string) (project.Preview, error) {
 						return project.PreviewDocument(source)
 					},
-					// The backlog's four acts. Each one publishes through
+					// The backlog's six acts. Each one publishes through
 					// the engine in-process under the boot proof, and then
 					// carries this clone's accepted ref forward, so the
 					// payload the route answers with is the ledger as it now
@@ -412,6 +412,28 @@ func runUI(verb string, args []string) int {
 							return err
 						}
 						if err := hand.Open(opened); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
+					Block: func(signed *session.Session, dependent, blocker string) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.Block(dependent, blocker); err != nil {
+							return err
+						}
+						advance()
+						return nil
+					},
+					Unblock: func(signed *session.Session, dependent, blocker string) error {
+						hand, err := acting(signed)
+						if err != nil {
+							return err
+						}
+						if err := hand.Unblock(dependent, blocker); err != nil {
 							return err
 						}
 						advance()

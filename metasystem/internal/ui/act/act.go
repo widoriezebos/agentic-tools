@@ -1,9 +1,11 @@
 // Package act is the interface server's human hand on the ledger.
 //
-// Four verbs reach it, and every one of them is a verb a human performs on
+// Six verbs reach it, and every one of them is a verb a human performs on
 // their own backlog: goal approve and goal unapprove admit and withdraw work,
-// goal set-priority places a goal in a band and orders it there, and goal
-// open is the intake act that creates one. Nothing here shells out. A
+// goal set-priority places a goal in a band and orders it there, goal open is
+// the intake act that creates one, and goal block and goal unblock write and
+// remove the edges that say which goal waits for which. Nothing here shells
+// out. A
 // child of this server has no terminal in its ancestry and would be refused
 // by the very check that makes these acts a human's, so the engine is called
 // in-process, through the same internal/goal request path the command edge
@@ -282,11 +284,17 @@ type Opened struct {
 	NextStep string
 	// Tier overrides the tier the risk answers derive. Zero takes the derived
 	// one, which is the usual case; anything else needs Why.
-	Tier   uint8
-	Why    string
-	Blocks string
-	Labels []string
-	Risk   goal.RiskRecord
+	Tier uint8
+	Why  string
+	// Blocks names the goals that will wait for this one, and BlockedBy the
+	// goals this one will wait for. Both are lists because the relation is
+	// one: a goal can be the blocker of several and can wait for several, and
+	// a sheet that took one id each way would be offering half of what the
+	// verb takes.
+	Blocks    []string
+	BlockedBy []string
+	Labels    []string
+	Risk      goal.RiskRecord
 }
 
 // Open publishes goal open for one new goal, under origin `human`.
@@ -317,8 +325,45 @@ func (a Authority) Open(opened Opened) error {
 		return err
 	}
 	result, publishErr := goal.OpenRisked(request, opened.ID, opened.Intent, goal.OriginHuman,
-		opened.NextStep, opened.Blocks, opened.Risk, opened.Tier, opened.Why, nil, &a.proof, opened.Labels...)
+		opened.NextStep, opened.Blocks, opened.BlockedBy, opened.Risk, opened.Tier, opened.Why, nil, &a.proof, opened.Labels...)
 	return a.settle(request, result, publishErr, "goal open")
+}
+
+// Block publishes goal block: the dependent waits for the blocker from now on.
+//
+// The path the route reads names the dependent both ways round, because the
+// goal page shows the relation from both ends and only one of the two ends
+// owns the edge: a row in "Holds" on G's page acts on X's route with G as the
+// blocker, so there is one mutation and not a second, mirrored one.
+func (a Authority) Block(dependent, blocker string) error {
+	if strings.TrimSpace(dependent) == "" || strings.TrimSpace(blocker) == "" {
+		return refuse(KindRequest, "no-goal", "an edge names the goal that waits and the goal it waits for")
+	}
+	if strings.TrimSpace(dependent) == strings.TrimSpace(blocker) {
+		return refuse(KindRequest, "self-edge", "a goal cannot wait for itself")
+	}
+	request, err := a.request()
+	if err != nil {
+		return err
+	}
+	result, publishErr := goal.Block(request, dependent, blocker, &a.proof)
+	return a.settle(request, result, publishErr, "goal block")
+}
+
+// Unblock publishes goal unblock. Removing an edge whose blocker is not done
+// is an early lift, which the engine admits under this hand's own proof — the
+// browser session where a human signed in, the boot proof otherwise — and
+// refuses outright where neither is a person's.
+func (a Authority) Unblock(dependent, blocker string) error {
+	if strings.TrimSpace(dependent) == "" || strings.TrimSpace(blocker) == "" {
+		return refuse(KindRequest, "no-goal", "an edge names the goal that waits and the goal it waits for")
+	}
+	request, err := a.request()
+	if err != nil {
+		return err
+	}
+	result, publishErr := goal.Unblock(request, dependent, blocker, &a.proof)
+	return a.settle(request, result, publishErr, "goal unblock")
 }
 
 // settle turns one publication into the answer a route gives, and records the

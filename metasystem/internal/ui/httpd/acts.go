@@ -3,6 +3,7 @@ package httpd
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -12,18 +13,20 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/session"
 )
 
-// The board's four acts.
+// The board's six acts.
 //
 // Two are the drag-and-drop moves between lanes that are real: To Do to Ready
 // for Work is goal approve, and Ready for Work back to To Do is goal
 // unapprove. The third is the drag that happens inside a lane, which is a
 // re-rank rather than a move: goal set-priority. The fourth is the one act
-// that has no card to start from, because it makes one: goal open. Every
-// other move on the board would need a fact this server cannot manufacture —
-// a seat's claim, a park with its reason, a landing — and is refused in the
-// browser without ever reaching here.
+// that has no card to start from, because it makes one: goal open. The last
+// two write the relation between two goals rather than the state of one: goal
+// block and goal unblock, from the goal's own page where both directions of
+// that relation are read. Every other move on the board would need a fact
+// this server cannot manufacture — a seat's claim, a park with its reason, a
+// landing — and is refused in the browser without ever reaching here.
 //
-// All four take the same policy every other route takes: the allowed host,
+// All six take the same policy every other route takes: the allowed host,
 // the same-site check, the single allowed origin, POST and nothing else, a
 // bounded JSON object with no unknown fields. What they add is the one thing
 // no read route needs: a human's proof. Two can supply one — the live browser
@@ -40,10 +43,14 @@ const (
 	approveSuffix   = "/approve"
 	withdrawSuffix  = "/withdraw"
 	prioritySuffix  = "/priority"
+	blockSuffix     = "/block"
+	unblockSuffix   = "/unblock"
 	routeApprove    = "approve-goal"
 	routeWithdraw   = "withdraw-goal"
 	routePriority   = "set-goal-priority"
 	routeOpen       = "open-goal"
+	routeBlock      = "block-goal"
+	routeUnblock    = "unblock-goal"
 	unprovenRefusal = "this interface cannot act as a human"
 	// expiredRefusal is the one refusal a human fixes without reading
 	// anything: the session ran out while the page stayed open.
@@ -93,18 +100,83 @@ type priorityBody struct {
 // and their basis travel flat rather than nested, because that is how the
 // sheet asks them and nothing here is a record the browser assembles.
 type openBody struct {
-	ID           string   `json:"id"`
-	Intent       string   `json:"intent"`
-	NextStep     string   `json:"nextStep"`
-	Tier         uint8    `json:"tier"`
-	Why          string   `json:"why"`
-	Blocks       string   `json:"blocks"`
+	ID       string `json:"id"`
+	Intent   string `json:"intent"`
+	NextStep string `json:"nextStep"`
+	Tier     uint8  `json:"tier"`
+	Why      string `json:"why"`
+	// Blocks names the goals that will wait for this one. It reads a list and
+	// it also reads the one string it used to be, because a browser that was
+	// open when this engine was replaced still sends `"blocks": ""` or
+	// `"blocks": "some-goal"`, and a decoder that rejected those would answer
+	// an ordinary intake with a 400 for a field that was not even filled in.
+	Blocks goalList `json:"blocks"`
+	// BlockedBy names the goals this one will wait for. It is new, so it
+	// reads a list alone - but it reads the same type, because two fields of
+	// one relation that parsed differently would be a trap for the next
+	// person to add a third.
+	BlockedBy    goalList `json:"blockedBy"`
 	Labels       []string `json:"labels"`
 	Severity     uint8    `json:"severity"`
 	Novelty      uint8    `json:"novelty"`
 	Exposure     uint8    `json:"exposure"`
 	Accumulation uint8    `json:"accumulation"`
 	Basis        string   `json:"basis"`
+}
+
+// edgeBody is one end of one edge. The path names the goal that waits; this
+// names the goal it waits for. Authority is never in here: the hand that acts
+// is the one mayAct found, and a name in a body authorizes nothing.
+type edgeBody struct {
+	Blocker string `json:"blocker"`
+}
+
+// goalList is a field that takes goal ids either as a JSON array or as the
+// one string an older browser sends, where a comma separates them. Absent,
+// null, "" and [] all mean none, which is the common case and must never be
+// an error.
+type goalList []string
+
+func (list *goalList) UnmarshalJSON(raw []byte) error {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "null" {
+		*list = nil
+		return nil
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		var named []string
+		if err := json.Unmarshal(raw, &named); err != nil {
+			return err
+		}
+		*list = goalList(cleanGoalList(named))
+		return nil
+	}
+	var one string
+	if err := json.Unmarshal(raw, &one); err != nil {
+		return fmt.Errorf("a list of goals is an array of ids, or one string of ids separated by commas")
+	}
+	*list = goalList(cleanGoalList(strings.Split(one, ",")))
+	return nil
+}
+
+// cleanGoalList drops what is not an id: blanks, whitespace around one, and a
+// goal named twice. The order a human chose is kept, because the first goal
+// named is the one an open's park takes its marker from.
+func cleanGoalList(named []string) []string {
+	cleaned := []string{}
+	seen := map[string]bool{}
+	for _, id := range named {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		cleaned = append(cleaned, id)
+	}
+	if len(cleaned) == 0 {
+		return nil
+	}
+	return cleaned
 }
 
 // actRouteOf reports which act route a path names. The id is the segment
@@ -119,6 +191,8 @@ func actRouteOf(path string) (written, bool) {
 		approveSuffix:  routeApprove,
 		withdrawSuffix: routeWithdraw,
 		prioritySuffix: routePriority,
+		blockSuffix:    routeBlock,
+		unblockSuffix:  routeUnblock,
 	}
 	for suffix, route := range suffixes {
 		if id, ok := actID(path, suffix); ok {
@@ -197,7 +271,8 @@ func (h *handler) openGoal(w http.ResponseWriter, r *http.Request) {
 	}
 	h.answerAct(w, h.info.Open(signed, act.Opened{
 		ID: body.ID, Intent: body.Intent, NextStep: body.NextStep,
-		Tier: body.Tier, Why: body.Why, Blocks: body.Blocks, Labels: body.Labels,
+		Tier: body.Tier, Why: body.Why, Blocks: body.Blocks, BlockedBy: body.BlockedBy,
+		Labels: body.Labels,
 		Risk: goal.RiskRecord{
 			Severity: body.Severity, Novelty: body.Novelty, Exposure: body.Exposure,
 			Accumulation: body.Accumulation, Basis: body.Basis,
@@ -205,12 +280,41 @@ func (h *handler) openGoal(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
+// blockGoal and unblockGoal write and remove one edge. The id in the path is
+// always the goal that WAITS, whichever end of the relation a human pressed
+// the button on, so the two directions the goal page shows reach one checked
+// mutation rather than two.
+func (h *handler) blockGoal(w http.ResponseWriter, r *http.Request, dependent string) {
+	signed, may := h.mayAct(w, r)
+	if !may {
+		return
+	}
+	var body edgeBody
+	if !decode(w, r, &body) {
+		return
+	}
+	h.answerAct(w, h.info.Block(signed, dependent, strings.TrimSpace(body.Blocker)))
+}
+
+func (h *handler) unblockGoal(w http.ResponseWriter, r *http.Request, dependent string) {
+	signed, may := h.mayAct(w, r)
+	if !may {
+		return
+	}
+	var body edgeBody
+	if !decode(w, r, &body) {
+		return
+	}
+	h.answerAct(w, h.info.Unblock(signed, dependent, strings.TrimSpace(body.Blocker)))
+}
+
 // mayAct reports the hand this act publishes under, and refuses before a body
 // is read, so a server nothing proves parses nothing a caller sent. A live
 // browser session is that hand; otherwise the boot proof is, and a nil session
 // says so. The reason a refusal carries is both proofs' own, in full.
 func (h *handler) mayAct(w http.ResponseWriter, r *http.Request) (*session.Session, bool) {
-	if h.info.Approve == nil || h.info.Withdraw == nil || h.info.SetPriority == nil || h.info.Open == nil {
+	if h.info.Approve == nil || h.info.Withdraw == nil || h.info.SetPriority == nil || h.info.Open == nil ||
+		h.info.Block == nil || h.info.Unblock == nil {
 		writeFailure(w, "this engine was built without the backlog's acts")
 		return nil, false
 	}

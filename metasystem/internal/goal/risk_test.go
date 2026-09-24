@@ -29,7 +29,7 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 	low := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "landed precedent"}
 	budget := Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	opened := obligationAuthorityVerbReq(root, "01J5X00000000000000000RA00", "mac-a")
-	if result, err := OpenRisked(opened, "risk-raise", "Raise rigor without erasing control state.", OriginHuman, "Exercise the raise.", "", low, 0, "", &budget, nil); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := OpenRisked(asPerson(t, root, opened), "risk-raise", "Raise rigor without erasing control state.", OriginHuman, "Exercise the raise.", nil, nil, low, 0, "", &budget, nil); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open risk-scored goal: %+v %v", result, err)
 	}
 	proof := testHumanAuthority(t, root, opened.Now)
@@ -145,7 +145,7 @@ func TestSTR4R1RaiseTransaction(t *testing.T) {
 
 	preserveLow := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine but conservatively tiered"}
 	preserveOpen := obligationAuthorityVerbReq(root, "01J5X00000000000000000RA70", "mac-b")
-	if opened, err := OpenRisked(preserveOpen, "preserve-override", "Preserve an existing override.", OriginHuman, "Raise derivation.", "", preserveLow, 3, "standing full review", &budget, nil); err != nil || opened.Outcome != OutcomeConfirmed {
+	if opened, err := OpenRisked(asPerson(t, root, preserveOpen), "preserve-override", "Preserve an existing override.", OriginHuman, "Raise derivation.", nil, nil, preserveLow, 3, "standing full review", &budget, nil); err != nil || opened.Outcome != OutcomeConfirmed {
 		t.Fatalf("open preserved override: %+v %v", opened, err)
 	}
 	preserveApprove := preserveOpen
@@ -206,7 +206,7 @@ func TestSTR4R1FourDowngradesRefused(t *testing.T) {
 	openULIDs := []string{"01J5X00000000000000000DB00", "01J5X00000000000000000DB10", "01J5X00000000000000000DB20", "01J5X00000000000000000DB30"}
 	for index, test := range cases {
 		req := obligationAuthorityVerbReq(root, openULIDs[index], "mac-a")
-		if result, err := OpenRisked(req, test.id, "Exercise "+test.id+".", OriginHuman, "Edit it.", "", test.initial, test.tier, test.why, &budget, nil); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := OpenRisked(asPerson(t, root, req), test.id, "Exercise "+test.id+".", OriginHuman, "Edit it.", nil, nil, test.initial, test.tier, test.why, &budget, nil); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", test.id, result, err)
 		}
 	}
@@ -241,7 +241,7 @@ func TestRiskOverridesAboveAndBelow(t *testing.T) {
 	budget := Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	low := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine"}
 	pair := obligationAuthorityVerbReq(root, "01J5X00000000000000000RB00", "mac-a")
-	result, err := OpenRisked(pair, "override-above", "Record a conservative override.", OriginHuman, "Review it.", "", low, 2, "independent review requested", &budget, nil)
+	result, err := OpenRisked(asPerson(t, root, pair), "override-above", "Record a conservative override.", OriginHuman, "Review it.", nil, nil, low, 2, "independent review requested", &budget, nil)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("pair override above: %+v %v", result, err)
 	}
@@ -250,13 +250,19 @@ func TestRiskOverridesAboveAndBelow(t *testing.T) {
 		t.Fatalf("pair override above was not recorded: %+v %v", tree.Live["override-above"], err)
 	}
 	high := RiskRecord{Severity: 3, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "severe"}
-	if _, err := OpenRisked(obligationAuthorityVerbReq(root, "01J5X00000000000000000RB10", "mac-a"), "override-below-pair", "Refuse an unsafe override.", OriginHuman, "Refuse it.", "", high, 2, "pair asks lower", &budget, nil); err == nil || !strings.Contains(err.Error(), "human act") {
+	// A pair's open reaches the tier gate only as a lawful seat open, so it
+	// names the goal it holds; what refuses it there is the tier below its
+	// own derivation, which is a person's to record and not a pair's.
+	if result, err := claimApprovedForTest(t, obligationAuthorityVerbReq(root, "01J5X00000000000000000RB05", "mac-a"), "override-above", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim the goal the pair holds: %+v %v", result, err)
+	}
+	if _, err := OpenRisked(obligationAuthorityVerbReq(root, "01J5X00000000000000000RB10", "mac-a"), "override-below-pair", "Refuse an unsafe override.", OriginHuman, "Refuse it.", []string{"override-above"}, nil, high, 2, "pair asks lower", &budget, nil); err == nil || !strings.Contains(err.Error(), "human act") {
 		t.Fatalf("pair override below = %v", err)
 	}
 	human := obligationAuthorityVerbReq(root, "01J5X00000000000000000RB20", "mac-a")
 	human.Actor.Human = "Wido"
 	proof := testHumanAuthority(t, root, human.Now)
-	result, err = OpenRisked(human, "override-below-human", "Record the human override.", OriginHuman, "Proceed under human authority.", "", high, 2, "human accepts narrower rigor", &budget, proof)
+	result, err = OpenRisked(asPerson(t, root, human), "override-below-human", "Record the human override.", OriginHuman, "Proceed under human authority.", nil, nil, high, 2, "human accepts narrower rigor", &budget, proof)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("human override below: %+v %v", result, err)
 	}
@@ -272,7 +278,7 @@ func TestSTR4R1FiveMemberExceptions(t *testing.T) {
 	low := RiskRecord{Severity: 3, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "severe"}
 	box := Budget{ElapsedLimit: "8h", AttemptLimit: 10, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 	opened := obligationAuthorityVerbReq(root, "01J5X00000000000000000EX00", "mac-a")
-	if result, err := OpenRisked(opened, "budget-exceptions", "Count every over-box member.", OriginHuman, "Raise two members.", "", low, 0, "", &box, nil); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := OpenRisked(asPerson(t, root, opened), "budget-exceptions", "Count every over-box member.", OriginHuman, "Raise two members.", nil, nil, low, 0, "", &box, nil); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
 	if result, err := claimApprovedForTest(t, obligationAuthorityVerbReq(root, "01J5X00000000000000000EX10", "mac-a"), "budget-exceptions", box); err != nil || result.Outcome != OutcomeConfirmed {
@@ -444,7 +450,7 @@ func TestRestatedAnswersNeverLowerARecordedTier(t *testing.T) {
 	budget := Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	seat := obligationAuthorityVerbReq(root, "01J5X00000000000000000RT00", "mac-a")
 	// The old formula's tier 3 is recorded as an override above derivation 1.
-	if res, err := OpenRisked(seat, "wide", "Wide but routine.", OriginHuman, "Edit it.", "", exposed, 3, "the earlier formula", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := OpenRisked(asPerson(t, root, seat), "wide", "Wide but routine.", OriginHuman, "Edit it.", nil, nil, exposed, 3, "the earlier formula", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	reworded := exposed

@@ -673,6 +673,80 @@
   min-width: 0;
 }
 
+/* Both directions of the blocked relation, side by side where there is room
+   and stacked where there is not: they are two answers to two questions, and
+   a column each is what makes them read as two rather than as one long list
+   whose halves mean different things. */
+.ms-edges-sides {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  min-width: 0;
+}
+
+.ms-edges-side {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms-edges-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-edges-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.ms-edges-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-edges-id {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-accent);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.ms-edges-id:hover {
+  text-decoration: underline;
+}
+
+.ms-edges-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-edges-add .ms-pick {
+  flex: 1 1 200px;
+}
+
 .ms-briefing-head {
   display: flex;
   flex-wrap: wrap;
