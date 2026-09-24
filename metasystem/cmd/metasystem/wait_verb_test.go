@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -803,8 +804,197 @@ func TestWaitSessionStartWithoutLeaseReturnsBusy(t *testing.T) {
 }
 
 type pendingWaitVerdictCommandOptions struct {
-	jobStatus   string
-	writeWaiter bool
+	jobStatus            string
+	writeWaiter          bool
+	requireHook          bool
+	requireChildShellGit bool
+}
+
+// installPendingWaitGit provides only the Git answers used by an ordinary
+// checkout before its accepted goal reference exists. Every other command is
+// recorded and refused, including commands from a different working directory.
+func installPendingWaitGit(t *testing.T, root string, requireHook, requireChildShellGit bool) {
+	t.Helper()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hookCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hookCwd, err = filepath.EvalSymlinks(hookCwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shimDir := t.TempDir()
+	supported := filepath.Join(shimDir, "supported.log")
+	unexpected := filepath.Join(shimDir, "unexpected.log")
+	for _, path := range []string{supported, unexpected} {
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	script := "#!/bin/sh\nGORACE=atexit_sleep_ms=0\nexport GORACE\nexec \"$METASYSTEM_WAIT_GIT_HELPER\" -test.run=^TestPendingWaitGitHelper$ -- \"$@\"\n"
+	if err := testexec.WriteFile(filepath.Join(shimDir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_WAIT_GIT_ROOT", canonicalRoot)
+	t.Setenv("METASYSTEM_WAIT_GIT_HELPER", os.Args[0])
+	t.Setenv("METASYSTEM_WAIT_GIT_HOOK_CWD", hookCwd)
+	t.Setenv("METASYSTEM_WAIT_GIT_SUPPORTED", supported)
+	t.Setenv("METASYSTEM_WAIT_GIT_UNEXPECTED", unexpected)
+	childShell := "0"
+	if requireChildShellGit {
+		childShell = "1"
+	}
+	t.Setenv("METASYSTEM_WAIT_GIT_CHILD_SHELL", childShell)
+	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Cleanup(func() {
+		calls, callsErr := os.ReadFile(supported)
+		denied, deniedErr := os.ReadFile(unexpected)
+		if callsErr != nil || deniedErr != nil {
+			t.Errorf("read pending-wait Git transcript: supported=%v unexpected=%v", callsErr, deniedErr)
+			return
+		}
+		t.Logf("pending-wait Git supported calls root=%s:\n%s", canonicalRoot, calls)
+		if len(denied) != 0 {
+			t.Errorf("pending-wait Git unexpected calls root=%s:\n%s", canonicalRoot, denied)
+		}
+		transcript := string(calls)
+		if !strings.Contains(transcript, "cwd="+canonicalRoot+" arg=<rev-parse> arg=<--verify> arg=<--quiet> arg=<refs/metasystem/goals/accepted>") {
+			t.Errorf("pending-wait Git accepted-ref probe missing for %s", canonicalRoot)
+		}
+		if !strings.Contains(transcript, "cwd="+canonicalRoot+" arg=<config> arg=<--get> arg=<metasystem.goal.machine>") {
+			t.Errorf("pending-wait Git machine-config probe missing for %s", canonicalRoot)
+		}
+		if requireHook && !strings.Contains(transcript, "cwd="+hookCwd+" arg=<-C> arg=<"+canonicalRoot+"> arg=<rev-parse> arg=<--path-format=absolute> arg=<--git-dir> arg=<--git-common-dir>") {
+			t.Errorf("pending-wait Git hook checkout probe missing for %s", canonicalRoot)
+		}
+		if requireHook && !strings.Contains(transcript, "cwd="+hookCwd+" arg=<-C> arg=<"+canonicalRoot+"> arg=<rev-parse> arg=<--show-toplevel>") {
+			t.Errorf("pending-wait Git repository-top probe missing for %s", canonicalRoot)
+		}
+	})
+}
+
+type pendingWaitGitReply struct {
+	stdout, stderr string
+	status         int
+}
+
+// TestPendingWaitGitHelper answers only the Git reads admitted by the wait fixture.
+// Each invocation records its decision before returning to the installed command.
+func TestPendingWaitGitHelper(t *testing.T) {
+	if os.Getenv("METASYSTEM_WAIT_GIT_HELPER") == "" {
+		return
+	}
+	var argv []string
+	for i, arg := range os.Args {
+		if arg == "--" {
+			argv = os.Args[i+1:]
+			break
+		}
+	}
+	cwd, cwdErr := os.Getwd()
+	if cwdErr == nil {
+		cwd, cwdErr = filepath.EvalSymlinks(cwd)
+	}
+	call := "cwd=" + cwd
+	for _, arg := range argv {
+		call += " arg=<" + arg + ">"
+	}
+	root := os.Getenv("METASYSTEM_WAIT_GIT_ROOT")
+	hookCwd := os.Getenv("METASYSTEM_WAIT_GIT_HOOK_CWD")
+	childShell := os.Getenv("METASYSTEM_WAIT_GIT_CHILD_SHELL") == "1"
+	reply, supported := pendingWaitGitAnswer(root, hookCwd, cwd, childShell, argv)
+	if cwdErr != nil || len(argv) == 0 || root == "" || hookCwd == "" {
+		supported = false
+	}
+	logPath := os.Getenv("METASYSTEM_WAIT_GIT_UNEXPECTED")
+	if supported {
+		logPath = os.Getenv("METASYSTEM_WAIT_GIT_SUPPORTED")
+	}
+	file, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "record pending-wait Git call:", err)
+		os.Exit(97)
+	}
+	_, writeErr := fmt.Fprintln(file, call)
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil {
+		fmt.Fprintln(os.Stderr, "record pending-wait Git call:", writeErr, closeErr)
+		os.Exit(97)
+	}
+	if !supported {
+		fmt.Fprintln(os.Stderr, "unexpected pending-wait git call:", call)
+		os.Exit(97)
+	}
+	fmt.Fprint(os.Stdout, reply.stdout)
+	fmt.Fprint(os.Stderr, reply.stderr)
+	os.Exit(reply.status)
+}
+
+func pendingWaitGitAnswer(root, hookCwd, cwd string, childShell bool, argv []string) (pendingWaitGitReply, bool) {
+	answer := func(stdout, stderr string, status int) (pendingWaitGitReply, bool) {
+		return pendingWaitGitReply{stdout: stdout, stderr: stderr, status: status}, true
+	}
+	if cwd == hookCwd && len(argv) >= 3 && argv[0] == "-C" {
+		commandRoot, err := filepath.EvalSymlinks(argv[1])
+		if err == nil && commandRoot == root {
+			args := argv[2:]
+			switch {
+			case slices.Equal(args, []string{"rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"}):
+				gitDir := filepath.Join(root, ".git") + "\n"
+				return answer(gitDir+gitDir, "", 0)
+			case slices.Equal(args, []string{"config", "--get", "metasystem.goal.machine"}):
+				return answer("", "", 1)
+			case slices.Equal(args, []string{"rev-parse", "--show-toplevel"}):
+				return answer(root+"\n", "", 0)
+			}
+			if childShell {
+				switch {
+				case slices.Equal(args, []string{"rev-parse", "--git-common-dir"}),
+					slices.Equal(args, []string{"rev-parse", "--git-dir"}):
+					return answer(".git\n", "", 0)
+				case slices.Equal(args, []string{"config", "--get", "metasystem.steward.tick-seconds"}),
+					slices.Equal(args, []string{"config", "--get", "metasystem.steward.notify-command"}),
+					slices.Equal(args, []string{"rev-parse", "--verify", "--quiet", "refs/metasystem/goals/accepted"}):
+					return answer("", "", 1)
+				case slices.Equal(args, []string{"rev-parse", "HEAD"}):
+					return answer("HEAD\n", "fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n", 128)
+				}
+				pinned := []string{"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "rev-parse"}
+				if len(args) >= len(pinned) && slices.Equal(args[:len(pinned)], pinned) {
+					switch {
+					case slices.Equal(args[len(pinned):], []string{"--show-toplevel"}):
+						return answer(root+"\n", "", 0)
+					case slices.Equal(args[len(pinned):], []string{"--show-prefix"}):
+						return answer("\n", "", 0)
+					case slices.Equal(args[len(pinned):], []string{"--git-dir"}):
+						return answer(".git\n", "", 0)
+					case slices.Equal(args[len(pinned):], []string{"--verify", "--quiet", "HEAD^{commit}"}):
+						return answer("", "", 1)
+					}
+				}
+			}
+		}
+	}
+	if cwd == root {
+		switch {
+		case childShell && slices.Equal(argv, []string{"ls-tree", "-r", "--name-only", "HEAD", "--", "plans/goals/", "records/goals/"}):
+			return answer("", "fatal: Not a valid object name HEAD\n", 128)
+		case slices.Equal(argv, []string{"rev-parse", "--verify", "--quiet", "refs/metasystem/goals/accepted"}),
+			slices.Equal(argv, []string{"rev-parse", "--verify", "--quiet", "refs/metasystem/goals/accepted^{commit}"}),
+			slices.Equal(argv, []string{"show-ref", "--verify", "--quiet", "refs/metasystem/goals/accepted"}),
+			slices.Equal(argv, []string{"config", "--get", "goal.sync-remote"}),
+			slices.Equal(argv, []string{"config", "--get", "goal.sync-branch"}),
+			slices.Equal(argv, []string{"config", "--get", "metasystem.goal.machine"}):
+			return answer("", "", 1)
+		case slices.Equal(argv, []string{"rev-parse", "--path-format=absolute", "--git-common-dir"}):
+			return answer(filepath.Join(root, ".git")+"\n", "", 0)
+		}
+	}
+	return pendingWaitGitReply{}, false
 }
 
 type pendingWaitCommandFixture struct {
@@ -823,6 +1013,12 @@ func pendingWaitVerdictCommandFixture(t *testing.T, root, runtimeName string) (s
 
 func pendingWaitVerdictCommandFixtureWithOptions(t *testing.T, root, runtimeName string, options pendingWaitVerdictCommandOptions) pendingWaitCommandFixture {
 	t.Helper()
+	installPendingWaitGit(t, root, options.requireHook, options.requireChildShellGit)
+	if options.requireChildShellGit {
+		if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	fixtureNow := time.Now().UTC().Truncate(time.Second)
 	fixtureBootElapsed := 2 * time.Hour
 	t.Setenv("METASYSTEM_GOAL_NOW", fixtureNow.Format(time.RFC3339))
@@ -849,9 +1045,6 @@ func pendingWaitVerdictCommandFixtureWithOptions(t *testing.T, root, runtimeName
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if output, err := exec.Command("git", "-C", root, "init", "-q", "-b", "main").CombinedOutput(); err != nil {
-		t.Fatalf("initialize wait verdict fixture: %v %s", err, output)
 	}
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes="+runtimeName+"\nrole.default.model."+runtimeName+"=fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -1388,7 +1581,10 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 	assertPendingWaitVerdictOutput(t, plainOutput)
 
 	hookRoot := t.TempDir()
-	hookSession, _ := pendingWaitVerdictCommandFixture(t, hookRoot, "fake")
+	hookFixture := pendingWaitVerdictCommandFixtureWithOptions(t, hookRoot, "fake", pendingWaitVerdictCommandOptions{
+		jobStatus: "pending-setup", writeWaiter: true, requireHook: true,
+	})
+	hookSession := hookFixture.session
 	sourceRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -1477,7 +1673,7 @@ func TestRegisteredLocalAndHumanWaitsInstalledVerdicts(t *testing.T) {
 	}
 	binary := testutil.InstalledWaitBinary(t, candidate)
 	root := t.TempDir()
-	commandFixture := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{jobStatus: "pending"})
+	commandFixture := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{jobStatus: "pending", requireHook: true})
 	fixture := newInstalledWaitFixture(t, commandFixture.ownerLineage)
 	session := commandFixture.session
 	hook, canonical, wrapper := installPendingWaitHookFixture(t, root, binary)
@@ -1581,7 +1777,7 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	binary := testutil.InstalledWaitBinary(t, candidate)
 	root := t.TempDir()
 	commandFixture := pendingWaitVerdictCommandFixtureWithOptions(t, root, "fake", pendingWaitVerdictCommandOptions{
-		jobStatus: "pending", writeWaiter: false,
+		jobStatus: "pending", writeWaiter: false, requireHook: true, requireChildShellGit: true,
 	})
 	fixture := newInstalledWaitFixture(t, commandFixture.ownerLineage)
 	mainID := commandFixture.mainID
@@ -1740,8 +1936,10 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	}
 
 	registeredVerdict := pendingWaitVerdict(t, root, runtimeSession, mainID)
-	diagnostic, _ := os.ReadFile(filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts", runtimeSession+".txt"))
-	t.Logf("associated wait diagnostic: row=%+v artifact=%s", row, diagnostic)
+	if registeredVerdict.ShouldBlock {
+		diagnostic, _ := os.ReadFile(filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts", runtimeSession+".txt"))
+		t.Logf("associated wait diagnostic: row=%+v artifact=%s", row, diagnostic)
+	}
 	assertRegisteredWaitVerdict(t, registeredVerdict, waitingLine)
 	beforeAllow := strings.Count(string(logData), "stop response decision=allow")
 	allowedPayload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop"}`, runtimeSession, root)

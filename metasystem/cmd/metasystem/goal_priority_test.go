@@ -65,9 +65,13 @@ func TestGoalPriorityAuthority(t *testing.T) {
 }
 
 func TestGoalPriorityListing(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	t.Run("cross-state", func(t *testing.T) {
-		root := priorityListingFixture(t)
-		stdout, code := captureStdout(t, func() int { return runGoalList([]string{"--root", root, "--json"}) })
+		fixture := priorityListingFixture(t)
+		root := fixture.root()
+		stdout, code := captureStdout(t, func() int {
+			return runGoalListWithResolver([]string{"--root", root, "--json"}, fixture.resolve)
+		})
 		if code != 0 {
 			t.Fatalf("JSON list failed: code=%d output=%q", code, stdout)
 		}
@@ -239,18 +243,10 @@ func TestGoalNextPrintsFencedClaimBeforeNoClaimableGoal(t *testing.T) {
 	}
 }
 
-func priorityListingFixture(t *testing.T) string {
+func priorityListingFixture(t *testing.T) *goalListRepositoryFixture {
 	t.Helper()
-	root := syncedClaimedGoalFixture(t)
-	standingPath := filepath.Join(root, "plans", "goals", "standing-validation.md")
-	data, err := os.ReadFile(standingPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	standing, problems := goal.ParseFile(data)
-	if len(problems) != 0 {
-		t.Fatalf("parse standing fixture: %v", problems)
-	}
+	base := newObligationCommandFixture(t)
+	standing, _ := base.acceptedGoal()
 	standing.Priority, standing.Sequence = 1, 2
 	queued := commandPriorityGoal("z-ranked", goal.StateQueued)
 	queued.Priority, queued.Sequence, queued.Pinned = 1, 1, "m2"
@@ -258,20 +254,25 @@ func priorityListingFixture(t *testing.T) string {
 	parked := commandPriorityGoal("a-unranked", goal.StateParked)
 	parked.Pinned = "m3"
 	parked.Parked = &goal.ParkRecord{By: "human:Wido", At: "2026-08-30T09:00:00Z", Because: "Waiting for input."}
-	for path, contents := range map[string][]byte{
-		standingPath: goal.RenderFile(standing),
-		filepath.Join(root, "plans", "goals", queued.Id+".md"): goal.RenderFile(queued),
-		filepath.Join(root, "plans", "goals", parked.Id+".md"): goal.RenderFile(parked),
-	} {
-		if err := os.WriteFile(path, contents, 0o644); err != nil {
-			t.Fatal(err)
-		}
+	changes := make([]goal.Change, 0, 3)
+	for _, file := range []*goal.GoalFile{standing, queued, parked} {
+		changes = append(changes, goal.Change{
+			Path: "plans/goals/" + file.Id + ".md", Content: goal.RenderFile(file),
+		})
 	}
-	goalSyncMutationGit(t, root, "add", "plans/goals")
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", "priority listing fixture")
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	return root
+	parent := base.repo.accepted
+	opid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAD", "mac-cli", "m1")
+	tip, err := base.repo.Build(opid, parent, changes, "priority listing fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome, err := base.repo.Publish(parent, tip); err != nil || outcome != goal.CASLanded {
+		t.Fatalf("publish priority listing fixture: outcome=%v error=%v", outcome, err)
+	}
+	if err := base.repo.AcceptedCAS(parent, tip); err != nil {
+		t.Fatal(err)
+	}
+	return &goalListRepositoryFixture{obligationCommandFixture: base}
 }
 
 func prioritySelectionFixture(t *testing.T, files ...*goal.GoalFile) string {

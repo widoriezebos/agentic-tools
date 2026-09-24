@@ -1,20 +1,110 @@
 package validate
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 type mergeClosureFixture struct {
-	t           *testing.T
-	fixture     *conformanceFixture
-	implementer map[string]any
-	finalTree   string
+	t               *testing.T
+	fixture         *conformanceFixture
+	implementer     map[string]any
+	finalTree       string
+	resolveEndpoint func(string) (goal.Endpoint, error)
+	acceptedGoal    *acceptedGoalDecisionRepository
+}
+
+type acceptedGoalDecisionRepository struct {
+	t     *testing.T
+	tip   string
+	files map[string][]byte
+	reads int
+}
+
+func (r *acceptedGoalDecisionRepository) unexpected(method string) {
+	r.t.Helper()
+	r.t.Fatalf("unexpected goal repository method %s", method)
+}
+
+func (r *acceptedGoalDecisionRepository) Capture(string) (string, error) {
+	r.unexpected("Capture")
+	return "", nil
+}
+
+func (r *acceptedGoalDecisionRepository) Accepted() (string, bool, error) {
+	r.reads++
+	return r.tip, true, nil
+}
+
+func (r *acceptedGoalDecisionRepository) Files(commit string, prefixes ...string) (map[string][]byte, error) {
+	r.t.Helper()
+	if commit != r.tip || len(prefixes) != 2 || prefixes[0] != "plans/goals/" || prefixes[1] != "records/goals/" {
+		r.t.Fatalf("unexpected accepted goal files request: commit %q prefixes %q", commit, prefixes)
+	}
+	r.reads++
+	copy := make(map[string][]byte, len(r.files))
+	for path, data := range r.files {
+		copy[path] = append([]byte(nil), data...)
+	}
+	return copy, nil
+}
+
+func (r *acceptedGoalDecisionRepository) Build(string, string, []goal.Change, string) (string, error) {
+	r.unexpected("Build")
+	return "", nil
+}
+
+func (r *acceptedGoalDecisionRepository) Publish(string, string) (goal.CASOutcome, error) {
+	r.unexpected("Publish")
+	return "", nil
+}
+
+func (r *acceptedGoalDecisionRepository) AcceptedCAS(string, string) error {
+	r.unexpected("AcceptedCAS")
+	return nil
+}
+
+func (r *acceptedGoalDecisionRepository) IsAncestor(string, string) (bool, error) {
+	r.unexpected("IsAncestor")
+	return false, nil
+}
+
+func (r *acceptedGoalDecisionRepository) TrailerPresent(string, string) (bool, error) {
+	r.unexpected("TrailerPresent")
+	return false, nil
+}
+
+func (r *acceptedGoalDecisionRepository) CommitWithTrailer(string, string, string) (string, error) {
+	r.unexpected("CommitWithTrailer")
+	return "", nil
+}
+
+func (r *acceptedGoalDecisionRepository) CommitTime(commit string) (time.Time, error) {
+	r.t.Helper()
+	if commit != r.tip {
+		r.t.Fatalf("unexpected accepted goal commit time request: %q", commit)
+	}
+	r.reads++
+	return time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC), nil
+}
+
+func (r *acceptedGoalDecisionRepository) Release(string) error {
+	r.unexpected("Release")
+	return nil
+}
+
+func (f *mergeClosureFixture) requireAcceptedGoalRead() {
+	f.t.Helper()
+	if f.acceptedGoal == nil || f.acceptedGoal.reads != 3 {
+		f.t.Fatalf("accepted goal repository read count = %v, want Accepted, Files, and CommitTime", f.acceptedGoal)
+	}
 }
 
 func newMergeClosureFixture(t *testing.T) *mergeClosureFixture {
@@ -37,7 +127,7 @@ func assembleMergeClosureFixture(t *testing.T, fixture *conformanceFixture) *mer
 	return &mergeClosureFixture{t: t, fixture: fixture, implementer: implementer, finalTree: strings.Repeat("a", 40)}
 }
 
-func (f *mergeClosureFixture) seedGoalDecision(status string) {
+func (f *mergeClosureFixture) seedGoalDecision(status string, includeAcceptedGoal bool) string {
 	f.t.Helper()
 	opened := goal.HistoryLine{
 		At: "2026-08-20T10:00:00Z", Opid: "01J5X0000000000000000000B0-mac-a-1a2b3c4d",
@@ -70,15 +160,28 @@ func (f *mergeClosureFixture) seedGoalDecision(status string) {
 	if err := os.MkdirAll(goalsDir, 0o755); err != nil {
 		f.t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(goalsDir, "backlog.md"), goal.RenderRoot(root), 0o644); err != nil {
+	rootBytes := goal.RenderRoot(root)
+	goalBytes := goal.RenderFile(file)
+	if err := os.WriteFile(filepath.Join(goalsDir, "backlog.md"), rootBytes, 0o644); err != nil {
 		f.t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(goalsDir, "goal-a.md"), goal.RenderFile(file), 0o644); err != nil {
+	goalPath := filepath.Join(goalsDir, "goal-a.md")
+	if err := os.WriteFile(goalPath, goalBytes, 0o644); err != nil {
 		f.t.Fatal(err)
 	}
-	f.fixture.git(f.fixture.controller, "add", "plans/goals")
-	f.fixture.git(f.fixture.controller, "-c", "user.name=m", "-c", "user.email=m@x", "commit", "-qm", "goal decision")
-	f.fixture.git(f.fixture.controller, "update-ref", goal.AcceptedRef, "HEAD")
+	files := map[string][]byte{"plans/goals/backlog.md": append([]byte(nil), rootBytes...)}
+	if includeAcceptedGoal {
+		files["plans/goals/goal-a.md"] = append([]byte(nil), goalBytes...)
+	}
+	repo := &acceptedGoalDecisionRepository{t: f.t, tip: strings.Repeat("c", 40), files: files}
+	f.acceptedGoal = repo
+	f.resolveEndpoint = func(requestedRoot string) (goal.Endpoint, error) {
+		if requestedRoot != f.fixture.controller {
+			return goal.Endpoint{}, fmt.Errorf("unexpected goal endpoint root %q", requestedRoot)
+		}
+		return goal.Endpoint{Root: requestedRoot, Remote: "origin", Repository: repo}, nil
+	}
+	return goalPath
 }
 
 func mergeRegisterFinding(id, status, resolution string) map[string]any {
@@ -176,7 +279,7 @@ func (f *mergeClosureFixture) run(selected string) ([]string, []string, int) {
 	f.t.Helper()
 	run := &conformanceRun{
 		root: f.fixture.controller, rootJob: "implementation", record: f.implementer,
-		criticRoot: selected,
+		criticRoot: selected, resolveEndpoint: f.resolveEndpoint,
 	}
 	return run.mergeCritique("", f.finalTree, "fake", "")
 }
@@ -370,21 +473,27 @@ func TestMergeCritiqueGoalDecisionsUseAcceptedRepository(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{"deferred", "accepted-risk"} {
 		t.Run(status+" still requires matching goal record", func(t *testing.T) {
-			fixture := newMergeClosureFixture(t)
+			fixture := newFileMergeClosureFixture(t)
 			fixture.writeHistoricalCritic("critic-a", fixture.finalTree, []any{mergeRegisterFinding("F-GOAL", status, status)})
 			root := fixture.criticRoot("critic-a")
 			root["goalId"] = "goal-a"
 			fixture.fixture.writeJSON("artifacts/agents/jobs/critic-a.json", root)
+			fixture.seedGoalDecision(status, false)
 			fixture.requireRefused("", status+" finding 'F-GOAL' has no readable matching goal record")
+			fixture.requireAcceptedGoalRead()
 		})
 		t.Run(status+" accepts matching goal record", func(t *testing.T) {
-			fixture := newMergeClosureFixture(t)
+			fixture := newFileMergeClosureFixture(t)
 			fixture.writeHistoricalCritic("critic-a", fixture.finalTree, []any{mergeRegisterFinding("F-GOAL", status, status)})
 			root := fixture.criticRoot("critic-a")
 			root["goalId"] = "goal-a"
 			fixture.fixture.writeJSON("artifacts/agents/jobs/critic-a.json", root)
-			fixture.seedGoalDecision(status)
+			goalPath := fixture.seedGoalDecision(status, true)
+			if err := os.Remove(goalPath); err != nil {
+				t.Fatal(err)
+			}
 			fixture.requireAccepted("")
+			fixture.requireAcceptedGoalRead()
 		})
 	}
 }

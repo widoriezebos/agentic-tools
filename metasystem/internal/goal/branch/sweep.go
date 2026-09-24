@@ -102,7 +102,7 @@ func droppedCommitWith(repo, endpointTip, goalID, commit, dropped string, read f
 	if !concludedGoalAtWith(repo, endpointTip, goalID, read) {
 		return false
 	}
-	digest, err := UnitDigest(repo, commit)
+	digest, err := unitDigestWithGit(repo, commit, read)
 	if err != nil {
 		return false
 	}
@@ -178,7 +178,7 @@ func cleanGoalWorktreesWith(repo, goalID string, read func(string, ...string) ([
 	return paths, nil
 }
 
-func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []string) error {
+func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []string, deps sweepDependencies) error {
 	for _, path := range paths {
 		same, _ := filepath.Abs(path)
 		root, _ := filepath.Abs(repo)
@@ -189,12 +189,12 @@ func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []st
 			root = resolved
 		}
 		if same == root {
-			if _, err := gitOutput(repo, "switch", "--quiet", "--detach", endpointTip); err != nil {
+			if _, err := deps.gitOutput(repo, "switch", "--quiet", "--detach", endpointTip); err != nil {
 				return err
 			}
 			continue
 		}
-		if _, err := gitOutput(repo, "worktree", "remove", path); err != nil {
+		if _, err := deps.gitOutput(repo, "worktree", "remove", path); err != nil {
 			return err
 		}
 	}
@@ -202,8 +202,8 @@ func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []st
 		return nil
 	}
 	ref := goalBranchRef(goalID)
-	if _, err := gitOutput(repo, "update-ref", "-d", ref, localTip); err != nil {
-		observed, present, readErr := localBranchTip(repo, ref)
+	if _, err := deps.gitOutput(repo, "update-ref", "-d", ref, localTip); err != nil {
+		observed, present, readErr := deps.localBranchTip(repo, ref)
 		if readErr != nil {
 			return readErr
 		}
@@ -356,7 +356,7 @@ func sweepWithDependencies(req SweepRequest, deps sweepDependencies) (SweepResul
 			return SweepResult{}, err
 		}
 	}
-	if err := cleanupGoalWorktrees(req.Repo, req.GoalID, req.EndpointTip, localTip, worktrees); err != nil {
+	if err := cleanupGoalWorktrees(req.Repo, req.GoalID, req.EndpointTip, localTip, worktrees, deps); err != nil {
 		return SweepResult{}, err
 	}
 	return SweepResult{GoalID: req.GoalID, Tip: resultTip, Deleted: true}, nil

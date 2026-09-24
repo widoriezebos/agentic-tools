@@ -2,6 +2,8 @@ package branch
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -33,6 +35,7 @@ type sweepPolicyCall struct {
 	bytes   []byte
 	commits []Commit
 	covered bool
+	outcome CASOutcome
 	err     error
 }
 
@@ -43,6 +46,7 @@ type sweepPolicyRig struct {
 	tips        map[string]string
 	localTip    string
 	clearedRefs map[string]bool
+	realRanges  bool
 }
 
 func newSweepPolicyRig(t *testing.T, tips map[string]string, localTip string, calls ...sweepPolicyCall) *sweepPolicyRig {
@@ -82,8 +86,31 @@ func (r *sweepPolicyRig) Fetch(repo, remote, ref, destination string) error {
 }
 
 func (r *sweepPolicyRig) Push(repo, remote, ref, expected, tip string) (CASOutcome, error) {
-	r.t.Fatalf("sweep tried to push %s %s %s %s %s after a refusal", repo, remote, ref, expected, tip)
-	return CASUnknown, errors.New("unexpected push")
+	call := r.take(sweepPolicyInvocation{method: "Push", repo: repo, remote: remote, ref: ref, endpoint: expected, tip: tip})
+	if call.outcome == CASLanded {
+		if r.tips[remote] != expected {
+			r.t.Fatalf("%s ref moved to %q before expected-tip delete %q", remote, r.tips[remote], expected)
+		}
+		r.tips[remote] = tip
+	} else if call.outcome == CASRefused && r.tips[remote] == expected {
+		r.t.Fatalf("%s refusal has no moved ref", remote)
+	}
+	return call.outcome, call.err
+}
+
+func (r *sweepPolicyRig) gitRead(repo string, args ...string) ([]byte, error) {
+	call := r.take(sweepPolicyInvocation{method: "GitRead", repo: repo, args: args})
+	if len(args) == 4 && args[0] == "update-ref" && args[1] == "-d" && args[2] == goalBranchRef(sweepPolicyGoal) {
+		if call.err == nil {
+			if r.localTip != args[3] {
+				r.t.Fatalf("local ref moved to %q before expected-tip delete %q", r.localTip, args[3])
+			}
+			r.localTip = ""
+		} else if r.localTip == args[3] {
+			r.t.Fatalf("local delete refusal has no moved ref")
+		}
+	}
+	return append([]byte(nil), call.bytes...), call.err
 }
 
 func (r *sweepPolicyRig) dependencies() sweepDependencies {
@@ -95,12 +122,12 @@ func (r *sweepPolicyRig) dependencies() sweepDependencies {
 			}
 			return call.tip, call.present, call.err
 		},
-		gitOutput: func(repo string, args ...string) ([]byte, error) {
-			call := r.take(sweepPolicyInvocation{method: "GitRead", repo: repo, args: args})
-			return append([]byte(nil), call.bytes...), call.err
-		},
+		gitOutput: r.gitRead,
 		validateRange: func(repo, endpoint, tip, goal string) ([]Commit, error) {
 			call := r.take(sweepPolicyInvocation{method: "ValidateRange", repo: repo, endpoint: endpoint, tip: tip, goal: goal})
+			if r.realRanges {
+				return validateRangeWithGit(repo, endpoint, tip, goal, r.gitRead)
+			}
 			return append([]Commit(nil), call.commits...), call.err
 		},
 		ancestor: func(repo, older, newer string) (bool, error) {
@@ -435,5 +462,329 @@ func TestSweepRefusesTransportTipWithUnlandedCommit(t *testing.T) {
 	}
 	if rig.tips["origin"] == "" {
 		t.Fatal("transport refusal deleted origin first")
+	}
+}
+
+func sweepFiveStart(repo, origin, transport, local string, hasTransport bool) []sweepPolicyCall {
+	calls := []sweepPolicyCall{sweepClaim(), sweepRemote(repo, "origin", origin)}
+	if hasTransport {
+		calls = append(calls, sweepRemote(repo, "transport", transport))
+	}
+	return append(calls, sweepLocal(repo, local), sweepWorktrees(repo, nil))
+}
+
+func sweepFiveRange(repo, endpoint, tip string) []sweepPolicyCall {
+	calls := []sweepPolicyCall{sweepRange(repo, endpoint, tip, nil, nil),
+		sweepRead(repo, []byte(sweepPolicyBase+"\n"), "merge-base", endpoint, tip)}
+	rows := sweepPolicyOrigin + " " + sweepPolicyBase + "\n"
+	if tip == sweepPolicyLocal {
+		rows += sweepPolicyLocal + " " + sweepPolicyOrigin + "\n"
+	} else if tip == sweepPolicyUnknown {
+		rows = sweepPolicyUnknown + " " + sweepPolicyBase + "\n"
+	} else if tip != sweepPolicyOrigin {
+		panic("undeclared sweep range tip")
+	}
+	calls = append(calls, sweepRead(repo, []byte(rows), "rev-list", "--first-parent", "--reverse", "--parents", sweepPolicyBase+".."+tip))
+	if tip == sweepPolicyUnknown {
+		return append(calls, sweepRead(repo, nil, "show", "-s", "--format=%(trailers:only,unfold=true)", tip))
+	}
+	for _, item := range []struct{ commit, parent, path string }{
+		{sweepPolicyOrigin, sweepPolicyBase, "metasystem/plans/landed.md"},
+		{sweepPolicyLocal, sweepPolicyOrigin, "metasystem/plans/unlanded.md"},
+	} {
+		if item.commit == sweepPolicyLocal && tip != sweepPolicyLocal {
+			break
+		}
+		calls = append(calls,
+			sweepRead(repo, []byte("Goal-Plan: goal-a\n"), "show", "-s", "--format=%(trailers:only,unfold=true)", item.commit),
+			sweepRead(repo, []byte(item.commit+" "+item.parent+"\n"), "rev-list", "--parents", "-n", "1", item.commit),
+			sweepRead(repo, []byte(rawTree(item.path)), "diff-tree", "-r", "-z", "--no-renames", "--full-index", item.commit+"^", item.commit))
+	}
+	return calls
+}
+
+func sweepFiveRemote(repo, endpoint, remote, tip string) []sweepPolicyCall {
+	calls := []sweepPolicyCall{sweepFetch(repo, remote)}
+	calls = append(calls, sweepFiveRange(repo, endpoint, tip)...)
+	return append(calls, sweepClear(repo, remote))
+}
+
+func sweepFiveCheck(repo, endpoint, tip string) []sweepPolicyCall {
+	calls := []sweepPolicyCall{
+		sweepRead(repo, []byte(sweepPolicyBase+"\n"), "merge-base", endpoint, tip),
+		sweepRead(repo, []byte(sweepPolicyOrigin+"\n"), "log", "--format=%(trailers:key=Goal-Source,valueonly)", sweepPolicyBase+".."+endpoint),
+	}
+	return append(calls, sweepFiveRange(repo, endpoint, tip)...)
+}
+
+func sweepFiveGoal(t *testing.T, repo, endpoint string, concluded bool) sweepPolicyCall {
+	t.Helper()
+	if !concluded {
+		return sweepMissingGoal(repo, endpoint)
+	}
+	path := filepath.Join(repo, "metasystem", "records", "goals", "goal-a.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("# goal-a\n\n- State: done\n- Concluded: Finished.\n")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sweepRead(repo, data,
+		"show", endpoint+":metasystem/records/goals/goal-a.md")
+}
+
+func sweepFiveDigest(repo string) []sweepPolicyCall {
+	return []sweepPolicyCall{
+		sweepRead(repo, []byte(sweepPolicyLocal+" "+sweepPolicyOrigin+"\n"), "rev-list", "--parents", "-n", "1", sweepPolicyLocal),
+		sweepRead(repo, []byte(rawTree("metasystem/plans/unlanded.md")), "diff-tree", "-r", "-z", "--no-renames", "--full-index", sweepPolicyLocal+"^", sweepPolicyLocal),
+	}
+}
+
+func sweepFivePush(repo, remote, expected string, outcome CASOutcome) sweepPolicyCall {
+	call := sweepPolicyCall{want: sweepPolicyInvocation{method: "Push", repo: repo, remote: remote,
+		ref: goalBranchRef(sweepPolicyGoal), endpoint: expected}, outcome: outcome}
+	if outcome == CASRefused {
+		call.err = errors.New("remote ref moved")
+	}
+	return call
+}
+
+func sweepFiveDeleteLocal(repo, expected string, moved bool) sweepPolicyCall {
+	call := sweepRead(repo, nil, "update-ref", "-d", goalBranchRef(sweepPolicyGoal), expected)
+	if moved {
+		call.err = errors.New("local ref moved")
+	}
+	return call
+}
+
+func sweepFiveRig(t *testing.T, origin, transport, local string, calls []sweepPolicyCall) *sweepPolicyRig {
+	t.Helper()
+	rig := newSweepPolicyRig(t, sweepPolicyTips(origin, transport), local, calls...)
+	rig.realRanges = true
+	return rig
+}
+
+func sweepFiveRefusal(t *testing.T, err error, code string) {
+	t.Helper()
+	var refusal *OpError
+	if !errors.As(err, &refusal) || refusal.Code != code {
+		t.Fatalf("sweep refusal = %v, want %s", err, code)
+	}
+}
+
+func TestGoalBranchSweepRules(t *testing.T) {
+	t.Parallel()
+	t.Run("last landing", func(t *testing.T) {
+		t.Parallel()
+		repo := t.TempDir()
+		calls := sweepFiveStart(repo, sweepPolicyOrigin, sweepPolicyOrigin, sweepPolicyOrigin, true)
+		calls = append(calls, sweepFiveRemote(repo, sweepPolicyEndpoint, "origin", sweepPolicyOrigin)...)
+		calls = append(calls, sweepFiveCheck(repo, sweepPolicyEndpoint, sweepPolicyOrigin)...)
+		calls = append(calls, sweepFiveRemote(repo, sweepPolicyEndpoint, "transport", sweepPolicyOrigin)...)
+		calls = append(calls, sweepFivePush(repo, "origin", sweepPolicyOrigin, CASLanded),
+			sweepFivePush(repo, "transport", sweepPolicyOrigin, CASLanded), sweepFiveDeleteLocal(repo, sweepPolicyOrigin, false))
+		rig := sweepFiveRig(t, sweepPolicyOrigin, sweepPolicyOrigin, sweepPolicyOrigin, calls)
+		req := rig.request(repo, sweepPolicyEndpoint)
+		req.Transport = "transport"
+		result, err := sweepWithDependencies(req, rig.dependencies())
+		if err != nil || !result.Deleted || rig.tips["origin"] != "" || rig.tips["transport"] != "" || rig.localTip != "" {
+			t.Fatalf("sweep=%+v err=%v remote=%v local=%q", result, err, rig.tips, rig.localTip)
+		}
+	})
+	t.Run("plan tail and abandoned word", func(t *testing.T) {
+		t.Parallel()
+		repo := t.TempDir()
+		calls := sweepFiveStart(repo, sweepPolicyLocal, "", sweepPolicyLocal, false)
+		calls = append(calls, sweepFiveRemote(repo, sweepPolicyEndpoint, "origin", sweepPolicyLocal)...)
+		calls = append(calls, sweepFiveCheck(repo, sweepPolicyEndpoint, sweepPolicyLocal)...)
+		calls = append(calls, sweepFiveGoal(t, repo, sweepPolicyEndpoint, false))
+		calls = append(calls, sweepFiveStart(repo, sweepPolicyLocal, "", sweepPolicyLocal, false)...)
+		calls = append(calls, sweepFiveRemote(repo, sweepPolicyEndpoint, "origin", sweepPolicyLocal)...)
+		calls = append(calls, sweepFivePush(repo, "origin", sweepPolicyLocal, CASLanded), sweepFiveDeleteLocal(repo, sweepPolicyLocal, false))
+		rig := sweepFiveRig(t, sweepPolicyLocal, "", sweepPolicyLocal, calls)
+		_, err := sweepWithDependencies(rig.request(repo, sweepPolicyEndpoint), rig.dependencies())
+		sweepFiveRefusal(t, err, SweepUnlandedCode)
+		if rig.tips["origin"] != sweepPolicyLocal || rig.localTip != sweepPolicyLocal {
+			t.Fatalf("plan refusal changed refs: %v, %q", rig.tips, rig.localTip)
+		}
+		req := rig.request(repo, sweepPolicyEndpoint)
+		req.Abandoned = true
+		result, err := sweepWithDependencies(req, rig.dependencies())
+		if err != nil || !result.Deleted || rig.tips["origin"] != "" || rig.localTip != "" {
+			t.Fatalf("abandoned deletion=%+v err=%v remote=%v local=%q", result, err, rig.tips, rig.localTip)
+		}
+	})
+	t.Run("tip race", func(t *testing.T) {
+		t.Parallel()
+		repo := t.TempDir()
+		calls := sweepFiveStart(repo, sweepPolicyOrigin, "", sweepPolicyOrigin, false)
+		calls = append(calls, sweepFiveRemote(repo, sweepPolicyEndpoint, "origin", sweepPolicyOrigin)...)
+		calls = append(calls, sweepFiveCheck(repo, sweepPolicyEndpoint, sweepPolicyOrigin)...)
+		calls = append(calls, sweepPolicyCall{want: sweepPolicyInvocation{method: "Hook"}}, sweepFivePush(repo, "origin", sweepPolicyOrigin, CASRefused))
+		rig := sweepFiveRig(t, sweepPolicyOrigin, "", sweepPolicyOrigin, calls)
+		req := rig.request(repo, sweepPolicyEndpoint)
+		req.Hooks.AfterRemoteRead = func() error {
+			rig.take(sweepPolicyInvocation{method: "Hook"})
+			rig.tips["origin"] = sweepPolicyUnknown
+			return nil
+		}
+		_, err := sweepWithDependencies(req, rig.dependencies())
+		sweepFiveRefusal(t, err, LeaseMovedCode)
+		if rig.tips["origin"] != sweepPolicyUnknown || rig.localTip != sweepPolicyOrigin {
+			t.Fatalf("race changed refs: %v, %q", rig.tips, rig.localTip)
+		}
+	})
+	t.Run("unknown commit", func(t *testing.T) {
+		t.Parallel()
+		repo := t.TempDir()
+		calls := sweepFiveStart(repo, sweepPolicyUnknown, "", "", false)
+		calls = append(calls, sweepFiveRemote(repo, sweepPolicyEndpoint, "origin", sweepPolicyUnknown)...)
+		rig := sweepFiveRig(t, sweepPolicyUnknown, "", "", calls)
+		_, err := sweepWithDependencies(rig.request(repo, sweepPolicyEndpoint), rig.dependencies())
+		var refusal *RangeError
+		if !errors.As(err, &refusal) || refusal.Code != RangeCode || refusal.Commit != sweepPolicyUnknown || rig.tips["origin"] != sweepPolicyUnknown {
+			t.Fatalf("unknown commit sweep=%v remote=%v", err, rig.tips)
+		}
+	})
+}
+
+func TestSweepKeepsLocalRefMovedAfterCheck(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	marker := filepath.Join(repo, "kept.txt")
+	if err := os.WriteFile(marker, []byte("keep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	calls := sweepFiveStart(repo, sweepPolicyOrigin, "", sweepPolicyOrigin, false)
+	calls = append(calls, sweepFiveRemote(repo, sweepPolicyEndpoint, "origin", sweepPolicyOrigin)...)
+	calls = append(calls, sweepFiveCheck(repo, sweepPolicyEndpoint, sweepPolicyOrigin)...)
+	calls = append(calls, sweepPolicyCall{want: sweepPolicyInvocation{method: "Hook"}},
+		sweepFivePush(repo, "origin", sweepPolicyOrigin, CASLanded),
+		sweepFiveDeleteLocal(repo, sweepPolicyOrigin, true), sweepLocal(repo, sweepPolicyUnknown))
+	rig := sweepFiveRig(t, sweepPolicyOrigin, "", sweepPolicyOrigin, calls)
+	req := rig.request(repo, sweepPolicyEndpoint)
+	req.Hooks.AfterRemoteRead = func() error {
+		rig.take(sweepPolicyInvocation{method: "Hook"})
+		rig.localTip = sweepPolicyUnknown
+		return nil
+	}
+	_, err := sweepWithDependencies(req, rig.dependencies())
+	sweepFiveRefusal(t, err, LeaseMovedCode)
+	if rig.tips["origin"] != "" || rig.localTip != sweepPolicyUnknown {
+		t.Fatalf("local race refs: %v, %q", rig.tips, rig.localTip)
+	}
+	if got, readErr := os.ReadFile(marker); readErr != nil || string(got) != "keep\n" {
+		t.Fatalf("marker after local race = %q, %v", got, readErr)
+	}
+}
+
+func TestSweepLocalTipExemptions(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"abandoned", "declared dropped"} {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			repo := t.TempDir()
+			calls := sweepFiveStart(repo, sweepPolicyOrigin, "", sweepPolicyLocal, false)
+			calls = append(calls, sweepFiveRemote(repo, sweepPolicyEndpoint, "origin", sweepPolicyOrigin)...)
+			if name != "abandoned" {
+				calls = append(calls, sweepFiveCheck(repo, sweepPolicyEndpoint, sweepPolicyOrigin)...)
+			}
+			calls = append(calls, sweepAncestor(repo, sweepPolicyLocal, sweepPolicyOrigin, false))
+			if name != "abandoned" {
+				calls = append(calls, sweepFiveCheck(repo, sweepPolicyEndpoint, sweepPolicyLocal)...)
+				calls = append(calls, sweepFiveGoal(t, repo, sweepPolicyEndpoint, true))
+				calls = append(calls, sweepFiveDigest(repo)...)
+			}
+			calls = append(calls, sweepFivePush(repo, "origin", sweepPolicyOrigin, CASLanded), sweepFiveDeleteLocal(repo, sweepPolicyLocal, false))
+			rig := sweepFiveRig(t, sweepPolicyOrigin, "", sweepPolicyLocal, calls)
+			req := rig.request(repo, sweepPolicyEndpoint)
+			if name == "abandoned" {
+				req.Abandoned = true
+			} else {
+				raw := []byte(rawTree("metasystem/plans/unlanded.md"))
+				sum := sha256.Sum256(raw)
+				req.Dropped = "dropped:" + sweepPolicyLocal + ":" + hex.EncodeToString(sum[:])
+			}
+			result, err := sweepWithDependencies(req, rig.dependencies())
+			if err != nil || !result.Deleted || rig.tips["origin"] != "" || rig.localTip != "" {
+				t.Fatalf("local exemption=%+v err=%v refs=%v, %q", result, err, rig.tips, rig.localTip)
+			}
+		})
+	}
+}
+
+func TestSweepCleansLeftoversWhenOriginBranchIsGone(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	calls := sweepFiveStart(repo, "", sweepPolicyOrigin, sweepPolicyOrigin, true)
+	calls = append(calls, sweepFiveRemote(repo, sweepPolicyEndpoint, "transport", sweepPolicyOrigin)...)
+	calls = append(calls, sweepFiveCheck(repo, sweepPolicyEndpoint, sweepPolicyOrigin)...)
+	calls = append(calls, sweepFivePush(repo, "transport", sweepPolicyOrigin, CASLanded), sweepFiveDeleteLocal(repo, sweepPolicyOrigin, false))
+	rig := sweepFiveRig(t, "", sweepPolicyOrigin, sweepPolicyOrigin, calls)
+	req := rig.request(repo, sweepPolicyEndpoint)
+	req.Transport = "transport"
+	result, err := sweepWithDependencies(req, rig.dependencies())
+	if err != nil || !result.Deleted || rig.tips["origin"] != "" || rig.tips["transport"] != "" || rig.localTip != "" {
+		t.Fatalf("leftover sweep=%+v err=%v refs=%v, %q", result, err, rig.tips, rig.localTip)
+	}
+}
+
+func TestSweepRequiresExactConcludedDroppedDeclaration(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, declaration    string
+		concluded, wantSweep bool
+	}{
+		{"prose mention", "prose", true, false},
+		{"exact concluded entry", "exact", true, true},
+		{"exact entry without conclusion", "exact", false, false},
+		{"last landing takes no exemption", "exact", false, false},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			repo := t.TempDir()
+			calls := sweepFiveStart(repo, sweepPolicyLocal, "", sweepPolicyLocal, false)
+			calls = append(calls, sweepFiveRemote(repo, sweepPolicyEndpoint, "origin", sweepPolicyLocal)...)
+			calls = append(calls, sweepFiveCheck(repo, sweepPolicyEndpoint, sweepPolicyLocal)...)
+			calls = append(calls, sweepFiveGoal(t, repo, sweepPolicyEndpoint, test.concluded))
+			if test.concluded {
+				calls = append(calls, sweepFiveDigest(repo)...)
+			}
+			if test.wantSweep {
+				calls = append(calls, sweepFivePush(repo, "origin", sweepPolicyLocal, CASLanded),
+					sweepFiveDeleteLocal(repo, sweepPolicyLocal, false))
+			}
+			rig := sweepFiveRig(t, sweepPolicyLocal, "", sweepPolicyLocal, calls)
+			req := rig.request(repo, sweepPolicyEndpoint)
+			raw := []byte(rawTree("metasystem/plans/unlanded.md"))
+			sum := sha256.Sum256(raw)
+			digest := hex.EncodeToString(sum[:])
+			if test.declaration == "prose" {
+				req.Dropped = "commit " + sweepPolicyLocal + " was landed with digest " + digest
+			} else {
+				req.Dropped = "dropped:" + sweepPolicyLocal + ":" + digest
+				if test.wantSweep {
+					req.Dropped = "resume later " + req.Dropped
+				}
+			}
+			result, err := sweepWithDependencies(req, rig.dependencies())
+			if test.wantSweep {
+				if err != nil || !result.Deleted || rig.tips["origin"] != "" || rig.localTip != "" {
+					t.Fatalf("exact concluded sweep=%+v err=%v refs=%v, %q", result, err, rig.tips, rig.localTip)
+				}
+				return
+			}
+			sweepFiveRefusal(t, err, SweepUnlandedCode)
+			if rig.tips["origin"] != sweepPolicyLocal || rig.localTip != sweepPolicyLocal {
+				t.Fatalf("dropped refusal changed refs: %v, %q", rig.tips, rig.localTip)
+			}
+		})
 	}
 }

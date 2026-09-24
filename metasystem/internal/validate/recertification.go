@@ -195,7 +195,11 @@ func artifactRegularNoFollowWithRaw(root, relative string, raw func(gittree.RawR
 }
 
 func refuseSymlinkedDirectory(root, directory string) error {
-	top, err := (gittree.Workspace{Dir: root}).TopLevel()
+	return refuseSymlinkedDirectoryWithRaw(root, directory, nil)
+}
+
+func refuseSymlinkedDirectoryWithRaw(root, directory string, raw func(gittree.RawRequest) gittree.RawResult) error {
+	top, err := (gittree.Workspace{Dir: root, RawSource: raw}).TopLevel()
 	if err != nil {
 		return err
 	}

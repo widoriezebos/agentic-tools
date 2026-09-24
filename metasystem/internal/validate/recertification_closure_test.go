@@ -279,10 +279,16 @@ func TestSelectOriginalCertificationRejectsChangedClosureSelection(t *testing.T)
 
 func assertVerifyRecertificationReviewSelectionRefusal(t *testing.T, want string, edit func(*recertificationClosureFixture)) {
 	t.Helper()
-	fixture := newRecertificationClosureFixture(t)
-	path := fixture.prepareVerifiedRecertification()
+	fixture, path, raw := newRawRecertificationClosure(t)
+	verified, err := verifyRecertificationWithRaw(fixture.fixture.controller, "implementation", path, raw.answer, nil)
+	if err != nil || verified.Record.RecordDigest != raw.record.RecordDigest || verified.RecordPath != path || !bytes.Equal(verified.Patch, raw.mergedPatch) {
+		t.Fatalf("untampered recertification did not verify: %+v, %v", verified, err)
+	}
+	raw.consumed()
 	edit(fixture)
-	_, err := VerifyRecertification(fixture.fixture.controller, "implementation", path)
+	raw.resetForRefusal()
+	_, err = verifyRecertificationWithRaw(fixture.fixture.controller, "implementation", path, raw.answer, nil)
+	raw.consumed()
 	var failure *RecertificationFailure
 	if !errors.As(err, &failure) || failure.Reason != "chain-recertification-unproven" || failure.Detail != "review-selection" ||
 		!strings.Contains(err.Error(), want) {
