@@ -186,7 +186,7 @@ trap cleanup EXIT
 
 origin="$tmp/origin.git"
 clone="$tmp/clone"
-git init -q --bare "$origin"
+git init -q -b main --bare "$origin"
 git -C "$origin" config metasystem.goal.machine fixture-machine
 git init -q -b main "$clone"
 git -C "$clone" config metasystem.goal.machine fixture-machine
@@ -332,17 +332,28 @@ MANIFEST
 # 2. The migration, under the runner's REAL lineage export: the
 # synthesized claim must carry it (F16 — the second env spelling
 # collapsed every session to the literal "session").
-migrate_out=$(cd "$clone" && METASYSTEM_OWNER_LINEAGE=fixture-lineage \
-  "$ms" goal migrate --root "$clone" --source-digest "$digest" --manifest "$manifest" --by wido)
-
-# Migration records its claim at the real clock. Start the two elapsed-budget
-# scenarios just after that claim, then advance the fixture clock from the
-# same base so the breach is independent of when the bed runs.
 fixture_stamp() { # seconds since the epoch -> RFC3339 UTC
   date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ
 }
+migrate_out=$(cd "$clone" && METASYSTEM_OWNER_LINEAGE=fixture-lineage \
+  "$ms" goal migrate --root "$clone" --source-digest "$digest" --manifest "$manifest" --by wido)
+
 case "$fixture_scenario" in
+  human-lineage | forgiving-budget-members)
+    claim_record=$(git -C "$origin" show main:plans/goals/ship-widget.md | sed -n '/^- Claimed:/p')
+    if [[ -z "$claim_record" || "$claim_record" == *$'\n'* || ! "$claim_record" =~ ^-\ Claimed:\ machine=[^[:space:]]+\ lineage=[^[:space:]]+\ at=([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)([[:space:]]|$) ]]; then
+      echo "migration did not persist one RFC3339 ship-widget claim timestamp: $claim_record" >&2; exit 1
+    fi
+    claim_at=${BASH_REMATCH[1]}
+    claim_epoch=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$claim_at" +%s 2>/dev/null \
+      || date -u -d "$claim_at" +%s) \
+      || { echo "cannot convert the persisted ship-widget claim timestamp: $claim_at" >&2; exit 1; }
+    [[ $(fixture_stamp "$claim_epoch") == "$claim_at" ]] \
+      || { echo "invalid persisted ship-widget claim timestamp: $claim_at" >&2; exit 1; }
+    export METASYSTEM_GOAL_NOW=$(fixture_stamp $((claim_epoch + 60)))
+    ;;
   forgiving-budget-states | forgiving-human-refusals)
+    # These scenarios advance the clock independently to exercise elapsed budgets.
     forgiving_base_epoch=$(( $(date -u +%s) + 60 ))
     export METASYSTEM_GOAL_NOW=$(fixture_stamp "$forgiving_base_epoch")
     forgiving_breach_at=$(fixture_stamp $((forgiving_base_epoch + 6 * 3600)))
@@ -659,18 +670,11 @@ if [[ "$fixture_scenario" == proof-grades ]]; then
   git clone -q -b main "$proof_grade_arc_origin" "$proof_grade_arc_clone"
   git -C "$proof_grade_arc_clone" config metasystem.goal.machine fixture-arc-machine
 
-  proof_grade_bed_view=$("$ms" lease classify --root "$clone" --metasystem-root "$root" --caller-pid "$$")
-  proof_grade_bed_class=$("$ms" json get --value "$proof_grade_bed_view" --field class)
-  case "$proof_grade_bed_class" in
-    HUMAN | DELEGATE) ;;
-    *) echo "proof-grade fixture bed classified $proof_grade_bed_class, not HUMAN or DELEGATE" >&2; exit 1 ;;
-  esac
-  export PROOF_GRADE_BED_CLASS=$proof_grade_bed_class
-
   # The holder is a signed fake-runtime sibling, never an ancestor of the
   # pseudo-terminal shell. The clone keeps every real runtime signature so
   # the agent assertions exercise the same signature set as production.
   export PROOF_GRADE_MS=$ms
+  export PROOF_GRADE_ROOT=$root
   proof_grade_holder_command=$tmp/metasystem-fake-agent
   cat >"$proof_grade_holder_command" <<'PROOF_GRADE_HOLDER_COMMAND'
 #!/bin/bash
@@ -832,6 +836,13 @@ proof_grade_finish() {
 }
 trap proof_grade_finish EXIT
 printf 'proof-grade assertions started\n'
+proof_grade_subject_view=$("$PROOF_GRADE_MS" lease classify --root "$PROOF_GRADE_CLONE" \
+  --metasystem-root "$PROOF_GRADE_ROOT" --caller-pid "$$")
+proof_grade_subject_class=$("$PROOF_GRADE_MS" json get --value "$proof_grade_subject_view" --field class)
+case "$proof_grade_subject_class" in
+  HUMAN | DELEGATE) ;;
+  *) echo "proof-grade PTY shell classified $proof_grade_subject_class, not HUMAN or DELEGATE" >&2; exit 1 ;;
+esac
 
 agent_refuses() { # label, expected refusal, command...
   local label=$1 expected=$2 rc
@@ -897,7 +908,7 @@ agent_refuses approve "$authority_refusal" "$PROOF_GRADE_MS" goal approve --root
   --id fix-docs --budget box --by Wido --lineage agent-shell
 agent_refuses session-stop 'caller classifies DELEGATE' "$PROOF_GRADE_MS" session stop --root "$PROOF_GRADE_CLONE" --by Wido
 
-if [[ "$PROOF_GRADE_BED_CLASS" == HUMAN ]]; then
+if [[ "$proof_grade_subject_class" == HUMAN ]]; then
   human_runs release "$PROOF_GRADE_MS" goal release --root "$PROOF_GRADE_CLONE" \
     --id ship-widget --by Wido
   human_runs park "$PROOF_GRADE_MS" goal park --root "$PROOF_GRADE_CLONE" \
@@ -1047,6 +1058,17 @@ prepare_brain_stop_bed() {
 }
 
 if [[ "$fixture_scenario" == abandoned-with-a-reason ]]; then
+  engine_status=$("$ms" supervise status --repo "$clone")
+  engine_descriptor=$("$ms" json get --value "$engine_status" --field engineBuild)
+  if [[ ! "$engine_descriptor" =~ ^[0-9a-f]{40}$ && ! "$engine_descriptor" =~ ^dev-[0-9a-f]{40}-dirty$ ]]; then
+    private_ms=$tmp/abandon-engine
+    env -u METASYSTEM_BUILD_STAMP bash "$root/scripts/agents/go-build.sh" --out "$private_ms" >/dev/null
+    ms=$private_ms
+    engine_status=$("$ms" supervise status --repo "$clone")
+    engine_descriptor=$("$ms" json get --value "$engine_status" --field engineBuild)
+    [[ "$engine_descriptor" =~ ^[0-9a-f]{40}$ || "$engine_descriptor" =~ ^dev-[0-9a-f]{40}-dirty$ ]] \
+      || { echo "private abandonment engine has no source-linked build stamp: $engine_descriptor" >&2; exit 1; }
+  fi
   "$ms" goal release --root "$clone" --id ship-widget >/dev/null
   export METASYSTEM_SUPERVISION_REGISTRY_HOME="$tmp/abandon-registry"
   mkdir -p "$METASYSTEM_SUPERVISION_REGISTRY_HOME"

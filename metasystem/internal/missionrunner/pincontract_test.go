@@ -9,14 +9,18 @@ import (
 	"testing"
 )
 
-// pinVerifiedContract's ladder with real files (Phase 6): the start-mode
+// pinVerifiedContract's ladder with real files: the start-mode
 // bootstrap, the double-pin refusal, resume against absent fences, the
 // digest mismatch, and identity checks.
 func TestPinVerifiedContract(t *testing.T) {
 	engine := &Engine{Root: t.TempDir(), Mission: "mr-pin"}
-	// The start ladder proves anchor-namespace emptiness through git;
-	// a bed without a repository cannot prove absence and refuses.
-	fixtureGit(t, engine.Root, "init", "-q", "-b", "main")
+	anchors := &strictWallReads{t: t, git: []wallGitReply{
+		{root: engine.Root, args: []string{"for-each-ref", "--format=%(refname)", "refs/metasystem/missions/mr-pin/"}},
+		{root: engine.Root, args: []string{"for-each-ref", "--format=%(refname)", "refs/metasystem/missions/mr-pin/"}},
+		{root: engine.Root, args: []string{"for-each-ref", "--format=%(refname)", "refs/metasystem/missions/mr-pin/"}},
+	}}
+	engine.wallReadFacts = anchors
+	t.Cleanup(anchors.done)
 	snapshot := []byte("contract bytes\n")
 	sum := sha256.Sum256(snapshot)
 	sha := hex.EncodeToString(sum[:])
@@ -69,4 +73,22 @@ func TestPinVerifiedContract(t *testing.T) {
 		!strings.Contains(err.Error(), "invalid identity") {
 		t.Fatalf("foreign identity: %v", err)
 	}
+
+	// An unreadable namespace cannot be treated as a successful empty one.
+	t.Run("anchor probe failure", func(t *testing.T) {
+		probe := &Engine{Root: t.TempDir(), Mission: "mr-pin"}
+		facts := &strictWallReads{t: t, git: []wallGitReply{{
+			root: probe.Root, args: []string{"for-each-ref", "--format=%(refname)", "refs/metasystem/missions/mr-pin/"},
+			stderr: "probe unavailable", code: 1,
+		}}}
+		probe.wallReadFacts = facts
+		if err := probe.pinVerifiedContract("start", snapshot, sha); err == nil ||
+			!strings.Contains(err.Error(), "cannot prove the mission's anchor namespace is empty: probe unavailable") {
+			t.Fatalf("failed probe must refuse instead of authorizing start: %v", err)
+		}
+		if pathExists(probe.approvedContractPath()) {
+			t.Fatal("failed probe wrote a contract pin")
+		}
+		facts.done()
+	})
 }

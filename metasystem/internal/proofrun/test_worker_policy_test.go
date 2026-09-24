@@ -13,7 +13,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -122,9 +121,6 @@ func TestNewTestResultExposesWorkerPolicyAndUnlimitedAdmission(t *testing.T) {
 func TestCommandJUnitConsumerUsesAllowanceRetainsRedAndCancels(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
 	script := `#!/bin/sh
 set -eu
 mode=$1
@@ -168,12 +164,10 @@ if [ "$mode" = red ]; then
 fi
 printf '<testsuite><testcase classname="portable" name="allowance"/></testsuite>\n' >"$report/result.xml"
 `
-	if err := testexec.WriteFile(filepath.Join(root, "runner.sh"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	tree := strings.Repeat("1", 40)
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"runner.sh": testSnapshotFile(script, 0o755),
+	}, 4)
 	whole := 0
 	run := func(t *testing.T, mode string, workers int, cancel bool) GroupResult {
 		t.Helper()
@@ -190,13 +184,22 @@ printf '<testsuite><testcase classname="portable" name="allowance"/></testsuite>
 				t.Fatal(err)
 			}
 		}
+		internalReadyOwner, err := os.OpenFile(internalReady, os.O_RDWR, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := internalReadyOwner.Close(); err != nil {
+				t.Errorf("close internal readiness FIFO: %v", err)
+			}
+		}()
 		group := testpolicy.Group{ID: "portable-" + mode, Kind: "component", Adapter: "command", CWD: ".",
 			Inputs: []string{"runner.sh"}, Outputs: []string{"reports"}, Platforms: []string{"any"}, TargetMS: 1000,
 			Resources: testpolicy.GroupResources{Workers: &whole}, Argv: []string{"sh", "runner.sh", mode, "reports"},
 			Reports: []string{"reports"}, Format: "junit-xml",
 			ExpectedTests: []testpolicy.ExpectedTest{{Report: "reports/result.xml", Classname: "portable", Name: "allowance"}}}
 		baseEnvironment := dropTestEnvironmentName(gittree.ScrubbedEnviron(), identity.FixtureCustodianEnv)
-		request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: workers,
+		request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open, Workers: workers,
 			Environment: append(baseEnvironment, "WORKER_STATE="+state,
 				"WORKER_INTERNAL_READY_FIFO="+internalReady, "WORKER_POOL_READY_FIFO="+poolReady),
 			LogRoot: filepath.Join(root, "logs", mode)}

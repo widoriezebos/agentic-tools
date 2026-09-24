@@ -29,6 +29,10 @@ var advanceBeforeSwap func()
 // through reset --keep while holding the checkout mutation lock. It never
 // writes, moves, or restores an append-only register.
 func Advance(root, upstream string, stdout, stderr io.Writer) error {
+	return advanceWithWorkspace(root, upstream, stdout, stderr, gittree.Workspace{Dir: root})
+}
+
+func advanceWithWorkspace(root, upstream string, stdout, stderr io.Writer, workspace gittree.Workspace) error {
 	if root == "" || upstream == "" {
 		return fmt.Errorf("landing advance requires --root and --upstream")
 	}
@@ -42,7 +46,6 @@ func Advance(root, upstream string, stdout, stderr io.Writer) error {
 	}
 	defer release()
 
-	workspace := gittree.Workspace{Dir: root}
 	branch, detached, err := workspace.SymbolicHead()
 	if err != nil {
 		return err
@@ -103,7 +106,7 @@ func Advance(root, upstream string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	topWorkspace := gittree.Workspace{Dir: top}
+	topWorkspace := gittree.Workspace{Dir: top, RawSource: workspace.RawSource}
 	changed, err := topWorkspace.ChangedPaths(landingTree, rebasedTree)
 	if err != nil {
 		return err

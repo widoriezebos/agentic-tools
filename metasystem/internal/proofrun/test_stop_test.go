@@ -2,9 +2,12 @@ package proofrun
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,22 +38,23 @@ func stopFixture(t *testing.T, purpose testpolicy.Purpose) (TestResult, int, map
 func stopFixtureWithAllGroups(t *testing.T, purpose testpolicy.Purpose, allGroups bool) (TestResult, int, map[string]GroupResult) {
 	t.Helper()
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultScript(t, root, "first", "passed", 0)
-	writeTestResultScript(t, root, "second", "failed", 24)
-	writeTestResultScript(t, root, "third", "passed", 0)
-	writeTestResultScript(t, root, "deep", "passed", 0)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	tree := fmt.Sprintf("%x", sha1.Sum([]byte(root)))
+	expectedOpens := 4
+	if purpose == testpolicy.PurposeDelivery && !allGroups {
+		expectedOpens = 2
+	}
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"scripts/first.sh":  testSnapshotScript("first", "passed", 0),
+		"scripts/second.sh": testSnapshotScript("second", "failed", 24),
+		"scripts/third.sh":  testSnapshotScript("third", "passed", 0),
+		"scripts/deep.sh":   testSnapshotScript("deep", "passed", 0),
+	}, expectedOpens)
 	contract, plan := stopFixtureContract(purpose)
 	progress := filepath.Join(root, "artifacts", "progress.jsonl")
 	if err := AppendProgressHeader(progress, ProgressHeader{LogPaths: []string{filepath.Join(root, "artifacts", "launcher.log")}}); err != nil {
 		t.Fatal(err)
 	}
-	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
+	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
 		Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "test-logs"), ProgressPath: progress, Concurrency: 1,
 		AllGroups: allGroups})
 	if err != nil {
@@ -240,15 +244,12 @@ func TestDeliveryRetryReusesTheFailedPredecessorsPassedGroups(t *testing.T) {
 	// The retry itself: the fixed second script and the unrun third run; the
 	// reused first does not launch.
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultScript(t, root, "first", "passed", 0)
-	writeTestResultScript(t, root, "second", "passed", 0)
-	writeTestResultScript(t, root, "third", "passed", 0)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	tree := fmt.Sprintf("%x", sha1.Sum([]byte(root)))
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"scripts/first.sh":  testSnapshotScript("first", "passed", 0),
+		"scripts/second.sh": testSnapshotScript("second", "passed", 0),
+		"scripts/third.sh":  testSnapshotScript("third", "passed", 0),
+	}, 2)
 	retryContract, retryPlan := stopFixtureContract(testpolicy.PurposeDelivery)
 	retryContract.Groups = retryContract.Groups[:3]
 	retryContract.Surfaces[0].Deep = nil
@@ -259,7 +260,7 @@ func TestDeliveryRetryReusesTheFailedPredecessorsPassedGroups(t *testing.T) {
 	if err := AppendProgressHeader(progress, ProgressHeader{LogPaths: []string{filepath.Join(root, "artifacts", "launcher.log")}}); err != nil {
 		t.Fatal(err)
 	}
-	retry, status, err := RunTestPlan(context.Background(), TestRunRequest{ControlRoot: controlRoot, ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
+	retry, status, err := RunTestPlan(context.Background(), TestRunRequest{ControlRoot: controlRoot, ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
 		Contract: retryContract, Plan: retryPlan, AttemptID: "retry", LogRoot: filepath.Join(root, "artifacts", "test-logs"), ProgressPath: progress, Concurrency: 1,
 		Reused: map[string]GroupResult{"first": byID["first"]}, ComponentIdentities: identities})
 	if err != nil || status != 0 || !retry.Delivery.Sufficient || retry.LaunchCounts.Test != 2 || retry.LaunchCounts.ReusedTest != 1 {
@@ -281,15 +282,13 @@ func TestDeliveryRetryReusesTheFailedPredecessorsPassedGroups(t *testing.T) {
 
 func TestDeliveryAttemptStopsAtAnInvalidReuse(t *testing.T) {
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
+	tree := fmt.Sprintf("%x", sha1.Sum([]byte(root)))
 	for _, id := range []string{"first", "second", "third", "deep"} {
-		writeTestResultScript(t, root, id, "passed", 0)
+		if err := writeTestSnapshotEntry(filepath.Join(root, "scripts", id+".sh"), testSnapshotScript(id, "passed", 0)); err != nil {
+			t.Fatal(err)
+		}
 	}
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	var candidateOpens atomic.Int32
 	contract, plan := stopFixtureContract(testpolicy.PurposeDelivery)
 	progress := filepath.Join(root, "artifacts", "progress.jsonl")
 	if err := AppendProgressHeader(progress, ProgressHeader{LogPaths: []string{filepath.Join(root, "artifacts", "launcher.log")}}); err != nil {
@@ -300,8 +299,15 @@ func TestDeliveryAttemptStopsAtAnInvalidReuse(t *testing.T) {
 	stale := GroupResult{ID: "second", Kind: "unit", ExecutionIdentity: strings.Repeat("2", 64), ReuseAttempt: "proof-never-retained",
 		Status: "reused", CollectionComplete: true, ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
 	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ControlRoot: t.TempDir(), ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
+		openCandidate: func(projectRoot, candidateTree string) (candidateWorkspace, error) {
+			candidateOpens.Add(1)
+			return nil, fmt.Errorf("candidate opened during invalid reuse: root=%s tree=%s", projectRoot, candidateTree)
+		},
 		Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "test-logs"), ProgressPath: progress, Concurrency: 1,
 		Reused: map[string]GroupResult{"second": stale}})
+	if opens := candidateOpens.Load(); opens != 0 {
+		t.Fatalf("invalid reuse opened %d candidates, want zero", opens)
+	}
 	if err != nil || status != 1 || result.LaunchCounts.Test != 0 || result.Delivery.Sufficient {
 		t.Fatalf("an invalid reuse did not stop the delivery attempt: status=%d counts=%+v delivery=%+v err=%v", status, result.LaunchCounts, result.Delivery, err)
 	}

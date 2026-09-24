@@ -12,6 +12,7 @@ internal/proofrun/host_resources_test.go	3	Two deadlines bound native child or b
 internal/proofrun/resource_custody_output_test.go	9	Timers bound native custodian output and large child observation, exact cleanup, and host-slot release; success requires emitted evidence, not elapsed time.
 internal/proofrun/test_ownership_test.go	4	Timers cap observation of a real native producer launch, terminal result, and waiting consumer; success comes from recorded attempt facts.
 internal/run/waiter_pair_test.go	1	The installed-process fixture succeeds on its published row, and the sleep only avoids busy-spinning while observing it.
+internal/steward/runner_git_process_fixture_test.go	2	Two bounded polls observe exact OS helper identity after killing the external CLI; no completion channel reaches the test, and success requires no live helper.
 internal/steward/runner_test.go	2	The installed runner fixture succeeds on kernel identity and health state, and the sleeps only avoid busy-spinning while observing it.
 internal/supervise/arming_test.go	3	Two sleeps keep fixture subjects alive until killed, while the third only paces observation of a real owner's kernel death.
 internal/testenv/protection_test.go	1	The context is passed to a fake that checks for a deadline and returns immediately without waiting.

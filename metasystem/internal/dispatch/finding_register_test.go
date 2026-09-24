@@ -3,7 +3,6 @@ package dispatch
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -60,19 +59,8 @@ func writeCriticRound(t *testing.T, repo, root, job string, round int, findings,
 	})
 }
 
-// setCriticSubject binds a critic root to a reviewed implementer round. A
-// root that names a reviewed job is no longer legacy: the subject reader
-// needs that job's record, its round diff (the artifact membership law)
-// and a git root to derive the project prefix, so the helper writes them
-// once per reviewed job with a diff that names the register fixture's
-// artifact.
-func setCriticSubject(t *testing.T, repo, root, reviews, reviewedTree string) {
+func setCriticSubjectFiles(t *testing.T, repo, root, reviews, reviewedTree string) {
 	t.Helper()
-	if _, err := os.Stat(filepath.Join(repo, ".git")); err != nil {
-		if output, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
-			t.Fatalf("git init: %v: %s", err, output)
-		}
-	}
 	reviewedRecord := filepath.Join(repo, "artifacts", "agents", "jobs", reviews+".json")
 	if _, err := os.Stat(reviewedRecord); err != nil {
 		writeJSONFile(t, filepath.Dir(reviewedRecord), reviews+".json", map[string]any{
@@ -442,15 +430,15 @@ func TestCritiqueRegisterCrossRootClassConflictBlocks(t *testing.T) {
 	writeCriticRound(t, repo, "critic-a", "critic-a", 1,
 		[]any{registerFindingValue("SHARED", true, "severe")},
 		[]any{registerRigor("SHARED", "severe")})
-	setCriticSubject(t, repo, "critic-a", "implementer", "tree-a")
-	if _, err := CritiqueRegisterAdvance(repo, "critic-a", "critic-a"); err != nil {
+	setCriticSubjectFiles(t, repo, "critic-a", "implementer", "tree-a")
+	if _, err := advanceWithPrefix(t, repo, "critic-a", "critic-a"); err != nil {
 		t.Fatal(err)
 	}
 	writeCriticRound(t, repo, "critic-b", "critic-b", 1,
 		[]any{registerFindingValue("SHARED", true, "bounded")},
 		[]any{registerRigor("SHARED", "bounded")})
-	setCriticSubject(t, repo, "critic-b", "implementer", "tree-b")
-	if _, err := CritiqueRegisterAdvance(repo, "critic-b", "critic-b"); err == nil ||
+	setCriticSubjectFiles(t, repo, "critic-b", "implementer", "tree-b")
+	if _, err := advanceWithPrefix(t, repo, "critic-b", "critic-b"); err == nil ||
 		!strings.Contains(err.Error(), "conflicting rigor classes") ||
 		!strings.Contains(err.Error(), `reviews="implementer" reviewedTree="tree-a"`) ||
 		!strings.Contains(err.Error(), `reviews="implementer" reviewedTree="tree-b"`) ||
@@ -467,16 +455,16 @@ func TestCritiqueRegisterSameFindingIDOnDifferentSubjectsAdvances(t *testing.T) 
 	writeCriticRound(t, repo, "critic-a", "critic-a", 1,
 		[]any{registerFindingValue("F-1", true, "severe")},
 		[]any{registerRigor("F-1", "severe")})
-	setCriticSubject(t, repo, "critic-a", "implementer-a", "tree-a")
-	if _, err := CritiqueRegisterAdvance(repo, "critic-a", "critic-a"); err != nil {
+	setCriticSubjectFiles(t, repo, "critic-a", "implementer-a", "tree-a")
+	if _, err := advanceWithPrefix(t, repo, "critic-a", "critic-a"); err != nil {
 		t.Fatal(err)
 	}
 
 	writeCriticRound(t, repo, "critic-b", "critic-b", 1,
 		[]any{registerFindingValue("F-1", true, "bounded")},
 		[]any{registerRigor("F-1", "bounded")})
-	setCriticSubject(t, repo, "critic-b", "implementer-b", "tree-b")
-	if outcome, err := CritiqueRegisterAdvance(repo, "critic-b", "critic-b"); err != nil || outcome != "advanced" {
+	setCriticSubjectFiles(t, repo, "critic-b", "implementer-b", "tree-b")
+	if outcome, err := advanceWithPrefix(t, repo, "critic-b", "critic-b"); err != nil || outcome != "advanced" {
 		t.Fatalf("different-subject advance = %q, %v", outcome, err)
 	}
 }
@@ -486,16 +474,16 @@ func TestCritiqueRegisterSameReviewedTreeConflictsAcrossReviewTargets(t *testing
 	writeCriticRound(t, repo, "critic-a", "critic-a", 1,
 		[]any{registerFindingValue("F-1", true, "severe")},
 		[]any{registerRigor("F-1", "severe")})
-	setCriticSubject(t, repo, "critic-a", "implementer-a", "shared-tree")
-	if _, err := CritiqueRegisterAdvance(repo, "critic-a", "critic-a"); err != nil {
+	setCriticSubjectFiles(t, repo, "critic-a", "implementer-a", "shared-tree")
+	if _, err := advanceWithPrefix(t, repo, "critic-a", "critic-a"); err != nil {
 		t.Fatal(err)
 	}
 
 	writeCriticRound(t, repo, "critic-b", "critic-b", 1,
 		[]any{registerFindingValue("F-1", true, "bounded")},
 		[]any{registerRigor("F-1", "bounded")})
-	setCriticSubject(t, repo, "critic-b", "implementer-b", "shared-tree")
-	if _, err := CritiqueRegisterAdvance(repo, "critic-b", "critic-b"); err == nil ||
+	setCriticSubjectFiles(t, repo, "critic-b", "implementer-b", "shared-tree")
+	if _, err := advanceWithPrefix(t, repo, "critic-b", "critic-b"); err == nil ||
 		!strings.Contains(err.Error(), "conflicting rigor classes") {
 		t.Fatalf("same-tree conflict = %v", err)
 	}
@@ -506,14 +494,14 @@ func TestCritiqueRegisterReissuedRoundWithNewFindingIDsAdvances(t *testing.T) {
 	writeCriticRound(t, repo, "critic", "critic", 1,
 		[]any{registerFindingValue("F-1", true, "first")},
 		[]any{registerRigor("F-1", "severe")})
-	setCriticSubject(t, repo, "critic", "implementer", "tree")
-	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+	setCriticSubjectFiles(t, repo, "critic", "implementer", "tree")
+	if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
 		t.Fatal(err)
 	}
 	writeCriticRound(t, repo, "critic", "critic-r2", 2,
 		[]any{registerFindingValue("F-2", true, "reissued")},
 		[]any{registerRigor("F-2", "bounded")})
-	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic-r2"); err != nil || outcome != "advanced" {
+	if outcome, err := advanceWithPrefix(t, repo, "critic", "critic-r2"); err != nil || outcome != "advanced" {
 		t.Fatalf("reissued round advance = %q, %v", outcome, err)
 	}
 	if items := readRegister(t, repo, "critic"); len(items) != 2 {

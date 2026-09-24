@@ -150,9 +150,6 @@ func TestBatchOwnerHoldsTheLease(t *testing.T) {
 		return
 	}
 	root := t.TempDir()
-	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
-		t.Fatal(err)
-	}
 	first := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerHoldsTheLease$")
 	first.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_LEASE_HELPER=hold", "BATCH_OWNER_TEST_ROOT="+root)
 	stdin, err := first.StdinPipe()
@@ -615,6 +612,38 @@ func TestBatchPostPushRearmFastForwardsRebuildsAndArms(t *testing.T) {
 	if !slices.Equal(events, want) {
 		t.Fatalf("post-push re-arm events=%v, want %v", events, want)
 	}
+}
+
+func proofFixtureEnvironmentWithoutHostLoad(environment []string) []string {
+	prefix := proofrun.TestHostLoadEnvironment + "="
+	filtered := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, prefix) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func reexecWithFixedProofLoad(t *testing.T, marker, testName string) bool {
+	t.Helper()
+	if os.Getenv(marker) != "" {
+		return false
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sampler := filepath.Join(t.TempDir(), proofrun.TestHostLoadCommandName("0"))
+	if err := os.Link(executable, sampler); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(sampler, "-test.run=^"+testName+"$", "-test.count=1")
+	command.Env = append(proofFixtureEnvironmentWithoutHostLoad(os.Environ()), marker+"=1")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("fixed-load %s child: %v\n%s", testName, err, output)
+	}
+	return true
 }
 
 func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {

@@ -2,6 +2,7 @@ package humanauthority
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -305,15 +306,18 @@ func TestKernelAncestryWalkReachesProcessTreeRoot(t *testing.T) {
 		t.Fatalf("live ancestry recorded no process nodes: outcome=%s err=%v", outcome, walkErr)
 	}
 	last := nodes[len(nodes)-1]
-	if last.Ref.PID != 1 || last.ParentRef != (ProcessRef{}) {
-		t.Fatalf("live ancestry did not reach the known process-tree root: last=%+v outcome=%s err=%v", last, outcome, walkErr)
-	}
 	switch outcome {
 	case OutcomeProven:
+		if last.Ref.PID != 1 || last.ParentRef != (ProcessRef{}) {
+			t.Fatalf("live ancestry did not reach the known process-tree root: last=%+v outcome=%s err=%v", last, outcome, walkErr)
+		}
 		if walkErr != nil {
 			t.Fatalf("agent-free live ancestry returned an error after reaching the root: %v", walkErr)
 		}
 	case OutcomeAgent:
+		if last.Ref.PID != 1 || last.ParentRef != (ProcessRef{}) {
+			t.Fatalf("live ancestry did not reach the known process-tree root: last=%+v outcome=%s err=%v", last, outcome, walkErr)
+		}
 		if walkErr == nil {
 			t.Fatal("agent-descended live ancestry reached the root without its refusal")
 		}
@@ -330,10 +334,58 @@ func TestKernelAncestryWalkReachesProcessTreeRoot(t *testing.T) {
 		if !strings.Contains(walkErr.Error(), OutcomeAgent+": "+namedRuntime) {
 			t.Fatalf("agent-descended live ancestry error did not name runtime %q: %v", namedRuntime, walkErr)
 		}
+	case OutcomeUnreadable:
+		assertExecutableUnreadableAtNextAncestor(t, last, walkErr)
 	default:
 		t.Fatalf("live ancestry did not complete with an honest root outcome: outcome=%s err=%v nodes=%+v", outcome, walkErr, nodes)
 	}
-	t.Logf("live ancestry reached process-tree root pid %d with outcome %s after checking %d nodes", last.Ref.PID, outcome, len(nodes))
+	t.Logf("live ancestry ended at pid %d with outcome %s after checking %d nodes", last.Ref.PID, outcome, len(nodes))
+}
+
+func TestExecutableUnreadableAncestorKeepsOwnerEvidence(t *testing.T) {
+	currentUID := uint32(os.Geteuid())
+	for _, test := range []struct {
+		name     string
+		ownerUID uint32
+	}{
+		{name: "same owner", ownerUID: currentUID},
+		{name: "foreign owner", ownerUID: currentUID ^ 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reader := enrolledReader()
+			unreadable := authoritySnapshot(20, 10, []string{"mapped-host-parent"}, "tty-1")
+			unreadable.Executable = ""
+			unreadable.ExecutableKnown = false
+			unreadable.OwnerUID = test.ownerUID
+			reader.snapshots[20] = []Snapshot{unreadable}
+
+			invoker, refusal := stableRead(reader, 30)
+			if refusal != nil {
+				t.Fatalf("read synthetic invoker: %v", refusal)
+			}
+			nodes, _, outcome, continuation, walkErr := walkProcessTree(30, invoker, reader, nil, nil)
+			if continuation != "" || outcome != OutcomeUnreadable || len(nodes) == 0 {
+				t.Fatalf("synthetic unreadable ancestry mismatch: outcome=%s continuation=%s nodes=%+v err=%v", outcome, continuation, nodes, walkErr)
+			}
+			captured := assertExecutableUnreadableAtNextAncestor(t, nodes[len(nodes)-1], walkErr)
+			if captured.ownerUID != test.ownerUID {
+				t.Fatalf("unreadable ancestry changed owner uid: got=%d want=%d refusal=%+v", captured.ownerUID, test.ownerUID, captured)
+			}
+		})
+	}
+}
+
+func assertExecutableUnreadableAtNextAncestor(t *testing.T, last Node, walkErr error) *processReadRefusal {
+	t.Helper()
+	var refusal *processReadRefusal
+	if !errors.As(walkErr, &refusal) {
+		t.Fatalf("unreadable ancestry did not return its typed refusal: last=%+v err=%T %v", last, walkErr, walkErr)
+	}
+	if refusal.outcome != OutcomeUnreadable || refusal.pid != last.ParentRef.PID || refusal.executableKnown ||
+		!refusal.ownerKnown || refusal.reason != "the process's executable path is unreadable" {
+		t.Fatalf("unreadable ancestry lost its exact executable-refusal evidence: last=%+v refusal=%+v", last, refusal)
+	}
+	return refusal
 }
 
 func TestTerminalConstraintEndsAtTheSessionLeader(t *testing.T) {

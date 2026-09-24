@@ -1,97 +1,81 @@
 package steward
 
 import (
-	"context"
+	"errors"
+	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
-func notifyIdentity(t *testing.T, root, enrollment string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(RepoIdentityPath(root)), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
-		RepoIdentity: canonicalPath(root), Generation: 1, InstallPath: "/bin/true",
-		MintedAt: "2026-09-06T00:00:00Z", Enrollment: enrollment,
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func notifyRepoWithoutCommand(t *testing.T) string {
-	t.Helper()
-	root := t.TempDir()
-	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
-		t.Fatalf("init: %v\n%s", err, out)
-	}
-	return root
-}
-
-func fakeDarwinNotifier(t *testing.T) *[]string {
-	t.Helper()
-	originalOS, originalCommand := notifyPlatformOS, notifyCommandContext
-	notifyPlatformOS = "darwin"
-	invocation := []string{}
-	notifyCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		invocation = append([]string{name}, args...)
-		return exec.CommandContext(ctx, "/usr/bin/true")
-	}
-	t.Cleanup(func() {
-		notifyPlatformOS = originalOS
-		notifyCommandContext = originalCommand
-	})
-	return &invocation
-}
-
 func TestNotifyCommandUsesPlatformForHumanEnrollments(t *testing.T) {
-	originalOS := notifyPlatformOS
-	notifyPlatformOS = "darwin"
-	t.Cleanup(func() { notifyPlatformOS = originalOS })
-
 	for _, enrollment := range []string{EnrollmentHumanTerminal, EnrollmentTemporaryWord} {
 		t.Run(enrollment, func(t *testing.T) {
-			human := notifyRepoWithoutCommand(t)
+			f := absentNotifyFixture(t, 1)
+			f.darwin()
+			human := f.root
 			notifyIdentity(t, human, enrollment)
-			if command, ok := NotifyCommand(human); !ok || command != "" {
+			if command, ok := notifyCommandWithDependencies(human, f.deps); !ok || command != "" {
 				t.Fatalf("%s enrollment did not choose the platform notifier: command=%q ok=%v", enrollment, command, ok)
 			}
 		})
 	}
 
-	fixture := notifyRepoWithoutCommand(t)
+	f := absentNotifyFixture(t, 1)
+	f.darwin()
+	fixture := f.root
 	notifyIdentity(t, fixture, EnrollmentFixture)
-	if command, ok := NotifyCommand(fixture); !ok || command != "" {
+	if command, ok := notifyCommandWithDependencies(fixture, f.deps); !ok || command != "" {
 		t.Fatalf("fixture enrollment did not choose its local delivery channel: command=%q ok=%v", command, ok)
 	}
+	t.Run("empty command follows fixture fallback", func(t *testing.T) {
+		f := newNotifyFixture(t, notifyRead{command: " "})
+		notifyIdentity(t, f.root, EnrollmentFixture)
+		if command, ok := notifyCommandWithDependencies(f.root, f.deps); !ok || command != "" {
+			t.Fatalf("blank command did not choose fixture log: command=%q ok=%v", command, ok)
+		}
+	})
+	t.Run("read error without fallback is unavailable", func(t *testing.T) {
+		f := newNotifyFixture(t, notifyRead{err: errors.New("config unreadable")}, notifyRead{err: errors.New("config unreadable")})
+		if command, ok := notifyCommandWithDependencies(f.root, f.deps); ok || command != "" {
+			t.Fatalf("read error invented a channel: command=%q ok=%v", command, ok)
+		}
+		if err := f.deliver(f.root, "message"); err == nil {
+			t.Fatal("read error without fallback claimed delivery")
+		}
+	})
 }
 
 func TestHumanDeliveryUsesRepositoryRootInPlatformTitle(t *testing.T) {
-	root := notifyRepoWithoutCommand(t)
+	f := absentNotifyFixture(t, 1)
+	f.darwin()
+	root := f.root
 	notifyIdentity(t, root, EnrollmentHumanTerminal)
-	invocation := fakeDarwinNotifier(t)
-	if err := Deliver(root, "worker dead"); err != nil {
+	if err := f.deliver(root, "worker dead"); err != nil {
 		t.Fatal(err)
 	}
-	joined := strings.Join(*invocation, " ")
+	joined := strings.Join(f.invocation, " ")
 	if !strings.Contains(joined, "osascript -e") || !strings.Contains(joined, "metasystem steward - "+canonicalPath(root)) {
 		t.Fatalf("platform notification did not name its repository root: %q", joined)
+	}
+	wantScript := fmt.Sprintf("display notification %q with title %q", "worker dead", "metasystem steward - "+canonicalPath(root))
+	if len(f.invocation) != 3 || f.invocation[0] != "osascript" || f.invocation[1] != "-e" || f.invocation[2] != wantScript {
+		t.Fatalf("platform notifier invocation changed: got=%q want script=%q", f.invocation, wantScript)
 	}
 }
 
 func TestFixtureDeliveryAppendsTimestampedLocalLog(t *testing.T) {
-	root := notifyRepoWithoutCommand(t)
+	f := absentNotifyFixture(t, 1)
+	f.darwin()
+	root := f.root
 	notifyIdentity(t, root, EnrollmentFixture)
-	invocation := fakeDarwinNotifier(t)
-	if err := Deliver(root, "HEALTH unhealthy"); err != nil {
+	if err := f.deliver(root, "HEALTH unhealthy"); err != nil {
 		t.Fatal(err)
 	}
-	if len(*invocation) != 0 {
-		t.Fatalf("fixture delivery invoked the platform notifier: %v", *invocation)
+	if len(f.invocation) != 0 {
+		t.Fatalf("fixture delivery invoked the platform notifier: %v", f.invocation)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "steward", "notifications.log"))
 	if err != nil {
@@ -110,13 +94,15 @@ func TestFixtureDeliveryAppendsTimestampedLocalLog(t *testing.T) {
 func TestConfiguredCommandWinsForEveryEnrollment(t *testing.T) {
 	for _, enrollment := range []string{EnrollmentHumanTerminal, EnrollmentTemporaryWord, EnrollmentFixture} {
 		t.Run(enrollment, func(t *testing.T) {
-			root, sink := notifyRepo(t, "")
+			f := configuredNotifyFixture(t, 2, "default")
+			f.deps.platform = "darwin"
+			root, sink := f.root, f.sink
 			notifyIdentity(t, root, enrollment)
-			command, ok := NotifyCommand(root)
+			command, ok := notifyCommandWithDependencies(root, f.deps)
 			if !ok || command == "" {
 				t.Fatalf("configured command was not resolved for %s", enrollment)
 			}
-			if err := Deliver(root, enrollment); err != nil {
+			if err := f.deliver(root, enrollment); err != nil {
 				t.Fatal(err)
 			}
 			if data, err := os.ReadFile(sink); err != nil || !strings.Contains(string(data), enrollment) {
@@ -127,37 +113,21 @@ func TestConfiguredCommandWinsForEveryEnrollment(t *testing.T) {
 }
 
 func TestMissingIdentityDeliversAsHuman(t *testing.T) {
-	root := notifyRepoWithoutCommand(t)
-	invocation := fakeDarwinNotifier(t)
-	if err := Deliver(root, "legacy installation"); err != nil {
+	f := absentNotifyFixture(t, 1)
+	f.darwin()
+	root := f.root
+	if err := f.deliver(root, "legacy installation"); err != nil {
 		t.Fatal(err)
 	}
-	if len(*invocation) == 0 || (*invocation)[0] != "osascript" {
-		t.Fatalf("missing identity did not retain platform delivery: %v", *invocation)
+	if len(f.invocation) == 0 || f.invocation[0] != "osascript" {
+		t.Fatalf("missing identity did not retain platform delivery: %v", f.invocation)
 	}
-}
-
-// notifyRepo is a git repository whose notify-command appends to a
-// sink file — a fully observable delivery channel.
-func notifyRepo(t *testing.T, command string) (string, string) {
-	t.Helper()
-	root := t.TempDir()
-	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
-		t.Fatalf("init: %v\n%s", err, out)
-	}
-	sink := filepath.Join(t.TempDir(), "delivered.log")
-	if command == "" {
-		command = `printf '%s\n' "$STEWARD_MESSAGE" >> ` + sink
-	}
-	if out, err := exec.Command("git", "-C", root, "config", "metasystem.steward.notify-command", command).CombinedOutput(); err != nil {
-		t.Fatalf("config: %v\n%s", err, out)
-	}
-	return root, sink
 }
 
 func TestDeliveryMeansTheCommandSucceeded(t *testing.T) {
-	root, sink := notifyRepo(t, "")
-	if err := Deliver(root, "worker dead; reviving fix-it"); err != nil {
+	f := configuredNotifyFixture(t, 1, "default")
+	root, sink := f.root, f.sink
+	if err := f.deliver(root, "worker dead; reviving fix-it"); err != nil {
 		t.Fatalf("a zero exit is a delivery: %v", err)
 	}
 	data, err := os.ReadFile(sink)
@@ -167,20 +137,21 @@ func TestDeliveryMeansTheCommandSucceeded(t *testing.T) {
 }
 
 func TestFailedChannelIsNotADelivery(t *testing.T) {
-	root, _ := notifyRepo(t, "exit 1")
-	if err := Deliver(root, "anything"); err == nil {
+	f := configuredNotifyFixture(t, 1, "exit 1")
+	if err := f.deliver(f.root, "anything"); err == nil {
 		t.Fatal("a failing notifier must not claim delivery")
 	}
 }
 
 func TestPendingQueueDrainsOnDeliveryAndHoldsOnFailure(t *testing.T) {
-	root, sink := notifyRepo(t, "")
+	f := newNotifyFixture(t, notifyRead{command: "default"}, notifyRead{command: "default"}, notifyRead{command: "exit 1"})
+	root, sink := f.root, f.sink
 	for _, n := range []string{"a", "b"} {
 		if err := QueueNotification(root, PendingNotification{Nonce: n, Message: "msg-" + n}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	delivered, err := DeliverPending(root)
+	delivered, err := f.pending()
 	if err != nil || delivered != 2 {
 		t.Fatalf("both must deliver: %d %v", delivered, err)
 	}
@@ -191,15 +162,15 @@ func TestPendingQueueDrainsOnDeliveryAndHoldsOnFailure(t *testing.T) {
 	if !strings.Contains(string(data), "msg-a") || !strings.Contains(string(data), "msg-b") {
 		t.Fatalf("both messages must reach the channel: %q", data)
 	}
+	if strings.Index(string(data), "msg-a") >= strings.Index(string(data), "msg-b") {
+		t.Fatalf("queued notifications must reach the channel in order: %q", data)
+	}
 
 	// Break the channel: the queue holds and reports.
-	if out, err := exec.Command("git", "-C", root, "config", "metasystem.steward.notify-command", "exit 1").CombinedOutput(); err != nil {
-		t.Fatalf("reconfig: %v\n%s", err, out)
-	}
 	if err := QueueNotification(root, PendingNotification{Nonce: "c", Message: "msg-c"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := DeliverPending(root); err == nil {
+	if _, err := f.pending(); err == nil {
 		t.Fatal("a down channel must surface, not silently drop")
 	}
 	if pending, _ := PendingNotifications(root); len(pending) != 1 {
@@ -208,12 +179,13 @@ func TestPendingQueueDrainsOnDeliveryAndHoldsOnFailure(t *testing.T) {
 }
 
 func TestPendingQueueRetiresAnObsoleteAlertBeforeRevival(t *testing.T) {
-	root, sink := notifyRepo(t, "")
+	f := newNotifyFixture(t)
+	root, sink := f.root, f.sink
 	nonce := "verdict-" + string(VerdictStalledDead)
 	if err := QueueNotification(root, PendingNotification{Nonce: nonce, Message: "steward: stalled-dead — reviving"}); err != nil {
 		t.Fatal(err)
 	}
-	delivered, err := DeliverPending(root)
+	delivered, err := f.pending()
 	if err != nil || delivered != 0 {
 		t.Fatalf("the old alert-before-heal intent must retire without delivery: %d %v", delivered, err)
 	}
@@ -226,12 +198,13 @@ func TestPendingQueueRetiresAnObsoleteAlertBeforeRevival(t *testing.T) {
 }
 
 func TestHealthAlertEpisodeDeduplicatesSubmissionAndRecordsAcknowledgment(t *testing.T) {
-	root, sink := notifyRepo(t, "")
+	f := configuredNotifyFixture(t, 1, "default")
+	root, sink := f.root, f.sink
 	first := evidenceDigest("runner stale")
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	unhealthy := HealthVerdict{Aggregate: "unhealthy", FindingDigest: first,
 		Roles: []RoleVerdict{{Role: RoleStewardRunner, Status: HealthDead, Reason: "runner stale"}}}
-	episode, err := UpdateAlertEpisodes(root, unhealthy, "HEALTH unhealthy — runner stale", now)
+	episode, err := f.alert(unhealthy, "HEALTH unhealthy — runner stale", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,14 +215,14 @@ func TestHealthAlertEpisodeDeduplicatesSubmissionAndRecordsAcknowledgment(t *tes
 		t.Fatalf("a recoverable first failure must not notify the human: %v", err)
 	}
 	unhealthy.ShouldAlert = true
-	episode, err = UpdateAlertEpisodes(root, unhealthy, "HEALTH unhealthy — runner stale", now.Add(time.Minute))
+	episode, err = f.alert(unhealthy, "HEALTH unhealthy — runner stale", now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if episode.TransportResult != TransportSubmitted || len(episode.Attempts) != 1 {
 		t.Fatalf("notifier zero records one transport submission: %+v", episode)
 	}
-	repeated, err := UpdateAlertEpisodes(root, unhealthy, "a later rendering", now.Add(2*time.Minute))
+	repeated, err := f.alert(unhealthy, "a later rendering", now.Add(2*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +244,7 @@ func TestHealthAlertEpisodeDeduplicatesSubmissionAndRecordsAcknowledgment(t *tes
 	}
 
 	healthy := HealthVerdict{Aggregate: "healthy", FindingDigest: evidenceDigest(""), Roles: []RoleVerdict{{Role: RoleStewardRunner, Status: HealthAlive}}}
-	if _, err := UpdateAlertEpisodes(root, healthy, "HEALTH healthy", now.Add(4*time.Minute)); err != nil {
+	if _, err := f.alert(healthy, "HEALTH healthy", now.Add(4*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	episodes, err := AlertEpisodes(root)
@@ -281,7 +254,8 @@ func TestHealthAlertEpisodeDeduplicatesSubmissionAndRecordsAcknowledgment(t *tes
 }
 
 func TestPendingSubmissionJournalIsReusedAfterRecovery(t *testing.T) {
-	root, sink := notifyRepo(t, "")
+	f := configuredNotifyFixture(t, 1, "default")
+	root, sink := f.root, f.sink
 	now := time.Date(2026, 8, 28, 12, 30, 0, 0, time.UTC)
 	digest := evidenceDigest("hook has no lawful remedy")
 	episode := AlertEpisode{
@@ -298,7 +272,7 @@ func TestPendingSubmissionJournalIsReusedAfterRecovery(t *testing.T) {
 	}
 	health := HealthVerdict{Aggregate: "unhealthy", FindingDigest: digest, ShouldAlert: true,
 		Roles: []RoleVerdict{{Role: RoleHookFreshness, Status: HealthDead, FailureEscalation: NoLawfulRemedy}}}
-	recovered, err := UpdateAlertEpisodes(root, health, episode.Message, now.Add(time.Minute))
+	recovered, err := f.alert(health, episode.Message, now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,22 +285,19 @@ func TestPendingSubmissionJournalIsReusedAfterRecovery(t *testing.T) {
 }
 
 func TestFailedAlertSubmissionRetriesWithoutDeletingTheEpisode(t *testing.T) {
-	root, sink := notifyRepo(t, "exit 1")
+	f := newNotifyFixture(t, notifyRead{command: "exit 1"}, notifyRead{command: "default"})
+	root := f.root
 	now := time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC)
 	health := HealthVerdict{Aggregate: "unhealthy", FindingDigest: evidenceDigest("watcher dead"), ShouldAlert: true,
 		Roles: []RoleVerdict{{Role: RoleRepoWatcher, Status: HealthDead, Reason: "watcher dead"}}}
-	failed, err := UpdateAlertEpisodes(root, health, "HEALTH unhealthy — watcher dead", now)
+	failed, err := f.alert(health, "HEALTH unhealthy — watcher dead", now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if failed.TransportResult != TransportFailed || len(failed.Attempts) != 1 || failed.Acknowledged {
 		t.Fatalf("a failed transport must leave its unacknowledged episode retryable: %+v", failed)
 	}
-	command := `printf '%s\n' "$STEWARD_MESSAGE" >> ` + sink
-	if out, err := exec.Command("git", "-C", root, "config", "metasystem.steward.notify-command", command).CombinedOutput(); err != nil {
-		t.Fatalf("reconfigure notifier: %v\n%s", err, out)
-	}
-	retried, err := UpdateAlertEpisodes(root, health, "HEALTH unhealthy — watcher dead", now.Add(time.Minute))
+	retried, err := f.alert(health, "HEALTH unhealthy — watcher dead", now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +311,8 @@ func TestFailedAlertSubmissionRetriesWithoutDeletingTheEpisode(t *testing.T) {
 }
 
 func TestLegacyHeldHealthNotificationMigratesIntoAnEpisode(t *testing.T) {
-	root, _ := notifyRepo(t, "true")
+	f := newNotifyFixture(t)
+	root := f.root
 	now := time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)
 	digest := evidenceDigest("legacy watcher finding")
 	if err := QueueNotification(root, PendingNotification{
@@ -354,7 +326,7 @@ func TestLegacyHeldHealthNotificationMigratesIntoAnEpisode(t *testing.T) {
 		t.Fatal(err)
 	}
 	health := HealthVerdict{Aggregate: "unhealthy", FindingDigest: digest}
-	episode, err := UpdateAlertEpisodes(root, health, "HEALTH unhealthy — legacy watcher finding", now)
+	episode, err := f.alert(health, "HEALTH unhealthy — legacy watcher finding", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,25 +337,26 @@ func TestLegacyHeldHealthNotificationMigratesIntoAnEpisode(t *testing.T) {
 	if err != nil || len(pending) != 1 || pending[0].Nonce != "unrelated" {
 		t.Fatalf("migration retired the wrong pending records: pending=%+v err=%v", pending, err)
 	}
-	second, err := UpdateAlertEpisodes(root, health, "later rendering", now.Add(time.Minute))
+	second, err := f.alert(health, "later rendering", now.Add(time.Minute))
 	if err != nil || second.EpisodeID != episode.EpisodeID {
 		t.Fatalf("migration duplicated an open episode: first=%+v second=%+v err=%v", episode, second, err)
 	}
 }
 
 func TestClearedFindingRecurrenceOpensANewEpisode(t *testing.T) {
-	root, _ := notifyRepo(t, "true")
+	f := newNotifyFixture(t)
+	root := f.root
 	now := time.Date(2026, 8, 29, 11, 0, 0, 0, time.UTC)
 	digest := evidenceDigest("runner stale")
 	unhealthy := HealthVerdict{Aggregate: "unhealthy", FindingDigest: digest}
-	first, err := UpdateAlertEpisodes(root, unhealthy, "runner stale", now)
+	first, err := f.alert(unhealthy, "runner stale", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := UpdateAlertEpisodes(root, HealthVerdict{Aggregate: "healthy"}, "healthy", now.Add(time.Minute)); err != nil {
+	if _, err := f.alert(HealthVerdict{Aggregate: "healthy"}, "healthy", now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	second, err := UpdateAlertEpisodes(root, unhealthy, "runner stale again", now.Add(2*time.Minute))
+	second, err := f.alert(unhealthy, "runner stale again", now.Add(2*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,14 +370,15 @@ func TestClearedFindingRecurrenceOpensANewEpisode(t *testing.T) {
 }
 
 func TestNewFindingResolvesEarlierOpenEpisodeWithoutClearingIt(t *testing.T) {
-	root, _ := notifyRepo(t, "true")
+	f := newNotifyFixture(t)
+	root := f.root
 	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
 	firstDigest := evidenceDigest("watcher stale")
 	secondDigest := evidenceDigest("runner stale")
-	if _, err := UpdateAlertEpisodes(root, HealthVerdict{Aggregate: "unhealthy", FindingDigest: firstDigest}, "watcher stale", now); err != nil {
+	if _, err := f.alert(HealthVerdict{Aggregate: "unhealthy", FindingDigest: firstDigest}, "watcher stale", now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := UpdateAlertEpisodes(root, HealthVerdict{Aggregate: "unhealthy", FindingDigest: secondDigest}, "runner stale", now.Add(time.Minute)); err != nil {
+	if _, err := f.alert(HealthVerdict{Aggregate: "unhealthy", FindingDigest: secondDigest}, "runner stale", now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	episodes, err := AlertEpisodes(root)
@@ -414,12 +388,13 @@ func TestNewFindingResolvesEarlierOpenEpisodeWithoutClearingIt(t *testing.T) {
 }
 
 func TestAlertEpisodeBoundariesRejectInvalidEvidenceAndInvoker(t *testing.T) {
-	root, _ := notifyRepo(t, "true")
+	f := newNotifyFixture(t)
+	root := f.root
 	now := time.Now()
-	if _, err := UpdateAlertEpisodes(root, HealthVerdict{Aggregate: "unhealthy", FindingDigest: "not-a-digest"}, "message", now); err == nil {
+	if _, err := f.alert(HealthVerdict{Aggregate: "unhealthy", FindingDigest: "not-a-digest"}, "message", now); err == nil {
 		t.Fatal("invalid finding digest opened an episode")
 	}
-	if _, err := UpdateAlertEpisodes(root, HealthVerdict{Aggregate: "unhealthy", FindingDigest: evidenceDigest("x")}, " ", now); err == nil {
+	if _, err := f.alert(HealthVerdict{Aggregate: "unhealthy", FindingDigest: evidenceDigest("x")}, " ", now); err == nil {
 		t.Fatal("blank finding message opened an episode")
 	}
 	if _, err := AcknowledgeAlert(root, "../escape", AlertInvoker{Pid: 1, PidStartedAt: 1}, now); err == nil {

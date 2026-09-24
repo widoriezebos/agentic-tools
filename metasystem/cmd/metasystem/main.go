@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // A verb takes its own arguments (after the family and verb words)
@@ -760,6 +762,14 @@ func dispatch(args []string) int {
 }
 
 func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []family) int {
+	return dispatchWithFamiliesAndRepositoryTop(args, stdout, stderr, registered, stateroot.RepositoryTop)
+}
+
+func dispatchWithRepositoryTop(args []string, repositoryTop func(string) (string, error)) int {
+	return dispatchWithFamiliesAndRepositoryTop(args, os.Stdout, os.Stderr, families(), repositoryTop)
+}
+
+func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
 	if len(args) == 0 {
 		writeUsage(stderr, registered)
 		return 2
@@ -799,7 +809,7 @@ func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []
 		}
 	}
 	if args[0] == "up" {
-		return runUp(args[1:])
+		return runUpWith(args[1:], repositoryTop)
 	}
 	if args[0] == "stop" {
 		return runProcessStop(args[1:])
@@ -831,7 +841,7 @@ func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []
 		}
 		if len(args) < 2 {
 			fmt.Fprintf(stderr, "metasystem %s: a verb is required\n", fam.name)
-			writeUsage(stderr, registered)
+			writeFamilyHelp(stderr, fam)
 			return 2
 		}
 		for _, v := range fam.verbs {
@@ -840,6 +850,7 @@ func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []
 			}
 		}
 		fmt.Fprintf(stderr, "metasystem %s: unknown verb %q\n", fam.name, args[1])
+		writeFamilyHelp(stderr, fam)
 		return 2
 	}
 	fmt.Fprintf(stderr, "metasystem: unknown family %q\n", args[0])
@@ -854,6 +865,14 @@ func writeFamilyHelp(w io.Writer, fam family) {
 	}
 	if len(fam.verbs) > 0 {
 		fmt.Fprintf(w, "example: metasystem %s %s --help (show leaf flags)\n", fam.name, fam.verbs[0].name)
+	}
+	fmt.Fprintln(w, "Flags are specific to each verb; use the verb help before adding options such as --root or --dir.")
+	if fam.name == "launch" {
+		fmt.Fprintln(w, "example: metasystem launch status --id <id>")
+		fmt.Fprintln(w, "example: metasystem launch wait --id <id> [--timeout <duration>]")
+		fmt.Fprintln(w, "example: metasystem launch cancel --id <id>")
+		fmt.Fprintln(w, "Launch records belong to the current user under ~/.metasystem/launch; they are not selected by repository.")
+		fmt.Fprintln(w, "--root is not a launch flag. Use --id to select a launch record.")
 	}
 }
 

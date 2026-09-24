@@ -279,10 +279,16 @@ func carryWordAuthorityRefusal(root string, word goal.CarryWord, provenance stri
 }
 
 func baseJudgeFenceRefusal(params ObserveParams, provenance string) *Observation {
+	return baseJudgeFenceRefusalWithSources(params, provenance, baseJudgeRawDiffTree, func(root string) (string, error) {
+		return (gittree.Workspace{Dir: root}).Prefix()
+	})
+}
+
+func baseJudgeFenceRefusalWithSources(params ObserveParams, provenance string, rawDiffTree func(root, projectTree string) ([]byte, error), prefixSource func(root string) (string, error)) *Observation {
 	if params.Judge != "base" {
 		return nil
 	}
-	blind, err := baseJudgeBlindPaths(params.RepoRoot, params.ProjectTree)
+	blind, err := baseJudgeBlindPathsWithSources(params.RepoRoot, params.ProjectTree, rawDiffTree, prefixSource)
 	if err == nil && len(blind) == 0 {
 		return nil
 	}
@@ -375,14 +381,18 @@ func setUnion(groups ...[]string) []string {
 	return values
 }
 
-func baseJudgeBlindPaths(root, projectTree string) ([]string, error) {
+func baseJudgeRawDiffTree(root, projectTree string) ([]byte, error) {
 	command := exec.Command("git", "-C", root, "diff-tree", "-r", "--name-only", "HEAD^{tree}", projectTree, "--")
 	command.Env = gittree.ScrubbedEnviron()
-	output, err := command.Output()
+	return command.Output()
+}
+
+func baseJudgeBlindPathsWithSources(root, projectTree string, rawDiffTree func(root, projectTree string) ([]byte, error), prefixSource func(root string) (string, error)) ([]string, error) {
+	output, err := rawDiffTree(root, projectTree)
 	if err != nil {
 		return nil, err
 	}
-	prefix, err := (gittree.Workspace{Dir: root}).Prefix()
+	prefix, err := prefixSource(root)
 	if err != nil {
 		return nil, err
 	}

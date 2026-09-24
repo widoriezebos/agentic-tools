@@ -4,14 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // The engine-level proof of the faulted-turn path: a turn whose return was
@@ -68,68 +66,45 @@ func faultedContract() string {
 	}, "\n")
 }
 
-// faultedMission builds a running one-cycle-reserved mission over a real
-// measurable repository: gate instruments committed and tagged, the sealed
+// faultedMission builds a running one-cycle-reserved mission with raw
+// repository facts: gate instruments declared and tagged, the sealed
 // contract in plans/, the approved snapshot pinned in the fence counters,
 // and a turn record whose announced and observed sessions differ.
-func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPath, turnDir string) {
+func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPath, turnDir string, source *hostCycleSource, workspace *hostCycleWorkspace) {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	root := t.TempDir()
-	git := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
-			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return string(out)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
 	write := func(rel, content string, mode os.FileMode) {
 		t.Helper()
-		path := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := testexec.WriteFile(path, []byte(content), mode); err != nil {
+		if err := writeHostCycleFile(filepath.Join(root, rel), []byte(content), mode); err != nil {
 			t.Fatal(err)
 		}
 	}
-	git("-c", "init.defaultBranch=main", "init", "-q")
-	git("config", "commit.gpgsign", "false")
-	// The deployment's projection boundary: runtime state under
-	// artifacts/ stays outside the wall's shippable snapshot.
-	write(".gitignore", "artifacts/\nbin/\nmetasystem.conf\n", 0o644)
+	engine = NewEngine(root, "demo")
+	source = &hostCycleSource{t: t, root: root, contractPath: engine.contractPath(), files: map[string][]byte{}}
+	source.files["scripts/gate.sh"] = []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\nmetric=audit=1\\n'\n")
+	source.files["truth/reference.txt"] = []byte("certified truth\n")
+	source.files["docs/project-rules.md"] = []byte(faultedProjectRules)
 	write("scripts/gate.sh", "#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\nmetric=audit=1\\n'\n", 0o755)
 	write("truth/reference.txt", "certified truth\n", 0o644)
 	write("docs/project-rules.md", faultedProjectRules, 0o644)
-	git("add", ".")
-	git("commit", "-qm", "instruments")
-	git("tag", "instruments")
-	git("checkout", "-q", "-B", "main")
-
-	engine = NewEngine(root, "demo")
-	// The bed anchors for REAL (no stub): the wall's snapshot-scope fence
-	// authenticates the state-anchors ref against the anchored truth at
-	// every capture, which the production runner keeps current by
-	// anchoring after each state write.
+	engine.contractSource = source.source()
 	// The drain beats the runner heartbeat every pass, which reads the
 	// runner's own record; a real runner writes it before its first cycle.
 	seedRunnerRecord(t, engine)
 	contractPath := engine.contractPath()
-	write(filepath.Join("plans", "mission-demo.contract.md"), faultedContract(), 0o644)
-	if _, err := contract.Seal(contractPath); err != nil {
+	write(filepath.Join("plans", "mission-"+engine.Mission+".contract.md"), faultedContract(), 0o644)
+	if _, err := contract.SealWithSource(contractPath, engine.contractSource); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
 	sealedBytes, err := os.ReadFile(contractPath)
 	if err != nil {
 		t.Fatal(err)
 	}
+	source.signed = sealedBytes
+	workspace, _ = installFaultedRepository(t, engine, source)
 	if err := os.MkdirAll(engine.missionDir(), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -148,10 +123,12 @@ func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPa
 	if err := mission.InitLedger(ledgerPath, 5, 3); err != nil {
 		t.Fatal(err)
 	}
-	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
+	origins := testAdmissionOrigins()
+	origins["refMap"] = mission.RecordableRefMap(workspace.refs, engine.Mission)
+	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", hostTree, origins); err != nil {
 		t.Fatal(err)
 	}
-	openFixtureTurn(t, root, statePath, "demo-t1-abcd", 1)
+	openFaultedTurn(t, engine, statePath, "demo-t1-abcd", 1, workspace)
 
 	turnDir = filepath.Join(engine.missionDir(), "turns", "demo-t1-abcd")
 	turnPath = filepath.Join(turnDir, "turn.json")
@@ -161,7 +138,7 @@ func faultedMission(t *testing.T) (engine *Engine, statePath, ledgerPath, turnPa
 		"hostSession": "s-stale", "announcedSession": "s-stale", "observedSession": "s-live",
 		"status": "failed", "outcome": "failed", "error": "protocol-error",
 	})
-	return engine, statePath, ledgerPath, turnPath, turnDir
+	return engine, statePath, ledgerPath, turnPath, turnDir, source, workspace
 }
 
 // TestStampObservedSession pins the observed-identity source order: the
@@ -199,7 +176,7 @@ func TestStampObservedSession(t *testing.T) {
 }
 
 func TestConcludeFaultedTurnMeasuresAndCompletes(t *testing.T) {
-	engine, statePath, ledgerPath, turnPath, turnDir := faultedMission(t)
+	engine, statePath, ledgerPath, turnPath, turnDir, _, _ := faultedMission(t)
 	fault := TurnFault{
 		Outcome:      "failed",
 		Detail:       "orchestrator return session identity matches neither the announced nor the observed session",
@@ -226,6 +203,7 @@ func TestConcludeFaultedTurnMeasuresAndCompletes(t *testing.T) {
 	if measurementDoc["gatePassed"] != true || measurementDoc["measurement"] == nil {
 		t.Fatalf("measurement artifact: %v", measurementDoc)
 	}
+	assertFaultedGateReadings(t, measurementDoc)
 	entry := updated["turnLog"].([]any)[0].(map[string]any)
 	if entry["outcome"] != "failed" || entry["sessionId"] != "s-live" || entry["measurement"] == nil {
 		t.Fatalf("turn-log entry must carry the measurement, the fault, and the observed session: %v", entry)
@@ -243,7 +221,7 @@ func TestConcludeFaultedTurnMeasuresAndCompletes(t *testing.T) {
 }
 
 func TestConcludeFaultedTurnUnmeasurableStillBooksUnmeasurable(t *testing.T) {
-	engine, statePath, ledgerPath, turnPath, turnDir := faultedMission(t)
+	engine, statePath, ledgerPath, turnPath, turnDir, source, workspace := faultedMission(t)
 	// Delete the gate's pinned ref: measurement now fails, and the failure
 	// is itself the measurement — an unmeasurable no-progress cycle. The
 	// ref transition fence forbids mid-turn ref deletion, so the deletion
@@ -262,10 +240,12 @@ func TestConcludeFaultedTurnUnmeasurableStillBooksUnmeasurable(t *testing.T) {
 	if err := mission.WriteState(statePath, closedSource, hash); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.Command("git", "-C", engine.Root, "tag", "-d", "instruments").CombinedOutput(); err != nil {
-		t.Fatalf("delete instruments tag: %v\n%s", err, out)
+	delete(workspace.refs, "refs/tags/instruments")
+	openFaultedTurn(t, engine, statePath, "demo-t1-abcd", 1, workspace)
+	opened := readTestDoc(t, statePath)["openTurn"].(map[string]any)
+	if refs := opened["refMap"].(map[string]any); refs["refs/tags/instruments"] != nil {
+		t.Fatalf("reopened turn retained deleted instruments tag: %v", refs)
 	}
-	openFixtureTurn(t, engine.Root, statePath, "demo-t1-abcd", 1)
 	fault := TurnFault{
 		Outcome:      "failed",
 		Detail:       "orchestrator return is invalid: schema violation",
@@ -291,10 +271,16 @@ func TestConcludeFaultedTurnUnmeasurableStillBooksUnmeasurable(t *testing.T) {
 	if entry["measurement"] != nil || entry["outcome"] != "failed" {
 		t.Fatalf("unmeasurable entry: %v", entry)
 	}
+	if doc := readTestDoc(t, filepath.Join(turnDir, "measurement.json")); doc["measurement"] != nil || doc["gatePassed"] != false {
+		t.Fatalf("unmeasurable artifact must have no readings: %v", doc)
+	}
+	if source.missingRefLookups == 0 {
+		t.Fatal("missing instruments revision lookup was not consumed")
+	}
 }
 
 func TestConcludeFaultedTurnCappedKeepsItsOutcome(t *testing.T) {
-	engine, statePath, ledgerPath, turnPath, turnDir := faultedMission(t)
+	engine, statePath, ledgerPath, turnPath, turnDir, _, _ := faultedMission(t)
 	// The launch path patched the cap before conclusion; the conclusion must
 	// not rewrite it to failed.
 	if _, err := patchTurn(turnPath, map[string]any{
@@ -324,9 +310,23 @@ func TestConcludeFaultedTurnCappedKeepsItsOutcome(t *testing.T) {
 	if entry["outcome"] != "capped" || entry["measurement"] == nil {
 		t.Fatalf("a cap that landed real work registers its measurement: %v", entry)
 	}
+	assertFaultedGateReadings(t, readTestDoc(t, filepath.Join(turnDir, "measurement.json")))
 	// The measured gate passed here too, so even a capped turn completes on
 	// the measured product.
 	if updated["status"] != "completed" {
 		t.Fatalf("measured gate pass on a capped turn: %v", updated["status"])
+	}
+}
+
+func assertFaultedGateReadings(t *testing.T, doc map[string]any) {
+	t.Helper()
+	measurement, ok := doc["measurement"].(map[string]any)
+	if !ok || doc["gatePassed"] != true {
+		t.Fatalf("missing passing faulted measurement: %v", doc)
+	}
+	metrics, _ := measurement["metrics"].(map[string]any)
+	guards, _ := measurement["guards"].(map[string]any)
+	if metrics["score"] != "1" || guards["audit"] != "1" || measurement["candidateSha"] != hostCandidateCommit {
+		t.Fatalf("faulted gate or audit did not run on the declared candidate: %v", measurement)
 	}
 }

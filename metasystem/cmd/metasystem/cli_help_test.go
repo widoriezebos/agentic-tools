@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 func runCLIHelp(args []string, registered []family) (int, string, string) {
@@ -82,6 +84,52 @@ func TestFamilyHelpDoesNotInvokeHandler(t *testing.T) {
 	}
 }
 
+func TestLaunchFamilyHelpShowsRecordCommands(t *testing.T) {
+	t.Parallel()
+	code, output, problem := runCLIHelp([]string{"launch", "--help"}, families())
+	if code != 0 || problem != "" {
+		t.Fatalf("launch help = code %d, stderr %q", code, problem)
+	}
+	for _, want := range []string{
+		"metasystem launch start --help",
+		"metasystem launch status --id <id>",
+		"metasystem launch wait --id <id> [--timeout <duration>]",
+		"metasystem launch cancel --id <id>",
+		"current user", "~/.metasystem/launch", "--root is not a launch flag",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("launch help omits %q", want)
+		}
+	}
+}
+
+func TestLaunchRecordHelpAndInvalidInputsSkipManager(t *testing.T) {
+	old := launchManager
+	calls := 0
+	launchManager = func() *launch.Manager { calls++; return nil }
+	t.Cleanup(func() { launchManager = old })
+	for _, verb := range []struct {
+		name string
+		run  func([]string) int
+	}{{"status", runLaunchStatus}, {"cancel", runLaunchCancel}} {
+		for _, alias := range []string{"--help", "-h"} {
+			code, output, problem := captureCommandOutput(t, true, true, func() int { return verb.run([]string{alias}) })
+			if code != 0 || problem != "" || !strings.Contains(output, "usage: metasystem launch "+verb.name+" --id <id>") || !strings.Contains(output, "~/.metasystem/launch") {
+				t.Errorf("%s %s = code %d, stdout %q, stderr %q", verb.name, alias, code, output, problem)
+			}
+		}
+		for _, args := range [][]string{nil, {"--root", "metasystem", "--id", "example"}, {"--unknown"}} {
+			code, output, problem := captureCommandOutput(t, true, true, func() int { return verb.run(args) })
+			if code != 2 || output != "" || !strings.Contains(problem, "usage: metasystem launch "+verb.name+" --id <id>") || !strings.Contains(problem, "--root is not a launch flag") || !strings.Contains(problem, "~/.metasystem/launch") {
+				t.Errorf("%s %v = code %d, stdout %q, stderr %q", verb.name, args, code, output, problem)
+			}
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("launch help or invalid input called manager %d times", calls)
+	}
+}
+
 func TestUnknownFamilyHelpAliasErrors(t *testing.T) {
 	t.Parallel()
 	registered := families()
@@ -101,5 +149,40 @@ func TestUnknownFamilyHelpAliasErrors(t *testing.T) {
 		if code != 2 || output != "" || !strings.Contains(problem, test.want) {
 			t.Errorf("%v = code %d, stdout %q, stderr %q; want diagnostic %q", test.args, code, output, problem, test.want)
 		}
+	}
+}
+
+func TestKnownFamilyVerbErrorsShowOnlyThatFamily(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{{"launch"}, {"launch", "no-such-verb"}} {
+		code, output, problem := runCLIHelp(args, families())
+		if code != 2 || output != "" || !strings.Contains(problem, "usage: metasystem launch <verb> [flags]") || !strings.Contains(problem, "Flags are specific to each verb") || strings.Contains(problem, "usage: metasystem <family> <verb>") {
+			t.Errorf("%v = code %d, stdout %q, stderr %q", args, code, output, problem)
+		}
+	}
+}
+
+func TestGoalOpenHelpShowsSharedFlagsBeforeAnyMutationInputs(t *testing.T) {
+	calls := 0
+	inputs := legacyMutationInputs{
+		repositoryTop: func(string) (string, error) { calls++; return "", nil },
+		ensureGuard:   func(string) error { calls++; return nil },
+	}
+	for _, alias := range []string{"--help", "-h"} {
+		code, output, problem := captureCommandOutput(t, true, true, func() int {
+			return goalMutationWithInputs("open", []string{alias}, nil, nil,
+				func(string, []string) (int, bool) { calls++; return 0, false }, inputs)
+		})
+		if code != 0 || problem != "" || !strings.Contains(output, "Shared synced-goal options") || !strings.Contains(output, "each verb may accept fewer flags") {
+			t.Errorf("goal open %s = code %d, stdout %q, stderr %q", alias, code, output, problem)
+		}
+		for _, want := range []string{"-id", "-intent", "-root", "-risk"} {
+			if !strings.Contains(output, want) {
+				t.Errorf("goal open %s help omits %q", alias, want)
+			}
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("goal open help consulted mutation inputs %d times", calls)
 	}
 }

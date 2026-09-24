@@ -44,6 +44,7 @@ func TestPrepareClearsAmbientControlsPinsRegistryAndRestoresDeclarations(t *test
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "inherited-job")
 	t.Setenv("METASYSTEM_GUARD_PROBE", "inherited-probe")
 	t.Setenv("METASYSTEM_ALLOW_NEW_PLAN", "1")
+	t.Setenv("METASYSTEM_TESTING_WORKERS", "9")
 	t.Setenv(supervisionRegistryHome, hostileRegistry)
 	t.Setenv(registryOwnerNonce, strings.Repeat("a", hex.EncodedLen(registryNonceSize)))
 	declaration := Declare("METASYSTEM_BIN")
@@ -62,7 +63,7 @@ func TestPrepareClearsAmbientControlsPinsRegistryAndRestoresDeclarations(t *test
 	if got := os.Getenv("METASYSTEM_BIN"); got != "/deliberate/candidate-engine" {
 		t.Fatalf("declared candidate engine = %q", got)
 	}
-	for _, name := range []string{"METASYSTEM_HOOK_DELEGATE_JOB", "METASYSTEM_GUARD_PROBE", "METASYSTEM_ALLOW_NEW_PLAN"} {
+	for _, name := range []string{"METASYSTEM_HOOK_DELEGATE_JOB", "METASYSTEM_GUARD_PROBE", "METASYSTEM_ALLOW_NEW_PLAN", "METASYSTEM_TESTING_WORKERS"} {
 		if got := os.Getenv(name); got != "" {
 			t.Errorf("%s survived as %q", name, got)
 		}

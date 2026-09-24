@@ -35,22 +35,44 @@ type deliveryJob struct {
 	capDeadline time.Time
 }
 
+type claimedDeliverySnapshot struct {
+	converted  bool
+	machine    string
+	projection goal.Projection
+}
+
 func checkClaimedGoalDelivery(repoRoot string, now time.Time) RoleVerdict {
+	return checkClaimedGoalDeliveryWithReader(repoRoot, now, readClaimedDeliverySnapshot)
+}
+
+func readClaimedDeliverySnapshot(repoRoot string, now time.Time) (claimedDeliverySnapshot, error) {
 	if !goal.NewWorld(repoRoot) {
-		return roleAlive(RoleClaimedGoalDelivery, "the bootstrap ledger has no claimed-goal delivery records")
+		return claimedDeliverySnapshot{}, nil
 	}
 	machine, err := goal.ResolveMachine(repoRoot)
 	if err != nil {
-		return deliveryDead("the claimed-goal machine identity is unreadable: " + err.Error())
+		return claimedDeliverySnapshot{}, fmt.Errorf("the claimed-goal machine identity is unreadable: %w", err)
 	}
 	endpoint, err := goal.ResolveEndpoint(repoRoot)
 	if err != nil {
-		return deliveryDead("the claimed-goal ledger endpoint is unreadable: " + err.Error())
+		return claimedDeliverySnapshot{}, fmt.Errorf("the claimed-goal ledger endpoint is unreadable: %w", err)
 	}
 	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
-		return deliveryDead("the claimed-goal ledger is unreadable: " + err.Error())
+		return claimedDeliverySnapshot{}, fmt.Errorf("the claimed-goal ledger is unreadable: %w", err)
 	}
+	return claimedDeliverySnapshot{converted: true, machine: machine, projection: projection}, nil
+}
+
+func checkClaimedGoalDeliveryWithReader(repoRoot string, now time.Time, read func(string, time.Time) (claimedDeliverySnapshot, error)) RoleVerdict {
+	snapshot, err := read(repoRoot, now)
+	if err != nil {
+		return deliveryDead(err.Error())
+	}
+	if !snapshot.converted {
+		return roleAlive(RoleClaimedGoalDelivery, "the bootstrap ledger has no claimed-goal delivery records")
+	}
+	machine, projection := snapshot.machine, snapshot.projection
 
 	ids := make([]string, 0, len(projection.Tree.Live))
 	for id := range projection.Tree.Live {

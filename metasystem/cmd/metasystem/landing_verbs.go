@@ -183,6 +183,19 @@ func runLandingTestReceipt(args []string) (status int) {
 }
 
 func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(string) (func() time.Time, bool, error), args []string) (status int) {
+	return runLandingTestReceiptWithDependencies(parent, resolveClock, nil, landingReceiptTestRun, args)
+}
+
+func runLandingTestReceiptWithDependencies(parent context.Context, resolveClock func(string) (func() time.Time, bool, error), raw func(gittree.RawRequest) gittree.RawResult, testRun func([]string) int, args []string) (status int) {
+	return runLandingTestReceiptWithInputs(parent, resolveClock, raw, testRun, args,
+		landing.PrepareTestReceipt, admitProofLaunch, landing.PublishCommittedReceiptAt, commitProofTerminal)
+}
+
+func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(string) (func() time.Time, bool, error), raw func(gittree.RawRequest) gittree.RawResult, testRun func([]string) int, args []string,
+	prepare func(string, string, string) (*landing.ReceiptPreparation, error),
+	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
+	publish func(string, string, string, time.Time) (landing.TestReceipt, error),
+	terminal func(proofrun.CompletionContext, json.RawMessage) error) (status int) {
 	flags := flag.NewFlagSet("landing test-receipt", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "candidate project tree")
@@ -218,11 +231,12 @@ func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(
 			fmt.Fprintln(os.Stderr, "landing test-receipt --mode must be auto, standard, or deep")
 			return 2
 		}
-		projectRoot, err := (gittree.Workspace{Dir: controlRoot}).TopLevel()
+		controlWorkspace := gittree.Workspace{Dir: controlRoot, RawSource: raw}
+		projectRoot, err := controlWorkspace.TopLevel()
 		if err != nil {
 			return recordExit(err)
 		}
-		workspace := gittree.Workspace{Dir: projectRoot}
+		workspace := gittree.Workspace{Dir: projectRoot, RawSource: raw}
 		acceptedIndexTree := *tree
 		if acceptedIndexTree == "" {
 			acceptedIndexTree, err = workspace.StagedTree()
@@ -247,7 +261,7 @@ func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(
 			testArgs = append(testArgs, "--expected-goal-revision", fmt.Sprint(*expectedGoalRevision),
 				"--expected-accounting-revision", fmt.Sprint(*expectedAccountingRevision))
 		}
-		status := landingReceiptTestRun(testArgs)
+		status := testRun(testArgs)
 		if status != 0 && status != proofrun.ExitReusableSuccess {
 			return status
 		}
@@ -270,7 +284,7 @@ func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(
 		printJSON(receipt)
 		return 0
 	}
-	preparation, err := landing.PrepareTestReceipt(controlRoot, *tree, *command)
+	preparation, err := prepare(controlRoot, *tree, *command)
 	if err != nil {
 		return recordExit(err)
 	}
@@ -304,7 +318,7 @@ func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(
 	if err := os.MkdirAll(proofDir, 0o700); err != nil {
 		return recordExit(err)
 	}
-	attempt, decision, joined, err := admitProofLaunch(proofLaunchAdmission{ControlRoot: controlRoot,
+	attempt, decision, joined, err := admit(proofLaunchAdmission{ControlRoot: controlRoot,
 		ExecutionRoot: preparation.ExecutionRoot(), ConfPath: confPath, GoalID: *goalID, CapMin: *capMin,
 		RetryDecision: *retryDecision, ScopeClass: "full", CommandClass: "landing-test-receipt", Sections: expected,
 		ExpectedGoalRevision: *expectedGoalRevision, ExpectedAccountingRevision: *expectedAccountingRevision,
@@ -317,7 +331,7 @@ func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(
 	}
 	if decision.Disposition != proofrun.DispositionExecuted {
 		if decision.Disposition == proofrun.DispositionReusableSuccess {
-			if _, err := landing.PublishCommittedReceiptAt(controlRoot, decision.AttemptID, preparation.AcceptedIndexTree(), commandClock()); err != nil {
+			if _, err := publish(controlRoot, decision.AttemptID, preparation.AcceptedIndexTree(), commandClock()); err != nil {
 				return recordExit(err)
 			}
 		}
@@ -366,13 +380,13 @@ func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(
 				return nil, fmt.Errorf("canonical validator produced no authenticated coverage component")
 			}
 			return json.Marshal(receipt)
-		}, CommitTerminal: commitProofTerminal})
+		}, CommitTerminal: terminal})
 	status = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, status)
 	decision.ExitStatus = status
 	if status != 0 {
 		decision.Disposition = proofrun.DispositionFailed
 	} else {
-		receipt, publishErr := landing.PublishCommittedReceiptAt(controlRoot, attempt.AttemptID, preparation.AcceptedIndexTree(), commandClock())
+		receipt, publishErr := publish(controlRoot, attempt.AttemptID, preparation.AcceptedIndexTree(), commandClock())
 		if publishErr != nil {
 			fmt.Fprintln(os.Stderr, publishErr)
 			status = 1
@@ -499,6 +513,10 @@ func runLandingAdoptionRulings(args []string) int {
 // tree right after staging. Exit 2 is a refusal with the detail in the
 // printed decision, exit 1 an unreadable checkout.
 func runLandingReceiptLine(args []string) int {
+	return runLandingReceiptLineWithRawSource(args, nil)
+}
+
+func runLandingReceiptLineWithRawSource(args []string, raw func(gittree.RawRequest) gittree.RawResult) int {
 	flags := flag.NewFlagSet("landing receipt-line", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	tree := flags.String("tree", "", "whole-project staged tree")
@@ -509,7 +527,7 @@ func runLandingReceiptLine(args []string) int {
 		return 2
 	}
 	decision, err := landing.ObserveReceiptLine(landing.ReceiptLineParams{
-		RepoRoot: *root, CandidateTree: *tree, Goal: *goalID, DirectFix: *directFix,
+		RepoRoot: *root, CandidateTree: *tree, Goal: *goalID, DirectFix: *directFix, RawSource: raw,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "landing receipt-line:", err)

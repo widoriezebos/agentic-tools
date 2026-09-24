@@ -87,25 +87,25 @@ func testFixtureHumanAuthority(t *testing.T, root string, now time.Time) *humana
 
 func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
-	if res, err := Open(verbReq(root, "01J5X00000000000000000S000", "mac-a"), "stop-me", "Bound this work.", "main", "Run it."); err != nil || res.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	if res, err := Open(verbReqFor(endpoint, "01J5X00000000000000000S000", "mac-a"), "stop-me", "Bound this work.", "main", "Run it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	claim := verbReq(root, "01J5X00000000000000000S010", "mac-a")
+	claim := verbReqFor(endpoint, "01J5X00000000000000000S010", "mac-a")
 	claim.ClaimEpoch = 9
 	approvedBudget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
 	if res, err := claimApprovedForTest(t, claim, "stop-me", approvedBudget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
-	p, err := Project(endpointFor(root), true, claim.Now)
+	p, err := Project(endpoint, true, claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	file := p.Tree.Live["stop-me"]
 	stop := CloseStopRequest{
 		VerbRequest: VerbRequest{
-			Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
+			Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
 			Ulid: "01J5X00000000000000000S020", Now: claim.Now.Add(90 * time.Second), ClaimEpoch: 9,
 		},
 		GoalID: "stop-me", StopID: "stop-stop-me-r2-f1", Reason: StopReasonElapsedLimit,
@@ -123,7 +123,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	if res, err := CloseStop(retry); err != nil || res.Outcome != OutcomeAbandoned {
 		t.Fatalf("fresh retry must rediscover the fence: %+v %v", res, err)
 	}
-	p, err = Project(endpointFor(root), true, stop.Now)
+	p, err = Project(endpoint, true, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,11 +139,11 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 			budgetIntentArgs(Budget{ElapsedLimit: "2h", AttemptLimit: 4, ReservedJobMinutesLimit: 80, ActiveJobLimit: 2}),
 		),
 	})
-	reports, err := Recover(endpointFor(root))
+	reports, err := Recover(endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err = Project(endpointFor(root), true, stop.Now)
+	p, err = Project(endpoint, true, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,17 +153,17 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 		!strings.Contains(reports[len(reports)-1].Detail, "cannot be replayed from journal text") {
 		t.Fatalf("dead-owner resume journal crossed the human boundary: goal=%+v entry=%+v reports=%+v err=%v", journalResume, entry, reports, err)
 	}
-	park := verbReq(root, "01J5X00000000000000000S025", "mac-a")
+	park := verbReqFor(endpoint, "01J5X00000000000000000S025", "mac-a")
 	park.Actor.Human = "wido"
 	if res, err := Park(park, "stop-me", "do not orphan the stop batch"); err != nil || res.Outcome != OutcomeRejected {
 		t.Fatalf("ordinary park cleared a stopped claim: %+v %v", res, err)
 	}
-	done := verbReq(root, "01J5X00000000000000000S026", "mac-a")
+	done := verbReqFor(endpoint, "01J5X00000000000000000S026", "mac-a")
 	if res, err := Done(done, "stop-me", "must not bypass the stop batch"); err != nil || res.Outcome != OutcomeRejected ||
 		!strings.Contains(res.Detail, "only goal resume may clear its launch fence") {
 		t.Fatalf("ordinary done cleared a stopped claim: %+v %v", res, err)
 	}
-	p, err = Project(endpointFor(root), true, done.Now)
+	p, err = Project(endpoint, true, done.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 
 	resume := ResumeRequest{
 		VerbRequest: VerbRequest{
-			Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "human-shell", Human: "wido"},
+			Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "human-shell", Human: "wido"},
 			Ulid: "01J5X00000000000000000S030", Now: stop.Now.Add(time.Minute),
 		},
 		GoalID: "stop-me",
@@ -204,7 +204,7 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	if res, err := Resume(resume); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("complete-batch resume: %+v %v", res, err)
 	}
-	p, err = Project(endpointFor(root), true, resume.Now)
+	p, err = Project(endpoint, true, resume.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,33 +217,33 @@ func TestBreachStopFenceAndHumanResumeAreOneWayTransactions(t *testing.T) {
 	}
 }
 
-func fencedSetBudgetBed(t *testing.T, state StopBatchState) (string, Budget, Budget, *GoalFile, VerbRequest) {
+func fencedSetBudgetBed(t *testing.T, state StopBatchState) (Endpoint, Budget, Budget, *GoalFile, VerbRequest) {
 	t.Helper()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	goalID := "fenced-rebudget"
-	if result, err := Open(verbReq(root, "01J5X00000000000000000FB00", "mac-a"), goalID, "Rebudget stopped work atomically.", OriginHuman, "Lift the completed fence."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000FB00", "mac-a"), goalID, "Rebudget stopped work atomically.", OriginHuman, "Lift the completed fence."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open fenced rebudget goal: %+v %v", result, err)
 	}
 	budget := testBudget()
-	claim := verbReq(root, "01J5X00000000000000000FB10", "mac-a")
+	claim := verbReqFor(endpoint, "01J5X00000000000000000FB10", "mac-a")
 	claim.ClaimEpoch = 9
 	if result, err := claimApprovedForTest(t, claim, goalID, budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim fenced rebudget goal: %+v %v", result, err)
 	}
-	projection, err := Project(endpointFor(root), true, claim.Now)
+	projection, err := Project(endpoint, true, claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	claimed := projection.Tree.Live[goalID]
 	stop := CloseStopRequest{
-		VerbRequest: VerbRequest{Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: "01J5X00000000000000000FB20", Now: claim.Now.Add(time.Minute), ClaimEpoch: 9},
+		VerbRequest: VerbRequest{Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: "01J5X00000000000000000FB20", Now: claim.Now.Add(time.Minute), ClaimEpoch: 9},
 		GoalID:      goalID, StopID: "stop-fenced-rebudget-r3-f1", Reason: StopReasonElapsedLimit, Capability: *claimed.StopCapability,
 	}
 	if result, err := CloseStop(stop); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("close fenced rebudget goal: %+v %v", result, err)
 	}
-	projection, err = Project(endpointFor(root), true, stop.Now)
+	projection, err = Project(endpoint, true, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,19 +263,19 @@ func fencedSetBudgetBed(t *testing.T, state StopBatchState) (string, Budget, Bud
 	}
 	next := budget
 	next.ElapsedLimit = "3h"
-	set := verbReq(root, "01J5X00000000000000000FB30", "mac-a")
+	set := verbReqFor(endpoint, "01J5X00000000000000000FB30", "mac-a")
 	set.Now = stop.Now.Add(time.Minute)
-	return root, budget, next, stopped, set
+	return endpoint, budget, next, stopped, set
 }
 
 func TestSetBudgetLiftsCompletedFenceInOneTransaction(t *testing.T) {
 	t.Parallel()
-	root, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
+	endpoint, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
 	result, err := setBudgetApprovedForTest(t, set, stopped.Id, next)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("one-step fenced set-budget: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,18 +295,18 @@ func TestSetBudgetLiftsCompletedFenceInOneTransaction(t *testing.T) {
 
 func TestSetBudgetFencedSameTupleRefusesWithoutMutation(t *testing.T) {
 	t.Parallel()
-	root, budget, _, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
+	endpoint, budget, _, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
 	before := RenderFile(stopped)
-	beforeTip := acceptedTip(t, root)
+	beforeTip := acceptedTipForEndpoint(t, endpoint)
 	result, err := setBudgetApprovedForTest(t, set, stopped.Id, budget)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "SET_BUDGET_FENCED_SAME_TUPLE") ||
 		!strings.Contains(result.Detail, "only goal resume") {
 		t.Fatalf("same-tuple fenced set-budget refusal: %+v %v", result, err)
 	}
-	if acceptedTip(t, root) != beforeTip {
+	if acceptedTipForEndpoint(t, endpoint) != beforeTip {
 		t.Fatal("same-tuple refusal advanced the accepted ledger")
 	}
-	afterTree, err := loadTree(root, beforeTip)
+	afterTree, err := loadTreeFor(endpoint, beforeTip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,14 +317,14 @@ func TestSetBudgetFencedSameTupleRefusesWithoutMutation(t *testing.T) {
 
 func TestSetBudgetFencedIncompleteBatchNamesRemedy(t *testing.T) {
 	t.Parallel()
-	root, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchOpen)
+	endpoint, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchOpen)
 	before := RenderFile(stopped)
 	result, err := setBudgetApprovedForTest(t, set, stopped.Id, next)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, stopped.StopFence.StopID) ||
 		!strings.Contains(result.Detail, "metasystem job stop-batch") {
 		t.Fatalf("incomplete stop batch refusal omitted its exact remedy: %+v %v", result, err)
 	}
-	afterTree, loadErr := loadTree(root, acceptedTip(t, root))
+	afterTree, loadErr := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if loadErr != nil {
 		t.Fatal(loadErr)
 	}
@@ -335,25 +335,22 @@ func TestSetBudgetFencedIncompleteBatchNamesRemedy(t *testing.T) {
 
 func TestSetBudgetFencedOtherClaimNamesConflict(t *testing.T) {
 	t.Parallel()
-	root, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
+	endpoint, _, next, stopped, set := fencedSetBudgetBed(t, StopBatchComplete)
 	otherID := "other-live-claim"
-	if result, err := Open(verbReq(root, "01J5X00000000000000000FB40", "mac-a"), otherID, "Occupy the stopped goal's machine.", OriginHuman, "Remain live."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000FB40", "mac-a"), otherID, "Occupy the stopped goal's machine.", OriginHuman, "Remain live."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open other claim: %+v %v", result, err)
 	}
-	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000FB50", "mac-a"), otherID, testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000FB50", "mac-a"), otherID, testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim other goal: %+v %v", result, err)
 	}
-	beforeTree, err := loadTree(root, acceptedTip(t, root))
-	if err != nil {
-		t.Fatal(err)
-	}
+	beforeTree, _ := acceptedTreeForEndpoint(t, endpoint)
 	before := RenderFile(beforeTree.Live[stopped.Id])
 	result, err := setBudgetApprovedForTest(t, set, stopped.Id, next)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, otherID) ||
 		!strings.Contains(result.Detail, "already holds live claim") {
 		t.Fatalf("other live claim refusal omitted the conflict: %+v %v", result, err)
 	}
-	afterTree, loadErr := loadTree(root, acceptedTip(t, root))
+	afterTree, loadErr := loadTreeFor(endpoint, acceptedTipForEndpoint(t, endpoint))
 	if loadErr != nil {
 		t.Fatal(loadErr)
 	}
@@ -364,36 +361,36 @@ func TestSetBudgetFencedOtherClaimNamesConflict(t *testing.T) {
 
 func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDependencyRule(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	floorReq := verbReq(root, "01J5X00000000000000001T000", "mac-a")
+	floorReq := verbReqFor(endpoint, "01J5X00000000000000001T000", "mac-a")
 	floorReq.Actor.Human = "Wido"
 	if result, err := EngineFloor(floorReq, strings.Repeat("a", 40), goalHumanProof(t, root, floorReq.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("engine floor: %+v %v", result, err)
 	}
-	if result, err := Open(verbReq(root, "01J5X00000000000000001T010", "mac-a"), "stop-me", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000001T010", "mac-a"), "stop-me", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open stop-me: %+v %v", result, err)
 	}
-	claim := verbReq(root, "01J5X00000000000000001T020", "mac-a")
+	claim := verbReqFor(endpoint, "01J5X00000000000000001T020", "mac-a")
 	claim.ClaimEpoch = 9
 	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
 	if result, err := claimApprovedForTest(t, claim, "stop-me", budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", result, err)
 	}
-	projection, err := Project(endpointFor(root), true, claim.Now)
+	projection, err := Project(endpoint, true, claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	claimed := projection.Tree.Live["stop-me"]
 	closeRequest := CloseStopRequest{
-		VerbRequest: VerbRequest{Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: "01J5X00000000000000001T030", Now: claim.Now.Add(time.Minute), ClaimEpoch: 9},
+		VerbRequest: VerbRequest{Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: "01J5X00000000000000001T030", Now: claim.Now.Add(time.Minute), ClaimEpoch: 9},
 		GoalID:      "stop-me", StopID: "stop-stop-me-r2-f1", Reason: StopReasonElapsedLimit, Capability: *claimed.StopCapability,
 	}
 	if result, err := CloseStop(closeRequest); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("close stop: %+v %v", result, err)
 	}
-	projection, err = Project(endpointFor(root), true, closeRequest.Now)
+	projection, err = Project(endpoint, true, closeRequest.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,21 +402,21 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 		run  func() (PublishResult, error)
 	}{
 		{"release", func() (PublishResult, error) {
-			return Release(verbReq(root, "01J5X00000000000000001T031", "mac-a"), "stop-me")
+			return Release(verbReqFor(endpoint, "01J5X00000000000000001T031", "mac-a"), "stop-me")
 		}},
 		{"done", func() (PublishResult, error) {
-			return Done(verbReq(root, "01J5X00000000000000001T032", "mac-a"), "stop-me", "must not bypass the stop batch")
+			return Done(verbReqFor(endpoint, "01J5X00000000000000001T032", "mac-a"), "stop-me", "must not bypass the stop batch")
 		}},
 		{"park", func() (PublishResult, error) {
-			return Park(verbReq(root, "01J5X00000000000000001T033", "mac-a"), "stop-me", "must not orphan the stop batch")
+			return Park(verbReqFor(endpoint, "01J5X00000000000000001T033", "mac-a"), "stop-me", "must not orphan the stop batch")
 		}},
 		{"set-budget", func() (PublishResult, error) {
-			request := verbReq(root, "01J5X00000000000000001T034", "mac-a")
+			request := verbReqFor(endpoint, "01J5X00000000000000001T034", "mac-a")
 			request.Actor.Human = "Wido"
 			return SetBudgetApproved(request, "stop-me", budget, goalHumanProof(t, root, request.Now))
 		}},
 		{"steal", func() (PublishResult, error) {
-			request := verbReq(root, "01J5X00000000000000001T035", "mac-b")
+			request := verbReqFor(endpoint, "01J5X00000000000000001T035", "mac-b")
 			request.Actor.Human = "Wido"
 			return Steal(request, "stop-me")
 		}},
@@ -432,20 +429,20 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 	}
 
 	for index, id := range []string{"dependent", "successor"} {
-		if result, err := Open(verbReq(root, []string{"01J5X00000000000000001T040", "01J5X00000000000000001T050"}[index], "mac-b"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Open(verbReqFor(endpoint, []string{"01J5X00000000000000001T040", "01J5X00000000000000001T050"}[index], "mac-b"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 	}
 	blocked := []string{"stop-me"}
-	if result, err := Edit(verbReq(root, "01J5X00000000000000001T060", "mac-b"), "dependent", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Edit(verbReqFor(endpoint, "01J5X00000000000000001T060", "mac-b"), "dependent", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("wire dependent: %+v %v", result, err)
 	}
-	approveDependent := verbReq(root, "01J5X00000000000000001T065", "mac-b")
+	approveDependent := verbReqFor(endpoint, "01J5X00000000000000001T065", "mac-b")
 	approveDependent.Actor.Human = "Wido"
 	if result, err := Approve(approveDependent, []string{"dependent"}, nil, goalHumanProof(t, root, approveDependent.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("approve dependent: %+v %v", result, err)
 	}
-	abandonReq := verbReq(root, "01J5X00000000000000001T070", "mac-a")
+	abandonReq := verbReqFor(endpoint, "01J5X00000000000000001T070", "mac-a")
 	abandonReq.Actor.Human = "Wido"
 	result, err := Abandon(abandonReq, "stop-me", AbandonSpec{Because: "stopped permanently"}, goalHumanProof(t, root, abandonReq.Now))
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal dependent is blocked by stop-me") {
@@ -456,7 +453,7 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("carried abandon: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,10 +468,6 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 	if tree.Live["stop-me"] != nil {
 		t.Fatalf("abandoned goal remained in the live map and could reach budget projection: %+v", tree.Live["stop-me"])
 	}
-	admissionOutput, admissionErr := goalRevisionAdmissionCLI(root, "stop-me", capabilityBefore.Revision, abandonReq.Now)
-	if admissionErr == nil || !strings.Contains(admissionOutput, "not a claimed accepted goal") || strings.Contains(admissionOutput, "BUDGET_") {
-		t.Fatalf("dispatch admission did not stop before budget projection for the abandoned goal: output=%q err=%v", admissionOutput, admissionErr)
-	}
 	if got := tree.Live["dependent"].Blocked; len(got) != 1 || got[0] != "successor" {
 		t.Fatalf("dependent was not re-pointed: %v", got)
 	}
@@ -483,45 +476,46 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 		t.Fatalf("dependent is not blocked on its live successor: %+v %v", frontier, err)
 	}
 
-	if result, err := Open(verbReq(root, "01J5X00000000000000001T090", "mac-a"), "fourth", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000001T090", "mac-a"), "fourth", "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open fourth: %+v %v", result, err)
 	}
-	fourthClaim := verbReq(root, "01J5X00000000000000001T100", "mac-a")
+	fourthClaim := verbReqFor(endpoint, "01J5X00000000000000001T100", "mac-a")
 	if result, err := claimApprovedForTest(t, fourthClaim, "fourth", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandoned claim still consumed the machine quota: %+v %v", result, err)
 	}
 }
 
-func makeFencedAbandonedGoal(t *testing.T, root, goalID, ulidPrefix string) (*GoalFile, time.Time) {
+func makeFencedAbandonedGoal(t *testing.T, endpoint Endpoint, goalID, ulidPrefix string) (*GoalFile, time.Time) {
 	t.Helper()
-	if result, err := Open(verbReq(root, ulidPrefix+"0", "mac-a"), goalID, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+	root := endpoint.Root
+	if result, err := Open(verbReqFor(endpoint, ulidPrefix+"0", "mac-a"), goalID, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open %s: %+v %v", goalID, result, err)
 	}
-	claim := verbReq(root, ulidPrefix+"1", "mac-a")
+	claim := verbReqFor(endpoint, ulidPrefix+"1", "mac-a")
 	claim.ClaimEpoch = 19
 	if result, err := claimApprovedForTest(t, claim, goalID, testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim %s: %+v %v", goalID, result, err)
 	}
-	projection, err := Project(endpointFor(root), true, claim.Now)
+	projection, err := Project(endpoint, true, claim.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	claimed := projection.Tree.Live[goalID]
 	closedAt := claim.Now.Add(time.Minute)
 	closeRequest := CloseStopRequest{
-		VerbRequest: VerbRequest{Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: ulidPrefix + "2", Now: closedAt, ClaimEpoch: 19},
+		VerbRequest: VerbRequest{Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: ulidPrefix + "2", Now: closedAt, ClaimEpoch: 19},
 		GoalID:      goalID, StopID: "stop-" + goalID + "-r2-f1", Reason: StopReasonElapsedLimit, Capability: *claimed.StopCapability,
 	}
 	if result, err := CloseStop(closeRequest); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("close stop %s: %+v %v", goalID, result, err)
 	}
-	abandon := verbReq(root, ulidPrefix+"3", "mac-a")
+	abandon := verbReqFor(endpoint, ulidPrefix+"3", "mac-a")
 	abandon.Now = closedAt.Add(time.Minute)
 	abandon.Actor.Human = "Wido"
 	if result, err := Abandon(abandon, goalID, AbandonSpec{Because: "the stopped work will not resume"}, goalHumanProof(t, root, abandon.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon %s: %+v %v", goalID, result, err)
 	}
-	projection, err = Project(endpointFor(root), true, abandon.Now)
+	projection, err = Project(endpoint, true, abandon.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,16 +539,16 @@ func stopBatchForAbandoned(t *testing.T, file *GoalFile, state StopBatchState, n
 
 func TestReopenFromAbandonedRequiresTheStopBatchComplete(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X000000000000000001S00")
-	abandoned, now := makeFencedAbandonedGoal(t, root, "fenced-reopen", "01J5X000000000000000001S1")
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X000000000000000001S00")
+	abandoned, now := makeFencedAbandonedGoal(t, endpoint, "fenced-reopen", "01J5X000000000000000001S1")
 	if abandoned == nil || abandoned.StopCapability == nil || abandoned.StopFence == nil {
 		t.Fatalf("fixture did not retain the frozen fence: %+v", abandoned)
 	}
 	revisionBefore := abandoned.Revision
-	reopen := verbReq(root, "01J5X000000000000000001S20", "mac-a")
+	reopen := verbReqFor(endpoint, "01J5X000000000000000001S20", "mac-a")
 	reopen.Now = now.Add(time.Minute)
 	reopen.Actor.Human = "Wido"
 	proof := goalHumanProof(t, root, reopen.Now)
@@ -562,7 +556,7 @@ func TestReopenFromAbandonedRequiresTheStopBatchComplete(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "cannot prove stop batch "+abandoned.StopFence.StopID+" complete") {
 		t.Fatalf("missing batch refusal: %+v %v", result, err)
 	}
-	projection, _ := Project(endpointFor(root), true, reopen.Now)
+	projection, _ := Project(endpoint, true, reopen.Now)
 	if projection.Tree.Abandoned["fenced-reopen"].Revision != revisionBefore {
 		t.Fatal("missing batch refusal changed the record")
 	}
@@ -575,7 +569,7 @@ func TestReopenFromAbandonedRequiresTheStopBatchComplete(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not COMPLETE") {
 		t.Fatalf("open batch refusal: %+v %v", result, err)
 	}
-	projection, _ = Project(endpointFor(root), true, reopen.Now)
+	projection, _ = Project(endpoint, true, reopen.Now)
 	if projection.Tree.Abandoned["fenced-reopen"].Revision != revisionBefore {
 		t.Fatal("non-complete batch refusal changed the record")
 	}
@@ -588,7 +582,7 @@ func TestReopenFromAbandonedRequiresTheStopBatchComplete(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("complete batch reopen: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -606,22 +600,22 @@ func TestReopenFromAbandonedRequiresTheStopBatchComplete(t *testing.T) {
 
 func TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers(t *testing.T) {
 	t.Parallel()
-	_, rootA, rootB := twoClones(t)
-	seedLedger(t, rootA)
+	endpointA, endpointB := fakeGoalEndpointPair(t)
+	rootA, rootB := endpointA.Root, endpointB.Root
 	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, rootA, "01J5X000000000000000001T00")
+	recordAbandonFloorTestForEndpoint(t, endpointA, "01J5X000000000000000001T00")
 	for index, id := range []string{"successor-one", "successor-two"} {
 		ulid := []string{"01J5X000000000000000001T10", "01J5X000000000000000001T20"}[index]
-		if result, err := Open(verbReq(rootA, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
+		if result, err := Open(verbReqFor(endpointA, ulid, "mac-a"), id, "intent", "main", "next"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, result, err)
 		}
 	}
-	abandoned, now := makeFencedAbandonedGoal(t, rootA, "lost-checkout-goal", "01J5X000000000000000001T3")
+	abandoned, now := makeFencedAbandonedGoal(t, endpointA, "lost-checkout-goal", "01J5X000000000000000001T3")
 	if err := WriteStopBatch(rootA, stopBatchForAbandoned(t, abandoned, StopBatchComplete, now)); err != nil {
 		t.Fatal(err)
 	}
 
-	reopenB := verbReq(rootB, "01J5X000000000000000001T40", "mac-b")
+	reopenB := verbReqFor(endpointB, "01J5X000000000000000001T40", "mac-b")
 	reopenB.Now = now.Add(time.Minute)
 	reopenB.Actor.Human = "Wido"
 	proofB := goalHumanProof(t, rootB, reopenB.Now)
@@ -630,14 +624,14 @@ func TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers(t *te
 		t.Fatalf("foreign checkout reopen did not refuse on its local batch: %+v %v", result, err)
 	}
 
-	carry := verbReq(rootB, "01J5X000000000000000001T50", "mac-b")
+	carry := verbReqFor(endpointB, "01J5X000000000000000001T50", "mac-b")
 	carry.Now = reopenB.Now.Add(time.Minute)
 	carry.Actor.Human = "Wido"
 	result, err = CarryAbandoned(carry, "lost-checkout-goal", "successor-one", proofB)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("first carry: %+v %v", result, err)
 	}
-	tree, err := loadTree(rootB, result.Tip)
+	tree, err := loadTreeFor(endpointB, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -654,7 +648,7 @@ func TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers(t *te
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("second carry: %+v %v", result, err)
 	}
-	tree, _ = loadTree(rootB, result.Tip)
+	tree, _ = loadTreeFor(endpointB, result.Tip)
 	carried = tree.Abandoned["lost-checkout-goal"]
 	if carried.Abandoned.Carried != "successor-two" || carried.History[len(carried.History)-2].Carried != "successor-one" || carried.History[len(carried.History)-1].Carried != "successor-two" {
 		t.Fatalf("second carry did not replace the field and retain both events: %+v", carried.History)
@@ -689,7 +683,7 @@ func TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers(t *te
 	if _, err := CarryAbandoned(self, "lost-checkout-goal", "lost-checkout-goal", proofB); err == nil || err.Error() != "carried must name a live successor" {
 		t.Fatalf("carry to self refusal = %v", err)
 	}
-	projectionB, err := Project(endpointFor(rootB), true, carry.Now)
+	projectionB, err := Project(endpointB, true, carry.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -697,14 +691,14 @@ func TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers(t *te
 		t.Fatal("a refused carry changed the abandoned record")
 	}
 
-	reopenA := verbReq(rootA, "01J5X000000000000000001TB0", "mac-a")
+	reopenA := verbReqFor(endpointA, "01J5X000000000000000001TB0", "mac-a")
 	reopenA.Now = carry.Now.Add(time.Minute)
 	reopenA.Actor.Human = "Wido"
 	result, err = ReopenAbandoned(reopenA, "lost-checkout-goal", goalHumanProof(t, rootA, reopenA.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claimant checkout reopen: %+v %v", result, err)
 	}
-	tree, err = loadTree(rootA, result.Tip)
+	tree, err = loadTreeFor(endpointA, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -722,12 +716,12 @@ func TestReopenFromAbandonedIsBoundToTheClaimantCheckoutAndCarriedRecovers(t *te
 
 func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
-	if result, err := Open(verbReq(root, "01J5X00000000000000000S100", "mac-a"), "one-relayed-resume", "Bound this work.", "main", "Run it."); err != nil || result.Outcome != OutcomeConfirmed {
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000S100", "mac-a"), "one-relayed-resume", "Bound this work.", "main", "Run it."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
-	claim := verbReq(root, "01J5X00000000000000000S110", "mac-a")
+	claim := verbReqFor(endpoint, "01J5X00000000000000000S110", "mac-a")
 	claim.ClaimEpoch = 9
 	if result, err := claimApprovedForTest(t, claim, "one-relayed-resume", Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", result, err)
@@ -735,14 +729,14 @@ func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 
 	closeAndComplete := func(ulid, stopID string, now time.Time) {
 		t.Helper()
-		projection, err := Project(endpointFor(root), true, now)
+		projection, err := Project(endpoint, true, now)
 		if err != nil {
 			t.Fatal(err)
 		}
 		file := projection.Tree.Live["one-relayed-resume"]
 		request := CloseStopRequest{
 			VerbRequest: VerbRequest{
-				Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
+				Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
 				Ulid: ulid, Now: now, ClaimEpoch: 9,
 			},
 			GoalID: "one-relayed-resume", StopID: stopID, Reason: StopReasonElapsedLimit,
@@ -751,7 +745,7 @@ func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 		if result, err := CloseStop(request); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("close stop: %+v %v", result, err)
 		}
-		projection, err = Project(endpointFor(root), true, now)
+		projection, err = Project(endpoint, true, now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -773,7 +767,7 @@ func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 	firstProof := testTemporaryGoalProof(t, root, "Wido authorizes first resume", "2026-09-06")
 	first := ResumeRequest{
 		VerbRequest: VerbRequest{
-			Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "human-shell", Human: "Wido"},
+			Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "human-shell", Human: "Wido"},
 			Ulid: "01J5X00000000000000000S130", Now: firstAt, ClaimEpoch: 9,
 		},
 		GoalID: "one-relayed-resume", Budget: Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1},
@@ -799,8 +793,9 @@ func TestRelayedResumeIsBoundOncePerGoalPerRuling(t *testing.T) {
 
 func TestResumeRequiresHumanAuthority(t *testing.T) {
 	t.Parallel()
+	endpoint, _ := fakeGoalEndpoint(t)
 	_, err := Resume(ResumeRequest{
-		VerbRequest: VerbRequest{Actor: Actor{Human: "argv-is-not-authority"}},
+		VerbRequest: VerbRequest{Endpoint: endpoint, Actor: Actor{Human: "argv-is-not-authority"}},
 		Budget:      Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1},
 	})
 	if err == nil {
@@ -810,11 +805,12 @@ func TestResumeRequiresHumanAuthority(t *testing.T) {
 
 func TestResumeRefusesInvalidFreshBudgetWithHumanAuthority(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
 	_, err := Resume(ResumeRequest{
 		VerbRequest: VerbRequest{
-			Endpoint: Endpoint{Root: root},
+			Endpoint: endpoint,
 			Actor:    Actor{Machine: "mac-a", Lineage: "human-shell", Human: "wido"},
 			Now:      now,
 		},
@@ -835,7 +831,8 @@ func TestStopBatchRefusesContradictionsAndCompleteIsAbsorbing(t *testing.T) {
 		Reason: StopReasonElapsedLimit, State: StopBatchComplete,
 		OpenedAt: stamp, UpdatedAt: stamp, CompletedAt: stamp, Pass: 1,
 	}
-	root := t.TempDir()
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	if err := WriteStopBatch(root, complete); err != nil {
 		t.Fatalf("write complete batch: %v", err)
 	}

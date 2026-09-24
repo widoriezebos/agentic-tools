@@ -23,60 +23,31 @@ type fixtureRepo struct {
 	originalReceipt string
 }
 
-func newFixtureRepo(t *testing.T) *fixtureRepo {
-	t.Helper()
-	base := t.TempDir()
-	f := &fixtureRepo{t: t, repo: filepath.Join(base, "repository"), evidence: filepath.Join(base, "evidence")}
-	f.root = filepath.Join(f.repo, "metasystem")
-	for _, path := range []string{
-		filepath.Join(f.root, "plans"), filepath.Join(f.root, "artifacts", "agents"),
-		filepath.Join(f.evidence, "suite-failures"),
-	} {
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	f.run("init", "-q", "-b", "main")
-	f.run("config", "user.name", "Fixture")
-	f.run("config", "user.email", "fixture@example.invalid")
-	f.run("config", "metasystem.goal.machine", "machine-a")
-	f.write("metasystem/metasystem.conf", "evidence.root="+f.evidence+"\n")
-	f.write("metasystem/memory/receipts.log", "")
-	f.commit("2026-08-01T00:00:00Z", "fixture baseline", false)
-	return f
-}
-
 func TestReceiptHistoryUsesTheHomeOwnedByEachCommit(t *testing.T) {
-	t.Helper()
-	base := t.TempDir()
-	f := &fixtureRepo{
-		t: t, repo: filepath.Join(base, "repository"), evidence: filepath.Join(base, "evidence"),
-	}
-	f.root = filepath.Join(f.repo, "metasystem")
-	if err := os.MkdirAll(f.root, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	f.run("init", "-q", "-b", "main")
-	f.run("config", "user.name", "Fixture")
-	f.run("config", "user.email", "fixture@example.invalid")
-	f.write("metasystem/metasystem.conf", "evidence.root="+f.evidence+"\n")
-
+	f := newSourceFixture(t)
 	legacyReceipt := "1770000000|2026-08-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=legacy|built_by=coordinator"
+	currentReceipt := "1770000001|2026-08-03T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=current|built_by=coordinator"
+	f.write("metasystem/metasystem.conf", "evidence.root="+f.evidence+"\n")
 	f.write("metasystem/plans/receipts.log", legacyReceipt+"\n")
-	legacyCommit := f.commit("2026-08-01T00:00:00Z", "legacy receipt landing", false)
-
-	// The move copies the ledger; copied rows are not new landing attribution.
 	f.write("metasystem/memory/receipts.log", legacyReceipt+"\n")
 	if err := os.Remove(filepath.Join(f.root, "plans", "receipts.log")); err != nil {
 		t.Fatal(err)
 	}
-	moveCommit := f.commit("2026-08-02T00:00:00Z", "move receipt register", false)
-
-	currentReceipt := "1770000001|2026-08-03T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=current|built_by=coordinator"
 	f.write("metasystem/memory/receipts.log", legacyReceipt+"\n"+currentReceipt+"\n")
-	currentCommit := f.commit("2026-08-03T00:00:00Z", "current receipt landing", false)
-
-	facts, err := loadGitFacts(f.root)
+	f.facts = sourceSnapshot{
+		mainTip: sourceCurrent, receiptBlob: sourceBlob, moveLog: sourceMove + "\n",
+		receiptText: legacyReceipt + "\n" + currentReceipt + "\n",
+	}
+	f.facts = appendRawCommit(f.facts, sourceLegacy, "", "fixture@example.invalid", "2026-08-01T00:00:00Z",
+		"1\t0\tmetasystem/metasystem.conf", "1\t0\tmetasystem/plans/receipts.log")
+	f.facts = appendRawCommit(f.facts, sourceMove, sourceLegacy, "fixture@example.invalid", "2026-08-02T00:00:00Z",
+		"0\t0\tmetasystem/{plans => memory}/receipts.log")
+	f.facts = appendRawCommit(f.facts, sourceCurrent, sourceMove, "fixture@example.invalid", "2026-08-03T00:00:00Z",
+		"1\t0\tmetasystem/memory/receipts.log")
+	f.facts = appendRawReceiptPatch(f.facts, sourceLegacy, "metasystem/plans/receipts.log", 0, true, legacyReceipt)
+	f.facts = appendRawReceiptPatch(f.facts, sourceMove, "metasystem/memory/receipts.log", 0, true, legacyReceipt)
+	f.facts = appendRawReceiptPatch(f.facts, sourceCurrent, "metasystem/memory/receipts.log", 1, false, currentReceipt)
+	facts, err := f.loadGitFacts()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,11 +55,11 @@ func TestReceiptHistoryUsesTheHomeOwnedByEachCommit(t *testing.T) {
 		t.Fatalf("current receipt path = %q", facts.receiptPath)
 	}
 	wantKeys := map[string]string{
-		legacyCommit:  receiptOriginalKey(legacyReceipt),
-		currentCommit: receiptOriginalKey(currentReceipt),
+		sourceLegacy:  receiptOriginalKey(legacyReceipt),
+		sourceCurrent: receiptOriginalKey(currentReceipt),
 	}
 	for _, landing := range facts.landings {
-		if landing.SHA == moveCommit && len(landing.ReceiptKeys) != 0 {
+		if landing.SHA == sourceMove && len(landing.ReceiptKeys) != 0 {
 			t.Fatalf("receipt copy was attributed as a new landing: %+v", landing)
 		}
 		if want, exists := wantKeys[landing.SHA]; exists {
@@ -158,113 +129,6 @@ func history(at, opid, verb string) goal.HistoryLine {
 	return goal.HistoryLine{At: at, Opid: opid, Verb: verb, Actor: "machine-a+fixture", Targets: []string{"g1"}, Keep: -1}
 }
 
-func (f *fixtureRepo) seedFullWorld() {
-	f.t.Helper()
-	f.originalReceipt = "1770000000|2026-08-19T12:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=1|stop_loss=no|delegate=fake:model:j1|goal=g1|built_by=delegate|critique_waived=none|waiver_stream=none|note=landed"
-	oldReceipt := "1770000001|2026-08-19T13:00:00Z|RECEIPT|type=review|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|critique_waived=none|waiver_stream=none|note=old row"
-	f.write("metasystem/memory/receipts.log", f.originalReceipt+"\n"+oldReceipt+"\n")
-	f.write("metasystem/payload.txt", "one\ntwo\nthree\nfour\n")
-	f.commit("2026-08-19T12:00:00Z", "land g1", false)
-
-	digest := fmt.Sprintf("%x", sha1.Sum([]byte(f.originalReceipt)))
-	correction1 := "1771000000|2026-08-25T00:00:00Z|CORRECTION|ref_epoch=1770000000|ref_sha1=" + digest + "|field=corrections|was=1|now=2|reason=first"
-	correction2 := "1771000001|2026-08-25T00:01:00Z|CORRECTION|ref_epoch=1770000000|ref_sha1=" + digest + "|field=corrections|was=1|now=3|reason=last"
-	f.write("metasystem/memory/receipts.log", f.originalReceipt+"\n"+oldReceipt+"\n"+correction1+"\n"+correction2+"\n")
-	f.commit("2026-08-25T00:02:00Z", "project receipt corrections", false)
-
-	goalsDir := filepath.Join(f.root, "plans", "goals")
-	if err := os.MkdirAll(filepath.Join(goalsDir, "done"), 0o755); err != nil {
-		f.t.Fatal(err)
-	}
-	g1 := &goal.GoalFile{
-		Id: "g1", State: goal.StateDone, Intent: "Ship fixture work.", Origin: goal.OriginMain,
-		NextStep: "Ship it.", Conclude: "Shipped.", OpenedAt: "2026-08-01T00:00:00Z", Revision: 3,
-		Budget: &goal.Budget{ElapsedLimit: "1d", AttemptLimit: 3, ReservedJobMinutesLimit: 480, ActiveJobLimit: 2},
-		History: []goal.HistoryLine{
-			history("2026-08-01T00:00:00Z", "01J5X00000000000000000P000-machine-a-11111111", "open"),
-			history("2026-08-05T00:00:00Z", "01J5X00000000000000000P010-machine-a-11111111", "claim"),
-			history("2026-08-20T12:00:00Z", "01J5X00000000000000000P020-machine-a-11111111", "done"),
-		},
-	}
-	if err := os.WriteFile(filepath.Join(goalsDir, "done", "g1.md"), goal.RenderFile(g1), 0o644); err != nil {
-		f.t.Fatal(err)
-	}
-	parked := &goal.GoalFile{
-		Id: "parked-old", State: goal.StateParked, Intent: "Parked debt.", Origin: goal.OriginMain,
-		NextStep: "Revisit.", OpenedAt: "2026-06-01T00:00:00Z", Revision: 2,
-		Parked: &goal.ParkRecord{By: "machine-a+fixture", At: "2026-07-01T00:00:00Z", Because: "waiting"},
-		History: []goal.HistoryLine{
-			{At: "2026-06-01T00:00:00Z", Opid: "01J5X00000000000000000P030-machine-a-11111111", Verb: "open", Actor: "machine-a+fixture", Targets: []string{"parked-old"}, Keep: -1},
-			{At: "2026-07-01T00:00:00Z", Opid: "01J5X00000000000000000P040-machine-a-11111111", Verb: "park", Actor: "machine-a+fixture", Targets: []string{"parked-old"}, Keep: -1},
-		},
-	}
-	queued := &goal.GoalFile{
-		Id: "queued-no-budget", State: goal.StateQueued, Intent: "Queued debt.", Origin: goal.OriginMain,
-		NextStep: "Investigate later.", OpenedAt: "2026-07-01T00:00:00Z", Revision: 1,
-		History: []goal.HistoryLine{{At: "2026-07-01T00:00:00Z", Opid: "01J5X00000000000000000P050-machine-a-11111111", Verb: "open", Actor: "machine-a+fixture", Targets: []string{"queued-no-budget"}, Keep: -1}},
-	}
-	collision := &goal.GoalFile{
-		Id: "collision", State: goal.StateClaimed, Intent: "Collision fixture.", Origin: goal.OriginMain,
-		NextStep: "Continue.", OpenedAt: "2026-08-01T00:00:00Z", Revision: 2,
-		Claimed: &goal.ClaimRecord{Machine: "machine-a", Lineage: "fixture", At: "2026-08-21T00:00:00Z"},
-		History: []goal.HistoryLine{
-			{At: "2026-08-01T00:00:00Z", Opid: "01J5X00000000000000000P060-machine-a-11111111", Verb: "open", Actor: "machine-a+fixture", Targets: []string{"collision"}, Keep: -1},
-			{At: "2026-08-21T00:00:00Z", Opid: "01J5X00000000000000000P070-machine-a-11111111", Verb: "steal", Actor: "machine-a+fixture", Targets: []string{"collision"}, Displaced: "machine-b+other@2026-08-20T00:00:00Z", Keep: -1},
-		},
-	}
-	for _, file := range []*goal.GoalFile{parked, queued, collision} {
-		if err := os.WriteFile(filepath.Join(goalsDir, file.Id+".md"), goal.RenderFile(file), 0o644); err != nil {
-			f.t.Fatal(err)
-		}
-	}
-	accepted := f.commit("2026-08-26T00:00:00Z", "publish goal facts", true)
-	f.run("update-ref", goal.AcceptedRef, accepted)
-
-	f.job("j1", map[string]any{
-		"jobId": "j1", "role": "implementer", "status": "completed", "goalId": "g1", "round": 1,
-		"runtime": "codex", "startedAt": "2026-08-18T10:00:00Z", "endedAt": "2026-08-18T12:00:00Z",
-		"usage": map[string]any{"inputTokens": 10, "cost": map[string]any{"amount": 1, "currency": "USD"}, "providerUnits": map[string]any{"name": "credits", "value": 2}},
-	})
-	f.job("critic", map[string]any{
-		"jobId": "critic", "role": "design-critic", "status": "completed", "goalId": "g1", "round": 1,
-		"runtime": "claude", "startedAt": "2026-08-18T12:00:00Z", "endedAt": "2026-08-18T13:00:00Z",
-		"usage": map[string]any{"outputTokens": 5, "cost": map[string]any{"amount": 2, "currency": "EUR"}},
-	})
-	f.job("critic-r2", map[string]any{
-		"jobId": "critic-r2", "parentJob": "critic", "role": "design-critic", "status": "completed", "goalId": "g1", "round": 2,
-		"runtime": "codex", "startedAt": "2026-08-18T13:00:00Z", "endedAt": "2026-08-18T14:00:00Z",
-		"usage": map[string]any{"inputTokens": 5, "providerUnits": map[string]any{"name": "credits", "value": 1}},
-	})
-
-	chain := filepath.Join(f.root, "artifacts", "agents", "critiques", "fixture-chain")
-	if err := os.MkdirAll(chain, 0o755); err != nil {
-		f.t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(chain, "attribution"), []byte("goal g1\n"), 0o644); err != nil {
-		f.t.Fatal(err)
-	}
-	for _, round := range []string{"1", "2"} {
-		if err := os.WriteFile(filepath.Join(chain, "r"+round+"-output.md"), []byte("ok\n"), 0o644); err != nil {
-			f.t.Fatal(err)
-		}
-	}
-
-	enumeration := filepath.Join(f.root, "artifacts", "agents", "enumeration-report.txt")
-	if err := os.WriteFile(enumeration, []byte("section\tdirect-validation\tretained validator\tpass\t0\n"), 0o644); err != nil {
-		f.t.Fatal(err)
-	}
-	proofAt := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
-	if err := os.Chtimes(enumeration, proofAt, proofAt); err != nil {
-		f.t.Fatal(err)
-	}
-
-	f.writeJSON("metasystem/artifacts/agents/goal-transactions/rejected.json", map[string]any{
-		"intent": map[string]any{"verb": "claim", "targets": []string{"g1"}},
-		"phase":  "terminal", "outcome": "rejected", "attempts": 1,
-		"terminalAt": "2026-08-21T00:00:00Z", "evidence": "claim refused",
-	})
-}
-
 func (f *fixtureRepo) job(id string, value map[string]any) {
 	f.t.Helper()
 	f.writeJSON("metasystem/artifacts/agents/jobs/"+id+".json", value)
@@ -290,9 +154,9 @@ func detailedReport(t *testing.T, result Result) string {
 }
 
 func TestO1EachMetricComputesValueAndCoverageFromCannedTree(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
-	result, err := Report(weeklyOptions(f))
+	result, err := f.report(weeklyOptions(f.fixtureRepo))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,12 +269,12 @@ func reportMetricValueAndCoverage(t *testing.T, report, key string) (string, []s
 }
 
 func TestO2JobsGapIsLoudAndNeverPrintsZero(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 	if err := os.RemoveAll(filepath.Join(f.root, "artifacts", "agents", "jobs")); err != nil {
 		t.Fatal(err)
 	}
-	result, err := Report(weeklyOptions(f))
+	result, err := f.report(weeklyOptions(f.fixtureRepo))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,9 +290,9 @@ func TestO2JobsGapIsLoudAndNeverPrintsZero(t *testing.T) {
 }
 
 func TestO6InjectedPeriodRerunIsByteIdentical(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
-	first, err := Report(weeklyOptions(f))
+	first, err := f.report(weeklyOptions(f.fixtureRepo))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +300,7 @@ func TestO6InjectedPeriodRerunIsByteIdentical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := Report(weeklyOptions(f))
+	second, err := f.report(weeklyOptions(f.fixtureRepo))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,9 +314,9 @@ func TestO6InjectedPeriodRerunIsByteIdentical(t *testing.T) {
 }
 
 func TestO18CorrectionProjectionIsLastWinsAtOriginalPeriod(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
-	w, err := loadWorld(f.root)
+	w, err := f.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,22 +329,30 @@ func TestO18CorrectionProjectionIsLastWinsAtOriginalPeriod(t *testing.T) {
 	if original == nil || original.Fields["corrections"] != "3" || original.At.Format(time.RFC3339) != "2026-08-19T12:00:00Z" {
 		t.Fatalf("projection did not stay on the original event: %+v", original)
 	}
-	row := computeRework(w, mustPeriod(t, weeklyOptions(f)), "", loadThresholds(f.root))
+	row := computeRework(w, mustPeriod(t, weeklyOptions(f.fixtureRepo)), "", loadThresholds(f.root))
 	if row.Value != "corrected_items=1 receipted_items=2 share=0.500 max_corrections=3" {
 		t.Fatalf("last correction did not win: %s", row.Value)
 	}
 }
 
 func TestInvalidEffectiveReceiptProvenanceIsRejectedByOriginalRow(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	goalReceipt := "1770000100|2026-08-19T12:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=g1|built_by=delegate|critique_waived=none|waiver_stream=none|note=goal"
 	builderReceipt := "1770000101|2026-08-19T12:01:00Z|RECEIPT|type=implement|outcome=shipped|skills=none|verify=clean|corrections=0|stop_loss=no|delegate=none|goal=g1|built_by=delegate|critique_waived=none|waiver_stream=none|note=builder"
 	goalCorrection := "1770000200|2026-08-20T12:00:00Z|CORRECTION|ref_epoch=1770000100|ref_sha1=" + fmt.Sprintf("%x", sha1.Sum([]byte(goalReceipt))) + "|field=goal|was=g1|now=Invalid_goal|reason=corrupt"
 	builderCorrection := "1770000201|2026-08-20T12:01:00Z|CORRECTION|ref_epoch=1770000101|ref_sha1=" + fmt.Sprintf("%x", sha1.Sum([]byte(builderReceipt))) + "|field=built_by|was=delegate|now=critic|reason=corrupt"
-	f.write("metasystem/memory/receipts.log", strings.Join([]string{goalReceipt, builderReceipt, goalCorrection, builderCorrection}, "\n")+"\n")
-	invalidLanding := f.commit("2026-08-20T12:02:00Z", "hand-corrupt receipt provenance", false)
+	f.facts = sourceSnapshot{machine: "machine-a", receiptBlob: sourceBlob, moveLog: sourceBaseline + "\n"}
+	f.facts = appendRawCommit(f.facts, sourceBaseline, "", "fixture@example.invalid", "2026-08-01T00:00:00Z",
+		"1\t0\tmetasystem/metasystem.conf", "0\t0\tmetasystem/memory/receipts.log")
+	f.facts = appendRawCommit(f.facts, sourceInvalid, sourceBaseline, "fixture@example.invalid", "2026-08-20T12:02:00Z",
+		"4\t0\tmetasystem/memory/receipts.log")
+	f.facts.currentPatch = "\x1e" + sourceBaseline + "\n\ndiff --git a/metasystem/memory/receipts.log b/metasystem/memory/receipts.log\nnew file mode 100644\nindex 0000000..e69de29\n"
+	f.facts = appendRawReceiptPatch(f.facts, sourceInvalid, "metasystem/memory/receipts.log", 0, false, goalReceipt, builderReceipt, goalCorrection, builderCorrection)
+	f.facts.receiptText = strings.Join([]string{goalReceipt, builderReceipt, goalCorrection, builderCorrection}, "\n") + "\n"
+	f.write("metasystem/memory/receipts.log", f.facts.receiptText)
+	invalidLanding := sourceInvalid
 
-	w, err := loadWorld(f.root)
+	w, err := f.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -533,8 +405,8 @@ func TestInvalidEffectiveReceiptProvenanceIsRejectedByOriginalRow(t *testing.T) 
 }
 
 func TestCritiqueAttributionDecisionReader(t *testing.T) {
-	f := newFixtureRepo(t)
-	root := filepath.Join(f.root, "artifacts", "agents", "critiques")
+	fixtureRoot := t.TempDir()
+	root := filepath.Join(fixtureRoot, "artifacts", "agents", "critiques")
 	makeChain := func(name string) string {
 		t.Helper()
 		directory := filepath.Join(root, name)
@@ -567,7 +439,7 @@ func TestCritiqueAttributionDecisionReader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	chains, coverage := loadCritiques(f.root)
+	chains, coverage := loadCritiques(fixtureRoot)
 	if coverage.Found != 5 || coverage.Rejected != 2 || len(chains) != 3 {
 		t.Fatalf("critique attribution decisions produced wrong coverage: chains=%+v coverage=%+v", chains, coverage)
 	}
@@ -586,13 +458,13 @@ func TestCritiqueAttributionDecisionReader(t *testing.T) {
 }
 
 func TestO19CostDimensionsNeverCollapseRuntimeOrCurrency(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
-	w, err := loadWorld(f.root)
+	w, err := f.loadWorld()
 	if err != nil {
 		t.Fatal(err)
 	}
-	row := computeCost(w, mustPeriod(t, weeklyOptions(f)), "")
+	row := computeCost(w, mustPeriod(t, weeklyOptions(f.fixtureRepo)), "")
 	for _, want := range []string{"tokens[codex,inputTokens]", "tokens[claude,outputTokens]", "cost[USD]", "cost[EUR]"} {
 		if !strings.Contains(row.Value, want) {
 			t.Fatalf("missing dimension %s: %s", want, row.Value)
@@ -604,13 +476,13 @@ func TestO19CostDimensionsNeverCollapseRuntimeOrCurrency(t *testing.T) {
 }
 
 func TestO20PeriodSweepCreatesMissingNonCLIGoalReport(t *testing.T) {
-	f := newFixtureRepo(t)
+	f := newSourceFixture(t)
 	f.seedFullWorld()
 	target := filepath.Join(f.root, "artifacts", "agents", "metrics", "goal-g1.md")
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
 		t.Fatalf("goal report unexpectedly exists before sweep: %v", err)
 	}
-	if _, err := Report(weeklyOptions(f)); err != nil {
+	if _, err := f.report(weeklyOptions(f.fixtureRepo)); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(target)

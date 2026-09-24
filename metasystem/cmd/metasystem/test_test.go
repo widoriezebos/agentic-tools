@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -133,32 +134,135 @@ func TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback(t *te
 }
 
 func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
-	fixture := newPortableProofFixture(t)
-	fixture.writeEpisodeContract()
-	tree := fixture.commit("declare expiring command observation")
-	before := time.Now().UTC().Truncate(time.Second)
-	expires := before.Add(time.Minute)
-	t.Setenv("METASYSTEM_GOAL_NOW", before.Format(time.RFC3339Nano))
-	request := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
-		Purpose: testpolicy.PurposeDelivery, FreshEpisode: strings.Repeat("1", 64), FreshExpiresAt: expires.Format(time.RFC3339Nano)}
-	prepared, err := prepareTestingForCommand(request)
+	fixture := newOrdinaryCandidateFixture(t)
+	writeTestingFixtureFile(t, filepath.Join(fixture.root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644)
+	pinProofBinaryFixture(t, fixture.root)
+	group := testpolicy.Group{ID: "candidate-bed", Kind: "unit", Adapter: "command", Phase: "acceptance",
+		EnvironmentMode: "inherit", Freshness: "episode", CWD: ".",
+		Inputs: []string{"metasystem/cmd/metasystem/engine.txt"}, Tools: []testpolicy.Tool{{ID: "shell", Executable: "sh", VersionArgs: []string{"-c", "printf fixture-shell"}}},
+		Obligations: []string{"candidate-engine"}, Platforms: []string{"any"}, TargetMS: 1,
+		Argv: []string{"sh", "-c", "test -s metasystem/cmd/metasystem/engine.txt"}, Format: "exit-status"}
+	contract := testpolicy.Contract{SchemaVersion: 2,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces:    []testpolicy.Surface{{ID: "app", Paths: []string{"metasystem/cmd/**"}, Standard: []string{group.ID}, Critical: group.Obligations}},
+		Groups:      []testpolicy.Group{group}, Always: testpolicy.Always{Canary: []string{group.ID}}, Unknown: []string{group.ID}, Cadence: []string{group.ID}}
+	contractBytes, err := json.Marshal(contract)
 	if err != nil {
 		t.Fatal(err)
 	}
+	writeTestingFixtureFile(t, filepath.Join(fixture.installation, "testing.json"), contractBytes, 0o644)
+	contract, err = testpolicy.Load(filepath.Join(fixture.installation, "testing.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{ChangedPaths: []string{"metasystem/cmd/metasystem/engine.txt"}, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery})
+	if err != nil || !reflect.DeepEqual(plan.SelectedGroups, []string{group.ID}) {
+		t.Fatalf("select retained proof groups: plan=%+v err=%v", plan, err)
+	}
+	prepared := testingPreparation{Installation: fixture.installation, ControlRoot: fixture.root, ProjectRoot: fixture.root,
+		Prefix: "metasystem", ConfPath: filepath.Join(fixture.root, "metasystem.conf"), GoalID: "portable", AccountingRevision: 2,
+		BaseCommit: ordinaryBaseCommit, PolicyBaseCommit: ordinaryBaseCommit, CandidateTree: ordinaryProjectTree,
+		EffectiveContract: contract, Plan: plan, Environment: testingEnvironment(os.Environ()),
+		ContractDigest: bytesSHA256(contractBytes), BaseContractDigest: bytesSHA256(contractBytes),
+		PolicyEngineDigest: fixture.policyDigest, BehaviorPolicyDigest: strings.Repeat("3", 64)}
+	fixture.queueJudge()
+	prepared.JudgeKey = proofrun.ComputeJudgeKeyWithReader(context.Background(), fixture.root, ordinaryBaseCommit, "metasystem", fixture.judgeReader)
+	if prepared.JudgeKey == proofrun.DefaultJudgeKey() || strings.Contains(prepared.JudgeKey, ":unreadable:") {
+		t.Fatalf("candidate engine sources did not yield a judge key: %s", prepared.JudgeKey)
+	}
+	type projectionStep struct {
+		dir, output string
+		args        []string
+		indexed     bool
+	}
+	var projection []projectionStep
+	queueProjection := func() {
+		paths := landing.WorkspaceExclusions()
+		for i, path := range paths {
+			paths[i] = "metasystem/" + path
+		}
+		projection = append(projection,
+			projectionStep{fixture.installation, fixture.root + "\n", []string{"rev-parse", "--show-toplevel"}, false},
+			projectionStep{fixture.installation, "metasystem/\n", []string{"rev-parse", "--show-prefix"}, false},
+			projectionStep{fixture.root, "", []string{"read-tree", ordinaryProjectTree}, true},
+			projectionStep{fixture.root, fixture.root + "\n", []string{"rev-parse", "--show-toplevel"}, false},
+			projectionStep{fixture.root, "", append([]string{"ls-files", "-z", "--"}, paths...), true},
+			projectionStep{fixture.root, ordinaryProjectTree + "\n", []string{"write-tree"}, true})
+	}
+	var indexPath, previousIndex string
+	raw := func(request gittree.RawRequest) gittree.RawResult {
+		if request.Operation != "git rev-parse --show-toplevel" && request.Operation != "git rev-parse --show-prefix" &&
+			request.Operation != "git read-tree "+ordinaryProjectTree && request.Operation != "git write-tree" &&
+			!strings.HasPrefix(request.Operation, "git ls-files -z -- ") {
+			return fixture.raw(request)
+		}
+		if len(projection) == 0 {
+			t.Fatal("unexpected projection request")
+		}
+		step := projection[0]
+		projection = projection[1:]
+		wantArgs := append(append([]string{"-C", step.dir}, ordinaryWorkspacePins...), step.args...)
+		if request.Dir != step.dir || !reflect.DeepEqual(request.Args, wantArgs) || request.Operation != "git "+strings.Join(step.args, " ") || len(request.Stdin) != 0 {
+			t.Fatalf("projection request dir=%q args=%q operation=%q stdin=%q; want dir=%q args=%q", request.Dir, request.Args, request.Operation, request.Stdin, step.dir, wantArgs)
+		}
+		wantEnv := gittree.ScrubbedEnviron()
+		if step.indexed {
+			if len(request.Env) != len(wantEnv)+1 || !reflect.DeepEqual(request.Env[:len(wantEnv)], wantEnv) || !strings.HasPrefix(request.Env[len(wantEnv)], "GIT_INDEX_FILE=") {
+				t.Fatalf("projection index environment differs from scrubbed environment plus one index: %q", request.Env)
+			}
+			actual := strings.TrimPrefix(request.Env[len(wantEnv)], "GIT_INDEX_FILE=")
+			if !filepath.IsAbs(actual) || filepath.Base(actual) != "index" || filepath.Dir(filepath.Dir(actual)) != os.TempDir() || !strings.HasPrefix(filepath.Base(filepath.Dir(actual)), "metasystem-gittree.") {
+				t.Fatalf("projection index path is not task-private: %q", actual)
+			}
+			if step.args[0] == "read-tree" {
+				if actual == previousIndex {
+					t.Fatalf("projection reused prior temporary index %q", actual)
+				}
+				indexPath = actual
+			} else if actual != indexPath {
+				t.Fatalf("projection index changed: %q != %q", actual, indexPath)
+			}
+			wantEnv = gittree.ScrubbedEnviron("GIT_INDEX_FILE=" + indexPath)
+			if step.args[0] == "write-tree" {
+				previousIndex = indexPath
+				indexPath = ""
+			}
+		}
+		if !reflect.DeepEqual(request.Env, wantEnv) {
+			t.Fatalf("projection environment differs from exact scrubbed environment")
+		}
+		return gittree.RawResult{Stdout: []byte(step.output)}
+	}
+	workspace := gittree.Workspace{Dir: fixture.root, RawSource: raw}
+	defer func() {
+		fixture.assertDrained()
+		if len(projection) != 0 || indexPath != "" {
+			t.Fatalf("unused projection requests: %d; active index=%q", len(projection), indexPath)
+		}
+	}()
+	before := time.Now().UTC().Truncate(time.Second)
+	expires := before.Add(time.Minute)
+	t.Setenv("METASYSTEM_GOAL_NOW", before.Format(time.RFC3339Nano))
+	request := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: ordinaryProjectTree, Mode: testpolicy.ModeAuto,
+		Purpose: testpolicy.PurposeDelivery, FreshEpisode: strings.Repeat("1", 64), FreshExpiresAt: expires.Format(time.RFC3339Nano)}
 	if _, err := resolveTestingPreparationWorkerPolicy(&prepared); err != nil {
 		t.Fatal(err)
 	}
-	buildIdentity, err := candidateEngineBuildIdentity(context.Background(), gittree.Workspace{Dir: prepared.ProjectRoot},
-		prepared.Prefix, prepared.CandidateTree, prepared.Environment)
+	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
+	buildIdentity, err := candidateEngineBuildIdentityUsing(context.Background(), workspace,
+		prepared.Prefix, prepared.CandidateTree, prepared.Environment, fixture.dependency())
 	if err != nil {
 		t.Fatal(err)
 	}
 	runRequest := testingRunRequest(prepared, "", "", "", strings.Repeat("a", 64), buildIdentity)
+	runRequest.WithCandidateOpener(fixture.openBed)
 	runRequest.FreshnessEpisode, runRequest.FreshnessExpiresAt = request.FreshEpisode, request.FreshExpiresAt
 	runRequest.FreshGroups, _ = testingFreshGroups(prepared, request)
-	if err := bindTestingFreshnessProjection(&runRequest, prepared.Installation); err != nil {
+	queueProjection()
+	if err := bindTestingFreshnessProjectionWithWorkspace(&runRequest, prepared.Installation, workspace); err != nil {
 		t.Fatal(err)
 	}
+	fixture.queueBed(ordinaryProjectTree)
 	identities, metadata, _, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), runRequest)
 	if err != nil {
 		t.Fatal(err)
@@ -207,7 +311,24 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fixed, err := verifyRetainedTesting(request)
+	retained, err := proofrun.ReadAttempts(prepared.proofControlRoot())
+	if err != nil || len(retained) != 1 || retained[0].TestResult == nil || retained[0].Terminal == nil {
+		t.Fatalf("persisted retained proof: attempts=%+v err=%v", retained, err)
+	}
+	fixedClock, authorized, err := goalCommandClock(prepared.proofControlRoot())
+	if err != nil || !authorized {
+		t.Fatalf("authorized fixed fixture clock: authorized=%t err=%v", authorized, err)
+	}
+	if actual := fixedClock(); !actual.Equal(before) {
+		t.Fatalf("authorized fixed fixture clock: now=%s want=%s", actual, before)
+	}
+	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
+	fixture.queueBed(ordinaryProjectTree)
+	queueProjection()
+	fixed, err := verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
+		clock: fixedClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+		workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
+	})
 	if err != nil || !fixed.Delivery.Sufficient {
 		t.Fatalf("authorized fixed fixture clock lost reusable proof: sufficient=%t err=%v groups=%+v", fixed.Delivery.Sufficient, err, fixed.Groups)
 	}
@@ -221,8 +342,12 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 		{name: "after expiry", at: expires.Add(time.Nanosecond)},
 	} {
 		t.Run(boundary.name, func(t *testing.T) {
+			fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
+			fixture.queueBed(ordinaryProjectTree)
+			queueProjection()
 			revalidated := false
 			result, err := verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
+				workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
 				clock: func() time.Time {
 					if revalidated {
 						return boundary.at
@@ -492,11 +617,11 @@ func testingTerminalControlRootProblems(testSource, proofSource, launcherSource 
 		{"test.go", "runTestWorker", "canonicalProofRoot", "controlRoot"},
 		{"test.go", "runTestWorker", "proofrun.AuthenticateWorker", "canonicalControl"},
 		{"test.go", "runTestWorker", "proofrun.ReadAttempt", "canonicalControl"},
-		{"test.go", "testingTerminalCommit", "readTestingWorkerResult", "workerResultPath"},
-		{"test.go", "testingTerminalCommit", "commitProofTerminalWithTestResult", "completion"},
-		{"proof_run.go", "commitProofTerminalWithTestResult", "commitProofTerminalWithReason", "completion"},
-		{"proof_run.go", "commitProofTerminalWithReason", "proofrun.ReadProcessRecord", "completion.ControlRoot"},
-		{"proof_run.go", "commitProofTerminalWithReason", "proofrun.FinalizeAttemptWithTestResultLocked", "completion.ControlRoot"},
+		{"test.go", "testingTerminalCommit", "testingTerminalCommitWithReads", "workerResultPath"},
+		{"test.go", "testingTerminalCommitWithReads", "readTestingWorkerResult", "workerResultPath"},
+		{"test.go", "testingTerminalCommitWithReads", "commitProofTerminalWithReasonAndReads", "completion"},
+		{"proof_run.go", "commitProofTerminalWithReasonAndReads", "proofrun.ReadProcessRecord", "completion.ControlRoot"},
+		{"proof_run.go", "commitProofTerminalWithReasonAndReads", "proofrun.FinalizeAttemptWithTestResultLocked", "completion.ControlRoot"},
 		{"launcher.go", "LaunchSuite", "options.CommitTerminal", "completion"},
 	}
 	for _, check := range checks {
@@ -572,18 +697,87 @@ func TestBaseMovedUnderTheRunRestartsPreparationOnce(t *testing.T) {
 	}
 }
 
-func newPolicyBaseMoveFixture(t *testing.T) (string, string) {
+type policyBaseMoveFixture struct {
+	root    string
+	parents map[string]string
+	refText string
+	commits map[string]string
+	git     *testgit.Stub
+}
+
+func newPolicyBaseMoveFixture(t *testing.T, parents map[string]string, tip string, calls ...[]string) *policyBaseMoveFixture {
 	t.Helper()
 	root := t.TempDir()
-	testingFixtureGit(t, root, "init", "-q", "-b", "main")
-	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\n"), 0o644)
-	writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), []byte("base contract\n"), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "old base")
-	old := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-	testingFixtureGit(t, root, "config", "--local", "metasystem.steward.landing-ref", "refs/remotes/origin/main")
-	testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", old)
-	return root, old
+	copyParents := make(map[string]string, len(parents))
+	for commit, parent := range parents {
+		if !policyBaseFixtureSHA(commit) || parent != "" && !policyBaseFixtureSHA(parent) {
+			t.Fatalf("invalid fixture commit or parent: %q %q", commit, parent)
+		}
+		copyParents[commit] = parent
+	}
+	if _, exists := copyParents[tip]; !exists {
+		t.Fatalf("landing tip is absent from fixture ancestry: %q", tip)
+	}
+	expected := make([]testgit.Expectation, 0, len(calls))
+	for _, call := range calls {
+		expected = append(expected, testgit.Expectation{Call: testgit.Call{Dir: root, Args: call}})
+	}
+	return &policyBaseMoveFixture{
+		root: root, parents: copyParents, refText: "refs/remotes/origin/main",
+		commits: map[string]string{"refs/remotes/origin/main": tip}, git: testgit.New(t, expected...),
+	}
+}
+
+func policyBaseFixtureSHA(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	for _, digit := range value {
+		if digit < '0' || digit > '9' && digit < 'a' || digit > 'f' {
+			return false
+		}
+	}
+	return true
+}
+
+func (fixture *policyBaseMoveFixture) readers() policyBaseMoveReaders {
+	return policyBaseMoveReaders{
+		isAncestor: func(root, ours, engine string) (bool, error) {
+			if result := fixture.git.Run(testgit.Call{Dir: root, Args: []string{"ancestry", ours, engine}}); result.Err != nil {
+				return false, result.Err
+			}
+			if !policyBaseFixtureSHA(ours) || !policyBaseFixtureSHA(engine) {
+				return false, fmt.Errorf("invalid ancestry commit")
+			}
+			if _, exists := fixture.parents[ours]; !exists {
+				return false, fmt.Errorf("unknown ancestor commit %s", ours)
+			}
+			for commit := engine; commit != ""; commit = fixture.parents[commit] {
+				if _, exists := fixture.parents[commit]; !exists {
+					return false, fmt.Errorf("unknown descendant commit %s", commit)
+				}
+				if commit == ours {
+					return true, nil
+				}
+			}
+			return false, nil
+		},
+		localLandingRef: func(root string) (string, error) {
+			result := fixture.git.Run(testgit.Call{Dir: root, Args: []string{"landing-ref"}})
+			return fixture.refText, result.Err
+		},
+		commitAtRef: func(root, ref string) (string, error) {
+			result := fixture.git.Run(testgit.Call{Dir: root, Args: []string{"commit-at-ref", ref}})
+			if result.Err != nil {
+				return "", result.Err
+			}
+			commit, exists := fixture.commits[ref]
+			if !exists || !policyBaseFixtureSHA(commit) {
+				return "", fmt.Errorf("unknown landing ref or invalid commit %q", ref)
+			}
+			return commit, nil
+		},
+	}
 }
 
 func TestBaseMovedToAnEngineChangeReArmsOnce(t *testing.T) {
@@ -596,32 +790,26 @@ func TestBaseMovedToAnEngineChangeReArmsOnce(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(preparationRestartedEnv, "")
-			root, old := newPolicyBaseMoveFixture(t)
-			writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar moved = true\n"), 0o644)
-			if test.contractChange {
-				writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), []byte("changed base contract\n"), 0o644)
-			}
-			testingFixtureGit(t, root, "add", ".")
-			testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "move base")
-			moved := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-			testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", moved)
+			old, moved := strings.Repeat("a", 40), strings.Repeat("b", 40)
+			fixture := newPolicyBaseMoveFixture(t, map[string]string{old: "", moved: old}, moved,
+				[]string{"ancestry", old, moved}, []string{"landing-ref"}, []string{"commit-at-ref", "refs/remotes/origin/main"})
 			decision := testingPlanOutput{CandidateTree: "candidate", PolicyBaseCommit: moved, BaseContractDigest: "old-digest"}
 			if test.contractChange {
 				decision.BaseContractDigest = "new-digest"
 			}
 			calls, rearms := 0, 0
-			_, err := prepareTestingWith(testingSelectionRequest{LandedRearm: true}, func(request testingSelectionRequest) (testingPreparation, error) {
+			prepared, err := prepareTestingWith(testingSelectionRequest{LandedRearm: true}, func(request testingSelectionRequest) (testingPreparation, error) {
 				calls++
 				if calls == 1 {
-					return testingPreparation{}, compareTrustedPolicyDecision(root, root, "candidate", old, "old-digest", decision)
+					return testingPreparation{}, compareTrustedPolicyDecisionWithReaders("candidate", old, "old-digest", decision, fixture.root, fixture.readers())
 				}
 				if request.LandedRearm {
 					rearms++
 				}
 				return testingPreparation{PolicyBaseCommit: moved}, nil
 			})
-			if err != nil || calls != 2 || rearms != 1 {
-				t.Fatalf("descendant move did not succeed after exactly one restart and re-arm: calls=%d rearms=%d err=%v", calls, rearms, err)
+			if err != nil || calls != 2 || rearms != 1 || prepared.PolicyBaseCommit != moved || os.Getenv(preparationRestartedEnv) != "1" {
+				t.Fatalf("descendant move did not succeed after exactly one restart and re-arm: calls=%d rearms=%d prepared=%+v guard=%q err=%v", calls, rearms, prepared, os.Getenv(preparationRestartedEnv), err)
 			}
 		})
 	}
@@ -643,35 +831,23 @@ func TestSecondBaseMoveRefusesBaseMoved(t *testing.T) {
 }
 
 func TestUnexplainedPolicyFieldRefusesDecisionMismatch(t *testing.T) {
-	root, old := newPolicyBaseMoveFixture(t)
-	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar moved = true\n"), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "move base")
-	moved := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-	testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", moved)
-	err := compareTrustedPolicyDecision(root, root, "candidate", old, "digest", testingPlanOutput{
+	old, moved := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	fixture := newPolicyBaseMoveFixture(t, map[string]string{old: "", moved: old}, moved)
+	err := compareTrustedPolicyDecisionWithReaders("candidate", old, "digest", testingPlanOutput{
 		CandidateTree: "other-candidate", PolicyBaseCommit: moved, BaseContractDigest: "other-digest",
-	})
+	}, fixture.root, fixture.readers())
 	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=candidate-tree") {
 		t.Fatalf("candidate mismatch was incorrectly explained by the base move: %v", err)
 	}
 }
 
 func TestNonDescendantPolicyBaseRefusesDecisionMismatch(t *testing.T) {
-	root, common := newPolicyBaseMoveFixture(t)
-	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar ours = true\n"), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "ours")
-	ours := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-	testingFixtureGit(t, root, "checkout", "-q", "-b", "sibling", common)
-	writeTestingFixtureFile(t, filepath.Join(root, "cmd", "metasystem", "engine.go"), []byte("package main\nvar sibling = true\n"), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "sibling")
-	sibling := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-	testingFixtureGit(t, root, "update-ref", "refs/remotes/origin/main", sibling)
-	err := compareTrustedPolicyDecision(root, root, "candidate", ours, "digest", testingPlanOutput{
+	common, ours, sibling := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40)
+	fixture := newPolicyBaseMoveFixture(t, map[string]string{common: "", ours: common, sibling: common}, sibling,
+		[]string{"ancestry", ours, sibling})
+	err := compareTrustedPolicyDecisionWithReaders("candidate", ours, "digest", testingPlanOutput{
 		CandidateTree: "candidate", PolicyBaseCommit: sibling, BaseContractDigest: "digest",
-	})
+	}, fixture.root, fixture.readers())
 	if err == nil || !strings.Contains(err.Error(), "cause=decision-mismatch field=policy-base-commit") {
 		t.Fatalf("non-descendant base was incorrectly restarted: %v", err)
 	}
@@ -775,51 +951,46 @@ func TestTrustedPolicyEngineIsRequiredWithoutBuildingDuringReadOnlySelection(t *
 }
 
 func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *testing.T) {
-	fixture := newCandidateEngineFixture(t)
+	fixture := newOrdinaryCandidateFixture(t)
 	ctx := context.Background()
-	built, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
-	if err != nil {
-		t.Fatalf("build candidate proof engine: %v", err)
+	environment := testingEnvironment(os.Environ())
+	build := func(tree, projection, commit string) *candidateEngineBuild {
+		t.Helper()
+		fixture.queueBuild(tree, projection, commit, environment)
+		artifact, err := buildCandidateEngine(ctx, fixture.workspace(), "metasystem", tree, environment, fixture.dependency())
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixture.assertDrained()
+		fixture.assertExecutable(artifact, commit)
+		t.Cleanup(func() { _ = artifact.Close() })
+		return artifact
 	}
-	t.Cleanup(func() { _ = built.Close() })
-	repeated, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
-	if err != nil {
-		t.Fatalf("repeat candidate proof engine build: %v", err)
-	}
-	t.Cleanup(func() { _ = repeated.Close() })
+	built := build(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne)
+	repeated := build(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne)
 	if repeated.Commit != built.Commit || repeated.Digest != built.Digest {
 		t.Fatalf("same candidate tree produced unstable proof engine identity: first=%+v repeated=%+v", built, repeated)
 	}
-	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "records", "counselor", "peer.md"), []byte("ledger-only move\n"), 0o644)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/records/counselor/peer.md")
-	recordsTree, err := (gittree.Workspace{Dir: fixture.projectRoot}).StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	recordsBuild, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", recordsTree, testingEnvironment(os.Environ()))
-	if err != nil {
-		t.Fatalf("build candidate proof engine after records-only move: %v", err)
-	}
-	t.Cleanup(func() { _ = recordsBuild.Close() })
+	fixture.records = []byte("ledger-only move\n")
+	fixture.writeFiles()
+	fixture.declareSnapshot(ordinaryRecordsTree, ordinaryRecordsInstallationTree, ordinaryEngineTree, ordinaryBaseScriptBlob, "")
+	recordsTree := ordinaryRecordsTree
+	recordsBuild := build(recordsTree, ordinaryEngineTree, ordinaryBuildOne)
 	if recordsBuild.Commit != built.Commit || recordsBuild.Digest != built.Digest {
 		t.Fatalf("records-only move changed engine build identity or bytes: first=%+v records=%+v", built, recordsBuild)
 	}
-	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "go.sum"), []byte("fixture.example/module v1.0.0 h1:changed\n"), 0o644)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/go.sum")
-	moduleTree, err := (gittree.Workspace{Dir: fixture.projectRoot}).StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	moduleBuild, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", moduleTree, testingEnvironment(os.Environ()))
-	if err != nil {
-		t.Fatalf("build candidate proof engine after go.sum move: %v", err)
-	}
-	t.Cleanup(func() { _ = moduleBuild.Close() })
+	fixture.sum = []byte("changed sum\n")
+	fixture.writeFiles()
+	fixture.declareSnapshot(ordinaryChangedTree, ordinaryChangedInstallationTree, ordinaryChangedEngineTree, ordinaryBaseScriptBlob, ordinaryChangedSumBlob)
+	moduleBuild := build(ordinaryChangedTree, ordinaryChangedEngineTree, ordinaryBuildTwo)
 	if moduleBuild.Commit == built.Commit {
 		t.Fatalf("go.sum move did not change engine build identity: first=%s changed=%s", built.Commit, moduleBuild.Commit)
 	}
-	testingFixtureGit(t, fixture.projectRoot, "config", "i18n.commitEncoding", "ISO-8859-1")
-	testingFixtureGit(t, fixture.projectRoot, "config", "author.name", "repository author")
+	t.Setenv("GIT_CONFIG_COUNT", "2")
+	t.Setenv("GIT_CONFIG_KEY_0", "i18n.commitEncoding")
+	t.Setenv("GIT_CONFIG_VALUE_0", "ISO-8859-1")
+	t.Setenv("GIT_CONFIG_KEY_1", "author.name")
+	t.Setenv("GIT_CONFIG_VALUE_1", "repository author")
 	t.Run("foreign Git identity and encoding", func(t *testing.T) {
 		for name, value := range map[string]string{
 			"GIT_AUTHOR_NAME": "foreign author", "GIT_AUTHOR_EMAIL": "foreign-author@example.invalid",
@@ -828,21 +999,13 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 		} {
 			t.Setenv(name, value)
 		}
-		foreignEnvironment, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
-		if err != nil {
-			t.Fatalf("build identical tree with foreign Git identity and encoding: %v", err)
-		}
-		t.Cleanup(func() { _ = foreignEnvironment.Close() })
+		foreignEnvironment := build(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne)
 		if foreignEnvironment.Commit != built.Commit || foreignEnvironment.Digest != built.Digest {
 			t.Fatalf("same tree depended on ambient Git identity or encoding: first=%+v foreign=%+v", built, foreignEnvironment)
 		}
 	})
-	testingFixtureGit(t, fixture.projectRoot, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "land candidate tree")
-	afterLanding, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
-	if err != nil {
-		t.Fatalf("build identical tree after its checkout history moved: %v", err)
-	}
-	t.Cleanup(func() { _ = afterLanding.Close() })
+	fixture.headPredecessor = ordinaryMovedHead
+	afterLanding := build(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne)
 	if afterLanding.Commit != built.Commit || afterLanding.Digest != built.Digest {
 		t.Fatalf("same tree depended on its checkout history: first=%+v after-landing=%+v", built, afterLanding)
 	}
@@ -862,29 +1025,43 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard,
 		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
 		RequiredGroups: []string{group.ID}, SelectedGroups: []string{group.ID}, Stages: []testpolicy.Stage{{ID: "standard", Groups: []string{group.ID}}}}
-	prepared := testingPreparation{ProjectRoot: fixture.projectRoot, Prefix: "metasystem", CandidateTree: fixture.candidateTree,
-		BaseCommit: fixture.baseCommit, PolicyBaseCommit: fixture.baseCommit, EffectiveContract: contract, Plan: plan,
+	fixture.queueJudge()
+	prepared := testingPreparation{ProjectRoot: fixture.root, Prefix: "metasystem", CandidateTree: ordinaryProjectTree,
+		BaseCommit: ordinaryBaseCommit, PolicyBaseCommit: ordinaryBaseCommit, EffectiveContract: contract, Plan: plan,
 		ContractDigest: strings.Repeat("1", 64), BaseContractDigest: strings.Repeat("2", 64),
 		PolicyEngineDigest: fixture.policyDigest, BehaviorPolicyDigest: strings.Repeat("3", 64),
-		JudgeKey: proofrun.ComputeJudgeKey(ctx, fixture.projectRoot, fixture.baseCommit, "metasystem")}
+		JudgeKey: proofrun.ComputeJudgeKeyWithReader(ctx, fixture.root, ordinaryBaseCommit, "metasystem", fixture.judgeReader)}
 	if prepared.JudgeKey == proofrun.DefaultJudgeKey() || strings.Contains(prepared.JudgeKey, ":unreadable:") {
 		t.Fatalf("the fixture's engine sources did not yield a judge key: %s", prepared.JudgeKey)
 	}
 	request := testingRunRequest(prepared, "", "", built.Path, built.Digest, built.Commit)
+	request.WithCandidateOpener(fixture.openBed)
+	serialized, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("serialize candidate request: %v", err)
+	}
+	nativeShape := request
+	nativeShape.WithCandidateOpener(nil)
+	nativeJSON, err := json.Marshal(nativeShape)
+	if err != nil || string(serialized) != string(nativeJSON) {
+		t.Fatalf("candidate bed opener changed request JSON: err=%v", err)
+	}
 	result := proofrun.NewTestResult(request)
 	if request.JudgeKey != prepared.JudgeKey || result.JudgeKey != prepared.JudgeKey {
 		t.Fatalf("the judge key was not carried into the request and the result: request=%s result=%s", request.JudgeKey, result.JudgeKey)
 	}
 	if result.PolicyEngineDigest != fixture.policyDigest || result.CandidateEngineDigest != built.Digest ||
-		result.CandidateEngineBuildIdentity != built.Commit || result.CandidateTree != fixture.candidateTree {
+		result.CandidateEngineBuildIdentity != built.Commit || result.CandidateTree != ordinaryProjectTree {
 		t.Fatalf("retained execution identity lost policy, candidate engine, or tree: %+v", result)
 	}
+	fixture.queueBed(ordinaryProjectTree)
 	identities, err := proofrun.GroupExecutionIdentities(ctx, request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	changedPolicy := request
 	changedPolicy.PolicyEngineDigest = strings.Repeat("4", 64)
+	fixture.queueBed(ordinaryProjectTree)
 	policyIdentities, err := proofrun.GroupExecutionIdentities(ctx, changedPolicy)
 	if err != nil {
 		t.Fatal(err)
@@ -894,18 +1071,24 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 	}
 	changedJudge := request
 	changedJudge.JudgeKey = prepared.JudgeKey + ":changed"
+	fixture.queueBed(ordinaryProjectTree)
 	policyIdentities, err = proofrun.GroupExecutionIdentities(ctx, changedJudge)
 	if err != nil {
 		t.Fatal(err)
 	}
 	changedCandidate := request
 	changedCandidate.CandidateEngineDigest = strings.Repeat("5", 64)
+	fixture.queueBed(ordinaryProjectTree)
 	candidateIdentities, err := proofrun.GroupExecutionIdentities(ctx, changedCandidate)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if identities[group.ID] == policyIdentities[group.ID] || identities[group.ID] == candidateIdentities[group.ID] {
 		t.Fatalf("group execution identity omitted the judge key or the candidate engine: current=%s judge-change=%s candidate-change=%s", identities[group.ID], policyIdentities[group.ID], candidateIdentities[group.ID])
+	}
+	fixture.assertDrained()
+	if want := (map[string]int{"open": 10, "raw": 30, "git": 42, "judge": 5}); !reflect.DeepEqual(fixture.requests, want) || fixture.opened != 10 || fixture.closed != 10 {
+		t.Fatalf("candidate proof requests=%v opened=%d closed=%d, want %v and 10 closed beds", fixture.requests, fixture.opened, fixture.closed, want)
 	}
 }
 
@@ -920,34 +1103,35 @@ func candidateResourceCustodyContext(t *testing.T) context.Context {
 }
 
 func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) {
-	fixture := newCandidateEngineFixture(t)
-	counter := filepath.Join(t.TempDir(), "builds")
-	custodySeen := filepath.Join(t.TempDir(), "custody-seen")
-	scriptPath := filepath.Join(fixture.installationRoot, "scripts", "agents", "go-build.sh")
+	fixture := newOrdinaryCandidateFixture(t)
+	controlRoot := t.TempDir()
+	counter := filepath.Join(controlRoot, "builds")
+	custodySeen := filepath.Join(controlRoot, "custody-seen")
+	scriptPath := filepath.Join(fixture.installation, "scripts", "agents", "go-build.sh")
 	script, err := os.ReadFile(scriptPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	script = []byte(strings.Replace(string(script), "set -euo pipefail\n", "set -euo pipefail\nprintf 'build\\n' >> '"+counter+"'\nprintf '%s' \"${METASYSTEM_PROOF_ATTEMPT:-}\" > '"+custodySeen+"'\n", 1))
+	script = []byte(strings.Replace(string(script), "set -euo pipefail\n", "set -euo pipefail\nprintf 'build\\n' >> \"${METASYSTEM_PROOF_CONTROL_ROOT:?}/builds\"\nprintf '%s' \"${METASYSTEM_PROOF_ATTEMPT:-}\" > \"${METASYSTEM_PROOF_CONTROL_ROOT:?}/custody-seen\"\n", 1))
+	fixture.script = script
 	writeTestingFixtureFile(t, scriptPath, script, 0o755)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/scripts/agents/go-build.sh")
-	workspace := gittree.Workspace{Dir: fixture.projectRoot}
-	tree, err := workspace.StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	controlRoot := t.TempDir()
+	fixture.declareSnapshot(ordinaryReuseTree, ordinaryReuseInstallationTree, ordinaryReuseEngineTree, ordinaryReuseScriptBlob, "")
+	workspace := fixture.workspace()
+	tree := ordinaryReuseTree
 	writeTestingFixtureFile(t, filepath.Join(controlRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=64\n"), 0o600)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(controlRoot, "admission"))
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
 	custodyContext := candidateResourceCustodyContext(t)
-	environment := inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_ATTEMPT=legacy-parent"})
-	prepare := func(tree string) *candidateEngineBuild {
+	environment := inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=legacy-parent"})
+	prepare := func(tree, engineTree, commit string, build bool) *candidateEngineBuild {
 		t.Helper()
-		artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment)
+		fixture.queuePrepare(tree, engineTree, commit, environment, build)
+		artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment, fixture.dependency())
 		if err != nil {
 			t.Fatal(err)
 		}
+		fixture.assertDrained()
+		fixture.assertExecutable(artifact, commit)
 		return artifact
 	}
 	buildCount := func() int {
@@ -958,19 +1142,19 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 		}
 		return strings.Count(string(data), "build\n")
 	}
-	first := prepare(tree)
+	first := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, true)
 	if buildCount() != 1 {
 		t.Fatal("cold candidate engine preparation did not build once")
 	}
 	if seen, err := os.ReadFile(custodySeen); err != nil || string(seen) != "legacy-parent" {
 		t.Fatalf("candidate build lost legacy proof custody: seen=%q err=%v", seen, err)
 	}
-	second := prepare(tree)
+	second := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, false)
 	if buildCount() != 1 || first.Path != second.Path || first.Digest != second.Digest {
 		t.Fatalf("warm candidate engine preparation rebuilt: first=%+v second=%+v count=%d", first, second, buildCount())
 	}
-	environment = inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_ATTEMPT=another-parent"})
-	custodyVariant := prepare(tree)
+	environment = inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=another-parent"})
+	custodyVariant := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, false)
 	if buildCount() != 1 || custodyVariant.Commit != first.Commit {
 		t.Fatalf("custody-only change fragmented candidate engine cache: first=%s variant=%s count=%d", first.Commit, custodyVariant.Commit, buildCount())
 	}
@@ -980,29 +1164,27 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 	if err := testexec.WriteFile(second.Path, []byte("corrupt"), 0o500); err != nil {
 		t.Fatal(err)
 	}
-	third := prepare(tree)
+	third := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, true)
 	if buildCount() != 2 || third.Digest != first.Digest {
 		t.Fatalf("corrupt candidate engine was not rebuilt: third=%+v count=%d", third, buildCount())
 	}
 	if err := os.Remove(third.Path); err != nil {
 		t.Fatal(err)
 	}
-	prepare(tree)
+	prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, true)
 	if buildCount() != 3 {
 		t.Fatalf("missing candidate engine was not rebuilt: %d", buildCount())
 	}
-	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "go.sum"), []byte("changed sum\n"), 0o644)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/go.sum")
-	changedTree, err := workspace.StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	changed := prepare(changedTree)
+	fixture.sum = []byte("changed sum\n")
+	fixture.writeFiles()
+	fixture.declareSnapshot(ordinaryChangedTree, ordinaryChangedInstallationTree, ordinaryChangedEngineTree, ordinaryReuseScriptBlob, ordinaryChangedSumBlob)
+	changedTree := ordinaryChangedTree
+	changed := prepare(changedTree, ordinaryChangedEngineTree, ordinaryBuildTwo, true)
 	if changed.Commit == first.Commit || buildCount() != 4 {
 		t.Fatalf("changed build input reused previous artifact: first=%s changed=%s count=%d", first.Commit, changed.Commit, buildCount())
 	}
 	environment = append(append([]string(nil), environment...), "METASYSTEM_FIXTURE_BUILD_MODE=changed")
-	changedEnvironment := prepare(changedTree)
+	changedEnvironment := prepare(changedTree, ordinaryChangedEngineTree, ordinaryBuildThree, true)
 	if changedEnvironment.Commit == changed.Commit || buildCount() != 5 {
 		t.Fatalf("changed build environment reused previous artifact: previous=%s current=%s count=%d", changed.Commit, changedEnvironment.Commit, buildCount())
 	}
@@ -1011,7 +1193,9 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 		t.Fatal(err)
 	}
 	toolDir := t.TempDir()
-	writeTestingFixtureFile(t, filepath.Join(toolDir, "go"), []byte("#!/bin/sh\nexec '"+realGo+"' \"$@\"\n"), 0o755)
+	toolBytes := []byte("#!/bin/sh\nexec '" + realGo + "' \"$@\"\n")
+	writeTestingFixtureFile(t, filepath.Join(toolDir, "go"), toolBytes, 0o755)
+	fixture.expectedGoPath, fixture.expectedGoBytes = filepath.Join(toolDir, "go"), toolBytes
 	toolEnvironment := append([]string(nil), environment...)
 	for index, entry := range toolEnvironment {
 		if strings.HasPrefix(entry, "PATH=") {
@@ -1019,11 +1203,14 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 		}
 	}
 	environment = toolEnvironment
-	changedTool := prepare(changedTree)
+	changedTool := prepare(changedTree, ordinaryChangedEngineTree, ordinaryBuildFour, true)
 	if changedTool.Commit == changedEnvironment.Commit || buildCount() != 6 {
 		t.Fatalf("changed Go executable reused previous artifact: previous=%s current=%s count=%d", changedEnvironment.Commit, changedTool.Commit, buildCount())
 	}
-	t.Run("physical command origin includes event-held cold build", testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin)
+}
+
+func TestCandidateEngineNativePhysicalCommandOriginIncludesEventHeldColdBuild(t *testing.T) {
+	testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin(t)
 }
 
 func testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin(t *testing.T) {
@@ -1102,17 +1289,15 @@ func testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin(t *testi
 }
 
 func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
-	fixture := newCandidateEngineFixture(t)
+	fixture := newOrdinaryCandidateFixture(t)
 	counter := filepath.Join(t.TempDir(), "builds")
-	scriptPath := filepath.Join(fixture.installationRoot, "scripts", "agents", "go-build.sh")
+	scriptPath := filepath.Join(fixture.installation, "scripts", "agents", "go-build.sh")
 	script := []byte("#!/usr/bin/env bash\nprintf 'build\\n' >> '" + counter + "'\nexit 23\n")
+	fixture.script = script
 	writeTestingFixtureFile(t, scriptPath, script, 0o755)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/scripts/agents/go-build.sh")
-	workspace := gittree.Workspace{Dir: fixture.projectRoot}
-	tree, err := workspace.StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture.declareSnapshot(ordinaryFailedTree, ordinaryFailedInstallationTree, ordinaryFailedEngineTree, ordinaryFailedScriptBlob, "")
+	workspace := fixture.workspace()
+	tree := ordinaryFailedTree
 	controlRoot := t.TempDir()
 	writeTestingFixtureFile(t, filepath.Join(controlRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=64\n"), 0o600)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(controlRoot, "admission"))
@@ -1120,18 +1305,22 @@ func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
 	custodyContext := candidateResourceCustodyContext(t)
 	environment := testingEnvironment(os.Environ())
 	for run := 0; run < 2; run++ {
-		if artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment); artifact != nil || err == nil {
+		fixture.queuePrepare(tree, ordinaryFailedEngineTree, ordinaryFailedBuild, environment, true)
+		if artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment, fixture.dependency()); artifact != nil || err == nil {
 			t.Fatalf("failed build %d entered cache: artifact=%+v err=%v", run, artifact, err)
 		}
+		fixture.assertDrained()
 	}
 	data, err := os.ReadFile(counter)
 	if err != nil || strings.Count(string(data), "build\n") != 2 {
 		t.Fatalf("failed builds were cached: count=%q err=%v", data, err)
 	}
-	buildIdentity, err := candidateEngineBuildIdentity(context.Background(), workspace, "metasystem", tree, environment)
+	fixture.queueIdentity(tree, ordinaryFailedEngineTree, ordinaryFailedBuild, environment, false)
+	buildIdentity, err := candidateEngineBuildIdentityUsing(context.Background(), workspace, "metasystem", tree, environment, fixture.dependency())
 	if err != nil {
 		t.Fatal(err)
 	}
+	fixture.assertDrained()
 	entry := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines", buildIdentity)
 	if _, err := os.Lstat(entry); !os.IsNotExist(err) {
 		t.Fatalf("failed build published an artifact entry: %v", err)
@@ -1397,16 +1586,90 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	}
 }
 
-func TestCandidateEngineBuildFailureCannotFallBackToPolicyEngine(t *testing.T) {
+func TestCandidateEngineNativeGitSerializationPinsHeadSourceAndCleanup(t *testing.T) {
 	fixture := newCandidateEngineFixture(t)
-	broken := []byte("#!/usr/bin/env bash\nset -euo pipefail\necho 'fixture candidate compile failed' >&2\nexit 23\n")
-	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "scripts", "agents", "go-build.sh"), broken, 0o755)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/scripts/agents/go-build.sh")
-	brokenTree, err := (gittree.Workspace{Dir: fixture.projectRoot}).StagedTree()
+	io := nativeCandidateEngineIO()
+	nativeRun := io.runGit
+	nativeOpen := io.open
+	var commands [][]string
+	var detachedRoot string
+	io.runGit = func(command *exec.Cmd) error {
+		commands = append(commands, append([]string(nil), command.Args...))
+		return nativeRun(command)
+	}
+	io.open = func(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {
+		if workspace.Dir != fixture.projectRoot || tree != fixture.candidateTree {
+			t.Fatalf("native detached request root=%s tree=%s", workspace.Dir, tree)
+		}
+		detached, err := nativeOpen(workspace, tree)
+		if err == nil {
+			detachedRoot = detached.Workspace().Dir
+		}
+		return detached, err
+	}
+	built, err := buildCandidateEngine(context.Background(), gittree.Workspace{Dir: fixture.projectRoot},
+		"metasystem", fixture.candidateTree, testingEnvironment(os.Environ()), io)
 	if err != nil {
 		t.Fatal(err)
 	}
-	built, err := buildCandidateEngine(context.Background(), gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", brokenTree, testingEnvironment(os.Environ()))
+	t.Cleanup(func() { _ = built.Close() })
+	if detachedRoot == "" {
+		t.Fatal("native detached worktree was not opened")
+	}
+	if _, err := os.Stat(detachedRoot); !os.IsNotExist(err) {
+		t.Fatalf("native detached worktree remains after build: %v", err)
+	}
+	commitObject := testingFixtureGit(t, fixture.projectRoot, "cat-file", "-p", built.Commit)
+	if !strings.HasPrefix(commitObject, "tree ") || !strings.Contains(commitObject, "stable candidate proof snapshot") {
+		t.Fatalf("candidate stamp does not name the serialized engine commit: %q", commitObject)
+	}
+	source := testingFixtureGit(t, fixture.projectRoot, "show", built.Commit+":cmd/metasystem/engine.txt")
+	if source != "candidate engine source\n" {
+		t.Fatalf("candidate commit source=%q", source)
+	}
+	executable, err := os.ReadFile(built.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(executable), "stamp="+built.Commit) || !strings.Contains(string(executable), "candidate engine source") {
+		t.Fatalf("native built bytes do not carry detached HEAD and source: %q", executable)
+	}
+	if digest, err := fileSHA256(built.Path); err != nil || digest != built.Digest {
+		t.Fatalf("native executable digest=%q want=%q err=%v", digest, built.Digest, err)
+	}
+	var projected, committed, bound bool
+	for _, args := range commands {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "core.fileMode=true -c core.useReplaceRefs=false read-tree") {
+			projected = true
+		}
+		if strings.Contains(joined, "i18n.commitEncoding=UTF-8 commit-tree") {
+			committed = true
+		}
+		if strings.Contains(joined, "update-ref --no-deref HEAD "+built.Commit) {
+			bound = true
+		}
+	}
+	if !projected || !committed || !bound {
+		t.Fatalf("native Git projection/serialization/HEAD binding missing: projected=%t committed=%t bound=%t commands=%q", projected, committed, bound, commands)
+	}
+}
+
+func TestCandidateEngineBuildFailureCannotFallBackToPolicyEngine(t *testing.T) {
+	fixture := newOrdinaryCandidateFixture(t)
+	broken := []byte("#!/usr/bin/env bash\nset -euo pipefail\necho 'fixture candidate compile failed' >&2\nexit 23\n")
+	fixture.script = broken
+	fixture.writeFiles()
+	fixture.declareSnapshot(ordinaryBrokenTree, ordinaryBrokenInstallationTree, ordinaryBrokenEngineTree, ordinaryBrokenScriptBlob, "")
+	environment := testingEnvironment(os.Environ())
+	fixture.steps = append(fixture.steps, ordinaryCandidateStep{kind: "open", output: []byte(ordinaryBrokenTree)})
+	fixture.queueRaw(true, ordinaryBrokenTree+"\n", "rev-parse", "HEAD^{tree}")
+	fixture.queueRaw(true, "", "rev-parse", "--show-prefix")
+	fixture.queueIdentity(ordinaryBrokenTree, ordinaryBrokenEngineTree, ordinaryBrokenBuild, environment, true)
+	fixture.queueRaw(true, ordinarySnapshotCommit+"\n", "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	fixture.queueGit(true, "plain", nil, nil, "update-ref", "--no-deref", "HEAD", ordinaryBrokenBuild, ordinarySnapshotCommit)
+	built, err := buildCandidateEngine(context.Background(), fixture.workspace(), "metasystem", ordinaryBrokenTree, environment, fixture.dependency())
+	fixture.assertDrained()
 	if built != nil || err == nil || !strings.Contains(err.Error(), "candidate engine build failed") || !strings.Contains(err.Error(), "fixture candidate compile failed") {
 		t.Fatalf("candidate build failure did not remain an explicit insufficient outcome: build=%+v err=%v", built, err)
 	}
@@ -1618,7 +1881,7 @@ func TestTestingPlanAdoptsCandidateFallbackOnlyWhenBaseHasNone(t *testing.T) {
 		{name: "base-fallback-remains-protected", baseFallback: true, expectedFallback: "trusted"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
+			t.Setenv("PATH", t.TempDir())
 			base := candidate
 			base.Surfaces = append([]testpolicy.Surface(nil), candidate.Surfaces...)
 			base.Groups = append([]testpolicy.Group(nil), candidate.Groups...)
@@ -1640,66 +1903,36 @@ func TestTestingPlanAdoptsCandidateFallbackOnlyWhenBaseHasNone(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			writeTestingFixtureFile(t, filepath.Join(root, "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0o644)
-			writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), baseBytes, 0o644)
-			writeTestingFixtureFile(t, filepath.Join(root, "owned", "source.go"), []byte("package owned\n"), 0o644)
-			testingFixtureGit(t, root, "init", "-q", "-b", "main")
-			testingFixtureGit(t, root, "add", ".")
-			testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "base")
-			baseCommit := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-			const landingRef = "refs/remotes/origin/main"
-			testingFixtureGit(t, root, "update-ref", landingRef, baseCommit)
-			testingFixtureGit(t, root, "config", "--local", "metasystem.steward.landing-ref", landingRef)
-
-			engine := filepath.Join(t.TempDir(), "metasystem")
-			build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-				"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+baseCommit, "-o", engine, ".")
-			if output, buildErr := build.CombinedOutput(); buildErr != nil {
-				t.Fatalf("build fallback policy engine: %v\n%s", buildErr, output)
-			}
-			canonicalRoot, err := canonicalProofRoot(root)
+			baseContract, err := testpolicy.Decode(baseBytes)
 			if err != nil {
 				t.Fatal(err)
 			}
-			canonicalEngine, err := canonicalPath(engine)
+			candidateContract, err := testpolicy.Decode(candidateBytes)
 			if err != nil {
 				t.Fatal(err)
 			}
-			digest, err := fileSHA256(canonicalEngine)
+			effective := protectedTestingContractWithCandidateFallback(baseContract, candidateContract)
+			if err := effective.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			if effective.Fallback != test.expectedFallback {
+				t.Fatalf("effective fallback = %q, want %q", effective.Fallback, test.expectedFallback)
+			}
+			plan, err := testpolicy.Select(effective, testpolicy.SelectionRequest{
+				ChangedPaths: []string{"unowned.txt"}, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic,
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.MkdirAll(filepath.Dir(steward.RepoIdentityPath(root)), 0o700); err != nil {
-				t.Fatal(err)
+			if len(plan.Uncertainty) != 0 || !containsString(plan.AffectedSurfaces, test.expectedFallback) || !containsString(plan.SelectedGroups, test.expectedFallback) {
+				t.Fatalf("unowned path did not select the fallback without uncertainty: %+v", plan)
 			}
-			if err := steward.MintIdentity(steward.RepoIdentityPath(root), steward.InstallIdentity{RepoIdentity: canonicalRoot, Generation: 1,
-				InstallPath: canonicalEngine, InstallDigest: "sha256:" + digest, MintedAt: "2026-09-10T00:00:00Z", Enrollment: steward.EnrollmentFixture,
-				EngineBuild: baseCommit, LandedCommit: baseCommit, LandingRef: landingRef}); err != nil {
-				t.Fatal(err)
+			if test.baseFallback && containsString(plan.AffectedSurfaces, candidate.Fallback) {
+				t.Fatalf("candidate fallback replaced the protected base fallback: %+v", plan)
 			}
-
-			writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), candidateBytes, 0o644)
-			writeTestingFixtureFile(t, filepath.Join(root, "unowned.txt"), []byte("changed\n"), 0o644)
-			testingFixtureGit(t, root, "add", "testing.json", "unowned.txt")
-			candidateTree, err := (gittree.Workspace{Dir: root}).StagedTree()
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("GIT_OBJECT_DIRECTORY", filepath.Join(root, ".git", "objects"))
-			t.Setenv("GIT_ALTERNATE_OBJECT_DIRECTORIES", "")
-			t.Setenv("GIT_CONFIG_COUNT", "0")
-			prepared, err := prepareTesting(testingSelectionRequest{Root: root, Tree: candidateTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if prepared.EffectiveContract.Fallback != test.expectedFallback {
-				t.Fatalf("effective fallback = %q, want %q", prepared.EffectiveContract.Fallback, test.expectedFallback)
-			}
-			if len(prepared.Plan.Uncertainty) != 0 || !containsString(prepared.Plan.AffectedSurfaces, test.expectedFallback) || !containsString(prepared.Plan.SelectedGroups, test.expectedFallback) {
-				t.Fatalf("unowned path did not select the fallback without uncertainty: %+v", prepared.Plan)
-			}
-			if test.baseFallback && containsString(prepared.Plan.AffectedSurfaces, candidate.Fallback) {
-				t.Fatalf("candidate fallback replaced the protected base fallback: %+v", prepared.Plan)
+			wantGroups := []string{"app", test.expectedFallback}
+			if !reflect.DeepEqual(plan.SelectedGroups, wantGroups) {
+				t.Fatalf("selected groups = %v, want %v", plan.SelectedGroups, wantGroups)
 			}
 		})
 	}
@@ -1726,31 +1959,69 @@ func testFallbackGroup(id, input string) testpolicy.Group {
 }
 
 func TestProtectedCoverageFloorCannotFallOrDisappear(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
-	writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", "coverage-ratchet.json"), []byte(`{"floors":{"internal/app":80.0}}`), 0o644)
-	writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", "coverage-ratchet-linux.json"), []byte(`{"floors":{"internal/app":79.0}}`), 0o644)
-	testingFixtureGit(t, root, "init")
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "base")
-	workspace := gittree.Workspace{Dir: root}
-	base, err := workspace.HeadTree()
-	if err != nil {
-		t.Fatal(err)
+	const baseTree = "1111111111111111111111111111111111111111"
+	const loweredTree = "2222222222222222222222222222222222222222"
+	const raisedTree = "3333333333333333333333333333333333333333"
+	const baseOID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const linuxOID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	const loweredOID = "cccccccccccccccccccccccccccccccccccccccc"
+	const raisedOID = "dddddddddddddddddddddddddddddddddddddddd"
+	const baselinePath = "scripts/agents/coverage-ratchet.json"
+	const linuxPath = "scripts/agents/coverage-ratchet-linux.json"
+	baseJSON := []byte(`{"floors":{"internal/app":80.0}}`)
+	linuxJSON := []byte(`{"floors":{"internal/app":79.0}}`)
+	loweredJSON := []byte(`{"floors":{"internal/app":79.9}}`)
+	raisedJSON := []byte(`{"floors":{"internal/app":80.1,"internal/new":50.0}}`)
+	type rawFact struct {
+		args   []string
+		output []byte
 	}
-	writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", "coverage-ratchet.json"), []byte(`{"floors":{"internal/app":79.9}}`), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	candidate, err := workspace.StagedTree()
-	if err != nil {
-		t.Fatal(err)
+	var facts []rawFact
+	addFile := func(tree, path, oid string, content []byte) {
+		facts = append(facts,
+			rawFact{args: []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path},
+				output: []byte(fmt.Sprintf("100644 blob %s\t%s\x00", oid, path))},
+			rawFact{args: []string{"cat-file", "blob", oid}, output: content},
+		)
 	}
-	if err := protectCoverageRatchets(workspace, base, candidate, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
+	pins := []string{"-C", root, "-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+		"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
+		"-c", "gc.auto=0", "-c", "maintenance.auto=false"}
+	next := 0
+	workspace := gittree.Workspace{Dir: root, RawSource: func(request gittree.RawRequest) gittree.RawResult {
+		if next >= len(facts) {
+			t.Fatalf("unexpected raw Git request: %v", request.Args)
+		}
+		fact := facts[next]
+		next++
+		wantArgs := append(append([]string(nil), pins...), fact.args...)
+		if request.Dir != root || !reflect.DeepEqual(request.Args, wantArgs) || request.Operation != "git "+strings.Join(fact.args, " ") ||
+			request.Stdin != nil || !reflect.DeepEqual(request.Env, gittree.ScrubbedEnviron()) {
+			t.Fatalf("raw Git request %d = %+v, want args %v", next, request, wantArgs)
+		}
+		return gittree.RawResult{Stdout: fact.output}
+	}}
+	addFile(baseTree, baselinePath, baseOID, baseJSON)
+	addFile(loweredTree, baselinePath, loweredOID, loweredJSON)
+	if err := protectCoverageRatchets(workspace, baseTree, loweredTree, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
 		t.Fatalf("lowered base floor was accepted: %v", err)
 	}
-	writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", "coverage-ratchet.json"), []byte(`{"floors":{"internal/app":80.1,"internal/new":50.0}}`), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	candidate, err = workspace.StagedTree()
-	if err != nil || protectCoverageRatchets(workspace, base, candidate, "") != nil {
+	if next != len(facts) {
+		t.Fatalf("lowered floor consumed %d of %d raw Git requests", next, len(facts))
+	}
+	facts = nil
+	next = 0
+	addFile(baseTree, baselinePath, baseOID, baseJSON)
+	addFile(raisedTree, baselinePath, raisedOID, raisedJSON)
+	addFile(baseTree, linuxPath, linuxOID, linuxJSON)
+	addFile(raisedTree, linuxPath, linuxOID, linuxJSON)
+	if err := protectCoverageRatchets(workspace, baseTree, raisedTree, ""); err != nil {
 		t.Fatalf("raised protected floor was refused: %v", err)
+	}
+	if next != len(facts) {
+		t.Fatalf("raised floor consumed %d of %d raw Git requests", next, len(facts))
 	}
 }
 
@@ -2274,6 +2545,17 @@ func mustReadTestingFixtureFile(t *testing.T, path string) []byte {
 
 func TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("METASYSTEM_TRUSTED_POLICY_DECISION", "1")
+	if _, _, _, err := trustedPolicyEngine(root, strings.Repeat("a", 40), false); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_ENGINE_REQUIRED") {
+		t.Fatalf("ambient flag bypassed retained engine authentication: %v", err)
+	}
+	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
+		t.Fatalf("ambient policy selection created build inputs: entries=%v err=%v", entries, err)
+	}
+}
+
+func TestPublicTestingPlanAmbientTrustedPolicyDecisionCannotBypassRetainedEngineNativeGit(t *testing.T) {
+	root := t.TempDir()
 	contract := testpolicy.Contract{SchemaVersion: 1,
 		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
 		Surfaces:    []testpolicy.Surface{{ID: "app", Paths: []string{"source.txt"}, Standard: []string{"app"}, Critical: []string{"app"}}},
@@ -2298,13 +2580,6 @@ func TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine(t *testing.T) {
 	testingFixtureGit(t, root, "update-ref", landingRef, head)
 	testingFixtureGit(t, root, "config", "--local", "metasystem.steward.landing-ref", landingRef)
 	t.Setenv("METASYSTEM_TRUSTED_POLICY_DECISION", "1")
-	prepared, err := prepareTesting(testingSelectionRequest{Root: root, Tree: tree, Mode: testpolicy.ModeStandard, Purpose: testpolicy.PurposeDiagnostic})
-	if err == nil && (!strings.HasPrefix(prepared.JudgeKey, proofrun.JudgeCompatibilityVersion+":") || strings.Contains(prepared.JudgeKey, ":unreadable:")) {
-		t.Fatalf("preparation did not compute a readable judge key: %q", prepared.JudgeKey)
-	}
-	if err == nil || !strings.Contains(err.Error(), "TEST_POLICY_ENGINE_REQUIRED") {
-		t.Fatalf("ordinary caller bypassed retained engine authentication with an ambient flag: %v", err)
-	}
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	build := exec.Command("go", "build", "-buildvcs=false", "-o", engine, ".")
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {

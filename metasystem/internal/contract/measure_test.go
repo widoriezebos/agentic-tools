@@ -64,15 +64,18 @@ func TestContractMeasureBaseline(t *testing.T) {
 }
 
 func TestContractMeasureClassifiesAgainstPrevious(t *testing.T) {
-	_, contractPath := newMeasureRepo(t)
-	improved, err := Measure(contractPath, map[string]string{"score": "0"})
+	f := newContractSource(t, 3, true)
+	if _, err := f.seal(false); err != nil {
+		t.Fatalf("seal failed: %v", err)
+	}
+	improved, err := f.measure(map[string]string{"score": "0"})
 	if err != nil {
 		t.Fatalf("measure failed: %v", err)
 	}
 	if improved.Classification != "contract-improved" {
 		t.Fatalf("rising past the noise floor should improve, got %s", improved.Classification)
 	}
-	regressed, err := Measure(contractPath, map[string]string{"score": "2"})
+	regressed, err := f.measure(map[string]string{"score": "2"})
 	if err != nil {
 		t.Fatalf("measure failed: %v", err)
 	}
@@ -82,7 +85,11 @@ func TestContractMeasureClassifiesAgainstPrevious(t *testing.T) {
 }
 
 func TestContractMeasureGuardFloor(t *testing.T) {
-	_, contractPath := newMeasureRepo(t)
+	f := newContractSource(t, 2, true)
+	contractPath := f.path
+	if _, err := f.seal(false); err != nil {
+		t.Fatalf("seal failed: %v", err)
+	}
 	data, err := os.ReadFile(contractPath)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +97,7 @@ func TestContractMeasureGuardFloor(t *testing.T) {
 	// Raise the audit floor above the value the guard emits; the gate must now
 	// fail even though the score metric still clears its threshold.
 	writeFileMode(t, contractPath, strings.Replace(string(data), "guard.audit.floor=1", "guard.audit.floor=5", 1), 0o644)
-	result, err := Measure(contractPath, nil)
+	result, err := f.measure(nil)
 	if err != nil {
 		t.Fatalf("measure failed: %v", err)
 	}

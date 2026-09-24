@@ -11,13 +11,17 @@ import (
 // returns the revision dispatch must copy into every reservation record.
 // Goal admission owns the separate budget decision.
 func ResolveGoalRevision(root, id string) (uint64, uint8, error) {
+	return resolveGoalRevisionWithReads(root, id, concreteGoalAdmissionReads())
+}
+
+func resolveGoalRevisionWithReads(root, id string, reads goalAdmissionReads) (uint64, uint8, error) {
 	if id == "" {
 		return 0, 0, fmt.Errorf("a goal id is required")
 	}
-	if !goal.NewWorld(root) {
+	if !reads.NewWorld(root) {
 		return 0, 0, fmt.Errorf("goal %s has no revision-bearing synced record", id)
 	}
-	endpoint, err := goal.ResolveEndpoint(root)
+	endpoint, err := reads.ResolveEndpoint(root)
 	if err != nil {
 		return 0, 0, fmt.Errorf("resolve goal ledger: %v", err)
 	}
@@ -54,7 +58,11 @@ func ResolveGoalRevision(root, id string) (uint64, uint8, error) {
 // record a brief hash that lies about intent. The section is quoted data
 // bounded at the ledger; it confers zero authority.
 func ServingGoalSection(root string) (string, error) {
-	id, intent, ok := (&goal.Store{Root: root}).ServingProjection()
+	return servingGoalSection((&goal.Store{Root: root}).ServingProjection)
+}
+
+func servingGoalSection(project func() (string, string, bool)) (string, error) {
+	id, intent, ok := project()
 	if !ok {
 		return "", fmt.Errorf("no serving goal to project: a converted checkout serves this machine's claimed goal, a legacy checkout its Current goal")
 	}

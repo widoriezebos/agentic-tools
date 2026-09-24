@@ -15,7 +15,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"golang.org/x/sys/unix"
 )
 
@@ -30,6 +29,7 @@ type BranchReadRequest struct {
 	Delegate                                                 func(string, string, string, string, string) (string, error)
 	Commit                                                   func(CommitReadRequest) (string, Attestation, error)
 	NewID                                                    func(string) (string, error)
+	Repository                                               BranchReadRepository
 }
 
 type BranchReadResult struct {
@@ -47,6 +47,7 @@ type ReadGateRequest struct {
 	Repo, GoalID, UnitCommit string
 	Gate                     func(string) (string, error)
 	NewID                    func(string) (string, error)
+	Repository               BranchReadRepository
 }
 
 type branchReadRecord struct {
@@ -78,8 +79,8 @@ func gitCommonDir(repo string) (string, error) {
 	return filepath.Clean(path), nil
 }
 
-func branchReadPaths(repo, goal, commit string) (common, record, brief string, err error) {
-	common, err = gitCommonDir(repo)
+func branchReadPathsWithRepository(repository BranchReadRepository, repo, goal, commit string) (common, record, brief string, err error) {
+	common, err = repository.CommonDir(repo)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -142,12 +143,13 @@ func resolveReadGate(request ReadGateRequest, common, recordPath string, record 
 		if request.Gate == nil {
 			return record, GateObservation{}, fmt.Errorf("goal branch read has no gate command")
 		}
-		detached, err := (gittree.Workspace{Dir: request.Repo}).NewDetachedCommitWorktree(request.UnitCommit)
+		repository := branchReadRepositoryFor(request.Repository)
+		dir, closeDetached, err := repository.Detached(request.Repo, request.UnitCommit)
 		if err != nil {
 			return record, GateObservation{}, err
 		}
-		lastLine, gateErr := request.Gate(detached.Workspace().Dir)
-		closeErr := detached.Close()
+		lastLine, gateErr := request.Gate(dir)
+		closeErr := closeDetached()
 		if gateErr != nil {
 			return record, GateObservation{}, errors.Join(operationRefusal(ReadUngatedCode, "%s", strings.TrimSpace(lastLine)), closeErr)
 		}
@@ -170,11 +172,12 @@ func resolveReadGate(request ReadGateRequest, common, recordPath string, record 
 }
 
 func ResolveReadGate(request ReadGateRequest) (GateObservation, error) {
-	subject, _, err := computeSubject(request.Repo, request.UnitCommit)
+	repository := branchReadRepositoryFor(request.Repository)
+	subject, err := repository.Subject(request.Repo, request.UnitCommit)
 	if err != nil {
 		return GateObservation{}, err
 	}
-	common, recordPath, _, err := branchReadPaths(request.Repo, request.GoalID, request.UnitCommit)
+	common, recordPath, _, err := branchReadPathsWithRepository(repository, request.Repo, request.GoalID, request.UnitCommit)
 	if err != nil {
 		return GateObservation{}, err
 	}
@@ -199,20 +202,31 @@ func ResolveReadGate(request ReadGateRequest) (GateObservation, error) {
 }
 
 func ResolveCommitReadGate(request CommitReadRequest, gate func(string) (string, error), newID func(string) (string, error)) (GateObservation, error) {
+	if request.Inputs != nil && (request.Transport == nil || request.GateRepository == nil) {
+		return GateObservation{}, fmt.Errorf("read commit raw transport and gate repository are required")
+	}
 	units, err := requestUnits(CommitRequest{Unit: request.Unit, Units: request.Units})
 	if err != nil || len(units) == 0 {
 		return GateObservation{}, fmt.Errorf("read commits need one or more distinct unit names")
 	}
-	state, err := inspectCommitBranch(CommitRequest{Repo: request.Repo, Remote: request.Remote, EndpointTip: request.EndpointTip,
+	repository, err := request.Inputs.repository()
+	if err != nil {
+		return GateObservation{}, err
+	}
+	state, err := repository.inspectCommitBranch(CommitRequest{Repo: request.Repo, Remote: request.Remote, EndpointTip: request.EndpointTip,
 		GoalID: request.GoalID, Units: units, OpID: request.OpID, Kind: Read, Transport: request.Transport})
 	if err != nil {
 		return GateObservation{}, err
 	}
-	commit, err := unitCommitInRange(request.Repo, request.EndpointTip, state.baseTip, request.GoalID, units)
+	reads, _, err := request.Inputs.readers()
 	if err != nil {
 		return GateObservation{}, err
 	}
-	return ResolveReadGate(ReadGateRequest{Repo: request.Repo, GoalID: request.GoalID, UnitCommit: commit, Gate: gate, NewID: newID})
+	commit, err := unitCommitInRangeWithReads(reads, request.Repo, request.EndpointTip, state.baseTip, request.GoalID, units)
+	if err != nil {
+		return GateObservation{}, err
+	}
+	return ResolveReadGate(ReadGateRequest{Repo: request.Repo, GoalID: request.GoalID, UnitCommit: commit, Gate: gate, NewID: newID, Repository: request.GateRepository})
 }
 
 func branchReadID(prefix string) (string, error) {
@@ -223,8 +237,8 @@ func branchReadID(prefix string) (string, error) {
 	return prefix + "-" + time.Now().UTC().Format("20060102t150405z") + "-" + hex.EncodeToString(raw), nil
 }
 
-func branchUnit(repo, endpoint, tip, goal, commit string) (KindInfo, error) {
-	commits, err := ValidateRange(repo, endpoint, tip, goal)
+func branchUnitWithRepository(repository BranchReadRepository, repo, endpoint, tip, goal, commit string) (KindInfo, error) {
+	commits, err := repository.Range(repo, endpoint, tip, goal)
 	if err != nil {
 		return KindInfo{}, err
 	}
@@ -236,8 +250,8 @@ func branchUnit(repo, endpoint, tip, goal, commit string) (KindInfo, error) {
 	return KindInfo{}, operationRefusal(ReadInvalidCode, "commit %s is not a Goal-Unit commit of goal %s's branch", commit, goal)
 }
 
-func branchReadBrief(repo, endpoint, goal, commit string, supplied []byte) (string, error) {
-	commits, err := ValidateRange(repo, endpoint, commit, goal)
+func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoint, goal, commit string, supplied []byte) (string, error) {
+	commits, err := repository.Range(repo, endpoint, commit, goal)
 	if err != nil {
 		return "", err
 	}
@@ -251,7 +265,7 @@ func branchReadBrief(repo, endpoint, goal, commit string, supplied []byte) (stri
 		if fold.Kind != Plan {
 			continue
 		}
-		entries, err := RawEntries(repo, fold.ID)
+		entries, err := repository.Entries(repo, fold.ID)
 		if err != nil {
 			return "", err
 		}
@@ -300,11 +314,12 @@ func branchReadJobState(repo, job string) (string, error) {
 	return lens.Status(), nil
 }
 
-func criticTestChanges(repo, commit, job string) ([]TestChange, error) {
-	paths, err := requiredTestChanges(repo, commit)
+func criticTestChangesWithRepository(repository BranchReadRepository, repo, commit, job string) ([]TestChange, error) {
+	entries, err := repository.Entries(repo, commit)
 	if err != nil {
 		return nil, err
 	}
+	paths := testPathsFromEntries(entries)
 	changes := make([]TestChange, 0, len(paths))
 	for _, path := range paths {
 		changes = append(changes, TestChange{Path: path, ReaderWord: "reviewed by critic root " + job})
@@ -316,15 +331,16 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	if err := CheckCommitAccess(request.GoalID, request.CheckClaim); err != nil {
 		return result, err
 	}
-	info, err := branchUnit(request.Repo, request.EndpointTip, request.BranchTip, request.GoalID, request.UnitCommit)
+	repository := branchReadRepositoryFor(request.Repository)
+	info, err := branchUnitWithRepository(repository, request.Repo, request.EndpointTip, request.BranchTip, request.GoalID, request.UnitCommit)
 	if err != nil {
 		return result, err
 	}
-	subject, _, err := computeSubject(request.Repo, request.UnitCommit)
+	subject, err := repository.Subject(request.Repo, request.UnitCommit)
 	if err != nil {
 		return result, err
 	}
-	common, recordPath, briefPath, err := branchReadPaths(request.Repo, request.GoalID, request.UnitCommit)
+	common, recordPath, briefPath, err := branchReadPathsWithRepository(repository, request.Repo, request.GoalID, request.UnitCommit)
 	if err != nil {
 		return result, err
 	}
@@ -373,7 +389,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 			result.State = "closed"
 			return result, nil
 		}
-		tests, testsErr := criticTestChanges(request.Repo, request.UnitCommit, record.RootJob)
+		tests, testsErr := criticTestChangesWithRepository(repository, request.Repo, request.UnitCommit, record.RootJob)
 		if testsErr != nil {
 			return result, testsErr
 		}
@@ -398,7 +414,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		return result, operationRefusal(ReadInvalidCode, "no critic root has been dispatched for unit %s", request.UnitCommit)
 	}
 	record, _, err = resolveReadGate(ReadGateRequest{Repo: request.Repo, GoalID: request.GoalID,
-		UnitCommit: request.UnitCommit, Gate: request.Gate, NewID: request.NewID}, common, recordPath, record, subject)
+		UnitCommit: request.UnitCommit, Gate: request.Gate, NewID: request.NewID, Repository: repository}, common, recordPath, record, subject)
 	if err != nil {
 		return result, err
 	}
@@ -421,7 +437,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		}
 		effectiveRuntime, effectiveModel = record.Runtime, record.Model
 	} else {
-		brief, err = branchReadBrief(request.Repo, request.EndpointTip, request.GoalID, request.UnitCommit, supplied)
+		brief, err = branchReadBriefWithRepository(repository, request.Repo, request.EndpointTip, request.GoalID, request.UnitCommit, supplied)
 		if err != nil {
 			return result, err
 		}

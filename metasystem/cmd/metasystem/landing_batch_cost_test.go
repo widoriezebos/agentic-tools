@@ -5,11 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -26,17 +24,16 @@ import (
 )
 
 func TestBatchCostPrefixGenericBudgetRefusalUsesTypedReturn(t *testing.T) {
+	t.Parallel()
 	root, tree := batchPrefixReceiptTestRoot(t)
 	fake := filepath.Join(root, "budget-refusal-engine")
 	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' 'metasystem test run: BUDGET_REFUSED reservedJobMinutesLimit used=1000 limit=1000' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	original := batchPrefixReceiptExecutable
-	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
-	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
+	dependencies := batchTestExecutionDependencies(t, root, tree, fake)
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	_, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", tree, []string{"same"})
+	_, err := executeBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
 	var budget *batch.PrefixBudgetRefusal
 	if !errors.As(err, &budget) || !strings.Contains(budget.Error(), "BUDGET_REFUSED") {
 		t.Fatalf("generic engine budget refusal was not typed for member return: %T %v", err, err)
@@ -79,223 +76,281 @@ func TestBatchCostLandingReadyElapsedAuthorityMatchesDispatch(t *testing.T) {
 }
 
 func TestBatchCostPortableJoinRefusesOverBudgetBeforeHandoverAndStatusShowsSnapshot(t *testing.T) {
-	batchE2EProcessEnvironment.Lock()
-	t.Cleanup(batchE2EProcessEnvironment.Unlock)
-	portable := newPortableProofFixture(t)
-	portable.contract.Groups = append(portable.contract.Groups, portable.group("app-b", "b"), portable.group("app-c", "c"))
-	portable.contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
-	for index := range portable.contract.Groups {
-		portable.contract.Groups[index].Phase, portable.contract.Groups[index].EnvironmentMode = "acceptance", "inherit"
-	}
-	portable.contract.Groups[2].Phase = "admission"
-	portable.contract.Surfaces = []testpolicy.Surface{
-		{ID: "app-a", Paths: []string{"app/a.txt"}, Standard: []string{"app-a"}, Critical: []string{"app-a-observed"}},
-		{ID: "app-b", Paths: []string{"app/b.txt"}, Standard: []string{"app-b"}, Critical: []string{"app-b-observed"}},
-		{ID: "app-c", Paths: []string{"app/c.txt"}, Standard: []string{"app-c"}, Critical: []string{"app-c-observed"}},
-		{ID: "control", Paths: []string{"testing.json", "records/**", "plans/goals/**", "memory/**", "metasystem/**", "scripts/**", "metasystem.conf"}, Standard: []string{"app-a"}},
-	}
-	portable.contract.Cadence = []string{"app-a", "app-b", "app-c"}
-	portable.write("app/b.txt", "green b\n", 0o644)
-	portable.write("app/c.txt", "green c\n", 0o644)
-	portable.writeContract()
-	portable.writeBytes("plans/goals/backlog.md", goal.RenderRoot(&goal.RootRecord{
-		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1,
-	}), 0o644)
-	if err := os.Remove(filepath.Join(portable.root, "plans", "goals", "portable.md")); err != nil {
-		t.Fatal(err)
-	}
-	for _, id := range []string{"goal-a", "goal-b", "goal-c"} {
-		path := filepath.Join(portable.root, "plans", "goals", id+".md")
-		data, err := os.ReadFile(path)
+	t.Parallel()
+	t.Run("before-handover", func(t *testing.T) {
+		request, dependencies, admissionCalls := prepublicationJoinBed(t)
+		request.GoalID, request.ChainID, request.At = "goal-b", "chain-b", time.Now().UTC()
+		if err := os.WriteFile(filepath.Join(request.LandingRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		fixture := newPortableFileProof(t)
+		fixture.root = costCanonicalRoot(t, fixture.root)
+		tree, files := fixture.snapshot()
+		run := fixture.request(tree, files, fixture.plan(fixture.loadedContract(files), "app/a.txt"))
+		prepared := fixture.prepared(run, proofrun.NewTestResult(run))
+		source := newProofAdmissionRepositoryFixture(t, request.At, false).goalFile(t, "standing-validation")
+		writeGoal := func(root, id string, limit uint64) *goal.GoalFile {
+			t.Helper()
+			file := *source
+			budget := *source.Budget
+			budget.AttemptLimit = limit
+			file.Id, file.Budget = id, &budget
+			claimed := *source.Claimed
+			claimed.AccountingRevision = 2
+			file.Claimed = &claimed
+			approved := *source.Approved
+			approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, budget, file.Risk)
+			file.Approved = &approved
+			if err := os.MkdirAll(filepath.Join(root, "plans", "goals"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "plans", "goals", id+".md"), goal.RenderFile(&file), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return &file
+		}
+		_ = writeGoal(request.LandingRoot, "goal-a", 4)
+		goalB := writeGoal(request.SeatRoot, "goal-b", 1)
+		beforeB, err := os.ReadFile(filepath.Join(request.SeatRoot, "plans", "goals", "goal-b.md"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		file, problems := goal.ParseFile(data)
-		if len(problems) != 0 {
-			t.Fatalf("parse seed goal %s: %v", id, problems)
+		claimA := batch.Claim{Machine: source.Claimed.Machine, Lineage: source.Claimed.Lineage, Epoch: 1, Revision: source.Claimed.Revision, AccountingRevision: 2}
+		const batchID = "01j5x00000000000000000ba99"
+		old := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateOpen, BaseTree: tree, TipTree: tree,
+			PrefixTrees: []string{tree}, Units: []batch.Unit{{GoalID: "goal-a", Chain: "chain-a", State: batch.UnitJoined,
+				Claim: claimA, SelectedGroups: []string{"app-a"}}}, SelectedGroups: []string{"app-a"}}
+		if err := batch.NewStore(request.LandingRoot, nil).Create(old); err != nil {
+			t.Fatal(err)
 		}
-		lineage := "lineage-" + id
-		file.Claimed.Machine, file.Claimed.Lineage = id, lineage
-		file.StopCapability.Machine = id
-		file.History[1].Actor = id + "+" + lineage
-		file.History[1].Opid = goal.Opid(strings.ToUpper(strings.Split(string(file.History[1].Opid), "-")[0]), id, lineage)
-		if id == "goal-b" {
-			file.Budget.ReservedJobMinutesLimit = 1
+		dependencies.binding = func(root, id string, _ time.Time) (dispatchcore.GoalBinding, error) {
+			if root != request.SeatRoot || id != "goal-b" {
+				return dispatchcore.GoalBinding{}, fmt.Errorf("unexpected binding %s %s", root, id)
+			}
+			return dispatchcore.GoalBinding{Revision: goalB.Claimed.Revision, Machine: goalB.Claimed.Machine, Lineage: goalB.Claimed.Lineage,
+				File: goalB, Capability: goal.StopCapability{ClaimEpoch: 1}}, nil
+		}
+		dependencies.base = func(string) (string, error) { return tree, nil }
+		dependencies.assemble = func(_ string, base string, units []batch.Unit) ([]string, error) {
+			if base != tree {
+				return nil, fmt.Errorf("unexpected base %s", base)
+			}
+			return slices.Repeat([]string{tree}, len(units)), nil
+		}
+		dependencies.plan = func(string, string, string) (testpolicy.Plan, error) { return run.Plan, nil }
+		dependencies.costForecast = func(root string, record batch.Record, incoming batch.Unit, at time.Time,
+			_ func(string, string, string) (testpolicy.Plan, error), _ func(string, string, []batch.Unit) ([]string, error)) (batch.Unit, batch.CostForecast, error) {
+			incoming.SelectedGroups = []string{"app-a"}
+			incoming.Admission = &batch.JoinAdmission{Tree: tree, Status: "pending"}
+			candidate := record
+			candidate.Units = append(slices.Clone(record.Units), incoming)
+			candidate.PrefixTrees, candidate.TipTree = []string{tree, tree}, tree
+			cost, err := forecastBatchCostWith(root, candidate, &incoming, at,
+				func(string, []batch.Unit, string) (batch.PrefixDecision, error) {
+					return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
+				},
+				func(_ string, selection costSelection, cap uint64) (costSelectionEvidence, error) {
+					engine, check := fixture.engineIO(tree)
+					value, err := forecastTestingSelectionPrepared(selection, cap, testingSelectionRequest{Root: fixture.root, GoalID: "portable",
+						Tree: tree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery,
+						BatchPrefixReceipt: !selection.Admission, BatchAdmission: selection.Admission, BatchRequirements: selection.Requirements},
+						prepared, forecastTestingDependencies{workspace: gittree.Workspace{Dir: fixture.root}, candidateIO: engine,
+							openCandidate: fixture.open(tree, files), now: func() time.Time { return at }})
+					check()
+					return value, err
+				},
+				func(_ string, unit batch.Unit, _ *batch.Unit, at time.Time) (batchCostBudgetProjection, error) {
+					budgetRoot := request.LandingRoot
+					if unit.GoalID == "goal-b" {
+						budgetRoot = request.SeatRoot
+					}
+					data, err := os.ReadFile(filepath.Join(budgetRoot, "plans", "goals", unit.GoalID+".md"))
+					if err != nil {
+						return batchCostBudgetProjection{}, err
+					}
+					file, problems := goal.ParseFile(data)
+					if len(problems) != 0 {
+						return batchCostBudgetProjection{}, fmt.Errorf("goal %s: %v", unit.GoalID, problems)
+					}
+					return batchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(budgetRoot, file, at)}, nil
+				})
+			if err != nil {
+				return batch.Unit{}, batch.CostForecast{}, err
+			}
+			if refused := forecastCostRefusal(cost); refused == nil {
+				t.Fatalf("insufficient forecast fitted: %+v", cost.Budgets)
+			}
+			return incoming, cost, nil
+		}
+		fatal := func(name string) error {
+			t.Errorf("%s crossed pre-handover refusal", name)
+			return fmt.Errorf("%s crossed refusal", name)
+		}
+		dependencies.handover = func(batchJoinRequest, string, batch.Claim) error { return fatal("handover") }
+		dependencies.admissionRun = func(string, string, batch.Unit) (batch.JoinAdmission, error) {
+			return batch.JoinAdmission{}, fatal("admission")
+		}
+		dependencies.publishAdmission = func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun) error {
+			return fatal("publication")
+		}
+		dependencies.publishForecast = func(batch.Store, string, batch.Unit, string, time.Time, func(string, string, string) (testpolicy.Plan, error), func() error, batch.JoinAdmissionRun, batch.CostForecast) error {
+			return fatal("forecast publication")
+		}
+		dependencies.ensure = func(string) error { return nil }
+		_, err = executeBatchJoin(request, dependencies)
+		if err == nil || !strings.Contains(err.Error(), "BATCH_COST_HEADROOM_REFUSED") || *admissionCalls != 0 {
+			t.Fatalf("pre-handover refusal=%v admission calls=%d", err, *admissionCalls)
+		}
+		after, err := batch.NewStore(request.LandingRoot, nil).Load(batchID)
+		if err != nil || after.ClosedReason != "budget-cost" || len(after.Units) != 1 || after.Units[0].GoalID != "goal-a" {
+			t.Fatalf("existing member cost closure: %+v err=%v", after, err)
+		}
+		afterB, err := os.ReadFile(filepath.Join(request.SeatRoot, "plans", "goals", "goal-b.md"))
+		if err != nil || !reflect.DeepEqual(afterB, beforeB) {
+			t.Fatalf("B claim changed: err=%v", err)
+		}
+	})
+	t.Run("after-handover", func(t *testing.T) {
+		now := time.Now().UTC().Truncate(time.Second)
+		repository := newProofAdmissionRepositoryFixture(t, now, false)
+		repository.root = costCanonicalRoot(t, repository.root)
+		repository.top = costCanonicalRoot(t, repository.top)
+		root, id := repository.root, "standing-validation"
+		file := repository.amend(t, id, func(file *goal.GoalFile) {
+			file.Claimed.AccountingRevision = 2
+			file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+			file.Budget.AttemptLimit = 1
+			file.Budget.ActiveJobLimit = 2
 			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+		})
+		path := filepath.Join(root, "plans", "goals", id+".md")
+		if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
+			t.Fatal(err)
 		}
-		portable.writeBytes("plans/goals/"+id+".md", goal.RenderFile(file), 0o644)
-	}
-	config, err := os.ReadFile(filepath.Join(portable.root, "metasystem.conf")) // Synthetic fixture configuration.
-	if err != nil {
-		t.Fatal(err)
-	}
-	portable.write("metasystem.conf", string(config)+"goal.human.portable=Portable Fixture <portable@example.invalid>\n", 0o644)
-	portable.write("scripts/receipt.sh", "#!/bin/sh\nset -eu\nmkdir -p memory\nprintf '%s\\n' \"$*\" >> memory/receipts.log\ngit add memory/receipts.log\n", 0o755)
-	buildScript := fmt.Sprintf(portableCandidateBuild, strconv.Quote(portable.buildCounter), strconv.Quote(portable.engine))
-	portable.write("scripts/agents/go-build.sh", buildScript, 0o755)
-	portable.write("scripts/agents/commit.sh", batchE2ECommitScript, 0o755)
-	portable.write("scripts/agents/pre-commit-guard.sh", "#!/bin/sh\nexit 0\n", 0o755)
-	portable.commit("seed budget-limited portable batch application")
-	baseCommit := portable.git("rev-parse", "HEAD")
-	origin := filepath.Join(t.TempDir(), "origin.git")
-	if output, err := exec.Command("git", "init", "-q", "-b", "main", "--bare", origin).CombinedOutput(); err != nil {
-		t.Fatalf("create portable origin: %v: %s", err, output)
-	}
-	portable.git("remote", "add", "origin", origin)
-	portable.git("push", "-q", "origin", "main")
-	portable.git("update-ref", goal.AcceptedRef, baseCommit)
-	landing := filepath.Join(t.TempDir(), "landing")
-	bed := &batchE2EFixture{t: t, origin: origin, landing: landing, seats: map[string]string{}, now: time.Now().UTC()}
-	bed.clone(landing, "landing")
-	engine := &batchE2EEngine{path: portable.engine}
-	bed.enrollPolicyEngine(baseCommit, engine)
-	bed.holdLanding()
-	for _, member := range []struct{ id, input string }{{"goal-a", "a"}, {"goal-b", "b"}, {"goal-c", "c"}} {
-		seat := filepath.Join(t.TempDir(), member.id)
-		bed.clone(seat, member.id)
-		bed.seats[member.id] = seat
-		(&batchE2EFixture{t: t, landing: seat, now: bed.now}).enrollPolicyEngine(baseCommit, engine)
-		bed.announce(seat, "lineage-"+member.id)
-		portableGoalBranch(t, bed, seat, member.id, member.input)
-	}
-	portable.root = landing
-	originalPlanner, originalAdmissionExecutable := batchTreePlanExecutable, batchJoinAdmissionExecutable
-	batchTreePlanExecutable = func() (string, error) { return portable.engine, nil }
-	batchJoinAdmissionExecutable = func() (string, error) { return portable.engine, nil }
-	t.Cleanup(func() {
-		batchTreePlanExecutable, batchJoinAdmissionExecutable = originalPlanner, originalAdmissionExecutable
-	})
-	for key, value := range map[string]string{
-		"GO_WANT_BATCH_E2E_COMMAND": "1", "METASYSTEM_OWNER_LINEAGE": landingOwnerLineage,
-		"METASYSTEM_PROOF_ADMISSION_TEST_DIR":     portable.admissionDir,
-		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT": landing,
-	} {
-		t.Setenv(key, value)
-	}
-	batchID := bed.join("goal-a")
-	builds, native := portable.counts()
-	if native["b"] != 0 || native["c"] != 0 {
-		t.Fatalf("B or C ran before its join: %v", native)
-	}
-	code, _, stderr := captureCommandOutput(t, true, true, func() int {
-		return runLandingBatch([]string{"join", "--root", bed.seats["goal-b"], "--goal", "goal-b", "--last"})
-	})
-	if code == 0 || !strings.Contains(stderr, "BATCH_COST_HEADROOM_REFUSED") {
-		t.Fatalf("budget-limited join exit=%d stderr=%s", code, stderr)
-	}
-	record := bed.load(batchID)
-	if record.ClosedReason != "budget-cost" || len(record.Units) != 1 || record.Units[0].GoalID != "goal-a" {
-		t.Fatalf("join refusal moved ownership or failed to close existing admission: %+v", record)
-	}
-	seatGoal, err := os.ReadFile(filepath.Join(bed.seats["goal-b"], "plans", "goals", "goal-b.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	seatFile, problems := goal.ParseFile(seatGoal)
-	if len(problems) != 0 || seatFile.State != goal.StateClaimed || seatFile.Claimed == nil || seatFile.Claimed.Machine != "goal-b" {
-		t.Fatalf("refused member lost seat claim: %v, %+v", problems, seatFile)
-	}
-	if afterBuilds, afterNative := portable.counts(); afterBuilds != builds || afterNative["b"] != 0 {
-		t.Fatalf("forecast/refusal launched B native work: builds %d→%d native=%v", builds, afterBuilds, afterNative)
-	}
-	baseTree, err := fetchLandingBaseTree(landing)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := productionBatchProofDependencies.seal(landing, batchID, landingOwnerLineage, baseTree, time.Now().UTC()); err != nil {
-		t.Fatalf("production seal after budget closure: %v", err)
-	}
-	record = bed.load(batchID)
-	if record.CostForecast == nil || record.CostForecast.Currency != "snapshot-not-revalidated" || record.CostForecast.ObservedAt == "" {
-		t.Fatalf("sealed batch has no labeled historical cost forecast: %+v", record.CostForecast)
-	}
-	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runLandingBatch([]string{"status", "--root", bed.seats["goal-a"], "--batch", batchID})
-	})
-	var status batchStatusOutput
-	if code != 0 || json.Unmarshal([]byte(stdout), &status) != nil || len(status.Batches) != 1 ||
-		status.Batches[0].CostForecast == nil || status.Batches[0].CostForecast.Currency != "snapshot-not-revalidated" ||
-		status.Batches[0].CostForecast.ObservedAt == "" {
-		t.Fatalf("public status lost stored historical forecast: exit=%d stdout=%s stderr=%s", code, stdout, stderr)
-	}
-	if len(status.Batches[0].LiveHeadroom) != 1 {
-		t.Fatalf("public status omitted separate live headroom: %+v", status.Batches[0])
-	}
-	priorAttemptsLeft := status.Batches[0].LiveHeadroom[0].AttemptsLeft
-	// The forecast fits C before its handover. A second, valid reservation
-	// spends C's unchanged accounting revision immediately after handover;
-	// only the final shared admission may decide whether native work starts.
-	originalDependencies := batchJoinDependenciesForCommand
-	var raceForecast batch.CostForecast
-	batchJoinDependenciesForCommand = func() batchJoinDependencies {
-		dependencies := originalDependencies()
-		costForecast := dependencies.costForecast
-		dependencies.costForecast = func(root string, record batch.Record, unit batch.Unit, at time.Time,
-			plan func(string, string, string) (testpolicy.Plan, error), assemble func(string, string, []batch.Unit) ([]string, error)) (batch.Unit, batch.CostForecast, error) {
-			prepared, forecast, err := costForecast(root, record, unit, at, plan, assemble)
-			if unit.GoalID == "goal-c" {
-				raceForecast = forecast
+		claim := batch.Claim{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage, Epoch: 1, Revision: file.Claimed.Revision,
+			AccountingRevision: file.Claimed.AccountingRevision}
+		const batchID = "01j5x00000000000000000ba48"
+		fixture := newPortableFileProof(t)
+		fixture.root = costCanonicalRoot(t, fixture.root)
+		tree, files := fixture.snapshot()
+		unit := batch.Unit{GoalID: id, Chain: "cost-join", State: batch.UnitJoining, Claim: claim,
+			Admission: &batch.JoinAdmission{Tree: tree, Status: "handed-over"}}
+		record := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateOpen, BaseTree: tree, TipTree: tree,
+			PrefixTrees: []string{tree}, Units: []batch.Unit{unit}}
+		proofRequest := fixture.request(tree, files, fixture.plan(fixture.loadedContract(files), "app/a.txt"))
+		proofRequest.CandidateEngineBuildIdentity = fixture.engineIdentity(tree, proofRequest.Environment)
+		proofResult, _ := fixture.execute(proofRequest, true)
+		compute := func(candidate batch.Record) (batch.CostForecast, error) {
+			return forecastBatchCostWith(root, candidate, nil, now,
+				func(string, []batch.Unit, string) (batch.PrefixDecision, error) {
+					return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
+				},
+				func(_ string, selected costSelection, cap uint64) (costSelectionEvidence, error) {
+					engine, check := fixture.engineIO(tree)
+					value, err := forecastTestingSelectionPrepared(selected, cap, testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree,
+						Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchPrefixReceipt: true, BatchRequirements: []string{"app-a"}},
+						fixture.prepared(proofRequest, proofResult), forecastTestingDependencies{workspace: gittree.Workspace{Dir: fixture.root},
+							candidateIO: engine, openCandidate: fixture.open(tree, files), now: func() time.Time { return now }})
+					check()
+					return value, err
+				},
+				func(root string, _ batch.Unit, _ *batch.Unit, at time.Time) (batchCostBudgetProjection, error) {
+					return batchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(root, file, at)}, nil
+				})
+		}
+		fit, err := compute(record)
+		if err != nil || forecastCostRefusal(fit) != nil {
+			t.Fatalf("fitting forecast=%+v err=%v", fit, err)
+		}
+		record.CostForecast = &fit
+		store := batch.NewStore(root, nil).WithReassembly(
+			func(string, []batch.Unit) ([]string, error) { return nil, fmt.Errorf("unexpected reassembly") },
+			func(string, string) error { return fmt.Errorf("unexpected delete") },
+			func(string, string, string, string, []batch.Unit) (string, error) {
+				return "", fmt.Errorf("unexpected rebuild")
+			})
+		if err := store.Create(record); err != nil {
+			t.Fatal(err)
+		}
+		historical := record
+		const historicalID = "01j5x00000000000000000ba49"
+		historical.BatchID, historical.State = historicalID, batch.StateSealed
+		historical.Units = []batch.Unit{unit}
+		historical.Units[0].State = batch.UnitJoined
+		historical.Seal = map[string]batch.Claim{id: claim}
+		historicalFit, err := compute(historical)
+		if err != nil || forecastCostRefusal(historicalFit) != nil {
+			t.Fatalf("historical forecast=%+v err=%v", historicalFit, err)
+		}
+		historical.CostForecast = &historicalFit
+		if err := store.Create(historical); err != nil {
+			t.Fatal(err)
+		}
+		seat := t.TempDir()
+		readStatus := func() batchStatusView {
+			t.Helper()
+			facts := &batchRawFacts{root: root}
+			var output strings.Builder
+			code := runBatchStatusWithOutput([]string{"--root", seat, "--landing-root", root, "--batch", historicalID},
+				facts.source(), repository.reads().ResolveEndpoint, &output)
+			facts.assertConsumed(t, true)
+			var decoded batchStatusOutput
+			if code != 0 || json.Unmarshal([]byte(output.String()), &decoded) != nil || len(decoded.Batches) != 1 {
+				t.Fatalf("status code=%d json=%s", code, output.String())
 			}
-			return prepared, forecast, err
+			return decoded.Batches[0]
 		}
-		handover := dependencies.handover
-		dependencies.handover = func(request batchJoinRequest, id string, claim batch.Claim) error {
-			if err := handover(request, id, claim); err != nil || request.GoalID != "goal-c" {
-				return err
+		before := readStatus()
+		if err := reserveCostFixtureSpend(root, id, claim, 1, repository.reads()); err != nil {
+			t.Fatal(err)
+		}
+		attemptsBefore := costAttemptBytes(t, root)
+		announceProofFixtureHolder(t, root)
+		var actual error
+		err = batch.ResumeJoinAdmission(store, batchID, id, "landing", now, func(_ string, joined batch.Unit) (batch.JoinAdmission, error) {
+			if joined.Admission == nil || joined.Admission.Tree != tree {
+				t.Fatalf("lost handed-over admission: %+v", joined)
 			}
-			return reserveCostFixtureSpend(landing, "goal-c", claim, 1000)
+			_, _, _, actual = admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
+				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: id,
+				CandidateTree: tree, CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
+				ExpectedGoalRevision: claim.Revision, ExpectedAccountingRevision: claim.AccountingRevision,
+				Now: now,
+			})
+			if actual == nil {
+				t.Fatal("competing spend passed final admission")
+			}
+			return batch.JoinAdmission{}, joinAdmissionRefusal(actual.Error())
+		})
+		var refusal *batch.PrefixBudgetRefusal
+		if !errors.As(err, &refusal) || actual == nil || !strings.Contains(actual.Error(), "BUDGET_REFUSED") {
+			t.Fatalf("real final budget refusal: returned=%v actual=%v", err, actual)
 		}
-		return dependencies
-	}
-	t.Cleanup(func() { batchJoinDependenciesForCommand = originalDependencies })
-	code, _, stderr = captureCommandOutput(t, true, true, func() int {
-		return runLandingBatch([]string{"join", "--root", bed.seats["goal-c"], "--goal", "goal-c", "--last"})
-	})
-	if code == 0 || !strings.Contains(stderr, "BUDGET_REFUSED") {
-		_, afterNative := portable.counts()
-		t.Fatalf("same-revision spending race join exit=%d stderr=%s native=%v forecast=%+v", code, stderr, afterNative, raceForecast)
-	}
-	records, err := batch.NewStore(landing, nil).Records()
-	if err != nil {
-		t.Fatal(err)
-	}
-	returned := false
-	for _, candidate := range records {
-		if candidate.BatchID == batchID || len(candidate.Units) == 0 || candidate.Units[0].GoalID != "goal-c" {
-			continue
+		if !reflect.DeepEqual(costAttemptBytes(t, root), attemptsBefore) {
+			t.Fatal("final admission reserved a new attempt")
 		}
-		returned = candidate.Units[0].State == batch.UnitReturnPending && candidate.Units[0].Outcome == batch.UnitWithdrawnBudget && candidate.State == batch.StateDissolved
-	}
-	if !returned {
-		t.Fatalf("post-handover budget refusal did not durably return C: %+v", records)
-	}
-	if afterBuilds, afterNative := portable.counts(); afterBuilds != builds || afterNative["c"] != 0 {
-		t.Fatalf("C native command crossed final budget admission: candidate builds %d→%d native=%v", builds, afterBuilds, afterNative)
-	}
-	// A stored forecast is historical even when live cap and retained budget
-	// evidence change under the same immutable batch binding.
-	if err := reserveCostFixtureSpend(landing, "goal-a", record.Units[0].Claim, 1); err != nil {
-		t.Fatal(err)
-	}
-	configuration, err := os.ReadFile(filepath.Join(landing, "metasystem.conf")) // Synthetic fixture configuration.
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(landing, "metasystem.conf"), append(configuration, []byte("cap.min.proof.main.proof=1\nproof.admission.top-level-max=1\n")...), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return runLandingBatch([]string{"status", "--root", bed.seats["goal-a"], "--batch", batchID})
+		returned, err := store.Load(batchID)
+		if err != nil || returned.State != batch.StateDissolved || len(returned.Units) != 1 ||
+			returned.Units[0].State != batch.UnitReturnPending || returned.Units[0].Outcome != batch.UnitWithdrawnBudget {
+			t.Fatalf("post-handover return=%+v err=%v", returned, err)
+		}
+		configPath := filepath.Join(root, "metasystem.conf")
+		configuration, err := os.ReadFile(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(configPath, append(configuration, []byte("cap.min.proof.main.proof=1\n")...), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		after := readStatus()
+		if after.CostForecast == nil || after.CostForecast.ObservedAt != historicalFit.ObservedAt || after.CostForecast.Currency != "snapshot-not-revalidated" ||
+			after.CostSnapshotStale || len(after.LiveHeadroom) != 1 || after.LiveHeadroom[0].AttemptsLeft >= before.LiveHeadroom[0].AttemptsLeft {
+			t.Fatalf("historical snapshot/live headroom before=%+v after=%+v", before, after)
+		}
 	})
-	if code != 0 || json.Unmarshal([]byte(stdout), &status) != nil || len(status.Batches) != 1 ||
-		status.Batches[0].CostForecast == nil || status.Batches[0].CostForecast.ObservedAt != record.CostForecast.ObservedAt ||
-		status.Batches[0].CostForecast.Currency != "snapshot-not-revalidated" || status.Batches[0].CostSnapshotStale ||
-		len(status.Batches[0].LiveHeadroom) != 1 || status.Batches[0].LiveHeadroom[0].AttemptsLeft >= priorAttemptsLeft {
-		t.Fatalf("status relabeled mutable forecast as current after budget/cap move: exit=%d stdout=%s stderr=%s", code, stdout, stderr)
-	}
 }
 
-func reserveCostFixtureSpend(root, goalID string, claim batch.Claim, minutes uint64) error {
+func reserveCostFixtureSpend(root, goalID string, claim batch.Claim, minutes uint64, reads dispatchcore.ProofAdmissionReads) error {
 	canonical, err := canonicalProofRoot(root)
 	if err != nil {
 		return err
@@ -342,7 +397,7 @@ func reserveCostFixtureSpend(root, goalID string, claim batch.Claim, minutes uin
 	if projection.Status != dispatchcore.BudgetKnown {
 		return fmt.Errorf("cost fixture reservation did not project: %+v", projection.Unknown)
 	}
-	endpoint, err := goal.ResolveEndpoint(root)
+	endpoint, err := reads.ResolveEndpoint(root)
 	if err != nil {
 		return err
 	}
@@ -440,179 +495,226 @@ func TestBatchCostStatusLabelsStoredSnapshotHistoricalAndStale(t *testing.T) {
 }
 
 func TestBatchCostPortableEvidenceForecastIsReadOnlyAndWarmsFromRealCommand(t *testing.T) {
-	batchE2EProcessEnvironment.Lock()
-	t.Cleanup(batchE2EProcessEnvironment.Unlock)
-	fixture := newPortableProofFixture(t)
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", "portable-lineage")
-	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", fixture.admissionDir)
-	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", fixture.root)
-	tree := fixture.git("rev-parse", "HEAD^{tree}")
+	t.Parallel()
+	fixture := newPortableFileProof(t)
+	fixture.root = costCanonicalRoot(t, fixture.root)
+	repository := newProofAdmissionRepositoryFixture(t, time.Now().UTC(), false)
+	goalFile := repository.goalFile(t, "standing-validation")
+	goalFile.Id = "portable"
+	goalFile.Claimed.AccountingRevision = 2
+	for i := range goalFile.History {
+		goalFile.History[i].Targets = []string{"portable"}
+	}
+	goalBytes := goal.RenderFile(goalFile)
+	if err := os.MkdirAll(filepath.Join(fixture.root, "plans", "goals"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture.root, "plans", "goals", "portable.md"), goalBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repository.seed(map[string][]byte{"metasystem/plans/goals/portable.md": goalBytes})
+	tree, files := fixture.snapshot()
+	contract := fixture.loadedContract(files)
+	run := fixture.request(tree, files, fixture.plan(contract, "app/a.txt"))
+	run.CandidateEngineBuildIdentity = fixture.engineIdentity(tree, run.Environment)
 	selection := costSelection{ID: "tip:portable", Kind: "tip", Tree: tree, GoalID: "portable", Requirements: []string{"app-a"}}
-	cold, err := forecastTestingSelection(fixture.root, selection, 2)
-	if err != nil {
-		t.Fatal(err)
+	selected := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
+		Purpose: testpolicy.PurposeDelivery, BatchPrefixReceipt: true, BatchRequirements: []string{"app-a"}}
+	forecast := func(result proofrun.TestResult) costSelectionEvidence {
+		t.Helper()
+		beforeBytes := costAttemptBytes(t, fixture.root)
+		beforeNative := fixture.counts()
+		engine, check := fixture.engineIO(tree)
+		view, err := forecastTestingSelectionPrepared(selection, 2, selected, fixture.prepared(run, result), forecastTestingDependencies{
+			workspace: gittree.Workspace{Dir: fixture.root}, candidateIO: engine, openCandidate: fixture.open(tree, files), now: time.Now,
+		})
+		check()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(costAttemptBytes(t, fixture.root), beforeBytes) || !reflect.DeepEqual(fixture.counts(), beforeNative) {
+			t.Fatal("forecast changed retained attempts or launched native work")
+		}
+		return view
 	}
+	cold := forecast(proofrun.NewTestResult(run))
 	if len(cold.Groups) != 1 || cold.Groups[0].Status != "unknown" || cold.Groups[0].IdentityKnown {
-		t.Fatalf("cold forecast invented known evidence: %+v", cold)
+		t.Fatalf("cold forecast invented evidence: %+v", cold)
 	}
-	if builds, native := fixture.counts(); builds != 0 || native["a"] != 0 {
-		t.Fatalf("cold forecast launched native work: builds=%d native=%v", builds, native)
+	result, _ := fixture.execute(run, true)
+	if group := portableGroups(result)["app-a"]; group.Status != "passed" || !group.NativeLaunched {
+		t.Fatalf("warm source lacks real command/JUnit result: %+v", group)
 	}
-	result := filepath.Join(t.TempDir(), "tip.json")
-	fixture.requireCommand("test", "run", "--root", fixture.root, "--goal", "portable", "--tree", tree,
-		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-a"}), "--result", result)
-	builds, native := fixture.counts()
-	warm, err := forecastTestingSelection(fixture.root, selection, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	requirePortableCounts(t, fixture.counts(), map[string]int{"a": 1})
+	warm := forecast(result)
 	if len(warm.Groups) != 1 || warm.Groups[0].Status != "reusable" || !warm.Groups[0].IdentityKnown {
-		t.Fatalf("warm forecast missed retained command/JUnit proof: %+v", warm)
-	}
-	if afterBuilds, afterNative := fixture.counts(); afterBuilds != builds || afterNative["a"] != native["a"] {
-		t.Fatalf("warm forecast launched native work: before=%d/%v after=%d/%v", builds, native, afterBuilds, afterNative)
-	}
-	goalData, err := os.ReadFile(filepath.Join(fixture.root, "plans", "goals", "portable.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	goalFile, problems := goal.ParseFile(goalData)
-	if len(problems) != 0 || goalFile.Claimed == nil || goalFile.StopCapability == nil {
-		t.Fatalf("portable goal claim is incomplete: %+v %v", goalFile, problems)
+		t.Fatalf("warm forecast missed retained result: %+v", warm)
 	}
 	claim := batch.Claim{Machine: goalFile.Claimed.Machine, Lineage: goalFile.Claimed.Lineage,
-		Epoch: uint64(goalFile.StopCapability.ClaimEpoch), Revision: goalFile.Claimed.Revision,
-		AccountingRevision: goalFile.Claimed.AccountingRevision}
-	const statusBatchID = "01j5x00000000000000000ba47"
-	record := batch.Record{Schema: 1, BatchID: statusBatchID, State: batch.StateSealed,
-		BaseTree: tree, TipTree: tree, PrefixTrees: []string{tree}, SelectedGroups: []string{"app-a"},
+		Epoch: 1, Revision: goalFile.Claimed.Revision, AccountingRevision: goalFile.Claimed.AccountingRevision}
+	const batchID = "01j5x00000000000000000ba47"
+	record := batch.Record{Schema: 1, BatchID: batchID, State: batch.StateSealed, BaseTree: tree, TipTree: tree,
+		PrefixTrees: []string{tree}, SelectedGroups: []string{"app-a"},
 		Units: []batch.Unit{{GoalID: "portable", Chain: "portable-cost", Claim: claim, State: batch.UnitJoined,
 			ChangedPaths: []string{"app/a.txt"}, SelectedGroups: []string{"app-a"}}},
 		Seal: map[string]batch.Claim{"portable": claim}}
-	priorPlanner := batchTreePlanExecutable
-	batchTreePlanExecutable = func() (string, error) { return fixture.engine, nil }
-	t.Cleanup(func() { batchTreePlanExecutable = priorPlanner })
-	storedForecast, err := forecastBatchCost(fixture.root, record, nil, time.Now().UTC())
-	if err != nil || len(storedForecast.Groups) != 1 || storedForecast.Groups[0].Status != "reusable" {
-		t.Fatalf("real warm batch forecast is incomplete: %+v err=%v", storedForecast, err)
+	budget := func(root string, unit batch.Unit, _ *batch.Unit, at time.Time) (batchCostBudgetProjection, error) {
+		data, err := os.ReadFile(filepath.Join(root, "plans", "goals", unit.GoalID+".md"))
+		if err != nil {
+			return batchCostBudgetProjection{}, err
+		}
+		file, problems := goal.ParseFile(data)
+		if len(problems) != 0 {
+			return batchCostBudgetProjection{}, fmt.Errorf("goal budget facts: %v", problems)
+		}
+		return batchCostBudgetProjection{Budget: dispatchcore.ProjectBudget(root, file, at), LandingClaim: file.IsLandingClaim()}, nil
 	}
-	record.CostForecast = &storedForecast
+	stored, err := forecastBatchCostWith(fixture.root, record, nil, time.Now().UTC(),
+		func(string, []batch.Unit, string) (batch.PrefixDecision, error) {
+			return batch.PrefixDecision{Groups: []string{"app-a"}}, nil
+		},
+		func(string, costSelection, uint64) (costSelectionEvidence, error) { return forecast(result), nil }, budget)
+	if err != nil || len(stored.Groups) != 1 || stored.Groups[0].Status != "reusable" {
+		t.Fatalf("stored cost forecast: %+v err=%v", stored, err)
+	}
+	record.CostForecast = &stored
 	if err := batch.NewStore(fixture.root, nil).Create(record); err != nil {
 		t.Fatal(err)
 	}
-	seat := filepath.Join(t.TempDir(), "seat")
-	if output, err := exec.Command("git", "clone", "-q", fixture.root, seat).CombinedOutput(); err != nil {
-		t.Fatalf("clone separate status seat: %v: %s", err, output)
-	}
+	seat := t.TempDir()
 	readStatus := func(stage string) batchStatusView {
 		t.Helper()
-		code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-			return runLandingBatch([]string{"status", "--root", seat, "--landing-root", fixture.root, "--batch", statusBatchID})
-		})
-		var output batchStatusOutput
-		if code != 0 || json.Unmarshal([]byte(stdout), &output) != nil || len(output.Batches) != 1 {
-			t.Fatalf("%s public status failed: exit=%d stdout=%s stderr=%s", stage, code, stdout, stderr)
+		beforeBytes := costAttemptBytes(t, fixture.root)
+		beforeNative := fixture.counts()
+		facts := &batchRawFacts{root: fixture.root}
+		var output strings.Builder
+		code := runBatchStatusWithOutput([]string{"--root", seat, "--landing-root", fixture.root, "--batch", batchID},
+			facts.source(), func(root string) (goal.Endpoint, error) {
+				if root != fixture.root {
+					return goal.Endpoint{}, fmt.Errorf("status root %s", root)
+				}
+				return repository.reads().ResolveEndpoint(repository.root)
+			}, &output)
+		facts.assertConsumed(t, true)
+		var decoded batchStatusOutput
+		if code != 0 || json.Unmarshal([]byte(output.String()), &decoded) != nil || len(decoded.Batches) != 1 {
+			t.Fatalf("%s public status code=%d json=%s", stage, code, output.String())
 		}
-		view := output.Batches[0]
-		if view.CostForecast == nil || view.CostForecast.ObservedAt != storedForecast.ObservedAt ||
+		view := decoded.Batches[0]
+		if view.CostForecast == nil || view.CostForecast.ObservedAt != stored.ObservedAt ||
 			view.CostForecast.Currency != "snapshot-not-revalidated" || view.CostSnapshotStale ||
 			len(view.LiveHeadroom) != 1 || view.LiveHeadroom[0].GoalID != "portable" {
-			t.Fatalf("%s public status lost historical snapshot or separate live headroom: %+v", stage, view)
+			t.Fatalf("%s historical snapshot/live headroom: %+v", stage, view)
 		}
-		if afterBuilds, afterNative := fixture.counts(); afterBuilds != builds || afterNative["a"] != native["a"] {
-			t.Fatalf("%s status launched build/native work: before=%d/%v after=%d/%v", stage, builds, native, afterBuilds, afterNative)
+		if !reflect.DeepEqual(costAttemptBytes(t, fixture.root), beforeBytes) || !reflect.DeepEqual(fixture.counts(), beforeNative) {
+			t.Fatalf("%s status changed proof attempts or native work", stage)
 		}
 		return view
 	}
 	beforeStatus := readStatus("older-green")
 	liveAttempt := reserveCostNewerGroupObservation(t, fixture.root, "app-a")
-	live, err := forecastTestingSelection(fixture.root, selection, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	live := forecast(result)
 	if len(live.Groups) != 1 || live.Groups[0].Status != "live-wait" || live.Groups[0].Reason != "newer-live-producer" {
-		t.Fatalf("older green survived a newer live producer: %+v", live)
-	}
-	if afterBuilds, afterNative := fixture.counts(); afterBuilds != builds || afterNative["a"] != native["a"] {
-		t.Fatalf("live forecast launched native work: before=%d/%v after=%d/%v", builds, native, afterBuilds, afterNative)
+		t.Fatalf("newer live producer: %+v", live)
 	}
 	liveStatus := readStatus("newer-live")
 	if liveStatus.LiveHeadroom[0].AttemptsLeft >= beforeStatus.LiveHeadroom[0].AttemptsLeft {
-		t.Fatalf("newer live attempt did not change separate headroom: before=%+v live=%+v", beforeStatus.LiveHeadroom, liveStatus.LiveHeadroom)
+		t.Fatalf("live reservation did not lower headroom: before=%+v live=%+v", beforeStatus.LiveHeadroom, liveStatus.LiveHeadroom)
 	}
 	if _, err := proofrun.FinalizeAttempt(liveAttempt.ControlRoot, liveAttempt.AttemptID, proofrun.TerminalFailed, 1,
-		"fixture newer red observation", nil, time.Now().UTC()); err != nil {
+		"newer red observation", nil, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	red, err := forecastTestingSelection(fixture.root, selection, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	red := forecast(result)
 	if len(red.Groups) != 1 || red.Groups[0].Status != "missing" || red.Groups[0].Reason != "newer-red-observation" {
-		t.Fatalf("older green survived a newer red producer: %+v", red)
-	}
-	if afterBuilds, afterNative := fixture.counts(); afterBuilds != builds || afterNative["a"] != native["a"] {
-		t.Fatalf("red forecast launched native work: before=%d/%v after=%d/%v", builds, native, afterBuilds, afterNative)
+		t.Fatalf("newer red observation: %+v", red)
 	}
 	redStatus := readStatus("newer-red")
 	if redStatus.LiveHeadroom[0].AttemptsLeft != liveStatus.LiveHeadroom[0].AttemptsLeft {
-		t.Fatalf("finalizing newer red attempt changed reservation headroom: live=%+v red=%+v", liveStatus.LiveHeadroom, redStatus.LiveHeadroom)
+		t.Fatalf("red finalization restored reservation: live=%+v red=%+v", liveStatus.LiveHeadroom, redStatus.LiveHeadroom)
 	}
 }
 
-func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T) {
-	batchE2EProcessEnvironment.Lock()
-	t.Cleanup(batchE2EProcessEnvironment.Unlock)
-	now := time.Now().UTC().Truncate(time.Second)
-	t.Setenv(goalNowEnvironment, now.Format(time.RFC3339Nano))
-	processTable := filepath.Join(t.TempDir(), "processes.json")
-	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
-		t.Fatal(err)
+func costAttemptBytes(t *testing.T, root string) map[string]string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(root, "artifacts", "agents", "proof-runs", "attempts"))
+	if os.IsNotExist(err) {
+		return map[string]string{}
 	}
-	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processTable)
-	fixture := newPortableProofFixture(t)
-	fixture.writeEpisodeContract()
-	tree := fixture.commit("declare forecast freshness observation")
-	// Detached prefix commits bind freshness. Use the authorized fixture instant
-	// so the run, forecast, and verifier materialize the same candidate commit.
-	t.Setenv("GIT_AUTHOR_DATE", now.Format(time.RFC3339Nano))
-	t.Setenv("GIT_COMMITTER_DATE", now.Format(time.RFC3339Nano))
-	detached, err := (gittree.Workspace{Dir: fixture.root}).NewDetachedWorktree(tree)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := detached.Close(); err != nil {
-			t.Error(err)
+	files := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "proof-runs", "attempts", entry.Name()))
+		if err != nil {
+			t.Fatal(err)
 		}
-	})
-	executionRoot := batch.ModuleRoot(detached.Workspace().Dir)
-	episode := strings.Repeat("6", 64)
-	expiresAt := now.Add(time.Hour)
-	expires := expiresAt.Format(time.RFC3339Nano)
-	base := []string{"--root", executionRoot, "--control-root", fixture.root, "--goal", "portable", "--tree", tree,
-		"--mode", "auto", "--purpose", "delivery", "--batch-prefix", "--batch-requirements", batchRequirementsArgument([]string{"app-a"}),
-		"--fresh-episode", episode, "--fresh-expires-at", expires}
-	fixture.requireCommand(append([]string{"test", "run"}, base...)...)
+		files[entry.Name()] = string(data)
+	}
+	return files
+}
+
+func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T) {
+	t.Parallel()
+	fixture := newPortableFileProof(t)
+	fixture.contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
+	maxAge := int64(time.Hour / time.Millisecond)
+	fixture.contract.Groups[0].Phase = "acceptance"
+	fixture.contract.Groups[0].EnvironmentMode = "inherit"
+	fixture.contract.Groups[0].Freshness = "episode"
+	fixture.contract.Groups[0].FreshnessMaxAgeMS = &maxAge
+	fixture.writeContract()
+	tree, files := fixture.snapshot()
+	plan := fixture.plan(fixture.loadedContract(files), "app/a.txt")
+	run := fixture.request(tree, files, plan)
+	run.CandidateEngineBuildIdentity = fixture.engineIdentity(tree, run.Environment)
+	expiresAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	run.FreshnessEpisode, run.FreshnessExpiresAt = strings.Repeat("6", 64), expiresAt.Format(time.RFC3339Nano)
+	run.FreshGroups = map[string]bool{"app-a": true}
+	fixture.bindFreshness(&run)
+	result, _ := fixture.execute(run, true)
+	if group := portableGroups(result)["app-a"]; group.Status != "passed" || !group.NativeLaunched {
+		t.Fatalf("fresh command/JUnit result is incomplete: %+v", group)
+	}
+	requirePortableCounts(t, fixture.counts(), map[string]int{"a": 1})
 	selection := costSelection{ID: "tip:fresh", Kind: "tip", Tree: tree, GoalID: "portable", Requirements: []string{"app-a"},
-		FreshEpisode: episode, FreshExpiresAt: expires}
-	verification := testingSelectionRequest{Root: executionRoot, ControlRoot: fixture.root, GoalID: "portable", Tree: tree,
-		Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchPrefixReceipt: true,
-		BatchRequirements: []string{"app-a"}, FreshEpisode: episode, FreshExpiresAt: expires}
+		FreshEpisode: run.FreshnessEpisode, FreshExpiresAt: run.FreshnessExpiresAt}
+	selected := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
+		Purpose: testpolicy.PurposeDelivery, BatchPrefixReceipt: true, BatchRequirements: []string{"app-a"},
+		FreshEpisode: run.FreshnessEpisode, FreshExpiresAt: run.FreshnessExpiresAt}
+	prepared := fixture.prepared(run, result)
 	for _, boundary := range []struct {
 		name     string
 		at       time.Time
 		reusable bool
 	}{
-		{name: "expiry-minus-one-nanosecond", at: expiresAt.Add(-time.Nanosecond), reusable: true},
-		{name: "exact-expiry", at: expiresAt},
-		{name: "expiry-plus-one-nanosecond", at: expiresAt.Add(time.Nanosecond)},
+		{"expiry-minus-one-nanosecond", expiresAt.Add(-time.Nanosecond), true},
+		{"exact-expiry", expiresAt, false},
+		{"expiry-plus-one-nanosecond", expiresAt.Add(time.Nanosecond), false},
 	} {
 		t.Run(boundary.name, func(t *testing.T) {
-			t.Setenv(goalNowEnvironment, boundary.at.Format(time.RFC3339Nano))
-			forecast, forecastErr := forecastTestingSelection(fixture.root, selection, 2)
-			verified, verifyErr := verifyRetainedTesting(verification)
+			engine, checkEngine := fixture.engineIO(tree)
+			projection, checkProjection := fixture.projection(tree)
+			forecast, forecastErr := forecastTestingSelectionPrepared(selection, 2, selected, prepared, forecastTestingDependencies{
+				workspace: projection, candidateIO: engine, openCandidate: fixture.open(tree, files),
+				now: func() time.Time { return boundary.at },
+			})
+			checkEngine()
+			checkProjection()
+			verifyEngine, checkVerifyEngine := fixture.engineIO(tree)
+			verifyProjection := gittree.Workspace{Dir: fixture.root}
+			checkVerifyProjection := func() {}
 			if boundary.reusable {
+				verifyProjection, checkVerifyProjection = fixture.projection(tree)
+			}
+			verified, verifyErr := verifyRetainedTestingPrepared(selected, prepared, retainedTestingVerification{
+				clock: func() time.Time { return boundary.at }, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+				workspace: verifyProjection, candidateIO: verifyEngine, openCandidate: fixture.open(tree, files),
+			})
+			if boundary.reusable {
+				checkVerifyEngine()
+				checkVerifyProjection()
 				if forecastErr != nil || len(forecast.Groups) != 1 || forecast.Groups[0].GroupID != "app-a" ||
 					forecast.Groups[0].Status != "reusable" || forecast.Groups[0].Reason != "" ||
 					verifyErr != nil || !verified.Delivery.Sufficient {
@@ -621,16 +723,13 @@ func TestBatchCostFreshForecastMatchesRetainedVerificationAtExpiry(t *testing.T)
 				}
 				return
 			}
-			if forecastErr != nil {
-				t.Fatalf("expired forecast returned an unrelated error at %s: %v", boundary.at, forecastErr)
-			}
-			if len(forecast.Groups) != 1 || forecast.Groups[0].GroupID != "app-a" ||
+			if forecastErr != nil || len(forecast.Groups) != 1 || forecast.Groups[0].GroupID != "app-a" ||
 				forecast.Groups[0].Status != "missing" || forecast.Groups[0].Reason != "missing-proof" {
-				t.Fatalf("expired forecast did not report app-a freshness expiry at %s: %+v", boundary.at, forecast)
+				t.Fatalf("expired forecast at %s: %+v err=%v", boundary.at, forecast, forecastErr)
 			}
 			const expired = "freshness episode has expired; renew the proof decision"
 			if verifyErr == nil || verifyErr.Error() != expired {
-				t.Fatalf("retained verification returned the wrong expiry error at %s: %v", boundary.at, verifyErr)
+				t.Fatalf("retained verification at %s: %v", boundary.at, verifyErr)
 			}
 		})
 	}
@@ -969,4 +1068,13 @@ func TestBatchCostElapsedFollowsLandingReadyAdmission(t *testing.T) {
 			}
 		})
 	}
+}
+
+func costCanonicalRoot(t *testing.T, root string) string {
+	t.Helper()
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return canonical
 }

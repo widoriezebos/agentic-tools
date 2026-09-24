@@ -120,7 +120,7 @@ func newAttestedBundleFixture(t *testing.T) attestedBundleFixture {
 func TestAttestedBoundaryValidatesTheClosureBundle(t *testing.T) {
 	f := newAttestedBundleFixture(t)
 	clone := filepath.Join(t.TempDir(), "fresh")
-	bundleGit(t, filepath.Dir(clone), "clone", "-q", f.origin, clone)
+	bundleGit(t, filepath.Dir(clone), "clone", "-q", "--branch", "main", f.origin, clone)
 	bundleGit(t, clone, "config", "user.name", "fixture")
 	bundleGit(t, clone, "config", "user.email", "fixture@example.invalid")
 	bundleGit(t, clone, "fetch", "-q", "origin", "goal/goal-a")

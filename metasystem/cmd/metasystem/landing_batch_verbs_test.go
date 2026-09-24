@@ -152,8 +152,10 @@ func TestBatchProductionRegistryComplete(t *testing.T) {
 			t.Fatalf("default build does not bind batch verb %s", verb)
 		}
 	}
-	root := syncedClaimedGoalFixture(t)
-	productionOwner, err := productionBatchLedgerOwner(root)
+	root := t.TempDir()
+	facts := batchConfigFacts(root, true, false)
+	productionOwner, err := productionBatchLedgerOwnerWithConfig(root, facts.config)
+	facts.assertConsumed(t, false)
 	if err != nil || !isLedgerTrunkRedOwner(productionOwner) {
 		t.Fatalf("production trunk-red owner type %T error=%v, want ledger adapter", productionOwner, err)
 	}

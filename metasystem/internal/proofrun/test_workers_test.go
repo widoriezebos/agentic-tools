@@ -3,7 +3,9 @@ package proofrun
 import (
 	"bufio"
 	"context"
+	"crypto/sha1"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,7 +14,6 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -737,12 +738,11 @@ func TestRunTestPlanStartsDependentBeforeHeldPeerFinishes(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
+	tree := fmt.Sprintf("%x", sha1.Sum([]byte(root)))
 	eventsPath, releasePath := filepath.Join(root, "events.fifo"), filepath.Join(root, "release.fifo")
 	ids := []string{"prerequisite", "held", "consumer"}
 	groups := make([]testpolicy.Group, 0, len(ids))
+	files := make(map[string]testSnapshotEntry, len(ids))
 	for index, id := range ids {
 		before := ""
 		if id == "held" {
@@ -752,13 +752,7 @@ func TestRunTestPlanStartsDependentBeforeHeldPeerFinishes(t *testing.T) {
 		}
 		body := "<testsuite><testcase classname=\"fixture\" name=\"" + id + "\"></testcase></testsuite>"
 		script := "#!/bin/sh\nset -eu\n" + before + "mkdir -p reports-" + id + "\nprintf '%s\\n' " + strconv.Quote(body) + " > reports-" + id + "/tests.xml\n"
-		path := filepath.Join(root, "scripts", id+".sh")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := testexec.WriteFile(path, []byte(script), 0o755); err != nil {
-			t.Fatal(err)
-		}
+		files["scripts/"+id+".sh"] = testSnapshotFile(script, 0o755)
 		group := testpolicy.Group{ID: id, Kind: "unit", Adapter: "command", Phase: "acceptance", EnvironmentMode: "inherit", CWD: ".",
 			Inputs: []string{"scripts/" + id + ".sh"}, Outputs: []string{"reports-" + id}, Tools: []testpolicy.Tool{}, Obligations: []string{id},
 			Platforms: []string{"any"}, TargetMS: int64(100 - index*10), Argv: []string{"sh", "scripts/" + id + ".sh"},
@@ -769,9 +763,7 @@ func TestRunTestPlanStartsDependentBeforeHeldPeerFinishes(t *testing.T) {
 		}
 		groups = append(groups, group)
 	}
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	snapshot := newTestSnapshotFactory(t, root, tree, files, 3)
 	if err := syscall.Mkfifo(eventsPath, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -804,7 +796,7 @@ func TestRunTestPlanStartsDependentBeforeHeldPeerFinishes(t *testing.T) {
 		err    error
 	}, 1)
 	go func() {
-		result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
+		result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
 			Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "logs"), Workers: 2, Concurrency: 2})
 		done <- struct {
 			result TestResult

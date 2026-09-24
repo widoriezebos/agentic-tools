@@ -1,12 +1,16 @@
 package batch
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -53,160 +57,291 @@ git reset -q --hard "$base"; printf 'package p\nvar A = 2\n' >a.go; printf 'pack
 	}
 	return assemblyBed{root: root, base: base, moved: moved, record: Record{Schema: 1, BatchID: testBatchID, TipTree: base, State: StateOpen, Units: units, batchRecordFields: batchRecordFields{BaseTree: base}}}
 }
-func sealedFixture(t *testing.T) (assemblyBed, Record, []string, int, func(string, string, string) (testpolicy.Plan, error)) {
-	bed := assemblyFixture(t)
-	record := bed.record
-	var trees []string
-	assemblies := 0
-	plan := func(_, goalID, tree string) (testpolicy.Plan, error) {
-		trees = append(trees, tree)
-		decision := "reused:G"
-		if strings.Contains(bedGit(t, bed.root, "show", tree+":a.go"), "A = 1") {
-			decision = "execute:G"
-		}
-		return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, SelectedGroups: []string{"shared", goalID, decision}}, nil
-	}
-	assemble := func(root, base string, units []Unit) ([]string, error) {
-		assemblies++
-		return assembleUnits(root, base, units)
-	}
-	must(t, sealBatch(bed.root, bed.moved, "landing+owner", time.Unix(1, 0), &record, plan, assemble))
-	return bed, record, trees, assemblies, plan
+
+// sealPolicyFixture keeps the record and flock real while declaring every
+// repository fact Seal may request.
+type sealPolicyFixture struct {
+	bed               assemblyBed
+	store             Store
+	first, tip, third string
 }
 
-func sealBatch(root, baseTree, owner string, at time.Time, record *Record, plan func(string, string, string) (testpolicy.Plan, error), assemble func(string, string, []Unit) ([]string, error)) error {
-	_, err := prepareSealCandidate(root, baseTree, record, assemble)
-	if err != nil {
-		return err
-	}
-	if err := selectSealCandidate(root, record, plan); err != nil {
-		return err
-	}
-	record.Transition(StateSealed, at, "seal", owner, "")
-	return nil
-}
-
-func nestedAssemblyFixture(t *testing.T) assemblyBed {
-	bed := assemblyFixture(t)
-	module := filepath.Join(bed.root, "metasystem")
-	must(t, os.Mkdir(module, 0o755))
-	must(t, os.Rename(filepath.Join(bed.root, "plans"), filepath.Join(module, "plans")))
-	must(t, os.WriteFile(filepath.Join(module, "go.mod"), []byte("module example.invalid/metasystem\n\ngo 1.27\n"), 0o644))
-	bedGit(t, bed.root, "add", "metasystem", "plans")
-	bedGit(t, bed.root, "commit", "-qm", "nest module ledger")
-	bed.base = bedGit(t, bed.root, "rev-parse", "HEAD^{tree}")
-	must(t, os.WriteFile(filepath.Join(bed.root, "trunk"), []byte("nested moved\n"), 0o644))
-	bedGit(t, bed.root, "add", "trunk")
-	bedGit(t, bed.root, "commit", "-qm", "move nested base")
-	bed.moved = bedGit(t, bed.root, "rev-parse", "HEAD^{tree}")
-	bed.record.BaseTree, bed.record.TipTree = bed.base, bed.base
-	return bed
-}
 func witness(t *testing.T, ok bool, format string, args ...any) {
+	t.Helper()
 	if !ok {
 		t.Fatalf(format, args...)
 	}
 }
-func sealWitness(t *testing.T, kind string) {
-	bed, record, trees, assemblies, plan := sealedFixture(t)
-	switch kind {
-	case "freeze":
-		store := NewStore(bed.root, scriptedProber{})
-		must(t, store.Create(record))
-		err := checkMembership(store, testBatchID, "goal-c", "chain-c")
-		witness(t, err != nil && strings.Contains(err.Error(), "BATCH_SEALED"), "join refusal=%v", err)
-	case "conflict":
-		_, err := assembleUnits(bed.root, bed.base, append(bed.record.Units, Unit{GoalID: "goal-conflict", Chain: "conflict", State: UnitJoined}))
-		witness(t, err != nil && strings.Contains(err.Error(), "goal-conflict") && strings.Contains(err.Error(), "a.go") && strings.Contains(err.Error(), "b.go"), "conflict=%v", err)
-	case "regate":
-		witness(t, record.BaseTree == bed.moved && record.TipTree != bed.record.TipTree && bedGit(t, bed.root, "show", record.TipTree+":trunk") == "moved" && len(trees) == 2, "moved assembly=%+v seam trees=%v", record, trees)
-		red := bed.record
-		err := sealBatch(bed.root, bed.base, "owner", time.Time{}, &red, func(string, string, string) (testpolicy.Plan, error) {
-			return testpolicy.Plan{}, errors.New("selection red")
-		}, assembleUnits)
-		witness(t, err != nil && strings.Contains(err.Error(), "selection red"), "red selection=%v", err)
-	case "ceiling":
-		open := Record{BatchID: testBatchID, State: StateOpen}
-		recordSelection(&open, testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, SelectedGroups: []string{"b", "a"}})
-		recordSelection(&open, testpolicy.Plan{RequiredMode: testpolicy.ModeDeep, SelectedGroups: []string{"c", "a"}})
-		witness(t, slices.Equal(open.SelectedGroups, []string{"a", "b", "c"}), "groups=%v", open.SelectedGroups)
-		err := joinRefusal(open)
-		witness(t, err != nil && strings.Contains(err.Error(), "BATCH_CLOSED"), "join refusal=%v", err)
-	case "inputs":
-		witness(t, !slices.ContainsFunc(trees, func(tree string) bool { return tree != record.TipTree }), "tip=%s seam trees=%v", record.TipTree, trees)
-		u, err := assembleUnits(bed.root, bed.base, []Unit{bed.record.Units[1]})
-		must(t, err)
-		reuse, err := plan(bed.root, "goal-b", u[0])
-		must(t, err)
-		witness(t, slices.Contains(record.SelectedGroups, "execute:G") && slices.Contains(reuse.SelectedGroups, "reused:G"), "tip groups=%v unit groups=%v", record.SelectedGroups, reuse.SelectedGroups)
-	case "boundary":
-		witness(t, assemblies == len(record.Units)+1 && len(record.PrefixTrees) == len(record.Units), "assembly calls=%d prefixes=%v", assemblies, record.PrefixTrees)
-		claim := record.Seal["goal-a"]
-		witness(t, claim.Revision == 2 && claim.AccountingRevision == 1, "sealed claims=%+v", record.Seal)
+
+func newSealPolicyFixture(t *testing.T, nested bool, goals ...string) sealPolicyFixture {
+	t.Helper()
+	root := t.TempDir()
+	if nested {
+		module := filepath.Join(root, "metasystem")
+		must(t, os.Mkdir(module, 0o755))
+		must(t, os.WriteFile(filepath.Join(module, "go.mod"), []byte("module example.invalid/metasystem\n\ngo 1.27\n"), 0o644))
+	}
+	if len(goals) == 0 {
+		goals = []string{"goal-a", "goal-b"}
+	}
+	base, moved := testCommit(101), testCommit(102)
+	units := make([]Unit, 0, len(goals))
+	for index, id := range goals {
+		units = append(units, Unit{GoalID: id, Chain: "chain-" + strings.TrimPrefix(id, "goal-"),
+			Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: uint64(7 + index), AccountingRevision: uint64(5 + index)}, State: UnitJoined})
+	}
+	bed := assemblyBed{root: root, base: base, moved: moved, record: Record{Schema: 1, BatchID: testBatchID,
+		BaseTree: base, TipTree: base, State: StateOpen, Units: units}}
+	store := NewStore(root, nil)
+	must(t, store.Create(bed.record))
+	return sealPolicyFixture{bed: bed, store: store, first: testCommit(103), tip: testCommit(104), third: testCommit(105)}
+}
+
+func (f *sealPolicyFixture) expectAssembly(t *testing.T, base string, goals, chains, prefixes []string) {
+	t.Helper()
+	expected := []expectedReassembly{expectedAssembly(base, goals, chains, prefixes)}
+	for index := range goals {
+		boundary := base
+		if index > 0 {
+			boundary = prefixes[index-1]
+		}
+		expected = append(expected, expectedAssembly(boundary, goals[index:index+1], chains[index:index+1], prefixes[index:index+1]))
+	}
+	strictReassembly(t, &f.store, expected...)
+}
+
+func (f *sealPolicyFixture) expectTwo(t *testing.T, base string) {
+	t.Helper()
+	f.expectAssembly(t, base, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{f.first, f.tip})
+}
+
+type committedGoalReply struct {
+	module, tree, goal string
+	data               []byte
+	present            bool
+	err                error
+}
+
+func expectedGoal(f sealPolicyFixture, goal string) committedGoalReply {
+	return committedGoalReply{module: ModuleRoot(f.bed.root), tree: f.tip, goal: goal, data: goalBed(goal), present: true}
+}
+
+func expectCommittedGoals(t *testing.T, store *Store, replies ...committedGoalReply) {
+	t.Helper()
+	var mu sync.Mutex
+	called := 0
+	store.committedGoal = func(module, tree, goal string) ([]byte, bool, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if called >= len(replies) {
+			t.Errorf("unexpected committed goal read: module=%q tree=%q goal=%q", module, tree, goal)
+			return nil, false, fmt.Errorf("unexpected committed goal read")
+		}
+		want := replies[called]
+		called++
+		if module != want.module || tree != want.tree || goal != want.goal {
+			t.Errorf("committed goal read %d: got module=%q tree=%q goal=%q, want %+v", called, module, tree, goal, want)
+			return nil, false, fmt.Errorf("unexpected committed goal read")
+		}
+		return bytes.Clone(want.data), want.present, want.err
+	}
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if called != len(replies) {
+			t.Errorf("committed goal reads=%d, want %d", called, len(replies))
+		}
+	})
+}
+
+func expectValidClaims(t *testing.T, f *sealPolicyFixture, goals ...string) {
+	t.Helper()
+	replies := make([]committedGoalReply, 0, len(goals))
+	for _, id := range goals {
+		replies = append(replies, expectedGoal(*f, id))
+	}
+	expectCommittedGoals(t, &f.store, replies...)
+}
+
+func standardSealPlan(root string) func(string, string, string) (testpolicy.Plan, error) {
+	return func(gotRoot, goalID, _ string) (testpolicy.Plan, error) {
+		if gotRoot != root {
+			return testpolicy.Plan{}, fmt.Errorf("planner root=%q, want %q", gotRoot, root)
+		}
+		return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, SelectedGroups: []string{"shared", goalID}}, nil
 	}
 }
 
-func TestBatchSealFreezesMembership(t *testing.T)         { sealWitness(t, "freeze") }
-func TestBatchJoinConflictNamesFiles(t *testing.T)        { sealWitness(t, "conflict") }
-func TestBatchSealRegates(t *testing.T)                   { sealWitness(t, "regate") }
-func TestBatchSelectionUnionClosesAtCeiling(t *testing.T) { sealWitness(t, "ceiling") }
-func TestBatchSealExecutesChangedInputs(t *testing.T)     { sealWitness(t, "inputs") }
-func TestBatchSealDryRunsTheBoundary(t *testing.T)        { sealWitness(t, "boundary") }
+func TestBatchSealFreezesMembership(t *testing.T) {
+	f := newSealPolicyFixture(t, false)
+	f.expectTwo(t, f.bed.moved)
+	expectValidClaims(t, &f, "goal-a", "goal-b")
+	must(t, Seal(f.store, testBatchID, f.bed.moved, "owner", time.Unix(1, 0), standardSealPlan(f.bed.root)))
+	err := checkMembership(f.store, testBatchID, "goal-c", "chain-c")
+	if err == nil || !strings.Contains(err.Error(), "BATCH_SEALED") {
+		t.Fatalf("join refusal=%v", err)
+	}
+}
+
+func TestBatchJoinConflictNamesFiles(t *testing.T) {
+	bed := assemblyFixture(t)
+	_, err := assembleUnits(bed.root, bed.base, append(bed.record.Units, Unit{GoalID: "goal-conflict", Chain: "conflict", State: UnitJoined}))
+	if err == nil || !strings.Contains(err.Error(), "goal-conflict") || !strings.Contains(err.Error(), "a.go") || !strings.Contains(err.Error(), "b.go") {
+		t.Fatalf("certified patch conflict=%v", err)
+	}
+}
+
+func TestBatchSealAssemblyPreservesMovedTrunkContent(t *testing.T) {
+	t.Parallel()
+	bed := assemblyFixture(t)
+	prefixes, err := assembleUnits(bed.root, bed.moved, bed.record.Units)
+	must(t, err)
+	if len(prefixes) != 2 || bedGit(t, bed.root, "show", prefixes[1]+":trunk") != "moved" {
+		t.Fatalf("moved trunk missing from composed tree: %v", prefixes)
+	}
+}
+
+func TestBatchSealRegates(t *testing.T) {
+	f := newSealPolicyFixture(t, false)
+	f.expectTwo(t, f.bed.moved)
+	expectValidClaims(t, &f, "goal-a", "goal-b")
+	var trees []string
+	plan := func(root, goalID, tree string) (testpolicy.Plan, error) {
+		if root != f.bed.root {
+			t.Fatalf("planner root=%q", root)
+		}
+		trees = append(trees, tree)
+		return testpolicy.Plan{SelectedGroups: []string{"shared", goalID}}, nil
+	}
+	must(t, Seal(f.store, testBatchID, f.bed.moved, "owner", time.Unix(1, 0), plan))
+	record := load(t, f.store)
+	if record.BaseTree != f.bed.moved || record.TipTree != f.tip || !slices.Equal(record.PrefixTrees, []string{f.first, f.tip}) || !slices.Equal(trees, []string{f.tip, f.tip}) ||
+		!slices.Equal(record.SelectedGroups, []string{"goal-a", "goal-b", "shared"}) {
+		t.Fatalf("moved assembly=%+v planner trees=%v", record, trees)
+	}
+	red := newSealPolicyFixture(t, false)
+	red.expectTwo(t, red.bed.base)
+	expectCommittedGoals(t, &red.store)
+	err := Seal(red.store, testBatchID, red.bed.base, "owner", time.Unix(1, 0), func(string, string, string) (testpolicy.Plan, error) {
+		return testpolicy.Plan{}, errors.New("selection red")
+	})
+	if err == nil || err.Error() != "selection red" || load(t, red.store).State != StateOpen {
+		t.Fatalf("selection refusal=%v", err)
+	}
+}
+
+func TestBatchSelectionUnionClosesAtCeiling(t *testing.T) {
+	open := Record{BatchID: testBatchID, State: StateOpen}
+	recordSelection(&open, testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, SelectedGroups: []string{"b", "a"}})
+	recordSelection(&open, testpolicy.Plan{RequiredMode: testpolicy.ModeDeep, SelectedGroups: []string{"c", "a"}})
+	if !slices.Equal(open.SelectedGroups, []string{"a", "b", "c"}) || open.ClosedReason != "deep-ceiling" {
+		t.Fatalf("groups=%v closure=%q", open.SelectedGroups, open.ClosedReason)
+	}
+	err := joinRefusal(open)
+	if err == nil || !strings.Contains(err.Error(), "BATCH_CLOSED") {
+		t.Fatalf("join refusal=%v", err)
+	}
+}
+
+func TestBatchSealExecutesChangedInputs(t *testing.T) {
+	f := newSealPolicyFixture(t, false)
+	f.expectTwo(t, f.bed.moved)
+	expectValidClaims(t, &f, "goal-a", "goal-b")
+	type request struct{ root, goal, tree string }
+	want := []request{{f.bed.root, "goal-a", f.tip}, {f.bed.root, "goal-b", f.tip}, {f.bed.root, "goal-b", testCommit(106)}}
+	called := 0
+	plan := func(root, goal, tree string) (testpolicy.Plan, error) {
+		got := request{root, goal, tree}
+		if called >= len(want) || got != want[called] {
+			t.Fatalf("planner request %d=%+v, want %v", called, got, want)
+		}
+		called++
+		decision := "execute:G"
+		if tree == testCommit(106) {
+			decision = "reused:G"
+		}
+		return testpolicy.Plan{SelectedGroups: []string{decision}}, nil
+	}
+	must(t, Seal(f.store, testBatchID, f.bed.moved, "owner", time.Unix(1, 0), plan))
+	record := load(t, f.store)
+	reuse, err := plan(f.bed.root, "goal-b", testCommit(106))
+	must(t, err)
+	if called != len(want) || !slices.Contains(record.SelectedGroups, "execute:G") || !slices.Contains(reuse.SelectedGroups, "reused:G") {
+		t.Fatalf("planner calls=%d tip groups=%v standalone=%v", called, record.SelectedGroups, reuse.SelectedGroups)
+	}
+}
+
+func TestBatchSealDryRunsTheBoundary(t *testing.T) {
+	f := newSealPolicyFixture(t, false)
+	f.expectTwo(t, f.bed.moved)
+	expectValidClaims(t, &f, "goal-a", "goal-b")
+	must(t, Seal(f.store, testBatchID, f.bed.moved, "owner", time.Unix(1, 0), standardSealPlan(f.bed.root)))
+	record := load(t, f.store)
+	if !slices.Equal(record.PrefixTrees, []string{f.first, f.tip}) {
+		t.Fatalf("prefixes=%v", record.PrefixTrees)
+	}
+	claim := record.Seal["goal-a"]
+	if claim.Revision != 2 || claim.AccountingRevision != 1 || claim.Machine != "" || claim.Lineage != "" {
+		t.Fatalf("sealed claim=%+v", claim)
+	}
+}
 
 func TestBatchSealReadsClaimsFromTheNestedModuleWithTheStoreAtTheRepositoryTop(t *testing.T) {
 	t.Parallel()
-	bed := nestedAssemblyFixture(t)
-	record := bed.record
-	plan := func(_, goalID, _ string) (testpolicy.Plan, error) {
-		return testpolicy.Plan{RequiredMode: testpolicy.ModeStandard, SelectedGroups: []string{goalID}}, nil
-	}
-	must(t, sealBatch(bed.root, bed.moved, "landing+owner", time.Unix(1, 0), &record, plan, assembleUnits))
-	for _, goalID := range []string{"goal-a", "goal-b"} {
-		claim := record.Seal[goalID]
+	f := newSealPolicyFixture(t, true)
+	f.expectTwo(t, f.bed.moved)
+	expectValidClaims(t, &f, "goal-a", "goal-b")
+	must(t, Seal(f.store, testBatchID, f.bed.moved, "owner", time.Unix(1, 0), standardSealPlan(f.bed.root)))
+	for _, id := range []string{"goal-a", "goal-b"} {
+		claim := load(t, f.store).Seal[id]
 		if claim.Revision != 2 || claim.AccountingRevision != 1 {
-			t.Fatalf("sealed claim for %s=%+v, want ledger revisions 2 and 1", goalID, claim)
+			t.Fatalf("sealed claim for %s=%+v", id, claim)
 		}
 	}
 }
 
 func TestBatchSealExcludesReturnedUnits(t *testing.T) {
-	bed := assemblyFixture(t)
-	claim := bed.record.Units[0].Claim
-	bed.record.Units = []Unit{
-		{GoalID: "goal-a", Chain: "chain-a", Claim: claim, State: UnitJoined},
-		{GoalID: "goal-b", Chain: "chain-b", Claim: claim, State: UnitJoined, ChangedPaths: []string{"b.go"}},
-		{GoalID: "goal-c", Chain: "chain-c", Claim: claim, State: UnitJoined},
-	}
-	bed.record.State = StateDiagnosing
-	bed.record.Proof = &Proof{Status: "failed", AttemptID: "tip-red"}
-	store := NewStore(bed.root, nil)
-	must(t, store.Create(bed.record))
-	must(t, DiagnoseRed(store, testBatchID, "owner", []RedGroup{{ID: "group", InputManifest: []string{"b.go"}}}, "", time.Unix(2, 0), RedSeams{Run: func(DiagnosticRequest) (DiagnosticResult, error) {
-		return DiagnosticResult{AttemptID: "base-green"}, nil
-	}}))
-	must(t, settleReturn(store, testBatchID, "goal-b", ReturnHandedBack, "owner", time.Unix(3, 0)))
-	plan := func(_, goalID, _ string) (testpolicy.Plan, error) {
-		return testpolicy.Plan{SelectedGroups: []string{goalID}}, nil
-	}
-	must(t, Seal(store, testBatchID, bed.base, "owner", time.Unix(4, 0), plan))
-	record := load(t, store)
-	want, err := assembleUnits(bed.root, bed.base, []Unit{bed.record.Units[0], bed.record.Units[2]})
-	must(t, err)
-	if !slices.Equal(record.PrefixTrees, want) || record.TipTree != want[len(want)-1] {
-		t.Fatalf("sealed prefixes=%v tip=%s, want survivors %v", record.PrefixTrees, record.TipTree, want)
+	f := newSealPolicyFixture(t, false, "goal-a", "goal-b", "goal-c")
+	must(t, RequestReturn(f.store, testBatchID, "goal-b", UnitEjected, "red", "owner", time.Unix(2, 0)))
+	must(t, f.store.locked(func() error {
+		return settleReturn(f.store, testBatchID, "goal-b", ReturnHandedBack, "owner", time.Unix(3, 0))
+	}))
+	f.expectAssembly(t, f.bed.base, []string{"goal-a", "goal-c"}, []string{"chain-a", "chain-c"}, []string{f.first, f.tip})
+	expectValidClaims(t, &f, "goal-a", "goal-c")
+	must(t, Seal(f.store, testBatchID, f.bed.base, "owner", time.Unix(4, 0), standardSealPlan(f.bed.root)))
+	record := load(t, f.store)
+	if !slices.Equal(record.PrefixTrees, []string{f.first, f.tip}) || record.TipTree != f.tip {
+		t.Fatalf("survivor series=%+v", record)
 	}
 	if _, sealed := record.Seal["goal-b"]; sealed {
-		t.Fatalf("returned goal-b remained in seal: %+v", record.Seal)
+		t.Fatalf("returned member remained sealed: %+v", record.Seal)
 	}
+}
+
+func appendThirdJoined(t *testing.T, store Store, f sealPolicyFixture) {
+	t.Helper()
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		unit := joiningUnit("goal-c", "chain-c")
+		unit.State = UnitJoined
+		unit.Admission = &JoinAdmission{Tree: testCommit(106), Status: "verified"}
+		unit.SelectedGroups = []string{"goal-c"}
+		record.Units = append(record.Units, unit)
+		record.PrefixTrees = []string{f.first, f.tip, f.third}
+		record.TipTree = f.third
+		record.SelectedGroups = []string{"goal-c"}
+		appendUnitHistory(record, time.Unix(2, 0), "join", "seat+goal-c", "goal-c", "", UnitJoining)
+		appendUnitHistory(record, time.Unix(2, 0), "join", "seat+goal-c", "goal-c", UnitJoining, UnitJoined)
+		return nil
+	}))
 }
 
 func TestBatchSealReleasesLockDuringSelectionAndRefusesChangedCandidate(t *testing.T) {
 	t.Parallel()
-	bed := assemblyFixture(t)
-	store := NewStore(bed.root, nil)
-	must(t, store.Create(bed.record))
+	f := newSealPolicyFixture(t, false)
+	f.expectTwo(t, f.bed.base)
+	expectValidClaims(t, &f, "goal-a", "goal-b")
 	var lockDepth atomic.Int32
-	store.seams.flock = func(fd, operation int) error {
+	f.store.seams.flock = func(fd, operation int) error {
 		if operation == unix.LOCK_UN {
 			lockDepth.Add(-1)
 			return unix.Flock(fd, operation)
@@ -218,83 +353,138 @@ func TestBatchSealReleasesLockDuringSelectionAndRefusesChangedCandidate(t *testi
 		return nil
 	}
 	planStarted, releasePlan := make(chan struct{}), make(chan struct{})
-	var planStartedOnce atomic.Bool
-	var planHeldLock atomic.Bool
+	var once, held atomic.Bool
 	plan := func(_, goalID, _ string) (testpolicy.Plan, error) {
-		if planStartedOnce.CompareAndSwap(false, true) {
-			planHeldLock.Store(lockDepth.Load() != 0)
+		if once.CompareAndSwap(false, true) {
+			held.Store(lockDepth.Load() != 0)
 			close(planStarted)
 			<-releasePlan
 		}
 		return testpolicy.Plan{SelectedGroups: []string{goalID}}, nil
 	}
 	sealDone := make(chan error, 1)
-	go func() { sealDone <- Seal(store, testBatchID, bed.base, "owner", time.Unix(3, 0), plan) }()
+	go func() { sealDone <- Seal(f.store, testBatchID, f.bed.base, "owner", time.Unix(3, 0), plan) }()
 	select {
 	case <-planStarted:
 	case err := <-sealDone:
-		t.Fatalf("seal returned before its selection: %v", err)
+		t.Fatalf("seal returned before selection: %v", err)
 	}
-	if planHeldLock.Load() {
+	if held.Load() {
 		close(releasePlan)
 		<-sealDone
-		t.Fatal("seal selection ran while the batch flock was held")
+		t.Fatal("selection held the batch flock")
 	}
-	join := joiningUnit("goal-c", "chain-c")
-	must(t, PublishJoin(store, testBatchID, join, "seat+goal-c", time.Unix(2, 0), plan, func() error { return nil }))
-	close(releasePlan)
-	err := <-sealDone
-	var changed *SealChangedDuringGateRefusal
-	if !errors.As(err, &changed) || changed.BatchID != testBatchID || !strings.Contains(err.Error(), "changed during seal preparation") {
-		t.Fatalf("changed-candidate refusal=%T %v", err, err)
-	}
-	record := load(t, store)
-	if record.State != StateOpen || len(joinedUnits(record.Units)) != 3 || record.Seal != nil {
-		t.Fatalf("changed seal wrote stale state: %+v", record)
-	}
-
-	unchanged := assemblyFixture(t)
-	unchangedStore := NewStore(unchanged.root, nil)
-	must(t, unchangedStore.Create(unchanged.record))
-	must(t, Seal(unchangedStore, testBatchID, unchanged.base, "owner", time.Unix(4, 0), plan))
-	if sealed := load(t, unchangedStore); sealed.State != StateSealed || len(sealed.Seal) != 2 {
-		t.Fatalf("unchanged candidate did not seal: %+v", sealed)
-	}
-}
-
-// A changed member cannot inherit an obsolete forecast while seal prepares
-// outside the batch lock.
-func TestBatchSealReleasesLockDuringGateAndRefusesChangedCandidate(t *testing.T) {
-	t.Parallel()
-	bed := assemblyFixture(t)
-	store := NewStore(bed.root, nil)
-	must(t, store.Create(bed.record))
-	plan := func(_, goalID, _ string) (testpolicy.Plan, error) {
-		return testpolicy.Plan{SelectedGroups: []string{goalID}}, nil
-	}
-	joinStore := store
+	joinStore := f.store
 	joinStore.seams.flock = func(fd, operation int) error {
 		if operation == unix.LOCK_EX {
 			operation |= unix.LOCK_NB
 		}
 		return unix.Flock(fd, operation)
 	}
-	sealErr := SealWithForecast(store, testBatchID, bed.base, "owner", time.Unix(3, 0), plan,
-		func(candidate Record) (CostForecast, error) {
-			if len(candidate.PrefixTrees) != 2 || candidate.TipTree == "" {
-				t.Errorf("forecast did not see the prepared series: %+v", candidate)
-			}
-			if err := PublishJoin(joinStore, testBatchID, joiningUnit("goal-c", "chain-c"), "seat+goal-c", time.Unix(2, 0), plan, func() error { return nil }); err != nil {
-				t.Fatalf("join could not acquire the batch flock during forecast: %v", err)
-			}
-			return CostForecast{SchemaVersion: 1, Binding: CostBinding(candidate, candidate.Units, candidate.PrefixTrees)}, nil
-		})
+	appendThirdJoined(t, joinStore, f)
+	close(releasePlan)
+	err := <-sealDone
 	var changed *SealChangedDuringGateRefusal
-	if !errors.As(sealErr, &changed) {
-		t.Fatalf("changed candidate seal result=%v", sealErr)
+	if !errors.As(err, &changed) || changed.BatchID != testBatchID || !strings.Contains(err.Error(), "changed during seal preparation") {
+		t.Fatalf("changed-candidate refusal=%T %v", err, err)
 	}
-	record := load(t, store)
-	if record.State != StateOpen || len(joinedUnits(record.Units)) != 3 || record.Seal != nil || record.CostForecast != nil {
-		t.Fatalf("stale seal or forecast published after changed membership: %+v", record)
+	record := load(t, f.store)
+	if record.State != StateOpen || len(joinedUnits(record.Units)) != 3 || record.Units[2].Admission == nil || record.Units[2].Admission.Status != "verified" || record.Seal != nil || record.CostForecast != nil {
+		t.Fatalf("stale state=%+v", record)
+	}
+	if want := []HistoryEntry{
+		{At: time.Unix(2, 0).UTC().Format(time.RFC3339Nano), Verb: "join", From: "", To: UnitJoining, Actor: "seat+goal-c", Detail: "goal-c joining"},
+		{At: time.Unix(2, 0).UTC().Format(time.RFC3339Nano), Verb: "join", From: UnitJoining, To: UnitJoined, Actor: "seat+goal-c", Detail: "goal-c joined"},
+	}; !slices.Equal(record.History, want) {
+		t.Fatalf("join history=%+v, want %+v", record.History, want)
+	}
+	unchanged := newSealPolicyFixture(t, false)
+	unchanged.expectTwo(t, unchanged.bed.base)
+	expectValidClaims(t, &unchanged, "goal-a", "goal-b")
+	must(t, Seal(unchanged.store, testBatchID, unchanged.bed.base, "owner", time.Unix(4, 0), plan))
+	if sealed := load(t, unchanged.store); sealed.State != StateSealed || len(sealed.Seal) != 2 {
+		t.Fatalf("unchanged candidate=%+v", sealed)
+	}
+}
+
+func TestBatchSealReleasesLockDuringGateAndRefusesChangedCandidate(t *testing.T) {
+	t.Parallel()
+	f := newSealPolicyFixture(t, false)
+	f.expectTwo(t, f.bed.base)
+	expectValidClaims(t, &f, "goal-a", "goal-b")
+	joinStore := f.store
+	joinStore.seams.flock = func(fd, operation int) error {
+		if operation == unix.LOCK_EX {
+			operation |= unix.LOCK_NB
+		}
+		return unix.Flock(fd, operation)
+	}
+	sealErr := SealWithForecast(f.store, testBatchID, f.bed.base, "owner", time.Unix(3, 0), standardSealPlan(f.bed.root), func(candidate Record) (CostForecast, error) {
+		if !slices.Equal(candidate.PrefixTrees, []string{f.first, f.tip}) || candidate.TipTree != f.tip {
+			t.Errorf("forecast candidate=%+v", candidate)
+		}
+		appendThirdJoined(t, joinStore, f)
+		return CostForecast{SchemaVersion: 1, Binding: CostBinding(candidate, candidate.Units, candidate.PrefixTrees)}, nil
+	})
+	var changed *SealChangedDuringGateRefusal
+	if !errors.As(sealErr, &changed) || changed.BatchID != testBatchID {
+		t.Fatalf("changed candidate result=%v", sealErr)
+	}
+	record := load(t, f.store)
+	if record.State != StateOpen || len(joinedUnits(record.Units)) != 3 || record.Units[2].Admission == nil || record.Units[2].Admission.Status != "verified" || record.Seal != nil || record.CostForecast != nil {
+		t.Fatalf("stale seal or forecast=%+v", record)
+	}
+	if want := []HistoryEntry{
+		{At: time.Unix(2, 0).UTC().Format(time.RFC3339Nano), Verb: "join", From: "", To: UnitJoining, Actor: "seat+goal-c", Detail: "goal-c joining"},
+		{At: time.Unix(2, 0).UTC().Format(time.RFC3339Nano), Verb: "join", From: UnitJoining, To: UnitJoined, Actor: "seat+goal-c", Detail: "goal-c joined"},
+	}; !slices.Equal(record.History, want) {
+		t.Fatalf("join history=%+v, want %+v", record.History, want)
+	}
+}
+
+func TestBatchSealRejectsAbsentCommittedGoal(t *testing.T) {
+	t.Parallel()
+	assertSealCommittedRefusal(t, committedGoalReply{present: false}, "absent from tree")
+}
+func TestBatchSealRejectsMalformedCommittedClaim(t *testing.T) {
+	data := []byte("malformed claim\n")
+	if _, problems := goal.ParseFile(data); len(problems) == 0 {
+		t.Fatal("malformed fixture parsed as a valid goal")
+	}
+	assertSealCommittedRefusal(t, committedGoalReply{data: data, present: true}, "has no valid handed-over claim")
+}
+func TestBatchSealRejectsWrongBatchCommittedClaim(t *testing.T) {
+	otherBatch := "01J5X0000000000000000000ZZ"
+	file, problems := goal.ParseFile(goalBed("goal-a"))
+	if len(problems) != 0 || file.Claimed == nil {
+		t.Fatalf("source goal fixture is invalid: %v", problems)
+	}
+	file.Claimed.HandedOver.Batch = otherBatch
+	data := goal.RenderFile(file)
+	file, problems = goal.ParseFile(data)
+	if len(problems) != 0 || file.Claimed == nil || file.Claimed.HandedOver.Batch != otherBatch {
+		t.Fatalf("wrong-batch fixture is not a valid handed-over claim: problems=%v claim=%+v", problems, file.Claimed)
+	}
+	assertSealCommittedRefusal(t, committedGoalReply{data: data, present: true}, "has no valid handed-over claim")
+}
+func assertSealCommittedRefusal(t *testing.T, reply committedGoalReply, reason string) {
+	t.Helper()
+	f := newSealPolicyFixture(t, false)
+	f.expectTwo(t, f.bed.base)
+	reply.module, reply.tree, reply.goal = ModuleRoot(f.bed.root), f.tip, "goal-a"
+	expectCommittedGoals(t, &f.store, reply)
+	before := load(t, f.store)
+	err := Seal(f.store, testBatchID, f.bed.base, "owner", time.Unix(3, 0), standardSealPlan(f.bed.root))
+	want := fmt.Errorf("goal ledger entry %s is absent from tree %s: %w", reply.goal, reply.tree, reply.err).Error()
+	if reply.present && reply.err == nil {
+		_, problems := goal.ParseFile(reply.data)
+		want = fmt.Sprintf("goal ledger entry %s has no valid handed-over claim for batch %s: %v", reply.goal, testBatchID, problems)
+	}
+	if err == nil || err.Error() != want || !strings.Contains(err.Error(), reason) {
+		t.Fatalf("committed claim refusal=%v, want %q", err, want)
+	}
+	after := load(t, f.store)
+	if !reflect.DeepEqual(after, before) || after.State != StateOpen || after.Seal != nil {
+		t.Fatalf("refusal changed durable record: before=%+v after=%+v", before, after)
 	}
 }

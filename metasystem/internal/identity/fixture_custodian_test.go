@@ -739,9 +739,9 @@ func TestControlledLaunchersExportTheirOwnRef(t *testing.T) {
 	}
 
 	gate := readLauncherSource(t, filepath.Join(sourceRoot, "scripts", "agents", "go-gate.sh"))
-	exportAt, firstTestAt := strings.Index(gate, "export METASYSTEM_RUN_OWNER"), strings.Index(gate, "go test -count=1")
+	exportAt, firstTestAt := strings.Index(gate, "export METASYSTEM_RUN_OWNER"), strings.Index(gate, `"$gate_build_scratch" proof-run go-gate-tests --root "$root"`)
 	if exportAt < 0 || firstTestAt < 0 || exportAt > firstTestAt {
-		t.Fatalf("go-gate run owner export position=%d, first go test position=%d", exportAt, firstTestAt)
+		t.Fatalf("go-gate run owner export position=%d, go-gate adapter position=%d", exportAt, firstTestAt)
 	}
 	bed := readLauncherSource(t, filepath.Join(sourceRoot, "scripts", "agents", "fixture-bed-scenarios.sh"))
 	ownerAt, childAt := strings.Index(bed, "harness_fixture_owner \"$fixture_bed_harness_root\""), strings.Index(bed, "\"$script\" --fixture-bed-child")

@@ -48,7 +48,8 @@ func TestWallMechanicalRecoveryRestoresUndeclaredScribble(t *testing.T) {
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
 
-	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
+	bed := newRecoveryFileBed(t, map[string]string{"scripts/assert-return-complete.sh": "original\n"})
+	engine, statePath, ledgerPath, turnDir := bed.e, bed.state, bed.ledger, bed.turnDir
 	scribbled := filepath.Join(engine.Root, "scripts", "assert-return-complete.sh")
 	original, err := os.ReadFile(scribbled)
 	if err != nil {
@@ -57,6 +58,13 @@ func TestWallMechanicalRecoveryRestoresUndeclaredScribble(t *testing.T) {
 	writeText(t, scribbled, string(original)+"# host scribble\n")
 	writeText(t, filepath.Join(engine.Root, "host-scribble.txt"), "junk\n")
 
+	bed.facts.ledgerGuard()
+	bed.facts.violation(recoveryPre, recoveryPost,
+		[]string{"host-scribble.txt", "scripts/assert-return-complete.sh"},
+		recoveryMaterialize{
+			before: map[string]string{"host-scribble.txt": "junk\n", "scripts/assert-return-complete.sh": string(original) + "# host scribble\n"},
+			after:  map[string]*string{"host-scribble.txt": nil, "scripts/assert-return-complete.sh": recoveryString(string(original))},
+		})
 	ctx, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, true, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -102,42 +110,26 @@ func TestWallMechanicalRecoveryRestoresUndeclaredScribble(t *testing.T) {
 // scribbled to C by the host comes back as B — reviewed work is never
 // discarded by recovery.
 func TestWallMechanicalRecoveryRestoresTheComposedTree(t *testing.T) {
-	// Under the compressed package scale this scenario livelocks: a
-	// recovery window expires before its real fact on every retry.
-	// Real scale until the recovery windows are audited — tracked
-	// under timing-tests-synthetic-clock.
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
-	if err != nil {
-		t.Fatal(err)
-	}
+	bed := newRecoveryFileBed(t, map[string]string{"product.txt": "A\n"})
+	engine, statePath, ledgerPath, turnDir := bed.e, bed.state, bed.ledger, bed.turnDir
 	product := filepath.Join(engine.Root, "product.txt")
-	writeText(t, product, "A\n")
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-live", 1)
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
-	if err := engine.anchor(statePath, ledgerPath, "open"); err != nil {
-		t.Fatal(err)
-	}
-	turnDir := filepath.Join(engine.missionDir(), "turns", "alpha-t1-live")
-	os.MkdirAll(turnDir, 0o755)
-	writeJSONFile(t, filepath.Join(turnDir, "turn.json"),
-		map[string]any{"missionId": engine.Mission, "turnId": "alpha-t1-live", "cycle": 1,
-			"runtime": "fake", "model": "fixture", "status": "running"})
-
-	workspace := gittree.Workspace{Dir: engine.Root}
-	pre, err := wallSnapshot(workspace, engine.Mission)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeText(t, product, "B\n")
-	reviewed, err := wallSnapshot(workspace, engine.Mission)
-	if err != nil {
-		t.Fatal(err)
-	}
-	digest := wallAuthorization(t, engine.Root, engine.Mission, pre, reviewed, nil)
+	patch := []byte("diff --git a/product.txt b/product.txt\n--- a/product.txt\n+++ b/product.txt\n@@ -1 +1 @@\n-A\n+B\n")
+	digest := (&wallPolicyBed{t: t, root: engine.Root, engine: engine}).authorization(recoveryPre, recoveryB, []string{"product.txt"}, patch, true, nil)
 	writeText(t, product, "C\n")
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-
+	entry := map[string]gittree.Entry{"product.txt": {Mode: "100644", OID: strings.Repeat("f", 40)}}
+	compose := func() {
+		bed.facts.add("Apply", recoveryB, recoveryPre, patch)
+		bed.facts.add("Entries", entry, recoveryB, []string{"product.txt"})
+		bed.facts.add("Entries", entry, recoveryB, []string{"product.txt"})
+	}
+	bed.facts.ledgerGuard()
+	compose()
+	bed.facts.restore(recoveryB, recoveryPost, []string{"product.txt"}, recoveryMaterialize{
+		before: map[string]string{"product.txt": "C\n"}, after: map[string]*string{"product.txt": recoveryString("B\n")},
+	})
+	compose()
+	bed.facts.pass(recoveryB)
 	ctx, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, certified, false, true, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -149,8 +141,8 @@ func TestWallMechanicalRecoveryRestoresTheComposedTree(t *testing.T) {
 	if err != nil || string(got) != "B\n" {
 		t.Fatalf("the restore must return the REVIEWED bytes, never the pre-tree: %q err=%v", got, err)
 	}
-	if len(ctx.OrderedDigests) != 1 {
-		t.Fatalf("the authorization must still be consumed: %v", ctx.OrderedDigests)
+	if len(ctx.OrderedDigests) != 1 || ctx.OrderedDigests[0] != digest {
+		t.Fatalf("the authorization must still be consumed exactly once: %v", ctx.OrderedDigests)
 	}
 }
 
@@ -161,13 +153,16 @@ func TestWallRecoveryLeavesLedgerDomainToTheHuman(t *testing.T) {
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
 
-	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
+	bed := newRecoveryFileBed(t)
+	engine, statePath, ledgerPath, turnDir := bed.e, bed.state, bed.ledger, bed.turnDir
 	tampered, err := os.ReadFile(ledgerPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeText(t, ledgerPath, string(tampered)+"- forged line\n")
 
+	bed.facts.ledgerGuard()
+	bed.facts.park()
 	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, true, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -205,11 +200,13 @@ func TestWallRecoveryStickyViolationOutranksTheRung(t *testing.T) {
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
 
-	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
+	bed := newRecoveryFileBed(t)
+	engine, statePath, ledgerPath, turnDir := bed.e, bed.state, bed.ledger, bed.turnDir
 	recorded := "undeclared host-authored change: ghost.txt (recorded before a crash)"
 	writeJSONFile(t, filepath.Join(turnDir, "wall.json"),
 		map[string]any{"verdict": "violated", "violation": recorded})
 
+	bed.facts.park()
 	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, true, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -232,7 +229,8 @@ func TestWallRecoveryCrashTailParksThePublishedPass(t *testing.T) {
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
 
-	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
+	bed := newRecoveryFileBed(t)
+	engine, statePath, ledgerPath, turnDir := bed.e, bed.state, bed.ledger, bed.turnDir
 	block := map[string]any{
 		"violation":     "undeclared host-authored change: x.txt",
 		"restoredPaths": []any{"x.txt"},
@@ -241,6 +239,7 @@ func TestWallRecoveryCrashTailParksThePublishedPass(t *testing.T) {
 	writeJSONFile(t, filepath.Join(turnDir, "wall.json"),
 		map[string]any{"verdict": "passed", "recovered": block})
 
+	bed.facts.park()
 	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, true, false, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -271,7 +270,8 @@ func TestWallRecoveryInPassRecordRidesTheRerun(t *testing.T) {
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
 
-	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
+	bed := newRecoveryFileBed(t)
+	engine, statePath, ledgerPath, turnDir := bed.e, bed.state, bed.ledger, bed.turnDir
 	block := map[string]any{
 		"violation":     "undeclared host-authored change: x.txt",
 		"restoredPaths": []any{"x.txt"},
@@ -280,6 +280,7 @@ func TestWallRecoveryInPassRecordRidesTheRerun(t *testing.T) {
 	writeJSONFile(t, filepath.Join(turnDir, "wall.json"),
 		map[string]any{"verdict": "passed", "recovered": block})
 
+	bed.facts.pass(recoveryPre)
 	ctx, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, true, false, block)
 	if err != nil {
 		t.Fatal(err)
@@ -333,6 +334,7 @@ func TestWallRecoveryInPassRecordRidesTheRerun(t *testing.T) {
 		"consumedAuthorizations": fullConsumed,
 	})
 	writeJSONFile(t, statePath, landed)
+	bed.facts.pass(recoveryPre)
 	after, _, violatedAfter, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, true, false, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -352,7 +354,8 @@ func TestWallRecoveryRefusesRepeatOffense(t *testing.T) {
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
 
-	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
+	bed := newRecoveryFileBed(t)
+	engine, statePath, ledgerPath, turnDir := bed.e, bed.state, bed.ledger, bed.turnDir
 	state := readTestDoc(t, statePath)
 	tree := strings.Repeat("d", 40)
 	priorLog, _ := state["turnLog"].([]any)
@@ -404,12 +407,19 @@ func TestWallRecoveryLateMutationFailsTheReverification(t *testing.T) {
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
 
-	engine, statePath, ledgerPath, turnDir := recoveryBed(t)
+	bed := newRecoveryFileBed(t)
+	engine, statePath, ledgerPath, turnDir := bed.e, bed.state, bed.ledger, bed.turnDir
 	writeText(t, filepath.Join(engine.Root, "host-scribble.txt"), "junk\n")
 	engine.postRestoreHook = func() {
 		writeText(t, filepath.Join(engine.Root, "late-mutation.txt"), "raced in\n")
 	}
 
+	bed.facts.ledgerGuard()
+	bed.facts.restore(recoveryPre, recoveryPost, []string{"host-scribble.txt"}, recoveryMaterialize{
+		before: map[string]string{"host-scribble.txt": "junk\n"}, after: map[string]*string{"host-scribble.txt": nil},
+	})
+	bed.facts.failedRecheck(recoveryPre, recoveryB, []string{"late-mutation.txt"})
+	bed.facts.park()
 	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, true, nil)
 	if err != nil {
 		t.Fatal(err)

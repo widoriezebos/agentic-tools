@@ -155,7 +155,7 @@ func installTierLawRequest(r VerbRequest) PublishRequest {
 		Intent:  Intent{Verb: "classify-sweep", Args: intentArgs(r, nil)},
 		Message: "goal classify-sweep",
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -177,7 +177,7 @@ func installTierLawRequest(r VerbRequest) PublishRequest {
 			})
 			return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -197,7 +197,7 @@ func ClassifyTier(r VerbRequest, proposal ClassificationProposal, installLaw boo
 		}, Args: intentArgs(r, map[string]string{"classifyReason": proposal.Reason, "why": proposal.Reason})},
 		Message: "goal classify-sweep " + proposal.ID,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -246,7 +246,7 @@ func ClassifyTier(r VerbRequest, proposal ClassificationProposal, installLaw boo
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }
 
@@ -546,7 +546,7 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 		}())},
 		Message: "goal approve " + strings.Join(targets, ","),
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -657,7 +657,7 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 			changes = armApprovalGate(t, r, changes)
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }
 
@@ -676,7 +676,7 @@ func Unapprove(r VerbRequest, id, because string, proof *humanauthority.Proof) (
 		Intent:  Intent{Verb: "unapprove", Targets: []string{id}, Args: intentArgs(r, map[string]string{"because": because})},
 		Message: "goal unapprove " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -719,7 +719,7 @@ func Unapprove(r VerbRequest, id, because string, proof *humanauthority.Proof) (
 			recordApprovalProof(f, proof, temporary)
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }
 
@@ -776,7 +776,7 @@ func ApproveSweep(r VerbRequest, confirm string, proof *humanauthority.Proof) (P
 		Intent:  Intent{Verb: "approve", Args: intentArgs(r, map[string]string{"sweep": "true", "listing": confirm})},
 		Message: "goal approve --sweep",
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -839,7 +839,7 @@ func ApproveSweep(r VerbRequest, confirm string, proof *humanauthority.Proof) (P
 			changes = armApprovalGate(t, r, changes)
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }
 
@@ -854,7 +854,7 @@ func RecordFleetEnrollment(r VerbRequest, generation uint64) (PublishResult, err
 		Intent:  Intent{Verb: "enroll-terminal", Args: intentArgs(r, map[string]string{"generation": strconv.FormatUint(generation, 10)})},
 		Message: "goal enroll-terminal",
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -866,6 +866,6 @@ func RecordFleetEnrollment(r VerbRequest, generation uint64) (PublishResult, err
 			t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "enroll-terminal", Actor: r.Actor.historyActor(), Keep: -1})
 			return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }

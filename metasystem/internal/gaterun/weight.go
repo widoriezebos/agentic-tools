@@ -342,6 +342,14 @@ func WeightDischarge(root, goalID string, obligationRevision uint64, runID strin
 // WeightDischargeAt applies the existing governed discharge path using its
 // caller's clock so cadence orchestration never reads wall time implicitly.
 func WeightDischargeAt(root, goalID string, obligationRevision uint64, runID string, now time.Time) (WeightDischargeResult, error) {
+	return weightDischargeAtWith(root, goalID, obligationRevision, runID, now, weightDischargeReads{ResolveGoalBinding: dispatch.ResolveGoalBinding})
+}
+
+type weightDischargeReads struct {
+	ResolveGoalBinding func(string, string, time.Time) (dispatch.GoalBinding, error)
+}
+
+func weightDischargeAtWith(root, goalID string, obligationRevision uint64, runID string, now time.Time, reads weightDischargeReads) (WeightDischargeResult, error) {
 	lock, err := acquireWeightLock(root)
 	if err != nil {
 		return WeightDischargeResult{}, err
@@ -356,7 +364,7 @@ func WeightDischargeAt(root, goalID string, obligationRevision uint64, runID str
 			return WeightDischargeResult{}, fmt.Errorf("REFUSED-PROOF-CONSUMED: run %s already discharged weight generation %d", runID, proof.WeightGeneration)
 		}
 	}
-	binding, err := dispatch.ResolveGoalBinding(root, goalID, now)
+	binding, err := reads.ResolveGoalBinding(root, goalID, now)
 	if err != nil {
 		return WeightDischargeResult{}, fmt.Errorf("weight discharge requires the exact accepted obligation revision: %w", err)
 	}

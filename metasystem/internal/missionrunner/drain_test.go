@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,7 +14,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // The proof of the finite drain and the runner's mission-scoped
@@ -604,59 +602,59 @@ func TestAnswerDrainStalledRollsBackWhenTheStateWriteRefuses(t *testing.T) {
 	}
 }
 
-// measurableDrainMission builds a mission over a real measurable repository
-// (the heal_test/faulted_test fixture pattern): sealed contract in plans/,
-// pinned approved snapshot, gate instruments committed and tagged, and a
-// gate whose score comes from a committed file so the tree can improve.
-func measurableDrainMission(t *testing.T) (engine *Engine, statePath, ledgerPath string, git func(args ...string) string, write func(rel, content string, mode os.FileMode)) {
+// measurableDrainMission seals a live gate against one declared candidate.
+// Its frozen instruments read score.txt from each candidate worktree.
+const drainImprovedCandidateCommit = "dddddddddddddddddddddddddddddddddddddddd"
+
+func measurableDrainMission(t *testing.T) (engine *Engine, statePath, ledgerPath string, source *hostCycleSource, write func(rel, content string, mode os.FileMode)) {
 	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	root := t.TempDir()
-	git = func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
-			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return string(out)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
 	write = func(rel, content string, mode os.FileMode) {
 		t.Helper()
-		path := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := testexec.WriteFile(path, []byte(content), mode); err != nil {
+		if err := writeHostCycleFile(filepath.Join(root, rel), []byte(content), mode); err != nil {
 			t.Fatal(err)
 		}
 	}
-	git("-c", "init.defaultBranch=main", "init", "-q")
-	git("config", "commit.gpgsign", "false")
-	write("scripts/gate.sh", "#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=%s\\nmetric=audit=1\\n' \"$(cat score.txt)\"\n", 0o755)
-	write("score.txt", "1", 0o644)
-	write("truth/reference.txt", "certified truth\n", 0o644)
-	write("docs/project-rules.md", faultedProjectRules, 0o644)
-	git("add", ".")
-	git("commit", "-qm", "instruments")
-	git("tag", "instruments")
-	git("checkout", "-q", "-B", "main")
-
 	engine = NewEngine(root, "demo")
-	engine.anchorFn = func(string, string, string) error { return nil }
+	source = &hostCycleSource{t: t, root: root, contractPath: engine.contractPath(), candidateSHA: hostCandidateCommit,
+		files: map[string][]byte{
+			"scripts/gate.sh":       []byte("#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=%s\\nmetric=audit=1\\n' \"$(cat score.txt)\"\n"),
+			"score.txt":             []byte("1"),
+			"truth/reference.txt":   []byte("certified truth\n"),
+			"docs/project-rules.md": []byte(faultedProjectRules),
+		}}
+	initialFiles := make(map[string][]byte, len(source.files))
+	for path, data := range source.files {
+		initialFiles[path] = data
+		mode := os.FileMode(0o644)
+		if strings.HasSuffix(path, ".sh") {
+			mode = 0o755
+		}
+		write(path, string(data), mode)
+	}
+	source.candidateFiles = initialFiles
+	engine.contractSource = source.source()
+	engine.anchorFn = func(state, ledger, name string) error {
+		if state != filepath.Join(engine.missionDir(), "state.json") || ledger != filepath.Join(engine.missionDir(), "ledger.md") || (name != engine.Mission && name != "demo-t1-abcd") {
+			return errors.New("unexpected drain heal anchor")
+		}
+		_, _, err := mission.VerifyStateShape(state)
+		return err
+	}
 	seedRunnerRecord(t, engine)
 	write(filepath.Join("plans", "mission-demo.contract.md"), faultedContract(), 0o644)
-	if _, err := contract.Seal(engine.contractPath()); err != nil {
+	if _, err := contract.SealWithSource(engine.contractPath(), engine.contractSource); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
 	sealedBytes, err := os.ReadFile(engine.contractPath())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(string(sealedBytes), "sealed.baseline.score=1") || !strings.Contains(string(sealedBytes), "sealed.baseline.candidate-sha="+hostCandidateCommit) {
+		t.Fatalf("seal did not measure the initial candidate score: %s", sealedBytes)
 	}
 	if err := os.MkdirAll(engine.missionDir(), 0o755); err != nil {
 		t.Fatal(err)
@@ -678,21 +676,27 @@ func measurableDrainMission(t *testing.T) (engine *Engine, statePath, ledgerPath
 	if err := mission.InitStateWithBaseline(statePath, engine.approvedContractPath(), ledgerPath, "", "main", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
 		t.Fatal(err)
 	}
-	return engine, statePath, ledgerPath, git, write
+	return engine, statePath, ledgerPath, source, write
 }
 
 // TestDrainStallEndToEnd drives the whole severed shape: the drain parks at
 // its deadline, the human answers resume:, the heal books the cycle as
 // honestly lost with the drain-stalled label, and the NEXT cycle measures
-// the committed tree — the ratchet banks the value one cycle late rather
+// the declared candidate — the ratchet banks the value one cycle late rather
 // than never.
 func TestDrainStallEndToEnd(t *testing.T) {
-	engine, statePath, ledgerPath, git, write := measurableDrainMission(t)
+	engine, statePath, ledgerPath, source, write := measurableDrainMission(t)
+	t.Cleanup(source.done)
 
-	// The stalled cycle's work landed in the tree before the drain wedged.
+	// The stalled cycle's work landed in the candidate before the drain wedged.
 	write("score.txt", "2", 0o644)
-	git("add", "score.txt")
-	git("commit", "-qm", "the stalled cycle's committed improvement")
+	improvedFiles := make(map[string][]byte, len(source.files))
+	for path, data := range source.files {
+		improvedFiles[path] = data
+	}
+	improvedFiles["score.txt"] = []byte("2")
+	source.candidateFiles = improvedFiles
+	source.candidateSHA = drainImprovedCandidateCommit
 
 	// 1) The drain parks: an unprovable survivor at an expired deadline.
 	writeUnprovableSurvivor(t, engine, "job-ghost", time.Now())
@@ -711,7 +715,12 @@ func TestDrainStallEndToEnd(t *testing.T) {
 
 	// 3) The heal books the reserved cycle distinguishably and clears the
 	//    label in the same conclude write.
+	reads := &strictWallReads{t: t, git: []wallGitReply{{
+		root: engine.Root, args: []string{"-C", engine.Root, "rev-parse", "HEAD"}, stdout: source.currentCandidateSHA() + "\n",
+	}}}
+	engine.wallReadFacts = reads
 	healed, err := engine.healReservedCycle(statePath, ledgerPath, readTestDoc(t, statePath))
+	reads.done()
 	if err != nil || !healed {
 		t.Fatalf("the resume heal must book the stalled cycle: healed=%v err=%v", healed, err)
 	}
@@ -728,9 +737,14 @@ func TestDrainStallEndToEnd(t *testing.T) {
 	// 4) The next cycle measures the committed tree and the ratchet banks it.
 	classification, observed, measurement, gatePassed := engine.measure(state)
 	if classification != "contract-improved" || !gatePassed {
-		t.Fatalf("the next cycle must measure the committed tree: %s %s gate=%v", classification, observed, gatePassed)
+		t.Fatalf("the next cycle must measure the improved candidate: %s %s gate=%v", classification, observed, gatePassed)
 	}
 	candidateSHA, _ := measurement["candidateSha"].(string)
+	metrics, _ := measurement["metrics"].(map[string]string)
+	guards, _ := measurement["guards"].(map[string]string)
+	if candidateSHA != drainImprovedCandidateCommit || metrics["score"] != "2" || guards["audit"] != "1" || observed != "score=2" {
+		t.Fatalf("the second declared candidate was not measured: candidate=%q observed=%q measurement=%v", candidateSHA, observed, measurement)
+	}
 	if _, err := engine.appendLedger(state, ledgerPath, 2, classification, candidateSHA, observed, nil); err != nil {
 		t.Fatal(err)
 	}

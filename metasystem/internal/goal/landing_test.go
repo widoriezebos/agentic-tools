@@ -7,33 +7,32 @@ import (
 	"time"
 )
 
-// landingReq is verbReq with a controllable clock.
-func landingReq(root, ulid, machine string, at time.Time) VerbRequest {
-	r := verbReq(root, ulid, machine)
+// landingReqFor is verbReqFor with a controllable clock.
+func landingReqFor(endpoint Endpoint, ulid, machine string, at time.Time) VerbRequest {
+	r := verbReqFor(endpoint, ulid, machine)
 	r.Now = at
 	return r
 }
 
 func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
+	a, b := fakeGoalEndpointPair(t)
 	budget := testBudget()
 	t0 := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
 	for _, id := range []string{"built-a", "next-b", "third-c"} {
-		if res, err := Open(landingReq(a, "01J5X00000000000000000NA0"+strings.ToUpper(id[len(id)-1:]), "mac-a", t0), id, "Work called "+id, OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(landingReqFor(a, "01J5X00000000000000000NA0"+strings.ToUpper(id[len(id)-1:]), "mac-a", t0), id, "Work called "+id, OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, res, err)
 		}
 	}
-	if res, err := claimApprovedForTest(t, landingReq(a, "01J5X00000000000000000NA10", "mac-a", t0.Add(time.Minute)), "built-a", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NA10", "mac-a", t0.Add(time.Minute)), "built-a", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim built-a: %+v %v", res, err)
 	}
 	// Another pair cannot enter the holder's claim into landing; a person
 	// has no such act either.
-	if res, err := LandReady(landingReq(b, "01J5X00000000000000000NA11", "mac-b", t0.Add(2*time.Minute)), "built-a"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "claim holder's own act") {
+	if res, err := LandReady(landingReqFor(b, "01J5X00000000000000000NA11", "mac-b", t0.Add(2*time.Minute)), "built-a"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "claim holder's own act") {
 		t.Fatalf("a foreign land-ready is refused: %+v %v", res, err)
 	}
-	human := landingReq(a, "01J5X00000000000000000NA12", "mac-a", t0.Add(2*time.Minute))
+	human := landingReqFor(a, "01J5X00000000000000000NA12", "mac-a", t0.Add(2*time.Minute))
 	human.Actor.Human = "Wido"
 	if _, err := LandReady(human, "built-a"); err == nil || !strings.Contains(err.Error(), "takes no --by") {
 		t.Fatalf("land-ready under --by is refused at the edge: %v", err)
@@ -41,11 +40,11 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 	// The holder enters landing: the claim stays, the record and the
 	// history line are written.
 	landAt := t0.Add(3 * time.Hour)
-	res, err := LandReady(landingReq(a, "01J5X00000000000000000NA13", "mac-a", landAt), "built-a")
+	res, err := LandReady(landingReqFor(a, "01J5X00000000000000000NA13", "mac-a", landAt), "built-a")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("land-ready: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, res.Tip)
+	tree, err := loadTreeFor(a, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,32 +59,32 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 		t.Fatal("a claimed goal with a Landing record is a landing claim")
 	}
 	// A repeat is nothing to do; the ledger does not move.
-	before := acceptedTip(t, a)
-	if res, err := LandReady(landingReq(a, "01J5X00000000000000000NA14", "mac-a", landAt.Add(time.Minute)), "built-a"); err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "already in landing") {
+	before := acceptedTipForEndpoint(t, a)
+	if res, err := LandReady(landingReqFor(a, "01J5X00000000000000000NA14", "mac-a", landAt.Add(time.Minute)), "built-a"); err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "already in landing") {
 		t.Fatalf("a repeated land-ready is nothing to do: %+v %v", res, err)
 	}
-	if acceptedTip(t, a) != before {
+	if acceptedTipForEndpoint(t, a) != before {
 		t.Fatal("the repeated land-ready moved the ledger")
 	}
 	// The machine's one claim is free: the next goal claims beside the
 	// landing goal and the tree validates.
-	if res, err := claimApprovedForTest(t, landingReq(a, "01J5X00000000000000000NA15", "mac-a", landAt.Add(2*time.Minute)), "next-b", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NA15", "mac-a", landAt.Add(2*time.Minute)), "next-b", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim beside the landing goal: %+v %v", res, err)
 	}
-	if err := ValidateCommit(a, acceptedTip(t, a)); err != nil {
+	if err := validateCommitFor(a, acceptedTipForEndpoint(t, a)); err != nil {
 		t.Fatalf("one landing claim beside one working claim must validate: %v", err)
 	}
 	// One landing slot per machine.
-	if res, err := LandReady(landingReq(a, "01J5X00000000000000000NA16", "mac-a", landAt.Add(3*time.Minute)), "next-b"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "one landing slot per machine") {
+	if res, err := LandReady(landingReqFor(a, "01J5X00000000000000000NA16", "mac-a", landAt.Add(3*time.Minute)), "next-b"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "one landing slot per machine") {
 		t.Fatalf("a second landing slot is refused: %+v %v", res, err)
 	}
 	// A third working claim is still over the quota.
-	if res, err := claimApprovedForTest(t, landingReq(a, "01J5X00000000000000000NA17", "mac-a", landAt.Add(4*time.Minute)), "third-c", budget); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "quota is one claim per machine") {
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NA17", "mac-a", landAt.Add(4*time.Minute)), "third-c", budget); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "quota is one claim per machine") {
 		t.Fatalf("the working claim still consumes the quota: %+v %v", res, err)
 	}
 	// The frontier lists the landing goal apart and continues the working
 	// claim; the current goal is the working claim.
-	projection, err := Project(endpointFor(a), true, landAt.Add(5*time.Minute))
+	projection, err := Project(a, true, landAt.Add(5*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,10 +112,10 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 	}
 	// Release the working claim: the landing goal alone resolves as current
 	// and the frontier offers the ready goal.
-	if res, err := Release(landingReq(a, "01J5X00000000000000000NA18", "mac-a", landAt.Add(6*time.Minute)), "next-b"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(landingReqFor(a, "01J5X00000000000000000NA18", "mac-a", landAt.Add(6*time.Minute)), "next-b"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", res, err)
 	}
-	projection, err = Project(endpointFor(a), true, landAt.Add(7*time.Minute))
+	projection, err = Project(a, true, landAt.Add(7*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,10 +130,10 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 		t.Fatalf("a landing goal never blocks the next claim: %+v frontier=%+v", selection, frontier)
 	}
 	// Done archives the goal with the land-ready line and without the slot.
-	if res, err := Done(landingReq(a, "01J5X00000000000000000NA19", "mac-a", landAt.Add(8*time.Minute)), "built-a", "Landed."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Done(landingReqFor(a, "01J5X00000000000000000NA19", "mac-a", landAt.Add(8*time.Minute)), "built-a", "Landed."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,16 +153,16 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 	// Park and release clear the slot too; the own pair's leave keeps the
 	// episode (section 2), so the record travels and the slot does not.
 	// third-c was approved by the refused claim above; the claim now fits.
-	if res, err := Claim(landingReq(a, "01J5X00000000000000000NA1A", "mac-a", landAt.Add(9*time.Minute)), "third-c"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(landingReqFor(a, "01J5X00000000000000000NA1A", "mac-a", landAt.Add(9*time.Minute)), "third-c"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim third-c: %+v %v", res, err)
 	}
-	if res, err := LandReady(landingReq(a, "01J5X00000000000000000NA1B", "mac-a", landAt.Add(10*time.Minute)), "third-c"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := LandReady(landingReqFor(a, "01J5X00000000000000000NA1B", "mac-a", landAt.Add(10*time.Minute)), "third-c"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("land-ready third-c: %+v %v", res, err)
 	}
-	if res, err := Park(landingReq(a, "01J5X00000000000000000NA1C", "mac-a", landAt.Add(11*time.Minute)), "third-c", "wait for the landing window"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Park(landingReqFor(a, "01J5X00000000000000000NA1C", "mac-a", landAt.Add(11*time.Minute)), "third-c", "wait for the landing window"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("park: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,28 +174,27 @@ func TestLandReadyOpensTheSlotBesideAWorkingClaim(t *testing.T) {
 
 func TestSamePairReclaimKeepsItsEpisodeAndAnotherPairStartsFresh(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
+	a, b := fakeGoalEndpointPair(t)
 	budget := testBudget()
 	t0 := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
-	if res, err := Open(landingReq(a, "01J5X00000000000000000NE00", "mac-a", t0), "kept", "Work the pair leaves and returns to.", OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(landingReqFor(a, "01J5X00000000000000000NE00", "mac-a", t0), "kept", "Work the pair leaves and returns to.", OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	claimAt := t0.Add(time.Minute)
-	if res, err := claimApprovedForTest(t, landingReq(a, "01J5X00000000000000000NE01", "mac-a", claimAt), "kept", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NE01", "mac-a", claimAt), "kept", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, acceptedTip(t, a))
+	tree, err := loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	first := *tree.Live["kept"].Claimed
 	// The own pair releases after an hour: the goal keeps the episode.
 	releaseAt := claimAt.Add(time.Hour)
-	if res, err := Release(landingReq(a, "01J5X00000000000000000NE02", "mac-a", releaseAt), "kept"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(landingReqFor(a, "01J5X00000000000000000NE02", "mac-a", releaseAt), "kept"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,16 +205,16 @@ func TestSamePairReclaimKeepsItsEpisodeAndAnotherPairStartsFresh(t *testing.T) {
 	if e := released.Episode; e.Machine != "mac-a" || e.Lineage != "lin-1" || e.AccountingRevision != first.AccountingRevision || e.EpisodeAt != first.EpisodeAt || e.EpisodeRevision != first.EpisodeRevision || e.IdleSeconds != 0 || e.Released != releaseAt.Format(time.RFC3339) {
 		t.Fatalf("the kept episode contradicts the claim it left: %+v claim=%+v", e, first)
 	}
-	if err := ValidateCommit(a, acceptedTip(t, a)); err != nil {
+	if err := validateCommitFor(a, acceptedTipForEndpoint(t, a)); err != nil {
 		t.Fatalf("an unclaimed goal with a kept episode validates: %v", err)
 	}
 	// The same pair re-claims two hours later: the accounting facts return
 	// and the gap is idle time.
 	reclaimAt := releaseAt.Add(2 * time.Hour)
-	if res, err := Claim(landingReq(a, "01J5X00000000000000000NE03", "mac-a", reclaimAt), "kept"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(landingReqFor(a, "01J5X00000000000000000NE03", "mac-a", reclaimAt), "kept"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("re-claim: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +225,7 @@ func TestSamePairReclaimKeepsItsEpisodeAndAnotherPairStartsFresh(t *testing.T) {
 	if c := reclaimed.Claimed; c.AccountingRevision != first.AccountingRevision || c.EpisodeAt != first.EpisodeAt || c.EpisodeRevision != first.EpisodeRevision || c.IdleSeconds != 7200 || c.Revision == first.Revision {
 		t.Fatalf("the re-claim did not continue the episode with the gap idle: %+v first=%+v", c, first)
 	}
-	if err := ValidateCommit(a, acceptedTip(t, a)); err != nil {
+	if err := validateCommitFor(a, acceptedTipForEndpoint(t, a)); err != nil {
 		t.Fatalf("a re-claimed goal validates: %v", err)
 	}
 	rendered := string(RenderFile(reclaimed))
@@ -235,10 +233,10 @@ func TestSamePairReclaimKeepsItsEpisodeAndAnotherPairStartsFresh(t *testing.T) {
 		t.Fatalf("idle seconds did not render on the claim: %s", rendered)
 	}
 	// A human set-budget keeps the idle seconds and the episode.
-	if res, err := setBudgetApprovedForTest(t, landingReq(a, "01J5X00000000000000000NE04", "mac-a", reclaimAt.Add(time.Minute)), "kept", Budget{ElapsedLimit: "6h", AttemptLimit: 6, ReservedJobMinutesLimit: 300, ActiveJobLimit: 2}); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := setBudgetApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NE04", "mac-a", reclaimAt.Add(time.Minute)), "kept", Budget{ElapsedLimit: "6h", AttemptLimit: 6, ReservedJobMinutesLimit: 300, ActiveJobLimit: 2}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-budget: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,20 +245,20 @@ func TestSamePairReclaimKeepsItsEpisodeAndAnotherPairStartsFresh(t *testing.T) {
 	}
 	// The own pair releases again; another pair claims and starts fresh.
 	secondRelease := reclaimAt.Add(2 * time.Minute)
-	if res, err := Release(landingReq(a, "01J5X00000000000000000NE05", "mac-a", secondRelease), "kept"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(landingReqFor(a, "01J5X00000000000000000NE05", "mac-a", secondRelease), "kept"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("second release: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if e := tree.Live["kept"].Episode; e == nil || e.IdleSeconds != 7200 || e.EpisodeAt != first.EpisodeAt {
 		t.Fatalf("the second release did not keep the continued episode: %+v", e)
 	}
-	if res, err := Claim(landingReq(b, "01J5X00000000000000000NE06", "mac-b", secondRelease.Add(time.Minute)), "kept"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(landingReqFor(b, "01J5X00000000000000000NE06", "mac-b", secondRelease.Add(time.Minute)), "kept"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("foreign claim: %+v %v", res, err)
 	}
-	tree, err = loadTree(b, acceptedTip(t, b))
+	tree, err = loadTreeFor(b, acceptedTipForEndpoint(t, b))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,17 +270,16 @@ func TestSamePairReclaimKeepsItsEpisodeAndAnotherPairStartsFresh(t *testing.T) {
 
 func TestParksDropOrKeepTheEpisodeByWhoParks(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	a, _ := fakeGoalEndpoint(t)
 	budget := testBudget()
 	t0 := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
-	if res, err := Open(landingReq(a, "01J5X00000000000000000NP00", "mac-a", t0), "paused", "Work the pair pauses.", OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(landingReqFor(a, "01J5X00000000000000000NP00", "mac-a", t0), "paused", "Work the pair pauses.", OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, landingReq(a, "01J5X00000000000000000NP01", "mac-a", t0.Add(time.Minute)), "paused", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NP01", "mac-a", t0.Add(time.Minute)), "paused", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, acceptedTip(t, a))
+	tree, err := loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,33 +287,33 @@ func TestParksDropOrKeepTheEpisodeByWhoParks(t *testing.T) {
 	// An own-pair park keeps the episode; unpark keeps it; the same pair's
 	// claim continues it with the pause idle.
 	parkAt := t0.Add(31 * time.Minute)
-	if res, err := Park(landingReq(a, "01J5X00000000000000000NP02", "mac-a", parkAt), "paused", "waiting on a fixture"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Park(landingReqFor(a, "01J5X00000000000000000NP02", "mac-a", parkAt), "paused", "waiting on a fixture"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("park: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if e := tree.Live["paused"].Episode; e == nil || e.Released != parkAt.Format(time.RFC3339) || e.EpisodeAt != first.EpisodeAt {
 		t.Fatalf("an own-pair park did not keep the episode: %+v", e)
 	}
-	if err := ValidateCommit(a, acceptedTip(t, a)); err != nil {
+	if err := validateCommitFor(a, acceptedTipForEndpoint(t, a)); err != nil {
 		t.Fatalf("a parked goal with a kept episode validates: %v", err)
 	}
-	if res, err := Unpark(landingReq(a, "01J5X00000000000000000NP03", "mac-a", parkAt.Add(10*time.Minute)), "paused"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Unpark(landingReqFor(a, "01J5X00000000000000000NP03", "mac-a", parkAt.Add(10*time.Minute)), "paused"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tree.Live["paused"].Episode == nil {
 		t.Fatal("unpark dropped the kept episode")
 	}
-	if res, err := Claim(landingReq(a, "01J5X00000000000000000NP04", "mac-a", parkAt.Add(30*time.Minute)), "paused"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(landingReqFor(a, "01J5X00000000000000000NP04", "mac-a", parkAt.Add(30*time.Minute)), "paused"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("re-claim after the pause: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,12 +321,12 @@ func TestParksDropOrKeepTheEpisodeByWhoParks(t *testing.T) {
 		t.Fatalf("park-and-reclaim did not continue the box: %+v", c)
 	}
 	// A person's park starts the box afresh: the episode is gone.
-	human := landingReq(a, "01J5X00000000000000000NP05", "mac-a", parkAt.Add(40*time.Minute))
+	human := landingReqFor(a, "01J5X00000000000000000NP05", "mac-a", parkAt.Add(40*time.Minute))
 	human.Actor.Human = "Wido"
 	if res, err := Park(human, "paused", "the person pauses it"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human park: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,31 +335,31 @@ func TestParksDropOrKeepTheEpisodeByWhoParks(t *testing.T) {
 	}
 	// A kept episode on an approved goal is dropped by the person's
 	// unapprove and by approve with a tuple.
-	unparkHuman := landingReq(a, "01J5X00000000000000000NP06", "mac-a", parkAt.Add(41*time.Minute))
+	unparkHuman := landingReqFor(a, "01J5X00000000000000000NP06", "mac-a", parkAt.Add(41*time.Minute))
 	unparkHuman.Actor.Human = "Wido"
-	unparkHuman.Authority = testHumanAuthority(t, a, unparkHuman.Now)
+	unparkHuman.Authority = testHumanAuthority(t, a.Root, unparkHuman.Now)
 	if res, err := Unpark(unparkHuman, "paused"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human unpark: %+v %v", res, err)
 	}
-	if res, err := Claim(landingReq(a, "01J5X00000000000000000NP07", "mac-a", parkAt.Add(42*time.Minute)), "paused"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(landingReqFor(a, "01J5X00000000000000000NP07", "mac-a", parkAt.Add(42*time.Minute)), "paused"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
-	if res, err := Release(landingReq(a, "01J5X00000000000000000NP08", "mac-a", parkAt.Add(50*time.Minute)), "paused"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(landingReqFor(a, "01J5X00000000000000000NP08", "mac-a", parkAt.Add(50*time.Minute)), "paused"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if tree.Live["paused"].Episode == nil {
 		t.Fatal("the release did not keep the episode")
 	}
-	withdraw := landingReq(a, "01J5X00000000000000000NP09", "mac-a", parkAt.Add(51*time.Minute))
+	withdraw := landingReqFor(a, "01J5X00000000000000000NP09", "mac-a", parkAt.Add(51*time.Minute))
 	withdraw.Actor.Human = "Wido"
-	if res, err := Unapprove(withdraw, "paused", "rethink the box", testHumanAuthority(t, a, withdraw.Now)); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Unapprove(withdraw, "paused", "rethink the box", testHumanAuthority(t, a.Root, withdraw.Now)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("unapprove: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,35 +370,34 @@ func TestParksDropOrKeepTheEpisodeByWhoParks(t *testing.T) {
 
 func TestSetBudgetKeepsTheLandingSlotAndUnapproveDropsIt(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	a, _ := fakeGoalEndpoint(t)
 	budget := testBudget()
 	t0 := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
-	if res, err := Open(landingReq(a, "01J5X00000000000000000NS00", "mac-a", t0), "slotted", "Built work.", OriginMain, "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(landingReqFor(a, "01J5X00000000000000000NS00", "mac-a", t0), "slotted", "Built work.", OriginMain, "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, landingReq(a, "01J5X00000000000000000NS01", "mac-a", t0.Add(time.Minute)), "slotted", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NS01", "mac-a", t0.Add(time.Minute)), "slotted", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
-	if res, err := LandReady(landingReq(a, "01J5X00000000000000000NS02", "mac-a", t0.Add(time.Hour)), "slotted"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := LandReady(landingReqFor(a, "01J5X00000000000000000NS02", "mac-a", t0.Add(time.Hour)), "slotted"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("land-ready: %+v %v", res, err)
 	}
-	if res, err := setBudgetApprovedForTest(t, landingReq(a, "01J5X00000000000000000NS03", "mac-a", t0.Add(61*time.Minute)), "slotted", Budget{ElapsedLimit: "6h", AttemptLimit: 6, ReservedJobMinutesLimit: 300, ActiveJobLimit: 2}); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := setBudgetApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NS03", "mac-a", t0.Add(61*time.Minute)), "slotted", Budget{ElapsedLimit: "6h", AttemptLimit: 6, ReservedJobMinutesLimit: 300, ActiveJobLimit: 2}); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-budget: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, acceptedTip(t, a))
+	tree, err := loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if f := tree.Live["slotted"]; f.Landing == nil || !f.IsLandingClaim() {
 		t.Fatalf("set-budget dropped the landing slot: %+v", f.Landing)
 	}
-	withdraw := landingReq(a, "01J5X00000000000000000NS04", "mac-a", t0.Add(62*time.Minute))
+	withdraw := landingReqFor(a, "01J5X00000000000000000NS04", "mac-a", t0.Add(62*time.Minute))
 	withdraw.Actor.Human = "Wido"
-	if res, err := Unapprove(withdraw, "slotted", "not this week", testHumanAuthority(t, a, withdraw.Now)); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Unapprove(withdraw, "slotted", "not this week", testHumanAuthority(t, a.Root, withdraw.Now)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("unapprove: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,20 +549,19 @@ func TestHandEditsOfLandingAndEpisodeFollowTheirVerbs(t *testing.T) {
 
 func TestRecoveryReplaysADeadOwnersLandReady(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X00000000000000000NR00", "mac-a"), "built", "Built work of a dead owner.", OriginMain, "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
+	a, _ := fakeGoalEndpoint(t)
+	if res, err := Open(verbReqFor(a, "01J5X00000000000000000NR00", "mac-a"), "built", "Built work of a dead owner.", OriginMain, "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000NR01", "mac-a"), "built", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, verbReqFor(a, "01J5X00000000000000000NR01", "mac-a"), "built", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
 	opid := Opid("01J5X00000000000000000NR02", "mac-a", "lin-1")
-	strandEntry(t, a, opid, PhaseCreated, Intent{Verb: "land-ready", Targets: []string{"built"}})
-	if _, err := Recover(endpointFor(a)); err != nil {
+	strandEntry(t, a.Root, opid, PhaseCreated, Intent{Verb: "land-ready", Targets: []string{"built"}})
+	if _, err := Recover(a); err != nil {
 		t.Fatal(err)
 	}
-	p, err := Project(endpointFor(a), true, time.Now())
+	p, err := Project(a, true, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -578,25 +573,25 @@ func TestRecoveryReplaysADeadOwnersLandReady(t *testing.T) {
 
 func TestResumeIsNotBlockedByALandingClaim(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
-	if result, err := Open(verbReq(root, "01J5X00000000000000000NX00", "mac-a"), "fenced-a", "Bound the stopped item.", OriginMain, "Run it."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000NX00", "mac-a"), "fenced-a", "Bound the stopped item.", OriginMain, "Run it."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open stopped goal: %+v %v", result, err)
 	}
-	claimA := verbReq(root, "01J5X00000000000000000NX01", "mac-a")
+	claimA := verbReqFor(endpoint, "01J5X00000000000000000NX01", "mac-a")
 	claimA.ClaimEpoch = 9
 	if result, err := claimApprovedForTest(t, claimA, "fenced-a", budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim stopped goal: %+v %v", result, err)
 	}
-	projection, err := Project(endpointFor(root), true, claimA.Now)
+	projection, err := Project(endpoint, true, claimA.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	goalA := projection.Tree.Live["fenced-a"]
 	stop := CloseStopRequest{
 		VerbRequest: VerbRequest{
-			Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
+			Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
 			Ulid: "01J5X00000000000000000NX02", Now: claimA.Now.Add(90 * time.Second), ClaimEpoch: 9,
 		},
 		GoalID: "fenced-a", StopID: "stop-fenced-a-r2-f1", Reason: StopReasonElapsedLimit,
@@ -605,7 +600,7 @@ func TestResumeIsNotBlockedByALandingClaim(t *testing.T) {
 	if result, err := CloseStop(stop); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("breach-stop goal A: %+v %v", result, err)
 	}
-	projection, err = Project(endpointFor(root), true, stop.Now)
+	projection, err = Project(endpoint, true, stop.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -621,22 +616,22 @@ func TestResumeIsNotBlockedByALandingClaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The machine's other claim is in landing: it does not block the resume.
-	if result, err := Open(verbReq(root, "01J5X00000000000000000NX03", "mac-a"), "landing-b", "Built work waiting to land.", OriginMain, "Land it."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000NX03", "mac-a"), "landing-b", "Built work waiting to land.", OriginMain, "Land it."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open landing goal: %+v %v", result, err)
 	}
-	claimB := verbReq(root, "01J5X00000000000000000NX04", "mac-a")
+	claimB := verbReqFor(endpoint, "01J5X00000000000000000NX04", "mac-a")
 	claimB.ClaimEpoch = 9
 	if result, err := claimApprovedForTest(t, claimB, "landing-b", budget); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim landing goal: %+v %v", result, err)
 	}
-	landReady := verbReq(root, "01J5X00000000000000000NX05", "mac-a")
+	landReady := verbReqFor(endpoint, "01J5X00000000000000000NX05", "mac-a")
 	landReady.Now = claimB.Now.Add(time.Second)
 	if result, err := LandReady(landReady, "landing-b"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("land-ready: %+v %v", result, err)
 	}
 	resume := ResumeRequest{
 		VerbRequest: VerbRequest{
-			Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "human-shell", Human: "wido"},
+			Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "human-shell", Human: "wido"},
 			Ulid: "01J5X00000000000000000NX06", Now: resumeAt, ClaimEpoch: 9,
 		},
 		GoalID: "fenced-a", Budget: budget,
@@ -645,116 +640,115 @@ func TestResumeIsNotBlockedByALandingClaim(t *testing.T) {
 	if result, err := Resume(resume); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("resume beside a landing claim: %+v %v", result, err)
 	}
-	if err := ValidateCommit(root, acceptedTip(t, root)); err != nil {
+	if err := validateCommitFor(endpoint, acceptedTipForEndpoint(t, endpoint)); err != nil {
 		t.Fatalf("a resumed working claim beside a landing claim validates: %v", err)
 	}
 }
 
 func TestOwnPairLeavesKeepTheEpisodeOnEveryPath(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	a, _ := fakeGoalEndpoint(t)
 	budget := testBudget()
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}
 	t0 := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
 	// Release, park, unpark, claim by the seat alone: the park of the
 	// unclaimed goal keeps the pair's own record.
-	if res, err := Open(landingReq(a, "01J5X00000000000000000NK00", "mac-a", t0), "kept-g", "Work the seat leaves twice.", OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(landingReqFor(a, "01J5X00000000000000000NK00", "mac-a", t0), "kept-g", "Work the seat leaves twice.", OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, landingReq(a, "01J5X00000000000000000NK01", "mac-a", t0.Add(time.Minute)), "kept-g", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NK01", "mac-a", t0.Add(time.Minute)), "kept-g", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, acceptedTip(t, a))
+	tree, err := loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	first := *tree.Live["kept-g"].Claimed
-	if res, err := Release(landingReq(a, "01J5X00000000000000000NK02", "mac-a", t0.Add(time.Hour)), "kept-g"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(landingReqFor(a, "01J5X00000000000000000NK02", "mac-a", t0.Add(time.Hour)), "kept-g"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", res, err)
 	}
-	if res, err := Park(landingReq(a, "01J5X00000000000000000NK03", "mac-a", t0.Add(2*time.Hour)), "kept-g", "wait a while"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Park(landingReqFor(a, "01J5X00000000000000000NK03", "mac-a", t0.Add(2*time.Hour)), "kept-g", "wait a while"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("park of the released goal: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if e := tree.Live["kept-g"].Episode; e == nil || e.Released != t0.Add(time.Hour).Format(time.RFC3339) {
 		t.Fatalf("the seat's park of its released goal dropped the kept episode: %+v", e)
 	}
-	if res, err := Unpark(landingReq(a, "01J5X00000000000000000NK04", "mac-a", t0.Add(3*time.Hour)), "kept-g"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Unpark(landingReqFor(a, "01J5X00000000000000000NK04", "mac-a", t0.Add(3*time.Hour)), "kept-g"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark: %+v %v", res, err)
 	}
-	if res, err := Claim(landingReq(a, "01J5X00000000000000000NK05", "mac-a", t0.Add(4*time.Hour)), "kept-g"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(landingReqFor(a, "01J5X00000000000000000NK05", "mac-a", t0.Add(4*time.Hour)), "kept-g"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("re-claim: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c := tree.Live["kept-g"].Claimed; c.AccountingRevision != first.AccountingRevision || c.EpisodeAt != first.EpisodeAt || c.IdleSeconds != 3*3600 {
 		t.Fatalf("release-park-unpark-claim reset the box: %+v first=%+v", c, first)
 	}
-	if res, err := Release(landingReq(a, "01J5X00000000000000000NK06", "mac-a", t0.Add(5*time.Hour)), "kept-g"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(landingReqFor(a, "01J5X00000000000000000NK06", "mac-a", t0.Add(5*time.Hour)), "kept-g"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", res, err)
 	}
 	// The park a seat's --blocks open records keeps the episode; the return
 	// keeps it; the same pair's claim continues it.
-	if res, err := Open(landingReq(a, "01J5X00000000000000000NK10", "mac-a", t0.Add(6*time.Hour)), "held-h", "Work a blocker parks.", OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(landingReqFor(a, "01J5X00000000000000000NK10", "mac-a", t0.Add(6*time.Hour)), "held-h", "Work a blocker parks.", OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open held-h: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, landingReq(a, "01J5X00000000000000000NK11", "mac-a", t0.Add(6*time.Hour+time.Minute)), "held-h", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NK11", "mac-a", t0.Add(6*time.Hour+time.Minute)), "held-h", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim held-h: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	heldFirst := *tree.Live["held-h"].Claimed
 	blockAt := t0.Add(7 * time.Hour)
-	if res, err := OpenRisked(landingReq(a, "01J5X00000000000000000NK12", "mac-a", blockAt), "fix-h", "The defect that blocks held-h.", OriginMain, "Fix it.", []string{"held-h"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := OpenRisked(landingReqFor(a, "01J5X00000000000000000NK12", "mac-a", blockAt), "fix-h", "The defect that blocks held-h.", OriginMain, "Fix it.", []string{"held-h"}, nil, risk, 0, "", &budget, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --blocks: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if held := tree.Live["held-h"]; held.State != StateParked || held.Episode == nil || held.Episode.Released != blockAt.Format(time.RFC3339) {
 		t.Fatalf("the blocker park dropped the seat's episode: state=%s episode=%+v", held.State, held.Episode)
 	}
-	if res, err := claimApprovedForTest(t, landingReq(a, "01J5X00000000000000000NK13", "mac-a", blockAt.Add(time.Minute)), "fix-h", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NK13", "mac-a", blockAt.Add(time.Minute)), "fix-h", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim the blocker: %+v %v", res, err)
 	}
-	if res, err := Done(landingReq(a, "01J5X00000000000000000NK14", "mac-a", blockAt.Add(30*time.Minute)), "fix-h", "Fixed."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Done(landingReqFor(a, "01J5X00000000000000000NK14", "mac-a", blockAt.Add(30*time.Minute)), "fix-h", "Fixed."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done the blocker: %+v %v", res, err)
 	}
-	if res, err := Claim(landingReq(a, "01J5X00000000000000000NK15", "mac-a", blockAt.Add(time.Hour)), "held-h"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Claim(landingReqFor(a, "01J5X00000000000000000NK15", "mac-a", blockAt.Add(time.Hour)), "held-h"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("re-claim the returned goal: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c := tree.Live["held-h"].Claimed; c.AccountingRevision != heldFirst.AccountingRevision || c.EpisodeAt != heldFirst.EpisodeAt || c.IdleSeconds != 3600 {
 		t.Fatalf("the blocker park and return reset the box: %+v first=%+v", c, heldFirst)
 	}
-	if res, err := Release(landingReq(a, "01J5X00000000000000000NK16", "mac-a", blockAt.Add(2*time.Hour)), "held-h"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(landingReqFor(a, "01J5X00000000000000000NK16", "mac-a", blockAt.Add(2*time.Hour)), "held-h"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release held-h: %+v %v", res, err)
 	}
 	// The arc cascades keep every member's episode; a single claim of a
 	// member continues it and the arc release keeps it again.
-	arcBed(t, a, "keep-arc", "ka", "NA")
-	tree, err = loadTree(a, acceptedTip(t, a))
+	arcBedFor(t, a, "keep-arc", "ka", "NA")
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	oneFirst := *tree.Live["ka-one"].Claimed
-	arcPark := verbReq(a, "01J5X00000000000000000NK20", "mac-a")
+	arcPark := verbReqFor(a, "01J5X00000000000000000NK20", "mac-a")
 	if res, err := ParkArc(arcPark, "ka-one", "pause the arc"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("park --arc: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -763,27 +757,27 @@ func TestOwnPairLeavesKeepTheEpisodeOnEveryPath(t *testing.T) {
 			t.Fatalf("park --arc dropped %s's episode: %+v", id, e)
 		}
 	}
-	if res, err := UnparkArc(verbReq(a, "01J5X00000000000000000NK21", "mac-a"), "ka-one"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := UnparkArc(verbReqFor(a, "01J5X00000000000000000NK21", "mac-a"), "ka-one"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark --arc: %+v %v", res, err)
 	}
-	reclaimOne := verbReq(a, "01J5X00000000000000000NK22", "mac-a")
+	reclaimOne := verbReqFor(a, "01J5X00000000000000000NK22", "mac-a")
 	reclaimOne.Now = arcPark.Now.Add(30 * time.Minute)
 	if res, err := Claim(reclaimOne, "ka-one"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim one member: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c := tree.Live["ka-one"].Claimed; c.AccountingRevision != oneFirst.AccountingRevision || c.IdleSeconds != 1800 {
 		t.Fatalf("park --arc and a member's claim reset the box: %+v first=%+v", c, oneFirst)
 	}
-	arcRelease := verbReq(a, "01J5X00000000000000000NK23", "mac-a")
+	arcRelease := verbReqFor(a, "01J5X00000000000000000NK23", "mac-a")
 	arcRelease.Now = reclaimOne.Now.Add(time.Hour)
 	if res, err := ReleaseArc(arcRelease, "ka-one"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release --arc: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -794,12 +788,11 @@ func TestOwnPairLeavesKeepTheEpisodeOnEveryPath(t *testing.T) {
 
 func TestLandReadyRefusesAFencedClaimAndAFencedLandingClaimKeepsItsSlot(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
 	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
 	fence := func(id, ulidClaim, ulidStop string, at time.Time) time.Time {
 		t.Helper()
-		claim := verbReq(root, ulidClaim, "mac-a")
+		claim := verbReqFor(endpoint, ulidClaim, "mac-a")
 		claim.Now = at
 		claim.ClaimEpoch = 9
 		if res, err := Claim(claim, id); err != nil || res.Outcome != OutcomeConfirmed {
@@ -809,14 +802,14 @@ func TestLandReadyRefusesAFencedClaimAndAFencedLandingClaimKeepsItsSlot(t *testi
 	}
 	stop := func(id, ulid string, at time.Time) {
 		t.Helper()
-		projection, err := Project(endpointFor(root), true, at)
+		projection, err := Project(endpoint, true, at)
 		if err != nil {
 			t.Fatal(err)
 		}
 		f := projection.Tree.Live[id]
 		request := CloseStopRequest{
 			VerbRequest: VerbRequest{
-				Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
+				Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"},
 				Ulid: ulid, Now: at, ClaimEpoch: 9,
 			},
 			GoalID: id, StopID: "stop-" + id + "-r" + fmt.Sprint(f.Claimed.Revision) + "-f1", Reason: StopReasonElapsedLimit,
@@ -828,25 +821,25 @@ func TestLandReadyRefusesAFencedClaimAndAFencedLandingClaimKeepsItsSlot(t *testi
 	}
 	t0 := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
 	for _, id := range []string{"fenced-a", "landing-c", "next-d"} {
-		if res, err := Open(landingReq(root, "01J5X00000000000000000NF0"+strings.ToUpper(id[len(id)-1:]), "mac-a", t0), id, "Work called "+id, OriginMain, "Run it."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(landingReqFor(endpoint, "01J5X00000000000000000NF0"+strings.ToUpper(id[len(id)-1:]), "mac-a", t0), id, "Work called "+id, OriginMain, "Run it."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, res, err)
 		}
-		approveGoalForTest(t, landingReq(root, "01J5X00000000000000000NF1"+strings.ToUpper(id[len(id)-1:]), "mac-a", t0), id, budget)
+		approveGoalForTest(t, landingReqFor(endpoint, "01J5X00000000000000000NF1"+strings.ToUpper(id[len(id)-1:]), "mac-a", t0), id, budget)
 	}
 	// land-ready refuses a fenced claim.
 	fence("fenced-a", "01J5X00000000000000000NF20", "", t0.Add(time.Minute))
 	stop("fenced-a", "01J5X00000000000000000NF21", t0.Add(3*time.Minute))
-	if res, err := LandReady(landingReq(root, "01J5X00000000000000000NF22", "mac-a", t0.Add(4*time.Minute)), "fenced-a"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "breach-stopped") {
+	if res, err := LandReady(landingReqFor(endpoint, "01J5X00000000000000000NF22", "mac-a", t0.Add(4*time.Minute)), "fenced-a"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "breach-stopped") {
 		t.Fatalf("land-ready of a fenced claim was not refused: %+v %v", res, err)
 	}
 	// A landing claim that is then fenced still holds the machine's one slot.
 	fence("landing-c", "01J5X00000000000000000NF30", "", t0.Add(5*time.Minute))
-	if res, err := LandReady(landingReq(root, "01J5X00000000000000000NF31", "mac-a", t0.Add(6*time.Minute)), "landing-c"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := LandReady(landingReqFor(endpoint, "01J5X00000000000000000NF31", "mac-a", t0.Add(6*time.Minute)), "landing-c"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("land-ready landing-c: %+v %v", res, err)
 	}
 	stop("landing-c", "01J5X00000000000000000NF32", t0.Add(8*time.Minute))
 	fence("next-d", "01J5X00000000000000000NF40", "", t0.Add(9*time.Minute))
-	if res, err := LandReady(landingReq(root, "01J5X00000000000000000NF41", "mac-a", t0.Add(10*time.Minute)), "next-d"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "one landing slot per machine") {
+	if res, err := LandReady(landingReqFor(endpoint, "01J5X00000000000000000NF41", "mac-a", t0.Add(10*time.Minute)), "next-d"); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "one landing slot per machine") {
 		t.Fatalf("a fenced landing claim gave up its slot: %+v %v", res, err)
 	}
 	// The tree says the same: a fenced landing claim and a landing claim on
@@ -869,28 +862,27 @@ func TestLandReadyRefusesAFencedClaimAndAFencedLandingClaimKeepsItsSlot(t *testi
 
 func TestReleaseStealAndSetArcClearTheLandingSlot(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
+	a, b := fakeGoalEndpointPair(t)
 	budget := testBudget()
 	t0 := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
 	enter := func(id, ulidOpen, ulidClaim, ulidLand string, at time.Time) {
 		t.Helper()
-		if res, err := Open(landingReq(a, ulidOpen, "mac-a", at), id, "Built work "+id, OriginMain, "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Open(landingReqFor(a, ulidOpen, "mac-a", at), id, "Built work "+id, OriginMain, "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", id, res, err)
 		}
-		if res, err := claimApprovedForTest(t, landingReq(a, ulidClaim, "mac-a", at.Add(time.Minute)), id, budget); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := claimApprovedForTest(t, landingReqFor(a, ulidClaim, "mac-a", at.Add(time.Minute)), id, budget); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("claim %s: %+v %v", id, res, err)
 		}
-		if res, err := LandReady(landingReq(a, ulidLand, "mac-a", at.Add(2*time.Minute)), id); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := LandReady(landingReqFor(a, ulidLand, "mac-a", at.Add(2*time.Minute)), id); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("land-ready %s: %+v %v", id, res, err)
 		}
 	}
 	// Release clears the slot and keeps the episode.
 	enter("built-e", "01J5X00000000000000000NR00", "01J5X00000000000000000NR01", "01J5X00000000000000000NR02", t0)
-	if res, err := Release(landingReq(a, "01J5X00000000000000000NR03", "mac-a", t0.Add(3*time.Minute)), "built-e"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Release(landingReqFor(a, "01J5X00000000000000000NR03", "mac-a", t0.Add(3*time.Minute)), "built-e"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, acceptedTip(t, a))
+	tree, err := loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -899,12 +891,12 @@ func TestReleaseStealAndSetArcClearTheLandingSlot(t *testing.T) {
 	}
 	// A steal clears the slot with the fresh owner's bind.
 	enter("built-f", "01J5X00000000000000000NR10", "01J5X00000000000000000NR11", "01J5X00000000000000000NR12", t0.Add(10*time.Minute))
-	steal := landingReq(b, "01J5X00000000000000000NR13", "mac-b", t0.Add(13*time.Minute))
+	steal := landingReqFor(b, "01J5X00000000000000000NR13", "mac-b", t0.Add(13*time.Minute))
 	steal.Actor.Human = "Wido"
 	if res, err := Steal(steal, "built-f"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("steal: %+v %v", res, err)
 	}
-	tree, err = loadTree(b, acceptedTip(t, b))
+	tree, err = loadTreeFor(b, acceptedTipForEndpoint(t, b))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -913,22 +905,22 @@ func TestReleaseStealAndSetArcClearTheLandingSlot(t *testing.T) {
 	}
 	// set-arc releases the source claim as it moves an arc member to another
 	// arc: the slot goes with the claim.
-	if res, err := Open(landingReq(a, "01J5X00000000000000000NR20", "mac-a", t0.Add(20*time.Minute)), "built-g", "Built work built-g", OriginMain, "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(landingReqFor(a, "01J5X00000000000000000NR20", "mac-a", t0.Add(20*time.Minute)), "built-g", "Built work built-g", OriginMain, "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open built-g: %+v %v", res, err)
 	}
-	if res, err := SetArc(landingReq(a, "01J5X00000000000000000NR24", "mac-a", t0.Add(20*time.Minute+30*time.Second)), "built-g", "source-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := SetArc(landingReqFor(a, "01J5X00000000000000000NR24", "mac-a", t0.Add(20*time.Minute+30*time.Second)), "built-g", "source-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-arc into the source arc: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, landingReq(a, "01J5X00000000000000000NR21", "mac-a", t0.Add(21*time.Minute)), "built-g", budget); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000NR21", "mac-a", t0.Add(21*time.Minute)), "built-g", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim built-g: %+v %v", res, err)
 	}
-	if res, err := LandReady(landingReq(a, "01J5X00000000000000000NR22", "mac-a", t0.Add(22*time.Minute)), "built-g"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := LandReady(landingReqFor(a, "01J5X00000000000000000NR22", "mac-a", t0.Add(22*time.Minute)), "built-g"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("land-ready built-g: %+v %v", res, err)
 	}
-	if res, err := SetArc(landingReq(a, "01J5X00000000000000000NR23", "mac-a", t0.Add(23*time.Minute)), "built-g", "moved-arc"); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := SetArc(landingReqFor(a, "01J5X00000000000000000NR23", "mac-a", t0.Add(23*time.Minute)), "built-g", "moved-arc"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-arc: %+v %v", res, err)
 	}
-	tree, err = loadTree(a, acceptedTip(t, a))
+	tree, err = loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -939,22 +931,21 @@ func TestReleaseStealAndSetArcClearTheLandingSlot(t *testing.T) {
 
 func TestAPersonsBudgetActsAndDoneDropTheKeptEpisode(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	seedLedger(t, a)
+	a, _ := fakeGoalEndpoint(t)
 	budget := testBudget()
 	t0 := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
-	if res, err := Open(landingReq(a, "01J5X00000000000000000ND00", "mac-a", t0), "boxed", "Work whose box a person resets.", OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(landingReqFor(a, "01J5X00000000000000000ND00", "mac-a", t0), "boxed", "Work whose box a person resets.", OriginMain, "Build it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	leave := func(ulidClaim, ulidRelease string, at time.Time) {
 		t.Helper()
-		if res, err := Claim(landingReq(a, ulidClaim, "mac-a", at), "boxed"); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Claim(landingReqFor(a, ulidClaim, "mac-a", at), "boxed"); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("claim: %+v %v", res, err)
 		}
-		if res, err := Release(landingReq(a, ulidRelease, "mac-a", at.Add(time.Minute)), "boxed"); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := Release(landingReqFor(a, ulidRelease, "mac-a", at.Add(time.Minute)), "boxed"); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("release: %+v %v", res, err)
 		}
-		tree, err := loadTree(a, acceptedTip(t, a))
+		tree, err := loadTreeFor(a, acceptedTipForEndpoint(t, a))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -964,7 +955,7 @@ func TestAPersonsBudgetActsAndDoneDropTheKeptEpisode(t *testing.T) {
 	}
 	episodeGone := func(what string) {
 		t.Helper()
-		tree, err := loadTree(a, acceptedTip(t, a))
+		tree, err := loadTreeFor(a, acceptedTipForEndpoint(t, a))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -972,28 +963,28 @@ func TestAPersonsBudgetActsAndDoneDropTheKeptEpisode(t *testing.T) {
 			t.Fatalf("%s kept the episode: %+v", what, f.Episode)
 		}
 	}
-	approveGoalForTest(t, landingReq(a, "01J5X00000000000000000ND01", "mac-a", t0), "boxed", budget)
+	approveGoalForTest(t, landingReqFor(a, "01J5X00000000000000000ND01", "mac-a", t0), "boxed", budget)
 	// set-budget acts on claimed work only, where no kept record lives; on
 	// the unclaimed goal it points at approve, and the record stays.
 	leave("01J5X00000000000000000ND02", "01J5X00000000000000000ND03", t0.Add(time.Minute))
-	if res, err := setBudgetApprovedForTest(t, landingReq(a, "01J5X00000000000000000ND04", "mac-a", t0.Add(3*time.Minute)), "boxed", Budget{ElapsedLimit: "6h", AttemptLimit: 6, ReservedJobMinutesLimit: 300, ActiveJobLimit: 2}); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "goal approve") {
+	if res, err := setBudgetApprovedForTest(t, landingReqFor(a, "01J5X00000000000000000ND04", "mac-a", t0.Add(3*time.Minute)), "boxed", Budget{ElapsedLimit: "6h", AttemptLimit: 6, ReservedJobMinutesLimit: 300, ActiveJobLimit: 2}); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "goal approve") {
 		t.Fatalf("set-budget on unclaimed work: %+v %v", res, err)
 	}
 	// A person's approve with a tuple.
 	leave("01J5X00000000000000000ND05", "01J5X00000000000000000ND06", t0.Add(4*time.Minute))
-	human := landingReq(a, "01J5X00000000000000000ND07", "mac-a", t0.Add(6*time.Minute))
+	human := landingReqFor(a, "01J5X00000000000000000ND07", "mac-a", t0.Add(6*time.Minute))
 	human.Actor.Human = "Wido"
 	tuple := Budget{ElapsedLimit: "8h", AttemptLimit: 8, ReservedJobMinutesLimit: 400, ActiveJobLimit: 2}
-	if res, err := Approve(human, []string{"boxed"}, &tuple, testHumanAuthority(t, a, human.Now)); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Approve(human, []string{"boxed"}, &tuple, testHumanAuthority(t, a.Root, human.Now)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("approve with a tuple: %+v %v", res, err)
 	}
 	episodeGone("approve with a tuple")
 	// Done archives without it.
 	leave("01J5X00000000000000000ND08", "01J5X00000000000000000ND09", t0.Add(7*time.Minute))
-	if res, err := Done(landingReq(a, "01J5X00000000000000000ND0A", "mac-a", t0.Add(9*time.Minute)), "boxed", "Concluded."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Done(landingReqFor(a, "01J5X00000000000000000ND0A", "mac-a", t0.Add(9*time.Minute)), "boxed", "Concluded."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("done: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, acceptedTip(t, a))
+	tree, err := loadTreeFor(a, acceptedTipForEndpoint(t, a))
 	if err != nil {
 		t.Fatal(err)
 	}

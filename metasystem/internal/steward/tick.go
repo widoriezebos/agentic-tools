@@ -8,10 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
@@ -87,7 +89,12 @@ type BreachStopReport struct {
 }
 
 func runBreachStopCustodian(repoRoot string, now time.Time) []BreachStopReport {
-	routes, err := dispatch.FindBreachStops(repoRoot, now)
+	return runBreachStopCustodianWithScanner(repoRoot, now, dispatch.FindBreachStops)
+}
+
+func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
+	scanner func(string, time.Time) ([]dispatch.StopRoute, error)) []BreachStopReport {
+	routes, err := scanner(repoRoot, now)
 	if err != nil {
 		return []BreachStopReport{{State: "FAILED", Detail: err.Error()}}
 	}
@@ -184,37 +191,117 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if err := sweepCounselorBrief(repoRoot, cfg.now()); err != nil {
 		return degradedTick(repoRoot, "counselor brief carriage failed: "+err.Error())
 	}
+	result, tickCompleted, returnErr = runTickAfterCustodial(repoRoot, cfg, census, generation, selfExact.Ref(), tickAttempt.AttemptSeq, goalStops, defaultTickContinuationDependencies())
+	return result, returnErr
+}
 
+type tickContinuationDependencies struct {
+	ledgerRepository *ledgerAttentionRepository
+	ledgerWriter     ledgerAttentionStateWriter
+	readMarks        func(string, ...string) ([]byte, error)
+	openWork         openWorkDependencies
+	resolveMachine   func(string) (string, error)
+	resolveLayout    func(string) (stateroot.Layout, error)
+	health           tickHealthDependencies
+}
+
+func defaultTickContinuationDependencies() tickContinuationDependencies {
+	return tickContinuationDependencies{
+		ledgerRepository: defaultLedgerAttentionRepository(),
+		ledgerWriter:     atomicfile.WriteText,
+		readMarks:        readMarksGit,
+		openWork: openWorkDependencies{
+			NewWorld:                  goal.NewWorld,
+			ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
+		},
+		resolveMachine: goal.ResolveMachine,
+		resolveLayout:  stateroot.ResolveLayout,
+		health: tickHealthDependencies{
+			evaluate: evaluateHealthRoles,
+			now:      tickHealthNow,
+			deliver:  deliver,
+		},
+	}
+}
+
+func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus, generation int, process identity.Ref, tickAttemptSeq int64, goalStops []BreachStopReport, dependencies tickContinuationDependencies) (TickResult, bool, error) {
 	// Close finished continuations first: the guard a reap frees must
 	// not suppress this same tick's decision.
 	reaped, err := ReapContinuations(repoRoot)
 	if err != nil {
-		return degradedTick(repoRoot, "reaping failed: "+err.Error())
+		result, degradedErr := degradedTick(repoRoot, "reaping failed: "+err.Error())
+		return result, false, degradedErr
 	}
-	ledgerAttempt, err := beginComponentAttempt(repoRoot, "ledger-attention", generation, selfExact.Ref(), cfg.now())
+	ledgerAttempt, err := beginComponentAttempt(repoRoot, "ledger-attention", generation, process, cfg.now())
 	if err != nil {
-		return TickResult{}, fmt.Errorf("record ledger-attention attempt: %w", err)
+		return TickResult{}, false, fmt.Errorf("record ledger-attention attempt: %w", err)
 	}
-	ledgerReport := RunLedgerAttention(repoRoot, cfg.now())
+	ledgerReport := runLedgerAttentionWithRepositoryAndWriter(repoRoot, cfg.now(), dependencies.ledgerRepository, dependencies.ledgerWriter)
 	ledgerResult, ledgerOutcome, ledgerEvidence := ComponentOK, "PASS_COMPLETE", ledgerReport.Outcome
 	if ledgerReport.Outcome == "failed" {
 		ledgerResult, ledgerOutcome, ledgerEvidence = ComponentError, ledgerReport.FailureKind, ledgerReport.Failure
 	}
 	if _, err := completeComponentAttempt(repoRoot, "ledger-attention", generation, ledgerAttempt.AttemptSeq,
 		ledgerResult, ledgerOutcome, ledgerEvidence, nil, cfg.now()); err != nil {
-		return TickResult{}, fmt.Errorf("record ledger-attention completion: %w", err)
+		return TickResult{}, false, fmt.Errorf("record ledger-attention completion: %w", err)
 	}
 
 	evPath := EvidencePath(repoRoot)
 	prev, err := LoadEvidence(evPath)
 	if err != nil {
 		// A torn store degrades honestly: report, do not guess ages.
-		return degradedTick(repoRoot, err.Error())
+		result, degradedErr := degradedTick(repoRoot, err.Error())
+		return result, false, degradedErr
 	}
-	marks, err := CurrentMarks(repoRoot)
+	marks, err := currentMarksWithReader(repoRoot, dependencies.readMarks)
 	if err != nil {
-		return degradedTick(repoRoot, err.Error())
+		result, degradedErr := degradedTick(repoRoot, err.Error())
+		return result, false, degradedErr
 	}
+	result, err := decideTickWithDependencies(repoRoot, cfg, census, prev, marks, dependencies.openWork)
+	if err != nil {
+		return TickResult{}, false, err
+	}
+	result.Reaped = reaped
+	result.GoalStops = goalStops
+	result.LedgerAttention = ledgerReport
+	if err := narrateDigestWithReaders(repoRoot, prev, result, cfg.now(), dependencies.resolveMachine, dependencies.resolveLayout); err != nil {
+		return result, false, fmt.Errorf("write narrator digest: %w", err)
+	}
+	machine := "this machine"
+	if enrolled, err := dependencies.resolveMachine(repoRoot); err == nil {
+		machine = enrolled
+	}
+	var surfaced []string
+	for _, event := range ledgerReport.Pending {
+		if err := QueueNotification(repoRoot, ledgerAttentionNotification(event, machine)); err != nil {
+			return result, false, fmt.Errorf("queue ledger-attention notification: %w", err)
+		}
+		surfaced = append(surfaced, event.SourceID)
+	}
+	if err := PersistLedgerAttentionMark(repoRoot, surfaced); err != nil {
+		return result, false, fmt.Errorf("mark ledger-attention events surfaced: %w", err)
+	}
+	if err := SaveEvidence(repoRoot, evPath, result.Evidence); err != nil {
+		return result, false, err
+	}
+	// The running plain-English account rides every tick, strictly
+	// best-effort: the storyteller never fails the shift. What the
+	// narration notices also reaches the operator, one gated message
+	// per building condition.
+	narrateWithMachineReader(repoRoot, result, cfg, dependencies.resolveMachine)
+	ReachTheHuman(repoRoot, noticingsAt(repoRoot, result, cfg, cfg.now()))
+	if err := completeTickHealthWithDependencies(repoRoot, &result, generation, process, cfg.Now, dependencies.health); err != nil {
+		return result, false, err
+	}
+	if _, err := completeComponentAttempt(repoRoot, "steward-tick", generation, tickAttemptSeq,
+		ComponentOK, "PASS_COMPLETE", result.Health.FindingDigest, nil, cfg.now()); err != nil {
+		return result, false, fmt.Errorf("record tick completion: %w", err)
+	}
+	return result, true, nil
+}
+
+func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, prev Evidence, marks Marks, dependencies openWorkDependencies) (TickResult, error) {
 	ev := Observe(prev, marks)
 	// A standing provider outage pauses the aging, never the reset:
 	// progress during an outage still counts, but the absence of
@@ -228,7 +315,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 		ev = prev
 	}
 
-	d, workReason, err := decideNow(repoRoot, cfg, census, ev, providerOutage)
+	d, workReason, err := decideNowWithDependencies(repoRoot, cfg, census, ev, providerOutage, dependencies)
 	if err != nil {
 		return TickResult{}, err
 	}
@@ -244,57 +331,35 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 			return TickResult{}, err
 		}
 	}
-	result = TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
-		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark, GoalStops: goalStops,
-		LedgerAttention: ledgerReport}
-	if err := NarrateDigest(repoRoot, prev, result, cfg.now()); err != nil {
-		return result, fmt.Errorf("write narrator digest: %w", err)
-	}
-	machine := "this machine"
-	if enrolled, err := goal.ResolveMachine(repoRoot); err == nil {
-		machine = enrolled
-	}
-	var surfaced []string
-	for _, event := range ledgerReport.Pending {
-		if err := QueueNotification(repoRoot, ledgerAttentionNotification(event, machine)); err != nil {
-			return result, fmt.Errorf("queue ledger-attention notification: %w", err)
-		}
-		surfaced = append(surfaced, event.SourceID)
-	}
-	if err := PersistLedgerAttentionMark(repoRoot, surfaced); err != nil {
-		return result, fmt.Errorf("mark ledger-attention events surfaced: %w", err)
-	}
-	if err := SaveEvidence(repoRoot, evPath, ev); err != nil {
-		return result, err
-	}
-	// The running plain-English account rides every tick, strictly
-	// best-effort: the storyteller never fails the shift. What the
-	// narration notices also reaches the operator, one gated message
-	// per building condition.
-	Narrate(repoRoot, result, cfg)
-	ReachTheHuman(repoRoot, noticingsAt(repoRoot, result, cfg, cfg.now()))
-	if err := completeTickHealth(repoRoot, &result, generation, selfExact.Ref(), cfg.Now); err != nil {
-		return result, err
-	}
-	if _, err := completeComponentAttempt(repoRoot, "steward-tick", generation, tickAttempt.AttemptSeq,
-		ComponentOK, "PASS_COMPLETE", result.Health.FindingDigest, nil, cfg.now()); err != nil {
-		return result, fmt.Errorf("record tick completion: %w", err)
-	}
-	tickCompleted = true
-	return result, nil
+	return TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
+		ProviderOutage: providerOutage, Outage: outageMark}, nil
 }
 
 // completeTickHealth performs the mandatory end of every tick: one durable
 // health observation, one durable narration line, and a queued alert whenever
 // the observation's dead or persistent-unknown boundary requires one.
 func completeTickHealth(repoRoot string, result *TickResult, generation int, process identity.Ref, now time.Time) error {
+	return completeTickHealthWithDependencies(repoRoot, result, generation, process, now, tickHealthDependencies{
+		evaluate: evaluateHealthRoles,
+		now:      tickHealthNow,
+		deliver:  deliver,
+	})
+}
+
+type tickHealthDependencies struct {
+	evaluate healthRoleEvaluator
+	now      func() time.Time
+	deliver  func(string, string) error
+}
+
+func completeTickHealthWithDependencies(repoRoot string, result *TickResult, generation int, process identity.Ref, now time.Time, dependencies tickHealthDependencies) error {
 	healthNow := func() time.Time {
 		if now.IsZero() {
-			return tickHealthNow()
+			return dependencies.now()
 		}
 		return now.UTC()
 	}
-	health, err := ObserveHealth(repoRoot, healthNow(), identity.KernelProber{})
+	health, err := observeHealthWithEvaluation(repoRoot, healthNow(), identity.KernelProber{}, dependencies.evaluate)
 	if err != nil {
 		return fmt.Errorf("compute health: %w", err)
 	}
@@ -316,10 +381,10 @@ func completeTickHealth(repoRoot string, result *TickResult, generation int, pro
 		ComponentOK, "EMITTED", line, nil, healthNow()); err != nil {
 		return fmt.Errorf("record narrator completion: %w", err)
 	}
-	if _, err := UpdateAlertEpisodes(repoRoot, health, line, healthNow()); err != nil {
+	if _, err := updateAlertEpisodesWith(repoRoot, health, line, healthNow(), dependencies.deliver); err != nil {
 		return fmt.Errorf("update health alert episodes: %w", err)
 	}
-	if err := UpdateSpendEpisodes(repoRoot, health.Spend, healthNow()); err != nil {
+	if err := updateSpendEpisodesWith(repoRoot, health.Spend, healthNow(), dependencies.deliver); err != nil {
 		return fmt.Errorf("update spend alert episodes: %w", err)
 	}
 	return nil
@@ -359,15 +424,9 @@ func degradedTick(repoRoot, reason string) (TickResult, error) {
 	return TickResult{Decision: d}, nil
 }
 
-// decideNow assembles one snapshot over the given evidence and
-// decides — without aging or persisting anything. The tick ages
-// first and calls this; revive's re-arbitration goes through
-// decideForRevival, so a re-check can never advance the clock it is
-// checking. The caller supplies the outage sample so one observation
-// governs its whole decision.
-func decideNow(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool) (Decision, string, error) {
+func decideNowWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool, dependencies openWorkDependencies) (Decision, string, error) {
 	cfg = cfg.withDefaults()
-	work, workReason, err := ReadOpenWork(repoRoot)
+	work, workReason, err := readOpenWorkWithDependencies(repoRoot, dependencies)
 	if err != nil {
 		return Decision{}, "", err
 	}

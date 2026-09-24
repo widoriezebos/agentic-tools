@@ -3,7 +3,6 @@ package dispatch
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -11,13 +10,11 @@ import (
 )
 
 func TestPlanFollowUpRebaseBehindWithOverlap(t *testing.T) {
-	repo, worktree, base := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
+	repo, worktree, base, trunk, facts := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
 	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "shared.txt"), "trunk\n")
-	gitFollowUpRebase(t, repo, "add", "metasystem/shared.txt")
-	gitFollowUpRebase(t, repo, "commit", "-qm", "trunk overlap")
-	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
+	facts.touched[postureRangeKey{worktree, base, trunk}] = postureFact[map[string]struct{}]{value: posturePaths("metasystem/shared.txt")}
 
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
+	plan, err := planFollowUpRebase(repo, "chain-a", worktree, trunk, "", facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,14 +25,13 @@ func TestPlanFollowUpRebaseBehindWithOverlap(t *testing.T) {
 }
 
 func TestPlanFollowUpRebaseBehindWithoutOverlap(t *testing.T) {
-	repo, worktree, base := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
+	repo, worktree, base, trunk, facts := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
 	writeFollowUpRebaseFile(t, filepath.Join(worktree, "metasystem", "shared.txt"), "delegate\n")
 	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "other.txt"), "trunk\n")
-	gitFollowUpRebase(t, repo, "add", "metasystem/other.txt")
-	gitFollowUpRebase(t, repo, "commit", "-qm", "unrelated trunk change")
-	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
+	facts.touched[postureRangeKey{worktree, base, trunk}] = postureFact[map[string]struct{}]{value: posturePaths("metasystem/other.txt")}
+	facts.tracked[worktree] = postureFact[map[string]struct{}]{value: posturePaths("metasystem/shared.txt")}
 
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
+	plan, err := planFollowUpRebase(repo, "chain-a", worktree, trunk, "", facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,8 +44,8 @@ func TestPlanFollowUpRebaseBehindWithoutOverlap(t *testing.T) {
 }
 
 func TestPlanFollowUpRebaseNotBehind(t *testing.T) {
-	repo, worktree, head := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, head, "")
+	repo, worktree, head, _, facts := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
+	plan, err := planFollowUpRebase(repo, "chain-a", worktree, head, "", facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,32 +55,27 @@ func TestPlanFollowUpRebaseNotBehind(t *testing.T) {
 }
 
 func TestPlanFollowUpRebaseRefusesUnreadableRound(t *testing.T) {
-	repo, worktree, _ := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
+	repo, worktree, _, trunk, facts := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
 	returnPath := filepath.Join(repo, "artifacts", "agents", "chain-a", "rounds", "1", "return.json")
 	writeFollowUpRebaseFile(t, returnPath, "{not-json\n")
 	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "other.txt"), "trunk\n")
-	gitFollowUpRebase(t, repo, "add", "metasystem/other.txt")
-	gitFollowUpRebase(t, repo, "commit", "-qm", "trunk movement")
-	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
 
-	_, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
+	_, err := planFollowUpRebase(repo, "chain-a", worktree, trunk, "", facts)
 	if err == nil || !strings.Contains(err.Error(), "cannot decode chain chain-a round 1 return") {
 		t.Fatalf("unreadable round error = %v", err)
 	}
 }
 
 func TestPlanFollowUpRebaseSkipsRoundsWithoutBoundaries(t *testing.T) {
-	repo, worktree, _ := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
+	repo, worktree, base, trunk, facts := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
 	writeFollowUpRebaseFile(t, filepath.Join(repo, "artifacts", "agents", "chain-a", "rounds", "2", "return.json"), `{"findings":[]}`+"\n")
 	if err := os.MkdirAll(filepath.Join(repo, "artifacts", "agents", "chain-a", "rounds", "3"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "shared.txt"), "trunk\n")
-	gitFollowUpRebase(t, repo, "add", "metasystem/shared.txt")
-	gitFollowUpRebase(t, repo, "commit", "-qm", "trunk boundary overlap")
-	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
+	facts.touched[postureRangeKey{worktree, base, trunk}] = postureFact[map[string]struct{}]{value: posturePaths("metasystem/shared.txt")}
 
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
+	plan, err := planFollowUpRebase(repo, "chain-a", worktree, trunk, "", facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,18 +85,17 @@ func TestPlanFollowUpRebaseSkipsRoundsWithoutBoundaries(t *testing.T) {
 }
 
 func TestPlanFollowUpRebaseUsesDirtyPathAbsentFromBoundaries(t *testing.T) {
-	repo, worktree, _ := newFollowUpRebaseFixture(t, []string{"metasystem/other.txt"})
+	repo, worktree, base, trunk, facts := newFollowUpRebaseFixture(t, []string{"metasystem/other.txt"})
 	writeFollowUpRebaseFile(t, filepath.Join(repo, "artifacts", "agents", "chain-a", "rounds", "2", "return.json"), `{"findings":[]}`+"\n")
 	if err := os.MkdirAll(filepath.Join(repo, "artifacts", "agents", "chain-a", "rounds", "3"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeFollowUpRebaseFile(t, filepath.Join(worktree, "metasystem", "shared.txt"), "delegate\n")
 	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "shared.txt"), "trunk\n")
-	gitFollowUpRebase(t, repo, "add", "metasystem/shared.txt")
-	gitFollowUpRebase(t, repo, "commit", "-qm", "trunk dirty-path overlap")
-	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
+	facts.touched[postureRangeKey{worktree, base, trunk}] = postureFact[map[string]struct{}]{value: posturePaths("metasystem/shared.txt")}
+	facts.tracked[worktree] = postureFact[map[string]struct{}]{value: posturePaths("metasystem/shared.txt")}
 
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
+	plan, err := planFollowUpRebase(repo, "chain-a", worktree, trunk, "", facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,20 +105,13 @@ func TestPlanFollowUpRebaseUsesDirtyPathAbsentFromBoundaries(t *testing.T) {
 }
 
 func TestPlanFollowUpRebaseReportsUnmergedPaths(t *testing.T) {
-	repo, worktree, _ := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
+	repo, worktree, _, trunk, facts := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
 	writeFollowUpRebaseFile(t, filepath.Join(worktree, "metasystem", "shared.txt"), "delegate\n")
-	gitFollowUpRebase(t, worktree, "stash", "push", "-qm", "unmerged-path-fixture")
-	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "shared.txt"), "trunk\n")
-	gitFollowUpRebase(t, repo, "add", "metasystem/shared.txt")
-	gitFollowUpRebase(t, repo, "commit", "-qm", "trunk conflict")
-	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
-	gitFollowUpRebase(t, worktree, "merge", "--ff-only", "-q", trunk)
-	command := exec.Command("git", "-C", worktree, "stash", "apply", "-q", "stash@{0}")
-	if output, err := command.CombinedOutput(); err == nil {
-		t.Fatalf("stash apply unexpectedly avoided a conflict: %s", output)
-	}
+	facts.heads[worktree] = postureFact[string]{value: trunk}
+	facts.behind[postureRangeKey{worktree, trunk, trunk}] = postureFact[int64]{value: 0}
+	facts.unmerged[worktree] = postureFact[map[string]struct{}]{value: posturePaths("metasystem/shared.txt")}
 
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
+	plan, err := planFollowUpRebase(repo, "chain-a", worktree, trunk, "", facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,16 +121,15 @@ func TestPlanFollowUpRebaseReportsUnmergedPaths(t *testing.T) {
 }
 
 func TestPlanFollowUpRebaseCitedTrunkPath(t *testing.T) {
-	repo, worktree, _ := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
+	repo, worktree, base, trunk, facts := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt"})
 	freshPath := "metasystem/plans/fresh.md"
 	writeFollowUpRebaseFile(t, filepath.Join(repo, freshPath), "fresh trunk plan\n")
-	gitFollowUpRebase(t, repo, "add", freshPath)
-	gitFollowUpRebase(t, repo, "commit", "-qm", "fresh trunk plan")
-	trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
+	facts.presence[posturePathKey{worktree, base, freshPath}] = postureFact[bool]{value: false}
+	facts.presence[posturePathKey{worktree, trunk, freshPath}] = postureFact[bool]{value: true}
 	brief := filepath.Join(t.TempDir(), "follow-up.md")
 	writeFollowUpRebaseFile(t, brief, "Authority: "+freshPath+"\n")
 
-	plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, brief)
+	plan, err := planFollowUpRebase(repo, "chain-a", worktree, trunk, brief, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +137,7 @@ func TestPlanFollowUpRebaseCitedTrunkPath(t *testing.T) {
 		plan.Reason != "the brief cites paths the trunk gained" {
 		t.Fatalf("cited trunk path plan = %+v", plan)
 	}
-	withoutBrief, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, "")
+	withoutBrief, err := planFollowUpRebase(repo, "chain-a", worktree, trunk, "", facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,15 +158,20 @@ func TestPlanFollowUpRebaseCitedPathsThatDoNotTrigger(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			repo, worktree, _ := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt", "metasystem/other.txt"})
+			repo, worktree, base, trunk, facts := newFollowUpRebaseFixture(t, []string{"metasystem/shared.txt", "metasystem/other.txt"})
 			writeFollowUpRebaseFile(t, filepath.Join(repo, test.trunkPath), "trunk change\n")
-			gitFollowUpRebase(t, repo, "add", test.trunkPath)
-			gitFollowUpRebase(t, repo, "commit", "-qm", "unrelated trunk change")
-			trunk := gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
+			facts.touched[postureRangeKey{worktree, base, trunk}] = postureFact[map[string]struct{}]{value: posturePaths(test.trunkPath)}
+			switch test.name {
+			case "already in worktree":
+				facts.presence[posturePathKey{worktree, base, "metasystem/plans/base.md"}] = postureFact[bool]{value: true}
+			case "absent from trunk":
+				facts.presence[posturePathKey{worktree, base, "metasystem/plans/never.md"}] = postureFact[bool]{value: false}
+				facts.presence[posturePathKey{worktree, trunk, "metasystem/plans/never.md"}] = postureFact[bool]{value: false}
+			}
 			brief := filepath.Join(t.TempDir(), "follow-up.md")
 			writeFollowUpRebaseFile(t, brief, test.brief)
 
-			plan, err := PlanFollowUpRebase(repo, "chain-a", worktree, trunk, brief)
+			plan, err := planFollowUpRebase(repo, "chain-a", worktree, trunk, brief, facts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -224,32 +211,37 @@ func TestValidateFollowUpRebaseFields(t *testing.T) {
 	}
 }
 
-func newFollowUpRebaseFixture(t *testing.T, boundary []string) (repo, worktree, base string) {
+func newFollowUpRebaseFixture(t *testing.T, boundary []string) (repo, worktree, base, trunk string, facts *postureFacts) {
 	t.Helper()
 	fixture := t.TempDir()
 	repo = filepath.Join(fixture, "repo")
 	worktree = filepath.Join(fixture, "worktree")
-	if err := os.MkdirAll(filepath.Join(repo, "metasystem"), 0o755); err != nil {
-		t.Fatal(err)
+	base, trunk = "base-tip", "trunk-tip"
+	for _, dir := range []string{repo, worktree} {
+		writeFollowUpRebaseFile(t, filepath.Join(dir, "metasystem", "shared.txt"), "base\n")
+		writeFollowUpRebaseFile(t, filepath.Join(dir, "metasystem", "other.txt"), "base\n")
+		writeFollowUpRebaseFile(t, filepath.Join(dir, "metasystem", "plans", "base.md"), "base\n")
 	}
-	gitFollowUpRebase(t, repo, "init", "-q", "-b", "main")
-	gitFollowUpRebase(t, repo, "config", "user.name", "fixture")
-	gitFollowUpRebase(t, repo, "config", "user.email", "fixture@example.invalid")
-	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "shared.txt"), "base\n")
-	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "other.txt"), "base\n")
-	writeFollowUpRebaseFile(t, filepath.Join(repo, "metasystem", "plans", "base.md"), "base\n")
-	gitFollowUpRebase(t, repo, "add", "metasystem")
-	gitFollowUpRebase(t, repo, "commit", "-qm", "base")
-	base = gitFollowUpRebase(t, repo, "rev-parse", "HEAD")
-	gitFollowUpRebase(t, repo, "worktree", "add", "-q", "--detach", worktree, base)
-
 	returnPath := filepath.Join(repo, "artifacts", "agents", "chain-a", "rounds", "1", "return.json")
 	encoded, err := json.Marshal(map[string]any{"diffBoundary": boundary})
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFollowUpRebaseFile(t, returnPath, string(encoded)+"\n")
-	return repo, worktree, base
+	facts = newPostureFacts()
+	facts.heads[worktree] = postureFact[string]{value: base}
+	facts.refs[postureRefKey{worktree, trunk}] = postureFact[string]{value: trunk}
+	facts.refs[postureRefKey{worktree, base}] = postureFact[string]{value: base}
+	facts.behind[postureRangeKey{worktree, base, trunk}] = postureFact[int64]{value: 1}
+	facts.behind[postureRangeKey{worktree, base, base}] = postureFact[int64]{value: 0}
+	facts.unmerged[worktree] = postureFact[map[string]struct{}]{value: posturePaths()}
+	facts.tracked[worktree] = postureFact[map[string]struct{}]{value: posturePaths()}
+	facts.untracked[worktree] = postureFact[map[string]struct{}]{value: posturePaths()}
+	facts.touched[postureRangeKey{worktree, base, trunk}] = postureFact[map[string]struct{}]{value: posturePaths()}
+	facts.prefixes[repo] = postureFact[string]{value: ""}
+	facts.directories[postureTreeKey{worktree, trunk}] = postureFact[map[string]bool]{value: map[string]bool{"metasystem": true, "artifacts": true}}
+	facts.directories[postureTreeKey{worktree, trunk + ":metasystem"}] = postureFact[map[string]bool]{value: map[string]bool{"plans": true}}
+	return repo, worktree, base, trunk, facts
 }
 
 func writeFollowUpRebaseFile(t *testing.T, path, content string) {
@@ -260,14 +252,4 @@ func writeFollowUpRebaseFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func gitFollowUpRebase(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, output)
-	}
-	return strings.TrimSpace(string(output))
 }

@@ -25,6 +25,7 @@ type conformanceFixture struct {
 	controller string
 	worktree   string
 	baseSha    string
+	raw        *rawConformanceFixture
 }
 
 func (f *conformanceFixture) git(dir string, args ...string) string {
@@ -130,7 +131,7 @@ func (f *conformanceFixture) writeReferencedFollowUp() string {
 
 func referencedExhaustionFixture(t *testing.T) (*conformanceRun, map[string]map[string]any, map[string]any, string) {
 	t.Helper()
-	f := newConformanceFixture(t)
+	f := newFileConformanceFixture(t)
 	f.writeImplementer("", "source.txt")
 	staged := f.writeReferencedFollowUp()
 	run := &conformanceRun{root: f.controller, rootJob: "impl"}
@@ -194,6 +195,11 @@ func (f *conformanceFixture) writeCritic(tree, materialID, exhaustion, model str
 }
 
 func (f *conformanceFixture) commitWorktree() {
+	if f.raw != nil {
+		f.raw.fact()
+		f.raw.committed = true
+		return
+	}
 	f.git(f.worktree, "add", ".")
 	f.git(f.worktree, "-c", "user.name=m", "-c", "user.email=m@x", "commit", "-qm", "change")
 }
@@ -220,7 +226,14 @@ func appendFile(t *testing.T, path, text string) {
 
 func expectConformance(t *testing.T, f *conformanceFixture, stage string, wantCode int, wantText string) (out, errs []string) {
 	t.Helper()
-	out, errs, code := Conformance(f.controller, stage, "impl")
+	var code int
+	if f.raw != nil {
+		f.raw.prepare(stage)
+		out, errs, code = conformanceWithRaw(f.controller, stage, "impl", ConformanceOptions{}, f.raw.answer, nil)
+		f.raw.consumed()
+	} else {
+		out, errs, code = Conformance(f.controller, stage, "impl")
+	}
 	if code != wantCode {
 		t.Fatalf("%s stage exit %d, want %d\nout: %v\nerr: %v", stage, code, wantCode, out, errs)
 	}
@@ -454,7 +467,7 @@ func TestSTR2CriticUnionDifferingClassRefuses(t *testing.T) {
 }
 
 func TestConformanceReviewAndCritiqueMerge(t *testing.T) {
-	f := newConformanceFixture(t)
+	f := newRawConformanceFixture(t)
 	appendFile(t, filepath.Join(f.worktree, "source.txt"), "changed\n")
 	f.writeImplementer("", "source.txt")
 
@@ -527,6 +540,42 @@ func TestConformanceReviewAndCritiqueMerge(t *testing.T) {
 }
 
 func TestConformanceReviewRefusesToOverwriteRoundEvidence(t *testing.T) {
+	root := t.TempDir()
+	roundDir := filepath.Join(root, "artifacts", "agents", "impl", "rounds", "1")
+	if err := os.MkdirAll(roundDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reviewPath := filepath.Join(roundDir, "review.json")
+	diffPath := filepath.Join(roundDir, "diff.patch")
+	const reviewedTree = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	originalReview := []byte("{\"reviewedTree\":\"" + reviewedTree + "\"}\n")
+	originalDiff := []byte("fixed review diff\n")
+	if err := os.WriteFile(reviewPath, originalReview, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(diffPath, originalDiff, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	want := fmt.Sprintf(
+		"conformance failure: immutable conformance review already exists: artifact='artifacts/agents/impl/rounds/1/review.json' reviewedTree='%s'; invoke conformance with the follow-up round's job id to write a new round, or leave the existing artifact untouched because it is chain evidence",
+		reviewedTree)
+	run := &conformanceRun{root: root}
+	_, errs, code := run.refuseExistingReview(reviewPath, originalReview)
+	if code != 1 || len(errs) != 1 || errs[0] != want {
+		t.Fatalf("overwrite refusal changed: code=%d\n got: %v\nwant: %s", code, errs, want)
+	}
+	t.Log(errs[0])
+	if after, err := os.ReadFile(reviewPath); err != nil || !bytes.Equal(after, originalReview) {
+		t.Fatalf("review.json changed after refusal: %v", err)
+	}
+	if after, err := os.ReadFile(diffPath); err != nil || !bytes.Equal(after, originalDiff) {
+		t.Fatalf("diff.patch changed after refusal: %v", err)
+	}
+}
+
+func TestReviewStageChangedSnapshotRoutesToImmutableEvidenceRefusal(t *testing.T) {
+	t.Parallel()
 	f := newConformanceFixture(t)
 	appendFile(t, filepath.Join(f.worktree, "source.txt"), "first review\n")
 	f.writeImplementer("", "source.txt")
@@ -578,7 +627,7 @@ func TestConformanceReviewIdenticalRerunIsIdempotent(t *testing.T) {
 }
 
 func TestConformanceReviewRefusesDelegateReceiptChange(t *testing.T) {
-	f := newConformanceFixture(t)
+	f := newRawConformanceFixture(t)
 	if err := os.MkdirAll(filepath.Join(f.worktree, "memory"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -600,13 +649,26 @@ func TestConformanceReviewRefusesDelegateReceiptChange(t *testing.T) {
 }
 
 func TestConformanceMissingCriticConfiguration(t *testing.T) {
-	f := newConformanceFixture(t)
-	os.WriteFile(filepath.Join(f.controller, "metasystem.conf"), []byte("metasystem.version=1\n"), 0o644)
-	appendFile(t, filepath.Join(f.worktree, "source.txt"), "changed\n")
+	f := newFileConformanceFixture(t)
+	if err := os.WriteFile(filepath.Join(f.controller, "metasystem.conf"), []byte("metasystem.version=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	f.writeImplementer("", "source.txt")
-	f.commitWorktree()
-	expectConformance(t, f, "merge", 1,
-		"the code-critic role is unconfigured; set the exact key role.code-critic.runtime")
+	run := &conformanceRun{root: f.controller, job: "impl", rootJob: "impl"}
+	run.record = run.loadConformanceRecords()["impl"]
+	if run.record == nil {
+		t.Fatal("implementer record is missing")
+	}
+	configuredRuntime := run.configGet("role.code-critic.runtime", "__missing__")
+	if configuredRuntime != "__missing__" {
+		t.Fatalf("unconfigured code-critic runtime = %q", configuredRuntime)
+	}
+	recordPath := filepath.Join(f.controller, "artifacts", "agents", "jobs", "impl.json")
+	_, errs, code := run.mergeCritique(recordPath, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", configuredRuntime, run.configGet("independence", ""))
+	want := "conformance failure: the code-critic role is unconfigured; set the exact key role.code-critic.runtime"
+	if code != 1 || len(errs) != 2 || errs[1] != want {
+		t.Fatalf("missing code-critic configuration: code=%d errs=%v; want %q", code, errs, want)
+	}
 }
 
 func TestConformanceWaivers(t *testing.T) {
@@ -643,7 +705,7 @@ func TestConformanceWaivers(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newConformanceFixture(t)
+			f := newRawConformanceFixture(t)
 			tc.change(f)
 			f.writeImplementer("prose-under-30", tc.boundary)
 			f.commitWorktree()
@@ -651,7 +713,7 @@ func TestConformanceWaivers(t *testing.T) {
 		})
 	}
 	t.Run("wrong class", func(t *testing.T) {
-		f := newConformanceFixture(t)
+		f := newRawConformanceFixture(t)
 		appendFile(t, filepath.Join(f.worktree, "docs", "note.md"), "small\n")
 		f.writeImplementer("prose-under-100", "docs/note.md")
 		f.commitWorktree()
@@ -661,7 +723,7 @@ func TestConformanceWaivers(t *testing.T) {
 }
 
 func TestMergeWaiverRefusesBehaviorPath(t *testing.T) {
-	f := newConformanceFixture(t)
+	f := newRawConformanceFixture(t)
 	appendFile(t, filepath.Join(f.worktree, "AGENTS.md"), "small behavior change\n")
 	f.writeImplementer("prose-under-30", "AGENTS.md")
 	f.commitWorktree()
@@ -775,7 +837,7 @@ func TestMergeWaiverAdoptedRootLayoutUsesShippedInventory(t *testing.T) {
 }
 
 func TestConformanceFactRefusals(t *testing.T) {
-	f := newConformanceFixture(t)
+	f := newFileConformanceFixture(t)
 	if _, errs, code := Conformance(f.controller, "review", "absent"); code != 1 ||
 		errs[0] != "conformance failure: unknown job: absent" {
 		t.Fatalf("unknown job wrong: %v %d", errs, code)
@@ -807,7 +869,7 @@ func TestConformanceProtectsDeclaredInstructionFile(t *testing.T) {
 		InstructionFile: "plans/NEWRT.md",
 	}))
 	defer restore()
-	f := newConformanceFixture(t)
+	f := newRawConformanceFixture(t)
 	os.MkdirAll(filepath.Join(f.worktree, "plans"), 0o755)
 	os.WriteFile(filepath.Join(f.worktree, "plans", "NEWRT.md"), []byte("changed\n"), 0o644)
 	f.writeImplementer("prose-under-30", "plans/NEWRT.md")

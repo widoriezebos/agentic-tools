@@ -172,11 +172,8 @@ func TestCadenceUnrelatedTipPublishesRevalidationOnly(t *testing.T) {
 	now, probe := cadenceTestStart.Add(time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "reused")
 	input, deps, _, executions := cadenceFixture(&now, probe)
 	input.Latest.TrunkCommit, input.Latest.TrunkTree = strings.Repeat("c", 40), strings.Repeat("d", 40)
-	root, _ := governedWeightBed(t, cadenceTestStart)
-	endpoint, endpointErr := goal.ResolveEndpoint(root)
-	if endpointErr != nil {
-		t.Fatal(endpointErr)
-	}
+	bed, _ := governedWeightFixture(t, cadenceTestStart)
+	endpoint := bed.endpoint
 	ulids := []string{"01J5X00000000000000000CR01", "01J5X00000000000000000CR02"}
 	deps.Ledger = GoalCadenceLedger{Endpoint: endpoint, Actor: goal.Actor{Machine: "bed-m1", Lineage: "cadence"}, MintULID: func() (string, error) {
 		ulid := ulids[0]
@@ -219,11 +216,8 @@ func TestCadenceTickJoinsLiveClaimAndReadsTerminalResult(t *testing.T) {
 func TestCadenceTickRecoversDeadClaimAfterLease(t *testing.T) {
 	now, probe := cadenceTestStart.Add(2*time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "failed")
 	input, deps, _, executions := cadenceFixture(&now, probe)
-	root, _ := governedWeightBed(t, cadenceTestStart)
-	endpoint, err := goal.ResolveEndpoint(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	bed, _ := governedWeightFixture(t, cadenceTestStart)
+	endpoint := bed.endpoint
 	ulids := []string{"01J5X00000000000000000CD01", "01J5X00000000000000000CD02", "01J5X00000000000000000CD03"}
 	ledger := GoalCadenceLedger{Endpoint: endpoint, Actor: goal.Actor{Machine: "bed-m1", Lineage: "cadence"}, MintULID: func() (string, error) {
 		ulid := ulids[0]
@@ -236,8 +230,13 @@ func TestCadenceTickRecoversDeadClaimAfterLease(t *testing.T) {
 		t.Fatalf("seed dead claim=%+v err=%v", first, claimErr)
 	}
 	result, err := RunCadenceTick(input, deps)
-	if err != nil || result.ClaimOutcome != goal.CadenceClaimAcquired || *executions != 1 || !result.Published {
-		t.Fatalf("recovery=%+v executions=%d err=%v", result, *executions, err)
+	projection, projectErr := goal.Project(endpoint, false, now)
+	if projectErr != nil {
+		t.Fatal(projectErr)
+	}
+	if err != nil || result.ClaimOutcome != goal.CadenceClaimAcquired || *executions != 1 || !result.Published ||
+		result.Status == nil || projection.Tree.CadenceClaim != nil || projection.Tree.Cadence == nil || projection.Tree.Cadence.RunID != result.Status.RunID {
+		t.Fatalf("recovery=%+v accepted cadence=%+v claim=%+v executions=%d err=%v project=%v", result, projection.Tree.Cadence, projection.Tree.CadenceClaim, *executions, err, projectErr)
 	}
 }
 
@@ -264,11 +263,8 @@ func TestCadencePublishedResultCompletesWhenAuthorityReleaseFails(t *testing.T) 
 func TestCadenceRedPublishesThroughTheBatchMapping(t *testing.T) {
 	now, probe := cadenceTestStart.Add(time.Hour), cadenceProbe("section/deep", strings.Repeat("1", 64), "failed")
 	input, deps, _, _ := cadenceFixture(&now, probe)
-	root, _ := governedWeightBed(t, cadenceTestStart)
-	endpoint, endpointErr := goal.ResolveEndpoint(root)
-	if endpointErr != nil {
-		t.Fatal(endpointErr)
-	}
+	bed, _ := governedWeightFixture(t, cadenceTestStart)
+	endpoint := bed.endpoint
 	ulids := []string{"01J5X00000000000000000RD01", "01J5X00000000000000000RD02"}
 	deps.Ledger = GoalCadenceLedger{Endpoint: endpoint, Actor: goal.Actor{Machine: "bed-m1", Lineage: "cadence"}, MintULID: func() (string, error) {
 		ulid := ulids[0]
@@ -291,11 +287,8 @@ func TestCadenceBlockedPrerequisitePublishesTerminalRed(t *testing.T) {
 	now := cadenceTestStart.Add(time.Hour)
 	probe := cadenceProbe("section/deep", strings.Repeat("1", 64), "not-run")
 	input, deps, _, executions := cadenceFixture(&now, probe)
-	root, _ := governedWeightBed(t, cadenceTestStart)
-	endpoint, err := goal.ResolveEndpoint(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	bed, _ := governedWeightFixture(t, cadenceTestStart)
+	endpoint := bed.endpoint
 	ulids := []string{"01J5X00000000000000000BD01", "01J5X00000000000000000BD02", "01J5X00000000000000000BD03"}
 	deps.Ledger = GoalCadenceLedger{Endpoint: endpoint, Actor: goal.Actor{Machine: "bed-m1", Lineage: "cadence"}, MintULID: func() (string, error) {
 		ulid := ulids[0]

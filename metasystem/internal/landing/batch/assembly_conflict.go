@@ -13,13 +13,19 @@ import (
 // apply to this tree. Other command, contract, or policy failures are not a
 // basis for returning a batch member.
 func patchCompositionConflict(root string, output []byte, applyErr error) bool {
+	return patchCompositionConflictWithUnmerged(root, output, applyErr, func(root string) ([]byte, error) {
+		command := exec.Command("git", "-C", root, "diff", "--name-only", "--diff-filter=U", "-z")
+		command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
+		return command.Output()
+	})
+}
+
+func patchCompositionConflictWithUnmerged(root string, output []byte, applyErr error, readUnmerged func(root string) ([]byte, error)) bool {
 	var exit *exec.ExitError
 	if !errors.As(applyErr, &exit) || exit.ExitCode() != 1 {
 		return false
 	}
-	command := exec.Command("git", "-C", root, "diff", "--name-only", "--diff-filter=U", "-z")
-	command.Env = gittree.ScrubbedEnviron("LC_ALL=C")
-	unmerged, err := command.Output()
+	unmerged, err := readUnmerged(root)
 	if err != nil {
 		return false
 	}

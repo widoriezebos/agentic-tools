@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -51,10 +50,7 @@ func TestRedGroupLogCarriesTheVerdictLineAndDigest(t *testing.T) {
 func runVerdictFixture(t *testing.T, name, status string) GroupResult {
 	t.Helper()
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	scriptPath := filepath.Join(root, "scripts", name+".sh")
+	scriptPath := filepath.ToSlash(filepath.Join("scripts", name+".sh"))
 	reportDir := "reports-" + name
 	reportPath := filepath.ToSlash(filepath.Join(reportDir, "tests.xml"))
 	testcase := fmt.Sprintf(`<testcase classname="fixture" name="%s"></testcase>`, name)
@@ -66,13 +62,11 @@ func runVerdictFixture(t *testing.T, name, status string) GroupResult {
 	if status == "skipped" {
 		nativeOutput = "printf 'unterminated native output'\n"
 	}
-	if err := testexec.WriteFile(scriptPath, []byte(fmt.Sprintf("#!/usr/bin/env bash\nset -eu\nmkdir -p %s\nprintf '%%s\\n' '%s' > %s\n%s", reportDir, report, reportPath, nativeOutput)), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	runTestResultGit(t, root, "init", "-q")
-	runTestResultGit(t, root, "add", "scripts")
-	runTestResultGit(t, root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture")
-	candidateTree := strings.TrimSpace(runTestResultGit(t, root, "rev-parse", "HEAD^{tree}"))
+	script := fmt.Sprintf("#!/usr/bin/env bash\nset -eu\nmkdir -p %s\nprintf '%%s\\n' '%s' > %s\n%s", reportDir, report, reportPath, nativeOutput)
+	candidateTree := verdictFixtureTree(t, name)
+	snapshot := newTestSnapshotFactory(t, root, candidateTree, map[string]testSnapshotEntry{
+		scriptPath: testSnapshotFile(script, 0o700),
+	}, 1)
 	group := testpolicy.Group{
 		ID:            name,
 		Kind:          "standard",
@@ -88,6 +82,7 @@ func runVerdictFixture(t *testing.T, name, status string) GroupResult {
 	return runTestGroup(context.Background(), TestRunRequest{
 		ProjectRoot:   root,
 		CandidateTree: candidateTree,
+		openCandidate: snapshot.open,
 		LogRoot:       filepath.Join(root, "logs"),
 	}, group)
 }

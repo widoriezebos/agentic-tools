@@ -3,6 +3,7 @@ package dispatch
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,36 +25,106 @@ type FollowUpRebasePlan struct {
 	UnmergedPaths    []string `json:"unmergedPaths"`
 }
 
+// worktreePosture supplies the facts shared by follow-up planning and cap text.
+type worktreePosture interface {
+	Head(worktree string) (string, error)
+	TrackedPaths(worktree string) (map[string]struct{}, error)
+	UntrackedPaths(worktree string) (map[string]struct{}, error)
+}
+
+type followUpRebasePosture interface {
+	worktreePosture
+	ResolveRef(worktree, ref string) (string, error)
+	BehindCount(worktree, from, to string) (int64, error)
+	UnmergedPaths(worktree string) (map[string]struct{}, error)
+	TrunkTouchedPaths(worktree, from, to string) (map[string]struct{}, error)
+	InstallPrefix(repoRoot string) (string, error)
+	TreeDirectories(worktree, treeish string) (map[string]bool, error)
+	PathPresent(worktree, treeish, path string) (bool, error)
+}
+
+type gitWorktreePosture struct{}
+
+func (gitWorktreePosture) Head(worktree string) (string, error) {
+	return gitOutput(worktree, "rev-parse", "HEAD")
+}
+func (gitWorktreePosture) ResolveRef(worktree, ref string) (string, error) {
+	return gitOutput(worktree, "rev-parse", ref)
+}
+
+type invalidBehindCountError struct{ text string }
+
+func (e invalidBehindCountError) Error() string {
+	return fmt.Sprintf("follow-up rebase planning received an invalid behind count %q", e.text)
+}
+func (gitWorktreePosture) BehindCount(worktree, from, to string) (int64, error) {
+	text, err := gitOutput(worktree, "rev-list", "--count", from+".."+to)
+	if err != nil {
+		return 0, err
+	}
+	count, err := strconv.ParseInt(text, 10, 64)
+	if err != nil || count < 0 {
+		return 0, invalidBehindCountError{text}
+	}
+	return count, nil
+}
+func (gitWorktreePosture) UnmergedPaths(worktree string) (map[string]struct{}, error) {
+	return gitPathSet(worktree, "diff", "--name-only", "-z", "--diff-filter=U")
+}
+func (gitWorktreePosture) TrackedPaths(worktree string) (map[string]struct{}, error) {
+	return gitPathSet(worktree, "diff", "--name-only", "-z", "--no-renames", "HEAD", "--")
+}
+func (gitWorktreePosture) UntrackedPaths(worktree string) (map[string]struct{}, error) {
+	return gitPathSet(worktree, "ls-files", "--others", "--exclude-standard", "-z", "--")
+}
+func (gitWorktreePosture) TrunkTouchedPaths(worktree, from, to string) (map[string]struct{}, error) {
+	return gitPathSet(worktree, "log", "--format=", "--name-only", "-z", "--no-renames", from+".."+to, "--")
+}
+func (gitWorktreePosture) InstallPrefix(repoRoot string) (string, error) {
+	return projectInstallPrefix(repoRoot)
+}
+func (gitWorktreePosture) TreeDirectories(worktree, treeish string) (map[string]bool, error) {
+	return treeDirectories(worktree, treeish)
+}
+func (gitWorktreePosture) PathPresent(worktree, treeish, path string) (bool, error) {
+	_, err := gitOutput(worktree, "cat-file", "-e", treeish+":"+path)
+	return err == nil, nil
+}
+
 // PlanFollowUpRebase computes the cumulative chain boundary and compares it
 // with every path touched by commits present on trunk but absent from the
 // worktree. Worktrees never commit, so their dirty path set carries every
 // round's live changes; readable boundaries additionally preserve paths that
 // a later round restored to HEAD.
 func PlanFollowUpRebase(repoRoot, rootJob, worktree, trunk, briefPath string) (FollowUpRebasePlan, error) {
+	return planFollowUpRebase(repoRoot, rootJob, worktree, trunk, briefPath, gitWorktreePosture{})
+}
+
+func planFollowUpRebase(repoRoot, rootJob, worktree, trunk, briefPath string, posture followUpRebasePosture) (FollowUpRebasePlan, error) {
 	if repoRoot == "" || worktree == "" || trunk == "" || !validJobID.MatchString(rootJob) {
 		return FollowUpRebasePlan{}, fmt.Errorf("follow-up rebase planning requires a repository root, chain root job, worktree, and trunk ref")
 	}
-	from, err := gitOutput(worktree, "rev-parse", "HEAD")
+	from, err := posture.Head(worktree)
 	if err != nil {
 		return FollowUpRebasePlan{}, fmt.Errorf("follow-up rebase planning cannot resolve the worktree head: %w", err)
 	}
-	to, err := gitOutput(worktree, "rev-parse", trunk)
+	to, err := posture.ResolveRef(worktree, trunk)
 	if err != nil {
 		return FollowUpRebasePlan{}, fmt.Errorf("follow-up rebase planning cannot resolve trunk ref %q: %w", trunk, err)
 	}
-	behindText, err := gitOutput(worktree, "rev-list", "--count", from+".."+to)
+	behind, err := posture.BehindCount(worktree, from, to)
 	if err != nil {
+		var invalid invalidBehindCountError
+		if errors.As(err, &invalid) {
+			return FollowUpRebasePlan{}, err
+		}
 		return FollowUpRebasePlan{}, fmt.Errorf("follow-up rebase planning cannot count trunk commits: %w", err)
-	}
-	behind, err := strconv.ParseInt(behindText, 10, 64)
-	if err != nil || behind < 0 {
-		return FollowUpRebasePlan{}, fmt.Errorf("follow-up rebase planning received an invalid behind count %q", behindText)
 	}
 	plan := FollowUpRebasePlan{
 		Reason: "the worktree already contains the trunk commit", BehindCount: behind,
 		RebasedFrom: from, RebasedTo: to, OverlappingPaths: []string{}, CitedTrunkPaths: []string{}, UnmergedPaths: []string{},
 	}
-	unmerged, err := gitPathSet(worktree, "diff", "--name-only", "-z", "--diff-filter=U")
+	unmerged, err := posture.UnmergedPaths(worktree)
 	if err != nil {
 		return FollowUpRebasePlan{}, fmt.Errorf("follow-up rebase planning cannot read unmerged worktree paths: %w", err)
 	}
@@ -69,14 +140,14 @@ func PlanFollowUpRebase(repoRoot, rootJob, worktree, trunk, briefPath string) (F
 	if err != nil {
 		return FollowUpRebasePlan{}, err
 	}
-	dirtyPaths, err := followUpDirtyPaths(worktree)
+	dirtyPaths, err := followUpDirtyPaths(worktree, posture)
 	if err != nil {
 		return FollowUpRebasePlan{}, err
 	}
 	for path := range dirtyPaths {
 		chainPaths[path] = struct{}{}
 	}
-	touched, err := gitPathSet(worktree, "log", "--format=", "--name-only", "-z", "--no-renames", from+".."+to, "--")
+	touched, err := posture.TrunkTouchedPaths(worktree, from, to)
 	if err != nil {
 		return FollowUpRebasePlan{}, fmt.Errorf("follow-up rebase planning cannot read trunk paths: %w", err)
 	}
@@ -86,7 +157,7 @@ func PlanFollowUpRebase(repoRoot, rootJob, worktree, trunk, briefPath string) (F
 		}
 	}
 	sort.Strings(plan.OverlappingPaths)
-	plan.CitedTrunkPaths, err = followUpCitedTrunkPaths(repoRoot, worktree, from, to, briefPath)
+	plan.CitedTrunkPaths, err = followUpCitedTrunkPaths(repoRoot, worktree, from, to, briefPath, posture)
 	if err != nil {
 		return FollowUpRebasePlan{}, err
 	}
@@ -102,7 +173,7 @@ func PlanFollowUpRebase(repoRoot, rootJob, worktree, trunk, briefPath string) (F
 	return plan, nil
 }
 
-func followUpCitedTrunkPaths(repoRoot, worktree, from, to, briefPath string) ([]string, error) {
+func followUpCitedTrunkPaths(repoRoot, worktree, from, to, briefPath string, posture followUpRebasePosture) ([]string, error) {
 	paths := []string{}
 	if briefPath == "" {
 		return paths, nil
@@ -112,18 +183,18 @@ func followUpCitedTrunkPaths(repoRoot, worktree, from, to, briefPath string) ([]
 		return nil, fmt.Errorf("follow-up rebase planning cannot read brief: %w", err)
 	}
 	var bounds BriefBounds
-	_, err = admitBriefBytes(data, func() (string, error) { return projectInstallPrefix(repoRoot) }, false,
+	_, err = admitBriefBytes(data, func() (string, error) { return posture.InstallPrefix(repoRoot) }, false,
 		func(_ []byte, admitted BriefBounds) error { bounds = admitted; return nil })
 	if err != nil {
 		return paths, nil
 	}
-	topDirectories, err := treeDirectories(worktree, to)
+	topDirectories, err := posture.TreeDirectories(worktree, to)
 	if err != nil {
 		return nil, fmt.Errorf("follow-up rebase planning cannot inspect the trunk tree: %w", err)
 	}
 	nestedDirectories := map[string]bool{}
 	if topDirectories["metasystem"] {
-		nestedDirectories, err = treeDirectories(worktree, to+":metasystem")
+		nestedDirectories, err = posture.TreeDirectories(worktree, to+":metasystem")
 		if err != nil {
 			return nil, fmt.Errorf("follow-up rebase planning cannot inspect the trunk metasystem tree: %w", err)
 		}
@@ -132,10 +203,18 @@ func followUpCitedTrunkPaths(repoRoot, worktree, from, to, briefPath string) ([]
 		if artifactAuthorityPath(candidate) {
 			continue
 		}
-		if _, fromErr := gitOutput(worktree, "cat-file", "-e", from+":"+candidate); fromErr == nil {
+		inFrom, fromErr := posture.PathPresent(worktree, from, candidate)
+		if fromErr != nil {
+			return nil, fromErr
+		}
+		if inFrom {
 			continue
 		}
-		if _, toErr := gitOutput(worktree, "cat-file", "-e", to+":"+candidate); toErr == nil {
+		inTo, toErr := posture.PathPresent(worktree, to, candidate)
+		if toErr != nil {
+			return nil, toErr
+		}
+		if inTo {
 			paths = append(paths, candidate)
 		}
 	}
@@ -205,12 +284,12 @@ func validFollowUpRebasePath(path string) bool {
 		!bytes.HasPrefix([]byte(path), []byte("../")) && filepath.Clean(path) == filepath.FromSlash(path)
 }
 
-func followUpDirtyPaths(worktree string) (map[string]struct{}, error) {
-	paths, err := gitPathSet(worktree, "diff", "--name-only", "-z", "--no-renames", "HEAD", "--")
+func followUpDirtyPaths(worktree string, posture worktreePosture) (map[string]struct{}, error) {
+	paths, err := posture.TrackedPaths(worktree)
 	if err != nil {
 		return nil, fmt.Errorf("follow-up rebase planning cannot read tracked worktree paths: %w", err)
 	}
-	untracked, err := gitPathSet(worktree, "ls-files", "--others", "--exclude-standard", "-z", "--")
+	untracked, err := posture.UntrackedPaths(worktree)
 	if err != nil {
 		return nil, fmt.Errorf("follow-up rebase planning cannot read untracked worktree paths: %w", err)
 	}

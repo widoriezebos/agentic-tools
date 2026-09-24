@@ -4,11 +4,90 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
+
+type promptHeldGoals struct {
+	goal.Repository
+	files   map[string][]byte
+	corrupt bool
+}
+
+func (r *promptHeldGoals) Capture(string) (string, error) {
+	return "", errors.New("canonical branch unavailable")
+}
+func (r *promptHeldGoals) Accepted() (string, bool, error) {
+	if r.corrupt {
+		return "", false, errors.New("accepted ref unreadable")
+	}
+	return strings.Repeat("a", 40), true, nil
+}
+func (r *promptHeldGoals) Files(commit string, prefixes ...string) (map[string][]byte, error) {
+	if commit != strings.Repeat("a", 40) {
+		return nil, errors.New("unexpected accepted commit")
+	}
+	return r.files, nil
+}
+func (r *promptHeldGoals) CommitTime(string) (time.Time, error) {
+	return time.Date(2026, 8, 23, 2, 0, 0, 0, time.UTC), nil
+}
+
+func TestAssemblePromptWithGoalSourceServesHeldGoal(t *testing.T) {
+	repo := promptSandbox(t)
+	const machine = "bed-m1"
+	history := []goal.HistoryLine{
+		{At: "2026-08-23T00:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAV-bed-00000000", Verb: "open", Actor: machine + "+coordinator", Targets: []string{"any"}, Keep: -1},
+		{At: "2026-08-23T01:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-bed-00000001", Verb: "claim", Actor: machine + "+coordinator", Targets: []string{"held"}, Keep: -1},
+	}
+	held := &goal.GoalFile{Id: "held", State: goal.StateClaimed, Intent: "Carry the claim", Origin: goal.OriginMain,
+		NextStep: "Continue it.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
+		Claimed: &goal.ClaimRecord{Machine: machine, Lineage: "coordinator", At: "2026-08-23T01:00:00Z"}, History: history}
+	raw := &promptHeldGoals{files: map[string][]byte{
+		"plans/goals/backlog.md": goal.RenderRoot(&goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}),
+		"plans/goals/held.md":    goal.RenderFile(held),
+	}}
+	source := &GoalSource{Endpoint: goal.Endpoint{Root: repo, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: raw}, Machine: machine}
+	output := filepath.Join(t.TempDir(), "prompt.md")
+	if err := AssemblePromptWithGoalSource(repo, "m1", "t1", output, source); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "## Serving goal\nheld — Carry the claim") {
+		t.Fatal("held goal did not enter the real prompt")
+	}
+	raw.corrupt = true
+	if err := AssemblePromptWithGoalSource(repo, "m1", "t1", output, source); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "## Serving goal") {
+		t.Fatal("corrupt accepted source served a goal")
+	}
+	source.Endpoint.Repository = nil
+	if err := AssemblePromptWithGoalSource(repo, "m1", "t1", output, source); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "## Serving goal") {
+		t.Fatal("incomplete source served a goal")
+	}
+}
 
 // promptSandbox lays out a minimal but complete mission tree under a temp repo
 // and returns the repo root. The two prompt-size settings are pinned through
@@ -303,6 +382,7 @@ func TestPromptConfigValueResolutionOrder(t *testing.T) {
 // annotations; detail lines filter against current chain-closed flags;
 // overflow and excluded lines are exempt.
 func TestPatiencePromptLines(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	ledger := filepath.Join(dir, "ledger.md")
 	if err := InitLedger(ledger, 5, 3); err != nil {

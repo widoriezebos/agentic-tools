@@ -61,6 +61,7 @@ type ParkParams struct {
 	Now             time.Time
 	Clock           func() time.Time
 	Pause           func(time.Duration)
+	RawSource       func(gittree.RawRequest) gittree.RawResult
 }
 
 type ParkResult struct {
@@ -258,8 +259,8 @@ func refuseSymlinkedParkPath(root, directory string) error {
 	return nil
 }
 
-func parkRepositoryRelative(root, path string) (string, error) {
-	top, err := (gittree.Workspace{Dir: root}).TopLevel()
+func parkRepositoryRelativeWithWorkspace(workspace gittree.Workspace, path string) (string, error) {
+	top, err := workspace.TopLevel()
 	if err != nil {
 		return "", err
 	}
@@ -291,7 +292,7 @@ func Park(params ParkParams) (ParkResult, error) {
 	if pause == nil {
 		pause = time.Sleep
 	}
-	workspace := gittree.Workspace{Dir: params.Root}
+	workspace := gittree.Workspace{Dir: params.Root, RawSource: params.RawSource}
 	target, err := workspace.ResolveCommit(params.TargetCommit)
 	if err != nil || target != params.TargetCommit {
 		return fail(fmt.Errorf("target is not one full commit object id"))
@@ -351,7 +352,7 @@ func Park(params ParkParams) (ParkResult, error) {
 	}
 	if existing, readErr := os.ReadFile(path); readErr == nil {
 		if bytes.Equal(existing, encoded) {
-			relative, _ := parkRepositoryRelative(params.Root, path)
+			relative, _ := parkRepositoryRelativeWithWorkspace(workspace, path)
 			return ParkResult{State: "parked", Reason: params.Reason, ParkRecord: relative}, nil
 		}
 		return fail(fmt.Errorf("publish park record: existing record has different bytes"))
@@ -383,7 +384,7 @@ func Park(params ParkParams) (ParkResult, error) {
 	if err := os.Link(temporaryPath, path); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			if existing, readErr := os.ReadFile(path); readErr == nil && bytes.Equal(existing, encoded) {
-				relative, _ := parkRepositoryRelative(params.Root, path)
+				relative, _ := parkRepositoryRelativeWithWorkspace(workspace, path)
 				return ParkResult{State: "parked", Reason: params.Reason, ParkRecord: relative}, nil
 			}
 		}
@@ -407,7 +408,7 @@ func Park(params ParkParams) (ParkResult, error) {
 	if err != nil || !bytes.Equal(readback, encoded) {
 		return fail(fmt.Errorf("park record read-back failed: %w", err))
 	}
-	relative, err := parkRepositoryRelative(params.Root, path)
+	relative, err := parkRepositoryRelativeWithWorkspace(workspace, path)
 	if err != nil {
 		return fail(err)
 	}

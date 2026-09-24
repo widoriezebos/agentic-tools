@@ -37,31 +37,29 @@ type MigrateOptions struct {
 	SyncMode string
 }
 
-// Migrate synthesizes and publishes the new ledger.
-// migrationComplete reports whether the tip already carries EXACTLY
-// this migration's root record — identity, mode, sync mode, and the
-// manifest digest all matching (identity+mode
-// alone let a rerun requesting the opposite sync mode or a different
-// manifest read as idempotent although that cutover never landed).
-// Any mismatch on a completed migration is the named confusion.
-func migrationComplete(root, tip, identity, mode, syncMode, manifestDigest string) (bool, error) {
+func migrationCompleteFor(endpoint Endpoint, tip, identity, mode, syncMode, manifestDigest string) (bool, error) {
 	// Absence and failure are different facts here exactly as they
 	// are for the ledger probe: only a tip PROVABLY carrying no root
 	// record reads as "not migrated"; a probe that cannot answer, or
 	// an existing record that does not parse, refuses — falling
 	// through would journal a migration against a world nobody read.
-	probe, err := gitIn(root, "ls-tree", "--name-only", tip, "--", goalsPrefix+"backlog.md")
+	rootPath := goalsPrefix + "backlog.md"
+	probe, err := readCommitFiles(endpoint, tip, rootPath)
 	if err != nil {
 		return false, fmt.Errorf("the tip's root record cannot be probed: %w", err)
 	}
-	if strings.TrimSpace(probe) == "" {
+	if _, present := probe[rootPath]; !present {
 		return false, nil
 	}
-	existing, err := gitIn(root, "cat-file", "-p", tip+":./"+goalsPrefix+"backlog.md")
+	files, err := readCommitFiles(endpoint, tip, rootPath)
 	if err != nil {
 		return false, fmt.Errorf("the tip's root record cannot be read: %w", err)
 	}
-	record, problems := ParseRoot([]byte(existing))
+	existing, present := files[rootPath]
+	if !present {
+		return false, fmt.Errorf("the tip's root record cannot be read: %s disappeared", rootPath)
+	}
+	record, problems := ParseRoot(existing)
 	if len(problems) != 0 {
 		return false, fmt.Errorf("the tip carries a root record that does not parse; the ledger needs repair, not a migration: %v", problems)
 	}
@@ -75,6 +73,31 @@ func migrationComplete(root, tip, identity, mode, syncMode, manifestDigest strin
 }
 
 func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
+	return migrateWithStatus(r, opts, migrationGitStatus)
+}
+
+func migrationGitStatus(root, path string) (string, error) {
+	return gitIn(root, "status", "--porcelain", "--untracked-files=all", "--", path)
+}
+
+func migrationCleanPaths(root, manifestPath string) ([]string, string) {
+	cleanPaths := []string{"plans/goals.md", "plans/goals-accepted.json", "plans/goals"}
+	manifestRel := ""
+	if manifestPath != "" {
+		if abs, absErr := filepath.Abs(manifestPath); absErr == nil {
+			if rootAbs, rootErr := filepath.Abs(root); rootErr == nil {
+				// IsLocal handles lawful in-root names beginning with two dots.
+				if rel, relErr := filepath.Rel(rootAbs, abs); relErr == nil && filepath.IsLocal(rel) {
+					manifestRel = filepath.ToSlash(rel)
+					cleanPaths = append(cleanPaths, rel)
+				}
+			}
+		}
+	}
+	return cleanPaths, manifestRel
+}
+
+func migrateWithStatus(r VerbRequest, opts MigrateOptions, status func(root, path string) (porcelain string, err error)) (PublishResult, error) {
 	if opts.Identity == "" {
 		return PublishResult{}, fmt.Errorf("migration needs its adoption identity — minted once, injected for determinism")
 	}
@@ -91,24 +114,9 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 	// the ledger, its baseline, the destination directory, or an
 	// in-repo manifest dies here, not inside the commit. Porcelain
 	// status covers modified AND untracked alike.
-	cleanPaths := []string{"plans/goals.md", "plans/goals-accepted.json", "plans/goals"}
-	manifestRel := ""
-	if opts.ManifestPath != "" {
-		if abs, absErr := filepath.Abs(opts.ManifestPath); absErr == nil {
-			if rootAbs, rootErr := filepath.Abs(r.Endpoint.Root); rootErr == nil {
-				// IsLocal, not a ".." prefix test: a lawful in-root
-				// name like "..review/manifest.md" must not be
-				// misread as external and skip the cleanliness and
-				// tip-side proofs.
-				if rel, relErr := filepath.Rel(rootAbs, abs); relErr == nil && filepath.IsLocal(rel) {
-					manifestRel = filepath.ToSlash(rel)
-					cleanPaths = append(cleanPaths, rel)
-				}
-			}
-		}
-	}
+	cleanPaths, manifestRel := migrationCleanPaths(r.Endpoint.Root, opts.ManifestPath)
 	for _, cleanPath := range cleanPaths {
-		out, stErr := gitIn(r.Endpoint.Root, "status", "--porcelain", "--untracked-files=all", "--", cleanPath)
+		out, stErr := status(r.Endpoint.Root, cleanPath)
 		if stErr != nil {
 			// A probe that cannot answer proves nothing: refusing
 			// beats reading failure as clean.
@@ -181,7 +189,7 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 		CleanupRefs(r.Endpoint, preNonce)
 		return PublishResult{}, fmt.Errorf("the rerun check cannot capture the canonical tip: %v", capErr)
 	}
-	done, doneErr := migrationComplete(r.Endpoint.Root, preTip, opts.Identity, mode, opts.SyncMode, manifestDigest)
+	done, doneErr := migrationCompleteFor(r.Endpoint, preTip, opts.Identity, mode, opts.SyncMode, manifestDigest)
 	CleanupRefs(r.Endpoint, preNonce)
 	if doneErr != nil {
 		return PublishResult{}, doneErr
@@ -203,7 +211,7 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 			// completed migration — never re-synthesized. A DIFFERENT
 			// identity or mode on the tip is a confusion refused by
 			// name (--manifest after bare included).
-			if done, doneErr := migrationComplete(r.Endpoint.Root, tip, opts.Identity, mode, opts.SyncMode, manifestDigest); doneErr != nil {
+			if done, doneErr := migrationCompleteFor(r.Endpoint, tip, opts.Identity, mode, opts.SyncMode, manifestDigest); doneErr != nil {
 				return nil, doneErr
 			} else if done {
 				// A racing migrator completed between the pre-journal
@@ -218,14 +226,20 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 			// concurrent legacy advance since the review makes the
 			// tip's bytes differ from the reviewed literal, and the
 			// migration refuses rather than silently discarding it.
-			tipSource, catErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":./plans/goals.md")
-			if catErr != nil {
+			sourceFiles, catErr := readCommitFiles(r.Endpoint, tip, "plans/goals.md")
+			tipSource, sourcePresent := sourceFiles["plans/goals.md"]
+			if catErr != nil || !sourcePresent {
+				if catErr == nil {
+					catErr = fmt.Errorf("plans/goals.md is absent from the canonical tip")
+				}
 				return nil, fmt.Errorf("the canonical tip carries no plans/goals.md; a completed migration reruns idempotently, anything else is a confusion: %v", catErr)
 			}
-			if got := sha256HexBytes([]byte(tipSource)); got != opts.SourceDigest {
+			if got := sha256HexBytes(tipSource); got != opts.SourceDigest {
 				return nil, fmt.Errorf("the canonical ledger advanced past the review: the tip's goals.md is %s, the reviewed literal is %s — re-review before migrating", got, opts.SourceDigest)
 			}
-			if accJSON, accErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":./plans/goals-accepted.json"); accErr != nil {
+			acceptedFiles, accErr := readCommitFiles(r.Endpoint, tip, "plans/goals-accepted.json")
+			accJSON, acceptedPresent := acceptedFiles["plans/goals-accepted.json"]
+			if accErr != nil || !acceptedPresent {
 				return nil, fmt.Errorf("migration precondition refused: the tip carries no goals-accepted.json baseline")
 			} else {
 				var accepted struct {
@@ -233,7 +247,7 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 					Ledger        string `json:"ledger"`
 					Sha256        string `json:"sha256"`
 				}
-				if jsonErr := json.Unmarshal([]byte(accJSON), &accepted); jsonErr != nil || accepted.Sha256 == "" {
+				if jsonErr := json.Unmarshal(accJSON, &accepted); jsonErr != nil || accepted.Sha256 == "" {
 					return nil, fmt.Errorf("migration precondition refused: the accepted baseline does not parse (schemaVersion/ledger/sha256)")
 				}
 				// The WHOLE baseline certifies:
@@ -243,11 +257,11 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 				if accepted.SchemaVersion != 1 {
 					return nil, fmt.Errorf("migration precondition refused: the accepted baseline's schemaVersion %d is not 1", accepted.SchemaVersion)
 				}
-				if accepted.Sha256 != sha256HexBytes([]byte(tipSource)) || accepted.Ledger != tipSource {
+				if accepted.Sha256 != sha256HexBytes(tipSource) || accepted.Ledger != string(tipSource) {
 					return nil, fmt.Errorf("migration precondition refused: goals.md diverges from its accepted baseline — run the legacy reconcile first")
 				}
 			}
-			if lsOut, lsErr := gitIn(r.Endpoint.Root, "ls-tree", "--name-only", tip, "--", goalsPrefix); lsErr == nil && strings.TrimSpace(lsOut) != "" {
+			if destinationFiles, lsErr := readCommitFiles(r.Endpoint, tip, goalsPrefix); lsErr == nil && len(destinationFiles) != 0 {
 				return nil, fmt.Errorf("migration precondition refused: %s already exists on the tip without a root record — not all-legacy: a confusion", goalsPrefix)
 			}
 			if manifestRel != "" {
@@ -256,15 +270,19 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 				// are separate moments, and a swap between them
 				// would publish amendments nobody reviewed under a
 				// digest the committed artifact does not carry.
-				tipManifest, mErr := gitIn(r.Endpoint.Root, "cat-file", "-p", tip+":./"+manifestRel)
-				if mErr != nil {
+				manifestFiles, mErr := readCommitFiles(r.Endpoint, tip, manifestRel)
+				tipManifest, manifestPresent := manifestFiles[manifestRel]
+				if mErr != nil || !manifestPresent {
+					if mErr == nil {
+						mErr = fmt.Errorf("%s is absent from the canonical tip", manifestRel)
+					}
 					return nil, fmt.Errorf("migration precondition refused: the manifest is not committed at the canonical tip: %v", mErr)
 				}
-				if sha256HexBytes([]byte(tipManifest)) != manifestDigest {
+				if sha256HexBytes(tipManifest) != manifestDigest {
 					return nil, fmt.Errorf("migration precondition refused: the manifest read for this migration differs from the one committed at the canonical tip")
 				}
 			}
-			legacy, problems := Parse([]byte(tipSource))
+			legacy, problems := Parse(tipSource)
 			if len(problems) > 0 {
 				lines := make([]string, len(problems))
 				for i, p := range problems {
@@ -288,7 +306,7 @@ func Migrate(r VerbRequest, opts MigrateOptions) (PublishResult, error) {
 			)
 			return changes, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }
 

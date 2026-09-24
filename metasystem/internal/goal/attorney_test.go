@@ -11,17 +11,17 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
-func attorneyBed(t *testing.T) string {
+func attorneyBed(t *testing.T) Endpoint {
 	t.Helper()
-	root := riskLocalRoot(t, "attorney-bed")
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
+	endpoint := riskLocalEndpoint(t)
+	if err := os.WriteFile(filepath.Join(endpoint.Root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return root
+	return endpoint
 }
 
-func attorneyReq(root string, n int, machine string) VerbRequest {
-	return obligationAuthorityVerbReq(root, fmt.Sprintf("01J5X00000000000000000PA%02d", n), machine)
+func attorneyReq(endpoint Endpoint, n int, machine string) VerbRequest {
+	return verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000PA%02d", n), machine)
 }
 
 func expectRefusal(t *testing.T, label string, res PublishResult, err error, needle string) {
@@ -42,8 +42,9 @@ func expectRefusal(t *testing.T, label string, res PublishResult, err error, nee
 // through the root record, and revokes.
 func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 	t.Parallel()
-	root := attorneyBed(t)
-	human := attorneyReq(root, 0, "mac-a")
+	endpoint := attorneyBed(t)
+	root := endpoint.Root
+	human := attorneyReq(endpoint, 0, "mac-a")
 	human.Actor.Human = "Wido"
 	proof := testHumanAuthority(t, root, human.Now)
 	expires := human.Now.AddDate(0, 0, 5).Format("2006-01-02")
@@ -51,7 +52,7 @@ func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("grant: %+v %v", res, err)
 	}
-	tree, err := loadTree(root, res.Tip)
+	tree, err := loadTreeFor(endpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,13 +82,13 @@ func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 	}
 
 	// A second entry coexists.
-	second := attorneyReq(root, 1, "mac-a")
+	second := attorneyReq(endpoint, 1, "mac-a")
 	second.Actor.Human = "Wido"
 	secondRes, err := Grant(second, proof, []uint8{1}, []string{"approve"}, expires)
 	if err != nil || secondRes.Outcome != OutcomeConfirmed {
 		t.Fatalf("second grant: %+v %v", secondRes, err)
 	}
-	if tree, err = loadTree(root, secondRes.Tip); err != nil {
+	if tree, err = loadTreeFor(endpoint, secondRes.Tip); err != nil {
 		t.Fatal(err)
 	}
 	if len(tree.Root.PowerOfAttorney) != 2 {
@@ -95,7 +96,7 @@ func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 	}
 
 	// The bounds: seven days, tier 1, the two verbs, a human, their own proof.
-	bad := attorneyReq(root, 2, "mac-a")
+	bad := attorneyReq(endpoint, 2, "mac-a")
 	bad.Actor.Human = "Wido"
 	res, err = Grant(bad, proof, []uint8{1}, []string{"approve"}, human.Now.AddDate(0, 0, 7).Format("2006-01-02"))
 	expectRefusal(t, "eight calendar days", res, err, "no entry lives longer than 7 days")
@@ -109,7 +110,7 @@ func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 	}
 	res, err = Grant(bad, proof, []uint8{1}, []string{"done"}, expires)
 	expectRefusal(t, "verb done", res, err, "covers approve,set-budget,unpark only")
-	res, err = Grant(attorneyReq(root, 3, "mac-a"), proof, []uint8{1}, []string{"approve"}, expires)
+	res, err = Grant(attorneyReq(endpoint, 3, "mac-a"), proof, []uint8{1}, []string{"approve"}, expires)
 	expectRefusal(t, "agent", res, err, "human-only")
 	// A proof that is not the human's own observed authority cannot grant:
 	// the relayed-word horizon has passed, so an unobserved relay stands in.
@@ -118,13 +119,13 @@ func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 	expectRefusal(t, "relayed word", res, err, "human")
 
 	// Revoke closes the entry; a second revoke has nothing to do.
-	revoke := attorneyReq(root, 4, "mac-a")
+	revoke := attorneyReq(endpoint, 4, "mac-a")
 	revoke.Actor.Human = "Wido"
 	res, err = Revoke(revoke, proof, entry.ID)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("revoke: %+v %v", res, err)
 	}
-	if tree, err = loadTree(root, res.Tip); err != nil {
+	if tree, err = loadTreeFor(endpoint, res.Tip); err != nil {
 		t.Fatal(err)
 	}
 	revoked, _ := rootAttorney(tree.Root, entry.ID)
@@ -134,7 +135,7 @@ func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 	if live, why := revoked.LiveAt(human.Now); live || !strings.Contains(why, "revoked") {
 		t.Fatalf("a revoked entry is not live: %v %s", live, why)
 	}
-	again := attorneyReq(root, 5, "mac-a")
+	again := attorneyReq(endpoint, 5, "mac-a")
 	again.Actor.Human = "Wido"
 	if res, err := Revoke(again, proof, entry.ID); err != nil || res.Outcome == OutcomeConfirmed {
 		t.Fatalf("a second revoke has nothing to do: %+v %v", res, err)
@@ -145,8 +146,9 @@ func TestGrantRecordsAPowerOfAttorneyWithinItsBounds(t *testing.T) {
 // own act, within the box, and is refused outside the entry.
 func TestApproveAndSetBudgetUnderPowerOfAttorney(t *testing.T) {
 	t.Parallel()
-	root := attorneyBed(t)
-	human := attorneyReq(root, 10, "mac-a")
+	endpoint := attorneyBed(t)
+	root := endpoint.Root
+	human := attorneyReq(endpoint, 10, "mac-a")
 	human.Actor.Human = "Wido"
 	proof := testHumanAuthority(t, root, human.Now)
 	expires := human.Now.AddDate(0, 0, 5).Format("2006-01-02")
@@ -154,7 +156,7 @@ func TestApproveAndSetBudgetUnderPowerOfAttorney(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("grant: %+v %v", res, err)
 	}
-	entry, err := ResolveAttorney(root, human.opid(), "approve", human.Now)
+	entry, err := resolveAttorneyForEndpoint(endpoint, human.opid(), "approve", human.Now)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -165,18 +167,18 @@ func TestApproveAndSetBudgetUnderPowerOfAttorney(t *testing.T) {
 		id   string
 		risk RiskRecord
 	}{{"small", low}, {"medium", mid}, {"proven-first", low}} {
-		if res, err := OpenRisked(asPerson(t, root, attorneyReq(root, 11+i, "mac-a")), open.id, "Work "+open.id+".", OriginHuman, "Do it.", nil, nil, open.risk, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := OpenRisked(asPerson(t, root, attorneyReq(endpoint, 11+i, "mac-a")), open.id, "Work "+open.id+".", OriginHuman, "Do it.", nil, nil, open.risk, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", open.id, res, err)
 		}
 	}
 
-	seat := attorneyReq(root, 20, "mac-a")
+	seat := attorneyReq(endpoint, 20, "mac-a")
 	seat.Attorney = &entry
 	res, err = Approve(seat, []string{"small"}, nil, nil)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("approve under attorney: %+v %v", res, err)
 	}
-	tree, err := loadTree(root, res.Tip)
+	tree, err := loadTreeFor(endpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +202,7 @@ func TestApproveAndSetBudgetUnderPowerOfAttorney(t *testing.T) {
 	expectRefusal(t, "--by beside --under", res, err, "seat's own")
 
 	// The claim, then set-budget within the box; over the box refuses.
-	holder := attorneyReq(root, 23, "mac-b")
+	holder := attorneyReq(endpoint, 23, "mac-b")
 	holder.ClaimEpoch = 6
 	if res, err := Claim(holder, "small"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
@@ -211,7 +213,7 @@ func TestApproveAndSetBudgetUnderPowerOfAttorney(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-budget under attorney: %+v %v", res, err)
 	}
-	if tree, err = loadTree(root, res.Tip); err != nil {
+	if tree, err = loadTreeFor(endpoint, res.Tip); err != nil {
 		t.Fatal(err)
 	}
 	f = tree.Live["small"]
@@ -226,16 +228,16 @@ func TestApproveAndSetBudgetUnderPowerOfAttorney(t *testing.T) {
 	// or revoked entry, and a standing proven approval.
 	res, err = Approve(withUlid(seat, 26), []string{"medium"}, nil, nil)
 	expectRefusal(t, "tier 2", res, err, "covers tier 1 only")
-	narrow := attorneyReq(root, 27, "mac-a")
+	narrow := attorneyReq(endpoint, 27, "mac-a")
 	narrow.Actor.Human = "Wido"
 	if res, err := Grant(narrow, proof, []uint8{1}, []string{"approve"}, expires); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("narrow grant: %+v %v", res, err)
 	}
-	narrowEntry, err := ResolveAttorney(root, narrow.opid(), "approve", human.Now)
+	narrowEntry, err := resolveAttorneyForEndpoint(endpoint, narrow.opid(), "approve", human.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResolveAttorney(root, narrow.opid(), "set-budget", human.Now); err == nil || !strings.Contains(err.Error(), "covers approve, not set-budget") {
+	if _, err := resolveAttorneyForEndpoint(endpoint, narrow.opid(), "set-budget", human.Now); err == nil || !strings.Contains(err.Error(), "covers approve, not set-budget") {
 		t.Fatalf("the entry's verbs bound the act: %v", err)
 	}
 	narrowSeat := withUlid(seat, 28)
@@ -246,17 +248,17 @@ func TestApproveAndSetBudgetUnderPowerOfAttorney(t *testing.T) {
 	late.Now = human.Now.AddDate(0, 0, 6)
 	res, err = Approve(late, []string{"medium"}, nil, nil)
 	expectRefusal(t, "expired", res, err, "expired "+expires)
-	if _, err := ResolveAttorney(root, entry.ID, "approve", late.Now); err == nil || !strings.Contains(err.Error(), "expired") {
+	if _, err := resolveAttorneyForEndpoint(endpoint, entry.ID, "approve", late.Now); err == nil || !strings.Contains(err.Error(), "expired") {
 		t.Fatalf("the command edge refuses an expired entry: %v", err)
 	}
-	proven := attorneyReq(root, 30, "mac-a")
+	proven := attorneyReq(endpoint, 30, "mac-a")
 	proven.Actor.Human = "Wido"
 	if res, err := Approve(proven, []string{"proven-first"}, &small, proof); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("proven approval: %+v %v", res, err)
 	}
 	res, err = Approve(withUlid(seat, 31), []string{"proven-first"}, nil, nil)
 	expectRefusal(t, "proven approval stands", res, err, "does not rewrite it")
-	revoke := attorneyReq(root, 32, "mac-a")
+	revoke := attorneyReq(endpoint, 32, "mac-a")
 	revoke.Actor.Human = "Wido"
 	if res, err := Revoke(revoke, proof, entry.ID); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("revoke: %+v %v", res, err)
@@ -324,26 +326,27 @@ func TestAnAttorneyActNeverRewritesAPersonsApproval(t *testing.T) {
 	}
 	// Through the verb: a person's proven approval on a claimed goal refuses
 	// an attorney set-budget, not only an attorney approve.
-	root := attorneyBed(t)
-	human := attorneyReq(root, 40, "mac-a")
+	endpoint := attorneyBed(t)
+	root := endpoint.Root
+	human := attorneyReq(endpoint, 40, "mac-a")
 	human.Actor.Human = "Wido"
 	proof := testHumanAuthority(t, root, human.Now)
 	small := Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	if res, err := Grant(human, proof, []uint8{1}, []string{"approve", "set-budget"}, human.Now.AddDate(0, 0, 3).Format("2006-01-02")); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("grant: %+v %v", res, err)
 	}
-	entry, err := ResolveAttorney(root, human.opid(), "set-budget", human.Now)
+	entry, err := resolveAttorneyForEndpoint(endpoint, human.opid(), "set-budget", human.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	low := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine"}
-	if res, err := OpenRisked(asPerson(t, root, attorneyReq(root, 41, "mac-a")), "kept", "Kept by the person.", OriginHuman, "Do it.", nil, nil, low, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := OpenRisked(asPerson(t, root, attorneyReq(endpoint, 41, "mac-a")), "kept", "Kept by the person.", OriginHuman, "Do it.", nil, nil, low, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	if res, err := claimApprovedForTest(t, attorneyReq(root, 42, "mac-a"), "kept", small); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := claimApprovedForTest(t, attorneyReq(endpoint, 42, "mac-a"), "kept", small); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", res, err)
 	}
-	seat := attorneyReq(root, 43, "mac-a")
+	seat := attorneyReq(endpoint, 43, "mac-a")
 	seat.Attorney = &entry
 	res, err := SetBudgetApproved(seat, "kept", Budget{ElapsedLimit: "1h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1, ReviewRoundLimit: 0}, nil)
 	expectRefusal(t, "set-budget over a proven approval", res, err, "does not rewrite it")
@@ -355,8 +358,9 @@ func TestAnAttorneyActNeverRewritesAPersonsApproval(t *testing.T) {
 // unpark refuse; recovery closes an interrupted attorney unpark by name.
 func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	t.Parallel()
-	root := attorneyBed(t)
-	human := attorneyReq(root, 40, "mac-a")
+	endpoint := attorneyBed(t)
+	root := endpoint.Root
+	human := attorneyReq(endpoint, 40, "mac-a")
 	human.Actor.Human = "Wido"
 	proof := testHumanAuthority(t, root, human.Now)
 	human.Authority = proof
@@ -365,7 +369,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	if err != nil || lifting.Outcome != OutcomeConfirmed {
 		t.Fatalf("grant unpark: %+v %v", lifting, err)
 	}
-	liftEntry, err := ResolveAttorney(root, human.opid(), "unpark", human.Now)
+	liftEntry, err := resolveAttorneyForEndpoint(endpoint, human.opid(), "unpark", human.Now)
 	if err != nil {
 		t.Fatalf("resolve unpark entry: %v", err)
 	}
@@ -374,7 +378,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	if err != nil || approveOnly.Outcome != OutcomeConfirmed {
 		t.Fatalf("grant approve: %+v %v", approveOnly, err)
 	}
-	approveEntry, err := ResolveAttorney(root, approving.opid(), "approve", approving.Now)
+	approveEntry, err := resolveAttorneyForEndpoint(endpoint, approving.opid(), "approve", approving.Now)
 	if err != nil {
 		t.Fatalf("resolve approve entry: %v", err)
 	}
@@ -385,7 +389,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 		id   string
 		risk RiskRecord
 	}{{"paused-one", low}, {"paused-two", mid}, {"held-one", low}, {"revoked-one", low}} {
-		if res, err := OpenRisked(asPerson(t, root, attorneyReq(root, 70+i, "mac-a")), open.id, "Work "+open.id+".", OriginHuman, "Do it.", nil, nil, open.risk, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
+		if res, err := OpenRisked(asPerson(t, root, attorneyReq(endpoint, 70+i, "mac-a")), open.id, "Work "+open.id+".", OriginHuman, "Do it.", nil, nil, open.risk, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", open.id, res, err)
 		}
 	}
@@ -394,7 +398,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	if res, err := Park(park, "paused-one", "wait for the vendor's 1.2 release"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("human park: %+v %v", res, err)
 	}
-	seat := attorneyReq(root, 46, "mac-a")
+	seat := attorneyReq(endpoint, 46, "mac-a")
 	// A bare seat unpark still refuses; an entry without the verb refuses;
 	// an empty reason refuses at the edge.
 	expectRefusal(t, "bare unpark", mustPublish(Unpark(seat, "paused-one")), nil, "lifting a human's pause is a human act")
@@ -410,7 +414,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark under attorney: %+v %v", res, err)
 	}
-	tree, err := loadTree(root, res.Tip)
+	tree, err := loadTreeFor(endpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +439,7 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	if err != nil || narrow.Outcome != OutcomeConfirmed {
 		t.Fatalf("grant a tier-2 unpark entry: %+v %v", narrow, err)
 	}
-	narrowEntry, err := ResolveAttorney(root, narrowing.opid(), "unpark", narrowing.Now)
+	narrowEntry, err := resolveAttorneyForEndpoint(endpoint, narrowing.opid(), "unpark", narrowing.Now)
 	if err != nil {
 		t.Fatalf("resolve the tier-2 entry: %v", err)
 	}
@@ -458,13 +462,13 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 		t.Fatalf("unpark after the blocker is done: %+v %v", res, err)
 	}
 	// A goal that is not parked refuses, and a claimed goal keeps its fence.
-	approveGoalForTest(t, attorneyReq(root, 51, "mac-a"), "held-one", small)
-	claimed, err := Claim(attorneyReq(root, 52, "mac-a"), "held-one")
+	approveGoalForTest(t, attorneyReq(endpoint, 51, "mac-a"), "held-one", small)
+	claimed, err := Claim(attorneyReq(endpoint, 52, "mac-a"), "held-one")
 	if err != nil || claimed.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim held-one: %+v %v", claimed, err)
 	}
 	expectRefusal(t, "claimed goal", mustPublish(UnparkUnderAttorney(withUlid(lifter, 56), "held-one", "nothing to lift")), nil, "is claimed, not parked")
-	before, err := loadTree(root, claimed.Tip)
+	before, err := loadTreeFor(endpoint, claimed.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,8 +481,8 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	}
 	// The park unapprove records when it displaces a claim is a person's
 	// park too, and lifts back to queued.
-	approveGoalForTest(t, attorneyReq(root, 57, "mac-a"), "revoked-one", small)
-	if res, err := Claim(attorneyReq(root, 60, "mac-b"), "revoked-one"); err != nil || res.Outcome != OutcomeConfirmed {
+	approveGoalForTest(t, attorneyReq(endpoint, 57, "mac-a"), "revoked-one", small)
+	if res, err := Claim(attorneyReq(endpoint, 60, "mac-b"), "revoked-one"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim revoked-one: %+v %v", res, err)
 	}
 	if res, err := Unapprove(withUlid(human, 58), "revoked-one", "the scope moved", proof); err != nil || res.Outcome != OutcomeConfirmed {
@@ -488,11 +492,11 @@ func TestUnparkUnderPowerOfAttorney(t *testing.T) {
 	if err != nil || revoked.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark an unapprove park under attorney: %+v %v", revoked, err)
 	}
-	if tree, err := loadTree(root, revoked.Tip); err != nil || tree.Live["revoked-one"].State != StateQueued || tree.Live["revoked-one"].Parked != nil {
+	if tree, err := loadTreeFor(endpoint, revoked.Tip); err != nil || tree.Live["revoked-one"].State != StateQueued || tree.Live["revoked-one"].Parked != nil {
 		t.Fatalf("the unapprove park did not lift to queued: %v %+v", err, tree.Live["revoked-one"])
 	}
 	// A blocker park is never lifted this way.
-	if res, err := OpenRisked(attorneyReq(root, 53, "mac-a"), "fix-held", "The defect that blocks held-one.", OriginMain, "Fix.", []string{"held-one"}, nil, low, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := OpenRisked(attorneyReq(endpoint, 53, "mac-a"), "fix-held", "The defect that blocks held-one.", OriginMain, "Fix.", []string{"held-one"}, nil, low, 0, "", &small, nil); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open --blocks: %+v %v", res, err)
 	}
 	expectRefusal(t, "blocker park", mustPublish(UnparkUnderAttorney(withUlid(lifter, 54), "held-one", "the blocker is done")), nil, "returns by itself")

@@ -60,10 +60,18 @@ func TestRunnerCreationReadersReturnFencedWithoutCreating(t *testing.T) {
 }
 
 func TestRunLoopClosesItsCreationClaimAfterASecondFenceRead(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	census := &countingFenceCensus{}
 	called := false
-	runnerAfterRecordPublished = func() {
+	deps := runnerLoopDependencies{Tick: func(string, TickConfig, WorkerCensus) (TickResult, error) {
+		t.Fatal("a fenced runner reached its first tick")
+		return TickResult{}, nil
+	}}
+	deps.AfterRecordPublished = func() {
 		called = true
 		claims, err := stopfence.Claims(root, 0)
 		if err != nil || len(claims) != 1 || claims[0].Verb != "steward-run" {
@@ -71,9 +79,8 @@ func TestRunLoopClosesItsCreationClaimAfterASecondFenceRead(t *testing.T) {
 		}
 		closeProcessFence(t, root, 1)
 	}
-	t.Cleanup(func() { runnerAfterRecordPublished = nil })
 
-	err := RunLoop(root, census, nil, time.Hour, TickConfig{})
+	err := runLoopWithDependencies(root, census, nil, time.Hour, TickConfig{}, deps)
 	var stopped *StoppedError
 	if !called || !errors.As(err, &stopped) || !stopped.Raced {
 		t.Fatalf("runner did not end itself after the fence changed: called=%t err=%v", called, err)

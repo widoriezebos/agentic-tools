@@ -126,6 +126,36 @@ func admitBriefBytes(data []byte, resolveInstallPrefix briefInstallPrefix, requi
 }
 
 func ReadBriefAdmissionAtRoot(briefPath, installRoot, baseTree, diskRoot string, requireMode bool) (BriefAdmission, error) {
+	return readBriefAdmissionAtRootWithFacts(briefPath, installRoot, baseTree, diskRoot, requireMode, gitBriefTreeFacts{})
+}
+
+// briefTreeFacts supplies the repository facts used by one admission. The
+// same instance must answer every query so prefix and path authority refer
+// to the same repository view.
+type briefTreeFacts interface {
+	InstallPrefix(root string) (string, error)
+	BaseCommit(root string) (string, error)
+	Directories(root, treeish string) (map[string]bool, error)
+	HasPath(root, commit, name string) (bool, error)
+}
+
+type gitBriefTreeFacts struct{}
+
+func (gitBriefTreeFacts) InstallPrefix(root string) (string, error) {
+	return projectInstallPrefix(root)
+}
+func (gitBriefTreeFacts) BaseCommit(root string) (string, error) {
+	return gitOutput(root, "rev-parse", "--verify", "HEAD^{commit}")
+}
+func (gitBriefTreeFacts) Directories(root, treeish string) (map[string]bool, error) {
+	return treeDirectories(root, treeish)
+}
+func (gitBriefTreeFacts) HasPath(root, commit, name string) (bool, error) {
+	_, err := gitOutput(root, "cat-file", "-e", commit+":"+name)
+	return err == nil, nil
+}
+
+func readBriefAdmissionAtRootWithFacts(briefPath, installRoot, baseTree, diskRoot string, requireMode bool, facts briefTreeFacts) (BriefAdmission, error) {
 	data, err := os.ReadFile(briefPath)
 	if err != nil {
 		if baseTree == "" {
@@ -134,13 +164,13 @@ func ReadBriefAdmissionAtRoot(briefPath, installRoot, baseTree, diskRoot string,
 		return BriefAdmission{}, fmt.Errorf("brief authority admission cannot read brief: %w", err)
 	}
 	authority := func(admitted []byte, bounds BriefBounds) error {
-		return validateBriefAuthority(admitted, bounds, baseTree, diskRoot)
+		return validateBriefAuthority(admitted, bounds, baseTree, diskRoot, facts)
 	}
 	if baseTree == "" {
 		authority = nil
 	}
 	resolveInstallPrefix := func() (string, error) {
-		installPrefix, err := projectInstallPrefix(installRoot)
+		installPrefix, err := facts.InstallPrefix(installRoot)
 		if err != nil {
 			return "", fmt.Errorf("brief admission cannot resolve installation prefix: %w", err)
 		}
@@ -274,18 +304,18 @@ func ValidateBriefAuthority(briefPath, baseTree, diskRoot string) error {
 	return err
 }
 
-func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot string) error {
-	baseCommit, err := gitOutput(baseTree, "rev-parse", "--verify", "HEAD^{commit}")
+func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot string, facts briefTreeFacts) error {
+	baseCommit, err := facts.BaseCommit(baseTree)
 	if err != nil {
 		return fmt.Errorf("brief authority admission cannot resolve delegate base tree: %w", err)
 	}
-	topDirectories, err := treeDirectories(baseTree, baseCommit)
+	topDirectories, err := facts.Directories(baseTree, baseCommit)
 	if err != nil {
 		return fmt.Errorf("brief authority admission cannot inspect delegate base tree: %w", err)
 	}
 	nestedDirectories := map[string]bool{}
 	if topDirectories["metasystem"] {
-		nestedDirectories, err = treeDirectories(baseTree, baseCommit+":metasystem")
+		nestedDirectories, err = facts.Directories(baseTree, baseCommit+":metasystem")
 		if err != nil {
 			return fmt.Errorf("brief authority admission cannot inspect metasystem base tree: %w", err)
 		}
@@ -304,7 +334,11 @@ func validateBriefAuthority(data []byte, bounds BriefBounds, baseTree, diskRoot 
 			}
 			continue
 		}
-		if _, pathErr := gitOutput(baseTree, "cat-file", "-e", baseCommit+":"+candidate); pathErr != nil {
+		present, pathErr := facts.HasPath(baseTree, baseCommit, candidate)
+		if pathErr != nil {
+			return fmt.Errorf("brief authority admission cannot inspect committed path %s: %w", candidate, pathErr)
+		}
+		if !present {
 			missing = append(missing, candidate)
 		}
 	}

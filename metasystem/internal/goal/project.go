@@ -49,6 +49,54 @@ type projectionDependencies struct {
 	timeout        time.Duration
 	processTimeout time.Duration
 	deadline       <-chan time.Time
+	source         *projectionSource
+}
+
+// projectionSource binds one accepted repository and machine to a read. The
+// endpoint is reused for classification and projection so they see one owner.
+type projectionSource struct {
+	endpoint Endpoint
+	machine  string
+}
+
+func (source *projectionSource) matchesRoot(root string) error {
+	if source.endpoint.Root != root {
+		return fmt.Errorf("projection source root %q does not match resolved state root %q", source.endpoint.Root, root)
+	}
+	if source.endpoint.Repository == nil {
+		return fmt.Errorf("projection source for %q has no repository", root)
+	}
+	if err := ValidateMachineNickname(source.machine); err != nil {
+		return fmt.Errorf("projection source for %q has no usable machine: %w", root, err)
+	}
+	return nil
+}
+
+func acceptedGoalWorldFor(endpoint Endpoint) (bool, error) {
+	tip, present, err := endpoint.repository().Accepted()
+	if err != nil {
+		return false, fmt.Errorf("accepted reference %s is unreadable: %w", AcceptedRef, err)
+	}
+	if !present {
+		if _, statErr := os.Stat(filepath.Join(endpoint.Root, filepath.FromSlash(goalsPrefix+"backlog.md"))); statErr == nil {
+			return false, fmt.Errorf("the canonical goal root exists but accepted reference %s is missing or unreadable", AcceptedRef)
+		} else if !os.IsNotExist(statErr) {
+			return false, fmt.Errorf("the canonical goal root cannot be inspected: %w", statErr)
+		}
+		return false, nil
+	}
+	tip = strings.TrimSpace(tip)
+	if tip == "" {
+		return false, fmt.Errorf("accepted reference %s resolved without a commit", AcceptedRef)
+	}
+	files, err := endpoint.repository().Files(tip, goalsPrefix+"backlog.md")
+	if err != nil {
+		return false, fmt.Errorf("accepted reference %s does not carry a readable canonical goal root: %w", AcceptedRef, err)
+	}
+	if len(files[goalsPrefix+"backlog.md"]) == 0 {
+		return false, fmt.Errorf("accepted reference %s does not carry a readable canonical goal root", AcceptedRef)
+	}
+	return true, nil
 }
 
 func (dependencies projectionDependencies) withDefaults() projectionDependencies {
@@ -80,12 +128,14 @@ func project(e Endpoint, fetchFirst bool, now time.Time, dependencies projection
 			return Projection{}, err
 		}
 	}
-	tipOut, err := goalGit(e.Root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef)
+	tip, present, err := e.repository().Accepted()
 	if err != nil {
+		return Projection{}, err
+	}
+	if !present {
 		return Projection{}, fmt.Errorf("no accepted tree; the first fetch or the migration bootstraps it")
 	}
-	tip := strings.TrimSpace(tipOut)
-	tree, err := loadTree(e.Root, tip)
+	tree, err := loadTreeFor(e, tip)
 	if err != nil {
 		return Projection{}, err
 	}
@@ -110,15 +160,10 @@ func project(e Endpoint, fetchFirst bool, now time.Time, dependencies projection
 	}
 
 	// Staleness: the accepted COMMIT's age is the tree's age.
-	if ageOut, err := goalGit(e.Root, nil, "log", "-1", "--format=%ct", tip); err == nil {
-		if seconds := strings.TrimSpace(ageOut); seconds != "" {
-			var epoch int64
-			if _, scanErr := fmt.Sscanf(seconds, "%d", &epoch); scanErr == nil {
-				age := now.Sub(time.Unix(epoch, 0))
-				if age > StaleThreshold {
-					p.Banners = append(p.Banners, fmt.Sprintf("the accepted tree is %s old; goal list --fetch validates and advances it", age.Round(time.Minute)))
-				}
-			}
+	if committed, err := e.repository().CommitTime(tip); err == nil {
+		age := now.Sub(committed)
+		if age > StaleThreshold {
+			p.Banners = append(p.Banners, fmt.Sprintf("the accepted tree is %s old; goal list --fetch validates and advances it", age.Round(time.Minute)))
 		}
 	}
 	return p, nil
@@ -152,6 +197,9 @@ func fetchProjectionWithinDeadline(e Endpoint, dependencies projectionDependenci
 // sixty-second Stop budget shipped under metasystem/scripts/enforcement and
 // owned by the hook's deadline parent.
 func boundedFetchAdvance(e Endpoint, processTimeout time.Duration) (AdvanceResult, error) {
+	if e.Repository != nil {
+		return FetchAdvance(e)
+	}
 	if e.LocalMode() {
 		return FetchAdvance(e)
 	}
@@ -174,26 +222,28 @@ func boundedFetchAdvance(e Endpoint, processTimeout time.Duration) (AdvanceResul
 	if err := SyncModeGate(e, fetched); err != nil {
 		return AdvanceResult{}, err
 	}
-	acceptedOut, acceptedErr := goalGit(e.Root, nil, "rev-parse", "--verify", "--quiet", AcceptedRef)
-	accepted := strings.TrimSpace(acceptedOut)
-	if acceptedErr == nil && accepted == fetched {
+	accepted, present, acceptedErr := e.repository().Accepted()
+	if acceptedErr != nil {
+		return AdvanceResult{}, acceptedErr
+	}
+	if present && accepted == fetched {
 		return AdvanceResult{Tip: accepted, Detail: "already at the canonical tip"}, nil
 	}
-	if acceptedErr == nil {
-		if err := AcceptanceGates(e.Root, accepted, fetched); err != nil {
+	if present {
+		if err := acceptanceGatesFor(e, accepted, fetched); err != nil {
 			return AdvanceResult{}, err
 		}
 	}
-	if err := ValidateCommit(e.Root, fetched); err != nil {
+	if err := validateCommitFor(e, fetched); err != nil {
 		return AdvanceResult{}, err
 	}
 	detail := "accepted " + short(fetched)
-	if acceptedErr == nil {
-		if diagnosed, diagErr := PrefixDiagnosis(e.Root, accepted, fetched); diagErr == nil && len(diagnosed) > 0 {
+	if present {
+		if diagnosed, diagErr := prefixDiagnosisFor(e, accepted, fetched); diagErr == nil && len(diagnosed) > 0 {
 			detail += "; " + strings.Join(diagnosed, "; ")
 		}
 	}
-	if err := AdvanceAccepted(e.Root, fetched); err != nil {
+	if err := advanceAcceptedFor(e, fetched); err != nil {
 		return AdvanceResult{}, err
 	}
 	return AdvanceResult{Tip: fetched, Advanced: true, Detail: detail}, nil
@@ -341,25 +391,43 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 		return ClaimableBudgetedWork{}, err
 	}
 	root = resolved
-	converted, err := acceptedGoalWorld(root)
+	var converted bool
+	if dependencies.source == nil {
+		converted, err = acceptedGoalWorld(root)
+	} else if err = dependencies.source.matchesRoot(root); err == nil {
+		converted, err = acceptedGoalWorldFor(dependencies.source.endpoint)
+	}
 	if err != nil {
 		return ClaimableBudgetedWork{}, err
 	}
 	if !converted {
 		return readLegacyClaimableWork(root, prober)
 	}
-	machine, err := ResolveMachine(root)
-	if err != nil {
-		return ClaimableBudgetedWork{}, err
-	}
-	endpoint, err := ResolveEndpoint(root)
-	if err != nil {
-		return ClaimableBudgetedWork{}, err
+	var machine string
+	var endpoint Endpoint
+	if dependencies.source == nil {
+		machine, err = ResolveMachine(root)
+		if err != nil {
+			return ClaimableBudgetedWork{}, err
+		}
+		endpoint, err = ResolveEndpoint(root)
+		if err != nil {
+			return ClaimableBudgetedWork{}, err
+		}
+	} else {
+		machine, endpoint = dependencies.source.machine, dependencies.source.endpoint
 	}
 	projection, err := project(endpoint, true, now, dependencies)
 	if err != nil {
 		return ClaimableBudgetedWork{}, err
 	}
+	return ClaimableWorkFromProjection(projection, machine, prober)
+}
+
+// ClaimableWorkFromProjection joins an accepted goal projection to live
+// activity for one machine. The projection root also owns local admission
+// rules and process records used by this judgment.
+func ClaimableWorkFromProjection(projection Projection, machine string, prober identity.Prober) (ClaimableBudgetedWork, error) {
 	if projection.Tree == nil {
 		return ClaimableBudgetedWork{}, fmt.Errorf("the accepted goal tree is unreadable")
 	}
@@ -401,7 +469,7 @@ func readClaimableBudgetedWork(root string, now time.Time, prober identity.Probe
 	}
 	work.Queued = len(frontier.Awaiting)
 	work.Claimable = append(work.Claimable, frontier.Ready...)
-	work.InFlight, work.NonTerminalJobs, err = readLiveBacklogActivity(root, claimLineages, false, prober)
+	work.InFlight, work.NonTerminalJobs, err = readLiveBacklogActivity(projection.Root, claimLineages, false, prober)
 	if err != nil {
 		return ClaimableBudgetedWork{}, err
 	}

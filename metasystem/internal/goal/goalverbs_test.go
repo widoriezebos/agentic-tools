@@ -556,8 +556,40 @@ func TestGenesisAdmitsGoalFreeLedgerForNonHolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	nonHolderMain := Caller{Class: "MAIN", Holder: false}
-	if _, err := s.Reconcile(nonHolderMain); err != nil {
+	calls := 0
+	if _, err := s.reconcileWithProbe(nonHolderMain, func(root string) (bool, error) {
+		if root != s.Root {
+			t.Fatalf("probe root=%q want %q", root, s.Root)
+		}
+		calls++
+		return false, nil
+	}); err != nil {
 		t.Fatalf("a goal-free genesis must pass for a non-holder main: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("history probes=%d want 1", calls)
+	}
+	for _, fixture := range []struct {
+		name, ledger, reason string
+	}{
+		{"malformed", "# Goals\n\n## Nonsense", "genesis reconcile refused"},
+		{"populated", goalLedger, "already carries goals"},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			other := testStore(t)
+			writeFile(t, LedgerPath(other.Root), fixture.ledger)
+			calls := 0
+			_, err := other.reconcileWithProbe(nonHolderMain, func(root string) (bool, error) {
+				if root != other.Root {
+					t.Fatalf("probe root=%q want %q", root, other.Root)
+				}
+				calls++
+				return false, nil
+			})
+			if err == nil || !strings.Contains(err.Error(), fixture.reason) || calls != 0 {
+				t.Fatalf("%s refusal=%v probes=%d", fixture.name, err, calls)
+			}
+		})
 	}
 }
 
@@ -568,11 +600,26 @@ func TestGenesisAdmitsGoalFreeLedgerForNonHolder(t *testing.T) {
 // stays reachable for a holder-authorized (non-genesis) caller.
 func TestReconcileRefusesGenesisCallerOnceBaselined(t *testing.T) {
 	t.Parallel()
+	reconcile := func(s *Store, caller Caller, tracked bool, wantCalls int) (Result, error) {
+		t.Helper()
+		calls := 0
+		result, err := s.reconcileWithProbe(caller, func(root string) (bool, error) {
+			if root != s.Root {
+				t.Fatalf("probe root=%q want %q", root, s.Root)
+			}
+			calls++
+			return tracked, nil
+		})
+		if calls != wantCalls {
+			t.Fatalf("history probes=%d want %d", calls, wantCalls)
+		}
+		return result, err
+	}
 	s := testStore(t)
 	if _, err := s.Open(mainHolder, "real-goal", "intent", "next"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Reconcile(mainHolder); err != nil {
+	if _, err := reconcile(s, mainHolder, false, 0); err != nil {
 		t.Fatal(err)
 	}
 	// The race outcome: authorization saw no baseline (Genesis true),
@@ -580,14 +627,14 @@ func TestReconcileRefusesGenesisCallerOnceBaselined(t *testing.T) {
 	// the replay and malformed arms would not — the guard refuses them
 	// all uniformly before any arm runs.
 	raced := Caller{Class: "HUMAN", Holder: false, Genesis: true}
-	if _, err := s.Reconcile(raced); err == nil || !strings.Contains(err.Error(), "authorized for genesis") {
+	if _, err := reconcile(s, raced, false, 0); err == nil || !strings.Contains(err.Error(), "authorized for genesis") {
 		t.Fatalf("a genesis-admitted caller must be refused once a baseline exists: %v", err)
 	}
 	// A re-run re-authorizes against the initialized project at the
 	// verb layer — holder-only there. The guard promises re-evaluation,
 	// not success: a HUMAN passes as sovereign, a non-holder MAIN is
 	// refused by authorization, and the HOLDER (here) proceeds.
-	if _, err := s.Reconcile(Caller{Class: "MAIN", Holder: true}); err != nil {
+	if _, err := reconcile(s, Caller{Class: "MAIN", Holder: true}, false, 0); err != nil {
 		t.Fatalf("a holder-authorized re-run must pass: %v", err)
 	}
 	// And a genesis-admitted caller against a genuinely virgin store
@@ -599,7 +646,7 @@ func TestReconcileRefusesGenesisCallerOnceBaselined(t *testing.T) {
 	if err := os.Remove(BaselinePath(virgin.Root)); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	if _, err := virgin.Reconcile(Caller{Class: "MAIN", Holder: false, Genesis: true}); err != nil {
+	if _, err := reconcile(virgin, Caller{Class: "MAIN", Holder: false, Genesis: true}, false, 1); err != nil {
 		t.Fatalf("genesis admission must still work on a virgin store: %v", err)
 	}
 }
@@ -611,13 +658,25 @@ func TestReconcileRefusesGenesisCallerOnceBaselined(t *testing.T) {
 // ledger rewrite a merge carries. The human keeps today's rule.
 func TestGenesisRefusesTrackedLedgerForNonHolder(t *testing.T) {
 	t.Parallel()
+	reconcile := func(s *Store, caller Caller, tracked bool, wantCalls int) (Result, error) {
+		t.Helper()
+		calls := 0
+		result, err := s.reconcileWithProbe(caller, func(root string) (bool, error) {
+			if root != s.Root {
+				t.Fatalf("probe root=%q want %q", root, s.Root)
+			}
+			calls++
+			return tracked, nil
+		})
+		if calls != wantCalls {
+			t.Fatalf("history probes=%d want %d", calls, wantCalls)
+		}
+		return result, err
+	}
 	s := testStore(t)
-	gitOK(t, s.Root, "init", "-q")
 	if _, err := s.DeclareFree(human); err != nil {
 		t.Fatalf("declare-free: %v", err)
 	}
-	gitOK(t, s.Root, "add", ".")
-	gitOK(t, s.Root, "commit", "-qm", "adopted")
 	if err := os.Remove(BaselinePath(s.Root)); err != nil {
 		t.Fatal(err)
 	}
@@ -626,17 +685,17 @@ func TestGenesisRefusesTrackedLedgerForNonHolder(t *testing.T) {
 		{Class: "DELEGATE", Holder: false, Genesis: true},
 		{Class: "ADAPTER-SUPERVISOR", Holder: false, Genesis: true},
 	} {
-		if _, err := s.Reconcile(caller); err == nil || !strings.Contains(err.Error(), "committed history") {
+		if _, err := reconcile(s, caller, true, 1); err == nil || !strings.Contains(err.Error(), "committed history") {
 			t.Fatalf("%s: a tracked ledger must refuse a non-holder genesis: %v", caller.Class, err)
 		}
 	}
-	if _, err := s.Reconcile(Caller{Class: "HUMAN", Genesis: true}); err != nil {
+	if _, err := reconcile(s, Caller{Class: "HUMAN", Genesis: true}, true, 0); err != nil {
 		t.Fatalf("the human keeps the goal-free genesis path: %v", err)
 	}
 	if err := os.Remove(BaselinePath(s.Root)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Reconcile(mainHolder); err != nil {
+	if _, err := reconcile(s, mainHolder, true, 0); err != nil {
 		t.Fatalf("the holder restores: %v", err)
 	}
 }
@@ -650,8 +709,18 @@ func TestGenesisAdmitsAdoptionShapedLedgerForMachinery(t *testing.T) {
 	s := testStore(t)
 	os.MkdirAll(filepath.Join(s.Root, "plans"), 0o755)
 	os.WriteFile(LedgerPath(s.Root), []byte(goalFreeLedger), 0o644)
-	if _, err := s.Reconcile(Caller{Class: "DELEGATE", Genesis: true}); err != nil {
+	calls := 0
+	if _, err := s.reconcileWithProbe(Caller{Class: "DELEGATE", Genesis: true}, func(root string) (bool, error) {
+		if root != s.Root {
+			t.Fatalf("probe root=%q want %q", root, s.Root)
+		}
+		calls++
+		return false, nil
+	}); err != nil {
 		t.Fatalf("a delegate-shaped adopter must seed a goal-free ledger: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("history probes=%d want 1", calls)
 	}
 	if !s.BaselineMatches() {
 		t.Fatal("genesis did not write the baseline")

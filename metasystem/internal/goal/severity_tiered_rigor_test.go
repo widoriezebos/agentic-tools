@@ -7,8 +7,8 @@ import (
 
 func TestConcludeRefusesWithReviewObligations(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "review-goal")
-	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR10", "mac-a")
+	endpoint := obligationAuthorityLocalEndpoint(t, "review-goal")
+	req := verbReqFor(endpoint, "01J5X00000000000000000SR10", "mac-a")
 	obligation := ReviewObligation{Finding: "F-1", Chain: "critic-a", Artifact: "NEW metasystem/a file.go", Test: "prove: it works", State: "open"}
 	if result, err := DeferFindings(req, "review-goal", []ReviewObligation{obligation}); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("defer = %+v, %v", result, err)
@@ -22,8 +22,8 @@ func TestConcludeRefusesWithReviewObligations(t *testing.T) {
 
 func TestSTR3GapDischargeSelectVerb(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "review-goal")
-	req := obligationAuthorityVerbReq(root, "01J5X00000000000000000SR20", "mac-a")
+	endpoint := obligationAuthorityLocalEndpoint(t, "review-goal")
+	req := verbReqFor(endpoint, "01J5X00000000000000000SR20", "mac-a")
 	obligations := []ReviewObligation{
 		{Finding: "F-1", Chain: "critic-a", Artifact: "metasystem/a.go", Test: "prove: a", State: "open"},
 		{Finding: "F-1", Chain: "critic-b", Artifact: "metasystem/b.go", Test: "prove: b", State: "open"},

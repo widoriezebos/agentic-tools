@@ -2,8 +2,6 @@ package goal
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -24,9 +22,8 @@ func TestReadChannelTree(t *testing.T) {
 	t.Parallel()
 	t.Run("missing directory is empty", func(t *testing.T) {
 		t.Parallel()
-		_, root := oneClone(t)
-		tip := mustGit(t, root, "rev-parse", "HEAD")
-		tree, err := ReadChannelTree(endpointFor(root), tip)
+		e, _ := fakeGoalEndpoint(t)
+		tree, err := ReadChannelTree(e, acceptedTipForEndpoint(t, e))
 		if err != nil || len(tree.Questions) != 0 || len(tree.Inbox) != 0 || len(tree.Listeners) != 0 {
 			t.Fatalf("missing directory: tree=%+v err=%v", tree, err)
 		}
@@ -34,9 +31,9 @@ func TestReadChannelTree(t *testing.T) {
 
 	t.Run("all record kinds use path keys", func(t *testing.T) {
 		t.Parallel()
-		_, root := oneClone(t)
-		tip := commitChannelFiles(t, root, validChannelFixture().files(t))
-		tree, err := ReadChannelTree(endpointFor(root), tip)
+		e, _ := fakeGoalEndpoint(t)
+		tip := commitChannelFilesForEndpoint(t, e, validChannelFixture().files(t))
+		tree, err := ReadChannelTree(e, tip)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -47,12 +44,12 @@ func TestReadChannelTree(t *testing.T) {
 
 	t.Run("decode refusal names the path", func(t *testing.T) {
 		t.Parallel()
-		_, root := oneClone(t)
+		e, _ := fakeGoalEndpoint(t)
 		path := ChannelPrefix + "questions/" + channelTestQuestionID + ".json"
 		files := vTree(vRoot(), []*GoalFile{vGoal(channelTestGoalID, StateQueued)}, nil)
 		files[path] = []byte("{\"unexpected\":true}\n")
-		tip := commitChannelFiles(t, root, files)
-		_, err := ReadChannelTree(endpointFor(root), tip)
+		tip := commitChannelFilesForEndpoint(t, e, files)
+		_, err := ReadChannelTree(e, tip)
 		if err == nil || !strings.Contains(err.Error(), path) {
 			t.Fatalf("decode error must name %s: %v", path, err)
 		}
@@ -169,13 +166,18 @@ func TestMatchChannelInboundUnthreadedTokens(t *testing.T) {
 	})
 }
 
-func channelPublishBed(t *testing.T, question *ChannelQuestion) (a, b string) {
+func channelPublishBed(t *testing.T, question *ChannelQuestion) (a, b Endpoint) {
 	t.Helper()
-	_, a, b = twoClones(t)
+	a, b = fakeGoalEndpointPair(t)
 	files := vTree(vRoot(), []*GoalFile{vGoal(question.Goal, StateQueued)}, nil)
 	files[ChannelPrefix+"questions/"+question.ID+".json"] = mustMarshalChannel(t, question)
-	commitChannelFiles(t, a, files)
-	mustGit(t, a, "push", "-q", "origin", "HEAD:main")
+	before := acceptedTipForEndpoint(t, a)
+	commit := commitChannelFilesForEndpoint(t, a, files)
+	for _, endpoint := range []Endpoint{a, b} {
+		if err := endpoint.Repository.AcceptedCAS(before, commit); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return a, b
 }
 
@@ -194,8 +196,7 @@ func channelPublishNow() time.Time {
 func TestChannelInboundPublishAtomicAnswerReplayLateAndLoss(t *testing.T) {
 	t.Parallel()
 	question := openInboxQuestion(channelTestQuestionID, channelTestGoalID, "required token")
-	a, b := channelPublishBed(t, question)
-	eA := endpointFor(a)
+	eA, eB := channelPublishBed(t, question)
 	record := publishRecord("42", 123)
 	opid := Opid("01J5X0000000000000000000H1", "mac-a", "lineage-a")
 	var decided ChannelInbound
@@ -203,7 +204,7 @@ func TestChannelInboundPublishAtomicAnswerReplayLateAndLoss(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("bound publish: result=%+v err=%v", result, err)
 	}
-	if err := ValidateCommit(a, result.Commit); err != nil {
+	if err := validateCommitFor(eA, result.Commit); err != nil {
 		t.Fatalf("landed commit did not validate: %v", err)
 	}
 	tree, err := ReadChannelTree(eA, result.Tip)
@@ -212,7 +213,7 @@ func TestChannelInboundPublishAtomicAnswerReplayLateAndLoss(t *testing.T) {
 	}
 	landedRecord := tree.Inbox["team/telegram-42"]
 	landedQuestion := tree.Questions[question.ID]
-	goals, err := loadTree(a, result.Tip)
+	goals, err := loadTreeFor(eA, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,13 +228,23 @@ func TestChannelInboundPublishAtomicAnswerReplayLateAndLoss(t *testing.T) {
 		t.Fatalf("goal answer row is not the verbatim one-opid proof: %+v", history)
 	}
 
-	eB := endpointFor(b)
 	loserOpid := Opid("01J5X0000000000000000000H2", "mac-b", "lineage-b")
-	before := mustGit(t, a, "ls-remote", "origin", "refs/heads/main")
+	beforeCanonical, err := eA.Repository.Capture("before-loser")
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeAccepted := acceptedTipForEndpoint(t, eB)
 	loser, err := Publish(eB, ChannelInboundRequest(eB, "mac-b", "lineage-b", loserOpid, record, time.Date(2026, 9, 4, 12, 36, 0, 0, time.UTC), nil))
-	after := mustGit(t, a, "ls-remote", "origin", "refs/heads/main")
-	if err != nil || loser.Outcome != OutcomeLost || !strings.Contains(loser.Detail, opid) || before != after {
-		t.Fatalf("second clone must lose without a write: result=%+v err=%v before=%q after=%q", loser, err, before, after)
+	afterCanonical, captureErr := eA.Repository.Capture("after-loser")
+	if captureErr != nil {
+		t.Fatal(captureErr)
+	}
+	afterAccepted := acceptedTipForEndpoint(t, eB)
+	if err != nil || loser.Outcome != OutcomeLost || !strings.Contains(loser.Detail, opid) {
+		t.Fatalf("second clone must lose to the named winner: result=%+v err=%v", loser, err)
+	}
+	if beforeCanonical != afterCanonical || beforeAccepted != afterAccepted {
+		t.Fatalf("second clone wrote state: canonical %q -> %q, accepted %q -> %q", beforeCanonical, afterCanonical, beforeAccepted, afterAccepted)
 	}
 
 	replay := publishRecord("43", 123)
@@ -302,8 +313,7 @@ func TestChannelInboundPublishBudgetAnswerRows(t *testing.T) {
 			question := openInboxQuestion(channelTestQuestionID, channelTestGoalID, "approve exactly")
 			question.Kind = "budget-above-norm"
 			question.Budget = &Budget{ElapsedLimit: "1d", AttemptLimit: 10, ReservedJobMinutesLimit: 1200, ActiveJobLimit: 1, ReviewRoundLimit: 3}
-			a, _ := channelPublishBed(t, question)
-			e := endpointFor(a)
+			e, _ := channelPublishBed(t, question)
 			record := publishRecord(test.messageID, test.step)
 			record.Text = test.text
 			opid := Opid(test.ulid, "mac-a", "lineage-a")
@@ -334,7 +344,7 @@ func TestChannelInboundPublishBudgetAnswerRows(t *testing.T) {
 			if test.row == "answer budget" && (budgetCalls == 0 || answerCalls != 0) || test.row == "answer" && (answerCalls == 0 || budgetCalls != 0) {
 				t.Fatalf("publish selected the wrong matrix row: want=%q answer-budget calls=%d answer calls=%d", test.row, budgetCalls, answerCalls)
 			}
-			if err := ValidateCommit(a, result.Commit); err != nil {
+			if err := validateCommitFor(e, result.Commit); err != nil {
 				t.Fatalf("budget answer commit did not validate: %v", err)
 			}
 
@@ -350,7 +360,7 @@ func TestChannelInboundPublishBudgetAnswerRows(t *testing.T) {
 				t.Fatalf("budget answer row is wrong: %+v", landed.Answer)
 			}
 
-			goals, err := loadTree(a, result.Tip)
+			goals, err := loadTreeFor(e, result.Tip)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -365,31 +375,29 @@ func TestChannelInboundPublishBudgetAnswerRows(t *testing.T) {
 func TestChannelInboundFreshRetryLosesAfterAbandonedAttempt(t *testing.T) {
 	t.Parallel()
 	question := openInboxQuestion(channelTestQuestionID, channelTestGoalID, "token")
-	a, b := channelPublishBed(t, question)
+	eA, eB := channelPublishBed(t, question)
 	record := publishRecord("42", 123)
 	abandonedOpid := Opid("01J5X0000000000000000000J1", "mac-b", "lineage-b")
-	badEndpoint := endpointFor(b)
-	badEndpoint.Remote = "missing-remote"
+	badEndpoint, badClient := fakeGoalEndpoint(t)
+	badClient.store.canonical = "missing-canonical-commit"
 	if _, err := Publish(badEndpoint, ChannelInboundRequest(badEndpoint, "mac-b", "lineage-b", abandonedOpid, record, channelPublishNow(), nil)); err == nil {
-		t.Fatal("missing remote must fail capture")
+		t.Fatal("missing canonical commit must fail capture")
 	}
-	abandoned, err := ReadEntry(b, abandonedOpid)
+	abandoned, err := ReadEntry(badEndpoint.Root, abandonedOpid)
 	if err != nil || abandoned.Phase != PhaseTerminal || abandoned.Outcome != OutcomeAbandoned {
 		t.Fatalf("capture failure was not journaled abandoned: entry=%+v err=%v", abandoned, err)
 	}
 
 	winnerOpid := Opid("01J5X0000000000000000000J2", "mac-a", "lineage-a")
-	eA := endpointFor(a)
 	if result, err := Publish(eA, ChannelInboundRequest(eA, "mac-a", "lineage-a", winnerOpid, record, channelPublishNow(), nil)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("winner did not land: result=%+v err=%v", result, err)
 	}
 	retryOpid := Opid("01J5X0000000000000000000J3", "mac-b", "lineage-b")
-	eB := endpointFor(b)
 	retry, err := Publish(eB, ChannelInboundRequest(eB, "mac-b", "lineage-b", retryOpid, record, channelPublishNow(), nil))
 	if err != nil || retry.Outcome != OutcomeLost || !strings.Contains(retry.Detail, winnerOpid) {
 		t.Fatalf("fresh retry did not lose to the committed record: result=%+v err=%v", retry, err)
 	}
-	if retryEntry, readErr := ReadEntry(b, retryOpid); readErr != nil || retryEntry.Outcome != OutcomeLost {
+	if retryEntry, readErr := ReadEntry(eB.Root, retryOpid); readErr != nil || retryEntry.Outcome != OutcomeLost {
 		t.Fatalf("retry journal entry is wrong: entry=%+v err=%v", retryEntry, readErr)
 	}
 }
@@ -426,28 +434,28 @@ func TestChannelAnswerDispositionAndApprovalULID(t *testing.T) {
 func TestChannelInboundPresentWithoutTrailerRefuses(t *testing.T) {
 	t.Parallel()
 	question := openInboxQuestion(channelTestQuestionID, channelTestGoalID, "token")
-	a, _ := channelPublishBed(t, question)
+	e, _ := channelPublishBed(t, question)
 	record := publishRecord("42", 123)
 	record.Opid = "missing-transaction"
 	record.Question = "unmatched"
 	path := ChannelPrefix + "inbox/team/telegram-42.json"
-	fullPath := filepath.Join(a, filepath.FromSlash(path))
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+	before := acceptedTipForEndpoint(t, e)
+	commit, err := e.Repository.Build("unproven-inbox-fixture", before, []Change{{Path: path, Content: mustMarshalChannel(t, record)}}, "unproven inbox record")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(fullPath, mustMarshalChannel(t, record), 0o644); err != nil {
+	if outcome, err := e.Repository.Publish(before, commit); err != nil || outcome != CASLanded {
+		t.Fatalf("publish unproven inbox record: outcome=%s err=%v", outcome, err)
+	}
+	if err := e.Repository.AcceptedCAS(before, commit); err != nil {
 		t.Fatal(err)
 	}
-	mustGit(t, a, "add", path)
-	mustGit(t, a, "commit", "-qm", "unproven inbox record")
-	mustGit(t, a, "push", "-q", "origin", "HEAD:main")
-	e := endpointFor(a)
 	opid := Opid("01J5X0000000000000000000K1", "mac-a", "lineage-a")
 	result, err := Publish(e, ChannelInboundRequest(e, "mac-a", "lineage-a", opid, publishRecord("42", 123), channelPublishNow(), nil))
 	if err != nil || result.Outcome != OutcomeRejected || result.Detail != "inbox record present without its transaction" {
 		t.Fatalf("unproven record result=%+v err=%v", result, err)
 	}
-	entry, readErr := ReadEntry(a, opid)
+	entry, readErr := ReadEntry(e.Root, opid)
 	if readErr != nil || entry.Outcome != OutcomeRejected {
 		t.Fatalf("refusal journal entry=%+v err=%v", entry, readErr)
 	}

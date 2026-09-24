@@ -46,9 +46,6 @@ func waitForWitnessEvent(
 		if done {
 			return
 		}
-		if !changed {
-			snapshot(want, observations, elapsed())
-		}
 		if err := event.wait(); err != nil {
 			observations = append(observations, "event error: "+err.Error())
 			snapshot(want, observations, elapsed())
@@ -123,22 +120,81 @@ func TestWitnessEventSnapshotPrecedesFirstBlock(t *testing.T) {
 	}
 }
 
+func TestWitnessEventIrrelevantEventsDoNotGrowSnapshots(t *testing.T) {
+	t.Parallel()
+
+	type observation struct {
+		done bool
+		text string
+	}
+	script := []observation{
+		{text: "phase=initial"},
+		{text: "phase=initial"},
+		{text: "phase=initial"},
+		{text: "phase=changed"},
+		{text: "phase=changed"},
+		{done: true, text: "phase=complete"},
+	}
+	observationCalls := 0
+	eventCalls := 0
+	var snapshots [][]string
+	var failure string
+	waitForWitnessEvent("scripted fact", func() witnessEventSource {
+		return witnessEventFunc(func() error {
+			eventCalls++
+			return nil
+		})
+	}, func() (bool, string) {
+		if observationCalls >= len(script) {
+			t.Fatal("observation script exhausted before detecting the fact")
+		}
+		observation := script[observationCalls]
+		observationCalls++
+		return observation.done, observation.text
+	}, func() time.Duration { return 0 }, func(_ string, observations []string, _ time.Duration) {
+		snapshots = append(snapshots, append([]string(nil), observations...))
+	}, func(message string) {
+		failure = message
+	})
+	if failure != "" {
+		t.Fatal(failure)
+	}
+	if observationCalls != 6 || eventCalls != 5 {
+		t.Fatalf("observation calls=%d event calls=%d, want 6 observations and 5 waits", observationCalls, eventCalls)
+	}
+	want := [][]string{
+		{"phase=initial"},
+		{"phase=initial", "phase=changed"},
+		{"phase=initial", "phase=changed", "phase=complete"},
+	}
+	if fmt.Sprint(snapshots) != fmt.Sprint(want) {
+		t.Fatalf("snapshots=%v, want bounded changed evidence %v", snapshots, want)
+	}
+}
+
 func TestWitnessEventTerminalErrorFailsWithText(t *testing.T) {
 	t.Parallel()
 
 	terminal := errors.New("watch was lost")
 	var failure string
+	var snapshots [][]string
 	waitForWitnessEvent("terminal fact", func() witnessEventSource {
 		return witnessEventFunc(func() error {
 			return terminal
 		})
 	}, func() (bool, string) {
 		return false, "not yet"
-	}, func() time.Duration { return 0 }, func(string, []string, time.Duration) {}, func(message string) {
+	}, func() time.Duration { return 0 }, func(_ string, observations []string, _ time.Duration) {
+		snapshots = append(snapshots, append([]string(nil), observations...))
+	}, func(message string) {
 		failure = message
 	})
 	if !strings.Contains(failure, terminal.Error()) {
 		t.Fatalf("failure %q omits terminal event error %q", failure, terminal)
+	}
+	want := [][]string{{"not yet"}, {"not yet", "event error: watch was lost"}}
+	if fmt.Sprint(snapshots) != fmt.Sprint(want) {
+		t.Fatalf("terminal snapshots=%v, want initial and error evidence %v", snapshots, want)
 	}
 }
 

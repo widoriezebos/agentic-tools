@@ -28,6 +28,10 @@ type ReconcileResult struct {
 // Reconcile runs the whole session: capture, map, publish, refresh.
 // The actor must carry its human — reconcile IS the hand-edit path.
 func Reconcile(r VerbRequest) (ReconcileResult, error) {
+	return reconcileFor(r, checkoutHead, anchorBase)
+}
+
+func reconcileFor(r VerbRequest, head func(string) (string, error), anchor func(string, string) error) (ReconcileResult, error) {
 	if r.Actor.Human == "" {
 		return ReconcileResult{}, fmt.Errorf("reconcile republishes hand edits and names its human (--by)")
 	}
@@ -43,8 +47,8 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 	if err := ensureRealGoalDirs(r.Endpoint.Root); err != nil {
 		return ReconcileResult{}, err
 	}
-	MaintainBase(r.Endpoint.Root)
-	base, err := BaseTip(r.Endpoint.Root)
+	maintainBaseFor(r.Endpoint, head, anchor)
+	base, err := baseTipFor(r.Endpoint, head)
 	if err != nil {
 		return ReconcileResult{}, err
 	}
@@ -52,7 +56,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 	if err != nil {
 		return ReconcileResult{}, err
 	}
-	rows, err := MapDeltas(r.Endpoint.Root, base, snap)
+	rows, err := mapDeltasFor(r.Endpoint, base, snap)
 	if err != nil {
 		return ReconcileResult{}, err
 	}
@@ -89,7 +93,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 		Intent:  reconcileIntent(r.Actor.Human, targets, rows),
 		Message: "goal reconcile (" + r.Actor.Human + ")",
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -155,7 +159,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 			// displacement addressed to this pair acks here.
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		// Only a DEFINITIVE non-landing clears the pending record: a
@@ -196,7 +200,7 @@ func Reconcile(r VerbRequest) (ReconcileResult, error) {
 		}
 		return ReconcileResult{Publish: res, Rows: rows}, err
 	}
-	skipped, err := Refresh(r.Endpoint.Root, res.Commit, snap)
+	skipped, err := refreshFor(r.Endpoint, res.Commit, snap, anchor)
 	if err != nil {
 		return ReconcileResult{Publish: res, Rows: rows}, fmt.Errorf("published, but the refresh died; goal reconcile --refresh-only completes it: %w", err)
 	}

@@ -32,11 +32,18 @@ type gateChange struct {
 type gateChanges map[string]gateChange
 
 func changedGoPackages(root, tree string, changes gateChanges) ([]string, error) {
+	workspaceRoot := unitGateModuleRoot(root)
+	if workspaceRoot == "" {
+		workspaceRoot = root
+	}
+	return changedGoPackagesWithWorkspace(root, tree, changes, gittree.Workspace{Dir: workspaceRoot})
+}
+
+func changedGoPackagesWithWorkspace(root, tree string, changes gateChanges, workspace gittree.Workspace) ([]string, error) {
 	set := map[string]bool{}
 	moduleRoot := unitGateModuleRoot(root)
 	modulePrefix := ""
 	if moduleRoot != "" {
-		workspace := gittree.Workspace{Dir: moduleRoot}
 		prefix, err := workspace.Prefix()
 		if err != nil {
 			return nil, err
@@ -59,16 +66,14 @@ func changedGoPackages(root, tree string, changes gateChanges) ([]string, error)
 		if root == "" {
 			return true, nil
 		}
-		workspaceRoot := moduleRoot
 		path := strings.TrimPrefix(filepath.ToSlash(dir), "./")
-		if workspaceRoot == "" {
-			workspaceRoot = root
+		if moduleRoot == "" {
 			path = filepath.ToSlash(filepath.Join(strings.TrimSuffix(modulePrefix, "/"), path))
 		}
 		if path == "" || path == "." {
 			path = strings.TrimSuffix(modulePrefix, "/")
 		}
-		entries, err := (gittree.Workspace{Dir: workspaceRoot}).Entries(tree, []string{path})
+		entries, err := workspace.Entries(tree, []string{path})
 		return len(entries) != 0, err
 	}
 	for changed, change := range changes {

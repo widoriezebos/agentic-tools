@@ -2,9 +2,9 @@ package main
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
@@ -82,16 +82,15 @@ func TestGLEBatchSupplementalFreshnessUsesTheSelectedPlan(t *testing.T) {
 }
 
 func TestGLEBatchFencedTipAdmissionNamesMemberForReassembly(t *testing.T) {
+	t.Parallel()
 	root, tree := batchPrefixReceiptTestRoot(t)
 	stub := filepath.Join(t.TempDir(), "fenced-test-run")
 	if err := testexec.WriteFile(stub, []byte("#!/bin/sh\nprintf 'CANDIDATE_GOAL_REFUSED state=fenced\\n' >&2\nexit 78\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	previous := batchTipProofExecutable
-	batchTipProofExecutable = func() (string, error) { return stub, nil }
-	t.Cleanup(func() { batchTipProofExecutable = previous })
-	_, err := launchBatchTipProof(batchProofLaunch{Root: root, GoalID: "goal-c", Tree: tree, Mode: testpolicy.ModeAuto,
-		ResultPath: filepath.Join(t.TempDir(), "result.json")})
+	dependencies := batchTestExecutionDependencies(t, root, tree, stub)
+	_, err := launchBatchTipProofWithDependencies(batchProofLaunch{Root: root, GoalID: "goal-c", Tree: tree, Mode: testpolicy.ModeAuto,
+		ResultPath: filepath.Join(t.TempDir(), "result.json")}, dependencies)
 	var refusal *batchProofAdmissionRefusal
 	if !errors.As(err, &refusal) || refusal.kind != "fenced" {
 		t.Fatalf("tip fence classified as %T %v", err, err)
@@ -103,27 +102,24 @@ func TestGLEBatchFencedTipAdmissionNamesMemberForReassembly(t *testing.T) {
 
 func TestGLEBatchRebasedPrefixTreesNamesEveryBoundary(t *testing.T) {
 	t.Parallel()
-	root, _ := batchPrefixReceiptTestRoot(t)
-	base := runReceiptGit(t, root, "rev-parse", "HEAD")
-	var expected []string
-	for _, name := range []string{"a", "b-one", "b-two", "c"} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0o644); err != nil {
-			t.Fatal(err)
+	root := t.TempDir()
+	base, tip := "base-commit", "rebased-tip"
+	expected := []string{"tree-a", "tree-b-one", "tree-b-two", "tree-c"}
+	readGit := func(gotRoot string, args ...string) (string, error) {
+		if gotRoot != root || !slices.Equal(args, []string{"log", "--first-parent", "--reverse", "--format=%T", base + ".." + tip}) {
+			t.Fatalf("ordered tree read root=%q args=%v", gotRoot, args)
 		}
-		runReceiptGit(t, root, "add", name)
-		runReceiptGit(t, root, "commit", "-qm", name)
-		expected = append(expected, runReceiptGit(t, root, "rev-parse", "HEAD^{tree}"))
+		return strings.Join(expected, "\n"), nil
 	}
-	tip := runReceiptGit(t, root, "rev-parse", "HEAD")
 	units := []batch.Unit{{GoalID: "a"}, {GoalID: "b", Builds: []batch.BranchBuild{{Commit: "one"}, {Commit: "two"}}}, {GoalID: "c"}}
-	trees, err := rebasedPrefixTrees(root, base, tip, units)
+	trees, err := rebasedPrefixTreesWith(root, base, tip, units, readGit)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(trees, []string{expected[0], expected[2], expected[3]}) {
 		t.Fatalf("prefix trees=%v, want selected cumulative trees", trees)
 	}
-	if _, err := rebasedPrefixTrees(root, base, tip, units[:2]); err == nil {
+	if _, err := rebasedPrefixTreesWith(root, base, tip, units[:2], readGit); err == nil {
 		t.Fatal("incomplete unit inventory accepted a rebased range")
 	}
 }

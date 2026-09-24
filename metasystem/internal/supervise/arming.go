@@ -525,6 +525,11 @@ func stopOwner(root string, owner ArmingOwner, scaleMilli int, requester string)
 		}
 		armingSleep(20 * time.Millisecond)
 	}
+	if armingOwnerLiveness(owner) == identity.Dead {
+		outcome.Result = ShutdownStopped
+		outcome.Reason = "shutdown-escalated"
+		return outcome, nil
+	}
 	outcome.Result = ShutdownNotStopped
 	outcome.Reason = fmt.Sprintf("owner pid %d did not stop after KILL", owner.Pid)
 	return outcome, nil

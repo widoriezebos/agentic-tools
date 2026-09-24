@@ -2,8 +2,6 @@ package landing
 
 import (
 	"fmt"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
 type attestationCodedError interface {
@@ -24,12 +22,12 @@ func attestedBindingCode(err error) string {
 	return "attested-invalid"
 }
 
-func observeAttested(params ObserveParams, change string) Observation {
+func observeAttestedWithFacts(params ObserveParams, change string, facts observationFacts) Observation {
 	provenance := "attested=" + params.Attested + " change=" + change
 	if !hexCommit(params.Attested) {
 		return refuse("attested-malformed-id", provenance)
 	}
-	workspace := gittree.Workspace{Dir: params.RepoRoot}
+	workspace := facts.reader
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
 		return refuse("attested-unreadable", provenance)
@@ -54,7 +52,7 @@ func observeAttested(params ObserveParams, change string) Observation {
 	}
 	provenance = fmt.Sprintf("attested=%s goal=%s unit=%s critic=%s/%d change=%s",
 		params.Attested, bound.Goal, bound.Unit, bound.CriticRoot, bound.Round, bound.Digest)
-	if _, err := readTestReceipt(params); err != nil {
+	if _, err := readObservationReceipt(params, facts); err != nil {
 		result := refuse("attested-invalid", provenance)
 		result.Detail = err.Error()
 		return result
@@ -67,7 +65,7 @@ func observeAttested(params ObserveParams, change string) Observation {
 	if err != nil {
 		return wouldRefuse("candidate-tree-unreadable", provenance)
 	}
-	resolved, err := resolvePathClasses(workspace, classes, changedPaths)
+	resolved, err := resolvePathClassesWithFacts(facts, classes, changedPaths)
 	if err != nil {
 		return wouldRefuse("register-carriage-policy-unreadable", provenance)
 	}
@@ -92,7 +90,7 @@ func observeAttested(params ObserveParams, change string) Observation {
 	}
 	extras = carriedReceiptLedger(workspace, baseTree, params.CandidateTree, extras)
 	if len(extras) != 0 {
-		if _, err := registerCarriage(params.RepoRoot, params.CandidateTree, extras, params.Goal, params.Actor, bound.GoalRevision); err != nil {
+		if _, err := registerCarriageWithFacts(facts, params.CandidateTree, extras, params.Goal, params.Actor, bound.GoalRevision); err != nil {
 			return wouldRefuseFromCarriage(err, provenance)
 		}
 	}

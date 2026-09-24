@@ -264,8 +264,19 @@ func productionBatchPlan(root, goalID, tree string, mode testpolicy.Mode) (testp
 var batchTipProofExecutable = os.Executable
 
 func launchBatchTipProof(request batchProofLaunch) (proofrun.TestResult, error) {
+	return launchBatchTipProofWithDependencies(request, batchExecutionDependencies{
+		executable: batchTipProofExecutable,
+		checkout:   batchDetachedCheckout,
+		topLevel: func(root string) (string, error) {
+			return (gittree.Workspace{Dir: root}).TopLevel()
+		},
+		readGit: gitOutput,
+	})
+}
+
+func launchBatchTipProofWithDependencies(request batchProofLaunch, dependencies batchExecutionDependencies) (proofrun.TestResult, error) {
 	if request.CandidateTip != "" {
-		candidateTree, treeErr := gitOutput(request.Root, "rev-parse", request.CandidateTip+"^{tree}")
+		candidateTree, treeErr := dependencies.readGit(request.Root, "rev-parse", request.CandidateTip+"^{tree}")
 		if treeErr != nil {
 			return proofrun.TestResult{}, fmt.Errorf("resolve batch proof candidate tip %s: %w", request.CandidateTip, treeErr)
 		}
@@ -273,7 +284,7 @@ func launchBatchTipProof(request batchProofLaunch) (proofrun.TestResult, error) 
 			return proofrun.TestResult{}, fmt.Errorf("batch proof candidate tip %s has tree %s, want %s", request.CandidateTip, candidateTree, request.Tree)
 		}
 	}
-	binary, err := batchTipProofExecutable()
+	binary, err := dependencies.executable()
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
@@ -283,16 +294,16 @@ func launchBatchTipProof(request batchProofLaunch) (proofrun.TestResult, error) 
 	// the engine that judges. The tip is therefore projected into its own
 	// detached worktree, whose index git itself verifies against the tree, and
 	// the run is pointed back at the control root for every durable write.
-	projectRoot, err := (gittree.Workspace{Dir: request.Root}).TopLevel()
+	projectRoot, err := dependencies.topLevel(request.Root)
 	if err != nil {
 		return proofrun.TestResult{}, err
 	}
-	detached, err := (gittree.Workspace{Dir: projectRoot}).NewDetachedWorktree(request.Tree)
+	detachedRoot, closeDetached, err := dependencies.checkout(projectRoot, request.Tree)
 	if err != nil {
 		return proofrun.TestResult{}, fmt.Errorf("project batch tip %s: %w", request.Tree, err)
 	}
-	defer detached.Close()
-	executionRoot := batch.ModuleRoot(detached.Workspace().Dir)
+	defer closeDetached()
+	executionRoot := batch.ModuleRoot(detachedRoot)
 	args := []string{"test", "run", "--root", executionRoot, "--control-root", request.Root, "--batch-tip",
 		"--goal", request.GoalID, "--tree", request.Tree,
 		"--mode", string(request.Mode), "--purpose", "delivery", "--result", request.ResultPath,

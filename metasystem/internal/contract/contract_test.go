@@ -87,37 +87,9 @@ func writeFileMode(t *testing.T, path, content string, mode os.FileMode) {
 	}
 }
 
-// newContractRepo builds a git repository with the frozen instruments committed
-// and tagged, and writes the base contract at plans/mission-alpha.contract.md.
-func newContractRepo(t *testing.T) (repo, contractPath string) {
-	t.Helper()
-	repo = filepath.Join(t.TempDir(), "repo")
-	if err := os.MkdirAll(repo, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runGitCmd(t, repo, "-c", "init.defaultBranch=main", "init", "-q")
-	runGitCmd(t, repo, "config", "user.name", "metasystem")
-	runGitCmd(t, repo, "config", "user.email", "metasystem@example.invalid")
-	runGitCmd(t, repo, "config", "commit.gpgsign", "false")
-
-	writeFileMode(t, filepath.Join(repo, "scripts", "gate.sh"),
-		"#!/usr/bin/env bash\nset -euo pipefail\nprintf 'metric=score=1\\n'\n", 0o755)
-	writeFileMode(t, filepath.Join(repo, "truth", "reference.txt"), "certified truth\n", 0o644)
-	writeFileMode(t, filepath.Join(repo, "docs", "project-rules.md"), projectRules, 0o644)
-	writeFileMode(t, filepath.Join(repo, "scripts", "agents", "arm-supervision.sh"),
-		"#!/usr/bin/env bash\nprintf 'fixture-fingerprint\\n'\n", 0o755)
-	runGitCmd(t, repo, "add", ".")
-	runGitCmd(t, repo, "commit", "-qm", "instruments")
-	runGitCmd(t, repo, "tag", "instruments")
-
-	contractPath = filepath.Join(repo, "plans", "mission-alpha.contract.md")
-	writeFileMode(t, contractPath, sealableContract(), 0o644)
-	return repo, contractPath
-}
-
 func TestContractValidateAcceptsBase(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	resolved, warnings, err := Validate(contractPath)
+	contractPath, repository := newContractFiles(t, 1)
+	resolved, warnings, err := contractValidateWithRepository(contractPath, repository)
 	if err != nil {
 		t.Fatalf("valid contract rejected: %v", err)
 	}
@@ -134,10 +106,10 @@ func TestContractValidateAcceptsBase(t *testing.T) {
 }
 
 func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
-	_, contractPath := newContractRepo(t)
+	contractPath, repository := newContractFiles(t, 5)
 	undersized := strings.Replace(baseContract(), "fence.cycles=3", "fence.cycles=6", 1)
 	writeFileMode(t, contractPath, undersized, 0o644)
-	_, warnings, err := Validate(contractPath)
+	_, warnings, err := contractValidateWithRepository(contractPath, repository)
 	if err != nil {
 		t.Fatalf("an undersized no-gain budget warns, never refuses: %v", err)
 	}
@@ -148,7 +120,7 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 	// remains (baseContract's budget of 2 is under the critique cadence).
 	atHalf := strings.Replace(baseContract(), "fence.cycles=3", "fence.cycles=4", 1)
 	writeFileMode(t, contractPath, atHalf, 0o644)
-	if _, warnings, err = Validate(contractPath); err != nil ||
+	if _, warnings, err = contractValidateWithRepository(contractPath, repository); err != nil ||
 		len(warnings) != 2 || !strings.Contains(warnings[0], "critique cadence") {
 		t.Fatalf("a budget at half the fence warns for cadence and unsealed caps: %v %v", warnings, err)
 	}
@@ -158,7 +130,7 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 		"ledger.no-gain-budget=2", "ledger.no-gain-budget=3", 1),
 		"fence.cycles=3", "fence.cycles=6", 1)
 	writeFileMode(t, contractPath, atCadence, 0o644)
-	if _, warnings, err = Validate(contractPath); err != nil ||
+	if _, warnings, err = contractValidateWithRepository(contractPath, repository); err != nil ||
 		len(warnings) != 2 || !strings.Contains(warnings[0], "critique cadence") {
 		t.Fatalf("budget 3 warns for cadence and unsealed caps: %v %v", warnings, err)
 	}
@@ -166,7 +138,7 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 		"ledger.no-gain-budget=2", "ledger.no-gain-budget=4", 1),
 		"fence.cycles=3", "fence.cycles=8", 1)
 	writeFileMode(t, contractPath, aboveCadence, 0o644)
-	if _, warnings, err = Validate(contractPath); err != nil ||
+	if _, warnings, err = contractValidateWithRepository(contractPath, repository); err != nil ||
 		len(warnings) != 1 || !strings.Contains(warnings[0], "host.max-turns is not sealed") {
 		t.Fatalf("budget 4 with cycles 8 warns only for unsealed caps: %v %v", warnings, err)
 	}
@@ -174,7 +146,7 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 	sealed := strings.Replace(aboveCadence, "host.turn-cap-min=",
 		"host.max-turns=150\nhost.max-budget-usd=5.00\nhost.turn-cap-min=", 1)
 	writeFileMode(t, contractPath, sealed, 0o644)
-	if _, warnings, err = Validate(contractPath); err != nil || len(warnings) != 0 {
+	if _, warnings, err = contractValidateWithRepository(contractPath, repository); err != nil || len(warnings) != 0 {
 		t.Fatalf("sealed caps must clear every warning: %v %v", warnings, err)
 	}
 }
@@ -209,11 +181,9 @@ func TestContractValidateRejects(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			repo := filepath.Join(t.TempDir(), "repo")
-			_ = repo
-			_, contractPath := newContractRepo(t)
+			contractPath, repository := newContractFiles(t, 1)
 			writeFileMode(t, contractPath, tc.mutate(baseContract()), 0o644)
-			_, _, err := Validate(contractPath)
+			_, _, err := contractValidateWithRepository(contractPath, repository)
 			if err == nil {
 				t.Fatalf("expected rejection for %s", tc.name)
 			}
@@ -225,8 +195,9 @@ func TestContractValidateRejects(t *testing.T) {
 }
 
 func TestContractSealWritesBlockAndDigest(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	digest, err := Seal(contractPath)
+	f := newContractSource(t, 2, false)
+	contractPath := f.path
+	digest, err := f.seal(false)
 	if err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
@@ -253,63 +224,69 @@ func TestContractSealWritesBlockAndDigest(t *testing.T) {
 	}
 
 	// A sealed contract may not be resealed.
-	if _, err := Seal(contractPath); err == nil || !strings.Contains(err.Error(), "already sealed") {
+	if _, err := contractSealWithSource(contractPath, f.repository, f.source()); err == nil || !strings.Contains(err.Error(), "already sealed") {
 		t.Fatalf("expected already-sealed refusal, got %v", err)
+	}
+	failed := newContractSource(t, 1, false)
+	if _, err := failed.seal(true); err == nil || !strings.Contains(err.Error(), "injected checkout failure") {
+		t.Fatalf("checkout failure did not propagate after registration: %v", err)
 	}
 }
 
 func TestContractSealRefusesAfterApproval(t *testing.T) {
-	_, contractPath := newContractRepo(t)
+	contractPath, repository := newContractFiles(t, 1)
 	writeFileMode(t, contractPath,
 		sealableContract()+"\nApproval: name=Human; date=2026-08-04; contract-sha256="+strings.Repeat("0", 64)+"\n", 0o644)
-	if _, err := Seal(contractPath); err == nil || !strings.Contains(err.Error(), "before approval") {
+	if _, err := contractSealWithRepository(contractPath, repository); err == nil || !strings.Contains(err.Error(), "before approval") {
 		t.Fatalf("expected refusal to seal after approval, got %v", err)
 	}
 }
 
 func TestContractPreflightUnsealed(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	_, _, err := Preflight(contractPath, "")
+	contractPath, repository := newContractFiles(t, 1)
+	_, _, err := contractPreflightWithRepository(contractPath, "", repository)
 	if err == nil || !strings.Contains(err.Error(), "unsealed") {
 		t.Fatalf("expected unsealed refusal, got %v", err)
 	}
 }
 
 func TestContractPreflightUnsigned(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	if _, err := Seal(contractPath); err != nil {
+	f := newContractSource(t, 2, false)
+	if _, err := f.seal(false); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
-	_, _, err := Preflight(contractPath, "")
+	_, _, err := f.preflight(false)
 	if err == nil || !strings.Contains(err.Error(), "unsigned") {
 		t.Fatalf("expected unsigned refusal, got %v", err)
 	}
 }
 
 func TestContractPreflightApprovalHashMismatch(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	if _, err := Seal(contractPath); err != nil {
+	f := newContractSource(t, 2, false)
+	contractPath := f.path
+	if _, err := f.seal(false); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
 	data, _ := os.ReadFile(contractPath)
 	writeFileMode(t, contractPath,
 		string(data)+"\nApproval: name=Human; date=2026-08-04; contract-sha256="+strings.Repeat("0", 64)+"\n", 0o644)
-	_, _, err := Preflight(contractPath, "")
+	_, _, err := f.preflight(false)
 	if err == nil || !strings.Contains(err.Error(), "approval hash") {
 		t.Fatalf("expected approval-hash refusal, got %v", err)
 	}
 }
 
 func TestContractPreflightStaleExposure(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	if _, err := Seal(contractPath); err != nil {
+	f := newContractSource(t, 2, false)
+	contractPath := f.path
+	if _, err := f.seal(false); err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
 	data, _ := os.ReadFile(contractPath)
 	// Change an authored fence value after sealing; the sealed exposure now
 	// disagrees with the live contract.
 	writeFileMode(t, contractPath, strings.Replace(string(data), "fence.jobs=4", "fence.jobs=5", 1), 0o644)
-	_, _, err := Preflight(contractPath, "")
+	_, _, err := f.preflight(false)
 	if err == nil || !strings.Contains(err.Error(), "exposure is stale") {
 		t.Fatalf("expected stale-exposure refusal, got %v", err)
 	}
@@ -319,8 +296,9 @@ func TestContractPreflightStaleExposure(t *testing.T) {
 // approval line it protects: sealing yields a digest, and appending exactly
 // that approval leaves preflight's recomputed hash matching.
 func TestContractApprovalHashStable(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	digest, err := Seal(contractPath)
+	f := newContractSource(t, 1, false)
+	contractPath := f.path
+	digest, err := f.seal(false)
 	if err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
@@ -373,14 +351,15 @@ func removeLine(text, line string) string {
 // patience-bearing contract passes its own preflight and a
 // pre-feature contract's seal is unchanged by the feature's existence.
 func TestContractPatienceEntriesValidateAndSeal(t *testing.T) {
-	_, contractPath := newContractRepo(t)
+	f := newContractSource(t, 3, false)
+	contractPath := f.path
 	withPatience := strings.Replace(sealableContract(), "exposure=EUR:10",
 		"exposure=EUR:10\npatience.rounds.implementer.codex.gpt-5-6-sol=4", 1)
 	writeFileMode(t, contractPath, withPatience, 0o644)
-	if _, _, err := Validate(contractPath); err != nil {
+	if _, _, err := contractValidateWithRepository(contractPath, f.repository); err != nil {
 		t.Fatalf("patience-bearing contract rejected: %v", err)
 	}
-	digest, err := Seal(contractPath)
+	digest, err := f.seal(false)
 	if err != nil {
 		t.Fatalf("seal failed: %v", err)
 	}
@@ -404,8 +383,8 @@ func TestContractPatienceEntriesValidateAndSeal(t *testing.T) {
 	// missing ordered-emitter entry fails exactly here.
 	signed := string(data) + "\nApproval: name=Human; date=2026-08-12; contract-sha256=" + digest + "\n"
 	writeFileMode(t, contractPath, signed, 0o644)
-	if _, _, err := Preflight(contractPath, ""); err != nil &&
-		(strings.Contains(err.Error(), "seal") || strings.Contains(err.Error(), "stale")) {
+	if _, _, err := f.preflight(true); err == nil || !strings.Contains(err.Error(), "origin fetch failed") ||
+		strings.Contains(err.Error(), "seal") || strings.Contains(err.Error(), "stale") {
 		t.Fatalf("patience-bearing seal failed its own preflight recomputation: %v", err)
 	}
 }
@@ -424,11 +403,11 @@ func TestContractPatienceEntriesRejected(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.key, func(t *testing.T) {
-			_, contractPath := newContractRepo(t)
+			contractPath, repository := newContractFiles(t, 1)
 			mutated := strings.Replace(baseContract(), "exposure=EUR:10",
 				"exposure=EUR:10\n"+tc.key, 1)
 			writeFileMode(t, contractPath, mutated, 0o644)
-			_, _, err := Validate(contractPath)
+			_, _, err := contractValidateWithRepository(contractPath, repository)
 			if err == nil || !strings.Contains(err.Error(), tc.contains) {
 				t.Fatalf("expected %q refusal, got %v", tc.contains, err)
 			}
@@ -487,9 +466,9 @@ func TestContractValidateRejectsPerKeyMatrix(t *testing.T) {
 		}
 		bad, mapped := badValues[key]
 		t.Run("missing "+key, func(t *testing.T) {
-			_, contractPath := newContractRepo(t)
+			contractPath, repository := newContractFiles(t, 1)
 			writeFileMode(t, contractPath, removeLine(base, line), 0o644)
-			if _, _, err := Validate(contractPath); err == nil {
+			if _, _, err := contractValidateWithRepository(contractPath, repository); err == nil {
 				t.Fatalf("a contract missing %s validated", key)
 			}
 		})
@@ -497,9 +476,13 @@ func TestContractValidateRejectsPerKeyMatrix(t *testing.T) {
 			t.Fatalf("no malformed value mapped for key %s — extend the table", key)
 		}
 		t.Run("malformed "+key, func(t *testing.T) {
-			_, contractPath := newContractRepo(t)
+			expectedRepositoryCalls := 1
+			if bad == " value " {
+				expectedRepositoryCalls = 0
+			}
+			contractPath, repository := newContractFiles(t, expectedRepositoryCalls)
 			writeFileMode(t, contractPath, strings.Replace(base, line, key+"="+bad, 1), 0o644)
-			if _, _, err := Validate(contractPath); err == nil {
+			if _, _, err := contractValidateWithRepository(contractPath, repository); err == nil {
 				t.Fatalf("a contract with %s=%q validated", key, bad)
 			}
 		})
@@ -509,15 +492,16 @@ func TestContractValidateRejectsPerKeyMatrix(t *testing.T) {
 // Issue #4 option 3: a single binary gate metric with a no-gain budget
 // below the cycle fence is UNSIGNABLE — refused at seal by name.
 func TestContractSealRefusesBinaryGateShortFuse(t *testing.T) {
-	_, contractPath := newContractRepo(t)
+	f := newContractSource(t, 2, false)
+	contractPath := f.path
 	writeFileMode(t, contractPath, baseContract(), 0o644)
-	if _, err := Seal(contractPath); err == nil ||
+	if _, err := contractSealWithSource(contractPath, f.repository, f.source()); err == nil ||
 		!strings.Contains(err.Error(), "parks perfect play") {
 		t.Fatalf("binary-gate short fuse must refuse at seal: %v", err)
 	}
 	// Raising the budget to the fence signs cleanly.
 	writeFileMode(t, contractPath, sealableContract(), 0o644)
-	if _, err := Seal(contractPath); err != nil {
+	if _, err := f.seal(false); err != nil {
 		t.Fatalf("fuse-compliant contract refused: %v", err)
 	}
 }

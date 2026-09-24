@@ -73,7 +73,7 @@ func RequestWithdrawal(store Store, goalID, machine, lineage, seatRoot, actor st
 			record.PrefixTrees, record.SelectedGroups = nil, nil
 			record.TipTree = record.BaseTree
 			if len(survivors) != 0 {
-				prefixes, err := assembleUnits(store.root, record.BaseTree, survivors)
+				prefixes, err := store.reassembly.assemble(record.BaseTree, survivors)
 				if err != nil {
 					return err
 				}

@@ -25,7 +25,16 @@ type recertificationClosureFixture struct {
 
 func newRecertificationClosureFixture(t *testing.T) *recertificationClosureFixture {
 	t.Helper()
-	fixture := newConformanceFixture(t)
+	return assembleRecertificationClosureFixture(t, newConformanceFixture(t))
+}
+
+func newFileRecertificationClosureFixture(t *testing.T) *recertificationClosureFixture {
+	t.Helper()
+	return assembleRecertificationClosureFixture(t, newFileConformanceFixture(t))
+}
+
+func assembleRecertificationClosureFixture(t *testing.T, fixture *conformanceFixture) *recertificationClosureFixture {
+	t.Helper()
 	reviewedTree := strings.Repeat("a", 40)
 	patch := []byte("same reviewed patch bytes\n")
 	implementation := map[string]any{
@@ -209,7 +218,7 @@ func removeRequiredClosure(f *recertificationClosureFixture) {
 }
 
 func TestRecertificationUsesClosureForNoOpMember(t *testing.T) {
-	fixture := newRecertificationClosureFixture(t)
+	fixture := newFileRecertificationClosureFixture(t)
 	certification, err := fixture.run.selectOriginalCertification()
 	if err != nil {
 		t.Fatal(err)
@@ -225,7 +234,7 @@ func TestRecertificationUsesClosureForNoOpMember(t *testing.T) {
 	}
 
 	t.Run("conflicting duplicate review copies still refuse", func(t *testing.T) {
-		duplicate := newRecertificationClosureFixture(t)
+		duplicate := newFileRecertificationClosureFixture(t)
 		writeRecertificationReview(t, duplicate.fixture, 3, "implementation-r2", duplicate.reviewedTree, duplicate.patch,
 			map[string]any{"copy": "different review bytes"})
 		if _, err := duplicate.run.selectOriginalCertification(); err == nil || !strings.Contains(err.Error(), "conflicting original review copies") {
@@ -255,7 +264,7 @@ func TestSelectOriginalCertificationRejectsChangedClosureSelection(t *testing.T)
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := newRecertificationClosureFixture(t)
+			fixture := newFileRecertificationClosureFixture(t)
 			_, err := fixture.run.selectOriginalCertification()
 			if err != nil {
 				t.Fatalf("valid setup did not select: %v", err)
@@ -270,10 +279,16 @@ func TestSelectOriginalCertificationRejectsChangedClosureSelection(t *testing.T)
 
 func assertVerifyRecertificationReviewSelectionRefusal(t *testing.T, want string, edit func(*recertificationClosureFixture)) {
 	t.Helper()
-	fixture := newRecertificationClosureFixture(t)
-	path := fixture.prepareVerifiedRecertification()
+	fixture, path, raw := newRawRecertificationClosure(t)
+	verified, err := verifyRecertificationWithRaw(fixture.fixture.controller, "implementation", path, raw.answer, nil)
+	if err != nil || verified.Record.RecordDigest != raw.record.RecordDigest || verified.RecordPath != path || !bytes.Equal(verified.Patch, raw.mergedPatch) {
+		t.Fatalf("untampered recertification did not verify: %+v, %v", verified, err)
+	}
+	raw.consumed()
 	edit(fixture)
-	_, err := VerifyRecertification(fixture.fixture.controller, "implementation", path)
+	raw.resetForRefusal()
+	_, err = verifyRecertificationWithRaw(fixture.fixture.controller, "implementation", path, raw.answer, nil)
+	raw.consumed()
 	var failure *RecertificationFailure
 	if !errors.As(err, &failure) || failure.Reason != "chain-recertification-unproven" || failure.Detail != "review-selection" ||
 		!strings.Contains(err.Error(), want) {

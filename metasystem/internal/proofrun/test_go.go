@@ -111,7 +111,7 @@ func RunGoGateTests(ctx context.Context, request GoGateTestRequest) (GoGateTestR
 	ctx = withTestWorkerPool(ctx, request.Workers)
 	limits, sampleInterval := groupSupervisorSettings(nil)
 	var output synchronizedBuffer
-	outcome, closeErr, _, launchErr := runShardedGoGroup(ctx, nativeRequest, group, request.Root, environment, expected,
+	outcome, closeErr, coverageMerge, launchErr := runShardedGoGroup(ctx, nativeRequest, group, request.Root, environment, expected,
 		discovery.Inventory, discovery.ModulePrefix, limits, sampleInterval, result.LogPath, &output)
 	result.Output = goNativePlainOutput(output.Bytes())
 	if launchErr != nil {
@@ -132,6 +132,7 @@ func RunGoGateTests(ctx context.Context, request GoGateTestRequest) (GoGateTestR
 		result.Reruns = groupResult.Reruns
 		return result, 1, goGateNativeFailure(outcome, result)
 	}
+	result.Output = []byte(coverageMerge)
 	return result, 0, nil
 }
 

@@ -37,7 +37,7 @@ func recordOverloadBackoffs(t *testing.T) *[]time.Duration {
 func TestInternalRunOverloadedHostStaysOffTheBreaker(t *testing.T) {
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "10")
 	backoffs := recordOverloadBackoffs(t)
-	engine := buildFullCycleRoot(t, "FAKEHOST:exit-overloaded")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:exit-overloaded")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -97,7 +97,7 @@ func TestInternalRunOverloadedHostStaysOffTheBreaker(t *testing.T) {
 func TestInternalRunCleanExitOverloadDocumentStaysOffTheBreaker(t *testing.T) {
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "10")
 	backoffs := recordOverloadBackoffs(t)
-	engine := buildFullCycleRoot(t, "FAKEHOST:overloaded-result")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:overloaded-result")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))

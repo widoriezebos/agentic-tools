@@ -378,10 +378,21 @@ func claimDependenciesWithDefaults(dependencies ClaimLaunchDependencies) ClaimLa
 }
 
 func markFirstSlice(params ClaimLaunchParams, now time.Time) error {
+	return markFirstSliceWithReads(params, now, concreteGoalAdmissionReads())
+}
+
+func MarkFirstSliceWithReads(params ClaimLaunchParams, now time.Time, reads ProofAdmissionReads) error {
+	if err := reads.Validate(); err != nil {
+		return err
+	}
+	return markFirstSliceWithReads(params, now, reads.private())
+}
+
+func markFirstSliceWithReads(params ClaimLaunchParams, now time.Time, reads goalAdmissionReads) error {
 	if params.GoalID == "" {
 		return nil
 	}
-	binding, err := ResolveGoalBinding(params.Root, params.GoalID, now)
+	binding, err := resolveGoalBindingWithReads(params.Root, params.GoalID, now, reads)
 	if err != nil {
 		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing fact could not land on the shared ledger; the reservation is refused: %w", params.GoalID, err)
 	}
@@ -395,7 +406,7 @@ func markFirstSlice(params ClaimLaunchParams, now time.Time) error {
 	if err != nil {
 		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing identity could not be minted; the reservation is refused: %w", params.GoalID, err)
 	}
-	endpoint, err := goal.ResolveEndpoint(params.Root)
+	endpoint, err := reads.ResolveEndpoint(params.Root)
 	if err != nil {
 		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's shared endpoint could not be resolved; the reservation is refused: %w", params.GoalID, err)
 	}
@@ -409,7 +420,7 @@ func markFirstSlice(params ClaimLaunchParams, now time.Time) error {
 	if result.Outcome != goal.OutcomeConfirmed && result.Outcome != goal.OutcomeAbandoned {
 		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing fact ended %s; the reservation is refused", params.GoalID, result.Outcome)
 	}
-	verified, err := ResolveGoalBinding(params.Root, params.GoalID, now)
+	verified, err := resolveGoalBindingWithReads(params.Root, params.GoalID, now, reads)
 	if err != nil || verified.File.Sliced == nil {
 		return fmt.Errorf("SLICE_START_UNRECORDED: goal %s's first-slicing fact is absent after publication; the reservation is refused", params.GoalID)
 	}

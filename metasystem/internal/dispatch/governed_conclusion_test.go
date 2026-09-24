@@ -3,7 +3,6 @@ package dispatch
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -12,31 +11,17 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
-func governedConclusionBed(t *testing.T, limit, attempts uint64, timingSeconds uint64) (string, uint64) {
+func governedConclusionBed(t *testing.T, limit, attempts uint64, timingSeconds uint64, expectedEndpointReads int) (*goalAdmissionBed, uint64) {
 	t.Helper()
-	for _, name := range []string{"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"} {
-		value, present := os.LookupEnv(name)
-		if err := os.Unsetenv(name); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			if present {
-				_ = os.Setenv(name, value)
-			} else {
-				_ = os.Unsetenv(name)
-			}
-		})
-	}
-	root := revisionBindingBed(t, 2)
-	revision := installEnforcedObligation(t, root, attempts)
+	bed := newGoalAdmissionBed(t, 2)
+	root := bed.root
+	revision := installAcceptedEnforcedObligation(t, bed, attempts)
 	path := filepath.Join(root, "plans", "goals", "bounded.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -54,24 +39,21 @@ func governedConclusionBed(t *testing.T, limit, attempts uint64, timingSeconds u
 	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "conclusion fixture"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		if output, runErr := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); runErr != nil {
-			t.Fatalf("git %v: %v: %s", args, runErr, output)
-		}
-	}
-	return root, revision
+	bed.accept(t)
+	countGoalAdmissionFacts(t, bed, 0, expectedEndpointReads, 0)
+	return bed, revision
 }
 
-func launchConclusionAttempt(t *testing.T, root string, revision uint64, now *time.Time) (*run.Store, *governedProofProber, string) {
+func launchConclusionAttempt(t *testing.T, bed *goalAdmissionBed, revision uint64, now *time.Time) (*run.Store, *governedProofProber, string) {
 	t.Helper()
 	prober := &governedProofProber{alive: true, started: *now}
-	store := NewConcludingRunStore(root, nil)
+	store := newConcludingRunStoreWithReads(bed.root, nil, bed.reads)
 	store.Now = func() time.Time { return *now }
 	store.Prober = prober
 	store.Getpgid = func(pid int64) (int64, error) { return pid, nil }
 	store.AllPids = func() ([]int64, error) { return nil, nil }
 	store.AdmitGoverned = func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
-		return EvaluateGovernedRunAdmission(root, request, *now)
+		return evaluateGovernedRunAdmissionWithReads(bed.root, request, *now, bed.reads)
 	}
 	nonce, err := store.Launch(run.Caller{Class: "HUMAN"}, run.LaunchParams{Id: "concluding-run", Kind: "suite",
 		Display: "concluding run", Log: "artifacts/concluding-run.log", GoalId: "bounded", ObligationRevision: revision, StandingShared: true})
@@ -103,26 +85,21 @@ func concludeAttemptRed(t *testing.T, store *run.Store, prober *governedProofPro
 
 func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 	t.Run("conclusion-observation-counts-itself", func(t *testing.T) {
-		root, revision := governedConclusionBed(t, 240, 4, 1800)
+		bed, revision := governedConclusionBed(t, 240, 4, 1800, 5)
+		root := bed.root
 		now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
-		weightGeneration := uint64(0)
-		others := &run.Store{Root: root, Now: func() time.Time { return now }, AdmitGoverned: func(run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
-			return run.GovernedAdmissionResult{Attempt: run.GovernedAttempt{GoalRevision: 2, ObligationRevision: revision,
-				WeightGeneration: &weightGeneration, Recurrence: governance.StandingSharedProcess, ExecutionCostMinutes: 30,
-				AttemptOrdinal: 1, Budget: goalbudget.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 3},
-				BudgetStartedAt: now.Format(time.RFC3339), ExpectedAssumptions: governance.ObligationAssumptions{
-					Recurrence: governance.StandingSharedProcess, Platform: "fixture/os", ToolchainIdentity: "fixture-go",
-					SurfaceDigest: "fixture-digest", MaxActiveJobs: 3, TimingEnvelopeSeconds: 1800,
-					ObservationSource: "run-terminal-record",
-				}, AdmissionDecision: governance.ConsequenceDecision{Apply: true}, Breaker: run.BreakerClosed}}, nil
-		}}
+		others := newConcludingRunStoreWithReads(root, nil, bed.reads)
+		others.Now = func() time.Time { return now }
+		others.AdmitGoverned = func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
+			return evaluateGovernedRunAdmissionWithReads(root, request, now, bed.reads)
+		}
 		for _, id := range []string{"other-one", "other-two"} {
 			if _, err := others.Launch(run.Caller{Class: "HUMAN"}, run.LaunchParams{Id: id, Kind: "suite", Log: "artifacts/" + id + ".log",
 				GoalId: "bounded", ObligationRevision: revision, StandingShared: true}); err != nil {
 				t.Fatal(err)
 			}
 		}
-		store, prober, nonce := launchConclusionAttempt(t, root, revision, &now)
+		store, prober, nonce := launchConclusionAttempt(t, bed, revision, &now)
 		record, err := store.Read("concluding-run")
 		if err != nil {
 			t.Fatal(err)
@@ -145,9 +122,10 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 	})
 
 	t.Run("foreign-malformed-obligation-state", func(t *testing.T) {
-		root, revision := governedConclusionBed(t, 60, 3, 1800)
+		bed, revision := governedConclusionBed(t, 60, 3, 1800, 3)
+		root := bed.root
 		now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
-		store, prober, nonce := launchConclusionAttempt(t, root, revision, &now)
+		store, prober, nonce := launchConclusionAttempt(t, bed, revision, &now)
 		foreign := filepath.Join(root, "artifacts", "agents", "governed-obligations", "foreign.g1.o1.json")
 		if err := os.MkdirAll(filepath.Dir(foreign), 0o755); err != nil {
 			t.Fatal(err)
@@ -161,10 +139,11 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 	})
 
 	t.Run("settled-cap", func(t *testing.T) {
-		root, revision := governedConclusionBed(t, 150, 3, 1800)
+		bed, revision := governedConclusionBed(t, 150, 3, 1800, 3)
+		root := bed.root
 		now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
 		writeBudgetJob(t, root, "settling", "settling", 2, 120, "running", budgetJobLife{})
-		store, prober, nonce := launchConclusionAttempt(t, root, revision, &now)
+		store, prober, nonce := launchConclusionAttempt(t, bed, revision, &now)
 		admitted, err := store.Read("concluding-run")
 		if err != nil || admitted == nil || admitted.Governed == nil || admitted.Governed.ReservedBefore != 120 {
 			t.Fatalf("fixture was not admitted against the open cap: run=%+v err=%v", admitted, err)
@@ -179,10 +158,11 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 	})
 
 	t.Run("real-exhaustion", func(t *testing.T) {
-		root, revision := governedConclusionBed(t, 150, 3, 1800)
+		bed, revision := governedConclusionBed(t, 150, 3, 1800, 3)
+		root := bed.root
 		now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
 		writeBudgetJob(t, root, "running", "running", 2, 120, "running", budgetJobLife{})
-		store, prober, nonce := launchConclusionAttempt(t, root, revision, &now)
+		store, prober, nonce := launchConclusionAttempt(t, bed, revision, &now)
 		record := concludeAttemptRed(t, store, prober, nonce, &now)
 		want := "terminal non-green attempt reached the human-set tuple: observed=0 open-caps=120 attempt=30 limit=150"
 		if !record.Governed.Exhausted || record.Governed.ExhaustionReason != want {
@@ -191,9 +171,9 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 	})
 
 	t.Run("excludes-concluding-run", func(t *testing.T) {
-		root, revision := governedConclusionBed(t, 60, 3, 1800)
+		bed, revision := governedConclusionBed(t, 60, 3, 1800, 3)
 		now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
-		store, prober, nonce := launchConclusionAttempt(t, root, revision, &now)
+		store, prober, nonce := launchConclusionAttempt(t, bed, revision, &now)
 		record := concludeAttemptRed(t, store, prober, nonce, &now)
 		if record.Governed.Exhausted {
 			t.Fatalf("concluding run charged itself twice: %+v", record.Governed)
@@ -201,9 +181,10 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 	})
 
 	t.Run("unknown", func(t *testing.T) {
-		root, revision := governedConclusionBed(t, 150, 3, 1800)
+		bed, revision := governedConclusionBed(t, 150, 3, 1800, 3)
+		root := bed.root
 		now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
-		store, prober, nonce := launchConclusionAttempt(t, root, revision, &now)
+		store, prober, nonce := launchConclusionAttempt(t, bed, revision, &now)
 		badPath := filepath.Join(root, "artifacts", "agents", "jobs", "duplicate.json")
 		if err := os.MkdirAll(filepath.Dir(badPath), 0o755); err != nil {
 			t.Fatal(err)
@@ -219,7 +200,8 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 	})
 
 	t.Run("proof-reservation-after-admission", func(t *testing.T) {
-		root, revision := governedConclusionBed(t, 60, 3, 1800)
+		bed, revision := governedConclusionBed(t, 60, 3, 1800, 3)
+		root := bed.root
 		conf, err := os.OpenFile(filepath.Join(root, "metasystem.conf"), os.O_APPEND|os.O_WRONLY, 0)
 		if err != nil {
 			t.Fatal(err)
@@ -232,7 +214,7 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 			t.Fatal(err)
 		}
 		now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
-		store, prober, nonce := launchConclusionAttempt(t, root, revision, &now)
+		store, prober, nonce := launchConclusionAttempt(t, bed, revision, &now)
 		identity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "late-proof",
 			[]string{"gate"}, behaviorsurface.SupportedVersion)
 		if err != nil {
@@ -264,9 +246,10 @@ func TestGovernedExhaustionReprojectsSettledSpendAtConclusion(t *testing.T) {
 }
 
 func TestGovernedExhaustionRetryRaisesMissingDebtImmediately(t *testing.T) {
-	root, revision := governedConclusionBed(t, 30, 2, 1800)
+	bed, revision := governedConclusionBed(t, 30, 2, 1800, 3)
+	root := bed.root
 	now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
-	store, prober, nonce := launchConclusionAttempt(t, root, revision, &now)
+	store, prober, nonce := launchConclusionAttempt(t, bed, revision, &now)
 	before, err := os.ReadFile(run.RecordPath(root, "concluding-run"))
 	if err != nil {
 		t.Fatal(err)
@@ -324,9 +307,10 @@ func TestGovernedExhaustionRetryRaisesMissingDebtImmediately(t *testing.T) {
 }
 
 func TestGovernedExhaustionRetryConvergesAfterDebtBeforeRunWrite(t *testing.T) {
-	root, revision := governedConclusionBed(t, 30, 2, 1800)
+	bed, revision := governedConclusionBed(t, 30, 2, 1800, 4)
+	root := bed.root
 	now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
-	store, prober, nonce := launchConclusionAttempt(t, root, revision, &now)
+	store, prober, nonce := launchConclusionAttempt(t, bed, revision, &now)
 	before, err := os.ReadFile(run.RecordPath(root, "concluding-run"))
 	if err != nil {
 		t.Fatal(err)
@@ -353,7 +337,7 @@ func TestGovernedExhaustionRetryConvergesAfterDebtBeforeRunWrite(t *testing.T) {
 	if err := os.WriteFile(run.RecordPath(root, "concluding-run"), before, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	binding, err := ResolveGoalBinding(root, "bounded", now)
+	binding, err := bed.binding("bounded", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,9 +371,10 @@ func TestGovernedExhaustionRetryConvergesAfterDebtBeforeRunWrite(t *testing.T) {
 }
 
 func TestGovernedNonExhaustedRetryIgnoresItsOwnPartialDurableAttempt(t *testing.T) {
-	root, revision := governedConclusionBed(t, 60, 2, 1800)
+	bed, revision := governedConclusionBed(t, 60, 2, 1800, 5)
+	root := bed.root
 	now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
-	store, prober, nonce := launchConclusionAttempt(t, root, revision, &now)
+	store, prober, nonce := launchConclusionAttempt(t, bed, revision, &now)
 	before, err := os.ReadFile(run.RecordPath(root, "concluding-run"))
 	if err != nil {
 		t.Fatal(err)
@@ -403,23 +388,17 @@ func TestGovernedNonExhaustedRetryIgnoresItsOwnPartialDurableAttempt(t *testing.
 	if firstObservation.DurationSeconds != 1800 || firstObservation.AssumptionState != run.AssumptionMatch {
 		t.Fatalf("fixture first observation is not the intended thirty-minute match: %+v", firstObservation)
 	}
-	if err := os.WriteFile(run.RecordPath(root, "concluding-run"), before, 0o644); err != nil {
-		t.Fatal(err)
+	interference := newConcludingRunStoreWithReads(root, nil, bed.reads)
+	interference.Now = func() time.Time { return now }
+	interference.AdmitGoverned = func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
+		return evaluateGovernedRunAdmissionWithReads(root, request, now, bed.reads)
 	}
-	interferenceAttempt := *first.Governed
-	interferenceAttempt.ObservedCostMinutes = nil
-	interferenceAttempt.Observation = nil
-	interferenceAttempt.AttemptOrdinal++
-	interferenceAttempt.Exhausted = false
-	interferenceAttempt.ExhaustionReason = ""
-	interferenceAttempt.RetroDebtRaised = false
-	interferenceAttempt.Breaker = run.BreakerClosed
-	interference := &run.Store{Root: root, Now: func() time.Time { return now }, AdmitGoverned: func(run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
-		return run.GovernedAdmissionResult{Attempt: interferenceAttempt}, nil
-	}}
 	if _, err := interference.Launch(run.Caller{Class: "HUMAN"}, run.LaunchParams{Id: "retry-interference", Kind: "suite",
 		Display: "retry interference", Log: "artifacts/retry-interference.log", GoalId: "bounded",
 		ObligationRevision: revision, StandingShared: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(run.RecordPath(root, "concluding-run"), before, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	restored, err := store.Read("concluding-run")
@@ -430,7 +409,7 @@ func TestGovernedNonExhaustedRetryIgnoresItsOwnPartialDurableAttempt(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	wouldRecompute := store.ObserveGoverned(restored, adoptedEnd)
+	wouldRecompute := observeGovernedRunWithReads(root, restored, adoptedEnd, restored.RunId, bed.reads)
 	if wouldRecompute.ActiveJobs == firstObservation.ActiveJobs {
 		t.Fatalf("retry fixture did not change the current observation: first=%+v current=%+v", firstObservation, wouldRecompute)
 	}
@@ -449,18 +428,19 @@ func TestGovernedNonExhaustedRetryIgnoresItsOwnPartialDurableAttempt(t *testing.
 }
 
 func TestSettledSpendAtConclusionUsesStableBindingDiagnostics(t *testing.T) {
-	root, revision := governedConclusionBed(t, 60, 2, 1800)
+	bed, revision := governedConclusionBed(t, 60, 2, 1800, 4)
+	root := bed.root
 	now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
 	record := &run.Record{RunId: "diagnostic-run", GoalId: "bounded", Governed: &run.GovernedAttempt{GoalRevision: 99, ObligationRevision: revision}}
-	observation := ObserveGovernedRun(root, record, now)
-	_, unknown := SettledSpendAtConclusion(root, record, now)
+	observation := observeGovernedRunWithReads(root, record, now, "", bed.reads)
+	_, unknown := settledSpendAtConclusionWithReads(root, record, now, bed.reads)
 	wantMismatch := "record=diagnostic-run reason=" + strings.Join(observation.DriftedFields, ",")
 	if unknown != wantMismatch {
 		t.Fatalf("revision mismatch diagnostic=%q, want observation diagnostic %q", unknown, wantMismatch)
 	}
 	record.GoalId = "missing"
-	_, bindingErr := ResolveGoalBinding(root, "missing", now)
-	_, unknown = SettledSpendAtConclusion(root, record, now)
+	_, bindingErr := bed.binding("missing", now)
+	_, unknown = settledSpendAtConclusionWithReads(root, record, now, bed.reads)
 	if bindingErr == nil || unknown != "record=diagnostic-run reason="+bindingErr.Error() {
 		t.Fatalf("binding failure diagnostic=%q error=%v", unknown, bindingErr)
 	}

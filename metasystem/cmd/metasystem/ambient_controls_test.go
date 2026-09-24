@@ -48,11 +48,12 @@ func TestMain(m *testing.M) {
 		declaredContextCostCandidateEngine = os.Getenv("METASYSTEM_BIN")
 	}
 	_, privateReceiptClockChild := receiptClockPrivateChildArguments()
+	_, proofCommandChild := proofCommandFixtureArguments()
 	privateReceiptClockProcess := privateReceiptClockChild ||
 		os.Getenv("GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD") == "shell-boundary" && os.Getenv(identity.FixtureCustodianEnv) == "1"
 	waitCandidateDir := ""
 	waitCandidate := os.Getenv("METASYSTEM_WAIT_BINARY")
-	if !privateReceiptClockProcess && (waitCandidate == "" || os.Getenv("METASYSTEM_WAIT_BINARY_SOURCE") != waitCandidate) {
+	if !privateReceiptClockProcess && !proofCommandChild && (waitCandidate == "" || os.Getenv("METASYSTEM_WAIT_BINARY_SOURCE") != waitCandidate) {
 		waitCandidateDir, err = os.MkdirTemp("", "metasystem-wait-candidate-")
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "create wait candidate directory:", err)
@@ -78,12 +79,15 @@ func TestMain(m *testing.M) {
 		}
 	}
 	var declarations []testenv.Declaration
-	if os.Getenv("GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD") != "" {
+	if os.Getenv("GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD") != "" || proofCommandChild {
 		// The parent constructs this helper's private fixture selectors. Preserve
 		// only that child process's declared controls through the package scrub.
 		declarations = testenv.DeclareInheritedControls()
 	}
 	status := testenv.Main(m, declarations...)
+	if proofCommandChild && status == 0 {
+		status = proofCommandFixtureChildStatus
+	}
 	if waitCandidateDir != "" {
 		_ = os.RemoveAll(waitCandidateDir)
 	}

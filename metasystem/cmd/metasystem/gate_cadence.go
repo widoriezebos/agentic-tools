@@ -50,6 +50,7 @@ type cadenceRevalidationDependencies struct {
 	readAttempts   func(string) ([]proofrun.Attempt, error)
 	buildIdentity  func(context.Context, gittree.Workspace, string, string, []string) (string, error)
 	retainedDigest func(testingPreparation, []proofrun.Attempt, string, bool) (string, error)
+	openCandidate  func(projectRoot, candidateTree string) (proofrun.CandidateWorkspace, error)
 }
 
 func productionCadenceRevalidationDependencies() cadenceRevalidationDependencies {
@@ -244,6 +245,7 @@ func revalidateCadenceWith(root string, prepared testingPreparation, trunk gater
 		return gaterun.CadenceRevalidation{}, err
 	}
 	request := testingRunRequest(prepared, "", "", "", digest, buildIdentity)
+	request.WithCandidateOpener(dependencies.openCandidate)
 	identities, err := proofrun.RevalidateRetainedGroupExecutionIdentities(context.Background(), request, attempts)
 	if err != nil {
 		return gaterun.CadenceRevalidation{}, err

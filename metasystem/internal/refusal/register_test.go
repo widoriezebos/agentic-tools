@@ -287,14 +287,14 @@ func TestHCL03GoalDoneReadItemsOpenRow(t *testing.T) {
 
 func TestHCL03ProofAdmissionRowsNameEmissions(t *testing.T) {
 	wants := map[string]Row{
-		"CANDIDATE_GOAL_REFUSED":           {Owner: "cmd/metasystem", Site: "proof_run.go:781", Shape: Question},
-		"CANDIDATE_GOAL_MOVED":             {Owner: "cmd/metasystem", Site: "proof_run.go:738", Shape: Question},
-		"PROOF_AUTHORITY_REQUIRED":         {Owner: "cmd/metasystem", Site: "proof_run.go:823", Shape: Question},
-		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run.go:899", Shape: Question},
-		"CANDIDATE_EXTENSION_REFUSED":      {Owner: "internal/dispatch", Site: "admission.go:396", Shape: Question},
+		"CANDIDATE_GOAL_REFUSED":           {Owner: "cmd/metasystem", Site: "proof_run.go:793", Shape: Question},
+		"CANDIDATE_GOAL_MOVED":             {Owner: "cmd/metasystem", Site: "proof_run.go:750", Shape: Question},
+		"PROOF_AUTHORITY_REQUIRED":         {Owner: "cmd/metasystem", Site: "proof_run.go:835", Shape: Question},
+		"PROOF_AUTHORITY_ARC_MATE_REFUSED": {Owner: "cmd/metasystem", Site: "proof_run.go:918", Shape: Question},
+		"CANDIDATE_EXTENSION_REFUSED":      {Owner: "internal/dispatch", Site: "admission.go:428", Shape: Question},
 		"RETRY_PRIOR_OUTSIDE_TREE":         {Owner: "internal/proofrun", Site: "attempt.go:1236", Shape: Question},
-		"SET_BUDGET_FENCED_SAME_TUPLE":     {Owner: "internal/goal", Site: "verbs.go:1618", Shape: Question},
-		"REBIND_EPOCH_UNAUTHENTICATED":     {Owner: "internal/goal", Site: "verbs.go:252", Shape: Identity},
+		"SET_BUDGET_FENCED_SAME_TUPLE":     {Owner: "internal/goal", Site: "verbs.go:1631", Shape: Question},
+		"REBIND_EPOCH_UNAUTHENTICATED":     {Owner: "internal/goal", Site: "verbs.go:261", Shape: Identity},
 	}
 	root := moduleRoot(t)
 	for code, want := range wants {

@@ -47,24 +47,27 @@ func TestRecordsArchiveUsesTheSameIntegrityValidation(t *testing.T) {
 
 func TestLegacyArchiveIsReadOnlyButItsRecordsCanReopen(t *testing.T) {
 	t.Parallel()
-	repo := soloLedgerRepo(t)
-	endpoint := Endpoint{Root: repo, Remote: "local", Branch: "refs/heads/main"}
-	accepted, err := goalGit(repo, nil, "rev-parse", AcceptedRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	base := strings.TrimSpace(accepted)
+	endpoint, client := fakeGoalEndpoint(t)
+	endpoint.Remote, endpoint.Branch = SyncLocal, LocalLedgerBranch
+	client.store.mu.Lock()
+	seed := client.store.commits[client.store.canonical]
+	root := vRoot()
+	root.SyncMode = SyncLocal
+	seed.files[goalsPrefix+"backlog.md"] = RenderRoot(root)
+	client.store.commits[client.store.canonical] = seed
+	client.store.mu.Unlock()
+	base := acceptedTipForEndpoint(t, endpoint)
 	legacy := vGoal("legacy-finished", StateDone)
-	commit, err := BuildCommit(endpoint, "fixture-legacy", base, []Change{{
+	commit, err := client.Build("fixture-legacy", base, []Change{{
 		Path: legacyDonePrefix + legacy.Id + ".md", Content: RenderFile(legacy),
 	}}, "fixture legacy conclusion")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := goalGit(repo, nil, "update-ref", LocalLedgerBranch, commit, base); err != nil {
-		t.Fatal(err)
+	if outcome, err := client.Publish(base, commit); err != nil || outcome != CASLanded {
+		t.Fatalf("historic conclusion was not published: outcome=%v err=%v", outcome, err)
 	}
-	if err := AdvanceAccepted(repo, commit); err != nil {
+	if err := client.AcceptedCAS(base, commit); err != nil {
 		t.Fatal(err)
 	}
 
@@ -80,7 +83,7 @@ func TestLegacyArchiveIsReadOnlyButItsRecordsCanReopen(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("reopen must move a legacy record through the ledger: %+v %v", result, err)
 	}
-	files, err := ReadCommitGoals(repo, result.Commit)
+	files, err := readCommitGoals(endpoint, result.Commit)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,10 +99,9 @@ func TestLegacyArchiveIsReadOnlyButItsRecordsCanReopen(t *testing.T) {
 
 func TestEngineRefusesNewLegacyArchiveWrites(t *testing.T) {
 	t.Parallel()
-	_, repo := oneClone(t)
-	seedLedger(t, repo)
+	endpoint, _ := fakeGoalEndpoint(t)
 	forbidden := vGoal("forbidden-legacy", StateDone)
-	result, err := Publish(endpointFor(repo), PublishRequest{
+	result, err := Publish(endpoint, PublishRequest{
 		Opid: "op-forbidden-legacy", Machine: "mac-a", Lineage: "lin-1",
 		Intent: testIntentFor("done"), Message: "try legacy write",
 		Mutate: func(string) ([]Change, error) {

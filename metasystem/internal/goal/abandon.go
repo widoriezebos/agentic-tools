@@ -66,7 +66,7 @@ func engineFloorRequest(r VerbRequest, commit string) PublishRequest {
 		Intent:  Intent{Verb: "engine-floor", Args: intentArgs(r, map[string]string{"commit": commit})},
 		Message: "goal engine-floor " + commit,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -83,7 +83,7 @@ func engineFloorRequest(r VerbRequest, commit string) PublishRequest {
 			})
 			return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(tree.Root)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -293,7 +293,7 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 		})},
 		Message: "goal abandon " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -361,7 +361,7 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 				return nil, fmt.Errorf("--waive names %s, which is not a live dependent of the abandoned set", strings.Join(badWaivers, ", "))
 			}
 			for _, goalID := range sortedSet(arguments.set) {
-				if err := abandonCarryRefusal(r.Endpoint.Root, tree, carryCodeTip(r.Endpoint, tip), goalID, tree.Live[goalID], r.Now); err != nil {
+				if err := abandonCarryRefusalFor(r.Endpoint, tree, carryCodeTip(r.Endpoint, tip), goalID, tree.Live[goalID], r.Now); err != nil {
 					return nil, err
 				}
 			}
@@ -467,14 +467,12 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 			}
 			return ackDisplacements(tree, r, ordered), nil
 		},
-		Validate:   func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate:   func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 		BeforePush: r.abandon.beforePush,
 	}
 }
 
-// abandonCarryRefusal keeps every carry permission reachable until it is
-// closed or expires, and keeps an in-flight landing bound to a live goal.
-func abandonCarryRefusal(root string, tree *TreeGoals, codeTip, id string, file *GoalFile, now time.Time) error {
+func abandonCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id string, file *GoalFile, now time.Time) error {
 	refs := map[string]bool{}
 	for _, history := range file.History {
 		if history.Verb == "carrying" && history.ApprovedRef != "" {
@@ -483,10 +481,10 @@ func abandonCarryRefusal(root string, tree *TreeGoals, codeTip, id string, file 
 	}
 	goalOnly := &TreeGoals{Root: tree.Root, Live: map[string]*GoalFile{id: file}, Done: map[string]*GoalFile{}, Abandoned: map[string]*GoalFile{}}
 	for _, word := range carryWords(goalOnly) {
-		if !CarryWordProven(root, word) {
+		if !CarryWordProven(endpoint.Root, word) {
 			continue
 		}
-		consumption, err := CarryConsumptionAt(root, tree, codeTip, word)
+		consumption, err := carryConsumptionAtFor(endpoint, tree, codeTip, word)
 		if err != nil {
 			return err
 		}

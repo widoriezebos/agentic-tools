@@ -1,7 +1,6 @@
 package steward
 
 import (
-	"os/exec"
 	"testing"
 
 	"encoding/json"
@@ -51,11 +50,6 @@ func TestUnknownInventoryClassIsUnprovable(t *testing.T) {
 	if w.Unprovable != 1 {
 		t.Fatalf("an unrecognized class must not silently vanish: %+v", w)
 	}
-}
-
-// gitConfig sets a repo-local key for fixtures.
-func gitConfig(root, key, value string) ([]byte, error) {
-	return exec.Command("git", "-C", root, "config", key, value).CombinedOutput()
 }
 
 func TestDiagnosticsBlockADeathProof(t *testing.T) {

@@ -201,6 +201,18 @@ func runAuditHookStartExits(args []string) int {
 }
 
 func runAuditStopDecisionSurface(args []string) int {
+	return runAuditStopDecisionSurfaceWith(args, stopDecisionSurfaceDependencies{
+		declare: audit.DeclareStopDecisionSurface,
+		audit:   audit.AuditStopDecisionSurface,
+	})
+}
+
+type stopDecisionSurfaceDependencies struct {
+	declare func(string, audit.StopSurfaceOptions, string, string) (string, error)
+	audit   func(string, audit.StopSurfaceOptions) (audit.StopSurfaceResult, error)
+}
+
+func runAuditStopDecisionSurfaceWith(args []string, dependencies stopDecisionSurfaceDependencies) int {
 	flags := flag.NewFlagSet("audit stop-decision-surface", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "metasystem installation to audit")
 	base := flags.String("base", "", "base commit (default: merge-base HEAD origin/main, or HEAD)")
@@ -212,9 +224,13 @@ func runAuditStopDecisionSurface(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem audit stop-decision-surface [--root INSTALLATION] [--base COMMIT] [--json] [--declare --goal GOAL --reason TEXT]")
 		return 2
 	}
+	if dependencies.declare == nil || dependencies.audit == nil {
+		fmt.Fprintln(os.Stderr, "stop decision surface: audit and declaration dependencies are required")
+		return 1
+	}
 	options := audit.StopSurfaceOptions{Base: *base, GoalRecord: goalpkg.StopSurfaceGoalReader}
 	if *declare {
-		path, err := audit.DeclareStopDecisionSurface(*root, options, *goal, *reason)
+		path, err := dependencies.declare(*root, options, *goal, *reason)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -222,7 +238,7 @@ func runAuditStopDecisionSurface(args []string) int {
 		fmt.Println(path)
 		return 0
 	}
-	result, err := audit.AuditStopDecisionSurface(*root, options)
+	result, err := dependencies.audit(*root, options)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

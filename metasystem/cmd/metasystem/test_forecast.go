@@ -30,6 +30,13 @@ type costSelectionEvidence struct {
 	Groups  []batch.CostForecastGroup
 }
 
+type forecastTestingDependencies struct {
+	workspace     gittree.Workspace
+	candidateIO   candidateEngineIO
+	openCandidate func(string, string) (proofrun.CandidateWorkspace, error)
+	now           func() time.Time
+}
+
 // forecastTestingSelection uses the same protected selection and retained
 // evaluator as test verify. It creates no proof attempt or native build/test.
 // Existing toolchain metadata reads may run bounded version/environment tools.
@@ -53,7 +60,14 @@ func forecastTestingSelection(root string, selection costSelection, proofCapMinu
 	if err != nil {
 		return costSelectionEvidence{}, err
 	}
-	semanticNow := commandClock()
+	return forecastTestingSelectionPrepared(selection, proofCapMinutes, request, prepared, forecastTestingDependencies{
+		workspace: gittree.Workspace{Dir: prepared.ProjectRoot}, candidateIO: nativeCandidateEngineIO(), now: commandClock,
+	})
+}
+
+func forecastTestingSelectionPrepared(selection costSelection, proofCapMinutes uint64, request testingSelectionRequest,
+	prepared testingPreparation, dependencies forecastTestingDependencies) (costSelectionEvidence, error) {
+	semanticNow := dependencies.now()
 	if _, err := resolveTestingPreparationWorkerPolicy(&prepared); err != nil {
 		return costSelectionEvidence{}, err
 	}
@@ -62,7 +76,7 @@ func forecastTestingSelection(root string, selection costSelection, proofCapMinu
 		return costSelectionEvidence{}, err
 	}
 	ctx := context.Background()
-	buildIdentity, err := candidateEngineBuildIdentity(ctx, gittree.Workspace{Dir: prepared.ProjectRoot}, prepared.Prefix, prepared.CandidateTree, prepared.Environment)
+	buildIdentity, err := candidateEngineBuildIdentityUsing(ctx, dependencies.workspace, prepared.Prefix, prepared.CandidateTree, prepared.Environment, dependencies.candidateIO)
 	if err != nil {
 		return costSelectionEvidence{}, err
 	}
@@ -72,11 +86,12 @@ func forecastTestingSelection(root string, selection costSelection, proofCapMinu
 		return costSelectionEvidence{}, err
 	}
 	run := testingRunRequest(prepared, "", "", "", engineDigest, buildIdentity)
+	run.WithCandidateOpener(dependencies.openCandidate)
 	run.FreshnessEpisode, run.FreshnessExpiresAt = selection.FreshEpisode, selection.FreshExpiresAt
 	freshGroups, _ := testingFreshGroups(prepared, request)
 	run.FreshGroups = freshGroups
 	if selection.FreshEpisode != "" {
-		if err := bindTestingFreshnessProjection(&run, prepared.Installation); err != nil {
+		if err := bindTestingFreshnessProjectionWithWorkspace(&run, prepared.Installation, dependencies.workspace); err != nil {
 			return costSelectionEvidence{}, err
 		}
 	}

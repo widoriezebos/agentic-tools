@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit"
 )
@@ -134,12 +133,12 @@ func ParseLandingRecord(data []byte) ([]LandingProof, error) {
 	return proofs, nil
 }
 
-func readLandingRecord(repo, tip, goalID string) ([]LandingProof, error) {
+func readLandingRecordWith(r landingRepository, repo, tip, goalID string) ([]LandingProof, error) {
 	path := landingRecordPath(goalID)
-	if _, err := gitOutput(repo, "cat-file", "-e", tip+":"+path); err != nil {
+	if err := r.exists(repo, tip, path); err != nil {
 		return nil, nil
 	}
-	data, err := gitOutput(repo, "show", tip+":"+path)
+	data, err := r.reads.SnapshotFile(repo, tip, path)
 	if err != nil {
 		return nil, err
 	}
@@ -204,12 +203,12 @@ func landingUnits(status Status, count int) []landUnit {
 
 type landingIdentity struct{ Name, Email string }
 
-func resolveLandingIdentity(repo, approvedBy string) (landingIdentity, error) {
+func resolveLandingIdentityWith(repo, approvedBy string, human func(string, string) ([]byte, error)) (landingIdentity, error) {
 	name := strings.TrimPrefix(approvedBy, "human:")
 	if name == approvedBy || !validName(name) {
 		return landingIdentity{}, operationRefusal(LandAuthorUnboundCode, "goal approver %q does not name a human", approvedBy)
 	}
-	out, err := gitOutput(repo, "config", "--get", "goal.human."+name)
+	out, err := human(repo, name)
 	if err != nil {
 		return landingIdentity{}, operationRefusal(LandAuthorUnboundCode, "goal approver %s has no goal.human.%s identity", approvedBy, name)
 	}
@@ -236,8 +235,12 @@ func treeEntry(repo, tree, path string) (mode, blob string, present bool, err er
 	return fields[0], fields[2], true, nil
 }
 
-func verifyUnitPreimages(repo, tree string, unit UnitStatus) error {
-	entries, err := RawEntries(repo, unit.Commit)
+func verifyUnitPreimagesWith(r landingRepository, repo, tree string, unit UnitStatus) error {
+	raw, err := r.reads.RawEntries(repo, unit.Commit)
+	if err != nil {
+		return err
+	}
+	entries, err := parseRawEntries(unit.Commit, raw)
 	if err != nil {
 		return err
 	}
@@ -247,7 +250,7 @@ func verifyUnitPreimages(repo, tree string, unit UnitStatus) error {
 			// Its three blob versions are validated by the contract merge driver.
 			continue
 		}
-		mode, blob, present, err := treeEntry(repo, tree, entry.Path)
+		mode, blob, present, err := r.entry(repo, tree, entry.Path)
 		if err != nil {
 			return err
 		}
@@ -262,14 +265,18 @@ func verifyUnitPreimages(repo, tree string, unit UnitStatus) error {
 	return nil
 }
 
-func verifyFoldPreimages(repo, tree string, fold Commit) error {
-	entries, err := RawEntries(repo, fold.ID)
+func verifyFoldPreimagesWith(r landingRepository, repo, tree string, fold Commit) error {
+	raw, err := r.reads.RawEntries(repo, fold.ID)
+	if err != nil {
+		return err
+	}
+	entries, err := parseRawEntries(fold.ID, raw)
 	if err != nil {
 		return err
 	}
 	var changed []string
 	for _, entry := range entries {
-		mode, blob, present, err := treeEntry(repo, tree, entry.Path)
+		mode, blob, present, err := r.entry(repo, tree, entry.Path)
 		if err != nil {
 			return err
 		}
@@ -284,88 +291,78 @@ func verifyFoldPreimages(repo, tree string, fold Commit) error {
 	return nil
 }
 
-func transitionDigest(repo, before, after string) (string, error) {
-	raw, err := transitionRaw(repo, before, after)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
-}
-
 func transitionRaw(repo, before, after string, pathspec ...string) ([]byte, error) {
 	args := []string{"diff-tree", "-r", "-z", "--no-renames", "--full-index", before, after}
 	return gitOutput(repo, append(args, pathspec...)...)
 }
 
-func transitionChangesTestingContract(repo, before, after string) (bool, error) {
-	raw, err := transitionRaw(repo, before, after, "--", "metasystem/testing.json")
-	return len(raw) != 0, err
-}
-
-func unitTransitionMatches(repo, before, after string, unit UnitStatus) (string, bool, error) {
-	if err := contractgit.CheckCommitContract(repo, before, after, unit.Commit, "unit "+unit.Unit+" commit "+unit.Commit); err != nil {
+func unitTransitionMatchesWith(r landingRepository, repo, before, after string, unit UnitStatus) (string, bool, error) {
+	if err := contractgit.CheckCommitContractWith(repo, before, after, unit.Commit, "unit "+unit.Unit+" commit "+unit.Commit, r.contracts); err != nil {
 		return "", false, err
 	}
-	got, err := transitionDigest(repo, before, after)
-	if err != nil || got == unit.Digest {
-		return got, got == unit.Digest, err
+	raw, err := r.transition(repo, before, after, landingAll)
+	if err != nil {
+		return "", false, err
 	}
-	originalDigest, err := transitionDigest(repo, unit.Commit+"^", unit.Commit)
-	if err != nil || originalDigest != unit.Digest {
-		return got, false, err
+	sum := sha256.Sum256(raw)
+	got := hex.EncodeToString(sum[:])
+	if got == unit.Digest {
+		return got, true, nil
 	}
-	originalContract, err := transitionChangesTestingContract(repo, unit.Commit+"^", unit.Commit)
+	original, err := r.transition(repo, unit.Commit+"^", unit.Commit, landingAll)
 	if err != nil {
 		return got, false, err
 	}
-	appliedContract, err := transitionChangesTestingContract(repo, before, after)
-	if err != nil || !originalContract || !appliedContract {
-		return got, false, err
+	originalSum := sha256.Sum256(original)
+	if hex.EncodeToString(originalSum[:]) != unit.Digest {
+		return got, false, nil
 	}
-	withoutContract := []string{"--", ".", ":(exclude)metasystem/testing.json"}
-	original, err := transitionRaw(repo, unit.Commit+"^", unit.Commit, withoutContract...)
+	originalContract, err := r.transition(repo, unit.Commit+"^", unit.Commit, landingContract)
 	if err != nil {
 		return got, false, err
 	}
-	applied, err := transitionRaw(repo, before, after, withoutContract...)
+	appliedContract, err := r.transition(repo, before, after, landingContract)
+	if err != nil || len(originalContract) == 0 || len(appliedContract) == 0 {
+		return got, false, err
+	}
+	original, err = r.transition(repo, unit.Commit+"^", unit.Commit, landingWithoutContract)
+	if err != nil {
+		return got, false, err
+	}
+	applied, err := r.transition(repo, before, after, landingWithoutContract)
 	return got, bytes.Equal(original, applied), err
 }
 
 func applyCommitMode(worktree, commit string, threeWay bool) error {
-	patch, err := gitOutput(worktree, "diff", "--binary", "--full-index", commit+"^", commit)
+	return applyCommitModeWith(gitLandingRepository(), worktree, commit, threeWay)
+}
+
+func applyCommitModeWith(r landingRepository, dir, commit string, threeWay bool) error {
+	patch, err := r.patch(dir, commit+"^", commit)
 	if err != nil {
 		return err
 	}
-	beforeOut, err := gitOutput(worktree, "write-tree")
+	before, err := r.index(dir)
 	if err != nil {
 		return err
 	}
-	before := strings.TrimSpace(string(beforeOut))
-	if err := contractgit.PreflightCommitAttributes(worktree, before, commit); err != nil {
+	if err := contractgit.PreflightCommitAttributesWith(dir, before, commit, r.contracts); err != nil {
 		return err
 	}
-	gitArgs := []string{"apply", "--index"}
-	if threeWay {
-		gitArgs = append(gitArgs, "--3way")
+	if err := r.apply(dir, patch, threeWay); err != nil {
+		return err
 	}
-	_, err = gitInput(worktree, patch, append(gitArgs, "-")...)
+	after, err := r.index(dir)
 	if err != nil {
 		return err
 	}
-	afterOut, err := gitOutput(worktree, "write-tree")
-	if err != nil {
-		return err
-	}
-	return contractgit.CheckCommitContract(worktree, before, strings.TrimSpace(string(afterOut)), commit, "commit "+commit)
+	return contractgit.CheckCommitContractWith(dir, before, after, commit, "commit "+commit, r.contracts)
 }
 
 func applyCommit(worktree, commit string) error { return applyCommitMode(worktree, commit, true) }
 
-func applyFoldCommit(worktree, commit string) error { return applyCommitMode(worktree, commit, false) }
-
-func commitCoAuthors(repo, commit string) ([]string, error) {
-	out, err := gitOutput(repo, "show", "-s", "--format=%B", commit)
+func commitCoAuthorsWith(r landingRepository, repo, commit string) ([]string, error) {
+	out, err := r.message(repo, commit)
 	if err != nil {
 		return nil, err
 	}
@@ -378,13 +375,17 @@ func commitCoAuthors(repo, commit string) ([]string, error) {
 	return lines, nil
 }
 
-func landingMessage(repo string, group landUnit, goalID, seat string, last bool) (string, []string, error) {
+func landingMessageWith(r landingRepository, repo string, group landUnit, goalID, seat string, last bool) (string, []string, error) {
 	lines := []string{"Goal-Unit: " + goalID + "/" + group.status.Unit, "Goal-Digest: " + group.status.Digest,
 		"Goal-Source: " + group.status.Commit}
 	foldPaths := map[string]bool{}
 	for _, fold := range group.folds {
 		lines = append(lines, "Goal-Source: "+fold.ID)
-		entries, err := RawEntries(repo, fold.ID)
+		raw, err := r.reads.RawEntries(repo, fold.ID)
+		if err != nil {
+			return "", nil, err
+		}
+		entries, err := parseRawEntries(fold.ID, raw)
 		if err != nil {
 			return "", nil, err
 		}
@@ -404,7 +405,7 @@ func landingMessage(repo string, group landUnit, goalID, seat string, last bool)
 		lines = append(lines, "Goal-Last: "+goalID)
 	}
 	lines = append(lines, "Landed-By: "+seat)
-	coauthors, err := commitCoAuthors(repo, group.status.Commit)
+	coauthors, err := commitCoAuthorsWith(r, repo, group.status.Commit)
 	if err != nil {
 		return "", nil, err
 	}
@@ -424,7 +425,7 @@ type landingReceiptEvidence struct {
 	failingGroups  []string
 }
 
-func readLandingReceipt(repo, path, candidate string) (landingReceiptEvidence, error) {
+func readLandingReceiptWith(r landingRepository, repo, path, candidate string) (landingReceiptEvidence, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return landingReceiptEvidence{}, operationRefusal(LandUnprovenCode, "read landing receipt: %v", err)
@@ -435,7 +436,7 @@ func readLandingReceipt(repo, path, candidate string) (landingReceiptEvidence, e
 	}
 	matched := receipt.Tree == candidate
 	if !matched && hex40(receipt.Tree) {
-		projected, projectErr := projectLandingWorkspace(repo, receipt.Tree)
+		projected, projectErr := projectLandingWorkspaceWith(r, repo, receipt.Tree)
 		matched = projectErr == nil && projected == candidate
 	}
 	if !matched {
@@ -485,26 +486,26 @@ func appendReceiptRow(worktree, goalID, lastUnit, attempt, stamp string) error {
 	return closeErr
 }
 
-func redProofChecked(repo, branchTip, goalID string, proof LandingProof) bool {
+func redProofChecked(r landingRepository, repo, branchTip, goalID string, proof LandingProof) bool {
 	if proof.CanaryRun == "" || !hex40(proof.CanaryTip) || proof.Fix == "" {
 		return false
 	}
-	fix, err := KindOf(repo, proof.Fix, goalID)
+	fix, err := r.reads.Kind(repo, proof.Fix, goalID)
 	if err != nil || fix.Kind != Unit {
 		return false
 	}
-	if _, err := gitOutput(repo, "merge-base", "--is-ancestor", proof.Fix, proof.CanaryTip); err != nil {
+	if err := r.ancestor(repo, proof.Fix, proof.CanaryTip); err != nil {
 		return false
 	}
 	if proof.CanaryTip == branchTip {
 		return true
 	}
-	out, err := gitOutput(repo, "rev-list", "--first-parent", "--reverse", proof.CanaryTip+".."+branchTip)
+	out, err := r.firstParent(repo, proof.CanaryTip, branchTip)
 	if err != nil {
 		return false
 	}
 	for _, commit := range strings.Fields(string(out)) {
-		kind, err := KindOf(repo, commit, goalID)
+		kind, err := r.reads.Kind(repo, commit, goalID)
 		if err != nil || kind.Kind == Unit {
 			return false
 		}
@@ -512,21 +513,21 @@ func redProofChecked(repo, branchTip, goalID string, proof LandingProof) bool {
 	return true
 }
 
-func landingRetryIdentity(repo, tree, goalID string) (string, error) {
-	return (gittree.Workspace{Dir: repo}).FilterTree(tree, []string{
+func landingRetryIdentityWith(r landingRepository, repo, tree, goalID string) (string, error) {
+	return r.filterExact(repo, tree, []string{
 		landingRecordPath(goalID), "metasystem/memory/receipts.log",
 	})
 }
 
-func projectLandingWorkspace(repo, tree string) (string, error) {
-	prefix, err := (gittree.Workspace{Dir: repo}).Prefix()
+func projectLandingWorkspaceWith(r landingRepository, repo, tree string) (string, error) {
+	prefix, err := r.projection.Prefix(repo)
 	if err != nil {
 		return "", err
 	}
 	if prefix == "" {
-		return landing.ProjectWorkspaceTree(filepath.Join(repo, "metasystem"), tree)
+		return landing.ProjectWorkspaceTreeWith(filepath.Join(repo, "metasystem"), tree, r.projection)
 	}
-	return landing.ProjectWorkspaceTree(repo, tree)
+	return landing.ProjectWorkspaceTreeWith(repo, tree, r.projection)
 }
 
 func writeLandArtifacts(out string, result LandResult, proof LandingProof, messages, diffs map[string][]byte) error {
@@ -572,8 +573,15 @@ func requireLandOutputAbsent(out string) error {
 }
 
 func PrepareLanding(req LandRequest) (LandResult, error) {
+	return prepareLanding(req, gitLandingRepository())
+}
+
+func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	if _, err := branchMergeDriverArgs(); err != nil {
 		return LandResult{}, err
+	}
+	if !r.complete() {
+		return LandResult{}, fmt.Errorf("land-prep repository is incomplete")
 	}
 	if req.PushTransport == nil {
 		req.PushTransport = GitPushTransport{}
@@ -588,14 +596,14 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 	if err := checkClaim(req.CheckClaim); err != nil {
 		return LandResult{}, err
 	}
-	identity, err := resolveLandingIdentity(req.Repo, req.ApprovedBy)
+	identity, err := resolveLandingIdentityWith(req.Repo, req.ApprovedBy, r.human)
 	if err != nil {
 		return LandResult{}, err
 	}
 	if strings.TrimSpace(req.Seat) == "" || strings.ContainsAny(req.Seat, "\r\n") {
 		return LandResult{}, fmt.Errorf("land-prep needs the landing seat")
 	}
-	status, err := InspectStatus(req.Repo, req.EndpointTip, req.BranchTip, req.GoalID)
+	status, err := r.status(req.Repo, req.EndpointTip, req.BranchTip, req.GoalID)
 	if err != nil {
 		return LandResult{}, err
 	}
@@ -633,61 +641,59 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 	if !expectedPresent {
 		expected = ""
 	}
-	scratch, err := os.MkdirTemp("", "goal-land-prep-*")
+	worktree, close, err := r.open(req.Repo, req.EndpointTip)
 	if err != nil {
 		return LandResult{}, err
 	}
-	defer os.RemoveAll(scratch)
-	worktree := filepath.Join(scratch, "worktree")
-	if _, err := gitOutput(req.Repo, "worktree", "add", "--quiet", "--detach", worktree, req.EndpointTip); err != nil {
-		return LandResult{}, err
+	if close == nil {
+		return LandResult{}, fmt.Errorf("land-prep repository opened without cleanup")
 	}
-	defer func() { _, _ = gitOutput(req.Repo, "worktree", "remove", "--force", worktree) }()
+	defer close()
 	lastUnit := lastUnitName(groups[len(groups)-1].status)
 	compose := func(receiptID, receiptStamp string) (map[string][]byte, map[string][]byte, error) {
-		if _, err := gitOutput(worktree, "reset", "--hard", req.EndpointTip); err != nil {
+		if err := r.reset(worktree, req.EndpointTip); err != nil {
 			return nil, nil, err
 		}
 		messages, diffs := map[string][]byte{}, map[string][]byte{}
 		for index, group := range groups {
-			parentOut, err := gitOutput(worktree, "rev-parse", "HEAD^{commit}")
+			parent, err := r.head(worktree)
 			if err != nil {
 				return nil, nil, err
 			}
 			for _, fold := range group.folds {
-				foldTreeOut, err := gitOutput(worktree, "write-tree")
+				foldTree, err := r.index(worktree)
 				if err != nil {
 					return nil, nil, err
 				}
-				if err := verifyFoldPreimages(req.Repo, strings.TrimSpace(string(foldTreeOut)), fold); err != nil {
+				if err := verifyFoldPreimagesWith(r, req.Repo, foldTree, fold); err != nil {
 					return nil, nil, err
 				}
-				if err := applyFoldCommit(worktree, fold.ID); err != nil {
+				if err := applyCommitModeWith(r, worktree, fold.ID, false); err != nil {
 					return nil, nil, operationRefusal(UnitRereadCode, "fold %s no longer applies to the endpoint: %v", fold.ID, err)
 				}
 			}
-			treeOut, err := gitOutput(worktree, "write-tree")
+			tree, err := r.index(worktree)
 			if err != nil {
 				return nil, nil, err
 			}
-			if err := verifyUnitPreimages(req.Repo, strings.TrimSpace(string(treeOut)), group.status); err != nil {
+			if err := verifyUnitPreimagesWith(r, req.Repo, tree, group.status); err != nil {
 				return nil, nil, err
 			}
-			if err := applyCommit(worktree, group.status.Commit); err != nil {
+			if err := applyCommitModeWith(r, worktree, group.status.Commit, true); err != nil {
 				return nil, nil, operationRefusal(UnitRereadCode, "unit %s no longer applies to the endpoint: %v", group.status.Unit, err)
 			}
-			appliedOut, err := gitOutput(worktree, "write-tree")
+			applied, err := r.index(worktree)
 			if err != nil {
 				return nil, nil, err
 			}
-			digest, matches, err := unitTransitionMatches(worktree, strings.TrimSpace(string(treeOut)), strings.TrimSpace(string(appliedOut)), group.status)
+			digest, matches, err := unitTransitionMatchesWith(r, worktree, tree, applied, group.status)
 			if err != nil {
 				return nil, nil, err
 			}
 			if !matches {
 				return nil, nil, operationRefusal(UnitRereadCode, "unit %s applies with digest %s, not attested digest %s", group.status.Unit, digest, group.status.Digest)
 			}
-			message, _, err := landingMessage(req.Repo, group, req.GoalID, req.Seat, req.Last && index == len(groups)-1)
+			message, _, err := landingMessageWith(r, req.Repo, group, req.GoalID, req.Seat, req.Last && index == len(groups)-1)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -695,16 +701,13 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 			if err := appendReceiptRow(worktree, req.GoalID, lastUnit, receiptID, receiptStamp); err != nil {
 				return nil, nil, err
 			}
-			if _, err := gitOutput(worktree, "add", "-A"); err != nil {
+			if err := r.stage(worktree); err != nil {
 				return nil, nil, err
 			}
-			env := []string{"GIT_AUTHOR_NAME=" + identity.Name, "GIT_AUTHOR_EMAIL=" + identity.Email,
-				"GIT_COMMITTER_NAME=" + identity.Name, "GIT_COMMITTER_EMAIL=" + identity.Email,
-				"GIT_AUTHOR_DATE=" + receiptStamp, "GIT_COMMITTER_DATE=" + receiptStamp}
-			if _, err := gitInputEnv(worktree, env, []byte(message), "commit", "--quiet", "-F", "-"); err != nil {
+			if err := r.commit(worktree, identity, receiptStamp, []byte(message)); err != nil {
 				return nil, nil, err
 			}
-			patch, err := gitOutput(worktree, "diff", "--binary", "--full-index", strings.TrimSpace(string(parentOut)), "HEAD")
+			patch, err := r.patch(worktree, parent, "HEAD")
 			if err != nil {
 				return nil, nil, err
 			}
@@ -715,15 +718,15 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 	if _, _, err := compose("pending", time.Unix(0, 0).UTC().Format(time.RFC3339)); err != nil {
 		return LandResult{}, err
 	}
-	candidateOut, err := gitOutput(worktree, "rev-parse", "HEAD^{tree}")
+	candidate, err := r.tree(worktree)
 	if err != nil {
 		return LandResult{}, err
 	}
-	projected, err := projectLandingWorkspace(req.Repo, strings.TrimSpace(string(candidateOut)))
+	projected, err := projectLandingWorkspaceWith(r, req.Repo, candidate)
 	if err != nil {
 		return LandResult{}, err
 	}
-	evidence, err := readLandingReceipt(req.Repo, req.TestReceipt, projected)
+	evidence, err := readLandingReceiptWith(r, req.Repo, req.TestReceipt, projected)
 	if err != nil {
 		return LandResult{}, err
 	}
@@ -731,31 +734,30 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 	if err != nil {
 		return LandResult{}, err
 	}
-	candidateOut, err = gitOutput(worktree, "rev-parse", "HEAD^{tree}")
+	candidate, err = r.tree(worktree)
 	if err != nil {
 		return LandResult{}, err
 	}
-	landingOut, err := gitOutput(worktree, "rev-parse", "HEAD^{commit}")
+	landingTip, err := r.head(worktree)
 	if err != nil {
 		return LandResult{}, err
 	}
-	candidate, landingTip := strings.TrimSpace(string(candidateOut)), strings.TrimSpace(string(landingOut))
-	finalProjected, err := projectLandingWorkspace(req.Repo, candidate)
+	finalProjected, err := projectLandingWorkspaceWith(r, req.Repo, candidate)
 	if err != nil || finalProjected != projected {
 		return LandResult{}, operationRefusal(LandUnprovenCode, "receipt projection moved while binding the landing rows")
 	}
-	proofs, err := readLandingRecord(req.Repo, req.BranchTip, req.GoalID)
+	proofs, err := readLandingRecordWith(r, req.Repo, req.BranchTip, req.GoalID)
 	if err != nil {
 		return LandResult{}, err
 	}
-	candidateIdentity, err := landingRetryIdentity(req.Repo, candidate, req.GoalID)
+	candidateIdentity, err := landingRetryIdentityWith(r, req.Repo, candidate, req.GoalID)
 	if err != nil {
 		return LandResult{}, err
 	}
 	for _, proof := range proofs {
 		proofIdentity := proof.RetryIdentity
 		if proofIdentity == "" {
-			proofIdentity, err = landingRetryIdentity(req.Repo, proof.Candidate, req.GoalID)
+			proofIdentity, err = landingRetryIdentityWith(r, req.Repo, proof.Candidate, req.GoalID)
 			if err != nil {
 				return LandResult{}, err
 			}
@@ -766,7 +768,7 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 	}
 	if len(proofs) != 0 {
 		last := proofs[len(proofs)-1]
-		if last.Verdict == "red" && !redProofChecked(req.Repo, req.BranchTip, req.GoalID, last) {
+		if last.Verdict == "red" && !redProofChecked(r, req.Repo, req.BranchTip, req.GoalID, last) {
 			return LandResult{}, operationRefusal(LandUncheckedCode, "proof %d is red without a clean canary on the fixed branch tip", last.Number)
 		}
 	}

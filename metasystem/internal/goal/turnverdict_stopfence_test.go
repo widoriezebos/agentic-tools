@@ -36,7 +36,8 @@ func TestTurnVerdictDoesNotBlockAndDescribesTheDurableStopPhase(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			root := t.TempDir()
+			store := legacyVerdictStore(t, false)
+			root := store.Root
 			if err := stopfence.Write(root, stopfence.Record{
 				State: stopfence.StateClosed, Phase: test.phase, Generation: 1,
 				ChangedAt: "2026-09-07T00:00:00Z", Checkout: root,
@@ -45,7 +46,7 @@ func TestTurnVerdictDoesNotBlockAndDescribesTheDurableStopPhase(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			verdict, err := (&Store{Root: root}).TurnVerdict(ScanResult{}, "session", "", "main")
+			verdict, err := legacyTurnVerdict(store, ScanResult{}, "session", "", "main")
 			if err != nil {
 				t.Fatal(err)
 			}
