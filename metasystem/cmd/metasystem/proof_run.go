@@ -711,10 +711,6 @@ func proofAdmissionGoalState(root string, file *goal.GoalFile, now time.Time) (p
 	return snapshot, nil
 }
 
-func proofAdmissionGoalStates(root, candidateID, authorityID string, now time.Time) (proofAdmissionSnapshots, error) {
-	return proofAdmissionGoalStatesWithReads(root, candidateID, authorityID, now, dispatchcore.ConcreteProofAdmissionReads())
-}
-
 func proofAdmissionGoalStatesWithReads(root, candidateID, authorityID string, now time.Time, reads dispatchcore.ProofAdmissionReads) (proofAdmissionSnapshots, error) {
 	if err := reads.Validate(); err != nil {
 		return proofAdmissionSnapshots{}, err

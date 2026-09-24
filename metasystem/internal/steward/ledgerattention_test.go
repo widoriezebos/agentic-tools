@@ -367,21 +367,55 @@ func TestLedgerAttentionBrokenAcceptedRefIsFailureNotBootstrap(t *testing.T) {
 }
 
 func TestLedgerAttentionValidationRefusalLeavesAcceptedUntouched(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	_ = RunLedgerAttention(bed.watcher, bed.now)
-	acceptedBefore := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef)
-	if err := os.WriteFile(filepath.Join(bed.publisher, "plans", "goals", "backlog.md"), []byte("not a goal root\n"), 0o644); err != nil {
-		t.Fatal(err)
+	bed := newAttentionPolicyBed(t)
+	if baseline := bed.run(bed.now, attentionBaselineCalls()); baseline.Outcome != "current" {
+		t.Fatalf("baseline attention pass: %+v", baseline)
 	}
-	attentionGit(t, bed.publisher, "add", "plans/goals/backlog.md")
-	attentionGit(t, bed.publisher, "commit", "-qm", "publish invalid ledger")
-	attentionGit(t, bed.publisher, "push", "-q", "origin", "main")
-	report := RunLedgerAttention(bed.watcher, bed.now.Add(time.Minute))
+	acceptedBefore, stateBefore := bed.accepted, bed.state()
+	bed.move("invalid", nil, "base")
+	bed.worlds["invalid"]["plans/goals/backlog.md"] = []byte("not a goal root\n")
+	refusalAt := bed.now.Add(time.Minute)
+	report := bed.runWith(refusalAt, "endpoint accepted machine capture sync accepted gates validate cleanup", func(repository *ledgerAttentionRepository) LedgerAttentionReport {
+		repository.ValidateCommit = func(root, tip string) error {
+			bed.checkRoot(root)
+			if tip != bed.remote || tip != "invalid" {
+				t.Fatalf("validated tip = %q, want captured invalid tip %q", tip, bed.remote)
+			}
+			if err := bed.call("validate"); err != nil {
+				t.Fatalf("unexpected fixture validation failure: %v", err)
+			}
+			files, ok := bed.worlds[tip]
+			if !ok {
+				t.Fatalf("undeclared goal tree at %q", tip)
+			}
+			tree, problems := goal.ParseTreeFiles(files)
+			if len(problems) == 0 {
+				problems = goal.ValidateTree(tree)
+			}
+			if len(problems) != 0 {
+				return fmt.Errorf("invalid goal ledger at %s: %v", tip, problems)
+			}
+			return nil
+		}
+		return runLedgerAttentionWithRepository(bed.root, refusalAt, repository)
+	})
 	if report.Outcome != "failed" || report.FailureKind != ledgerAttentionFetchFailed {
 		t.Fatalf("invalid captured ledger did not fail closed: %+v", report)
 	}
-	if acceptedAfter := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef); acceptedAfter != acceptedBefore {
-		t.Fatalf("validation refusal advanced accepted ref: before=%s after=%s", acceptedBefore, acceptedAfter)
+	if !strings.Contains(report.Failure, "plans/goals/backlog.md") {
+		t.Fatalf("validation failure did not name the invalid root: %+v", report)
+	}
+	if bed.accepted != acceptedBefore {
+		t.Fatalf("validation refusal advanced accepted tip: before=%s after=%s", acceptedBefore, bed.accepted)
+	}
+	stateAfter := bed.state()
+	wantState := stateBefore
+	wantState.LastAttemptAt = refusalAt.UTC().Format(time.RFC3339Nano)
+	wantState.LastOutcome = "failed"
+	wantState.LastFailure = report.Failure
+	wantState.FailingSince = wantState.LastAttemptAt
+	if !reflect.DeepEqual(stateAfter, wantState) {
+		t.Fatalf("validation refusal changed accepted attention state: got=%+v want=%+v", stateAfter, wantState)
 	}
 }
 

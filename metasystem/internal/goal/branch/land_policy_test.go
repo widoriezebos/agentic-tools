@@ -530,10 +530,6 @@ func (f *landingFacts) repository() landingRepository {
 	}
 }
 
-func (f *landingFacts) endpointForScratch() string {
-	return f.scratchEndpoint
-}
-
 func (f *landingFacts) writeFiles(root string, files map[string][]byte) {
 	f.t.Helper()
 	for path, data := range files {

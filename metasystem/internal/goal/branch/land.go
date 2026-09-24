@@ -133,10 +133,6 @@ func ParseLandingRecord(data []byte) ([]LandingProof, error) {
 	return proofs, nil
 }
 
-func readLandingRecord(repo, tip, goalID string) ([]LandingProof, error) {
-	return readLandingRecordWith(gitLandingRepository(), repo, tip, goalID)
-}
-
 func readLandingRecordWith(r landingRepository, repo, tip, goalID string) ([]LandingProof, error) {
 	path := landingRecordPath(goalID)
 	if err := r.exists(repo, tip, path); err != nil {
@@ -239,10 +235,6 @@ func treeEntry(repo, tree, path string) (mode, blob string, present bool, err er
 	return fields[0], fields[2], true, nil
 }
 
-func verifyUnitPreimages(repo, tree string, unit UnitStatus) error {
-	return verifyUnitPreimagesWith(gitLandingRepository(), repo, tree, unit)
-}
-
 func verifyUnitPreimagesWith(r landingRepository, repo, tree string, unit UnitStatus) error {
 	raw, err := r.reads.RawEntries(repo, unit.Commit)
 	if err != nil {
@@ -299,27 +291,9 @@ func verifyFoldPreimagesWith(r landingRepository, repo, tree string, fold Commit
 	return nil
 }
 
-func transitionDigest(repo, before, after string) (string, error) {
-	raw, err := transitionRaw(repo, before, after)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
-}
-
 func transitionRaw(repo, before, after string, pathspec ...string) ([]byte, error) {
 	args := []string{"diff-tree", "-r", "-z", "--no-renames", "--full-index", before, after}
 	return gitOutput(repo, append(args, pathspec...)...)
-}
-
-func transitionChangesTestingContract(repo, before, after string) (bool, error) {
-	raw, err := transitionRaw(repo, before, after, "--", "metasystem/testing.json")
-	return len(raw) != 0, err
-}
-
-func unitTransitionMatches(repo, before, after string, unit UnitStatus) (string, bool, error) {
-	return unitTransitionMatchesWith(gitLandingRepository(), repo, before, after, unit)
 }
 
 func unitTransitionMatchesWith(r landingRepository, repo, before, after string, unit UnitStatus) (string, bool, error) {
@@ -387,12 +361,6 @@ func applyCommitModeWith(r landingRepository, dir, commit string, threeWay bool)
 
 func applyCommit(worktree, commit string) error { return applyCommitMode(worktree, commit, true) }
 
-func applyFoldCommit(worktree, commit string) error { return applyCommitMode(worktree, commit, false) }
-
-func commitCoAuthors(repo, commit string) ([]string, error) {
-	return commitCoAuthorsWith(gitLandingRepository(), repo, commit)
-}
-
 func commitCoAuthorsWith(r landingRepository, repo, commit string) ([]string, error) {
 	out, err := r.message(repo, commit)
 	if err != nil {
@@ -405,10 +373,6 @@ func commitCoAuthorsWith(r landingRepository, repo, commit string) ([]string, er
 		}
 	}
 	return lines, nil
-}
-
-func landingMessage(repo string, group landUnit, goalID, seat string, last bool) (string, []string, error) {
-	return landingMessageWith(gitLandingRepository(), repo, group, goalID, seat, last)
 }
 
 func landingMessageWith(r landingRepository, repo string, group landUnit, goalID, seat string, last bool) (string, []string, error) {
@@ -459,10 +423,6 @@ func lastUnitName(status UnitStatus) string {
 type landingReceiptEvidence struct {
 	attempt, stamp string
 	failingGroups  []string
-}
-
-func readLandingReceipt(repo, path, candidate string) (landingReceiptEvidence, error) {
-	return readLandingReceiptWith(gitLandingRepository(), repo, path, candidate)
 }
 
 func readLandingReceiptWith(r landingRepository, repo, path, candidate string) (landingReceiptEvidence, error) {
@@ -553,18 +513,10 @@ func redProofChecked(r landingRepository, repo, branchTip, goalID string, proof 
 	return true
 }
 
-func landingRetryIdentity(repo, tree, goalID string) (string, error) {
-	return landingRetryIdentityWith(gitLandingRepository(), repo, tree, goalID)
-}
-
 func landingRetryIdentityWith(r landingRepository, repo, tree, goalID string) (string, error) {
 	return r.filterExact(repo, tree, []string{
 		landingRecordPath(goalID), "metasystem/memory/receipts.log",
 	})
-}
-
-func projectLandingWorkspace(repo, tree string) (string, error) {
-	return projectLandingWorkspaceWith(gitLandingRepository(), repo, tree)
 }
 
 func projectLandingWorkspaceWith(r landingRepository, repo, tree string) (string, error) {

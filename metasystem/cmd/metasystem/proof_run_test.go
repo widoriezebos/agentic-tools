@@ -174,19 +174,6 @@ func candidateProofLaunchAdmission(request proofLaunchAdmission) proofLaunchAdmi
 	return request
 }
 
-func admitCandidateProofLaunch(t *testing.T, request proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
-	t.Helper()
-	previous := request.BeforePublish
-	request.BeforePublish = func(reservation *proofrun.AdmissionRequest) {
-		if previous != nil {
-			previous(reservation)
-		}
-		*reservation = proofrun.WithTestHostLoadSampler(*reservation, "0")
-		*reservation = privateProofAdmissionRequest(*reservation)
-	}
-	return admitProofLaunch(candidateProofLaunchAdmission(request))
-}
-
 func TestProofAdmissionCandidateTreeUsesProofIdentityAccessor(t *testing.T) {
 	tree := strings.Repeat("2", 40)
 	request := proofLaunchAdmission{CommandClass: "testing", IdentityInputs: []string{
@@ -196,73 +183,6 @@ func TestProofAdmissionCandidateTreeUsesProofIdentityAccessor(t *testing.T) {
 	if got := proofAdmissionCandidateTree(request); got != tree {
 		t.Fatalf("proof admission candidate tree = %q, want %q", got, tree)
 	}
-}
-
-func addProofCandidateGoal(t *testing.T, root, id, arc string, risk *goal.RiskRecord) *goal.GoalFile {
-	t.Helper()
-	budget := goal.Budget{ElapsedLimit: "4h", AttemptLimit: 8, ReservedJobMinutesLimit: 480, ActiveJobLimit: 2, ReviewRoundLimit: 3}
-	openedAt, approvedAt := "2026-08-30T08:10:00Z", "2026-08-30T08:11:00Z"
-	openOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAV", "mac-cli", id)
-	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAW", "mac-cli", id)
-	file := &goal.GoalFile{
-		Id: id, State: goal.StateApproved, Tier: 3, Risk: risk, Intent: "Prove candidate " + id + ".", Arc: arc,
-		Origin: goal.OriginMain, NextStep: "Prove it.", OpenedAt: openedAt, Revision: 2, Budget: &budget,
-		Approved: &goal.ApprovalRecord{By: "human:Wido", At: approvedAt, Revision: 2, EpisodeRevision: 2,
-			Opid: approvalOpid, Authority: goal.ApprovalAuthorityProven},
-		History: []goal.HistoryLine{
-			{At: openedAt, Opid: openOpid, Verb: "open", Actor: "mac-cli+" + id, Targets: []string{id}, Keep: -1},
-			{At: approvedAt, Opid: approvalOpid, Verb: "approve", Actor: "human:Wido", Targets: []string{id}, Keep: -1},
-		},
-	}
-	file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, budget, risk)
-	path := filepath.Join(root, "plans", "goals", id+".md")
-	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	goalSyncMutationGit(t, root, "add", filepath.ToSlash(filepath.Join("plans", "goals", id+".md")))
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", "add proof candidate "+id)
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	return file
-}
-
-func amendProofGoalFixture(t *testing.T, root, id, message string, mutate func(*goal.GoalFile)) *goal.GoalFile {
-	t.Helper()
-	path := filepath.Join(root, "plans", "goals", id+".md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, problems := goal.ParseFile(data)
-	if len(problems) != 0 {
-		t.Fatalf("parse goal %s before amendment: %v", id, problems)
-	}
-	mutate(file)
-	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	relative := filepath.ToSlash(filepath.Join("plans", "goals", id+".md"))
-	goalSyncMutationGit(t, root, "add", relative)
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", message)
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	return file
-}
-
-func rebudgetProofGoalFixture(t *testing.T, root, id string, now time.Time) *goal.GoalFile {
-	t.Helper()
-	return amendProofGoalFixture(t, root, id, "rebudget proof candidate", func(file *goal.GoalFile) {
-		file.Revision++
-		file.Budget.AttemptLimit++
-		event := goal.HistoryLine{At: now.UTC().Format(time.RFC3339),
-			Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAX", "mac-cli", id), Verb: "set-budget",
-			Actor: "human:Wido", Targets: []string{id}, Keep: -1}
-		file.History = append(file.History, event)
-		file.Approved = &goal.ApprovalRecord{By: event.Actor, At: event.At, Revision: file.Revision,
-			EpisodeRevision: file.Revision, Opid: event.Opid, Authority: goal.ApprovalAuthorityProven,
-			Digest: goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)}
-		file.BudgetExtension = nil
-	})
 }
 
 func restoreProofAdmissionSeams(t *testing.T) {
