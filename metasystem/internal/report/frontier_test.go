@@ -316,3 +316,58 @@ func TestGitAdapterFrontierReadsRepoState(t *testing.T) {
 		t.Fatalf("dirty status: %q %v", dirty, err)
 	}
 }
+
+// Record enforces the stored frontier's guards before reading HEAD, and a
+// refused record leaves the recorded frontier byte-for-byte intact.
+func TestFrontierRecordRefusesAgainstStoredFrontier(t *testing.T) {
+	t.Parallel()
+	now := func() time.Time { return time.Unix(1_000_000, 0) }
+	fresh := "sha=x\nrecorded_epoch=999940\nscore=80\nmin_delta=1\nmax_age_minutes=60\neval=e\nartifact=\n"
+	for _, test := range []struct {
+		name, stored string
+		opts         FrontierOptions
+		code         int
+		want         string
+	}{
+		{"noise floor flag", fresh, FrontierOptions{MinDelta: "tiny"}, 2, "invalid noise floor: tiny"},
+		{"window flag", fresh, FrontierOptions{MaxAge: "soon"}, 2, "invalid measurement window: soon"},
+		{"direction flag", fresh, FrontierOptions{Direction: "sideways"}, 2, "direction"},
+		{"legacy direction is max", fresh, FrontierOptions{Direction: "min"}, 1, "direction min differs from the recorded frontier's max"},
+		{"unparseable epoch", strings.Replace(fresh, "recorded_epoch=999940", "recorded_epoch=yesterday", 1), FrontierOptions{}, 2, "frontier file is malformed"},
+		{"expired window", strings.Replace(fresh, "recorded_epoch=999940", "recorded_epoch=1", 1), FrontierOptions{}, 1, "older than its measurement window"},
+		{"malformed score", strings.Replace(fresh, "score=80", "score=high", 1), FrontierOptions{}, 2, "frontier file is malformed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			repo := t.TempDir()
+			file := filepath.Join(repo, "frontier")
+			if err := os.WriteFile(file, []byte(test.stored), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			opts := test.opts
+			opts.File, opts.Repo, opts.Env, opts.Now, opts.Score, opts.Eval = file, repo, noEnv, now, "99", "e"
+			_, ferr := frontierRecordWithGit(opts, frontierGitScript(t, frontierCheckReads(repo)))
+			if ferr == nil || ferr.Code != test.code || !strings.Contains(ferr.Message, test.want) {
+				t.Fatalf("record = %v, want code %d containing %q", ferr, test.code, test.want)
+			}
+			if data, err := os.ReadFile(file); err != nil || string(data) != test.stored {
+				t.Fatalf("refused record changed the frontier: %q, %v", data, err)
+			}
+		})
+	}
+}
+
+// A clean worktree whose HEAD cannot be read records nothing.
+func TestFrontierRecordRefusesWithoutHead(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	headless := append(frontierCheckReads(repo), frontierGitStep{repo, []string{"rev-parse", "HEAD"}, "", errors.New("unborn branch")})
+	file := filepath.Join(repo, "plans", "frontier")
+	if _, ferr := frontierRecordWithGit(FrontierOptions{File: file, Repo: repo, Env: noEnv, Score: "80", Eval: "e"}, frontierGitScript(t, headless)); ferr == nil ||
+		ferr.Code != 2 || ferr.Message != "not inside a git repository" {
+		t.Fatalf("record without HEAD = %v", ferr)
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Fatalf("record without HEAD wrote a frontier: %v", err)
+	}
+}

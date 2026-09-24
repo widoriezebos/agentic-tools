@@ -1932,9 +1932,20 @@ docs/collaboration.md	## Escalation Shape	1
 docs/project-rules.md	These require explicit in-task approval	0
 REQUIRED
 cp -R scripts/agents/roles "$tmp/drifted-roles"
-sed 's/build something DIFFERENT/build the same thing/' \
-  "$tmp/drifted-roles/design-critic.md" >"$tmp/drifted-roles/design-critic.md.new"
+# Drift the declared design-critique quote block by its markers, not by its
+# wording, so a lawful rewording of source and quote together cannot turn
+# this fixture into a no-op.
+awk '
+  $0 == "<!-- quote source=\"skills/design-critique/SKILL.md\" -->" { inblock = 1; print; next }
+  inblock && $0 == "<!-- /quote -->" { inblock = 0; print; next }
+  inblock && !drifted && /^> ./ { print $0 " (drifted)"; drifted = 1; next }
+  { print }
+' "$tmp/drifted-roles/design-critic.md" >"$tmp/drifted-roles/design-critic.md.new"
 mv "$tmp/drifted-roles/design-critic.md.new" "$tmp/drifted-roles/design-critic.md"
+if cmp -s scripts/agents/roles/design-critic.md "$tmp/drifted-roles/design-critic.md"; then
+  echo "design-critique quote drift fixture changed nothing" >&2
+  exit 1
+fi
 set +e
 "$engine" validate preamble-quotes --root "$root" --roles-dir "$tmp/drifted-roles" >"$tmp/quote-drift.out" 2>&1
 quote_status=$?

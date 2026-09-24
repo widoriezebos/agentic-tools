@@ -353,3 +353,27 @@ func TestStopSurfaceGitBaseAdapterResolvesDivergedHistory(t *testing.T) {
 		t.Fatalf("diverged Git history result = %+v, want base %s and additions %+v", result, base, want)
 	}
 }
+
+// An explicit base that does not resolve refuses both the audit and the
+// declaration before any tree is read, and the declaration writes nothing.
+func TestStopSurfaceUnresolvableBaseRefusesAuditAndDeclaration(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	repository := newStopSurfaceFake(t, root)
+	options := StopSurfaceOptions{Base: "missing-base"}
+
+	repository.expect("ResolveCommit", options.Base, "")
+	if _, err := auditStopDecisionSurface(root, options, repository.dependencies()); err == nil || !strings.Contains(err.Error(), `stop decision surface base: unknown revision "missing-base"`) {
+		t.Fatalf("audit with unresolvable base = %v", err)
+	}
+	repository.assertConsumed()
+
+	repository.expect("ResolveCommit", options.Base, "")
+	if path, err := declareStopDecisionSurface(root, options, "move-stop", "moved", repository.dependencies()); err == nil || path != "" || !strings.Contains(err.Error(), "stop decision surface base") {
+		t.Fatalf("declare with unresolvable base = %q, %v", path, err)
+	}
+	repository.assertConsumed()
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(stopMoveDirectory))); !os.IsNotExist(err) {
+		t.Fatalf("refused declaration created %s: %v", stopMoveDirectory, err)
+	}
+}

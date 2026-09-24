@@ -193,6 +193,37 @@ func TestResolveExplicitBatchLandingWithRunner(t *testing.T) {
 	}
 }
 
+// The exported raw runner receives the same Git request as the production
+// runner, and a missing runner is refused rather than defaulting to Git.
+func TestResolveExplicitBatchLandingWithRawRunner(t *testing.T) {
+	t.Parallel()
+	seat, landing := t.TempDir(), t.TempDir()
+	now := func() time.Time { return time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC) }
+	if _, err := ResolveExplicitBatchLandingWithRunner(landing, seat, time.Minute, now, nil); err == nil || !strings.Contains(err.Error(), "runner is required") {
+		t.Fatalf("nil raw runner error = %v", err)
+	}
+	expected := expectedBatchGit(landing)
+	runner := oneGitResult(t, expected, []byte(landing+"\n"), nil)
+	settings, err := ResolveExplicitBatchLandingWithRunner(landing, seat, time.Minute, now, func(directory string, args, environment []string) ([]byte, error) {
+		return runner(gitRequest{Directory: directory, Args: args, Environment: environment})
+	})
+	if err != nil || settings.Root != resolvePath(landing) || settings.MaxWait != time.Minute {
+		t.Fatalf("raw runner landing = %+v, %v", settings, err)
+	}
+}
+
+// A landing checkout whose seat marker cannot be inspected is refused, not
+// assumed to be a non-seat checkout.
+func TestBatchLandingRootRefusesUninspectableSeatMarker(t *testing.T) {
+	t.Parallel()
+	seat, landing := t.TempDir(), t.TempDir()
+	putFile(t, filepath.Join(landing, "artifacts"), "not a directory")
+	_, err := batchLandingRootWithRunner(landing, seat, oneGitResult(t, expectedBatchGit(landing), []byte(landing+"\n"), nil))
+	if err == nil || !strings.Contains(err.Error(), "inspect "+BatchRootKey+" as a non-seat checkout") {
+		t.Fatalf("uninspectable seat marker error = %v", err)
+	}
+}
+
 // TestGetPrecedence walks the resolution order the reference reader defines:
 // flag, environment, .local, mode-scoped, committed, default.
 func TestGetPrecedence(t *testing.T) {

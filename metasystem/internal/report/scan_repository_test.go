@@ -3,6 +3,7 @@ package report
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,5 +195,34 @@ func (f *scanReadFixture) setDraftFiles() {
 				Verb: "open", Actor: "bed-m1+coordinator", Targets: []string{"draft-here"}, Keep: -1,
 			}},
 		}),
+	}
+}
+
+// An endpoint scan refuses, before any goal read, an endpoint for another
+// checkout or a machine nickname the goal ledger cannot carry.
+func TestScanWithCompletionAtEndpointRefusesMismatchedIdentity(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	other := t.TempDir()
+	for _, test := range []struct {
+		name     string
+		endpoint goal.Endpoint
+		machine  string
+		want     string
+	}{
+		{"other checkout", goal.Endpoint{Root: other}, "bed-m1", "does not match endpoint root"},
+		{"empty machine", goal.Endpoint{Root: root}, "", "machine nickname must be one nonempty word"},
+		{"spaced machine", goal.Endpoint{Root: root}, "bed m1", `machine nickname "bed m1"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			scan, completion := ScanWithCompletionAtEndpoint(root, test.endpoint, test.machine)
+			if len(scan.Unreadable) != 1 || !strings.Contains(scan.Unreadable[0], test.want) {
+				t.Fatalf("unreadable = %q, want one containing %q", scan.Unreadable, test.want)
+			}
+			if len(scan.Busy) != 0 || len(scan.Open) != 0 || completion.Records != nil || completion.Unavailable != nil {
+				t.Fatalf("refused scan reported facts: %+v %+v", scan, completion)
+			}
+		})
 	}
 }
