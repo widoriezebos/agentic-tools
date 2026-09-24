@@ -1,6 +1,7 @@
 package missionrunner
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -326,8 +327,8 @@ func writeFreshSupervision(t *testing.T, engine *Engine) {
 // approval, origin, the gate command, supervision facts, the lease probe,
 // and the pin landing the approved bytes into the fences.
 func TestArmAndPreflightFullPass(t *testing.T) {
-	engine := buildPreflightRoot(t)
-	commitBedBaseline(t, engine.Root)
+	engine, source := newGitFreePreflightBed(t, "")
+	t.Cleanup(source.done)
 	if err := engine.armAndPreflight("start"); err != nil {
 		t.Fatalf("the full launch gate refused: %v", err)
 	}
@@ -338,6 +339,13 @@ func TestArmAndPreflightFullPass(t *testing.T) {
 	if !strings.Contains(string(pinned), "Approval: name=Fixture Human") {
 		t.Fatal("the pinned bytes are not the signed contract")
 	}
+	signed, err := os.ReadFile(engine.contractPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(pinned) != string(signed) {
+		t.Fatal("the pin differs from the approved signed bytes")
+	}
 	fences, err := readJSONDoc(engine.fencesPath())
 	if err != nil {
 		t.Fatalf("fences unreadable: %v", err)
@@ -346,9 +354,11 @@ func TestArmAndPreflightFullPass(t *testing.T) {
 	if len(sha) != 64 {
 		t.Fatalf("fences carry no contract sha: %v", fences["approvedContractSha256"])
 	}
+	if sha != fmt.Sprintf("%x", sha256.Sum256(pinned)) {
+		t.Fatalf("fences sha does not match the pinned signed bytes: %q", sha)
+	}
 	// Until the mission is BORN, a second start may re-pin (the
 	// stillborn rule); once state.json exists, it steers to resume.
-	commitBedBaseline(t, engine.Root)
 	if err := engine.armAndPreflight("start"); err != nil {
 		t.Fatalf("a stillborn pin must be re-pinnable: %v", err)
 	}
@@ -740,7 +750,11 @@ func TestLostStateFreezesTheBornMission(t *testing.T) {
 // survive untouched. Without the lock, the blocked launcher's cached
 // no-birth decision would overwrite the newborn's fences.
 func TestLaunchLockSerializesStartDecisions(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine, source := newGitFreePreflightBed(t, "")
+	t.Cleanup(source.done)
+	if err := engine.armAndPreflight("start"); err != nil {
+		t.Fatalf("initial preflight: %v", err)
+	}
 	fencesBefore := readTestDoc(t, engine.fencesPath())
 	hold, err := engine.acquireLaunchLock()
 	if err != nil {

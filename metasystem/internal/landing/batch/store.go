@@ -97,6 +97,15 @@ func NewStore(root string, prober identity.Prober) Store {
 		},
 	}
 }
+
+// WithReassembly returns a store using the supplied repository effects.
+func (store Store) WithReassembly(assemble func(string, []Unit) ([]string, error), remove func(string, string) error, rebuild func(string, string, string, string, []Unit) (string, error)) Store {
+	store.reassembly.assemble = assemble
+	store.reassembly.delete = remove
+	store.reassembly.rebuild = rebuild
+	return store
+}
+
 func (s Store) Liveness(p identity.Ref) identity.Liveness {
 	return identity.AliveRef(s.seams.prober, p)
 }

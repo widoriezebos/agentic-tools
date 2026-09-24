@@ -218,7 +218,9 @@ func (f *hostCycleSource) done() {
 	}
 }
 
-func buildGitFreeHostCycle(t *testing.T, behavior string) *Engine {
+// newGitFreePreflightBed prepares an authored, signed contract and live
+// supervision facts without pinning them to a mission.
+func newGitFreePreflightBed(t *testing.T, behavior string) (*Engine, *hostCycleSource) {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -279,11 +281,17 @@ func buildGitFreeHostCycle(t *testing.T, behavior string) *Engine {
 		t.Fatal(err)
 	}
 	writeFreshSupervision(t, e)
-	equipFullCycleFiles(t, e)
 	installHostCycleRepository(t, e, f)
+	return e, f
+}
+
+func buildGitFreeHostCycle(t *testing.T, behavior string) *Engine {
+	t.Helper()
+	e, f := newGitFreePreflightBed(t, behavior)
+	equipFullCycleFiles(t, e)
 	goalRepository := &hostCycleGoals{t: t}
 	e.goalSource = &mission.GoalSource{Endpoint: goal.Endpoint{
-		Root: root, Remote: "origin", Branch: "refs/heads/main", Repository: goalRepository,
+		Root: e.Root, Remote: "origin", Branch: "refs/heads/main", Repository: goalRepository,
 	}, Machine: "fixture-machine"}
 	t.Cleanup(func() {
 		if goalRepository.captures == 0 || goalRepository.accepted == 0 {

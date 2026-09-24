@@ -610,10 +610,6 @@ func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint,
 	return 0
 }
 
-func nextSyncedWithProjector(root, machine string, fetchFirst bool, project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), requiredLabels ...string) int {
-	return nextSyncedWithInputs(root, machine, fetchFirst, goal.ResolveEndpoint, goalCommandNow, project, requiredLabels...)
-}
-
 func nextSyncedWithInputs(root, machine string, fetchFirst bool, resolve func(string) (goal.Endpoint, error), commandNow func(string) (time.Time, error), project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), requiredLabels ...string) int {
 	e, err := resolve(root)
 	if err != nil {
@@ -825,6 +821,10 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 // Every representable state is exit 0; nonzero means I/O failure and the
 // hook's own fixed degraded message takes over.
 func runReportTurnVerdict(args []string) int {
+	return runReportTurnVerdictWithInputs(args, nil, nil)
+}
+
+func runReportTurnVerdictWithInputs(args []string, resolve func(string) (goal.Endpoint, error), resolveMachine func(string) (string, error)) int {
 	flags := flag.NewFlagSet("report turn-verdict", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	session := flags.String("session", "", "normalized session id")
@@ -862,7 +862,26 @@ func runReportTurnVerdict(args []string) int {
 		fmt.Fprintln(os.Stderr, "report turn-verdict: --facts-file and --completion-file must differ")
 		return 2
 	}
-	scan, completionCapture := report.ScanWithCompletion(*root)
+	var endpoint goal.Endpoint
+	var machine string
+	var err error
+	if resolve != nil {
+		endpoint, err = resolve(*root)
+		if err == nil {
+			machine, err = resolveMachine(*root)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
+	var scan goal.ScanResult
+	var completionCapture report.StopCompletionCapture
+	if resolve == nil {
+		scan, completionCapture = report.ScanWithCompletion(*root)
+	} else {
+		scan, completionCapture = report.ScanWithCompletionAtEndpoint(*root, endpoint, machine)
+	}
 	now, err := goalCommandNow(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -898,9 +917,14 @@ func runReportTurnVerdict(args []string) int {
 		store.PrepareIdleContinuation = prepareSeatIdleContinuation(stateRoot)
 		store.RecordIdleIncident = recordSeatIdleIncident(stateRoot, now)
 		store.RaiseIdleAlarm = raiseSeatIdleAlarm(stateRoot)
-		store.ResolveIdleSeat = resolveSeatIdleActor(stateRoot, *mainId)
+		store.ResolveIdleSeat = resolveSeatIdleActorWithMachine(stateRoot, *mainId, resolveMachine)
 	}
-	verdict, err := store.TurnVerdict(scan, *session, *watchdog, *mainId, options)
+	var verdict goal.Verdict
+	if resolve == nil {
+		verdict, err = store.TurnVerdict(scan, *session, *watchdog, *mainId, options)
+	} else {
+		verdict, err = store.TurnVerdictAtEndpoint(endpoint, machine, scan, *session, *watchdog, *mainId, options)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -1001,8 +1025,15 @@ var turnVerdictFactsWriter = atomicfile.WriteText
 var turnVerdictCompletionWriter = atomicfile.WriteText
 
 func resolveSeatIdleActor(root, mainID string) func() (goal.Actor, int64, error) {
+	return resolveSeatIdleActorWithMachine(root, mainID, nil)
+}
+
+func resolveSeatIdleActorWithMachine(root, mainID string, resolveMachine func(string) (string, error)) func() (goal.Actor, int64, error) {
+	if resolveMachine == nil {
+		resolveMachine = goal.ResolveMachine
+	}
 	return func() (goal.Actor, int64, error) {
-		machine, err := goal.ResolveMachine(root)
+		machine, err := resolveMachine(root)
 		if err != nil {
 			return goal.Actor{}, 0, fmt.Errorf("the seat machine could not be resolved: %w", err)
 		}

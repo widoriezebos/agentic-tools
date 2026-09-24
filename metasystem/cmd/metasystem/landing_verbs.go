@@ -183,6 +183,10 @@ func runLandingTestReceipt(args []string) (status int) {
 }
 
 func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(string) (func() time.Time, bool, error), args []string) (status int) {
+	return runLandingTestReceiptWithDependencies(parent, resolveClock, nil, landingReceiptTestRun, args)
+}
+
+func runLandingTestReceiptWithDependencies(parent context.Context, resolveClock func(string) (func() time.Time, bool, error), raw func(gittree.RawRequest) gittree.RawResult, testRun func([]string) int, args []string) (status int) {
 	flags := flag.NewFlagSet("landing test-receipt", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "candidate project tree")
@@ -218,11 +222,12 @@ func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(
 			fmt.Fprintln(os.Stderr, "landing test-receipt --mode must be auto, standard, or deep")
 			return 2
 		}
-		projectRoot, err := (gittree.Workspace{Dir: controlRoot}).TopLevel()
+		controlWorkspace := gittree.Workspace{Dir: controlRoot, RawSource: raw}
+		projectRoot, err := controlWorkspace.TopLevel()
 		if err != nil {
 			return recordExit(err)
 		}
-		workspace := gittree.Workspace{Dir: projectRoot}
+		workspace := gittree.Workspace{Dir: projectRoot, RawSource: raw}
 		acceptedIndexTree := *tree
 		if acceptedIndexTree == "" {
 			acceptedIndexTree, err = workspace.StagedTree()
@@ -247,7 +252,7 @@ func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(
 			testArgs = append(testArgs, "--expected-goal-revision", fmt.Sprint(*expectedGoalRevision),
 				"--expected-accounting-revision", fmt.Sprint(*expectedAccountingRevision))
 		}
-		status := landingReceiptTestRun(testArgs)
+		status := testRun(testArgs)
 		if status != 0 && status != proofrun.ExitReusableSuccess {
 			return status
 		}

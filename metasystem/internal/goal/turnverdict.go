@@ -209,6 +209,7 @@ type TurnVerdictOptions struct {
 	// verdict carries it: the terminal one-line verdicts (stop fence,
 	// live-handoff allowance, infrastructure) are read whole by callers.
 	ContextLine      string
+	workMachine      string
 	SeatActor        Actor
 	SeatClaimEpoch   int64
 	SeatActorProblem string
@@ -445,6 +446,7 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		if err := source.matchesRoot(s.Root); err != nil {
 			return infrastructureVerdict("state-root", err), nil
 		}
+		options.workMachine = source.machine
 		brainState = brain.Read(s.Root, existingLedgerIdentityFor(source.endpoint))
 	} else {
 		brainState = brain.Read(s.Root, ExistingLedgerIdentity(s.Root))

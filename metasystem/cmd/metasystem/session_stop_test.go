@@ -65,6 +65,25 @@ func sessionStopFileBed(t *testing.T) (string, map[string][]byte) {
 	}
 }
 
+func sessionStopRawInputs(t *testing.T, root string, repository goal.Repository) (func(string) (goal.Endpoint, error), func(string) (string, error)) {
+	t.Helper()
+	resolve := func(requested string) (goal.Endpoint, error) {
+		if requested != root {
+			return goal.Endpoint{}, fmt.Errorf("unexpected goal endpoint root %q", requested)
+		}
+		return goal.Endpoint{Root: root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: repository}, nil
+	}
+	machine := func(requested string) (string, error) {
+		return goal.ResolveMachineWithConfig(requested, func(configRoot, key string) (string, error) {
+			if configRoot != root || key != "metasystem.goal.machine" {
+				return "", fmt.Errorf("unexpected machine config lookup %q %q", configRoot, key)
+			}
+			return "bed-m1", nil
+		})
+	}
+	return resolve, machine
+}
+
 func sessionStopBed(t *testing.T) string {
 	t.Helper()
 	root, _ := sessionStopFileBed(t)
@@ -285,7 +304,7 @@ func TestSessionStopAgentClassifiedCallerCannotReachTheWriter(t *testing.T) {
 }
 
 func TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent(t *testing.T) {
-	root := sessionStopBed(t)
+	root, files := sessionStopFileBed(t)
 	budget := goal.Budget{
 		ElapsedLimit: "4h", AttemptLimit: 4,
 		ReservedJobMinutesLimit: 240, ActiveJobLimit: 2,
@@ -306,7 +325,8 @@ func TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent(t *testing.T) {
 		By: "human:Wido", At: held.History[1].At, Revision: 2, Opid: held.History[1].Opid,
 		Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest(held.Intent, held.Tier, budget),
 	}
-	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "held.md"), goal.RenderFile(held), 0o644); err != nil {
+	heldBytes := goal.RenderFile(held)
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "held.md"), heldBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	write := func(relative, content string) {
@@ -324,10 +344,14 @@ func TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent(t *testing.T) {
 	write("scripts/agents/roles/steward-continuation.requirements.json", "{\"required\":[]}")
 	write("scripts/agents/schemas/steward-continuation.schema.json", "{\"type\":\"object\"}")
 	write("scripts/agents/permissions/workspace.json", "{\"write\":[\"workspace\"]}")
-	goalSyncMutationGit(t, root, "add", "plans/goals/held.md", "metasystem.conf", "scripts/agents")
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", "held claim command fixture")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	endpoint, err := goal.ResolveEndpoint(root)
+	repository := &proofAdmissionRepository{top: root, root: root, commits: map[string]proofAdmissionCommit{}, operations: map[string]string{}}
+	repository.seed(map[string][]byte{
+		"metasystem/plans/goals/backlog.md": files["plans/goals/backlog.md"],
+		"metasystem/plans/goals/waiting.md": files["plans/goals/waiting.md"],
+		"metasystem/plans/goals/held.md":    heldBytes,
+	})
+	resolve, machine := sessionStopRawInputs(t, root, repository)
+	endpoint, err := resolve(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,6 +365,10 @@ func TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent(t *testing.T) {
 	}, "held")
 	if err != nil || (claimResult.Outcome != goal.OutcomeConfirmed && claimResult.Outcome != goal.OutcomeConfirmedLate) {
 		t.Fatalf("fixture claim failed: %+v %v", claimResult, err)
+	}
+	claimed := repository.goalFile(t, "held")
+	if claimed.State != goal.StateClaimed || claimed.Claimed == nil || claimed.Claimed.Machine != "bed-m1" || claimed.Claimed.Lineage != "main-1" {
+		t.Fatalf("real claim did not persist held ownership: %+v", claimed)
 	}
 
 	absoluteRoot, err := filepath.Abs(root)
@@ -371,7 +399,7 @@ func TestReportTurnVerdictHeldClaimWritesRealSeatIdleIntent(t *testing.T) {
 		if stop == 3 {
 			args = append(args, "--stop-hook-active")
 		}
-		stdout, code := captureStdout(t, func() int { return runReportTurnVerdict(args) })
+		stdout, code := captureStdout(t, func() int { return runReportTurnVerdictWithInputs(args, resolve, machine) })
 		if code != 0 {
 			t.Fatalf("turn-verdict stop %d exited %d: %s", stop, code, stdout)
 		}
@@ -403,12 +431,13 @@ func TestReportTurnVerdictFactsWriteFailurePreservesCompletedVerdict(t *testing.
 	original := turnVerdictFactsWriter
 	t.Cleanup(func() { turnVerdictFactsWriter = original })
 
-	invoke := func(root, session, factsPath string) (string, string, int) {
+	invoke := func(root, session, factsPath string, repository goal.Repository) (string, string, int) {
+		resolve, machine := sessionStopRawInputs(t, root, repository)
 		var stdout string
 		stderr, code := captureStderr(t, func() int {
 			var inner int
 			stdout, inner = captureStdout(t, func() int {
-				return runReportTurnVerdict([]string{"--root", root, "--session", session, "--facts-file", factsPath})
+				return runReportTurnVerdictWithInputs([]string{"--root", root, "--session", session, "--facts-file", factsPath}, resolve, machine)
 			})
 			return inner
 		})
@@ -448,24 +477,27 @@ func TestReportTurnVerdictFactsWriteFailurePreservesCompletedVerdict(t *testing.
 	turnVerdictFactsWriter = func(string, string, string) (bool, error) {
 		return false, errors.New("injected auxiliary failure")
 	}
-	blockRoot := sessionStopBed(t)
+	blockRoot, blockFiles := sessionStopFileBed(t)
+	blockRepository := &sessionStopAcceptedRepository{tip: "session-stop-accepted-tip", files: blockFiles}
 	blockFacts := filepath.Join(t.TempDir(), "block-facts.json")
-	stdout, stderr, code := invoke(blockRoot, "facts-writer-block", blockFacts)
+	stdout, stderr, code := invoke(blockRoot, "facts-writer-block", blockFacts, blockRepository)
 	if code != 0 {
 		t.Fatalf("completed block exited %d: stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	assertWire(stdout, stderr, blockFacts, true)
 
-	allowRoot := sessionStopBed(t)
+	allowRoot, allowFiles := sessionStopFileBed(t)
+	allowRepository := &sessionStopAcceptedRepository{tip: "session-stop-accepted-tip", files: allowFiles}
+	allowResolve, allowMachine := sessionStopRawInputs(t, allowRoot, allowRepository)
 	for attempt := 1; attempt < 3; attempt++ {
 		if output, runCode := captureStdout(t, func() int {
-			return runReportTurnVerdict([]string{"--root", allowRoot, "--session", "facts-writer-allow"})
+			return runReportTurnVerdictWithInputs([]string{"--root", allowRoot, "--session", "facts-writer-allow"}, allowResolve, allowMachine)
 		}); runCode != 0 {
 			t.Fatalf("allowance setup attempt %d exited %d: %s", attempt, runCode, output)
 		}
 	}
 	allowFacts := filepath.Join(t.TempDir(), "allow-facts.json")
-	stdout, stderr, code = invoke(allowRoot, "facts-writer-allow", allowFacts)
+	stdout, stderr, code = invoke(allowRoot, "facts-writer-allow", allowFacts, allowRepository)
 	if code != 0 {
 		t.Fatalf("completed allowance exited %d: stdout=%q stderr=%q", code, stdout, stderr)
 	}
@@ -478,7 +510,9 @@ func TestReportTurnVerdictCompletionCapturePreservesVerdict(t *testing.T) {
 	t.Setenv("METASYSTEM_GATES_RUNNING", "1")
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-14T12:00:00Z")
 
-	root := sessionStopBed(t)
+	root, files := sessionStopFileBed(t)
+	repository := &sessionStopAcceptedRepository{tip: "session-stop-accepted-tip", files: files}
+	resolve, machine := sessionStopRawInputs(t, root, repository)
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -493,7 +527,7 @@ func TestReportTurnVerdictCompletionCapturePreservesVerdict(t *testing.T) {
 	completionPath := filepath.Join(t.TempDir(), "completion.json")
 	factsPath := filepath.Join(t.TempDir(), "facts.json")
 	args := []string{"--root", root, "--session", "completion-capture", "--main-id", "main-completion", "--facts-file", factsPath, "--completion-file", completionPath}
-	stdout, code := captureStdout(t, func() int { return runReportTurnVerdict(args) })
+	stdout, code := captureStdout(t, func() int { return runReportTurnVerdictWithInputs(args, resolve, machine) })
 	if code != 0 {
 		t.Fatalf("completion capture exited %d: %s", code, stdout)
 	}
@@ -546,7 +580,7 @@ func TestReportTurnVerdictCompletionCapturePreservesVerdict(t *testing.T) {
 	var failedStdout string
 	stderr, failedCode := captureStderr(t, func() int {
 		failedStdout, code = captureStdout(t, func() int {
-			return runReportTurnVerdict([]string{"--root", root, "--session", "completion-capture", "--main-id", "main-completion", "--facts-file", failedFactsPath, "--completion-file", failedPath})
+			return runReportTurnVerdictWithInputs([]string{"--root", root, "--session", "completion-capture", "--main-id", "main-completion", "--facts-file", failedFactsPath, "--completion-file", failedPath}, resolve, machine)
 		})
 		return code
 	})

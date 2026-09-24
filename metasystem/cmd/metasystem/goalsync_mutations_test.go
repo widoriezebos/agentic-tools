@@ -2075,51 +2075,6 @@ func writeFixtureEnrollment(t *testing.T, root, human string) {
 	}
 }
 
-func syncedStoppedGoalFixture(t *testing.T) string {
-	t.Helper()
-	root := syncedClaimedGoalFixture(t)
-	path := filepath.Join(root, "plans", "goals", "standing-validation.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, problems := goal.ParseFile(data)
-	if len(problems) != 0 {
-		t.Fatalf("claimed fixture did not parse before stop setup: %v", problems)
-	}
-	closedAt := "2026-09-01T09:00:00Z"
-	stopID := "stop-standing-validation-r2-f1"
-	file.Revision++
-	file.StopCapability = &goal.StopCapability{
-		Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1, FenceEpoch: 1,
-	}
-	file.StopFence = &goal.StopFence{
-		StopID: stopID, Revision: 2, Epoch: 1, CapabilityGeneration: 2,
-		ClosedAt: closedAt, Reason: goal.StopReasonElapsedLimit,
-	}
-	file.History = append(file.History, goal.HistoryLine{
-		At: closedAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAC", "mac-cli", "m1"),
-		Verb: "breach-stop", Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1,
-	})
-	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	goalSyncMutationGit(t, root, "add", "plans/goals/standing-validation.md")
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", "breach-stopped resume fixture")
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	batch := goal.StopBatch{
-		StopID: stopID, GoalID: "standing-validation", GoalRevision: 2,
-		FenceEpoch: 1, CapabilityGeneration: 2, Machine: "mac-cli", ClaimEpoch: 1,
-		Reason: goal.StopReasonElapsedLimit, State: goal.StopBatchComplete,
-		OpenedAt: closedAt, UpdatedAt: closedAt, CompletedAt: closedAt, Pass: 1,
-	}
-	if err := goal.WriteStopBatch(root, batch); err != nil {
-		t.Fatal(err)
-	}
-	return root
-}
-
 func proofSelectorStoppedFixture(t *testing.T) (*proofAdmissionRepository, time.Time) {
 	t.Helper()
 	now := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)

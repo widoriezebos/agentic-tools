@@ -109,3 +109,17 @@ func existingLedgerIdentityFor(e Endpoint) string {
 func ExistingLedgerIdentityAtEndpoint(e Endpoint) string {
 	return existingLedgerIdentityFor(e)
 }
+
+// NewWorldAtEndpoint checks the accepted tree for the committed goal root.
+func NewWorldAtEndpoint(e Endpoint) bool {
+	if e.Repository == nil {
+		return NewWorld(e.Root)
+	}
+	tip, present, err := e.Repository.Accepted()
+	if err != nil || !present || strings.TrimSpace(tip) == "" {
+		return false
+	}
+	files, err := e.Repository.Files(tip, goalsPrefix+"backlog.md")
+	_, exists := files[goalsPrefix+"backlog.md"]
+	return err == nil && exists
+}

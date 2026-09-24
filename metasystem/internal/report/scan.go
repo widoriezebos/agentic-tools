@@ -152,6 +152,29 @@ func ScanWithCompletion(root string) (goal.ScanResult, StopCompletionCapture) {
 	return scanWithCompletionWithReads(root, defaultScanGoalReads())
 }
 
+// ScanWithCompletionAtEndpoint scans with the caller's accepted goal repository.
+func ScanWithCompletionAtEndpoint(root string, endpoint goal.Endpoint, machine string) (goal.ScanResult, StopCompletionCapture) {
+	canonical := resolveRepo(root)
+	if canonical != resolveRepo(endpoint.Root) {
+		return goal.ScanResult{Unreadable: []string{fmt.Sprintf("scan goal root %q does not match endpoint root %q", canonical, endpoint.Root)}}, StopCompletionCapture{}
+	}
+	if err := goal.ValidateMachineNickname(machine); err != nil {
+		return goal.ScanResult{Unreadable: []string{err.Error()}}, StopCompletionCapture{}
+	}
+	checkRoot := func(requested string) error {
+		if resolveRepo(requested) == canonical {
+			return nil
+		}
+		return fmt.Errorf("unexpected scan goal root %q", requested)
+	}
+	return scanWithCompletionWithReads(root, scanGoalReads{
+		newWorld:               func(string) bool { return goal.NewWorldAtEndpoint(endpoint) },
+		existingLedgerIdentity: func(string) string { return goal.ExistingLedgerIdentityAtEndpoint(endpoint) },
+		resolveEndpoint:        func(requested string) (goal.Endpoint, error) { return endpoint, checkRoot(requested) },
+		resolveMachine: func(requested string) (string, error) { return machine, checkRoot(requested) },
+	})
+}
+
 func scanWithCompletionWithReads(root string, reads scanGoalReads) (goal.ScanResult, StopCompletionCapture) {
 	root = resolveRepo(root)
 	return scanWithProberAndStatusesAndCompletionAtWithReads(root, identity.KernelProber{}, inFlightStatusesWithReads(root, reads), time.Now().UTC(), reads)
