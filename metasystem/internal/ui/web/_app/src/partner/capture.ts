@@ -27,6 +27,12 @@ export type Capturing = {
   page: Subject;
   /** The subject a human chose, or null while the subject follows the page. */
   chosen: Chosen | null;
+  /**
+   * A passage a human selected, or null. It stands beside the subject rather
+   * than in place of it: they are two attachments, made by two acts, and the
+   * document a passage was quoted from is still what the page is about.
+   */
+  passage?: Chosen | null;
   /** The line the drawer showed, which is what the human read. */
   label: string;
   /** The sheet open over the work area, by its own name, or "". */
@@ -57,24 +63,28 @@ export function captureOf(from: Capturing): Page {
   // The subject: the chosen one where there is one, and the page's otherwise.
   // A chosen subject replaces the page's rather than standing beside it,
   // because "this" means one thing at a time.
-  if (from.chosen !== null) {
-    const chosen = from.chosen;
-    if (chosen.kind === "passage") {
-      page.quote = chosen.quote ?? "";
-      put(page, "quoteFrom", chosen.id);
-      put(page, "quoteRevision", chosen.revision);
-      put(page, "quoteAnchor", chosen.anchor);
-    } else {
-      page.kind = subjectKind(chosen.kind);
-      page.subject = chosen.id;
-      put(page, "title", chosen.title);
-      put(page, "revision", chosen.revision);
-    }
+  const chosen = from.chosen;
+  if (chosen !== null) {
+    page.kind = subjectKind(chosen.kind);
+    page.subject = chosen.id;
+    put(page, "title", chosen.title);
+    put(page, "revision", chosen.revision);
   } else {
     put(page, "kind", page_.kind);
     put(page, "subject", page_.subject);
     put(page, "title", page_.title);
     put(page, "revision", page_.revision);
+  }
+
+  // A passage is its own attachment, so it travels beside whatever the
+  // question is about rather than in place of it: what was quoted, and where
+  // it was read, are two facts and the Partner is given both.
+  const passage = from.passage ?? null;
+  if (passage !== null) {
+    page.quote = passage.quote ?? "";
+    put(page, "quoteFrom", passage.id);
+    put(page, "quoteRevision", passage.revision);
+    put(page, "quoteAnchor", passage.anchor);
   }
 
   if (page_.filters !== undefined && page_.filters.length > 0) {

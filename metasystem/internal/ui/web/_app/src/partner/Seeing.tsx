@@ -2,11 +2,9 @@ import { useEffect, useState } from "react";
 
 import { seeing, type Seeing as Composed } from "./api";
 import { seeingLine } from "./capture";
-import { DraftChip, SubjectChip } from "./Chips";
+import { AttachmentChip } from "./Chips";
 import { usePartner } from "./store";
-import { effectiveSubject } from "./subject";
 import { Sheet } from "../shell/Sheet";
-import { useSubject } from "../shell/about";
 
 /**
  * What the Partner will see, said in one line and opened in full.
@@ -45,17 +43,15 @@ export function Seeing() {
 }
 
 /**
- * The composer card's top row: what the next question will carry, the subject
- * it is about with the × that gives it back to the page, and the offer to take
+ * The composer card's top row: what the next question will carry, everything
+ * attached to it with the × that takes each one back, and the offer to take
  * the page's reading again where it has moved on.
  *
  * It is the card's own first row rather than a line of its own above the
  * transcript, because everything a human touches belongs to one object.
  */
 export function SeeingRow() {
-  const { chosen, clearChosen, sheetDraft, clearSheetDraft, moved, refresh } = usePartner();
-  const page = useSubject();
-  const subject = effectiveSubject(chosen, page);
+  const { attachments, detach, moved, refresh } = usePartner();
   const [open, setOpen] = useState(false);
   return (
     <div className="ms-composer-seeing">
@@ -64,11 +60,20 @@ export function SeeingRow() {
           setOpen(true);
         }}
       />
-      {subject !== null && <SubjectChip subject={subject} onClear={chosen === null ? null : clearChosen} />}
-      {/* A sheet a human handed over stands here beside the subject: both are
-          answers to "what is this question about", and both are theirs to
-          take back. */}
-      {sheetDraft !== null && <DraftChip draft={sheetDraft} onClear={clearSheetDraft} />}
+      {/* Everything attached, in the order the acts were made, each with its ×
+          and the line that says how long it lives. What is here is what the
+          capture carries, because both are the same list. Where the human is
+          standing is not among them: it has no × and is not a chip, it is the
+          Seeing line to the left. */}
+      {attachments.map((attachment) => (
+        <AttachmentChip
+          key={attachment.id}
+          attachment={attachment}
+          onRemove={() => {
+            detach(attachment.id);
+          }}
+        />
+      ))}
       {/* The page moved on since the Partner last looked; the control brings
           its view up to date for the next question, and the words say whose
           view that is (Wido, 2026-09-24: not "refresh", not "what I see"). */}

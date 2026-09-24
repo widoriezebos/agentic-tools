@@ -1,6 +1,7 @@
 import { NavLink } from "react-router";
 import { X } from "lucide-react";
 
+import { idFor } from "./attachments";
 import { usePartner } from "./store";
 import { chipLabel, effectiveSubject, kindWord } from "./subject";
 import { useSubject } from "../shell/about";
@@ -19,9 +20,20 @@ import { useSubject } from "../shell/about";
  * places it is visible.
  */
 export function PinnedSubject() {
-  const { chosen, clearChosen } = usePartner();
+  const { chosen, passage, clearChosen, detach } = usePartner();
   const page = useSubject();
-  const subject = effectiveSubject(chosen, page);
+  // A passage is pinned where nothing else was chosen: it is what the human
+  // put there, and the panel shows the quote itself below.
+  const attached = chosen ?? passage;
+  const takeBack =
+    chosen !== null
+      ? clearChosen
+      : passage === null
+        ? null
+        : () => {
+            detach(idFor("passage"));
+          };
+  const subject = effectiveSubject(attached, page);
   if (subject === null) {
     return (
       <aside className="ms-partner-pinned ms-partner-pinned--empty" aria-label="What this is about">
@@ -36,12 +48,12 @@ export function PinnedSubject() {
     <aside className="ms-partner-pinned" aria-label="What this is about">
       <div className="ms-partner-pinned-head">
         <span className="ms-partner-pinned-kind">{kindWord(subject.kind)}</span>
-        {chosen !== null && (
+        {takeBack !== null && (
           <button
             type="button"
             className="ms-partner-subject-clear"
             aria-label={`Stop asking about ${chipLabel(subject)}`}
-            onClick={clearChosen}
+            onClick={takeBack}
           >
             <X size={12} strokeWidth={2} aria-hidden="true" />
           </button>

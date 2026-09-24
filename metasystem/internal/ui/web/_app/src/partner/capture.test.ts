@@ -68,6 +68,17 @@ describe("the capture a document makes", () => {
     returnTo: "/project/doc/plans/designs/d1.md#the-seam",
   };
 
+  const passage: Chosen = {
+    kind: "passage",
+    id: "plans/designs/d1.md",
+    title: "One client",
+    source: "plans/designs/d1.md, revision blob:abc",
+    summary: "",
+    quote: "One client, and nothing else.",
+    revision: "blob:abc",
+    anchor: "the-seam",
+  };
+
   it("carries the document's own id and the revision the page displayed", () => {
     const capture = captureOf({
       pathname: "/project/doc/plans/designs/d1.md",
@@ -82,30 +93,45 @@ describe("the capture a document makes", () => {
     expect(capture.return).toBe("/project/doc/plans/designs/d1.md#the-seam");
   });
 
-  it("puts a selected passage in place of the subject, with where it came from", () => {
-    const passage: Chosen = {
-      kind: "passage",
-      id: "plans/designs/d1.md",
-      title: "One client",
-      source: "plans/designs/d1.md, revision blob:abc",
-      summary: "",
-      quote: "One client, and nothing else.",
-      revision: "blob:abc",
-      anchor: "the-seam",
-    };
+  it("carries a selected passage beside what the page is about", () => {
     const capture = captureOf({
       pathname: "/project/doc/plans/designs/d1.md",
       page: document_,
-      chosen: passage,
+      chosen: null,
+      passage,
       label: "",
     });
     expect(capture.quote).toBe("One client, and nothing else.");
     expect(capture.quoteFrom).toBe("plans/designs/d1.md");
     expect(capture.quoteRevision).toBe("blob:abc");
     expect(capture.quoteAnchor).toBe("the-seam");
-    // A passage is the subject, so the page's own is not also sent: "this"
-    // means one thing at a time.
-    expect(capture.subject).toBeUndefined();
+    // A passage is an attachment of its own, made by its own act and living
+    // for one question, so it stands beside what the page is about rather
+    // than in place of it (g1-s38).
+    expect(capture.subject).toBe("plans/designs/d1.md");
+  });
+
+  // Two acts, two attachments, and the Partner is given both: the goal a
+  // human chose on the board, and the sentence they selected afterwards.
+  it("carries a chosen subject and a passage together", () => {
+    const goal: Chosen = {
+      kind: "goal",
+      id: "g1-s23",
+      title: "g1-s23",
+      source: "the accepted tip 6984cde, 17:54",
+      summary: "queued",
+    };
+    const capture = captureOf({
+      pathname: "/project/doc/plans/designs/d1.md",
+      page: document_,
+      chosen: goal,
+      passage,
+      label: "",
+    });
+    expect(capture.subject).toBe("g1-s23");
+    expect(capture.kind).toBe("goal");
+    expect(capture.quote).toBe("One client, and nothing else.");
+    expect(capture.quoteFrom).toBe("plans/designs/d1.md");
   });
 });
 

@@ -7,10 +7,11 @@ import type { Chosen } from "./subject";
  * Selected text is a subject.
  *
  * Select a passage anywhere the interface renders prose and a small Ask
- * appears beside it; choosing it attaches the passage as the subject, with the
- * document and revision it was read at, and puts the caret in the composer.
- * Nothing is sent: the quote is a removable chip above the composer and the
- * question is still the human's to write, which is Astra's seventh finding.
+ * appears beside it; choosing it attaches the passage, with the document and
+ * revision it was read at, and puts the caret in the composer. It is attached
+ * for one question: a quote is said once, and its chip says so. Nothing is
+ * sent: the quote is a removable chip above the composer and the question is
+ * still the human's to write, which is Astra's seventh finding.
  *
  * It appears over reading surfaces only. A card is a drag target and a
  * selection on it competes with the gesture the board is built on; the editor
@@ -29,7 +30,7 @@ const MAX_PASSAGE = 4000;
 type Standing = { text: string; source: string; revision: string; anchor: string; x: number; y: number };
 
 export function AskSelection() {
-  const { ask } = usePartner();
+  const { askPassage } = usePartner();
   const [standing, setStanding] = useState<Standing | null>(null);
 
   useEffect(() => {
@@ -66,7 +67,7 @@ export function AskSelection() {
         event.preventDefault();
       }}
       onClick={() => {
-        ask(passageOf(standing));
+        askPassage(passageOf(standing));
         setStanding(null);
       }}
     >

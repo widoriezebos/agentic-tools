@@ -2,6 +2,21 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation } from "react-router";
 
 import { isBusy, loadPartner, PartnerError, sendTurn, stopTurn, type Page } from "./api";
+import {
+  attach,
+  attachedDraft,
+  attachedPassage,
+  attachedSubject,
+  draftIn,
+  idFor,
+  passageIn,
+  refreshDraft,
+  remove,
+  retireOnSent,
+  retireOnSheetClosed,
+  subjectIn,
+  type Attachment,
+} from "./attachments";
 import { captureOf, readingMoved } from "./capture";
 import { chipped, insertAt } from "./composing";
 import type { SheetDraft } from "./drafting";
@@ -21,6 +36,12 @@ import { useAboutLine, useSubject } from "../shell/about";
  * stranded whatever was half-written in it. The subject is here for the same
  * reason and one more: "this" has to keep meaning the same thing while a human
  * navigates, and a subject derived from the mounted pane disappears with it.
+ *
+ * Everything above the composer is one list of attachments, held here, each
+ * with the lifetime the act that made it declared. The store keeps the list
+ * and nothing else: the subject, the passage and the offered sheet are views
+ * over it, so there is one place an attachment is made and one place it is
+ * retired. src/partner/attachments.ts holds the rules.
  *
  * The transcript is read when the page loads and again on every reconnect of
  * the one stream, and at no other time. Everything between arrives as beats on
@@ -46,24 +67,46 @@ type Partner = {
   /** True while a send is in flight, so Send cannot be pressed twice. */
   sending: boolean;
 
+  /**
+   * Everything above the composer, in the order it was attached. It is what
+   * the chips render from and what the capture is composed from, so what the
+   * Partner is told is exactly what the human can see.
+   */
+  attachments: readonly Attachment[];
+  /** Take one back, which is what every chip's × does. */
+  detach: (id: string) => void;
+
   /** The subject a human chose, or null while the subject follows the page. */
   chosen: Chosen | null;
-  /** Make this the subject and take the caret to the composer. */
+  /**
+   * Make this the subject and take the caret to the composer. It stays until
+   * it is cleared or replaced; a selected passage is the other act, below,
+   * because it lives for one question rather than until it is taken back.
+   */
   ask: (chosen: Chosen) => void;
   /** Clear the chosen subject, which is what the chip's × does. */
   clearChosen: () => void;
 
+  /** A passage a human selected, or null. It goes with the next question. */
+  passage: Chosen | null;
+  /** Attach this passage, and take the caret to the composer. */
+  askPassage: (passage: Chosen) => void;
+
   /**
    * A sheet a human handed over with "Ask about this", or null. It stands as a
-   * chip above the composer until it is removed or another sheet replaces it,
-   * exactly as a chosen subject does: what "this" means, and what the draft
-   * beside it is, both stay put while a human writes their question.
+   * chip above the composer for as long as its sheet is open: cancelled or
+   * opened, the thing it described is gone and the chip would describe
+   * nothing.
    */
   sheetDraft: SheetDraft | null;
   /** Offer this sheet's fields, and take the caret to the composer. */
   askAbout: (draft: SheetDraft) => void;
-  /** Stop offering it, which is what that chip's × does. */
-  clearSheetDraft: () => void;
+  /**
+   * How an open sheet reads its own fields right now, so that a question
+   * carries the draft as the sheet stands rather than as it stood when it was
+   * handed over. A sheet that has handed nothing over is still never read.
+   */
+  offerFields: (sheet: string, read: (() => SheetDraft) | null) => void;
   /**
    * Say that this sheet is open, for as long as it is. The capture carries
    * its name, the Seeing line ends with it, and the message a question becomes
@@ -100,12 +143,16 @@ const nothing: Partner = {
   send: () => {},
   stop: () => {},
   sending: false,
+  attachments: [],
+  detach: () => {},
   chosen: null,
   ask: () => {},
   clearChosen: () => {},
+  passage: null,
+  askPassage: () => {},
   sheetDraft: null,
   askAbout: () => {},
-  clearSheetDraft: () => {},
+  offerFields: () => {},
   noteSheet: () => () => {},
   capture: { section: "", path: "" },
   moved: false,
@@ -145,14 +192,14 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const [store, setStore] = useState<Store>(emptyStore);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  // The subject a human chose. It survives navigation, and it is cleared by
-  // its own chip and by choosing another — never by arriving somewhere else.
-  const [chosen, setChosen] = useState<Chosen | null>(null);
-  // The sheet a human handed over, and the sheets that are open over the work
-  // area. They are two different facts: a sheet is open whether or not anybody
-  // offered it, and an offered draft outlives the sheet it came from, because
-  // the question about it is still being written.
-  const [sheetDraft, setSheetDraft] = useState<SheetDraft | null>(null);
+  // Everything above the composer, in the order it was attached. One list,
+  // because a subject, a passage and an offered sheet are one kind of thing —
+  // context a human put there by one act — and three states were three places
+  // for a rule about when they leave to be written and forgotten.
+  const [attachments, setAttachments] = useState<readonly Attachment[]>([]);
+  // The sheets that are open over the work area. That is a different fact from
+  // a sheet a human handed over: a sheet is open whether or not anybody
+  // offered it, and it is this stack that says where the human is standing.
   const [sheets, setSheets] = useState<readonly string[]>([]);
   // The capture the last question was sent with, which is what "the page has
   // moved since" is measured against. Refresh replaces it with the page as it
@@ -166,6 +213,9 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const cameFrom = useRef<HTMLElement | null>(null);
   // How the composer on screen inserts at its own cursor.
   const insert = useRef<((text: string) => void) | null>(null);
+  // How each open sheet reads its own fields, by the sheet's own name. It is
+  // read at one moment and no other: the instant a question is sent.
+  const openFields = useRef(new Map<string, () => SheetDraft>());
   const location = useLocation();
   const subject = useSubject();
   const label = useAboutLine("");
@@ -203,17 +253,48 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     read();
   }), [read]);
 
-  // The capture: the page as it stands, with whatever subject is in force. It
-  // is composed here because it belongs to the moment of asking, and it is
+  // What the components that read one attachment read: a view over the list
+  // rather than a state of its own, so nothing can hold a subject the list has
+  // retired.
+  const chosen = useMemo(() => subjectIn(attachments), [attachments]);
+  const passage = useMemo(() => passageIn(attachments), [attachments]);
+  const sheetDraft = useMemo(() => draftIn(attachments), [attachments]);
+
+  // The capture: the page as it stands, with the attachments that are on it.
+  // It is composed here because it belongs to the moment of asking, and it is
   // what the sheet shows, what the question carries, and what the message
-  // keeps — one composition rather than three.
+  // keeps — one composition rather than three. It is composed from the list
+  // the chips are drawn from, so the Partner is told what the human sees.
   // The innermost sheet is the one a human is standing in, and the one the
   // capture names.
   const sheet = sheets.at(-1) ?? "";
-  const capture = useMemo(
-    () => captureOf({ pathname: location.pathname, page: subject, chosen, label, sheet, draft: sheetDraft }),
-    [location.pathname, subject, chosen, label, sheet, sheetDraft],
+  const compose = useCallback(
+    (list: readonly Attachment[]) =>
+      captureOf({
+        pathname: location.pathname,
+        page: subject,
+        label,
+        sheet,
+        chosen: subjectIn(list),
+        passage: passageIn(list),
+        draft: draftIn(list),
+      }),
+    [location.pathname, subject, label, sheet],
   );
+  const capture = useMemo(() => compose(attachments), [compose, attachments]);
+
+  /**
+   * Every open sheet's draft, brought up to date from the sheet itself. A
+   * sheet that handed nothing over is not read, and a list with nothing to
+   * bring up to date comes back as it went in.
+   */
+  const refreshed = useCallback((held: readonly Attachment[]) => {
+    let next = held;
+    for (const fields of openFields.current.values()) {
+      next = refreshDraft(next, fields());
+    }
+    return next;
+  }, []);
   const moved = useMemo(() => readingMoved(baseline, subject), [baseline, subject]);
 
   const running = busy(store);
@@ -222,18 +303,29 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     if (text === "" || running || sending) {
       return;
     }
+    // An open sheet says what is in it now, so the question carries the draft
+    // as the sheet stands rather than as it stood when it was handed over.
+    const list = refreshed(attachments);
+    const taken = list === attachments ? capture : compose(list);
+    if (list !== attachments) {
+      setAttachments(list);
+    }
     key.current = keyFor(key.current);
     const minted = key.current;
     setSending(true);
     setStore(retrying);
-    sendTurn(minted, text, capture)
+    sendTurn(minted, text, taken)
       .then((accepted) => {
         // Accepted: the draft goes, the key goes with it, and the question is
         // on screen before the first beat arrives.
         key.current = "";
         setDraft("");
-        setBaseline(capture);
-        setStore((held) => asked(held, accepted.turn, minted, text, capture, new Date().toISOString()));
+        setBaseline(taken);
+        // The question carried them: the first of the two retiring events.
+        // What goes with a question goes now; the subject and the sheets a
+        // human is still filling in stand.
+        setAttachments(retireOnSent);
+        setStore((held) => asked(held, accepted.turn, minted, text, taken, new Date().toISOString()));
       })
       .catch((error: unknown) => {
         // Refused: the draft stays, and so does the key, so pressing Send
@@ -247,7 +339,7 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         setSending(false);
       });
-  }, [draft, running, sending, capture]);
+  }, [draft, running, sending, capture, attachments, compose, refreshed]);
 
   const turn = store.live.turn;
   const stop = useCallback(() => {
@@ -264,36 +356,61 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   }, [turn]);
 
   /**
-   * Ask about this: the thing becomes the subject, the drawer opens, and the
-   * caret goes to the composer. Where it came from is remembered, because
-   * Escape from the composer belongs back on the card it was opened from.
+   * What every Ask does besides attaching: the drawer opens and the caret goes
+   * to the composer. Where it came from is remembered, because Escape from the
+   * composer belongs back on the card it was opened from.
    */
-  const ask = useCallback((next: Chosen) => {
+  const wantComposer = useCallback(() => {
     const active = globalThis.document.activeElement;
     cameFrom.current = active instanceof HTMLElement ? active : null;
-    setChosen(next);
     setWanted((at) => at + 1);
   }, []);
 
-  const clearChosen = useCallback(() => {
-    setChosen(null);
+  const detach = useCallback((id: string) => {
+    setAttachments((held) => remove(held, id));
   }, []);
 
   /**
+   * Ask about this: the thing becomes the subject, and stays the subject until
+   * it is cleared or replaced. Navigating does not touch it.
+   */
+  const ask = useCallback((next: Chosen) => {
+    setAttachments((held) => attach(held, attachedSubject(next)));
+    wantComposer();
+  }, [wantComposer]);
+
+  const clearChosen = useCallback(() => {
+    detach(idFor("subject"));
+  }, [detach]);
+
+  /**
+   * Ask on a selection: the passage is attached for one question. A quote is
+   * said once, and one that stayed would be carried by questions nobody meant
+   * it for.
+   */
+  const askPassage = useCallback((next: Chosen) => {
+    setAttachments((held) => attach(held, attachedPassage(next)));
+    wantComposer();
+  }, [wantComposer]);
+
+  /**
    * Ask about this sheet: what is written in it right now becomes a chip above
-   * the composer, the drawer opens, and the caret goes to the field. It is the
-   * same act Ask on a card is, and it takes the same route — nothing is sent,
-   * and the question is still the human's to write.
+   * the composer, and it lives as long as its sheet does. It is the same act
+   * Ask on a card is, and it takes the same route — nothing is sent, and the
+   * question is still the human's to write.
    */
   const askAbout = useCallback((draft: SheetDraft) => {
-    const active = globalThis.document.activeElement;
-    cameFrom.current = active instanceof HTMLElement ? active : null;
-    setSheetDraft(draft);
-    setWanted((at) => at + 1);
-  }, []);
+    setAttachments((held) => attach(held, attachedDraft(draft)));
+    wantComposer();
+  }, [wantComposer]);
 
-  const clearSheetDraft = useCallback(() => {
-    setSheetDraft(null);
+  /** A sheet says how to read its fields, for as long as it is on screen. */
+  const offerFields = useCallback((name: string, read: (() => SheetDraft) | null) => {
+    if (read === null) {
+      openFields.current.delete(name);
+      return;
+    }
+    openFields.current.set(name, read);
   }, []);
 
   /**
@@ -309,11 +426,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
         const at = held.lastIndexOf(name);
         return at < 0 ? held : [...held.slice(0, at), ...held.slice(at + 1)];
       });
-      // A draft's life is its sheet's: cancelled, the thing it described is
-      // gone; opened, it is a goal now. Either way the chip would describe
-      // nothing, so it goes with the sheet (Wido, 2026-09-24). A draft from
-      // another sheet stands.
-      setSheetDraft((draft) => (draft !== null && draft.sheet === name ? null : draft));
+      // The second of the two retiring events. A draft's life is its sheet's:
+      // cancelled, the thing it described is gone; opened, it is a goal now.
+      // Either way the chip would describe nothing (Wido, 2026-09-24). It is
+      // the lifetime that decides, so a draft from another sheet stands and
+      // nothing here knows what kinds of attachment there are.
+      setAttachments((held) => retireOnSheetClosed(held, name));
     };
   }, []);
 
@@ -355,12 +473,13 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       store, busy: running, draft, setDraft, send, stop, sending,
-      chosen, ask, clearChosen, sheetDraft, askAbout, clearSheetDraft, noteSheet,
+      attachments, detach, chosen, ask, clearChosen, passage, askPassage,
+      sheetDraft, askAbout, offerFields, noteSheet,
       capture, moved, refresh, suggest, offerInsert,
       wanted, returnFocus,
     }),
-    [store, running, draft, send, stop, sending, chosen, ask, clearChosen,
-      sheetDraft, askAbout, clearSheetDraft, noteSheet,
+    [store, running, draft, send, stop, sending, attachments, detach, chosen, ask,
+      clearChosen, passage, askPassage, sheetDraft, askAbout, offerFields, noteSheet,
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus],
   );
 

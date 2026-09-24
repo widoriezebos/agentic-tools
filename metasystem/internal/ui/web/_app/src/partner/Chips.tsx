@@ -1,8 +1,8 @@
 import { X } from "lucide-react";
 
-import { draftClearLabel, draftLabel, draftSource, type SheetDraft } from "./drafting";
+import { lifeOf, takeBackLabel, type Attachment } from "./attachments";
 import { usePartner } from "./store";
-import { chipLabel, registerFor, type Chosen } from "./subject";
+import { registerFor } from "./subject";
 import { suggestionsFor } from "./suggestions";
 import { Hint } from "../shell/controls";
 
@@ -15,10 +15,11 @@ import { Hint } from "../shell/controls";
  * over it are three questions in the way. They leave when the human types and
  * come back when the field is empty again.
  *
- * The subject chip is the answer to "what does 'this' mean right now". It is
- * the thing a human chose, with the × that gives the subject back to the page;
- * a page whose own subject is in force shows it too, without the ×, because
- * there is nothing to clear.
+ * A chip is one attachment: the thing a human put above the composer by one
+ * act, with the × that takes it back and the one line that says how long it
+ * lives. Everything above the composer is one of these, and nothing else is —
+ * where the human is standing has no × and is not a chip; it is the Seeing
+ * line beside them.
  *
  * A pill sends when the composer is empty and inserts at the cursor when
  * something is half-written, which is the whole of contract 5 — and with the
@@ -36,10 +37,11 @@ export function showsSuggestions(draft: string): boolean {
 }
 
 export function Suggestions() {
-  const { suggest, busy, capture, chosen } = usePartner();
-  // Which register: the subject's kind where there is one, and the section
-  // otherwise — which is what the board and the landing page are asked about.
-  const suggestions = suggestionsFor(registerFor(chosen, capture.section));
+  const { suggest, busy, capture, chosen, passage } = usePartner();
+  // Which register: the subject's kind where there is one, a selected passage
+  // where that is all there is, and the section otherwise — which is what the
+  // board and the landing page are asked about.
+  const suggestions = suggestionsFor(registerFor(chosen ?? passage, capture.section));
   if (suggestions.length === 0) {
     return null;
   }
@@ -64,44 +66,38 @@ export function Suggestions() {
 }
 
 /**
- * A sheet a human handed over, with the × that takes it back.
+ * One attachment, as a chip: what it is, the × that takes it back, and — on
+ * hover and on focus — the one line that says how long it lives.
  *
- * It stands beside the subject chip and reads the same way, because it is the
- * same kind of answer to the same question — what the next question is about.
- * What it says it is, it says out loud: a draft, named by the sheet it came
- * from, and not anything the ledger holds.
+ * The line is there because a human should never have to guess why a chip is
+ * on screen or when it will leave. It comes from the attachment's own
+ * lifetime, declared by the act that made it, so a chip cannot say one thing
+ * while the list does another.
+ *
+ * The tooltip wraps the whole chip rather than the ×, so that the words are
+ * enough to hover over; focus reaches it through the × inside, which is the
+ * part of a chip a keyboard can land on, and the × keeps its own name.
  */
-export function DraftChip({ draft, onClear }: { draft: SheetDraft; onClear: () => void }) {
+export function AttachmentChip({ attachment, onRemove }: { attachment: Attachment; onRemove: () => void }) {
   return (
-    <span className="ms-partner-subject-chip ms-partner-draft-chip" title={`From ${draftSource(draft)}, not saved`}>
-      <span className="ms-partner-subject-what">{draftLabel(draft)}</span>
-      <button
-        type="button"
-        className="ms-partner-subject-clear"
-        aria-label={draftClearLabel(draft)}
-        onClick={onClear}
+    <Hint label={lifeOf(attachment)}>
+      <span
+        className={
+          attachment.kind === "draft"
+            ? "ms-partner-subject-chip ms-partner-draft-chip"
+            : "ms-partner-subject-chip"
+        }
       >
-        <X size={12} strokeWidth={2} aria-hidden="true" />
-      </button>
-    </span>
-  );
-}
-
-/** The chosen subject, with the × that gives the subject back to the page. */
-export function SubjectChip({ subject, onClear }: { subject: Chosen; onClear: (() => void) | null }) {
-  return (
-    <span className="ms-partner-subject-chip">
-      <span className="ms-partner-subject-what">{chipLabel(subject)}</span>
-      {onClear !== null && (
+        <span className="ms-partner-subject-what">{attachment.label}</span>
         <button
           type="button"
           className="ms-partner-subject-clear"
-          aria-label={`Stop asking about ${chipLabel(subject)}`}
-          onClick={onClear}
+          aria-label={takeBackLabel(attachment)}
+          onClick={onRemove}
         >
           <X size={12} strokeWidth={2} aria-hidden="true" />
         </button>
-      )}
-    </span>
+      </span>
+    </Hint>
   );
 }
