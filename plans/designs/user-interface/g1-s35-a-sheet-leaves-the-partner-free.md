@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M392EC50QQZ0NWD44BHWD4QM
-- Status: accepted
+- Status: done
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
 Revision 1, 2026-09-24, Claude on Fable, on Wido's ask about the New goal sheet: "it's a modal pop up, which means I cannot use the project partner to discuss whatever is in the goal. It would be really nice if the pop up is modal only for the top half and that I would still have access to the project partner." Ruled "do as proposed". Frontend only; the acts and their routes are unchanged.
