@@ -164,9 +164,10 @@ func Fleet(input FleetInput) []MachineStanding {
 	for machine := range input.Claims {
 		universe[machine] = true
 	}
-	if input.This != "" {
-		universe[input.This] = true
-	}
+	// The machine set is the refs and the claims, and nothing else. This
+	// machine earns its line the same way every other one does: by having
+	// published a record or by holding a claim. A checkout that has never
+	// published and holds nothing has nothing to report about itself.
 	names := make([]string, 0, len(universe))
 	for machine := range universe {
 		names = append(names, machine)
@@ -191,7 +192,13 @@ func Fleet(input FleetInput) []MachineStanding {
 			line.AgeSeconds = &age
 			line.Standing, line.Reason = Judge(record, now, input.Window)
 		}
-		line.Since = freezeSince(input.Previous, machine, line.Standing, now)
+		if line.Record != nil || line.Malformed != "" {
+			// since is the reader's first observation of a standing, and a
+			// machine that has published nothing has been observed in no
+			// standing: its unknown is the absence of evidence, which has no
+			// beginning to name.
+			line.Since = freezeSince(input.Previous, machine, line.Standing, now)
+		}
 		if input.ClaimsUnavailable == "" {
 			line.Flag = SilentHolder(line)
 		}
@@ -229,6 +236,11 @@ func Observations(standings []MachineStanding) map[string]Observation {
 func SilentHolder(line MachineStanding) string {
 	if line.Standing == Reachable || len(line.Holds) == 0 {
 		return ""
+	}
+	if line.Since == "" {
+		// A machine with no record at all has been observed in no standing,
+		// so there is no since to name.
+		return fmt.Sprintf("held by a machine %s with no presence record", line.Standing)
 	}
 	return fmt.Sprintf("held by a machine %s since %s", line.Standing, line.Since)
 }

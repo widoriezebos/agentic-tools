@@ -97,6 +97,46 @@ func TestTheMachineSetIsTheUnionOfRefsAndClaims(t *testing.T) {
 	}
 }
 
+func TestTheUniverseIsRefsAndClaimsAndNothingElse(t *testing.T) {
+	t.Parallel()
+	// A checkout that has published nothing and holds nothing has no line of
+	// its own: there is nothing observed about it to report.
+	standings := Fleet(FleetInput{
+		This: "m1e",
+		Copy: Copy{Records: map[string]Record{"m1c": presence("m1c", fixtureClock.Add(-time.Minute), 600)}},
+		Now:  fixtureClock, Window: 30 * time.Minute,
+	})
+	for _, line := range standings {
+		if line.Machine == "m1e" {
+			t.Fatalf("a machine with neither a ref nor a claim took a line: %+v", line)
+		}
+	}
+	// One claim is enough to put it back.
+	held := Fleet(FleetInput{
+		This: "m1e", Copy: Copy{},
+		Claims: map[string][]string{"m1e": {"goal-a"}},
+		Now:    fixtureClock, Window: 30 * time.Minute,
+	})
+	if len(held) != 1 || held[0].Machine != "m1e" || held[0].Standing != Unknown {
+		t.Fatalf("standings = %+v", held)
+	}
+	// An unknown machine with no record has no since to name.
+	if held[0].Since != "" {
+		t.Fatalf("a machine with no record was given a since of %q", held[0].Since)
+	}
+	if !strings.Contains(held[0].Flag, "with no presence record") {
+		t.Fatalf("flag = %q", held[0].Flag)
+	}
+	// A malformed record IS an observation, so it keeps its since.
+	torn := Fleet(FleetInput{
+		This: "m1e", Copy: Copy{Malformed: map[string]string{"m1d": "SEAT_PRESENCE_MALFORMED: torn"}},
+		Now: fixtureClock, Window: 30 * time.Minute,
+	})
+	if len(torn) != 1 || torn[0].Since == "" {
+		t.Fatalf("a malformed record lost its since: %+v", torn)
+	}
+}
+
 func TestSilentHoldersAreFlaggedAndClaimsUnavailableRaisesNone(t *testing.T) {
 	t.Parallel()
 	copied := Copy{Records: map[string]Record{"m1c": presence("m1c", fixtureClock.Add(-6*time.Hour), 600)}}

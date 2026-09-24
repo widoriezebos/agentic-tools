@@ -83,6 +83,11 @@ func transitionMessage(line MachineStanding) string {
 	if at, err := parsePresenceTime(line.Since); err == nil {
 		when = at.Format("15:04")
 	}
+	if line.Since == "" {
+		// A machine the ledger names and the refs do not has no observed
+		// beginning; saying so is better than naming a time it never had.
+		when = "it was first named by a claim"
+	}
 	held := "holds no goals"
 	if len(line.Holds) == 1 {
 		held = "holds 1 goal: " + line.Holds[0]
