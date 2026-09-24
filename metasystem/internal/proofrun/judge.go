@@ -47,10 +47,16 @@ func DefaultJudgeKey() string {
 // matches another unreadable run: a key must never make a test run fail,
 // and never let two unknown judges look alike.
 func ComputeJudgeKey(ctx context.Context, projectRoot, policyBaseCommit, installationPrefix string) string {
-	return computeJudgeKey(ctx, projectRoot, policyBaseCommit, installationPrefix, judgeGit)
+	return ComputeJudgeKeyWithReader(ctx, projectRoot, policyBaseCommit, installationPrefix, judgeGit)
 }
 
 type judgeGitReader func(context.Context, string, ...string) (string, error)
+
+// ComputeJudgeKeyWithReader computes the native judge key from a caller's
+// repository reader. The reader supplies the raw rev-parse and ls-tree replies.
+func ComputeJudgeKeyWithReader(ctx context.Context, projectRoot, policyBaseCommit, installationPrefix string, readGit func(context.Context, string, ...string) (string, error)) string {
+	return computeJudgeKey(ctx, projectRoot, policyBaseCommit, installationPrefix, readGit)
+}
 
 func computeJudgeKey(ctx context.Context, projectRoot, policyBaseCommit, installationPrefix string, readGit judgeGitReader) string {
 	if projectRoot == "" || policyBaseCommit == "" {

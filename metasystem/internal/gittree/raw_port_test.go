@@ -92,6 +92,7 @@ func rawPortIndex(t *testing.T, index *string) func(RawRequest) {
 }
 
 func TestWorkspaceRawSourceNonzeroAndSpawnDistinct(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	spawn := errors.New("cannot start Git")
 	base := strings.Repeat("a", 40)
@@ -216,6 +217,7 @@ func TestWorkspaceRawSourceInputEnvironmentAndInstances(t *testing.T) {
 }
 
 func TestTransferTreeClosureRawSourceAndDestination(t *testing.T) {
+	t.Parallel()
 	source, destination := t.TempDir(), t.TempDir()
 	tree := strings.Repeat("c", 40)
 	packBytes := []byte{'P', 'A', 'C', 'K', 0, 1, 2, 255}
@@ -240,6 +242,7 @@ func TestTransferTreeClosureRawSourceAndDestination(t *testing.T) {
 }
 
 func TestDetachedWorkspaceRetainsRawSource(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	common := filepath.Join(repo, ".git")
 	if err := os.Mkdir(common, 0o755); err != nil {
@@ -324,6 +327,7 @@ func TestDetachedWorkspaceRetainsRawSource(t *testing.T) {
 }
 
 func TestTransferTreeClosureNativeAdapter(t *testing.T) {
+	t.Parallel()
 	source := newTreeFixture(t)
 	destination := t.TempDir()
 	runRawAdapterGit(t, destination, "init", "-q", "-b", "main")

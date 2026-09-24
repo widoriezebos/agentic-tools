@@ -827,51 +827,46 @@ func TestTrustedPolicyEngineIsRequiredWithoutBuildingDuringReadOnlySelection(t *
 }
 
 func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *testing.T) {
-	fixture := newCandidateEngineFixture(t)
+	fixture := newOrdinaryCandidateFixture(t)
 	ctx := context.Background()
-	built, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
-	if err != nil {
-		t.Fatalf("build candidate proof engine: %v", err)
+	environment := testingEnvironment(os.Environ())
+	build := func(tree, projection, commit string) *candidateEngineBuild {
+		t.Helper()
+		fixture.queueBuild(tree, projection, commit, environment)
+		artifact, err := buildCandidateEngine(ctx, fixture.workspace(), "metasystem", tree, environment, fixture.dependency())
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixture.assertDrained()
+		fixture.assertExecutable(artifact, commit)
+		t.Cleanup(func() { _ = artifact.Close() })
+		return artifact
 	}
-	t.Cleanup(func() { _ = built.Close() })
-	repeated, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
-	if err != nil {
-		t.Fatalf("repeat candidate proof engine build: %v", err)
-	}
-	t.Cleanup(func() { _ = repeated.Close() })
+	built := build(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne)
+	repeated := build(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne)
 	if repeated.Commit != built.Commit || repeated.Digest != built.Digest {
 		t.Fatalf("same candidate tree produced unstable proof engine identity: first=%+v repeated=%+v", built, repeated)
 	}
-	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "records", "counselor", "peer.md"), []byte("ledger-only move\n"), 0o644)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/records/counselor/peer.md")
-	recordsTree, err := (gittree.Workspace{Dir: fixture.projectRoot}).StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	recordsBuild, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", recordsTree, testingEnvironment(os.Environ()))
-	if err != nil {
-		t.Fatalf("build candidate proof engine after records-only move: %v", err)
-	}
-	t.Cleanup(func() { _ = recordsBuild.Close() })
+	fixture.records = []byte("ledger-only move\n")
+	fixture.writeFiles()
+	fixture.declareSnapshot(ordinaryRecordsTree, ordinaryRecordsInstallationTree, ordinaryEngineTree, ordinaryBaseScriptBlob, "")
+	recordsTree := ordinaryRecordsTree
+	recordsBuild := build(recordsTree, ordinaryEngineTree, ordinaryBuildOne)
 	if recordsBuild.Commit != built.Commit || recordsBuild.Digest != built.Digest {
 		t.Fatalf("records-only move changed engine build identity or bytes: first=%+v records=%+v", built, recordsBuild)
 	}
-	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "go.sum"), []byte("fixture.example/module v1.0.0 h1:changed\n"), 0o644)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/go.sum")
-	moduleTree, err := (gittree.Workspace{Dir: fixture.projectRoot}).StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	moduleBuild, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", moduleTree, testingEnvironment(os.Environ()))
-	if err != nil {
-		t.Fatalf("build candidate proof engine after go.sum move: %v", err)
-	}
-	t.Cleanup(func() { _ = moduleBuild.Close() })
+	fixture.sum = []byte("changed sum\n")
+	fixture.writeFiles()
+	fixture.declareSnapshot(ordinaryChangedTree, ordinaryChangedInstallationTree, ordinaryChangedEngineTree, ordinaryBaseScriptBlob, ordinaryChangedSumBlob)
+	moduleBuild := build(ordinaryChangedTree, ordinaryChangedEngineTree, ordinaryBuildTwo)
 	if moduleBuild.Commit == built.Commit {
 		t.Fatalf("go.sum move did not change engine build identity: first=%s changed=%s", built.Commit, moduleBuild.Commit)
 	}
-	testingFixtureGit(t, fixture.projectRoot, "config", "i18n.commitEncoding", "ISO-8859-1")
-	testingFixtureGit(t, fixture.projectRoot, "config", "author.name", "repository author")
+	t.Setenv("GIT_CONFIG_COUNT", "2")
+	t.Setenv("GIT_CONFIG_KEY_0", "i18n.commitEncoding")
+	t.Setenv("GIT_CONFIG_VALUE_0", "ISO-8859-1")
+	t.Setenv("GIT_CONFIG_KEY_1", "author.name")
+	t.Setenv("GIT_CONFIG_VALUE_1", "repository author")
 	t.Run("foreign Git identity and encoding", func(t *testing.T) {
 		for name, value := range map[string]string{
 			"GIT_AUTHOR_NAME": "foreign author", "GIT_AUTHOR_EMAIL": "foreign-author@example.invalid",
@@ -880,21 +875,13 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 		} {
 			t.Setenv(name, value)
 		}
-		foreignEnvironment, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
-		if err != nil {
-			t.Fatalf("build identical tree with foreign Git identity and encoding: %v", err)
-		}
-		t.Cleanup(func() { _ = foreignEnvironment.Close() })
+		foreignEnvironment := build(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne)
 		if foreignEnvironment.Commit != built.Commit || foreignEnvironment.Digest != built.Digest {
 			t.Fatalf("same tree depended on ambient Git identity or encoding: first=%+v foreign=%+v", built, foreignEnvironment)
 		}
 	})
-	testingFixtureGit(t, fixture.projectRoot, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "land candidate tree")
-	afterLanding, err := buildCandidateEngine(ctx, gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()))
-	if err != nil {
-		t.Fatalf("build identical tree after its checkout history moved: %v", err)
-	}
-	t.Cleanup(func() { _ = afterLanding.Close() })
+	fixture.headPredecessor = ordinaryMovedHead
+	afterLanding := build(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne)
 	if afterLanding.Commit != built.Commit || afterLanding.Digest != built.Digest {
 		t.Fatalf("same tree depended on its checkout history: first=%+v after-landing=%+v", built, afterLanding)
 	}
@@ -914,29 +901,43 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard,
 		RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
 		RequiredGroups: []string{group.ID}, SelectedGroups: []string{group.ID}, Stages: []testpolicy.Stage{{ID: "standard", Groups: []string{group.ID}}}}
-	prepared := testingPreparation{ProjectRoot: fixture.projectRoot, Prefix: "metasystem", CandidateTree: fixture.candidateTree,
-		BaseCommit: fixture.baseCommit, PolicyBaseCommit: fixture.baseCommit, EffectiveContract: contract, Plan: plan,
+	fixture.queueJudge()
+	prepared := testingPreparation{ProjectRoot: fixture.root, Prefix: "metasystem", CandidateTree: ordinaryProjectTree,
+		BaseCommit: ordinaryBaseCommit, PolicyBaseCommit: ordinaryBaseCommit, EffectiveContract: contract, Plan: plan,
 		ContractDigest: strings.Repeat("1", 64), BaseContractDigest: strings.Repeat("2", 64),
 		PolicyEngineDigest: fixture.policyDigest, BehaviorPolicyDigest: strings.Repeat("3", 64),
-		JudgeKey: proofrun.ComputeJudgeKey(ctx, fixture.projectRoot, fixture.baseCommit, "metasystem")}
+		JudgeKey: proofrun.ComputeJudgeKeyWithReader(ctx, fixture.root, ordinaryBaseCommit, "metasystem", fixture.judgeReader)}
 	if prepared.JudgeKey == proofrun.DefaultJudgeKey() || strings.Contains(prepared.JudgeKey, ":unreadable:") {
 		t.Fatalf("the fixture's engine sources did not yield a judge key: %s", prepared.JudgeKey)
 	}
 	request := testingRunRequest(prepared, "", "", built.Path, built.Digest, built.Commit)
+	request.WithCandidateOpener(fixture.openBed)
+	serialized, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("serialize candidate request: %v", err)
+	}
+	nativeShape := request
+	nativeShape.WithCandidateOpener(nil)
+	nativeJSON, err := json.Marshal(nativeShape)
+	if err != nil || string(serialized) != string(nativeJSON) {
+		t.Fatalf("candidate bed opener changed request JSON: err=%v", err)
+	}
 	result := proofrun.NewTestResult(request)
 	if request.JudgeKey != prepared.JudgeKey || result.JudgeKey != prepared.JudgeKey {
 		t.Fatalf("the judge key was not carried into the request and the result: request=%s result=%s", request.JudgeKey, result.JudgeKey)
 	}
 	if result.PolicyEngineDigest != fixture.policyDigest || result.CandidateEngineDigest != built.Digest ||
-		result.CandidateEngineBuildIdentity != built.Commit || result.CandidateTree != fixture.candidateTree {
+		result.CandidateEngineBuildIdentity != built.Commit || result.CandidateTree != ordinaryProjectTree {
 		t.Fatalf("retained execution identity lost policy, candidate engine, or tree: %+v", result)
 	}
+	fixture.queueBed(ordinaryProjectTree)
 	identities, err := proofrun.GroupExecutionIdentities(ctx, request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	changedPolicy := request
 	changedPolicy.PolicyEngineDigest = strings.Repeat("4", 64)
+	fixture.queueBed(ordinaryProjectTree)
 	policyIdentities, err := proofrun.GroupExecutionIdentities(ctx, changedPolicy)
 	if err != nil {
 		t.Fatal(err)
@@ -946,18 +947,24 @@ func TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity(t *tes
 	}
 	changedJudge := request
 	changedJudge.JudgeKey = prepared.JudgeKey + ":changed"
+	fixture.queueBed(ordinaryProjectTree)
 	policyIdentities, err = proofrun.GroupExecutionIdentities(ctx, changedJudge)
 	if err != nil {
 		t.Fatal(err)
 	}
 	changedCandidate := request
 	changedCandidate.CandidateEngineDigest = strings.Repeat("5", 64)
+	fixture.queueBed(ordinaryProjectTree)
 	candidateIdentities, err := proofrun.GroupExecutionIdentities(ctx, changedCandidate)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if identities[group.ID] == policyIdentities[group.ID] || identities[group.ID] == candidateIdentities[group.ID] {
 		t.Fatalf("group execution identity omitted the judge key or the candidate engine: current=%s judge-change=%s candidate-change=%s", identities[group.ID], policyIdentities[group.ID], candidateIdentities[group.ID])
+	}
+	fixture.assertDrained()
+	if want := (map[string]int{"open": 10, "raw": 30, "git": 42, "judge": 5}); !reflect.DeepEqual(fixture.requests, want) || fixture.opened != 10 || fixture.closed != 10 {
+		t.Fatalf("candidate proof requests=%v opened=%d closed=%d, want %v and 10 closed beds", fixture.requests, fixture.opened, fixture.closed, want)
 	}
 }
 

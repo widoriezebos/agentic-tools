@@ -69,6 +69,16 @@ func ResolveExplicitBatchLanding(root, seatRoot string, maxWait time.Duration, n
 	return resolveExplicitBatchLandingWithRunner(root, seatRoot, maxWait, now, runGit)
 }
 
+// ResolveExplicitBatchLandingWithRunner validates a landing checkout using a raw Git response source.
+func ResolveExplicitBatchLandingWithRunner(root, seatRoot string, maxWait time.Duration, now func() time.Time, raw func(string, []string, []string) ([]byte, error)) (BatchLanding, error) {
+	if raw == nil {
+		return BatchLanding{}, fmt.Errorf("resolve %s: a Git runner is required", BatchRootKey)
+	}
+	return resolveExplicitBatchLandingWithRunner(root, seatRoot, maxWait, now, func(request gitRequest) ([]byte, error) {
+		return raw(request.Directory, request.Args, request.Environment)
+	})
+}
+
 func resolveExplicitBatchLandingWithRunner(root, seatRoot string, maxWait time.Duration, now func() time.Time, runner gitRunner) (BatchLanding, error) {
 	validated, err := batchLandingRootWithRunner(root, seatRoot, runner)
 	if err != nil {

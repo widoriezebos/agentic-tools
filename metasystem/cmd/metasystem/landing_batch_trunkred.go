@@ -20,7 +20,15 @@ type ledgerTrunkRedOwner struct {
 }
 
 func newLedgerTrunkRedOwner(root, machine, lineage string) (batch.LedgerOwner, error) {
-	endpoint, err := goal.ResolveEndpoint(root)
+	return newLedgerTrunkRedOwnerWithConfig(root, machine, lineage, nil)
+}
+
+func newLedgerTrunkRedOwnerWithConfig(root, machine, lineage string, lookup func(string, string) (string, error)) (batch.LedgerOwner, error) {
+	resolve := goal.ResolveEndpoint
+	if lookup != nil {
+		resolve = func(root string) (goal.Endpoint, error) { return goal.ResolveEndpointWithConfig(root, lookup) }
+	}
+	endpoint, err := resolve(root)
 	if err != nil {
 		return nil, err
 	}
@@ -29,11 +37,19 @@ func newLedgerTrunkRedOwner(root, machine, lineage string) (batch.LedgerOwner, e
 
 // productionBatchLedgerOwner uses the landing identity that mints trunk-red operation identifiers.
 func productionBatchLedgerOwner(root string) (batch.LedgerOwner, error) {
-	machine, err := goal.ResolveMachine(root)
+	return productionBatchLedgerOwnerWithConfig(root, nil)
+}
+
+func productionBatchLedgerOwnerWithConfig(root string, lookup func(string, string) (string, error)) (batch.LedgerOwner, error) {
+	resolve := goal.ResolveMachine
+	if lookup != nil {
+		resolve = func(root string) (string, error) { return goal.ResolveMachineWithConfig(root, lookup) }
+	}
+	machine, err := resolve(root)
 	if err != nil {
 		return nil, err
 	}
-	return newLedgerTrunkRedOwner(root, machine, landingOwnerLineage)
+	return newLedgerTrunkRedOwnerWithConfig(root, machine, landingOwnerLineage, lookup)
 }
 
 func isLedgerTrunkRedOwner(owner batch.LedgerOwner) bool {

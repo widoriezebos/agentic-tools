@@ -121,6 +121,7 @@ func TestArtifactRegularNoFollowRefusesLinksAndNonFiles(t *testing.T) {
 }
 
 func TestRefuseSymlinkedDirectoryWalksEveryComponent(t *testing.T) {
+	t.Parallel()
 	root := guardFilesystemRoot(t)
 	outside := t.TempDir()
 	facts := &guardTopLevelFacts{t: t, root: root, expected: []string{root, root, root, root, outside}}
@@ -149,6 +150,7 @@ func TestRefuseSymlinkedDirectoryWalksEveryComponent(t *testing.T) {
 }
 
 func TestRefuseSymlinkedDirectoryNativeTopLevelAdapter(t *testing.T) {
+	t.Parallel()
 	root := recertGuardRepo(t)
 	if err := refuseSymlinkedDirectory(root, root); err != nil {
 		t.Fatalf("native repository top level refused: %v", err)
@@ -156,6 +158,7 @@ func TestRefuseSymlinkedDirectoryNativeTopLevelAdapter(t *testing.T) {
 }
 
 func TestTerminalMemberPicksTheHighestRoundOfAClosedChain(t *testing.T) {
+	t.Parallel()
 	records := map[string]map[string]any{
 		"root":  {"round": float64(1), "status": "completed"},
 		"r2":    {"round": float64(2), "status": "failed", "parentJob": "root"},
@@ -185,6 +188,7 @@ func TestTerminalMemberPicksTheHighestRoundOfAClosedChain(t *testing.T) {
 }
 
 func TestCommandForWidthFollowsTheContractAndTheGateWidth(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	conf := filepath.Join(root, "metasystem.conf")
 	if _, _, _, err := commandForWidth(root, map[string]any{}, "go test ./..."); err == nil {

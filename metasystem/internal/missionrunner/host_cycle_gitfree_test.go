@@ -28,6 +28,8 @@ type hostCycleSource struct {
 	files              map[string][]byte
 	signed             []byte
 	created, removed   []string
+	refs               map[string]string
+	missingRefLookups  int
 }
 
 // This bed has no accepted goal tree or legacy goal file. The refresh still
@@ -100,6 +102,10 @@ func (f *hostCycleSource) output(root string, args ...string) (string, error) {
 	if root == f.root {
 		switch {
 		case reflect.DeepEqual(args, []string{"rev-parse", "instruments^{commit}"}):
+			if f.refs != nil && f.refs["refs/tags/instruments"] == "" {
+				f.missingRefLookups++
+				return "", fmt.Errorf("unknown revision instruments")
+			}
 			return hostGateCommit + "\n", nil
 		case reflect.DeepEqual(args, []string{"rev-parse", "main^{commit}"}):
 			return hostCandidateCommit + "\n", nil
@@ -182,7 +188,11 @@ func (f *hostCycleSource) checkRegistry(worktree string) {
 
 func (f *hostCycleSource) try(root string, args ...string) (string, int) {
 	f.t.Helper()
-	if root == f.root && len(args) == 2 && args[0] == "show" && args[1] == "refs/remotes/origin/main:plans/mission-alpha.contract.md" {
+	contractRel, err := filepath.Rel(f.root, f.contractPath)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if root == f.root && len(args) == 2 && args[0] == "show" && args[1] == "refs/remotes/origin/main:"+filepath.ToSlash(contractRel) {
 		if f.signed == nil {
 			f.t.Fatal("origin requested before signed bytes were published")
 		}
@@ -290,8 +300,25 @@ func buildGitFreeHostCycle(t *testing.T, behavior string) *Engine {
 type hostCycleWorkspace struct {
 	t           *testing.T
 	root        string
+	mission     string
 	contractOID string
 	refs        map[string]string
+}
+
+func (w *hostCycleWorkspace) missionID() string {
+	if w.mission == "" {
+		return "alpha"
+	}
+	return w.mission
+}
+func (w *hostCycleWorkspace) treeRef() string {
+	return mission.MissionRefNamespace(w.missionID()) + hostTree
+}
+func (w *hostCycleWorkspace) stateRef() string {
+	return mission.MissionRefNamespace(w.missionID()) + "state-anchors"
+}
+func (w *hostCycleWorkspace) openRef() string {
+	return mission.MissionRefNamespace(w.missionID()) + "turn-open-head"
 }
 
 func hostCycleTreeRef() string { return "refs/metasystem/missions/alpha/" + hostTree }
@@ -309,10 +336,10 @@ func (w *hostCycleWorkspace) Snapshot(base string) (string, error) {
 	return hostTree, nil
 }
 func (w *hostCycleWorkspace) FilterTree(tree string, paths []string) (string, error) {
-	ledger := missionLedgerRel("alpha")
+	ledger := missionLedgerRel(w.missionID())
 	if tree != hostTree ||
 		!reflect.DeepEqual(paths, []string{ledger}) &&
-			!reflect.DeepEqual(paths, []string{ledger, "plans/mission-alpha.contract.md"}) {
+			!reflect.DeepEqual(paths, []string{ledger, "plans/mission-" + w.missionID() + ".contract.md"}) {
 		w.unexpected("FilterTree", tree, paths)
 	}
 	return hostTree, nil
@@ -328,10 +355,10 @@ func (w *hostCycleWorkspace) TreeOf(rev string) (string, error) {
 	return hostTree, nil
 }
 func (w *hostCycleWorkspace) Entries(tree string, paths []string) (map[string]gittree.Entry, error) {
-	if tree == hostTree && reflect.DeepEqual(paths, []string{missionLedgerRel("alpha")}) {
+	if tree == hostTree && reflect.DeepEqual(paths, []string{missionLedgerRel(w.missionID())}) {
 		return map[string]gittree.Entry{}, nil
 	}
-	if tree != hostTree || !reflect.DeepEqual(paths, []string{"plans/mission-alpha.contract.md"}) {
+	if tree != hostTree || !reflect.DeepEqual(paths, []string{"plans/mission-" + w.missionID() + ".contract.md"}) {
 		w.unexpected("Entries", tree, paths)
 	}
 	return map[string]gittree.Entry{paths[0]: {Mode: "100644", OID: w.contractOID}}, nil
@@ -370,20 +397,20 @@ func (w *hostCycleWorkspace) ChangedPaths(from, to string) ([]string, error) {
 	return nil, nil
 }
 func (w *hostCycleWorkspace) Anchor(missionID, tree string) error {
-	if missionID != "alpha" || tree != hostTree {
+	if missionID != w.missionID() || tree != hostTree {
 		w.unexpected("Anchor", missionID, tree)
 	}
-	w.refs[hostCycleTreeRef()] = tree
+	w.refs[w.treeRef()] = tree
 	return nil
 }
 func (w *hostCycleWorkspace) AnchorCommit(missionID, name, commit string) error {
-	if missionID != "alpha" || name != "turn-open-head" || commit != hostCandidateCommit {
+	if missionID != w.missionID() || name != "turn-open-head" || commit != hostCandidateCommit {
 		w.unexpected("AnchorCommit", missionID, name, commit)
 	}
-	if w.refs[hostCycleStateRef] == "" {
+	if w.refs[w.stateRef()] == "" {
 		w.t.Fatal("turn-open anchor preceded state anchor")
 	}
-	w.refs[hostCycleOpenRef] = commit
+	w.refs[w.openRef()] = commit
 	return nil
 }
 func (w *hostCycleWorkspace) FileAt(tree, path string) ([]byte, bool, error) {
@@ -406,11 +433,11 @@ type hostCycleReads struct {
 }
 
 func (r *hostCycleReads) Git(root string, args ...string) (string, string, int) {
-	if root == r.root && reflect.DeepEqual(args, []string{"update-ref", "-d", "refs/metasystem/missions/alpha/turn-open-head"}) {
-		if r.workspace.refs[hostCycleOpenRef] == "" {
+	if root == r.root && reflect.DeepEqual(args, []string{"update-ref", "-d", r.workspace.openRef()}) {
+		if r.workspace.refs[r.workspace.openRef()] == "" {
 			r.t.Fatal("turn-open ref was removed before its anchor effect")
 		}
-		delete(r.workspace.refs, hostCycleOpenRef)
+		delete(r.workspace.refs, r.workspace.openRef())
 		return "", "", 0
 	}
 	if root == r.root && reflect.DeepEqual(args, []string{"-C", r.root, "rev-parse", "main"}) {
@@ -425,10 +452,10 @@ func (r *hostCycleReads) Git(root string, args ...string) (string, string, int) 
 	if root == r.root && reflect.DeepEqual(args, []string{"config", "--local", "--type=bool", "--get", "core.fileMode"}) {
 		return "true\n", "", 0
 	}
-	if root == r.root && reflect.DeepEqual(args, []string{"for-each-ref", "--format=%(refname)", "refs/metasystem/missions/alpha/"}) {
+	if root == r.root && reflect.DeepEqual(args, []string{"for-each-ref", "--format=%(refname)", mission.MissionRefNamespace(r.workspace.missionID())}) {
 		var refs []string
 		for ref := range r.workspace.refs {
-			if strings.HasPrefix(ref, mission.MissionRefNamespace("alpha")) {
+			if strings.HasPrefix(ref, mission.MissionRefNamespace(r.workspace.missionID())) {
 				refs = append(refs, ref)
 			}
 		}

@@ -382,6 +382,7 @@ func TestPromptConfigValueResolutionOrder(t *testing.T) {
 // annotations; detail lines filter against current chain-closed flags;
 // overflow and excluded lines are exempt.
 func TestPatiencePromptLines(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	ledger := filepath.Join(dir, "ledger.md")
 	if err := InitLedger(ledger, 5, 3); err != nil {

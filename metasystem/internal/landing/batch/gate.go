@@ -66,10 +66,8 @@ func changedGoPackagesWithWorkspace(root, tree string, changes gateChanges, work
 		if root == "" {
 			return true, nil
 		}
-		workspaceRoot := moduleRoot
 		path := strings.TrimPrefix(filepath.ToSlash(dir), "./")
-		if workspaceRoot == "" {
-			workspaceRoot = root
+		if moduleRoot == "" {
 			path = filepath.ToSlash(filepath.Join(strings.TrimSuffix(modulePrefix, "/"), path))
 		}
 		if path == "" || path == "." {

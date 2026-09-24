@@ -443,6 +443,7 @@ func TestBatchSealReleasesLockDuringGateAndRefusesChangedCandidate(t *testing.T)
 }
 
 func TestBatchSealRejectsAbsentCommittedGoal(t *testing.T) {
+	t.Parallel()
 	assertSealCommittedRefusal(t, committedGoalReply{present: false}, "absent from tree")
 }
 func TestBatchSealRejectsMalformedCommittedClaim(t *testing.T) {

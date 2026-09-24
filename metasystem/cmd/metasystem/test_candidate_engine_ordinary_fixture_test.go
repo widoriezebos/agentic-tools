@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -47,6 +48,13 @@ const (
 	ordinaryFailedScriptBlob        = "adadadadadadadadadadadadadadadadadadadad"
 	ordinaryBrokenScriptBlob        = "aeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeaeae"
 	ordinaryChangedSumBlob          = "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc"
+	ordinaryRecordsTree             = "1313131313131313131313131313131313131313"
+	ordinaryRecordsInstallationTree = "3939393939393939393939393939393939393939"
+	ordinaryRecordsBlob             = "9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a9a"
+	ordinaryMovedHead               = "8989898989898989898989898989898989898989"
+	ordinaryJudgeCmdTree            = "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+	ordinaryJudgeInternalTree       = "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+	ordinaryJudgeModuleBlob         = "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1"
 )
 
 var ordinaryProjectionPaths = []string{"cmd/**", "internal/**", "scripts/agents/**", "go.mod", "go.sum", "records/misc/goals-migration-manifest.md"}
@@ -58,9 +66,10 @@ type ordinaryCandidateFixture struct {
 	t                                                         *testing.T
 	root, installation, policyEngine, policyDigest, denialLog string
 	steps                                                     []ordinaryCandidateStep
+	requests                                                  map[string]int
 	detachedRoot                                              string
 	opened, closed                                            int
-	script, source, sum                                       []byte
+	script, source, sum, records                              []byte
 	sourceIndex, targetIndex                                  string
 	sourceEntries, targetEntries                              []byte
 	snapshots                                                 map[string]ordinaryCandidateSnapshot
@@ -70,10 +79,11 @@ type ordinaryCandidateFixture struct {
 	expectedGoPath                                            string
 	expectedGoBytes                                           []byte
 	currentTree                                               string
+	mutableTree, detachedTree, headPredecessor                string
 }
 type ordinaryCandidateSnapshot struct {
 	tree, installation, engine, scriptBlob, sourceBlob, sumBlob string
-	script, source, sum                                         []byte
+	script, source, sum, records                                []byte
 	entries                                                     []byte
 }
 type ordinaryMessageFacts struct{ environmentDigest, closure string }
@@ -107,7 +117,7 @@ func newOrdinaryCandidateFixture(t *testing.T) *ordinaryCandidateFixture {
 	root := t.TempDir()
 	f := &ordinaryCandidateFixture{t: t, root: root, installation: filepath.Join(root, "metasystem"), denialLog: log,
 		snapshots: make(map[string]ordinaryCandidateSnapshot), oidFacts: make(map[string]string),
-		commitRequests: make(map[string]string), commitOIDs: make(map[string]string), messageFacts: make(map[string]ordinaryMessageFacts),
+		commitRequests: make(map[string]string), commitOIDs: make(map[string]string), messageFacts: make(map[string]ordinaryMessageFacts), requests: make(map[string]int),
 		source: []byte("candidate engine source\n")}
 	f.script = []byte(`#!/usr/bin/env bash
 set -euo pipefail
@@ -160,7 +170,7 @@ func (f *ordinaryCandidateFixture) declareSnapshot(tree, installation, engine, s
 	}
 	s := ordinaryCandidateSnapshot{tree: tree, installation: installation, engine: engine,
 		scriptBlob: scriptBlob, sourceBlob: ordinarySourceBlob, sumBlob: sumBlob,
-		script: bytes.Clone(f.script), source: bytes.Clone(f.source), sum: bytes.Clone(f.sum)}
+		script: bytes.Clone(f.script), source: bytes.Clone(f.source), sum: bytes.Clone(f.sum), records: bytes.Clone(f.records)}
 	if (sumBlob == "") != (s.sum == nil) {
 		f.t.Fatal("go.sum blob declaration differs from tracked go.sum bytes")
 	}
@@ -169,14 +179,20 @@ func (f *ordinaryCandidateFixture) declareSnapshot(tree, installation, engine, s
 	if sumBlob != "" {
 		f.declareOID(sumBlob, fmt.Sprintf("100644:%x", s.sum))
 	}
+	recordsBlob := ""
+	if s.records != nil {
+		recordsBlob = ordinaryRecordsBlob
+		f.declareOID(recordsBlob, fmt.Sprintf("100644:%x", s.records))
+	}
 	s.entries = []byte(fmt.Sprintf("100644 %s 0\tcmd/metasystem/engine.txt\x00100755 %s 0\tscripts/agents/go-build.sh\x00", s.sourceBlob, s.scriptBlob))
 	if sumBlob != "" {
 		s.entries = append(s.entries, []byte(fmt.Sprintf("100644 %s 0\tgo.sum\x00", sumBlob))...)
 	}
 	f.declareOID(engine, fmt.Sprintf("projection:%x", s.entries))
-	f.declareOID(installation, fmt.Sprintf("installation:%s:%s:%s", s.scriptBlob, s.sourceBlob, s.sumBlob))
+	f.declareOID(installation, fmt.Sprintf("installation:%s:%s:%s:%s", s.scriptBlob, s.sourceBlob, s.sumBlob, recordsBlob))
 	f.declareOID(tree, "project:metasystem="+installation)
 	f.snapshots[tree] = s
+	f.mutableTree = tree
 }
 func (f *ordinaryCandidateFixture) snapshot(tree string) ordinaryCandidateSnapshot {
 	f.t.Helper()
@@ -184,7 +200,10 @@ func (f *ordinaryCandidateFixture) snapshot(tree string) ordinaryCandidateSnapsh
 	if !ok {
 		f.t.Fatalf("undeclared synthetic project tree %s", tree)
 	}
-	if !bytes.Equal(f.script, s.script) || !bytes.Equal(f.source, s.source) || !bytes.Equal(f.sum, s.sum) {
+	if tree != f.mutableTree {
+		return s
+	}
+	if !bytes.Equal(f.script, s.script) || !bytes.Equal(f.source, s.source) || !bytes.Equal(f.sum, s.sum) || !bytes.Equal(f.records, s.records) {
 		f.t.Fatalf("current tracked source differs from declared tree %s", tree)
 	}
 	for _, file := range []struct {
@@ -195,6 +214,7 @@ func (f *ordinaryCandidateFixture) snapshot(tree string) ordinaryCandidateSnapsh
 		{"scripts/agents/go-build.sh", s.script, 0o755},
 		{"cmd/metasystem/engine.txt", s.source, 0o644},
 		{"go.sum", s.sum, 0o644},
+		{"records/counselor/peer.md", s.records, 0o644},
 	} {
 		path := filepath.Join(f.installation, file.path)
 		data, err := os.ReadFile(path)
@@ -215,6 +235,9 @@ func (f *ordinaryCandidateFixture) writeFiles() {
 	if f.sum != nil {
 		writeTestingFixtureFile(f.t, filepath.Join(f.installation, "go.sum"), f.sum, 0o644)
 	}
+	if f.records != nil {
+		writeTestingFixtureFile(f.t, filepath.Join(f.installation, "records/counselor/peer.md"), f.records, 0o644)
+	}
 }
 func (f *ordinaryCandidateFixture) workspace() gittree.Workspace {
 	return gittree.Workspace{Dir: f.root, RawSource: f.raw}
@@ -229,6 +252,7 @@ func (f *ordinaryCandidateFixture) take(kind string) ordinaryCandidateStep {
 	}
 	step := f.steps[0]
 	f.steps = f.steps[1:]
+	f.requests[kind]++
 	if step.kind != kind {
 		f.t.Fatalf("request kind %s, want %s args=%q", kind, step.kind, step.args)
 	}
@@ -413,29 +437,37 @@ func ordinaryExpectedBuildEnvironment(environment []string) []string {
 	return append(result, "CGO_ENABLED=0", "GOAMD64=v1", "GOARM64=v8.0", "GOARM=7", "GOENV=off",
 		"GOEXPERIMENT=", "GOFLAGS=-mod=readonly", "GOTOOLCHAIN=local", "GOWORK=off", "METASYSTEM_BUILD_STAMP=")
 }
-func (f *ordinaryCandidateFixture) open(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {
-	step := f.take("open")
-	if tree != string(step.output) || workspace.Dir != f.root || workspace.RawSource == nil {
-		f.t.Fatalf("open workspace=%q tree=%q want=%q", workspace.Dir, tree, step.output)
-	}
+func (f *ordinaryCandidateFixture) prepareDetached(tree string) {
 	s := f.snapshot(tree)
-	parent, err := os.MkdirTemp("", "candidate-ordinary-detached.*")
-	if err != nil {
-		return nil, err
-	}
-	f.detachedRoot = parent
-	f.opened++
+	parent := f.t.TempDir()
+	f.detachedRoot, f.detachedTree = parent, tree
 	writeTestingFixtureFile(f.t, filepath.Join(parent, "metasystem/scripts/agents/go-build.sh"), s.script, 0o755)
 	writeTestingFixtureFile(f.t, filepath.Join(parent, "metasystem/cmd/metasystem/engine.txt"), s.source, 0o644)
 	if s.sum != nil {
 		writeTestingFixtureFile(f.t, filepath.Join(parent, "metasystem/go.sum"), s.sum, 0o644)
 	}
+	if s.records != nil {
+		writeTestingFixtureFile(f.t, filepath.Join(parent, "metasystem/records/counselor/peer.md"), s.records, 0o644)
+	}
+}
+func (f *ordinaryCandidateFixture) open(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {
+	step := f.take("open")
+	if tree != string(step.output) || workspace.Dir != f.root || workspace.RawSource == nil {
+		f.t.Fatalf("open workspace=%q tree=%q want=%q", workspace.Dir, tree, step.output)
+	}
+	if _, err := os.Stat(f.detachedRoot); f.detachedTree != tree || os.IsNotExist(err) {
+		f.prepareDetached(tree)
+	}
+	s := f.snapshot(tree)
+	parent := f.detachedRoot
+	f.opened++
 	for _, file := range []struct {
 		path string
 		data []byte
 		mode os.FileMode
 	}{
-		{"scripts/agents/go-build.sh", s.script, 0o755}, {"cmd/metasystem/engine.txt", s.source, 0o644}, {"go.sum", s.sum, 0o644},
+		{"scripts/agents/go-build.sh", s.script, 0o755}, {"cmd/metasystem/engine.txt", s.source, 0o644},
+		{"go.sum", s.sum, 0o644}, {"records/counselor/peer.md", s.records, 0o644},
 	} {
 		path := filepath.Join(parent, "metasystem", file.path)
 		data, err := os.ReadFile(path)
@@ -451,6 +483,11 @@ func (f *ordinaryCandidateFixture) open(workspace gittree.Workspace, tree string
 }
 func (f *ordinaryCandidateFixture) queueIdentity(tree, engineTree, commit string, environment []string, detached bool) {
 	s := f.snapshot(tree)
+	if detached {
+		if _, err := os.Stat(f.detachedRoot); f.detachedTree != tree || os.IsNotExist(err) {
+			f.prepareDetached(tree)
+		}
+	}
 	if engineTree != s.engine {
 		f.t.Fatalf("projection tree %s differs from declared %s", engineTree, s.engine)
 	}
@@ -463,7 +500,11 @@ func (f *ordinaryCandidateFixture) queueIdentity(tree, engineTree, commit string
 	f.queueGit(detached, "target", bytes.Clone(s.entries), nil, "update-index", "-z", "--index-info")
 	f.queueGit(detached, "target", nil, []byte(engineTree+"\n"), "write-tree")
 	buildEnv := ordinaryExpectedBuildEnvironment(environment)
-	closure, err := proofrun.ToolchainClosureIdentity(f.installation, buildEnv)
+	installation := f.installation
+	if detached {
+		installation = filepath.Join(f.detachedRoot, "metasystem")
+	}
+	closure, err := proofrun.ToolchainClosureIdentity(installation, buildEnv)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -512,6 +553,9 @@ func containsExactEntry(entries []string, want string) bool {
 	return false
 }
 func (f *ordinaryCandidateFixture) queuePrepare(tree, engineTree, commit string, environment []string, build bool) {
+	if build {
+		f.prepareDetached(tree)
+	}
 	f.queueIdentity(tree, engineTree, commit, environment, false)
 	if !build {
 		return
@@ -520,8 +564,62 @@ func (f *ordinaryCandidateFixture) queuePrepare(tree, engineTree, commit string,
 	f.queueRaw(true, tree+"\n", "rev-parse", "HEAD^{tree}")
 	f.queueRaw(true, "", "rev-parse", "--show-prefix")
 	f.queueIdentity(tree, engineTree, commit, environment, true)
-	f.queueRaw(true, ordinarySnapshotCommit+"\n", "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
-	f.queueGit(true, "plain", nil, nil, "update-ref", "--no-deref", "HEAD", commit, ordinarySnapshotCommit)
+	f.queueHeadUpdate(commit)
+}
+func (f *ordinaryCandidateFixture) queueHeadUpdate(commit string) {
+	predecessor := f.headPredecessor
+	if predecessor == "" {
+		predecessor = ordinarySnapshotCommit
+	}
+	f.queueRaw(true, predecessor+"\n", "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	f.queueGit(true, "plain", nil, nil, "update-ref", "--no-deref", "HEAD", commit, predecessor)
+}
+func (f *ordinaryCandidateFixture) queueBuild(tree, engineTree, commit string, environment []string) {
+	f.prepareDetached(tree)
+	f.steps = append(f.steps, ordinaryCandidateStep{kind: "open", output: []byte(tree)})
+	f.queueRaw(true, tree+"\n", "rev-parse", "HEAD^{tree}")
+	f.queueRaw(true, "", "rev-parse", "--show-prefix")
+	f.queueIdentity(tree, engineTree, commit, environment, true)
+	f.queueHeadUpdate(commit)
+}
+func (f *ordinaryCandidateFixture) queueJudge() {
+	f.declareOID(ordinaryBaseCommit, "base commit with declared judge sources")
+	for _, item := range []struct{ id, fact string }{
+		{ordinaryJudgeCmdTree, "base cmd tree"}, {ordinaryJudgeInternalTree, "base internal tree"},
+		{ordinaryJudgeModuleBlob, "base go.mod blob"},
+	} {
+		f.declareOID(item.id, item.fact)
+	}
+	f.steps = append(f.steps, ordinaryCandidateStep{kind: "judge", args: []string{"rev-parse", "--verify", "--quiet", ordinaryBaseCommit + "^{commit}"}, output: []byte(ordinaryBaseCommit)})
+	for _, source := range []struct{ path, mode, kind, id string }{
+		{"cmd", "040000", "tree", ordinaryJudgeCmdTree},
+		{"internal", "040000", "tree", ordinaryJudgeInternalTree},
+		{"go.mod", "100644", "blob", ordinaryJudgeModuleBlob},
+		{"go.sum", "", "", ""},
+	} {
+		path := "metasystem/" + source.path
+		output := ""
+		if source.id != "" {
+			output = fmt.Sprintf("%s %s %s\t%s\x00", source.mode, source.kind, source.id, path)
+		}
+		f.steps = append(f.steps, ordinaryCandidateStep{kind: "judge", args: []string{"ls-tree", "-z", "--full-tree", ordinaryBaseCommit, "--", path}, output: []byte(output)})
+	}
+}
+func (f *ordinaryCandidateFixture) judgeReader(_ context.Context, root string, args ...string) (string, error) {
+	step := f.take("judge")
+	if root != f.root || !reflect.DeepEqual(args, step.args) {
+		f.t.Fatalf("judge source read: root=%q args=%q; want root=%q args=%q", root, args, f.root, step.args)
+	}
+	return string(step.output), nil
+}
+func (f *ordinaryCandidateFixture) queueBed(tree string) {
+	f.steps = append(f.steps, ordinaryCandidateStep{kind: "open", output: []byte(tree)})
+}
+func (f *ordinaryCandidateFixture) openBed(root, tree string) (proofrun.CandidateWorkspace, error) {
+	if root != f.root {
+		f.t.Fatalf("candidate bed root=%q want=%q", root, f.root)
+	}
+	return f.open(f.workspace(), tree)
 }
 func (f *ordinaryCandidateFixture) assertExecutable(artifact *candidateEngineBuild, commit string) {
 	f.t.Helper()

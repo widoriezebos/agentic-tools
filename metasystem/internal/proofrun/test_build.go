@@ -102,9 +102,18 @@ type TestRunRequest struct {
 	now         func() time.Time
 }
 
-type candidateWorkspace interface {
+// CandidateWorkspace is the detached candidate bed used by a test request.
+type CandidateWorkspace interface {
 	Workspace() gittree.Workspace
 	Close() error
+}
+
+type candidateWorkspace = CandidateWorkspace
+
+// WithCandidateOpener sets the detached candidate bed for this request.
+// A nil opener keeps the native worktree behavior.
+func (request *TestRunRequest) WithCandidateOpener(open func(projectRoot, candidateTree string) (CandidateWorkspace, error)) {
+	request.openCandidate = open
 }
 
 func (request TestRunRequest) candidateWorkspace() (candidateWorkspace, error) {

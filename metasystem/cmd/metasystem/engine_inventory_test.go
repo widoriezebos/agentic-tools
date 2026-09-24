@@ -19,6 +19,8 @@ var engineBindingStandardTests = []string{
 	"TestCandidateEngineBuildEnvironmentIsPinnedWithoutDroppingProofCustody",
 	"TestCandidateEngineBuildFailureCannotFallBackToPolicyEngine",
 	"TestCandidateEngineIsBuiltFromCandidateTreeAndBindsExecutionIdentity",
+	"TestCandidateEngineNativeGitSerializationPinsHeadSourceAndCleanup",
+	"TestCandidateEngineNativePhysicalCommandOriginIncludesEventHeldColdBuild",
 	"TestCandidateEngineTrimpathIsReproducibleAcrossMaterializationDirectories",
 	"TestCauseOutcomesRenderDeclaredCommandCount",
 	"TestDecisionMismatchNamesTheField",

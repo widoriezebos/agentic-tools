@@ -283,8 +283,15 @@ func TestHostArtifactDeclarationGrammar(t *testing.T) {
 // bed driving a conclude path must have opened its turn like the runner
 // does — through the state's compare-and-write.
 func openFixtureTurn(t *testing.T, root, statePath, turnID string, cycle int) {
+	openFixtureTurnWithSource(t, root, statePath, turnID, cycle, gittree.Workspace{Dir: root},
+		func(state, ledger, name string) error { return mission.AnchorNamed(state, root, ledger, name, "", "") })
+}
+
+func openFixtureTurnWithSource(t *testing.T, root, statePath, turnID string, cycle int, workspace wallWorkspace, anchor func(string, string, string) error) {
 	t.Helper()
-	tree, err := wallSnapshot(gittree.Workspace{Dir: root}, filepath.Base(filepath.Dir(statePath)))
+	missionID := filepath.Base(filepath.Dir(statePath))
+	ledgerPath := filepath.Join(filepath.Dir(statePath), "ledger.md")
+	tree, err := wallSnapshotWithWorkspace(workspace, missionID)
 	if err != nil {
 		t.Fatalf("open fixture turn: %v", err)
 	}
@@ -298,8 +305,6 @@ func openFixtureTurn(t *testing.T, root, statePath, turnID string, cycle int) {
 	}
 	taint, _ := doc["workspaceTaint"].(map[string]any)
 	segment, _ := jsonInt(taint["segment"])
-	missionID := filepath.Base(filepath.Dir(statePath))
-	workspace := gittree.Workspace{Dir: root}
 	head, _, herr := workspace.HeadCommit()
 	if herr != nil {
 		t.Fatalf("open fixture turn: %v", herr)
@@ -336,16 +341,15 @@ func openFixtureTurn(t *testing.T, root, statePath, turnID string, cycle int) {
 	if err := mission.WriteState(statePath, source, hash); err != nil {
 		t.Fatalf("open fixture turn: %v", err)
 	}
-	// Production anchors the admitted baseline at init and a real state
-	// anchor at every write; the bed mirrors that so the ref fence sees
-	// the runner refs it requires.
+	// The native fixture anchors after its state write. A raw fixture that
+	// requires pre-open facts installs them before calling this helper.
 	if baseline, _ := readJSONDoc(statePath); baseline != nil {
 		if b0, _ := baseline["initialBaseline"].(string); b0 != "" {
 			_ = workspace.Anchor(missionID, b0)
 		}
 	}
 	_ = workspace.Anchor(missionID, tree)
-	if err := mission.AnchorNamed(statePath, root, filepath.Join(filepath.Dir(statePath), "ledger.md"), "fixture", "", ""); err != nil {
+	if err := anchor(statePath, ledgerPath, "fixture"); err != nil {
 		t.Fatalf("open fixture turn cannot anchor: %v", err)
 	}
 }

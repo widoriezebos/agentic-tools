@@ -60,9 +60,14 @@ const DefaultPublishDeadline = 60 * time.Second
 // goal.sync-branch (default refs/heads/main) from the repository's
 // git configuration.
 func ResolveEndpoint(root string) (Endpoint, error) {
-	return resolveEndpointWithConfig(root, func(root, key string) (string, error) {
+	return ResolveEndpointWithConfig(root, func(root, key string) (string, error) {
 		return gitIn(root, "config", "--get", key)
 	})
+}
+
+// ResolveEndpointWithConfig applies endpoint defaults to raw config values.
+func ResolveEndpointWithConfig(root string, lookup func(string, string) (string, error)) (Endpoint, error) {
+	return resolveEndpointWithConfig(root, lookup)
 }
 
 func resolveEndpointWithConfig(root string, lookup func(string, string) (string, error)) (Endpoint, error) {

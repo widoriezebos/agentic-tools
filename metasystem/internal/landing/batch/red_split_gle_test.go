@@ -26,7 +26,7 @@ func deleteReaddPolicyPatches() map[string][]byte {
 func dependentPolicyStore(t *testing.T, form string) (assemblyBed, Store, string, func(...string) func()) {
 	t.Helper()
 	fixture := policyFixture(t)
-	bed := assemblyBed{root: fixture.root, base: fixture.base, moved: fixture.moved, record: fixture.record}
+	bed := assemblyBed(fixture)
 	bed.record.Units = append(bed.record.Units, Unit{GoalID: "goal-c", Chain: "chain-c",
 		Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 9, AccountingRevision: 7}, State: UnitJoined})
 	patches := map[string][]byte{
