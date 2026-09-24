@@ -223,13 +223,15 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if err != nil {
 		return TickResult{}, fmt.Errorf("record seat-presence attempt: %w", err)
 	}
-	seatReport := RunSeatPresence(repoRoot, cfg.Runner, generation, cfg.now())
+	seatReport, seatEvidenceErr := RunSeatPresence(repoRoot, cfg.Runner, generation, cfg.now())
 	seatResult, seatOutcome := ComponentOK, "PASS_COMPLETE"
 	var seatEvidence string
-	switch seatReport.Outcome {
-	case seat.OutcomeSkipped:
+	switch {
+	case seatEvidenceErr != nil:
+		seatResult, seatOutcome, seatEvidence = ComponentError, "STATE_WRITE_FAILED", seatEvidenceErr.Error()
+	case seatReport.Outcome == seat.OutcomeSkipped:
 		seatOutcome, seatEvidence = "SKIPPED", "skipped: "+seatReport.Reason
-	case seat.OutcomeFailed:
+	case seatReport.Outcome == seat.OutcomeFailed:
 		seatResult, seatOutcome, seatEvidence = ComponentError, "PUBLISH_FAILED", "failed: "+seatReport.Detail
 	default:
 		seatEvidence = fmt.Sprintf("published on rung %d", seatReport.Rung)
@@ -240,6 +242,12 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if _, err := completeComponentAttempt(repoRoot, "seat-presence", generation, seatAttempt.AttemptSeq,
 		seatResult, seatOutcome, seatEvidence, nil, cfg.now()); err != nil {
 		return TickResult{}, fmt.Errorf("record seat-presence completion: %w", err)
+	}
+	// A component that could not write its own durable evidence follows the
+	// tick's rule for every component: the observation is not recorded, so
+	// the tick does not claim it was.
+	if seatEvidenceErr != nil {
+		return TickResult{}, fmt.Errorf("record seat-presence evidence: %w", seatEvidenceErr)
 	}
 
 	evPath := EvidencePath(repoRoot)

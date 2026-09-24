@@ -49,9 +49,14 @@ func seatPresenceNamespace(repoRoot string) string {
 
 // RunSeatPresence fetches the fleet's presence, publishes this machine's own
 // record, notices every peer's change of standing, and records what it did.
-// It never fails the tick: a transport failure is this component's outcome
-// and the tick continues.
-func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int, now time.Time) SeatPresenceReport {
+//
+// The two failure classes are kept apart, as section 3 requires. A transport
+// failure is this component's OUTCOME and the tick continues. A failure to
+// write the component's own durable evidence — its publication state, its
+// standings — is returned as the error, and the tick's rule for every
+// component applies to it: the tick ends rather than pretending the
+// observation was recorded.
+func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int, now time.Time) (SeatPresenceReport, error) {
 	report := SeatPresenceReport{}
 	// The manual verb calls this same component with no runner context. That
 	// is settled FIRST and before anything that can write publication state,
@@ -66,7 +71,7 @@ func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int
 		detail := "the goal endpoint is unreadable: " + err.Error()
 		if manual {
 			report.Detail = detail
-			return report
+			return report, nil
 		}
 		return seatPresenceFailed(repoRoot, report, detail, now)
 	}
@@ -138,16 +143,16 @@ func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int
 			state = seat.RecordFailed(state, report.Detail, now)
 		}
 		if err := seat.SavePublicationState(repoRoot, state); err != nil {
-			report.Detail = strings.TrimSpace(report.Detail + " publication state unwritten: " + err.Error())
+			return report, fmt.Errorf("write seat-presence publication state: %w", err)
 		}
 	}
 
 	notified, err := noticeSeatStandings(repoRoot, machine, fleetCopy, now)
-	if err != nil {
-		report.Detail = strings.TrimSpace(report.Detail + " standings unwritten: " + err.Error())
-	}
 	report.Notified = notified
-	return report
+	if err != nil {
+		return report, fmt.Errorf("record seat-presence standings: %w", err)
+	}
+	return report, nil
 }
 
 func seatTickSeconds(runner *seat.RunnerContext) int {
@@ -162,14 +167,14 @@ func seatPresenceSkip(report SeatPresenceReport, reason string) SeatPresenceRepo
 	return report
 }
 
-func seatPresenceFailed(repoRoot string, report SeatPresenceReport, detail string, now time.Time) SeatPresenceReport {
+func seatPresenceFailed(repoRoot string, report SeatPresenceReport, detail string, now time.Time) (SeatPresenceReport, error) {
 	report.Outcome, report.Detail = seat.OutcomeFailed, detail
 	state, _, _ := seat.LoadPublicationState(repoRoot)
 	state = seat.RecordFailed(state, detail, now)
 	if err := seat.SavePublicationState(repoRoot, state); err != nil {
-		report.Detail += "; publication state unwritten: " + err.Error()
+		return report, fmt.Errorf("write seat-presence publication state: %w", err)
 	}
-	return report
+	return report, nil
 }
 
 // publishSeatPresence composes this machine's record and climbs the ladder.

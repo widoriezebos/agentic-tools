@@ -26,10 +26,22 @@ func seatPresenceRoot(t *testing.T) string {
 	return root
 }
 
+// runSeatPresenceForTest runs the component and fails the test on an
+// evidence-write failure, which is the tick's own rule: a component that
+// could not record its observation never reports one.
+func runSeatPresenceForTest(t *testing.T, root string, runner *seat.RunnerContext, generation int, now time.Time) SeatPresenceReport {
+	t.Helper()
+	report, err := RunSeatPresence(root, runner, generation, now)
+	if err != nil {
+		t.Fatalf("seat presence could not record its own evidence: %v", err)
+	}
+	return report
+}
+
 func TestATickWithNoRunnerContextPublishesNoPresence(t *testing.T) {
 	t.Parallel()
 	root := seatPresenceRoot(t)
-	report := RunSeatPresence(root, nil, 4, seatFixtureClock)
+	report := runSeatPresenceForTest(t, root, nil, 4, seatFixtureClock)
 	if report.Outcome != seat.OutcomeSkipped || report.Reason != seat.SkipManualTick {
 		t.Fatalf("report = %+v; want the manual-tick skip", report)
 	}
@@ -46,7 +58,7 @@ func TestAManualTickSkipsEvenWhereTheMachineIsEnrolled(t *testing.T) {
 	t.Parallel()
 	root := seatPresenceRoot(t)
 	seatEnroll(t, root, "m1e")
-	report := RunSeatPresence(root, nil, 4, seatFixtureClock)
+	report := runSeatPresenceForTest(t, root, nil, 4, seatFixtureClock)
 	if report.Outcome != seat.OutcomeSkipped || report.Reason != seat.SkipManualTick {
 		t.Fatalf("report = %+v; want the manual-tick skip", report)
 	}
@@ -60,7 +72,7 @@ func TestAnUnarmedTickNeverOverwritesTheArmedRunnersRecord(t *testing.T) {
 	root := seatPresenceRoot(t)
 	seatEnroll(t, root, "m1e")
 	runner := &seat.RunnerContext{RepoIdentity: "repo-a", Generation: 0, Engine: "3f9c1e2", ArmedLineage: seat.NoLease, TickSeconds: 600}
-	report := RunSeatPresence(root, runner, 0, seatFixtureClock)
+	report := runSeatPresenceForTest(t, root, runner, 0, seatFixtureClock)
 	if report.Outcome != seat.OutcomeSkipped || report.Reason != seat.SkipUnarmed {
 		t.Fatalf("report = %+v; want the unarmed skip", report)
 	}
@@ -83,7 +95,7 @@ func TestPresencePublishesInLocalModeAndRecordsItsRung(t *testing.T) {
 	seatGit(t, root, "config", "goal.sync-remote", "local")
 
 	runner := &seat.RunnerContext{RepoIdentity: "repo-a", Generation: 4, Engine: "3f9c1e2", ArmedLineage: "lineage-7", TickSeconds: 600}
-	report := RunSeatPresence(root, runner, 4, seatFixtureClock)
+	report := runSeatPresenceForTest(t, root, runner, 4, seatFixtureClock)
 	if report.Outcome != seat.OutcomePublished || report.Rung != int(seat.RungMetasystemRef) {
 		t.Fatalf("report = %+v", report)
 	}
@@ -142,7 +154,7 @@ func TestAFailedFetchStopsThePublishAndLeavesTheOtherCheckoutsRecord(t *testing.
 	// holds cannot be current.
 	seatGit(t, root, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
 	runner := &seat.RunnerContext{RepoIdentity: "repo-a", Generation: 4, Engine: "3f9c1e2", ArmedLineage: seat.NoLease, TickSeconds: 600}
-	report := RunSeatPresence(root, runner, 4, seatFixtureClock)
+	report := runSeatPresenceForTest(t, root, runner, 4, seatFixtureClock)
 	if report.Outcome != seat.OutcomeFailed {
 		t.Fatalf("report = %+v; a publish on a copy that could not be refreshed must fail", report)
 	}
