@@ -499,7 +499,9 @@ function Column({
             a keyboard or a finger. The help icon says the same thing to all
             three, and stopping its press keeps the column's drag intact. */}
         <h2 className="ms-column-title">
-          {column.title}
+          <span className="ms-column-name" title={column.title}>
+            {column.title}
+          </span>
           <span className="ms-column-count">{shown}</span>
           {column.help !== null && <Help id={column.help} />}
           {/* A lane is a thing to ask about too, and a lane header has no
