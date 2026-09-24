@@ -105,6 +105,55 @@ func TestPresencePublishesInLocalModeAndRecordsItsRung(t *testing.T) {
 	}
 }
 
+func TestAFailedFetchStopsThePublishAndLeavesTheOtherCheckoutsRecord(t *testing.T) {
+	t.Parallel()
+	root := seatPresenceRoot(t)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	if err := os.MkdirAll(remote, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seatGit(t, remote, "init", "-q", "--bare", "-b", "main")
+	seatGit(t, root, "init", "-q", "-b", "main")
+	seatGit(t, root, "config", "user.name", "fixture")
+	seatGit(t, root, "config", "user.email", "fixture@example.invalid")
+	seatGit(t, root, "config", "metasystem.goal.machine", "m1e")
+	seatGit(t, root, "remote", "add", "origin", remote)
+
+	// Another checkout is already publishing under this nickname, and its
+	// record is newer than the one this tick would compose.
+	foreign := seat.Record{
+		PresenceSchema: seat.RecordSchema, Machine: "m1e", RepoIdentity: "another-checkout",
+		Generation: 9, Engine: "8a01d77", ArmedLineage: seat.NoLease, TickSeconds: 600,
+		TickAt: seat.FormatTime(seatFixtureClock.Add(time.Minute)),
+	}
+	file, err := foreign.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	publisher := seat.Git{Root: root, Remote: "origin"}
+	held, err := publisher.Publish(seat.Write{
+		Ref: seat.MetasystemNamespace + "/m1e", Message: seat.CommitMessage(foreign), File: file, Force: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The remote goes away before this tick runs, so the copy this machine
+	// holds cannot be current.
+	seatGit(t, root, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
+	runner := &seat.RunnerContext{RepoIdentity: "repo-a", Generation: 4, Engine: "3f9c1e2", ArmedLineage: seat.NoLease, TickSeconds: 600}
+	report := RunSeatPresence(root, runner, 4, seatFixtureClock)
+	if report.Outcome != seat.OutcomeFailed {
+		t.Fatalf("report = %+v; a publish on a copy that could not be refreshed must fail", report)
+	}
+	if !strings.Contains(report.Detail, "fetch failed") {
+		t.Fatalf("report detail = %q; it must name the transport failure", report.Detail)
+	}
+	if still := seatGit(t, remote, "rev-parse", seat.MetasystemNamespace+"/m1e"); still != held {
+		t.Fatalf("the other checkout's record was overwritten: %s is now %s", held, still)
+	}
+}
+
 func TestTheTransitionQueuesBeforeItPersists(t *testing.T) {
 	t.Parallel()
 	root := seatPresenceRoot(t)

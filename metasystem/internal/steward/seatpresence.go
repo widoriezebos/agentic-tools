@@ -71,16 +71,24 @@ func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int
 		return seatPresenceFailed(repoRoot, report, detail, now)
 	}
 
+	// The conflict check is only as good as the copy it reads, so the two
+	// transport acts are told apart from the standings they feed: a fetch or
+	// a read that failed leaves the previously fetched refs, which still
+	// carry standings, but it does NOT license a publish. Publishing on a
+	// stale or empty copy would overwrite a newer record from another
+	// checkout publishing under this nickname — the one case the conflict
+	// refusal exists to catch.
 	var problems []string
+	current := true
 	if err := transport.Fetch(seat.TickNamespace); err != nil {
-		// A fetch that fails leaves the previously fetched refs, which the
-		// read below still reports.
 		problems = append(problems, "fetch failed: "+err.Error())
+		current = false
 	}
 	fleetCopy, readErr := transport.Read(seat.TickNamespace)
 	if readErr != nil {
 		problems = append(problems, "read failed: "+readErr.Error())
 		fleetCopy = seat.Copy{Records: map[string]seat.Record{}, Malformed: map[string]string{}}
+		current = false
 	}
 
 	machine, enrolled := seat.Machine(repoRoot)
@@ -93,6 +101,9 @@ func RunSeatPresence(repoRoot string, runner *seat.RunnerContext, generation int
 		report = seatPresenceSkip(report, seat.SkipNoNickname)
 	case generation < 1:
 		report = seatPresenceSkip(report, seat.SkipUnarmed)
+	case !current:
+		report.Outcome = seat.OutcomeFailed
+		report.Detail = "presence was not published because this machine could not read the fleet's current presence"
 	default:
 		report, mine = publishSeatPresence(repoRoot, transport, fleetCopy, machine, *runner, now, report)
 	}
