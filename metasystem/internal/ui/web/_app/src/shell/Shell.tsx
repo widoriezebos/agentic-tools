@@ -16,6 +16,7 @@ import { sectionHelp } from "../help/terms";
 import { useNotifications } from "../notifications/store";
 import { OverviewPane } from "../overview/OverviewPane";
 import { AskSelection } from "../partner/AskSelection";
+import { TypefaceProvider } from "../partner/FontControl";
 import { PartnerProvider, usePartner } from "../partner/store";
 import { Focused } from "../panes/Focused";
 import { NotFoundPane, SectionPane } from "../panes/sections";
@@ -73,7 +74,13 @@ export function Shell() {
         {/* The section's refresh is offered by whichever pane is on screen and
             shown in the header, so the provider has to stand above both. */}
         <RefreshProvider>
-          <Frame />
+          {/* The face and the size the conversation is read in. It stands
+              above the drawer and the focused page for the reason the
+              conversation itself does: they are two views of one exchange,
+              and a face chosen in one is the face of the other. */}
+          <TypefaceProvider>
+            <Frame />
+          </TypefaceProvider>
         </RefreshProvider>
       </PartnerProvider>
     </AboutProvider>

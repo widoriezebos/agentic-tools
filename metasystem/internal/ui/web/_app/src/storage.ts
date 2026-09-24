@@ -8,10 +8,11 @@ import {
   type Filters,
   type Window,
 } from "./backlog/filters";
+import { normalizeFace, normalizeSize, type Typeface } from "./partner/typeface";
 import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 /**
- * The fourteen keys this build remembers, and nothing else.
+ * The sixteen keys this build remembers, and nothing else.
  *
  * Every access is wrapped: a browser with site data blocked throws on the very
  * first read, and view state is never worth an error a human has to read. An
@@ -95,6 +96,19 @@ export const BACKLOG_DONE_KEY = "ms.ui.backlog.done";
  * and a mark the server held would be one of them overwriting the other.
  */
 export const NOTIFICATIONS_SEEN_KEY = "ms.ui.notifications.seen";
+
+/**
+ * The face and the size the conversation is read in.
+ *
+ * Two keys and not one, for the reason the board's five filters are five keys:
+ * a human who changes the size has not changed their mind about the face, and
+ * a value written by an older build is read field by field rather than thrown
+ * away whole. Both are validated on the way out by the module that decides
+ * what a face and a size may be, so a name nothing could render and a size
+ * nothing could read reach the page as the defaults.
+ */
+export const PARTNER_FONT_KEY = "ms.ui.partner.font";
+export const PARTNER_FONT_SIZE_KEY = "ms.ui.partner.font-size";
 
 /**
  * What the drawer is worth, in the work area's own height.
@@ -277,4 +291,17 @@ export function readNotificationsSeen(store: Store | null = browserStore()): str
 
 export function writeNotificationsSeen(id: string, store: Store | null = browserStore()): void {
   write(NOTIFICATIONS_SEEN_KEY, id, store);
+}
+
+/** The conversation's face and size, or the defaults where neither is stored. */
+export function readPartnerTypeface(store: Store | null = browserStore()): Typeface {
+  return {
+    face: normalizeFace(read(PARTNER_FONT_KEY, store)),
+    size: normalizeSize(read(PARTNER_FONT_SIZE_KEY, store)),
+  };
+}
+
+export function writePartnerTypeface(typeface: Typeface, store: Store | null = browserStore()): void {
+  write(PARTNER_FONT_KEY, typeface.face, store);
+  write(PARTNER_FONT_SIZE_KEY, String(typeface.size), store);
 }

@@ -900,24 +900,32 @@ body {
 }
 
 /*
- * The field: the sans face a question is written in, one line to begin with and
- * six at the most. `field-sizing` is what grows it, so nothing measures the
- * text and nothing writes a height into the element.
+ * The field: the face and the size the conversation above it is read in, one
+ * line to begin with and six at the most. `field-sizing` is what grows it, so
+ * nothing measures the text and nothing writes a height into the element, and
+ * the two floors are stated in `em` so a question typed at twenty-eight pixels
+ * still has a whole line to be typed on.
+ *
+ * This is the second of the two rules that read the chooser's properties; the
+ * first is .ms-conversation in partner/partner.css. The card above it sets
+ * them, and the rest of the card — the hint, Send, the pills — is the
+ * interface's own face at the interface's own sizes.
  */
 .ms-composer-field {
   width: 100%;
   box-sizing: border-box;
   field-sizing: content;
-  min-height: 38px;
-  max-height: 148px;
+  min-height: calc(1.5em + 18px);
+  max-height: calc(9em + 18px);
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--ms-border-strong);
   background: var(--ms-surface);
   color: var(--ms-text);
   font: inherit;
-  font-size: 15px;
-  line-height: 22px;
+  font-family: var(--ms-partner-face, inherit);
+  font-size: var(--ms-partner-size, 16px);
+  line-height: 1.5;
   resize: none;
   overflow-y: auto;
 }
@@ -1229,9 +1237,13 @@ body {
   }
 
   /* The help goes with the name it explains: a question mark beside nothing
-     is a question mark about nothing. */
+     is a question mark about nothing. The font chooser goes with it, and for
+     the same reason the about line does: the bar on a phone is where to type
+     and the way to open, and the chooser is still on the focused page, which
+     is where a long conversation is read. */
   .ms-drawer-bar .ms-drawer-about,
   .ms-drawer-who .ms-help,
+  .ms-drawer-who .ms-font-control,
   .ms-drawer-title {
     display: none;
   }

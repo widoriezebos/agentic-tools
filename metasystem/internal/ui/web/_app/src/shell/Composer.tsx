@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { Button } from "./controls";
 import { showsSuggestions, Suggestions } from "../partner/Chips";
 import { insertAt } from "../partner/composing";
+import { useTypefaceOn } from "../partner/FontControl";
 import { SeeingRow } from "../partner/Seeing";
 import { usePartner } from "../partner/store";
 
@@ -57,7 +58,13 @@ export function Composer({
 }) {
   const { draft, setDraft, send, stop, busy, sending, store, wanted, offerInsert, returnFocus } = usePartner();
   const field = useRef<HTMLTextAreaElement | null>(null);
+  // The card carries the conversation's chosen face and size, and the field is
+  // the one thing in it that reads them: a custom property inherits, and the
+  // rule that acts on it is the field's own.
+  const card = useRef<HTMLDivElement | null>(null);
   const unavailable = store.state === "unavailable";
+
+  useTypefaceOn(card);
 
   useEffect(() => {
     const element = field.current;
@@ -106,7 +113,7 @@ export function Composer({
   }, [offerInsert, setDraft, draft]);
 
   return (
-    <div className="ms-composer">
+    <div className="ms-composer" ref={card}>
       <SeeingRow />
       {showsSuggestions(draft) && <Suggestions />}
       <label className="ms-visually-hidden" htmlFor="composer">
