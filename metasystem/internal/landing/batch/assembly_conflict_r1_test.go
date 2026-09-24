@@ -136,8 +136,10 @@ func movedDeleteReaddFixture(t *testing.T) (assemblyBed, Store, string) {
 	return bed, store, newBase
 }
 
-func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) {
-	t.Parallel()
+// reopenMovedBaseDependents builds its own delete/re-add store, moves the base
+// across A, and reopens it so A and B return while C alone survives.
+func reopenMovedBaseDependents(t *testing.T) (Store, string, string) {
+	t.Helper()
 	bed, store, _, patches := dependentPolicyStore(t, "delete-readd")
 	newBase, cOnly := bed.moved, testCommit(205)
 	must(t, store.Update(testBatchID, func(record *Record) error {
@@ -156,6 +158,12 @@ func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) 
 	if err := ReopenMovedTrunk(store, testBatchID, newBase, "owner", time.Unix(4, 0)); err != nil {
 		t.Fatal(err)
 	}
+	return store, newBase, cOnly
+}
+
+func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) {
+	t.Parallel()
+	store, newBase, cOnly := reopenMovedBaseDependents(t)
 	record := load(t, store)
 	if record.State != StateOpen || record.BaseTree != newBase || record.TipTree != cOnly || !slices.Equal(record.PrefixTrees, []string{cOnly}) || record.Proof != nil || len(record.Receipts) != 0 ||
 		record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitReturnPending || record.Units[2].State != UnitJoined ||
@@ -172,6 +180,13 @@ func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) 
 	if !slices.Equal(returns, []string{"goal-a", "goal-b"}) {
 		t.Fatalf("moved-base return order=%v", returns)
 	}
+}
+
+// The name is retained as a protected contract selector; the moved-base survivor
+// is now proved against stub seams instead of the public owner and native proof.
+func TestGLEBatchPortableOwnerMovedBaseReturnsTwoConflictsAndLandsSurvivor(t *testing.T) {
+	t.Parallel()
+	store, _, cOnly := reopenMovedBaseDependents(t)
 
 	// C alone is then proved, published and returned; A and B never reach the
 	// landing seams, and every member goes back to its own source claim.
