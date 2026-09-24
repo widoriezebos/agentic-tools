@@ -123,6 +123,12 @@ func planPrefixDecisionWith(root string, units []batch.Unit, tree string, plan f
 	}
 	if deep {
 		for index, unit := range units {
+			// A member whose auto plan already selected deep keeps that plan
+			// and its honest requested mode; replanning would repeat the same
+			// selection on the same tree.
+			if testpolicy.AutoPlanSelectsDeep(outputs[index].Plan) {
+				continue
+			}
 			output, err := plan(root, unit.GoalID, tree, testpolicy.ModeDeep, unit.SelectedGroups)
 			if err != nil {
 				return batch.PrefixDecision{}, err

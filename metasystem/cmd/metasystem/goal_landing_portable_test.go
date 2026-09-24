@@ -831,15 +831,13 @@ func TestCommandApplicationThreePrefixReceiptConsumer(t *testing.T) {
 		t.Fatalf("moved-trunk reopen retained stale evidence or wrong series: %+v err=%v", reopened, err)
 	}
 	fixture.observe("moved-trunk-reassembled", movedTrees[2], started)
+	var tipDecision batch.PrefixDecision
 	for index := range reopened.Units {
 		decision, planErr := productionPrefixDecision(fixture.root, reopened.Units[:index+1], movedTrees[index])
 		if planErr != nil || len(decision.Groups) == 0 {
 			t.Fatalf("moved prefix %d did not replan: %+v err=%v", index, decision, planErr)
 		}
-	}
-	tipDecision, err := productionPrefixDecision(fixture.root, reopened.Units, movedTrees[2])
-	if err != nil {
-		t.Fatal(err)
+		tipDecision = decision
 	}
 	started = time.Now()
 	movedTip, err := fixture.runPrefixCommand(reopened.Units[2], movedTrees[2], tipDecision)
