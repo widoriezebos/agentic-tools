@@ -35,8 +35,9 @@ type recoverySnapshot struct {
 // remain ordinary files, so policy code reads and writes its real documents.
 type recoveryFacts struct {
 	*scopePolicyFacts
-	bed      *recoveryFileBed
-	original []byte
+	bed                *recoveryFileBed
+	original           []byte
+	permitAppendPrefix bool
 }
 
 type recoveryFileBed struct {
@@ -53,6 +54,10 @@ func newRecoveryFileBed(t *testing.T, initial ...map[string]string) *recoveryFil
 }
 
 func newRecoveryFileBedBeforeOpen(t *testing.T, beforeOpen func(*recoveryFileBed), initial ...map[string]string) *recoveryFileBed {
+	return newRecoveryFileBedWithContract(t, beforeOpen, "```mission\ncandidate.branch=main\nstream.solo=Do solo\n```\n```mission-seal\ncandidate.branch=main\n```\n", initial...)
+}
+
+func newRecoveryFileBedWithContract(t *testing.T, beforeOpen func(*recoveryFileBed), contract string, initial ...map[string]string) *recoveryFileBed {
 	t.Helper()
 	if len(initial) > 1 {
 		t.Fatal("one initial file set per recovery bed")
@@ -60,7 +65,6 @@ func newRecoveryFileBedBeforeOpen(t *testing.T, beforeOpen func(*recoveryFileBed
 	root := t.TempDir()
 	e := &Engine{Root: root, Mission: "alpha"}
 	b := &recoveryFileBed{t: t, e: e, state: filepath.Join(e.missionDir(), "state.json"), ledger: filepath.Join(e.missionDir(), "ledger.md")}
-	contract := "```mission\ncandidate.branch=main\nstream.solo=Do solo\n```\n```mission-seal\ncandidate.branch=main\n```\n"
 	writeText(t, e.approvedContractPath(), contract)
 	sum := sha256.Sum256([]byte(contract))
 	writeJSONFile(t, e.fencesPath(), map[string]any{"cycles": 0, "approvedContractSha256": hex.EncodeToString(sum[:])})
@@ -316,7 +320,21 @@ func (f *recoveryFacts) AuthenticateLedger(root string, state map[string]any, pa
 		return err
 	}
 	if !bytes.Equal(current, f.original) {
-		return fmt.Errorf("ledger differs from original bytes")
+		if !f.permitAppendPrefix || !bytes.HasPrefix(current, f.original) {
+			return fmt.Errorf("ledger differs from original bytes")
+		}
+		_, _, cycles, err := mission.ParseLedger(path)
+		if err != nil || len(cycles) != 1 {
+			return fmt.Errorf("appended ledger is not one parsable cycle: %v", err)
+		}
+		pending, err := readJSONDoc(filepath.Join(filepath.Dir(path), "pending-block.json"))
+		if err != nil {
+			return err
+		}
+		cycle, ok := jsonInt(pending["cycle"])
+		if !ok || cycle != 1 || pending["ledgerSha256"] != sha256Hex(string(current)) {
+			return fmt.Errorf("appended ledger differs from its pending block stamp")
+		}
 	}
 	return nil
 }

@@ -2921,13 +2921,13 @@ type threeAnchorFact struct {
 }
 
 type threeAnchorTrace struct {
-	t                                     *testing.T
-	root, state, ledger, rel, ref, branch string
-	tip, pending                          *threeAnchorFact
-	queued                                []testgit.Expectation
-	stub                                  *testgit.Stub
-	wantCalls                             int
-	indexDirs                             map[string]bool
+	t                                                *testing.T
+	root, state, ledger, rel, ref, branch, missionID string
+	tip, pending                                     *threeAnchorFact
+	queued                                           []testgit.Expectation
+	stub                                             *testgit.Stub
+	wantCalls                                        int
+	indexDirs                                        map[string]bool
 }
 
 func newThreeAnchorTrace(t *testing.T, root, state, ledger string, commit string) *threeAnchorTrace {
@@ -2937,9 +2937,10 @@ func newThreeAnchorTrace(t *testing.T, root, state, ledger string, commit string
 		t.Fatal(err)
 	}
 	doc := readTestDoc(t, state)
+	missionID := doc["missionId"].(string)
 	b := &threeAnchorTrace{t: t, root: root, state: state, ledger: ledger,
-		rel: filepath.ToSlash(rel), ref: "refs/metasystem/missions/alpha/state-anchors",
-		branch: doc["branch"].(string), indexDirs: make(map[string]bool)}
+		rel: filepath.ToSlash(rel), ref: mission.MissionRefNamespace(missionID) + "state-anchors",
+		branch: doc["branch"].(string), missionID: missionID, indexDirs: make(map[string]bool)}
 	data, err := os.ReadFile(ledger)
 	if err != nil {
 		t.Fatal(err)
@@ -2964,7 +2965,7 @@ func (b *threeAnchorTrace) fact(ledger string, parent *threeAnchorFact, commit s
 	if !ok {
 		b.t.Fatal("state has no ledger cycle")
 	}
-	message := fmt.Sprintf("mission(alpha): anchor cycle %d\n\nMission-Id: alpha\nMission-State-Hash: %s\nMission-Ledger-SHA256: %s\nMission-Ledger-Path: %s\nMission-Cycle: %d\n\n", cycle, hash, sha, b.rel, cycle)
+	message := fmt.Sprintf("mission(%s): anchor cycle %d\n\nMission-Id: %s\nMission-State-Hash: %s\nMission-Ledger-SHA256: %s\nMission-Ledger-Path: %s\nMission-Cycle: %d\n\n", b.missionID, cycle, b.missionID, hash, sha, b.rel, cycle)
 	return &threeAnchorFact{hash: hash, sha: sha, ledger: ledger, commit: commit,
 		blob: blob, tree: fmt.Sprintf("%x", treeSum[:20]), message: message, parent: parent}
 }
@@ -3141,7 +3142,7 @@ func (c *threeAnchorContinuity) VerifyStateWithAnchor(state, root, ledger string
 	return mission.VerifyStateWithRawAnchorOperations(c.raw, state, root, ledger)
 }
 func (c *threeAnchorContinuity) LedgerPin(root, missionID string) (string, error) {
-	if root != c.b.root || missionID != "alpha" {
+	if root != c.b.root || missionID != c.b.missionID {
 		c.b.t.Fatalf("ledger pin: %q %q", root, missionID)
 	}
 	return mission.AnchoredLedgerSHAWithRawAnchorOperations(c.raw, root, missionID)

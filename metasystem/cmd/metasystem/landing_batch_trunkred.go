@@ -16,6 +16,7 @@ type ledgerTrunkRedOwner struct {
 	endpoint               goal.Endpoint
 	actor                  goal.Actor
 	now                    func() time.Time
+	gitRead                func(root string, args ...string) (string, error)
 	beforeClearTransaction func() error
 }
 
@@ -83,7 +84,7 @@ func (owner ledgerTrunkRedOwner) Record(opid string, red batch.TrunkRed) ([]batc
 	if err != nil {
 		return nil, err
 	}
-	projection, err := goal.ProjectAt(owner.endpoint.Root, result.Tip, request.Now)
+	projection, err := goal.ProjectAtEndpoint(owner.endpoint, result.Tip, request.Now)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +105,10 @@ func (owner ledgerTrunkRedOwner) Clear(opid string, ref batch.EntryRef, green ba
 	if err != nil {
 		return err
 	}
+	gitRead := owner.gitRead
+	if gitRead == nil {
+		gitRead = goalBranchGit
+	}
 	branchMerged := false
 	expectedEntry := goal.TrunkRedEntry{}
 	for _, entry := range projection.Tree.TrunkRed {
@@ -114,18 +119,18 @@ func (owner ledgerTrunkRedOwner) Clear(opid string, ref batch.EntryRef, green ba
 		if entry.FixBranch.Commit == "" {
 			break
 		}
-		_, objectErr := goalBranchGit(owner.endpoint.Root, "cat-file", "-e", entry.FixBranch.Commit)
+		_, objectErr := gitRead(owner.endpoint.Root, "cat-file", "-e", entry.FixBranch.Commit)
 		if objectErr != nil {
 			var exit *exec.ExitError
 			if errors.As(objectErr, &exit) && exit.ExitCode() == 1 {
-				if _, historyErr := goalBranchGit(owner.endpoint.Root, "-c", "core.commitGraph=false", "rev-list", "--quiet", green.BaseCommit); historyErr != nil {
+				if _, historyErr := gitRead(owner.endpoint.Root, "-c", "core.commitGraph=false", "rev-list", "--quiet", green.BaseCommit); historyErr != nil {
 					return historyErr
 				}
 				break
 			}
 			return objectErr
 		}
-		_, ancestryErr := goalBranchGit(owner.endpoint.Root, "merge-base", "--is-ancestor", entry.FixBranch.Commit, green.BaseCommit)
+		_, ancestryErr := gitRead(owner.endpoint.Root, "merge-base", "--is-ancestor", entry.FixBranch.Commit, green.BaseCommit)
 		if ancestryErr == nil {
 			branchMerged = true
 			break

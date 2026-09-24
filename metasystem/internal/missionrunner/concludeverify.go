@@ -335,7 +335,7 @@ func (e *Engine) healTerminalPublication(statePath string, state map[string]any)
 	// crash-after-delivery case needs no re-delivery: its annotation
 	// suffix is exactly what reconciliation's terminal-delivery-lag
 	// shape re-anchors.
-	if code, err := mission.Reconcile(statePath, e.Root, ledgerPath); err != nil || code != 0 {
+	if code, err := e.continuity().Reconcile(statePath, e.Root, ledgerPath); err != nil || code != 0 {
 		detail := ""
 		if err != nil {
 			detail = err.Error()

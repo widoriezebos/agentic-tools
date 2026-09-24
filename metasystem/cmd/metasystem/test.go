@@ -252,11 +252,17 @@ type testingSelectionRequest struct {
 }
 
 func admitTestingRun(request testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+	return admitTestingRunWith(request, admission, admitProofLaunch)
+}
+
+func admitTestingRunWith(request testingSelectionRequest, admission proofLaunchAdmission,
+	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
+) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
 	admission.ForceAttempt = request.Purpose == testpolicy.PurposeCadence || request.NoReuse || request.ForceGroups
 	if admission.CandidateTree == "" {
 		admission.CandidateTree = request.Tree
 	}
-	return admitProofLaunch(admission)
+	return admit(admission)
 }
 
 type testingCommandAdmission struct {

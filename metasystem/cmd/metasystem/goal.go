@@ -1024,10 +1024,6 @@ func turnContextThousands(tokens int64) int64 {
 var turnVerdictFactsWriter = atomicfile.WriteText
 var turnVerdictCompletionWriter = atomicfile.WriteText
 
-func resolveSeatIdleActor(root, mainID string) func() (goal.Actor, int64, error) {
-	return resolveSeatIdleActorWithMachine(root, mainID, nil)
-}
-
 func resolveSeatIdleActorWithMachine(root, mainID string, resolveMachine func(string) (string, error)) func() (goal.Actor, int64, error) {
 	if resolveMachine == nil {
 		resolveMachine = goal.ResolveMachine

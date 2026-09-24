@@ -84,20 +84,6 @@ func sessionStopRawInputs(t *testing.T, root string, repository goal.Repository)
 	return resolve, machine
 }
 
-func sessionStopBed(t *testing.T) string {
-	t.Helper()
-	root, _ := sessionStopFileBed(t)
-	goalSyncMutationGit(t, root, "init", "-q", "-b", "main")
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "bed-m1")
-	goalSyncMutationGit(t, root, "config", "goal.sync-remote", "local")
-	goalSyncMutationGit(t, root, "config", "user.name", "session-stop-fixture")
-	goalSyncMutationGit(t, root, "config", "user.email", "session-stop@example.invalid")
-	goalSyncMutationGit(t, root, "add", "plans/goals")
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", "session stop bed")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	return root
-}
-
 func sessionStopLiveRef(t *testing.T) (humanauthority.ProcessRef, map[string]any) {
 	t.Helper()
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))

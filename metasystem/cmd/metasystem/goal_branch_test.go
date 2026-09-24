@@ -427,26 +427,57 @@ func TestGoalBranchHolderResolutionPreservesInstallationSubdirectory(t *testing.
 }
 
 func TestGoalBranchCommitRefusesToMoveAnArmedCheckout(t *testing.T) {
-	root, _, _ := goalBranchMainCLIFixture(t, "m1")
-	dirtyGoalBranchLedgers(t, root)
+	f := newBranchRawFixtureWithReadReplies(t, false, false, false)
+	root := f.installation
+	raw := f.dependencies()
+	headReads := 0
+	raw.Linked = func(repo string) bool {
+		if repo != root {
+			t.Fatalf("linked checkout repo %s", repo)
+		}
+		return false
+	}
+	headRef := raw.HeadRef
+	raw.HeadRef = func(repo string) ([]byte, error) {
+		headReads++
+		return headRef(repo)
+	}
+	for _, rel := range []string{"metasystem/memory/receipts.log", "metasystem/records/narrator-digest.log"} {
+		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(rel)), []byte("live append\n"), 0o644)
+	}
 	record := "metasystem/records/decisions/armed-checkout.md"
 	writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(record)), []byte("staged record\n"), 0o644)
-	goalSyncMutationGit(t, root, "add", record)
-	before := goalBranchCLIState(t, root) + "\n" + goalBranchCheckoutState(t, root)
+	for path, data := range map[string][]byte{
+		".git/HEAD":            []byte("opaque HEAD sentinel\n"),
+		".git/index":           {0x00, 0xff, 0x19, 0x7e},
+		".git/refs/heads/main": []byte("opaque main ref sentinel\n"),
+	} {
+		writeTestingFixtureFile(t, filepath.Join(root, filepath.FromSlash(path)), data, 0o644)
+	}
+	assertFiles := f.unchangedFiles("metasystem.conf", "plans/goals/backlog.md", "plans/goals/standing-validation.md",
+		"metasystem/code.go", "metasystem/memory/receipts.log", "metasystem/records/narrator-digest.log", record)
+	beforeTree := watchTreeHash(t, root)
 
-	stderr, code := captureStderr(t, func() int {
-		return runGoalBranch([]string{"commit", "--goal", "standing-validation", "--kind", "plan", "--root", root})
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return runGoalBranchCommitWith([]string{"--goal", "standing-validation", "--kind", "plan", "--root", root},
+			goalBranchCommitDependencies{Raw: raw})
 	})
 	remedy := "git worktree add <path> goal/standing-validation"
-	if code == 0 || !strings.Contains(stderr, branch.CheckoutArmedCode) || !strings.Contains(stderr, root) || !strings.Contains(stderr, remedy) {
-		t.Fatalf("armed checkout refusal: code=%d stderr=%q", code, stderr)
+	want := branch.CheckoutArmedCode + ": checkout " + root + " is not on goal/standing-validation; run " + remedy + ", then run goal branch commit there\n"
+	if code != 1 || stdout != "" || stderr != want {
+		t.Fatalf("armed checkout refusal: code=%d stdout=%q stderr=%q want=%q", code, stdout, stderr, want)
 	}
 	if strings.Contains(stderr, "receipts.log") || strings.Contains(stderr, "narrator-digest.log") {
 		t.Fatalf("armed checkout reached stale-ledger preflight: %q", stderr)
 	}
-	if after := goalBranchCLIState(t, root) + "\n" + goalBranchCheckoutState(t, root); after != before {
-		t.Fatalf("armed checkout refusal changed checkout:\nbefore=%s\nafter=%s", before, after)
+	if headReads != 1 {
+		t.Fatalf("head-ref reads = %d, want 1", headReads)
 	}
+	assertFiles()
+	if afterTree := watchTreeHash(t, root); afterTree != beforeTree {
+		t.Fatalf("armed checkout refusal changed physical fixture tree: before=%s after=%s", beforeTree, afterTree)
+	}
+	f.assertNoPreflightEffects()
 }
 
 func TestGoalBranchCheckPrintsKinds(t *testing.T) {
@@ -783,13 +814,29 @@ func TestGoalBranchHelpNamesPush(t *testing.T) {
 }
 
 func TestGoalBranchStatusReportsAbsentOrigin(t *testing.T) {
-	root, _, _ := goalBranchCLIFixture(t, "m1")
+	f := newBranchRawFixtureWithReadReplies(t, false, false, false)
+	root := f.installation
+	raw := f.dependencies()
+	originReads := 0
+	raw.OriginTip = func(repo string, endpoint goal.Endpoint, goalID string) (string, bool, error) {
+		originReads++
+		if repo != root || endpoint.Remote != "upstream" || endpoint.Branch != "refs/heads/main" || goalID != "standing-validation" {
+			t.Fatalf("absent origin lookup: repo=%s endpoint=%+v goal=%s", repo, endpoint, goalID)
+		}
+		return "", false, nil
+	}
+	assertFiles := f.unchangedFiles("metasystem.conf", "plans/goals/backlog.md", "plans/goals/standing-validation.md", "metasystem/code.go")
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"status", "--goal", "standing-validation", "--root", root})
+		return runGoalBranchStatusWithRaw([]string{"--goal", "standing-validation", "--root", root}, raw)
 	})
 	if code != 0 || stdout != "no branch\n" || stderr != "" {
 		t.Fatalf("status: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
+	if originReads != 1 {
+		t.Fatalf("origin reads = %d, want 1", originReads)
+	}
+	assertFiles()
+	f.assertNoPreflightEffects()
 }
 
 func TestGoalBranchSweepListsParkedDoneAbandonedAndOrphan(t *testing.T) {

@@ -192,9 +192,7 @@ func TestLandingReceiptForwardsBothExpectedRevisions(t *testing.T) {
 }
 
 func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
-	if reexecWithFixedProofLoad(t, "GO_WANT_DIAGNOSTIC_NO_REUSE_FIXED_LOAD", "TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses") {
-		return
-	}
+	t.Parallel()
 	root := t.TempDir()
 	diagnostic, _, status := parseTestingSelection("test run", []string{
 		"--root", root, "--purpose", "diagnostic", "--groups", "red-group", "--no-reuse",
@@ -207,17 +205,29 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	}, true); status != 2 {
 		t.Fatalf("delivery --no-reuse status=%d, want usage refusal", status)
 	}
-	originalExecute := batchDiagnosticExecute
-	t.Cleanup(func() { batchDiagnosticExecute = originalExecute })
+	const batchID = "01j5x00000000000000000ba12"
+	resultPath := filepath.Join(root, "artifacts", "agents", "proof-runs", "batch", batchID+"-diagnostic.json")
+	if err := os.MkdirAll(filepath.Dir(resultPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wantArgs := []string{"test", "run", "--root", root, "--goal", "goal-k", "--tree", "base-tree", "--mode", "canary",
+		"--purpose", "diagnostic", "--groups", "F", "--no-reuse", "--result", resultPath,
+		"--expected-goal-revision", "7", "--expected-accounting-revision", "5"}
 	var recorded []string
-	batchDiagnosticExecute = func(_ string, args []string, dir string, _ []string) ([]byte, int, error) {
-		recorded = append([]string(nil), args...)
-		resultAt := slices.Index(args, "--result")
-		if resultAt < 0 || resultAt+1 >= len(args) {
-			t.Fatalf("production diagnostic omitted --result: %v", args)
+	execute := func(_ string, args []string, dir string, _ []string) ([]byte, int, error) {
+		recorded = slices.Clone(args)
+		if dir != root {
+			t.Fatalf("diagnostic dir=%q want %q", dir, root)
 		}
-		if err := os.MkdirAll(filepath.Dir(args[resultAt+1]), 0o755); err != nil {
-			t.Fatal(err)
+		if !slices.Equal(args, wantArgs) {
+			t.Fatalf("diagnostic argv=%v, want %v", args, wantArgs)
+		}
+		resultAt := slices.Index(args, "--result")
+		if resultAt < 0 || resultAt+1 >= len(args) || args[resultAt+1] != resultPath {
+			t.Fatalf("diagnostic result path in argv=%v, want %q", args, resultPath)
+		}
+		if filepath.Dir(args[resultAt+1]) != filepath.Dir(resultPath) {
+			t.Fatalf("diagnostic result directory=%q, want %q", filepath.Dir(args[resultAt+1]), filepath.Dir(resultPath))
 		}
 		data, err := json.Marshal(proofrun.TestResult{AttemptID: "fresh-diagnostic"})
 		if err != nil {
@@ -226,15 +236,15 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 		if err := os.WriteFile(args[resultAt+1], append(data, '\n'), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if dir != root {
-			t.Fatalf("diagnostic dir=%q want %q", dir, root)
-		}
 		return nil, 0, nil
 	}
-	result, err := launchBatchDiagnostic(root, "01j5x00000000000000000ba12", batch.DiagnosticRequest{GoalID: "goal-k", Tree: "base-tree", Groups: []string{"F"},
-		Claim: batch.Claim{Revision: 7, AccountingRevision: 5}})
+	result, err := launchBatchDiagnosticWithExecute(root, batchID, batch.DiagnosticRequest{GoalID: "goal-k", Tree: "base-tree", Groups: []string{"F"},
+		Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}, execute)
 	if err != nil || result.AttemptID != "fresh-diagnostic" {
 		t.Fatalf("production diagnostic result=%+v err=%v", result, err)
+	}
+	if _, err := os.Stat(resultPath); err != nil {
+		t.Fatalf("diagnostic result path %q: %v", resultPath, err)
 	}
 	joined := strings.Join(recorded, " ")
 	for _, want := range []string{"--purpose diagnostic", "--no-reuse", "--mode canary", "--groups F", "--tree base-tree", "--goal goal-k",
@@ -243,10 +253,22 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 			t.Fatalf("diagnostic argv %q does not contain %q", joined, want)
 		}
 	}
-	// The owner's clearing path passes the claim beside the request; its revisions must reach the run.
-	if _, err := clearingDiagnostic(root)("01j5x00000000000000000ba12", batch.DiagnosticRequest{GoalID: "goal-k", Tree: "new-base", Groups: []string{"F"}},
-		batch.Claim{Revision: 11, AccountingRevision: 13}); err != nil {
-		t.Fatal(err)
+	wantArgs = []string{"test", "run", "--root", root, "--goal", "goal-k", "--tree", "new-base", "--mode", "canary",
+		"--purpose", "diagnostic", "--groups", "F", "--no-reuse", "--result", resultPath,
+		"--expected-goal-revision", "11", "--expected-accounting-revision", "13"}
+	var forwarded batch.DiagnosticRequest
+	clear := clearingDiagnosticWithLaunch(root, func(launchRoot, launchBatchID string, request batch.DiagnosticRequest) (batch.DiagnosticResult, error) {
+		if launchRoot != batch.ModuleRoot(root) || launchBatchID != batchID {
+			t.Fatalf("clearing launcher root=%q batch=%q", launchRoot, launchBatchID)
+		}
+		forwarded = request
+		return launchBatchDiagnosticWithExecute(launchRoot, launchBatchID, request, execute)
+	})
+	cleared, err := clear(batchID, batch.DiagnosticRequest{GoalID: "goal-k", Tree: "new-base", Groups: []string{"F"}},
+		batch.Claim{Revision: 11, AccountingRevision: 13})
+	if err != nil || cleared.AttemptID != "fresh-diagnostic" || forwarded.GoalID != "goal-k" || forwarded.Tree != "new-base" ||
+		!slices.Equal(forwarded.Groups, []string{"F"}) || forwarded.Claim.Revision != 11 || forwarded.Claim.AccountingRevision != 13 {
+		t.Fatalf("clearing diagnostic result=%+v forwarded=%+v err=%v", cleared, forwarded, err)
 	}
 	joined = strings.Join(recorded, " ")
 	for _, want := range []string{"--tree new-base", "--expected-goal-revision 11", "--expected-accounting-revision 13"} {
@@ -255,27 +277,20 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 		}
 	}
 
-	controlRoot, now := proofExtensionGoalFixture(t)
-	admissionDirectory := filepath.Join(t.TempDir(), "host-admission")
-	if err := os.MkdirAll(admissionDirectory, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDirectory)
-	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
-	if directory, selected, err := proofrun.FixtureHostAdmissionDirectory(controlRoot); err != nil || !selected || directory != admissionDirectory {
-		t.Fatalf("host admission directory=%q selected=%t err=%v, want %q", directory, selected, err, admissionDirectory)
-	}
-	conf := filepath.Join(controlRoot, "metasystem.conf")
-	amendSyncedGoalFixture(t, controlRoot, "diagnostic no-reuse fixture", func(file *goal.GoalFile) {
+	repository, now := proofAdmissionExtensionFixture(t)
+	controlRoot := repository.root
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.Budget.AttemptLimit = 4
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
 	announceProofFixtureHolder(t, controlRoot)
-	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	admission := proofLaunchAdmission{ControlRoot: controlRoot, ExecutionRoot: controlRoot, ConfPath: conf,
+	admit := func(request proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+		return admitCandidateProofLaunchWithRepository(t, repository, request)
+	}
+	admission := proofLaunchAdmission{ControlRoot: controlRoot, ExecutionRoot: controlRoot, ConfPath: filepath.Join(controlRoot, "metasystem.conf"),
 		GoalID: "standing-validation", CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
-		CandidateTree: strings.Repeat("b", 40), IdentityInputs: []string{"diagnostic-no-reuse"}, ForceAttempt: true}
-	retained, decision, _, err := admitProofLaunch(admission)
+		CandidateTree: strings.Repeat("b", 40), IdentityInputs: []string{"diagnostic-no-reuse"}, ForceAttempt: true, Now: now}
+	retained, decision, _, err := admit(admission)
 	if err != nil || decision.Disposition != proofrun.DispositionExecuted || retained.AttemptID == "" {
 		t.Fatalf("seed admission=%+v attempt=%+v err=%v", decision, retained, err)
 	}
@@ -283,10 +298,10 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	admission.ForceAttempt = false
-	if _, reused, _, err := admitProofLaunch(admission); err != nil || reused.Disposition != proofrun.DispositionReusableSuccess {
+	if _, reused, _, err := admit(admission); err != nil || reused.Disposition != proofrun.DispositionReusableSuccess {
 		t.Fatalf("same diagnostic without --no-reuse did not reuse: decision=%+v err=%v", reused, err)
 	}
-	fresh, decision, _, err := admitTestingRun(diagnostic, admission)
+	fresh, decision, _, err := admitTestingRunWith(diagnostic, admission, admit)
 	if err != nil || decision.Disposition != proofrun.DispositionExecuted || fresh.AttemptID == "" || fresh.AttemptID == retained.AttemptID {
 		t.Fatalf("--no-reuse did not reserve a fresh native attempt: fresh=%+v decision=%+v err=%v", fresh, decision, err)
 	}

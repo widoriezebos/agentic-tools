@@ -126,12 +126,6 @@ func spawnTaggedHold(t *testing.T, tag string) (int, int64) {
 	return cmd.Process.Pid, exact.StartedAt.Unix()
 }
 
-// buildPreflightRoot assembles the whole launch-gate world and returns the
-// engine pointed at it.
-func buildPreflightRoot(t *testing.T) *Engine {
-	return buildPreflightRootWithStream(t, "")
-}
-
 // buildPreflightRootWithStream appends a directive to the contract's
 // primary stream text, which the prompt carries and the fake host reads.
 // commitBedBaseline closes a fixture bed's tracked-space setup into a

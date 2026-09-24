@@ -35,15 +35,26 @@ func branchRawEntry(path string) []byte {
 func branchRawKey(args ...string) string { return strings.Join(args, "\x00") }
 
 func newBranchRawFixture(t *testing.T, nested, reader bool) *branchRawFixture {
+	return newBranchRawFixtureWithReadReplies(t, nested, reader, true)
+}
+
+func newBranchRawFixtureWithReadReplies(t *testing.T, nested, reader, readReplies bool) *branchRawFixture {
 	t.Helper()
 	deny, err := filepath.Abs(filepath.Join("..", "..", "internal", "testgit", "testdata", "deny-bin"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", deny+string(os.PathListSeparator)+os.Getenv("PATH"))
-	if os.Getenv("METASYSTEM_TEST_GIT_DENIED_LOG") == "" {
-		t.Setenv("METASYSTEM_TEST_GIT_DENIED_LOG", filepath.Join(t.TempDir(), "git-denied.log"))
-	}
+	deniedLog := filepath.Join(t.TempDir(), "git-denied.log")
+	t.Setenv("METASYSTEM_TEST_GIT_DENIED_LOG", deniedLog)
+	t.Cleanup(func() {
+		data, err := os.ReadFile(deniedLog)
+		if err != nil && !os.IsNotExist(err) {
+			t.Errorf("read denied Git log: %v", err)
+		} else if len(data) != 0 {
+			t.Errorf("denied Git calls:\n%s", data)
+		}
+	})
 	source := newObligationCommandFixture(t)
 	project, installation := source.root(), source.root()
 	if nested {
@@ -87,11 +98,13 @@ func newBranchRawFixture(t *testing.T, nested, reader bool) *branchRawFixture {
 	if _, err = lease.AnnounceWithPair(installation, "goal-branch-raw", int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "fixture", "fake", "m1"); err != nil {
 		t.Fatal(err)
 	}
-	f.add(f.base+"\n", "merge-base", f.base, f.unit)
-	f.add(f.unit+" "+f.base+"\n", "rev-list", "--first-parent", "--reverse", "--parents", f.base+".."+f.unit)
-	f.add("Goal-Unit: standing-validation/u1\n", "show", "-s", "--format=%(trailers:only,unfold=true)", f.unit)
-	f.add(f.unit+" "+f.base+"\n", "rev-list", "--parents", "-n", "1", f.unit)
-	f.responses[branchRawKey("diff-tree", "-r", "-z", "--no-renames", "--full-index", f.unit+"^", f.unit)] = branchRawEntry(f.unitPath)
+	if readReplies {
+		f.add(f.base+"\n", "merge-base", f.base, f.unit)
+		f.add(f.unit+" "+f.base+"\n", "rev-list", "--first-parent", "--reverse", "--parents", f.base+".."+f.unit)
+		f.add("Goal-Unit: standing-validation/u1\n", "show", "-s", "--format=%(trailers:only,unfold=true)", f.unit)
+		f.add(f.unit+" "+f.base+"\n", "rev-list", "--parents", "-n", "1", f.unit)
+		f.responses[branchRawKey("diff-tree", "-r", "-z", "--no-renames", "--full-index", f.unit+"^", f.unit)] = branchRawEntry(f.unitPath)
+	}
 	t.Cleanup(func() {
 		for key := range f.responses {
 			if f.used[key] == 0 {
@@ -377,6 +390,44 @@ func (f *branchRawFixture) dependencies() *goalBranchRawDependencies {
 			}
 			return commit, nil
 		},
-		HolderRoot: func(string) string { return f.installation }, Linked: func(string) bool { return true }, ReadRepository: f, ReadInputs: f.inputs(), Transport: branchRawTransport{f},
+		HolderRoot: func(string) string { return f.installation }, Linked: func(string) bool { return true },
+		HeadRef: func(repo string) ([]byte, error) {
+			if repo != f.installation {
+				f.t.Fatalf("head ref repo %s", repo)
+			}
+			return []byte("refs/heads/main\n"), nil
+		},
+		ReadRepository: f, ReadInputs: f.inputs(), Transport: branchRawTransport{f},
+	}
+}
+
+func (f *branchRawFixture) unchangedFiles(paths ...string) func() {
+	f.t.Helper()
+	before := make(map[string][]byte, len(paths))
+	for _, path := range paths {
+		data, err := os.ReadFile(filepath.Join(f.project, filepath.FromSlash(path)))
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		before[path] = data
+	}
+	return func() {
+		f.t.Helper()
+		for path, want := range before {
+			data, err := os.ReadFile(filepath.Join(f.project, filepath.FromSlash(path)))
+			if err != nil || !bytes.Equal(data, want) {
+				f.t.Errorf("physical file %s changed: err=%v", path, err)
+			}
+		}
+	}
+}
+
+func (f *branchRawFixture) assertNoPreflightEffects() {
+	f.t.Helper()
+	if f.ledger.canonical != strings.Repeat("0", 39)+"1" || f.ledger.accepted != strings.Repeat("0", 39)+"1" ||
+		f.ledger.captures != 0 || f.ledger.builds != 0 || f.ledger.publications != 0 || f.ledger.advances != 0 || f.ledger.releases != 0 ||
+		len(f.ledger.commits) != 1 || f.tip != f.unit || f.staged || f.published || f.generated != nil || len(f.responses) != 0 {
+		f.t.Fatalf("early refusal changed raw state: ledger=%+v tip=%s staged=%t published=%t generated=%v replies=%d",
+			f.ledger, f.tip, f.staged, f.published, f.generated, len(f.responses))
 	}
 }

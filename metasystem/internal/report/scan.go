@@ -171,7 +171,7 @@ func ScanWithCompletionAtEndpoint(root string, endpoint goal.Endpoint, machine s
 		newWorld:               func(string) bool { return goal.NewWorldAtEndpoint(endpoint) },
 		existingLedgerIdentity: func(string) string { return goal.ExistingLedgerIdentityAtEndpoint(endpoint) },
 		resolveEndpoint:        func(requested string) (goal.Endpoint, error) { return endpoint, checkRoot(requested) },
-		resolveMachine: func(requested string) (string, error) { return machine, checkRoot(requested) },
+		resolveMachine:         func(requested string) (string, error) { return machine, checkRoot(requested) },
 	})
 }
 

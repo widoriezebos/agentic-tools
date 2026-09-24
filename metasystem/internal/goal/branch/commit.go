@@ -82,10 +82,14 @@ func CheckCommitAccess(goalID string, check func() error) error {
 // linked worktree and a plain clone already on the goal branch are the two
 // places where the commit verb may install its new tip.
 func CheckCommitCheckout(repo, goalID string, linked bool) error {
+	return CheckCommitCheckoutWithHeadRef(repo, goalID, linked, func(repo string) ([]byte, error) { return gitOutput(repo, "symbolic-ref", "-q", "HEAD") })
+}
+
+func CheckCommitCheckoutWithHeadRef(repo, goalID string, linked bool, headRef func(string) ([]byte, error)) error {
 	if linked {
 		return nil
 	}
-	currentOut, _ := gitOutput(repo, "symbolic-ref", "-q", "HEAD")
+	currentOut, _ := headRef(repo)
 	if strings.TrimSpace(string(currentOut)) == goalBranchRef(goalID) {
 		return nil
 	}

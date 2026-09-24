@@ -81,6 +81,7 @@ type goalBranchRawDependencies struct {
 	ResolveCommit  func(string, string) (string, error)
 	HolderRoot     func(string) string
 	Linked         func(string) bool
+	HeadRef        func(string) ([]byte, error)
 	ReadRepository branch.BranchReadRepository
 	ReadInputs     *branch.ReadCommitInputs
 	Transport      branch.PushTransport
@@ -625,7 +626,9 @@ func runGoalBranchLandPrepWith(args []string, dependencies goalBranchLandPrepDep
 	return 0
 }
 
-func runGoalBranchStatus(args []string) int {
+func runGoalBranchStatus(args []string) int { return runGoalBranchStatusWithRaw(args, nil) }
+
+func runGoalBranchStatusWithRaw(args []string, raw *goalBranchRawDependencies) int {
 	flags := flag.NewFlagSet("goal branch status", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
@@ -633,17 +636,21 @@ func runGoalBranchStatus(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal branch status needs --goal")
 		return 2
 	}
-	endpoint, err := goalBranchEndpoint(*root)
+	endpoint, err := raw.endpoint(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	endpointTip, err := goalBranchEndpointTip(*root, endpoint)
+	endpointTipReader, originTipReader := goalBranchEndpointTip, goalBranchOriginTip
+	if raw != nil {
+		endpointTipReader, originTipReader = raw.EndpointTip, raw.OriginTip
+	}
+	endpointTip, err := endpointTipReader(*root, endpoint)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	tip, present, err := goalBranchOriginTip(*root, endpoint, *goalID)
+	tip, present, err := originTipReader(*root, endpoint, *goalID)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -908,7 +915,13 @@ func runGoalBranchCommitWith(args []string, dependencies goalBranchCommitDepende
 	} else {
 		_, linked = linkedWorktreeMainCheckout(*root)
 	}
-	if err := branch.CheckCommitCheckout(*root, *goalID, linked); err != nil {
+	checkCheckout := branch.CheckCommitCheckout
+	if dependencies.Raw != nil {
+		checkCheckout = func(repo, goalID string, linked bool) error {
+			return branch.CheckCommitCheckoutWithHeadRef(repo, goalID, linked, dependencies.Raw.HeadRef)
+		}
+	}
+	if err := checkCheckout(*root, *goalID, linked); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

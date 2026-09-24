@@ -576,6 +576,11 @@ func ProjectAt(root, tip string, at ...time.Time) (Projection, error) {
 	return projectAtForEndpoint(Endpoint{Root: root}, tip, at...)
 }
 
+// ProjectAtEndpoint reads one already-identified commit through the endpoint's repository.
+func ProjectAtEndpoint(endpoint Endpoint, tip string, at ...time.Time) (Projection, error) {
+	return projectAtForEndpoint(endpoint, tip, at...)
+}
+
 func projectAtForEndpoint(endpoint Endpoint, tip string, at ...time.Time) (Projection, error) {
 	tree, err := loadTreeFor(endpoint, tip)
 	if err != nil {

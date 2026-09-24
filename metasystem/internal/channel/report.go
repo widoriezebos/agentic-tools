@@ -42,6 +42,27 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 	})
 }
 
+func ComposeStatusReportAtEndpoint(c ReportConfig, endpoint goal.Endpoint, landingLog func(string, time.Time) ([]byte, error)) (string, string, error) {
+	return composeStatusReportWithReads(c, reportGoalReads{
+		resolveEndpoint: func(root string) (goal.Endpoint, error) {
+			actual, err := filepath.EvalSymlinks(root)
+			if err != nil {
+				return goal.Endpoint{}, err
+			}
+			bound, err := filepath.EvalSymlinks(endpoint.Root)
+			if err != nil {
+				return goal.Endpoint{}, err
+			}
+			if actual != bound {
+				return goal.Endpoint{}, fmt.Errorf("status endpoint root %q does not match report root %q", endpoint.Root, root)
+			}
+			return endpoint, nil
+		},
+		ledgerIdentity: func(string) string { return goal.ExistingLedgerIdentityAtEndpoint(endpoint) },
+		landingLog:     landingLog,
+	})
+}
+
 // reportGoalReads binds the three raw goal reads to one composition call.
 type reportGoalReads struct {
 	resolveEndpoint func(string) (goal.Endpoint, error)
