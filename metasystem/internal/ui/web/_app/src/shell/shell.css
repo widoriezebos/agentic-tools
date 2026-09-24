@@ -1055,9 +1055,28 @@ body {
     white-space: nowrap;
   }
 
-  .ms-composer-seeing .ms-partner-subject-chip,
   .ms-composer-seeing .ms-seeing-refresh {
     flex: none;
+  }
+
+  /*
+   * Three chips can stand on this row, so they give up their words rather
+   * than the × that takes them back: each is cut to what is left, and each
+   * keeps enough of it to be read and pressed. The label already trails off;
+   * this is what lets it, and the floor is what stops a chip shrinking to a
+   * bare × nobody can name.
+   */
+  .ms-composer-seeing .ms-seeing-chip {
+    min-width: 5em;
+  }
+
+  .ms-composer-seeing .ms-partner-subject-chip {
+    flex: 0 1 auto;
+    min-width: 7em;
+  }
+
+  .ms-composer-seeing .ms-partner-subject-what {
+    min-width: 0;
   }
 }
 

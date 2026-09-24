@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:5e03f7406b48bc117ec942a7ca9f109de6ceb49b704376329e542aa16185bd71",
+  "sourceDigest": "sha256:edf513da0551a607d01f1b367fa85210ca7af2a77c665cd87abb31135eb83263",
   "source": [
     {
       "path": ".npmrc",
@@ -384,15 +384,15 @@
     },
     {
       "path": "src/partner/AskSelection.tsx",
-      "sha256": "29d63506f57e8a0ecd3507bc126ef56e3e006bcd34d7c9b8b5342b496fe17d99"
+      "sha256": "092dbcdfbcca8dc6fe65aa886ee19501bbf2d789fc365fd78d4d6e23dce90f25"
     },
     {
       "path": "src/partner/AskSheet.tsx",
-      "sha256": "898e44ea686f37ff61a996628bb0ce5db6932fbe521f64c9df954f74bc0d6f13"
+      "sha256": "5b6b3535bfc985c625e45434c688643ec3339da1c346d75873f32882659f59a4"
     },
     {
       "path": "src/partner/Chips.tsx",
-      "sha256": "db645e5f7231b281f9519c57ca8527bb5d4762ea7dea987f340f852525e1901d"
+      "sha256": "425b72a3f2d5375bc55a808a648b5f950a9c5c4f13c90f1b1a3b8e5ee8bb8ce3"
     },
     {
       "path": "src/partner/FontControl.tsx",
@@ -404,11 +404,11 @@
     },
     {
       "path": "src/partner/Pinned.tsx",
-      "sha256": "e6df28853c7dc5f0b8671aee63cb1857dbde6557e01b9b4075de0d301f6c2742"
+      "sha256": "d400937340246418a446ba6d44a3260a4f949e1225f24b5a9b93d3b480c1d109"
     },
     {
       "path": "src/partner/Seeing.tsx",
-      "sha256": "b4ed86d55d87bfecf006f08cd14cf9de9109461f38a849322d32488cf651ca4b"
+      "sha256": "558ec10d9720242b8f6294c9986a2857a24686927bbc0745c9787218e98076ae"
     },
     {
       "path": "src/partner/Transcript.tsx",
@@ -427,12 +427,20 @@
       "sha256": "2c5c21b8b52aed072346b719e52c92e8be99d6520d273e3a6509377cbed0a9de"
     },
     {
+      "path": "src/partner/attachments.test.ts",
+      "sha256": "ee4c8d7811bcf6f910ada00d72c3a0f75349861d4ff28651898e0759b5cc5112"
+    },
+    {
+      "path": "src/partner/attachments.ts",
+      "sha256": "8af4fe7e13d0b691864e318f3258a2df707e54b01f332be7812c1e0c9fcb3dd3"
+    },
+    {
       "path": "src/partner/capture.test.ts",
-      "sha256": "84face3bb156c3f6d3c358349b22644316affb19050cd585076c468183968e3f"
+      "sha256": "e1359476978d78d90ef87fcba3b57ab64f0e89bb68031078a860dec8b46c3177"
     },
     {
       "path": "src/partner/capture.ts",
-      "sha256": "5242b65ea8fe979f85e8047b666b6bc25bb23222f17cdb0c6f1ec151c4e95355"
+      "sha256": "bdd7f904949a912174fb7c00724bd489d857a358e64e24543540539c0e655866"
     },
     {
       "path": "src/partner/composing.test.ts",
@@ -476,7 +484,7 @@
     },
     {
       "path": "src/partner/store.tsx",
-      "sha256": "a122e30480439f434acaf805ab4e899795a73a32c4a8f15cf52279f0d1014910"
+      "sha256": "7fa49ac9e410015a341bb0d726da38153392d93f3d67be8d2783b24902a27045"
     },
     {
       "path": "src/partner/subject.test.ts",
@@ -680,7 +688,7 @@
     },
     {
       "path": "src/shell/shell.css",
-      "sha256": "535d0d89e6bdefe4f84bb78ad1d802e35ddd838501aa806fc2ce31b3a3d8eeb8"
+      "sha256": "240f8f90659d83355215cf96d44790ca38836802dcd41e984abe9824f91f9394"
     },
     {
       "path": "src/shell/workmodal.test.ts",
@@ -746,11 +754,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "b66f3703c4b2dac53b474596272acc5056d2c341d2a6899fa09ea113f35f2cbe"
+      "sha256": "62d6fc7a903d0463a32bb97809b2f146225a6b5c6be39719ccc1f5603cf85a4f"
     },
     {
       "path": "assets/index.js",
-      "sha256": "4c194f8a1383ad9c94e96b5f0ee27da57ea614f8f2a1473de1cbdc17abe1339d"
+      "sha256": "ff951c525adbd565092d6a5fc47f8e8ce3563acffe9ee9e6e9b2c8adac20cc1f"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
