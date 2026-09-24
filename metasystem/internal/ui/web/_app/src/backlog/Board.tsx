@@ -1,3 +1,4 @@
+import { MessageSquare } from "lucide-react";
 import { useId, useMemo, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router";
 
@@ -507,11 +508,12 @@ function Column({
             type="button"
             className="ms-column-ask"
             aria-label={`Ask about ${column.title}`}
+            title={`Ask about ${column.title}`}
             onClick={() => {
               ask(laneSubject(column.title, rows, tip, observedAt, returnAddress(view, filters, reach)));
             }}
           >
-            Ask
+            <MessageSquare size={14} strokeWidth={1.75} aria-hidden="true" />
           </button>
         </h2>
         {column.head}

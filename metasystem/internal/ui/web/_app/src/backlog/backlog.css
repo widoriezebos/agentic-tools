@@ -389,6 +389,7 @@
   display: flex;
   align-items: baseline;
   gap: 6px;
+  min-width: 0;
   margin: 0;
   font-size: 13px;
   line-height: 18px;
@@ -1128,8 +1129,26 @@
   border-radius: 8px;
 }
 
-/* A lane's one control: it is a thing to ask about, and it has no menu. */
-.ms-column-ask,
+/* A lane's one control: it is a thing to ask about, and it has no menu. It is
+   the Partner's own mark at the size of the help icon beside it, because a
+   word does not fit a narrow lane's head; the name is its label. */
+.ms-column-ask {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-self: center;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ms-text-3);
+  cursor: pointer;
+}
+
+.ms-column-ask:hover,
+.ms-column-ask:focus-visible {
+  color: var(--ms-accent);
+}
+
 .ms-card-ask,
 .ms-overview-ask {
   margin-left: 8px;
@@ -1143,7 +1162,6 @@
   cursor: pointer;
 }
 
-.ms-column-ask:hover,
 .ms-card-ask:hover,
 .ms-overview-ask:hover {
   border-color: var(--ms-accent);
