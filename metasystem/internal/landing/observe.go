@@ -258,6 +258,12 @@ func ValidateCarriedCandidatePaths(params ObserveParams, ledgerTree *goal.TreeGo
 	return candidatePathPolicy(params, ledgerTree)
 }
 
+// ValidateCarriedCandidatePathsWithWorkspace reads the same path policy from a supplied repository workspace.
+func ValidateCarriedCandidatePathsWithWorkspace(params ObserveParams, ledgerTree *goal.TreeGoals, workspace gittree.Workspace, resolver *stateroot.Resolver, readCommit func(root, commit string) ([]byte, error)) error {
+	facts := observationFacts{reader: workspace, installation: params.RepoRoot, ownerForInstallation: resolver.OwnerForInstallation}
+	return candidatePathPolicyWithFacts(params, ledgerTree, facts, readCommit)
+}
+
 func carriedCounselorCarriageError(root string, workspace observationReader, baseTree, candidateTree, path string, ledgerTree *goal.TreeGoals, commitMessage func(root, commit string) ([]byte, error)) error {
 	lines, err := carriedCounselorAppendLines(workspace, baseTree, candidateTree, path)
 	if err != nil {

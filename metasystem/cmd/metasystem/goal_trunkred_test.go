@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -44,10 +42,15 @@ func trunkRedNextFixture(t *testing.T) (*proofAdmissionRepository, goal.Projecti
 }
 
 func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-17T10:00:00Z")
-	root := syncedClaimedGoalFixture(t)
+	denyPriorityGit(t)
+	fixture := newObligationCommandFixture(t)
+	root := fixture.root()
+	resolve := fixture.dependencies().endpoint
+	request := func(verb, root, by, lineage string) (goal.VerbRequest, error) {
+		return syncReqWithProofAtWithDependencies(verb, root, by, lineage, nil, fixture.commandNow, fixture.dependencies())
+	}
 	emptyOutput, emptyCode := captureStdout(t, func() int {
-		return runGoalList([]string{"--root", root, "--json"})
+		return runGoalListWithResolver([]string{"--root", root, "--json"}, resolve)
 	})
 	if emptyCode != 0 || !strings.Contains(emptyOutput, `"trunkRed":[]`) {
 		t.Fatalf("empty JSON register code=%d output=%q", emptyCode, emptyOutput)
@@ -60,24 +63,51 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 			Opid: goal.Opid("01J5X0000000000000000000X1", "mac-cli", "m1")}},
 		Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: stamp, How: "joiner"}, Holds: []string{"batch-1"}, Opened: stamp,
 	}})
-	registerPath := filepath.Join(root, "plans", "goals", "trunk-red.json")
-	if err := os.WriteFile(registerPath, register, 0o644); err != nil {
+	parent := fixture.repo.accepted
+	tip, err := fixture.repo.Build(goal.Opid("01J5X0000000000000000000X2", "mac-cli", "m1"), parent,
+		[]goal.Change{{Path: "plans/goals/trunk-red.json", Content: register}}, "trunk-red command fixture")
+	if err != nil {
 		t.Fatal(err)
 	}
-	goalSyncMutationGit(t, root, "add", "plans/goals/trunk-red.json")
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", "trunk-red command fixture")
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	goalSyncMutationGit(t, root, "branch", "fix/red")
+	if outcome, err := fixture.repo.Publish(parent, tip); err != nil || outcome != goal.CASLanded {
+		t.Fatalf("publish trunk-red register: outcome=%v err=%v", outcome, err)
+	}
+	if err := fixture.repo.AcceptedCAS(parent, tip); err != nil {
+		t.Fatal(err)
+	}
+	branchCommit := fixture.repo.accepted
+	var branchReads []string
+	branchRead := func(candidate string, args ...string) (string, error) {
+		if candidate != root || len(args) != 4 || args[0] != "rev-parse" || args[1] != "--verify" || args[2] != "--quiet" {
+			t.Fatalf("unexpected branch read: root=%q args=%q", candidate, args)
+		}
+		branchReads = append(branchReads, args[3])
+		if args[3] == "refs/heads/fix/red" {
+			return "", fmt.Errorf("local branch absent")
+		}
+		if args[3] != "refs/remotes/local/fix/red" {
+			t.Fatalf("unexpected branch ref %q", args[3])
+		}
+		return branchCommit, nil
+	}
 
 	output, code := captureStdout(t, func() int {
-		return runGoalTrunkRed([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--branch", "fix/red", "--lineage", "m1"})
+		return runGoalTrunkRedWithRequest([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--branch", "fix/red", "--lineage", "m1"}, request, branchRead)
 	})
 	if code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
 		t.Fatalf("own command code=%d output=%q", code, output)
 	}
+	if strings.Join(branchReads, ",") != "refs/heads/fix/red,refs/remotes/local/fix/red" {
+		t.Fatalf("branch lookup order = %q", branchReads)
+	}
+	owned, problems := goal.ParseTrunkRed(fixture.repo.commit(fixture.repo.accepted).files["plans/goals/trunk-red.json"])
+	if len(problems) != 0 || len(owned) != 1 || owned[0].Owner.Machine != "mac-cli" || owned[0].Owner.How != "taken" ||
+		owned[0].FixGoal != "standing-validation" || owned[0].FixBranch.Commit != branchCommit || owned[0].FixBranch.State != goal.TrunkRedBranchOpen ||
+		len(owned[0].Sightings) != 1 || owned[0].Sightings[0].Attempt != "attempt-1" || len(owned[0].Holds) != 1 || owned[0].Holds[0] != "batch-1" {
+		t.Fatalf("published owner lost branch, sighting, or hold: entries=%+v problems=%v", owned, problems)
+	}
 	output, code = captureStdout(t, func() int {
-		return runGoalList([]string{"--root", root, "--json"})
+		return runGoalListWithResolver([]string{"--root", root, "--json"}, resolve)
 	})
 	var listed struct {
 		TrunkRed []goal.TrunkRedEntry `json:"trunkRed"`
@@ -86,22 +116,28 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 		t.Fatalf("json list code=%d output=%q parsed=%+v", code, output, listed)
 	}
 	stderr, code := captureStderr(t, func() int {
-		return runGoalTrunkRed([]string{"close", "--root", root, "--id", id, "--why", "external outage", "--lineage", "m1"})
+		return runGoalTrunkRedWithRequest([]string{"close", "--root", root, "--id", id, "--why", "external outage", "--lineage", "m1"}, request, branchRead)
 	})
 	if code != 1 || !strings.Contains(stderr, "TRUNK_RED_CLOSE_IS_HUMAN") {
 		t.Fatalf("close without human code=%d stderr=%q", code, stderr)
 	}
 
 	output, code = captureStdout(t, func() int {
-		return runGoalTrunkRed([]string{"close", "--root", root, "--id", id, "--by", "Wido", "--why", "external outage", "--lineage", "human-line"})
+		return runGoalTrunkRedWithRequest([]string{"close", "--root", root, "--id", id, "--by", "Wido", "--why", "external outage", "--lineage", "human-line"}, request, branchRead)
 	})
 	if code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
 		t.Fatalf("close command code=%d output=%q", code, output)
 	}
+	closed, problems := goal.ParseTrunkRed(fixture.repo.commit(fixture.repo.accepted).files["plans/goals/trunk-red.json"])
+	if len(problems) != 0 || len(closed) != 1 || closed[0].Closed == nil || closed[0].Closed.How != "hand" ||
+		closed[0].Closed.By != "Wido" || closed[0].Closed.Why != "external outage" || len(closed[0].Holds) != 0 ||
+		closed[0].Owner.Machine != "mac-cli" || closed[0].FixBranch.Commit != branchCommit || len(closed[0].Sightings) != 1 {
+		t.Fatalf("published closure lost owner history or failed to clear holds: entries=%+v problems=%v", closed, problems)
+	}
 	stderr, code = captureStderr(t, func() int {
-		return runGoalTrunkRed([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--to", "mac-other"})
+		return runGoalTrunkRedWithRequest([]string{"own", "--root", root, "--id", id, "--goal", "standing-validation", "--to", "mac-other"}, request, branchRead)
 	})
-	if code != 2 || !strings.Contains(stderr, "--to only with --by") {
+	if code != 2 || stderr != "goal trunk-red own takes --to only with --by\n" {
 		t.Fatalf("--to edge code=%d stderr=%q", code, stderr)
 	}
 }

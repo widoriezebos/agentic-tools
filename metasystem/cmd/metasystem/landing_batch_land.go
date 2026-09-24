@@ -108,6 +108,10 @@ var batchLandOriginTree = func(root, commit string) (string, error) {
 var batchLandRecoverPush = recoverMovedBatchPush
 
 func batchLandSeams(root, id string, record batch.Record, baseCommit, actor string) batch.LandSeams {
+	return batchLandSeamsWithRead(root, id, record, baseCommit, actor, gitOutput)
+}
+
+func batchLandSeamsWithRead(root, id string, record batch.Record, baseCommit, actor string, readGit func(root string, args ...string) (string, error)) batch.LandSeams {
 	controlRoot := batch.ModuleRoot(root)
 	return batch.LandSeams{
 		Prepare: func(_ string) error { return batch.PrepareLandingBranch(root, id, baseCommit) },
@@ -121,10 +125,10 @@ func batchLandSeams(root, id string, record batch.Record, baseCommit, actor stri
 				path = filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+".json")
 			}
 			message := fmt.Sprintf("land %s in batch %s\n\nOriginal join order; prefix tree %s.\n", unit.GoalID, id, receipt.Tree)
-			if err := batch.CommitWithWrapper(controlRoot, batch.ChainDeclaration(unit.Chain), unit.GoalID, path, message, unit.AuthorName, unit.AuthorEmail, actor); err != nil {
+			if err := batch.CommitWithWrapperWithRead(controlRoot, batch.ChainDeclaration(unit.Chain), unit.GoalID, path, message, unit.AuthorName, unit.AuthorEmail, actor, readGit); err != nil {
 				return "", err
 			}
-			return gitOutput(root, "rev-parse", "HEAD")
+			return readGit(root, "rev-parse", "HEAD")
 		},
 		ApplyBuild: func(_ batch.Unit, build batch.BranchBuild) error {
 			return batch.ApplyBranchBuild(root, root, build)

@@ -51,6 +51,7 @@ var engineBindingStandardTests = []string{
 	"TestNonDescendantPolicyBaseRefusesDecisionMismatch",
 	"TestPolicyChildNeverFetchesOrReArms",
 	"TestProtectedCoverageFloorCannotFallOrDisappear",
+	"TestPublicTestingPlanAmbientTrustedPolicyDecisionCannotBypassRetainedEngineNativeGit",
 	"TestPublishTestingResultSpillsOverTheBound",
 	"TestPublishTestingResultUnderTheBoundIsUnchanged",
 	"TestRefusalQuotesPathFacts",

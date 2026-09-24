@@ -326,17 +326,6 @@ func goalBranchCLIFixtureBelow(t *testing.T, lineage, subdir string) (string, st
 	return filepath.Join(worktreeTop, subdir), upstream, base
 }
 
-func goalBranchCLIState(t *testing.T, root string) string {
-	t.Helper()
-	parts := []string{
-		goalSyncMutationGit(t, root, "symbolic-ref", "-q", "HEAD"),
-		goalSyncMutationGit(t, root, "write-tree"),
-		goalSyncMutationGit(t, root, "status", "--porcelain=v1", "--untracked-files=all"),
-		goalSyncMutationGit(t, root, "for-each-ref", "--format=%(refname) %(objectname)"),
-	}
-	return strings.Join(parts, "\n---\n")
-}
-
 func goalBranchCheckoutState(t *testing.T, root string) string {
 	t.Helper()
 	parts := []string{

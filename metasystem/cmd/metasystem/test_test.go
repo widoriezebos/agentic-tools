@@ -134,32 +134,135 @@ func TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback(t *te
 }
 
 func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
-	fixture := newPortableProofFixture(t)
-	fixture.writeEpisodeContract()
-	tree := fixture.commit("declare expiring command observation")
-	before := time.Now().UTC().Truncate(time.Second)
-	expires := before.Add(time.Minute)
-	t.Setenv("METASYSTEM_GOAL_NOW", before.Format(time.RFC3339Nano))
-	request := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
-		Purpose: testpolicy.PurposeDelivery, FreshEpisode: strings.Repeat("1", 64), FreshExpiresAt: expires.Format(time.RFC3339Nano)}
-	prepared, err := prepareTestingForCommand(request)
+	fixture := newOrdinaryCandidateFixture(t)
+	writeTestingFixtureFile(t, filepath.Join(fixture.root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644)
+	pinProofBinaryFixture(t, fixture.root)
+	group := testpolicy.Group{ID: "candidate-bed", Kind: "unit", Adapter: "command", Phase: "acceptance",
+		EnvironmentMode: "inherit", Freshness: "episode", CWD: ".",
+		Inputs: []string{"metasystem/cmd/metasystem/engine.txt"}, Tools: []testpolicy.Tool{{ID: "shell", Executable: "sh", VersionArgs: []string{"-c", "printf fixture-shell"}}},
+		Obligations: []string{"candidate-engine"}, Platforms: []string{"any"}, TargetMS: 1,
+		Argv: []string{"sh", "-c", "test -s metasystem/cmd/metasystem/engine.txt"}, Format: "exit-status"}
+	contract := testpolicy.Contract{SchemaVersion: 2,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces:    []testpolicy.Surface{{ID: "app", Paths: []string{"metasystem/cmd/**"}, Standard: []string{group.ID}, Critical: group.Obligations}},
+		Groups:      []testpolicy.Group{group}, Always: testpolicy.Always{Canary: []string{group.ID}}, Unknown: []string{group.ID}, Cadence: []string{group.ID}}
+	contractBytes, err := json.Marshal(contract)
 	if err != nil {
 		t.Fatal(err)
 	}
+	writeTestingFixtureFile(t, filepath.Join(fixture.installation, "testing.json"), contractBytes, 0o644)
+	contract, err = testpolicy.Load(filepath.Join(fixture.installation, "testing.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := testpolicy.Select(contract, testpolicy.SelectionRequest{ChangedPaths: []string{"metasystem/cmd/metasystem/engine.txt"}, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery})
+	if err != nil || !reflect.DeepEqual(plan.SelectedGroups, []string{group.ID}) {
+		t.Fatalf("select retained proof groups: plan=%+v err=%v", plan, err)
+	}
+	prepared := testingPreparation{Installation: fixture.installation, ControlRoot: fixture.root, ProjectRoot: fixture.root,
+		Prefix: "metasystem", ConfPath: filepath.Join(fixture.root, "metasystem.conf"), GoalID: "portable", AccountingRevision: 2,
+		BaseCommit: ordinaryBaseCommit, PolicyBaseCommit: ordinaryBaseCommit, CandidateTree: ordinaryProjectTree,
+		EffectiveContract: contract, Plan: plan, Environment: testingEnvironment(os.Environ()),
+		ContractDigest: bytesSHA256(contractBytes), BaseContractDigest: bytesSHA256(contractBytes),
+		PolicyEngineDigest: fixture.policyDigest, BehaviorPolicyDigest: strings.Repeat("3", 64)}
+	fixture.queueJudge()
+	prepared.JudgeKey = proofrun.ComputeJudgeKeyWithReader(context.Background(), fixture.root, ordinaryBaseCommit, "metasystem", fixture.judgeReader)
+	if prepared.JudgeKey == proofrun.DefaultJudgeKey() || strings.Contains(prepared.JudgeKey, ":unreadable:") {
+		t.Fatalf("candidate engine sources did not yield a judge key: %s", prepared.JudgeKey)
+	}
+	type projectionStep struct {
+		dir, output string
+		args        []string
+		indexed     bool
+	}
+	var projection []projectionStep
+	queueProjection := func() {
+		paths := landing.WorkspaceExclusions()
+		for i, path := range paths {
+			paths[i] = "metasystem/" + path
+		}
+		projection = append(projection,
+			projectionStep{fixture.installation, fixture.root + "\n", []string{"rev-parse", "--show-toplevel"}, false},
+			projectionStep{fixture.installation, "metasystem/\n", []string{"rev-parse", "--show-prefix"}, false},
+			projectionStep{fixture.root, "", []string{"read-tree", ordinaryProjectTree}, true},
+			projectionStep{fixture.root, fixture.root + "\n", []string{"rev-parse", "--show-toplevel"}, false},
+			projectionStep{fixture.root, "", append([]string{"ls-files", "-z", "--"}, paths...), true},
+			projectionStep{fixture.root, ordinaryProjectTree + "\n", []string{"write-tree"}, true})
+	}
+	var indexPath, previousIndex string
+	raw := func(request gittree.RawRequest) gittree.RawResult {
+		if request.Operation != "git rev-parse --show-toplevel" && request.Operation != "git rev-parse --show-prefix" &&
+			request.Operation != "git read-tree "+ordinaryProjectTree && request.Operation != "git write-tree" &&
+			!strings.HasPrefix(request.Operation, "git ls-files -z -- ") {
+			return fixture.raw(request)
+		}
+		if len(projection) == 0 {
+			t.Fatal("unexpected projection request")
+		}
+		step := projection[0]
+		projection = projection[1:]
+		wantArgs := append(append([]string{"-C", step.dir}, ordinaryWorkspacePins...), step.args...)
+		if request.Dir != step.dir || !reflect.DeepEqual(request.Args, wantArgs) || request.Operation != "git "+strings.Join(step.args, " ") || len(request.Stdin) != 0 {
+			t.Fatalf("projection request dir=%q args=%q operation=%q stdin=%q; want dir=%q args=%q", request.Dir, request.Args, request.Operation, request.Stdin, step.dir, wantArgs)
+		}
+		wantEnv := gittree.ScrubbedEnviron()
+		if step.indexed {
+			if len(request.Env) != len(wantEnv)+1 || !reflect.DeepEqual(request.Env[:len(wantEnv)], wantEnv) || !strings.HasPrefix(request.Env[len(wantEnv)], "GIT_INDEX_FILE=") {
+				t.Fatalf("projection index environment differs from scrubbed environment plus one index: %q", request.Env)
+			}
+			actual := strings.TrimPrefix(request.Env[len(wantEnv)], "GIT_INDEX_FILE=")
+			if !filepath.IsAbs(actual) || filepath.Base(actual) != "index" || filepath.Dir(filepath.Dir(actual)) != os.TempDir() || !strings.HasPrefix(filepath.Base(filepath.Dir(actual)), "metasystem-gittree.") {
+				t.Fatalf("projection index path is not task-private: %q", actual)
+			}
+			if step.args[0] == "read-tree" {
+				if actual == previousIndex {
+					t.Fatalf("projection reused prior temporary index %q", actual)
+				}
+				indexPath = actual
+			} else if actual != indexPath {
+				t.Fatalf("projection index changed: %q != %q", actual, indexPath)
+			}
+			wantEnv = gittree.ScrubbedEnviron("GIT_INDEX_FILE=" + indexPath)
+			if step.args[0] == "write-tree" {
+				previousIndex = indexPath
+				indexPath = ""
+			}
+		}
+		if !reflect.DeepEqual(request.Env, wantEnv) {
+			t.Fatalf("projection environment differs from exact scrubbed environment")
+		}
+		return gittree.RawResult{Stdout: []byte(step.output)}
+	}
+	workspace := gittree.Workspace{Dir: fixture.root, RawSource: raw}
+	defer func() {
+		fixture.assertDrained()
+		if len(projection) != 0 || indexPath != "" {
+			t.Fatalf("unused projection requests: %d; active index=%q", len(projection), indexPath)
+		}
+	}()
+	before := time.Now().UTC().Truncate(time.Second)
+	expires := before.Add(time.Minute)
+	t.Setenv("METASYSTEM_GOAL_NOW", before.Format(time.RFC3339Nano))
+	request := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: ordinaryProjectTree, Mode: testpolicy.ModeAuto,
+		Purpose: testpolicy.PurposeDelivery, FreshEpisode: strings.Repeat("1", 64), FreshExpiresAt: expires.Format(time.RFC3339Nano)}
 	if _, err := resolveTestingPreparationWorkerPolicy(&prepared); err != nil {
 		t.Fatal(err)
 	}
-	buildIdentity, err := candidateEngineBuildIdentity(context.Background(), gittree.Workspace{Dir: prepared.ProjectRoot},
-		prepared.Prefix, prepared.CandidateTree, prepared.Environment)
+	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
+	buildIdentity, err := candidateEngineBuildIdentityUsing(context.Background(), workspace,
+		prepared.Prefix, prepared.CandidateTree, prepared.Environment, fixture.dependency())
 	if err != nil {
 		t.Fatal(err)
 	}
 	runRequest := testingRunRequest(prepared, "", "", "", strings.Repeat("a", 64), buildIdentity)
+	runRequest.WithCandidateOpener(fixture.openBed)
 	runRequest.FreshnessEpisode, runRequest.FreshnessExpiresAt = request.FreshEpisode, request.FreshExpiresAt
 	runRequest.FreshGroups, _ = testingFreshGroups(prepared, request)
-	if err := bindTestingFreshnessProjection(&runRequest, prepared.Installation); err != nil {
+	queueProjection()
+	if err := bindTestingFreshnessProjectionWithWorkspace(&runRequest, prepared.Installation, workspace); err != nil {
 		t.Fatal(err)
 	}
+	fixture.queueBed(ordinaryProjectTree)
 	identities, metadata, _, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), runRequest)
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +311,24 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fixed, err := verifyRetainedTesting(request)
+	retained, err := proofrun.ReadAttempts(prepared.proofControlRoot())
+	if err != nil || len(retained) != 1 || retained[0].TestResult == nil || retained[0].Terminal == nil {
+		t.Fatalf("persisted retained proof: attempts=%+v err=%v", retained, err)
+	}
+	fixedClock, authorized, err := goalCommandClock(prepared.proofControlRoot())
+	if err != nil || !authorized {
+		t.Fatalf("authorized fixed fixture clock: authorized=%t err=%v", authorized, err)
+	}
+	if actual := fixedClock(); !actual.Equal(before) {
+		t.Fatalf("authorized fixed fixture clock: now=%s want=%s", actual, before)
+	}
+	fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
+	fixture.queueBed(ordinaryProjectTree)
+	queueProjection()
+	fixed, err := verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
+		clock: fixedClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+		workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
+	})
 	if err != nil || !fixed.Delivery.Sufficient {
 		t.Fatalf("authorized fixed fixture clock lost reusable proof: sufficient=%t err=%v groups=%+v", fixed.Delivery.Sufficient, err, fixed.Groups)
 	}
@@ -222,8 +342,12 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 		{name: "after expiry", at: expires.Add(time.Nanosecond)},
 	} {
 		t.Run(boundary.name, func(t *testing.T) {
+			fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
+			fixture.queueBed(ordinaryProjectTree)
+			queueProjection()
 			revalidated := false
 			result, err := verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
+				workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
 				clock: func() time.Time {
 					if revalidated {
 						return boundary.at
@@ -2421,6 +2545,17 @@ func mustReadTestingFixtureFile(t *testing.T, path string) []byte {
 
 func TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("METASYSTEM_TRUSTED_POLICY_DECISION", "1")
+	if _, _, _, err := trustedPolicyEngine(root, strings.Repeat("a", 40), false); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_ENGINE_REQUIRED") {
+		t.Fatalf("ambient flag bypassed retained engine authentication: %v", err)
+	}
+	if entries, err := os.ReadDir(root); err != nil || len(entries) != 0 {
+		t.Fatalf("ambient policy selection created build inputs: entries=%v err=%v", entries, err)
+	}
+}
+
+func TestPublicTestingPlanAmbientTrustedPolicyDecisionCannotBypassRetainedEngineNativeGit(t *testing.T) {
+	root := t.TempDir()
 	contract := testpolicy.Contract{SchemaVersion: 1,
 		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
 		Surfaces:    []testpolicy.Surface{{ID: "app", Paths: []string{"source.txt"}, Standard: []string{"app"}, Critical: []string{"app"}}},
@@ -2445,13 +2580,6 @@ func TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine(t *testing.T) {
 	testingFixtureGit(t, root, "update-ref", landingRef, head)
 	testingFixtureGit(t, root, "config", "--local", "metasystem.steward.landing-ref", landingRef)
 	t.Setenv("METASYSTEM_TRUSTED_POLICY_DECISION", "1")
-	prepared, err := prepareTesting(testingSelectionRequest{Root: root, Tree: tree, Mode: testpolicy.ModeStandard, Purpose: testpolicy.PurposeDiagnostic})
-	if err == nil && (!strings.HasPrefix(prepared.JudgeKey, proofrun.JudgeCompatibilityVersion+":") || strings.Contains(prepared.JudgeKey, ":unreadable:")) {
-		t.Fatalf("preparation did not compute a readable judge key: %q", prepared.JudgeKey)
-	}
-	if err == nil || !strings.Contains(err.Error(), "TEST_POLICY_ENGINE_REQUIRED") {
-		t.Fatalf("ordinary caller bypassed retained engine authentication with an ambient flag: %v", err)
-	}
 	engine := filepath.Join(t.TempDir(), "metasystem")
 	build := exec.Command("go", "build", "-buildvcs=false", "-o", engine, ".")
 	if output, buildErr := build.CombinedOutput(); buildErr != nil {

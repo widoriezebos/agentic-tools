@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -22,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -1189,6 +1192,7 @@ func TestGoalSetObligationTemporaryWordFlagsTravelTogether(t *testing.T) {
 }
 
 func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.T) {
+	denyPriorityGit(t)
 	fixture := newObligationCommandFixture(t)
 	root := fixture.root()
 	dependencies := fixture.dependencies()
@@ -1321,23 +1325,10 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 }
 
 func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	for _, policy := range []string{"path-classes.txt", "landing-classes.json"} {
-		data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", policy))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(root, "scripts", "agents", policy), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.MkdirAll(filepath.Join(root, "memory"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "memory", "rulings.md"), []byte("| R-35-m0 | landing class authority |\n| R-54-m1 | tier-1 landing authority |\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	denyPriorityGit(t)
+	fixture := newObligationCommandFixture(t)
+	root := fixture.root()
+	commit := strings.Repeat("6", 40)
 	message := strings.Join([]string{
 		"carried fixture", "", "Carry: fixture-word", "Carried-By: human:Wido",
 		"Carried-Tree: workspace=" + strings.Repeat("a", 40) + " project=" + strings.Repeat("b", 40),
@@ -1346,37 +1337,44 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 		"Carried-Ledger: " + strings.Repeat("e", 40),
 		"Landing-Provenance: carried opid=fixture-word", "",
 	}, "\n")
-	goalSyncMutationGit(t, root, "add", "scripts/agents/path-classes.txt", "scripts/agents/landing-classes.json", "memory/rulings.md")
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", message)
-	commit := goalSyncMutationGit(t, root, "rev-parse", "HEAD")
 	finding := "carried:" + commit
-
+	messageReads := 0
+	readCommit := func(gotRoot, gotCommit string) ([]byte, error) {
+		if gotRoot != root || gotCommit != commit {
+			t.Fatalf("commit message requested for root=%q commit=%q", gotRoot, gotCommit)
+		}
+		messageReads++
+		return []byte(message), nil
+	}
 	goalPath := filepath.Join(root, "plans", "goals", "standing-validation.md")
-	goalData, err := os.ReadFile(goalPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	goalFile, problems := goal.ParseFile(goalData)
-	if len(problems) != 0 {
-		t.Fatalf("parse carried goal fixture: %v", problems)
-	}
+	goalFile, _ := fixture.acceptedGoal()
 	goalFile.ReviewObligations = append(goalFile.ReviewObligations, goal.ReviewObligation{
 		Finding: finding, Chain: goal.HumanCarriedChain, Artifact: "commit:" + commit, Test: "pending", State: "open",
 	})
-	if err := os.WriteFile(goalPath, goal.RenderFile(goalFile), 0o644); err != nil {
+	goalData := goal.RenderFile(goalFile)
+	if err := os.WriteFile(goalPath, goalData, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	goalSyncMutationGit(t, root, "add", "plans/goals/standing-validation.md")
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", "seed carried review debt")
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	parent := fixture.repo.canonical
+	seed, err := fixture.repo.Build("seed-carried-review-debt", parent, []goal.Change{{Path: "plans/goals/standing-validation.md", Content: goalData}}, "seed carried review debt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome, err := fixture.repo.Publish(parent, seed); err != nil || outcome != goal.CASLanded {
+		t.Fatalf("publish review debt: outcome=%v err=%v", outcome, err)
+	}
+	if err := fixture.repo.AcceptedCAS(parent, seed); err != nil {
+		t.Fatal(err)
+	}
 
 	args := []string{
 		"--root", root, "--id", "standing-validation", "--finding", finding,
 		"--chain", goal.HumanCarriedChain, "--by", "Wido", "--why", "paid the carried debt ", "--lineage", "m1",
 		"--temporary-human-word", "Wido accepts this carried risk", "--review-by", "2026-09-06",
 	}
-	stdout, code := captureStdout(t, func() int { return runGoalAcceptRiskWithAuthority(args, fixedTemporaryGoalAuthority) })
+	stdout, code := captureStdout(t, func() int {
+		return runGoalAcceptRiskWithFacts(args, fixedTemporaryGoalAuthority, fixture.commandNow, fixture.dependencies(), readCommit)
+	})
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("goal accept-risk = exit %d output %q", code, stdout)
 	}
@@ -1388,9 +1386,24 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 	if !strings.Contains(string(registerData), `"acceptanceReason":"paid the carried debt"`) || strings.Contains(string(registerData), `paid the carried debt `) {
 		t.Fatalf("goal accept-risk did not trim the counselor reason: %s", registerData)
 	}
-	goalSyncMutationGit(t, root, "add", "records/counselor/accepted-risk-register.jsonl")
-	candidateTree := goalSyncMutationGit(t, root, "write-tree")
-	endpoint, err := goal.ResolveEndpoint(root)
+	accepted, _ := fixture.acceptedGoal()
+	if len(accepted.History) == 0 {
+		t.Fatal("accepted goal has no history")
+	}
+	decision := accepted.History[len(accepted.History)-1]
+	if len(accepted.ReviewObligations) != 1 || accepted.ReviewObligations[0].Finding != finding || accepted.ReviewObligations[0].State != "discharged" || accepted.ReviewObligations[0].Test != "accepted-risk:"+decision.Opid ||
+		len(accepted.AcceptedRisks) != 1 || accepted.AcceptedRisks[0].Finding != finding || accepted.AcceptedRisks[0].Chain != goal.HumanCarriedChain || accepted.AcceptedRisks[0].Opid != decision.Opid ||
+		decision.Verb != "accept-risk" || decision.Reason != "paid the carried debt" {
+		t.Fatalf("accepted goal lacks the carried decision: %+v", accepted)
+	}
+	var proofRecord struct {
+		OperationID string `json:"operationId"`
+		Action      string `json:"action"`
+	}
+	if err := json.Unmarshal(fixture.proofRecord(), &proofRecord); err != nil || proofRecord.OperationID != decision.Opid || proofRecord.Action != "goal accept-risk" {
+		t.Fatalf("carried authority proof does not match decision: record=%+v err=%v", proofRecord, err)
+	}
+	endpoint, err := fixture.dependencies().endpoint(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1398,10 +1411,113 @@ func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := landing.ValidateCarriedCandidatePaths(landing.ObserveParams{
+	if projection.Tip != fixture.repo.accepted || projection.Tree.Live[accepted.Id] == nil {
+		t.Fatalf("projected accepted goal does not match accepted tip %s", fixture.repo.accepted)
+	}
+	policyFiles := map[string][]byte{"memory/rulings.md": []byte("| R-35-m0 | landing class authority |\n| R-54-m1 | tier-1 landing authority |\n")}
+	for _, name := range []string{"path-classes.txt", "landing-classes.json"} {
+		policyFiles["scripts/agents/"+name], err = os.ReadFile(filepath.Join("..", "..", "scripts", "agents", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	const riskPath = "records/counselor/accepted-risk-register.jsonl"
+	baseTree, candidateTree := strings.Repeat("7", 40), strings.Repeat("8", 40)
+	pathOID := map[string]string{
+		"scripts/agents/landing-classes.json": strings.Repeat("1", 40),
+		"scripts/agents/path-classes.txt":     strings.Repeat("2", 40),
+		"memory/rulings.md":                   strings.Repeat("3", 40),
+	}
+	blobs := map[string][]byte{}
+	for path, data := range policyFiles {
+		blobs[pathOID[path]] = data
+	}
+	riskOID := strings.Repeat("9", 40)
+	blobs[riskOID] = registerData
+	pins := []string{"-C", root, "-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
+	calls := map[string]int{}
+	raw := func(request gittree.RawRequest) gittree.RawResult {
+		if request.Dir != root || len(request.Args) < len(pins) || !slices.Equal(request.Args[:len(pins)], pins) || len(request.Stdin) != 0 {
+			t.Fatalf("unexpected raw Git request: %+v", request)
+		}
+		args := request.Args[len(pins):]
+		if request.Operation != "git "+strings.Join(args, " ") {
+			t.Fatalf("raw Git operation %q disagrees with args %q", request.Operation, args)
+		}
+		calls[strings.Join(args, "\x00")]++
+		answer := func(data []byte) gittree.RawResult { return gittree.RawResult{Stdout: data} }
+		switch {
+		case slices.Equal(args, []string{"rev-parse", "HEAD^{tree}"}):
+			return answer([]byte(baseTree + "\n"))
+		case slices.Equal(args, []string{"rev-parse", "--show-prefix"}):
+			return answer([]byte("\n"))
+		case slices.Equal(args, []string{"diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", baseTree, candidateTree, "--"}):
+			return answer([]byte(riskPath + "\x00"))
+		case len(args) == 8 && slices.Equal(args[:5], []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree"}) && args[6] == "--":
+			path, tree := args[7], args[5]
+			oid := pathOID[path]
+			if tree == baseTree && path == riskPath {
+				return answer(nil)
+			}
+			if tree == candidateTree && path == riskPath {
+				oid = riskOID
+			}
+			if oid != "" && (tree == baseTree || tree == candidateTree && path == riskPath) {
+				return answer([]byte("100644 blob " + oid + "\t" + path + "\x00"))
+			}
+		case len(args) == 3 && args[0] == "cat-file" && args[1] == "blob":
+			if data, ok := blobs[args[2]]; ok {
+				return answer(data)
+			}
+		}
+		t.Fatalf("unexpected raw Git request args: %q", args)
+		return gittree.RawResult{}
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerCalls := 0
+	resolver := stateroot.NewResolver(func(path string) (string, error) {
+		if path != canonicalRoot {
+			t.Fatalf("unexpected repository-top lookup %q; want %q", path, canonicalRoot)
+		}
+		ownerCalls++
+		return canonicalRoot, nil
+	}, func() (string, error) { t.Fatal("unexpected executable lookup"); return "", nil })
+	if err := landing.ValidateCarriedCandidatePathsWithWorkspace(landing.ObserveParams{
 		RepoRoot: root, CandidateTree: candidateTree, Carried: "fixture-word",
-	}, projection.Tree); err != nil {
+	}, projection.Tree, gittree.Workspace{Dir: root, RawSource: raw}, &resolver, readCommit); err != nil {
 		t.Fatalf("carried admission refused the command's accepted-risk line: %v", err)
+	}
+	if messageReads != 3 {
+		t.Fatalf("carried commit message read %d times; want validation, append, and landing", messageReads)
+	}
+	if ownerCalls != 1 {
+		t.Fatalf("landing owner resolved %d times; want once", ownerCalls)
+	}
+	prefixKey := strings.Join([]string{"rev-parse", "--show-prefix"}, "\x00")
+	if calls[prefixKey] != 2 {
+		t.Fatalf("workspace prefix read %d times; want twice", calls[prefixKey])
+	}
+	delete(calls, prefixKey)
+	wantCalls := [][]string{{"rev-parse", "HEAD^{tree}"}, {"diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", baseTree, candidateTree, "--"}}
+	for _, path := range []string{"scripts/agents/landing-classes.json", "memory/rulings.md", "scripts/agents/path-classes.txt", riskPath} {
+		wantCalls = append(wantCalls, []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", baseTree, "--", path})
+		if oid := pathOID[path]; oid != "" {
+			wantCalls = append(wantCalls, []string{"cat-file", "blob", oid})
+		}
+	}
+	wantCalls = append(wantCalls, []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", candidateTree, "--", riskPath}, []string{"cat-file", "blob", riskOID})
+	for _, args := range wantCalls {
+		key := strings.Join(args, "\x00")
+		if calls[key] != 1 {
+			t.Fatalf("raw Git fact %q consumed %d times; want once", args, calls[key])
+		}
+		delete(calls, key)
+	}
+	if len(calls) != 0 {
+		t.Fatalf("unexpected raw Git facts consumed: %v", calls)
 	}
 }
 
@@ -1714,38 +1830,60 @@ func TestGoalSecondRelayedSetObligationRefusesWithFirstAct(t *testing.T) {
 }
 
 func TestForeignLandedAuthorityKeepsGoalTreeUsable(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	amendSyncedGoalFixture(t, root, "land renewed authority marker", func(file *goal.GoalFile) {
-		file.Revision++
-		file.History = append(file.History, goal.HistoryLine{
-			At: "2026-09-07T10:00:00Z", Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAE", "mac-cli", "m1"),
-			Verb: "set-obligation", Actor: "human:Wido", Targets: []string{"standing-validation"}, Keep: -1,
-			AuthorityOutcome: goal.AuthorityOutcomeTemporaryHumanWord, AuthorityReviewBy: "2026-09-07",
-			AuthorityRuling: "R-33-m1", TemporaryHumanWord: "Wido renews this obligation",
-		})
-		file.Obligation = &goal.GovernedObligation{
-			Revision: file.Revision, BudgetRevision: file.Claimed.Revision, State: goal.ObligationDraft, Owner: "Wido",
-			AuthorityOutcome: goal.AuthorityOutcomeTemporaryHumanWord, AuthorityReviewBy: "2026-09-07",
-			AuthorityRuling: "R-33-m1", TemporaryHumanWord: "Wido renews this obligation",
-			Effects: []goal.GoverningEffect{goal.EffectAuthorizeSpend},
-			Assumptions: goal.ObligationAssumptions{
-				Recurrence: goal.SingleExperiment, Platform: "darwin/arm64", ToolchainIdentity: "go-fixture",
-				SurfaceDigest: "fixture-surface", MaxActiveJobs: 1, TimingEnvelopeSeconds: 60,
-				ObservationSource: "run-terminal-record",
-			},
-			Triggers: goal.HumanReviewTriggers{
-				ValueJudgment: "unknown", Reversibility: "reversible", SevereHarm: "no", UnfamiliarApproach: "no",
-				TestDiscrimination: "strong", CorrelatedAssumptionRisk: "no", AuthorityScopeChange: "no", DestructiveReach: "none",
-			},
-		}
+	denyPriorityGit(t)
+	fixture := newObligationCommandFixture(t)
+	root := fixture.root()
+	file, _ := fixture.acceptedGoal()
+	file.Revision++
+	file.History = append(file.History, goal.HistoryLine{
+		At: "2026-09-07T10:00:00Z", Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAE", "mac-cli", "m1"),
+		Verb: "set-obligation", Actor: "human:Wido", Targets: []string{"standing-validation"}, Keep: -1,
+		AuthorityOutcome: goal.AuthorityOutcomeTemporaryHumanWord, AuthorityReviewBy: "2026-09-07",
+		AuthorityRuling: "R-33-m1", TemporaryHumanWord: "Wido renews this obligation",
 	})
+	file.Obligation = &goal.GovernedObligation{
+		Revision: file.Revision, BudgetRevision: file.Claimed.Revision, State: goal.ObligationDraft, Owner: "Wido",
+		AuthorityOutcome: goal.AuthorityOutcomeTemporaryHumanWord, AuthorityReviewBy: "2026-09-07",
+		AuthorityRuling: "R-33-m1", TemporaryHumanWord: "Wido renews this obligation",
+		Effects: []goal.GoverningEffect{goal.EffectAuthorizeSpend},
+		Assumptions: goal.ObligationAssumptions{
+			Recurrence: goal.SingleExperiment, Platform: "darwin/arm64", ToolchainIdentity: "go-fixture",
+			SurfaceDigest: "fixture-surface", MaxActiveJobs: 1, TimingEnvelopeSeconds: 60,
+			ObservationSource: "run-terminal-record",
+		},
+		Triggers: goal.HumanReviewTriggers{
+			ValueJudgment: "unknown", Reversibility: "reversible", SevereHarm: "no", UnfamiliarApproach: "no",
+			TestDiscrimination: "strong", CorrelatedAssumptionRisk: "no", AuthorityScopeChange: "no", DestructiveReach: "none",
+		},
+	}
+	parent := fixture.repo.accepted
+	tip, err := fixture.repo.Build(goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAC", "mac-cli", "m1"), parent,
+		[]goal.Change{{Path: "plans/goals/standing-validation.md", Content: goal.RenderFile(file)}}, "land renewed authority marker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome, err := fixture.repo.Publish(parent, tip); err != nil || outcome != goal.CASLanded {
+		t.Fatalf("publish renewed authority: outcome=%v err=%v", outcome, err)
+	}
+	if err := fixture.repo.AcceptedCAS(parent, tip); err != nil {
+		t.Fatal(err)
+	}
+	if accepted, _ := fixture.acceptedGoal(); accepted.Revision != file.Revision ||
+		accepted.Obligation == nil || accepted.Obligation.AuthorityRuling != "R-33-m1" ||
+		accepted.History[len(accepted.History)-1].AuthorityOutcome != goal.AuthorityOutcomeTemporaryHumanWord {
+		t.Fatalf("renewed authority marker was not accepted: %+v", accepted)
+	}
+	resolve := fixture.dependencies().endpoint
 
 	for name, run := range map[string]func() int{
-		"list":  func() int { return runGoalList([]string{"--root", root}) },
-		"show":  func() int { return runGoalShow([]string{"--root", root, "--id", "standing-validation"}) },
-		"next":  func() int { return runGoalNext([]string{"--root", root}) },
-		"fetch": func() int { return runGoalFetch([]string{"--root", root}) },
+		"list": func() int { return runGoalListWithResolver([]string{"--root", root}, resolve) },
+		"show": func() int {
+			return runGoalShowWithResolver([]string{"--root", root, "--id", "standing-validation"}, resolve)
+		},
+		"next": func() int {
+			return runGoalNextWithInputs([]string{"--root", root}, fixture.dependencies(), fixture.commandNow)
+		},
+		"fetch": func() int { return runGoalFetchWithResolver([]string{"--root", root}, resolve) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			stderr, code := captureStderr(t, run)
@@ -1757,7 +1895,7 @@ func TestForeignLandedAuthorityKeepsGoalTreeUsable(t *testing.T) {
 
 	mutationArgs := append(completeSetObligationArgs(root),
 		"--temporary-human-word", "Wido authorizes current obligation", "--review-by", "2026-09-06")
-	if stdout, stderr, code := captureSetObligationOutputWithAuthority(t, mutationArgs, fixedTemporaryGoalAuthority); code != 0 {
+	if stdout, stderr, code := fixture.run(mutationArgs, fixedTemporaryGoalAuthority); code != 0 {
 		t.Fatalf("a goal mutation could not use the tree after renewal: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 }

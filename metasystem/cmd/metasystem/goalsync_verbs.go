@@ -394,6 +394,10 @@ func runGoalMigrate(args []string) int {
 // runGoalFetch is the read-side advance: validate, then CAS the
 // accepted ref — how this machine observes the fleet.
 func runGoalFetch(args []string) int {
+	return runGoalFetchWithResolver(args, goal.ResolveEndpoint)
+}
+
+func runGoalFetchWithResolver(args []string, resolve func(string) (goal.Endpoint, error)) int {
 	flags := flag.NewFlagSet("goal fetch", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "checkout root")
 	if flags.Parse(args) != nil {
@@ -403,7 +407,7 @@ func runGoalFetch(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal fetch: --root is required")
 		return 2
 	}
-	endpoint, err := goal.ResolveEndpoint(*root)
+	endpoint, err := resolve(*root)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "goal fetch: %v\n", err)
 		return 1

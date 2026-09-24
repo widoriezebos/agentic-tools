@@ -1192,6 +1192,10 @@ func parseSyncFlagValues(name string, args []string) (*syncFlags, error) {
 }
 
 func runGoalDischargeReviewObligation(args []string) int {
+	return runGoalDischargeReviewObligationWithOwners(args, syncReq, dischargeReviewObligation)
+}
+
+func runGoalDischargeReviewObligationWithOwners(args []string, requestBuilder func(verb, root, by, lineage string) (goal.VerbRequest, error), discharge func(goal.VerbRequest, string, string, string, string, string, ...goal.DischargeEvidence) (goal.PublishResult, error)) int {
 	f, ok := parseSyncFlags("discharge-review-obligation", args)
 	if !ok || f.id == "" || f.finding == "" || f.chain == "" || f.by == "" || f.test == "" && (f.chain == goal.HumanCarriedChain || f.implementationChain == "" || f.artifact == "" || f.result == "" || f.critic == "") {
 		fmt.Fprintln(os.Stderr, "goal discharge-review-obligation needs --id, --finding, --chain, and --by; non-fixture obligations also need --test, while fixture obligations need --implementation-chain, --artifact, --result, and --critic")
@@ -1208,7 +1212,7 @@ func runGoalDischargeReviewObligation(args []string) int {
 			return 1
 		}
 	}
-	req, err := syncReq("discharge-review-obligation", f.root, f.by, f.lineage)
+	req, err := requestBuilder("discharge-review-obligation", f.root, f.by, f.lineage)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -1217,7 +1221,7 @@ func runGoalDischargeReviewObligation(args []string) int {
 		req.Actor.Human = f.by
 	}
 	evidence := goal.DischargeEvidence{Root: f.root, ImplementationChain: f.implementationChain, Artifact: f.artifact, ResultRunID: f.result, CriticRoot: f.critic}
-	res, err := dischargeReviewObligation(req, f.id, f.finding, f.chain, f.by, f.test, evidence)
+	res, err := discharge(req, f.id, f.finding, f.chain, f.by, f.test, evidence)
 	return printSyncResult(res, err)
 }
 
@@ -1230,6 +1234,10 @@ func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) in
 }
 
 func runGoalAcceptRiskWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
+	return runGoalAcceptRiskWithFacts(args, prove, commandNow, dependencies, nil)
+}
+
+func runGoalAcceptRiskWithFacts(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, commitMessage func(root, commit string) ([]byte, error)) int {
 	values := newHumanVerbValues("accept-risk", args)
 	f, ok := parseHumanSyncFlags(values, "accept-risk", args)
 	if !ok {
@@ -1274,7 +1282,7 @@ func runGoalAcceptRiskWithInputs(args []string, prove goalAuthorityProver, comma
 			fmt.Fprintln(os.Stderr, commitErr)
 			return 1
 		}
-		carriedRisk = counselor.CarriedAcceptedRiskAppend{Goal: f.id, Finding: f.finding, By: f.by, Why: f.why, OpID: opid, Commit: commit, RecordedAt: req.Now}
+		carriedRisk = counselor.CarriedAcceptedRiskAppend{Goal: f.id, Finding: f.finding, By: f.by, Why: f.why, OpID: opid, Commit: commit, RecordedAt: req.Now, CommitMessage: commitMessage}
 		if err := counselor.ValidateCarriedAcceptedRisk(f.root, carriedRisk); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -2066,16 +2074,20 @@ func runGoalReleaseWithRequest(args []string, requestBuilder func(string, string
 }
 
 func runGoalTrunkRed(args []string) int {
+	return runGoalTrunkRedWithRequest(args, nil, nil)
+}
+
+func runGoalTrunkRedWithRequest(args []string, requestBuilder func(string, string, string, string) (goal.VerbRequest, error), branchRead func(string, ...string) (string, error)) int {
 	if len(args) == 0 || args[0] != "own" && args[0] != "close" {
 		fmt.Fprintln(os.Stderr, "goal trunk-red needs one of:\n  own --id <entry> --goal <fix-goal> [--branch <name>] [--by <human> [--to <machine>]]\n  close --id <entry> --by <human> --why <text>")
 		return 2
 	}
 	sub := args[0]
 	if sub == "own" {
-		run := runSyncOnly("trunk-red own", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		run := runSyncOnlyWithRequest("trunk-red own", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 			branchCommit := ""
 			if f.branch != "" {
-				commit, err := resolveTrunkRedBranch(req.Endpoint, f.branch)
+				commit, err := resolveTrunkRedBranchWithRead(req.Endpoint, f.branch, branchRead)
 				if err != nil {
 					return goal.PublishResult{}, err
 				}
@@ -2083,18 +2095,21 @@ func runGoalTrunkRed(args []string) int {
 			}
 			return goal.OwnTrunkRed(req, goal.TrunkRedOwnArgs{Entry: f.id, Goal: f.goal, Branch: f.branch,
 				BranchCommit: branchCommit, To: f.to, By: f.by})
-		}, "id", "goal")
+		}, requestBuilder, "id", "goal")
 		return run(args[1:])
 	}
-	run := runSyncOnly("trunk-red close", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+	run := runSyncOnlyWithRequest("trunk-red close", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.CloseTrunkRed(req, goal.TrunkRedCloseArgs{Entry: f.id, By: f.by, Why: strings.TrimSpace(f.why)})
-	}, "id", "why")
+	}, requestBuilder, "id", "why")
 	return run(args[1:])
 }
 
-func resolveTrunkRedBranch(endpoint goal.Endpoint, name string) (string, error) {
+func resolveTrunkRedBranchWithRead(endpoint goal.Endpoint, name string, read func(string, ...string) (string, error)) (string, error) {
+	if read == nil {
+		read = goalBranchGit
+	}
 	for _, ref := range []string{"refs/heads/" + name, "refs/remotes/" + endpoint.Remote + "/" + name} {
-		if commit, err := goalBranchGit(endpoint.Root, "rev-parse", "--verify", "--quiet", ref); err == nil {
+		if commit, err := read(endpoint.Root, "rev-parse", "--verify", "--quiet", ref); err == nil {
 			return commit, nil
 		}
 	}

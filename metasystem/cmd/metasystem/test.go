@@ -1890,10 +1890,28 @@ func testingOwnedResources(prepared testingPreparation, attempt proofrun.Attempt
 }
 
 func bindTestingFreshnessProjection(request *proofrun.TestRunRequest, installation string) error {
+	return bindTestingFreshnessProjectionWithWorkspace(request, installation, gittree.Workspace{Dir: installation})
+}
+
+type testingProjectionAccess struct {
+	raw func(gittree.RawRequest) gittree.RawResult
+}
+
+func (a testingProjectionAccess) TopLevel(root string) (string, error) {
+	return (gittree.Workspace{Dir: root, RawSource: a.raw}).TopLevel()
+}
+func (a testingProjectionAccess) Prefix(root string) (string, error) {
+	return (gittree.Workspace{Dir: root, RawSource: a.raw}).Prefix()
+}
+func (a testingProjectionAccess) FilterPrefixes(root, tree string, paths []string) (string, error) {
+	return (gittree.Workspace{Dir: root, RawSource: a.raw}).FilterTreePrefixes(tree, paths)
+}
+
+func bindTestingFreshnessProjectionWithWorkspace(request *proofrun.TestRunRequest, installation string, workspace gittree.Workspace) error {
 	if request.FreshnessEpisode == "" {
 		return nil
 	}
-	tree, err := landing.ProjectWorkspaceTree(installation, request.CandidateTree)
+	tree, err := landing.ProjectWorkspaceTreeWith(installation, request.CandidateTree, testingProjectionAccess{raw: workspace.RawSource})
 	if err != nil {
 		return err
 	}
@@ -2131,12 +2149,16 @@ func verifyRetainedTesting(request testingSelectionRequest) (proofrun.TestResult
 	}
 	return verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
 		clock: commandClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+		workspace: gittree.Workspace{Dir: prepared.ProjectRoot}, candidateIO: nativeCandidateEngineIO(),
 	})
 }
 
 type retainedTestingVerification struct {
-	clock      func() time.Time
-	revalidate func(context.Context, proofrun.TestRunRequest, []proofrun.Attempt) (map[string]string, error)
+	clock         func() time.Time
+	revalidate    func(context.Context, proofrun.TestRunRequest, []proofrun.Attempt) (map[string]string, error)
+	workspace     gittree.Workspace
+	candidateIO   candidateEngineIO
+	openCandidate func(string, string) (proofrun.CandidateWorkspace, error)
 }
 
 func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared testingPreparation, dependencies retainedTestingVerification) (proofrun.TestResult, error) {
@@ -2158,8 +2180,8 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 		return proofrun.TestResult{}, err
 	}
 	identityContext, cancelIdentity := context.WithCancel(context.Background())
-	candidateEngineBuildIdentity, err := candidateEngineBuildIdentity(identityContext, gittree.Workspace{Dir: prepared.ProjectRoot},
-		prepared.Prefix, prepared.CandidateTree, prepared.Environment)
+	candidateEngineBuildIdentity, err := candidateEngineBuildIdentityUsing(identityContext, dependencies.workspace,
+		prepared.Prefix, prepared.CandidateTree, prepared.Environment, dependencies.candidateIO)
 	cancelIdentity()
 	if err != nil {
 		return proofrun.TestResult{}, err
@@ -2169,6 +2191,7 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 		return proofrun.TestResult{}, err
 	}
 	runRequest := testingRunRequest(prepared, "", "", "", candidateEngineDigest, candidateEngineBuildIdentity)
+	runRequest.WithCandidateOpener(dependencies.openCandidate)
 	metadataContext, cancelMetadata := context.WithCancel(context.Background())
 	identities, err := dependencies.revalidate(metadataContext, runRequest, attempts)
 	cancelMetadata()
@@ -2184,7 +2207,7 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 		return proofrun.TestResult{}, fmt.Errorf("selected fresh testing groups require the same explicit episode and expiry used by test run")
 	}
 	runRequest.FreshGroups = freshGroups
-	if err := bindTestingFreshnessProjection(&runRequest, prepared.Installation); err != nil {
+	if err := bindTestingFreshnessProjectionWithWorkspace(&runRequest, prepared.Installation, dependencies.workspace); err != nil {
 		return proofrun.TestResult{}, err
 	}
 	runRequest.FreshnessBinding = testingFreshnessBinding(runRequest, identities, request.FreshEpisode)

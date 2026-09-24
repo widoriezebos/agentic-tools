@@ -272,10 +272,14 @@ func AttestedDeclaration(commit, snapshot, base string) CommitDeclaration {
 // caller supplies the goal approver's configured identity; ambient git author
 // and committer configuration is intentionally ignored.
 func CommitWithWrapper(root string, declaration CommitDeclaration, goalID, receipt, message, authorName, authorEmail, landedBy string) error {
+	return CommitWithWrapperWithRead(root, declaration, goalID, receipt, message, authorName, authorEmail, landedBy, landingGitOutput)
+}
+
+func CommitWithWrapperWithRead(root string, declaration CommitDeclaration, goalID, receipt, message, authorName, authorEmail, landedBy string, readGit func(root string, args ...string) (string, error)) error {
 	if authorName == "" || authorEmail == "" {
 		return fmt.Errorf("BATCH_LAND_AUTHOR_UNBOUND: goal %s has no configured approver identity", goalID)
 	}
-	before, err := landingGitOutput(root, "rev-parse", "HEAD")
+	before, err := readGit(root, "rev-parse", "HEAD")
 	if err != nil {
 		return err
 	}
@@ -299,14 +303,14 @@ func CommitWithWrapper(root string, declaration CommitDeclaration, goalID, recei
 			"GIT_COMMITTER_NAME=" + authorName, "GIT_COMMITTER_EMAIL=" + authorEmail, "METASYSTEM_LANDED_BY=" + landedBy}}); err != nil {
 		return err
 	}
-	after, err := landingGitOutput(root, "rev-parse", "HEAD")
+	after, err := readGit(root, "rev-parse", "HEAD")
 	if err != nil {
 		return err
 	}
 	if after == before {
 		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("goal %s commit boundary did not advance HEAD by exactly one commit", goalID))
 	}
-	parent, err := landingGitOutput(root, "rev-parse", after+"^")
+	parent, err := readGit(root, "rev-parse", after+"^")
 	if err != nil || parent != before {
 		return refuseBatch("BATCH_LAND_UNPROVENANCED", fmt.Sprintf("goal %s commit boundary did not advance HEAD by exactly one commit", goalID))
 	}

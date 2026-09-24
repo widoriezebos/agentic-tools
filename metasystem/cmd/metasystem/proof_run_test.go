@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -684,9 +685,53 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 	if err := os.WriteFile(tracked, []byte("clean\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, root, "init", "-q", "-b", "main")
-	runGit(t, root, "add", "internal/tracked")
-	runGit(t, root, "-c", "user.name=metasystem", "-c", "user.email=metasystem@example.invalid", "commit", "-qm", "initial")
+	cleanReads := [][]string{
+		{"rev-parse", "--show-prefix"},
+		{"rev-parse", "--show-toplevel"},
+		{"diff", "--no-renames", "--name-only", "-z", "HEAD", "--"},
+		{"ls-files", "--others", "--exclude-standard", "--full-name", "-z"},
+		{"ls-files", "--others", "-i", "--exclude-standard", "--full-name", "-z"},
+	}
+	assertState := func(want string, reads [][]string) {
+		t.Helper()
+		called := 0
+		read := func(gotRoot string, args ...string) ([]byte, error) {
+			t.Helper()
+			if called >= len(reads) {
+				t.Fatalf("unexpected raw Git read: root=%q args=%q", gotRoot, args)
+			}
+			if gotRoot != root || !slices.Equal(args, reads[called]) {
+				t.Fatalf("raw Git read %d: root=%q args=%q, want root=%q args=%q", called, gotRoot, args, root, reads[called])
+			}
+			called++
+			switch called {
+			case 1:
+				return []byte("\n"), nil
+			case 2:
+				return []byte(root + "\n"), nil
+			case 3:
+				data, err := os.ReadFile(tracked)
+				if err != nil {
+					t.Fatal(err)
+				}
+				switch {
+				case bytes.Equal(data, []byte("clean\n")):
+					return nil, nil
+				case bytes.Equal(data, []byte("dirty\n")):
+					return []byte("internal/tracked\x00"), nil
+				default:
+					t.Fatalf("unexpected tracked file bytes: %q", data)
+				}
+			}
+			return nil, nil
+		}
+		if state := proofRunWitnessStateWithRead(root, read); state != want {
+			t.Fatalf("witness state = %q, want %q", state, want)
+		}
+		if called != len(reads) {
+			t.Fatalf("raw Git reads consumed %d of %d operations", called, len(reads))
+		}
+	}
 	for name, value := range map[string]string{
 		"METASYSTEM_GATE_WITNESS": "", "METASYSTEM_GATE_WITNESS_EXPORT": "",
 		"METASYSTEM_COVERAGE_RATCHET_SEED": "0", "METASYSTEM_GATE_FORCE": "0",
@@ -694,24 +739,16 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 	} {
 		t.Setenv(name, value)
 	}
-	if state := proofRunWitnessState(root); state != "unarmed" {
-		t.Fatalf("clean state = %q", state)
-	}
+	assertState("unarmed", cleanReads)
 	if err := os.WriteFile(tracked, []byte("dirty\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if state := proofRunWitnessState(root); state != "frozen" {
-		t.Fatalf("eligible dirty state = %q", state)
-	}
+	assertState("frozen", cleanReads[:3])
 	t.Setenv("METASYSTEM_GATE_FORCE", "1")
-	if state := proofRunWitnessState(root); state != "unarmed" {
-		t.Fatalf("forced dirty state = %q", state)
-	}
+	assertState("unarmed", nil)
 	t.Setenv("METASYSTEM_GATE_FORCE", "0")
 	t.Setenv("METASYSTEM_GATE_WITNESS", "unusable")
-	if state := proofRunWitnessState(root); state != "unarmed" {
-		t.Fatalf("unusable witness state = %q", state)
-	}
+	assertState("unarmed", nil)
 
 	script := filepath.Join(root, "scripts", "agents", "go-gate.sh")
 	if err := os.MkdirAll(filepath.Dir(script), 0o700); err != nil {
@@ -721,20 +758,14 @@ func TestProofRunWitnessStateUsesProbeAndFrozenEligibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_GATE_WITNESS", "usable")
-	if state := proofRunWitnessState(root); state != "armed" {
-		t.Fatalf("usable witness state = %q", state)
-	}
+	assertState("armed", nil)
 	export := filepath.Join(root, "export")
 	t.Setenv("METASYSTEM_GATE_WITNESS_EXPORT", export)
-	if state := proofRunWitnessState(root); state != "unarmed" {
-		t.Fatalf("missing exported witness state = %q", state)
-	}
+	assertState("unarmed", nil)
 	if err := os.Mkdir(export, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if state := proofRunWitnessState(root); state != "frozen" {
-		t.Fatalf("usable exported witness state = %q", state)
-	}
+	assertState("frozen", nil)
 }
 
 func runGit(t *testing.T, root string, arguments ...string) {

@@ -351,7 +351,7 @@ fi
 
 if [[ "$fixture_scenario" == brain-actor-seam-coverage ]]; then
 	actor_sites=$(cd "$root" && find cmd/metasystem internal -type f -name '*.go' ! -name '*_test.go' \
-		-exec grep -H -E 'goal\.Actor\{|Actor\.Human[[:space:]]*=[^=]|classifyVerbCaller\(|lease\.ClassifyVerbAt\(e\.Root' {} + \
+		-exec grep -H -E 'goal\.Actor\{|Actor\.Human[[:space:]]*=[^=]|classifyVerbCaller(With)?\(|lease\.ClassifyVerbAt\(e\.Root' {} + \
 		| grep -v '^cmd/metasystem/goalsync_mutations.go:[[:space:]]*Endpoint: e, Actor:' \
 		| LC_ALL=C sort)
 	expected_actor_sites=$(cat <<'ACTOR_SITES'
@@ -364,13 +364,16 @@ cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the announced chec
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the checkout holder has no readable main announcement and lineage")
 cmd/metasystem/goal.go:			return goal.Actor{}, 0, fmt.Errorf("the seat machine could not be resolved: %w", err)
 cmd/metasystem/goal.go:		return goal.Actor{Machine: machine, Lineage: holder.OwnerLineage}, holder.ClaimEpoch, nil
-cmd/metasystem/goal.go:	view, err := classifyVerbCaller(root, callerPid)
+cmd/metasystem/goal.go:	view, err := classifyVerbCallerWith(root, callerPid, repositoryTop)
 cmd/metasystem/goalsync_mutations.go:		classification, classErr := classifyVerbCaller(f.root, int64(os.Getppid()))
 cmd/metasystem/goalsync_mutations.go:		req.Actor.Human = f.by
+cmd/metasystem/goalsync_mutations.go:	classification, classifyErr := classifyVerbCallerWith(root, int64(os.Getppid()), facts.repositoryTop)
 cmd/metasystem/goalsync_verbs.go:		return goal.Actor{}, err
 cmd/metasystem/goalsync_verbs.go:	return goal.Actor{Machine: machine, Lineage: lineage, Human: human}, nil
 cmd/metasystem/landing_batch_trunkred.go:	return &ledgerTrunkRedOwner{endpoint: endpoint, actor: goal.Actor{Machine: machine, Lineage: lineage}, now: time.Now}, nil
+cmd/metasystem/process_verbs.go:	return classifyVerbCallerWith(root, callerPid, stateroot.RepositoryTop)
 cmd/metasystem/process_verbs.go:func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, error) {
+cmd/metasystem/process_verbs.go:func classifyVerbCallerWith(root string, callerPid int64, repositoryTop func(string) (string, error)) (lease.ClassifyResult, error) {
 cmd/metasystem/proof_run.go:				Actor: goal.Actor{Machine: binding.Machine, Lineage: binding.Lineage}, Ulid: ulid, Now: now,
 cmd/metasystem/proof_run.go:	classification, err := classifyVerbCaller(root, int64(os.Getppid()))
 cmd/metasystem/run.go:		view, err := classifyVerbCaller(root, int64(os.Getpid()))

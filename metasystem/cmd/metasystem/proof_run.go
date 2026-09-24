@@ -2354,6 +2354,10 @@ func proofRunDisplayPath(root, path string) string {
 }
 
 func proofRunWitnessState(root string) string {
+	return proofRunWitnessStateWithRead(root, proofRunRawGit)
+}
+
+func proofRunWitnessStateWithRead(root string, read func(string, ...string) ([]byte, error)) string {
 	if os.Getenv("METASYSTEM_GATE_WITNESS") != "" {
 		if proofRunWitnessUsable(root) {
 			if export := os.Getenv("METASYSTEM_GATE_WITNESS_EXPORT"); export != "" {
@@ -2366,7 +2370,7 @@ func proofRunWitnessState(root string) string {
 		}
 		return "unarmed"
 	}
-	if proofRunFrozenWillRun(root) {
+	if proofRunFrozenWillRunWithRead(root, read) {
 		return "frozen"
 	}
 	return "unarmed"
@@ -2393,13 +2397,13 @@ func proofRunEnvironment(name, value string) []string {
 	return append(environment, prefix+value)
 }
 
-func proofRunFrozenWillRun(root string) bool {
+func proofRunFrozenWillRunWithRead(root string, read func(string, ...string) ([]byte, error)) bool {
 	if os.Getenv("METASYSTEM_COVERAGE_RATCHET_SEED") == "1" ||
 		os.Getenv("METASYSTEM_GATE_FORCE") == "1" ||
 		os.Getenv("METASYSTEM_DELIVERY_CONTRACT") == "1" || proofRunAlternateGoInputs() {
 		return false
 	}
-	dirty, proved := proofRunEngineDirty(root)
+	dirty, proved := proofRunEngineDirtyWithRead(root, read)
 	return proved && dirty
 }
 
@@ -2414,12 +2418,16 @@ func proofRunAlternateGoInputs() bool {
 	return false
 }
 
-func proofRunEngineDirty(root string) (bool, bool) {
-	prefixBytes, err := exec.Command("git", "-C", root, "rev-parse", "--show-prefix").Output()
+func proofRunRawGit(root string, args ...string) ([]byte, error) {
+	return exec.Command("git", append([]string{"-C", root}, args...)...).Output()
+}
+
+func proofRunEngineDirtyWithRead(root string, read func(string, ...string) ([]byte, error)) (bool, bool) {
+	prefixBytes, err := read(root, "rev-parse", "--show-prefix")
 	if err != nil {
 		return false, false
 	}
-	gitRootBytes, err := exec.Command("git", "-C", root, "rev-parse", "--show-toplevel").Output()
+	gitRootBytes, err := read(root, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return false, false
 	}
@@ -2435,7 +2443,7 @@ func proofRunEngineDirty(root string) (bool, bool) {
 		{"ls-files", "--others", "-i", "--exclude-standard", "--full-name", "-z"},
 	}
 	for _, arguments := range commands {
-		output, err := exec.Command("git", append([]string{"-C", gitRoot}, arguments...)...).Output()
+		output, err := read(gitRoot, arguments...)
 		if err != nil {
 			return false, false
 		}
