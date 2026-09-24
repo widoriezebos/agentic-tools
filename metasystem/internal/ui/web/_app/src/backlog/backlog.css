@@ -691,6 +691,15 @@
   min-width: 0;
 }
 
+/* A field grows only beside other fields in a row. Stacked in a sheet's
+   column, a growing field takes a share of the sheet's height and the form
+   becomes bands of nothing (the New goal sheet, 2026-09-24). */
+.ms-sheet-body > .ms-act-field,
+.ms-sheet-body > form > .ms-act-field,
+.ms-act-stack > .ms-act-field {
+  flex: 0 0 auto;
+}
+
 .ms-act-field label {
   font-size: 12px;
   line-height: 16px;
