@@ -483,6 +483,72 @@ func TestSeatOpenBlocksRefusesAGoalItDoesNotHold(t *testing.T) {
 	}
 }
 
+// A seat removes an edge from the goal it holds and from no other. It is the
+// rule its open and its block already carry, read from the other end: naming
+// one goal it claims never authorises another, in either direction (S37-01).
+func TestSeatUnblockReachesOnlyTheGoalItHolds(t *testing.T) {
+	t.Parallel()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	budget := testBudget()
+	liveGoalForEdges(t, root, "01J5X00000000000000000BW00", "seat-work", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BW01", "other-work", OriginHuman)
+	liveGoalForEdges(t, root, "01J5X00000000000000000BW02", "settled", OriginMain)
+	concludeForEdges(t, root, "01J5X00000000000000000BW03", "01J5X00000000000000000BW04", "settled")
+
+	// A satisfied edge on each: the done goal holds neither up, and the two
+	// records differ only in who holds them.
+	for _, edge := range []struct{ ulid, id string }{
+		{"01J5X00000000000000000BW05", "seat-work"},
+		{"01J5X00000000000000000BW06", "other-work"},
+	} {
+		if result, err := Block(personReq(root, edge.ulid, "mac-a"), edge.id, "settled"); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("record the satisfied edge on %s: %+v %v", edge.id, result, err)
+		}
+	}
+	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000BW07", "mac-a"), "seat-work", budget); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("the seat claims its goal: %+v %v", result, err)
+	}
+
+	// The goal it does not hold is refused by name, in the shape its block
+	// refusal has, and nothing publishes.
+	before := acceptedTip(t, root)
+	result, err := Unblock(verbReq(root, "01J5X00000000000000000BW08", "mac-a"), "other-work", "settled", nil)
+	if err != nil || result.Outcome != OutcomeRejected ||
+		!strings.Contains(result.Detail, "not this seat's claim") ||
+		!strings.Contains(result.Detail, "a seat removes an edge only from the goal it holds") {
+		t.Fatalf("a seat removed an edge from a goal it does not hold: %+v %v", result, err)
+	}
+	if acceptedTip(t, root) != before {
+		t.Fatal("the refused seat unblock moved the ledger")
+	}
+	tree, err := loadTree(root, before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held := tree.Live["other-work"]; strings.Join(held.Blocked, ",") != "settled" {
+		t.Fatalf("the refused unblock changed the record: %v", held.Blocked)
+	}
+
+	// Its own claim, with a satisfied edge, is the one case it may run.
+	result, err = Unblock(verbReq(root, "01J5X00000000000000000BW09", "mac-a"), "seat-work", "settled", nil)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("a seat could not drop a satisfied edge from its own claim: %+v %v", result, err)
+	}
+	tree, err = loadTree(root, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine := tree.Live["seat-work"]
+	if len(mine.Blocked) != 0 || mine.State != StateClaimed || mine.Claimed == nil {
+		t.Fatalf("the seat's own claim did not drop the edge and keep its claim: state=%s blocked=%v claimed=%+v", mine.State, mine.Blocked, mine.Claimed)
+	}
+	if last := mine.History[len(mine.History)-1]; last.Verb != "unblock" || !strings.Contains(last.Reason, "drops settled") {
+		t.Fatalf("the seat's removal is not in the history as its own verb: %+v", last)
+	}
+	assertFilesParse(t, tree)
+}
+
 // A recovered open rebuilds the same mutation, which means both directions of
 // its dependencies and not whichever one the old argument carried (S37-09).
 func TestRecoveryReplaysAnOpenCarryingBothLists(t *testing.T) {

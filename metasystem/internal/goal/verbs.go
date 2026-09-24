@@ -941,12 +941,8 @@ func recordBlockerEdge(t *TreeGoals, r VerbRequest, blocked, blocker, naming, oc
 		}
 		return nil, fmt.Errorf("%s %s names a goal that is not live", naming, blocked)
 	}
-	if r.Actor.Human == "" && (f.State != StateClaimed || f.Claimed == nil || !ownPair(f.Claimed, r.Actor)) {
-		holder := "unclaimed"
-		if f.Claimed != nil {
-			holder = "claimed by " + f.Claimed.Machine + "+" + f.Claimed.Lineage
-		}
-		return nil, fmt.Errorf("a seat opens only the defect that blocks the goal it holds (R-93-m1e): goal %s is %s, %s, not this seat's claim", blocked, f.State, holder)
+	if r.Actor.Human == "" && !heldBySeat(f, r) {
+		return nil, seatHoldsOnly("a seat opens only the defect that blocks the goal it holds", f, blocked)
 	}
 	if !contains(f.Blocked, blocker) {
 		f.Blocked = sortedUnique(append(append([]string(nil), f.Blocked...), blocker))
@@ -991,6 +987,24 @@ func recordBlockerEdge(t *TreeGoals, r VerbRequest, blocked, blocker, naming, oc
 		Displaced: displaced, Keep: -1, Reason: because,
 	})
 	return f, nil
+}
+
+// heldBySeat reports whether this goal is the acting seat's own claim, which
+// is the whole of a seat's reach over another goal's record.
+func heldBySeat(f *GoalFile, r VerbRequest) bool {
+	return f.State == StateClaimed && f.Claimed != nil && ownPair(f.Claimed, r.Actor)
+}
+
+// seatHoldsOnly is the refusal a seat gets for a goal it does not hold: the
+// rule it crossed, the state that goal is in, and who does hold it. Both edge
+// verbs answer in this shape, because a seat writing an edge and a seat
+// removing one are the same authority question.
+func seatHoldsOnly(rule string, f *GoalFile, id string) error {
+	holder := "unclaimed"
+	if f.Claimed != nil {
+		holder = "claimed by " + f.Claimed.Machine + "+" + f.Claimed.Lineage
+	}
+	return fmt.Errorf("%s (R-93-m1e): goal %s is %s, %s, not this seat's claim", rule, id, f.State, holder)
 }
 
 // namedGoals is what a caller named, in the order it named them: each value
@@ -2717,6 +2731,11 @@ func blockRequest(r VerbRequest, id, blocker string) PublishRequest {
 // terminal and the signed-in session both reach it and the browser's own act
 // is not locked out (S37-04); the proof's provenance lands on the History
 // line exactly as an approval records it.
+//
+// What is left for a seat is one case and one goal: a satisfied edge on the
+// goal it holds. A seat keeps exactly today's power and no more, so its
+// unblock is bounded the way its block is (S37-01), and an edge on any other
+// goal is refused by name.
 func Unblock(r VerbRequest, id, blocker string, proof *humanauthority.Proof) (PublishResult, error) {
 	if strings.TrimSpace(id) == "" || strings.TrimSpace(blocker) == "" {
 		return PublishResult{}, fmt.Errorf("goal unblock names the goal that waits with --id and the goal it no longer waits for with --blocker")
@@ -2768,6 +2787,14 @@ func unblockRequest(r VerbRequest, id, blocker string, proof *humanauthority.Pro
 					return nil, err
 				}
 			} else {
+				// The satisfied case is the only one a seat can reach, and it
+				// reaches it on one goal: the one it holds. A seat keeps
+				// exactly today's power, and naming one goal it claims never
+				// authorises another (S37-01) — in this direction as in the
+				// other, because they are the same rule seen from both ends.
+				if r.Actor.Human == "" && !heldBySeat(f, r) {
+					return nil, seatHoldsOnly("a seat removes an edge only from the goal it holds", f, id)
+				}
 				proof = nil
 			}
 			remaining := make([]string, 0, len(f.Blocked))
