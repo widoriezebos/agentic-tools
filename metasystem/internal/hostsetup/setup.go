@@ -53,7 +53,12 @@ type action struct {
 // Setup validates every selected input and destination before publishing any
 // entry. Check mode uses the same plan and refuses when a write is required.
 func Setup(options Options) (Result, error) {
-	layout, err := stateroot.ResolveLayout(options.RepositoryPath)
+	return SetupWithResolver(options, stateroot.ResolveLayout)
+}
+
+// SetupWithResolver supplies layout discovery for this setup call.
+func SetupWithResolver(options Options, resolve func(string) (stateroot.Layout, error)) (Result, error) {
+	layout, err := resolve(options.RepositoryPath)
 	if err != nil {
 		return Result{}, err
 	}

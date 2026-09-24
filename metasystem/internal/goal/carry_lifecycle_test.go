@@ -33,6 +33,25 @@ func carryBed(t *testing.T, base time.Time) (root, other string, human VerbReque
 	return root, other, human
 }
 
+func carryBedFor(t *testing.T, base time.Time) (endpoint, other Endpoint, human VerbRequest) {
+	t.Helper()
+	endpoint, other = fakeGoalEndpointPair(t)
+	open := verbReqFor(endpoint, "01J5X00000000000000000C000", "mac-a")
+	open.Now = base
+	if res, err := Open(open, "g", "Carry one landing past a refusal.", "main", "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", res, err)
+	}
+	claim := verbReqFor(endpoint, "01J5X00000000000000000C001", "mac-a")
+	claim.Now = base
+	if res, err := claimApprovedForTest(t, claim, "g", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim: %+v %v", res, err)
+	}
+	human = verbReqFor(endpoint, "01J5X00000000000000000C002", "mac-a")
+	human.Now = base.Add(time.Minute)
+	human.Actor.Human = "wido"
+	return endpoint, other, human
+}
+
 func carryVerb(base VerbRequest, ulid string, minutes int) VerbRequest {
 	r := base
 	r.Ulid = ulid
@@ -52,7 +71,8 @@ func acceptedTree(t *testing.T, root string, now time.Time) (*TreeGoals, string)
 func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 	t.Parallel()
 	base := time.Now().UTC().Truncate(time.Second)
-	root, other, human := carryBed(t, base)
+	endpoint, other, human := carryBedFor(t, base)
+	root := endpoint.Root
 	proof := testHumanAuthority(t, root, base)
 	workspace := strings.Repeat("a", 40)
 	word := CarryArgs{Goal: "g", Workspace: workspace, Past: "missing-declaration", Why: "the declaration is a line away", Expires: human.Now.Add(2 * time.Hour)}
@@ -89,7 +109,8 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 		t.Fatalf("carry with --raise-format: %+v %v", result, err)
 	}
 	first := raiser.opid()
-	tree, tip := acceptedTree(t, root, raiser.Now)
+	declareWordHistory(t, endpoint, first, "")
+	tree, tip := acceptedTreeForEndpoint(t, endpoint)
 	if tree.Root.FormatVersion != "2" {
 		t.Fatalf("carry left the ledger at format %s", tree.Root.FormatVersion)
 	}
@@ -110,14 +131,14 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 	if !strings.Contains(err.Error(), first+" workspace="+workspace) {
 		t.Fatalf("cap ask does not list the open word: %v", err)
 	}
-	open, err := OpenCarryWords(root, tree, tip, "mac-a", second.Now)
+	open, err := openCarryWordsFor(endpoint, tree, tip, "mac-a", second.Now)
 	if err != nil || len(open) != 1 || open[0].History.Opid != first {
 		t.Fatalf("open words = %+v, %v", open, err)
 	}
-	if foreign, err := OpenCarryWords(root, tree, tip, "mac-b", second.Now); err != nil || len(foreign) != 0 {
+	if foreign, err := openCarryWordsFor(endpoint, tree, tip, "mac-b", second.Now); err != nil || len(foreign) != 0 {
 		t.Fatalf("another seat's open words = %+v, %v", foreign, err)
 	}
-	counts, err := CountCarries(root, tree, tip, second.Now)
+	counts, err := countCarriesFor(endpoint, tree, tip, second.Now)
 	if err != nil || counts != (CarryCounts{Open: 1}) {
 		t.Fatalf("counts = %+v, %v", counts, err)
 	}
@@ -129,21 +150,22 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 		t.Fatalf("carry --supersede: %+v %v", result, err)
 	}
 	live := third.opid()
-	tree, tip = acceptedTree(t, root, third.Now)
-	consumption, err := CarryConsumptionAt(root, tree, tip, parsed)
+	declareWordHistory(t, endpoint, live, "")
+	tree, tip = acceptedTreeForEndpoint(t, endpoint)
+	consumption, err := carryConsumptionAtFor(endpoint, tree, tip, parsed)
 	if err != nil || consumption.Kind != "superseded" || consumption.ID != live {
 		t.Fatalf("superseded word's consumption = %+v, %v", consumption, err)
 	}
 	if replacement, err := CarryWordAt(tree, "g", live); err != nil || replacement.Supersedes != first {
 		t.Fatalf("replacement word = %+v, %v", replacement, err)
 	}
-	if open, err := OpenCarryWords(root, tree, tip, "mac-a", third.Now); err != nil || len(open) != 1 || open[0].History.Opid != live {
+	if open, err := openCarryWordsFor(endpoint, tree, tip, "mac-a", third.Now); err != nil || len(open) != 1 || open[0].History.Opid != live {
 		t.Fatalf("open words after supersede = %+v, %v", open, err)
 	}
 
 	// The reservation: refusals at the word, then the row, idempotent on
 	// the same seat, abandoned, and reserved again.
-	seat := verbReq(root, "01J5X00000000000000000C005", "mac-a")
+	seat := verbReqFor(endpoint, "01J5X00000000000000000C005", "mac-a")
 	seat.Now = third.Now.Add(time.Minute)
 	reservation := CarryingArgs{Goal: "g", ApprovedRef: live, Workspace: workspace, Project: strings.Repeat("b", 40)}
 	_, _, err = Carrying(seat, CarryingArgs{Goal: "absent", ApprovedRef: live, Workspace: workspace})
@@ -168,18 +190,19 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 	if result, sameRow, err := Carrying(again, reservation); err != nil || result.Outcome != OutcomeConfirmed || sameRow != row {
 		t.Fatalf("carrying again on the same seat: %+v %q %v", result, sameRow, err)
 	}
-	tree, tip = acceptedTree(t, root, again.Now)
+	declareWordHistory(t, endpoint, live, "")
+	tree, tip = acceptedTreeForEndpoint(t, endpoint)
 	if state := CarryReservationAt(tree, "g", live, again.Now); state.State != "open" || state.History.Opid != row {
 		t.Fatalf("reservation = %+v", state)
 	}
 	ledger := tip
-	if counts, err := CountCarries(root, tree, tip, again.Now); err != nil || counts != (CarryCounts{Open: 1, Inflight: 1}) {
+	if counts, err := countCarriesFor(endpoint, tree, tip, again.Now); err != nil || counts != (CarryCounts{Open: 1, Inflight: 1}) {
 		t.Fatalf("counts with a reservation = %+v, %v", counts, err)
 	}
-	if debt, found, err := CarryDebtAt(root, tree, tip, "", again.Now); err != nil || !found || debt.Kind != "inflight" || debt.ID != row {
+	if debt, found, err := carryDebtAtFor(endpoint, tree, tip, "", again.Now); err != nil || !found || debt.Kind != "inflight" || debt.ID != row {
 		t.Fatalf("in-flight debt = %+v %v %v", debt, found, err)
 	}
-	if _, found, err := CarryDebtAt(root, tree, tip, live, again.Now); err != nil || found {
+	if _, found, err := carryDebtAtFor(endpoint, tree, tip, live, again.Now); err != nil || found {
 		t.Fatalf("the reservation's own word counts as debt: %v %v", found, err)
 	}
 	_, _, err = Carrying(again, CarryingArgs{Goal: "g", ApprovedRef: live, Carrying: "01J5X00000000000000000C998-mac-a-1a2b3c4d", Commit: strings.Repeat("d", 40), Workspace: workspace})
@@ -205,10 +228,11 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 	if result, err := AbandonCarrying(replay, "g", row, "the tree moved"); err != nil || result.Outcome != OutcomeConfirmed || result.Detail != "idempotent" {
 		t.Fatalf("abandon replay: %+v %v", result, err)
 	}
-	tree, _ = acceptedTree(t, root, replay.Now)
+	tree, _ = acceptedTreeForEndpoint(t, endpoint)
 	if state := CarryReservationAt(tree, "g", live, replay.Now); state.State != "abandoned" {
 		t.Fatalf("reservation after abandon = %+v", state)
 	}
+	declareWordHistory(t, endpoint, live, "")
 	reserve := carryVerb(seat, "01J5X00000000000000000C009", 4)
 	result, row, err = Carrying(reserve, reservation)
 	if err != nil || result.Outcome != OutcomeConfirmed || row != reserve.opid() {
@@ -217,14 +241,8 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 
 	// The code lands on origin under the word, the carried intent is
 	// journaled beside it, and the completion writes the durable row.
-	mustGit(t, other, "pull", "-q", "origin", "main")
-	if err := os.WriteFile(filepath.Join(other, "carried.txt"), []byte("carried\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mustGit(t, other, "add", "carried.txt")
-	mustGit(t, other, "commit", "-qm", "carried change", "-m", "Carry: "+live)
-	commit := mustGit(t, other, "rev-parse", "HEAD")
-	mustGit(t, other, "push", "-q", "origin", "main")
+	commit := fakeCodeCarryCommit(t, other, live)
+	declareWordHistory(t, endpoint, live, commit)
 
 	var appended []string
 	writer := bindCarriedCounselorAppend(nil, func(_ string, goalID string, row HistoryLine, _ time.Time) error {
@@ -263,17 +281,17 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 	if result, err := Carried(complete, entry); err != nil || result.Outcome != OutcomeConfirmed || result.Detail != "idempotent" {
 		t.Fatalf("carried replay: %+v %v", result, err)
 	}
-	repairEndpoint := endpointFor(root)
+	repairEndpoint := endpoint
 	repairEndpoint.ConfigureCarriedCounselorAppend(writer)
 	if err := RepairCarriedCounselor(repairEndpoint, live, complete.Now); err != nil || len(appended) != 2 {
 		t.Fatalf("repair = %v, appended %v", err, appended)
 	}
-	if err := RepairCarriedCounselor(endpointFor(root), "01J5X00000000000000000C995-mac-a-1a2b3c4d", complete.Now); err == nil || !strings.Contains(err.Error(), "is absent") {
+	if err := RepairCarriedCounselor(endpoint, "01J5X00000000000000000C995-mac-a-1a2b3c4d", complete.Now); err == nil || !strings.Contains(err.Error(), "is absent") {
 		t.Fatalf("repair of an unknown row = %v", err)
 	}
 
 	// The durable row, its obligation, and the readers over it.
-	tree, tip = acceptedTree(t, root, complete.Now)
+	tree, tip = acceptedTreeForEndpoint(t, endpoint)
 	file := tree.Live["g"]
 	if LandedCarryCount(file) != 1 || file.BudgetExceptions != 1 {
 		t.Fatalf("landed count %d exceptions %d", LandedCarryCount(file), file.BudgetExceptions)
@@ -288,18 +306,18 @@ func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
 	if state := CarryReservationAt(tree, "g", live, complete.Now); state.State != "closed" {
 		t.Fatalf("reservation after landing = %+v", state)
 	}
-	if consumption, err := CarryConsumptionAt(root, tree, tip, parsed); err != nil || consumption.Kind != "superseded" {
+	if consumption, err := carryConsumptionAtFor(endpoint, tree, tip, parsed); err != nil || consumption.Kind != "superseded" {
 		t.Fatalf("first word after landing = %+v, %v", consumption, err)
 	}
 	landedAt, err := time.Parse(time.RFC3339, landed.At)
 	if err != nil {
 		t.Fatalf("carried row time %q: %v", landed.At, err)
 	}
-	counts, err = CountCarries(root, tree, tip, landedAt)
+	counts, err = countCarriesFor(endpoint, tree, tip, landedAt)
 	if err != nil || counts != (CarryCounts{Today: 1, Debt: 1}) {
 		t.Fatalf("counts after landing = %+v, %v", counts, err)
 	}
-	if debt, found, err := CarryDebtAt(root, tree, tip, "", complete.Now); err != nil || !found || debt.Kind != "obligation" || debt.Detail != "commit:"+commit {
+	if debt, found, err := carryDebtAtFor(endpoint, tree, tip, "", complete.Now); err != nil || !found || debt.Kind != "obligation" || debt.Detail != "commit:"+commit {
 		t.Fatalf("obligation debt = %+v %v %v", debt, found, err)
 	}
 	if !strings.Contains(carryDebtText(CarryDebt{Kind: "obligation", Goal: "g", ID: "f", Detail: "commit:x"}), "open obligation f") ||
@@ -428,25 +446,46 @@ func openCarryWordForAbandonTest(t *testing.T, base time.Time) (root, other stri
 	return root, other, human, proof, word, request.opid()
 }
 
+func openCarryWordForAbandonTestFor(t *testing.T, base time.Time) (endpoint, other Endpoint, human VerbRequest, proof *humanauthority.Proof, word CarryArgs, ref string) {
+	t.Helper()
+	endpoint, other, human = carryBedFor(t, base)
+	root := endpoint.Root
+	configureAbandonFloorTest(t, strings.Repeat("a", 40))
+	recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000D000")
+	proof = testHumanAuthority(t, root, base)
+	word = CarryArgs{
+		Goal: "g", Workspace: strings.Repeat("a", 40), Past: "missing-declaration",
+		Why: "the bounded exception remains necessary", Expires: base.Add(2 * time.Hour), RaiseFormat: true,
+	}
+	request := carryVerb(human, "01J5X00000000000000000D010", 1)
+	result, err := Carry(request, word, proof)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open carry word: %+v %v", result, err)
+	}
+	return endpoint, other, human, proof, word, request.opid()
+}
+
 func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 	t.Parallel()
 	base := time.Date(2026, 9, 13, 9, 0, 0, 0, time.UTC)
 	t.Run("missing anchor", func(t *testing.T) {
 		t.Parallel()
-		_, root := oneClone(t)
-		seedLedger(t, root)
+		endpoint, _ := fakeGoalEndpoint(t)
 		ref := "01ARZ3NDEKTSV4RRFFQ69G5FAZ-mac-a-1a2b3c4d"
 		tree, file := hclCarryTree("g", ref, base.Add(time.Hour))
 		tree.Abandoned = map[string]*GoalFile{}
-		err := abandonCarryRefusal(root, tree, "HEAD", "g", file, base)
+		declareCarryAt(t, endpoint, "HEAD", ref, "", "")
+		err := abandonCarryRefusalFor(endpoint, tree, "HEAD", "g", file, base)
 		if err == nil || !strings.Contains(err.Error(), "goal g has open carry word "+ref) || !strings.Contains(err.Error(), "let it expire at "+base.Add(time.Hour).Format(time.RFC3339)) {
 			t.Fatalf("missing-anchor refusal = %v", err)
 		}
 	})
 	t.Run("unused word and expiry", func(t *testing.T) {
 		t.Parallel()
-		root, _, human, _, word, ref := openCarryWordForAbandonTest(t, base)
-		before, beforeTip := acceptedTree(t, root, base.Add(2*time.Minute))
+		endpoint, _, human, _, word, ref := openCarryWordForAbandonTestFor(t, base)
+		root := endpoint.Root
+		declareWordHistory(t, endpoint, ref, "")
+		before, beforeTip := acceptedTreeForEndpoint(t, endpoint)
 		request := carryVerb(human, "01J5X00000000000000000D020", 2)
 		result, err := Abandon(request, "g", AbandonSpec{Because: "the work is obsolete"}, goalHumanProof(t, root, request.Now))
 		if err != nil || result.Outcome != OutcomeRejected {
@@ -456,7 +495,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		if !strings.Contains(result.Detail, want) || !strings.Contains(result.Detail, "goal carry --supersede "+ref) || !strings.Contains(result.Detail, word.Expires.Format(time.RFC3339)) {
 			t.Fatalf("open-word refusal = %q", result.Detail)
 		}
-		after, afterTip := acceptedTree(t, root, request.Now)
+		after, afterTip := acceptedTreeForEndpoint(t, endpoint)
 		if beforeTip != afterTip || after.Live["g"] == nil || after.Abandoned["g"] != nil || string(RenderFile(before.Live["g"])) != string(RenderFile(after.Live["g"])) {
 			t.Fatal("open-word refusal changed the goal tree")
 		}
@@ -470,7 +509,9 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 
 	t.Run("open and closed reservation", func(t *testing.T) {
 		t.Parallel()
-		root, _, human, _, _, ref := openCarryWordForAbandonTest(t, base)
+		endpoint, _, human, _, _, ref := openCarryWordForAbandonTestFor(t, base)
+		root := endpoint.Root
+		declareWordHistory(t, endpoint, ref, "")
 		seat := carryVerb(human, "01J5X00000000000000000D030", 2)
 		seat.Actor.Human = ""
 		args := CarryingArgs{Goal: "g", ApprovedRef: ref, Workspace: strings.Repeat("a", 40), Project: strings.Repeat("b", 40)}
@@ -478,6 +519,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open reservation: %+v %q %v", result, row, err)
 		}
+		declareWordHistory(t, endpoint, ref, "")
 		request := carryVerb(human, "01J5X00000000000000000D031", 3)
 		result, err = Abandon(request, "g", AbandonSpec{Because: "the work is obsolete"}, goalHumanProof(t, root, request.Now))
 		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "carry reservation "+row+" on goal g is in flight on mac-a") || !strings.Contains(result.Detail, "goal carrying --abandon "+row) {
@@ -487,6 +529,7 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		if result, err := AbandonCarrying(closeRequest, "g", row, "the candidate was withdrawn"); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("close reservation: %+v %v", result, err)
 		}
+		declareWordHistory(t, endpoint, ref, "")
 		request = carryVerb(human, "01J5X00000000000000000D033", 5)
 		result, err = Abandon(request, "g", AbandonSpec{Because: "the work is obsolete"}, goalHumanProof(t, root, request.Now))
 		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal g has open carry word "+ref) {
@@ -496,15 +539,10 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 
 	t.Run("carried commit without ledger row", func(t *testing.T) {
 		t.Parallel()
-		root, other, human, _, word, ref := openCarryWordForAbandonTest(t, base)
-		mustGit(t, other, "pull", "-q", "origin", "main")
-		if err := os.WriteFile(filepath.Join(other, "unrecorded-carry.txt"), []byte("carried\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		mustGit(t, other, "add", "unrecorded-carry.txt")
-		mustGit(t, other, "commit", "-qm", "unrecorded carried change", "-m", "Carry: "+ref)
-		commit := mustGit(t, other, "rev-parse", "HEAD")
-		mustGit(t, other, "push", "-q", "origin", "main")
+		endpoint, other, human, _, word, ref := openCarryWordForAbandonTestFor(t, base)
+		root := endpoint.Root
+		commit := fakeCodeCarryCommit(t, other, ref)
+		declareWordHistory(t, endpoint, ref, commit)
 		request := carryVerb(human, "01J5X00000000000000000D040", 121)
 		request.Now = word.Expires.Add(time.Minute)
 		result, err := Abandon(request, "g", AbandonSpec{Because: "the landing will not continue"}, goalHumanProof(t, root, request.Now))
@@ -515,20 +553,21 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 
 	t.Run("also target is atomic", func(t *testing.T) {
 		t.Parallel()
-		root, _, human := carryBed(t, base)
+		endpoint, _, human := carryBedFor(t, base)
+		root := endpoint.Root
 		configureAbandonFloorTest(t, strings.Repeat("a", 40))
-		recordAbandonFloorTest(t, root, "01J5X00000000000000000D050")
+		recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000D050")
 		open := carryVerb(human, "01J5X00000000000000000D051", 1)
 		if result, err := Open(open, "child", "Carry the dependent.", OriginHuman, "Land it."); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open child: %+v %v", result, err)
 		}
-		claim := verbReq(root, "01J5X00000000000000000D052", "mac-b")
+		claim := verbReqFor(endpoint, "01J5X00000000000000000D052", "mac-b")
 		claim.Now = base.Add(2 * time.Minute)
 		if result, err := claimApprovedForTest(t, claim, "child", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("claim child: %+v %v", result, err)
 		}
 		proof := testHumanAuthority(t, root, base)
-		carryRequest := verbReq(root, "01J5X00000000000000000D053", "mac-b")
+		carryRequest := verbReqFor(endpoint, "01J5X00000000000000000D053", "mac-b")
 		carryRequest.Now = base.Add(3 * time.Minute)
 		carryRequest.Actor.Human = "wido"
 		args := CarryArgs{Goal: "child", Workspace: strings.Repeat("c", 40), Past: "missing-declaration", Why: "the child needs the exception", Expires: base.Add(time.Hour), RaiseFormat: true}
@@ -543,13 +582,14 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 		if result, err := Edit(carryVerb(human, "01J5X00000000000000000D055", 5), "child", EditFields{Blocked: &blocked}); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("block child: %+v %v", result, err)
 		}
-		before, tip := acceptedTree(t, root, base.Add(5*time.Minute))
+		declareWordHistory(t, endpoint, carryRequest.opid(), "")
+		before, tip := acceptedTreeForEndpoint(t, endpoint)
 		request := carryVerb(human, "01J5X00000000000000000D056", 6)
 		result, err := Abandon(request, "g", AbandonSpec{Because: "both goals are obsolete", Also: []string{"child"}}, goalHumanProof(t, root, request.Now))
 		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "goal child has open carry word "+carryRequest.opid()) {
 			t.Fatalf("also carry refusal: %+v %v", result, err)
 		}
-		after, afterTip := acceptedTree(t, root, request.Now)
+		after, afterTip := acceptedTreeForEndpoint(t, endpoint)
 		if tip != afterTip || after.Live["g"] == nil || after.Live["child"] == nil || !contains(after.Live["child"].Blocked, "g") || string(RenderFile(before.Live["child"])) != string(RenderFile(after.Live["child"])) {
 			t.Fatal("--also refusal changed a goal or dependent edge")
 		}
@@ -593,6 +633,38 @@ func landedCarryForAbandonTest(t *testing.T, base time.Time) (root string, human
 	return root, human, proof, ref, commit, ordinaryFinding
 }
 
+func landedCarryForAbandonTestFor(t *testing.T, base time.Time) (endpoint Endpoint, human VerbRequest, proof *humanauthority.Proof, ref, commit, ordinaryFinding string) {
+	t.Helper()
+	endpoint, other, human, proof, word, ref := openCarryWordForAbandonTestFor(t, base)
+	declareWordHistory(t, endpoint, ref, "")
+	reservationRequest := carryVerb(human, "01J5X00000000000000000D059", 2)
+	reservationRequest.Actor.Human = ""
+	reservationArgs := CarryingArgs{Goal: "g", ApprovedRef: ref, Workspace: word.Workspace, Project: strings.Repeat("b", 40)}
+	reservationResult, reservation, reservationErr := Carrying(reservationRequest, reservationArgs)
+	if reservationErr != nil || reservationResult.Outcome != OutcomeConfirmed {
+		t.Fatalf("open carrying reservation: %+v %q %v", reservationResult, reservation, reservationErr)
+	}
+	_, ledger := acceptedTreeForEndpoint(t, endpoint)
+	commit = fakeCodeCarryCommit(t, other, ref)
+	declareWordHistory(t, endpoint, ref, commit)
+	seat := carryVerb(human, "01J5X00000000000000000D060", 5)
+	seat.Actor.Human = ""
+	seat.Endpoint.ConfigureCarriedCounselorAppend(func(string, string, HistoryLine, time.Time) error { return nil })
+	args := CarriedArgs{
+		Goal: "g", ApprovedRef: ref, Carrying: reservation, Commit: commit, Project: strings.Repeat("b", 40), Workspace: word.Workspace,
+		Past: word.Past, Battery: "green", Judge: "base", JudgeDigest: strings.Repeat("d", 64), Ledger: ledger, By: "human:wido",
+	}
+	if result, err := CarriedFromCommit(seat, args); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("record carried landing: %+v %v", result, err)
+	}
+	ordinaryFinding = "ordinary-review"
+	deferRequest := carryVerb(seat, "01J5X00000000000000000D061", 6)
+	if result, err := DeferFindings(deferRequest, "g", []ReviewObligation{{Finding: ordinaryFinding, Chain: "critic-chain", Artifact: "commit:" + commit, Test: "pending"}}); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("defer ordinary review: %+v %v", result, err)
+	}
+	return endpoint, human, proof, ref, commit, ordinaryFinding
+}
+
 func freezeCarriedGoalForAbandonTest(t *testing.T, root string, now time.Time, ulid string) string {
 	t.Helper()
 	tree, _ := acceptedTree(t, root, now)
@@ -608,6 +680,24 @@ func freezeCarriedGoalForAbandonTest(t *testing.T, root string, now time.Time, u
 		t.Fatalf("freeze carried goal: %+v %v", result, err)
 	}
 	tree, _ = acceptedTree(t, root, now)
+	return renderedStopFenceLines(tree.Live["g"])
+}
+
+func freezeCarriedGoalForAbandonTestFor(t *testing.T, endpoint Endpoint, now time.Time, ulid string) string {
+	t.Helper()
+	tree, _ := acceptedTreeForEndpoint(t, endpoint)
+	file := tree.Live["g"]
+	if file == nil || file.StopCapability == nil {
+		t.Fatalf("carried goal has no stop capability: %+v", file)
+	}
+	request := CloseStopRequest{
+		VerbRequest: VerbRequest{Endpoint: endpoint, Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: ulid, Now: now, ClaimEpoch: file.StopCapability.ClaimEpoch},
+		GoalID:      "g", StopID: "stop-g-carried-review", Reason: StopReasonElapsedLimit, Capability: *file.StopCapability,
+	}
+	if result, err := CloseStop(request); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("freeze carried goal: %+v %v", result, err)
+	}
+	tree, _ = acceptedTreeForEndpoint(t, endpoint)
 	return renderedStopFenceLines(tree.Live["g"])
 }
 
@@ -636,12 +726,28 @@ func openNextCarryGoalForAbandonTest(t *testing.T, root string, now time.Time) {
 	}
 }
 
+func openNextCarryGoalForAbandonTestFor(t *testing.T, endpoint Endpoint, now time.Time) {
+	t.Helper()
+	open := verbReqFor(endpoint, "01J5X00000000000000000D062", "mac-b")
+	open.Now = now
+	open.Actor.Human = "wido"
+	if result, err := Open(open, "next-carry", "Carry after the archived review debt is paid.", OriginHuman, "Issue the next carry word."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open next carry goal: %+v %v", result, err)
+	}
+	claim := verbReqFor(endpoint, "01J5X00000000000000000D063", "mac-b")
+	claim.Now = now.Add(time.Minute)
+	if result, err := claimApprovedForTest(t, claim, "next-carry", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("claim next carry goal: %+v %v", result, err)
+	}
+}
+
 func TestAbandonKeepsReviewDebtReachable(t *testing.T) {
 	t.Parallel()
 	base := time.Date(2026, 9, 13, 11, 0, 0, 0, time.UTC)
-	root, human, proof, _, commit, ordinaryFinding := landedCarryForAbandonTest(t, base)
-	openNextCarryGoalForAbandonTest(t, root, base.Add(13*time.Minute))
-	fenceBefore := freezeCarriedGoalForAbandonTest(t, root, base.Add(15*time.Minute), "01J5X00000000000000000D064")
+	endpoint, human, proof, _, commit, ordinaryFinding := landedCarryForAbandonTestFor(t, base)
+	root := endpoint.Root
+	openNextCarryGoalForAbandonTestFor(t, endpoint, base.Add(13*time.Minute))
+	fenceBefore := freezeCarriedGoalForAbandonTestFor(t, endpoint, base.Add(15*time.Minute), "01J5X00000000000000000D064")
 	if fenceBefore == "" {
 		t.Fatal("frozen carried goal rendered no stop fence lines")
 	}
@@ -650,18 +756,18 @@ func TestAbandonKeepsReviewDebtReachable(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed || !strings.Contains(result.Detail, "finding=carried:"+commit+" chain=human-carried; it still needs discharge") || !strings.Contains(result.Detail, "finding="+ordinaryFinding+" chain=critic-chain; it still needs discharge") {
 		t.Fatalf("abandon with review debt: %+v %v", result, err)
 	}
-	tree, tip := acceptedTree(t, root, request.Now)
+	tree, tip := acceptedTreeForEndpoint(t, endpoint)
 	if got := renderedStopFenceLines(tree.Abandoned["g"]); got != fenceBefore {
 		t.Fatalf("abandon changed frozen stop fence lines:\nbefore: %s\nafter:  %s", fenceBefore, got)
 	}
-	if debt, found, err := CarryDebtAt(root, tree, tip, "", request.Now); err != nil || !found || debt.Kind != "obligation" || debt.Goal != "g" || debt.ID != "carried:"+commit {
+	if debt, found, err := carryDebtAtFor(endpoint, tree, tip, "", request.Now); err != nil || !found || debt.Kind != "obligation" || debt.Goal != "g" || debt.ID != "carried:"+commit {
 		t.Fatalf("archived carry debt = %+v %v %v", debt, found, err)
 	}
-	if counts, err := CountCarries(root, tree, tip, request.Now); err != nil || counts.Today != 1 || counts.Debt != 1 {
+	if counts, err := countCarriesFor(endpoint, tree, tip, request.Now); err != nil || counts.Today != 1 || counts.Debt != 1 {
 		t.Fatalf("archived carry counts = %+v %v", counts, err)
 	}
 	carryArgs := CarryArgs{Goal: "next-carry", Workspace: strings.Repeat("e", 40), Past: "missing-declaration", Why: "the archived carry debt is now the only gate", Expires: request.Now.Add(2 * time.Hour)}
-	blockedCarry := verbReq(root, "01J5X00000000000000000D065", "mac-b")
+	blockedCarry := verbReqFor(endpoint, "01J5X00000000000000000D065", "mac-b")
 	blockedCarry.Now = request.Now
 	blockedCarry.Actor.Human = "wido"
 	if _, err := Carry(blockedCarry, carryArgs, proof); err == nil {
@@ -687,7 +793,7 @@ func TestAbandonKeepsReviewDebtReachable(t *testing.T) {
 	if _, err := DischargeReviewObligation(wrong, "g", "carried:"+commit, HumanCarriedChain, "wido", " "); err == nil {
 		t.Fatal("archived discharge accepted a blank citation")
 	}
-	tree, _ = acceptedTree(t, root, wrong.Now)
+	tree, _ = acceptedTreeForEndpoint(t, endpoint)
 	if got := string(RenderFile(tree.Abandoned["g"])); got != before {
 		t.Fatal("a refused archived discharge changed the record")
 	}
@@ -706,7 +812,7 @@ func TestAbandonKeepsReviewDebtReachable(t *testing.T) {
 	if result, err := ReopenAbandoned(reopen, "g", goalHumanProof(t, root, reopen.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("reopen with debt: %+v %v", result, err)
 	}
-	tree, _ = acceptedTree(t, root, reopen.Now)
+	tree, _ = acceptedTreeForEndpoint(t, endpoint)
 	if match, err := reviewObligationMatch(tree.Live["g"].ReviewObligations, "carried:"+commit, HumanCarriedChain); err != nil || tree.Live["g"].ReviewObligations[match].State != "open" {
 		t.Fatalf("reopen cleared debt: %v", err)
 	}
@@ -719,12 +825,12 @@ func TestAbandonKeepsReviewDebtReachable(t *testing.T) {
 	if result, err := DischargeReviewObligation(discharge, "g", "carried:"+commit, HumanCarriedChain, "wido", "critic-root"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("discharge archived carried review: %+v %v", result, err)
 	}
-	tree, _ = acceptedTree(t, root, discharge.Now)
+	tree, _ = acceptedTreeForEndpoint(t, endpoint)
 	carriedMatch, matchErr := reviewObligationMatch(tree.Abandoned["g"].ReviewObligations, "carried:"+commit, HumanCarriedChain)
 	if matchErr != nil || tree.Abandoned["g"].ReviewObligations[carriedMatch].State != "discharged" || tree.Abandoned["g"].ReviewObligations[carriedMatch].Test != "critic-root" {
 		t.Fatalf("archived discharge evidence = %+v %v", tree.Abandoned["g"].ReviewObligations, matchErr)
 	}
-	allowedCarry := verbReq(root, "01J5X00000000000000000D077", "mac-b")
+	allowedCarry := verbReqFor(endpoint, "01J5X00000000000000000D077", "mac-b")
 	allowedCarry.Now = discharge.Now.Add(time.Minute)
 	allowedCarry.Actor.Human = "wido"
 	carryArgs.Expires = allowedCarry.Now.Add(2 * time.Hour)
@@ -735,8 +841,9 @@ func TestAbandonKeepsReviewDebtReachable(t *testing.T) {
 	if result, err := DischargeReviewObligation(ordinary, "g", ordinaryFinding, "critic-chain", "wido", "successor:test"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("discharge archived ordinary review: %+v %v", result, err)
 	}
-	tree, tip = acceptedTree(t, root, ordinary.Now)
-	if debt, found, err := CarryDebtAt(root, tree, tip, "", ordinary.Now); err != nil || found {
+	tree, tip = acceptedTreeForEndpoint(t, endpoint)
+	declareWordHistory(t, endpoint, allowedCarry.opid(), "")
+	if debt, found, err := carryDebtAtFor(endpoint, tree, tip, "", ordinary.Now); err != nil || found {
 		t.Fatalf("debt after discharge = %+v %v %v", debt, found, err)
 	}
 }
@@ -744,8 +851,9 @@ func TestAbandonKeepsReviewDebtReachable(t *testing.T) {
 func TestAbandonedCarriedReviewCanBeWaived(t *testing.T) {
 	t.Parallel()
 	base := time.Date(2026, 9, 13, 13, 0, 0, 0, time.UTC)
-	root, human, _, _, commit, ordinaryFinding := landedCarryForAbandonTest(t, base)
-	fenceBefore := freezeCarriedGoalForAbandonTest(t, root, base.Add(13*time.Minute), "01J5X00000000000000000D079")
+	endpoint, human, _, _, commit, ordinaryFinding := landedCarryForAbandonTestFor(t, base)
+	root := endpoint.Root
+	fenceBefore := freezeCarriedGoalForAbandonTestFor(t, endpoint, base.Add(13*time.Minute), "01J5X00000000000000000D079")
 	if fenceBefore == "" {
 		t.Fatal("frozen carried goal rendered no stop fence lines")
 	}
@@ -753,7 +861,7 @@ func TestAbandonedCarriedReviewCanBeWaived(t *testing.T) {
 	if result, err := Abandon(abandon, "g", AbandonSpec{Because: "the review will not be completed"}, goalHumanProof(t, root, abandon.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon: %+v %v", result, err)
 	}
-	tree, _ := acceptedTree(t, root, abandon.Now)
+	tree, _ := acceptedTreeForEndpoint(t, endpoint)
 	before := string(RenderFile(tree.Abandoned["g"]))
 	if got := renderedStopFenceLines(tree.Abandoned["g"]); got != fenceBefore {
 		t.Fatalf("abandon changed frozen stop fence lines:\nbefore: %s\nafter:  %s", fenceBefore, got)
@@ -768,7 +876,7 @@ func TestAbandonedCarriedReviewCanBeWaived(t *testing.T) {
 	if result, err := AcceptedRiskDecision(waive, "g", ordinaryFinding, "critic-chain", "wido", "the ordinary review is waived", goalHumanProof(t, root, waive.Now)); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "not live") {
 		t.Fatalf("archived waiver accepted another chain: %+v %v", result, err)
 	}
-	tree, _ = acceptedTree(t, root, waive.Now)
+	tree, _ = acceptedTreeForEndpoint(t, endpoint)
 	if got := string(RenderFile(tree.Abandoned["g"])); got != before {
 		t.Fatal("refused archived waiver changed the record")
 	}
@@ -781,10 +889,16 @@ func TestAbandonedCarriedReviewCanBeWaived(t *testing.T) {
 	if result, err := AcceptedRiskDecision(accept, "g", "carried:"+commit, HumanCarriedChain, "wido", "the bounded delivery risk is accepted", goalHumanProof(t, root, accept.Now)); err != nil || result.Outcome != OutcomeConfirmed || result.Detail != "idempotent" {
 		t.Fatalf("archived waiver replay: %+v %v", result, err)
 	}
-	if opid, err := AcceptedRiskDecisionOpID(root, "g", "carried:"+commit, HumanCarriedChain, accept.Now); err != nil || opid != accept.opid() {
+	resolve := func(repoRoot string) (Endpoint, error) {
+		if repoRoot != root {
+			return Endpoint{}, os.ErrNotExist
+		}
+		return endpoint, nil
+	}
+	if opid, err := acceptedRiskDecisionOpIDWithResolver(root, "g", "carried:"+commit, HumanCarriedChain, accept.Now, resolve); err != nil || opid != accept.opid() {
 		t.Fatalf("archived waiver receipt = %q %v", opid, err)
 	}
-	tree, tip := acceptedTree(t, root, accept.Now)
+	tree, tip := acceptedTreeForEndpoint(t, endpoint)
 	file := tree.Abandoned["g"]
 	match, matchErr := reviewObligationMatch(file.ReviewObligations, "carried:"+commit, HumanCarriedChain)
 	ordinaryMatch, ordinaryErr := reviewObligationMatch(file.ReviewObligations, ordinaryFinding, "critic-chain")
@@ -794,7 +908,7 @@ func TestAbandonedCarriedReviewCanBeWaived(t *testing.T) {
 	if got := renderedStopFenceLines(file); got != fenceBefore {
 		t.Fatalf("archived waiver changed frozen stop fence lines:\nbefore: %s\nafter:  %s", fenceBefore, got)
 	}
-	if debt, found, err := CarryDebtAt(root, tree, tip, "", accept.Now); err != nil || found {
+	if debt, found, err := carryDebtAtFor(endpoint, tree, tip, "", accept.Now); err != nil || found {
 		t.Fatalf("waived debt remains = %+v %v %v", debt, found, err)
 	}
 }
@@ -802,49 +916,52 @@ func TestAbandonedCarriedReviewCanBeWaived(t *testing.T) {
 func TestAbandonKeepsClosedCarryHistoryVisible(t *testing.T) {
 	t.Parallel()
 	base := time.Date(2026, 9, 13, 15, 0, 0, 0, time.UTC)
-	root, human, _, ref, commit, _ := landedCarryForAbandonTest(t, base)
+	endpoint, human, _, ref, commit, _ := landedCarryForAbandonTestFor(t, base)
+	root := endpoint.Root
 	abandon := carryVerb(human, "01J5X00000000000000000D090", 7)
 	if result, err := Abandon(abandon, "g", AbandonSpec{Because: "retain the carried history"}, goalHumanProof(t, root, abandon.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("abandon carried goal: %+v %v", result, err)
 	}
-	tree, tip := acceptedTree(t, root, abandon.Now)
+	tree, tip := acceptedTreeForEndpoint(t, endpoint)
 	word, err := CarryWordAt(tree, "g", ref)
 	if err != nil || word.History.Opid != ref {
 		t.Fatalf("archived word = %+v %v", word, err)
 	}
-	if consumption, err := CarryConsumptionAt(root, tree, tip, word); err != nil || consumption.Kind != "ledger" {
+	if consumption, err := carryConsumptionAtFor(endpoint, tree, tip, word); err != nil || consumption.Kind != "ledger" {
 		t.Fatalf("archived word closer = %+v %v", consumption, err)
 	}
 	if reservation := CarryReservationAt(tree, "g", ref, abandon.Now); reservation.State != "closed" {
 		t.Fatalf("archived reservation state = %+v", reservation)
 	}
-	if counts, err := CountCarries(root, tree, tip, abandon.Now); err != nil || counts.Today != 1 || counts.Debt != 1 || counts.Open != 0 || counts.Inflight != 0 {
+	if counts, err := countCarriesFor(endpoint, tree, tip, abandon.Now); err != nil || counts.Today != 1 || counts.Debt != 1 || counts.Open != 0 || counts.Inflight != 0 {
 		t.Fatalf("archived history counts = %+v %v (commit %s)", counts, err, commit)
 	}
 
 	t.Run("superseded words stay closed", func(t *testing.T) {
 		t.Parallel()
-		root, _, human := carryBed(t, base.Add(3*time.Hour))
+		endpoint, _, human := carryBedFor(t, base.Add(3*time.Hour))
+		root := endpoint.Root
 		configureAbandonFloorTest(t, strings.Repeat("a", 40))
-		recordAbandonFloorTest(t, root, "01J5X00000000000000000D0A0")
+		recordAbandonFloorTestForEndpoint(t, endpoint, "01J5X00000000000000000D0A0")
 		proof := testHumanAuthority(t, root, base.Add(3*time.Hour))
 		firstRequest := carryVerb(human, "01J5X00000000000000000D0A1", 1)
 		firstArgs := CarryArgs{Goal: "g", Workspace: strings.Repeat("e", 40), Past: "missing-declaration", Why: "first bounded word", Expires: base.Add(5 * time.Hour), RaiseFormat: true}
 		if result, err := Carry(firstRequest, firstArgs, proof); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("first word: %+v %v", result, err)
 		}
-		open := verbReq(root, "01J5X00000000000000000D0A2", "mac-b")
+		open := verbReqFor(endpoint, "01J5X00000000000000000D0A2", "mac-b")
 		open.Now = base.Add(3*time.Hour + 2*time.Minute)
 		open.Actor.Human = "wido"
 		if result, err := Open(open, "replacement", "Hold the replacement word.", OriginHuman, "Use it or let it expire."); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("open replacement: %+v %v", result, err)
 		}
-		claim := verbReq(root, "01J5X00000000000000000D0A3", "mac-b")
+		claim := verbReqFor(endpoint, "01J5X00000000000000000D0A3", "mac-b")
 		claim.Now = base.Add(3*time.Hour + 3*time.Minute)
 		if result, err := claimApprovedForTest(t, claim, "replacement", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("claim replacement: %+v %v", result, err)
 		}
-		secondRequest := verbReq(root, "01J5X00000000000000000D0A4", "mac-b")
+		declareWordHistory(t, endpoint, firstRequest.opid(), "")
+		secondRequest := verbReqFor(endpoint, "01J5X00000000000000000D0A4", "mac-b")
 		secondRequest.Now = base.Add(3*time.Hour + 4*time.Minute)
 		secondRequest.Actor.Human = "wido"
 		secondArgs := CarryArgs{Goal: "replacement", Workspace: strings.Repeat("f", 40), Past: "missing-declaration", Why: "replacement bounded word", Expires: base.Add(6 * time.Hour), Supersede: firstRequest.opid(), Transfer: true}
@@ -855,22 +972,23 @@ func TestAbandonKeepsClosedCarryHistoryVisible(t *testing.T) {
 		if result, err := Abandon(abandonFirst, "g", AbandonSpec{Because: "the first word was superseded"}, goalHumanProof(t, root, abandonFirst.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("abandon superseded word goal: %+v %v", result, err)
 		}
-		abandonSecond := verbReq(root, "01J5X00000000000000000D0A6", "mac-b")
+		declareWordHistory(t, endpoint, secondRequest.opid(), "")
+		abandonSecond := verbReqFor(endpoint, "01J5X00000000000000000D0A6", "mac-b")
 		abandonSecond.Now = secondArgs.Expires
 		abandonSecond.Actor.Human = "wido"
 		if result, err := Abandon(abandonSecond, "replacement", AbandonSpec{Because: "the replacement expired unused"}, goalHumanProof(t, root, abandonSecond.Now)); err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("abandon replacement: %+v %v", result, err)
 		}
-		tree, tip := acceptedTree(t, root, abandonSecond.Now)
+		tree, tip := acceptedTreeForEndpoint(t, endpoint)
 		first, firstErr := CarryWordAt(tree, "g", firstRequest.opid())
 		second, secondErr := CarryWordAt(tree, "replacement", secondRequest.opid())
 		if firstErr != nil || secondErr != nil || first.History.Opid == "" || second.History.Opid == "" {
 			t.Fatalf("archived superseded words = %+v/%v %+v/%v", first, firstErr, second, secondErr)
 		}
-		if consumption, err := CarryConsumptionAt(root, tree, tip, first); err != nil || consumption.Kind != "superseded" || consumption.ID != secondRequest.opid() {
+		if consumption, err := carryConsumptionAtFor(endpoint, tree, tip, first); err != nil || consumption.Kind != "superseded" || consumption.ID != secondRequest.opid() {
 			t.Fatalf("archived supersede closer = %+v %v", consumption, err)
 		}
-		if counts, err := CountCarries(root, tree, tip, abandonSecond.Now); err != nil || counts.Open != 0 {
+		if counts, err := countCarriesFor(endpoint, tree, tip, abandonSecond.Now); err != nil || counts.Open != 0 {
 			t.Fatalf("archived superseded words reopened the cap: %+v %v", counts, err)
 		}
 	})
@@ -892,34 +1010,33 @@ func TestDeclareFreeAndLabelDelta(t *testing.T) {
 		t.Fatal("invalid removed label")
 	}
 
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
 	now := time.Now().UTC().Truncate(time.Second)
-	open := verbReq(root, "01J5X00000000000000000F000", "mac-a")
+	open := verbReqFor(endpoint, "01J5X00000000000000000F000", "mac-a")
 	open.Now = now
 	if res, err := Open(open, "queued-one", "Queued work blocks the declaration.", "main", "Do it."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	declare := verbReq(root, "01J5X00000000000000000F001", "mac-a")
+	declare := verbReqFor(endpoint, "01J5X00000000000000000F001", "mac-a")
 	declare.Now = now.Add(time.Minute)
 	if res, err := DeclareFree(declare, "main", strings.Repeat("1", 64)); err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "queued-one is queued") {
 		t.Fatalf("declare over a queued goal: %+v %v", res, err)
 	}
-	park := verbReq(root, "01J5X00000000000000000F002", "mac-a")
+	park := verbReqFor(endpoint, "01J5X00000000000000000F002", "mac-a")
 	park.Now = now.Add(2 * time.Minute)
 	if res, err := Park(park, "queued-one", "waiting on the human"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("park: %+v %v", res, err)
 	}
-	first := verbReq(root, "01J5X00000000000000000F003", "mac-a")
+	first := verbReqFor(endpoint, "01J5X00000000000000000F003", "mac-a")
 	first.Now = now.Add(3 * time.Minute)
 	if res, err := DeclareFree(first, "main", strings.Repeat("1", 64)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("declare over parked only: %+v %v", res, err)
 	}
-	projection, err := Project(endpointFor(root), true, first.Now)
+	projection, err := Project(endpoint, true, first.Now)
 	if err != nil || projection.Tree.Root.Free == nil || projection.Tree.Root.Free.Digest != strings.Repeat("1", 64) || projection.Tree.Root.Free.Origin != "main" {
 		t.Fatalf("free record = %+v, %v", projection.Tree.Root, err)
 	}
-	same := verbReq(root, "01J5X00000000000000000F004", "mac-a")
+	same := verbReqFor(endpoint, "01J5X00000000000000000F004", "mac-a")
 	same.Now = now.Add(4 * time.Minute)
 	if res, err := DeclareFree(same, "main", strings.Repeat("1", 64)); err != nil || res.Outcome != OutcomeAbandoned || !strings.Contains(res.Detail, "already stands") {
 		t.Fatalf("declare at the standing digest: %+v %v", res, err)
@@ -927,7 +1044,7 @@ func TestDeclareFreeAndLabelDelta(t *testing.T) {
 	if res, err := DeclareFree(first, "main", strings.Repeat("1", 64)); err != nil || res.Outcome != OutcomeConfirmed || res.Detail != "idempotent" {
 		t.Fatalf("declare replay of the confirmed entry: %+v %v", res, err)
 	}
-	renew := verbReq(root, "01J5X00000000000000000F005", "mac-a")
+	renew := verbReqFor(endpoint, "01J5X00000000000000000F005", "mac-a")
 	renew.Now = now.Add(5 * time.Minute)
 	if res, err := DeclareFree(renew, "main", strings.Repeat("2", 64)); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("declare at a new digest: %+v %v", res, err)

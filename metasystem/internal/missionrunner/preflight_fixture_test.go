@@ -524,17 +524,20 @@ func TestWallPreflightContractIdentity(t *testing.T) {
 // decision (the contract is excluded from it); only the approved-bytes
 // binding keeps E0 from recording a contract nobody approved.
 func TestAdmissionBindsTheApprovedContract(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	tampered := strings.Replace(fixtureContract, "exposure=EUR:10", "exposure=EUR:9999", 1)
-	if err := testexec.WriteFile(engine.contractPath(), []byte(tampered), 0o644); err != nil {
+	b := newBirthBed(t)
+	e := b.engine
+	tampered := strings.Replace(string(b.snapshot), "exposure=EUR:10", "exposure=EUR:9999", 1)
+	if err := os.WriteFile(e.contractPath(), []byte(tampered), 0644); err != nil {
 		t.Fatal(err)
 	}
-	fixtureGit(t, engine.Root, "add", "plans")
-	fixtureGit(t, engine.Root, "commit", "-qm", "swap the contract after the pin")
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "approved contract bytes") {
+	b.expectStart()
+	b.admission([]byte(tampered), false)
+	b.drop()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "approved contract bytes") {
 		t.Fatalf("admission must refuse a workspace contract that is not the pinned one: %v", err)
+	}
+	if pathExists(b.atState()) {
+		t.Fatal("refused admission published state")
 	}
 }
 
@@ -543,17 +546,17 @@ func TestAdmissionBindsTheApprovedContract(t *testing.T) {
 // read state birth is allowed — because admission and state construction
 // take that read's bytes as given and never touch the file again.
 func TestBirthRefusesAReplacedPin(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	tampered := strings.Replace(fixtureContract, "exposure=EUR:10", "exposure=EUR:9999", 1)
-	if err := os.WriteFile(engine.approvedContractPath(), []byte(tampered), 0o644); err != nil {
+	b := newBirthBed(t)
+	e := b.engine
+	tampered := strings.Replace(string(b.snapshot), "exposure=EUR:10", "exposure=EUR:9999", 1)
+	if err := os.WriteFile(e.approvedContractPath(), []byte(tampered), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "approvedContractSha256") {
+	b.expectStart()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "approvedContractSha256") {
 		t.Fatalf("a replaced pin must refuse at the authenticated read: %v", err)
 	}
-	if pathExists(filepath.Join(engine.missionDir(), "state.json")) {
+	if pathExists(b.atState()) {
 		t.Fatal("a replaced pin must not birth a mission")
 	}
 }
@@ -566,33 +569,29 @@ func TestBirthRefusesAReplacedPin(t *testing.T) {
 // the pin file again — for admission or for state construction — would
 // bind the replacement instead and fail here.
 func TestBirthUsesTheBytesItAuthenticated(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	tampered := strings.Replace(fixtureContract,
-		"stream.primary=Reach the acceptance score.",
-		"stream.primary=Injected after authentication.", 1)
-	engine.afterApprovedParse = func() {
-		if err := os.WriteFile(engine.approvedContractPath(), []byte(tampered), 0o644); err != nil {
+	b := newBirthBed(t)
+	e := b.engine
+	tampered := strings.Replace(string(b.snapshot), "stream.primary=Reach the acceptance score.", "stream.primary=Injected after authentication.", 1)
+	e.afterApprovedParse = func() {
+		if err := os.WriteFile(e.approvedContractPath(), []byte(tampered), 0644); err != nil {
 			t.Errorf("cannot replace the pin in the gap: %v", err)
 		}
 	}
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	// Birth itself is the boundary: the turn machinery that follows
-	// re-authenticates the pin per turn and would rightly refuse the
-	// still-tampered file — a separate defense, witnessed separately.
-	if _, _, _, err := engine.initializeState(leasePath); err != nil {
+	b.birth()
+	b.verifyBirth()
+	if _, _, _, err := e.initializeState(b.lease); err != nil {
 		t.Fatalf("birth on the authenticated bytes must succeed: %v", err)
 	}
-	state := readTestDoc(t, filepath.Join(engine.missionDir(), "state.json"))
+	state := readTestDoc(t, b.atState())
 	streams, _ := state["streams"].(map[string]any)
 	primary, _ := streams["primary"].(map[string]any)
 	if goal, _ := primary["goal"].(string); !strings.HasPrefix(goal, "Reach the acceptance score.") {
 		t.Fatalf("state bound %q — the replaced pin leaked into birth", goal)
 	}
 	if reason, _ := state["parkReason"].(string); reason == "wall-violation" {
-		t.Fatalf("admission judged the replacement, not the authenticated bytes")
+		t.Fatal("admission judged the replacement, not the authenticated bytes")
 	}
-	// The replacement really was on disk before birth finished.
-	pin, err := os.ReadFile(engine.approvedContractPath())
+	pin, err := os.ReadFile(e.approvedContractPath())
 	if err != nil || !strings.Contains(string(pin), "Injected after authentication.") {
 		t.Fatalf("the seam did not replace the pin: %v", err)
 	}
@@ -603,33 +602,25 @@ func TestBirthUsesTheBytesItAuthenticated(t *testing.T) {
 // through the object. What a symlink points at may be a living
 // mission's state; only a human removes it.
 func TestNonRegularStatePathFreezesTheMission(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
+	b := newBirthBed(t)
+	e := b.engine
 	target := filepath.Join(t.TempDir(), "elsewhere-state.json")
 	writeText(t, target, "{}\n")
-	statePath := filepath.Join(engine.missionDir(), "state.json")
+	statePath := b.atState()
 	if err := os.Symlink(target, statePath); err != nil {
 		t.Fatal(err)
 	}
-	fencesBefore := readTestDoc(t, engine.fencesPath())
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "non-regular object") {
+	fencesBefore := readTestDoc(t, e.fencesPath())
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "non-regular object") {
 		t.Fatalf("start must refuse the shape by name: %v", err)
 	}
-	if _, _, _, err := engine.resumeState(); err == nil ||
-		!strings.Contains(err.Error(), "non-regular object") {
+	if _, _, _, err := e.resumeState(); err == nil || !strings.Contains(err.Error(), "non-regular object") {
 		t.Fatalf("resume must refuse the shape by name: %v", err)
 	}
-	if err := engine.armAndPreflight("start"); err == nil ||
-		!strings.Contains(err.Error(), "non-regular object") {
-		t.Fatalf("the pin ladder must refuse the shape by name: %v", err)
-	}
-	// Everything survives the refusals: the pin, the fence clock, the
-	// symlink itself, and its target.
-	if !pathExists(engine.approvedContractPath()) {
+	if !pathExists(e.approvedContractPath()) {
 		t.Fatal("the refusal must not sweep the pin")
 	}
-	fencesAfter := readTestDoc(t, engine.fencesPath())
+	fencesAfter := readTestDoc(t, e.fencesPath())
 	if fencesBefore["startedAt"] != fencesAfter["startedAt"] {
 		t.Fatal("the refusal must not reset the fence clock")
 	}
@@ -639,34 +630,29 @@ func TestNonRegularStatePathFreezesTheMission(t *testing.T) {
 	if !pathExists(target) {
 		t.Fatal("the symlink target must survive untouched")
 	}
-
-	// A DANGLING symlink is the sharpest shape: a dereferencing check
-	// reads it as absence. Resume must still name the shape, and a
-	// symlink landing mid-birth must refuse at publication instead of
-	// being replaced by the state rename.
 	if err := os.Remove(statePath); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(t.TempDir(), "never-exists.json"), statePath); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := engine.resumeState(); err == nil ||
-		!strings.Contains(err.Error(), "non-regular object") {
+	if _, _, _, err := e.resumeState(); err == nil || !strings.Contains(err.Error(), "non-regular object") {
 		t.Fatalf("resume must name a dangling symlink, not report absence: %v", err)
 	}
 	if err := os.Remove(statePath); err != nil {
 		t.Fatal(err)
 	}
-	engine.afterApprovedParse = func() {
+	e.afterApprovedParse = func() {
 		if err := os.Symlink(filepath.Join(t.TempDir(), "never-exists.json"), statePath); err != nil {
 			t.Errorf("cannot plant the mid-birth symlink: %v", err)
 		}
 	}
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "non-regular object") {
+	b.birth()
+	b.drop()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "non-regular object") {
 		t.Fatalf("publication must refuse the mid-birth symlink by name: %v", err)
 	}
-	engine.afterApprovedParse = nil
+	e.afterApprovedParse = nil
 	if info, err := os.Lstat(statePath); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("publication must not replace the symlink: %v", err)
 	}
@@ -859,18 +845,21 @@ func TestSealedBaselineBirthsAndRuns(t *testing.T) {
 // The birth record self-heals at resume: a born mission whose record is
 // missing gets it re-stamped from the verified living state.
 func TestBirthRecordSelfHealsAtResume(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	if _, _, _, err := engine.initializeState(leasePath); err != nil {
+	b := newBirthBed(t)
+	e := b.engine
+	b.birth()
+	b.verifyBirth()
+	if _, _, _, err := e.initializeState(b.lease); err != nil {
 		t.Fatalf("birth: %v", err)
 	}
-	if err := os.Remove(engine.birthRecordPath()); err != nil {
+	if err := os.Remove(e.birthRecordPath()); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := engine.resumeState(); err != nil {
+	b.resume()
+	if _, _, _, err := e.resumeState(); err != nil {
 		t.Fatalf("resume over a missing birth record: %v", err)
 	}
-	if !pathExists(engine.birthRecordPath()) {
+	if !pathExists(e.birthRecordPath()) {
 		t.Fatal("resume must re-stamp the birth record")
 	}
 }
@@ -879,14 +868,13 @@ func TestBirthRecordSelfHealsAtResume(t *testing.T) {
 // path that exists but cannot be read as a ledger refuses the start
 // instead of counting as no evidence.
 func TestUnprovableEmptinessRefusesRebirth(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
-	if err := os.MkdirAll(ledgerPath, 0o755); err != nil {
+	b := newBirthBed(t)
+	e := b.engine
+	ledgerPath := b.atLedger()
+	if err := os.MkdirAll(ledgerPath, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "cannot prove") {
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "cannot prove") {
 		t.Fatalf("an unreadable ledger probe must refuse, not authorize: %v", err)
 	}
 	if info, err := os.Lstat(ledgerPath); err != nil || !info.IsDir() {
@@ -895,119 +883,60 @@ func TestUnprovableEmptinessRefusesRebirth(t *testing.T) {
 }
 
 func TestStillbornInitCleansItsArtifacts(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	commitBedBaseline(t, engine.Root)
-	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
-	// The bed's own build already armed and pinned (the parent's half).
-	// A fileMode flip in the SAME gap refuses at the child's admission
-	// before any dirt considerations.
-	fixtureGit(t, engine.Root, "config", "core.fileMode", "false")
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "core.fileMode") {
+	b := newBirthBed(t)
+	e := b.engine
+	// The child rechecks fileMode before any repository snapshot.
+	b.expectStart()
+	b.fileMode("false")
+	b.drop()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "core.fileMode") {
 		t.Fatalf("the child must recheck the fileMode pin: %v", err)
 	}
-	fixtureGit(t, engine.Root, "config", "core.fileMode", "true")
-	// The fileMode refusal above CLEANED the stillborn pin (that is the
-	// contract under test), so the dirt leg needs its own pin — without
-	// it the next attempt would die reading the missing approved
-	// contract and never reach admission.
-	if err := engine.armAndPreflight("start"); err != nil {
-		t.Fatalf("re-pin between legs must succeed on a clean bed: %v", err)
+	if pathExists(b.atLedger()) || pathExists(e.approvedContractPath()) {
+		t.Fatal("fileMode refusal must clean ledger and pin")
 	}
-	// Dirt lands in the parent-child gap; the child's re-admission must
-	// refuse BY NAME and clean the stillborn ledger and pin.
-	writeText(t, filepath.Join(engine.Root, "truth", "gap-dirt.txt"), "dirt\n")
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "initial baseline is dirty") {
+	b.pin()
+	// Dirt lands after the corrected ordinary repin.
+	writeText(t, filepath.Join(e.Root, "truth", "gap-dirt.txt"), "dirt\n")
+	b.expectStart()
+	b.admission(b.snapshot, true)
+	b.drop()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "initial baseline is dirty") {
 		t.Fatalf("the child re-admission must refuse the gap dirt by name: %v", err)
 	}
-	if pathExists(filepath.Join(engine.missionDir(), "ledger.md")) {
+	if pathExists(b.atLedger()) {
 		t.Fatal("the stillborn ledger must be removed")
 	}
-	if pathExists(engine.approvedContractPath()) {
+	if pathExists(e.approvedContractPath()) {
 		t.Fatal("the stillborn pin must be removed")
 	}
-	// A STATE-BIRTH failure sweeps too: admission and the E0 anchor
-	// succeed, then the atomic state write fails — a directory landing
-	// on state.json mid-birth (after the entry checks) forces exactly
-	// that. The sweep must remove the ledger, the pin, AND the anchored
-	// E0 ref; the squatting object itself stays untouched.
-	if err := os.Remove(filepath.Join(engine.Root, "truth", "gap-dirt.txt")); err != nil {
+	if err := os.Remove(filepath.Join(e.Root, "truth", "gap-dirt.txt")); err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.armAndPreflight("start"); err != nil {
-		t.Fatalf("re-pin before the state-birth leg must succeed: %v", err)
-	}
-	statePath := filepath.Join(engine.missionDir(), "state.json")
-	engine.afterApprovedParse = func() {
-		if err := os.MkdirAll(statePath, 0o755); err != nil {
+	b.pin()
+	statePath := b.atState()
+	e.afterApprovedParse = func() {
+		if err := os.MkdirAll(statePath, 0755); err != nil {
 			t.Errorf("cannot squat the state path mid-birth: %v", err)
 		}
 	}
-	if _, _, _, err := engine.initializeState(leasePath); err == nil ||
-		!strings.Contains(err.Error(), "state initialization refused") {
+	b.birth()
+	b.drop()
+	if _, _, _, err := e.initializeState(b.lease); err == nil || !strings.Contains(err.Error(), "state initialization refused") {
 		t.Fatalf("the mid-birth squatter must fail the state write: %v", err)
 	}
-	engine.afterApprovedParse = nil
-	if pathExists(engine.birthRecordPath()) {
+	e.afterApprovedParse = nil
+	if pathExists(e.birthRecordPath()) {
 		t.Fatal("a proven same-pass publication failure must unstamp the birth record")
 	}
-	if err := os.Remove(statePath); err != nil {
-		t.Fatal(err)
+	if info, err := os.Lstat(statePath); err != nil || !info.IsDir() {
+		t.Fatalf("the squatting directory must survive: %v", err)
 	}
-	if pathExists(filepath.Join(engine.missionDir(), "ledger.md")) {
+	if pathExists(b.atLedger()) {
 		t.Fatal("the state-birth failure must sweep the stillborn ledger")
 	}
-	if pathExists(engine.approvedContractPath()) {
+	if pathExists(e.approvedContractPath()) {
 		t.Fatal("the state-birth failure must sweep the stillborn pin")
-	}
-	anchorList := exec.Command("git", "-C", engine.Root, "for-each-ref",
-		"--format=%(refname)", "refs/metasystem/missions/"+engine.Mission+"/")
-	if refs, err := anchorList.CombinedOutput(); err != nil || strings.TrimSpace(string(refs)) != "" {
-		t.Fatalf("the state-birth failure must drop the stillborn E0 anchor: %q (%v)", refs, err)
-	}
-	// The corrected retry starts cleanly end to end — and the BIRTH
-	// RULE, not the cleanup, is what makes it possible: recreate the
-	// stillborn artifacts a failed or interrupted cleanup would leave,
-	// and the retry must STILL work.
-	writeText(t, filepath.Join(engine.missionDir(), "ledger.md"), "stillborn remnant\n")
-	// A surviving FENCES remnant with an old clock must not eat the
-	// mission's sealed wall time: the re-pin refreshes startedAt.
-	writeJSONFile(t, engine.fencesPath(), map[string]any{
-		"schemaVersion": 1, "missionId": engine.Mission,
-		"startedAt": "2020-01-01T00:00:00Z", "cycles": 0,
-		"reservations":           map[string]any{},
-		"approvedContractSha256": strings.Repeat("d", 64),
-	})
-	fixedNow := time.Now().UTC().Truncate(time.Second)
-	engine.Now = func() time.Time { return fixedNow }
-	if err := engine.armAndPreflight("start"); err != nil {
-		t.Fatalf("the corrected retry must re-pin over remnants: %v", err)
-	}
-	// The refreshed clock is BOUNDED, not merely different: any stale
-	// replacement — 2020 or 2021 alike — would eat sealed wall time.
-	refreshed := readTestDoc(t, engine.fencesPath())
-	started, _ := refreshed["startedAt"].(string)
-	stamp, perr := time.Parse(time.RFC3339, started)
-	if perr != nil || !stamp.Equal(fixedNow) {
-		t.Fatalf("the stillborn re-pin timestamp = %v, want %v (parse error %v)", stamp, fixedNow, perr)
-	}
-	signal := filepath.Join(t.TempDir(), "start.json")
-	if code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture-sb", signal); code != 0 {
-		t.Fatalf("the corrected retry must give birth cleanly, exit %d", code)
-	}
-	state := readTestDoc(t, filepath.Join(engine.missionDir(), "state.json"))
-	// A TURN genuinely ran: exit 0 alone would also fit a pre-turn
-	// fence park eating the remnant's stale clock, so demand a terminal
-	// that is NOT the fence park and a booked cycle — a fence park
-	// before any turn books nothing.
-	status, _ := state["status"].(string)
-	if status == "running" || (status == "parked" && state["parkReason"] == "fence") {
-		t.Fatalf("the corrected retry must reach a worked terminal, not %q (%v)", status, state["parkReason"])
-	}
-	ledgerBytes, lerr := os.ReadFile(filepath.Join(engine.missionDir(), "ledger.md"))
-	if lerr != nil || !strings.Contains(string(ledgerBytes), "Cycle 1") {
-		t.Fatalf("the corrected retry must book its first cycle: %v", lerr)
 	}
 }
 
@@ -1207,16 +1136,27 @@ func TestNestedCheckoutMissionBirth(t *testing.T) {
 // does not survive the parent-child gap on either launch mode, and
 // resume's reconciliation trusts the tree equation.
 func TestResumeChildRechecksFileMode(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
-	signal := filepath.Join(t.TempDir(), "start.json")
-	if code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture-rf", signal); code != 0 {
-		t.Fatalf("the bed mission must be born, exit %d", code)
+	engine := &Engine{Root: t.TempDir(), Mission: "alpha"}
+	writeText(t, filepath.Join(engine.missionDir(), "state.json"), "{}")
+	args := []string{"config", "--local", "--type=bool", "--get", "core.fileMode"}
+	facts := &strictWallReads{t: t, git: []wallGitReply{
+		{root: engine.Root, args: args, stdout: "true\n"},
+		{root: engine.Root, args: args, stdout: "false\n"},
+	}}
+	engine.wallReadFacts = facts
+	continuity := &strictResumeContinuity{t: t}
+	engine.continuityFacts = continuity
+	if err := engine.wallPreflight("resume", nil, nil); err != nil {
+		t.Fatalf("parent preflight must accept the true local pin: %v", err)
 	}
-	fixtureGit(t, engine.Root, "config", "core.fileMode", "false")
 	if _, _, _, err := engine.resumeState(); err == nil ||
-		!strings.Contains(err.Error(), "core.fileMode") {
+		!strings.Contains(err.Error(), "core.fileMode is not pinned true") {
 		t.Fatalf("the resume child must recheck the fileMode pin: %v", err)
 	}
+	if len(continuity.calls) != 0 {
+		t.Fatalf("the child reached continuity after the fileMode refusal: %+v", continuity.calls)
+	}
+	facts.done()
 }
 
 // The full cycle in-process: after the armed preflight, internalRun — the

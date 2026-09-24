@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition"
@@ -26,16 +27,20 @@ type processScope struct {
 	Binary               string
 }
 
-var classifyProcessVerbCaller = lease.ClassifyAt
+type processCallerClassifier func(string, string, int64) (lease.Classification, error)
 
 // classifyVerbCaller keeps checkout-owned lease state separate from the
 // installed adapters that identify runtimes. Production uses the engine that
 // is executing the verb; source-tree and fixture binaries resolve the target
 // checkout's installation with the same rule as stop, status, and arm.
 func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, error) {
+	return classifyVerbCallerWith(root, callerPid, stateroot.RepositoryTop)
+}
+
+func classifyVerbCallerWith(root string, callerPid int64, repositoryTop func(string) (string, error)) (lease.ClassifyResult, error) {
 	installation, err := upMetasystemRoot("")
 	if err != nil {
-		if scope, scopeErr := resolveProcessScope(root, ""); scopeErr == nil {
+		if scope, scopeErr := resolveProcessScopeWith(root, "", repositoryTop); scopeErr == nil {
 			installation = scope.Installation
 		} else {
 			// Package tests model a self-hosted installation directly at the
@@ -48,8 +53,12 @@ func classifyVerbCaller(root string, callerPid int64) (lease.ClassifyResult, err
 }
 
 func resolveProcessScope(repo, installation string) (processScope, error) {
+	return resolveProcessScopeWith(repo, installation, stateroot.RepositoryTop)
+}
+
+func resolveProcessScopeWith(repo, installation string, repositoryTop func(string) (string, error)) (processScope, error) {
 	installationExplicit := installation != ""
-	checkout, err := upRepositoryScope(repo)
+	checkout, err := upRepositoryScopeWith(repo, repositoryTop)
 	if err != nil {
 		return processScope{}, fmt.Errorf("%s is not inside a git repository", repo)
 	}
@@ -99,7 +108,11 @@ func processVerbRetryCommand(scope processScope, verb string) string {
 }
 
 func runProcessStop(args []string) int {
-	scope, scale, code := parseProcessScope("stop", args)
+	return runProcessStopWith(args, stateroot.RepositoryTop, lease.ClassifyAt)
+}
+
+func runProcessStopWith(args []string, repositoryTop func(string) (string, error), classify processCallerClassifier) int {
+	scope, scale, code := parseProcessScopeWith("stop", args, repositoryTop)
 	if code != 0 {
 		return code
 	}
@@ -107,7 +120,7 @@ func runProcessStop(args []string) int {
 	if err != nil {
 		return refuseProcessVerb("stop", scope.Checkout, err.Error(), "run: "+processVerbRetryCommand(scope, "stop"))
 	}
-	if _, authorized := requireHumanTerminalAt(scope.Root, scope.Installation, "metasystem stop", processVerbRetryCommand(scope, "stop")); !authorized {
+	if _, authorized := requireHumanTerminalAtWith(scope.Root, scope.Installation, "metasystem stop", repositoryTop, classify, processVerbRetryCommand(scope, "stop")); !authorized {
 		return 1
 	}
 	transition := processTransition(scope, scale)
@@ -152,7 +165,11 @@ func processStopCrashStep(root string) (int, error) {
 }
 
 func runProcessStatus(args []string) int {
-	scope, scale, code := parseProcessScope("status", args)
+	return runProcessStatusWith(args, stateroot.RepositoryTop)
+}
+
+func runProcessStatusWith(args []string, repositoryTop func(string) (string, error)) int {
+	scope, scale, code := parseProcessScopeWith("status", args, repositoryTop)
 	if code != 0 {
 		return code
 	}
@@ -165,15 +182,19 @@ func runProcessStatus(args []string) int {
 }
 
 func runProcessArm(args []string) int {
+	return runProcessArmWith(args, stateroot.RepositoryTop, lease.ClassifyAt)
+}
+
+func runProcessArmWith(args []string, repositoryTop func(string) (string, error), classify processCallerClassifier) int {
 	var temporaryWord, reviewBy string
-	scope, scale, code := parseProcessScope("arm", args, func(flags *flag.FlagSet) {
+	scope, scale, code := parseProcessScopeWith("arm", args, repositoryTop, func(flags *flag.FlagSet) {
 		flags.StringVar(&temporaryWord, "temporary-human-word", "", "verbatim remote human authorization")
 		flags.StringVar(&reviewBy, "review-by", "", "human re-approval date")
 	})
 	if code != 0 {
 		return code
 	}
-	fixtureGranted, authorized := requireHumanTerminalAt(scope.Root, scope.Installation, "metasystem arm", processVerbRetryCommand(scope, "arm"))
+	fixtureGranted, authorized := requireHumanTerminalAtWith(scope.Root, scope.Installation, "metasystem arm", repositoryTop, classify, processVerbRetryCommand(scope, "arm"))
 	if !authorized {
 		return 1
 	}
@@ -261,6 +282,10 @@ func armRefusalSecondLine(scope processScope, err error) string {
 }
 
 func parseProcessScope(verb string, args []string, register ...func(*flag.FlagSet)) (processScope, int, int) {
+	return parseProcessScopeWith(verb, args, stateroot.RepositoryTop, register...)
+}
+
+func parseProcessScopeWith(verb string, args []string, repositoryTop func(string) (string, error), register ...func(*flag.FlagSet)) (processScope, int, int) {
 	flags := flag.NewFlagSet("metasystem "+verb, flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	repo := pathFlag(flags, "repo", ".", "repository or path inside it")
@@ -272,7 +297,7 @@ func parseProcessScope(verb string, args []string, register ...func(*flag.FlagSe
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return processScope{}, 0, 2
 	}
-	scope, err := resolveProcessScope(*repo, *installation)
+	scope, err := resolveProcessScopeWith(*repo, *installation, repositoryTop)
 	if err != nil {
 		return processScope{}, 0, processScopeRefusal(verb, *repo, *installation, err)
 	}
@@ -329,18 +354,22 @@ func requireHumanTerminal(repo, verb string, retryCommands ...string) (fixtureGr
 }
 
 func requireHumanTerminalAt(repo, metasystemRoot, verb string, retryCommands ...string) (fixtureGranted, authorized bool) {
+	return requireHumanTerminalAtWith(repo, metasystemRoot, verb, stateroot.RepositoryTop, lease.ClassifyAt, retryCommands...)
+}
+
+func requireHumanTerminalAtWith(repo, metasystemRoot, verb string, repositoryTop func(string) (string, error), classify processCallerClassifier, retryCommands ...string) (fixtureGranted, authorized bool) {
 	retryCommand := ""
+	checkout := ""
 	if strings.HasPrefix(verb, "metasystem ") {
-		checkout, _ := upRepositoryScope(repo)
+		checkout, _ = upRepositoryScopeWith(repo, repositoryTop)
 		retryCommand = verb + " --repo " + checkout
 		if len(retryCommands) > 0 && retryCommands[0] != "" {
 			retryCommand = retryCommands[0]
 		}
 	}
-	classification, err := classifyProcessVerbCaller(repo, metasystemRoot, int64(os.Getppid()))
+	classification, err := classify(repo, metasystemRoot, int64(os.Getppid()))
 	if err != nil {
 		if strings.HasPrefix(verb, "metasystem ") {
-			checkout, _ := upRepositoryScope(repo)
 			if refuseClassificationData(strings.TrimPrefix(verb, "metasystem "), checkout, retryCommand, err) {
 				return false, false
 			}
@@ -352,7 +381,6 @@ func requireHumanTerminalAt(repo, metasystemRoot, verb string, retryCommands ...
 	}
 	if classification.Class != lease.ClassHuman {
 		if strings.HasPrefix(verb, "metasystem ") {
-			checkout, _ := upRepositoryScope(repo)
 			name := strings.TrimPrefix(verb, "metasystem ")
 			refuseProcessVerb(name, checkout, name+" is a human act at a terminal; this caller is "+classification.Class, "at an agent-free terminal, run: "+retryCommand)
 		} else {
@@ -395,6 +423,10 @@ func runStopFenceCreatingClose(args []string) int {
 // mission launcher can reach supervision arming or any gate that depends on
 // live supervision.
 func missionFenceBeforeArm(root, mode string) (int64, int) {
+	return missionFenceBeforeArmWith(root, mode, stateroot.RepositoryTop, lease.ClassifyAt)
+}
+
+func missionFenceBeforeArmWith(root, mode string, repositoryTop func(string) (string, error), classify processCallerClassifier) (int64, int) {
 	record, err := stopfence.Read(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mission "+mode+":", err)
@@ -403,7 +435,7 @@ func missionFenceBeforeArm(root, mode string) (int64, int) {
 	if record.State == stopfence.StateOpen {
 		return record.Generation, 0
 	}
-	scope, scopeErr := resolveProcessScope(root, "")
+	scope, scopeErr := resolveProcessScopeWith(root, "", repositoryTop)
 	if scopeErr != nil {
 		fmt.Fprintln(os.Stderr, "mission "+mode+":", scopeErr)
 		return 0, 1
@@ -412,7 +444,7 @@ func missionFenceBeforeArm(root, mode string) (int64, int) {
 	// Mission state and its stop fence remain application-owned. Only the
 	// process-control verbs move their supervision/accounting root to the
 	// authenticated installation.
-	classification, classifyErr := classifyProcessVerbCaller(scope.Checkout, scope.Installation, int64(os.Getpid()))
+	classification, classifyErr := classify(scope.Checkout, scope.Installation, int64(os.Getpid()))
 	if classifyErr != nil {
 		if refuseClassificationData("mission "+mode, scope.Checkout, retryCommand, classifyErr) {
 			return 0, 1

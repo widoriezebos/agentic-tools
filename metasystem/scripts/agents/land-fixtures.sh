@@ -1584,6 +1584,7 @@ LEDGER
   git -C "$leg_seed" add -f bin/metasystem
   git -C "$leg_seed" commit -qm seed
   git init -q --bare "$leg_remote"
+  git --git-dir="$leg_remote" symbolic-ref HEAD refs/heads/main
   git -C "$leg_seed" remote add origin "$leg_remote"
   git -C "$leg_seed" push -q -u origin main
   git clone -q "$leg_remote" "$leg_local"
@@ -1669,7 +1670,13 @@ assert_land_brain_refusal() { # root, expected, command...
 }
 
 prepare_abandonment_landing_leg() { # name
-  local name=$1 saved_config engine_status engine_stamp engine_commit source_top
+  local name=$1 saved_config engine_status engine_stamp engine_commit source_top source_status source_stamp
+  source_status=$("$source_engine" supervise status --repo "$root") || exit $?
+  source_stamp=$("$source_engine" json get --value "$source_status" --field engineBuild) || exit $?
+  if [[ ! $source_stamp =~ ^[0-9a-f]{40}$ && ! $source_stamp =~ ^dev-[0-9a-f]{40}-dirty$ ]]; then
+    source_engine=$tmp/abandonment-source-engine
+    env -u METASYSTEM_BUILD_STAMP bash "$root/scripts/agents/go-build.sh" --out "$source_engine" || exit $?
+  fi
   make_brain_source_leg "$name"
   engine_status=$("$source_engine" supervise status --repo "$leg_local")
   engine_stamp=$("$source_engine" json get --value "$engine_status" --field engineBuild)

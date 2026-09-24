@@ -595,6 +595,28 @@ func TestInheritedWorkerAllowance(t *testing.T) {
 	}
 }
 
+func TestFixtureWithoutOuterProofScrubsWitnessHandoff(t *testing.T) {
+	t.Parallel()
+	budget, _ := filepath.Abs(filepath.Join("..", "..", "scripts", "agents", "fixture-budget.sh"))
+	command := exec.Command("bash", "-c", `
+source "$1"
+harness_fixture_without_outer_proof bash -c 'printf "%s|%s|%s\n" "${METASYSTEM_GATE_WITNESS+x}" "${METASYSTEM_GATE_WITNESS_WRITE+x}" "$FIXTURE_SENTINEL"'
+printf '%s|%s|%s\n' "$METASYSTEM_GATE_WITNESS" "$METASYSTEM_GATE_WITNESS_WRITE" "$FIXTURE_SENTINEL"
+`, "bash", budget)
+	command.Env = append(os.Environ(),
+		"METASYSTEM_GATE_WITNESS=outer-read",
+		"METASYSTEM_GATE_WITNESS_WRITE=outer-write",
+		"FIXTURE_SENTINEL=retained",
+	)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("fixture proof scrub failed: %v\n%s", err, output)
+	}
+	if want := "||retained\nouter-read|outer-write|retained\n"; string(output) != want {
+		t.Fatalf("fixture proof scrub output = %q, want %q", output, want)
+	}
+}
+
 func TestFixtureGoConsumersUseSharedWorkerBoundary(t *testing.T) {
 	t.Parallel()
 	scripts := map[string]int{

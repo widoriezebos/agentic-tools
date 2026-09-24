@@ -152,7 +152,9 @@ func writeHandoffJob(t *testing.T, root, id, status string, fields map[string]an
 }
 
 func TestHandoffWritesAVerifiedStateFile(t *testing.T) {
-	root := handoffCaptureRepo(t, "landing")
+	fixture := newHandoffGoalFixture(t, "landing")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6000000000000001")
 	jobPath := writeHandoffJob(t, root, "running-job", "running", nil)
 	scratchPath := filepath.Join(root, "artifacts", "reports", "proof.txt")
@@ -169,7 +171,7 @@ func TestHandoffWritesAVerifiedStateFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, []ScratchArg{
+	result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, []ScratchArg{
 		{Purpose: "proof", Path: "artifacts/reports/proof.txt", Required: true},
 		{Purpose: "optional note", Path: "artifacts/reports/absent.txt"},
 	}), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
@@ -249,7 +251,9 @@ func TestHandoffManifestPreservesOverflow(t *testing.T) {
 	if err := decodeStrictHandoffJSON(encoded, &decoded); err != nil || len(decoded.OpenWork) != 5 || len(decoded.Delegates) != 6 {
 		t.Fatalf("new manifest lists did not round trip: manifest=%+v err=%v", decoded, err)
 	}
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6000000000000002")
 	for index := 0; index < maxHandoffOpenJobs+3; index++ {
 		writeHandoffJob(t, root, fmt.Sprintf("running-%03d", index), "running", nil)
@@ -265,7 +269,7 @@ func TestHandoffManifestPreservesOverflow(t *testing.T) {
 		writeTestFile(t, filepath.Join(root, relative), []byte(fmt.Sprintf("scratch %d\n", index)))
 		scratch = append(scratch, ScratchArg{Purpose: fmt.Sprintf("scratch %d", index), Path: relative, Required: true})
 	}
-	result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, scratch), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, scratch), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,9 +306,11 @@ func TestHandoffManifestPreservesOverflow(t *testing.T) {
 }
 
 func TestHandoffRecordsEngineIdentity(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "4000000000000004")
-	result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,15 +384,16 @@ func TestHandoffWaiterStates(t *testing.T) {
 
 func TestHandoffRefusals(t *testing.T) {
 	tests := []struct {
-		name string
-		code string
-		set  func(*testing.T, string, *HandoffCaller) []ScratchArg
+		name       string
+		code       string
+		beforeGoal bool
+		set        func(*testing.T, string, *HandoffCaller) []ScratchArg
 	}{
-		{name: "unobservable runtime precedes holder checks", code: "HANDOFF_UNOBSERVABLE", set: func(_ *testing.T, _ string, caller *HandoffCaller) []ScratchArg {
+		{name: "unobservable runtime precedes holder checks", code: "HANDOFF_UNOBSERVABLE", beforeGoal: true, set: func(_ *testing.T, _ string, caller *HandoffCaller) []ScratchArg {
 			caller.Runtime, caller.MainId = "devin", "advisor"
 			return nil
 		}},
-		{name: "advisor is not holder", code: "HANDOFF_NOT_HOLDER", set: func(_ *testing.T, _ string, caller *HandoffCaller) []ScratchArg {
+		{name: "advisor is not holder", code: "HANDOFF_NOT_HOLDER", beforeGoal: true, set: func(_ *testing.T, _ string, caller *HandoffCaller) []ScratchArg {
 			caller.MainId = "advisor"
 			return nil
 		}},
@@ -427,7 +434,7 @@ func TestHandoffRefusals(t *testing.T) {
 			arg := ScratchArg{Purpose: "plan", Path: "plans/handoff-capture.md", Required: true}
 			return []ScratchArg{arg, arg}
 		}},
-		{name: "invalid main identity", code: "HANDOFF_NOT_HOLDER", set: func(_ *testing.T, _ string, caller *HandoffCaller) []ScratchArg {
+		{name: "invalid main identity", code: "HANDOFF_NOT_HOLDER", beforeGoal: true, set: func(_ *testing.T, _ string, caller *HandoffCaller) []ScratchArg {
 			caller.Ref = identity.Ref{}
 			return nil
 		}},
@@ -484,11 +491,17 @@ func TestHandoffRefusals(t *testing.T) {
 	}
 	for index, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			root := handoffCaptureRepo(t, "claimed")
+			fixture := newHandoffGoalFixture(t, "claimed")
+			root := fixture.root
+			_ = fixture
 			caller := handoffMainCaller()
 			scratch := test.set(t, root, &caller)
 			useHandoffNonces(t, fmt.Sprintf("61%014x", index+1))
-			_, err := Handoff(root, caller, handoffTestRecord(t, root, scratch), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+			handoff := fixture.handoff
+			if test.beforeGoal {
+				handoff = fixture.handoffBeforeGoal
+			}
+			_, err := handoff(root, caller, handoffTestRecord(t, root, scratch), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 			var got *HandoffRefusal
 			if !errors.As(err, &got) || got.Code != test.code {
 				t.Fatalf("refusal=%v, want %s", err, test.code)
@@ -500,10 +513,9 @@ func TestHandoffRefusals(t *testing.T) {
 	}
 
 	t.Run("state cannot fit", func(t *testing.T) {
-		file := capturedGoal("claimed")
-		file.NextStep = strings.Repeat("next ", 8000)
-		root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"fix-it": file})
-		installHandoffFixtureFiles(t, root)
+		fixture := newHandoffGoalFixture(t, "claimed")
+		fixture.file.NextStep = strings.Repeat("next ", 8000)
+		root := fixture.root
 		previous := mintHandoffNonce
 		mintCalls := 0
 		mintHandoffNonce = func() (string, error) {
@@ -511,7 +523,7 @@ func TestHandoffRefusals(t *testing.T) {
 			return "6100000000000008", nil
 		}
 		t.Cleanup(func() { mintHandoffNonce = previous })
-		result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		var got *HandoffRefusal
 		if !errors.As(err, &got) || got.Code != "HANDOFF_STATE_TOO_LARGE" {
 			t.Fatalf("oversized-state refusal=%v", err)
@@ -528,9 +540,11 @@ func TestHandoffRefusals(t *testing.T) {
 	})
 
 	t.Run("no claimed or landing goal", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "none")
+		fixture := newHandoffGoalFixture(t, "none")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6200000000000001")
-		_, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		_, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		var got *HandoffRefusal
 		if !errors.As(err, &got) || got.Code != "HANDOFF_NO_GOAL" {
 			t.Fatalf("no-goal refusal=%v", err)
@@ -541,15 +555,17 @@ func TestHandoffRefusals(t *testing.T) {
 	})
 
 	t.Run("another session already has the handoff", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6100000000000009")
-		first, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		first, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		caller := handoffMainCaller()
 		caller.Session = "different session"
-		_, err = Handoff(root, caller, handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		_, err = fixture.handoff(root, caller, handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		var got *HandoffRefusal
 		if !errors.As(err, &got) || got.Code != "HANDOFF_OTHER_PENDING" || got.Detail != "nonce="+first.Nonce {
 			t.Fatalf("other-session refusal=%v", err)
@@ -560,16 +576,18 @@ func TestHandoffRefusals(t *testing.T) {
 	})
 
 	t.Run("bad caller arguments are refused rather than clamped", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
-		if _, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), time.Time{}, filepath.Join(root, "memory", "receipts.log")); err == nil {
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
+		if _, err := fixture.handoffBeforeGoal(root, handoffMainCaller(), handoffTestRecord(t, root, nil), time.Time{}, filepath.Join(root, "memory", "receipts.log")); err == nil {
 			t.Fatal("zero handoff clock was silently replaced")
 		}
 		badReceipt := filepath.Join(root, "artifacts", "reports", "receipts.log")
 		writeTestFile(t, badReceipt, []byte("external receipt sink\n"))
-		if _, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, badReceipt); err == nil {
+		if _, err := fixture.handoffBeforeGoal(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, badReceipt); err == nil {
 			t.Fatal("out-of-owner receipt path was silently accepted")
 		}
-		if _, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, []ScratchArg{{Path: "plans/handoff-capture.md", Required: true}}), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil {
+		if _, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, []ScratchArg{{Path: "plans/handoff-capture.md", Required: true}}), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil {
 			t.Fatal("empty scratch purpose was silently accepted")
 		}
 		if directories, intents := handoffArtifactCount(root); directories != 0 || intents != 0 {
@@ -578,9 +596,11 @@ func TestHandoffRefusals(t *testing.T) {
 	})
 
 	t.Run("malformed matching receipt refuses", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		writeTestFile(t, filepath.Join(root, "memory", "receipts.log"), []byte("1|2026-09-14T17:00:00Z|RECEIPT|type=implement|goal=fix-it\n"))
-		if _, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "last landing receipt") {
+		if _, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "last landing receipt") {
 			t.Fatalf("malformed matching receipt=%v", err)
 		}
 		if directories, intents := handoffArtifactCount(root); directories != 0 || intents != 0 {
@@ -590,12 +610,14 @@ func TestHandoffRefusals(t *testing.T) {
 }
 
 func TestHandoffRetriesNonceCollisionWithoutOverwriting(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	const collision = "6b00000000000001"
 	sentinel := filepath.Join(HandoffDir(root, collision), "keep.txt")
 	writeTestFile(t, sentinel, []byte("prior evidence\n"))
 	useHandoffNonces(t, collision, "6b00000000000002")
-	result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil || result.Nonce != "6b00000000000002" {
 		t.Fatalf("collision retry=%+v err=%v", result, err)
 	}
@@ -603,12 +625,14 @@ func TestHandoffRetriesNonceCollisionWithoutOverwriting(t *testing.T) {
 		t.Fatalf("nonce collision overwrote evidence: %q %v", data, err)
 	}
 
-	root = handoffCaptureRepo(t, "claimed")
+	fixture = newHandoffGoalFixture(t, "claimed")
+
+	root = fixture.root
 	const lifecycleCollision = "6b00000000000003"
 	lifecycle := filepath.Join(cancelledDir(root), lifecycleCollision+".json")
 	writeTestFile(t, lifecycle, []byte("prior lifecycle evidence\n"))
 	useHandoffNonces(t, lifecycleCollision, "6b00000000000004")
-	result, err = Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	result, err = fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil || result.Nonce != "6b00000000000004" {
 		t.Fatalf("lifecycle collision retry=%+v err=%v", result, err)
 	}
@@ -618,7 +642,9 @@ func TestHandoffRetriesNonceCollisionWithoutOverwriting(t *testing.T) {
 }
 
 func TestHandoffCleansDirectoryPublicationFailure(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	const nonce = "6e00000000000001"
 	useHandoffNonces(t, nonce)
 	previous := syncHandoffDir
@@ -631,7 +657,7 @@ func TestHandoffCleansDirectoryPublicationFailure(t *testing.T) {
 		return previous(path)
 	}
 	t.Cleanup(func() { syncHandoffDir = previous })
-	result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err == nil || !strings.Contains(err.Error(), "injected handoff parent sync failure") || result != (HandoffResult{}) {
 		t.Fatalf("directory partial=%+v err=%v", result, err)
 	}
@@ -645,7 +671,9 @@ func TestHandoffCleansDirectoryPublicationFailure(t *testing.T) {
 
 func TestHandoffPublicationIsExclusiveAndReverified(t *testing.T) {
 	t.Run("existing member is not overwritten", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		const nonce = "6e00000000000002"
 		useHandoffNonces(t, nonce)
 		previous := syncHandoffDir
@@ -659,18 +687,20 @@ func TestHandoffPublicationIsExclusiveAndReverified(t *testing.T) {
 			return previous(path)
 		}
 		t.Cleanup(func() { syncHandoffDir = previous })
-		if _, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !os.IsExist(err) {
+		if _, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !os.IsExist(err) {
 			t.Fatalf("existing immutable member was overwritten: %v", err)
 		}
 	})
 
 	t.Run("published state is verified before minting", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6e00000000000003")
 		previous := handoffStatePublished
 		handoffStatePublished = func(path string) { writeTestFile(t, path, []byte("{}\n")) }
 		t.Cleanup(func() { handoffStatePublished = previous })
-		if _, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		if _, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
 			t.Fatalf("drifted publication minted authority: %v", err)
 		}
 		if directories, intents := handoffArtifactCount(root); directories != 0 || intents != 0 {
@@ -680,9 +710,11 @@ func TestHandoffPublicationIsExclusiveAndReverified(t *testing.T) {
 }
 
 func TestLiveHandoffUsesNoExpiryClock(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6d00000000000001")
-	result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -711,9 +743,13 @@ func TestLiveHandoffReadDoesNotWaitOrWrite(t *testing.T) {
 		t.Fatalf("read-only lookup created state: %v", err)
 	}
 
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+
+	root := fixture.root
+
+	_ = fixture
 	useHandoffNonces(t, "6d00000000000002")
-	result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -753,7 +789,9 @@ func TestHandoffAcceptsOnlyTheActiveContinuation(t *testing.T) {
 		{name: "exact active continuation", callerJob: "delegate-job", activeJob: "delegate-job", want: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := handoffCaptureRepo(t, "claimed")
+			fixture := newHandoffGoalFixture(t, "claimed")
+			root := fixture.root
+			_ = fixture
 			if test.activeJob != "" {
 				active := testIntent("active-" + test.activeJob)
 				active.JobId = test.activeJob
@@ -767,7 +805,11 @@ func TestHandoffAcceptsOnlyTheActiveContinuation(t *testing.T) {
 			caller.Class, caller.JobId, caller.MainId = handoffClassDelegate, test.callerJob, "supplied-main"
 			caller.Runtime, caller.Session, caller.Tag, caller.Ref = "devin", "supplied-session", "supplied-tag", identity.Ref{Pid: 9999, StartedAtSec: 999}
 			useHandoffNonces(t, "6200000000000002")
-			result, err := Handoff(root, caller, handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+			handoff := fixture.handoff
+			if !test.want {
+				handoff = fixture.handoffBeforeGoal
+			}
+			result, err := handoff(root, caller, handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 			if !test.want {
 				var got *HandoffRefusal
 				if !errors.As(err, &got) || got.Code != "HANDOFF_NOT_HOLDER" {
@@ -789,13 +831,15 @@ func TestHandoffAcceptsOnlyTheActiveContinuation(t *testing.T) {
 }
 
 func TestHandoffResultNamesTheLiveIntentPath(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	link := filepath.Join(t.TempDir(), "root")
 	if err := os.Symlink(root, link); err != nil {
 		t.Fatal(err)
 	}
 	useHandoffNonces(t, "6200000000000003")
-	result, err := Handoff(link, handoffMainCaller(), handoffTestRecord(t, link, nil), handoffCaptureNow, filepath.Join(link, "memory", "receipts.log"))
+	result, err := fixture.handoff(link, handoffMainCaller(), handoffTestRecord(t, link, nil), handoffCaptureNow, filepath.Join(link, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,9 +907,11 @@ func handoffHumanProof(t *testing.T, root string, exact identity.Exact) humanaut
 
 func humanCancelFixture(t *testing.T) (string, HandoffResult, HandoffCanceller) {
 	t.Helper()
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6400000000000001")
-	result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1016,7 +1062,7 @@ func TestCancelHandoffRefusesAnUnprovenHumanAct(t *testing.T) {
 
 	t.Run("other root", func(t *testing.T) {
 		root, result, canceller := humanCancelFixture(t)
-		other := handoffCaptureRepo(t, "claimed")
+		other := newHandoffGoalFixture(t, "claimed").root
 		canceller.Human.Proof = handoffHumanProof(t, other, identity.Exact{Pid: 4711, StartedAt: time.Unix(1700000000, 0)})
 		refusedCancel(t, root, result.Nonce, canceller, "HANDOFF_HUMAN_UNPROVEN nonce="+result.Nonce+" by= Wido  caller=HUMAN human=other-root")
 	})
@@ -1043,10 +1089,12 @@ func TestCancelHandoffAdmitsTheRecordingSession(t *testing.T) {
 		{name: "delegate", caller: handoffDelegateCaller},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := handoffCaptureRepo(t, "claimed")
+			fixture := newHandoffGoalFixture(t, "claimed")
+			root := fixture.root
+			_ = fixture
 			caller := test.caller(t, root)
 			useHandoffNonces(t, "6400000000000002")
-			result, err := Handoff(root, caller, handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+			result, err := fixture.handoff(root, caller, handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1075,9 +1123,11 @@ func TestCancelHandoffRefusesAnotherSession(t *testing.T) {
 		{name: "runtime", mutate: func(c *HandoffCaller) { c.Runtime = "claude" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := handoffCaptureRepo(t, "claimed")
+			fixture := newHandoffGoalFixture(t, "claimed")
+			root := fixture.root
+			_ = fixture
 			useHandoffNonces(t, "6400000000000003")
-			result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+			result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1089,9 +1139,11 @@ func TestCancelHandoffRefusesAnotherSession(t *testing.T) {
 	}
 
 	t.Run("job", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6400000000000004")
-		result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1118,9 +1170,11 @@ func TestCancelHandoffPassesAdmissionRefusalsThrough(t *testing.T) {
 		{name: "no active continuation", caller: HandoffCaller{Class: handoffClassDelegate, JobId: "delegate-job", Machine: "bed-m1"}, want: "HANDOFF_NOT_HOLDER"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := handoffCaptureRepo(t, "claimed")
+			fixture := newHandoffGoalFixture(t, "claimed")
+			root := fixture.root
+			_ = fixture
 			useHandoffNonces(t, "6400000000000005")
-			result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+			result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1129,9 +1183,11 @@ func TestCancelHandoffPassesAdmissionRefusalsThrough(t *testing.T) {
 	}
 
 	t.Run("plain error", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6400000000000005")
-		result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1216,7 +1272,9 @@ func TestCancelHandoffHumanActRequiresNameAndIdentity(t *testing.T) {
 }
 
 func TestHandoffIgnoresConcurrentUnrelatedRecords(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6500000000000004")
 	waiterRelative := filepath.ToSlash(filepath.Join("artifacts", "agents", "waiters", "other.json"))
 	writeTestFile(t, filepath.Join(root, filepath.FromSlash(waiterRelative)), []byte(`{"schemaVersion":2,"mainId":"other-main","state":"pending"}`))
@@ -1242,20 +1300,22 @@ func TestHandoffIgnoresConcurrentUnrelatedRecords(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { handoffSourceAfterRead = previousSource })
-	if _, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err != nil {
+	if _, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err != nil {
 		t.Fatalf("unrelated waiter completion or job progress refused handoff: %v", err)
 	}
 }
 
 func TestSecondHandoffSupersedesTheFirst(t *testing.T) {
 	t.Run("replacement becomes the sole live authorization", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6300000000000001", "6300000000000002")
-		first, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		first, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		second, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow.Add(time.Minute), filepath.Join(root, "memory", "receipts.log"))
+		second, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow.Add(time.Minute), filepath.Join(root, "memory", "receipts.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1284,9 +1344,11 @@ func TestSecondHandoffSupersedesTheFirst(t *testing.T) {
 	})
 
 	t.Run("failure after supersession reports the exact durable partial state", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6300000000000003", "6300000000000004")
-		first, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		first, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1301,7 +1363,7 @@ func TestSecondHandoffSupersedesTheFirst(t *testing.T) {
 			}
 		}
 		t.Cleanup(func() { beforeHandoffPrepare = previous })
-		second, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow.Add(time.Minute), receiptPath)
+		second, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow.Add(time.Minute), receiptPath)
 		if err == nil || !strings.Contains(err.Error(), "superseded "+first.Nonce+", but the replacement intent is not live") {
 			t.Fatalf("partial supersession result=%+v err=%v", second, err)
 		}
@@ -1323,7 +1385,9 @@ func TestSecondHandoffSupersedesTheFirst(t *testing.T) {
 }
 
 func TestConcurrentHandoffsDoNotCross(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6400000000000001", "6400000000000002")
 	type outcome struct {
 		result HandoffResult
@@ -1336,7 +1400,7 @@ func TestConcurrentHandoffsDoNotCross(t *testing.T) {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			result, err := Handoff(root, handoffMainCaller(), record, handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+			result, err := fixture.handoff(root, handoffMainCaller(), record, handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 			results <- outcome{result: result, err: err}
 		}()
 	}
@@ -1378,9 +1442,11 @@ func TestConcurrentHandoffsDoNotCross(t *testing.T) {
 }
 
 func TestCancelHandoffReportsItsExactPartialOutcome(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6500000000000003")
-	result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1398,9 +1464,11 @@ func TestCancelHandoffReportsItsExactPartialOutcome(t *testing.T) {
 
 func TestVerifyHandoffStateUsesExactLifecycleRecord(t *testing.T) {
 	t.Run("consumed remains verifiable after reaping and cannot be cancelled", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6600000000000001")
-		result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1423,9 +1491,11 @@ func TestVerifyHandoffStateUsesExactLifecycleRecord(t *testing.T) {
 	})
 
 	t.Run("drift and absence have distinct refusals", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6600000000000002")
-		result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1442,7 +1512,9 @@ func TestVerifyHandoffStateUsesExactLifecycleRecord(t *testing.T) {
 
 func TestHandoffRejectsInvalidLiveAuthority(t *testing.T) {
 	t.Run("cancel requires a bound handoff", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		intent := Intent{Nonce: "6600000000000003", Reason: "seatIdle"}
 		if err := MintIntent(root, intent); err != nil {
 			t.Fatal(err)
@@ -1457,7 +1529,9 @@ func TestHandoffRejectsInvalidLiveAuthority(t *testing.T) {
 	})
 
 	t.Run("incomplete authorization refuses live lookup", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		if err := MintIntent(root, Intent{Nonce: "6600000000000004", Reason: seatHandoffReason}); err != nil {
 			t.Fatal(err)
 		}
@@ -1467,14 +1541,16 @@ func TestHandoffRejectsInvalidLiveAuthority(t *testing.T) {
 	})
 
 	t.Run("drifted predecessor cannot be superseded", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6600000000000005")
-		first, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		first, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		writeTestFile(t, first.StatePath, []byte("{}\n"))
-		if _, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "invalid and cannot be superseded") {
+		if _, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "invalid and cannot be superseded") {
 			t.Fatalf("drifted predecessor supersession=%v", err)
 		}
 		if directories, intents := handoffArtifactCount(root); directories != 1 || intents != 1 {
@@ -1483,13 +1559,15 @@ func TestHandoffRejectsInvalidLiveAuthority(t *testing.T) {
 	})
 
 	t.Run("duplicate session authorization is never selected", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6600000000000006", "6600000000000007")
-		first, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		first, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow.Add(time.Minute), filepath.Join(root, "memory", "receipts.log")); err != nil {
+		if _, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow.Add(time.Minute), filepath.Join(root, "memory", "receipts.log")); err != nil {
 			t.Fatal(err)
 		}
 		cancelled, err := os.ReadFile(filepath.Join(cancelledDir(root), first.Nonce+".json"))
@@ -1500,7 +1578,7 @@ func TestHandoffRejectsInvalidLiveAuthority(t *testing.T) {
 		if _, _, err := LiveHandoffForSession(root, handoffMainCaller().Session); err == nil || !strings.Contains(err.Error(), "more than one live handoff") {
 			t.Fatalf("duplicate live lookup=%v", err)
 		}
-		if _, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow.Add(2*time.Minute), filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "more than one live handoff already names session") {
+		if _, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow.Add(2*time.Minute), filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "more than one live handoff already names session") {
 			t.Fatalf("duplicate supersession=%v", err)
 		}
 	})
@@ -1515,9 +1593,11 @@ func ageHandoffState(t *testing.T, root, nonce string, at time.Time) {
 }
 
 func TestContextPruneKeepsLiveHandoffs(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6700000000000001", "6700000000000002", "6700000000000003")
-	first, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	first, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1547,7 +1627,7 @@ func TestContextPruneKeepsLiveHandoffs(t *testing.T) {
 		}
 	}
 
-	second, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	second, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1568,7 +1648,7 @@ func TestContextPruneKeepsLiveHandoffs(t *testing.T) {
 	if result, err = PruneContext(root, 14*24*time.Hour, handoffCaptureNow); err != nil || len(result.Handoffs) != 1 {
 		t.Fatalf("reaped handoff was not retired: %+v %v", result, err)
 	}
-	boundary, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	boundary, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1585,9 +1665,11 @@ func TestContextPruneKeepsLiveHandoffs(t *testing.T) {
 }
 
 func TestContextPruneSerializesWithConsumption(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6800000000000001")
-	result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1631,9 +1713,11 @@ func TestContextPruneSerializesWithConsumption(t *testing.T) {
 }
 
 func TestContextPruneStopsOnUsageError(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6800000000000002")
-	handoff, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	handoff, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1654,7 +1738,9 @@ func TestContextPruneStopsOnUsageError(t *testing.T) {
 }
 
 func TestContextPruneDefaultAgeComposesWithUsageFloor(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	now := time.Now().UTC().Add(time.Hour)
 	if result, err := PruneContext(root, 14*24*time.Hour, now); err != nil || result.CallSessions != 0 || len(result.Handoffs) != 0 {
 		t.Fatalf("documented 14-day default was blocked by usage retention: %+v %v", result, err)
@@ -1663,7 +1749,9 @@ func TestContextPruneDefaultAgeComposesWithUsageFloor(t *testing.T) {
 
 func TestContextPruneRefusesRedirectedHandoffTrees(t *testing.T) {
 	t.Run("nonce directory symlink", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		outside := t.TempDir()
 		sentinel := filepath.Join(outside, "keep.txt")
 		writeTestFile(t, sentinel, []byte("keep\n"))
@@ -1683,9 +1771,11 @@ func TestContextPruneRefusesRedirectedHandoffTrees(t *testing.T) {
 	})
 
 	t.Run("member symlink", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		useHandoffNonces(t, "6800000000000004")
-		handoff, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+		handoff, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1707,7 +1797,9 @@ func TestContextPruneRefusesRedirectedHandoffTrees(t *testing.T) {
 	})
 
 	t.Run("publication parent symlink", func(t *testing.T) {
-		root := handoffCaptureRepo(t, "claimed")
+		fixture := newHandoffGoalFixture(t, "claimed")
+		root := fixture.root
+		_ = fixture
 		outside := t.TempDir()
 		parent := filepath.Join(root, "artifacts", "agents", "context", "handoffs")
 		if err := os.MkdirAll(filepath.Dir(parent), 0o755); err != nil {
@@ -1717,7 +1809,7 @@ func TestContextPruneRefusesRedirectedHandoffTrees(t *testing.T) {
 			t.Fatal(err)
 		}
 		useHandoffNonces(t, "6800000000000005")
-		if _, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "redirected or nonregular") {
+		if _, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log")); err == nil || !strings.Contains(err.Error(), "redirected or nonregular") {
 			t.Fatalf("redirected publication parent=%v", err)
 		}
 		if entries, err := os.ReadDir(outside); err != nil || len(entries) != 0 {
@@ -1727,9 +1819,11 @@ func TestContextPruneRefusesRedirectedHandoffTrees(t *testing.T) {
 }
 
 func TestContextPruneRechecksBeforeRemoval(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6800000000000006")
-	handoff, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	handoff, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1749,9 +1843,11 @@ func TestContextPruneRechecksBeforeRemoval(t *testing.T) {
 }
 
 func TestContextPruneReportsRemovalBeforeSyncFailure(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6800000000000007")
-	handoff, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	handoff, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1777,7 +1873,9 @@ func TestContextPruneReportsRemovalBeforeSyncFailure(t *testing.T) {
 }
 
 func TestContextPruneRetainsDamageAndRefusesBadBounds(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	for _, olderThan := range []time.Duration{0, -time.Hour} {
 		result, err := PruneContext(root, olderThan, handoffCaptureNow)
 		if err == nil || err.Error() != "context prune older-than must be positive" || result.CallSessions != 0 || len(result.Handoffs) != 0 {
@@ -1802,7 +1900,7 @@ func TestContextPruneRetainsDamageAndRefusesBadBounds(t *testing.T) {
 		}
 	}
 	useHandoffNonces(t, "6c00000000000002")
-	handoff, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	handoff, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1821,9 +1919,11 @@ func TestContextPruneRetainsDamageAndRefusesBadBounds(t *testing.T) {
 }
 
 func TestHandoffAndDiagnosticsHaveSeparateLifetimes(t *testing.T) {
-	root := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
+	root := fixture.root
+	_ = fixture
 	useHandoffNonces(t, "6a00000000000001")
-	result, err := Handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
+	result, err := fixture.handoff(root, handoffMainCaller(), handoffTestRecord(t, root, nil), handoffCaptureNow, filepath.Join(root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}

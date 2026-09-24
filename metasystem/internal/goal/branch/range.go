@@ -83,7 +83,11 @@ func sameUnits(a, b []string) bool {
 }
 
 func KindOf(repo, commit, goalID string) (KindInfo, error) {
-	out, err := gitOutput(repo, "show", "-s", "--format=%(trailers:only,unfold=true)", commit)
+	return kindOfWithGit(repo, commit, goalID, gitOutput)
+}
+
+func kindOfWithGit(repo, commit, goalID string, gitRead func(string, ...string) ([]byte, error)) (KindInfo, error) {
+	out, err := gitRead(repo, "show", "-s", "--format=%(trailers:only,unfold=true)", commit)
 	if err != nil {
 		return KindInfo{}, err
 	}
@@ -186,12 +190,16 @@ func PathClass(path string) Class {
 }
 
 func ValidateRange(repo, endpointTip, tip, goalID string) ([]Commit, error) {
-	baseOut, err := gitOutput(repo, "merge-base", endpointTip, tip)
+	return validateRangeWithGit(repo, endpointTip, tip, goalID, gitOutput)
+}
+
+func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(string, ...string) ([]byte, error)) ([]Commit, error) {
+	baseOut, err := gitRead(repo, "merge-base", endpointTip, tip)
 	if err != nil || strings.TrimSpace(string(baseOut)) == "" {
 		return nil, refuse(tip, "tip and endpoint have no common history")
 	}
 	base := strings.TrimSpace(string(baseOut))
-	out, err := gitOutput(repo, "rev-list", "--first-parent", "--reverse", "--parents", base+".."+tip)
+	out, err := gitRead(repo, "rev-list", "--first-parent", "--reverse", "--parents", base+".."+tip)
 	if err != nil {
 		return nil, err
 	}
@@ -208,11 +216,11 @@ func ValidateRange(repo, endpointTip, tip, goalID string) ([]Commit, error) {
 		if len(fields) != 2 {
 			return nil, refuse(id, fmt.Sprintf("commit has %d parents; exactly one is required", len(fields)-1))
 		}
-		kind, err := KindOf(repo, id, goalID)
+		kind, err := kindOfWithGit(repo, id, goalID, gitRead)
 		if err != nil {
 			return nil, err
 		}
-		entries, err := RawEntries(repo, id)
+		entries, err := rawEntriesWithGitParsed(repo, id, gitRead)
 		if err != nil {
 			return nil, err
 		}
@@ -259,7 +267,7 @@ func ValidateRange(repo, endpointTip, tip, goalID string) ([]Commit, error) {
 		if kind.Kind == Read {
 			subject, present := unitCommits[kind.CommitID]
 			if !present {
-				subject, err = KindOf(repo, kind.CommitID, goalID)
+				subject, err = kindOfWithGit(repo, kind.CommitID, goalID, gitRead)
 				present = err == nil && subject.Kind == Unit
 			}
 			if !present || !sameUnits(subject.Units, kind.Units) || !unitLists[kind.Unit] {
@@ -268,7 +276,7 @@ func ValidateRange(repo, endpointTip, tip, goalID string) ([]Commit, error) {
 		}
 		item := Commit{ID: id, Kind: kind.Kind, Units: append([]string(nil), kind.Units...), Unit: kind.Unit}
 		if kind.Kind == Unit {
-			item.Digest, err = UnitDigest(repo, id)
+			item.Digest, err = unitDigestWithGit(repo, id, gitRead)
 			if err != nil {
 				return nil, err
 			}

@@ -2,38 +2,27 @@ package dispatch
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-func capContinuationWorktree(t *testing.T) string {
+func capContinuationWorktree(t *testing.T) (string, *postureFacts) {
 	t.Helper()
 	dir := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		command := exec.Command("git", append([]string{"-C", dir}, args...)...)
-		command.Env = append(os.Environ(), "GIT_AUTHOR_NAME=fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid", "GIT_COMMITTER_NAME=fixture", "GIT_COMMITTER_EMAIL=fixture@example.invalid")
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
+	for path, content := range map[string]string{
+		"kept.txt": "changed by the capped round\n", "new-file.go": "package x\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, path), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
-	run("init", "-q", "-b", "main")
-	if err := os.WriteFile(filepath.Join(dir, "kept.txt"), []byte("base\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run("add", "kept.txt")
-	run("commit", "-q", "-m", "base")
-	// The capped round changed a tracked file and left a new one.
-	if err := os.WriteFile(filepath.Join(dir, "kept.txt"), []byte("changed by the capped round\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "new-file.go"), []byte("package x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return dir
+	facts := newPostureFacts()
+	facts.heads[dir] = postureFact[string]{value: "capped-round-head"}
+	facts.tracked[dir] = postureFact[map[string]struct{}]{value: posturePaths("kept.txt")}
+	facts.untracked[dir] = postureFact[map[string]struct{}]{value: posturePaths("new-file.go")}
+	return dir, facts
 }
 
 func cappedParentRecord(t *testing.T, fields map[string]any) string {
@@ -53,15 +42,12 @@ func cappedParentRecord(t *testing.T, fields map[string]any) string {
 }
 
 func TestCapContinuationTextTellsTheFactAndWhatTheWorktreeHolds(t *testing.T) {
-	worktree := capContinuationWorktree(t)
-	text, err := CapContinuationText(cappedParentRecord(t, nil), worktree)
+	worktree, facts := capContinuationWorktree(t)
+	text, err := capContinuationText(cappedParentRecord(t, nil), worktree, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	head, err := gitOutput(worktree, "rev-parse", "HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
+	head := facts.heads[worktree].value
 	for _, want := range []string{
 		"Round 1 of this chain was cut off at its 120-minute cap at 2026-09-12T10:00:00Z and wrote no return.",
 		"2 path(s) changed against the worktree head " + head,
@@ -78,13 +64,15 @@ func TestCapContinuationTextTellsTheFactAndWhatTheWorktreeHolds(t *testing.T) {
 }
 
 func TestCapContinuationTextCapsTheListAndNamesTheTotal(t *testing.T) {
-	worktree := capContinuationWorktree(t)
+	worktree, facts := capContinuationWorktree(t)
 	for index := 0; index < capContinuationListLimit+5; index++ {
-		if err := os.WriteFile(filepath.Join(worktree, "many-"+strings.Repeat("0", 3-len(itoa(index)))+itoa(index)+".txt"), []byte("x\n"), 0o644); err != nil {
+		path := "many-" + strings.Repeat("0", 3-len(itoa(index))) + itoa(index) + ".txt"
+		if err := os.WriteFile(filepath.Join(worktree, path), []byte("x\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		facts.untracked[worktree].value[path] = struct{}{}
 	}
-	text, err := CapContinuationText(cappedParentRecord(t, nil), worktree)
+	text, err := capContinuationText(cappedParentRecord(t, nil), worktree, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +83,7 @@ func TestCapContinuationTextCapsTheListAndNamesTheTotal(t *testing.T) {
 }
 
 func TestCapContinuationTextRefusesWhatIsNotACappedImplementerRound(t *testing.T) {
-	worktree := capContinuationWorktree(t)
+	worktree, facts := capContinuationWorktree(t)
 	for _, test := range []struct {
 		name   string
 		fields map[string]any
@@ -110,12 +98,12 @@ func TestCapContinuationTextRefusesWhatIsNotACappedImplementerRound(t *testing.T
 		{"verifier", map[string]any{"role": "verifier"}, "implementer chain's"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := CapContinuationText(cappedParentRecord(t, test.fields), worktree); err == nil || !strings.Contains(err.Error(), test.want) {
+			if _, err := capContinuationText(cappedParentRecord(t, test.fields), worktree, facts); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("refusal = %v, want %q", err, test.want)
 			}
 		})
 	}
-	if _, err := CapContinuationText(cappedParentRecord(t, nil), filepath.Join(t.TempDir(), "gone")); err == nil || !strings.Contains(err.Error(), "use a fresh dispatch") {
+	if _, err := capContinuationText(cappedParentRecord(t, nil), filepath.Join(t.TempDir(), "gone"), facts); err == nil || !strings.Contains(err.Error(), "use a fresh dispatch") {
 		t.Fatalf("a missing worktree did not refuse naming the fresh dispatch: %v", err)
 	}
 }
@@ -252,12 +240,13 @@ func TestAfterCapContinuationRecordHoldsItsInvariant(t *testing.T) {
 }
 
 func TestCapContinuationTextQuotesAndBoundsThePaths(t *testing.T) {
-	worktree := capContinuationWorktree(t)
+	worktree, facts := capContinuationWorktree(t)
 	odd := "odd name.txt"
 	if err := os.WriteFile(filepath.Join(worktree, odd), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	text, err := CapContinuationText(cappedParentRecord(t, nil), worktree)
+	facts.untracked[worktree].value[odd] = struct{}{}
+	text, err := capContinuationText(cappedParentRecord(t, nil), worktree, facts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,11 +255,13 @@ func TestCapContinuationTextQuotesAndBoundsThePaths(t *testing.T) {
 	}
 	long := strings.Repeat("a", 200)
 	for index := 0; index < 60; index++ {
-		if err := os.WriteFile(filepath.Join(worktree, long+"-"+strconv.Itoa(index)+".txt"), []byte("x\n"), 0o644); err != nil {
+		path := long + "-" + strconv.Itoa(index) + ".txt"
+		if err := os.WriteFile(filepath.Join(worktree, path), []byte("x\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		facts.untracked[worktree].value[path] = struct{}{}
 	}
-	text, err = CapContinuationText(cappedParentRecord(t, nil), worktree)
+	text, err = capContinuationText(cappedParentRecord(t, nil), worktree, facts)
 	if err != nil {
 		t.Fatal(err)
 	}

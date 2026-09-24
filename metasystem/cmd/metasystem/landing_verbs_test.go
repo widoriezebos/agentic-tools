@@ -813,7 +813,13 @@ exec "${CLBM_REAL_GIT:-/usr/bin/git}" "$@"
 	runAsHolder := func(arguments []string, extraEnv []string) (string, int) {
 		t.Helper()
 		gate := filepath.Join(bed, "holder-gate-"+strconv.FormatInt(time.Now().UnixNano(), 10))
-		script := `while [[ ! -e "$1" ]]; do sleep 0.01; done; shift; "$@"`
+		script := `while [[ ! -e "$1" ]]; do sleep 0.01; done
+shift
+"$@" &
+child=$!
+wait "$child"
+status=$?
+exit "$status"`
 		command := exec.Command("bash", append([]string{"-c", script, "holder", gate}, arguments...)...)
 		command.Dir = root
 		// The landing verifies the retained proof in the environment the
@@ -1317,17 +1323,30 @@ exec "$RECEIPT_CANARY_ENGINE" "$@"
 import (
  "fmt"
  "os"
+ "path/filepath"
  "strconv"
  "strings"
  "syscall"
 )
 func main() {
  if len(os.Args) >= 3 && os.Args[1] == "proof-run" && os.Args[2] == "go-gate-tests" {
+  logRoot := ""
+  for index := 3; index < len(os.Args); index++ {
+   if os.Args[index] != "--log-root" { continue }
+   if index+1 >= len(os.Args) { fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: --log-root requires a value"); os.Exit(2) }
+   logRoot = os.Args[index+1]
+   index++
+  }
+  if logRoot == "" { fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: --log-root is required"); os.Exit(2) }
+  if err := os.MkdirAll(logRoot, 0755); err != nil { panic(err) }
+  if err := os.WriteFile(filepath.Join(logRoot, "go-gate-native.log"), []byte("native fixture diagnostics\n"), 0600); err != nil { panic(err) }
   path := os.Getenv("RECEIPT_CANARY_MEASUREMENT_COUNT")
   measurements := 0
   if data, err := os.ReadFile(path); err == nil { measurements, _ = strconv.Atoi(strings.TrimSpace(string(data))) }
   if err := os.WriteFile(path, []byte(strconv.Itoa(measurements+1)+"\n"), 0600); err != nil { panic(err) }
-  fmt.Println("ok  github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun 0.1s coverage: 85.0% of statements")
+  packagePath := "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+  output := "ok  \t"+packagePath+"\t0.1s\tcoverage: 85.0% of statements\n"
+  fmt.Printf("{\"Action\":\"output\",\"Package\":%q,\"Test\":\"\",\"Output\":%q}\n", packagePath, output)
   return
  }
  engine := os.Getenv("RECEIPT_CANARY_ENGINE")
@@ -1339,11 +1358,20 @@ set -euo pipefail
 case "${1:-}" in
   version|env) exec "$RECEIPT_CANARY_REAL_GO" "$@" ;;
   run)
-    if [[ "${2:-}" == ./cmd/metasystem ]]; then
-      shift 2
-      exec "$RECEIPT_CANARY_ENGINE" "$@"
-    fi
-    exit 0
+    shift
+    case "${1:-}" in
+      -p=*) [[ "$1" =~ ^-p=[1-9][0-9]*$ ]] || exit 97; shift ;;
+      -p) [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] || exit 97; shift 2 ;;
+    esac
+    case "${1:-}" in
+      honnef.co/go/tools/cmd/staticcheck@v0.8.0|golang.org/x/vuln/cmd/govulncheck@v1.2.0)
+        [[ "$#" -eq 2 && "${2:-}" == ./... ]] || exit 97
+        exit 0
+        ;;
+    esac
+    [[ "${1:-}" == ./cmd/metasystem ]] || exit 97
+    shift
+    exec "$RECEIPT_CANARY_ENGINE" "$@"
     ;;
   vet|build) exit 0 ;;
   list)

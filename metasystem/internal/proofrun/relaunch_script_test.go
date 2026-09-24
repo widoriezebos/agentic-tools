@@ -167,8 +167,11 @@ func newRelaunchScriptFixture(t *testing.T, site relaunchScriptSite) relaunchScr
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "scripts", "agents", "coverage-ratchet.json"), []byte(`{"floors":{"internal/proofrun":80},"exempt":{}}`), 0o600); err != nil {
-		t.Fatal(err)
+	ratchet := []byte(`{"floors":{"internal/proofrun":80},"exempt":{}}`)
+	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
+		if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), ratchet, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	selector := "#!/usr/bin/env bash\n[[ ${1:-} == context ]] || exit 97\nprintf 'template\\n'\n"
 	if err := testexec.WriteFile(filepath.Join(root, "scripts", "agents", "validate-section-selector.sh"), []byte(selector), 0o700); err != nil {

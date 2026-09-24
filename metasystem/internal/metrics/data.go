@@ -109,15 +109,31 @@ type world struct {
 
 var goalToken = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
+type metricsSource struct {
+	resolveMachine func(string) (string, error)
+	gitStdout      func(string, ...string) (string, error)
+	committedGoals func(string, string) (map[string][]byte, error)
+}
+
+func realMetricsSource() metricsSource {
+	return metricsSource{goal.ResolveMachine, gitCommand, func(root, tip string) (map[string][]byte, error) {
+		return goal.ReadCommitGoals(root, tip)
+	}}
+}
+
 func loadWorld(root string) (world, error) {
+	return loadWorldWithSource(root, realMetricsSource())
+}
+
+func loadWorldWithSource(root string, source metricsSource) (world, error) {
 	w := world{Goals: map[string]goalRecord{}}
-	machine, err := goal.ResolveMachine(root)
+	machine, err := source.resolveMachine(root)
 	if err != nil {
 		return w, err
 	}
 	w.Machine = machine
 
-	gitFacts, err := loadGitFacts(root)
+	gitFacts, err := loadGitFactsWithGit(root, source.gitStdout)
 	if err != nil {
 		return w, err
 	}
@@ -125,13 +141,13 @@ func loadWorld(root string) (world, error) {
 	w.Identity.ReceiptBlob = gitFacts.receiptBlob
 	w.LandingCoverage = gitFacts.coverage
 
-	w.Receipts, w.ReceiptCoverage = loadReceipts(root, gitFacts.mainTip, gitFacts.receiptPath, gitFacts.selfReceiptLines)
+	w.Receipts, w.ReceiptCoverage = loadReceiptsWithGit(root, gitFacts.mainTip, gitFacts.receiptPath, gitFacts.selfReceiptLines, source.gitStdout)
 	w.Landings = attributeLandings(gitFacts.landings, w.Receipts)
 	w.Jobs, w.JobCoverage = loadJobs(root)
 	w.Journals, w.JournalCoverage = loadJournals(root)
 	w.Proofs, w.ProofCoverage = loadProofs(root)
 	w.Critiques, w.CritiqueCoverage = loadCritiques(root)
-	w.Goals, w.GoalCoverage, w.Identity.AcceptedTip = loadGoals(root)
+	w.Goals, w.GoalCoverage, w.Identity.AcceptedTip = loadGoalsWithSource(root, source.gitStdout, source.committedGoals)
 	return w, nil
 }
 
@@ -185,13 +201,17 @@ type rawCommit struct {
 }
 
 func loadGitFacts(root string) (gitFacts, error) {
+	return loadGitFactsWithGit(root, gitCommand)
+}
+
+func loadGitFactsWithGit(root string, gitStdout func(string, ...string) (string, error)) (gitFacts, error) {
 	facts := gitFacts{coverage: Coverage{Source: "landings"}, selfReceiptLines: map[string]int{}}
-	gitRoot, err := gitCommand(root, "rev-parse", "--show-toplevel")
+	gitRoot, err := gitStdout(root, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return facts, fmt.Errorf("metrics report: cannot resolve repository root: %w", err)
 	}
 	gitRoot = strings.TrimSpace(gitRoot)
-	prefix, err := gitCommand(root, "rev-parse", "--show-prefix")
+	prefix, err := gitStdout(root, "rev-parse", "--show-prefix")
 	if err != nil {
 		return facts, fmt.Errorf("metrics report: cannot resolve checkout prefix: %w", err)
 	}
@@ -202,12 +222,12 @@ func loadGitFacts(root string) (gitFacts, error) {
 	}
 	facts.receiptPath = filepath.ToSlash(filepath.Join(prefix, receiptRoot, "receipts.log"))
 	legacyReceiptPath := filepath.ToSlash(filepath.Join(prefix, "plans", "receipts.log"))
-	mainTip, err := gitCommand(gitRoot, "rev-parse", "--verify", "refs/heads/main")
+	mainTip, err := gitStdout(gitRoot, "rev-parse", "--verify", "refs/heads/main")
 	if err != nil {
 		return facts, fmt.Errorf("metrics report: no readable main branch: %w", err)
 	}
 	facts.mainTip = strings.TrimSpace(mainTip)
-	moveLog, err := gitCommand(gitRoot, "log", "--reverse", "--diff-filter=A", "--format=%H", facts.mainTip, "--", facts.receiptPath)
+	moveLog, err := gitStdout(gitRoot, "log", "--reverse", "--diff-filter=A", "--format=%H", facts.mainTip, "--", facts.receiptPath)
 	if err != nil {
 		return facts, fmt.Errorf("metrics report: cannot resolve receipt-home history: %w", err)
 	}
@@ -215,11 +235,11 @@ func loadGitFacts(root string) (gitFacts, error) {
 	if fields := strings.Fields(moveLog); len(fields) > 0 {
 		moveCommit = fields[0]
 	}
-	if blob, blobErr := gitCommand(gitRoot, "rev-parse", facts.mainTip+":"+facts.receiptPath); blobErr == nil {
+	if blob, blobErr := gitStdout(gitRoot, "rev-parse", facts.mainTip+":"+facts.receiptPath); blobErr == nil {
 		facts.receiptBlob = strings.TrimSpace(blob)
 	}
 
-	log, err := gitCommand(gitRoot, "log", "--topo-order", "--reverse", "--format=%x1e%H%x1f%P%x1f%ae%x1f%cI", "--numstat", facts.mainTip)
+	log, err := gitStdout(gitRoot, "log", "--topo-order", "--reverse", "--format=%x1e%H%x1f%P%x1f%ae%x1f%cI", "--numstat", facts.mainTip)
 	if err != nil {
 		return facts, fmt.Errorf("metrics report: cannot read main history: %w", err)
 	}
@@ -272,7 +292,7 @@ func loadGitFacts(root string) (gitFacts, error) {
 
 	if facts.receiptBlob != "" {
 		for _, receiptPath := range []string{legacyReceiptPath, facts.receiptPath} {
-			patches, patchErr := gitCommand(gitRoot, "log", "--reverse", "--format=%x1e%H", "-p", "--unified=0", facts.mainTip, "--", receiptPath)
+			patches, patchErr := gitStdout(gitRoot, "log", "--reverse", "--format=%x1e%H", "-p", "--unified=0", facts.mainTip, "--", receiptPath)
 			if patchErr == nil {
 				for _, block := range strings.Split(patches, "\x1e") {
 					block = strings.TrimLeft(block, "\r\n")
@@ -366,12 +386,16 @@ func receiptFields(line string) (map[string]string, bool) {
 }
 
 func loadReceipts(root, mainTip, receiptPath string, selfLines map[string]int) ([]*receiptRecord, Coverage) {
+	return loadReceiptsWithGit(root, mainTip, receiptPath, selfLines, gitCommand)
+}
+
+func loadReceiptsWithGit(root, mainTip, receiptPath string, selfLines map[string]int, gitStdout func(string, ...string) (string, error)) ([]*receiptRecord, Coverage) {
 	coverage := Coverage{Source: "receipts"}
 	if mainTip == "" || receiptPath == "" {
 		coverage.Missing = 1
 		return nil, coverage
 	}
-	text, err := gitCommand(root, "cat-file", "-p", mainTip+":"+receiptPath)
+	text, err := gitStdout(root, "cat-file", "-p", mainTip+":"+receiptPath)
 	if err != nil {
 		coverage.Missing = 1
 		coverage.Details = append(coverage.Details, "path="+receiptPath+" unreadable")
@@ -813,15 +837,21 @@ func loadCritiques(root string) ([]critiqueChain, Coverage) {
 }
 
 func loadGoals(root string) (map[string]goalRecord, Coverage, string) {
+	return loadGoalsWithSource(root, gitCommand, func(root, tip string) (map[string][]byte, error) {
+		return goal.ReadCommitGoals(root, tip)
+	})
+}
+
+func loadGoalsWithSource(root string, gitStdout func(string, ...string) (string, error), committedGoals func(string, string) (map[string][]byte, error)) (map[string]goalRecord, Coverage, string) {
 	coverage := Coverage{Source: "goals"}
 	records := map[string]goalRecord{}
-	tipText, err := gitCommand(root, "rev-parse", "--verify", goal.AcceptedRef)
+	tipText, err := gitStdout(root, "rev-parse", "--verify", goal.AcceptedRef)
 	if err != nil {
 		coverage.Missing = 1
 		return records, coverage, ""
 	}
 	tip := strings.TrimSpace(tipText)
-	files, err := goal.ReadCommitGoals(root, tip)
+	files, err := committedGoals(root, tip)
 	if err != nil {
 		coverage.Missing = 1
 		coverage.Details = append(coverage.Details, cleanLine(err.Error()))

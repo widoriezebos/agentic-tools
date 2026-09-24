@@ -157,20 +157,23 @@ func check(t *testing.T, ok bool, format string, args ...any) {
 	}
 }
 func TestRoundTwoCloseRefusesUnrecordedDeferral(t *testing.T) {
-	repo := revisionBindingBed(t, 2)
+	bed := newGoalMutationBed(t)
+	repo := bed.root
 	path := filepath.Join(repo, "artifacts", "agents", "jobs", "critic-root.json")
 	check(t, os.MkdirAll(filepath.Dir(path), 0o755) == nil, "cannot create test job directory")
 	finding := closeFinding("finding-a", "mechanical", "go test ./a", "title a", critiqueModel.Bounded)
 	record := map[string]any{"jobId": "critic-root", "role": "design-critic", "findingRegister": encodeFindingRegister([]registerFinding{finding}), "findingRegisterRound": int64(2),
 		"reviewRoundLimit": int64(2), "criticRoundsConsumed": int64(2), materialByRoundField: materialHistory(2, 1), "goalId": "bounded", "machineId": "bed-m1", "mainId": "successor-main", "claimEpoch": int64(7)}
 	check(t, writeRecord(path, record) == nil, "cannot write test root")
-	outcome, err := CritiqueRegisterClose(repo, "critic-root")
+	outcome, err := bed.close("critic-root")
 	check(t, err != nil && strings.Contains(err.Error(), "goal bounded defer-findings ended rejected: goal bounded defer-findings requires its owning pair"), "a deferral the goal refused closed anyway: outcome=%q err=%v", outcome, err)
 	written, _ := readObject(path)
 	register, decodeErr := decodeFindingRegister(written[findingRegisterField])
 	check(t, decodeErr == nil && register[0].Status == "open", "a refused deferral changed the register: %+v %v", register, decodeErr)
 	record["mainId"] = "coordinator"
 	check(t, writeRecord(path, record) == nil, "cannot rewrite test root")
-	outcome, err = CritiqueRegisterClose(repo, "critic-root")
+	outcome, err = bed.close("critic-root")
 	check(t, err == nil && outcome == "deferred", "the owning pair's deferral did not close: outcome=%q err=%v", outcome, err)
+	accepted := bed.parsedAcceptedGoal(t, "bounded")
+	check(t, len(accepted.ReviewObligations) == 1 && accepted.ReviewObligations[0].Finding == "finding-a" && accepted.ReviewObligations[0].State == "open", "the accepted goal did not carry the deferred finding: %+v", accepted.ReviewObligations)
 }

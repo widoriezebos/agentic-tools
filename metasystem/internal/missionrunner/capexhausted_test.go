@@ -100,21 +100,22 @@ func TestHealTerminalPublication(t *testing.T) {
 // runner's failure at every retained-object probe — never a repository
 // verdict that could park the mission falsely.
 func TestScopeProbesTypeCouldNotRun(t *testing.T) {
-	engine, _, _, _ := crashedMission(t, 0, 1)
+	engine := crashedFileMission(t, 0, 1).engine
+	engine.wallReadFacts = nil
 	acct := &wallAccountant{
 		workspace:      gittree.Workspace{Dir: engine.Root},
 		ledgerRel:      missionLedgerRel(engine.Mission),
 		anchoredLedger: strings.Repeat("a", 40),
 	}
 	t.Setenv("PATH", filepath.Join(t.TempDir(), "empty"))
-	if _, err := acct.accountedOID(engine, strings.Repeat("b", 40)); err == nil ||
+	if violation, err := acct.accountedOID(engine, strings.Repeat("b", 40)); err == nil || violation != "" ||
 		!strings.Contains(err.Error(), "could not probe retained object") {
-		t.Fatalf("a spawn failure must ride the runner ramp: %v", err)
+		t.Fatalf("a spawn failure must ride the runner ramp: %q, %v", violation, err)
 	}
-	if _, err := acct.rawLedgerCarrier(strings.Repeat("c", 40), "commit test"); err == nil {
-		t.Fatal("an unreadable ledger carrier probe must be the runner's error")
+	if violation, err := acct.rawLedgerCarrier(strings.Repeat("c", 40), "commit test"); err == nil || violation != "" {
+		t.Fatalf("an unreadable ledger carrier probe must be the runner's error: %q, %v", violation, err)
 	}
-	if violation, err := engine.judgeCommitLedgerCarrier(strings.Repeat("d", 40), map[string]any{}); err == nil && violation != "" {
-		t.Fatalf("a spawn failure must never read as a violation: %q", violation)
+	if violation, err := engine.judgeCommitLedgerCarrier(strings.Repeat("d", 40), map[string]any{}); err == nil || violation != "" {
+		t.Fatalf("a spawn failure must be an error, never a violation: %q, %v", violation, err)
 	}
 }

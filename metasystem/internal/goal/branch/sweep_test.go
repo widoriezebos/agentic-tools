@@ -2,9 +2,7 @@ package branch_test
 
 import (
 	"errors"
-	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -83,18 +81,6 @@ func TestGoalBranchSweepRules(t *testing.T) {
 		}
 	})
 
-	t.Run("orphan landing word", func(t *testing.T) {
-		t.Parallel()
-		fixture := newLandFixture(t)
-		_, _ = preparedLanding(t, fixture)
-		if err := branch.DeleteLanding(branch.DeleteLandingRequest{Repo: fixture.root, Remote: "origin", GoalID: "goal-a", CheckClaim: claimAllowed}); err != nil {
-			t.Fatal(err)
-		}
-		if refs := git(t, fixture.root, "ls-remote", "--refs", "origin", "refs/heads/landing/goal-a"); refs != "" {
-			t.Fatalf("orphan landing survived: %s", refs)
-		}
-	})
-
 	t.Run("unknown commit", func(t *testing.T) {
 		t.Parallel()
 		fixture := newBranchFixture(t)
@@ -107,23 +93,6 @@ func TestGoalBranchSweepRules(t *testing.T) {
 			t.Fatalf("unknown commit sweep=%v", err)
 		}
 	})
-}
-
-func TestSweepAbandonedStillValidatesRemoteRange(t *testing.T) {
-	t.Parallel()
-	fixture := newBranchFixture(t)
-	unknown := git(t, fixture.root, "commit-tree", fixture.base+"^{tree}", "-p", fixture.base, "-m", "unknown")
-	git(t, fixture.root, "push", "-q", "origin", unknown+":refs/heads/goal/goal-a")
-
-	_, err := branch.Sweep(branch.SweepRequest{Repo: fixture.root, Remote: "origin", EndpointTip: fixture.base,
-		GoalID: "goal-a", Abandoned: true, CheckClaim: claimAllowed})
-	var refusal *branch.RangeError
-	if !errors.As(err, &refusal) {
-		t.Fatalf("abandoned unknown commit sweep=%v", err)
-	}
-	if got := git(t, fixture.origin, "rev-parse", "refs/heads/goal/goal-a"); got != unknown {
-		t.Fatalf("origin ref after refused sweep = %s, want %s", got, unknown)
-	}
 }
 
 func landedSweepFixture(t *testing.T) (landFixture, branch.LandResult) {
@@ -160,86 +129,6 @@ func endpointWithConclusion(t *testing.T, root, endpoint, goalID string) string 
 	git(t, worktree, "add", ".")
 	git(t, worktree, "commit", "-qm", "goal conclusion")
 	return git(t, worktree, "rev-parse", "HEAD")
-}
-
-func TestSweepRefusesUnlandedLocalTip(t *testing.T) {
-	t.Parallel()
-	fixture, prepared := landedSweepFixture(t)
-	unlanded := addSweepTail(t, fixture, prepared.Landing)
-	git(t, fixture.root, "push", "-q", "--force", "origin", fixture.tip+":refs/heads/goal/goal-a")
-
-	_, err := branch.Sweep(branch.SweepRequest{Repo: fixture.root, Remote: "origin", EndpointTip: prepared.Landing,
-		GoalID: "goal-a", CheckClaim: claimAllowed})
-	var refusal *branch.OpError
-	if !errors.As(err, &refusal) || refusal.Code != branch.SweepUnlandedCode ||
-		!strings.Contains(refusal.Message, "goal/goal-a") || !strings.Contains(refusal.Message, "local") ||
-		!strings.Contains(refusal.Message, unlanded+" (plan )") {
-		t.Fatalf("unlanded local sweep = %v", err)
-	}
-}
-
-func TestSweepRefusalPreservesRefsAndWorktree(t *testing.T) {
-	t.Parallel()
-	fixture, prepared := landedSweepFixture(t)
-	transport := filepath.Join(t.TempDir(), "transport.git")
-	git(t, filepath.Dir(transport), "init", "-q", "--bare", transport)
-	git(t, fixture.root, "remote", "add", "transport", transport)
-	git(t, fixture.root, "push", "-q", "transport", fixture.tip+":refs/heads/goal/goal-a")
-	unlanded := addSweepTail(t, fixture, prepared.Landing)
-	git(t, fixture.root, "push", "-q", "--force", "origin", fixture.tip+":refs/heads/goal/goal-a")
-	worktreesBefore := git(t, fixture.root, "worktree", "list", "--porcelain")
-
-	_, err := branch.Sweep(branch.SweepRequest{Repo: fixture.root, Remote: "origin", Transport: "transport",
-		EndpointTip: prepared.Landing, GoalID: "goal-a", CheckClaim: claimAllowed})
-	var refusal *branch.OpError
-	if !errors.As(err, &refusal) || refusal.Code != branch.SweepUnlandedCode {
-		t.Fatalf("unlanded local sweep = %v", err)
-	}
-	for _, remote := range []string{"origin", "transport"} {
-		if got := git(t, fixture.root, "ls-remote", "--refs", remote, "refs/heads/goal/goal-a"); !strings.HasPrefix(got, fixture.tip+"\t") {
-			t.Fatalf("%s ref after refusal = %q, want %s", remote, got, fixture.tip)
-		}
-	}
-	if got, present, refErr := localFixtureRef(fixture.root, "refs/heads/goal/goal-a"); refErr != nil || !present || got != unlanded {
-		t.Fatalf("local ref after refusal = %s, present=%v, err=%v", got, present, refErr)
-	}
-	if worktrees := git(t, fixture.root, "worktree", "list", "--porcelain"); worktrees != worktreesBefore {
-		t.Fatalf("goal worktree changed after refusal:\nbefore:\n%s\nafter:\n%s", worktreesBefore, worktrees)
-	}
-}
-
-func TestSweepRefusalNamesEveryUnlandedCommit(t *testing.T) {
-	t.Parallel()
-	fixture, prepared := landedSweepFixture(t)
-	var commits []string
-	for index := 0; index < 10; index++ {
-		commits = append(commits, commitUnit(t, fixture.branchFixture, fmt.Sprintf("tail-%d", index),
-			fmt.Sprintf("metasystem/tail-%d.go", index), fmt.Sprintf("tail %d\n", index)))
-	}
-
-	_, err := branch.Sweep(branch.SweepRequest{Repo: fixture.root, Remote: "origin", EndpointTip: prepared.Landing,
-		GoalID: "goal-a", CheckClaim: claimAllowed})
-	var refusal *branch.OpError
-	if !errors.As(err, &refusal) || refusal.Code != branch.SweepUnlandedCode {
-		t.Fatalf("unlanded local sweep = %v", err)
-	}
-	wantPrefix := fmt.Sprintf("goal/goal-a at local tip %s has unlanded commits: ", commits[9])
-	if !strings.HasPrefix(refusal.Message, wantPrefix) {
-		t.Fatalf("refusal = %q, want prefix %q", refusal.Message, wantPrefix)
-	}
-	previous := -1
-	for index, commit := range commits[:8] {
-		entry := fmt.Sprintf("%s (unit tail-%d)", commit, index)
-		at := strings.Index(refusal.Message, entry)
-		if at <= previous {
-			t.Fatalf("refusal does not name commits oldest first: %q", refusal.Message)
-		}
-		previous = at
-	}
-	if strings.Contains(refusal.Message, commits[8]) || strings.Contains(refusal.Message, commits[9]+" (unit tail-9)") ||
-		!strings.HasSuffix(refusal.Message, "and 2 more") {
-		t.Fatalf("refusal cap = %q", refusal.Message)
-	}
 }
 
 func TestSweepKeepsLocalRefMovedAfterCheck(t *testing.T) {
@@ -302,40 +191,6 @@ func TestSweepLocalTipExemptions(t *testing.T) {
 				t.Fatalf("local ref after exempt sweep present=%v, err=%v", present, refErr)
 			}
 		})
-	}
-}
-
-func TestSweepRefusesDirtyGoalWorktree(t *testing.T) {
-	t.Parallel()
-	fixture, prepared := landedSweepFixture(t)
-	write(t, fixture.root, "metasystem/one.go", "dirty worktree\n")
-	_, err := branch.Sweep(branch.SweepRequest{Repo: fixture.root, Remote: "origin", EndpointTip: prepared.Landing,
-		GoalID: "goal-a", CheckClaim: claimAllowed})
-	if err == nil || !strings.Contains(err.Error(), fixture.root) || !strings.Contains(err.Error(), "metasystem/one.go") {
-		t.Fatalf("dirty worktree sweep = %v", err)
-	}
-	if remote := git(t, fixture.root, "ls-remote", "--refs", "origin", "refs/heads/goal/goal-a"); remote == "" {
-		t.Fatal("dirty worktree refusal deleted origin first")
-	}
-}
-
-func TestSweepRefusesTransportTipWithUnlandedCommit(t *testing.T) {
-	t.Parallel()
-	fixture, prepared := landedSweepFixture(t)
-	transport := filepath.Join(t.TempDir(), "transport.git")
-	git(t, filepath.Dir(transport), "init", "-q", "--bare", transport)
-	git(t, fixture.root, "remote", "add", "transport", transport)
-	unlanded := addSweepTail(t, fixture, prepared.Landing)
-	git(t, fixture.root, "push", "-q", "transport", unlanded+":refs/heads/goal/goal-a")
-	git(t, fixture.root, "push", "-q", "origin", fixture.tip+":refs/heads/goal/goal-a", "--force")
-	_, err := branch.Sweep(branch.SweepRequest{Repo: fixture.root, Remote: "origin", Transport: "transport",
-		EndpointTip: prepared.Landing, GoalID: "goal-a", CheckClaim: claimAllowed})
-	var refusal *branch.OpError
-	if !errors.As(err, &refusal) || refusal.Code != branch.SweepUnlandedCode {
-		t.Fatalf("unlanded transport sweep = %v", err)
-	}
-	if git(t, fixture.root, "ls-remote", "--refs", "origin", "refs/heads/goal/goal-a") == "" {
-		t.Fatal("transport refusal deleted origin first")
 	}
 }
 

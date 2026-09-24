@@ -1,7 +1,6 @@
 package landing
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,39 +8,28 @@ import (
 
 const receiptLineFixtureGoal = "fx-receipt-line"
 
-// stagedProjectTree stages the fixture's working tree and returns the
-// whole-project index tree, the tree land.sh hands the check.
-func (f *observeFixture) stagedProjectTree() string {
-	f.t.Helper()
-	f.git("add", "-A", "--", ".")
-	return f.git("write-tree")
-}
+const receiptLineBaseLedger = "receipt=existing\n"
 
-func (f *observeFixture) appendReceipt(goalID string) {
-	f.t.Helper()
+func receiptLineAppended(goalID string) string {
 	line := "1789000000|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|skills=verify|verify=clean|corrections=0|stop_loss=no|delegate=none"
 	if goalID != "" {
 		line += "|goal=" + goalID
 	}
-	line += "|built_by=coordinator|critique_waived=none|waiver_stream=none|note=fixture\n"
-	f.write("memory/receipts.log", "receipt=existing\n"+line)
+	return receiptLineBaseLedger + line + "|built_by=coordinator|critique_waived=none|waiver_stream=none|note=fixture\n"
 }
 
-func receiptLineDecision(t *testing.T, f *observeFixture, goalID, directFix string) ReceiptLineDecision {
-	t.Helper()
-	decision, err := ObserveReceiptLine(ReceiptLineParams{
-		RepoRoot: f.root, CandidateTree: f.stagedProjectTree(), Goal: goalID, DirectFix: directFix,
-	})
-	if err != nil {
-		t.Fatalf("receipt-line check failed: %v", err)
-	}
-	return decision
+func receiptLineCodeRun(f *receiptLineFixture, base, candidate, candidateLedger string) *receiptLineRun {
+	r := f.newRun(base, candidate)
+	r.expectPresentLedgerChange(receiptLineBaseLedger, candidateLedger, "metasystem/cmd/fixture.go")
+	r.expectManifest()
+	r.expectOwner()
+	return r
 }
 
 func TestReceiptLineRefusesCodeWithoutItsLineAndNamesTheCommand(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("cmd/fixture.go", "package main\n")
-	decision := receiptLineDecision(t, f, receiptLineFixtureGoal, "")
+	f := newReceiptLineFixture(t, false)
+	f.writeInstall("cmd/fixture.go", "package main\n")
+	decision := receiptLineCodeRun(f, "base", "candidate", receiptLineBaseLedger).decide(receiptLineFixtureGoal, "")
 	if decision.Outcome != ReceiptLineOutcomeRefused || decision.Reason != "receipt-line-missing" {
 		t.Fatalf("code without a receipt line was not refused: %+v", decision)
 	}
@@ -61,10 +49,11 @@ func TestReceiptLineRefusesCodeWithoutItsLineAndNamesTheCommand(t *testing.T) {
 }
 
 func TestReceiptLinePassesWhenTheLineForItsGoalIsAppended(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("cmd/fixture.go", "package main\n")
-	f.appendReceipt(receiptLineFixtureGoal)
-	decision := receiptLineDecision(t, f, receiptLineFixtureGoal, "")
+	f := newReceiptLineFixture(t, false)
+	f.writeInstall("cmd/fixture.go", "package main\n")
+	ledger := receiptLineAppended(receiptLineFixtureGoal)
+	f.writeTop(f.ledger, ledger)
+	decision := receiptLineCodeRun(f, "base", "candidate", ledger).decide(receiptLineFixtureGoal, "")
 	if decision.Outcome != ReceiptLineOutcomePass || decision.Reason != "receipt-line-appended" {
 		t.Fatalf("code with its receipt line did not pass: %+v", decision)
 	}
@@ -74,10 +63,11 @@ func TestReceiptLinePassesWhenTheLineForItsGoalIsAppended(t *testing.T) {
 }
 
 func TestReceiptLineRefusesALineForAnotherGoal(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("cmd/fixture.go", "package main\n")
-	f.appendReceipt("other-goal")
-	decision := receiptLineDecision(t, f, receiptLineFixtureGoal, "")
+	f := newReceiptLineFixture(t, false)
+	f.writeInstall("cmd/fixture.go", "package main\n")
+	ledger := receiptLineAppended("other-goal")
+	f.writeTop(f.ledger, ledger)
+	decision := receiptLineCodeRun(f, "base", "candidate", ledger).decide(receiptLineFixtureGoal, "")
 	if decision.Outcome != ReceiptLineOutcomeRefused {
 		t.Fatalf("a receipt line for another goal satisfied the check: %+v", decision)
 	}
@@ -87,162 +77,174 @@ func TestReceiptLineRefusesALineForAnotherGoal(t *testing.T) {
 }
 
 func TestReceiptLineWithoutAGoalAcceptsAnyAppendedReceipt(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("cmd/fixture.go", "package main\n")
-	if decision := receiptLineDecision(t, f, "", ""); decision.Outcome != ReceiptLineOutcomeRefused ||
-		!strings.Contains(decision.Detail, "--goal <goal id>") {
+	f := newReceiptLineFixture(t, false)
+	f.writeInstall("cmd/fixture.go", "package main\n")
+	if decision := receiptLineCodeRun(f, "base", "candidate-without-line", receiptLineBaseLedger).decide("", ""); decision.Outcome != ReceiptLineOutcomeRefused || !strings.Contains(decision.Detail, "--goal <goal id>") {
 		t.Fatalf("code without any receipt line was not refused with the goal placeholder: %+v", decision)
 	}
-	f.appendReceipt("")
-	if decision := receiptLineDecision(t, f, "", ""); decision.Outcome != ReceiptLineOutcomePass {
+	ledger := receiptLineAppended("")
+	f.writeTop(f.ledger, ledger)
+	if decision := receiptLineCodeRun(f, "base", "candidate-with-line", ledger).decide("", ""); decision.Outcome != ReceiptLineOutcomePass {
 		t.Fatalf("an appended receipt line did not satisfy a goal-less landing: %+v", decision)
 	}
 }
 
 func TestReceiptLineIgnoresNonReceiptLines(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("cmd/fixture.go", "package main\n")
-	f.write("memory/receipts.log", "receipt=existing\n1789000000|2026-09-12T00:00:00Z|CORRECTION|ref_epoch=1|field=note|was=a|now=b|reason=fixture\n")
-	if decision := receiptLineDecision(t, f, receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeRefused {
+	f := newReceiptLineFixture(t, false)
+	f.writeInstall("cmd/fixture.go", "package main\n")
+	ledger := receiptLineBaseLedger + "1789000000|2026-09-12T00:00:00Z|CORRECTION|ref_epoch=1|field=note|was=a|now=b|reason=fixture\n"
+	f.writeTop(f.ledger, ledger)
+	if decision := receiptLineCodeRun(f, "base", "candidate", ledger).decide(receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeRefused {
 		t.Fatalf("a CORRECTION line passed as a receipt: %+v", decision)
 	}
 }
 
 func TestReceiptLineExemptsRecordsOnlyAndReceiptOnlyLandings(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("plans/note.md", "a record\n")
-	f.write("records/narrator-digest.log", "digest=existing\ndigest=more\n")
-	if decision := receiptLineDecision(t, f, receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeExempt ||
+	f := newReceiptLineFixture(t, false)
+	f.writeInstall("plans/note.md", "a record\n")
+	f.writeInstall("records/narrator-digest.log", "digest=existing\ndigest=more\n")
+	r := f.newRun("base", "candidate-records")
+	r.expectPresentLedgerChange(receiptLineBaseLedger, receiptLineBaseLedger,
+		"metasystem/plans/note.md", "metasystem/records/narrator-digest.log")
+	r.expectManifest()
+	r.expectOwner()
+	r.expectOwner()
+	if decision := r.decide(receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeExempt ||
 		decision.Reason != "records-only" {
 		t.Fatalf("a records-only landing was not exempt: %+v", decision)
 	}
-	f.git("commit", "-qm", "records")
-	f.appendReceipt(receiptLineFixtureGoal)
-	if decision := receiptLineDecision(t, f, receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeExempt ||
+	ledger := receiptLineAppended(receiptLineFixtureGoal)
+	f.writeTop(f.ledger, ledger)
+	r = f.newRun("base-after-records", "candidate-receipt")
+	r.expectPresentLedgerChange(receiptLineBaseLedger, ledger, f.ledger)
+	r.expectManifest()
+	r.expectOwner()
+	if decision := r.decide(receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeExempt ||
 		decision.Reason != "receipt-only" {
 		t.Fatalf("a receipt-only landing was not exempt: %+v", decision)
 	}
+	t.Run("empty change list stops before candidate ledger", func(t *testing.T) {
+		r := f.newRun("base-without-changes", "same-tree")
+		r.expectLocation()
+		r.expectHead()
+		r.expectBaseLedger(ledger, true)
+		r.expectChanged()
+		if decision := r.decide(receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeExempt ||
+			decision.Reason != "no-changes" {
+			t.Fatalf("a landing with no changed paths was not exempt: %+v", decision)
+		}
+	})
 }
 
 func TestReceiptLineExemptsAnExactRevert(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("cmd/fixture.go", "package main\n")
-	if decision := receiptLineDecision(t, f, receiptLineFixtureGoal, "exact-revert"); decision.Outcome != ReceiptLineOutcomeExempt ||
+	f := newReceiptLineFixture(t, false)
+	f.writeInstall("cmd/fixture.go", "package main\n")
+	r := f.newRun("base", "candidate")
+	r.expectPresentLedgerChange(receiptLineBaseLedger, receiptLineBaseLedger, "metasystem/cmd/fixture.go")
+	if decision := r.decide(receiptLineFixtureGoal, "exact-revert"); decision.Outcome != ReceiptLineOutcomeExempt ||
 		decision.Reason != "exact-revert" {
 		t.Fatalf("an exact revert was not exempt: %+v", decision)
 	}
 }
 
 func TestReceiptLineExemptsACheckoutWithoutATrackedLedger(t *testing.T) {
-	f := newObserveFixture(t)
-	f.git("rm", "-q", "memory/receipts.log")
-	f.git("commit", "-qm", "no ledger")
-	f.write("cmd/fixture.go", "package main\n")
-	if decision := receiptLineDecision(t, f, receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeExempt ||
+	f := newReceiptLineFixture(t, false)
+	f.removeTop(f.ledger)
+	f.writeInstall("cmd/fixture.go", "package main\n")
+	r := f.newRun("base-without-ledger", "candidate")
+	r.expectLocation()
+	r.expectHead()
+	r.expectBaseLedger("", false)
+	if decision := r.decide(receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeExempt ||
 		decision.Reason != "no-receipt-ledger" {
 		t.Fatalf("a checkout without a tracked ledger was not exempt: %+v", decision)
 	}
 }
 
 func TestReceiptLineRefusesALandingThatRemovesTheLedger(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("cmd/fixture.go", "package main\n")
-	f.git("rm", "-q", "memory/receipts.log")
-	if decision := receiptLineDecision(t, f, receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeRefused ||
+	f := newReceiptLineFixture(t, false)
+	f.writeInstall("cmd/fixture.go", "package main\n")
+	f.removeTop(f.ledger)
+	r := f.newRun("base", "candidate-without-ledger")
+	r.expectLocation()
+	r.expectHead()
+	r.expectBaseLedger(receiptLineBaseLedger, true)
+	r.expectChanged("metasystem/cmd/fixture.go", f.ledger)
+	r.expectCandidateLedger("", false)
+	if decision := r.decide(receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeRefused ||
 		decision.Reason != "receipt-ledger-removed" {
 		t.Fatalf("a landing that removes the ledger was not refused: %+v", decision)
 	}
 }
 
 func TestReceiptLineNamesTheLedgerFromTheInstallationRoot(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("cmd/fixture.go", "package main\n")
-	decision := receiptLineDecision(t, f, receiptLineFixtureGoal, "")
+	f := newReceiptLineFixture(t, false)
+	f.writeInstall("cmd/fixture.go", "package main\n")
+	decision := receiptLineCodeRun(f, "base", "candidate", receiptLineBaseLedger).decide(receiptLineFixtureGoal, "")
 	if decision.Ledger != filepath.ToSlash(filepath.Join("memory", "receipts.log")) {
 		t.Fatalf("ledger path is not installation-relative: %+v", decision)
 	}
 }
 
 func TestReceiptLineRefusesALandingThatRemovesTheLedgerAlone(t *testing.T) {
-	f := newObserveFixture(t)
-	f.git("rm", "-q", "memory/receipts.log")
-	if decision := receiptLineDecision(t, f, receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeRefused ||
+	f := newReceiptLineFixture(t, false)
+	f.removeTop(f.ledger)
+	r := f.newRun("base", "candidate-without-ledger")
+	r.expectLocation()
+	r.expectHead()
+	r.expectBaseLedger(receiptLineBaseLedger, true)
+	r.expectChanged(f.ledger)
+	r.expectCandidateLedger("", false)
+	if decision := r.decide(receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeRefused ||
 		decision.Reason != "receipt-ledger-removed" {
 		t.Fatalf("a landing that removes only the ledger was not refused: %+v", decision)
 	}
 }
 
-// newVendoredAdoptedFixture lays out an application that vendors the
-// installation at vendor/metasystem and keeps its registers, plans and
-// records at its own root, the layout where the manifest has no row for
-// the application's state.
-func newVendoredAdoptedFixture(t *testing.T) (*observeFixture, string) {
-	t.Helper()
-	repository := t.TempDir()
-	root := filepath.Join(repository, "vendor", "metasystem")
-	f := newObserveFixtureAt(t, repository, root)
-	f.git("rm", "-q", "memory/receipts.log")
-	for _, entry := range []struct{ relative, content string }{
-		{"memory/receipts.log", "receipt=existing\n"},
-		{"plans/goals/app-goal.md", "# app-goal\n"},
-		{"records/misc/note.md", "note\n"},
-		{"app/main.go", "package main\n"},
-	} {
-		target := filepath.Join(repository, filepath.FromSlash(entry.relative))
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(target, []byte(entry.content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	f.git("add", "-A", "--", "../..")
-	f.git("commit", "-qm", "vendored base")
-	return f, repository
-}
-
+// The application keeps state at the repository top while its installation
+// lives beneath vendor/metasystem.
 func TestReceiptLineVendoredAdoptedLayoutKeepsApplicationStateAsRecords(t *testing.T) {
-	f, repository := newVendoredAdoptedFixture(t)
-	writeTop := func(relative, content string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(repository, filepath.FromSlash(relative)), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	stage := func() string {
-		t.Helper()
-		f.git("add", "-A", "--", "../..")
-		return f.git("write-tree")
-	}
-	decide := func() ReceiptLineDecision {
-		t.Helper()
-		decision, err := ObserveReceiptLine(ReceiptLineParams{RepoRoot: f.root, CandidateTree: stage(), Goal: receiptLineFixtureGoal})
-		if err != nil {
-			t.Fatalf("receipt-line check failed: %v", err)
-		}
-		return decision
-	}
-	writeTop("plans/goals/app-goal.md", "# app-goal\n- State: claimed\n")
-	writeTop("records/misc/note.md", "note\nmore\n")
-	if decision := decide(); decision.Outcome != ReceiptLineOutcomeExempt || decision.Reason != "records-only" {
+	f := newReceiptLineFixture(t, true)
+	f.writeTop("plans/goals/app-goal.md", "# app-goal\n")
+	f.writeTop("records/misc/note.md", "note\n")
+	f.writeTop("app/main.go", "package main\n")
+	f.writeTop("plans/goals/app-goal.md", "# app-goal\n- State: claimed\n")
+	f.writeTop("records/misc/note.md", "note\nmore\n")
+	r := f.newRun("vendored-base", "candidate-records")
+	r.expectPresentLedgerChange(receiptLineBaseLedger, receiptLineBaseLedger,
+		"plans/goals/app-goal.md", "records/misc/note.md")
+	r.expectManifest()
+	if decision := r.decide(receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeExempt ||
+		decision.Reason != "records-only" {
 		t.Fatalf("application records were counted as code: %+v", decision)
 	}
-	f.git("commit", "-qm", "records")
-	writeTop("memory/receipts.log", "receipt=existing\n1|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=other|note=x\n")
-	if decision := decide(); decision.Outcome != ReceiptLineOutcomeExempt || decision.Reason != "receipt-only" ||
-		decision.Ledger != "../../memory/receipts.log" {
+	otherLedger := receiptLineBaseLedger + "1|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=other|note=x\n"
+	f.writeTop(f.ledger, otherLedger)
+	r = f.newRun("base-after-records", "candidate-receipt")
+	r.expectPresentLedgerChange(receiptLineBaseLedger, otherLedger, f.ledger)
+	r.expectManifest()
+	if decision := r.decide(receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomeExempt ||
+		decision.Reason != "receipt-only" || decision.Ledger != "../../memory/receipts.log" {
 		t.Fatalf("the application ledger alone was not receipt-only: %+v", decision)
 	}
-	f.git("commit", "-qm", "receipt")
-	f.write("cmd/vendored.go", "package main\n")
-	decision := decide()
+	f.writeInstall("cmd/vendored.go", "package main\n")
+	r = f.newRun("base-after-receipt", "candidate-code")
+	r.expectPresentLedgerChange(otherLedger, otherLedger, "vendor/metasystem/cmd/vendored.go")
+	r.expectManifest()
+	r.expectOwner()
+	decision := r.decide(receiptLineFixtureGoal, "")
 	if decision.Outcome != ReceiptLineOutcomeRefused || decision.Reason != "receipt-line-missing" ||
 		!strings.Contains(decision.Detail, "the landing changes code (cmd/vendored.go)") ||
 		!strings.Contains(decision.Detail, "include ../../memory/receipts.log in the landing") {
 		t.Fatalf("vendored code without its line was not refused with application-root paths: %+v", decision)
 	}
-	writeTop("memory/receipts.log", "receipt=existing\n1|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=other|note=x\n2|2026-09-12T00:00:01Z|RECEIPT|type=implement|outcome=shipped|goal="+receiptLineFixtureGoal+"|note=y\n")
-	if decision := decide(); decision.Outcome != ReceiptLineOutcomePass {
+	matchingLedger := otherLedger + "2|2026-09-12T00:00:01Z|RECEIPT|type=implement|outcome=shipped|goal=" + receiptLineFixtureGoal + "|note=y\n"
+	f.writeTop(f.ledger, matchingLedger)
+	r = f.newRun("base-after-receipt", "candidate-code-and-receipt")
+	r.expectPresentLedgerChange(otherLedger, matchingLedger, f.ledger, "vendor/metasystem/cmd/vendored.go")
+	r.expectManifest()
+	r.expectOwner()
+	if decision := r.decide(receiptLineFixtureGoal, ""); decision.Outcome != ReceiptLineOutcomePass {
 		t.Fatalf("vendored code with its line did not pass: %+v", decision)
 	}
 }

@@ -14,16 +14,13 @@ import (
 
 func TestGLEPrerequisiteFailureBlocksOnlyDependents(t *testing.T) {
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultScript(t, root, "first", "failed", 24)
-	writeTestResultScript(t, root, "second", "failed", 25)
-	writeTestResultScript(t, root, "third", "passed", 0)
-	writeTestResultScript(t, root, "deep", "passed", 0)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	tree := strings.Repeat("2", 40)
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"scripts/first.sh":  testSnapshotScript("first", "failed", 24),
+		"scripts/second.sh": testSnapshotScript("second", "failed", 25),
+		"scripts/third.sh":  testSnapshotScript("third", "passed", 0),
+		"scripts/deep.sh":   testSnapshotScript("deep", "passed", 0),
+	}, 3)
 	contract, plan := stopFixtureContract(testpolicy.PurposeDelivery)
 	contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
 	for index := range contract.Groups {
@@ -35,7 +32,7 @@ func TestGLEPrerequisiteFailureBlocksOnlyDependents(t *testing.T) {
 	if err := contract.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
+	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
 		Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "logs"), Concurrency: 2,
 		CandidateEngineDigest: strings.Repeat("a", 64)})
 	if err != nil {

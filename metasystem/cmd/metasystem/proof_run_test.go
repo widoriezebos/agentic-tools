@@ -367,8 +367,9 @@ func TestCandidateGoalEligibilityTable(t *testing.T) {
 }
 
 func TestCandidateLaunchStillNeedsTheClaimHolder(t *testing.T) {
-	root, now := proofExtensionGoalFixture(t)
-	addProofCandidateGoal(t, root, "candidate-holder", "", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Holder witness."})
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
+	repository.addCandidate(t, "candidate-holder", "", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Holder witness."})
 	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe parent: state=%s err=%v", state, err)
@@ -394,7 +395,7 @@ func TestCandidateLaunchStillNeedsTheClaimHolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+	attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 		GoalID: "candidate-holder", AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	})
@@ -404,13 +405,14 @@ func TestCandidateLaunchStillNeedsTheClaimHolder(t *testing.T) {
 }
 
 func TestCandidateUsesResolvedAuthority(t *testing.T) {
-	root, now := proofExtensionGoalFixture(t)
-	candidate := addProofCandidateGoal(t, root, "candidate-authority", "", &goal.RiskRecord{
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
+	candidate := repository.addCandidate(t, "candidate-authority", "", &goal.RiskRecord{
 		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Separate candidate and authority witness.",
 	})
 	announceProofFixtureHolder(t, root)
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, result, noChild, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+	attempt, result, noChild, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 		GoalID: candidate.Id, AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	})
@@ -439,14 +441,15 @@ func TestCandidateGoalTransitionUnderLockIsBeforeOrAfter(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			restoreProofAdmissionSeams(t)
-			root, now := proofExtensionGoalFixture(t)
-			candidate := addProofCandidateGoal(t, root, "candidate-move", "", &goal.RiskRecord{
+			repository, now := proofAdmissionExtensionFixture(t)
+			root := repository.root
+			candidate := repository.addCandidate(t, "candidate-move", "", &goal.RiskRecord{
 				Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Linearization witness."})
 			announceProofFixtureHolder(t, root)
 			t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
 			move := func() {
 				if test.seam == "under-locks" {
-					amendProofGoalFixture(t, root, candidate.Id, "park proof candidate", func(file *goal.GoalFile) {
+					repository.amend(t, candidate.Id, func(file *goal.GoalFile) {
 						file.Revision++
 						file.State = goal.StateParked
 						file.Parked = &goal.ParkRecord{By: "mac-cli+m1", At: now.Format(time.RFC3339), Because: "linearization witness"}
@@ -456,7 +459,7 @@ func TestCandidateGoalTransitionUnderLockIsBeforeOrAfter(t *testing.T) {
 					})
 					return
 				}
-				rebudgetProofGoalFixture(t, root, candidate.Id, now)
+				repository.rebudget(t, candidate.Id, now)
 			}
 			switch test.seam {
 			case "under-locks":
@@ -466,7 +469,7 @@ func TestCandidateGoalTransitionUnderLockIsBeforeOrAfter(t *testing.T) {
 			case "after-publish":
 				proofAdmissionAfterPublish = move
 			}
-			attempt, result, noChild, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+			attempt, result, noChild, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 				GoalID: candidate.Id, AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 			})
@@ -474,7 +477,7 @@ func TestCandidateGoalTransitionUnderLockIsBeforeOrAfter(t *testing.T) {
 				if err != nil || noChild || result.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
 					t.Fatalf("admission before later rebudget: attempt=%+v result=%+v noChild=%t err=%v", attempt, result, noChild, err)
 				}
-				moved := rebudgetProofGoalFixture(t, root, candidate.Id, now)
+				moved := repository.rebudget(t, candidate.Id, now)
 				stored, readErr := proofrun.ReadAttempt(root, attempt.AttemptID)
 				consumption := dispatchcore.ProjectConsumption(root, moved, now)
 				if readErr != nil || stored.CandidateRevision != goal.BudgetEpisodeRevision(candidate) ||
@@ -516,8 +519,9 @@ func TestProofAdmissionLocksReciprocalGoalsInSortedOrder(t *testing.T) {
 
 func TestProofAdmissionAcquireWaitZeroNamesBothGoalsAndBusyPath(t *testing.T) {
 	restoreProofAdmissionSeams(t)
-	root, now := proofExtensionGoalFixture(t)
-	candidate := addProofCandidateGoal(t, root, "z-candidate-busy", "", &goal.RiskRecord{
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
+	candidate := repository.addCandidate(t, "z-candidate-busy", "", &goal.RiskRecord{
 		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Busy lock witness."})
 	held, err := goalrevision.Acquire(root, candidate.Id, candidate.Revision, "busy-witness")
 	if err != nil {
@@ -529,7 +533,7 @@ func TestProofAdmissionAcquireWaitZeroNamesBothGoalsAndBusyPath(t *testing.T) {
 	t.Cleanup(func() { goalrevision.AcquireWait = previousWait })
 	announceProofFixtureHolder(t, root)
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+	attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
 		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	})
@@ -541,8 +545,9 @@ func TestProofAdmissionAcquireWaitZeroNamesBothGoalsAndBusyPath(t *testing.T) {
 }
 
 func TestCandidateCannotUseAuthorityEarnedExtension(t *testing.T) {
-	root, now := proofExtensionGoalFixture(t)
-	addProofCandidateGoal(t, root, "candidate-no-extension", "", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Extension authority witness."})
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
+	repository.addCandidate(t, "candidate-no-extension", "", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Extension authority witness."})
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	if err := os.MkdirAll(jobs, 0o755); err != nil {
 		t.Fatal(err)
@@ -553,17 +558,14 @@ func TestCandidateCannotUseAuthorityEarnedExtension(t *testing.T) {
 	})
 	announceProofFixtureHolder(t, root)
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, decision, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+	attempt, decision, _, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 		GoalID: "candidate-no-extension", AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	})
 	if err != nil || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("authority consumption incorrectly closed the candidate lens: attempt=%+v decision=%+v err=%v", attempt, decision, err)
 	}
-	data, readErr := os.ReadFile(filepath.Join(root, "plans", "goals", "standing-validation.md"))
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
+	data := repository.rawFile(t, "metasystem/plans/goals/standing-validation.md")
 	file, problems := goal.ParseFile(data)
 	if len(problems) != 0 || file.BudgetExtension != nil {
 		t.Fatalf("cross-candidate admission used the authority's extension: extension=%+v problems=%v", file.BudgetExtension, problems)
@@ -572,24 +574,25 @@ func TestCandidateCannotUseAuthorityEarnedExtension(t *testing.T) {
 
 func TestOneLiveChargedAttemptCountsForBothLenses(t *testing.T) {
 	t.Parallel()
-	root, now := proofExtensionGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "bound authority concurrency", func(file *goal.GoalFile) {
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.Budget.AttemptLimit = 6
 		file.Budget.ActiveJobLimit = 1
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	candidate := addProofCandidateGoal(t, root, "candidate-two-lens", "", &goal.RiskRecord{
+	candidate := repository.addCandidate(t, "candidate-two-lens", "", &goal.RiskRecord{
 		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Two-lens witness."})
-	candidate = amendProofGoalFixture(t, root, candidate.Id, "bound candidate attempts", func(file *goal.GoalFile) {
+	candidate = repository.amend(t, candidate.Id, func(file *goal.GoalFile) {
 		file.Budget.AttemptLimit = 1
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	other := addProofCandidateGoal(t, root, "candidate-other", "", &goal.RiskRecord{
+	other := repository.addCandidate(t, "candidate-other", "", &goal.RiskRecord{
 		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Authority concurrency witness."})
 	announceProofFixtureHolder(t, root)
 	beforePublish := false
 	launch := func(goalID, tree string) (proofrun.Attempt, error) {
-		attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+		attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 			ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 			GoalID: goalID, AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full",
 			CommandClass: "testing", CandidateTree: tree, Now: now,
@@ -601,7 +604,7 @@ func TestOneLiveChargedAttemptCountsForBothLenses(t *testing.T) {
 	if err != nil || !beforePublish || first.AttemptID == "" || first.GoalID != "standing-validation" || first.CandidateGoalID != candidate.Id {
 		t.Fatalf("first two-lens launch: attempt=%+v err=%v", first, err)
 	}
-	binding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
+	binding, err := dispatchcore.ResolveGoalBindingWithReads(root, "standing-validation", now, repository.reads())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,15 +627,16 @@ func TestOneLiveChargedAttemptCountsForBothLenses(t *testing.T) {
 
 func TestCandidateCannotEscapeAuthorityElapsedLimit(t *testing.T) {
 	t.Parallel()
-	root, now := proofExtensionGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "expire authority elapsed budget", func(file *goal.GoalFile) {
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.Budget.ElapsedLimit = "1m"
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	candidate := addProofCandidateGoal(t, root, "candidate-elapsed", "", &goal.RiskRecord{
+	candidate := repository.addCandidate(t, "candidate-elapsed", "", &goal.RiskRecord{
 		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Elapsed authority witness."})
 	announceProofFixtureHolder(t, root)
-	attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+	attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
 		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", Now: now,
 	})
@@ -643,30 +647,21 @@ func TestCandidateCannotEscapeAuthorityElapsedLimit(t *testing.T) {
 
 func TestCandidateExtensionIsRefusedUntilCandidateBecomesAuthority(t *testing.T) {
 	t.Parallel()
-	root, now := proofExtensionGoalFixture(t)
-	candidate := addProofCandidateGoal(t, root, "candidate-extension", "", &goal.RiskRecord{
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
+	candidate := repository.addCandidate(t, "candidate-extension", "", &goal.RiskRecord{
 		Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Candidate extension witness."})
-	candidate = amendProofGoalFixture(t, root, candidate.Id, "bound candidate extension", func(file *goal.GoalFile) {
+	candidate = repository.amend(t, candidate.Id, func(file *goal.GoalFile) {
 		file.Budget.AttemptLimit = 1
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	receiptPath := filepath.Join(root, "memory", "receipts.log")
-	receipts, err := os.ReadFile(receiptPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	receipts := repository.rawFile(t, "metasystem/memory/receipts.log")
 	receiptAt := now.Add(-30 * time.Minute)
 	receipts = append(receipts, []byte(fmt.Sprintf("%d|%s|RECEIPT|type=implement|outcome=shipped|goal=%s|note=candidate extension witness\n",
 		receiptAt.Unix(), receiptAt.Format(time.RFC3339), candidate.Id))...)
-	if err := os.WriteFile(receiptPath, receipts, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	goalSyncMutationGit(t, root, "add", "memory/receipts.log")
-	goalSyncMutationGit(t, root, "commit", "-q", "-m", "candidate extension receipt")
-	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	repository.seed(map[string][]byte{"metasystem/memory/receipts.log": receipts})
 	announceProofFixtureHolder(t, root)
-	first, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+	first, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
 		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", CandidateTree: strings.Repeat("b", 40), Now: now,
 	})
@@ -678,20 +673,20 @@ func TestCandidateExtensionIsRefusedUntilCandidateBecomesAuthority(t *testing.T)
 	}
 	request := proofLaunchAdmission{ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: candidate.Id,
 		AuthorityGoalID: "standing-validation", CapMin: "1", ScopeClass: "full", CommandClass: "testing", CandidateTree: strings.Repeat("c", 40), Now: now}
-	attempt, _, _, err := admitCandidateProofLaunch(t, request)
+	attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, request)
 	for _, want := range []string{"CANDIDATE_EXTENSION_REFUSED", candidate.Id, "attemptLimit", "claim " + candidate.Id + " as authority", "goal set-budget"} {
 		if err == nil || !strings.Contains(err.Error(), want) || attempt.AttemptID != "" {
 			t.Fatalf("candidate extension refusal did not name %q: attempt=%+v err=%v", want, attempt, err)
 		}
 	}
-	amendSyncedGoalFixture(t, root, "release old proof authority", func(file *goal.GoalFile) {
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.Revision++
 		file.State, file.Claimed, file.StopCapability = goal.StateApproved, nil, nil
 		file.History = append(file.History, goal.HistoryLine{At: now.Format(time.RFC3339),
 			Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAT", "mac-cli", "m1"), Verb: "release",
 			Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1})
 	})
-	unchanged := amendProofGoalFixture(t, root, candidate.Id, "claim extension candidate", func(file *goal.GoalFile) {
+	unchanged := repository.amend(t, candidate.Id, func(file *goal.GoalFile) {
 		if file.BudgetExtension != nil {
 			t.Fatalf("candidate refusal wrote an extension: %+v", file.BudgetExtension)
 		}
@@ -705,13 +700,12 @@ func TestCandidateExtensionIsRefusedUntilCandidateBecomesAuthority(t *testing.T)
 		file.StopCapability = &goal.StopCapability{Generation: file.Revision, Revision: file.Revision, Machine: "mac-cli", ClaimEpoch: 1}
 	})
 	request.AuthorityGoalID = ""
-	attempt, decision, _, err := admitCandidateProofLaunch(t, request)
+	attempt, decision, _, err := admitCandidateProofLaunchWithRepository(t, repository, request)
 	if err != nil || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("candidate as authority did not receive its own earned extension: goal=%+v attempt=%+v decision=%+v err=%v", unchanged, attempt, decision, err)
 	}
-	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
-	data := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/"+candidate.Id+".md")
-	file, problems := goal.ParseFile([]byte(data))
+	data := repository.rawFile(t, "metasystem/plans/goals/"+candidate.Id+".md")
+	file, problems := goal.ParseFile(data)
 	if len(problems) != 0 || file.BudgetExtension == nil {
 		t.Fatalf("candidate authority extension was not persisted: extension=%+v problems=%v", file.BudgetExtension, problems)
 	}
@@ -736,20 +730,21 @@ func TestBoundProofContextsRequireTheirOwnAuthority(t *testing.T) {
 }
 
 func TestArcMateAuthorityIsRefused(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
 	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
-	amendSyncedGoalFixture(t, root, "put authority in arc-a", func(file *goal.GoalFile) { file.Arc = "arc-a" })
-	addProofCandidateGoal(t, root, "candidate-arc", "arc-a", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Arc witness."})
-	addProofCandidateGoal(t, root, "candidate-outside", "arc-b", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Outside arc witness."})
+	repository := newProofAdmissionRepositoryFixture(t, now, false)
+	root := repository.root
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) { file.Arc = "arc-a" })
+	repository.addCandidate(t, "candidate-arc", "arc-a", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Arc witness."})
+	repository.addCandidate(t, "candidate-outside", "arc-b", &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "Outside arc witness."})
 	for _, authority := range []string{"standing-validation", ""} {
-		roles, err := resolveProofGoalRoles(root, "candidate-arc", authority, now)
+		roles, err := resolveProofGoalRolesWithReads(root, "candidate-arc", authority, now, repository.reads())
 		if err == nil || !strings.Contains(err.Error(), "PROOF_AUTHORITY_ARC_MATE_REFUSED") ||
 			!strings.Contains(err.Error(), "candidate-arc") || !strings.Contains(err.Error(), "standing-validation") ||
 			!strings.Contains(err.Error(), "arc-a") || roles.Authority != nil {
 			t.Fatalf("arc mate authority=%q roles=%+v err=%v", authority, roles, err)
 		}
 	}
-	roles, err := resolveProofGoalRoles(root, "candidate-outside", "standing-validation", now)
+	roles, err := resolveProofGoalRolesWithReads(root, "candidate-outside", "standing-validation", now, repository.reads())
 	if err != nil || roles.Candidate.Id != "candidate-outside" || roles.Authority.Id != "standing-validation" {
 		t.Fatalf("outside-arc authority refused: roles=%+v err=%v", roles, err)
 	}
@@ -841,6 +836,10 @@ func TestProofRunLimitsDefaultSilentlyWhenOperationalKnobsAreAbsent(t *testing.T
 }
 
 func workerAuthorizedAttemptFixture(t *testing.T, sectionWorktree ...bool) (string, string, proofrun.Attempt) {
+	return workerAuthorizedAttemptFixtureWithProject(t, nil, sectionWorktree...)
+}
+
+func workerAuthorizedAttemptFixtureWithProject(t *testing.T, populate func(string), sectionWorktree ...bool) (string, string, proofrun.Attempt) {
 	t.Helper()
 	controlRoot, _ := proofExtensionGoalFixture(t)
 	controlRoot, err := canonicalProofRoot(controlRoot)
@@ -862,7 +861,10 @@ func workerAuthorizedAttemptFixture(t *testing.T, sectionWorktree ...bool) (stri
 		if err := os.WriteFile(filepath.Join(application, "tracked.txt"), []byte("candidate\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		runGit(t, controlRoot, "add", "application/tracked.txt")
+		if populate != nil {
+			populate(controlRoot)
+		}
+		runGit(t, controlRoot, "add", ".")
 		runGit(t, controlRoot, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "application subtree")
 		candidateTree, err = (gittree.Workspace{Dir: controlRoot}).HeadTree()
 		if err != nil {
@@ -915,7 +917,7 @@ func workerAuthorizedAttemptFixture(t *testing.T, sectionWorktree ...bool) (stri
 }
 
 func TestWorkerAuthorizedAcceptsTheAdmittedRoot(t *testing.T) {
-	_, root, _ := workerAuthorizedAttemptFixture(t)
+	_, root, _ := workerAuthorizedFileAttemptFixture(t)
 	code, _, stderr := captureCommandOutput(t, false, true, func() int {
 		return runProofRunWorkerAuthorized([]string{"--root", root})
 	})
@@ -950,7 +952,7 @@ func TestGoGateTestsRefusesWorkerRequestAboveInheritedAllowanceBeforeNativeLaunc
 	if runGoGateCommandTestInOwnedProcess(t) {
 		return
 	}
-	_, root, _ := workerAuthorizedAttemptFixture(t)
+	_, root, _ := workerAuthorizedFileAttemptFixture(t)
 	setOwnedGoGateProcessEnvironment(t, proofrun.TestWorkersEnvironment, "1")
 	logRoot := filepath.Join(root, "native-logs")
 	code, _, stderr := captureCommandOutput(t, false, true, func() int {
@@ -969,7 +971,7 @@ func TestGoGateTestsRefusesForeignRootBeforeNativeLaunch(t *testing.T) {
 	if runGoGateCommandTestInOwnedProcess(t) {
 		return
 	}
-	foreign, admitted, _ := workerAuthorizedAttemptFixture(t)
+	foreign, admitted, _ := workerAuthorizedFileAttemptFixture(t)
 	setOwnedGoGateProcessEnvironment(t, proofrun.TestWorkersEnvironment, "1")
 	logRoot := filepath.Join(foreign, "native-logs")
 	code, _, stderr := captureCommandOutput(t, false, true, func() int {
@@ -988,7 +990,7 @@ func TestGoGateTestsAuthenticatedCancellationDrainsNativeChildAndBorrowedLease(t
 	if runGoGateCommandTestInOwnedProcess(t) {
 		return
 	}
-	controlRoot, root, attempt := workerAuthorizedAttemptFixture(t)
+	controlRoot, root, attempt := workerAuthorizedFileAttemptFixture(t)
 	for path, source := range map[string]string{
 		"go.mod":              "module example.invalid/publicgate\n\ngo 1.27\n",
 		"internal/app/app.go": "package app\n",
@@ -1148,6 +1150,85 @@ func TestHeldUntilCancellation(t *testing.T) {
 		t.Fatalf("borrowed host slot remained held after public return: %v\n%s", probeOutcome.err, output.String())
 	}
 	_ = probeOutcome.lease.Close()
+}
+
+func TestGoGateTestsAuthenticatedLegacyWorkerUsesInheritedLease(t *testing.T) {
+	t.Parallel()
+	if runGoGateCommandTestInOwnedProcess(t) {
+		return
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(root, "metasystem.conf")
+	if err := os.WriteFile(conf, []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=4\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	internalMarker := filepath.Join(root, "internal-complete")
+	commandMarker := filepath.Join(root, "command-complete")
+	for path, source := range map[string]string{
+		"go.mod":              "module example.invalid/legacynative\n\ngo 1.27\n",
+		"internal/app/app.go": "package app\n",
+		"internal/app/app_test.go": `package app
+import (
+ "os"
+ "testing"
+)
+func TestInternalIdentity(t *testing.T) {
+ if err := os.WriteFile(os.Getenv("INTERNAL_MARKER"), []byte("internal\n"), 0600); err != nil { t.Fatal(err) }
+}
+`,
+		"cmd/tool/main.go": "package main\nfunc main() {}\n",
+		"cmd/tool/main_test.go": `package main
+import (
+ "os"
+ "testing"
+)
+func TestCommandIdentity(t *testing.T) {
+ if err := os.WriteFile(os.Getenv("COMMAND_MARKER"), []byte("command\n"), 0600); err != nil { t.Fatal(err) }
+}
+`,
+	} {
+		writeReceiptFixture(t, root, path, source)
+	}
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	build := exec.CommandContext(t.Context(), "go", "build", "-o", engine, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build public legacy native runner: %v\n%s", err, output)
+	}
+	admissionDir := filepath.Join(t.TempDir(), "host-admission")
+	processTable := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := filepath.Join(t.TempDir(), "result.json")
+	logRoot := filepath.Join(t.TempDir(), "native-logs")
+	environment := append(receiptCanaryEnvironment(),
+		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
+		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root,
+		"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
+		"GOFLAGS=-buildvcs=false",
+		"INTERNAL_MARKER="+internalMarker,
+		"COMMAND_MARKER="+commandMarker)
+	command := pinProofBinaryFixture(t, root).command(environment, engine, "proof-run", "launch", "--suite", "legacy-native",
+		"--root", root, "--conf", conf, "--progress", result+".progress", "--log", result+".log", "--banner", "legacy native",
+		"--result", result, "--", "bash", "-c", `"$1" proof-run go-gate-tests --root "$2" --log-root "$3" --workers 1; status=$?; :; exit "$status"`,
+		"fixture", engine, root, logRoot)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("public legacy native launch: %v\n%s", err, output)
+	}
+	if bytes.Contains(output, []byte("nested proof resource locator")) {
+		t.Fatalf("public legacy native launch attempted nested admission:\n%s", output)
+	}
+	for path, want := range map[string]string{internalMarker: "internal\n", commandMarker: "command\n"} {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil || string(data) != want {
+			t.Fatalf("native identity %s did not complete: data=%q err=%v\n%s", filepath.Base(path), data, readErr, output)
+		}
+	}
+	assertHostAdmissionClean(t, admissionDir, 1)
 }
 
 func runGoGateCommandTestInOwnedProcess(t *testing.T) bool {
@@ -1428,7 +1509,7 @@ func TestWorkerAuthorizedAcceptsOnlyAttemptBoundSectionWorktree(t *testing.T) {
 }
 
 func TestWorkerAuthorizedAcceptsAttemptWitnessSnapshot(t *testing.T) {
-	_, root, _ := workerAuthorizedAttemptFixture(t)
+	_, root, _ := workerAuthorizedFileAttemptFixture(t)
 	snapshot := t.TempDir()
 	t.Chdir(snapshot)
 	t.Setenv(proofWitnessExecutionRootEnv, root)
@@ -1441,8 +1522,193 @@ func TestWorkerAuthorizedAcceptsAttemptWitnessSnapshot(t *testing.T) {
 	}
 }
 
+func TestFrozenPolicyProbePreservesSyntheticProjectRootAfterOuterAuthentication(t *testing.T) {
+	t.Parallel()
+	if runGoGateCommandTestInOwnedProcess(t) {
+		return
+	}
+	controlRoot, executionRoot, attempt := workerAuthorizedAttemptFixture(t)
+	launcher, err := proofrun.ProcessIdentityForPID(int64(os.Getpid()), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt.Launcher = launcher
+	attemptPath, err := proofrun.AttemptPath(controlRoot, attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attemptBytes, err := json.Marshal(attempt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(attemptPath, attemptBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	probeEngine := func(legacy bool) (string, string) {
+		t.Helper()
+		legacyEnvironment := "export " + policyProbeWorkerEnvironment + "=1"
+		if !legacy {
+			legacyEnvironment = "unset " + policyProbeWorkerEnvironment
+		}
+		engine := filepath.Join(t.TempDir(), "metasystem")
+		body := fmt.Sprintf("#!/bin/sh\n%s\nexport GO_WANT_BATCH_E2E_COMMAND=1\nexec %q \"$@\"\n", legacyEnvironment, commandTestExecutable(t))
+		if err := testexec.WriteFile(engine, []byte(body), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		digest, err := fileSHA256(engine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return engine, digest
+	}
+	runProbe := func(legacy bool) error {
+		engine, digest := probeEngine(legacy)
+		outer := proofrun.TestRunRequest{ControlRoot: controlRoot, ProjectRoot: executionRoot,
+			BaseCommit: strings.Repeat("a", 40), PolicyBaseCommit: strings.Repeat("b", 40), AttemptID: attempt.AttemptID,
+			Environment: append(gittree.ScrubbedEnviron(), "GO_WANT_BATCH_E2E_COMMAND=1"), PolicyEngine: engine,
+			PolicyEngineDigest: digest, CandidateEngine: engine, CandidateEngineDigest: digest,
+			CandidateEngineBuildIdentity: strings.Repeat("c", 40), Workers: 1}
+		return runFrozenWorkerProbe(context.Background(), outer, testpolicy.FrozenProtectionProbeCases()[4])
+	}
+	if err := runProbe(true); err != nil {
+		t.Fatalf("recognized frozen policy probe lost its synthetic project root: %v", err)
+	}
+	if err := runProbe(false); err == nil || !strings.Contains(err.Error(), "authenticated request roots") {
+		t.Fatalf("ordinary worker retained a foreign synthetic project root: %v", err)
+	}
+}
+
+func TestTestingWorkerWitnessPreservesAdmittedProjectRoot(t *testing.T) {
+	t.Parallel()
+	if runGoGateCommandTestInOwnedProcess(t) {
+		return
+	}
+	controlRoot, root, attempt := workerAuthorizedAttemptFixtureWithProject(t, func(projectRoot string) {
+		moduleRoot := filepath.Join(projectRoot, "metasystem")
+		if err := os.MkdirAll(moduleRoot, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(moduleRoot, "tracked.txt"), []byte("module\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}, true)
+	engine := commandTestExecutable(t)
+	engineDigest, err := fileSHA256(engine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshotParent := t.TempDir()
+	script := `set -eu
+snapshot=$(mktemp -d "$1/frozen-witness.XXXXXX")
+(cd "$snapshot" && METASYSTEM_GATE_WITNESS_WRITE="$snapshot/witness.json" "$2" proof-run worker-authorized --root "$snapshot")
+printf '%s\n' "<testsuite><testcase classname=\"fixture\" name=\"$3\"/></testsuite>" > "$4/tests.xml"
+`
+	groups := make([]testpolicy.Group, 0, 2)
+	groupIDs := make([]string, 0, 2)
+	for _, mode := range []string{"inherit", "explicit"} {
+		id := "root-handoff-" + mode
+		report := "reports-" + id
+		environment := map[string]string{proofWitnessExecutionRootEnv: filepath.Join(root, "stale-"+mode), "GO_WANT_BATCH_E2E_COMMAND": "1"}
+		if mode == "explicit" {
+			for _, name := range []string{"METASYSTEM_PROOF_CONTROL_ROOT", "METASYSTEM_PROOF_ATTEMPT", "METASYSTEM_PROOF_RECORD_KEY", "METASYSTEM_PROOF_CREATION_CLAIM", "METASYSTEM_PROOF_AUTH_BIN"} {
+				environment[name] = os.Getenv(name)
+			}
+		}
+		groupIDs = append(groupIDs, id)
+		groups = append(groups, testpolicy.Group{ID: id, Kind: "component", Adapter: "command", CWD: "metasystem", Phase: "acceptance", EnvironmentMode: mode,
+			Env:       environment,
+			Resources: testpolicy.GroupResources{Class: "cheap"}, Freshness: "reusable", Inputs: []string{"metasystem/tracked.txt"},
+			Outputs: []string{"metasystem/" + report}, Obligations: []string{"root-handoff"}, Platforms: []string{"any"}, TargetMS: 1000,
+			Argv: []string{"/bin/sh", "-c", script, "fixture", snapshotParent, engine, id, report}, Reports: []string{"metasystem/" + report}, Format: "junit-xml",
+			ExpectedTests: []testpolicy.ExpectedTest{{Report: "metasystem/" + report + "/tests.xml", Classname: "fixture", Name: id}}})
+	}
+	contract := testpolicy.Contract{SchemaVersion: testpolicy.ExecutionContractSchemaVersion,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces:    []testpolicy.Surface{{ID: "module", Paths: []string{"metasystem/**"}, Standard: groupIDs}}, Groups: groups,
+		Always: testpolicy.Always{Canary: groupIDs, Standard: groupIDs}, Unknown: groupIDs}
+	if err := contract.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard,
+		ExecutedMode: testpolicy.ModeStandard, RequiredGroups: groupIDs, SelectedGroups: groupIDs,
+		Stages: []testpolicy.Stage{{ID: "canary", Groups: groupIDs}}}
+	request := proofrun.TestRunRequest{ControlRoot: controlRoot, ProjectRoot: root, CandidateTree: attempt.CandidateTree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
+		Contract: contract, Plan: plan, AttemptID: attempt.AttemptID, Environment: append(gittree.ScrubbedEnviron(), "GO_WANT_BATCH_E2E_COMMAND=1"),
+		LogRoot: filepath.Join(root, "artifacts", "root-handoff-logs"), PolicyEngine: engine, PolicyEngineDigest: engineDigest,
+		CandidateEngine: engine, CandidateEngineDigest: engineDigest, CandidateEngineBuildIdentity: attempt.CandidateTree, Workers: 1}
+	identities, preparedGroups, preparationLaunches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.ComponentIdentities, request.PreparedGroups, request.PreparationLaunches = identities, preparedGroups, preparationLaunches
+	if len(attempt.TestInventory) != 0 {
+		t.Fatalf("root-binding regression needs an authenticated attempt with empty test inventory, got %v", attempt.TestInventory)
+	}
+	artifactsRoot := filepath.Join(root, "artifacts")
+	packetPath := filepath.Join(artifactsRoot, "root-handoff-request.json")
+	resultPath := filepath.Join(artifactsRoot, "root-handoff-result.json")
+	if err := os.MkdirAll(filepath.Dir(packetPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, tamper := range []struct {
+		name   string
+		mutate func(*proofrun.TestRunRequest)
+	}{
+		{name: "project-root", mutate: func(foreign *proofrun.TestRunRequest) { foreign.ProjectRoot = t.TempDir() }},
+		{name: "control-root", mutate: func(foreign *proofrun.TestRunRequest) { foreign.ControlRoot = t.TempDir() }},
+	} {
+		t.Run("refuses-foreign-"+tamper.name, func(t *testing.T) {
+			foreign := request
+			tamper.mutate(&foreign)
+			foreignPacket := filepath.Join(artifactsRoot, "root-handoff-"+tamper.name+"-request.json")
+			foreignResult := filepath.Join(artifactsRoot, "root-handoff-"+tamper.name+"-result.json")
+			if err := writePrivateJSON(foreignPacket, foreign); err != nil {
+				t.Fatal(err)
+			}
+			foreignDigest, err := fileSHA256(foreignPacket)
+			if err != nil {
+				t.Fatal(err)
+			}
+			code, _, stderr := captureCommandOutput(t, false, true, func() int {
+				return runTestWorker([]string{"--packet", foreignPacket, "--packet-sha256", foreignDigest, "--result", foreignResult})
+			})
+			if code != 3 || !strings.Contains(stderr, "authenticated request roots") {
+				t.Fatalf("foreign %s refusal = code=%d stderr=%q", tamper.name, code, stderr)
+			}
+			if _, err := os.Stat(foreignResult); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("foreign %s retained a result before refusal: %v", tamper.name, err)
+			}
+			matches, err := filepath.Glob(filepath.Join(snapshotParent, "frozen-witness.*"))
+			if err != nil || len(matches) != 0 {
+				t.Fatalf("foreign %s launched a command before refusal: matches=%v err=%v", tamper.name, matches, err)
+			}
+		})
+	}
+	if err := writePrivateJSON(packetPath, request); err != nil {
+		t.Fatal(err)
+	}
+	packetDigest, err := fileSHA256(packetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := captureCommandOutput(t, false, true, func() int {
+		return runTestWorker([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath})
+	})
+	result, resultErr := readTestingWorkerResult(resultPath)
+	if code != 0 || resultErr != nil || !result.Delivery.Sufficient || len(result.Groups) != len(groupIDs) {
+		t.Fatalf("authenticated worker did not carry the admitted project root into its frozen witness: code=%d read=%v stderr=%q result=%+v", code, resultErr, stderr, result)
+	}
+	for _, group := range result.Groups {
+		prepared := preparedGroups[group.ID]
+		if group.Status != "passed" || !group.NativeLaunched || group.ExecutionIdentity != identities[group.ID] || group.EnvironmentDigest != prepared.EnvironmentDigest {
+			t.Fatalf("%s preparation and authenticated execution diverged: prepared=%+v identity=%q result=%+v", group.ID, prepared, identities[group.ID], group)
+		}
+	}
+}
+
 func TestWorkerAuthorizedRefusesAForeignRoot(t *testing.T) {
-	foreign, root, attempt := workerAuthorizedAttemptFixture(t)
+	foreign, root, attempt := workerAuthorizedFileAttemptFixture(t)
 	code, _, stderr := captureCommandOutput(t, false, true, func() int {
 		return runProofRunWorkerAuthorized([]string{"--root", foreign})
 	})
@@ -1996,7 +2262,8 @@ func proofExtensionGoalFixtureAt(t *testing.T, now time.Time) (string, time.Time
 }
 
 func TestProofAdmissionExtendsRejudgesAndReserves(t *testing.T) {
-	root, now := proofExtensionGoalFixture(t)
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
 
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	if err := os.MkdirAll(jobs, 0o755); err != nil {
@@ -2016,7 +2283,7 @@ func TestProofAdmissionExtendsRejudgesAndReserves(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, decision, joined, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+	attempt, decision, joined, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	})
@@ -2026,8 +2293,7 @@ func TestProofAdmissionExtendsRejudgesAndReserves(t *testing.T) {
 		attempt.CandidateRevision != attempt.AccountingRevision || attempt.CandidateTree != strings.Repeat("b", 40) {
 		t.Fatalf("proof admission did not extend and reserve: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
 	}
-	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
-	record := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	record := string(repository.rawFile(t, "metasystem/plans/goals/standing-validation.md"))
 	if !strings.Contains(record, "- BudgetExtension: ") || !strings.Contains(record, "attemptLimit=1->2") ||
 		!strings.Contains(record, "- Claimed: machine=mac-cli lineage=m1") {
 		t.Fatalf("proof admission did not preserve the claim and marker: %s", record)
@@ -2035,7 +2301,8 @@ func TestProofAdmissionExtendsRejudgesAndReserves(t *testing.T) {
 }
 
 func TestNativeDelegateProofAdmissionExtendsItsClaimPairBudget(t *testing.T) {
-	root, now := proofExtensionGoalFixture(t)
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
 	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe native delegate parent: state=%s err=%v", state, err)
@@ -2066,7 +2333,7 @@ func TestNativeDelegateProofAdmissionExtendsItsClaimPairBudget(t *testing.T) {
 		strconv.FormatInt(ambientAncestor, 10): map[string]any{"terminal": true},
 	})
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", identities)
-	classified, err := classifyVerbCaller(root, parent.Pid)
+	classified, err := classifyVerbCallerWith(root, parent.Pid, repository.reads().Receipt.TopLevel)
 	if err != nil || classified.Class != lease.ClassHuman {
 		t.Fatalf("fixture ambient caller classification = %+v, %v; want HUMAN", classified, err)
 	}
@@ -2078,17 +2345,17 @@ func TestNativeDelegateProofAdmissionExtendsItsClaimPairBudget(t *testing.T) {
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT", root)
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "native-proof")
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	preBinding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
+	preBinding, err := dispatchcore.ResolveGoalBindingWithReads(root, "standing-validation", now, repository.reads())
 	if err != nil {
 		t.Fatalf("resolve pre-extension binding: %v", err)
 	}
-	preVerdict, verdictErr := dispatchcore.EvaluateProofAdmissionForDispatch(root, preBinding.GoalID, preBinding.Revision,
-		preBinding.File, preBinding.Revision, 1, now, "implementer", "fresh", dispatchcore.HazardMechanical)
+	preVerdict, verdictErr := dispatchcore.EvaluateProofAdmissionForDispatchWithReads(root, preBinding.GoalID, preBinding.Revision,
+		preBinding.File, preBinding.Revision, 1, now, "implementer", "fresh", repository.reads(), dispatchcore.HazardMechanical)
 	if verdictErr != nil || !preVerdict.Refused() || preVerdict.Authority.Extension == nil ||
 		!strings.Contains(strings.Join(dispatchcore.FormatProofAdmission(preVerdict), "; "), "attemptLimit used=1 limit=1") {
 		t.Fatalf("fixture did not begin at exact extendable exhaustion: binding=%+v verdict=%+v err=%v", preBinding, preVerdict, verdictErr)
 	}
-	attempt, decision, joined, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+	attempt, decision, joined, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	})
@@ -2096,27 +2363,27 @@ func TestNativeDelegateProofAdmissionExtendsItsClaimPairBudget(t *testing.T) {
 	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("native delegate proof did not extend and reserve: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
 	}
-	binding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
+	binding, err := dispatchcore.ResolveGoalBindingWithReads(root, "standing-validation", now, repository.reads())
 	if err != nil || binding.File.Budget.AttemptLimit != 2 || binding.File.BudgetExtension == nil ||
 		binding.File.BudgetExtension.AttemptLimitFrom != 1 || binding.File.BudgetExtension.AttemptLimitTo != 2 {
 		t.Fatalf("authoritative post-extension binding = %+v, %v", binding, err)
 	}
-	postVerdict, err := dispatchcore.EvaluateProofAdmissionForDispatch(root, binding.GoalID, binding.Revision,
-		binding.File, binding.Revision, 1, now, "implementer", "fresh", dispatchcore.HazardMechanical)
+	postVerdict, err := dispatchcore.EvaluateProofAdmissionForDispatchWithReads(root, binding.GoalID, binding.Revision,
+		binding.File, binding.Revision, 1, now, "implementer", "fresh", repository.reads(), dispatchcore.HazardMechanical)
 	if err != nil || !postVerdict.Refused() || postVerdict.Authority.Extension != nil ||
 		!strings.Contains(strings.Join(dispatchcore.FormatProofAdmission(postVerdict), "; "), "attemptLimit used=2 limit=2") {
 		t.Fatalf("consumed extension did not restore exact exhaustion: verdict=%+v err=%v", postVerdict, err)
 	}
-	tip := goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef)
-	goalRecord := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	goalRecord := string(repository.rawFile(t, "metasystem/plans/goals/standing-validation.md"))
 	if !strings.Contains(goalRecord, "- BudgetExtension: ") || !strings.Contains(goalRecord, "attemptLimit=1->2") {
 		t.Fatalf("native delegate proof did not persist the extension: %s", goalRecord)
 	}
 }
 
 func TestSupervisorTakeoverRefusesStaleEpochProof(t *testing.T) {
-	root, now := proofExtensionGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "landing owner epoch two", func(file *goal.GoalFile) {
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.StopCapability.ClaimEpoch = 2
 	})
 	parent, state, err := (identity.KernelProber{}).Probe(int64(os.Getppid()))
@@ -2144,7 +2411,7 @@ func TestSupervisorTakeoverRefusesStaleEpochProof(t *testing.T) {
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT", root)
 	t.Setenv("METASYSTEM_HOOK_DELEGATE_JOB", "stale-proof")
 	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-	attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+	attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	})
@@ -2155,7 +2422,8 @@ func TestSupervisorTakeoverRefusesStaleEpochProof(t *testing.T) {
 }
 
 func TestProofGateAdmitsAfterTheStopCapabilityIsRestamped(t *testing.T) {
-	root, now := proofExtensionGoalFixture(t)
+	repository, now := proofAdmissionExtensionFixture(t)
+	root := repository.root
 	announceProofFixtureHolder(t, root)
 	leasePath := filepath.Join(root, "artifacts", "agents", "mains", "worktree-lease.json")
 	leaseBytes, err := os.ReadFile(leasePath)
@@ -2180,7 +2448,7 @@ func TestProofGateAdmitsAfterTheStopCapabilityIsRestamped(t *testing.T) {
 		ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 		CapMin: "1", ScopeClass: "full", CommandClass: "testing",
 	}
-	attempt, _, _, err := admitCandidateProofLaunch(t, admission)
+	attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, admission)
 	wantStart := "active coordinator does not own the claimed goal reservation"
 	if err == nil || !strings.HasPrefix(err.Error(), wantStart) || !strings.Contains(err.Error(), "lease claim epoch 5") ||
 		!strings.Contains(err.Error(), "stop capability claim epoch 1") ||
@@ -2188,7 +2456,7 @@ func TestProofGateAdmitsAfterTheStopCapabilityIsRestamped(t *testing.T) {
 		t.Fatalf("stale capability refusal: attempt=%+v err=%v", attempt, err)
 	}
 
-	endpoint, err := goal.ResolveEndpoint(root)
+	endpoint, err := repository.reads().ResolveEndpoint(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2200,7 +2468,7 @@ func TestProofGateAdmitsAfterTheStopCapabilityIsRestamped(t *testing.T) {
 	if err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("restamp: %+v %v", result, err)
 	}
-	attempt, decision, joined, err := admitCandidateProofLaunch(t, admission)
+	attempt, decision, joined, err := admitCandidateProofLaunchWithRepository(t, repository, admission)
 	if err != nil || joined || decision.Disposition != proofrun.DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("proof admission after restamp: attempt=%+v decision=%+v joined=%v err=%v", attempt, decision, joined, err)
 	}
@@ -2224,15 +2492,16 @@ func TestBatchRevisionBoundAdmissionRefusesBeforeRunnerOrCharge(t *testing.T) {
 		goalRev, accountRev uint64
 	}{{"goal moved", 1, 2}, {"accounting moved", 2, 1}} {
 		t.Run(test.name, func(t *testing.T) {
-			root, now := proofExtensionGoalFixture(t)
+			repository, now := proofAdmissionExtensionFixture(t)
+			root := repository.root
 			announceProofFixtureHolder(t, root)
 			t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-			binding, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", now)
+			binding, err := dispatchcore.ResolveGoalBindingWithReads(root, "standing-validation", now, repository.reads())
 			if err != nil {
 				t.Fatal(err)
 			}
 			before := dispatchcore.ProjectBudget(root, binding.File, now)
-			attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+			attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 				CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
 				ExpectedGoalRevision: test.goalRev, ExpectedAccountingRevision: test.accountRev,
@@ -2273,13 +2542,14 @@ func TestBatchP2RequiresDiagnosticHeadroom(t *testing.T) {
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root, now := proofExtensionGoalFixture(t)
+			repository, now := proofAdmissionExtensionFixture(t)
+			root := repository.root
 			if test.name != "one attempt remains" {
-				amendSyncedGoalFixture(t, root, test.name, test.mutate)
+				repository.amend(t, "standing-validation", test.mutate)
 			}
 			announceProofFixtureHolder(t, root)
 			t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
-			attempt, _, _, err := admitCandidateProofLaunch(t, proofLaunchAdmission{
+			attempt, _, _, err := admitCandidateProofLaunchWithRepository(t, repository, proofLaunchAdmission{
 				ControlRoot: root, ExecutionRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"), GoalID: "standing-validation",
 				CapMin: "1", ScopeClass: "selected", CommandClass: "testing",
 				ExpectedGoalRevision: 2, ExpectedAccountingRevision: 2,

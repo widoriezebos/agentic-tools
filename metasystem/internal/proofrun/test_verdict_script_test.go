@@ -2,6 +2,7 @@ package proofrun
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -78,13 +79,18 @@ func runScriptVerdictFixture(t *testing.T, names []string, markers bool, reporte
 		script.WriteString("printf '%s\\n' 'fixture failed without a summary'\n")
 	}
 	fmt.Fprintf(&script, "exit %d\n", processExit)
-	writeTestResultFile(t, filepath.Join(root, "scripts", "agents", "validate-section-selector.sh"), []byte(script.String()), 0o755)
-	runTestResultGit(t, root, "init", "-q")
-	runTestResultGit(t, root, "add", "scripts")
-	runTestResultGit(t, root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	tree := verdictFixtureTree(t, "script")
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"scripts/agents/validate-section-selector.sh": testSnapshotFile(script.String(), 0o755),
+	}, 1)
 	group := testpolicy.Group{ID: "script-verdict", Kind: "integration", Adapter: "section", CWD: ".",
 		Inputs: []string{"scripts/**"}, Platforms: []string{"any"}, TargetMS: 1000, Section: "fixture"}
-	return runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree,
+	return runTestGroup(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open,
 		LogRoot: filepath.Join(root, "logs")}, group)
+}
+
+func verdictFixtureTree(t *testing.T, specimen string) string {
+	t.Helper()
+	digest := sha256.Sum256([]byte(t.Name() + "/" + specimen))
+	return fmt.Sprintf("%x", digest[:20])
 }

@@ -13,9 +13,6 @@ import (
 func TestAffectedGoSelectionOwnsAssetsDeletionAndBuildableInventory(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	gitSelection(t, root, "init", "-q")
-	gitSelection(t, root, "config", "user.name", "fixture")
-	gitSelection(t, root, "config", "user.email", "fixture@example.invalid")
 	writeSelectionFile(t, root, "go.mod", "module example.invalid/selection\n\ngo 1.27\n")
 	writeSelectionFile(t, root, "a/a.go", "package a\n")
 	writeSelectionFile(t, root, "a/assets/value.txt", "one\n")
@@ -43,40 +40,44 @@ func TestAffectedGoSelectionOwnsAssetsDeletionAndBuildableInventory(t *testing.T
 	writeSelectionFile(t, root, "platformonly/only_"+otherPlatform+".go", "package platformonly\n")
 	writeSelectionFile(t, root, "ignored/_ignored.go", "package ignored\n")
 	writeSelectionFile(t, root, "docs/readme.txt", "read me\n")
-	gitSelection(t, root, "add", ".")
-	gitSelection(t, root, "commit", "-qm", "base")
-	base := gitSelection(t, root, "rev-parse", "HEAD^{tree}")
-	check := func(edit func(), tags []string) Selection {
+	check := func(t *testing.T, path string, edit func(string), tags []string, openBase bool) (Selection, *selectionFixture) {
 		t.Helper()
-		gitSelection(t, root, "reset", "--hard", "HEAD")
-		edit()
-		gitSelection(t, root, "add", "-A")
-		tree := gitSelection(t, root, "write-tree")
-		selection, err := SelectWithTags(root, base, tree, tags)
+		fixture := newSelectionFixture(t, root, path, edit, openBase)
+		selection, err := fixture.selectWithTags(tags)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return selection
+		return selection, fixture
 	}
 	for _, asset := range []string{"a/assets/value.txt", "a/testdata/golden.json", "a/header.h"} {
 		t.Run(asset, func(t *testing.T) {
-			selected := check(func() { writeSelectionFile(t, root, asset, "changed\n") }, nil)
+			selected, _ := check(t, asset, func(candidate string) { writeSelectionFile(t, candidate, asset, "changed\n") }, nil, false)
 			if !slices.Equal(selected.Changed, []string{"./a"}) || !slices.Equal(selected.Packages, []string{"./a", "./b"}) {
 				t.Fatalf("asset %s selected changed=%v packages=%v", asset, selected.Changed, selected.Packages)
 			}
 		})
 	}
-	deleted := check(func() {
-		if err := os.Remove(filepath.Join(root, "outer", "missing", "inner", "value.go")); err != nil {
+	baseSource, _ := check(t, "a/a.go", func(candidate string) {
+		writeSelectionFile(t, candidate, "a/a.go", "package a\nconst Value = 2\n")
+	}, nil, false)
+	if !slices.Equal(baseSource.Changed, []string{"./a"}) ||
+		!slices.Equal(baseSource.Dependents, []string{"./b"}) ||
+		!slices.Equal(baseSource.Packages, []string{"./a", "./b"}) ||
+		!slices.Contains(baseSource.InputDirs["./b"], "./a") ||
+		!slices.Contains(baseSource.InputDirs["./b"], "./b") {
+		t.Fatalf("base source did not retain its test-import consumer and input directories: %+v", baseSource)
+	}
+	deleted, _ := check(t, "outer/missing/inner/value.go", func(candidate string) {
+		if err := os.Remove(filepath.Join(candidate, "outer", "missing", "inner", "value.go")); err != nil {
 			t.Fatal(err)
 		}
-	}, nil)
+	}, nil, true)
 	if !slices.Equal(deleted.Changed, []string{"./..."}) || !slices.Contains(deleted.Packages, "./a") || !slices.Contains(deleted.Packages, "./b") {
 		t.Fatalf("deleted leaf under surviving non-Go ancestor = %+v", deleted)
 	}
-	manifest := check(func() {
-		writeSelectionFile(t, root, "go.mod", "module example.invalid/selection\n\ngo 1.27\n// changed\n")
-	}, nil)
+	manifest, manifestFixture := check(t, "go.mod", func(candidate string) {
+		writeSelectionFile(t, candidate, "go.mod", "module example.invalid/selection\n\ngo 1.27\n// changed\n")
+	}, nil, false)
 	if !slices.Equal(manifest.Changed, []string{"./..."}) || slices.Contains(manifest.Packages, "./tagonly") ||
 		slices.Contains(manifest.Packages, "./featureonly") || slices.Contains(manifest.Packages, "./ignored") || slices.Contains(manifest.Packages, "./platformonly") ||
 		slices.Contains(manifest.Packages, "./unsatisfied") || slices.Contains(manifest.Packages, "./unsatisfiedlegacy") ||
@@ -84,12 +85,12 @@ func TestAffectedGoSelectionOwnsAssetsDeletionAndBuildableInventory(t *testing.T
 		!slices.Contains(manifest.Packages, "./onlytest") {
 		t.Fatalf("untagged manifest inventory included excluded package: %+v", manifest)
 	}
-	cgoDisabled, err := SelectWithEnvironment(root, base, manifest.Tree, nil, []string{"CGO_ENABLED=0"})
+	cgoDisabled, err := manifestFixture.selectWithEnvironment(nil, []string{"CGO_ENABLED=0"})
 	if err != nil || slices.Contains(cgoDisabled.Packages, "./cgoonly") || !slices.Contains(cgoDisabled.Packages, "./onlytest") {
 		t.Fatalf("cgo-disabled/test-only inventory = %+v err=%v", cgoDisabled, err)
 	}
 	listed := exec.Command("go", "list", "./...")
-	listed.Dir = root
+	listed.Dir = manifestFixture.candidate
 	listed.Env = append(os.Environ(), "CGO_ENABLED=0")
 	output, err := listed.CombinedOutput()
 	if err != nil {
@@ -105,24 +106,24 @@ func TestAffectedGoSelectionOwnsAssetsDeletionAndBuildableInventory(t *testing.T
 			t.Fatalf("possible cross-tool build tag %s was silently excluded: %+v", uncertainToolPackage, manifest)
 		}
 	}
-	tagged := check(func() {
-		writeSelectionFile(t, root, "go.mod", "module example.invalid/selection\n\ngo 1.27\n// changed\n")
-	}, []string{"feature"})
+	tagged, taggedFixture := check(t, "go.mod", func(candidate string) {
+		writeSelectionFile(t, candidate, "go.mod", "module example.invalid/selection\n\ngo 1.27\n// changed\n")
+	}, []string{"feature"}, false)
 	if !slices.Contains(tagged.Packages, "./featureonly") || slices.Contains(tagged.Packages, "./tagonly") {
 		t.Fatalf("feature-tagged inventory = %+v", tagged)
 	}
-	fromEnvironment, err := SelectWithEnvironment(root, base, tagged.Tree, nil, []string{"GOFLAGS=-tags=feature"})
+	fromEnvironment, err := taggedFixture.selectWithEnvironment(nil, []string{"GOFLAGS=-tags=feature"})
 	if err != nil || !slices.Contains(fromEnvironment.Packages, "./featureonly") || slices.Contains(fromEnvironment.Packages, "./tagonly") {
 		t.Fatalf("GOFLAGS-tagged inventory = %+v err=%v", fromEnvironment, err)
 	}
-	if _, err := SelectWithEnvironment(root, base, tagged.Tree, nil, []string{"GOFLAGS=-overlay=dirty.json"}); err == nil || !strings.Contains(err.Error(), "overlay") {
+	if _, err := taggedFixture.selectWithEnvironment(nil, []string{"GOFLAGS=-overlay=dirty.json"}); err == nil || !strings.Contains(err.Error(), "overlay") {
 		t.Fatalf("unresolved Go overlay allowed a possibly stale package inventory: %v", err)
 	}
-	platform, err := SelectWithEnvironment(root, base, tagged.Tree, nil, []string{"GOOS=" + otherPlatform, "GOARCH=amd64"})
+	platform, err := taggedFixture.selectWithEnvironment(nil, []string{"GOOS=" + otherPlatform, "GOARCH=amd64"})
 	if err != nil || !slices.Contains(platform.Packages, "./platformonly") {
 		t.Fatalf("target-platform inventory = %+v err=%v", platform, err)
 	}
-	unknown := check(func() { writeSelectionFile(t, root, "docs/readme.txt", "changed\n") }, nil)
+	unknown, _ := check(t, "docs/readme.txt", func(candidate string) { writeSelectionFile(t, candidate, "docs/readme.txt", "changed\n") }, nil, true)
 	if !slices.Equal(unknown.Changed, []string{"./..."}) || !slices.Contains(unknown.Packages, "./a") {
 		t.Fatalf("unowned asset did not select full candidate inventory: %+v", unknown)
 	}
@@ -131,21 +132,15 @@ func TestAffectedGoSelectionOwnsAssetsDeletionAndBuildableInventory(t *testing.T
 func TestDeletedLastGoPackageAllowsEmptyCandidateInventory(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	gitSelection(t, root, "init", "-q")
-	gitSelection(t, root, "config", "user.name", "fixture")
-	gitSelection(t, root, "config", "user.email", "fixture@example.invalid")
 	writeSelectionFile(t, root, "go.mod", "module example.invalid/last\n\ngo 1.27\n")
 	writeSelectionFile(t, root, "leaf/leaf.go", "package leaf\n")
 	writeSelectionFile(t, root, "outer/keep.txt", "keep\n")
-	gitSelection(t, root, "add", ".")
-	gitSelection(t, root, "commit", "-qm", "base")
-	base := gitSelection(t, root, "rev-parse", "HEAD^{tree}")
-	if err := os.Remove(filepath.Join(root, "leaf", "leaf.go")); err != nil {
-		t.Fatal(err)
-	}
-	gitSelection(t, root, "add", "-A")
-	tree := gitSelection(t, root, "write-tree")
-	selected, err := Select(root, base, tree)
+	fixture := newSelectionFixture(t, root, "leaf/leaf.go", func(candidate string) {
+		if err := os.Remove(filepath.Join(candidate, "leaf", "leaf.go")); err != nil {
+			t.Fatal(err)
+		}
+	}, true)
+	selected, err := fixture.selectWithTags(nil)
 	if err != nil || len(selected.Packages) != 0 || !slices.Equal(selected.Changed, []string{"./..."}) {
 		t.Fatalf("last Go package deletion selection=%+v err=%v", selected, err)
 	}

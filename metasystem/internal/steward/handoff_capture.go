@@ -371,14 +371,44 @@ func ResolveHandoffCaller(stateRoot string, caller HandoffCaller) (HandoffCaller
 	return admitHandoffCaller(root, caller)
 }
 
-func selectHandoffGoal(root string, now time.Time) (*goal.GoalFile, string, error) {
+type handoffGoalSnapshot struct {
+	claimed  []string
+	landing  []string
+	accepted map[string]*goal.GoalFile
+}
+
+type handoffGoalReader func(string, time.Time) (handoffGoalSnapshot, error)
+
+func readHandoffGoalSnapshot(root string, now time.Time) (handoffGoalSnapshot, error) {
 	work, err := goal.ReadClaimableBudgetedWork(root, now)
+	if err != nil {
+		return handoffGoalSnapshot{}, err
+	}
+	snapshot := handoffGoalSnapshot{claimed: work.Claimed, landing: work.Landing, accepted: make(map[string]*goal.GoalFile)}
+	ids := work.Claimed
+	if len(ids) == 0 {
+		ids = work.Landing
+	}
+	if len(ids) == 1 {
+		if file, ok := work.OwnedClaim(ids[0]); ok {
+			snapshot.accepted[ids[0]] = file
+		}
+	}
+	return snapshot, nil
+}
+
+func selectHandoffGoal(root string, now time.Time) (*goal.GoalFile, string, error) {
+	return selectHandoffGoalWithReader(root, now, readHandoffGoalSnapshot)
+}
+
+func selectHandoffGoalWithReader(root string, now time.Time, readGoal handoffGoalReader) (*goal.GoalFile, string, error) {
+	work, err := readGoal(root, now)
 	if err != nil {
 		return nil, "", err
 	}
-	ids, state := work.Claimed, "claimed"
+	ids, state := work.claimed, "claimed"
 	if len(ids) == 0 {
-		ids, state = work.Landing, "landing"
+		ids, state = work.landing, "landing"
 	}
 	if len(ids) == 0 {
 		return nil, "", refusal("HANDOFF_NO_GOAL", "")
@@ -386,7 +416,7 @@ func selectHandoffGoal(root string, now time.Time) (*goal.GoalFile, string, erro
 	if len(ids) != 1 {
 		return nil, "", fmt.Errorf("handoff found %d %s goals for this machine", len(ids), state)
 	}
-	file, ok := work.OwnedClaim(ids[0])
+	file, ok := work.accepted[ids[0]]
 	if !ok || file == nil || file.Claimed == nil {
 		return nil, "", fmt.Errorf("handoff goal %s has no accepted claim record in its admission snapshot", ids[0])
 	}
@@ -619,11 +649,15 @@ func captureHandoffMessages(root string) ([]HandoffMessage, error) {
 }
 
 func captureHandoff(root string, caller HandoffCaller, record HandoffRecord, now time.Time) (capturedHandoff, error) {
+	return captureHandoffWithReader(root, caller, record, now, readHandoffGoalSnapshot)
+}
+
+func captureHandoffWithReader(root string, caller HandoffCaller, record HandoffRecord, now time.Time, readGoal handoffGoalReader) (capturedHandoff, error) {
 	authority, err := admitHandoffCaller(root, caller)
 	if err != nil {
 		return capturedHandoff{}, err
 	}
-	file, state, err := selectHandoffGoal(root, now)
+	file, state, err := selectHandoffGoalWithReader(root, now, readGoal)
 	if err != nil {
 		return capturedHandoff{}, err
 	}
@@ -1040,6 +1074,10 @@ func readLiveHandoffIntents(root string) ([]Intent, error) {
 // replacement authorization. Every refusal before directory creation leaves
 // no nonce state or intent.
 func Handoff(stateRoot string, caller HandoffCaller, record HandoffRecord, now time.Time, receiptFile string) (HandoffResult, error) {
+	return handoffWithGoalReader(stateRoot, caller, record, now, receiptFile, readHandoffGoalSnapshot)
+}
+
+func handoffWithGoalReader(stateRoot string, caller HandoffCaller, record HandoffRecord, now time.Time, receiptFile string, readGoal handoffGoalReader) (HandoffResult, error) {
 	root, err := handoffCanonicalRoot(stateRoot)
 	if err != nil {
 		return HandoffResult{}, err
@@ -1055,7 +1093,7 @@ func Handoff(stateRoot string, caller HandoffCaller, record HandoffRecord, now t
 		return HandoffResult{}, err
 	}
 	defer arbitration.Release()
-	capture, err := captureHandoff(root, caller, record, now)
+	capture, err := captureHandoffWithReader(root, caller, record, now, readGoal)
 	if err != nil {
 		return HandoffResult{}, err
 	}

@@ -338,6 +338,7 @@ type turnVerdictDependencies struct {
 	stateWriter        func(string, []byte) error
 	brainStatusWriter  func(string, brain.Record, time.Time) error
 	consumeSessionStop func(*Store, string, string) (SessionStop, bool, string, error)
+	observeLedger      func(context.Context, string, run.WaitSelector, run.WaiterTarget, string, string) (run.SourceObservation, error)
 }
 
 func (s *Store) turnBootClock() func() (string, time.Duration, error) {
@@ -414,6 +415,13 @@ func NormalizeSession(id string) string {
 	return sha256Hex([]byte(id))
 }
 
+// TurnVerdictAtEndpoint decides a turn using committed facts from the supplied endpoint.
+func (s *Store) TurnVerdictAtEndpoint(endpoint Endpoint, machine string, scan ScanResult, sessionID, watchdogDigest, mainID string, options ...TurnVerdictOptions) (Verdict, error) {
+	store := *s
+	store.projectionDeps.source = &projectionSource{endpoint: endpoint, machine: machine}
+	return store.TurnVerdict(scan, sessionID, watchdogDigest, mainID, options...)
+}
+
 // TurnVerdict decides one turn end. watchdogDigest is the hook's
 // --watchdog-surfaced value ("" = no watchdog findings this turn, which
 // clears the stored digest); mainId is the CALLER's main identity for
@@ -432,7 +440,15 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 	store := *s
 	store.Root = resolvedRoot
 	s = &store
-	brainState := brain.Read(s.Root, ExistingLedgerIdentity(s.Root))
+	var brainState brain.ReadResult
+	if source := s.projectionDeps.source; source != nil {
+		if err := source.matchesRoot(s.Root); err != nil {
+			return infrastructureVerdict("state-root", err), nil
+		}
+		brainState = brain.Read(s.Root, existingLedgerIdentityFor(source.endpoint))
+	} else {
+		brainState = brain.Read(s.Root, ExistingLedgerIdentity(s.Root))
+	}
 	brainSeat := brainState.State == brain.Declared || brainState.State == brain.Corrupt
 	if !brainSeat {
 		scan = withoutBrainOnlyScanEffects(scan)
@@ -966,7 +982,11 @@ func (s *Store) registeredWaitSource(work ClaimableBudgetedWork, claimed map[str
 			return registeredWait{}, false
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), budget)
-		observation, err := ObserveLedgerForWait(ctx, s.Root, row.Selector, row.Target, row.LastCheckedTip, row.OwnerLineage)
+		observe := s.verdictDeps.observeLedger
+		if observe == nil {
+			observe = ObserveLedgerForWait
+		}
+		observation, err := observe(ctx, s.Root, row.Selector, row.Target, row.LastCheckedTip, row.OwnerLineage)
 		cancel()
 		if err != nil || observation.Temporary || !observation.Pending || observation.Incarnation != row.Target {
 			*reason = waitDrop("source", "kind", row.Kind, "check", "observation", "err", err, "temporary", observation.Temporary, "pending", observation.Pending, "incarnation", observation.Incarnation, "target", row.Target)
@@ -1076,9 +1096,9 @@ func (s *Store) brainSummary(scan ScanResult, state brain.ReadResult) []string {
 		return nil
 	}
 	var claimed, held, approved []string
-	machine, _ := ResolveMachine(s.Root)
-	if endpoint, err := ResolveEndpoint(s.Root); err == nil {
-		if projection, projectErr := Project(endpoint, false, s.now()); projectErr == nil && projection.Tree != nil {
+	machine, _ := s.projectionMachine()
+	if endpoint, err := s.projectionEndpoint(); err == nil {
+		if projection, projectErr := s.readProjection(endpoint, s.now()); projectErr == nil && projection.Tree != nil {
 			for id, item := range projection.Tree.Live {
 				if item.Claimed != nil {
 					claimed = append(claimed, id)
@@ -1781,7 +1801,11 @@ func (s *Store) decide(verdict *Verdict, scan ScanResult, session *sessionState,
 // queued-only, goal-free, absent, degraded — so every verdict rule
 // downstream is world-neutral.
 func (s *Store) goalFacts() (*GoalFacts, string, string) {
-	if NewWorld(s.Root) {
+	converted, err := s.projectionWorld()
+	if err != nil {
+		return nil, "degraded", err.Error()
+	}
+	if converted {
 		return s.convertedGoalFacts()
 	}
 	return s.legacyGoalFacts()
@@ -1792,15 +1816,15 @@ func (s *Store) goalFacts() (*GoalFacts, string, string) {
 // root record's declaration plays goal-free, and a queue nobody here
 // claimed plays queued-only.
 func (s *Store) convertedGoalFacts() (*GoalFacts, string, string) {
-	machine, err := ResolveMachine(s.Root)
+	machine, err := s.projectionMachine()
 	if err != nil {
 		return nil, "degraded", err.Error()
 	}
-	endpoint, err := ResolveEndpoint(s.Root)
+	endpoint, err := s.projectionEndpoint()
 	if err != nil {
 		return nil, "degraded", err.Error()
 	}
-	proj, err := Project(endpoint, false, s.now())
+	proj, err := s.readProjection(endpoint, s.now())
 	if err != nil {
 		return nil, "degraded", err.Error()
 	}
@@ -1856,12 +1880,16 @@ func (s *Store) legacyGoalFacts() (*GoalFacts, string, string) {
 // queuedFrontier names the first awaiting or approved goal and a stable
 // digest of that whole backlog frontier.
 func (s *Store) queuedFrontier() (first, digest string) {
-	if NewWorld(s.Root) {
-		endpoint, err := ResolveEndpoint(s.Root)
+	converted, err := s.projectionWorld()
+	if err != nil {
+		return "", ""
+	}
+	if converted {
+		endpoint, err := s.projectionEndpoint()
 		if err != nil {
 			return "", ""
 		}
-		proj, err := Project(endpoint, false, s.now())
+		proj, err := s.readProjection(endpoint, s.now())
 		if err != nil || proj.Tree == nil {
 			return "", ""
 		}
@@ -1900,12 +1928,16 @@ func (s *Store) queuedFrontier() (first, digest string) {
 // plans-stream scan, because a declaration is only as good as the world
 // it described.
 func (s *Store) freeState() (fresh bool, digest, declared string) {
-	if NewWorld(s.Root) {
-		endpoint, err := ResolveEndpoint(s.Root)
+	converted, err := s.projectionWorld()
+	if err != nil {
+		return false, "", ""
+	}
+	if converted {
+		endpoint, err := s.projectionEndpoint()
 		if err != nil {
 			return false, "", ""
 		}
-		proj, err := Project(endpoint, false, s.now())
+		proj, err := s.readProjection(endpoint, s.now())
 		if err != nil || proj.Tree == nil || proj.Tree.Root == nil || proj.Tree.Root.Free == nil {
 			return false, "", ""
 		}

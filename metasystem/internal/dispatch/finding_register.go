@@ -72,6 +72,10 @@ func (subject reviewedSubject) String() string {
 // cross-root conflict check and the root-record write. A retry for an already
 // folded round returns unchanged without reading or publishing its return.
 func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string, err error) {
+	return critiqueRegisterAdvance(repoRoot, rootJob, roundJob, gitCritiqueSubjectFacts{})
+}
+
+func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueSubjectFacts) (outcome string, err error) {
 	return withFindingRegisterLock(repoRoot, func() (string, error) {
 		state := loadCritiqueState(repoRoot)
 		roundRecord, present := state.records[roundJob]
@@ -160,7 +164,7 @@ func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string
 				if !findingsOK {
 					return fmt.Errorf("critique return for job %s has no findings array", roundJob)
 				}
-				subject, subjectErr := critiqueSubjectForRound(repoRoot, state, root, role, result)
+				subject, subjectErr := critiqueSubjectForRoundWithFacts(repoRoot, state, root, role, result, facts)
 				if subjectErr != nil {
 					return subjectErr
 				}
@@ -254,6 +258,10 @@ type critiqueRoundAccount struct {
 }
 
 func critiqueRoundAccounting(repoRoot string, state critiqueState, rootJob string, root map[string]any) (critiqueRoundAccount, error) {
+	return critiqueRoundAccountingWithReads(repoRoot, state, rootJob, root, concreteGoalAdmissionReads())
+}
+
+func critiqueRoundAccountingWithReads(repoRoot string, state critiqueState, rootJob string, root map[string]any, reads goalAdmissionReads) (critiqueRoundAccount, error) {
 	var account critiqueRoundAccount
 	limitValue, limitPresent := root[reviewRoundLimitField]
 	if limitPresent {
@@ -267,7 +275,7 @@ func critiqueRoundAccounting(repoRoot string, state critiqueState, rootJob strin
 		account.limit = limit
 	} else {
 		revision, _ := numInt(root["goalRevision"])
-		resolution, err := goalReviewRoundLimit(repoRoot, asString(root["goalId"]), uint64(max(revision, 0)), asString(root["role"]))
+		resolution, err := goalReviewRoundLimitWithReads(repoRoot, asString(root["goalId"]), uint64(max(revision, 0)), asString(root["role"]), reads)
 		if err != nil || resolution.roleLimit == 0 {
 			return account, fmt.Errorf("cannot resolve a positive goal review-round limit: %v", err)
 		}
@@ -555,6 +563,12 @@ func CritiqueRegisterClose(repoRoot, rootJob string) (string, error) {
 	return critiqueRegisterClose(repoRoot, rootJob, deferReviewObligations)
 }
 
+func critiqueRegisterCloseWithReads(repoRoot, rootJob string, reads goalAdmissionReads) (string, error) {
+	return critiqueRegisterClose(repoRoot, rootJob, func(repoRoot, rootJob, goalID, machine, lineage string, epoch int64, obligations []goal.ReviewObligation) (string, error) {
+		return deferReviewObligationsWithReads(repoRoot, rootJob, goalID, machine, lineage, epoch, obligations, reads)
+	})
+}
+
 type deferReviewObligationsFunc func(string, string, string, string, string, int64, []goal.ReviewObligation) (string, error)
 
 func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewObligationsFunc) (string, error) {
@@ -660,7 +674,11 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 }
 
 func deferReviewObligations(repoRoot, rootJob, goalID, machine, lineage string, epoch int64, obligations []goal.ReviewObligation) (string, error) {
-	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	return deferReviewObligationsWithReads(repoRoot, rootJob, goalID, machine, lineage, epoch, obligations, concreteGoalAdmissionReads())
+}
+
+func deferReviewObligationsWithReads(repoRoot, rootJob, goalID, machine, lineage string, epoch int64, obligations []goal.ReviewObligation, reads goalAdmissionReads) (string, error) {
+	endpoint, err := reads.ResolveEndpoint(repoRoot)
 	if err != nil {
 		return "", err
 	}
@@ -838,6 +856,10 @@ func deterministicULID(value string) string {
 }
 
 func CritiqueBudgetRebind(repoRoot, rootJob string) (outcome string, err error) {
+	return critiqueBudgetRebindWithReads(repoRoot, rootJob, concreteGoalAdmissionReads())
+}
+
+func critiqueBudgetRebindWithReads(repoRoot, rootJob string, reads goalAdmissionReads) (outcome string, err error) {
 	return withFindingRegisterLock(repoRoot, func() (string, error) {
 		state := loadCritiqueState(repoRoot)
 		err := withRecordLock(repoRoot, rootJob, func(path string) error {
@@ -853,12 +875,12 @@ func CritiqueBudgetRebind(repoRoot, rootJob string) (outcome string, err error) 
 			var revision uint64
 			var tier uint8
 			if goalID != "" {
-				revision, tier, e = ResolveGoalRevision(repoRoot, goalID)
+				revision, tier, e = resolveGoalRevisionWithReads(repoRoot, goalID, reads)
 				if e != nil {
 					return e
 				}
 			}
-			resolution, e := goalReviewRoundLimit(repoRoot, goalID, revision, role)
+			resolution, e := goalReviewRoundLimitWithReads(repoRoot, goalID, revision, role, reads)
 			if e != nil {
 				return fmt.Errorf("cannot resolve a positive goal review-round limit: %v", e)
 			}
@@ -1032,10 +1054,52 @@ type critiqueSubject struct {
 	paths          map[string]bool
 	repoRoot, tree string
 	legacy         bool
+	facts          critiqueSubjectFacts
 }
 
 func critiqueSubjectForRound(repoRoot string, state critiqueState, root map[string]any, role string, result map[string]any) (critiqueSubject, error) {
-	s := critiqueSubject{paths: map[string]bool{}, repoRoot: repoRoot}
+	return critiqueSubjectForRoundWithFacts(repoRoot, state, root, role, result, gitCritiqueSubjectFacts{})
+}
+
+type critiqueSubjectFacts interface {
+	ChangedPaths(root, commit string) ([]string, error)
+	CommitTree(root, commit string) (string, error)
+	InstallPrefix(root string) (string, error)
+	ArtifactAbsent(root, tree, path string) bool
+}
+
+type gitCritiqueSubjectFacts struct{}
+
+func (gitCritiqueSubjectFacts) ChangedPaths(root, commit string) ([]string, error) {
+	output, err := exec.Command("git", "-C", root, "diff-tree", "-r", "--no-commit-id", "--name-only", commit+"^", commit).Output()
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, path := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		path = filepath.ToSlash(strings.TrimSpace(path))
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
+}
+
+func (gitCritiqueSubjectFacts) CommitTree(root, commit string) (string, error) {
+	tree, err := exec.Command("git", "-C", root, "rev-parse", commit+"^{tree}").Output()
+	return strings.TrimSpace(string(tree)), err
+}
+
+func (gitCritiqueSubjectFacts) InstallPrefix(root string) (string, error) {
+	return projectInstallPrefix(root)
+}
+
+func (gitCritiqueSubjectFacts) ArtifactAbsent(root, tree, path string) bool {
+	return artifactAbsentFromTree(root, tree, path)
+}
+
+func critiqueSubjectForRoundWithFacts(repoRoot string, state critiqueState, root map[string]any, role string, result map[string]any, facts critiqueSubjectFacts) (critiqueSubject, error) {
+	s := critiqueSubject{paths: map[string]bool{}, repoRoot: repoRoot, facts: facts}
 	if root["reviews"] == nil && root["declaredOutputs"] == nil {
 		s.legacy = true
 		return s, nil
@@ -1059,12 +1123,11 @@ func critiqueSubjectForRound(repoRoot string, state critiqueState, root map[stri
 	reviewedJob := asString(root["reviews"])
 	if role == "code-critic" && validCommitReview.MatchString(reviewedJob) {
 		commit := strings.TrimPrefix(reviewedJob, "commit:")
-		paths, err := exec.Command("git", "-C", repoRoot, "diff-tree", "-r", "--no-commit-id", "--name-only", commit+"^", commit).Output()
+		paths, err := facts.ChangedPaths(repoRoot, commit)
 		if err != nil {
 			return s, fmt.Errorf("commit subject %s is not a readable non-root commit: %v", reviewedJob, err)
 		}
-		for _, path := range strings.Split(strings.TrimSpace(string(paths)), "\n") {
-			path = filepath.ToSlash(strings.TrimSpace(path))
+		for _, path := range paths {
 			if path != "" {
 				s.paths[path] = true
 			}
@@ -1072,11 +1135,11 @@ func critiqueSubjectForRound(repoRoot string, state critiqueState, root map[stri
 		if len(s.paths) == 0 {
 			return s, fmt.Errorf("commit subject %s has no changed paths", reviewedJob)
 		}
-		tree, err := exec.Command("git", "-C", repoRoot, "rev-parse", commit+"^{tree}").Output()
+		tree, err := facts.CommitTree(repoRoot, commit)
 		if err != nil {
 			return s, fmt.Errorf("commit subject %s has no readable tree: %v", reviewedJob, err)
 		}
-		s.tree = strings.TrimSpace(string(tree))
+		s.tree = tree
 		return s, nil
 	}
 	reviewed, ok := state.records[reviewedJob]
@@ -1097,7 +1160,7 @@ func critiqueSubjectForRound(repoRoot string, state critiqueState, root map[stri
 	if err != nil {
 		return s, fmt.Errorf("reviewed implementer round %s (round %d) has no diff.patch at %s; run validate conformance --stage review --job %s first", reviewedJob, round, relativeDiffPath, reviewedJob)
 	}
-	installPrefix, err := projectInstallPrefix(repoRoot)
+	installPrefix, err := facts.InstallPrefix(repoRoot)
 	if err != nil {
 		return s, fmt.Errorf("cannot derive the reviewed project's install prefix: %v", err)
 	}
@@ -1161,7 +1224,7 @@ func (s critiqueSubject) demoteReason(value string) string {
 		if !s.paths[ref.Path] {
 			return "NEW artifact is not a declared or changed output"
 		}
-		if s.tree == "" || !artifactAbsentFromTree(s.repoRoot, s.tree, ref.Path) {
+		if s.tree == "" || s.facts == nil || !s.facts.ArtifactAbsent(s.repoRoot, s.tree, ref.Path) {
 			return "NEW artifact is present in or unproven absent from the reviewed tree"
 		}
 	}

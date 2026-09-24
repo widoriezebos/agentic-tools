@@ -87,7 +87,12 @@ type BreachStopReport struct {
 }
 
 func runBreachStopCustodian(repoRoot string, now time.Time) []BreachStopReport {
-	routes, err := dispatch.FindBreachStops(repoRoot, now)
+	return runBreachStopCustodianWithScanner(repoRoot, now, dispatch.FindBreachStops)
+}
+
+func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
+	scanner func(string, time.Time) ([]dispatch.StopRoute, error)) []BreachStopReport {
+	routes, err := scanner(repoRoot, now)
 	if err != nil {
 		return []BreachStopReport{{State: "FAILED", Detail: err.Error()}}
 	}
@@ -215,38 +220,16 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if err != nil {
 		return degradedTick(repoRoot, err.Error())
 	}
-	ev := Observe(prev, marks)
-	// A standing provider outage pauses the aging, never the reset:
-	// progress during an outage still counts, but the absence of
-	// progress stops accusing local machinery while the provider is
-	// the one down. The mark lapses on its own horizon, so a paused
-	// clock can never outlive the outage's evidence. ONE sample
-	// governs the whole tick — aging, decision, and narration must
-	// tell the same story even when the mark moves mid-tick.
-	outageMark, providerOutage := outage.StandingAt(repoRoot, cfg.now())
-	if providerOutage && marks == prev.Marks {
-		ev = prev
-	}
-
-	d, workReason, err := decideNow(repoRoot, cfg, census, ev, providerOutage)
+	result, err = decideTickWithDependencies(repoRoot, cfg, census, prev, marks, openWorkDependencies{
+		NewWorld:                  goal.NewWorld,
+		ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
+	})
 	if err != nil {
 		return TickResult{}, err
 	}
-	if d.Action == ActNotify {
-		// A notify verdict IS the visibility the invariant promises:
-		// it goes to the queue, keyed by its verdict so the standing
-		// condition holds one pending message (redelivered after each
-		// successful delivery, held durably through an outage).
-		if err := QueueNotification(repoRoot, PendingNotification{
-			Nonce:   "verdict-" + string(d.Verdict),
-			Message: fmt.Sprintf("steward: %s — %s", d.Verdict, d.Reason),
-		}); err != nil {
-			return TickResult{}, err
-		}
-	}
-	result = TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
-		Reaped: reaped, ProviderOutage: providerOutage, Outage: outageMark, GoalStops: goalStops,
-		LedgerAttention: ledgerReport}
+	result.Reaped = reaped
+	result.GoalStops = goalStops
+	result.LedgerAttention = ledgerReport
 	if err := NarrateDigest(repoRoot, prev, result, cfg.now()); err != nil {
 		return result, fmt.Errorf("write narrator digest: %w", err)
 	}
@@ -264,7 +247,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if err := PersistLedgerAttentionMark(repoRoot, surfaced); err != nil {
 		return result, fmt.Errorf("mark ledger-attention events surfaced: %w", err)
 	}
-	if err := SaveEvidence(repoRoot, evPath, ev); err != nil {
+	if err := SaveEvidence(repoRoot, evPath, result.Evidence); err != nil {
 		return result, err
 	}
 	// The running plain-English account rides every tick, strictly
@@ -284,17 +267,65 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	return result, nil
 }
 
+func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, prev Evidence, marks Marks, dependencies openWorkDependencies) (TickResult, error) {
+	ev := Observe(prev, marks)
+	// A standing provider outage pauses the aging, never the reset:
+	// progress during an outage still counts, but the absence of
+	// progress stops accusing local machinery while the provider is
+	// the one down. The mark lapses on its own horizon, so a paused
+	// clock can never outlive the outage's evidence. ONE sample
+	// governs the whole tick — aging, decision, and narration must
+	// tell the same story even when the mark moves mid-tick.
+	outageMark, providerOutage := outage.StandingAt(repoRoot, cfg.now())
+	if providerOutage && marks == prev.Marks {
+		ev = prev
+	}
+
+	d, workReason, err := decideNowWithDependencies(repoRoot, cfg, census, ev, providerOutage, dependencies)
+	if err != nil {
+		return TickResult{}, err
+	}
+	if d.Action == ActNotify {
+		// A notify verdict IS the visibility the invariant promises:
+		// it goes to the queue, keyed by its verdict so the standing
+		// condition holds one pending message (redelivered after each
+		// successful delivery, held durably through an outage).
+		if err := QueueNotification(repoRoot, PendingNotification{
+			Nonce:   "verdict-" + string(d.Verdict),
+			Message: fmt.Sprintf("steward: %s — %s", d.Verdict, d.Reason),
+		}); err != nil {
+			return TickResult{}, err
+		}
+	}
+	return TickResult{Decision: d, Evidence: ev, OpenWork: workReason,
+		ProviderOutage: providerOutage, Outage: outageMark}, nil
+}
+
 // completeTickHealth performs the mandatory end of every tick: one durable
 // health observation, one durable narration line, and a queued alert whenever
 // the observation's dead or persistent-unknown boundary requires one.
 func completeTickHealth(repoRoot string, result *TickResult, generation int, process identity.Ref, now time.Time) error {
+	return completeTickHealthWithDependencies(repoRoot, result, generation, process, now, tickHealthDependencies{
+		evaluate: evaluateHealthRoles,
+		now:      tickHealthNow,
+		deliver:  Deliver,
+	})
+}
+
+type tickHealthDependencies struct {
+	evaluate healthRoleEvaluator
+	now      func() time.Time
+	deliver  func(string, string) error
+}
+
+func completeTickHealthWithDependencies(repoRoot string, result *TickResult, generation int, process identity.Ref, now time.Time, dependencies tickHealthDependencies) error {
 	healthNow := func() time.Time {
 		if now.IsZero() {
-			return tickHealthNow()
+			return dependencies.now()
 		}
 		return now.UTC()
 	}
-	health, err := ObserveHealth(repoRoot, healthNow(), identity.KernelProber{})
+	health, err := observeHealthWithEvaluation(repoRoot, healthNow(), identity.KernelProber{}, dependencies.evaluate)
 	if err != nil {
 		return fmt.Errorf("compute health: %w", err)
 	}
@@ -316,10 +347,10 @@ func completeTickHealth(repoRoot string, result *TickResult, generation int, pro
 		ComponentOK, "EMITTED", line, nil, healthNow()); err != nil {
 		return fmt.Errorf("record narrator completion: %w", err)
 	}
-	if _, err := UpdateAlertEpisodes(repoRoot, health, line, healthNow()); err != nil {
+	if _, err := updateAlertEpisodesWith(repoRoot, health, line, healthNow(), dependencies.deliver); err != nil {
 		return fmt.Errorf("update health alert episodes: %w", err)
 	}
-	if err := UpdateSpendEpisodes(repoRoot, health.Spend, healthNow()); err != nil {
+	if err := updateSpendEpisodesWith(repoRoot, health.Spend, healthNow(), dependencies.deliver); err != nil {
 		return fmt.Errorf("update spend alert episodes: %w", err)
 	}
 	return nil
@@ -366,8 +397,15 @@ func degradedTick(repoRoot, reason string) (TickResult, error) {
 // checking. The caller supplies the outage sample so one observation
 // governs its whole decision.
 func decideNow(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool) (Decision, string, error) {
+	return decideNowWithDependencies(repoRoot, cfg, census, ev, providerOutage, openWorkDependencies{
+		NewWorld:                  goal.NewWorld,
+		ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
+	})
+}
+
+func decideNowWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool, dependencies openWorkDependencies) (Decision, string, error) {
 	cfg = cfg.withDefaults()
-	work, workReason, err := ReadOpenWork(repoRoot)
+	work, workReason, err := readOpenWorkWithDependencies(repoRoot, dependencies)
 	if err != nil {
 		return Decision{}, "", err
 	}

@@ -115,15 +115,15 @@ func TestSyncReqLineage(t *testing.T) {
 	)
 
 	t.Run("human act derives enrolled terminal lineage", func(t *testing.T) {
-		root := syncedClaimedGoalFixture(t)
-		t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+		facts := newSyncRequestFacts(t)
+		root := facts.root
 		enrollment, reader := enrollGoalSyncTerminal(t, root, "ttys:fixture_01")
-		proveSyncReqWithReader(t, reader)
+		facts.reader = &reader
 		if enrollment.Generation != 1 {
 			t.Fatalf("first enrollment generation = %d, want 1", enrollment.Generation)
 		}
 
-		req, err := syncReq("test", root, "Wido", "")
+		req, err := syncReqWithProofAtWithDependencies("test", root, "Wido", "", nil, facts.commandNow, facts.dependencies())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -131,46 +131,49 @@ func TestSyncReqLineage(t *testing.T) {
 		if req.Actor != want {
 			t.Fatalf("derived actor = %+v, want %+v", req.Actor, want)
 		}
+		facts.expect(1, 1, 1, 2, 1, 0, "repository top", "ledger identity", "guard", "endpoint", "machine", "lineage", "clock", "human proof", "clock")
 	})
 
 	t.Run("human act without enrollment names repair", func(t *testing.T) {
-		root := syncedClaimedGoalFixture(t)
-		t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+		facts := newSyncRequestFacts(t)
+		root := facts.root
 		_, enrollmentErr := humanauthority.ReadEnrollment(root)
 		if enrollmentErr == nil {
 			t.Fatal("unenrolled fixture unexpectedly has an enrollment")
 		}
-		_, err := syncReq("test", root, "Wido", "")
+		_, err := syncReqWithProofAtWithDependencies("test", root, "Wido", "", nil, facts.commandNow, facts.dependencies())
 		want := noEnrollmentRefusal + ": " + enrollmentErr.Error()
 		if err == nil || err.Error() != want {
 			t.Fatalf("human refusal = %v, want %q", err, want)
 		}
+		facts.expect(1, 1, 1, 0, 0, 0, "repository top", "ledger identity", "guard", "endpoint", "machine", "lineage")
 	})
 
 	t.Run("human act from another shell refuses", func(t *testing.T) {
-		root := syncedClaimedGoalFixture(t)
-		t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
+		facts := newSyncRequestFacts(t)
+		root := facts.root
 		_, reader := enrollGoalSyncTerminal(t, root, "ttys:fixture_01")
 		reader.terminalID = "ttys:another-shell"
-		proveSyncReqWithReader(t, reader)
-		_, err := syncReq("test", root, "Wido", "")
+		facts.reader = &reader
+		_, err := syncReqWithProofAtWithDependencies("test", root, "Wido", "", nil, facts.commandNow, facts.dependencies())
 		if err == nil || err.Error() != wrongShellRefusal {
 			t.Fatalf("wrong-shell refusal = %v, want %q", err, wrongShellRefusal)
 		}
+		facts.expect(1, 1, 1, 1, 1, 0, "repository top", "ledger identity", "guard", "endpoint", "machine", "lineage", "clock", "human proof")
 	})
 
 	t.Run("agent keeps coordinator identity refusal", func(t *testing.T) {
-		root := syncedClaimedGoalFixture(t)
-		t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
-		_, err := syncReq("test", root, "", "")
+		facts := newSyncRequestFacts(t)
+		root := facts.root
+		_, err := syncReqWithProofAtWithDependencies("test", root, "", "", nil, facts.commandNow, facts.dependencies())
 		if err == nil || err.Error() != agentRefusal {
 			t.Fatalf("agent refusal = %v, want %q", err, agentRefusal)
 		}
+		facts.expect(1, 1, 1, 0, 0, 0, "repository top", "ledger identity", "guard", "endpoint", "machine", "lineage")
 	})
 }
 
 func TestSyncRequestPublishesEpochAuthorityForTheHolderOnly(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
 	epoch := int64(6)
 	for _, test := range []struct {
 		name           string
@@ -181,13 +184,16 @@ func TestSyncRequestPublishesEpochAuthorityForTheHolderOnly(t *testing.T) {
 		{name: "non holder", classification: lease.ClassifyResult{Class: lease.ClassMain, ClaimEpoch: &epoch}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			request, err := syncReqClassified(root, "", "m1", nil, test.classification)
+			facts := newSyncRequestFacts(t)
+			root := facts.root
+			request, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(root, "", "m1", nil, test.classification, false, facts.commandNow, facts.dependencies())
 			if err != nil {
 				t.Fatal(err)
 			}
 			if request.EpochAuthority != test.wantAuthority {
 				t.Fatalf("epoch authority = %q, want %q", request.EpochAuthority, test.wantAuthority)
 			}
+			facts.expect(0, 1, 0, 1, 0, 0, "guard", "endpoint", "machine", "clock")
 		})
 	}
 }
@@ -270,13 +276,12 @@ func TestHolderSetBudgetRebindsEpochForProofAdmission(t *testing.T) {
 }
 
 func TestStoppingRequestFallsBackToTerminalGrade(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
+	facts := newSyncRequestFacts(t)
+	root := facts.root
 	reader := goalSyncTerminalReader(t, root, "ttys:fixture_02")
-	proveSyncReqWithReader(t, reader)
+	facts.reader = &reader
 
-	request, err := syncStoppingReq("release", root, "Wido", "")
+	request, err := syncStoppingReqWithProofWithDependencies("release", root, "Wido", "", nil, facts.commandNow, facts.dependencies())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +293,7 @@ func TestStoppingRequestFallsBackToTerminalGrade(t *testing.T) {
 		t.Fatalf("terminal-grade lineage = %q", request.Actor.Lineage)
 	}
 
-	explicit, err := syncStoppingReq("release", root, "Wido", "named-lineage")
+	explicit, err := syncStoppingReqWithProofWithDependencies("release", root, "Wido", "named-lineage", nil, facts.commandNow, facts.dependencies())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,39 +301,29 @@ func TestStoppingRequestFallsBackToTerminalGrade(t *testing.T) {
 		explicit.Authority.AuthorityGrade() != humanauthority.GradeTerminal {
 		t.Fatalf("explicit lineage bypassed terminal proof: actor=%+v proof=%+v", explicit.Actor, explicit.Authority)
 	}
+	facts.expect(2, 2, 1, 4, 2, 2,
+		"repository top", "ledger identity", "guard", "endpoint", "machine", "clock", "human proof", "terminal proof", "lineage", "clock",
+		"repository top", "ledger identity", "guard", "endpoint", "machine", "clock", "human proof", "terminal proof", "clock")
 }
 
 func TestStoppingRequestCarriesEnrolledGradeWithoutFallingBack(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
+	facts := newSyncRequestFacts(t)
+	root := facts.root
 	_, reader := enrollGoalSyncTerminal(t, root, "ttys:fixture_03")
-	original := proveSyncReqHumanAuthority
-	originalTerminal := proveSyncReqTerminalAuthority
-	terminalCalls := 0
-	proveSyncReqHumanAuthority = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Prove(root, reader.exact.Pid, reader, now)
-	}
-	proveSyncReqTerminalAuthority = func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error) {
-		terminalCalls++
-		return humanauthority.Proof{}, fmt.Errorf("terminal fallback must not run")
-	}
-	t.Cleanup(func() {
-		proveSyncReqHumanAuthority = original
-		proveSyncReqTerminalAuthority = originalTerminal
-	})
+	facts.reader = &reader
 
-	request, err := syncStoppingReq("park", root, "Wido", "")
+	request, err := syncStoppingReqWithProofWithDependencies("park", root, "Wido", "", nil, facts.commandNow, facts.dependencies())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if terminalCalls != 0 || request.Authority == nil || !request.Authority.ValidFor(root) ||
+	if facts.terminalCalls != 0 || request.Authority == nil || !request.Authority.ValidFor(root) ||
 		request.Authority.AuthorityGrade() != humanauthority.GradeEnrolled {
-		t.Fatalf("enrolled stopping request used the fallback or lost proof: calls=%d proof=%+v", terminalCalls, request.Authority)
+		t.Fatalf("enrolled stopping request used the fallback or lost proof: calls=%d proof=%+v", facts.terminalCalls, request.Authority)
 	}
 	if request.Actor.Lineage != "terminal-ttys-fixture-03-1" {
 		t.Fatalf("enrolled proof lineage = %q", request.Actor.Lineage)
 	}
+	facts.expect(1, 1, 1, 2, 1, 0, "repository top", "ledger identity", "guard", "endpoint", "machine", "clock", "human proof", "lineage", "clock")
 }
 
 func TestRestampVerbRefusesTheByFlag(t *testing.T) {
@@ -419,7 +414,7 @@ func TestGoalBudgetCompletionUsesOnlyFiveValidMembers(t *testing.T) {
 
 func TestGoalApproveSweepWithIDsDropsSweepAndConfirmFromItsRemedy(t *testing.T) {
 	t.Parallel()
-	root := syncedClaimedGoalFixture(t)
+	root := syncedMarkerRoot(t)
 	code, _, stderr := captureCommandOutput(t, false, true, func() int {
 		return runGoalApproveWithAuthority([]string{
 			"--root", root, "--sweep", "--id", "standing-validation", "--confirm", "stale",
@@ -435,7 +430,7 @@ func TestGoalApproveSweepWithIDsDropsSweepAndConfirmFromItsRemedy(t *testing.T) 
 
 func TestGoalClassifySweepWithoutDraftPrintsWordsInsteadOfAnEmptyPath(t *testing.T) {
 	t.Parallel()
-	root := syncedClaimedGoalFixture(t)
+	root := syncedMarkerRoot(t)
 	code, _, stderr := captureCommandOutput(t, false, true, func() int {
 		return runGoalClassifySweepWithAuthority([]string{"--root", root, "--preview"}, fixedFixtureGoalAuthority)
 	})
@@ -444,11 +439,23 @@ func TestGoalClassifySweepWithoutDraftPrintsWordsInsteadOfAnEmptyPath(t *testing
 	}
 }
 
+func syncedMarkerRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	path := filepath.Join(root, "plans", "goals", "backlog.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("synced backlog\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name             string
-		fixture          func(*testing.T) string
 		mutate           func(*goal.GoalFile)
 		wantRun          bool
 		proveRerun       bool
@@ -477,7 +484,6 @@ func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 		},
 		{
 			name:             "claimed breach-stopped box",
-			fixture:          syncedStoppedGoalFixture,
 			wantRun:          true,
 			proveRerun:       true,
 			wantRemedySuffix: " keep",
@@ -502,19 +508,13 @@ func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := test.fixture
-			if fixture == nil {
-				fixture = syncedClaimedGoalFixture
-			}
-			root := fixture(t)
-			if test.mutate != nil {
-				amendSyncedGoalFixture(t, root, test.name, test.mutate)
-			}
+			fixture := newGoalBudgetResumeFixture(t, test.wantFenceCleared, test.mutate)
+			root := fixture.root()
 			writeFixtureEnrollment(t, root, "Wido")
 			code, _, stderr := captureCommandOutput(t, false, true, func() int {
-				return runGoalBudgetWithAuthorityAt([]string{
+				return fixture.runBudget([]string{
 					"--root", root, "--id", "standing-validation", "4h/4/240m/2", "--fixture-human-authority", "--lineage", "m1",
-				}, fixedFixtureGoalAuthority, fixedForgivingGoalNow)
+				}, fixedFixtureGoalAuthority)
 			})
 			if code != 2 {
 				t.Fatalf("the incomplete compact box did not refuse: code=%d stderr=%q", code, stderr)
@@ -529,6 +529,10 @@ func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 			} else if !strings.Contains(stderr, "already carries that box") || strings.Contains(stderr, "run:") {
 				t.Fatalf("an engine no-op was printed as a command: stderr=%q", stderr)
 			}
+			if fixture.repo.publications != 0 {
+				t.Fatalf("an incomplete box published %d times", fixture.repo.publications)
+			}
+			fixture.expectBindings(0)
 			if test.proveRerun {
 				var remedy string
 				for _, line := range strings.Split(strings.TrimSpace(stderr), "\n") {
@@ -542,23 +546,23 @@ func TestGoalBudgetCompletionMirrorsTheEngineNoOpGuard(t *testing.T) {
 					t.Fatalf("the refusal did not print an executable goal budget command: stderr=%q", stderr)
 				}
 				runCode, stdout, runStderr := captureCommandOutput(t, true, true, func() int {
-					return runGoalBudgetWithAuthorityAt(fields[3:], fixedFixtureGoalAuthority, fixedForgivingGoalNow)
+					return fixture.runBudget(fields[3:], fixedFixtureGoalAuthority)
 				})
 				if runCode != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 					t.Fatalf("the printed completion did not represent a successful proven re-approval: code=%d stdout=%q stderr=%q", runCode, stdout, runStderr)
 				}
 				if test.wantFenceCleared {
-					endpoint, err := goal.ResolveEndpoint(root)
-					if err != nil {
-						t.Fatal(err)
-					}
-					projection, err := goal.Project(endpoint, false, time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC))
-					if err != nil {
-						t.Fatal(err)
-					}
-					if projected := projection.Tree.Live["standing-validation"]; projected == nil || projected.StopFence != nil {
+					if projected := fixture.project(); projected.StopFence != nil {
 						t.Fatalf("the printed keep command did not clear the projected stop fence: %+v", projected)
 					}
+				}
+				if fixture.repo.publications != 1 {
+					t.Fatalf("printed completion published %d times, want one", fixture.repo.publications)
+				}
+				if test.wantFenceCleared {
+					fixture.expectBindings(1)
+				} else {
+					fixture.expectBindings(0)
 				}
 			}
 		})
@@ -666,8 +670,40 @@ func TestArcStoppingCommandsFallBackToTerminalGrade(t *testing.T) {
 
 func TestGoalResumeBindsTheConfiguredTierBoxBesideTheStandingBox(t *testing.T) {
 	t.Parallel()
-	root := syncedClaimedGoalFixture(t)
-	data, err := os.ReadFile(filepath.Join(root, "plans", "goals", "standing-validation.md"))
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	openedAt := now.Add(-time.Hour).Format(time.RFC3339)
+	claimAt := now.Add(-55 * time.Minute).Format(time.RFC3339)
+	approvedAt := now.Add(-54 * time.Minute).Format(time.RFC3339)
+	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2, ReviewRoundLimit: 3}
+	risk := &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture exercises an admitted tier-three goal."}
+	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAZ", "mac-cli", "m1")
+	claimed := &goal.GoalFile{
+		Id: "standing-validation", State: goal.StateClaimed, Tier: 3, Intent: "Govern validation.", Origin: goal.OriginMain,
+		NextStep: "Run it.", OpenedAt: openedAt, Revision: 3,
+		Budget: budget, Risk: risk,
+		Claimed: &goal.ClaimRecord{Machine: "mac-cli", Lineage: "m1", At: claimAt, Revision: 2},
+		Approved: &goal.ApprovalRecord{
+			By: "human:Wido", At: approvedAt, Revision: 3, Opid: approvalOpid,
+			Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest("Govern validation.", 3, *budget, risk),
+		},
+		History: []goal.HistoryLine{
+			{At: openedAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAA", "mac-cli", "m1"), Verb: "open", Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1},
+			{At: claimAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAB", "mac-cli", "m1"), Verb: "claim", Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1},
+			{At: approvedAt, Opid: approvalOpid, Verb: "approve", Actor: "human:Wido", Targets: []string{"standing-validation"}, Keep: -1},
+		},
+	}
+	path := filepath.Join(root, "plans", "goals", "standing-validation.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, goal.RenderFile(claimed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -693,19 +729,19 @@ func TestGoalResumeBindsTheConfiguredTierBoxBesideTheStandingBox(t *testing.T) {
 
 func TestGoalResumeWithoutAStopFencePrintsTheTypedBudget(t *testing.T) {
 	t.Parallel()
-	root := syncedClaimedGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "bind breach-stop authority without a fence", func(file *goal.GoalFile) {
+	fixture := newGoalBudgetResumeFixture(t, false, func(file *goal.GoalFile) {
 		file.StopCapability = &goal.StopCapability{
 			Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1,
 		}
 	})
+	root := fixture.root()
 	writeFixtureEnrollment(t, root, "Wido")
 	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runGoalResumeWithAuthorityAt([]string{
+		return fixture.runResume([]string{
 			"--root", root, "--id", "standing-validation", "--by", "Wido", "--fixture-human-authority",
 			"--elapsed-limit", "3h", "--attempt-limit", "5", "--reserved-job-minutes-limit", "300",
 			"--active-job-limit", "1", "--review-round-limit", "2", "--lineage", "m1",
-		}, fixedFixtureGoalAuthority, fixedForgivingGoalNow)
+		}, fixedFixtureGoalAuthority)
 	})
 	if code != 1 {
 		t.Fatalf("resume without a stop fence did not refuse: code=%d stderr=%q", code, stderr)
@@ -714,6 +750,10 @@ func TestGoalResumeWithoutAStopFencePrintsTheTypedBudget(t *testing.T) {
 	if len(lines) != 2 || !strings.HasPrefix(lines[1], "run: metasystem goal budget ") ||
 		!strings.HasSuffix(lines[1], " 3h/5/300m/1/2") || strings.Contains(lines[1], " 4h/4/240m/2/3") {
 		t.Fatalf("resume without a stop fence did not print the typed budget unchanged: stderr=%q", stderr)
+	}
+	fixture.expectBindings(1)
+	if fixture.repo.publications != 0 {
+		t.Fatalf("resume without a fence published %d times", fixture.repo.publications)
 	}
 }
 
@@ -740,29 +780,29 @@ func TestGoalBudgetRoutesQueuedBoxesAndDefaultsTheEnrolledName(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := syncedClaimedGoalFixture(t)
-			amendSyncedGoalFixture(t, root, "queued compact-budget fixture", func(file *goal.GoalFile) {
+			fixture := newGoalBudgetResumeFixture(t, false, func(file *goal.GoalFile) {
 				file.State = goal.StateQueued
 				file.Budget = nil
 				file.Approved = nil
 				file.Claimed = nil
 				file.StopCapability = nil
 			})
+			root := fixture.root()
 			writeFixtureEnrollment(t, root, "Enroller")
 			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-				return runGoalBudgetWithAuthorityAt(test.args(root), fixedFixtureGoalAuthority, fixedForgivingGoalNow)
+				return fixture.runBudget(test.args(root), fixedFixtureGoalAuthority)
 			})
 			if code != 0 || stderr != "" || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 				t.Fatalf("compact budget command did not confirm: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 			}
-			projection, err := goal.Project(goal.Endpoint{Root: root, Remote: "local", Branch: goal.LocalLedgerBranch}, false, time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC))
-			if err != nil {
-				t.Fatal(err)
-			}
-			file := projection.Tree.Live["standing-validation"]
+			file := fixture.project()
 			last := file.History[len(file.History)-1]
 			if file.State != goal.StateApproved || file.Budget == nil || file.Budget.ElapsedLimit != "2h" || file.Budget.ReviewRoundLimit != 2 || last.Verb != "approve" || last.Actor != test.want {
 				t.Fatalf("queued route did not land the expected approval: goal=%+v history=%+v", file, last)
+			}
+			fixture.expectBindings(0)
+			if fixture.repo.publications != 1 {
+				t.Fatalf("queued approval published %d times, want one", fixture.repo.publications)
 			}
 		})
 	}
@@ -770,15 +810,20 @@ func TestGoalBudgetRoutesQueuedBoxesAndDefaultsTheEnrolledName(t *testing.T) {
 
 func TestGoalBudgetKeepsOverNormFixtureAuthorityOutsideTheTerminalFold(t *testing.T) {
 	t.Parallel()
-	root := syncedClaimedGoalFixture(t)
+	fixture := newGoalBudgetResumeFixture(t, false, nil)
+	root := fixture.root()
 	writeFixtureEnrollment(t, root, "Wido")
 	args := []string{"--root", root, "--id", "standing-validation", "--fixture-human-authority", "--lineage", "m1", "8h/10/1201m/1/3"}
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBudgetWithAuthorityAt(args, fixedFixtureGoalAuthority, fixedForgivingGoalNow)
+		return fixture.runBudget(args, fixedFixtureGoalAuthority)
 	})
 	if code != 1 || !strings.Contains(stdout, `"outcome":"rejected"`) || strings.Count(stderr, "\n") != 2 ||
 		!strings.Contains(stderr, "goal budget: GOAL_NORM_REFUSED") || !strings.Contains(stderr, "no command completes this: run the over-norm box at a real enrolled terminal") {
 		t.Fatalf("fixture proof reached the enrolled-terminal fold: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	fixture.expectBindings(0)
+	if fixture.repo.publications != 0 {
+		t.Fatalf("over-norm refusal published %d times", fixture.repo.publications)
 	}
 }
 
@@ -856,9 +901,8 @@ func TestRiskGateAdmissionCommandMarksThenEnforces(t *testing.T) {
 }
 
 func TestSTR2P2A03GoalEditCommandRequiresRiskAndWhyForOverride(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
 	low := &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine"}
-	amendSyncedGoalFixture(t, root, "queued risk edit fixture", func(file *goal.GoalFile) {
+	fixture := newGoalEditRepositoryFixture(t, time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), func(file *goal.GoalFile) {
 		file.State = goal.StateQueued
 		file.Tier = 1
 		file.Risk = low
@@ -867,55 +911,53 @@ func TestSTR2P2A03GoalEditCommandRequiresRiskAndWhyForOverride(t *testing.T) {
 		file.Claimed = nil
 		file.StopCapability = nil
 	})
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	bare, bareCode := captureStderr(t, func() int {
-		return runGoalEdit([]string{"--root", root, "--id", "standing-validation", "--tier", "2"})
-	})
+	_, bare, bareCode := fixture.run([]string{"--root", fixture.root(), "--id", "standing-validation", "--lineage", "m1", "--tier", "2"})
 	if bareCode == 0 || !strings.Contains(bare, "answer the four questions") {
 		t.Fatalf("bare tier edit was not refused with the four-question remedy: code=%d stderr=%q", bareCode, bare)
 	}
-	base := []string{"--root", root, "--id", "standing-validation", "--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "routine", "--tier", "2"}
-	withoutWhy, withoutWhyCode := captureStderr(t, func() int { return runGoalEdit(base) })
+	base := []string{"--root", fixture.root(), "--id", "standing-validation", "--lineage", "m1", "--risk", "severity=1,novelty=1,exposure=1,accumulation=1", "--basis", "routine", "--tier", "2"}
+	_, withoutWhy, withoutWhyCode := fixture.run(base)
 	if withoutWhyCode == 0 || !strings.Contains(withoutWhy, "requires --why") {
 		t.Fatalf("override without reason was not refused: code=%d stderr=%q", withoutWhyCode, withoutWhy)
 	}
 	withWhy := append(append([]string(nil), base...), "--why", "conservative review")
-	if output, code := captureStdout(t, func() int { return runGoalEdit(withWhy) }); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
-		t.Fatalf("reasoned override did not confirm: code=%d output=%q", code, output)
+	if output, stderr, code := fixture.run(withWhy); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("reasoned override did not confirm: code=%d output=%q stderr=%q", code, output, stderr)
 	}
-	tip := goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
-	goalText := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	fixture.expectFacts(3, 0)
+	fixture.expectTransactions(1, 0)
+	goalText := fixture.acceptedText()
 	if !strings.Contains(goalText, "TierOverride: derived=1 set=2 why=conservative review") {
 		t.Fatalf("reasoned override did not write its history line:\n%s", goalText)
 	}
 }
 
 func TestSTR4R1MisclassificationKindThroughGoalEditCommand(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
 	low := &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "routine"}
-	amendSyncedGoalFixture(t, root, "claimed risk raise fixture", func(file *goal.GoalFile) {
+	fixture := newGoalEditRepositoryFixture(t, time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), func(file *goal.GoalFile) {
 		file.Tier = 1
 		file.Risk = low
 		file.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 3, ReservedJobMinutesLimit: 360, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 		file.StopCapability = &goal.StopCapability{Generation: file.Claimed.Revision, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, ClaimEpoch: 1}
 	})
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	args := []string{"--root", root, "--id", "standing-validation", "--risk", "severity=2,novelty=1,exposure=1,accumulation=1", "--basis", "moderate consequence", "--evidence", "refusal:BUDGET_REFUSED"}
-	if output, code := captureStdout(t, func() int { return runGoalEdit(args) }); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
-		t.Fatalf("command-layer raise failed: code=%d output=%q", code, output)
+	args := []string{"--root", fixture.root(), "--id", "standing-validation", "--lineage", "m1", "--risk", "severity=2,novelty=1,exposure=1,accumulation=1", "--basis", "moderate consequence", "--evidence", "refusal:BUDGET_REFUSED"}
+	if output, stderr, code := fixture.run(args); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("command-layer raise failed: code=%d output=%q stderr=%q", code, output, stderr)
 	}
-	register, err := os.ReadFile(filepath.Join(root, "records", "counselor", "misclassification-register.jsonl"))
+	fixture.expectFacts(1, 0)
+	fixture.expectTransactions(1, 0)
+	if file, _ := fixture.acceptedGoal(); file.Risk == nil || file.Risk.Severity != 2 || file.Tier != 2 {
+		t.Fatalf("accepted goal did not retain the raised risk and tier: %+v", file)
+	}
+	register, err := os.ReadFile(filepath.Join(fixture.root(), "records", "counselor", "misclassification-register.jsonl"))
 	if err != nil || strings.Count(string(register), `"kind":"misclassification"`) != 1 {
 		t.Fatalf("command-layer raise did not append exactly one misclassification register line: err=%v text=%s", err, register)
 	}
 }
 
 func TestSTR4R1QueuedFirstRiskAnswersDoNotRegisterMisclassification(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "queued tierless risk fixture", func(file *goal.GoalFile) {
+	fixture := newGoalEditRepositoryFixture(t, time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), func(file *goal.GoalFile) {
 		file.State = goal.StateQueued
 		file.Tier = 0
 		file.Risk = nil
@@ -923,13 +965,16 @@ func TestSTR4R1QueuedFirstRiskAnswersDoNotRegisterMisclassification(t *testing.T
 		file.Approved = nil
 		file.StopCapability = nil
 	})
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	args := []string{"--root", root, "--id", "standing-validation", "--risk", "severity=2,novelty=1,exposure=1,accumulation=1", "--basis", "moderate consequence"}
-	if output, code := captureStdout(t, func() int { return runGoalEdit(args) }); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
-		t.Fatalf("queued goal's first four risk answers failed: code=%d output=%q", code, output)
+	args := []string{"--root", fixture.root(), "--id", "standing-validation", "--lineage", "m1", "--risk", "severity=2,novelty=1,exposure=1,accumulation=1", "--basis", "moderate consequence"}
+	if output, stderr, code := fixture.run(args); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("queued goal's first four risk answers failed: code=%d output=%q stderr=%q", code, output, stderr)
 	}
-	registerPath := filepath.Join(root, "records", "counselor", "misclassification-register.jsonl")
+	fixture.expectFacts(1, 0)
+	fixture.expectTransactions(1, 0)
+	if file, _ := fixture.acceptedGoal(); file.Risk == nil || file.Risk.Severity != 2 || file.Tier != 2 {
+		t.Fatalf("accepted queued goal did not retain its first risk answers: %+v", file)
+	}
+	registerPath := filepath.Join(fixture.root(), "records", "counselor", "misclassification-register.jsonl")
 	if _, err := os.Stat(registerPath); !os.IsNotExist(err) {
 		t.Fatalf("queued goal's first four risk answers wrote a misclassification register: err=%v", err)
 	}
@@ -977,20 +1022,17 @@ func completeResumeArgs(root string) []string {
 }
 
 func TestGoalSetObligationTemporaryWordFlagsTravelTogether(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	base := completeSetObligationArgs(root)
+	fixture := newObligationCommandFixture(t)
+	base := completeSetObligationArgs(fixture.root())
 	for _, loneFlag := range []string{"--temporary-human-word", "--review-by"} {
 		args := append(append([]string(nil), base...), loneFlag, "present")
-		stderr, code := captureStderr(t, func() int { return runGoalSetObligation(args) })
+		_, stderr, code := fixture.runReal(args)
 		if code != 2 || !strings.Contains(stderr, "--temporary-human-word and --review-by travel together") {
 			t.Fatalf("single temporary flag did not refuse as a pair error: flag=%s code=%d stderr=%q", loneFlag, code, stderr)
 		}
 	}
 
-	stderr, code := captureStderr(t, func() int {
-		return runGoalSetObligation([]string{"--temporary-human-word", "word", "--review-by", "2026-09-06"})
-	})
+	_, stderr, code := fixture.runReal([]string{"--temporary-human-word", "word", "--review-by", "2026-09-06"})
 	if code != 2 || !strings.Contains(stderr, "requires identity, recurrence") {
 		t.Fatalf("the temporary pair bypassed ordinary obligation requirements: code=%d stderr=%q", code, stderr)
 	}
@@ -1008,12 +1050,14 @@ func TestGoalSetObligationTemporaryWordFlagsTravelTogether(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			args := append(append([]string(nil), base...),
 				"--temporary-human-word", test.word, "--review-by", test.reviewBy)
-			stderr, code := captureStderr(t, func() int { return runGoalSetObligation(args) })
+			_, stderr, code := fixture.runReal(args)
 			if code != 2 || !strings.Contains(stderr, test.want) {
 				t.Fatalf("invalid temporary authority was not refused before mutation: code=%d stderr=%q", code, stderr)
 			}
 		})
 	}
+	fixture.expectTransactions(0, 0)
+	fixture.expectFacts(5, 0)
 }
 
 func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.T) {
@@ -1236,11 +1280,13 @@ func TestGoalTemporaryAuthorityRefusesPastAndBeyondHorizon(t *testing.T) {
 		{name: "beyond horizon", reviewBy: beyondHorizonDate, want: fmt.Sprintf("--review-by %s exceeds temporary goal authority horizon %s", beyondHorizonDate, governance.TemporaryGoalAuthorityHorizon)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := syncedClaimedGoalFixture(t)
+			root, facts := goalAuthorityRefusalRoot(t)
 			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
 			args := append(completeSetObligationArgs(root),
 				"--temporary-human-word", "Wido authorizes this obligation", "--review-by", test.reviewBy)
-			stderr, code := captureStderr(t, func() int { return runGoalSetObligation(args) })
+			stderr, code := captureStderr(t, func() int {
+				return runGoalSetObligationWithAuthorityFacts(args, humanauthority.ProveOrTemporaryGoalAuthority, facts)
+			})
 			if code != 2 || !strings.Contains(stderr, test.want) {
 				t.Fatalf("temporary authority date was not refused exactly: code=%d stderr=%q", code, stderr)
 			}
@@ -1249,7 +1295,7 @@ func TestGoalTemporaryAuthorityRefusesPastAndBeyondHorizon(t *testing.T) {
 }
 
 func TestGoalTemporaryAuthorityIgnoresFixtureClock(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
+	root, facts := goalAuthorityRefusalRoot(t)
 	wallDate := time.Now().UTC().AddDate(0, 0, -1)
 	horizon, err := time.Parse("2006-01-02", "2026-09-06")
 	if err != nil {
@@ -1262,7 +1308,9 @@ func TestGoalTemporaryAuthorityIgnoresFixtureClock(t *testing.T) {
 	t.Setenv("METASYSTEM_GOAL_NOW", wallDate.AddDate(0, 0, -1).Format(time.RFC3339))
 	args := append(completeSetObligationArgs(root),
 		"--temporary-human-word", "Wido authorizes stale obligation", "--review-by", reviewBy)
-	stderr, code := captureStderr(t, func() int { return runGoalSetObligation(args) })
+	stderr, code := captureStderr(t, func() int {
+		return runGoalSetObligationWithAuthorityFacts(args, humanauthority.ProveOrTemporaryGoalAuthority, facts)
+	})
 	want := "--review-by " + reviewBy + " is in the past"
 	if code != 2 || !strings.Contains(stderr, want) {
 		t.Fatalf("fixture clock moved a temporary authority decision: code=%d stderr=%q want=%q", code, stderr, want)
@@ -1270,18 +1318,24 @@ func TestGoalTemporaryAuthorityIgnoresFixtureClock(t *testing.T) {
 }
 
 func TestGoalResumeTemporaryPathConfirmsAndRecordsWords(t *testing.T) {
-	root := syncedStoppedGoalFixture(t)
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
+	fixture := newGoalBudgetResumeFixture(t, true, nil)
+	root := fixture.root()
 	word := "Wido authorizes this goal resume"
 	args := append(completeResumeArgs(root),
 		"--temporary-human-word", word, "--review-by", "2026-09-06")
-	stdout, stderr, code := captureResumeOutputWithAuthority(t, args, fixedTemporaryGoalAuthority)
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return fixture.runResume(args, fixedTemporaryGoalAuthority)
+	})
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) ||
 		!strings.Contains(stdout, "goal resume: TEMPORARY authority under a recorded relayed word (human provenance not verified); re-approval due 2026-09-06 at an agent-free terminal") {
 		t.Fatalf("temporary resume did not confirm and announce: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	tip := goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
-	rendered := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	fixture.expectBindings(1)
+	if fixture.repo.publications != 1 {
+		t.Fatalf("temporary resume published %d times, want one", fixture.repo.publications)
+	}
+	_, renderedBytes := fixture.acceptedGoal()
+	rendered := string(renderedBytes)
 	want := `resume actor=human:Wido targets=standing-validation authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Wido authorizes this goal resume"`
 	if !strings.Contains(rendered, want) {
 		t.Fatalf("the resume history did not retain its complete temporary authority:\n%s", rendered)
@@ -1361,8 +1415,7 @@ func TestGoalApproveAndUnapproveTemporarySurfacesRecordProofs(t *testing.T) {
 }
 
 func TestGoalSecondRelayedResumeRefusesWithFirstAct(t *testing.T) {
-	root := syncedStoppedGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "land first relayed resume marker", func(file *goal.GoalFile) {
+	fixture := newGoalBudgetResumeFixture(t, true, func(file *goal.GoalFile) {
 		file.Revision++
 		file.History = append(file.History, goal.HistoryLine{
 			At: "2026-09-01T09:30:00Z", Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAD", "mac-cli", "m1"),
@@ -1371,22 +1424,30 @@ func TestGoalSecondRelayedResumeRefusesWithFirstAct(t *testing.T) {
 			AuthorityRuling: goal.TemporaryGoalAuthorityRuling, TemporaryHumanWord: "Wido authorizes first resume",
 		})
 	})
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
+	root := fixture.root()
 	args := append(completeResumeArgs(root),
 		"--temporary-human-word", "Wido authorizes second resume", "--review-by", "2026-09-06")
-	stdout, stderr, code := captureResumeOutputWithAuthority(t, args, fixedTemporaryGoalAuthority)
+	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
+		return fixture.runResume(args, fixedTemporaryGoalAuthority)
+	})
 	want := `goal standing-validation already used relayed resume authority on 2026-09-01T09:30:00Z with recorded word \"Wido authorizes first resume\"; a further resume needs freshly observed enrolled-terminal authority`
 	if code != 1 || !strings.Contains(stdout, want) || strings.Contains(stdout, "TEMPORARY authority") {
 		t.Fatalf("second relayed resume refusal mismatch: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	fixture.expectBindings(1)
+	if fixture.repo.publications != 0 {
+		t.Fatalf("second relayed refusal published %d times", fixture.repo.publications)
 	}
 }
 
 func TestGoalResumeTemporaryWordFlagsTravelTogether(t *testing.T) {
 	for _, loneFlag := range []string{"--temporary-human-word", "--review-by"} {
-		root := syncedStoppedGoalFixture(t)
+		root, facts := goalAuthorityRefusalRoot(t)
 		t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
 		args := append(completeResumeArgs(root), loneFlag, "present")
-		stderr, code := captureStderr(t, func() int { return runGoalResume(args) })
+		stderr, code := captureStderr(t, func() int {
+			return runGoalResumeWithAuthorityFacts(args, humanauthority.ProveOrTemporaryGoalAuthority, goalCommandNow, facts)
+		})
 		if code != 2 || !strings.Contains(stderr, "--temporary-human-word and --review-by travel together") {
 			t.Fatalf("resume accepted one temporary flag: flag=%s code=%d stderr=%q", loneFlag, code, stderr)
 		}
@@ -1403,20 +1464,21 @@ func TestGoalMigrateStillRefusesTemporaryHumanWord(t *testing.T) {
 }
 
 func TestGoalSetObligationWithoutTemporaryWordStillProvesAncestry(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
+	root, facts := goalAuthorityRefusalRoot(t)
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	stderr, code := captureStderr(t, func() int { return runGoalSetObligation(completeSetObligationArgs(root)) })
+	stderr, code := captureStderr(t, func() int {
+		return runGoalSetObligationWithAuthorityFacts(completeSetObligationArgs(root), humanauthority.ProveOrTemporaryGoalAuthority, facts)
+	})
 	if code != 1 || !strings.Contains(stderr, "could not prove enrolled human ancestry") {
 		t.Fatalf("ordinary set-obligation no longer failed closed on missing ancestry: code=%d stderr=%q", code, stderr)
 	}
 }
 
 func TestGoalSetObligationAnnouncesTemporaryAuthority(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	args := append(completeSetObligationArgs(root),
+	fixture := newObligationCommandFixture(t)
+	args := append(completeSetObligationArgs(fixture.root()),
 		"--temporary-human-word", "Wido authorizes this obligation", "--review-by", "2026-09-06")
-	stdout, stderr, code := captureSetObligationOutputWithAuthority(t, args, fixedTemporaryGoalAuthority)
+	stdout, stderr, code := fixture.run(args, fixedTemporaryGoalAuthority)
 	if code != 0 || !strings.Contains(stdout, "TEMPORARY authority under a recorded relayed word (human provenance not verified)") ||
 		!strings.Contains(stdout, "re-approval due 2026-09-06 at an agent-free terminal") {
 		t.Fatalf("temporary set-obligation did not announce its status: code=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -1424,54 +1486,76 @@ func TestGoalSetObligationAnnouncesTemporaryAuthority(t *testing.T) {
 	if strings.Contains(stderr, "could not prove enrolled human ancestry") {
 		t.Fatalf("temporary set-obligation still attempted enrolled ancestry: %q", stderr)
 	}
+	fixture.expectTransactions(1, 0)
+	fixture.expectFacts(1, 1)
+	if file, _ := fixture.acceptedGoal(); file.Obligation == nil {
+		t.Fatal("accepted goal has no obligation")
+	}
 }
 
 func TestGoalSetObligationTemporaryPathConfirmsAndRecords(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	args := append(completeSetObligationArgs(root),
+	fixture := newObligationCommandFixture(t)
+	args := append(completeSetObligationArgs(fixture.root()),
 		"--temporary-human-word", "Wido authorizes this obligation",
 		"--review-by", "2026-09-06")
-	stdout, stderr, code := captureSetObligationOutputWithAuthority(t, args, fixedTemporaryGoalAuthority)
+	stdout, stderr, code := fixture.run(args, fixedTemporaryGoalAuthority)
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) ||
 		!strings.Contains(stdout, "TEMPORARY authority under a recorded relayed word (human provenance not verified)") {
 		t.Fatalf("temporary set-obligation did not complete through the CLI: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 
-	tip := goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
-	rendered := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
-	if !strings.Contains(rendered, `authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Wido authorizes this obligation"`) {
+	fixture.expectTransactions(1, 0)
+	fixture.expectFacts(1, 1)
+	file, rendered := fixture.acceptedGoal()
+	if file.Obligation == nil || file.Obligation.AuthorityOutcome != goal.AuthorityOutcomeTemporaryHumanWord ||
+		file.Obligation.AuthorityReviewBy != "2026-09-06" || file.Obligation.AuthorityRuling != "R-32-m1" ||
+		file.Obligation.TemporaryHumanWord != "Wido authorizes this obligation" ||
+		!strings.Contains(string(rendered), `authorityOutcome=TEMPORARY_HUMAN_WORD authorityReviewBy=2026-09-06 authorityRuling=R-32-m1 temporaryHumanWord="Wido authorizes this obligation"`) {
 		t.Fatalf("the landed goal record did not enumerate the temporary authority:\n%s", rendered)
 	}
-	matches, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "authority", "proofs", "*.json"))
-	if err != nil || len(matches) != 1 {
-		t.Fatalf("temporary CLI mutation did not record exactly one local proof: matches=%v err=%v", matches, err)
-	}
-	proofRecord, err := os.ReadFile(matches[0])
-	if err != nil {
-		t.Fatal(err)
-	}
+	proofRecord := fixture.proofRecord()
 	if !strings.Contains(string(proofRecord), `"temporaryHumanWord": "Wido authorizes this obligation"`) ||
 		!strings.Contains(string(proofRecord), `"reviewBy": "2026-09-06"`) ||
 		!strings.Contains(string(proofRecord), `"departure": "R-32-m1"`) {
 		t.Fatalf("the local proof record lost the verbatim word or review date: %s", proofRecord)
 	}
+	var recorded struct {
+		Schema      int                  `json:"schema"`
+		OperationID string               `json:"operationId"`
+		Action      string               `json:"action"`
+		Proof       humanauthority.Proof `json:"proof"`
+	}
+	if err := json.Unmarshal(proofRecord, &recorded); err != nil {
+		t.Fatal(err)
+	}
+	if recorded.Schema != 1 || recorded.Action != "goal set-obligation" ||
+		recorded.OperationID != file.History[len(file.History)-1].Opid ||
+		recorded.Proof.TemporaryHumanWord != "Wido authorizes this obligation" ||
+		recorded.Proof.ReviewBy != "2026-09-06" || recorded.Proof.Departure != "R-32-m1" {
+		t.Fatalf("local proof JSON disagrees with accepted history: %+v", recorded)
+	}
 }
 
 func TestGoalSecondRelayedSetObligationRefusesWithFirstAct(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	firstArgs := append(completeSetObligationArgs(root),
+	fixture := newObligationCommandFixture(t)
+	firstArgs := append(completeSetObligationArgs(fixture.root()),
 		"--temporary-human-word", "Wido authorizes first obligation", "--review-by", "2026-09-06")
-	if stdout, stderr, code := captureSetObligationOutputWithAuthority(t, firstArgs, fixedTemporaryGoalAuthority); code != 0 {
+	if stdout, stderr, code := fixture.run(firstArgs, fixedTemporaryGoalAuthority); code != 0 {
 		t.Fatalf("first relayed set-obligation did not confirm: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	secondArgs := append(completeSetObligationArgs(root),
+	firstFile, firstBytes := fixture.acceptedGoal()
+	secondArgs := append(completeSetObligationArgs(fixture.root()),
 		"--temporary-human-word", "Wido authorizes second obligation", "--review-by", "2026-09-06")
-	stdout, stderr, code := captureSetObligationOutputWithAuthority(t, secondArgs, fixedTemporaryGoalAuthority)
+	stdout, stderr, code := fixture.run(secondArgs, fixedTemporaryGoalAuthority)
 	want := `goal standing-validation already used relayed set-obligation authority on 2026-09-01T10:00:00Z with recorded word \"Wido authorizes first obligation\"; a further set-obligation needs freshly observed enrolled-terminal authority`
 	if code != 1 || !strings.Contains(stdout, want) || strings.Contains(stdout, "TEMPORARY authority") {
 		t.Fatalf("second relayed set-obligation refusal mismatch: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	fixture.expectTransactions(1, 1)
+	fixture.expectFacts(2, 2)
+	secondFile, secondBytes := fixture.acceptedGoal()
+	if !reflect.DeepEqual(firstFile, secondFile) || string(firstBytes) != string(secondBytes) || len(fixture.proofFiles()) != 1 {
+		t.Fatal("second relay changed the accepted goal or recorded another proof")
 	}
 }
 
@@ -1525,17 +1609,17 @@ func TestForeignLandedAuthorityKeepsGoalTreeUsable(t *testing.T) {
 }
 
 func TestGoalSetObligationDoesNotRecordProofForRejectedMutation(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
-	args := replaceFlagValue(completeSetObligationArgs(root), "--state", "UNKNOWN")
+	fixture := newObligationCommandFixture(t)
+	args := replaceFlagValue(completeSetObligationArgs(fixture.root()), "--state", "UNKNOWN")
 	args = append(args, "--temporary-human-word", "Wido authorizes this obligation", "--review-by", "2026-09-06")
-	_, stderr, code := captureSetObligationOutputWithAuthority(t, args, fixedTemporaryGoalAuthority)
+	_, stderr, code := fixture.run(args, fixedTemporaryGoalAuthority)
 	if code != 1 || !strings.Contains(stderr, `unknown obligation state "UNKNOWN"`) {
 		t.Fatalf("invalid set-obligation did not refuse by state: code=%d stderr=%q", code, stderr)
 	}
-	matches, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "authority", "proofs", "*.json"))
-	if err != nil || len(matches) != 0 {
-		t.Fatalf("a rejected set-obligation left an authority proof record: matches=%v err=%v", matches, err)
+	fixture.expectTransactions(0, 0)
+	fixture.expectFacts(1, 1)
+	if matches := fixture.proofFiles(); len(matches) != 0 {
+		t.Fatalf("a rejected set-obligation left an authority proof record: matches=%v", matches)
 	}
 }
 
@@ -2153,9 +2237,8 @@ func TestGoalHandoverTargetLiveness(t *testing.T) {
 // lowers it with --tier and the same answers: the command edge collects
 // the human proof for that lowering.
 func TestGoalEditLowersARecordedTierOnlyUnderHumanProof(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
 	exposed := &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 3, Accumulation: 1, Basis: "wide but routine"}
-	amendSyncedGoalFixture(t, root, "exposure-lifted tier fixture", func(file *goal.GoalFile) {
+	fixture := newGoalEditRepositoryFixture(t, time.Date(2026, 9, 12, 10, 0, 0, 0, time.UTC), func(file *goal.GoalFile) {
 		file.State = goal.StateQueued
 		file.Tier = 3
 		file.Risk = exposed
@@ -2164,26 +2247,24 @@ func TestGoalEditLowersARecordedTierOnlyUnderHumanProof(t *testing.T) {
 		file.Claimed = nil
 		file.StopCapability = nil
 	})
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-12T10:00:00Z")
-	same := []string{"--root", root, "--id", "standing-validation", "--risk", "severity=1,novelty=1,exposure=3,accumulation=1", "--basis", "wide but routine"}
-	if output, code := captureStdout(t, func() int { return runGoalEdit(same) }); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
-		t.Fatalf("a seat re-stating the answers is not a lowering: code=%d output=%q", code, output)
+	same := []string{"--root", fixture.root(), "--id", "standing-validation", "--lineage", "m1", "--risk", "severity=1,novelty=1,exposure=3,accumulation=1", "--basis", "wide but routine"}
+	if output, stderr, code := fixture.run(same); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("a seat re-stating the answers is not a lowering: code=%d output=%q stderr=%q", code, output, stderr)
 	}
-	tip := goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
-	if text := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md"); !strings.Contains(text, "- Tier: 3\n") {
+	if text := fixture.acceptedText(); !strings.Contains(text, "- Tier: 3\n") {
 		t.Fatalf("the recorded tier stands after a re-statement:\n%s", text)
 	}
 	lower := append(append([]string(nil), same...), "--tier", "1", "--why", "the formula changed")
-	if refusal, code := captureStdout(t, func() int { return runGoalEdit(lower) }); code == 0 || !strings.Contains(refusal, `"outcome":"rejected"`) || !strings.Contains(refusal, "human act") {
+	if refusal, _, code := fixture.run(lower); code == 0 || !strings.Contains(refusal, `"outcome":"rejected"`) || !strings.Contains(refusal, "human act") {
 		t.Fatalf("a seat's lowering was not refused by name: code=%d stdout=%q", code, refusal)
 	}
 	human := append(append([]string(nil), lower...), "--by", "Wido", "--fixture-human-authority")
-	if output, code := captureStdout(t, func() int { return runGoalEdit(human) }); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
-		t.Fatalf("the human's lowering with unchanged answers did not confirm: code=%d output=%q", code, output)
+	if output, stderr, code := fixture.run(human); code != 0 || !strings.Contains(output, `"outcome":"confirmed"`) {
+		t.Fatalf("the human's lowering with unchanged answers did not confirm: code=%d output=%q stderr=%q", code, output, stderr)
 	}
-	tip = goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
-	if text := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md"); !strings.Contains(text, "- Tier: 1\n") {
+	fixture.expectFacts(3, 1)
+	fixture.expectTransactions(2, 1)
+	if text := fixture.acceptedText(); !strings.Contains(text, "- Tier: 1\n") {
 		t.Fatalf("the lowered tier is recorded:\n%s", text)
 	}
 }

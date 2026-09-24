@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 // FindOrCreateOpen selects the one open batch, or creates it while holding the
@@ -59,15 +60,42 @@ type batchSeams struct {
 	ledgerOwner LedgerOwner
 }
 type Store struct {
-	root  string
-	seams batchSeams
+	root           string
+	seams          batchSeams
+	reassembly     reassemblyOperations
+	planJoinedUnit joinedUnitPlanner
+	committedGoal  func(string, string, string) ([]byte, bool, error)
+}
+
+type joinedUnitPlanner func(string, Unit, string, func(string, string, string) (testpolicy.Plan, error)) (testpolicy.Plan, error)
+
+// reassemblyOperations supplies the repository effects needed while reopening
+// a landing candidate. Each Store owns its own implementation.
+type reassemblyOperations struct {
+	assemble func(string, []Unit) ([]string, error)
+	delete   func(string, string) error
+	rebuild  func(string, string, string, string, []Unit) (string, error)
 }
 
 func NewStore(root string, prober identity.Prober) Store {
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
-	return Store{root: root, seams: batchSeams{prober: prober, flock: unix.Flock, publish: func(string) error { return nil }, updated: func(Record) {}}}
+	return Store{
+		root:          root,
+		committedGoal: readCommittedGoal,
+		planJoinedUnit: func(baseTree string, unit Unit, unitTree string, plan func(string, string, string) (testpolicy.Plan, error)) (testpolicy.Plan, error) {
+			return planJoinedUnit(root, baseTree, unit, unitTree, plan)
+		},
+		seams: batchSeams{prober: prober, flock: unix.Flock, publish: func(string) error { return nil }, updated: func(Record) {}},
+		reassembly: reassemblyOperations{
+			assemble: func(base string, units []Unit) ([]string, error) { return assembleUnits(root, base, units) },
+			delete:   func(id, expected string) error { return DeleteLandingBranch(root, id, expected) },
+			rebuild: func(id, base, expected, actor string, units []Unit) (string, error) {
+				return RebuildLandingBranch(root, id, base, expected, actor, units)
+			},
+		},
+	}
 }
 func (s Store) Liveness(p identity.Ref) identity.Liveness {
 	return identity.AliveRef(s.seams.prober, p)

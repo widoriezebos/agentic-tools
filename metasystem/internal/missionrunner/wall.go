@@ -109,6 +109,10 @@ func protectedArtifactPath(path string) bool {
 // between this check and the stable snapshot. A returned error is the
 // runner's could-not-run, never a judgment.
 func covenantGovernanceViolation(workspace gittree.Workspace, preTree, reviewedTree, digest string) (string, error) {
+	return covenantGovernanceViolationWithWorkspace(workspace, preTree, reviewedTree, digest)
+}
+
+func covenantGovernanceViolationWithWorkspace(workspace wallWorkspace, preTree, reviewedTree, digest string) (string, error) {
 	oldBytes, existed, err := workspace.FileAt(preTree, covenant.Filename)
 	if violation, rerr := covenantReadSplit(err, digest, "pre-change tree"); rerr != nil || violation != "" {
 		return violation, rerr
@@ -210,7 +214,10 @@ func parseHostArtifacts(value string) (map[string]bool, string) {
 // failure to PROVE is a violation; an error is the runner's own (git
 // unavailable, unreadable workspace), never a judgment.
 func inspectWall(root, missionID, preTree string, state map[string]any, certified []map[string]any, declared map[string]bool, guardrails *mission.GuardrailClass, declarationViolation string, snapshot func(expected string) (string, error)) (*wallInspection, error) {
-	workspace := gittree.Workspace{Dir: root}
+	return inspectWallWithWorkspace((&Engine{}).wallWorkspace(root), root, missionID, preTree, state, certified, declared, guardrails, declarationViolation, snapshot)
+}
+
+func inspectWallWithWorkspace(workspace wallWorkspace, root, missionID, preTree string, state map[string]any, certified []map[string]any, declared map[string]bool, guardrails *mission.GuardrailClass, declarationViolation string, snapshot func(expected string) (string, error)) (*wallInspection, error) {
 	inspection := &wallInspection{PreTree: preTree, ExpectedTree: preTree, OrderedDigests: []string{}}
 	if declarationViolation != "" {
 		inspection.Violation = declarationViolation
@@ -310,7 +317,7 @@ func inspectWall(root, missionID, preTree string, state map[string]any, certifie
 			// judges the record's own reviewedTree.
 			if path == covenant.Filename && guardrailLane {
 				reviewedTree, _ := record["reviewedTree"].(string)
-				violation, gerr := covenantGovernanceViolation(workspace, preTree, reviewedTree, digest)
+				violation, gerr := covenantGovernanceViolationWithWorkspace(workspace, preTree, reviewedTree, digest)
 				if gerr != nil {
 					return nil, gerr
 				}
@@ -518,6 +525,10 @@ func missionLedgerRel(missionID string) string {
 // wallSnapshot projects the workspace into the wall's identity space: the
 // shippable snapshot with the mission's own ledger filtered out.
 func wallSnapshot(workspace gittree.Workspace, missionID string) (string, error) {
+	return wallSnapshotWithWorkspace(workspace, missionID)
+}
+
+func wallSnapshotWithWorkspace(workspace wallWorkspace, missionID string) (string, error) {
 	tree, err := workspace.Snapshot("HEAD")
 	if err != nil {
 		return "", err
@@ -561,7 +572,7 @@ func (e *Engine) checkFileModePinned() error {
 	// (strictness guards the invariant, not a spelling), and a global
 	// or system value satisfies nothing — this repository must carry
 	// the pin itself.
-	stdout, _, code := gitCaptured(e.Root, "config", "--local", "--type=bool", "--get", "core.fileMode")
+	stdout, _, code := e.wallReads().Git(e.Root, "config", "--local", "--type=bool", "--get", "core.fileMode")
 	if code != 0 || strings.TrimSpace(stdout) != "true" {
 		return failf(3, "wall preflight refused: core.fileMode is not pinned true in this repository; run `git config core.fileMode true` (mode-bit drift must be visible to the tree equation)")
 	}
@@ -575,7 +586,7 @@ func (e *Engine) admittedBaseline(values map[string]string, approved []byte) (st
 	if err := e.checkFileModePinned(); err != nil {
 		return "", err
 	}
-	workspace := gittree.Workspace{Dir: e.Root}
+	workspace := e.wallWorkspace(e.Root)
 	contractRel := filepath.Join("plans", "mission-"+e.Mission+".contract.md")
 	exclude := []string{missionLedgerRel(e.Mission), contractRel}
 	raw, err := workspace.Snapshot("HEAD")
@@ -636,7 +647,7 @@ func (e *Engine) admittedBaseline(values map[string]string, approved []byte) (st
 	// E0 would record bytes nobody approved. The snapshot's entry must
 	// BE the approved bytes — the verified snapshot at launch, the
 	// pinned copy at birth.
-	approvedOID, err := blobOID(e.Root, approved)
+	approvedOID, err := e.wallReads().BlobOID(e.Root, approved)
 	if err != nil {
 		return "", failf(3, "wall preflight cannot hash the approved contract bytes: %v", err)
 	}
@@ -750,7 +761,7 @@ func blobOID(root string, content []byte) (string, error) {
 const ledgerViolationPrefix = "mission ledger"
 
 func (e *Engine) guardLedgerInTurn(state map[string]any, ledgerPath string) (string, error) {
-	anchored, current, err := mission.AnchoredLedgerTruth(e.Root, state, ledgerPath)
+	anchored, current, err := e.wallReads().LedgerTruth(e.Root, state, ledgerPath)
 	if errors.Is(err, mission.ErrNoAnchor) {
 		return "", nil
 	}
@@ -881,7 +892,7 @@ func (e *Engine) wallGate(statePath, ledger, turnID, turnDir string, cycle int64
 		}
 	}
 	origin := scopeOriginFromOpenTurn(openTurn, diskState)
-	workspace := gittree.Workspace{Dir: e.Root}
+	workspace := e.wallWorkspace(e.Root)
 	inspection, capture, stable, err := e.runWallInspection(preTree, diskState, certified, declared, guardrails, declarationViolation, origin)
 	if err != nil {
 		return nil, nil, false, err
@@ -1005,7 +1016,7 @@ func (e *Engine) runWallInspection(preTree string, diskState map[string]any, cer
 	for attempt := 0; attempt < 3 && !stable; attempt++ {
 		capture = nil
 		var err error
-		inspection, err = inspectWall(e.Root, e.Mission, preTree, diskState, certified, declared, guardrails, declarationViolation,
+		inspection, err = inspectWallWithWorkspace(e.wallWorkspace(e.Root), e.Root, e.Mission, preTree, diskState, certified, declared, guardrails, declarationViolation,
 			func(expected string) (string, error) {
 				snapped, cerr := e.captureWallPostureStable(expected, declared)
 				if cerr != nil {
@@ -1186,7 +1197,7 @@ func (e *Engine) attemptWallRecovery(inspection *wallInspection, capture *wallCa
 	if len(paths) == 0 {
 		return refuse("the unexplained delta is empty")
 	}
-	workspace := gittree.Workspace{Dir: e.Root}
+	workspace := e.wallWorkspace(e.Root)
 	if err := workspace.MaterializePaths(inspection.ExpectedTree, paths); err != nil {
 		return refuse(err.Error())
 	}
@@ -1273,7 +1284,7 @@ func (e *Engine) parkWallViolation(statePath, ledger, turnID, turnDir string, cy
 	}
 	// The event payload carries the committed-HEAD observable beside the
 	// violation (records stay the authority, events stay observability).
-	if head, _, code := gitCaptured(e.Root, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"); code == 0 {
+	if head, _, code := e.wallReads().Git(e.Root, "rev-parse", "--verify", "--quiet", "HEAD^{commit}"); code == 0 {
 		payload["headCommit"] = strings.TrimSpace(head)
 	}
 	e.emit("wall-violation", clipSummary(violation), payload)

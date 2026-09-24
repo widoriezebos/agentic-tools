@@ -22,26 +22,44 @@ import (
 // byte-identical. The verdict feeds the dead-man's decision, so
 // absence of a readable ledger is degraded-honest, never no-work.
 func ReadOpenWork(repoRoot string) (OpenWork, string, error) {
+	return readOpenWorkWithDependencies(repoRoot, openWorkDependencies{
+		NewWorld:                  goal.NewWorld,
+		ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
+	})
+}
+
+type openWorkDependencies struct {
+	NewWorld                  func(string) bool
+	ReadClaimableBudgetedWork func(string, time.Time) (goal.ClaimableBudgetedWork, error)
+}
+
+func readOpenWorkWithDependencies(repoRoot string, dependencies openWorkDependencies) (OpenWork, string, error) {
 	resolvedRoot, err := goal.ResolveStateRoot(repoRoot)
 	if err != nil {
 		return WorkDegraded, fmt.Sprintf("goal state root is uncertain: %v", err), nil
 	}
 	repoRoot = resolvedRoot
-	if goal.NewWorld(repoRoot) {
-		return convertedOpenWork(repoRoot)
+	if dependencies.NewWorld(repoRoot) {
+		return convertedOpenWorkWithDependencies(repoRoot, dependencies)
 	}
-	return LegacyOpenWork(repoRoot)
+	return legacyOpenWorkWithReader(repoRoot, dependencies.ReadClaimableBudgetedWork)
 }
 
 // convertedOpenWork consumes the same fresh, liveness-joined predicate as the
 // turn verdict. A stale claim or job record never makes backlog look active.
 func convertedOpenWork(repoRoot string) (OpenWork, string, error) {
+	return convertedOpenWorkWithDependencies(repoRoot, openWorkDependencies{
+		ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
+	})
+}
+
+func convertedOpenWorkWithDependencies(repoRoot string, dependencies openWorkDependencies) (OpenWork, string, error) {
 	if attention, present, err := loadLedgerAttentionState(repoRoot); err != nil {
 		return WorkDegraded, fmt.Sprintf("ledger-attention state unreadable: %v", err), nil
 	} else if present && attention.LastOutcome == "failed" {
 		return WorkDegraded, fmt.Sprintf("fresh canonical ledger read failed: %s", attention.LastFailure), nil
 	}
-	work, err := goal.ReadClaimableBudgetedWork(repoRoot, time.Now())
+	work, err := dependencies.ReadClaimableBudgetedWork(repoRoot, time.Now())
 	if err != nil {
 		return WorkDegraded, fmt.Sprintf("fresh canonical ledger unreadable: %v", err), nil
 	}
@@ -87,6 +105,10 @@ func classifySharedBacklog(work goal.ClaimableBudgetedWork) (OpenWork, string, e
 // single-machine by standing rule, so a Current goal is this
 // machine's work.
 func LegacyOpenWork(repoRoot string) (OpenWork, string, error) {
+	return legacyOpenWorkWithReader(repoRoot, goal.ReadClaimableBudgetedWork)
+}
+
+func legacyOpenWorkWithReader(repoRoot string, reader func(string, time.Time) (goal.ClaimableBudgetedWork, error)) (OpenWork, string, error) {
 	path := goal.LedgerPath(repoRoot)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -104,7 +126,7 @@ func LegacyOpenWork(repoRoot string) (OpenWork, string, error) {
 		return WorkDegraded, fmt.Sprintf("goal ledger has %d parse problems; refusing to guess", len(problems)), nil
 	}
 	_ = ledger
-	work, err := goal.ReadClaimableBudgetedWork(repoRoot, time.Now())
+	work, err := reader(repoRoot, time.Now())
 	if err != nil {
 		return WorkDegraded, fmt.Sprintf("legacy backlog judgment failed: %v", err), nil
 	}

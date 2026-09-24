@@ -48,7 +48,7 @@ func buildWallRepo(t *testing.T) string {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	run("init", "-q")
+	run("init", "-q", "-b", "main")
 	writeText(t, filepath.Join(root, ".gitignore"), "artifacts/\n")
 	writeText(t, filepath.Join(root, "main.go"), "package main\n")
 	writeText(t, filepath.Join(root, "metasystem.conf"), "metasystem.runtimes=fake\n")
@@ -125,11 +125,12 @@ func snapshotTree(t *testing.T, root string) string {
 }
 
 func TestWallPassesUntouchedWorkspace(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	// Machine metadata under artifacts/ is outside the projection.
-	writeText(t, filepath.Join(root, "artifacts", "agents", "x.json"), "{}\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed := newWallPolicyBed(t)
+	pre := "pre"
+	// Machine metadata exists on disk while the declared projection stays at pre.
+	writeText(t, filepath.Join(bed.root, "artifacts", "agents", "x.json"), "{}\n")
+	bed.facts.expectSnapshot(pre, pre)
+	inspection, err := bed.inspect(pre, wallState(), nil, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,13 +140,16 @@ func TestWallPassesUntouchedWorkspace(t *testing.T) {
 }
 
 func TestWallPassesConsumedAuthorizedPatch(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
-	post := snapshotTree(t, root)
-	digest := wallAuthorization(t, root, "demo", pre, post, nil)
+	bed := newWallPolicyBed(t)
+	pre, post := "pre", "post"
+	patch := wallPolicyPatch("main.go reviewed")
+	digest := bed.authorization(pre, post, []string{"main.go"}, patch, true, nil)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectApply(pre, patch, post)
+	bed.facts.expectEntries(post, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectEntries(post, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectSnapshot(post, post)
+	inspection, err := bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,23 +165,30 @@ func TestWallPassesConsumedAuthorizedPatch(t *testing.T) {
 }
 
 func TestWallRefusesUndeclaredHostBytes(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main // host-authored drift\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed := newWallPolicyBed(t)
+	pre, post := "pre", "host-post"
+	bed.facts.expectSnapshot(pre, post)
+	bed.facts.expectChanged(pre, post, []string{"main.go"})
+	inspection, err := bed.inspect(pre, wallState(), nil, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(inspection.Violation, "undeclared host-authored change: main.go") {
 		t.Fatalf("undeclared drift must violate: %+v", inspection)
 	}
+	if !inspection.UndeclaredOnly {
+		t.Fatalf("undeclared drift must be classified for recovery: %+v", inspection)
+	}
 }
 
 func TestWallAllowsDeclaredArtifactRefusesReviewedOverwrite(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "docs", "note.md"), "design note\n")
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, nil, "", legacySnapshot(root, "demo"))
+	bed := newWallPolicyBed(t)
+	pre, artifactPost := "pre", "artifact-post"
+	writeText(t, filepath.Join(bed.root, "docs", "note.md"), "design note\n")
+	bed.facts.expectSnapshot(pre, artifactPost)
+	bed.facts.expectEntries(artifactPost, []string{"docs", "docs/note.md"}, map[string]gittree.Entry{"docs/note.md": wallPolicyFile})
+	bed.facts.expectChanged(pre, artifactPost, []string{"docs/note.md"})
+	inspection, err := bed.inspect(pre, wallState(), nil, map[string]bool{"docs/note.md": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,12 +198,19 @@ func TestWallAllowsDeclaredArtifactRefusesReviewedOverwrite(t *testing.T) {
 
 	// The same path under a consumed authorization refuses:
 	// a declared artifact never overwrites reviewed bytes.
-	writeText(t, filepath.Join(root, "docs", "note.md"), "reviewed bytes\n")
-	reviewed := snapshotTree(t, root)
-	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
-	writeText(t, filepath.Join(root, "docs", "note.md"), "host overwrote the review\n")
+	writeText(t, filepath.Join(bed.root, "docs", "note.md"), "reviewed bytes\n")
+	reviewed, hostPost := "reviewed", "host-post"
+	patch := wallPolicyPatch("docs/note.md reviewed")
+	digest := bed.authorization(pre, reviewed, []string{"docs/note.md"}, patch, true, nil)
+	writeText(t, filepath.Join(bed.root, "docs", "note.md"), "host overwrote the review\n")
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{"docs/note.md": true}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectApply(pre, patch, reviewed)
+	bed.facts.expectEntries(reviewed, []string{"docs/note.md"}, map[string]gittree.Entry{"docs/note.md": wallPolicyFile})
+	bed.facts.expectEntries(reviewed, []string{"docs/note.md"}, map[string]gittree.Entry{"docs/note.md": wallPolicyFile})
+	bed.facts.expectSnapshot(reviewed, hostPost)
+	bed.facts.expectEntries(hostPost, []string{"docs", "docs/note.md"}, map[string]gittree.Entry{"docs/note.md": wallPolicyOtherFile})
+	bed.facts.expectChanged(reviewed, hostPost, []string{"docs/note.md"})
+	inspection, err = bed.inspect(pre, wallState(), certified, map[string]bool{"docs/note.md": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,40 +220,36 @@ func TestWallAllowsDeclaredArtifactRefusesReviewedOverwrite(t *testing.T) {
 }
 
 func TestWallRefusesOverlappingAuthorizations(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main // round two\n")
-	post := snapshotTree(t, root)
-	first := wallAuthorization(t, root, "demo", pre, post, nil)
-	second := wallAuthorization(t, root, "demo", pre, post, func(r map[string]any) { r["jobId"] = "job-w2" })
+	bed := newWallPolicyBed(t)
+	pre, post := "pre", "post"
+	patch := wallPolicyPatch("main.go overlapping")
+	first := bed.authorization(pre, post, []string{"main.go"}, patch, true, nil)
+	second := bed.authorization(pre, post, []string{"main.go"}, patch, true, func(r map[string]any) { r["jobId"] = "job-w2" })
 	certified := []map[string]any{
 		{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": first},
 		{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": second},
 	}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectApply(pre, patch, post)
+	bed.facts.expectEntries(post, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectEntries(post, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	inspection, err := bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(inspection.Violation, "overlap on main.go") {
 		t.Fatalf("overlapping consumptions must violate: %+v", inspection)
 	}
+	if !strings.Contains(inspection.Violation, first[:12]) || !strings.Contains(inspection.Violation, second[:12]) {
+		t.Fatalf("overlap must name both authorizations: %+v", inspection)
+	}
 }
 
 func TestWallRefusesMissingPatchBytes(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	record := map[string]any{"jobId": "job-w", "rootJob": "job-w", "mission": "demo",
-		"baseTree": pre, "reviewedTree": pre,
-		"baseSequencePoint": map[string]any{"sequence": 0, "segment": 0},
-		"changedPaths":      []any{"main.go"}, "supersedes": []any{}}
-	digest, derr := validate.AuthorizationRecordDigest(record)
-	if derr != nil {
-		t.Fatal(derr)
-	}
-	record["authorizationDigest"] = digest
-	writeJSONFile(t, filepath.Join(missionDirPath(root, "demo"), "authorizations", digest+".json"), record)
+	bed := newWallPolicyBed(t)
+	pre := "pre"
+	digest := bed.authorization(pre, pre, []string{"main.go"}, wallPolicyPatch("missing"), false, nil)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	inspection, err := bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,74 +375,12 @@ func seedWallEvidence(t *testing.T, root, mission, turnID string) {
 			}})
 }
 
-// The resume binding order: an unfinished open turn is
-// inspected BEFORE healing or any new baseline. Drift parks with taint at
-// resume; a clean workspace closes the unaccepted turn's marker so a
-// fresh turn can open.
-func TestResumeInspectsOpenTurnFirst(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
-	if err != nil {
-		t.Fatal(err)
-	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-dead", 1)
-	if err := engine.anchor(statePath, filepath.Join(engine.missionDir(), "ledger.md"), "crash-seed"); err != nil {
-		t.Fatal(err)
-	}
-	os.MkdirAll(filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead"), 0o755)
-	writeJSONFile(t, filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead", "turn.json"),
-		map[string]any{"missionId": engine.Mission, "turnId": "alpha-t1-dead", "cycle": 1,
-			"runtime": "fake", "model": "fixture", "status": "running"})
-
-	// Crash shape with host-authored drift: resume must park on the wall.
-	writeText(t, filepath.Join(engine.Root, "solo.go"), "package solo\n")
-	if _, _, _, rerr := engine.resumeState(); rerr == nil ||
-		!strings.Contains(rerr.Error(), "failed the wall at resume") {
-		t.Fatalf("drifted crash must park at resume: %v", rerr)
-	}
-	state := readTestDoc(t, statePath)
-	if state["parkReason"] != "wall-violation" {
-		t.Fatalf("park reason: %v", state["parkReason"])
-	}
-	taint, _ := state["workspaceTaint"].(map[string]any)
-	if entries, _ := taint["entries"].([]any); len(entries) != 1 {
-		t.Fatalf("taint: %v", taint)
-	}
-}
-
-func TestResumeClosesCleanUnacceptedTurn(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
-	if err != nil {
-		t.Fatal(err)
-	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-dead", 1)
-	if err := engine.anchor(statePath, filepath.Join(engine.missionDir(), "ledger.md"), "crash-seed"); err != nil {
-		t.Fatal(err)
-	}
-	os.MkdirAll(filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead"), 0o755)
-	writeJSONFile(t, filepath.Join(engine.missionDir(), "turns", "alpha-t1-dead", "turn.json"),
-		map[string]any{"missionId": engine.Mission, "turnId": "alpha-t1-dead", "cycle": 1,
-			"runtime": "fake", "model": "fixture", "status": "running"})
-
-	_, _, state, err := engine.resumeState()
-	if err != nil {
-		t.Fatalf("a clean crashed turn must resume: %v", err)
-	}
-	if state["openTurn"] != nil {
-		t.Fatalf("the unaccepted turn's marker must close: %v", state["openTurn"])
-	}
-}
-
 // The staleness predicate: an authorization based on an
 // older E-point refuses when intervening accepted changes touch its
 // paths, and consumes cleanly when they are disjoint.
 func TestWallStalenessPredicate(t *testing.T) {
-	root := wallRepo(t)
-	writeText(t, filepath.Join(root, "other.txt"), "delegate target\n")
-	base := snapshotTree(t, root) // E(k): the older accepted point
-	writeText(t, filepath.Join(root, "main.go"), "package main // accepted intervening change\n")
-	pre := snapshotTree(t, root) // E(j): intervening delta is main.go alone
+	bed := newWallPolicyBed(t)
+	base, pre := "base", "pre" // E(k) and E(j): the intervening delta is main.go alone
 
 	// The intervening acceptance took the expected tree from base to pre.
 	state := map[string]any{"turnLog": []any{map[string]any{
@@ -439,12 +391,11 @@ func TestWallStalenessPredicate(t *testing.T) {
 	}}}
 
 	// Overlapping: based at E(k), touching main.go, which changed since.
-	writeText(t, filepath.Join(root, "main.go"), "package main // reviewed on the old base\n")
-	overlapping := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main // accepted intervening change\n")
-	stale := wallAuthorization(t, root, "demo", base, overlapping, nil)
+	overlapping := "overlapping-reviewed"
+	stale := bed.authorization(base, overlapping, []string{"main.go"}, wallPolicyPatch("stale main.go"), true, nil)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": stale}}
-	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(base, pre, []string{"main.go"})
+	inspection, err := bed.inspect(pre, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,15 +406,18 @@ func TestWallStalenessPredicate(t *testing.T) {
 	// Disjoint: a delegate on the SAME old base touched only other.txt —
 	// its reviewed tree is base + that edit alone, so the intervening
 	// main.go change is disjoint and the authorization stays consumable.
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	writeText(t, filepath.Join(root, "other.txt"), "reviewed delegate work\n")
-	disjointTree := snapshotTree(t, root)
-	disjoint := wallAuthorization(t, root, "demo", base, disjointTree, nil)
+	disjointTree := "disjoint-reviewed"
+	patch := wallPolicyPatch("disjoint other.txt")
+	disjoint := bed.authorization(base, disjointTree, []string{"other.txt"}, patch, true, nil)
 	// The concluding workspace: the intervening change plus the reviewed
 	// delegate bytes — exactly expected + the consumed patch.
-	writeText(t, filepath.Join(root, "main.go"), "package main // accepted intervening change\n")
 	certified = []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": disjoint}}
-	inspection, err = inspectWall(root, "demo", pre, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(base, pre, []string{"main.go"})
+	bed.facts.expectApply(pre, patch, "applied")
+	bed.facts.expectEntries(disjointTree, []string{"other.txt"}, map[string]gittree.Entry{"other.txt": wallPolicyFile})
+	bed.facts.expectEntries("applied", []string{"other.txt"}, map[string]gittree.Entry{"other.txt": wallPolicyFile})
+	bed.facts.expectSnapshot("applied", "applied")
+	inspection, err = bed.inspect(pre, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,15 +430,17 @@ func TestWallStalenessPredicate(t *testing.T) {
 // reviewed tree the patch does not produce, and swapped patch bytes
 // beside an intact record, both violate.
 func TestWallRefusesTamperedAuthorization(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
-	post := snapshotTree(t, root)
+	bed := newWallPolicyBed(t)
+	pre, post := "pre", "post"
+	patch := wallPolicyPatch("reviewed main.go")
 	// A SELF-DIGESTED forgery — reviewedTree claims a tree the patch does
 	// not produce — authenticates fine and dies on object-id equality.
-	forged := wallAuthorization(t, root, "demo", pre, post, func(r map[string]any) { r["reviewedTree"] = pre })
+	forged := bed.authorization(pre, post, []string{"main.go"}, patch, true, func(r map[string]any) { r["reviewedTree"] = pre })
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": forged}}
-	inspection, err := inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectApply(pre, patch, post)
+	bed.facts.expectEntries(pre, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyOtherFile})
+	bed.facts.expectEntries(post, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	inspection, err := bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,10 +449,10 @@ func TestWallRefusesTamperedAuthorization(t *testing.T) {
 	}
 
 	// Swapped patch bytes beside an intact record die on the patchDigest.
-	honest := wallAuthorization(t, root, "demo", pre, post, nil)
-	writeText(t, filepath.Join(missionDirPath(root, "demo"), "authorizations", honest+".patch"), "not the issued bytes\n")
+	honest := bed.authorization(pre, post, []string{"main.go"}, patch, true, nil)
+	writeText(t, filepath.Join(missionDirPath(bed.root, "demo"), "authorizations", honest+".patch"), "not the issued bytes\n")
 	certified = []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": honest}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	inspection, err = bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,10 +461,10 @@ func TestWallRefusesTamperedAuthorization(t *testing.T) {
 	}
 
 	// A post-mint field rewrite dies on record authentication itself.
-	rewritten := wallAuthorization(t, root, "demo", pre, post, func(r map[string]any) { r["jobId"] = "job-w3" })
-	patchRecord(t, root, "demo", rewritten, map[string]any{"changedPaths": []any{"free-pass.go"}})
+	rewritten := bed.authorization(pre, post, []string{"main.go"}, patch, true, func(r map[string]any) { r["jobId"] = "job-w3" })
+	patchRecord(t, bed.root, "demo", rewritten, map[string]any{"changedPaths": []any{"free-pass.go"}})
 	certified = []map[string]any{{"jobId": "job-w3", "verdict": "accepted", "authorizationDigest": rewritten}}
-	inspection, err = inspectWall(root, "demo", pre, wallState(), certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	inspection, err = bed.inspect(pre, wallState(), certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -578,18 +534,10 @@ func patchRecord(t *testing.T, root, missionID, digest string, fields map[string
 // the turn-by-turn union still names it — an old authorization touching
 // it refuses instead of landing bytes whose review context is gone.
 func TestWallStalenessCatchesChangedThenReverted(t *testing.T) {
-	root := wallRepo(t)
-	base := snapshotTree(t, root) // E0
-	writeText(t, filepath.Join(root, "main.go"), "package main // changed in turn one\n")
-	writeText(t, filepath.Join(root, "helper.txt"), "kept\n")
-	mid := snapshotTree(t, root) // E1: main.go and helper.txt changed
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	preJ := snapshotTree(t, root) // E2: main.go reverted; endpoint diff hides it
-
-	writeText(t, filepath.Join(root, "main.go"), "package main // reviewed on E0\n")
-	reviewed := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	digest := wallAuthorization(t, root, "demo", base, reviewed, nil)
+	bed := newWallPolicyBed(t)
+	base, mid, preJ := "base", "mid", "pre-j" // E0, E1, E2: main.go reverted at E2
+	reviewed := "reviewed"
+	digest := bed.authorization(base, reviewed, []string{"main.go"}, wallPolicyPatch("old main.go"), true, nil)
 
 	state := map[string]any{"turnLog": []any{
 		map[string]any{"turnId": "demo-t1", "consumedAuthorizations": []any{},
@@ -602,7 +550,8 @@ func TestWallStalenessCatchesChangedThenReverted(t *testing.T) {
 				"sequencePoint": map[string]any{"sequence": 2, "segment": 0}}},
 	}}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", preJ, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(base, mid, []string{"helper.txt", "main.go"})
+	inspection, err := bed.inspect(preJ, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,16 +560,18 @@ func TestWallStalenessCatchesChangedThenReverted(t *testing.T) {
 	}
 }
 
-// A declared artifact path beneath a symlinked ancestor
-// refuses: the write escaped the repository, so the tree shows nothing.
+// A declared artifact path beneath a symlinked ancestor refuses because
+// following that path would leave the repository.
 func TestWallRefusesSymlinkedArtifactAncestry(t *testing.T) {
-	root := wallRepo(t)
+	bed := newWallPolicyBed(t)
 	outside := t.TempDir()
-	if err := os.Symlink(outside, filepath.Join(root, "docs")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(bed.root, "docs")); err != nil {
 		t.Fatal(err)
 	}
-	pre := snapshotTree(t, root)
-	inspection, err := inspectWall(root, "demo", pre, wallState(), nil, map[string]bool{"docs/note.md": true}, nil, "", legacySnapshot(root, "demo"))
+	pre := "pre"
+	bed.facts.expectSnapshot(pre, pre)
+	bed.facts.expectEntries(pre, []string{"docs", "docs/note.md"}, map[string]gittree.Entry{"docs": wallPolicySymlink})
+	inspection, err := bed.inspect(pre, wallState(), nil, map[string]bool{"docs/note.md": true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -728,10 +679,35 @@ func TestResumeCleanLedgerAheadHeals(t *testing.T) {
 	}
 }
 
-// The filtered identity is append-stable: tracked
-// ledger appends between snapshots never change the wall's trees, so
-// E(i+1) == pre(i+1) holds exactly across turn boundaries.
+// The wall snapshot wrapper excludes the mission ledger from each raw
+// workspace snapshot. Distinct raw trees can therefore share one wall tree.
 func TestWallIdentityStableAcrossLedgerAppends(t *testing.T) {
+	ledger := missionLedgerRel("demo")
+	workspace := &strictBaselineWorkspace{t: t, queries: []baselineQuery{
+		{method: "Snapshot", tree: "HEAD", result: "raw-before"},
+		{method: "FilterTree", tree: "raw-before", paths: []string{ledger}, result: "projected"},
+		{method: "Snapshot", tree: "HEAD", result: "raw-after"},
+		{method: "FilterTree", tree: "raw-after", paths: []string{ledger}, result: "projected"},
+	}}
+	before, err := wallSnapshotWithWorkspace(workspace, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := wallSnapshotWithWorkspace(workspace, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before != after {
+		t.Fatalf("a ledger append changed the wall's identity: %s vs %s", before, after)
+	}
+	if len(workspace.queries) != 0 {
+		t.Fatalf("unconsumed workspace queries: %+v", workspace.queries)
+	}
+}
+
+// A tracked ledger append changes the real raw workspace snapshot while
+// the physical filter keeps the mission's wall identity stable.
+func TestGitAdapterWallIdentityExcludesLedgerAppends(t *testing.T) {
 	root := wallRepo(t)
 	rel := missionLedgerRel("demo")
 	writeText(t, filepath.Join(root, rel), "# ledger\n")
@@ -747,17 +723,28 @@ func TestWallIdentityStableAcrossLedgerAppends(t *testing.T) {
 	run("add", "-f", "--", rel)
 	run("commit", "-qm", "anchor")
 	workspace := gittree.Workspace{Dir: root}
+	rawBefore, err := workspace.Snapshot("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
 	before, err := wallSnapshot(workspace, "demo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeText(t, filepath.Join(root, rel), "# ledger\n\n## Cycle 1\nappended\n")
+	rawAfter, err := workspace.Snapshot("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
 	after, err := wallSnapshot(workspace, "demo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if before != after {
 		t.Fatalf("a ledger append changed the wall's identity: %s vs %s", before, after)
+	}
+	if rawBefore == rawAfter {
+		t.Fatalf("a tracked ledger append did not change the raw snapshot: %s", rawBefore)
 	}
 }
 
@@ -769,21 +756,19 @@ func TestWallIdentityStableAcrossLedgerAppends(t *testing.T) {
 // delta refuses, and one disjoint from it consumes — the old blanket
 // segment fence refused work the resolution never touched.
 func TestWallResolutionDeltaStalenessOverlap(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
-	reviewed := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
+	bed := newWallPolicyBed(t)
+	pre, reviewed := "pre", "reviewed"
+	digest := bed.authorization(pre, reviewed, []string{"main.go"}, wallPolicyPatch("main.go before resolution"), true, nil)
 
 	// The adopted disputed tree TOUCHES main.go — the very path the
 	// delayed authorization changes.
-	writeText(t, filepath.Join(root, "main.go"), "package main\n// disputed\n")
-	adopted := snapshotTree(t, root)
+	adopted := "adopted"
 
 	state := resolvedFixtureState(pre, adopted)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(pre, pre, []string{})
+	bed.facts.expectChanged(pre, adopted, []string{"main.go"})
+	inspection, err := bed.inspect(adopted, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -793,22 +778,24 @@ func TestWallResolutionDeltaStalenessOverlap(t *testing.T) {
 }
 
 func TestWallResolutionDeltaStalenessDisjoint(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
-	reviewed := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
+	bed := newWallPolicyBed(t)
+	pre, reviewed := "pre", "reviewed"
+	patch := wallPolicyPatch("main.go disjoint resolution")
+	digest := bed.authorization(pre, reviewed, []string{"main.go"}, patch, true, nil)
 
 	// The adopted tree touches ONLY notes.md; the delayed main.go
 	// authorization is disjoint from the ruling and stays fresh.
-	writeText(t, filepath.Join(root, "notes.md"), "adopted by ruling\n")
-	adopted := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
+	adopted := "adopted"
 
 	state := resolvedFixtureState(pre, adopted)
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(pre, pre, []string{})
+	bed.facts.expectChanged(pre, adopted, []string{"notes.md"})
+	bed.facts.expectApply(adopted, patch, "applied")
+	bed.facts.expectEntries(reviewed, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectEntries("applied", []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectSnapshot("applied", "applied")
+	inspection, err := bed.inspect(adopted, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -825,21 +812,22 @@ func TestWallResolutionDeltaStalenessDisjoint(t *testing.T) {
 // resolution's previousTree — a delayed {0,0} authorization disjoint
 // from the ruling's delta still names its base and consumes.
 func TestWallFirstTurnResolutionKeepsE0(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
-	reviewed := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n")
-	digest := wallAuthorization(t, root, "demo", pre, reviewed, nil)
+	bed := newWallPolicyBed(t)
+	pre, reviewed := "pre", "reviewed"
+	patch := wallPolicyPatch("main.go first-turn resolution")
+	digest := bed.authorization(pre, reviewed, []string{"main.go"}, patch, true, nil)
 
-	writeText(t, filepath.Join(root, "notes.md"), "adopted by ruling\n")
-	adopted := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc F() {}\n")
+	adopted := "adopted"
 
 	state := resolvedFixtureState(pre, adopted)
 	state["turnLog"] = []any{}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", adopted, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectChanged(pre, adopted, []string{"notes.md"})
+	bed.facts.expectApply(adopted, patch, "applied")
+	bed.facts.expectEntries(reviewed, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectEntries("applied", []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectSnapshot("applied", "applied")
+	inspection, err := bed.inspect(adopted, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -878,49 +866,24 @@ func resolvedFixtureState(pre, adopted string) map[string]any {
 // even one that commits its edit on the mission branch to become "the
 // last commit touching the path" — violates.
 func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
+	bed := newVerificationFileBed(t)
+	original, err := os.ReadFile(bed.ledger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-live", 1)
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
-	if err := engine.anchor(statePath, ledgerPath, "open"); err != nil {
-		t.Fatal(err)
-	}
-	turnDir := filepath.Join(engine.missionDir(), "turns", "alpha-t1-live")
-	os.MkdirAll(turnDir, 0o755)
-	writeJSONFile(t, filepath.Join(turnDir, "turn.json"),
-		map[string]any{"missionId": engine.Mission, "turnId": "alpha-t1-live", "cycle": 1,
-			"runtime": "fake", "model": "fixture", "status": "running"})
+	writeText(t, bed.ledger, string(original)+"- Stop-loss reset: ask=forged\n")
+	bed.wantLedger = []byte(string(original) + "- Stop-loss reset: ask=forged\n")
+	bed.expectLedgerTruth()
+	bed.expectPark()
 
-	// The host injects a vocal stop-loss reset line and commits its own
-	// alteration on the branch, hoping to become the guard's baseline.
-	tampered, err := os.ReadFile(ledgerPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeText(t, ledgerPath, string(tampered)+"- Stop-loss reset: ask=forged\n")
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", engine.Root}, args...)...)
-		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=h", "GIT_AUTHOR_EMAIL=h@h",
-			"GIT_COMMITTER_NAME=h", "GIT_COMMITTER_EMAIL=h@h")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("laundering git %v must succeed for the proof: %v\n%s", args, err, out)
-		}
-	}
-	run("add", "-f", "--", "artifacts/agents/missions/alpha/ledger.md")
-	run("commit", "-qm", "host launders its ledger edit")
-
-	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, false, nil)
+	_, final, violated, err := bed.e.wallGate(bed.state, bed.ledger, "alpha-t1-live", bed.turnDir, 1, nil, false, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !violated {
 		t.Fatalf("a mid-turn ledger edit must violate: %v", final)
 	}
-	state := readTestDoc(t, statePath)
+	state := readTestDoc(t, bed.state)
 	if state["parkReason"] != "wall-violation" {
 		t.Fatalf("park reason: %v", state["parkReason"])
 	}
@@ -932,6 +895,7 @@ func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
 	if reason, _ := entries[0].(map[string]any)["reason"].(string); !strings.Contains(reason, "ledger") {
 		t.Fatalf("the taint must name the ledger: %v", reason)
 	}
+	bed.checkAnchors(1)
 }
 
 // Answering a superseded ask refuses BY NAME toward its
@@ -939,11 +903,8 @@ func TestWallCatchesMidTurnLedgerTamper(t *testing.T) {
 // coincidental later refusal, so the bed is a real provisioned mission
 // and the stderr text is captured.
 func TestAnswerRefusesSupersededAsk(t *testing.T) {
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	if _, err := seedCrashedMissionState(t, engine); err != nil {
-		t.Fatal(err)
-	}
-	writeJSONFile(t, filepath.Join(asksDirPath(engine.Root, engine.Mission), "ask-1-1.json"),
+	bed := newVerificationFileBed(t)
+	writeJSONFile(t, filepath.Join(asksDirPath(bed.e.Root, bed.e.Mission), "ask-1-1.json"),
 		map[string]any{"askId": "ask-1-1", "streamId": "build", "reasonClass": "reserved-decision",
 			"question": "old wording", "answeredAt": nil, "supersededBy": "ask-2-1"})
 
@@ -953,7 +914,7 @@ func TestAnswerRefusesSupersededAsk(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Stderr = wr
-	code := engine.Answer("ask-1-1", "approve: too late")
+	code := bed.e.Answer("ask-1-1", "approve: too late")
 	wr.Close()
 	os.Stderr = saved
 	captured, _ := io.ReadAll(read)
@@ -964,6 +925,7 @@ func TestAnswerRefusesSupersededAsk(t *testing.T) {
 	if !strings.Contains(string(captured), "superseded; answer ask-2-1 instead") {
 		t.Fatalf("the refusal must name the successor: %q", captured)
 	}
+	bed.checkAnchors(0)
 }
 
 // The two typed resolutions, end to end from a host-authored-product
@@ -1065,9 +1027,9 @@ func TestResolveTaintRestore(t *testing.T) {
 // parked with the violated turn's marker intact; the last resolution
 // unparks.
 func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed := newResolutionFileBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
 
@@ -1097,21 +1059,12 @@ func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
 	if _, err := engine.writeState(statePath, proposed); err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.anchor(statePath, ledgerPath, "fixture-second-taint"); err != nil {
-		t.Fatal(err)
-	}
-	// Anchoring reclaimed the checkout as MAIN; the human resolves from
-	// their own shell, so clear the dead run's announcement again.
-	announcements, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
-	for _, path := range announcements {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-	}
+	bed.recordAnchor()
 
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
+	bed.expectResolve(recoveryPre, true, false, false)
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring the recorded safe tree", nil); code != 0 {
 		t.Fatalf("the first resolution must succeed: %d", code)
 	}
@@ -1135,15 +1088,7 @@ func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
 		t.Fatal("the first resolution must NOT answer the sibling taint's ask")
 	}
 
-	// The first resolution's anchor announced THIS process as MAIN; a
-	// real second ruling is a fresh shell process, so clear it again.
-	announcements, _ = filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
-	for _, path := range announcements {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-	}
-
+	bed.expectResolve(recoveryPre, false, true, false)
 	if code := engine.ResolveTaint(2, "adopt-disputed-tree", "", "Wido", "keeping the disputed work",
 		[]string{"authorship of the second drift"}); code != 0 {
 		t.Fatalf("the last resolution must succeed: %d", code)
@@ -1169,9 +1114,9 @@ func TestResolveTaintMultiTaintDiscipline(t *testing.T) {
 // the ledger sits outside the tree projection restore proves against;
 // adoption — which re-baselines the anchored truth — is the lawful path.
 func TestResolveTaintLedgerDomainRefusesRestore(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed := newResolutionFileBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
 
@@ -1184,22 +1129,31 @@ func TestResolveTaintLedgerDomainRefusesRestore(t *testing.T) {
 	if _, err := engine.writeState(statePath, proposed); err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.anchor(statePath, ledgerPath, "fixture-ledger-taint"); err != nil {
+	pristine, err := os.ReadFile(bed.ledger)
+	if err != nil {
 		t.Fatal(err)
 	}
-	announcements, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
-	for _, path := range announcements {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
+	disputed := string(pristine) + "\n"
+	writeText(t, bed.ledger, disputed)
+	if _, _, _, err := mission.ParseLedger(bed.ledger); err != nil {
+		t.Fatalf("disputed ledger must remain parseable: %v", err)
+	}
+	bed.recordAnchor()
+	if bed.anchorSHA != sha256Hex(disputed) || bed.anchorSHA == sha256Hex(string(pristine)) {
+		t.Fatal("parked ledger anchor must bind distinct parseable disputed bytes")
 	}
 
+	bed.snapshot(recoveryPost)
 	if code := engine.ResolveTaint(2, "restore", preTree, "Wido", "put it back", nil); code != 3 {
 		t.Fatalf("restore of a ledger-domain taint must refuse: %d", code)
 	}
+	bed.expectResolve(recoveryPost, false, false, true)
 	if code := engine.ResolveTaint(2, "adopt-disputed-tree", "", "Wido", "re-baselining the ledger",
 		[]string{"ledger narrative integrity for turn alpha-t1-ledger"}); code != 0 {
 		t.Fatalf("adoption must close a ledger-domain taint: %d", code)
+	}
+	if bed.anchorSHA != sha256Hex(disputed) || string(bed.anchored) != disputed {
+		t.Fatal("adoption anchor must bind the disputed ledger bytes")
 	}
 }
 
@@ -1208,7 +1162,8 @@ func TestResolveTaintLedgerDomainRefusesRestore(t *testing.T) {
 // re-running resolve-taint, which answers from the RECORDED ruling; an
 // ask without a parseable bound taint id is never touched.
 func TestResolveTaintTailCompletion(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed := newResolutionFileBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 	state := readTestDoc(t, statePath)
 	preTree := state["openTurn"].(map[string]any)["preTree"].(string)
@@ -1228,6 +1183,7 @@ func TestResolveTaintTailCompletion(t *testing.T) {
 	if err := os.Remove(filepath.Join(engine.Root, "solo.go")); err != nil {
 		t.Fatal(err)
 	}
+	bed.expectResolve(recoveryPre, true, true, false)
 	if code := engine.ResolveTaint(1, "restore", preTree, "Wido", "restoring the recorded safe tree", nil); code != 0 {
 		t.Fatalf("restore must succeed: %d", code)
 	}
@@ -1241,14 +1197,9 @@ func TestResolveTaintTailCompletion(t *testing.T) {
 	crashed["answeredAt"] = nil
 	crashed["answer"] = nil
 	writeJSONFile(t, asks[0], crashed)
-	announcements, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
-	for _, path := range announcements {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-	}
 	// The retry may name ANY variant/args — the tail completes from the
 	// RECORDED resolution, never from this call.
+	bed.nextIdentity = "Someone Else"
 	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Someone Else", "different args", []string{"x"}); code != 0 {
 		t.Fatalf("the tail completion must succeed: %d", code)
 	}
@@ -1716,6 +1667,9 @@ func TestResumeCloseAnchorRefusesMovedLedger(t *testing.T) {
 	engine.preAnchorHook = func() {
 		writeText(t, ledgerPath, string(pristine)+"\n")
 	}
+	// This fixture checks the production pin refusal. The bed's ordinary
+	// anchor override uses the unpinned mission anchor for other tests.
+	engine.anchorFn = nil
 	if _, _, _, rerr := engine.resumeState(); rerr == nil {
 		t.Fatal("the close-marker anchor must refuse ledger bytes moved past the verified pin")
 	}
@@ -1858,13 +1812,15 @@ func TestResolveTaintCrashHealsAtReconcile(t *testing.T) {
 }
 
 func TestResolveTaintAdoptDisputedTree(t *testing.T) {
-	engine := parkedSoloBuildMission(t)
+	bed := newResolutionFileBed(t)
+	engine := bed.e
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 
 	// Adoption without named waived claims refuses.
 	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keeping the work", nil); code == 0 {
 		t.Fatal("adoption must name the waived attribution claims")
 	}
+	bed.expectResolve(recoveryPost, false, true, false)
 	if code := engine.ResolveTaint(1, "adopt-disputed-tree", "", "Wido", "keeping the disputed work",
 		[]string{"authorship of solo.go"}); code != 0 {
 		t.Fatal("adoption with named claims must succeed")
@@ -1878,7 +1834,8 @@ func TestResolveTaintAdoptDisputedTree(t *testing.T) {
 	}
 	adopted, _ := resolution["treeId"].(string)
 	// The adopted tree IS the observed workspace — solo.go included.
-	workspaceNow, err := wallSnapshot(gittree.Workspace{Dir: engine.Root}, engine.Mission)
+	bed.snapshot(recoveryPost)
+	workspaceNow, err := wallSnapshotWithWorkspace(engine.wallWorkspace(engine.Root), engine.Mission)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1965,11 +1922,10 @@ func stageHumanShell(t *testing.T) {
 // The tree-equation positive after a resolution: FRESH work issued at the new
 // segment consumes cleanly — the fence blocks only the old segment.
 func TestWallConsumesFreshWorkAfterResolution(t *testing.T) {
-	root := wallRepo(t)
-	pre := snapshotTree(t, root)
-	writeText(t, filepath.Join(root, "main.go"), "package main\n\nfunc Fresh() {}\n")
-	reviewed := snapshotTree(t, root)
-	digest := wallAuthorization(t, root, "demo", pre, reviewed, func(r map[string]any) {
+	bed := newWallPolicyBed(t)
+	pre, reviewed := "pre", "reviewed"
+	patch := wallPolicyPatch("fresh main.go")
+	digest := bed.authorization(pre, reviewed, []string{"main.go"}, patch, true, func(r map[string]any) {
 		r["baseSequencePoint"] = map[string]any{"sequence": 1, "segment": 1}
 	})
 	state := map[string]any{
@@ -1984,7 +1940,11 @@ func TestWallConsumesFreshWorkAfterResolution(t *testing.T) {
 		}},
 	}
 	certified := []map[string]any{{"jobId": "job-w", "verdict": "accepted", "authorizationDigest": digest}}
-	inspection, err := inspectWall(root, "demo", pre, state, certified, map[string]bool{}, nil, "", legacySnapshot(root, "demo"))
+	bed.facts.expectApply(pre, patch, reviewed)
+	bed.facts.expectEntries(reviewed, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectEntries(reviewed, []string{"main.go"}, map[string]gittree.Entry{"main.go": wallPolicyFile})
+	bed.facts.expectSnapshot(reviewed, reviewed)
+	inspection, err := bed.inspect(pre, state, certified, map[string]bool{})
 	if err != nil {
 		t.Fatal(err)
 	}

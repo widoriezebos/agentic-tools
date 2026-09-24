@@ -1,15 +1,12 @@
 package missionrunner
 
 import (
-	"bufio"
-	"io"
 	"os"
-	"os/exec"
-	"strconv"
-	"strings"
-	"syscall"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestParsePSCPUTime(t *testing.T) {
@@ -88,90 +85,37 @@ func TestTreeCPUProgressOnAScriptedSampler(t *testing.T) {
 }
 
 // TestProcessTreeCPUSecondsCountsDescendants is the reader's wiring proof:
-// a busy child under a shell, and the tree's CPU time grows while the
-// shell itself sits in wait, so descendant time must be part of the sum.
+// the real ps command path, parser, and tree traversal see a child whose CPU
+// grows while the root stays unchanged, so descendant time must be summed.
 func TestProcessTreeCPUSecondsCountsDescendants(t *testing.T) {
-	// The shell and its burner share a process group of their own, and the
-	// group is what ends. A bare Process.Kill ended only the shell, before
-	// its own `kill $!` ran, and every run of this test left a `yes` at a
-	// full core behind it: ten of them burned through the night of
-	// 2026-09-11 under every cadence measurement (found 2026-09-12 08:40,
-	// parent launchd, start times matching the runs). The shell's own
-	// lifetime pipe keeps cleanup tied to that whole group rather than only
-	// to the shell process returned by Start.
-	startRead, startWrite, err := os.Pipe()
-	if err != nil {
+	bin := t.TempDir()
+	calls := filepath.Join(bin, "ps-calls")
+	ps := `#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" == "-axo pid=,ppid=,cputime=" ]] || exit 97
+count=0
+if [[ -f "${PS_FIXTURE_CALLS:?}" ]]; then
+  read -r count <"$PS_FIXTURE_CALLS"
+fi
+count=$((count + 1))
+printf '%d\n' "$count" >"$PS_FIXTURE_CALLS"
+child_cpu=0:00
+[[ "$count" -eq 1 ]] || child_cpu=0:01
+printf '4242 1 0:02\n4243 4242 %s\n9000 1 9:59\n' "$child_cpu"
+`
+	if err := testexec.WriteFile(filepath.Join(bin, "ps"), []byte(ps), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	lifetimeRead, lifetimeWrite, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
+	t.Setenv("PS_FIXTURE_CALLS", calls)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	first, ok := processTreeCPUSeconds(4242)
+	if !ok || first != 2 {
+		t.Fatalf("first scripted process-tree sample = %v, %v; want 2, true", first, ok)
 	}
-	reportRead, reportWrite, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The burner starts behind a pipe gate, consumes its own CPU in Bash,
-	// reports `times` on a second pipe, then becomes yes. The lifetime pipe's
-	// writer is inherited by the shell and burner; EOF therefore proves every
-	// member has exited after cleanup.
-	script := `bash -c '
-printf "%s\n" "$$" >&5
-read -r _ <&3
-i=0
-while [ "$i" -lt 50000 ]; do i=$((i + 1)); done
-times >&5
-exec yes >/dev/null
-' &
-wait`
-	command := exec.Command("bash", "-c", script)
-	command.ExtraFiles = []*os.File{startRead, lifetimeWrite, reportWrite}
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	startRead.Close()
-	lifetimeWrite.Close()
-	reportWrite.Close()
-	group := command.Process.Pid
-	burnerPID := 0
-	t.Cleanup(func() {
-		startWrite.Close()
-		_ = syscall.Kill(-group, syscall.SIGKILL)
-		if burnerPID > 0 {
-			_ = syscall.Kill(burnerPID, syscall.SIGKILL)
-		}
-		_ = command.Wait()
-		if _, err := io.Copy(io.Discard, lifetimeRead); err != nil {
-			t.Errorf("read process-group lifetime pipe: %v", err)
-		}
-		lifetimeRead.Close()
-		reportRead.Close()
-	})
-	reportReader := bufio.NewReader(reportRead)
-	pidLine, err := reportReader.ReadString('\n')
-	if err != nil {
-		t.Fatalf("burner did not report its pid: %v", err)
-	}
-	burnerPID, err = strconv.Atoi(strings.TrimSpace(pidLine))
-	if err != nil || burnerPID < 2 {
-		t.Fatalf("burner pid report %q: %v", pidLine, err)
-	}
-	first, ok := processTreeCPUSeconds(group)
-	if !ok {
-		t.Skip("platform process reader is unavailable on this test host")
-	}
-	if _, err := startWrite.Write([]byte("burn\n")); err != nil {
-		t.Fatal(err)
-	}
-	startWrite.Close()
-	reported, err := reportReader.ReadString('\n')
-	if err != nil {
-		t.Fatalf("burner did not report its CPU fact: %v", err)
-	}
-	second, ok := processTreeCPUSeconds(group)
-	if !ok || second <= first {
-		t.Fatalf("descendant CPU did not grow after burner report %q: first=%v second=%v ok=%v", reported, first, second, ok)
+	second, ok := processTreeCPUSeconds(4242)
+	if !ok || second != 3 {
+		t.Fatalf("second scripted process-tree sample = %v, %v; want 3, true", second, ok)
 	}
 	if _, ok := processTreeCPUSeconds(os.Getpid() + 1_000_000); ok {
 		t.Fatal("an absent process must report no sample")

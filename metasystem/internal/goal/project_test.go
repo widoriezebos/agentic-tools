@@ -8,19 +8,18 @@ import (
 
 func TestProjectionReadsTheAcceptedTreeOnly(t *testing.T) {
 	t.Parallel()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	if res, err := Open(verbReq(a, "01J5X00000000000000000E000", "mac-a"), "seen", "Visible.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	a, b := fakeGoalEndpointPair(t)
+	if res, err := Open(verbReqFor(a, "01J5X00000000000000000E000", "mac-a"), "seen", "Visible.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	// B publishes past A's accepted tree; A's OFFLINE projection
 	// still shows only what A accepted — mid-edit remote state is
 	// invisible until a fetch.
-	if res, err := Open(verbReq(b, "01J5X00000000000000000E010", "mac-b"), "unseen", "Not yet.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := Open(verbReqFor(b, "01J5X00000000000000000E010", "mac-b"), "unseen", "Not yet.", "main", "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("B opens: %+v %v", res, err)
 	}
 	now := time.Now()
-	p, err := Project(endpointFor(a), false, now)
+	p, err := Project(a, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +46,7 @@ func TestProjectionReadsTheAcceptedTreeOnly(t *testing.T) {
 	}
 	projected := make(chan projectionAnswer, 1)
 	go func() {
-		projection, projectErr := project(endpointFor(a), true, now, projectionDependencies{
+		projection, projectErr := project(a, true, now, projectionDependencies{
 			deadline: make(chan time.Time),
 			fetch: func(endpoint Endpoint) (AdvanceResult, error) {
 				close(fetchStarted)
@@ -144,8 +143,7 @@ func TestNextTreatsArcMemberPinsIndependently(t *testing.T) {
 
 func TestProjectionBannersStalenessAndLocalMode(t *testing.T) {
 	t.Parallel()
-	repo := soloLedgerRepo(t)
-	e := Endpoint{Root: repo, Remote: "local", Branch: "refs/heads/main"}
+	e := soloLedgerFakeEndpoint(t)
 	// Read far in the future: the staleness banner names the age;
 	// the local-mode banner names the promotion goal.
 	later := time.Now().Add(2 * time.Hour)
@@ -172,14 +170,38 @@ func TestProjectionBannersStalenessAndLocalMode(t *testing.T) {
 
 func TestSyncModeMismatchRefusesByName(t *testing.T) {
 	t.Parallel()
-	repo := soloLedgerRepo(t)
+	e := soloLedgerFakeEndpoint(t)
 	// The ledger says local; the config says remote: the forbidden
 	// promotion refuses naming the goal.
-	e := Endpoint{Root: repo, Remote: "origin", Branch: "refs/heads/main"}
+	e.Remote = "origin"
 	_, err := Project(e, false, time.Now())
 	if err == nil || !strings.Contains(err.Error(), "backlog-local-promotion") {
 		t.Fatalf("the mode flip refuses toward the promotion goal: %v", err)
 	}
+}
+
+func soloLedgerFakeEndpoint(t *testing.T) Endpoint {
+	t.Helper()
+	root := t.TempDir()
+	seedGoalNormConfig(t, root)
+	store := newFakeGoalStore()
+	e := Endpoint{Root: root, Remote: "local", Branch: LocalLedgerBranch, Repository: store.client()}
+	localRoot := vRoot()
+	localRoot.SyncMode = SyncLocal
+	files := vTree(localRoot, []*GoalFile{approvedGoalFixture(vGoal("solo-goal", StateQueued), testBudget())}, nil)
+	changes := make([]Change, 0, len(files))
+	for path, content := range files {
+		changes = append(changes, Change{Path: path, Content: content})
+	}
+	res, err := Publish(e, PublishRequest{
+		Opid: "op-solo-seed", Machine: "mac-solo", Lineage: "l1",
+		Intent: testIntentFor("migrate"), Message: "seed solo ledger",
+		Mutate: func(string) ([]Change, error) { return changes, nil },
+	})
+	if err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("solo seed: %+v %v", res, err)
+	}
+	return e
 }
 
 // soloLedgerRepo builds a single-machine repo whose ledger branch

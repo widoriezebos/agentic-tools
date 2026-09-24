@@ -189,7 +189,6 @@ func TestBatchOwnerWiringBound(t *testing.T) {
 
 func TestBatchOwnerManualAcquireCleansFailedAnnouncement(t *testing.T) {
 	root := t.TempDir()
-	goalSyncMutationGit(t, root, "init", "-q")
 	original := batchOwnerAnnounce
 	t.Cleanup(func() { batchOwnerAnnounce = original })
 	batchOwnerAnnounce = func(root, session string, pid, start, startTicks int64, bootID, tag, runtime, lineage string) (string, error) {
@@ -208,7 +207,6 @@ func TestBatchOwnerManualAcquireCleansFailedAnnouncement(t *testing.T) {
 
 func TestBatchOwnerReleaseDoesNotRecreateRemovedRoot(t *testing.T) {
 	root := t.TempDir()
-	goalSyncMutationGit(t, root, "init", "-q")
 	held, err := acquireBatchOwner(root)
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +249,6 @@ func TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	goalSyncMutationGit(t, root, "init", "-q")
 	startHolder := func(mode string) (*exec.Cmd, io.WriteCloser, *bufio.Scanner) {
 		t.Helper()
 		command := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerNextProcessRecoversReleasedAndKilledHolder$")
@@ -450,7 +447,6 @@ func TestBatchCommandsResolveInputsBeforeAnnouncement(t *testing.T) {
 func TestBatchOwnerManualProofAndEnvironmentFailuresReleaseAnnouncement(t *testing.T) {
 	t.Run("holder proof", func(t *testing.T) {
 		root := t.TempDir()
-		goalSyncMutationGit(t, root, "init", "-q")
 		mains := filepath.Join(root, "artifacts", "agents", "mains")
 		if err := os.MkdirAll(mains, 0o755); err != nil {
 			t.Fatal(err)
@@ -468,7 +464,6 @@ func TestBatchOwnerManualProofAndEnvironmentFailuresReleaseAnnouncement(t *testi
 
 	t.Run("environment", func(t *testing.T) {
 		root := t.TempDir()
-		goalSyncMutationGit(t, root, "init", "-q")
 		original := batchOwnerSetenv
 		t.Cleanup(func() { batchOwnerSetenv = original })
 		batchOwnerSetenv = func(string, string) error { return errors.New("injected environment failure") }

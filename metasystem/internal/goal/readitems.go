@@ -134,7 +134,7 @@ func AddReadItems(r VerbRequest, id, label string, texts []string) (PublishResul
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "read-items-add", Targets: []string{id}}, Message: "goal read-items add " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -169,7 +169,7 @@ func AddReadItems(r VerbRequest, id, label string, texts []string) (PublishResul
 			}
 			touchDisplaced(file, r, "read-items-add", []string{id}, displaced)
 			return ackDisplacements(tree, r, []Change{{Path: livePath(id), Content: RenderFile(file)}}), nil
-		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }
 
@@ -181,6 +181,14 @@ type ReadItemClosure struct {
 }
 
 func CloseReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure) (PublishResult, error) {
+	return closeReadItem(r, id, itemID, closure, resolveReadItemCodeCommit)
+}
+
+func resolveReadItemCodeCommit(root, ref string) (string, error) {
+	return gitIn(root, "rev-parse", "--verify", ref+"^{commit}")
+}
+
+func closeReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure, resolveCodeCommit func(root, ref string) (raw string, err error)) (PublishResult, error) {
 	ways := 0
 	for _, present := range []bool{closure.Fixed != nil, closure.Moved != nil, closure.Accepted != nil} {
 		if present {
@@ -194,7 +202,7 @@ func CloseReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure) (P
 	switch {
 	case closure.Fixed != nil:
 		state, reference = ReadItemFixed, strings.TrimSpace(*closure.Fixed)
-		commit, err := gitIn(r.Endpoint.Root, "rev-parse", "--verify", reference+"^{commit}")
+		commit, err := resolveCodeCommit(r.Endpoint.Root, reference)
 		if err != nil || reference == "" {
 			return PublishResult{}, fmt.Errorf("--fixed %q does not resolve to a commit object in this repository", reference)
 		}
@@ -218,7 +226,7 @@ func CloseReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure) (P
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "read-items-close", Targets: requestTargets}, Message: "goal read-items close " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -272,7 +280,7 @@ func CloseReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure) (P
 			touchDisplaced(file, r, "read-items-close", targets, displaced)
 			changes = append(changes, Change{Path: livePath(id), Content: RenderFile(file)})
 			return ackDisplacements(tree, r, changes), nil
-		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }
 
@@ -310,11 +318,15 @@ func refuseOpenReadItems(goalID string, file *GoalFile) error {
 // A concluded record always reports zero open items; an impossible open item
 // beside it is separately and loudly reported as a ledger defect.
 func ReadItemsForRetro(root string) ([]string, bool, error) {
-	tip, present, err := acceptedTipForGates(root)
+	return readItemsForRetro(Endpoint{Root: root})
+}
+
+func readItemsForRetro(e Endpoint) ([]string, bool, error) {
+	tip, present, err := e.repository().Accepted()
 	if err != nil || !present {
 		return nil, present, err
 	}
-	tree, err := loadTree(root, tip)
+	tree, err := loadTreeFor(e, tip)
 	if err != nil {
 		return nil, true, err
 	}

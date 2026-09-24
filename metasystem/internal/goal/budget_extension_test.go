@@ -6,20 +6,24 @@ import (
 	"time"
 )
 
-func budgetExtensionBed(t *testing.T) (string, VerbRequest, BudgetExtensionOffer, uint64) {
+func budgetExtensionEndpointBed(t *testing.T) (Endpoint, VerbRequest, BudgetExtensionOffer, uint64) {
 	t.Helper()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
-	req := verbReq(root, "01J5X00000000000000000EX01", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	return budgetExtensionSetup(t, endpoint)
+}
+
+func budgetExtensionSetup(t *testing.T, endpoint Endpoint) (Endpoint, VerbRequest, BudgetExtensionOffer, uint64) {
+	t.Helper()
+	req := verbReqFor(endpoint, "01J5X00000000000000000EX01", "mac-a")
 	opened, err := Open(req, "earned-raise", "Ship the bounded change.", OriginMain, "Implement it.")
 	if err != nil || opened.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", opened, err)
 	}
-	claimed, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000EX02", "mac-a"), "earned-raise", testBudget())
+	claimed, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000EX02", "mac-a"), "earned-raise", testBudget())
 	if err != nil || claimed.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", claimed, err)
 	}
-	tree, err := loadTree(root, claimed.Tip)
+	tree, err := loadTreeFor(endpoint, claimed.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,19 +33,27 @@ func budgetExtensionBed(t *testing.T) (string, VerbRequest, BudgetExtensionOffer
 		EvidenceAt: "2026-08-20T21:30:00Z", AttemptLimitFrom: 4, AttemptLimitTo: 14,
 		ReservedJobMinutesFrom: 240, ReservedJobMinutesTo: 1440,
 	}
-	extend := verbReq(root, "01J5X00000000000000000EX03", "mac-a")
+	extend := verbReqFor(endpoint, "01J5X00000000000000000EX03", "mac-a")
 	extend.Now = time.Date(2026, 8, 20, 22, 5, 0, 0, time.UTC)
-	return root, extend, offer, revision
+	return endpoint, extend, offer, revision
+}
+
+func budgetExtensionBed(t *testing.T) (string, VerbRequest, BudgetExtensionOffer, uint64) {
+	t.Helper()
+	_, root, _ := twoClones(t)
+	seedLedger(t, root)
+	endpoint, request, offer, revision := budgetExtensionSetup(t, endpointFor(root))
+	return endpoint.Root, request, offer, revision
 }
 
 func TestExtendBudgetRaisesOnlyConsumptionMembersAndWritesMarker(t *testing.T) {
 	t.Parallel()
-	root, req, offer, claimRevision := budgetExtensionBed(t)
+	endpoint, req, offer, claimRevision := budgetExtensionEndpointBed(t)
 	result, err := ExtendBudget(req, "earned-raise", offer)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("extend budget: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,13 +99,13 @@ func TestExtendBudgetRaisesOnlyConsumptionMembersAndWritesMarker(t *testing.T) {
 
 func TestExtendBudgetAcceptsApprovalEarlierInTheSameSecond(t *testing.T) {
 	t.Parallel()
-	root, req, offer, _ := budgetExtensionBed(t)
+	endpoint, req, offer, _ := budgetExtensionEndpointBed(t)
 	req.Now = time.Date(2026, 8, 20, 22, 0, 0, 0, time.UTC)
 	result, err := ExtendBudget(req, "earned-raise", offer)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("same-second extension: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +120,7 @@ func TestExtendBudgetAcceptsApprovalEarlierInTheSameSecond(t *testing.T) {
 
 func TestExtendBudgetRecoveryReplaysJournaledOffer(t *testing.T) {
 	t.Parallel()
-	root, req, offer, _ := budgetExtensionBed(t)
+	endpoint, req, offer, _ := budgetExtensionEndpointBed(t)
 	publish := extendBudgetRequest(req, "earned-raise", offer)
 	entry := Entry{Opid: publish.Opid, Machine: req.Actor.Machine, Lineage: req.Actor.Lineage, Intent: publish.Intent}
 	rebuilt, err := requestForEntry(req.Endpoint, entry)
@@ -119,16 +131,91 @@ func TestExtendBudgetRecoveryReplaysJournaledOffer(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("replayed extension: %+v %v", result, err)
 	}
-	tree, err := loadTree(root, result.Tip)
+	tree, err := loadTreeFor(endpoint, result.Tip)
 	if err != nil || tree.Live["earned-raise"].BudgetExtension == nil ||
 		tree.Live["earned-raise"].BudgetExtension.EvidenceID != offer.EvidenceID {
 		t.Fatalf("recovery lost the journaled offer: marker=%+v err=%v", tree.Live["earned-raise"].BudgetExtension, err)
+	}
+
+	for _, scenario := range []struct {
+		name       string
+		opid       string
+		invalidTip bool
+	}{
+		{name: "sighted push advances accepted", opid: "fake-recovery-valid"},
+		{name: "invalid canonical tip refuses accepted advancement", opid: "fake-recovery-invalid", invalidTip: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			endpoint, client := fakeGoalEndpoint(t)
+			previousTip := acceptedTipForEndpoint(t, endpoint)
+			opid := scenario.opid
+			published, err := Publish(endpoint, fakeRootPublishRequest(endpoint, opid))
+			if err != nil || published.Outcome != OutcomeConfirmed {
+				t.Fatalf("publish recovered operation: %+v %v", published, err)
+			}
+			entry, err := ReadEntry(endpoint.Root, opid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry.Phase = PhasePushed
+			entry.Outcome = ""
+			entry.TerminalAt = ""
+			if err := writeEntry(endpoint.Root, entry); err != nil {
+				t.Fatal(err)
+			}
+
+			canonicalTip := published.Tip
+			if scenario.invalidTip {
+				invalid, err := client.Build("invalid-goal-bytes", canonicalTip,
+					[]Change{{Path: goalsPrefix + "backlog.md", Content: []byte("invalid goal root\n")}}, "invalid canonical goal")
+				if err != nil {
+					t.Fatal(err)
+				}
+				outcome, err := client.Publish(canonicalTip, invalid)
+				if err != nil || outcome != CASLanded {
+					t.Fatalf("publish invalid canonical tip: %s %v", outcome, err)
+				}
+				canonicalTip = invalid
+			}
+			client.store.mu.Lock()
+			client.accepted = previousTip
+			buildsBefore := client.store.serial
+			client.store.mu.Unlock()
+			if got := acceptedTipForEndpoint(t, endpoint); got != previousTip {
+				t.Fatalf("lost-acknowledgment fixture accepted=%s, want %s", got, previousTip)
+			}
+
+			reports, err := Recover(endpoint)
+			if err != nil || len(reports) != 1 || reports[0].Opid != opid || reports[0].Action != ActionConfirm {
+				t.Fatalf("sighted operation was not confirmed: reports=%+v err=%v", reports, err)
+			}
+			terminal, err := ReadEntry(endpoint.Root, opid)
+			if err != nil || terminal.Phase != PhaseTerminal || terminal.Outcome != OutcomeConfirmed {
+				t.Fatalf("recovery journal not terminal: %+v err=%v", terminal, err)
+			}
+			client.store.mu.Lock()
+			gotTip, buildsAfter := client.store.canonical, client.store.serial
+			client.store.mu.Unlock()
+			if gotTip != canonicalTip || buildsAfter != buildsBefore {
+				t.Fatalf("recovery rebuilt or moved canonical history: tip=%s want=%s builds=%d want=%d",
+					gotTip, canonicalTip, buildsAfter, buildsBefore)
+			}
+			accepted := acceptedTipForEndpoint(t, endpoint)
+			if scenario.invalidTip {
+				if accepted != previousTip || !strings.Contains(reports[0].Detail, "accepted NOT advanced (the tip does not validate)") ||
+					!strings.Contains(reports[0].Detail, "the ledger tree at "+canonicalTip+" does not validate") {
+					t.Fatalf("invalid canonical tip advanced accepted or hid validation refusal: accepted=%s report=%+v", accepted, reports[0])
+				}
+			} else if accepted != canonicalTip || reports[0].Detail != "confirmed on the canonical tip" {
+				t.Fatalf("validated canonical tip did not advance accepted: accepted=%s want=%s report=%+v", accepted, canonicalTip, reports[0])
+			}
+		})
 	}
 }
 
 func TestBudgetExtensionMarkerSurvivesClaimLifecycle(t *testing.T) {
 	t.Parallel()
-	root, req, offer, _ := budgetExtensionBed(t)
+	endpoint, req, offer, _ := budgetExtensionEndpointBed(t)
 	extended, err := ExtendBudget(req, "earned-raise", offer)
 	if err != nil || extended.Outcome != OutcomeConfirmed {
 		t.Fatalf("extend: %+v %v", extended, err)
@@ -142,7 +229,7 @@ func TestBudgetExtensionMarkerSurvivesClaimLifecycle(t *testing.T) {
 	markerAt := req.stamp()
 	assertLiveMarker := func(tip string) {
 		t.Helper()
-		tree, readErr := loadTree(root, tip)
+		tree, readErr := loadTreeFor(endpoint, tip)
 		if readErr != nil || tree.Live["earned-raise"] == nil || tree.Live["earned-raise"].BudgetExtension == nil ||
 			tree.Live["earned-raise"].BudgetExtension.At != markerAt {
 			t.Fatalf("live marker was lost: goal=%+v err=%v", tree.Live["earned-raise"], readErr)
@@ -162,7 +249,7 @@ func TestBudgetExtensionMarkerSurvivesClaimLifecycle(t *testing.T) {
 	if err != nil || done.Outcome != OutcomeConfirmed {
 		t.Fatalf("done: %+v %v", done, err)
 	}
-	tree, err := loadTree(root, done.Tip)
+	tree, err := loadTreeFor(endpoint, done.Tip)
 	if err != nil || tree.Done["earned-raise"].BudgetExtension == nil {
 		t.Fatalf("archived parent lost marker: %+v %v", tree.Done["earned-raise"], err)
 	}
@@ -171,7 +258,7 @@ func TestBudgetExtensionMarkerSurvivesClaimLifecycle(t *testing.T) {
 		t.Fatalf("reopen: %+v %v", reopened, err)
 	}
 	assertLiveMarker(reopened.Tip)
-	tree, err = loadTree(root, reopened.Tip)
+	tree, err = loadTreeFor(endpoint, reopened.Tip)
 	if err != nil || tree.Live["earned-raise"].Budget != nil || tree.Live["earned-raise"].Approved != nil {
 		t.Fatalf("reopen lifecycle shape changed: %+v %v", tree.Live["earned-raise"], err)
 	}
@@ -179,7 +266,7 @@ func TestBudgetExtensionMarkerSurvivesClaimLifecycle(t *testing.T) {
 
 func TestBudgetExtensionMarkerSurvivesHumanActsStealAndSplit(t *testing.T) {
 	t.Parallel()
-	root, req, offer, _ := budgetExtensionBed(t)
+	endpoint, req, offer, _ := budgetExtensionEndpointBed(t)
 	extended, err := ExtendBudget(req, "earned-raise", offer)
 	if err != nil || extended.Outcome != OutcomeConfirmed {
 		t.Fatalf("extend: %+v %v", extended, err)
@@ -196,7 +283,7 @@ func TestBudgetExtensionMarkerSurvivesHumanActsStealAndSplit(t *testing.T) {
 	}
 	assertMarker := func(tip string, archived bool) *GoalFile {
 		t.Helper()
-		tree, readErr := loadTree(root, tip)
+		tree, readErr := loadTreeFor(endpoint, tip)
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
@@ -220,7 +307,7 @@ func TestBudgetExtensionMarkerSurvivesHumanActsStealAndSplit(t *testing.T) {
 
 	current := Budget{ElapsedLimit: "2h", AttemptLimit: 3, ReservedJobMinutesLimit: 180, ActiveJobLimit: 1, ReviewRoundLimit: 3}
 	set := act("01J5X00000000000000000EY02", 2, true)
-	setResult, err := SetBudgetApproved(set, "earned-raise", current, testHumanAuthority(t, root, set.Now))
+	setResult, err := SetBudgetApproved(set, "earned-raise", current, testHumanAuthority(t, endpoint.Root, set.Now))
 	if err != nil || setResult.Outcome != OutcomeConfirmed {
 		t.Fatalf("set-budget: %+v %v", setResult, err)
 	}
@@ -229,7 +316,7 @@ func TestBudgetExtensionMarkerSurvivesHumanActsStealAndSplit(t *testing.T) {
 	}
 
 	unapprove := act("01J5X00000000000000000EY03", 3, true)
-	unapproved, err := Unapprove(unapprove, "earned-raise", "reconsider the next member", testHumanAuthority(t, root, unapprove.Now))
+	unapproved, err := Unapprove(unapprove, "earned-raise", "reconsider the next member", testHumanAuthority(t, endpoint.Root, unapprove.Now))
 	if err != nil || unapproved.Outcome != OutcomeConfirmed {
 		t.Fatalf("unapprove: %+v %v", unapproved, err)
 	}
@@ -237,13 +324,13 @@ func TestBudgetExtensionMarkerSurvivesHumanActsStealAndSplit(t *testing.T) {
 		t.Fatalf("unapprove retained approval state: %+v", file)
 	}
 	unpark := act("01J5X00000000000000000EY04", 4, true)
-	unpark.Authority = testTerminalAuthority(t, root, unpark.Now)
+	unpark.Authority = testTerminalAuthority(t, endpoint.Root, unpark.Now)
 	unparked, err := Unpark(unpark, "earned-raise")
 	if err != nil || unparked.Outcome != OutcomeConfirmed {
 		t.Fatalf("unpark: %+v %v", unparked, err)
 	}
 	approve := act("01J5X00000000000000000EY05", 5, true)
-	approved, err := Approve(approve, []string{"earned-raise"}, &current, testHumanAuthority(t, root, approve.Now))
+	approved, err := Approve(approve, []string{"earned-raise"}, &current, testHumanAuthority(t, endpoint.Root, approve.Now))
 	if err != nil || approved.Outcome != OutcomeConfirmed {
 		t.Fatalf("approve after marker: %+v %v", approved, err)
 	}
@@ -261,7 +348,7 @@ func TestBudgetExtensionMarkerSurvivesHumanActsStealAndSplit(t *testing.T) {
 		t.Fatalf("split: %+v %v", split, err)
 	}
 	assertMarker(split.Tip, true)
-	tree, err := loadTree(root, split.Tip)
+	tree, err := loadTreeFor(endpoint, split.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}

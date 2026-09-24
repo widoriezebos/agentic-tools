@@ -53,6 +53,10 @@ func (v SliceAdmission) Refused() bool { return v.Refusal != "" }
 // EvaluateSliceAdmission applies the configured norm and proves any supplied
 // exception against the two durable places where a human can leave the word.
 func EvaluateSliceAdmission(repoRoot string, capMinutes uint64, approvedRef, goalID string, goalRevision uint64) (SliceAdmission, error) {
+	return evaluateSliceAdmissionWithReads(repoRoot, capMinutes, approvedRef, goalID, goalRevision, concreteGoalAdmissionReads())
+}
+
+func evaluateSliceAdmissionWithReads(repoRoot string, capMinutes uint64, approvedRef, goalID string, goalRevision uint64, reads goalAdmissionReads) (SliceAdmission, error) {
 	norm, err := config.SliceNormHours(filepath.Join(repoRoot, "metasystem.conf"))
 	if err != nil {
 		return SliceAdmission{}, err
@@ -69,7 +73,7 @@ func EvaluateSliceAdmission(repoRoot string, capMinutes uint64, approvedRef, goa
 			verdict.Refusal = "SLICE_CAP_REFUSED: --approved-ref requires this slice's goal id and positive accepted revision"
 			return verdict, nil
 		}
-		approval, err := recordedHumanApproval(repoRoot, approvedRef, goalID)
+		approval, err := recordedHumanApprovalWithReads(repoRoot, approvedRef, goalID, reads)
 		if err != nil {
 			return verdict, err
 		}
@@ -107,6 +111,10 @@ func EvaluateSliceAdmission(repoRoot string, capMinutes uint64, approvedRef, goa
 }
 
 func recordedHumanApproval(repoRoot, ref, goalID string) (recordedSliceApproval, error) {
+	return recordedHumanApprovalWithReads(repoRoot, ref, goalID, concreteGoalAdmissionReads())
+}
+
+func recordedHumanApprovalWithReads(repoRoot, ref, goalID string, reads goalAdmissionReads) (recordedSliceApproval, error) {
 	if rulingApprovalRef.MatchString(ref) {
 		data, err := os.ReadFile(filepath.Join(repoRoot, "memory", "rulings.md"))
 		if os.IsNotExist(err) {
@@ -128,10 +136,10 @@ func recordedHumanApproval(repoRoot, ref, goalID string) (recordedSliceApproval,
 		}
 		return recordedSliceApproval{}, nil
 	}
-	if !goal.NewWorld(repoRoot) {
+	if !reads.NewWorld(repoRoot) {
 		return recordedSliceApproval{}, nil
 	}
-	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	endpoint, err := reads.ResolveEndpoint(repoRoot)
 	if err != nil {
 		return recordedSliceApproval{}, err
 	}

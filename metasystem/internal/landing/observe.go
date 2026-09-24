@@ -101,13 +101,48 @@ type Observation struct {
 	frozenTarget   string
 }
 
+// observationReader supplies the tree facts used by declaration and register
+// carriage observations. The installation root is carried separately because
+// ownership depends on the filesystem layout around it.
+type observationReader interface {
+	HeadTree() (string, error)
+	Diff(string, string) ([]byte, error)
+	ChangedPaths(string, string) ([]string, error)
+	FileAt(string, string) ([]byte, bool, error)
+	Entries(string, []string) (map[string]gittree.Entry, error)
+	Prefix() (string, error)
+}
+
+type observationFacts struct {
+	reader               observationReader
+	apply                func(string, []byte) (string, error)
+	installation         string
+	ownerForInstallation func(string, string) (stateroot.Ownership, string, error)
+	singleParent         func(string) (string, error)
+	treeOf               func(string) (string, error)
+}
+
+func defaultObservationFacts(root string) observationFacts {
+	workspace := gittree.Workspace{Dir: root}
+	return observationFacts{
+		reader: workspace, installation: root,
+		apply:                workspace.Apply,
+		ownerForInstallation: stateroot.OwnerForInstallation,
+		singleParent:         workspace.SingleParent, treeOf: workspace.TreeOf,
+	}
+}
+
 // Observe evaluates one prospective landing. The caller enforces refusing
 // outcomes only for agent commits; human commits stay sovereign.
 func Observe(params ObserveParams) Observation {
+	return observeWithFacts(params, defaultObservationFacts(params.RepoRoot))
+}
+
+func observeWithFacts(params ObserveParams, facts observationFacts) Observation {
 	if params.Carried != "" {
 		return observeCarried(params)
 	}
-	observation := observe(params)
+	observation := observeWithReader(params, facts)
 	if observation.frozenTarget != "" && recertifiedTargetMoved(gittree.Workspace{Dir: params.RepoRoot}, observation.frozenTarget) {
 		moved := refuse("chain-recertification-target-moved", observation.Provenance)
 		moved.Detail = "target-commit"
@@ -117,10 +152,14 @@ func Observe(params ObserveParams) Observation {
 }
 
 func observe(params ObserveParams) Observation {
+	return observeWithReader(params, defaultObservationFacts(params.RepoRoot))
+}
+
+func observeWithReader(params ObserveParams, facts observationFacts) Observation {
 	if !treeOID.MatchString(params.CandidateTree) {
 		return wouldRefuse("malformed-candidate-tree", "none change=unknown")
 	}
-	change, err := changeDigest(params.RepoRoot, params.CandidateTree)
+	change, err := changeDigestWithReader(facts.reader, params.CandidateTree)
 	if err != nil {
 		return wouldRefuse("candidate-tree-unreadable", "none change=unknown")
 	}
@@ -154,12 +193,12 @@ func observe(params ObserveParams) Observation {
 		return wouldRefuse("conflicting-declarations", "invalid change="+change)
 	}
 	if params.Chain != "" {
-		return observeChain(params, change)
+		return observeChainWithFacts(params, change, facts)
 	}
 	if params.Attested != "" {
 		return observeAttested(params, change)
 	}
-	return observeDirectFix(params, change)
+	return observeDirectFixWithFacts(params, change, facts)
 }
 
 // candidatePathPolicy enforces the never-carried path and record laws before
@@ -322,7 +361,10 @@ func humanCarriedRiskCommit(finding string) (string, bool) {
 }
 
 func changeDigest(root, candidateTree string) (string, error) {
-	workspace := gittree.Workspace{Dir: root}
+	return changeDigestWithReader(gittree.Workspace{Dir: root}, candidateTree)
+}
+
+func changeDigestWithReader(workspace observationReader, candidateTree string) (string, error) {
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
 		return "", err
@@ -336,6 +378,10 @@ func changeDigest(root, candidateTree string) (string, error) {
 }
 
 func observeChain(params ObserveParams, change string) (observation Observation) {
+	return observeChainWithFacts(params, change, defaultObservationFacts(params.RepoRoot))
+}
+
+func observeChainWithFacts(params ObserveParams, change string, facts observationFacts) (observation Observation) {
 	frozenTargetCommit, frozenTargetTree := "", ""
 	var observedGoalRevision uint64
 	goalFree := false
@@ -476,13 +522,13 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 			observation.Detail = outputErr.Error()
 			return observation
 		}
-		certifiedDigest, extraPaths, err = bindCertifiedChange(params.RepoRoot, params.CandidateTree, output)
+		certifiedDigest, extraPaths, err = bindCertifiedChangeWithFacts(facts, params.CandidateTree, output)
 		if err != nil {
 			return wouldRefuse("chain-output-mismatch", provenance)
 		}
 		provenance = fmt.Sprintf("chain=%s change=%s certified-change=%s", params.Chain, change, certifiedDigest)
 	}
-	workspace := gittree.Workspace{Dir: params.RepoRoot}
+	workspace := facts.reader
 	baseTree := frozenTargetTree
 	if baseTree == "" {
 		baseTree, err = workspace.HeadTree()
@@ -507,7 +553,7 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 	if err != nil {
 		return wouldRefuse("candidate-tree-unreadable", provenance)
 	}
-	resolved, err := resolvePathClasses(workspace, classes, changedPaths)
+	resolved, err := resolvePathClassesWithFacts(facts, classes, changedPaths)
 	if err != nil {
 		return wouldRefuse("register-carriage-policy-unreadable", provenance)
 	}
@@ -538,10 +584,10 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 		if goalFree {
 			provenance += " goal-free"
 		}
-		if _, err := registerCarriage(params.RepoRoot, params.CandidateTree, extraPaths, params.Goal, params.Actor, 0); err != nil {
+		if _, err := registerCarriageWithFacts(facts, params.CandidateTree, extraPaths, params.Goal, params.Actor, 0); err != nil {
 			return wouldRefuseFromCarriage(err, provenance)
 		}
-		if frozenTargetCommit != "" && recertifiedTargetMoved(workspace, frozenTargetCommit) {
+		if frozenTargetCommit != "" && recertifiedTargetMoved(gittree.Workspace{Dir: params.RepoRoot}, frozenTargetCommit) {
 			observation := refuse("chain-recertification-target-moved", provenance)
 			observation.Detail = "target-commit"
 			return observation
@@ -550,7 +596,7 @@ func observeChain(params ObserveParams, change string) (observation Observation)
 		observation.VerdictTrailer = "pass bar=a carriage=register-carriage"
 		return observation
 	}
-	if frozenTargetCommit != "" && recertifiedTargetMoved(workspace, frozenTargetCommit) {
+	if frozenTargetCommit != "" && recertifiedTargetMoved(gittree.Workspace{Dir: params.RepoRoot}, frozenTargetCommit) {
 		observation := refuse("chain-recertification-target-moved", provenance)
 		observation.Detail = "target-commit"
 		return observation
@@ -866,7 +912,9 @@ func chainRecordGoalBinding(record map[string]any) (string, uint64, bool, error)
 	return goalID, uint64(revision), true, nil
 }
 
-func goalFreeAt(workspace gittree.Workspace, tree string) bool {
+func goalFreeAt(workspace interface {
+	FileAt(string, string) ([]byte, bool, error)
+}, tree string) bool {
 	data, present, err := workspace.FileAt(tree, "plans/goals/backlog.md")
 	if err != nil || !present {
 		return false
@@ -880,12 +928,16 @@ func goalFreeAt(workspace gittree.Workspace, tree string) bool {
 // paths. Unrelated base movement and bundled carriage paths are outside that
 // digest; a changed certified blob, mode, addition, or deletion changes it.
 func bindCertifiedChange(root, candidateTree string, output certifiedOutput) (string, []string, error) {
-	workspace := gittree.Workspace{Dir: root}
+	return bindCertifiedChangeWithFacts(defaultObservationFacts(root), candidateTree, output)
+}
+
+func bindCertifiedChangeWithFacts(facts observationFacts, candidateTree string, output certifiedOutput) (string, []string, error) {
+	workspace := facts.reader
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
 		return "", nil, err
 	}
-	expectedTree, err := workspace.Apply(baseTree, output.patch)
+	expectedTree, err := facts.apply(baseTree, output.patch)
 	if err != nil {
 		return "", nil, err
 	}
@@ -928,7 +980,7 @@ func bindCertifiedChange(root, candidateTree string, output certifiedOutput) (st
 	return want, extras, nil
 }
 
-func pathChangeDigest(workspace gittree.Workspace, fromTree, toTree string, paths []string) (string, error) {
+func pathChangeDigest(workspace observationReader, fromTree, toTree string, paths []string) (string, error) {
 	ordered := append([]string(nil), paths...)
 	sort.Strings(ordered)
 	before, err := workspace.Entries(fromTree, ordered)
@@ -1007,7 +1059,11 @@ type landingClassManifest struct {
 }
 
 func registerCarriage(root, candidateTree string, changedPaths []string, goalID, actor string, want uint64) (*goal.GoalFile, error) {
-	workspace := gittree.Workspace{Dir: root}
+	return registerCarriageWithFacts(defaultObservationFacts(root), candidateTree, changedPaths, goalID, actor, want)
+}
+
+func registerCarriageWithFacts(facts observationFacts, candidateTree string, changedPaths []string, goalID, actor string, want uint64) (*goal.GoalFile, error) {
+	workspace := facts.reader
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
 		return nil, err
@@ -1016,7 +1072,7 @@ func registerCarriage(root, candidateTree string, changedPaths []string, goalID,
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := resolvePathClasses(workspace, classes, changedPaths)
+	resolved, err := resolvePathClassesWithFacts(facts, classes, changedPaths)
 	if err != nil {
 		return nil, &carriageError{code: "register-carriage-policy-unreadable", err: err}
 	}
@@ -1042,6 +1098,11 @@ func registerCarriage(root, candidateTree string, changedPaths []string, goalID,
 }
 
 func resolvePathClasses(workspace gittree.Workspace, classes *pathclass.Manifest, changedPaths []string) (map[string]pathclass.Class, error) {
+	return resolvePathClassesWithFacts(defaultObservationFacts(workspace.Dir), classes, changedPaths)
+}
+
+func resolvePathClassesWithFacts(facts observationFacts, classes *pathclass.Manifest, changedPaths []string) (map[string]pathclass.Class, error) {
+	workspace := facts.reader
 	prefix, err := workspace.Prefix()
 	if err != nil {
 		return nil, err
@@ -1049,7 +1110,7 @@ func resolvePathClasses(workspace gittree.Workspace, classes *pathclass.Manifest
 	resolved := make(map[string]pathclass.Class, len(changedPaths))
 	for _, changedPath := range changedPaths {
 		repositoryPath := filepath.ToSlash(filepath.Join(filepath.FromSlash(prefix), filepath.FromSlash(changedPath)))
-		ownership, modeText, err := stateroot.OwnerForInstallation(workspace.Dir, repositoryPath)
+		ownership, modeText, err := facts.ownerForInstallation(facts.installation, repositoryPath)
 		if err != nil {
 			return nil, fmt.Errorf("classify landing path %s: %w", changedPath, err)
 		}
@@ -1103,7 +1164,7 @@ func nonBehaviorClassError(resolved map[string]pathclass.Class, changedPaths []s
 	return nil
 }
 
-func heldGoal(workspace gittree.Workspace, baseTree, goalID, actor string, want uint64) (*goal.GoalFile, error) {
+func heldGoal(workspace observationReader, baseTree, goalID, actor string, want uint64) (*goal.GoalFile, error) {
 	data, present, err := workspace.FileAt(baseTree, "plans/goals/"+goalID+".md")
 	if err != nil || !present {
 		return nil, &carriageError{code: "goal-item-not-held", err: fmt.Errorf("goal item %s is not held by %s", goalID, actor)}
@@ -1119,12 +1180,12 @@ func heldGoal(workspace gittree.Workspace, baseTree, goalID, actor string, want 
 	return file, nil
 }
 
-func heldGoalError(workspace gittree.Workspace, baseTree, goalID, actor string, want uint64) error {
+func heldGoalError(workspace observationReader, baseTree, goalID, actor string, want uint64) error {
 	_, err := heldGoal(workspace, baseTree, goalID, actor, want)
 	return err
 }
 
-func recordCarriageError(workspace gittree.Workspace, baseTree, candidateTree string, classes *pathclass.Manifest, changedPath, goalID, actor string) error {
+func recordCarriageError(workspace observationReader, baseTree, candidateTree string, classes *pathclass.Manifest, changedPath, goalID, actor string) error {
 	baseEntries, err := workspace.Entries(baseTree, []string{changedPath})
 	if err != nil {
 		return &carriageError{code: "register-carriage-policy-unreadable", err: err}
@@ -1227,7 +1288,7 @@ func handoffSeat(changedPath string) (string, bool) {
 	return seat, ok && seat != "" && suffix != ""
 }
 
-func longestGoalOwner(workspace gittree.Workspace, baseTree, changedPath string) (string, error) {
+func longestGoalOwner(workspace observationReader, baseTree, changedPath string) (string, error) {
 	if filepath.Dir(changedPath) != "plans" || filepath.Ext(changedPath) != ".md" {
 		return "", nil
 	}
@@ -1249,7 +1310,7 @@ func longestGoalOwner(workspace gittree.Workspace, baseTree, changedPath string)
 	return longest, nil
 }
 
-func loadPathClasses(workspace gittree.Workspace, baseTree string, requireTierOne ...bool) (*pathclass.Manifest, error) {
+func loadPathClasses(workspace observationReader, baseTree string, requireTierOne ...bool) (*pathclass.Manifest, error) {
 	tierOneRequired := len(requireTierOne) > 0 && requireTierOne[0]
 	if err := loadLandingClasses(workspace, baseTree, tierOneRequired); err != nil {
 		return nil, err
@@ -1265,7 +1326,7 @@ func loadPathClasses(workspace gittree.Workspace, baseTree string, requireTierOn
 	return manifest, nil
 }
 
-func loadLandingClasses(workspace gittree.Workspace, baseTree string, requireTierOne bool) error {
+func loadLandingClasses(workspace observationReader, baseTree string, requireTierOne bool) error {
 	manifestBytes, present, err := workspace.FileAt(baseTree, "scripts/agents/landing-classes.json")
 	if err != nil || !present {
 		return &carriageError{code: "register-carriage-policy-unreadable", err: fmt.Errorf("landing class manifest is unreadable")}
@@ -1313,7 +1374,7 @@ func loadLandingClasses(workspace gittree.Workspace, baseTree string, requireTie
 	return nil
 }
 
-func appendOnly(workspace gittree.Workspace, baseTree, candidateTree, changedPath string) error {
+func appendOnly(workspace observationReader, baseTree, candidateTree, changedPath string) error {
 	baseEntries, err := workspace.Entries(baseTree, []string{changedPath})
 	if err != nil {
 		return err
@@ -1350,7 +1411,7 @@ func appendOnly(workspace gittree.Workspace, baseTree, candidateTree, changedPat
 	return nil
 }
 
-func addRulingRowsOnly(workspace gittree.Workspace, baseTree, candidateTree string) error {
+func addRulingRowsOnly(workspace observationReader, baseTree, candidateTree string) error {
 	const rulingsPath = "memory/rulings.md"
 	before, existed, err := workspace.FileAt(baseTree, rulingsPath)
 	if err != nil {
@@ -1397,10 +1458,14 @@ func rulingRowID(line string) (string, bool) {
 }
 
 func observeDirectFix(params ObserveParams, change string) Observation {
+	return observeDirectFixWithFacts(params, change, defaultObservationFacts(params.RepoRoot))
+}
+
+func observeDirectFixWithFacts(params ObserveParams, change string, facts observationFacts) Observation {
 	switch params.DirectFix {
 	case "register-carriage":
 		provenance := "direct-fix class=register-carriage change=" + change
-		workspace := gittree.Workspace{Dir: params.RepoRoot}
+		workspace := facts.reader
 		baseTree, err := workspace.HeadTree()
 		if err != nil {
 			return wouldRefuse("register-carriage-policy-unreadable", provenance)
@@ -1417,7 +1482,7 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 			}
 			provenance += " goal-free"
 		}
-		held, err := registerCarriage(params.RepoRoot, params.CandidateTree, paths, params.Goal, params.Actor, 0)
+		held, err := registerCarriageWithFacts(facts, params.CandidateTree, paths, params.Goal, params.Actor, 0)
 		if err != nil {
 			return wouldRefuseFromCarriage(err, provenance)
 		}
@@ -1431,7 +1496,7 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 		if !treeOID.MatchString(params.RevertOf) {
 			return wouldRefuse("malformed-revert-commit", provenance)
 		}
-		workspace := gittree.Workspace{Dir: params.RepoRoot}
+		workspace := facts.reader
 		baseTree, err := workspace.HeadTree()
 		classes, classErr := loadPathClasses(workspace, baseTree)
 		if err != nil || classErr != nil {
@@ -1456,7 +1521,7 @@ func observeDirectFix(params ObserveParams, change string) Observation {
 		if goalFree {
 			provenance += " goal-free"
 		}
-		if err := exactRevert(params.RepoRoot, params.CandidateTree, params.RevertOf, classes, params.Goal, params.Actor); err != nil {
+		if err := exactRevertWithFacts(facts, params.CandidateTree, params.RevertOf, classes, params.Goal, params.Actor); err != nil {
 			return wouldRefuseFromExactRevert(err, provenance)
 		}
 		result := pass(BarDirectFix, "exact-revert", provenance)
@@ -1502,29 +1567,33 @@ func exactRevertRefusalCode(err error) string {
 }
 
 func exactRevert(root, candidateTree, revertOf string, classes *pathclass.Manifest, goalID, actor string) error {
-	workspace := gittree.Workspace{Dir: root}
+	return exactRevertWithFacts(defaultObservationFacts(root), candidateTree, revertOf, classes, goalID, actor)
+}
+
+func exactRevertWithFacts(facts observationFacts, candidateTree, revertOf string, classes *pathclass.Manifest, goalID, actor string) error {
+	workspace := facts.reader
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
 		return err
 	}
 	candidatePaths, candidateErr := workspace.ChangedPaths(baseTree, candidateTree)
-	parent, err := workspace.SingleParent(revertOf)
+	parent, err := facts.singleParent(revertOf)
 	if err != nil {
-		return exactRevertPolicyError(workspace, baseTree, classes, candidatePaths, nil, goalID, actor, err)
+		return exactRevertPolicyErrorWithFacts(facts, baseTree, classes, candidatePaths, nil, goalID, actor, err)
 	}
-	preimageTree, err := workspace.TreeOf(parent)
+	preimageTree, err := facts.treeOf(parent)
 	if err != nil {
-		return exactRevertPolicyError(workspace, baseTree, classes, candidatePaths, nil, goalID, actor, err)
+		return exactRevertPolicyErrorWithFacts(facts, baseTree, classes, candidatePaths, nil, goalID, actor, err)
 	}
-	postimageTree, err := workspace.TreeOf(revertOf)
+	postimageTree, err := facts.treeOf(revertOf)
 	if err != nil {
-		return exactRevertPolicyError(workspace, baseTree, classes, candidatePaths, nil, goalID, actor, err)
+		return exactRevertPolicyErrorWithFacts(facts, baseTree, classes, candidatePaths, nil, goalID, actor, err)
 	}
 	targetPaths, err := workspace.ChangedPaths(preimageTree, postimageTree)
 	if err != nil || len(targetPaths) == 0 {
-		return exactRevertPolicyError(workspace, baseTree, classes, candidatePaths, targetPaths, goalID, actor, fmt.Errorf("reverted commit has no decidable changed paths"))
+		return exactRevertPolicyErrorWithFacts(facts, baseTree, classes, candidatePaths, targetPaths, goalID, actor, fmt.Errorf("reverted commit has no decidable changed paths"))
 	}
-	if err := exactRevertPolicyError(workspace, baseTree, classes, candidatePaths, targetPaths, goalID, actor, nil); err != nil {
+	if err := exactRevertPolicyErrorWithFacts(facts, baseTree, classes, candidatePaths, targetPaths, goalID, actor, nil); err != nil {
 		return err
 	}
 	if candidateErr != nil {
@@ -1561,8 +1630,12 @@ func exactRevert(root, candidateTree, revertOf string, classes *pathclass.Manife
 }
 
 func exactRevertPolicyError(workspace gittree.Workspace, baseTree string, classes *pathclass.Manifest, candidatePaths, targetPaths []string, goalID, actor string, fallback error) error {
+	return exactRevertPolicyErrorWithFacts(defaultObservationFacts(workspace.Dir), baseTree, classes, candidatePaths, targetPaths, goalID, actor, fallback)
+}
+
+func exactRevertPolicyErrorWithFacts(facts observationFacts, baseTree string, classes *pathclass.Manifest, candidatePaths, targetPaths []string, goalID, actor string, fallback error) error {
 	paths := exactRevertPaths(candidatePaths, targetPaths)
-	resolved, err := resolvePathClasses(workspace, classes, paths)
+	resolved, err := resolvePathClassesWithFacts(facts, classes, paths)
 	if err != nil {
 		return &exactRevertError{code: "direct-fix-policy-unreadable", err: err}
 	}
@@ -1574,7 +1647,7 @@ func exactRevertPolicyError(workspace gittree.Workspace, baseTree string, classe
 		return err
 	}
 	if goalID != "" {
-		if err := heldGoalError(workspace, baseTree, goalID, actor, 0); err != nil {
+		if err := heldGoalError(facts.reader, baseTree, goalID, actor, 0); err != nil {
 			var carriage *carriageError
 			if errors.As(err, &carriage) {
 				return &exactRevertError{code: carriage.code, err: carriage.err}
@@ -1792,7 +1865,7 @@ func AdoptionRulings(sourceRoot, targetRoot string) ([]byte, error) {
 // carriedReceiptLedger drops the receipt ledger from a chain landing's
 // uncarried extras when its change is a pure append; any other change to it
 // stays an extra and is refused as before.
-func carriedReceiptLedger(workspace gittree.Workspace, baseTree, candidateTree string, extras []string) []string {
+func carriedReceiptLedger(workspace observationReader, baseTree, candidateTree string, extras []string) []string {
 	var kept []string
 	for _, extra := range extras {
 		if extra == receiptLedgerPath && appendOnly(workspace, baseTree, candidateTree, extra) == nil {

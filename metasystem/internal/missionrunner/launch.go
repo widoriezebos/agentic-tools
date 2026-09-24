@@ -117,7 +117,7 @@ func (e *Engine) bornEvidence(ledger string) (string, error) {
 // narrower birth evidence: a same-pass failure drops its own staging
 // anchors, so only honest emptiness reaches a retry.
 func (e *Engine) missionAnchorsExist() (bool, error) {
-	stdout, stderr, code := gitCaptured(e.Root, "for-each-ref",
+	stdout, stderr, code := e.wallReads().Git(e.Root, "for-each-ref",
 		"--format=%(refname)", "refs/metasystem/missions/"+e.Mission+"/")
 	if code != 0 {
 		// Only a SUCCESSFUL empty enumeration proves absence; a failed

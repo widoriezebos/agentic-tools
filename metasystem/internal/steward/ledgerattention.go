@@ -81,6 +81,8 @@ type LedgerAttentionReport struct {
 var ledgerAttentionFetchBudget = 60 * time.Second
 var ledgerAttentionWriter = atomicfile.WriteText
 
+type ledgerAttentionStateWriter func(path, contents, anchor string) (bool, error)
+
 func ledgerAttentionStatePath(repoRoot string) string {
 	return filepath.Join(repoRoot, "artifacts", "agents", "steward", "ledger-attention.json")
 }
@@ -111,12 +113,16 @@ func loadLedgerAttentionState(repoRoot string) (ledgerAttentionState, bool, erro
 }
 
 func saveLedgerAttentionState(repoRoot string, state ledgerAttentionState) error {
+	return saveLedgerAttentionStateWithWriter(repoRoot, state, ledgerAttentionWriter)
+}
+
+func saveLedgerAttentionStateWithWriter(repoRoot string, state ledgerAttentionState, writer ledgerAttentionStateWriter) error {
 	state.Schema = ledgerAttentionStateSchema
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
-	durable, err := ledgerAttentionWriter(ledgerAttentionStatePath(repoRoot), string(append(data, '\n')), repoRoot)
+	durable, err := writer(ledgerAttentionStatePath(repoRoot), string(append(data, '\n')), repoRoot)
 	if err != nil {
 		return err
 	}
@@ -214,11 +220,15 @@ func confirmedRepairOperationIDs(entries []goal.Entry) []string {
 }
 
 func buildLedgerAttentionStage(repoRoot, machine, before, after string, epoch uint64, at time.Time) (ledgerAttentionStage, error) {
-	entries, err := goal.Entries(repoRoot)
+	return buildLedgerAttentionStageWithRepository(repoRoot, machine, before, after, epoch, at, defaultLedgerAttentionRepository())
+}
+
+func buildLedgerAttentionStageWithRepository(repoRoot, machine, before, after string, epoch uint64, at time.Time, repository *ledgerAttentionRepository) (ledgerAttentionStage, error) {
+	entries, err := repository.Entries(repoRoot)
 	if err != nil {
 		return ledgerAttentionStage{}, err
 	}
-	previousProjection, err := goal.ProjectAt(repoRoot, before)
+	previousProjection, err := repository.ProjectAt(repoRoot, before)
 	if err != nil {
 		return ledgerAttentionStage{}, err
 	}
@@ -226,7 +236,7 @@ func buildLedgerAttentionStage(repoRoot, machine, before, after string, epoch ui
 	if err != nil {
 		return ledgerAttentionStage{}, err
 	}
-	changes, err := goal.LedgerChanges(repoRoot, before, after)
+	changes, err := repository.LedgerChanges(repoRoot, before, after)
 	if err != nil {
 		return ledgerAttentionStage{}, err
 	}
@@ -238,7 +248,7 @@ func buildLedgerAttentionStage(repoRoot, machine, before, after string, epoch ui
 		if !change.Consecutive {
 			stage.TopologyEpoch++
 		}
-		projection, err := goal.ProjectAt(repoRoot, change.Tip)
+		projection, err := repository.ProjectAt(repoRoot, change.Tip)
 		if err != nil {
 			return ledgerAttentionStage{}, err
 		}
@@ -299,13 +309,17 @@ func stateWriteFailureReport(repoRoot string, err error) LedgerAttentionReport {
 }
 
 func failedLedgerAttention(repoRoot string, state ledgerAttentionState, now time.Time, cause error) LedgerAttentionReport {
+	return failedLedgerAttentionWithWriter(repoRoot, state, now, cause, ledgerAttentionWriter)
+}
+
+func failedLedgerAttentionWithWriter(repoRoot string, state ledgerAttentionState, now time.Time, cause error, writer ledgerAttentionStateWriter) LedgerAttentionReport {
 	state.LastAttemptAt = now.UTC().Format(time.RFC3339Nano)
 	state.LastOutcome = "failed"
 	state.LastFailure = cause.Error()
 	if state.FailingSince == "" {
 		state.FailingSince = state.LastAttemptAt
 	}
-	if err := saveLedgerAttentionState(repoRoot, state); err != nil {
+	if err := saveLedgerAttentionStateWithWriter(repoRoot, state, writer); err != nil {
 		return stateWriteFailureReport(repoRoot, err)
 	}
 	report := reportLedgerAttention(state)
@@ -324,10 +338,14 @@ func journalOperationIDs(entries []goal.Entry) []string {
 }
 
 func clearLedgerAttentionFromJournal(repoRoot string, state *ledgerAttentionState) (bool, error) {
+	return clearLedgerAttentionFromJournalWithRepository(repoRoot, state, defaultLedgerAttentionRepository())
+}
+
+func clearLedgerAttentionFromJournalWithRepository(repoRoot string, state *ledgerAttentionState, repository *ledgerAttentionRepository) (bool, error) {
 	if state.RemoteTip == "" || state.RemoteTip == state.ExaminedTip || !state.JournalReady {
 		return false, nil
 	}
-	entries, err := goal.Entries(repoRoot)
+	entries, err := repository.Entries(repoRoot)
 	if err != nil {
 		return false, err
 	}
@@ -339,7 +357,7 @@ func clearLedgerAttentionFromJournal(repoRoot string, state *ledgerAttentionStat
 		if baseline[entry.Opid] || entry.FetchedOid == "" {
 			continue
 		}
-		examined, err := goal.IsAncestor(repoRoot, state.RemoteTip, entry.FetchedOid)
+		examined, err := repository.IsAncestor(repoRoot, state.RemoteTip, entry.FetchedOid)
 		if err != nil {
 			return false, err
 		}
@@ -353,12 +371,16 @@ func clearLedgerAttentionFromJournal(repoRoot string, state *ledgerAttentionStat
 }
 
 func stagedTipRetiredByRepair(repoRoot string, stage *ledgerAttentionStage) (bool, error) {
+	return stagedTipRetiredByRepairWithRepository(repoRoot, stage, defaultLedgerAttentionRepository())
+}
+
+func stagedTipRetiredByRepairWithRepository(repoRoot string, stage *ledgerAttentionStage, repository *ledgerAttentionRepository) (bool, error) {
 	if !stage.RepairBaselineReady {
 		// A stage written before repair baselines existed cannot prove that
 		// its classification still postdates the human's accepted world.
 		return true, nil
 	}
-	entries, err := goal.Entries(repoRoot)
+	entries, err := repository.Entries(repoRoot)
 	if err != nil {
 		return false, err
 	}
@@ -378,12 +400,16 @@ func stagedTipRetiredByRepair(repoRoot string, stage *ledgerAttentionStage) (boo
 }
 
 func recoverLedgerAttentionStage(repoRoot string, state *ledgerAttentionState, accepted string) (bool, error) {
+	return recoverLedgerAttentionStageWithRepository(repoRoot, state, accepted, defaultLedgerAttentionRepository())
+}
+
+func recoverLedgerAttentionStageWithRepository(repoRoot string, state *ledgerAttentionState, accepted string, repository *ledgerAttentionRepository) (bool, error) {
 	if state.Staged == nil {
 		return false, nil
 	}
 	stage := state.Staged
 	if accepted == stage.From {
-		retired, err := stagedTipRetiredByRepair(repoRoot, stage)
+		retired, err := stagedTipRetiredByRepairWithRepository(repoRoot, stage, repository)
 		if err != nil {
 			return false, err
 		}
@@ -391,12 +417,12 @@ func recoverLedgerAttentionStage(repoRoot string, state *ledgerAttentionState, a
 			state.Staged = nil
 			return true, nil
 		}
-		if err := goal.AdvanceAccepted(repoRoot, stage.Tip); err != nil {
+		if err := repository.AdvanceAccepted(repoRoot, stage.Tip); err != nil {
 			return false, err
 		}
 		accepted = stage.Tip
 	}
-	held, err := goal.IsAncestor(repoRoot, stage.Tip, accepted)
+	held, err := repository.IsAncestor(repoRoot, stage.Tip, accepted)
 	if err != nil {
 		return false, err
 	}
@@ -426,132 +452,148 @@ func resetRetiredLedgerAttentionState(state *ledgerAttentionState) {
 }
 
 func recordAcceptedLedgerTransition(repoRoot, machine string, state *ledgerAttentionState, accepted string, now time.Time) error {
+	return recordAcceptedLedgerTransitionWithRepository(repoRoot, machine, state, accepted, now, defaultLedgerAttentionRepository())
+}
+
+func recordAcceptedLedgerTransitionWithRepository(repoRoot, machine string, state *ledgerAttentionState, accepted string, now time.Time, repository *ledgerAttentionRepository) error {
+	return recordAcceptedLedgerTransitionWithRepositoryAndWriter(repoRoot, machine, state, accepted, now, repository, ledgerAttentionWriter)
+}
+
+func recordAcceptedLedgerTransitionWithRepositoryAndWriter(repoRoot, machine string, state *ledgerAttentionState, accepted string, now time.Time, repository *ledgerAttentionRepository, writer ledgerAttentionStateWriter) error {
 	if state.DiffedTip == accepted {
 		return nil
 	}
-	stage, err := buildLedgerAttentionStage(repoRoot, machine, state.DiffedTip, accepted, state.TopologyEpoch, now)
+	stage, err := buildLedgerAttentionStageWithRepository(repoRoot, machine, state.DiffedTip, accepted, state.TopologyEpoch, now, repository)
 	if err != nil {
 		return err
 	}
 	state.Staged = &stage
 	promoteLedgerAttentionStage(state)
-	return saveLedgerAttentionState(repoRoot, *state)
+	return saveLedgerAttentionStateWithWriter(repoRoot, *state, writer)
 }
 
 // RunLedgerAttention fetches and validates the shared ledger, records every
 // surfaced change before the accepted world can outrun it, and never mutates
 // a goal or grants a claim.
 func RunLedgerAttention(repoRoot string, now time.Time) LedgerAttentionReport {
+	return runLedgerAttentionWithRepository(repoRoot, now, defaultLedgerAttentionRepository())
+}
+
+func runLedgerAttentionWithRepository(repoRoot string, now time.Time, repository *ledgerAttentionRepository) LedgerAttentionReport {
+	return runLedgerAttentionWithRepositoryAndWriter(repoRoot, now, repository, ledgerAttentionWriter)
+}
+
+func runLedgerAttentionWithRepositoryAndWriter(repoRoot string, now time.Time, repository *ledgerAttentionRepository, writer ledgerAttentionStateWriter) LedgerAttentionReport {
 	state, _, err := loadLedgerAttentionState(repoRoot)
 	if err != nil {
 		return LedgerAttentionReport{Outcome: "failed", Failure: err.Error(), FailureKind: ledgerAttentionFetchFailed}
 	}
-	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	endpoint, err := repository.ResolveEndpoint(repoRoot)
 	if err != nil {
-		return failedLedgerAttention(repoRoot, state, now, err)
+		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	}
 	state.LastAttemptAt = now.UTC().Format(time.RFC3339Nano)
 	if endpoint.LocalMode() {
 		state.LastOutcome, state.LastFailure, state.FailingSince = "local", "", ""
-		if err := saveLedgerAttentionState(repoRoot, state); err != nil {
+		if err := saveLedgerAttentionStateWithWriter(repoRoot, state, writer); err != nil {
 			return stateWriteFailureReport(repoRoot, err)
 		}
 		return reportLedgerAttention(state)
 	}
 
-	accepted, migrated, err := goal.AcceptedLedgerTip(repoRoot)
+	accepted, migrated, err := repository.AcceptedLedgerTip(repoRoot)
 	if err != nil {
-		return failedLedgerAttention(repoRoot, state, now, err)
+		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	}
 	if !migrated {
 		resetRetiredLedgerAttentionState(&state)
 		state.LastOutcome, state.LastFailure, state.FailingSince = "pre-bootstrap", "", ""
-		if err := saveLedgerAttentionState(repoRoot, state); err != nil {
+		if err := saveLedgerAttentionStateWithWriter(repoRoot, state, writer); err != nil {
 			return stateWriteFailureReport(repoRoot, err)
 		}
 		return reportLedgerAttention(state)
 	}
-	machine, err := goal.ResolveMachine(repoRoot)
+	machine, err := repository.ResolveMachine(repoRoot)
 	if err != nil {
-		return failedLedgerAttention(repoRoot, state, now, err)
+		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	}
 
 	if state.DiffedTip == "" {
-		projection, err := goal.ProjectAt(repoRoot, accepted)
+		projection, err := repository.ProjectAt(repoRoot, accepted)
 		if err != nil {
-			return failedLedgerAttention(repoRoot, state, now, err)
+			return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 		}
 		baseline, err := snapshotLedger(projection, machine)
 		if err != nil {
-			return failedLedgerAttention(repoRoot, state, now, err)
+			return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 		}
 		state.DiffedTip, state.ExaminedTip = accepted, accepted
 		state.Ready, state.Pinned, state.Queue = baseline.Ready, baseline.Pinned, baseline.Queue
-		if err := saveLedgerAttentionState(repoRoot, state); err != nil {
+		if err := saveLedgerAttentionStateWithWriter(repoRoot, state, writer); err != nil {
 			return stateWriteFailureReport(repoRoot, err)
 		}
 	}
 
-	if changed, err := recoverLedgerAttentionStage(repoRoot, &state, accepted); err != nil {
-		return failedLedgerAttention(repoRoot, state, now, err)
+	if changed, err := recoverLedgerAttentionStageWithRepository(repoRoot, &state, accepted, repository); err != nil {
+		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	} else if changed {
-		if err := saveLedgerAttentionState(repoRoot, state); err != nil {
+		if err := saveLedgerAttentionStateWithWriter(repoRoot, state, writer); err != nil {
 			return stateWriteFailureReport(repoRoot, err)
 		}
-		accepted, _, err = goal.AcceptedLedgerTip(repoRoot)
+		accepted, _, err = repository.AcceptedLedgerTip(repoRoot)
 		if err != nil {
-			return failedLedgerAttention(repoRoot, state, now, err)
+			return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 		}
 	}
-	if err := recordAcceptedLedgerTransition(repoRoot, machine, &state, accepted, now); err != nil {
-		return failedLedgerAttention(repoRoot, state, now, err)
+	if err := recordAcceptedLedgerTransitionWithRepositoryAndWriter(repoRoot, machine, &state, accepted, now, repository, writer); err != nil {
+		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	}
-	if cleared, err := clearLedgerAttentionFromJournal(repoRoot, &state); err != nil {
-		return failedLedgerAttention(repoRoot, state, now, err)
+	if cleared, err := clearLedgerAttentionFromJournalWithRepository(repoRoot, &state, repository); err != nil {
+		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	} else if cleared {
-		if err := saveLedgerAttentionState(repoRoot, state); err != nil {
+		if err := saveLedgerAttentionStateWithWriter(repoRoot, state, writer); err != nil {
 			return stateWriteFailureReport(repoRoot, err)
 		}
 	}
 
-	capture, err := goal.CaptureTipBounded(endpoint, ledgerAttentionFetchBudget)
+	capture, err := repository.CaptureTipBounded(endpoint, ledgerAttentionFetchBudget)
 	if err != nil {
-		return failedLedgerAttention(repoRoot, state, now, err)
+		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	}
-	defer goal.CleanupRefs(endpoint, capture.OperationID)
-	if err := goal.SyncModeGate(endpoint, capture.Tip); err != nil {
-		return failedLedgerAttention(repoRoot, state, now, err)
+	defer repository.CleanupRefs(endpoint, capture.OperationID)
+	if err := repository.SyncModeGate(endpoint, capture.Tip); err != nil {
+		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	}
-	accepted, acceptedExists, err := goal.AcceptedLedgerTip(repoRoot)
+	accepted, acceptedExists, err := repository.AcceptedLedgerTip(repoRoot)
 	if err != nil || !acceptedExists {
 		if err == nil {
 			err = fmt.Errorf("the accepted goal ledger disappeared during its attention pass")
 		}
-		return failedLedgerAttention(repoRoot, state, now, err)
+		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	}
-	if err := recordAcceptedLedgerTransition(repoRoot, machine, &state, accepted, now); err != nil {
-		return failedLedgerAttention(repoRoot, state, now, err)
+	if err := recordAcceptedLedgerTransitionWithRepositoryAndWriter(repoRoot, machine, &state, accepted, now, repository, writer); err != nil {
+		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	}
 	if accepted != capture.Tip {
-		if err := goal.AcceptanceGates(repoRoot, accepted, capture.Tip); err != nil {
-			return failedLedgerAttention(repoRoot, state, now, err)
+		if err := repository.AcceptanceGates(repoRoot, accepted, capture.Tip); err != nil {
+			return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 		}
 	}
-	if err := goal.ValidateCommit(repoRoot, capture.Tip); err != nil {
-		return failedLedgerAttention(repoRoot, state, now, err)
+	if err := repository.ValidateCommit(repoRoot, capture.Tip); err != nil {
+		return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 	}
 	advanced := accepted != capture.Tip
 	if advanced {
-		stage, err := buildLedgerAttentionStage(repoRoot, machine, state.DiffedTip, capture.Tip, state.TopologyEpoch, now)
+		stage, err := buildLedgerAttentionStageWithRepository(repoRoot, machine, state.DiffedTip, capture.Tip, state.TopologyEpoch, now, repository)
 		if err != nil {
-			return failedLedgerAttention(repoRoot, state, now, err)
+			return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 		}
 		state.Staged = &stage
-		if err := saveLedgerAttentionState(repoRoot, state); err != nil {
+		if err := saveLedgerAttentionStateWithWriter(repoRoot, state, writer); err != nil {
 			return stateWriteFailureReport(repoRoot, err)
 		}
-		if err := goal.AdvanceAccepted(repoRoot, capture.Tip); err != nil {
-			return failedLedgerAttention(repoRoot, state, now, err)
+		if err := repository.AdvanceAccepted(repoRoot, capture.Tip); err != nil {
+			return failedLedgerAttentionWithWriter(repoRoot, state, now, err, writer)
 		}
 		promoteLedgerAttentionStage(&state)
 	}
@@ -560,7 +602,7 @@ func RunLedgerAttention(repoRoot string, now time.Time) LedgerAttentionReport {
 	state.RemoteTip = capture.Tip
 	if remoteChanged {
 		state.RemoteTipAt = time.Now().UTC().Format(time.RFC3339Nano)
-		entries, entriesErr := goal.Entries(repoRoot)
+		entries, entriesErr := repository.Entries(repoRoot)
 		if entriesErr == nil {
 			state.JournalBaseline = journalOperationIDs(entries)
 			state.JournalReady = true
@@ -570,7 +612,7 @@ func RunLedgerAttention(repoRoot string, now time.Time) LedgerAttentionReport {
 		}
 	}
 	if !state.JournalReady {
-		if entries, entriesErr := goal.Entries(repoRoot); entriesErr == nil {
+		if entries, entriesErr := repository.Entries(repoRoot); entriesErr == nil {
 			state.JournalBaseline = journalOperationIDs(entries)
 			state.JournalReady = true
 		}
@@ -585,7 +627,7 @@ func RunLedgerAttention(repoRoot string, now time.Time) LedgerAttentionReport {
 		state.LastOutcome = "advanced"
 	}
 	state.LastFailure, state.FailingSince = "", ""
-	if err := saveLedgerAttentionState(repoRoot, state); err != nil {
+	if err := saveLedgerAttentionStateWithWriter(repoRoot, state, writer); err != nil {
 		return stateWriteFailureReport(repoRoot, err)
 	}
 	return reportLedgerAttention(state)

@@ -265,7 +265,7 @@ func (e *Engine) concludeVerification(statePath, ledger, turnID string, cycle in
 	// to the acceptance's anchored truth — never a separate reread.
 	provenSHA := ""
 	ledgerPath := filepath.Join(e.missionDir(), "ledger.md")
-	if anchored, current, terr := mission.AnchoredLedgerTruth(e.Root, diskState, ledgerPath); terr == nil {
+	if anchored, current, terr := e.wallReads().LedgerTruth(e.Root, diskState, ledgerPath); terr == nil {
 		if anchored != current {
 			return nil, failf(3, "mission ledger moved between the acceptance anchor and its verification")
 		}
@@ -420,5 +420,5 @@ func (e *Engine) repairTerminalTurnRecords(state map[string]any) error {
 // a failed delete costs nothing.
 func (e *Engine) dropTurnOpenHead() {
 	ref := mission.MissionRefNamespace(e.Mission) + "turn-open-head"
-	gitCaptured(e.Root, "update-ref", "-d", ref)
+	e.wallReads().Git(e.Root, "update-ref", "-d", ref)
 }

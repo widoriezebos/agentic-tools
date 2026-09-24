@@ -111,11 +111,11 @@ func ClaimCadence(r VerbRequest, key CadenceClaimKey, lease time.Duration) (Cade
 	if err != nil {
 		return CadenceClaimResult{}, err
 	}
-	projection, err := ProjectAt(r.Endpoint.Root, result.Tip, r.Now)
+	tree, err := loadTreeFor(r.Endpoint, result.Tip)
 	if err != nil {
 		return CadenceClaimResult{}, err
 	}
-	return classifyCadenceClaim(projection.Tree, key, r.opid(), r.Now, result.Tip)
+	return classifyCadenceClaim(tree, key, r.opid(), r.Now, result.Tip)
 }
 
 // PublishCadence atomically replaces the claim with terminal status and

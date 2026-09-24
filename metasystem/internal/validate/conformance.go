@@ -407,16 +407,10 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 		return r.out, r.errs, 1
 	}
 
-	review := map[string]string{
-		"diffArtifact":   filepath.Base(diffFile),
-		"implementerJob": r.job,
-		"reviewedTree":   reviewedTree,
-	}
-	encoded, err := json.MarshalIndent(review, "", "  ")
+	reviewBytes, err := encodeConformanceReview(diffFile, r.job, reviewedTree)
 	if err != nil {
 		return fail(fmt.Sprintf("conformance failure: %v", err))
 	}
-	reviewBytes := append(encoded, '\n')
 	if reviewExists {
 		existingDiff, diffErr := os.ReadFile(diffFile)
 		if diffErr == nil && bytes.Equal(existingReview, reviewBytes) && bytes.Equal(existingDiff, diff) {
@@ -433,6 +427,19 @@ func (r *conformanceRun) reviewStage(diffFile, reviewFile string) ([]string, []s
 	}
 	r.out = append(r.out, "reviewedTree="+reviewedTree, "diffArtifact="+diffFile)
 	return r.out, r.errs, 0
+}
+
+func encodeConformanceReview(diffFile, job, reviewedTree string) ([]byte, error) {
+	review := map[string]string{
+		"diffArtifact":   filepath.Base(diffFile),
+		"implementerJob": job,
+		"reviewedTree":   reviewedTree,
+	}
+	encoded, err := json.MarshalIndent(review, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(encoded, '\n'), nil
 }
 
 func (r *conformanceRun) configGet(key, def string) string {

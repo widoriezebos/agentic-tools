@@ -127,10 +127,11 @@ func TestTOTPResumeExceptionIsEnvelopeScoped(t *testing.T) {
 	}
 }
 func TestPollAtomicallyConsumesTOTP(t *testing.T) {
-	root, p, _, now := pollLedgerBed(t)
+	bed, p, _, now := pollLedgerBed(t)
+	root := bed.root
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "first " + code}}
-	if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
 	q2 := Question{ID: "01J5X0000000000000000000Q2", Goal: "g", Kind: "other", Machine: "machine", OpenedAt: now, Facts: []string{"second"}, Thread: &MessageRef{ID: "3", ThreadID: "3"}, State: "open"}
@@ -138,10 +139,10 @@ func TestPollAtomicallyConsumesTOTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "4", ThreadID: "3"}, ThreadID: "3", UserID: "UWIDO", Text: "second " + code}}
-	if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
-	g := projectGoal(t, root, "g")
+	g := projectGoal(t, bed, "g")
 	answers := 0
 	for _, h := range g.History {
 		if h.Verb == "answer" {
@@ -208,13 +209,17 @@ func TestReportOmitsEmptyParts(t *testing.T) {
 		text string
 		want string
 	}{
-		{name: "empty fleet", text: mustComposeReport(t, ReportConfig{RepoRoot: t.TempDir(), Machine: "m", Now: now, Location: time.UTC}), want: "m status 2026-09-04 12:00 +0000\n" + unavailable},
+		{name: "empty fleet", text: func() string {
+			fixture := newAbsentReportFixture(t)
+			return fixture.mustCompose(ReportConfig{RepoRoot: fixture.root, Machine: "m", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
+		}(), want: "m status 2026-09-04 12:00 +0000\n" + unavailable},
 		{name: "needs you only", text: func() string {
-			root := t.TempDir()
+			fixture := newAbsentReportFixture(t)
+			root := fixture.root
 			if err := writeJSON(questionPath(root, "question"), Question{ID: "question", Goal: "choose-colour", State: "open", Facts: []string{"Choose the launch colour"}}); err != nil {
 				t.Fatal(err)
 			}
-			return mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m", Now: now, Location: time.UTC})
+			return fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 		}(), want: "m status 2026-09-04 12:00 +0000\nNeeds you: choose colour — Choose the launch colour.\n" + unavailable},
 	}
 	for _, test := range tests {
@@ -234,7 +239,8 @@ func TestReportOmitsEmptyParts(t *testing.T) {
 func TestReportHeadlineUsesConfiguredLocalTimeAndOffset(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	location := time.FixedZone("machine-local", 5*60*60+30*60)
-	text := mustComposeReport(t, ReportConfig{RepoRoot: t.TempDir(), Machine: "m", Now: now, Location: location})
+	fixture := newAbsentReportFixture(t)
+	text := fixture.mustCompose(ReportConfig{RepoRoot: fixture.root, Machine: "m", Now: now, Location: location}, now.Add(-4*time.Hour), nil)
 	if text != "m status 2026-09-04 17:30 +0530\nBacklog order: unavailable — no accepted tree; the first fetch or the migration bootstraps it" {
 		t.Fatalf("got %q, want configured wall-clock time and offset", text)
 	}
@@ -296,22 +302,20 @@ func TestStatusCadenceAndDigestGate(t *testing.T) {
 }
 
 func TestReportShowsOneQuestionTwoLandingsAndOnlyTwoNextItems(t *testing.T) {
-	now := time.Now().UTC().Add(time.Minute)
-	root := reportLedger(t,
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	fixture := newReportFixture(t, now,
 		reportGoal("delivery-one", "Deliver one.", goal.StateApproved, "other-machine", now),
 		reportGoal("delivery-two", "Deliver two.", goal.StateApproved, "other-machine", now),
 		reportClaimedGoal("alpha-next", "Do alpha.", "fleet-one", now),
 		reportClaimedGoal("beta-next", "Do beta.", "fleet-one", now),
 		reportClaimedGoal("gamma-next", "Do gamma.", "fleet-one", now),
 	)
+	root := fixture.root
 	if err := writeJSON(questionPath(root, "question"), Question{ID: "question", Goal: "launch-choice", State: "open", Facts: []string{"Choose the launch colour"}}); err != nil {
 		t.Fatal(err)
 	}
-	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship delivery one\n\nGoal-Item: delivery-one")
-	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship delivery two\n\nGoal-Item: delivery-two")
-	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
 
-	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC})
+	text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC}, now.Add(-4*time.Hour), []byte("Ship delivery two\x00delivery-two\nShip delivery one\x00delivery-one\n"))
 	want := strings.Join([]string{
 		"fleet-one status " + now.Format("2006-01-02 15:04") + " +0000",
 		"Needs you: launch choice — Choose the launch colour.",
@@ -334,9 +338,10 @@ func TestReportPriority(t *testing.T) {
 		global.Priority, global.Sequence = 1, 1
 		local := reportGoal("local-candidate", "Local candidate.", goal.StateApproved, "", now)
 		local.Priority, local.Sequence = 2, 1
-		root := reportLedger(t, global, local)
+		fixture := newReportFixture(t, now, global, local)
+		root := fixture.root
 
-		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 		globalLine := "Backlog first: global head — priority 1, sequence 1, approved, pin m2"
 		localLine := "Next for m1: local candidate — priority 2, sequence 1, unpinned"
 		if !strings.Contains(text, globalLine) || !strings.Contains(text, localLine) || strings.Contains(text, "Next up:") {
@@ -352,9 +357,10 @@ func TestReportPriority(t *testing.T) {
 		global.Approved.Digest = goal.ApprovalDigest(global.Intent, global.Tier, *global.Budget)
 		local := reportGoal("local-candidate", "Local candidate.", goal.StateApproved, "", now)
 		local.Priority, local.Sequence = 2, 1
-		root := reportLedger(t, global, local)
+		fixture := newReportFixture(t, now, global, local)
+		root := fixture.root
 
-		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 		globalLine := "Backlog first: global head — priority 1, sequence 1, approved, unpinned"
 		localLine := "Next for m1: local candidate — priority 2, sequence 1, unpinned; skipped global head: GOAL_NORM_REFUSED"
 		if !strings.Contains(text, globalLine) || !strings.Contains(text, localLine) {
@@ -368,9 +374,10 @@ func TestReportPriority(t *testing.T) {
 		global.Priority, global.Sequence = 1, 1
 		global.Budget.ReservedJobMinutesLimit = 2400
 		global.Approved.Digest = goal.ApprovalDigest(global.Intent, global.Tier, *global.Budget)
-		root := reportLedger(t, global)
+		fixture := newReportFixture(t, now, global)
+		root := fixture.root
 
-		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 		want := "Next for m1: none claimable; skipped global head: GOAL_NORM_REFUSED"
 		if !strings.Contains(text, want) || len(strings.Split(text, "\n")) != 3 {
 			t.Fatalf("status did not report the only refused goal without adding a line:\n%s", text)
@@ -383,7 +390,8 @@ func TestReportPriority(t *testing.T) {
 		global.Priority, global.Sequence = 1, 1
 		local := reportGoal("local-candidate", "Local candidate.", goal.StateApproved, "", now)
 		local.Priority, local.Sequence = 2, 1
-		root := reportLedger(t, global, local)
+		fixture := newReportFixture(t, now, global, local)
+		root := fixture.root
 		for i := 0; i < 20; i++ {
 			id := fmt.Sprintf("priority-question-%02d", i)
 			if err := writeJSON(questionPath(root, id), Question{ID: id, Goal: id, State: "open", Facts: []string{"Choose safely"}}); err != nil {
@@ -391,7 +399,7 @@ func TestReportPriority(t *testing.T) {
 			}
 		}
 
-		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC, Undelivered: 2})
+		text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC, Undelivered: 2}, now.Add(-4*time.Hour), nil)
 		lines := strings.Split(text, "\n")
 		if len(lines) != 12 || !strings.Contains(text, "Backlog first: global head") || !strings.Contains(text, "Next for m1: local candidate") ||
 			!strings.HasPrefix(lines[len(lines)-1], "Undelivered: 2 channel messages") {
@@ -400,7 +408,9 @@ func TestReportPriority(t *testing.T) {
 	})
 
 	t.Run("unavailable", func(t *testing.T) {
-		text := mustComposeReport(t, ReportConfig{RepoRoot: t.TempDir(), Machine: "m1", Now: time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC), Location: time.UTC})
+		now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+		fixture := newAbsentReportFixture(t)
+		text := fixture.mustCompose(ReportConfig{RepoRoot: fixture.root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 		if !strings.Contains(text, "Backlog order: unavailable — no accepted tree") || strings.Contains(text, "Next for m1:") {
 			t.Fatalf("an unreadable projection implied an empty or selectable backlog:\n%s", text)
 		}
@@ -417,22 +427,24 @@ func TestReportPriority(t *testing.T) {
 	t.Run("configuration-failure", func(t *testing.T) {
 		now := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
 		candidate := reportGoal("config-candidate", "Configuration candidate.", goal.StateApproved, "", now)
-		root := reportLedger(t, candidate)
+		fixture := newReportFixture(t, now, candidate)
+		root := fixture.root
 		if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(config.Tier1BudgetKey+"=malformed\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 		if !strings.Contains(text, "Backlog order: unavailable — cannot answer claimable backlog") || !strings.Contains(text, config.Tier1BudgetKey) || strings.Contains(text, "none claimable") || strings.Contains(text, "Next for m1:") {
 			t.Fatalf("configuration uncertainty became an empty status answer:\n%s", text)
 		}
 	})
 
 	t.Run("stale", func(t *testing.T) {
-		now := time.Now().UTC().Add(2 * time.Hour)
+		now := time.Date(2026, 9, 8, 14, 0, 0, 0, time.UTC)
 		first := reportGoal("stale-head", "Stale head.", goal.StateApproved, "", now)
 		first.Priority, first.Sequence = 1, 1
-		root := reportLedger(t, first)
-		text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		fixture := newReportFixture(t, now.Add(-45*time.Minute), first)
+		root := fixture.root
+		text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 		var backlogLine string
 		for _, line := range strings.Split(text, "\n") {
 			if strings.HasPrefix(line, "Backlog first:") {
@@ -445,15 +457,16 @@ func TestReportPriority(t *testing.T) {
 	})
 
 	t.Run("stale-age-does-not-repost", func(t *testing.T) {
-		firstNow := time.Now().UTC().Add(2 * time.Hour)
+		firstNow := time.Date(2026, 9, 8, 14, 0, 0, 0, time.UTC)
 		firstGoal := reportGoal("quiet-head", "Quiet head.", goal.StateApproved, "", firstNow)
 		firstGoal.Priority, firstGoal.Sequence = 1, 1
-		root := reportLedger(t, firstGoal)
+		fixture := newReportFixture(t, firstNow.Add(-45*time.Minute), firstGoal)
+		root := fixture.root
 		windowStart := firstNow.Add(-4 * time.Hour)
-		first := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: firstNow, WindowStart: windowStart, Location: time.UTC})
+		first := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m1", Now: firstNow, WindowStart: windowStart, Location: time.UTC}, windowStart, nil)
 
 		secondNow := firstNow.Add(time.Hour)
-		second := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m1", Now: secondNow, WindowStart: windowStart, Location: time.UTC})
+		second := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m1", Now: secondNow, WindowStart: windowStart, Location: time.UTC}, windowStart, nil)
 		if !strings.Contains(first, "accepted tree") || !strings.Contains(second, "accepted tree") {
 			t.Fatalf("staleness notice was not visible at both ages:\nfirst:\n%s\nsecond:\n%s", first, second)
 		}
@@ -468,8 +481,9 @@ func TestReportPriority(t *testing.T) {
 		marked := reportGoal("zz-marked", "Marked work.", goal.StateQueued, "m1", now)
 		marked.Priority, marked.Sequence = 1, 1
 		marked.Labels = []string{"next"}
-		root := reportLedger(t, marked)
-		text, goalID, err := ComposeStatusReport(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		fixture := newReportFixture(t, now, marked)
+		root := fixture.root
+		text, goalID, err := fixture.composeStatus(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 		if err != nil || goalID != marked.Id || !strings.Contains(text, approvalRequestLine(marked.Id)) {
 			t.Fatalf("a visible approval line lost its binding: goal=%q err=%v\n%s", goalID, err, text)
 		}
@@ -479,7 +493,7 @@ func TestReportPriority(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		text, goalID, err = ComposeStatusReport(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC})
+		text, goalID, err = fixture.composeStatus(ReportConfig{RepoRoot: root, Machine: "m1", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 		if err != nil || goalID != "" || strings.Contains(text, approvalRequestLine(marked.Id)) || !strings.Contains(text, "Backlog first: zz marked") {
 			t.Fatalf("a trimmed approval line retained its binding or displaced the reserved backlog line: goal=%q err=%v\n%s", goalID, err, text)
 		}
@@ -492,8 +506,9 @@ func TestReportShowsGoalApprovalGapOnceBesideItsOpenQuestion(t *testing.T) {
 	waiting.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1}
 	waiting.Pinned = "fleet-one"
 	waiting.Labels = []string{"next"}
-	root := reportLedger(t, waiting)
-	withoutQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
+	fixture := newReportFixture(t, now, waiting)
+	root := fixture.root
+	withoutQuestion := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 	if !strings.Contains(withoutQuestion, "Needs you: waiting feature — Reply in this thread with this token verbatim, followed by your code: start waiting-feature") {
 		t.Fatalf("approval gap was omitted:\n%s", withoutQuestion)
 	}
@@ -501,7 +516,7 @@ func TestReportShowsGoalApprovalGapOnceBesideItsOpenQuestion(t *testing.T) {
 	if err := writeJSON(questionPath(root, "budget-question"), Question{ID: "budget-question", Goal: waiting.Id, Kind: "budget-above-norm", State: "open", Facts: []string{"The current allowance is exhausted"}, Budget: &questionBudget}); err != nil {
 		t.Fatal(err)
 	}
-	withQuestion := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
+	withQuestion := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 	if strings.Count(withQuestion, "Needs you: waiting feature") != 1 || !strings.Contains(withQuestion, "approve the requested budget raise.") {
 		t.Fatalf("the open budget question did not replace the generic approval gap:\n%s", withQuestion)
 	}
@@ -690,8 +705,9 @@ func TestReportOmitsApprovalForElevenUnmarkedQueuedGoals(t *testing.T) {
 		f.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1}
 		goals = append(goals, f)
 	}
-	root := reportLedger(t, goals...)
-	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
+	fixture := newReportFixture(t, now, goals...)
+	root := fixture.root
+	text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 	want := strings.Join([]string{
 		"fleet-one status 2026-09-04 12:00 +0000",
 		"Backlog first: feature 01 — priority unset, sequence unset, queued, unpinned — notice: single-machine mode: multi-machine guarantees are void here; joining a fleet is the backlog-local-promotion goal",
@@ -706,8 +722,9 @@ func TestReportNamesTheMarkedPinnedGoalAndReturnsItsBinding(t *testing.T) {
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	marked := reportGoal("real-next-pick", "Build the selected feature.", goal.StateQueued, "fleet-one", now)
 	marked.Labels = []string{"next"}
-	root := reportLedger(t, marked)
-	text, goalID, err := ComposeStatusReport(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
+	fixture := newReportFixture(t, now, marked)
+	root := fixture.root
+	text, goalID, err := fixture.composeStatus(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -722,38 +739,38 @@ func TestReportDoesNotRequestApprovalWhenFirstBudgetedGoalIsApproved(t *testing.
 	approved := reportGoal("alpha-approved", "Start approved work.", goal.StateApproved, "", now)
 	waiting := reportGoal("beta-waiting", "Wait for approval.", goal.StateQueued, "", now)
 	waiting.Budget = &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 1, ReservedJobMinutesLimit: 30, ActiveJobLimit: 1}
-	root := reportLedger(t, approved, waiting)
-	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC})
+	fixture := newReportFixture(t, now, approved, waiting)
+	root := fixture.root
+	text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil)
 	if strings.Contains(text, "Needs you:") || strings.Contains(text, "Next up:") {
 		t.Fatalf("an approved but unclaimed goal should produce neither approval nor Next up:\n%s", text)
 	}
 }
 
 func TestReportNextUpRequiresClaimAndDelivery(t *testing.T) {
-	now := time.Now().UTC().Add(time.Minute)
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	ready := reportGoal("ready-goal", "Ready.", goal.StateApproved, "fleet-one", now)
-	root := reportLedger(t, ready)
-	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship work\n\nGoal-Item: "+ready.Id)
-	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
-	if text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC}); strings.Contains(text, "Next up:") {
+	fixture := newReportFixture(t, now, ready)
+	root := fixture.root
+	if text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC}, now.Add(-4*time.Hour), []byte("Ship work\x00ready-goal\n")); strings.Contains(text, "Next up:") {
 		t.Fatalf("ready but unclaimed goal rendered as Next up:\n%s", text)
 	}
-	root = reportLedger(t, reportClaimedGoal("claimed-goal", "Claimed.", "fleet-one", now))
-	if text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC}); strings.Contains(text, "Next up:") {
+	fixture = newReportFixture(t, now, reportClaimedGoal("claimed-goal", "Claimed.", "fleet-one", now))
+	root = fixture.root
+	if text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, Location: time.UTC}, now.Add(-4*time.Hour), nil); strings.Contains(text, "Next up:") {
 		t.Fatalf("claimed goal without a delivery rendered as Next up:\n%s", text)
 	}
 }
 
 func TestReportShowsFencedClaimInNextUpBlock(t *testing.T) {
-	now := time.Now().UTC().Add(time.Minute)
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	fenced := reportFencedClaim("fenced-report", "Wait for the human.", "fleet-one", "stop-fenced-report-r3-f1", now)
-	root := reportLedger(t, fenced)
-	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship work before stop\n\nGoal-Item: "+fenced.Id)
-	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+	fixture := newReportFixture(t, now, fenced)
+	root := fixture.root
 
-	text := mustComposeReport(t, ReportConfig{
+	text := fixture.mustCompose(ReportConfig{
 		RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC,
-	})
+	}, now.Add(-4*time.Hour), []byte("Ship work before stop\x00fenced-report\n"))
 	wantFence := "FENCED fenced-report: breach-stopped by stop-fenced-report-r3-f1 (ELAPSED_LIMIT); only goal resume, a human act, clears it; the queue is open"
 	deliveredAt := strings.Index(text, "Delivered: fenced report")
 	fencedAt := strings.Index(text, wantFence)
@@ -764,19 +781,18 @@ func TestReportShowsFencedClaimInNextUpBlock(t *testing.T) {
 }
 
 func TestReportShowsTwoLiveArcClaimsBesideFencedClaim(t *testing.T) {
-	now := time.Now().UTC().Add(time.Minute)
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	first := reportClaimedGoal("arc-live-one", "Work the first arc member.", "fleet-one", now)
 	second := reportClaimedGoal("arc-live-two", "Work the second arc member.", "fleet-one", now)
 	first.Arc = "report-live-arc"
 	second.Arc = "report-live-arc"
 	fenced := reportFencedClaim("fenced-report", "Wait for the human.", "fleet-one", "stop-fenced-report-r3-f1", now)
-	root := reportLedger(t, first, second, fenced)
-	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship arc work\n\nGoal-Item: "+first.Id)
-	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+	fixture := newReportFixture(t, now, first, second, fenced)
+	root := fixture.root
 
-	text := mustComposeReport(t, ReportConfig{
+	text := fixture.mustCompose(ReportConfig{
 		RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC,
-	})
+	}, now.Add(-4*time.Hour), []byte("Ship arc work\x00arc-live-one\n"))
 	wantFence := "FENCED fenced-report: breach-stopped by stop-fenced-report-r3-f1 (ELAPSED_LIMIT); only goal resume, a human act, clears it; the queue is open"
 	if !strings.Contains(text, wantFence) || strings.Count(text, "Next up:") != 2 {
 		t.Fatalf("report did not keep both live arc members beside the fenced claim:\n%s", text)
@@ -784,14 +800,16 @@ func TestReportShowsTwoLiveArcClaimsBesideFencedClaim(t *testing.T) {
 }
 
 func TestReportCapsAllOutputAtTwelveLines(t *testing.T) {
-	root := t.TempDir()
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	fixture := newAbsentReportFixture(t)
+	root := fixture.root
 	for i := 0; i < 20; i++ {
 		id := fmt.Sprintf("question-%02d", i)
 		if err := writeJSON(questionPath(root, id), Question{ID: id, Goal: id, State: "open", Facts: []string{"Make a decision"}}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "m", Now: time.Now(), Location: time.UTC, Undelivered: 2})
+	text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "m", Now: now, Location: time.UTC, Undelivered: 2}, now.Add(-4*time.Hour), nil)
 	lines := strings.Split(text, "\n")
 	if len(lines) != 12 || !strings.HasPrefix(lines[len(lines)-1], "Undelivered: 2 channel messages") {
 		t.Fatalf("line count=%d, last=%q\n%s", len(lines), lines[len(lines)-1], text)
@@ -807,16 +825,17 @@ func TestReportCapTrimsNextUpBeforeNeedsYou(t *testing.T) {
 	for i := 0; i < 11; i++ {
 		goals = append(goals, reportGoal(fmt.Sprintf("delivered-%02d", i), "Deliver work.", goal.StateApproved, "other-machine", now))
 	}
-	root := reportLedger(t, goals...)
+	fixture := newReportFixture(t, now, goals...)
+	root := fixture.root
 	if err := writeJSON(questionPath(root, "decision"), Question{ID: "decision", Goal: "launch-choice", State: "open", Facts: []string{"Choose the launch colour"}}); err != nil {
 		t.Fatal(err)
 	}
+	var landingLog strings.Builder
 	for i := 0; i < 11; i++ {
-		reportGit(t, root, "commit", "-q", "--allow-empty", "-m", fmt.Sprintf("Ship delivered %02d\n\nGoal-Item: delivered-%02d", i, i))
+		fmt.Fprintf(&landingLog, "Ship delivered %02d\x00delivered-%02d\n", i, i)
 	}
-	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
 
-	text := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC})
+	text := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC}, now.Add(-4*time.Hour), []byte(landingLog.String()))
 	lines := strings.Split(text, "\n")
 	if len(lines) != 12 || !strings.Contains(text, "Needs you: launch choice — Choose the launch colour.") || strings.Contains(text, "Next up:") {
 		t.Fatalf("the cap did not preserve the decision while trimming Next up first:\n%s", text)
@@ -824,22 +843,21 @@ func TestReportCapTrimsNextUpBeforeNeedsYou(t *testing.T) {
 }
 
 func TestLandingIsReportedInExactlyOnePostWindow(t *testing.T) {
-	landedAt := time.Now().UTC()
-	root := reportLedger(t, reportGoal("one-landing", "Land once.", goal.StateApproved, "other-machine", landedAt))
+	landedAt := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+	fixture := newReportFixture(t, landedAt, reportGoal("one-landing", "Land once.", goal.StateApproved, "other-machine", landedAt))
+	root := fixture.root
 	firstPost := landedAt.Add(time.Minute)
 	if err := SaveStatusState(root, StatusState{LastPost: landedAt.Add(-time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
-	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship it once\n\nGoal-Item: one-landing")
-	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
-	first := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: firstPost, Location: time.UTC})
+	first := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: firstPost, Location: time.UTC}, landedAt.Add(-time.Hour), []byte("Ship it once\x00one-landing\n"))
 	if strings.Count(first, "Delivered: one landing — Ship it once") != 1 {
 		t.Fatalf("first post did not report the landing once:\n%s", first)
 	}
 	if err := SaveStatusState(root, StatusState{LastPost: firstPost, ContentDigest: Digest(first)}); err != nil {
 		t.Fatal(err)
 	}
-	second := mustComposeReport(t, ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: firstPost.Add(time.Hour), Location: time.UTC})
+	second := fixture.mustCompose(ReportConfig{RepoRoot: root, Machine: "fleet-one", Now: firstPost.Add(time.Hour), Location: time.UTC}, firstPost, nil)
 	if strings.Contains(second, "Delivered:") {
 		t.Fatalf("second post repeated the landing:\n%s", second)
 	}
@@ -942,16 +960,17 @@ func TestPollRejectsWrongUserNoCodeBadCodeReplay(t *testing.T) {
 	}
 	for _, tc := range []struct{ name, user, secret string }{{"empty-secret", "human", ""}, {"empty-user", "", "JBSWY3DPEHPK3PXP"}} {
 		t.Run(tc.name, func(t *testing.T) {
-			root, p, q, now := pollLedgerBed(t)
+			bed, p, q, now := pollLedgerBed(t)
+			root := bed.root
 			code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 			p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "human", Text: "answer " + code}}
-			cfg := pollBedConfig(root, p, now)
+			cfg := pollBedConfig(bed, p, now)
 			cfg.HumanUserID, cfg.TOTPSecret = tc.user, tc.secret
-			if _, err := Poll(context.Background(), cfg); err != nil {
+			if _, err := bed.poll(context.Background(), cfg); err != nil {
 				t.Fatal(err)
 			}
 			got, _ := ReadQuestion(root, q.ID)
-			g := projectGoal(t, root, "g")
+			g := projectGoal(t, bed, "g")
 			if len(got.Rejected) != 1 || got.Rejected[0].Reason != "unconfigured" || len(p.posts) != 1 {
 				t.Fatalf("question=%+v posts=%v", got, p.posts)
 			}
@@ -982,7 +1001,8 @@ func TestPollVerifiesCodeAtProviderSendTime(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			root, p, q, now := pollLedgerBed(t)
+			bed, p, q, now := pollLedgerBed(t)
+			root := bed.root
 			sentAt := now.Add(-tc.sentBefore)
 			codeAt := sentAt
 			if !tc.includeTime {
@@ -994,7 +1014,7 @@ func TestPollVerifiesCodeAtProviderSendTime(t *testing.T) {
 				t.Fatal(err)
 			}
 			p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code, SentAt: sentAt}}
-			if _, err = Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+			if _, err = bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 				t.Fatal(err)
 			}
 			got, err := ReadQuestion(root, q.ID)
@@ -1012,21 +1032,22 @@ func TestPollVerifiesCodeAtProviderSendTime(t *testing.T) {
 }
 
 func TestInboundCheckpointSurvivesCrashAndDeduplicates(t *testing.T) {
-	root, p, _, now := pollLedgerBed(t)
+	bed, p, _, now := pollLedgerBed(t)
+	root := bed.root
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "u"}, ThreadID: "stray"}, {Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code}}
-	cfg := pollBedConfig(root, p, now)
+	cfg := pollBedConfig(bed, p, now)
 	cfg.FailurePoint = func(point string) error {
 		if point == "before-cursor" {
 			return errors.New("crash")
 		}
 		return nil
 	}
-	if _, err := Poll(context.Background(), cfg); err == nil {
+	if _, err := bed.poll(context.Background(), cfg); err == nil {
 		t.Fatal("crash before cursor write did not fire")
 	}
 	cfg.FailurePoint = nil
-	if _, err := Poll(context.Background(), cfg); err != nil {
+	if _, err := bed.poll(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "channel", "fleet", "cursor.json"))
@@ -1034,7 +1055,7 @@ func TestInboundCheckpointSurvivesCrashAndDeduplicates(t *testing.T) {
 		t.Fatal(string(b), err)
 	}
 	unmatched, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "channel", "fleet", "unmatched.jsonl"))
-	g := projectGoal(t, root, "g")
+	g := projectGoal(t, bed, "g")
 	answers := 0
 	for _, h := range g.History {
 		if h.Verb == "answer" {
@@ -1047,7 +1068,8 @@ func TestInboundCheckpointSurvivesCrashAndDeduplicates(t *testing.T) {
 }
 
 func TestStatusThreadTokenWithValidCodeApprovesMarkedGoal(t *testing.T) {
-	root, p, _, now := pollLedgerBed(t)
+	bed, p, _, now := pollLedgerBed(t)
+	root := bed.root
 	statusRef := MessageRef{ID: "10", ThreadID: "10"}
 	if err := SaveStatusState(root, StatusState{LastPost: now, Ref: statusRef, GoalID: "g"}); err != nil {
 		t.Fatal(err)
@@ -1058,10 +1080,10 @@ func TestStatusThreadTokenWithValidCodeApprovesMarkedGoal(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "UWIDO", Text: "start g " + code, SentAt: sentAt}}
-	if _, err = Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+	if _, err = bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
-	approved := projectGoal(t, root, "g")
+	approved := projectGoal(t, bed, "g")
 	last := approved.History[len(approved.History)-1]
 	if approved.State != goal.StateApproved || approved.Approved == nil || last.Verb != "approve" ||
 		last.AuthorityOutcome != goal.AuthorityOutcomeVerifiedChannelAnswer || last.ChannelUser != "UWIDO" ||
@@ -1074,14 +1096,15 @@ func TestStatusThreadTokenWithValidCodeApprovesMarkedGoal(t *testing.T) {
 }
 
 func TestStatusThreadReplyWithoutTokenIsAnsweredAndFiled(t *testing.T) {
-	root, p, _, now := pollLedgerBed(t)
+	bed, p, _, now := pollLedgerBed(t)
+	root := bed.root
 	if err := SaveStatusState(root, StatusState{LastPost: now, Ref: MessageRef{ID: "10", ThreadID: "10"}, GoalID: "g"}); err != nil {
 		t.Fatal(err)
 	}
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	in := Inbound{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "UWIDO", Text: "approved " + code, SentAt: now}
 	p.inbound = []Inbound{in}
-	if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "channel", "fleet", "unmatched.jsonl"))
@@ -1091,7 +1114,7 @@ func TestStatusThreadReplyWithoutTokenIsAnsweredAndFiled(t *testing.T) {
 	if len(p.posts) != 1 || p.posts[0] != "not recorded: wrong token; reply with the token and your code" || p.postThreads[0] == nil || p.postThreads[0].ThreadID != "10" {
 		t.Fatalf("posts=%v threads=%v", p.posts, p.postThreads)
 	}
-	if got := projectGoal(t, root, "g"); got.State != goal.StateQueued {
+	if got := projectGoal(t, bed, "g"); got.State != goal.StateQueued {
 		t.Fatalf("reply without token changed goal state: %s", got.State)
 	}
 }
@@ -1190,21 +1213,22 @@ func TestEveryInvalidInboundRefIsAnsweredAtMostOnceAcrossRecordBeforePostCrash(t
 }
 
 func TestTelegramCrashAfterMatchedDoesNotRedisposeReplyAsUnmatched(t *testing.T) {
-	root, p, _, now := pollLedgerBed(t)
+	bed, p, _, now := pollLedgerBed(t)
+	root := bed.root
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "22", ThreadID: "20"}, ThreadID: "1", UserID: "UWIDO", Text: "yes " + code}}
-	cfg := pollBedConfig(root, p, now)
+	cfg := pollBedConfig(bed, p, now)
 	cfg.FailurePoint = func(point string) error {
 		if point == "matched" {
 			return errors.New("injected crash")
 		}
 		return nil
 	}
-	if _, err := Poll(context.Background(), cfg); err == nil {
+	if _, err := bed.poll(context.Background(), cfg); err == nil {
 		t.Fatal("matched crash did not fire")
 	}
 	cfg.FailurePoint = nil
-	if _, err := Poll(context.Background(), cfg); err != nil {
+	if _, err := bed.poll(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "artifacts", "agents", "channel", "fleet", "unmatched.jsonl")
@@ -1260,15 +1284,16 @@ func TestAuthenticatedChannelHistoryRoundTrip(t *testing.T) {
 	}
 }
 func TestPollRecordsAuthenticatedReply(t *testing.T) {
-	root, p, q, now := pollLedgerBed(t)
+	bed, p, q, now := pollLedgerBed(t)
+	root := bed.root
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved\nnow " + code}}
-	r, err := Poll(context.Background(), pollBedConfig(root, p, now))
+	r, err := bed.poll(context.Background(), pollBedConfig(bed, p, now))
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, _ := ReadQuestion(root, q.ID)
-	g := projectGoal(t, root, "g")
+	g := projectGoal(t, bed, "g")
 	answers := 0
 	for _, h := range g.History {
 		if h.Verb == "answer" {
@@ -1285,26 +1310,27 @@ func TestPollRecordsAuthenticatedReply(t *testing.T) {
 		t.Fatalf("question=%+v goal=%+v result=%+v", got, g, r)
 	}
 	t.Run("receipt post failure does not stop receiving", func(t *testing.T) {
-		root, p, _, now := pollLedgerBed(t)
+		bed, p, _, now := pollLedgerBed(t)
+		root := bed.root
 		code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 		p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code}}
-		cfg := pollBedConfig(root, p, now)
+		cfg := pollBedConfig(bed, p, now)
 		cfg.FailurePoint = func(point string) error {
 			if point == "recorded" {
 				return errors.New("crash")
 			}
 			return nil
 		}
-		if _, err := Poll(context.Background(), cfg); err == nil {
+		if _, err := bed.poll(context.Background(), cfg); err == nil {
 			t.Fatal("recorded crash did not fire")
 		}
 		cfg.FailurePoint = nil
 		p.failPosts = 1
-		r, err := Poll(context.Background(), cfg)
+		r, err := bed.poll(context.Background(), cfg)
 		if err != nil || r.Received != 1 || p.receives != 2 {
 			t.Fatalf("result=%+v receives=%d err=%v", r, p.receives, err)
 		}
-		if _, err := Poll(context.Background(), cfg); err != nil {
+		if _, err := bed.poll(context.Background(), cfg); err != nil {
 			t.Fatal(err)
 		}
 		got, _ := ReadQuestion(root, "01J5X0000000000000000000Q0")
@@ -1316,10 +1342,11 @@ func TestPollRecordsAuthenticatedReply(t *testing.T) {
 func TestPollCrashRecoveryExactlyOnce(t *testing.T) {
 	for _, phase := range []string{"matched", "recorded-commit", "recorded", "receipted", "closed"} {
 		t.Run(phase, func(t *testing.T) {
-			root, p, q, now := pollLedgerBed(t)
+			bed, p, q, now := pollLedgerBed(t)
+			root := bed.root
 			code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 			p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code}}
-			cfg := pollBedConfig(root, p, now)
+			cfg := pollBedConfig(bed, p, now)
 			fired := false
 			cfg.FailurePoint = func(got string) error {
 				if got == phase && !fired {
@@ -1328,14 +1355,14 @@ func TestPollCrashRecoveryExactlyOnce(t *testing.T) {
 				}
 				return nil
 			}
-			if _, err := Poll(context.Background(), cfg); err == nil {
+			if _, err := bed.poll(context.Background(), cfg); err == nil {
 				t.Fatal("crash injection did not stop the pass")
 			}
 			cfg.FailurePoint = nil
-			if _, err := Poll(context.Background(), cfg); err != nil {
+			if _, err := bed.poll(context.Background(), cfg); err != nil {
 				t.Fatal(err)
 			}
-			g := projectGoal(t, root, "g")
+			g := projectGoal(t, bed, "g")
 			answers := 0
 			for _, h := range g.History {
 				if h.Verb == "answer" {
@@ -1353,19 +1380,20 @@ func TestPollCrashRecoveryExactlyOnce(t *testing.T) {
 	}
 }
 func TestAnswerCarryingStrictTokenSatisfiesNormApproval(t *testing.T) {
-	root, p, q, now := pollLedgerBed(t)
+	bed, p, q, now := pollLedgerBed(t)
+	root := bed.root
 	q.Wants = "goal=g minutes=60 reviewRounds=3 goalRevision=2"
 	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
 		t.Fatal(err)
 	}
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved " + code}}
-	if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
 	record, _ := ReadQuestion(root, q.ID)
-	syncAccepted(t, root)
-	ep, _ := goal.ResolveEndpoint(root)
+	bed.syncAccepted(t)
+	ep := bed.endpoint
 	projection, err := goal.Project(ep, false, now)
 	if err != nil {
 		t.Fatal(err)
@@ -1377,7 +1405,8 @@ func TestAnswerCarryingStrictTokenSatisfiesNormApproval(t *testing.T) {
 }
 
 func TestVerifiedBudgetTokenRaisesBoxTwiceAndReopensAdmission(t *testing.T) {
-	root, p, _, now := pollLedgerBed(t)
+	bed, p, _, now := pollLedgerBed(t)
+	root := bed.root
 	firstBudget, _ := goal.NewBudget("2h", 5, 600, 1, 0)
 	first := Question{ID: "01J5X0000000000000000000B1", Goal: "g", Kind: "budget-above-norm", Machine: "machine", OpenedAt: now, Facts: []string{"raise the box"}, Wants: "yes", Budget: &firstBudget, Thread: &MessageRef{ID: "10", ThreadID: "10"}, State: "open"}
 	if err := writeJSON(questionPath(root, first.ID), first); err != nil {
@@ -1385,10 +1414,10 @@ func TestVerifiedBudgetTokenRaisesBoxTwiceAndReopensAdmission(t *testing.T) {
 	}
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "UWIDO", Text: "yes " + code, SentAt: now}}
-	if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
-	afterFirst := projectGoal(t, root, "g")
+	afterFirst := projectGoal(t, bed, "g")
 	if afterFirst.Budget == nil || *afterFirst.Budget != firstBudget || afterFirst.Approved == nil || afterFirst.Approved.Authority != goal.ApprovalAuthorityChannel || afterFirst.NormApproval == nil || afterFirst.NormApproval.ApprovedRef != first.ID {
 		t.Fatalf("first verified answer did not bind its box and norm proof: %+v", afterFirst)
 	}
@@ -1404,18 +1433,15 @@ func TestVerifiedBudgetTokenRaisesBoxTwiceAndReopensAdmission(t *testing.T) {
 	}
 	code, _ = TOTPCode("JBSWY3DPEHPK3PXP", secondNow)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "21", ThreadID: "20"}, ThreadID: "20", UserID: "UWIDO", Text: "allow two more rounds " + code, SentAt: secondNow}}
-	if _, err := Poll(context.Background(), pollBedConfig(root, p, secondNow)); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, secondNow)); err != nil {
 		t.Fatal(err)
 	}
-	afterSecond := projectGoal(t, root, "g")
+	afterSecond := projectGoal(t, bed, "g")
 	if afterSecond.Budget == nil || *afterSecond.Budget != secondBudget || afterSecond.Approved == nil || afterSecond.Approved.Authority != goal.ApprovalAuthorityChannel || afterSecond.NormApproval == nil || afterSecond.NormApproval.ApprovedRef != second.ID {
 		t.Fatalf("second verified answer did not replace the box: %+v", afterSecond)
 	}
-	syncAccepted(t, root)
-	ep, err := goal.ResolveEndpoint(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	bed.syncAccepted(t)
+	ep := bed.endpoint
 	claim, err := goal.Claim(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: "machine", Lineage: "lineage"}, Ulid: "01J5X0000000000000000000B3", Now: secondNow.Add(time.Minute), ClaimEpoch: 1}, "g")
 	if err != nil || claim.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("raised box did not reopen admission: %+v %v", claim, err)
@@ -1431,7 +1457,8 @@ func TestBudgetFreeTextAndOtherQuestionDoNotRaiseBox(t *testing.T) {
 		{name: "other question token", kind: "other", wants: "yes", answer: "yes"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root, p, _, now := pollLedgerBed(t)
+			bed, p, _, now := pollLedgerBed(t)
+			root := bed.root
 			budget, _ := goal.NewBudget("2h", 5, 600, 1, 0)
 			q := Question{ID: "01J5X0000000000000000000N1", Goal: "g", Kind: test.kind, Machine: "machine", OpenedAt: now, Facts: []string{"question"}, Wants: test.wants, Thread: &MessageRef{ID: "10", ThreadID: "10"}, State: "open"}
 			if test.withBudget {
@@ -1442,10 +1469,10 @@ func TestBudgetFreeTextAndOtherQuestionDoNotRaiseBox(t *testing.T) {
 			}
 			code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 			p.inbound = []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "UWIDO", Text: test.answer + " " + code, SentAt: now}}
-			if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+			if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 				t.Fatal(err)
 			}
-			got := projectGoal(t, root, "g")
+			got := projectGoal(t, bed, "g")
 			if got.Budget != nil || got.Approved != nil || got.State != goal.StateQueued {
 				t.Fatalf("non-token answer changed approval: %+v", got)
 			}
@@ -1454,14 +1481,15 @@ func TestBudgetFreeTextAndOtherQuestionDoNotRaiseBox(t *testing.T) {
 }
 
 func TestLegacyBudgetQuestionAnswerRaisesNothing(t *testing.T) {
-	root, p, _, now := pollLedgerBed(t)
+	bed, p, _, now := pollLedgerBed(t)
+	root := bed.root
 	q := Question{ID: "01J5X0000000000000000000L3", Goal: "g", Kind: "budget-above-norm", Machine: "machine", OpenedAt: now, Facts: []string{"raise the box"}, Wants: "yes", Thread: &MessageRef{ID: "10", ThreadID: "10"}, State: "open"}
 	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
 		t.Fatal(err)
 	}
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "11", ThreadID: "10"}, ThreadID: "10", UserID: "UWIDO", Text: "yes " + code, SentAt: now}}
-	if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1475,7 +1503,7 @@ func TestLegacyBudgetQuestionAnswerRaisesNothing(t *testing.T) {
 	if !strings.Contains(record.Answer.Receipt, "nothing raised") {
 		t.Fatalf("legacy answer receipt=%q", record.Answer.Receipt)
 	}
-	got := projectGoal(t, root, "g")
+	got := projectGoal(t, bed, "g")
 	if got.Budget != nil || got.Approved != nil {
 		t.Fatalf("legacy answer changed approval: %+v", got)
 	}
@@ -1490,7 +1518,8 @@ func TestLegacyBudgetQuestionAnswerRaisesNothing(t *testing.T) {
 }
 
 func TestAuthenticatedChannelAuthorityAfterTemporaryHorizon(t *testing.T) {
-	root, p, first, _ := pollLedgerBed(t)
+	bed, p, first, _ := pollLedgerBed(t)
+	root := bed.root
 	now := time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)
 	proof, err := humanauthority.AuthenticatedChannelProof(root, governance.RecordedChannelAuthority{Outcome: governance.AuthorityOutcomeAuthenticatedChannelWord, Provider: "slack", UserID: "UWIDO", MessageRef: "1/2", Step: 42}, now)
 	if err != nil || !proof.AuthorizesResume(root) || !proof.AuthorizesSetObligation(root) || proof.TemporaryResumeFor(root) {
@@ -1504,11 +1533,11 @@ func TestAuthenticatedChannelAuthorityAfterTemporaryHorizon(t *testing.T) {
 	}
 	code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approve " + code}}
-	if _, err := Poll(context.Background(), pollBedConfig(root, p, now)); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, now)); err != nil {
 		t.Fatal(err)
 	}
 	answered, _ := ReadQuestion(root, first.ID)
-	if _, err := goal.AuthenticatedChannelApproval(root, "g", answered.Answer.Opid, resumeToken, now); err == nil {
+	if _, err := goal.AuthenticatedChannelApprovalAtEndpoint(bed.endpoint, "g", answered.Answer.Opid, resumeToken, now); err == nil {
 		t.Fatal("a budget-above-norm answer authorized a resume without the resume tuple")
 	}
 
@@ -1518,15 +1547,15 @@ func TestAuthenticatedChannelAuthorityAfterTemporaryHorizon(t *testing.T) {
 	}
 	code, _ = TOTPCode("JBSWY3DPEHPK3PXP", resumeQ.OpenedAt)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "4", ThreadID: "3"}, ThreadID: "3", UserID: "UWIDO", Text: resumeToken + " " + code}}
-	if _, err := Poll(context.Background(), pollBedConfig(root, p, resumeQ.OpenedAt)); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, resumeQ.OpenedAt)); err != nil {
 		t.Fatal(err)
 	}
 	resumeAnswer, _ := ReadQuestion(root, resumeQ.ID)
-	if _, err := goal.AuthenticatedChannelApproval(root, "g", resumeAnswer.Answer.Opid, resumeToken, resumeQ.OpenedAt); err != nil {
+	if _, err := goal.AuthenticatedChannelApprovalAtEndpoint(bed.endpoint, "g", resumeAnswer.Answer.Opid, resumeToken, resumeQ.OpenedAt); err != nil {
 		t.Fatal("resume token refused its first use:", err)
 	}
-	landApprovalUse(t, root, "resume", resumeAnswer.Answer.Opid, resumeQ.OpenedAt)
-	if _, err := goal.AuthenticatedChannelApproval(root, "g", resumeAnswer.Answer.Opid, resumeToken, resumeQ.OpenedAt); err == nil {
+	landApprovalUse(t, bed, "resume", resumeAnswer.Answer.Opid, resumeQ.OpenedAt)
+	if _, err := goal.AuthenticatedChannelApprovalAtEndpoint(bed.endpoint, "g", resumeAnswer.Answer.Opid, resumeToken, resumeQ.OpenedAt); err == nil {
 		t.Fatal("resume token was accepted twice")
 	}
 
@@ -1537,92 +1566,46 @@ func TestAuthenticatedChannelAuthorityAfterTemporaryHorizon(t *testing.T) {
 	}
 	code, _ = TOTPCode("JBSWY3DPEHPK3PXP", obligationQ.OpenedAt)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "6", ThreadID: "5"}, ThreadID: "5", UserID: "UWIDO", Text: obligationToken + " " + code}}
-	if _, err := Poll(context.Background(), pollBedConfig(root, p, obligationQ.OpenedAt)); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, p, obligationQ.OpenedAt)); err != nil {
 		t.Fatal(err)
 	}
 	obligationAnswer, _ := ReadQuestion(root, obligationQ.ID)
-	if _, err := goal.AuthenticatedChannelApproval(root, "g", obligationAnswer.Answer.Opid, obligationToken, obligationQ.OpenedAt); err != nil {
+	if _, err := goal.AuthenticatedChannelApprovalAtEndpoint(bed.endpoint, "g", obligationAnswer.Answer.Opid, obligationToken, obligationQ.OpenedAt); err != nil {
 		t.Fatal("set-obligation token refused its first use:", err)
 	}
-	landApprovalUse(t, root, "set-obligation", obligationAnswer.Answer.Opid, obligationQ.OpenedAt)
-	if _, err := goal.AuthenticatedChannelApproval(root, "g", obligationAnswer.Answer.Opid, obligationToken, obligationQ.OpenedAt); err == nil {
+	landApprovalUse(t, bed, "set-obligation", obligationAnswer.Answer.Opid, obligationQ.OpenedAt)
+	if _, err := goal.AuthenticatedChannelApprovalAtEndpoint(bed.endpoint, "g", obligationAnswer.Answer.Opid, obligationToken, obligationQ.OpenedAt); err == nil {
 		t.Fatal("set-obligation token was accepted twice")
 	}
 }
 
-func landApprovalUse(t *testing.T, root, verb, approvedRef string, now time.Time) {
+func landApprovalUse(t *testing.T, bed *pollRepository, verb, approvedRef string, now time.Time) {
 	t.Helper()
-	g := projectGoal(t, root, "g")
+	g := projectGoal(t, bed, "g")
 	g.Revision++
 	g.History = append(g.History, goal.HistoryLine{At: now.UTC().Format(time.RFC3339), Opid: goal.Opid("01J5X0000000000000000000A0", "machine", verb), Verb: verb, Actor: "human:wido", Targets: []string{"g"}, Keep: -1, ApprovedRef: approvedRef})
-	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "g.md"), goal.RenderFile(g), 0644); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command("git", "-C", root, "add", "plans/goals/g.md")
-	cmd.Env = testGitEnv()
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git add: %v %s", err, out)
-	}
-	cmd = exec.Command("git", "-C", root, "commit", "-q", "-m", "record approval use")
-	cmd.Env = testGitEnv()
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %v %s", err, out)
-	}
-	cmd = exec.Command("git", "-C", root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	cmd.Env = testGitEnv()
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("update local ledger: %v %s", err, out)
-	}
-	syncAccepted(t, root)
+	bed.recordConsumedHistory(t, g)
 }
 
-func pollBedConfig(root string, p Provider, now time.Time) PollConfig {
-	return PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: "fake", HumanUserID: "UWIDO", TOTPSecret: "JBSWY3DPEHPK3PXP", Machine: "machine", Lineage: "lineage", Provider: p, Now: now}
+func pollBedConfig(bed *pollRepository, p Provider, now time.Time) PollConfig {
+	return PollConfig{RepoRoot: bed.root, Destination: "fleet", ProviderName: "fake", HumanUserID: "UWIDO", TOTPSecret: "JBSWY3DPEHPK3PXP", Machine: "machine", Lineage: "lineage", Provider: p, Now: now}
 }
-func pollLedgerBed(t *testing.T) (string, *testProvider, Question, time.Time) {
+func pollLedgerBed(t *testing.T) (*pollRepository, *testProvider, Question, time.Time) {
 	t.Helper()
-	root := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-		cmd.Env = testGitEnv()
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run("init", "-q", "-b", "main")
-	run("config", "user.name", "channel-test")
-	run("config", "user.email", "channel@example.invalid")
-	run("config", "goal.sync-remote", "local")
-	if endpoint, err := goal.ResolveEndpoint(root); err != nil || !endpoint.LocalMode() {
-		t.Fatalf("local goal endpoint not resolved: %+v %v", endpoint, err)
-	}
-	_ = os.MkdirAll(filepath.Join(root, "plans", "goals"), 0755)
-	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "backlog.md"), goal.RenderRoot(&goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}), 0644); err != nil {
-		t.Fatal(err)
-	}
 	opened := goal.HistoryLine{At: "2026-09-03T00:00:00Z", Opid: goal.Opid("01J5X0000000000000000000F0", "machine", "lineage"), Verb: "open", Actor: "machine+lineage", Targets: []string{"g"}, Keep: -1}
 	f := &goal.GoalFile{Id: "g", State: goal.StateQueued, Tier: 1, Intent: "Question target.", Origin: "main", NextStep: "Wait.", OpenedAt: "2026-09-03T00:00:00Z", Revision: 1, History: []goal.HistoryLine{opened}}
-	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "g.md"), goal.RenderFile(f), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.budget.tier-1=1h/3/360m/1/0\nmetasystem.budget.review-round-max=3\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	run("add", "plans/goals")
-	run("commit", "-q", "-m", "seed channel ledger")
-	run("update-ref", goal.LocalLedgerBranch, "HEAD")
-	run("update-ref", goal.AcceptedRef, "HEAD")
+	bed := newPollRepository(t, goal.RenderRoot(&goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}), goal.RenderFile(f))
 	q := Question{ID: "01J5X0000000000000000000Q0", Goal: "g", Kind: "other", Machine: "machine", OpenedAt: time.Date(2026, 9, 3, 1, 0, 0, 0, time.UTC), Facts: []string{"fact"}, Thread: &MessageRef{ID: "1", ThreadID: "1"}, State: "open"}
-	if err := writeJSON(questionPath(root, q.ID), q); err != nil {
+	if err := writeJSON(questionPath(bed.root, q.ID), q); err != nil {
 		t.Fatal(err)
 	}
-	return root, &testProvider{cursor: "done"}, q, q.OpenedAt
+	return bed, &testProvider{cursor: "done"}, q, q.OpenedAt
 }
 
 func hclCarryAnswer(t *testing.T, answer string) (goal.HistoryLine, error) {
 	t.Helper()
-	root, provider, question, now := pollLedgerBed(t)
+	bed, provider, question, now := pollLedgerBed(t)
+	root := bed.root
 	question.Kind = "carry"
 	question.Wants = "carry workspace=" + strings.Repeat("a", 40) + " goal=g past=missing-declaration"
 	question.Facts = []string{"workspace", "refusal", "risk", "diff", "carries and debt", "expiry"}
@@ -1634,10 +1617,10 @@ func hclCarryAnswer(t *testing.T, answer string) (goal.HistoryLine, error) {
 		t.Fatal(err)
 	}
 	provider.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: answer + " " + code, SentAt: now}}
-	if _, err := Poll(context.Background(), pollBedConfig(root, provider, now)); err != nil {
+	if _, err := bed.poll(context.Background(), pollBedConfig(bed, provider, now)); err != nil {
 		t.Fatal(err)
 	}
-	file := projectGoal(t, root, "g")
+	file := projectGoal(t, bed, "g")
 	row := file.History[len(file.History)-1]
 	tree := &goal.TreeGoals{Live: map[string]*goal.GoalFile{"g": file}, Done: map[string]*goal.GoalFile{}}
 	_, wordErr := goal.CarryWordAt(tree, "g", row.Opid)
@@ -1682,31 +1665,13 @@ func testGitEnv() []string {
 	}
 	return out
 }
-func projectGoal(t *testing.T, root, id string) *goal.GoalFile {
+func projectGoal(t *testing.T, bed *pollRepository, id string) *goal.GoalFile {
 	t.Helper()
-	cmd := exec.Command("git", "-C", root, "show", goal.LocalLedgerBranch+":plans/goals/"+id+".md")
-	cmd.Env = testGitEnv()
-	b, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	f, problems := goal.ParseFile(b)
-	if len(problems) > 0 {
-		t.Fatal(problems)
-	}
-	return f
-}
-func syncAccepted(t *testing.T, root string) {
-	t.Helper()
-	cmd := exec.Command("git", "-C", root, "update-ref", goal.AcceptedRef, goal.LocalLedgerBranch)
-	cmd.Env = testGitEnv()
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("advance accepted ref: %v %s", err, out)
-	}
+	return bed.canonicalGoal(t, id)
 }
 
 func TestReportShowsLandingClaimInNextUpBlock(t *testing.T) {
-	now := time.Now().UTC().Add(time.Minute)
+	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
 	landing := reportClaimedGoal("landing-report", "Land the built work.", "fleet-one", now)
 	landing.Revision++
 	landing.History = append(landing.History, goal.HistoryLine{
@@ -1714,13 +1679,12 @@ func TestReportShowsLandingClaimInNextUpBlock(t *testing.T) {
 		Verb: "land-ready", Actor: "fleet-one+test-lineage", Targets: []string{landing.Id}, Keep: -1,
 	})
 	landing.Landing = &goal.LandingRecord{At: now.Format(time.RFC3339), Opid: goal.Opid("01J5X0000000000000000000R4", "fleet-one", "land")}
-	root := reportLedger(t, landing)
-	reportGit(t, root, "commit", "-q", "--allow-empty", "-m", "Ship the built work\n\nGoal-Item: "+landing.Id)
-	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
+	fixture := newReportFixture(t, now, landing)
+	root := fixture.root
 
-	text := mustComposeReport(t, ReportConfig{
+	text := fixture.mustCompose(ReportConfig{
 		RepoRoot: root, Machine: "fleet-one", Now: now, WindowStart: now.Add(-4 * time.Hour), Location: time.UTC,
-	})
+	}, now.Add(-4*time.Hour), []byte("Ship the built work\x00landing-report\n"))
 	wantLanding := "LANDING landing-report: land-ready since " + now.Format(time.RFC3339) + "; the queue is open"
 	deliveredAt := strings.Index(text, "Delivered: landing report")
 	landingAt := strings.Index(text, wantLanding)

@@ -63,18 +63,18 @@ func publishJoinWithAdmission(store Store, batchID string, unit Unit, actor stri
 					return fmt.Errorf("BATCH_COST_INPUT_MOVED: batch or member changed before handover")
 				}
 			}
-			prefixes, err := assembleUnits(store.root, record.BaseTree, live)
+			prefixes, err := store.reassembly.assemble(record.BaseTree, live)
 			if err != nil {
 				return err
 			}
 			if forecast != nil && !slices.Equal(prefixes, forecast.Binding.PrefixTrees) {
 				return fmt.Errorf("BATCH_COST_INPUT_MOVED: cumulative prefix trees changed before handover")
 			}
-			unitPrefixes, err := assembleUnits(store.root, record.BaseTree, []Unit{unit})
+			unitPrefixes, err := store.reassembly.assemble(record.BaseTree, []Unit{unit})
 			if err != nil || len(unitPrefixes) != 1 {
 				return fmt.Errorf("select joined unit %s: prefixes=%d: %w", unit.GoalID, len(unitPrefixes), err)
 			}
-			selection, err := planJoinedUnit(store.root, record.BaseTree, unit, unitPrefixes[0], plan)
+			selection, err := store.planJoinedUnit(record.BaseTree, unit, unitPrefixes[0], plan)
 			if err != nil {
 				return err
 			}

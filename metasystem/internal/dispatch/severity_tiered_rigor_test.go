@@ -2,7 +2,6 @@ package dispatch
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -37,7 +36,8 @@ func TestSTR3Gap03OutputsGrammar(t *testing.T) {
 }
 
 func TestGoalReviewRoundLimitUsesTupleAndGoalFreeCeiling(t *testing.T) {
-	repo := revisionBindingBed(t, 2)
+	bed := newGoalAdmissionBed(t, 2)
+	repo := bed.root
 	if err := os.WriteFile(filepath.Join(repo, "metasystem.conf"), []byte("metasystem.budget.review-round-max=9\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -54,24 +54,8 @@ func TestGoalReviewRoundLimitUsesTupleAndGoalFreeCeiling(t *testing.T) {
 	if err := os.WriteFile(goalPath, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("git", "-C", repo, "add", "metasystem.conf", "plans/goals/bounded.md")
-	command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git add: %v: %s", err, output)
-	}
-	command = exec.Command("git", "-C", repo, "commit", "-qm", "nine review rounds")
-	command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git commit: %v: %s", err, output)
-	}
-	for _, ref := range []string{goal.LocalLedgerBranch, goal.AcceptedRef} {
-		command = exec.Command("git", "-C", repo, "update-ref", ref, "HEAD")
-		command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("update %s: %v: %s", ref, err, output)
-		}
-	}
-	limit, err := goalReviewRoundLimit(repo, "bounded", 2, "code-critic")
+	bed.accept(t)
+	limit, err := goalReviewRoundLimitWithReads(repo, "bounded", 2, "code-critic", bed.reads)
 	if err != nil || limit.roleLimit != 9 {
 		t.Fatalf("goal tuple limit = %d, %v", limit.roleLimit, err)
 	}
@@ -94,7 +78,7 @@ func TestGoalReviewRoundLimitUsesTupleAndGoalFreeCeiling(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(goalFree, "metasystem.conf"), []byte("metasystem.budget.review-round-max=7\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if limit, err := goalReviewRoundLimit(goalFree, "", 0, "code-critic"); err != nil || limit.roleLimit != 7 {
+	if limit, err := goalReviewRoundLimitWithReads(goalFree, "", 0, "code-critic", goalFreeCriticReads(t)); err != nil || limit.roleLimit != 7 {
 		t.Fatalf("goal-free ceiling = %d, %v", limit.roleLimit, err)
 	}
 }
@@ -139,9 +123,6 @@ func TestSTR2BRenameEitherSide(t *testing.T) {
 
 func TestCritiqueSubjectPrefixesProjectRelativeDiffPaths(t *testing.T) {
 	gitRoot := t.TempDir()
-	if output, err := exec.Command("git", "init", "-q", gitRoot).CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
 	repo := filepath.Join(gitRoot, "metasystem")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
@@ -181,7 +162,9 @@ func TestCritiqueSubjectPrefixesProjectRelativeDiffPaths(t *testing.T) {
 				t.Fatal(err)
 			}
 			state := loadCritiqueState(repo)
-			subject, err := critiqueSubjectForRound(repo, state, map[string]any{"reviews": "impl"}, "code-critic", map[string]any{"reviewedTree": "tree"})
+			facts := newStrictCritiqueFacts(t, declaredPrefix(repo, "metasystem"))
+			subject, err := critiqueSubjectForRoundWithFacts(repo, state, map[string]any{"reviews": "impl"}, "code-critic", map[string]any{"reviewedTree": "tree"}, facts)
+			facts.assertConsumed()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -199,18 +182,17 @@ func TestCritiqueSubjectPrefixesProjectRelativeDiffPaths(t *testing.T) {
 
 func TestCritiqueSubjectDiffRefusalsNameReviewedRoundAndPath(t *testing.T) {
 	repo := t.TempDir()
-	if output, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), "impl.json", map[string]any{
 		"jobId": "impl", "role": "implementer", "round": 1, "parentJob": nil,
 	})
 	state := loadCritiqueState(repo)
 	root := map[string]any{"reviews": "impl"}
 	wantMissing := "reviewed implementer round impl (round 1) has no diff.patch at artifacts/agents/impl/rounds/1/diff.patch; run validate conformance --stage review --job impl first"
-	if _, err := critiqueSubjectForRound(repo, state, root, "code-critic", map[string]any{}); err == nil || err.Error() != wantMissing {
+	missingFacts := newStrictCritiqueFacts(t)
+	if _, err := critiqueSubjectForRoundWithFacts(repo, state, root, "code-critic", map[string]any{}, missingFacts); err == nil || err.Error() != wantMissing {
 		t.Fatalf("missing diff refusal = %v, want %q", err, wantMissing)
 	}
+	missingFacts.assertConsumed()
 	diffDir := filepath.Join(repo, "artifacts", "agents", "impl", "rounds", "1")
 	if err := os.MkdirAll(diffDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -219,24 +201,35 @@ func TestCritiqueSubjectDiffRefusalsNameReviewedRoundAndPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantEmpty := "reviewed implementer round impl (round 1) has no changed paths in diff.patch at artifacts/agents/impl/rounds/1/diff.patch; run validate conformance --stage review --job impl first"
-	if _, err := critiqueSubjectForRound(repo, state, root, "code-critic", map[string]any{}); err == nil || err.Error() != wantEmpty {
+	emptyFacts := newStrictCritiqueFacts(t, declaredPrefix(repo, ""))
+	if _, err := critiqueSubjectForRoundWithFacts(repo, state, root, "code-critic", map[string]any{}, emptyFacts); err == nil || err.Error() != wantEmpty {
 		t.Fatalf("empty diff refusal = %v, want %q", err, wantEmpty)
 	}
+	emptyFacts.assertConsumed()
 }
 
 func TestNEWPathAccepted(t *testing.T) {
 	repo := t.TempDir()
-	if output, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
-	emptyTree, err := exec.Command("git", "-C", repo, "mktree").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	subject := critiqueSubject{repoRoot: repo, tree: strings.TrimSpace(string(emptyTree)), paths: map[string]bool{"metasystem/new file.go": true}}
+	facts := newStrictCritiqueFacts(t, declaredAbsence(repo, "empty-tree", "metasystem/new file.go", true))
+	subject := critiqueSubject{repoRoot: repo, tree: "empty-tree", paths: map[string]bool{"metasystem/new file.go": true}, facts: facts}
 	register, demotions, err := foldCritiqueFindings(nil, "design-critic", "critic", []any{registerFindingValue("F-1", true, "evidence")}, rigorWire("F-1", "bounded", "NEW metasystem/new file.go"), subject, 1)
+	facts.assertConsumed()
 	if err != nil || len(register) != 1 || len(demotions) != 0 {
 		t.Fatalf("NEW fold = %+v, %+v, %v", register, demotions, err)
+	}
+	for _, tc := range []struct {
+		name   string
+		absent bool
+	}{{"invalid-tree", false}, {"present-path", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			facts := newStrictCritiqueFacts(t, declaredAbsence(repo, tc.name, "metasystem/new file.go", tc.absent))
+			subject.tree, subject.facts = tc.name, facts
+			_, demotions, err := foldCritiqueFindings(nil, "design-critic", "critic", []any{registerFindingValue("F-1", true, "evidence")}, rigorWire("F-1", "bounded", "NEW metasystem/new file.go"), subject, 1)
+			facts.assertConsumed()
+			if err != nil || len(demotions) != 1 {
+				t.Fatalf("NEW %s fold demotions = %+v, %v", tc.name, demotions, err)
+			}
+		})
 	}
 }
 
@@ -308,11 +301,12 @@ func TestMalformedRoundAccountingNamesBudgetRebindNextStep(t *testing.T) {
 }
 
 func TestRaiseByRebind(t *testing.T) {
-	repo := revisionBindingBed(t, 2)
+	bed := newGoalAdmissionBed(t, 2)
+	repo := bed.root
 	// design-critic limits are capped at 2 by section 4 of critique-closes-on-folded-proof-design.md; see design_round_cap_test.go.
 	root := map[string]any{"jobId": "critic", "role": "code-critic", "goalId": "bounded", reviewRoundLimitField: 1, criticRoundsConsumedField: 1}
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), "critic.json", root)
-	if outcome, err := CritiqueBudgetRebind(repo, "critic"); err != nil || outcome != "rebound" {
+	if outcome, err := critiqueBudgetRebindWithReads(repo, "critic", bed.reads); err != nil || outcome != "rebound" {
 		t.Fatalf("rebind = %q, %v", outcome, err)
 	}
 	got := readJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json"))
@@ -329,14 +323,15 @@ func TestRaiseByRebind(t *testing.T) {
 }
 
 func TestCritiqueBudgetRebindBackfillsLegacyAccounting(t *testing.T) {
-	repo := revisionBindingBed(t, 2)
+	bed := newGoalAdmissionBed(t, 2)
+	repo := bed.root
 	root := map[string]any{
 		// design-critic limits are capped at 2 by section 4 of critique-closes-on-folded-proof-design.md; see design_round_cap_test.go.
 		"jobId": "legacy-critic", "role": "code-critic", "round": 1, "parentJob": nil,
 		"status": "completed", "goalId": "bounded", findingRegisterField: []any{}, findingRegisterRoundField: 1,
 	}
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), "legacy-critic.json", root)
-	if outcome, err := CritiqueBudgetRebind(repo, "legacy-critic"); err != nil || outcome != "rebound" {
+	if outcome, err := critiqueBudgetRebindWithReads(repo, "legacy-critic", bed.reads); err != nil || outcome != "rebound" {
 		t.Fatalf("legacy rebind = %q, %v", outcome, err)
 	}
 	got := readJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs", "legacy-critic.json"))
@@ -359,25 +354,23 @@ func TestCritiqueRegisterCloseKeepsRegisterlessCompatibility(t *testing.T) {
 }
 
 func TestSTR2BCloseOneWrite(t *testing.T) {
-	repo := revisionBindingBed(t, 2)
+	bed := newGoalMutationBed(t)
+	repo := bed.root
 	chain := "critic-crash"
 	finding := registerFinding{FindingID: "B-1", Critic: chain, RigorClass: critiqueModel.Bounded, FactsDigest: digestJSON(registerFacts()), Facts: registerFacts(), Artifact: "NEW metasystem/a file.go", Title: "bounded title", Status: "open", Evidence: "proof", EvidenceDigest: digestJSON("proof"), Multiplicity: 1}
 	// design-critic limits are capped at 2 by section 4 of critique-closes-on-folded-proof-design.md; see design_round_cap_test.go.
 	root := map[string]any{"jobId": chain, "role": "code-critic", "goalId": "bounded", "machineId": "bed-m1", "mainId": "coordinator", "claimEpoch": 7, findingRegisterRoundField: 1, reviewRoundLimitField: 3, criticRoundsConsumedField: 3, "demotions": []any{}, findingRegisterField: encodeFindingRegister([]registerFinding{finding})}
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), chain+".json", root)
-	endpoint, err := goal.ResolveEndpoint(repo)
-	if err != nil {
-		t.Fatal(err)
-	}
+	endpoint := bed.endpoint()
 	req := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: "bed-m1", Lineage: "coordinator"}, Ulid: deterministicULID(chain), Now: time.Date(2026, 9, 3, 12, 0, 0, 0, time.UTC), ClaimEpoch: 7}
 	obligation := goal.ReviewObligation{Finding: "B-1", Chain: chain, Artifact: finding.Artifact, Test: "prove: " + finding.Title, State: "open"}
-	if _, err := goal.DeferFindings(req, "bounded", []goal.ReviewObligation{obligation}); err != nil {
-		t.Fatalf("simulated ledger-first step = %v", err)
+	if result, err := goal.DeferFindings(req, "bounded", []goal.ReviewObligation{obligation}); err != nil || result.Outcome != goal.OutcomeConfirmed {
+		t.Fatalf("ledger-first step = %+v %v", result, err)
 	}
-	if outcome, err := CritiqueRegisterClose(repo, chain); err != nil || outcome != "deferred" {
+	if outcome, err := bed.close(chain); err != nil || outcome != "deferred" {
 		t.Fatalf("close recovery = %q, %v", outcome, err)
 	}
-	if outcome, err := CritiqueRegisterClose(repo, chain); err != nil || outcome != "closed" {
+	if outcome, err := bed.close(chain); err != nil || outcome != "closed" {
 		t.Fatalf("close replay = %q, %v", outcome, err)
 	}
 	projection, err := goal.Project(endpoint, false, req.Now)
@@ -387,6 +380,10 @@ func TestSTR2BCloseOneWrite(t *testing.T) {
 	file := projection.Tree.Live["bounded"]
 	if file == nil || len(file.ReviewObligations) != 1 || file.ReviewObligations[0] != obligation {
 		t.Fatalf("obligation replay duplicated or changed: %+v", file)
+	}
+	accepted := bed.parsedAcceptedGoal(t, "bounded")
+	if len(accepted.ReviewObligations) != 1 || accepted.ReviewObligations[0] != obligation {
+		t.Fatalf("accepted obligation replay duplicated or changed: %+v", accepted.ReviewObligations)
 	}
 }
 

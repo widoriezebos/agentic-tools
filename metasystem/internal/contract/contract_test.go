@@ -116,8 +116,8 @@ func newContractRepo(t *testing.T) (repo, contractPath string) {
 }
 
 func TestContractValidateAcceptsBase(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	resolved, warnings, err := Validate(contractPath)
+	contractPath, repository := newContractFiles(t, 1)
+	resolved, warnings, err := contractValidateWithRepository(contractPath, repository)
 	if err != nil {
 		t.Fatalf("valid contract rejected: %v", err)
 	}
@@ -134,10 +134,10 @@ func TestContractValidateAcceptsBase(t *testing.T) {
 }
 
 func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
-	_, contractPath := newContractRepo(t)
+	contractPath, repository := newContractFiles(t, 5)
 	undersized := strings.Replace(baseContract(), "fence.cycles=3", "fence.cycles=6", 1)
 	writeFileMode(t, contractPath, undersized, 0o644)
-	_, warnings, err := Validate(contractPath)
+	_, warnings, err := contractValidateWithRepository(contractPath, repository)
 	if err != nil {
 		t.Fatalf("an undersized no-gain budget warns, never refuses: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 	// remains (baseContract's budget of 2 is under the critique cadence).
 	atHalf := strings.Replace(baseContract(), "fence.cycles=3", "fence.cycles=4", 1)
 	writeFileMode(t, contractPath, atHalf, 0o644)
-	if _, warnings, err = Validate(contractPath); err != nil ||
+	if _, warnings, err = contractValidateWithRepository(contractPath, repository); err != nil ||
 		len(warnings) != 2 || !strings.Contains(warnings[0], "critique cadence") {
 		t.Fatalf("a budget at half the fence warns for cadence and unsealed caps: %v %v", warnings, err)
 	}
@@ -158,7 +158,7 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 		"ledger.no-gain-budget=2", "ledger.no-gain-budget=3", 1),
 		"fence.cycles=3", "fence.cycles=6", 1)
 	writeFileMode(t, contractPath, atCadence, 0o644)
-	if _, warnings, err = Validate(contractPath); err != nil ||
+	if _, warnings, err = contractValidateWithRepository(contractPath, repository); err != nil ||
 		len(warnings) != 2 || !strings.Contains(warnings[0], "critique cadence") {
 		t.Fatalf("budget 3 warns for cadence and unsealed caps: %v %v", warnings, err)
 	}
@@ -166,7 +166,7 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 		"ledger.no-gain-budget=2", "ledger.no-gain-budget=4", 1),
 		"fence.cycles=3", "fence.cycles=8", 1)
 	writeFileMode(t, contractPath, aboveCadence, 0o644)
-	if _, warnings, err = Validate(contractPath); err != nil ||
+	if _, warnings, err = contractValidateWithRepository(contractPath, repository); err != nil ||
 		len(warnings) != 1 || !strings.Contains(warnings[0], "host.max-turns is not sealed") {
 		t.Fatalf("budget 4 with cycles 8 warns only for unsealed caps: %v %v", warnings, err)
 	}
@@ -174,7 +174,7 @@ func TestContractValidateWarnsOnUndersizedNoGainBudget(t *testing.T) {
 	sealed := strings.Replace(aboveCadence, "host.turn-cap-min=",
 		"host.max-turns=150\nhost.max-budget-usd=5.00\nhost.turn-cap-min=", 1)
 	writeFileMode(t, contractPath, sealed, 0o644)
-	if _, warnings, err = Validate(contractPath); err != nil || len(warnings) != 0 {
+	if _, warnings, err = contractValidateWithRepository(contractPath, repository); err != nil || len(warnings) != 0 {
 		t.Fatalf("sealed caps must clear every warning: %v %v", warnings, err)
 	}
 }
@@ -209,11 +209,9 @@ func TestContractValidateRejects(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			repo := filepath.Join(t.TempDir(), "repo")
-			_ = repo
-			_, contractPath := newContractRepo(t)
+			contractPath, repository := newContractFiles(t, 1)
 			writeFileMode(t, contractPath, tc.mutate(baseContract()), 0o644)
-			_, _, err := Validate(contractPath)
+			_, _, err := contractValidateWithRepository(contractPath, repository)
 			if err == nil {
 				t.Fatalf("expected rejection for %s", tc.name)
 			}
@@ -259,17 +257,17 @@ func TestContractSealWritesBlockAndDigest(t *testing.T) {
 }
 
 func TestContractSealRefusesAfterApproval(t *testing.T) {
-	_, contractPath := newContractRepo(t)
+	contractPath, repository := newContractFiles(t, 1)
 	writeFileMode(t, contractPath,
 		sealableContract()+"\nApproval: name=Human; date=2026-08-04; contract-sha256="+strings.Repeat("0", 64)+"\n", 0o644)
-	if _, err := Seal(contractPath); err == nil || !strings.Contains(err.Error(), "before approval") {
+	if _, err := contractSealWithRepository(contractPath, repository); err == nil || !strings.Contains(err.Error(), "before approval") {
 		t.Fatalf("expected refusal to seal after approval, got %v", err)
 	}
 }
 
 func TestContractPreflightUnsealed(t *testing.T) {
-	_, contractPath := newContractRepo(t)
-	_, _, err := Preflight(contractPath, "")
+	contractPath, repository := newContractFiles(t, 1)
+	_, _, err := contractPreflightWithRepository(contractPath, "", repository)
 	if err == nil || !strings.Contains(err.Error(), "unsealed") {
 		t.Fatalf("expected unsealed refusal, got %v", err)
 	}
@@ -424,11 +422,11 @@ func TestContractPatienceEntriesRejected(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.key, func(t *testing.T) {
-			_, contractPath := newContractRepo(t)
+			contractPath, repository := newContractFiles(t, 1)
 			mutated := strings.Replace(baseContract(), "exposure=EUR:10",
 				"exposure=EUR:10\n"+tc.key, 1)
 			writeFileMode(t, contractPath, mutated, 0o644)
-			_, _, err := Validate(contractPath)
+			_, _, err := contractValidateWithRepository(contractPath, repository)
 			if err == nil || !strings.Contains(err.Error(), tc.contains) {
 				t.Fatalf("expected %q refusal, got %v", tc.contains, err)
 			}
@@ -487,9 +485,9 @@ func TestContractValidateRejectsPerKeyMatrix(t *testing.T) {
 		}
 		bad, mapped := badValues[key]
 		t.Run("missing "+key, func(t *testing.T) {
-			_, contractPath := newContractRepo(t)
+			contractPath, repository := newContractFiles(t, 1)
 			writeFileMode(t, contractPath, removeLine(base, line), 0o644)
-			if _, _, err := Validate(contractPath); err == nil {
+			if _, _, err := contractValidateWithRepository(contractPath, repository); err == nil {
 				t.Fatalf("a contract missing %s validated", key)
 			}
 		})
@@ -497,9 +495,13 @@ func TestContractValidateRejectsPerKeyMatrix(t *testing.T) {
 			t.Fatalf("no malformed value mapped for key %s — extend the table", key)
 		}
 		t.Run("malformed "+key, func(t *testing.T) {
-			_, contractPath := newContractRepo(t)
+			expectedRepositoryCalls := 1
+			if bad == " value " {
+				expectedRepositoryCalls = 0
+			}
+			contractPath, repository := newContractFiles(t, expectedRepositoryCalls)
 			writeFileMode(t, contractPath, strings.Replace(base, line, key+"="+bad, 1), 0o644)
-			if _, _, err := Validate(contractPath); err == nil {
+			if _, _, err := contractValidateWithRepository(contractPath, repository); err == nil {
 				t.Fatalf("a contract with %s=%q validated", key, bad)
 			}
 		})

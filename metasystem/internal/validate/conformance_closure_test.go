@@ -19,7 +19,16 @@ type mergeClosureFixture struct {
 
 func newMergeClosureFixture(t *testing.T) *mergeClosureFixture {
 	t.Helper()
-	fixture := newConformanceFixture(t)
+	return assembleMergeClosureFixture(t, newConformanceFixture(t))
+}
+
+func newFileMergeClosureFixture(t *testing.T) *mergeClosureFixture {
+	t.Helper()
+	return assembleMergeClosureFixture(t, newFileConformanceFixture(t))
+}
+
+func assembleMergeClosureFixture(t *testing.T, fixture *conformanceFixture) *mergeClosureFixture {
+	t.Helper()
 	implementer := map[string]any{
 		"jobId": "implementation", "role": "implementer", "round": 1, "parentJob": nil,
 		"status": "completed", "effectiveModel": "implementer-model",
@@ -200,14 +209,14 @@ func (f *mergeClosureFixture) requireRefused(selected, contains string) {
 
 func TestMergeCritiqueClosureAndUnion(t *testing.T) {
 	t.Run("bound current closure", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 		fixture.requireAccepted("")
 	})
 
 	for _, status := range []string{"open", "disputed"} {
 		t.Run("older "+status+" root remains in union", func(t *testing.T) {
-			fixture := newMergeClosureFixture(t)
+			fixture := newFileMergeClosureFixture(t)
 			fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 			fixture.writeHistoricalCritic("critic-b", strings.Repeat("b", 40), []any{mergeRegisterFinding("F-OLD", status, "")})
 			fixture.requireRefused("", "critic-b: canonical finding register has unresolved finding 'F-OLD'")
@@ -215,41 +224,41 @@ func TestMergeCritiqueClosureAndUnion(t *testing.T) {
 	}
 
 	t.Run("selected root does not hide older unresolved root", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 		fixture.writeHistoricalCritic("critic-b", strings.Repeat("b", 40), []any{mergeRegisterFinding("F-OLD", "open", "")})
 		fixture.requireRefused("critic-a", "critic-b: canonical finding register has unresolved finding 'F-OLD'")
 	})
 
 	t.Run("older registerless material return remains in union", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 		fixture.writeRegisterlessMaterialCritic("critic-b", strings.Repeat("b", 40))
 		fixture.requireRefused("", "critic-b: final round still has material findings despite any dispositions: F-LEGACY")
 	})
 
 	t.Run("material finding without a count still refuses", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeMaterialCriticWithoutCount("critic-a", fixture.finalTree)
 		fixture.requireRefused("", "critic-a: final round still has material findings despite any dispositions: F-NOCOUNT")
 	})
 
 	t.Run("older material finding without a count blocks a matching current root", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 		fixture.writeMaterialCriticWithoutCount("critic-b", strings.Repeat("b", 40))
 		fixture.requireRefused("", "critic-b: final round still has material findings despite any dispositions: F-NOCOUNT")
 	})
 
 	t.Run("old clean root is harmless beside current closure", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 		fixture.writeHistoricalCritic("critic-b", strings.Repeat("b", 40), []any{})
 		fixture.requireAccepted("")
 	})
 
 	t.Run("closure must name the implementation root", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 		fixture.replaceClosureSubject("critic-a", readsubject.ReadSubject{
 			Kind: readsubject.SubjectLive, ImplementerRoot: "other-implementation", ReviewedMember: "implementation",
@@ -259,7 +268,7 @@ func TestMergeCritiqueClosureAndUnion(t *testing.T) {
 	})
 
 	t.Run("closure reviewed member must belong to implementation", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 		fixture.replaceClosureSubject("critic-a", readsubject.ReadSubject{
 			Kind: readsubject.SubjectLive, ImplementerRoot: "implementation", ReviewedMember: "other-member",
@@ -269,13 +278,13 @@ func TestMergeCritiqueClosureAndUnion(t *testing.T) {
 	})
 
 	t.Run("absent selected root", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 		fixture.requireRefused("critic-missing", "requested code-critic chain 'critic-missing' is absent")
 	})
 
 	t.Run("invalid selected root", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeClosedCritic("critic-a", "implementation", strings.Repeat("b", 40))
 		fixture.writeClosedCritic("critic-b", "implementation", fixture.finalTree)
 		fixture.requireRefused("critic-a", "requested code-critic chain 'critic-a' is not valid and current")
@@ -285,7 +294,7 @@ func TestMergeCritiqueClosureAndUnion(t *testing.T) {
 func TestMergeCritiqueIgnoresIncompleteStaleRootsWhenCurrentRootMatches(t *testing.T) {
 	for _, status := range []string{"running", "cancelled"} {
 		t.Run(status, func(t *testing.T) {
-			fixture := newMergeClosureFixture(t)
+			fixture := newFileMergeClosureFixture(t)
 			fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 			fixture.writeCriticWithoutReturn("critic-b", status)
 			fixture.requireAccepted("")
@@ -296,7 +305,7 @@ func TestMergeCritiqueIgnoresIncompleteStaleRootsWhenCurrentRootMatches(t *testi
 func TestMergeCritiqueRejectsStaleClosureRound(t *testing.T) {
 	for _, status := range []string{"running", "failed", "cancelled", "completed"} {
 		t.Run(status, func(t *testing.T) {
-			fixture := newMergeClosureFixture(t)
+			fixture := newFileMergeClosureFixture(t)
 			fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 			fixture.writeClosedCritic("critic-b", "implementation", strings.Repeat("b", 40))
 			fixture.fixture.writeJSON("artifacts/agents/jobs/critic-b-r2.json", map[string]any{
@@ -314,7 +323,7 @@ func TestMergeCritiqueRejectsStaleClosureRound(t *testing.T) {
 
 func TestMergeCritiqueClosureAbsence(t *testing.T) {
 	t.Run("modern clean fold", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
 		root := fixture.criticRoot("critic-a")
 		delete(root, "closure")
@@ -323,7 +332,7 @@ func TestMergeCritiqueClosureAbsence(t *testing.T) {
 	})
 
 	t.Run("registerless historical", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeHistoricalCritic("critic-a", fixture.finalTree, nil)
 		root := fixture.criticRoot("critic-a")
 		delete(root, "findingRegister")
@@ -333,11 +342,31 @@ func TestMergeCritiqueClosureAbsence(t *testing.T) {
 	})
 
 	t.Run("lawful out-of-scope decision", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
+		fixture := newFileMergeClosureFixture(t)
 		fixture.writeHistoricalCritic("critic-a", fixture.finalTree, []any{mergeRegisterFinding("F-OOS", "resolved", "out-of-scope")})
 		fixture.requireAccepted("")
 	})
 
+	t.Run("malformed present closure", func(t *testing.T) {
+		fixture := newFileMergeClosureFixture(t)
+		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
+		root := fixture.criticRoot("critic-a")
+		root["closure"] = "malformed"
+		fixture.fixture.writeJSON("artifacts/agents/jobs/critic-a.json", root)
+		fixture.requireRefused("", "closure must be an object")
+	})
+
+	t.Run("changed folded subject digest", func(t *testing.T) {
+		fixture := newFileMergeClosureFixture(t)
+		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
+		root := fixture.criticRoot("critic-a")
+		root["findingRegisterSubjectDigest"] = "changed"
+		fixture.fixture.writeJSON("artifacts/agents/jobs/critic-a.json", root)
+		fixture.requireRefused("", "does not equal folded subject changed")
+	})
+}
+
+func TestMergeCritiqueGoalDecisionsUseAcceptedRepository(t *testing.T) {
 	for _, status := range []string{"deferred", "accepted-risk"} {
 		t.Run(status+" still requires matching goal record", func(t *testing.T) {
 			fixture := newMergeClosureFixture(t)
@@ -357,22 +386,4 @@ func TestMergeCritiqueClosureAbsence(t *testing.T) {
 			fixture.requireAccepted("")
 		})
 	}
-
-	t.Run("malformed present closure", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
-		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
-		root := fixture.criticRoot("critic-a")
-		root["closure"] = "malformed"
-		fixture.fixture.writeJSON("artifacts/agents/jobs/critic-a.json", root)
-		fixture.requireRefused("", "closure must be an object")
-	})
-
-	t.Run("changed folded subject digest", func(t *testing.T) {
-		fixture := newMergeClosureFixture(t)
-		fixture.writeClosedCritic("critic-a", "implementation", fixture.finalTree)
-		root := fixture.criticRoot("critic-a")
-		root["findingRegisterSubjectDigest"] = "changed"
-		fixture.fixture.writeJSON("artifacts/agents/jobs/critic-a.json", root)
-		fixture.requireRefused("", "does not equal folded subject changed")
-	})
 }

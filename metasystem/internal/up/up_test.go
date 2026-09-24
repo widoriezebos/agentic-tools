@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -171,8 +172,13 @@ func TestRuntimeSignatureAbsenceFailsBeforeArmingWithTheFallbackRemedy(t *testin
 
 func TestOrdinaryUpRefusesDriftWithoutMintingANewGeneration(t *testing.T) {
 	root := t.TempDir()
-	if output, err := exec.Command("git", "-C", root, "init", "-q", "-b", "trunk").CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v\n%s", err, output)
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "trunk"},
+		{"config", "--local", "metasystem.steward.notify-command", "true"},
+	} {
+		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, output)
+		}
 	}
 	binary := filepath.Join(root, "metasystem")
 	if err := testexec.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
@@ -203,6 +209,30 @@ func TestOrdinaryUpRefusesDriftWithoutMintingANewGeneration(t *testing.T) {
 
 func TestOrdinaryUpReportsALandingRefReadFailureByName(t *testing.T) {
 	t.Parallel()
+	const helperMode = "METASYSTEM_UP_LANDING_REF_READ_FAILURE_HELPER"
+	if os.Getenv(helperMode) != "1" {
+		globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+		if err := os.WriteFile(globalConfig, []byte("[metasystem \"steward\"]\n\tnotify-command = true\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		arguments := []string{"-test.run=^TestOrdinaryUpReportsALandingRefReadFailureByName$", "-test.count=1"}
+		if coverageFlag := flag.Lookup("test.gocoverdir"); coverageFlag != nil && coverageFlag.Value.String() != "" {
+			arguments = append(arguments, "-test.gocoverdir="+coverageFlag.Value.String())
+		}
+		command := exec.Command(os.Args[0], arguments...)
+		environment := make([]string, 0, len(os.Environ())+3)
+		for _, entry := range os.Environ() {
+			name, _, _ := strings.Cut(entry, "=")
+			if name != helperMode && name != "GIT_CONFIG_GLOBAL" && name != "GIT_CONFIG_NOSYSTEM" {
+				environment = append(environment, entry)
+			}
+		}
+		command.Env = append(environment, helperMode+"=1", "GIT_CONFIG_GLOBAL="+globalConfig, "GIT_CONFIG_NOSYSTEM=1")
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("landing-ref read failure helper: %v\n%s", err, output)
+		}
+		return
+	}
 	root := t.TempDir()
 	binary := filepath.Join(root, "metasystem")
 	if err := testexec.WriteFile(binary, []byte("accepted\n"), 0o755); err != nil {
@@ -238,6 +268,7 @@ func TestMissingConfiguredLandingRefNamesItsActualRepair(t *testing.T) {
 	for _, args := range [][]string{
 		{"init", "-q", "-b", "trunk"},
 		{"config", "--local", "metasystem.steward.landing-ref", "refs/remotes/origin/trunk"},
+		{"config", "--local", "metasystem.steward.notify-command", "true"},
 	} {
 		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, output)
@@ -327,6 +358,14 @@ func TestOrdinaryUpRefusesAStrangerBeforeSessionState(t *testing.T) {
 	for _, changed := range []bool{false, true} {
 		t.Run(fmt.Sprintf("enrolled bytes changed=%t", changed), func(t *testing.T) {
 			root := t.TempDir()
+			for _, args := range [][]string{
+				{"init", "-q", "-b", "trunk"},
+				{"config", "--local", "metasystem.steward.notify-command", "true"},
+			} {
+				if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+					t.Fatalf("git %v: %v\n%s", args, err, output)
+				}
+			}
 			accepted := filepath.Join(root, "accepted-engine")
 			stranger := filepath.Join(root, "stranger-engine")
 			if err := testexec.WriteFile(accepted, []byte("accepted\n"), 0o755); err != nil {

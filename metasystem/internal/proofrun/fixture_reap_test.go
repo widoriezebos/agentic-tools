@@ -184,6 +184,47 @@ func TestForeignFixtureSurvivorDoesNotFailProofAttempt(t *testing.T) {
 	}
 }
 
+func TestFixtureSurvivorOwnedByAttemptCanonicalRef(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux exact references carry the redundant-seconds representation under test")
+	}
+
+	owner := identity.Ref{Pid: 4101, StartedAtSec: 17, StartTicks: 701, BootID: "boot-a"}
+	survivor := identity.FixtureSurvivor{
+		Ref: identity.Ref{Pid: 4201, StartTicks: 801, BootID: "boot-a"},
+		Key: identity.FixtureKey{Owner: identity.Ref{Pid: owner.Pid, StartTicks: owner.StartTicks, BootID: owner.BootID}},
+	}
+	process := proofSurvivorProcess(survivor.Ref.Pid, survivor.Ref.StartTicks)
+	process.BootID = survivor.Ref.BootID
+	prober := census.FixtureProcessProber([]census.Process{process})
+
+	tests := []struct {
+		name  string
+		owner identity.Ref
+		want  bool
+	}{
+		{name: "redundant seconds differ", owner: owner, want: true},
+		{name: "pid differs", owner: identity.Ref{Pid: owner.Pid + 1, StartTicks: owner.StartTicks, BootID: owner.BootID}},
+		{name: "ticks differ", owner: identity.Ref{Pid: owner.Pid, StartTicks: owner.StartTicks + 1, BootID: owner.BootID}},
+		{name: "boot differs", owner: identity.Ref{Pid: owner.Pid, StartTicks: owner.StartTicks, BootID: "boot-b"}},
+		{name: "survivor owner invalid", owner: owner},
+		{name: "attempt owner invalid", owner: identity.Ref{Pid: owner.Pid}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := survivor
+			if test.name == "survivor owner invalid" {
+				candidate.Key.Owner = identity.Ref{Pid: owner.Pid}
+			}
+			if got := fixtureSurvivorOwnedByAttempt(prober, candidate, fixtureAttemptOwnership{owner: test.owner}); got != test.want {
+				t.Fatalf("fixtureSurvivorOwnedByAttempt() = %t, want %t for survivor owner %+v and attempt owner %+v",
+					got, test.want, candidate.Key.Owner, test.owner)
+			}
+		})
+	}
+}
+
 func writeProofProcessTable(t *testing.T, path string, rows []census.Process) {
 	t.Helper()
 	data, err := json.Marshal(rows)

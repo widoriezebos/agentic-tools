@@ -64,7 +64,11 @@ func stateDirectory(kind stateroot.Kind) string {
 // records/ and artifacts/, and never spills control state at the Git
 // repository scope above it.
 func digestRoot(repoRoot string) string {
-	layout, err := stateroot.ResolveLayout(repoRoot)
+	return digestRootWithLayoutReader(repoRoot, stateroot.ResolveLayout)
+}
+
+func digestRootWithLayoutReader(repoRoot string, resolveLayout func(string) (stateroot.Layout, error)) string {
+	layout, err := resolveLayout(repoRoot)
 	if err != nil || !layout.Template || layout.InstallationRoot == "" {
 		return repoRoot
 	}
@@ -72,7 +76,11 @@ func digestRoot(repoRoot string) string {
 }
 
 func Path(repoRoot string) string {
-	return filepath.Join(digestRoot(repoRoot), stateDirectory(stateroot.Records), "narrator-digest.log")
+	return pathWithLayoutReader(repoRoot, stateroot.ResolveLayout)
+}
+
+func pathWithLayoutReader(repoRoot string, resolveLayout func(string) (stateroot.Layout, error)) string {
+	return filepath.Join(digestRootWithLayoutReader(repoRoot, resolveLayout), stateDirectory(stateroot.Records), "narrator-digest.log")
 }
 
 var cursorNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
@@ -102,16 +110,24 @@ func CursorPath(repoRoot string, names ...string) string {
 }
 
 func lockPath(repoRoot string) string {
-	return filepath.Join(digestRoot(repoRoot), stateDirectory(stateroot.Steward), "narrator-digest.flock")
+	return lockPathWithLayoutReader(repoRoot, stateroot.ResolveLayout)
+}
+
+func lockPathWithLayoutReader(repoRoot string, resolveLayout func(string) (stateroot.Layout, error)) string {
+	return filepath.Join(digestRootWithLayoutReader(repoRoot, resolveLayout), stateDirectory(stateroot.Steward), "narrator-digest.flock")
 }
 
 type digestLock struct{ file *os.File }
 
 func acquire(repoRoot string) (*digestLock, error) {
-	if err := os.MkdirAll(filepath.Dir(lockPath(repoRoot)), 0o755); err != nil {
+	return acquireWithLayoutReader(repoRoot, stateroot.ResolveLayout)
+}
+
+func acquireWithLayoutReader(repoRoot string, resolveLayout func(string) (stateroot.Layout, error)) (*digestLock, error) {
+	if err := os.MkdirAll(filepath.Dir(lockPathWithLayoutReader(repoRoot, resolveLayout)), 0o755); err != nil {
 		return nil, err
 	}
-	file, err := os.OpenFile(lockPath(repoRoot), os.O_CREATE|os.O_RDWR, 0o644)
+	file, err := os.OpenFile(lockPathWithLayoutReader(repoRoot, resolveLayout), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, err
 	}
@@ -145,15 +161,20 @@ func sourceMarker(entry Entry) string {
 
 // Append writes one line per event and deduplicates exact event retries.
 func Append(repoRoot string, entries []Entry, now time.Time) error {
+	return AppendWithLayoutReader(repoRoot, entries, now, stateroot.ResolveLayout)
+}
+
+// AppendWithLayoutReader writes digest entries using layout facts supplied for this call.
+func AppendWithLayoutReader(repoRoot string, entries []Entry, now time.Time, resolveLayout func(string) (stateroot.Layout, error)) error {
 	if len(entries) == 0 {
 		return nil
 	}
-	lock, err := acquire(repoRoot)
+	lock, err := acquireWithLayoutReader(repoRoot, resolveLayout)
 	if err != nil {
 		return err
 	}
 	defer lock.release()
-	path := Path(repoRoot)
+	path := pathWithLayoutReader(repoRoot, resolveLayout)
 	existing, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -175,7 +196,7 @@ func Append(repoRoot string, entries []Entry, now time.Time) error {
 	if body == string(existing) {
 		return nil
 	}
-	durable, err := atomicfile.WriteText(path, body, digestRoot(repoRoot))
+	durable, err := atomicfile.WriteText(path, body, digestRootWithLayoutReader(repoRoot, resolveLayout))
 	if err != nil {
 		return err
 	}

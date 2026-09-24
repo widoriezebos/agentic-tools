@@ -79,18 +79,20 @@ func installEnforcedObligation(t *testing.T, root string, attemptLimit uint64) u
 }
 
 func TestGovernedAdmissionRefusesAcceptedGoalWithoutObligationTuple(t *testing.T) {
-	root := revisionBindingBed(t, 2)
-	_, err := EvaluateGovernedRunAdmission(root, run.GovernedAdmissionRequest{
+	bed := newGoalAdmissionBed(t, 2)
+	root := bed.root
+	_, err := evaluateGovernedRunAdmissionWithReads(root, run.GovernedAdmissionRequest{
 		GoalID: "bounded", ObligationRevision: 1, StandingShared: true,
-	}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC))
+	}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC), bed.reads)
 	if err == nil || !strings.Contains(err.Error(), "has no accepted obligation revision 1") {
 		t.Fatalf("accepted goal without its obligation tuple was admitted: %v", err)
 	}
 }
 
 func TestGovernedAdmissionKeepsRecordedRelayConsequencesActive(t *testing.T) {
-	root := revisionBindingBed(t, 2)
-	revision := installEnforcedObligation(t, root, 4)
+	bed := newGoalAdmissionBed(t, 2)
+	root := bed.root
+	revision := installAcceptedEnforcedObligation(t, bed, 4)
 	path := filepath.Join(root, "plans", "goals", "bounded.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -114,14 +116,10 @@ func TestGovernedAdmissionKeepsRecordedRelayConsequencesActive(t *testing.T) {
 	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "recorded relay obligation"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		if output, runErr := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); runErr != nil {
-			t.Fatalf("git %v: %v: %s", args, runErr, output)
-		}
-	}
-	admission, err := EvaluateGovernedRunAdmission(root, run.GovernedAdmissionRequest{
+	bed.accept(t)
+	admission, err := evaluateGovernedRunAdmissionWithReads(root, run.GovernedAdmissionRequest{
 		GoalID: "bounded", ObligationRevision: revision, StandingShared: true,
-	}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC))
+	}, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC), bed.reads)
 	if err != nil || !admission.Attempt.AdmissionDecision.Apply ||
 		!strings.Contains(admission.Attempt.AdmissionDecision.Reason, "human provenance not verified") {
 		t.Fatalf("recorded relay became inert or overstated at governed admission: admission=%+v err=%v", admission, err)
@@ -129,7 +127,8 @@ func TestGovernedAdmissionKeepsRecordedRelayConsequencesActive(t *testing.T) {
 }
 
 func TestDraftAdmissionRecordsWouldRefuseButDoesNotRefuseTheRun(t *testing.T) {
-	root := revisionBindingBed(t, 2)
+	bed := newGoalAdmissionBed(t, 2)
+	root := bed.root
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -165,19 +164,17 @@ func TestDraftAdmissionRecordsWouldRefuseButDoesNotRefuseTheRun(t *testing.T) {
 	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "draft obligation"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		if output, runErr := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); runErr != nil {
-			t.Fatalf("git %v: %v: %s", args, runErr, output)
-		}
-	}
+	bed.accept(t)
 	now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
-	admission, err := EvaluateGovernedRunAdmission(root, run.GovernedAdmissionRequest{
-		GoalID: "bounded", ObligationRevision: file.Revision, StandingShared: true}, now)
+	admission, err := evaluateGovernedRunAdmissionWithReads(root, run.GovernedAdmissionRequest{
+		GoalID: "bounded", ObligationRevision: file.Revision, StandingShared: true}, now, bed.reads)
 	if err != nil || !admission.Attempt.AdmissionDecision.WouldRefuse || admission.Attempt.AdmissionDecision.Apply {
 		t.Fatalf("DRAFT did not produce an inert would-refuse: %+v %v", admission, err)
 	}
 	store := &run.Store{Root: root, Now: func() time.Time { return now },
-		AdmitGoverned: func(run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) { return admission, nil }}
+		AdmitGoverned: func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
+			return evaluateGovernedRunAdmissionWithReads(root, request, now, bed.reads)
+		}}
 	if _, err := store.Launch(run.Caller{Class: "HUMAN"}, run.LaunchParams{Id: "draft-observer", Kind: "suite",
 		Display: "draft observer", Log: "artifacts/draft-observer.log", GoalId: "bounded",
 		ObligationRevision: file.Revision, StandingShared: true}); err != nil {
@@ -190,17 +187,18 @@ func TestDraftAdmissionRecordsWouldRefuseButDoesNotRefuseTheRun(t *testing.T) {
 }
 
 func TestExhaustedObligationSurvivesIDOverlayAttemptAndGovernedRunPrune(t *testing.T) {
-	root := revisionBindingBed(t, 2)
-	obligationRevision := installEnforcedObligation(t, root, 1)
+	bed := newGoalAdmissionBed(t, 2)
+	root := bed.root
+	obligationRevision := installAcceptedEnforcedObligation(t, bed, 1)
 	now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
 	prober := &governedProofProber{alive: true, started: now}
 	store := &run.Store{Root: root, Now: func() time.Time { return now }, Prober: prober,
 		Getpgid: func(pid int64) (int64, error) { return pid, nil }, AllPids: func() ([]int64, error) { return nil, nil }}
 	store.AdmitGoverned = func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
-		return EvaluateGovernedRunAdmission(root, request, now)
+		return evaluateGovernedRunAdmissionWithReads(root, request, now, bed.reads)
 	}
-	store.ObserveGoverned = func(*run.Record, time.Time) run.AssumptionObservation {
-		return run.AssumptionObservation{ObservedAt: now.UTC().Format(time.RFC3339), AssumptionState: run.AssumptionMatch}
+	store.ObserveGoverned = func(record *run.Record, at time.Time) run.AssumptionObservation {
+		return observeGovernedRunWithReads(root, record, at, record.RunId, bed.reads)
 	}
 	store.ProjectSpend = func(*run.Record, time.Time) (run.SpendSnapshot, string) { return run.SpendSnapshot{}, "" }
 	params := run.LaunchParams{Id: "red-n", Kind: "suite", Display: "governed red N", Log: "artifacts/red-n.log",
@@ -256,17 +254,18 @@ func TestExhaustedObligationSurvivesIDOverlayAttemptAndGovernedRunPrune(t *testi
 }
 
 func TestMissingUnprunedRunEvidenceMakesDurableSpendFailClosed(t *testing.T) {
-	root := revisionBindingBed(t, 2)
+	bed := newGoalAdmissionBed(t, 2)
+	root := bed.root
 	if err := os.MkdirAll(filepath.Join(root, "artifacts"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	obligationRevision := installEnforcedObligation(t, root, 2)
+	obligationRevision := installAcceptedEnforcedObligation(t, bed, 2)
 	now := time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC)
 	store := &run.Store{Root: root, Now: func() time.Time { return now },
 		AdmitGoverned: func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
-			return EvaluateGovernedRunAdmission(root, request, now)
-		}, ObserveGoverned: func(*run.Record, time.Time) run.AssumptionObservation {
-			return run.AssumptionObservation{ObservedAt: now.UTC().Format(time.RFC3339), AssumptionState: run.AssumptionMatch}
+			return evaluateGovernedRunAdmissionWithReads(root, request, now, bed.reads)
+		}, ObserveGoverned: func(record *run.Record, at time.Time) run.AssumptionObservation {
+			return observeGovernedRunWithReads(root, record, at, record.RunId, bed.reads)
 		}, ProjectSpend: func(*run.Record, time.Time) (run.SpendSnapshot, string) { return run.SpendSnapshot{}, "" }}
 	if _, err := store.Launch(run.Caller{Class: "HUMAN"}, run.LaunchParams{Id: "lost-evidence", Kind: "suite",
 		Display: "lost evidence", Log: "artifacts/lost.log", GoalId: "bounded", ObligationRevision: obligationRevision,

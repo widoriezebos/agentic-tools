@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // A verb takes its own arguments (after the family and verb words)
@@ -733,6 +735,14 @@ func dispatch(args []string) int {
 }
 
 func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []family) int {
+	return dispatchWithFamiliesAndRepositoryTop(args, stdout, stderr, registered, stateroot.RepositoryTop)
+}
+
+func dispatchWithRepositoryTop(args []string, repositoryTop func(string) (string, error)) int {
+	return dispatchWithFamiliesAndRepositoryTop(args, os.Stdout, os.Stderr, families(), repositoryTop)
+}
+
+func dispatchWithFamiliesAndRepositoryTop(args []string, stdout, stderr io.Writer, registered []family, repositoryTop func(string) (string, error)) int {
 	if len(args) == 0 {
 		writeUsage(stderr, registered)
 		return 2
@@ -772,7 +782,7 @@ func dispatchWithFamilies(args []string, stdout, stderr io.Writer, registered []
 		}
 	}
 	if args[0] == "up" {
-		return runUp(args[1:])
+		return runUpWith(args[1:], repositoryTop)
 	}
 	if args[0] == "stop" {
 		return runProcessStop(args[1:])

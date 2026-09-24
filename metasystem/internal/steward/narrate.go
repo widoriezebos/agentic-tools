@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // narrationCapLines bounds the file: old ticks scroll away, because a
@@ -34,7 +35,11 @@ func NarrationPath(repoRoot string) string {
 // failure path returns silently, because the tick's real duties must
 // never hang on the storyteller.
 func Narrate(repoRoot string, result TickResult, cfg TickConfig) {
-	line := narrationLine(repoRoot, result, cfg, cfg.now())
+	narrateWithMachineReader(repoRoot, result, cfg, goal.ResolveMachine)
+}
+
+func narrateWithMachineReader(repoRoot string, result TickResult, cfg TickConfig, readMachine func(string) (string, error)) {
+	line := narrationLineWithMachineReader(repoRoot, result, cfg, cfg.now(), readMachine)
 	if line == "" {
 		return
 	}
@@ -45,9 +50,13 @@ func Narrate(repoRoot string, result TickResult, cfg TickConfig) {
 // scrolling tick narration, this concluded-story register is durable and a
 // write failure fails the tick before its observation high-water advances.
 func NarrateDigest(repoRoot string, previous Evidence, result TickResult, now time.Time) error {
+	return narrateDigestWithReaders(repoRoot, previous, result, now, goal.ResolveMachine, stateroot.ResolveLayout)
+}
+
+func narrateDigestWithReaders(repoRoot string, previous Evidence, result TickResult, now time.Time, readMachine func(string) (string, error), resolveLayout func(string) (stateroot.Layout, error)) error {
 	var entries []narratordigest.Entry
 	machine := "this machine"
-	if enrolled, err := goal.ResolveMachine(repoRoot); err == nil {
+	if enrolled, err := readMachine(repoRoot); err == nil {
 		machine = enrolled
 	}
 	for _, event := range result.LedgerAttention.Pending {
@@ -91,7 +100,7 @@ func NarrateDigest(repoRoot string, previous Evidence, result TickResult, now ti
 			SourceType: "episode", SourceID: fmt.Sprintf("revival-%s-%d", result.Evidence.Marks.HeadOid, result.Evidence.DryRevivals),
 		})
 	}
-	return narratordigest.Append(repoRoot, entries, now)
+	return narratordigest.AppendWithLayoutReader(repoRoot, entries, now, resolveLayout)
 }
 
 // NarrateHealthLine durably appends the typed one-line health verdict. Unlike
@@ -133,8 +142,12 @@ func appendNarrationLine(repoRoot, line string) error {
 // in the narrator's plain-English register, no identifiers a reader
 // would have to look up.
 func narrationLine(repoRoot string, result TickResult, cfg TickConfig, now time.Time) string {
+	return narrationLineWithMachineReader(repoRoot, result, cfg, now, goal.ResolveMachine)
+}
+
+func narrationLineWithMachineReader(repoRoot string, result TickResult, cfg TickConfig, now time.Time, readMachine func(string) (string, error)) string {
 	machine := "this machine"
-	if name, err := goal.ResolveMachine(repoRoot); err == nil {
+	if name, err := readMachine(repoRoot); err == nil {
 		machine = name
 	}
 	var doing string

@@ -2,33 +2,27 @@ package validate
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
 func TestReviewStageWritesOnlyThreeFields(t *testing.T) {
-	f := newConformanceFixture(t)
-	f.writeImplementer("", "source.txt")
-	appendFile(t, filepath.Join(f.worktree, "source.txt"), "reviewed change\n")
-	expectConformance(t, f, "review", 0, "reviewedTree=")
-
-	path := filepath.Join(f.controller, "artifacts", "agents", "impl", "rounds", "1", "review.json")
-	data, err := os.ReadFile(path)
+	data, err := encodeConformanceReview(filepath.Join("artifacts", "diff.patch"), "impl", "opaque-reviewed-tree")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var review map[string]any
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		t.Fatalf("review.json has no trailing newline: %q", data)
+	}
+	var review map[string]string
 	if err := json.Unmarshal(data, &review); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]bool{"diffArtifact": true, "implementerJob": true, "reviewedTree": true}
-	if len(review) != len(want) {
-		t.Fatalf("review.json fields = %v, want exactly %v", review, want)
+	want := map[string]string{
+		"diffArtifact": "diff.patch", "implementerJob": "impl", "reviewedTree": "opaque-reviewed-tree",
 	}
-	for key := range review {
-		if !want[key] {
-			t.Fatalf("review.json contains unexpected field %q: %v", key, review)
-		}
+	if !reflect.DeepEqual(review, want) {
+		t.Fatalf("review.json fields = %v, want exactly %v", review, want)
 	}
 }

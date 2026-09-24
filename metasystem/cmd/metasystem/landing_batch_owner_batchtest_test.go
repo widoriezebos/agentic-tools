@@ -150,9 +150,6 @@ func TestBatchOwnerHoldsTheLease(t *testing.T) {
 		return
 	}
 	root := t.TempDir()
-	if err := exec.Command("git", "init", "-q", root).Run(); err != nil {
-		t.Fatal(err)
-	}
 	first := exec.Command(os.Args[0], "-test.run=^TestBatchOwnerHoldsTheLease$")
 	first.Env = append(os.Environ(), "GO_WANT_BATCH_OWNER_LEASE_HELPER=hold", "BATCH_OWNER_TEST_ROOT="+root)
 	stdin, err := first.StdinPipe()

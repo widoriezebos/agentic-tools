@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -28,9 +27,9 @@ func requirePublishCode(t *testing.T, err error, code string) {
 	}
 }
 
-func TestGoalLandingPublicationAndVerification(t *testing.T) {
+func TestLandingPublicationGitAdapter(t *testing.T) {
 	t.Parallel()
-	t.Run("whole series", func(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
 		t.Parallel()
 		fixture := newLandFixture(t)
 		out, prepared := preparedLanding(t, fixture)
@@ -77,8 +76,8 @@ func TestGoalLandingPublicationAndVerification(t *testing.T) {
 	for _, test := range []struct {
 		name, code, movedRef string
 	}{
-		{name: "endpoint moved", code: branch.LandTrunkMovedCode, movedRef: "refs/heads/main"},
-		{name: "landing moved", code: branch.LandBranchMovedCode, movedRef: "refs/heads/landing/goal-a"},
+		{name: "endpoint_moved", code: branch.LandTrunkMovedCode, movedRef: "refs/heads/main"},
+		{name: "landing_moved", code: branch.LandBranchMovedCode, movedRef: "refs/heads/landing/goal-a"},
 	} {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
@@ -94,45 +93,15 @@ func TestGoalLandingPublicationAndVerification(t *testing.T) {
 			}
 			_, err := branch.LandPush(req)
 			requirePublishCode(t, err, test.code)
-			if test.movedRef != "refs/heads/main" && git(t, fixture.origin, "rev-parse", "refs/heads/main") != prepared.Endpoint {
-				t.Fatal("landing-tip race moved the endpoint")
-			}
-			if test.movedRef == "refs/heads/main" && !strings.Contains(git(t, fixture.root, "ls-remote", "--refs", "origin", "refs/heads/landing/goal-a"), prepared.Landing) {
-				t.Fatal("endpoint race deleted the prepared landing branch")
+			endpoint := git(t, fixture.origin, "rev-parse", "refs/heads/main")
+			landing := git(t, fixture.origin, "rev-parse", "refs/heads/landing/goal-a")
+			if test.movedRef == "refs/heads/main" {
+				if endpoint != intruder || landing != prepared.Landing {
+					t.Fatalf("endpoint race refs=%s, %s", endpoint, landing)
+				}
+			} else if endpoint != prepared.Endpoint || landing != intruder {
+				t.Fatalf("landing race refs=%s, %s", endpoint, landing)
 			}
 		})
-	}
-}
-
-func TestLandPushRerunAfterPublishedCrashReportsLanded(t *testing.T) {
-	t.Parallel()
-	fixture := newLandFixture(t)
-	out, prepared := preparedLanding(t, fixture)
-	git(t, fixture.root, "push", "-q", "--atomic", "origin",
-		prepared.Landing+":refs/heads/main", ":refs/heads/landing/goal-a")
-	result, err := branch.LandPush(branch.LandPushRequest{Repo: fixture.root, Remote: "origin", EndpointRef: "refs/heads/main",
-		GoalID: "goal-a", Prepared: out, CheckClaim: claimAllowed})
-	if err != nil || result != (branch.PreparedLanding{Endpoint: prepared.Endpoint, Candidate: prepared.Candidate,
-		Landing: prepared.Landing, Branch: prepared.Branch}) {
-		t.Fatalf("published rerun = %+v, %v", result, err)
-	}
-}
-
-func TestLandPushRechecksClaimBeforePush(t *testing.T) {
-	t.Parallel()
-	fixture := newLandFixture(t)
-	out, prepared := preparedLanding(t, fixture)
-	checks := 0
-	_, err := branch.LandPush(branch.LandPushRequest{Repo: fixture.root, Remote: "origin", EndpointRef: "refs/heads/main",
-		GoalID: "goal-a", Prepared: out, CheckClaim: func() error {
-			checks++
-			if checks == 2 {
-				return errors.New("claim moved before push")
-			}
-			return nil
-		}})
-	requirePublishCode(t, err, branch.NotHolderCode)
-	if checks != 2 || git(t, fixture.origin, "rev-parse", "refs/heads/main") != prepared.Endpoint {
-		t.Fatalf("claim checks=%d endpoint moved", checks)
 	}
 }

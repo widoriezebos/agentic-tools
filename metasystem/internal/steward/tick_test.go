@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -113,6 +115,41 @@ func TestKilledWatcherIsRoutedToItsOwnerWithinOneTick(t *testing.T) {
 	}
 }
 
+func scanBreachStopsInRoleHealthBed(t *testing.T, bed *roleHealthProjectionBed) []BreachStopReport {
+	t.Helper()
+	reads := 0
+	repository := roleHealthRepository{bed: bed}
+	reports := runBreachStopCustodianWithScanner(bed.root, bed.now,
+		func(root string, now time.Time) ([]dispatch.StopRoute, error) {
+			if root != bed.root || !now.Equal(bed.now) {
+				t.Fatalf("stop scan root/time = %q/%s, want %q/%s", root, now, bed.root, bed.now)
+			}
+			return dispatch.FindBreachStopsWithRawReads(root, now,
+				func(got string) bool {
+					if got != bed.root {
+						t.Fatalf("accepted-tree read root = %q, want %q", got, bed.root)
+					}
+					reads++
+					_, accepted, err := repository.Accepted()
+					if err != nil {
+						t.Fatal(err)
+					}
+					return accepted
+				},
+				func(got string) (goal.Endpoint, error) {
+					if got != bed.root {
+						t.Fatalf("endpoint read root = %q, want %q", got, bed.root)
+					}
+					reads++
+					return goal.Endpoint{Root: bed.root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: repository}, nil
+				})
+		})
+	if reads != 2 {
+		t.Fatalf("stop scan raw reads = %d, want 2", reads)
+	}
+	return reports
+}
+
 func TestBreachStopCustodianReportsIndeterminateFailureAndCommandOutcome(t *testing.T) {
 	now := time.Date(2026, 8, 29, 13, 0, 0, 0, time.UTC)
 	file := structuredHealthGoal()
@@ -121,42 +158,42 @@ func TestBreachStopCustodianReportsIndeterminateFailureAndCommandOutcome(t *test
 		StopID: "stop-bounded-goal-r2-f1", Revision: 2, Epoch: 1, CapabilityGeneration: 2,
 		ClosedAt: now.Add(-time.Minute).Format(time.RFC3339), Reason: goal.StopReasonElapsedLimit,
 	}
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
+	bed := newRoleHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": file}, nil)
 	stamp := now.Format(time.RFC3339)
 	batch := goal.StopBatch{
 		StopID: file.StopFence.StopID, GoalID: file.Id, GoalRevision: 2, FenceEpoch: 1,
 		CapabilityGeneration: 2, Machine: "bed-m1", ClaimEpoch: 7, Reason: goal.StopReasonElapsedLimit,
 		State: goal.StopBatchIndeterminate, Failure: "custody cannot be proven", OpenedAt: stamp, UpdatedAt: stamp, Pass: 1,
 	}
-	if err := goal.WriteStopBatch(root, batch); err != nil {
+	if err := goal.WriteStopBatch(bed.root, batch); err != nil {
 		t.Fatal(err)
 	}
-	reports := runBreachStopCustodian(root, now)
+	reports := scanBreachStopsInRoleHealthBed(t, bed)
 	if len(reports) != 1 || reports[0].State != "INDETERMINATE" || reports[0].Detail != batch.Failure {
 		t.Fatalf("indeterminate stop was not routed to escalation: %+v", reports)
 	}
 
-	commandRoot := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": file})
+	commandBed := newRoleHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": file}, nil)
 	batch.State = goal.StopBatchOpen
 	batch.Failure = ""
-	if err := goal.WriteStopBatch(commandRoot, batch); err != nil {
+	if err := goal.WriteStopBatch(commandBed.root, batch); err != nil {
 		t.Fatal(err)
 	}
-	script := filepath.Join(commandRoot, "scripts", "agents", "dispatch.sh")
+	script := filepath.Join(commandBed.root, "scripts", "agents", "dispatch.sh")
 	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := testexec.WriteFile(script, []byte("#!/bin/sh\nprintf 'stop failed\\n'\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	reports = runBreachStopCustodian(commandRoot, now)
+	reports = scanBreachStopsInRoleHealthBed(t, commandBed)
 	if len(reports) != 1 || reports[0].State != "FAILED" || reports[0].Detail != "stop failed" {
 		t.Fatalf("failed stop command was not reported: %+v", reports)
 	}
 	if err := testexec.WriteFile(script, []byte("#!/bin/sh\nprintf 'stop complete\\n'\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	reports = runBreachStopCustodian(commandRoot, now)
+	reports = scanBreachStopsInRoleHealthBed(t, commandBed)
 	if len(reports) != 1 || reports[0].State != "COMPLETE" || reports[0].Detail != "stop complete" {
 		t.Fatalf("successful stop command was not reported: %+v", reports)
 	}
@@ -164,30 +201,43 @@ func TestBreachStopCustodianReportsIndeterminateFailureAndCommandOutcome(t *test
 
 func TestCorruptGraceTickEscalatesWithoutCancellingLawfulWork(t *testing.T) {
 	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"),
+	file := structuredHealthGoal()
+	original := goal.RenderFile(file)
+	bed := newRoleHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": file}, nil)
+	if err := os.WriteFile(filepath.Join(bed.root, "metasystem.conf"),
 		[]byte("metasystem.budget.elapsed-grace-percent=broken\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	reports := runBreachStopCustodian(root, now)
+	reports := scanBreachStopsInRoleHealthBed(t, bed)
 	if len(reports) != 1 || reports[0].State != "INDETERMINATE" ||
 		!strings.Contains(reports[0].Detail, "BUDGET_UNKNOWN") {
 		t.Fatalf("the next stop scan did not surface corrupt grace: %+v", reports)
 	}
-	role := checkClaimedGoalBudgets(root, now)
-	verdict := applyHealthObservation(root, HealthObservationState{}, []RoleVerdict{role}, now)
+	projection, err := bed.project()
+	if err != nil {
+		t.Fatal(err)
+	}
+	role := checkClaimedGoalBudgetsFromProjection(bed.root, now, projection, true, nil, nil)
+	verdict := applyHealthObservation(bed.root, HealthObservationState{}, []RoleVerdict{role}, now)
 	if role.Status != HealthDead || !role.NoAutomaticRemedy || !verdict.ShouldAlert ||
 		verdict.Roles[0].FailureEscalation != NoLawfulRemedy {
 		t.Fatalf("corrupt grace did not escalate immediately under Ruling L: role=%+v verdict=%+v", role, verdict)
 	}
-	endpoint, err := goal.ResolveEndpoint(root)
+	fresh, err := bed.project()
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := goal.Project(endpoint, false, now)
-	if err != nil || projection.Tree.Live["bounded-goal"].StopFence != nil {
-		t.Fatalf("indeterminate grace fenced or cancelled lawful work: %+v %v", projection.Tree.Live["bounded-goal"], err)
+	goalFile := fresh.Tree.Live["bounded-goal"]
+	if goalFile == nil || goalFile.StopFence != nil {
+		t.Fatalf("indeterminate grace fenced or cancelled lawful work: %+v", goalFile)
+	}
+	actual, err := os.ReadFile(filepath.Join(bed.root, "plans", "goals", "bounded-goal.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(actual, original) {
+		t.Fatal("indeterminate grace changed the accepted goal file")
 	}
 }
 
@@ -212,84 +262,74 @@ func TestDegradedTickQueuesTheIncidentOrSurfacesQueueFailure(t *testing.T) {
 }
 
 func TestQuietTicksAgeIntoLiveIdleNotification(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	bed := newDecisionTickRepository(t)
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
-	r := tickN(t, root, TickConfig{StaleTicks: 3}, census, 3)
+	r := bed.tickN(TickConfig{StaleTicks: 3}, census, 3)
 	if r.Decision.Verdict != VerdictHealthy {
 		t.Fatalf("inside the threshold a live worker is healthy: %+v", r.Decision)
 	}
-	r = tickN(t, root, TickConfig{StaleTicks: 3}, census, 1)
+	r = bed.tickN(TickConfig{StaleTicks: 3}, census, 1)
 	if r.Decision.Verdict != VerdictStalledIdle || r.Decision.Action != ActNotify {
 		t.Fatalf("past the threshold a live-idle worker is notified, never displaced: %+v", r.Decision)
 	}
 }
 
 func TestCommitResetsTheAging(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	bed := newDecisionTickRepository(t)
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
-	tickN(t, root, TickConfig{StaleTicks: 2}, census, 2)
-	// Real progress: a commit moves HEAD.
-	cmd := exec.Command("git", "-C", root, "commit", "-q", "--allow-empty", "-m", "progress")
-	cmd.Env = append(os.Environ(),
-		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
-		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("commit: %v\n%s", err, out)
-	}
-	r := tickN(t, root, TickConfig{StaleTicks: 2}, census, 1)
+	bed.tickN(TickConfig{StaleTicks: 2}, census, 2)
+	bed.declareProgress()
+	r := bed.tickN(TickConfig{StaleTicks: 2}, census, 1)
 	if r.Evidence.TicksSinceAdvance != 0 || r.Decision.Verdict != VerdictHealthy {
 		t.Fatalf("a commit is progress: %+v", r)
 	}
 }
 
 func TestProvenDeathRevivesRegardlessOfFreshEvidence(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	bed := newDecisionTickRepository(t)
 	census := fakeCensus{workers: Workers{CensusComplete: true}}
-	r := tickN(t, root, TickConfig{}, census, 1)
+	r := bed.tickN(TickConfig{}, census, 1)
 	if r.Decision.Verdict != VerdictStalledDead || r.Decision.Action != ActRevive {
 		t.Fatalf("dead seconds after a fresh commit is still dead: %+v", r.Decision)
 	}
 }
 
 func TestUnreadableCensusNeverSpawns(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	bed := newDecisionTickRepository(t)
 	census := fakeCensus{err: os.ErrPermission}
-	r := tickN(t, root, TickConfig{}, census, 1)
+	r := bed.tickN(TickConfig{}, census, 1)
 	if r.Decision.Verdict != VerdictUnknown || r.Decision.Action != ActNotify {
 		t.Fatalf("an unreadable census cannot prove death: %+v", r.Decision)
 	}
 }
 
 func TestOpenIntentSuppressesASecondRevival(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	bed := newDecisionTickRepository(t)
 	it := testIntent("live-one")
-	if err := MintIntent(root, it); err != nil {
+	if err := MintIntent(bed.root, it); err != nil {
 		t.Fatal(err)
 	}
 	census := fakeCensus{workers: Workers{CensusComplete: true}}
-	r := tickN(t, root, TickConfig{}, census, 1)
+	r := bed.tickN(TickConfig{}, census, 1)
 	if r.Decision.Action != ActNotify {
 		t.Fatalf("an open continuation suppresses dispatch: %+v", r.Decision)
 	}
 }
 
 func TestGoalFreeRepositoryTicksQuietly(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
-	free := "# Goals\n\n## Goal-free: declared 2026-08-15T10:00:00Z by human over abc123\n"
-	if err := os.WriteFile(filepath.Join(root, "plans", "goals.md"), []byte(free), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	r := tickN(t, root, TickConfig{}, fakeCensus{}, 1)
+	bed := newDecisionTickRepository(t)
+	bed.declareGoalFree()
+	r := bed.tickN(TickConfig{}, fakeCensus{}, 1)
 	if r.Decision.Verdict != VerdictNoWork || r.Decision.Action != ActNone {
 		t.Fatalf("goal-free needs nothing: %+v", r.Decision)
 	}
 }
 
 func TestNotifyVerdictsReachTheQueue(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	bed := newDecisionTickRepository(t)
 	live := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
-	tickN(t, root, TickConfig{StaleTicks: 1}, live, 2) // ages past the threshold
-	pending, err := PendingNotifications(root)
+	bed.tickN(TickConfig{StaleTicks: 1}, live, 2) // ages past the threshold
+	pending, err := PendingNotifications(bed.root)
 	if err != nil || len(pending) == 0 {
 		t.Fatalf("a live-idle verdict is an incident the operator hears about: %v %v", pending, err)
 	}
@@ -304,17 +344,19 @@ func TestNotifyVerdictsReachTheQueue(t *testing.T) {
 	}
 	// The standing condition holds ONE pending message per verdict.
 	before := len(pending)
-	tickN(t, root, TickConfig{StaleTicks: 1}, live, 3)
-	after, _ := PendingNotifications(root)
+	bed.tickN(TickConfig{StaleTicks: 1}, live, 3)
+	after, _ := PendingNotifications(bed.root)
 	if len(after) != before {
 		t.Fatalf("a repeating verdict overwrites its one message: %d -> %d", before, len(after))
 	}
 }
 
 func TestRevivalPreparationStaysSilentAndLaunches(t *testing.T) {
-	root := reviveRepo(t)
-	if out, err := gitConfig(root, "metasystem.steward.notify-command", "exit 1"); err != nil {
-		t.Fatalf("config: %v\n%s", err, out)
+	t.Parallel()
+	revival := newRevivalFixture(t, 1, 1)
+	root := revival.root
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.steward.notify-command=exit 1\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), testIntent("dg-1")); err != nil {
 		t.Fatal(err)
@@ -323,20 +365,20 @@ func TestRevivalPreparationStaysSilentAndLaunches(t *testing.T) {
 		t.Fatalf("a prepared automatic repair must remain silent: %v %v", pending, err)
 	}
 	launched := 0
-	out, err := CompleteRevival(root, TickConfig{}, deadCensus(), "dg-1", func(Intent) error { launched++; return nil })
+	out, err := revival.complete(TickConfig{}, deadCensus(), "dg-1", func(Intent) error { launched++; return nil })
 	if err != nil || !out.Launched || launched != 1 {
 		t.Fatalf("the gate-complete intent launches exactly once: %+v %d %v", out, launched, err)
 	}
 }
 
 func TestReviveVerdictStaysSilentBeforeHealing(t *testing.T) {
-	root := gitRepoWithCurrentGoal(t)
+	bed := newDecisionTickRepository(t)
 	census := fakeCensus{workers: Workers{CensusComplete: true}}
-	r := tickN(t, root, TickConfig{}, census, 1)
+	r := bed.tickN(TickConfig{}, census, 1)
 	if r.Decision.Action != ActRevive {
 		t.Fatalf("this world revives: %+v", r.Decision)
 	}
-	pending, err := PendingNotifications(root)
+	pending, err := PendingNotifications(bed.root)
 	if err != nil {
 		t.Fatal(err)
 	}

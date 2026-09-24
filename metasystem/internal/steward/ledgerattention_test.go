@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -184,94 +185,81 @@ func (b *ledgerAttentionBed) claimAs(t *testing.T, id, machine string) string {
 }
 
 func TestLedgerAttentionLocalAndPreBootstrapAreQuiet(t *testing.T) {
-	local := convertedBed(t, "mac-a", nil)
-	if report := RunLedgerAttention(local, time.Now().UTC()); report.Outcome != "local" || len(report.Pending) != 0 {
+	local := newAttentionPolicyBed(t)
+	local.local = true
+	if report := local.run(local.now, "endpoint"); report.Outcome != "local" || len(report.Pending) != 0 {
 		t.Fatalf("local ledger attention: %+v", report)
 	}
-	pre := t.TempDir()
-	attentionGit(t, pre, "init", "-q")
-	if err := os.WriteFile(filepath.Join(pre, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if report := RunLedgerAttention(pre, time.Now().UTC()); report.Outcome != "pre-bootstrap" || len(report.Pending) != 0 {
+	pre := newAttentionPolicyBed(t)
+	pre.migrated = false
+	if report := pre.run(pre.now, "endpoint accepted"); report.Outcome != "pre-bootstrap" || len(report.Pending) != 0 {
 		t.Fatalf("pre-bootstrap ledger attention: %+v", report)
 	}
 }
 
 func TestLedgerAttentionInitializesFrontierAfterLocalOrPreBootstrapState(t *testing.T) {
 	t.Run("local state", func(t *testing.T) {
-		local := convertedBed(t, "mac-a", nil)
-		if report := RunLedgerAttention(local, bedTime()); report.Outcome != "local" {
+		local := newAttentionPolicyBed(t)
+		local.local = true
+		if report := local.run(local.now, "endpoint"); report.Outcome != "local" {
 			t.Fatalf("local setup pass: %+v", report)
 		}
-		localState, _, err := loadLedgerAttentionState(local)
-		if err != nil || localState.DiffedTip != "" {
-			t.Fatalf("local setup state: %+v %v", localState, err)
+		localState := local.state()
+		if localState.DiffedTip != "" {
+			t.Fatalf("local setup state: %+v", localState)
 		}
-		bed := newLedgerAttentionBed(t)
-		if err := saveLedgerAttentionState(bed.watcher, localState); err != nil {
+		bed := newAttentionPolicyBed(t)
+		if err := saveLedgerAttentionState(bed.root, localState); err != nil {
 			t.Fatal(err)
 		}
-		report := RunLedgerAttention(bed.watcher, bed.now)
-		state, _, err := loadLedgerAttentionState(bed.watcher)
-		if report.Outcome != "current" || report.Failure != "" || err != nil || state.DiffedTip == "" || state.ExaminedTip != state.DiffedTip {
-			t.Fatalf("remote migrated ledger did not initialize over local state: report=%+v state=%+v err=%v", report, state, err)
+		report := bed.run(bed.now, attentionBaselineCalls())
+		state := bed.state()
+		if report.Outcome != "current" || report.Failure != "" || state.DiffedTip != "base" || state.ExaminedTip != state.DiffedTip {
+			t.Fatalf("remote migrated ledger did not initialize over local state: report=%+v state=%+v", report, state)
 		}
 	})
-
 	t.Run("pre-bootstrap state", func(t *testing.T) {
-		bed := newLedgerAttentionBed(t)
-		accepted := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef)
-		attentionGit(t, bed.watcher, "update-ref", "-d", goal.AcceptedRef)
-		if report := RunLedgerAttention(bed.watcher, bed.now); report.Outcome != "pre-bootstrap" {
+		bed := newAttentionPolicyBed(t)
+		bed.migrated = false
+		if report := bed.run(bed.now, "endpoint accepted"); report.Outcome != "pre-bootstrap" {
 			t.Fatalf("pre-bootstrap setup pass: %+v", report)
 		}
-		attentionGit(t, bed.watcher, "update-ref", goal.AcceptedRef, accepted)
-		report := RunLedgerAttention(bed.watcher, bed.now.Add(time.Minute))
-		state, _, err := loadLedgerAttentionState(bed.watcher)
-		if report.Outcome != "current" || report.Failure != "" || err != nil || state.DiffedTip != accepted || state.ExaminedTip != accepted {
-			t.Fatalf("migrated ledger did not initialize over pre-bootstrap state: report=%+v state=%+v err=%v", report, state, err)
+		bed.migrated = true
+		report := bed.run(bed.now.Add(time.Minute), attentionBaselineCalls())
+		state := bed.state()
+		if report.Outcome != "current" || report.Failure != "" || state.DiffedTip != "base" || state.ExaminedTip != "base" {
+			t.Fatalf("migrated ledger did not initialize over pre-bootstrap state: report=%+v state=%+v", report, state)
 		}
 	})
 }
 
 func TestLedgerAttentionPreBootstrapSaveRetiresOldFrontier(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	baseTip := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef)
-	_ = RunLedgerAttention(bed.watcher, bed.now)
-	retiredTip := bed.open(t, "retired-before-bootstrap")
-	advanced := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
+	bed := newAttentionPolicyBed(t)
+	_ = bed.run(bed.now, attentionBaselineCalls())
+	retiredTip := "retired-tip"
+	bed.move(retiredTip, attentionWorld(queuedAttentionGoal("retired-before-bootstrap")), "base")
+	advanced := bed.run(bed.now.Add(2*time.Minute), attentionMoveCalls("base", retiredTip))
 	if len(advanced.Pending) != 1 || advanced.Pending[0].Tip != retiredTip {
 		t.Fatalf("retired setup movement missing: %+v", advanced)
 	}
-	attentionGit(t, bed.publisher, "push", "-q", "--force", "origin", baseTip+":refs/heads/main")
-	attentionGit(t, bed.watcher, "update-ref", "-d", goal.AcceptedRef)
-
-	retired := RunLedgerAttention(bed.watcher, bed.now.Add(3*time.Minute))
+	bed.migrated = false
+	retired := bed.run(bed.now.Add(3*time.Minute), "endpoint accepted")
 	if retired.Outcome != "pre-bootstrap" || retired.Tip != "" || len(retired.Pending) != 0 {
 		t.Fatalf("pre-bootstrap save retained retired attention: %+v", retired)
 	}
-	if cmd := exec.Command("git", "-C", bed.watcher, "rev-parse", "--verify", goal.AcceptedRef); cmd.Run() == nil {
-		t.Fatal("pre-bootstrap attention resurrected the deleted accepted ref")
+	if bed.accepted != retiredTip {
+		t.Fatal("pre-bootstrap pass changed the declared accepted tip")
 	}
-	state, _, err := loadLedgerAttentionState(bed.watcher)
-	if err != nil {
-		t.Fatal(err)
-	}
+	state := bed.state()
 	if state.DiffedTip != "" || state.RemoteTip != "" || state.ExaminedTip != "" || state.Staged != nil || len(state.Pending) != 0 || len(state.Ready) != 0 || len(state.Pinned) != 0 || len(state.Queue) != 0 || state.JournalReady {
 		t.Fatalf("pre-bootstrap save retained a retired frontier: %+v", state)
 	}
-
-	attentionGit(t, bed.watcher, "reflog", "expire", "--expire=now", "--all")
-	attentionGit(t, bed.watcher, "gc", "--prune=now")
-	if cmd := exec.Command("git", "-C", bed.watcher, "cat-file", "-e", retiredTip+"^{commit}"); cmd.Run() == nil {
-		t.Fatalf("retired tip %s remained reachable in the watcher fixture", retiredTip)
-	}
-	attentionGit(t, bed.watcher, "update-ref", goal.AcceptedRef, baseTip)
-	rebootstrapped := RunLedgerAttention(bed.watcher, bed.now.Add(4*time.Minute))
-	state, _, err = loadLedgerAttentionState(bed.watcher)
-	if rebootstrapped.Outcome != "current" || rebootstrapped.Failure != "" || len(rebootstrapped.Pending) != 0 || err != nil || state.DiffedTip != baseTip {
-		t.Fatalf("re-bootstrap tried to walk the pruned retired frontier: report=%+v state=%+v err=%v", rebootstrapped, state, err)
+	delete(bed.worlds, retiredTip)
+	bed.accepted, bed.remote, bed.migrated = "base", "base", true
+	rebootstrapped := bed.run(bed.now.Add(4*time.Minute), attentionBaselineCalls())
+	state = bed.state()
+	if rebootstrapped.Outcome != "current" || rebootstrapped.Failure != "" || len(rebootstrapped.Pending) != 0 || state.DiffedTip != "base" {
+		t.Fatalf("re-bootstrap tried to walk the retired frontier: report=%+v state=%+v", rebootstrapped, state)
 	}
 }
 
@@ -363,59 +351,59 @@ func TestPriorityLedgerSnapshot(t *testing.T) {
 }
 
 func TestLedgerAttentionSurfacesMovementOnceAndAdvancesAccepted(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	if report := RunLedgerAttention(bed.watcher, bed.now); report.Outcome != "current" || len(report.Pending) != 0 {
+	bed := newAttentionPolicyBed(t)
+	if report := bed.run(bed.now, attentionBaselineCalls()); report.Outcome != "current" || len(report.Pending) != 0 {
 		t.Fatalf("baseline pass: %+v", report)
 	}
-	bed.open(t, "claimable-a")
-	queued := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
+	bed.move("opened", attentionWorld(queuedAttentionGoal("claimable-a")), "base")
+	queued := bed.run(bed.now.Add(2*time.Minute), attentionMoveCalls("base", "opened"))
 	if queued.Outcome != "advanced" || len(queued.Pending) != 1 || strings.Join(queued.Pending[0].QueueNow, ",") != "claimable-a" || len(queued.Pending[0].Claimable) != 0 {
 		t.Fatalf("queued movement report: %+v", queued)
 	}
-	if err := PersistLedgerAttentionMark(bed.watcher, []string{queued.Pending[0].SourceID}); err != nil {
+	if err := PersistLedgerAttentionMark(bed.root, []string{queued.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
-	remoteTip := bed.approve(t, "claimable-a")
-	report := RunLedgerAttention(bed.watcher, bed.now.Add(4*time.Minute))
+	bed.move("approved", attentionWorld(approvedAttentionGoal("claimable-a")), "opened")
+	report := bed.run(bed.now.Add(4*time.Minute), attentionMovedCalls("opened", "approved"))
 	if report.Outcome != "advanced" || len(report.Pending) != 1 || strings.Join(report.Pending[0].Claimable, ",") != "claimable-a" {
 		t.Fatalf("approval movement report: %+v", report)
 	}
-	if accepted := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef); accepted != remoteTip {
-		t.Fatalf("accepted ref=%s remote=%s", accepted, remoteTip)
+	if bed.accepted != "approved" {
+		t.Fatalf("accepted ref=%s remote=%s", bed.accepted, bed.remote)
 	}
-	if err := PersistLedgerAttentionMark(bed.watcher, []string{report.Pending[0].SourceID}); err != nil {
+	if err := PersistLedgerAttentionMark(bed.root, []string{report.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
-	if again := RunLedgerAttention(bed.watcher, bed.now.Add(5*time.Minute)); len(again.Pending) != 0 {
+	again := bed.run(bed.now.Add(5*time.Minute), "endpoint accepted machine entries capture sync accepted validate cleanup")
+	if len(again.Pending) != 0 {
 		t.Fatalf("surfaced change replayed after its mark: %+v", again)
+	}
+	if len(bed.state().Pending) != 0 {
+		t.Fatal("marked events remained on disk")
 	}
 }
 
 func TestLedgerAttentionFirstPassBaselinesBeforeFetchingMovedRemote(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	acceptedBefore := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef)
-	remoteTip := bed.open(t, "first-pass-movement")
-	report := RunLedgerAttention(bed.watcher, bed.now)
-	if report.Outcome != "advanced" || len(report.Pending) != 1 || report.Pending[0].Tip != remoteTip {
+	bed := newAttentionPolicyBed(t)
+	bed.move("remote-moved", attentionWorld(queuedAttentionGoal("first-pass-movement")), "base")
+	report := bed.run(bed.now, "endpoint accepted machine project:base capture sync accepted gates validate entries project:base changes:base>remote-moved project:remote-moved advance:remote-moved entries cleanup")
+	if report.Outcome != "advanced" || len(report.Pending) != 1 || report.Pending[0].Tip != "remote-moved" {
 		t.Fatalf("first pass erased a pre-existing remote movement: %+v", report)
 	}
-	state, _, err := loadLedgerAttentionState(bed.watcher)
-	if err != nil || state.ExaminedTip != acceptedBefore || state.RemoteTip != remoteTip || state.MovedAt == "" {
-		t.Fatalf("first pass did not retain the pre-fetch examination frontier: %+v %v", state, err)
+	state := bed.state()
+	if state.ExaminedTip != "base" || state.RemoteTip != "remote-moved" || state.MovedAt == "" {
+		t.Fatalf("first pass did not retain the pre-fetch examination frontier: %+v", state)
 	}
 }
 
 func TestLedgerAttentionBrokenAcceptedRefIsFailureNotBootstrap(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	common := attentionGit(t, bed.watcher, "rev-parse", "--path-format=absolute", "--git-common-dir")
-	if err := os.WriteFile(filepath.Join(common, filepath.FromSlash(goal.AcceptedRef)), []byte("not-an-oid\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	report := RunLedgerAttention(bed.watcher, bed.now)
+	bed := newAttentionPolicyBed(t)
+	bed.fail("accepted", "accepted ref is unreadable")
+	report := bed.run(bed.now, "endpoint accepted")
 	if report.Outcome != "failed" || report.FailureKind != ledgerAttentionFetchFailed || !strings.Contains(report.Failure, "accepted ref") {
 		t.Fatalf("broken accepted state masqueraded as pre-bootstrap: %+v", report)
 	}
-	verdict := checkLedgerAttention(bed.watcher, bed.now.Add(time.Minute))
+	verdict := checkLedgerAttention(bed.root, bed.now.Add(time.Minute))
 	if verdict.Status != HealthAlive || !strings.Contains(verdict.Reason, "last fetch failed") || strings.Contains(verdict.Reason, "examined at the canonical tip") {
 		t.Fatalf("a first failure with no canonical tip claimed an examination: %+v", verdict)
 	}
@@ -441,43 +429,49 @@ func TestLedgerAttentionValidationRefusalLeavesAcceptedUntouched(t *testing.T) {
 }
 
 func TestLedgerAttentionPinsAndQueueSequenceChanges(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	_ = RunLedgerAttention(bed.watcher, bed.now)
-	bed.open(t, "pin-target")
-	opened := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
-	if err := PersistLedgerAttentionMark(bed.watcher, []string{opened.Pending[0].SourceID}); err != nil {
+	bed := newAttentionPolicyBed(t)
+	_ = bed.run(bed.now, attentionBaselineCalls())
+	queued := queuedAttentionGoal("pin-target")
+	bed.move("opened", attentionWorld(queued), "base")
+	opened := bed.run(bed.now.Add(2*time.Minute), attentionMoveCalls("base", "opened"))
+	if err := PersistLedgerAttentionMark(bed.root, []string{opened.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
-	bed.pin(t, "pin-target", "mac-a")
-	pinned := RunLedgerAttention(bed.watcher, bed.now.Add(4*time.Minute))
+	pinnedFile := queuedAttentionGoal("pin-target")
+	pinnedFile.Pinned = "mac-a"
+	bed.move("pinned", attentionWorld(pinnedFile), "opened")
+	pinned := bed.run(bed.now.Add(4*time.Minute), attentionMovedCalls("opened", "pinned"))
 	if len(pinned.Pending) != 1 || strings.Join(pinned.Pending[0].Pins, ",") != "pin-target" {
 		t.Fatalf("local pin did not surface through schema-2 Pending.Pins: %+v", pinned)
 	}
-	if err := PersistLedgerAttentionMark(bed.watcher, []string{pinned.Pending[0].SourceID}); err != nil {
+	if err := PersistLedgerAttentionMark(bed.root, []string{pinned.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
-	bed.approve(t, "pin-target")
-	approved := RunLedgerAttention(bed.watcher, bed.now.Add(6*time.Minute))
-	if len(approved.Pending) != 1 || strings.Join(approved.Pending[0].Claimable, ",") != "pin-target" ||
-		strings.Join(approved.Pending[0].QueueWas, ",") != "pin-target" || len(approved.Pending[0].QueueNow) != 0 {
+	approvedFile := approvedAttentionGoal("pin-target")
+	approvedFile.Pinned = "mac-a"
+	bed.move("approved", attentionWorld(approvedFile), "pinned")
+	approved := bed.run(bed.now.Add(6*time.Minute), attentionMovedCalls("pinned", "approved"))
+	if len(approved.Pending) != 1 || strings.Join(approved.Pending[0].Claimable, ",") != "pin-target" || strings.Join(approved.Pending[0].QueueWas, ",") != "pin-target" || len(approved.Pending[0].QueueNow) != 0 {
 		t.Fatalf("approval did not move the goal from awaiting to the local ready frontier: %+v", approved)
 	}
-	if err := PersistLedgerAttentionMark(bed.watcher, []string{approved.Pending[0].SourceID}); err != nil {
+	if err := PersistLedgerAttentionMark(bed.root, []string{approved.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
-	bed.pin(t, "pin-target", "mac-b")
-	foreign := RunLedgerAttention(bed.watcher, bed.now.Add(8*time.Minute))
+	foreignFile := approvedAttentionGoal("pin-target")
+	foreignFile.Pinned = "mac-b"
+	bed.move("foreign", attentionWorld(foreignFile), "approved")
+	foreign := bed.run(bed.now.Add(8*time.Minute), attentionMovedCalls("approved", "foreign"))
 	for _, event := range foreign.Pending {
 		if len(event.Pins) > 0 || len(event.Claimable) > 0 {
 			t.Fatalf("foreign pin surfaced as local attention: %+v", foreign)
 		}
 	}
-	bed.pin(t, "pin-target", "-")
-	cleared := RunLedgerAttention(bed.watcher, bed.now.Add(10*time.Minute))
+	bed.move("cleared", attentionWorld(approvedAttentionGoal("pin-target")), "foreign")
+	cleared := bed.run(bed.now.Add(10*time.Minute), attentionMovedCalls("foreign", "cleared"))
 	if len(cleared.Pending) != 1 || strings.Join(cleared.Pending[0].Claimable, ",") != "pin-target" {
 		t.Fatalf("clearing the foreign pin did not restore the local frontier: %+v", cleared)
 	}
-	if err := PersistLedgerAttentionMark(bed.watcher, []string{cleared.Pending[0].SourceID}); err != nil {
+	if err := PersistLedgerAttentionMark(bed.root, []string{cleared.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
 	if sameStrings([]string{"a", "b", "c"}, []string{"b", "a", "c"}) {
@@ -486,58 +480,100 @@ func TestLedgerAttentionPinsAndQueueSequenceChanges(t *testing.T) {
 }
 
 func TestLedgerAttentionKeepsOneDigestAndNudgePerChange(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	_ = RunLedgerAttention(bed.watcher, bed.now)
-	bed.open(t, "change-one")
-	bed.open(t, "change-two")
-	report := RunLedgerAttention(bed.watcher, bed.now.Add(4*time.Minute))
+	bed := newAttentionPolicyBed(t)
+	_ = bed.run(bed.now, attentionBaselineCalls())
+	bed.world("change-one", attentionWorld(queuedAttentionGoal("change-one")))
+	pinned := queuedAttentionGoal("change-two")
+	pinned.Pinned = "mac-a"
+	bed.move("change-two", attentionWorld(queuedAttentionGoal("change-one"), pinned), "base",
+		goal.LedgerChange{Tip: "change-one", Consecutive: true}, goal.LedgerChange{Tip: "change-two", Consecutive: true})
+	report := bed.run(bed.now.Add(4*time.Minute), attentionMoveCalls("base", "change-one", "change-two"))
 	if len(report.Pending) != 2 || report.Pending[0].SourceID == report.Pending[1].SourceID {
 		t.Fatalf("two remote changes were coalesced: %+v", report)
 	}
+	var discoveryCalls []string
+	readMachine := func(root string) (string, error) {
+		if root != bed.root {
+			t.Fatalf("narration machine root = %q, want %q", root, bed.root)
+		}
+		discoveryCalls = append(discoveryCalls, "machine")
+		return "mac-a", nil
+	}
+	resolveLayout := func(root string) (stateroot.Layout, error) {
+		if root != bed.root {
+			t.Fatalf("digest layout root = %q, want %q", root, bed.root)
+		}
+		discoveryCalls = append(discoveryCalls, "layout")
+		return stateroot.Layout{GitRoot: bed.root, RepositoryRoot: bed.root, InstallationRoot: bed.root}, nil
+	}
 	result := TickResult{LedgerAttention: report}
-	if err := NarrateDigest(bed.watcher, Evidence{}, result, bed.now.Add(4*time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	// A crash before the mark replays the same pending events; the digest's
-	// source identity keeps one line per change rather than one per attempt.
-	if err := NarrateDigest(bed.watcher, Evidence{}, result, bed.now.Add(5*time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	for _, event := range report.Pending {
-		if err := QueueNotification(bed.watcher, ledgerAttentionNotification(event, "mac-a")); err != nil {
+	for _, when := range []time.Time{bed.now.Add(4 * time.Minute), bed.now.Add(5 * time.Minute)} {
+		if err := narrateDigestWithReaders(bed.root, Evidence{}, result, when, readMachine, resolveLayout); err != nil {
 			t.Fatal(err)
 		}
 	}
-	data, err := os.ReadFile(narratordigest.Path(bed.watcher))
+	if got, want := strings.Join(discoveryCalls, ","), "machine,layout,layout,layout,layout,machine,layout,layout,layout"; got != want {
+		t.Fatalf("narration discovery calls = %q, want %q", got, want)
+	}
+	for _, event := range report.Pending {
+		if err := QueueNotification(bed.root, ledgerAttentionNotification(event, "mac-a")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(bed.root, "records", "narrator-digest.log"))
 	if err != nil || strings.Count(string(data), "source: ledger ") != 2 {
 		t.Fatalf("per-change digest entries: %q %v", data, err)
 	}
-	pending, err := PendingNotifications(bed.watcher)
+	for _, event := range report.Pending {
+		if count := strings.Count(string(data), "(source: ledger "+event.SourceID+")"); count != 1 {
+			t.Fatalf("digest source %q appears %d times in %q", event.SourceID, count, data)
+		}
+	}
+	if !strings.Contains(string(data), "pin(s) addressed to mac-a: change-two") {
+		t.Fatalf("digest omitted the enrolled machine name: %q", data)
+	}
+	pending, err := PendingNotifications(bed.root)
 	if err != nil || len(pending) != 2 || pending[0].Nonce == pending[1].Nonce {
 		t.Fatalf("per-change pending notifications: %+v %v", pending, err)
+	}
+	notifications := map[string]PendingNotification{}
+	for _, item := range pending {
+		notifications[item.Nonce] = item
+	}
+	for _, event := range report.Pending {
+		if _, ok := notifications["ledger-attention-"+event.SourceID]; !ok {
+			t.Fatalf("missing notification for %q: %+v", event.SourceID, pending)
+		}
+	}
+	if !strings.Contains(notifications["ledger-attention-"+report.Pending[1].SourceID].Message, "pin(s) addressed to mac-a: change-two") {
+		t.Fatalf("notification omitted the enrolled machine name: %+v", pending)
 	}
 }
 
 func TestLedgerAttentionRetainsTransientFactAcrossSkippedMark(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	_ = RunLedgerAttention(bed.watcher, bed.now)
-	bed.open(t, "transient-a")
-	queued := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
+	bed := newAttentionPolicyBed(t)
+	_ = bed.run(bed.now, attentionBaselineCalls())
+	bed.move("opened", attentionWorld(queuedAttentionGoal("transient-a")), "base")
+	queued := bed.run(bed.now.Add(2*time.Minute), attentionMoveCalls("base", "opened"))
 	if len(queued.Pending) != 1 {
 		t.Fatalf("queued transient setup: %+v", queued)
 	}
-	if err := PersistLedgerAttentionMark(bed.watcher, []string{queued.Pending[0].SourceID}); err != nil {
+	if err := PersistLedgerAttentionMark(bed.root, []string{queued.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
-	firstTip := bed.approve(t, "transient-a")
-	first := RunLedgerAttention(bed.watcher, bed.now.Add(4*time.Minute))
-	if len(first.Pending) != 1 || first.Pending[0].Tip != firstTip {
+	approved := approvedAttentionGoal("transient-a")
+	bed.move("approved", attentionWorld(approved), "opened")
+	first := bed.run(bed.now.Add(4*time.Minute), attentionMovedCalls("opened", "approved"))
+	if len(first.Pending) != 1 || first.Pending[0].Tip != "approved" {
 		t.Fatalf("first transient fact: %+v", first)
 	}
-	// Simulate a crash after classification and accepted-ref advance by
-	// deliberately skipping both surfacing and the mark.
-	bed.claim(t, "transient-a")
-	second := RunLedgerAttention(bed.watcher, bed.now.Add(6*time.Minute))
+	claimed := approvedAttentionGoal("transient-a")
+	claimed.State = goal.StateClaimed
+	claimed.Claimed = &goal.ClaimRecord{Machine: "mac-a", Lineage: "attention-fixture", At: "2026-09-01T08:05:00Z", Revision: 3}
+	claimed.Revision = 3
+	claimed.History = append(claimed.History, goal.HistoryLine{At: "2026-09-01T08:05:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAX-mac-a-00000000", Verb: "claim", Actor: "mac-a+attention-fixture", Targets: []string{"transient-a"}, Keep: -1})
+	bed.move("claimed", attentionWorld(claimed), "approved")
+	second := bed.run(bed.now.Add(6*time.Minute), attentionMovedCalls("approved", "claimed"))
 	found := false
 	for _, event := range second.Pending {
 		if event.SourceID == first.Pending[0].SourceID && strings.Join(event.Claimable, ",") == "transient-a" {
@@ -550,52 +586,44 @@ func TestLedgerAttentionRetainsTransientFactAcrossSkippedMark(t *testing.T) {
 }
 
 func TestLedgerAttentionRewindUsesDirectTransitionAndFreshEventIdentity(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	baseTip := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef)
-	_ = RunLedgerAttention(bed.watcher, bed.now)
-	forwardTip := bed.open(t, "rewind-visible")
-	forward := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
-	if len(forward.Pending) != 1 || forward.Pending[0].SourceID != forwardTip {
+	bed := newAttentionPolicyBed(t)
+	_ = bed.run(bed.now, attentionBaselineCalls())
+	bed.move("forward", attentionWorld(queuedAttentionGoal("rewind-visible")), "base")
+	forward := bed.run(bed.now.Add(2*time.Minute), attentionMoveCalls("base", "forward"))
+	if len(forward.Pending) != 1 || forward.Pending[0].SourceID != "forward" {
 		t.Fatalf("initial forward event: %+v", forward)
 	}
-	if err := PersistLedgerAttentionMark(bed.watcher, []string{forward.Pending[0].SourceID}); err != nil {
+	if err := PersistLedgerAttentionMark(bed.root, []string{forward.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
-	attentionGit(t, bed.publisher, "push", "-q", "--force", "origin", baseTip+":refs/heads/main")
-	endpoint, err := goal.ResolveEndpoint(bed.watcher)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := goal.RepairAcceptRemote(endpoint, "Wido"); err != nil {
-		t.Fatal(err)
-	}
-	rewound := RunLedgerAttention(bed.watcher, bed.now.Add(4*time.Minute))
-	if len(rewound.Pending) != 1 || rewound.Pending[0].Tip != baseTip || !strings.Contains(rewound.Pending[0].SourceID, "-epoch-1") {
+	bed.changes["forward>base"] = []goal.LedgerChange{{Tip: "base", Consecutive: false}}
+	bed.accepted, bed.remote = "base", "base"
+	bed.entries = append(bed.entries, goal.Entry{Opid: "repair-rewind", Intent: goal.Intent{Verb: "repair-accept-remote", Args: map[string]string{"newTip": "base"}}, Phase: goal.PhaseTerminal, Outcome: goal.OutcomeConfirmed})
+	bed.repairBaseline = []string{"repair-rewind"}
+	rewound := bed.run(bed.now.Add(4*time.Minute), "endpoint accepted machine entries project:forward changes:forward>base project:base entries capture sync accepted validate entries cleanup")
+	if len(rewound.Pending) != 1 || rewound.Pending[0].Tip != "base" || !strings.Contains(rewound.Pending[0].SourceID, "-epoch-1") {
 		t.Fatalf("sanctioned rewind was not one direct, epoch-qualified transition: %+v", rewound)
 	}
-	if err := PersistLedgerAttentionMark(bed.watcher, []string{rewound.Pending[0].SourceID}); err != nil {
+	if err := PersistLedgerAttentionMark(bed.root, []string{rewound.Pending[0].SourceID}); err != nil {
 		t.Fatal(err)
 	}
-	attentionGit(t, bed.publisher, "push", "-q", "origin", forwardTip+":refs/heads/main")
-	forwardAgain := RunLedgerAttention(bed.watcher, bed.now.Add(6*time.Minute))
-	if len(forwardAgain.Pending) != 1 || forwardAgain.Pending[0].Tip != forwardTip || forwardAgain.Pending[0].SourceID == forward.Pending[0].SourceID {
+	bed.move("forward", attentionWorld(queuedAttentionGoal("rewind-visible")), "base")
+	bed.stageTime["forward"] = bed.now.Add(6 * time.Minute)
+	forwardAgain := bed.run(bed.now.Add(6*time.Minute), attentionMoveCalls("base", "forward"))
+	if len(forwardAgain.Pending) != 1 || forwardAgain.Pending[0].Tip != "forward" || forwardAgain.Pending[0].SourceID == forward.Pending[0].SourceID {
 		t.Fatalf("revisited commit was silently deduplicated after rewind: first=%+v later=%+v", forward, forwardAgain)
 	}
 }
 
 func TestLedgerAttentionDurabilityRefusalDoesNotFetch(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	remoteTip := bed.open(t, "must-not-fetch")
-	acceptedBefore := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef)
-	previous := ledgerAttentionWriter
-	ledgerAttentionWriter = func(string, string, string) (bool, error) { return false, nil }
-	t.Cleanup(func() { ledgerAttentionWriter = previous })
-	report := RunLedgerAttention(bed.watcher, bed.now)
+	bed := newAttentionPolicyBed(t)
+	bed.move("must-not-fetch", attentionWorld(queuedAttentionGoal("must-not-fetch")), "base")
+	report := bed.runWithWriter(bed.now, "endpoint accepted machine project:base", func(string, string, string) (bool, error) { return false, nil })
 	if report.Outcome != "failed" || report.FailureKind != ledgerAttentionStateWriteFailed {
 		t.Fatalf("durability refusal was mislabeled: %+v", report)
 	}
-	if acceptedAfter := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef); acceptedAfter != acceptedBefore || acceptedAfter == remoteTip {
-		t.Fatalf("fetch advanced past an uncommitted baseline: before=%s after=%s remote=%s", acceptedBefore, acceptedAfter, remoteTip)
+	if bed.accepted != "base" || bed.accepted == bed.remote {
+		t.Fatalf("fetch advanced past an uncommitted baseline: before=%s remote=%s", bed.accepted, bed.remote)
 	}
 }
 
@@ -664,75 +692,72 @@ exec "$LEDGER_ATTENTION_REAL_GIT" "$@"
 }
 
 func TestLedgerAttentionRecoversDurableStageBeforeAcceptedCAS(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	_ = RunLedgerAttention(bed.watcher, bed.now)
-	acceptedBefore := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef)
-	remoteTip := bed.open(t, "staged-before-cas")
-	original := ledgerAttentionWriter
-	ledgerAttentionWriter = func(path, contents, anchor string) (bool, error) {
-		durable, err := original(path, contents, anchor)
+	bed := newAttentionPolicyBed(t)
+	_ = bed.run(bed.now, attentionBaselineCalls())
+	bed.move("staged-tip", attentionWorld(queuedAttentionGoal("staged-before-cas")), "base")
+	stagedUncertain := func(path, contents, anchor string) (bool, error) {
+		durable, err := atomicfile.WriteText(path, contents, anchor)
 		if err == nil && strings.Contains(contents, `"staged": {`) {
 			return false, nil
 		}
 		return durable, err
 	}
-	t.Cleanup(func() { ledgerAttentionWriter = original })
-	failed := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
+	failed := bed.runWithWriter(bed.now.Add(2*time.Minute), "endpoint accepted machine capture sync accepted gates validate entries project:base changes:base>staged-tip project:staged-tip cleanup", stagedUncertain)
 	if failed.Outcome != "failed" || failed.FailureKind != ledgerAttentionStateWriteFailed {
 		t.Fatalf("staged durability uncertainty was not refused: %+v", failed)
 	}
-	if accepted := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef); accepted != acceptedBefore {
-		t.Fatalf("accepted ref moved before the staged frontier was proven durable: %s", accepted)
+	if bed.accepted != "base" {
+		t.Fatalf("accepted ref moved before staged frontier was proven durable: %s", bed.accepted)
 	}
-	ledgerAttentionWriter = original
-	recovered := RunLedgerAttention(bed.watcher, bed.now.Add(3*time.Minute))
-	if len(recovered.Pending) != 1 || recovered.Pending[0].Tip != remoteTip {
+	if stage := bed.state().Staged; stage == nil || stage.Tip != "staged-tip" {
+		t.Fatalf("writer did not leave a durable staged file: %+v", stage)
+	}
+	recovered := bed.run(bed.now.Add(3*time.Minute), "endpoint accepted machine entries advance:staged-tip ancestor:staged-tip>staged-tip accepted capture sync accepted validate entries cleanup")
+	if len(recovered.Pending) != 1 || recovered.Pending[0].Tip != "staged-tip" {
 		t.Fatalf("durable pre-CAS stage did not recover exactly once: %+v", recovered)
 	}
-	state, _, err := loadLedgerAttentionState(bed.watcher)
-	if err != nil || state.Staged != nil || state.DiffedTip != remoteTip {
-		t.Fatalf("recovered stage did not promote atomically: %+v %v", state, err)
+	state := bed.state()
+	if state.Staged != nil || state.DiffedTip != "staged-tip" {
+		t.Fatalf("recovered stage did not promote atomically: %+v", state)
 	}
 }
 
 func TestLedgerAttentionCrashStageDoesNotResurrectHumanRetirement(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	_ = RunLedgerAttention(bed.watcher, bed.now)
-	acceptedBefore := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef)
-	retiredTip := bed.open(t, "retired-mid-capture")
-	original := ledgerAttentionWriter
-	ledgerAttentionWriter = func(path, contents, anchor string) (bool, error) {
-		durable, err := original(path, contents, anchor)
+	bed := newAttentionPolicyBed(t)
+	_ = bed.run(bed.now, attentionBaselineCalls())
+	acceptedBefore := bed.accepted
+	retiredTip := "retired-tip"
+	bed.move(retiredTip, attentionWorld(queuedAttentionGoal("retired-mid-capture")), "base")
+	stagedUncertain := func(path, contents, anchor string) (bool, error) {
+		durable, err := atomicfile.WriteText(path, contents, anchor)
 		if err == nil && strings.Contains(contents, `"staged": {`) {
 			return false, nil
 		}
 		return durable, err
 	}
-	t.Cleanup(func() { ledgerAttentionWriter = original })
-	failed := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
+	failed := bed.runWithWriter(bed.now.Add(2*time.Minute), "endpoint accepted machine capture sync accepted gates validate entries project:base changes:base>retired-tip project:retired-tip cleanup", stagedUncertain)
 	if failed.Outcome != "failed" || failed.FailureKind != ledgerAttentionStateWriteFailed {
 		t.Fatalf("crash fixture did not stop after its durable stage: %+v", failed)
 	}
-	attentionGit(t, bed.publisher, "push", "-q", "--force", "origin", acceptedBefore+":refs/heads/main")
-	endpoint, err := goal.ResolveEndpoint(bed.watcher)
-	if err != nil {
-		t.Fatal(err)
+	if bed.accepted != acceptedBefore {
+		t.Fatalf("accepted ref moved before staged frontier was proven durable: %s", bed.accepted)
 	}
-	if repaired, err := goal.RepairAcceptRemote(endpoint, "Wido"); err != nil || repaired.Tip != acceptedBefore {
-		t.Fatalf("human retirement repair: %+v %v", repaired, err)
+	if stage := bed.state().Staged; stage == nil || stage.Tip != retiredTip {
+		t.Fatalf("writer did not leave a durable retired stage: %+v", stage)
 	}
-	ledgerAttentionWriter = original
+	bed.entries = append(bed.entries, goal.Entry{Opid: "repair-retirement", Intent: goal.Intent{Verb: "repair-accept-remote", Args: map[string]string{"newTip": acceptedBefore}}, Phase: goal.PhaseTerminal, Outcome: goal.OutcomeConfirmed})
+	bed.accepted, bed.remote = acceptedBefore, acceptedBefore
 
-	recovered := RunLedgerAttention(bed.watcher, bed.now.Add(3*time.Minute))
+	recovered := bed.run(bed.now.Add(3*time.Minute), "endpoint accepted machine entries accepted capture sync accepted validate cleanup")
 	if recovered.Outcome != "current" || recovered.Failure != "" || len(recovered.Pending) != 0 || recovered.Tip != acceptedBefore {
 		t.Fatalf("crash recovery resurfaced the retired capture: %+v", recovered)
 	}
-	if accepted := attentionGit(t, bed.watcher, "rev-parse", goal.AcceptedRef); accepted != acceptedBefore || accepted == retiredTip {
+	if accepted := bed.accepted; accepted != acceptedBefore || accepted == retiredTip {
 		t.Fatalf("crash recovery resurrected retired accepted tip: accepted=%s retired=%s", accepted, retiredTip)
 	}
-	state, _, err := loadLedgerAttentionState(bed.watcher)
-	if err != nil || state.Staged != nil || state.DiffedTip != acceptedBefore {
-		t.Fatalf("retired durable stage survived recovery: %+v %v", state, err)
+	state := bed.state()
+	if state.Staged != nil || state.DiffedTip != acceptedBefore {
+		t.Fatalf("retired durable stage survived recovery: %+v", state)
 	}
 }
 
@@ -755,36 +780,32 @@ func TestTickRecordsLedgerStateWriteFailureAndRunsLaterDuties(t *testing.T) {
 }
 
 func TestLedgerAttentionJournalClearsBeforeOfflineFetch(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	_ = RunLedgerAttention(bed.watcher, bed.now)
-	remoteTip := bed.open(t, "examine-me")
-	moved := RunLedgerAttention(bed.watcher, bed.now.Add(2*time.Minute))
-	if moved.Tip != remoteTip || moved.MovedAt.IsZero() {
+	bed := newAttentionPolicyBed(t)
+	_ = bed.run(bed.now, attentionBaselineCalls())
+	bed.move("examine-tip", attentionWorld(queuedAttentionGoal("examine-me")), "base")
+	moved := bed.run(bed.now.Add(2*time.Minute), attentionMoveCalls("base", "examine-tip"))
+	if moved.Tip != "examine-tip" || moved.MovedAt.IsZero() {
 		t.Fatalf("movement did not start the examination clock: %+v", moved)
 	}
 	opid := "journal-examines-remote"
-	if _, err := goal.CreateEntry(bed.watcher, opid, "mac-a", "attention-fixture", goal.Intent{Verb: "edit"}); err != nil {
-		t.Fatal(err)
-	}
-	attentionGit(t, bed.watcher, "config", "goal.sync-remote", filepath.Join(t.TempDir(), "unreachable.git"))
-	empty := RunLedgerAttention(bed.watcher, bed.now.Add(3*time.Minute))
+	bed.entries = []goal.Entry{{Opid: opid}}
+	bed.fail("capture", "offline fetch unavailable")
+	empty := bed.run(bed.now.Add(3*time.Minute), "endpoint accepted machine entries capture")
 	if empty.Outcome != "failed" {
 		t.Fatalf("offline fetch unexpectedly succeeded: %+v", empty)
 	}
-	state, _, err := loadLedgerAttentionState(bed.watcher)
-	if err != nil || state.ExaminedTip == remoteTip || state.MovedAt == "" {
-		t.Fatalf("a journal entry without a fetched tip falsely cleared attention: %+v %v", state, err)
+	state := bed.state()
+	if state.ExaminedTip == "examine-tip" || state.MovedAt == "" {
+		t.Fatalf("a journal entry without a fetched tip falsely cleared attention: %+v", state)
 	}
-	if err := goal.RecordSteps(bed.watcher, opid, remoteTip, ""); err != nil {
-		t.Fatal(err)
-	}
-	report := RunLedgerAttention(bed.watcher, bed.now.Add(4*time.Minute))
+	bed.entries[0].FetchedOid = "examine-tip"
+	report := bed.run(bed.now.Add(4*time.Minute), "endpoint accepted machine entries ancestor:examine-tip>examine-tip capture")
 	if report.Outcome != "failed" {
 		t.Fatalf("offline fetch unexpectedly succeeded: %+v", report)
 	}
-	state, _, err = loadLedgerAttentionState(bed.watcher)
-	if err != nil || state.ExaminedTip != remoteTip || state.MovedAt != "" {
-		t.Fatalf("journal evidence did not clear before offline fetch: %+v %v", state, err)
+	state = bed.state()
+	if state.ExaminedTip != "examine-tip" || state.MovedAt != "" {
+		t.Fatalf("journal evidence did not clear before offline fetch: %+v", state)
 	}
 }
 
@@ -832,17 +853,23 @@ func TestLedgerAttentionHealthDeadOutranksPersistentFetchFailure(t *testing.T) {
 }
 
 func TestLedgerAttentionFetchFailureMaturesFromAliveToUnknown(t *testing.T) {
-	bed := newLedgerAttentionBed(t)
-	_ = RunLedgerAttention(bed.watcher, bed.now)
-	attentionGit(t, bed.watcher, "config", "goal.sync-remote", filepath.Join(t.TempDir(), "unreachable.git"))
+	bed := newAttentionPolicyBed(t)
+	if report := bed.run(bed.now, attentionBaselineCalls()); report.Outcome != "current" {
+		t.Fatalf("baseline did not establish a reachable ledger: %+v", report)
+	}
+	bed.fail("capture", "unreachable remote")
 	failureAt := bed.now.Add(time.Minute)
-	if report := RunLedgerAttention(bed.watcher, failureAt); report.Outcome != "failed" {
+	if report := bed.run(failureAt, "endpoint accepted machine capture"); report.Outcome != "failed" {
 		t.Fatalf("unreachable remote unexpectedly succeeded: %+v", report)
 	}
-	if early := checkLedgerAttention(bed.watcher, failureAt.Add(29*time.Minute)); early.Status != HealthAlive {
+	state := bed.state()
+	if state.LastOutcome != "failed" || state.LastFailure != "unreachable remote" || state.FailingSince != failureAt.UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("fetch failure was not persisted: %+v", state)
+	}
+	if early := checkLedgerAttention(bed.root, failureAt.Add(29*time.Minute)); early.Status != HealthAlive {
 		t.Fatalf("a fresh fetch failure was not inside its patience window: %+v", early)
 	}
-	if mature := checkLedgerAttention(bed.watcher, failureAt.Add(30*time.Minute)); mature.Status != HealthUnknown || !strings.Contains(mature.Reason, "unreachable") {
+	if mature := checkLedgerAttention(bed.root, failureAt.Add(30*time.Minute)); mature.Status != HealthUnknown || !strings.Contains(mature.Reason, "unreachable") {
 		t.Fatalf("a persistent fetch failure did not mature to unknown: %+v", mature)
 	}
 }

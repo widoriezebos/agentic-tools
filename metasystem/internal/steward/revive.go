@@ -91,6 +91,12 @@ func prepareIntentUnderLock(repoRoot, receiptFile string, it Intent) error {
 // survives a crash until it launches or cancels, without waking the operator
 // merely to announce work that the machinery can do itself.
 func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
+	return completeRevivalWithDependencies(repoRoot, cfg, census, nonce, launch, openWorkDependencies{
+		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
+	}, claimOption...)
+}
+
+func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, dependencies openWorkDependencies, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
 	// The critical section: fence, verdict, consume, launch, stamp.
 	arb, err := AcquireArbitration(repoRoot)
 	if err != nil {
@@ -132,7 +138,7 @@ func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce
 		return ReviveOutcome{}, err
 	}
 	// The one-active-continuation guard must not count OUR OWN intent.
-	d, _, err := decideForRevival(repoRoot, cfg, census, ev, *it)
+	d, _, err := decideForRevivalWithDependencies(repoRoot, cfg, census, ev, *it, dependencies)
 	if err != nil {
 		return ReviveOutcome{}, err
 	}
@@ -250,8 +256,14 @@ func claimSeatIdleGoal(repoRoot string, intent Intent) error {
 // decideForRevival is decideNow with one intent excluded from the
 // active-continuation guard — an intent must not suppress itself.
 func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, intent Intent) (Decision, string, error) {
+	return decideForRevivalWithDependencies(repoRoot, cfg, census, ev, intent, openWorkDependencies{
+		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
+	})
+}
+
+func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, intent Intent, dependencies openWorkDependencies) (Decision, string, error) {
 	cfg = cfg.withDefaults()
-	work, workReason, err := ReadOpenWork(repoRoot)
+	work, workReason, err := readOpenWorkWithDependencies(repoRoot, dependencies)
 	if err != nil {
 		return Decision{}, "", err
 	}
@@ -296,7 +308,7 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 		ProviderOutage:     providerOutage,
 	})
 	if intent.Reason == seatHandoffReason {
-		return decideForHandoff(repoRoot, cfg, workers, ev, intent, others, providerOutage, workReason, now)
+		return decideForHandoffWithReader(repoRoot, cfg, workers, ev, intent, others, providerOutage, workReason, now, dependencies.ReadClaimableBudgetedWork)
 	}
 	if intent.Reason != "seatIdle" {
 		return decision, workReason, nil
@@ -304,7 +316,7 @@ func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev E
 	// A seatIdle intent is the seat's explicit handoff: the main is expected
 	// to remain alive. Re-check the exact held claim or claimable target and
 	// every safety guard, then bypass only the ordinary live-main suppression.
-	shared, err := goal.ReadClaimableBudgetedWork(repoRoot, now)
+	shared, err := dependencies.ReadClaimableBudgetedWork(repoRoot, now)
 	if err != nil {
 		return Decision{VerdictDegraded, ActNotify, "seatIdle claim could not be re-read: " + err.Error()}, workReason, nil
 	}

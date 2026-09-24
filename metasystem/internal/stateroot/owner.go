@@ -30,18 +30,24 @@ const (
 // repository is refused. Symlinks are judged by their entry path,
 // never their referent. The repo mode rides along so callers needing
 // the self-hosting distinction get both answers from one mouth.
-func Owner(path string) (Ownership, string, error) {
-	installation, err := installationRoot()
+func Owner(path string) (Ownership, string, error) { return defaultResolver().Owner(path) }
+
+func (r Resolver) Owner(path string) (Ownership, string, error) {
+	installation, err := r.installationRoot()
 	if err != nil {
 		return OwnerOutside, "", err
 	}
-	return OwnerForInstallation(installation, path)
+	return r.OwnerForInstallation(installation, path)
 }
 
 // OwnerForInstallation applies the ownership rule for an explicitly located
 // installation. Callers that inspect another checkout use this entry point so
 // ownership is not accidentally derived from the running binary.
 func OwnerForInstallation(installation, path string) (Ownership, string, error) {
+	return defaultResolver().OwnerForInstallation(installation, path)
+}
+
+func (r Resolver) OwnerForInstallation(installation, path string) (Ownership, string, error) {
 	absoluteInstallation, err := filepath.Abs(installation)
 	if err != nil {
 		return OwnerOutside, "", fmt.Errorf("path owner: resolve installation: %w", err)
@@ -56,7 +62,7 @@ func OwnerForInstallation(installation, path string) (Ownership, string, error) 
 	}
 	appRoot := installation
 	if mode == "adopted" {
-		if appRoot, err = repositoryTop(installation); err != nil {
+		if appRoot, err = r.repositoryTop(installation); err != nil {
 			return OwnerOutside, mode, err
 		}
 	} else {
@@ -64,7 +70,7 @@ func OwnerForInstallation(installation, path string) (Ownership, string, error) 
 		// level down; ownership is judged against the repository. A
 		// repository that cannot be identified refuses rather than
 		// answering against the wrong boundary.
-		top, topErr := repositoryTop(installation)
+		top, topErr := r.repositoryTop(installation)
 		if topErr != nil {
 			return OwnerOutside, mode, fmt.Errorf("path owner: repository top unreadable: %w", topErr)
 		}

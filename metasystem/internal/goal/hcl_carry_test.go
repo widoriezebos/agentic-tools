@@ -32,21 +32,9 @@ func TestHCL40CarriedVerbsRequireRemote(t *testing.T) {
 
 func TestHCL39FormatOneReservationAndRecordAsk(t *testing.T) {
 	t.Parallel()
-	bed := t.TempDir()
-	origin := filepath.Join(bed, "origin.git")
-	mustGit(t, bed, "init", "-q", "--bare", "-b", "main", origin)
-	seed := filepath.Join(bed, "seed")
-	mustGit(t, bed, "clone", "-q", origin, seed)
-	if err := os.WriteFile(filepath.Join(seed, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mustGit(t, seed, "add", "metasystem.conf")
-	mustGit(t, seed, "commit", "-qm", "seed")
-	mustGit(t, seed, "push", "-q", "origin", "main")
-	root := filepath.Join(bed, "clone-a")
-	mustGit(t, bed, "clone", "-q", origin, root)
-	seedLedger(t, root)
-	request := verbReq(root, "01J5X0000000000000000H390", "mac-a")
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
+	request := verbReqFor(endpoint, "01J5X0000000000000000H390", "mac-a")
 	_, _, err := Carrying(request, CarryingArgs{Goal: "g"})
 	requireCarryAsk(t, err, "carry-format-required")
 	request.Ulid = "01J5X0000000000000000H391"
@@ -67,6 +55,7 @@ func TestHCL39FormatOneReservationAndRecordAsk(t *testing.T) {
 func TestHCL45ConfirmedCarriedEntryIsIdempotent(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
+	repository := &strictAbsentRepository{t: t}
 	opid := "01J5X0000000000000000H450"
 	intent := Intent{Verb: "carried", Targets: []string{"g"}, Args: map[string]string{}}
 	if _, err := CreateCarryingEntry(root, opid, "mac-a", "lin-a", intent, int64(os.Getpid())); err != nil {
@@ -75,9 +64,17 @@ func TestHCL45ConfirmedCarriedEntryIsIdempotent(t *testing.T) {
 	if err := MarkTerminal(root, opid, OutcomeConfirmed, "landed"); err != nil {
 		t.Fatal(err)
 	}
-	result, err := Carried(VerbRequest{Endpoint: Endpoint{Root: root, Remote: "origin", Branch: "refs/heads/main"}}, opid)
+	result, err := Carried(VerbRequest{Endpoint: Endpoint{Root: root, Remote: "origin", Branch: "refs/heads/main", Repository: repository}}, opid)
 	if err != nil || result.Outcome != OutcomeConfirmed || result.Detail != "idempotent" {
 		t.Fatalf("confirmed replay = %+v, %v; want confirmed idempotent", result, err)
+	}
+	repository.requireAccepted(t)
+	entry, err := ReadEntry(root, opid)
+	if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeConfirmed {
+		t.Fatalf("confirmed journal entry changed during replay: %+v, %v", entry, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "plans", "goals", "backlog.md")); !os.IsNotExist(err) {
+		t.Fatalf("replay published a ledger root: %v", err)
 	}
 }
 
@@ -178,18 +175,7 @@ func TestHCL60SupersedePreconditions(t *testing.T) {
 	foreign := "01ARZ3NDEKTSV4RRFFQ69G5FAY-seat-b-1a2b3c4d"
 	opening := "01ARZ3NDEKTSV4RRFFQ69G5FAX-seat-a-1a2b3c4d"
 
-	repo := t.TempDir()
-	mustGit(t, repo, "init", "-q", "-b", "main")
-	if err := os.WriteFile(filepath.Join(repo, "payload.txt"), []byte("anchor\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mustGit(t, repo, "add", "payload.txt")
-	mustGit(t, repo, "commit", "-qm", "anchor", "-m", "Goal-Transaction: "+target)
-	if err := os.WriteFile(filepath.Join(repo, "payload.txt"), []byte("carried\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mustGit(t, repo, "commit", "-qam", "carried", "-m", "Carry: "+target)
-	carriedTip := mustGit(t, repo, "rev-parse", "HEAD")
+	carriedTip := strings.Repeat("c", 40)
 
 	tests := []struct {
 		name string
@@ -228,7 +214,11 @@ func TestHCL60SupersedePreconditions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			tree, args, codeTip := test.make()
-			request := VerbRequest{Endpoint: Endpoint{Root: repo}, Actor: Actor{Machine: "seat-a"}, Now: now}
+			endpoint, _ := fakeGoalEndpoint(t)
+			if test.name == "push before row" {
+				declareCarryAt(t, endpoint, codeTip, target, strings.Repeat("a", 40), carriedTip)
+			}
+			request := VerbRequest{Endpoint: endpoint, Actor: Actor{Machine: "seat-a"}, Now: now}
 			_, _, err := carrySupersedePrecondition(request, tree, codeTip, args)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("refusal = %v; want %q", err, test.want)

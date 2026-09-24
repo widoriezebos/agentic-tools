@@ -221,6 +221,15 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	}
 
 	controlRoot, now := proofExtensionGoalFixture(t)
+	admissionDirectory := filepath.Join(t.TempDir(), "host-admission")
+	if err := os.MkdirAll(admissionDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDirectory)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
+	if directory, selected, err := proofrun.FixtureHostAdmissionDirectory(controlRoot); err != nil || !selected || directory != admissionDirectory {
+		t.Fatalf("host admission directory=%q selected=%t err=%v, want %q", directory, selected, err, admissionDirectory)
+	}
 	conf := filepath.Join(controlRoot, "metasystem.conf")
 	amendSyncedGoalFixture(t, controlRoot, "diagnostic no-reuse fixture", func(file *goal.GoalFile) {
 		file.Budget.AttemptLimit = 4

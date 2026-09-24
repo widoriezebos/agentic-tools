@@ -35,6 +35,21 @@ func ComposeReport(c ReportConfig) (string, error) {
 // ComposeStatusReport returns the rendered post and the goal named by its
 // execution-approval line, when that line fits in the post.
 func ComposeStatusReport(c ReportConfig) (string, string, error) {
+	return composeStatusReportWithReads(c, reportGoalReads{
+		resolveEndpoint: goal.ResolveEndpoint,
+		ledgerIdentity:  goal.ExistingLedgerIdentity,
+		landingLog:      defaultLandingLogBytes,
+	})
+}
+
+// reportGoalReads binds the three raw goal reads to one composition call.
+type reportGoalReads struct {
+	resolveEndpoint func(string) (goal.Endpoint, error)
+	ledgerIdentity  func(string) string
+	landingLog      func(string, time.Time) ([]byte, error)
+}
+
+func composeStatusReportWithReads(c ReportConfig, reads reportGoalReads) (string, string, error) {
 	if c.Now.IsZero() {
 		c.Now = time.Now()
 	}
@@ -61,7 +76,7 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 		questionGoals[q.Goal] = true
 		needs = append(needs, "Needs you: "+featureName(q.Goal)+" — "+questionRequest(q))
 	}
-	ep, err := goal.ResolveEndpoint(c.RepoRoot)
+	ep, err := reads.resolveEndpoint(c.RepoRoot)
 	if err != nil {
 		backlog = []string{"Backlog order: unavailable — " + statusLineText(err.Error())}
 	} else if p, projectErr := goal.Project(ep, false, c.Now); projectErr != nil {
@@ -108,7 +123,7 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 		}
 	}
 	sort.Strings(needs)
-	delivered = landingLines(c, features)
+	delivered = landingLinesWithReader(c, features, reads.landingLog)
 	if len(delivered) == 0 {
 		next = nil
 	}
@@ -119,7 +134,7 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 	}
 	lineLimit -= len(backlog)
 	lines := []string{}
-	brainState := brain.Read(c.RepoRoot, goal.ExistingLedgerIdentity(c.RepoRoot))
+	brainState := brain.Read(c.RepoRoot, reads.ledgerIdentity(c.RepoRoot))
 	if brainState.State == brain.Declared {
 		if status, statusErr := brain.ReadStatus(c.RepoRoot); statusErr == nil && status.Line == brain.StatusLine(*brainState.Record) {
 			lines = append(lines, status.Line)
@@ -255,9 +270,11 @@ func oneSentence(s string) string {
 }
 
 func landingLines(c ReportConfig, features map[string]string) []string {
-	cmd := exec.Command("git", "-C", c.RepoRoot, "log", "origin/main", landingSince(c.WindowStart), "--format=%s%x00%(trailers:key=Goal-Item,valueonly)")
-	cmd.Env = reportGitEnv()
-	b, err := cmd.Output()
+	return landingLinesWithReader(c, features, defaultLandingLogBytes)
+}
+
+func landingLinesWithReader(c ReportConfig, features map[string]string, readLog func(string, time.Time) ([]byte, error)) []string {
+	b, err := readLog(c.RepoRoot, c.WindowStart)
 	if err != nil {
 		return nil
 	}
@@ -283,6 +300,12 @@ func landingLines(c ReportConfig, features map[string]string) []string {
 		out = append(out, fmt.Sprintf("Delivered: %s — %s", features[id], subjects[id]))
 	}
 	return out
+}
+
+func defaultLandingLogBytes(root string, windowStart time.Time) ([]byte, error) {
+	cmd := exec.Command("git", "-C", root, "log", "origin/main", landingSince(windowStart), "--format=%s%x00%(trailers:key=Goal-Item,valueonly)")
+	cmd.Env = reportGitEnv()
+	return cmd.Output()
 }
 
 func landingSince(windowStart time.Time) string {

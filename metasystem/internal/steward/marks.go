@@ -21,9 +21,14 @@ import (
 // mark has no referent yet (an unborn branch, an absent ledger), so
 // comparisons stay total.
 func CurrentMarks(repoRoot string) (Marks, error) {
+	return currentMarksWithReader(repoRoot, func(root string, args ...string) ([]byte, error) {
+		return exec.Command("git", append([]string{"-C", root}, args...)...).Output()
+	})
+}
+
+func currentMarksWithReader(repoRoot string, read func(string, ...string) ([]byte, error)) (Marks, error) {
 	head := "no-head"
-	cmd := exec.Command("git", "-C", repoRoot, "rev-parse", "HEAD")
-	out, headErr := cmd.Output()
+	out, headErr := read(repoRoot, "rev-parse", "HEAD")
 	if headErr == nil {
 		head = strings.TrimSpace(string(out))
 	} else if _, statErr := os.Stat(filepath.Join(repoRoot, ".git")); statErr == nil {
@@ -41,8 +46,7 @@ func CurrentMarks(repoRoot string) (Marks, error) {
 	// detection (steward-marks-retired-ledger). An absent ref keeps the
 	// sentinel so pre-cutover checkouts still compare totally.
 	ledger := "no-ledger"
-	refCmd := exec.Command("git", "-C", repoRoot, "rev-parse", "--verify", "--quiet", "refs/metasystem/goals/accepted")
-	if refOut, refErr := refCmd.Output(); refErr == nil {
+	if refOut, refErr := read(repoRoot, "rev-parse", "--verify", "--quiet", "refs/metasystem/goals/accepted"); refErr == nil {
 		tip := strings.TrimSpace(string(refOut))
 		if tip != "" {
 			sum := sha256.Sum256([]byte(tip))

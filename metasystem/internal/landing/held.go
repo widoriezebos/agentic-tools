@@ -40,15 +40,56 @@ type heldTrailers struct {
 	provenance []string
 }
 
+type heldFacts struct {
+	resolveCommit func(root, revision string) (string, error)
+	rangeBytes    func(root, base, tip string) ([]byte, error)
+	commitObject  func(root, commit string) ([]byte, error)
+	endpoint      func(root string) (goal.Endpoint, error)
+	parentTree    func(root, parent string) (string, error)
+	fileAt        func(root, tree, path string) ([]byte, bool, error)
+}
+
+type heldFiles struct {
+	root  string
+	facts heldFacts
+}
+
+func (f heldFiles) FileAt(tree, path string) ([]byte, bool, error) {
+	return f.facts.fileAt(f.root, tree, path)
+}
+
+func defaultHeldFacts() heldFacts {
+	return heldFacts{
+		resolveCommit: resolveHeldCommit,
+		rangeBytes: func(root, base, tip string) ([]byte, error) {
+			return landingGit(root, "rev-list", "--first-parent", "--ancestry-path", "--parents", "--reverse", base+".."+tip)
+		},
+		commitObject: func(root, commit string) ([]byte, error) {
+			return landingGit(root, "cat-file", "commit", commit)
+		},
+		endpoint: goal.ResolveEndpoint,
+		parentTree: func(root, parent string) (string, error) {
+			return (gittree.Workspace{Dir: root}).TreeOf(parent)
+		},
+		fileAt: func(root, tree, path string) ([]byte, bool, error) {
+			return (gittree.Workspace{Dir: root}).FileAt(tree, path)
+		},
+	}
+}
+
 // Held rechecks every commit in the first-parent range against the goal
 // ledger in that commit's parent. Policy outcomes are verdicts; only Git
 // plumbing failures needed to open or resolve the repository are errors.
 func Held(root, base, commit, remote, ref string) (HeldVerdict, error) {
-	resolvedBase, err := resolveHeldCommit(root, base)
+	return heldWithFacts(root, base, commit, remote, ref, defaultHeldFacts())
+}
+
+func heldWithFacts(root, base, commit, remote, ref string, facts heldFacts) (HeldVerdict, error) {
+	resolvedBase, err := facts.resolveCommit(root, base)
 	if err != nil {
 		return HeldVerdict{}, err
 	}
-	resolvedCommit, err := resolveHeldCommit(root, commit)
+	resolvedCommit, err := facts.resolveCommit(root, commit)
 	if err != nil {
 		return HeldVerdict{}, err
 	}
@@ -58,7 +99,7 @@ func Held(root, base, commit, remote, ref string) (HeldVerdict, error) {
 		return verdict, nil
 	}
 
-	rangeCommits, refusal, err := heldRange(root, resolvedBase, resolvedCommit)
+	rangeCommits, refusal, err := heldRange(root, resolvedBase, resolvedCommit, facts.rangeBytes)
 	if err != nil {
 		return HeldVerdict{}, err
 	}
@@ -68,11 +109,11 @@ func Held(root, base, commit, remote, ref string) (HeldVerdict, error) {
 		return verdict, nil
 	}
 
-	workspace := gittree.Workspace{Dir: root}
+	files := heldFiles{root: root, facts: facts}
 commitLoop:
 	for _, entry := range rangeCommits {
 		verdict.Outcome = "ok"
-		object, messageErr := landingGit(root, "cat-file", "commit", entry.commit)
+		object, messageErr := facts.commitObject(root, entry.commit)
 		if messageErr != nil {
 			verdict.Outcome = "unreadable"
 			verdict.ExitCode = 2
@@ -112,7 +153,7 @@ commitLoop:
 			return true
 		}
 
-		endpoint, endpointErr := goal.ResolveEndpoint(root)
+		endpoint, endpointErr := facts.endpoint(root)
 		if endpointErr != nil {
 			return HeldVerdict{}, endpointErr
 		}
@@ -154,7 +195,7 @@ commitLoop:
 			}
 		}
 
-		parentTree, treeErr := workspace.TreeOf(entry.parent)
+		parentTree, treeErr := facts.parentTree(root, entry.parent)
 		if treeErr != nil {
 			verdict.Outcome = "unreadable"
 			verdict.ExitCode = 2
@@ -162,7 +203,7 @@ commitLoop:
 			return verdict, nil
 		}
 		if goalID == "" {
-			if goalFreeAt(workspace, parentTree) {
+			if goalFreeAt(files, parentTree) {
 				verdict.Outcome = "goal-free"
 				continue commitLoop
 			}
@@ -194,7 +235,7 @@ commitLoop:
 			continue
 		}
 
-		file, state := heldGoalAtParent(workspace, parentTree, goalID)
+		file, state := heldGoalAtParent(files, parentTree, goalID)
 		parentShort := shortHeldCommit(entry.parent)
 		if file == nil || file.State != goal.StateClaimed || file.Claimed == nil || (!human && actor != file.Claimed.Machine+"+"+file.Claimed.Lineage) {
 			if refuse("goal-item-not-held", fmt.Sprintf("goal %s is %s at %s", goalID, state, parentShort)) {
@@ -225,10 +266,10 @@ func resolveHeldCommit(root, value string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func heldRange(root, base, tip string) ([]heldCommit, *HeldRefusal, error) {
+func heldRange(root, base, tip string, rangeBytes func(root, base, tip string) ([]byte, error)) ([]heldCommit, *HeldRefusal, error) {
 	// The ancestry path keeps a moved base from turning the proposed push
 	// range into an inspection of the tip's entire first-parent history.
-	out, err := landingGit(root, "rev-list", "--first-parent", "--ancestry-path", "--parents", "--reverse", base+".."+tip)
+	out, err := rangeBytes(root, base, tip)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -309,7 +350,9 @@ func heldChainGoal(root, chain string) (string, bool) {
 	return goalID, ok && goalID != ""
 }
 
-func heldGoalAtParent(workspace gittree.Workspace, tree, id string) (*goal.GoalFile, string) {
+func heldGoalAtParent(workspace interface {
+	FileAt(string, string) ([]byte, bool, error)
+}, tree, id string) (*goal.GoalFile, string) {
 	for _, path := range []string{"plans/goals/" + id + ".md", "records/goals/" + id + ".md"} {
 		data, present, err := workspace.FileAt(tree, path)
 		if err != nil || !present {

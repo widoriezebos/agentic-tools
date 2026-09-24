@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
 func initReadSubjectRepo(t *testing.T) string {
@@ -59,16 +57,85 @@ func writeImplementerSubjectRound(t *testing.T, repo, root, job string, round in
 	}
 }
 
-func TestComputeReadSubjectByKind(t *testing.T) {
-	repo := initReadSubjectRepo(t)
-	reviewedTree, err := (gittree.Workspace{Dir: repo}).Snapshot("HEAD")
-	if err != nil {
+func initReadSubjectFiles(t *testing.T) string {
+	t.Helper()
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "metasystem"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(repo, "metasystem", "page.md"), []byte("design one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return repo
+}
+
+type readSubjectFactCall struct {
+	kind, repo, arg, commit, value string
+	patch                          []byte
+}
+
+type strictReadSubjectFacts struct {
+	t         *testing.T
+	remaining []readSubjectFactCall
+}
+
+func newStrictReadSubjectFacts(t *testing.T) *strictReadSubjectFacts {
+	t.Helper()
+	facts := &strictReadSubjectFacts{t: t}
+	t.Cleanup(func() {
+		if len(facts.remaining) != 0 {
+			t.Errorf("unconsumed read subject facts: %+v", facts.remaining)
+		}
+	})
+	return facts
+}
+
+func (f *strictReadSubjectFacts) expect(call readSubjectFactCall) {
+	f.remaining = append(f.remaining, call)
+}
+
+func (f *strictReadSubjectFacts) take(kind, repo, arg, commit string) readSubjectFactCall {
+	f.t.Helper()
+	if len(f.remaining) == 0 {
+		f.t.Fatalf("unexpected %s fact query: repo=%q arg=%q commit=%q", kind, repo, arg, commit)
+	}
+	call := f.remaining[0]
+	f.remaining = f.remaining[1:]
+	if call.kind != kind || call.repo != repo || call.arg != arg || call.commit != commit {
+		f.t.Fatalf("read subject fact query = (%s, %q, %q, %q); want (%s, %q, %q, %q)", kind, repo, arg, commit, call.kind, call.repo, call.arg, call.commit)
+	}
+	return call
+}
+
+func (f *strictReadSubjectFacts) CommitParent(repo, commit string) (string, error) {
+	return f.take("parent", repo, commit, "").value, nil
+}
+
+func (f *strictReadSubjectFacts) CommitTree(repo, commit string) (string, error) {
+	return f.take("tree", repo, commit, "").value, nil
+}
+
+func (f *strictReadSubjectFacts) CommitDiff(repo, parentExpression, commit string) ([]byte, error) {
+	return f.take("diff", repo, parentExpression, commit).patch, nil
+}
+
+func (f *strictReadSubjectFacts) WorkspaceHead(workspace string) (string, error) {
+	return f.take("head", workspace, "", "").value, nil
+}
+
+func (f *strictReadSubjectFacts) LiveWorkspaceTree(repoRoot, workspaceRoot string) (string, error) {
+	return f.take("snapshot", repoRoot, workspaceRoot, "").value, nil
+}
+
+func TestComputeReadSubjectByKind(t *testing.T) {
+	repo := initReadSubjectFiles(t)
+	facts := newStrictReadSubjectFacts(t)
+	reviewedTree := strings.Repeat("a", 40)
 	patch := []byte("diff --git a/metasystem/page.md b/metasystem/page.md\n")
 	writeImplementerSubjectRound(t, repo, "implementer", "implementer", 1, repo, reviewedTree, patch)
 
-	live, present, err := ComputeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "implementer"})
+	facts.expect(readSubjectFactCall{kind: "snapshot", repo: repo, arg: repo, value: reviewedTree})
+	live, present, err := computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "implementer"}, facts)
 	if err != nil || !present {
 		t.Fatalf("live subject = %+v, present=%v, err=%v", live, present, err)
 	}
@@ -80,7 +147,8 @@ func TestComputeReadSubjectByKind(t *testing.T) {
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), "critic.json", map[string]any{
 		"jobId": "critic", "role": "code-critic", "round": 1, "parentJob": nil, "reviews": "implementer",
 	})
-	fromRoot, present, err := ComputeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", RootJob: "critic"})
+	facts.expect(readSubjectFactCall{kind: "snapshot", repo: repo, arg: repo, value: reviewedTree})
+	fromRoot, present, err := computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", RootJob: "critic"}, facts)
 	if err != nil || !present || !fromRoot.Equal(live) {
 		t.Fatalf("root-job subject = %+v, present=%v, err=%v; want %+v", fromRoot, present, err, live)
 	}
@@ -88,28 +156,28 @@ func TestComputeReadSubjectByKind(t *testing.T) {
 	if err := os.Remove(filepath.Join(repo, "artifacts", "agents", "implementer", "rounds", "1", "review.json")); err != nil {
 		t.Fatal(err)
 	}
-	if subject, present, err := ComputeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "implementer"}); err != nil || present || subject != (ReadSubject{}) {
+	if subject, present, err := computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "implementer"}, facts); err != nil || present || subject != (ReadSubject{}) {
 		t.Fatalf("missing review subject = %+v, present=%v, err=%v", subject, present, err)
 	}
 
 	if err := os.WriteFile(filepath.Join(repo, "metasystem", "commit.txt"), []byte("commit subject\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitReadSubject(t, repo, "add", "metasystem/commit.txt")
-	gitReadSubject(t, repo, "-c", "user.name=test", "-c", "user.email=test@example.invalid", "commit", "-qm", "subject")
-	commit := gitReadSubject(t, repo, "rev-parse", "HEAD")
-	commitSubject, present, err := ComputeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "commit:" + commit})
+	commit := strings.Repeat("b", 40)
+	parent := strings.Repeat("c", 40)
+	tree := strings.Repeat("d", 40)
+	commitPatch := []byte("diff --git a/metasystem/commit.txt b/metasystem/commit.txt\nnew file mode 100644\n")
+	facts.expect(readSubjectFactCall{kind: "parent", repo: repo, arg: commit, value: parent})
+	facts.expect(readSubjectFactCall{kind: "tree", repo: repo, arg: commit, value: tree})
+	facts.expect(readSubjectFactCall{kind: "diff", repo: repo, arg: commit + "^", commit: commit, patch: commitPatch})
+	commitSubject, present, err := computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "commit:" + commit}, facts)
 	if err != nil || !present {
 		t.Fatalf("commit subject = %+v, present=%v, err=%v", commitSubject, present, err)
 	}
-	commitPatch, err := gitRawOutput(repo, "diff", "--binary", "--full-index", commit+"^", commit)
-	if err != nil {
-		t.Fatal(err)
-	}
 	commitDigest := sha256.Sum256(commitPatch)
 	if commitSubject.Kind != SubjectCommit || commitSubject.Commit != commit ||
-		commitSubject.Parent != gitReadSubject(t, repo, "rev-parse", commit+"^") ||
-		commitSubject.Tree != gitReadSubject(t, repo, "rev-parse", commit+"^{tree}") ||
+		commitSubject.Parent != parent ||
+		commitSubject.Tree != tree ||
 		commitSubject.DiffDigest != hex.EncodeToString(commitDigest[:]) {
 		t.Fatalf("commit subject fields = %+v", commitSubject)
 	}
@@ -119,10 +187,11 @@ func TestComputeReadSubjectByKind(t *testing.T) {
 	if err := os.WriteFile(outputsFile, []byte(strings.Join(outputs, "\n")+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	design, present, err := ComputeReadSubject(ReadSubjectRequest{
+	facts.expect(readSubjectFactCall{kind: "head", repo: repo, value: commit})
+	design, present, err := computeReadSubject(ReadSubjectRequest{
 		RepoRoot: repo, Role: "design-critic", Workspace: repo,
 		Design: "metasystem/page.md", DeclaredOutputs: outputsFile,
-	})
+	}, facts)
 	if err != nil || !present {
 		t.Fatalf("design subject = %+v, present=%v, err=%v", design, present, err)
 	}
@@ -138,32 +207,33 @@ func TestComputeReadSubjectByKind(t *testing.T) {
 		"jobId": "design-root", "role": "design-critic", "round": 1, "parentJob": nil,
 		"design": "metasystem/page.md", "declaredOutputsDigest": recordedDigest,
 	})
-	fromDesignRoot, present, err := ComputeReadSubject(ReadSubjectRequest{
+	facts.expect(readSubjectFactCall{kind: "head", repo: repo, value: commit})
+	fromDesignRoot, present, err := computeReadSubject(ReadSubjectRequest{
 		RepoRoot: repo, Role: "design-critic", RootJob: "design-root", Workspace: repo,
 		Design: "outside.md", DeclaredOutputs: filepath.Join(repo, "missing-outputs.txt"),
-	})
+	}, facts)
 	if err != nil || !present || fromDesignRoot.DesignPath != "metasystem/page.md" || fromDesignRoot.DeclaredOutputsDigest != recordedDigest {
 		t.Fatalf("recorded design subject = %+v, present=%v, err=%v", fromDesignRoot, present, err)
 	}
 }
 
 func TestLiveSubjectFollowsTheChangeNotTheMember(t *testing.T) {
-	repo := initReadSubjectRepo(t)
-	tree, err := (gittree.Workspace{Dir: repo}).Snapshot("HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
+	repo := initReadSubjectFiles(t)
+	facts := newStrictReadSubjectFacts(t)
+	tree := strings.Repeat("a", 40)
 	patch := []byte("same patch\n")
 	writeImplementerSubjectRound(t, repo, "implementer", "implementer", 1, repo, tree, patch)
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), "critic.json", map[string]any{
 		"jobId": "critic", "role": "code-critic", "round": 1, "parentJob": nil, "reviews": "implementer",
 	})
-	first, present, err := ComputeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", RootJob: "critic"})
+	facts.expect(readSubjectFactCall{kind: "snapshot", repo: repo, arg: repo, value: tree})
+	first, present, err := computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", RootJob: "critic"}, facts)
 	if err != nil || !present {
 		t.Fatalf("root subject: present=%v err=%v", present, err)
 	}
 	writeImplementerSubjectRound(t, repo, "implementer", "implementer-r2", 2, repo, tree, patch)
-	follow, present, err := ComputeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", RootJob: "critic"})
+	facts.expect(readSubjectFactCall{kind: "snapshot", repo: repo, arg: repo, value: tree})
+	follow, present, err := computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", RootJob: "critic"}, facts)
 	if err != nil || !present {
 		t.Fatalf("follow-up subject: present=%v err=%v", present, err)
 	}
@@ -174,12 +244,10 @@ func TestLiveSubjectFollowsTheChangeNotTheMember(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "metasystem", "page.md"), []byte("changed design\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	changedTree, err := (gittree.Workspace{Dir: repo}).Snapshot("HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
+	changedTree := strings.Repeat("b", 40)
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "implementer", "rounds", "2"), "review.json", map[string]any{"reviewedTree": changedTree})
-	changed, present, err := ComputeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", RootJob: "critic"})
+	facts.expect(readSubjectFactCall{kind: "snapshot", repo: repo, arg: repo, value: changedTree})
+	changed, present, err := computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", RootJob: "critic"}, facts)
 	if err != nil || !present {
 		t.Fatalf("changed subject: present=%v err=%v", present, err)
 	}
@@ -189,11 +257,9 @@ func TestLiveSubjectFollowsTheChangeNotTheMember(t *testing.T) {
 }
 
 func TestCriticFollowUpUsesFinalImplementerWorkRound(t *testing.T) {
-	repo := initReadSubjectRepo(t)
-	firstTree, err := (gittree.Workspace{Dir: repo}).Snapshot("HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
+	repo := initReadSubjectFiles(t)
+	facts := newStrictReadSubjectFacts(t)
+	firstTree := strings.Repeat("a", 40)
 	writeImplementerSubjectRound(t, repo, "implementer", "implementer", 1, repo, firstTree, []byte("round one\n"))
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs"), "critic.json", map[string]any{
 		"jobId": "critic", "role": "code-critic", "round": 1, "parentJob": nil, "reviews": "implementer",
@@ -202,14 +268,12 @@ func TestCriticFollowUpUsesFinalImplementerWorkRound(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "metasystem", "page.md"), []byte("round two\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	finalTree, err := (gittree.Workspace{Dir: repo}).Snapshot("HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
+	finalTree := strings.Repeat("b", 40)
 	finalPatch := []byte("round two patch\n")
 	writeImplementerSubjectRound(t, repo, "implementer", "implementer-r2", 2, repo, finalTree, finalPatch)
 
-	subject, present, err := ComputeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", RootJob: "critic"})
+	facts.expect(readSubjectFactCall{kind: "snapshot", repo: repo, arg: repo, value: finalTree})
+	subject, present, err := computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", RootJob: "critic"}, facts)
 	if err != nil || !present {
 		t.Fatalf("critic follow-up subject: %+v present=%v err=%v", subject, present, err)
 	}
@@ -220,20 +284,20 @@ func TestCriticFollowUpUsesFinalImplementerWorkRound(t *testing.T) {
 }
 
 func TestLiveSubjectWorkspaceMismatchRefuses(t *testing.T) {
-	repo := initReadSubjectRepo(t)
-	tree, err := (gittree.Workspace{Dir: repo}).Snapshot("HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
+	repo := initReadSubjectFiles(t)
+	facts := newStrictReadSubjectFacts(t)
+	tree := strings.Repeat("a", 40)
 	writeImplementerSubjectRound(t, repo, "implementer", "implementer", 1, repo, tree, []byte("patch\n"))
-	if _, present, err := ComputeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "implementer"}); err != nil || !present {
+	facts.expect(readSubjectFactCall{kind: "snapshot", repo: repo, arg: repo, value: tree})
+	if _, present, err := computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "implementer"}, facts); err != nil || !present {
 		t.Fatalf("matching workspace: present=%v err=%v", present, err)
 	}
 
 	if err := os.WriteFile(filepath.Join(repo, "metasystem", "page.md"), []byte("drifted\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = ComputeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "implementer"})
+	facts.expect(readSubjectFactCall{kind: "snapshot", repo: repo, arg: repo, value: strings.Repeat("b", 40)})
+	_, _, err := computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "implementer"}, facts)
 	assertSubjectMismatch(t, err)
 
 	recordPath := filepath.Join(repo, "artifacts", "agents", "jobs", "implementer.json")
@@ -242,7 +306,14 @@ func TestLiveSubjectWorkspaceMismatchRefuses(t *testing.T) {
 	if err := writeRecord(recordPath, record); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = ComputeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "implementer"})
+	_, _, err = computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "implementer"}, facts)
+	assertSubjectMismatch(t, err)
+
+	record["workspaceRoot"] = filepath.Join(repo, "metasystem", "page.md")
+	if err := writeRecord(recordPath, record); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = computeReadSubject(ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "implementer"}, facts)
 	assertSubjectMismatch(t, err)
 }
 
@@ -328,14 +399,14 @@ func TestFoldRefusesUnboundReturn(t *testing.T) {
 	t.Run("mismatch", func(t *testing.T) {
 		repo := t.TempDir()
 		writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
-		setCriticSubject(t, repo, "critic", "implementer", "tree-a")
+		setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
 		if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json"), ReadSubject{
 			Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer",
 			ReviewedProjectTree: "tree-b", DiffDigest: "diff",
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil || outcome != "advanced" {
+		if outcome, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil || outcome != "advanced" {
 			t.Fatalf("advance = %q, %v", outcome, err)
 		}
 		items := readRegister(t, repo, "critic")
@@ -354,14 +425,14 @@ func TestFoldRefusesUnboundReturn(t *testing.T) {
 	t.Run("matching", func(t *testing.T) {
 		repo := t.TempDir()
 		writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
-		setCriticSubject(t, repo, "critic", "implementer", "tree-a")
+		setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
 		if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json"), ReadSubject{
 			Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer",
 			ReviewedProjectTree: "tree-a", DiffDigest: "diff",
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil || outcome != "advanced" {
+		if outcome, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil || outcome != "advanced" {
 			t.Fatalf("advance = %q, %v", outcome, err)
 		}
 		if items := readRegister(t, repo, "critic"); len(items) != 0 {
@@ -402,13 +473,13 @@ func TestCloseWritesOneClosure(t *testing.T) {
 
 	repo := t.TempDir()
 	writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
-	setCriticSubject(t, repo, "critic", "implementer", "tree-a")
+	setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
 	subjectPath := filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json")
 	subject := ReadSubject{Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff"}
 	if err := WriteReadSubject(subjectPath, subject); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+	if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
 		t.Fatal(err)
 	}
 	if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {
@@ -445,12 +516,12 @@ func TestCloseWritesOneClosure(t *testing.T) {
 
 	differentRepo := t.TempDir()
 	writeCriticRound(t, differentRepo, "different", "different", 1, []any{}, []any{})
-	setCriticSubject(t, differentRepo, "different", "implementer", "tree-a")
+	setCriticSubjectFiles(t, differentRepo, "different", "implementer", "tree-a")
 	differentSubject := ReadSubject{Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff"}
 	if err := WriteReadSubject(filepath.Join(differentRepo, "artifacts", "agents", "different", "rounds", "1", "subject.json"), differentSubject); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueRegisterAdvance(differentRepo, "different", "different"); err != nil {
+	if _, err := advanceWithPrefix(t, differentRepo, "different", "different"); err != nil {
 		t.Fatal(err)
 	}
 	differentRootPath := filepath.Join(differentRepo, "artifacts", "agents", "jobs", "different.json")
@@ -468,13 +539,13 @@ func TestCloseWritesOneClosure(t *testing.T) {
 
 	mutatedRepo := t.TempDir()
 	writeCriticRound(t, mutatedRepo, "mutated", "mutated", 1, []any{}, []any{})
-	setCriticSubject(t, mutatedRepo, "mutated", "implementer", "tree-a")
+	setCriticSubjectFiles(t, mutatedRepo, "mutated", "implementer", "tree-a")
 	mutatedSubjectPath := filepath.Join(mutatedRepo, "artifacts", "agents", "mutated", "rounds", "1", "subject.json")
 	mutatedSubject := ReadSubject{Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff"}
 	if err := WriteReadSubject(mutatedSubjectPath, mutatedSubject); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueRegisterAdvance(mutatedRepo, "mutated", "mutated"); err != nil {
+	if _, err := advanceWithPrefix(t, mutatedRepo, "mutated", "mutated"); err != nil {
 		t.Fatal(err)
 	}
 	// DiffDigest is part of the subject identity but is not echoed in a
@@ -500,13 +571,13 @@ func TestCloseWritesOneClosure(t *testing.T) {
 	if err := writeRecord(cancelledRootPath, cancelledRoot); err != nil {
 		t.Fatal(err)
 	}
-	setCriticSubject(t, cancelledRepo, "cancelled", "implementer", "tree-a")
+	setCriticSubjectFiles(t, cancelledRepo, "cancelled", "implementer", "tree-a")
 	if err := WriteReadSubject(filepath.Join(cancelledRepo, "artifacts", "agents", "cancelled", "rounds", "1", "subject.json"), ReadSubject{
 		Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueRegisterAdvance(cancelledRepo, "cancelled", "cancelled"); err != nil {
+	if _, err := advanceWithFacts(t, cancelledRepo, "cancelled", "cancelled"); err != nil {
 		t.Fatal(err)
 	}
 	if outcome, err := CritiqueRegisterClose(cancelledRepo, "cancelled"); err != nil || outcome != "closed" {
@@ -524,13 +595,13 @@ func TestCloseWritesOneClosure(t *testing.T) {
 	blockedRepo := t.TempDir()
 	writeCriticRound(t, blockedRepo, "blocked", "blocked", 1,
 		[]any{registerFindingValue("F-1", true, "evidence")}, []any{registerRigor("F-1", "severe")})
-	setCriticSubject(t, blockedRepo, "blocked", "implementer", "tree-a")
+	setCriticSubjectFiles(t, blockedRepo, "blocked", "implementer", "tree-a")
 	if err := WriteReadSubject(filepath.Join(blockedRepo, "artifacts", "agents", "blocked", "rounds", "1", "subject.json"), ReadSubject{
 		Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueRegisterAdvance(blockedRepo, "blocked", "blocked"); err != nil {
+	if _, err := advanceWithPrefix(t, blockedRepo, "blocked", "blocked"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := CritiqueRegisterClose(blockedRepo, "blocked"); err == nil {
@@ -545,12 +616,12 @@ func TestCloseWritesOneClosure(t *testing.T) {
 func TestCleanClosureWaitsForLastCriticRound(t *testing.T) {
 	repo := t.TempDir()
 	writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
-	setCriticSubject(t, repo, "critic", "implementer", "tree-a")
+	setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
 	subject := ReadSubject{Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff"}
 	if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json"), subject); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+	if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -581,7 +652,7 @@ func TestCleanClosureWaitsForLastCriticRound(t *testing.T) {
 	if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "2", "subject.json"), subject); err != nil {
 		t.Fatal(err)
 	}
-	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic-r2"); err != nil || outcome != "advanced" {
+	if outcome, err := advanceWithPrefix(t, repo, "critic", "critic-r2"); err != nil || outcome != "advanced" {
 		t.Fatalf("round two advance = %q, %v", outcome, err)
 	}
 	if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {
@@ -612,13 +683,13 @@ func TestNonCleanFoldClosesWithoutCleanClosure(t *testing.T) {
 		if err := writeRecord(rootPath, root); err != nil {
 			t.Fatal(err)
 		}
-		setCriticSubject(t, repo, "critic", "implementer", "tree-a")
+		setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
 		if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json"), ReadSubject{
 			Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff",
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+		if _, err := advanceWithFacts(t, repo, "critic", "critic"); err != nil {
 			t.Fatal(err)
 		}
 		if err := CritiqueRegisterAcceptRisk(repo, "critic", syntheticProtocolFindingID("code-critic", "critic"), "decision-op"); err != nil {
@@ -640,13 +711,13 @@ func TestNonCleanFoldClosesWithoutCleanClosure(t *testing.T) {
 	t.Run("unbound-return", func(t *testing.T) {
 		repo := t.TempDir()
 		writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
-		setCriticSubject(t, repo, "critic", "implementer", "tree-a")
+		setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
 		if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json"), ReadSubject{
 			Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-b", DiffDigest: "diff",
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+		if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
 			t.Fatal(err)
 		}
 		if err := CritiqueRegisterAcceptRisk(repo, "critic", syntheticUnboundFindingID("code-critic", "critic"), "decision-op"); err != nil {
@@ -700,13 +771,13 @@ func TestCleanClosureRequiresWithdrawnRegister(t *testing.T) {
 			repo := t.TempDir()
 			writeCriticRound(t, repo, "critic", "critic", 1,
 				[]any{registerFindingValue("F-1", true, "evidence")}, []any{registerRigor("F-1", tc.class)})
-			setCriticSubject(t, repo, "critic", "implementer", "tree-a")
+			setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
 			if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json"), ReadSubject{
 				Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff",
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+			if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
 				t.Fatal(err)
 			}
 			tc.close(t, repo)
@@ -774,12 +845,12 @@ func TestDesignChainClosesAtRoundOne(t *testing.T) {
 func TestClosureFollowsChainClose(t *testing.T) {
 	repo := t.TempDir()
 	writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
-	setCriticSubject(t, repo, "critic", "implementer", "tree-a")
+	setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
 	subject := ReadSubject{Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff"}
 	if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json"), subject); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+	if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
 		t.Fatal(err)
 	}
 	if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {
@@ -804,7 +875,7 @@ func TestClosureFollowsChainClose(t *testing.T) {
 	if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "2", "subject.json"), subject); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic-r2"); err != nil {
+	if _, err := advanceWithPrefix(t, repo, "critic", "critic-r2"); err != nil {
 		t.Fatal(err)
 	}
 	if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {
@@ -839,12 +910,12 @@ func TestClosureFollowsChainClose(t *testing.T) {
 func TestCancelledRoundAfterRefusedClose(t *testing.T) {
 	repo := t.TempDir()
 	writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
-	setCriticSubject(t, repo, "critic", "implementer", "tree-a")
+	setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
 	subject := ReadSubject{Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff"}
 	if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json"), subject); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+	if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
 		t.Fatal(err)
 	}
 	if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {
@@ -863,7 +934,7 @@ func TestCancelledRoundAfterRefusedClose(t *testing.T) {
 	if err := writeRecord(roundTwoPath, roundTwo); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic-r2"); err != nil {
+	if _, err := advanceWithFacts(t, repo, "critic", "critic-r2"); err != nil {
 		t.Fatal(err)
 	}
 	if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {
@@ -895,13 +966,13 @@ func TestCancelledRoundAfterRefusedClose(t *testing.T) {
 func TestRegisterCloseNeverWritesClosure(t *testing.T) {
 	repo := t.TempDir()
 	writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
-	setCriticSubject(t, repo, "critic", "implementer", "tree-a")
+	setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
 	if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json"), ReadSubject{
 		Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+	if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
 		t.Fatal(err)
 	}
 	for attempt := 1; attempt <= 3; attempt++ {
@@ -924,13 +995,13 @@ func TestCleanClosureSkipsEditedReturn(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := t.TempDir()
 			writeCriticRound(t, repo, "critic", "critic", 1, []any{}, []any{})
-			setCriticSubject(t, repo, "critic", "implementer", "tree-a")
+			setCriticSubjectFiles(t, repo, "critic", "implementer", "tree-a")
 			if err := WriteReadSubject(filepath.Join(repo, "artifacts", "agents", "critic", "rounds", "1", "subject.json"), ReadSubject{
 				Kind: SubjectLive, ImplementerRoot: "implementer", ReviewedMember: "implementer", ReviewedProjectTree: "tree-a", DiffDigest: "diff",
 			}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+			if _, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil {
 				t.Fatal(err)
 			}
 			if outcome, err := CritiqueRegisterClose(repo, "critic"); err != nil || outcome != "closed" {

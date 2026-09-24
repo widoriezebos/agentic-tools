@@ -89,12 +89,16 @@ type TestReceiptProjection struct {
 
 // ProjectWorkspaceTree removes workspace exclusions from a whole-project tree.
 func ProjectWorkspaceTree(root, tree string) (string, error) {
-	installation := gittree.Workspace{Dir: root}
-	top, err := installation.TopLevel()
+	return ProjectWorkspaceTreeWith(root, tree, DefaultProjectionAccess())
+}
+
+// ProjectWorkspaceTreeWith applies the installation's workspace exclusions.
+func ProjectWorkspaceTreeWith(root, tree string, a ProjectionAccess) (string, error) {
+	top, err := a.TopLevel(root)
 	if err != nil {
 		return "", err
 	}
-	prefix, err := installation.Prefix()
+	prefix, err := a.Prefix(root)
 	if err != nil {
 		return "", err
 	}
@@ -102,7 +106,7 @@ func ProjectWorkspaceTree(root, tree string) (string, error) {
 	for index, path := range paths {
 		paths[index] = filepath.ToSlash(filepath.Join(prefix, path))
 	}
-	return (gittree.Workspace{Dir: top}).FilterTreePrefixes(tree, paths)
+	return a.FilterPrefixes(top, tree, paths)
 }
 
 // InstallationWorkspaceTree removes workspace exclusions from a tree already

@@ -315,7 +315,7 @@ trap 'cleanup "$?"' EXIT
 setup_brain_dispatch_bed() {
   brain_origin=$tmp/brain-origin.git
   brain_repo=$tmp/brain-repo
-  git init -q --bare "$brain_origin"
+  git init -q -b main --bare "$brain_origin"
   git init -q -b main "$brain_repo"
   git -C "$brain_repo" config user.name fixture
   git -C "$brain_repo" config user.email fixture@example.invalid

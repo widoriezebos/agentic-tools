@@ -1,9 +1,12 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -20,7 +23,6 @@ func validateRepo(t *testing.T, confBody string, localBody ...string) []string {
 	conf := filepath.Join(repo, "metasystem.conf")
 	evidence := t.TempDir()
 	batch := t.TempDir()
-	initGit(t, batch)
 	body := strings.ReplaceAll(confBody, "@EVIDENCE@", evidence)
 	body = strings.ReplaceAll(body, "@REPO@", repo)
 	body = strings.ReplaceAll(body, "@BATCH@", batch)
@@ -30,7 +32,30 @@ func validateRepo(t *testing.T, confBody string, localBody ...string) []string {
 	putFile(t, conf, body)
 	putFile(t, conf+".local", strings.Join(localBody, ""))
 	putFile(t, filepath.Join(repo, "testing.json"), minimalTestingContract)
-	tiersAbsent, problems, err := Validate(conf, repo)
+	expected := expectedBatchGit(batch)
+	expectedCalls := 0
+	if strings.Contains(body, BatchRootKey+"=") || strings.Contains(strings.Join(localBody, ""), BatchRootKey+"=") {
+		expectedCalls = 1
+	}
+	var mu sync.Mutex
+	calls := 0
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if calls != expectedCalls {
+			t.Errorf("validation Git runner received %d calls; want %d", calls, expectedCalls)
+		}
+	})
+	runner := func(request gitRequest) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		if calls > expectedCalls || !reflect.DeepEqual(request, expected) {
+			return nil, errors.New("unexpected validation Git request")
+		}
+		return []byte(batch + "\n"), nil
+	}
+	tiersAbsent, problems, err := validateWithRunner(conf, repo, runner)
 	if err != nil {
 		t.Fatalf("hard error: %v", err)
 	}

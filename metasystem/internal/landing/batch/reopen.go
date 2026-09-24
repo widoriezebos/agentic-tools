@@ -32,7 +32,7 @@ func prepareHeldReopen(store Store, id, newBaseTree string) (heldReopen, error) 
 		return heldReopen{}, refuseBatch("BATCH_REOPEN_SAME_TREE", "held batch requires a new base tree")
 	}
 	survivors := joinedUnits(record.Units)
-	prefixes, err := assembleUnits(store.root, newBaseTree, survivors)
+	prefixes, err := store.reassembly.assemble(newBaseTree, survivors)
 	if err != nil {
 		return heldReopen{}, err
 	}

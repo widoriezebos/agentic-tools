@@ -34,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
@@ -521,11 +522,15 @@ func syncStoppingReq(verb, root, by, lineageFlag string) (goal.VerbRequest, erro
 }
 
 func syncStoppingReqWithProof(verb, root, by, lineageFlag string, observedProof *humanauthority.Proof) (goal.VerbRequest, error) {
-	classification, classifyErr := brainHumanWordClassification(verb, root, by, observedProof)
+	return syncStoppingReqWithProofWithDependencies(verb, root, by, lineageFlag, observedProof, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func syncStoppingReqWithProofWithDependencies(verb, root, by, lineageFlag string, observedProof *humanauthority.Proof, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, error) {
+	classification, classifyErr := brainHumanWordClassificationWithFacts(verb, root, by, observedProof, dependencies.authorityFacts)
 	if classifyErr != nil {
 		return goal.VerbRequest{}, classifyErr
 	}
-	return syncReqClassifiedWithTerminalGrade(root, by, lineageFlag, observedProof, classification, true)
+	return syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag, observedProof, classification, true, commandNow, dependencies)
 }
 
 var (
@@ -533,6 +538,28 @@ var (
 	proveSyncReqTerminalAuthority = humanauthority.ProveTerminal
 	dischargeReviewObligation     = goal.DischargeReviewObligation
 )
+
+type syncRequestDependencies struct {
+	authorityFacts goalAuthorityReadFacts
+	endpoint       func(string) (goal.Endpoint, error)
+	machine        func(string) (string, error)
+	ensureGuard    func(string) error
+	ownerLineage   func() string
+	proveHuman     func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
+	proveTerminal  func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
+}
+
+func defaultSyncRequestDependencies() syncRequestDependencies {
+	return syncRequestDependencies{
+		authorityFacts: defaultGoalAuthorityReadFacts(),
+		endpoint:       goal.ResolveEndpoint,
+		machine:        goal.ResolveMachine,
+		ensureGuard:    ensureGuardEnrolled,
+		ownerLineage:   func() string { return os.Getenv("METASYSTEM_OWNER_LINEAGE") },
+		proveHuman:     proveSyncReqHumanAuthority,
+		proveTerminal:  proveSyncReqTerminalAuthority,
+	}
+}
 
 func terminalEnrollmentLineage(enrollment humanauthority.Enrollment) string {
 	return terminalAuthorityLineage(enrollment.TerminalID, enrollment.Generation)
@@ -554,11 +581,15 @@ func syncReqWithProof(verb, root, by, lineageFlag string, observedProof *humanau
 }
 
 func syncReqWithProofAt(verb, root, by, lineageFlag string, observedProof *humanauthority.Proof, commandNow func(string) (time.Time, error)) (goal.VerbRequest, error) {
-	classification, classifyErr := brainHumanWordClassification(verb, root, by, observedProof)
+	return syncReqWithProofAtWithDependencies(verb, root, by, lineageFlag, observedProof, commandNow, defaultSyncRequestDependencies())
+}
+
+func syncReqWithProofAtWithDependencies(verb, root, by, lineageFlag string, observedProof *humanauthority.Proof, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, error) {
+	classification, classifyErr := brainHumanWordClassificationWithFacts(verb, root, by, observedProof, dependencies.authorityFacts)
 	if classifyErr != nil {
 		return goal.VerbRequest{}, classifyErr
 	}
-	return syncReqClassifiedAt(root, by, lineageFlag, observedProof, classification, commandNow)
+	return syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag, observedProof, classification, false, commandNow, dependencies)
 }
 
 func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult) (goal.VerbRequest, error) {
@@ -574,15 +605,19 @@ func syncReqClassifiedWithTerminalGrade(root, by, lineageFlag string, observedPr
 }
 
 func syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, allowTerminal bool, commandNow func(string) (time.Time, error)) (goal.VerbRequest, error) {
-	if err := ensureGuardEnrolled(root); err != nil {
+	return syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag, observedProof, classification, allowTerminal, commandNow, defaultSyncRequestDependencies())
+}
+
+func syncReqClassifiedWithTerminalGradeAtWithDependencies(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, allowTerminal bool, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, error) {
+	if err := dependencies.ensureGuard(root); err != nil {
 		return goal.VerbRequest{}, err
 	}
-	e, err := goal.ResolveEndpoint(root)
+	e, err := dependencies.endpoint(root)
 	if err != nil {
 		return goal.VerbRequest{}, err
 	}
 	configureCarriedCounselor(&e)
-	machine, err := goal.ResolveMachine(root)
+	machine, err := dependencies.machine(root)
 	if err != nil {
 		return goal.VerbRequest{}, err
 	}
@@ -592,7 +627,7 @@ func syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag string, observed
 		if nowErr != nil {
 			return goal.VerbRequest{}, nowErr
 		}
-		fullProof, fullErr := proveSyncReqHumanAuthority(root, int64(os.Getppid()), nil, now)
+		fullProof, fullErr := dependencies.proveHuman(root, int64(os.Getppid()), nil, now)
 		if fullErr == nil && fullProof.ValidFor(root) {
 			authority = &fullProof
 		} else {
@@ -602,7 +637,7 @@ func syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag string, observed
 				}
 				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove enrolled human ancestry: %w", fullErr)
 			}
-			terminalProof, terminalErr := proveSyncReqTerminalAuthority(root, int64(os.Getppid()), nil, now)
+			terminalProof, terminalErr := dependencies.proveTerminal(root, int64(os.Getppid()), nil, now)
 			if terminalErr != nil {
 				return goal.VerbRequest{}, fmt.Errorf("a human stopping act could not prove terminal human ancestry: %w", terminalErr)
 			}
@@ -614,7 +649,7 @@ func syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag string, observed
 	}
 	lineage := lineageFlag
 	if lineage == "" {
-		lineage = os.Getenv("METASYSTEM_OWNER_LINEAGE")
+		lineage = dependencies.ownerLineage()
 	}
 	if lineage == "" {
 		if by == "" {
@@ -642,7 +677,7 @@ func syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag string, observed
 		if authority != nil {
 			proof = *authority
 		} else {
-			proof, proofErr = proveSyncReqHumanAuthority(root, int64(os.Getppid()), nil, now)
+			proof, proofErr = dependencies.proveHuman(root, int64(os.Getppid()), nil, now)
 		}
 		if proofErr != nil || proof.Outcome != humanauthority.OutcomeProven || !proof.ValidFor(root) {
 			outcome := proof.Outcome
@@ -682,9 +717,25 @@ func syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag string, observed
 	return req, nil
 }
 
+type goalAuthorityReadFacts struct {
+	repositoryTop  func(string) (string, error)
+	ledgerIdentity func(string) string
+}
+
+func defaultGoalAuthorityReadFacts() goalAuthorityReadFacts {
+	return goalAuthorityReadFacts{
+		repositoryTop:  stateroot.RepositoryTop,
+		ledgerIdentity: goal.ExistingLedgerIdentity,
+	}
+}
+
 func brainHumanWordClassification(verb, root, by string, observedProof *humanauthority.Proof) (lease.ClassifyResult, error) {
-	classification, classifyErr := classifyVerbCaller(root, int64(os.Getppid()))
-	brainState := brain.Read(root, goal.ExistingLedgerIdentity(root))
+	return brainHumanWordClassificationWithFacts(verb, root, by, observedProof, defaultGoalAuthorityReadFacts())
+}
+
+func brainHumanWordClassificationWithFacts(verb, root, by string, observedProof *humanauthority.Proof, facts goalAuthorityReadFacts) (lease.ClassifyResult, error) {
+	classification, classifyErr := classifyVerbCallerWith(root, int64(os.Getppid()), facts.repositoryTop)
+	brainState := brain.Read(root, facts.ledgerIdentity(root))
 	if brainState.State != brain.Undeclared {
 		command := fmt.Sprintf("metasystem goal %s --root <checkout> --id <id> --by <name> <the verb's own flags>", verb)
 		if classifyErr != nil {
@@ -702,6 +753,10 @@ func brainHumanWordClassification(verb, root, by string, observedProof *humanaut
 }
 
 func classifyGoalAuthorityFirst(verb string, f *syncFlags) (lease.ClassifyResult, error) {
+	return classifyGoalAuthorityFirstWithFacts(verb, f, defaultGoalAuthorityReadFacts())
+}
+
+func classifyGoalAuthorityFirstWithFacts(verb string, f *syncFlags, facts goalAuthorityReadFacts) (lease.ClassifyResult, error) {
 	var fixtureProof *humanauthority.Proof
 	var fixtureErr error
 	if f.fixtureHumanAuthority {
@@ -712,7 +767,7 @@ func classifyGoalAuthorityFirst(verb string, f *syncFlags) (lease.ClassifyResult
 			fixtureProof = &proof
 		}
 	}
-	classification, err := brainHumanWordClassification(verb, f.root, f.by, fixtureProof)
+	classification, err := brainHumanWordClassificationWithFacts(verb, f.root, f.by, fixtureProof, facts)
 	if err != nil {
 		return lease.ClassifyResult{}, err
 	}
@@ -1404,6 +1459,12 @@ func runGoalBudgetWithAuthority(args []string, prove goalAuthorityProver) int {
 }
 
 func runGoalBudgetWithAuthorityAt(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error)) int {
+	return runGoalBudgetWithInputs(args, prove, commandNow, defaultSyncRequestDependencies(), dispatchcore.ResolveGoalBinding)
+}
+
+type goalBindingResolver func(string, string, time.Time) (dispatchcore.GoalBinding, error)
+
+func runGoalBudgetWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("budget", args)
 	cleaned, box, err := extractGoalBudgetBox(args)
 	if err != nil {
@@ -1414,7 +1475,7 @@ func runGoalBudgetWithAuthorityAt(args []string, prove goalAuthorityProver, comm
 		return 2
 	}
 	values.boxTyped = box
-	return runGoalBudgetPreparedAt(values, flags, box, prove, commandNow)
+	return runGoalBudgetPreparedWithInputs(values, flags, box, prove, commandNow, dependencies, binding)
 }
 
 func runGoalBudgetPrepared(values *humanVerbValues, flags *syncFlags, boxToken string, prove goalAuthorityProver) int {
@@ -1422,6 +1483,10 @@ func runGoalBudgetPrepared(values *humanVerbValues, flags *syncFlags, boxToken s
 }
 
 func runGoalBudgetPreparedAt(values *humanVerbValues, flags *syncFlags, boxToken string, prove goalAuthorityProver, commandNow func(string) (time.Time, error)) int {
+	return runGoalBudgetPreparedWithInputs(values, flags, boxToken, prove, commandNow, defaultSyncRequestDependencies(), dispatchcore.ResolveGoalBinding)
+}
+
+func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, boxToken string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values.bindSyncFlags(flags)
 	values.boxTyped = boxToken
 	if !converted(flags.root) {
@@ -1430,9 +1495,15 @@ func runGoalBudgetPreparedAt(values *humanVerbValues, flags *syncFlags, boxToken
 	if flags.id == "" {
 		return refuseHumanVerb(values, 2, "needs --id", humanVerbRemedy{words: "add the live goal's identifier with --id"})
 	}
-	endpoint, err := goal.ResolveEndpoint(flags.root)
+	if dependencies.endpoint == nil {
+		return refuseHumanVerb(values, 1, "goal endpoint reader is missing", humanVerbRemedy{words: "repair the checkout's goal synchronization endpoint"})
+	}
+	endpoint, err := dependencies.endpoint(flags.root)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the checkout's goal synchronization endpoint"})
+	}
+	if commandNow == nil {
+		return refuseHumanVerb(values, 1, "goal command clock is missing", humanVerbRemedy{words: "provide a valid goal command clock"})
 	}
 	now, err := commandNow(flags.root)
 	if err != nil {
@@ -1511,10 +1582,10 @@ func runGoalBudgetPreparedAt(values *humanVerbValues, flags *syncFlags, boxToken
 	if file.StopFence != nil && file.Budget != nil && budget != *file.Budget {
 		return refuseHumanVerb(values, 1, "a breach-stopped goal resumes under its standing box before a new box is recorded", humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
 	}
-	if _, err := classifyGoalAuthorityFirst(values.verb, flags); err != nil {
+	if _, err := classifyGoalAuthorityFirstWithFacts(values.verb, flags, dependencies.authorityFacts); err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "run this at the enrolled terminal"})
 	}
-	proof, err := proveGoalHumanAuthority("budget", flags, prove)
+	proof, err := proveGoalHumanAuthorityAt("budget", flags, prove, commandNow)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy))
 	}
@@ -1522,7 +1593,7 @@ func runGoalBudgetPreparedAt(values *humanVerbValues, flags *syncFlags, boxToken
 		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
 	}
 	values.by = flags.by
-	req, err := syncReqWithProofAt("budget", flags.root, flags.by, flags.lineage, &proof, commandNow)
+	req, err := syncReqWithProofAtWithDependencies("budget", flags.root, flags.by, flags.lineage, &proof, commandNow, dependencies)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
@@ -1538,7 +1609,10 @@ func runGoalBudgetPreparedAt(values *humanVerbValues, flags *syncFlags, boxToken
 			result, err = goal.SetBudgetApproved(req, flags.id, budget, &proof)
 			action = "goal set-budget"
 		} else {
-			binding, bindingErr := dispatchcore.ResolveGoalBinding(flags.root, flags.id, req.Now)
+			if binding == nil {
+				return refuseHumanVerb(values, 1, "stopped goal binding reader is missing", humanVerbRemedy{words: "repair the stopped goal binding before retrying"})
+			}
+			binding, bindingErr := binding(flags.root, flags.id, req.Now)
 			if bindingErr != nil {
 				return refuseHumanVerb(values, 1, bindingErr.Error(), humanVerbRemedy{words: "repair the stopped goal binding before retrying"})
 			}
@@ -1871,6 +1945,10 @@ func trySyncMutation(name string, args []string) (int, bool) {
 
 // runSyncOnly wraps the verbs that exist ONLY in the synced world.
 func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error), required ...string) func([]string) int {
+	return runSyncOnlyWithRequest(name, run, nil, required...)
+}
+
+func runSyncOnlyWithRequest(name string, run func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error), requestBuilder func(string, string, string, string) (goal.VerbRequest, error), required ...string) func([]string) int {
 	return func(args []string) int {
 		f, ok := parseSyncFlags(name, args)
 		if !ok {
@@ -1910,11 +1988,14 @@ func runSyncOnly(name string, run func(req goal.VerbRequest, f *syncFlags) (goal
 				return 2
 			}
 		}
-		requestBuilder := syncReq
-		if name == "release" {
-			requestBuilder = syncStoppingReq
+		builder := requestBuilder
+		if builder == nil {
+			builder = syncReq
+			if name == "release" {
+				builder = syncStoppingReq
+			}
 		}
-		req, err := requestBuilder(name, f.root, f.by, f.lineage)
+		req, err := builder(name, f.root, f.by, f.lineage)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -1965,7 +2046,11 @@ func resolveTrunkRedBranch(endpoint goal.Endpoint, name string) (string, error) 
 type goalAuthorityProver func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error)
 
 func proveFixtureGoalAuthority(name string, f *syncFlags) (humanauthority.Proof, error) {
-	ancestryNow, err := goalCommandNow(f.root)
+	return proveFixtureGoalAuthorityAt(name, f, goalCommandNow)
+}
+
+func proveFixtureGoalAuthorityAt(name string, f *syncFlags, commandNow func(string) (time.Time, error)) (humanauthority.Proof, error) {
+	ancestryNow, err := commandNow(f.root)
 	if err != nil {
 		return humanauthority.Proof{}, err
 	}
@@ -1981,13 +2066,17 @@ func proveFixtureGoalAuthority(name string, f *syncFlags) (humanauthority.Proof,
 }
 
 func proveGoalHumanAuthority(name string, f *syncFlags, prove goalAuthorityProver) (humanauthority.Proof, error) {
+	return proveGoalHumanAuthorityAt(name, f, prove, goalCommandNow)
+}
+
+func proveGoalHumanAuthorityAt(name string, f *syncFlags, prove goalAuthorityProver, commandNow func(string) (time.Time, error)) (humanauthority.Proof, error) {
 	if f.fixtureHumanAuthority {
 		if f.temporaryWord != "" || f.reviewBy != "" {
 			return humanauthority.Proof{}, fmt.Errorf("goal %s fixture authority does not combine with a temporary human word or review date", name)
 		}
-		return proveFixtureGoalAuthority(name, f)
+		return proveFixtureGoalAuthorityAt(name, f, commandNow)
 	}
-	ancestryNow, err := goalCommandNow(f.root)
+	ancestryNow, err := commandNow(f.root)
 	if err != nil {
 		return humanauthority.Proof{}, err
 	}
@@ -2834,6 +2923,16 @@ func runGoalResumeWithAuthority(args []string, prove goalAuthorityProver) int {
 }
 
 func runGoalResumeWithAuthorityAt(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error)) int {
+	return runGoalResumeWithAuthorityFacts(args, prove, commandNow, defaultGoalAuthorityReadFacts())
+}
+
+func runGoalResumeWithAuthorityFacts(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), facts goalAuthorityReadFacts) int {
+	dependencies := defaultSyncRequestDependencies()
+	dependencies.authorityFacts = facts
+	return runGoalResumeWithInputs(args, prove, commandNow, dependencies, dispatchcore.ResolveGoalBinding)
+}
+
+func runGoalResumeWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("resume", args)
 	f, ok := parseHumanSyncFlags(values, "resume", args)
 	if !ok {
@@ -2850,10 +2949,13 @@ func runGoalResumeWithAuthorityAt(args []string, prove goalAuthorityProver, comm
 		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{command: values.budgetCommand("keep")})
 	}
 	values.box = budget
-	classification, err := classifyGoalAuthorityFirst("resume", f)
+	classification, err := classifyGoalAuthorityFirstWithFacts("resume", f, dependencies.authorityFacts)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
+	}
+	if commandNow == nil {
+		return refuseHumanVerb(values, 1, "goal command clock is missing", humanVerbRemedy{words: "provide a valid goal command clock"})
 	}
 	ancestryNow, err := commandNow(f.root)
 	if err != nil {
@@ -2867,7 +2969,7 @@ func runGoalResumeWithAuthorityAt(args []string, prove goalAuthorityProver, comm
 		}
 		proof, err = humanauthority.AuthenticatedChannelProof(f.root, recorded, ancestryNow)
 	} else {
-		proof, err = proveGoalHumanAuthority("resume", f, prove)
+		proof, err = proveGoalHumanAuthorityAt("resume", f, prove, commandNow)
 	}
 	if err != nil {
 		code := 1
@@ -2883,7 +2985,10 @@ func runGoalResumeWithAuthorityAt(args []string, prove goalAuthorityProver, comm
 		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
 	}
 	values.by = f.by
-	req, err := syncReqClassifiedAt(f.root, f.by, f.lineage, &proof, classification, commandNow)
+	if dependencies.endpoint == nil {
+		return refuseHumanVerb(values, 1, "goal endpoint reader is missing", humanVerbRemedy{words: "repair the checkout's goal synchronization endpoint"})
+	}
+	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
@@ -2894,28 +2999,31 @@ func runGoalResumeWithAuthorityAt(args []string, prove goalAuthorityProver, comm
 			return refuseHumanVerb(values, 1, "the claimed goal is not breach-stopped and has no standing budget", humanVerbRemedy{command: values.budgetCommand("norm")})
 		}
 	}
-	binding, err := dispatchcore.ResolveGoalBinding(f.root, f.id, req.Now)
+	if binding == nil {
+		return refuseHumanVerb(values, 1, "goal binding reader is missing", humanVerbRemedy{words: "repair the goal's current claim binding before retrying"})
+	}
+	resolvedBinding, err := binding(f.root, f.id, req.Now)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the goal's current claim binding before retrying"})
 	}
-	if binding.Fence == nil {
+	if resolvedBinding.Fence == nil {
 		projection, projectErr := goal.Project(req.Endpoint, false, req.Now)
 		if projectErr == nil {
 			if file := projection.Tree.Live[f.id]; file != nil {
 				if file.Budget == nil {
-					return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", binding.Revision), humanVerbRemedy{command: values.budgetCommand("norm")})
+					return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", resolvedBinding.Revision), humanVerbRemedy{command: values.budgetCommand("norm")})
 				}
 				if viewErr := bindGoalTierView(values, f.root, file); viewErr != nil {
 					return refuseHumanVerb(values, 1, viewErr.Error(), humanVerbRemedy{words: "repair the configured tier box"})
 				}
 				if *file.Budget != *budget {
-					return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", binding.Revision), humanVerbRemedy{command: values.budgetCommand(goalbudget.FormatBox(*budget))})
+					return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", resolvedBinding.Revision), humanVerbRemedy{command: values.budgetCommand(goalbudget.FormatBox(*budget))})
 				}
 			}
 		}
-		return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", binding.Revision), humanVerbRemedy{words: "the goal is already live under that standing box"})
+		return refuseHumanVerb(values, 1, fmt.Sprintf("revision %d is not breach-stopped", resolvedBinding.Revision), humanVerbRemedy{words: "the goal is already live under that standing box"})
 	}
-	held, err := goalrevision.Acquire(f.root, f.id, binding.Revision, "goal-resume")
+	held, err := goalrevision.Acquire(f.root, f.id, resolvedBinding.Revision, "goal-resume")
 	if err != nil {
 		return refuseHumanVerb(values, 1, "could not acquire the goal-revision lock: "+err.Error(), humanVerbRemedy{words: "wait for the current goal revision operation to finish"})
 	}
@@ -3107,6 +3215,16 @@ func runGoalSetObligation(args []string) int {
 // runGoalSetObligationWithAuthority is the test-only entry seam paired with
 // runGoalResumeWithAuthority; no flag, config, or environment value selects it.
 func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver) int {
+	return runGoalSetObligationWithAuthorityFacts(args, prove, defaultGoalAuthorityReadFacts())
+}
+
+func runGoalSetObligationWithAuthorityFacts(args []string, prove goalAuthorityProver, facts goalAuthorityReadFacts) int {
+	dependencies := defaultSyncRequestDependencies()
+	dependencies.authorityFacts = facts
+	return runGoalSetObligationWithAuthorityFactsAtWithDependencies(args, prove, goalCommandNow, dependencies)
+}
+
+func runGoalSetObligationWithAuthorityFactsAtWithDependencies(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("set-obligation", args)
 	flags := flag.NewFlagSet("goal set-obligation", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -3156,12 +3274,12 @@ func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver)
 	if !converted(*root) {
 		return refuseHumanVerb(values, 1, "works only with the synced backlog", humanVerbRemedy{words: "migrate this checkout to the synced backlog first"})
 	}
-	classification, err := brainHumanWordClassification("set-obligation", *root, *by, nil)
+	classification, err := brainHumanWordClassificationWithFacts("set-obligation", *root, *by, nil, dependencies.authorityFacts)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	ancestryNow, err := goalCommandNow(*root)
+	ancestryNow, err := commandNow(*root)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "provide a valid goal command clock"})
 	}
@@ -3175,7 +3293,7 @@ func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver)
 	} else {
 		authorityFlags := &syncFlags{root: *root, id: *id, by: *by, lineage: *lineage,
 			temporaryWord: *temporaryWord, reviewBy: *reviewBy, fixtureHumanAuthority: *fixtureHumanAuthority}
-		proof, err = proveGoalHumanAuthority("set-obligation", authorityFlags, prove)
+		proof, err = proveGoalHumanAuthorityAt("set-obligation", authorityFlags, prove, commandNow)
 	}
 	if err != nil {
 		code := 1
@@ -3193,7 +3311,7 @@ func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver)
 	}
 	*by = authorityFlags.by
 	values.by = *by
-	req, err := syncReqClassified(*root, *by, *lineage, &proof, classification)
+	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(*root, *by, *lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
@@ -3231,6 +3349,95 @@ func runGoalSetObligationWithAuthority(args []string, prove goalAuthorityProver)
 	return printSyncResult(res, nil)
 }
 
+func runGoalEditWithDependencies(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
+	requestBuilder := func(verb, root, by, lineage string) (goal.VerbRequest, error) {
+		return syncReqWithProofAtWithDependencies(verb, root, by, lineage, nil, commandNow, dependencies)
+	}
+	run := runSyncOnlyWithRequest("edit", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		return goalEditEffect(req, f, commandNow)
+	}, requestBuilder, "id")
+	return run(args)
+}
+
+func goalEditEffect(req goal.VerbRequest, f *syncFlags, commandNow func(string) (time.Time, error)) (goal.PublishResult, error) {
+	fields := goal.EditFields{Why: f.why, Evidence: f.evidence}
+	var beforeDerived uint8
+	if f.tier != 0 && f.risk == "" {
+		return goal.PublishResult{}, fmt.Errorf("answer the four questions: --risk severity=,novelty=,exposure=,accumulation= --basis")
+	}
+	if f.risk != "" {
+		if strings.TrimSpace(f.basis) == "" {
+			return goal.PublishResult{}, fmt.Errorf("goal edit --risk requires --basis")
+		}
+		risk, err := goal.ParseRiskRecord(f.risk, f.basis)
+		if err != nil {
+			return goal.PublishResult{}, err
+		}
+		fields.Risk = &risk
+		projected, err := goal.Project(req.Endpoint, false, req.Now)
+		if err != nil {
+			return goal.PublishResult{}, err
+		}
+		current := projected.Tree.Live[f.id]
+		if current == nil {
+			return goal.PublishResult{}, fmt.Errorf("goal %s is not live", f.id)
+		}
+		beforeDerived = current.Tier
+		if current.Risk != nil {
+			beforeDerived = current.Risk.DerivedTier()
+		}
+		if current.Approved != nil && risk.DerivedTier() > beforeDerived {
+			if err := dispatchcore.ValidateMisclassificationEvidence(f.root, f.id, f.evidence); err != nil {
+				return goal.PublishResult{}, err
+			}
+		}
+		// A lowering of an answer, the derivation, the width or the recorded
+		// tier is the human's act: with --by the edge proves the human; without
+		// it the verb refuses the lowering by name.
+		tierLowered := f.tier != 0 && uint8(f.tier) < current.Tier
+		if f.by != "" && (tierLowered || current.Risk != nil && (risk.Severity < current.Risk.Severity || risk.Novelty < current.Risk.Novelty || risk.Exposure < current.Risk.Exposure || risk.Accumulation < current.Risk.Accumulation || risk.DerivedTier() < beforeDerived || (current.Risk.GateWidth() == "full" && risk.GateWidth() == "area"))) {
+			proof, proofErr := proveGoalHumanAuthorityAt("edit", f, humanauthority.ProveOrTemporaryGoalAuthority, commandNow)
+			if proofErr != nil {
+				return goal.PublishResult{}, proofErr
+			}
+			fields.Proof = &proof
+		}
+	}
+	if f.intent != "" {
+		fields.Intent = &f.intent
+	}
+	if f.next != "" {
+		fields.NextStep = &f.next
+	}
+	if f.tier != 0 {
+		tier := uint8(f.tier)
+		fields.Tier = &tier
+	}
+	if len(f.labels) > 0 || len(f.unlabels) > 0 {
+		p, err := goal.Project(req.Endpoint, false, time.Now())
+		if err != nil {
+			return goal.PublishResult{}, err
+		}
+		current, exists := p.Tree.Live[f.id]
+		if !exists {
+			return goal.PublishResult{}, fmt.Errorf("goal %s is not live; the archive edits through reopen", f.id)
+		}
+		labels, err := goal.ApplyLabelDelta(current.Labels, f.labels, f.unlabels)
+		if err != nil {
+			return goal.PublishResult{}, err
+		}
+		fields.Labels = &labels
+	}
+	res, err := goal.Edit(req, f.id, fields)
+	if err == nil && res.Outcome == goal.OutcomeConfirmed && fields.Risk != nil && res.RiskRaised {
+		opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
+		if appendErr := counselor.AppendMisclassification(f.root, counselor.MisclassificationAppend{Goal: f.id, OpID: opid, From: int(beforeDerived), To: int(fields.Risk.DerivedTier()), Evidence: f.evidence, RecordedAt: req.Now}); appendErr != nil {
+			return res, appendErr
+		}
+	}
+	return res, err
+}
+
 var (
 	runGoalClaim = runSyncOnly("claim", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		budget, err := f.budgetTuple(false)
@@ -3264,82 +3471,7 @@ var (
 		return goal.LandReady(req, f.id)
 	}, "id")
 	runGoalEdit = runSyncOnly("edit", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
-		fields := goal.EditFields{Why: f.why, Evidence: f.evidence}
-		var beforeDerived uint8
-		if f.tier != 0 && f.risk == "" {
-			return goal.PublishResult{}, fmt.Errorf("answer the four questions: --risk severity=,novelty=,exposure=,accumulation= --basis")
-		}
-		if f.risk != "" {
-			if strings.TrimSpace(f.basis) == "" {
-				return goal.PublishResult{}, fmt.Errorf("goal edit --risk requires --basis")
-			}
-			risk, err := goal.ParseRiskRecord(f.risk, f.basis)
-			if err != nil {
-				return goal.PublishResult{}, err
-			}
-			fields.Risk = &risk
-			projected, err := goal.Project(req.Endpoint, false, req.Now)
-			if err != nil {
-				return goal.PublishResult{}, err
-			}
-			current := projected.Tree.Live[f.id]
-			if current == nil {
-				return goal.PublishResult{}, fmt.Errorf("goal %s is not live", f.id)
-			}
-			beforeDerived = current.Tier
-			if current.Risk != nil {
-				beforeDerived = current.Risk.DerivedTier()
-			}
-			if current.Approved != nil && risk.DerivedTier() > beforeDerived {
-				if err := dispatchcore.ValidateMisclassificationEvidence(f.root, f.id, f.evidence); err != nil {
-					return goal.PublishResult{}, err
-				}
-			}
-			// A lowering of an answer, the derivation, the width or the recorded
-			// tier is the human's act: with --by the edge proves the human; without
-			// it the verb refuses the lowering by name.
-			tierLowered := f.tier != 0 && uint8(f.tier) < current.Tier
-			if f.by != "" && (tierLowered || current.Risk != nil && (risk.Severity < current.Risk.Severity || risk.Novelty < current.Risk.Novelty || risk.Exposure < current.Risk.Exposure || risk.Accumulation < current.Risk.Accumulation || risk.DerivedTier() < beforeDerived || (current.Risk.GateWidth() == "full" && risk.GateWidth() == "area"))) {
-				proof, proofErr := proveGoalHumanAuthority("edit", f, humanauthority.ProveOrTemporaryGoalAuthority)
-				if proofErr != nil {
-					return goal.PublishResult{}, proofErr
-				}
-				fields.Proof = &proof
-			}
-		}
-		if f.intent != "" {
-			fields.Intent = &f.intent
-		}
-		if f.next != "" {
-			fields.NextStep = &f.next
-		}
-		if f.tier != 0 {
-			tier := uint8(f.tier)
-			fields.Tier = &tier
-		}
-		if len(f.labels) > 0 || len(f.unlabels) > 0 {
-			p, err := goal.Project(req.Endpoint, false, time.Now())
-			if err != nil {
-				return goal.PublishResult{}, err
-			}
-			current, exists := p.Tree.Live[f.id]
-			if !exists {
-				return goal.PublishResult{}, fmt.Errorf("goal %s is not live; the archive edits through reopen", f.id)
-			}
-			labels, err := goal.ApplyLabelDelta(current.Labels, f.labels, f.unlabels)
-			if err != nil {
-				return goal.PublishResult{}, err
-			}
-			fields.Labels = &labels
-		}
-		res, err := goal.Edit(req, f.id, fields)
-		if err == nil && res.Outcome == goal.OutcomeConfirmed && fields.Risk != nil && res.RiskRaised {
-			opid := goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
-			if appendErr := counselor.AppendMisclassification(f.root, counselor.MisclassificationAppend{Goal: f.id, OpID: opid, From: int(beforeDerived), To: int(fields.Risk.DerivedTier()), Evidence: f.evidence, RecordedAt: req.Now}); appendErr != nil {
-				return res, appendErr
-			}
-		}
-		return res, err
+		return goalEditEffect(req, f, goalCommandNow)
 	}, "id")
 	runGoalSetPin = runSyncOnly("set-pin", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.SetPin(req, f.id, f.pin)

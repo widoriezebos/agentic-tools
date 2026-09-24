@@ -2,12 +2,15 @@ package brain
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
 const testLedger = "01J5X0000000000000000BRAIN"
@@ -78,6 +81,45 @@ func TestMaximumDeclarationHeaderFitsExplicitBound(t *testing.T) {
 	header, _, _ := strings.Cut(payload, "\n")
 	if len(header) > HeaderBytes {
 		t.Fatalf("maximal declaration header is %d bytes, exceeds %d-byte bound", len(header), HeaderBytes)
+	}
+}
+
+func TestAcquireRefusesExactLiveHolder(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "declare.lock")
+
+	first, err := acquire(path, 0)
+	if first != nil {
+		t.Cleanup(func() {
+			if err := first.Release(); err != nil {
+				t.Errorf("release first lock: %v", err)
+			}
+		})
+	}
+	if err != nil || first == nil {
+		t.Fatalf("first acquire = %v, %v", first, err)
+	}
+
+	second, err := acquire(path, 0)
+	if second != nil {
+		t.Cleanup(func() {
+			if err := second.Release(); err != nil {
+				t.Errorf("release second lock: %v", err)
+			}
+		})
+	}
+	if second != nil {
+		t.Fatalf("second acquire returned lock %v", second)
+	}
+	var holderErr *lock.HolderError
+	if !errors.As(err, &holderErr) {
+		t.Fatalf("second acquire error = %T %v, want *lock.HolderError", err, err)
+	}
+	if holderErr.Path != path || holderErr.State != lock.Alive {
+		t.Errorf("holder error path/state = %q/%v, want %q/%v", holderErr.Path, holderErr.State, path, lock.Alive)
+	}
+	if holderErr.Holder.Pid != int64(os.Getpid()) || holderErr.Holder.PidStartedAt <= 0 {
+		t.Errorf("holder identity = %#v, want current process with positive start time", holderErr.Holder)
 	}
 }
 

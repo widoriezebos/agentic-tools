@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -17,16 +18,89 @@ import (
 
 func landingBed(t *testing.T) (assemblyBed, Store) {
 	t.Helper()
-	bed := assemblyFixture(t)
-	prefixes, err := assembleUnits(bed.root, bed.base, bed.record.Units)
-	must(t, err)
+	bed := newLandingBed(t)
+	store := NewStore(bed.root, nil)
+	strictReassembly(t, &store)
+	must(t, store.Create(bed.record))
+	return bed, store
+}
+
+func newLandingBed(t *testing.T) assemblyBed {
+	t.Helper()
+	root := t.TempDir()
+	base, moved := testCommit(101), testCommit(102)
+	bed := assemblyBed{root: root, base: base, moved: moved, record: Record{
+		Schema: 1, BatchID: testBatchID, State: StateOpen, TipTree: base,
+		Units: []Unit{
+			{GoalID: "goal-a", Chain: "chain-a", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 7, AccountingRevision: 5}, State: UnitJoined},
+			{GoalID: "goal-b", Chain: "chain-b", Claim: Claim{Machine: "seat", Lineage: "l", Epoch: 1, Revision: 8, AccountingRevision: 6}, State: UnitJoined},
+		},
+		batchRecordFields: batchRecordFields{BaseTree: base},
+	}}
+	prefixes := []string{testCommit(103), testCommit(104)}
 	bed.record.State, bed.record.PrefixTrees, bed.record.TipTree = StateLanding, prefixes, prefixes[len(prefixes)-1]
 	bed.record.Proof = &Proof{Status: "green", AttemptID: "tip-attempt"}
 	bed.record.History = append(bed.record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "owner"})
 	bed.record.Receipts = map[string]PrefixReceipt{"goal-a": {GoalID: "goal-a", Tree: prefixes[0], AttemptID: "prefix-attempt"}}
-	store := NewStore(bed.root, nil)
-	must(t, store.Create(bed.record))
-	return bed, store
+	return bed
+}
+
+type expectedReassembly struct {
+	kind, base, batchID, leaseTip, actor string
+	goals, chains                        []string
+	prefixes                             []string
+	tip                                  string
+	err                                  error
+	onCall                               func()
+}
+
+// strictReassembly requires every repository effect to be declared by its test.
+func strictReassembly(t *testing.T, store *Store, expected ...expectedReassembly) {
+	t.Helper()
+	called := 0
+	next := func(kind, base, batchID, leaseTip, actor string, units []Unit) expectedReassembly {
+		t.Helper()
+		if called >= len(expected) {
+			t.Fatalf("unexpected reassembly %s base=%q batch=%q lease=%q actor=%q units=%+v", kind, base, batchID, leaseTip, actor, units)
+		}
+		want := expected[called]
+		called++
+		goals, chains := make([]string, 0, len(units)), make([]string, 0, len(units))
+		for _, unit := range units {
+			goals, chains = append(goals, unit.GoalID), append(chains, unit.Chain)
+		}
+		if want.kind != kind || want.base != base || want.batchID != batchID || want.leaseTip != leaseTip || want.actor != actor ||
+			!slices.Equal(want.goals, goals) || !slices.Equal(want.chains, chains) {
+			t.Fatalf("reassembly call %d: got %s base=%q batch=%q lease=%q actor=%q goals=%v chains=%v, want %+v",
+				called, kind, base, batchID, leaseTip, actor, goals, chains, want)
+		}
+		if want.onCall != nil {
+			want.onCall()
+		}
+		return want
+	}
+	store.reassembly = reassemblyOperations{
+		assemble: func(base string, units []Unit) ([]string, error) {
+			want := next("assemble", base, "", "", "", units)
+			return slices.Clone(want.prefixes), want.err
+		},
+		delete: func(id, tip string) error {
+			return next("delete", "", id, tip, "", nil).err
+		},
+		rebuild: func(id, base, tip, actor string, units []Unit) (string, error) {
+			want := next("rebuild", base, id, tip, actor, units)
+			return want.tip, want.err
+		},
+	}
+	t.Cleanup(func() {
+		if called != len(expected) {
+			t.Errorf("reassembly calls=%d, want %d; missing=%+v", called, len(expected), expected[called:])
+		}
+	})
+}
+
+func expectedAssembly(base string, goals, chains, prefixes []string) expectedReassembly {
+	return expectedReassembly{kind: "assemble", base: base, goals: goals, chains: chains, prefixes: prefixes}
 }
 
 func greenLandSeams(events *[]string) LandSeams {
@@ -85,6 +159,7 @@ func TestBatchLandingResumeRebuildsCompleteSeries(t *testing.T) {
 
 func TestBatchLandingDoesNotRepeatRefusedPushOnUnchangedOrigin(t *testing.T) {
 	_, store := landingBed(t)
+	strictReassembly(t, &store, expectedAssembly(testCommit(101), []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{testCommit(103), testCommit(104)}))
 	pushes, abandons := 0, 0
 	seams := greenLandSeams(&[]string{})
 	seams.LeaseBase = testCommit(1)
@@ -150,18 +225,36 @@ func TestBatchLandingPersistsRecoveryBranchOnSecondRefusal(t *testing.T) {
 
 func TestBatchLandingOpensAfterThreeRecoveryPushRounds(t *testing.T) {
 	bed, store := landingBed(t)
-	origin := filepath.Join(t.TempDir(), "origin.git")
-	if output, err := exec.Command("git", "init", "-q", "--bare", origin).CombinedOutput(); err != nil {
-		t.Fatalf("create recovery origin: %v: %s", err, output)
-	}
-	bedGit(t, bed.root, "remote", "add", "origin", origin)
-	publishedTip := bedGit(t, bed.root, "rev-parse", "HEAD")
+	publishedTip := "published-tip"
+	candidateRefTip := ""
+	strictReassembly(t, &store,
+		expectedAssembly(bed.moved, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{testCommit(105), testCommit(106)}),
+		expectedReassembly{kind: "delete", batchID: testBatchID, leaseTip: publishedTip, onCall: func() {
+			if candidateRefTip != publishedTip {
+				t.Fatalf("candidate deletion lease=%q does not match current ref tip=%q", publishedTip, candidateRefTip)
+			}
+			candidateRefTip = ""
+		}},
+	)
 	refusals, originReads := 0, 0
 	seams := greenLandSeams(&[]string{})
 	seams.LeaseBase = testCommit(1)
 	seams.SeriesOnOrigin = func(string, string) (bool, error) { return false, nil }
 	abandons := 0
-	seams.Abandon = func(string, string) error { abandons++; return nil }
+	seams.PublishBranch = func(expected, tip string) error {
+		if expected != candidateRefTip || tip != "commit-goal-b" || candidateRefTip != "" {
+			return fmt.Errorf("unexpected candidate publication expected=%q tip=%q current=%q", expected, tip, candidateRefTip)
+		}
+		candidateRefTip = tip
+		return nil
+	}
+	seams.Abandon = func(tip, _ string) error {
+		if tip != publishedTip || tip != candidateRefTip {
+			return fmt.Errorf("unexpected candidate abandon tip=%q current=%q", tip, candidateRefTip)
+		}
+		abandons++
+		return nil
+	}
 	seams.Origin = func() (string, error) {
 		originReads++
 		return testCommit(originReads + 1), nil
@@ -170,15 +263,12 @@ func TestBatchLandingOpensAfterThreeRecoveryPushRounds(t *testing.T) {
 		refusals++
 		return staleLeaseRefusal("initial endpoint refusal: stale info")
 	}
-	published := false
-	seams.RecoverPush = func(origin, _, _ string) (PushRecovery, error) {
+	seams.RecoverPush = func(origin, _, tip string) (PushRecovery, error) {
 		refusals++
-		if !published {
-			if err := PublishLandingBranch(bed.root, testBatchID, "", publishedTip); err != nil {
-				return PushRecovery{}, err
-			}
-			published = true
+		if tip != candidateRefTip {
+			return PushRecovery{}, fmt.Errorf("recovery candidate tip=%q does not match current ref tip=%q", tip, candidateRefTip)
 		}
+		candidateRefTip = publishedTip
 		return PushRecovery{Origin: origin, BaseTree: bed.moved, Tip: publishedTip}, errors.New("recovery endpoint refusal")
 	}
 	for tick := 0; tick < 4 && load(t, store).State == StateLanding; tick++ {
@@ -188,8 +278,8 @@ func TestBatchLandingOpensAfterThreeRecoveryPushRounds(t *testing.T) {
 	if refusals != 4 || abandons != 1 || record.State != StateOpen || record.BaseTree != bed.moved || record.Landing != nil {
 		t.Fatalf("refusals=%d record=%+v, want four bounded refusals followed by reopen", refusals, record)
 	}
-	if present, err := remoteLandingBranchPresent(bed.root, testBatchID); err != nil || present {
-		t.Fatalf("bounded recovery left a published candidate branch: present=%v err=%v", present, err)
+	if candidateRefTip != "" || abandons != 1 {
+		t.Fatalf("bounded recovery left candidate ref tip=%q abandons=%d", candidateRefTip, abandons)
 	}
 }
 
@@ -217,6 +307,7 @@ func TestBatchLandingResumesPendingMovedOriginRecovery(t *testing.T) {
 
 func TestBatchLandingMovedInputReturnsOpenOnNewBase(t *testing.T) {
 	bed, store := landingBed(t)
+	strictReassembly(t, &store, expectedAssembly(bed.moved, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{testCommit(105), testCommit(106)}))
 	seams := greenLandSeams(&[]string{})
 	seams.LeaseBase = testCommit(1)
 	seams.Origin = func() (string, error) { return testCommit(2), nil }
@@ -327,6 +418,7 @@ func TestBatchLandingHoldsNonLeaseRejectionUntilOriginMoves(t *testing.T) {
 
 func TestBatchLandingCountsRecoveryFailureBeforeBranchPublication(t *testing.T) {
 	bed, store := landingBed(t)
+	strictReassembly(t, &store, expectedAssembly(bed.moved, []string{"goal-a", "goal-b"}, []string{"chain-a", "chain-b"}, []string{testCommit(105), testCommit(106)}))
 	originReads, recoveries, abandons := 0, 0, 0
 	seams := greenLandSeams(&[]string{})
 	seams.LeaseBase = testCommit(1)
@@ -381,8 +473,8 @@ func TestBatchLandingCrashAfterPushRecognizesPublishedSeries(t *testing.T) {
 }
 
 func TestBatchConflictReopenPublishesOneConsistentUpdate(t *testing.T) {
-	bed := assemblyFixture(t)
-	newBase := mustAssemblePrefix(t, bed.root, bed.base, []Unit{bed.record.Units[0]})
+	bed := newLandingBed(t)
+	newBase := testCommit(105)
 	conflict := bed.record.Units[0]
 	conflict.GoalID, conflict.Chain = "goal-conflict", "conflict"
 	record := bed.record
@@ -390,6 +482,10 @@ func TestBatchConflictReopenPublishesOneConsistentUpdate(t *testing.T) {
 	record.State, record.Proof = StateLanding, &Proof{Status: "green", AttemptID: "tip-proof"}
 	record.History = append(record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), To: StateLanding, Actor: "owner"})
 	store := NewStore(bed.root, nil)
+	strictReassembly(t, &store,
+		expectedReassembly{kind: "assemble", base: newBase, goals: []string{"goal-conflict", "goal-b"}, chains: []string{"conflict", "chain-b"}, err: &assemblyConflict{GoalID: "goal-conflict", Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit goal-conflict does not apply")}},
+		expectedAssembly(newBase, []string{"goal-b"}, []string{"chain-b"}, []string{testCommit(106)}),
+	)
 	must(t, store.Create(record))
 	updates := 0
 	store.seams.updated = func(Record) { updates++ }
@@ -401,13 +497,6 @@ func TestBatchConflictReopenPublishesOneConsistentUpdate(t *testing.T) {
 		updated.Units[0].State != UnitReturnPending || updated.Units[0].Outcome != UnitEjected || len(updated.PrefixTrees) != 1 || updated.TipTree != updated.PrefixTrees[0] {
 		t.Fatalf("updates=%d record=%+v", updates, updated)
 	}
-}
-
-func mustAssemblePrefix(t *testing.T, root, base string, units []Unit) string {
-	t.Helper()
-	prefixes, err := assembleUnits(root, base, units)
-	must(t, err)
-	return prefixes[len(prefixes)-1]
 }
 
 func TestBatchLandingHeldRefusalNamesCause(t *testing.T) {
@@ -428,7 +517,7 @@ func TestBatchMemberLandsEveryBuildInOrder(t *testing.T) {
 			t.Fatalf("landing message lacks %q:\n%s", trailer, message)
 		}
 	}
-	bed := assemblyFixture(t)
+	bed := newLandingBed(t)
 	bed.record.Units = bed.record.Units[:1]
 	bed.record.Units[0] = BindBranchMember(bed.record.Units[0], BranchMember{GoalID: "goal-a", Tip: "tip-a", Builds: []BranchBuild{
 		{Units: []string{"8", "9"}, Commit: "source-89", Digest: "digest-89"},
@@ -461,12 +550,10 @@ func TestBatchMemberLandsEveryBuildInOrder(t *testing.T) {
 // TestBatchDelegationRules keeps the name protected by testing.json and checks
 // that only the actor responsible for the green proof can land its candidate.
 func TestBatchDelegationRules(t *testing.T) {
-	bed, _ := landingBed(t)
+	bed := newLandingBed(t)
 	bed.record.History = append(bed.record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "landing-owner"})
 	store := NewStore(bed.root, nil)
-	// landingBed already created this id in another root; this bed's root is
-	// independent and the replacement store receives the actor-bound record.
-	must(t, os.Remove(filepath.Join(bed.root, "artifacts", "agents", "landing-batches", testBatchID+".json")))
+	strictReassembly(t, &store)
 	must(t, store.Create(bed.record))
 	if err := LandSeries(store, testBatchID, "other-owner", time.Unix(4, 0), greenLandSeams(&[]string{})); err == nil || !strings.Contains(err.Error(), "BATCH_LAND_DELEGATION_REFUSED") {
 		t.Fatalf("foreign landing actor error=%v", err)
@@ -481,7 +568,7 @@ func TestBatchDelegationRules(t *testing.T) {
 func TestBatchCommitRefusalIsAtomicAndKeepsJoinOrder(t *testing.T) {
 	fixture := func(t *testing.T) Store {
 		t.Helper()
-		bed := assemblyFixture(t)
+		bed := newLandingBed(t)
 		bed.record.Units = append(bed.record.Units, Unit{GoalID: "goal-c", Chain: "chain-b", Claim: bed.record.Units[0].Claim, State: UnitJoined})
 		bed.record.State, bed.record.PrefixTrees, bed.record.TipTree = StateLanding, []string{"prefix-a", "prefix-b", "prefix-c"}, "prefix-c"
 		bed.record.Proof = &Proof{Status: "green", AttemptID: "tip"}
@@ -491,6 +578,7 @@ func TestBatchCommitRefusalIsAtomicAndKeepsJoinOrder(t *testing.T) {
 			"goal-b": {GoalID: "goal-b", Tree: "prefix-b"},
 		}
 		store := NewStore(bed.root, nil)
+		strictReassembly(t, &store)
 		must(t, store.Create(bed.record))
 		return store
 	}
@@ -520,6 +608,7 @@ func TestBatchCommitRefusalIsAtomicAndKeepsJoinOrder(t *testing.T) {
 
 	t.Run("named boundary refusal ejects and keeps survivor order", func(t *testing.T) {
 		store := fixture(t)
+		strictReassembly(t, &store, expectedAssembly(testCommit(101), []string{"goal-a", "goal-c"}, []string{"chain-a", "chain-b"}, []string{"prefix-a", "prefix-c"}))
 		var events []string
 		seams := greenLandSeams(&events)
 		seams.Commit = func(unit Unit, _ PrefixReceipt) (string, error) {
@@ -639,7 +728,7 @@ func TestBatchRecoveryRefusalsNameCauses(t *testing.T) {
 }
 
 func TestBatchRecoveryRequiresEveryMemberGoalSource(t *testing.T) {
-	bed := assemblyFixture(t)
+	bed := newLandingBed(t)
 	bed.record.State = StateLanding
 	bed.record.Proof = &Proof{Status: "green", AttemptID: "tip"}
 	bed.record.History = append(bed.record.History, HistoryEntry{At: time.Unix(3, 0).UTC().Format(time.RFC3339Nano), Verb: "prove", From: StateProving, To: StateLanding, Actor: "owner"})
@@ -648,6 +737,7 @@ func TestBatchRecoveryRequiresEveryMemberGoalSource(t *testing.T) {
 	bed.record.Units[0].LastUnit = "10b"
 	bed.record.Landing = &LandingProgress{Base: bed.record.BaseTree, PushComplete: true, PushedTip: "tip"}
 	store := NewStore(bed.root, nil)
+	strictReassembly(t, &store)
 	must(t, store.Create(bed.record))
 	foundB, finalized := false, 0
 	seams := RecoverySeams{
@@ -745,8 +835,48 @@ func TestBatchRecoverySweepsOnlyLastBranchMember(t *testing.T) {
 	})
 }
 
+// certifiedPatchGitAdapterFixture creates real Git objects so the staged index
+// check observes the bytes transported by ApplyCertifiedPatch.
+func certifiedPatchGitAdapterFixture(t *testing.T) assemblyBed {
+	t.Helper()
+	return assemblyFixture(t)
+}
+
+// commitWrapperGitAdapterRepo supplies a real repository for commit count,
+// identity, and trailer assertions that require Git and the wrapper script.
+func commitWrapperGitAdapterRepo(t *testing.T, root, name, email string) {
+	t.Helper()
+	must(t, exec.Command("git", "init", "-q", "-b", "main", root).Run())
+	must(t, exec.Command("git", "-C", root, "config", "user.name", name).Run())
+	must(t, exec.Command("git", "-C", root, "config", "user.email", email).Run())
+}
+
+// landingBranchGitAdapterFixture creates two real repositories to exercise
+// atomic endpoint leases and candidate branch deletion or reconciliation.
+func landingBranchGitAdapterFixture(t *testing.T) (origin, root, base string) {
+	t.Helper()
+	origin, root = filepath.Join(t.TempDir(), "origin.git"), t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		command := exec.Command("git", args...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	run("init", "-q", "--bare", origin)
+	run("init", "-q", "-b", "main", root)
+	run("-C", root, "config", "user.name", "Fixture")
+	run("-C", root, "config", "user.email", "fixture@example.com")
+	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("base\n"), 0o644))
+	run("-C", root, "add", "file")
+	run("-C", root, "commit", "-qm", "base")
+	run("-C", root, "remote", "add", "origin", origin)
+	run("-C", root, "push", "-q", "-u", "origin", "main")
+	return origin, root, strings.TrimSpace(runGitOutput(t, root, "rev-parse", "HEAD"))
+}
+
 func TestApplyCertifiedPatchStagesTheTransportedBytes(t *testing.T) {
-	bed := assemblyFixture(t)
+	bed := certifiedPatchGitAdapterFixture(t)
 	worktree := t.TempDir()
 	baseCommit := strings.TrimSpace(runGitOutput(t, bed.root, "commit-tree", bed.base, "-m", "fixture base"))
 	must(t, exec.Command("git", "-C", bed.root, "worktree", "add", "--detach", worktree, baseCommit).Run())
@@ -771,9 +901,7 @@ printf '%s <%s>|%s <%s>|%s\n' "$GIT_AUTHOR_NAME" "$GIT_AUTHOR_EMAIL" "$GIT_COMMI
 git commit -q "$@"
 `
 	must(t, testexec.WriteFile(wrapper, []byte(script), 0o755))
-	must(t, exec.Command("git", "init", "-q", "-b", "main", root).Run())
-	must(t, exec.Command("git", "-C", root, "config", "user.name", "Fixture").Run())
-	must(t, exec.Command("git", "-C", root, "config", "user.email", "fixture@example.invalid").Run())
+	commitWrapperGitAdapterRepo(t, root, "Fixture", "fixture@example.invalid")
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("one\n"), 0o644))
 	must(t, exec.Command("git", "-C", root, "add", "file").Run())
 	must(t, exec.Command("git", "-C", root, "commit", "-qm", "base").Run())
@@ -799,9 +927,7 @@ git commit -q "$@"`)
 func TestCommitWithWrapperRequiresExactlyOneNewCommitAndStrictPassVerdict(t *testing.T) {
 	root := t.TempDir()
 	must(t, os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755))
-	must(t, exec.Command("git", "init", "-q", "-b", "main", root).Run())
-	must(t, exec.Command("git", "-C", root, "config", "user.name", "Fixture").Run())
-	must(t, exec.Command("git", "-C", root, "config", "user.email", "fixture@example.invalid").Run())
+	commitWrapperGitAdapterRepo(t, root, "Fixture", "fixture@example.invalid")
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("base\n"), 0o644))
 	must(t, exec.Command("git", "-C", root, "add", "file").Run())
 	must(t, exec.Command("git", "-C", root, "commit", "-qm", "base").Run())
@@ -831,7 +957,11 @@ func TestCommitWithRealWrapperWritesBatchTrailersAndExplicitIdentity(t *testing.
 	for _, dir := range []string{"scripts/agents", "bin", "artifacts/agents/mains"} {
 		must(t, os.MkdirAll(filepath.Join(root, dir), 0o755))
 	}
-	realWrapper, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "agents", "commit.sh"))
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate real commit wrapper fixture")
+	}
+	realWrapper, err := os.ReadFile(filepath.Join(filepath.Dir(source), "..", "..", "..", "scripts", "agents", "commit.sh"))
 	must(t, err)
 	must(t, testexec.WriteFile(filepath.Join(root, "scripts", "agents", "commit.sh"), realWrapper, 0o755))
 	engine := `#!/usr/bin/env bash
@@ -890,9 +1020,7 @@ chmod +x "$out"
 	must(t, os.WriteFile(filepath.Join(root, "testing.json"), []byte("{}\n"), 0o644))
 	must(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("artifacts/agents/\n"), 0o644))
 	must(t, os.WriteFile(filepath.Join(root, "source.txt"), []byte("base\n"), 0o644))
-	must(t, exec.Command("git", "init", "-q", "-b", "main", root).Run())
-	must(t, exec.Command("git", "-C", root, "config", "user.name", "Ambient Other").Run())
-	must(t, exec.Command("git", "-C", root, "config", "user.email", "ambient@example.com").Run())
+	commitWrapperGitAdapterRepo(t, root, "Ambient Other", "ambient@example.com")
 	must(t, exec.Command("git", "-C", root, "config", "metasystem.goal.machine", "m1l").Run())
 	must(t, exec.Command("git", "-C", root, "add", ".").Run())
 	must(t, exec.Command("git", "-C", root, "commit", "-qm", "base").Run())
@@ -921,7 +1049,7 @@ chmod +x "$out"
 }
 
 func TestLandingBranchLeasesEndpointAndDeletesCandidateAtomically(t *testing.T) {
-	origin, root := filepath.Join(t.TempDir(), "origin.git"), t.TempDir()
+	origin, root, base := landingBranchGitAdapterFixture(t)
 	run := func(args ...string) {
 		t.Helper()
 		command := exec.Command("git", args...)
@@ -929,16 +1057,6 @@ func TestLandingBranchLeasesEndpointAndDeletesCandidateAtomically(t *testing.T) 
 			t.Fatalf("git %v: %v: %s", args, err, output)
 		}
 	}
-	run("init", "-q", "--bare", origin)
-	run("init", "-q", "-b", "main", root)
-	run("-C", root, "config", "user.name", "Fixture")
-	run("-C", root, "config", "user.email", "fixture@example.com")
-	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("base\n"), 0o644))
-	run("-C", root, "add", "file")
-	run("-C", root, "commit", "-qm", "base")
-	run("-C", root, "remote", "add", "origin", origin)
-	run("-C", root, "push", "-q", "-u", "origin", "main")
-	base := strings.TrimSpace(runGitOutput(t, root, "rev-parse", "HEAD"))
 	must(t, PrepareLandingBranch(root, testBatchID, base))
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("tip\n"), 0o644))
 	run("-C", root, "add", "file")
@@ -993,28 +1111,11 @@ func TestEndpointPushErrorClassifiesOnlyStaleInfoAsLease(t *testing.T) {
 }
 
 func TestAbandonLandingBranchIsIdempotent(t *testing.T) {
-	origin, root := filepath.Join(t.TempDir(), "origin.git"), t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		command := exec.Command("git", args...)
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
-	run("init", "-q", "--bare", origin)
-	run("init", "-q", "-b", "main", root)
-	run("-C", root, "config", "user.name", "Fixture")
-	run("-C", root, "config", "user.email", "fixture@example.com")
-	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("base\n"), 0o644))
-	run("-C", root, "add", "file")
-	run("-C", root, "commit", "-qm", "base")
-	run("-C", root, "remote", "add", "origin", origin)
-	run("-C", root, "push", "-q", "-u", "origin", "main")
-	base := strings.TrimSpace(runGitOutput(t, root, "rev-parse", "HEAD"))
+	_, root, base := landingBranchGitAdapterFixture(t)
 	must(t, PrepareLandingBranch(root, testBatchID, base))
 	must(t, os.WriteFile(filepath.Join(root, "file"), []byte("tip\n"), 0o644))
-	run("-C", root, "add", "file")
-	run("-C", root, "commit", "-qm", "candidate")
+	bedGit(t, root, "add", "file")
+	bedGit(t, root, "commit", "-qm", "candidate")
 	tip := strings.TrimSpace(runGitOutput(t, root, "rev-parse", "HEAD"))
 	must(t, PublishLandingBranch(root, testBatchID, "", tip))
 	must(t, AbandonLandingBranch(root, testBatchID, tip, base))

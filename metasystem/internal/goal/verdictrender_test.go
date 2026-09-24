@@ -10,7 +10,7 @@ import (
 
 func TestTurnVerdictBoundsRunHistoryAndWritesTheFullDisplay(t *testing.T) {
 	t.Parallel()
-	store := testStore(t)
+	store := legacyVerdictStore(t, true)
 	runs := make([]RunFact, 0, 200)
 	for i := 0; i < 200; i++ {
 		id := fmt.Sprintf("stale-run-%03d", i)
@@ -28,7 +28,7 @@ func TestTurnVerdictBoundsRunHistoryAndWritesTheFullDisplay(t *testing.T) {
 		Jobs: []JobFact{{Id: "unwatched-job", MainId: "main-1", StartedAt: "2026-08-01T10:00:00Z", Status: "running"}},
 		Runs: runs,
 	}
-	verdict, err := store.TurnVerdict(scan, "bounded-session", "", "main-1")
+	verdict, err := legacyTurnVerdict(store, scan, "bounded-session", "", "main-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,14 +68,14 @@ func TestTurnVerdictBoundsRunHistoryAndWritesTheFullDisplay(t *testing.T) {
 
 func TestTurnVerdictPrintsTheFirstThreeOfFourGreenContinuations(t *testing.T) {
 	t.Parallel()
-	store := testStore(t)
+	store := legacyVerdictStore(t, true)
 	runs := []RunFact{
 		{Id: "green-a", Status: "green", TerminalSeq: 1, ExpectGreen: "continue alpha"},
 		{Id: "green-b", Status: "green", TerminalSeq: 2, ExpectGreen: "continue beta"},
 		{Id: "green-c", Status: "green", TerminalSeq: 3, ExpectGreen: "continue gamma"},
 		{Id: "green-d", Status: "green", TerminalSeq: 4, ExpectGreen: "continue delta"},
 	}
-	verdict, err := store.TurnVerdict(ScanResult{Runs: runs}, "green-session", "", "main-1")
+	verdict, err := legacyTurnVerdict(store, ScanResult{Runs: runs}, "green-session", "", "main-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +91,8 @@ func TestTurnVerdictPrintsTheFirstThreeOfFourGreenContinuations(t *testing.T) {
 
 func TestTurnVerdictPrintsOneHungRunInFull(t *testing.T) {
 	t.Parallel()
-	store := testStore(t)
-	verdict, err := store.TurnVerdict(ScanResult{Runs: []RunFact{{Id: "hung-one", Hung: true, ExpectHung: "inspect it"}}}, "hung-session", "", "main-1")
+	store := legacyVerdictStore(t, true)
+	verdict, err := legacyTurnVerdict(store, ScanResult{Runs: []RunFact{{Id: "hung-one", Hung: true, ExpectHung: "inspect it"}}}, "hung-session", "", "main-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestRunWarningSummariesCoverEveryClass(t *testing.T) {
 
 func TestTurnVerdictReportsArtifactWriteFailureWithoutChangingTheDecision(t *testing.T) {
 	t.Parallel()
-	store := testStore(t)
+	store := legacyVerdictStore(t, true)
 	blockedDirectory := filepath.Join(store.Root, "artifacts", "agents", "supervision", "stop-verdicts")
 	if err := os.MkdirAll(filepath.Dir(blockedDirectory), 0o755); err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestTurnVerdictReportsArtifactWriteFailureWithoutChangingTheDecision(t *tes
 	if err := os.WriteFile(blockedDirectory, []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	verdict, err := store.TurnVerdict(ScanResult{Busy: []Item{{Kind: "job", Id: "live", Detail: "live job"}}}, "write-failure", "", "main-1")
+	verdict, err := legacyTurnVerdict(store, ScanResult{Busy: []Item{{Kind: "job", Id: "live", Detail: "live job"}}}, "write-failure", "", "main-1")
 	if err != nil {
 		t.Fatal(err)
 	}

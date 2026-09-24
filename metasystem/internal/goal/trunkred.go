@@ -405,7 +405,7 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 		Intent:  Intent{Verb: "trunk-red-record", Args: map[string]string{"red": string(encoded)}},
 		Message: "trunk-red record " + args.Batch + " " + strings.Join(groupNames, ","),
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -471,7 +471,7 @@ func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishReques
 			}
 			return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -544,7 +544,7 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 		Intent:  Intent{Verb: "trunk-red-clear", Targets: []string{args.Entry}, Args: intentArgs},
 		Message: "trunk-red clear " + args.Entry,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -571,7 +571,7 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 			}
 			return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -586,7 +586,7 @@ type TrunkRedOwnArgs struct {
 
 // OwnTrunkRed assigns the machine responsible for an open entry and its fix goal.
 func OwnTrunkRed(r VerbRequest, args TrunkRedOwnArgs) (PublishResult, error) {
-	if detail := brain.Fence(r.Endpoint.Root, "trunk-red own", ExistingLedgerIdentity(r.Endpoint.Root)); detail != "" {
+	if detail := brain.Fence(r.Endpoint.Root, "trunk-red own", existingLedgerIdentityFor(r.Endpoint)); detail != "" {
 		return PublishResult{}, fmt.Errorf("%s", detail)
 	}
 	if (args.By == "") != (r.Actor.Human == "") || args.By != "" && args.By != r.Actor.Human {
@@ -603,7 +603,7 @@ func trunkRedOwnRequest(r VerbRequest, args TrunkRedOwnArgs) PublishRequest {
 		}},
 		Message: "trunk-red own " + args.Entry,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -639,7 +639,7 @@ func trunkRedOwnRequest(r VerbRequest, args TrunkRedOwnArgs) PublishRequest {
 			}
 			return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -663,7 +663,7 @@ func trunkRedCloseRequest(r VerbRequest, args TrunkRedCloseArgs) PublishRequest 
 		Intent:  Intent{Verb: "trunk-red-close", Targets: []string{args.Entry}, Args: map[string]string{"by": args.By, "why": args.Why}},
 		Message: "trunk-red close " + args.Entry,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -678,7 +678,7 @@ func trunkRedCloseRequest(r VerbRequest, args TrunkRedCloseArgs) PublishRequest 
 			entry.Holds = []string{}
 			return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 

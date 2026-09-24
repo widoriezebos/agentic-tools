@@ -176,6 +176,21 @@ func TestAliveTaggedRefBindsIdentityAndTagToOneProbe(t *testing.T) {
 	if got := AliveTaggedRef(unreadable, ref, "instance-tag"); got != Unknown {
 		t.Fatalf("unreadable argv = %s, want unknown", got)
 	}
+	for _, terminal := range []struct {
+		name   string
+		mutate func(*Exact)
+	}{
+		{"zombie", func(exact *Exact) { exact.Zombie = true }},
+		{"exiting", func(exact *Exact) { exact.Exiting = true }},
+	} {
+		t.Run(terminal.name+" without argv", func(t *testing.T) {
+			probe := unreadable
+			terminal.mutate(&probe.exact)
+			if got := AliveTaggedRef(probe, ref, "instance-tag"); got != Dead {
+				t.Fatalf("matched %s identity with unreadable argv = %s, want dead", terminal.name, got)
+			}
+		})
+	}
 }
 
 func TestAliveTaggedRefPreservesDefinitiveDeathAndProbeUncertainty(t *testing.T) {

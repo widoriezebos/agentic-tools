@@ -90,9 +90,9 @@ func RecoverWithPolicy(e Endpoint, policy SensitiveRecoveryPolicy) ([]RecoveryRe
 			// Accepted advances only onto a VALIDATED tip, recovery
 			// included, and a refused advance is said in the
 			// report — never discarded.
-			if valErr := ValidateCommit(e.Root, tip); valErr != nil {
+			if valErr := validateCommitFor(e, tip); valErr != nil {
 				report.Detail = "confirmed on the canonical tip; accepted NOT advanced (the tip does not validate): " + valErr.Error()
-			} else if advErr := advanceAcceptedForward(e.Root, tip); advErr != nil {
+			} else if advErr := advanceAcceptedFor(e, tip); advErr != nil {
 				report.Detail = "confirmed on the canonical tip; accepted NOT advanced: " + advErr.Error()
 			} else {
 				report.Detail = "confirmed on the canonical tip"

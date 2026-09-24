@@ -15,13 +15,19 @@ type Verification struct {
 	Commit, Goal, Units, Expected, Actual string
 }
 
+type landingGitReader func(string, ...string) ([]byte, error)
+
 func IsLastLanding(repo, commit, goalID string) bool {
 	out, err := gitOutput(repo, "show", "-s", "--format=%(trailers:key=Goal-Last,valueonly)", commit)
 	return err == nil && strings.TrimSpace(string(out)) == goalID
 }
 
 func landedManifest(repo, commit string) (goalID, units, digest string, folds map[string]bool, err error) {
-	out, err := gitOutput(repo, "show", "-s", "--format=%(trailers:only,unfold=true)", commit)
+	return landedManifestWithGit(repo, commit, gitOutput)
+}
+
+func landedManifestWithGit(repo, commit string, gitRead landingGitReader) (goalID, units, digest string, folds map[string]bool, err error) {
+	out, err := gitRead(repo, "show", "-s", "--format=%(trailers:only,unfold=true)", commit)
 	if err != nil {
 		return "", "", "", nil, err
 	}
@@ -56,7 +62,11 @@ func landedManifest(repo, commit string) (goalID, units, digest string, folds ma
 }
 
 func digestLandingEntries(repo, commit string, folds map[string]bool) (string, error) {
-	entries, err := RawEntries(repo, commit)
+	return digestLandingEntriesWithGit(repo, commit, folds, gitOutput)
+}
+
+func digestLandingEntriesWithGit(repo, commit string, folds map[string]bool, gitRead landingGitReader) (string, error) {
+	entries, err := rawEntriesWithGitParsed(repo, commit, gitRead)
 	if err != nil {
 		return "", err
 	}
@@ -82,11 +92,15 @@ func digestLandingEntries(repo, commit string, folds map[string]bool) (string, e
 }
 
 func VerifyLanded(repo, commit string) (Verification, error) {
-	goalID, units, expected, folds, err := landedManifest(repo, commit)
+	return verifyLandedWithGit(repo, commit, gitOutput)
+}
+
+func verifyLandedWithGit(repo, commit string, gitRead landingGitReader) (Verification, error) {
+	goalID, units, expected, folds, err := landedManifestWithGit(repo, commit, gitRead)
 	if err != nil {
 		return Verification{}, err
 	}
-	actual, err := digestLandingEntries(repo, commit, folds)
+	actual, err := digestLandingEntriesWithGit(repo, commit, folds, gitRead)
 	if err != nil {
 		return Verification{}, err
 	}
@@ -98,19 +112,23 @@ func VerifyLanded(repo, commit string) (Verification, error) {
 }
 
 func VerifyLandedSeries(repo, tip string) ([]Verification, error) {
-	goalID, _, _, _, err := landedManifest(repo, tip)
+	return verifyLandedSeriesWithGit(repo, tip, gitOutput)
+}
+
+func verifyLandedSeriesWithGit(repo, tip string, gitRead landingGitReader) ([]Verification, error) {
+	goalID, _, _, _, err := landedManifestWithGit(repo, tip, gitRead)
 	if err != nil {
 		return nil, err
 	}
 	var reversed []string
 	current := tip
 	for {
-		goal, _, _, _, manifestErr := landedManifest(repo, current)
+		goal, _, _, _, manifestErr := landedManifestWithGit(repo, current, gitRead)
 		if manifestErr != nil || goal != goalID {
 			break
 		}
 		reversed = append(reversed, current)
-		parent, parentErr := gitOutput(repo, "rev-parse", current+"^")
+		parent, parentErr := gitRead(repo, "rev-parse", current+"^")
 		if parentErr != nil {
 			break
 		}
@@ -118,7 +136,7 @@ func VerifyLandedSeries(repo, tip string) ([]Verification, error) {
 	}
 	results := make([]Verification, 0, len(reversed))
 	for index := len(reversed) - 1; index >= 0; index-- {
-		verified, err := VerifyLanded(repo, reversed[index])
+		verified, err := verifyLandedWithGit(repo, reversed[index], gitRead)
 		if err != nil {
 			return nil, err
 		}

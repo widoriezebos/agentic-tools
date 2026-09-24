@@ -931,11 +931,15 @@ func testingRelevantInputs(prefix, contractRel string, contract testpolicy.Contr
 }
 
 func checkDeliveryInputParity(workspace gittree.Workspace, candidateTree, prefix, contractRel string, contract testpolicy.Contract, plan testpolicy.Plan) error {
+	return checkDeliveryInputParityWith(candidateTree, prefix, contractRel, contract, plan, workspace.SnapshotRelevant)
+}
+
+func checkDeliveryInputParityWith(candidateTree, prefix, contractRel string, contract testpolicy.Contract, plan testpolicy.Plan, snapshot func(candidateTree string, declarations []string) (string, error)) error {
 	declarations, err := testingRelevantInputs(prefix, contractRel, contract, plan)
 	if err != nil {
 		return err
 	}
-	workingTree, err := workspace.SnapshotRelevant(candidateTree, declarations)
+	workingTree, err := snapshot(candidateTree, declarations)
 	if err != nil {
 		return fmt.Errorf("capture relevant candidate working inputs: %w", err)
 	}
@@ -1913,11 +1917,30 @@ func runTestWorker(args []string) int {
 		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
 		return 3
 	}
+	packetControl, controlErr := canonicalProofRoot(request.ControlRoot)
+	packetProject, projectErr := canonicalProofRoot(request.ProjectRoot)
+	admittedControl, admittedControlErr := canonicalProofRoot(attempt.ControlRoot)
+	admittedProject, admittedProjectErr := canonicalProofRoot(attempt.ExecutionRoot)
+	if controlErr != nil || projectErr != nil || admittedControlErr != nil || admittedProjectErr != nil ||
+		packetControl != canonicalControl || admittedControl != canonicalControl ||
+		(!legacyPolicyProbe && packetProject != admittedProject) {
+		fmt.Fprintln(os.Stderr, "metasystem test worker: authenticated request roots do not match the worker packet")
+		return 3
+	}
+	request.ControlRoot = canonicalControl
+	if legacyPolicyProbe {
+		request.ProjectRoot = packetProject
+	} else {
+		request.ProjectRoot = admittedProject
+	}
 	if _, err := time.Parse(time.RFC3339Nano, attempt.Deadline); err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test worker: admitted deadline is invalid")
 		return 3
 	}
 	request.Environment = inheritedTestingEnvironment(request.Environment, os.Environ())
+	request.Environment = proofrun.TestingEnvironment(request.Environment, map[string]string{
+		proofWitnessExecutionRootEnv: attempt.ExecutionRoot,
+	})
 	// The worker's context carries no deadline: the reservation is a
 	// figure, not a kill rule (proof-groups-detect-hangs-by-progress-not-
 	// the-clock, decision 3). A recorded cancellation intent cancels it.

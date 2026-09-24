@@ -3,8 +3,10 @@ package hostsetup
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
@@ -36,6 +38,48 @@ func hostFixture(t *testing.T, nested bool) (repo, installation string) {
 	}
 	populateHostInstallation(t, installation)
 	return repo, installation
+}
+
+func hostGitFreeNestedFixture(t *testing.T, allowedPaths ...string) (string, stateroot.Resolver) {
+	t.Helper()
+	repo := filepath.Join(t.TempDir(), "repository with spaces")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeHostFile(t, filepath.Join(repo, "development", "metasystem-design.md"), "design\n", 0o644)
+	populateHostInstallation(t, filepath.Join(repo, "metasystem"))
+	canonicalRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := map[string]bool{canonicalRepo: true}
+	for _, relative := range allowedPaths {
+		allowed[filepath.Join(canonicalRepo, relative)] = true
+	}
+	seen := map[string]bool{}
+	t.Cleanup(func() {
+		for path := range allowed {
+			if !seen[path] {
+				t.Errorf("repository discovery did not inspect %q", path)
+			}
+		}
+	})
+	resolver := stateroot.NewResolver(func(path string) (string, error) {
+		canonicalPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			t.Fatalf("resolve repository path %q: %v", path, err)
+		}
+		relative, err := filepath.Rel(canonicalRepo, canonicalPath)
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || !allowed[canonicalPath] {
+			t.Fatalf("unexpected repository discovery path %q for %q", canonicalPath, canonicalRepo)
+		}
+		seen[canonicalPath] = true
+		return canonicalRepo, nil
+	}, func() (string, error) {
+		t.Fatal("unexpected executable lookup during host setup")
+		return "", errors.New("unexpected executable lookup")
+	})
+	return repo, resolver
 }
 
 func populateHostInstallation(t *testing.T, installation string) {
@@ -82,8 +126,8 @@ func hostHookFixture(t *testing.T, name string) string {
 // template's other top-level keys, which is what keeps this a transform test.
 func TestSetupImposesNoSeatWindowThroughClaudeTransform(t *testing.T) {
 	t.Parallel()
-	repo, _ := hostFixture(t, true)
-	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}); err != nil {
+	repo, resolver := hostGitFreeNestedFixture(t)
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(repo, ".claude", "settings.json"))
@@ -106,7 +150,7 @@ func TestSetupImposesNoSeatWindowThroughClaudeTransform(t *testing.T) {
 }
 
 func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *testing.T) {
-	repo, _ := hostFixture(t, true)
+	repo, resolver := hostGitFreeNestedFixture(t, "sub/directory")
 	writeHostFile(t, filepath.Join(repo, "AGENTS.md"), "application instructions\n", 0o600)
 	writeHostFile(t, filepath.Join(repo, ".claude", "settings.json"), `{"unrelated":{"keep":true},"hooks":{"Foreign":[{"hooks":[{"command":"foreign-handler"}]}]}}`, 0o640)
 	writeHostFile(t, filepath.Join(repo, ".agents", "skills", "foreign", "SKILL.md"), "foreign skill\n", 0o644)
@@ -117,7 +161,7 @@ func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *te
 	if err := os.MkdirAll(filepath.Join(repo, "sub", "directory"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	result, err = Setup(Options{RepositoryPath: filepath.Join(repo, "sub", "directory")})
+	result, err = SetupWithResolver(Options{RepositoryPath: filepath.Join(repo, "sub", "directory")}, resolver.ResolveLayout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,10 +202,10 @@ func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *te
 	if !strings.Contains(string(codex), "startup|resume|clear|compact") {
 		t.Fatalf("Codex compact rejoin missing: %s", codex)
 	}
-	if _, err := Setup(Options{RepositoryPath: repo, Check: true}); err != nil {
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Check: true}, resolver.ResolveLayout); err != nil {
 		t.Fatalf("check after setup: %v", err)
 	}
-	again, err := Setup(Options{RepositoryPath: repo})
+	again, err := SetupWithResolver(Options{RepositoryPath: repo}, resolver.ResolveLayout)
 	if err != nil || len(again.Changed) != 0 {
 		t.Fatalf("repeat changed %v: %v", again.Changed, err)
 	}
@@ -172,7 +216,7 @@ func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *te
 	if err := os.Symlink("interrupted-stage", staleStage); err != nil {
 		t.Fatal(err)
 	}
-	retry, err := Setup(Options{RepositoryPath: repo})
+	retry, err := SetupWithResolver(Options{RepositoryPath: repo}, resolver.ResolveLayout)
 	if err != nil || len(retry.Changed) != 1 {
 		t.Fatalf("partial retry = %v, %v", retry.Changed, err)
 	}
@@ -182,12 +226,12 @@ func TestSetupNestedDefaultsAllPreservesUnrelatedStateModesAndIsIdempotent(t *te
 }
 
 func TestSetupUpgradesClaudeCompactMatcherAndPreservesForeignGroupModeAndIdempotence(t *testing.T) {
-	repo, _ := hostFixture(t, true)
+	repo, resolver := hostGitFreeNestedFixture(t)
 	settingsPath := filepath.Join(repo, ".claude", "settings.json")
 	legacy := `{"foreignTop":{"kept":true},"hooks":{"SessionStart":[{"matcher":"startup|resume|clear","groupMetadata":{"kept":true},"hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR/metasystem\" && bash scripts/agents/supervision-hook.sh claude start","timeout":15},{"type":"command","command":"foreign-start-handler","timeout":7}]}]}}`
 	writeHostFile(t, settingsPath, legacy, 0o600)
 
-	first, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}})
+	first, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +255,7 @@ func TestSetupUpgradesClaudeCompactMatcherAndPreservesForeignGroupModeAndIdempot
 		t.Fatalf("compact matcher upgrade changed settings mode: %v, %v", info, err)
 	}
 
-	second, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}})
+	second, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout)
 	if err != nil || len(second.Changed) != 0 {
 		t.Fatalf("repeated compact matcher setup changed %v: %v", second.Changed, err)
 	}
@@ -222,8 +266,8 @@ func TestSetupUpgradesClaudeCompactMatcherAndPreservesForeignGroupModeAndIdempot
 }
 
 func TestSetupPreservesStructurallyReadySettingsBytes(t *testing.T) {
-	repo, _ := hostFixture(t, true)
-	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}); err != nil {
+	repo, resolver := hostGitFreeNestedFixture(t)
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout); err != nil {
 		t.Fatal(err)
 	}
 	settingsPath := filepath.Join(repo, ".claude", "settings.json")
@@ -253,11 +297,11 @@ func TestSetupPreservesStructurallyReadySettingsBytes(t *testing.T) {
 	if err := os.WriteFile(settingsPath, rewritten, 0o640); err != nil {
 		t.Fatal(err)
 	}
-	checked, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}, Check: true})
+	checked, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}, Check: true}, resolver.ResolveLayout)
 	if err != nil || len(checked.Changed) != 0 {
 		t.Fatalf("semantic check changed %v: %v", checked.Changed, err)
 	}
-	applied, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}})
+	applied, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout)
 	if err != nil || len(applied.Changed) != 0 {
 		t.Fatalf("semantic setup changed %v: %v", applied.Changed, err)
 	}
@@ -271,26 +315,26 @@ func TestSetupPreservesStructurallyReadySettingsBytes(t *testing.T) {
 }
 
 func TestSetupValidatesConflictsBeforeAnyWrite(t *testing.T) {
-	repo, _ := hostFixture(t, true)
+	repo, resolver := hostGitFreeNestedFixture(t)
 	writeHostFile(t, filepath.Join(repo, ".agents", "skills", "demo"), "foreign\n", 0o644)
-	if _, err := Setup(Options{RepositoryPath: repo}); err == nil || !strings.Contains(err.Error(), "foreign") {
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo}, resolver.ResolveLayout); err == nil || !strings.Contains(err.Error(), "foreign") {
 		t.Fatalf("foreign skill did not conflict: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "AGENTS.md")); !os.IsNotExist(err) {
 		t.Fatal("instruction pointer was written before conflict validation")
 	}
-	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"unknown"}}); err == nil {
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"unknown"}}, resolver.ResolveLayout); err == nil {
 		t.Fatal("unknown runtime was accepted")
 	}
-	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"codex", "codex"}}); err == nil {
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"codex", "codex"}}, resolver.ResolveLayout); err == nil {
 		t.Fatal("duplicate runtime was accepted")
 	}
 }
 
 func TestSetupRejectsChangedProfileAndMalformedManagedBlockWithoutWrites(t *testing.T) {
-	repo, _ := hostFixture(t, true)
+	repo, resolver := hostGitFreeNestedFixture(t)
 	writeHostFile(t, filepath.Join(repo, ".claude", "agents", "demo.md"), "locally changed profile\n", 0o644)
-	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}); err == nil || !strings.Contains(err.Error(), "changed profile") {
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout); err == nil || !strings.Contains(err.Error(), "changed profile") {
 		t.Fatalf("changed profile did not conflict: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "AGENTS.md")); !os.IsNotExist(err) {
@@ -301,7 +345,7 @@ func TestSetupRejectsChangedProfileAndMalformedManagedBlockWithoutWrites(t *test
 		t.Fatal(err)
 	}
 	writeHostFile(t, filepath.Join(repo, "AGENTS.md"), pointerBegin+"\nunterminated\n", 0o644)
-	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}); err == nil || !strings.Contains(err.Error(), "malformed managed pointer") {
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout); err == nil || !strings.Contains(err.Error(), "malformed managed pointer") {
 		t.Fatalf("malformed managed block did not conflict: %v", err)
 	}
 }
@@ -558,8 +602,8 @@ func TestGeneratedShippedClaudeStopLauncherAllowsDegradedOutsideGit(t *testing.T
 }
 
 func TestGeneratedShippedClaudeStopHasNoSeparateReceiptHandler(t *testing.T) {
-	repo, _ := hostFixture(t, true)
-	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}); err != nil {
+	repo, resolver := hostGitFreeNestedFixture(t)
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout); err != nil {
 		t.Fatal(err)
 	}
 	settings := filepath.Join(repo, ".claude", "settings.json")
@@ -807,10 +851,10 @@ func TestSetupNestedAdoptedSelectionModesAndConflictAreLocal(t *testing.T) {
 }
 
 func TestSetupPreservesExistingInstructionAndConfigurationModes(t *testing.T) {
-	repo, _ := hostFixture(t, true)
+	repo, resolver := hostGitFreeNestedFixture(t)
 	writeHostFile(t, filepath.Join(repo, "AGENTS.md"), "existing instructions\n", 0o600)
 	writeHostFile(t, filepath.Join(repo, ".claude", "settings.json"), `{}`, 0o640)
-	if _, err := Setup(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}); err != nil {
+	if _, err := SetupWithResolver(Options{RepositoryPath: repo, Runtimes: []string{"claude"}}, resolver.ResolveLayout); err != nil {
 		t.Fatal(err)
 	}
 	for path, want := range map[string]os.FileMode{
@@ -820,5 +864,24 @@ func TestSetupPreservesExistingInstructionAndConfigurationModes(t *testing.T) {
 		if err != nil || info.Mode().Perm() != want {
 			t.Fatalf("%s mode = %v, %v; want %o", path, info, err, want)
 		}
+	}
+}
+
+func TestSetupResolverRouting(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "missing")
+	if _, err := Setup(Options{RepositoryPath: path}); err == nil || !strings.Contains(err.Error(), "inspect repository path") {
+		t.Fatalf("default resolver result: %v", err)
+	}
+	called := 0
+	_, err := SetupWithResolver(Options{RepositoryPath: path}, func(seen string) (stateroot.Layout, error) {
+		called++
+		if seen != path {
+			t.Fatalf("injected resolver path = %q", seen)
+		}
+		return stateroot.Layout{}, errors.New("injected resolver")
+	})
+	if called != 1 || err == nil || !strings.Contains(err.Error(), "injected resolver") {
+		t.Fatalf("injected resolver result: calls %d, error %v", called, err)
 	}
 }

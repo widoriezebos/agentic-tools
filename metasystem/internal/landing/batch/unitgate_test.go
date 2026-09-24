@@ -20,6 +20,19 @@ func TestReverseDependentsIncludeDirectTransitiveTestAndTaggedImports(t *testing
 	if !slices.Equal(got, want) {
 		t.Fatalf("reverse dependents = %v, want %v", got, want)
 	}
+	if err := os.WriteFile(filepath.Join(root, "base", "base.go"), []byte("package base\nconst Changed = true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bedGit(t, root, "add", "base/base.go")
+	candidateTree := bedGit(t, root, "write-tree")
+	selection, err := SelectUnitPackages(root, tree, candidateTree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.Tree != candidateTree || !slices.Equal(selection.Changed, []string{"./base"}) ||
+		!slices.Equal(selection.Dependents, []string{"./cmd/metasystem", "./direct", "./tagged", "./testonly", "./transitive"}) {
+		t.Fatalf("exact-tree package closure=%+v", selection)
+	}
 }
 
 func TestWorkingUnitSelectionIncludesTrackedAndUntrackedPackages(t *testing.T) {
@@ -97,11 +110,7 @@ func TestWorkingUnitSelectionAcceptsNestedModuleTreeBase(t *testing.T) {
 
 func TestUnitGatePackageStepsChangedThenSortedDependentsAndBatchTests(t *testing.T) {
 	t.Parallel()
-	root, tree := dependencyModuleTree(t)
-	selection, err := unitPackagesFromChanges(unitGateModuleRoot(root), tree, patchGateChanges(gatePatch("base/base.go")))
-	if err != nil {
-		t.Fatal(err)
-	}
+	selection := gateConsumerPackages()
 	steps := JoinGatePackageSteps(selection)
 	want := [][]string{
 		{"go", "test", "-count=1", "-timeout", "900s", "./base"},
@@ -132,20 +141,7 @@ func TestUnitGateFailureDetailNamesFailingDependentTests(t *testing.T) {
 
 func TestBatchJoinGateStepsChangedThenSortedDependentsAndBatchTests(t *testing.T) {
 	t.Parallel()
-	root, base := dependencyModuleTree(t)
-	if err := os.WriteFile(filepath.Join(root, "base", "base.go"), []byte("package base\nconst Changed = true\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	bedGit(t, root, "add", "base/base.go")
-	tree := bedGit(t, root, "write-tree")
-	selection, err := SelectUnitPackages(root, base, tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if selection.Tree != tree || !slices.Equal(selection.Changed, []string{"./base"}) ||
-		!slices.Equal(selection.Dependents, []string{"./cmd/metasystem", "./direct", "./tagged", "./testonly", "./transitive"}) {
-		t.Fatalf("exact-tree package closure=%+v", selection)
-	}
+	selection := gateConsumerPackages()
 	steps := JoinGatePackageSteps(selection)
 	want := []string{"package ./base", "dependent package ./cmd/metasystem", "dependent package ./direct",
 		"dependent package ./tagged", "dependent package ./testonly", "dependent package ./transitive", "package ./cmd/metasystem batchtest"}
@@ -161,11 +157,7 @@ func TestBatchJoinGateStepsChangedThenSortedDependentsAndBatchTests(t *testing.T
 
 func TestBatchJoinGateRedNamesFailingDependentTests(t *testing.T) {
 	t.Parallel()
-	root, tree := dependencyModuleTree(t)
-	selection, err := unitPackagesFromChanges(root, tree, patchGateChanges(gatePatch("base/base.go")))
-	if err != nil {
-		t.Fatal(err)
-	}
+	selection := gateConsumerPackages()
 	var direct GateStep
 	for _, step := range JoinGatePackageSteps(selection) {
 		if step.Name == "dependent package ./direct" {
@@ -183,6 +175,15 @@ func TestBatchJoinGateRedNamesFailingDependentTests(t *testing.T) {
 	reds := GateReds(direct, selection.ModulePath, output)
 	if !slices.Equal(reds, []GateRed{{Package: "./direct", Test: "TestDirectContract"}}) {
 		t.Fatalf("dependent refusal attribution=%v", reds)
+	}
+}
+
+func gateConsumerPackages() UnitPackages {
+	return UnitPackages{
+		Tree:       "unit-gate-tree",
+		ModulePath: "example.invalid/unitgate",
+		Changed:    []string{"./base"},
+		Dependents: []string{"./cmd/metasystem", "./direct", "./tagged", "./testonly", "./transitive"},
 	}
 }
 

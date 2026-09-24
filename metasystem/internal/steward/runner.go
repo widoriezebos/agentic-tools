@@ -111,6 +111,21 @@ func TickSeconds(repoRoot string) int {
 // launcher. The loop never crashes out of a tick: a failed pass is
 // reported and the next tick tries again.
 func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig) error {
+	return runLoopWithDependencies(repoRoot, census, revive, interval, cfg, runnerLoopDependencies{
+		Tick: RunTick, DeliverPending: DeliverPending,
+		Now: runnerNow, Sleep: runnerSleep, AfterRecordPublished: runnerAfterRecordPublished,
+	})
+}
+
+type runnerLoopDependencies struct {
+	Tick                 func(string, TickConfig, WorkerCensus) (TickResult, error)
+	DeliverPending       func(string) (int, error)
+	Now                  func() time.Time
+	Sleep                func(time.Duration)
+	AfterRecordPublished func()
+}
+
+func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig, deps runnerLoopDependencies) error {
 	top := canonicalPath(repoRoot)
 	fence, err := readOpenFence(top, "the steward runner")
 	if err != nil {
@@ -147,8 +162,8 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		return err
 	}
 	defer os.Remove(runnerRecordPath(top))
-	if runnerAfterRecordPublished != nil {
-		runnerAfterRecordPublished()
+	if deps.AfterRecordPublished != nil {
+		deps.AfterRecordPublished()
 	}
 	closed, second, err := stopfence.Closed(top)
 	if err != nil {
@@ -168,7 +183,7 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		if _, err := os.Stat(runnerStopPath(top)); err == nil {
 			return nil
 		}
-		result, err := RunTick(top, cfg, census)
+		result, err := deps.Tick(top, cfg, census)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
 		}
@@ -200,7 +215,7 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		// Recovery runs before delivery. A failed recovery queues its incident
 		// above and can reach the operator in this same pass; a successful one
 		// leaves only silent history.
-		if _, deliverErr := DeliverPending(top); deliverErr != nil {
+		if _, deliverErr := deps.DeliverPending(top); deliverErr != nil {
 			fmt.Fprintf(os.Stderr, "notifications pending: %v\n", deliverErr)
 		}
 		channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -208,12 +223,12 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 			fmt.Fprintf(os.Stderr, "channel pending: %d undelivered: %v\n", undelivered, channelErr)
 		}
 		cancelChannel()
-		deadline := runnerNow().Add(interval)
-		for runnerNow().Before(deadline) {
+		deadline := deps.Now().Add(interval)
+		for deps.Now().Before(deadline) {
 			if _, err := os.Stat(runnerStopPath(top)); err == nil {
 				return nil
 			}
-			runnerSleep(200 * time.Millisecond)
+			deps.Sleep(200 * time.Millisecond)
 		}
 	}
 }
@@ -308,6 +323,10 @@ func humanMintDecision(mintedBy, word, reviewBy, enrollment string) mintDecision
 // read from its changed bytes resolves to the installation's configured
 // remote-tracking history. Caller identity is deliberately irrelevant.
 func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReArmOutcome, error) {
+	return reArmRebuiltEngineWithDeps(defaultRearmResolverDeps(), repoRoot, installationRoot, invokingBinary)
+}
+
+func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRoot, invokingBinary string) (ReArmOutcome, error) {
 	decision := func(prior InstallIdentity, priorErr error, bytes enrolledBytes) (mintPlan, error) {
 		if priorErr != nil {
 			return mintPlan{}, fmt.Errorf("%w: %v", ErrEnrollmentDrift, priorErr)
@@ -321,7 +340,7 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 		if bytes.Digest == prior.InstallDigest {
 			return mintPlan{Skip: true, Message: fmt.Sprintf("already current (generation %d)", prior.Generation)}, nil
 		}
-		landingRef, err := readOwnedLandingRef(installationRoot)
+		landingRef, err := readOwnedLandingRefWithDeps(deps, installationRoot)
 		if err != nil {
 			var commandFailure *gitCommandFailure
 			if errors.As(err, &commandFailure) {
@@ -329,21 +348,21 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 			}
 			return mintPlan{}, fmt.Errorf("%w: %v", ErrEnrollmentDrift, err)
 		}
-		sourceCommit, err := resolveLandedBuild(repoRoot, installationRoot, landingRef, bytes.Stamp)
+		sourceCommit, err := resolveLandedBuildWithDeps(deps, SystemRearmClock(), repoRoot, installationRoot, landingRef, bytes.Stamp)
 		if err != nil {
 			if !errors.Is(err, ErrNotOwned) {
 				return mintPlan{}, fmt.Errorf("resolve landed build: %w", err)
 			}
 			return mintPlan{}, fmt.Errorf("%w: rebuilt engine at %s: %v", ErrEnrollmentDrift, prior.InstallPath, err)
 		}
-		landedCommit, err := gitOutputContext(context.Background(), installationRoot, "rev-parse", "--verify", "HEAD^{commit}")
+		landedCommit, err := deps.checkoutHead(installationRoot)
 		if err != nil {
 			if gitSaidNo(err) {
 				return mintPlan{}, fmt.Errorf("%w: resolve landed source at checkout HEAD: %v", ErrEnrollmentDrift, err)
 			}
 			return mintPlan{}, fmt.Errorf("resolve landed source at checkout HEAD: %w", err)
 		}
-		if err := verifyEnrollmentBuildSource(installationRoot, bytes.Stamp, sourceCommit, landedCommit); err != nil {
+		if err := verifyEnrollmentBuildSourceWithDeps(deps, SystemRearmClock(), installationRoot, bytes.Stamp, sourceCommit, landedCommit); err != nil {
 			if !errors.Is(err, ErrNotOwned) {
 				return mintPlan{}, fmt.Errorf("verify enrollment build source: %w", err)
 			}
@@ -359,7 +378,7 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 			LandedCommit: landedCommit, LandingRef: landingRef, Enrollment: prior.Enrollment,
 		}, nil
 	}
-	outcome, err := arm(repoRoot, invokingBinary, true, true, false, decision)
+	outcome, err := armWithRearmDeps(repoRoot, invokingBinary, true, true, false, decision, deps)
 	return outcome.ReArmOutcome, err
 }
 
@@ -411,11 +430,15 @@ func scaledRunnerWait(scaleMilli int) time.Duration {
 }
 
 func waitForRunnerSuccess(repoRoot string, wait time.Duration) RoleVerdict {
-	deadline := runnerNow().Add(wait)
-	verdict := checkStewardRunner(repoRoot, runnerNow(), identity.KernelProber{})
-	for verdict.Status != HealthAlive && runnerNow().Before(deadline) {
-		runnerSleep(50 * time.Millisecond)
-		verdict = checkStewardRunner(repoRoot, runnerNow(), identity.KernelProber{})
+	return waitForRunnerSuccessWithClock(repoRoot, wait, runnerNow, runnerSleep)
+}
+
+func waitForRunnerSuccessWithClock(repoRoot string, wait time.Duration, now func() time.Time, sleep func(time.Duration)) RoleVerdict {
+	deadline := now().Add(wait)
+	verdict := checkStewardRunner(repoRoot, now(), identity.KernelProber{})
+	for verdict.Status != HealthAlive && now().Before(deadline) {
+		sleep(50 * time.Millisecond)
+		verdict = checkStewardRunner(repoRoot, now(), identity.KernelProber{})
 	}
 	return verdict
 }
@@ -423,6 +446,10 @@ func waitForRunnerSuccess(repoRoot string, wait time.Duration) RoleVerdict {
 // EnsureRunner consults the standing enrolled engine, verifies a successful
 // generation-bound tick, and restores the runner without minting a generation.
 func EnsureRunner(repoRoot string, enrolled *EnrolledBinary, scaleMilli int) (EnsureRunnerResult, error) {
+	return ensureRunnerWithDependencies(repoRoot, enrolled, scaleMilli, defaultRearmResolverDeps(), runnerNow, runnerSleep)
+}
+
+func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, scaleMilli int, deps rearmResolverDeps, now func() time.Time, sleep func(time.Duration)) (EnsureRunnerResult, error) {
 	top := canonicalPath(repoRoot)
 	if fence, err := readOpenFence(top, "the steward runner"); err != nil {
 		var stopped *StoppedError
@@ -431,10 +458,10 @@ func EnsureRunner(repoRoot string, enrolled *EnrolledBinary, scaleMilli int) (En
 		}
 		return EnsureRunnerResult{}, err
 	}
-	if _, excluded := runnerExclusion(top, false); excluded {
+	if _, excluded := deps.runnerExcluded(top, false); excluded {
 		return EnsureRunnerResult{Action: "excluded"}, nil
 	}
-	if _, ok := NotifyCommand(top); !ok {
+	if !deps.notifyAvailable(top) {
 		return EnsureRunnerResult{}, fmt.Errorf("no notification channel is configured; an unreachable watchdog guards nothing — set metasystem.steward.notify-command")
 	}
 	if enrolled == nil || enrolled.file == nil {
@@ -445,7 +472,7 @@ func EnsureRunner(repoRoot string, enrolled *EnrolledBinary, scaleMilli int) (En
 		wasAlive = true
 	}
 	if wasAlive {
-		verdict := waitForRunnerSuccess(top, scaledRunnerWait(scaleMilli))
+		verdict := waitForRunnerSuccessWithClock(top, scaledRunnerWait(scaleMilli), now, sleep)
 		if verdict.Status == HealthAlive {
 			record, _ := liveRunner(top)
 			return EnsureRunnerResult{Action: "verified", Pid: record.Pid, Generation: enrolled.Install.Generation}, nil
@@ -454,7 +481,7 @@ func EnsureRunner(repoRoot string, enrolled *EnrolledBinary, scaleMilli int) (En
 			return EnsureRunnerResult{}, fmt.Errorf("steward runner cannot be verified: %s", verdict.Reason)
 		}
 	}
-	repair, err := repairPinnedRunner(top, enrolled, nil, scaledRunnerWait(scaleMilli))
+	repair, err := repairPinnedRunnerWithClock(top, enrolled, nil, scaledRunnerWait(scaleMilli), now, sleep)
 	if err != nil {
 		return EnsureRunnerResult{}, err
 	}
@@ -492,6 +519,10 @@ func RepairEnrolledRunner(repoRoot string) (RunnerRepairOutcome, error) {
 }
 
 func repairEnrolledRunner(repoRoot string, beforeLock func()) (RunnerRepairOutcome, error) {
+	return repairEnrolledRunnerWithClock(repoRoot, beforeLock, runnerNow, runnerSleep)
+}
+
+func repairEnrolledRunnerWithClock(repoRoot string, beforeLock func(), now func() time.Time, sleep func(time.Duration)) (RunnerRepairOutcome, error) {
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return RunnerRepairOutcome{}, err
@@ -517,10 +548,14 @@ func repairEnrolledRunner(repoRoot string, beforeLock func()) (RunnerRepairOutco
 	if err := pinned.PrepareForExecution(); err != nil {
 		return RunnerRepairOutcome{}, err
 	}
-	return repairPinnedRunner(top, pinned, beforeLock, 10*time.Second)
+	return repairPinnedRunnerWithClock(top, pinned, beforeLock, 10*time.Second, now, sleep)
 }
 
 func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func(), wait time.Duration) (RunnerRepairOutcome, error) {
+	return repairPinnedRunnerWithClock(top, pinned, beforeLock, wait, runnerNow, runnerSleep)
+}
+
+func repairPinnedRunnerWithClock(top string, pinned *EnrolledBinary, beforeLock func(), wait time.Duration, now func() time.Time, sleep func(time.Duration)) (RunnerRepairOutcome, error) {
 	installed := pinned.Install
 	if beforeLock != nil {
 		beforeLock()
@@ -559,7 +594,7 @@ func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func(), w
 		return RunnerRepairOutcome{Status: AutoHealEnded, Generation: installed.Generation}, nil
 	}
 
-	verdict := checkStewardRunner(top, runnerNow(), identity.KernelProber{})
+	verdict := checkStewardRunner(top, now(), identity.KernelProber{})
 	if verdict.Status == HealthAlive {
 		record, _ := liveRunner(top)
 		return RunnerRepairOutcome{Status: "CURRENT", Generation: installed.Generation, ReplacementPid: record.Pid}, nil
@@ -577,22 +612,28 @@ func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func(), w
 	if err != nil {
 		return RunnerRepairOutcome{}, err
 	}
-	deadline := runnerNow().Add(wait)
-	for runnerNow().Before(deadline) {
-		if current := checkStewardRunner(top, runnerNow(), identity.KernelProber{}); current.Status == HealthAlive {
+	deadline := now().Add(wait)
+	for now().Before(deadline) {
+		if current := checkStewardRunner(top, now(), identity.KernelProber{}); current.Status == HealthAlive {
 			return RunnerRepairOutcome{
 				Status: "RESTORED", Generation: installed.Generation,
 				PreviousPid: previous.Pid, ReplacementPid: replacement.Pid,
 			}, nil
 		}
-		runnerSleep(50 * time.Millisecond)
+		sleep(50 * time.Millisecond)
 	}
 	return RunnerRepairOutcome{}, fmt.Errorf("replacement runner pid %d did not complete generation %d within %s", replacement.Pid, installed.Generation, wait)
 }
 
 func runnerExclusion(top string, allowFixture bool) (string, bool) {
-	if commonDir, err := exec.Command("git", "-C", top, "rev-parse", "--git-common-dir").Output(); err == nil {
-		if gitDir, dirErr := exec.Command("git", "-C", top, "rev-parse", "--git-dir").Output(); dirErr == nil &&
+	return runnerExclusionWithGit(top, allowFixture, func(root string, args ...string) ([]byte, error) {
+		return exec.Command("git", append([]string{"-C", root}, args...)...).Output()
+	})
+}
+
+func runnerExclusionWithGit(top string, allowFixture bool, gitOutput func(string, ...string) ([]byte, error)) (string, bool) {
+	if commonDir, err := gitOutput(top, "rev-parse", "--git-common-dir"); err == nil {
+		if gitDir, dirErr := gitOutput(top, "rev-parse", "--git-dir"); dirErr == nil &&
 			canonicalGitPath(top, string(commonDir)) != canonicalGitPath(top, string(gitDir)) {
 			return "linked worktree (the primary checkout owns the watchdog)", true
 		}
@@ -607,6 +648,10 @@ var beforeArmLock func()
 var afterArmDecision func()
 
 func arm(repoRoot, binaryPath string, replace, machine, allowFixture bool, decide mintDecision) (armOutcome, error) {
+	return armWithRearmDeps(repoRoot, binaryPath, replace, machine, allowFixture, decide, defaultRearmResolverDeps())
+}
+
+func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixture bool, decide mintDecision, deps rearmResolverDeps) (armOutcome, error) {
 	outcome := armOutcome{ReArmOutcome: ReArmOutcome{Stage: StageBeforeMint}}
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
@@ -618,11 +663,11 @@ func arm(repoRoot, binaryPath string, replace, machine, allowFixture bool, decid
 	if _, err := readOpenFence(top, "the steward runner"); err != nil {
 		return outcome, err
 	}
-	if reason, excluded := runnerExclusion(top, allowFixture); excluded {
+	if reason, excluded := deps.runnerExcluded(top, allowFixture); excluded {
 		outcome.Message = "not armed: " + reason
 		return outcome, nil
 	}
-	if _, ok := NotifyCommand(top); !ok {
+	if !deps.notifyAvailable(top) {
 		return outcome, fmt.Errorf("no notification channel is configured; an unreachable watchdog guards nothing — set metasystem.steward.notify-command")
 	}
 	runnerPath := runnerDir(top)

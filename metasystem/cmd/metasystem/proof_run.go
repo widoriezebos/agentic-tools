@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -340,13 +341,15 @@ func runProofRunGoGateTests(args []string) int {
 		fmt.Fprintln(os.Stderr, "proof-run go-gate-tests:", err)
 		return 3
 	}
-	lease, err := proofrun.AcquireHostResources(ctx, controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", nil)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: inherit admitted host resources:", err)
-		return 3
+	if os.Getenv("METASYSTEM_PROOF_ATTEMPT") != "" {
+		lease, err := proofrun.AcquireHostResources(ctx, controlRoot, filepath.Join(controlRoot, "metasystem.conf"), "heavy", nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "proof-run go-gate-tests: inherit admitted host resources:", err)
+			return 3
+		}
+		defer lease.Close()
+		ctx = proofrun.WithHostResourceLease(ctx, lease)
 	}
-	defer lease.Close()
-	ctx = proofrun.WithHostResourceLease(ctx, lease)
 	result, status, err := proofrun.RunGoGateTests(ctx, proofrun.GoGateTestRequest{
 		Root: *root, LogRoot: *logRoot, Environment: os.Environ(), Workers: *workers,
 	})
@@ -709,7 +712,14 @@ func proofAdmissionGoalState(root string, file *goal.GoalFile, now time.Time) (p
 }
 
 func proofAdmissionGoalStates(root, candidateID, authorityID string, now time.Time) (proofAdmissionSnapshots, error) {
-	endpoint, err := goal.ResolveEndpoint(root)
+	return proofAdmissionGoalStatesWithReads(root, candidateID, authorityID, now, dispatchcore.ConcreteProofAdmissionReads())
+}
+
+func proofAdmissionGoalStatesWithReads(root, candidateID, authorityID string, now time.Time, reads dispatchcore.ProofAdmissionReads) (proofAdmissionSnapshots, error) {
+	if err := reads.Validate(); err != nil {
+		return proofAdmissionSnapshots{}, err
+	}
+	endpoint, err := reads.ResolveEndpoint(root)
 	if err != nil {
 		return proofAdmissionSnapshots{}, err
 	}
@@ -831,7 +841,14 @@ func enforceBoundProofGoals(kind, boundGoal, candidateGoal, authorityGoal string
 }
 
 func resolveProofGoalRoles(root, candidateID, authorityID string, now time.Time) (proofGoalRoles, error) {
-	endpoint, err := goal.ResolveEndpoint(root)
+	return resolveProofGoalRolesWithReads(root, candidateID, authorityID, now, dispatchcore.ConcreteProofAdmissionReads())
+}
+
+func resolveProofGoalRolesWithReads(root, candidateID, authorityID string, now time.Time, reads dispatchcore.ProofAdmissionReads) (proofGoalRoles, error) {
+	if err := reads.Validate(); err != nil {
+		return proofGoalRoles{}, err
+	}
+	endpoint, err := reads.ResolveEndpoint(root)
 	if err != nil {
 		return proofGoalRoles{}, err
 	}
@@ -839,7 +856,7 @@ func resolveProofGoalRoles(root, candidateID, authorityID string, now time.Time)
 	if err != nil {
 		return proofGoalRoles{}, fmt.Errorf("resolve proof goals: %w", err)
 	}
-	machine, machineErr := goal.ResolveMachine(root)
+	machine, machineErr := reads.ResolveMachine(root)
 	// The pre-enrollment human path already admits a proof bound to the
 	// candidate's own claim. Preserve that compatibility without allowing an
 	// unclaimed candidate to select some other machine's authority.
@@ -903,7 +920,16 @@ func resolveProofGoalRoles(root, candidateID, authorityID string, now time.Time)
 }
 
 func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
-	classifiedCaller, err := classifyVerbCaller(request.ControlRoot, int64(os.Getppid()))
+	return admitProofLaunchWithReads(request, dispatchcore.ConcreteProofAdmissionReads)
+}
+
+func admitProofLaunchWithReads(request proofLaunchAdmission, makeReads func() dispatchcore.ProofAdmissionReads) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+	return admitProofLaunchWithReadsAndClassifier(request, makeReads, classifyVerbCaller)
+}
+
+func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeReads func() dispatchcore.ProofAdmissionReads,
+	classify func(string, int64) (lease.ClassifyResult, error)) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+	classifiedCaller, err := classify(request.ControlRoot, int64(os.Getppid()))
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller classification failed: %w", err)
 	}
@@ -1045,7 +1071,14 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	if request.GoalID == "" {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("top-level proof launch requires --goal")
 	}
-	roles, err := resolveProofGoalRoles(request.ControlRoot, request.GoalID, request.AuthorityGoalID, now)
+	if makeReads == nil {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof admission reads factory is nil")
+	}
+	reads := makeReads()
+	if err := reads.Validate(); err != nil {
+		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
+	}
+	roles, err := resolveProofGoalRolesWithReads(request.ControlRoot, request.GoalID, request.AuthorityGoalID, now, reads)
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
@@ -1085,7 +1118,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("resolve proof reservation: %w", err)
 		}
 	}
-	binding, err := dispatchcore.ResolveGoalBinding(request.ControlRoot, authorityGoalID, now)
+	binding, err := dispatchcore.ResolveGoalBindingWithReads(request.ControlRoot, authorityGoalID, now, reads)
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
@@ -1122,14 +1155,14 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	if proofAdmissionUnderLocks != nil {
 		proofAdmissionUnderLocks()
 	}
-	lockedSnapshots, err := proofAdmissionGoalStates(request.ControlRoot, request.GoalID, authorityGoalID, now)
+	lockedSnapshots, err := proofAdmissionGoalStatesWithReads(request.ControlRoot, request.GoalID, authorityGoalID, now, reads)
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
 	if err := proofAdmissionMoved(admissionSnapshots, lockedSnapshots, request.GoalID, authorityGoalID); err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 	}
-	classifiedCaller, err = classifyVerbCaller(request.ControlRoot, int64(os.Getppid()))
+	classifiedCaller, err = classify(request.ControlRoot, int64(os.Getppid()))
 	if err != nil {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller reclassification failed under admission lock: %w", err)
 	}
@@ -1164,7 +1197,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		extensionAuthorized = true
 		extensionCallerClass = lease.ClassDelegate
 	} else if classifiedCaller.Class == lease.ClassMain {
-		machine, machineErr := goal.ResolveMachine(request.ControlRoot)
+		machine, machineErr := reads.ResolveMachine(request.ControlRoot)
 		if machineErr != nil || !classifiedCaller.Holder || classifiedCaller.ClaimEpoch == nil ||
 			*classifiedCaller.ClaimEpoch != binding.Capability.ClaimEpoch || machine != binding.Machine {
 			if machineErr == nil && classifiedCaller.Holder && classifiedCaller.ClaimEpoch != nil &&
@@ -1183,7 +1216,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	} else if classifiedCaller.Class != lease.ClassHuman {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof caller has no authenticated goal reservation context")
 	}
-	binding, err = dispatchcore.ResolveGoalBinding(request.ControlRoot, authorityGoalID, now)
+	binding, err = dispatchcore.ResolveGoalBindingWithReads(request.ControlRoot, authorityGoalID, now, reads)
 	if err != nil || binding.Fence != nil || reservationOwner != nil && binding.Revision != reservationOwner.GoalRevision {
 		return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost its accepted goal authority")
 	}
@@ -1241,8 +1274,8 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 		if request.GoalID == authorityGoalID {
 			candidateFile = binding.File
 		}
-		verdict, err := dispatchcore.EvaluateProofAdmissionForDispatch(request.ControlRoot, authorityGoalID, binding.Revision,
-			candidateFile, candidateRevision, uint64(capValue), now, "implementer", "fresh", dispatchcore.HazardMechanical)
+		verdict, err := dispatchcore.EvaluateProofAdmissionForDispatchWithReads(request.ControlRoot, authorityGoalID, binding.Revision,
+			candidateFile, candidateRevision, uint64(capValue), now, "implementer", "fresh", reads, dispatchcore.HazardMechanical)
 		if err != nil {
 			return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 		}
@@ -1256,7 +1289,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 					return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation could not bind the budget extension to the claim holder pair")
 				}
 			}
-			endpoint, endpointErr := goal.ResolveEndpoint(request.ControlRoot)
+			endpoint, endpointErr := reads.ResolveEndpoint(request.ControlRoot)
 			ulid, ulidErr := goalUlid()
 			if endpointErr != nil || ulidErr != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, errors.Join(endpointErr, ulidErr)
@@ -1272,7 +1305,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			if extended.Outcome != goal.OutcomeConfirmed {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation extend budget ended %s: %s", extended.Outcome, extended.Detail)
 			}
-			binding, err = dispatchcore.ResolveGoalBinding(request.ControlRoot, authorityGoalID, now)
+			binding, err = dispatchcore.ResolveGoalBindingWithReads(request.ControlRoot, authorityGoalID, now, reads)
 			if err != nil || binding.Revision != reservation.GoalRevision {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, fmt.Errorf("proof reservation lost its goal binding after budget extension")
 			}
@@ -1288,12 +1321,12 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 			}
 			reservation.BudgetEpoch = projection.WeightEpoch
 			reservation.CandidateBudgetEpoch = projection.WeightEpoch
-			lockedSnapshots, err = proofAdmissionGoalStates(request.ControlRoot, request.GoalID, authorityGoalID, now)
+			lockedSnapshots, err = proofAdmissionGoalStatesWithReads(request.ControlRoot, request.GoalID, authorityGoalID, now, reads)
 			if err != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 			}
-			verdict, err = dispatchcore.EvaluateProofAdmissionForDispatch(request.ControlRoot, authorityGoalID, binding.Revision,
-				binding.File, candidateRevision, uint64(capValue), now, "implementer", "fresh", dispatchcore.HazardMechanical)
+			verdict, err = dispatchcore.EvaluateProofAdmissionForDispatchWithReads(request.ControlRoot, authorityGoalID, binding.Revision,
+				binding.File, candidateRevision, uint64(capValue), now, "implementer", "fresh", reads, dispatchcore.HazardMechanical)
 			if err != nil {
 				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, err
 			}
@@ -1321,7 +1354,7 @@ func admitProofLaunch(request proofLaunchAdmission) (proofrun.Attempt, proofrun.
 	if proofAdmissionAfterPublish != nil {
 		proofAdmissionAfterPublish()
 	}
-	publishedSnapshots, snapshotErr := proofAdmissionGoalStates(request.ControlRoot, request.GoalID, authorityGoalID, now)
+	publishedSnapshots, snapshotErr := proofAdmissionGoalStatesWithReads(request.ControlRoot, request.GoalID, authorityGoalID, now, reads)
 	if snapshotErr == nil {
 		snapshotErr = proofAdmissionMoved(lockedSnapshots, publishedSnapshots, request.GoalID, authorityGoalID)
 	}
@@ -1702,13 +1735,53 @@ func defaultTestingWorkers(gomaxprocs, admissionMaximum int) int {
 	return max(1, gomaxprocs/divisor)
 }
 
+const (
+	testingWorkerMemoryHeadroom = uint64(1 << 30)
+	testingWorkerMemoryBytes    = uint64(2 << 30)
+)
+
+// memoryConstrainedTestingWorkers applies provisional safety constants to the
+// CPU candidate. They are conservative policy inputs, not measured optima.
+func memoryConstrainedTestingWorkers(cpuWorkers int, availableBytes uint64, available bool) int {
+	if cpuWorkers < 1 {
+		cpuWorkers = 1
+	}
+	if !available {
+		return cpuWorkers
+	}
+	usableBytes := uint64(0)
+	if availableBytes > testingWorkerMemoryHeadroom {
+		usableBytes = availableBytes - testingWorkerMemoryHeadroom
+	}
+	ramWorkers := usableBytes / testingWorkerMemoryBytes
+	if ramWorkers < 1 {
+		return 1
+	}
+	if ramWorkers < uint64(cpuWorkers) {
+		return int(ramWorkers)
+	}
+	return cpuWorkers
+}
+
 func resolveProofRunLimits(confPath string) (proofRunLimits, error) {
 	return resolveProofRunLimitsWithEnvironment(confPath, os.LookupEnv)
 }
 
 func resolveProofRunLimitsWithEnvironment(confPath string, lookup func(string) (string, bool)) (proofRunLimits, error) {
-	capturedGOMAXPROCS := runtime.GOMAXPROCS(0)
-	admission, err := proofrun.ResolveAdmissionCap(confPath, runtime.NumCPU())
+	return resolveProofRunLimitsWithInputs(confPath, lookup, runtime.GOMAXPROCS(0), runtime.NumCPU(), hostload.AvailableMemory)
+}
+
+func validateProofRunLimits(confPath string) error {
+	return validateProofRunLimitsWithInputs(confPath, os.LookupEnv, runtime.GOMAXPROCS(0), runtime.NumCPU())
+}
+
+func validateProofRunLimitsWithInputs(confPath string, lookup func(string) (string, bool), capturedGOMAXPROCS, hardwareCores int) error {
+	_, err := resolveProofRunLimitsWithInputs(confPath, lookup, capturedGOMAXPROCS, hardwareCores, nil)
+	return err
+}
+
+func resolveProofRunLimitsWithInputs(confPath string, lookup func(string) (string, bool), capturedGOMAXPROCS, hardwareCores int, memoryProbe func() (uint64, string, bool)) (proofRunLimits, error) {
+	admission, err := proofrun.ResolveAdmissionCap(confPath, hardwareCores)
 	if err != nil {
 		return proofRunLimits{}, err
 	}
@@ -1745,10 +1818,32 @@ func resolveProofRunLimitsWithEnvironment(confPath string, lookup func(string) (
 	if err != nil {
 		return proofRunLimits{}, err
 	}
+	const absentWorkerValueOne = "<automatic testing workers one>"
+	const absentWorkerValueTwo = "<automatic testing workers two>"
 	workerValue, _, err := config.Get(config.GetParams{Key: "testing.workers",
-		Default: strconv.Itoa(defaultTestingWorkers(capturedGOMAXPROCS, admission.Max)), DefaultSet: true, ConfPath: confPath})
+		Default: absentWorkerValueOne, DefaultSet: true, ConfPath: confPath})
 	if err != nil {
 		return proofRunLimits{}, err
+	}
+	workersConfigured := workerValue != absentWorkerValueOne
+	if !workersConfigured {
+		confirmedValue, _, confirmErr := config.Get(config.GetParams{Key: "testing.workers",
+			Default: absentWorkerValueTwo, DefaultSet: true, ConfPath: confPath})
+		if confirmErr != nil {
+			return proofRunLimits{}, confirmErr
+		}
+		workersConfigured = confirmedValue != absentWorkerValueTwo
+		if workersConfigured {
+			workerValue = confirmedValue
+		}
+	}
+	if !workersConfigured {
+		cpuWorkers := defaultTestingWorkers(capturedGOMAXPROCS, admission.Max)
+		availableBytes, available := uint64(0), false
+		if memoryProbe != nil {
+			availableBytes, _, available = memoryProbe()
+		}
+		workerValue = strconv.Itoa(memoryConstrainedTestingWorkers(cpuWorkers, availableBytes, available))
 	}
 	workers, err := strconv.Atoi(workerValue)
 	if err != nil || workers < 1 {
@@ -1895,7 +1990,7 @@ func runProofRunWatchdog(args []string) int {
 	// an unlawful operational window. Fixture duration overrides remain the
 	// passed values after this effective-value validation.
 	if *conf != "" {
-		if _, err := resolveProofRunLimits(*conf); err != nil {
+		if err := validateProofRunLimits(*conf); err != nil {
 			fmt.Fprintln(os.Stderr, "proof-run watchdog:", err)
 			return 1
 		}

@@ -45,38 +45,108 @@ func TestWaitGoalCursorHistory(t *testing.T) {
 
 func TestWaitGoalLandingDestinationMatchesLedgerBranch(t *testing.T) {
 	t.Parallel()
-	_, repo := oneClone(t)
-	mustGit(t, repo, "config", "metasystem.goal.machine", "mac-a")
-	seedLedger(t, repo)
-	opened, err := Open(verbReq(repo, "01J5X0000000000000000000D1", "mac-a"), "goal-a", "Wait target.", "main", "Wait for landing.")
+	endpoint, client := fakeGoalEndpoint(t)
+	repo := endpoint.Root
+	baseTip := acceptedTipForEndpoint(t, endpoint)
+	opened, err := Open(verbReqFor(endpoint, "01J5X0000000000000000000D1", "mac-a"), "goal-a", "Wait target.", "main", "Wait for landing.")
 	if err != nil || opened.Outcome != OutcomeConfirmed {
 		t.Fatalf("open goal-a: %+v %v", opened, err)
 	}
+	transcript := newWaitObservationTranscript(t, endpoint, client)
+	transcript.declare(opened.Tip, baseTip)
 	selector := metarun.WaitSelector{Kind: "goal", TargetID: "goal-a", GoalID: "goal-a", Event: "landing", After: opened.Tip}
-	mustGit(t, repo, "config", "metasystem.steward.landing-ref", "refs/remotes/origin/trunk")
-	refused, observeErr := ObserveLedger(context.Background(), repo, selector, metarun.WaiterTarget{}, opened.Tip)
+	transcript.endpoint("", "")
+	transcript.expect("refs/remotes/origin/trunk\n", "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
+	ctx := withWaitGitDependencies(context.Background(), transcript.dependencies())
+	refused, observeErr := ObserveLedger(ctx, repo, selector, metarun.WaiterTarget{}, opened.Tip)
 	if observeErr != nil || refused.ExitCode != metarun.ExitNoRecord || refused.Reason != "landings go to refs/heads/trunk; this ledger endpoint watches refs/heads/main" {
 		t.Fatalf("configured mismatched landing destination = %+v err=%v", refused, observeErr)
 	}
-	mustGit(t, repo, "config", "metasystem.steward.landing-ref", "refs/remotes/origin/main")
-	accepted, observeErr := ObserveLedger(context.Background(), repo, selector, metarun.WaiterTarget{}, opened.Tip)
+	transcript.done()
+	transcript.endpoint("", "")
+	transcript.expect("refs/remotes/origin/main\n", "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
+	transcript.capture(opened.Tip)
+	transcript.acceptance(opened.Tip, opened.Tip)
+	transcript.files(opened.Tip, goalsPrefix, recordsGoalsPrefix, ChannelPrefix)
+	transcript.cleanup()
+	accepted, observeErr := ObserveLedger(ctx, repo, selector, metarun.WaiterTarget{}, opened.Tip)
 	if observeErr != nil || !accepted.Pending || accepted.ExitCode != 0 {
 		t.Fatalf("matching remote landing destination = %+v err=%v", accepted, observeErr)
 	}
-	mustGit(t, repo, "config", "--unset", "metasystem.steward.landing-ref")
-	mustGit(t, repo, "config", "goal.sync-remote", "local")
-	mustGit(t, repo, "config", "goal.sync-branch", LocalLedgerBranch)
-	refused, observeErr = ObserveLedger(context.Background(), repo, selector, metarun.WaiterTarget{}, opened.Tip)
+	transcript.done()
+	transcript.endpoint("local", LocalLedgerBranch)
+	transcript.expect("", "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
+	transcript.expect("refs/heads/main\n", "symbolic-ref", "--quiet", "HEAD")
+	refused, observeErr = ObserveLedger(ctx, repo, selector, metarun.WaiterTarget{}, opened.Tip)
 	wantReason := "landings go to refs/heads/main; this ledger endpoint watches " + LocalLedgerBranch
 	if observeErr != nil || refused.ExitCode != metarun.ExitNoRecord || refused.Reason != wantReason {
 		t.Fatalf("local mismatched landing destination = %+v err=%v", refused, observeErr)
 	}
+	transcript.done()
 }
 
 func TestWaitGoalFetchDeadline(t *testing.T) {
 	t.Parallel()
 	if _, err := CaptureTipBounded(Endpoint{Root: t.TempDir(), Remote: "local", Branch: LocalLedgerBranch}, 0); err == nil || !strings.Contains(err.Error(), "positive") {
 		t.Fatalf("zero fetch budget was accepted: %v", err)
+	}
+	endpoint, client := fakeGoalEndpoint(t)
+	repo := endpoint.Root
+	baseTip := acceptedTipForEndpoint(t, endpoint)
+	opened, err := Open(verbReqFor(endpoint, "01J5X0000000000000000000W1", "mac-a"), "goal-a", "Wait target.", "main", "Wait.")
+	if err != nil || opened.Outcome != OutcomeConfirmed {
+		t.Fatalf("open goal-a: %+v %v", opened, err)
+	}
+	cursor := opened.Tip
+	advanced, err := Open(verbReqFor(endpoint, "01J5X0000000000000000000W2", "mac-a"), "goal-b", "Advance ledger.", "main", "Advance.")
+	if err != nil || advanced.Outcome != OutcomeConfirmed {
+		t.Fatalf("open goal-b: %+v %v", advanced, err)
+	}
+	selector := metarun.WaitSelector{Kind: "goal", TargetID: "goal-a", GoalID: "goal-a", Event: "human-act", After: cursor}
+	stages := []string{"endpoint resolution", "acceptance gates", "commit validation", "change inspection"}
+	for _, stage := range stages {
+		t.Run(stage, func(t *testing.T) {
+			t.Parallel()
+			transcript := newWaitObservationTranscript(t, endpoint, client)
+			transcript.declare(cursor, baseTip)
+			transcript.declare(advanced.Tip, cursor)
+			if stage == "endpoint resolution" {
+				transcript.cancel("config", "--get", "goal.sync-remote")
+			} else {
+				transcript.endpoint("", "")
+				transcript.capture(advanced.Tip)
+				switch stage {
+				case "acceptance gates":
+					transcript.cancel("cat-file", "-p", cursor+":./"+goalsPrefix+"backlog.md")
+				case "commit validation":
+					transcript.acceptance(cursor, advanced.Tip)
+					transcript.cancel("ls-tree", "-r", "--name-only", advanced.Tip, "--", goalsPrefix, recordsGoalsPrefix, ChannelPrefix)
+				case "change inspection":
+					transcript.acceptance(cursor, advanced.Tip)
+					transcript.files(advanced.Tip, goalsPrefix, recordsGoalsPrefix, ChannelPrefix)
+					transcript.cancel("rev-list", "--reverse", "--first-parent", cursor+".."+advanced.Tip)
+				}
+				transcript.cleanup()
+			}
+			ctx := withWaitGitDependencies(context.Background(), transcript.dependencies())
+			result := (&metarun.Store{Root: repo}).Wait(ctx, metarun.WaitRequest{
+				Selector: selector, Owner: metarun.Caller{Class: "MAIN", MainId: "main-bound", OwnerLineage: "lineage-bound", SessionId: "session-bound"},
+				RuntimeSession: "runtime-bound", Timeout: time.Hour,
+			}, metarun.WaitOptions{Observe: func(readCtx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, tip string) (metarun.SourceObservation, error) {
+				return ObserveLedger(readCtx, repo, selected, pinned, tip)
+			}})
+			if transcript.cancelled != 1 || result.ExitCode != metarun.ExitWaiterIO {
+				t.Fatalf("hung %s: reached=%t result=%+v", stage, transcript.cancelled == 1, result)
+			}
+			transcript.done()
+		})
+	}
+}
+
+func TestGitAdapterWaitGoalFetchDeadlineInstalledCommand(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("METASYSTEM_WAIT_BINARY") == "" {
+		t.Skip("installed wait binary is not configured")
 	}
 	_, repo := oneClone(t)
 	mustGit(t, repo, "config", "metasystem.goal.machine", "mac-a")
@@ -89,55 +159,6 @@ func TestWaitGoalFetchDeadline(t *testing.T) {
 	advanced, err := Open(verbReq(repo, "01J5X0000000000000000000W2", "mac-a"), "goal-b", "Advance ledger.", "main", "Advance.")
 	if err != nil || advanced.Outcome != OutcomeConfirmed {
 		t.Fatalf("open goal-b: %+v %v", advanced, err)
-	}
-	selector := metarun.WaitSelector{Kind: "goal", TargetID: "goal-a", GoalID: "goal-a", Event: "human-act", After: cursor}
-	realRunner := attentionGitRun(runAttentionGit)
-	stages := []struct {
-		name  string
-		match func([]string) bool
-	}{
-		{"endpoint resolution", func(args []string) bool {
-			return len(args) >= 3 && args[0] == "config" && args[2] == "goal.sync-remote"
-		}},
-		{"acceptance gates", func(args []string) bool { return len(args) >= 1 && args[0] == "cat-file" }},
-		{"commit validation", func(args []string) bool { return len(args) >= 1 && args[0] == "ls-tree" }},
-		{"change inspection", func(args []string) bool { return len(args) >= 1 && args[0] == "rev-list" }},
-	}
-	for _, stage := range stages {
-		t.Run(stage.name, func(t *testing.T) {
-			t.Parallel()
-			dependencies := waitGitDependencies{}
-			reached := false
-			dependencies.withTimeout = func(parent context.Context, budget time.Duration, args []string) (context.Context, context.CancelFunc) {
-				stageCtx, cancel := context.WithCancel(parent)
-				if !reached && stage.match(args) {
-					cancel()
-				}
-				return stageCtx, cancel
-			}
-			dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
-				if !reached && stage.match(args) {
-					reached = true
-					select {
-					case <-gitCtx.Done():
-						return "", gitCtx.Err()
-					default:
-						return "", fmt.Errorf("%s ran with a live context", stage.name)
-					}
-				}
-				return realRunner(gitCtx, root, stdin, args...)
-			}
-			ctx := withWaitGitDependencies(context.Background(), dependencies)
-			result := (&metarun.Store{Root: repo}).Wait(ctx, metarun.WaitRequest{
-				Selector: selector, Owner: metarun.Caller{Class: "MAIN", MainId: "main-bound", OwnerLineage: "lineage-bound", SessionId: "session-bound"},
-				RuntimeSession: "runtime-bound", Timeout: time.Hour,
-			}, metarun.WaitOptions{Observe: func(readCtx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, tip string) (metarun.SourceObservation, error) {
-				return ObserveLedger(readCtx, repo, selected, pinned, tip)
-			}})
-			if !reached || result.ExitCode != metarun.ExitWaiterIO {
-				t.Fatalf("hung %s: reached=%t result=%+v", stage.name, reached, result)
-			}
-		})
 	}
 	if binary := os.Getenv("METASYSTEM_WAIT_BINARY"); binary != "" {
 		t.Run("installed hanging git", func(t *testing.T) {
@@ -246,36 +267,56 @@ exec "${LEDGER_REAL_GIT:?}" "$@"
 
 func TestWaitGoalObservationUsesBoundedBatchReads(t *testing.T) {
 	t.Parallel()
-	_, repo := oneClone(t)
-	mustGit(t, repo, "config", "metasystem.goal.machine", "mac-a")
-	seedLedger(t, repo)
-	opened, err := Open(verbReq(repo, "01J5X0000000000000000000B1", "mac-a"), "goal-a", "Wait target.", "main", "Wait.")
+	endpoint, client := fakeGoalEndpoint(t)
+	repo := endpoint.Root
+	baseTip := acceptedTipForEndpoint(t, endpoint)
+	opened, err := Open(verbReqFor(endpoint, "01J5X0000000000000000000B1", "mac-a"), "goal-a", "Wait target.", "main", "Wait.")
 	if err != nil || opened.Outcome != OutcomeConfirmed {
 		t.Fatalf("open goal-a: %+v %v", opened, err)
 	}
-	realRunner := attentionGitRun(runAttentionGit)
+	transcript := newWaitObservationTranscript(t, endpoint, client)
+	transcript.declare(opened.Tip, baseTip)
 	selector := metarun.WaitSelector{Kind: "goal", TargetID: "goal-a", GoalID: "goal-a", Event: "human-act", After: opened.Tip}
+	transcript.endpoint("", "")
+	transcript.capture(opened.Tip)
+	transcript.acceptance(opened.Tip, opened.Tip)
+	transcript.files(opened.Tip, goalsPrefix, recordsGoalsPrefix, ChannelPrefix)
+	transcript.expect("mac-a\n", "config", "--get", "metasystem.goal.machine")
+	transcript.cleanup()
 	observe := func(pinned metarun.WaiterTarget, lastTip string) (metarun.SourceObservation, [][]string) {
-		var calls [][]string
-		dependencies := waitGitDependencies{run: func(ctx context.Context, root string, stdin []byte, args ...string) (string, error) {
-			calls = append(calls, append([]string(nil), args...))
-			return realRunner(ctx, root, stdin, args...)
-		}}
-		ctx := withWaitGitDependencies(context.Background(), dependencies)
+		callStart := len(transcript.calls)
+		ctx := withWaitGitDependencies(context.Background(), transcript.dependencies())
 		observation, observeErr := ObserveLedgerForWait(ctx, repo, selector, pinned, lastTip, "lineage-a")
 		if observeErr != nil || !observation.Pending {
 			t.Fatalf("observation after %s = %+v err=%v", lastTip, observation, observeErr)
 		}
-		return observation, calls
+		transcript.done()
+		return observation, transcript.calls[callStart:]
 	}
 	firstObservation, firstCalls := observe(metarun.WaiterTarget{}, "")
 	const newChanges = 3
+	previousTip := opened.Tip
+	var newTips []string
 	for i, goalID := range []string{"goal-b", "goal-c", "goal-d"} {
-		advanced, openErr := Open(verbReq(repo, fmt.Sprintf("01J5X0000000000000000000B%d", i+2), "mac-a"), goalID, "More files.", "main", "Wait.")
+		advanced, openErr := Open(verbReqFor(endpoint, fmt.Sprintf("01J5X0000000000000000000B%d", i+2), "mac-a"), goalID, "More files.", "main", "Wait.")
 		if openErr != nil || advanced.Outcome != OutcomeConfirmed {
 			t.Fatalf("open %s: %+v %v", goalID, advanced, openErr)
 		}
+		transcript.declare(advanced.Tip, previousTip)
+		newTips = append(newTips, advanced.Tip)
+		previousTip = advanced.Tip
 	}
+	transcript.endpoint("", "")
+	transcript.capture(previousTip)
+	transcript.acceptance(opened.Tip, previousTip)
+	transcript.files(previousTip, goalsPrefix, recordsGoalsPrefix, ChannelPrefix)
+	transcript.changes(opened.Tip, newTips...)
+	transcript.expect("mac-a\n", "config", "--get", "metasystem.goal.machine")
+	transcript.files(opened.Tip, goalsPrefix, recordsGoalsPrefix)
+	for _, tip := range newTips[:len(newTips)-1] {
+		transcript.files(tip, goalsPrefix, recordsGoalsPrefix)
+	}
+	transcript.cleanup()
 	secondObservation, secondCalls := observe(firstObservation.Incarnation, firstObservation.LedgerTip)
 	for name, calls := range map[string][][]string{"first": firstCalls, "incremental": secondCalls} {
 		batch := 0
@@ -304,6 +345,9 @@ func TestWaitGoalObservationUsesBoundedBatchReads(t *testing.T) {
 	if !incrementalRange {
 		t.Fatalf("incremental observation did not start at the last checked tip: %v", secondCalls)
 	}
+	transcript.endpoint("", "")
+	transcript.capture(previousTip)
+	transcript.cleanup()
 	_, repeatedCalls := observe(secondObservation.Incarnation, secondObservation.LedgerTip)
 	for _, args := range repeatedCalls {
 		if len(args) == 0 {
@@ -337,119 +381,176 @@ func (spentDeadlineContext) Err() error {
 
 func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 	t.Parallel()
-	_, publisher, waiterClone := twoClones(t)
-	seedLedger(t, publisher)
-	mustGit(t, waiterClone, "config", "metasystem.goal.machine", "mac-waiter")
+	publisher, waiter := fakeGoalEndpointPair(t)
+	client := publisher.Repository.(*fakeGoalRepository)
+	baseTip := acceptedTipForEndpoint(t, publisher)
+	waiterRoot := waiter.Root
 	target := "goal-replay-observer"
-	opened, err := Open(verbReq(publisher, "01J5X0000000000000000000R0", "mac-a"), target, "Replay a recorded wait result.", "main", "Wait for an authenticated answer.")
+	opened, err := Open(verbReqFor(publisher, "01J5X0000000000000000000R0", "mac-a"), target, "Replay a recorded wait result.", "main", "Wait for an authenticated answer.")
 	if err != nil || opened.Outcome != OutcomeConfirmed {
 		t.Fatalf("open replay target: %+v %v", opened, err)
 	}
 	cursor := opened.Tip
 	preActTips := map[string]bool{cursor: true}
+	var preActOrder []string
 	for index, goalID := range []string{"goal-replay-before-a", "goal-replay-before-b", "goal-replay-before-c", "goal-replay-before-d", "goal-replay-before-e", "goal-replay-before-f"} {
-		advanced, openErr := Open(verbReq(publisher, fmt.Sprintf("01J5X0000000000000000000R%d", index+1), "mac-a"), goalID, "Advance before the answer.", "main", "Remain queued.")
+		advanced, openErr := Open(verbReqFor(publisher, fmt.Sprintf("01J5X0000000000000000000R%d", index+1), "mac-a"), goalID, "Advance before the answer.", "main", "Remain queued.")
 		if openErr != nil || advanced.Outcome != OutcomeConfirmed {
 			t.Fatalf("open pre-answer goal %s: %+v %v", goalID, advanced, openErr)
 		}
 		preActTips[advanced.Tip] = true
+		preActOrder = append(preActOrder, advanced.Tip)
 	}
-	answered, err := Answer(verbReq(publisher, "01J5X0000000000000000000R7", "mac-a"), target, "replay-question", "recorded answer", "", AnswerProof{Provider: "fake", User: "human-wido", Ref: "replay/answer", Step: 1})
+	answerRequest := verbReqFor(publisher, "01J5X0000000000000000000R7", "mac-a")
+	answered, err := Answer(answerRequest, target, "replay-question", "recorded answer", "", AnswerProof{Provider: "fake", User: "human-wido", Ref: "replay/answer", Step: 1})
 	if err != nil || answered.Outcome != OutcomeConfirmed {
 		t.Fatalf("answer replay target: %+v %v", answered, err)
 	}
 	owner := metarun.Caller{Class: "MAIN", MainId: "main-replay-observer", OwnerLineage: "lineage-replay-observer", SessionId: "session-replay-observer"}
 	selector := metarun.WaitSelector{Kind: "goal", TargetID: target, GoalID: target, Event: "human-act", Verb: "answer", Question: "replay-question", After: cursor}
-	store := &metarun.Store{Root: waiterClone}
+	store := &metarun.Store{Root: waiterRoot}
 	options := metarun.WaitOptions{
 		Observe: func(readCtx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, floor string) (metarun.SourceObservation, error) {
-			return ObserveLedgerForWait(readCtx, waiterClone, selected, pinned, floor, owner.OwnerLineage)
+			return ObserveLedgerForWait(readCtx, waiterRoot, selected, pinned, floor, owner.OwnerLineage)
 		},
 		Deliver: func(context.Context, string, string, time.Time, string) (string, bool, error) {
 			return "blocking", false, nil
 		},
 	}
-	withoutGitOperationDeadline := waitGitContextFunc(func(parent context.Context, _ time.Duration, _ []string) (context.Context, context.CancelFunc) {
+	withoutGitOperationDeadline := func(parent context.Context, _ time.Duration, _ []string) (context.Context, context.CancelFunc) {
 		return context.WithCancel(parent)
-	})
-	nonTimeoutOptions := options
-	nonTimeoutOptions.Observe = func(readCtx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, floor string) (metarun.SourceObservation, error) {
-		dependencies := waitDependencies(readCtx)
-		dependencies.withTimeout = withoutGitOperationDeadline
-		dependencies.withFetchTimeout = withoutGitOperationDeadline
-		// Replay semantics are independent of production operation deadlines.
-		// The test context remains the unsuccessful outer termination path.
-		outerCtx := withWaitGitDependencies(t.Context(), dependencies)
-		return ObserveLedgerForWait(outerCtx, waiterClone, selected, pinned, floor, owner.OwnerLineage)
 	}
+	declare := func(t *testing.T) *waitObservationTranscript {
+		tr := newWaitObservationTranscript(t, waiter, client)
+		tr.declare(cursor, baseTip)
+		parent := cursor
+		for _, tip := range preActOrder {
+			tr.declare(tip, parent)
+			parent = tip
+		}
+		tr.declare(answered.Tip, parent)
+		return tr
+	}
+	initial := declare(t)
+	if got := initial.commits[answered.Tip].trailer; got != answerRequest.opid() {
+		t.Fatalf("authenticated answer transaction trailer = %q, want %q", got, answerRequest.opid())
+	}
+	initial.endpoint("", "")
+	initial.capture(answered.Tip)
+	initial.acceptance(cursor, answered.Tip)
+	initial.files(answered.Tip, goalsPrefix, recordsGoalsPrefix, ChannelPrefix)
+	initial.changes(cursor, append(append([]string(nil), preActOrder...), answered.Tip)...)
+	initial.expect("mac-waiter\n", "config", "--get", "metasystem.goal.machine")
+	initial.files(cursor, goalsPrefix, recordsGoalsPrefix)
+	for _, tip := range preActOrder {
+		initial.files(tip, goalsPrefix, recordsGoalsPrefix)
+	}
+	initial.cleanup()
 	fetchStarted := make(chan struct{})
 	releaseFetch := make(chan struct{})
 	released := false
+	savedResult := make(chan metarun.WaitResult, 1)
+	joined := false
+	waitCtx, cancelWait := context.WithCancel(t.Context())
 	defer func() {
 		if !released {
 			close(releaseFetch)
 		}
-	}()
-	delayedOptions := nonTimeoutOptions
-	delayedOptions.Observe = func(readCtx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, floor string) (metarun.SourceObservation, error) {
-		dependencies := waitDependencies(readCtx)
-		dependencies.withTimeout = withoutGitOperationDeadline
-		dependencies.withFetchTimeout = withoutGitOperationDeadline
-		realRunner := dependencies.run
-		if realRunner == nil {
-			realRunner = runAttentionGit
+		cancelWait()
+		if !joined {
+			<-savedResult
 		}
-		dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
-			if len(args) > 0 && args[0] == "fetch" {
-				close(fetchStarted)
-				<-releaseFetch
+	}()
+	delayedDependencies := initial.dependencies()
+	runner := delayedDependencies.run
+	fetches := 0
+	delayedDependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "fetch" {
+			fetches++
+			if fetches != 1 {
+				return "", fmt.Errorf("unexpected extra wait fetch: %q", args)
 			}
-			return realRunner(gitCtx, root, stdin, args...)
+			close(fetchStarted)
+			select {
+			case <-releaseFetch:
+			case <-gitCtx.Done():
+				return "", gitCtx.Err()
+			}
 		}
-		return ObserveLedgerForWait(withWaitGitDependencies(t.Context(), dependencies), waiterClone, selected, pinned, floor, owner.OwnerLineage)
+		return runner(gitCtx, root, stdin, args...)
 	}
-	savedResult := make(chan metarun.WaitResult, 1)
 	go func() {
-		savedResult <- store.Wait(t.Context(), metarun.WaitRequest{Selector: selector, Owner: owner, RuntimeSession: "runtime-replay-observer", Timeout: time.Hour}, delayedOptions)
+		savedResult <- store.Wait(withWaitGitDependencies(waitCtx, delayedDependencies), metarun.WaitRequest{Selector: selector, Owner: owner, RuntimeSession: "runtime-replay-observer", Timeout: time.Hour}, options)
 	}()
-	<-fetchStarted
+	select {
+	case <-fetchStarted:
+	case result := <-savedResult:
+		joined = true
+		t.Fatalf("saved replay returned before delayed fetch: %+v", result)
+	}
 	select {
 	case result := <-savedResult:
+		joined = true
 		t.Fatalf("saved replay returned before delayed fetch release: %+v", result)
 	default:
 	}
 	close(releaseFetch)
 	released = true
 	saved := <-savedResult
+	joined = true
+	if fetches != 1 {
+		t.Fatalf("initial wait made %d fetches, want one", fetches)
+	}
 	if saved.ExitCode != metarun.ExitGreen || saved.LedgerTip != answered.Tip {
 		t.Fatalf("save real answer result: %+v", saved)
 	}
-	row, _, err := metarun.LoadWaiterByID(waiterClone, saved.WaitID)
+	row, _, err := metarun.LoadWaiterByID(waiterRoot, saved.WaitID)
 	if err != nil || row.Result == nil || row.LastCheckedTip != answered.Tip {
 		t.Fatalf("saved answer row=%+v err=%v", row, err)
 	}
 
 	const laterChanges = 2
+	var laterTips []string
 	for index, goalID := range []string{"goal-replay-after-a", "goal-replay-after-b"} {
-		advanced, openErr := Open(verbReq(publisher, fmt.Sprintf("01J5X0000000000000000000R%d", index+8), "mac-a"), goalID, "Advance after the answer.", "main", "Remain queued.")
+		advanced, openErr := Open(verbReqFor(publisher, fmt.Sprintf("01J5X0000000000000000000R%d", index+8), "mac-a"), goalID, "Advance after the answer.", "main", "Remain queued.")
 		if openErr != nil || advanced.Outcome != OutcomeConfirmed {
 			t.Fatalf("open post-answer goal %s: %+v %v", goalID, advanced, openErr)
 		}
+		laterTips = append(laterTips, advanced.Tip)
 	}
-
-	realRunner := attentionGitRun(runAttentionGit)
+	newReplayTranscript := func(t *testing.T) *waitObservationTranscript {
+		tr := declare(t)
+		parent := answered.Tip
+		for _, tip := range laterTips {
+			tr.declare(tip, parent)
+			parent = tip
+		}
+		tr.endpoint("", "")
+		tr.capture(laterTips[1])
+		tr.acceptance(answered.Tip, laterTips[1])
+		tr.files(laterTips[1], goalsPrefix, recordsGoalsPrefix, ChannelPrefix)
+		tr.changes(answered.Tip, laterTips...)
+		tr.expect("mac-waiter\n", "config", "--get", "metasystem.goal.machine")
+		tr.files(answered.Tip, goalsPrefix, recordsGoalsPrefix)
+		return tr
+	}
 
 	t.Run("before rewinding the ledger", func(t *testing.T) {
 		t.Run("later accepted changes replay the saved answer from its event floor", func(t *testing.T) {
 			t.Parallel()
+			tr := newReplayTranscript(t)
+			tr.files(laterTips[0], goalsPrefix, recordsGoalsPrefix)
+			tr.cleanup()
 			var projectedTips []string
-			dependencies := waitGitDependencies{run: func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
+			dependencies := tr.dependencies()
+			runner := dependencies.run
+			dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
 				if len(args) >= 4 && args[0] == "ls-tree" {
 					projectedTips = append(projectedTips, args[3])
 				}
-				return realRunner(gitCtx, root, stdin, args...)
-			}}
-			replayed := store.ResumeWait(withWaitGitDependencies(t.Context(), dependencies), saved.WaitID, owner, owner.SessionId, 0, nonTimeoutOptions)
+				return runner(gitCtx, root, stdin, args...)
+			}
+			replayed := store.ResumeWait(withWaitGitDependencies(t.Context(), dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
 			if replayed.ExitCode != metarun.ExitGreen {
 				t.Fatalf("replay after later accepted changes: %+v", replayed)
 			}
@@ -472,8 +573,11 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 
 		t.Run("an exhausted intervening read is an operational failure", func(t *testing.T) {
 			t.Parallel()
+			tr := newReplayTranscript(t)
+			tr.expectError(context.DeadlineExceeded, "ls-tree", "-r", "--name-only", laterTips[0], "--", goalsPrefix, recordsGoalsPrefix)
+			tr.cleanup()
 			contextReads := 0
-			dependencies := waitGitDependencies{}
+			dependencies := tr.dependencies()
 			dependencies.withTimeout = func(parent context.Context, budget time.Duration, args []string) (context.Context, context.CancelFunc) {
 				if len(args) > 0 && args[0] == "ls-tree" {
 					contextReads++
@@ -485,51 +589,43 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 			}
 			dependencies.withFetchTimeout = withoutGitOperationDeadline
 			runnerReads := 0
+			runner := dependencies.run
 			dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
 				if len(args) > 0 && args[0] == "ls-tree" {
 					runnerReads++
-					if runnerReads == 3 {
-						select {
-						case <-gitCtx.Done():
-							return "", gitCtx.Err()
-						default:
-							return "", errors.New("third read ran with a live context")
-						}
-					}
 				}
-				return realRunner(gitCtx, root, stdin, args...)
+				return runner(gitCtx, root, stdin, args...)
 			}
-			failureOptions := nonTimeoutOptions
-			failureOptions.Observe = func(readCtx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, floor string) (metarun.SourceObservation, error) {
-				return ObserveLedgerForWait(withWaitGitDependencies(t.Context(), waitDependencies(readCtx)), waiterClone, selected, pinned, floor, owner.OwnerLineage)
-			}
-			replayed := store.ResumeWait(withWaitGitDependencies(t.Context(), dependencies), saved.WaitID, owner, owner.SessionId, 0, failureOptions)
-			if replayed.ExitCode != metarun.ExitWaiterIO || replayed.SourceOutcome != "transport-failure" || runnerReads != 3 {
-				t.Fatalf("budget-exhausted replay=%+v intervening reads=%d", replayed, runnerReads)
+			replayed := store.ResumeWait(withWaitGitDependencies(t.Context(), dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
+			if replayed.ExitCode != metarun.ExitWaiterIO || replayed.SourceOutcome != "transport-failure" || contextReads != 3 || runnerReads != 3 {
+				t.Fatalf("budget-exhausted replay=%+v context reads=%d intervening reads=%d", replayed, contextReads, runnerReads)
 			}
 		})
 
 		t.Run("cancelling an intervening read interrupts replay", func(t *testing.T) {
 			t.Parallel()
+			tr := newReplayTranscript(t)
+			tr.cancel("ls-tree", "-r", "--name-only", laterTips[0], "--", goalsPrefix, recordsGoalsPrefix)
+			tr.cleanup()
 			reached := make(chan struct{})
 			runnerReads := 0
-			dependencies := waitGitDependencies{
-				withTimeout:      withoutGitOperationDeadline,
-				withFetchTimeout: withoutGitOperationDeadline,
-				run: func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
-					if len(args) > 0 && args[0] == "ls-tree" {
-						runnerReads++
-						if runnerReads == 3 {
-							close(reached)
-							<-gitCtx.Done()
-							return "", gitCtx.Err()
-						}
+			dependencies := tr.dependencies()
+			dependencies.withTimeout = withoutGitOperationDeadline
+			dependencies.withFetchTimeout = withoutGitOperationDeadline
+			runner := dependencies.run
+			dependencies.run = func(gitCtx context.Context, root string, stdin []byte, args ...string) (string, error) {
+				if len(args) > 0 && args[0] == "ls-tree" {
+					runnerReads++
+					if runnerReads == 3 {
+						close(reached)
+						<-gitCtx.Done()
 					}
-					return realRunner(gitCtx, root, stdin, args...)
-				}}
+				}
+				return runner(gitCtx, root, stdin, args...)
+			}
 			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
 			cancelled := make(chan struct{})
+			defer func() { cancel(); <-cancelled }()
 			go func() {
 				select {
 				case <-reached:
@@ -538,22 +634,25 @@ func TestWaitGoalSavedResultReplayThroughAcceptedLedger(t *testing.T) {
 				}
 				close(cancelled)
 			}()
-			cancellationOptions := nonTimeoutOptions
-			cancellationOptions.Observe = func(readCtx context.Context, selected metarun.WaitSelector, pinned metarun.WaiterTarget, floor string) (metarun.SourceObservation, error) {
-				return ObserveLedgerForWait(withWaitGitDependencies(ctx, waitDependencies(readCtx)), waiterClone, selected, pinned, floor, owner.OwnerLineage)
-			}
-			replayed := store.ResumeWait(withWaitGitDependencies(ctx, dependencies), saved.WaitID, owner, owner.SessionId, 0, cancellationOptions)
+			replayed := store.ResumeWait(withWaitGitDependencies(ctx, dependencies), saved.WaitID, owner, owner.SessionId, 0, options)
 			cancel()
 			<-cancelled
-			if replayed.ExitCode != metarun.ExitInterrupted || replayed.SourceOutcome != "interrupted" || runnerReads != 3 {
+			if replayed.ExitCode != metarun.ExitInterrupted || replayed.SourceOutcome != "interrupted" || runnerReads != 3 || tr.cancelled != 1 {
 				t.Fatalf("cancelled replay=%+v intervening reads=%d", replayed, runnerReads)
 			}
 		})
 	})
 
 	t.Run("rewinding away the answer invalidates the saved evidence", func(t *testing.T) {
-		mustGit(t, publisher, "push", "-q", "--force", "origin", cursor+":refs/heads/main")
-		replayed := store.ResumeWait(t.Context(), saved.WaitID, owner, owner.SessionId, 0, nonTimeoutOptions)
+		client.store.mu.Lock()
+		client.store.canonical = cursor
+		client.store.mu.Unlock()
+		tr := declare(t)
+		tr.endpoint("", "")
+		tr.capture(cursor)
+		tr.rewind(answered.Tip, cursor)
+		tr.cleanup()
+		replayed := store.ResumeWait(withWaitGitDependencies(t.Context(), tr.dependencies()), saved.WaitID, owner, owner.SessionId, 0, options)
 		if replayed.ExitCode != metarun.ExitNoRecord || replayed.SourceOutcome != "invalid-source" {
 			t.Fatalf("rewound saved evidence replay=%+v", replayed)
 		}
@@ -612,48 +711,76 @@ func TestAcceptedLedgerTipDistinguishesBootstrapFromBreakage(t *testing.T) {
 func TestLedgerChangesFallsBackWhenAcceptedIsASecondParent(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()
-	mustGit(t, repo, "init", "-q", "-b", "main")
-	write := func(name, body, message string) string {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(repo, name), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		mustGit(t, repo, "add", name)
-		mustGit(t, repo, "commit", "-qm", message)
-		return mustGit(t, repo, "rev-parse", "HEAD")
+	accepted := strings.Repeat("a", 40)
+	otherParent := strings.Repeat("b", 40)
+	merged := strings.Repeat("c", 40)
+	next := strings.Repeat("d", 40)
+	transcript := []struct {
+		args []string
+		out  string
+	}{
+		{[]string{"rev-list", "--reverse", "--first-parent", accepted + ".." + merged}, merged + "\n"},
+		{[]string{"rev-parse", "--verify", merged + "^1"}, otherParent + "\n"},
+		{[]string{"rev-list", "--reverse", "--first-parent", merged + ".." + next}, next + "\n"},
+		{[]string{"rev-parse", "--verify", next + "^1"}, merged + "\n"},
 	}
-	base := write("base", "base\n", "base")
-	accepted := write("accepted", "accepted\n", "accepted")
-	mustGit(t, repo, "checkout", "-qb", "other", base)
-	_ = write("other", "other\n", "other")
-	mustGit(t, repo, "merge", "--no-ff", "-qm", "merge accepted as second parent", accepted)
-	merged := mustGit(t, repo, "rev-parse", "HEAD")
-	changes, err := LedgerChanges(repo, accepted, merged)
+	read := 0
+	reader := func(root string, extraEnv []string, args ...string) (string, error) {
+		t.Helper()
+		if read >= len(transcript) {
+			t.Fatalf("unexpected ledger history read: %v", args)
+		}
+		step := transcript[read]
+		if root != repo || extraEnv != nil || !slices.Equal(args, step.args) {
+			t.Fatalf("ledger history read %d = root %q env %v args %v; want root %q nil env args %v", read, root, extraEnv, args, repo, step.args)
+		}
+		read++
+		return step.out, nil
+	}
+	changes, err := ledgerChangesWithReader(repo, accepted, merged, reader)
 	if err != nil || len(changes) != 1 || changes[0].Tip != merged || changes[0].Consecutive {
 		t.Fatalf("second-parent ancestry invented intermediate canonical states: %+v %v", changes, err)
 	}
-	next := write("next", "next\n", "next")
-	changes, err = LedgerChanges(repo, merged, next)
+	changes, err = ledgerChangesWithReader(repo, merged, next, reader)
 	if err != nil || len(changes) != 1 || changes[0].Tip != next || !changes[0].Consecutive {
 		t.Fatalf("ordinary first-parent movement was not consecutive: %+v %v", changes, err)
+	}
+	if read != len(transcript) {
+		t.Fatalf("ledger history read %d of %d expected commands", read, len(transcript))
 	}
 }
 
 func TestLedgerChangesDoesNotDisguiseUnreadableHistoryAsARewind(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()
-	mustGit(t, repo, "init", "-q", "-b", "main")
-	if _, err := LedgerChanges(repo, strings.Repeat("a", 40), strings.Repeat("b", 40)); err == nil || !strings.Contains(err.Error(), "walk accepted ledger changes") {
+	before := strings.Repeat("a", 40)
+	after := strings.Repeat("b", 40)
+	readErr := errors.New("declared unreadable history")
+	wantArgs := []string{"rev-list", "--reverse", "--first-parent", before + ".." + after}
+	reads := 0
+	reader := func(root string, extraEnv []string, args ...string) (string, error) {
+		t.Helper()
+		if reads != 0 || root != repo || extraEnv != nil || !slices.Equal(args, wantArgs) {
+			t.Fatalf("unexpected ledger history read %d = root %q env %v args %v; want root %q nil env args %v", reads, root, extraEnv, args, repo, wantArgs)
+		}
+		reads++
+		return "", readErr
+	}
+	if _, err := ledgerChangesWithReader(repo, before, after, reader); err == nil || !strings.Contains(err.Error(), "walk accepted ledger changes") || !errors.Is(err, readErr) {
 		t.Fatalf("unreadable object history was accepted as a direct transition: %v", err)
+	}
+	if reads != 1 {
+		t.Fatalf("ledger history read %d of 1 expected commands", reads)
 	}
 }
 
 func TestRunAttentionGitCancellationUsesInjectedTimers(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	mustGit(t, root, "init", "-q")
-	startedPath := filepath.Join(t.TempDir(), "started")
-	blockedPath := filepath.Join(t.TempDir(), "blocked")
+	dir := t.TempDir()
+	startedPath := filepath.Join(dir, "started")
+	blockedPath := filepath.Join(dir, "blocked")
+	callsPath := filepath.Join(dir, "calls")
 	for _, path := range []string{startedPath, blockedPath} {
 		if err := syscall.Mkfifo(path, 0o600); err != nil {
 			t.Fatal(err)
@@ -671,17 +798,52 @@ func TestRunAttentionGitCancellationUsesInjectedTimers(t *testing.T) {
 	defer cancel()
 	result := make(chan error, 1)
 	alias := "!trap '' TERM; printf S > " + strconv.Quote(startedPath) + "; read -r _ < " + strconv.Quote(blockedPath)
+	script := `#!/bin/sh
+if [ "$#" -eq 7 ] && [ "$1" = -C ] && [ "$2" = "$LEDGER_EXPECT_ROOT" ] &&
+   [ "$3" = -c ] && [ "$4" = core.logAllRefUpdates=false ] &&
+   [ "$5" = -c ] && [ "$6" = "alias.attention-hang=$LEDGER_EXPECT_ALIAS" ] &&
+   [ "$7" = attention-hang ]; then
+  printf 'accepted\n' >> "$LEDGER_CALLS_FILE"
+  trap '' TERM
+  printf S > "$LEDGER_HANG_STARTED"
+  read -r _ < "$LEDGER_HANG_BLOCKED"
+  exit 0
+fi
+printf 'unexpected' >> "$LEDGER_CALLS_FILE"
+printf ' <%s>' "$@" >> "$LEDGER_CALLS_FILE"
+printf '\n' >> "$LEDGER_CALLS_FILE"
+exit 97
+`
+	if err := testexec.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	environment := testEnvironment(os.Environ(), "PATH="+dir,
+		"LEDGER_EXPECT_ROOT="+root, "LEDGER_EXPECT_ALIAS="+alias, "LEDGER_HANG_STARTED="+startedPath,
+		"LEDGER_HANG_BLOCKED="+blockedPath, "LEDGER_CALLS_FILE="+callsPath)
 	go func() {
-		_, runErr := runAttentionGit(ctx, root, nil, "-c", "alias.attention-hang="+alias, "attention-hang")
+		_, runErr := runAttentionGitWithEnvironment(ctx, root, nil, environment, "-c", "alias.attention-hang="+alias, "attention-hang")
 		result <- runErr
 	}()
 	startedByte := make([]byte, 1)
-	if _, err := started.Read(startedByte); err != nil || string(startedByte) != "S" {
-		t.Fatalf("hanging git start signal=%q err=%v", startedByte, err)
+	startedResult := make(chan error, 1)
+	go func() {
+		_, readErr := started.Read(startedByte)
+		startedResult <- readErr
+	}()
+	select {
+	case err := <-startedResult:
+		if err != nil || string(startedByte) != "S" {
+			t.Fatalf("hanging git start signal=%q err=%v", startedByte, err)
+		}
+	case err := <-result:
+		t.Fatalf("strict git executable returned before the start signal: %v", err)
 	}
 	cancel()
 	if err := <-result; !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled git returned %v", err)
+	}
+	if calls, err := os.ReadFile(callsPath); err != nil || string(calls) != "accepted\n" {
+		t.Fatalf("strict git calls=%q err=%v", calls, err)
 	}
 	created := timers.Created()
 	if len(created) != 2 || created[0].kind != fakeAttentionTimer || created[0].duration != boundedCaptureGrace || created[1].kind != fakeAttentionTicker || created[1].duration != 10*time.Millisecond {
@@ -689,41 +851,113 @@ func TestRunAttentionGitCancellationUsesInjectedTimers(t *testing.T) {
 	}
 }
 
+type strictCaptureCleanupRepository struct {
+	Repository
+	root        string
+	environment []string
+}
+
+func (r strictCaptureCleanupRepository) Release(opid string) error {
+	cmd := commandWithEnvironment(r.environment, "git", "-C", r.root, "update-ref", "-d", fetchRefFor(opid))
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("strict capture cleanup: %w (%s)", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func strictCaptureGitScript(body string) string {
+	return "#!/bin/sh\n" + testutil.ShellPrologue + `prefix='+refs/heads/main:refs/metasystem/goals/fetch/read-'
+if [ "$#" -eq 9 ] && [ "$1" = -C ] && [ "$2" = "$LEDGER_EXPECT_ROOT" ] &&
+   [ "$3" = -c ] && [ "$4" = core.logAllRefUpdates=false ] &&
+   [ "$5" = fetch ] && [ "$6" = --no-tags ] && [ "$7" = --refmap= ] &&
+   [ "$8" = blocked ]; then
+  case "$9" in
+    "$prefix"*)
+      suffix=${9#"$prefix"}
+      if [ "${#suffix}" -eq 26 ]; then
+        case "$suffix" in
+          *[!0123456789ABCDEFGHJKMNPQRSTVWXYZ]*) ;;
+          *)
+            destination=${9#*:}
+            printf '%s\n' "$destination" > "$LEDGER_CAPTURE_REF_FILE"
+            printf 'fetch %s\n' "$destination" >> "$LEDGER_CAPTURE_CALLS_FILE"
+` + body + `
+            exit 0
+            ;;
+        esac
+      fi
+      ;;
+  esac
+fi
+if [ "$#" -eq 5 ] && [ "$1" = -C ] && [ "$2" = "$LEDGER_EXPECT_ROOT" ] &&
+   [ "$3" = update-ref ] && [ "$4" = -d ] &&
+   [ -s "$LEDGER_CAPTURE_REF_FILE" ] && [ "$5" = "$(cat "$LEDGER_CAPTURE_REF_FILE")" ]; then
+  printf 'cleanup %s\n' "$5" >> "$LEDGER_CAPTURE_CALLS_FILE"
+  exit 0
+fi
+printf 'unexpected' >> "$LEDGER_CAPTURE_CALLS_FILE"
+printf ' <%s>' "$@" >> "$LEDGER_CAPTURE_CALLS_FILE"
+printf '\n' >> "$LEDGER_CAPTURE_CALLS_FILE"
+exit 97
+`
+}
+
+func strictCaptureGitFixture(t *testing.T, dir, root, body string, fixture *testutil.ProcessFixture, entries ...string) ([]string, Repository, func()) {
+	t.Helper()
+	refFile := filepath.Join(dir, "capture-ref")
+	callsFile := filepath.Join(dir, "capture-calls")
+	for _, name := range []string{"cat", "ps", "sh", "tr"} {
+		path, err := exec.LookPath(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(path, filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := testexec.WriteFile(filepath.Join(dir, "git"), []byte(strictCaptureGitScript(body)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	environment := testEnvironment(os.Environ(), append(entries,
+		"LEDGER_EXPECT_ROOT="+root, "LEDGER_CAPTURE_REF_FILE="+refFile, "LEDGER_CAPTURE_CALLS_FILE="+callsFile,
+		"PATH="+dir)...)
+	environment = fixture.Env(environment)
+	repository := strictCaptureCleanupRepository{root: root, environment: environment}
+	checkCalls := func() {
+		t.Helper()
+		refData, refErr := os.ReadFile(refFile)
+		if refErr != nil {
+			t.Fatalf("strict fetch destination was not recorded: %v", refErr)
+		}
+		ref := strings.TrimSpace(string(refData))
+		calls, callsErr := os.ReadFile(callsFile)
+		if callsErr != nil || string(calls) != "fetch "+ref+"\ncleanup "+ref+"\n" {
+			t.Fatalf("strict git calls=%q, want fetch and cleanup for %q: %v", calls, ref, callsErr)
+		}
+	}
+	return environment, repository, checkCalls
+}
+
 func TestCaptureTipBoundedKillsTheWholeTransportGroup(t *testing.T) {
 	t.Parallel()
 	timers := newFakeAttentionTimerSource()
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := t.TempDir()
+	root := t.TempDir()
 	fixture := testutil.Fixture(t)
 	groupFile := filepath.Join(dir, "group")
 	childFile := filepath.Join(dir, "child")
 	groupFIFO, childFIFO := openHangingGitPIDFIFOs(t, groupFile, childFile)
-	wrapper := filepath.Join(dir, "git")
-	script := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
-  *" fetch "*)
+	body := `
     trap '' TERM
 	printf '%s %s\n' "$$" "$(ps -o pgid= -p $$ | tr -d ' ')" > "$LEDGER_FETCH_GROUP_FILE"
 	sh -c 'trap "" TERM; echo $$ > "$LEDGER_FETCH_CHILD_FILE"; read -r _ <"${METASYSTEM_FIXTURE_LEASH:?}"' sh "$tag" &
     wait
-    ;;
-esac
-exec "$LEDGER_REAL_GIT" "$@"
 `
-	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	environment := testEnvironment(os.Environ(), "LEDGER_REAL_GIT="+realGit, "LEDGER_FETCH_GROUP_FILE="+groupFile,
-		"LEDGER_FETCH_CHILD_FILE="+childFile, "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	environment = fixture.Env(environment)
-
-	root := t.TempDir()
-	mustGit(t, root, "init", "-q")
+	environment, repository, checkCalls := strictCaptureGitFixture(t, dir, root, body, fixture,
+		"LEDGER_FETCH_GROUP_FILE="+groupFile, "LEDGER_FETCH_CHILD_FILE="+childFile)
 	captured := make(chan error, 1)
 	go func() {
-		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment, captureTimers: timers}, 300*time.Millisecond)
+		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", Repository: repository, commandEnv: environment, captureTimers: timers}, 300*time.Millisecond)
 		captured <- captureErr
 	}()
 	var wrapperID, groupID, childID int
@@ -748,10 +982,11 @@ exec "$LEDGER_REAL_GIT" "$@"
 		t.Fatalf("transport process group %d did not remain during TERM grace: %v", groupID, groupErr)
 	}
 	grace.Fire()
-	err = <-captured
+	err := <-captured
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("blocking transport did not time out: %v", err)
 	}
+	checkCalls()
 	for _, pid := range []int{wrapperID, childID} {
 		exited, exitErr := transportMemberExited(pid)
 		if exitErr != nil {
@@ -777,39 +1012,24 @@ func TestCaptureTipBoundedLetsCooperativeTransportExitDuringGrace(t *testing.T) 
 	if boundedCaptureGrace != 5*time.Second {
 		t.Fatalf("bounded capture grace=%s, want 5s", boundedCaptureGrace)
 	}
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := t.TempDir()
+	root := t.TempDir()
 	fixture := testutil.Fixture(t)
 	groupFile := filepath.Join(dir, "group")
 	childFile := filepath.Join(dir, "child")
 	groupFIFO, childFIFO := openHangingGitPIDFIFOs(t, groupFile, childFile)
 	termFile := filepath.Join(dir, "term")
-	wrapper := filepath.Join(dir, "git")
-	script := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
-  *" fetch "*)
+	body := `
     trap 'echo TERM > "$LEDGER_GRACE_TERM_FILE"; exit 0' TERM
 	printf '%s %s\n' "$$" "$(ps -o pgid= -p $$ | tr -d ' ')" > "$LEDGER_GRACE_GROUP_FILE"
 	sh -c 'echo $$ > "$LEDGER_GRACE_CHILD_FILE"; read -r _ <"${METASYSTEM_FIXTURE_LEASH:?}"' sh "$tag" &
 	wait
-    ;;
-esac
-exec "$LEDGER_GRACE_REAL_GIT" "$@"
 `
-	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	environment := testEnvironment(os.Environ(), "LEDGER_GRACE_REAL_GIT="+realGit, "LEDGER_GRACE_GROUP_FILE="+groupFile,
-		"LEDGER_GRACE_CHILD_FILE="+childFile, "LEDGER_GRACE_TERM_FILE="+termFile,
-		"PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	environment = fixture.Env(environment)
-	root := t.TempDir()
-	mustGit(t, root, "init", "-q")
+	environment, repository, checkCalls := strictCaptureGitFixture(t, dir, root, body, fixture,
+		"LEDGER_GRACE_GROUP_FILE="+groupFile, "LEDGER_GRACE_CHILD_FILE="+childFile, "LEDGER_GRACE_TERM_FILE="+termFile)
 	captured := make(chan error, 1)
 	go func() {
-		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment, captureTimers: timers}, 300*time.Millisecond)
+		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", Repository: repository, commandEnv: environment, captureTimers: timers}, 300*time.Millisecond)
 		captured <- captureErr
 	}()
 	var wrapperID, groupID, childID int
@@ -830,6 +1050,7 @@ exec "$LEDGER_GRACE_REAL_GIT" "$@"
 	timers.Next(t, captured, fakeAttentionTimer, 300*time.Millisecond).Fire()
 	grace := timers.Next(t, captured, fakeAttentionTimer, boundedCaptureGrace)
 	poll := timers.Next(t, captured, fakeAttentionTicker, 10*time.Millisecond)
+	var err error
 	for {
 		select {
 		case err = <-captured:
@@ -844,6 +1065,7 @@ captureReturned:
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("cooperative transport did not time out: %v", err)
 	}
+	checkCalls()
 	if grace.Fired() {
 		t.Fatal("cooperative transport spent the grace timer")
 	}
@@ -909,11 +1131,8 @@ func TestCaptureTipBoundedKillsADescendantThatOutlivesTheTransport(t *testing.T)
 	t.Parallel()
 	timers := newFakeAttentionTimerSource()
 	timers.noticeCCalls = true
-	realGit, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := t.TempDir()
+	root := t.TempDir()
 	fixture := testutil.Fixture(t)
 	groupFile := filepath.Join(dir, "group")
 	childFile := filepath.Join(dir, "child")
@@ -928,30 +1147,19 @@ func TestCaptureTipBoundedKillsADescendantThatOutlivesTheTransport(t *testing.T)
 	}
 	t.Cleanup(func() { _ = exitFIFO.Close() })
 	termFile := filepath.Join(dir, "term")
-	wrapper := filepath.Join(dir, "git")
-	script := "#!/bin/sh\n" + testutil.ShellPrologue + `case " $* " in
-  *" fetch "*)
+	body := `
     trap 'echo TERM > "$LEDGER_GRACE_TERM_FILE"; exit 0' TERM
 	printf '%s %s\n' "$$" "$$" > "$LEDGER_GRACE_GROUP_FILE"
 	# Closing these pipes lets capture wait for the transport without waiting for its descendant.
 	sh -c 'trap "" TERM; exec 3>"$LEDGER_GRACE_EXIT_FILE"; echo $$ > "$LEDGER_GRACE_CHILD_FILE"; read -r _ <"${METASYSTEM_FIXTURE_LEASH:?}"' sh "$tag" >/dev/null 2>&1 &
 	wait
-    ;;
-esac
-exec "$LEDGER_GRACE_REAL_GIT" "$@"
 `
-	if err := testexec.WriteFile(wrapper, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	environment := testEnvironment(os.Environ(), "LEDGER_GRACE_REAL_GIT="+realGit, "LEDGER_GRACE_GROUP_FILE="+groupFile,
-		"LEDGER_GRACE_CHILD_FILE="+childFile, "LEDGER_GRACE_EXIT_FILE="+exitFile, "LEDGER_GRACE_TERM_FILE="+termFile,
-		"PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	environment = fixture.Env(environment)
-	root := t.TempDir()
-	mustGit(t, root, "init", "-q")
+	environment, repository, checkCalls := strictCaptureGitFixture(t, dir, root, body, fixture,
+		"LEDGER_GRACE_GROUP_FILE="+groupFile, "LEDGER_GRACE_CHILD_FILE="+childFile,
+		"LEDGER_GRACE_EXIT_FILE="+exitFile, "LEDGER_GRACE_TERM_FILE="+termFile)
 	captured := make(chan error, 1)
 	go func() {
-		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", commandEnv: environment, captureTimers: timers}, 300*time.Millisecond)
+		_, captureErr := CaptureTipBounded(Endpoint{Root: root, Remote: "blocked", Branch: "refs/heads/main", Repository: repository, commandEnv: environment, captureTimers: timers}, 300*time.Millisecond)
 		captured <- captureErr
 	}()
 	var wrapperID, groupID, childID int
@@ -1013,6 +1221,7 @@ exec "$LEDGER_GRACE_REAL_GIT" "$@"
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("transport did not time out: %v", err)
 	}
+	checkCalls()
 	if !grace.Fired() {
 		t.Fatal("transport did not spend the grace timer")
 	}
@@ -1204,38 +1413,86 @@ func parseHangingGitPIDs(groupData, childData []byte) (int, int, int, error) {
 
 func TestProjectAtReadsACommitWithoutMovingAnyRef(t *testing.T) {
 	t.Parallel()
-	_, clone := oneClone(t)
-	seedLedger(t, clone)
-	tip, exists, err := AcceptedLedgerTip(clone)
-	if err != nil || !exists {
-		t.Fatalf("accepted tip: %q %t %v", tip, exists, err)
+	endpoint, repository := fakeGoalEndpoint(t, vGoal("seen", StateQueued))
+	before := acceptedTipForEndpoint(t, endpoint)
+	goal := vGoal("unseen", StateQueued)
+	other := repository.store.client()
+	other.accepted = before
+	publisher := endpoint
+	publisher.Repository = other
+	result, err := Publish(publisher, PublishRequest{
+		Opid: "publish-unseen", Machine: "mac-a", Lineage: "lin-1", Intent: testIntentFor("open"), Message: "publish unseen goal",
+		Mutate: func(string) ([]Change, error) {
+			return []Change{{Path: livePath(goal.Id), Content: RenderFile(goal)}}, nil
+		},
+		Validate: func(commit string) error { return validateCommitFor(publisher, commit) },
+	})
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("publish immutable goal commit: %+v %v", result, err)
 	}
-	before := mustGit(t, clone, "rev-parse", AcceptedRef)
-	projection, err := ProjectAt(clone, tip)
-	if err != nil || projection.Tip != tip || projection.Tree == nil {
-		t.Fatalf("projection at the accepted tip: %+v err=%v", projection, err)
+	projection, err := projectAtForEndpoint(endpoint, result.Tip)
+	if err != nil || projection.Root != endpoint.Root || projection.Tip != result.Tip || projection.Tree == nil {
+		t.Fatalf("projection at the published tip: %+v err=%v", projection, err)
 	}
-	if after := mustGit(t, clone, "rev-parse", AcceptedRef); after != before {
+	if seen, unseen := projection.Tree.Live["seen"], projection.Tree.Live["unseen"]; seen == nil || seen.State != StateQueued || unseen == nil || unseen.State != StateQueued || unseen.Intent != goal.Intent {
+		t.Fatalf("projection did not parse the committed goal files: %+v", projection.Tree.Live)
+	}
+	if after := acceptedTipForEndpoint(t, endpoint); after != before {
 		t.Fatalf("a read moved the accepted ref: %q -> %q", before, after)
 	}
-	if _, err := ProjectAt(clone, "0000000000000000000000000000000000000000"); err == nil {
+	if _, err := projectAtForEndpoint(endpoint, "0000000000000000000000000000000000000000"); err == nil {
 		t.Fatal("an unreadable commit must refuse, not project")
 	}
 }
 
 func TestIsAncestorAnswersAllThreeShapes(t *testing.T) {
 	t.Parallel()
-	_, clone := oneClone(t)
-	seedLedger(t, clone)
-	tip := strings.TrimSpace(mustGit(t, clone, "rev-parse", AcceptedRef))
-	if ok, err := IsAncestor(clone, tip, tip); err != nil || !ok {
+	root := t.TempDir()
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "git-calls.log")
+	tip := strings.Repeat("a", 40)
+	parent := strings.Repeat("b", 40)
+	broken := strings.Repeat("c", 40)
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$*" >> %q
+[ "$#" -eq 8 ] && [ "$1" = -C ] && [ "$2" = %q ] &&
+    [ "$3" = -c ] && [ "$4" = core.logAllRefUpdates=false ] &&
+    [ "$5" = merge-base ] && [ "$6" = --is-ancestor ] || exit 97
+if [ "$7" = %q ] && [ "$8" = %q ]; then exit 0; fi
+if [ "$7" = %q ] && [ "$8" = %q ]; then exit 1; fi
+if [ "$7" = %q ] && [ "$8" = %q ]; then exit 23; fi
+exit 97
+`, logPath, root, parent, tip, tip, parent, broken, tip)
+	if err := testexec.WriteFile(filepath.Join(binDir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	environment := testEnvironment(os.Environ(), "PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if ok, err := isAncestorWithEnvironment(root, tip, tip, environment); err != nil || !ok {
 		t.Fatalf("a commit is its own ancestor: %t %v", ok, err)
 	}
-	parent := strings.TrimSpace(mustGit(t, clone, "rev-parse", tip+"^1"))
-	if ok, err := IsAncestor(clone, parent, tip); err != nil || !ok {
+	if _, err := os.Stat(logPath); !os.IsNotExist(err) {
+		t.Fatalf("equality invoked git: %v", err)
+	}
+	if ok, err := isAncestorWithEnvironment(root, parent, tip, environment); err != nil || !ok {
 		t.Fatalf("a first parent precedes its child: %t %v", ok, err)
 	}
-	if ok, err := IsAncestor(clone, tip, parent); err != nil || ok {
+	if ok, err := isAncestorWithEnvironment(root, tip, parent, environment); err != nil || ok {
 		t.Fatalf("a child does not precede its parent: %t %v", ok, err)
+	}
+	if ok, err := isAncestorWithEnvironment(root, broken, tip, environment); err == nil || ok {
+		t.Fatalf("a merge-base failure other than exit 1 must remain an error: %t %v", ok, err)
+	} else {
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) || exit.ExitCode() != 23 {
+			t.Fatalf("merge-base failure lost its exit status: %v", err)
+		}
+	}
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("-C %s -c core.logAllRefUpdates=false merge-base --is-ancestor %s %s\n-C %s -c core.logAllRefUpdates=false merge-base --is-ancestor %s %s\n-C %s -c core.logAllRefUpdates=false merge-base --is-ancestor %s %s\n", root, parent, tip, root, tip, parent, root, broken, tip)
+	if string(logBytes) != want {
+		t.Fatalf("unexpected git calls:\n%s", logBytes)
 	}
 }

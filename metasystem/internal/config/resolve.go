@@ -34,6 +34,19 @@ type BatchLanding struct {
 	now     func() time.Time
 }
 
+type gitRequest struct {
+	Directory         string
+	Args, Environment []string
+}
+
+type gitRunner func(gitRequest) ([]byte, error)
+
+func runGit(request gitRequest) ([]byte, error) {
+	command := exec.Command("git", append([]string{"-C", request.Directory}, request.Args...)...)
+	command.Env = request.Environment
+	return command.Output()
+}
+
 // NewBatchLanding binds already-resolved owner settings. It is used by the
 // production supervisor, which runs inside the dedicated landing checkout and
 // therefore cannot resolve that same checkout as if it were a seat.
@@ -53,7 +66,11 @@ func NewBatchLanding(root string, maxWait time.Duration, now func() time.Time) (
 // ResolveExplicitBatchLanding validates an explicitly supplied landing root
 // with the same existence and non-seat rules as configured resolution.
 func ResolveExplicitBatchLanding(root, seatRoot string, maxWait time.Duration, now func() time.Time) (BatchLanding, error) {
-	validated, err := batchLandingRoot(root, seatRoot)
+	return resolveExplicitBatchLandingWithRunner(root, seatRoot, maxWait, now, runGit)
+}
+
+func resolveExplicitBatchLandingWithRunner(root, seatRoot string, maxWait time.Duration, now func() time.Time, runner gitRunner) (BatchLanding, error) {
+	validated, err := batchLandingRootWithRunner(root, seatRoot, runner)
 	if err != nil {
 		return BatchLanding{}, err
 	}
@@ -61,6 +78,10 @@ func ResolveExplicitBatchLanding(root, seatRoot string, maxWait time.Duration, n
 }
 
 func ResolveBatchLanding(confPath, seatRoot string, now func() time.Time) (BatchLanding, error) {
+	return resolveBatchLandingWithRunner(confPath, seatRoot, now, runGit)
+}
+
+func resolveBatchLandingWithRunner(confPath, seatRoot string, now func() time.Time, runner gitRunner) (BatchLanding, error) {
 	if now == nil {
 		return BatchLanding{}, fmt.Errorf("resolve batch landing: an injected clock is required")
 	}
@@ -68,7 +89,7 @@ func ResolveBatchLanding(confPath, seatRoot string, now func() time.Time) (Batch
 	if err != nil {
 		return BatchLanding{}, fmt.Errorf("resolve %s: %w", BatchRootKey, err)
 	}
-	root, err := batchLandingRoot(rawRoot, seatRoot)
+	root, err := batchLandingRootWithRunner(rawRoot, seatRoot, runner)
 	if err != nil {
 		return BatchLanding{}, err
 	}
@@ -83,7 +104,7 @@ func ResolveBatchLanding(confPath, seatRoot string, now func() time.Time) (Batch
 	return BatchLanding{Root: root, MaxWait: wait, now: now}, nil
 }
 
-func batchLandingRoot(raw, seatRoot string) (string, error) {
+func batchLandingRootWithRunner(raw, seatRoot string, runner gitRunner) (string, error) {
 	if !filepath.IsAbs(raw) {
 		return "", fmt.Errorf("%s must be absolute, got %q", BatchRootKey, raw)
 	}
@@ -91,9 +112,10 @@ func batchLandingRoot(raw, seatRoot string) (string, error) {
 	if root == resolvePath(seatRoot) {
 		return "", fmt.Errorf("%s must name a dedicated non-seat checkout", BatchRootKey)
 	}
-	command := exec.Command("git", "-C", root, "rev-parse", "--show-toplevel")
-	command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
-	top, err := command.Output()
+	if runner == nil {
+		return "", fmt.Errorf("resolve %s: a Git runner is required", BatchRootKey)
+	}
+	top, err := runner(gitRequest{Directory: root, Args: []string{"rev-parse", "--show-toplevel"}, Environment: []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}})
 	if err != nil || resolvePath(strings.TrimSpace(string(top))) != root {
 		return "", fmt.Errorf("%s must name an existing checkout, got %q", BatchRootKey, raw)
 	}

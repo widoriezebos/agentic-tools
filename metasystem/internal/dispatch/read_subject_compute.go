@@ -21,10 +21,45 @@ type ReadSubjectRequest struct {
 	RepoRoot, Role, Reviews, Workspace, Design, DeclaredOutputs, RootJob string
 }
 
+type readSubjectFacts interface {
+	CommitParent(repo, commit string) (string, error)
+	CommitTree(repo, commit string) (string, error)
+	CommitDiff(repo, parentExpression, commit string) ([]byte, error)
+	WorkspaceHead(workspace string) (string, error)
+	LiveWorkspaceTree(repoRoot, workspaceRoot string) (string, error)
+}
+
+type gitReadSubjectFacts struct{}
+
+func (gitReadSubjectFacts) CommitParent(repo, commit string) (string, error) {
+	return gitOutput(repo, "rev-parse", commit+"^")
+}
+
+func (gitReadSubjectFacts) CommitTree(repo, commit string) (string, error) {
+	return gitOutput(repo, "rev-parse", commit+"^{tree}")
+}
+
+func (gitReadSubjectFacts) CommitDiff(repo, parentExpression, commit string) ([]byte, error) {
+	return gitRawOutput(repo, "diff", "--binary", "--full-index", parentExpression, commit)
+}
+
+func (gitReadSubjectFacts) WorkspaceHead(workspace string) (string, error) {
+	return gitOutput(workspace, "rev-parse", "HEAD")
+}
+
+func (gitReadSubjectFacts) LiveWorkspaceTree(repoRoot, workspaceRoot string) (string, error) {
+	prefix, _ := projectInstallPrefix(repoRoot)
+	return (gittree.Workspace{Dir: filepath.Join(workspaceRoot, prefix)}).Snapshot("HEAD")
+}
+
 // ComputeReadSubject returns present=false with no error when a live
 // subject's reviewed round has no review.json or diff.patch yet. The fold's
 // existing missing-diff refusal remains responsible for that incomplete read.
 func ComputeReadSubject(req ReadSubjectRequest) (ReadSubject, bool, error) {
+	return computeReadSubject(req, gitReadSubjectFacts{})
+}
+
+func computeReadSubject(req ReadSubjectRequest, facts readSubjectFacts) (ReadSubject, bool, error) {
 	state := loadCritiqueState(req.RepoRoot)
 	reviews, design, outputsFile, outputsDigest := req.Reviews, req.Design, req.DeclaredOutputs, ""
 	if req.RootJob != "" {
@@ -40,11 +75,11 @@ func ComputeReadSubject(req ReadSubjectRequest) (ReadSubject, bool, error) {
 
 	switch req.Role {
 	case "design-critic":
-		subject, err := designReadSubject(req.Workspace, design, outputsFile, outputsDigest)
+		subject, err := designReadSubject(facts, req.Workspace, design, outputsFile, outputsDigest)
 		return subject, err == nil, err
 	case "code-critic":
 		if validCommitReview.MatchString(reviews) {
-			subject, err := commitReadSubject(req.RepoRoot, reviews)
+			subject, err := commitReadSubject(facts, req.RepoRoot, reviews)
 			return subject, err == nil, err
 		}
 	case "warden":
@@ -64,7 +99,7 @@ func ComputeReadSubject(req ReadSubjectRequest) (ReadSubject, bool, error) {
 	if err != nil || !present {
 		return subject, present, err
 	}
-	if err := checkLiveSubjectWorkspace(req.RepoRoot, workspaceRoot, subject); err != nil {
+	if err := checkLiveSubjectWorkspace(facts, req.RepoRoot, workspaceRoot, subject); err != nil {
 		return ReadSubject{}, false, err
 	}
 	return subject, true, nil
@@ -164,17 +199,17 @@ func liveReadSubject(state critiqueState, reviewedJob string) (subject ReadSubje
 	}, asString(reviewed["workspaceRoot"]), true, nil
 }
 
-func commitReadSubject(repoRoot, reviews string) (ReadSubject, error) {
+func commitReadSubject(facts readSubjectFacts, repoRoot, reviews string) (ReadSubject, error) {
 	commit := strings.TrimPrefix(reviews, "commit:")
-	parent, err := gitOutput(repoRoot, "rev-parse", commit+"^")
+	parent, err := facts.CommitParent(repoRoot, commit)
 	if err != nil {
 		return ReadSubject{}, fmt.Errorf("commit subject %s has no readable parent: %v", reviews, err)
 	}
-	tree, err := gitOutput(repoRoot, "rev-parse", commit+"^{tree}")
+	tree, err := facts.CommitTree(repoRoot, commit)
 	if err != nil {
 		return ReadSubject{}, fmt.Errorf("commit subject %s has no readable tree: %v", reviews, err)
 	}
-	patch, err := gitRawOutput(repoRoot, "diff", "--binary", "--full-index", commit+"^", commit)
+	patch, err := facts.CommitDiff(repoRoot, commit+"^", commit)
 	if err != nil {
 		return ReadSubject{}, fmt.Errorf("commit subject %s has no readable parent diff: %v", reviews, err)
 	}
@@ -185,7 +220,7 @@ func commitReadSubject(repoRoot, reviews string) (ReadSubject, error) {
 	}, nil
 }
 
-func designReadSubject(workspace, design, outputsFile, recordedOutputsDigest string) (ReadSubject, error) {
+func designReadSubject(facts readSubjectFacts, workspace, design, outputsFile, recordedOutputsDigest string) (ReadSubject, error) {
 	abs := design
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(workspace, design)
@@ -213,7 +248,7 @@ func designReadSubject(workspace, design, outputsFile, recordedOutputsDigest str
 	if outputsDigest == "" {
 		return ReadSubject{}, fmt.Errorf("design subject has no declared outputs digest")
 	}
-	reviewedCommit, err := gitOutput(workspace, "rev-parse", "HEAD")
+	reviewedCommit, err := facts.WorkspaceHead(workspace)
 	if err != nil {
 		return ReadSubject{}, fmt.Errorf("design workspace has no readable HEAD: %v", err)
 	}
@@ -226,12 +261,11 @@ func designReadSubject(workspace, design, outputsFile, recordedOutputsDigest str
 	}, nil
 }
 
-func checkLiveSubjectWorkspace(repoRoot, workspaceRoot string, subject ReadSubject) error {
+func checkLiveSubjectWorkspace(facts readSubjectFacts, repoRoot, workspaceRoot string, subject ReadSubject) error {
 	observed := "unavailable"
 	info, statErr := os.Stat(workspaceRoot)
 	if statErr == nil && info.IsDir() {
-		prefix, _ := projectInstallPrefix(repoRoot)
-		snapshot, snapshotErr := (gittree.Workspace{Dir: filepath.Join(workspaceRoot, prefix)}).Snapshot("HEAD")
+		snapshot, snapshotErr := facts.LiveWorkspaceTree(repoRoot, workspaceRoot)
 		if snapshotErr == nil {
 			observed = snapshot
 			if observed == subject.ReviewedProjectTree {

@@ -58,6 +58,7 @@ var inheritedControlNames = []string{
 	"METASYSTEM_PROOF_CONTROL_ROOT",
 	"METASYSTEM_PROOF_RUN_ROOT",
 	"METASYSTEM_SUITE_PROGRESS_ROOT",
+	"METASYSTEM_TESTING_WORKERS",
 }
 
 var inheritedControlPrefixes = []string{

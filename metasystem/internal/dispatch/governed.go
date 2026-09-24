@@ -60,6 +60,10 @@ func ObserveGovernedRun(repoRoot string, record *run.Record, now time.Time) run.
 }
 
 func observeGovernedRun(repoRoot string, record *run.Record, now time.Time, excludeRunID string) run.AssumptionObservation {
+	return observeGovernedRunWithReads(repoRoot, record, now, excludeRunID, concreteGoalAdmissionReads())
+}
+
+func observeGovernedRunWithReads(repoRoot string, record *run.Record, now time.Time, excludeRunID string, reads goalAdmissionReads) run.AssumptionObservation {
 	unavailable := func(field string) run.AssumptionObservation {
 		return run.AssumptionObservation{ObservedAt: now.UTC().Format(time.RFC3339), AssumptionState: run.AssumptionUnavailable,
 			DriftedFields: []string{field}}
@@ -67,7 +71,7 @@ func observeGovernedRun(repoRoot string, record *run.Record, now time.Time, excl
 	if record == nil || record.Governed == nil {
 		return unavailable("governedAttempt")
 	}
-	binding, err := ResolveGoalBinding(repoRoot, record.GoalId, now)
+	binding, err := resolveGoalBindingWithReads(repoRoot, record.GoalId, now, reads)
 	if err != nil || binding.Revision != record.Governed.GoalRevision || binding.File.Obligation == nil ||
 		binding.File.Obligation.Revision != record.Governed.ObligationRevision {
 		return unavailable(governedObligationRevisionMismatch)
@@ -94,7 +98,11 @@ func observeGovernedRun(repoRoot string, record *run.Record, now time.Time, excl
 // SettledSpendAtConclusion projects every spend owner except the run whose
 // terminal record is being written.
 func SettledSpendAtConclusion(repoRoot string, record *run.Record, now time.Time) (run.SpendSnapshot, string) {
-	binding, err := ResolveGoalBinding(repoRoot, record.GoalId, now)
+	return settledSpendAtConclusionWithReads(repoRoot, record, now, concreteGoalAdmissionReads())
+}
+
+func settledSpendAtConclusionWithReads(repoRoot string, record *run.Record, now time.Time, reads goalAdmissionReads) (run.SpendSnapshot, string) {
+	binding, err := resolveGoalBindingWithReads(repoRoot, record.GoalId, now, reads)
 	if err != nil {
 		return run.SpendSnapshot{}, fmt.Sprintf("record=%s reason=%s", record.RunId, err)
 	}
@@ -113,15 +121,19 @@ func SettledSpendAtConclusion(repoRoot string, record *run.Record, now time.Time
 // NewConcludingRunStore is the production constructor for a run store that
 // may terminalize a governed run.
 func NewConcludingRunStore(root string, currentEpoch func() (*int64, bool)) *run.Store {
+	return newConcludingRunStoreWithReads(root, currentEpoch, concreteGoalAdmissionReads())
+}
+
+func newConcludingRunStoreWithReads(root string, currentEpoch func() (*int64, bool), reads goalAdmissionReads) *run.Store {
 	return &run.Store{Root: root, CurrentEpoch: currentEpoch,
 		AdmitGoverned: func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {
-			return EvaluateGovernedRunAdmission(root, request, time.Now().UTC())
+			return evaluateGovernedRunAdmissionWithReads(root, request, time.Now().UTC(), reads)
 		},
 		ObserveGoverned: func(record *run.Record, now time.Time) run.AssumptionObservation {
-			return observeGovernedRun(root, record, now, record.RunId)
+			return observeGovernedRunWithReads(root, record, now, record.RunId, reads)
 		},
 		ProjectSpend: func(record *run.Record, now time.Time) (run.SpendSnapshot, string) {
-			return SettledSpendAtConclusion(root, record, now)
+			return settledSpendAtConclusionWithReads(root, record, now, reads)
 		},
 	}
 }
@@ -129,7 +141,11 @@ func NewConcludingRunStore(root string, currentEpoch func() (*int64, bool)) *run
 // EvaluateGovernedRunAdmission binds authorization and the complete existing
 // budget projection to the exact obligation revision about to be launched.
 func EvaluateGovernedRunAdmission(repoRoot string, request run.GovernedAdmissionRequest, now time.Time) (run.GovernedAdmissionResult, error) {
-	binding, err := ResolveGoalBinding(repoRoot, request.GoalID, now)
+	return evaluateGovernedRunAdmissionWithReads(repoRoot, request, now, concreteGoalAdmissionReads())
+}
+
+func evaluateGovernedRunAdmissionWithReads(repoRoot string, request run.GovernedAdmissionRequest, now time.Time, reads goalAdmissionReads) (run.GovernedAdmissionResult, error) {
+	binding, err := resolveGoalBindingWithReads(repoRoot, request.GoalID, now, reads)
 	if err != nil {
 		return run.GovernedAdmissionResult{}, err
 	}

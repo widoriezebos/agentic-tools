@@ -52,7 +52,7 @@ func SetObligationApprovalToken(goalID string, state ObligationState, owner stri
 func Asked(r VerbRequest, id, qid, kind, firstFact string) (PublishResult, error) {
 	marker := "ASKED " + qid + " (" + kind + "): " + firstFact
 	return Publish(r.Endpoint, PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, Intent: Intent{Verb: "ask", Targets: []string{id}}, Message: "goal ask " + id, Mutate: func(tip string) ([]Change, error) {
-		t, err := loadTree(r.Endpoint.Root, tip)
+		t, err := loadTreeFor(r.Endpoint, tip)
 		if err != nil {
 			return nil, err
 		}
@@ -70,7 +70,7 @@ func Asked(r VerbRequest, id, qid, kind, firstFact string) (PublishResult, error
 		}
 		touch(f, r, "ask", []string{id})
 		return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
-	}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
+	}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }})
 }
 
 func AuthenticatedChannelApproval(repoRoot, goalID, opid, strictToken string, now time.Time) (governance.RecordedChannelAuthority, error) {
@@ -78,6 +78,15 @@ func AuthenticatedChannelApproval(repoRoot, goalID, opid, strictToken string, no
 	if err != nil {
 		return governance.RecordedChannelAuthority{}, err
 	}
+	return authenticatedChannelApprovalForEndpoint(ep, goalID, opid, strictToken, now)
+}
+
+// AuthenticatedChannelApprovalAtEndpoint checks a recorded channel answer on the supplied endpoint.
+func AuthenticatedChannelApprovalAtEndpoint(ep Endpoint, goalID, opid, strictToken string, now time.Time) (governance.RecordedChannelAuthority, error) {
+	return authenticatedChannelApprovalForEndpoint(ep, goalID, opid, strictToken, now)
+}
+
+func authenticatedChannelApprovalForEndpoint(ep Endpoint, goalID, opid, strictToken string, now time.Time) (governance.RecordedChannelAuthority, error) {
 	p, err := Project(ep, false, now)
 	if err != nil {
 		return governance.RecordedChannelAuthority{}, err
@@ -135,7 +144,7 @@ func answerRequest(r VerbRequest, id, qid, text, wants string, proof AnswerProof
 	}
 	args := map[string]string{"question": qid, "text": text, "wants": wants, "provider": proof.Provider, "user": proof.User, "ref": proof.Ref, "step": strconv.FormatInt(proof.Step, 10)}
 	return PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, Intent: Intent{Verb: "answer", Targets: []string{id}, Args: args}, Message: "goal answer " + id, Mutate: func(tip string) ([]Change, error) {
-		t, err := loadTree(r.Endpoint.Root, tip)
+		t, err := loadTreeFor(r.Endpoint, tip)
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +160,7 @@ func answerRequest(r VerbRequest, id, qid, text, wants string, proof AnswerProof
 			return nil, err
 		}
 		return []Change{change}, nil
-	}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }}
+	}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }}
 }
 
 func answerGoalChange(t *TreeGoals, id, qid, text, reason, opid, at string, proof AnswerProof) (Change, error) {
@@ -351,7 +360,11 @@ func (e *TreeReadError) Error() string {
 }
 
 func loadTree(root, tip string) (*TreeGoals, error) {
-	files, err := ReadCommitGoals(root, tip)
+	return loadTreeFor(Endpoint{Root: root}, tip)
+}
+
+func loadTreeFor(e Endpoint, tip string) (*TreeGoals, error) {
+	files, err := readCommitGoals(e, tip)
 	if err != nil {
 		return nil, err
 	}
@@ -829,7 +842,7 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep, blocks string, tie
 			mergeIntentArgs(budgetIntentArgs(*budget), riskIntentArgs(risk, why))))},
 		Message: message,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -873,7 +886,7 @@ func openRequest(r VerbRequest, id, intent, origin, nextStep, blocks string, tie
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}, nil
 }
 
@@ -978,7 +991,7 @@ func returnBlockerParks(t *TreeGoals, r VerbRequest, finished string) []*GoalFil
 const ClaimQuotaCode = "GOAL_CLAIM_QUOTA"
 
 func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
-	if detail := brain.Fence(r.Endpoint.Root, "claim", ExistingLedgerIdentity(r.Endpoint.Root)); detail != "" {
+	if detail := brain.Fence(r.Endpoint.Root, "claim", existingLedgerIdentityFor(r.Endpoint)); detail != "" {
 		return PublishResult{}, fmt.Errorf("%s", detail)
 	}
 	if r.Actor.Human != "" {
@@ -1024,7 +1037,7 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "handover", Targets: []string{id}, Args: claimIntentArgs(r, args)}, Message: "goal handover " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -1087,7 +1100,7 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 				Machine: targetMachine, ClaimEpoch: targetClaimEpoch, FenceEpoch: capability.FenceEpoch}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }
 
@@ -1105,7 +1118,7 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: claimIntentArgs(r, args)},
 		Message: "goal claim " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -1162,7 +1175,7 @@ func claimRequest(r VerbRequest, id string, supplied *Budget) PublishRequest {
 			}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -1213,7 +1226,7 @@ func extendBudgetRequest(r VerbRequest, id string, offer BudgetExtensionOffer) P
 		Intent:  Intent{Verb: "extend-budget", Targets: []string{id}, Args: args},
 		Message: "goal extend-budget " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -1270,7 +1283,7 @@ func extendBudgetRequest(r VerbRequest, id string, offer BudgetExtensionOffer) P
 			}
 			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -1310,7 +1323,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 		}())},
 		Message: "goal set-budget " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -1417,7 +1430,7 @@ func setBudgetRequest(r VerbRequest, id string, budget Budget, proof *humanautho
 			changes := armApprovalGate(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}})
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -1503,6 +1516,10 @@ func ResolveAttorney(root, id, verb string, now time.Time) (PowerOfAttorneyEntry
 	if err != nil {
 		return PowerOfAttorneyEntry{}, err
 	}
+	return resolveAttorneyForEndpoint(e, id, verb, now)
+}
+
+func resolveAttorneyForEndpoint(e Endpoint, id, verb string, now time.Time) (PowerOfAttorneyEntry, error) {
 	p, err := Project(e, false, now)
 	if err != nil {
 		return PowerOfAttorneyEntry{}, err
@@ -1565,7 +1582,7 @@ func Grant(r VerbRequest, proof *humanauthority.Proof, tiers []uint8, verbs []st
 		})},
 		Message: "goal grant",
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -1580,7 +1597,7 @@ func Grant(r VerbRequest, proof *humanauthority.Proof, tiers []uint8, verbs []st
 			t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "grant", Actor: r.Actor.historyActor(), Keep: -1, Reason: reason})
 			return []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }
 
@@ -1601,7 +1618,7 @@ func Revoke(r VerbRequest, proof *humanauthority.Proof, id string) (PublishResul
 		Intent:  Intent{Verb: "revoke", Args: intentArgs(r, map[string]string{"entry": id})},
 		Message: "goal revoke " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -1624,7 +1641,7 @@ func Revoke(r VerbRequest, proof *humanauthority.Proof, id string) (PublishResul
 			}
 			return nil, fmt.Errorf("no power of attorney %s is recorded", id)
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }
 
@@ -1653,7 +1670,7 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 		})},
 		Message: "goal set-obligation " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -1706,7 +1723,7 @@ func SetObligation(r VerbRequest, id string, proposed GovernedObligation, proof 
 			f.Obligation = &o
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
 }
 
@@ -1724,7 +1741,7 @@ func releaseRequest(r VerbRequest, id string) PublishRequest {
 		Intent:  Intent{Verb: "release", Targets: []string{id}, Args: intentArgs(r, nil)},
 		Message: "goal release " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -1756,7 +1773,7 @@ func releaseRequest(r VerbRequest, id string) PublishRequest {
 			touchDisplaced(f, r, "release", []string{id}, displaced)
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -1780,7 +1797,7 @@ func landReadyRequest(r VerbRequest, id string) PublishRequest {
 		Intent:  Intent{Verb: "land-ready", Targets: []string{id}, Args: intentArgs(r, nil)},
 		Message: "goal land-ready " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -1814,7 +1831,7 @@ func landReadyRequest(r VerbRequest, id string) PublishRequest {
 			f.Landing = &LandingRecord{At: r.stamp(), Opid: r.opid()}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -1849,7 +1866,7 @@ func Done(r VerbRequest, id, conclusion string) (PublishResult, error) {
 	}
 	var retroErr error
 	var archived *GoalFile
-	tree, treeErr := loadTree(r.Endpoint.Root, result.Tip)
+	tree, treeErr := loadTreeFor(r.Endpoint, result.Tip)
 	if treeErr != nil {
 		retroErr = fmt.Errorf("goal done confirmed but arc retro debt could not be classified: %w", treeErr)
 	} else {
@@ -1898,7 +1915,7 @@ func DeferFindings(r VerbRequest, id string, obligations []ReviewObligation) (Pu
 	return Publish(r.Endpoint, PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "defer-findings", Targets: []string{id}}, Message: "goal defer-findings " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -1927,7 +1944,7 @@ func DeferFindings(r VerbRequest, id string, obligations []ReviewObligation) (Pu
 			}
 			touch(f, r, "defer-findings", []string{id})
 			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
-		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
+		}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }})
 }
 
 type DischargeEvidence struct {
@@ -1941,7 +1958,7 @@ func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation s
 	return Publish(r.Endpoint, PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "discharge-review-obligation", Targets: []string{id}}, Message: "goal discharge-review-obligation " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -1985,7 +2002,7 @@ func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation s
 				path = archivedPath(t, id)
 			}
 			return []Change{{Path: path, Content: RenderFile(f)}}, nil
-		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
+		}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }})
 }
 
 func proveFixtureObligation(evidence DischargeEvidence, obligation ReviewObligation) error {
@@ -2084,7 +2101,7 @@ func AcceptedRiskDecision(r VerbRequest, id, finding, chain, by, why string, pro
 	return Publish(r.Endpoint, PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "accept-risk", Targets: []string{id}}, Message: "goal accept-risk " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -2145,11 +2162,15 @@ func AcceptedRiskDecision(r VerbRequest, id, finding, chain, by, why string, pro
 				path = archivedPath(t, id)
 			}
 			return []Change{{Path: path, Content: RenderFile(f)}}, nil
-		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }})
+		}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }})
 }
 
 func AcceptedRiskDecisionOpID(repoRoot, id, finding, chain string, now time.Time) (string, error) {
-	endpoint, err := ResolveEndpoint(repoRoot)
+	return acceptedRiskDecisionOpIDWithResolver(repoRoot, id, finding, chain, now, ResolveEndpoint)
+}
+
+func acceptedRiskDecisionOpIDWithResolver(repoRoot, id, finding, chain string, now time.Time, resolve func(string) (Endpoint, error)) (string, error) {
+	endpoint, err := resolve(repoRoot)
 	if err != nil {
 		return "", err
 	}
@@ -2189,7 +2210,7 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 		})},
 		Message: "goal done " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -2211,7 +2232,7 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 					return nil, fmt.Errorf("goal %s has open review obligation finding=%s chain=%s test=%s", id, obligation.Finding, obligation.Chain, obligation.Test)
 				}
 			}
-			if err := doneCarryRefusal(r.Endpoint.Root, t, carryCodeTip(r.Endpoint, tip), id, f, r.Now); err != nil {
+			if err := doneCarryRefusalFor(r.Endpoint, t, carryCodeTip(r.Endpoint, tip), id, f, r.Now); err != nil {
 				return nil, err
 			}
 			// Queued concludes directly; a foreign
@@ -2272,7 +2293,7 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -2337,7 +2358,7 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 		})},
 		Message: "goal park " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -2399,7 +2420,7 @@ func parkRequest(r VerbRequest, id, because string) PublishRequest {
 			})
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -2443,7 +2464,7 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 		Intent:  Intent{Verb: "unpark", Targets: []string{id}, Args: intentArgs(r, args)},
 		Message: "goal unpark " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -2546,7 +2567,7 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -2574,7 +2595,7 @@ func reopenAbandonedRequest(r VerbRequest, id string) PublishRequest {
 		Intent:  Intent{Verb: "reopen", Targets: []string{id}, Args: intentArgs(r, map[string]string{"from": "abandoned"})},
 		Message: "goal reopen " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -2654,7 +2675,7 @@ func reopenAbandonedRequest(r VerbRequest, id string) PublishRequest {
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -2680,7 +2701,7 @@ func carryAbandonedRequest(r VerbRequest, id, successor string) PublishRequest {
 		Intent:  Intent{Verb: "carry", Targets: []string{id}, Args: intentArgs(r, map[string]string{"to": successor})},
 		Message: "goal carry " + id + " -> " + successor,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -2704,7 +2725,7 @@ func carryAbandonedRequest(r VerbRequest, id, successor string) PublishRequest {
 			line.Reason = "carried to " + successor
 			return []Change{{Path: archivedPath(t, id), Content: RenderFile(f)}}, nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -2717,7 +2738,7 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 		Intent:  Intent{Verb: "reopen", Targets: []string{id}, Args: intentArgs(r, nil)},
 		Message: "goal reopen " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -2800,7 +2821,7 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -2865,7 +2886,7 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 		Intent:  Intent{Verb: "edit", Targets: []string{id}, Deltas: editDeltas(id, fields), Args: intentArgs(r, map[string]string{"why": fields.Why, "evidence": fields.Evidence})},
 		Message: "goal edit " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -2988,7 +3009,7 @@ func editRequestReportingRiskRaise(r VerbRequest, id string, fields EditFields, 
 			}
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}, nil
 }
 
@@ -3033,7 +3054,7 @@ func declareFreeRequest(r VerbRequest, origin, digest string) PublishRequest {
 		})},
 		Message: "goal declare-free",
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -3060,7 +3081,7 @@ func declareFreeRequest(r VerbRequest, origin, digest string) PublishRequest {
 			})
 			return ackDisplacements(t, r, []Change{{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -3085,7 +3106,7 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 		})},
 		Message: "goal steal " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -3142,7 +3163,7 @@ func stealRequest(r VerbRequest, id string) PublishRequest {
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -3169,7 +3190,7 @@ func openClaimRequest(r VerbRequest, id, intent, origin, nextStep string, budget
 		Mutate: func(tip string) ([]Change, error) {
 			return nil, fmt.Errorf("APPROVAL_REQUIRED: recovery cannot replay retired open --claim for goal %s; close this entry by hand", id)
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}, nil
 }
 
@@ -3197,7 +3218,7 @@ func pruneRequest(r VerbRequest, keep int) PublishRequest {
 		})},
 		Message: "goal prune",
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -3266,7 +3287,7 @@ func pruneRequest(r VerbRequest, keep int) PublishRequest {
 			changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -3356,7 +3377,7 @@ func classifyArcJoin(t *TreeGoals, arc, excludeID string, actor Actor) arcJoinSt
 // members, skips already-owned and parked members, and loses atomically to
 // any foreign claim it encounters.
 func ClaimArc(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
-	if detail := brain.Fence(r.Endpoint.Root, "claim", ExistingLedgerIdentity(r.Endpoint.Root)); detail != "" {
+	if detail := brain.Fence(r.Endpoint.Root, "claim", existingLedgerIdentityFor(r.Endpoint)); detail != "" {
 		return PublishResult{}, fmt.Errorf("%s", detail)
 	}
 	if r.Actor.Human != "" {
@@ -3381,7 +3402,7 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 		Intent:  Intent{Verb: "claim", Targets: []string{id}, Args: claimIntentArgs(r, args)},
 		Message: "goal claim " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -3444,7 +3465,7 @@ func claimArcRequest(r VerbRequest, id string, supplied *Budget) PublishRequest 
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -3464,7 +3485,7 @@ func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 		Intent:  Intent{Verb: "release", Targets: []string{id}, Args: intentArgs(r, map[string]string{"cascade": "arc"})},
 		Message: "goal release " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -3507,7 +3528,7 @@ func releaseArcRequest(r VerbRequest, id string) PublishRequest {
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -3533,7 +3554,7 @@ func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 		})},
 		Message: "goal park " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -3594,7 +3615,7 @@ func parkArcRequest(r VerbRequest, id, because string) PublishRequest {
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -3614,7 +3635,7 @@ func unparkArcRequest(r VerbRequest, id string) PublishRequest {
 		Intent:  Intent{Verb: "unpark", Targets: []string{id}, Args: intentArgs(r, map[string]string{"cascade": "arc"})},
 		Message: "goal unpark " + id + " (arc cascade)",
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -3665,7 +3686,7 @@ func unparkArcRequest(r VerbRequest, id string) PublishRequest {
 			}
 			return ackDisplacements(t, r, changes), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -3685,7 +3706,7 @@ func detachRequest(r VerbRequest, id string) PublishRequest {
 		Intent:  Intent{Verb: "detach", Targets: []string{id}, Args: intentArgs(r, nil)},
 		Message: "goal detach " + id,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -3720,7 +3741,7 @@ func detachRequest(r VerbRequest, id string) PublishRequest {
 			touchDisplaced(f, r, "detach", []string{id}, displaced)
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -3778,7 +3799,7 @@ func setPinRequest(r VerbRequest, id, pin string) PublishRequest {
 		Intent:  Intent{Verb: "set-pin", Targets: []string{id}, Args: intentArgs(r, map[string]string{"pin": pin})},
 		Message: "goal set-pin " + id + " -> " + pin,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -3806,7 +3827,7 @@ func setPinRequest(r VerbRequest, id, pin string) PublishRequest {
 			touch(f, r, "set-pin", []string{id})
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -3826,7 +3847,7 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 		Intent:  Intent{Verb: "set-arc", Targets: []string{id}, Args: intentArgs(r, map[string]string{"arc": arc})},
 		Message: "goal set-arc " + id + " -> " + arc,
 		Mutate: func(tip string) ([]Change, error) {
-			t, err := loadTree(r.Endpoint.Root, tip)
+			t, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -3938,7 +3959,7 @@ func setArcRequest(r VerbRequest, id, arc string) PublishRequest {
 			touchDisplaced(f, r, "set-arc", []string{id}, displaced)
 			return ackDisplacements(t, r, []Change{{Path: livePath(id), Content: RenderFile(f)}}), nil
 		},
-		Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) },
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
 }
 
@@ -4234,17 +4255,25 @@ func commitWithTrailer(root, revision, key, value string) (string, error) {
 }
 
 func carryAnchorAndCommit(root, codeTip, opid string) (string, string, error) {
-	anchor, err := commitWithTrailer(root, codeTip, "Goal-Transaction", opid)
+	return carryAnchorAndCommitFor(Endpoint{Root: root}, codeTip, opid)
+}
+
+func carryAnchorAndCommitFor(endpoint Endpoint, codeTip, opid string) (string, string, error) {
+	anchor, err := endpoint.repository().CommitWithTrailer(codeTip, "Goal-Transaction", opid)
 	if err != nil || anchor == "" {
 		return anchor, "", err
 	}
-	commit, err := commitWithTrailer(root, anchor+".."+codeTip, "Carry", opid)
+	commit, err := endpoint.repository().CommitWithTrailer(anchor+".."+codeTip, "Carry", opid)
 	return anchor, commit, err
 }
 
 // CarryConsumptionAt checks ledger rows first and then the anchored code
 // range; no timestamp participates in consumption.
 func CarryConsumptionAt(root string, tree *TreeGoals, codeTip string, word CarryWord) (CarryConsumption, error) {
+	return carryConsumptionAtFor(Endpoint{Root: root}, tree, codeTip, word)
+}
+
+func carryConsumptionAtFor(endpoint Endpoint, tree *TreeGoals, codeTip string, word CarryWord) (CarryConsumption, error) {
 	if _, row, ok := carriedRow(tree, word.History.Opid); ok {
 		if strings.HasPrefix(row.Reason, "superseded ") {
 			match := regexp.MustCompile(`(^|\s)by=([^\s]+)`).FindStringSubmatch(row.Reason)
@@ -4262,7 +4291,7 @@ func CarryConsumptionAt(root string, tree *TreeGoals, codeTip string, word Carry
 	if codeTip == "" {
 		return CarryConsumption{Kind: "none"}, nil
 	}
-	anchor, commit, err := carryAnchorAndCommit(root, codeTip, word.History.Opid)
+	anchor, commit, err := carryAnchorAndCommitFor(endpoint, codeTip, word.History.Opid)
 	if err != nil {
 		return CarryConsumption{}, err
 	}
@@ -4336,16 +4365,20 @@ func carryCodeTip(endpoint Endpoint, capturedTip string) string {
 }
 
 func openCarryWords(root string, tree *TreeGoals, codeTip, seat string, now time.Time) ([]CarryWord, error) {
+	return openCarryWordsFor(Endpoint{Root: root}, tree, codeTip, seat, now)
+}
+
+func openCarryWordsFor(endpoint Endpoint, tree *TreeGoals, codeTip, seat string, now time.Time) ([]CarryWord, error) {
 	var open []CarryWord
 	for _, word := range carryWords(tree) {
-		if !CarryWordProven(root, word) || !now.Before(word.Expires) {
+		if !CarryWordProven(endpoint.Root, word) || !now.Before(word.Expires) {
 			continue
 		}
 		wordSeat, err := OpidMachine(word.History.Opid)
 		if err != nil || wordSeat != seat {
 			continue
 		}
-		consumption, err := CarryConsumptionAt(root, tree, codeTip, word)
+		consumption, err := carryConsumptionAtFor(endpoint, tree, codeTip, word)
 		if err != nil {
 			return nil, err
 		}
@@ -4378,6 +4411,15 @@ func LandedCarryCount(file *GoalFile) int {
 }
 
 func CountCarries(root string, tree *TreeGoals, codeTip string, now time.Time) (CarryCounts, error) {
+	return countCarriesFor(Endpoint{Root: root}, tree, codeTip, now)
+}
+
+// CountCarriesAtEndpoint counts carries using the endpoint's committed history.
+func CountCarriesAtEndpoint(endpoint Endpoint, tree *TreeGoals, codeTip string, now time.Time) (CarryCounts, error) {
+	return countCarriesFor(endpoint, tree, codeTip, now)
+}
+
+func countCarriesFor(endpoint Endpoint, tree *TreeGoals, codeTip string, now time.Time) (CarryCounts, error) {
 	counts := CarryCounts{}
 	for _, collection := range []map[string]*GoalFile{tree.Live, tree.Done, tree.Abandoned} {
 		for _, file := range collection {
@@ -4403,10 +4445,10 @@ func CountCarries(root string, tree *TreeGoals, codeTip string, now time.Time) (
 		}
 	}
 	for _, word := range carryWords(tree) {
-		if !CarryWordProven(root, word) || !now.Before(word.Expires) {
+		if !CarryWordProven(endpoint.Root, word) || !now.Before(word.Expires) {
 			continue
 		}
-		consumption, err := CarryConsumptionAt(root, tree, codeTip, word)
+		consumption, err := carryConsumptionAtFor(endpoint, tree, codeTip, word)
 		if err != nil {
 			return CarryCounts{}, err
 		}
@@ -4446,6 +4488,10 @@ func openCarryingDebt(tree *TreeGoals, exceptRef string, now time.Time) (CarryDe
 // CarryDebtAt finds reviewed-late, in-flight, and landed-without-a-row debt
 // in that order.
 func CarryDebtAt(root string, tree *TreeGoals, base, exceptRef string, now time.Time) (CarryDebt, bool, error) {
+	return carryDebtAtFor(Endpoint{Root: root}, tree, base, exceptRef, now)
+}
+
+func carryDebtAtFor(endpoint Endpoint, tree *TreeGoals, base, exceptRef string, now time.Time) (CarryDebt, bool, error) {
 	for _, files := range []map[string]*GoalFile{tree.Live, tree.Abandoned} {
 		for _, id := range sortedGoalIds(files) {
 			for _, obligation := range files[id].ReviewObligations {
@@ -4453,7 +4499,7 @@ func CarryDebtAt(root string, tree *TreeGoals, base, exceptRef string, now time.
 					continue
 				}
 				commit := strings.TrimPrefix(obligation.Artifact, "commit:")
-				ancestor, err := IsAncestor(root, commit, base)
+				ancestor, err := endpoint.repository().IsAncestor(commit, base)
 				if err != nil {
 					return CarryDebt{}, false, err
 				}
@@ -4467,13 +4513,13 @@ func CarryDebtAt(root string, tree *TreeGoals, base, exceptRef string, now time.
 		return debt, true, nil
 	}
 	for _, word := range carryWords(tree) {
-		if !CarryWordProven(root, word) {
+		if !CarryWordProven(endpoint.Root, word) {
 			continue
 		}
 		if _, _, exists := carriedRow(tree, word.History.Opid); exists {
 			continue
 		}
-		consumption, err := CarryConsumptionAt(root, tree, base, word)
+		consumption, err := carryConsumptionAtFor(endpoint, tree, base, word)
 		if err != nil {
 			return CarryDebt{}, false, err
 		}
@@ -4539,12 +4585,16 @@ func Carry(r VerbRequest, args CarryArgs, proof *humanauthority.Proof) (PublishR
 }
 
 func doneCarryRefusal(root string, tree *TreeGoals, codeTip, id string, file *GoalFile, now time.Time) error {
+	return doneCarryRefusalFor(Endpoint{Root: root}, tree, codeTip, id, file, now)
+}
+
+func doneCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id string, file *GoalFile, now time.Time) error {
 	goalOnly := &TreeGoals{Root: tree.Root, Live: map[string]*GoalFile{id: file}, Done: map[string]*GoalFile{}}
 	for _, word := range carryWords(goalOnly) {
-		if !CarryWordProven(root, word) {
+		if !CarryWordProven(endpoint.Root, word) {
 			continue
 		}
-		consumption, err := CarryConsumptionAt(root, tree, codeTip, word)
+		consumption, err := carryConsumptionAtFor(endpoint, tree, codeTip, word)
 		if err != nil {
 			return err
 		}
@@ -4556,7 +4606,11 @@ func doneCarryRefusal(root string, tree *TreeGoals, codeTip, id string, file *Go
 }
 
 func carryDebtAskAt(root string, tree *TreeGoals, codeTip, exceptRef string, now time.Time) error {
-	debt, found, err := CarryDebtAt(root, tree, codeTip, exceptRef, now)
+	return carryDebtAskAtFor(Endpoint{Root: root}, tree, codeTip, exceptRef, now)
+}
+
+func carryDebtAskAtFor(endpoint Endpoint, tree *TreeGoals, codeTip, exceptRef string, now time.Time) error {
+	debt, found, err := carryDebtAtFor(endpoint, tree, codeTip, exceptRef, now)
 	if err != nil {
 		return err
 	}
@@ -4575,7 +4629,7 @@ func carryRequest(r VerbRequest, args CarryArgs, generation uint64) PublishReque
 			"generation": strconv.FormatUint(generation, 10), "by": r.Actor.Human,
 		}}, Message: "goal carry " + args.Goal,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -4593,11 +4647,11 @@ func carryRequest(r VerbRequest, args CarryArgs, generation uint64) PublishReque
 				return nil, fmt.Errorf("--raise-format is only valid while the ledger is at format 1")
 			}
 			codeTip := carryCodeTip(r.Endpoint, tip)
-			if err := carryDebtAskAt(r.Endpoint.Root, tree, codeTip, "", r.Now); err != nil {
+			if err := carryDebtAskAtFor(r.Endpoint, tree, codeTip, "", r.Now); err != nil {
 				return nil, err
 			}
 			seat, _ := OpidMachine(r.opid())
-			open, openErr := openCarryWords(r.Endpoint.Root, tree, codeTip, seat, r.Now)
+			open, openErr := openCarryWordsFor(r.Endpoint, tree, codeTip, seat, r.Now)
 			if openErr != nil {
 				return nil, openErr
 			}
@@ -4640,7 +4694,7 @@ func carryRequest(r VerbRequest, args CarryArgs, generation uint64) PublishReque
 				changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(tree.Root)})
 			}
 			return changes, nil
-		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }}
+		}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }}
 }
 
 func carrySupersedePrecondition(r VerbRequest, tree *TreeGoals, codeTip string, args CarryArgs) (CarryWord, *GoalFile, error) {
@@ -4659,7 +4713,7 @@ func carrySupersedePrecondition(r VerbRequest, tree *TreeGoals, codeTip string, 
 	if reservation.State == "open" {
 		return CarryWord{}, nil, fmt.Errorf("in flight on %s since %s: goal carrying --abandon %s on that seat, or wait for %s", targetSeat, reservation.History.At, reservation.History.Opid, target.Expires.UTC().Format(time.RFC3339))
 	}
-	consumption, err := CarryConsumptionAt(r.Endpoint.Root, tree, codeTip, target)
+	consumption, err := carryConsumptionAtFor(r.Endpoint, tree, codeTip, target)
 	if err != nil {
 		return CarryWord{}, nil, err
 	}
@@ -4733,19 +4787,19 @@ func validateCarryReservation(r VerbRequest, tree *TreeGoals, tip string, args C
 	if !r.Now.Before(word.Expires) {
 		return CarryWord{}, carryAsk("carry-word-expired", fmt.Sprintf("word %s expired at %s; issue a fresh goal carry", word.History.Opid, word.Expires.UTC().Format(time.RFC3339)))
 	}
-	consumption, err := CarryConsumptionAt(r.Endpoint.Root, tree, carryCodeTip(r.Endpoint, tip), word)
+	consumption, err := carryConsumptionAtFor(r.Endpoint, tree, carryCodeTip(r.Endpoint, tip), word)
 	if err != nil {
 		return CarryWord{}, err
 	}
 	if consumption.Kind != "none" {
 		return CarryWord{}, carryAsk("carry-word-consumed", fmt.Sprintf("word %s is consumed at %s:%s", word.History.Opid, consumption.Kind, consumption.ID))
 	}
-	if debt, found, debtErr := CarryDebtAt(r.Endpoint.Root, tree, carryCodeTip(r.Endpoint, tip), word.History.Opid, r.Now); debtErr != nil {
+	if debt, found, debtErr := carryDebtAtFor(r.Endpoint, tree, carryCodeTip(r.Endpoint, tip), word.History.Opid, r.Now); debtErr != nil {
 		return CarryWord{}, debtErr
 	} else if found {
 		return CarryWord{}, carryAsk("carry-debt-unpaid", carryDebtText(debt))
 	}
-	open, err := openCarryWords(r.Endpoint.Root, tree, carryCodeTip(r.Endpoint, tip), seat, r.Now)
+	open, err := openCarryWordsFor(r.Endpoint, tree, carryCodeTip(r.Endpoint, tip), seat, r.Now)
 	if err != nil {
 		return CarryWord{}, err
 	}
@@ -4849,7 +4903,7 @@ func carryingRequest(r VerbRequest, args CarryingArgs) PublishRequest {
 		Intent:  Intent{Verb: "carrying", Targets: []string{args.Goal}, Args: map[string]string{"approvedRef": args.ApprovedRef, "workspace": args.Workspace, "tree": args.Project, "by": args.By}},
 		Message: "goal carrying " + args.Goal,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -4869,7 +4923,7 @@ func carryingRequest(r VerbRequest, args CarryingArgs) PublishRequest {
 			row.ApprovedRef = args.ApprovedRef
 			row.Reason = fmt.Sprintf("open workspace=%s project=%s expires=%s by=%s", args.Workspace, args.Project, word.Expires.UTC().Format(time.RFC3339), args.By)
 			return []Change{{Path: livePath(args.Goal), Content: RenderFile(file)}}, nil
-		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }}
+		}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }}
 }
 
 // AbandonCarrying closes a reservation from its own seat after proving that
@@ -4914,7 +4968,7 @@ func AbandonCarrying(r VerbRequest, goalID, rowOpid, why string) (PublishResult,
 func abandonCarryingRequest(r VerbRequest, goalID string, opening HistoryLine, rowOpid, why string) PublishRequest {
 	return PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, Intent: Intent{Verb: "carrying", Targets: []string{goalID}, Args: map[string]string{"abandon": rowOpid}}, Message: "goal carrying abandon " + goalID,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -4934,7 +4988,7 @@ func abandonCarryingRequest(r VerbRequest, goalID string, opening HistoryLine, r
 			row.ApprovedRef = opening.ApprovedRef
 			row.Reason = "abandoned of=" + rowOpid + " why=" + strconv.Quote(why)
 			return []Change{{Path: livePath(goalID), Content: RenderFile(file)}}, nil
-		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }}
+		}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }}
 }
 
 func reasonField(reason, key string) string {
@@ -4983,7 +5037,7 @@ func bindCarriedCounselorAppend(current, candidate func(string, string, HistoryL
 
 func carriedAfterConfirmed(endpoint Endpoint, approvedRef string, now time.Time) func(string) error {
 	return func(tip string) error {
-		tree, err := loadTree(endpoint.Root, tip)
+		tree, err := loadTreeFor(endpoint, tip)
 		if err != nil {
 			return err
 		}
@@ -5091,7 +5145,7 @@ func carriedRequestMode(r VerbRequest, args CarriedArgs, recovering bool) Publis
 	}}
 	return PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, Intent: intent, Message: "goal carried " + args.Goal,
 		Mutate: func(tip string) ([]Change, error) {
-			tree, err := loadTree(r.Endpoint.Root, tip)
+			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
@@ -5114,7 +5168,7 @@ func carriedRequestMode(r VerbRequest, args CarriedArgs, recovering bool) Publis
 			if word.Workspace != args.Workspace || word.Past != args.Past {
 				return nil, fmt.Errorf("carried record differs from its word: workspace=%s/%s past=%s/%s", args.Workspace, word.Workspace, args.Past, word.Past)
 			}
-			_, landedCommit, scanErr := carryAnchorAndCommit(r.Endpoint.Root, carryCodeTip(r.Endpoint, tip), args.ApprovedRef)
+			_, landedCommit, scanErr := carryAnchorAndCommitFor(r.Endpoint, carryCodeTip(r.Endpoint, tip), args.ApprovedRef)
 			if scanErr != nil {
 				return nil, scanErr
 			}
@@ -5178,7 +5232,7 @@ func carriedRequestMode(r VerbRequest, args CarriedArgs, recovering bool) Publis
 				path = donePath(args.Goal)
 			}
 			return []Change{{Path: path, Content: RenderFile(file)}}, nil
-		}, Validate: func(commit string) error { return ValidateCommit(r.Endpoint.Root, commit) }, AfterConfirmed: carriedAfterConfirmed(r.Endpoint, args.ApprovedRef, r.Now)}
+		}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }, AfterConfirmed: carriedAfterConfirmed(r.Endpoint, args.ApprovedRef, r.Now)}
 }
 
 func valueOrLanded(value string) string {

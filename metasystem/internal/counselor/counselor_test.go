@@ -221,10 +221,6 @@ func TestClassifiersAreClosedAndAuditable(t *testing.T) {
 
 func TestAbandonEventsNeverCountAsDone(t *testing.T) {
 	root := t.TempDir()
-	mustGit(t, root, "init", "-q")
-	mustGit(t, root, "config", "user.name", "Fixture")
-	mustGit(t, root, "config", "user.email", "fixture@example.invalid")
-	mustGit(t, root, "config", "commit.gpgsign", "false")
 	rootRecord := &goal.RootRecord{
 		Identity: "01J5X000000000000000000000", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
 		History: []goal.HistoryLine{{
@@ -249,13 +245,12 @@ func TestAbandonEventsNeverCountAsDone(t *testing.T) {
 		},
 		Abandoned: &goal.AbandonRecord{By: "human:Wido", At: "2026-08-12T01:00:00Z", Revision: 4, Opid: "01J5X00000000000000000C040-m1-11111111", Because: "cancelled"},
 	}
-	writeFixture(t, filepath.Join(root, "plans", "goals", "backlog.md"), goal.RenderRoot(rootRecord))
-	writeFixture(t, filepath.Join(root, "records", "goals", "done.md"), goal.RenderFile(done))
-	writeFixture(t, filepath.Join(root, "records", "goals", "abandoned.md"), goal.RenderFile(abandoned))
-	mustGit(t, root, "add", ".")
-	mustGitAt(t, root, "2026-08-13T00:00:00Z", "commit", "-q", "-m", "goal records")
-
-	events, limitations := loadGoalEvents(root)
+	files := map[string][]byte{
+		"plans/goals/backlog.md":     goal.RenderRoot(rootRecord),
+		"records/goals/done.md":      goal.RenderFile(done),
+		"records/goals/abandoned.md": goal.RenderFile(abandoned),
+	}
+	events, limitations := loadGoalEventsWith(root, &rawSourceBundle{goalFiles: strictGoalFiles(t, root, files, nil)})
 	brief := Compute(RecordSet{GoalEvents: events}, time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC))
 	counts := brief.ProcessVsProduct.Windows[0].GoalEvents
 	if counts != (GoalVerbCounts{Open: 2, Edit: 1, Claim: 1, Done: 1}) {
@@ -269,6 +264,113 @@ func TestAbandonEventsNeverCountAsDone(t *testing.T) {
 
 type failingWriter struct{}
 
+func strictGoalFiles(t *testing.T, root string, input map[string][]byte, readErr error) func(string, string) (map[string][]byte, error) {
+	t.Helper()
+	copyFiles := func(files map[string][]byte) map[string][]byte {
+		copy := make(map[string][]byte, len(files))
+		for path, data := range files {
+			copy[path] = bytes.Clone(data)
+		}
+		return copy
+	}
+	retained := copyFiles(input)
+	calls := 0
+	t.Cleanup(func() {
+		if calls != 1 {
+			t.Errorf("committed goal files read %d times, want one", calls)
+		}
+	})
+	return func(gotRoot, ref string) (map[string][]byte, error) {
+		calls++
+		if gotRoot != root || ref != "HEAD" || calls != 1 {
+			t.Fatalf("unexpected committed goal read: root=%q ref=%q call=%d", gotRoot, ref, calls)
+		}
+		return copyFiles(retained), readErr
+	}
+}
+
+func strictLandingHistory(t *testing.T, root string, input rawLandingHistory, readErr error) func(string) (rawLandingHistory, error) {
+	t.Helper()
+	retained := input
+	retained.log = bytes.Clone(input.log)
+	calls := 0
+	t.Cleanup(func() {
+		if calls != 1 {
+			t.Errorf("landing history read %d times, want one", calls)
+		}
+	})
+	return func(gotRoot string) (rawLandingHistory, error) {
+		calls++
+		if gotRoot != root || calls != 1 {
+			t.Fatalf("unexpected landing history read: root=%q call=%d", gotRoot, calls)
+		}
+		result := retained
+		result.log = bytes.Clone(retained.log)
+		return result, readErr
+	}
+}
+
+func fixtureSources(t *testing.T, root string, landing rawLandingHistory, landingErr error, files map[string][]byte, goalErr error) *rawSourceBundle {
+	t.Helper()
+	landingReader := strictLandingHistory(t, root, landing, landingErr)
+	goalReader := strictGoalFiles(t, root, files, goalErr)
+	next := 0
+	t.Cleanup(func() {
+		if next != 2 {
+			t.Errorf("raw source bundle consumed %d reads, want landing then goals", next)
+		}
+	})
+	return &rawSourceBundle{
+		landingHistory: func(gotRoot string) (rawLandingHistory, error) {
+			if next != 0 {
+				t.Fatalf("landing history read out of order: %d", next)
+			}
+			next++
+			return landingReader(gotRoot)
+		},
+		goalFiles: func(gotRoot, ref string) (map[string][]byte, error) {
+			if next != 1 {
+				t.Fatalf("committed goal files read out of order: %d", next)
+			}
+			next++
+			return goalReader(gotRoot, ref)
+		},
+	}
+}
+
+func emptyFixtureSources(t *testing.T, root string) *rawSourceBundle {
+	t.Helper()
+	rootRecord := &goal.RootRecord{Identity: "01J5X000000000000000000000", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}
+	return fixtureSources(t, root, rawLandingHistory{unborn: true}, nil,
+		map[string][]byte{"plans/goals/backlog.md": goal.RenderRoot(rootRecord)}, nil)
+}
+
+func strictCommitMessage(t *testing.T, root, commit string, input []byte, wantCalls int) func(string, string) ([]byte, error) {
+	t.Helper()
+	if len(commit) != 40 {
+		t.Fatalf("fixture commit is not 40 hexadecimal characters: %q", commit)
+	}
+	for _, digit := range commit {
+		if !strings.ContainsRune("0123456789abcdef", digit) {
+			t.Fatalf("fixture commit is not hexadecimal: %q", commit)
+		}
+	}
+	retained := bytes.Clone(input)
+	calls := 0
+	t.Cleanup(func() {
+		if calls != wantCalls {
+			t.Errorf("carried commit message read %d times, want %d", calls, wantCalls)
+		}
+	})
+	return func(gotRoot, gotCommit string) ([]byte, error) {
+		calls++
+		if gotRoot != root || gotCommit != commit || calls > wantCalls {
+			t.Fatalf("unexpected carried message read: root=%q commit=%q call=%d", gotRoot, gotCommit, calls)
+		}
+		return bytes.Clone(retained), nil
+	}
+}
+
 func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("closed") }
 
 func TestRenderSurfacesWriterFailure(t *testing.T) {
@@ -279,10 +381,6 @@ func TestRenderSurfacesWriterFailure(t *testing.T) {
 
 func TestBuildReadsDurableFixtureSources(t *testing.T) {
 	root := t.TempDir()
-	mustGit(t, root, "init", "-q")
-	mustGit(t, root, "config", "user.name", "Fixture")
-	mustGit(t, root, "config", "user.email", "fixture@example.invalid")
-	mustGit(t, root, "config", "commit.gpgsign", "false")
 
 	rootRecord := &goal.RootRecord{
 		Identity: "01J5X000000000000000000000", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
@@ -296,14 +394,14 @@ func TestBuildReadsDurableFixtureSources(t *testing.T) {
 			{At: "2026-08-11T10:00:00Z", Opid: "01J5X00000000000000000P002-m1-11111111", Verb: "done", Actor: "m1+fixture", Targets: []string{"fixture"}, Keep: -1},
 		},
 	}
-	writeFixture(t, filepath.Join(root, "plans", "goals", "backlog.md"), goal.RenderRoot(rootRecord))
-	writeFixture(t, filepath.Join(root, "records", "goals", "fixture.md"), goal.RenderFile(goalRecord))
-	mustGit(t, root, "add", ".")
-	mustGitAt(t, root, "2026-08-12T10:00:00Z", "commit", "-q", "-m", "goal records", "-m", "Goal-Transaction: 01J5X00000000000000000P000-m1-11111111")
-
-	writeFixture(t, filepath.Join(root, "internal", "app.go"), []byte("package app\n"))
-	mustGit(t, root, "add", ".")
-	mustGitAt(t, root, "2026-08-13T10:00:00Z", "commit", "-q", "-m", "product")
+	committedGoals := map[string][]byte{
+		"plans/goals/backlog.md":   goal.RenderRoot(rootRecord),
+		"records/goals/fixture.md": goal.RenderFile(goalRecord),
+	}
+	landingLog := []byte("\x1e" + strings.Repeat("1", 40) + "\x1f2026-08-12T10:00:00Z\x1f01J5X00000000000000000P000-m1-11111111\n\n" +
+		"1\t0\tplans/goals/backlog.md\n1\t0\trecords/goals/fixture.md\n" +
+		"\x1e" + strings.Repeat("2", 40) + "\x1f2026-08-13T10:00:00Z\x1f\n\n1\t0\tinternal/app.go\n")
+	sources := fixtureSources(t, root, rawLandingHistory{log: landingLog}, nil, committedGoals, nil)
 
 	if err := obligationstate.RecordTerminal(root, "fixture", 3, 1, obligationstate.TerminalAttempt{
 		RunID: "governed-proof", Status: run.StatusGreen, StartedAt: "2026-08-12T11:00:00Z", EndedAt: "2026-08-12T11:25:00Z",
@@ -326,7 +424,7 @@ func TestBuildReadsDurableFixtureSources(t *testing.T) {
 		WindDownMin: run.DefaultWindDown, Evidence: run.Evidence{Mode: run.EvidenceNone}, Status: run.StatusLaunching,
 	})
 
-	brief := Build(Options{Root: root, Now: func() time.Time {
+	brief := Build(Options{Root: root, sources: sources, Now: func() time.Time {
 		return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	}})
 	window := brief.SpendVsOutcome.Windows[0]
@@ -443,7 +541,7 @@ func TestBuildReadsAcceptedRiskRegisterAndNamesMalformedGaps(t *testing.T) {
 	}
 	writeFixture(t, filepath.Join(root, filepath.FromSlash(acceptedRiskRegisterSource)), []byte(strings.Join(lines, "\n")+"\n"))
 
-	brief := Build(Options{Root: root, Now: func() time.Time {
+	brief := Build(Options{Root: root, sources: emptyFixtureSources(t, root), Now: func() time.Time {
 		return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	}})
 	register := brief.AcceptedRiskRegister
@@ -660,9 +758,6 @@ func TestHCL79RegisterLockSurvivesRelease(t *testing.T) {
 
 func TestHCL07AcceptedRiskLineComplete(t *testing.T) {
 	root := t.TempDir()
-	mustGit(t, root, "init", "-q", "-b", "main")
-	mustGit(t, root, "config", "user.name", "carry fixture")
-	mustGit(t, root, "config", "user.email", "carry@example.invalid")
 	message := strings.Join([]string{
 		"carried fixture", "", "Carry: word", "Carried-By: human:Wido",
 		"Carried-Tree: workspace=" + strings.Repeat("a", 40) + " project=" + strings.Repeat("b", 40),
@@ -670,16 +765,9 @@ func TestHCL07AcceptedRiskLineComplete(t *testing.T) {
 		"Carried-Judge: live sha256=" + strings.Repeat("c", 64), "Carried-Ledger: " + strings.Repeat("d", 40),
 		"Landing-Provenance: carried opid=word past=missing-declaration", "",
 	}, "\n")
-	mustGit(t, root, "commit", "-q", "--allow-empty", "-m", message)
-	command := exec.Command("git", "-C", root, "rev-parse", "HEAD")
-	command.Env = gittree.ScrubbedEnviron()
-	output, err := command.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	commit := strings.TrimSpace(string(output))
+	commit := strings.Repeat("a", 40)
 	finding := "carried:" + commit + ":battery-red"
-	input := CarriedAcceptedRiskAppend{Goal: "carry-goal", Finding: finding, By: "Wido", Why: "accepted for delivery", OpID: "accept-opid", Commit: commit, RecordedAt: time.Date(2026, 9, 11, 13, 0, 0, 0, time.UTC)}
+	input := CarriedAcceptedRiskAppend{Goal: "carry-goal", Finding: finding, By: "Wido", Why: "accepted for delivery", OpID: "accept-opid", Commit: commit, RecordedAt: time.Date(2026, 9, 11, 13, 0, 0, 0, time.UTC), commitMessage: strictCommitMessage(t, root, commit, []byte(message+"\n"), 2)}
 	if err := AppendCarriedAcceptedRisk(root, input); err != nil {
 		t.Fatal(err)
 	}
@@ -763,7 +851,7 @@ func TestGovernedRunReconciliationAndLaunchFailureBoundaries(t *testing.T) {
 		TerminalSeq: int64Pointer(1),
 	})
 
-	brief := Build(Options{Root: root, Now: func() time.Time {
+	brief := Build(Options{Root: root, sources: emptyFixtureSources(t, root), Now: func() time.Time {
 		return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	}})
 	window := brief.SpendVsOutcome.Windows[0]
@@ -799,7 +887,7 @@ func TestLaunchFailedRunWithUnparsableEndIsRejected(t *testing.T) {
 		TerminalSeq: int64Pointer(1), EndedAt: stringPointer("not-a-time"),
 	})
 
-	brief := Build(Options{Root: root, Now: func() time.Time {
+	brief := Build(Options{Root: root, sources: emptyFixtureSources(t, root), Now: func() time.Time {
 		return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	}})
 	window := brief.SpendVsOutcome.Windows[0]
@@ -814,7 +902,9 @@ func TestLaunchFailedRunWithUnparsableEndIsRejected(t *testing.T) {
 }
 
 func TestBuildTurnsUnavailableSourcesIntoCounselLimitations(t *testing.T) {
-	brief := Build(Options{Root: t.TempDir(), Now: func() time.Time {
+	root := t.TempDir()
+	sources := fixtureSources(t, root, rawLandingHistory{}, errors.New("repository top-level resolution failed: source unavailable"), nil, errors.New("committed goal files unavailable"))
+	brief := Build(Options{Root: root, sources: sources, Now: func() time.Time {
 		return time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 	}})
 	if !hasLimitation(brief.SpendVsOutcome.Limitations, "Git landing evidence") {
@@ -827,6 +917,22 @@ func TestBuildTurnsUnavailableSourcesIntoCounselLimitations(t *testing.T) {
 	if len(brief.SpendVsOutcome.Windows) != 1 {
 		t.Fatalf("evidence loss prevented the current brief: %+v", brief.SpendVsOutcome.Windows)
 	}
+	t.Run("missing landing callback", func(t *testing.T) {
+		files := strictGoalFiles(t, root, nil, errors.New("committed goal files unavailable"))
+		brief := Build(Options{Root: root, sources: &rawSourceBundle{goalFiles: files}})
+		if !hasLimitation(brief.SpendVsOutcome.Limitations, "Git landing evidence") ||
+			!hasLimitation(brief.ProcessVsProduct.Limitations, "Goal-history evidence") {
+			t.Fatalf("a missing landing callback did not remain unavailable: %+v", brief)
+		}
+	})
+	t.Run("missing goal callback", func(t *testing.T) {
+		landing := strictLandingHistory(t, root, rawLandingHistory{unborn: true}, nil)
+		brief := Build(Options{Root: root, sources: &rawSourceBundle{landingHistory: landing}})
+		if !hasLimitation(brief.ProcessVsProduct.Limitations, "Goal-history evidence") ||
+			hasLimitation(brief.SpendVsOutcome.Limitations, "Git landing evidence") {
+			t.Fatalf("a missing goal callback did not remain unavailable: %+v", brief)
+		}
+	})
 }
 
 func TestGitRootResolutionLimitationIsReadable(t *testing.T) {
@@ -841,6 +947,34 @@ func TestGitRootResolutionLimitationIsReadable(t *testing.T) {
 		strings.Contains(limitation.Detail, "gittree toplevel") ||
 		strings.Contains(limitation.Detail, "rev-parse") {
 		t.Fatalf("root-resolution limitation is not human-readable: %q", limitation.Detail)
+	}
+}
+
+func TestCarriedAcceptedRiskGitAdapterReadsImmutableCommitMessage(t *testing.T) {
+	root := t.TempDir()
+	mustGit(t, root, "init", "-q", "-b", "main")
+	mustGit(t, root, "config", "user.name", "carry fixture")
+	mustGit(t, root, "config", "user.email", "carry@example.invalid")
+	mustGit(t, root, "config", "commit.gpgsign", "false")
+	message := "carried message from the first commit"
+	mustGit(t, root, "commit", "-q", "--allow-empty", "-m", message)
+	command := exec.Command("git", "-C", root, "rev-parse", "HEAD")
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := strings.TrimSpace(string(output))
+	if len(commit) != 40 {
+		t.Fatalf("commit identifier has %d characters", len(commit))
+	}
+	mustGit(t, root, "commit", "-q", "--allow-empty", "-m", "later branch tip")
+	got, err := readCarriedCommitMessage(root, commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimRight(string(got), "\n") != message {
+		t.Fatalf("message from immutable commit %s changed: %q", commit, got)
 	}
 }
 
@@ -959,9 +1093,6 @@ func registerLine(t *testing.T, line acceptedRiskRegisterLine) string {
 
 func TestCarriedAcceptedRiskValidatorsReadTheSpecimen(t *testing.T) {
 	root := t.TempDir()
-	mustGit(t, root, "init", "-q", "-b", "main")
-	mustGit(t, root, "config", "user.name", "carry fixture")
-	mustGit(t, root, "config", "user.email", "carry@example.invalid")
 	message := strings.Join([]string{
 		"carried fixture", "", "Carry: word", "Carried-By: human:Wido",
 		"Carried-Tree: workspace=" + strings.Repeat("a", 40) + " project=" + strings.Repeat("b", 40),
@@ -969,16 +1100,9 @@ func TestCarriedAcceptedRiskValidatorsReadTheSpecimen(t *testing.T) {
 		"Carried-Judge: live sha256=" + strings.Repeat("c", 64), "Carried-Ledger: " + strings.Repeat("d", 40),
 		"Landing-Provenance: carried opid=word past=missing-declaration", "",
 	}, "\n")
-	mustGit(t, root, "commit", "-q", "--allow-empty", "-m", message)
-	command := exec.Command("git", "-C", root, "rev-parse", "HEAD")
-	command.Env = gittree.ScrubbedEnviron()
-	output, err := command.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	commit := strings.TrimSpace(string(output))
+	commit := strings.Repeat("b", 40)
 	finding := "carried:" + commit + ":battery-green"
-	input := CarriedAcceptedRiskAppend{Goal: "carry-goal", Finding: finding, By: "Wido", Why: "accepted for delivery", OpID: "accept-opid", Commit: commit, RecordedAt: time.Date(2026, 9, 12, 5, 0, 0, 0, time.UTC)}
+	input := CarriedAcceptedRiskAppend{Goal: "carry-goal", Finding: finding, By: "Wido", Why: "accepted for delivery", OpID: "accept-opid", Commit: commit, RecordedAt: time.Date(2026, 9, 12, 5, 0, 0, 0, time.UTC), commitMessage: strictCommitMessage(t, root, commit, []byte(message+"\n"), 6)}
 	if err := ValidateCarriedAcceptedRisk(root, input); err != nil {
 		t.Fatalf("a complete carried entry did not validate: %v", err)
 	}

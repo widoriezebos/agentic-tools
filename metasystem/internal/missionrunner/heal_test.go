@@ -108,7 +108,9 @@ func crashedMission(t *testing.T, ledgerCycles, spentCycles int) (engine *Engine
 }
 
 func TestHealReservedCycleRecordsLostTurn(t *testing.T) {
-	engine, statePath, ledgerPath, head := crashedMission(t, 2, 3)
+	bed := crashedFileMission(t, 2, 3)
+	bed.expectHEAD()
+	engine, statePath, ledgerPath, head := bed.engine, bed.statePath, bed.ledgerPath, fileHealHEAD
 	healed, err := engine.healReservedCycle(statePath, ledgerPath, readTestDoc(t, statePath))
 	if err != nil || !healed {
 		t.Fatalf("crash window must heal: healed=%v err=%v", healed, err)
@@ -137,7 +139,9 @@ func TestHealReservedCycleRecordsLostTurn(t *testing.T) {
 }
 
 func TestHealReservedCycleIsIdempotent(t *testing.T) {
-	engine, statePath, ledgerPath, _ := crashedMission(t, 2, 3)
+	bed := crashedFileMission(t, 2, 3)
+	bed.expectHEAD()
+	engine, statePath, ledgerPath := bed.engine, bed.statePath, bed.ledgerPath
 	if healed, err := engine.healReservedCycle(statePath, ledgerPath, readTestDoc(t, statePath)); err != nil || !healed {
 		t.Fatalf("first heal: healed=%v err=%v", healed, err)
 	}
@@ -155,8 +159,10 @@ func TestHealReservedCycleIsIdempotent(t *testing.T) {
 }
 
 func TestHealReservedCycleNoopWithoutGap(t *testing.T) {
-	engine, statePath, ledgerPath, _ := crashedMission(t, 2, 2)
+	bed := crashedFileMission(t, 2, 2)
+	engine, statePath, ledgerPath := bed.engine, bed.statePath, bed.ledgerPath
 	before, _ := os.ReadFile(ledgerPath)
+	stateBytesBefore, _ := os.ReadFile(statePath)
 	stateBefore := readTestDoc(t, statePath)
 	healed, err := engine.healReservedCycle(statePath, ledgerPath, stateBefore)
 	if err != nil || healed {
@@ -166,13 +172,19 @@ func TestHealReservedCycleNoopWithoutGap(t *testing.T) {
 	if string(before) != string(after) {
 		t.Fatal("a clean resume must not touch the ledger")
 	}
+	stateBytesAfter, _ := os.ReadFile(statePath)
+	if string(stateBytesBefore) != string(stateBytesAfter) {
+		t.Fatal("a clean resume must not touch the state")
+	}
 	if cycles, _ := jsonInt(readTestDoc(t, statePath)["ledger"].(map[string]any)["cycles"]); cycles != 2 {
 		t.Fatal("a clean resume must not advance the state")
 	}
 }
 
 func TestHealReservedCycleConsumesDrainStall(t *testing.T) {
-	engine, statePath, ledgerPath, head := crashedMission(t, 2, 3)
+	bed := crashedFileMission(t, 2, 3)
+	bed.expectHEAD()
+	engine, statePath, ledgerPath, head := bed.engine, bed.statePath, bed.ledgerPath, fileHealHEAD
 	// The drain-stalled unpark left the durable label naming exactly this
 	// reserved cycle.
 	proposed := deepCopyDoc(readTestDoc(t, statePath))
@@ -207,7 +219,9 @@ func TestHealReservedCycleConsumesDrainStall(t *testing.T) {
 }
 
 func TestHealReservedCycleIgnoresMismatchedDrainStall(t *testing.T) {
-	engine, statePath, ledgerPath, _ := crashedMission(t, 2, 3)
+	bed := crashedFileMission(t, 2, 3)
+	bed.expectHEAD()
+	engine, statePath, ledgerPath := bed.engine, bed.statePath, bed.ledgerPath
 	// A label from some older stall that does not name this gap's cycle:
 	// the gap heals as a plain lost turn, exactly as shipped, and the label
 	// is not consumed.
@@ -234,8 +248,10 @@ func TestHealReservedCycleLeavesWiderGapsAlone(t *testing.T) {
 	// A gap of more than one cycle is not this crash's signature: the heal
 	// covers exactly the one reserve a runner life can leave unappended, and
 	// anything wider stays a human's call rather than fabricated history.
-	engine, statePath, ledgerPath, _ := crashedMission(t, 1, 3)
+	bed := crashedFileMission(t, 1, 3)
+	engine, statePath, ledgerPath := bed.engine, bed.statePath, bed.ledgerPath
 	before, _ := os.ReadFile(ledgerPath)
+	stateBefore, _ := os.ReadFile(statePath)
 	healed, err := engine.healReservedCycle(statePath, ledgerPath, readTestDoc(t, statePath))
 	if err != nil || healed {
 		t.Fatalf("a wider gap must not be healed: healed=%v err=%v", healed, err)
@@ -243,5 +259,9 @@ func TestHealReservedCycleLeavesWiderGapsAlone(t *testing.T) {
 	after, _ := os.ReadFile(ledgerPath)
 	if string(before) != string(after) {
 		t.Fatal("a wider gap must leave the ledger untouched")
+	}
+	stateAfter, _ := os.ReadFile(statePath)
+	if string(stateBefore) != string(stateAfter) {
+		t.Fatal("a wider gap must leave the state untouched")
 	}
 }

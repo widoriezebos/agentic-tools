@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -51,13 +50,12 @@ func TestEffectiveGroupIdentitySeparatesPolicyFromExecution(t *testing.T) {
 func TestRetainedMetadataReconstructsAcrossUnrelatedContract(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultFile(t, filepath.Join(root, "source.txt"), []byte("first\n"), 0o644)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "first")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	firstSnapshot := newTestSnapshotFactory(t, root, strings.Repeat("4", 40), map[string]testSnapshotEntry{
+		"source.txt": testSnapshotFile("first\n", 0o644),
+	}, 8)
+	secondSnapshot := newTestSnapshotFactory(t, root, strings.Repeat("5", 40), map[string]testSnapshotEntry{
+		"source.txt": testSnapshotFile("second\n", 0o644),
+	}, 1)
 	toolRoot := t.TempDir()
 	versionPath := filepath.Join(toolRoot, "version")
 	versionCalls := filepath.Join(toolRoot, "version-calls")
@@ -69,7 +67,7 @@ func TestRetainedMetadataReconstructsAcrossUnrelatedContract(t *testing.T) {
 		ExternalInputs: []testpolicy.ExternalInput{{ID: "tool-version", Path: versionPath}},
 		Tools:          []testpolicy.Tool{{ID: "fixture-tool", Executable: toolPath, VersionArgs: []string{"--version"}}}}
 	plan := testpolicy.Plan{SelectedGroups: []string{"a"}}
-	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: 1, Contract: testpolicy.Contract{Groups: []testpolicy.Group{group}}, Plan: plan,
+	request := TestRunRequest{ProjectRoot: root, CandidateTree: firstSnapshot.tree, openCandidate: firstSnapshot.open, Workers: 1, Contract: testpolicy.Contract{Groups: []testpolicy.Group{group}}, Plan: plan,
 		Environment: os.Environ(), ContractDigest: strings.Repeat("a", 64), BaseContractDigest: strings.Repeat("b", 64),
 		JudgeKey: "judge", BehaviorPolicyDigest: strings.Repeat("c", 64)}
 	identities, prepared, launches, err := PrepareGroupExecutionIdentities(context.Background(), request)
@@ -168,12 +166,7 @@ func TestRetainedMetadataReconstructsAcrossUnrelatedContract(t *testing.T) {
 		t.Fatalf("changed environment retained A identity: current=%v original=%v err=%v", reconstructed, identities, err)
 	}
 	request.Environment = request.Environment[:len(request.Environment)-1]
-	writeTestResultFile(t, filepath.Join(root, "source.txt"), []byte("second\n"), 0o644)
-	runTestResultGit(t, root, "add", "source.txt")
-	request.CandidateTree, err = (gittree.Workspace{Dir: root}).StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
+	request.CandidateTree, request.openCandidate = secondSnapshot.tree, secondSnapshot.open
 	reconstructed, err = RevalidateRetainedGroupExecutionIdentities(context.Background(), request, []Attempt{attempt})
 	if err != nil || reconstructed["a"] == identities["a"] {
 		t.Fatalf("changed source retained A identity: current=%v original=%v err=%v", reconstructed, identities, err)

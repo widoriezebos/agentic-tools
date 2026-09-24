@@ -42,7 +42,7 @@ func TestProcessRefPrintsOneExactEncodedLineOrNothing(t *testing.T) {
 	var output bytes.Buffer
 	code := runIdentityRefWithProber([]string{"--pid", "42"}, processRefProber{exact: exact, state: identity.Alive}, &output)
 	parsed, err := identity.ParseRef(strings.TrimSpace(output.String()))
-	if code != 0 || err != nil || parsed != exact.Ref() || strings.Count(output.String(), "\n") != 1 {
+	if code != 0 || err != nil || !parsed.NativeExact() || !identity.SameIdentity(exact, parsed) || strings.Count(output.String(), "\n") != 1 {
 		t.Fatalf("proc ref exit=%d output=%q parsed=%+v err=%v", code, output.String(), parsed, err)
 	}
 	output.Reset()
@@ -61,11 +61,13 @@ func TestProcFixtureKeyPrintsAnEncodedKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	normalizedOwner, ownerParseErr := identity.ParseRef(owner)
 	var output bytes.Buffer
 	code := runFixtureKeyWithReader([]string{"--owner", owner, "--test", t.Name()}, strings.NewReader("\x01\x23\x45\x67"), &output)
 	key, parseErr := identity.ParseKey(strings.TrimSpace(output.String()))
-	if code != 0 || parseErr != nil || key.Owner != exact.Ref() || key.Test != t.Name() || key.Nonce != "01234567" {
-		t.Fatalf("proc fixture-key exit=%d output=%q key=%+v err=%v", code, output.String(), key, parseErr)
+	if code != 0 || ownerParseErr != nil || parseErr != nil || key.Owner != normalizedOwner ||
+		!key.Owner.NativeExact() || !identity.SameIdentity(exact, key.Owner) || key.Test != t.Name() || key.Nonce != "01234567" {
+		t.Fatalf("proc fixture-key exit=%d output=%q owner=%+v ownerErr=%v key=%+v err=%v", code, output.String(), normalizedOwner, ownerParseErr, key, parseErr)
 	}
 }
 

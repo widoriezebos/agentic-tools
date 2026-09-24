@@ -7,7 +7,7 @@ import (
 
 func critiqueVerdict(t *testing.T, fact JobFact) (string, bool) {
 	t.Helper()
-	verdict, err := testStore(t).TurnVerdict(ScanResult{Busy: []Item{{Kind: "job", Id: "busy", Detail: "busy"}}, Jobs: []JobFact{fact}}, t.Name(), "", "seat")
+	verdict, err := legacyTurnVerdict(legacyVerdictStore(t, true), ScanResult{Busy: []Item{{Kind: "job", Id: "busy", Detail: "busy"}}, Jobs: []JobFact{fact}}, t.Name(), "", "seat")
 	if err != nil {
 		t.Fatal(err)
 	}

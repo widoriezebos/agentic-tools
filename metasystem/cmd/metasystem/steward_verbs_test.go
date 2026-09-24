@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,43 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport/stopreporttest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
+
+type stubStewardLandingRefGit struct{ stub *testgit.Stub }
+
+func (g stubStewardLandingRefGit) Output(repo string, args ...string) ([]byte, error) {
+	result := g.stub.Run(testgit.Call{Dir: repo, Args: append([]string{"Output"}, args...)})
+	return result.Stdout, result.Err
+}
+
+func (g stubStewardLandingRefGit) CombinedOutput(repo string, args ...string) ([]byte, error) {
+	result := g.stub.Run(testgit.Call{Dir: repo, Args: append([]string{"CombinedOutput"}, args...)})
+	return result.Stdout, result.Err
+}
+
+func stewardSeedCall(repo, method string, result testgit.Result, args ...string) testgit.Expectation {
+	return testgit.Expectation{
+		Call:   testgit.Call{Dir: repo, Args: append([]string{method}, args...)},
+		Result: result,
+	}
+}
+
+func stewardSeedConfigRead(repo string, result testgit.Result) testgit.Expectation {
+	return stewardSeedCall(repo, "Output", result, "config", "--local", "--no-includes", "--get", "metasystem.steward.landing-ref")
+}
+
+func stewardSeedBranchRead(repo string, result testgit.Result) testgit.Expectation {
+	return stewardSeedCall(repo, "Output", result, "symbolic-ref", "--quiet", "--short", "HEAD")
+}
+
+func stewardSeedUpstreamRead(repo string, result testgit.Result) testgit.Expectation {
+	return stewardSeedCall(repo, "CombinedOutput", result, "rev-parse", "--symbolic-full-name", "@{upstream}")
+}
+
+func stewardSeedConfigWrite(repo, ref string, result testgit.Result) testgit.Expectation {
+	return stewardSeedCall(repo, "CombinedOutput", result, "config", "--local", "metasystem.steward.landing-ref", ref)
+}
 
 func stewardVerbGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
@@ -27,6 +64,26 @@ func stewardVerbGit(t *testing.T, root string, args ...string) string {
 }
 
 func TestHumanStewardVerbSeedsTheCheckedOutUpstreamOnce(t *testing.T) {
+	repo := t.TempDir()
+	stub := testgit.New(t,
+		stewardSeedConfigRead(repo, testgit.Result{Err: errors.New("exit status 1")}),
+		stewardSeedBranchRead(repo, testgit.Result{Stdout: []byte(" release\n")}),
+		stewardSeedUpstreamRead(repo, testgit.Result{Stdout: []byte("refs/remotes/origin/release\n")}),
+		stewardSeedConfigWrite(repo, "refs/remotes/origin/release", testgit.Result{}),
+		stewardSeedConfigRead(repo, testgit.Result{Stdout: []byte("refs/remotes/fork/operator-choice\n")}),
+	)
+	git := stubStewardLandingRefGit{stub}
+	seeded, err := seedStewardLandingRefWithGit(repo, git)
+	if err != nil || seeded != (stewardLandingRefSeed{Ref: "refs/remotes/origin/release"}) {
+		t.Fatalf("checked-out upstream was not seeded: %+v %v", seeded, err)
+	}
+	seeded, err = seedStewardLandingRefWithGit(repo, git)
+	if err != nil || seeded != (stewardLandingRefSeed{}) {
+		t.Fatalf("an existing local value was reseeded: %+v %v", seeded, err)
+	}
+}
+
+func TestStewardLandingRefGitAdapterPersistsCheckedOutUpstream(t *testing.T) {
 	root := t.TempDir()
 	stewardVerbGit(t, root, "init", "-q", "-b", "release")
 	stewardVerbGit(t, root, "config", "user.name", "fixture")
@@ -61,34 +118,86 @@ func TestHumanStewardVerbSeedsTheCheckedOutUpstreamOnce(t *testing.T) {
 }
 
 func TestHumanStewardVerbDoesNotSeedABranchWithoutAnUpstream(t *testing.T) {
-	root := t.TempDir()
-	stewardVerbGit(t, root, "init", "-q", "-b", "release")
-	seeded, err := seedStewardLandingRef(root)
-	if err != nil || seeded.Ref != "" || !strings.Contains(seeded.NotSeeded, "branch release has no upstream") {
+	repo := t.TempDir()
+	stub := testgit.New(t,
+		stewardSeedConfigRead(repo, testgit.Result{Err: errors.New("exit status 1")}),
+		stewardSeedBranchRead(repo, testgit.Result{Stdout: []byte("release\n")}),
+		stewardSeedUpstreamRead(repo, testgit.Result{Err: errors.New("exit status 128"), Stdout: []byte("fatal: no upstream configured\n")}),
+	)
+	seeded, err := seedStewardLandingRefWithGit(repo, stubStewardLandingRefGit{stub})
+	want := stewardLandingRefSeed{NotSeeded: "the checked-out branch release has no upstream; automatic machine re-arm remains disabled until the key is configured"}
+	if err != nil || seeded != want {
 		t.Fatalf("branch without an upstream did not preserve human arming: %+v %v", seeded, err)
-	}
-	if _, err := exec.Command("git", "-C", root, "config", "--local", "--get", "metasystem.steward.landing-ref").Output(); err == nil {
-		t.Fatal("branch without an upstream invented a landing ref")
 	}
 }
 
 func TestHumanStewardVerbCannotInventABranchWhileDetached(t *testing.T) {
-	root := t.TempDir()
-	stewardVerbGit(t, root, "init", "-q", "-b", "release")
-	stewardVerbGit(t, root, "config", "user.name", "fixture")
-	stewardVerbGit(t, root, "config", "user.email", "fixture@example.invalid")
-	if err := os.WriteFile(filepath.Join(root, "README"), []byte("fixture\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	stewardVerbGit(t, root, "add", "README")
-	stewardVerbGit(t, root, "commit", "-qm", "fixture")
-	stewardVerbGit(t, root, "checkout", "--detach", "-q")
-	seeded, err := seedStewardLandingRef(root)
-	if err != nil || seeded.Ref != "" || !strings.Contains(seeded.NotSeeded, "checkout is detached") {
+	repo := t.TempDir()
+	stub := testgit.New(t,
+		stewardSeedConfigRead(repo, testgit.Result{Err: errors.New("exit status 1")}),
+		stewardSeedBranchRead(repo, testgit.Result{Err: errors.New("exit status 1")}),
+	)
+	seeded, err := seedStewardLandingRefWithGit(repo, stubStewardLandingRefGit{stub})
+	want := stewardLandingRefSeed{NotSeeded: "the checkout is detached; automatic machine re-arm remains disabled until the key is configured"}
+	if err != nil || seeded != want {
 		t.Fatalf("detached checkout did not preserve human arming: %+v %v", seeded, err)
 	}
-	if _, err := exec.Command("git", "-C", root, "config", "--local", "--get", "metasystem.steward.landing-ref").Output(); err == nil {
-		t.Fatal("detached checkout invented a landing ref")
+}
+
+func TestStewardLandingRefSeedRefusesInvalidUpstreamAndWriteFailure(t *testing.T) {
+	for _, scenario := range []struct {
+		name          string
+		upstream      testgit.Result
+		write         *testgit.Result
+		wantNotSeeded string
+		wantError     string
+	}{
+		{
+			name:          "malformed remote-tracking shape",
+			upstream:      testgit.Result{Stdout: []byte(" refs/remotes/origin\n")},
+			wantNotSeeded: "the checked-out branch release has upstream refs/remotes/origin, not a remote-tracking ref shaped refs/remotes/<remote>/<branch>; automatic machine re-arm remains disabled until the key is configured",
+		},
+		{
+			name:          "nonremote ref",
+			upstream:      testgit.Result{Stdout: []byte("refs/heads/release\n")},
+			wantNotSeeded: "the checked-out branch release has upstream refs/heads/release, not a remote-tracking ref shaped refs/remotes/<remote>/<branch>; automatic machine re-arm remains disabled until the key is configured",
+		},
+		{
+			name:          "blank upstream output",
+			upstream:      testgit.Result{Stdout: []byte(" \n\t")},
+			wantNotSeeded: "the checked-out branch release has no upstream; automatic machine re-arm remains disabled until the key is configured",
+		},
+		{
+			name:          "upstream command error",
+			upstream:      testgit.Result{Stdout: []byte("refs/remotes/origin/release\n"), Err: errors.New("exit status 128")},
+			wantNotSeeded: "the checked-out branch release has no upstream; automatic machine re-arm remains disabled until the key is configured",
+		},
+		{
+			name:      "config-write failure",
+			upstream:  testgit.Result{Stdout: []byte(" refs/remotes/origin/release\n")},
+			write:     &testgit.Result{Stdout: []byte(" permission denied \n"), Err: errors.New("exit status 1")},
+			wantError: "seed metasystem.steward.landing-ref: exit status 1 (permission denied)",
+		},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			repo := t.TempDir()
+			expected := []testgit.Expectation{
+				stewardSeedConfigRead(repo, testgit.Result{Err: errors.New("exit status 1")}),
+				stewardSeedBranchRead(repo, testgit.Result{Stdout: []byte("release\n")}),
+				stewardSeedUpstreamRead(repo, scenario.upstream),
+			}
+			if scenario.write != nil {
+				expected = append(expected, stewardSeedConfigWrite(repo, "refs/remotes/origin/release", *scenario.write))
+			}
+			stub := testgit.New(t, expected...)
+			seeded, err := seedStewardLandingRefWithGit(repo, stubStewardLandingRefGit{stub})
+			if seeded != (stewardLandingRefSeed{NotSeeded: scenario.wantNotSeeded}) {
+				t.Fatalf("seed result = %+v, want refusal %q", seeded, scenario.wantNotSeeded)
+			}
+			if scenario.wantError == "" && err != nil || scenario.wantError != "" && (err == nil || err.Error() != scenario.wantError) {
+				t.Fatalf("seed error = %v, want %q", err, scenario.wantError)
+			}
+		})
 	}
 }
 

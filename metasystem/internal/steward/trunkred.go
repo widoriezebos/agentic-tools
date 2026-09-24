@@ -38,8 +38,12 @@ func checkTrunkRed(repoRoot string, now time.Time) RoleVerdict {
 		return roleUnknown(RoleTrunkRed, "the trunk-red ledger endpoint is unreadable: "+err.Error(), "repair the goal sync configuration, then run metasystem health")
 	}
 	projection, err := goal.Project(endpoint, false, now)
-	if err != nil {
-		return roleUnknown(RoleTrunkRed, "the trunk-red ledger is unreadable: "+err.Error(), "repair or fetch the goal ledger, then run metasystem health")
+	return checkTrunkRedFromProjection(repoRoot, now, projection, err, config.ResolveBatchLanding)
+}
+
+func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error)) RoleVerdict {
+	if projectionErr != nil {
+		return roleUnknown(RoleTrunkRed, "the trunk-red ledger is unreadable: "+projectionErr.Error(), "repair or fetch the goal ledger, then run metasystem health")
 	}
 	cadenceRoot := repoRoot
 	if configured, _, configErr := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: filepath.Join(repoRoot, "metasystem.conf"), Default: "", DefaultSet: true}); configErr == nil && strings.TrimSpace(configured) != "" {
@@ -61,7 +65,7 @@ func checkTrunkRed(repoRoot string, now time.Time) RoleVerdict {
 		return roleDead(RoleTrunkRed, fmt.Sprintf("deep validation cadence is non-green at trunk %s tree %s", cadence.TrunkCommit, cadence.TrunkTree), remedy)
 	}
 
-	staleBatches, batchErr := staleUnrecordedTrunkRedBatches(repoRoot, now)
+	staleBatches, batchErr := staleUnrecordedTrunkRedBatchesWith(repoRoot, now, resolveBatchLanding)
 	if batchErr != nil {
 		return roleUnknown(RoleTrunkRed, batchErr.Error(), "repair the configured landing batch root, then run metasystem health")
 	}
@@ -100,6 +104,10 @@ func checkTrunkRed(repoRoot string, now time.Time) RoleVerdict {
 }
 
 func staleUnrecordedTrunkRedBatches(repoRoot string, now time.Time) ([]string, error) {
+	return staleUnrecordedTrunkRedBatchesWith(repoRoot, now, config.ResolveBatchLanding)
+}
+
+func staleUnrecordedTrunkRedBatchesWith(repoRoot string, now time.Time, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error)) ([]string, error) {
 	conf := filepath.Join(repoRoot, "metasystem.conf")
 	configured, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: conf, Default: "", DefaultSet: true})
 	if err != nil {
@@ -108,7 +116,7 @@ func staleUnrecordedTrunkRedBatches(repoRoot string, now time.Time) ([]string, e
 	if strings.TrimSpace(configured) == "" {
 		return nil, nil
 	}
-	settings, err := config.ResolveBatchLanding(conf, repoRoot, func() time.Time { return now })
+	settings, err := resolveBatchLanding(conf, repoRoot, func() time.Time { return now })
 	if err != nil {
 		return nil, fmt.Errorf("the trunk-red batch root is unreadable: %w", err)
 	}

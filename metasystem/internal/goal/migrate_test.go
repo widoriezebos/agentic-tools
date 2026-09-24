@@ -1,9 +1,11 @@
 package goal
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -66,16 +68,104 @@ func migrateOpts(t *testing.T, root, digest string) MigrateOptions {
 	}
 }
 
+// fakeLegacyMigrationEndpoint gives each migration its own committed legacy
+// snapshot and real worktree files. The accepted pointer starts absent.
+func fakeLegacyMigrationEndpoint(t *testing.T) (Endpoint, *fakeGoalRepository, MigrateOptions) {
+	t.Helper()
+	store := newFakeGoalStore()
+	root := t.TempDir()
+	plans := filepath.Join(root, "plans")
+	if err := os.MkdirAll(plans, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256HexBytes([]byte(canonical))
+	baseline, err := json.Marshal(map[string]any{
+		"schemaVersion": 1, "ledger": canonical, "sha256": digest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := []byte(migrateManifestFor(digest))
+	worktree := map[string][]byte{
+		"plans/goals.md":            []byte(canonical),
+		"plans/goals-accepted.json": baseline,
+		"manifest.md":               manifest,
+		"stale-manifest.md":         []byte(migrateManifestFor(strings.Repeat("00", 32))),
+		"metasystem.conf":           []byte("metasystem.runtimes=fake\n"),
+	}
+	for path, data := range worktree {
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(path)), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed := store.commits[store.canonical]
+	seed.files = copyFakeFiles(worktree)
+	delete(seed.files, "metasystem.conf")
+	store.commits[store.canonical] = seed
+	client := store.client()
+	endpoint := Endpoint{Root: root, Remote: "origin", Branch: "refs/heads/main", Repository: client}
+	opts := MigrateOptions{SourceDigest: digest, ManifestPath: filepath.Join(root, "manifest.md"),
+		Identity: "01J5XM00000000000000000000", SyncMode: SyncRemote}
+	return endpoint, client, opts
+}
+
+type migrationStatusCall struct {
+	root, path, porcelain string
+	err                   error
+}
+
+type migrationStatusTranscript struct {
+	t     *testing.T
+	calls []migrationStatusCall
+	next  int
+}
+
+func newMigrationStatusTranscript(t *testing.T, calls ...migrationStatusCall) *migrationStatusTranscript {
+	t.Helper()
+	transcript := &migrationStatusTranscript{t: t, calls: calls}
+	t.Cleanup(func() {
+		if transcript.next != len(transcript.calls) {
+			t.Errorf("unused status declarations: consumed %d of %d", transcript.next, len(transcript.calls))
+		}
+	})
+	return transcript
+}
+
+func (transcript *migrationStatusTranscript) status(root, path string) (string, error) {
+	transcript.t.Helper()
+	if transcript.next >= len(transcript.calls) {
+		transcript.t.Fatalf("unexpected status call: root=%q path=%q", root, path)
+	}
+	want := transcript.calls[transcript.next]
+	transcript.next++
+	if root != want.root || path != want.path {
+		transcript.t.Fatalf("status call %d: got root=%q path=%q, want root=%q path=%q", transcript.next, root, path, want.root, want.path)
+	}
+	return want.porcelain, want.err
+}
+
+func cleanMigrationStatusCalls(root, manifest string) []migrationStatusCall {
+	paths := []string{"plans/goals.md", "plans/goals-accepted.json", "plans/goals"}
+	if manifest != "" {
+		paths = append(paths, manifest)
+	}
+	calls := make([]migrationStatusCall, len(paths))
+	for i, path := range paths {
+		calls[i] = migrationStatusCall{root: root, path: path, porcelain: "", err: nil}
+	}
+	return calls
+}
+
 func TestMigrateSynthesizesTheExpectedMap(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	digest := migrateBed(t, a)
+	endpoint, _, opts := fakeLegacyMigrationEndpoint(t)
+	status := newMigrationStatusTranscript(t, append(cleanMigrationStatusCalls(endpoint.Root, "manifest.md"), cleanMigrationStatusCalls(endpoint.Root, "manifest.md")...)...)
 
-	res, err := Migrate(verbReq(a, "01J5XM0000000000000000M000", "mac-a"), migrateOpts(t, a, digest))
+	res, err := migrateWithStatus(verbReqFor(endpoint, "01J5XM0000000000000000M000", "mac-a"), opts, status.status)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("migrate: %+v %v", res, err)
 	}
-	tree, err := loadTree(a, res.Tip)
+	tree, err := loadTreeFor(endpoint, res.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,10 +203,14 @@ func TestMigrateSynthesizesTheExpectedMap(t *testing.T) {
 		t.Fatalf("the root record binds identity, mode, sync mode, and the manifest digest: %+v", tree.Root)
 	}
 	// The clean-path set: the legacy files are gone from the tip.
-	if _, err := gitIn(a, "cat-file", "-p", res.Tip+":plans/goals.md"); err == nil {
+	files, err := readCommitFiles(endpoint, res.Tip, "plans/goals.md", "plans/goals-accepted.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, present := files["plans/goals.md"]; present {
 		t.Fatal("goals.md dies in the migration commit")
 	}
-	if _, err := gitIn(a, "cat-file", "-p", res.Tip+":plans/goals-accepted.json"); err == nil {
+	if _, present := files["plans/goals-accepted.json"]; present {
 		t.Fatal("goals-accepted.json dies in the migration commit")
 	}
 	// ONE commit, ONE opid: every synthesized file carries the same
@@ -129,7 +223,10 @@ func TestMigrateSynthesizesTheExpectedMap(t *testing.T) {
 	}
 
 	// The rerun is idempotent, keyed on the root record + mode.
-	res2, err := Migrate(verbReq(a, "01J5XM0000000000000000M010", "mac-a"), migrateOpts(t, a, digest))
+	if err := os.Remove(filepath.Join(endpoint.Root, "plans", "goals.md")); err != nil {
+		t.Fatal(err)
+	}
+	res2, err := migrateWithStatus(verbReqFor(endpoint, "01J5XM0000000000000000M010", "mac-a"), opts, status.status)
 	if err != nil || res2.Outcome != OutcomeConfirmed || res2.Detail != "idempotent" {
 		t.Fatalf("the rerun classifies idempotent: %+v %v", res2, err)
 	}
@@ -137,73 +234,76 @@ func TestMigrateSynthesizesTheExpectedMap(t *testing.T) {
 
 func TestMigrateRefusalsComeBeforeAnyMutation(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	digest := migrateBed(t, a)
+	endpoint, client, good := fakeLegacyMigrationEndpoint(t)
+	digest := good.SourceDigest
+	canonicalTip := client.store.canonical
+	original := copyFakeFiles(client.store.commits[canonicalTip].files)
+	calls := append(cleanMigrationStatusCalls(endpoint.Root, "manifest.md"), cleanMigrationStatusCalls(endpoint.Root, "stale-manifest.md")...)
+	calls = append(calls, cleanMigrationStatusCalls(endpoint.Root, "manifest.md")...)
+	calls = append(calls, cleanMigrationStatusCalls(endpoint.Root, "")...)
+	status := newMigrationStatusTranscript(t, calls...)
 
 	// A caller digest disagreeing with the MANIFEST's bound literal
 	// refuses at the binding gate; a manifest whose literal does not
 	// match the worktree refuses at the source gate.
-	badOpts := migrateOpts(t, a, digest)
+	badOpts := good
 	badOpts.SourceDigest = strings.Repeat("00", 32)
-	_, err := Migrate(verbReq(a, "01J5XM0000000000000000M020", "mac-a"), badOpts)
+	_, err := migrateWithStatus(verbReqFor(endpoint, "01J5XM0000000000000000M020", "mac-a"), badOpts, status.status)
 	if err == nil || !strings.Contains(err.Error(), "the manifest is the authority") {
 		t.Fatalf("the manifest binds the reviewed literal: %v", err)
 	}
-	staleOpts := migrateOpts(t, a, strings.Repeat("00", 32))
-	_, err = Migrate(verbReq(a, "01J5XM0000000000000000M021", "mac-a"), staleOpts)
+	staleOpts := good
+	staleOpts.SourceDigest = strings.Repeat("00", 32)
+	staleOpts.ManifestPath = filepath.Join(endpoint.Root, "stale-manifest.md")
+	_, err = migrateWithStatus(verbReqFor(endpoint, "01J5XM0000000000000000M021", "mac-a"), staleOpts, status.status)
 	if err == nil || !strings.Contains(err.Error(), "source digest mismatch") {
 		t.Fatalf("the reviewed-source literal gates everything: %v", err)
 	}
 	// Nothing moved: the legacy ledger is untouched on the branch.
-	if _, catErr := gitIn(a, "cat-file", "-p", "origin/main:plans/goals.md"); catErr != nil {
+	if client.store.canonical != canonicalTip || !reflect.DeepEqual(client.store.commits[canonicalTip].files, original) {
 		t.Fatal("a refused migration mutates nothing")
 	}
 
 	// Mode confusion: bare after manifest refuses by name.
-	good := migrateOpts(t, a, digest)
-	if res, err := Migrate(verbReq(a, "01J5XM0000000000000000M030", "mac-a"), good); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := migrateWithStatus(verbReqFor(endpoint, "01J5XM0000000000000000M030", "mac-a"), good, status.status); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("migrate: %+v %v", res, err)
 	}
 	// The confusion refuses BEFORE any journal write: a
 	// doomed rerun never mints an entry.
 	bare := MigrateOptions{SourceDigest: digest, Identity: good.Identity, SyncMode: SyncRemote}
-	_, err = Migrate(verbReq(a, "01J5XM0000000000000000M040", "mac-a"), bare)
+	_, err = migrateWithStatus(verbReqFor(endpoint, "01J5XM0000000000000000M040", "mac-a"), bare, status.status)
 	if err == nil || !strings.Contains(err.Error(), "confusion") {
 		t.Fatalf("mode confusion refuses by name pre-journal: %v", err)
 	}
 }
 
 func TestMigrateIsDeterministicUnderInjection(t *testing.T) {
-	t.Parallel(
-	// Two INDEPENDENT worlds, identical inputs (source bytes,
-	// manifest, identity, actor, timestamp): byte-identical ledger
-	// trees (R10's determinism leg).
-	)
+	t.Parallel()
+	// Two independent worlds have identical source bytes, manifest,
+	// identity, actor, and timestamp.
 
-	_, a, _ := twoClones(t)
-	_, b, _ := twoClones(t)
-	digestA := migrateBed(t, a)
-	digestB := migrateBed(t, b)
-	if digestA != digestB {
+	a, _, optsA := fakeLegacyMigrationEndpoint(t)
+	b, _, optsB := fakeLegacyMigrationEndpoint(t)
+	if optsA.SourceDigest != optsB.SourceDigest {
 		t.Fatal("identical source bytes")
 	}
-	optsA := migrateOpts(t, a, digestA)
-	optsB := migrateOpts(t, b, digestB)
 	optsB.Identity = optsA.Identity
+	statusA := newMigrationStatusTranscript(t, cleanMigrationStatusCalls(a.Root, "manifest.md")...)
+	statusB := newMigrationStatusTranscript(t, cleanMigrationStatusCalls(b.Root, "manifest.md")...)
 
-	resA, err := Migrate(verbReq(a, "01J5XM0000000000000000M050", "mac-a"), optsA)
+	resA, err := migrateWithStatus(verbReqFor(a, "01J5XM0000000000000000M050", "mac-a"), optsA, statusA.status)
 	if err != nil || resA.Outcome != OutcomeConfirmed {
 		t.Fatalf("A migrates: %+v %v", resA, err)
 	}
-	resB, err := Migrate(verbReq(b, "01J5XM0000000000000000M050", "mac-a"), optsB)
+	resB, err := migrateWithStatus(verbReqFor(b, "01J5XM0000000000000000M050", "mac-a"), optsB, statusB.status)
 	if err != nil || resB.Outcome != OutcomeConfirmed {
 		t.Fatalf("B migrates: %+v %v", resB, err)
 	}
-	filesA, err := ReadCommitGoals(a, resA.Tip)
+	filesA, err := readCommitGoals(a, resA.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
-	filesB, err := ReadCommitGoals(b, resB.Tip)
+	filesB, err := readCommitGoals(b, resB.Tip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +311,8 @@ func TestMigrateIsDeterministicUnderInjection(t *testing.T) {
 		t.Fatalf("same file set: %d vs %d", len(filesA), len(filesB))
 	}
 	for p, contentA := range filesA {
-		if string(contentA) != string(filesB[p]) {
+		contentB, present := filesB[p]
+		if !present || !bytes.Equal(contentA, contentB) {
 			t.Fatalf("byte-identical synthesis under injection: %s differs", p)
 		}
 	}
@@ -262,8 +363,8 @@ func TestTheCheckedInManifestParses(t *testing.T) {
 
 func TestMigrationCompleteRefusesAnUnparseableRootRecord(t *testing.T) {
 	t.Parallel()
-	_, a, _ := twoClones(t)
-	res, err := Publish(endpointFor(a), PublishRequest{
+	endpoint, client, _ := fakeLegacyMigrationEndpoint(t)
+	res, err := Publish(endpoint, PublishRequest{
 		Opid: "op-torn-root-000000000000", Machine: "mac-a", Lineage: "l1",
 		Intent: testIntentFor("migrate"), Message: "torn root",
 		Mutate: func(tip string) ([]Change, error) {
@@ -276,8 +377,57 @@ func TestMigrationCompleteRefusesAnUnparseableRootRecord(t *testing.T) {
 	// A root record that EXISTS but does not parse is a broken world,
 	// never "not migrated yet": reading it as absence would journal a
 	// second migration on top of the wreck.
-	if _, doneErr := migrationComplete(a, res.Tip, "01JIDENT", "bare", SyncRemote, ""); doneErr == nil ||
+	rootFiles, err := readCommitFiles(endpoint, res.Tip, goalsPrefix+"backlog.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if malformed, present := rootFiles[goalsPrefix+"backlog.md"]; !present || !bytes.Equal(malformed, []byte("not a root record at all\n")) {
+		t.Fatalf("malformed committed root is present: %t %q", present, malformed)
+	}
+	if client.store.canonical != res.Tip {
+		t.Fatal("the malformed root was not published")
+	}
+	if _, doneErr := migrationCompleteFor(endpoint, res.Tip, "01JIDENT", "bare", SyncRemote, ""); doneErr == nil ||
 		!strings.Contains(doneErr.Error(), "does not parse") {
 		t.Fatalf("a torn root refuses by name: %v", doneErr)
+	}
+}
+
+func TestMigrationWorktreeStatusGitAdapterProvesPorcelainPaths(t *testing.T) {
+	root := t.TempDir()
+	mustGit(t, root, "init", "-q", "-b", "main")
+	if err := os.MkdirAll(filepath.Join(root, "plans", "goals"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacyPath := filepath.Join(root, "plans", "goals.md")
+	if err := os.WriteFile(legacyPath, []byte("original\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, root, "add", "plans/goals.md")
+	mustGit(t, root, "commit", "-qm", "tracked legacy ledger")
+	if err := os.WriteFile(legacyPath, []byte("modified\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "untracked.md"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(root, "manifest.md")
+	if err := os.WriteFile(manifestPath, []byte("manifest\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	paths, rel := migrationCleanPaths(root, manifestPath)
+	if rel != "manifest.md" || !reflect.DeepEqual(paths, []string{"plans/goals.md", "plans/goals-accepted.json", "plans/goals", "manifest.md"}) {
+		t.Fatalf("in-root manifest path selection: %q %q", rel, paths)
+	}
+	for _, path := range []string{"plans/goals.md", "plans/goals", "manifest.md"} {
+		porcelain, err := migrationGitStatus(root, path)
+		if err != nil || strings.TrimSpace(porcelain) == "" {
+			t.Fatalf("porcelain for changed path %s: %q %v", path, porcelain, err)
+		}
+	}
+	external := filepath.Join(t.TempDir(), "external-manifest.md")
+	externalPaths, externalRel := migrationCleanPaths(root, external)
+	if externalRel != "" || !reflect.DeepEqual(externalPaths, []string{"plans/goals.md", "plans/goals-accepted.json", "plans/goals"}) {
+		t.Fatalf("external manifest must be excluded: %q %q", externalRel, externalPaths)
 	}
 }

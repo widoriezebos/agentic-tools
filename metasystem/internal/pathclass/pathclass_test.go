@@ -1,14 +1,110 @@
 package pathclass
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
+
+func oneRepositoryRootResult(t *testing.T, expected repositoryRootRequest, output []byte, resultErr error) repositoryRootRunner {
+	t.Helper()
+	expected.Args = append([]string(nil), expected.Args...)
+	expected.Environment = append([]string(nil), expected.Environment...)
+	output = append([]byte(nil), output...)
+	var mu sync.Mutex
+	calls := 0
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if calls != 1 {
+			t.Errorf("repository root runner received %d calls; want exactly one", calls)
+		}
+	})
+	return func(request repositoryRootRequest) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		if calls != 1 || !reflect.DeepEqual(request, expected) {
+			t.Errorf("repository root request %d = %+v; want %+v", calls, request, expected)
+			return nil, errors.New("unexpected repository root request")
+		}
+		return append([]byte(nil), output...), resultErr
+	}
+}
+
+func TestDiscoverRepositoryRootWithRunner(t *testing.T) {
+	installation := t.TempDir()
+	steering := []string{
+		"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_CEILING_DIRECTORIES",
+		"GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+		"GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
+		"GIT_CONFIG_NOSYSTEM", "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_REPLACE_REF_BASE",
+		"GIT_IMPLICIT_WORK_TREE", "GIT_NO_REPLACE_OBJECTS", "GIT_PREFIX",
+	}
+	for _, name := range steering {
+		t.Setenv(name, "hostile")
+	}
+	t.Setenv("PATHCLASS_SENTINEL", "retained")
+	expected := repositoryRootRequest{Directory: installation, Args: []string{"rev-parse", "--show-toplevel"}, Environment: scrubGitSteering(os.Environ())}
+	for _, entry := range expected.Environment {
+		name, _, _ := strings.Cut(entry, "=")
+		for _, forbidden := range steering {
+			if name == forbidden {
+				t.Fatalf("Git steering %s survived scrubbing", name)
+			}
+		}
+	}
+	if !containsEnvironment(expected.Environment, "PATHCLASS_SENTINEL=retained") {
+		t.Fatal("unrelated environment entry was dropped")
+	}
+	for _, test := range []struct {
+		name, output, want string
+		err                error
+	}{
+		{name: "absolute output", output: "  " + installation + "\n", want: installation},
+		{name: "relative output", output: "  .\n", want: mustWorkingDirectory(t)},
+		{name: "command error", output: "fatal: no repository\n", err: errors.New("exit status 128"), want: "path class: installation is not inside a Git repository: fatal: no repository"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root, err := discoverRepositoryRootWithRunner(installation, oneRepositoryRootResult(t, expected, []byte(test.output), test.err))
+			if test.err != nil {
+				if err == nil || err.Error() != test.want {
+					t.Fatalf("error = %v; want %q", err, test.want)
+				}
+			} else if err != nil || root != test.want {
+				t.Fatalf("root = %q, error = %v; want %q", root, err, test.want)
+			}
+		})
+	}
+	if _, err := discoverRepositoryRootWithRunner(installation, nil); err == nil || !strings.Contains(err.Error(), "runner is required") {
+		t.Fatalf("nil runner error = %v", err)
+	}
+}
+
+func containsEnvironment(environment []string, entry string) bool {
+	for _, candidate := range environment {
+		if candidate == entry {
+			return true
+		}
+	}
+	return false
+}
+
+func mustWorkingDirectory(t *testing.T) string {
+	t.Helper()
+	directory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return directory
+}
 
 func TestLongestPrefixWins(t *testing.T) {
 	manifest := parseTestManifest(t, `

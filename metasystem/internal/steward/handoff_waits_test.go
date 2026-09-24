@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
@@ -166,11 +167,24 @@ func TestEndInFlightWaitsSelectsByWaiterStateClass(t *testing.T) {
 }
 
 func TestRecordOnlyHandoffStillRefusesInFlightWaits(t *testing.T) {
-	root := handoffWaitsTestRoot(t, handoffCaptureRepo(t, "claimed"))
+	root := handoffWaitsTestRoot(t, t.TempDir())
+	installHandoffFixtureFiles(t, root)
 	path := filepath.Join(run.WaitersDir(root), "record-only.json")
 	for _, state := range run.WaiterStates {
 		_, before := writeHandoffWaiter(t, root, "record-only", run.Waiter{State: state.Name})
-		_, err := captureHandoff(root, handoffMainCaller(), HandoffRecord{}, handoffCaptureNow)
+		file := capturedGoal("claimed")
+		snapshot := handoffGoalSnapshot{claimed: []string{file.Id}, accepted: map[string]*goal.GoalFile{file.Id: file}}
+		reads := 0
+		_, err := captureHandoffWithReader(root, handoffMainCaller(), HandoffRecord{}, handoffCaptureNow, func(gotRoot string, gotNow time.Time) (handoffGoalSnapshot, error) {
+			reads++
+			if gotRoot != root || gotNow != handoffCaptureNow {
+				t.Errorf("goal reader received root=%q clock=%s; want root=%q clock=%s", gotRoot, gotNow, root, handoffCaptureNow)
+			}
+			return snapshot, nil
+		})
+		if reads != 1 {
+			t.Errorf("%q goal reader calls=%d, want 1", state.Name, reads)
+		}
 		var refusal *HandoffRefusal
 		if state.Class == run.WaiterStateInFlight && (!errors.As(err, &refusal) || refusal.Code != "HANDOFF_WAIT_IN_FLIGHT") {
 			t.Errorf("in-flight class %q returned %v", state.Name, err)

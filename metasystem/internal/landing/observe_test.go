@@ -207,89 +207,86 @@ func tierOneParams(f *observeFixture, candidate, receipt string) ObserveParams {
 }
 
 func TestObserveChainBoundLandingEvaluatesBarA(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("internal/x.go", "package internal\n")
-	candidate := f.tree()
-	validRecord := map[string]any{
-		"jobId": "impl-chain", "parentJob": nil, "role": "implementer",
-		"round": 1, "destructiveReach": "DESIGN-BEARING", "chainClosed": true,
+	change := chainAddition("internal/x.go", "package internal\n")
+	patch := chainDiff(change)
+	validRecord := chainRoot("impl-chain")
+	makeCase := func(t *testing.T) (*repositoryObservationFixture, *observationCase) {
+		t.Helper()
+		f := newRepositoryObservationFixture(t)
+		c := f.chainCase(observeTreeB, change)
+		return f, c
 	}
+	ready := func(f *repositoryObservationFixture, c *observationCase, chain string) {
+		f.writeChainReview(chain, 1, chain, chainReviewedTree, patch)
+		c.bindChain(patch, chainReviewedTree, change)
+		c.wantChainPolicy(c.changed...)
+	}
+	f, c := makeCase(t)
 	f.writeChainRecord("impl-chain", validRecord)
 	f.writeChainRecord("impl-chain-r2", map[string]any{
 		"jobId": "impl-chain-r2", "parentJob": "impl-chain", "role": "implementer",
 		"round": 2, "destructiveReach": "DESIGN-BEARING", "status": "completed",
 	})
-	// This is the real root-id conformance layout: even after a round-two
-	// correction, invoking conformance with the root writes review.json in
-	// rounds/1 and records the invoked root as implementerJob.
-	f.writeChainReview("impl-chain", 1, "impl-chain", candidate)
-
-	got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: candidate, Chain: "impl-chain"})
+	ready(f, c, "impl-chain")
+	got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "impl-chain"})
 	if got.Bar != BarChain || got.Verdict != "pass" || got.Code != "closed-chain" {
 		t.Fatalf("closed chain classified as %+v", got)
 	}
 	t.Run("follow-up-id conformance layout", func(t *testing.T) {
-		follow := newObserveFixture(t)
-		follow.write("internal/x.go", "package internal\n")
-		followCandidate := follow.tree()
-		followRecord := map[string]any{
-			"jobId": "follow-chain", "parentJob": nil, "role": "implementer", "round": 1,
-			"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
-		}
-		follow.writeChainRecord("follow-chain", followRecord)
-		follow.writeChainRecord("follow-chain-r2", map[string]any{
-			"jobId": "follow-chain-r2", "parentJob": "follow-chain", "role": "implementer", "round": 2,
-			"destructiveReach": "DESIGN-BEARING", "status": "completed",
+		f, c := makeCase(t)
+		f.writeChainRecord("follow-chain", chainRoot("follow-chain"))
+		f.writeChainRecord("follow-chain-r2", map[string]any{
+			"jobId": "follow-chain-r2", "parentJob": "follow-chain", "role": "implementer",
+			"round": 2, "destructiveReach": "DESIGN-BEARING", "status": "completed",
 		})
-		follow.writeChainReview("follow-chain", 2, "follow-chain-r2", followCandidate)
-		got := Observe(ObserveParams{RepoRoot: follow.root, CandidateTree: followCandidate, Chain: "follow-chain"})
+		f.writeChainReview("follow-chain", 2, "follow-chain-r2", chainReviewedTree, patch)
+		c.bindChain(patch, chainReviewedTree, change)
+		c.wantChainPolicy(c.changed...)
+		got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "follow-chain"})
 		if got.Bar != BarChain || got.Verdict != "pass" || got.Code != "closed-chain" {
 			t.Fatalf("follow-up-id conformance layout classified as %+v", got)
 		}
 	})
 	t.Run("closed critic selects the certified root-id review", func(t *testing.T) {
-		selected := newObserveFixture(t)
-		selected.write("internal/x.go", "package internal\n")
-		selectedTree := selected.tree()
-		selected.write("internal/x.go", "package internal // stale\n")
-		staleTree := selected.tree()
-		selected.writeChainRecord("selected-chain", map[string]any{
-			"jobId": "selected-chain", "parentJob": nil, "role": "implementer", "round": 1,
-			"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
-			"independentCritiqueJobRef": "selected-critic",
+		f, c := makeCase(t)
+		selected := chainRoot("selected-chain")
+		selected["independentCritiqueJobRef"] = "selected-critic"
+		f.writeChainRecord("selected-chain", selected)
+		f.writeChainRecord("selected-chain-r2", map[string]any{
+			"jobId": "selected-chain-r2", "parentJob": "selected-chain", "role": "implementer",
+			"round": 2, "destructiveReach": "DESIGN-BEARING", "status": "completed",
 		})
-		selected.writeChainRecord("selected-chain-r2", map[string]any{
-			"jobId": "selected-chain-r2", "parentJob": "selected-chain", "role": "implementer", "round": 2,
-			"destructiveReach": "DESIGN-BEARING", "status": "completed",
-		})
-		selected.writeChainRecord("selected-critic", map[string]any{
+		f.writeChainRecord("selected-critic", map[string]any{
 			"jobId": "selected-critic", "parentJob": nil, "role": "code-critic", "round": 1,
 			"reviews": "selected-chain-r2", "status": "completed",
 		})
-		selected.writeChainReview("selected-chain", 1, "selected-chain", selectedTree)
-		selected.writeChainReview("selected-chain", 2, "selected-chain-r2", staleTree)
-		result, err := json.Marshal(map[string]any{"reviewedTree": selectedTree})
+		f.writeChainReview("selected-chain", 1, "selected-chain", chainReviewedTree, patch)
+		f.writeChainReview("selected-chain", 2, "selected-chain-r2", observeTreeC,
+			chainDiff(chainAddition("internal/x.go", "package internal // stale\n")))
+		result, err := json.Marshal(map[string]any{"reviewedTree": chainReviewedTree})
 		if err != nil {
 			t.Fatal(err)
 		}
-		selected.write("artifacts/agents/selected-critic/rounds/1/return.json", string(append(result, '\n')))
-		got := Observe(ObserveParams{RepoRoot: selected.root, CandidateTree: selectedTree, Chain: "selected-chain"})
+		f.write("artifacts/agents/selected-critic/rounds/1/return.json", string(append(result, '\n')))
+		c.bindChain(patch, chainReviewedTree, change)
+		c.wantChainPolicy(c.changed...)
+		got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "selected-chain"})
 		if got.Bar != BarChain || got.Verdict != "pass" {
 			t.Fatalf("closed critic's selected conformance output classified as %+v", got)
 		}
 	})
 	t.Run("certified change with register carriage", func(t *testing.T) {
-		bundled := newObserveFixture(t)
-		bundled.write("internal/x.go", "package internal\n")
-		reviewed := bundled.tree()
-		bundled.writeChainRecord("bundle-chain", map[string]any{
-			"jobId": "bundle-chain", "parentJob": nil, "role": "implementer", "round": 1,
-			"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
-		})
-		bundled.writeChainReview("bundle-chain", 1, "bundle-chain", reviewed)
-		bundled.write("memory/receipts.log", "receipt=existing\nreceipt=landing\n")
-		got := Observe(ObserveParams{
-			RepoRoot: bundled.root, CandidateTree: bundled.tree(), Chain: "bundle-chain",
+		f := newRepositoryObservationFixture(t)
+		receipt := chainReplacement("memory/receipts.log", "receipt=existing\n", "receipt=existing\nreceipt=landing\n")
+		f.writeChainRecord("bundle-chain", chainRoot("bundle-chain"))
+		c := f.chainCase(observeTreeB, change, receipt)
+		f.writeChainReview("bundle-chain", 1, "bundle-chain", chainReviewedTree, patch)
+		c.bindChain(patch, chainReviewedTree, change)
+		c.wantChainPolicy(c.changed...)
+		c.wantChainReceiptAppend(1)
+		c.wantChainRegister()
+		got := c.observe(ObserveParams{
+			RepoRoot: f.root, CandidateTree: c.candidate, Chain: "bundle-chain",
 			DirectFix: "register-carriage",
 		})
 		if got.Bar != BarChain || got.Verdict != "pass" ||
@@ -297,23 +294,27 @@ func TestObserveChainBoundLandingEvaluatesBarA(t *testing.T) {
 			got.VerdictTrailer != "pass bar=a carriage=register-carriage" {
 			t.Fatalf("chain plus append-only register carriage classified as %+v", got)
 		}
-
-		bundled.write("memory/known-issues.md", "protected but not carriage\n")
-		got = Observe(ObserveParams{
-			RepoRoot: bundled.root, CandidateTree: bundled.tree(), Chain: "bundle-chain",
+		known := chainAddition("memory/known-issues.md", "protected but not carriage\n")
+		c = f.chainCase(observeTreeC, change, receipt, known)
+		c.bindChain(patch, chainReviewedTree, change)
+		c.wantChainPolicy(c.changed...)
+		c.wantChainReceiptAppend(1)
+		c.wantChainRegister(known.path)
+		got = c.observe(ObserveParams{
+			RepoRoot: f.root, CandidateTree: c.candidate, Chain: "bundle-chain",
 			DirectFix: "register-carriage",
 		})
 		if got.Bar != BarChain || got.Verdict != "pass" || got.Code != "closed-chain" {
 			t.Fatalf("chain with a new record path classified as %+v", got)
 		}
 	})
-	got = Observe(ObserveParams{
-		RepoRoot: f.root, CandidateTree: candidate, Chain: "impl-chain", RevertOf: strings.Repeat("0", 40),
+	c = f.chainCase(observeTreeB, change)
+	got = c.observe(ObserveParams{
+		RepoRoot: f.root, CandidateTree: c.candidate, Chain: "impl-chain", RevertOf: strings.Repeat("0", 40),
 	})
 	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "conflicting-declarations" || got.Mode != "refuse" {
 		t.Fatalf("chain with direct-fix parameter classified as %+v", got)
 	}
-
 	negativeShapes := []struct {
 		name         string
 		code         string
@@ -328,33 +329,32 @@ func TestObserveChainBoundLandingEvaluatesBarA(t *testing.T) {
 	}
 	for _, test := range negativeShapes {
 		t.Run(test.name, func(t *testing.T) {
-			record := map[string]any{}
-			for key, value := range validRecord {
-				record[key] = value
-			}
+			f, c := makeCase(t)
+			record := chainRoot("impl-chain")
 			test.edit(record)
 			f.writeChainRecord("impl-chain", record)
-			got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: candidate, Chain: "impl-chain"})
+			got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "impl-chain"})
 			if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != test.code || got.Mode != test.mode || got.RefusesAgent != test.refusesAgent {
 				t.Fatalf("negative root shape classified as %+v", got)
 			}
 		})
 	}
 	t.Run("unreadable record", func(t *testing.T) {
-		recordPath := filepath.Join(f.root, "artifacts", "agents", "jobs", "impl-chain.json")
-		if err := os.Remove(recordPath); err != nil {
-			t.Fatal(err)
-		}
-		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: candidate, Chain: "impl-chain"})
+		f, c := makeCase(t)
+		got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "impl-chain"})
 		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "chain-record-unreadable" {
 			t.Fatalf("unreadable root record classified as %+v", got)
 		}
 	})
-
 	t.Run("tampered certified path", func(t *testing.T) {
+		f := newRepositoryObservationFixture(t)
+		tampered := chainAddition("internal/x.go", "package internal // tampered\n")
+		c := f.chainCase(observeTreeB, tampered)
 		f.writeChainRecord("impl-chain", validRecord)
-		f.write("internal/x.go", "package internal // tampered\n")
-		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), Chain: "impl-chain"})
+		f.writeChainReview("impl-chain", 1, "impl-chain", chainReviewedTree, patch)
+		c.bindChain(patch, chainReviewedTree, change)
+		c.chain.expected["paths:"+observeBaseTree+":"+c.candidate]--
+		got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "impl-chain"})
 		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "chain-output-mismatch" {
 			t.Fatalf("closed chain with a tampered certified path classified as %+v", got)
 		}
@@ -362,71 +362,55 @@ func TestObserveChainBoundLandingEvaluatesBarA(t *testing.T) {
 }
 
 func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("product.txt", "after\n")
-	f.git("add", "product.txt")
-	f.git("commit", "-qm", "regression to revert")
-	revertOf := f.git("rev-parse", "HEAD")
-	f.write("product.txt", "before\n")
-
-	got := Observe(ObserveParams{
-		RepoRoot: f.root, CandidateTree: f.tree(),
-		DirectFix: "exact-revert", RevertOf: revertOf,
-	})
+	f := newRepositoryObservationFixture(t)
+	before, after := observationText("before\n"), observationText("after\n")
+	params := func(c *observationCase) ObserveParams {
+		return ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "exact-revert", RevertOf: c.revertCommit()}
+	}
+	makeCase := func(candidate, diff string, paths ...string) *observationCase {
+		c := f.comparison(candidate, diff, paths...)
+		c.exactRevert("product.txt")
+		c.declare("product.txt", after, before)
+		c.declareInverseEntries("product.txt", before, after)
+		return c
+	}
+	c := makeCase(observeTreeB, "diff --git a/product.txt b/product.txt\n-after\n+before\n", "product.txt")
+	got := c.observe(params(c))
 	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "path-unclassified" {
 		t.Fatalf("exact inverse classified as %+v", got)
 	}
 
-	f.write("extra.txt", "not part of the inverse\n")
-	got = Observe(ObserveParams{
-		RepoRoot: f.root, CandidateTree: f.tree(),
-		DirectFix: "exact-revert", RevertOf: revertOf,
-	})
+	c = makeCase(observeTreeC, "diff --git a/product.txt b/product.txt\n-after\n+before\ndiff --git a/extra.txt b/extra.txt\n+not part of the inverse\n", "product.txt", "extra.txt")
+	c.declare("extra.txt", nil, observationText("not part of the inverse\n"))
+	got = c.observe(params(c))
 	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "path-unclassified" {
 		t.Fatalf("expanded inverse classified as %+v", got)
 	}
-	if err := os.Remove(filepath.Join(f.root, "extra.txt")); err != nil {
-		t.Fatal(err)
-	}
-	f.write("internal/extra.txt", "floor path outside the inverse\n")
-	got = Observe(ObserveParams{
-		RepoRoot: f.root, CandidateTree: f.tree(),
-		DirectFix: "exact-revert", RevertOf: revertOf,
-	})
+	c = makeCase(observeTreeC, "diff --git a/product.txt b/product.txt\n-after\n+before\ndiff --git a/internal/extra.txt b/internal/extra.txt\n+floor path outside the inverse\n", "product.txt", "internal/extra.txt")
+	c.declare("internal/extra.txt", nil, observationText("floor path outside the inverse\n"))
+	got = c.observe(params(c))
 	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
 		t.Fatalf("expanded inverse with a floor path classified as %+v", got)
 	}
 
-	protected := newObserveFixture(t)
-	protected.write("internal/authority.txt", "protected\n")
-	protected.git("add", "internal/authority.txt")
-	protected.git("commit", "-qm", "protected change")
-	protectedCommit := protected.git("rev-parse", "HEAD")
-	if err := os.Remove(filepath.Join(protected.root, "internal", "authority.txt")); err != nil {
-		t.Fatal(err)
-	}
-	got = Observe(ObserveParams{
-		RepoRoot: protected.root, CandidateTree: protected.tree(),
-		DirectFix: "exact-revert", RevertOf: protectedCommit,
-	})
+	protected := newRepositoryObservationFixture(t)
+	c = protected.comparison(observeTreeB, "diff --git a/internal/authority.txt b/internal/authority.txt\n-protected\n", "internal/authority.txt")
+	c.exactRevert("internal/authority.txt")
+	c.declare("internal/authority.txt", observationText("protected\n"), nil)
+	c.declareInverseEntries("internal/authority.txt", nil, observationText("protected\n"))
+	got = c.observe(ObserveParams{RepoRoot: protected.root, CandidateTree: c.candidate, DirectFix: "exact-revert", RevertOf: c.revertCommit()})
 	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
 		t.Fatalf("floor-changing inverse classified as %+v", got)
 	}
 
 	for _, nestedPath := range []string{"product/AGENTS.md", "product/scripts/x"} {
 		t.Run("unclassified nested path "+nestedPath, func(t *testing.T) {
-			nested := newObserveFixture(t)
-			nested.write(nestedPath, "nested instruction\n")
-			nested.git("add", nestedPath)
-			nested.git("commit", "-qm", "nested instruction change")
-			nestedCommit := nested.git("rev-parse", "HEAD")
-			if err := os.Remove(filepath.Join(nested.root, filepath.FromSlash(nestedPath))); err != nil {
-				t.Fatal(err)
-			}
-			got := Observe(ObserveParams{
-				RepoRoot: nested.root, CandidateTree: nested.tree(),
-				DirectFix: "exact-revert", RevertOf: nestedCommit,
-			})
+			nested := newRepositoryObservationFixture(t)
+			c := nested.comparison(observeTreeB, "diff --git a/"+nestedPath+" b/"+nestedPath+"\n-nested instruction\n", nestedPath)
+			c.exactRevert(nestedPath)
+			c.declare(nestedPath, observationText("nested instruction\n"), nil)
+			c.declareInverseEntries(nestedPath, nil, observationText("nested instruction\n"))
+			got := c.observe(ObserveParams{RepoRoot: nested.root, CandidateTree: c.candidate, DirectFix: "exact-revert", RevertOf: c.revertCommit()})
 			if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "path-unclassified" || got.Mode != "refuse" {
 				t.Fatalf("nested instruction inverse classified as %+v", got)
 			}
@@ -434,171 +418,27 @@ func TestObserveDeclaredDirectFixEvaluatesPerClassRule(t *testing.T) {
 	}
 
 	t.Run("committed engine floor", func(t *testing.T) {
-		engine := newObserveFixture(t)
-		engine.write("bin/metasystem", "committed engine\n")
-		engine.git("add", "bin/metasystem")
-		engine.git("commit", "-qm", "committed engine change")
-		engineCommit := engine.git("rev-parse", "HEAD")
-		if err := os.Remove(filepath.Join(engine.root, "bin", "metasystem")); err != nil {
-			t.Fatal(err)
-		}
-		got := Observe(ObserveParams{
-			RepoRoot: engine.root, CandidateTree: engine.tree(),
-			DirectFix: "exact-revert", RevertOf: engineCommit,
-		})
+		engine := newRepositoryObservationFixture(t)
+		c := engine.comparison(observeTreeB, "diff --git a/bin/metasystem b/bin/metasystem\n-committed engine\n", "bin/metasystem")
+		c.exactRevert("bin/metasystem")
+		c.declare("bin/metasystem", observationText("committed engine\n"), nil)
+		c.declareInverseEntries("bin/metasystem", nil, observationText("committed engine\n"))
+		got := c.observe(ObserveParams{RepoRoot: engine.root, CandidateTree: c.candidate, DirectFix: "exact-revert", RevertOf: c.revertCommit()})
 		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "runtime-path-refused" || got.Mode != "refuse" {
 			t.Fatalf("committed engine inverse classified as %+v", got)
 		}
 	})
 
 	t.Run("record exact revert remains refused", func(t *testing.T) {
-		record := newObserveFixture(t)
-		record.write("memory/receipts.log", "receipt=existing\nreceipt=appended\n")
-		record.git("add", "memory/receipts.log")
-		record.git("commit", "-qm", "append receipt")
-		recordCommit := record.git("rev-parse", "HEAD")
-		record.write("memory/receipts.log", "receipt=existing\n")
-		got := Observe(ObserveParams{
-			RepoRoot: record.root, CandidateTree: record.tree(),
-			DirectFix: "exact-revert", RevertOf: recordCommit,
-		})
+		record := newRepositoryObservationFixture(t)
+		c := record.comparison(observeTreeB, "diff --git a/memory/receipts.log b/memory/receipts.log\n-receipt=appended\n", "memory/receipts.log")
+		c.exactRevert("memory/receipts.log")
+		c.declare("memory/receipts.log", observationText("receipt=existing\nreceipt=appended\n"), observationText("receipt=existing\n"))
+		c.declareInverseEntries("memory/receipts.log", observationText("receipt=existing\n"), observationText("receipt=existing\nreceipt=appended\n"))
+		got := c.observe(ObserveParams{RepoRoot: record.root, CandidateTree: c.candidate, DirectFix: "exact-revert", RevertOf: c.revertCommit()})
 		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "exact-revert-record-refused" {
 			t.Fatalf("record exact revert widened during path-class cutover: %+v", got)
 		}
-	})
-
-	t.Run("register carriage append-only", func(t *testing.T) {
-		for _, register := range []string{"memory/rulings.md", "memory/receipts.log", "records/narrator-digest.log"} {
-			t.Run(register, func(t *testing.T) {
-				carriage := newObserveFixture(t)
-				original, err := os.ReadFile(filepath.Join(carriage.root, register))
-				if err != nil {
-					t.Fatal(err)
-				}
-				appended := "appended row\n"
-				if register == "memory/rulings.md" {
-					appended = "| R-36-m0 | appended ruling |\n"
-				}
-				carriage.write(register, string(original)+appended)
-				got := Observe(ObserveParams{
-					RepoRoot: carriage.root, CandidateTree: carriage.tree(), DirectFix: "register-carriage",
-				})
-				if got.Bar != BarDirectFix || got.Verdict != "pass" || got.Code != "register-carriage" {
-					t.Fatalf("append-only carriage classified as %+v", got)
-				}
-
-				carriage.write(register, "rewritten existing line\n")
-				got = Observe(ObserveParams{
-					RepoRoot: carriage.root, CandidateTree: carriage.tree(), DirectFix: "register-carriage",
-				})
-				if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-not-append-only" {
-					t.Fatalf("rewritten append-only register classified as %+v", got)
-				}
-			})
-		}
-	})
-
-	t.Run("rulings carriage requires rows and preserves mode", func(t *testing.T) {
-		malformed := newObserveFixture(t)
-		original, err := os.ReadFile(filepath.Join(malformed.root, "memory", "rulings.md"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		malformed.write("memory/rulings.md", string(original)+"free text\n")
-		got := Observe(ObserveParams{
-			RepoRoot: malformed.root, CandidateTree: malformed.tree(), DirectFix: "register-carriage",
-		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-not-append-only" {
-			t.Fatalf("malformed ruling carriage classified as %+v", got)
-		}
-
-		modeChanged := newObserveFixture(t)
-		modeOriginal, err := os.ReadFile(filepath.Join(modeChanged.root, "memory", "rulings.md"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		modeChanged.write("memory/rulings.md", string(modeOriginal)+"| R-36-m0 | appended ruling |\n")
-		if err := os.Chmod(filepath.Join(modeChanged.root, "memory", "rulings.md"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		got = Observe(ObserveParams{
-			RepoRoot: modeChanged.root, CandidateTree: modeChanged.tree(), DirectFix: "register-carriage",
-		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-not-append-only" {
-			t.Fatalf("mode-changing ruling carriage classified as %+v", got)
-		}
-	})
-
-	t.Run("landing class authority must name an existing ruling row", func(t *testing.T) {
-		missing := newObserveFixture(t)
-		missing.write("memory/rulings.md", "| R-1 | unrelated ruling |\n")
-		missing.git("add", "memory/rulings.md")
-		missing.git("commit", "-qm", "remove landing class authority")
-		missing.write("memory/receipts.log", "receipt=existing\nreceipt=carried\n")
-		got := Observe(ObserveParams{
-			RepoRoot: missing.root, CandidateTree: missing.tree(), DirectFix: "register-carriage",
-		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-policy-unreadable" {
-			t.Fatalf("manifest with absent authority row classified as %+v", got)
-		}
-	})
-
-	t.Run("register carriage exact and constrained glob entries", func(t *testing.T) {
-		for _, changedPath := range []string{"records/narrator-digest.log", "plans/handoff-current.md"} {
-			t.Run(changedPath, func(t *testing.T) {
-				carriage := newObserveFixture(t)
-				content := "carried register\n"
-				if changedPath == "records/narrator-digest.log" {
-					content = "digest=existing\ndigest=carried\n"
-				}
-				carriage.write(changedPath, content)
-				got := Observe(ObserveParams{
-					RepoRoot: carriage.root, CandidateTree: carriage.tree(), DirectFix: "register-carriage",
-				})
-				if got.Bar != BarDirectFix || got.Verdict != "pass" || got.Code != "register-carriage" {
-					t.Fatalf("allowlisted register %s classified as %+v", changedPath, got)
-				}
-			})
-		}
-		carriage := newObserveFixture(t)
-		carriage.write("plans/handoff-current.txt", "wrong basename shape\n")
-		got := Observe(ObserveParams{
-			RepoRoot: carriage.root, CandidateTree: carriage.tree(), DirectFix: "register-carriage",
-		})
-		if got.Bar != BarDirectFix || got.Code != "register-carriage" {
-			t.Fatalf("new plan record classified as %+v", got)
-		}
-
-		mixed := newObserveFixture(t)
-		mixed.write("adopted.txt", "off-floor miss sorts first\n")
-		mixed.write("internal/protected.txt", "floor miss sorts second\n")
-		got = Observe(ObserveParams{
-			RepoRoot: mixed.root, CandidateTree: mixed.tree(), DirectFix: "register-carriage",
-		})
-		if got.Bar != BarRefusal || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
-			t.Fatalf("mixed carriage misses did not give the floor precedence: %+v", got)
-		}
-	})
-
-	t.Run("carriage policy files are on the floor", func(t *testing.T) {
-		policy := newObserveFixture(t)
-		policy.write("scripts/agents/path-classes.txt", "install:memory/ record\n")
-		got := Observe(ObserveParams{
-			RepoRoot: policy.root, CandidateTree: policy.tree(), DirectFix: "register-carriage",
-		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
-			t.Fatalf("allowlist self-change classified as %+v", got)
-		}
-
-		manifest := newObserveFixture(t)
-		manifest.write("scripts/agents/landing-classes.json", "{}\n")
-		got = Observe(ObserveParams{
-			RepoRoot: manifest.root, CandidateTree: manifest.tree(), DirectFix: "register-carriage",
-		})
-		if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" || got.Mode != "refuse" {
-			t.Fatalf("manifest self-change classified as %+v", got)
-		}
-
 	})
 }
 
@@ -849,8 +689,8 @@ func TestSTR4R1FullWidthChainRequiresFullBatteryReceipt(t *testing.T) {
 }
 
 func TestTierOneClassCutoverAcceptsTheTwoClassLandingBase(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("scripts/agents/landing-classes.json", `{
+	f := newRepositoryObservationFixture(t)
+	f.base("scripts/agents/landing-classes.json", `{
   "schemaVersion": 1,
   "enginePolicyVersion": 1,
   "classes": [
@@ -859,11 +699,10 @@ func TestTierOneClassCutoverAcceptsTheTwoClassLandingBase(t *testing.T) {
   ]
 }
 `)
-	f.git("add", "scripts/agents/landing-classes.json")
-	f.git("commit", "-qm", "legacy two-class landing base")
-	f.write("memory/receipts.log", "receipt=existing\nreceipt=cutover\n")
-	got := Observe(ObserveParams{
-		RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage",
+	c := f.comparison(observeTreeB, "diff --git a/memory/receipts.log b/memory/receipts.log\n+receipt=cutover\n", "memory/receipts.log")
+	c.declare("memory/receipts.log", observationText("receipt=existing\n"), observationText("receipt=existing\nreceipt=cutover\n"))
+	got := c.observe(ObserveParams{
+		RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "register-carriage",
 	})
 	if got.Bar != BarDirectFix || got.Code != "register-carriage" {
 		t.Fatalf("new evaluator could not land from the previous two-class base: %+v", got)
@@ -871,10 +710,11 @@ func TestTierOneClassCutoverAcceptsTheTwoClassLandingBase(t *testing.T) {
 }
 
 func TestSliceOneRetainsHandoffCarriage(t *testing.T) {
-	fixture := newObserveFixture(t)
-	fixture.write("plans/handoff-fixture-1.md", "# fixture handoff\n")
-	got := Observe(ObserveParams{
-		RepoRoot: fixture.root, CandidateTree: fixture.tree(), DirectFix: "register-carriage",
+	fixture := newRepositoryObservationFixture(t)
+	c := fixture.comparison(observeTreeB, "diff --git a/plans/handoff-fixture-1.md b/plans/handoff-fixture-1.md\n+# fixture handoff\n", "plans/handoff-fixture-1.md")
+	c.declare("plans/handoff-fixture-1.md", nil, observationText("# fixture handoff\n"))
+	got := c.observe(ObserveParams{
+		RepoRoot: fixture.root, CandidateTree: c.candidate, DirectFix: "register-carriage",
 	})
 	if got.Bar != BarDirectFix || got.Verdict != "pass" || got.Code != "register-carriage" {
 		t.Fatalf("new handoff lost register carriage during the manifest transition: %+v", got)
@@ -882,10 +722,12 @@ func TestSliceOneRetainsHandoffCarriage(t *testing.T) {
 }
 
 func TestObserveManifestIsBehavior(t *testing.T) {
-	fixture := newObserveFixture(t)
-	fixture.write("scripts/agents/path-classes.txt", "install:memory/ record\n")
-	got := Observe(ObserveParams{
-		RepoRoot: fixture.root, CandidateTree: fixture.tree(), DirectFix: "register-carriage",
+	fixture := newRepositoryObservationFixture(t)
+	before := string(fixture.baseFiles["scripts/agents/path-classes.txt"])
+	c := fixture.comparison(observeTreeB, "diff --git a/scripts/agents/path-classes.txt b/scripts/agents/path-classes.txt\n+install:memory/ record\n", "scripts/agents/path-classes.txt")
+	c.declare("scripts/agents/path-classes.txt", &before, observationText("install:memory/ record\n"))
+	got := c.observe(ObserveParams{
+		RepoRoot: fixture.root, CandidateTree: c.candidate, DirectFix: "register-carriage",
 	})
 	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "direct-fix-floor-refused" {
 		t.Fatalf("path class manifest change escaped the behavior floor: %+v", got)
@@ -906,9 +748,14 @@ func TestObserveClassifiesEachPathClass(t *testing.T) {
 		"unclassified": {path: "product.txt", wantCode: "path-unclassified", wantDetail: true},
 	} {
 		t.Run(name, func(t *testing.T) {
-			f := newObserveFixture(t)
-			f.write(fixture.path, "changed\n")
-			got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage"})
+			f := newRepositoryObservationFixture(t)
+			c := f.comparison(observeTreeB, "diff --git a/"+fixture.path+" b/"+fixture.path+"\n+changed\n", fixture.path)
+			var before *string
+			if fixture.path == "product.txt" {
+				before = observationText("before\n")
+			}
+			c.declare(fixture.path, before, observationText("changed\n"))
+			got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "register-carriage"})
 			if got.Code != fixture.wantCode || (got.Verdict == "pass") != fixture.wantPass {
 				t.Fatalf("%s path classified as %+v", name, got)
 			}
@@ -929,15 +776,18 @@ func TestObserveChainRefusesLedgerRuntimeAndUnclassifiedPaths(t *testing.T) {
 		"unclassified": {path: "product.txt", code: "path-unclassified"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			f := newObserveFixture(t)
-			f.write(leg.path, "changed\n")
-			candidate := f.tree()
-			f.writeChainRecord("class-chain", map[string]any{
-				"jobId": "class-chain", "parentJob": nil, "role": "implementer", "round": 1,
-				"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
-			})
-			f.writeChainReview("class-chain", 1, "class-chain", candidate)
-			got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: candidate, Chain: "class-chain"})
+			f := newRepositoryObservationFixture(t)
+			change := chainAddition(leg.path, "changed\n")
+			if leg.path == "product.txt" {
+				change = chainReplacement(leg.path, "before\n", "changed\n")
+			}
+			c := f.chainCase(observeTreeB, change)
+			f.writeChainRecord("class-chain", chainRoot("class-chain"))
+			patch := chainDiff(change)
+			f.writeChainReview("class-chain", 1, "class-chain", chainReviewedTree, patch)
+			c.bindChain(patch, chainReviewedTree, change)
+			c.wantChainPolicy(c.changed...)
+			got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "class-chain"})
 			if got.Code != leg.code || got.Verdict != "would-refuse" {
 				t.Fatalf("certified %s path classified as %+v", name, got)
 			}
@@ -957,17 +807,12 @@ func TestObserveExactRevertRefusesByClass(t *testing.T) {
 		"unclassified": {path: "product.txt", code: "path-unclassified"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			f := newObserveFixture(t)
-			f.write(leg.path, "after\n")
-			f.git("add", leg.path)
-			f.git("commit", "-qm", "change to revert")
-			revertOf := f.git("rev-parse", "HEAD")
-			if err := os.Remove(filepath.Join(f.root, filepath.FromSlash(leg.path))); err != nil {
-				t.Fatal(err)
-			}
-			got := Observe(ObserveParams{
-				RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "exact-revert", RevertOf: revertOf,
-			})
+			f := newRepositoryObservationFixture(t)
+			c := f.comparison(observeTreeB, "diff --git a/"+leg.path+" b/"+leg.path+"\n-after\n", leg.path)
+			c.exactRevert(leg.path)
+			c.declare(leg.path, observationText("after\n"), nil)
+			c.declareInverseEntries(leg.path, nil, observationText("after\n"))
+			got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "exact-revert", RevertOf: c.revertCommit()})
 			if got.Code != leg.code || got.Verdict != "would-refuse" {
 				t.Fatalf("exact revert of %s path classified as %+v", name, got)
 			}
@@ -1019,177 +864,73 @@ func TestObserveAdoptedApplicationPathsAreOutside(t *testing.T) {
 	})
 }
 
-func TestObserveRecordSemantics(t *testing.T) {
-	t.Run("existing record appends only under a held goal", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.writeHeldGoal("fx", "m9", "L1")
-		f.write("records/misc/fx-analysis.md", "base\n")
-		f.git("add", "plans/goals/fx.md", "records/misc/fx-analysis.md")
-		f.git("commit", "-qm", "owned record base")
-
-		f.write("records/misc/fx-analysis.md", "base\nappend\n")
-		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx", Actor: "m9+L1"})
-		if got.Code != "register-carriage" || got.Verdict != "pass" {
-			t.Fatalf("owned existing record append classified as %+v", got)
-		}
-
-		f.write("records/misc/fx-analysis.md", "replacement\n")
-		got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx", Actor: "m9+L1"})
-		if got.Code != "register-carriage-not-append-only" {
-			t.Fatalf("existing record replacement classified as %+v", got)
-		}
-
-		if err := os.Remove(filepath.Join(f.root, "records/misc/fx-analysis.md")); err != nil {
-			t.Fatal(err)
-		}
-		got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx", Actor: "m9+L1"})
-		if got.Code != "register-carriage-not-append-only" {
-			t.Fatalf("existing record deletion classified as %+v", got)
-		}
-
-		f.write("records/misc/fx-analysis.md", "base\nappend\n")
-		got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage"})
-		if got.Code != "record-not-owned" {
-			t.Fatalf("ownerless existing record append classified as %+v", got)
-		}
-	})
-
-	t.Run("goal-bound plans use base claims and longest identifiers", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.writeHeldGoal("fx", "m9", "L1")
-		f.writeHeldGoal("fx-load", "m9", "L1")
-		f.write("plans/fx-design.md", "base\n")
-		f.write("plans/fx-load-x.md", "base\n")
-		f.write("plans/legacy.md", "legacy\n")
-		f.git("add", "plans")
-		f.git("commit", "-qm", "plan ownership base")
-
-		f.write("plans/fx-design.md", "modified\n")
-		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx", Actor: "m9+L1"})
-		if got.Code != "register-carriage" {
-			t.Fatalf("owned goal plan classified as %+v", got)
-		}
-		got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx", Actor: "m1+L2"})
-		if got.Code != "goal-item-not-held" {
-			t.Fatalf("foreign actor classified as %+v", got)
-		}
-		got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx-load", Actor: "m9+L1"})
-		if got.Code != "record-not-owned" {
-			t.Fatalf("wrong held goal classified as %+v", got)
-		}
-
-		f.write("plans/fx-design.md", "base\n")
-		f.write("plans/fx-load-x.md", "modified\n")
-		got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx", Actor: "m9+L1"})
-		if got.Code != "record-not-owned" {
-			t.Fatalf("shorter goal identifier won ownership: %+v", got)
-		}
-		got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx-load", Actor: "m9+L1"})
-		if got.Code != "register-carriage" {
-			t.Fatalf("longest goal identifier lost ownership: %+v", got)
-		}
-
-		f.write("plans/fx-load-x.md", "base\n")
-		f.write("plans/legacy.md", "modified\n")
-		got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx", Actor: "m9+L1"})
-		if got.Code != "record-not-owned" {
-			t.Fatalf("frozen legacy plan classified as %+v", got)
-		}
-		manifest, err := os.ReadFile(filepath.Join(f.root, "scripts/agents/path-classes.txt"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		f.write("scripts/agents/path-classes.txt", string(manifest)+"own:plans/legacy.md fx\n")
-		f.git("add", "scripts/agents/path-classes.txt")
-		f.git("commit", "-qm", "own legacy plan")
-		f.write("plans/legacy.md", "owned modification\n")
-		got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx", Actor: "m9+L1"})
-		if got.Code != "register-carriage" {
-			t.Fatalf("explicitly owned legacy plan classified as %+v", got)
-		}
-	})
-
-	t.Run("handoffs belong to their seat after creation", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.writeBytes("plans/goals/backlog.md", goal.RenderRoot(&goal.RootRecord{
-			Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1,
-			Free: &goal.FreeRecord{Declared: "2026-09-03T08:00:00Z", Origin: "human", Digest: strings.Repeat("a", 64)},
-		}))
-		f.write("plans/handoff-m9-x.md", "base\n")
-		f.git("add", "plans/handoff-m9-x.md", "plans/goals/backlog.md")
-		f.git("commit", "-qm", "handoff base")
-		f.write("plans/handoff-m9-x.md", "modified\n")
-		got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Actor: "m9+L1"})
-		if got.Code != "register-carriage" {
-			t.Fatalf("own handoff classified as %+v", got)
-		}
-		got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Actor: "m1+L1"})
-		if got.Code != "record-not-owned" {
-			t.Fatalf("foreign handoff classified as %+v", got)
-		}
-	})
-}
-
 func TestObserveUnclassifiedDetailFromBase(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("product.txt", "changed\n")
-	candidate := f.tree()
+	f := newRepositoryObservationFixture(t)
+	c := f.comparison(observeTreeB, "diff --git a/product.txt b/product.txt\n+changed\n", "product.txt")
+	c.declare("product.txt", observationText("before\n"), observationText("changed\n"))
+	candidate := c.candidate
 	manifest, err := os.ReadFile(filepath.Join(f.root, "scripts/agents/path-classes.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.write("scripts/agents/path-classes.txt", string(manifest)+"install:product.txt record\n")
-	got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: candidate, DirectFix: "register-carriage"})
+	got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: candidate, DirectFix: "register-carriage"})
 	if got.Code != "path-unclassified" || len(got.Unclassified) != 1 || got.Unclassified[0] != "product.txt" || !strings.Contains(got.Refusal, "path product.txt has no class") {
 		t.Fatalf("candidate manifest reclassified its own landing: %+v", got)
 	}
 }
 
 func TestObserveFloorPrecedesGoalOwnershipValidation(t *testing.T) {
-	f := newObserveFixture(t)
-	f.writeHeldGoal("fx", "m9", "L1")
-	f.write("records/misc/base.md", "base\n")
-	f.git("add", "plans/goals/fx.md", "records/misc/base.md")
-	f.git("commit", "-qm", "foreign-goal base")
+	f := newRepositoryObservationFixture(t)
+	f.base("plans/goals/fx.md", string(observationHeldGoal("fx", "m9", "L1")))
+	f.base("records/misc/base.md", "base\n")
 
-	f.write("internal/x.go", "package internal\n")
-	got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx", Actor: "m1+L2"})
+	c := f.comparison(observeTreeB, "diff --git a/internal/x.go b/internal/x.go\n+package internal\n", "internal/x.go")
+	c.declare("internal/x.go", nil, observationText("package internal\n"))
+	got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "register-carriage", Goal: "fx", Actor: "m1+L2"})
 	if got.Code != "direct-fix-floor-refused" {
 		t.Fatalf("goal ownership ran before the behavior floor: %+v", got)
 	}
 	if err := os.Remove(filepath.Join(f.root, "internal/x.go")); err != nil {
 		t.Fatal(err)
 	}
-	f.write("records/misc/base.md", "base\nappend\n")
-	got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", Goal: "fx", Actor: "m1+L2"})
+	c = f.comparison(observeTreeC, "diff --git a/records/misc/base.md b/records/misc/base.md\n+append\n", "records/misc/base.md")
+	c.declare("records/misc/base.md", observationText("base\n"), observationText("base\nappend\n"))
+	got = c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "register-carriage", Goal: "fx", Actor: "m1+L2"})
 	if got.Code != "goal-item-not-held" {
 		t.Fatalf("record-only foreign goal classified as %+v", got)
 	}
 }
 
 func TestObserveClassPrecedenceIsSetWide(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("product.txt", "unclassified\n")
-	f.write("bin/metasystem", "runtime\n")
-	f.write("plans/goals/new.md", "ledger\n")
-	got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage"})
+	f := newRepositoryObservationFixture(t)
+	c := f.comparison(observeTreeB, "diff --git a/product.txt b/product.txt\ndiff --git a/bin/metasystem b/bin/metasystem\ndiff --git a/plans/goals/new.md b/plans/goals/new.md\n", "product.txt", "bin/metasystem", "plans/goals/new.md")
+	c.declare("product.txt", observationText("before\n"), observationText("unclassified\n"))
+	c.declare("bin/metasystem", nil, observationText("runtime\n"))
+	c.declare("plans/goals/new.md", nil, observationText("ledger\n"))
+	got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "register-carriage"})
 	if got.Code != "ledger-path-not-goal-verb" {
 		t.Fatalf("ledger did not precede runtime and unclassified paths: %+v", got)
 	}
 
-	f.write("internal/x.go", "package internal\n")
-	got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage"})
+	c = f.comparison(observeTreeC, "diff --git a/product.txt b/product.txt\ndiff --git a/bin/metasystem b/bin/metasystem\ndiff --git a/plans/goals/new.md b/plans/goals/new.md\ndiff --git a/internal/x.go b/internal/x.go\n", "product.txt", "bin/metasystem", "plans/goals/new.md", "internal/x.go")
+	c.declare("product.txt", observationText("before\n"), observationText("unclassified\n"))
+	c.declare("bin/metasystem", nil, observationText("runtime\n"))
+	c.declare("plans/goals/new.md", nil, observationText("ledger\n"))
+	c.declare("internal/x.go", nil, observationText("package internal\n"))
+	got = c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "register-carriage"})
 	if got.Code != "direct-fix-floor-refused" {
 		t.Fatalf("behavior did not precede every other class: %+v", got)
 	}
 }
 
 func TestObserveRegisterCarriageRefusesStagedNarratorDigestRewrite(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("records/narrator-digest.log", "digest=rewritten\n")
+	f := newRepositoryObservationFixture(t)
+	c := f.comparison(observeTreeB, "diff --git a/records/narrator-digest.log b/records/narrator-digest.log\n+digest=rewritten\n", "records/narrator-digest.log")
+	c.declare("records/narrator-digest.log", observationText("digest=existing\n"), observationText("digest=rewritten\n"))
 
-	got := Observe(ObserveParams{
-		RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage",
+	got := c.observe(ObserveParams{
+		RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "register-carriage",
 	})
 	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "register-carriage-not-append-only" {
 		t.Fatalf("staged narrator digest rewrite classified as %+v", got)
@@ -1197,9 +938,11 @@ func TestObserveRegisterCarriageRefusesStagedNarratorDigestRewrite(t *testing.T)
 }
 
 func TestObserveUndeclaredLandingRecordsWouldRefuse(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("product.txt", "undeclared change\n")
-	got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree()})
+	f := newRepositoryObservationFixture(t)
+	f.base("product.txt", "before\n")
+	c := f.comparison(observeTreeB, "diff --git a/product.txt b/product.txt\n+undeclared change\n", "product.txt")
+	c.declare("product.txt", observationText("before\n"), observationText("undeclared change\n"))
+	got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate})
 	if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "missing-declaration" || got.Mode != "refuse" {
 		t.Fatalf("undeclared landing classified as %+v", got)
 	}
@@ -1208,17 +951,17 @@ func TestObserveUndeclaredLandingRecordsWouldRefuse(t *testing.T) {
 	}
 	for name, params := range map[string]ObserveParams{
 		"orphaned revert parameter": {
-			RepoRoot: f.root, CandidateTree: f.tree(), RevertOf: strings.Repeat("0", 40),
+			RepoRoot: f.root, CandidateTree: c.candidate, RevertOf: strings.Repeat("0", 40),
 		},
 		"revert parameter on register carriage": {
-			RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "register-carriage", RevertOf: strings.Repeat("0", 40),
+			RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "register-carriage", RevertOf: strings.Repeat("0", 40),
 		},
 		"exact revert missing its commit": {
-			RepoRoot: f.root, CandidateTree: f.tree(), DirectFix: "exact-revert",
+			RepoRoot: f.root, CandidateTree: c.candidate, DirectFix: "exact-revert",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := Observe(params)
+			got := c.observe(params)
 			if got.Bar != BarRefusal || got.Verdict != "would-refuse" || got.Code != "conflicting-declarations" || got.Mode != "refuse" {
 				t.Fatalf("partial classification parameter classified as %+v", got)
 			}
@@ -1228,13 +971,15 @@ func TestObserveUndeclaredLandingRecordsWouldRefuse(t *testing.T) {
 
 func TestObservePromotionRecordIsStrictAndAbsentMeansObserve(t *testing.T) {
 	t.Parallel()
-	observeMissingDeclaration := func(f *observeFixture, content string) Observation {
+	observeMissingDeclaration := func(f *repositoryObservationFixture, content string) Observation {
 		f.t.Helper()
-		f.write("product.txt", content)
-		return Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree()})
+		f.base("product.txt", "before\n")
+		c := f.comparison(observeTreeB, "diff --git a/product.txt b/product.txt\n+"+content, "product.txt")
+		c.declare("product.txt", observationText("before\n"), &content)
+		return c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate})
 	}
 
-	absent := newObserveFixture(t)
+	absent := newRepositoryObservationFixture(t)
 	if _, err := os.Stat(filepath.Join(absent.root, "scripts", "agents", "landing-promotion.json")); !os.IsNotExist(err) {
 		t.Fatalf("deleted promotion record exists or cannot be inspected: %v", err)
 	}
@@ -1243,10 +988,8 @@ func TestObservePromotionRecordIsStrictAndAbsentMeansObserve(t *testing.T) {
 		t.Fatalf("missing promotion record changed refusing behavior: %+v", absentObservation)
 	}
 
-	ignored := newObserveFixture(t)
+	ignored := newRepositoryObservationFixture(t)
 	ignored.write("scripts/agents/landing-promotion.json", "not policy\n")
-	ignored.git("add", "scripts/agents/landing-promotion.json")
-	ignored.git("commit", "-qm", "irrelevant legacy filename")
 	ignoredObservation := observeMissingDeclaration(ignored, "undeclared with ignored legacy file\n")
 	if ignoredObservation.Mode != absentObservation.Mode || ignoredObservation.Code != absentObservation.Code ||
 		ignoredObservation.RefusesAgent != absentObservation.RefusesAgent || ignoredObservation.VerdictTrailer != absentObservation.VerdictTrailer {
@@ -1347,150 +1090,135 @@ func TestObserveTierOneBoundsIgnoreTheReceiptLedger(t *testing.T) {
 }
 
 func TestObserveChainCarriesAnAppendedReceiptLedger(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("internal/x.go", "package internal\n")
-	certified := f.tree()
-	f.writeChainRecord("impl-chain", map[string]any{
-		"jobId": "impl-chain", "parentJob": nil, "role": "implementer",
-		"round": 1, "destructiveReach": "DESIGN-BEARING", "chainClosed": true,
-	})
+	f := newRepositoryObservationFixture(t)
+	change := chainAddition("internal/x.go", "package internal\n")
+	patch := chainDiff(change)
+	f.writeChainRecord("impl-chain", chainRoot("impl-chain"))
 	f.writeChainRecord("impl-chain-r2", map[string]any{
 		"jobId": "impl-chain-r2", "parentJob": "impl-chain", "role": "implementer",
 		"round": 2, "destructiveReach": "DESIGN-BEARING", "status": "completed",
 	})
-	f.writeChainReview("impl-chain", 1, "impl-chain", certified)
-	f.write("memory/receipts.log", "receipt=existing\n1|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=fx|note=fixture\n")
-	got := Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), Chain: "impl-chain"})
+	f.writeChainReview("impl-chain", 1, "impl-chain", chainReviewedTree, patch)
+	receipt := chainReplacement("memory/receipts.log", "receipt=existing\n",
+		"receipt=existing\n1|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=fx|note=fixture\n")
+	c := f.chainCase(observeTreeB, change, receipt)
+	c.bindChain(patch, chainReviewedTree, change)
+	c.wantChainPolicy(c.changed...)
+	c.wantChainReceiptAppend(1)
+	got := c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "impl-chain"})
 	if got.Bar != BarChain || got.Verdict != "pass" || got.Code != "closed-chain" {
 		t.Fatalf("chain landing with its appended receipt line classified as %+v", got)
 	}
-	f.write("memory/receipts.log", "rewritten\n")
-	got = Observe(ObserveParams{RepoRoot: f.root, CandidateTree: f.tree(), Chain: "impl-chain"})
+	rewritten := chainReplacement("memory/receipts.log", "receipt=existing\n", "rewritten\n")
+	c = f.chainCase(observeTreeC, change, rewritten)
+	c.bindChain(patch, chainReviewedTree, change)
+	c.wantChainPolicy(c.changed...)
+	c.wantChainReceiptAppend(1)
+	got = c.observe(ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "impl-chain"})
 	if got.Code != "chain-has-uncarried-paths" {
 		t.Fatalf("chain landing that rewrites the receipt ledger classified as %+v", got)
 	}
 }
 
 func TestObservationBindsTheChainRootsGoalAndRevision(t *testing.T) {
-	f := newObserveFixture(t)
-	f.writeHeldGoalAtRevision("ship-widget", "m9", "L1", 3)
-	f.git("add", "plans/goals/ship-widget.md")
-	f.git("commit", "-qm", "claim fixture goal")
-	f.write("internal/x.go", "package internal\n")
-	candidate := f.tree()
-	record := map[string]any{
-		"jobId": "goal-chain", "parentJob": nil, "role": "implementer", "round": 1,
-		"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
-		"goalId": "ship-widget", "goalRevision": 3,
-	}
+	f := newRepositoryObservationFixture(t)
+	f.baseHeldGoalAtRevision("ship-widget", "m9", "L1", 3)
+	change := chainAddition("internal/x.go", "package internal\n")
+	patch := chainDiff(change)
+	record := chainRoot("goal-chain")
+	record["goalId"], record["goalRevision"] = "ship-widget", 3
 	f.writeChainRecord("goal-chain", record)
-	f.writeChainReview("goal-chain", 1, "goal-chain", candidate)
-
-	params := ObserveParams{RepoRoot: f.root, CandidateTree: candidate, Chain: "goal-chain", Goal: "ship-widget", Actor: "m9+L1"}
-	got := Observe(params)
+	f.writeChainReview("goal-chain", 1, "goal-chain", chainReviewedTree, patch)
+	ready := func(candidate string) *observationCase {
+		c := f.chainCase(candidate, change)
+		c.bindChain(patch, chainReviewedTree, change)
+		c.wantChainPolicy(c.changed...)
+		c.wantChainGoal("ship-widget")
+		return c
+	}
+	c := ready(observeTreeB)
+	params := ObserveParams{RepoRoot: f.root, CandidateTree: c.candidate, Chain: "goal-chain", Goal: "ship-widget", Actor: "m9+L1"}
+	got := c.observe(params)
 	if got.Code != "closed-chain" || got.GoalRevision != 3 {
 		t.Fatalf("matching goal-bound chain classified as %+v", got)
 	}
-
+	c = f.chainCase(observeTreeB, change)
 	missing := params
 	missing.Goal = ""
-	if got := Observe(missing); got.Code != "goal-binding-missing" || got.Verdict != "would-refuse" {
+	if got := c.observe(missing); got.Code != "goal-binding-missing" || got.Verdict != "would-refuse" {
 		t.Fatalf("goal-bound chain without --goal classified as %+v", got)
 	}
+	c = f.chainCase(observeTreeB, change)
 	mismatch := params
 	mismatch.Goal = "ship-gadget"
-	if got := Observe(mismatch); got.Code != "goal-binding-mismatch" || got.Verdict != "would-refuse" {
+	if got := c.observe(mismatch); got.Code != "goal-binding-mismatch" || got.Verdict != "would-refuse" {
 		t.Fatalf("goal-bound chain under another goal classified as %+v", got)
 	}
-
-	f.writeHeldGoalAtRevision("ship-widget", "m9", "L1", 4)
-	f.git("add", "plans/goals/ship-widget.md")
-	f.git("commit", "-qm", "move fixture claim revision")
-	f.write("internal/x.go", "package internal // moved\n")
-	movedCandidate := f.tree()
-	f.writeChainReview("goal-chain", 1, "goal-chain", movedCandidate)
-	params.CandidateTree = movedCandidate
-	if got := Observe(params); got.Code != "goal-revision-moved" || got.Verdict != "would-refuse" {
+	f.baseHeldGoalAtRevision("ship-widget", "m9", "L1", 4)
+	c = ready(observeTreeC)
+	params.CandidateTree = c.candidate
+	if got := c.observe(params); got.Code != "goal-revision-moved" || got.Verdict != "would-refuse" {
 		t.Fatalf("chain at an old claim revision classified as %+v", got)
 	}
-
 	delete(record, "goalRevision")
 	f.writeChainRecord("goal-chain", record)
-	if got := Observe(params); got.Code != "chain-record-malformed" || got.Verdict != "would-refuse" {
+	c = f.chainCase(observeTreeC, change)
+	if got := c.observe(params); got.Code != "chain-record-malformed" || got.Verdict != "would-refuse" {
 		t.Fatalf("goal-bound chain without a positive revision classified as %+v", got)
 	}
-
 	goalFreeRoot := map[string]any{}
 	for key, value := range record {
 		goalFreeRoot[key] = value
 	}
 	goalFreeRoot["goalId"] = nil
 	f.writeChainRecord("goal-chain", goalFreeRoot)
-	params.Goal = "ship-widget"
-	if got := Observe(params); got.Code != "closed-chain" || got.GoalRevision != 4 {
+	c = ready(observeTreeC)
+	if got := c.observe(params); got.Code != "closed-chain" || got.GoalRevision != 4 {
 		t.Fatalf("goal-free root with a currently held --goal classified as %+v", got)
 	}
-
-	carriage := newObserveFixture(t)
-	carriage.writeHeldGoalAtRevision("ship-widget", "m9", "L1", 4)
-	carriage.git("add", "plans/goals/ship-widget.md")
-	carriage.git("commit", "-qm", "claim carriage goal")
-	carriage.write("records/misc/fixture.md", "fixture\n")
-	got = Observe(ObserveParams{RepoRoot: carriage.root, CandidateTree: carriage.tree(), DirectFix: "register-carriage", Goal: "ship-widget", Actor: "m9+L1"})
+	carriage := newRepositoryObservationFixture(t)
+	carriage.baseHeldGoalAtRevision("ship-widget", "m9", "L1", 4)
+	recordChange := chainAddition("records/misc/fixture.md", "fixture\n")
+	recordCase := carriage.chainCase(observeTreeB, recordChange)
+	recordCase.wantChain("head", 1)
+	recordCase.wantChain("paths:"+observeBaseTree+":"+recordCase.candidate, 1)
+	recordCase.wantChainRegister(recordChange.path)
+	recordCase.wantChainGoal("ship-widget")
+	got = recordCase.observe(ObserveParams{
+		RepoRoot: carriage.root, CandidateTree: recordCase.candidate,
+		DirectFix: "register-carriage", Goal: "ship-widget", Actor: "m9+L1",
+	})
 	if got.Code != "register-carriage" || got.GoalRevision != 4 {
 		t.Fatalf("register carriage did not bind the base claim revision: %+v", got)
 	}
-
-	tierOne := newObserveFixture(t)
-	tierOne.prepareTierOne("area")
-	tierOne.write("docs/constant.txt", "change\n")
-	tierOne.git("add", "docs/constant.txt")
-	tierCandidate, receipt := tierOne.tierOneReceipt("true")
+	tierOne := newRepositoryObservationFixture(t)
+	tierChange := chainAddition("docs/constant.txt", "change\n")
+	tierCase := tierOne.chainCase(observeTreeB, tierChange)
 	tierOne.writeChainRecord("tier-one-root", map[string]any{
 		"jobId": "tier-one-root", "parentJob": nil, "role": "implementer",
 		"goalId": "other-goal", "goalRevision": 1, "goalTier": 1, "gateWidth": "area",
 	})
-	if got := Observe(tierOneParams(tierOne, tierCandidate, receipt)); got.Code != "goal-binding-mismatch" || got.Mode != "refuse" {
+	if got := tierCase.observe(ObserveParams{
+		RepoRoot: tierOne.root, CandidateTree: tierCase.candidate, DirectFix: "tier-1",
+		Goal: "tier-one", Actor: "m9+L1", RootJob: "tier-one-root", TestReceipt: "unused",
+	}); got.Code != "goal-binding-mismatch" || got.Mode != "refuse" {
 		t.Fatalf("tier-one root under another goal classified as %+v", got)
 	}
 }
 
-func TestObservationRequiresAGoalFromANonHumanActor(t *testing.T) {
-	nonFree := newObserveFixture(t)
-	nonFree.write("records/misc/fixture.md", "fixture\n")
-	params := ObserveParams{RepoRoot: nonFree.root, CandidateTree: nonFree.tree(), DirectFix: "register-carriage", Actor: "m9+lineage"}
-	if got := Observe(params); got.Code != "goal-binding-missing" || got.Verdict != "would-refuse" {
-		t.Fatalf("goal-less agent landing on an ordinary ledger classified as %+v", got)
-	}
-
-	free := newObserveFixture(t)
-	free.writeBytes("plans/goals/backlog.md", goal.RenderRoot(&goal.RootRecord{
+func TestObservationRequiresAGoalFromANonHumanActorForGoalBoundChain(t *testing.T) {
+	free := newRepositoryObservationFixture(t)
+	free.base("plans/goals/backlog.md", string(goal.RenderRoot(&goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1,
 		Free: &goal.FreeRecord{Declared: "2026-09-03T08:00:00Z", Origin: "human", Digest: strings.Repeat("a", 64)},
-	}))
-	free.git("add", "plans/goals/backlog.md")
-	free.git("commit", "-qm", "declare fixture ledger goal-free")
-	free.write("records/misc/fixture.md", "fixture\n")
-	params.RepoRoot, params.CandidateTree = free.root, free.tree()
-	if got := Observe(params); got.Code != "register-carriage" || !strings.Contains(got.Provenance, " goal-free") {
-		t.Fatalf("goal-less agent landing on a Goal-free ledger classified as %+v", got)
-	}
-
-	params.Actor = "m9+human"
-	params.RepoRoot, params.CandidateTree = nonFree.root, nonFree.tree()
-	if got := Observe(params); got.Code != "goal-binding-missing" || got.Verdict != "would-refuse" {
-		t.Fatalf("human observation did not record the would-refuse verdict: %+v", got)
-	}
-
-	free.write("internal/x.go", "package internal\n")
-	chainCandidate := free.tree()
-	free.writeChainRecord("goal-chain", map[string]any{
-		"jobId": "goal-chain", "parentJob": nil, "role": "implementer", "round": 1,
-		"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
-		"goalId": "ship-widget", "goalRevision": 3,
-	})
-	free.writeChainReview("goal-chain", 1, "goal-chain", chainCandidate)
-	if got := Observe(ObserveParams{RepoRoot: free.root, CandidateTree: chainCandidate, Chain: "goal-chain", Actor: "m9+lineage"}); got.Code != "goal-binding-missing" {
+	})))
+	change := chainAddition("internal/x.go", "package internal\n")
+	c := free.chainCase(observeTreeB, change)
+	record := chainRoot("goal-chain")
+	record["goalId"], record["goalRevision"] = "ship-widget", 3
+	free.writeChainRecord("goal-chain", record)
+	free.writeChainReview("goal-chain", 1, "goal-chain", chainReviewedTree, chainDiff(change))
+	if got := c.observe(ObserveParams{RepoRoot: free.root, CandidateTree: c.candidate, Chain: "goal-chain", Actor: "m9+lineage"}); got.Code != "goal-binding-missing" {
 		t.Fatalf("Goal-free ledger overrode a goal-bound chain root: %+v", got)
 	}
 }

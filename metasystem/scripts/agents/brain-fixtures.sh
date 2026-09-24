@@ -46,7 +46,7 @@ setup_ledger() {
   local label=$1 machine=$2 digest ledger manifest migrate_out fixture_start
   bed_origin=$tmp/$label-origin.git
   bed_clone=$tmp/$label-clone
-  git init -q --bare "$bed_origin"
+  git init -q -b main --bare "$bed_origin"
   git init -q -b main "$bed_clone"
   git -C "$bed_clone" config user.name fixture
   git -C "$bed_clone" config user.email fixture@example.invalid

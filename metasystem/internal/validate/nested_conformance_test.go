@@ -108,14 +108,8 @@ func TestNestedReviewStageSpeaksProjectSpace(t *testing.T) {
 // diagnosis is sound without authenticated admission provenance.
 func TestUnnamedBaseKeepsTheGenericRefusal(t *testing.T) {
 	root := t.TempDir()
-	nestedGit(t, root, "init", "-q", "-b", "main")
-	nestedWrite(t, root, "truth/a.txt", "a\n")
-	nestedGit(t, root, "add", ".")
-	nestedGit(t, root, "commit", "-qm", "first")
-	head, err := (gittree.Workspace{Dir: root}).HeadTree()
-	if err != nil {
-		t.Fatal(err)
-	}
+	const firstUnnamedBase = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const secondUnnamedBase = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 	state := map[string]any{
 		"initialBaseline": strings.Repeat("d", 40),
 		"turnLog":         []any{},
@@ -127,7 +121,7 @@ func TestUnnamedBaseKeepsTheGenericRefusal(t *testing.T) {
 	}
 	nestedWrite(t, root, "artifacts/agents/missions/m1/state.json", string(encoded))
 
-	for _, base := range []string{head, strings.Repeat("e", 40)} {
+	for _, base := range []string{firstUnnamedBase, secondUnnamedBase} {
 		if _, _, err := missionBaseSequencePoint(root, "m1", base); err == nil ||
 			!strings.Contains(err.Error(), "not a named expected-tree sequence point") {
 			t.Fatalf("an unnamed base (%s) keeps the generic refusal: %v", base, err)

@@ -67,7 +67,8 @@ func proveObligationHuman(t *testing.T, root string) humanauthority.Proof {
 
 func TestEnrolledAncestryWithRelayedFlagsLeavesNoLandedTemporaryMark(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "enrolled-precedence")
+	endpoint := obligationAuthorityLocalEndpoint(t, "enrolled-precedence")
+	root := endpoint.Root
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -78,13 +79,13 @@ func TestEnrolledAncestryWithRelayedFlagsLeavesNoLandedTemporaryMark(t *testing.
 	if err != nil || !proof.ValidFor(root) {
 		t.Fatalf("enrolled ancestry did not take precedence over valid relayed flags: proof=%+v err=%v", proof, err)
 	}
-	request := obligationAuthorityVerbReq(root, "01J5X00000000000000000Q541", "mac-a")
+	request := verbReqFor(endpoint, "01J5X00000000000000000Q541", "mac-a")
 	request.Actor.Human = "Wido"
 	request.Now = now
 	if result, err := SetObligation(request, "enrolled-precedence", testGovernedObligation(ObligationDraft), &proof); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("enrolled set-obligation did not confirm: %+v %v", result, err)
 	}
-	projection, err := Project(obligationAuthorityEndpoint(root), false, now)
+	projection, err := Project(endpoint, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,9 +175,10 @@ func obligationAuthorityVerbReq(root, ulid, machine string) VerbRequest {
 
 func TestOnlyHumanProofAndChosenPolicyCanActivateAnObligation(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "governed")
+	endpoint := obligationAuthorityLocalEndpoint(t, "governed")
+	root := endpoint.Root
 	proof := proveObligationHuman(t, root)
-	human := obligationAuthorityVerbReq(root, "01J5X00000000000000000Q542", "mac-a")
+	human := verbReqFor(endpoint, "01J5X00000000000000000Q542", "mac-a")
 	human.Actor.Human = "Wido"
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -190,12 +192,12 @@ func TestOnlyHumanProofAndChosenPolicyCanActivateAnObligation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	active := obligationAuthorityVerbReq(root, "01J5X00000000000000000Q543", "mac-a")
+	active := verbReqFor(endpoint, "01J5X00000000000000000Q543", "mac-a")
 	active.Actor.Human = "Wido"
 	if _, err := SetObligation(active, "governed", testGovernedObligation(ObligationEnforced), &proof); err != nil {
 		t.Fatalf("Wido's one-word policy choice did not activate the human-authorized obligation: %v", err)
 	}
-	projection, err := Project(obligationAuthorityEndpoint(root), false, active.Now)
+	projection, err := Project(endpoint, false, active.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,11 +210,12 @@ func TestOnlyHumanProofAndChosenPolicyCanActivateAnObligation(t *testing.T) {
 
 func TestRecordedRelayCanOnlyReplaceSetObligationAncestry(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "temporary-governed")
+	endpoint := obligationAuthorityLocalEndpoint(t, "temporary-governed")
+	root := endpoint.Root
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	human := obligationAuthorityVerbReq(root, "01J5X00000000000000000Q552", "mac-a")
+	human := verbReqFor(endpoint, "01J5X00000000000000000Q552", "mac-a")
 	human.Actor.Human = "Wido"
 	if _, err := SetObligation(human, "temporary-governed", testGovernedObligation(ObligationDraft), nil); err == nil {
 		t.Fatal("set-obligation accepted no authority proof")
@@ -224,7 +227,7 @@ func TestRecordedRelayCanOnlyReplaceSetObligationAncestry(t *testing.T) {
 	if temporaryProof.ValidFor(root) {
 		t.Fatal("temporary set-obligation authority became reusable enrolled ancestry")
 	}
-	projection, err := Project(obligationAuthorityEndpoint(root), false, human.Now)
+	projection, err := Project(endpoint, false, human.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,17 +246,18 @@ func TestRecordedRelayCanOnlyReplaceSetObligationAncestry(t *testing.T) {
 		t.Fatalf("temporary set-obligation was not durable in append-only history: %+v", lastHistory)
 	}
 
-	activeRoot := obligationAuthorityLocalRoot(t, "temporary-active")
+	activeEndpoint := obligationAuthorityLocalEndpoint(t, "temporary-active")
+	activeRoot := activeEndpoint.Root
 	if err := os.WriteFile(filepath.Join(activeRoot, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	active := obligationAuthorityVerbReq(activeRoot, "01J5X00000000000000000Q553", "mac-a")
+	active := verbReqFor(activeEndpoint, "01J5X00000000000000000Q553", "mac-a")
 	active.Actor.Human = "Wido"
 	activeProof := testTemporaryGoalProof(t, activeRoot, "Wido authorizes active consequences", "2026-09-06")
 	if _, err := SetObligation(active, "temporary-active", testGovernedObligation(ObligationEnforced), &activeProof); err != nil {
 		t.Fatalf("recorded relay did not stamp an active obligation: %v", err)
 	}
-	projection, err = Project(obligationAuthorityEndpoint(activeRoot), false, active.Now)
+	projection, err = Project(activeEndpoint, false, active.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,11 +275,12 @@ func TestRecordedRelayCanOnlyReplaceSetObligationAncestry(t *testing.T) {
 
 func TestRelayedSetObligationIsBoundOncePerGoalPerRuling(t *testing.T) {
 	t.Parallel()
-	root := obligationAuthorityLocalRoot(t, "one-relayed-obligation")
+	endpoint := obligationAuthorityLocalEndpoint(t, "one-relayed-obligation")
+	root := endpoint.Root
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	first := obligationAuthorityVerbReq(root, "01J5X00000000000000000Q554", "mac-a")
+	first := verbReqFor(endpoint, "01J5X00000000000000000Q554", "mac-a")
 	first.Actor.Human = "Wido"
 	firstWord := "Wido authorizes first obligation"
 	firstProof := testTemporaryGoalProof(t, root, firstWord, "2026-09-06")
@@ -283,7 +288,7 @@ func TestRelayedSetObligationIsBoundOncePerGoalPerRuling(t *testing.T) {
 		t.Fatalf("first relayed set-obligation did not confirm: %+v %v", result, err)
 	}
 
-	second := obligationAuthorityVerbReq(root, "01J5X00000000000000000Q555", "mac-a")
+	second := verbReqFor(endpoint, "01J5X00000000000000000Q555", "mac-a")
 	second.Actor.Human = "Wido"
 	second.Now = first.Now.Add(time.Minute)
 	secondProof := testTemporaryGoalProof(t, root, "Wido authorizes second obligation", "2026-09-06")
@@ -296,36 +301,36 @@ func TestRelayedSetObligationIsBoundOncePerGoalPerRuling(t *testing.T) {
 
 func TestPruneRetainsRelayedUseForAReopenedGoalIdentifier(t *testing.T) {
 	t.Parallel()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
+	endpoint, _ := fakeGoalEndpoint(t)
+	root := endpoint.Root
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if result, err := Open(verbReq(root, "01J5X00000000000000000Q560", "mac-a"), "relay-survives-prune", "Keep relay use durable.", OriginMain, "Exercise it."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000Q560", "mac-a"), "relay-survives-prune", "Keep relay use durable.", OriginMain, "Exercise it."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", result, err)
 	}
-	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000Q561", "mac-a"), "relay-survives-prune", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000Q561", "mac-a"), "relay-survives-prune", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", result, err)
 	}
-	first := verbReq(root, "01J5X00000000000000000Q562", "mac-a")
+	first := verbReqFor(endpoint, "01J5X00000000000000000Q562", "mac-a")
 	first.Actor.Human = "Wido"
 	firstProof := testTemporaryGoalProof(t, root, "Wido authorizes retained obligation", "2026-09-06")
 	if result, err := SetObligation(first, "relay-survives-prune", testGovernedObligation(ObligationDraft), &firstProof); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("first relayed set-obligation: %+v %v", result, err)
 	}
-	if result, err := Done(verbReq(root, "01J5X00000000000000000Q563", "mac-a"), "relay-survives-prune", "Archive it."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Done(verbReqFor(endpoint, "01J5X00000000000000000Q563", "mac-a"), "relay-survives-prune", "Archive it."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("done: %+v %v", result, err)
 	}
-	if result, err := Prune(verbReq(root, "01J5X00000000000000000Q564", "mac-a"), 0); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Prune(verbReqFor(endpoint, "01J5X00000000000000000Q564", "mac-a"), 0); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("prune: %+v %v", result, err)
 	}
-	if result, err := Open(verbReq(root, "01J5X00000000000000000Q565", "mac-a"), "relay-survives-prune", "Reuse the stable identifier.", OriginMain, "Try another relay."); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := Open(verbReqFor(endpoint, "01J5X00000000000000000Q565", "mac-a"), "relay-survives-prune", "Reuse the stable identifier.", OriginMain, "Try another relay."); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("reopen identifier: %+v %v", result, err)
 	}
-	if result, err := claimApprovedForTest(t, verbReq(root, "01J5X00000000000000000Q566", "mac-a"), "relay-survives-prune", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
+	if result, err := claimApprovedForTest(t, verbReqFor(endpoint, "01J5X00000000000000000Q566", "mac-a"), "relay-survives-prune", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("reclaim identifier: %+v %v", result, err)
 	}
-	second := verbReq(root, "01J5X00000000000000000Q567", "mac-a")
+	second := verbReqFor(endpoint, "01J5X00000000000000000Q567", "mac-a")
 	second.Actor.Human = "Wido"
 	second.Now = first.Now.Add(time.Minute)
 	secondProof := testTemporaryGoalProof(t, root, "Wido authorizes reset obligation", "2026-09-06")

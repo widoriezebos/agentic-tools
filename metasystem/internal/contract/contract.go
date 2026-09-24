@@ -162,7 +162,11 @@ type contractSealField struct {
 // resolved path so a caller can report exactly which file it accepted, plus
 // calibration warnings that never refuse the contract.
 func Validate(path string) (string, []string, error) {
-	doc, _, _, err := contractLoad(path)
+	return contractValidateWithRepository(path, contractRepositoryFor)
+}
+
+func contractValidateWithRepository(path string, repository func(string) (string, error)) (string, []string, error) {
+	doc, _, _, err := contractLoadWithRepository(path, repository)
 	if err != nil {
 		return "", nil, err
 	}
@@ -211,7 +215,11 @@ func (d *contractDoc) calibrationWarnings() []string {
 // Seal measures the reproducible baseline and writes the generated
 // mission-seal block, returning the digest a human signs.
 func Seal(path string) (string, error) {
-	doc, repo, projectRoot, err := contractLoad(path)
+	return contractSealWithRepository(path, contractRepositoryFor)
+}
+
+func contractSealWithRepository(path string, repository func(string) (string, error)) (string, error) {
+	doc, repo, projectRoot, err := contractLoadWithRepository(path, repository)
 	if err != nil {
 		return "", err
 	}
@@ -222,7 +230,11 @@ func Seal(path string) (string, error) {
 // mission id and the sha256 of the approved raw bytes, and — when an output
 // path is given — atomically records those exact bytes there.
 func Preflight(path, verifiedBytesOutput string) (missionID, rawSHA string, err error) {
-	doc, repo, projectRoot, err := contractLoad(path)
+	return contractPreflightWithRepository(path, verifiedBytesOutput, contractRepositoryFor)
+}
+
+func contractPreflightWithRepository(path, verifiedBytesOutput string, repository func(string) (string, error)) (missionID, rawSHA string, err error) {
+	doc, repo, projectRoot, err := contractLoadWithRepository(path, repository)
 	if err != nil {
 		return "", "", err
 	}
@@ -245,12 +257,16 @@ func Preflight(path, verifiedBytesOutput string) (missionID, rawSHA string, err 
 // contractLoad resolves the path, parses the contract, locates its repository
 // and project root, and type-checks it — the shared preamble every verb runs.
 func contractLoad(path string) (*contractDoc, string, string, error) {
+	return contractLoadWithRepository(path, contractRepositoryFor)
+}
+
+func contractLoadWithRepository(path string, repository func(string) (string, error)) (*contractDoc, string, string, error) {
 	resolved := resolvePath(path)
 	doc, err := contractRead(resolved)
 	if err != nil {
 		return nil, "", "", err
 	}
-	repo, err := contractRepositoryFor(resolved)
+	repo, err := repository(resolved)
 	if err != nil {
 		return nil, "", "", err
 	}

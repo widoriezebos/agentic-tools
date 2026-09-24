@@ -103,6 +103,26 @@ func commitChannelFiles(t *testing.T, root string, files map[string][]byte) stri
 	return mustGit(t, root, "rev-parse", "HEAD")
 }
 
+func commitChannelFilesForEndpoint(t *testing.T, e Endpoint, files map[string][]byte) string {
+	t.Helper()
+	tip, err := e.Repository.Capture("channel-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes := make([]Change, 0, len(files))
+	for _, path := range sortedKeys(files) {
+		changes = append(changes, Change{Path: path, Content: files[path]})
+	}
+	commit, err := e.Repository.Build("channel-fixture", tip, changes, "channel fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome, err := e.Repository.Publish(tip, commit); err != nil || outcome != CASLanded {
+		t.Fatalf("publish channel fixture: outcome=%s err=%v", outcome, err)
+	}
+	return commit
+}
+
 func expectChannelProblem(t *testing.T, problems []Problem, code string) {
 	t.Helper()
 	for _, problem := range problems {
@@ -149,12 +169,12 @@ func TestMarshalChannelRoundTripsEveryStruct(t *testing.T) {
 
 func TestValidateChannelTreeAndCommitAcceptValidTree(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	tip := commitChannelFiles(t, root, validChannelFixture().files(t))
-	if problems := ValidateChannelTree(root, tip); len(problems) != 0 {
+	e, _ := fakeGoalEndpoint(t)
+	tip := commitChannelFilesForEndpoint(t, e, validChannelFixture().files(t))
+	if problems := validateChannelTreeFor(e, tip); len(problems) != 0 {
 		t.Fatalf("valid channel tree was refused: %v", problems)
 	}
-	if err := ValidateCommit(root, tip); err != nil {
+	if err := validateCommitFor(e, tip); err != nil {
 		t.Fatalf("ValidateCommit must accept the same tree: %v", err)
 	}
 }
@@ -193,12 +213,12 @@ func TestValidateChannelTreeRefusalTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, root := oneClone(t)
+			e, _ := fakeGoalEndpoint(t)
 			fixture := validChannelFixture()
 			test.mutate(&fixture)
-			tip := commitChannelFiles(t, root, fixture.files(t))
-			expectChannelProblem(t, ValidateChannelTree(root, tip), test.code)
-			if err := ValidateCommit(root, tip); err == nil || !strings.Contains(err.Error(), test.code+": ") {
+			tip := commitChannelFilesForEndpoint(t, e, fixture.files(t))
+			expectChannelProblem(t, validateChannelTreeFor(e, tip), test.code)
+			if err := validateCommitFor(e, tip); err == nil || !strings.Contains(err.Error(), test.code+": ") {
 				t.Fatalf("ValidateCommit did not carry %s in its normal refusal: %v", test.code, err)
 			}
 		})
@@ -244,17 +264,23 @@ func TestValidateChannelTreeSecretAndClosedNullEdges(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, root := oneClone(t)
+			e, _ := fakeGoalEndpoint(t)
 			fixture := validChannelFixture()
 			test.mutate(&fixture)
-			tip := commitChannelFiles(t, root, fixture.files(t))
-			problems := ValidateChannelTree(root, tip)
+			tip := commitChannelFilesForEndpoint(t, e, fixture.files(t))
+			problems := validateChannelTreeFor(e, tip)
 			if test.code == "" {
 				if len(problems) != 0 {
 					t.Fatalf("lawful edge was refused: %v", problems)
 				}
+				if err := validateCommitFor(e, tip); err != nil {
+					t.Fatalf("ValidateCommit refused a lawful edge: %v", err)
+				}
 			} else {
 				expectChannelProblem(t, problems, test.code)
+				if err := validateCommitFor(e, tip); err == nil || !strings.Contains(err.Error(), test.code+": ") {
+					t.Fatalf("ValidateCommit did not carry %s in its normal refusal: %v", test.code, err)
+				}
 			}
 		})
 	}
@@ -279,11 +305,14 @@ func TestValidateChannelTreeJSONEdges(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, root := oneClone(t)
+			e, _ := fakeGoalEndpoint(t)
 			fixture := validChannelFixture()
 			test.mutate(&fixture, t)
-			tip := commitChannelFiles(t, root, fixture.files(t))
-			expectChannelProblem(t, ValidateChannelTree(root, tip), "channel-json")
+			tip := commitChannelFilesForEndpoint(t, e, fixture.files(t))
+			expectChannelProblem(t, validateChannelTreeFor(e, tip), "channel-json")
+			if err := validateCommitFor(e, tip); err == nil || !strings.Contains(err.Error(), "channel-json: ") {
+				t.Fatalf("ValidateCommit did not carry channel-json in its normal refusal: %v", err)
+			}
 		})
 	}
 }
@@ -313,12 +342,12 @@ func TestChannelTimeRequiresCanonicalSecondPrecision(t *testing.T) {
 
 func TestValidateChannelTreeAbsentIsSilent(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	tip := commitChannelFiles(t, root, vTree(vRoot(), []*GoalFile{vGoal(channelTestGoalID, StateQueued)}, nil))
-	if problems := ValidateChannelTree(root, tip); problems != nil {
+	e, _ := fakeGoalEndpoint(t)
+	tip := commitChannelFilesForEndpoint(t, e, vTree(vRoot(), []*GoalFile{vGoal(channelTestGoalID, StateQueued)}, nil))
+	if problems := validateChannelTreeFor(e, tip); problems != nil {
 		t.Fatalf("absent channel directory must return nil, got %v", problems)
 	}
-	if err := ValidateCommit(root, tip); err != nil {
+	if err := validateCommitFor(e, tip); err != nil {
 		t.Fatalf("absent channel directory must not change ValidateCommit: %v", err)
 	}
 }
@@ -360,9 +389,8 @@ func TestChannelQuestionTupleAtMarksOnlyStaleCanonicalPosting(t *testing.T) {
 
 func TestClassifyChannelTransitionMatrix(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	tip := mustGit(t, root, "rev-parse", "HEAD")
-	e := endpointFor(root)
+	e, _ := fakeGoalEndpoint(t)
+	tip := acceptedTipForEndpoint(t, e)
 	const me = "mac-a"
 	tests := []struct {
 		name    string
@@ -413,10 +441,17 @@ func TestClassifyChannelTransitionMatrix(t *testing.T) {
 
 func TestClassifyChannelTransitionAlreadyAppliedAndForeignTuple(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	mustGit(t, root, "commit", "--allow-empty", "-q", "-m", "own transaction", "-m", "Goal-Transaction: own-opid")
-	tip := mustGit(t, root, "rev-parse", "HEAD")
-	e := endpointFor(root)
+	e, _ := fakeGoalEndpoint(t)
+	parent := acceptedTipForEndpoint(t, e)
+	tip, err := e.Repository.Build("own-opid", parent, []Change{{
+		Path: livePath("own-transaction"), Content: RenderFile(vGoal("own-transaction", StateQueued)),
+	}}, "own transaction")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome, err := e.Repository.Publish(parent, tip); err != nil || outcome != CASLanded {
+		t.Fatalf("publish own transaction: outcome=%s err=%v", outcome, err)
+	}
 	foreign := ChannelTuple{State: "closed", Posting: channelPosting("list", "mac-b"), ThreadNull: false, ReceiptRefNull: false}
 	apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "own-opid", "mac-a", "", true, foreign, ChannelMatrix["post-ref question"])
 	if err != nil || apply {
@@ -431,28 +466,28 @@ func TestClassifyChannelTransitionAlreadyAppliedAndForeignTuple(t *testing.T) {
 
 func TestRejectionIntentClosedRequiresLateReason(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	tip := mustGit(t, root, "rev-parse", "HEAD")
+	e, _ := fakeGoalEndpoint(t)
+	tip := acceptedTipForEndpoint(t, e)
 	row := ChannelMatrix["rejection intent"]
 	closed := ChannelTuple{State: "closed", ThreadNull: false, ReceiptRefNull: true}
-	if apply, err := ClassifyChannelTransition(endpointFor(root), tip, channelTestQuestionID, "opid", "mac-a", "", true, closed, row); apply || err == nil {
+	if apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "opid", "mac-a", "", true, closed, row); apply || err == nil {
 		t.Fatalf("closed rejection without late reason must refuse: apply=%v err=%v", apply, err)
 	}
 	row.RejectionReason = "late"
-	if apply, err := ClassifyChannelTransition(endpointFor(root), tip, channelTestQuestionID, "opid", "mac-a", "", true, closed, row); !apply || err != nil {
+	if apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "opid", "mac-a", "", true, closed, row); !apply || err != nil {
 		t.Fatalf("late rejection on closed question must apply: apply=%v err=%v", apply, err)
 	}
 }
 
 func TestListAndSilenceIntentsRejectClosedQuestions(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	tip := mustGit(t, root, "rev-parse", "HEAD")
+	e, _ := fakeGoalEndpoint(t)
+	tip := acceptedTipForEndpoint(t, e)
 	closed := ChannelTuple{State: "closed", ThreadNull: false, ReceiptRefNull: true}
 	for _, name := range []string{"list intent", "silence intent"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			apply, err := ClassifyChannelTransition(endpointFor(root), tip, channelTestQuestionID, "opid", "mac-a", "", true, closed, ChannelMatrix[name])
+			apply, err := ClassifyChannelTransition(e, tip, channelTestQuestionID, "opid", "mac-a", "", true, closed, ChannelMatrix[name])
 			if apply || err == nil || !strings.HasPrefix(err.Error(), "channel-transition: ") {
 				t.Fatalf("closed %s must refuse with a channel-transition error: apply=%v err=%v", name, apply, err)
 			}
@@ -462,9 +497,8 @@ func TestListAndSilenceIntentsRejectClosedQuestions(t *testing.T) {
 
 func TestTakeOverRequiresStaleForeignPosting(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	tip := mustGit(t, root, "rev-parse", "HEAD")
-	e := endpointFor(root)
+	e, _ := fakeGoalEndpoint(t)
+	tip := acceptedTipForEndpoint(t, e)
 	question := validChannelFixture().question
 	question.State = "open"
 	question.Answer = nil
@@ -496,38 +530,49 @@ func TestTakeOverRequiresStaleForeignPosting(t *testing.T) {
 
 func TestChannelInboxMutateThreeBranches(t *testing.T) {
 	t.Parallel()
-	_, root := oneClone(t)
-	e := endpointFor(root)
+	e, _ := fakeGoalEndpoint(t)
 	recordPath := ChannelPrefix + "inbox/team/telegram-42.json"
 	content := []byte("{\"opid\":\"winner\"}\n")
-	tip := mustGit(t, root, "rev-parse", "HEAD")
+	tip, err := e.Repository.Capture("inbox-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	publishStep := func(opid string, change Change) {
+		t.Helper()
+		commit, err := e.Repository.Build(opid, tip, []Change{change}, "inbox fixture")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if outcome, err := e.Repository.Publish(tip, commit); err != nil || outcome != CASLanded {
+			t.Fatalf("publish inbox fixture: outcome=%s err=%v", outcome, err)
+		}
+		tip = commit
+	}
 	changes, err := ChannelInboxMutate(e, tip, recordPath, content)
 	if err != nil || len(changes) != 1 || changes[0].Path != recordPath || !reflect.DeepEqual(changes[0].Content, content) {
 		t.Fatalf("absent path must produce one write: changes=%v err=%v", changes, err)
 	}
-	fullPath := filepath.Join(root, filepath.FromSlash(recordPath))
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-		t.Fatal(err)
+	publishStep("prefix-sibling", Change{Path: recordPath + "-sibling", Content: content})
+	if changes, err = ChannelInboxMutate(e, tip, recordPath, content); err != nil || len(changes) != 1 || changes[0].Path != recordPath || !reflect.DeepEqual(changes[0].Content, content) {
+		t.Fatalf("prefix sibling must leave the exact path absent: changes=%v err=%v", changes, err)
 	}
-	if err := os.WriteFile(fullPath, content, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mustGit(t, root, "add", recordPath)
-	mustGit(t, root, "commit", "-qm", "record without transaction")
-	tip = mustGit(t, root, "rev-parse", "HEAD")
+	publishStep("record-without-transaction", Change{Path: recordPath, Content: content})
 	if changes, err = ChannelInboxMutate(e, tip, recordPath, content); changes != nil || err == nil || err.Error() != "inbox record present without its transaction" {
 		t.Fatalf("unproven record must refuse by name: changes=%v err=%v", changes, err)
 	}
-	mustGit(t, root, "commit", "--allow-empty", "-q", "-m", "winner transaction", "-m", "Goal-Transaction: winner")
-	tip = mustGit(t, root, "rev-parse", "HEAD")
+	publishStep("winner", Change{Path: "unrelated/winner.txt", Content: []byte("winner\n")})
 	changes, err = ChannelInboxMutate(e, tip, recordPath, content)
 	var lost LostToCompetitor
 	if changes != nil || !errors.As(err, &lost) || lost.Winner != "winner" {
 		t.Fatalf("proven existing record must name its winner: changes=%v err=%v", changes, err)
 	}
+	publishStep("malformed-record", Change{Path: recordPath, Content: []byte("{malformed")})
+	if changes, err = ChannelInboxMutate(e, tip, recordPath, content); changes != nil || err == nil || !strings.HasPrefix(err.Error(), "read inbox record opid: ") {
+		t.Fatalf("malformed stored JSON must refuse: changes=%v err=%v", changes, err)
+	}
 	changes, err = ChannelInboxMutate(e, "not-a-commit", recordPath, content)
 	if changes != nil || err == nil {
-		t.Fatalf("bogus tip must surface the Git error: changes=%v err=%v", changes, err)
+		t.Fatalf("bogus tip must surface the committed-read error: changes=%v err=%v", changes, err)
 	}
 }
 

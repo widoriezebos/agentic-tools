@@ -55,8 +55,9 @@ func TestReadModelWithContextSuffixPassesThroughToClaude(t *testing.T) {
 	}
 	delete(record.AdapterData, "model")
 	command, err = (ClaudeHeadless{Binary: "claude"}).Command(record, t.TempDir())
-	if err != nil || !reflect.DeepEqual(command.Args, want) {
-		t.Fatalf("fallback argv=%v want=%v err=%v", command.Args, want, err)
+	fallbackWant := []string{"-p", "--model", "claude-opus-5-5", "--dangerously-skip-permissions", "--output-format", "json", "--name", "read-alpha"}
+	if err != nil || !reflect.DeepEqual(command.Args, fallbackWant) {
+		t.Fatalf("fallback argv=%v want=%v err=%v", command.Args, fallbackWant, err)
 	}
 }
 
@@ -105,9 +106,9 @@ func TestKindSelectsTheAdapterAndTheDefaultModel(t *testing.T) {
 		kind, adapter, model string
 	}{
 		{"design", "claude-headless", "claude-fable-5-1"},
-		{"read", "claude-headless", "claude-opus-5[1m]"},
-		{"build", "codex-exec", "gpt-5.6-sol"},
-		{"critique", "codex-exec", "gpt-5.6-sol"},
+		{"read", "claude-headless", "claude-opus-5-5"},
+		{"build", "codex-exec", "gpt-6-sol"},
+		{"critique", "codex-exec", "gpt-6-sol"},
 	}
 	for index, row := range cases {
 		briefPath := brief(t)
@@ -134,7 +135,7 @@ func TestKindSelectsTheAdapterAndTheDefaultModel(t *testing.T) {
 		} else {
 			commandRecord := record
 			commandRecord.Kind = "build"
-			command, err = (CodexExec{Binary: "codex", Model: "gpt-5.6-sol", Effort: "xhigh"}).Command(commandRecord, t.TempDir())
+			command, err = (CodexExec{Binary: "codex", Model: "gpt-6-sol", Effort: "xhigh"}).Command(commandRecord, t.TempDir())
 			if err == nil && flagValue(command.Args, "-m") != row.model {
 				err = fmt.Errorf("model %q", flagValue(command.Args, "-m"))
 			}

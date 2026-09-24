@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,11 +50,13 @@ func SealWithForecast(store Store, id, baseTree, owner string, at time.Time, pla
 	}
 	revision := sealRevisionOf(snapshot)
 	candidate := snapshot
-	_, err := prepareSealCandidate(store.root, baseTree, &candidate, assembleUnits)
+	_, err := prepareSealCandidate(store.root, baseTree, &candidate, func(_ string, base string, units []Unit) ([]string, error) {
+		return store.reassembly.assemble(base, units)
+	})
 	if err != nil {
 		return err
 	}
-	selectionErr := selectSealCandidate(store.root, &candidate, plan)
+	selectionErr := selectSealCandidateWithReader(store.root, &candidate, plan, store.committedGoal)
 	if selectionErr == nil && forecast != nil {
 		var cost CostForecast
 		cost, selectionErr = forecast(candidate)
@@ -162,6 +165,10 @@ func prepareSealCandidate(root, baseTree string, record *Record, assemble func(s
 }
 
 func selectSealCandidate(root string, candidate *Record, plan func(string, string, string) (testpolicy.Plan, error)) error {
+	return selectSealCandidateWithReader(root, candidate, plan, readCommittedGoal)
+}
+
+func selectSealCandidateWithReader(root string, candidate *Record, plan func(string, string, string) (testpolicy.Plan, error), read func(string, string, string) ([]byte, bool, error)) error {
 	candidate.SelectedGroups = nil
 	candidate.Seal = map[string]Claim{}
 	units := joinedUnits(candidate.Units)
@@ -171,7 +178,7 @@ func selectSealCandidate(root string, candidate *Record, plan func(string, strin
 			return planErr
 		}
 		recordSelection(candidate, selection)
-		claim, claimErr := claimAt(root, candidate.TipTree, candidate.BatchID, unit.GoalID)
+		claim, claimErr := claimAtWithReader(ModuleRoot(root), candidate.TipTree, candidate.BatchID, unit.GoalID, read)
 		if claimErr != nil {
 			return claimErr
 		}
@@ -191,13 +198,27 @@ func recordSelection(record *Record, plan testpolicy.Plan) {
 }
 
 func claimAt(root, tree, batchID, goalID string) (Claim, error) {
-	workspace := gittree.Workspace{Dir: ModuleRoot(root)}
+	return claimAtWithReader(ModuleRoot(root), tree, batchID, goalID, readCommittedGoal)
+}
+
+type committedGoalPrefixError struct{ error }
+
+func readCommittedGoal(moduleRoot, tree, goalID string) ([]byte, bool, error) {
+	workspace := gittree.Workspace{Dir: moduleRoot}
 	prefix, err := workspace.Prefix()
 	if err != nil {
-		return Claim{}, err
+		return nil, false, &committedGoalPrefixError{err}
 	}
 	path := prefix + filepath.ToSlash(filepath.Join("plans", "goals", goalID+".md"))
-	data, present, err := workspace.FileAt(tree, path)
+	return workspace.FileAt(tree, path)
+}
+
+func claimAtWithReader(moduleRoot, tree, batchID, goalID string, read func(string, string, string) ([]byte, bool, error)) (Claim, error) {
+	data, present, err := read(moduleRoot, tree, goalID)
+	var prefixErr *committedGoalPrefixError
+	if errors.As(err, &prefixErr) {
+		return Claim{}, prefixErr.error
+	}
 	if err != nil || !present {
 		return Claim{}, fmt.Errorf("goal ledger entry %s is absent from tree %s: %w", goalID, tree, err)
 	}

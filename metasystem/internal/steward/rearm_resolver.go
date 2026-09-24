@@ -30,13 +30,45 @@ type witnessDigestCache struct {
 	Entries map[string]string `json:"entries"`
 }
 
-var (
-	witnessTreeDigester      = digestArchivedTree
-	witnessDigestCacheWriter = writeWitnessDigestCache
-	witnessGitCommandRunner  = runWitnessGitCommand
-	projectionDiffRunner     = diffEngineProjection
-	archivedEngineDigester   = archivedEngineDigestAtCommitWithClock
-)
+// Each rearm resolution carries its own repository answers. The default
+// binds the existing Git commands; callers may supply isolated answers.
+type rearmResolverDeps struct {
+	resolveSeconds       func(string) int
+	localLandingRef      func(string) (string, error)
+	resolvingRef         func(string, string) (string, error)
+	checkoutHead         func(string) (string, error)
+	deadlineGit          func(RearmClock, int, string, string, ...string) (string, error)
+	witnessGit           func(context.Context, string, []byte, func(), ...string) ([]byte, error)
+	witnessTreeDigest    func(context.Context, string, string, behaviorsurface.Policy, RearmClock, int) (string, error)
+	writeWitnessCache    func(string, string, map[string]string)
+	projectionDiff       func(context.Context, string, string, string, func()) ([]byte, error)
+	archivedEngineDigest func(context.Context, string, string, behaviorsurface.Policy, RearmClock, int) (string, error)
+	notifyAvailable      func(string) bool
+	runnerExcluded       func(string, bool) (string, bool)
+}
+
+func defaultRearmResolverDeps() rearmResolverDeps {
+	return rearmResolverDeps{
+		resolveSeconds: RearmResolveSeconds,
+		localLandingRef: func(root string) (string, error) {
+			return gitOutputContext(context.Background(), root, "config", "--local", "--no-includes", "--get", landingRefConfigKey)
+		},
+		resolvingRef: func(root, ref string) (string, error) {
+			return gitOutputContext(context.Background(), root, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+		},
+		checkoutHead: func(root string) (string, error) {
+			return gitOutputContext(context.Background(), root, "rev-parse", "--verify", "HEAD^{commit}")
+		},
+		deadlineGit:          gitOutputWithProgressDeadline,
+		witnessGit:           runWitnessGitCommand,
+		witnessTreeDigest:    digestArchivedTree,
+		writeWitnessCache:    writeWitnessDigestCache,
+		projectionDiff:       diffEngineProjection,
+		archivedEngineDigest: archivedEngineDigestAtCommitWithClock,
+		notifyAvailable:      func(root string) bool { _, ok := NotifyCommand(root); return ok },
+		runnerExcluded:       runnerExclusion,
+	}
+}
 
 type classifiedJudgmentError struct {
 	message string
@@ -66,8 +98,8 @@ func classifiedJudgment(message string, cause error) error {
 }
 
 func gitSaidNo(err error) bool {
-	var exitError *exec.ExitError
-	return errors.As(err, &exitError) && exitError.ExitCode() == 1
+	var status interface{ ExitCode() int }
+	return errors.As(err, &status) && status.ExitCode() == 1
 }
 
 var (
@@ -93,7 +125,11 @@ func RearmResolveSeconds(installationRoot string) int {
 }
 
 func readOwnedLandingRef(installationRoot string) (string, error) {
-	value, err := gitOutputContext(context.Background(), installationRoot, "config", "--local", "--no-includes", "--get", landingRefConfigKey)
+	return readOwnedLandingRefWithDeps(defaultRearmResolverDeps(), installationRoot)
+}
+
+func readOwnedLandingRefWithDeps(deps rearmResolverDeps, installationRoot string) (string, error) {
+	value, err := deps.localLandingRef(installationRoot)
 	if err != nil {
 		if !gitSaidNo(err) {
 			return "", &gitCommandFailure{cause: err}
@@ -112,7 +148,7 @@ func readOwnedLandingRef(installationRoot string) (string, error) {
 	if tail == value || !qualified || remote == "" || branch == "" {
 		return "", fmt.Errorf("the installation owns no remote-tracking landing ref (%s is %s; expected refs/remotes/<remote>/<branch>)", landingRefConfigKey, value)
 	}
-	if _, err := gitOutputContext(context.Background(), installationRoot, "rev-parse", "--verify", "--quiet", value+"^{commit}"); err != nil {
+	if _, err := deps.resolvingRef(installationRoot, value); err != nil {
 		message := fmt.Sprintf("the installation owns no resolving remote-tracking landing ref (%s is %s)", landingRefConfigKey, value)
 		if gitSaidNo(err) {
 			return "", classifiedJudgment(message, err)
@@ -219,18 +255,26 @@ func parseWitnessLog(raw []byte) ([]witnessCandidate, error) {
 // witnessGitStep runs one git command under the silence bound: every byte
 // the command writes counts as progress, so a long but live walk is not a stall.
 func witnessGitStep(clock RearmClock, seconds int, step, root string, input []byte, args ...string) ([]byte, error) {
+	return witnessGitStepWithDeps(defaultRearmResolverDeps(), clock, seconds, step, root, input, args...)
+}
+
+func witnessGitStepWithDeps(deps rearmResolverDeps, clock RearmClock, seconds int, step, root string, input []byte, args ...string) ([]byte, error) {
 	var out []byte
 	err := RunRearmStep(context.Background(), clock, time.Duration(seconds)*time.Second, step, func(stepContext context.Context, progress func()) error {
 		var runErr error
-		out, runErr = witnessGitCommandRunner(stepContext, root, input, progress, args...)
+		out, runErr = deps.witnessGit(stepContext, root, input, progress, args...)
 		return runErr
 	})
 	return out, err
 }
 
 func readWitnessCandidates(clock RearmClock, seconds int, installationRoot, ref string) ([]witnessCandidate, error) {
+	return readWitnessCandidatesWithDeps(defaultRearmResolverDeps(), clock, seconds, installationRoot, ref)
+}
+
+func readWitnessCandidatesWithDeps(deps rearmResolverDeps, clock RearmClock, seconds int, installationRoot, ref string) ([]witnessCandidate, error) {
 	args := []string{"log", "--topo-order", "--no-abbrev", "--raw", "-z", "--no-renames", "--no-ext-diff", "--ignore-submodules=none", "--diff-merges=first-parent", "--format=%x01%H %T %P", ref}
-	raw, err := witnessGitStep(clock, seconds, "list-witness-history", installationRoot, nil, args...)
+	raw, err := witnessGitStepWithDeps(deps, clock, seconds, "list-witness-history", installationRoot, nil, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -238,11 +282,15 @@ func readWitnessCandidates(clock RearmClock, seconds int, installationRoot, ref 
 }
 
 func readWitnessPrefixTrees(clock RearmClock, seconds int, installationRoot, prefix string, candidates []witnessCandidate) error {
+	return readWitnessPrefixTreesWithDeps(defaultRearmResolverDeps(), clock, seconds, installationRoot, prefix, candidates)
+}
+
+func readWitnessPrefixTreesWithDeps(deps rearmResolverDeps, clock RearmClock, seconds int, installationRoot, prefix string, candidates []witnessCandidate) error {
 	var input strings.Builder
 	for _, candidate := range candidates {
 		fmt.Fprintf(&input, "%s:%s\n", candidate.commit, prefix)
 	}
-	out, err := witnessGitStep(clock, seconds, "resolve-witness-trees", installationRoot, []byte(input.String()), "cat-file", "--batch-check=%(objectname)")
+	out, err := witnessGitStepWithDeps(deps, clock, seconds, "resolve-witness-trees", installationRoot, []byte(input.String()), "cat-file", "--batch-check=%(objectname)")
 	if err != nil {
 		return err
 	}
@@ -292,8 +340,12 @@ func resolveWitnessStamp(repoRoot, installationRoot, ref, hex12 string) (string,
 }
 
 func resolveWitnessStampWithClock(clock RearmClock, repoRoot, installationRoot, ref, hex12 string) (string, error) {
-	seconds := RearmResolveSeconds(installationRoot)
-	toplevelBytes, err := witnessGitStep(clock, seconds, "resolve-toplevel", installationRoot, nil, "rev-parse", "--show-toplevel")
+	return resolveWitnessStampWithDeps(defaultRearmResolverDeps(), clock, repoRoot, installationRoot, ref, hex12)
+}
+
+func resolveWitnessStampWithDeps(deps rearmResolverDeps, clock RearmClock, repoRoot, installationRoot, ref, hex12 string) (string, error) {
+	seconds := deps.resolveSeconds(installationRoot)
+	toplevelBytes, err := witnessGitStepWithDeps(deps, clock, seconds, "resolve-toplevel", installationRoot, nil, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", err
 	}
@@ -313,15 +365,15 @@ func resolveWitnessStampWithClock(clock RearmClock, repoRoot, installationRoot, 
 	cachePath := filepath.Join(repoRoot, "artifacts", "agents", "steward", witnessDigestCacheName)
 	digests := readWitnessDigestCache(cachePath)
 	finish := func(commit string, resultErr error) (string, error) {
-		witnessDigestCacheWriter(cachePath, repoRoot, digests)
+		deps.writeWitnessCache(cachePath, repoRoot, digests)
 		return commit, resultErr
 	}
-	candidates, err := readWitnessCandidates(clock, seconds, installationRoot, ref)
+	candidates, err := readWitnessCandidatesWithDeps(deps, clock, seconds, installationRoot, ref)
 	if err != nil {
 		return finish("", err)
 	}
 	if prefix != "" {
-		if err := readWitnessPrefixTrees(clock, seconds, installationRoot, prefix, candidates); err != nil {
+		if err := readWitnessPrefixTreesWithDeps(deps, clock, seconds, installationRoot, prefix, candidates); err != nil {
 			return finish("", err)
 		}
 	}
@@ -346,7 +398,7 @@ func resolveWitnessStampWithClock(clock RearmClock, repoRoot, installationRoot, 
 				if prefix != "" {
 					archiveSpec += ":" + prefix
 				}
-				digest, err = witnessTreeDigester(context.Background(), toplevel, archiveSpec, policy, clock, seconds)
+				digest, err = deps.witnessTreeDigest(context.Background(), toplevel, archiveSpec, policy, clock, seconds)
 				if err != nil {
 					return finish("", err)
 				}
@@ -437,11 +489,15 @@ func resolveLandedBuild(repoRoot, installationRoot, landingRef, stamp string) (s
 }
 
 func resolveLandedBuildWithClock(clock RearmClock, repoRoot, installationRoot, landingRef, stamp string) (string, error) {
+	return resolveLandedBuildWithDeps(defaultRearmResolverDeps(), clock, repoRoot, installationRoot, landingRef, stamp)
+}
+
+func resolveLandedBuildWithDeps(deps rearmResolverDeps, clock RearmClock, repoRoot, installationRoot, landingRef, stamp string) (string, error) {
 	commit := ""
-	seconds := RearmResolveSeconds(installationRoot)
+	seconds := deps.resolveSeconds(installationRoot)
 	switch {
 	case commitBuildStamp.MatchString(stamp):
-		out, err := gitOutputWithProgressDeadline(clock, seconds, "resolve-build-stamp", installationRoot, "rev-parse", "--verify", "--quiet", stamp+"^{commit}")
+		out, err := deps.deadlineGit(clock, seconds, "resolve-build-stamp", installationRoot, "rev-parse", "--verify", "--quiet", stamp+"^{commit}")
 		if err != nil {
 			if errors.Is(err, ErrJudgmentStalled) {
 				return "", err
@@ -454,7 +510,7 @@ func resolveLandedBuildWithClock(clock RearmClock, repoRoot, installationRoot, l
 		commit = out
 	case witnessBuildStamp.MatchString(stamp):
 		var err error
-		commit, err = resolveWitnessStampWithClock(clock, repoRoot, installationRoot, landingRef, witnessBuildStamp.FindStringSubmatch(stamp)[1])
+		commit, err = resolveWitnessStampWithDeps(deps, clock, repoRoot, installationRoot, landingRef, witnessBuildStamp.FindStringSubmatch(stamp)[1])
 		if err != nil {
 			return "", fmt.Errorf("rebuilt engine was built from %s, which is not proven landed on %s: %w", stamp, landingRef, err)
 		}
@@ -465,7 +521,7 @@ func resolveLandedBuildWithClock(clock RearmClock, repoRoot, installationRoot, l
 		}
 		return "", classifiedJudgment(fmt.Sprintf("rebuilt engine carries build stamp %s; automatic re-arm is bounded to landed commits", shown), ErrNotOwned)
 	}
-	if _, err := gitOutputWithProgressDeadline(clock, seconds, "compare-build-ancestry", installationRoot, "merge-base", "--is-ancestor", commit, landingRef); err != nil {
+	if _, err := deps.deadlineGit(clock, seconds, "compare-build-ancestry", installationRoot, "merge-base", "--is-ancestor", commit, landingRef); err != nil {
 		if gitSaidNo(err) {
 			return "", classifiedJudgment(fmt.Sprintf("rebuilt engine was built from %s, which is not landed on %s", stamp, landingRef), ErrNotOwned)
 		}
@@ -481,11 +537,15 @@ func verifyEnrollmentLandedSource(installationRoot, sourceCommit, landedCommit s
 }
 
 func verifyEnrollmentLandedSourceWithClock(clock RearmClock, installationRoot, sourceCommit, landedCommit string) error {
+	return verifyEnrollmentLandedSourceWithDeps(defaultRearmResolverDeps(), clock, installationRoot, sourceCommit, landedCommit)
+}
+
+func verifyEnrollmentLandedSourceWithDeps(deps rearmResolverDeps, clock RearmClock, installationRoot, sourceCommit, landedCommit string) error {
 	if sourceCommit == landedCommit {
 		return nil
 	}
-	seconds := RearmResolveSeconds(installationRoot)
-	_, ancestorErr := gitOutputWithProgressDeadline(clock, seconds, "compare-enrollment-ancestry", installationRoot, "merge-base", "--is-ancestor", sourceCommit, landedCommit)
+	seconds := deps.resolveSeconds(installationRoot)
+	_, ancestorErr := deps.deadlineGit(clock, seconds, "compare-enrollment-ancestry", installationRoot, "merge-base", "--is-ancestor", sourceCommit, landedCommit)
 	if ancestorErr != nil {
 		if gitSaidNo(ancestorErr) {
 			return classifiedJudgment(fmt.Sprintf("enrollment records landed source %q but executable stamp source %q is not its ancestor", landedCommit, sourceCommit), ErrNotOwned)
@@ -494,7 +554,7 @@ func verifyEnrollmentLandedSourceWithClock(clock RearmClock, installationRoot, s
 	}
 	args := []string{"log", "--format=", "--name-only", "--ancestry-path", "--diff-merges=first-parent", sourceCommit + ".." + landedCommit, "--"}
 	args = append(args, enrollmentSkewPathspecs[:]...)
-	changedPaths, err := gitOutputWithProgressDeadline(clock, seconds, "read-enrollment-skew", installationRoot, args...)
+	changedPaths, err := deps.deadlineGit(clock, seconds, "read-enrollment-skew", installationRoot, args...)
 	if err != nil {
 		return fmt.Errorf("read enrollment engine-and-agent-script skew: %w", err)
 	}
@@ -509,14 +569,18 @@ func verifyEnrollmentBuildSource(installationRoot, stamp, sourceCommit, landedCo
 }
 
 func verifyEnrollmentBuildSourceWithClock(clock RearmClock, installationRoot, stamp, sourceCommit, landedCommit string) error {
-	err := verifyEnrollmentLandedSourceWithClock(clock, installationRoot, sourceCommit, landedCommit)
+	return verifyEnrollmentBuildSourceWithDeps(defaultRearmResolverDeps(), clock, installationRoot, stamp, sourceCommit, landedCommit)
+}
+
+func verifyEnrollmentBuildSourceWithDeps(deps rearmResolverDeps, clock RearmClock, installationRoot, stamp, sourceCommit, landedCommit string) error {
+	err := verifyEnrollmentLandedSourceWithDeps(deps, clock, installationRoot, sourceCommit, landedCommit)
 	if err == nil || !witnessBuildStamp.MatchString(stamp) || !errors.Is(err, ErrNotOwned) {
 		return err
 	}
 	// A witness names ENGINE content rather than one commit. Its resolver
 	// deliberately chooses the newest matching commit, which may be a
 	// ledger-only descendant of the commit recorded by enrollment.
-	if reverseErr := verifyEnrollmentLandedSourceWithClock(clock, installationRoot, landedCommit, sourceCommit); reverseErr == nil {
+	if reverseErr := verifyEnrollmentLandedSourceWithDeps(deps, clock, installationRoot, landedCommit, sourceCommit); reverseErr == nil {
 		return nil
 	}
 	return err
@@ -602,10 +666,14 @@ func compareEngineProjection(ctx context.Context, installationRoot, sourceCommit
 }
 
 func compareEngineProjectionWithClock(ctx context.Context, installationRoot, sourceCommit, destinationCommit string, policy behaviorsurface.Policy, clock RearmClock, seconds int) error {
+	return compareEngineProjectionWithDeps(defaultRearmResolverDeps(), ctx, installationRoot, sourceCommit, destinationCommit, policy, clock, seconds)
+}
+
+func compareEngineProjectionWithDeps(deps rearmResolverDeps, ctx context.Context, installationRoot, sourceCommit, destinationCommit string, policy behaviorsurface.Policy, clock RearmClock, seconds int) error {
 	var raw []byte
 	err := RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, "compare-engine-projection", func(stepContext context.Context, progress func()) error {
 		var diffErr error
-		raw, diffErr = projectionDiffRunner(stepContext, installationRoot, sourceCommit, destinationCommit, progress)
+		raw, diffErr = deps.projectionDiff(stepContext, installationRoot, sourceCommit, destinationCommit, progress)
 		return diffErr
 	})
 	if err != nil {
@@ -626,11 +694,11 @@ func compareEngineProjectionWithClock(ctx context.Context, installationRoot, sou
 		message := fmt.Sprintf("enrolled source %s and destination %s have different ENGINE projections (first changed path %q)", sourceCommit, destinationCommit, changedPath)
 		return classifiedJudgment(message, ErrProjectionDiffers)
 	}
-	sourceDigest, err := archivedEngineDigester(ctx, installationRoot, sourceCommit, policy, clock, seconds)
+	sourceDigest, err := deps.archivedEngineDigest(ctx, installationRoot, sourceCommit, policy, clock, seconds)
 	if err != nil {
 		return fmt.Errorf("read enrolled source ENGINE projection: %w", err)
 	}
-	destinationDigest, err := archivedEngineDigester(ctx, installationRoot, destinationCommit, policy, clock, seconds)
+	destinationDigest, err := deps.archivedEngineDigest(ctx, installationRoot, destinationCommit, policy, clock, seconds)
 	if err != nil {
 		return fmt.Errorf("read destination ENGINE projection: %w", err)
 	}
@@ -652,6 +720,10 @@ func (b *EnrolledBinary) VerifySourceAtDestination(installationRoot, destination
 // VerifySourceAtDestinationWithClock is the injected-clock form used by a
 // landed re-arm judgment.
 func (b *EnrolledBinary) VerifySourceAtDestinationWithClock(clock RearmClock, installationRoot, destinationCommit string) error {
+	return b.verifySourceAtDestinationWithDeps(defaultRearmResolverDeps(), clock, installationRoot, destinationCommit)
+}
+
+func (b *EnrolledBinary) verifySourceAtDestinationWithDeps(deps rearmResolverDeps, clock RearmClock, installationRoot, destinationCommit string) error {
 	if b == nil || b.file == nil {
 		return fmt.Errorf("the enrolled engine is not open")
 	}
@@ -659,7 +731,7 @@ func (b *EnrolledBinary) VerifySourceAtDestinationWithClock(clock RearmClock, in
 		return fmt.Errorf("captured policy destination %q is not a full commit id", destinationCommit)
 	}
 	stamp := b.BuildStamp()
-	sourceCommit, err := resolveLandedBuildWithClock(clock, b.repoRoot, installationRoot, destinationCommit, stamp)
+	sourceCommit, err := resolveLandedBuildWithDeps(deps, clock, b.repoRoot, installationRoot, destinationCommit, stamp)
 	if err != nil {
 		return err
 	}
@@ -667,7 +739,7 @@ func (b *EnrolledBinary) VerifySourceAtDestinationWithClock(clock RearmClock, in
 	// still has to prove its actual pinned build stamp, ancestry and complete
 	// ENGINE projection below; it does not invent a machine landing record.
 	if b.Install.LandedCommit != "" {
-		if err := verifyEnrollmentBuildSourceWithClock(clock, installationRoot, stamp, sourceCommit, b.Install.LandedCommit); err != nil {
+		if err := verifyEnrollmentBuildSourceWithDeps(deps, clock, installationRoot, stamp, sourceCommit, b.Install.LandedCommit); err != nil {
 			return err
 		}
 	}
@@ -681,8 +753,8 @@ func (b *EnrolledBinary) VerifySourceAtDestinationWithClock(clock RearmClock, in
 	if err != nil {
 		return err
 	}
-	seconds := RearmResolveSeconds(installationRoot)
-	err = compareEngineProjectionWithClock(context.Background(), installationRoot, sourceCommit, destinationCommit, policy, clock, seconds)
+	seconds := deps.resolveSeconds(installationRoot)
+	err = compareEngineProjectionWithDeps(deps, context.Background(), installationRoot, sourceCommit, destinationCommit, policy, clock, seconds)
 	if err != nil {
 		return err
 	}

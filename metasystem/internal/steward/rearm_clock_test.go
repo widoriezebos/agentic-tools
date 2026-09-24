@@ -125,7 +125,7 @@ func TestWitnessResolverStallsOnlyWhenAStepIsSilent(t *testing.T) {
 	}
 }
 
-func TestWitnessExtractionCountsStdoutAsProgress(t *testing.T) {
+func TestGitArchivedTreeAdapterCountsExtractionOutputAsProgress(t *testing.T) {
 	root := initRearmRepo(t)
 	commitRearmTree(t, root, "archive")
 	bin := t.TempDir()

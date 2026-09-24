@@ -52,10 +52,21 @@ func effectiveGoalTier(tree *goal.TreeGoals, file *goal.GoalFile) (uint8, error)
 }
 
 func ResolveGoalBinding(root, id string, now time.Time) (GoalBinding, error) {
+	return resolveGoalBindingWithReads(root, id, now, concreteGoalAdmissionReads())
+}
+
+func ResolveGoalBindingWithReads(root, id string, now time.Time, reads ProofAdmissionReads) (GoalBinding, error) {
+	if err := reads.Validate(); err != nil {
+		return GoalBinding{}, err
+	}
+	return resolveGoalBindingWithReads(root, id, now, reads.private())
+}
+
+func resolveGoalBindingWithReads(root, id string, now time.Time, reads goalAdmissionReads) (GoalBinding, error) {
 	if id == "" {
 		return GoalBinding{}, fmt.Errorf("a goal id is required")
 	}
-	endpoint, err := goal.ResolveEndpoint(root)
+	endpoint, err := reads.ResolveEndpoint(root)
 	if err != nil {
 		return GoalBinding{}, err
 	}
@@ -121,7 +132,11 @@ func stopIdentity(id string, revision, epoch uint64) (string, string) {
 // EnsureBreachStop closes or rediscovers the exact fence and creates its
 // resumable batch. The caller must cancel only after this function returns.
 func EnsureBreachStop(root, id string, revision uint64, now time.Time) (goal.StopBatch, error) {
-	binding, err := ResolveGoalBinding(root, id, now)
+	return ensureBreachStopWithReads(root, id, revision, now, concreteGoalAdmissionReads())
+}
+
+func ensureBreachStopWithReads(root, id string, revision uint64, now time.Time, reads goalAdmissionReads) (goal.StopBatch, error) {
+	binding, err := resolveGoalBindingWithReads(root, id, now, reads)
 	if err != nil {
 		return goal.StopBatch{}, err
 	}
@@ -135,7 +150,7 @@ func EnsureBreachStop(root, id string, revision uint64, now time.Time) (goal.Sto
 	defer held.Release()
 
 	// Re-read after the lock. This is the launch-fence decision point.
-	binding, err = ResolveGoalBinding(root, id, now)
+	binding, err = resolveGoalBindingWithReads(root, id, now, reads)
 	if err != nil {
 		return goal.StopBatch{}, err
 	}
@@ -159,7 +174,7 @@ func EnsureBreachStop(root, id string, revision uint64, now time.Time) (goal.Sto
 			}
 		}
 		stopID, ulid := stopIdentity(id, binding.Revision, binding.Capability.FenceEpoch+1)
-		endpoint, endpointErr := goal.ResolveEndpoint(root)
+		endpoint, endpointErr := reads.ResolveEndpoint(root)
 		if endpointErr != nil {
 			return goal.StopBatch{}, endpointErr
 		}
@@ -178,7 +193,7 @@ func EnsureBreachStop(root, id string, revision uint64, now time.Time) (goal.Sto
 		if result.Outcome != goal.OutcomeConfirmed && result.Outcome != goal.OutcomeAbandoned {
 			return goal.StopBatch{}, fmt.Errorf("closing goal %s fence ended %s: %s", id, result.Outcome, result.Detail)
 		}
-		binding, err = ResolveGoalBinding(root, id, now)
+		binding, err = resolveGoalBindingWithReads(root, id, now, reads)
 		if err != nil {
 			return goal.StopBatch{}, err
 		}
@@ -220,6 +235,19 @@ type GoalRecoveryPolicy struct {
 }
 
 func (policy GoalRecoveryPolicy) BreachStop(endpoint goal.Endpoint, entry goal.Entry) (goal.PublishRequest, func(), error) {
+	return policy.breachStopWithReads(endpoint, entry, concreteGoalAdmissionReads())
+}
+
+type goalRecoveryPolicyWithReads struct {
+	GoalRecoveryPolicy
+	reads goalAdmissionReads
+}
+
+func (policy goalRecoveryPolicyWithReads) BreachStop(endpoint goal.Endpoint, entry goal.Entry) (goal.PublishRequest, func(), error) {
+	return policy.GoalRecoveryPolicy.breachStopWithReads(endpoint, entry, policy.reads)
+}
+
+func (policy GoalRecoveryPolicy) breachStopWithReads(endpoint goal.Endpoint, entry goal.Entry, reads goalAdmissionReads) (goal.PublishRequest, func(), error) {
 	if len(entry.Intent.Targets) != 1 {
 		return goal.PublishRequest{}, nil, fmt.Errorf("breach-stop recovery needs exactly one recorded goal target")
 	}
@@ -228,7 +256,7 @@ func (policy GoalRecoveryPolicy) BreachStop(endpoint goal.Endpoint, entry goal.E
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	binding, err := ResolveGoalBinding(endpoint.Root, id, now)
+	binding, err := resolveGoalBindingWithReads(endpoint.Root, id, now, reads)
 	if err != nil {
 		return goal.PublishRequest{}, nil, err
 	}
@@ -237,7 +265,7 @@ func (policy GoalRecoveryPolicy) BreachStop(endpoint goal.Endpoint, entry goal.E
 		return goal.PublishRequest{}, nil, err
 	}
 	release := func() { _ = held.Release() }
-	binding, err = ResolveGoalBinding(endpoint.Root, id, now)
+	binding, err = resolveGoalBindingWithReads(endpoint.Root, id, now, reads)
 	if err != nil {
 		release()
 		return goal.PublishRequest{}, nil, err
@@ -289,10 +317,23 @@ type StopRoute struct {
 
 // FindBreachStops supplies the steward's heal-before-notify routes.
 func FindBreachStops(root string, now time.Time) ([]StopRoute, error) {
-	if !goal.NewWorld(root) {
+	return findBreachStopsWithReads(root, now, concreteGoalAdmissionReads())
+}
+
+// FindBreachStopsWithRawReads accepts the repository facts needed to locate
+// the accepted goal tree. Route policy remains inside the dispatch scanner.
+func FindBreachStopsWithRawReads(root string, now time.Time, newWorld func(string) bool,
+	resolveEndpoint func(string) (goal.Endpoint, error)) ([]StopRoute, error) {
+	return findBreachStopsWithReads(root, now, goalAdmissionReads{
+		NewWorld: newWorld, ResolveEndpoint: resolveEndpoint,
+	})
+}
+
+func findBreachStopsWithReads(root string, now time.Time, reads goalAdmissionReads) ([]StopRoute, error) {
+	if !reads.NewWorld(root) {
 		return nil, nil
 	}
-	endpoint, err := goal.ResolveEndpoint(root)
+	endpoint, err := reads.ResolveEndpoint(root)
 	if err != nil {
 		return nil, err
 	}

@@ -219,6 +219,10 @@ func setupLandingOwner(metasystemRoot, repo string) (release func() error, pass 
 }
 
 func setupLandingOwnerWithCadence(metasystemRoot, repo string, cadence *batchOwnerCadence) (release func() error, pass func() error, ok bool) {
+	return setupLandingOwnerWithInputs(metasystemRoot, repo, cadence, resolveProductionBatchOwnerInputs)
+}
+
+func setupLandingOwnerWithInputs(metasystemRoot, repo string, cadence *batchOwnerCadence, resolveInputs func(string) (productionBatchOwnerInputs, error)) (release func() error, pass func() error, ok bool) {
 	var activePass func() error
 	var held *batchOwnerLease
 	var announced *batchOwnerLease
@@ -267,7 +271,7 @@ func setupLandingOwnerWithCadence(metasystemRoot, repo string, cadence *batchOwn
 		if err != nil {
 			return err
 		}
-		inputs, err = resolveProductionBatchOwnerInputs(repo)
+		inputs, err = resolveInputs(repo)
 		if err != nil {
 			return err
 		}

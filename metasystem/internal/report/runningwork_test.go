@@ -24,7 +24,7 @@ func TestRunningWorkClauseJobsHalf(t *testing.T) {
 		[]byte(`{"jobId":"done","status":"completed"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	clause := RunningWorkClause(repo)
+	clause := runningWorkClauseWithoutGoal(t, repo)
 	if !strings.HasPrefix(clause, "1 helper agent(s): implementer job-a [running, codex]") {
 		t.Fatalf("clause = %q", clause)
 	}

@@ -14,6 +14,10 @@ import (
 // writes outside the workspace it was given. A repository-wide network floor
 // of deny overrides whatever the envelope asked for; it only ever narrows.
 func ExpandPermissions(sourcePath, repo, workspace string, isWorktree bool, preset, networkFloor, outputPath string) error {
+	return expandPermissions(sourcePath, repo, workspace, isWorktree, preset, networkFloor, outputPath, gitWorktreeMetadata{})
+}
+
+func expandPermissions(sourcePath, repo, workspace string, isWorktree bool, preset, networkFloor, outputPath string, metadata worktreeMetadata) error {
 	data, err := readJSON(sourcePath)
 	if err != nil {
 		return fmt.Errorf("invalid permissions envelope: %v", err)
@@ -85,7 +89,7 @@ func ExpandPermissions(sourcePath, repo, workspace string, isWorktree bool, pres
 	// (content-addressed; unreachable garbage at worst), and the agent
 	// branch namespace — never main's ref, never HEAD of the checkout.
 	if isWorktree && len(expandedWrite) > 0 {
-		gitRoots, err := worktreeGitWriteRoots(workspaceResolved)
+		gitRoots, err := worktreeGitWriteRootsWithMetadata(workspaceResolved, metadata)
 		if err != nil {
 			return err
 		}
@@ -108,11 +112,35 @@ func ExpandPermissions(sourcePath, repo, workspace string, isWorktree bool, pres
 // reflog (ref updates create sibling .lock files, so the namespace
 // DIRECTORY must be writable, not just the ref file).
 func worktreeGitWriteRoots(worktree string) ([]string, error) {
-	gitDir, err := gitOutput(worktree, "rev-parse", "--absolute-git-dir")
+	return worktreeGitWriteRootsWithMetadata(worktree, gitWorktreeMetadata{})
+}
+
+type worktreeMetadata interface {
+	AbsoluteGitDir(worktree string) (string, error)
+	CommonGitDir(worktree string) (string, error)
+	CurrentBranch(worktree string) (string, error)
+}
+
+type gitWorktreeMetadata struct{}
+
+func (gitWorktreeMetadata) AbsoluteGitDir(worktree string) (string, error) {
+	return gitOutput(worktree, "rev-parse", "--absolute-git-dir")
+}
+
+func (gitWorktreeMetadata) CommonGitDir(worktree string) (string, error) {
+	return gitOutput(worktree, "rev-parse", "--git-common-dir")
+}
+
+func (gitWorktreeMetadata) CurrentBranch(worktree string) (string, error) {
+	return gitOutput(worktree, "branch", "--show-current")
+}
+
+func worktreeGitWriteRootsWithMetadata(worktree string, metadata worktreeMetadata) ([]string, error) {
+	gitDir, err := metadata.AbsoluteGitDir(worktree)
 	if err != nil {
 		return nil, fmt.Errorf("worktree git dir unreadable: %v", err)
 	}
-	commonDir, err := gitOutput(worktree, "rev-parse", "--git-common-dir")
+	commonDir, err := metadata.CommonGitDir(worktree)
 	if err != nil {
 		return nil, fmt.Errorf("worktree common git dir unreadable: %v", err)
 	}
@@ -126,7 +154,7 @@ func worktreeGitWriteRoots(worktree string) ([]string, error) {
 	if _, err := os.Stat(filepath.Join(commonDir, "reftable")); err == nil {
 		return nil, fmt.Errorf("worktree delegate commits require the files ref backend; this repository uses reftable")
 	}
-	branch, err := gitOutput(worktree, "branch", "--show-current")
+	branch, err := metadata.CurrentBranch(worktree)
 	if err != nil || branch == "" {
 		return nil, fmt.Errorf("worktree delegate must be on its own branch (detached or unreadable HEAD)")
 	}

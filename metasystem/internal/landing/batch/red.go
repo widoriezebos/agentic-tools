@@ -126,7 +126,7 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 		unnamed := slices.DeleteFunc(slices.Clone(joined), func(unit Unit) bool { return named[unit.GoalID] })
 		survivors := slices.Clone(unnamed)
 		if len(unnamed) > 0 {
-			trees, assembleErr := assembleUnits(store.root, record.BaseTree, unnamed)
+			trees, assembleErr := store.reassembly.assemble(record.BaseTree, unnamed)
 			if assembleErr != nil {
 				return hold("unnamed members do not compose: " + assembleErr.Error())
 			}
@@ -150,7 +150,7 @@ func DiagnoseRed(store Store, id, actor string, failing []RedGroup, prefixGoal s
 				included[survivor.GoalID] = true
 			}
 			candidate := slices.DeleteFunc(slices.Clone(joined), func(member Unit) bool { return !included[member.GoalID] })
-			trees, assembleErr := assembleUnits(store.root, record.BaseTree, candidate)
+			trees, assembleErr := store.reassembly.assemble(record.BaseTree, candidate)
 			if assembleErr != nil {
 				var conflict *assemblyConflict
 				if len(decisions) == 0 || !errors.As(assembleErr, &conflict) || conflict.GoalID != unit.GoalID {

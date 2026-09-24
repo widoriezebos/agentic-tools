@@ -85,12 +85,41 @@ func newLandingClosureFixture(t *testing.T) (*observeFixture, map[string]any, st
 	return fixture, rootRecord, reviewedTree, patch
 }
 
+func newFileOnlyClosureFixture(t *testing.T) (*observeFixture, map[string]any, string, []byte) {
+	t.Helper()
+	fixture := &observeFixture{t: t, root: t.TempDir()}
+	const reviewedTree = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	patch := []byte("file-only reviewed patch\n")
+	rootRecord := map[string]any{
+		"jobId": "implementation", "parentJob": nil, "role": "implementer", "round": 1,
+		"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
+		"independentCritiqueJobRef": "critic",
+	}
+	fixture.writeChainRecord("implementation", rootRecord)
+	fixture.writeFileOnlyChainReview("implementation", 1, "implementation", reviewedTree, patch)
+	subject := readsubject.ReadSubject{
+		Kind: readsubject.SubjectLive, ImplementerRoot: "implementation", ReviewedMember: "implementation",
+		ReviewedProjectTree: reviewedTree, DiffDigest: landingPatchDigest(patch),
+	}
+	writeLandingCriticClosure(t, fixture, "critic", 1, subject)
+	return fixture, rootRecord, reviewedTree, patch
+}
+
+func (f *observeFixture) writeFileOnlyChainReview(chain string, round int, implementerJob, reviewedTree string, patch []byte) {
+	f.t.Helper()
+	path := filepath.Join("artifacts", "agents", chain, "rounds", strconv.Itoa(round))
+	f.writeJSONDocument(filepath.Join(path, "review.json"), map[string]any{
+		"diffArtifact": "diff.patch", "implementerJob": implementerJob, "reviewedTree": reviewedTree,
+	})
+	f.writeBytes(filepath.Join(path, "diff.patch"), patch)
+}
+
 func TestChainCertifiedOutputPrefersClosure(t *testing.T) {
-	fixture := newObserveFixture(t)
-	fixture.write("internal/output.go", "package internal // old\n")
-	oldTree := fixture.tree()
-	fixture.write("internal/output.go", "package internal // selected\n")
-	selectedTree := fixture.tree()
+	fixture := &observeFixture{t: t, root: t.TempDir()}
+	const oldTree = "1111111111111111111111111111111111111111"
+	const selectedTree = "2222222222222222222222222222222222222222"
+	oldPatch := []byte("old review patch\n")
+	selectedPatch := []byte("selected review patch\n")
 	rootRecord := map[string]any{
 		"jobId": "implementation", "parentJob": nil, "role": "implementer", "round": 1,
 		"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
@@ -101,9 +130,8 @@ func TestChainCertifiedOutputPrefersClosure(t *testing.T) {
 		"jobId": "implementation-r2", "parentJob": "implementation", "role": "implementer",
 		"round": 2, "status": "completed",
 	})
-	fixture.writeChainReview("implementation", 1, "implementation", oldTree)
-	fixture.writeChainReview("implementation", 2, "implementation-r2", selectedTree)
-	selectedPatch := landingReviewPatch(t, fixture, "implementation", 2)
+	fixture.writeFileOnlyChainReview("implementation", 1, "implementation", oldTree, oldPatch)
+	fixture.writeFileOnlyChainReview("implementation", 2, "implementation-r2", selectedTree, selectedPatch)
 	subject := readsubject.ReadSubject{
 		Kind: readsubject.SubjectLive, ImplementerRoot: "implementation", ReviewedMember: "implementation-r2",
 		ReviewedProjectTree: selectedTree, DiffDigest: landingPatchDigest(selectedPatch),
@@ -123,18 +151,25 @@ func TestChainCertifiedOutputPrefersClosure(t *testing.T) {
 	}
 
 	t.Run("equal subjects use numeric round order", func(t *testing.T) {
-		equal := newObserveFixture(t)
-		equal.write("internal/output.go", "package internal\n")
-		tree := equal.tree()
+		equal := &observeFixture{t: t, root: t.TempDir()}
+		const tree = "3333333333333333333333333333333333333333"
+		patch := []byte("same review patch for both rounds\n")
 		record := map[string]any{
 			"jobId": "equal-implementation", "parentJob": nil, "role": "implementer", "round": 1,
 			"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
 			"independentCritiqueJobRef": "equal-critic",
 		}
 		equal.writeChainRecord("equal-implementation", record)
-		equal.writeChainReview("equal-implementation", 10, "equal-implementation-r10", tree)
-		equal.writeChainReview("equal-implementation", 2, "equal-implementation-r2", tree)
-		patch := landingReviewPatch(t, equal, "equal-implementation", 2)
+		equal.writeChainRecord("equal-implementation-r2", map[string]any{
+			"jobId": "equal-implementation-r2", "parentJob": "equal-implementation",
+			"role": "implementer", "round": 2, "status": "completed",
+		})
+		equal.writeChainRecord("equal-implementation-r10", map[string]any{
+			"jobId": "equal-implementation-r10", "parentJob": "equal-implementation-r2",
+			"role": "implementer", "round": 10, "status": "completed",
+		})
+		equal.writeFileOnlyChainReview("equal-implementation", 10, "equal-implementation-r10", tree, patch)
+		equal.writeFileOnlyChainReview("equal-implementation", 2, "equal-implementation-r2", tree, patch)
 		subject := readsubject.ReadSubject{
 			Kind: readsubject.SubjectLive, ImplementerRoot: "equal-implementation", ReviewedMember: "equal-implementation-r10",
 			ReviewedProjectTree: tree, DiffDigest: landingPatchDigest(patch),
@@ -152,10 +187,10 @@ func TestChainCertifiedOutputPrefersClosure(t *testing.T) {
 
 func TestChainCertifiedOutputRejectsUnmatchedClosure(t *testing.T) {
 	t.Run("sole output has another reviewed tree", func(t *testing.T) {
-		fixture, rootRecord, _, patch := newLandingClosureFixture(t)
+		fixture, rootRecord, _, patch := newFileOnlyClosureFixture(t)
 		subject := readsubject.ReadSubject{
 			Kind: readsubject.SubjectLive, ImplementerRoot: "implementation", ReviewedMember: "implementation",
-			ReviewedProjectTree: strings.Repeat("b", 40), DiffDigest: landingPatchDigest(patch),
+			ReviewedProjectTree: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", DiffDigest: landingPatchDigest(patch),
 		}
 		writeLandingCriticClosure(t, fixture, "critic", 1, subject)
 		if _, err := chainCertifiedOutput(fixture.root, "implementation", rootRecord); err == nil || !strings.Contains(err.Error(), "does not match") {
@@ -164,10 +199,10 @@ func TestChainCertifiedOutputRejectsUnmatchedClosure(t *testing.T) {
 	})
 
 	t.Run("equal tree has another patch digest", func(t *testing.T) {
-		fixture, rootRecord, reviewedTree, _ := newLandingClosureFixture(t)
+		fixture, rootRecord, reviewedTree, _ := newFileOnlyClosureFixture(t)
 		subject := readsubject.ReadSubject{
 			Kind: readsubject.SubjectLive, ImplementerRoot: "implementation", ReviewedMember: "implementation",
-			ReviewedProjectTree: reviewedTree, DiffDigest: strings.Repeat("c", 64),
+			ReviewedProjectTree: reviewedTree, DiffDigest: landingPatchDigest([]byte("different patch bytes\n")),
 		}
 		writeLandingCriticClosure(t, fixture, "critic", 1, subject)
 		if _, err := chainCertifiedOutput(fixture.root, "implementation", rootRecord); err == nil || !strings.Contains(err.Error(), "does not match") {
@@ -176,7 +211,7 @@ func TestChainCertifiedOutputRejectsUnmatchedClosure(t *testing.T) {
 	})
 
 	t.Run("malformed closure cannot fall back", func(t *testing.T) {
-		fixture, rootRecord, _, _ := newLandingClosureFixture(t)
+		fixture, rootRecord, _, _ := newFileOnlyClosureFixture(t)
 		criticData, err := os.ReadFile(filepath.Join(fixture.root, "artifacts", "agents", "jobs", "critic.json"))
 		if err != nil {
 			t.Fatal(err)
@@ -200,7 +235,7 @@ func TestChainCertifiedOutputRejectsUnmatchedClosure(t *testing.T) {
 		{name: "empty critic stamp cannot fall back", stamp: ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			fixture, rootRecord, _, _ := newLandingClosureFixture(t)
+			fixture, rootRecord, _, _ := newFileOnlyClosureFixture(t)
 			rootRecord["independentCritiqueJobRef"] = test.stamp
 			if _, err := chainCertifiedOutput(fixture.root, "implementation", rootRecord); err == nil || !strings.Contains(err.Error(), "critique reference") {
 				t.Fatalf("malformed critic stamp error = %v", err)
@@ -209,11 +244,11 @@ func TestChainCertifiedOutputRejectsUnmatchedClosure(t *testing.T) {
 	}
 
 	t.Run("historical closure absence keeps the stamped return fallback", func(t *testing.T) {
-		fixture := newObserveFixture(t)
-		fixture.write("internal/output.go", "package internal // historical\n")
-		historicalTree := fixture.tree()
-		fixture.write("internal/output.go", "package internal // terminal\n")
-		terminalTree := fixture.tree()
+		fixture := &observeFixture{t: t, root: t.TempDir()}
+		const historicalTree = "4444444444444444444444444444444444444444"
+		const terminalTree = "5555555555555555555555555555555555555555"
+		historicalPatch := []byte("historical review patch\n")
+		terminalPatch := []byte("terminal review patch\n")
 		record := map[string]any{
 			"jobId": "historical-implementation", "parentJob": nil, "role": "implementer", "round": 1,
 			"destructiveReach": "DESIGN-BEARING", "chainClosed": true,
@@ -224,8 +259,8 @@ func TestChainCertifiedOutputRejectsUnmatchedClosure(t *testing.T) {
 			"jobId": "historical-implementation-r2", "parentJob": "historical-implementation",
 			"role": "implementer", "round": 2, "status": "completed",
 		})
-		fixture.writeChainReview("historical-implementation", 1, "historical-implementation", historicalTree)
-		fixture.writeChainReview("historical-implementation", 2, "historical-implementation-r2", terminalTree)
+		fixture.writeFileOnlyChainReview("historical-implementation", 1, "historical-implementation", historicalTree, historicalPatch)
+		fixture.writeFileOnlyChainReview("historical-implementation", 2, "historical-implementation-r2", terminalTree, terminalPatch)
 		fixture.writeChainRecord("historical-critic", map[string]any{
 			"jobId": "historical-critic", "parentJob": nil, "role": "code-critic", "round": 1,
 			"reviews": "historical-implementation", "status": "completed", "chainClosed": true,

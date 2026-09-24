@@ -117,7 +117,9 @@ func TestHandoffAdmissionKeepsALandingGoal(t *testing.T) {
 		Verb: "land-ready", Actor: "bed-m1+coordinator", Targets: []string{landing.Id}, Keep: -1,
 	})
 	landing.Landing = &goal.LandingRecord{At: "2026-08-23T03:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAY-bed-m1-00000002"}
-	root := convertedBed(t, "bed-m1", map[string]*goal.GoalFile{landing.Id: landing})
+	bed := newDecisionTickRepository(t)
+	bed.files["plans/goals/"+landing.Id+".md"] = goal.RenderFile(landing)
+	root := bed.root
 	fixture := writeStagedHandoffFixture(t, root, "5000000000000003")
 	intent := testIntent("5000000000000003")
 	intent.Reason = seatHandoffReason
@@ -125,7 +127,25 @@ func TestHandoffAdmissionKeepsALandingGoal(t *testing.T) {
 	intent.Handoff = &fixture.binding
 	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
 
-	decision, _, err := decideForHandoff(root, TickConfig{}.withDefaults(), Workers{CensusComplete: true}, Evidence{}, intent, 0, false, "landing", time.Now())
+	now := time.Now()
+	reads := 0
+	reader := func(actualRoot string, observedAt time.Time) (goal.ClaimableBudgetedWork, error) {
+		reads++
+		if actualRoot != root || !observedAt.Equal(now) || reads != 1 {
+			t.Fatalf("unexpected landing projection read: root=%q time=%s reads=%d", actualRoot, observedAt, reads)
+		}
+		tree, problems := goal.ParseTreeFiles(bed.files)
+		if len(problems) != 0 {
+			t.Fatalf("declared landing goal files did not parse: %v", problems)
+		}
+		return goal.ClaimableWorkFromProjection(goal.Projection{
+			Root: root, Tree: tree, Horizon: goal.ApprovalHorizon{Now: observedAt},
+		}, "bed-m1", identity.KernelProber{})
+	}
+	decision, _, err := decideForHandoffWithReader(root, TickConfig{}.withDefaults(), Workers{CensusComplete: true}, Evidence{}, intent, 0, false, "landing", now, reader)
+	if reads != 1 {
+		t.Fatalf("landing projection reads = %d, want 1", reads)
+	}
 	if err != nil || decision.Action != ActRevive {
 		t.Fatalf("a goal in this machine's landing slot must remain admitted: %+v %v", decision, err)
 	}

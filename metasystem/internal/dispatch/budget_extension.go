@@ -47,6 +47,10 @@ type advancementEvidence struct {
 }
 
 func budgetExtensionOffer(repoRoot string, file *goal.GoalFile, tier uint8, now time.Time) (*BudgetExtensionOffer, error) {
+	return budgetExtensionOfferWithReads(repoRoot, file, tier, now, concreteReceiptAdmissionReads())
+}
+
+func budgetExtensionOfferWithReads(repoRoot string, file *goal.GoalFile, tier uint8, now time.Time, reads receiptAdmissionReads) (*BudgetExtensionOffer, error) {
 	if file == nil || file.Budget == nil || file.BudgetExtension != nil {
 		return nil, nil
 	}
@@ -58,7 +62,7 @@ func budgetExtensionOffer(repoRoot string, file *goal.GoalFile, tier uint8, now 
 		file.Budget.ReservedJobMinutesLimit > ^uint64(0)-box.ReservedJobMinutesLimit {
 		return nil, nil
 	}
-	evidence, err := latestAdvancementEvidence(repoRoot, file.Id, now)
+	evidence, err := latestAdvancementEvidenceWithReads(repoRoot, file.Id, now, reads)
 	if err != nil || evidence == nil {
 		return nil, err
 	}
@@ -81,9 +85,13 @@ func budgetExtensionTuple(b goal.Budget) BudgetExtensionTuple {
 }
 
 func latestAdvancementEvidence(repoRoot, goalID string, now time.Time) (*advancementEvidence, error) {
+	return latestAdvancementEvidenceWithReads(repoRoot, goalID, now, concreteReceiptAdmissionReads())
+}
+
+func latestAdvancementEvidenceWithReads(repoRoot, goalID string, now time.Time, reads receiptAdmissionReads) (*advancementEvidence, error) {
 	var candidates []advancementEvidence
 	candidates = append(candidates, reviewAdvancementEvidence(repoRoot, goalID, now)...)
-	landingEvidence, err := landingAdvancementEvidence(repoRoot, goalID, now)
+	landingEvidence, err := landingAdvancementEvidenceWithReads(repoRoot, goalID, now, reads)
 	if err != nil {
 		return nil, fmt.Errorf("budget extension landing evidence: %w", err)
 	}
@@ -165,16 +173,19 @@ type receiptCorrection struct {
 }
 
 func landingAdvancementEvidence(repoRoot, goalID string, now time.Time) ([]advancementEvidence, error) {
-	tip, exists, err := goal.AcceptedLedgerTip(repoRoot)
+	return landingAdvancementEvidenceWithReads(repoRoot, goalID, now, concreteReceiptAdmissionReads())
+}
+
+func landingAdvancementEvidenceWithReads(repoRoot, goalID string, now time.Time, reads receiptAdmissionReads) ([]advancementEvidence, error) {
+	tip, exists, err := reads.AcceptedLedgerTip(repoRoot)
 	if err != nil || !exists {
 		return nil, err
 	}
-	workspace := gittree.Workspace{Dir: repoRoot}
-	receiptPath, err := budgetExtensionReceiptPath(workspace, repoRoot)
+	receiptPath, err := budgetExtensionReceiptPathWithReads(repoRoot, reads)
 	if err != nil {
 		return nil, err
 	}
-	data, present, err := workspace.FileAt(tip, receiptPath)
+	data, present, err := reads.FileAt(repoRoot, tip, receiptPath)
 	if err != nil || !present {
 		return nil, err
 	}
@@ -232,7 +243,13 @@ func landingAdvancementEvidence(repoRoot, goalID string, now time.Time) ([]advan
 // whole-repository tree. A template installation is a repository subtree;
 // an adopted nested installation keeps the ledger at its application root.
 func budgetExtensionReceiptPath(workspace gittree.Workspace, repoRoot string) (string, error) {
-	top, err := workspace.TopLevel()
+	return budgetExtensionReceiptPathWithReads(repoRoot, receiptAdmissionReads{
+		TopLevel: func(string) (string, error) { return workspace.TopLevel() },
+	})
+}
+
+func budgetExtensionReceiptPathWithReads(repoRoot string, reads receiptAdmissionReads) (string, error) {
+	top, err := reads.TopLevel(repoRoot)
 	if err != nil {
 		return "", err
 	}

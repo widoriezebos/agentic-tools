@@ -2,6 +2,8 @@ package proofrun
 
 import (
 	"context"
+	"crypto/sha1"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -9,7 +11,6 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -18,11 +19,10 @@ import (
 // and the progress file still records one start and one end per group.
 func TestStageRunsIndependentGroupsSideBySide(t *testing.T) {
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
+	tree := fmt.Sprintf("%x", sha1.Sum([]byte(root)))
 	ids := []string{"alpha", "beta", "gamma"}
 	groups := []testpolicy.Group{}
+	files := make(map[string]testSnapshotEntry, len(ids))
 	// Side by side is a fact the groups witness themselves: each announces
 	// its start through the other groups' FIFOs and blocks on its own until
 	// both peers have announced themselves.
@@ -47,21 +47,13 @@ func TestStageRunsIndependentGroupsSideBySide(t *testing.T) {
 			"read -r first <&9\nread -r second <&9\n" +
 			"[[ \"$first\" != \"$second\" ]]\n" +
 			"mkdir -p reports-" + id + "\nprintf '%s\\n' " + strconv.Quote(body) + " > reports-" + id + "/tests.xml\n"
-		path := filepath.Join(root, "scripts", id+".sh")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := testexec.WriteFile(path, []byte(script), 0o755); err != nil {
-			t.Fatal(err)
-		}
+		files["scripts/"+id+".sh"] = testSnapshotFile(script, 0o755)
 		groups = append(groups, testpolicy.Group{ID: id, Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"scripts/**"}, Outputs: []string{"reports-" + id},
 			Tools: []testpolicy.Tool{}, Obligations: []string{id + "-obligation"}, Platforms: []string{"any"}, TargetMS: 10000,
 			Argv: []string{"bash", "scripts/" + id + ".sh"}, Reports: []string{"reports-" + id}, Format: "junit-xml",
 			ExpectedTests: []testpolicy.ExpectedTest{{Report: "reports-" + id + "/tests.xml", Classname: "fixture", Name: id}}})
 	}
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	snapshot := newTestSnapshotFactory(t, root, tree, files, 3)
 	contract := testpolicy.Contract{SchemaVersion: 1, ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
 		Surfaces: []testpolicy.Surface{{ID: "app", Paths: []string{"scripts/**"}, Standard: ids, Critical: []string{"alpha-obligation"}}}, Groups: groups,
 		Always: testpolicy.Always{Canary: []string{"alpha"}}, Unknown: []string{"alpha"}, Cadence: ids}
@@ -71,7 +63,7 @@ func TestStageRunsIndependentGroupsSideBySide(t *testing.T) {
 	if err := AppendProgressHeader(progress, ProgressHeader{LogPaths: []string{filepath.Join(root, "artifacts", "launcher.log")}}); err != nil {
 		t.Fatal(err)
 	}
-	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
+	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
 		Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "test-logs"), ProgressPath: progress, Workers: 3, Concurrency: 3})
 	if err != nil || status != 0 {
 		t.Fatalf("concurrent stage: status=%d err=%v result=%+v", status, err, result.Groups)
@@ -115,14 +107,11 @@ func TestStageRunsIndependentGroupsSideBySide(t *testing.T) {
 // A cap of one keeps the old serial behaviour exactly.
 func TestStageWithCapOfOneRunsSerially(t *testing.T) {
 	root := t.TempDir()
-	runTestResultGit(t, root, "init", "-q", "-b", "main")
-	runTestResultGit(t, root, "config", "user.name", "fixture")
-	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestResultScript(t, root, "one", "passed", 0)
-	writeTestResultScript(t, root, "two", "passed", 0)
-	runTestResultGit(t, root, "add", ".")
-	runTestResultGit(t, root, "commit", "-qm", "fixture")
-	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	tree := fmt.Sprintf("%x", sha1.Sum([]byte(root)))
+	snapshot := newTestSnapshotFactory(t, root, tree, map[string]testSnapshotEntry{
+		"scripts/one.sh": testSnapshotScript("one", "passed", 0),
+		"scripts/two.sh": testSnapshotScript("two", "passed", 0),
+	}, 2)
 	groups := []testpolicy.Group{}
 	for _, id := range []string{"one", "two"} {
 		groups = append(groups, testpolicy.Group{ID: id, Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"scripts/**"}, Outputs: []string{"reports-" + id},
@@ -135,7 +124,7 @@ func TestStageWithCapOfOneRunsSerially(t *testing.T) {
 		Always: testpolicy.Always{Canary: []string{"one"}}, Unknown: []string{"one"}, Cadence: []string{"one", "two"}}
 	plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto, RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
 		RequiredGroups: []string{"one", "two"}, SelectedGroups: []string{"one", "two"}, Stages: []testpolicy.Stage{{ID: "standard", Groups: []string{"one", "two"}}}}
-	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
+	result, status, err := RunTestPlan(context.Background(), TestRunRequest{ProjectRoot: root, CandidateTree: tree, openCandidate: snapshot.open, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD",
 		Contract: contract, Plan: plan, AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "test-logs"), Concurrency: 1})
 	if err != nil || status != 0 || len(result.Groups) != 2 || result.Groups[0].ID != "one" || result.Groups[1].ID != "two" {
 		t.Fatalf("serial stage: status=%d err=%v result=%+v", status, err, result.Groups)

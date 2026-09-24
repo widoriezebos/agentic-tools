@@ -141,6 +141,10 @@ func nullableGoalTier(goalID string, tier uint8) (any, error) {
 // this record is built, so publication immediately creates a complete
 // attempt-and-minute spending fact. A non-empty parent marks a follow-up.
 func BuildSetup(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, goalTier uint8, capResolution, machineID, approvedRef string) error {
+	return buildSetupWithGoalReads(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID, goalRevision, goalTier, capResolution, machineID, approvedRef, concreteGoalAdmissionReads())
+}
+
+func buildSetupWithGoalReads(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID string, goalRevision uint64, goalTier uint8, capResolution, machineID, approvedRef string, reads goalAdmissionReads) error {
 	fenceGeneration := int64(0)
 	if repoRoot != "" {
 		fence, err := stopfence.Read(repoRoot)
@@ -152,7 +156,7 @@ func BuildSetup(repoRoot, output, job, role, parent, mainID, claimEpoch, goalID 
 	gateWidth := ""
 	if goalID != "" {
 		gateWidth = "area"
-		if binding, bindErr := ResolveGoalBinding(repoRoot, goalID, time.Now().UTC()); bindErr == nil && binding.Revision == goalRevision {
+		if binding, bindErr := resolveGoalBindingWithReads(repoRoot, goalID, time.Now().UTC(), reads); bindErr == nil && binding.Revision == goalRevision {
 			gateWidth = binding.GateWidth
 		}
 	}
@@ -330,6 +334,10 @@ func validateReviewRoundTier(role string, goalBound bool, tier uint8) error {
 }
 
 func goalReviewRoundLimit(repoRoot, goalID string, revision uint64, role string) (reviewRoundLimitResolution, error) {
+	return goalReviewRoundLimitWithReads(repoRoot, goalID, revision, role, concreteGoalAdmissionReads())
+}
+
+func goalReviewRoundLimitWithReads(repoRoot, goalID string, revision uint64, role string, reads goalAdmissionReads) (reviewRoundLimitResolution, error) {
 	var zero reviewRoundLimitResolution
 	maximum, err := config.ReviewRoundMax(filepath.Join(repoRoot, "metasystem.conf"))
 	if err != nil {
@@ -341,7 +349,7 @@ func goalReviewRoundLimit(repoRoot, goalID string, revision uint64, role string)
 	if goalID == "" {
 		return reviewRoundLimitForRole(role, false, uint8(maximum)), nil
 	}
-	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	endpoint, err := reads.ResolveEndpoint(repoRoot)
 	if err != nil {
 		return zero, err
 	}
@@ -424,7 +432,27 @@ func digestDeclaredOutputs(outputs []string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func designBlobBinding(workspace, commit, design string) (path, source string, err error) {
+type buildWorkspaceFacts interface {
+	Head(workspace string) (string, error)
+	Branch(workspace string) (string, error)
+	BlobAt(workspace, commit, path string) (string, error)
+}
+
+type gitBuildWorkspaceFacts struct{}
+
+func (gitBuildWorkspaceFacts) Head(workspace string) (string, error) {
+	return gitOutput(workspace, "rev-parse", "HEAD")
+}
+
+func (gitBuildWorkspaceFacts) Branch(workspace string) (string, error) {
+	return gitOutput(workspace, "branch", "--show-current")
+}
+
+func (gitBuildWorkspaceFacts) BlobAt(workspace, commit, path string) (string, error) {
+	return gitOutput(workspace, "rev-parse", commit+":"+path)
+}
+
+func designBlobBinding(workspace, commit, design string, facts buildWorkspaceFacts) (path, source string, err error) {
 	abs := design
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(workspace, design)
@@ -437,7 +465,7 @@ func designBlobBinding(workspace, commit, design string) (path, source string, e
 	if !strings.HasPrefix(rel, "metasystem/") {
 		return "", "", fmt.Errorf("design path must begin metasystem/")
 	}
-	blob, err := gitOutput(workspace, "rev-parse", commit+":"+rel)
+	blob, err := facts.BlobAt(workspace, commit, rel)
 	if err != nil || !gitObjectIDRe.MatchString(blob) {
 		return "", "", fmt.Errorf("design path %s is not a blob at reviewed commit %s", rel, commit)
 	}
@@ -448,6 +476,14 @@ func designBlobBinding(workspace, commit, design string) (path, source string, e
 // identity, workspace pin (base SHA and branch read from the workspace),
 // permissions, cap authority, capability snapshot, and input digest.
 func BuildRecord(p BuildRecordParams) error {
+	return buildRecord(p, gitBuildWorkspaceFacts{})
+}
+
+func buildRecord(p BuildRecordParams, facts buildWorkspaceFacts) error {
+	return buildRecordWithReads(p, facts, concreteGoalAdmissionReads())
+}
+
+func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads goalAdmissionReads) error {
 	if p.GoalID != "" && p.GateWidth == "" {
 		p.GateWidth = "area"
 	}
@@ -461,11 +497,11 @@ func BuildRecord(p BuildRecordParams) error {
 	if len(productRoots) == 0 {
 		productRoots = []string{resolvePath(p.Workspace)}
 	}
-	base, err := gitOutput(p.Workspace, "rev-parse", "HEAD")
+	base, err := facts.Head(p.Workspace)
 	if err != nil {
 		return fmt.Errorf("workspace is not a git worktree")
 	}
-	branch, err := gitOutput(p.Workspace, "branch", "--show-current")
+	branch, err := facts.Branch(p.Workspace)
 	if err != nil {
 		return fmt.Errorf("cannot read the workspace branch: %v", err)
 	}
@@ -642,7 +678,7 @@ func BuildRecord(p BuildRecordParams) error {
 		if tierErr := validateReviewRoundTier(p.Role, p.GoalID != "", p.GoalTier); tierErr != nil {
 			return tierErr
 		}
-		resolution, limitErr := goalReviewRoundLimit(p.Root, p.GoalID, p.GoalRevision, p.Role)
+		resolution, limitErr := goalReviewRoundLimitWithReads(p.Root, p.GoalID, p.GoalRevision, p.Role, reads)
 		if limitErr != nil || resolution.roleLimit == 0 {
 			return fmt.Errorf("cannot resolve a positive goal review-round limit: %v", limitErr)
 		}
@@ -662,7 +698,7 @@ func BuildRecord(p BuildRecordParams) error {
 			if parseErr != nil {
 				return parseErr
 			}
-			design, source, sourceErr := designBlobBinding(p.Workspace, base, p.Design)
+			design, source, sourceErr := designBlobBinding(p.Workspace, base, p.Design, facts)
 			if sourceErr != nil {
 				return sourceErr
 			}

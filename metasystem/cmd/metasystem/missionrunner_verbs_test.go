@@ -4,13 +4,11 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -73,11 +71,6 @@ func missionFenceFixture(t *testing.T, terminal bool) string {
 	if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("fixture"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("git", "-C", root, "init", "-q")
-	command.Env = gittree.ScrubbedEnviron()
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
 	root, err := canonicalPath(root)
 	if err != nil {
 		t.Fatal(err)
@@ -95,6 +88,7 @@ func TestMissionLaunchHumanOpensClosedFenceBeforeArming(t *testing.T) {
 	for _, mode := range []string{"start", "resume"} {
 		t.Run(mode, func(t *testing.T) {
 			root := missionFenceFixture(t, true)
+			repositoryTop := declaredRepositoryTop(t, root, map[string]int{root: 1})
 			record := stopfence.Record{
 				State: stopfence.StateClosed, Phase: stopfence.PhaseStopped,
 				Generation: 9, ChangedAt: "2026-09-07T09:30:00Z", Checkout: root,
@@ -104,7 +98,7 @@ func TestMissionLaunchHumanOpensClosedFenceBeforeArming(t *testing.T) {
 			if err := stopfence.Write(root, record); err != nil {
 				t.Fatal(err)
 			}
-			generation, code := missionFenceBeforeArm(root, mode)
+			generation, code := missionFenceBeforeArmWith(root, mode, repositoryTop, lease.ClassifyAt)
 			if code != 0 || generation != 10 {
 				t.Fatalf("human handover = generation %d code %d", generation, code)
 			}
@@ -118,6 +112,7 @@ func TestMissionLaunchHumanOpensClosedFenceBeforeArming(t *testing.T) {
 
 func TestMissionLaunchNonHumanKeepsStoppedRefusalAheadOfArming(t *testing.T) {
 	root := missionFenceFixture(t, false)
+	repositoryTop := declaredRepositoryTop(t, root, map[string]int{root: 1})
 	if err := stopfence.Write(root, stopfence.Record{
 		State: stopfence.StateClosed, Phase: stopfence.PhaseStopped,
 		Generation: 9, ChangedAt: "2026-09-07T09:30:00Z", Checkout: root,
@@ -127,7 +122,7 @@ func TestMissionLaunchNonHumanKeepsStoppedRefusalAheadOfArming(t *testing.T) {
 		t.Fatal(err)
 	}
 	output, code := captureMissionStderr(t, func() int {
-		_, code := missionFenceBeforeArm(root, "resume")
+		_, code := missionFenceBeforeArmWith(root, "resume", repositoryTop, lease.ClassifyAt)
 		return code
 	})
 	expected := "the metasystem is stopped for " + root + " since 2026-09-07T09:30:00Z, by stop pid 4321\n" +
@@ -143,6 +138,7 @@ func TestMissionLaunchNonHumanKeepsStoppedRefusalAheadOfArming(t *testing.T) {
 
 func TestMissionLaunchClassificationDataFailureNamesRepairBeforeRetry(t *testing.T) {
 	root := missionFenceFixture(t, true)
+	repositoryTop := declaredRepositoryTop(t, root, map[string]int{root: 1})
 	if err := stopfence.Write(root, stopfence.Record{
 		State: stopfence.StateClosed, Phase: stopfence.PhaseStopped,
 		Generation: 9, ChangedAt: "2026-09-07T09:30:00Z", Checkout: root,
@@ -167,7 +163,7 @@ func TestMissionLaunchClassificationDataFailureNamesRepairBeforeRetry(t *testing
 		t.Fatal(err)
 	}
 	output, code := captureMissionStderr(t, func() int {
-		_, code := missionFenceBeforeArm(root, "resume")
+		_, code := missionFenceBeforeArmWith(root, "resume", repositoryTop, lease.ClassifyAt)
 		return code
 	})
 	want := "metasystem mission resume: caller classification is blocked by job record " + printedJobPath + ": invalid JSON: unexpected end of JSON input.\n" +
@@ -183,13 +179,11 @@ func TestMissionLaunchClassificationDataFailureNamesRepairBeforeRetry(t *testing
 
 func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(t *testing.T) {
 	root := t.TempDir()
-	if output, err := fixtureGitCommand("init", "--quiet", root).CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
 	root, err := canonicalPath(root)
 	if err != nil {
 		t.Fatal(err)
 	}
+	repositoryTop := declaredRepositoryTop(t, root, map[string]int{root: 1})
 	installation := filepath.Join(root, "metasystem")
 	if err := os.MkdirAll(filepath.Join(installation, "bin"), 0o755); err != nil {
 		t.Fatal(err)
@@ -219,14 +213,12 @@ func TestMissionFenceClassificationUsesTheNestedInstallationAndKeepsFenceClosed(
 	}); err != nil {
 		t.Fatal(err)
 	}
-	previous := classifyProcessVerbCaller
 	var gotRoot, gotInstallation string
-	classifyProcessVerbCaller = func(stateRoot, installed string, _ int64) (lease.Classification, error) {
+	classify := func(stateRoot, installed string, _ int64) (lease.Classification, error) {
 		gotRoot, gotInstallation = stateRoot, installed
 		return lease.ClassifyAt(stateRoot, installed, int64(os.Getpid()))
 	}
-	t.Cleanup(func() { classifyProcessVerbCaller = previous })
-	_, code := missionFenceBeforeArm(root, "start")
+	_, code := missionFenceBeforeArmWith(root, "start", repositoryTop, classify)
 	if code != 1 || gotRoot != root || gotInstallation != installation {
 		t.Fatalf("mission classifier root=%q installation=%q code=%d, want %q and %q", gotRoot, gotInstallation, code, root, installation)
 	}

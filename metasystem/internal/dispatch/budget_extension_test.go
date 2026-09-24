@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -59,13 +58,14 @@ func shippedReceiptLine(at time.Time, goalID, kind, outcome string) string {
 
 func TestGoalRevisionAdmissionOffersOneLandingEarnedExtension(t *testing.T) {
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
-	root := admissionBudgetBed(t, 1, 10000, 10)
-	commitExtensionReceipt(t, root, shippedReceiptLine(now.Add(-30*time.Minute), "bounded", "implement", "shipped")+"\n")
+	bed := newBudgetReceiptBed(t, 1, 10000, 10)
+	root := bed.root
+	bed.setReceipt(t, shippedReceiptLine(now.Add(-30*time.Minute), "bounded", "implement", "shipped")+"\n", 1)
 	writeBudgetJob(t, root, "settled", "reserve-settled", 3, 1, "completed", budgetJobLife{
 		startedAt: "2026-08-28T09:40:00Z", endedAt: "2026-08-28T09:41:00Z", pid: 4242,
 	})
 
-	verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 3, 1, now)
+	verdict, err := bed.revisionAdmission("bounded", 3, 1, now)
 	if err != nil || verdict.Extension == nil || verdict.Extension.EvidenceKind != "landing" {
 		t.Fatalf("attempt exhaustion did not offer the landing-earned extension: %+v %v", verdict, err)
 	}
@@ -77,11 +77,11 @@ func TestGoalRevisionAdmissionOffersOneLandingEarnedExtension(t *testing.T) {
 	if len(lines) != 1 || !strings.Contains(lines[0], "; extension available: landing ") || !strings.HasSuffix(lines[0], " at 2026-08-28T09:30:00Z") {
 		t.Fatalf("refusal did not carry the offer: %v", lines)
 	}
-	binding, err := ResolveGoalBinding(root, "bounded", now)
+	binding, err := bed.binding("bounded", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	seat, err := EvaluateGoalAdmission(root, binding.Lineage, now)
+	seat, err := bed.admission(binding.Lineage, now)
 	if err != nil || !seat.Refused() {
 		t.Fatalf("seat walk did not keep its ordinary refusal: %+v %v", seat, err)
 	}
@@ -106,39 +106,33 @@ func TestLandingAdvancementFindsTemplateReceiptBelowGitRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(installation, "plans", "goals", "backlog.md"), []byte("# fixture ledger\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{
-		{"init", "-q"},
-		{"config", "user.email", "fixture@example.invalid"},
-		{"config", "user.name", "fixture"},
-		{"add", "development/metasystem-design.md", "metasystem/memory/receipts.log", "metasystem/plans/goals/backlog.md"},
-		{"commit", "-q", "-m", "nested template receipt"},
-		{"update-ref", goal.AcceptedRef, "HEAD"},
-	} {
-		if output, err := exec.Command("git", append([]string{"-C", top}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
-	workspace := gittree.Workspace{Dir: installation}
-	receiptPath, err := budgetExtensionReceiptPath(workspace, installation)
+	receiptPath, err := budgetExtensionReceiptPathWithReads(installation, receiptAdmissionReads{
+		TopLevel: func(root string) (string, error) {
+			if root != installation {
+				t.Fatalf("repository top root = %q, want %q", root, installation)
+			}
+			return top, nil
+		},
+	})
 	if err != nil || receiptPath != "metasystem/memory/receipts.log" {
 		t.Fatalf("nested receipt path = %q, %v", receiptPath, err)
 	}
-	tip, present, err := goal.AcceptedLedgerTip(installation)
-	if err != nil || !present {
-		t.Fatalf("nested accepted tip: %q present=%v err=%v", tip, present, err)
+	data, err := os.ReadFile(filepath.Join(installation, "memory", "receipts.log"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	data, present, err := workspace.FileAt(tip, receiptPath)
-	if err != nil || !present || string(data) != line+"\n" {
-		t.Fatalf("nested receipt read: present=%v data=%q err=%v", present, data, err)
-	}
-	evidence, err := landingAdvancementEvidence(installation, "nested-goal", now)
+	receipt := newStrictBudgetReceipt(t, installation, top, receiptPath)
+	receipt.data = append([]byte(nil), data...)
+	receipt.present = true
+	receipt.want = 1
+	evidence, err := landingAdvancementEvidenceWithReads(installation, "nested-goal", now, receipt.reads())
 	if err != nil || len(evidence) != 1 || evidence[0].kind != "landing" {
 		t.Fatalf("nested template receipt was not selected: evidence=%+v err=%v", evidence, err)
 	}
 }
 
 func TestGoalRevisionAdmissionRejectsMalformedProposalCoordinates(t *testing.T) {
-	root := admissionBudgetBed(t, 1, 10000, 10)
+	root := t.TempDir()
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
 	if _, err := EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 3, 0, now, "implementer", "fresh", HazardMechanical); err == nil || !strings.Contains(err.Error(), "positive proposed cap") {
 		t.Fatalf("zero-cap proposal was not refused: %v", err)
@@ -150,13 +144,14 @@ func TestGoalRevisionAdmissionRejectsMalformedProposalCoordinates(t *testing.T) 
 
 func TestGoalRevisionAdmissionOffersForUsedPlusProposedMinutes(t *testing.T) {
 	now := time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC)
-	root := admissionBudgetBed(t, 10, 240, 10)
-	commitExtensionReceipt(t, root, shippedReceiptLine(now.Add(-time.Hour), "bounded", "implement", "shipped")+"\n")
+	bed := newBudgetReceiptBed(t, 10, 240, 10)
+	root := bed.root
+	bed.setReceipt(t, shippedReceiptLine(now.Add(-time.Hour), "bounded", "implement", "shipped")+"\n", 1)
 	writeBudgetJob(t, root, "settled", "reserve-settled", 3, 120, "completed", budgetJobLife{
 		startedAt: "2026-08-28T09:35:00Z", endedAt: "2026-08-28T10:25:00Z", pid: 4242,
 	})
 	writeBudgetJob(t, root, "running", "reserve-running", 3, 120, "running", budgetJobLife{})
-	verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 3, 120, now)
+	verdict, err := bed.revisionAdmission("bounded", 3, 120, now)
 	if err != nil || verdict.Extension == nil || len(verdict.Refusal.Breaches) != 1 || verdict.Refusal.Breaches[0].Field != "reservedJobMinutesLimit" {
 		t.Fatalf("170+120 minute refusal did not offer: %+v %v", verdict, err)
 	}
@@ -164,10 +159,11 @@ func TestGoalRevisionAdmissionOffersForUsedPlusProposedMinutes(t *testing.T) {
 
 func TestGoalRevisionAdmissionOffersAtReservedMinuteLimit(t *testing.T) {
 	now := time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC)
-	root := admissionBudgetBed(t, 10, 240, 10)
-	commitExtensionReceipt(t, root, shippedReceiptLine(now.Add(-time.Hour), "bounded", "implement", "shipped")+"\n")
+	bed := newBudgetReceiptBed(t, 10, 240, 10)
+	root := bed.root
+	bed.setReceipt(t, shippedReceiptLine(now.Add(-time.Hour), "bounded", "implement", "shipped")+"\n", 1)
 	writeBudgetJob(t, root, "running", "reserve-running", 3, 240, "running", budgetJobLife{})
-	verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 3, 1, now)
+	verdict, err := bed.revisionAdmission("bounded", 3, 1, now)
 	if err != nil || verdict.Extension == nil || len(verdict.Refusal.Breaches) != 1 ||
 		verdict.Refusal.Breaches[0].Field != "reservedJobMinutesLimit" {
 		t.Fatalf("minute exhaustion at the limit did not offer: %+v %v", verdict, err)
@@ -177,28 +173,30 @@ func TestGoalRevisionAdmissionOffersAtReservedMinuteLimit(t *testing.T) {
 func TestGoalRevisionAdmissionWithholdsOfferForOtherBoundaries(t *testing.T) {
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
 	t.Run("mixed", func(t *testing.T) {
-		root := admissionBudgetBed(t, 1, 10000, 1)
-		commitExtensionReceipt(t, root, shippedReceiptLine(now.Add(-time.Minute), "bounded", "implement", "shipped")+"\n")
+		bed := newBudgetReceiptBed(t, 1, 10000, 1)
+		root := bed.root
+		bed.setReceipt(t, shippedReceiptLine(now.Add(-time.Minute), "bounded", "implement", "shipped")+"\n", 0)
 		writeBudgetJob(t, root, "running", "reserve-running", 3, 1, "running", budgetJobLife{})
-		verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 3, 1, now)
+		verdict, err := bed.revisionAdmission("bounded", 3, 1, now)
 		if err != nil || verdict.Extension != nil || len(verdict.Refusal.Breaches) != 2 {
 			t.Fatalf("mixed breach carried an extension: %+v %v", verdict, err)
 		}
 	})
 	t.Run("elapsed stop", func(t *testing.T) {
-		root := admissionBudgetBed(t, 10, 10000, 10)
-		commitExtensionReceipt(t, root, shippedReceiptLine(now.Add(-time.Minute), "bounded", "implement", "shipped")+"\n")
-		verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 3, 1, now.Add(48*time.Hour))
+		bed := newBudgetReceiptBed(t, 10, 10000, 10)
+		bed.setReceipt(t, shippedReceiptLine(now.Add(-time.Minute), "bounded", "implement", "shipped")+"\n", 0)
+		verdict, err := bed.revisionAdmission("bounded", 3, 1, now.Add(48*time.Hour))
 		if err != nil || verdict.Extension != nil || verdict.LiveStopReason == "" {
 			t.Fatalf("live stop carried an extension: %+v %v", verdict, err)
 		}
 	})
 	t.Run("review round", func(t *testing.T) {
-		root := reviewChainBudgetBed(t)
-		commitExtensionReceipt(t, root, shippedReceiptLine(now.Add(-time.Minute), "bounded", "implement", "shipped")+"\n")
+		bed := newReviewReceiptBed(t)
+		root := bed.root
+		bed.setReceipt(t, shippedReceiptLine(now.Add(-time.Minute), "bounded", "implement", "shipped")+"\n", 0)
 		writeCountedCriticRootAtRevision(t, root, "critic-one", "code-critic", 2)
 		writeCountedCriticRootAtRevision(t, root, "critic-two", "code-critic", 2)
-		verdict, err := EvaluateGoalRevisionAdmissionForDispatch(root, "bounded", 2, 1, now,
+		verdict, err := bed.revisionAdmissionForDispatch("bounded", 2, 1, now,
 			"code-critic", "fresh", HazardMechanical)
 		if err != nil || verdict.Extension != nil || verdict.Refusal == nil || len(verdict.Refusal.Breaches) != 1 ||
 			verdict.Refusal.Breaches[0].Field != "codeCritiques" {
@@ -209,7 +207,8 @@ func TestGoalRevisionAdmissionWithholdsOfferForOtherBoundaries(t *testing.T) {
 
 func TestGoalRevisionAdmissionNamesStandingExtensionMarker(t *testing.T) {
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
-	root := admissionBudgetBed(t, 1, 10000, 10)
+	bed := newBudgetReceiptBed(t, 1, 10000, 10)
+	root := bed.root
 	path := filepath.Join(root, "plans", "goals", "bounded.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -231,18 +230,14 @@ func TestGoalRevisionAdmissionNamesStandingExtensionMarker(t *testing.T) {
 	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "standing extension marker"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		if output, runErr := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); runErr != nil {
-			t.Fatalf("git %v: %v: %s", args, runErr, output)
-		}
-	}
+	bed.accept(t)
 	for index := 1; index <= 2; index++ {
 		name := fmt.Sprintf("spent-%d", index)
 		writeBudgetJob(t, root, name, name, 3, 1, "completed", budgetJobLife{
 			startedAt: "2026-08-28T09:40:00Z", endedAt: "2026-08-28T09:41:00Z",
 		})
 	}
-	verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 3, 1, now)
+	verdict, err := bed.revisionAdmission("bounded", 3, 1, now)
 	lines := FormatGoalRevisionAdmission(verdict)
 	if err != nil || verdict.Extension != nil || len(lines) != 1 ||
 		!strings.Contains(lines[0], "; extended once at 2026-08-28T10:00:00Z; a further raise is a person's set-budget") {
@@ -252,7 +247,8 @@ func TestGoalRevisionAdmissionNamesStandingExtensionMarker(t *testing.T) {
 
 func TestLandingEvidenceAppliesCorrectionsAndWindow(t *testing.T) {
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
-	root := admissionBudgetBed(t, 10, 10000, 10)
+	bed := newBudgetReceiptBed(t, 10, 10000, 10)
+	root := bed.root
 	original := shippedReceiptLine(now.Add(-time.Hour), "bounded", "implement", "shipped")
 	digest := fmt.Sprintf("%x", sha1.Sum([]byte(original)))
 	correction := fmt.Sprintf("%d|%s|CORRECTION|ref_epoch=%d|ref_sha1=%s|field=goal|was=bounded|now=other|reason=fixture",
@@ -263,8 +259,8 @@ func TestLandingEvidenceAppliesCorrectionsAndWindow(t *testing.T) {
 		shippedReceiptLine(now.Add(-20*time.Minute), "bounded", "implement", "parked"),
 		shippedReceiptLine(now.Add(-3*time.Hour), "bounded", "implement", "shipped"),
 	}, "\n") + "\n"
-	commitExtensionReceipt(t, root, content)
-	evidence, err := landingAdvancementEvidence(root, "bounded", now)
+	bed.setReceipt(t, content, 1)
+	evidence, err := landingAdvancementEvidenceWithReads(root, "bounded", now, bed.reads.Receipt)
 	if err != nil || len(evidence) != 0 {
 		t.Fatalf("weak landing shapes became advancement: %+v %v", evidence, err)
 	}
@@ -282,9 +278,10 @@ func TestLandingEvidenceCorrectionAppliesToDuplicateIdentity(t *testing.T) {
 		"correction before duplicates": {correction, original, original},
 	} {
 		t.Run(name, func(t *testing.T) {
-			root := admissionBudgetBed(t, 10, 10000, 10)
-			commitExtensionReceipt(t, root, strings.Join(lines, "\n")+"\n")
-			evidence, err := landingAdvancementEvidence(root, "bounded", now)
+			bed := newBudgetReceiptBed(t, 10, 10000, 10)
+			root := bed.root
+			bed.setReceipt(t, strings.Join(lines, "\n")+"\n", 1)
+			evidence, err := landingAdvancementEvidenceWithReads(root, "bounded", now, bed.reads.Receipt)
 			if err != nil || len(evidence) != 0 {
 				t.Fatalf("correction left a duplicate receipt as advancement: %+v %v", evidence, err)
 			}
@@ -294,7 +291,7 @@ func TestLandingEvidenceCorrectionAppliesToDuplicateIdentity(t *testing.T) {
 
 func TestClosedCritiqueEvidenceRequiresClosedFoldedCompletedChain(t *testing.T) {
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
-	root := admissionBudgetBed(t, 20, 10000, 10)
+	root := t.TempDir()
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	writeJSON(t, filepath.Join(jobs, "work-root.json"), map[string]any{
 		"jobId": "work-root", "parentJob": nil, "goalId": "bounded", independentCritiqueReferenceField: "critic-root",
@@ -377,12 +374,13 @@ func TestExtensionEvidenceFollowsTheCandidate(t *testing.T) {
 
 func TestGoalRevisionAdmissionOffersWhenBothConsumptionMembersBreach(t *testing.T) {
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
-	root := admissionBudgetBed(t, 1, 1, 10)
-	commitExtensionReceipt(t, root, shippedReceiptLine(now.Add(-30*time.Minute), "bounded", "implement", "shipped")+"\n")
+	bed := newBudgetReceiptBed(t, 1, 1, 10)
+	root := bed.root
+	bed.setReceipt(t, shippedReceiptLine(now.Add(-30*time.Minute), "bounded", "implement", "shipped")+"\n", 1)
 	writeBudgetJob(t, root, "settled", "reserve-settled", 3, 1, "completed", budgetJobLife{
 		startedAt: "2026-08-28T09:40:00Z", endedAt: "2026-08-28T09:41:00Z", pid: 4242,
 	})
-	verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 3, 1, now)
+	verdict, err := bed.revisionAdmission("bounded", 3, 1, now)
 	if err != nil || verdict.Refusal == nil || len(verdict.Refusal.Breaches) != 2 || verdict.Extension == nil {
 		t.Fatalf("attempts and minutes exhausted together did not offer: %+v %v", verdict, err)
 	}
@@ -396,20 +394,23 @@ func TestGoalRevisionAdmissionOffersWhenBothConsumptionMembersBreach(t *testing.
 func TestGoalRevisionAdmissionWithholdsOfferWithoutEvidenceOrWhenTheRaiseWouldNotAdmit(t *testing.T) {
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
 	t.Run("no evidence", func(t *testing.T) {
-		root := admissionBudgetBed(t, 1, 10000, 10)
+		bed := newBudgetReceiptBed(t, 1, 10000, 10)
+		root := bed.root
+		bed.setReceipt(t, "", 1)
 		writeBudgetJob(t, root, "settled", "reserve-settled", 3, 1, "completed", budgetJobLife{
 			startedAt: "2026-08-28T09:40:00Z", endedAt: "2026-08-28T09:41:00Z", pid: 4242,
 		})
-		verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 3, 1, now)
+		verdict, err := bed.revisionAdmission("bounded", 3, 1, now)
 		if err != nil || verdict.Refusal == nil || verdict.Extension != nil {
 			t.Fatalf("an attempts breach without advancement carried an offer: %+v %v", verdict, err)
 		}
 	})
 	t.Run("proposal beyond the raised box", func(t *testing.T) {
-		root := admissionBudgetBed(t, 10, 240, 10)
-		commitExtensionReceipt(t, root, shippedReceiptLine(now.Add(-time.Hour), "bounded", "implement", "shipped")+"\n")
+		bed := newBudgetReceiptBed(t, 10, 240, 10)
+		root := bed.root
+		bed.setReceipt(t, shippedReceiptLine(now.Add(-time.Hour), "bounded", "implement", "shipped")+"\n", 1)
 		writeBudgetJob(t, root, "running", "reserve-running", 3, 240, "running", budgetJobLife{})
-		verdict, err := EvaluateGoalRevisionAdmission(root, "bounded", 3, 2000, now)
+		verdict, err := bed.revisionAdmission("bounded", 3, 2000, now)
 		if err != nil || verdict.Refusal == nil || verdict.Extension != nil {
 			t.Fatalf("a proposal the raise cannot admit carried an offer: %+v %v", verdict, err)
 		}

@@ -102,7 +102,7 @@ func bindFoldRound(t *testing.T, repo, root, job string, round int, subject Read
 	t.Helper()
 	writeCriticRound(t, repo, root, job, round, findings, rigor)
 	if round == 1 {
-		setCriticSubject(t, repo, root, subject.ReviewedMember, subject.ReviewedProjectTree)
+		setCriticSubjectFiles(t, repo, root, subject.ReviewedMember, subject.ReviewedProjectTree)
 	} else {
 		resultPath := filepath.Join(repo, "artifacts", "agents", root, "rounds", strconv.Itoa(round), "return.json")
 		result := readJSONFile(t, resultPath)
@@ -130,7 +130,7 @@ func TestCleanReadHistorySurvivesChangedFold(t *testing.T) {
 			subjectA := admissionLiveSubject("implementer", "implementer", "a", "1")
 			subjectB := admissionLiveSubject("implementer", "implementer", "b", "2")
 			bindFoldRound(t, repo, "critic", "critic", 1, subjectA, []any{}, []any{})
-			if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil || outcome != "advanced" {
+			if outcome, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil || outcome != "advanced" {
 				t.Fatalf("clean fold = %q, %v", outcome, err)
 			}
 			if prehistory {
@@ -144,7 +144,7 @@ func TestCleanReadHistorySurvivesChangedFold(t *testing.T) {
 			bindFoldRound(t, repo, "critic", "critic-r2", 2, subjectB,
 				[]any{registerFindingValue("F-1", true, "changed subject defect")},
 				[]any{registerRigor("F-1", "severe")})
-			if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic-r2"); err != nil || outcome != "advanced" {
+			if outcome, err := advanceWithPrefix(t, repo, "critic", "critic-r2"); err != nil || outcome != "advanced" {
 				t.Fatalf("changed fold = %q, %v", outcome, err)
 			}
 			history := readCleanHistory(t, repo, "critic")
@@ -161,7 +161,7 @@ func TestCleanReadHistorySurvivesChangedFold(t *testing.T) {
 				t.Fatal("admission synthesized a closure")
 			}
 			before := string(canonicalJSON(history))
-			if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic-r2"); err != nil || outcome != "unchanged" {
+			if outcome, err := advanceWithFacts(t, repo, "critic", "critic-r2"); err != nil || outcome != "unchanged" {
 				t.Fatalf("fold retry = %q, %v", outcome, err)
 			}
 			if after := string(canonicalJSON(readCleanHistory(t, repo, "critic"))); after != before {
@@ -199,7 +199,11 @@ func TestCleanReadHistoryRejectsNonCleanRounds(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if _, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil {
+				calls := []critiqueFactCall{}
+				if tc.status == "completed" {
+					calls = append(calls, declaredPrefix(repo, ""))
+				}
+				if _, err := advanceWithFacts(t, repo, "critic", "critic", calls...); err != nil {
 					t.Fatal(err)
 				}
 				if history := readCleanHistory(t, repo, "critic"); len(history) != 0 {
@@ -410,7 +414,7 @@ func TestCritiqueRegisterAdvanceContinuesWithoutHistoricalProof(t *testing.T) {
 	repo := t.TempDir()
 	stale := admissionLiveSubject("implementer", "implementer", "a", "1")
 	bindFoldRound(t, repo, "critic", "critic", 1, stale, []any{}, []any{})
-	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil || outcome != "advanced" {
+	if outcome, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil || outcome != "advanced" {
 		t.Fatalf("round one fold = %q, %v", outcome, err)
 	}
 	rootPath := filepath.Join(repo, "artifacts", "agents", "jobs", "critic.json")
@@ -428,7 +432,7 @@ func TestCritiqueRegisterAdvanceContinuesWithoutHistoricalProof(t *testing.T) {
 
 	current := admissionLiveSubject("implementer", "implementer", "c", "3")
 	bindFoldRound(t, repo, "critic", "critic-r3", 3, current, []any{}, []any{})
-	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic-r3"); err != nil || outcome != "advanced" {
+	if outcome, err := advanceWithPrefix(t, repo, "critic", "critic-r3"); err != nil || outcome != "advanced" {
 		t.Fatalf("round three fold = %q, %v", outcome, err)
 	}
 	history := readCleanHistory(t, repo, "critic")
@@ -445,12 +449,12 @@ func TestCritiqueRegisterAdvanceContinuesWithMissingFoldMember(t *testing.T) {
 	repo := t.TempDir()
 	first := admissionLiveSubject("implementer", "implementer", "a", "1")
 	bindFoldRound(t, repo, "critic", "critic", 1, first, []any{}, []any{})
-	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic"); err != nil || outcome != "advanced" {
+	if outcome, err := advanceWithPrefix(t, repo, "critic", "critic"); err != nil || outcome != "advanced" {
 		t.Fatalf("round one fold = %q, %v", outcome, err)
 	}
 	second := admissionLiveSubject("implementer", "implementer", "b", "2")
 	bindFoldRound(t, repo, "critic", "critic-r2", 2, second, []any{}, []any{})
-	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic-r2"); err != nil || outcome != "advanced" {
+	if outcome, err := advanceWithPrefix(t, repo, "critic", "critic-r2"); err != nil || outcome != "advanced" {
 		t.Fatalf("round two fold = %q, %v", outcome, err)
 	}
 	if err := os.Remove(filepath.Join(repo, "artifacts", "agents", "jobs", "critic-r2.json")); err != nil {
@@ -462,7 +466,7 @@ func TestCritiqueRegisterAdvanceContinuesWithMissingFoldMember(t *testing.T) {
 
 	current := admissionLiveSubject("implementer", "implementer", "c", "3")
 	bindFoldRound(t, repo, "critic", "critic-r3", 3, current, []any{}, []any{})
-	if outcome, err := CritiqueRegisterAdvance(repo, "critic", "critic-r3"); err != nil || outcome != "advanced" {
+	if outcome, err := advanceWithPrefix(t, repo, "critic", "critic-r3"); err != nil || outcome != "advanced" {
 		t.Fatalf("round three fold = %q, %v", outcome, err)
 	}
 	history := readCleanHistory(t, repo, "critic")

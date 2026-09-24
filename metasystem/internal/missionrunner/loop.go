@@ -389,7 +389,7 @@ func (e *Engine) releaseLease() {
 func (e *Engine) verifyState(statePath string, anchor bool) (map[string]any, error) {
 	var err error
 	if anchor {
-		_, _, err = mission.VerifyStateWithAnchor(statePath, e.Root, filepath.Join(filepath.Dir(statePath), "ledger.md"))
+		_, _, err = e.continuity().VerifyStateWithAnchor(statePath, e.Root, filepath.Join(filepath.Dir(statePath), "ledger.md"))
 	} else {
 		_, _, err = mission.VerifyStateShape(statePath)
 	}
@@ -486,7 +486,13 @@ func (e *Engine) anchorStatePinned(statePath, ledgerPath, identityName, stateHas
 	if err := e.reclaimCheckout(); err != nil {
 		return err
 	}
-	if err := mission.AnchorNamed(statePath, e.Root, ledgerPath, identityName, stateHash, ledgerSHA); err != nil {
+	anchor := e.pinnedAnchorEffect
+	if anchor == nil {
+		anchor = func(statePath, ledgerPath, identityName, stateHash, ledgerSHA string) error {
+			return mission.AnchorNamed(statePath, e.Root, ledgerPath, identityName, stateHash, ledgerSHA)
+		}
+	}
+	if err := anchor(statePath, ledgerPath, identityName, stateHash, ledgerSHA); err != nil {
 		return failf(3, "mission anchor refused: %s", strings.TrimSpace(err.Error()))
 	}
 	return nil
@@ -584,7 +590,7 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 			e.cleanupStillborn(ledger)
 			return "", "", nil, err
 		}
-		origins, err = mission.CaptureAdmissionOrigins(e.Root, e.Mission)
+		origins, err = e.birthRepository().CaptureAdmissionOrigins(e.Root, e.Mission)
 		if err != nil {
 			e.cleanupStillborn(ledger)
 			return "", "", nil, failf(3, "mission initialization cannot capture the admission origins: %v", err)
@@ -594,7 +600,7 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 			e.cleanupStillborn(ledger)
 			return "", "", nil, aerr
 		}
-		originsAgain, oerr := mission.CaptureAdmissionOrigins(e.Root, e.Mission)
+		originsAgain, oerr := e.birthRepository().CaptureAdmissionOrigins(e.Root, e.Mission)
 		if oerr != nil {
 			e.cleanupStillborn(ledger)
 			return "", "", nil, failf(3, "mission initialization cannot capture the admission origins: %v", oerr)
@@ -605,8 +611,7 @@ func (e *Engine) initializeState(leasePath string) (statePath, ledger string, st
 		e.cleanupStillborn(ledger)
 		return "", "", nil, failf(3, "mission initialization refused: the repository would not hold still during admission")
 	}
-	workspace := gittree.Workspace{Dir: e.Root}
-	if err := workspace.Anchor(e.Mission, admitted); err != nil {
+	if err := e.birthRepository().AnchorInitial(e.Root, e.Mission, admitted); err != nil {
 		e.cleanupStillborn(ledger)
 		return "", "", nil, failf(3, "mission initialization cannot anchor the admitted baseline: %v", err)
 	}
@@ -687,7 +692,7 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 	if err := e.checkFileModePinned(); err != nil {
 		return "", "", nil, err
 	}
-	code, reconcileErr := mission.Reconcile(statePath, e.Root, ledger)
+	code, reconcileErr := e.continuity().Reconcile(statePath, e.Root, ledger)
 	if reconcileErr != nil || code != 0 {
 		detail := ""
 		if reconcileErr != nil {
@@ -799,7 +804,7 @@ func (e *Engine) resumeState() (statePath, ledger string, state map[string]any, 
 			if lerr != nil {
 				return "", "", nil, lerr
 			}
-			if err := e.anchorStatePinned(statePath, ledger, turnID, closedHash, anchoredSHA); err != nil {
+			if err := e.anchorPinnedTo(statePath, ledger, turnID, closedHash, anchoredSHA); err != nil {
 				return "", "", nil, err
 			}
 			if state, err = e.verifyState(statePath, false); err != nil {
@@ -869,8 +874,7 @@ func (e *Engine) cleanupStillborn(ledger string) {
 	// may already have anchored its admitted E0. Before birth there is
 	// no living anchor to protect, so the mission's whole anchor
 	// namespace drops with the rest.
-	workspace := gittree.Workspace{Dir: e.Root}
-	if err := workspace.DropAnchors(e.Mission); err != nil {
+	if err := e.birthRepository().DropAnchors(e.Root, e.Mission); err != nil {
 		e.emit("mission-stillborn-cleanup", "leftover anchors", map[string]string{
 			"missionId": e.Mission, "error": err.Error(),
 		})
@@ -1128,7 +1132,7 @@ func (e *Engine) applyPark(statePath, ledger, identityName string, outcome *Park
 
 // gitRevParse resolves a ref in the mission's repository.
 func (e *Engine) gitRevParse(ref string) (string, error) {
-	stdout, stderr, code := gitCaptured(e.Root, "-C", e.Root, "rev-parse", ref)
+	stdout, stderr, code := e.wallReads().Git(e.Root, "-C", e.Root, "rev-parse", ref)
 	if code != 0 {
 		return "", failf(3, "cannot resolve candidate sha: %s", firstDetail(stderr, stdout))
 	}

@@ -119,7 +119,8 @@ func landingOwnerRetryFixtureWithCadence(t *testing.T) (string, func() error, fu
 }
 
 func TestLandingOwnerComponentRetriesAfterEnrollmentAppears(t *testing.T) {
-	root, pass, release := landingOwnerRetryFixture(t)
+	fixture := newLandingOwnerOrdinaryFixture(t, "", "mac-cli")
+	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
 	if err := pass(); err == nil || !strings.Contains(err.Error(), "no machine nickname is enrolled") {
 		t.Fatalf("first setup error=%v, want missing machine enrollment", err)
@@ -127,14 +128,15 @@ func TestLandingOwnerComponentRetriesAfterEnrollmentAppears(t *testing.T) {
 	if _, err := lease.CurrentHolder(root); !errors.Is(err, lease.ErrLeaseAbsent) {
 		t.Fatalf("configuration failure left a checkout lease: %v", err)
 	}
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	fixture.enroll("mac-cli")
 	if err := pass(); err != nil {
 		t.Fatalf("setup did not recover after machine enrollment: %v", err)
 	}
 }
 
 func TestLandingOwnerComponentSetupFailureDoesNotReannounce(t *testing.T) {
-	root, pass, release := landingOwnerRetryFixture(t)
+	fixture := newLandingOwnerOrdinaryFixture(t, "", "", "")
+	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
 	for attempt := 1; attempt <= 3; attempt++ {
 		if err := pass(); err == nil || !strings.Contains(err.Error(), "no machine nickname is enrolled") {
@@ -170,9 +172,10 @@ func assertLandingOwnerAnnouncementCount(t *testing.T, root string, wantCursors 
 }
 
 func TestLandingOwnerComponentRecoversFromHolderProofFailure(t *testing.T) {
-	root, pass, release := landingOwnerRetryFixture(t)
+	fixture := newLandingOwnerOrdinaryFixture(t, "mac-cli", "mac-cli")
+	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	fixture.enroll("mac-cli")
 	mains := filepath.Join(root, "artifacts", "agents", "mains")
 	if err := os.MkdirAll(mains, 0o755); err != nil {
 		t.Fatal(err)
@@ -194,8 +197,9 @@ func TestLandingOwnerComponentRecoversFromHolderProofFailure(t *testing.T) {
 }
 
 func TestLandingOwnerComponentAnnounceErrorReleasesOnStop(t *testing.T) {
-	root, pass, release := landingOwnerRetryFixture(t)
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	fixture := newLandingOwnerOrdinaryFixture(t, "mac-cli")
+	root, pass, release := fixture.root, fixture.pass, fixture.release
+	fixture.enroll("mac-cli")
 	original := batchOwnerAnnounce
 	t.Cleanup(func() { batchOwnerAnnounce = original })
 	batchOwnerAnnounce = func(root, session string, pid, start, startTicks int64, bootID, tag, runtime, lineage string) (string, error) {
@@ -230,9 +234,10 @@ func TestLandingOwnerComponentForeignHolderDoesNotReannounce(t *testing.T) {
 		return
 	}
 
-	root, pass, release := landingOwnerRetryFixture(t)
+	fixture := newLandingOwnerOrdinaryFixture(t, "mac-cli", "mac-cli", "mac-cli", "mac-cli")
+	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	fixture.enroll("mac-cli")
 	child := exec.Command(os.Args[0], "-test.run=^TestLandingOwnerComponentForeignHolderDoesNotReannounce$")
 	child.Env = append(os.Environ(), "GO_WANT_LANDING_OWNER_FOREIGN_HOLDER="+root)
 	stdin, err := child.StdinPipe()
@@ -284,9 +289,10 @@ func TestLandingOwnerComponentForeignHolderDoesNotReannounce(t *testing.T) {
 }
 
 func TestLandingOwnerComponentRecoversFromEnvironmentFailure(t *testing.T) {
-	root, pass, release := landingOwnerRetryFixture(t)
+	fixture := newLandingOwnerOrdinaryFixture(t, "mac-cli", "mac-cli")
+	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	fixture.enroll("mac-cli")
 	original := batchOwnerSetenv
 	t.Cleanup(func() { batchOwnerSetenv = original })
 	failed := false
@@ -307,9 +313,10 @@ func TestLandingOwnerComponentRecoversFromEnvironmentFailure(t *testing.T) {
 }
 
 func TestLandingOwnerComponentRetriesConstructionWithFreshInputs(t *testing.T) {
-	root, pass, release := landingOwnerRetryFixture(t)
+	fixture := newLandingOwnerOrdinaryFixture(t, "machine-one", "machine-two")
+	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "machine-one")
+	fixture.enroll("machine-one")
 	original := batchOwnerConstruct
 	t.Cleanup(func() { batchOwnerConstruct = original })
 	var machines []string
@@ -323,7 +330,7 @@ func TestLandingOwnerComponentRetriesConstructionWithFreshInputs(t *testing.T) {
 	if err := pass(); err == nil || !strings.Contains(err.Error(), "injected construction failure") {
 		t.Fatalf("first pass error=%v, want injected construction failure", err)
 	}
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "machine-two")
+	fixture.enroll("machine-two")
 	if err := pass(); err != nil {
 		t.Fatalf("construction recovered but the later pass remained stuck: %v", err)
 	}
@@ -334,9 +341,10 @@ func TestLandingOwnerComponentRetriesConstructionWithFreshInputs(t *testing.T) {
 }
 
 func TestLandingOwnerComponentStopsActingAfterLeaseLoss(t *testing.T) {
-	root, pass, release := landingOwnerRetryFixture(t)
+	fixture := newLandingOwnerOrdinaryFixture(t, "mac-cli", "mac-cli")
+	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	fixture.enroll("mac-cli")
 	originalResume := batchOwnerResume
 	t.Cleanup(func() { batchOwnerResume = originalResume })
 	resumes := 0
@@ -380,9 +388,10 @@ func TestLandingOwnerComponentCadenceWiringBound(t *testing.T) {
 	t.Cleanup(func() {
 		batchOwnerCadenceStart, batchOwnerCadenceTick, batchOwnerCadenceReport = originalStart, originalTick, originalReport
 	})
-	root, pass, release := landingOwnerRetryFixture(t)
+	fixture := newLandingOwnerOrdinaryCadenceFixture(t, "mac-cli")
+	root, pass, release := fixture.root, fixture.pass, fixture.release
 	defer release()
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	fixture.enroll("mac-cli")
 	starts, ticks, reports := 0, 0, 0
 	batchOwnerCadenceStart = func(tick func()) { starts++; tick() }
 	batchOwnerCadenceTick = func(gotRoot string, _ batchOwnerLease, _ func() time.Time) error {
@@ -430,8 +439,9 @@ func TestLandingOwnerComponentReleaseJoinsCadenceTick(t *testing.T) {
 		reported <- cadenceReport{line: err.Error(), afterRelease: releaseReturned.Load()}
 	}
 
-	root, pass, release, cadence := landingOwnerRetryFixtureWithCadence(t)
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	fixture := newLandingOwnerOrdinaryCadenceFixture(t, "mac-cli")
+	pass, release, cadence := fixture.pass, fixture.release, fixture.cadence
+	fixture.enroll("mac-cli")
 	if err := pass(); err != nil {
 		t.Fatal(err)
 	}
@@ -527,8 +537,9 @@ func TestLandingOwnerComponentReleaseLeavesNoCadenceChild(t *testing.T) {
 	}
 	batchOwnerCadenceReport = func(error) {}
 
-	root, pass, release, cadence := landingOwnerRetryFixtureWithCadence(t)
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "mac-cli")
+	ownerFixture := newLandingOwnerOrdinaryCadenceFixture(t, "mac-cli")
+	pass, release, cadence := ownerFixture.pass, ownerFixture.release, ownerFixture.cadence
+	ownerFixture.enroll("mac-cli")
 	if err := pass(); err != nil {
 		t.Fatal(err)
 	}

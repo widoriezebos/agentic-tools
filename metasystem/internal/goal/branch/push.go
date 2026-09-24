@@ -142,17 +142,27 @@ func recordOriginTip(repo, goalID, tip string) error {
 	return err
 }
 
-func fetchAndValidate(repo, remote, endpointTip, goalID, opid, tip string, transport PushTransport) (err error) {
+type fetchValidationDependencies struct {
+	validateRange func(repo, endpointTip, tip, goalID string) ([]Commit, error)
+	clearRef      func(repo, ref string) error
+}
+
+func fetchAndValidate(repo, remote, endpointTip, goalID, opid, tip string, transport PushTransport) error {
+	return fetchAndValidateWith(repo, remote, endpointTip, goalID, opid, tip, transport,
+		fetchValidationDependencies{validateRange: ValidateRange, clearRef: clearPushTxn})
+}
+
+func fetchAndValidateWith(repo, remote, endpointTip, goalID, opid, tip string, transport PushTransport, deps fetchValidationDependencies) (err error) {
 	temporary := fetchRef(opid)
 	defer func() {
-		if clearErr := clearPushTxn(repo, temporary); err == nil && clearErr != nil {
+		if clearErr := deps.clearRef(repo, temporary); err == nil && clearErr != nil {
 			err = clearErr
 		}
 	}()
 	if err = transport.Fetch(repo, remote, goalBranchRef(goalID), temporary); err != nil {
 		return err
 	}
-	_, err = ValidateRange(repo, endpointTip, tip, goalID)
+	_, err = deps.validateRange(repo, endpointTip, tip, goalID)
 	return err
 }
 
@@ -189,42 +199,43 @@ func updateBranchAndOrigin(repo, goalID, oldBranch, newBranch, newOrigin string)
 }
 
 func adoptRemoteTip(repo, goalID, localTip, remoteTip string, beforeRefMove, afterRefMove func() error) error {
+	return adoptRemoteTipWithRepository(repo, goalID, localTip, remoteTip, beforeRefMove, afterRefMove, gitPushRepository())
+}
+
+func adoptRemoteTipWithRepository(repo, goalID, localTip, remoteTip string, beforeRefMove, afterRefMove func() error, repository pushRepository) error {
 	ref := goalBranchRef(goalID)
-	currentOut, _ := gitOutput(repo, "symbolic-ref", "-q", "HEAD")
-	current := strings.TrimSpace(string(currentOut))
+	current := repository.HeadRef(repo)
 	if current == ref {
-		_, err := gitOutput(repo, "diff", "--quiet")
+		clean, err := repository.TrackedClean(repo, false)
 		if err != nil {
-			var exit *exec.ExitError
-			if !errors.As(err, &exit) || exit.ExitCode() != 1 {
-				return err
-			}
+			return err
+		}
+		if !clean {
 			return operationRefusal(StaleCode, "local tip %s cannot adopt remote tip %s while the checkout has tracked changes", localTip, remoteTip)
 		}
-		_, err = gitOutput(repo, "diff", "--cached", "--quiet")
+		clean, err = repository.TrackedClean(repo, true)
 		if err != nil {
-			var exit *exec.ExitError
-			if !errors.As(err, &exit) || exit.ExitCode() != 1 {
-				return err
-			}
+			return err
+		}
+		if !clean {
 			return operationRefusal(StaleCode, "local tip %s cannot adopt remote tip %s while the checkout has tracked changes", localTip, remoteTip)
 		}
-		if _, err := gitOutput(repo, "switch", "--quiet", "--detach", remoteTip); err != nil {
+		if err := repository.Detach(repo, remoteTip); err != nil {
 			return err
 		}
 	}
 	if beforeRefMove != nil {
 		if err := beforeRefMove(); err != nil {
 			if current == ref {
-				_, restoreErr := gitOutput(repo, "symbolic-ref", "HEAD", ref)
+				restoreErr := repository.RestoreHead(repo, ref)
 				return errors.Join(err, restoreErr)
 			}
 			return err
 		}
 	}
-	if err := updateBranchAndOrigin(repo, goalID, localTip, remoteTip, remoteTip); err != nil {
+	if err := repository.MoveRefs(repo, goalID, localTip, remoteTip, remoteTip); err != nil {
 		if current == ref {
-			_, restoreErr := gitOutput(repo, "symbolic-ref", "HEAD", ref)
+			restoreErr := repository.RestoreHead(repo, ref)
 			return errors.Join(err, restoreErr)
 		}
 		return err
@@ -235,11 +246,10 @@ func adoptRemoteTip(repo, goalID, localTip, remoteTip string, beforeRefMove, aft
 		}
 	}
 	if current == ref {
-		_, err := gitOutput(repo, "symbolic-ref", "HEAD", ref)
-		return err
+		return repository.RestoreHead(repo, ref)
 	}
 	if localTip == "" {
-		if _, err := gitOutput(repo, "switch", "--quiet", "goal/"+goalID); err != nil {
+		if err := repository.SwitchGoal(repo, goalID); err != nil {
 			return err
 		}
 	}
@@ -257,12 +267,16 @@ func staleBranch(remote, localTip, remoteTip, originTip string) error {
 }
 
 func reconcilePushTransactions(req PushRequest) (*PushResult, error) {
-	out, err := gitOutput(req.Repo, "for-each-ref", "--format=%(refname)", "refs/metasystem/goals/txn/")
+	return reconcilePushTransactionsWithRepository(req, gitPushRepository())
+}
+
+func reconcilePushTransactionsWithRepository(req PushRequest, repository pushRepository) (*PushResult, error) {
+	refs, err := repository.TxnRefs(req.Repo)
 	if err != nil {
 		return nil, err
 	}
-	for _, ref := range strings.Fields(string(out)) {
-		txn, err := readPushTxn(req.Repo, ref)
+	for _, ref := range refs {
+		txn, err := repository.Txn(req.Repo, ref)
 		if err != nil {
 			return nil, err
 		}
@@ -278,10 +292,10 @@ func reconcilePushTransactions(req PushRequest) (*PushResult, error) {
 		}
 		switch remoteTip {
 		case txn.New:
-			if err := recordOriginTip(req.Repo, req.GoalID, txn.New); err != nil {
+			if err := repository.RecordOrigin(req.Repo, req.GoalID, txn.New); err != nil {
 				return nil, err
 			}
-			if err := clearPushTxn(req.Repo, ref); err != nil {
+			if err := repository.ClearRef(req.Repo, ref); err != nil {
 				return nil, err
 			}
 			if err := checkClaim(req.CheckClaim); err != nil {
@@ -289,24 +303,24 @@ func reconcilePushTransactions(req PushRequest) (*PushResult, error) {
 			}
 			return &PushResult{State: "reconciled", Tip: txn.New}, nil
 		case txn.Expected:
-			if err := clearPushTxn(req.Repo, ref); err != nil {
+			if err := repository.ClearRef(req.Repo, ref); err != nil {
 				return nil, err
 			}
 			return nil, operationRefusal(PushUnknownCode, "%s still holds %s after the prepared push of %s", req.Remote, remoteTip, txn.New)
 		default:
 			if present {
-				if err := fetchAndValidate(req.Repo, req.Remote, req.EndpointTip, req.GoalID, req.OpID, remoteTip, req.Transport); err != nil {
+				if err := fetchAndValidateFromRepository(req, remoteTip, repository); err != nil {
 					return nil, err
 				}
-				landed, err := ancestor(req.Repo, txn.New, remoteTip)
+				landed, err := repository.Ancestor(req.Repo, txn.New, remoteTip)
 				if err != nil {
 					return nil, err
 				}
 				if landed {
-					if err := recordOriginTip(req.Repo, req.GoalID, remoteTip); err != nil {
+					if err := repository.RecordOrigin(req.Repo, req.GoalID, remoteTip); err != nil {
 						return nil, err
 					}
-					if err := clearPushTxn(req.Repo, ref); err != nil {
+					if err := repository.ClearRef(req.Repo, ref); err != nil {
 						return nil, err
 					}
 					if err := checkClaim(req.CheckClaim); err != nil {
@@ -315,7 +329,7 @@ func reconcilePushTransactions(req PushRequest) (*PushResult, error) {
 					return &PushResult{State: "reconciled", Tip: remoteTip}, nil
 				}
 			}
-			if err := clearPushTxn(req.Repo, ref); err != nil {
+			if err := repository.ClearRef(req.Repo, ref); err != nil {
 				return nil, err
 			}
 			return nil, operationRefusal(LeaseMovedCode, "%s moved from expected tip %s to %s", req.Remote, txn.Expected, remoteTip)
@@ -325,6 +339,15 @@ func reconcilePushTransactions(req PushRequest) (*PushResult, error) {
 }
 
 func Push(req PushRequest) (PushResult, error) {
+	return pushWithRepository(req, gitPushRepository())
+}
+
+func fetchAndValidateFromRepository(req PushRequest, tip string, repository pushRepository) error {
+	return fetchAndValidateWith(req.Repo, req.Remote, req.EndpointTip, req.GoalID, req.OpID, tip, req.Transport,
+		fetchValidationDependencies{validateRange: repository.Range, clearRef: repository.ClearRef})
+}
+
+func pushWithRepository(req PushRequest, repository pushRepository) (PushResult, error) {
 	if req.Transport == nil {
 		req.Transport = GitPushTransport{}
 	}
@@ -334,7 +357,7 @@ func Push(req PushRequest) (PushResult, error) {
 	if err := checkClaim(req.CheckClaim); err != nil {
 		return PushResult{}, err
 	}
-	if recovered, err := reconcilePushTransactions(req); err != nil || recovered != nil {
+	if recovered, err := reconcilePushTransactionsWithRepository(req, repository); err != nil || recovered != nil {
 		if recovered != nil {
 			return *recovered, err
 		}
@@ -345,7 +368,7 @@ func Push(req PushRequest) (PushResult, error) {
 	if err != nil {
 		return PushResult{}, err
 	}
-	localTip, localPresent, err := localBranchTip(req.Repo, ref)
+	localTip, localPresent, err := repository.Tip(req.Repo, ref)
 	if err != nil {
 		return PushResult{}, err
 	}
@@ -353,48 +376,48 @@ func Push(req PushRequest) (PushResult, error) {
 		if !remotePresent {
 			return PushResult{}, fmt.Errorf("goal branch %s has no local or remote tip", ref)
 		}
-		if err := fetchAndValidate(req.Repo, req.Remote, req.EndpointTip, req.GoalID, req.OpID, remoteTip, req.Transport); err != nil {
+		if err := fetchAndValidateFromRepository(req, remoteTip, repository); err != nil {
 			return PushResult{}, err
 		}
-		if err := adoptRemoteTip(req.Repo, req.GoalID, "", remoteTip, req.Hooks.BeforeAdoptionRefMove, req.Hooks.AfterAdoptionRefMove); err != nil {
+		if err := adoptRemoteTipWithRepository(req.Repo, req.GoalID, "", remoteTip, req.Hooks.BeforeAdoptionRefMove, req.Hooks.AfterAdoptionRefMove, repository); err != nil {
 			return PushResult{}, err
 		}
 		return PushResult{State: "adopted", Tip: remoteTip}, nil
 	}
-	if _, err := ValidateRange(req.Repo, req.EndpointTip, localTip, req.GoalID); err != nil {
+	if _, err := repository.Range(req.Repo, req.EndpointTip, localTip, req.GoalID); err != nil {
 		return PushResult{}, err
 	}
 	if remotePresent && remoteTip == localTip {
-		if err := recordOriginTip(req.Repo, req.GoalID, remoteTip); err != nil {
+		if err := repository.RecordOrigin(req.Repo, req.GoalID, remoteTip); err != nil {
 			return PushResult{}, err
 		}
 		return PushResult{State: "current", Tip: localTip}, nil
 	}
-	originTip, originPresent, err := localBranchTip(req.Repo, originTipRef(req.GoalID))
+	originTip, originPresent, err := repository.Tip(req.Repo, originTipRef(req.GoalID))
 	if err != nil {
 		return PushResult{}, err
 	}
 	if remotePresent {
-		if err := fetchAndValidate(req.Repo, req.Remote, req.EndpointTip, req.GoalID, req.OpID, remoteTip, req.Transport); err != nil {
+		if err := fetchAndValidateFromRepository(req, remoteTip, repository); err != nil {
 			return PushResult{}, err
 		}
-		remoteBuiltOnLocal, err := ancestor(req.Repo, localTip, remoteTip)
+		remoteBuiltOnLocal, err := repository.Ancestor(req.Repo, localTip, remoteTip)
 		if err != nil {
 			return PushResult{}, err
 		}
 		if remoteBuiltOnLocal {
-			if err := adoptRemoteTip(req.Repo, req.GoalID, localTip, remoteTip, req.Hooks.BeforeAdoptionRefMove, req.Hooks.AfterAdoptionRefMove); err != nil {
+			if err := adoptRemoteTipWithRepository(req.Repo, req.GoalID, localTip, remoteTip, req.Hooks.BeforeAdoptionRefMove, req.Hooks.AfterAdoptionRefMove, repository); err != nil {
 				return PushResult{}, err
 			}
 			return PushResult{State: "adopted", Tip: remoteTip}, nil
 		}
-		builtOnRemote, err := ancestor(req.Repo, remoteTip, localTip)
+		builtOnRemote, err := repository.Ancestor(req.Repo, remoteTip, localTip)
 		if err != nil {
 			return PushResult{}, err
 		}
 		if !builtOnRemote && !(originPresent && remoteTip == originTip) {
 			if originPresent && localTip == originTip {
-				if err := adoptRemoteTip(req.Repo, req.GoalID, localTip, remoteTip, req.Hooks.BeforeAdoptionRefMove, req.Hooks.AfterAdoptionRefMove); err != nil {
+				if err := adoptRemoteTipWithRepository(req.Repo, req.GoalID, localTip, remoteTip, req.Hooks.BeforeAdoptionRefMove, req.Hooks.AfterAdoptionRefMove, repository); err != nil {
 					return PushResult{}, err
 				}
 				return PushResult{State: "adopted", Tip: remoteTip}, nil
@@ -409,7 +432,7 @@ func Push(req PushRequest) (PushResult, error) {
 		expected = ""
 	}
 	txn := pushTxn{SchemaVersion: 1, Goal: req.GoalID, Remote: req.Remote, Ref: ref, Expected: expected, New: localTip}
-	if err := writePushTxn(req.Repo, req.OpID, txn); err != nil {
+	if err := repository.WriteTxn(req.Repo, req.OpID, txn); err != nil {
 		return PushResult{}, err
 	}
 	if req.Hooks.AfterRemoteRead != nil {
@@ -419,7 +442,7 @@ func Push(req PushRequest) (PushResult, error) {
 	}
 	outcome, pushErr := req.Transport.Push(req.Repo, req.Remote, ref, expected, localTip)
 	if outcome == CASRefused {
-		if err := clearPushTxn(req.Repo, txnRef(req.OpID)); err != nil {
+		if err := repository.ClearRef(req.Repo, txnRef(req.OpID)); err != nil {
 			return PushResult{}, err
 		}
 		return PushResult{}, operationRefusal(LeaseMovedCode, "origin moved after tip %s was observed: %v", expected, pushErr)
@@ -438,7 +461,7 @@ func Push(req PushRequest) (PushResult, error) {
 			observed = ""
 		}
 		if observed != localTip {
-			if err := clearPushTxn(req.Repo, txnRef(req.OpID)); err != nil {
+			if err := repository.ClearRef(req.Repo, txnRef(req.OpID)); err != nil {
 				return PushResult{}, err
 			}
 			if observed != expected {
@@ -447,10 +470,10 @@ func Push(req PushRequest) (PushResult, error) {
 			return PushResult{}, operationRefusal(PushUnknownCode, "origin still holds %s after an unknown push outcome", observed)
 		}
 	}
-	if err := recordOriginTip(req.Repo, req.GoalID, localTip); err != nil {
+	if err := repository.RecordOrigin(req.Repo, req.GoalID, localTip); err != nil {
 		return PushResult{}, err
 	}
-	if err := clearPushTxn(req.Repo, txnRef(req.OpID)); err != nil {
+	if err := repository.ClearRef(req.Repo, txnRef(req.OpID)); err != nil {
 		return PushResult{}, err
 	}
 	if err := checkClaim(req.CheckClaim); err != nil {

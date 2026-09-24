@@ -438,6 +438,72 @@ func TestGoalRevisionAdmissionCommandMarksThenEnforcesWithExplicitDispatchContex
 	}
 }
 
+// An abandoned breach-stopped goal cannot enter command budget admission.
+func TestGoalRevisionAdmissionCommandRefusesAbandonedBreachStoppedGoalBeforeBudget(t *testing.T) {
+	root := syncedClaimedGoalFixture(t)
+	livePath := filepath.Join(root, "plans", "goals", "standing-validation.md")
+	data, err := os.ReadFile(livePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		t.Fatalf("claimed fixture is invalid: %v", problems)
+	}
+	closedAt := "2026-08-30T08:07:00Z"
+	abandonedAt := "2026-08-30T08:08:00Z"
+	stopID := "stop-standing-validation-r2-f1"
+	file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1, FenceEpoch: 1}
+	file.StopFence = &goal.StopFence{StopID: stopID, Revision: 2, Epoch: 1, CapabilityGeneration: 2, ClosedAt: closedAt, Reason: goal.StopReasonElapsedLimit}
+	file.History = append(file.History, goal.HistoryLine{
+		At: closedAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAC", "mac-cli", "m1"),
+		Verb: "breach-stop", Actor: "mac-cli+m1", Targets: []string{file.Id}, Keep: -1,
+	})
+	displaced := "mac-cli+m1@" + file.Claimed.At
+	abandonOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAD", "mac-cli", "m1")
+	reason := "The stopped work will not resume."
+	file.State = goal.StateAbandoned
+	file.Claimed = nil
+	file.Revision = 5
+	file.Abandoned = &goal.AbandonRecord{By: "human:Wido", At: abandonedAt, Revision: 5, Opid: abandonOpid, Displaced: displaced, StopID: stopID, Because: reason}
+	file.History = append(file.History, goal.HistoryLine{
+		At: abandonedAt, Opid: abandonOpid, Verb: "abandon", Actor: "human:Wido",
+		Targets: []string{file.Id}, Displaced: displaced, StopID: stopID, Keep: -1, Reason: reason,
+	})
+	archivePath := filepath.Join(root, "records", "goals", "standing-validation.md")
+	if err := os.MkdirAll(filepath.Dir(archivePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(archivePath, goal.RenderFile(file), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(livePath); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "-A", "plans/goals", "records/goals")
+	goalSyncMutationGit(t, root, "commit", "-q", "-m", "abandoned breach-stopped admission fixture")
+	goalSyncMutationGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
+	endpoint, err := goal.ResolveEndpoint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := goal.Project(endpoint, false, time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("accepted abandoned fixture is invalid: %v", err)
+	}
+	archived := projection.Tree.Abandoned[file.Id]
+	if projection.Tree.Live[file.Id] != nil || archived == nil || archived.State != goal.StateAbandoned || archived.Claimed != nil || archived.StopCapability == nil || archived.StopFence == nil || archived.StopFence.StopID != stopID || archived.Abandoned == nil || archived.Abandoned.StopID != stopID {
+		t.Fatalf("accepted ledger does not contain the abandoned stopped goal: %+v", archived)
+	}
+	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "1", "--destructive-reach", "MECHANICAL"}
+	output, code := captureStderr(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	if code == 0 || !strings.Contains(output, "not a claimed accepted goal") || strings.Contains(output, "BUDGET_") {
+		t.Fatalf("abandoned goal reached budget admission: code=%d output=%q", code, output)
+	}
+}
+
 func testStopProofCancelCommandKeepsFrozenInstantFixtureOnly(t *testing.T) {
 	production := t.TempDir()
 	if err := os.WriteFile(filepath.Join(production, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o644); err != nil {

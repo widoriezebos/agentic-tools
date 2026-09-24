@@ -24,8 +24,7 @@ func servingBed(t *testing.T, machine string, files map[string]*GoalFile) string
 	run("config", "goal.sync-remote", "local")
 	run("config", "user.name", "serving-fixture")
 	run("config", "user.email", "serving-fixture@example.invalid")
-	write := func(rel string, data []byte) {
-		t.Helper()
+	for rel, data := range servingFixtureFiles(machine, files) {
 		abs := filepath.Join(root, rel)
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 			t.Fatal(err)
@@ -35,10 +34,33 @@ func servingBed(t *testing.T, machine string, files map[string]*GoalFile) string
 		}
 		run("add", rel)
 	}
-	write("plans/goals/backlog.md", RenderRoot(&RootRecord{
+	run("commit", "-q", "-m", "serving bed")
+	run("update-ref", AcceptedRef, "HEAD")
+	return root
+}
+
+// fakeServingFixture binds immutable committed files to one Store without a
+// checkout. The same rendered records feed the Git-backed serving bed.
+func fakeServingFixture(t *testing.T, machine string, files map[string]*GoalFile) (*Store, *fakeGoalRepository, Endpoint) {
+	t.Helper()
+	root := t.TempDir()
+	commits := newFakeGoalStore()
+	seed := commits.commits[commits.canonical]
+	seed.files = copyFakeFiles(servingFixtureFiles(machine, files))
+	commits.commits[commits.canonical] = seed
+	client := commits.client()
+	client.accepted = commits.canonical
+	endpoint := Endpoint{Root: root, Remote: "local", Branch: LocalLedgerBranch, Repository: client}
+	store := &Store{Root: root, projectionDeps: projectionDependencies{source: &projectionSource{endpoint: endpoint, machine: machine}}}
+	return store, client, endpoint
+}
+
+func servingFixtureFiles(machine string, files map[string]*GoalFile) map[string][]byte {
+	committed := map[string][]byte{}
+	committed[goalsPrefix+"backlog.md"] = RenderRoot(&RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1",
 		SyncMode: SyncLocal, Revision: 1,
-	}))
+	})
 	history := []HistoryLine{{
 		At: "2026-08-23T00:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAV-bed-00000000",
 		Verb: "open", Actor: machine + "+coordinator", Targets: []string{"any"}, Keep: -1,
@@ -67,23 +89,21 @@ func servingBed(t *testing.T, machine string, files map[string]*GoalFile) string
 				Verb: "claim", Actor: f.Claimed.Machine + "+" + f.Claimed.Lineage, Targets: []string{id}, Keep: -1,
 			})
 		}
-		write("plans/goals/"+id+".md", RenderFile(f))
+		committed[goalsPrefix+id+".md"] = RenderFile(f)
 	}
-	run("commit", "-q", "-m", "serving bed")
-	run("update-ref", AcceptedRef, "HEAD")
-	return root
+	return committed
 }
 
 func TestServingProjectionConvertedClaimCarriesOnlyIdentityAndIntent(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"ship-it": {
 			Id: "ship-it", State: "claimed", Intent: "Ship the whole thing", Origin: "main",
 			NextStep: "Land it in pieces.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
 			Claimed: &ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
 		},
 	})
-	id, intent, ok := (&Store{Root: root}).ServingProjection()
+	id, intent, ok := store.ServingProjection()
 	if !ok || id != "ship-it" || intent != "Ship the whole thing" {
 		t.Fatalf("this machine's claim did not serve its identity and intent: %q %q %v", id, intent, ok)
 	}
@@ -91,14 +111,14 @@ func TestServingProjectionConvertedClaimCarriesOnlyIdentityAndIntent(t *testing.
 
 func TestServingProjectionForeignClaimServesNothing(t *testing.T) {
 	t.Parallel()
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"theirs": {
 			Id: "theirs", State: "claimed", Intent: "Someone else's", Origin: "main",
 			NextStep: "Work elsewhere.", OpenedAt: "2026-08-23T00:00:00Z", Revision: 2,
 			Claimed: &ClaimRecord{Machine: "bed-m2", Lineage: "coordinator", At: "2026-08-23T01:00:00Z"},
 		},
 	})
-	if _, _, ok := (&Store{Root: root}).ServingProjection(); ok {
+	if _, _, ok := store.ServingProjection(); ok {
 		t.Fatal("a foreign claim must serve nothing here")
 	}
 }
@@ -116,11 +136,10 @@ func TestServingProjectionAlwaysServesLiveClaimInsteadOfFencedClaim(t *testing.T
 			Revision: 2, AccountingRevision: 2,
 		},
 	}
-	root := servingBed(t, "bed-m1", map[string]*GoalFile{
+	store, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		fenced.Id: fenced,
 		live.Id:   live,
 	})
-	store := &Store{Root: root}
 	for call := 1; call <= 40; call++ {
 		id, intent, ok := store.ServingProjection()
 		if !ok || id != live.Id || intent != live.Intent {

@@ -14,6 +14,10 @@ type MirrorRequest struct {
 }
 
 func Mirror(req MirrorRequest) (PushResult, error) {
+	return mirror(req, fetchValidationDependencies{validateRange: ValidateRange, clearRef: clearPushTxn})
+}
+
+func mirror(req MirrorRequest, deps fetchValidationDependencies) (PushResult, error) {
 	if req.PushTransport == nil {
 		req.PushTransport = GitPushTransport{}
 	}
@@ -31,7 +35,7 @@ func Mirror(req MirrorRequest) (PushResult, error) {
 	if !present {
 		return PushResult{}, fmt.Errorf("origin has no %s", ref)
 	}
-	if err := fetchAndValidate(req.Repo, req.Origin, req.EndpointTip, req.GoalID, req.OpID, originTip, req.PushTransport); err != nil {
+	if err := fetchAndValidateWith(req.Repo, req.Origin, req.EndpointTip, req.GoalID, req.OpID, originTip, req.PushTransport, deps); err != nil {
 		return PushResult{}, err
 	}
 	transportTip, transportPresent, err := req.PushTransport.RemoteTip(req.Repo, req.Transport, ref)

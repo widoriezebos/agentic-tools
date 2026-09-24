@@ -23,7 +23,7 @@ func Build(options Options) Brief {
 	if root == "" {
 		root = "."
 	}
-	return Compute(loadRecordSet(root), options.now())
+	return Compute(loadRecordSetWith(root, options.sources), options.now())
 }
 
 // Compute derives both signals from a fixture-ready durable record projection.

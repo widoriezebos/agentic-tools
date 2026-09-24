@@ -4,19 +4,17 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestBriefAuthorityRefusesMissingBasePathThenAdmitsCommittedPath(t *testing.T) {
 	repo := newBriefAuthorityRepo(t)
-	brief := writeBriefAuthorityFile(t, repo, "brief.md", "Working Mode: implement\nAuthority: records/two-bars/missing.md\n")
+	brief := writeBriefAuthorityFile(t, repo.root, "brief.md", "Working Mode: implement\nAuthority: records/two-bars/missing.md\n")
 
-	err := ValidateBriefAuthority(brief, repo, repo)
+	err := briefAuthorityError(brief, repo.root, repo.facts)
 	var refusal *BriefAuthorityRefusal
 	if !errors.As(err, &refusal) {
 		t.Fatalf("missing record error = %v, want typed BriefAuthorityRefusal", err)
@@ -26,39 +24,38 @@ func TestBriefAuthorityRefusesMissingBasePathThenAdmitsCommittedPath(t *testing.
 		t.Fatalf("missing record refusal = %+v, %q", refusal, err)
 	}
 
-	path := filepath.Join(repo, "records", "two-bars", "missing.md")
+	path := filepath.Join(repo.root, "records", "two-bars", "missing.md")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("landed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateBriefAuthority(brief, repo, repo); err == nil {
+	if err := briefAuthorityError(brief, repo.root, repo.facts); err == nil {
 		t.Fatal("an uncommitted working-tree file was accepted as delegate base content")
 	}
-	briefAuthorityGit(t, repo, "add", "records/two-bars/missing.md")
-	briefAuthorityGit(t, repo, "commit", "-q", "-m", "land authority")
-	if err := ValidateBriefAuthority(brief, repo, repo); err != nil {
+	repo.facts.commitPaths("records/two-bars/missing.md")
+	if err := briefAuthorityError(brief, repo.root, repo.facts); err != nil {
 		t.Fatalf("committed authority path refused: %v", err)
 	}
 }
 
 func TestBriefAuthoritySkipsTemplatesAndChecksArtifactsOnDisk(t *testing.T) {
 	repo := newBriefAuthorityRepo(t)
-	artifact := filepath.Join(repo, "artifacts", "agents", "jobs", "live.json")
+	artifact := filepath.Join(repo.root, "artifacts", "agents", "jobs", "live.json")
 	if err := os.MkdirAll(filepath.Dir(artifact), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(artifact, []byte("runtime state\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	brief := writeBriefAuthorityFile(t, repo, "brief.md", strings.Join([]string{
+	brief := writeBriefAuthorityFile(t, repo.root, "brief.md", strings.Join([]string{
 		"Working Mode: implement",
 		"Skip records/**/*.md records/<name>.md records/${name}.md.",
 		"Read `artifacts/agents/jobs/live.json` and `artifacts/agents/jobs/absent.json`.",
 	}, "\n"))
 
-	err := ValidateBriefAuthority(brief, repo, repo)
+	err := briefAuthorityError(brief, repo.root, repo.facts)
 	var refusal *BriefAuthorityRefusal
 	if !errors.As(err, &refusal) {
 		t.Fatalf("missing artifact error = %v, want typed BriefAuthorityRefusal", err)
@@ -67,19 +64,19 @@ func TestBriefAuthoritySkipsTemplatesAndChecksArtifactsOnDisk(t *testing.T) {
 		t.Fatalf("artifact and template extraction = %v", refusal.MissingPaths)
 	}
 
-	missing := filepath.Join(repo, "artifacts", "agents", "jobs", "absent.json")
+	missing := filepath.Join(repo.root, "artifacts", "agents", "jobs", "absent.json")
 	if err := os.WriteFile(missing, []byte("runtime state\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateBriefAuthority(brief, repo, repo); err != nil {
+	if err := briefAuthorityError(brief, repo.root, repo.facts); err != nil {
 		t.Fatalf("on-disk artifact paths refused: %v", err)
 	}
 }
 
 func TestBriefAuthorityAdmitsBriefWithNoCandidatePaths(t *testing.T) {
 	repo := newBriefAuthorityRepo(t)
-	brief := writeBriefAuthorityFile(t, repo, "brief.md", "Working Mode: implement\nExplain the change without citing repository inputs.\n")
-	if err := ValidateBriefAuthority(brief, repo, repo); err != nil {
+	brief := writeBriefAuthorityFile(t, repo.root, "brief.md", "Working Mode: implement\nExplain the change without citing repository inputs.\n")
+	if err := briefAuthorityError(brief, repo.root, repo.facts); err != nil {
 		t.Fatalf("zero-candidate brief refused: %v", err)
 	}
 }
@@ -92,8 +89,8 @@ func TestBriefAuthorityTreatsMetasystemDiffBoundaryExampleAsPrefixOnly(t *testin
 		{"bounded-member", boundedAuthority([]string{member}, "diffBoundary example: [\""+member+"\"]")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			brief := writeBriefAuthorityFile(t, repo, "brief.md", tc.content)
-			if err := ValidateBriefAuthority(brief, repo, repo); err != nil {
+			brief := writeBriefAuthorityFile(t, repo.root, "brief.md", tc.content)
+			if err := briefAuthorityError(brief, repo.root, repo.facts); err != nil {
 				t.Fatalf("repository-relative diffBoundary example was treated as cited authority: %v", err)
 			}
 		})
@@ -102,7 +99,7 @@ func TestBriefAuthorityTreatsMetasystemDiffBoundaryExampleAsPrefixOnly(t *testin
 
 func TestBriefAuthorityExemptsDeclaredOutputsUnlessTheyAreAlsoInputs(t *testing.T) {
 	repo := newBriefAuthorityRepo(t)
-	brief := writeBriefAuthorityFile(t, repo, "brief.md", strings.Join([]string{
+	brief := writeBriefAuthorityFile(t, repo.root, "brief.md", strings.Join([]string{
 		"Working Mode: implement",
 		"# Workspace",
 		"May-write: records/identity/epoch-drift-design.md",
@@ -111,18 +108,18 @@ func TestBriefAuthorityExemptsDeclaredOutputsUnlessTheyAreAlsoInputs(t *testing.
 		"# Goal",
 		"Produce the listed deliverables.",
 	}, "\n"))
-	if err := ValidateBriefAuthority(brief, repo, repo); err != nil {
+	if err := briefAuthorityError(brief, repo.root, repo.facts); err != nil {
 		t.Fatalf("absent paths declared only as outputs were refused: %v", err)
 	}
 
-	brief = writeBriefAuthorityFile(t, repo, "brief.md", strings.Join([]string{
+	brief = writeBriefAuthorityFile(t, repo.root, "brief.md", strings.Join([]string{
 		"Working Mode: implement",
 		"# Workspace",
 		"May-write: records/identity/epoch-drift-design.md",
 		"# Inputs",
 		"Follow the authority in records/identity/epoch-drift-design.md.",
 	}, "\n"))
-	err := ValidateBriefAuthority(brief, repo, repo)
+	err := briefAuthorityError(brief, repo.root, repo.facts)
 	var refusal *BriefAuthorityRefusal
 	if !errors.As(err, &refusal) {
 		t.Fatalf("path cited as both output and input error = %v, want typed BriefAuthorityRefusal", err)
@@ -297,7 +294,7 @@ func TestBriefAuthorityBoundedCitationCompatibility(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := newBriefAuthorityRepo(t)
 			if tc.artifact != "" {
-				path := filepath.Join(repo, filepath.FromSlash(tc.artifact))
+				path := filepath.Join(repo.root, filepath.FromSlash(tc.artifact))
 				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 					t.Fatal(err)
 				}
@@ -311,11 +308,43 @@ func TestBriefAuthorityBoundedCitationCompatibility(t *testing.T) {
 }
 
 func TestBriefAuthorityRealBriefRegression(t *testing.T) {
-	_, testFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate repository from test source")
-	}
-	repo := filepath.Clean(filepath.Join(filepath.Dir(testFile), "..", "..", ".."))
+	repo := newBriefAuthorityRepo(t)
+	// These inputs are cited by the example brief; the snapshot is independent
+	// of the authority scanner's output.
+	repo.facts.commitPaths(
+		"metasystem/plans/landing-receipt-survives-records-drift-design.md",
+		"metasystem/records/misc/landing-receipt-survives-records-drift-critique-r1.md",
+		"metasystem/records/misc/landing-receipt-survives-records-drift-critique-r2.md",
+		"metasystem/internal/gittree/detached_test.go",
+		"metasystem/internal/gittree/detached.go",
+		"metasystem/internal/gittree/snapshotscope.go",
+		"metasystem/internal/landing/receipt.go",
+		"metasystem/internal/landing/testing.go",
+		"metasystem/internal/landing/receipt_test.go",
+		"metasystem/internal/landing/observe.go",
+		"metasystem/internal/landing/registers.go",
+		"metasystem/internal/landing/registers_test.go",
+		"metasystem/internal/landing/drift.go",
+		"metasystem/internal/landing/drift_test.go",
+		"metasystem/internal/landing/advance.go",
+		"metasystem/internal/landing/advance_test.go",
+		"metasystem/internal/lease/lease.go",
+		"metasystem/internal/behaviorsurface/policy.v2.json",
+		"metasystem/internal/behaviorsurface/policy_test.go",
+		"metasystem/internal/behaviorsurface/consumer_wiring_test.go",
+		"metasystem/internal/refusal/register.go",
+		"metasystem/cmd/metasystem/landing_verbs.go",
+		"metasystem/cmd/metasystem/main.go",
+		"metasystem/scripts/agents/static-reproof-fixtures.sh",
+		"metasystem/scripts/agents/land.sh",
+		"metasystem/scripts/agents/land-fixtures.sh",
+		"metasystem/scripts/agents/go-gate.sh",
+		"scripts/agents/dispatch-fixtures.sh",
+		"scripts/agents/go-gate.sh",
+		"scripts/agents/goal-cli-fixtures.sh",
+		"scripts/agents/land-fixtures.sh",
+		"records/narrator-digest.log",
+	)
 	for _, tc := range []struct {
 		name     string
 		boundary []string
@@ -326,7 +355,7 @@ func TestBriefAuthorityRealBriefRegression(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			encoded, _ := json.Marshal(tc.boundary)
 			brief := writeBriefAuthorityFile(t, t.TempDir(), "brief.md", realBriefFixture+"\nBoundary: "+string(encoded)+"\nCeiling: 1\n")
-			if err := ValidateBriefAuthority(brief, repo, repo); err != nil {
+			if err := briefAuthorityError(brief, repo.root, repo.facts); err != nil {
 				t.Fatalf("real implementer brief changed authority result: %v", err)
 			}
 		})
@@ -345,46 +374,30 @@ func jsonString(value string) string {
 	return string(encoded)
 }
 
-func commitBriefAuthorityPath(t *testing.T, repo, name string) {
+func commitBriefAuthorityPath(t *testing.T, repo briefAuthorityFixture, name string) {
 	t.Helper()
-	path := filepath.Join(repo, filepath.FromSlash(name))
+	path := filepath.Join(repo.root, filepath.FromSlash(name))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("landed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	briefAuthorityGit(t, repo, "add", name)
-	briefAuthorityGit(t, repo, "commit", "-q", "-m", "land authority")
+	repo.facts.commitPaths(name)
 }
 
-func requireAuthorityInRepo(t *testing.T, repo, content string, want []string) {
+func briefAuthorityError(brief, root string, facts briefTreeFacts) error {
+	_, err := readBriefAdmissionAtRootWithFacts(brief, root, root, root, false, facts)
+	return err
+}
+
+func requireAuthorityInRepo(t *testing.T, repo briefAuthorityFixture, content string, want []string) {
 	t.Helper()
-	err := ValidateBriefAuthority(writeBriefAuthorityFile(t, repo, "brief.md", content), repo, repo)
+	err := briefAuthorityError(writeBriefAuthorityFile(t, repo.root, "brief.md", content), repo.root, repo.facts)
 	var refusal *BriefAuthorityRefusal
 	if want == nil && err != nil || want != nil && (!errors.As(err, &refusal) || !reflect.DeepEqual(refusal.MissingPaths, want)) {
 		t.Fatalf("authority error = %#v, want missing paths %q", err, want)
 	}
-}
-
-func newBriefAuthorityRepo(t *testing.T) string {
-	t.Helper()
-	repo := t.TempDir()
-	briefAuthorityGit(t, repo, "init", "-q")
-	briefAuthorityGit(t, repo, "config", "user.email", "test@example.invalid")
-	briefAuthorityGit(t, repo, "config", "user.name", "Test")
-	for _, directory := range []string{"records", "docs", "scripts", "metasystem/internal", "metasystem/records", "metasystem/scripts"} {
-		path := filepath.Join(repo, directory, ".keep")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	briefAuthorityGit(t, repo, "add", ".")
-	briefAuthorityGit(t, repo, "commit", "-q", "-m", "base")
-	return repo
 }
 
 func writeBriefAuthorityFile(t *testing.T, directory, name, content string) string {
@@ -394,12 +407,4 @@ func writeBriefAuthorityFile(t *testing.T, directory, name, content string) stri
 		t.Fatal(err)
 	}
 	return path
-}
-
-func briefAuthorityGit(t *testing.T, directory string, args ...string) {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", directory}, args...)...)
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, output)
-	}
 }

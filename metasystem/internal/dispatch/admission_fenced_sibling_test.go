@@ -53,24 +53,24 @@ func addFencedAdmissionGoal(t *testing.T, root, id, stopID string, opids [3]stri
 }
 
 func TestGoalAdmissionIgnoresSiblingFencedClaim(t *testing.T) {
-	root := revisionBindingBed(t, 2)
-	addFencedAdmissionGoal(t, root, "stopped-a", "stop-stopped-a-r2-f1", [3]string{
+	bed := newGoalAdmissionBed(t, 2)
+	bed.addFenced(t, "stopped-a", "stop-stopped-a-r2-f1", [3]string{
 		"01ARZ3NDEKTSV4RRFFQ69G5FAA", "01ARZ3NDEKTSV4RRFFQ69G5FAB", "01ARZ3NDEKTSV4RRFFQ69G5FAC",
 	})
 
-	verdict, err := EvaluateGoalAdmission(root, "coordinator", time.Date(2026, 8, 28, 14, 1, 0, 0, time.UTC))
+	verdict, err := bed.admission("coordinator", time.Date(2026, 8, 28, 14, 1, 0, 0, time.UTC))
 	if err != nil || verdict.Refused() {
 		t.Fatalf("the fenced sibling kept admission closed for the live goal: %+v %v", verdict, err)
 	}
 }
 
 func TestGoalRevisionAdmissionStillRefusesTheFencedGoal(t *testing.T) {
-	root := revisionBindingBed(t, 2)
-	addFencedAdmissionGoal(t, root, "stopped-a", "stop-stopped-a-r2-f1", [3]string{
+	bed := newGoalAdmissionBed(t, 2)
+	bed.addFenced(t, "stopped-a", "stop-stopped-a-r2-f1", [3]string{
 		"01ARZ3NDEKTSV4RRFFQ69G5FAA", "01ARZ3NDEKTSV4RRFFQ69G5FAB", "01ARZ3NDEKTSV4RRFFQ69G5FAC",
 	})
 
-	verdict, err := EvaluateGoalRevisionAdmission(root, "stopped-a", 2, 5,
+	verdict, err := bed.revisionAdmission("stopped-a", 2, 5,
 		time.Date(2026, 8, 28, 14, 1, 0, 0, time.UTC))
 	if err != nil || !verdict.Refused() || verdict.Refusal == nil ||
 		verdict.Refusal.Unknown == nil ||
@@ -82,15 +82,15 @@ func TestGoalRevisionAdmissionStillRefusesTheFencedGoal(t *testing.T) {
 }
 
 func TestGoalAdmissionIgnoresMultipleSiblingFencedClaims(t *testing.T) {
-	root := revisionBindingBed(t, 2)
-	addFencedAdmissionGoal(t, root, "stopped-a", "stop-stopped-a-r2-f1", [3]string{
+	bed := newGoalAdmissionBed(t, 2)
+	bed.addFenced(t, "stopped-a", "stop-stopped-a-r2-f1", [3]string{
 		"01ARZ3NDEKTSV4RRFFQ69G5FAA", "01ARZ3NDEKTSV4RRFFQ69G5FAB", "01ARZ3NDEKTSV4RRFFQ69G5FAC",
 	})
-	addFencedAdmissionGoal(t, root, "stopped-c", "stop-stopped-c-r2-f1", [3]string{
+	bed.addFenced(t, "stopped-c", "stop-stopped-c-r2-f1", [3]string{
 		"01ARZ3NDEKTSV4RRFFQ69G5FAD", "01ARZ3NDEKTSV4RRFFQ69G5FAE", "01ARZ3NDEKTSV4RRFFQ69G5FAF",
 	})
 
-	verdict, err := EvaluateGoalAdmission(root, "coordinator", time.Date(2026, 8, 28, 14, 1, 0, 0, time.UTC))
+	verdict, err := bed.admission("coordinator", time.Date(2026, 8, 28, 14, 1, 0, 0, time.UTC))
 	if err != nil || verdict.Refused() {
 		t.Fatalf("multiple fenced siblings kept admission closed for the live goal: %+v %v", verdict, err)
 	}

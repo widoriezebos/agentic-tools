@@ -101,13 +101,15 @@ func captureCommandOutput(t *testing.T, captureStdout, captureStderr bool, run f
 	outResult := drain(outRead)
 	errResult := drain(errRead)
 
-	originalOut, originalErr := os.Stdout, os.Stderr
+	var originalOut, originalErr *os.File
 	var code int
 	func() {
 		if captureStdout {
+			originalOut = os.Stdout
 			os.Stdout = outWrite
 		}
 		if captureStderr {
+			originalErr = os.Stderr
 			os.Stderr = errWrite
 		}
 		defer func() {

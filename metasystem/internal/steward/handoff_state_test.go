@@ -187,9 +187,9 @@ func rewriteManifest(t *testing.T, fixture stagedHandoffFixture, mutate func(map
 }
 
 func TestHandoffStateRoundTripSchema2(t *testing.T) {
-	captureRoot := handoffCaptureRepo(t, "claimed")
+	fixture := newHandoffGoalFixture(t, "claimed")
 	useHandoffNonces(t, "2000000000000002")
-	result, err := Handoff(captureRoot, handoffMainCaller(), handoffTestRecord(t, captureRoot, nil), handoffCaptureNow, filepath.Join(captureRoot, "memory", "receipts.log"))
+	result, err := fixture.handoff(fixture.root, handoffMainCaller(), handoffTestRecord(t, fixture.root, nil), handoffCaptureNow, filepath.Join(fixture.root, "memory", "receipts.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
