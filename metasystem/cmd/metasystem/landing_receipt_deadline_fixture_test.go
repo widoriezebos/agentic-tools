@@ -121,6 +121,7 @@ func (f *deadlineReceiptTreeFixture) entries() []byte {
 
 func (f *deadlineReceiptTreeFixture) checkFiles(root string) {
 	f.t.Helper()
+	expected := f.files
 	if root == f.root {
 		for path, want := range f.ignored {
 			full := filepath.Join(root, filepath.FromSlash(path))
@@ -133,8 +134,21 @@ func (f *deadlineReceiptTreeFixture) checkFiles(root string) {
 				f.t.Fatalf("accepted mode %s = %v, %v", path, info, err)
 			}
 		}
+	} else {
+		// Freeze carries the accepted live goal pages even though this fixture's
+		// Git projection ignores them. Check their exact bytes in the export.
+		expected = make(map[string][]byte, len(f.files)+len(f.ignored))
+		for path, data := range f.files {
+			expected[path] = data
+		}
+		for path, data := range f.ignored {
+			name, ok := strings.CutPrefix(path, "plans/goals/")
+			if ok && name != "backlog.md" && !strings.Contains(name, "/") && strings.HasSuffix(name, ".md") {
+				expected[path] = data
+			}
+		}
 	}
-	for path, want := range f.files {
+	for path, want := range expected {
 		full := filepath.Join(root, filepath.FromSlash(path))
 		got, err := os.ReadFile(full)
 		if err != nil || !bytes.Equal(got, want) {
@@ -163,7 +177,7 @@ func (f *deadlineReceiptTreeFixture) checkFiles(root string) {
 			return filepath.SkipDir
 		}
 		if !entry.IsDir() {
-			if _, ok := f.files[rel]; !ok {
+			if _, ok := expected[rel]; !ok {
 				if root == f.root {
 					if _, accepted := f.ignored[rel]; accepted {
 						return nil

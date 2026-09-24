@@ -2273,7 +2273,7 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	for _, layout := range frozenCorpusSourceLayouts() {
 		t.Run(layout.name, func(t *testing.T) {
 			layoutRoot := materializeFrozenCorpusLayout(t, source.Root, layout)
-			runFrozenPublicVersionOneCorpus(t, layoutRoot, engine, &builtForCommit, now)
+			runFrozenPublicVersionOneCorpus(t, layoutRoot, layout, engine, &builtForCommit, now)
 		})
 	}
 }
@@ -2299,6 +2299,25 @@ func materializeFrozenCorpusLayout(t *testing.T, sourceRoot string, layout froze
 		root = filepath.Join(project, filepath.FromSlash(layout.prefix))
 	}
 	copyFrozenCorpusTree(t, sourceRoot, root)
+	if layout.prefix != "" {
+		// An adopted installation keeps goals at the application root. Move
+		// these fixture inputs there before freezing the real layout.
+		for _, relative := range []string{"plans/goals", "records/goals"} {
+			from := filepath.Join(root, filepath.FromSlash(relative))
+			if _, err := os.Stat(from); os.IsNotExist(err) {
+				continue
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			to := filepath.Join(project, filepath.FromSlash(relative))
+			if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(from, to); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	if layout.git {
 		testingFixtureGit(t, project, "init", "-q", "-b", "main")
 		testingFixtureGit(t, project, "add", ".")
@@ -2307,14 +2326,18 @@ func materializeFrozenCorpusLayout(t *testing.T, sourceRoot string, layout froze
 	return root
 }
 
-func runFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot, engine string, builtForCommit *string, now time.Time) {
+func runFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout frozenCorpusSourceLayout, engine string, builtForCommit *string, now time.Time) {
 	t.Helper()
 	frozen, err := proofrun.Freeze(sourceRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = frozen.Close() })
-	projectRoot, root := normalizeFrozenCorpusSource(t, frozen.Root)
+	stateRoot := frozen.Root
+	if layout.prefix != "" {
+		stateRoot = frozen.ProjectRoot
+	}
+	projectRoot, root := normalizeFrozenCorpusSource(t, frozen.Root, stateRoot)
 	testingFixtureGit(t, projectRoot, "config", "user.name", "Test")
 	testingFixtureGit(t, projectRoot, "config", "user.email", "test@example.invalid")
 	if err := os.Remove(filepath.Join(root, "testing.json")); err != nil && !os.IsNotExist(err) {
@@ -2475,6 +2498,8 @@ func TestFrozenPublicVersionOneCorpusNormalizesSupportedSourceLayouts(t *testing
 	source := t.TempDir()
 	writeTestingFixtureFile(t, filepath.Join(source, "metasystem.conf"), []byte("metasystem.version=1\n"), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(source, ".gitignore"), []byte("reports*/\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(source, "plans", "goals", "live.md"), []byte("live goal\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(source, "records", "goals", "done.md"), []byte("concluded goal\n"), 0o644)
 	for _, test := range frozenCorpusSourceLayouts() {
 		t.Run(test.name, func(t *testing.T) {
 			writeTestingFixtureFile(t, filepath.Join(source, "internal", "shape.txt"), []byte(test.name+"\n"), 0o644)
@@ -2490,12 +2515,21 @@ func TestFrozenPublicVersionOneCorpusNormalizesSupportedSourceLayouts(t *testing
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = frozen.Close() })
-			privateProject, privateRoot := normalizeFrozenCorpusSource(t, frozen.Root)
+			stateRoot := frozen.Root
+			if test.prefix != "" {
+				stateRoot = frozen.ProjectRoot
+			}
+			privateProject, privateRoot := normalizeFrozenCorpusSource(t, frozen.Root, stateRoot)
 			if privateRoot != filepath.Join(privateProject, "metasystem") {
 				t.Fatalf("normalized root = %s beneath %s", privateRoot, privateProject)
 			}
 			if got := strings.TrimSpace(string(mustReadTestingFixtureFile(t, filepath.Join(privateRoot, "internal", "shape.txt")))); got != test.name {
 				t.Fatalf("normalized source marker = %q, want %q", got, test.name)
+			}
+			for goalPath, want := range map[string]string{"plans/goals/live.md": "live goal\n", "records/goals/done.md": "concluded goal\n"} {
+				if got := string(mustReadTestingFixtureFile(t, filepath.Join(privateRoot, filepath.FromSlash(goalPath)))); got != want {
+					t.Fatalf("normalized goal input %s = %q, want %q", goalPath, got, want)
+				}
 			}
 			wantProject, err := canonicalPath(privateProject)
 			if err != nil {
@@ -2522,7 +2556,7 @@ func copyFrozenCorpusTree(t *testing.T, sourceRoot, destinationRoot string) {
 	}
 }
 
-func normalizeFrozenCorpusSource(t *testing.T, sourceRoot string) (string, string) {
+func normalizeFrozenCorpusSource(t *testing.T, sourceRoot, stateRoot string) (string, string) {
 	t.Helper()
 	projectRoot := t.TempDir()
 	projectRoot, err := canonicalPath(projectRoot)
@@ -2531,6 +2565,19 @@ func normalizeFrozenCorpusSource(t *testing.T, sourceRoot string) (string, strin
 	}
 	root := filepath.Join(projectRoot, "metasystem")
 	copyFrozenCorpusTree(t, sourceRoot, root)
+	if stateRoot != sourceRoot {
+		// Normalize the adopted application's frozen goal inputs into the
+		// module root used by the shared first-transition worker.
+		for _, relative := range []string{"plans/goals", "records/goals"} {
+			from := filepath.Join(stateRoot, filepath.FromSlash(relative))
+			if _, err := os.Stat(from); os.IsNotExist(err) {
+				continue
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			copyFrozenCorpusTree(t, from, filepath.Join(root, filepath.FromSlash(relative)))
+		}
+	}
 	testingFixtureGit(t, projectRoot, "init", "-q", "-b", "main")
 	return projectRoot, root
 }

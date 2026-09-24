@@ -1,10 +1,20 @@
 # Test parallelism and Git-free tests: final candidate handoff
 
-Updated 24 September 2026, 20:21 CEST. Continue **finish-test-repairs-and-integrate**. Do not claim a new goal or stop unfinished work because of metadata. User authorizes commits, pushes, Main integration, tmux, and machinery workarounds. Main integration and final matching Mac/Linux validation remain outstanding.
+Updated 24 September 2026, after the performance correction and Opus implementation roster change. Continue **finish-test-repairs-and-integrate**. Do not claim a new goal or stop unfinished work because of metadata. User authorizes commits, pushes, Main integration, tmux, and machinery workarounds. Main integration and final matching validation remain outstanding. The earlier full runs were halted at the user's request; do not restart them. The user subsequently authorized the three performance changes below.
 
 ## Authority and boundaries
 
-Root Astra coordinates Sol6 implementation and independent native reviews. Only root edits Main; delegates own isolated clones. Ordinary tests stub Git including setup. Necessary native Git adapters retain their actual integration assertions. No new inventory, audit system, emulator, dependency, or unrelated scope. User explicitly added bounded CLI help fixes; broad command restructuring already belongs to queued goal `verbs-match-intent`. Related `human-goal-verbs-forgiving` is done.
+Root Astra coordinates Claude Opus 5.5 (`claude-opus-5-5`) implementation and Sol6 reviews, as the user most recently requested. This supersedes the earlier Sol implementation authorization. Only root edits Main; delegates own isolated clones. Ordinary tests stub Git including setup. Necessary native Git adapters retain their actual integration assertions. No new inventory, audit system, emulator, dependency, or unrelated scope. User explicitly added bounded CLI help fixes; broad command restructuring already belongs to queued goal `verbs-match-intent`. Related `human-goal-verbs-forgiving` is done.
+
+## Current performance slice
+
+Implement only the three authorized changes: remove duplicate same-configuration execution, shrink heavyweight decision/failure fixtures using existing stubs, and eliminate measured repeated proof-reuse operations. The acceptance conditions are in `plans/test-suite-redesign.md`. No whole-suite speedup is proven; earlier 2x/8x claims do not describe the full suite.
+
+Main base is `89d3674aa3a93929c6905e322f5cebfa4ea2ef36`; inherited staged work is backed up as candidate `58919d4e9dc51ac89b95f87beebdc3094115495f` on `backup/test-parallelism-repairs-20260924`. Preserve the live unstaged narrator append. Installed trusted engine is generation 177 at the Main baseline. Do not rebaseline again from older handoff sections below.
+
+Four actual Opus children are supervised under `E/coordination/performance-opus-20260924/{dedup,fixtures,reuse,fixture-repair}`. Each directory holds `launch-input.json`, `process.json`, `events.jsonl`, and eventually `exit.json`; requested and observed model is `claude-opus-5-5`. The native launch build adapter currently hardcodes Codex, so these use directly supervised Claude CLI under the user's existing machinery-workaround authority. Their private source paths are in launch-input.json. Sol implementers stopped and handed over preserved edits. The small fourth assignment finishes already identified goal-layout/strict-stub fixture repairs; it is not another performance project. Do not start duplicate jobs.
+
+At transfer: dedup has a traced design but no edits; fixtures has a two-file scenario migration, not yet tested; reuse has measured duplicate DEEP planning and temporary profiling that must be excluded; fixture-repair has two formatted, untested fixture edits. The separate one-file deadline-receipt fixture repair passed focused/Git-denied checks and has been applied to Main's index. No new full suite until focused correctness and actual mechanism observations justify it. Collect meaningful before/after measurements from existing runs; do not rerun only to repackage reports.
 
 NEVER read, echo, copy, or diff actual `metasystem/metasystem.conf.local`: secrets. Transport only the tracked index tree. Preserve all inherited work and the four zero launch caps. Mac uses nine testing workers. Linux uses six workers on six CPUs and 16 GiB RAM. Preserve inherited `METASYSTEM_TEST_WORKERS`. Full Linux remains required for this runner/process goal; future Linux validation is selective.
 

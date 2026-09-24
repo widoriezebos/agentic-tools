@@ -67,6 +67,12 @@ if [ "$#" -eq 20 ] &&
     printf '%s\n' "$METASYSTEM_TEST_GIT_PROJECT"
     exit 0
 fi
+if [ "$#" -eq 4 ] &&
+   [ "$1" = -C ] && [ "$2" = "$METASYSTEM_TEST_GIT_INSTALLATION" ] &&
+   [ "$3" = rev-parse ] && [ "$4" = --show-toplevel ]; then
+    printf '%s\n' "$METASYSTEM_TEST_GIT_PROJECT"
+    exit 0
+fi
 printf 'unexpected git invocation: %s\n' "$*" >&2
 exit 97
 `
@@ -173,16 +179,26 @@ exit 97
 		t.Fatal(err)
 	}
 	wantGitCall := "-C " + root + " -c core.fileMode=true -c diff.noprefix=false -c diff.mnemonicPrefix=false -c apply.ignoreWhitespace=no -c core.logAllRefUpdates=false -c core.useReplaceRefs=false -c gc.auto=0 -c maintenance.auto=false rev-parse --show-toplevel"
+	wantStateRootCall := "-C " + root + " rev-parse --show-toplevel"
 	gitLines := strings.Split(strings.TrimSpace(string(gitCalls)), "\n")
 	if len(gitLines) == 0 || gitLines[0] == "" {
 		t.Fatal("strict git stub did not observe project root discovery")
 	}
+	seenWorkspace, seenStateRoot := false, false
 	for _, call := range gitLines {
-		if call != wantGitCall {
+		switch call {
+		case wantGitCall:
+			seenWorkspace = true
+		case wantStateRootCall:
+			seenStateRoot = true
+		default:
 			t.Fatalf("strict git stub saw unexpected call %q", call)
 		}
 	}
-	t.Logf("strict git stub accepted %d root-discovery calls: %s", len(gitLines), wantGitCall)
+	if !seenWorkspace || !seenStateRoot {
+		t.Fatalf("strict git stub missed root discovery: workspace=%t state-root=%t", seenWorkspace, seenStateRoot)
+	}
+	t.Logf("strict git stub accepted %d exact root-discovery calls", len(gitLines))
 }
 
 func candidateProofAdmission(request proofrun.AdmissionRequest) proofrun.AdmissionRequest {

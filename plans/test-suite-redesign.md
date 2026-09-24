@@ -6,6 +6,18 @@ Focused design, independently reviewed on 22 September 2026 with no material fin
 
 Run the existing suite in the shortest practical wall time, with configurable parallelism and deterministic tests. Keep its tests, race checks, coverage floors and required native-platform checks. The same worker mechanism must work for another application's test command.
 
+## Performance correction authorized on 24 September
+
+The user stopped the previous validation loop and authorized three specific changes. The recoverable starting candidate is `58919d4e9dc51ac89b95f87beebdc3094115495f`, published on `backup/test-parallelism-repairs-20260924`. Its full runs were stopped and do not prove completion or a full-suite speedup.
+
+1. The existing Go runner will execute overlapping tests once per equivalent configuration. Prepared discovery supplies the identities; there is no maintained inventory. A passing native result may satisfy another selected group's overlapping identities within the same immutable candidate. The consumer runs its remaining tests and retains source provenance. Its prerequisites still apply. Different inputs, environments, tools, tags, race/coverage flags or worker conditions remain separate. Missing, failed, cancelled or incomplete evidence cannot supply a passing result. Existing result validation and retained-proof admission must verify the relationship.
+2. Decision and failure combinations move into the existing isolated test harnesses. Keep a small genuine process/Git/landing integration witness and every behavioral assertion. Each test owns its state; use controlled clocks and existing stubs. First target: the separate two-conflict owner scenario currently repeats a whole-system lifecycle that the retained success witness already exercises.
+3. Eliminate measured duplicate work within proof reuse. Initial profiling found a prefix plan running both AUTO plans in DEEP mode, then requesting the same two DEEP plans again. Retain those already-deep outputs within the operation, including their honest requested mode. Preserve fresh input checks, prefix green guarantees, restart verification and changed-input rejection. Further changes require an operation-level measurement, not an assumed bottleneck.
+
+Acceptance for this slice: actual native invocation counts demonstrate deduplication and separate configuration execution; smaller fixtures preserve the original transition assertions; the unchanged receipt consumer passes with measured duplicate planning removed and no extra application test execution. Compare matched focused before/after runs and label host load. Full-suite improvement remains unproven until the combined candidate completes the required validation. No automatic second full run merely for timing.
+
+Implementation uses Claude Opus 5.5 (`claude-opus-5-5`) following the user's latest roster ruling; Astra coordinates and Sol reviews. Work remains in private checkouts until reviewed. No new goal, framework, global cache, test inventory or audit service is part of these changes.
+
 The user's scope correction is binding: improve test execution now; broader improvements can come later. Use the existing runner, worker pool, test groups, command adapter and result store. No new proof framework, contract schema, remote execution platform, cache redesign or batch-budget model. The earlier broad draft is superseded. Begin with a simple CPU-and-available-memory worker default and ordinary suite metadata. Optimize only if the user asks after several observed runs; do not start a tuning campaign now.
 
 ## User correction: automatic association and maintenance
