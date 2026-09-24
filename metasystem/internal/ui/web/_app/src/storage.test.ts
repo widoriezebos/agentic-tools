@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ANY, DEFAULT_WINDOW, named, noFilters, NONE } from "./backlog/filters";
+import { DEFAULT_SIZE, DEFAULT_TYPEFACE, INTERFACE, MONO } from "./partner/typeface";
 import {
   BACKLOG_ARC_KEY,
   BACKLOG_DONE_KEY,
@@ -13,6 +14,8 @@ import {
   DOCK_HEIGHT_KEY,
   DOCK_KEY,
   GOAL_TAB_KEY,
+  PARTNER_FONT_KEY,
+  PARTNER_FONT_SIZE_KEY,
   PROJECT_TAB_KEY,
   RAIL_KEY,
   readBacklogFilters,
@@ -21,6 +24,7 @@ import {
   readDockOpen,
   readDoneWindow,
   readGoalTab,
+  readPartnerTypeface,
   readProjectTab,
   readRailExpanded,
   readTheme,
@@ -30,6 +34,7 @@ import {
   writeDockOpen,
   writeDoneWindow,
   writeGoalTab,
+  writePartnerTypeface,
   writeProjectTab,
   writeRailExpanded,
   type Store,
@@ -296,6 +301,50 @@ describe("the stored view state", () => {
 
     expect(written.getItem(BACKLOG_DONE_KEY)).toBe("30");
     expect(readDoneWindow(written)).toBe(30);
+  });
+
+  // The conversation's face and its size: two keys, because a human who
+  // changed the size has not changed their mind about the face. Both are
+  // validated on the way out, so a name nothing could render and a size
+  // nothing could read arrive as the defaults rather than as a broken column.
+  it("remembers the conversation's face and size under their own keys", () => {
+    const written = store({});
+
+    writePartnerTypeface({ face: "Meslo LG M for Powerline", size: 18 }, written);
+
+    expect(written.getItem(PARTNER_FONT_KEY)).toBe("Meslo LG M for Powerline");
+    expect(written.getItem(PARTNER_FONT_SIZE_KEY)).toBe("18");
+    expect(readPartnerTypeface(written)).toEqual({ face: "Meslo LG M for Powerline", size: 18 });
+
+    writePartnerTypeface({ face: MONO, size: 12 }, written);
+
+    expect(readPartnerTypeface(written)).toEqual({ face: MONO, size: 12 });
+  });
+
+  it("reads the conversation's defaults where nothing is stored", () => {
+    expect(readPartnerTypeface(store({}))).toEqual(DEFAULT_TYPEFACE);
+    expect(readPartnerTypeface(store({ [PARTNER_FONT_KEY]: MONO }))).toEqual({ face: MONO, size: DEFAULT_SIZE });
+  });
+
+  it("reads the conversation's defaults where something invalid is stored", () => {
+    const nonsense = store({
+      [PARTNER_FONT_KEY]: "x; color: red",
+      [PARTNER_FONT_SIZE_KEY]: "enormous",
+    });
+
+    expect(readPartnerTypeface(nonsense)).toEqual(DEFAULT_TYPEFACE);
+    expect(readPartnerTypeface(store({ [PARTNER_FONT_KEY]: '"Menlo"' })).face).toBe(INTERFACE);
+    expect(readPartnerTypeface(store({ [PARTNER_FONT_SIZE_KEY]: "400" })).size).toBe(28);
+    expect(readPartnerTypeface(store({ [PARTNER_FONT_SIZE_KEY]: "2" })).size).toBe(12);
+  });
+
+  it("keeps the conversation's face out of a store that refuses to keep it", () => {
+    expect(readPartnerTypeface(throwing)).toEqual(DEFAULT_TYPEFACE);
+    expect(readPartnerTypeface(null)).toEqual(DEFAULT_TYPEFACE);
+    expect(() => {
+      writePartnerTypeface({ face: MONO, size: 20 }, throwing);
+      writePartnerTypeface({ face: MONO, size: 20 }, null);
+    }).not.toThrow();
   });
 
   it("keeps the board's narrowing out of a store that refuses to keep it", () => {

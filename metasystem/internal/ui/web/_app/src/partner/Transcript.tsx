@@ -4,6 +4,7 @@ import { NavLink, useNavigate } from "react-router";
 
 import type { Message, Page } from "./api";
 import { chipOf } from "./capture";
+import { useTypefaceOn } from "./FontControl";
 import { Looked } from "./Looked";
 import { namesIn, runsIn, type Names } from "./references";
 import { ring } from "./ringing";
@@ -67,6 +68,9 @@ export function Transcript() {
   // Every name this workspace answers to, built once per index rather than
   // once per answer: the conversation re-renders on every beat.
   const names = useMemo(() => namesIn(store.index), [store.index]);
+  // The face and the size a human chose for this conversation, on the column
+  // they chose it for and on nothing above it.
+  useTypefaceOn(column);
 
   // Where the human is in the conversation, from the scroller itself. It is
   // the only thing that clears the pill: no timer takes it away.

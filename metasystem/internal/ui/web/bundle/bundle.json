@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:32565bdeacb7a873c44f0b889371e12fc462a5edd36eff1502bb877ba25ad0be",
+  "sourceDigest": "sha256:550152b1660599eff4d0394a490ea39456e7e5e948710870cb06cda75667de3d",
   "source": [
     {
       "path": ".npmrc",
@@ -344,7 +344,7 @@
     },
     {
       "path": "src/panes/Focused.tsx",
-      "sha256": "4c4d67fb6e02c2758a0c7ac5044edf34f4e020dc7fa88e5607f0f786cecdd9b4"
+      "sha256": "800d5d97762356065b6df895c5623506597f1d034edd1031e70987d9001dcd21"
     },
     {
       "path": "src/panes/Pane.tsx",
@@ -387,6 +387,10 @@
       "sha256": "c9bb2f2c545a7fb36245d19062b6117aeba434432314c1b1a556d4e152499ca1"
     },
     {
+      "path": "src/partner/FontControl.tsx",
+      "sha256": "4a5c6343482e97016f4e8cd093c2a493fd03b9a596b2d4109da5926505d63500"
+    },
+    {
       "path": "src/partner/Looked.tsx",
       "sha256": "6c6b36a217e68014100a981f1e0785e91fa940fe21690f23e5042a03a1eb2794"
     },
@@ -400,7 +404,7 @@
     },
     {
       "path": "src/partner/Transcript.tsx",
-      "sha256": "76fc4c797edb27bc8bab8360b317f7499461376cc544411a6a0d89cce2ffb204"
+      "sha256": "3413953f8c546376ca89843b57e87a5eab8cc48b925f00a577a95a8c385e4fbb"
     },
     {
       "path": "src/partner/api.ts",
@@ -440,7 +444,7 @@
     },
     {
       "path": "src/partner/partner.css",
-      "sha256": "d92fc88a57bef7e52a5ae91cc324cade02fb78a7d71bca5738463963d2415fd4"
+      "sha256": "7e7c73889c4d9bfa9a0a04725af1367b6682e3d59554bd4e8cedb4922f46135e"
     },
     {
       "path": "src/partner/references.test.ts",
@@ -473,6 +477,14 @@
     {
       "path": "src/partner/tidy.test.ts",
       "sha256": "69592fa3da8deecb381c432173ad9efaed941794d8fcebfbe6d61203c77c93ae"
+    },
+    {
+      "path": "src/partner/typeface.test.ts",
+      "sha256": "0d0ab7b4f25dcb2467e882e529b2feb38a3e703554700d40363284d0a93c121d"
+    },
+    {
+      "path": "src/partner/typeface.ts",
+      "sha256": "0f9da0188f3acd9285ddec7608e045567cb323a75c8c7439a914cd78e92b0b4b"
     },
     {
       "path": "src/project/DocumentPane.tsx",
@@ -560,11 +572,11 @@
     },
     {
       "path": "src/shell/Composer.tsx",
-      "sha256": "4eff42a1e85bab94b82f22fbdc0ca4b03884bcf2309bb051770fb26fa5bb20ab"
+      "sha256": "491128d34a3f833bdf7103ab69f28d917203bebc097d36fda1cd9d448a9fabd6"
     },
     {
       "path": "src/shell/Drawer.tsx",
-      "sha256": "50a4b42914ef95d138a8936fd263712a5ac19f67acbf5b94aed00451a63393b6"
+      "sha256": "fbb21684d6dd111c46246c85566de6e796b06c67ffb82864b3871249a17febba"
     },
     {
       "path": "src/shell/ErrorBoundary.tsx",
@@ -584,7 +596,7 @@
     },
     {
       "path": "src/shell/Shell.tsx",
-      "sha256": "36e23d96c4cf7e6a133a9bead96b308271e50b196c0878f71b26195a555c4ed8"
+      "sha256": "b4a1a85355e7aab9700beefaf96b5b4f1a9573a8a41484a274fe195cb3d91cd8"
     },
     {
       "path": "src/shell/SignInControl.tsx",
@@ -636,7 +648,7 @@
     },
     {
       "path": "src/shell/shell.css",
-      "sha256": "4281febd6fe339bd24e0eae97acf6f11c71f81e15718c59eb45fb4e4b2a73656"
+      "sha256": "9d81c97c62846fa899b92620a073d98282834eb12a588db9efcb6175e92a847e"
     },
     {
       "path": "src/shell/workspace.ts",
@@ -644,11 +656,11 @@
     },
     {
       "path": "src/storage.test.ts",
-      "sha256": "a2938db30dc7215eed2701a2e33d54da1ee3217656722f4ec1465e2c83a8296e"
+      "sha256": "c7569f7d82d662705180aeda2b84c153b9a7c5b6f8edb742719a0aa1b6a6be9a"
     },
     {
       "path": "src/storage.ts",
-      "sha256": "e26c66292b18ceb13cde77a60af226a90c8918ad976f4da838649c03adf60d48"
+      "sha256": "09bfa69a16e462f7f2d3e56bfbf04cfa437538f659621c1bfe5088d295be254d"
     },
     {
       "path": "src/theme.test.ts",
@@ -694,11 +706,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "99113ff166e018bd29d0d61edf0fefcf2c4c3a428d94760a6d3c4d53f5ee2223"
+      "sha256": "e1b146ffa61c2d8787033c779ecea0a788dec86232050fc635b84c0503ef6071"
     },
     {
       "path": "assets/index.js",
-      "sha256": "c219ba89d0e10f952d43429bd3b88a8323f4b5efa220f1d52b834f4df5640aa0"
+      "sha256": "b7938b327744f0678036e9745fd187e94876342d075caa2c1699435dfdf842d1"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

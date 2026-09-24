@@ -5,6 +5,7 @@ import { useNavigate } from "react-router";
 import { Composer, COMPOSER_HINT, COMPOSER_LABEL } from "./Composer";
 import { IconButton } from "./controls";
 import { Help } from "../help/Help";
+import { FontControl } from "../partner/FontControl";
 import { Seeing } from "../partner/Seeing";
 import { Transcript } from "../partner/Transcript";
 import { usePartner } from "../partner/store";
@@ -80,6 +81,7 @@ export function Drawer({
         <span className="ms-drawer-who">
           <span className="ms-drawer-title">Project Partner</span>
           <Help id="partner" />
+          <FontControl />
         </span>
         {!open && (
           <>

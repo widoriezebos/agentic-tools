@@ -23,6 +23,25 @@
   font-size: 16px;
 }
 
+/*
+ * The face and the size the human chose, and the only two rules in this build
+ * that read them. The other one is .ms-composer-field in shell/shell.css; the
+ * chooser sets both properties on this element and on the composer's card, and
+ * on nothing else, so the rest of the interface is untouched by a choice made
+ * here (Wido, 2026-09-24: "I want a font chooser for the project partner ... I
+ * also want a fixed width font so that it looks more like a terminal").
+ *
+ * Everything in the column below is declared in `em` and in a unitless line
+ * height, so one property moves the whole conversation and the proportions it
+ * was drawn at survive every size from twelve pixels to twenty-eight. The
+ * fallbacks are what the conversation reads at where nobody has chosen.
+ */
+.ms-conversation {
+  font-family: var(--ms-partner-face, inherit);
+  font-size: var(--ms-partner-size, 16px);
+  line-height: 1.5;
+}
+
 .ms-partner-transcript {
   position: relative;
   display: flex;
@@ -31,7 +50,7 @@
   /* Twenty pixels between turns, and nothing at all between an answer and the
      line that says what it was given. */
   gap: 20px;
-  line-height: 24px;
+  line-height: 1.5;
   padding-bottom: 8px;
 }
 
@@ -62,8 +81,8 @@
 }
 
 .ms-partner-bubble .ms-partner-text {
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 0.875em;
+  line-height: 1.5;
 }
 
 /*
@@ -77,14 +96,52 @@
 
 .ms-partner-text {
   margin: 0;
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 1em;
+  line-height: 1.5;
   color: var(--ms-text);
   white-space: pre-wrap;
 }
 
 .ms-partner-text + .ms-partner-text {
-  margin-top: 12px;
+  margin-top: 0.75em;
+}
+
+/*
+ * A complete answer is the reader's own elements, and the reader sizes a
+ * document in pixels because a document is read at one size. Here the size is
+ * the human's, so the blocks an answer is made of are restated in `em` against
+ * the conversation's own size — and only inside the conversation, so the
+ * document pages are untouched. A code block keeps the monospace it was given:
+ * an `l` and a `1` in a command have to stay apart whatever face the prose is
+ * read in.
+ */
+.ms-conversation .ms-md-paragraph,
+.ms-conversation .ms-md-list,
+.ms-conversation .ms-md-h3 {
+  font-size: 1em;
+  line-height: 1.5;
+}
+
+.ms-conversation .ms-md-h1 {
+  font-size: 1.5em;
+  line-height: 1.34;
+}
+
+.ms-conversation .ms-md-h2 {
+  font-size: 1.25em;
+  line-height: 1.4;
+}
+
+.ms-conversation .ms-md-h4 {
+  font-size: 0.875em;
+  line-height: 1.5;
+}
+
+.ms-conversation .ms-md-pre,
+.ms-conversation .ms-md-inline-code,
+.ms-conversation .ms-md-table {
+  font-size: 0.8125em;
+  line-height: 1.4;
 }
 
 /*
@@ -461,7 +518,219 @@
   display: block;
 }
 
+/* -------------------------------------------------------- the font chooser -- */
+
+/*
+ * The control: two letters rather than an icon, because "Aa" is what every
+ * interface that lets a human choose a face has used for one, and a glyph
+ * nobody has seen before teaches nobody anything.
+ */
+.ms-font-mark {
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.ms-sheet-body--font {
+  padding: 16px;
+}
+
+.ms-font-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.ms-font-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms-font-legend {
+  margin: 0 0 2px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ms-text-3);
+}
+
+.ms-font-help {
+  margin: 0 0 2px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+/*
+ * One face, drawn in itself. The name and the mark are in the interface's own
+ * face, because a list whose labels change shape as the eye goes down it is a
+ * list nobody can scan; the line under each name is the face itself, which is
+ * the only honest way to offer one.
+ */
+.ms-font-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ms-font-entry:hover {
+  border-color: var(--ms-accent);
+}
+
+.ms-font-entry[aria-pressed="true"] {
+  border-color: var(--ms-accent);
+  background: var(--ms-surface-2);
+}
+
+/* The typed name's preview is shown, not pressed: it is not in the list. */
+.ms-font-entry--still {
+  cursor: default;
+  background: var(--ms-surface-2);
+}
+
+.ms-font-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-font-entry-name {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--ms-text);
+}
+
+.ms-font-entry-note {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-font-entry-absent {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-marker-fg);
+}
+
+.ms-font-entry-preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ms-partner-face, inherit);
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--ms-text-2);
+}
+
+.ms-font-other {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-font-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  border: 1px solid var(--ms-border-strong);
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.ms-font-field::placeholder {
+  color: var(--ms-text-3);
+}
+
+.ms-font-refusal {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-danger);
+}
+
+.ms-font-stepper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-font-size {
+  min-width: 56px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--ms-text);
+}
+
+.ms-font-leading {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+/*
+ * The one preview that shows both: the chosen face at the chosen size, in the
+ * rhythm the size carries with it. It is set the same way the conversation is,
+ * by the two properties and nothing else.
+ */
+.ms-font-sample {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+  color: var(--ms-text);
+  font-family: var(--ms-partner-face, inherit);
+  font-size: var(--ms-partner-size, 16px);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ms-font-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* ------------------------------------------------------- the pinned thing -- */
+
+/*
+ * The focused page's own header: one control, against the right edge, over the
+ * conversation it belongs to.
+ */
+.ms-focused-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
 
 .ms-focused-frame {
   display: flex;

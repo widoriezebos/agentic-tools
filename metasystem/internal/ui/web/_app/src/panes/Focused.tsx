@@ -1,3 +1,4 @@
+import { FontControl } from "../partner/FontControl";
 import { PinnedSubject } from "../partner/Pinned";
 import { Transcript } from "../partner/Transcript";
 import { Composer } from "../shell/Composer";
@@ -20,6 +21,12 @@ export function Focused() {
   return (
     <main id="content" className="ms-focused-conversation" tabIndex={-1}>
       <h1 className="ms-visually-hidden">Project Partner</h1>
+      {/* The page's own header is one control: the same "Aa" the drawer's
+          header carries, because a face chosen in one is the face of both and
+          a human who expanded the drawer must not have to go back for it. */}
+      <div className="ms-focused-header">
+        <FontControl />
+      </div>
       <div className="ms-focused-frame">
         <PinnedSubject />
         <div className="ms-focused-column">
