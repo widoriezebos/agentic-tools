@@ -1,6 +1,7 @@
 package backlog
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -80,23 +81,28 @@ type Fence struct {
 // own facts, and every gap the record leaves open.
 type Row struct {
 	Ref          `json:"ref"`
-	Where        string    `json:"where"`
-	Lane         Lane      `json:"lane"`
-	Phase        string    `json:"phase"`
-	State        string    `json:"state"`
-	Intent       string    `json:"intent"`
-	NextStep     string    `json:"nextStep"`
-	Concluded    string    `json:"concluded"`
-	Origin       string    `json:"origin"`
-	Priority     uint8     `json:"priority"`
-	Sequence     uint64    `json:"sequence"`
-	Tier         uint8     `json:"tier"`
-	Labels       []string  `json:"labels"`
-	Arc          string    `json:"arc"`
-	Pinned       string    `json:"pinned"`
-	BlockedBy    []string  `json:"blockedBy"`
-	OpenBlockers []string  `json:"openBlockers"`
-	Approved     *Approval `json:"approved,omitempty"`
+	Where        string   `json:"where"`
+	Lane         Lane     `json:"lane"`
+	Phase        string   `json:"phase"`
+	State        string   `json:"state"`
+	Intent       string   `json:"intent"`
+	NextStep     string   `json:"nextStep"`
+	Concluded    string   `json:"concluded"`
+	Origin       string   `json:"origin"`
+	Priority     uint8    `json:"priority"`
+	Sequence     uint64   `json:"sequence"`
+	Tier         uint8    `json:"tier"`
+	Labels       []string `json:"labels"`
+	Arc          string   `json:"arc"`
+	Pinned       string   `json:"pinned"`
+	BlockedBy    []string `json:"blockedBy"`
+	OpenBlockers []string `json:"openBlockers"`
+	// Holds is the other direction of the same relation: the goals that wait
+	// for this one. Nothing in the ledger stores it - a goal's record names
+	// what it waits for and never what waits for it - so it is computed from
+	// the tree, over every goal the tree carries, and is in id order.
+	Holds    []string  `json:"holds"`
+	Approved *Approval `json:"approved,omitempty"`
 	// Budget is the complete limit tuple the goal's record carries, where it
 	// carries one. It is here because the approval sheet prefills from it:
 	// the machinery never invents a budget, so the one the record already
@@ -146,22 +152,47 @@ func Project(tree *goal.TreeGoals, horizon goal.ApprovalHorizon, admission Admis
 	if tree == nil {
 		return board
 	}
+	// The dependents are indexed once for the whole board rather than sought
+	// per row: the relation is stored one way round, and a reader asking six
+	// hundred times who waits for this goal would walk the tree six hundred
+	// times to be told the same thing.
+	holds := heldBy(tree)
 	for _, id := range goal.OrderedOpenGoalIDs(tree.Live) {
-		row := rowOf(tree.Live[id], WhereLive, tree, horizon, admission)
+		row := rowOf(tree.Live[id], WhereLive, tree, horizon, admission, holds)
 		board.Rows = append(board.Rows, row)
 		board.Counts[row.Lane]++
 	}
 	for _, id := range goal.SortedGoalIds(tree.Done) {
-		row := rowOf(tree.Done[id], WhereArchived, tree, horizon, admission)
+		row := rowOf(tree.Done[id], WhereArchived, tree, horizon, admission, holds)
 		board.Closed = append(board.Closed, row)
 		board.Counts[row.Lane]++
 	}
 	for _, id := range goal.SortedGoalIds(tree.Abandoned) {
-		row := rowOf(tree.Abandoned[id], WhereArchived, tree, horizon, admission)
+		row := rowOf(tree.Abandoned[id], WhereArchived, tree, horizon, admission, holds)
 		board.Closed = append(board.Closed, row)
 		board.Counts[row.Lane]++
 	}
 	return board
+}
+
+// heldBy inverts the blocked graph: for every goal, the goals whose own
+// BlockedBy names it, in id order. Every goal the tree carries is read - a
+// done goal still holds the ones that waited for it, and saying otherwise
+// would make a finished dependency look like one nobody had - and a goal that
+// holds nothing is absent rather than empty.
+func heldBy(tree *goal.TreeGoals) map[string][]string {
+	holds := map[string][]string{}
+	for _, set := range []map[string]*goal.GoalFile{tree.Live, tree.Done, tree.Abandoned} {
+		for _, id := range goal.SortedGoalIds(set) {
+			for _, blocker := range set[id].Blocked {
+				holds[blocker] = append(holds[blocker], id)
+			}
+		}
+	}
+	for blocker := range holds {
+		sort.Strings(holds[blocker])
+	}
+	return holds
 }
 
 // LaneOf decides where one goal stands, what its execution phase is, and what
@@ -214,7 +245,7 @@ func LaneOf(f *goal.GoalFile, tree *goal.TreeGoals, horizon goal.ApprovalHorizon
 	return LaneUnknown, "", []string{"state " + f.State + " is not placed by this build"}
 }
 
-func rowOf(f *goal.GoalFile, where string, tree *goal.TreeGoals, horizon goal.ApprovalHorizon, admission Admission) Row {
+func rowOf(f *goal.GoalFile, where string, tree *goal.TreeGoals, horizon goal.ApprovalHorizon, admission Admission, holds map[string][]string) Row {
 	lane, phase, gaps := LaneOf(f, tree, horizon, admission)
 	open, unknown := openBlockers(f, tree)
 	row := Row{
@@ -235,6 +266,7 @@ func rowOf(f *goal.GoalFile, where string, tree *goal.TreeGoals, horizon goal.Ap
 		Pinned:       f.Pinned,
 		BlockedBy:    append([]string{}, f.Blocked...),
 		OpenBlockers: open,
+		Holds:        append([]string{}, holds[f.Id]...),
 		Sliced:       f.Sliced != nil,
 		Decomposed:   decomposed(tree, f.Id),
 		OpenedAt:     f.OpenedAt,

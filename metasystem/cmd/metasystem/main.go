@@ -574,6 +574,8 @@ func families() []family {
 				{"promote", "move a queued goal to Current", runGoalPromote},
 				{"park", "park a goal; parking the Current one requires --then or --and-none", runGoalPark},
 				{"unpark", "return a parked goal to the queue", runGoalUnpark},
+				{"block", "record that one goal waits for another (--id waits, --blocker is waited for); it parks unless the blocker is already done", runGoalBlock},
+				{"unblock", "remove one blocker edge; the park lifts only when the dependency created it and every remaining blocker is done, and removing an unfinished blocker is a human act", runGoalUnblock},
 				{"done", "conclude the Current goal; requires --then or --and-none", runGoalDone},
 				{"reopen", "return a done goal or an abandoned goal, as a proven human act, to the queue with a fresh --next", runGoalReopen},
 				{"declare-free", "declare (or renew) the absence of intent over the current plans world", runGoalDeclareFree},

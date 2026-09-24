@@ -317,7 +317,7 @@ func (a Authority) Open(opened Opened) error {
 		return err
 	}
 	result, publishErr := goal.OpenRisked(request, opened.ID, opened.Intent, goal.OriginHuman,
-		opened.NextStep, opened.Blocks, opened.Risk, opened.Tier, opened.Why, nil, &a.proof, opened.Labels...)
+		opened.NextStep, []string{opened.Blocks}, nil, opened.Risk, opened.Tier, opened.Why, nil, &a.proof, opened.Labels...)
 	return a.settle(request, result, publishErr, "goal open")
 }
 

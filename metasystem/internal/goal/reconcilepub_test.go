@@ -629,7 +629,7 @@ func TestHandDoneOfABlockerLiftsItsPark(t *testing.T) {
 	if res, err := claimApprovedForTest(t, verbReq(a, "01J5X00000000000000000HD01", "mac-a"), "held", budget); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("claim held: %+v %v", res, err)
 	}
-	res, err := OpenRisked(verbReq(a, "01J5X00000000000000000HD02", "mac-a"), "fixer", "The blocker.", OriginMain, "Fix.", "held", risk, 0, "", &budget, nil)
+	res, err := OpenRisked(verbReq(a, "01J5X00000000000000000HD02", "mac-a"), "fixer", "The blocker.", OriginMain, "Fix.", []string{"held"}, nil, risk, 0, "", &budget, nil)
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open the blocker: %+v %v", res, err)
 	}

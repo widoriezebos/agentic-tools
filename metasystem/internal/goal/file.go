@@ -411,9 +411,14 @@ type ParkRecord struct {
 	At        string
 	Because   string
 	Displaced string // machine+lineage@claimedAt of a displaced claimant, or empty
-	// Blocker names the goal whose open parked this one (goal open
-	// --blocks). Only that verb writes it; the park lifts by itself when
-	// every BlockedBy goal is done, and an agent cannot lift it earlier.
+	// Blocker is the marker of a dependency-created park: it names one goal
+	// of BlockedBy, and its presence says this pause was a dependency's and
+	// not a person's. Release is governed by the whole of BlockedBy, never by
+	// this one name - the park lifts by itself when every BlockedBy goal is
+	// done, and an agent cannot lift it earlier. goal open --blocks, goal
+	// open --blocked-by and goal block write it; abandon, split and goal
+	// unblock rebind it when the goal it names leaves the list, because a
+	// marker outside BlockedBy is an invalid record (the check below).
 	Blocker string
 }
 
@@ -809,7 +814,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		addProblem("Parked without its because — a pause without a why is a stall in disguise")
 	}
 	if f.Parked != nil && f.Parked.Blocker != "" && !contains(f.Blocked, f.Parked.Blocker) {
-		addProblem("Parked blocker=%s is not in BlockedBy; the park that a blocker's open records always carries the edge", f.Parked.Blocker)
+		addProblem("Parked blocker=%s is not in BlockedBy; a dependency-created park always carries the edge its marker names", f.Parked.Blocker)
 	}
 	if f.State == StateDone && f.Conclude == "" {
 		addProblem("done without Concluded")

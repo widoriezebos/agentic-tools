@@ -275,7 +275,7 @@ func refuseJournaledHumanIntent(e Endpoint, entry Entry, detail string) (string,
 
 func hasConditionalRecoveryHumanBoundary(verb string) bool {
 	switch verb {
-	case "park", "unpark", "release":
+	case "park", "unpark", "release", "unblock":
 		return true
 	default:
 		return false
@@ -401,7 +401,18 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 			}
 			risk = &parsedRisk
 		}
-		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"], in.Args["blocks"], uint8(tier), budget, risk, in.Args["why"], commaValues(in.Args["labels"]))
+		// Both directions are rebuilt, in the order they were named, so a
+		// replayed open carries the goals it blocks and the goals it waits
+		// for rather than half of its dependencies.
+		return openRequest(r, target, in.Args["intent"], in.Args["origin"], in.Args["next"],
+			commaValues(in.Args["blocks"]), commaValues(in.Args["blockedBy"]), uint8(tier), budget, risk, in.Args["why"], commaValues(in.Args["labels"]))
+	case "block":
+		return blockRequest(r, target, in.Args["blocker"]), nil
+	case "unblock":
+		// An early unblock never reaches the mutation with a proof here: the
+		// conditional boundary below refuses it by name, and a satisfied edge
+		// needs none.
+		return unblockRequest(r, target, in.Args["blocker"], nil), nil
 	case "open-claim":
 		budget, err := budgetFromIntentArgs(in.Args)
 		if err != nil {

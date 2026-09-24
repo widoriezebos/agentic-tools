@@ -517,7 +517,7 @@ func TestRowFieldNames(t *testing.T) {
 	testutil.Require(t, "decode", json.Unmarshal(encoded, &decoded), nil)
 	testutil.Expect(t, "row field names", keysOf(decoded), []string{
 		"abandoned", "approved", "arc", "blockedBy", "claim", "concluded", "decomposed",
-		"doneAt", "fence", "gaps", "intent", "labels", "lane", "lastChangeAt", "lastVerb",
+		"doneAt", "fence", "gaps", "holds", "intent", "labels", "lane", "lastChangeAt", "lastVerb",
 		"nextStep", "openBlockers", "openedAt", "origin", "phase", "pinned", "priority", "ref",
 		"sequence", "sliced", "state", "tier", "waiting", "where",
 	})
@@ -542,8 +542,46 @@ func TestRowOmitsEveryAbsentRecord(t *testing.T) {
 		}
 	}
 	testutil.Expect(t, "empty lists serialize as lists",
-		[]string{string(decoded["labels"]), string(decoded["blockedBy"]), string(decoded["openBlockers"])},
-		[]string{"[]", "[]", "[]"})
+		[]string{string(decoded["labels"]), string(decoded["blockedBy"]), string(decoded["openBlockers"]), string(decoded["holds"])},
+		[]string{"[]", "[]", "[]", "[]"})
+}
+
+// The relation reads both ways. A goal's record says what it waits for; who
+// waits for it is nowhere in any record, so the projection computes it, over
+// every goal the tree carries and not only the live ones - a dependency that
+// finished still holds the goals that waited for it, and a reader told
+// otherwise would think nobody ever did.
+func TestRowNamesTheGoalsThatWaitForThisOne(t *testing.T) {
+	t.Parallel()
+
+	blocker := liveGoal("the-blocker", goal.StateQueued)
+	waitingOne := liveGoal("waits-one", goal.StateQueued)
+	waitingOne.Blocked = []string{"the-blocker"}
+	waitingTwo := liveGoal("waits-two", goal.StateQueued)
+	waitingTwo.Blocked = []string{"another-blocker", "the-blocker"}
+	finished := liveGoal("finished-waiter", goal.StateDone)
+	finished.Blocked = []string{"the-blocker"}
+	dropped := liveGoal("dropped-waiter", goal.StateAbandoned)
+	dropped.Blocked = []string{"the-blocker"}
+	lonely := liveGoal("waits-for-nobody", goal.StateQueued)
+
+	tree := treeOf(blocker, waitingOne, waitingTwo, finished, dropped, lonely)
+	board := Project(tree, goal.NewApprovalHorizon(tree, observedAt), answered(nil, nil, nil, nil))
+
+	holds := map[string][]string{}
+	for _, row := range append(append([]Row{}, board.Rows...), board.Closed...) {
+		holds[row.ID] = row.Holds
+	}
+	testutil.Expect(t, "the goals that wait for the blocker", holds["the-blocker"],
+		[]string{"dropped-waiter", "finished-waiter", "waits-one", "waits-two"})
+	testutil.Expect(t, "a goal nothing waits for", holds["waits-for-nobody"], []string{})
+	testutil.Expect(t, "a waiting goal holds nothing itself", holds["waits-one"], []string{})
+	// The other direction is unchanged, and the two are not the same list.
+	for _, row := range board.Rows {
+		if row.ID == "waits-two" {
+			testutil.Expect(t, "what a goal waits for", row.BlockedBy, []string{"another-blocker", "the-blocker"})
+		}
+	}
 }
 
 // TestRowDatesTheGoalsOwnConclusion pins what doneAt reads and what it refuses

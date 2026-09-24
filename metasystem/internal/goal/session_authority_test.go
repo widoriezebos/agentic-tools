@@ -242,11 +242,11 @@ func TestTierOverrideOnOpenUnderASignedInSession(t *testing.T) {
 	request := verbReq(root, "01J5X00000000000000000SQ10", "mac-a")
 	request.Actor.Human = "Wido"
 	risk := RiskRecord{Severity: 2, Novelty: 2, Exposure: 1, Accumulation: 1, Basis: "session override fixture"}
-	if _, err := OpenRisked(request, "session-open", "Work opened below its derived tier.", OriginHuman, "Run it.", "", risk, 1, "the human judged it smaller", nil, nil); err == nil ||
+	if _, err := OpenRisked(request, "session-open", "Work opened below its derived tier.", OriginHuman, "Run it.", nil, nil, risk, 1, "the human judged it smaller", nil, nil); err == nil ||
 		!strings.Contains(err.Error(), "freshly observed") {
 		t.Fatalf("a tier override without proof opened: %v", err)
 	}
-	result, err := OpenRisked(request, "session-open", "Work opened below its derived tier.", OriginHuman, "Run it.", "", risk, 1, "the human judged it smaller", nil, sessionProofForTest(t, root, request.Now))
+	result, err := OpenRisked(request, "session-open", "Work opened below its derived tier.", OriginHuman, "Run it.", nil, nil, risk, 1, "the human judged it smaller", nil, sessionProofForTest(t, root, request.Now))
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("tier override under a signed-in session: %+v %v", result, err)
 	}
