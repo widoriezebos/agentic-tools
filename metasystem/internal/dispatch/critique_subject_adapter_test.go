@@ -9,6 +9,7 @@ import (
 )
 
 func TestGitCritiqueSubjectFactsReadsCommit(t *testing.T) {
+	t.Parallel()
 	repo := initReadSubjectRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "metasystem", "next.go"), []byte("package next\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -44,6 +45,7 @@ func TestGitCritiqueSubjectFactsReadsCommit(t *testing.T) {
 }
 
 func TestGitCritiqueSubjectFactsChecksArtifactAbsence(t *testing.T) {
+	t.Parallel()
 	repo := initReadSubjectRepo(t)
 	tree := gitReadSubject(t, repo, "rev-parse", "HEAD^{tree}")
 	facts := gitCritiqueSubjectFacts{}

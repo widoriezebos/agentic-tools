@@ -103,6 +103,7 @@ func (f *strictWallReads) AuthenticateLedger(root string, state map[string]any, 
 }
 
 func TestWallReadsConsumersUseEngineFactsWithoutGit(t *testing.T) {
+	t.Parallel()
 	const root = "/virtual/wall-read-consumer"
 	pinArgs := []string{"config", "--local", "--type=bool", "--get", "core.fileMode"}
 	for _, tc := range []struct {
@@ -198,6 +199,7 @@ func (w *prefixOnlyWallWorkspace) Prefix() (string, error) {
 }
 
 func TestWallReadsLedgerGuardPreservesTypedErrorsWithoutGit(t *testing.T) {
+	t.Parallel()
 	const root = "/virtual/wall-ledger"
 	path := filepath.Join(missionDirPath(root, "demo"), "ledger.md")
 	for _, tc := range []struct {
@@ -311,6 +313,7 @@ func (w *strictBaselineWorkspace) StagedTree() (string, error) {
 }
 
 func TestWallReadsAdmittedBaselineUsesApprovedBytesAndIsolatesEngines(t *testing.T) {
+	t.Parallel()
 	const missionID = "demo"
 	contract := filepath.Join("plans", "mission-"+missionID+".contract.md")
 	ledger := missionLedgerRel(missionID)

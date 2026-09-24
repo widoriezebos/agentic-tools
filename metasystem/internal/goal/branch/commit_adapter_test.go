@@ -12,6 +12,7 @@ import (
 )
 
 func TestCommitStagedGitAdapter(t *testing.T) {
+	t.Parallel()
 	t.Run("create_adopt", func(t *testing.T) {
 		t.Parallel()
 		f := newBranchFixture(t)

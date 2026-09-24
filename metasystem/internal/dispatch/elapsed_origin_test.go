@@ -14,6 +14,7 @@ import (
 )
 
 func TestElapsedOriginRaiseCanary(t *testing.T) {
+	t.Parallel()
 	t0 := time.Date(2026, 9, 11, 8, 0, 0, 0, time.UTC)
 	bed := newGoalMutationBed(t)
 	root, endpoint := bed.root, bed.endpoint()

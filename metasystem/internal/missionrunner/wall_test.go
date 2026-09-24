@@ -699,6 +699,7 @@ func TestWallIdentityStableAcrossLedgerAppends(t *testing.T) {
 // A tracked ledger append changes the real raw workspace snapshot while
 // the physical filter keeps the mission's wall identity stable.
 func TestGitAdapterWallIdentityExcludesLedgerAppends(t *testing.T) {
+	t.Parallel()
 	root := wallRepo(t)
 	rel := missionLedgerRel("demo")
 	writeText(t, filepath.Join(root, rel), "# ledger\n")

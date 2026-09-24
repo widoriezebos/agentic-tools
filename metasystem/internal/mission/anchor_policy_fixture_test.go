@@ -285,6 +285,7 @@ func (q *anchorPolicyQueue) operations() anchorOperations {
 }
 
 func TestAnchorPolicyRefusesLedgerMoveWithoutStateWrite(t *testing.T) {
+	t.Parallel()
 	b := newAnchorPolicyBed(t)
 	second := b.nextFact("d")
 	q := b.queue()

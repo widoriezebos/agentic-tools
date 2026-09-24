@@ -1207,6 +1207,7 @@ func TestObservationBindsTheChainRootsGoalAndRevision(t *testing.T) {
 }
 
 func TestObservationRequiresAGoalFromANonHumanActorForGoalBoundChain(t *testing.T) {
+	t.Parallel()
 	free := newRepositoryObservationFixture(t)
 	free.base("plans/goals/backlog.md", string(goal.RenderRoot(&goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1,

@@ -961,24 +961,31 @@ func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testin
 }
 
 func TestRiskGateAdmissionCommandMarksThenEnforces(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "breach-stop capable admission fixture", func(file *goal.GoalFile) {
+	now := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	repository := newProofAdmissionRepositoryFixture(t, now, false)
+	root, reads := repository.root, repository.reads()
+	commandNow := func(requestRoot string) (time.Time, error) {
+		if requestRoot != root {
+			return time.Time{}, fmt.Errorf("admission clock root %q differs from %q", requestRoot, root)
+		}
+		return now, nil
+	}
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
 		file.Risk = nil
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-30T09:00:00Z")
 	args := []string{"--root", root, "--goal", "standing-validation", "--revision", "2", "--proposed-cap", "5", "--destructive-reach", "MECHANICAL"}
 	want := "RISK_UNANSWERED goal=standing-validation tier=3 next: goal edit --risk"
-	refusal, refusalCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	refusal, refusalCode := captureStderr(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
 	if refusalCode != 9 || strings.TrimSpace(refusal) != want {
 		t.Fatalf("unanswered-risk command did not refuse: code=%d output=%q", refusalCode, refusal)
 	}
-	amendSyncedGoalFixture(t, root, "answer admission risk", func(file *goal.GoalFile) {
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 		file.Risk = &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture answers every risk question."}
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
-	output, admittedCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmission(args) })
+	output, admittedCode := captureStdout(t, func() int { return runDispatchGoalRevisionAdmissionWithReads(args, reads, commandNow) })
 	if admittedCode != 0 || strings.TrimSpace(output) != "" {
 		t.Fatalf("answered-risk command was not admitted: code=%d output=%q", admittedCode, output)
 	}

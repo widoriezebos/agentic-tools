@@ -14,6 +14,7 @@ import (
 // TestPushGitAdapter checks the physical Git operations used by Push. Policy
 // decisions are covered by the Git-denied tests in the internal package.
 func TestPushGitAdapter(t *testing.T) {
+	t.Parallel()
 	t.Run("transport_adopt", func(t *testing.T) {
 		f := newBranchFixture(t)
 		tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
@@ -132,6 +133,7 @@ func TestPushGitAdapter(t *testing.T) {
 // TestPushCommitFollowonGitAdapter checks the Git ref and parent handoffs
 // that the shared policy fixtures cannot establish from symbolic commits.
 func TestPushCommitFollowonGitAdapter(t *testing.T) {
+	t.Parallel()
 	t.Run("lease_refusal", func(t *testing.T) {
 		f := newBranchFixture(t)
 		first := commitUnit(t, f, "u1", "metasystem/code.go", "one")

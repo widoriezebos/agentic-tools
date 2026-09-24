@@ -331,6 +331,7 @@ func assertNoGitInvocations(t *testing.T, log string) {
 }
 
 func TestGitRevParseUsesWallReads(t *testing.T) {
+	t.Parallel()
 	const root = "/virtual/resume-candidate"
 	for _, tc := range []struct {
 		name, stdout, stderr string

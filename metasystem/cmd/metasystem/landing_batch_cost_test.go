@@ -26,17 +26,16 @@ import (
 )
 
 func TestBatchCostPrefixGenericBudgetRefusalUsesTypedReturn(t *testing.T) {
+	t.Parallel()
 	root, tree := batchPrefixReceiptTestRoot(t)
 	fake := filepath.Join(root, "budget-refusal-engine")
 	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' 'metasystem test run: BUDGET_REFUSED reservedJobMinutesLimit used=1000 limit=1000' >&2\nexit %d\n", proofrun.ExitAdmissionRefused)
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	original := batchPrefixReceiptExecutable
-	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
-	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
+	dependencies := batchTestExecutionDependencies(t, root, tree, fake)
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	_, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", tree, []string{"same"})
+	_, err := executeBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"same"}}, dependencies)
 	var budget *batch.PrefixBudgetRefusal
 	if !errors.As(err, &budget) || !strings.Contains(budget.Error(), "BUDGET_REFUSED") {
 		t.Fatalf("generic engine budget refusal was not typed for member return: %T %v", err, err)

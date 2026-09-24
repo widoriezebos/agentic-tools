@@ -84,6 +84,7 @@ func TestHumanStewardVerbSeedsTheCheckedOutUpstreamOnce(t *testing.T) {
 }
 
 func TestStewardLandingRefGitAdapterPersistsCheckedOutUpstream(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	stewardVerbGit(t, root, "init", "-q", "-b", "release")
 	stewardVerbGit(t, root, "config", "user.name", "fixture")
@@ -145,6 +146,7 @@ func TestHumanStewardVerbCannotInventABranchWhileDetached(t *testing.T) {
 }
 
 func TestStewardLandingRefSeedRefusesInvalidUpstreamAndWriteFailure(t *testing.T) {
+	t.Parallel()
 	for _, scenario := range []struct {
 		name          string
 		upstream      testgit.Result

@@ -149,6 +149,7 @@ func TestReStageOutsideAClosureKeepsTheIdentity(t *testing.T) {
 }
 
 func TestExpandedGoGroupIdentityTracksOnlyRelevantInputs(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	contract := loadGoExpansionContract(t)
 	template := goExpansionTemplate(t, contract)

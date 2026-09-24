@@ -54,6 +54,7 @@ func concreteGoExpansionGroup(t *testing.T, contract testpolicy.Contract, templa
 }
 
 func TestGoExpansionPreservesGroupsAcrossPackageInventoryChanges(t *testing.T) {
+	t.Parallel()
 	contract := loadGoExpansionContract(t)
 	template := goExpansionTemplate(t, contract)
 	if !slices.Contains(template.Inputs, "metasystem/scripts/**") {
@@ -151,6 +152,7 @@ func TestGoExpansionPreservesGroupsAcrossPackageInventoryChanges(t *testing.T) {
 }
 
 func TestGoalLandingGoAssetOnlyChangeExpandsConcretePackage(t *testing.T) {
+	t.Parallel()
 	contract := loadGoExpansionContract(t)
 	template := goExpansionTemplate(t, contract)
 	root := t.TempDir()
@@ -189,6 +191,7 @@ func TestGoalLandingGoAssetOnlyChangeExpandsConcretePackage(t *testing.T) {
 }
 
 func TestGoExpansionIncludesCompletePackageInputs(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		cwd        string
@@ -248,6 +251,7 @@ func TestGoExpansionIncludesCompletePackageInputs(t *testing.T) {
 }
 
 func TestGoExpansionSelectorBoundary(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		run  func(*testing.T)

@@ -357,6 +357,7 @@ func TestMigrationCompleteRefusesAnUnparseableRootRecord(t *testing.T) {
 }
 
 func TestMigrationWorktreeStatusGitAdapterProvesPorcelainPaths(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mustGit(t, root, "init", "-q", "-b", "main")
 	if err := os.MkdirAll(filepath.Join(root, "plans", "goals"), 0o755); err != nil {

@@ -405,6 +405,7 @@ func TestGLEBranchReadPrelaunchRefusalRetriesFrozenSelectionOnce(t *testing.T) {
 }
 
 func TestGLEBranchReadRepositoryFactFailurePrecedesSideEffects(t *testing.T) {
+	t.Parallel()
 	for _, failed := range []string{"Range", "Subject", "CommonDir"} {
 		t.Run(failed, func(t *testing.T) {
 			r := newReadFactRepository(t, false)
@@ -440,6 +441,7 @@ func TestGLEBranchReadRepositoryFactFailurePrecedesSideEffects(t *testing.T) {
 }
 
 func TestGLEBranchReadRedGateClosesDetachedWorkspace(t *testing.T) {
+	t.Parallel()
 	r := newReadFactRepository(t, false)
 	r.expectStart()
 	r.expect(readFactCall{method: "Detached", args: []string{r.root, r.unit}})
@@ -471,6 +473,7 @@ func TestGLEBranchReadRedGateClosesDetachedWorkspace(t *testing.T) {
 }
 
 func TestGLEBranchReadConcurrentRepositoriesKeepRootsIsolated(t *testing.T) {
+	t.Parallel()
 	left, right := newReadFactRepository(t, false), newReadFactRepository(t, true)
 	if left.root == right.root {
 		t.Fatal("concurrent repositories share a root")

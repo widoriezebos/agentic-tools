@@ -172,6 +172,7 @@ func TestObservationRequiresAGoalFromANonHumanActor(t *testing.T) {
 }
 
 func TestObserveRegisterCarriagePerClassRules(t *testing.T) {
+	t.Parallel()
 	t.Run("register carriage append-only", func(t *testing.T) {
 		for _, register := range []string{"memory/rulings.md", "memory/receipts.log", "records/narrator-digest.log"} {
 			t.Run(register, func(t *testing.T) {

@@ -107,6 +107,7 @@ func mustWorkingDirectory(t *testing.T) string {
 }
 
 func TestLongestPrefixWins(t *testing.T) {
+	t.Parallel()
 	manifest := parseTestManifest(t, `
 install:memory/ record
 install:memory/README.md behavior

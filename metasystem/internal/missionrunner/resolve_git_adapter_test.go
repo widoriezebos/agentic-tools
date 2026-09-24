@@ -12,6 +12,7 @@ import (
 // The default pinned effect publishes the verified position and leaves its
 // anchor ref untouched when either file moves before publication.
 func TestGitAdapterResolvePinnedAnchorRejectsMovedStateOrLedger(t *testing.T) {
+	t.Parallel()
 	for _, moved := range []string{"state", "ledger"} {
 		t.Run(moved, func(t *testing.T) {
 			root := wallRepo(t)

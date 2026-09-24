@@ -951,6 +951,7 @@ func TestGitRootResolutionLimitationIsReadable(t *testing.T) {
 }
 
 func TestCarriedAcceptedRiskGitAdapterReadsImmutableCommitMessage(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mustGit(t, root, "init", "-q", "-b", "main")
 	mustGit(t, root, "config", "user.name", "carry fixture")

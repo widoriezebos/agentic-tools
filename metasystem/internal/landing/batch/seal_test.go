@@ -192,6 +192,7 @@ func TestBatchJoinConflictNamesFiles(t *testing.T) {
 }
 
 func TestBatchSealAssemblyPreservesMovedTrunkContent(t *testing.T) {
+	t.Parallel()
 	bed := assemblyFixture(t)
 	prefixes, err := assembleUnits(bed.root, bed.moved, bed.record.Units)
 	must(t, err)

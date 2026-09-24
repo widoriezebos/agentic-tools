@@ -70,6 +70,7 @@ func fakeRootPublishRequest(e Endpoint, opid string) PublishRequest {
 }
 
 func TestGoalRepositoryFakePublishProtocol(t *testing.T) {
+	t.Parallel()
 	t.Run("confirmed trailer and refetch", func(t *testing.T) {
 		e, client := fakeGoalEndpoint(t)
 		result, err := Publish(e, fakeRootPublishRequest(e, "fake-confirmed"))
@@ -232,6 +233,7 @@ func TestGoalRepositoryFakePublishProtocol(t *testing.T) {
 }
 
 func TestGoalRepositoryFakeProjectOfflineFresh(t *testing.T) {
+	t.Parallel()
 	e, client := fakeGoalEndpoint(t, vGoal("seen", StateQueued))
 	other := client.store.client()
 	other.accepted = client.accepted

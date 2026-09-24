@@ -11,6 +11,7 @@ import (
 )
 
 func TestGitAdapterCarrierInputsReflectRefIndexCommitAndORIGHEAD(t *testing.T) {
+	t.Parallel()
 	root := wallRepo(t)
 	workspace := gittree.Workspace{Dir: root}
 	head, unborn, err := workspace.HeadCommit()

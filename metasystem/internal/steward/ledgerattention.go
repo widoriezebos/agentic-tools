@@ -218,10 +218,6 @@ func confirmedRepairOperationIDs(entries []goal.Entry) []string {
 	return ids
 }
 
-func buildLedgerAttentionStage(repoRoot, machine, before, after string, epoch uint64, at time.Time) (ledgerAttentionStage, error) {
-	return buildLedgerAttentionStageWithRepository(repoRoot, machine, before, after, epoch, at, defaultLedgerAttentionRepository())
-}
-
 func buildLedgerAttentionStageWithRepository(repoRoot, machine, before, after string, epoch uint64, at time.Time, repository *ledgerAttentionRepository) (ledgerAttentionStage, error) {
 	entries, err := repository.Entries(repoRoot)
 	if err != nil {
@@ -307,10 +303,6 @@ func stateWriteFailureReport(repoRoot string, err error) LedgerAttentionReport {
 	return report
 }
 
-func failedLedgerAttention(repoRoot string, state ledgerAttentionState, now time.Time, cause error) LedgerAttentionReport {
-	return failedLedgerAttentionWithWriter(repoRoot, state, now, cause, atomicfile.WriteText)
-}
-
 func failedLedgerAttentionWithWriter(repoRoot string, state ledgerAttentionState, now time.Time, cause error, writer ledgerAttentionStateWriter) LedgerAttentionReport {
 	state.LastAttemptAt = now.UTC().Format(time.RFC3339Nano)
 	state.LastOutcome = "failed"
@@ -369,10 +361,6 @@ func clearLedgerAttentionFromJournalWithRepository(repoRoot string, state *ledge
 	return false, nil
 }
 
-func stagedTipRetiredByRepair(repoRoot string, stage *ledgerAttentionStage) (bool, error) {
-	return stagedTipRetiredByRepairWithRepository(repoRoot, stage, defaultLedgerAttentionRepository())
-}
-
 func stagedTipRetiredByRepairWithRepository(repoRoot string, stage *ledgerAttentionStage, repository *ledgerAttentionRepository) (bool, error) {
 	if !stage.RepairBaselineReady {
 		// A stage written before repair baselines existed cannot prove that
@@ -396,10 +384,6 @@ func stagedTipRetiredByRepairWithRepository(repoRoot string, stage *ledgerAttent
 		}
 	}
 	return false, nil
-}
-
-func recoverLedgerAttentionStage(repoRoot string, state *ledgerAttentionState, accepted string) (bool, error) {
-	return recoverLedgerAttentionStageWithRepository(repoRoot, state, accepted, defaultLedgerAttentionRepository())
 }
 
 func recoverLedgerAttentionStageWithRepository(repoRoot string, state *ledgerAttentionState, accepted string, repository *ledgerAttentionRepository) (bool, error) {
@@ -448,14 +432,6 @@ func resetRetiredLedgerAttentionState(state *ledgerAttentionState) {
 	state.Staged = nil
 	state.JournalBaseline = nil
 	state.JournalReady = false
-}
-
-func recordAcceptedLedgerTransition(repoRoot, machine string, state *ledgerAttentionState, accepted string, now time.Time) error {
-	return recordAcceptedLedgerTransitionWithRepository(repoRoot, machine, state, accepted, now, defaultLedgerAttentionRepository())
-}
-
-func recordAcceptedLedgerTransitionWithRepository(repoRoot, machine string, state *ledgerAttentionState, accepted string, now time.Time, repository *ledgerAttentionRepository) error {
-	return recordAcceptedLedgerTransitionWithRepositoryAndWriter(repoRoot, machine, state, accepted, now, repository, atomicfile.WriteText)
 }
 
 func recordAcceptedLedgerTransitionWithRepositoryAndWriter(repoRoot, machine string, state *ledgerAttentionState, accepted string, now time.Time, repository *ledgerAttentionRepository, writer ledgerAttentionStateWriter) error {

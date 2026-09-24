@@ -144,6 +144,7 @@ func TestBatchLandingBoundaryUsesInjectedClock(t *testing.T) {
 }
 
 func TestResolveExplicitBatchLandingWithRunner(t *testing.T) {
+	t.Parallel()
 	seat, landing := t.TempDir(), t.TempDir()
 	now := func() time.Time { return time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC) }
 	settings, err := resolveExplicitBatchLandingWithRunner(landing, seat, time.Minute, now,

@@ -376,7 +376,11 @@ func batchProofInputsMoved(record batch.Record, changed []string, installationPr
 }
 
 func rebasedPrefixTrees(root, base, tip string, units []batch.Unit) ([]string, error) {
-	output, err := gitOutput(root, "log", "--first-parent", "--reverse", "--format=%T", base+".."+tip)
+	return rebasedPrefixTreesWith(root, base, tip, units, gitOutput)
+}
+
+func rebasedPrefixTreesWith(root, base, tip string, units []batch.Unit, readGit func(string, ...string) (string, error)) ([]string, error) {
+	output, err := readGit(root, "log", "--first-parent", "--reverse", "--format=%T", base+".."+tip)
 	if err != nil {
 		return nil, err
 	}
@@ -412,11 +416,32 @@ func gitHead(root string) string {
 
 var batchPrefixReceiptExecutable = os.Executable
 
+type batchExecutionDependencies struct {
+	executable func() (string, error)
+	checkout   func(string, string) (string, func() error, error)
+	topLevel   func(string) (string, error)
+	readGit    func(string, ...string) (string, error)
+}
+
+func batchDetachedCheckout(root, tree string) (string, func() error, error) {
+	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
+	if err != nil {
+		return "", nil, err
+	}
+	return detached.Workspace().Dir, detached.Close, nil
+}
+
 func executeBatchPrefixReceipt(root, id string, record batch.Record, goalID, tree string, groups []string) (batch.PrefixRunResult, error) {
 	return executeBatchPrefixReceiptWithDecision(root, id, record, goalID, tree, batch.PrefixDecision{Groups: groups})
 }
 
 func executeBatchPrefixReceiptWithDecision(root, id string, record batch.Record, goalID, tree string, decision batch.PrefixDecision) (batch.PrefixRunResult, error) {
+	return executeBatchPrefixReceiptWithDependencies(root, id, record, goalID, tree, decision, batchExecutionDependencies{
+		executable: batchPrefixReceiptExecutable, checkout: batchDetachedCheckout,
+	})
+}
+
+func executeBatchPrefixReceiptWithDependencies(root, id string, record batch.Record, goalID, tree string, decision batch.PrefixDecision, dependencies batchExecutionDependencies) (batch.PrefixRunResult, error) {
 	controlRoot := batch.ModuleRoot(root)
 	var unit batch.Unit
 	for _, candidate := range record.Units {
@@ -426,13 +451,13 @@ func executeBatchPrefixReceiptWithDecision(root, id string, record batch.Record,
 		}
 	}
 	resultPath := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "batch", id+"-prefix-"+goalID+".json")
-	detached, err := (gittree.Workspace{Dir: root}).NewDetachedWorktree(tree)
+	detachedRoot, closeDetached, err := dependencies.checkout(root, tree)
 	if err != nil {
 		return batch.PrefixRunResult{}, err
 	}
-	defer detached.Close()
-	executionRoot := batch.ModuleRoot(detached.Workspace().Dir)
-	binary, err := batchPrefixReceiptExecutable()
+	defer closeDetached()
+	executionRoot := batch.ModuleRoot(detachedRoot)
+	binary, err := dependencies.executable()
 	if err != nil {
 		return batch.PrefixRunResult{}, err
 	}

@@ -217,6 +217,7 @@ func TestGLEPathPublicDeliveryPlanRejectsUnstagedSelectedGoPackageSource(t *test
 }
 
 func TestDeliveryInputParityBoundary(t *testing.T) {
+	t.Parallel()
 	cause := errors.New("snapshot unavailable")
 	cases := []struct {
 		name         string

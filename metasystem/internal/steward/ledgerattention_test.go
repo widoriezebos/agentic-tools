@@ -141,50 +141,6 @@ func (b *ledgerAttentionBed) open(t *testing.T, id string) string {
 	return result.Tip
 }
 
-func (b *ledgerAttentionBed) pin(t *testing.T, id, machine string) string {
-	t.Helper()
-	request := b.request()
-	request.Actor.Human = "Wido"
-	result, err := goal.SetPin(request, id, machine)
-	if err != nil || result.Outcome != goal.OutcomeConfirmed {
-		t.Fatalf("pin %s: %+v %v", id, result, err)
-	}
-	return result.Tip
-}
-
-func (b *ledgerAttentionBed) approve(t *testing.T, id string) string {
-	t.Helper()
-	request := b.request()
-	request.Actor.Human = "Wido"
-	proof, err := humanauthority.Prove(b.publisher, 20, attentionAuthorityReader{}, request.Now)
-	if err != nil {
-		t.Fatalf("prove approval fixture authority: %v", err)
-	}
-	budget := goal.Budget{
-		ElapsedLimit: "4h", AttemptLimit: 2, ReservedJobMinutesLimit: 120, ActiveJobLimit: 1,
-	}
-	result, err := goal.Approve(request, []string{id}, &budget, &proof)
-	if err != nil || result.Outcome != goal.OutcomeConfirmed {
-		t.Fatalf("approve %s: %+v %v", id, result, err)
-	}
-	return result.Tip
-}
-
-func (b *ledgerAttentionBed) claim(t *testing.T, id string) string {
-	return b.claimAs(t, id, "mac-a")
-}
-
-func (b *ledgerAttentionBed) claimAs(t *testing.T, id, machine string) string {
-	t.Helper()
-	request := b.request()
-	request.Actor.Machine = machine
-	result, err := goal.Claim(request, id)
-	if err != nil || result.Outcome != goal.OutcomeConfirmed {
-		t.Fatalf("claim %s: %+v %v", id, result, err)
-	}
-	return result.Tip
-}
-
 func TestLedgerAttentionLocalAndPreBootstrapAreQuiet(t *testing.T) {
 	local := newAttentionPolicyBed(t)
 	local.local = true

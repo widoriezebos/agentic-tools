@@ -217,6 +217,15 @@ func EvaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, pro
 	return evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id, revision, proposedCap, now, role, dispatchMode, allBudgetMembers, concreteGoalAdmissionReads(), hazards...)
 }
 
+// EvaluateGoalRevisionAdmissionForDispatchWithReads evaluates the same
+// dispatch policy against supplied repository facts.
+func EvaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id string, revision, proposedCap uint64, now time.Time, role, dispatchMode string, reads ProofAdmissionReads, hazards ...HazardClass) (GoalRevisionAdmission, error) {
+	if err := reads.Validate(); err != nil {
+		return GoalRevisionAdmission{}, err
+	}
+	return evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id, revision, proposedCap, now, role, dispatchMode, allBudgetMembers, reads.private(), hazards...)
+}
+
 // EvaluateProofAdmissionForDispatch evaluates the claimed authority's clock
 // and concurrency independently from the candidate's attempt and minute
 // consumption. An earned extension is actionable only when both lenses name

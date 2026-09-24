@@ -8,6 +8,7 @@ import (
 )
 
 func TestCritiqueRegisterCommitSubjectUsesDeclaredFacts(t *testing.T) {
+	t.Parallel()
 	commit := strings.Repeat("a", 40)
 	for _, tc := range []struct {
 		name, artifact, path        string

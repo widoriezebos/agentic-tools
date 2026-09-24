@@ -29,6 +29,7 @@ func (r *reporter) messages() []string {
 }
 
 func TestDeclaredResultAndCopies(t *testing.T) {
+	t.Parallel()
 	r := &reporter{}
 	errDeclared := errors.New("declared failure")
 	args, env, stdin := []string{"show"}, []string{"A=B"}, []byte("input")
@@ -57,6 +58,7 @@ func TestDeclaredResultAndCopies(t *testing.T) {
 }
 
 func TestMismatchesRefuseWithoutConsuming(t *testing.T) {
+	t.Parallel()
 	for _, row := range []struct {
 		name string
 		call Call
@@ -81,6 +83,7 @@ func TestMismatchesRefuseWithoutConsuming(t *testing.T) {
 }
 
 func TestUnexpectedCallAndValidator(t *testing.T) {
+	t.Parallel()
 	r := &reporter{}
 	s := New(r, Expectation{Call: Call{Dir: "repo", Args: []string{"show"}}, Check: func(call Call) error {
 		if !slices.Equal(call.Env, []string{"A=B"}) || string(call.Stdin) != "x" {
@@ -110,6 +113,7 @@ func TestUnexpectedCallAndValidator(t *testing.T) {
 }
 
 func TestNilAndEmptyInputsMatch(t *testing.T) {
+	t.Parallel()
 	r := &reporter{}
 	s := New(r, Expectation{Call: Call{Dir: "repo", Args: []string{"show"}}})
 	if result := s.Run(Call{Dir: "repo", Args: []string{"show"}, Env: []string{}, Stdin: []byte{}}); result.Err != nil {
@@ -119,6 +123,7 @@ func TestNilAndEmptyInputsMatch(t *testing.T) {
 }
 
 func TestConcurrentCalls(t *testing.T) {
+	t.Parallel()
 	const count = 128
 	r := &reporter{}
 	expected := make([]Expectation, count)

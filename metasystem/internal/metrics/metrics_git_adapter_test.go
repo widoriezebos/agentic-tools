@@ -7,6 +7,7 @@ import (
 )
 
 func TestMetricsGitAdapterReadsNestedReceiptHistory(t *testing.T) {
+	t.Parallel()
 	t.Helper()
 	base := t.TempDir()
 	f := &fixtureRepo{

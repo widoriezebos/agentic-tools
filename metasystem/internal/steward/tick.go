@@ -424,19 +424,6 @@ func degradedTick(repoRoot, reason string) (TickResult, error) {
 	return TickResult{Decision: d}, nil
 }
 
-// decideNow assembles one snapshot over the given evidence and
-// decides — without aging or persisting anything. The tick ages
-// first and calls this; revive's re-arbitration goes through
-// decideForRevival, so a re-check can never advance the clock it is
-// checking. The caller supplies the outage sample so one observation
-// governs its whole decision.
-func decideNow(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool) (Decision, string, error) {
-	return decideNowWithDependencies(repoRoot, cfg, census, ev, providerOutage, openWorkDependencies{
-		NewWorld:                  goal.NewWorld,
-		ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
-	})
-}
-
 func decideNowWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool, dependencies openWorkDependencies) (Decision, string, error) {
 	cfg = cfg.withDefaults()
 	work, workReason, err := readOpenWorkWithDependencies(repoRoot, dependencies)

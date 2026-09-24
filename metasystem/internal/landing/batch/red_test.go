@@ -371,6 +371,7 @@ func TestGLEPathDiagnosticManifestLiteralAttribution(t *testing.T) {
 }
 
 func TestBatchDiagnosticAssemblyFailureHolds(t *testing.T) {
+	t.Parallel()
 	bed, store := diagnosingBed(t)
 	must(t, store.Update(testBatchID, func(record *Record) error {
 		record.Units = append(record.Units, Unit{GoalID: "goal-c", Chain: "chain-c",
@@ -401,6 +402,7 @@ func TestBatchDiagnosticAssemblyFailureHolds(t *testing.T) {
 }
 
 func TestBatchReopenAssemblyFailurePreservesHeldRecord(t *testing.T) {
+	t.Parallel()
 	bed, store := diagnosingBed(t)
 	groups := []RedGroup{{ID: "group", InputManifest: []string{"a.go"}}}
 	ledger := &redLedger{}
@@ -425,6 +427,7 @@ func TestBatchReopenAssemblyFailurePreservesHeldRecord(t *testing.T) {
 }
 
 func TestBatchDiagnosticNamedConflictEjectsInOrder(t *testing.T) {
+	t.Parallel()
 	bed, store := diagnosingBed(t)
 	must(t, store.Update(testBatchID, func(record *Record) error {
 		record.Units = append(record.Units, Unit{GoalID: "goal-c", Chain: "chain-c",

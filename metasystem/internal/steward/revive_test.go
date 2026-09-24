@@ -709,7 +709,7 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	handoffProber = handoffProbe(*intent.Handoff, identity.Alive, true, nil)
 
 	for attempt := 0; attempt < 2; attempt++ {
-		outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 			t.Fatal("a live predecessor launched its successor")
 			return nil
 		})
@@ -738,7 +738,7 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	results := make(chan result, 2)
 	var launches atomic.Int32
 	go func() {
-		outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 			launches.Add(1)
 			close(launchEntered)
 			<-releaseLaunch
@@ -748,7 +748,7 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	}()
 	<-launchEntered
 	go func() {
-		outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 			launches.Add(1)
 			return nil
 		})
@@ -784,7 +784,7 @@ func TestHandoffLaunchTreatsAMissingHoldNoticeAsClean(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000002")
 	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Dead, false, nil))
 	launches := 0
-	outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -796,7 +796,7 @@ func TestHandoffLaunchTreatsAMissingHoldNoticeAsClean(t *testing.T) {
 func TestCancellingAHeldHandoffClearsItsNotice(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000003")
 	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
-	if outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !outcome.Held {
+	if outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !outcome.Held {
 		t.Fatalf("fixture handoff did not hold: %+v %v", outcome, err)
 	}
 	if err := CancelIntent(root, intent.Nonce, "superseded by 4000000000000004"); err != nil {
@@ -813,7 +813,7 @@ func TestCancellingAHeldHandoffClearsItsNotice(t *testing.T) {
 func TestEnrollmentAfterReservationCancelsHeldHandoff(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000007")
 	useHandoffProber(t, handoffProbe(*intent.Handoff, identity.Alive, true, nil))
-	if outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !outcome.Held {
+	if outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !outcome.Held {
 		t.Fatalf("fixture handoff did not hold: %+v %v", outcome, err)
 	}
 	arbitration, err := AcquireArbitration(root)
@@ -826,7 +826,7 @@ func TestEnrollmentAfterReservationCancelsHeldHandoff(t *testing.T) {
 	}
 	arbitration.Release()
 	launches := 0
-	outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -854,7 +854,7 @@ func TestMissingHandoffTargetCancelsThroughTheTerminalPath(t *testing.T) {
 	}
 	writeLedger(t, root, "# Goals\n\n## Current goal: another-goal — Repair something else\n- Origin: main\n- Next step: Repair it.\n")
 	launches := 0
-	outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -885,7 +885,7 @@ func TestMissingHandoffStateFileCancelsThroughTheTerminalPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	launches := 0
-	outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -910,7 +910,7 @@ func TestUnreadableHandoffGoalRefusesWithoutCancelling(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000009")
 	writeLedger(t, root, "# Goals\n\n## Current goal: malformed — Repair it\n- Unknown field: refuse\n")
 	launches := 0
-	outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -935,7 +935,7 @@ func TestHandoffCancellationReportsNoticeCleanupFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeLedger(t, root, "# Goals\n\n## Current goal: another-goal — Repair something else\n- Origin: main\n- Next step: Repair it.\n")
-	outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		t.Fatal("a missing target launched")
 		return nil
 	})
@@ -989,7 +989,7 @@ func TestHandoffHoldsOnTheFinalOutageCheck(t *testing.T) {
 		}
 	}))
 	launches := 0
-	outcome, err := CompleteRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})

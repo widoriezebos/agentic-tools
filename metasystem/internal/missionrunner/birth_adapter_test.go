@@ -10,6 +10,7 @@ import (
 )
 
 func TestGitAdapterNonRegularStatePublicPreflight(t *testing.T) {
+	t.Parallel()
 	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
 	target := filepath.Join(t.TempDir(), "elsewhere-state.json")
 	writeText(t, target, "{}\n")
@@ -38,6 +39,7 @@ func TestGitAdapterNonRegularStatePublicPreflight(t *testing.T) {
 }
 
 func TestGitAdapterStillbornCleanupAndCorrectedRetry(t *testing.T) {
+	t.Parallel()
 	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
 	commitBedBaseline(t, engine.Root)
 	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")

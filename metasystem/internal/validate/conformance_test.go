@@ -562,6 +562,7 @@ func TestConformanceReviewRefusesToOverwriteRoundEvidence(t *testing.T) {
 }
 
 func TestReviewStageChangedSnapshotRoutesToImmutableEvidenceRefusal(t *testing.T) {
+	t.Parallel()
 	f := newConformanceFixture(t)
 	appendFile(t, filepath.Join(f.worktree, "source.txt"), "first review\n")
 	f.writeImplementer("", "source.txt")

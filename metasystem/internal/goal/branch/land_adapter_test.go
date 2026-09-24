@@ -13,6 +13,7 @@ import (
 )
 
 func TestPrepareLandingGitAdapter(t *testing.T) {
+	t.Parallel()
 	t.Run("series", func(t *testing.T) {
 		f := newLandFixture(t)
 		beforeWorktrees := git(t, f.root, "worktree", "list", "--porcelain")

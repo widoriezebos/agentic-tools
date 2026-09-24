@@ -64,6 +64,7 @@ func materializeFakeReconcile(t *testing.T, endpoint Endpoint, commit string) {
 }
 
 func TestBaseTipUsesPerCallHeadOnlyWithoutRecordedBase(t *testing.T) {
+	t.Parallel()
 	root, tip, endpoint := newFakeReconcileBed(t)
 	if err := os.Remove(baseRecordPath(root)); err != nil {
 		t.Fatal(err)
@@ -95,6 +96,7 @@ func TestBaseTipUsesPerCallHeadOnlyWithoutRecordedBase(t *testing.T) {
 }
 
 func TestBaseTipRecordedCommitUsesEndpointRepository(t *testing.T) {
+	t.Parallel()
 	root, tip, endpoint := newFakeReconcileBed(t)
 	head := func(string) (string, error) { t.Fatal("recorded base read HEAD"); return "", nil }
 	if got, err := baseTipFor(endpoint, head); err != nil || got != tip {
@@ -111,6 +113,7 @@ func TestBaseTipRecordedCommitUsesEndpointRepository(t *testing.T) {
 }
 
 func TestRecordMaterializedAnchorsBeforeDurableBase(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	endpoint := Endpoint{Root: root}
 	commit := strings.Repeat("a", 40)
@@ -144,6 +147,7 @@ func TestRecordMaterializedAnchorsBeforeDurableBase(t *testing.T) {
 }
 
 func TestRefreshAnchorFailureKeepsPendingRecord(t *testing.T) {
+	t.Parallel()
 	root, tip, endpoint := newFakeReconcileBed(t)
 	snapshot, err := CaptureSnapshot(root)
 	if err != nil {
@@ -171,6 +175,7 @@ func TestRefreshAnchorFailureKeepsPendingRecord(t *testing.T) {
 }
 
 func TestRefreshOnlyResolvesPublicationEndpointLazily(t *testing.T) {
+	t.Parallel()
 	root, tip, endpoint := newFakeReconcileBed(t)
 	resolveCalls, anchorCalls := 0, 0
 	resolve := func(string) (Endpoint, error) {
@@ -257,6 +262,7 @@ func eventIndex(events []string, prefix string) int {
 }
 
 func TestRefreshOnlyPublishingUsesEndpointRepositoryAndPreservesGates(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, stage string
 	}{
@@ -388,6 +394,7 @@ func TestRefreshOnlyPublishingUsesEndpointRepositoryAndPreservesGates(t *testing
 }
 
 func TestReconcileCheckoutDependenciesAreInstanceScoped(t *testing.T) {
+	t.Parallel()
 	rootA, tipA, endpointA := newFakeReconcileBed(t)
 	rootB, tipB, endpointB := newFakeReconcileBed(t)
 	repoA := endpointA.Repository.(*fakeGoalRepository)

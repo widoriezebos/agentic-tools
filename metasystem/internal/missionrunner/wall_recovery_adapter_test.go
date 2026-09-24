@@ -10,6 +10,7 @@ import (
 )
 
 func TestGitAdapterWallRecoveryRestoresUndeclaredScribble(t *testing.T) {
+	t.Parallel()
 	// Recovery windows livelock under the compressed package scale
 	// (window expires before its real fact on every retry); real scale
 	// until audited — tracked under timing-tests-synthetic-clock.
@@ -64,6 +65,7 @@ func TestGitAdapterWallRecoveryRestoresUndeclaredScribble(t *testing.T) {
 }
 
 func TestGitAdapterWallRecoveryRestoresComposedTree(t *testing.T) {
+	t.Parallel()
 	// Under the compressed package scale this scenario livelocks: a
 	// recovery window expires before its real fact on every retry.
 	// Real scale until the recovery windows are audited — tracked

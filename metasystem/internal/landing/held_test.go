@@ -368,6 +368,7 @@ func TestHeldRejectsAMovedBaseWithoutWalkingHistory(t *testing.T) {
 }
 
 func TestHeldDefaultAdapterReadsConcreteParentLedger(t *testing.T) {
+	t.Parallel()
 	f := newObserveFixture(t)
 	writeHeldGoalForPush(f, "ship-widget", "m9", "L1", 3)
 	commitHeldSetup(f, "claim ship-widget", "plans/goals/ship-widget.md")

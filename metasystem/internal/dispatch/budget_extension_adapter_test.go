@@ -12,6 +12,7 @@ import (
 )
 
 func TestLandingAdvancementGitAdapterReadsNestedReceipt(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC)
 	top := t.TempDir()
 	installation := filepath.Join(top, "metasystem")

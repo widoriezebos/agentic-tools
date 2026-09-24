@@ -198,6 +198,7 @@ func TestDescendantRevertAcceptsWithThePrefixDiagnosis(t *testing.T) {
 }
 
 func TestRepairAcceptedReadStates(t *testing.T) {
+	t.Parallel()
 	t.Run("absent", func(t *testing.T) {
 		e, client := fakeGoalEndpoint(t)
 		fetched := repairPublishGoal(t, e, "op-read-absent", "one", nil).Tip
@@ -242,6 +243,7 @@ func TestRepairAcceptedReadStates(t *testing.T) {
 }
 
 func TestRepairAcceptedCASLossLeavesAbandonedJournal(t *testing.T) {
+	t.Parallel()
 	e, client := fakeGoalEndpoint(t)
 	fetched := repairPublishGoal(t, e, "op-cas-first", "one", nil).Tip
 	oldTip := repairPublishGoal(t, e, "op-cas-second", "two", []*GoalFile{vGoal("one", StateQueued)}).Tip

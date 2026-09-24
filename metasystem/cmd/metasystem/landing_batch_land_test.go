@@ -133,6 +133,7 @@ func TestFinishBatchLandingLeavesUnchangedPushRejectionQuiet(t *testing.T) {
 }
 
 func TestPrefixReceiptRetriesInfrastructureExitWithNonTerminalStatus(t *testing.T) {
+	t.Parallel()
 	root, tree := batchPrefixReceiptTestRoot(t)
 	if err := os.MkdirAll(filepath.Join(root, "artifacts", "agents", "proof-runs", "batch"), 0o755); err != nil {
 		t.Fatal(err)
@@ -150,11 +151,9 @@ exit 2
 	if err := testexec.WriteFile(fake, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	original := batchPrefixReceiptExecutable
-	t.Cleanup(func() { batchPrefixReceiptExecutable = original })
-	batchPrefixReceiptExecutable = func() (string, error) { return fake, nil }
+	dependencies := batchTestExecutionDependencies(t, root, tree, fake)
 	record := batch.Record{Units: []batch.Unit{{GoalID: "goal-a", Claim: batch.Claim{Revision: 7, AccountingRevision: 5}}}}
-	result, err := executeBatchPrefixReceipt(root, "batch", record, "goal-a", tree, []string{"group-a"})
+	result, err := executeBatchPrefixReceiptWithDependencies(root, "batch", record, "goal-a", tree, batch.PrefixDecision{Groups: []string{"group-a"}}, dependencies)
 	if err == nil || len(result.Red) != 0 {
 		t.Fatalf("infrastructure result=%+v error=%v", result, err)
 	}

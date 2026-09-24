@@ -437,6 +437,7 @@ func TestRetroReadItemsListsOpenAndFlagsConcludedDefect(t *testing.T) {
 }
 
 func TestReadItemCodeCommitResolverUsesGitCommitObjects(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	mustGit(t, root, "init", "-q")
 	if err := os.WriteFile(filepath.Join(root, "sample.txt"), []byte("commit object\n"), 0o644); err != nil {

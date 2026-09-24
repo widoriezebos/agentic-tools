@@ -41,6 +41,7 @@ func writeProjectionTestFile(t *testing.T, path string, data []byte) {
 }
 
 func TestProjectionSourceAcceptedWorldStates(t *testing.T) {
+	t.Parallel()
 	t.Run("absent accepted ref is legacy only without a materialized root", func(t *testing.T) {
 		store, client, _ := fakeServingFixture(t, "bed-m1", nil)
 		client.accepted = ""
@@ -153,6 +154,7 @@ func approvedProjectionCandidate(id string) *GoalFile {
 }
 
 func TestProjectionSourceClaimableReadUsesConfigAndIsolatedSources(t *testing.T) {
+	t.Parallel()
 	first, firstClient, firstEndpoint := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"first": approvedProjectionCandidate("first"),
 	})
@@ -206,6 +208,7 @@ func TestProjectionSourceClaimableReadUsesConfigAndIsolatedSources(t *testing.T)
 }
 
 func TestProjectionSourceRoutesStoreConsumers(t *testing.T) {
+	t.Parallel()
 	store, _, endpoint := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{
 		"held": {
 			Id: "held", State: StateClaimed, Intent: "Carry the claim", Origin: OriginMain,

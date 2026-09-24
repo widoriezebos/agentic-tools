@@ -1177,6 +1177,10 @@ func runDispatchGoalAdmission(args []string) int {
 }
 
 func runDispatchGoalRevisionAdmission(args []string) int {
+	return runDispatchGoalRevisionAdmissionWithReads(args, dispatchcore.ConcreteProofAdmissionReads(), goalCommandNow)
+}
+
+func runDispatchGoalRevisionAdmissionWithReads(args []string, reads dispatchcore.ProofAdmissionReads, commandNow func(string) (time.Time, error)) int {
 	flags := flag.NewFlagSet("job goal-revision-admission", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
@@ -1197,11 +1201,11 @@ func runDispatchGoalRevisionAdmission(args []string) int {
 		fmt.Fprintln(os.Stderr, "job goal-revision-admission: --format must be text or json")
 		return 2
 	}
-	now, err := goalCommandNow(*root)
+	now, err := commandNow(*root)
 	if err != nil {
 		return recordExit(err)
 	}
-	verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatch(*root, *goalID, *revision, *proposedCap, now, *role, *dispatchMode, dispatchcore.HazardClass(*destructiveReach))
+	verdict, err := dispatchcore.EvaluateGoalRevisionAdmissionForDispatchWithReads(*root, *goalID, *revision, *proposedCap, now, *role, *dispatchMode, reads, dispatchcore.HazardClass(*destructiveReach))
 	if err != nil {
 		return recordExit(err)
 	}

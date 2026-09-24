@@ -9,6 +9,7 @@ import (
 )
 
 func TestHistorySteeringFilesFindsPhysicalGraftFile(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run := func(args ...string) string {
 		t.Helper()

@@ -8,6 +8,7 @@ import (
 )
 
 func TestLandingHistoryGitAdapterHonorsWindowsAndGoalItemFormat(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	runGit := func(env []string, args ...string) {
 		t.Helper()

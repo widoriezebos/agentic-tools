@@ -367,6 +367,7 @@ func TestMergeCritiqueClosureAbsence(t *testing.T) {
 }
 
 func TestMergeCritiqueGoalDecisionsUseAcceptedRepository(t *testing.T) {
+	t.Parallel()
 	for _, status := range []string{"deferred", "accepted-risk"} {
 		t.Run(status+" still requires matching goal record", func(t *testing.T) {
 			fixture := newMergeClosureFixture(t)

@@ -51,19 +51,6 @@ func gitRepoWithCurrentGoal(t *testing.T) string {
 	return root
 }
 
-func tickN(t *testing.T, root string, cfg TickConfig, census WorkerCensus, n int) TickResult {
-	t.Helper()
-	var last TickResult
-	for i := 0; i < n; i++ {
-		r, err := RunTick(root, cfg, census)
-		if err != nil {
-			t.Fatal(err)
-		}
-		last = r
-	}
-	return last
-}
-
 func TestKilledWatcherIsRoutedToItsOwnerWithinOneTick(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "artifacts", "agents", "supervision")

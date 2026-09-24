@@ -21,6 +21,7 @@ func verificationGit(t *testing.T, root string, args ...string) {
 }
 
 func TestGitAdapterCommittedLedgerTamperDoesNotReplaceAnchorTruth(t *testing.T) {
+	t.Parallel()
 	root := wallRepo(t)
 	e := &Engine{Root: root, Mission: "alpha"}
 	ledger := filepath.Join(e.missionDir(), "ledger.md")
@@ -57,6 +58,7 @@ func TestGitAdapterCommittedLedgerTamperDoesNotReplaceAnchorTruth(t *testing.T) 
 }
 
 func TestGitAdapterPostAcceptanceCommitMovesCapturedPosture(t *testing.T) {
+	t.Parallel()
 	root := wallRepo(t)
 	e := &Engine{Root: root, Mission: "alpha"}
 	before, err := e.captureWallPosture("", nil)
@@ -74,6 +76,7 @@ func TestGitAdapterPostAcceptanceCommitMovesCapturedPosture(t *testing.T) {
 }
 
 func TestGitAdapterRefMapSeesReplacementNamespace(t *testing.T) {
+	t.Parallel()
 	root := wallRepo(t)
 	workspace := gittree.Workspace{Dir: root}
 	head, _, err := workspace.HeadCommit()

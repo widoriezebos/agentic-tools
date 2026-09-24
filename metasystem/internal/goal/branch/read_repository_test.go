@@ -9,6 +9,7 @@ import (
 )
 
 func TestBranchReadDefaultDetachedAdapterChecksOutTreeAndCleansUp(t *testing.T) {
+	t.Parallel()
 	repo := t.TempDir()
 	git := func(args ...string) string {
 		t.Helper()

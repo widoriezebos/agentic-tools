@@ -312,6 +312,7 @@ func (f *pushPolicyFixture) verifyScratch(path string, want []byte) {
 }
 
 func TestAdoptRemoteTipRestoresHeadWhenTheRefUpdateFails(t *testing.T) {
+	t.Parallel()
 	f := newPushPolicyFixture(t)
 	f.refs[policyGoalRef] = policyFirst
 	f.refs[originTipRef("goal-a")] = policyFirst
@@ -348,6 +349,7 @@ func TestAdoptRemoteTipRestoresHeadWhenTheRefUpdateFails(t *testing.T) {
 }
 
 func TestPushReconcilesUnknownOutcomeAndPreparedTransaction(t *testing.T) {
+	t.Parallel()
 	t.Run("unknown landed", func(t *testing.T) {
 		f := newPushPolicyFixture(t)
 		f.refs[policyGoalRef] = policyFirst
@@ -446,6 +448,7 @@ func TestPushReconcilesUnknownOutcomeAndPreparedTransaction(t *testing.T) {
 }
 
 func TestPushAdoptionValidatesRangeAndCleansFetchRef(t *testing.T) {
+	t.Parallel()
 	f := newPushPolicyFixture(t)
 	f.remote[policyGoalRef] = policySecond
 	f.rangeErrors[policySecond] = &RangeError{Code: RangeCode, Commit: policySecond, Reason: "invalid commit"}
@@ -480,6 +483,7 @@ func TestPushAdoptionValidatesRangeAndCleansFetchRef(t *testing.T) {
 }
 
 func TestPushAdoptionKeepsUntrackedScratchFile(t *testing.T) {
+	t.Parallel()
 	f := newPushPolicyFixture(t)
 	f.remote[policyGoalRef] = policyFirst
 	const scratch = "notes/scratch.txt"
@@ -509,6 +513,7 @@ func TestPushAdoptionKeepsUntrackedScratchFile(t *testing.T) {
 }
 
 func TestPushAdoptionCrashCannotStageAReversal(t *testing.T) {
+	t.Parallel()
 	f := newPushPolicyFixture(t)
 	f.refs[policyGoalRef] = policyFirst
 	f.refs[originTipRef("goal-a")] = policyFirst

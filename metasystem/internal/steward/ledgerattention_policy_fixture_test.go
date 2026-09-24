@@ -355,10 +355,6 @@ func attentionBaselineCalls() string {
 	return "endpoint accepted machine project:base capture sync accepted validate entries cleanup"
 }
 
-func attentionCurrentCalls() string {
-	return "endpoint accepted machine capture sync accepted validate cleanup"
-}
-
 func attentionMovedCalls(from string, tips ...string) string {
 	return fmt.Sprintf("endpoint accepted machine entries %s", strings.TrimPrefix(attentionMoveCalls(from, tips...), "endpoint accepted machine "))
 }

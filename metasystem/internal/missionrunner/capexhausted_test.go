@@ -13,6 +13,7 @@ import (
 // result carrying is_error + error_max_turns names the cutoff; a crash
 // without it stays generic; absence stays generic.
 func TestProviderErrorSubtype(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	write := func(name, body string) string {
 		path := filepath.Join(dir, name)

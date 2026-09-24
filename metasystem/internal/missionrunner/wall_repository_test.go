@@ -136,6 +136,7 @@ func (f *strictWallFacts) MaterializePaths(string, []string) error {
 var _ wallWorkspace = (*strictWallFacts)(nil)
 
 func TestWallWorkspaceEngineIsolationWithoutGit(t *testing.T) {
+	t.Parallel()
 	type caseFacts struct {
 		id, root, top      string
 		engine             *Engine
@@ -184,6 +185,7 @@ func TestWallWorkspaceEngineIsolationWithoutGit(t *testing.T) {
 }
 
 func TestWallWorkspaceDefaultUsesRealRepository(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	run := func(args ...string) string {
 		t.Helper()
