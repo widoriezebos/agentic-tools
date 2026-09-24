@@ -1072,6 +1072,32 @@ type candidateEngineCacheRecord struct {
 	Digest        string `json:"digest"`
 }
 
+type candidateDetachedWorkspace interface {
+	Workspace() gittree.Workspace
+	Close() error
+}
+
+type candidateEngineIO struct {
+	runGit func(*exec.Cmd) error
+	open   func(gittree.Workspace, string) (candidateDetachedWorkspace, error)
+}
+
+func nativeCandidateEngineIO() candidateEngineIO {
+	return candidateEngineIO{
+		runGit: func(command *exec.Cmd) error { return command.Run() },
+		open: func(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {
+			return workspace.NewDetachedWorktree(tree)
+		},
+	}
+}
+
+func selectedCandidateEngineIO(options []candidateEngineIO) candidateEngineIO {
+	if len(options) == 0 {
+		return nativeCandidateEngineIO()
+	}
+	return options[0]
+}
+
 func candidateEngineBuildEnvironment(environment []string, stamp string) []string {
 	owned := map[string]bool{
 		"CGO_ENABLED": true, "GOAMD64": true, "GOARM": true, "GOARM64": true,
@@ -1122,12 +1148,13 @@ func (build *candidateEngineBuild) Close() error {
 // prepareCandidateEngine keeps build outputs under the proof control root.
 // The existing build identity covers the tracked engine closure, platform and
 // toolchain. Every cache hit also checks the published bytes before use.
-func prepareCandidateEngine(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string) (*candidateEngineBuild, error) {
-	return prepareCandidateEngineWithColdPreflight(ctx, controlRoot, workspace, installationPrefix, candidateTree, environment, nil)
+func prepareCandidateEngine(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, options ...candidateEngineIO) (*candidateEngineBuild, error) {
+	return prepareCandidateEngineWithColdPreflight(ctx, controlRoot, workspace, installationPrefix, candidateTree, environment, nil, selectedCandidateEngineIO(options))
 }
 
-func prepareCandidateEngineWithColdPreflight(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, beforeColdBuild func() error) (*candidateEngineBuild, error) {
-	buildIdentity, err := candidateEngineBuildIdentity(ctx, workspace, installationPrefix, candidateTree, environment)
+func prepareCandidateEngineWithColdPreflight(ctx context.Context, controlRoot string, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, beforeColdBuild func() error, options ...candidateEngineIO) (*candidateEngineBuild, error) {
+	io := selectedCandidateEngineIO(options)
+	buildIdentity, err := candidateEngineBuildIdentityUsing(ctx, workspace, installationPrefix, candidateTree, environment, io)
 	if err != nil {
 		return nil, err
 	}
@@ -1172,7 +1199,7 @@ func prepareCandidateEngineWithColdPreflight(ctx context.Context, controlRoot st
 		return nil, fmt.Errorf("admit candidate engine build: %w", err)
 	}
 	defer lease.Close()
-	built, err := buildCandidateEngine(proofrun.WithHostResourceLease(ctx, lease), workspace, installationPrefix, candidateTree, environment)
+	built, err := buildCandidateEngine(proofrun.WithHostResourceLease(ctx, lease), workspace, installationPrefix, candidateTree, environment, io)
 	if err != nil {
 		return nil, err
 	}
@@ -1249,13 +1276,14 @@ func copyCandidateEngineArtifact(source, target string) error {
 // synthetic candidate commit into one proof build, and leaves bin/metasystem
 // untouched. The output survives worktree cleanup for the authenticated
 // worker and every detached group it launches.
-func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string) (*candidateEngineBuild, error) {
-	detached, err := workspace.NewDetachedWorktree(candidateTree)
+func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, options ...candidateEngineIO) (*candidateEngineBuild, error) {
+	io := selectedCandidateEngineIO(options)
+	detached, err := io.open(workspace, candidateTree)
 	if err != nil {
 		return nil, fmt.Errorf("candidate engine build failed while materializing tree %s: %w", candidateTree, err)
 	}
 	removeDetached := func() error { return detached.Close() }
-	candidateCommit, err := bindMaterializedCandidateCommit(ctx, detached.Workspace().Dir, installationPrefix, environment)
+	candidateCommit, err := bindMaterializedCandidateCommit(ctx, detached.Workspace(), installationPrefix, environment, io)
 	if err != nil {
 		closeErr := removeDetached()
 		return nil, fmt.Errorf("candidate engine build failed while resolving the materialized candidate commit: %v (cleanup: %v)", err, closeErr)
@@ -1309,6 +1337,10 @@ func buildCandidateEngine(ctx context.Context, workspace gittree.Workspace, inst
 }
 
 func candidateEngineBuildIdentity(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string) (string, error) {
+	return candidateEngineBuildIdentityUsing(ctx, workspace, installationPrefix, candidateTree, environment, nativeCandidateEngineIO())
+}
+
+func candidateEngineBuildIdentityUsing(ctx context.Context, workspace gittree.Workspace, installationPrefix, candidateTree string, environment []string, io candidateEngineIO) (string, error) {
 	policy, err := behaviorsurface.Load()
 	if err != nil {
 		return "", err
@@ -1321,7 +1353,7 @@ func candidateEngineBuildIdentity(ctx context.Context, workspace gittree.Workspa
 			return "", fmt.Errorf("resolve candidate installation subtree: %w", err)
 		}
 	}
-	engineTree, err := engineProjectionTree(ctx, workspace.Dir, installationTree, policy.EnginePaths)
+	engineTree, err := engineProjectionTree(ctx, workspace.Dir, installationTree, policy.EnginePaths, io)
 	if err != nil {
 		return "", err
 	}
@@ -1345,10 +1377,10 @@ func candidateEngineBuildIdentity(ctx context.Context, workspace gittree.Workspa
 		"platform=" + runtime.GOOS + "/" + runtime.GOARCH,
 		"build-context=CGO_ENABLED=0,GOAMD64=v1,GOARM64=v8.0,GOARM=7,GOENV=off,GOEXPERIMENT=,GOFLAGS=-mod=readonly,GOTOOLCHAIN=local,GOWORK=off,-buildvcs=false,-trimpath",
 	}, "\n")
-	return commitCandidateEngineTree(ctx, workspace.Dir, engineTree, message)
+	return commitCandidateEngineTree(ctx, workspace.Dir, engineTree, message, io)
 }
 
-func engineProjectionTree(ctx context.Context, root, tree string, paths []string) (string, error) {
+func engineProjectionTree(ctx context.Context, root, tree string, paths []string, io candidateEngineIO) (string, error) {
 	directory, err := os.MkdirTemp("", "metasystem-engine-projection.*")
 	if err != nil {
 		return "", err
@@ -1360,7 +1392,7 @@ func engineProjectionTree(ctx context.Context, root, tree string, paths []string
 		command.Stdin = bytes.NewReader(stdin)
 		var stdout, stderr bytes.Buffer
 		command.Stdout, command.Stderr = &stdout, &stderr
-		if err := command.Run(); err != nil {
+		if err := io.runGit(command); err != nil {
 			return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 		}
 		return stdout.Bytes(), nil
@@ -1393,11 +1425,14 @@ func engineProjectionTree(ctx context.Context, root, tree string, paths []string
 	return engineTree, nil
 }
 
-func commitCandidateEngineTree(ctx context.Context, root, tree, message string) (string, error) {
+func commitCandidateEngineTree(ctx context.Context, root, tree, message string, io candidateEngineIO) (string, error) {
 	gitLine := func(environment []string, args ...string) (string, error) {
 		command := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
 		command.Env = environment
-		output, err := command.CombinedOutput()
+		var combined bytes.Buffer
+		command.Stdout, command.Stderr = &combined, &combined
+		err := io.runGit(command)
+		output := combined.Bytes()
 		if err != nil {
 			return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 		}
@@ -1426,23 +1461,26 @@ func commitCandidateEngineTree(ctx context.Context, root, tree, message string) 
 	return commit, nil
 }
 
-func bindMaterializedCandidateCommit(ctx context.Context, root, installationPrefix string, environment []string) (string, error) {
-	workspace := gittree.Workspace{Dir: root}
+func bindMaterializedCandidateCommit(ctx context.Context, workspace gittree.Workspace, installationPrefix string, environment []string, io candidateEngineIO) (string, error) {
+	root := workspace.Dir
 	tree, err := workspace.HeadTree()
 	if err != nil {
 		return "", err
 	}
-	commit, err := candidateEngineBuildIdentity(ctx, workspace, installationPrefix, tree, environment)
+	commit, err := candidateEngineBuildIdentityUsing(ctx, workspace, installationPrefix, tree, environment, io)
 	if err != nil {
 		return "", err
 	}
-	current, unborn, err := (gittree.Workspace{Dir: root}).HeadCommit()
+	current, unborn, err := workspace.HeadCommit()
 	if err != nil || unborn {
 		return "", fmt.Errorf("resolve temporary candidate HEAD: %v", err)
 	}
 	command := exec.CommandContext(ctx, "git", "-C", root, "update-ref", "--no-deref", "HEAD", commit, current)
 	command.Env = gittree.ScrubbedEnviron()
-	if output, err := command.CombinedOutput(); err != nil {
+	var combined bytes.Buffer
+	command.Stdout, command.Stderr = &combined, &combined
+	if err := io.runGit(command); err != nil {
+		output := combined.Bytes()
 		return "", fmt.Errorf("git update-ref --no-deref HEAD: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return commit, nil

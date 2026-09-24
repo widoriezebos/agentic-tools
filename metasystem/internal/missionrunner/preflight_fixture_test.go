@@ -1214,6 +1214,13 @@ func buildFullCycleRoot(t *testing.T, behavior string) *Engine {
 // ladder instead.
 func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 	t.Helper()
+	equipFullCycleFiles(t, engine)
+	commitBedBaseline(t, engine.Root)
+	return engine
+}
+
+func equipFullCycleFiles(t *testing.T, engine *Engine) {
+	t.Helper()
 	root := engine.Root
 	// The bed binary is COMPILED FROM THE REVIEWED TREE, once per test
 	// process: a prebuilt
@@ -1264,8 +1271,6 @@ func equipFullCycleBed(t *testing.T, engine *Engine) *Engine {
 		os.MkdirAll(filepath.Dir(filepath.Join(root, artifact)), 0o755)
 		testexec.WriteFile(filepath.Join(root, artifact), data, mode)
 	}
-	commitBedBaseline(t, engine.Root)
-	return engine
 }
 
 // equipFullCycleBed then pins the contract in-process and installs the
@@ -1282,7 +1287,7 @@ func pinAndSeamBed(t *testing.T, engine *Engine) *Engine {
 }
 
 func TestInternalRunFullCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "")
+	engine := buildGitFreeHostCycle(t, "")
 	root := engine.Root
 	_ = root
 
@@ -1347,6 +1352,20 @@ func TestInternalRunFullCycle(t *testing.T) {
 	if data, err := os.ReadFile(ledger); err != nil || !strings.Contains(string(data), "Cycle 1") {
 		t.Fatalf("the ledger booked nothing: %v", err)
 	}
+	measurement, err := readJSONDoc(filepath.Join(filepath.Dir(turns[0]), "measurement.json"))
+	if err != nil {
+		t.Fatalf("turn one measurement is absent: %v", err)
+	}
+	reading, _ := measurement["measurement"].(map[string]any)
+	metrics, _ := reading["metrics"].(map[string]any)
+	guards, _ := reading["guards"].(map[string]any)
+	if measurement["gatePassed"] != true || metrics["score"] != "1" || guards["audit"] != "1" {
+		t.Fatalf("turn one did not record a passing gate and audit guard: %v", measurement)
+	}
+	ledgerBytes, err := os.ReadFile(ledger)
+	if err != nil || !strings.Contains(string(ledgerBytes), "- Classification: unresolved;") {
+		t.Fatalf("turn one did not classify the real baseline measurement: %v %s", err, ledgerBytes)
+	}
 	if _, ok := outage.Read(engine.Root); ok {
 		t.Fatal("a completed host turn must clear the seeded outage mark")
 	}
@@ -1363,7 +1382,7 @@ func tailOf(text string, n int) string {
 // drives the failed-turn conclusion; the mission still books the cycle and
 // reaches a terminal rather than hanging or losing the record.
 func TestInternalRunHostFailureCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:exit-nonzero")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:exit-nonzero")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1388,7 +1407,7 @@ func TestInternalRunHostFailureCycle(t *testing.T) {
 // duties (drain, measure, conclude with both facts) and the turn records
 // the protocol error.
 func TestInternalRunMalformedReturnCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:return-malformed")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:return-malformed")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1410,7 +1429,7 @@ func TestInternalRunMalformedReturnCycle(t *testing.T) {
 
 // A host that never writes a return concludes as a host failure.
 func TestInternalRunNoReturnCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:no-return")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:no-return")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1425,7 +1444,7 @@ func TestInternalRunNoReturnCycle(t *testing.T) {
 // A park-request return drives the ask pipeline: the mission parks with a
 // reserved decision and the proposed ask lands on disk.
 func TestInternalRunParkRequestCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:park-request")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:park-request")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1519,7 +1538,7 @@ func TestInternalRunCloseStreamCycle(t *testing.T) {
 // by naming its state, and a parked mission's resume is refused toward the
 // park reason — both through the public launch spine.
 func TestInternalRunResumeVerdicts(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:park-request")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:park-request")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1541,7 +1560,7 @@ func TestInternalRunResumeVerdicts(t *testing.T) {
 // dispatch-terminal: the orchestrator return that certifies a terminal job
 // drives the certified-entry adjudication path end to end.
 func TestInternalRunDispatchTerminalCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:dispatch-terminal")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:dispatch-terminal")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1557,7 +1576,7 @@ func TestInternalRunDispatchTerminalCycle(t *testing.T) {
 // Answer applies the human's decision to the ask, and the resumed run
 // drives another real cycle — the full human-in-the-loop round trip.
 func TestInternalRunAnswerAndResumeChain(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:park-request")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:park-request")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))

@@ -34,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
@@ -802,6 +803,10 @@ func printSyncResult(res goal.PublishResult, err error) int {
 }
 
 func runGoalReadItems(args []string) int {
+	return runGoalReadItemsWithInputs(args, goalCommandNow, defaultSyncRequestDependencies(), nil)
+}
+
+func runGoalReadItemsWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, resolveCodeCommit func(root, ref string) (string, error)) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: metasystem goal read-items add|close|list [flags]")
 		return 2
@@ -810,9 +815,9 @@ func runGoalReadItems(args []string) int {
 	case "add":
 		return runGoalReadItemsAdd(args[1:])
 	case "close":
-		return runGoalReadItemsClose(args[1:])
+		return runGoalReadItemsCloseWithInputs(args[1:], commandNow, dependencies, resolveCodeCommit)
 	case "list":
-		return runGoalReadItemsList(args[1:])
+		return runGoalReadItemsListWithInputs(args[1:], commandNow, dependencies.endpoint)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown goal read-items verb %q\n", args[0])
 		return 2
@@ -820,11 +825,15 @@ func runGoalReadItems(args []string) int {
 }
 
 func readItemMutationRequest(verb, root, by, lineage string) (goal.VerbRequest, bool) {
+	return readItemMutationRequestWithInputs(verb, root, by, lineage, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func readItemMutationRequestWithInputs(verb, root, by, lineage string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) (goal.VerbRequest, bool) {
 	if !converted(root) {
 		fmt.Fprintln(os.Stderr, "goal read-items works the synced backlog; this checkout still carries the legacy ledger")
 		return goal.VerbRequest{}, false
 	}
-	req, err := syncReq(verb, root, by, lineage)
+	req, err := syncReqWithProofAtWithDependencies(verb, root, by, lineage, nil, commandNow, dependencies)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return goal.VerbRequest{}, false
@@ -882,7 +891,7 @@ func readItemsFile(path string) ([]string, error) {
 	return items, nil
 }
 
-func runGoalReadItemsClose(args []string) int {
+func runGoalReadItemsCloseWithInputs(args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, resolveCodeCommit func(root, ref string) (string, error)) int {
 	flags := flag.NewFlagSet("goal read-items close", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
@@ -907,11 +916,17 @@ func runGoalReadItemsClose(args []string) int {
 			closure.Accepted = accepted
 		}
 	})
-	req, ok := readItemMutationRequest("read-items close", *root, *by, *lineage)
+	req, ok := readItemMutationRequestWithInputs("read-items close", *root, *by, *lineage, commandNow, dependencies)
 	if !ok {
 		return 1
 	}
-	result, err := goal.CloseReadItem(req, *id, *item, closure)
+	var result goal.PublishResult
+	var err error
+	if resolveCodeCommit == nil {
+		result, err = goal.CloseReadItem(req, *id, *item, closure)
+	} else {
+		result, err = goal.CloseReadItemWithResolver(req, *id, *item, closure, resolveCodeCommit)
+	}
 	return printSyncResult(result, err)
 }
 
@@ -921,7 +936,7 @@ type readItemsGoalJSON struct {
 	Items []goal.ReadItem `json:"items"`
 }
 
-func runGoalReadItemsList(args []string) int {
+func runGoalReadItemsListWithInputs(args []string, commandNow func(string) (time.Time, error), resolve func(string) (goal.Endpoint, error)) int {
 	flags := flag.NewFlagSet("goal read-items list", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "one goal id")
@@ -934,12 +949,12 @@ func runGoalReadItemsList(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal read-items list reads the synced backlog")
 		return 1
 	}
-	endpoint, err := goal.ResolveEndpoint(*root)
+	endpoint, err := resolve(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	now, err := goalCommandNow(*root)
+	now, err := commandNow(*root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -1715,6 +1730,15 @@ func trySyncMutation(name string, args []string) (int, bool) {
 }
 
 func trySyncMutationWithDependencies(name string, args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, parkBranchCheck func(string, goal.Endpoint) func(string, string) (string, error)) (int, bool) {
+	return trySyncMutationWithCompletion(name, args, commandNow, dependencies, parkBranchCheck, completionInputs{})
+}
+
+type completionInputs struct {
+	localTip func(repo, ref string) (string, bool, error)
+	reporter func(metrics.Options) (metrics.Result, error)
+}
+
+func trySyncMutationWithCompletion(name string, args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, parkBranchCheck func(string, goal.Endpoint) func(string, string) (string, error), completion completionInputs) (int, bool) {
 	f, ok := parseSyncFlags(name, args)
 	if !ok {
 		return 2, true
@@ -1886,7 +1910,12 @@ func trySyncMutationWithDependencies(name string, args []string, commandNow func
 			if file := projection.Tree.Done[goalID]; file != nil {
 				dropped = file.NextStep
 			}
-			shouldSweep, err := goalbranch.ShouldSweep(f.root, goalID, dropped)
+			var shouldSweep bool
+			if completion.localTip == nil {
+				shouldSweep, err = goalbranch.ShouldSweep(f.root, goalID, dropped)
+			} else {
+				shouldSweep, err = goalbranch.ShouldSweepWithLocalTip(f.root, goalID, dropped, completion.localTip)
+			}
 			if err != nil || !shouldSweep {
 				return err
 			}
@@ -1904,6 +1933,9 @@ func trySyncMutationWithDependencies(name string, args []string, commandNow func
 		}
 		res, err := goal.Done(req, f.id, f.conclude)
 		code := printSyncResult(res, err)
+		if completion.reporter != nil {
+			return reportAfterConfirmedDoneWithReporter(code, f.root, f.id, os.Stderr, completion.reporter), true
+		}
 		return reportAfterConfirmedDone(code, f.root, f.id, os.Stderr), true
 	case "reopen":
 		res, err := goal.Reopen(req, f.id)

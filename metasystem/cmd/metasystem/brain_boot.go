@@ -22,6 +22,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 const minimumBrainContextBytes = 2048
@@ -98,13 +99,13 @@ func runBrainBootCommand(args []string) int {
 	return 0
 }
 
-func composeBrainBoot(root, repo string, bound, deadlineMS int) (brainBootOutput, error) {
-	return composeBrainBootMode(root, repo, bound, deadlineMS, false)
+func composeBrainBootMode(root, repo string, bound, deadlineMS int, readOnly bool) (brainBootOutput, error) {
+	return composeBrainBootModeWithIdentity(root, repo, bound, deadlineMS, readOnly, goal.ExistingLedgerIdentity)
 }
 
-func composeBrainBootMode(root, repo string, bound, deadlineMS int, readOnly bool) (brainBootOutput, error) {
+func composeBrainBootModeWithIdentity(root, repo string, bound, deadlineMS int, readOnly bool, ledgerIdentity func(string) string) (brainBootOutput, error) {
 	started := brainBootNow()
-	state, phaseOne := brain.PhaseOne(root, repo, goal.ExistingLedgerIdentity(root), bound)
+	state, phaseOne := brain.PhaseOne(root, repo, ledgerIdentity(root), bound)
 	if state.State == brain.Undeclared {
 		return brainBootOutput{Declared: false}, nil
 	}
@@ -495,8 +496,12 @@ func readBrainFleet(root string) (brainBootSection, brainBootSection) {
 }
 
 func readBrainDigest(repo string) brainBootSection {
+	return readBrainDigestWithLayoutReader(repo, stateroot.ResolveLayout)
+}
+
+func readBrainDigestWithLayoutReader(repo string, resolveLayout func(string) (stateroot.Layout, error)) brainBootSection {
 	section := brainBootSection{Status: "complete"}
-	pending, err := narratordigest.Pending(repo, "brain")
+	pending, err := narratordigest.PendingWithLayoutReader(repo, resolveLayout, "brain")
 	if err != nil {
 		section.Status = "error"
 		section.Lines = append(section.Lines, brainBootLine{Text: fmt.Sprintf("DIGEST unreadable (%v); read records/narrator-digest.log by hand; the brain cursor was not advanced", err)})
@@ -546,6 +551,14 @@ func runBrainDigestAdvance(args []string) int {
 }
 
 func runBrainStartDelivered(args []string) int {
+	return runBrainStartDeliveredWithIdentity(args, goal.ExistingLedgerIdentity)
+}
+
+func runBrainStartDeliveredWithIdentity(args []string, ledgerIdentity func(string) string) int {
+	return runBrainStartDeliveredWithReaders(args, ledgerIdentity, stateroot.ResolveLayout)
+}
+
+func runBrainStartDeliveredWithReaders(args []string, ledgerIdentity func(string) string, resolveLayout func(string) (stateroot.Layout, error)) int {
 	flags := flag.NewFlagSet("brain start-delivered", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "checkout state root")
 	repo := pathFlag(flags, "repo", "", "checkout containing the digest")
@@ -560,7 +573,7 @@ func runBrainStartDelivered(args []string) int {
 		fmt.Fprintln(os.Stderr, "brain start-delivered needs both digest delivery arguments or neither")
 		return 2
 	}
-	state := brain.Read(*root, goal.ExistingLedgerIdentity(*root))
+	state := brain.Read(*root, ledgerIdentity(*root))
 	if state.State != brain.Declared || state.Record == nil {
 		fmt.Fprintln(os.Stderr, "brain start-delivered: the delivered declaration is no longer current")
 		return 1
@@ -580,7 +593,7 @@ func runBrainStartDelivered(args []string) int {
 		return 1
 	}
 	if *digestCursor >= 0 {
-		if err := narratordigest.Advance(*repo, *digestCursor, *digestPrefix, "brain"); err != nil {
+		if err := narratordigest.AdvanceWithLayoutReader(*repo, *digestCursor, *digestPrefix, resolveLayout, "brain"); err != nil {
 			fmt.Fprintln(os.Stderr, "brain start-delivered: advance brain digest:", err)
 			return 1
 		}

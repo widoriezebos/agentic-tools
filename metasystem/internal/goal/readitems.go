@@ -184,6 +184,12 @@ func CloseReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure) (P
 	return closeReadItem(r, id, itemID, closure, resolveReadItemCodeCommit)
 }
 
+// CloseReadItemWithResolver keeps the ordinary close policy and publication
+// while allowing a caller to supply the raw code commit lookup.
+func CloseReadItemWithResolver(r VerbRequest, id, itemID string, closure ReadItemClosure, resolveCodeCommit func(root, ref string) (string, error)) (PublishResult, error) {
+	return closeReadItem(r, id, itemID, closure, resolveCodeCommit)
+}
+
 func resolveReadItemCodeCommit(root, ref string) (string, error) {
 	return gitIn(root, "rev-parse", "--verify", ref+"^{commit}")
 }

@@ -235,6 +235,10 @@ func (f *resumeWorkspaceFacts) Anchor(missionID, tree string) error {
 	f.anchored = append(f.anchored, tree)
 	return nil
 }
+func (f *resumeWorkspaceFacts) AnchorCommit(string, string, string) error {
+	f.t.Fatal("unexpected AnchorCommit")
+	return nil
+}
 
 func resumeFileBed(t *testing.T, drift bool) (*Engine, string, string, *strictResumeContinuity, *resumeReads, *resumeWorkspaceFacts, string) {
 	t.Helper()

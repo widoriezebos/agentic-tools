@@ -147,9 +147,10 @@ func (f *contractFixtureSource) nextCall(kind, dir string, args []string) source
 	return want
 }
 
-func (f *contractFixtureSource) source() *contractSource {
-	return &contractSource{
-		output: func(dir string, args ...string) (string, error) {
+func (f *contractFixtureSource) source() *Source {
+	return &Source{
+		Repository: f.repository,
+		Output: func(dir string, args ...string) (string, error) {
 			if len(args) == 0 {
 				f.t.Fatal("empty raw output call")
 			}
@@ -201,7 +202,7 @@ func (f *contractFixtureSource) source() *contractSource {
 				return f.nextCall("output", dir, args).out, nil
 			}
 		},
-		try: func(dir string, args ...string) (string, int) {
+		Try: func(dir string, args ...string) (string, int) {
 			f.nextCall("remove", dir, args)
 			if dir != f.repo || len(f.worktrees) == 0 || !reflect.DeepEqual(args, []string{"worktree", "remove", "--force", f.worktrees[len(f.worktrees)-1]}) {
 				f.t.Fatalf("unexpected worktree removal: %s %q", dir, args)
@@ -209,7 +210,7 @@ func (f *contractFixtureSource) source() *contractSource {
 			f.removed = append(f.removed, args[3])
 			return "", 0
 		},
-		fetch: func(dir string) (string, error) {
+		Fetch: func(dir string) (string, error) {
 			f.nextCall("fetch", dir, nil)
 			if dir != f.repo {
 				f.t.Fatalf("fetch in %s, want %s", dir, f.repo)

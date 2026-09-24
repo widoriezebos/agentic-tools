@@ -98,6 +98,11 @@ func cursorName(names []string) (string, error) {
 // CursorPath returns the named cursor path. With no name it preserves the
 // human Stop-hook cursor's original path and protocol.
 func CursorPath(repoRoot string, names ...string) string {
+	return CursorPathWithLayoutReader(repoRoot, stateroot.ResolveLayout, names...)
+}
+
+// CursorPathWithLayoutReader returns a named cursor path using this call's layout facts.
+func CursorPathWithLayoutReader(repoRoot string, resolveLayout func(string) (stateroot.Layout, error), names ...string) string {
 	name, err := cursorName(names)
 	if err != nil {
 		return ""
@@ -106,7 +111,7 @@ func CursorPath(repoRoot string, names ...string) string {
 	if name == "human" {
 		base = "narrator-digest-cursor.json"
 	}
-	return filepath.Join(digestRoot(repoRoot), stateDirectory(stateroot.Steward), base)
+	return filepath.Join(digestRootWithLayoutReader(repoRoot, resolveLayout), stateDirectory(stateroot.Steward), base)
 }
 
 func lockPathWithLayoutReader(repoRoot string, resolveLayout func(string) (stateroot.Layout, error)) string {
@@ -252,8 +257,8 @@ func digest(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func loadCursor(repoRoot, name string) (cursorRecord, error) {
-	data, err := os.ReadFile(CursorPath(repoRoot, name))
+func loadCursorWithLayoutReader(repoRoot, name string, resolveLayout func(string) (stateroot.Layout, error)) (cursorRecord, error) {
+	data, err := os.ReadFile(CursorPathWithLayoutReader(repoRoot, resolveLayout, name))
 	if os.IsNotExist(err) {
 		return cursorRecord{Schema: 1, PrefixSHA256: digest(nil)}, nil
 	}
@@ -311,22 +316,27 @@ func cursorStale(cursor cursorRecord, data []byte) bool {
 
 // Pending returns the digest bytes after the last emitted check-in cursor.
 func Pending(repoRoot string, names ...string) (PendingDigest, error) {
+	return PendingWithLayoutReader(repoRoot, stateroot.ResolveLayout, names...)
+}
+
+// PendingWithLayoutReader reads pending digest bytes using this call's layout facts.
+func PendingWithLayoutReader(repoRoot string, resolveLayout func(string) (stateroot.Layout, error), names ...string) (PendingDigest, error) {
 	name, err := cursorName(names)
 	if err != nil {
 		return PendingDigest{}, err
 	}
-	lock, err := acquire(repoRoot)
+	lock, err := acquireWithLayoutReader(repoRoot, resolveLayout)
 	if err != nil {
 		return PendingDigest{}, err
 	}
 	defer lock.release()
-	data, err := os.ReadFile(Path(repoRoot))
+	data, err := os.ReadFile(pathWithLayoutReader(repoRoot, resolveLayout))
 	if os.IsNotExist(err) {
 		data = nil
 	} else if err != nil {
 		return PendingDigest{}, err
 	}
-	cursor, err := loadCursor(repoRoot, name)
+	cursor, err := loadCursorWithLayoutReader(repoRoot, name, resolveLayout)
 	if err != nil {
 		return PendingDigest{}, err
 	}
@@ -336,7 +346,7 @@ func Pending(repoRoot string, names ...string) (PendingDigest, error) {
 		pending = data[cursor.Cursor:]
 	}
 	heading := "NARRATOR DIGEST since last check-in:\n"
-	if _, statErr := os.Stat(CursorPath(repoRoot, name)); os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(CursorPathWithLayoutReader(repoRoot, resolveLayout, name)); os.IsNotExist(statErr) {
 		// A first check-in has no "since": the reader gets the recent tail
 		// of the story, never its whole history, and the cursor then
 		// stands at the end.
@@ -363,20 +373,25 @@ func Pending(repoRoot string, names ...string) (PendingDigest, error) {
 
 // Advance records that exactly one pending prefix reached the check-in.
 func Advance(repoRoot string, cursor int64, prefixSHA256 string, names ...string) error {
+	return AdvanceWithLayoutReader(repoRoot, cursor, prefixSHA256, stateroot.ResolveLayout, names...)
+}
+
+// AdvanceWithLayoutReader records an emitted prefix using this call's layout facts.
+func AdvanceWithLayoutReader(repoRoot string, cursor int64, prefixSHA256 string, resolveLayout func(string) (stateroot.Layout, error), names ...string) error {
 	name, err := cursorName(names)
 	if err != nil {
 		return err
 	}
-	lock, err := acquire(repoRoot)
+	lock, err := acquireWithLayoutReader(repoRoot, resolveLayout)
 	if err != nil {
 		return err
 	}
 	defer lock.release()
-	data, err := os.ReadFile(Path(repoRoot))
+	data, err := os.ReadFile(pathWithLayoutReader(repoRoot, resolveLayout))
 	if err != nil {
 		return err
 	}
-	current, err := loadCursor(repoRoot, name)
+	current, err := loadCursorWithLayoutReader(repoRoot, name, resolveLayout)
 	if err != nil {
 		return err
 	}
@@ -388,7 +403,7 @@ func Advance(repoRoot string, cursor int64, prefixSHA256 string, names ...string
 	if err != nil {
 		return err
 	}
-	durable, err := atomicfile.WriteText(CursorPath(repoRoot, name), string(encoded)+"\n", digestRoot(repoRoot))
+	durable, err := atomicfile.WriteText(CursorPathWithLayoutReader(repoRoot, resolveLayout, name), string(encoded)+"\n", digestRootWithLayoutReader(repoRoot, resolveLayout))
 	if err != nil {
 		return err
 	}

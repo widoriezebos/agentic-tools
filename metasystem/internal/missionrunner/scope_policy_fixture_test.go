@@ -143,6 +143,10 @@ func (f *scopePolicyFacts) TopStagedPosture() (gittree.StagedPosture, error) {
 	return gittree.StagedPosture{}, nil
 }
 func (f *scopePolicyFacts) Anchor(string, string) error { f.unexpected("Anchor"); return nil }
+func (f *scopePolicyFacts) AnchorCommit(string, string, string) error {
+	f.unexpected("AnchorCommit")
+	return nil
+}
 func (f *scopePolicyFacts) MaterializePaths(string, []string) error {
 	f.unexpected("MaterializePaths")
 	return nil

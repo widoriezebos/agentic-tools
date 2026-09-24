@@ -14,7 +14,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
@@ -1354,7 +1353,12 @@ func (e *Engine) measure(state map[string]any) (classification, observed string,
 		return unmeasurable(err)
 	}
 	turnLog, _ := state["turnLog"].([]any)
-	result, err := contract.Measure(e.contractPath(), PreviousMetrics(turnLog, gateMetricNames(values)))
+	var result *contract.MeasureResult
+	if e.contractSource != nil {
+		result, err = contract.MeasureWithSource(e.contractPath(), PreviousMetrics(turnLog, gateMetricNames(values)), e.contractSource)
+	} else {
+		result, err = contract.Measure(e.contractPath(), PreviousMetrics(turnLog, gateMetricNames(values)))
+	}
 	if err != nil {
 		return unmeasurable(err)
 	}
@@ -1396,7 +1400,12 @@ func (e *Engine) measureCandidate(state map[string]any) string {
 		})
 		return ""
 	}
-	metrics, err := contract.MeasureCandidate(e.contractPath(), sha)
+	var metrics map[string]string
+	if e.contractSource != nil {
+		metrics, err = contract.MeasureCandidateWithSource(e.contractPath(), sha, e.contractSource)
+	} else {
+		metrics, err = contract.MeasureCandidate(e.contractPath(), sha)
+	}
 	if err != nil {
 		e.emit("candidate-measure-skipped", clipSummary(err.Error()), map[string]string{
 			"missionId": e.Mission, "error": err.Error(),
@@ -1829,8 +1838,8 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 	// The wall's pre-tree: the shippable projection at turn open, anchored
 	// against garbage collection for the mission's life (the state
 	// openTurn write joins in the acceptance-write step).
-	workspace := gittree.Workspace{Dir: e.Root}
-	preTree, err := wallSnapshot(workspace, e.Mission)
+	workspace := e.wallWorkspace(e.Root)
+	preTree, err := wallSnapshotWithWorkspace(workspace, e.Mission)
 	if err != nil {
 		return nil, true, failf(3, "turn open cannot snapshot the workspace: %v", err)
 	}
@@ -2037,7 +2046,7 @@ func (e *Engine) cycleReserveAndBuildTurn(c *cycleContext) (map[string]any, bool
 // cycleGatePrompt assembles the turn prompt and holds it to the prompt
 // checker; a refusal parks the mission rather than burning a second cycle.
 func (e *Engine) cycleGatePrompt(c *cycleContext) (map[string]any, bool, error) {
-	if err := mission.AssemblePrompt(e.Root, e.Mission, c.turnID, filepath.Join(c.turnDir, "prompt.md")); err != nil {
+	if err := mission.AssemblePromptWithGoalSource(e.Root, e.Mission, c.turnID, filepath.Join(c.turnDir, "prompt.md"), e.goalSource); err != nil {
 		detail := strings.TrimSpace(err.Error())
 		if detail == "" {
 			detail = "prompt assembly refused"

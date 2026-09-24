@@ -294,7 +294,11 @@ func runGoalUnparkWithSync(args []string, trySync func(string, []string) (int, b
 }
 
 func runGoalDone(args []string) int {
-	return goalMutation("done", args, func(f *flag.FlagSet) []*string {
+	return runGoalDoneWithSync(args, trySyncMutation)
+}
+
+func runGoalDoneWithSync(args []string, trySync func(string, []string) (int, bool)) int {
+	return goalMutationWithSync("done", args, func(f *flag.FlagSet) []*string {
 		return []*string{
 			f.String("id", "", "the Current goal's id"),
 			f.String("concluded", "", "one concluding sentence"),
@@ -303,7 +307,7 @@ func runGoalDone(args []string) int {
 		}
 	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
 		return s.Done(c, v[0], v[1], v[2], v[3] == "true")
-	})
+	}, trySync)
 }
 
 func runGoalReopen(args []string) int {
@@ -579,18 +583,17 @@ func runGoalShowWithResolver(args []string, resolve func(string) (goal.Endpoint,
 	return 0
 }
 
-// nextSynced prints the ordered frontier line for one machine.
-func nextSynced(root, machine string, fetchFirst bool, requiredLabels ...string) int {
-	return nextSyncedWithProjector(root, machine, fetchFirst, goal.Project, requiredLabels...)
+func nextSyncedWithProjector(root, machine string, fetchFirst bool, project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), requiredLabels ...string) int {
+	return nextSyncedWithInputs(root, machine, fetchFirst, goal.ResolveEndpoint, goalCommandNow, project, requiredLabels...)
 }
 
-func nextSyncedWithProjector(root, machine string, fetchFirst bool, project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), requiredLabels ...string) int {
-	e, err := goal.ResolveEndpoint(root)
+func nextSyncedWithInputs(root, machine string, fetchFirst bool, resolve func(string) (goal.Endpoint, error), commandNow func(string) (time.Time, error), project func(goal.Endpoint, bool, time.Time) (goal.Projection, error), requiredLabels ...string) int {
+	e, err := resolve(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	now, err := goalCommandNow(root)
+	now, err := commandNow(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -707,6 +710,10 @@ func trunkRedOwnedLine(entry goal.TrunkRedEntry) string {
 // runGoalNext prints the one orientation line any runtime's main can read
 // by instruction — the universal fallback transport.
 func runGoalNext(args []string) int {
+	return runGoalNextWithInputs(args, defaultSyncRequestDependencies(), goalCommandNow)
+}
+
+func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, commandNow func(string) (time.Time, error)) int {
 	flags := flag.NewFlagSet("goal next", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	machineFlag := flags.String("machine", "", "machine nickname whose ordered frontier to inspect")
@@ -750,13 +757,13 @@ func runGoalNext(args []string) int {
 			}
 		} else {
 			var err error
-			machine, err = goal.ResolveMachine(*root)
+			machine, err = dependencies.machine(*root)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				return 1
 			}
 		}
-		return nextSynced(*root, machine, *fetch, labels...)
+		return nextSyncedWithInputs(*root, machine, *fetch, dependencies.endpoint, commandNow, goal.Project, labels...)
 	}
 	if len(labels) > 0 || machineProvided || *fetch {
 		fmt.Fprintln(os.Stderr, "goal next --label, --machine, and --fetch read the synced backlog; this checkout still carries the legacy ledger and must migrate first")

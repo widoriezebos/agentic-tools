@@ -107,11 +107,6 @@ func (f *mergeClosureFixture) requireAcceptedGoalRead() {
 	}
 }
 
-func newMergeClosureFixture(t *testing.T) *mergeClosureFixture {
-	t.Helper()
-	return assembleMergeClosureFixture(t, newConformanceFixture(t))
-}
-
 func newFileMergeClosureFixture(t *testing.T) *mergeClosureFixture {
 	t.Helper()
 	return assembleMergeClosureFixture(t, newFileConformanceFixture(t))

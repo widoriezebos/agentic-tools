@@ -149,27 +149,28 @@ type contractDoc struct {
 	values   map[string]string
 	sealed   map[string]string
 	approval []string
-	source   *contractSource
+	source   *Source
 }
 
-// contractSource supplies the raw repository facts and checkout effects for one
-// invocation. A supplied source must implement every operation it can reach.
-type contractSource struct {
-	output func(string, ...string) (string, error)
-	try    func(string, ...string) (string, int)
-	fetch  func(string) (string, error)
+// Source supplies raw repository facts and checkout effects for one contract invocation.
+// A supplied source must cover every raw operation, including repository resolution.
+type Source struct {
+	Repository func(string) (string, error)
+	Output     func(string, ...string) (string, error)
+	Try        func(string, ...string) (string, int)
+	Fetch      func(string) (string, error)
 }
 
 func (d *contractDoc) gitOutput(repo string, args ...string) (string, error) {
 	if d.source != nil {
-		return d.source.output(repo, args...)
+		return d.source.Output(repo, args...)
 	}
 	return gitOutput(repo, args...)
 }
 
 func (d *contractDoc) gitTry(repo string, args ...string) (string, int) {
 	if d.source != nil {
-		return d.source.try(repo, args...)
+		return d.source.Try(repo, args...)
 	}
 	return gitTry(repo, args...)
 }
@@ -246,11 +247,18 @@ func Seal(path string) (string, error) {
 	return contractSealWithRepository(path, contractRepositoryFor)
 }
 
+func SealWithSource(path string, source *Source) (string, error) {
+	if err := checkSource(source); err != nil {
+		return "", err
+	}
+	return contractSealWithSource(path, source.Repository, source)
+}
+
 func contractSealWithRepository(path string, repository func(string) (string, error)) (string, error) {
 	return contractSealWithSource(path, repository, nil)
 }
 
-func contractSealWithSource(path string, repository func(string) (string, error), source *contractSource) (string, error) {
+func contractSealWithSource(path string, repository func(string) (string, error), source *Source) (string, error) {
 	doc, repo, projectRoot, err := contractLoadWithSource(path, repository, source)
 	if err != nil {
 		return "", err
@@ -265,11 +273,18 @@ func Preflight(path, verifiedBytesOutput string) (missionID, rawSHA string, err 
 	return contractPreflightWithRepository(path, verifiedBytesOutput, contractRepositoryFor)
 }
 
+func PreflightWithSource(path, verifiedBytesOutput string, source *Source) (string, string, error) {
+	if err := checkSource(source); err != nil {
+		return "", "", err
+	}
+	return contractPreflightWithSource(path, verifiedBytesOutput, source.Repository, source)
+}
+
 func contractPreflightWithRepository(path, verifiedBytesOutput string, repository func(string) (string, error)) (missionID, rawSHA string, err error) {
 	return contractPreflightWithSource(path, verifiedBytesOutput, repository, nil)
 }
 
-func contractPreflightWithSource(path, verifiedBytesOutput string, repository func(string) (string, error), source *contractSource) (missionID, rawSHA string, err error) {
+func contractPreflightWithSource(path, verifiedBytesOutput string, repository func(string) (string, error), source *Source) (missionID, rawSHA string, err error) {
 	doc, repo, projectRoot, err := contractLoadWithSource(path, repository, source)
 	if err != nil {
 		return "", "", err
@@ -290,17 +305,11 @@ func contractPreflightWithSource(path, verifiedBytesOutput string, repository fu
 	return id, rawSHA, nil
 }
 
-// contractLoad resolves the path, parses the contract, locates its repository
-// and project root, and type-checks it — the shared preamble every verb runs.
-func contractLoad(path string) (*contractDoc, string, string, error) {
-	return contractLoadWithRepository(path, contractRepositoryFor)
-}
-
 func contractLoadWithRepository(path string, repository func(string) (string, error)) (*contractDoc, string, string, error) {
 	return contractLoadWithSource(path, repository, nil)
 }
 
-func contractLoadWithSource(path string, repository func(string) (string, error), source *contractSource) (*contractDoc, string, string, error) {
+func contractLoadWithSource(path string, repository func(string) (string, error), source *Source) (*contractDoc, string, string, error) {
 	resolved := resolvePath(path)
 	doc, err := contractRead(resolved)
 	if err != nil {
@@ -316,6 +325,13 @@ func contractLoadWithSource(path string, repository func(string) (string, error)
 		return nil, "", "", err
 	}
 	return doc, repo, projectRoot, nil
+}
+
+func checkSource(source *Source) error {
+	if source == nil || source.Repository == nil || source.Output == nil || source.Try == nil || source.Fetch == nil {
+		return stateErr("contract repository source is incomplete")
+	}
+	return nil
 }
 
 // contractRead decodes a contract and splits it into its authored block, its
@@ -1370,7 +1386,7 @@ func (d *contractDoc) verifyOrigin(repo string) error {
 
 func (d *contractDoc) fetchOrigin(repo string) (string, error) {
 	if d.source != nil {
-		return d.source.fetch(repo)
+		return d.source.Fetch(repo)
 	}
 	// The fetch is a direct auto-maintenance trigger: the gc pins keep a
 	// detached maintenance process from writing objects while later wall

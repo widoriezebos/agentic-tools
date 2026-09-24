@@ -972,34 +972,35 @@ func candidateResourceCustodyContext(t *testing.T) context.Context {
 }
 
 func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) {
-	fixture := newCandidateEngineFixture(t)
-	counter := filepath.Join(t.TempDir(), "builds")
-	custodySeen := filepath.Join(t.TempDir(), "custody-seen")
-	scriptPath := filepath.Join(fixture.installationRoot, "scripts", "agents", "go-build.sh")
+	fixture := newOrdinaryCandidateFixture(t)
+	controlRoot := t.TempDir()
+	counter := filepath.Join(controlRoot, "builds")
+	custodySeen := filepath.Join(controlRoot, "custody-seen")
+	scriptPath := filepath.Join(fixture.installation, "scripts", "agents", "go-build.sh")
 	script, err := os.ReadFile(scriptPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	script = []byte(strings.Replace(string(script), "set -euo pipefail\n", "set -euo pipefail\nprintf 'build\\n' >> '"+counter+"'\nprintf '%s' \"${METASYSTEM_PROOF_ATTEMPT:-}\" > '"+custodySeen+"'\n", 1))
+	script = []byte(strings.Replace(string(script), "set -euo pipefail\n", "set -euo pipefail\nprintf 'build\\n' >> \"${METASYSTEM_PROOF_CONTROL_ROOT:?}/builds\"\nprintf '%s' \"${METASYSTEM_PROOF_ATTEMPT:-}\" > \"${METASYSTEM_PROOF_CONTROL_ROOT:?}/custody-seen\"\n", 1))
+	fixture.script = script
 	writeTestingFixtureFile(t, scriptPath, script, 0o755)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/scripts/agents/go-build.sh")
-	workspace := gittree.Workspace{Dir: fixture.projectRoot}
-	tree, err := workspace.StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	controlRoot := t.TempDir()
+	fixture.declareSnapshot(ordinaryReuseTree, ordinaryReuseInstallationTree, ordinaryReuseEngineTree, ordinaryReuseScriptBlob, "")
+	workspace := fixture.workspace()
+	tree := ordinaryReuseTree
 	writeTestingFixtureFile(t, filepath.Join(controlRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=64\n"), 0o600)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(controlRoot, "admission"))
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
 	custodyContext := candidateResourceCustodyContext(t)
-	environment := inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_ATTEMPT=legacy-parent"})
-	prepare := func(tree string) *candidateEngineBuild {
+	environment := inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=legacy-parent"})
+	prepare := func(tree, engineTree, commit string, build bool) *candidateEngineBuild {
 		t.Helper()
-		artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment)
+		fixture.queuePrepare(tree, engineTree, commit, environment, build)
+		artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment, fixture.dependency())
 		if err != nil {
 			t.Fatal(err)
 		}
+		fixture.assertDrained()
+		fixture.assertExecutable(artifact, commit)
 		return artifact
 	}
 	buildCount := func() int {
@@ -1010,19 +1011,19 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 		}
 		return strings.Count(string(data), "build\n")
 	}
-	first := prepare(tree)
+	first := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, true)
 	if buildCount() != 1 {
 		t.Fatal("cold candidate engine preparation did not build once")
 	}
 	if seen, err := os.ReadFile(custodySeen); err != nil || string(seen) != "legacy-parent" {
 		t.Fatalf("candidate build lost legacy proof custody: seen=%q err=%v", seen, err)
 	}
-	second := prepare(tree)
+	second := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, false)
 	if buildCount() != 1 || first.Path != second.Path || first.Digest != second.Digest {
 		t.Fatalf("warm candidate engine preparation rebuilt: first=%+v second=%+v count=%d", first, second, buildCount())
 	}
-	environment = inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_ATTEMPT=another-parent"})
-	custodyVariant := prepare(tree)
+	environment = inheritedTestingEnvironment(testingEnvironment(os.Environ()), []string{"METASYSTEM_PROOF_CONTROL_ROOT=" + controlRoot, "METASYSTEM_PROOF_ATTEMPT=another-parent"})
+	custodyVariant := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, false)
 	if buildCount() != 1 || custodyVariant.Commit != first.Commit {
 		t.Fatalf("custody-only change fragmented candidate engine cache: first=%s variant=%s count=%d", first.Commit, custodyVariant.Commit, buildCount())
 	}
@@ -1032,29 +1033,27 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 	if err := testexec.WriteFile(second.Path, []byte("corrupt"), 0o500); err != nil {
 		t.Fatal(err)
 	}
-	third := prepare(tree)
+	third := prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, true)
 	if buildCount() != 2 || third.Digest != first.Digest {
 		t.Fatalf("corrupt candidate engine was not rebuilt: third=%+v count=%d", third, buildCount())
 	}
 	if err := os.Remove(third.Path); err != nil {
 		t.Fatal(err)
 	}
-	prepare(tree)
+	prepare(tree, ordinaryReuseEngineTree, ordinaryBuildOne, true)
 	if buildCount() != 3 {
 		t.Fatalf("missing candidate engine was not rebuilt: %d", buildCount())
 	}
-	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "go.sum"), []byte("changed sum\n"), 0o644)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/go.sum")
-	changedTree, err := workspace.StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	changed := prepare(changedTree)
+	fixture.sum = []byte("changed sum\n")
+	fixture.writeFiles()
+	fixture.declareSnapshot(ordinaryChangedTree, ordinaryChangedInstallationTree, ordinaryChangedEngineTree, ordinaryReuseScriptBlob, ordinaryChangedSumBlob)
+	changedTree := ordinaryChangedTree
+	changed := prepare(changedTree, ordinaryChangedEngineTree, ordinaryBuildTwo, true)
 	if changed.Commit == first.Commit || buildCount() != 4 {
 		t.Fatalf("changed build input reused previous artifact: first=%s changed=%s count=%d", first.Commit, changed.Commit, buildCount())
 	}
 	environment = append(append([]string(nil), environment...), "METASYSTEM_FIXTURE_BUILD_MODE=changed")
-	changedEnvironment := prepare(changedTree)
+	changedEnvironment := prepare(changedTree, ordinaryChangedEngineTree, ordinaryBuildThree, true)
 	if changedEnvironment.Commit == changed.Commit || buildCount() != 5 {
 		t.Fatalf("changed build environment reused previous artifact: previous=%s current=%s count=%d", changed.Commit, changedEnvironment.Commit, buildCount())
 	}
@@ -1063,7 +1062,9 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 		t.Fatal(err)
 	}
 	toolDir := t.TempDir()
-	writeTestingFixtureFile(t, filepath.Join(toolDir, "go"), []byte("#!/bin/sh\nexec '"+realGo+"' \"$@\"\n"), 0o755)
+	toolBytes := []byte("#!/bin/sh\nexec '" + realGo + "' \"$@\"\n")
+	writeTestingFixtureFile(t, filepath.Join(toolDir, "go"), toolBytes, 0o755)
+	fixture.expectedGoPath, fixture.expectedGoBytes = filepath.Join(toolDir, "go"), toolBytes
 	toolEnvironment := append([]string(nil), environment...)
 	for index, entry := range toolEnvironment {
 		if strings.HasPrefix(entry, "PATH=") {
@@ -1071,11 +1072,14 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 		}
 	}
 	environment = toolEnvironment
-	changedTool := prepare(changedTree)
+	changedTool := prepare(changedTree, ordinaryChangedEngineTree, ordinaryBuildFour, true)
 	if changedTool.Commit == changedEnvironment.Commit || buildCount() != 6 {
 		t.Fatalf("changed Go executable reused previous artifact: previous=%s current=%s count=%d", changedEnvironment.Commit, changedTool.Commit, buildCount())
 	}
-	t.Run("physical command origin includes event-held cold build", testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin)
+}
+
+func TestCandidateEngineNativePhysicalCommandOriginIncludesEventHeldColdBuild(t *testing.T) {
+	testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin(t)
 }
 
 func testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin(t *testing.T) {
@@ -1154,17 +1158,15 @@ func testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin(t *testi
 }
 
 func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
-	fixture := newCandidateEngineFixture(t)
+	fixture := newOrdinaryCandidateFixture(t)
 	counter := filepath.Join(t.TempDir(), "builds")
-	scriptPath := filepath.Join(fixture.installationRoot, "scripts", "agents", "go-build.sh")
+	scriptPath := filepath.Join(fixture.installation, "scripts", "agents", "go-build.sh")
 	script := []byte("#!/usr/bin/env bash\nprintf 'build\\n' >> '" + counter + "'\nexit 23\n")
+	fixture.script = script
 	writeTestingFixtureFile(t, scriptPath, script, 0o755)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/scripts/agents/go-build.sh")
-	workspace := gittree.Workspace{Dir: fixture.projectRoot}
-	tree, err := workspace.StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture.declareSnapshot(ordinaryFailedTree, ordinaryFailedInstallationTree, ordinaryFailedEngineTree, ordinaryFailedScriptBlob, "")
+	workspace := fixture.workspace()
+	tree := ordinaryFailedTree
 	controlRoot := t.TempDir()
 	writeTestingFixtureFile(t, filepath.Join(controlRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=64\n"), 0o600)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(controlRoot, "admission"))
@@ -1172,18 +1174,22 @@ func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
 	custodyContext := candidateResourceCustodyContext(t)
 	environment := testingEnvironment(os.Environ())
 	for run := 0; run < 2; run++ {
-		if artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment); artifact != nil || err == nil {
+		fixture.queuePrepare(tree, ordinaryFailedEngineTree, ordinaryFailedBuild, environment, true)
+		if artifact, err := prepareCandidateEngine(custodyContext, controlRoot, workspace, "metasystem", tree, environment, fixture.dependency()); artifact != nil || err == nil {
 			t.Fatalf("failed build %d entered cache: artifact=%+v err=%v", run, artifact, err)
 		}
+		fixture.assertDrained()
 	}
 	data, err := os.ReadFile(counter)
 	if err != nil || strings.Count(string(data), "build\n") != 2 {
 		t.Fatalf("failed builds were cached: count=%q err=%v", data, err)
 	}
-	buildIdentity, err := candidateEngineBuildIdentity(context.Background(), workspace, "metasystem", tree, environment)
+	fixture.queueIdentity(tree, ordinaryFailedEngineTree, ordinaryFailedBuild, environment, false)
+	buildIdentity, err := candidateEngineBuildIdentityUsing(context.Background(), workspace, "metasystem", tree, environment, fixture.dependency())
 	if err != nil {
 		t.Fatal(err)
 	}
+	fixture.assertDrained()
 	entry := filepath.Join(controlRoot, "artifacts", "agents", "candidate-engines", buildIdentity)
 	if _, err := os.Lstat(entry); !os.IsNotExist(err) {
 		t.Fatalf("failed build published an artifact entry: %v", err)
@@ -1449,16 +1455,90 @@ func TestCandidateBuiltCommitPassesDispatchSkewPreflight(t *testing.T) {
 	}
 }
 
-func TestCandidateEngineBuildFailureCannotFallBackToPolicyEngine(t *testing.T) {
+func TestCandidateEngineNativeGitSerializationPinsHeadSourceAndCleanup(t *testing.T) {
 	fixture := newCandidateEngineFixture(t)
-	broken := []byte("#!/usr/bin/env bash\nset -euo pipefail\necho 'fixture candidate compile failed' >&2\nexit 23\n")
-	writeTestingFixtureFile(t, filepath.Join(fixture.installationRoot, "scripts", "agents", "go-build.sh"), broken, 0o755)
-	testingFixtureGit(t, fixture.projectRoot, "add", "metasystem/scripts/agents/go-build.sh")
-	brokenTree, err := (gittree.Workspace{Dir: fixture.projectRoot}).StagedTree()
+	io := nativeCandidateEngineIO()
+	nativeRun := io.runGit
+	nativeOpen := io.open
+	var commands [][]string
+	var detachedRoot string
+	io.runGit = func(command *exec.Cmd) error {
+		commands = append(commands, append([]string(nil), command.Args...))
+		return nativeRun(command)
+	}
+	io.open = func(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {
+		if workspace.Dir != fixture.projectRoot || tree != fixture.candidateTree {
+			t.Fatalf("native detached request root=%s tree=%s", workspace.Dir, tree)
+		}
+		detached, err := nativeOpen(workspace, tree)
+		if err == nil {
+			detachedRoot = detached.Workspace().Dir
+		}
+		return detached, err
+	}
+	built, err := buildCandidateEngine(context.Background(), gittree.Workspace{Dir: fixture.projectRoot},
+		"metasystem", fixture.candidateTree, testingEnvironment(os.Environ()), io)
 	if err != nil {
 		t.Fatal(err)
 	}
-	built, err := buildCandidateEngine(context.Background(), gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", brokenTree, testingEnvironment(os.Environ()))
+	t.Cleanup(func() { _ = built.Close() })
+	if detachedRoot == "" {
+		t.Fatal("native detached worktree was not opened")
+	}
+	if _, err := os.Stat(detachedRoot); !os.IsNotExist(err) {
+		t.Fatalf("native detached worktree remains after build: %v", err)
+	}
+	commitObject := testingFixtureGit(t, fixture.projectRoot, "cat-file", "-p", built.Commit)
+	if !strings.HasPrefix(commitObject, "tree ") || !strings.Contains(commitObject, "stable candidate proof snapshot") {
+		t.Fatalf("candidate stamp does not name the serialized engine commit: %q", commitObject)
+	}
+	source := testingFixtureGit(t, fixture.projectRoot, "show", built.Commit+":cmd/metasystem/engine.txt")
+	if source != "candidate engine source\n" {
+		t.Fatalf("candidate commit source=%q", source)
+	}
+	executable, err := os.ReadFile(built.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(executable), "stamp="+built.Commit) || !strings.Contains(string(executable), "candidate engine source") {
+		t.Fatalf("native built bytes do not carry detached HEAD and source: %q", executable)
+	}
+	if digest, err := fileSHA256(built.Path); err != nil || digest != built.Digest {
+		t.Fatalf("native executable digest=%q want=%q err=%v", digest, built.Digest, err)
+	}
+	var projected, committed, bound bool
+	for _, args := range commands {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "core.fileMode=true -c core.useReplaceRefs=false read-tree") {
+			projected = true
+		}
+		if strings.Contains(joined, "i18n.commitEncoding=UTF-8 commit-tree") {
+			committed = true
+		}
+		if strings.Contains(joined, "update-ref --no-deref HEAD "+built.Commit) {
+			bound = true
+		}
+	}
+	if !projected || !committed || !bound {
+		t.Fatalf("native Git projection/serialization/HEAD binding missing: projected=%t committed=%t bound=%t commands=%q", projected, committed, bound, commands)
+	}
+}
+
+func TestCandidateEngineBuildFailureCannotFallBackToPolicyEngine(t *testing.T) {
+	fixture := newOrdinaryCandidateFixture(t)
+	broken := []byte("#!/usr/bin/env bash\nset -euo pipefail\necho 'fixture candidate compile failed' >&2\nexit 23\n")
+	fixture.script = broken
+	fixture.writeFiles()
+	fixture.declareSnapshot(ordinaryBrokenTree, ordinaryBrokenInstallationTree, ordinaryBrokenEngineTree, ordinaryBrokenScriptBlob, "")
+	environment := testingEnvironment(os.Environ())
+	fixture.steps = append(fixture.steps, ordinaryCandidateStep{kind: "open", output: []byte(ordinaryBrokenTree)})
+	fixture.queueRaw(true, ordinaryBrokenTree+"\n", "rev-parse", "HEAD^{tree}")
+	fixture.queueRaw(true, "", "rev-parse", "--show-prefix")
+	fixture.queueIdentity(ordinaryBrokenTree, ordinaryBrokenEngineTree, ordinaryBrokenBuild, environment, true)
+	fixture.queueRaw(true, ordinarySnapshotCommit+"\n", "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+	fixture.queueGit(true, "plain", nil, nil, "update-ref", "--no-deref", "HEAD", ordinaryBrokenBuild, ordinarySnapshotCommit)
+	built, err := buildCandidateEngine(context.Background(), fixture.workspace(), "metasystem", ordinaryBrokenTree, environment, fixture.dependency())
+	fixture.assertDrained()
 	if built != nil || err == nil || !strings.Contains(err.Error(), "candidate engine build failed") || !strings.Contains(err.Error(), "fixture candidate compile failed") {
 		t.Fatalf("candidate build failure did not remain an explicit insufficient outcome: build=%+v err=%v", built, err)
 	}

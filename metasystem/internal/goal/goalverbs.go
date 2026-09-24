@@ -857,6 +857,14 @@ func (s *Store) ServingProjection() (id, intent string, ok bool) {
 	return id, intent, ok
 }
 
+// ServingProjectionAtEndpoint binds one caller-supplied repository and machine
+// to the existing serving policy without changing the Store's other reads.
+func (s *Store) ServingProjectionAtEndpoint(endpoint Endpoint, machine string) (id, intent string, ok bool) {
+	bound := *s
+	bound.projectionDeps.source = &projectionSource{endpoint: endpoint, machine: machine}
+	return bound.ServingProjection()
+}
+
 func (s *Store) projectionWorld() (bool, error) {
 	if s.projectionDeps.source == nil {
 		return NewWorld(s.Root), nil

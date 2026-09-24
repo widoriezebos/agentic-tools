@@ -64,6 +64,7 @@ type wallWorkspace interface {
 	TopLevel() (string, error)
 	HistorySteeringFiles() ([]string, error)
 	Anchor(mission, tree string) error
+	AnchorCommit(mission, name, commit string) error
 	MaterializePaths(tree string, paths []string) error
 }
 

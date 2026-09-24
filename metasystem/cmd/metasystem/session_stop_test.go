@@ -20,15 +20,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
-func sessionStopBed(t *testing.T) string {
+func sessionStopFileBed(t *testing.T) (string, map[string][]byte) {
 	t.Helper()
 	root := t.TempDir()
-	goalSyncMutationGit(t, root, "init", "-q", "-b", "main")
-	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "bed-m1")
-	goalSyncMutationGit(t, root, "config", "goal.sync-remote", "local")
-	goalSyncMutationGit(t, root, "config", "user.name", "session-stop-fixture")
-	goalSyncMutationGit(t, root, "config", "user.email", "session-stop@example.invalid")
-
 	goals := filepath.Join(root, "plans", "goals")
 	if err := os.MkdirAll(goals, 0o755); err != nil {
 		t.Fatal(err)
@@ -37,7 +31,8 @@ func sessionStopBed(t *testing.T) string {
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1",
 		SyncMode: goal.SyncLocal, Revision: 1,
 	}
-	if err := os.WriteFile(filepath.Join(goals, "backlog.md"), goal.RenderRoot(rootRecord), 0o644); err != nil {
+	rootBytes := goal.RenderRoot(rootRecord)
+	if err := os.WriteFile(filepath.Join(goals, "backlog.md"), rootBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	budget := goal.Budget{
@@ -60,9 +55,24 @@ func sessionStopBed(t *testing.T) string {
 		By: "human:Wido", At: waiting.History[1].At, Revision: 2, Opid: waiting.History[1].Opid,
 		Authority: goal.ApprovalAuthorityProven, Digest: goal.ApprovalDigest(waiting.Intent, waiting.Tier, budget),
 	}
-	if err := os.WriteFile(filepath.Join(goals, "waiting.md"), goal.RenderFile(waiting), 0o644); err != nil {
+	waitingBytes := goal.RenderFile(waiting)
+	if err := os.WriteFile(filepath.Join(goals, "waiting.md"), waitingBytes, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	return root, map[string][]byte{
+		"plans/goals/backlog.md": append([]byte(nil), rootBytes...),
+		"plans/goals/waiting.md": append([]byte(nil), waitingBytes...),
+	}
+}
+
+func sessionStopBed(t *testing.T) string {
+	t.Helper()
+	root, _ := sessionStopFileBed(t)
+	goalSyncMutationGit(t, root, "init", "-q", "-b", "main")
+	goalSyncMutationGit(t, root, "config", "metasystem.goal.machine", "bed-m1")
+	goalSyncMutationGit(t, root, "config", "goal.sync-remote", "local")
+	goalSyncMutationGit(t, root, "config", "user.name", "session-stop-fixture")
+	goalSyncMutationGit(t, root, "config", "user.email", "session-stop@example.invalid")
 	goalSyncMutationGit(t, root, "add", "plans/goals")
 	goalSyncMutationGit(t, root, "commit", "-q", "-m", "session stop bed")
 	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
@@ -199,7 +209,7 @@ func TestProveSessionStopHumanKeepsThePopulatedProof(t *testing.T) {
 }
 
 func TestSessionStopAttendedHumanEndsQuietly(t *testing.T) {
-	root := sessionStopBed(t)
+	root, acceptedFiles := sessionStopFileBed(t)
 	human, leaseRecord := sessionStopLiveRef(t)
 	installSessionStopLease(t, root, leaseRecord)
 	installSessionStopAnnouncement(t, root, "session-human", "main-1", human)
@@ -230,18 +240,26 @@ func TestSessionStopAttendedHumanEndsQuietly(t *testing.T) {
 	store := &goal.Store{Root: root, Now: func() time.Time {
 		return time.Date(2026, 9, 2, 10, 1, 0, 0, time.UTC)
 	}}
-	verdict, err := store.TurnVerdict(goal.ScanResult{}, "session-human", "", "main-1")
+	repository := &sessionStopAcceptedRepository{tip: "session-stop-accepted-tip", files: acceptedFiles}
+	endpoint := goal.Endpoint{Root: root, Remote: "local", Repository: repository}
+	seat := goal.TurnVerdictOptions{SeatActor: goal.Actor{Machine: "bed-m1"}}
+	verdict, err := store.TurnVerdictAtEndpoint(endpoint, "bed-m1", goal.ScanResult{}, "session-human", "", "main-1", seat)
 	if err != nil || verdict.ShouldBlock || !strings.Contains(verdict.Display, "Wido") {
 		t.Fatalf("the attended human must end quietly: %+v %v", verdict, err)
 	}
-	second, err := store.TurnVerdict(goal.ScanResult{}, "session-human", "", "main-1")
+	second, err := store.TurnVerdictAtEndpoint(endpoint, "bed-m1", goal.ScanResult{}, "session-human", "", "main-1", seat)
 	if err != nil || !second.ShouldBlock || second.BlockSource == nil || *second.BlockSource != "idle-backlog" {
 		t.Fatalf("one attended-human marker must end exactly one session: %+v %v", second, err)
+	}
+	repository.mu.Lock()
+	defer repository.mu.Unlock()
+	if repository.fetches == 0 || repository.releases != repository.fetches || len(repository.captured) != 0 {
+		t.Fatalf("accepted repository fetches=%d releases=%d active=%d", repository.fetches, repository.releases, len(repository.captured))
 	}
 }
 
 func TestSessionStopAgentClassifiedCallerCannotReachTheWriter(t *testing.T) {
-	root := sessionStopBed(t)
+	root, _ := sessionStopFileBed(t)
 	stubSessionStopCommand(t)
 	classifySessionStopCaller = func(string, int64) (lease.Classification, error) {
 		return lease.Classification{Class: lease.ClassDelegate}, nil

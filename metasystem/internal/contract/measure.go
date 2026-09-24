@@ -45,7 +45,14 @@ func Measure(path string, previous map[string]string) (*MeasureResult, error) {
 	return contractMeasureWithSource(path, previous, contractRepositoryFor, nil)
 }
 
-func contractMeasureWithSource(path string, previous map[string]string, repository func(string) (string, error), source *contractSource) (*MeasureResult, error) {
+func MeasureWithSource(path string, previous map[string]string, source *Source) (*MeasureResult, error) {
+	if err := checkSource(source); err != nil {
+		return nil, err
+	}
+	return contractMeasureWithSource(path, previous, source.Repository, source)
+}
+
+func contractMeasureWithSource(path string, previous map[string]string, repository func(string) (string, error), source *Source) (*MeasureResult, error) {
 	doc, repo, projectRoot, err := contractLoadWithSource(path, repository, source)
 	if err != nil {
 		return nil, err
@@ -411,7 +418,18 @@ func measureCommand(commandRoot, command string, capMinutes int) (map[string]str
 // alone: classification, guards, and the best fold belong to the caller's
 // gate-of-record measurement.
 func MeasureCandidate(path, sha string) (map[string]string, error) {
-	doc, repo, projectRoot, err := contractLoad(path)
+	return measureCandidateWithSource(path, sha, contractRepositoryFor, nil)
+}
+
+func MeasureCandidateWithSource(path, sha string, source *Source) (map[string]string, error) {
+	if err := checkSource(source); err != nil {
+		return nil, err
+	}
+	return measureCandidateWithSource(path, sha, source.Repository, source)
+}
+
+func measureCandidateWithSource(path, sha string, repository func(string) (string, error), source *Source) (map[string]string, error) {
+	doc, repo, projectRoot, err := contractLoadWithSource(path, repository, source)
 	if err != nil {
 		return nil, err
 	}

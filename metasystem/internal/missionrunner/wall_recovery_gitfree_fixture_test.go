@@ -323,6 +323,10 @@ func (f *recoveryFacts) Anchor(missionID, tree string) error {
 	}
 	return nil
 }
+func (f *recoveryFacts) AnchorCommit(string, string, string) error {
+	f.t.Fatal("unexpected AnchorCommit")
+	return nil
+}
 
 func (f *recoveryFacts) MaterializePaths(tree string, paths []string) error {
 	r := f.next("MaterializePaths", tree, paths)

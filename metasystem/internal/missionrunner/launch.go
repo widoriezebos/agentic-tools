@@ -511,7 +511,12 @@ func (e *Engine) armAndPreflight(mode string) error {
 	if err := contractShapeRefusal(e.contractPath()); err != nil {
 		return err
 	}
-	_, rawSHA, err := contract.Preflight(e.contractPath(), verifiedPath)
+	var rawSHA string
+	if e.contractSource != nil {
+		_, rawSHA, err = contract.PreflightWithSource(e.contractPath(), verifiedPath, e.contractSource)
+	} else {
+		_, rawSHA, err = contract.Preflight(e.contractPath(), verifiedPath)
+	}
 	if err != nil {
 		return failf(3, "mission start refused by preflight: %v", err)
 	}

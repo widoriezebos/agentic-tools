@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"bytes"
 	"fmt"
 	"go/parser"
 	"go/token"
@@ -40,7 +41,18 @@ func unitGateModuleRoot(root string) string {
 // SelectUnitPackages computes the changed packages and their transitive
 // reverse dependencies against one exact candidate tree.
 func SelectUnitPackages(moduleRoot, base, tree string) (UnitPackages, error) {
-	selected, err := gopackages.Select(moduleRoot, base, tree)
+	workspace := gittree.Workspace{Dir: moduleRoot}
+	return selectUnitPackagesWithSnapshot(workspace, base, tree, func(tree string) (string, func() error, error) {
+		detached, err := workspace.NewDetachedWorktree(tree)
+		if err != nil {
+			return "", nil, err
+		}
+		return detached.Workspace().Dir, detached.Close, nil
+	})
+}
+
+func selectUnitPackagesWithSnapshot(workspace gittree.Workspace, base, tree string, openSnapshot func(string) (string, func() error, error)) (UnitPackages, error) {
+	selected, err := gopackages.SelectWithWorkspaceSnapshot(workspace, base, tree, nil, os.Environ(), openSnapshot)
 	if err != nil {
 		return UnitPackages{}, err
 	}
@@ -52,11 +64,16 @@ func SelectUnitPackages(moduleRoot, base, tree string) (UnitPackages, error) {
 // It includes untracked files without staging them or writing Git objects.
 func SelectWorkingUnitPackages(moduleRoot, base string) (UnitPackages, error) {
 	workspace := gittree.Workspace{Dir: moduleRoot}
+	return selectWorkingUnitPackagesWithWorkspace(workspace, base, (*exec.Cmd).Run)
+}
+
+func selectWorkingUnitPackagesWithWorkspace(workspace gittree.Workspace, base string, runGit func(*exec.Cmd) error) (UnitPackages, error) {
+	moduleRoot := workspace.Dir
 	baseTree, err := moduleTree(workspace, base)
 	if err != nil {
 		return UnitPackages{}, fmt.Errorf("unit gate base: %w", err)
 	}
-	paths, err := workingChangedPaths(moduleRoot, baseTree)
+	paths, err := workingChangedPathsWithWorkspace(workspace, baseTree, runGit)
 	if err != nil {
 		return UnitPackages{}, err
 	}
@@ -84,7 +101,7 @@ func SelectWorkingUnitPackages(moduleRoot, base string) (UnitPackages, error) {
 	if err != nil {
 		return UnitPackages{}, err
 	}
-	goFiles, err := workingGoFiles(moduleRoot)
+	goFiles, err := workingGoFilesWithRunner(moduleRoot, runGit)
 	if err != nil {
 		return UnitPackages{}, err
 	}
@@ -99,15 +116,17 @@ func SelectWorkingUnitPackages(moduleRoot, base string) (UnitPackages, error) {
 	}, nil
 }
 
-func workingGoFiles(moduleRoot string) (map[string]bool, error) {
+func workingGoFilesWithRunner(moduleRoot string, runGit func(*exec.Cmd) error) (map[string]bool, error) {
 	command := exec.Command("git", "-C", moduleRoot, "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "*.go")
 	command.Env = gittree.ScrubbedEnviron()
-	output, err := command.CombinedOutput()
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	err := runGit(command)
 	if err != nil {
-		return nil, fmt.Errorf("unit gate git ls-files: %s: %w", strings.TrimSpace(string(output)), err)
+		return nil, fmt.Errorf("unit gate git ls-files: %s: %w", strings.TrimSpace(output.String()), err)
 	}
 	files := map[string]bool{}
-	for _, path := range strings.Split(string(output), "\x00") {
+	for _, path := range strings.Split(output.String(), "\x00") {
 		if path != "" {
 			files[filepath.ToSlash(path)] = true
 		}
@@ -115,9 +134,9 @@ func workingGoFiles(moduleRoot string) (map[string]bool, error) {
 	return files, nil
 }
 
-func workingChangedPaths(moduleRoot, baseTree string) ([]string, error) {
+func workingChangedPathsWithWorkspace(workspace gittree.Workspace, baseTree string, runGit func(*exec.Cmd) error) ([]string, error) {
 	set := map[string]bool{}
-	workspace := gittree.Workspace{Dir: moduleRoot}
+	moduleRoot := workspace.Dir
 	headTree, err := workspace.TreeOf("HEAD")
 	if err != nil {
 		return nil, err
@@ -136,11 +155,13 @@ func workingChangedPaths(moduleRoot, baseTree string) ([]string, error) {
 	for _, arguments := range commands {
 		command := exec.Command("git", append([]string{"-C", moduleRoot}, arguments...)...)
 		command.Env = gittree.ScrubbedEnviron()
-		output, err := command.CombinedOutput()
+		var output bytes.Buffer
+		command.Stdout, command.Stderr = &output, &output
+		err := runGit(command)
 		if err != nil {
-			return nil, fmt.Errorf("unit gate git %s: %s: %w", arguments[0], strings.TrimSpace(string(output)), err)
+			return nil, fmt.Errorf("unit gate git %s: %s: %w", arguments[0], strings.TrimSpace(output.String()), err)
 		}
-		for _, path := range strings.Split(string(output), "\x00") {
+		for _, path := range strings.Split(output.String(), "\x00") {
 			if path != "" {
 				set[filepath.ToSlash(path)] = true
 			}
@@ -200,6 +221,10 @@ func changedWorkingGoPackages(moduleRoot string, changes gateChanges) ([]string,
 // tree participates, including tests and files excluded by build tags.
 func ReverseDependents(moduleRoot, tree string, changed []string) (_ []string, err error) {
 	return gopackages.ReverseDependents(moduleRoot, tree, changed)
+}
+
+func reverseDependentsWithSnapshot(workspace gittree.Workspace, tree string, changed []string, openSnapshot func(string) (string, func() error, error)) ([]string, error) {
+	return gopackages.ReverseDependentsWithWorkspaceSnapshot(workspace, tree, changed, openSnapshot)
 }
 
 func reverseDependents(module string, changed []string, imports map[string]map[string]bool) []string {

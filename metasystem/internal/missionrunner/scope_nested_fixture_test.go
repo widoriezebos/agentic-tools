@@ -147,6 +147,10 @@ func (w *nestedScopeWorkspace) Anchor(string, string) error {
 	w.unexpected("Anchor")
 	return nil
 }
+func (w *nestedScopeWorkspace) AnchorCommit(string, string, string) error {
+	w.unexpected("AnchorCommit")
+	return nil
+}
 func (w *nestedScopeWorkspace) MaterializePaths(string, []string) error {
 	w.unexpected("MaterializePaths")
 	return nil

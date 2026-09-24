@@ -22,21 +22,11 @@ import (
 func TestReadTestReceiptSurvivesRegisterAppendAfterReceipt(t *testing.T) {
 	for _, register := range []string{"records/narrator-digest.log", "memory/receipts.log"} {
 		t.Run(register, func(t *testing.T) {
-			f := newObserveFixture(t)
-			f.write("product.txt", "candidate\n")
-			f.git("add", "--", "product.txt")
-			candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := CreateTestReceipt(f.root, candidate, "true", io.Discard, io.Discard); err != nil {
-				t.Fatal(err)
-			}
+			f := newReceiptReaderFixture(t, register, false)
+			f.receipt()
 			appendReceiptFixtureFile(t, filepath.Join(f.root, register), "after-receipt\n")
 
-			if _, err := readTestReceipt(ObserveParams{
-				RepoRoot: f.root, CandidateTree: candidate, TestReceipt: TestReceiptPath(f.root, candidate),
-			}); err != nil {
+			if _, err := f.read(); err != nil {
 				t.Fatalf("receipt rejected append to %s: %v", register, err)
 			}
 		})
@@ -45,43 +35,22 @@ func TestReadTestReceiptSurvivesRegisterAppendAfterReceipt(t *testing.T) {
 
 func TestReadTestReceiptRefusesNonRegisterDrift(t *testing.T) {
 	t.Run("unstaged product", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.write("product.txt", "candidate\n")
-		f.git("add", "--", "product.txt")
-		candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := CreateTestReceipt(f.root, candidate, "true", io.Discard, io.Discard); err != nil {
-			t.Fatal(err)
-		}
+		f := newReceiptReaderFixture(t, "product.txt", false)
+		f.receipt()
 		appendReceiptFixtureFile(t, filepath.Join(f.root, "product.txt"), "after-receipt\n")
 
-		_, err = readTestReceipt(ObserveParams{
-			RepoRoot: f.root, CandidateTree: candidate, TestReceipt: TestReceiptPath(f.root, candidate),
-		})
+		_, err := f.read()
 		if err == nil || !strings.Contains(err.Error(), "the index or working tree moved after the test receipt was created") {
 			t.Fatalf("non-register drift error = %v", err)
 		}
 	})
 
 	t.Run("staged register append", func(t *testing.T) {
-		f := newObserveFixture(t)
-		f.write("product.txt", "candidate\n")
-		f.git("add", "--", "product.txt")
-		candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := CreateTestReceipt(f.root, candidate, "true", io.Discard, io.Discard); err != nil {
-			t.Fatal(err)
-		}
+		f := newReceiptReaderFixture(t, "memory/receipts.log", true)
+		f.receipt()
 		appendReceiptFixtureFile(t, filepath.Join(f.root, "memory", "receipts.log"), "after-receipt\n")
-		f.git("add", "--", "memory/receipts.log")
 
-		_, err = readTestReceipt(ObserveParams{
-			RepoRoot: f.root, CandidateTree: candidate, TestReceipt: TestReceiptPath(f.root, candidate),
-		})
+		_, err := f.read()
 		if err == nil || !strings.Contains(err.Error(), "the index or working tree moved after the test receipt was created") {
 			t.Fatalf("staged register drift error = %v", err)
 		}
@@ -333,17 +302,8 @@ func TestReadTestReceiptVersions(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			f := newObserveFixture(t)
-			f.write("product.txt", "candidate\n")
-			f.git("add", "--", "product.txt")
-			candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
-			if err != nil {
-				t.Fatal(err)
-			}
-			identity, err := receiptIdentity(gittree.Workspace{Dir: f.root}, candidate)
-			if err != nil {
-				t.Fatal(err)
-			}
+			f := newReceiptReaderFixture(t, "", false)
+			candidate, identity := f.candidate, f.identity
 			receipt := TestReceipt{
 				SchemaVersion: test.version,
 				Tree:          candidate,
@@ -356,9 +316,7 @@ func TestReadTestReceiptVersions(t *testing.T) {
 			}
 			writeTestReceiptFixture(t, f.root, candidate, receipt)
 
-			_, err = readTestReceipt(ObserveParams{
-				RepoRoot: f.root, CandidateTree: candidate, TestReceipt: TestReceiptPath(f.root, candidate),
-			})
+			_, err := f.read()
 			if test.wantError == "" && err != nil {
 				t.Fatalf("receipt refused: %v", err)
 			}

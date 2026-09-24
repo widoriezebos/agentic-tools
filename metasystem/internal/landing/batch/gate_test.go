@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -89,48 +90,56 @@ func TestBatchProtectedTestsAcceptTheBaseTree(t *testing.T) {
 
 func TestDeletedGoPackagesSelectNearestExistingDirectory(t *testing.T) {
 	root := t.TempDir()
-	for _, arguments := range [][]string{{"init", "-q", "-b", "main"}, {"config", "user.name", "Fixture"}, {"config", "user.email", "fixture@example.invalid"}} {
-		command := exec.Command("git", arguments...)
-		command.Dir = root
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", arguments, err, output)
-		}
-	}
-	for path, content := range map[string]string{
+	baseFiles := map[string]string{
 		"metasystem/outer/keep.txt":               "keep\n",
 		"metasystem/outer/missing/inner/value.go": "package inner\n",
-	} {
+	}
+	for path, content := range baseFiles {
 		absolute := filepath.Join(root, filepath.FromSlash(path))
 		must(t, os.MkdirAll(filepath.Dir(absolute), 0o755))
 		must(t, os.WriteFile(absolute, []byte(content), 0o644))
 	}
-	for _, arguments := range [][]string{{"add", "."}, {"commit", "-qm", "base"}} {
-		command := exec.Command("git", arguments...)
-		command.Dir = root
-		must(t, command.Run())
-	}
-	base := bedGit(t, root, "rev-parse", "HEAD^{tree}")
+	candidate := clonePackageFiles(baseFiles)
+	delete(candidate, "metasystem/outer/missing/inner/value.go")
+	fixture := newPackageTreeFixture(t, root, baseFiles, candidate, "")
+	base, tip := fixture.baseTree, fixture.candidateTree
 	must(t, os.Remove(filepath.Join(root, "metasystem", "outer", "missing", "inner", "value.go")))
-	bedGit(t, root, "add", "-u")
-	tip := bedGit(t, root, "write-tree")
-	patch := []byte(bedGit(t, root, "diff", "--cached", "--binary", "HEAD"))
-	packages, err := changedGoPackages(root, tip, patchGateChanges(patch))
+	deletionPatch := []byte("diff --git a/metasystem/outer/missing/inner/value.go b/metasystem/outer/missing/inner/value.go\ndeleted file mode 100644\n--- a/metasystem/outer/missing/inner/value.go\n+++ /dev/null\n@@ -1 +0,0 @@\n-package inner\n")
+	packages, err := changedGoPackagesWithWorkspace(root, tip, patchGateChanges(deletionPatch), fixture.workspace())
 	must(t, err)
 	if !slices.Equal(packages, []string{"./outer/..."}) {
 		t.Fatalf("nested deletion packages=%v, want nearest existing parent", packages)
 	}
 
 	createDelete := []byte("diff --git a/metasystem/fresh/inner/value.go b/metasystem/fresh/inner/value.go\nnew file mode 100644\n--- /dev/null\n+++ b/metasystem/fresh/inner/value.go\n@@ -0,0 +1 @@\n+package inner\ndiff --git a/metasystem/fresh/inner/value.go b/metasystem/fresh/inner/value.go\ndeleted file mode 100644\n--- a/metasystem/fresh/inner/value.go\n+++ /dev/null\n@@ -1 +0,0 @@\n-package inner\n")
-	packages, err = changedGoPackages(root, base, patchGateChanges(createDelete))
+	packages, err = changedGoPackagesWithWorkspace(root, base, patchGateChanges(createDelete), fixture.workspace())
 	must(t, err)
 	if len(packages) != 0 {
 		t.Fatalf("create-delete path selected packages=%v", packages)
 	}
 	t.Run("branch-member-patch-deletion", func(t *testing.T) {
-		bedGit(t, root, "commit", "-qm", "delete package")
-		commit := bedGit(t, root, "rev-parse", "HEAD")
-		patch, err := BranchMemberPatch(root, BranchMember{Builds: []BranchBuild{{Commit: commit}}})
+		foldPatch := []byte("diff --git a/metasystem/outer/missing/inner/value.go b/metasystem/outer/missing/inner/value.go\n--- a/metasystem/outer/missing/inner/value.go\n+++ b/metasystem/outer/missing/inner/value.go\n@@ -1 +1 @@\n-package inner\n+package inner // folded\n")
+		member := BranchMember{Builds: []BranchBuild{{Folds: []goalbranch.Commit{{ID: "fold"}}, Commit: "delete"}}}
+		calls := []string{}
+		patch, err := branchMemberPatchWithReader(root, member, func(repo, commit string) ([]byte, error) {
+			if repo != root {
+				t.Fatalf("branch patch repo=%q, want %q", repo, root)
+			}
+			calls = append(calls, commit)
+			switch commit {
+			case "fold":
+				return foldPatch, nil
+			case "delete":
+				return deletionPatch, nil
+			default:
+				t.Fatalf("unknown branch patch commit=%q", commit)
+				return nil, nil
+			}
+		})
 		must(t, err)
+		if !slices.Equal(calls, []string{"fold", "delete"}) || string(patch) != string(foldPatch)+string(deletionPatch) {
+			t.Fatalf("branch patch order=%v bytes=%q", calls, patch)
+		}
 		changes := patchGateChanges(patch)
 		if change, ok := changes["metasystem/outer/missing/inner/value.go"]; len(changes) != 1 || !ok || !change.Deleted {
 			t.Fatalf("branch deletion changes=%v", changes)

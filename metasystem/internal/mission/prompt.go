@@ -444,6 +444,17 @@ func promptTurnInt(v any) (int64, bool) {
 // turn to output, assembled from the frozen authority and the mission's live
 // control-plane data. The bytes are a deterministic function of the inputs.
 func AssemblePrompt(repo, mission, turnID, output string) error {
+	return AssemblePromptWithGoalSource(repo, mission, turnID, output, nil)
+}
+
+// GoalSource binds one optional serving-goal read to a repository and machine.
+// An explicit source remains explicit even when its facts are unusable.
+type GoalSource struct {
+	Endpoint goal.Endpoint
+	Machine  string
+}
+
+func AssemblePromptWithGoalSource(repo, mission, turnID, output string, goalSource *GoalSource) error {
 	if !idRe.MatchString(mission) || !idRe.MatchString(turnID) {
 		return fmt.Errorf("mission and turn ids must match the lowercase metasystem id grammar")
 	}
@@ -614,10 +625,20 @@ func AssemblePrompt(repo, mission, turnID, output string) error {
 	// accepted ledger, and an offline or refused fetch keeps the stale
 	// read under the same never-degrade rule — the prompt never blocks
 	// on goal state.
-	if endpoint, endpointErr := goal.ResolveEndpoint(repo); endpointErr == nil {
-		_, _ = goal.Project(endpoint, true, time.Now())
+	var goalId, goalIntent string
+	var goalOK bool
+	if goalSource == nil {
+		if endpoint, endpointErr := goal.ResolveEndpoint(repo); endpointErr == nil {
+			_, _ = goal.Project(endpoint, true, time.Now())
+		}
+		goalId, goalIntent, goalOK = (&goal.Store{Root: repo}).ServingProjection()
+	} else {
+		if goalSource.Endpoint.Repository != nil && goalSource.Endpoint.Root == repo {
+			_, _ = goal.Project(goalSource.Endpoint, true, time.Now())
+		}
+		goalId, goalIntent, goalOK = (&goal.Store{Root: repo}).ServingProjectionAtEndpoint(goalSource.Endpoint, goalSource.Machine)
 	}
-	if goalId, goalIntent, ok := (&goal.Store{Root: repo}).ServingProjection(); ok {
+	if goalOK {
 		block := "## Serving goal\n" + goalId + " — " + goalIntent
 		blocks = append(blocks, struct {
 			name    string

@@ -128,6 +128,10 @@ func (f *strictWallFacts) Anchor(string, string) error {
 	f.unexpected("Anchor")
 	panic("unreachable")
 }
+func (f *strictWallFacts) AnchorCommit(string, string, string) error {
+	f.unexpected("AnchorCommit")
+	panic("unreachable")
+}
 func (f *strictWallFacts) MaterializePaths(string, []string) error {
 	f.unexpected("MaterializePaths")
 	panic("unreachable")

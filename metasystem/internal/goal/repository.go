@@ -103,3 +103,9 @@ func existingLedgerIdentityFor(e Endpoint) string {
 	}
 	return identity
 }
+
+// ExistingLedgerIdentityAtEndpoint reads the accepted ledger identity through
+// the endpoint's repository, using Git when the endpoint has no repository.
+func ExistingLedgerIdentityAtEndpoint(e Endpoint) string {
+	return existingLedgerIdentityFor(e)
+}

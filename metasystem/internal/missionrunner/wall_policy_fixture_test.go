@@ -236,6 +236,10 @@ func (f *strictWallPolicyFacts) Anchor(string, string) error {
 	f.unexpected("Anchor")
 	panic("unreachable")
 }
+func (f *strictWallPolicyFacts) AnchorCommit(string, string, string) error {
+	f.unexpected("AnchorCommit")
+	panic("unreachable")
+}
 func (f *strictWallPolicyFacts) MaterializePaths(string, []string) error {
 	f.unexpected("MaterializePaths")
 	panic("unreachable")

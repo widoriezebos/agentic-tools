@@ -14,9 +14,11 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/contract"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
 )
@@ -55,6 +57,8 @@ type Engine struct {
 	Root                 string
 	Installation         string
 	Mission              string
+	contractSource       *contract.Source
+	goalSource           *mission.GoalSource
 	wallWorkspaceFactory func(root string) wallWorkspace
 	wallReadFacts        wallReads
 	continuityFacts      missionContinuity

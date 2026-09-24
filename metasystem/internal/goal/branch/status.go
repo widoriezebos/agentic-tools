@@ -100,6 +100,13 @@ func ShouldSweep(repo, goalID, next string) (bool, error) {
 	return shouldSweep(repo, goalID, next, defaultStatusDependencies())
 }
 
+// ShouldSweepWithLocalTip applies the branch policy to a caller's raw local ref.
+func ShouldSweepWithLocalTip(repo, goalID, next string, localTip func(repo, ref string) (string, bool, error)) (bool, error) {
+	deps := defaultStatusDependencies()
+	deps.localTip = localTip
+	return shouldSweep(repo, goalID, next, deps)
+}
+
 func shouldSweep(repo, goalID, next string, deps statusDependencies) (bool, error) {
 	_, localPresent, err := deps.localTip(repo, goalBranchRef(goalID))
 	if err != nil {

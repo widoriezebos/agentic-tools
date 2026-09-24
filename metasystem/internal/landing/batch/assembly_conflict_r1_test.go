@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -67,16 +68,31 @@ func TestGLEBatchPathExistsGitDiagnosticIsDefiniteComposition(t *testing.T) {
 
 func TestGLEBatchDeleteReaddDependentReturnsWithIndependentSurvivor(t *testing.T) {
 	t.Parallel()
-	_, store, cOnly, _ := deleteReaddFixture(t)
+	bed, store, cOnly, patches := dependentPolicyStore(t, "delete-readd")
+	strictReassembly(t, &store,
+		expectedReassembly{kind: "assemble", base: bed.base, goals: []string{"goal-b", "goal-c"}, chains: []string{"chain-b", "chain-c"},
+			err:    &assemblyConflict{GoalID: "goal-b", Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit goal-b does not apply: a.go already exists in index")},
+			onCall: patches("chain-b", "chain-c")},
+		expectedReassembly{kind: "assemble", base: bed.base, goals: []string{"goal-c"}, chains: []string{"chain-c"}, prefixes: []string{cOnly}, onCall: patches("chain-c")})
 	if err := ReassembleSurvivorsWithReturns(store, testBatchID, "owner", time.Unix(3, 0),
 		[]ReturnDecision{{GoalID: "goal-a", Outcome: UnitEjected, Reason: "A fenced"}}); err != nil {
 		t.Fatal(err)
 	}
 	record := load(t, store)
-	if record.State != StateOpen || record.Proof != nil || record.TipTree != cOnly ||
+	if record.State != StateOpen || record.Proof != nil || record.TipTree != cOnly || !slices.Equal(record.PrefixTrees, []string{cOnly}) ||
 		record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitReturnPending ||
-		record.Units[2].State != UnitJoined || !strings.Contains(record.Units[1].Failure, "cannot apply") {
+		record.Units[0].Outcome != UnitEjected || record.Units[1].Outcome != UnitEjected ||
+		record.Units[2].State != UnitJoined || !strings.Contains(record.Units[1].Failure, "cannot apply after returning goal-a") {
 		t.Fatalf("delete/re-add dependency did not close to C: %+v", record)
+	}
+	var returns []string
+	for _, entry := range record.History {
+		if entry.Verb == "return-request" {
+			returns = append(returns, strings.Fields(entry.Detail)[0])
+		}
+	}
+	if !slices.Equal(returns, []string{"goal-a", "goal-b"}) {
+		t.Fatalf("delete/re-add return order=%v", returns)
 	}
 }
 
@@ -109,17 +125,89 @@ func movedDeleteReaddFixture(t *testing.T) (assemblyBed, Store, string) {
 
 func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) {
 	t.Parallel()
-	bed, store, newBase := movedDeleteReaddFixture(t)
-	cOnly, err := assembleUnits(bed.root, newBase, bed.record.Units[2:])
-	must(t, err)
+	bed, store, _, patches := dependentPolicyStore(t, "delete-readd")
+	newBase, cOnly := bed.moved, testCommit(205)
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		record.State, record.Proof.Status = StateLanding, "green"
+		return nil
+	}))
+	strictReassembly(t, &store,
+		expectedReassembly{kind: "assemble", base: newBase, goals: []string{"goal-a", "goal-b", "goal-c"}, chains: []string{"chain-a", "chain-b", "chain-c"},
+			err:    &assemblyConflict{GoalID: "goal-a", Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit goal-a does not apply on moved base: b.go changed")},
+			onCall: patches("chain-a", "chain-b", "chain-c")},
+		expectedReassembly{kind: "assemble", base: newBase, goals: []string{"goal-b", "goal-c"}, chains: []string{"chain-b", "chain-c"},
+			err:    &assemblyConflict{GoalID: "goal-b", Cause: refuseBatch("BATCH_JOIN_CONFLICT", "unit goal-b does not apply: a.go already exists in index")},
+			onCall: patches("chain-b", "chain-c")},
+		expectedReassembly{kind: "assemble", base: newBase, goals: []string{"goal-c"}, chains: []string{"chain-c"}, prefixes: []string{cOnly}, onCall: patches("chain-c")})
 	if err := ReopenMovedTrunk(store, testBatchID, newBase, "owner", time.Unix(4, 0)); err != nil {
 		t.Fatal(err)
 	}
 	record := load(t, store)
-	if record.State != StateOpen || record.BaseTree != newBase || record.TipTree != cOnly[0] || record.Proof != nil ||
+	if record.State != StateOpen || record.BaseTree != newBase || record.TipTree != cOnly || !slices.Equal(record.PrefixTrees, []string{cOnly}) || record.Proof != nil ||
 		record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitReturnPending || record.Units[2].State != UnitJoined ||
-		!strings.Contains(record.Units[1].Failure, "cannot apply") {
+		!strings.Contains(record.Units[0].Failure, "cannot apply on moved base") ||
+		!strings.Contains(record.Units[1].Failure, "cannot apply after returning goal-a") {
 		t.Fatalf("moved-base dependent closure did not retain C: %+v", record)
+	}
+	var returns []string
+	for _, entry := range record.History {
+		if entry.Verb == "return-request" {
+			returns = append(returns, strings.Fields(entry.Detail)[0])
+		}
+	}
+	if !slices.Equal(returns, []string{"goal-a", "goal-b"}) {
+		t.Fatalf("moved-base return order=%v", returns)
+	}
+}
+
+func TestGLEBatchNativeDependentChainPatchAdapter(t *testing.T) {
+	t.Parallel()
+	bridge, _, _ := dependentSplitStore(t)
+	_, err := assembleUnits(bridge.root, bridge.base, bridge.record.Units[1:2])
+	var conflict *assemblyConflict
+	if !errors.As(err, &conflict) || conflict.GoalID != "goal-b" {
+		t.Fatalf("bridge B-only patch was not a typed B conflict: %v", err)
+	}
+
+	deleted := assemblyFixture(t)
+	for chain, patch := range deleteReaddPolicyPatches() {
+		path := filepath.Join(deleted.root, "artifacts/agents/landing-batches/chains", chain, "diff.patch")
+		must(t, os.WriteFile(path, patch, 0o644))
+	}
+	if _, err := assembleUnits(deleted.root, deleted.base, deleted.record.Units); err != nil {
+		t.Fatalf("declared delete/re-add patches did not assemble on their base: %v", err)
+	}
+	_, err = assembleUnits(deleted.root, deleted.base, deleted.record.Units[1:2])
+	conflict = nil
+	if !errors.As(err, &conflict) || conflict.GoalID != "goal-b" {
+		t.Fatalf("delete/re-add B-only patch was not a typed B conflict: %v", err)
+	}
+	baseCommit := bedGit(t, deleted.root, "rev-parse", "HEAD^")
+	bedGit(t, deleted.root, "switch", "-q", "--detach", baseCommit)
+	must(t, os.WriteFile(filepath.Join(deleted.root, "b.go"), []byte("package p\nvar B = 9\n"), 0o644))
+	bedGit(t, deleted.root, "add", "b.go")
+	bedGit(t, deleted.root, "commit", "-qm", "move base across A")
+	newBase := bedGit(t, deleted.root, "rev-parse", "HEAD^{tree}")
+	for _, check := range []struct {
+		units []Unit
+		goal  string
+	}{{deleted.record.Units, "goal-a"}, {deleted.record.Units[1:], "goal-b"}} {
+		_, err := assembleUnits(deleted.root, newBase, check.units)
+		conflict = nil
+		if !errors.As(err, &conflict) || conflict.GoalID != check.goal {
+			t.Fatalf("moved-base %s conflict was not typed in join order: %v", check.goal, err)
+		}
+		if check.goal == "goal-a" && !strings.Contains(err.Error(), "b.go") {
+			t.Fatalf("moved-base A conflict did not name changed b.go: %v", err)
+		}
+	}
+	path := filepath.Join(bridge.root, "artifacts/agents/landing-batches/chains/chain-c/diff.patch")
+	must(t, os.Remove(path))
+	_, err = assembleUnits(bridge.root, bridge.base, bridge.record.Units[2:])
+	var readError *os.PathError
+	conflict = nil
+	if !errors.As(err, &readError) || readError.Op != "open" || readError.Path != path || !errors.Is(err, os.ErrNotExist) || errors.As(err, &conflict) {
+		t.Fatalf("missing C patch was not an untyped os.ReadFile failure: %v", err)
 	}
 }
 

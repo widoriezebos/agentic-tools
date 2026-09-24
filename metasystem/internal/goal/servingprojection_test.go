@@ -1,8 +1,6 @@
 package goal
 
-import (
-	"testing"
-)
+import "testing"
 
 // fakeServingFixture binds immutable committed files to one Store without a
 // checkout. The same rendered records feed the Git-backed serving bed.
