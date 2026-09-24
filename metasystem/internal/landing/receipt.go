@@ -201,6 +201,10 @@ func PublishCommittedReceipt(root, attemptID, acceptedIndexTree string) (TestRec
 // PublishCommittedReceiptAt validates freshness at publication time while
 // projecting the exact bytes committed by the successful attempt.
 func PublishCommittedReceiptAt(root, attemptID, acceptedIndexTree string, now time.Time) (TestReceipt, error) {
+	return publishCommittedReceiptAtWithWorkspace(root, attemptID, acceptedIndexTree, now, gittree.Workspace{Dir: root})
+}
+
+func publishCommittedReceiptAtWithWorkspace(root, attemptID, acceptedIndexTree string, now time.Time, workspace gittree.Workspace) (TestReceipt, error) {
 	if !treeOID.MatchString(acceptedIndexTree) {
 		return TestReceipt{}, fmt.Errorf("committed delivery receipt requires the accepted index tree")
 	}
@@ -221,7 +225,7 @@ func PublishCommittedReceiptAt(root, attemptID, acceptedIndexTree string, now ti
 			return TestReceipt{}, fmt.Errorf("test receipt mixes schema versions")
 		}
 		if decodeErr == nil {
-			decodeErr = validateTestReceiptWorkspace(root, receipt)
+			decodeErr = validateTestReceiptWorkspaceWithWorkspace(root, receipt, workspace)
 		}
 		if decodeErr != nil || receipt.Testing.AttemptID != attempt.AttemptID || attempt.TestResult == nil ||
 			!reflect.DeepEqual(*attempt.TestResult, *receipt.Testing) {
@@ -232,7 +236,7 @@ func PublishCommittedReceiptAt(root, attemptID, acceptedIndexTree string, now ti
 		if timeErr != nil || ownerErr != nil || !reflect.DeepEqual(ownerIDs, receipt.AttemptIDs) {
 			return TestReceipt{}, fmt.Errorf("committed schema-2 delivery receipt has invalid outer owners: %v", errors.Join(timeErr, ownerErr))
 		}
-		indexTree, worktreeTree, postureErr := testingReceiptPosture(root, *receipt.Testing)
+		indexTree, worktreeTree, postureErr := testingReceiptPostureWithWorkspace(root, *receipt.Testing, gittree.Workspace{Dir: receipt.Testing.ProjectRoot, RawSource: workspace.RawSource})
 		if postureErr != nil || indexTree != acceptedIndexTree || worktreeTree != receipt.Tree {
 			return TestReceipt{}, fmt.Errorf("candidate moved after the committed schema-2 delivery receipt")
 		}
@@ -256,7 +260,7 @@ func PublishCommittedReceiptAt(root, attemptID, acceptedIndexTree string, now ti
 		receipt.Proof.Deadline != attempt.Deadline {
 		return TestReceipt{}, fmt.Errorf("committed delivery receipt contradicts its proof attempt")
 	}
-	workspace := gittree.Workspace{Dir: root}
+	workspace.Dir = root
 	indexTree, worktreeTree, postureErr := rawReceiptPosture(workspace)
 	expectedWorktree := receipt.Tree
 	if receipt.SchemaVersion == 3 {
@@ -516,6 +520,10 @@ type testingReceiptVerificationFailure struct {
 func (failure *testingReceiptVerificationFailure) Error() string { return failure.detail }
 
 func verifyTestingReceipt(params ObserveParams) (proofrun.TestResult, bool, error) {
+	return verifyTestingReceiptWithWorkspace(params, gittree.Workspace{Dir: params.RepoRoot})
+}
+
+func verifyTestingReceiptWithWorkspace(params ObserveParams, workspace gittree.Workspace) (proofrun.TestResult, bool, error) {
 	if params.VerifyTesting == nil {
 		return proofrun.TestResult{}, false, nil
 	}
@@ -526,7 +534,7 @@ func verifyTestingReceipt(params ObserveParams) (proofrun.TestResult, bool, erro
 	if !result.Delivery.Sufficient {
 		return proofrun.TestResult{}, false, &testingReceiptVerificationFailure{detail: "testing-receipt: retained proof is not sufficient for the index; missing groups: " + strings.Join(result.Delivery.MissingGroups, ",")}
 	}
-	projected, projectErr := (gittree.Workspace{Dir: params.RepoRoot}).TreeOf(result.CandidateTree)
+	projected, projectErr := (gittree.Workspace{Dir: params.RepoRoot, RawSource: workspace.RawSource}).TreeOf(result.CandidateTree)
 	if projectErr != nil {
 		return proofrun.TestResult{}, false, &testingReceiptVerificationFailure{detail: "testing-receipt: verify core failed: " + projectErr.Error()}
 	}
@@ -537,6 +545,10 @@ func verifyTestingReceipt(params ObserveParams) (proofrun.TestResult, bool, erro
 }
 
 func validateTestReceiptWorkspace(root string, receipt TestReceipt) error {
+	return validateTestReceiptWorkspaceWithWorkspace(root, receipt, gittree.Workspace{Dir: root})
+}
+
+func validateTestReceiptWorkspaceWithWorkspace(root string, receipt TestReceipt, workspace gittree.Workspace) error {
 	if receipt.Workspace == nil {
 		return nil
 	}
@@ -544,7 +556,7 @@ func validateTestReceiptWorkspace(root string, receipt TestReceipt) error {
 	if !reflect.DeepEqual(receipt.Workspace.Excludes, wantExcludes) {
 		return fmt.Errorf("schema-2 test receipt workspace exclusions differ from this engine")
 	}
-	wantTree, err := ProjectWorkspaceTree(root, receipt.Tree)
+	wantTree, err := ProjectWorkspaceTreeWith(root, receipt.Tree, gitProjectionAccess{RawSource: workspace.RawSource})
 	if err != nil {
 		return fmt.Errorf("recompute schema-2 test receipt workspace tree: %w", err)
 	}
@@ -653,18 +665,18 @@ func readTestReceiptWithWorkspace(params ObserveParams, workspace gittree.Worksp
 		var verified proofrun.TestResult
 		verifiedAvailable := false
 		if receipt.Workspace != nil {
-			verified, verifiedAvailable, err = verifyTestingReceipt(params)
+			verified, verifiedAvailable, err = verifyTestingReceiptWithWorkspace(params, workspace)
 			if err != nil {
 				return TestReceipt{}, err
 			}
 		}
-		if err := validateTestReceiptWorkspace(params.RepoRoot, receipt); err != nil {
+		if err := validateTestReceiptWorkspaceWithWorkspace(params.RepoRoot, receipt, workspace); err != nil {
 			return TestReceipt{}, err
 		}
 		if err := validateTestingReceiptEngineIdentity(receipt); err != nil {
 			return TestReceipt{}, err
 		}
-		projected, projectErr := (gittree.Workspace{Dir: params.RepoRoot}).TreeOf(receipt.Tree)
+		projected, projectErr := (gittree.Workspace{Dir: params.RepoRoot, RawSource: workspace.RawSource}).TreeOf(receipt.Tree)
 		if projectErr != nil {
 			return TestReceipt{}, fmt.Errorf("schema-2 whole-project receipt does not project to landing candidate")
 		}
@@ -686,8 +698,8 @@ func readTestReceiptWithWorkspace(params ObserveParams, workspace gittree.Worksp
 		workspaceCandidate := false
 		identityDifferences := []string(nil)
 		if !exactCandidate && verifiedAvailable {
-			receiptWorkspace, receiptWorkspaceErr := InstallationWorkspaceTree(params.RepoRoot, projected)
-			candidateWorkspace, candidateWorkspaceErr := InstallationWorkspaceTree(params.RepoRoot, params.CandidateTree)
+			receiptWorkspace, receiptWorkspaceErr := installationWorkspaceTreeWithWorkspace(params.RepoRoot, projected, workspace)
+			candidateWorkspace, candidateWorkspaceErr := installationWorkspaceTreeWithWorkspace(params.RepoRoot, params.CandidateTree, workspace)
 			if receiptWorkspaceErr != nil || candidateWorkspaceErr != nil {
 				return TestReceipt{}, fmt.Errorf("compare schema-2 installation workspace trees: %v", errors.Join(receiptWorkspaceErr, candidateWorkspaceErr))
 			}
@@ -699,11 +711,12 @@ func readTestReceiptWithWorkspace(params ObserveParams, workspace gittree.Worksp
 		if !exactCandidate && !workspaceCandidate && (!verifiedAvailable || len(identityDifferences) != 0) {
 			return TestReceipt{}, &testingReceiptVerificationFailure{detail: "testing-receipt: receipt does not cover the candidate: " + strings.Join(identityDifferences, ",")}
 		}
-		indexTree, worktreeTree, postureErr := testingReceiptPosture(params.RepoRoot, *receipt.Testing)
+		indexTree, worktreeTree, postureErr := testingReceiptPostureWithWorkspace(params.RepoRoot, *receipt.Testing, gittree.Workspace{Dir: receipt.Testing.ProjectRoot, RawSource: workspace.RawSource})
 		indexMatches := indexTree == receipt.Tree
 		if !indexMatches && verifiedAvailable {
-			indexWorkspace, indexWorkspaceErr := ProjectWorkspaceTree(params.RepoRoot, indexTree)
-			receiptWorkspace, receiptWorkspaceErr := ProjectWorkspaceTree(params.RepoRoot, receipt.Tree)
+			access := gitProjectionAccess{RawSource: workspace.RawSource}
+			indexWorkspace, indexWorkspaceErr := ProjectWorkspaceTreeWith(params.RepoRoot, indexTree, access)
+			receiptWorkspace, receiptWorkspaceErr := ProjectWorkspaceTreeWith(params.RepoRoot, receipt.Tree, access)
 			if indexWorkspaceErr != nil || receiptWorkspaceErr != nil {
 				return TestReceipt{}, fmt.Errorf("compare schema-2 project workspace trees: %v", errors.Join(indexWorkspaceErr, receiptWorkspaceErr))
 			}

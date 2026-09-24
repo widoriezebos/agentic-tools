@@ -161,9 +161,6 @@ exit 2
 
 func TestRecoveryFailureDoesNotAbortAmbientRebase(t *testing.T) {
 	root := t.TempDir()
-	if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
-		t.Fatalf("init: %v: %s", err, output)
-	}
 	marker := filepath.Join(root, ".git", "rebase-merge", "ambient-owner")
 	if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
 		t.Fatal(err)

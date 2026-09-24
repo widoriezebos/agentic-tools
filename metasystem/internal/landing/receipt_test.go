@@ -58,22 +58,15 @@ func TestReadTestReceiptRefusesNonRegisterDrift(t *testing.T) {
 }
 
 func TestReadSchemaTwoTestingReceiptSurvivesRegisterAppend(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("metasystem.conf", "testing.contract=testing.json\ndispatch.cap-max=120\n")
-	f.git("add", ".", "../development/metasystem-design.md")
-	projectRoot, err := (gittree.Workspace{Dir: f.root}).TopLevel()
+	f := newSchemaTwoReceiptFixture(t)
+	projectRoot := f.repository
+	workspace := gittree.Workspace{Dir: projectRoot, RawSource: f.raw}
+	tree := f.remember(f.top(f.index))
+	subtree, err := (gittree.Workspace{Dir: f.root, RawSource: f.raw}).TreeOf(tree)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree, err := (gittree.Workspace{Dir: projectRoot}).StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	subtree, err := (gittree.Workspace{Dir: f.root}).TreeOf(tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	head := f.git("rev-parse", "HEAD")
+	head := observeBaseTree
 	identity, err := proofrun.BuildProofIdentity(
 		f.root,
 		filepath.Join(f.root, "metasystem.conf"),
@@ -124,7 +117,7 @@ func TestReadSchemaTwoTestingReceiptSurvivesRegisterAppend(t *testing.T) {
 	}
 	result.RecomputeDelivery()
 	completedAt := now.Add(time.Second)
-	prepared, payload, err := PrepareTestingReceiptPayload(f.root, tree, result, completedAt)
+	prepared, payload, err := prepareTestingReceiptPayloadWithWorkspace(f.root, tree, result, completedAt, workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,16 +126,20 @@ func TestReadSchemaTwoTestingReceiptSurvivesRegisterAppend(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree); err != nil {
+	if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, time.Now().UTC(), workspace); err != nil {
 		t.Fatal(err)
 	}
-	appendReceiptFixtureFile(t, filepath.Join(f.root, "records", "narrator-digest.log"), "after-receipt\n")
+	register := "records/narrator-digest.log"
+	appendReceiptFixtureFile(t, filepath.Join(f.root, register), "after-receipt\n")
+	f.worktree[register] = append(bytes.Clone(f.worktree[register]), "after-receipt\n"...)
+	f.nextPhase("register")
 
-	if _, err := readTestReceipt(ObserveParams{
+	if _, err := readTestReceiptWithWorkspace(ObserveParams{
 		RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree),
-	}); err != nil {
+	}, workspace); err != nil {
 		t.Fatalf("schema-2 testing receipt rejected register append: %v", err)
 	}
+	f.nextPhase("complete")
 }
 
 func appendReceiptFixtureFile(t *testing.T, path, content string) {

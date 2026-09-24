@@ -2718,55 +2718,6 @@ func TestVerifiedLedgerPinIsTheAnchorTip(t *testing.T) {
 	}
 }
 
-// ledgerTamperPark drives a mid-turn ledger tamper through the wall gate
-// and returns the parked bed with the booked taint id.
-func ledgerTamperPark(t *testing.T, tamper func(string) string) (*Engine, string, string, int64) {
-	t.Helper()
-	engine := copyFullCycleRoot(t, "FAKEHOST:close-stream")
-	statePath, err := seedCrashedMissionState(t, engine)
-	if err != nil {
-		t.Fatal(err)
-	}
-	openFixtureTurn(t, engine.Root, statePath, "alpha-t1-live", 1)
-	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
-	if err := engine.anchor(statePath, ledgerPath, "open"); err != nil {
-		t.Fatal(err)
-	}
-	turnDir := filepath.Join(engine.missionDir(), "turns", "alpha-t1-live")
-	os.MkdirAll(turnDir, 0o755)
-	writeJSONFile(t, filepath.Join(turnDir, "turn.json"),
-		map[string]any{"missionId": engine.Mission, "turnId": "alpha-t1-live", "cycle": 1,
-			"runtime": "fake", "model": "fixture", "status": "running"})
-	pristine, err := os.ReadFile(ledgerPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeText(t, ledgerPath, tamper(string(pristine)))
-
-	_, final, violated, err := engine.wallGate(statePath, ledgerPath, "alpha-t1-live", turnDir, 1, nil, false, false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !violated {
-		t.Fatalf("the ledger tamper must violate: %v", final)
-	}
-	state := readTestDoc(t, statePath)
-	if unresolvedTaint(state) == "" {
-		t.Fatal("the violation must be a recorded, resolvable taint")
-	}
-	announcements, _ := filepath.Glob(filepath.Join(engine.Root, "artifacts", "agents", "mains", "*.json"))
-	for _, path := range announcements {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-	}
-	stageHumanShell(t)
-	entries, _ := state["workspaceTaint"].(map[string]any)["entries"].([]any)
-	lastEntry, _ := entries[len(entries)-1].(map[string]any)
-	taintID, _ := jsonInt(lastEntry["taintId"])
-	return engine, statePath, ledgerPath, taintID
-}
-
 // The resolution's crash window: state written,
 // anchor missing. The reconciliation anchor-lag heal recovers it without
 // human surgery.

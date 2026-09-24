@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -266,22 +267,20 @@ func (f *literalReceiptRaw) answer(request gittree.RawRequest) gittree.RawResult
 }
 
 func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("metasystem.conf", "testing.contract=testing.json\nmetasystem.runtimes=fake\ndispatch.cap-max=120\n")
-	f.git("add", ".", "../development/metasystem-design.md")
-	projectRoot, err := (gittree.Workspace{Dir: f.root}).TopLevel()
+	f := newSchemaTwoReceiptFixture(t)
+	defer f.assertConsumed()
+	projectRoot := f.repository
+	workspace := gittree.Workspace{Dir: projectRoot, RawSource: f.raw}
+	readWorkspace := gittree.Workspace{Dir: f.root, RawSource: f.raw}
+	tree, err := workspace.StagedTree()
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree, err := (gittree.Workspace{Dir: projectRoot}).StagedTree()
+	subtree, err := readWorkspace.TreeOf(tree)
 	if err != nil {
 		t.Fatal(err)
 	}
-	subtree, err := (gittree.Workspace{Dir: f.root}).TreeOf(tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	head := f.git("rev-parse", "HEAD")
+	head := strings.Repeat("b", 40)
 	identity, err := proofrun.BuildProofIdentity(f.root, filepath.Join(f.root, "metasystem.conf"), "selected", "testing", nil, behaviorsurface.SupportedVersion)
 	if err != nil {
 		t.Fatal(err)
@@ -320,7 +319,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	result.RecomputeDelivery()
 	f.write("records/narrator-digest.log", "ordinary append\n")
 	completedAt := now.Add(time.Second)
-	preparedReceipt, payload, err := PrepareTestingReceiptPayload(f.root, tree, result, completedAt)
+	preparedReceipt, payload, err := prepareTestingReceiptPayloadWithWorkspace(f.root, tree, result, completedAt, workspace)
 	if err != nil || preparedReceipt.Time != completedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("prepare atomic schema-2 receipt: receipt=%+v err=%v", preparedReceipt, err)
 	}
@@ -328,18 +327,18 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		preparedReceipt.Testing.Cost.ActualDurationMS < 2000 || preparedReceipt.Testing.EndedAt == "" {
 		t.Fatalf("schema-2 terminal preparation did not retain whole-command timing: %+v", preparedReceipt.Testing)
 	}
-	if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree); err == nil {
+	if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, now, workspace); err == nil {
 		t.Fatal("live schema-2 attempt published before terminal success")
 	}
 	if _, err := proofrun.FinalizeAttemptWithTestResultLocked(f.root, attempt.AttemptID, proofrun.TerminalSuccess, 0, "fixture", payload, preparedReceipt.Testing, completedAt); err != nil {
 		t.Fatal(err)
 	}
-	published, err := PublishCommittedReceiptAt(f.root, attempt.AttemptID, tree, now)
+	published, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, now, workspace)
 	if err != nil || published.Time != preparedReceipt.Time {
 		t.Fatalf("publish atomic schema-2 receipt: receipt=%+v err=%v", published, err)
 	}
 	committed := append([]byte(nil), payload...)
-	published, err = PublishCommittedReceiptAt(f.root, attempt.AttemptID, tree, expires.Add(-time.Nanosecond))
+	published, err = publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, expires.Add(-time.Nanosecond), workspace)
 	if err != nil || published.Time != preparedReceipt.Time {
 		t.Fatalf("publish immediately before owner expiry: receipt=%+v err=%v", published, err)
 	}
@@ -347,14 +346,14 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		!bytes.Equal(bytes.TrimSpace(projected), bytes.TrimSpace(committed)) {
 		t.Fatalf("expiry-aware publication changed committed bytes: err=%v", readErr)
 	}
-	if _, err := PublishCommittedReceiptAt(f.root, attempt.AttemptID, tree, expires); err == nil {
+	if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, expires, workspace); err == nil {
 		t.Fatal("publication accepted an owner at its exact expiry")
 	}
 	projected, err := os.ReadFile(TestReceiptPath(f.root, tree))
 	if err != nil || !bytes.Equal(bytes.TrimSpace(projected), bytes.TrimSpace(payload)) {
 		t.Fatalf("schema-2 projection changed committed payload: err=%v\nprojected=%s\npayload=%s", err, projected, payload)
 	}
-	receipt, err := CreateTestingReceiptAt(f.root, tree, result, expires.Add(-time.Nanosecond))
+	receipt, err := createTestingReceiptAtWithWorkspace(f.root, tree, result, expires.Add(-time.Nanosecond), workspace)
 	if err != nil || receipt.SchemaVersion != 2 || len(receipt.AttemptIDs) != 1 || !fullReceiptCommandAccepted(receipt) {
 		t.Fatalf("schema-2 receipt=%+v err=%v", receipt, err)
 	}
@@ -362,13 +361,13 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		receipt.CandidateEngineBuildIdentity != result.CandidateEngineBuildIdentity || receipt.ProvedTree != tree {
 		t.Fatalf("schema-2 receipt lost policy engine, candidate engine, or candidate tree: %+v", receipt)
 	}
-	if _, err := CreateTestingReceiptAt(f.root, tree, result, expires); err == nil {
+	if _, err := createTestingReceiptAtWithWorkspace(f.root, tree, result, expires, workspace); err == nil {
 		t.Fatal("composition accepted an owner at its exact expiry")
 	}
-	if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires.Add(-time.Nanosecond)}); err != nil {
+	if _, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires.Add(-time.Nanosecond)}, readWorkspace); err != nil {
 		t.Fatalf("schema-2 receipt consumer: %v", err)
 	}
-	if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires}); err == nil {
+	if _, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires}, readWorkspace); err == nil {
 		t.Fatal("receipt read accepted an owner at its exact expiry")
 	}
 	writeReceipt := func(t *testing.T, value TestReceipt) {
@@ -388,14 +387,13 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	stageCandidate := func(t *testing.T, paths map[string]string) (string, string) {
 		t.Helper()
 		for path, content := range paths {
-			f.write(path, content)
-			f.git("add", path)
+			f.stage(path, content)
 		}
-		whole, err := (gittree.Workspace{Dir: projectRoot}).StagedTree()
+		whole, err := workspace.StagedTree()
 		if err != nil {
 			t.Fatal(err)
 		}
-		installationTree, err := (gittree.Workspace{Dir: f.root}).TreeOf(whole)
+		installationTree, err := readWorkspace.TreeOf(whole)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -404,23 +402,20 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	unstageCandidate := func(t *testing.T, paths ...string) {
 		t.Helper()
 		for _, path := range paths {
-			f.git("reset", "-q", "HEAD", "--", path)
-			if err := os.Remove(filepath.Join(f.root, path)); err != nil {
-				t.Fatal(err)
-			}
+			f.unstage(path)
 		}
 	}
 
 	t.Run("preparation and publication accept the judged index across goal-ledger motion", func(t *testing.T) {
 		whole, _ := stageCandidate(t, map[string]string{"plans/goals/x.md": "goal revision\n"})
 		defer unstageCandidate(t, "plans/goals/x.md")
-		if _, _, err := PrepareTestingReceiptPayload(f.root, tree, result, completedAt); err != nil {
+		if _, _, err := prepareTestingReceiptPayloadWithWorkspace(f.root, tree, result, completedAt, workspace); err != nil {
 			t.Fatalf("workspace-equivalent index invalidated receipt preparation: %v", err)
 		}
-		if _, err := PublishCommittedReceiptAt(f.root, attempt.AttemptID, whole, now); err != nil {
+		if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, whole, now, workspace); err != nil {
 			t.Fatalf("publication refused the accepted index tree: %v", err)
 		}
-		if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree); err == nil {
+		if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, time.Now().UTC(), workspace); err == nil {
 			t.Fatal("publication accepted an index that moved after the reuse decision")
 		}
 	})
@@ -434,8 +429,8 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		defer unstageCandidate(t, "plans/goals/x.md", "plans/goals.md")
 		current := baseVerified
 		current.CandidateTree = whole
-		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree,
-			TestReceipt: TestReceiptPath(f.root, tree), Now: now, VerifyTesting: verify(current, nil)}); err != nil {
+		if _, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree,
+			TestReceipt: TestReceiptPath(f.root, tree), Now: now, VerifyTesting: verify(current, nil)}, readWorkspace); err != nil {
 			t.Fatalf("workspace-equivalent receipt was refused: %v", err)
 		}
 	})
@@ -446,8 +441,8 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		defer unstageCandidate(t, "records/misc/x.md")
 		current := baseVerified
 		current.CandidateTree = keyWhole
-		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: keyInstallation,
-			TestReceipt: TestReceiptPath(f.root, tree), Now: now, VerifyTesting: verify(current, nil)}); err != nil {
+		if _, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: keyInstallation,
+			TestReceipt: TestReceiptPath(f.root, tree), Now: now, VerifyTesting: verify(current, nil)}, readWorkspace); err != nil {
 			t.Fatalf("identity-equivalent receipt was refused: %v", err)
 		}
 	})
@@ -460,8 +455,8 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		current.CandidateTree = whole
 		current.Groups = append([]proofrun.GroupResult(nil), current.Groups...)
 		current.Groups[0].ExecutionIdentity = strings.Repeat("f", 64)
-		_, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree,
-			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(current, nil)})
+		_, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree,
+			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(current, nil)}, readWorkspace)
 		if err == nil || !strings.Contains(err.Error(), "application") {
 			t.Fatalf("differing execution identity did not name its group: %v", err)
 		}
@@ -489,8 +484,8 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	} {
 		t.Run(test.name+" refuses before exact coverage", func(t *testing.T) {
 			writeReceipt(t, receipt)
-			_, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
-				TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(test.result, test.err)})
+			_, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
+				TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(test.result, test.err)}, readWorkspace)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("step-zero refusal = %v, want %q", err, test.want)
 			}
@@ -503,8 +498,8 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		projection.Tree = strings.Repeat("0", 40)
 		tampered.Workspace = &projection
 		writeReceipt(t, tampered)
-		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
-			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(baseVerified, nil)}); err == nil {
+		if _, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
+			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(baseVerified, nil)}, readWorkspace); err == nil {
 			t.Fatal("receipt with a false workspace tree was accepted")
 		}
 	})
@@ -516,8 +511,8 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		projection.Excludes = projection.Excludes[1:]
 		tampered.Workspace = &projection
 		writeReceipt(t, tampered)
-		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
-			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(baseVerified, nil)}); err == nil {
+		if _, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
+			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(baseVerified, nil)}, readWorkspace); err == nil {
 			t.Fatal("receipt with a different workspace exclusion list was accepted")
 		}
 	})
@@ -527,11 +522,11 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		legacy.Workspace = nil
 		writeReceipt(t, legacy)
 		called := false
-		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
+		if _, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
 			TestReceipt: TestReceiptPath(f.root, tree), Now: now, VerifyTesting: func() (proofrun.TestResult, error) {
 				called = true
 				return proofrun.TestResult{}, fmt.Errorf("must not be called")
-			}}); err != nil {
+			}}, readWorkspace); err != nil {
 			t.Fatalf("legacy exact receipt was refused: %v", err)
 		}
 		if called {
@@ -544,7 +539,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		if err := os.WriteFile(TestReceiptPath(f.root, tree), legacyPayload, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree), Now: now}); err != nil {
+		if _, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree), Now: now}, readWorkspace); err != nil {
 			t.Fatalf("shared landing receipt reader rejected an old-format schema-2 payload: %v", err)
 		}
 	})
@@ -580,27 +575,22 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		if err := os.WriteFile(attemptPath, append(encodedAttempt, '\n'), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		published, err := PublishCommittedReceiptAt(f.root, attempt.AttemptID, tree, now)
+		published, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, now, workspace)
 		if err != nil || published.Testing == nil || published.Testing.CandidateEngineIdentityVersion != 0 {
 			t.Fatalf("committed receipt recovery rejected an old-format schema-2 payload: receipt=%+v err=%v", published, err)
 		}
 	})
-	if err := os.MkdirAll(filepath.Join(projectRoot, "source"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(projectRoot, "source", "changed.go"), []byte("changed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := PrepareTestingReceiptPayload(f.root, tree, result, completedAt); err == nil {
-		t.Fatal("relevant source mutation accepted")
-	}
-	if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree); err == nil {
-		t.Fatal("recovery accepted relevant source mutation")
-	}
 	failed := result
 	failed.AttemptID = "missing-attempt"
-	if _, err := CreateTestingReceipt(f.root, tree, failed); err == nil {
-		t.Fatal("receipt projection accepted a group without terminal outer authority")
+	if _, err := createTestingReceiptAtWithWorkspace(f.root, tree, failed, time.Now().UTC(), workspace); err == nil || !strings.Contains(err.Error(), "no successful terminal outer attempt") {
+		t.Fatalf("receipt projection accepted a group without terminal outer authority: %v", err)
+	}
+	f.writeOutside("source/changed.go", "changed\n")
+	if _, _, err := prepareTestingReceiptPayloadWithWorkspace(f.root, tree, result, completedAt, workspace); err == nil {
+		t.Fatal("relevant source mutation accepted")
+	}
+	if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, time.Now().UTC(), workspace); err == nil {
+		t.Fatal("recovery accepted relevant source mutation")
 	}
 }
 
@@ -630,7 +620,8 @@ func legacyTestingReceiptPayload(t *testing.T, receipt TestReceipt) []byte {
 }
 
 func TestAdoptionRulingsPreserveApplicationAndLandingAuthority(t *testing.T) {
-	source := newObserveFixture(t)
+	t.Parallel()
+	source := newRepositoryObservationFixture(t)
 	target := t.TempDir()
 	data, err := AdoptionRulings(source.root, target)
 	if err != nil {
@@ -676,24 +667,18 @@ func TestAdoptionRulingsPreserveApplicationAndLandingAuthority(t *testing.T) {
 // delivery purpose alone, and only because the owner's own record of the
 // group is a complete pass.
 func TestSchemaTwoReceiptAcceptsReuseFromAFailedDeliveryPredecessor(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("metasystem.conf", "testing.contract=testing.json\nmetasystem.runtimes=fake\ndispatch.cap-max=120\n")
+	f := newSchemaTwoReceiptFixture(t)
+	f.manifestSelectors = []string{"application/**", "later/**"}
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(t.TempDir(), "host-admission"))
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", f.root)
-	f.git("add", ".", "../development/metasystem-design.md")
-	projectRoot, err := (gittree.Workspace{Dir: f.root}).TopLevel()
+	projectRoot := f.repository
+	workspace := gittree.Workspace{Dir: projectRoot, RawSource: f.raw}
+	tree := f.remember(f.top(f.index))
+	installationTree, err := (gittree.Workspace{Dir: f.root, RawSource: f.raw}).TreeOf(tree)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree, err := (gittree.Workspace{Dir: projectRoot}).StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	installationTree, err := (gittree.Workspace{Dir: f.root}).TreeOf(tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	head := f.git("rev-parse", "HEAD")
+	head := observeBaseTree
 	identity, err := proofrun.BuildProofIdentity(f.root, filepath.Join(f.root, "metasystem.conf"), "selected", "testing", nil, behaviorsurface.SupportedVersion)
 	if err != nil {
 		t.Fatal(err)
@@ -750,7 +735,7 @@ func TestSchemaTwoReceiptAcceptsReuseFromAFailedDeliveryPredecessor(t *testing.T
 	result := resultFor(retry, testpolicy.PurposeDelivery, []proofrun.GroupResult{reused, group("later", "passed", &zero)})
 	result.LaunchCounts = proofrun.LaunchCounts{Test: 1, ReusedTest: 1, CountsComplete: true}
 	f.write("records/narrator-digest.log", "ordinary append\n")
-	if _, _, err := PrepareTestingReceiptPayload(f.root, tree, result, now.Add(2*time.Second)); err != nil {
+	if _, _, err := prepareTestingReceiptPayloadWithWorkspace(f.root, tree, result, now.Add(2*time.Second), workspace); err != nil {
 		t.Fatalf("delivery retry reusing a failed predecessor's pass was refused at the receipt: %v", err)
 	}
 	episode, binding := strings.Repeat("7", 64), strings.Repeat("8", 64)
@@ -795,41 +780,447 @@ func TestSchemaTwoReceiptAcceptsReuseFromAFailedDeliveryPredecessor(t *testing.T
 	result.FreshnessEpisode, result.FreshnessBinding = episode, binding
 	result.FreshnessExpiresAt = expires.Format(time.RFC3339Nano)
 	result.FreshGroups = map[string]bool{"application": true, "later": true}
-	receipt, payload, err := PrepareTestingReceiptPayload(f.root, tree, result, now.Add(2*time.Second))
+	receipt, payload, err := prepareTestingReceiptPayloadWithWorkspace(f.root, tree, result, now.Add(2*time.Second), workspace)
 	if err != nil {
 		t.Fatalf("prepare exact-episode reused-owner receipt: %v", err)
 	}
 	if _, err := proofrun.FinalizeAttemptWithTestResultLocked(f.root, retry, proofrun.TerminalSuccess, 0, "retry passed", payload, receipt.Testing, now.Add(2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PublishCommittedReceiptAt(f.root, retry, tree, expires.Add(-time.Nanosecond)); err != nil {
+	if _, err := publishCommittedReceiptAtWithWorkspace(f.root, retry, tree, expires.Add(-time.Nanosecond), workspace); err != nil {
 		t.Fatalf("reused-owner publication before expiry: %v", err)
 	}
-	if _, err := PublishCommittedReceiptAt(f.root, retry, tree, expires); err == nil {
+	if _, err := publishCommittedReceiptAtWithWorkspace(f.root, retry, tree, expires, workspace); err == nil {
 		t.Fatal("reused-owner publication accepted exact expiry")
 	}
-	if _, err := CreateTestingReceiptAt(f.root, tree, result, expires.Add(-time.Nanosecond)); err != nil {
+	if _, err := createTestingReceiptAtWithWorkspace(f.root, tree, result, expires.Add(-time.Nanosecond), workspace); err != nil {
 		t.Fatalf("reused-owner composition before expiry: %v", err)
 	}
-	if _, err := CreateTestingReceiptAt(f.root, tree, result, expires); err == nil {
+	if _, err := createTestingReceiptAtWithWorkspace(f.root, tree, result, expires, workspace); err == nil {
 		t.Fatal("reused-owner composition accepted exact expiry")
 	}
 	verify := func() (proofrun.TestResult, error) { return result, nil }
-	if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires.Add(-time.Nanosecond), VerifyTesting: verify}); err != nil {
+	if _, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires.Add(-time.Nanosecond), VerifyTesting: verify}, workspace); err != nil {
 		t.Fatalf("reused-owner read before expiry: %v", err)
 	}
-	if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires, VerifyTesting: verify}); err == nil {
+	if _, err := readTestReceiptWithWorkspace(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires, VerifyTesting: verify}, workspace); err == nil {
 		t.Fatal("reused-owner read accepted exact expiry")
 	}
 	cadence := result
 	cadence.Purpose = testpolicy.PurposeCadence
-	if _, _, err := PrepareTestingReceiptPayload(f.root, tree, cadence, now.Add(2*time.Second)); err == nil || !strings.Contains(err.Error(), "reuses nothing") {
+	if _, _, err := prepareTestingReceiptPayloadWithWorkspace(f.root, tree, cadence, now.Add(2*time.Second), workspace); err == nil || !strings.Contains(err.Error(), "reuses nothing") {
 		t.Fatalf("cadence result carrying a reused group was accepted at the receipt: %v", err)
 	}
 	broken := result
 	broken.Groups = []proofrun.GroupResult{reused, group("later", "passed", &zero)}
 	broken.Groups[0].ExecutionIdentity = strings.Repeat("z", 64)
-	if _, _, err := PrepareTestingReceiptPayload(f.root, tree, broken, now.Add(2*time.Second)); err == nil {
+	if _, _, err := prepareTestingReceiptPayloadWithWorkspace(f.root, tree, broken, now.Add(2*time.Second), workspace); err == nil {
 		t.Fatal("a reuse whose identity the failed predecessor never proved was accepted at the receipt")
+	}
+	f.nextPhase("complete")
+}
+
+// schemaTwoReceiptFixture names tree and blob facts while keeping proof attempts
+// and receipt files on disk. Every raw answer is checked against the file phase.
+type schemaTwoReceiptFixture struct {
+	t                 *testing.T
+	repository, root  string
+	worktree, index   map[string][]byte
+	outside           map[string][]byte
+	trees             map[string]map[string][]byte
+	indices           map[string]*schemaTwoPrivateIndex
+	calls             map[string]int
+	phase             string
+	phaseCalls        map[string]map[string]int
+	manifestSelectors []string
+}
+
+type schemaTwoPrivateIndex struct {
+	files  map[string][]byte
+	phase  string
+	listed []byte
+}
+
+func newSchemaTwoReceiptFixture(t *testing.T) *schemaTwoReceiptFixture {
+	t.Helper()
+	base := newRepositoryObservationFixture(t)
+	f := &schemaTwoReceiptFixture{t: t, repository: base.repository, root: base.root,
+		worktree: schemaTwoCopy(base.baseFiles), index: schemaTwoCopy(base.baseFiles), outside: map[string][]byte{"development/metasystem-design.md": []byte("fixture\n")},
+		trees: map[string]map[string][]byte{}, indices: map[string]*schemaTwoPrivateIndex{},
+		calls: map[string]int{}, phase: "base", phaseCalls: map[string]map[string]int{}, manifestSelectors: []string{"source/**"}}
+	f.write("metasystem.conf", "testing.contract=testing.json\nmetasystem.runtimes=fake\ndispatch.cap-max=120\n")
+	f.index["metasystem.conf"] = bytes.Clone(f.worktree["metasystem.conf"])
+	f.remember(f.top(f.index))
+	f.checkFiles()
+	return f
+}
+
+func schemaTwoCopy(files map[string][]byte) map[string][]byte {
+	copy := make(map[string][]byte, len(files))
+	for path, data := range files {
+		copy[path] = bytes.Clone(data)
+	}
+	return copy
+}
+
+func (f *schemaTwoReceiptFixture) top(files map[string][]byte) map[string][]byte {
+	top := map[string][]byte{"development/metasystem-design.md": []byte("fixture\n")}
+	for path, data := range files {
+		top["metasystem/"+path] = bytes.Clone(data)
+	}
+	return top
+}
+
+func (f *schemaTwoReceiptFixture) currentTop() map[string][]byte {
+	top := f.top(f.worktree)
+	for path, data := range f.outside {
+		top[path] = bytes.Clone(data)
+	}
+	return top
+}
+
+func (f *schemaTwoReceiptFixture) remember(files map[string][]byte) string {
+	id := receiptFactID(files)
+	f.trees[id] = schemaTwoCopy(files)
+	return id
+}
+
+func (f *schemaTwoReceiptFixture) write(path, content string) {
+	f.t.Helper()
+	file := filepath.Join(f.root, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.Chmod(file, 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+	f.worktree[path] = []byte(content)
+}
+
+func (f *schemaTwoReceiptFixture) writeOutside(path, content string) {
+	f.t.Helper()
+	file := filepath.Join(f.repository, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.Chmod(file, 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+	f.outside[path] = []byte(content)
+	if path == "source/changed.go" {
+		f.nextPhase("source")
+	}
+}
+
+func (f *schemaTwoReceiptFixture) stage(path, content string) {
+	f.write(path, content)
+	f.index[path] = bytes.Clone(f.worktree[path])
+	if strings.HasPrefix(path, "plans/goals") {
+		f.nextPhase("ledger")
+	}
+	if strings.HasPrefix(path, "records/misc/") {
+		f.nextPhase("records")
+	}
+}
+
+func (f *schemaTwoReceiptFixture) unstage(path string) {
+	f.t.Helper()
+	delete(f.index, path)
+	delete(f.worktree, path)
+	if err := os.Remove(filepath.Join(f.root, filepath.FromSlash(path))); err != nil {
+		f.t.Fatal(err)
+	}
+	f.nextPhase("base")
+}
+
+func (f *schemaTwoReceiptFixture) nextPhase(phase string) {
+	f.t.Helper()
+	for path, state := range f.indices {
+		if state.phase != "done" {
+			f.t.Fatalf("private index %s stopped at %s", path, state.phase)
+		}
+	}
+	f.indices = map[string]*schemaTwoPrivateIndex{}
+	f.phase = phase
+}
+
+func (f *schemaTwoReceiptFixture) checkFiles() {
+	f.t.Helper()
+	for path, want := range f.worktree {
+		full := filepath.Join(f.root, filepath.FromSlash(path))
+		got, err := os.ReadFile(full)
+		if err != nil || !bytes.Equal(got, want) {
+			f.t.Fatalf("declared file %s = %q, %v; want %q", path, got, err, want)
+		}
+		info, err := os.Lstat(full)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o644 {
+			f.t.Fatalf("declared mode %s = %v, %v", path, info, err)
+		}
+	}
+	for path, want := range f.outside {
+		got, err := os.ReadFile(filepath.Join(f.repository, filepath.FromSlash(path)))
+		if err != nil || !bytes.Equal(got, want) {
+			f.t.Fatalf("declared outside file %s = %q, %v", path, got, err)
+		}
+	}
+}
+
+func schemaTwoMatches(path string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if path == prefix || strings.HasPrefix(path, strings.TrimSuffix(prefix, "/")+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func schemaTwoPaths(files map[string][]byte, prefixes []string) []string {
+	var paths []string
+	for path := range files {
+		if len(prefixes) == 0 || schemaTwoMatches(path, prefixes) {
+			paths = append(paths, path)
+		}
+	}
+	slices.Sort(paths)
+	return paths
+}
+
+func schemaTwoNul(paths []string) []byte {
+	if len(paths) == 0 {
+		return nil
+	}
+	return []byte(strings.Join(paths, "\x00") + "\x00")
+}
+
+func (f *schemaTwoReceiptFixture) indexEntries() []byte {
+	files := f.top(f.index)
+	paths := schemaTwoPaths(files, nil)
+	var entries bytes.Buffer
+	for _, path := range paths {
+		fmt.Fprintf(&entries, "100644 %s 0\t%s\x00", chainBlobOID(files[path]), path)
+	}
+	return entries.Bytes()
+}
+
+func (f *schemaTwoReceiptFixture) raw(request gittree.RawRequest) gittree.RawResult {
+	f.t.Helper()
+	f.checkFiles()
+	pins := []string{"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+		"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
+		"-c", "gc.auto=0", "-c", "maintenance.auto=false"}
+	if request.Dir != f.root && request.Dir != f.repository {
+		f.t.Fatalf("raw cwd = %q", request.Dir)
+	}
+	prefix := append([]string{"-C", request.Dir}, pins...)
+	if len(request.Args) < len(prefix) || !slices.Equal(request.Args[:len(prefix)], prefix) {
+		f.t.Fatalf("raw pins/cwd = %q", request.Args)
+	}
+	args := request.Args[len(prefix):]
+	if request.Operation != "git "+strings.Join(args, " ") {
+		f.t.Fatalf("raw operation = %q args=%q", request.Operation, args)
+	}
+	private := ""
+	for _, entry := range request.Env {
+		if strings.HasPrefix(entry, "GIT_INDEX_FILE=") {
+			if private != "" {
+				f.t.Fatal("duplicate private index")
+			}
+			private = strings.TrimPrefix(entry, "GIT_INDEX_FILE=")
+		}
+	}
+	wantEnv := gittree.ScrubbedEnviron()
+	if private != "" {
+		if request.Dir != f.repository {
+			f.t.Fatalf("private index cwd = %q", request.Dir)
+		}
+		if !filepath.IsAbs(private) || filepath.Base(private) != "index" {
+			f.t.Fatalf("private index path = %q", private)
+		}
+		wantEnv = gittree.ScrubbedEnviron("GIT_INDEX_FILE=" + private)
+	}
+	if !reflect.DeepEqual(request.Env, wantEnv) {
+		f.t.Fatal("raw environment differs from scrubbed environment")
+	}
+	if request.Stdin != nil && !(private != "" && request.Dir == f.repository &&
+		(slices.Equal(args, []string{"update-index", "-z", "--index-info"}) || slices.Equal(args, []string{"update-index", "-z", "--force-remove", "--stdin"}))) {
+		f.t.Fatalf("unexpected raw stdin for %q", args)
+	}
+	answer := func(id string) gittree.RawResult { return gittree.RawResult{Stdout: []byte(id + "\n")} }
+	f.calls[request.Operation]++
+	if f.phaseCalls[f.phase] == nil {
+		f.phaseCalls[f.phase] = map[string]int{}
+	}
+	f.phaseCalls[f.phase][request.Operation]++
+	state, known := f.indices[private]
+	wantInputs := []string{"metasystem/metasystem.conf", "metasystem/testing.json"}
+	for _, selector := range f.manifestSelectors {
+		if !strings.HasSuffix(selector, "/**") {
+			f.t.Fatalf("undeclared manifest selector %q", selector)
+		}
+		wantInputs = append(wantInputs, strings.TrimSuffix(selector, "/**"))
+	}
+	slices.Sort(wantInputs)
+	switch {
+	case slices.Equal(args, []string{"rev-parse", "--show-toplevel"}):
+		return answer(f.repository)
+	case slices.Equal(args, []string{"rev-parse", "--show-prefix"}):
+		if request.Dir == f.root {
+			return answer("metasystem/")
+		}
+		return answer("")
+	case private == "" && request.Dir == f.root && len(args) == 2 && args[0] == "rev-parse" && strings.HasSuffix(args[1], "^{tree}"):
+		id := strings.TrimSuffix(args[1], "^{tree}")
+		if _, ok := f.trees[id]; !ok {
+			f.t.Fatalf("unknown tree %s", id)
+		}
+		return answer(id)
+	case private == "" && request.Dir == f.root && len(args) == 2 && args[0] == "rev-parse" && strings.HasSuffix(args[1], ":metasystem"):
+		id := strings.TrimSuffix(args[1], ":metasystem")
+		files, ok := f.trees[id]
+		if !ok {
+			f.t.Fatalf("unknown whole tree %s", id)
+		}
+		sub := map[string][]byte{}
+		for path, data := range files {
+			if strings.HasPrefix(path, "metasystem/") {
+				sub[strings.TrimPrefix(path, "metasystem/")] = data
+			}
+		}
+		return answer(f.remember(sub))
+	case private == "" && request.Dir == f.repository && slices.Equal(args, []string{"ls-files", "--stage", "-z"}):
+		return gittree.RawResult{Stdout: f.indexEntries()}
+	case private == "" && request.Dir == f.repository && len(args) == 7+len(wantInputs) && slices.Equal(args[:5], []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree"}) && args[6] == "--" && slices.Equal(args[7:], wantInputs):
+		files, ok := f.trees[args[5]]
+		if !ok {
+			f.t.Fatalf("unknown entries tree %s", args[5])
+		}
+		paths := schemaTwoPaths(files, args[7:])
+		var entries bytes.Buffer
+		for _, path := range paths {
+			fmt.Fprintf(&entries, "100644 blob %s\t%s\x00", chainBlobOID(files[path]), path)
+		}
+		return gittree.RawResult{Stdout: entries.Bytes()}
+	case private == "" && request.Dir == f.repository && len(args) == 10 && slices.Equal(args[:7], []string{"diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none"}) && args[9] == "--":
+		before, beforeOK := f.trees[args[7]]
+		after, afterOK := f.trees[args[8]]
+		if !beforeOK || !afterOK {
+			f.t.Fatalf("undeclared changed-path trees %q", args)
+		}
+		all := map[string]bool{}
+		for path := range before {
+			all[path] = true
+		}
+		for path := range after {
+			all[path] = true
+		}
+		var changed []string
+		for path := range all {
+			if !bytes.Equal(before[path], after[path]) {
+				changed = append(changed, path)
+			}
+		}
+		slices.Sort(changed)
+		if f.phase != "source" || !slices.Equal(changed, []string{"source/changed.go"}) {
+			f.t.Fatalf("undeclared changed paths in phase %s: %q", f.phase, changed)
+		}
+		return gittree.RawResult{Stdout: schemaTwoNul(changed)}
+	case private != "" && (!known || state.phase == "done") && len(args) == 2 && args[0] == "read-tree" && (args[1] == "--empty" || f.trees[args[1]] != nil):
+		files := map[string][]byte{}
+		if args[1] != "--empty" {
+			files = schemaTwoCopy(f.trees[args[1]])
+		}
+		f.indices[private] = &schemaTwoPrivateIndex{files: files, phase: "seeded"}
+		return gittree.RawResult{}
+	case private != "" && known && state.phase == "seeded" && request.Dir == f.repository && slices.Equal(args, []string{"update-index", "-z", "--index-info"}) && bytes.Equal(request.Stdin, f.indexEntries()):
+		state.files = f.top(f.index)
+		if f.phase == "source" {
+			if _, present := state.files["source/changed.go"]; present {
+				f.t.Fatal("relevant source edit entered the staged index")
+			}
+		}
+		state.phase = "ready"
+		return gittree.RawResult{}
+	case private != "" && known && state.phase == "seeded" && request.Dir == f.repository && len(args) >= 5 && slices.Equal(args[:4], []string{"add", "-A", "-f", "--"}) && (slices.Equal(args[4:], []string{"metasystem/metasystem.conf"}) || slices.Equal(args[4:], []string{"metasystem/metasystem.conf", "source"})):
+		current := f.currentTop()
+		for path := range state.files {
+			if schemaTwoMatches(path, args[4:]) {
+				delete(state.files, path)
+			}
+		}
+		for path, data := range current {
+			if schemaTwoMatches(path, args[4:]) {
+				state.files[path] = bytes.Clone(data)
+			}
+		}
+		state.phase = "ready"
+		return gittree.RawResult{}
+	case private != "" && known && state.phase == "seeded" && request.Dir == f.repository && len(args) >= 4 && slices.Equal(args[:3], []string{"ls-files", "-z", "--"}):
+		want := append([]string(nil), WorkspaceExclusions()...)
+		prefixed := make([]string, len(want))
+		for i, path := range want {
+			prefixed[i] = "metasystem/" + path
+		}
+		if !slices.Equal(args[3:], want) && !slices.Equal(args[3:], prefixed) {
+			f.t.Fatalf("undeclared filter paths %q", args[3:])
+		}
+		state.listed = schemaTwoNul(schemaTwoPaths(state.files, args[3:]))
+		if len(state.listed) == 0 {
+			state.phase = "ready"
+		} else {
+			state.phase = "listed"
+		}
+		return gittree.RawResult{Stdout: state.listed}
+	case private != "" && known && state.phase == "listed" && request.Dir == f.repository && slices.Equal(args, []string{"update-index", "-z", "--force-remove", "--stdin"}) && bytes.Equal(request.Stdin, state.listed):
+		for _, path := range bytes.Split(bytes.TrimSuffix(state.listed, []byte{0}), []byte{0}) {
+			delete(state.files, string(path))
+		}
+		state.phase = "ready"
+		return gittree.RawResult{}
+	case private != "" && known && state.phase == "ready" && slices.Equal(args, []string{"write-tree"}):
+		state.phase = "done"
+		return answer(f.remember(state.files))
+	}
+	f.t.Fatalf("undeclared raw schema-2 request: cwd=%q args=%q stdin=%q private=%q state=%+v", request.Dir, args, request.Stdin, private, state)
+	return gittree.RawResult{}
+}
+
+func (f *schemaTwoReceiptFixture) assertConsumed() {
+	f.t.Helper()
+	for path, state := range f.indices {
+		if state.phase != "done" {
+			f.t.Errorf("private index %s stopped at %s", path, state.phase)
+		}
+	}
+	for _, operation := range []string{"git ls-files --stage -z", "git read-tree --empty", "git update-index -z --index-info", "git write-tree", "git rev-parse --show-prefix",
+		"git --literal-pathspecs ls-tree -r -z --full-tree", "git diff --name-only -z --no-renames --no-ext-diff --no-textconv --ignore-submodules=none"} {
+		found := false
+		for call, count := range f.calls {
+			if strings.HasPrefix(call, operation) && count > 0 {
+				found = true
+			}
+		}
+		if !found {
+			f.t.Errorf("required raw call %q not consumed", operation)
+		}
+	}
+	for phase, prefix := range map[string]string{"base": "git ls-files --stage -z", "ledger": "git ls-files --stage -z", "records": "git ls-files --stage -z", "source": "git diff --name-only -z"} {
+		found := false
+		for call, count := range f.phaseCalls[phase] {
+			if strings.HasPrefix(call, prefix) && count > 0 {
+				found = true
+			}
+		}
+		if !found {
+			f.t.Errorf("phase %s did not consume %s", phase, prefix)
+		}
+	}
+	if f.phaseCalls["source"]["git add -A -f -- metasystem/metasystem.conf source"] == 0 {
+		f.t.Error("source edit did not reach the relevant worktree snapshot")
 	}
 }

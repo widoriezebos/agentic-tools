@@ -357,6 +357,7 @@ func TestAdvanceRefusals(t *testing.T) {
 	})
 }
 
+// A real repository proves a contended checkout lease leaves HEAD unchanged and creates no extra worktree.
 func TestAdvanceRefusesWhenCheckoutLocked(t *testing.T) {
 	f := newAdvanceFixture(t)
 	head := runAdvanceGit(t, f.root, "rev-parse", "HEAD")
@@ -375,6 +376,30 @@ func TestAdvanceRefusesWhenCheckoutLocked(t *testing.T) {
 		t.Fatalf("lock refusal moved HEAD to %s", got)
 	}
 	f.assertOneWorktree()
+}
+
+func TestAdvanceRefusesCheckoutLockBeforeGit(t *testing.T) {
+	t.Parallel()
+	const childMarker = "METASYSTEM_TEST_ADVANCE_CHECKOUT_LOCK_CHILD"
+	if os.Getenv(childMarker) == "1" {
+		root := t.TempDir()
+		release, err := lease.LockBounded(lease.LockPath(root), "test-holder")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer release()
+		err = Advance(root, "refs/remotes/origin/main", &bytes.Buffer{}, &bytes.Buffer{})
+		assertAdvanceRefusal(t, err, "advance-checkout-locked")
+		if !strings.Contains(err.Error(), "another lease-gated operation holds it") {
+			t.Fatalf("lock refusal changed its existing text: %v", err)
+		}
+		return
+	}
+	child := exec.Command(os.Args[0], "-test.run=^TestAdvanceRefusesCheckoutLockBeforeGit$")
+	child.Env = append(os.Environ(), childMarker+"=1", "METASYSTEM_LEASE_LOCK_WAIT_SEC=0")
+	if output, err := child.CombinedOutput(); err != nil {
+		t.Fatalf("checkout-lock child failed: %v\n%s", err, output)
+	}
 }
 
 func assertAdvanceRefusal(t *testing.T, err error, code string) {
@@ -508,14 +533,6 @@ func TestFastForwardAppendFailureKeepsLandedHeadAndUnrelatedFiles(t *testing.T) 
 	}
 }
 func TestFastForwardRefusesNonAppendRegisters(t *testing.T) {
-	for _, transition := range [][2]string{{"receipt=seed", "receipt=seed\nreceipt=next\n"}, {"receipt=seed\n", "receipt=seed\nreceipt=partial"}} {
-		if _, ok := appendDelta([]byte(transition[0]), true, []byte(transition[1]), true); ok {
-			t.Fatalf("non-append transition was accepted: %q", transition)
-		}
-	}
-	if _, ok := appendDelta([]byte("receipt=seed\n"), true, nil, false); ok {
-		t.Fatal("a deleted register was accepted")
-	}
 	for _, test := range []struct{ name, local, landed string }{{"local rewrite", "receipt=rewritten\n", ""}, {"staged rewrite", "receipt=rewritten\n", ""}, {"landed rewrite", "receipt=seed\nreceipt=local\n", "receipt=rewritten\n"}} {
 		t.Run(test.name, func(t *testing.T) {
 			f := newAdvanceFixture(t)
@@ -542,5 +559,17 @@ func TestFastForwardRefusesNonAppendRegisters(t *testing.T) {
 				t.Fatalf("refusal changed bytes from %q to %q", test.local, got)
 			}
 		})
+	}
+}
+
+func TestAppendDeltaRefusesNonAppendRegisters(t *testing.T) {
+	t.Parallel()
+	for _, transition := range [][2]string{{"receipt=seed", "receipt=seed\nreceipt=next\n"}, {"receipt=seed\n", "receipt=seed\nreceipt=partial"}} {
+		if _, ok := appendDelta([]byte(transition[0]), true, []byte(transition[1]), true); ok {
+			t.Fatalf("non-append transition was accepted: %q", transition)
+		}
+	}
+	if _, ok := appendDelta([]byte("receipt=seed\n"), true, nil, false); ok {
+		t.Fatal("a deleted register was accepted")
 	}
 }

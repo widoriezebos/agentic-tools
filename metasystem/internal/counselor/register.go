@@ -59,7 +59,8 @@ type CarriedLanding struct {
 type CarriedAcceptedRiskAppend struct {
 	Goal, Finding, By, Why, OpID, Commit string
 	RecordedAt                           time.Time
-	commitMessage                        func(root, commit string) ([]byte, error)
+	// CommitMessage supplies the raw commit-message fact; nil reads it with native Git.
+	CommitMessage func(root, commit string) ([]byte, error)
 }
 
 // CarriedLandingLine derives the durable counter solely from the confirmed
@@ -157,7 +158,7 @@ func carriedAcceptedRiskLine(root string, in CarriedAcceptedRiskAppend) (accepte
 	if in.Finding == "" || in.Goal == "" || in.OpID == "" || in.By == "" || in.Why == "" || len(in.Commit) != 40 {
 		return acceptedRiskRegisterLine{}, fmt.Errorf("carried accepted-risk entry is incomplete")
 	}
-	read := in.commitMessage
+	read := in.CommitMessage
 	if read == nil {
 		read = readCarriedCommitMessage
 	}

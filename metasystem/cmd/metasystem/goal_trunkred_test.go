@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,14 +12,35 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-func trunkRedNextFixture(t *testing.T) (string, goal.Projection) {
+func trunkRedNextFixture(t *testing.T) (*proofAdmissionRepository, goal.Projection) {
 	t.Helper()
-	root := syncedStoppedGoalFixture(t)
-	p, err := goal.Project(goal.Endpoint{Root: root, Remote: "local", Branch: goal.LocalLedgerBranch}, false, time.Now())
+	repository := newProofAdmissionRepositoryFixture(t, time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC), false)
+	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
+		closedAt := "2026-09-01T09:00:00Z"
+		file.Revision++
+		file.StopCapability = &goal.StopCapability{
+			Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1, FenceEpoch: 1,
+		}
+		file.StopFence = &goal.StopFence{
+			StopID: "stop-standing-validation-r2-f1", Revision: 2, Epoch: 1, CapabilityGeneration: 2,
+			ClosedAt: closedAt, Reason: goal.StopReasonElapsedLimit,
+		}
+		file.History = append(file.History, goal.HistoryLine{
+			At: closedAt, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAC", "mac-cli", "m1"),
+			Verb: "breach-stop", Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1,
+		})
+	})
+	now := time.Now()
+	repository.mu.Lock()
+	committed := repository.commits[repository.accepted]
+	committed.at = now
+	repository.commits[repository.accepted] = committed
+	repository.mu.Unlock()
+	p, err := goal.Project(goal.Endpoint{Root: repository.root, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: repository}, false, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return root, p
+	return repository, p
 }
 
 func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
@@ -83,10 +105,40 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 		t.Fatalf("--to edge code=%d stderr=%q", code, stderr)
 	}
 }
-func renderTrunkRedNext(t *testing.T, root, machine string, p goal.Projection, labels ...string) string {
+func renderTrunkRedNext(t *testing.T, repository *proofAdmissionRepository, machine string, p goal.Projection, labels ...string) string {
 	t.Helper()
+	root := repository.root
+	resolve := func(candidate string) (goal.Endpoint, error) {
+		if candidate != root {
+			return goal.Endpoint{}, fmt.Errorf("unknown trunk-red root %q", candidate)
+		}
+		var lookupErr error
+		endpoint, err := goal.ResolveEndpointWithConfig(candidate, func(configRoot, key string) (string, error) {
+			if configRoot != root {
+				lookupErr = fmt.Errorf("unknown trunk-red config root %q", configRoot)
+				return "", lookupErr
+			}
+			switch key {
+			case "goal.sync-remote":
+				return "local", nil
+			case "goal.sync-branch":
+				return goal.LocalLedgerBranch, nil
+			default:
+				lookupErr = fmt.Errorf("unknown trunk-red config key %q", key)
+				return "", lookupErr
+			}
+		})
+		if lookupErr != nil {
+			return goal.Endpoint{}, lookupErr
+		}
+		if err != nil {
+			return goal.Endpoint{}, err
+		}
+		endpoint.Repository = repository
+		return endpoint, nil
+	}
 	out, code := captureStdout(t, func() int {
-		return nextSyncedWithProjector(root, machine, false, func(goal.Endpoint, bool, time.Time) (goal.Projection, error) { return p, nil }, labels...)
+		return nextSyncedWithInputs(root, machine, false, resolve, goalCommandNow, func(goal.Endpoint, bool, time.Time) (goal.Projection, error) { return p, nil }, labels...)
 	})
 	if code != 0 {
 		t.Fatalf("goal next code=%d output=%q", code, out)
@@ -94,25 +146,28 @@ func renderTrunkRedNext(t *testing.T, root, machine string, p goal.Projection, l
 	return out
 }
 func TestTrunkRedEmptyFieldChangesNothing(t *testing.T) {
-	root, p := trunkRedNextFixture(t)
+	repository, p := trunkRedNextFixture(t)
 	if problems := goal.ValidateTree(p.Tree); len(problems) != 0 {
 		t.Fatalf("tree without trunk-red entries is invalid: %v", problems)
 	}
 	want := "single-machine mode: multi-machine guarantees are void here; joining a fleet is the backlog-local-promotion goal\n" +
 		"FENCED standing-validation: breach-stopped by stop-standing-validation-r2-f1 (ELAPSED_LIMIT); only goal resume, a human act, clears it; the queue is open\n" +
 		"no claimable goal for machine mac-cli; no matching eligible work\n"
-	if without := renderTrunkRedNext(t, root, "mac-cli", p); without != want {
+	if without := renderTrunkRedNext(t, repository, "mac-cli", p); without != want {
 		t.Fatalf("no-entry output\ngot:  %q\nwant: %q", without, want)
 	}
 	tree := *p.Tree
 	tree.TrunkRed = []goal.TrunkRedEntry{}
 	p.Tree = &tree
-	if with := renderTrunkRedNext(t, root, "mac-cli", p); with != want {
+	if with := renderTrunkRedNext(t, repository, "mac-cli", p); with != want {
 		t.Fatalf("empty field output\ngot:  %q\nwant: %q", with, want)
 	}
 }
 func TestTrunkRedNextLinesAndPlacement(t *testing.T) {
-	root, p := trunkRedNextFixture(t)
+	repository, p := trunkRedNextFixture(t)
+	if problems := goal.ValidateTree(p.Tree); len(problems) != 0 {
+		t.Fatalf("tree without trunk-red entries is invalid: %v", problems)
+	}
 	tests := []struct {
 		entry goal.TrunkRedEntry
 		want  string
@@ -136,7 +191,7 @@ func TestTrunkRedNextLinesAndPlacement(t *testing.T) {
 		tree := *p.Tree
 		tree.TrunkRed = []goal.TrunkRedEntry{tests[0].entry, tests[1].entry, elsewhere.entry}
 		p.Tree = &tree
-		out := renderTrunkRedNext(t, root, "mac-cli", p)
+		out := renderTrunkRedNext(t, repository, "mac-cli", p)
 		ordered := []string{tests[0].want, tests[1].want, "FENCED standing-validation:", "no claimable goal for machine mac-cli", elsewhere.want}
 		position := -1
 		for _, text := range ordered {
@@ -150,7 +205,7 @@ func TestTrunkRedNextLinesAndPlacement(t *testing.T) {
 	tree := *p.Tree
 	tree.TrunkRed = []goal.TrunkRedEntry{elsewhereTests[0].entry}
 	p.Tree = &tree
-	out := renderTrunkRedNext(t, root, "mac-cli", p, "missing")
+	out := renderTrunkRedNext(t, repository, "mac-cli", p, "missing")
 	noMatch := strings.Index(out, "no goal matches --label missing")
 	elsewhere := strings.Index(out, elsewhereTests[0].want)
 	if noMatch < 0 || elsewhere <= noMatch {

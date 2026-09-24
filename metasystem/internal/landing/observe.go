@@ -199,7 +199,7 @@ func observeWithReader(params ObserveParams, facts observationFacts) Observation
 		return observeChainWithFacts(params, change, facts)
 	}
 	if params.Attested != "" {
-		return observeAttested(params, change)
+		return observeAttestedWithFacts(params, change, facts)
 	}
 	return observeDirectFixWithFacts(params, change, facts)
 }
@@ -208,7 +208,11 @@ func observeWithReader(params ObserveParams, facts observationFacts) Observation
 // declaration matching. Missing-declaration remains the ordinary answer only
 // when the candidate has no stronger path-policy defect.
 func candidatePathPolicy(params ObserveParams, ledgerTree *goal.TreeGoals) error {
-	workspace := gittree.Workspace{Dir: params.RepoRoot}
+	return candidatePathPolicyWithFacts(params, ledgerTree, defaultObservationFacts(params.RepoRoot), nil)
+}
+
+func candidatePathPolicyWithFacts(params ObserveParams, ledgerTree *goal.TreeGoals, facts observationFacts, commitMessage func(root, commit string) ([]byte, error)) error {
+	workspace := facts.reader
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
 		return &carriageError{code: "register-carriage-policy-unreadable", err: err}
@@ -221,7 +225,7 @@ func candidatePathPolicy(params ObserveParams, ledgerTree *goal.TreeGoals) error
 	if err != nil {
 		return err
 	}
-	resolved, err := resolvePathClasses(workspace, classes, changedPaths)
+	resolved, err := resolvePathClassesWithFacts(facts, classes, changedPaths)
 	if err != nil {
 		return &carriageError{code: "register-carriage-policy-unreadable", err: err}
 	}
@@ -236,7 +240,7 @@ func candidatePathPolicy(params ObserveParams, ledgerTree *goal.TreeGoals) error
 			if !containsString(counselorRegisters, changedPath) {
 				return &carriageError{code: "record-not-owned", err: fmt.Errorf("record %s is not owned by the carried landing", changedPath)}
 			}
-			if err := carriedCounselorCarriageError(workspace, baseTree, params.CandidateTree, changedPath, ledgerTree); err != nil {
+			if err := carriedCounselorCarriageError(params.RepoRoot, workspace, baseTree, params.CandidateTree, changedPath, ledgerTree, commitMessage); err != nil {
 				return err
 			}
 			continue
@@ -254,7 +258,7 @@ func ValidateCarriedCandidatePaths(params ObserveParams, ledgerTree *goal.TreeGo
 	return candidatePathPolicy(params, ledgerTree)
 }
 
-func carriedCounselorCarriageError(workspace gittree.Workspace, baseTree, candidateTree, path string, ledgerTree *goal.TreeGoals) error {
+func carriedCounselorCarriageError(root string, workspace observationReader, baseTree, candidateTree, path string, ledgerTree *goal.TreeGoals, commitMessage func(root, commit string) ([]byte, error)) error {
 	lines, err := carriedCounselorAppendLines(workspace, baseTree, candidateTree, path)
 	if err != nil {
 		return err
@@ -263,13 +267,13 @@ func carriedCounselorCarriageError(workspace gittree.Workspace, baseTree, candid
 	case "records/counselor/carried-landings.jsonl":
 		return carriedLandingAppendError(lines, ledgerTree)
 	case "records/counselor/accepted-risk-register.jsonl":
-		return carriedAcceptedRiskAppendError(workspace.Dir, lines, ledgerTree)
+		return carriedAcceptedRiskAppendError(root, lines, ledgerTree, commitMessage)
 	default:
 		return &carriageError{code: "record-not-owned", err: fmt.Errorf("record %s is not owned by the carried landing", path)}
 	}
 }
 
-func carriedCounselorAppendLines(workspace gittree.Workspace, baseTree, candidateTree, path string) ([]string, error) {
+func carriedCounselorAppendLines(workspace observationReader, baseTree, candidateTree, path string) ([]string, error) {
 	before, _, err := workspace.FileAt(baseTree, path)
 	if err != nil {
 		return nil, &carriageError{code: "register-carriage-policy-unreadable", err: err}
@@ -311,7 +315,7 @@ func carriedLandingAppendError(lines []string, ledgerTree *goal.TreeGoals) error
 	return nil
 }
 
-func carriedAcceptedRiskAppendError(root string, lines []string, ledgerTree *goal.TreeGoals) error {
+func carriedAcceptedRiskAppendError(root string, lines []string, ledgerTree *goal.TreeGoals, commitMessage func(root, commit string) ([]byte, error)) error {
 	var rows []counselor.CarriedAcceptedRiskAppend
 	if ledgerTree != nil {
 		for _, files := range []map[string]*goal.GoalFile{ledgerTree.Live, ledgerTree.Done, ledgerTree.Abandoned} {
@@ -332,7 +336,7 @@ func carriedAcceptedRiskAppendError(root string, lines []string, ledgerTree *goa
 						if parseErr == nil {
 							rows = append(rows, counselor.CarriedAcceptedRiskAppend{
 								Goal: file.Id, Finding: risk.Finding, By: risk.By, Why: history.Reason,
-								OpID: risk.Opid, Commit: commit, RecordedAt: recordedAt,
+								OpID: risk.Opid, Commit: commit, RecordedAt: recordedAt, CommitMessage: commitMessage,
 							})
 						}
 						break

@@ -9,16 +9,18 @@ type ProjectionAccess interface {
 	FilterPrefixes(repo, tree string, paths []string) (string, error)
 }
 
-type gitProjectionAccess struct{}
+type gitProjectionAccess struct {
+	RawSource func(gittree.RawRequest) gittree.RawResult
+}
 
 func DefaultProjectionAccess() ProjectionAccess { return gitProjectionAccess{} }
 
-func (gitProjectionAccess) TopLevel(root string) (string, error) {
-	return (gittree.Workspace{Dir: root}).TopLevel()
+func (a gitProjectionAccess) TopLevel(root string) (string, error) {
+	return (gittree.Workspace{Dir: root, RawSource: a.RawSource}).TopLevel()
 }
-func (gitProjectionAccess) Prefix(root string) (string, error) {
-	return (gittree.Workspace{Dir: root}).Prefix()
+func (a gitProjectionAccess) Prefix(root string) (string, error) {
+	return (gittree.Workspace{Dir: root, RawSource: a.RawSource}).Prefix()
 }
-func (gitProjectionAccess) FilterPrefixes(repo, tree string, paths []string) (string, error) {
-	return (gittree.Workspace{Dir: repo}).FilterTreePrefixes(tree, paths)
+func (a gitProjectionAccess) FilterPrefixes(repo, tree string, paths []string) (string, error) {
+	return (gittree.Workspace{Dir: repo, RawSource: a.RawSource}).FilterTreePrefixes(tree, paths)
 }

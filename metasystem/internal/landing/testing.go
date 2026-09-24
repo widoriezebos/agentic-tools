@@ -25,6 +25,10 @@ import (
 // passed groups; every reused group must already belong to a successful outer
 // attempt. Projection is deliberately separate from this atomic payload.
 func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun.TestResult, completedAt time.Time) (TestReceipt, json.RawMessage, error) {
+	return prepareTestingReceiptPayloadWithWorkspace(installationRoot, tree, result, completedAt, gittree.Workspace{Dir: result.ProjectRoot})
+}
+
+func prepareTestingReceiptPayloadWithWorkspace(installationRoot, tree string, result proofrun.TestResult, completedAt time.Time, workspace gittree.Workspace) (TestReceipt, json.RawMessage, error) {
 	publicationStarted := time.Now()
 	if err := proofrun.ValidateTestResult(result); err != nil || !result.Delivery.Sufficient {
 		return TestReceipt{}, nil, fmt.Errorf("testing result is not sufficient delivery evidence: %v", err)
@@ -38,9 +42,8 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 	if completedAt.IsZero() {
 		return TestReceipt{}, nil, fmt.Errorf("testing receipt preparation requires the terminal completion time")
 	}
-	workspace := gittree.Workspace{Dir: result.ProjectRoot}
-	indexBefore, worktreeBefore, err := testingReceiptPosture(installationRoot, result)
-	indexBeforeMatches, indexBeforeErr := testingReceiptIndexMatches(installationRoot, tree, indexBefore)
+	indexBefore, worktreeBefore, err := testingReceiptPostureWithWorkspace(installationRoot, result, workspace)
+	indexBeforeMatches, indexBeforeErr := testingReceiptIndexMatchesWithAccess(installationRoot, tree, indexBefore, gitProjectionAccess{RawSource: workspace.RawSource})
 	if err != nil || indexBeforeErr != nil || !indexBeforeMatches || worktreeBefore != tree {
 		changed, _ := workspace.ChangedPaths(tree, worktreeBefore)
 		return TestReceipt{}, nil, fmt.Errorf("testing receipt candidate moved before preparation: index=%s worktree=%s expected=%s changed=%v cause=%v", indexBefore, worktreeBefore, tree, changed, errors.Join(err, indexBeforeErr))
@@ -49,8 +52,8 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 	if err != nil {
 		return TestReceipt{}, nil, err
 	}
-	indexAfter, worktreeAfter, err := testingReceiptPosture(installationRoot, result)
-	indexAfterMatches, indexAfterErr := testingReceiptIndexMatches(installationRoot, tree, indexAfter)
+	indexAfter, worktreeAfter, err := testingReceiptPostureWithWorkspace(installationRoot, result, workspace)
+	indexAfterMatches, indexAfterErr := testingReceiptIndexMatchesWithAccess(installationRoot, tree, indexAfter, gitProjectionAccess{RawSource: workspace.RawSource})
 	if err != nil || indexAfterErr != nil || !indexAfterMatches || worktreeAfter != tree {
 		return TestReceipt{}, nil, fmt.Errorf("testing receipt candidate moved during preparation")
 	}
@@ -69,7 +72,7 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 		copyResult.DurationMS += publicationMS
 	}
 	copyResult.EndedAt = terminalPreparation.Format(time.RFC3339Nano)
-	workspaceTree, err := ProjectWorkspaceTree(installationRoot, tree)
+	workspaceTree, err := ProjectWorkspaceTreeWith(installationRoot, tree, gitProjectionAccess{RawSource: workspace.RawSource})
 	if err != nil {
 		return TestReceipt{}, nil, fmt.Errorf("testing receipt workspace projection: %w", err)
 	}
@@ -87,14 +90,18 @@ func PrepareTestingReceiptPayload(installationRoot, tree string, result proofrun
 }
 
 func testingReceiptIndexMatches(installationRoot, receiptTree, indexTree string) (bool, error) {
+	return testingReceiptIndexMatchesWithAccess(installationRoot, receiptTree, indexTree, DefaultProjectionAccess())
+}
+
+func testingReceiptIndexMatchesWithAccess(installationRoot, receiptTree, indexTree string, access ProjectionAccess) (bool, error) {
 	if indexTree == receiptTree {
 		return true, nil
 	}
-	receiptWorkspace, err := ProjectWorkspaceTree(installationRoot, receiptTree)
+	receiptWorkspace, err := ProjectWorkspaceTreeWith(installationRoot, receiptTree, access)
 	if err != nil {
 		return false, err
 	}
-	indexWorkspace, err := ProjectWorkspaceTree(installationRoot, indexTree)
+	indexWorkspace, err := ProjectWorkspaceTreeWith(installationRoot, indexTree, access)
 	if err != nil {
 		return false, err
 	}
@@ -111,7 +118,11 @@ func CreateTestingReceipt(installationRoot, tree string, result proofrun.TestRes
 // CreateTestingReceiptAt composes a receipt at the caller's current semantic
 // time. That instant is both the composition event and the owner-expiry check.
 func CreateTestingReceiptAt(installationRoot, tree string, result proofrun.TestResult, now time.Time) (TestReceipt, error) {
-	receipt, _, err := PrepareTestingReceiptPayload(installationRoot, tree, result, now.UTC())
+	return createTestingReceiptAtWithWorkspace(installationRoot, tree, result, now, gittree.Workspace{Dir: result.ProjectRoot})
+}
+
+func createTestingReceiptAtWithWorkspace(installationRoot, tree string, result proofrun.TestResult, now time.Time, workspace gittree.Workspace) (TestReceipt, error) {
+	receipt, _, err := prepareTestingReceiptPayloadWithWorkspace(installationRoot, tree, result, now.UTC(), workspace)
 	if err != nil {
 		return TestReceipt{}, err
 	}

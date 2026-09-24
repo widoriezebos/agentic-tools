@@ -11,24 +11,6 @@ import (
 )
 
 func TestWorkspaceProjection(t *testing.T) {
-	want := []string{
-		"memory/receipts.log",
-		"plans/goals",
-		"plans/goals-accepted.json",
-		"plans/goals.md",
-		"records/counselor",
-		"records/goals",
-		"records/narrator-digest.log",
-	}
-	got := WorkspaceExclusions()
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("WorkspaceExclusions() = %v, want %v", got, want)
-	}
-	got[0] = "mutated"
-	if reflect.DeepEqual(WorkspaceExclusions(), got) {
-		t.Fatal("WorkspaceExclusions returned shared mutable state")
-	}
-
 	for _, fixture := range []struct {
 		name string
 		new  func(*testing.T) *observeFixture
@@ -86,6 +68,27 @@ func TestWorkspaceProjection(t *testing.T) {
 				t.Fatal("installation workspace projection retained excluded goal paths")
 			}
 		})
+	}
+}
+
+func TestWorkspaceExclusionsAreStableCopies(t *testing.T) {
+	t.Parallel()
+	want := []string{
+		"memory/receipts.log",
+		"plans/goals",
+		"plans/goals-accepted.json",
+		"plans/goals.md",
+		"records/counselor",
+		"records/goals",
+		"records/narrator-digest.log",
+	}
+	got := WorkspaceExclusions()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("WorkspaceExclusions() = %v, want %v", got, want)
+	}
+	got[0] = "mutated"
+	if reflect.DeepEqual(WorkspaceExclusions(), got) {
+		t.Fatal("WorkspaceExclusions returned shared mutable state")
 	}
 }
 

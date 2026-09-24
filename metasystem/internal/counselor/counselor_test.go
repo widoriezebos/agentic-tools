@@ -767,7 +767,7 @@ func TestHCL07AcceptedRiskLineComplete(t *testing.T) {
 	}, "\n")
 	commit := strings.Repeat("a", 40)
 	finding := "carried:" + commit + ":battery-red"
-	input := CarriedAcceptedRiskAppend{Goal: "carry-goal", Finding: finding, By: "Wido", Why: "accepted for delivery", OpID: "accept-opid", Commit: commit, RecordedAt: time.Date(2026, 9, 11, 13, 0, 0, 0, time.UTC), commitMessage: strictCommitMessage(t, root, commit, []byte(message+"\n"), 2)}
+	input := CarriedAcceptedRiskAppend{Goal: "carry-goal", Finding: finding, By: "Wido", Why: "accepted for delivery", OpID: "accept-opid", Commit: commit, RecordedAt: time.Date(2026, 9, 11, 13, 0, 0, 0, time.UTC), CommitMessage: strictCommitMessage(t, root, commit, []byte(message+"\n"), 2)}
 	if err := AppendCarriedAcceptedRisk(root, input); err != nil {
 		t.Fatal(err)
 	}
@@ -1103,7 +1103,7 @@ func TestCarriedAcceptedRiskValidatorsReadTheSpecimen(t *testing.T) {
 	}, "\n")
 	commit := strings.Repeat("b", 40)
 	finding := "carried:" + commit + ":battery-green"
-	input := CarriedAcceptedRiskAppend{Goal: "carry-goal", Finding: finding, By: "Wido", Why: "accepted for delivery", OpID: "accept-opid", Commit: commit, RecordedAt: time.Date(2026, 9, 12, 5, 0, 0, 0, time.UTC), commitMessage: strictCommitMessage(t, root, commit, []byte(message+"\n"), 6)}
+	input := CarriedAcceptedRiskAppend{Goal: "carry-goal", Finding: finding, By: "Wido", Why: "accepted for delivery", OpID: "accept-opid", Commit: commit, RecordedAt: time.Date(2026, 9, 12, 5, 0, 0, 0, time.UTC), CommitMessage: strictCommitMessage(t, root, commit, []byte(message+"\n"), 6)}
 	if err := ValidateCarriedAcceptedRisk(root, input); err != nil {
 		t.Fatalf("a complete carried entry did not validate: %v", err)
 	}
