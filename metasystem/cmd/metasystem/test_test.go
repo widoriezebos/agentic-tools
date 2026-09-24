@@ -2240,8 +2240,6 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 	const landingRef = "refs/remotes/origin/main"
 	testingFixtureGit(t, root, "update-ref", landingRef, head)
 	testingFixtureGit(t, root, "config", "--local", "metasystem.steward.landing-ref", landingRef)
-	refsBefore := testingFixtureGit(t, root, "for-each-ref", "--format=%(refname) %(objectname)")
-	configBefore := testingFixtureGit(t, root, "config", "--local", "--list")
 	goPath, err := exec.LookPath("go")
 	if err != nil {
 		t.Fatal(err)
@@ -2262,6 +2260,25 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 	}
 	request := proofrun.TestRunRequest{ControlRoot: root, ProjectRoot: root, PolicyBaseCommit: head, PolicyEngine: engine, PolicyEngineDigest: digest,
 		CandidateEngine: engine, CandidateEngineDigest: digest, Environment: testingEnvironment(os.Environ())}
+	// The caller's destination may advance while the probes run. The probes
+	// judge the admitted policy base, so a later destination that drops the
+	// reverse dependency must neither be read nor fail the admitted source.
+	moved := contract
+	moved.Surfaces = append([]testpolicy.Surface(nil), contract.Surfaces...)
+	moved.Surfaces[1].DependsOn = nil
+	movedData, err := json.Marshal(moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), movedData, 0o644)
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "later destination")
+	testingFixtureGit(t, root, "update-ref", landingRef, "HEAD")
+	refsBefore := testingFixtureGit(t, root, "for-each-ref", "--format=%(refname) %(objectname)")
+	configBefore := testingFixtureGit(t, root, "config", "--local", "--list")
+	if strings.Contains(refsBefore, landingRef+" "+head) {
+		t.Fatal("fixture landing ref did not move past the admitted policy base")
+	}
 	for _, probe := range testpolicy.FrozenProtectionProbeCases()[:4] {
 		t.Run(probe.ID, func(t *testing.T) {
 			if err := runFrozenSelectionProbe(context.Background(), request, probe); err != nil {
@@ -2275,10 +2292,13 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 			}
 		})
 	}
-	failedRequest := request
-	failedRequest.PolicyBaseCommit = strings.Repeat("b", 40)
-	if err := runFrozenSelectionProbe(context.Background(), failedRequest, testpolicy.FrozenProtectionProbeCases()[0]); err == nil {
-		t.Fatal("protected probe accepted a destination that differed from the real caller ref")
+	headTree := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", head+"^{tree}"))
+	for name, invalidBase := range map[string]string{"missing object": strings.Repeat("b", 40), "tree instead of commit": headTree} {
+		failedRequest := request
+		failedRequest.PolicyBaseCommit = invalidBase
+		if err := runFrozenSelectionProbe(context.Background(), failedRequest, testpolicy.FrozenProtectionProbeCases()[0]); err == nil {
+			t.Fatalf("protected probe accepted a policy base that is a %s", name)
+		}
 	}
 	if refsAfter := testingFixtureGit(t, root, "for-each-ref", "--format=%(refname) %(objectname)"); refsAfter != refsBefore {
 		t.Fatalf("failed protected probe changed caller refs:\nbefore:\n%safter:\n%s", refsBefore, refsAfter)

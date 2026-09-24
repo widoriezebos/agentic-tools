@@ -35,9 +35,38 @@ func TestLaunchSettingsPrintsEachValueAndSource(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
-	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if len(lines) != 18 || lines[0] != "launch.seat.window.tokens=0 source=conf" || lines[15] != "launch.seat.window.shipped=0 source=absent" || lines[16] != "context.ceiling.tokens=250000 source=conf" || lines[17] != "context.handoff.margin.tokens=145000 source=conf" {
-		t.Fatalf("lines=%q", lines)
+	// Read by key, not by position: the resolver grows new settings (the lane
+	// runtimes did), and each one must still print once with its value and source.
+	printed := settingLinesByKey(t, stdout)
+	want := map[string]string{
+		launch.SeatWindowKey:            "0 source=conf",
+		launch.ShippedSeatWindowKey:     "0 source=absent",
+		"context.ceiling.tokens":        "250000 source=conf",
+		"context.handoff.margin.tokens": "145000 source=conf",
+	}
+	trackedValues := trackedConfValues(string(tracked))
+	for _, setting := range launch.DefaultSettings().Values {
+		if _, pinned := want[setting.Key]; pinned {
+			continue
+		}
+		if value, ok := trackedValues[setting.Key]; ok {
+			want[setting.Key] = value + " source=conf"
+		} else {
+			want[setting.Key] = setting.Value + " source=default"
+		}
+	}
+	for _, key := range []string{launch.BuildRuntimeKey, launch.CritiqueRuntimeKey, launch.DesignRuntimeKey, launch.ReadRuntimeKey} {
+		if !strings.HasSuffix(want[key], " source=conf") {
+			t.Fatalf("tracked conf does not carry runtime setting %s: want=%q", key, want[key])
+		}
+	}
+	if len(printed) != len(want) {
+		t.Fatalf("printed %d settings, want %d: printed=%q want=%q", len(printed), len(want), printed, want)
+	}
+	for key, value := range want {
+		if printed[key] != value {
+			t.Fatalf("%s printed %q, want %q; stdout=%q", key, printed[key], value, stdout)
+		}
 	}
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.window.tokens=210000\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -55,7 +84,18 @@ func TestLaunchSettingsPrintsEachValueAndSource(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &values); err != nil {
 		t.Fatal(err)
 	}
-	shipped := values[15]
+	if len(values) != len(want) {
+		t.Fatalf("json carries %d settings, want %d: %+v", len(values), len(want), values)
+	}
+	var shipped launch.Setting
+	for _, value := range values {
+		if _, ok := want[value.Key]; !ok {
+			t.Fatalf("json carries unexpected setting %+v", value)
+		}
+		if value.Key == launch.ShippedSeatWindowKey {
+			shipped = value
+		}
+	}
 	if shipped.Key != launch.ShippedSeatWindowKey || shipped.Value != "200000" || shipped.Source != launch.ShippedClaudeSettingsSource || shipped.ShippedDiffersFromConf == nil || !*shipped.ShippedDiffersFromConf {
 		t.Fatalf("shipped setting=%+v", shipped)
 	}
@@ -65,6 +105,39 @@ func TestLaunchSettingsPrintsEachValueAndSource(t *testing.T) {
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "launch.seat.window.shipped=0 source=absent shipped-differs-from-conf\n") {
 		t.Fatalf("absent shipped setting: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
+}
+
+// settingLinesByKey maps each printed "key=value source=..." line to the text
+// after its key, refusing a line without a key or a key printed twice.
+func settingLinesByKey(t *testing.T, stdout string) map[string]string {
+	t.Helper()
+	printed := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		key, rest, ok := strings.Cut(line, "=")
+		if !ok || key == "" {
+			t.Fatalf("setting line without a key: %q", line)
+		}
+		if _, seen := printed[key]; seen {
+			t.Fatalf("setting %s printed twice: %q", key, stdout)
+		}
+		printed[key] = rest
+	}
+	return printed
+}
+
+// trackedConfValues reads the uncommented key=value lines of a conf file.
+func trackedConfValues(conf string) map[string]string {
+	values := map[string]string{}
+	for _, line := range strings.Split(conf, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if key, value, ok := strings.Cut(line, "="); ok {
+			values[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		}
+	}
+	return values
 }
 
 func writeShippedSeatWindow(t *testing.T, root string, tokens int64, present bool) {

@@ -164,6 +164,7 @@ type turnDriver struct {
 	sessionID  string
 	violations int
 	inWindow   bool
+	fence      uint64
 	failure    error
 }
 
@@ -259,12 +260,7 @@ func runTurn(ctx context.Context, conn *Conn, cfg TurnConfig, timer turnTimer) O
 		}
 	}
 
-	// The fence: sampled immediately before the prompt is sent.
-	// Anything already routed is setup noise or replay; the
-	// assembler refuses to buffer at or below it.
-	driver.assembler = NewAssembler(driver.sessionID)
-	driver.assembler.SetFence(conn.LastSeq())
-	driver.inWindow = true
+	driver.openPromptWindow()
 
 	promptCtx, cancelPrompt := timer.withTimeout(ctx, turnWaitPrompt, cfg.PromptTimeout)
 	defer cancelPrompt()
@@ -304,6 +300,30 @@ func (d *turnDriver) emit(ev TapEvent) {
 	if d.tap != nil {
 		d.tap(ev)
 	}
+}
+
+// openPromptWindow samples the fence immediately before the prompt
+// is sent. Anything already routed is setup noise or replay; the
+// assembler refuses to buffer at or below it, and the permission
+// gate refuses requests at or below it.
+func (d *turnDriver) openPromptWindow() {
+	d.fence = d.conn.LastSeq()
+	d.assembler = NewAssembler(d.sessionID)
+	d.assembler.SetFence(d.fence)
+	d.inWindow = true
+}
+
+// inPromptWindow reports whether a request's wire sequence lies
+// inside the open prompt window: above the fence and, once the
+// PromptResponse is on the wire, below it. The phase flag alone
+// cannot decide this — the pump may select a request routed after
+// the response before the response itself reaches the call.
+func (d *turnDriver) inPromptWindow(seq uint64) bool {
+	if !d.inWindow || seq <= d.fence {
+		return false
+	}
+	response := d.conn.LastResponseSeq()
+	return response <= d.fence || seq < response
 }
 
 // call pumps notifications and server requests while one request
@@ -359,7 +379,7 @@ func (d *turnDriver) answer(ctx context.Context, frame Frame) error {
 		SessionID string             `json:"sessionId"`
 		Options   []PermissionOption `json:"options"`
 	}
-	inWindow := d.inWindow
+	inWindow := d.inPromptWindow(frame.Seq)
 	if err := json.Unmarshal(request.Params, &params); err != nil || params.SessionID != d.sessionID || !inWindow {
 		// Wrong session, unreadable, or outside the open window:
 		// a violation, answered cancelled,

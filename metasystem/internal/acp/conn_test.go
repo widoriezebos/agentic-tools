@@ -218,6 +218,93 @@ func TestTurnLateWindowTraffic(t *testing.T) {
 	}
 }
 
+// The permission window is a wire-sequence range, not the pump's
+// phase: the pump may service a request before the prompt result
+// reaches it, so a request the wire placed after the PromptResponse
+// is a violation answered cancelled, while one the wire placed
+// before it keeps the strict in-window answer even when serviced
+// after the response was delivered. The fixture services the
+// request by hand in exactly those orders, so no scheduling luck
+// decides the result.
+func TestPermissionWindowFollowsWireOrder(t *testing.T) {
+	t.Parallel()
+	permission := `{"sessionId":"s-1","toolCall":{"toolCallId":"t1"},"options":[{"optionId":"a1","kind":"allow_once","name":"Allow"},{"optionId":"r1","kind":"reject_once","name":"Reject"}]}`
+	for _, tc := range []struct {
+		name            string
+		requestFirst    bool
+		wantViolations  int
+		wantAnswerParts []string
+	}{
+		{name: "after the response", wantViolations: 1, wantAnswerParts: []string{`"cancelled"`}},
+		{name: "before the response", requestFirst: true, wantAnswerParts: []string{`"selected"`, `"r1"`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clientReads, serverWrites := io.Pipe()
+			serverReads, clientWrites := io.Pipe()
+			conn := NewConn(clientReads, clientWrites, &bytes.Buffer{})
+			defer func() { clientWrites.Close(); serverWrites.Close() }()
+			writer := NewWriter(serverWrites, nil)
+			reader := NewReader(serverReads, nil)
+			answer := make(chan string, 1)
+			go func() {
+				prompt, _ := reader.Next()
+				request := &Message{JSONRPC: "2.0", ID: NewRequestID(7), Method: "session/request_permission", Params: json.RawMessage(permission)}
+				response := &Message{JSONRPC: "2.0", ID: prompt.ID, Result: json.RawMessage(`{"stopReason":"end_turn"}`)}
+				if tc.requestFirst {
+					writer.Send(request)
+					writer.Send(response)
+				} else {
+					writer.Send(response)
+					writer.Send(request)
+				}
+				reply, _ := reader.Next()
+				answer <- string(reply.Result)
+			}()
+
+			ctx := context.Background()
+			driver := &turnDriver{conn: conn, sessionID: "s-1"}
+			driver.openPromptWindow()
+			type callResult struct {
+				frame Frame
+				err   error
+			}
+			resultCh := make(chan callResult, 1)
+			go func() {
+				frame, err := conn.CallSeq(ctx, "session/prompt", map[string]any{"sessionId": "s-1"})
+				resultCh <- callResult{frame, err}
+			}()
+			var result callResult
+			if tc.requestFirst {
+				// Serviced after the response was delivered.
+				result = <-resultCh
+			}
+			request := <-conn.Requests()
+			if err := driver.answer(ctx, request); err != nil {
+				t.Fatalf("answer: %v", err)
+			}
+			if !tc.requestFirst {
+				// Serviced before the pump received the response.
+				result = <-resultCh
+			}
+			if result.err != nil {
+				t.Fatalf("prompt call: %v", result.err)
+			}
+			if (request.Seq < result.frame.Seq) != tc.requestFirst {
+				t.Fatalf("fixture wire order: request seq %d, response seq %d", request.Seq, result.frame.Seq)
+			}
+			if driver.violations != tc.wantViolations {
+				t.Fatalf("violations = %d, want %d", driver.violations, tc.wantViolations)
+			}
+			got := <-answer
+			for _, part := range tc.wantAnswerParts {
+				if !strings.Contains(got, part) {
+					t.Fatalf("answer %s lacks %s", got, part)
+				}
+			}
+		})
+	}
+}
+
 // Cancellation with a dead write side still settles cancelled with
 // the courtesy failure recorded.
 func TestCancelWithDeadWriteSide(t *testing.T) {
