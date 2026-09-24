@@ -42,8 +42,13 @@ type Goal struct {
 	Title  string // the goal file's heading, or the id where it has none
 	State  string // queued | approved | claimed | parked | done | abandoned
 	Intent string // the goal's own Intent line
-	Where  string // GoalLive or GoalConcluded
-	Path   string // checkout-relative
+	// Concluded is the goal's own Concluded line, in its own words, and empty
+	// while the goal is still worked under. A goal that concluded as done and
+	// a goal that was superseded by something else both stand in the ledger as
+	// done, and this line is the only place the difference is written.
+	Concluded string
+	Where     string // GoalLive or GoalConcluded
+	Path      string // checkout-relative
 	// Sliced is the goal's own `- Sliced:` line, where it carries one.
 	Sliced *Slicing
 }
@@ -107,12 +112,13 @@ func (p *Project) goalsIn(relative, where string) []Goal {
 			title = id
 		}
 		one := Goal{
-			ID:     id,
-			Title:  title,
-			State:  read.State,
-			Intent: normalizeSpace(read.Intent),
-			Where:  where,
-			Path:   relative + "/" + name,
+			ID:        id,
+			Title:     title,
+			State:     read.State,
+			Intent:    normalizeSpace(read.Intent),
+			Concluded: normalizeSpace(read.Conclude),
+			Where:     where,
+			Path:      relative + "/" + name,
 		}
 		if sliced := read.Sliced; sliced != nil {
 			one.Sliced = &Slicing{At: sliced.At, Machine: sliced.Machine, Lineage: sliced.Lineage}
@@ -150,11 +156,19 @@ func readGoalFile(root *os.Root, name string) (*goal.GoalFile, bool) {
 // HasGoal reports whether the ledger carries this goal, live or concluded. It
 // is what a Goals line is judged against, and the one place that judgement is
 // made.
-func (p *Project) HasGoal(id string) bool {
+func (p *Project) HasGoal(id string) bool { return p.Goal(id) != nil }
+
+// Goal is the ledger's goal of this id, live or concluded, or nil. It is the
+// same lookup HasGoal makes, for a reader that needs the goal itself and not
+// only the answer that it exists.
+func (p *Project) Goal(id string) *Goal {
+	if id == "" {
+		return nil
+	}
 	for index := range p.Goals {
 		if p.Goals[index].ID == id {
-			return true
+			return &p.Goals[index]
 		}
 	}
-	return false
+	return nil
 }

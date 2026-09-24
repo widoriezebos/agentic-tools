@@ -226,6 +226,40 @@ func TestEditChecksNoHeadOverADocumentTheResolverDoesNotRead(t *testing.T) {
 	testutil.Expect(t, "it is still not a record", saved.Record, (*Head)(nil))
 }
 
+// The historical home reaches only what its glob names, and only as far as a
+// declared Kind: a brief flat beside the kit's designs is not a record however
+// its bullets read, and an untyped design's legacy bullets are the prose they
+// always were. Neither is judged by the head grammar; a design that does
+// declare a Kind is.
+func TestEditChecksNoHeadOverTheUntypedHistory(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	state := seed(t, roots)
+	legacy := "# The round boundary\n\n- Owner: wido\n- Date: 2026-01-01\n\nProse.\n"
+	for _, document := range []string{
+		state + "plans/round-boundary-brief.md",
+		state + "plans/round-boundary-design.md",
+	} {
+		plant(t, roots.Checkout, document, "# A document\n\nProse.\n")
+
+		saved, err := EditDocument(roots, document, legacy, revisionAt(t, roots, document), readAt)
+
+		testutil.Require(t, "save "+document, err, nil)
+		testutil.Expect(t, "the file at "+document, fileAt(t, roots, document), legacy)
+		testutil.Expect(t, "it is no record at "+document, saved.Record, (*Head)(nil))
+	}
+
+	typed := state + "plans/typed-design.md"
+	plant(t, roots.Checkout, typed, "# A document\n\nProse.\n")
+	_, err := EditDocument(roots, typed,
+		record("A design about a goal the ledger has not", "design", "design-typed", "accepted", "nowhere"),
+		revisionAt(t, roots, typed), readAt)
+
+	refusal := refusalOf(t, err)
+	testutil.Expect(t, "a declared head in the historical home is judged", refusal.Kind, RefusalProject)
+}
+
 // A revision that is not what is on disk is the file having changed underneath,
 // and the save is refused rather than resolved. Nothing is written.
 func TestEditRefusesAStaleRevision(t *testing.T) {

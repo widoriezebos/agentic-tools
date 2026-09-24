@@ -33,15 +33,17 @@ import (
 type Roots struct{ Checkout, Installation, StateRoot string }
 
 // SchemaVersion is the shape of the project resource the interface reads. It
-// is 6: the first was the catalogue of canonical documents, which guessed a
+// is 7: the first was the catalogue of canonical documents, which guessed a
 // kind from a filename; the second carried what the records declare; the third
 // carried, beside each of them, the record's own first words; the fourth
 // carried the ledger's goals where the third carried the intent index's areas,
 // which are gone; the fifth carried what a goal's slice plan is read out of —
-// the goal's own slicing boundary, and the slices each design lists; this one
-// carries when each record's file was last written, which is what a reader
-// asking "what changed since I last looked" compares against.
-const SchemaVersion = 6
+// the goal's own slicing boundary, and the slices each design lists; the sixth
+// carried when each record's file was last written, which is what a reader
+// asking "what changed since I last looked" compares against; this one carries
+// the name of the home a record was read from, because the kit's own history
+// has a name its path does not give.
+const SchemaVersion = 7
 
 // Pane is the whole of Project, read once, as it was at readAt.
 type Pane struct {
@@ -82,14 +84,19 @@ type Sliced struct {
 // key — a record whose body opens with a table has none — so it is carried as
 // the empty string rather than as an absence the pane must explain.
 type Record struct {
-	Kind    string   `json:"kind"`
-	ID      string   `json:"id"`
-	Status  string   `json:"status"`
-	Goals   []string `json:"goals"`
-	Title   string   `json:"title"`
-	Path    string   `json:"path"`
-	Home    string   `json:"home"`
-	Summary string   `json:"summary"`
+	Kind   string   `json:"kind"`
+	ID     string   `json:"id"`
+	Status string   `json:"status"`
+	Goals  []string `json:"goals"`
+	Title  string   `json:"title"`
+	Path   string   `json:"path"`
+	Home   string   `json:"home"`
+	// HomeName is what the home is called where its path does not say it. The
+	// kit's own history is "designs (historical)"; every other home is named
+	// by its path, and carries nothing here rather than a second spelling of
+	// the path the row already shows.
+	HomeName string `json:"homeName,omitempty"`
+	Summary  string `json:"summary"`
 	// ChangedAt is when this record's file was last written, from the
 	// filesystem, in RFC3339. It is the file's own modification time and
 	// nothing the record declares: a record carries no revision date, and a
@@ -216,6 +223,7 @@ func describe(roots Roots, record resolver.Record) Record {
 		Title:     record.Title,
 		Path:      record.Path,
 		Home:      record.Home,
+		HomeName:  record.HomeName,
 		Summary:   summaryOf(record.Body),
 		Slices:    slicesIn(record.Body),
 		ChangedAt: changedAt(roots, record.Path),

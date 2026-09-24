@@ -180,7 +180,7 @@ func TestPaneCarriesEachBookInReadingOrder(t *testing.T) {
 		{ID: "doctrine-events", Title: "Events are the source of truth"},
 		{ID: "doctrine-budgets", Title: "Every run is budgeted"},
 	})
-	testutil.Expect(t, "the schema the change time arrived in", pane.SchemaVersion, 6)
+	testutil.Expect(t, "the schema the home's name arrived in", pane.SchemaVersion, 7)
 	testutil.Expect(t, "the register", pane.Questions, []Question{
 		{ID: "Q-1", Opened: "2026-09-22", Question: "Where does an adopted project's intent live?",
 			Goals: []string{}, Status: "open"},
@@ -253,6 +253,29 @@ func TestPaneListsTheCheckoutsOtherMarkdownByPath(t *testing.T) {
 			t.Fatalf("the listing and the route disagree about %q: %q and %q", file.Path, file.Title, document.Title)
 		}
 	}
+}
+
+// The kit's own history is a home with a name, and the pane carries it: a row
+// whose path is metasystem/plans would otherwise say nothing about what it is.
+// Every other home is named by its path and carries no second spelling of it.
+func TestPaneNamesTheHistoricalDesignHome(t *testing.T) {
+	t.Parallel()
+
+	roots := selfHostedFixture(t)
+	state := seed(t, roots)
+	plant(t, roots.Checkout, state+"plans/two-homes-design.md",
+		record("Two homes, typed", "design", "design-history", "done", "two-homes"))
+
+	pane, err := ReadPane(roots, readAt)
+
+	testutil.Require(t, "read the pane", err, nil)
+	testutil.Expect(t, "the historical row's home",
+		recordWithID(pane.Records, "design-history").Home, "metasystem/plans")
+	testutil.Expect(t, "the historical row's home name",
+		recordWithID(pane.Records, "design-history").HomeName, "designs (historical)")
+	testutil.Expect(t, "a home named by its path carries no name",
+		recordWithID(pane.Records, "design-ledger").HomeName, "")
+	testutil.Expect(t, "nothing is refused", pane.Problems, []Problem{})
 }
 
 // An adopted workspace has one design home, its own, and the pane says so

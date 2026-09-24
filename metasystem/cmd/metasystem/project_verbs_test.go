@@ -208,7 +208,7 @@ func TestProjectCheckVerbPassesAndRefuses(t *testing.T) {
 	if code != 0 || problem != "" {
 		t.Fatalf("project check = code %d, stderr %q", code, problem)
 	}
-	if out != "project check passed: 4 record(s) in 6 home(s), 1 question(s), 2 ledger goal(s)\n" {
+	if out != "project check passed: 4 record(s) in 7 home(s), 1 question(s), 2 ledger goal(s)\n" {
 		t.Fatalf("project check's summary line was %q", out)
 	}
 

@@ -544,6 +544,7 @@ func families() []family {
 				{"tree", "the declared areas, each with counts by kind and status", runProjectTree},
 				{"check", "refuse every fault in the homes, anchored at its file and line", runProjectCheck},
 				{"design-of", "the design records that name one ledger goal, or the refusal that there are none", runProjectDesignOf},
+				{"type-designs", "propose, and with --apply write, the head the kit's historical designs never carried", runProjectTypeDesigns},
 			},
 		},
 		{
