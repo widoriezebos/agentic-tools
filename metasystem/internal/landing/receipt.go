@@ -285,6 +285,18 @@ func publishCommittedReceiptAtWithWorkspace(root, attemptID, acceptedIndexTree s
 // contains that exact candidate. The stale target is removed first so a
 // refused retry cannot leave an older receipt available for observation.
 func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (receipt TestReceipt, err error) {
+	return createTestReceiptWithInputs(root, tree, command, stdout, stderr, gittree.Workspace{Dir: root},
+		func(workspace gittree.Workspace, tree string) (gittree.Workspace, func() error, error) {
+			detached, err := workspace.NewDetachedWorktree(tree)
+			if err != nil {
+				return gittree.Workspace{}, nil, err
+			}
+			return detached.Workspace(), detached.Close, nil
+		})
+}
+
+func createTestReceiptWithInputs(root, tree, command string, stdout, stderr io.Writer, workspace gittree.Workspace,
+	checkout func(gittree.Workspace, string) (gittree.Workspace, func() error, error)) (receipt TestReceipt, err error) {
 	if root == "" || !treeOID.MatchString(tree) || command == "" {
 		return receipt, fmt.Errorf("landing test receipt requires --root, a full tree object id, and a non-empty --command")
 	}
@@ -302,7 +314,6 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (re
 	signal.Notify(interrupts, os.Interrupt, syscall.SIGHUP, syscall.SIGTERM)
 	defer signal.Stop(interrupts)
 
-	workspace := gittree.Workspace{Dir: root}
 	if _, err := workspace.Diff(tree, tree); err != nil {
 		return receipt, fmt.Errorf("candidate tree is unreadable: %w", err)
 	}
@@ -321,12 +332,12 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (re
 		return receipt, err
 	}
 
-	detached, err := workspace.NewDetachedWorktree(tree)
+	candidateWorkspace, closeCandidate, err := checkout(workspace, tree)
 	if err != nil {
 		return receipt, fmt.Errorf("prepare isolated candidate: %w", err)
 	}
 	defer func() {
-		if cleanupErr := detached.Close(); cleanupErr != nil {
+		if cleanupErr := closeCandidate(); cleanupErr != nil {
 			published = false
 			receipt = TestReceipt{}
 			err = errors.Join(err, fmt.Errorf("cleanup isolated candidate: %w", cleanupErr))
@@ -335,7 +346,6 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (re
 	if err := receiptInterrupted(interrupts); err != nil {
 		return receipt, err
 	}
-	candidateWorkspace := detached.Workspace()
 	candidateIndexBefore, candidateWorktreeBefore, err := receiptPosture(candidateWorkspace)
 	if err != nil {
 		return receipt, fmt.Errorf("verify isolated candidate: %w", err)
@@ -369,7 +379,7 @@ func CreateTestReceipt(root, tree, command string, stdout, stderr io.Writer) (re
 	if candidateIndexAfter != tree || candidateWorktreeAfter != identity {
 		return receipt, fmt.Errorf("test receipt refused: the candidate changed while the command ran")
 	}
-	if err := detached.Close(); err != nil {
+	if err := closeCandidate(); err != nil {
 		return receipt, fmt.Errorf("cleanup isolated candidate: %w", err)
 	}
 	if err := receiptInterrupted(interrupts); err != nil {

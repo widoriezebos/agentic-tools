@@ -614,6 +614,38 @@ func TestBatchPostPushRearmFastForwardsRebuildsAndArms(t *testing.T) {
 	}
 }
 
+func proofFixtureEnvironmentWithoutHostLoad(environment []string) []string {
+	prefix := proofrun.TestHostLoadEnvironment + "="
+	filtered := make([]string, 0, len(environment))
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, prefix) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func reexecWithFixedProofLoad(t *testing.T, marker, testName string) bool {
+	t.Helper()
+	if os.Getenv(marker) != "" {
+		return false
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sampler := filepath.Join(t.TempDir(), proofrun.TestHostLoadCommandName("0"))
+	if err := os.Link(executable, sampler); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(sampler, "-test.run=^"+testName+"$", "-test.count=1")
+	command.Env = append(proofFixtureEnvironmentWithoutHostLoad(os.Environ()), marker+"=1")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("fixed-load %s child: %v\n%s", testName, err, output)
+	}
+	return true
+}
+
 func TestBatchSupervisorTakeoverRebindsJoinedClaims(t *testing.T) {
 	if reexecWithFixedProofLoad(t, "GO_WANT_BATCH_TAKEOVER_FIXED_LOAD", "TestBatchSupervisorTakeoverRebindsJoinedClaims") {
 		return

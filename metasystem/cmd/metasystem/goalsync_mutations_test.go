@@ -1189,8 +1189,9 @@ func TestGoalSetObligationTemporaryWordFlagsTravelTogether(t *testing.T) {
 }
 
 func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
+	fixture := newObligationCommandFixture(t)
+	root := fixture.root()
+	dependencies := fixture.dependencies()
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	if err := os.MkdirAll(jobs, 0o755); err != nil {
 		t.Fatal(err)
@@ -1222,13 +1223,17 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 			break
 		}
 	}
-	stderr, code := captureStderr(t, func() int { return runGoalAcceptRiskWithAuthority(blankWhy, fixedTemporaryGoalAuthority) })
+	stderr, code := captureStderr(t, func() int {
+		return runGoalAcceptRiskWithInputs(blankWhy, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+	})
 	if code != 2 || !strings.Contains(stderr, "goal accept-risk: needs --id, --finding, --chain, and --why") ||
 		!strings.Contains(stderr, "no command completes this: add the missing decision value named in the refusal") {
 		t.Fatalf("blank accepted-risk reason = exit %d stderr %q", code, stderr)
 	}
 	paired := append(append([]string(nil), base...), "--temporary-human-word", "Wido accepts this severe risk")
-	stderr, code = captureStderr(t, func() int { return runGoalAcceptRiskWithAuthority(paired, fixedTemporaryGoalAuthority) })
+	stderr, code = captureStderr(t, func() int {
+		return runGoalAcceptRiskWithInputs(paired, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+	})
 	if code != 2 || !strings.Contains(stderr, "--temporary-human-word and --review-by travel together") {
 		t.Fatalf("unpaired authority flags = exit %d stderr %q", code, stderr)
 	}
@@ -1236,15 +1241,21 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 	args := append(paired, "--review-by", "2026-09-06")
 	var stdout string
 	stderr, code = captureStderr(t, func() int {
-		stdout, code = captureStdout(t, func() int { return runGoalAcceptRiskWithAuthority(args, fixedTemporaryGoalAuthority) })
+		stdout, code = captureStdout(t, func() int {
+			return runGoalAcceptRiskWithInputs(args, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+		})
 		return code
 	})
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("accepted-risk verb = exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 
-	tip := goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
-	goalText := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	fixture.expectTransactions(1, 0)
+	accepted, goalBytes := fixture.acceptedGoal()
+	goalText := string(goalBytes)
+	if len(accepted.AcceptedRisks) != 1 || fixture.repo.commit(fixture.repo.accepted).parent == "" {
+		t.Fatalf("accepted goal transaction was not published: accepted risks=%v tip=%s", accepted.AcceptedRisks, fixture.repo.accepted)
+	}
 	if !strings.Contains(goalText, "- AcceptedRisk: finding=S-1 chain=critic by=Wido opid=") {
 		t.Fatalf("goal transaction did not land first:\n%s", goalText)
 	}
@@ -1271,8 +1282,15 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 	register := record["findingRegister"].([]any)
 	entry := register[0].(map[string]any)
 	opid, _ := entry["decisionOpid"].(string)
-	if entry["status"] != "accepted-risk" || entry["resolution"] != "accepted-risk" || opid == "" || !strings.Contains(goalText, "opid="+opid) || !strings.Contains(string(counselorText), "opid="+opid) {
+	if entry["status"] != "accepted-risk" || entry["resolution"] != "accepted-risk" || opid == "" || accepted.AcceptedRisks[0].Opid != opid || !strings.Contains(goalText, "opid="+opid) || !strings.Contains(string(counselorText), "opid="+opid) {
 		t.Fatalf("root register write did not land third with the shared operation id: entry=%v counselor=%s", entry, counselorText)
+	}
+	var proofRecord struct {
+		OperationID string `json:"operationId"`
+		Action      string `json:"action"`
+	}
+	if err := json.Unmarshal(fixture.proofRecord(), &proofRecord); err != nil || proofRecord.OperationID != opid || proofRecord.Action != "goal accept-risk" {
+		t.Fatalf("accepted-risk authority proof does not match the decision: record=%+v err=%v", proofRecord, err)
 	}
 	closeOut, closeCode := captureStdout(t, func() int {
 		return runDispatchCritiqueRegisterClose([]string{"--repo", root, "--root-job", "critic"})
@@ -1293,10 +1311,13 @@ func TestSTR3Gap05AcceptRiskWritesGoalCounselorAndRegisterThenCloses(t *testing.
 		"--by", "Wido", "--why", "not applicable", "--lineage", "m1",
 		"--temporary-human-word", "Wido accepts this bounded risk", "--review-by", "2026-09-06",
 	}
-	stderr, code = captureStderr(t, func() int { return runGoalAcceptRiskWithAuthority(boundedArgs, fixedTemporaryGoalAuthority) })
+	stderr, code = captureStderr(t, func() int {
+		return runGoalAcceptRiskWithInputs(boundedArgs, fixedTemporaryGoalAuthority, fixture.commandNow, dependencies)
+	})
 	if code != 1 || !strings.Contains(stderr, "bounded findings defer at close, not by acceptance") {
 		t.Fatalf("bounded finding acceptance = exit %d stderr %q", code, stderr)
 	}
+	fixture.expectTransactions(1, 0)
 }
 
 func TestHCL80TrailingWhitespaceWhyIsAdmitted(t *testing.T) {

@@ -984,12 +984,18 @@ func runGoalBranchCommitWith(args []string, dependencies goalBranchCommitDepende
 		return 2
 	}
 	var commit string
-	err = withGoalBranchCommitToken(*root, func() error {
+	err = withGoalBranchCommitTokenAt(*root, holderRoot(*root), func() error {
 		var commitErr error
-		commit, commitErr = branch.CommitStaged(branch.CommitRequest{
+		request := branch.CommitRequest{
 			Repo: *root, Remote: endpoint.Remote, EndpointTip: endpointTip, GoalID: *goalID, Units: units, OpID: operationID,
 			Kind: branch.Kind(*kindName), Amend: *amend, CheckClaim: check,
-		})
+		}
+		if dependencies.Raw != nil {
+			request.Transport = dependencies.Raw.Transport
+			commit, commitErr = branch.CommitStagedWithInputs(request, dependencies.Raw.ReadInputs.Facts, dependencies.Raw.ReadInputs.Effects)
+		} else {
+			commit, commitErr = branch.CommitStaged(request)
+		}
 		return commitErr
 	})
 	if err != nil {
@@ -998,10 +1004,6 @@ func runGoalBranchCommitWith(args []string, dependencies goalBranchCommitDepende
 	}
 	fmt.Println(commit)
 	return 0
-}
-
-func withGoalBranchCommitToken(root string, commit func() error) error {
-	return withGoalBranchCommitTokenAt(root, goalBranchHolderRoot(root), commit)
 }
 
 func withGoalBranchCommitTokenAt(root, holderRoot string, commit func() error) error {

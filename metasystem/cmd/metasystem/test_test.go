@@ -1757,7 +1757,7 @@ func TestTestingPlanAdoptsCandidateFallbackOnlyWhenBaseHasNone(t *testing.T) {
 		{name: "base-fallback-remains-protected", baseFallback: true, expectedFallback: "trusted"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
+			t.Setenv("PATH", t.TempDir())
 			base := candidate
 			base.Surfaces = append([]testpolicy.Surface(nil), candidate.Surfaces...)
 			base.Groups = append([]testpolicy.Group(nil), candidate.Groups...)
@@ -1779,66 +1779,36 @@ func TestTestingPlanAdoptsCandidateFallbackOnlyWhenBaseHasNone(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			writeTestingFixtureFile(t, filepath.Join(root, "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0o644)
-			writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), baseBytes, 0o644)
-			writeTestingFixtureFile(t, filepath.Join(root, "owned", "source.go"), []byte("package owned\n"), 0o644)
-			testingFixtureGit(t, root, "init", "-q", "-b", "main")
-			testingFixtureGit(t, root, "add", ".")
-			testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "base")
-			baseCommit := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-			const landingRef = "refs/remotes/origin/main"
-			testingFixtureGit(t, root, "update-ref", landingRef, baseCommit)
-			testingFixtureGit(t, root, "config", "--local", "metasystem.steward.landing-ref", landingRef)
-
-			engine := filepath.Join(t.TempDir(), "metasystem")
-			build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-				"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+baseCommit, "-o", engine, ".")
-			if output, buildErr := build.CombinedOutput(); buildErr != nil {
-				t.Fatalf("build fallback policy engine: %v\n%s", buildErr, output)
-			}
-			canonicalRoot, err := canonicalProofRoot(root)
+			baseContract, err := testpolicy.Decode(baseBytes)
 			if err != nil {
 				t.Fatal(err)
 			}
-			canonicalEngine, err := canonicalPath(engine)
+			candidateContract, err := testpolicy.Decode(candidateBytes)
 			if err != nil {
 				t.Fatal(err)
 			}
-			digest, err := fileSHA256(canonicalEngine)
+			effective := protectedTestingContractWithCandidateFallback(baseContract, candidateContract)
+			if err := effective.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			if effective.Fallback != test.expectedFallback {
+				t.Fatalf("effective fallback = %q, want %q", effective.Fallback, test.expectedFallback)
+			}
+			plan, err := testpolicy.Select(effective, testpolicy.SelectionRequest{
+				ChangedPaths: []string{"unowned.txt"}, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic,
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.MkdirAll(filepath.Dir(steward.RepoIdentityPath(root)), 0o700); err != nil {
-				t.Fatal(err)
+			if len(plan.Uncertainty) != 0 || !containsString(plan.AffectedSurfaces, test.expectedFallback) || !containsString(plan.SelectedGroups, test.expectedFallback) {
+				t.Fatalf("unowned path did not select the fallback without uncertainty: %+v", plan)
 			}
-			if err := steward.MintIdentity(steward.RepoIdentityPath(root), steward.InstallIdentity{RepoIdentity: canonicalRoot, Generation: 1,
-				InstallPath: canonicalEngine, InstallDigest: "sha256:" + digest, MintedAt: "2026-09-10T00:00:00Z", Enrollment: steward.EnrollmentFixture,
-				EngineBuild: baseCommit, LandedCommit: baseCommit, LandingRef: landingRef}); err != nil {
-				t.Fatal(err)
+			if test.baseFallback && containsString(plan.AffectedSurfaces, candidate.Fallback) {
+				t.Fatalf("candidate fallback replaced the protected base fallback: %+v", plan)
 			}
-
-			writeTestingFixtureFile(t, filepath.Join(root, "testing.json"), candidateBytes, 0o644)
-			writeTestingFixtureFile(t, filepath.Join(root, "unowned.txt"), []byte("changed\n"), 0o644)
-			testingFixtureGit(t, root, "add", "testing.json", "unowned.txt")
-			candidateTree, err := (gittree.Workspace{Dir: root}).StagedTree()
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("GIT_OBJECT_DIRECTORY", filepath.Join(root, ".git", "objects"))
-			t.Setenv("GIT_ALTERNATE_OBJECT_DIRECTORIES", "")
-			t.Setenv("GIT_CONFIG_COUNT", "0")
-			prepared, err := prepareTesting(testingSelectionRequest{Root: root, Tree: candidateTree, Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if prepared.EffectiveContract.Fallback != test.expectedFallback {
-				t.Fatalf("effective fallback = %q, want %q", prepared.EffectiveContract.Fallback, test.expectedFallback)
-			}
-			if len(prepared.Plan.Uncertainty) != 0 || !containsString(prepared.Plan.AffectedSurfaces, test.expectedFallback) || !containsString(prepared.Plan.SelectedGroups, test.expectedFallback) {
-				t.Fatalf("unowned path did not select the fallback without uncertainty: %+v", prepared.Plan)
-			}
-			if test.baseFallback && containsString(prepared.Plan.AffectedSurfaces, candidate.Fallback) {
-				t.Fatalf("candidate fallback replaced the protected base fallback: %+v", prepared.Plan)
+			wantGroups := []string{"app", test.expectedFallback}
+			if !reflect.DeepEqual(plan.SelectedGroups, wantGroups) {
+				t.Fatalf("selected groups = %v, want %v", plan.SelectedGroups, wantGroups)
 			}
 		})
 	}
@@ -1865,31 +1835,69 @@ func testFallbackGroup(id, input string) testpolicy.Group {
 }
 
 func TestProtectedCoverageFloorCannotFallOrDisappear(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	root := t.TempDir()
-	writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", "coverage-ratchet.json"), []byte(`{"floors":{"internal/app":80.0}}`), 0o644)
-	writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", "coverage-ratchet-linux.json"), []byte(`{"floors":{"internal/app":79.0}}`), 0o644)
-	testingFixtureGit(t, root, "init")
-	testingFixtureGit(t, root, "add", ".")
-	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "base")
-	workspace := gittree.Workspace{Dir: root}
-	base, err := workspace.HeadTree()
-	if err != nil {
-		t.Fatal(err)
+	const baseTree = "1111111111111111111111111111111111111111"
+	const loweredTree = "2222222222222222222222222222222222222222"
+	const raisedTree = "3333333333333333333333333333333333333333"
+	const baseOID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const linuxOID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	const loweredOID = "cccccccccccccccccccccccccccccccccccccccc"
+	const raisedOID = "dddddddddddddddddddddddddddddddddddddddd"
+	const baselinePath = "scripts/agents/coverage-ratchet.json"
+	const linuxPath = "scripts/agents/coverage-ratchet-linux.json"
+	baseJSON := []byte(`{"floors":{"internal/app":80.0}}`)
+	linuxJSON := []byte(`{"floors":{"internal/app":79.0}}`)
+	loweredJSON := []byte(`{"floors":{"internal/app":79.9}}`)
+	raisedJSON := []byte(`{"floors":{"internal/app":80.1,"internal/new":50.0}}`)
+	type rawFact struct {
+		args   []string
+		output []byte
 	}
-	writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", "coverage-ratchet.json"), []byte(`{"floors":{"internal/app":79.9}}`), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	candidate, err := workspace.StagedTree()
-	if err != nil {
-		t.Fatal(err)
+	var facts []rawFact
+	addFile := func(tree, path, oid string, content []byte) {
+		facts = append(facts,
+			rawFact{args: []string{"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path},
+				output: []byte(fmt.Sprintf("100644 blob %s\t%s\x00", oid, path))},
+			rawFact{args: []string{"cat-file", "blob", oid}, output: content},
+		)
 	}
-	if err := protectCoverageRatchets(workspace, base, candidate, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
+	pins := []string{"-C", root, "-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+		"-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
+		"-c", "gc.auto=0", "-c", "maintenance.auto=false"}
+	next := 0
+	workspace := gittree.Workspace{Dir: root, RawSource: func(request gittree.RawRequest) gittree.RawResult {
+		if next >= len(facts) {
+			t.Fatalf("unexpected raw Git request: %v", request.Args)
+		}
+		fact := facts[next]
+		next++
+		wantArgs := append(append([]string(nil), pins...), fact.args...)
+		if request.Dir != root || !reflect.DeepEqual(request.Args, wantArgs) || request.Operation != "git "+strings.Join(fact.args, " ") ||
+			request.Stdin != nil || !reflect.DeepEqual(request.Env, gittree.ScrubbedEnviron()) {
+			t.Fatalf("raw Git request %d = %+v, want args %v", next, request, wantArgs)
+		}
+		return gittree.RawResult{Stdout: fact.output}
+	}}
+	addFile(baseTree, baselinePath, baseOID, baseJSON)
+	addFile(loweredTree, baselinePath, loweredOID, loweredJSON)
+	if err := protectCoverageRatchets(workspace, baseTree, loweredTree, ""); err == nil || !strings.Contains(err.Error(), "TEST_POLICY_COVERAGE_FLOOR_LOWERED") {
 		t.Fatalf("lowered base floor was accepted: %v", err)
 	}
-	writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", "coverage-ratchet.json"), []byte(`{"floors":{"internal/app":80.1,"internal/new":50.0}}`), 0o644)
-	testingFixtureGit(t, root, "add", ".")
-	candidate, err = workspace.StagedTree()
-	if err != nil || protectCoverageRatchets(workspace, base, candidate, "") != nil {
+	if next != len(facts) {
+		t.Fatalf("lowered floor consumed %d of %d raw Git requests", next, len(facts))
+	}
+	facts = nil
+	next = 0
+	addFile(baseTree, baselinePath, baseOID, baseJSON)
+	addFile(raisedTree, baselinePath, raisedOID, raisedJSON)
+	addFile(baseTree, linuxPath, linuxOID, linuxJSON)
+	addFile(raisedTree, linuxPath, linuxOID, linuxJSON)
+	if err := protectCoverageRatchets(workspace, baseTree, raisedTree, ""); err != nil {
 		t.Fatalf("raised protected floor was refused: %v", err)
+	}
+	if next != len(facts) {
+		t.Fatalf("raised floor consumed %d of %d raw Git requests", next, len(facts))
 	}
 }
 

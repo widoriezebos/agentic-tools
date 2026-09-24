@@ -29,6 +29,10 @@ type receiptReaderFixture struct {
 	rawAfter   string
 	identity   string
 	indices    map[string]receiptPrivateIndex
+	isolated   struct {
+		root  string
+		after map[string][]byte
+	}
 }
 
 type receiptPrivateIndex struct{ kind, phase, seed string }
@@ -114,9 +118,13 @@ func (f *receiptReaderFixture) checkFiles() {
 }
 
 func (f *receiptReaderFixture) checkFactFiles(facts map[string][]byte) {
+	f.checkFactFilesAt(f.root, facts)
+}
+
+func (f *receiptReaderFixture) checkFactFilesAt(root string, facts map[string][]byte) {
 	f.t.Helper()
 	for path, want := range facts {
-		full := filepath.Join(f.root, filepath.FromSlash(path))
+		full := filepath.Join(root, filepath.FromSlash(path))
 		got, err := os.ReadFile(full)
 		if err != nil || !bytes.Equal(got, want) {
 			f.t.Fatalf("snapshot file %s = %q, %v; want %q", path, got, err, want)
@@ -130,6 +138,21 @@ func (f *receiptReaderFixture) checkFactFiles(facts map[string][]byte) {
 	if err != nil || string(outside) != "fixture\n" {
 		f.t.Fatalf("nested installation sibling = %q, %v", outside, err)
 	}
+}
+
+func (f *receiptReaderFixture) checkIsolatedFiles() string {
+	f.t.Helper()
+	register := "records/narrator-digest.log"
+	actual, err := os.ReadFile(filepath.Join(f.isolated.root, register))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if bytes.Equal(actual, f.before[register]) {
+		f.checkFactFilesAt(f.isolated.root, f.before)
+		return f.candidate
+	}
+	f.checkFactFilesAt(f.isolated.root, f.isolated.after)
+	return receiptFactID(f.isolated.after)
 }
 
 func (f *receiptReaderFixture) entries() []byte {
@@ -153,7 +176,10 @@ func (f *receiptReaderFixture) raw(request gittree.RawRequest) gittree.RawResult
 		"-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
 		"-c", "gc.auto=0", "-c", "maintenance.auto=false",
 	}
-	if request.Dir != f.root && request.Dir != f.repository {
+	isolated := f.isolated.root != "" && request.Dir == f.isolated.root
+	workspace := request.Dir == f.root || isolated
+	toplevel := request.Dir == f.repository || isolated
+	if !workspace && !toplevel {
 		f.t.Fatalf("raw Git cwd = %q", request.Dir)
 	}
 	prefix := append([]string{"-C", request.Dir}, pins...)
@@ -183,12 +209,18 @@ func (f *receiptReaderFixture) raw(request gittree.RawRequest) gittree.RawResult
 	if !reflect.DeepEqual(request.Env, wantEnv) {
 		f.t.Fatal("raw Git environment differs from scrubbed environment and private index")
 	}
-	if request.Stdin != nil && !(request.Dir == f.repository && slices.Equal(args, []string{"update-index", "-z", "--index-info"})) {
+	if request.Stdin != nil && !(toplevel && slices.Equal(args, []string{"update-index", "-z", "--index-info"})) {
 		f.t.Fatalf("unexpected raw stdin for %q", args)
 	}
 	answer := func(id string) gittree.RawResult { return gittree.RawResult{Stdout: []byte(id + "\n")} }
 	state, known := f.indices[private]
 	switch {
+	case private == "" && request.Dir == f.root && slices.Equal(args, []string{"diff", "--binary", "--no-renames", "--unified=3", "--no-ext-diff", "--no-textconv", "--no-color", "--ignore-submodules=none", "--src-prefix=a/", "--dst-prefix=b/", f.candidate, f.candidate, "--"}):
+		return gittree.RawResult{}
+	case private == "" && isolated && slices.Equal(args, []string{"rev-parse", "--show-prefix"}):
+		return answer("")
+	case private == "" && isolated && slices.Equal(args, []string{"rev-parse", "--show-toplevel"}):
+		return answer(f.isolated.root)
 	case private == "" && request.Dir == f.root && slices.Equal(args, []string{"rev-parse", "--show-prefix"}):
 		return answer("metasystem/")
 	case private == "" && request.Dir == f.root && slices.Equal(args, []string{"rev-parse", "--show-toplevel"}):
@@ -198,41 +230,48 @@ func (f *receiptReaderFixture) raw(request gittree.RawRequest) gittree.RawResult
 			f.t.Fatalf("undeclared subtree request %q", args)
 		}
 		return answer(f.rawAfter)
-	case private == "" && request.Dir == f.root && slices.Equal(args, []string{"ls-files", "--stage", "-z"}):
+	case private == "" && workspace && slices.Equal(args, []string{"ls-files", "--stage", "-z"}):
 		return gittree.RawResult{Stdout: f.entries()}
-	case private != "" && !known && request.Dir == f.root && slices.Equal(args, []string{"read-tree", "--empty"}):
+	case private != "" && !known && workspace && slices.Equal(args, []string{"read-tree", "--empty"}):
 		f.indices[private] = receiptPrivateIndex{kind: "staged", phase: "seeded"}
 		return gittree.RawResult{}
-	case private != "" && !known && request.Dir == f.root && slices.Equal(args, []string{"read-tree", "HEAD"}):
+	case private != "" && !known && workspace && slices.Equal(args, []string{"read-tree", "HEAD"}):
 		f.indices[private] = receiptPrivateIndex{kind: "snapshot", phase: "seeded"}
 		return gittree.RawResult{}
-	case private != "" && !known && request.Dir == f.root && len(args) == 2 && args[0] == "read-tree" && (args[1] == f.candidate || args[1] == f.rawAfter):
+	case private != "" && !known && workspace && len(args) == 2 && args[0] == "read-tree" && (args[1] == f.candidate || args[1] == f.rawAfter || isolated && args[1] == receiptFactID(f.isolated.after)):
 		f.indices[private] = receiptPrivateIndex{kind: "filter", phase: "seeded", seed: args[1]}
 		return gittree.RawResult{}
-	case private != "" && known && state.kind == "staged" && state.phase == "seeded" && request.Dir == f.repository && slices.Equal(args, []string{"update-index", "-z", "--index-info"}) && bytes.Equal(request.Stdin, f.entries()):
+	case private != "" && known && state.kind == "staged" && state.phase == "seeded" && toplevel && slices.Equal(args, []string{"update-index", "-z", "--index-info"}) && bytes.Equal(request.Stdin, f.entries()):
 		state.phase = "ready"
 		f.indices[private] = state
 		return gittree.RawResult{}
-	case private != "" && known && state.kind == "snapshot" && state.phase == "seeded" && request.Dir == f.root && slices.Equal(args, []string{"add", "-A", "--", "."}):
-		f.checkFiles()
+	case private != "" && known && state.kind == "snapshot" && state.phase == "seeded" && workspace && slices.Equal(args, []string{"add", "-A", "--", "."}):
+		if isolated {
+			f.checkIsolatedFiles()
+		} else {
+			f.checkFiles()
+		}
 		state.phase = "ready"
 		f.indices[private] = state
 		return gittree.RawResult{}
-	case private != "" && known && state.kind == "filter" && state.phase == "seeded" && request.Dir == f.repository && slices.Equal(args, append([]string{"update-index", "--force-remove", "--"}, appendOnlyRegisters...)):
+	case private != "" && known && state.kind == "filter" && state.phase == "seeded" && toplevel && slices.Equal(args, append([]string{"update-index", "--force-remove", "--"}, appendOnlyRegisters...)):
 		state.phase = "ready"
 		f.indices[private] = state
 		return gittree.RawResult{}
-	case private != "" && known && state.phase == "ready" && request.Dir == f.root && slices.Equal(args, []string{"write-tree"}):
+	case private != "" && known && state.phase == "ready" && workspace && slices.Equal(args, []string{"write-tree"}):
 		state.phase = "done"
 		f.indices[private] = state
 		switch state.kind {
 		case "staged":
 			return answer(f.indexAfter)
 		case "snapshot":
+			if isolated {
+				return answer(f.checkIsolatedFiles())
+			}
 			f.checkFiles()
 			return answer(f.snapshotTop())
 		case "filter":
-			if state.seed == f.candidate {
+			if state.seed == f.candidate || isolated && state.seed == receiptFactID(f.isolated.after) {
 				return answer(f.identity)
 			}
 			return answer(receiptFactID(receiptWithoutRegisters(f.after)))

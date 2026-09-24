@@ -86,11 +86,11 @@ func inspectionReaders(t *testing.T, root string, expected ...testgit.Expectatio
 
 func inspectionMissingRefError(t *testing.T) error {
 	t.Helper()
-	executable, err := os.Executable()
+	testBinary, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	child := exec.Command(executable, "-test.run=^TestGoalBranchMissingRefExitChild$")
+	child := exec.Command(testBinary, "-test.run=^TestGoalBranchMissingRefExitChild$")
 	child.Env = append(os.Environ(), "GOAL_BRANCH_MISSING_REF_CHILD=1")
 	err = child.Run()
 	var exit *exec.ExitError

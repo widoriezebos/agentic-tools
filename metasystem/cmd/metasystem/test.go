@@ -625,10 +625,7 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		}
 		workerCapabilitiesChecked = true
 	}
-	effective := testpolicy.ProtectedContract(baseContract, candidateContract)
-	if effective.Fallback == "" {
-		effective.Fallback = candidateContract.Fallback
-	}
+	effective := protectedTestingContractWithCandidateFallback(baseContract, candidateContract)
 	if err := effective.Validate(); err != nil {
 		return testingPreparation{}, fmt.Errorf("protected testing contract: %w", err)
 	}
@@ -730,6 +727,14 @@ func prepareTestingOnce(request testingSelectionRequest) (testingPreparation, er
 		FirstTestingTransition:    !basePresent,
 		BehaviorPolicyDigest:      bytesSHA256(behaviorsurface.Bytes()), Plan: plan, Environment: selectionEnvironment,
 		AllGroups: request.AllGroups}, nil
+}
+
+func protectedTestingContractWithCandidateFallback(baseContract, candidateContract testpolicy.Contract) testpolicy.Contract {
+	effective := testpolicy.ProtectedContract(baseContract, candidateContract)
+	if effective.Fallback == "" {
+		effective.Fallback = candidateContract.Fallback
+	}
+	return effective
 }
 
 func testingPreparationAccountsToGoal(request testingSelectionRequest) (bool, error) {

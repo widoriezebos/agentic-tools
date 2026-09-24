@@ -310,27 +310,6 @@ func TestDiagnosticNoReuseForcesFreshRunsAndDeliveryRefuses(t *testing.T) {
 	}
 }
 
-func reexecWithFixedProofLoad(t *testing.T, marker, testName string) bool {
-	t.Helper()
-	if os.Getenv(marker) != "" {
-		return false
-	}
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sampler := filepath.Join(t.TempDir(), proofrun.TestHostLoadCommandName("0"))
-	if err := os.Link(executable, sampler); err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command(sampler, "-test.run=^"+testName+"$", "-test.count=1")
-	command.Env = append(proofFixtureEnvironmentWithoutHostLoad(os.Environ()), marker+"=1")
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("fixed-load %s child: %v\n%s", testName, err, output)
-	}
-	return true
-}
-
 func TestPrefixReceiptAllowsIdentityReuseAndBindsRevisions(t *testing.T) {
 	args := batchPrefixReceiptArgs("/prefix", "/landing", "goal-a", "tree-a", "result.json", []string{"same", "different"}, batch.Claim{Revision: 7, AccountingRevision: 5})
 	joined := strings.Join(args, " ")

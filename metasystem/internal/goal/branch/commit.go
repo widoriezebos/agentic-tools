@@ -347,6 +347,13 @@ func (r commitRepository) commitPreparedState(req CommitRequest, subjectCommit s
 
 func CommitStaged(req CommitRequest) (string, error) { return commitStaged(req, gitCommitRepository()) }
 
+func CommitStagedWithInputs(req CommitRequest, facts CommitFacts, effects CommitEffects) (string, error) {
+	if !facts.complete() || !effects.complete() {
+		return "", fmt.Errorf("commit facts and effects must be complete")
+	}
+	return commitStaged(req, commitRepository{facts: facts, effects: effects})
+}
+
 func adoptionCheckoutClean(req CommitRequest, state commitBranchState, allowed []string) error {
 	return gitCommitRepository().adoptionCheckoutClean(req, state, allowed)
 }

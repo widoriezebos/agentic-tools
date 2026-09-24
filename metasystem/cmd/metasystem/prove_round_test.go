@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -20,16 +19,6 @@ import (
 
 type proveRoundFixture struct {
 	installation, worktree, tree string
-}
-
-func proveRoundGit(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", dir, "-c", "core.hooksPath=/dev/null", "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid"}, args...)...)
-	out, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
 }
 
 func writeProveRoundRecord(t *testing.T, installation, id string, fields map[string]any) {
@@ -51,104 +40,8 @@ func writeProveRoundRecord(t *testing.T, installation, id string, fields map[str
 	}
 }
 
-// newProveRoundFixture is a project with its installation under metasystem/,
-// one job worktree of the dispatcher's shape under artifacts/agents/worktrees
-// holding an uncommitted round, and a two-round chain of records.
-func newProveRoundFixture(t *testing.T) proveRoundFixture {
+func newProveRoundFileFixture(t *testing.T) proveRoundFixture {
 	t.Helper()
-	projectRoot, err := canonicalPath(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	installation := filepath.Join(projectRoot, "metasystem")
-	if err := os.MkdirAll(installation, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(installation, "seed.txt"), []byte("seed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(projectRoot, ".gitignore"), []byte("metasystem/artifacts/\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	proveRoundGit(t, projectRoot, "init", "-q", "-b", "main")
-	proveRoundGit(t, projectRoot, "add", ".")
-	proveRoundGit(t, projectRoot, "commit", "-qm", "seed")
-	worktree := filepath.Join(installation, "artifacts", "agents", "worktrees", "implementer-1")
-	proveRoundGit(t, projectRoot, "worktree", "add", "-q", "-b", "agent/implementer-1", worktree, "HEAD")
-	if err := os.WriteFile(filepath.Join(worktree, "metasystem", "round.txt"), []byte("round 1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Delegates never commit: the round's work is the working tree.
-	tree, err := (gittree.Workspace{Dir: worktree}).Snapshot("HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if head := proveRoundGit(t, worktree, "rev-parse", "HEAD^{tree}"); head == tree {
-		t.Fatalf("the fixture's round left HEAD unchanged: %s", head)
-	}
-	writeProveRoundRecord(t, installation, "implementer-1", map[string]any{"launchMode": "worktree", "workspaceRoot": worktree, "goalId": "goal-a", "round": 1})
-	writeProveRoundRecord(t, installation, "implementer-1-r2", map[string]any{"parentJob": "implementer-1", "launchMode": "worktree", "workspaceRoot": worktree, "goalId": "goal-a", "round": 2})
-	return proveRoundFixture{installation: installation, worktree: worktree, tree: tree}
-}
-
-func stubProveRoundRun(t *testing.T, exit int) *[]string {
-	t.Helper()
-	var captured []string
-	previous := proveRoundTestRun
-	proveRoundTestRun = func(args []string) int {
-		captured = append([]string(nil), args...)
-		return exit
-	}
-	t.Cleanup(func() { proveRoundTestRun = previous })
-	return &captured
-}
-
-func readProofRoundRecord(t *testing.T, installation, rootJob string, round int) ProofRoundRecord {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(installation, "artifacts", "agents", rootJob, "rounds", itoa(round), "proof.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var record ProofRoundRecord
-	if err := json.Unmarshal(data, &record); err != nil {
-		t.Fatal(err)
-	}
-	return record
-}
-
-func itoa(value int) string { return strconv.Itoa(value) }
-
-func TestProveRoundProvesTheChainWorktreesCommittedTreeOnTheInstallation(t *testing.T) {
-	fixture := newProveRoundFixture(t)
-	captured := stubProveRoundRun(t, 7)
-	// Any member of the chain names it; the tree is the worktree's snapshot
-	// (HEAD plus the working tree), the whole project, and the proof runs on
-	// the installation, not in the worktree.
-	if status := runDispatchProveRound([]string{"--root", fixture.installation, "--job", "implementer-1-r2"}); status != 7 {
-		t.Fatalf("prove-round exit = %d; want the test run's own exit 7", status)
-	}
-	want := []string{"--root", fixture.installation, "--tree", fixture.tree, "--goal", "goal-a", "--mode", "auto", "--purpose", "diagnostic"}
-	if strings.Join(*captured, " ") != strings.Join(want, " ") {
-		t.Fatalf("test run arguments = %v; want %v", *captured, want)
-	}
-	record := readProofRoundRecord(t, fixture.installation, "implementer-1", 2)
-	if record.CandidateTree != fixture.tree || record.RootJob != "implementer-1" || record.Round != 2 || record.GoalID != "goal-a" ||
-		record.Purpose != "diagnostic" || record.ExitStatus != 7 || record.AttemptID != "" || record.Sufficient {
-		t.Fatalf("proof record = %+v", record)
-	}
-	if _, err := time.Parse(time.RFC3339Nano, record.ProvedAt); err != nil {
-		t.Fatalf("proof record time: %v", err)
-	}
-	// The retry decision of a red previous round rides along to admission.
-	if status := runDispatchProveRound([]string{"--root", fixture.installation, "--job", "implementer-1", "--retry-decision", "/tmp/decision.json"}); status != 7 {
-		t.Fatalf("prove-round with a retry decision exit = %d; want 7", status)
-	}
-	if joined := strings.Join(*captured, " "); !strings.HasSuffix(joined, "--purpose diagnostic --retry-decision /tmp/decision.json") {
-		t.Fatalf("the retry decision did not reach the test run: %v", *captured)
-	}
-}
-
-func TestProveRoundTreatsWholeReuseAsProof(t *testing.T) {
 	projectRoot, err := canonicalPath(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +59,13 @@ func TestProveRoundTreatsWholeReuseAsProof(t *testing.T) {
 	}
 	writeProveRoundRecord(t, installation, "implementer-1", map[string]any{"launchMode": "worktree", "workspaceRoot": worktree, "goalId": "goal-a", "round": 1})
 	writeProveRoundRecord(t, installation, "implementer-1-r2", map[string]any{"parentJob": "implementer-1", "launchMode": "worktree", "workspaceRoot": worktree, "goalId": "goal-a", "round": 2})
-	tree := strings.Repeat("b", 40)
+	return proveRoundFixture{installation: installation, worktree: worktree, tree: strings.Repeat("b", 40)}
+}
+
+// Each proof attempt gets its own complete snapshot transcript and isolated
+// index. A missing or extra operation makes the test fail.
+func strictProveRoundSnapshot(t *testing.T, worktree, tree string) func(gittree.RawRequest) gittree.RawResult {
+	t.Helper()
 	prefix := []string{
 		"-C", worktree,
 		"-c", "core.fileMode=true",
@@ -219,7 +118,7 @@ func TestProveRoundTreatsWholeReuseAsProof(t *testing.T) {
 		expect([]string{"rev-parse", "--show-prefix"}, "", false),
 	)
 	operations := []string{"git read-tree HEAD", "git add -A -- .", "git write-tree", "git rev-parse --show-prefix"}
-	raw := func(request gittree.RawRequest) gittree.RawResult {
+	return func(request gittree.RawRequest) gittree.RawResult {
 		callIndex := len(stub.Calls())
 		if callIndex >= len(operations) || request.Operation != operations[callIndex] {
 			t.Fatalf("unexpected Git operation %q at call %d", request.Operation, callIndex)
@@ -227,39 +126,93 @@ func TestProveRoundTreatsWholeReuseAsProof(t *testing.T) {
 		result := stub.Run(testgit.Call{Dir: request.Dir, Args: request.Args, Env: request.Env, Stdin: request.Stdin})
 		return gittree.RawResult{Stdout: result.Stdout, Stderr: result.Stderr, Err: result.Err}
 	}
+}
+
+func stubProveRoundRun(t *testing.T, exit int) *[]string {
+	t.Helper()
+	var captured []string
+	previous := proveRoundTestRun
+	proveRoundTestRun = func(args []string) int {
+		captured = append([]string(nil), args...)
+		return exit
+	}
+	t.Cleanup(func() { proveRoundTestRun = previous })
+	return &captured
+}
+
+func readProofRoundRecord(t *testing.T, installation, rootJob string, round int) ProofRoundRecord {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(installation, "artifacts", "agents", rootJob, "rounds", itoa(round), "proof.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record ProofRoundRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	return record
+}
+
+func itoa(value int) string { return strconv.Itoa(value) }
+
+func TestProveRoundProvesTheChainWorktreesCommittedTreeOnTheInstallation(t *testing.T) {
+	fixture := newProveRoundFileFixture(t)
+	captured := stubProveRoundRun(t, 7)
+	// Any member of the chain names it; the tree is the worktree's snapshot
+	// (HEAD plus the working tree), the whole project, and the proof runs on
+	// the installation, not in the worktree.
+	if status := runDispatchProveRoundWithRawSource([]string{"--root", fixture.installation, "--job", "implementer-1-r2"}, strictProveRoundSnapshot(t, fixture.worktree, fixture.tree)); status != 7 {
+		t.Fatalf("prove-round exit = %d; want the test run's own exit 7", status)
+	}
+	want := []string{"--root", fixture.installation, "--tree", fixture.tree, "--goal", "goal-a", "--mode", "auto", "--purpose", "diagnostic"}
+	if !slices.Equal(*captured, want) {
+		t.Fatalf("test run arguments = %v; want %v", *captured, want)
+	}
+	record := readProofRoundRecord(t, fixture.installation, "implementer-1", 2)
+	if record.CandidateTree != fixture.tree || record.RootJob != "implementer-1" || record.Round != 2 || record.GoalID != "goal-a" ||
+		record.Purpose != "diagnostic" || record.ExitStatus != 7 || record.AttemptID != "" || record.Sufficient {
+		t.Fatalf("proof record = %+v", record)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, record.ProvedAt); err != nil {
+		t.Fatalf("proof record time: %v", err)
+	}
+	// The retry decision of a red previous round rides along to admission.
+	if status := runDispatchProveRoundWithRawSource([]string{"--root", fixture.installation, "--job", "implementer-1", "--retry-decision", "/tmp/decision.json"}, strictProveRoundSnapshot(t, fixture.worktree, fixture.tree)); status != 7 {
+		t.Fatalf("prove-round with a retry decision exit = %d; want 7", status)
+	}
+	if wantRetry := append(slices.Clone(want), "--retry-decision", "/tmp/decision.json"); !slices.Equal(*captured, wantRetry) {
+		t.Fatalf("the retry decision did not reach the test run: %v", *captured)
+	}
+}
+
+func TestProveRoundTreatsWholeReuseAsProof(t *testing.T) {
+	fixture := newProveRoundFileFixture(t)
 	stubProveRoundRun(t, proofrun.ExitReusableSuccess)
-	if status := runDispatchProveRoundWithRawSource([]string{"--root", installation, "--job", "implementer-1"}, raw); status != 0 {
+	if status := runDispatchProveRoundWithRawSource([]string{"--root", fixture.installation, "--job", "implementer-1"}, strictProveRoundSnapshot(t, fixture.worktree, fixture.tree)); status != 0 {
 		t.Fatalf("a round proved by whole reuse exited %d; want 0", status)
 	}
-	record := readProofRoundRecord(t, installation, "implementer-1", 2)
-	if record.CandidateTree != tree || !record.ReusedWhole || !record.Sufficient || record.ExitStatus != 0 || record.AttemptID != "" {
+	record := readProofRoundRecord(t, fixture.installation, "implementer-1", 2)
+	if record.CandidateTree != fixture.tree || !record.ReusedWhole || !record.Sufficient || record.ExitStatus != 0 || record.AttemptID != "" {
 		t.Fatalf("whole reuse was not recorded as the proof: %+v", record)
 	}
 }
 
 func TestProveRoundRefusesWhatItCannotProveAsARound(t *testing.T) {
-	fixture := newProveRoundFixture(t)
+	fixture := newProveRoundFileFixture(t)
 	captured := stubProveRoundRun(t, 0)
 	refuse := func(name string, args ...string) {
 		t.Helper()
 		*captured = nil
-		if status := runDispatchProveRound(args); status != 2 {
+		noGit := func(request gittree.RawRequest) gittree.RawResult {
+			t.Fatalf("%s: Git started before refusal: %s", name, request.Operation)
+			return gittree.RawResult{}
+		}
+		if status := runDispatchProveRoundWithRawSource(args, noGit); status != 2 {
 			t.Fatalf("%s: exit = %d; want refusal 2", name, status)
 		}
 		if *captured != nil {
 			t.Fatalf("%s: the test run was started anyway with %v", name, *captured)
 		}
-	}
-	// Every change in the worktree is the round's work, an untracked file
-	// included: the tree proved follows it.
-	if err := os.WriteFile(filepath.Join(fixture.worktree, "metasystem", "extra.txt"), []byte("more\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if status := runDispatchProveRound([]string{"--root", fixture.installation, "--job", "implementer-1"}); status != 0 || len(*captured) < 4 || (*captured)[3] == fixture.tree {
-		t.Fatalf("an untracked change did not reach the proved tree: exit=%d args=%v", status, *captured)
-	}
-	if err := os.Remove(filepath.Join(fixture.worktree, "metasystem", "extra.txt")); err != nil {
-		t.Fatal(err)
 	}
 	// A shared-checkout job has no tree of its own to prove.
 	writeProveRoundRecord(t, fixture.installation, "shared-1", map[string]any{"launchMode": "shared-checkout", "workspaceRoot": filepath.Dir(fixture.installation), "goalId": "goal-a", "round": 1})
@@ -275,8 +228,12 @@ func TestProveRoundRefusesWhatItCannotProveAsARound(t *testing.T) {
 	}
 	// A record without a launch mode is placed by where its workspace lives.
 	writeProveRoundRecord(t, fixture.installation, "older-1", map[string]any{"workspaceRoot": fixture.worktree, "goalId": "goal-a", "round": 1})
-	if status := runDispatchProveRound([]string{"--root", fixture.installation, "--job", "older-1"}); status != 0 || len(*captured) == 0 {
+	if status := runDispatchProveRoundWithRawSource([]string{"--root", fixture.installation, "--job", "older-1"}, strictProveRoundSnapshot(t, fixture.worktree, fixture.tree)); status != 0 {
 		t.Fatalf("a record without a launch mode was not placed by its worktree: exit=%d args=%v", status, *captured)
+	}
+	want := []string{"--root", fixture.installation, "--tree", fixture.tree, "--goal", "goal-a", "--mode", "auto", "--purpose", "diagnostic"}
+	if !slices.Equal(*captured, want) {
+		t.Fatalf("a record without a launch mode forwarded %v; want %v", *captured, want)
 	}
 }
 

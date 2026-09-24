@@ -1,11 +1,7 @@
 package missionrunner
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,87 +21,6 @@ const healContract = "# Intent\n\n```mission\n" +
 	"```\n\n```mission-seal\n" +
 	"sealed.baseline.score=5\n" +
 	"```\n"
-
-// crashedMission builds a running mission whose runner died inside a turn:
-// the fence counters have spent spentCycles while the ledger holds only
-// ledgerCycles appended lines (equal counts model a clean resume). The
-// workspace is a real git repository so the heal can resolve HEAD; the
-// anchor is stubbed as in the other engine tests, because anchoring shells
-// out to the metasystem binary a unit test does not have.
-func crashedMission(t *testing.T, ledgerCycles, spentCycles int) (engine *Engine, statePath, ledgerPath, head string) {
-	t.Helper()
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	root := t.TempDir()
-	git := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
-			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com")
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return string(out)
-	}
-	git("init", "-q")
-	// The deployment's projection boundary: runtime state under
-	// artifacts/ stays outside the wall's shippable snapshot.
-	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("artifacts/\nbin/\nmetasystem.conf\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "README"), []byte("seed\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	git("add", ".gitignore", "README")
-	git("commit", "-q", "-m", "seed")
-	git("checkout", "-q", "-B", "main")
-	head = strings.TrimSpace(git("rev-parse", "HEAD"))
-
-	engine = NewEngine(root, "demo")
-	engine.anchorFn = func(string, string, string) error { return nil }
-	dir := engine.missionDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	contractPath := engine.approvedContractPath()
-	if err := os.WriteFile(contractPath, []byte(healContract), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256([]byte(healContract))
-	writeJSONFile(t, engine.fencesPath(), map[string]any{
-		"schemaVersion": 1, "missionId": "demo", "startedAt": "2026-08-11T00:00:00Z",
-		"cycles": spentCycles, "reservations": map[string]any{},
-		"approvedContractSha256": hex.EncodeToString(sum[:]),
-	})
-
-	statePath = filepath.Join(dir, "state.json")
-	ledgerPath = filepath.Join(dir, "ledger.md")
-	if err := mission.InitLedger(ledgerPath, 10, 5); err != nil {
-		t.Fatal(err)
-	}
-	if err := mission.InitStateWithBaseline(statePath, contractPath, ledgerPath, "", "main", strings.Repeat("b", 40), testAdmissionOrigins()); err != nil {
-		t.Fatal(err)
-	}
-	for cycle := 1; cycle <= ledgerCycles; cycle++ {
-		if _, err := mission.AppendCycle(ledgerPath, cycle, "unresolved", testSHA, "score=5", "no"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if ledgerCycles > 0 {
-		// Bring the state to its last concluded cycle, as a real crash
-		// leaves it: the reserved cycle exists only in the fence counters.
-		proposed := deepCopyDoc(readTestDoc(t, statePath))
-		proposed["ledger"].(map[string]any)["cycles"] = ledgerCycles
-		proposed["fences"].(map[string]any)["cycles"] = ledgerCycles
-		if _, err := engine.writeState(statePath, proposed); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return engine, statePath, ledgerPath, head
-}
 
 func TestHealReservedCycleRecordsLostTurn(t *testing.T) {
 	bed := crashedFileMission(t, 2, 3)

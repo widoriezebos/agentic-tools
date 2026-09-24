@@ -354,17 +354,6 @@ func admissionReasonTokens(t *testing.T, reason string) map[string]string {
 	return tokens
 }
 
-func proofFixtureEnvironmentWithoutHostLoad(environment []string) []string {
-	prefix := proofrun.TestHostLoadEnvironment + "="
-	filtered := make([]string, 0, len(environment))
-	for _, entry := range environment {
-		if !strings.HasPrefix(entry, prefix) {
-			filtered = append(filtered, entry)
-		}
-	}
-	return filtered
-}
-
 func TestLandFixtureConfigurationsPinProofAdmission(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "land-fixtures.sh"))
 	if err != nil {

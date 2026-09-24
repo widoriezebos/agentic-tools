@@ -26,6 +26,10 @@ var batchDiagnosisSeams = struct {
 }{commitForTree, batch.DiagnoseRed}
 
 func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
+	return executeBatchDiagnosisWithConfig(root, id, actor, at, nil)
+}
+
+func executeBatchDiagnosisWithConfig(root, id, actor string, at time.Time, lookup func(string, string) (string, error)) error {
 	controlRoot := batch.ModuleRoot(root)
 	ledgerOwner, err := productionTrunkRedLedgerOwner(controlRoot)
 	if err != nil {
@@ -61,7 +65,11 @@ func executeBatchDiagnosis(root, id, actor string, at time.Time) error {
 			return "", false, nil
 		},
 		MintOpid: func() (string, error) {
-			machine, err := goal.ResolveMachine(controlRoot)
+			resolveMachine := goal.ResolveMachine
+			if lookup != nil {
+				resolveMachine = func(root string) (string, error) { return goal.ResolveMachineWithConfig(root, lookup) }
+			}
+			machine, err := resolveMachine(controlRoot)
 			if err != nil {
 				return "", err
 			}

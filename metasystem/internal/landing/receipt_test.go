@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -212,27 +213,77 @@ func TestCreateTestReceiptIgnoresLiveWorkspaceMotion(t *testing.T) {
 }
 
 func TestCreateTestReceiptToleratesCandidateRegisterAppend(t *testing.T) {
-	f := newObserveFixture(t)
-	candidate, err := (gittree.Workspace{Dir: f.root}).StagedTree()
-	if err != nil {
-		t.Fatal(err)
+	f := newReceiptReaderFixture(t, "", false)
+	register := "records/narrator-digest.log"
+	f.isolated.root = t.TempDir()
+	f.isolated.after = make(map[string][]byte, len(f.before))
+	for path, data := range f.before {
+		f.isolated.after[path] = bytes.Clone(data)
 	}
-	receipt, err := CreateTestReceipt(
-		f.root,
-		candidate,
-		`printf '%s\n' 'digest=during-battery' >> records/narrator-digest.log`,
-		io.Discard,
-		io.Discard,
-	)
+	f.isolated.after[register] = append(f.isolated.after[register], "digest=during-battery\n"...)
+	command := `printf '%s\n' 'digest=during-battery' >> records/narrator-digest.log`
+	var candidateRegister []byte
+	closeCalls := 0
+	checkout := func(workspace gittree.Workspace, tree string) (gittree.Workspace, func() error, error) {
+		if workspace.Dir != f.root || tree != f.candidate {
+			t.Fatalf("checkout input = %q, %q", workspace.Dir, tree)
+		}
+		for path, data := range f.before {
+			full := filepath.Join(f.isolated.root, filepath.FromSlash(path))
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(full, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		f.checkFactFilesAt(f.isolated.root, f.before)
+		return gittree.Workspace{Dir: f.isolated.root, RawSource: f.raw}, func() error {
+			closeCalls++
+			if closeCalls == 1 {
+				var err error
+				candidateRegister, err = os.ReadFile(filepath.Join(f.isolated.root, register))
+				if err != nil {
+					return err
+				}
+			}
+			return os.RemoveAll(f.isolated.root)
+		}, nil
+	}
+	receipt, err := createTestReceiptWithInputs(f.root, f.candidate, command, io.Discard, io.Discard,
+		gittree.Workspace{Dir: f.root, RawSource: f.raw}, checkout)
 	if err != nil {
 		t.Fatalf("candidate register append refused: %v", err)
 	}
-	identity, err := receiptIdentity(gittree.Workspace{Dir: f.root}, candidate)
-	if err != nil {
-		t.Fatal(err)
+	if closeCalls != 2 {
+		t.Fatalf("candidate close calls = %d, want two", closeCalls)
 	}
-	if receipt.Binding.IndexTreeAfter != candidate || receipt.Binding.WorktreeTreeAfter != identity {
-		t.Fatalf("receipt bindings = %+v, want exact index %s and projection %s", receipt.Binding, candidate, identity)
+	if !bytes.Equal(candidateRegister, f.isolated.after[register]) {
+		t.Fatalf("candidate register = %q, want %q", candidateRegister, f.isolated.after[register])
+	}
+	liveRegister, err := os.ReadFile(filepath.Join(f.root, register))
+	if err != nil || !bytes.Equal(liveRegister, f.before[register]) {
+		t.Fatalf("live register = %q, %v; want %q", liveRegister, err, f.before[register])
+	}
+	if receipt.SchemaVersion != 3 || receipt.Tree != f.candidate || receipt.Command != command || receipt.ExitStatus != 0 ||
+		receipt.Binding != filteredReceiptBinding(f.candidate, f.identity) || receipt.WorktreeProjection == nil ||
+		receipt.WorktreeProjection.Tree != f.identity || !slices.Equal(receipt.WorktreeProjection.Excludes, AppendOnlyRegisters()) {
+		t.Fatalf("receipt = %+v, want candidate index and filtered projection", receipt)
+	}
+	published, err := os.ReadFile(TestReceiptPath(f.root, f.candidate))
+	if err != nil || len(published) == 0 || published[len(published)-1] != '\n' {
+		t.Fatalf("published receipt = %q, %v", published, err)
+	}
+	var decoded TestReceipt
+	if err := json.Unmarshal(published, &decoded); err != nil || decoded.Binding != receipt.Binding {
+		t.Fatalf("published receipt binding = %+v, %v", decoded.Binding, err)
+	}
+	accepted, err := f.read()
+	if err != nil || accepted.Binding != receipt.Binding {
+		t.Fatalf("published receipt rejected: %+v, %v", accepted, err)
 	}
 }
 

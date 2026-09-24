@@ -2166,7 +2166,11 @@ func AcceptedRiskDecision(r VerbRequest, id, finding, chain, by, why string, pro
 }
 
 func AcceptedRiskDecisionOpID(repoRoot, id, finding, chain string, now time.Time) (string, error) {
-	return acceptedRiskDecisionOpIDWithResolver(repoRoot, id, finding, chain, now, ResolveEndpoint)
+	return AcceptedRiskDecisionOpIDWithResolver(repoRoot, id, finding, chain, now, ResolveEndpoint)
+}
+
+func AcceptedRiskDecisionOpIDWithResolver(repoRoot, id, finding, chain string, now time.Time, resolve func(string) (Endpoint, error)) (string, error) {
+	return acceptedRiskDecisionOpIDWithResolver(repoRoot, id, finding, chain, now, resolve)
 }
 
 func acceptedRiskDecisionOpIDWithResolver(repoRoot, id, finding, chain string, now time.Time, resolve func(string) (Endpoint, error)) (string, error) {

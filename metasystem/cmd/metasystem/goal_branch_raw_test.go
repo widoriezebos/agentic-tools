@@ -38,7 +38,7 @@ func newBranchRawFixture(t *testing.T, nested, reader bool) *branchRawFixture {
 	return newBranchRawFixtureWithReadReplies(t, nested, reader, true)
 }
 
-func newBranchRawFixtureWithReadReplies(t *testing.T, nested, reader, readReplies bool) *branchRawFixture {
+func newBranchRawFixtureWithReadReplies(t *testing.T, nested, reader, readReplies bool, lineages ...string) *branchRawFixture {
 	t.Helper()
 	deny, err := filepath.Abs(filepath.Join("..", "..", "internal", "testgit", "testdata", "deny-bin"))
 	if err != nil {
@@ -95,7 +95,11 @@ func newBranchRawFixtureWithReadReplies(t *testing.T, nested, reader, readReplie
 	if err != nil || state != identity.Alive {
 		t.Fatalf("identity %s %v", state, err)
 	}
-	if _, err = lease.AnnounceWithPair(installation, "goal-branch-raw", int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "fixture", "fake", "m1"); err != nil {
+	lineage := "m1"
+	if len(lineages) != 0 {
+		lineage = lineages[0]
+	}
+	if _, err = lease.AnnounceWithPair(installation, "goal-branch-raw", int64(os.Getpid()), exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "fixture", "fake", lineage); err != nil {
 		t.Fatal(err)
 	}
 	if readReplies {

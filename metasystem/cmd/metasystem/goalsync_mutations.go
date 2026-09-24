@@ -1226,6 +1226,10 @@ func runGoalAcceptRisk(args []string) int {
 }
 
 func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) int {
+	return runGoalAcceptRiskWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func runGoalAcceptRiskWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("accept-risk", args)
 	f, ok := parseHumanSyncFlags(values, "accept-risk", args)
 	if !ok {
@@ -1238,7 +1242,7 @@ func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) in
 	if (f.temporaryWord == "") != (f.reviewBy == "") {
 		return refuseHumanVerb(values, 2, "--temporary-human-word and --review-by travel together", humanVerbRemedy{command: values.sameCommandWithout("temporary-human-word", "review-by")})
 	}
-	classification, err := classifyGoalAuthorityFirst("accept-risk", f)
+	classification, err := classifyGoalAuthorityFirstWithFacts("accept-risk", f, dependencies.authorityFacts)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "choose an open severe or unproven finding from the named critique register"})
 	}
@@ -1250,7 +1254,7 @@ func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) in
 			return 1
 		}
 	}
-	proof, err := proveGoalHumanAuthority("accept-risk", f, prove)
+	proof, err := proveGoalHumanAuthorityAt("accept-risk", f, prove, commandNow)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy))
 	}
@@ -1258,7 +1262,7 @@ func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) in
 		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
 	}
 	values.by = f.by
-	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
@@ -1284,7 +1288,7 @@ func runGoalAcceptRiskWithAuthority(args []string, prove goalAuthorityProver) in
 		printJSON(map[string]any{"outcome": res.Outcome, "tip": res.Tip, "detail": res.Detail})
 		return refuseHumanVerb(values, 1, res.Detail, humanVerbRemedy{words: "read the current goal and critique finding before retrying"})
 	}
-	opid, err = goal.AcceptedRiskDecisionOpID(f.root, f.id, f.finding, f.chain, req.Now)
+	opid, err = goal.AcceptedRiskDecisionOpIDWithResolver(f.root, f.id, f.finding, f.chain, req.Now, dependencies.endpoint)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "the goal act landed, but its accepted-risk record needs repair"})
 	}
