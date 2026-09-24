@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:2ef155b4808d18b9a1101c3e9eb5633a17c46664738618e149d897eb71f6749e",
+  "sourceDigest": "sha256:1b0c731050f8036cae840a7702e799a88273086437a5e8d2c6e416b430790201",
   "source": [
     {
       "path": ".npmrc",
@@ -164,11 +164,11 @@
     },
     {
       "path": "src/backlog/lanes.test.ts",
-      "sha256": "fb6728b334627c826ed8892c2985ba7a4e6dc5e327cc3bd22c7aff08a306953d"
+      "sha256": "e561f50ee79169d096ad93cf4f31642f5819cd39109c2969cc027e6b2a6bb076"
     },
     {
       "path": "src/backlog/lanes.ts",
-      "sha256": "bf07164af48ca46f191639f27b90207cf8227c7e2bd4cffa86e15e53234b81d7"
+      "sha256": "436cfdd019a638638ba085e9263c830d6255957cb43704c1596df4aed7bbd67e"
     },
     {
       "path": "src/backlog/menu.test.ts",
@@ -268,7 +268,7 @@
     },
     {
       "path": "src/help/terms.ts",
-      "sha256": "e1fd11595c6029cd82ab42441a101144c071858affd968a85e8171686e58b48f"
+      "sha256": "de9a5645519c3796b6ef3371462462caac95d1530c854d073da1e72dbf0e3754"
     },
     {
       "path": "src/index.css",
@@ -336,7 +336,7 @@
     },
     {
       "path": "src/overview/overview.test.ts",
-      "sha256": "d641f5e265270b534afb6908c120a2157e6927cbdb659e12bc93e80d590a5c13"
+      "sha256": "26bc60ee9c158ad6c30cbbcd94d78c349c38bb11f4f2a723acf0992d76dd61a1"
     },
     {
       "path": "src/overview/overview.ts",
@@ -698,7 +698,7 @@
     },
     {
       "path": "assets/index.js",
-      "sha256": "023c5b65a5f6fa11c9c8a399d5268e3b54d5f2f325d4a1ecfc8a7849758786e0"
+      "sha256": "a62d452204912f96602c2b01c927dcac0311d87275b727a420be0ff9db38fef7"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",
@@ -722,7 +722,7 @@
     },
     {
       "path": "interface.json",
-      "sha256": "a3a36e68b7ea9402777e90ca8fdb4c2c64ecd6ee7d0da04c0a0113de472fd8ae"
+      "sha256": "993e5113dfc3254357f3ee27993994a85999eaa0b18674903194e46765d33a76"
     },
     {
       "path": "theme.js",

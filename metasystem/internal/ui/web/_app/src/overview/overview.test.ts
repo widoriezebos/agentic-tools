@@ -442,7 +442,7 @@ describe("the lane strip", () => {
     expect(laneName("to-do")).toBe("To Do");
     expect(laneName("ready")).toBe("Ready for Work");
     expect(laneName("in-progress")).toBe("In Progress");
-    expect(laneName("review")).toBe("Review and Verification");
+    expect(laneName("review")).toBe("Review");
     expect(laneName("waiting")).toBe("Waiting");
   });
 

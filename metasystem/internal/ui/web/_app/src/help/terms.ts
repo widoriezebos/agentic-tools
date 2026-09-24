@@ -170,7 +170,7 @@ export const HELP: Record<HelpId, Term> = {
     text: "Goals a seat has claimed and is working on.",
   },
   "lane-review": {
-    term: "Review and Verification",
+    term: "Review",
     text: "Work that is built and being checked before it lands.",
   },
   "lane-waiting": {

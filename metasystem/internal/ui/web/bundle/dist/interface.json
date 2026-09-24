@@ -101,7 +101,7 @@
     },
     {
       "id": "review",
-      "title": "Review and Verification",
+      "title": "Review",
       "purpose": "Work that is built and being checked before it lands.",
       "shown": true
     },
@@ -273,7 +273,7 @@
     },
     {
       "id": "lane-review",
-      "term": "Review and Verification",
+      "term": "Review",
       "text": "Work that is built and being checked before it lands."
     },
     {

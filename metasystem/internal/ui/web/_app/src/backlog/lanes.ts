@@ -43,7 +43,7 @@ export const lanes: readonly Lane[] = [
   { id: "to-do", title: "To Do", help: "lane-todo" },
   { id: "ready", title: "Ready for Work", help: "lane-ready" },
   { id: "in-progress", title: "In Progress", help: "lane-progress" },
-  { id: "review", title: "Review and Verification", help: "lane-review" },
+  { id: "review", title: "Review", help: "lane-review" },
   { id: "waiting", title: "Waiting", help: "lane-waiting" },
   { id: "done", title: "Done", help: "lane-done" },
   { id: "abandoned", title: "Abandoned", help: "lane-abandoned" },
