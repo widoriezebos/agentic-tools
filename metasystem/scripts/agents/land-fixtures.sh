@@ -761,7 +761,8 @@ BACKLOG
       --id fx --origin human --intent "Create an exact fixture-local landing receipt." \
       --next "Run the bounded fixture receipt." \
       --risk severity=1,novelty=1,exposure=1,accumulation=1 \
-      --basis "This disposable fixture executes only its bounded local landing receipt." >/dev/null
+      --basis "This disposable fixture executes only its bounded local landing receipt." \
+      --fixture-human-authority >/dev/null
     "$seed_goal_engine" goal approve --root "$leg_seed" --id fx --by Wido \
       --lineage land-receipt-fixture --elapsed-limit 4h --attempt-limit 4 \
       --reserved-job-minutes-limit 12 --active-job-limit 1 --review-round-limit 0 \
@@ -905,7 +906,8 @@ if is_carried_scenario; then
         --id fx-b --origin human --intent "Create the second seat's carried landing." \
         --next "Prove debt is visible between seats." \
         --risk severity=1,novelty=1,exposure=1,accumulation=1 \
-        --basis "This disposable fixture serializes two carried landing seats." >/dev/null
+        --basis "This disposable fixture serializes two carried landing seats." \
+        --fixture-human-authority >/dev/null
     receipt_env_run env METASYSTEM_GOAL_NOW=$carried_now "$leg_peer/bin/metasystem" goal approve \
       --root "$leg_peer" --id fx-b --by Wido --lineage land-receipt-fixture-b \
       --elapsed-limit 4h --attempt-limit 4 --reserved-job-minutes-limit 12 \
@@ -1470,7 +1472,8 @@ publish_peer_ledger_move() { # optional peer checkout
       --intent "Publish one fixture peer goal." \
       --next "Let the landing consume this ledger-only move." \
       --risk severity=1,novelty=1,exposure=1,accumulation=1 \
-      --basis "This disposable fixture writes one isolated goal ledger commit." >/dev/null
+      --basis "This disposable fixture writes one isolated goal ledger commit." \
+      --fixture-human-authority >/dev/null
   receipt_env_run "$engine" lease retire --root "$checkout" --session land-receipt-fixture-peer \
     --pid "$$" --start "$peer_start" >/dev/null
   sync_remote=$(git -C "$checkout" config --get goal.sync-remote || true)
@@ -1575,6 +1578,18 @@ LEDGER
     awk '{ gsub(/<[^>]+>/, "fixture"); print }' "$fixture_template" >"$fixture_template.fixture"
     mv "$fixture_template.fixture" "$fixture_template"
   done
+  # The archive flattens the kit's own installation into this root, so its
+  # intent and doctrine books bind metasystem/docs/... chapters that do not
+  # exist here and its question register names goals this one-goal ledger
+  # lacks. The leg is an application: it owns minimal synthetic memory.
+  rm -rf "$leg_seed/docs/intent" "$leg_seed/docs/doctrine"
+  mkdir -p "$leg_seed/docs/intent" "$leg_seed/docs/doctrine" "$leg_seed/memory"
+  printf '%s\n' '# Intent' '' '- Kind: intent' '- Id: 01FIXTUREBRAINLEGINTENT' '- Status: accepted' '' \
+    'This disposable application exists only to land one fixture change.' >"$leg_seed/docs/intent/index.md"
+  printf '%s\n' '# Doctrine' '' '- Kind: doctrine' '- Id: 01FIXTUREBRAINLEGDOCTRINE' '- Status: accepted' '' \
+    'A landing is proven by its own gate, not narrated.' >"$leg_seed/docs/doctrine/index.md"
+  printf '%s\n' '# Open questions' '' '| id | opened | question | goals | status |' '| --- | --- | --- | --- | --- |' \
+    >"$leg_seed/memory/questions.md"
   awk '$0 !~ /^[[:space:]]*testing[.]contract[[:space:]]*=/' "$leg_seed/metasystem.conf" \
     >"$leg_seed/metasystem.conf.legacy"
   mv "$leg_seed/metasystem.conf.legacy" "$leg_seed/metasystem.conf"

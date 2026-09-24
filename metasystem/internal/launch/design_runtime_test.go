@@ -10,9 +10,7 @@ import (
 	"time"
 )
 
-// The name is a stable selector in retained testing contracts; the cases
-// check routing by the lane's runtime and model settings.
-func TestDesignAdapterFollowsTheResolvedModel(t *testing.T) {
+func TestLaneAdapterFollowsItsRuntimeSetting(t *testing.T) {
 	t.Parallel()
 
 	// A lane runs on the agent its own runtime setting names. The model never

@@ -766,6 +766,14 @@ case "$fixture_scenario" in
 	awk '{ gsub(/<[^>]+>/, "fixture"); print }' "$measure_root/docs/project-rules.md" \
 	  >"$measure_root/docs/project-rules.md.fixture"
 	mv "$measure_root/docs/project-rules.md.fixture" "$measure_root/docs/project-rules.md"
+	# The copied indexes bind chapters under metasystem/docs/, which a
+	# standalone bed does not have, so the bed keeps its own short records.
+	printf '%s\n' '# Intent' '' '- Kind: intent' '- Id: 01WAITMEASUREINTENT' '- Status: accepted' '' \
+	  'This bed exists so a landing can be measured without touching a real checkout.' \
+	  >"$measure_root/docs/intent/index.md"
+	printf '%s\n' '# Doctrine' '' '- Kind: doctrine' '- Id: 01WAITMEASUREDOCTRINE' '- Status: accepted' '' \
+	  'A landing passes the same project check here as anywhere else.' \
+	  >"$measure_root/docs/doctrine/index.md"
 	landing_goal=wait-measure-goal
 	measure_goal=$measure_root/plans/goals/$landing_goal.md
 	mkdir -p "${measure_goal%/*}"

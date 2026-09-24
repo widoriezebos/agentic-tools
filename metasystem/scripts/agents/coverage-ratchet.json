@@ -2,8 +2,10 @@
  "exempt": {
   "cmd/metasystem": "thin verb wiring exercised end to end by the shell fixtures",
   "internal/refusal": "declarative refusal types, constants, and register data contain no executable production statements; completeness tests independently join every row",
+  "internal/testgoal": "test-only in-memory goal ledger repository fixture with no test files of its own: imported only by _test.go files of internal/dispatch, internal/gaterun and internal/report, and no non-test package imports it or depends on it on darwin or linux; its behavior is exercised through those importers' tests",
   "internal/testutil": "test-only subprocess installation support exercised by the importing packages' wait tests",
-  "internal/ui/httpd/walkthrough": "manual UI walkthrough harness, not shipped engine code: package main (main.go, partner.go, smoke.go) with no test files, imported by no module package and built by no gate or build script; it serves the committed interface bundle over a canned ledger and a fakeacp partner for browser inspection, while the production handlers it drives are measured and floored in their own internal/ui packages"
+  "internal/ui/httpd/walkthrough": "manual UI walkthrough harness, not shipped engine code: package main (main.go, partner.go, smoke.go) with no test files, imported by no module package and built by no gate or build script; it serves the committed interface bundle over a canned ledger and a fakeacp partner for browser inspection, while the production handlers it drives are measured and floored in their own internal/ui packages",
+  "internal/ui/partner/fakeacp": "test-support scripted ACP server stand-in with no test files of its own: imported only by _test.go files of internal/ui/partner and internal/ui/httpd and by the exempt manual walkthrough harness internal/ui/httpd/walkthrough, and no shipped package imports it or depends on it on darwin or linux; the ACP host it drives is measured and floored in internal/ui/partner"
  },
  "floors": {
   "internal/acp": 88.7,
@@ -57,6 +59,7 @@
   "internal/landing/trunkredmap": 42.1,
   "internal/launch": 82.8,
   "internal/lease": 78.6,
+  "internal/ledgerfence": 23.1,
   "internal/lock": 84.0,
   "internal/metrics": 85.0,
   "internal/mission": 73.1,

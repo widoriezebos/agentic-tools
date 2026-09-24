@@ -200,6 +200,10 @@ type handler struct {
 	dist         fs.FS
 	page         [][]byte
 	nonce        func() string
+	// streamTick and streamHeartbeat are the notification stream's clock,
+	// per handler so that a test's faster clock is its own server's alone.
+	streamTick      time.Duration
+	streamHeartbeat time.Duration
 }
 
 func New(info Info, bound net.Addr, bundle fs.FS) http.Handler {
@@ -222,6 +226,9 @@ func newHandler(info Info, bound net.Addr, bundle fs.FS, nonce func() string) *h
 		dist:         bundle,
 		page:         page,
 		nonce:        nonce,
+
+		streamTick:      notificationTick,
+		streamHeartbeat: notificationHeartbeat,
 	}
 	// The Partner is told what the landing page shows from this server's own
 	// composition of it, which needs the journal and the seat's standing as

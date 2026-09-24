@@ -45,9 +45,10 @@ const (
 // and exists only to keep a silent connection from being reaped. The retry
 // hint is what the browser waits before reconnecting after a drop.
 //
-// They are variables rather than constants so a test can run the whole stream
-// in milliseconds; nothing outside this package changes them.
-var (
+// The tick and the heartbeat are the defaults every handler starts with; a
+// test that wants the stream in milliseconds sets them on its own handler, so
+// parallel streams never share a clock.
+const (
 	notificationTick      = time.Second
 	notificationHeartbeat = 25 * time.Second
 	notificationRetry     = 3 * time.Second
@@ -147,7 +148,7 @@ func (h *handler) notificationStream(w http.ResponseWriter, r *http.Request) {
 	arrivals := make(chan []notifications.Notice)
 	go func() {
 		defer close(arrivals)
-		_ = notifications.Follow(ctx, follower, notificationTick, func(notices []notifications.Notice) error {
+		_ = notifications.Follow(ctx, follower, h.streamTick, func(notices []notifications.Notice) error {
 			select {
 			case arrivals <- notices:
 				return nil
@@ -168,7 +169,7 @@ func (h *handler) notificationStream(w http.ResponseWriter, r *http.Request) {
 		partnerEvents = events
 	}
 
-	beat := time.NewTicker(notificationHeartbeat)
+	beat := time.NewTicker(h.streamHeartbeat)
 	defer beat.Stop()
 	for {
 		select {
