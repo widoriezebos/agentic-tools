@@ -7,18 +7,19 @@
  */
 
 /*
- * One measure, and the composer shares it.
+ * The conversation and the composer take the width the drawer gives them.
  *
- * Seventy-two characters of the reading face is what a column of prose is read
- * at, and `ch` is the element's own font size — so the measure is declared at
- * the size the prose is read at, and the card under the conversation is the
- * same width as the conversation rather than the width of whatever holds it.
- * Everything inside either one that is not prose says its own size.
+ * A fixed reading measure belongs to a column of prose read top to bottom; a
+ * drawer beside a board is resized by the human and read a few lines at a
+ * time, and a measure there leaves half the screen empty (Wido, 2026-09-24:
+ * "why fixed width? That's the part I don't like"). The width is the
+ * drawer's; the gutters are the page's; `font-size` is declared so anything
+ * inside that sizes itself in `ch` does so at the size prose is read at.
  */
 .ms-conversation,
 .ms-composer {
   box-sizing: border-box;
-  max-width: 72ch;
+  width: 100%;
   font-size: 16px;
 }
 
