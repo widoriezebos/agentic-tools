@@ -130,6 +130,10 @@ func FinishProof(store Store, id, actor string, result proofrun.TestResult, laun
 				if group.Status == "passed" {
 					record.Proof.Passed = append(record.Proof.Passed, group.ID)
 				}
+			} else if proofrun.CoveredTestPass(result, group) {
+				// Other groups of this proof ran these tests natively; the
+				// group passed here without a launch of its own.
+				record.Proof.Passed = append(record.Proof.Passed, group.ID)
 			}
 			if group.ReuseAttempt != "" {
 				if record.Proof.Reuse == nil {

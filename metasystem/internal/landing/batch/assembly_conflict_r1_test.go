@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"golang.org/x/sys/unix"
 )
 
@@ -140,6 +142,7 @@ func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) 
 	newBase, cOnly := bed.moved, testCommit(205)
 	must(t, store.Update(testBatchID, func(record *Record) error {
 		record.State, record.Proof.Status = StateLanding, "green"
+		record.Receipts = map[string]PrefixReceipt{"goal-a": {GoalID: "goal-a", Tree: record.PrefixTrees[0], AttemptID: record.Proof.AttemptID}}
 		return nil
 	}))
 	strictReassembly(t, &store,
@@ -154,7 +157,7 @@ func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) 
 		t.Fatal(err)
 	}
 	record := load(t, store)
-	if record.State != StateOpen || record.BaseTree != newBase || record.TipTree != cOnly || !slices.Equal(record.PrefixTrees, []string{cOnly}) || record.Proof != nil ||
+	if record.State != StateOpen || record.BaseTree != newBase || record.TipTree != cOnly || !slices.Equal(record.PrefixTrees, []string{cOnly}) || record.Proof != nil || len(record.Receipts) != 0 ||
 		record.Units[0].State != UnitReturnPending || record.Units[1].State != UnitReturnPending || record.Units[2].State != UnitJoined ||
 		!strings.Contains(record.Units[0].Failure, "cannot apply on moved base") ||
 		!strings.Contains(record.Units[1].Failure, "cannot apply after returning goal-a") {
@@ -168,6 +171,79 @@ func TestGLEBatchMovedBaseClosesTwoDependentConflictsBeforeReopen(t *testing.T) 
 	}
 	if !slices.Equal(returns, []string{"goal-a", "goal-b"}) {
 		t.Fatalf("moved-base return order=%v", returns)
+	}
+
+	// C alone is then proved, published and returned; A and B never reach the
+	// landing seams, and every member goes back to its own source claim.
+	var handBacks []Claim
+	returnSeams := ReturnSeams{
+		Read: func(string, string, string) (ReturnLedgerGoal, error) {
+			return ReturnLedgerGoal{Claimed: true, Machine: "landing", Lineage: "owner", Batch: testBatchID}, nil
+		},
+		Target: func(Unit) ReturnTarget { return ReturnTarget{State: ReturnTargetLive, Epoch: 9} },
+		HandBack: func(_ string, claim Claim, _ uint64) error {
+			handBacks = append(handBacks, claim)
+			return nil
+		},
+		Release: func(string, string) error { t.Fatal("live joiner claim was released"); return nil },
+	}
+	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(5, 0), returnSeams))
+	must(t, store.Update(testBatchID, func(record *Record) error {
+		record.Transition(StateSealed, time.Unix(6, 0), "seal", "owner", "")
+		return nil
+	}))
+	if _, err := RequireProofPlan(store, testBatchID, "owner", "expired", proofrun.LoadSample{}, testpolicy.Plan{SelectedGroups: []string{"group"}}, time.Unix(7, 0)); err != nil {
+		t.Fatal(err)
+	}
+	must(t, FinishProof(store, testBatchID, "owner", proofrun.TestResult{AttemptID: "survivor-green", CandidateTree: cOnly,
+		Delivery: proofrun.DeliveryJudgment{Sufficient: true}, Groups: []proofrun.GroupResult{{ID: "group", Status: "passed", NativeLaunched: true}}}, nil, time.Unix(8, 0)))
+	if proved := load(t, store); proved.State != StateLanding || proved.Proof == nil || proved.Proof.Status != "green" || proved.Proof.Tree != cOnly ||
+		proved.Proof.AttemptID != "survivor-green" || proved.Proof.Window != "expired" {
+		t.Fatalf("C-only survivor proof=%+v state=%s", proved.Proof, proved.State)
+	}
+	var events []string
+	var receipts []PrefixReceipt
+	landSeams := greenLandSeams(&events)
+	landSeams.AppendReceipt = func(unit Unit, receipt PrefixReceipt) error {
+		events, receipts = append(events, "receipt:"+unit.GoalID), append(receipts, receipt)
+		return nil
+	}
+	must(t, LandSeries(store, testBatchID, "owner", time.Unix(9, 0), landSeams))
+	if want := []string{"apply:goal-c", "receipt:goal-c", "commit:goal-c", "held", "push", "cleanup"}; !slices.Equal(events, want) ||
+		len(receipts) != 1 || receipts[0].Tree != cOnly || receipts[0].AttemptID != "survivor-green" {
+		t.Fatalf("C-only landing events=%v receipts=%+v", events, receipts)
+	}
+	finalized := 0
+	must(t, RecoverPushedSeries(store, testBatchID, "owner", time.Unix(10, 0), RecoverySeams{
+		OriginCommit: func(unit Unit) (string, bool, error) {
+			if unit.GoalID != "goal-c" {
+				t.Fatalf("recovery inspected returned unit %+v", unit)
+			}
+			return "commit-goal-c", true, nil
+		},
+		Finalize: func(unit Unit, commit string) error {
+			if unit.GoalID != "goal-c" || commit != "commit-goal-c" {
+				t.Fatalf("finalize unit=%+v commit=%s", unit, commit)
+			}
+			finalized++
+			return nil
+		},
+		Rearm:   func(string) error { return nil },
+		Cleanup: func() error { t.Fatal("landing cleanup ran twice"); return nil },
+	}))
+	must(t, ReturnUnits(store, testBatchID, "tree", "owner", time.Unix(11, 0), returnSeams))
+	landed := load(t, store)
+	if landed.State != StateLanded || landed.Units[0].State != UnitEjected || landed.Units[1].State != UnitEjected ||
+		landed.Units[2].State != UnitLanded || !landed.Units[2].P6Done || finalized != 1 {
+		t.Fatalf("C-only landed batch=%+v finalized=%d", landed, finalized)
+	}
+	for index, unit := range landed.Units {
+		if unit.ReturnDisposition != ReturnHandedBack || index >= len(handBacks) || handBacks[index] != unit.Claim {
+			t.Fatalf("%s was not handed back to its source claim: unit=%+v handBacks=%+v", unit.GoalID, unit, handBacks)
+		}
+	}
+	if len(handBacks) != 3 {
+		t.Fatalf("hand-backs=%+v, want A, B and C once", handBacks)
 	}
 }
 

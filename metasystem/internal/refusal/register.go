@@ -35,7 +35,7 @@ type Defect struct{ Code, Why string }
 var Rows = []Row{
 	{Code: "TEST_WORKER_POLICY_UNSUPPORTED", Owner: "cmd/metasystem", Site: "test.go:82", Shape: Question},
 	{Code: "LAUNCH_ALREADY_SUPERVISED", Owner: "internal/launch", Site: "launch.go:251", Shape: Question},
-	{Code: "LAUNCH_SETTING_INVALID", Owner: "internal/launch", Site: "settings.go:104", Shape: Question},
+	{Code: "LAUNCH_SETTING_INVALID", Owner: "internal/launch", Site: "settings.go:120", Shape: Question},
 	{Code: "LAUNCH_BRIEF_OVERSIZE", Owner: "internal/launch", Site: "admit.go:105", Shape: Question},
 	{Code: "LAUNCH_BRIEF_PACK_UNFILLED", Owner: "internal/launch", Site: "pack.go:48", Shape: Question},
 	{Code: "LAUNCH_BRIEF_PACK_DRIFTED", Owner: "internal/launch", Site: "pack.go:184", Shape: Question},
@@ -93,7 +93,7 @@ var Rows = []Row{
 	{Code: "BATCH_PROOF_NOT_ADMITTED", Owner: "internal/landing/batch", Site: "prove.go:96", Shape: Question},
 	{Code: "BATCH_PROOF_STATE_REFUSED", Owner: "internal/landing/batch", Site: "prove.go:48", Shape: Question},
 	{Code: "BATCH_PROOF_UNION_UNCOVERED", Owner: "internal/landing/batch", Site: "prove.go:55", Shape: Question},
-	{Code: "BATCH_REASSEMBLE_MOVED", Owner: "internal/landing/batch", Site: "prove.go:231", Shape: Question},
+	{Code: "BATCH_REASSEMBLE_MOVED", Owner: "internal/landing/batch", Site: "prove.go:235", Shape: Question},
 	{Code: "BATCH_REOPEN_SAME_TREE", Owner: "internal/landing/batch", Site: "reopen.go:32", Shape: Question},
 	{Code: "BATCH_LANDING_BRANCH_MOVED", Owner: "internal/landing/batch", Site: "transport.go:64", Shape: Question},
 	{Code: "BATCH_LANDING_BRANCH_PREP_REFUSED", Owner: "internal/landing/batch", Site: "transport.go:53", Shape: Question},

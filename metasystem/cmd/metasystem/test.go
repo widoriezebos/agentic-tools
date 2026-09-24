@@ -241,7 +241,11 @@ type testingSelectionRequest struct {
 	NoReuse, ForceGroups, RequireDiagnosticHeadroom, AllGroups                          bool
 	BatchPrefixReceipt, BatchTipProof, BatchAdmission                                   bool
 	FreshEpisode, FreshExpiresAt                                                        string
-	RequireWorkerCapabilities                                                           bool
+	// ExecutedWorkers is the worker allowance of the run a verification checks.
+	// Group execution identity binds that allowance, and a fresh resolution can
+	// differ because the default allowance follows available memory.
+	ExecutedWorkers           int
+	RequireWorkerCapabilities bool
 	// CadencePreflight plans and revalidates the fetched tree before the cadence
 	// tick claims standing authority. Governed cadence execution does not set it.
 	CadencePreflight bool
@@ -2181,6 +2185,9 @@ func verifyRetainedTestingPrepared(request testingSelectionRequest, prepared tes
 	// the-clock, slice 2).
 	if _, err := resolveTestingPreparationWorkerPolicy(&prepared); err != nil {
 		return proofrun.TestResult{}, err
+	}
+	if request.ExecutedWorkers > 0 {
+		prepared.Workers = request.ExecutedWorkers
 	}
 	attempts, err := proofrun.ReadAttempts(prepared.proofControlRoot())
 	if err != nil {

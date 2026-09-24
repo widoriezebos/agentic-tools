@@ -199,7 +199,7 @@ func validateTestingAttemptOwnersAt(installationRoot string, result proofrun.Tes
 			}
 		}
 		for _, recorded := range ownerResult.Groups {
-			nativeOwner := proofrun.NativeTestProducer(attempt, recorded)
+			nativeOwner := proofrun.TestGroupProducer(attempt, *ownerResult, recorded)
 			if len(attempt.TestInventory) == 0 {
 				// Older attempts did not separate complete plans from native
 				// reservations. Their own native marker remains valid for an

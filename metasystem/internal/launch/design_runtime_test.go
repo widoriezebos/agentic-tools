@@ -10,27 +10,33 @@ import (
 	"time"
 )
 
-func TestDesignAdapterFollowsTheResolvedModel(t *testing.T) {
+func TestLaneAdapterFollowsItsRuntimeSetting(t *testing.T) {
 	t.Parallel()
 
+	// A lane runs on the agent its own runtime setting names. The model never
+	// routes on its own: more than one agent can serve the same model, so a
+	// Codex model on a Claude lane is a Claude launch of that model, and a
+	// runtime this engine cannot launch is refused rather than guessed.
 	cases := []struct {
 		name        string
 		kind        string
 		useSettings bool
+		runtime     string
 		settings    string
 		adapterData string
 		model       string
 		want        string
+		refused     bool
 	}{
-		{name: "Codex from settings", kind: "design", useSettings: true, settings: "gpt-6-astra", want: "codex-exec"},
-		{name: "Claude from settings", kind: "design", useSettings: true, settings: "claude-opus-5-5[1m]", want: "claude-headless"},
-		{name: "empty model", kind: "design", useSettings: true, want: "claude-headless"},
+		{name: "Codex from settings", kind: "design", useSettings: true, runtime: "codex", settings: "gpt-6-astra", want: "codex-exec"},
+		{name: "Claude from settings", kind: "design", useSettings: true, runtime: "claude", settings: "claude-opus-5-5[1m]", want: "claude-headless"},
+		{name: "the model alone never routes", kind: "design", useSettings: true, runtime: "claude", settings: "gpt-6-astra", want: "claude-headless"},
+		{name: "adapter data changes the model, not the agent", kind: "design", useSettings: true, runtime: "claude", settings: "claude-opus-5-5[1m]", adapterData: "gpt-6-astra", want: "claude-headless"},
+		{name: "spec changes the model, not the agent", kind: "design", useSettings: true, runtime: "codex", settings: "gpt-6-astra", model: "claude-opus-5-5[1m]", want: "codex-exec"},
 		{name: "default design", kind: "design", want: "claude-headless"},
-		{name: "adapter data overrides settings", kind: "design", useSettings: true, settings: "claude-opus-5-5[1m]", adapterData: "gpt-6-astra", want: "codex-exec"},
-		{name: "spec overrides adapter data", kind: "design", useSettings: true, settings: "gpt-6-astra", adapterData: "gpt-6-astra", model: "claude-opus-5-5[1m]", want: "claude-headless"},
-		{name: "read defaults to Claude", kind: "read", want: "claude-headless"},
-		{name: "read uses configured Codex model", kind: "read", useSettings: true, settings: "gpt-6-sol", want: "codex-exec"},
-		{name: "read uses explicit Codex model", kind: "read", model: "gpt-6-sol", want: "codex-exec"},
+		{name: "read defaults to Codex", kind: "read", want: "codex-exec"},
+		{name: "read on Claude by its setting", kind: "read", useSettings: true, runtime: "claude", settings: "claude-opus-5-5[1m]", want: "claude-headless"},
+		{name: "an agent this engine cannot launch is refused", kind: "design", useSettings: true, runtime: "devin", settings: "claude-opus-5-5", refused: true},
 	}
 	for index, row := range cases {
 		row := row
@@ -42,9 +48,9 @@ func TestDesignAdapterFollowsTheResolvedModel(t *testing.T) {
 			if row.useSettings {
 				m.Settings = DefaultSettings()
 				if row.kind == "read" {
-					m.Settings.ReadModel = row.settings
+					m.Settings.ReadModel, m.Settings.ReadRuntime = row.settings, row.runtime
 				} else {
-					m.Settings.DesignModel = row.settings
+					m.Settings.DesignModel, m.Settings.DesignRuntime = row.settings, row.runtime
 				}
 			}
 			data := map[string]json.RawMessage{}
@@ -63,6 +69,12 @@ func TestDesignAdapterFollowsTheResolvedModel(t *testing.T) {
 				spec.DiffFile = writeLaunchFile(t, "change.diff", "")
 			}
 			record, err := m.Start(spec)
+			if row.refused {
+				if err == nil {
+					t.Fatalf("a lane on an agent this engine cannot launch started: %+v", record)
+				}
+				return
+			}
 			if err != nil || record.Adapter != row.want {
 				t.Fatalf("adapter=%q, want %q, err=%v", record.Adapter, row.want, err)
 			}

@@ -39,6 +39,8 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 		switch record.Kind {
 		case "design":
 			model = "claude-fable-5-1"
+		case "build":
+			model = "claude-opus-5-5"
 		case "read":
 			model = "claude-opus-5-5[1m]"
 		}

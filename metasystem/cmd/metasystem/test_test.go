@@ -135,7 +135,7 @@ func TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback(t *te
 
 func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 	fixture := newOrdinaryCandidateFixture(t)
-	writeTestingFixtureFile(t, filepath.Join(fixture.root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(fixture.root, "metasystem.conf"), []byte("metasystem.runtimes=fake\ntesting.workers=2\n"), 0o644)
 	pinProofBinaryFixture(t, fixture.root)
 	group := testpolicy.Group{ID: "candidate-bed", Kind: "unit", Adapter: "command", Phase: "acceptance",
 		EnvironmentMode: "inherit", Freshness: "episode", CWD: ".",
@@ -332,6 +332,42 @@ func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
 	if err != nil || !fixed.Delivery.Sufficient {
 		t.Fatalf("authorized fixed fixture clock lost reusable proof: sufficient=%t err=%v groups=%+v", fixed.Delivery.Sufficient, err, fixed.Groups)
 	}
+	t.Run("executed worker allowance", func(t *testing.T) {
+		// The default allowance follows available memory, so a verification
+		// can resolve another allowance than the run it checks. The moved
+		// configuration stands in for that later resolution.
+		configured := 1
+		if prepared.Workers == 1 {
+			configured = 2
+		}
+		moved := prepared
+		moved.ConfPath = filepath.Join(t.TempDir(), "metasystem.conf")
+		writeTestingFixtureFile(t, moved.ConfPath, []byte(fmt.Sprintf("metasystem.runtimes=fake\ntesting.workers=%d\n", configured)), 0o644)
+		verify := func(request testingSelectionRequest) proofrun.TestResult {
+			fixture.queueIdentity(ordinaryProjectTree, ordinaryEngineTree, ordinaryBuildOne, prepared.Environment, false)
+			fixture.queueBed(ordinaryProjectTree)
+			queueProjection()
+			result, err := verifyRetainedTestingPrepared(request, moved, retainedTestingVerification{
+				clock: fixedClock, revalidate: proofrun.RevalidateRetainedGroupExecutionIdentities,
+				workspace: workspace, candidateIO: fixture.dependency(), openCandidate: fixture.openBed,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return result
+		}
+		if resolved := verify(request); resolved.Workers == prepared.Workers {
+			// An inherited ceiling of one worker pins every resolution.
+			t.Logf("inherited %s=%q leaves no other allowance to resolve", proofrun.TestWorkersEnvironment, os.Getenv(proofrun.TestWorkersEnvironment))
+		} else if resolved.Delivery.Sufficient {
+			t.Fatalf("resolved allowance %d reused proof executed with %d workers: groups=%+v", resolved.Workers, prepared.Workers, resolved.Groups)
+		}
+		executed := request
+		executed.ExecutedWorkers = prepared.Workers
+		if result := verify(executed); !result.Delivery.Sufficient || result.Workers != prepared.Workers {
+			t.Fatalf("executed allowance %d lost its retained proof: workers=%d groups=%+v", prepared.Workers, result.Workers, result.Groups)
+		}
+	})
 	for _, boundary := range []struct {
 		name       string
 		at         time.Time
@@ -2267,14 +2303,34 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	t.Cleanup(func() { _ = source.Close() })
 	t.Setenv("GIT_AUTHOR_DATE", "2026-09-21T00:00:00Z")
 	t.Setenv("GIT_COMMITTER_DATE", "2026-09-21T00:00:00Z")
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	builtForCommit := ""
 	now := time.Now().UTC()
+	// Every supported source layout must freeze and normalize to the same
+	// candidate commit with a clean working tree before the authenticated
+	// worker runs its six cases once for that shared input.
+	var inputs []frozenCorpusWorkerInput
 	for _, layout := range frozenCorpusSourceLayouts() {
-		t.Run(layout.name, func(t *testing.T) {
-			layoutRoot := materializeFrozenCorpusLayout(t, source.Root, layout)
-			runFrozenPublicVersionOneCorpus(t, layoutRoot, layout, engine, &builtForCommit, now)
-		})
+		t.Logf("preparing frozen corpus source layout %s", layout.name)
+		input := prepareFrozenPublicVersionOneCorpus(t, materializeFrozenCorpusLayout(t, source.Root, layout), layout, now)
+		if len(inputs) > 0 && input.candidateCommit != inputs[0].candidateCommit {
+			t.Fatalf("normalized source layout %s candidate commit=%s, shared worker commit=%s", layout.name, input.candidateCommit, inputs[0].candidateCommit)
+		}
+		inputs = append(inputs, input)
+	}
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	var executions frozenCorpusExecutions
+	buildFrozenPublicVersionOneCorpusEngine(t, inputs[0], engine, &executions)
+	runFrozenPublicVersionOneCorpusWorker(t, inputs[0], engine, &executions)
+	workerAttempts := 0
+	for _, input := range inputs {
+		attempts, err := proofrun.ReadAttempts(input.root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		workerAttempts += len(attempts)
+	}
+	if executions.engineBuilds != 1 || executions.workerRuns != 1 || workerAttempts != 1 {
+		t.Fatalf("frozen corpus across %d layouts: engine builds=%d worker runs=%d recorded attempts=%d, want one each",
+			len(inputs), executions.engineBuilds, executions.workerRuns, workerAttempts)
 	}
 }
 
@@ -2326,7 +2382,16 @@ func materializeFrozenCorpusLayout(t *testing.T, sourceRoot string, layout froze
 	return root
 }
 
-func runFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout frozenCorpusSourceLayout, engine string, builtForCommit *string, now time.Time) {
+type frozenCorpusWorkerInput struct {
+	projectRoot, root, candidate, candidateCommit string
+	proofFixture                                  proofBinaryFixture
+}
+
+type frozenCorpusExecutions struct {
+	engineBuilds, workerRuns int
+}
+
+func prepareFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout frozenCorpusSourceLayout, now time.Time) frozenCorpusWorkerInput {
 	t.Helper()
 	frozen, err := proofrun.Freeze(sourceRoot)
 	if err != nil {
@@ -2421,19 +2486,29 @@ func runFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout fro
 	testingFixtureGit(t, projectRoot, "update-ref", goal.LocalLedgerBranch, candidateCommit)
 	testingFixtureGit(t, projectRoot, "update-ref", goal.AcceptedRef, candidateCommit)
 	testingFixtureGit(t, projectRoot, "config", "--local", "metasystem.steward.landing-ref", "refs/remotes/origin/main")
-
-	if *builtForCommit == "" {
-		build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-			"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+candidateCommit, "-o", engine, ".")
-		build.Dir = filepath.Join(root, "cmd", "metasystem")
-		build.Env = gittree.ScrubbedEnviron()
-		if output, buildErr := build.CombinedOutput(); buildErr != nil {
-			t.Fatalf("build first-transition worker: %v\n%s", buildErr, output)
-		}
-		*builtForCommit = candidateCommit
-	} else if candidateCommit != *builtForCommit {
-		t.Fatalf("normalized source layout candidate commit=%s, shared engine commit=%s", candidateCommit, *builtForCommit)
+	// The commit fixes tracked content only, so untracked or ignored files
+	// would be worker-visible state that differs outside the shared commit.
+	if status := testingFixtureGit(t, projectRoot, "status", "--porcelain=v1", "--ignored=matching", "--untracked-files=all"); status != "" {
+		t.Fatalf("normalized source layout %s has untracked or ignored files:\n%s", layout.name, status)
 	}
+	return frozenCorpusWorkerInput{projectRoot: projectRoot, root: root, candidate: candidate, candidateCommit: candidateCommit, proofFixture: proofFixture}
+}
+
+func buildFrozenPublicVersionOneCorpusEngine(t *testing.T, input frozenCorpusWorkerInput, engine string, executions *frozenCorpusExecutions) {
+	t.Helper()
+	build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
+		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+input.candidateCommit, "-o", engine, ".")
+	build.Dir = filepath.Join(input.root, "cmd", "metasystem")
+	build.Env = gittree.ScrubbedEnviron()
+	if output, buildErr := build.CombinedOutput(); buildErr != nil {
+		t.Fatalf("build first-transition worker: %v\n%s", buildErr, output)
+	}
+	executions.engineBuilds++
+}
+
+func runFrozenPublicVersionOneCorpusWorker(t *testing.T, input frozenCorpusWorkerInput, engine string, executions *frozenCorpusExecutions) {
+	t.Helper()
+	projectRoot, root, candidate, proofFixture := input.projectRoot, input.root, input.candidate, input.proofFixture
 	identityTable := filepath.Join(t.TempDir(), "process-identities.json")
 	identities := map[string]map[string]any{
 		fmt.Sprint(os.Getpid()): {"terminal": true},
@@ -2474,6 +2549,7 @@ func runFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout fro
 	public := proofFixture.command(fixtureEnvironment, engine, "test", "run", "--root", root, "--tree", candidate,
 		"--mode", "auto", "--purpose", "delivery", "--goal", "policy-corpus", "--cap-min", "5")
 	public.Dir = projectRoot
+	executions.workerRuns++
 	output, runErr := public.CombinedOutput()
 	if runErr != nil {
 		t.Fatalf("authenticated first-transition worker did not complete all six frozen cases: %v\n%s", runErr, output)

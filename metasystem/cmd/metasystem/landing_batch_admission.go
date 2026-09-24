@@ -133,7 +133,7 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 	}
 	request := testingSelectionRequest{Root: executionRoot, ControlRoot: controlRoot, GoalID: unit.GoalID, Tree: tree,
 		Mode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery, BatchAdmission: true,
-		FreshEpisode: result.FreshEpisode, FreshExpiresAt: result.FreshExpiresAt}
+		FreshEpisode: result.FreshEpisode, FreshExpiresAt: result.FreshExpiresAt, ExecutedWorkers: proof.Workers}
 	verified, err := verifyRetainedTesting(request)
 	if err != nil || !verified.Delivery.Sufficient {
 		return batch.JoinAdmission{}, fmt.Errorf("BATCH_JOIN_TEST_DROPPED: retained admission is incomplete: %w; missing=%v", err, verified.Delivery.MissingGroups)

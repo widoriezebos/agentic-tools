@@ -351,6 +351,7 @@ func RunTestPlan(ctx context.Context, request TestRunRequest) (TestResult, int, 
 						return finalizeOperationalError(fmt.Errorf("admitted source for %s is incomplete: %v", id, sourceErr))
 					}
 					original.Status, original.NativeLaunched, original.ReuseAttempt = "reused", false, source
+					original.CoveredByGroups, original.CoveredTests = nil, nil
 					result.Groups = append(result.Groups, original)
 					if groups[id].Kind == "build" {
 						result.LaunchCounts.ReusedBuild++
@@ -484,6 +485,7 @@ func runExecutionContractPlan(ctx context.Context, request TestRunRequest, resul
 					return GroupResult{}, false, fmt.Errorf("admitted source for %s is incomplete: %v", id, err)
 				}
 				original.Status, original.NativeLaunched, original.ReuseAttempt = "reused", false, source
+				original.CoveredByGroups, original.CoveredTests = nil, nil
 				return original, true, nil
 			}
 			if admitted.TestOwned[id] == "" {
@@ -730,6 +732,15 @@ func runStageGroupsScheduled(ctx context.Context, request TestRunRequest, groups
 	for id, groupResult := range prior {
 		known[id] = groupResult
 	}
+	// A Go group waits for broader same-context groups that select its tests,
+	// then launches only what their passing native terminals left uncovered.
+	coverageSources := planStageCoverage(request, groups, ids)
+	coverageParticipant := make([]bool, len(ids))
+	for consumer, sources := range coverageSources {
+		for _, source := range sources {
+			coverageParticipant[consumer], coverageParticipant[source] = true, true
+		}
+	}
 
 	remaining, active := len(ids), 0
 	performanceActive := false
@@ -807,6 +818,11 @@ func runStageGroupsScheduled(ctx context.Context, request TestRunRequest, groups
 			}
 			return false, nil, fmt.Errorf("testing plan omits prerequisite %s for %s", dependency, ids[index])
 		}
+		for _, source := range coverageSources[index] {
+			if state[source] != stageDone {
+				ready = false
+			}
+		}
 		return ready, blockers, nil
 	}
 	launch := func(index int, release func()) {
@@ -816,10 +832,17 @@ func runStageGroupsScheduled(ctx context.Context, request TestRunRequest, groups
 		if group.Kind == "performance" {
 			performanceActive = true
 		}
+		var sources []GroupResult
+		for _, source := range coverageSources[index] {
+			sources = append(sources, results[source])
+		}
 		launched.Add(1)
 		go func() {
 			defer launched.Done()
 			groupCtx := withTestWorkerPool(ctx, EffectiveTestWorkers(request))
+			if coverageParticipant[index] {
+				groupCtx = withCoverageSources(groupCtx, sources)
+			}
 			if release != nil {
 				defer release()
 			}
@@ -1727,6 +1750,17 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 		result.EndedAt, result.DurationMS = resultDuration(request, started)
 		return result
 	}
+	var credit testCoverageCredit
+	if sources, participant := coverageSourcesFromContext(ctx); participant && group.Adapter == "go" {
+		result.NativeContext = goNativeContext(request, group)
+		if result.NativeContext != "" && len(sources) != 0 {
+			credit = creditCoveredTests(result, sources)
+		}
+	}
+	nativeExpected := expected
+	if len(credit.tests) != 0 {
+		nativeExpected = credit.residual
+	}
 	if err := prepareGroupOutputs(root, group); err != nil {
 		result.Status = "invalid"
 		result.NotRunReason = err.Error()
@@ -1793,12 +1827,18 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 	var closeErr error
 	var coverageMerge string
 	var launchErr error
-	if group.Adapter == "go" {
+	if group.Adapter == "go" && len(credit.tests) != 0 && len(credit.residual) == 0 {
+		// Every expected test already passed natively in this result, so the
+		// group launches nothing and its log names the covering groups.
+		output.Write([]byte(fmt.Sprintf("TEST-COVERED %s by %s: %d expected tests passed natively in this result\n",
+			group.ID, strings.Join(credit.sources, ","), len(credit.tests))))
+		closeErr = os.WriteFile(result.LogPath, output.Bytes(), 0o600)
+	} else if group.Adapter == "go" {
 		// The group's discovered tests run as concurrent go test launches
 		// inside this one group; their outputs join in shard order, and
 		// whole-package coverage is merged from the shards' coverage data.
-		supervised, closeErr, coverageMerge, launchErr = runShardedGoGroup(ctx, request, group, cwd, environment, expected,
-			coverageInventory, coverageModule, limits, sampleInterval, result.LogPath, &output)
+		supervised, closeErr, coverageMerge, launchErr = runShardedGoGroup(ctx, request, group, cwd, environment, nativeExpected,
+			credit.residualInventory(coverageInventory, coverageModule), coverageModule, limits, sampleInterval, result.LogPath, &output)
 	} else {
 		// The supervisor owns cancellation so it can census and terminate the
 		// complete process tree. exec.CommandContext would kill the root first,
@@ -1863,7 +1903,15 @@ func runTestGroup(ctx context.Context, request TestRunRequest, group testpolicy.
 	if result.Status == "" {
 		switch group.Adapter {
 		case "go":
-			result.Observed, result.Missing, result.Unexpected, result.CollectionComplete = parseGoJSON(output.Bytes(), expected)
+			result.Observed, result.Missing, result.Unexpected, result.CollectionComplete = parseGoJSON(output.Bytes(), nativeExpected)
+			if len(credit.tests) != 0 {
+				if len(credit.residual) == 0 {
+					result.Observed, result.Missing, result.Unexpected, result.CollectionComplete = nil, nil, nil, true
+				}
+				result.Observed = append(result.Observed, credit.observed...)
+				sortNative(result.Observed)
+				result.CoveredByGroups, result.CoveredTests = credit.sources, credit.tests
+			}
 			if group.Coverage {
 				allTests, _, _ := testpolicy.GoTests(group)
 				if !allTests {
