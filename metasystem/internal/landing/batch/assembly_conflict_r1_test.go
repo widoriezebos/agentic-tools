@@ -51,18 +51,29 @@ func deleteReaddFixture(t *testing.T) (assemblyBed, Store, string, string) {
 
 func TestGLEBatchPathExistsGitDiagnosticIsDefiniteComposition(t *testing.T) {
 	t.Parallel()
-	bed := assemblyFixture(t)
+	root := t.TempDir()
+	calls := 0
+	readUnmerged := func(gotRoot string) ([]byte, error) {
+		if gotRoot != root {
+			t.Fatalf("unmerged reader root = %q, want %q", gotRoot, root)
+		}
+		calls++
+		return []byte{}, nil
+	}
 	command := exec.Command("sh", "-c", "exit 1")
 	err := command.Run()
 	for _, diagnostic := range []string{"error: a.go: already exists in working directory", "error: a.go: already exists in index"} {
-		if !patchCompositionConflict(bed.root, []byte(diagnostic), err) {
+		if !patchCompositionConflictWithUnmerged(root, []byte(diagnostic), err, readUnmerged) {
 			t.Fatalf("ordinary add/add diagnostic was not typed: %q", diagnostic)
 		}
 	}
 	for _, diagnostic := range []string{"error: metasystem/testing.json: already exists in index", "error: a.go: patch does not apply", "fatal: a.go: already exists in index", "error: a.go: already exists in index\nfatal: could not read index"} {
-		if patchCompositionConflict(bed.root, []byte(diagnostic), err) {
+		if patchCompositionConflictWithUnmerged(root, []byte(diagnostic), err, readUnmerged) {
 			t.Fatalf("non-composition diagnostic was typed: %q", diagnostic)
 		}
+	}
+	if calls != 6 {
+		t.Fatalf("unmerged reader called %d times, want 6", calls)
 	}
 }
 

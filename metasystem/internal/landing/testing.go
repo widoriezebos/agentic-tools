@@ -89,10 +89,6 @@ func prepareTestingReceiptPayloadWithWorkspace(installationRoot, tree string, re
 	return receipt, encoded, nil
 }
 
-func testingReceiptIndexMatches(installationRoot, receiptTree, indexTree string) (bool, error) {
-	return testingReceiptIndexMatchesWithAccess(installationRoot, receiptTree, indexTree, DefaultProjectionAccess())
-}
-
 func testingReceiptIndexMatchesWithAccess(installationRoot, receiptTree, indexTree string, access ProjectionAccess) (bool, error) {
 	if indexTree == receiptTree {
 		return true, nil
@@ -269,11 +265,6 @@ func validateTestingReceiptEngineIdentity(receipt TestReceipt) error {
 }
 
 // Schema two binds the whole staged candidate and projects only actual test inputs.
-func testingReceiptPosture(installationRoot string, result proofrun.TestResult) (string, string, error) {
-	workspace := gittree.Workspace{Dir: result.ProjectRoot}
-	return testingReceiptPostureWithWorkspace(installationRoot, result, workspace)
-}
-
 func testingReceiptPostureWithWorkspace(installationRoot string, result proofrun.TestResult, workspace gittree.Workspace) (string, string, error) {
 	index, err := workspace.StagedTree()
 	if err != nil {

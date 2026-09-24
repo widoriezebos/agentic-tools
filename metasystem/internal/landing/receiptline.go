@@ -23,6 +23,7 @@ type ReceiptLineParams struct {
 	CandidateTree string
 	Goal          string
 	DirectFix     string
+	RawSource     func(gittree.RawRequest) gittree.RawResult
 }
 
 // ReceiptLineDecision is the check's answer. Outcome is pass, exempt or
@@ -68,7 +69,16 @@ type receiptLineWorkspace interface {
 // the appended line must carry that goal; without one, any appended
 // RECEIPT line satisfies the check.
 func ObserveReceiptLine(params ReceiptLineParams) (ReceiptLineDecision, error) {
-	workspace := gittree.Workspace{Dir: params.RepoRoot}
+	workspace := gittree.Workspace{Dir: params.RepoRoot, RawSource: params.RawSource}
+	if params.RawSource != nil {
+		resolver := stateroot.NewResolver(func(root string) (string, error) {
+			return (gittree.Workspace{Dir: root, RawSource: params.RawSource}).TopLevel()
+		}, nil)
+		return observeReceiptLineWithDependencies(params, workspace,
+			func(root string) (string, error) {
+				return (gittree.Workspace{Dir: root, RawSource: params.RawSource}).HeadTree()
+			}, resolver.RootForInstallation, resolver.OwnerForInstallation)
+	}
 	headTree := func(root string) (string, error) {
 		baseTreeBytes, err := landingGit(root, "rev-parse", "HEAD^{tree}")
 		if err != nil {

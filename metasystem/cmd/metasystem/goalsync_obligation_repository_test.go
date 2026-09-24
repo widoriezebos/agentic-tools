@@ -25,6 +25,7 @@ type obligationRepository struct {
 	canonical, accepted                                string
 	serial                                             uint64
 	captures, builds, publications, advances, releases int
+	captureErr                                         error
 }
 
 func obligationFilesCopy(files map[string][]byte) map[string][]byte {
@@ -48,6 +49,9 @@ func (r *obligationRepository) Capture(opid string) (string, error) {
 	r.t.Helper()
 	if opid == "" {
 		r.t.Fatal("capture without an operation id")
+	}
+	if r.captureErr != nil {
+		return "", r.captureErr
 	}
 	r.commit(r.canonical)
 	r.captures++

@@ -200,7 +200,10 @@ func claimAt(root, tree, batchID, goalID string) (Claim, error) {
 type committedGoalPrefixError struct{ error }
 
 func readCommittedGoal(moduleRoot, tree, goalID string) ([]byte, bool, error) {
-	workspace := gittree.Workspace{Dir: moduleRoot}
+	return readCommittedGoalWithWorkspace(gittree.Workspace{Dir: moduleRoot}, tree, goalID)
+}
+
+func readCommittedGoalWithWorkspace(workspace gittree.Workspace, tree, goalID string) ([]byte, bool, error) {
 	prefix, err := workspace.Prefix()
 	if err != nil {
 		return nil, false, &committedGoalPrefixError{err}

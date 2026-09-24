@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -23,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/wiredoc"
@@ -2180,36 +2182,105 @@ chmod +x "$3"
 }
 
 func TestLandingReceiptLineRefusesCodeWithoutItsLineAndPassesWithIt(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	runReceiptGit(t, root, "init", "-q", "-b", "main")
-	runReceiptGit(t, root, "config", "user.name", "receipt fixture")
-	runReceiptGit(t, root, "config", "user.email", "receipt@example.invalid")
+	ownerRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	manifest, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "path-classes.txt"))
 	if err != nil {
 		t.Fatalf("read path class manifest: %v", err)
 	}
-	writeReceiptFixture(t, root, "scripts/agents/path-classes.txt", string(manifest)+"install:payload.txt behavior\n")
-	writeReceiptFixture(t, root, "memory/receipts.log", "1|2026-01-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=seed|note=seed\n")
+	manifest = append(manifest, []byte("install:payload.txt behavior\n")...)
+	baseLedger := "1|2026-01-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=seed|note=seed\n"
+	appendedLedger := baseLedger + "2|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=fx|note=candidate\n"
+	writeReceiptFixture(t, root, "scripts/agents/path-classes.txt", string(manifest))
+	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.version=1\n")
+	writeReceiptFixture(t, root, "memory/receipts.log", baseLedger)
 	writeReceiptFixture(t, root, "payload.txt", "base\n")
-	runReceiptGit(t, root, "add", "-A")
-	runReceiptGit(t, root, "commit", "-qm", "base")
+
+	baseTree := strings.Repeat("a", 40)
+	withoutLine := strings.Repeat("b", 40)
+	withLine := strings.Repeat("c", 40)
+	baseLedgerBlob := strings.Repeat("d", 40)
+	appendedLedgerBlob := strings.Repeat("e", 40)
+	manifestBlob := strings.Repeat("f", 40)
+	const ledgerPath = "memory/receipts.log"
+	const manifestPath = "scripts/agents/path-classes.txt"
+	pins := []string{
+		"-c", "core.fileMode=true", "-c", "diff.noprefix=false",
+		"-c", "diff.mnemonicPrefix=false", "-c", "apply.ignoreWhitespace=no",
+		"-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false",
+		"-c", "gc.auto=0", "-c", "maintenance.auto=false",
+	}
+	var expected []testgit.Expectation
+	var operations []string
+	add := func(dir string, output []byte, args ...string) {
+		argv := append([]string{"-C", dir}, pins...)
+		argv = append(argv, args...)
+		expected = append(expected, testgit.Expectation{
+			Call:   testgit.Call{Dir: dir, Args: argv, Env: gittree.ScrubbedEnviron()},
+			Result: testgit.Result{Stdout: output},
+		})
+		operations = append(operations, "git "+strings.Join(args, " "))
+	}
+	file := func(tree, path, blob string, content []byte) {
+		add(root, []byte("100644 blob "+blob+"\t"+path+"\x00"),
+			"--literal-pathspecs", "ls-tree", "-r", "-z", "--full-tree", tree, "--", path)
+		add(root, content, "cat-file", "blob", blob)
+	}
+	for _, candidate := range []struct {
+		tree, ledgerBlob, changed string
+		ledger                    string
+	}{
+		{withoutLine, baseLedgerBlob, "payload.txt\x00", baseLedger},
+		{withLine, appendedLedgerBlob, "memory/receipts.log\x00payload.txt\x00", appendedLedger},
+	} {
+		add(root, []byte(root+"\n"), "rev-parse", "--show-toplevel") // State root.
+		add(root, []byte(root+"\n"), "rev-parse", "--show-toplevel") // Ledger location.
+		add(root, []byte(baseTree+"\n"), "rev-parse", "HEAD^{tree}")
+		add(root, []byte("\n"), "rev-parse", "--show-prefix")
+		file(baseTree, ledgerPath, baseLedgerBlob, []byte(baseLedger))
+		add(root, []byte(candidate.changed), "diff", "--name-only", "-z", "--no-renames",
+			"--no-ext-diff", "--no-textconv", "--ignore-submodules=none", baseTree, candidate.tree, "--")
+		file(candidate.tree, ledgerPath, candidate.ledgerBlob, []byte(candidate.ledger))
+		add(root, []byte("\n"), "rev-parse", "--show-prefix")
+		file(baseTree, manifestPath, manifestBlob, manifest)
+		if candidate.tree == withLine {
+			add(ownerRoot, []byte(ownerRoot+"\n"), "rev-parse", "--show-toplevel") // Receipt ledger owner.
+		}
+		add(ownerRoot, []byte(ownerRoot+"\n"), "rev-parse", "--show-toplevel") // Payload owner.
+	}
+	stub := testgit.New(t, expected...)
+	consumed := 0
+	raw := func(request gittree.RawRequest) gittree.RawResult {
+		t.Helper()
+		if consumed >= len(operations) {
+			t.Fatalf("extra raw Git request: %+v", request)
+		}
+		if request.Operation != operations[consumed] || request.Stdin != nil ||
+			request.Timeout != boundedexec.Timeout(filepath.Join(root, "metasystem.conf"), boundedexec.Local) {
+			t.Fatalf("raw Git request %d: operation=%q stdin=%q timeout=%+v", consumed, request.Operation, request.Stdin, request.Timeout)
+		}
+		consumed++
+		result := stub.Run(testgit.Call{Dir: request.Dir, Args: request.Args, Env: request.Env, Stdin: request.Stdin})
+		return gittree.RawResult{Stdout: result.Stdout, Stderr: result.Stderr, Err: result.Err}
+	}
 
 	writeReceiptFixture(t, root, "payload.txt", "candidate\n")
-	runReceiptGit(t, root, "add", "payload.txt")
-	candidate := runReceiptGit(t, root, "write-tree")
-	if code := runLandingReceiptLine([]string{"--root", root, "--tree", candidate, "--goal", "fx"}); code != 2 {
+	if code := runLandingReceiptLineWithRawSource([]string{"--root", root, "--tree", withoutLine, "--goal", "fx"}, raw); code != 2 {
 		t.Fatalf("a code landing without its receipt line exited %d, want 2", code)
 	}
 
-	writeReceiptFixture(t, root, "memory/receipts.log",
-		"1|2026-01-01T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=seed|note=seed\n"+
-			"2|2026-09-12T00:00:00Z|RECEIPT|type=implement|outcome=shipped|goal=fx|note=candidate\n")
-	runReceiptGit(t, root, "add", "memory/receipts.log")
-	candidate = runReceiptGit(t, root, "write-tree")
-	if code := runLandingReceiptLine([]string{"--root", root, "--tree", candidate, "--goal", "fx"}); code != 0 {
+	writeReceiptFixture(t, root, "memory/receipts.log", appendedLedger)
+	if code := runLandingReceiptLineWithRawSource([]string{"--root", root, "--tree", withLine, "--goal", "fx"}, raw); code != 0 {
 		t.Fatalf("a code landing with its receipt line exited %d, want 0", code)
 	}
-	if code := runLandingReceiptLine([]string{"--root", root}); code != 2 {
+	if code := runLandingReceiptLineWithRawSource([]string{"--root", root}, raw); code != 2 {
 		t.Fatalf("a call without a tree exited %d, want 2", code)
+	}
+	if consumed != len(operations) || len(stub.Calls()) != len(expected) {
+		t.Fatalf("raw Git transcript consumed %d of %d requests", consumed, len(expected))
 	}
 }

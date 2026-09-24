@@ -519,10 +519,6 @@ type testingReceiptVerificationFailure struct {
 
 func (failure *testingReceiptVerificationFailure) Error() string { return failure.detail }
 
-func verifyTestingReceipt(params ObserveParams) (proofrun.TestResult, bool, error) {
-	return verifyTestingReceiptWithWorkspace(params, gittree.Workspace{Dir: params.RepoRoot})
-}
-
 func verifyTestingReceiptWithWorkspace(params ObserveParams, workspace gittree.Workspace) (proofrun.TestResult, bool, error) {
 	if params.VerifyTesting == nil {
 		return proofrun.TestResult{}, false, nil
@@ -542,10 +538,6 @@ func verifyTestingReceiptWithWorkspace(params ObserveParams, workspace gittree.W
 		return proofrun.TestResult{}, false, &testingReceiptVerificationFailure{detail: fmt.Sprintf("testing-receipt: verify core judged tree %s, not the landing candidate %s", projected, params.CandidateTree)}
 	}
 	return result, true, nil
-}
-
-func validateTestReceiptWorkspace(root string, receipt TestReceipt) error {
-	return validateTestReceiptWorkspaceWithWorkspace(root, receipt, gittree.Workspace{Dir: root})
 }
 
 func validateTestReceiptWorkspaceWithWorkspace(root string, receipt TestReceipt, workspace gittree.Workspace) error {

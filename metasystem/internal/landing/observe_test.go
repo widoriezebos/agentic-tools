@@ -150,23 +150,6 @@ func (f *observeFixture) writeBytes(relative string, content []byte) {
 	}
 }
 
-func (f *observeFixture) writeHeldGoal(id, machine, lineage string) {
-	f.writeHeldGoalWithTier(id, machine, lineage, 0)
-}
-
-func (f *observeFixture) writeHeldGoalWithTier(id, machine, lineage string, tier uint8) {
-	f.t.Helper()
-	f.writeBytes(filepath.Join("plans", "goals", id+".md"), goal.RenderFile(&goal.GoalFile{
-		Id: id, State: goal.StateClaimed, Tier: tier, Intent: "Fixture ownership.", Origin: goal.OriginMain,
-		NextStep: "Exercise record carriage.", OpenedAt: "2026-09-03T08:00:00Z", Revision: 1,
-		Claimed: &goal.ClaimRecord{Machine: machine, Lineage: lineage, At: "2026-09-03T08:01:00Z", Revision: 1},
-		History: []goal.HistoryLine{{
-			At: "2026-09-03T08:01:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-m9-00000001",
-			Verb: "claim", Actor: machine + "+" + lineage, Targets: []string{id}, Keep: -1,
-		}},
-	}))
-}
-
 func TestObserveChainBoundLandingEvaluatesBarA(t *testing.T) {
 	change := chainAddition("internal/x.go", "package internal\n")
 	patch := chainDiff(change)

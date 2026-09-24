@@ -2271,6 +2271,10 @@ func runGoalEngineFloor(args []string) int {
 }
 
 func runGoalSetPriorityWithAuthority(args []string, prove goalAuthorityProver) int {
+	return runGoalSetPriorityWithAuthorityAndInputs(args, prove, defaultSyncRequestDependencies())
+}
+
+func runGoalSetPriorityWithAuthorityAndInputs(args []string, prove goalAuthorityProver, dependencies syncRequestDependencies) int {
 	flags := flag.NewFlagSet("goal set-priority", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
@@ -2324,7 +2328,7 @@ func runGoalSetPriorityWithAuthority(args []string, prove goalAuthorityProver) i
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	request, err := syncReqWithProof("set-priority", *root, *by, *lineage, &proof)
+	request, err := syncReqWithProofAtWithDependencies("set-priority", *root, *by, *lineage, &proof, goalCommandNow, dependencies)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

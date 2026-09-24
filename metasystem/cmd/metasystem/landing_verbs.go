@@ -499,6 +499,10 @@ func runLandingAdoptionRulings(args []string) int {
 // tree right after staging. Exit 2 is a refusal with the detail in the
 // printed decision, exit 1 an unreadable checkout.
 func runLandingReceiptLine(args []string) int {
+	return runLandingReceiptLineWithRawSource(args, nil)
+}
+
+func runLandingReceiptLineWithRawSource(args []string, raw func(gittree.RawRequest) gittree.RawResult) int {
 	flags := flag.NewFlagSet("landing receipt-line", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "MetaSystem installation root")
 	tree := flags.String("tree", "", "whole-project staged tree")
@@ -509,7 +513,7 @@ func runLandingReceiptLine(args []string) int {
 		return 2
 	}
 	decision, err := landing.ObserveReceiptLine(landing.ReceiptLineParams{
-		RepoRoot: *root, CandidateTree: *tree, Goal: *goalID, DirectFix: *directFix,
+		RepoRoot: *root, CandidateTree: *tree, Goal: *goalID, DirectFix: *directFix, RawSource: raw,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "landing receipt-line:", err)

@@ -1049,10 +1049,6 @@ type landingClassManifest struct {
 	} `json:"classes"`
 }
 
-func registerCarriage(root, candidateTree string, changedPaths []string, goalID, actor string, want uint64) (*goal.GoalFile, error) {
-	return registerCarriageWithFacts(defaultObservationFacts(root), candidateTree, changedPaths, goalID, actor, want)
-}
-
 func registerCarriageWithFacts(facts observationFacts, candidateTree string, changedPaths []string, goalID, actor string, want uint64) (*goal.GoalFile, error) {
 	workspace := facts.reader
 	baseTree, err := workspace.HeadTree()
@@ -1086,10 +1082,6 @@ func registerCarriageWithFacts(facts observationFacts, candidateTree string, cha
 		}
 	}
 	return held, nil
-}
-
-func resolvePathClasses(workspace gittree.Workspace, classes *pathclass.Manifest, changedPaths []string) (map[string]pathclass.Class, error) {
-	return resolvePathClassesWithFacts(defaultObservationFacts(workspace.Dir), classes, changedPaths)
 }
 
 func resolvePathClassesWithFacts(facts observationFacts, classes *pathclass.Manifest, changedPaths []string) (map[string]pathclass.Class, error) {

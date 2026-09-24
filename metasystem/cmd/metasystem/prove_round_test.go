@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -146,13 +149,90 @@ func TestProveRoundProvesTheChainWorktreesCommittedTreeOnTheInstallation(t *test
 }
 
 func TestProveRoundTreatsWholeReuseAsProof(t *testing.T) {
-	fixture := newProveRoundFixture(t)
+	projectRoot, err := canonicalPath(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	installation := filepath.Join(projectRoot, "metasystem")
+	worktree := filepath.Join(installation, "artifacts", "agents", "worktrees", "implementer-1")
+	if err := os.MkdirAll(filepath.Join(worktree, "metasystem"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installation, "seed.txt"), []byte("seed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, "metasystem", "round.txt"), []byte("round 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeProveRoundRecord(t, installation, "implementer-1", map[string]any{"launchMode": "worktree", "workspaceRoot": worktree, "goalId": "goal-a", "round": 1})
+	writeProveRoundRecord(t, installation, "implementer-1-r2", map[string]any{"parentJob": "implementer-1", "launchMode": "worktree", "workspaceRoot": worktree, "goalId": "goal-a", "round": 2})
+	tree := strings.Repeat("b", 40)
+	prefix := []string{
+		"-C", worktree,
+		"-c", "core.fileMode=true",
+		"-c", "diff.noprefix=false",
+		"-c", "diff.mnemonicPrefix=false",
+		"-c", "apply.ignoreWhitespace=no",
+		"-c", "core.logAllRefUpdates=false",
+		"-c", "core.useReplaceRefs=false",
+		"-c", "gc.auto=0",
+		"-c", "maintenance.auto=false",
+	}
+	index := ""
+	check := func(indexed bool) func(testgit.Call) error {
+		return func(call testgit.Call) error {
+			if call.Stdin != nil {
+				return fmt.Errorf("unexpected Git stdin: %q", call.Stdin)
+			}
+			if !indexed {
+				if !slices.Equal(call.Env, gittree.ScrubbedEnviron()) {
+					return fmt.Errorf("unexpected Git environment: %q", call.Env)
+				}
+				return nil
+			}
+			var found string
+			for _, entry := range call.Env {
+				if strings.HasPrefix(entry, "GIT_INDEX_FILE=") {
+					if found != "" {
+						return fmt.Errorf("repeated isolated index: %q", call.Env)
+					}
+					found = strings.TrimPrefix(entry, "GIT_INDEX_FILE=")
+				}
+			}
+			if filepath.Base(found) != "index" || (index != "" && found != index) || !slices.Equal(call.Env, gittree.ScrubbedEnviron("GIT_INDEX_FILE="+found)) {
+				return fmt.Errorf("unexpected isolated index environment: %q", call.Env)
+			}
+			index = found
+			return nil
+		}
+	}
+	expect := func(args []string, output string, indexed bool) testgit.Expectation {
+		return testgit.Expectation{
+			Call:   testgit.Call{Dir: worktree, Args: append(slices.Clone(prefix), args...)},
+			Result: testgit.Result{Stdout: []byte(output)}, Check: check(indexed),
+		}
+	}
+	stub := testgit.New(t,
+		expect([]string{"read-tree", "HEAD"}, "", true),
+		expect([]string{"add", "-A", "--", "."}, "", true),
+		expect([]string{"write-tree"}, tree+"\n", true),
+		expect([]string{"rev-parse", "--show-prefix"}, "", false),
+	)
+	operations := []string{"git read-tree HEAD", "git add -A -- .", "git write-tree", "git rev-parse --show-prefix"}
+	raw := func(request gittree.RawRequest) gittree.RawResult {
+		callIndex := len(stub.Calls())
+		if callIndex >= len(operations) || request.Operation != operations[callIndex] {
+			t.Fatalf("unexpected Git operation %q at call %d", request.Operation, callIndex)
+		}
+		result := stub.Run(testgit.Call{Dir: request.Dir, Args: request.Args, Env: request.Env, Stdin: request.Stdin})
+		return gittree.RawResult{Stdout: result.Stdout, Stderr: result.Stderr, Err: result.Err}
+	}
 	stubProveRoundRun(t, proofrun.ExitReusableSuccess)
-	if status := runDispatchProveRound([]string{"--root", fixture.installation, "--job", "implementer-1"}); status != 0 {
+	if status := runDispatchProveRoundWithRawSource([]string{"--root", installation, "--job", "implementer-1"}, raw); status != 0 {
 		t.Fatalf("a round proved by whole reuse exited %d; want 0", status)
 	}
-	record := readProofRoundRecord(t, fixture.installation, "implementer-1", 2)
-	if !record.ReusedWhole || !record.Sufficient || record.ExitStatus != 0 || record.AttemptID != "" {
+	record := readProofRoundRecord(t, installation, "implementer-1", 2)
+	if record.CandidateTree != tree || !record.ReusedWhole || !record.Sufficient || record.ExitStatus != 0 || record.AttemptID != "" {
 		t.Fatalf("whole reuse was not recorded as the proof: %+v", record)
 	}
 }

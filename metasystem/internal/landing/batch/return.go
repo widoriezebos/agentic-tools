@@ -31,7 +31,10 @@ type ReturnSeams struct {
 // ReadReturnLedgerGoal reads return custody from the exact fetched tree used
 // for the rest of an owner tick.
 func ReadReturnLedgerGoal(root, tree, goalID string) (ReturnLedgerGoal, error) {
-	workspace := gittree.Workspace{Dir: root}
+	return readReturnLedgerGoalWithWorkspace(gittree.Workspace{Dir: root}, tree, goalID)
+}
+
+func readReturnLedgerGoalWithWorkspace(workspace gittree.Workspace, tree, goalID string) (ReturnLedgerGoal, error) {
 	prefix, err := workspace.Prefix()
 	if err != nil {
 		return ReturnLedgerGoal{}, err
