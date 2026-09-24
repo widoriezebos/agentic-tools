@@ -60,6 +60,33 @@ func TestANonceIsAlwaysAPlainFileName(t *testing.T) {
 	if !strings.HasPrefix(nonce, "seat-presence-m1c-unreachable-") {
 		t.Fatalf("nonce = %q", nonce)
 	}
+	// The fleet also names machines the ledger mentions in a Claimed: line,
+	// and that validator refuses only whitespace.
+	for _, hostile := range []string{"../../escape", "a/b", "..", ".", "m1c\x00"} {
+		nonce := NotificationNonce(hostile, Unknown, FormatTime(fixtureClock))
+		if strings.ContainsAny(nonce, "/\\ ") || strings.Contains(nonce, "..") || strings.ContainsRune(nonce, 0) {
+			t.Errorf("nonce for %q = %q; it must be a plain file name", hostile, nonce)
+		}
+		if nonce != NotificationNonce(hostile, Unknown, FormatTime(fixtureClock)) {
+			t.Errorf("the nonce for %q is not stable", hostile)
+		}
+	}
+	if NotificationNonce("a/b", Unknown, FormatTime(fixtureClock)) ==
+		NotificationNonce("a-b", Unknown, FormatTime(fixtureClock)) {
+		t.Fatal("two different machine names share one nonce")
+	}
+}
+
+func TestTheMessageKeepsTheNameTheHumanKnows(t *testing.T) {
+	t.Parallel()
+	standings := []MachineStanding{{Machine: "a/b", Standing: Unreachable, Since: FormatTime(fixtureClock)}}
+	queued := Transitions(map[string]Observation{"a/b": {Standing: Reachable, Since: FormatTime(fixtureClock)}}, standings, false)
+	if len(queued) != 1 || !strings.Contains(queued[0].Message, "a/b has been unreachable") {
+		t.Fatalf("queued = %+v", queued)
+	}
+	if strings.Contains(queued[0].Nonce, "/") {
+		t.Fatalf("nonce = %q", queued[0].Nonce)
+	}
 }
 
 func TestThisMachineIsNotItsOwnPeerNotification(t *testing.T) {

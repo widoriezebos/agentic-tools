@@ -1,6 +1,8 @@
 package seat
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -49,14 +51,28 @@ func Transitions(previous map[string]Observation, standings []MachineStanding, b
 }
 
 // NotificationNonce is the pending notification's file name, so it must be a
-// plain one: the nickname charset of ValidateMachineName and a unix second
-// make it so.
+// plain one. The publisher's own charset cannot be assumed here: the fleet
+// also names machines the ledger mentions in a Claimed: line, and the
+// ledger's nickname validator refuses only whitespace, so a claim can name
+// a machine with a slash in it. A name outside the publishable charset is
+// therefore carried as a digest of itself, which is stable, collision-free
+// in practice and always a plain file name; the message text keeps the name
+// the human knows.
 func NotificationNonce(machine string, standing Standing, since string) string {
 	seconds := int64(0)
 	if at, err := parsePresenceTime(since); err == nil {
 		seconds = at.Unix()
 	}
-	return fmt.Sprintf("seat-presence-%s-%s-%d", machine, standing, seconds)
+	return fmt.Sprintf("seat-presence-%s-%s-%d", nonceMachine(machine), standing, seconds)
+}
+
+// nonceMachine renders one machine name as a plain file-name segment.
+func nonceMachine(machine string) string {
+	if ValidateMachineName(machine) == nil {
+		return machine
+	}
+	digest := sha256.Sum256([]byte(machine))
+	return "encoded-" + hex.EncodeToString(digest[:8])
 }
 
 func transitionMessage(line MachineStanding) string {
