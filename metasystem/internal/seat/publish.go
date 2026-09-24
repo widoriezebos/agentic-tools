@@ -20,9 +20,14 @@ type RunnerContext struct {
 	TickSeconds  int
 }
 
-// JobRecord is the part of a delegate job record presence reads.
+// JobRecord is the part of a delegate job record presence reads. A chain is
+// a lineage linked by Parent, so the ROOT is resolved by walking that link,
+// never taken from the immediate parent: a round-four critic whose parent is
+// the round-three implementer belongs to the chain they both descend from.
 type JobRecord struct {
-	Root      string
+	// Parent is the record this one follows; empty means this record is its
+	// chain's root.
+	Parent    string
 	Job       string
 	Role      string
 	Goal      string
@@ -45,19 +50,30 @@ var nonTerminalStatuses = map[string]bool{"pending-setup": true, "pending": true
 
 // NewestChain picks the newest non-terminal delegate job: newest by
 // createdAt, ties by job id, with the greater id winning so two readers of
-// the same records never disagree. An unreadable or corrupt record makes the
-// chain null and names itself in the returned detail rather than failing the
-// publish.
+// the same records never disagree.
+//
+// A record that cannot answer for itself is never silently skipped. An
+// unreadable record, and a newest record whose fields are incomplete or
+// whose ancestry does not resolve to a root, both yield a NULL chain with a
+// named detail: a machine that cannot say what it is running says so,
+// instead of reporting the second-newest job as though it were the work in
+// hand.
 func NewestChain(jobs JobSet) (*Chain, string) {
 	if len(jobs.Unreadable) > 0 {
 		sorted := append([]string(nil), jobs.Unreadable...)
 		sort.Strings(sorted)
 		return nil, "chain unread: " + sorted[0]
 	}
+	table := make(map[string]JobRecord, len(jobs.Records))
+	for _, record := range jobs.Records {
+		if record.Job != "" {
+			table[record.Job] = record
+		}
+	}
 	var best *JobRecord
 	for index := range jobs.Records {
 		candidate := jobs.Records[index]
-		if !nonTerminalStatuses[candidate.Status] || candidate.Job == "" {
+		if !nonTerminalStatuses[candidate.Status] {
 			continue
 		}
 		if best == nil || newerJob(candidate, *best) {
@@ -68,12 +84,54 @@ func NewestChain(jobs JobSet) (*Chain, string) {
 	if best == nil {
 		return nil, ""
 	}
-	chain := Chain{Root: best.Root, Job: best.Job, Role: best.Role, Round: best.Round, Goal: best.Goal}
+	if problem := incompleteJob(*best); problem != "" {
+		return nil, "chain unnamed: " + problem
+	}
+	root := lineageRoot(table, best.Job)
+	if root == "" {
+		return nil, "chain unrooted: the ancestry of job " + best.Job + " does not resolve to a root"
+	}
+	chain := Chain{Root: root, Job: best.Job, Role: best.Role, Round: best.Round, Goal: best.Goal}
 	if best.StartedAt != "" {
 		started := best.StartedAt
 		chain.StartedAt = &started
 	}
 	return &chain, ""
+}
+
+// incompleteJob names the first field a chain cannot be composed without.
+func incompleteJob(record JobRecord) string {
+	switch {
+	case record.Job == "":
+		return "a job record in flight names no job"
+	case record.Role == "":
+		return "job " + record.Job + " names no role"
+	case record.CreatedAt == "":
+		return "job " + record.Job + " names no createdAt"
+	case record.Round < 0:
+		return "job " + record.Job + " carries a negative round"
+	}
+	return ""
+}
+
+// lineageRoot resolves a job's chain root by walking Parent through one
+// loaded table, which is how dispatch resolves it (internal/dispatch/chain.go:28).
+// A walk that leaves the table, cycles, or is missing a link roots NOWHERE:
+// a member of a corrupt chain is attributed to no chain, never to whatever
+// record a broken walk happened to stop on.
+func lineageRoot(table map[string]JobRecord, job string) string {
+	seen := map[string]bool{}
+	for {
+		record, present := table[job]
+		if !present || seen[job] {
+			return ""
+		}
+		seen[job] = true
+		if record.Parent == "" {
+			return job
+		}
+		job = record.Parent
+	}
 }
 
 func newerJob(candidate, best JobRecord) bool {

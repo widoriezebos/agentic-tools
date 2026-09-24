@@ -92,8 +92,8 @@ func ReadJobs(root string) JobSet {
 			jobs.Unreadable = append(jobs.Unreadable, logical+": the job record is not readable JSON")
 			continue
 		}
-		jobs.Records = append(jobs.Records, JobRecord{
-			Root:      jobText(record, "parentJob", "jobId"),
+		job := JobRecord{
+			Parent:    jobText(record, "parentJob"),
 			Job:       jobText(record, "jobId"),
 			Role:      jobText(record, "role"),
 			Goal:      jobText(record, "goalId"),
@@ -101,7 +101,20 @@ func ReadJobs(root string) JobSet {
 			StartedAt: jobText(record, "startedAt"),
 			CreatedAt: jobText(record, "createdAt"),
 			Status:    jobText(record, "status"),
-		})
+		}
+		// A record that parses but cannot say which job it is, or what state
+		// it is in, cannot be reasoned about: it is unreadable in the only
+		// sense that matters here, and it names itself rather than being
+		// dropped from the scan.
+		if job.Job == "" {
+			jobs.Unreadable = append(jobs.Unreadable, logical+": the job record names no jobId")
+			continue
+		}
+		if job.Status == "" {
+			jobs.Unreadable = append(jobs.Unreadable, logical+": job "+job.Job+" names no status")
+			continue
+		}
+		jobs.Records = append(jobs.Records, job)
 	}
 	return jobs
 }

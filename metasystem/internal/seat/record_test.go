@@ -17,9 +17,13 @@ func fixtureRunner() RunnerContext {
 
 func TestComposeBuildsTheRecordFromIdentityAndJobs(t *testing.T) {
 	t.Parallel()
+	// A three-deep chain: the root, its follow-up, and the newest record,
+	// whose own parent is the middle one. The root is the walk's answer, not
+	// the immediate parent.
 	jobs := JobSet{Records: []JobRecord{
-		{Job: "job-old", Root: "job-old", Role: "implementer", Goal: "goal-a", Round: 1, Status: "completed", CreatedAt: "2026-09-24T09:00:00Z", StartedAt: "2026-09-24T09:00:05Z"},
-		{Job: "job-new", Root: "job-old", Role: "critic", Goal: "goal-a", Round: 2, Status: "running", CreatedAt: "2026-09-24T09:30:00Z", StartedAt: "2026-09-24T09:30:05Z"},
+		{Job: "job-old", Role: "implementer", Goal: "goal-a", Round: 1, Status: "completed", CreatedAt: "2026-09-24T09:00:00Z", StartedAt: "2026-09-24T09:00:05Z"},
+		{Job: "job-mid", Parent: "job-old", Role: "critic", Goal: "goal-a", Round: 2, Status: "completed", CreatedAt: "2026-09-24T09:15:00Z", StartedAt: "2026-09-24T09:15:05Z"},
+		{Job: "job-new", Parent: "job-mid", Role: "critic", Goal: "goal-a", Round: 2, Status: "running", CreatedAt: "2026-09-24T09:30:00Z", StartedAt: "2026-09-24T09:30:05Z"},
 	}}
 	record, detail, err := Compose("m1e", fixtureRunner(), jobs, fixtureClock)
 	if err != nil || detail != "" {
@@ -35,7 +39,7 @@ func TestComposeBuildsTheRecordFromIdentityAndJobs(t *testing.T) {
 		t.Fatalf("record tickAt = %q", record.TickAt)
 	}
 	if record.Chain == nil || record.Chain.Job != "job-new" || record.Chain.Round != 2 || record.Chain.Root != "job-old" {
-		t.Fatalf("record chain = %+v", record.Chain)
+		t.Fatalf("record chain = %+v; the root is the walk's answer, not the parent", record.Chain)
 	}
 	if record.Chain.StartedAt == nil || *record.Chain.StartedAt != "2026-09-24T09:30:05Z" {
 		t.Fatalf("record chain startedAt = %v", record.Chain.StartedAt)
@@ -44,7 +48,7 @@ func TestComposeBuildsTheRecordFromIdentityAndJobs(t *testing.T) {
 
 func TestComposeLeavesTheChainNullWhenNothingIsInFlight(t *testing.T) {
 	t.Parallel()
-	jobs := JobSet{Records: []JobRecord{{Job: "job-done", Status: "completed", CreatedAt: "2026-09-24T09:00:00Z"}}}
+	jobs := JobSet{Records: []JobRecord{{Job: "job-done", Role: "implementer", Status: "completed", CreatedAt: "2026-09-24T09:00:00Z"}}}
 	record, detail, err := Compose("m1e", fixtureRunner(), jobs, fixtureClock)
 	if err != nil || detail != "" || record.Chain != nil {
 		t.Fatalf("idle compose = chain %+v detail %q err %v", record.Chain, detail, err)
@@ -54,7 +58,7 @@ func TestComposeLeavesTheChainNullWhenNothingIsInFlight(t *testing.T) {
 func TestPendingSetupReservationComposesAChainWithNoStartedAt(t *testing.T) {
 	t.Parallel()
 	jobs := JobSet{Records: []JobRecord{
-		{Job: "job-reserved", Root: "job-reserved", Role: "implementer", Goal: "goal-b", Status: "pending-setup", CreatedAt: "2026-09-24T09:31:00Z"},
+		{Job: "job-reserved", Role: "implementer", Goal: "goal-b", Status: "pending-setup", CreatedAt: "2026-09-24T09:31:00Z"},
 	}}
 	record, _, err := Compose("m1e", fixtureRunner(), jobs, fixtureClock)
 	if err != nil {
@@ -75,7 +79,7 @@ func TestPendingSetupReservationComposesAChainWithNoStartedAt(t *testing.T) {
 func TestACorruptJobRecordYieldsANullChainWithANamedDetail(t *testing.T) {
 	t.Parallel()
 	jobs := JobSet{
-		Records:    []JobRecord{{Job: "job-live", Status: "running", CreatedAt: "2026-09-24T09:30:00Z"}},
+		Records:    []JobRecord{{Job: "job-live", Role: "implementer", Status: "running", CreatedAt: "2026-09-24T09:30:00Z"}},
 		Unreadable: []string{"artifacts/agents/jobs/job-torn.json: the job record is not readable JSON"},
 	}
 	record, detail, err := Compose("m1e", fixtureRunner(), jobs, fixtureClock)
@@ -87,6 +91,85 @@ func TestACorruptJobRecordYieldsANullChainWithANamedDetail(t *testing.T) {
 	}
 	if !strings.Contains(detail, "job-torn.json") {
 		t.Fatalf("detail = %q; it must name the record it could not read", detail)
+	}
+}
+
+func TestAnIncompleteOrUnrootedNewestJobYieldsANullChain(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		jobs   JobSet
+		detail string
+	}{
+		{
+			name: "the newest record names no role",
+			jobs: JobSet{Records: []JobRecord{
+				{Job: "job-done", Role: "implementer", Status: "completed", CreatedAt: "2026-09-24T09:00:00Z"},
+				{Job: "job-live", Status: "running", CreatedAt: "2026-09-24T09:30:00Z"},
+			}},
+			detail: "names no role",
+		},
+		{
+			name: "the newest record names no createdAt",
+			jobs: JobSet{Records: []JobRecord{
+				{Job: "job-live", Role: "implementer", Status: "running"},
+			}},
+			detail: "names no createdAt",
+		},
+		{
+			name: "the newest record's parent is not in the scan",
+			jobs: JobSet{Records: []JobRecord{
+				{Job: "job-live", Parent: "job-gone", Role: "implementer", Status: "running", CreatedAt: "2026-09-24T09:30:00Z"},
+			}},
+			detail: "does not resolve to a root",
+		},
+		{
+			name: "the newest record's ancestry cycles",
+			jobs: JobSet{Records: []JobRecord{
+				{Job: "job-a", Parent: "job-b", Role: "implementer", Status: "running", CreatedAt: "2026-09-24T09:30:00Z"},
+				{Job: "job-b", Parent: "job-a", Role: "implementer", Status: "running", CreatedAt: "2026-09-24T09:20:00Z"},
+			}},
+			detail: "does not resolve to a root",
+		},
+	}
+	for _, test := range cases {
+		chain, detail := NewestChain(test.jobs)
+		if chain != nil {
+			t.Errorf("%s composed a chain: %+v", test.name, chain)
+		}
+		if !strings.Contains(detail, test.detail) {
+			t.Errorf("%s detail = %q; want it to name %q", test.name, detail, test.detail)
+		}
+	}
+	// An incomplete record that is NOT the newest in flight does not hide the
+	// work in hand behind it.
+	healthy := JobSet{Records: []JobRecord{
+		{Job: "job-broken", Status: "running", CreatedAt: "2026-09-24T09:00:00Z"},
+		{Job: "job-live", Role: "implementer", Goal: "goal-a", Status: "running", CreatedAt: "2026-09-24T09:30:00Z"},
+	}}
+	chain, detail := NewestChain(healthy)
+	if chain == nil || chain.Job != "job-live" || chain.Root != "job-live" || detail != "" {
+		t.Fatalf("chain = %+v detail = %q", chain, detail)
+	}
+}
+
+func TestAComposedChainAlwaysSatisfiesTheReader(t *testing.T) {
+	t.Parallel()
+	// Whatever the composer emits, the reader on the other machine must
+	// accept: the two halves of the record are one contract.
+	jobs := JobSet{Records: []JobRecord{
+		{Job: "job-live", Role: "implementer", Status: "running", CreatedAt: "2026-09-24T09:30:00Z"},
+	}}
+	record, detail, err := Compose("m1e", fixtureRunner(), jobs, fixtureClock)
+	if err != nil || detail != "" {
+		t.Fatalf("compose = detail %q err %v", detail, err)
+	}
+	encoded, err := record.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseRecord(encoded); err != nil {
+		t.Fatalf("the composer emitted a record its own reader refuses: %v\n%s", err, encoded)
 	}
 }
 
@@ -252,7 +335,7 @@ func TestAChainOfEmptyFieldsIsAMalformedRecord(t *testing.T) {
 func TestEncodeAndParseRoundTrip(t *testing.T) {
 	t.Parallel()
 	record, _, err := Compose("m1e", fixtureRunner(), JobSet{Records: []JobRecord{
-		{Job: "job-live", Root: "job-live", Role: "implementer", Goal: "goal-a", Round: 2, Status: "running", CreatedAt: "2026-09-24T09:30:00Z", StartedAt: "2026-09-24T09:30:05Z"},
+		{Job: "job-live", Role: "implementer", Goal: "goal-a", Round: 2, Status: "running", CreatedAt: "2026-09-24T09:30:00Z", StartedAt: "2026-09-24T09:30:05Z"},
 	}}, fixtureClock)
 	if err != nil {
 		t.Fatal(err)
