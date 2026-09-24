@@ -106,8 +106,13 @@ func TestSeatFleetVerbExitsZeroWithoutANickname(t *testing.T) {
 	if code := runSeatFleet([]string{"--root", root}); code != 0 {
 		t.Fatalf("seat fleet = %d; want 0", code)
 	}
-	if code := runSeatFleet(nil); code != 2 {
-		t.Fatalf("seat fleet with no root = %d; want the usage refusal", code)
+	// No --root is not a refusal: the checkout the caller is standing in is
+	// the answer, and this test process stands in the engine's own checkout.
+	if code := runSeatFleet(nil); code != 0 {
+		t.Fatalf("seat fleet with no root = %d; want it to read the current checkout", code)
+	}
+	if code := runSeatFleet([]string{"--nonsense"}); code != 2 {
+		t.Fatalf("seat fleet with an unknown flag = %d; want the usage refusal", code)
 	}
 }
 

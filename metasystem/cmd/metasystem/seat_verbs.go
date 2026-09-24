@@ -24,14 +24,12 @@ var seatFleetNow = func() time.Time { return time.Now().UTC() }
 // runSeatFleet prints one line per machine, this machine first.
 func runSeatFleet(args []string) int {
 	flags := flag.NewFlagSet("seat fleet", flag.ContinueOnError)
-	root := pathFlag(flags, "root", "", "checkout root")
+	// Reading the fleet is an ordinary look around, so the checkout the
+	// caller is standing in is the answer when they name none.
+	root := pathFlag(flags, "root", ".", "checkout root (default: the current directory)")
 	fetch := flags.Bool("fetch", false, "fetch presence into this read's own namespace instead of reading the tick's copy")
 	asJSON := flags.Bool("json", false, "print the standings as JSON")
 	if flags.Parse(args) != nil {
-		return 2
-	}
-	if *root == "" {
-		fmt.Fprintln(os.Stderr, "seat fleet: --root is required")
 		return 2
 	}
 	report, err := seatFleetReport(*root, *fetch, seatFleetNow())
