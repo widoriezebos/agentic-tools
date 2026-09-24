@@ -262,9 +262,11 @@ shared ref collide on that ref's lock (txn.go:126-133). Three readers in
 one clone fetching into the same `refs/metasystem/presence/*` would collide
 the same way, so:
 
-- the tick's `seat-presence` component fetches
-  `+refs/metasystem/presence/*:refs/metasystem/presence/*`, once per tick;
-  that namespace is the clone's canonical local copy;
+- the tick's `seat-presence` component fetches both remote namespaces into
+  the clone's canonical local copy, `refs/metasystem/presence-copy/metasystem/*`
+  and `refs/metasystem/presence-copy/heads/*`, once per tick; the copy lives
+  beside the publish namespace rather than in it, because in LocalMode the
+  publish namespace holds this machine's own live ref;
 - every presence fetch is `git fetch --no-tags --refmap= --atomic --prune
   <remote> +refs/metasystem/presence/*:<namespace>/*`: `--refmap=` keeps
   it out of the remote-tracking refs, `--atomic` makes a multi-ref update
@@ -474,8 +476,13 @@ A refusal that names the ref (git's `funny refname`, a pre-receive hook, a
 ruleset message) moves the publisher one rung down for that publish and
 the next; a transport failure that names no ref (a timeout, a credential
 fault) does not, because the rung was not the fault. `seat.presence-namespace`
-pins the ladder to one rung for an operator who knows the host, and is
-otherwise unset. The rung in use is a fact on the health line (`presence
+pins the ladder to one NAMESPACE for an operator who knows the host, and
+is otherwise unset: pinned to `refs/metasystem/presence` the publisher
+never falls; pinned to `refs/heads/presence` it may still fall from the
+force push of rung 2 to the fast-forward push of rung 3, because a ban on
+force pushes is not a namespace question. Rung 3's weekly branch reset is
+deferred: slice 1 lets rung 3's history grow, and the reset comes when a
+host actually lands a fleet on rung 3. The rung in use is a fact on the health line (`presence
 published 2 min ago on rung 2, a branch per machine`) and in the
 publication state, and readers do not need to know it: every presence
 fetch carries both remote namespaces, `refs/metasystem/presence/*` and
@@ -543,8 +550,15 @@ namespaces without blocking each other; a ref deleted at the remote pruned
 from the namespace; a fetch that fails part way leaving the namespace as
 it was; and the `LocalMode` update of the local ref only. Its operations
 are classified in the isolation inventory as fixture-data and
-host-readonly following the existing git fixture rows. The tick integration
-is one scenario, `seat-presence`, added to the supervision fixture bed
+host-readonly following the existing git fixture rows. The tick integration in slice 1 is a Go test that drives `RunTick` against
+a bare repository in `t.TempDir()` with an injected runner context and
+asserts the component record, the ref at the remote, the published record,
+the publication state and the health line, then that a tick without runner
+context moves neither the ref nor the state. The arm-to-runner handoff of
+`--lineage` through a resident runner is verified at rollout on the first
+armed seat, by reading its presence record; a scenario on the supervision
+fixture bed is owed when that bed is next touched. The scenario, when it
+comes, is `seat-presence`, added to the supervision fixture bed
 (scripts/agents/supervision-fixtures.sh, the kit's existing git-driven
 integration layer) in both its invocation and its acceptance lists
 (supervision-fixtures.sh:46), with the assertions in Go where the bed
