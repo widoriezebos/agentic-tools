@@ -151,10 +151,6 @@ func observeWithFacts(params ObserveParams, facts observationFacts) Observation 
 	return observation
 }
 
-func observe(params ObserveParams) Observation {
-	return observeWithReader(params, defaultObservationFacts(params.RepoRoot))
-}
-
 func observeWithReader(params ObserveParams, facts observationFacts) Observation {
 	if !treeOID.MatchString(params.CandidateTree) {
 		return wouldRefuse("malformed-candidate-tree", "none change=unknown")
@@ -360,10 +356,6 @@ func humanCarriedRiskCommit(finding string) (string, bool) {
 	return commit, validShape && len(commit) == 40 && treeOID.MatchString(commit)
 }
 
-func changeDigest(root, candidateTree string) (string, error) {
-	return changeDigestWithReader(gittree.Workspace{Dir: root}, candidateTree)
-}
-
 func changeDigestWithReader(workspace observationReader, candidateTree string) (string, error) {
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
@@ -375,10 +367,6 @@ func changeDigestWithReader(workspace observationReader, candidateTree string) (
 	}
 	sum := sha256.Sum256(patch)
 	return fmt.Sprintf("%x", sum), nil
-}
-
-func observeChain(params ObserveParams, change string) (observation Observation) {
-	return observeChainWithFacts(params, change, defaultObservationFacts(params.RepoRoot))
 }
 
 func observeChainWithFacts(params ObserveParams, change string, facts observationFacts) (observation Observation) {
@@ -923,14 +911,6 @@ func goalFreeAt(workspace interface {
 	return len(problems) == 0 && record.Free != nil
 }
 
-// bindCertifiedChange applies the certified patch to the landing's current
-// base, then compares canonical change digests over exactly the certified
-// paths. Unrelated base movement and bundled carriage paths are outside that
-// digest; a changed certified blob, mode, addition, or deletion changes it.
-func bindCertifiedChange(root, candidateTree string, output certifiedOutput) (string, []string, error) {
-	return bindCertifiedChangeWithFacts(defaultObservationFacts(root), candidateTree, output)
-}
-
 func bindCertifiedChangeWithFacts(facts observationFacts, candidateTree string, output certifiedOutput) (string, []string, error) {
 	workspace := facts.reader
 	baseTree, err := workspace.HeadTree()
@@ -1457,10 +1437,6 @@ func rulingRowID(line string) (string, bool) {
 	return id, true
 }
 
-func observeDirectFix(params ObserveParams, change string) Observation {
-	return observeDirectFixWithFacts(params, change, defaultObservationFacts(params.RepoRoot))
-}
-
 func observeDirectFixWithFacts(params ObserveParams, change string, facts observationFacts) Observation {
 	switch params.DirectFix {
 	case "register-carriage":
@@ -1566,10 +1542,6 @@ func exactRevertRefusalCode(err error) string {
 	return "not-exact-revert"
 }
 
-func exactRevert(root, candidateTree, revertOf string, classes *pathclass.Manifest, goalID, actor string) error {
-	return exactRevertWithFacts(defaultObservationFacts(root), candidateTree, revertOf, classes, goalID, actor)
-}
-
 func exactRevertWithFacts(facts observationFacts, candidateTree, revertOf string, classes *pathclass.Manifest, goalID, actor string) error {
 	workspace := facts.reader
 	baseTree, err := workspace.HeadTree()
@@ -1627,10 +1599,6 @@ func exactRevertWithFacts(facts observationFacts, candidateTree, revertOf string
 		return fmt.Errorf("candidate is not the exact tree-shaped inverse")
 	}
 	return nil
-}
-
-func exactRevertPolicyError(workspace gittree.Workspace, baseTree string, classes *pathclass.Manifest, candidatePaths, targetPaths []string, goalID, actor string, fallback error) error {
-	return exactRevertPolicyErrorWithFacts(defaultObservationFacts(workspace.Dir), baseTree, classes, candidatePaths, targetPaths, goalID, actor, fallback)
 }
 
 func exactRevertPolicyErrorWithFacts(facts observationFacts, baseTree string, classes *pathclass.Manifest, candidatePaths, targetPaths []string, goalID, actor string, fallback error) error {

@@ -1,43 +1,8 @@
 package goal
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
 )
-
-// servingBed builds a converted checkout with the given goal files —
-// the world the mission prompt's goal line reads after migration.
-func servingBed(t *testing.T, machine string, files map[string]*GoalFile) string {
-	t.Helper()
-	root := t.TempDir()
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run("init", "-q", "-b", "main")
-	run("config", "metasystem.goal.machine", machine)
-	run("config", "goal.sync-remote", "local")
-	run("config", "user.name", "serving-fixture")
-	run("config", "user.email", "serving-fixture@example.invalid")
-	for rel, data := range servingFixtureFiles(machine, files) {
-		abs := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(abs, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		run("add", rel)
-	}
-	run("commit", "-q", "-m", "serving bed")
-	run("update-ref", AcceptedRef, "HEAD")
-	return root
-}
 
 // fakeServingFixture binds immutable committed files to one Store without a
 // checkout. The same rendered records feed the Git-backed serving bed.

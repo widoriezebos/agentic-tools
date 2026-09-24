@@ -51,10 +51,6 @@ func handoffExpired(_ time.Time, _ time.Time) bool {
 	return false
 }
 
-func handoffGoalIsStillOwned(repoRoot, goalID string, now time.Time) (bool, error) {
-	return handoffGoalIsStillOwnedWithReader(repoRoot, goalID, now, goal.ReadClaimableBudgetedWork)
-}
-
 func handoffGoalIsStillOwnedWithReader(repoRoot, goalID string, now time.Time, reader func(string, time.Time) (goal.ClaimableBudgetedWork, error)) (bool, error) {
 	work, err := reader(repoRoot, now)
 	if err != nil {

@@ -293,10 +293,6 @@ func verifyInbound(c PollConfig, in Inbound, code string, hasCode bool) (int64, 
 	return step, ""
 }
 
-func disposeStatusReply(ctx context.Context, c PollConfig, status StatusState, in Inbound) error {
-	return disposeStatusReplyWithEndpoint(ctx, c, status, in, goal.ResolveEndpoint)
-}
-
 func disposeStatusReplyWithEndpoint(ctx context.Context, c PollConfig, status StatusState, in Inbound, resolveEndpoint pollEndpointResolver) error {
 	answer, code, hasCode := SplitTOTP(in.Text)
 	step, reason := verifyInbound(c, in, code, hasCode)
@@ -346,10 +342,6 @@ func disposeStatusReplyWithEndpoint(ctx context.Context, c PollConfig, status St
 	}
 	_, err := c.Provider.Post(ctx, c.DestinationConfig, "not recorded: "+reason+"; reply with the token and your code", &status.Ref)
 	return err
-}
-
-func advanceAnswer(ctx context.Context, c PollConfig, q *Question) error {
-	return advanceAnswerWithEndpoint(ctx, c, q, goal.ResolveEndpoint)
 }
 
 func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, resolveEndpoint pollEndpointResolver) error {

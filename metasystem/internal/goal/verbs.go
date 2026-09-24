@@ -4254,10 +4254,6 @@ func commitWithTrailer(root, revision, key, value string) (string, error) {
 	return "", nil
 }
 
-func carryAnchorAndCommit(root, codeTip, opid string) (string, string, error) {
-	return carryAnchorAndCommitFor(Endpoint{Root: root}, codeTip, opid)
-}
-
 func carryAnchorAndCommitFor(endpoint Endpoint, codeTip, opid string) (string, string, error) {
 	anchor, err := endpoint.repository().CommitWithTrailer(codeTip, "Goal-Transaction", opid)
 	if err != nil || anchor == "" {

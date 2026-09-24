@@ -472,12 +472,6 @@ func abandonRequest(r VerbRequest, id string, spec AbandonSpec, arguments abando
 	}
 }
 
-// abandonCarryRefusal keeps every carry permission reachable until it is
-// closed or expires, and keeps an in-flight landing bound to a live goal.
-func abandonCarryRefusal(root string, tree *TreeGoals, codeTip, id string, file *GoalFile, now time.Time) error {
-	return abandonCarryRefusalFor(Endpoint{Root: root}, tree, codeTip, id, file, now)
-}
-
 func abandonCarryRefusalFor(endpoint Endpoint, tree *TreeGoals, codeTip, id string, file *GoalFile, now time.Time) error {
 	refs := map[string]bool{}
 	for _, history := range file.History {

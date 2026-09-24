@@ -116,12 +116,6 @@ func acceptanceGatesFor(e Endpoint, accepted, fetched string) error {
 	return nil
 }
 
-// treeIdentity reads the root record's adoption identity at a
-// commit — the one fact that means "same ledger".
-func treeIdentity(root, commit string) (string, error) {
-	return treeIdentityFor(Endpoint{Root: root}, commit)
-}
-
 func treeIdentityFor(e Endpoint, commit string) (string, error) {
 	files, err := readCommitFiles(e, commit, goalsPrefix+"backlog.md")
 	if err != nil {

@@ -63,10 +63,6 @@ var (
 	brainInFlightStatus = map[string]bool{"pending-setup": true, "pending": true, "running": true}
 )
 
-func inFlightStatuses(root string) map[string]bool {
-	return inFlightStatusesWithReads(root, defaultScanGoalReads())
-}
-
 func inFlightStatusesWithReads(root string, reads scanGoalReads) map[string]bool {
 	state := brain.Read(root, reads.existingLedgerIdentity(root))
 	if state.State == brain.Declared || state.State == brain.Corrupt {
@@ -135,10 +131,6 @@ func readJobRecords(root string) []map[string]any {
 		records = append(records, record)
 	}
 	return records
-}
-
-func jobsInFlight(root string) int {
-	return jobsInFlightWithReads(root, defaultScanGoalReads())
 }
 
 func jobsInFlightWithReads(root string, reads scanGoalReads) int {
@@ -334,10 +326,6 @@ func MarkOpenWorkSeen(root string, items []goal.Item, at time.Time) ([]goal.Item
 	return marked, warning, nil
 }
 
-func stalePlans(root string) []string {
-	return stalePlansWithReads(root, defaultScanGoalReads())
-}
-
 func stalePlansWithReads(root string, reads scanGoalReads) []string {
 	return stalePlansWithStatuses(root, inFlightStatusesWithReads(root, reads))
 }
@@ -436,10 +424,6 @@ func stalePlansWithStatuses(root string, statuses map[string]bool) []string {
 		}
 	}
 	return lines
-}
-
-func openWork(root string) []string {
-	return openWorkWithReads(root, defaultScanGoalReads())
 }
 
 func openWorkWithReads(root string, reads scanGoalReads) []string {

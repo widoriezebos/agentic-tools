@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -264,15 +263,6 @@ func TestChannelRecordTimesAndGitWindowRemainUTC(t *testing.T) {
 	if got := landingSince(sentAt); got != "--since=2026-09-04T12:00:00Z" {
 		t.Fatalf("git history window changed from UTC RFC 3339: %q", got)
 	}
-}
-
-func mustComposeReport(t *testing.T, config ReportConfig) string {
-	t.Helper()
-	text, err := ComposeReport(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return text
 }
 
 func TestStatusCadenceAndDigestGate(t *testing.T) {
@@ -904,42 +894,6 @@ func reportFencedClaim(id, intent, machine, stopID string, now time.Time) *goal.
 		Verb: "breach-stop", Actor: machine + "+goal-stop-custodian", Targets: []string{f.Id}, Keep: -1,
 	})
 	return f
-}
-
-func reportLedger(t *testing.T, goals ...*goal.GoalFile) string {
-	t.Helper()
-	root := t.TempDir()
-	reportGit(t, root, "init", "-q", "-b", "main")
-	reportGit(t, root, "config", "user.name", "channel-test")
-	reportGit(t, root, "config", "user.email", "channel@example.invalid")
-	reportGit(t, root, "config", "goal.sync-remote", "local")
-	if err := os.MkdirAll(filepath.Join(root, "plans", "goals"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	backlog := goal.RenderRoot(&goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1})
-	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "backlog.md"), backlog, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range goals {
-		if err := os.WriteFile(filepath.Join(root, "plans", "goals", f.Id+".md"), goal.RenderFile(f), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	reportGit(t, root, "add", "plans/goals")
-	reportGit(t, root, "commit", "-q", "-m", "seed report ledger")
-	reportGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-	reportGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-	reportGit(t, root, "update-ref", "refs/remotes/origin/main", "HEAD")
-	return root
-}
-
-func reportGit(t *testing.T, root string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-	cmd.Env = testGitEnv()
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
 }
 
 func TestPollRejectsWrongUserNoCodeBadCodeReplay(t *testing.T) {

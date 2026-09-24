@@ -115,15 +115,6 @@ func wallAuthorization(t *testing.T, root, missionID, baseTree, reviewedTree str
 	return digest
 }
 
-func snapshotTree(t *testing.T, root string) string {
-	t.Helper()
-	tree, err := gittree.Workspace{Dir: root}.Snapshot("HEAD")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return tree
-}
-
 func TestWallPassesUntouchedWorkspace(t *testing.T) {
 	bed := newWallPolicyBed(t)
 	pre := "pre"
@@ -1963,14 +1954,5 @@ func testAdmissionOrigins() map[string]any {
 		"headCommit": strings.Repeat("c", 40), "topTree": nil, "topStaged": nil,
 		"refMap": map[string]any{}, "worktreeCensus": []any{},
 		"capturedAt": "2026-01-01T00:00:00Z",
-	}
-}
-
-// legacySnapshot is the HEAD-seeded projection the tree-equation tests
-// exercise rule 7 with; the seeded-projection behavior has its own
-// engine-level tests.
-func legacySnapshot(root, missionID string) func(string) (string, error) {
-	return func(string) (string, error) {
-		return wallSnapshot(gittree.Workspace{Dir: root}, missionID)
 	}
 }

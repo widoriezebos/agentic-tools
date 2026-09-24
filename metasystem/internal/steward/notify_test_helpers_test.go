@@ -25,24 +25,6 @@ func notifyIdentity(t *testing.T, root, enrollment string) {
 	}
 }
 
-// notifyRepo is a git repository whose notify-command appends to a
-// sink file — a fully observable delivery channel.
-func notifyRepo(t *testing.T, command string) (string, string) {
-	t.Helper()
-	root := t.TempDir()
-	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
-		t.Fatalf("init: %v\n%s", err, out)
-	}
-	sink := filepath.Join(t.TempDir(), "delivered.log")
-	if command == "" {
-		command = `printf '%s\n' "$STEWARD_MESSAGE" >> ` + sink
-	}
-	if out, err := exec.Command("git", "-C", root, "config", "metasystem.steward.notify-command", command).CombinedOutput(); err != nil {
-		t.Fatalf("config: %v\n%s", err, out)
-	}
-	return root, sink
-}
-
 type notifyRead struct {
 	command string
 	err     error

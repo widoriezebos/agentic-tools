@@ -429,10 +429,6 @@ func scaledRunnerWait(scaleMilli int) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-func waitForRunnerSuccess(repoRoot string, wait time.Duration) RoleVerdict {
-	return waitForRunnerSuccessWithClock(repoRoot, wait, runnerNow, runnerSleep)
-}
-
 func waitForRunnerSuccessWithClock(repoRoot string, wait time.Duration, now func() time.Time, sleep func(time.Duration)) RoleVerdict {
 	deadline := now().Add(wait)
 	verdict := checkStewardRunner(repoRoot, now(), identity.KernelProber{})

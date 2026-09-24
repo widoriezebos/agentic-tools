@@ -3,8 +3,6 @@ package goal
 import (
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -85,22 +83,6 @@ func mustMarshalChannel(t *testing.T, value any) []byte {
 		t.Fatal(err)
 	}
 	return b
-}
-
-func commitChannelFiles(t *testing.T, root string, files map[string][]byte) string {
-	t.Helper()
-	for path, content := range files {
-		fullPath := filepath.Join(root, filepath.FromSlash(path))
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(fullPath, content, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	mustGit(t, root, "add", ".")
-	mustGit(t, root, "commit", "-qm", "channel fixture")
-	return mustGit(t, root, "rev-parse", "HEAD")
 }
 
 func commitChannelFilesForEndpoint(t *testing.T, e Endpoint, files map[string][]byte) string {

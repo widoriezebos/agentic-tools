@@ -52,10 +52,6 @@ func classifyVerbCallerWith(root string, callerPid int64, repositoryTop func(str
 	return lease.ClassifyVerbAt(root, installation, callerPid)
 }
 
-func resolveProcessScope(repo, installation string) (processScope, error) {
-	return resolveProcessScopeWith(repo, installation, stateroot.RepositoryTop)
-}
-
 func resolveProcessScopeWith(repo, installation string, repositoryTop func(string) (string, error)) (processScope, error) {
 	installationExplicit := installation != ""
 	checkout, err := upRepositoryScopeWith(repo, repositoryTop)
@@ -279,10 +275,6 @@ func armRefusalSecondLine(scope processScope, err error) string {
 		return "run: " + stopCommand
 	}
 	return second
-}
-
-func parseProcessScope(verb string, args []string, register ...func(*flag.FlagSet)) (processScope, int, int) {
-	return parseProcessScopeWith(verb, args, stateroot.RepositoryTop, register...)
 }
 
 func parseProcessScopeWith(verb string, args []string, repositoryTop func(string) (string, error), register ...func(*flag.FlagSet)) (processScope, int, int) {

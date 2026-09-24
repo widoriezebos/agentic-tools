@@ -2,7 +2,6 @@ package dispatch
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -328,32 +327,6 @@ func TestBreachStopRecoveryReprojectsBudgetAndIgnoresJournalAuthorityStrings(t *
 			t.Fatalf("recovery mutated without acquiring the ranked lock: binding=%+v reports=%+v err=%v", binding, reports, err)
 		}
 	})
-}
-
-// landingBed marks the revision bed's claim as waiting to land.
-func landingBed(t *testing.T) string {
-	t.Helper()
-	root := revisionBindingBed(t, 2)
-	path := filepath.Join(root, "plans", "goals", "bounded.md")
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, problems := goal.ParseFile(content)
-	if len(problems) != 0 {
-		t.Fatalf("parse accepted goal: %v", problems)
-	}
-	file.Landing = &goal.LandingRecord{At: "2026-08-28T12:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAZ-bed-m1-00000004"}
-	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "landing bed"}, {"update-ref", goal.LocalLedgerBranch, "HEAD"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		command := exec.Command("git", append([]string{"-C", root}, args...)...)
-		if output, runErr := command.CombinedOutput(); runErr != nil {
-			t.Fatalf("git %v: %v: %s", args, runErr, output)
-		}
-	}
-	return root
 }
 
 func TestLandingClaimSuspendsOnlyItsElapsedFence(t *testing.T) {

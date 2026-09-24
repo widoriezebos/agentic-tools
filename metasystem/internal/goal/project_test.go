@@ -204,34 +204,6 @@ func soloLedgerFakeEndpoint(t *testing.T) Endpoint {
 	return e
 }
 
-// soloLedgerRepo builds a single-machine repo whose ledger branch
-// carries a LOCAL-mode root record and one queued goal, with the
-// accepted ref set — the world after a local-mode migration.
-func soloLedgerRepo(t *testing.T) string {
-	t.Helper()
-	repo := t.TempDir()
-	mustGit(t, t.TempDir(), "init", "-q", "-b", "main", repo)
-	mustGit(t, repo, "commit", "-q", "--allow-empty", "-m", "seed")
-	mustGit(t, repo, "update-ref", LocalLedgerBranch, "HEAD")
-	root := vRoot()
-	root.SyncMode = SyncLocal
-	files := vTree(root, []*GoalFile{approvedGoalFixture(vGoal("solo-goal", StateQueued), testBudget())}, nil)
-	var changes []Change
-	for p, content := range files {
-		changes = append(changes, Change{Path: p, Content: content})
-	}
-	e := Endpoint{Root: repo, Remote: "local", Branch: "refs/heads/main"}
-	res, err := Publish(e, PublishRequest{
-		Opid: "op-solo-seed", Machine: "mac-solo", Lineage: "l1",
-		Intent: testIntentFor("migrate"), Message: "seed solo ledger",
-		Mutate: func(tip string) ([]Change, error) { return changes, nil },
-	})
-	if err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("solo seed: %+v %v", res, err)
-	}
-	return repo
-}
-
 func TestWorkingDurationGrammar(t *testing.T) {
 	t.Parallel()
 	for token, want := range map[string]time.Duration{

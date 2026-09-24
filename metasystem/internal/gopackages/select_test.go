@@ -156,14 +156,3 @@ func writeSelectionFile(t *testing.T, root, path, content string) {
 		t.Fatal(err)
 	}
 }
-
-func gitSelection(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", args...)
-	command.Dir = root
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, output)
-	}
-	return strings.TrimSpace(string(output))
-}

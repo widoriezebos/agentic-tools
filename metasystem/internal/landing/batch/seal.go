@@ -164,10 +164,6 @@ func prepareSealCandidate(root, baseTree string, record *Record, assemble func(s
 	return units, nil
 }
 
-func selectSealCandidate(root string, candidate *Record, plan func(string, string, string) (testpolicy.Plan, error)) error {
-	return selectSealCandidateWithReader(root, candidate, plan, readCommittedGoal)
-}
-
 func selectSealCandidateWithReader(root string, candidate *Record, plan func(string, string, string) (testpolicy.Plan, error), read func(string, string, string) ([]byte, bool, error)) error {
 	candidate.SelectedGroups = nil
 	candidate.Seal = map[string]Claim{}

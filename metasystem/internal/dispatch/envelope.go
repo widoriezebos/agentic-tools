@@ -105,16 +105,6 @@ func expandPermissions(sourcePath, repo, workspace string, isWorktree bool, pres
 	return writeRecord(outputPath, envelope)
 }
 
-// worktreeGitWriteRoots derives the git-metadata write roots a worktree
-// delegate needs to commit on its own branch, verified against
-// a live probe: the worktree git dir (index, HEAD, COMMIT_EDITMSG, its
-// logs), the common object store, and the branch's ref namespace with its
-// reflog (ref updates create sibling .lock files, so the namespace
-// DIRECTORY must be writable, not just the ref file).
-func worktreeGitWriteRoots(worktree string) ([]string, error) {
-	return worktreeGitWriteRootsWithMetadata(worktree, gitWorktreeMetadata{})
-}
-
 type worktreeMetadata interface {
 	AbsoluteGitDir(worktree string) (string, error)
 	CommonGitDir(worktree string) (string, error)

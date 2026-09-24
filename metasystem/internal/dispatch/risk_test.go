@@ -2,7 +2,6 @@ package dispatch
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,31 +9,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
-
-func commitRiskBindingState(t *testing.T, root string, risk *goal.RiskRecord, tier uint8) {
-	t.Helper()
-	path := filepath.Join(root, "plans", "goals", "bounded.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, problems := goal.ParseFile(data)
-	if len(problems) != 0 {
-		t.Fatalf("parse goal binding fixture: %v", problems)
-	}
-	file.Risk = risk
-	file.Tier = tier
-	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-qm", "risk binding state"}, {"update-ref", goal.AcceptedRef, "HEAD"}, {"update-ref", goal.LocalLedgerBranch, "HEAD"}} {
-		command := exec.Command("git", append([]string{"-C", root}, args...)...)
-		command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
-}
 
 func TestSTR4R1RaiseTransactionDispatchSnapshots(t *testing.T) {
 	bed := newGoalAdmissionBed(t, 2)

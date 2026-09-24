@@ -168,10 +168,6 @@ func scanForBrainDeclarationWithReads(root string, reads scanGoalReads) goal.Sca
 	return scanWithProberAndStatusesAtWithReads(root, identity.KernelProber{}, brainInFlightStatus, time.Now().UTC(), reads)
 }
 
-func scanWithProber(root string, prober identity.Prober) goal.ScanResult {
-	return scanWithProberAt(root, prober, time.Now().UTC())
-}
-
 func scanWithProberAt(root string, prober identity.Prober, now time.Time) goal.ScanResult {
 	return scanWithProberAtWithReads(root, prober, now, defaultScanGoalReads())
 }
@@ -181,17 +177,9 @@ func scanWithProberAtWithReads(root string, prober identity.Prober, now time.Tim
 	return scanWithProberAndStatusesAtWithReads(root, prober, inFlightStatusesWithReads(root, reads), now, reads)
 }
 
-func scanWithProberAndStatusesAt(root string, prober identity.Prober, statuses map[string]bool, now time.Time) goal.ScanResult {
-	return scanWithProberAndStatusesAtWithReads(root, prober, statuses, now, defaultScanGoalReads())
-}
-
 func scanWithProberAndStatusesAtWithReads(root string, prober identity.Prober, statuses map[string]bool, now time.Time, reads scanGoalReads) goal.ScanResult {
 	scan, _ := scanWithProberAndStatusesAndCompletionAtWithReads(root, prober, statuses, now, reads)
 	return scan
-}
-
-func scanWithProberAndStatusesAndCompletionAt(root string, prober identity.Prober, statuses map[string]bool, now time.Time) (goal.ScanResult, StopCompletionCapture) {
-	return scanWithProberAndStatusesAndCompletionAtWithReads(root, prober, statuses, now, defaultScanGoalReads())
 }
 
 func scanWithProberAndStatusesAndCompletionAtWithReads(root string, prober identity.Prober, statuses map[string]bool, now time.Time, reads scanGoalReads) (goal.ScanResult, StopCompletionCapture) {
@@ -264,10 +252,6 @@ func scanWithProberAndStatusesAndCompletionAtWithReads(root string, prober ident
 		result = scanPlans(root, result, statuses)
 	}
 	return result, completion
-}
-
-func scanDraftsAt(root string, result goal.ScanResult, now time.Time) goal.ScanResult {
-	return scanDraftsAtWithReads(root, result, now, defaultScanGoalReads())
 }
 
 func scanDraftsAtWithReads(root string, result goal.ScanResult, now time.Time, reads scanGoalReads) goal.ScanResult {
@@ -634,10 +618,6 @@ func runFactsForAt(root string, prober identity.Prober, now time.Time) ([]goal.R
 
 func normalizeRoleTitle(role string) string {
 	return strings.TrimSpace(strings.NewReplacer("-", " ", "_", " ").Replace(role))
-}
-
-func readGoalIntentsAt(root string, now time.Time) map[string]string {
-	return readGoalIntentsAtWithReads(root, now, defaultScanGoalReads())
 }
 
 func readGoalIntentsAtWithReads(root string, now time.Time, reads scanGoalReads) map[string]string {

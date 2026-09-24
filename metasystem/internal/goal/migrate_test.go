@@ -31,43 +31,6 @@ REVIEWED_SOURCE_SHA256: ` + digest + `
 `
 }
 
-// migrateBed writes the canonical legacy ledger into a clone.
-func migrateBed(t *testing.T, root string) string {
-	t.Helper()
-	plans := filepath.Join(root, "plans")
-	if err := os.MkdirAll(plans, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(plans, "goals.md"), []byte(canonical), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	baseline, err := json.Marshal(map[string]any{
-		"schemaVersion": 1, "ledger": canonical, "sha256": sha256HexBytes([]byte(canonical)),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(plans, "goals-accepted.json"), baseline, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mustGit(t, root, "add", "plans")
-	mustGit(t, root, "commit", "-qm", "legacy ledger")
-	mustGit(t, root, "push", "-q", "origin", "main")
-	return sha256HexBytes([]byte(canonical))
-}
-
-func migrateOpts(t *testing.T, root, digest string) MigrateOptions {
-	t.Helper()
-	manifestPath := filepath.Join(t.TempDir(), "manifest.md")
-	if err := os.WriteFile(manifestPath, []byte(migrateManifestFor(digest)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return MigrateOptions{
-		SourceDigest: digest, ManifestPath: manifestPath,
-		Identity: "01J5XM00000000000000000000", SyncMode: SyncRemote,
-	}
-}
-
 // fakeLegacyMigrationEndpoint gives each migration its own committed legacy
 // snapshot and real worktree files. The accepted pointer starts absent.
 func fakeLegacyMigrationEndpoint(t *testing.T) (Endpoint, *fakeGoalRepository, MigrateOptions) {

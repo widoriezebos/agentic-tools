@@ -128,10 +128,6 @@ func restampStopCapabilityForUp(root, lineage string, claimEpoch int64) (up.Stop
 	return up.StopCapabilityRestampResult{}, nil
 }
 
-func runUp(args []string) int {
-	return runUpWith(args, stateroot.RepositoryTop)
-}
-
 func runUpWith(args []string, repositoryTop func(string) (string, error)) int {
 	flags := flag.NewFlagSet("up", flag.ContinueOnError)
 	repo := pathFlag(flags, "repo", ".", "repository or path inside it")

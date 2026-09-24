@@ -843,23 +843,6 @@ func TestPriorityRecovery(t *testing.T) {
 	})
 }
 
-func rankedGoalBed(t *testing.T, ranks map[string][2]uint64) string {
-	t.Helper()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	ids := make([]string, 0, len(ranks))
-	for id := range ranks {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	files := make([]*GoalFile, 0, len(ids))
-	for _, id := range ids {
-		files = append(files, rankedGoal(id, uint8(ranks[id][0]), ranks[id][1]))
-	}
-	publishGoalFixtures(t, root, files...)
-	return root
-}
-
 func rankedGoalBedForEndpoint(t *testing.T, ranks map[string][2]uint64) Endpoint {
 	t.Helper()
 	endpoint, _ := fakeGoalEndpoint(t)
@@ -881,12 +864,6 @@ func rankedGoal(id string, priority uint8, sequence uint64) *GoalFile {
 	file.Priority = priority
 	file.Sequence = sequence
 	return file
-}
-
-func priorityVerbReq(root, ulid, machine string) VerbRequest {
-	request := verbReq(root, ulid, machine)
-	request.Actor.Human = "wido"
-	return request
 }
 
 func priorityVerbReqForEndpoint(endpoint Endpoint, ulid, machine string) VerbRequest {
@@ -912,14 +889,6 @@ func assertPair(t *testing.T, file *GoalFile, priority uint8, sequence uint64) {
 	if file == nil || file.Priority != priority || file.Sequence != sequence {
 		t.Fatalf("goal pair = %+v, want %d:%d", file, priority, sequence)
 	}
-}
-
-func priorityRaceBed(t *testing.T, files []*GoalFile) (string, string) {
-	t.Helper()
-	_, a, b := twoClones(t)
-	seedLedger(t, a)
-	publishGoalFixtures(t, a, files...)
-	return a, b
 }
 
 func priorityRaceBedForEndpoint(t *testing.T, files []*GoalFile) (Endpoint, Endpoint) {

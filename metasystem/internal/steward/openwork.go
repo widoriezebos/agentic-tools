@@ -45,14 +45,6 @@ func readOpenWorkWithDependencies(repoRoot string, dependencies openWorkDependen
 	return legacyOpenWorkWithReader(repoRoot, dependencies.ReadClaimableBudgetedWork)
 }
 
-// convertedOpenWork consumes the same fresh, liveness-joined predicate as the
-// turn verdict. A stale claim or job record never makes backlog look active.
-func convertedOpenWork(repoRoot string) (OpenWork, string, error) {
-	return convertedOpenWorkWithDependencies(repoRoot, openWorkDependencies{
-		ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
-	})
-}
-
 func convertedOpenWorkWithDependencies(repoRoot string, dependencies openWorkDependencies) (OpenWork, string, error) {
 	if attention, present, err := loadLedgerAttentionState(repoRoot); err != nil {
 		return WorkDegraded, fmt.Sprintf("ledger-attention state unreadable: %v", err), nil

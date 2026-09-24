@@ -397,10 +397,6 @@ func readHandoffGoalSnapshot(root string, now time.Time) (handoffGoalSnapshot, e
 	return snapshot, nil
 }
 
-func selectHandoffGoal(root string, now time.Time) (*goal.GoalFile, string, error) {
-	return selectHandoffGoalWithReader(root, now, readHandoffGoalSnapshot)
-}
-
 func selectHandoffGoalWithReader(root string, now time.Time, readGoal handoffGoalReader) (*goal.GoalFile, string, error) {
 	work, err := readGoal(root, now)
 	if err != nil {
@@ -646,10 +642,6 @@ func captureHandoffMessages(root string) ([]HandoffMessage, error) {
 		messages = append(messages, HandoffMessage{Nonce: notification.Nonce, Message: notification.Message, DeliveryStatus: "pending"})
 	}
 	return messages, nil
-}
-
-func captureHandoff(root string, caller HandoffCaller, record HandoffRecord, now time.Time) (capturedHandoff, error) {
-	return captureHandoffWithReader(root, caller, record, now, readHandoffGoalSnapshot)
 }
 
 func captureHandoffWithReader(root string, caller HandoffCaller, record HandoffRecord, now time.Time, readGoal handoffGoalReader) (capturedHandoff, error) {

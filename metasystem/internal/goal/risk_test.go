@@ -10,16 +10,6 @@ import (
 	"time"
 )
 
-func riskLocalRoot(t *testing.T, seedID string) string {
-	t.Helper()
-	root := obligationAuthorityLocalRoot(t, seedID)
-	obligationAuthorityGit(t, root, "rm", "-q", "plans/goals/"+seedID+".md")
-	obligationAuthorityGit(t, root, "commit", "-qm", "remove local fixture seed")
-	obligationAuthorityGit(t, root, "update-ref", LocalLedgerBranch, "HEAD")
-	obligationAuthorityGit(t, root, "update-ref", AcceptedRef, "HEAD")
-	return root
-}
-
 func riskLocalEndpoint(t *testing.T) Endpoint {
 	t.Helper()
 	endpoint, client := fakeGoalEndpoint(t)

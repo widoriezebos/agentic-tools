@@ -78,17 +78,6 @@ func installHandoffFixtureFiles(t *testing.T, root string) {
 	}
 }
 
-func handoffCaptureRepo(t *testing.T, state string) string {
-	t.Helper()
-	files := map[string]*goal.GoalFile{}
-	if state != "none" {
-		files["fix-it"] = capturedGoal(state)
-	}
-	root := convertedBed(t, "bed-m1", files)
-	installHandoffFixtureFiles(t, root)
-	return root
-}
-
 func handoffMainCaller() HandoffCaller {
 	return HandoffCaller{Class: handoffClassMain, MainId: "main-1", HolderMainId: "main-1", Runtime: "fake",
 		Session: "session / original", Machine: "bed-m1", Ref: identity.Ref{Pid: 4242, StartedAtSec: 100}, Tag: "main-tag"}

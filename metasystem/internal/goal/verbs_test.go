@@ -516,11 +516,6 @@ func TestRebindEpochFollowsTheAuthenticatedHolderOnly(t *testing.T) {
 	}
 }
 
-func publishClaimFixtureMutation(t *testing.T, root, id, opid string, mutate func(*GoalFile)) PublishResult {
-	t.Helper()
-	return publishClaimFixtureMutationForEndpoint(t, obligationAuthorityEndpoint(root), id, opid, mutate)
-}
-
 func publishClaimFixtureMutationForEndpoint(t *testing.T, endpoint Endpoint, id, opid string, mutate func(*GoalFile)) PublishResult {
 	t.Helper()
 	result, err := Publish(endpoint, PublishRequest{

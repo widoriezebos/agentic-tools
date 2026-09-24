@@ -76,48 +76,6 @@ func TestLandingOwnerComponentKeepsHeartbeatLoopOnSetupErrors(t *testing.T) {
 	}
 }
 
-func landingOwnerRetryRoot(t *testing.T) string {
-	t.Helper()
-	isolateGlobalGitConfig(t)
-	originalLineage, hadLineage := os.LookupEnv("METASYSTEM_OWNER_LINEAGE")
-	t.Cleanup(func() {
-		if hadLineage {
-			_ = os.Setenv("METASYSTEM_OWNER_LINEAGE", originalLineage)
-			return
-		}
-		_ = os.Unsetenv("METASYSTEM_OWNER_LINEAGE")
-	})
-	root := syncedClaimedGoalFixture(t)
-	goalSyncMutationGit(t, root, "config", "--unset", "metasystem.goal.machine")
-	conf := "metasystem.runtimes=fake\nmetasystem.governance.correlation-policy=A\n" +
-		"landing.batch-root=" + root + "\nlanding.batch-max-wait=45m\n"
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte(conf), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return root
-}
-
-func landingOwnerRetryFixture(t *testing.T) (string, func() error, func() error) {
-	t.Helper()
-	root := landingOwnerRetryRoot(t)
-	release, pass, ok := setupLandingOwner(root, root)
-	if !ok {
-		t.Fatal("landing owner setup stopped the component")
-	}
-	return root, pass, release
-}
-
-func landingOwnerRetryFixtureWithCadence(t *testing.T) (string, func() error, func() error, *batchOwnerCadence) {
-	t.Helper()
-	root := landingOwnerRetryRoot(t)
-	cadence := newBatchOwnerCadence()
-	release, pass, ok := setupLandingOwnerWithCadence(root, root, cadence)
-	if !ok {
-		t.Fatal("landing owner setup stopped the component")
-	}
-	return root, pass, release, cadence
-}
-
 func TestLandingOwnerComponentRetriesAfterEnrollmentAppears(t *testing.T) {
 	fixture := newLandingOwnerOrdinaryFixture(t, "", "mac-cli")
 	root, pass, release := fixture.root, fixture.pass, fixture.release

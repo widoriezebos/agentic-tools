@@ -46,10 +46,6 @@ type advancementEvidence struct {
 	at   time.Time
 }
 
-func budgetExtensionOffer(repoRoot string, file *goal.GoalFile, tier uint8, now time.Time) (*BudgetExtensionOffer, error) {
-	return budgetExtensionOfferWithReads(repoRoot, file, tier, now, concreteReceiptAdmissionReads())
-}
-
 func budgetExtensionOfferWithReads(repoRoot string, file *goal.GoalFile, tier uint8, now time.Time, reads receiptAdmissionReads) (*BudgetExtensionOffer, error) {
 	if file == nil || file.Budget == nil || file.BudgetExtension != nil {
 		return nil, nil
@@ -82,10 +78,6 @@ func budgetExtensionTuple(b goal.Budget) BudgetExtensionTuple {
 		ReservedJobMinutesLimit: b.ReservedJobMinutesLimit, ActiveJobLimit: b.ActiveJobLimit,
 		ReviewRoundLimit: b.ReviewRoundLimit,
 	}
-}
-
-func latestAdvancementEvidence(repoRoot, goalID string, now time.Time) (*advancementEvidence, error) {
-	return latestAdvancementEvidenceWithReads(repoRoot, goalID, now, concreteReceiptAdmissionReads())
 }
 
 func latestAdvancementEvidenceWithReads(repoRoot, goalID string, now time.Time, reads receiptAdmissionReads) (*advancementEvidence, error) {

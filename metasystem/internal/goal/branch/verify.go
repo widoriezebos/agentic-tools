@@ -22,10 +22,6 @@ func IsLastLanding(repo, commit, goalID string) bool {
 	return err == nil && strings.TrimSpace(string(out)) == goalID
 }
 
-func landedManifest(repo, commit string) (goalID, units, digest string, folds map[string]bool, err error) {
-	return landedManifestWithGit(repo, commit, gitOutput)
-}
-
 func landedManifestWithGit(repo, commit string, gitRead landingGitReader) (goalID, units, digest string, folds map[string]bool, err error) {
 	out, err := gitRead(repo, "show", "-s", "--format=%(trailers:only,unfold=true)", commit)
 	if err != nil {
@@ -59,10 +55,6 @@ func landedManifestWithGit(repo, commit string, gitRead landingGitReader) (goalI
 		return "", "", "", nil, operationRefusal(LandVerifyCode, "commit %s has a malformed Goal-Digest", commit)
 	}
 	return goalID, unitList(parsed), digestValues[0], folds, nil
-}
-
-func digestLandingEntries(repo, commit string, folds map[string]bool) (string, error) {
-	return digestLandingEntriesWithGit(repo, commit, folds, gitOutput)
 }
 
 func digestLandingEntriesWithGit(repo, commit string, folds map[string]bool, gitRead landingGitReader) (string, error) {

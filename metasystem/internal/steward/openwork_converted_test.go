@@ -3,12 +3,10 @@ package steward
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -25,52 +23,6 @@ func bedHistory(id, verb string) []goal.HistoryLine {
 		Targets: []string{id},
 		Keep:    -1,
 	}}
-}
-
-func convertedBed(t *testing.T, machine string, files map[string]*goal.GoalFile) string {
-	t.Helper()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
-		cmd.Env = gittree.ScrubbedEnviron()
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run("init", "-q", "-b", "main")
-	run("config", "metasystem.goal.machine", machine)
-	run("config", "goal.sync-remote", "local")
-	run("config", "user.name", "steward-fixture")
-	run("config", "user.email", "steward-fixture@example.invalid")
-
-	rootRecord := &goal.RootRecord{
-		Identity:      "01ARZ3NDEKTSV4RRFFQ69G5FAV",
-		FormatVersion: "1",
-		SyncMode:      goal.SyncLocal,
-		Revision:      1,
-	}
-	write := func(rel string, data []byte) {
-		t.Helper()
-		abs := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(abs, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		run("add", rel)
-	}
-	write("plans/goals/backlog.md", goal.RenderRoot(rootRecord))
-	for id, f := range files {
-		write("plans/goals/"+id+".md", goal.RenderFile(f))
-	}
-	run("commit", "-q", "-m", "converted bed")
-	run("update-ref", goal.AcceptedRef, "HEAD")
-	return root
 }
 
 func liveProcessRecord(t *testing.T) map[string]any {

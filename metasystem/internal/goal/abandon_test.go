@@ -22,16 +22,6 @@ func configureAbandonFloorTest(t *testing.T, stamp string) {
 	}
 }
 
-func recordAbandonFloorTest(t *testing.T, root, ulid string) {
-	t.Helper()
-	req := verbReq(root, ulid, "mac-a")
-	req.Actor.Human = "Wido"
-	commit := strings.Repeat("a", 40)
-	if result, err := EngineFloor(req, commit, goalHumanProof(t, root, req.Now)); err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("engine floor: %+v %v", result, err)
-	}
-}
-
 func recordAbandonFloorTestForEndpoint(t *testing.T, endpoint Endpoint, ulid string) {
 	t.Helper()
 	req := verbReqFor(endpoint, ulid, "mac-a")

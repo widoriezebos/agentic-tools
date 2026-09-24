@@ -269,13 +269,6 @@ func TestEditChecksAuthorityAndTheBlockerInvariant(t *testing.T) {
 	}
 }
 
-// arcBed opens two goals, wires them into one arc, and claims it.
-// code is two ulid-safe characters keeping the bed's opids unique.
-func arcBed(t *testing.T, a, arc, prefix, code string) {
-	t.Helper()
-	arcBedFor(t, endpointFor(a), arc, prefix, code)
-}
-
 func arcBedFor(t *testing.T, endpoint Endpoint, arc, prefix, code string) {
 	t.Helper()
 	const base = "01J5X00000000000000000"

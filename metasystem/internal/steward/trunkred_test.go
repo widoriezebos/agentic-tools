@@ -4,14 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -139,31 +137,6 @@ func healthTrunkRedEntry(id, machine string, opened time.Time) goal.TrunkRedEntr
 			Opid: goal.Opid("01J5X0000000000000000000W1", "bed-m1", "lineage")}}, Owner: owner, Holds: []string{"batch-1"}, Opened: stamp}
 }
 
-func writeHealthTrunkRed(t *testing.T, root string, entries []goal.TrunkRedEntry, cadence *goal.CadenceStatus) {
-	t.Helper()
-	path := filepath.Join(root, "plans", "goals", "trunk-red.json")
-	if entries == nil {
-		entries = []goal.TrunkRedEntry{}
-	}
-	data, err := json.MarshalIndent(map[string]any{"schema": 1, "entries": entries, "cadence": cadence}, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	healthGit(t, root, "add", "plans/goals/trunk-red.json")
-	healthGit(t, root, "commit", "-q", "-m", "trunk-red health fixture")
-	healthGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
-}
-
-func healthBatchRoot(t *testing.T) string {
-	t.Helper()
-	root := t.TempDir()
-	healthGit(t, root, "init", "-q", "-b", "main")
-	return root
-}
-
 func writeHealthBatch(t *testing.T, root string, heldAt time.Time, currentOpid string, previousHoldAt ...time.Time) {
 	t.Helper()
 	directory := filepath.Join(root, "artifacts", "agents", "landing-batches")
@@ -199,15 +172,4 @@ func writeHealthBatch(t *testing.T, root string, heldAt time.Time, currentOpid s
 	if err := os.WriteFile(filepath.Join(directory, "batch-held.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func healthGit(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	command.Env = gittree.ScrubbedEnviron()
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, output)
-	}
-	return strings.TrimSpace(string(output))
 }

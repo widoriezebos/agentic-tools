@@ -451,35 +451,6 @@ func TestTrunkRedLegacyClearRequestKeepsUnknownAndAlreadyApplied(t *testing.T) {
 	})
 }
 
-func legacyTrunkRedClearFixture(t *testing.T) (string, PublishRequest, TrunkRedEntry, time.Time) {
-	t.Helper()
-	root := soloLedgerRepo(t)
-	at := time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
-	entry := testTrunkRedEntry("tr-fast-legacy-clear", "tr-fast-legacy-clear", at.Format(time.RFC3339))
-	entry.FixGoal = "solo-goal"
-	entry.FixBranch = TrunkRedBranch{Name: "fix/legacy-clear", Commit: "abc123", State: TrunkRedBranchOpen}
-	publishTrunkRed(t, root, []TrunkRedEntry{entry})
-	clear := trunkRedVerbReq(root, "01J5X0000000000000000000V1", "mac-a")
-	clear.Now = at.Add(time.Hour)
-	request := trunkRedClearRequest(clear, TrunkRedClearArgs{Entry: entry.ID, Attempt: "green-legacy", BaseCommit: "base-green",
-		BaseTree: "tree-green", Group: entry.Group, BranchMerged: true, ExpectedEntry: entry})
-	delete(request.Intent.Args, "expectedEntry")
-	return root, request, entry, at
-}
-
-func requestEndpoint(root string) Endpoint {
-	return Endpoint{Root: root, Remote: "local", Branch: "refs/heads/main"}
-}
-
-func projectedTrunkRedEntry(t *testing.T, root string, at time.Time) TrunkRedEntry {
-	t.Helper()
-	projection, err := Project(requestEndpoint(root), false, at)
-	if err != nil || len(projection.Tree.TrunkRed) != 1 {
-		t.Fatalf("project trunk-red entry: %+v %v", projection.Tree.TrunkRed, err)
-	}
-	return projection.Tree.TrunkRed[0]
-}
-
 func trunkRedRecoveryReport(t *testing.T, reports []RecoveryReport, opid string) RecoveryReport {
 	t.Helper()
 	for _, report := range reports {
@@ -489,40 +460,6 @@ func trunkRedRecoveryReport(t *testing.T, reports []RecoveryReport, opid string)
 	}
 	t.Fatalf("recovery report for %s not found: %+v", opid, reports)
 	return RecoveryReport{}
-}
-
-func assertUnreadableTrunkRedBindingRejected(t *testing.T, root string, request PublishRequest, at time.Time) {
-	t.Helper()
-	want := "the stored trunk-red clear has no readable entry binding; close it by hand"
-	reports, err := Recover(requestEndpoint(root))
-	if err != nil {
-		t.Fatal(err)
-	}
-	report := trunkRedRecoveryReport(t, reports, request.Opid)
-	if report.Action != ActionComplete || report.Detail != "not rebuildable: "+want {
-		t.Fatalf("unreadable binding recovery report: %+v", report)
-	}
-	journal, err := ReadEntry(root, request.Opid)
-	if err != nil || journal.Outcome != OutcomeRejected || journal.Evidence != want {
-		t.Fatalf("unreadable binding journal: %+v %v", journal, err)
-	}
-	if entry := projectedTrunkRedEntry(t, root, at.Add(2*time.Hour)); entry.Closed != nil {
-		t.Fatalf("unreadable binding closed the entry: %+v", entry)
-	}
-}
-
-func publishTrunkRedWithRequest(t *testing.T, root string, entry TrunkRedEntry, ulid string) {
-	t.Helper()
-	request := trunkRedVerbReq(root, ulid, "mac-a")
-	result, err := Publish(request.Endpoint, PublishRequest{Opid: request.opid(), Machine: request.Actor.Machine, Lineage: request.Actor.Lineage,
-		Intent: Intent{Verb: "trunk-red-fixture"}, Message: "publish trunk-red fixture",
-		Mutate: func(string) ([]Change, error) {
-			return []Change{{Path: trunkRedPath, Content: RenderTrunkRed([]TrunkRedEntry{entry})}}, nil
-		},
-		Validate: func(commit string) error { return ValidateCommit(root, commit) }})
-	if err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("publish trunk-red fixture: %+v %v", result, err)
-	}
 }
 
 func createDeadTrunkRedEntry(t *testing.T, root string, request PublishRequest) {
@@ -535,27 +472,6 @@ func createDeadTrunkRedEntry(t *testing.T, root string, request PublishRequest) 
 	if err := writeEntry(root, entry); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func trunkRedVerbReq(root, ulid, machine string) VerbRequest {
-	request := verbReq(root, ulid, machine)
-	request.Endpoint = Endpoint{Root: root, Remote: "local", Branch: "refs/heads/main"}
-	return request
-}
-
-func publishTrunkRed(t *testing.T, root string, entries []TrunkRedEntry) PublishResult {
-	t.Helper()
-	request := trunkRedVerbReq(root, "01J5X0000000000000000000T1", "mac-a")
-	result, err := Publish(request.Endpoint, PublishRequest{Opid: request.opid(), Machine: request.Actor.Machine, Lineage: request.Actor.Lineage,
-		Intent: Intent{Verb: "trunk-red-fixture"}, Message: "publish trunk-red fixture",
-		Mutate: func(string) ([]Change, error) {
-			return []Change{{Path: trunkRedPath, Content: RenderTrunkRed(entries)}}, nil
-		},
-		Validate: func(commit string) error { return ValidateCommit(root, commit) }})
-	if err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("publish trunk-red fixture: %+v %v", result, err)
-	}
-	return result
 }
 
 func localTrunkRedEndpoint(t *testing.T) Endpoint {

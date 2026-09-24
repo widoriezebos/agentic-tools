@@ -1057,10 +1057,6 @@ type critiqueSubject struct {
 	facts          critiqueSubjectFacts
 }
 
-func critiqueSubjectForRound(repoRoot string, state critiqueState, root map[string]any, role string, result map[string]any) (critiqueSubject, error) {
-	return critiqueSubjectForRoundWithFacts(repoRoot, state, root, role, result, gitCritiqueSubjectFacts{})
-}
-
 type critiqueSubjectFacts interface {
 	ChangedPaths(root, commit string) ([]string, error)
 	CommitTree(root, commit string) (string, error)

@@ -333,10 +333,6 @@ func validateReviewRoundTier(role string, goalBound bool, tier uint8) error {
 	return nil
 }
 
-func goalReviewRoundLimit(repoRoot, goalID string, revision uint64, role string) (reviewRoundLimitResolution, error) {
-	return goalReviewRoundLimitWithReads(repoRoot, goalID, revision, role, concreteGoalAdmissionReads())
-}
-
 func goalReviewRoundLimitWithReads(repoRoot, goalID string, revision uint64, role string, reads goalAdmissionReads) (reviewRoundLimitResolution, error) {
 	var zero reviewRoundLimitResolution
 	maximum, err := config.ReviewRoundMax(filepath.Join(repoRoot, "metasystem.conf"))

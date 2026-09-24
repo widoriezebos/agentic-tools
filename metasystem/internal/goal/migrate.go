@@ -37,17 +37,6 @@ type MigrateOptions struct {
 	SyncMode string
 }
 
-// Migrate synthesizes and publishes the new ledger.
-// migrationComplete reports whether the tip already carries EXACTLY
-// this migration's root record — identity, mode, sync mode, and the
-// manifest digest all matching (identity+mode
-// alone let a rerun requesting the opposite sync mode or a different
-// manifest read as idempotent although that cutover never landed).
-// Any mismatch on a completed migration is the named confusion.
-func migrationComplete(root, tip, identity, mode, syncMode, manifestDigest string) (bool, error) {
-	return migrationCompleteFor(Endpoint{Root: root}, tip, identity, mode, syncMode, manifestDigest)
-}
-
 func migrationCompleteFor(endpoint Endpoint, tip, identity, mode, syncMode, manifestDigest string) (bool, error) {
 	// Absence and failure are different facts here exactly as they
 	// are for the ledger probe: only a tip PROVABLY carrying no root

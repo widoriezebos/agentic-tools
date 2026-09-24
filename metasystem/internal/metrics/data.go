@@ -121,10 +121,6 @@ func realMetricsSource() metricsSource {
 	}}
 }
 
-func loadWorld(root string) (world, error) {
-	return loadWorldWithSource(root, realMetricsSource())
-}
-
 func loadWorldWithSource(root string, source metricsSource) (world, error) {
 	w := world{Goals: map[string]goalRecord{}}
 	machine, err := source.resolveMachine(root)
@@ -383,10 +379,6 @@ func receiptFields(line string) (map[string]string, bool) {
 		}
 	}
 	return fields, true
-}
-
-func loadReceipts(root, mainTip, receiptPath string, selfLines map[string]int) ([]*receiptRecord, Coverage) {
-	return loadReceiptsWithGit(root, mainTip, receiptPath, selfLines, gitCommand)
 }
 
 func loadReceiptsWithGit(root, mainTip, receiptPath string, selfLines map[string]int, gitStdout func(string, ...string) (string, error)) ([]*receiptRecord, Coverage) {
@@ -834,12 +826,6 @@ func loadCritiques(root string) ([]critiqueChain, Coverage) {
 		coverage.Missing = 1
 	}
 	return chains, coverage
-}
-
-func loadGoals(root string) (map[string]goalRecord, Coverage, string) {
-	return loadGoalsWithSource(root, gitCommand, func(root, tip string) (map[string][]byte, error) {
-		return goal.ReadCommitGoals(root, tip)
-	})
 }
 
 func loadGoalsWithSource(root string, gitStdout func(string, ...string) (string, error), committedGoals func(string, string) (map[string][]byte, error)) (map[string]goalRecord, Coverage, string) {

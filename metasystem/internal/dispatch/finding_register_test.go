@@ -3,7 +3,6 @@ package dispatch
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -58,22 +57,6 @@ func writeCriticRound(t *testing.T, repo, root, job string, round int, findings,
 		"schemaVersion": 3, "jobId": job, "round": round,
 		"findings": findings, "rigor": rigor,
 	})
-}
-
-// setCriticSubject binds a critic root to a reviewed implementer round. A
-// root that names a reviewed job is no longer legacy: the subject reader
-// needs that job's record, its round diff (the artifact membership law)
-// and a git root to derive the project prefix, so the helper writes them
-// once per reviewed job with a diff that names the register fixture's
-// artifact.
-func setCriticSubject(t *testing.T, repo, root, reviews, reviewedTree string) {
-	t.Helper()
-	if _, err := os.Stat(filepath.Join(repo, ".git")); err != nil {
-		if output, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
-			t.Fatalf("git init: %v: %s", err, output)
-		}
-	}
-	setCriticSubjectFiles(t, repo, root, reviews, reviewedTree)
 }
 
 func setCriticSubjectFiles(t *testing.T, repo, root, reviews, reviewedTree string) {

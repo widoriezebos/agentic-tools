@@ -239,10 +239,6 @@ func declareStopDecisionSurface(root string, options StopSurfaceOptions, goalID,
 	return relative, nil
 }
 
-func inspectStopDecisionSurface(root string, options StopSurfaceOptions) (stopSurfaceInspection, error) {
-	return inspectStopDecisionSurfaceWithDependencies(root, options, gitStopSurfaceDependencies(root))
-}
-
 func inspectStopDecisionSurfaceWithDependencies(root string, options StopSurfaceOptions, dependencies stopSurfaceDependencies) (stopSurfaceInspection, error) {
 	workspace := dependencies.workspace
 	base, err := resolveStopSurfaceBaseWithWorkspace(workspace, options.Base)
@@ -285,10 +281,6 @@ func inspectStopDecisionSurfaceWithDependencies(root string, options StopSurface
 		added:     added,
 		removed:   removed,
 	}, nil
-}
-
-func resolveStopSurfaceBase(workspace gittree.Workspace, requested string) (string, error) {
-	return resolveStopSurfaceBaseWithWorkspace(workspace, requested)
 }
 
 func resolveStopSurfaceBaseWithWorkspace(workspace stopSurfaceWorkspace, requested string) (string, error) {
@@ -370,10 +362,6 @@ func discoverStopSurfaceFilesWithInventory(root string, inventory func(string) (
 	}
 	sortStopSurfaceFiles(files)
 	return files, nil
-}
-
-func discoverStopSurfaceFilesAtTree(root, tree string) ([]stopSurfaceFile, error) {
-	return discoverStopSurfaceFilesAtTreeWithInventory(root, tree, gitStopSurfaceTreeInventory)
 }
 
 func gitStopSurfaceTreeInventory(root, tree string) ([]byte, error) {

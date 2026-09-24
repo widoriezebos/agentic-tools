@@ -109,10 +109,6 @@ func CursorPath(repoRoot string, names ...string) string {
 	return filepath.Join(digestRoot(repoRoot), stateDirectory(stateroot.Steward), base)
 }
 
-func lockPath(repoRoot string) string {
-	return lockPathWithLayoutReader(repoRoot, stateroot.ResolveLayout)
-}
-
 func lockPathWithLayoutReader(repoRoot string, resolveLayout func(string) (stateroot.Layout, error)) string {
 	return filepath.Join(digestRootWithLayoutReader(repoRoot, resolveLayout), stateDirectory(stateroot.Steward), "narrator-digest.flock")
 }

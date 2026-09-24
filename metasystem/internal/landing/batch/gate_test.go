@@ -3,7 +3,6 @@ package batch
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,18 +17,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-func gatePatch(paths ...string) []byte {
-	var patch strings.Builder
-	for _, name := range paths {
-		to := "b/" + name
-		if strings.HasPrefix(name, "!") {
-			name = strings.TrimPrefix(name, "!")
-			to = "/dev/null"
-		}
-		fmt.Fprintf(&patch, "diff --git a/%s b/%s\n--- a/%s\n+++ %s\n@@ -1 +1 @@\n--- metasystem/not-a-header.go\n+++ metasystem/not-a-header.go\n", name, name, name, to)
-	}
-	return []byte(patch.String())
-}
 func readRepo(t *testing.T, path ...string) []byte {
 	data, err := os.ReadFile(filepath.Join(append([]string{"..", "..", ".."}, path...)...))
 	must(t, err)

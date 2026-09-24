@@ -195,38 +195,6 @@ func changedWorkingGoPackages(moduleRoot string, changes gateChanges) ([]string,
 	return packages, nil
 }
 
-func unitPackagesFromChanges(moduleRoot, tree string, changes gateChanges) (UnitPackages, error) {
-	resolvedTree := tree
-	var err error
-	if moduleRoot != "" {
-		resolvedTree, err = moduleTree(gittree.Workspace{Dir: moduleRoot}, tree)
-		if err != nil {
-			return UnitPackages{}, err
-		}
-	}
-	changed, err := changedGoPackages(moduleRoot, resolvedTree, changes)
-	if err != nil {
-		return UnitPackages{}, err
-	}
-	selection := UnitPackages{Tree: resolvedTree, Changed: changed}
-	if moduleRoot == "" || len(changed) == 0 {
-		return selection, nil
-	}
-	selection.Dependents, err = ReverseDependents(moduleRoot, resolvedTree, changed)
-	if err != nil {
-		return UnitPackages{}, err
-	}
-	data, present, err := (gittree.Workspace{Dir: moduleRoot}).FileAt(resolvedTree, "go.mod")
-	if err != nil {
-		return UnitPackages{}, err
-	}
-	if !present {
-		return UnitPackages{}, fmt.Errorf("unit gate tree %s has no go.mod", resolvedTree)
-	}
-	selection.ModulePath, err = modulePath(data)
-	return selection, err
-}
-
 // ReverseDependents returns every package in moduleRoot that imports a
 // changed package directly or through another package. Every Go file in the
 // tree participates, including tests and files excluded by build tags.

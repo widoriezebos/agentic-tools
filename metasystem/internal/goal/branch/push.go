@@ -147,11 +147,6 @@ type fetchValidationDependencies struct {
 	clearRef      func(repo, ref string) error
 }
 
-func fetchAndValidate(repo, remote, endpointTip, goalID, opid, tip string, transport PushTransport) error {
-	return fetchAndValidateWith(repo, remote, endpointTip, goalID, opid, tip, transport,
-		fetchValidationDependencies{validateRange: ValidateRange, clearRef: clearPushTxn})
-}
-
 func fetchAndValidateWith(repo, remote, endpointTip, goalID, opid, tip string, transport PushTransport, deps fetchValidationDependencies) (err error) {
 	temporary := fetchRef(opid)
 	defer func() {
@@ -196,10 +191,6 @@ func updateBranchAndOrigin(repo, goalID, oldBranch, newBranch, newOrigin string)
 	input += "prepare\ncommit\n"
 	_, err = gitInput(repo, []byte(input), "update-ref", "--stdin")
 	return err
-}
-
-func adoptRemoteTip(repo, goalID, localTip, remoteTip string, beforeRefMove, afterRefMove func() error) error {
-	return adoptRemoteTipWithRepository(repo, goalID, localTip, remoteTip, beforeRefMove, afterRefMove, gitPushRepository())
 }
 
 func adoptRemoteTipWithRepository(repo, goalID, localTip, remoteTip string, beforeRefMove, afterRefMove func() error, repository pushRepository) error {
@@ -264,10 +255,6 @@ func staleBranch(remote, localTip, remoteTip, originTip string) error {
 		originTip = "<absent>"
 	}
 	return operationRefusal(StaleCode, "local tip %s was based on %s, but %s holds %s", localTip, originTip, remote, remoteTip)
-}
-
-func reconcilePushTransactions(req PushRequest) (*PushResult, error) {
-	return reconcilePushTransactionsWithRepository(req, gitPushRepository())
 }
 
 func reconcilePushTransactionsWithRepository(req PushRequest, repository pushRepository) (*PushResult, error) {

@@ -25,14 +25,6 @@ func criticRecordParams(t *testing.T, root, role string) BuildRecordParams {
 	}
 	return p
 }
-func buildCriticLimit(t *testing.T, p BuildRecordParams) int64 {
-	t.Helper()
-	if err := BuildRecord(p); err != nil {
-		t.Fatal(err)
-	}
-	limit, _ := numInt(readJSONFile(t, p.Output)[reviewRoundLimitField])
-	return limit
-}
 func TestDesignCriticDispatchCapsGoalRoundLimitAtTwo(t *testing.T) {
 	bed := newGoalAdmissionBed(t, 2)
 	p := criticRecordParams(t, bed.root, "design-critic")

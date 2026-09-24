@@ -182,45 +182,12 @@ func TestReconcileEditRowSeesAnAbandonedArchive(t *testing.T) {
 	}
 }
 
-func priorityReconcileBed(t *testing.T, live, done []*GoalFile) (string, string) {
-	t.Helper()
-	_, root := oneClone(t)
-	seedLedger(t, root)
-	changes := make([]Change, 0, len(live)+len(done))
-	for _, file := range live {
-		changes = append(changes, Change{Path: livePath(file.Id), Content: RenderFile(file)})
-	}
-	for _, file := range done {
-		changes = append(changes, Change{Path: donePath(file.Id), Content: RenderFile(file)})
-	}
-	result, err := Publish(endpointFor(root), PublishRequest{
-		Opid: "priority-reconcile-fixture", Machine: "mac-fixture", Lineage: "lin-fixture",
-		Intent: testIntentFor("migrate"), Message: "seed priority reconcile fixture",
-		Mutate:   func(string) ([]Change, error) { return changes, nil },
-		Validate: func(commit string) error { return ValidateCommit(root, commit) },
-	})
-	if err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("publish priority reconcile fixture: %+v %v", result, err)
-	}
-	materialize(t, root, result.Tip)
-	return root, result.Tip
-}
-
 func rankedPriorityGoals(priority uint8, ids ...string) []*GoalFile {
 	files := make([]*GoalFile, 0, len(ids))
 	for index, id := range ids {
 		files = append(files, rankedGoal(id, priority, uint64(index+1)))
 	}
 	return files
-}
-
-func humanReconcileReq(root, ulid string) VerbRequest {
-	return VerbRequest{
-		Endpoint: endpointFor(root),
-		Actor:    Actor{Machine: "mac-a", Lineage: "lin-1", Human: "wido"},
-		Ulid:     ulid,
-		Now:      time.Date(2026, 8, 21, 1, 0, 0, 0, time.UTC),
-	}
 }
 
 func TestReconcilePublishesHandEditsUnderTheHuman(t *testing.T) {

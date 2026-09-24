@@ -401,39 +401,6 @@ func writeHeldGoalForPush(f *observeFixture, id, machine, lineage string, revisi
 	f.writeHeldGoalAtRevision(id, machine, lineage, revision)
 }
 
-// moveGoalOutOfClaimedState archives the fixture as abandoned, matching the
-// ledger transition whose parent-state recheck this bed exercises.
-func moveGoalOutOfClaimedState(f *observeFixture, id string) {
-	f.t.Helper()
-	_ = os.Remove(filepath.Join(f.root, "plans", "goals", id+".md"))
-	const (
-		at      = "2026-09-03T08:00:00Z"
-		opid    = "01ARZ3NDEKTSV4RRFFQ69G5FAW-m9-00000001"
-		actor   = "human:Wido"
-		because = "fixture moves the goal out of the claimed state"
-	)
-	record := goal.RenderFile(&goal.GoalFile{
-		Id: id, State: goal.StateAbandoned, Intent: "Fixture ownership.", Origin: goal.OriginMain,
-		NextStep: "none",
-		OpenedAt: at, Revision: 1,
-		Abandoned: &goal.AbandonRecord{By: actor, At: at, Revision: 1, Opid: opid, Because: because},
-		History:   []goal.HistoryLine{{At: at, Opid: opid, Verb: "abandon", Actor: actor, Targets: []string{id}, Reason: because, Keep: -1}},
-	})
-	if _, problems := goal.ParseFile(record); len(problems) != 0 {
-		f.t.Fatalf("abandoned goal fixture is invalid: %v", problems)
-	}
-	f.writeBytes(filepath.Join("records", "goals", id+".md"), record)
-}
-
-func writeHeldRoot(f *observeFixture, free bool) {
-	f.t.Helper()
-	record := &goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1}
-	if free {
-		record.Free = &goal.FreeRecord{Declared: "2026-09-03T08:00:00Z", Origin: "human", Digest: strings.Repeat("a", 64)}
-	}
-	f.writeBytes("plans/goals/backlog.md", goal.RenderRoot(record))
-}
-
 func commitHeldSetup(f *observeFixture, subject string, paths ...string) {
 	f.t.Helper()
 	args := append([]string{"add"}, paths...)
@@ -467,18 +434,6 @@ func commitHeldFixtureTrailers(f *observeFixture, subject string, trailers ...st
 	}
 	f.git(args...)
 	return f.git("rev-parse", "HEAD")
-}
-
-func removeHeldTreeObject(t *testing.T, f *observeFixture, commit string) {
-	t.Helper()
-	tree := f.git("rev-parse", commit+"^{tree}")
-	gitDir := f.git("rev-parse", "--git-dir")
-	if !filepath.IsAbs(gitDir) {
-		gitDir = filepath.Join(f.root, gitDir)
-	}
-	if err := os.Remove(filepath.Join(gitDir, "objects", tree[:2], tree[2:])); err != nil {
-		t.Fatalf("remove fixture parent tree: %v", err)
-	}
 }
 
 func shortHeldID(id string) string {

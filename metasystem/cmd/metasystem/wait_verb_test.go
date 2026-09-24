@@ -1740,10 +1740,8 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	}
 
 	registeredVerdict := pendingWaitVerdict(t, root, runtimeSession, mainID)
-	if registeredVerdict.ShouldBlock {
-		diagnostic, _ := os.ReadFile(filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts", runtimeSession+".txt"))
-		t.Logf("associated wait diagnostic: row=%+v artifact=%s", row, diagnostic)
-	}
+	diagnostic, _ := os.ReadFile(filepath.Join(root, "artifacts", "agents", "supervision", "stop-verdicts", runtimeSession+".txt"))
+	t.Logf("associated wait diagnostic: row=%+v artifact=%s", row, diagnostic)
 	assertRegisteredWaitVerdict(t, registeredVerdict, waitingLine)
 	beforeAllow := strings.Count(string(logData), "stop response decision=allow")
 	allowedPayload := fmt.Sprintf(`{"session_id":%q,"cwd":%q,"hook_event_name":"Stop"}`, runtimeSession, root)

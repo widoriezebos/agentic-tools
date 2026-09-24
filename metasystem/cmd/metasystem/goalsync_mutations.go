@@ -2334,6 +2334,10 @@ func runGoalClassifySweep(args []string) int {
 }
 
 func runGoalClassifySweepWithAuthority(args []string, prove goalAuthorityProver) int {
+	return runGoalClassifySweepWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func runGoalClassifySweepWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("classify-sweep", args)
 	fs := flag.NewFlagSet("goal classify-sweep", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -2362,11 +2366,11 @@ func runGoalClassifySweepWithAuthority(args []string, prove goalAuthorityProver)
 	if err != nil {
 		return refuseHumanVerb(values, 1, "could not read its draft: "+err.Error(), humanVerbRemedy{words: "repair the draft path before previewing again"})
 	}
-	endpoint, err := goal.ResolveEndpoint(*root)
+	endpoint, err := dependencies.endpoint(*root)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the checkout's goal synchronization endpoint"})
 	}
-	now, err := goalCommandNow(*root)
+	now, err := commandNow(*root)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "provide a valid goal command clock"})
 	}
@@ -2385,10 +2389,10 @@ func runGoalClassifySweepWithAuthority(args []string, prove goalAuthorityProver)
 		return refuseHumanVerb(values, 1, fmt.Sprintf("SWEEP_LISTING_CHANGED: confirmation %s does not match current listing %s", *confirm, listing.Digest), humanVerbRemedy{command: shellCommand([]string{"metasystem", "goal", "classify-sweep", "--root", *root, "--draft", *draftPath, "--preview"})})
 	}
 	authorityFlags := &syncFlags{root: *root, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureHumanAuthority}
-	if _, err := classifyGoalAuthorityFirst("classify-sweep", authorityFlags); err != nil {
+	if _, err := classifyGoalAuthorityFirstWithFacts("classify-sweep", authorityFlags, dependencies.authorityFacts); err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "run this at the enrolled terminal"})
 	}
-	proof, err := proveGoalHumanAuthority("classify-sweep", authorityFlags, prove)
+	proof, err := proveGoalHumanAuthorityAt("classify-sweep", authorityFlags, prove, commandNow)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "run confirmation at the enrolled terminal"})
 	}
@@ -2402,7 +2406,7 @@ func runGoalClassifySweepWithAuthority(args []string, prove goalAuthorityProver)
 			printJSON(map[string]any{"outcome": goal.OutcomeConfirmed, "detail": "the tier law is already installed and no tierless goals remain"})
 			return 0
 		}
-		req, reqErr := syncReqWithProof("classify-sweep", *root, *by, *lineage, &proof)
+		req, reqErr := syncReqWithProofAtWithDependencies("classify-sweep", *root, *by, *lineage, &proof, commandNow, dependencies)
 		if reqErr != nil {
 			return refuseHumanVerb(values, 1, reqErr.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 		}
@@ -2421,7 +2425,7 @@ func runGoalClassifySweepWithAuthority(args []string, prove goalAuthorityProver)
 		return 0
 	}
 	for index, proposal := range listing.Proposals {
-		req, reqErr := syncReqWithProof("classify-sweep", *root, *by, *lineage, &proof)
+		req, reqErr := syncReqWithProofAtWithDependencies("classify-sweep", *root, *by, *lineage, &proof, commandNow, dependencies)
 		if reqErr != nil {
 			return refuseHumanVerb(values, 1, reqErr.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 		}
@@ -2442,6 +2446,10 @@ func runGoalClassifySweepWithAuthority(args []string, prove goalAuthorityProver)
 }
 
 func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
+	return runGoalApproveWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies(), dispatchcore.ResolveGoalBinding)
+}
+
+func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values := newHumanVerbValues("approve", args)
 	f, ok := parseHumanSyncFlags(values, "approve", args)
 	if !ok {
@@ -2457,11 +2465,11 @@ func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
 		return refuseHumanVerb(values, 2, "--sweep uses the tuples already listed and takes no budget or --approved-ref", humanVerbRemedy{command: values.sameCommandWithout("budget", "elapsed-limit", "attempt-limit", "reserved-job-minutes-limit", "active-job-limit", "review-round-limit", "approved-ref")})
 	}
 	if f.sweep && f.confirm == "" {
-		e, err := goal.ResolveEndpoint(f.root)
+		e, err := dependencies.endpoint(f.root)
 		if err != nil {
 			return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the checkout's goal synchronization endpoint"})
 		}
-		now, err := goalCommandNow(f.root)
+		now, err := commandNow(f.root)
 		if err != nil {
 			return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "provide a valid goal command clock"})
 		}
@@ -2503,18 +2511,18 @@ func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
 			hintBox = goalbudget.FormatBox(*parsed)
 		}
 		fmt.Fprintln(os.Stderr, "hint:", values.budgetCommand(hintBox))
-		return runGoalBudgetPrepared(values, f, routeBox, prove)
+		return runGoalBudgetPreparedWithInputs(values, f, routeBox, prove, commandNow, dependencies, binding)
 	}
 	budget, err := f.approvalBudget()
 	if err != nil {
 		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "give each goal its box with goal budget"})
 	}
-	classification, err := classifyGoalAuthorityFirst("approve", f)
+	classification, err := classifyGoalAuthorityFirstWithFacts("approve", f, dependencies.authorityFacts)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	proof, err := proveGoalHumanAuthority("approve", f, prove)
+	proof, err := proveGoalHumanAuthorityAt("approve", f, prove, commandNow)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy))
 	}
@@ -2522,7 +2530,7 @@ func runGoalApproveWithAuthority(args []string, prove goalAuthorityProver) int {
 		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
 	}
 	values.by = f.by
-	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
@@ -2563,6 +2571,10 @@ func runGoalUnapprove(args []string) int {
 }
 
 func runGoalUnapproveWithAuthority(args []string, prove goalAuthorityProver) int {
+	return runGoalUnapproveWithInputs(args, prove, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func runGoalUnapproveWithInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("unapprove", args)
 	f, ok := parseHumanSyncFlags(values, "unapprove", args)
 	if !ok {
@@ -2574,12 +2586,12 @@ func runGoalUnapproveWithAuthority(args []string, prove goalAuthorityProver) int
 	if f.id == "" || f.because == "" {
 		return refuseHumanVerb(values, 2, "needs --id and --because", humanVerbRemedy{words: "add the missing goal identifier or reason, whose value was not supplied"})
 	}
-	classification, err := classifyGoalAuthorityFirst("unapprove", f)
+	classification, err := classifyGoalAuthorityFirstWithFacts("unapprove", f, dependencies.authorityFacts)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	proof, err := proveGoalHumanAuthority("unapprove", f, prove)
+	proof, err := proveGoalHumanAuthorityAt("unapprove", f, prove, commandNow)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy))
 	}
@@ -2587,7 +2599,7 @@ func runGoalUnapproveWithAuthority(args []string, prove goalAuthorityProver) int
 		return refuseHumanVerb(values, 2, err.Error(), humanVerbRemedy{words: "re-enroll with goal enroll-terminal --by <your name>, or add --by <your name> to this command"})
 	}
 	values.by = f.by
-	req, err := syncReqClassified(f.root, f.by, f.lineage, &proof, classification)
+	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}
@@ -3190,6 +3202,10 @@ func runGoalEnrollTerminal(args []string) int {
 }
 
 func runGoalEnrollTerminalWith(args []string, enroll goalTerminalEnroller) int {
+	return runGoalEnrollTerminalWithDependencies(args, enroll, goalCommandNow, defaultSyncRequestDependencies())
+}
+
+func runGoalEnrollTerminalWithDependencies(args []string, enroll goalTerminalEnroller, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	values := newHumanVerbValues("enroll-terminal", args)
 	flags := flag.NewFlagSet("goal enroll-terminal", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -3210,7 +3226,7 @@ func runGoalEnrollTerminalWith(args []string, enroll goalTerminalEnroller) int {
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "run enrollment from a shell whose ancestry to its session leader is owned by you"})
 	}
-	req, err := syncReq("enroll-terminal", *root, "terminal", *lineage)
+	req, err := syncReqWithProofAtWithDependencies("enroll-terminal", *root, "terminal", *lineage, nil, commandNow, dependencies)
 	if err != nil {
 		return refuseHumanVerb(values, 1, err.Error(), humanVerbRemedy{words: "repair the named checkout identity fact before retrying"})
 	}

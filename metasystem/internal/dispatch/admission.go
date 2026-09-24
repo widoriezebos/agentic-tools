@@ -258,11 +258,6 @@ func evaluateProofAdmissionForDispatchWithReads(repoRoot, authorityID string, au
 	return result, err
 }
 
-func evaluateGoalRevisionAdmissionForDispatch(repoRoot, id string, revision, proposedCap uint64, now time.Time,
-	role, dispatchMode string, lens admissionBudgetLens, hazards ...HazardClass) (GoalRevisionAdmission, error) {
-	return evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id, revision, proposedCap, now, role, dispatchMode, lens, concreteGoalAdmissionReads(), hazards...)
-}
-
 func evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id string, revision, proposedCap uint64, now time.Time,
 	role, dispatchMode string, lens admissionBudgetLens, reads goalAdmissionReads, hazards ...HazardClass) (GoalRevisionAdmission, error) {
 	verdict := GoalRevisionAdmission{GoalID: id, GoalRevision: revision}
@@ -370,10 +365,6 @@ func evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id string, revi
 		}
 	}
 	return verdict, nil
-}
-
-func evaluateCandidateConsumptionAdmission(repoRoot string, candidate *goal.GoalFile, revision, proposedCap uint64, now time.Time) (GoalRevisionAdmission, error) {
-	return evaluateCandidateConsumptionAdmissionWithReads(repoRoot, candidate, revision, proposedCap, now, concreteGoalAdmissionReads())
 }
 
 func evaluateCandidateConsumptionAdmissionWithReads(repoRoot string, candidate *goal.GoalFile, revision, proposedCap uint64, now time.Time, reads goalAdmissionReads) (GoalRevisionAdmission, error) {

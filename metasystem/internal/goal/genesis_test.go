@@ -34,10 +34,6 @@ func writeFile(t *testing.T, path, body string) {
 	}
 }
 
-func wantShaped(t *testing.T, root string, ledger []byte, want bool, reasonPart string) {
-	wantShapedWithEnvironment(t, root, ledger, nil, want, reasonPart)
-}
-
 func wantShapedWithEnvironment(t *testing.T, root string, ledger []byte, environment []string, want bool, reasonPart string) {
 	t.Helper()
 	shaped, reason, err := adoptionShapedWithEnvironment(root, ledger, environment)

@@ -38,14 +38,6 @@ func budgetExtensionSetup(t *testing.T, endpoint Endpoint) (Endpoint, VerbReques
 	return endpoint, extend, offer, revision
 }
 
-func budgetExtensionBed(t *testing.T) (string, VerbRequest, BudgetExtensionOffer, uint64) {
-	t.Helper()
-	_, root, _ := twoClones(t)
-	seedLedger(t, root)
-	endpoint, request, offer, revision := budgetExtensionSetup(t, endpointFor(root))
-	return endpoint.Root, request, offer, revision
-}
-
 func TestExtendBudgetRaisesOnlyConsumptionMembersAndWritesMarker(t *testing.T) {
 	t.Parallel()
 	endpoint, req, offer, claimRevision := budgetExtensionEndpointBed(t)

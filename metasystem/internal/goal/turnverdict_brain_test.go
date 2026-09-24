@@ -124,4 +124,21 @@ func TestUndeclaredCheckoutDropsOnlyBrainDraftScannerFailure(t *testing.T) {
 	if len(got.Unreadable) != 1 || got.Unreadable[0] != "plan scan failed" {
 		t.Fatalf("brain-only scan failure changed an undeclared checkout's all-clear: %+v", got.Unreadable)
 	}
+	fixture, _, _ := fakeServingFixture(t, "bed-m1", map[string]*GoalFile{})
+	verdict, err := fixture.TurnVerdict(ScanResult{
+		Questions:  []Item{{Kind: "question", Id: "ask-one"}},
+		Drafts:     []Item{{Kind: "draft", Id: "draft-one"}},
+		Unreadable: []string{"draft scan: fixture projection failed", "question scan: malformed fixture question"},
+	}, "undeclared-brain-only", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verdict.ShouldBlock || strings.Contains(verdict.Display, "UNCERTAIN") {
+		t.Fatalf("brain-only scanner failures changed the undeclared turn verdict: %+v", verdict)
+	}
+	if !strings.Contains(verdict.Display, "no goal is claimed here and the queue is empty") ||
+		strings.Contains(verdict.Display, "draft scan: fixture projection failed") ||
+		strings.Contains(verdict.Display, "question scan: malformed fixture question") {
+		t.Fatalf("brain-only scanner failures leaked into the undeclared all-clear: %q", verdict.Display)
+	}
 }

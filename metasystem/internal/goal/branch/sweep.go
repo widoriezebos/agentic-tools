@@ -67,10 +67,6 @@ func DeleteLanding(req DeleteLandingRequest) error {
 	return deleteRemoteRef(req.PushTransport, req.Repo, req.Remote, ref, tip, LandBranchMovedCode)
 }
 
-func sourceCommits(repo, base, endpointTip string) (map[string]bool, error) {
-	return sourceCommitsWith(repo, base, endpointTip, gitOutput)
-}
-
 func sourceCommitsWith(repo, base, endpointTip string, read func(string, ...string) ([]byte, error)) (map[string]bool, error) {
 	out, err := read(repo, "log", "--format=%(trailers:key=Goal-Source,valueonly)", base+".."+endpointTip)
 	if err != nil {
@@ -83,10 +79,6 @@ func sourceCommitsWith(repo, base, endpointTip string, read func(string, ...stri
 		}
 	}
 	return sources, nil
-}
-
-func concludedGoalAt(repo, endpointTip, goalID string) bool {
-	return concludedGoalAtWith(repo, endpointTip, goalID, gitOutput)
 }
 
 func concludedGoalAtWith(repo, endpointTip, goalID string, read func(string, ...string) ([]byte, error)) bool {
@@ -104,10 +96,6 @@ func concludedGoalAtWith(repo, endpointTip, goalID string, read func(string, ...
 		concluded = concluded || strings.HasPrefix(strings.TrimSpace(line), "- Concluded: ") && strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "- Concluded: ")) != ""
 	}
 	return done && concluded
-}
-
-func droppedCommit(repo, endpointTip, goalID, commit, dropped string) bool {
-	return droppedCommitWith(repo, endpointTip, goalID, commit, dropped, gitOutput)
 }
 
 func droppedCommitWith(repo, endpointTip, goalID, commit, dropped string, read func(string, ...string) ([]byte, error)) bool {
@@ -142,10 +130,6 @@ func deleteRemoteRef(transport PushTransport, repo, remote, ref, expected, code 
 	return nil
 }
 
-func goalWorktreePaths(repo, goalID string) ([]string, error) {
-	return goalWorktreePathsWith(repo, goalID, gitOutput)
-}
-
 func goalWorktreePathsWith(repo, goalID string, read func(string, ...string) ([]byte, error)) ([]string, error) {
 	out, err := read(repo, "worktree", "list", "--porcelain")
 	if err != nil {
@@ -168,10 +152,6 @@ func goalWorktreePathsWith(repo, goalID string, read func(string, ...string) ([]
 		}
 	}
 	return paths, nil
-}
-
-func cleanGoalWorktrees(repo, goalID string) ([]string, error) {
-	return cleanGoalWorktreesWith(repo, goalID, gitOutput)
 }
 
 func cleanGoalWorktreesWith(repo, goalID string, read func(string, ...string) ([]byte, error)) ([]string, error) {
@@ -235,10 +215,6 @@ func cleanupGoalWorktrees(repo, goalID, endpointTip, localTip string, paths []st
 	return nil
 }
 
-func checkSweepTip(req SweepRequest, place, tip string) error {
-	return checkSweepTipWith(req, place, tip, defaultSweepDependencies())
-}
-
 func checkSweepTipWith(req SweepRequest, place, tip string, deps sweepDependencies) error {
 	if req.Abandoned {
 		return nil
@@ -269,10 +245,6 @@ func checkSweepTipWith(req SweepRequest, place, tip string, deps sweepDependenci
 		return operationRefusal(SweepUnlandedCode, "goal/%s at %s tip %s has unlanded commits: %s", req.GoalID, place, tip, strings.Join(unlanded, ", "))
 	}
 	return nil
-}
-
-func sweepTipCovered(repo, tip string, checked []string) (bool, error) {
-	return sweepTipCoveredWith(repo, tip, checked, ancestor)
 }
 
 func sweepTipCoveredWith(repo, tip string, checked []string, isAncestor func(string, string, string) (bool, error)) (bool, error) {

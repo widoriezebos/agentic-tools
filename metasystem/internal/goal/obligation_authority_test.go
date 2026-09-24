@@ -2,7 +2,6 @@ package goal
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -110,67 +109,6 @@ func testGovernedObligation(state ObligationState) GovernedObligation {
 		Triggers: HumanReviewTriggers{ValueJudgment: "unknown", Reversibility: "unknown", SevereHarm: "unknown",
 			UnfamiliarApproach: "unknown", TestDiscrimination: "unknown", CorrelatedAssumptionRisk: "unknown",
 			AuthorityScopeChange: "unknown", DestructiveReach: "unknown"}}
-}
-
-func obligationAuthorityLocalRoot(t *testing.T, id string) string {
-	t.Helper()
-	root := t.TempDir()
-	obligationAuthorityGit(t, root, "init", "-q", "-b", "main")
-	obligationAuthorityGit(t, root, "config", "user.name", "obligation-fixture")
-	obligationAuthorityGit(t, root, "config", "user.email", "obligation-fixture@example.invalid")
-	obligationAuthorityGit(t, root, "config", "goal.sync-remote", "local")
-	openedAt := "2026-08-30T08:00:00Z"
-	claimAt := "2026-08-30T08:05:00Z"
-	rootRecord := &RootRecord{
-		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: SyncLocal, Revision: 1,
-	}
-	file := &GoalFile{
-		Id: id, State: StateClaimed, Intent: "Govern validation.", Origin: OriginMain,
-		NextStep: "Run it.", OpenedAt: openedAt, Revision: 2,
-		Budget:  &Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2},
-		Claimed: &ClaimRecord{Machine: "mac-a", Lineage: "lin-1", At: claimAt, Revision: 2},
-		History: []HistoryLine{
-			{At: openedAt, Opid: Opid("01ARZ3NDEKTSV4RRFFQ69G5FAA", "mac-a", "lin-1"), Verb: "open", Actor: "mac-a+lin-1", Targets: []string{id}, Keep: -1},
-			{At: claimAt, Opid: Opid("01ARZ3NDEKTSV4RRFFQ69G5FAB", "mac-a", "lin-1"), Verb: "claim", Actor: "mac-a+lin-1", Targets: []string{id}, Keep: -1},
-		},
-	}
-	for path, data := range map[string][]byte{
-		filepath.Join(root, "plans", "goals", "backlog.md"): RenderRoot(rootRecord),
-		filepath.Join(root, "plans", "goals", id+".md"):     RenderFile(file),
-	} {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	obligationAuthorityGit(t, root, "add", "plans/goals")
-	obligationAuthorityGit(t, root, "commit", "-qm", "obligation authority fixture")
-	obligationAuthorityGit(t, root, "update-ref", LocalLedgerBranch, "HEAD")
-	obligationAuthorityGit(t, root, "update-ref", AcceptedRef, "HEAD")
-	return root
-}
-
-func obligationAuthorityGit(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root, "-c", "user.name=obligation-fixture", "-c", "user.email=obligation-fixture@example.invalid"}, args...)...)
-	cmd.Env = environWithoutGitSteering()
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, output)
-	}
-	return strings.TrimSpace(string(output))
-}
-
-func obligationAuthorityEndpoint(root string) Endpoint {
-	return Endpoint{Root: root, Remote: SyncLocal, Branch: "refs/heads/main"}
-}
-
-func obligationAuthorityVerbReq(root, ulid, machine string) VerbRequest {
-	req := verbReq(root, ulid, machine)
-	req.Endpoint = obligationAuthorityEndpoint(root)
-	return req
 }
 
 func TestOnlyHumanProofAndChosenPolicyCanActivateAnObligation(t *testing.T) {

@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,37 +17,6 @@ func legacyBudgetApprovalDigest(intent string, budget goal.Budget) string {
 	record := fmt.Sprintf("elapsedLimit=%s attemptLimit=%d reservedJobMinutesLimit=%d activeJobLimit=%d",
 		budget.ElapsedLimit, budget.AttemptLimit, budget.ReservedJobMinutesLimit, budget.ActiveJobLimit)
 	return fmt.Sprintf("%x", sha256.Sum256([]byte("intent="+intent+"\n"+"budget="+record+"\n")))
-}
-
-func admissionBudgetBed(t *testing.T, attemptLimit, reservedLimit, activeLimit uint64) string {
-	t.Helper()
-	root := revisionBindingBed(t, 2)
-	path := filepath.Join(root, "plans", "goals", "bounded.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, problems := goal.ParseFile(data)
-	if len(problems) != 0 {
-		t.Fatalf("admission fixture goal did not parse: %v", problems)
-	}
-	file.Claimed.Revision = 3
-	file.Claimed.At = file.History[2].At
-	file.Claimed.AccountingRevision = 3
-	file.StopCapability.Generation = 3
-	file.StopCapability.Revision = 3
-	file.Budget.AttemptLimit = attemptLimit
-	file.Budget.ReservedJobMinutesLimit = reservedLimit
-	file.Budget.ActiveJobLimit = activeLimit
-	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "admission budget fixture"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		if output, runErr := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); runErr != nil {
-			t.Fatalf("git %v: %v: %s", args, runErr, output)
-		}
-	}
-	return root
 }
 
 func TestEveryBudgetRefusalNamesObservedAndOpenCaps(t *testing.T) {
@@ -184,42 +152,6 @@ func TestProofAdmissionEvaluatesAuthorityAndCandidateLenses(t *testing.T) {
 	})
 }
 
-func reviewChainBudgetBed(t *testing.T) string {
-	t.Helper()
-	root := revisionBindingBed(t, 2)
-	path := filepath.Join(root, "plans", "goals", "bounded.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, problems := goal.ParseFile(data)
-	if len(problems) != 0 {
-		t.Fatalf("parse goal fixture: %v", problems)
-	}
-	file.Budget.AttemptLimit = 20
-	file.Budget.ReservedJobMinutesLimit = 1000
-	file.Budget.ActiveJobLimit = 10
-	file.Budget.ReviewRoundLimit = 2
-	file.History[0].Verb = "approve"
-	file.History[0].Actor = "human:Wido"
-	file.Approved = &goal.ApprovalRecord{
-		By: "human:Wido", At: file.History[0].At, Revision: 1, EpisodeRevision: 1,
-		Opid: file.History[0].Opid, Authority: goal.ApprovalAuthorityProven,
-		Digest: legacyBudgetApprovalDigest(file.Intent, *file.Budget),
-	}
-	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", "review chain budget bed"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		command := exec.Command("git", append([]string{"-C", root}, args...)...)
-		command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
-		if output, runErr := command.CombinedOutput(); runErr != nil {
-			t.Fatalf("git %v: %v: %s", args, runErr, output)
-		}
-	}
-	return root
-}
-
 func writeCountedCriticRootAtRevision(t *testing.T, root, job, role string, revision uint64) {
 	t.Helper()
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", job+".json"), map[string]any{
@@ -232,30 +164,6 @@ func writeCountedCriticRootAtRevision(t *testing.T, root, job, role string, revi
 func writeCountedCriticRoot(t *testing.T, root, job, role string) {
 	t.Helper()
 	writeCountedCriticRootAtRevision(t, root, job, role, 2)
-}
-
-func amendReviewChainBudgetBed(t *testing.T, root, message string, mutate func(*goal.GoalFile)) {
-	t.Helper()
-	path := filepath.Join(root, "plans", "goals", "bounded.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, problems := goal.ParseFile(data)
-	if len(problems) != 0 {
-		t.Fatalf("parse goal fixture before amendment: %v", problems)
-	}
-	mutate(file)
-	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "plans/goals/bounded.md"}, {"commit", "-q", "-m", message}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		command := exec.Command("git", append([]string{"-C", root}, args...)...)
-		command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
-		if output, runErr := command.CombinedOutput(); runErr != nil {
-			t.Fatalf("git %v: %v: %s", args, runErr, output)
-		}
-	}
 }
 
 func TestGoalRevisionAdmissionRefusesThirdCodeCritiqueChain(t *testing.T) {

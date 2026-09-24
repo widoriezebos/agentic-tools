@@ -10,29 +10,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
-// carryBed opens and claims one goal on a remote-backed ledger and returns the
-// clone that holds the claim, a second clone for code pushes, and the human
-// proof the carry word needs.
-func carryBed(t *testing.T, base time.Time) (root, other string, human VerbRequest) {
-	t.Helper()
-	_, root, other = twoClones(t)
-	seedLedger(t, root)
-	open := verbReq(root, "01J5X00000000000000000C000", "mac-a")
-	open.Now = base
-	if res, err := Open(open, "g", "Carry one landing past a refusal.", "main", "Land it."); err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("open: %+v %v", res, err)
-	}
-	claim := verbReq(root, "01J5X00000000000000000C001", "mac-a")
-	claim.Now = base
-	if res, err := claimApprovedForTest(t, claim, "g", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
-		t.Fatalf("claim: %+v %v", res, err)
-	}
-	human = verbReq(root, "01J5X00000000000000000C002", "mac-a")
-	human.Now = base.Add(time.Minute)
-	human.Actor.Human = "wido"
-	return root, other, human
-}
-
 func carryBedFor(t *testing.T, base time.Time) (endpoint, other Endpoint, human VerbRequest) {
 	t.Helper()
 	endpoint, other = fakeGoalEndpointPair(t)
@@ -57,15 +34,6 @@ func carryVerb(base VerbRequest, ulid string, minutes int) VerbRequest {
 	r.Ulid = ulid
 	r.Now = base.Now.Add(time.Duration(minutes) * time.Minute)
 	return r
-}
-
-func acceptedTree(t *testing.T, root string, now time.Time) (*TreeGoals, string) {
-	t.Helper()
-	projection, err := Project(endpointFor(root), true, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return projection.Tree, projection.Tip
 }
 
 func TestCarryLifecycleLandsThroughTheJournal(t *testing.T) {
@@ -428,24 +396,6 @@ func TestCarryReadersAndJournalGuards(t *testing.T) {
 	}
 }
 
-func openCarryWordForAbandonTest(t *testing.T, base time.Time) (root, other string, human VerbRequest, proof *humanauthority.Proof, word CarryArgs, ref string) {
-	t.Helper()
-	root, other, human = carryBed(t, base)
-	configureAbandonFloorTest(t, strings.Repeat("a", 40))
-	recordAbandonFloorTest(t, root, "01J5X00000000000000000D000")
-	proof = testHumanAuthority(t, root, base)
-	word = CarryArgs{
-		Goal: "g", Workspace: strings.Repeat("a", 40), Past: "missing-declaration",
-		Why: "the bounded exception remains necessary", Expires: base.Add(2 * time.Hour), RaiseFormat: true,
-	}
-	request := carryVerb(human, "01J5X00000000000000000D010", 1)
-	result, err := Carry(request, word, proof)
-	if err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("open carry word: %+v %v", result, err)
-	}
-	return root, other, human, proof, word, request.opid()
-}
-
 func openCarryWordForAbandonTestFor(t *testing.T, base time.Time) (endpoint, other Endpoint, human VerbRequest, proof *humanauthority.Proof, word CarryArgs, ref string) {
 	t.Helper()
 	endpoint, other, human = carryBedFor(t, base)
@@ -596,43 +546,6 @@ func TestAbandonRefusesOpenCarryWords(t *testing.T) {
 	})
 }
 
-func landedCarryForAbandonTest(t *testing.T, base time.Time) (root string, human VerbRequest, proof *humanauthority.Proof, ref, commit, ordinaryFinding string) {
-	t.Helper()
-	root, other, human, proof, word, ref := openCarryWordForAbandonTest(t, base)
-	reservationRequest := carryVerb(human, "01J5X00000000000000000D059", 2)
-	reservationRequest.Actor.Human = ""
-	reservationArgs := CarryingArgs{Goal: "g", ApprovedRef: ref, Workspace: word.Workspace, Project: strings.Repeat("b", 40)}
-	reservationResult, reservation, reservationErr := Carrying(reservationRequest, reservationArgs)
-	if reservationErr != nil || reservationResult.Outcome != OutcomeConfirmed {
-		t.Fatalf("open carrying reservation: %+v %q %v", reservationResult, reservation, reservationErr)
-	}
-	_, ledger := acceptedTree(t, root, base.Add(3*time.Minute))
-	mustGit(t, other, "pull", "-q", "origin", "main")
-	if err := os.WriteFile(filepath.Join(other, "recorded-carry.txt"), []byte("carried\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	mustGit(t, other, "add", "recorded-carry.txt")
-	mustGit(t, other, "commit", "-qm", "recorded carried change", "-m", "Carry: "+ref)
-	commit = mustGit(t, other, "rev-parse", "HEAD")
-	mustGit(t, other, "push", "-q", "origin", "main")
-	seat := carryVerb(human, "01J5X00000000000000000D060", 5)
-	seat.Actor.Human = ""
-	seat.Endpoint.ConfigureCarriedCounselorAppend(func(string, string, HistoryLine, time.Time) error { return nil })
-	args := CarriedArgs{
-		Goal: "g", ApprovedRef: ref, Carrying: reservation, Commit: commit, Project: strings.Repeat("b", 40), Workspace: word.Workspace,
-		Past: word.Past, Battery: "green", Judge: "base", JudgeDigest: strings.Repeat("d", 64), Ledger: ledger, By: "human:wido",
-	}
-	if result, err := CarriedFromCommit(seat, args); err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("record carried landing: %+v %v", result, err)
-	}
-	ordinaryFinding = "ordinary-review"
-	deferRequest := carryVerb(seat, "01J5X00000000000000000D061", 6)
-	if result, err := DeferFindings(deferRequest, "g", []ReviewObligation{{Finding: ordinaryFinding, Chain: "critic-chain", Artifact: "commit:" + commit, Test: "pending"}}); err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("defer ordinary review: %+v %v", result, err)
-	}
-	return root, human, proof, ref, commit, ordinaryFinding
-}
-
 func landedCarryForAbandonTestFor(t *testing.T, base time.Time) (endpoint Endpoint, human VerbRequest, proof *humanauthority.Proof, ref, commit, ordinaryFinding string) {
 	t.Helper()
 	endpoint, other, human, proof, word, ref := openCarryWordForAbandonTestFor(t, base)
@@ -665,24 +578,6 @@ func landedCarryForAbandonTestFor(t *testing.T, base time.Time) (endpoint Endpoi
 	return endpoint, human, proof, ref, commit, ordinaryFinding
 }
 
-func freezeCarriedGoalForAbandonTest(t *testing.T, root string, now time.Time, ulid string) string {
-	t.Helper()
-	tree, _ := acceptedTree(t, root, now)
-	file := tree.Live["g"]
-	if file == nil || file.StopCapability == nil {
-		t.Fatalf("carried goal has no stop capability: %+v", file)
-	}
-	request := CloseStopRequest{
-		VerbRequest: VerbRequest{Endpoint: endpointFor(root), Actor: Actor{Machine: "mac-a", Lineage: "goal-stop-custodian"}, Ulid: ulid, Now: now, ClaimEpoch: file.StopCapability.ClaimEpoch},
-		GoalID:      "g", StopID: "stop-g-carried-review", Reason: StopReasonElapsedLimit, Capability: *file.StopCapability,
-	}
-	if result, err := CloseStop(request); err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("freeze carried goal: %+v %v", result, err)
-	}
-	tree, _ = acceptedTree(t, root, now)
-	return renderedStopFenceLines(tree.Live["g"])
-}
-
 func freezeCarriedGoalForAbandonTestFor(t *testing.T, endpoint Endpoint, now time.Time, ulid string) string {
 	t.Helper()
 	tree, _ := acceptedTreeForEndpoint(t, endpoint)
@@ -709,21 +604,6 @@ func renderedStopFenceLines(file *GoalFile) string {
 		}
 	}
 	return strings.Join(lines, "\n")
-}
-
-func openNextCarryGoalForAbandonTest(t *testing.T, root string, now time.Time) {
-	t.Helper()
-	open := verbReq(root, "01J5X00000000000000000D062", "mac-b")
-	open.Now = now
-	open.Actor.Human = "wido"
-	if result, err := Open(open, "next-carry", "Carry after the archived review debt is paid.", OriginHuman, "Issue the next carry word."); err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("open next carry goal: %+v %v", result, err)
-	}
-	claim := verbReq(root, "01J5X00000000000000000D063", "mac-b")
-	claim.Now = now.Add(time.Minute)
-	if result, err := claimApprovedForTest(t, claim, "next-carry", testBudget()); err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("claim next carry goal: %+v %v", result, err)
-	}
 }
 
 func openNextCarryGoalForAbandonTestFor(t *testing.T, endpoint Endpoint, now time.Time) {

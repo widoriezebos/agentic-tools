@@ -53,10 +53,6 @@ const (
 	notifyFixtureLog
 )
 
-func resolveNotify(repoRoot string) (string, notifyKind) {
-	return resolveNotifyWithDependencies(repoRoot, defaultNotificationDependencies())
-}
-
 func resolveNotifyWithDependencies(repoRoot string, deps notificationDependencies) (string, notifyKind) {
 	out, err := deps.configuredCommand(repoRoot)
 	if err == nil {

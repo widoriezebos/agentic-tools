@@ -34,10 +34,6 @@ type rawLandingHistory struct {
 	log    []byte
 }
 
-func loadRecordSet(root string) RecordSet {
-	return loadRecordSetWith(root, nil)
-}
-
 func loadRecordSetWith(root string, sources *rawSourceBundle) RecordSet {
 	records := RecordSet{}
 	governed, invalidGoverned, governedLimitations := loadGovernedRuns(root)
@@ -513,10 +509,6 @@ func asOutcome(status string) (RunOutcome, bool) {
 	}
 }
 
-func loadGoalEvents(root string) ([]GoalEventObservation, []Limitation) {
-	return loadGoalEventsWith(root, nil)
-}
-
 func loadGoalEventsWith(root string, sources *rawSourceBundle) ([]GoalEventObservation, []Limitation) {
 	read := goal.ReadCommitGoals
 	if sources != nil {
@@ -619,10 +611,6 @@ func goalVerbClass(verb string) (GoalVerbClass, bool) {
 	default:
 		return "", false
 	}
-}
-
-func loadLandings(root string) ([]LandingObservation, []Limitation) {
-	return loadLandingsWith(root, nil)
 }
 
 func loadLandingsWith(root string, sources *rawSourceBundle) ([]LandingObservation, []Limitation) {

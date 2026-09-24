@@ -110,10 +110,6 @@ func evaluateSliceAdmissionWithReads(repoRoot string, capMinutes uint64, approve
 	return verdict, nil
 }
 
-func recordedHumanApproval(repoRoot, ref, goalID string) (recordedSliceApproval, error) {
-	return recordedHumanApprovalWithReads(repoRoot, ref, goalID, concreteGoalAdmissionReads())
-}
-
 func recordedHumanApprovalWithReads(repoRoot, ref, goalID string, reads goalAdmissionReads) (recordedSliceApproval, error) {
 	if rulingApprovalRef.MatchString(ref) {
 		data, err := os.ReadFile(filepath.Join(repoRoot, "memory", "rulings.md"))

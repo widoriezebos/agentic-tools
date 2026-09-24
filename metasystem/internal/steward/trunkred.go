@@ -103,10 +103,6 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 	return roleAlive(RoleTrunkRed, fmt.Sprintf("%d open, all owned; oldest %s", len(open), deliveryAge(now, oldest)))
 }
 
-func staleUnrecordedTrunkRedBatches(repoRoot string, now time.Time) ([]string, error) {
-	return staleUnrecordedTrunkRedBatchesWith(repoRoot, now, config.ResolveBatchLanding)
-}
-
 func staleUnrecordedTrunkRedBatchesWith(repoRoot string, now time.Time, resolveBatchLanding func(string, string, func() time.Time) (config.BatchLanding, error)) ([]string, error) {
 	conf := filepath.Join(repoRoot, "metasystem.conf")
 	configured, _, err := config.Get(config.GetParams{Key: config.BatchRootKey, ConfPath: conf, Default: "", DefaultSet: true})

@@ -99,19 +99,6 @@ func protectedArtifactPath(path string) bool {
 	return mission.ProtectedArtifactPath(path)
 }
 
-// covenantGovernanceViolation deep-checks a warden-lane change to the
-// covenant: the identity and battery rows are governance the human
-// tier owns — the warden may move requirements, budgets, and guards,
-// never what the app IS or what earns green. The OLD covenant reads
-// from the pre-tree blob, the NEW from the AUTHORIZATION'S OWN
-// reviewedTree — the immutable tree the warden actually reviewed and
-// the digest binds — never from the mutable workspace, which can move
-// between this check and the stable snapshot. A returned error is the
-// runner's could-not-run, never a judgment.
-func covenantGovernanceViolation(workspace gittree.Workspace, preTree, reviewedTree, digest string) (string, error) {
-	return covenantGovernanceViolationWithWorkspace(workspace, preTree, reviewedTree, digest)
-}
-
 func covenantGovernanceViolationWithWorkspace(workspace wallWorkspace, preTree, reviewedTree, digest string) (string, error) {
 	oldBytes, existed, err := workspace.FileAt(preTree, covenant.Filename)
 	if violation, rerr := covenantReadSplit(err, digest, "pre-change tree"); rerr != nil || violation != "" {
@@ -205,16 +192,6 @@ func parseHostArtifacts(value string) (map[string]bool, string) {
 		declared[path] = true
 	}
 	return declared, ""
-}
-
-// inspectWall proves the tree equation for one concluded turn: the post
-// snapshot equals the pre-tree plus each consumed authorization's exact
-// patch (pairwise disjoint, applied with no fuzz) plus a delta touching
-// only declared host-artifact files that no consumed patch touched. Any
-// failure to PROVE is a violation; an error is the runner's own (git
-// unavailable, unreadable workspace), never a judgment.
-func inspectWall(root, missionID, preTree string, state map[string]any, certified []map[string]any, declared map[string]bool, guardrails *mission.GuardrailClass, declarationViolation string, snapshot func(expected string) (string, error)) (*wallInspection, error) {
-	return inspectWallWithWorkspace((&Engine{}).wallWorkspace(root), root, missionID, preTree, state, certified, declared, guardrails, declarationViolation, snapshot)
 }
 
 func inspectWallWithWorkspace(workspace wallWorkspace, root, missionID, preTree string, state map[string]any, certified []map[string]any, declared map[string]bool, guardrails *mission.GuardrailClass, declarationViolation string, snapshot func(expected string) (string, error)) (*wallInspection, error) {

@@ -47,18 +47,3 @@ func (t unknownAfterLanding) Push(repo, remote, ref, expected, tip string) (bran
 	}
 	return branch.CASUnknown, errors.New("connection ended before the result was read")
 }
-
-type unknownWithoutLanding struct{ branch.GitPushTransport }
-
-func (unknownWithoutLanding) Push(string, string, string, string, string) (branch.CASOutcome, error) {
-	return branch.CASUnknown, errors.New("connection ended before the remote accepted the push")
-}
-
-type fetchThenFail struct{ branch.GitPushTransport }
-
-func (t fetchThenFail) Fetch(repo, remote, ref, destination string) error {
-	if err := t.GitPushTransport.Fetch(repo, remote, ref, destination); err != nil {
-		return err
-	}
-	return errors.New("fetch result was lost")
-}

@@ -627,31 +627,3 @@ func writeTestResultFile(t *testing.T, path string, data []byte, mode os.FileMod
 		t.Fatal(err)
 	}
 }
-
-func writeTestResultScript(t *testing.T, root, name, status string, exit int) {
-	t.Helper()
-	body := "<testsuite><testcase classname=\"fixture\" name=\"" + name + "\">"
-	if status == "failed" {
-		body += "<failure message=\"red\"/>"
-	}
-	body += "</testcase></testsuite>"
-	script := "#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p reports-" + name + "\nprintf '%s\\n' " + strconv.Quote(body) + " > reports-" + name + "/tests.xml\nexit " + strconv.Itoa(exit) + "\n"
-	path := filepath.Join(root, "scripts", name+".sh")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func runTestResultGit(t *testing.T, root string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", append([]string{"-C", root}, args...)...)
-	command.Env = gittree.ScrubbedEnviron()
-	data, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, data)
-	}
-	return strings.TrimSpace(string(data))
-}

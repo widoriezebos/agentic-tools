@@ -895,50 +895,67 @@ func TestGoalBudgetKeepsOverNormFixtureAuthorityOutsideTheTerminalFold(t *testin
 }
 
 func TestGoalClassifySweepEmptyListingInstallsTierLawAndClosesDispatch(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "risk-scored classification fixture", func(file *goal.GoalFile) {
-		risk := &goal.RiskRecord{Severity: 3, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "standing validation is severe"}
-		file.Risk = risk
-		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, risk)
-	})
-	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
+	fixture := newObligationCommandFixture(t)
+	root := fixture.root()
 	draft := filepath.Join(t.TempDir(), "classification.txt")
 	if err := os.WriteFile(draft, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	preview, previewCode := captureStdout(t, func() int {
-		return runGoalClassifySweep([]string{"--root", root, "--draft", draft, "--preview"})
+		return runGoalClassifySweepWithInputs([]string{"--root", root, "--draft", draft, "--preview"}, fixedFixtureGoalAuthority, fixture.commandNow, fixture.dependencies())
 	})
 	markerIndex := strings.LastIndex(preview, "listing-digest ")
 	if previewCode != 0 || markerIndex < 0 || strings.TrimSpace(preview[:markerIndex]) != "" {
 		t.Fatalf("already-risk-scored ledger did not preview as an empty listing: code=%d output=%q", previewCode, preview)
 	}
 	digest := strings.TrimSpace(strings.TrimPrefix(preview[markerIndex:], "listing-digest "))
+	if len(digest) != 64 {
+		t.Fatalf("empty classification listing had no SHA-256 digest: %q", digest)
+	}
 	confirmed, confirmCode := captureStdout(t, func() int {
-		return runGoalClassifySweepWithAuthority([]string{"--root", root, "--draft", draft, "--confirm", digest, "--by", "Wido"}, fixedFixtureGoalAuthority)
+		return runGoalClassifySweepWithInputs([]string{"--root", root, "--draft", draft, "--confirm", digest, "--by", "Wido", "--lineage", "m1"}, fixedFixtureGoalAuthority, fixture.commandNow, fixture.dependencies())
 	})
 	if confirmCode != 0 || !strings.Contains(confirmed, `"outcome":"confirmed"`) || !strings.Contains(confirmed, `"classified":0`) {
 		t.Fatalf("empty classification confirmation failed: code=%d output=%q", confirmCode, confirmed)
 	}
 
-	tip := goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
-	rootBytes := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/backlog.md")
-	rootRecord, problems := goal.ParseRoot([]byte(rootBytes))
+	fixture.expectTransactions(1, 0)
+	accepted := fixture.repo.commit(fixture.repo.accepted)
+	rootRecord, problems := goal.ParseRoot(accepted.files["plans/goals/backlog.md"])
 	if len(problems) != 0 || rootRecord.TierLaw == "" {
 		t.Fatalf("empty confirmation did not install TierLaw: marker=%q problems=%v", rootRecord.TierLaw, problems)
 	}
 
-	// A post-law hand edit cannot smuggle a tierless goal into a delegate.
-	goalSyncMutationGit(t, root, "reset", "-q", "--hard", goal.AcceptedRef)
-	amendSyncedGoalFixture(t, root, "hand-written tierless goal", func(file *goal.GoalFile) {
-		file.Tier = 0
-		file.Approved = nil
-		file.StopCapability = &goal.StopCapability{
-			Generation: 1, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, ClaimEpoch: 1,
-		}
-	})
-	if _, err := dispatchcore.ResolveGoalBinding(root, "standing-validation", time.Date(2026, 9, 1, 10, 1, 0, 0, time.UTC)); err == nil || !strings.Contains(err.Error(), "classify the goal first") {
+	file, _ := fixture.acceptedGoal()
+	file.Tier = 0
+	file.Approved = nil
+	file.StopCapability = &goal.StopCapability{
+		Generation: 1, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, ClaimEpoch: 1,
+	}
+	files := obligationFilesCopy(accepted.files)
+	files["plans/goals/standing-validation.md"] = goal.RenderFile(file)
+	fixture.repo.serial++
+	inserted := fmt.Sprintf("%040x", fixture.repo.serial)
+	fixture.repo.commits[inserted] = obligationCommit{parent: fixture.repo.accepted, files: files, at: time.Date(2026, 9, 1, 10, 1, 0, 0, time.UTC)}
+	fixture.repo.canonical, fixture.repo.accepted = inserted, inserted
+	dependencies := fixture.dependencies()
+	reads := dispatchcore.ProofAdmissionReads{
+		ResolveEndpoint: dependencies.endpoint,
+		ResolveMachine:  dependencies.machine,
+		Receipt: dispatchcore.ReceiptAdmissionSource{
+			AcceptedLedgerTip: func(root string) (string, bool, error) {
+				fixture.facts.checkRoot(root)
+				return fixture.repo.accepted, true, nil
+			},
+			TopLevel: func(root string) (string, error) { fixture.facts.checkRoot(root); return root, nil },
+			FileAt: func(root, tip, path string) ([]byte, bool, error) {
+				fixture.facts.checkRoot(root)
+				data, ok := fixture.repo.commit(tip).files[path]
+				return data, ok, nil
+			},
+		},
+	}
+	if _, err := dispatchcore.ResolveGoalBindingWithReads(root, "standing-validation", time.Date(2026, 9, 1, 10, 1, 0, 0, time.UTC), reads); err == nil || !strings.Contains(err.Error(), "classify the goal first") {
 		t.Fatalf("delegate accepted a hand-written tierless goal after TierLaw: %v", err)
 	}
 }
@@ -1423,8 +1440,8 @@ func TestGoalResumeTemporaryPathConfirmsAndRecordsWords(t *testing.T) {
 }
 
 func TestGoalApproveAndUnapproveTemporarySurfacesRecordProofs(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-01T10:00:00Z")
+	fixture := newObligationCommandFixture(t)
+	root := fixture.root()
 	approveArgs := []string{
 		"--root", root, "--id", "standing-validation", "--by", "Wido", "--lineage", "m1",
 		"--temporary-human-word", "Wido authorizes this goal approval", "--review-by", "2026-09-06",
@@ -1432,15 +1449,17 @@ func TestGoalApproveAndUnapproveTemporarySurfacesRecordProofs(t *testing.T) {
 	var approveOut string
 	approveErr, approveCode := captureStderr(t, func() int {
 		var code int
-		approveOut, code = captureStdout(t, func() int { return runGoalApproveWithAuthority(approveArgs, fixedTemporaryGoalAuthority) })
+		approveOut, code = captureStdout(t, func() int {
+			return runGoalApproveWithInputs(approveArgs, fixedTemporaryGoalAuthority, fixture.commandNow, fixture.dependencies(), nil)
+		})
 		return code
 	})
 	if approveCode != 0 || !strings.Contains(approveOut, `"outcome":"confirmed"`) || !strings.Contains(approveOut, "TEMPORARY authority") {
 		t.Fatalf("goal approve temporary surface failed: code=%d stdout=%q stderr=%q", approveCode, approveOut, approveErr)
 	}
 
-	tip := goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
-	rendered := goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	_, acceptedApproval := fixture.acceptedGoal()
+	rendered := string(acceptedApproval)
 	if !strings.Contains(rendered, "authority=relayed") || !strings.Contains(rendered, "reviewBy=2026-09-06") {
 		t.Fatalf("goal approve did not publish its relayed record:\n%s", rendered)
 	}
@@ -1452,17 +1471,20 @@ func TestGoalApproveAndUnapproveTemporarySurfacesRecordProofs(t *testing.T) {
 	var unapproveOut string
 	unapproveErr, unapproveCode := captureStderr(t, func() int {
 		var code int
-		unapproveOut, code = captureStdout(t, func() int { return runGoalUnapproveWithAuthority(unapproveArgs, fixedTemporaryGoalAuthority) })
+		unapproveOut, code = captureStdout(t, func() int {
+			return runGoalUnapproveWithInputs(unapproveArgs, fixedTemporaryGoalAuthority, fixture.commandNow, fixture.dependencies())
+		})
 		return code
 	})
 	if unapproveCode != 0 || !strings.Contains(unapproveOut, `"outcome":"confirmed"`) {
 		t.Fatalf("goal unapprove temporary surface failed: code=%d stdout=%q stderr=%q", unapproveCode, unapproveOut, unapproveErr)
 	}
-	tip = goalSyncMutationGit(t, root, "rev-parse", "--verify", goal.AcceptedRef)
-	rendered = goalSyncMutationGit(t, root, "cat-file", "-p", tip+":plans/goals/standing-validation.md")
+	_, acceptedWithdrawal := fixture.acceptedGoal()
+	rendered = string(acceptedWithdrawal)
 	if !strings.Contains(rendered, "State: parked") || strings.Contains(rendered, "- Approved:") || strings.Contains(rendered, "- Budget:") {
 		t.Fatalf("goal unapprove did not park the claim and clear execution authority:\n%s", rendered)
 	}
+	fixture.expectTransactions(2, 0)
 
 	matches, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "authority", "proofs", "*.json"))
 	if err != nil || len(matches) != 2 {
@@ -1690,19 +1712,13 @@ func TestGoalSetObligationDoesNotRecordProofForRejectedMutation(t *testing.T) {
 	}
 }
 
-func twoMachineEnrollmentFixture(t *testing.T) (string, string) {
+func twoMachineEnrollmentFixture(t *testing.T) (*obligationCommandFixture, *obligationCommandFixture) {
 	t.Helper()
-	base := t.TempDir()
-	origin := filepath.Join(base, "origin.git")
-	goalSyncMutationGit(t, base, "init", "-q", "--bare", "-b", "main", origin)
-	seed := filepath.Join(base, "seed")
-	goalSyncMutationGit(t, base, "clone", "-q", origin, seed)
-	goalSyncMutationGit(t, seed, "config", "user.name", "enrollment-fixture")
-	goalSyncMutationGit(t, seed, "config", "user.email", "enrollment-fixture@example.invalid")
-
+	machineA, machineB := newObligationCommandFixture(t), newObligationCommandFixture(t)
 	approvalAt := "2026-09-01T08:00:00Z"
 	approvalOpid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAX", "mac-a", "enrollment-fixture")
 	budget := goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2, ReviewRoundLimit: 3}
+	risk := goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The relayed approval governs a tier-three goal."}
 	rootRecord := &goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncRemote,
 		MigrationEpoch: "2026-09-01T07:00:00Z", ManifestDigest: strings.Repeat("ab", 32), MigrationMode: "manifest", Revision: 2,
@@ -1714,10 +1730,10 @@ func twoMachineEnrollmentFixture(t *testing.T) (string, string) {
 	}
 	file := &goal.GoalFile{
 		Id: "relayed-waiting", State: goal.StateApproved, Tier: 3, Intent: "Run only while relayed authority remains valid.",
-		Origin: goal.OriginMain, NextStep: "Claim it.", OpenedAt: "2026-09-01T07:30:00Z", Revision: 2, Budget: &budget,
+		Origin: goal.OriginMain, NextStep: "Claim it.", OpenedAt: "2026-09-01T07:30:00Z", Revision: 2, Budget: &budget, Risk: &risk,
 		Approved: &goal.ApprovalRecord{
 			By: "human:Wido", At: approvalAt, Revision: 2, Opid: approvalOpid,
-			Authority: goal.ApprovalAuthorityRelayed, Digest: goal.ApprovalDigest("Run only while relayed authority remains valid.", 3, budget), ReviewBy: "2026-09-06",
+			Authority: goal.ApprovalAuthorityRelayed, Digest: goal.ApprovalDigest("Run only while relayed authority remains valid.", 3, budget, &risk), ReviewBy: "2026-09-06",
 		},
 		History: []goal.HistoryLine{
 			{At: "2026-09-01T07:30:00Z", Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAY", "mac-a", "enrollment-fixture"), Verb: "open", Actor: "mac-a+enrollment-fixture", Targets: []string{"relayed-waiting"}, Keep: -1},
@@ -1726,45 +1742,51 @@ func twoMachineEnrollmentFixture(t *testing.T) (string, string) {
 				TemporaryHumanWord: "Wido authorizes this relayed goal"},
 		},
 	}
-	for path, data := range map[string][]byte{
-		filepath.Join(seed, "metasystem.conf"):                          []byte("metasystem.runtimes=fake\n"),
-		filepath.Join(seed, "plans", "goals", "backlog.md"):             goal.RenderRoot(rootRecord),
-		filepath.Join(seed, "plans", "goals", "relayed-waiting.md"):     goal.RenderFile(file),
-		filepath.Join(seed, "scripts", "agents", "pre-commit-guard.sh"): []byte("#!/bin/sh\nexit 0\n"),
-		filepath.Join(seed, "scripts", "agents", "adapters", "fake.sh"): []byte("#!/bin/sh\n[ \"$1\" = signature ] && printf '%s\\n' 'match never-an-attended-human-shell'\n"),
-	} {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
+	for _, fixture := range []*obligationCommandFixture{machineA, machineB} {
+		files := obligationFilesCopy(fixture.repo.commit(fixture.repo.accepted).files)
+		delete(files, "plans/goals/standing-validation.md")
+		files["plans/goals/backlog.md"] = goal.RenderRoot(rootRecord)
+		files["plans/goals/relayed-waiting.md"] = goal.RenderFile(file)
+		for path, data := range files {
+			full := filepath.Join(fixture.root(), filepath.FromSlash(path))
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
-		mode := os.FileMode(0o644)
-		if strings.HasSuffix(path, ".sh") {
-			mode = 0o755
-		}
-		if err := testexec.WriteFile(path, data, mode); err != nil {
-			t.Fatal(err)
-		}
+		initial := fixture.repo.accepted
+		fixture.repo.commits[initial] = obligationCommit{files: files, at: time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)}
 	}
-	goalSyncMutationGit(t, seed, "add", "metasystem.conf", "plans/goals", "scripts/agents")
-	goalSyncMutationGit(t, seed, "commit", "-q", "-m", "seed fleet enrollment fixture")
-	goalSyncMutationGit(t, seed, "push", "-q", "origin", "main")
-
-	clones := []string{filepath.Join(base, "machine-a"), filepath.Join(base, "machine-b")}
-	for index, clone := range clones {
-		goalSyncMutationGit(t, base, "clone", "-q", origin, clone)
-		goalSyncMutationGit(t, clone, "config", "user.name", "enrollment-fixture")
-		goalSyncMutationGit(t, clone, "config", "user.email", "enrollment-fixture@example.invalid")
-		goalSyncMutationGit(t, clone, "config", "metasystem.goal.machine", []string{"mac-a", "mac-b"}[index])
-		goalSyncMutationGit(t, clone, "config", "goal.sync-remote", "origin")
-		goalSyncMutationGit(t, clone, "config", "goal.sync-branch", "refs/heads/main")
-		goalSyncMutationGit(t, clone, "update-ref", goal.AcceptedRef, "origin/main")
-	}
-	return clones[0], clones[1]
+	return machineA, machineB
 }
 
-func captureEnrollTerminalOutput(t *testing.T, args []string, enroll goalTerminalEnroller) (string, string, int) {
+func enrollmentDependencies(fixture *obligationCommandFixture, machine string, reader *sessionStopCommandAuthorityReader) syncRequestDependencies {
+	dependencies := fixture.dependencies()
+	endpoint := dependencies.endpoint
+	dependencies.endpoint = func(root string) (goal.Endpoint, error) {
+		e, err := endpoint(root)
+		e.Remote = "origin"
+		return e, err
+	}
+	dependencies.machine = func(root string) (string, error) {
+		fixture.facts.checkRoot(root)
+		return machine, nil
+	}
+	dependencies.ownerLineage = func() string { return "" }
+	if reader != nil {
+		dependencies.proveHuman = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
+			return humanauthority.Prove(root, reader.pid, *reader, now)
+		}
+	}
+	return dependencies
+}
+
+func captureEnrollTerminalOutput(t *testing.T, args []string, enroll goalTerminalEnroller, now func(string) (time.Time, error), dependencies syncRequestDependencies) (string, string, int) {
 	t.Helper()
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalEnrollTerminalWith(args, enroll)
+		return runGoalEnrollTerminalWithDependencies(args, enroll, now, dependencies)
 	})
 	return stdout, stderr, code
 }
@@ -1772,6 +1794,7 @@ func captureEnrollTerminalOutput(t *testing.T, args []string, enroll goalTermina
 func TestGoalEnrollTerminalKeepsLiteralTerminalActor(t *testing.T) {
 	t.Parallel()
 	machine, _ := twoMachineEnrollmentFixture(t)
+	root := machine.root()
 	enrolledAt := time.Date(2026, 9, 2, 7, 30, 0, 0, time.UTC)
 	enroll := func(_ string, _ int64, _ humanauthority.Reader, human string, _ time.Time) (humanauthority.Enrollment, error) {
 		if human != "NamedEnroller" {
@@ -1781,12 +1804,12 @@ func TestGoalEnrollTerminalKeepsLiteralTerminalActor(t *testing.T) {
 	}
 
 	stdout, stderr, code := captureEnrollTerminalOutput(t, []string{
-		"--root", machine, "--lineage", "enrollment-fixture", "--by", "NamedEnroller",
-	}, enroll)
+		"--root", root, "--lineage", "enrollment-fixture", "--by", "NamedEnroller",
+	}, enroll, func(string) (time.Time, error) { return enrolledAt, nil }, enrollmentDependencies(machine, "mac-a", nil))
 	if code != 0 || stderr != "" {
 		t.Fatalf("terminal enrollment failed: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	endpoint, err := goal.ResolveEndpoint(machine)
+	endpoint, err := enrollmentDependencies(machine, "mac-a", nil).endpoint(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1802,25 +1825,26 @@ func TestGoalEnrollTerminalKeepsLiteralTerminalActor(t *testing.T) {
 
 func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T) {
 	machineA, machineB := twoMachineEnrollmentFixture(t)
+	rootA, rootB := machineA.root(), machineB.root()
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
 	firstAt := time.Date(2026, 9, 2, 8, 0, 0, 0, time.UTC)
 	secondAt := firstAt.Add(time.Hour)
-	times := map[string]time.Time{machineA: firstAt, machineB: secondAt}
+	times := map[string]time.Time{rootA: firstAt, rootB: secondAt}
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("probe fixture process: %s: %v", state, err)
 	}
 	reader := sessionStopCommandAuthorityReader{pid: exact.Pid, exact: exact}
-	originalProver := proveSyncReqHumanAuthority
-	proveSyncReqHumanAuthority = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Prove(root, exact.Pid, reader, now)
-	}
-	t.Cleanup(func() { proveSyncReqHumanAuthority = originalProver })
+	goalSyncTerminalReader(t, rootA, "tty-session-stop")
+	goalSyncTerminalReader(t, rootB, "tty-session-stop")
 	enroll := func(root string, _ int64, _ humanauthority.Reader, human string, _ time.Time) (humanauthority.Enrollment, error) {
 		return humanauthority.Enroll(root, exact.Pid, reader, human, times[root])
 	}
+	clock := func(root string) (time.Time, error) { return times[root], nil }
+	dependenciesA := enrollmentDependencies(machineA, "mac-a", &reader)
+	dependenciesB := enrollmentDependencies(machineB, "mac-b", &reader)
 
-	stdoutA, stderrA, codeA := captureEnrollTerminalOutput(t, []string{"--root", machineA, "--by", "Wido"}, enroll)
+	stdoutA, stderrA, codeA := captureEnrollTerminalOutput(t, []string{"--root", rootA, "--by", "Wido"}, enroll, clock, dependenciesA)
 	if codeA != 0 || stderrA != "" {
 		t.Fatalf("first machine enrollment failed: code=%d stdout=%q stderr=%q", codeA, stdoutA, stderrA)
 	}
@@ -1829,7 +1853,15 @@ func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T)
 		t.Fatalf("first machine did not print its local enrollment: enrollment=%+v err=%v stdout=%q", printedA, err, stdoutA)
 	}
 
-	endpointB, err := goal.ResolveEndpoint(machineB)
+	// The remote publishes immutable commit data and its canonical pointer;
+	// this machine must still accept that observation for itself.
+	published := machineA.repo.canonical
+	commit := machineA.repo.commit(published)
+	commit.files = obligationFilesCopy(commit.files)
+	machineB.repo.commits[published] = commit
+	machineB.repo.canonical = published
+	machineB.repo.serial = machineA.repo.serial
+	endpointB, err := dependenciesB.endpoint(rootB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1844,7 +1876,7 @@ func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T)
 		t.Fatalf("the first machine's enrollment did not end relayed approval fleet-wide: result=%+v err=%v", claim, err)
 	}
 
-	stdoutB, stderrB, codeB := captureEnrollTerminalOutput(t, []string{"--root", machineB, "--by", "Wido"}, enroll)
+	stdoutB, stderrB, codeB := captureEnrollTerminalOutput(t, []string{"--root", rootB, "--by", "Wido"}, enroll, clock, dependenciesB)
 	if codeB != 0 || stderrB != "" {
 		t.Fatalf("second machine enrollment failed: code=%d stdout=%q stderr=%q", codeB, stdoutB, stderrB)
 	}
@@ -1852,7 +1884,7 @@ func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T)
 	if err := json.Unmarshal([]byte(stdoutB), &printedB); err != nil || printedB.EnrolledAt != secondAt || printedB.Generation != 1 {
 		t.Fatalf("second machine did not print its local enrollment: enrollment=%+v err=%v stdout=%q", printedB, err, stdoutB)
 	}
-	for root, want := range map[string]time.Time{machineA: firstAt, machineB: secondAt} {
+	for root, want := range map[string]time.Time{rootA: firstAt, rootB: secondAt} {
 		local, err := humanauthority.ReadEnrollment(root)
 		if err != nil || local.EnrolledAt != want || local.Generation != 1 {
 			t.Fatalf("machine %s local enrollment=%+v, want at=%s generation=1: %v", root, local, want, err)
@@ -1861,12 +1893,19 @@ func TestGoalEnrollTerminalSucceedsOnEveryMachineAndFirstEndsRelay(t *testing.T)
 		if entriesErr != nil {
 			t.Fatal(entriesErr)
 		}
+		wantMachine := "mac-a"
+		if root == rootB {
+			wantMachine = "mac-b"
+		}
 		foundDerivedLineage := false
 		for _, entry := range entries {
 			if entry.Intent.Verb != "enroll-terminal" {
 				continue
 			}
 			foundDerivedLineage = true
+			if entry.Machine != wantMachine {
+				t.Fatalf("machine %s enrollment journal machine = %q, want %q: entry=%+v", root, entry.Machine, wantMachine, entry)
+			}
 			if entry.Lineage != "terminal-tty-session-stop-1" {
 				t.Fatalf("machine %s enrollment journal lineage = %q, want terminal-tty-session-stop-1", root, entry.Lineage)
 			}

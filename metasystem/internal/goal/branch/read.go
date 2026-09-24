@@ -79,10 +79,6 @@ func gitCommonDir(repo string) (string, error) {
 	return filepath.Clean(path), nil
 }
 
-func branchReadPaths(repo, goal, commit string) (common, record, brief string, err error) {
-	return branchReadPathsWithRepository(defaultBranchReadRepository{}, repo, goal, commit)
-}
-
 func branchReadPathsWithRepository(repository BranchReadRepository, repo, goal, commit string) (common, record, brief string, err error) {
 	common, err = repository.CommonDir(repo)
 	if err != nil {
@@ -230,10 +226,6 @@ func branchReadID(prefix string) (string, error) {
 	return prefix + "-" + time.Now().UTC().Format("20060102t150405z") + "-" + hex.EncodeToString(raw), nil
 }
 
-func branchUnit(repo, endpoint, tip, goal, commit string) (KindInfo, error) {
-	return branchUnitWithRepository(defaultBranchReadRepository{}, repo, endpoint, tip, goal, commit)
-}
-
 func branchUnitWithRepository(repository BranchReadRepository, repo, endpoint, tip, goal, commit string) (KindInfo, error) {
 	commits, err := repository.Range(repo, endpoint, tip, goal)
 	if err != nil {
@@ -245,10 +237,6 @@ func branchUnitWithRepository(repository BranchReadRepository, repo, endpoint, t
 		}
 	}
 	return KindInfo{}, operationRefusal(ReadInvalidCode, "commit %s is not a Goal-Unit commit of goal %s's branch", commit, goal)
-}
-
-func branchReadBrief(repo, endpoint, goal, commit string, supplied []byte) (string, error) {
-	return branchReadBriefWithRepository(defaultBranchReadRepository{}, repo, endpoint, goal, commit, supplied)
 }
 
 func branchReadBriefWithRepository(repository BranchReadRepository, repo, endpoint, goal, commit string, supplied []byte) (string, error) {
@@ -313,10 +301,6 @@ func branchReadJobState(repo, job string) (string, error) {
 		return "", fmt.Errorf("recorded reader root %s is not a code-critic root", job)
 	}
 	return lens.Status(), nil
-}
-
-func criticTestChanges(repo, commit, job string) ([]TestChange, error) {
-	return criticTestChangesWithRepository(defaultBranchReadRepository{}, repo, commit, job)
 }
 
 func criticTestChangesWithRepository(repository BranchReadRepository, repo, commit, job string) ([]TestChange, error) {

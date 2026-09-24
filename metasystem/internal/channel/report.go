@@ -269,10 +269,6 @@ func oneSentence(s string) string {
 	return s
 }
 
-func landingLines(c ReportConfig, features map[string]string) []string {
-	return landingLinesWithReader(c, features, defaultLandingLogBytes)
-}
-
 func landingLinesWithReader(c ReportConfig, features map[string]string, readLog func(string, time.Time) ([]byte, error)) []string {
 	b, err := readLog(c.RepoRoot, c.WindowStart)
 	if err != nil {

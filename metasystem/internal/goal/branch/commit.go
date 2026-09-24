@@ -305,10 +305,6 @@ func validateCommitPaths(kind Kind, paths []string, goalID string) error {
 	return nil
 }
 
-func commitPrepared(req CommitRequest, subjectCommit string) (string, error) {
-	return commitStagedSubject(req, subjectCommit, gitCommitRepository())
-}
-
 func commitStaged(req CommitRequest, r commitRepository) (string, error) {
 	return commitStagedSubject(req, "", r)
 }
@@ -322,10 +318,6 @@ func commitStagedSubject(req CommitRequest, subjectCommit string, r commitReposi
 		return "", err
 	}
 	return r.commitPreparedState(req, subjectCommit, state)
-}
-
-func commitPreparedState(req CommitRequest, subjectCommit string, state commitBranchState) (string, error) {
-	return gitCommitRepository().commitPreparedState(req, subjectCommit, state)
 }
 
 func (r commitRepository) commitPreparedState(req CommitRequest, subjectCommit string, state commitBranchState) (string, error) {
@@ -399,20 +391,6 @@ func (r commitRepository) buildCommitOnto(req CommitRequest, state commitBranchS
 		return "", err
 	}
 	return newTip, nil
-}
-
-func nulNames(data []byte) map[string]bool {
-	names := map[string]bool{}
-	for _, item := range bytes.Split(data, []byte{0}) {
-		if len(item) != 0 {
-			names[string(item)] = true
-		}
-	}
-	return names
-}
-
-func checkoutInstallPreflight(req CommitRequest, newTip string) (string, string, error) {
-	return gitCommitRepository().checkoutInstallPreflight(req, newTip)
 }
 
 func (r commitRepository) checkoutInstallPreflight(req CommitRequest, newTip string) (string, string, error) {
@@ -497,10 +475,6 @@ func (r commitRepository) installCommitOnto(req CommitRequest, state commitBranc
 	return nil
 }
 
-func commitStagedOnto(req CommitRequest, state commitBranchState, subject, trailer string) (string, error) {
-	return gitCommitRepository().commitStagedOnto(req, state, subject, trailer)
-}
-
 func (r commitRepository) commitStagedOnto(req CommitRequest, state commitBranchState, subject, trailer string) (string, error) {
 	if state.adopt {
 		if err := r.adoptionCheckoutClean(req, state, nil); err != nil {
@@ -540,10 +514,6 @@ func treeWithoutPaths(repo, tree string, paths []string) (string, error) {
 	}
 	out, err := gitInputEnv(repo, env, nil, "write-tree")
 	return strings.TrimSpace(string(out)), err
-}
-
-func amendUnit(req CommitRequest, state commitBranchState) (string, error) {
-	return gitCommitRepository().amendUnit(req, state)
 }
 
 func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) (string, error) {

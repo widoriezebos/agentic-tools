@@ -2,7 +2,6 @@ package dispatch
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -48,63 +47,6 @@ func TestServingGoalResolvesAndRefuses(t *testing.T) {
 	}
 }
 
-func revisionBindingBed(t *testing.T, claimRevision uint64) string {
-	t.Helper()
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run := func(args ...string) {
-		t.Helper()
-		command := exec.Command("git", append([]string{"-C", root}, args...)...)
-		command.Env = []string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
-	}
-	run("init", "-q", "-b", "main")
-	run("config", "user.name", "fixture")
-	run("config", "user.email", "fixture@example.invalid")
-	run("config", "goal.sync-remote", "local")
-	run("config", "metasystem.goal.machine", "bed-m1")
-	write := func(relative string, data []byte) {
-		path := filepath.Join(root, relative)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("plans/goals/backlog.md", goal.RenderRoot(&goal.RootRecord{
-		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
-	}))
-	file := &goal.GoalFile{
-		Id: "bounded", State: goal.StateClaimed, Intent: "Bound the dispatch", Origin: goal.OriginMain,
-		NextStep: "Run the bounded work.", OpenedAt: "2026-08-28T08:00:00Z", Revision: 4,
-		Risk:    &goal.RiskRecord{Severity: 3, Novelty: 3, Exposure: 1, Accumulation: 1, Basis: "The fixture exercises an admitted tier-three goal."},
-		Claimed: &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-28T09:00:00Z", Revision: claimRevision},
-		History: []goal.HistoryLine{
-			{At: "2026-08-28T08:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAV-bed-m1-00000000", Verb: "open", Actor: "bed-m1+coordinator", Targets: []string{"bounded"}, Keep: -1},
-			{At: "2026-08-28T09:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAW-bed-m1-00000001", Verb: "claim", Actor: "bed-m1+coordinator", Targets: []string{"bounded"}, Keep: -1},
-			{At: "2026-08-28T09:30:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAX-bed-m1-00000002", Verb: "edit", Actor: "bed-m1+coordinator", Targets: []string{"bounded"}, Keep: -1},
-			{At: "2026-08-28T10:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAY-bed-m1-00000003", Verb: "edit", Actor: "bed-m1+coordinator", Targets: []string{"bounded"}, Keep: -1},
-		},
-	}
-	if claimRevision > 0 {
-		file.Budget = &goal.Budget{ElapsedLimit: "1d", AttemptLimit: 2, ReservedJobMinutesLimit: 60, ActiveJobLimit: 1, ReviewRoundLimit: 3}
-		file.StopCapability = &goal.StopCapability{
-			Generation: claimRevision, Revision: claimRevision, Machine: "bed-m1", ClaimEpoch: 7,
-		}
-	}
-	write("plans/goals/bounded.md", goal.RenderFile(file))
-	run("add", "plans/goals")
-	run("commit", "-q", "-m", "revision binding bed")
-	run("update-ref", goal.LocalLedgerBranch, "HEAD")
-	run("update-ref", goal.AcceptedRef, "HEAD")
-	return root
-}
-
 func TestResolveGoalRevisionUsesTheClaimBinding(t *testing.T) {
 	bed := newGoalAdmissionBed(t, 2)
 	revision, tier, err := bed.revision("bounded")
@@ -121,42 +63,6 @@ func TestResolveGoalRevisionUsesTheClaimBinding(t *testing.T) {
 	if _, _, err := contradictory.revision("bounded"); err == nil ||
 		!strings.Contains(err.Error(), "BUDGET_UNKNOWN record=plans/goals/bounded.md") {
 		t.Fatalf("a nonexistent claimed revision did not name its exact authoritative goal file: %v", err)
-	}
-}
-
-func commitRevisionBindingTierState(t *testing.T, root string, tier uint8, tierLaw string) {
-	t.Helper()
-	goalPath := filepath.Join(root, "plans", "goals", "bounded.md")
-	data, err := os.ReadFile(goalPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, problems := goal.ParseFile(data)
-	if len(problems) != 0 {
-		t.Fatalf("parse goal fixture: %v", problems)
-	}
-	file.Tier = tier
-	if err := os.WriteFile(goalPath, goal.RenderFile(file), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	rootPath := filepath.Join(root, "plans", "goals", "backlog.md")
-	data, err = os.ReadFile(rootPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rootRecord, rootProblems := goal.ParseRoot(data)
-	if len(rootProblems) != 0 {
-		t.Fatalf("parse root fixture: %v", rootProblems)
-	}
-	rootRecord.TierLaw = tierLaw
-	if err := os.WriteFile(rootPath, goal.RenderRoot(rootRecord), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "plans/goals"}, {"commit", "-q", "-m", "tier state"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		command := exec.Command("git", append([]string{"-C", root}, args...)...)
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
 	}
 }
 

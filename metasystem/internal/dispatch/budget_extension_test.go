@@ -4,7 +4,6 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,22 +32,6 @@ func requireProofReservationNotAdmissionRefused(t *testing.T, decision proofrun.
 	t.Helper()
 	if decision.Disposition == proofrun.DispositionAdmissionRefused {
 		t.Fatalf("proof reservation fixture was admission-refused: %+v", decision)
-	}
-}
-
-func commitExtensionReceipt(t *testing.T, root, content string) {
-	t.Helper()
-	path := filepath.Join(root, "memory", "receipts.log")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"add", "memory/receipts.log"}, {"commit", "-q", "-m", "extension receipt"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, output)
-		}
 	}
 }
 

@@ -273,22 +273,6 @@ func TestClassifySweepRecoverySkipsRowsAlreadyApplied(t *testing.T) {
 	}
 }
 
-func publishGoalFixtures(t *testing.T, root string, files ...*GoalFile) {
-	t.Helper()
-	changes := make([]Change, 0, len(files))
-	for _, file := range files {
-		changes = append(changes, Change{Path: livePath(file.Id), Content: RenderFile(file)})
-	}
-	result, err := Publish(endpointFor(root), PublishRequest{
-		Opid: "approval-fixture-" + files[0].Id, Machine: "mac-fixture", Lineage: "lin-fixture",
-		Intent: testIntentFor("migrate"), Message: "seed approval fixtures",
-		Mutate: func(string) ([]Change, error) { return changes, nil },
-	})
-	if err != nil || result.Outcome != OutcomeConfirmed {
-		t.Fatalf("publish approval fixtures: %+v %v", result, err)
-	}
-}
-
 func publishGoalFixturesForEndpoint(t *testing.T, endpoint Endpoint, files ...*GoalFile) {
 	t.Helper()
 	changes := make([]Change, 0, len(files))
