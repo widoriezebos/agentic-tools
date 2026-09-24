@@ -187,6 +187,15 @@ func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(
 }
 
 func runLandingTestReceiptWithDependencies(parent context.Context, resolveClock func(string) (func() time.Time, bool, error), raw func(gittree.RawRequest) gittree.RawResult, testRun func([]string) int, args []string) (status int) {
+	return runLandingTestReceiptWithInputs(parent, resolveClock, raw, testRun, args,
+		landing.PrepareTestReceipt, admitProofLaunch, landing.PublishCommittedReceiptAt, commitProofTerminal)
+}
+
+func runLandingTestReceiptWithInputs(parent context.Context, resolveClock func(string) (func() time.Time, bool, error), raw func(gittree.RawRequest) gittree.RawResult, testRun func([]string) int, args []string,
+	prepare func(string, string, string) (*landing.ReceiptPreparation, error),
+	admit func(proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error),
+	publish func(string, string, string, time.Time) (landing.TestReceipt, error),
+	terminal func(proofrun.CompletionContext, json.RawMessage) error) (status int) {
 	flags := flag.NewFlagSet("landing test-receipt", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "candidate project tree")
@@ -275,7 +284,7 @@ func runLandingTestReceiptWithDependencies(parent context.Context, resolveClock 
 		printJSON(receipt)
 		return 0
 	}
-	preparation, err := landing.PrepareTestReceipt(controlRoot, *tree, *command)
+	preparation, err := prepare(controlRoot, *tree, *command)
 	if err != nil {
 		return recordExit(err)
 	}
@@ -309,7 +318,7 @@ func runLandingTestReceiptWithDependencies(parent context.Context, resolveClock 
 	if err := os.MkdirAll(proofDir, 0o700); err != nil {
 		return recordExit(err)
 	}
-	attempt, decision, joined, err := admitProofLaunch(proofLaunchAdmission{ControlRoot: controlRoot,
+	attempt, decision, joined, err := admit(proofLaunchAdmission{ControlRoot: controlRoot,
 		ExecutionRoot: preparation.ExecutionRoot(), ConfPath: confPath, GoalID: *goalID, CapMin: *capMin,
 		RetryDecision: *retryDecision, ScopeClass: "full", CommandClass: "landing-test-receipt", Sections: expected,
 		ExpectedGoalRevision: *expectedGoalRevision, ExpectedAccountingRevision: *expectedAccountingRevision,
@@ -322,7 +331,7 @@ func runLandingTestReceiptWithDependencies(parent context.Context, resolveClock 
 	}
 	if decision.Disposition != proofrun.DispositionExecuted {
 		if decision.Disposition == proofrun.DispositionReusableSuccess {
-			if _, err := landing.PublishCommittedReceiptAt(controlRoot, decision.AttemptID, preparation.AcceptedIndexTree(), commandClock()); err != nil {
+			if _, err := publish(controlRoot, decision.AttemptID, preparation.AcceptedIndexTree(), commandClock()); err != nil {
 				return recordExit(err)
 			}
 		}
@@ -371,13 +380,13 @@ func runLandingTestReceiptWithDependencies(parent context.Context, resolveClock 
 				return nil, fmt.Errorf("canonical validator produced no authenticated coverage component")
 			}
 			return json.Marshal(receipt)
-		}, CommitTerminal: commitProofTerminal})
+		}, CommitTerminal: terminal})
 	status = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, status)
 	decision.ExitStatus = status
 	if status != 0 {
 		decision.Disposition = proofrun.DispositionFailed
 	} else {
-		receipt, publishErr := landing.PublishCommittedReceiptAt(controlRoot, attempt.AttemptID, preparation.AcceptedIndexTree(), commandClock())
+		receipt, publishErr := publish(controlRoot, attempt.AttemptID, preparation.AcceptedIndexTree(), commandClock())
 		if publishErr != nil {
 			fmt.Fprintln(os.Stderr, publishErr)
 			status = 1

@@ -154,6 +154,26 @@ func (c *observationCase) bindChain(patch []byte, reviewedTree string, certified
 	}
 }
 
+func (c *observationCase) expectChainClosureRefusal() {
+	c.fixture.t.Helper()
+	c.chain.expected = map[string]int{
+		"head": 1,
+		"diff:" + observeBaseTree + ":" + c.candidate: 1,
+	}
+}
+
+func (c *observationCase) expectChainReviewedMismatch(patch []byte, path string) {
+	c.fixture.t.Helper()
+	c.chain.expected = map[string]int{
+		"head": 2,
+		"diff:" + observeBaseTree + ":" + c.candidate:        1,
+		"apply:" + observeBaseTree + ":" + string(patch):     1,
+		"paths:" + observeBaseTree + ":" + chainExpectedTree: 1,
+		"entries:" + chainExpectedTree + ":" + path:          1,
+		"entries:" + c.chain.reviewedTree + ":" + path:       1,
+	}
+}
+
 func (c *observationCase) Apply(base string, patch []byte) (string, error) {
 	c.consumeExact("apply:" + base + ":" + string(patch))
 	if base != c.chain.applyBase || !bytes.Equal(patch, c.chain.applyPatch) {

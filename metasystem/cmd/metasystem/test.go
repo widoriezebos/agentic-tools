@@ -1961,6 +1961,10 @@ func testingCandidateManifest(workspace gittree.Workspace, candidateTree string)
 }
 
 func runTestWorker(args []string) int {
+	return runTestWorkerWithCandidateOpener(args, nil)
+}
+
+func runTestWorkerWithCandidateOpener(args []string, opener func(string, string) (proofrun.CandidateWorkspace, error)) int {
 	flags := flag.NewFlagSet("test worker", flag.ContinueOnError)
 	packet := flags.String("packet", "", "private testing request")
 	packetDigest := flags.String("packet-sha256", "", "SHA-256 identity of the immutable testing request")
@@ -2052,6 +2056,9 @@ func runTestWorker(args []string) int {
 	if err := runFrozenPolicyProtectionCorpus(workerContext, request); err != nil {
 		fmt.Fprintln(os.Stderr, "metasystem test worker:", err)
 		return 1
+	}
+	if opener != nil {
+		request.WithCandidateOpener(opener)
 	}
 	result, status, runErr := proofrun.RunTestPlan(workerContext, request)
 	response := result

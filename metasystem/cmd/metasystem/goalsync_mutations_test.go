@@ -2366,17 +2366,6 @@ func TestHCL54CarryByRejectsStoredActorPrefix(t *testing.T) {
 	}
 }
 
-func captureSetObligationOutputWithAuthority(t *testing.T, args []string, prove goalAuthorityProver) (string, string, int) {
-	t.Helper()
-	var stdout string
-	stderr, code := captureStderr(t, func() int {
-		var innerCode int
-		stdout, innerCode = captureStdout(t, func() int { return runGoalSetObligationWithAuthority(args, prove) })
-		return innerCode
-	})
-	return stdout, stderr, code
-}
-
 // fixedTemporaryGoalAuthority is compiled only into this package's test
 // binary. It supplies an already-granted proof to the direct worker seam so
 // historical/transaction tests remain meaningful after R-32-m1 expires;

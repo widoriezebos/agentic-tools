@@ -124,6 +124,15 @@ func NewConcludingRunStore(root string, currentEpoch func() (*int64, bool)) *run
 	return newConcludingRunStoreWithReads(root, currentEpoch, concreteGoalAdmissionReads())
 }
 
+// NewConcludingRunStoreWithReads binds concluding observations to one validated
+// source of accepted goal and receipt facts.
+func NewConcludingRunStoreWithReads(root string, currentEpoch func() (*int64, bool), reads ProofAdmissionReads) (*run.Store, error) {
+	if err := reads.Validate(); err != nil {
+		return nil, err
+	}
+	return newConcludingRunStoreWithReads(root, currentEpoch, reads.private()), nil
+}
+
 func newConcludingRunStoreWithReads(root string, currentEpoch func() (*int64, bool), reads goalAdmissionReads) *run.Store {
 	return &run.Store{Root: root, CurrentEpoch: currentEpoch,
 		AdmitGoverned: func(request run.GovernedAdmissionRequest) (run.GovernedAdmissionResult, error) {

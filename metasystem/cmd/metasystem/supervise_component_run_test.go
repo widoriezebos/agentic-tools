@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
@@ -543,9 +544,28 @@ func TestLandingOwnerComponentReleaseLeavesNoCadenceChild(t *testing.T) {
 }
 
 func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
-	root := t.TempDir()
-	seedClaimLaunchGoal(t, root)
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.governance.correlation-policy=C\n"), 0o644); err != nil {
+	deny, err := filepath.Abs(filepath.Join("..", "..", "internal", "testgit", "testdata", "deny-bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", deny+string(os.PathListSeparator)+os.Getenv("PATH"))
+	deniedLog := filepath.Join(t.TempDir(), "git-denied.log")
+	t.Setenv("METASYSTEM_TEST_GIT_DENIED_LOG", deniedLog)
+	t.Cleanup(func() {
+		calls, err := os.ReadFile(deniedLog)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if len(calls) != 0 {
+			t.Fatalf("run pass test invoked physical Git: %s", calls)
+		}
+	})
+	now := time.Now().UTC()
+	repository := newProofAdmissionRepositoryFixture(t, now, false)
+	root := repository.root
+	seedClaimLaunchGoalFiles(t, root)
+	conf := []byte("metasystem.governance.correlation-policy=C\n")
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), conf, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	goalPath := filepath.Join(root, "plans", "goals", "goal-a.md")
@@ -557,6 +577,15 @@ func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 	if len(problems) != 0 {
 		t.Fatalf("parse fixture goal: %v", problems)
 	}
+	backlog, err := os.ReadFile(filepath.Join(root, "plans", "goals", "backlog.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository.seed(map[string][]byte{
+		"metasystem/metasystem.conf":        conf,
+		"metasystem/plans/goals/backlog.md": backlog,
+		"metasystem/plans/goals/goal-a.md":  data,
+	})
 	policy, err := behaviorsurface.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -580,9 +609,18 @@ func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 	if err := os.WriteFile(goalPath, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	goalSyncMutationGit(t, root, "add", "metasystem.conf", "plans/goals/goal-a.md")
-	goalSyncMutationGit(t, root, "commit", "-qm", "enforce run-pass obligation")
-	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+	accepted := repository.amend(t, "goal-a", func(accepted *goal.GoalFile) {
+		accepted.Revision = file.Revision
+		accepted.Obligation = file.Obligation
+	})
+	acceptedBytes := repository.rawFile(t, "metasystem/plans/goals/goal-a.md")
+	localBytes, err := os.ReadFile(goalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted.Obligation == nil || accepted.Obligation.State != goal.ObligationEnforced || string(acceptedBytes) != string(localBytes) {
+		t.Fatal("accepted goal-a bytes differ from the enforced local obligation")
+	}
 	started := time.Now().UTC().Add(-3 * time.Minute)
 	weightGeneration := uint64(0)
 	store := &run.Store{Root: root, Now: func() time.Time { return started },
@@ -601,7 +639,11 @@ func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 		Display: "governed pass", Log: "artifacts/governed-pass.log", GoalId: "goal-a", ObligationRevision: file.Revision, StandingShared: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := runPass(root, identity.Ref{Pid: 71, StartedAtSec: 72}); err != nil {
+	concludingStore, err := dispatchcore.NewConcludingRunStoreWithReads(root, nil, repository.reads())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runPassWithStore(root, identity.Ref{Pid: 71, StartedAtSec: 72}, concludingStore); err != nil {
 		t.Fatal(err)
 	}
 	concluded, err := store.Read("governed-pass")
@@ -609,6 +651,18 @@ func TestRunPassCarriesGovernedSpendProjection(t *testing.T) {
 	if err != nil || stateErr != nil || concluded == nil || concluded.Status != run.StatusLaunchFailed || !found || len(state.Attempts) != 1 ||
 		concluded.Governed.Exhausted || concluded.Governed.ExhaustionReason != "" {
 		t.Fatalf("watcher run pass did not durably carry its projection: run=%+v state=%+v found=%t err=%v stateErr=%v", concluded, state, found, err, stateErr)
+	}
+	passBytes, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "supervision", "runs-pass.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pass struct {
+		ScannedRuns []struct {
+			ID string `json:"id"`
+		} `json:"scannedRuns"`
+	}
+	if err := json.Unmarshal(passBytes, &pass); err != nil || len(pass.ScannedRuns) != 1 || pass.ScannedRuns[0].ID != "governed-pass" {
+		t.Fatalf("run pass attestation=%s error=%v", passBytes, err)
 	}
 }
 

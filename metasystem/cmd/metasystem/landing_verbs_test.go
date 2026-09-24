@@ -1090,7 +1090,10 @@ func TestLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 	}
 	t.Parallel()
 	command := exec.Command(os.Args[0], "-test.run=^TestLandingTestReceiptPublicSemanticDeadlineBoundaries$", "-test.v")
-	command.Env = append(receiptCanaryEnvironmentBase(os.Environ()), "GO_WANT_LANDING_RECEIPT_DEADLINE_CHILD=1")
+	command.Env = append(receiptCanaryEnvironmentBase(os.Environ()),
+		"GO_WANT_LANDING_RECEIPT_DEADLINE_CHILD=1",
+		"METASYSTEM_WAIT_BINARY="+os.Getenv("METASYSTEM_WAIT_BINARY"),
+		"METASYSTEM_WAIT_BINARY_SOURCE="+os.Getenv("METASYSTEM_WAIT_BINARY"))
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("owned public deadline fixture: %v\n%s", err, output)
@@ -1102,32 +1105,34 @@ func TestLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 
 func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 	for _, testCase := range []struct {
-		name          string
-		advance       time.Duration
-		cancelParent  bool
-		wantLaunches  int
-		wantExit      int
-		wantReason    string
-		refusesExpiry bool
+		name         string
+		advance      time.Duration
+		cancelParent bool
+		wantLaunches int
+		wantExit     int
+		wantReason   string
 	}{
 		{name: "deadline-minus-one-nanosecond", advance: -time.Nanosecond, wantLaunches: 1},
-		{name: "exact-deadline", wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time", refusesExpiry: true},
-		{name: "after-deadline", advance: time.Nanosecond, wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time", refusesExpiry: true},
+		{name: "exact-deadline", wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time"},
+		{name: "after-deadline", advance: time.Nanosecond, wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time"},
 		{name: "outer-cancellation", advance: -time.Second, cancelParent: true, wantExit: proofrun.ExitAdmissionRefused, wantReason: context.Canceled.Error()},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			startedAt := time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)
 			t.Setenv(goalNowEnvironment, startedAt.Format(time.RFC3339Nano))
-			root, _ := proofExtensionGoalFixtureAt(t, startedAt)
+			repository := newProofAdmissionRepositoryFixture(t, startedAt, true)
+			root := repository.root
 			root, err := filepath.EvalSymlinks(root)
 			if err != nil {
 				t.Fatal(err)
 			}
-			confPath := filepath.Join(root, "metasystem.conf")
-			configuration, err := os.ReadFile(confPath)
+			repository.root = root
+			repository.top, err = filepath.EvalSymlinks(repository.top)
 			if err != nil {
 				t.Fatal(err)
 			}
+			confPath := filepath.Join(root, "metasystem.conf")
+			configuration := repository.rawFile(t, "metasystem/metasystem.conf")
 			configuration = bytes.Replace(configuration,
 				[]byte(proofrun.AdmissionCapKey+"=4"), []byte(proofrun.AdmissionCapKey+"=1"), 1)
 			if !bytes.Contains(configuration, []byte(proofrun.AdmissionCapKey+"=1")) {
@@ -1136,23 +1141,25 @@ func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 			if err := os.WriteFile(confPath, configuration, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			writeReceiptFixture(t, root, ".gitignore", "artifacts/\n")
-			runReceiptGit(t, root, "add", "metasystem.conf", ".gitignore")
-			runReceiptGit(t, root, "commit", "-qm", "cap-one public deadline fixture")
-			runReceiptGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
-			runReceiptGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+			repository.seed(map[string][]byte{"metasystem/metasystem.conf": configuration})
+			fixture := newDeadlineReceiptTreeFixture(t, repository)
 			announceProofFixtureHolder(t, root)
 
 			admissionDir := filepath.Join(t.TempDir(), "host-admission")
 			t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
 			t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
+			processes := filepath.Join(t.TempDir(), "processes.json")
+			if err := os.WriteFile(processes, []byte("[]\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processes)
 			holder, err := proofrun.AcquireHostResources(context.Background(), root, confPath, "heavy", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = holder.Close() })
 
-			tree := runReceiptGit(t, root, "write-tree")
+			tree := fixture.tree
 			launchCount := filepath.Join(t.TempDir(), "native-launches")
 			t.Setenv("LANDING_DEADLINE_LAUNCH_COUNT", launchCount)
 			resultPath := filepath.Join(t.TempDir(), "launch-result.json")
@@ -1179,7 +1186,31 @@ func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 				"--command", "printf 'launch\\n' >> " + strconv.Quote(launchCount),
 				"--goal", "standing-validation", "--cap-min", "1", "--result", resultPath}
 			code, _, problem := captureChannelOutput(t, func() int {
-				return runLandingTestReceiptWithContext(parent, resolveClock, args)
+				reads := repository.reads()
+				return runLandingTestReceiptWithInputs(parent, resolveClock, nil, landingReceiptTestRun, args,
+					func(receiptRoot, receiptTree, command string) (*landing.ReceiptPreparation, error) {
+						return landing.PrepareTestReceiptWithWorkspace(receiptRoot, receiptTree, command, fixture.workspace(),
+							func(freezeRoot, freezeTree string) (proofrun.FrozenExport, error) {
+								if freezeRoot != root || freezeTree != tree {
+									t.Fatalf("freeze coordinates = %q %q", freezeRoot, freezeTree)
+								}
+								frozen, err := proofrun.Freeze(freezeRoot)
+								if err == nil {
+									fixture.frozen = frozen.Root
+									fixture.checkFiles(frozen.Root)
+								}
+								return frozen, err
+							})
+					},
+					func(request proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+						return admitCandidateProofLaunchWithRepository(t, repository, request)
+					},
+					func(receiptRoot, attemptID, receiptTree string, now time.Time) (landing.TestReceipt, error) {
+						return landing.PublishCommittedReceiptAtWithWorkspace(receiptRoot, attemptID, receiptTree, now, fixture.workspace())
+					},
+					func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
+						return commitProofTerminalWithReasonAndReads(completion, receipt, nil, "proof launcher completed", &reads)
+					})
 			})
 			if code != testCase.wantExit || observedWait != 1 || !strings.Contains(problem, testCase.wantReason) {
 				t.Fatalf("public boundary exit=%d want=%d waits=%d stderr=%q", code, testCase.wantExit, observedWait, problem)
@@ -1204,8 +1235,12 @@ func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 			if !strings.Contains(launchResult.Reason, testCase.wantReason) {
 				t.Fatalf("structured refusal reason=%q want substring %q", launchResult.Reason, testCase.wantReason)
 			}
-			if testCase.refusesExpiry && launchResult.Disposition != proofrun.DispositionAdmissionRefused {
-				t.Fatalf("semantic expiry disposition=%+v", launchResult)
+			wantDisposition := proofrun.DispositionExecuted
+			if testCase.wantLaunches == 0 {
+				wantDisposition = proofrun.DispositionAdmissionRefused
+			}
+			if launchResult.Disposition != wantDisposition {
+				t.Fatalf("public boundary disposition=%+v want=%s", launchResult, wantDisposition)
 			}
 			attempts, err := proofrun.ReadAttempts(root)
 			if err != nil || len(attempts) != 1 {
@@ -1223,8 +1258,13 @@ func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
 				if _, err := os.Stat(landing.TestReceiptPath(root, tree)); err != nil {
 					t.Fatalf("accepted boundary did not publish receipt: %v", err)
 				}
-			} else if attempt.Terminal.Result == proofrun.TerminalSuccess || len(proofrun.CommittedDeliveryReceipt(attempt)) != 0 {
-				t.Fatalf("refused boundary published success: %+v", attempt)
+			} else {
+				if attempt.Terminal.Result == proofrun.TerminalSuccess || len(proofrun.CommittedDeliveryReceipt(attempt)) != 0 {
+					t.Fatalf("refused boundary published success: %+v", attempt)
+				}
+				if _, err := os.Stat(landing.TestReceiptPath(root, tree)); !os.IsNotExist(err) {
+					t.Fatalf("refused boundary projected a receipt: %v", err)
+				}
 			}
 			probe, acquireErr := proofrun.AcquireHostResources(t.Context(), root, confPath, "heavy", nil)
 			if acquireErr != nil || probe == nil {

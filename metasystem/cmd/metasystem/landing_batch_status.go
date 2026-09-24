@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -165,11 +167,7 @@ func batchReadSettings(root, landingRoot string, maxWait time.Duration) (config.
 	return resolveBatchOwnerSettings(root, landingRoot, maxWait, batchWaitClock.Now)
 }
 
-func batchCadenceStatus(root string, now time.Time) (batchCadenceStatusView, error) {
-	endpoint, err := goal.ResolveEndpoint(root)
-	if err != nil {
-		return batchCadenceStatusView{}, err
-	}
+func batchCadenceStatusWithEndpoint(endpoint goal.Endpoint, now time.Time) (batchCadenceStatusView, error) {
 	projection, err := goal.Project(endpoint, false, now)
 	if err != nil {
 		return batchCadenceStatusView{}, err
@@ -195,6 +193,14 @@ func classifyBatchCadenceStatus(status *goal.CadenceStatus, now time.Time) (batc
 }
 
 func runBatchStatus(args []string) int {
+	return runBatchStatusWithSource(args, nil, goal.ResolveEndpoint)
+}
+
+func runBatchStatusWithSource(args []string, source *batchOwnerSource, resolveEndpoint func(string) (goal.Endpoint, error)) int {
+	return runBatchStatusWithOutput(args, source, resolveEndpoint, os.Stdout)
+}
+
+func runBatchStatusWithOutput(args []string, source *batchOwnerSource, resolveEndpoint func(string) (goal.Endpoint, error), output io.Writer) int {
 	flags := flag.NewFlagSet("landing batch status", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "seat checkout root")
 	landingRoot := pathFlag(flags, "landing-root", "", "resolved dedicated landing checkout")
@@ -206,7 +212,7 @@ func runBatchStatus(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: metasystem landing batch status --root ROOT [--batch ID|--goal GOAL]")
 		return 2
 	}
-	settings, err := batchReadSettings(*root, *landingRoot, *maxWait)
+	settings, err := resolveBatchOwnerSettingsWithSource(*root, *landingRoot, *maxWait, batchWaitClock.Now, source)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -226,7 +232,12 @@ func runBatchStatus(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	cadence, err := batchCadenceStatus(batch.ModuleRoot(settings.Root), batchStatusNow().UTC())
+	endpoint, err := resolveEndpoint(batch.ModuleRoot(settings.Root))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	cadence, err := batchCadenceStatusWithEndpoint(endpoint, batchStatusNow().UTC())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -235,7 +246,15 @@ func runBatchStatus(args []string) int {
 	for _, record := range records {
 		views = append(views, batchRecordStatus(record, settings, *lockDir))
 	}
-	printJSON(batchStatusOutput{Cadence: cadence, Batches: views})
+	encoded, err := json.Marshal(batchStatusOutput{Cadence: cadence, Batches: views})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if _, err := fmt.Fprintln(output, string(encoded)); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	return 0
 }
 

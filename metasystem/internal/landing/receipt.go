@@ -92,10 +92,13 @@ type ReceiptPreparation struct {
 }
 
 func PrepareTestReceipt(root, tree, command string) (*ReceiptPreparation, error) {
+	return PrepareTestReceiptWithWorkspace(root, tree, command, gittree.Workspace{Dir: root}, proofrun.FreezeCandidate)
+}
+
+func PrepareTestReceiptWithWorkspace(root, tree, command string, workspace gittree.Workspace, freeze func(root, tree string) (proofrun.FrozenExport, error)) (*ReceiptPreparation, error) {
 	if root == "" || !treeOID.MatchString(tree) || command == "" {
 		return nil, fmt.Errorf("landing test receipt requires --root, a full tree object id, and a non-empty --command")
 	}
-	workspace := gittree.Workspace{Dir: root}
 	if _, err := workspace.Diff(tree, tree); err != nil {
 		return nil, fmt.Errorf("candidate tree is unreadable: %w", err)
 	}
@@ -110,11 +113,11 @@ func PrepareTestReceipt(root, tree, command string) (*ReceiptPreparation, error)
 	if indexBefore != tree || worktreeBefore != identity {
 		return nil, fmt.Errorf("test receipt refused: supplied tree %s differs from the real index tree %s or working-tree projection %s", tree, indexBefore, worktreeBefore)
 	}
-	frozen, err := proofrun.FreezeCandidate(root, tree)
+	frozen, err := freeze(root, tree)
 	if err != nil {
 		return nil, fmt.Errorf("prepare isolated candidate: %w", err)
 	}
-	candidate := gittree.Workspace{Dir: frozen.Root}
+	candidate := gittree.Workspace{Dir: frozen.Root, RawSource: workspace.RawSource}
 	candidateIndex, candidateWorktree, err := receiptPosture(candidate)
 	if err != nil || candidateIndex != tree || candidateWorktree != identity {
 		_ = frozen.Close()
@@ -202,6 +205,10 @@ func PublishCommittedReceipt(root, attemptID, acceptedIndexTree string) (TestRec
 // projecting the exact bytes committed by the successful attempt.
 func PublishCommittedReceiptAt(root, attemptID, acceptedIndexTree string, now time.Time) (TestReceipt, error) {
 	return publishCommittedReceiptAtWithWorkspace(root, attemptID, acceptedIndexTree, now, gittree.Workspace{Dir: root})
+}
+
+func PublishCommittedReceiptAtWithWorkspace(root, attemptID, acceptedIndexTree string, now time.Time, workspace gittree.Workspace) (TestReceipt, error) {
+	return publishCommittedReceiptAtWithWorkspace(root, attemptID, acceptedIndexTree, now, workspace)
 }
 
 func publishCommittedReceiptAtWithWorkspace(root, attemptID, acceptedIndexTree string, now time.Time, workspace gittree.Workspace) (TestReceipt, error) {

@@ -26,6 +26,8 @@ type hostCycleSource struct {
 	t                  *testing.T
 	root, contractPath string
 	files              map[string][]byte
+	candidateSHA       string
+	candidateFiles     map[string][]byte
 	signed             []byte
 	created, removed   []string
 	refs               map[string]string
@@ -97,6 +99,13 @@ func (f *hostCycleSource) source() *contract.Source {
 	}
 }
 
+func (f *hostCycleSource) currentCandidateSHA() string {
+	if f.candidateSHA != "" {
+		return f.candidateSHA
+	}
+	return hostCandidateCommit
+}
+
 func (f *hostCycleSource) output(root string, args ...string) (string, error) {
 	f.t.Helper()
 	if root == f.root {
@@ -108,7 +117,7 @@ func (f *hostCycleSource) output(root string, args ...string) (string, error) {
 			}
 			return hostGateCommit + "\n", nil
 		case reflect.DeepEqual(args, []string{"rev-parse", "main^{commit}"}):
-			return hostCandidateCommit + "\n", nil
+			return f.currentCandidateSHA() + "\n", nil
 		case reflect.DeepEqual(args, []string{"branch", "--show-current"}):
 			return "main\n", nil
 		case reflect.DeepEqual(args, []string{"symbolic-ref", "refs/remotes/origin/HEAD"}):
@@ -125,7 +134,7 @@ func (f *hostCycleSource) output(root string, args ...string) (string, error) {
 			if data, ok := f.files[path]; ok {
 				return string(data), nil
 			}
-		case len(args) == 6 && reflect.DeepEqual(args[:4], []string{"worktree", "add", "--detach", "--quiet"}) && args[5] == hostCandidateCommit:
+		case len(args) == 6 && reflect.DeepEqual(args[:4], []string{"worktree", "add", "--detach", "--quiet"}) && args[5] == f.currentCandidateSHA():
 			f.checkRegistry(args[4])
 			if err := f.materialize(args[4]); err != nil {
 				return "", err
@@ -159,6 +168,18 @@ func (f *hostCycleSource) lastCreated() string {
 }
 
 func (f *hostCycleSource) materialize(worktree string) error {
+	if f.candidateFiles != nil {
+		for path, data := range f.candidateFiles {
+			mode := os.FileMode(0o644)
+			if strings.HasSuffix(path, ".sh") {
+				mode = 0o755
+			}
+			if err := writeHostCycleFile(filepath.Join(worktree, path), data, mode); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	for _, path := range []string{"scripts/gate.sh", "truth/reference.txt"} {
 		mode := os.FileMode(0o644)
 		if path == "scripts/gate.sh" {
@@ -179,7 +200,7 @@ func (f *hostCycleSource) checkRegistry(worktree string) {
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		var row struct{ Path, SHA, GateRef string }
-		if json.Unmarshal([]byte(line), &row) == nil && row.Path == worktree && row.SHA == hostCandidateCommit && row.GateRef == hostGateCommit {
+		if json.Unmarshal([]byte(line), &row) == nil && row.Path == worktree && row.SHA == f.currentCandidateSHA() && row.GateRef == hostGateCommit {
 			return
 		}
 	}

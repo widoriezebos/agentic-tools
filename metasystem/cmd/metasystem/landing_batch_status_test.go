@@ -763,7 +763,51 @@ func TestBatchProofInputsMovedIncludesEnginePaths(t *testing.T) {
 }
 
 func TestBatchMovedPushRecoveryDoesNotRetryUnchangedOrigin(t *testing.T) {
-	root, _, origin, baseCommit, baseTree, tip := movedBatchGitFixture(t)
+	deny, err := filepath.Abs(filepath.Join("..", "..", "internal", "testgit", "testdata", "deny-bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", deny+string(os.PathListSeparator)+os.Getenv("PATH"))
+	deniedLog := filepath.Join(t.TempDir(), "git-denied.log")
+	t.Setenv("METASYSTEM_TEST_GIT_DENIED_LOG", deniedLog)
+	t.Cleanup(func() {
+		calls, err := os.ReadFile(deniedLog)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if len(calls) != 0 {
+			t.Fatalf("moved push test invoked physical Git: %s", calls)
+		}
+	})
+	root := t.TempDir()
+	origin := filepath.Join(root, "opaque-origin-ref")
+	originBytes := []byte("origin ref sentinel; not a Git ref\n")
+	if err := os.WriteFile(origin, originBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	baseCommit, tip, baseTree := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40)
+	readCalls, runnerCalls := 0, 0
+	readGit := func(gotRoot string, args ...string) (string, error) {
+		readCalls++
+		if gotRoot != root || !slices.Equal(args, []string{"rev-parse", baseCommit + "^{tree}"}) {
+			t.Fatalf("origin tree read: root=%q args=%q", gotRoot, args)
+		}
+		return baseTree, nil
+	}
+	runGit := func(command *exec.Cmd) error {
+		runnerCalls++
+		if command.Path != filepath.Join(deny, "git") ||
+			!slices.Equal(command.Args, []string{"git", "-C", root, "merge-base", "--is-ancestor", tip, baseCommit}) ||
+			command.Dir != "" || !slices.Equal(command.Env, gittree.ScrubbedEnviron()) {
+			t.Fatalf("ancestor command: path=%q args=%q dir=%q env=%q", command.Path, command.Args, command.Dir, command.Env)
+		}
+		err := exec.Command("sh", "-c", "exit 1").Run()
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+			t.Fatalf("construct exit-code-1 result: %v", err)
+		}
+		return err
+	}
 	originalPush := batchMovedEndpointPush
 	t.Cleanup(func() { batchMovedEndpointPush = originalPush })
 	pushes := 0
@@ -771,16 +815,16 @@ func TestBatchMovedPushRecoveryDoesNotRetryUnchangedOrigin(t *testing.T) {
 		pushes++
 		return nil
 	}
-	recovery, err := recoverMovedBatchPush(root, "01j5x00000000000000000ba21", batch.Record{}, "owner", baseCommit, baseCommit, baseTree, tip)
+	recovery, err := recoverMovedBatchPushWithInputs(root, "01j5x00000000000000000ba21", batch.Record{}, "owner", baseCommit, baseCommit, baseTree, tip, readGit, runGit)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recovery.Pushed || recovery.Reopen || pushes != 0 {
-		t.Fatalf("unchanged origin recovery=%+v pushes=%d", recovery, pushes)
+	if recovery.Pushed || recovery.Reopen || pushes != 0 || recovery.Origin != baseCommit || recovery.BaseTree != baseTree || readCalls != 1 || runnerCalls != 1 {
+		t.Fatalf("unchanged origin recovery=%+v pushes=%d reads=%d ancestorRuns=%d", recovery, pushes, readCalls, runnerCalls)
 	}
-	mainTip := strings.TrimSpace(runBatchFixtureGit(t, origin, "rev-parse", "refs/heads/main"))
-	if mainTip != baseCommit {
-		t.Fatalf("unchanged origin moved main from %s to %s", baseCommit, mainTip)
+	after, err := os.ReadFile(origin)
+	if err != nil || !slices.Equal(after, originBytes) {
+		t.Fatalf("opaque origin sentinel changed: bytes=%q error=%v", after, err)
 	}
 }
 

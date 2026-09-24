@@ -119,19 +119,7 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 	command.Dir, command.Env = executionRoot, append(gittree.ScrubbedEnviron(), "METASYSTEM_OWNER_LINEAGE="+landingOwnerLineage)
 	output, runErr := command.CombinedOutput()
 	if runErr != nil && command.ProcessState != nil && command.ProcessState.ExitCode() == proofrun.ExitAdmissionRefused {
-		reason := strings.TrimSpace(string(output))
-		code := batchAdmissionRefusalCode(reason)
-		switch code {
-		case "GOAL_REVISION_MOVED":
-			return batch.JoinAdmission{}, &batch.PrefixRevisionRefusal{Reason: reason}
-		case "BATCH_MEMBER_BUDGET_REFUSED", "BUDGET_REFUSED":
-			return batch.JoinAdmission{}, &batch.PrefixBudgetRefusal{Reason: reason}
-		case "CANDIDATE_GOAL_REFUSED":
-			if strings.Contains(reason, "state=fenced") {
-				return batch.JoinAdmission{}, &batch.PrefixFencedRefusal{Reason: reason}
-			}
-		}
-		return batch.JoinAdmission{}, &batch.PrefixAdmissionRefusal{Code: code, Reason: reason}
+		return batch.JoinAdmission{}, joinAdmissionRefusal(strings.TrimSpace(string(output)))
 	}
 	var proof proofrun.TestResult
 	if err := readStrictJSON(result.ResultPath, &proof); err != nil {
@@ -155,6 +143,21 @@ func productionJoinAdmission(root, batchID string, unit batch.Unit) (batch.JoinA
 	}
 	result.AttemptID, result.Status = proof.AttemptID, "verified"
 	return result, nil
+}
+
+func joinAdmissionRefusal(reason string) error {
+	code := batchAdmissionRefusalCode(reason)
+	switch code {
+	case "GOAL_REVISION_MOVED":
+		return &batch.PrefixRevisionRefusal{Reason: reason}
+	case "BATCH_MEMBER_BUDGET_REFUSED", "BUDGET_REFUSED":
+		return &batch.PrefixBudgetRefusal{Reason: reason}
+	case "CANDIDATE_GOAL_REFUSED":
+		if strings.Contains(reason, "state=fenced") {
+			return &batch.PrefixFencedRefusal{Reason: reason}
+		}
+	}
+	return &batch.PrefixAdmissionRefusal{Code: code, Reason: reason}
 }
 
 func retainJoinEpisode(root string, store batch.Store, batchID string, unit batch.Unit, decision batch.JoinAdmission, maxAgeMS int64) (batch.JoinAdmission, error) {

@@ -41,23 +41,50 @@ import (
 
 func TestCoverageReuseVerbRefusesChangedParentProjectInput(t *testing.T) {
 	t.Parallel()
-	project := t.TempDir()
+	if runGoGateCommandTestInOwnedProcess(t) {
+		return
+	}
+	project, err := canonicalPath(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	root := filepath.Join(project, "tools", "metasystem")
+	gitBin := t.TempDir()
+	gitLog := filepath.Join(t.TempDir(), "git-calls.log")
+	gitStub := `#!/bin/sh
+printf '%s\n' "$*" >> "$METASYSTEM_TEST_GIT_CALLS"
+if [ "$#" -eq 20 ] &&
+   [ "$1" = -C ] && [ "$2" = "$METASYSTEM_TEST_GIT_INSTALLATION" ] &&
+   [ "$3" = -c ] && [ "$4" = core.fileMode=true ] &&
+   [ "$5" = -c ] && [ "$6" = diff.noprefix=false ] &&
+   [ "$7" = -c ] && [ "$8" = diff.mnemonicPrefix=false ] &&
+   [ "$9" = -c ] && [ "${10}" = apply.ignoreWhitespace=no ] &&
+   [ "${11}" = -c ] && [ "${12}" = core.logAllRefUpdates=false ] &&
+   [ "${13}" = -c ] && [ "${14}" = core.useReplaceRefs=false ] &&
+   [ "${15}" = -c ] && [ "${16}" = gc.auto=0 ] &&
+   [ "${17}" = -c ] && [ "${18}" = maintenance.auto=false ] &&
+   [ "${19}" = rev-parse ] && [ "${20}" = --show-toplevel ]; then
+    printf '%s\n' "$METASYSTEM_TEST_GIT_PROJECT"
+    exit 0
+fi
+printf 'unexpected git invocation: %s\n' "$*" >&2
+exit 97
+`
+	if err := testexec.WriteFile(filepath.Join(gitBin, "git"), []byte(gitStub), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_TEST_GIT_INSTALLATION", root)
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_TEST_GIT_PROJECT", project)
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_TEST_GIT_CALLS", gitLog)
+	setOwnedGoGateProcessEnvironment(t, "PATH", gitBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	writeTestingFixtureFile(t, filepath.Join(project, ".git"), []byte("test project marker\n"), 0o600)
 	writeTestingFixtureFile(t, filepath.Join(project, ".gitattributes"), []byte("testing.json merge=metasystem-testing\n"), 0o644)
 	writeTestingFixtureFile(t, filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\ndispatch.cap-max=120\n"), 0o600)
 	writeTestingFixtureFile(t, filepath.Join(root, "internal", "proofrun", "stub.go"), []byte("package proofrun\n"), 0o600)
 	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
 		writeTestingFixtureFile(t, filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600)
 	}
-	testingFixtureGit(t, project, "init", "-q", "-b", "main")
-	testingFixtureGit(t, project, "add", ".")
-	testingFixtureGit(t, project, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "base")
-	root, err := canonicalPath(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	project, err = canonicalPath(project)
-	if err != nil {
+	if root, err = canonicalPath(root); err != nil {
 		t.Fatal(err)
 	}
 	proofIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"),
@@ -103,6 +130,8 @@ func TestCoverageReuseVerbRefusesChangedParentProjectInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := []string{"--root", root, "--control-root", root, "--baseline", baseline, "--package", "internal/proofrun"}
+	freezeRoot := filepath.Join(t.TempDir(), "freeze")
+	writeTestingFixtureFile(t, filepath.Join(freezeRoot, "internal", "source.go"), []byte("package internal\n"), 0o644)
 	overlapOutput := newFreezeOverlapWriter()
 	type freezeResult struct {
 		code   int
@@ -111,7 +140,7 @@ func TestCoverageReuseVerbRefusesChangedParentProjectInput(t *testing.T) {
 	freezeDone := make(chan freezeResult, 1)
 	go func() {
 		var stderr bytes.Buffer
-		freezeDone <- freezeResult{runGateWitnessFreezeWithWriters([]string{"--root", root}, overlapOutput, &stderr), stderr.String()}
+		freezeDone <- freezeResult{runGateWitnessFreezeWithWriters([]string{"--root", freezeRoot}, overlapOutput, &stderr), stderr.String()}
 	}()
 	select {
 	case <-overlapOutput.started:
@@ -129,6 +158,9 @@ func TestCoverageReuseVerbRefusesChangedParentProjectInput(t *testing.T) {
 	if code := runGateWitnessFreezeWithWriters([]string{"--cleanup", fields[2]}, &cleanupOut, &cleanupErr); code != 0 || cleanupOut.Len() != 0 || cleanupErr.Len() != 0 {
 		t.Fatalf("overlapped freeze cleanup code=%d stdout=%q stderr=%q", code, cleanupOut.String(), cleanupErr.String())
 	}
+	if _, err := os.Stat(filepath.Dir(fields[2])); !os.IsNotExist(err) {
+		t.Fatalf("overlapped freeze cleanup left owned root %s: %v", filepath.Dir(fields[2]), err)
+	}
 	if coverageCode != 0 {
 		t.Fatalf("coverage-reuse before parent mutation exited %d", coverageCode)
 	}
@@ -136,6 +168,21 @@ func TestCoverageReuseVerbRefusesChangedParentProjectInput(t *testing.T) {
 	if code := runProofRunCoverageReuse(args); code != 3 {
 		t.Fatalf("coverage-reuse after parent mutation exited %d, want stale-proof status 3", code)
 	}
+	gitCalls, err := os.ReadFile(gitLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantGitCall := "-C " + root + " -c core.fileMode=true -c diff.noprefix=false -c diff.mnemonicPrefix=false -c apply.ignoreWhitespace=no -c core.logAllRefUpdates=false -c core.useReplaceRefs=false -c gc.auto=0 -c maintenance.auto=false rev-parse --show-toplevel"
+	gitLines := strings.Split(strings.TrimSpace(string(gitCalls)), "\n")
+	if len(gitLines) == 0 || gitLines[0] == "" {
+		t.Fatal("strict git stub did not observe project root discovery")
+	}
+	for _, call := range gitLines {
+		if call != wantGitCall {
+			t.Fatalf("strict git stub saw unexpected call %q", call)
+		}
+	}
+	t.Logf("strict git stub accepted %d root-discovery calls: %s", len(gitLines), wantGitCall)
 }
 
 func candidateProofAdmission(request proofrun.AdmissionRequest) proofrun.AdmissionRequest {
@@ -1483,7 +1530,43 @@ func TestFrozenPolicyProbePreservesSyntheticProjectRootAfterOuterAuthentication(
 	if runGoGateCommandTestInOwnedProcess(t) {
 		return
 	}
-	controlRoot, executionRoot, attempt := workerAuthorizedAttemptFixture(t)
+	denyGit, err := filepath.Abs(filepath.Join("..", "..", "internal", "testgit", "testdata", "deny-bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deniedLog := filepath.Join(t.TempDir(), "git-denied.log")
+	if err := os.WriteFile(deniedLog, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	previousPath, pathPresent := os.LookupEnv("PATH")
+	previousLog, logPresent := os.LookupEnv("METASYSTEM_TEST_GIT_DENIED_LOG")
+	setOwnedGoGateProcessEnvironment(t, "PATH", denyGit+string(os.PathListSeparator)+previousPath)
+	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_TEST_GIT_DENIED_LOG", deniedLog)
+	controlRoot, executionRoot, attempt := workerAuthorizedFileAttemptFixture(t)
+	denied, err := os.ReadFile(deniedLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(denied) != 0 {
+		t.Fatalf("outer file fixture invoked Git:\n%s", denied)
+	}
+	t.Logf("outer file fixture denied Git attempts: %d", len(denied))
+	for _, original := range []struct {
+		name, value string
+		present     bool
+	}{
+		{"PATH", previousPath, pathPresent},
+		{"METASYSTEM_TEST_GIT_DENIED_LOG", previousLog, logPresent},
+	} {
+		if original.present {
+			err = os.Setenv(original.name, original.value)
+		} else {
+			err = os.Unsetenv(original.name)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	launcher, err := proofrun.ProcessIdentityForPID(int64(os.Getpid()), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -1536,19 +1619,28 @@ func TestFrozenPolicyProbePreservesSyntheticProjectRootAfterOuterAuthentication(
 }
 
 func TestTestingWorkerWitnessPreservesAdmittedProjectRoot(t *testing.T) {
-	t.Parallel()
+	if os.Getenv("GO_WANT_GO_GATE_COMMAND_TEST") != "1" {
+		t.Parallel()
+	}
 	if runGoGateCommandTestInOwnedProcess(t) {
 		return
 	}
-	controlRoot, root, attempt := workerAuthorizedAttemptFixtureWithProject(t, func(projectRoot string) {
-		moduleRoot := filepath.Join(projectRoot, "metasystem")
-		if err := os.MkdirAll(moduleRoot, 0o700); err != nil {
-			t.Fatal(err)
+	denialLog := os.Getenv("METASYSTEM_TEST_GIT_DENIED_LOG")
+	tracked := []byte("module\n")
+	candidate := newOrdinaryCandidateFixture(t, ordinaryCandidateFixtureOptions{externalDenialLog: denialLog, tracked: tracked})
+	controlRoot, root, attempt := workerAuthorizedFileAttemptFixture(t, ordinaryProjectTree)
+	root, err := canonicalProofRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate.root, candidate.installation = root, filepath.Join(root, "metasystem")
+	candidate.writeFiles()
+	openCandidate := func(projectRoot, tree string) (proofrun.CandidateWorkspace, error) {
+		if projectRoot != root || tree != attempt.CandidateTree {
+			return nil, fmt.Errorf("candidate opener root=%q tree=%q, want admitted root=%q tree=%q", projectRoot, tree, root, attempt.CandidateTree)
 		}
-		if err := os.WriteFile(filepath.Join(moduleRoot, "tracked.txt"), []byte("module\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}, true)
+		return candidate.openBed(projectRoot, tree)
+	}
 	engine := commandTestExecutable(t)
 	engineDigest, err := fileSHA256(engine)
 	if err != nil {
@@ -1593,6 +1685,8 @@ printf '%s\n' "<testsuite><testcase classname=\"fixture\" name=\"$3\"/></testsui
 		Contract: contract, Plan: plan, AttemptID: attempt.AttemptID, Environment: append(gittree.ScrubbedEnviron(), "GO_WANT_BATCH_E2E_COMMAND=1"),
 		LogRoot: filepath.Join(root, "artifacts", "root-handoff-logs"), PolicyEngine: engine, PolicyEngineDigest: engineDigest,
 		CandidateEngine: engine, CandidateEngineDigest: engineDigest, CandidateEngineBuildIdentity: attempt.CandidateTree, Workers: 1}
+	request.WithCandidateOpener(openCandidate)
+	candidate.queueBed(attempt.CandidateTree)
 	identities, preparedGroups, preparationLaunches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -1627,7 +1721,7 @@ printf '%s\n' "<testsuite><testcase classname=\"fixture\" name=\"$3\"/></testsui
 				t.Fatal(err)
 			}
 			code, _, stderr := captureCommandOutput(t, false, true, func() int {
-				return runTestWorker([]string{"--packet", foreignPacket, "--packet-sha256", foreignDigest, "--result", foreignResult})
+				return runTestWorkerWithCandidateOpener([]string{"--packet", foreignPacket, "--packet-sha256", foreignDigest, "--result", foreignResult}, openCandidate)
 			})
 			if code != 3 || !strings.Contains(stderr, "authenticated request roots") {
 				t.Fatalf("foreign %s refusal = code=%d stderr=%q", tamper.name, code, stderr)
@@ -1639,6 +1733,9 @@ printf '%s\n' "<testsuite><testcase classname=\"fixture\" name=\"$3\"/></testsui
 			if err != nil || len(matches) != 0 {
 				t.Fatalf("foreign %s launched a command before refusal: matches=%v err=%v", tamper.name, matches, err)
 			}
+			if candidate.opened != 1 {
+				t.Fatalf("foreign %s opened a candidate before refusal: opens=%d", tamper.name, candidate.opened)
+			}
 		})
 	}
 	if err := writePrivateJSON(packetPath, request); err != nil {
@@ -1648,8 +1745,10 @@ printf '%s\n' "<testsuite><testcase classname=\"fixture\" name=\"$3\"/></testsui
 	if err != nil {
 		t.Fatal(err)
 	}
+	candidate.queueBed(attempt.CandidateTree)
+	candidate.queueBed(attempt.CandidateTree)
 	code, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runTestWorker([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath})
+		return runTestWorkerWithCandidateOpener([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath}, openCandidate)
 	})
 	result, resultErr := readTestingWorkerResult(resultPath)
 	if code != 0 || resultErr != nil || !result.Delivery.Sufficient || len(result.Groups) != len(groupIDs) {
@@ -1661,6 +1760,7 @@ printf '%s\n' "<testsuite><testcase classname=\"fixture\" name=\"$3\"/></testsui
 			t.Fatalf("%s preparation and authenticated execution diverged: prepared=%+v identity=%q result=%+v", group.ID, prepared, identities[group.ID], group)
 		}
 	}
+	candidate.assertDrained()
 }
 
 func TestWorkerAuthorizedRefusesAForeignRoot(t *testing.T) {
@@ -3324,23 +3424,6 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 	}
 }
 
-// terminalCommitFixture reserves an attempt on a claimed goal that carries
-// stop capability, so the commit's authority checks pass and the scripted
-// lock seam alone decides the outcome. The launch it returns runs a command
-// under a watchdog stub and commits through the given terminal commit. The
-// fixture's 2026-08-30 goal dates are inert here: the commit's binding reads
-// committed fields only, and nothing on this path reads METASYSTEM_GOAL_NOW.
-func terminalCommitFixture(t *testing.T, existing ...proofrun.Attempt) (string, proofrun.Attempt, func([]string, func(proofrun.CompletionContext, json.RawMessage) error) (int, string)) {
-	t.Helper()
-	var root string
-	if len(existing) != 0 {
-		root = existing[0].ControlRoot
-	} else {
-		root, _ = proofExtensionGoalFixture(t)
-	}
-	return terminalCommitFixtureAt(t, root, existing...)
-}
-
 func gitFreeTerminalCommitFixture(t *testing.T) (string, proofrun.Attempt, func([]string, func(proofrun.CompletionContext, json.RawMessage) error) (int, string), dispatchcore.ProofAdmissionReads) {
 	t.Helper()
 	repository := newProofAdmissionRepositoryFixture(t, time.Now().UTC(), true)
@@ -3569,8 +3652,20 @@ func TestATestingWorkerThatWroteNoResultEndsItsAttemptFailedWithTheFileNamed(t *
 	}
 }
 
+type retainedFileCandidateWorkspace struct{ root string }
+
+func (w retainedFileCandidateWorkspace) Workspace() gittree.Workspace {
+	return gittree.Workspace{Dir: w.root, RawSource: func(request gittree.RawRequest) gittree.RawResult {
+		return gittree.RawResult{Err: fmt.Errorf("unexpected raw Git request for retained worker candidate: %q", request.Args)}
+	}}
+}
+
+func (w retainedFileCandidateWorkspace) Close() error { return os.RemoveAll(w.root) }
+
 func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.T) {
-	t.Parallel()
+	if os.Getenv("GO_WANT_GO_GATE_COMMAND_TEST") != "1" {
+		t.Parallel()
+	}
 	if runGoGateCommandTestInOwnedProcess(t) {
 		return
 	}
@@ -3579,7 +3674,70 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 		t.Fatal(err)
 	}
 	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_CENSUS_PROCESS_FILE", processTable)
-	controlRoot, root, attempt := workerAuthorizedAttemptFixture(t, true)
+	const declared40Tree = "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc"
+	repository, _ := proofAdmissionExtensionFixture(t)
+	canonicalRoot, err := canonicalProofRoot(repository.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository.root = canonicalRoot
+	repository.top = filepath.Dir(repository.root)
+	for _, path := range []string{"metasystem/plans/goals/backlog.md", "metasystem/plans/goals/standing-validation.md"} {
+		physical := filepath.Join(repository.top, path)
+		if err := os.WriteFile(physical, repository.rawFile(t, path), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	controlRoot, root, attempt := workerAuthorizedFileAttemptFixtureAt(t, repository.root, declared40Tree)
+	for _, path := range []string{"metasystem/metasystem.conf", "metasystem/memory/receipts.log"} {
+		physical, err := os.ReadFile(filepath.Join(repository.top, path))
+		if err != nil || !bytes.Equal(physical, repository.rawFile(t, path)) {
+			t.Fatalf("physical proof file %s differs from accepted bytes: %v", path, err)
+		}
+	}
+	root, err = canonicalProofRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateParent := t.TempDir()
+	tracked := filepath.Join(candidateParent, "source", "application", "tracked.txt")
+	if err := os.MkdirAll(filepath.Dir(tracked), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tracked, []byte("retained worker candidate input\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	openCandidate := func(projectRoot, tree string) (proofrun.CandidateWorkspace, error) {
+		canonical, canonicalErr := canonicalProofRoot(projectRoot)
+		if canonicalErr != nil || projectRoot != root || canonical != root || tree != attempt.CandidateTree || tree != declared40Tree {
+			return nil, fmt.Errorf("candidate opener root=%q tree=%q, want admitted root=%q tree=%q: %v", projectRoot, tree, root, attempt.CandidateTree, canonicalErr)
+		}
+		bed, err := os.MkdirTemp(candidateParent, "detached-")
+		if err != nil {
+			return nil, err
+		}
+		copyCandidate := func() error {
+			input, err := os.Open(tracked)
+			if err != nil {
+				return err
+			}
+			defer input.Close()
+			outputPath := filepath.Join(bed, "application", "tracked.txt")
+			if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+				return err
+			}
+			output, err := os.OpenFile(outputPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+			if err != nil {
+				return err
+			}
+			_, copyErr := io.Copy(output, input)
+			return errors.Join(copyErr, output.Close())
+		}
+		if err := copyCandidate(); err != nil {
+			return nil, errors.Join(err, os.RemoveAll(bed))
+		}
+		return retainedFileCandidateWorkspace{root: bed}, nil
+	}
 	progressDirectory := filepath.Join(root, "artifacts", "retained-progress")
 	progressPath := filepath.Join(progressDirectory, "events.jsonl")
 	if err := os.MkdirAll(progressDirectory, 0o755); err != nil {
@@ -3618,6 +3776,7 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 		Contract: contract, Plan: plan, AttemptID: attempt.AttemptID, Environment: gittree.ScrubbedEnviron(), LogRoot: filepath.Join(root, "artifacts", "retained-logs"),
 		ProgressPath: progressPath, PolicyEngine: engine, PolicyEngineDigest: engineDigest, CandidateEngine: engine, CandidateEngineDigest: engineDigest,
 		CandidateEngineBuildIdentity: attempt.CandidateTree, Workers: 2, AdmissionMaximum: 0, Concurrency: 2}
+	request.WithCandidateOpener(openCandidate)
 	identities, prepared, launches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -3632,7 +3791,7 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 		t.Fatal(err)
 	}
 	_, _, stderr := captureCommandOutput(t, false, true, func() int {
-		return runTestWorker([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath})
+		return runTestWorkerWithCandidateOpener([]string{"--packet", packetPath, "--packet-sha256", packetDigest, "--result", resultPath}, openCandidate)
 	})
 	result, err := readTestingWorkerResult(resultPath)
 	if err != nil {
@@ -3678,6 +3837,7 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 	greenPlan.Stages = []testpolicy.Stage{{ID: "canary", Groups: []string{"green"}}}
 	greenRequest := request
 	greenRequest.Contract, greenRequest.Plan, greenRequest.ProgressPath = greenContract, greenPlan, greenProgressPath
+	greenRequest.WithCandidateOpener(openCandidate)
 	greenIdentities, greenPrepared, greenLaunches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), greenRequest)
 	if err != nil {
 		t.Fatal(err)
@@ -3692,7 +3852,7 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 		t.Fatal(err)
 	}
 	greenCode, _, greenStderr := captureCommandOutput(t, false, true, func() int {
-		return runTestWorker([]string{"--packet", greenPacketPath, "--packet-sha256", greenPacketDigest, "--result", greenResultPath})
+		return runTestWorkerWithCandidateOpener([]string{"--packet", greenPacketPath, "--packet-sha256", greenPacketDigest, "--result", greenResultPath}, openCandidate)
 	})
 	greenResult, err := readTestingWorkerResult(greenResultPath)
 	if err != nil {
@@ -3732,6 +3892,7 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 		Stages: []testpolicy.Stage{{ID: "canary", Groups: []string{"earlier"}}, {ID: "standard", Groups: []string{"first"}}, {ID: "retained", Groups: []string{"later"}}}}
 	legacyRequest := request
 	legacyRequest.Contract, legacyRequest.Plan, legacyRequest.ProgressPath = legacyContract, legacyPlan, ""
+	legacyRequest.WithCandidateOpener(openCandidate)
 	legacyRequest.LogRoot = filepath.Join(root, "artifacts", "retained-source-logs")
 	legacyIdentities, legacyPrepared, legacyLaunches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), legacyRequest)
 	if err != nil {
@@ -3749,6 +3910,7 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 		t.Fatal(err)
 	}
 	sourceRequest := legacyRequest
+	sourceRequest.WithCandidateOpener(openCandidate)
 	sourceRequest.AttemptID = producer.AttemptID
 	sourceRequest.Plan.RequiredGroups, sourceRequest.Plan.SelectedGroups = []string{"earlier", "later"}, []string{"earlier", "later"}
 	sourceRequest.Plan.Stages = []testpolicy.Stage{{ID: "canary", Groups: []string{"earlier"}}, {ID: "standard", Groups: []string{"later"}}}
@@ -3789,7 +3951,7 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 	}
 	setOwnedGoGateProcessEnvironment(t, "METASYSTEM_PROOF_ATTEMPT", consumer.AttemptID)
 	legacyCode, _, legacyStderr := captureCommandOutput(t, false, true, func() int {
-		return runTestWorker([]string{"--packet", legacyPacketPath, "--packet-sha256", legacyPacketDigest, "--result", legacyResultPath})
+		return runTestWorkerWithCandidateOpener([]string{"--packet", legacyPacketPath, "--packet-sha256", legacyPacketDigest, "--result", legacyResultPath}, openCandidate)
 	})
 	legacyResult, err := readTestingWorkerResult(legacyResultPath)
 	if err != nil {
@@ -3811,9 +3973,9 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 		t.Fatalf("earlier native pass lost its retained log: err=%v output=%q", err, legacyLog)
 	}
 
-	terminalRoot, terminalAttempt, launch := terminalCommitFixture(t)
+	terminalRoot, terminalAttempt, launch, terminalReads := gitFreeTerminalCommitFixture(t)
 	var retained *proofrun.TestResult
-	status, launcherErrors := launch([]string{"false"}, testingTerminalCommit(resultPath, &retained))
+	status, launcherErrors := launch([]string{"false"}, testingTerminalCommitWithReads(resultPath, &retained, &terminalReads))
 	stored, readErr := proofrun.ReadAttempt(terminalRoot, terminalAttempt.AttemptID)
 	if readErr != nil || retained == nil || stored.TestResult == nil {
 		t.Fatalf("terminal result is absent: retained=%+v stored=%+v read=%v", retained, stored, readErr)
@@ -3834,9 +3996,10 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 		t.Fatalf("terminal did not retain the worker result: status=%d errors=%q retained=%+v stored=%+v read=%v", status, launcherErrors, retained, stored, readErr)
 	}
 
-	_, _, legacyLaunch := terminalCommitFixture(t, consumer)
+	consumerReads := repository.reads()
+	_, _, legacyLaunch := terminalCommitFixtureAt(t, controlRoot, consumer)
 	var legacyRetained *proofrun.TestResult
-	status, launcherErrors = legacyLaunch([]string{"false"}, testingTerminalCommit(legacyResultPath, &legacyRetained))
+	status, launcherErrors = legacyLaunch([]string{"false"}, testingTerminalCommitWithReads(legacyResultPath, &legacyRetained, &consumerReads))
 	legacyStored, readErr := proofrun.ReadAttempt(controlRoot, consumer.AttemptID)
 	if status != 1 || readErr != nil || legacyRetained == nil || legacyStored.Terminal == nil || legacyStored.Terminal.Result != proofrun.TerminalFailed ||
 		legacyStored.TestResult == nil || len(legacyStored.TestInventory) != 3 || legacyStored.TestOwned["first"] == "" || len(legacyStored.TestResult.Groups) != 3 ||

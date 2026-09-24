@@ -43,6 +43,7 @@ const (
 	ordinaryFailedBuild             = "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1"
 	ordinaryBrokenBuild             = "f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2"
 	ordinarySourceBlob              = "9999999999999999999999999999999999999999"
+	ordinaryTrackedBlob             = "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1"
 	ordinaryBaseScriptBlob          = "abababababababababababababababababababab"
 	ordinaryReuseScriptBlob         = "acacacacacacacacacacacacacacacacacacacac"
 	ordinaryFailedScriptBlob        = "adadadadadadadadadadadadadadadadadadadad"
@@ -69,7 +70,7 @@ type ordinaryCandidateFixture struct {
 	requests                                                  map[string]int
 	detachedRoot                                              string
 	opened, closed                                            int
-	script, source, sum, records                              []byte
+	script, source, sum, records, tracked                     []byte
 	sourceIndex, targetIndex                                  string
 	sourceEntries, targetEntries                              []byte
 	snapshots                                                 map[string]ordinaryCandidateSnapshot
@@ -83,7 +84,7 @@ type ordinaryCandidateFixture struct {
 }
 type ordinaryCandidateSnapshot struct {
 	tree, installation, engine, scriptBlob, sourceBlob, sumBlob string
-	script, source, sum, records                                []byte
+	script, source, sum, records, tracked                       []byte
 	entries                                                     []byte
 }
 type ordinaryMessageFacts struct{ environmentDigest, closure string }
@@ -94,6 +95,10 @@ type ordinaryCandidateStep struct {
 	output      []byte
 	stdin       []byte
 	environment string
+}
+type ordinaryCandidateFixtureOptions struct {
+	externalDenialLog string
+	tracked           []byte
 }
 type ordinaryDetached struct {
 	workspace gittree.Workspace
@@ -112,21 +117,30 @@ func writeOrdinaryFixtureFile(t *testing.T, path string, data []byte, mode os.Fi
 	}
 }
 
-func newOrdinaryCandidateFixture(t *testing.T) *ordinaryCandidateFixture {
+func newOrdinaryCandidateFixture(t *testing.T, options ...ordinaryCandidateFixtureOptions) *ordinaryCandidateFixture {
 	t.Helper()
-	originalPath := os.Getenv("PATH")
-	shim := t.TempDir()
-	log := filepath.Join(t.TempDir(), "denied-git.log")
-	if err := os.WriteFile(log, nil, 0o600); err != nil {
-		t.Fatal(err)
+	option := ordinaryCandidateFixtureOptions{}
+	if len(options) != 0 {
+		option = options[0]
 	}
-	writeOrdinaryFixtureFile(t, filepath.Join(shim, "git"), []byte("#!/bin/sh\nprintf 'denied git invocation\\n' >> '"+log+"'\nexit 97\n"), 0o755)
-	t.Setenv("PATH", shim+string(os.PathListSeparator)+originalPath)
+	log := ""
+	if option.externalDenialLog != "" {
+		log = option.externalDenialLog
+	} else {
+		originalPath := os.Getenv("PATH")
+		shim := t.TempDir()
+		log = filepath.Join(t.TempDir(), "denied-git.log")
+		if err := os.WriteFile(log, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		writeOrdinaryFixtureFile(t, filepath.Join(shim, "git"), []byte("#!/bin/sh\nprintf 'denied git invocation\\n' >> '"+log+"'\nexit 97\n"), 0o755)
+		t.Setenv("PATH", shim+string(os.PathListSeparator)+originalPath)
+	}
 	root := t.TempDir()
 	f := &ordinaryCandidateFixture{t: t, root: root, installation: filepath.Join(root, "metasystem"), denialLog: log,
 		snapshots: make(map[string]ordinaryCandidateSnapshot), oidFacts: make(map[string]string),
 		commitRequests: make(map[string]string), commitOIDs: make(map[string]string), messageFacts: make(map[string]ordinaryMessageFacts), requests: make(map[string]int),
-		source: []byte("candidate engine source\n")}
+		source: []byte("candidate engine source\n"), tracked: bytes.Clone(option.tracked)}
 	f.script = []byte(`#!/usr/bin/env bash
 set -euo pipefail
 [[ "$1" == --trimpath && "$2" == --out && -n "${3:-}" ]]
@@ -178,7 +192,7 @@ func (f *ordinaryCandidateFixture) declareSnapshot(tree, installation, engine, s
 	}
 	s := ordinaryCandidateSnapshot{tree: tree, installation: installation, engine: engine,
 		scriptBlob: scriptBlob, sourceBlob: ordinarySourceBlob, sumBlob: sumBlob,
-		script: bytes.Clone(f.script), source: bytes.Clone(f.source), sum: bytes.Clone(f.sum), records: bytes.Clone(f.records)}
+		script: bytes.Clone(f.script), source: bytes.Clone(f.source), sum: bytes.Clone(f.sum), records: bytes.Clone(f.records), tracked: bytes.Clone(f.tracked)}
 	if (sumBlob == "") != (s.sum == nil) {
 		f.t.Fatal("go.sum blob declaration differs from tracked go.sum bytes")
 	}
@@ -192,12 +206,21 @@ func (f *ordinaryCandidateFixture) declareSnapshot(tree, installation, engine, s
 		recordsBlob = ordinaryRecordsBlob
 		f.declareOID(recordsBlob, fmt.Sprintf("100644:%x", s.records))
 	}
+	trackedBlob := ""
+	if s.tracked != nil {
+		trackedBlob = ordinaryTrackedBlob
+		f.declareOID(trackedBlob, fmt.Sprintf("100644:%x", s.tracked))
+	}
 	s.entries = []byte(fmt.Sprintf("100644 %s 0\tcmd/metasystem/engine.txt\x00100755 %s 0\tscripts/agents/go-build.sh\x00", s.sourceBlob, s.scriptBlob))
 	if sumBlob != "" {
 		s.entries = append(s.entries, []byte(fmt.Sprintf("100644 %s 0\tgo.sum\x00", sumBlob))...)
 	}
 	f.declareOID(engine, fmt.Sprintf("projection:%x", s.entries))
-	f.declareOID(installation, fmt.Sprintf("installation:%s:%s:%s:%s", s.scriptBlob, s.sourceBlob, s.sumBlob, recordsBlob))
+	installationFact := fmt.Sprintf("installation:%s:%s:%s:%s", s.scriptBlob, s.sourceBlob, s.sumBlob, recordsBlob)
+	if trackedBlob != "" {
+		installationFact += ":" + trackedBlob
+	}
+	f.declareOID(installation, installationFact)
 	f.declareOID(tree, "project:metasystem="+installation)
 	f.snapshots[tree] = s
 	f.mutableTree = tree
@@ -211,7 +234,7 @@ func (f *ordinaryCandidateFixture) snapshot(tree string) ordinaryCandidateSnapsh
 	if tree != f.mutableTree {
 		return s
 	}
-	if !bytes.Equal(f.script, s.script) || !bytes.Equal(f.source, s.source) || !bytes.Equal(f.sum, s.sum) || !bytes.Equal(f.records, s.records) {
+	if !bytes.Equal(f.script, s.script) || !bytes.Equal(f.source, s.source) || !bytes.Equal(f.sum, s.sum) || !bytes.Equal(f.records, s.records) || !bytes.Equal(f.tracked, s.tracked) {
 		f.t.Fatalf("current tracked source differs from declared tree %s", tree)
 	}
 	for _, file := range []struct {
@@ -223,6 +246,7 @@ func (f *ordinaryCandidateFixture) snapshot(tree string) ordinaryCandidateSnapsh
 		{"cmd/metasystem/engine.txt", s.source, 0o644},
 		{"go.sum", s.sum, 0o644},
 		{"records/counselor/peer.md", s.records, 0o644},
+		{"tracked.txt", s.tracked, 0o600},
 	} {
 		path := filepath.Join(f.installation, file.path)
 		data, err := os.ReadFile(path)
@@ -245,6 +269,9 @@ func (f *ordinaryCandidateFixture) writeFiles() {
 	}
 	if f.records != nil {
 		writeOrdinaryFixtureFile(f.t, filepath.Join(f.installation, "records/counselor/peer.md"), f.records, 0o644)
+	}
+	if f.tracked != nil {
+		writeOrdinaryFixtureFile(f.t, filepath.Join(f.installation, "tracked.txt"), f.tracked, 0o600)
 	}
 }
 func (f *ordinaryCandidateFixture) workspace() gittree.Workspace {
@@ -457,6 +484,9 @@ func (f *ordinaryCandidateFixture) prepareDetached(tree string) {
 	if s.records != nil {
 		writeOrdinaryFixtureFile(f.t, filepath.Join(parent, "metasystem/records/counselor/peer.md"), s.records, 0o644)
 	}
+	if s.tracked != nil {
+		writeOrdinaryFixtureFile(f.t, filepath.Join(parent, "metasystem/tracked.txt"), s.tracked, 0o600)
+	}
 }
 func (f *ordinaryCandidateFixture) open(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {
 	step := f.take("open")
@@ -475,7 +505,7 @@ func (f *ordinaryCandidateFixture) open(workspace gittree.Workspace, tree string
 		mode os.FileMode
 	}{
 		{"scripts/agents/go-build.sh", s.script, 0o755}, {"cmd/metasystem/engine.txt", s.source, 0o644},
-		{"go.sum", s.sum, 0o644}, {"records/counselor/peer.md", s.records, 0o644},
+		{"go.sum", s.sum, 0o644}, {"records/counselor/peer.md", s.records, 0o644}, {"tracked.txt", s.tracked, 0o600},
 	} {
 		path := filepath.Join(parent, "metasystem", file.path)
 		data, err := os.ReadFile(path)

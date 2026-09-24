@@ -434,6 +434,10 @@ func requireSuccessfulWatcherCensus(supervisionDir string, generation int) error
 // runPass assesses runs and writes the attestation on full success.
 func runPass(repo string, self identity.Ref) error {
 	store := dispatchpkg.NewConcludingRunStore(repo, nil)
+	return runPassWithStore(repo, self, store)
+}
+
+func runPassWithStore(repo string, self identity.Ref, store *run.Store) error {
 	records, unreadable := store.List()
 	type scanned struct {
 		Id          string `json:"id"`

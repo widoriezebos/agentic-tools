@@ -1,14 +1,17 @@
 package missionrunner
 
 import (
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -364,53 +367,199 @@ func TestArmAndPreflightFullPass(t *testing.T) {
 	}
 }
 
-// The wall's repository preconditions: mode-drift visibility
-// pinned, and a start over unsealed dirt refuses before any turn —
-// while the human's sealed baseline admits exactly its tree.
+// preflightPolicyBed keeps the policy's repository answers tied to files in
+// this bed. The committed entries are captured before each test's physical
+// change; the snapshot entries are read from the changed files at admission.
+type preflightPolicyBed struct {
+	t         *testing.T
+	engine    *Engine
+	source    *hostCycleSource
+	committed map[string]gittree.Entry
+	reads     *strictWallReads
+	workspace *strictBaselineWorkspace
+}
+
+func newPreflightPolicyBed(t *testing.T) *preflightPolicyBed {
+	t.Helper()
+	e, source := newGitFreePreflightBed(t, "")
+	b := &preflightPolicyBed{t: t, engine: e, source: source,
+		reads: &strictWallReads{t: t}, workspace: &strictBaselineWorkspace{t: t}}
+	b.committed = b.physicalEntries()
+	e.wallReadFacts = b.reads
+	e.wallWorkspaceFactory = func(root string) wallWorkspace {
+		if root != e.Root {
+			t.Fatalf("workspace root %q, want %q", root, e.Root)
+		}
+		return b.workspace
+	}
+	t.Cleanup(source.done)
+	return b
+}
+
+func (b *preflightPolicyBed) physicalEntries() map[string]gittree.Entry {
+	b.t.Helper()
+	paths := make([]string, 0, len(b.source.files)+2)
+	for path := range b.source.files {
+		paths = append(paths, path)
+	}
+	paths = append(paths, filepath.ToSlash(filepath.Join("plans", "mission-"+b.engine.Mission+".contract.md")))
+	truthDir := filepath.Join(b.engine.Root, "truth")
+	truth, err := os.ReadDir(truthDir)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	for _, file := range truth {
+		path := "truth/" + file.Name()
+		if _, known := b.source.files[path]; !known {
+			paths = append(paths, path)
+		}
+	}
+	entries := make(map[string]gittree.Entry, len(paths))
+	for _, path := range paths {
+		abs := filepath.Join(b.engine.Root, filepath.FromSlash(path))
+		info, err := os.Lstat(abs)
+		if err != nil {
+			b.t.Fatal(err)
+		}
+		var data []byte
+		mode := "100644"
+		if info.Mode()&os.ModeSymlink != 0 {
+			mode = "120000"
+			target, err := os.Readlink(abs)
+			if err != nil {
+				b.t.Fatal(err)
+			}
+			data = []byte(target)
+		} else if info.Mode().IsRegular() {
+			if info.Mode()&0o111 != 0 {
+				mode = "100755"
+			}
+			data, err = os.ReadFile(abs)
+			if err != nil {
+				b.t.Fatal(err)
+			}
+		} else {
+			b.t.Fatalf("unexpected snapshot object %s: %s", path, info.Mode())
+		}
+		entries[path] = gittree.Entry{Mode: mode, OID: birthBlobOID(data)}
+	}
+	return entries
+}
+
+// The identifier describes the observed path, mode, and blob facts. It is a
+// fixture tree identity, so distinct worktree, HEAD, and staged projections
+// cannot collapse into a single canned answer.
+func preflightFactTree(entries map[string]gittree.Entry, exclude ...string) string {
+	paths := make([]string, 0, len(entries))
+	for path := range entries {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	h := sha1.New()
+	for _, path := range paths {
+		if path == excludeAt(exclude, 0) || path == excludeAt(exclude, 1) {
+			continue
+		}
+		entry := entries[path]
+		fmt.Fprintf(h, "%s\x00%s\x00%s\x00", path, entry.Mode, entry.OID)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func excludeAt(paths []string, index int) string {
+	if index < len(paths) {
+		return paths[index]
+	}
+	return ""
+}
+
+func (b *preflightPolicyBed) pin(stdout string, code int) {
+	b.reads.git = append(b.reads.git, wallGitReply{root: b.engine.Root,
+		args:   []string{"config", "--local", "--type=bool", "--get", "core.fileMode"},
+		stdout: stdout, code: code})
+}
+
+func (b *preflightPolicyBed) admission(approved []byte, throughIdentity bool) string {
+	b.t.Helper()
+	live := b.physicalEntries()
+	contractPath := filepath.ToSlash(filepath.Join("plans", "mission-"+b.engine.Mission+".contract.md"))
+	ledger := missionLedgerRel(b.engine.Mission)
+	exclude := []string{ledger, contractPath}
+	raw := preflightFactTree(live)
+	head := preflightFactTree(b.committed)
+	observed := preflightFactTree(live, exclude...)
+	committed := preflightFactTree(b.committed, exclude...)
+	b.workspace.queries = append(b.workspace.queries,
+		baselineQuery{method: "Snapshot", tree: "HEAD", result: raw},
+		baselineQuery{method: "FilterTree", tree: raw, paths: exclude, result: observed},
+		baselineQuery{method: "HeadTree", result: head},
+		baselineQuery{method: "FilterTree", tree: head, paths: exclude, result: committed},
+		baselineQuery{method: "Entries", tree: raw, paths: []string{contractPath}, entries: map[string]gittree.Entry{contractPath: live[contractPath]}},
+		baselineQuery{method: "Entries", tree: head, paths: []string{contractPath}, entries: map[string]gittree.Entry{contractPath: b.committed[contractPath]}},
+	)
+	if throughIdentity {
+		b.reads.bytes = append(b.reads.bytes, wallByteReply{root: b.engine.Root,
+			content: approved, oid: birthBlobOID(approved)})
+		b.workspace.queries = append(b.workspace.queries,
+			baselineQuery{method: "RefMap"},
+			baselineQuery{method: "FilterTree", tree: raw, paths: []string{ledger}, result: preflightFactTree(live, ledger)},
+			baselineQuery{method: "StagedTree", result: head},
+			baselineQuery{method: "FilterTree", tree: head, paths: []string{ledger}, result: preflightFactTree(b.committed, ledger)},
+			baselineQuery{method: "FilterTree", tree: head, paths: []string{ledger}, result: preflightFactTree(b.committed, ledger)},
+		)
+	}
+	return observed
+}
+
+func (b *preflightPolicyBed) done() {
+	b.t.Helper()
+	b.reads.done()
+	if len(b.workspace.queries) != 0 {
+		b.t.Fatalf("unconsumed workspace queries: %+v", b.workspace.queries)
+	}
+}
+
+// The wall's repository preconditions: the local pin guards mode visibility,
+// and only the exact tree in the human's signed seal admits existing dirt.
 func TestWallPreflightPreconditions(t *testing.T) {
 	t.Run("filemode-off", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		fixtureGit(t, engine.Root, "config", "core.fileMode", "false")
-		err := engine.armAndPreflight("start")
+		b := newPreflightPolicyBed(t)
+		b.pin("false\n", 0)
+		err := b.engine.armAndPreflight("start")
 		if err == nil || !strings.Contains(err.Error(), "core.fileMode") {
 			t.Fatalf("a fileMode-off repository must refuse by name: %v", err)
 		}
+		b.done()
 	})
-	t.Run("filemode-spellings-and-scope", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		// The invariant is git's own boolean, not a spelling: every
-		// value git normalizes to true satisfies the pin.
-		for _, spelling := range []string{"yes", "on", "1", "TRUE"} {
-			fixtureGit(t, engine.Root, "config", "core.fileMode", spelling)
-			if err := engine.checkFileModePinned(); err != nil {
-				t.Fatalf("git-true spelling %q must satisfy the pin: %v", spelling, err)
-			}
-		}
-		// The pin must live in THIS repository: with the local value
-		// unset, an inherited or default true satisfies nothing.
-		fixtureGit(t, engine.Root, "config", "--unset", "core.fileMode")
-		if err := engine.checkFileModePinned(); err == nil ||
-			!strings.Contains(err.Error(), "core.fileMode") {
+	t.Run("filemode-absent-local-pin", func(t *testing.T) {
+		b := newPreflightPolicyBed(t)
+		b.pin("", 1)
+		err := b.engine.armAndPreflight("start")
+		if err == nil || !strings.Contains(err.Error(), "core.fileMode") {
 			t.Fatalf("an unpinned repository must refuse by name: %v", err)
 		}
+		b.done()
 	})
 	t.Run("dirty-baseline", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		writeText(t, filepath.Join(engine.Root, "truth", "uncommitted.txt"), "dirt\n")
-		err := engine.armAndPreflight("start")
-		if err == nil || !strings.Contains(err.Error(), "initial baseline is dirty") {
-			t.Fatalf("unsealed dirt must refuse by name: %v", err)
+		b := newPreflightPolicyBed(t)
+		writeText(t, filepath.Join(b.engine.Root, "truth", "uncommitted.txt"), "dirt\n")
+		b.pin("true\n", 0)
+		b.pin("true\n", 0)
+		observed := b.admission(b.source.signed, true)
+		err := b.engine.armAndPreflight("start")
+		if err == nil || !strings.Contains(err.Error(), "initial baseline is dirty") ||
+			!strings.Contains(err.Error(), "wall.sealed-baseline="+observed) {
+			t.Fatalf("unsealed dirt must refuse and name its observed tree %s: %v", observed, err)
 		}
+		b.done()
 	})
 	t.Run("sealed-baseline", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		writeText(t, filepath.Join(engine.Root, "truth", "uncommitted.txt"), "dirt the human saw\n")
-		// The refusal itself names the tree to seal.
-		err := engine.armAndPreflight("start")
+		b := newPreflightPolicyBed(t)
+		writeText(t, filepath.Join(b.engine.Root, "truth", "uncommitted.txt"), "dirt the human saw\n")
+		b.pin("true\n", 0)
+		b.pin("true\n", 0)
+		observed := b.admission(b.source.signed, true)
+		err := b.engine.armAndPreflight("start")
 		if err == nil {
 			t.Fatal("the dirty start must refuse before sealing")
 		}
@@ -418,9 +567,11 @@ func TestWallPreflightPreconditions(t *testing.T) {
 		if len(parts) != 2 {
 			t.Fatalf("the refusal must name the sealable tree: %v", err)
 		}
-		observed := strings.Fields(parts[1])[0]
-		// The human seals exactly that tree into the signed contract.
-		contractPath := engine.contractPath()
+		if named := strings.Fields(parts[1])[0]; named != observed {
+			t.Fatalf("named tree %s differs from the observed file facts %s", named, observed)
+		}
+		b.done()
+		contractPath := b.engine.contractPath()
 		raw, rerr := os.ReadFile(contractPath)
 		if rerr != nil {
 			t.Fatal(rerr)
@@ -430,96 +581,179 @@ func TestWallPreflightPreconditions(t *testing.T) {
 		document = document[:strings.Index(document, "```mission-seal")]
 		document = strings.Replace(document, "```mission\n",
 			"```mission\nwall.sealed-baseline="+observed+"\n", 1)
-		os.WriteFile(contractPath, []byte(document), 0o644)
-		sha, serr := contract.Seal(contractPath)
+		if err := os.WriteFile(contractPath, []byte(document), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		sha, serr := contract.SealWithSource(contractPath, b.engine.contractSource)
 		if serr != nil {
 			t.Fatalf("re-seal: %v", serr)
 		}
-		handle, _ := os.OpenFile(contractPath, os.O_APPEND|os.O_WRONLY, 0o644)
-		handle.WriteString("\nApproval: name=Fixture Human; date=2026-08-19; contract-sha256=" + sha + "\n")
-		handle.Close()
-		fixtureGit(t, engine.Root, "add", "plans")
-		fixtureGit(t, engine.Root, "commit", "-qm", "seal the dirty baseline")
-		fixtureGit(t, engine.Root, "push", "-q", "origin", "main")
-		if err := engine.armAndPreflight("start"); err != nil {
+		handle, err := os.OpenFile(contractPath, os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := handle.WriteString("\nApproval: name=Fixture Human; date=2026-08-19; contract-sha256=" + sha + "\n"); err != nil {
+			t.Fatal(err)
+		}
+		if err := handle.Close(); err != nil {
+			t.Fatal(err)
+		}
+		b.source.signed, err = os.ReadFile(contractPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b.committed[filepath.ToSlash(filepath.Join("plans", "mission-"+b.engine.Mission+".contract.md"))] =
+			b.physicalEntries()[filepath.ToSlash(filepath.Join("plans", "mission-"+b.engine.Mission+".contract.md"))]
+		b.pin("true\n", 0)
+		b.pin("true\n", 0)
+		if next := b.admission(b.source.signed, true); next != observed {
+			t.Fatalf("the observed truth tree changed during sealing: %s -> %s", observed, next)
+		}
+		b.reads.git = append(b.reads.git, wallGitReply{root: b.engine.Root,
+			args: []string{"for-each-ref", "--format=%(refname)", mission.MissionRefNamespace(b.engine.Mission)}})
+		if err := b.engine.armAndPreflight("start"); err != nil {
 			t.Fatalf("the sealed baseline must admit exactly its tree: %v", err)
 		}
+		b.done()
 	})
 }
 
-// The contract-identity witnesses: the live contract must equal its
-// committed form, bytes AND mode.
+// These contract-identity checks exercise the actual launch and admission
+// decisions with separate committed and live entries from physical files.
 func TestWallPreflightContractIdentity(t *testing.T) {
 	t.Run("mode-flip", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		if err := os.Chmod(engine.contractPath(), 0o755); err != nil {
+		b := newPreflightPolicyBed(t)
+		if err := os.Chmod(b.engine.contractPath(), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		err := engine.armAndPreflight("start")
+		b.pin("true\n", 0)
+		b.pin("true\n", 0)
+		b.admission(b.source.signed, false)
+		err := b.engine.armAndPreflight("start")
 		if err == nil || !strings.Contains(err.Error(), "differs from its committed form") {
 			t.Fatalf("an executable contract must refuse by name: %v", err)
 		}
+		b.done()
 	})
 	t.Run("symlink", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		sealedCopy := filepath.Join(engine.Root, "artifacts", "sealed-copy.contract.md")
-		os.MkdirAll(filepath.Dir(sealedCopy), 0o755)
-		raw, rerr := os.ReadFile(engine.contractPath())
-		if rerr != nil {
-			t.Fatal(rerr)
-		}
-		if err := os.WriteFile(sealedCopy, raw, 0o644); err != nil {
+		b := newPreflightPolicyBed(t)
+		sealedCopy := filepath.Join(b.engine.Root, "artifacts", "sealed-copy.contract.md")
+		if err := os.MkdirAll(filepath.Dir(sealedCopy), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Remove(engine.contractPath()); err != nil {
+		if err := os.WriteFile(sealedCopy, b.source.signed, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(sealedCopy, engine.contractPath()); err != nil {
+		if err := os.Remove(b.engine.contractPath()); err != nil {
 			t.Fatal(err)
 		}
-		// The ADMISSION gate is the belt for flows where origin cannot
-		// see the link — witness it directly.
-		if _, err := engine.admittedBaseline(map[string]string{}, raw); err == nil ||
+		if err := os.Symlink(sealedCopy, b.engine.contractPath()); err != nil {
+			t.Fatal(err)
+		}
+		b.pin("true\n", 0)
+		b.admission(b.source.signed, false)
+		if _, err := b.engine.admittedBaseline(map[string]string{}, b.source.signed); err == nil ||
 			!strings.Contains(err.Error(), "symlink") {
 			t.Fatalf("the admission gate must refuse a symlinked contract by name: %v", err)
 		}
-		// The PUBLIC ladder speaks the same named diagnostic; without
-		// its own gate, contract preflight dereferences first and the
-		// refusal is a generic origin error.
-		if err := engine.armAndPreflight("start"); err == nil ||
+		b.done()
+		if err := b.engine.armAndPreflight("start"); err == nil ||
 			!strings.Contains(err.Error(), "symlink") {
 			t.Fatalf("the full launch ladder must refuse the symlink shape by name: %v", err)
 		}
+		b.done()
 	})
 	t.Run("fifo", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		if err := os.Remove(engine.contractPath()); err != nil {
+		b := newPreflightPolicyBed(t)
+		if err := os.Remove(b.engine.contractPath()); err != nil {
 			t.Fatal(err)
 		}
-		// A FIFO would HANG the blocking contract read; the shape gate
-		// must refuse it by name before anything reads.
-		if err := syscall.Mkfifo(engine.contractPath(), 0o644); err != nil {
+		if err := syscall.Mkfifo(b.engine.contractPath(), 0o644); err != nil {
 			t.Skipf("cannot create a FIFO on this filesystem: %v", err)
 		}
-		if err := engine.armAndPreflight("start"); err == nil ||
+		if err := b.engine.armAndPreflight("start"); err == nil ||
 			!strings.Contains(err.Error(), "non-regular object") {
 			t.Fatalf("a FIFO contract must refuse by name, not hang: %v", err)
 		}
+		b.done()
 	})
 	t.Run("byte-edit", func(t *testing.T) {
-		engine := buildPreflightRootWithStream(t, "")
-		commitBedBaseline(t, engine.Root)
-		handle, _ := os.OpenFile(engine.contractPath(), os.O_APPEND|os.O_WRONLY, 0o644)
-		handle.WriteString("\n<!-- unsigned edit in the preflight gap -->\n")
-		handle.Close()
-		err := engine.armAndPreflight("start")
+		b := newPreflightPolicyBed(t)
+		handle, err := os.OpenFile(b.engine.contractPath(), os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := handle.WriteString("\n<!-- unsigned edit in the preflight gap -->\n"); err != nil {
+			t.Fatal(err)
+		}
+		if err := handle.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if b.physicalEntries()["plans/mission-alpha.contract.md"].OID == b.committed["plans/mission-alpha.contract.md"].OID {
+			t.Fatal("the edit did not change the physical contract blob")
+		}
+		b.pin("true\n", 0)
+		b.admission(b.source.signed, false)
+		if _, err := b.engine.admittedBaseline(map[string]string{}, b.source.signed); err == nil ||
+			!strings.Contains(err.Error(), "differs from its committed form") {
+			t.Fatalf("the admission gate must refuse edited contract bytes by name: %v", err)
+		}
+		b.done()
+		err = b.engine.armAndPreflight("start")
 		if err == nil {
 			t.Fatal("an uncommitted contract edit must refuse")
 		}
+		b.done()
 	})
+}
+
+// This small native adapter witnesses Git's boolean normalization and the
+// index/worktree mode distinction used by the strict ordinary transcript.
+func TestNativePreflightConfigAndModeAdapter(t *testing.T) {
+	root := t.TempDir()
+	fixtureGit(t, root, "init", "-q", "-b", "main")
+	engine := &Engine{Root: root}
+	for _, spelling := range []string{"yes", "on", "1", "TRUE"} {
+		fixtureGit(t, root, "config", "core.fileMode", spelling)
+		if err := engine.checkFileModePinned(); err != nil {
+			t.Fatalf("Git true spelling %q must satisfy the local pin: %v", spelling, err)
+		}
+	}
+	fixtureGit(t, root, "config", "--unset", "core.fileMode")
+	if err := engine.checkFileModePinned(); err == nil || !strings.Contains(err.Error(), "core.fileMode") {
+		t.Fatalf("an absent local pin must refuse: %v", err)
+	}
+	fixtureGit(t, root, "config", "core.fileMode", "true")
+	path := filepath.Join(root, "contract.md")
+	if err := os.WriteFile(path, []byte("signed bytes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixtureGit(t, root, "add", "contract.md")
+	fixtureGit(t, root, "commit", "-qm", "committed contract mode")
+	if err := os.Chmod(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workspace := gittree.Workspace{Dir: root}
+	raw, err := workspace.Snapshot("HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := workspace.HeadTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := workspace.Entries(raw, []string{"contract.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	committed, err := workspace.Entries(head, []string{"contract.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live["contract.md"].Mode != "100755" || committed["contract.md"].Mode != "100644" ||
+		live["contract.md"].OID != committed["contract.md"].OID {
+		t.Fatalf("mode-only change: snapshot=%+v committed=%+v", live, committed)
+	}
 }
 
 // The mission must run EXACTLY the pinned contract. A different contract
@@ -668,11 +902,29 @@ func TestNonRegularStatePathFreezesTheMission(t *testing.T) {
 // and the anchors all survive. The ledger's own booked cycles are the
 // belt for missions whose birth record is also gone.
 func TestLostStateFreezesTheBornMission(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:close-stream")
 	leasePath := filepath.Join(engine.Root, "artifacts", "agents", "checkout.lease.json")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	if code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture-ls", signal); code != 0 {
 		t.Fatalf("the bed mission must be born, exit %d", code)
+	}
+	missionRefs := func() map[string]string {
+		t.Helper()
+		refs, err := engine.wallWorkspace(engine.Root).RefMap()
+		if err != nil {
+			t.Fatalf("read the mission's anchors: %v", err)
+		}
+		anchors := make(map[string]string)
+		for ref, oid := range refs {
+			if strings.HasPrefix(ref, mission.MissionRefNamespace(engine.Mission)) {
+				anchors[ref] = oid
+			}
+		}
+		return anchors
+	}
+	bornAnchors := missionRefs()
+	if len(bornAnchors) == 0 {
+		t.Fatal("the born mission has no anchors")
 	}
 	statePath := filepath.Join(engine.missionDir(), "state.json")
 	ledgerPath := filepath.Join(engine.missionDir(), "ledger.md")
@@ -705,10 +957,8 @@ func TestLostStateFreezesTheBornMission(t *testing.T) {
 	if !pathExists(ledgerPath) || !pathExists(engine.approvedContractPath()) {
 		t.Fatal("the refusals must not sweep the lived mission's evidence")
 	}
-	anchors := exec.Command("git", "-C", engine.Root, "for-each-ref",
-		"--format=%(refname)", "refs/metasystem/missions/"+engine.Mission+"/")
-	if refs, err := anchors.CombinedOutput(); err != nil || strings.TrimSpace(string(refs)) == "" {
-		t.Fatalf("the lived mission's anchors must survive: %q (%v)", refs, err)
+	if anchors := missionRefs(); !maps.Equal(anchors, bornAnchors) {
+		t.Fatalf("the lived mission's anchors changed during refusal: born=%v now=%v", bornAnchors, anchors)
 	}
 	// The BELT: even with the birth record gone too, booked cycles in
 	// the ledger prove the mission lived.
@@ -731,10 +981,8 @@ func TestLostStateFreezesTheBornMission(t *testing.T) {
 		!strings.Contains(err.Error(), "anchor namespace") {
 		t.Fatalf("surviving anchors alone must refuse rebirth: %v", err)
 	}
-	anchorsAfter := exec.Command("git", "-C", engine.Root, "for-each-ref",
-		"--format=%(refname)", "refs/metasystem/missions/"+engine.Mission+"/")
-	if refs, err := anchorsAfter.CombinedOutput(); err != nil || strings.TrimSpace(string(refs)) == "" {
-		t.Fatalf("the anchor refusal must leave the refs standing: %q (%v)", refs, err)
+	if anchors := missionRefs(); !maps.Equal(anchors, bornAnchors) {
+		t.Fatalf("the anchor refusal changed the refs: born=%v now=%v", bornAnchors, anchors)
 	}
 }
 
@@ -1489,7 +1737,7 @@ func TestInternalRunParkRequestCycle(t *testing.T) {
 // A close-stream return concludes the mission's only stream: the mission
 // reaches a terminal and the ledger books the cycle that did it.
 func TestInternalRunCloseStreamCycle(t *testing.T) {
-	engine := buildFullCycleRoot(t, "FAKEHOST:close-stream")
+	engine := buildGitFreeHostCycle(t, "FAKEHOST:close-stream")
 	signal := filepath.Join(t.TempDir(), "start.json")
 	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
@@ -1531,14 +1779,13 @@ func TestInternalRunCloseStreamCycle(t *testing.T) {
 	if !regexp.MustCompile(`^[0-9a-f]{40,64}$`).MatchString(preTree) {
 		t.Fatalf("turn record preTree is not a tree id: %q", preTree)
 	}
-	anchor := exec.Command("git", "-C", engine.Root, "rev-parse", "--verify",
-		"refs/metasystem/missions/"+engine.Mission+"/"+preTree)
-	anchored, err := anchor.Output()
+	anchors, err := engine.wallWorkspace(engine.Root).RefMap()
 	if err != nil {
-		t.Fatalf("the pre-tree anchor ref is missing: %v", err)
+		t.Fatalf("read the pre-tree anchor ref: %v", err)
 	}
-	if strings.TrimSpace(string(anchored)) != preTree {
-		t.Fatalf("anchor points at %q, not the pre-tree %q", strings.TrimSpace(string(anchored)), preTree)
+	ref := mission.MissionRefNamespace(engine.Mission) + preTree
+	if anchors[ref] != preTree {
+		t.Fatalf("anchor %q points at %q, not the pre-tree %q", ref, anchors[ref], preTree)
 	}
 }
 

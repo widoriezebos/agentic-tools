@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
@@ -83,6 +84,28 @@ func newLandingClosureFixture(t *testing.T) (*observeFixture, map[string]any, st
 	}
 	writeLandingCriticClosure(t, fixture, "critic", 1, subject)
 	return fixture, rootRecord, reviewedTree, patch
+}
+
+func newLandingClosureObservation(t *testing.T, movedBase bool, reviewedTree string) (*repositoryObservationFixture, *observationCase, map[string]any, chainFileChange, []byte) {
+	t.Helper()
+	fixture := newRepositoryObservationFixture(t)
+	if movedBase {
+		fixture.base("docs/base-move.md", "unrelated base movement\n")
+	}
+	change := chainAddition("internal/output.go", "package internal\n")
+	patch := chainDiff(change)
+	caseFacts := fixture.chainCase(observeTreeB, change)
+	rootRecord := chainRoot("implementation")
+	rootRecord["independentCritiqueJobRef"] = "critic"
+	fixture.writeChainRecord("implementation", rootRecord)
+	fixture.writeChainReview("implementation", 1, "implementation", reviewedTree, patch)
+	subject := readsubject.ReadSubject{
+		Kind: readsubject.SubjectLive, ImplementerRoot: "implementation", ReviewedMember: "implementation",
+		ReviewedProjectTree: reviewedTree, DiffDigest: landingPatchDigest(patch),
+	}
+	writeLandingCriticClosure(t, &observeFixture{t: t, root: fixture.root}, "critic", 1, subject)
+	caseFacts.bindChain(patch, reviewedTree, change)
+	return fixture, caseFacts, rootRecord, change, patch
 }
 
 func newFileOnlyClosureFixture(t *testing.T) (*observeFixture, map[string]any, string, []byte) {
@@ -278,49 +301,52 @@ func TestChainCertifiedOutputRejectsUnmatchedClosure(t *testing.T) {
 
 func TestLandingRejectsStaleCriticClosure(t *testing.T) {
 	t.Run("later critic member invalidates the public observation", func(t *testing.T) {
-		fixture, rootRecord, reviewedTree, _ := newLandingClosureFixture(t)
+		fixture, caseFacts, rootRecord, _, _ := newLandingClosureObservation(t, false, observeTreeB)
 		fixture.writeChainRecord("critic-r2", map[string]any{
 			"jobId": "critic-r2", "parentJob": "critic", "role": "code-critic",
 			"round": 2, "status": "completed",
 		})
-		got := Observe(ObserveParams{RepoRoot: fixture.root, CandidateTree: reviewedTree, Chain: "implementation"})
+		caseFacts.expectChainClosureRefusal()
+		got := caseFacts.observe(ObserveParams{RepoRoot: fixture.root, CandidateTree: caseFacts.candidate, Chain: "implementation"})
 		if got.Code != "chain-output-unreadable" || got.Bar != BarRefusal || !strings.Contains(got.Detail, "last critic round") {
 			t.Fatalf("stale critic observation = %+v; root=%v", got, rootRecord)
 		}
 	})
 
 	t.Run("base movement preserves patch replay", func(t *testing.T) {
-		fixture, _, _, _ := newLandingClosureFixture(t)
-		if err := os.Remove(filepath.Join(fixture.root, "internal", "output.go")); err != nil {
-			t.Fatal(err)
-		}
-		fixture.write("docs/base-move.md", "unrelated base movement\n")
-		fixture.git("add", "docs/base-move.md")
-		fixture.git("commit", "-qm", "move landing base")
-		fixture.write("internal/output.go", "package internal\n")
-		candidate := fixture.tree()
-		got := Observe(ObserveParams{RepoRoot: fixture.root, CandidateTree: candidate, Chain: "implementation"})
+		fixture, caseFacts, _, _, _ := newLandingClosureObservation(t, true, observeTreeB)
+		caseFacts.wantChainPolicy(caseFacts.changed...)
+		got := caseFacts.observe(ObserveParams{RepoRoot: fixture.root, CandidateTree: caseFacts.candidate, Chain: "implementation"})
 		if got.Code != "closed-chain" || got.Bar != BarChain || got.Verdict != "pass" {
 			t.Fatalf("base-moved observation = %+v", got)
 		}
 	})
 
 	t.Run("reviewed postimage drift still refuses", func(t *testing.T) {
-		fixture, rootRecord, reviewedTree, patch := newLandingClosureFixture(t)
-		fixture.write("internal/output.go", "package internal // drifted postimage\n")
-		driftedTree := fixture.tree()
-		fixture.write("internal/output.go", "package internal\n")
-		fixture.writeJSONDocument("artifacts/agents/implementation/rounds/1/review.json", map[string]any{
-			"diffArtifact": "diff.patch", "implementerJob": "implementation", "reviewedTree": driftedTree,
+		fixture, caseFacts, rootRecord, change, patch := newLandingClosureObservation(t, false, chainReviewedTree)
+		caseFacts.declareEntries(chainReviewedTree, []string{change.path}, map[string]gittree.Entry{
+			change.path: {Mode: "100644", OID: chainBlobOID([]byte("package internal // drifted postimage\n"))},
 		})
-		subject := readsubject.ReadSubject{
-			Kind: readsubject.SubjectLive, ImplementerRoot: "implementation", ReviewedMember: "implementation",
-			ReviewedProjectTree: driftedTree, DiffDigest: landingPatchDigest(patch),
-		}
-		writeLandingCriticClosure(t, fixture, "critic", 1, subject)
-		got := Observe(ObserveParams{RepoRoot: fixture.root, CandidateTree: reviewedTree, Chain: "implementation"})
+		caseFacts.expectChainReviewedMismatch(patch, change.path)
+		got := caseFacts.observe(ObserveParams{RepoRoot: fixture.root, CandidateTree: caseFacts.candidate, Chain: "implementation"})
 		if got.Code != "chain-output-mismatch" || got.Bar != BarRefusal {
 			t.Fatalf("postimage drift observation = %+v; root=%v", got, rootRecord)
 		}
 	})
+}
+
+func TestLandingNativeMovedBaseReplayAdapter(t *testing.T) {
+	fixture, _, _, _ := newLandingClosureFixture(t)
+	if err := os.Remove(filepath.Join(fixture.root, "internal", "output.go")); err != nil {
+		t.Fatal(err)
+	}
+	fixture.write("docs/base-move.md", "unrelated base movement\n")
+	fixture.git("add", "docs/base-move.md")
+	fixture.git("commit", "-qm", "move landing base")
+	fixture.write("internal/output.go", "package internal\n")
+	candidate := fixture.tree()
+	got := Observe(ObserveParams{RepoRoot: fixture.root, CandidateTree: candidate, Chain: "implementation"})
+	if got.Code != "closed-chain" || got.Bar != BarChain || got.Verdict != "pass" {
+		t.Fatalf("base-moved observation = %+v", got)
+	}
 }

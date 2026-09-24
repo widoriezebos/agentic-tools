@@ -276,63 +276,44 @@ func TestLegacyReceiptPreservesNestedSuiteFailureEvidenceBeforeCandidateCleanup(
 }
 
 func TestReceiptPreparationSurvivesCanonicalRecordMotion(t *testing.T) {
-	f := newObserveFixture(t)
-	f.write("metasystem.conf", "metasystem.runtimes=fake\ndispatch.cap-max=120\n")
-	f.write("internal/proofrun/stub.go", "package proofrun\n")
-	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
-		f.write(filepath.Join("scripts", "agents", name), `{"floors":{"internal/proofrun":1},"exempt":{}}`)
-	}
-	f.git("add", ".")
-	tree, err := (gittree.Workspace{Dir: f.root}).StagedTree()
-	if err != nil {
-		t.Fatal(err)
-	}
-	preparation, err := PrepareTestReceipt(f.root, tree, "true")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = preparation.Close() })
-	proofIdentity, err := proofrun.BuildProofIdentity(preparation.ExecutionRoot(), filepath.Join(preparation.ExecutionRoot(), "metasystem.conf"),
-		"full", "landing-test-receipt", nil, behaviorsurface.SupportedVersion)
-	if err != nil {
-		t.Fatal(err)
-	}
-	launcher, err := proofrun.CurrentProcessIdentity(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now().UTC()
-	request := candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: preparation.ExecutionRoot(),
-		GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: now}, tree)
-	request = proofrun.WithTestHostAdmissionDirectory(request, filepath.Join(t.TempDir(), "host-admission"))
-	attempt, decision, err := proofrun.ReserveLocked(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	requireProofReservationNotAdmissionRefused(t, decision)
-	f.write("records/steward/narration.txt", "record motion\n")
-	f.git("add", "records/steward/narration.txt")
-	receipt, err := preparation.Complete(attempt, now.Add(time.Second))
-	if err != nil {
-		t.Fatalf("canonical record motion invalidated detached candidate proof: %v", err)
-	}
-	payload, err := json.Marshal(receipt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := proofrun.FinalizeAttempt(f.root, attempt.AttemptID, proofrun.TerminalSuccess, 0, "prepared receipt", payload, now.Add(2*time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree); err == nil {
+	const path = "records/steward/narration.txt"
+	content := []byte("record motion\n")
+	f := newFileOnlyCanonicalReceiptFixtureWithBeforeComplete(t, func(f *fileOnlyCanonicalReceiptFixture) {
+		full := filepath.Join(f.root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(full, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	})
+	originalTree, originalTime := f.tree, f.receipt.Time
+	f.files[path] = content
+	f.tree = receiptFactID(f.files)
+	f.checkFiles(f.root)
+	f.commit(t)
+	if _, err := publishCommittedReceiptAtWithWorkspace(f.root, f.attempt.AttemptID, originalTree, time.Now().UTC(), f.workspace()); err == nil {
 		t.Fatal("ordinary publication ignored the moved live candidate posture")
 	}
-	f.git("reset", "-q", "HEAD", "records/steward/narration.txt")
-	if err := os.Remove(filepath.Join(f.root, "records", "steward", "narration.txt")); err != nil {
+	if err := os.Remove(filepath.Join(f.root, path)); err != nil {
 		t.Fatal(err)
 	}
-	recovered, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree)
-	if err != nil || recovered.Time != receipt.Time {
+	delete(f.files, path)
+	f.tree = receiptFactID(f.files)
+	if f.tree != originalTree {
+		t.Fatalf("restored candidate tree = %s, want %s", f.tree, originalTree)
+	}
+	f.checkFiles(f.root)
+	recovered, err := publishCommittedReceiptAtWithWorkspace(f.root, f.attempt.AttemptID, originalTree, time.Now().UTC(), f.workspace())
+	if err != nil || recovered.Time != originalTime {
 		t.Fatalf("exact prepared receipt was not recoverable after ordinary posture returned: receipt=%+v err=%v", recovered, err)
+	}
+	attempts, err := proofrun.ReadAttempts(f.root)
+	if err != nil || len(attempts) != 1 || attempts[0].AttemptID != f.attempt.AttemptID {
+		t.Fatalf("record motion changed proof attempts: attempts=%+v err=%v", attempts, err)
 	}
 }
 
@@ -444,13 +425,20 @@ func (fixture *canonicalReceiptFixture) commit(t *testing.T) {
 
 type fileOnlyCanonicalReceiptFixture struct {
 	canonicalReceiptFixture
-	t       *testing.T
-	files   map[string][]byte
-	frozen  string
-	indices map[string]receiptPrivateIndex
+	t                  *testing.T
+	files              map[string][]byte
+	frozen             string
+	acceptedTree       string
+	acceptedProjection string
+	indices            map[string]receiptPrivateIndex
 }
 
 func newFileOnlyCanonicalReceiptFixture(t *testing.T) *fileOnlyCanonicalReceiptFixture {
+	t.Helper()
+	return newFileOnlyCanonicalReceiptFixtureWithBeforeComplete(t, nil)
+}
+
+func newFileOnlyCanonicalReceiptFixtureWithBeforeComplete(t *testing.T, beforeComplete func(*fileOnlyCanonicalReceiptFixture)) *fileOnlyCanonicalReceiptFixture {
 	t.Helper()
 	f := &fileOnlyCanonicalReceiptFixture{t: t, files: map[string][]byte{}, indices: map[string]receiptPrivateIndex{}}
 	f.root = t.TempDir()
@@ -469,6 +457,8 @@ func newFileOnlyCanonicalReceiptFixture(t *testing.T) *fileOnlyCanonicalReceiptF
 		f.write(filepath.Join("scripts", "agents", name), string(content))
 	}
 	f.tree = receiptFactID(f.files)
+	f.acceptedTree = f.tree
+	f.acceptedProjection = receiptFactID(receiptWithoutRegisters(f.files))
 	frozen, err := proofrun.Freeze(f.root)
 	if err != nil {
 		t.Fatal(err)
@@ -481,7 +471,7 @@ func newFileOnlyCanonicalReceiptFixture(t *testing.T) *fileOnlyCanonicalReceiptF
 	}
 	candidate := gittree.Workspace{Dir: frozen.Root, RawSource: f.strictRaw}
 	indexBefore, worktreeBefore, err := receiptPosture(candidate)
-	if err != nil || indexBefore != f.tree || worktreeBefore != receiptFactID(receiptWithoutRegisters(f.files)) {
+	if err != nil || indexBefore != f.tree || worktreeBefore != f.acceptedProjection {
 		t.Fatalf("file-only candidate posture: index=%s worktree=%s err=%v", indexBefore, worktreeBefore, err)
 	}
 	preparation := &ReceiptPreparation{root: f.root, tree: f.tree, command: CanonicalValidatorCommand,
@@ -535,6 +525,9 @@ func newFileOnlyCanonicalReceiptFixture(t *testing.T) *fileOnlyCanonicalReceiptF
 	current, err := proofrun.ReadAttempt(f.root, attempt.AttemptID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if beforeComplete != nil {
+		beforeComplete(f)
 	}
 	f.receipt, err = preparation.Complete(current, now.Add(time.Minute))
 	if err != nil {
@@ -679,8 +672,9 @@ func (f *fileOnlyCanonicalReceiptFixture) strictRaw(request gittree.RawRequest) 
 	case private != "" && (!known || state.phase == "done") && slices.Equal(args, []string{"read-tree", "HEAD"}):
 		f.indices[private] = receiptPrivateIndex{kind: "snapshot", phase: "seeded"}
 		return gittree.RawResult{}
-	case private != "" && (!known || state.phase == "done") && slices.Equal(args, []string{"read-tree", f.tree}):
-		f.indices[private] = receiptPrivateIndex{kind: "filter", phase: "seeded"}
+	case private != "" && (!known || state.phase == "done") && len(args) == 2 && args[0] == "read-tree" &&
+		(args[1] == f.tree || args[1] == f.acceptedTree):
+		f.indices[private] = receiptPrivateIndex{kind: "filter", phase: "seeded", seed: args[1]}
 		return gittree.RawResult{}
 	case private != "" && known && state.kind == "staged" && state.phase == "seeded" &&
 		slices.Equal(args, []string{"update-index", "-z", "--index-info"}) && bytes.Equal(request.Stdin, f.entries()):
@@ -702,6 +696,9 @@ func (f *fileOnlyCanonicalReceiptFixture) strictRaw(request gittree.RawRequest) 
 			f.checkFiles(request.Dir)
 			return answer(f.tree)
 		case "filter":
+			if state.seed == f.acceptedTree {
+				return answer(f.acceptedProjection)
+			}
 			return answer(receiptFactID(receiptWithoutRegisters(f.files)))
 		}
 	default:

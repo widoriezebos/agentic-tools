@@ -231,13 +231,18 @@ var batchRecoveryGoalNext = func(root, goalID string, at time.Time) (string, err
 }
 
 func recoverMovedBatchPush(root, id string, record batch.Record, actor, expectedBase, originCommit, baseTree, tip string) (batch.PushRecovery, error) {
+	return recoverMovedBatchPushWithInputs(root, id, record, actor, expectedBase, originCommit, baseTree, tip, gitOutput, func(cmd *exec.Cmd) error { return cmd.Run() })
+}
+
+func recoverMovedBatchPushWithInputs(root, id string, record batch.Record, actor, expectedBase, originCommit, baseTree, tip string,
+	readGit func(root string, args ...string) (string, error), runGit func(*exec.Cmd) error) (batch.PushRecovery, error) {
 	controlRoot := batch.ModuleRoot(root)
-	originTree, err := gitOutput(root, "rev-parse", originCommit+"^{tree}")
+	originTree, err := readGit(root, "rev-parse", originCommit+"^{tree}")
 	recovery := batch.PushRecovery{Origin: originCommit, BaseTree: originTree}
 	if err != nil {
 		return recovery, err
 	}
-	landed, err := batchSeriesOnEndpoint(root, originCommit, tip)
+	landed, err := batchSeriesOnEndpointWithRunner(root, originCommit, tip, runGit)
 	if err != nil {
 		return recovery, err
 	}
@@ -315,12 +320,16 @@ func reopenMovedBatchAfterRecoveryFailure(_, _, _, _ string, recovery batch.Push
 }
 
 func batchSeriesOnEndpoint(root, origin, tip string) (bool, error) {
+	return batchSeriesOnEndpointWithRunner(root, origin, tip, func(cmd *exec.Cmd) error { return cmd.Run() })
+}
+
+func batchSeriesOnEndpointWithRunner(root, origin, tip string, runGit func(*exec.Cmd) error) (bool, error) {
 	if origin == "" || tip == "" {
 		return false, nil
 	}
 	command := exec.Command("git", "-C", root, "merge-base", "--is-ancestor", tip, origin)
 	command.Env = gittree.ScrubbedEnviron()
-	err := command.Run()
+	err := runGit(command)
 	if err == nil {
 		return true, nil
 	}
