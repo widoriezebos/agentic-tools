@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { PartnerEvent, Snapshot } from "./api";
 import {
+  ANYONE,
   asked,
   busy,
   emptyStore,
   loaded,
+  nameOf,
   received,
   refused,
   retrying,
@@ -225,5 +227,29 @@ describe("the conversation", () => {
       state: "unavailable",
       refusal: "no Partner runtime is configured on this seat",
     });
+  });
+});
+
+/**
+ * What the row above a question calls the human who asked it.
+ *
+ * The server answers with a name where anything knows one and with the word
+ * "seat" where nothing does, so the one case worth asserting is that the word
+ * is read as nobody in particular: a header row saying "seat" would be naming
+ * a chair, and the row exists to say who spoke.
+ */
+describe("who a question is signed by", () => {
+  it("is the human the server names", () => {
+    expect(nameOf("Wido")).toBe("Wido");
+    expect(nameOf("  Wido  ")).toBe("Wido");
+    expect(nameOf(loaded(emptyStore, snapshot).human)).toBe("Wido");
+  });
+
+  it("is You where the server names nobody", () => {
+    expect(nameOf("seat")).toBe(ANYONE);
+    expect(nameOf("")).toBe(ANYONE);
+    expect(nameOf("   ")).toBe(ANYONE);
+    expect(nameOf(emptyStore.human)).toBe(ANYONE);
+    expect(ANYONE).toBe("You");
   });
 });

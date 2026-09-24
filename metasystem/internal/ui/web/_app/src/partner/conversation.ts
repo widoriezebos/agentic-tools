@@ -73,6 +73,27 @@ export function busy(store: Store): boolean {
 }
 
 /**
+ * What a header row calls the human who asked.
+ *
+ * The server resolves whose conversation this is per request — the human
+ * signed in at this browser, else the one its boot proof names, else the one
+ * the seat configured — and where none of those knows a name it answers with
+ * the word "seat". A row that said "seat" above a question would be naming a
+ * chair rather than a person, so the word is read as nobody in particular and
+ * the row says "You", which is what every interface says to someone it has not
+ * been introduced to.
+ */
+export const ANYONE = "You";
+
+/** The server's own word for a conversation nobody is named on. */
+const UNNAMED = "seat";
+
+export function nameOf(human: string): string {
+  const named = human.trim();
+  return named === "" || named === UNNAMED ? ANYONE : named;
+}
+
+/**
  * The conversation as the server reads it. It replaces the transcript whole:
  * the server owns it, and a page that merged its own idea of it into the
  * server's would be a second account of the same conversation.

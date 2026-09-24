@@ -915,8 +915,10 @@ body {
   width: 100%;
   box-sizing: border-box;
   field-sizing: content;
-  min-height: calc(1.5em + 18px);
-  max-height: calc(9em + 18px);
+  /* One line to start and six at most, in whatever rhythm the chooser is set
+     to: a spacing a human loosened must not shrink the field to five. */
+  min-height: calc(1em * var(--ms-partner-leading, 1.5) + 18px);
+  max-height: calc(6em * var(--ms-partner-leading, 1.5) + 18px);
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--ms-border-strong);
@@ -925,7 +927,7 @@ body {
   font: inherit;
   font-family: var(--ms-partner-face, inherit);
   font-size: var(--ms-partner-size, 16px);
-  line-height: 1.5;
+  line-height: var(--ms-partner-leading, 1.5);
   resize: none;
   overflow-y: auto;
 }

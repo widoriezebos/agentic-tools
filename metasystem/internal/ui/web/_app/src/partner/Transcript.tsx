@@ -1,9 +1,10 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, MessageSquare, User } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router";
 
 import type { Message, Page } from "./api";
-import { chipOf } from "./capture";
+import { chipOf, whenOf } from "./capture";
+import { nameOf } from "./conversation";
 import { useTypefaceOn } from "./FontControl";
 import { Looked } from "./Looked";
 import { namesIn, runsIn, type Names } from "./references";
@@ -16,13 +17,20 @@ import { Markdown } from "../project/Markdown";
 /**
  * The conversation, as a human reads it.
  *
- * One column, one measure, two voices. A question is a block in the surface
- * colour against the right edge, at most two thirds of the measure, with the
- * page it was asked from as a tiny label under it; an answer is plain prose in
- * the reading face, at the size the document pages are read at, with no box
- * around it — an answer is read, not received. Under each answer stands one
- * muted line saying what it was given and what it looked at, and nothing else
- * stands between two turns.
+ * One column, and every turn attributed the same way, so a reader never has to
+ * infer who spoke. Above each turn stands one small row — a mark, the
+ * speaker's name, and the time at the row's end — and under it the words: the
+ * human's on a tinted block spanning the column, the Partner's as plain prose
+ * with a hairline in the accent down its left, from the header to the meta
+ * line that says what the answer was given and what it looked at.
+ *
+ * g1-s31 told the two voices apart by shape alone, a block against the right
+ * edge and prose beside it, and once the conversation took the drawer's width
+ * the block sat far from the prose it answered; a short question and a short
+ * answer looked alike (Wido, 2026-09-24: "I also would like to see a bit more
+ * clearly the difference between my message and the partner message"). So
+ * attribution is written down rather than implied by position, and nothing
+ * here is right-aligned: the eye reads down one edge.
  *
  * An answer arrives in pieces, so while it is arriving it is shown as plain
  * paragraphs: there is no half-parsed Markdown that is worth showing, and a
@@ -55,6 +63,12 @@ const RENDERED = 25;
  */
 const AT_END = 24;
 
+/** What the Partner is called in the row above everything it says. */
+const PARTNER = "Project Partner";
+
+/** The mark a header row wears. Sixteen pixels beside a twelve pixel row. */
+const MARK = 16;
+
 export function Transcript() {
   const { store } = usePartner();
   const messages = store.messages;
@@ -68,6 +82,10 @@ export function Transcript() {
   // Every name this workspace answers to, built once per index rather than
   // once per answer: the conversation re-renders on every beat.
   const names = useMemo(() => namesIn(store.index), [store.index]);
+  // What every question is signed with. It is the human the server says this
+  // conversation is, which is the same answer the identity control reads, so
+  // the row above a question and the chip in the header never disagree.
+  const asker = nameOf(store.human);
   // The face and the size a human chose for this conversation, on the column
   // they chose it for and on nothing above it.
   useTypefaceOn(column);
@@ -121,7 +139,13 @@ export function Transcript() {
   return (
     <div ref={column} className="ms-conversation ms-partner-transcript">
       {messages.map((message, index) => (
-        <Said key={message.id} message={message} rendered={index >= firstRendered} names={names} />
+        <Said
+          key={message.id}
+          message={message}
+          rendered={index >= firstRendered}
+          names={names}
+          asker={asker}
+        />
       ))}
       {store.live.turn !== "" && <Running />}
       {store.refusal !== "" && <Refusal reason={store.refusal} install={store.install} />}
@@ -152,33 +176,90 @@ function atEnd(scroller: HTMLElement): boolean {
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= AT_END;
 }
 
-function Said({ message, rendered, names }: { message: Message; rendered: boolean; names: Names }) {
+function Said({
+  message,
+  rendered,
+  names,
+  asker,
+}: {
+  message: Message;
+  rendered: boolean;
+  names: Names;
+  asker: string;
+}) {
   if (message.role === "human") {
     return (
-      <div className="ms-partner-said ms-partner-said--human">
-        <p className="ms-visually-hidden">You</p>
-        <div className="ms-partner-bubble">
+      <div className="ms-turn ms-turn--human">
+        <TurnHead who="human" name={asker} at={message.at}>
+          {message.page !== undefined && <AskedFrom capture={message.page} />}
+        </TurnHead>
+        <div className="ms-turn-body">
           <Paragraphs text={message.text} />
         </div>
-        {message.page !== undefined && <AskedFrom capture={message.page} />}
       </div>
     );
   }
   const failed = message.outcome === "failed" || message.outcome === "refused";
   return (
-    <div className="ms-partner-said ms-partner-said--partner">
-      <p className="ms-visually-hidden">Project Partner</p>
-      {message.text !== "" &&
-        (rendered ? <Answer text={message.text} names={names} /> : <Paragraphs text={message.text} />)}
-      {message.outcome === "stopped" && <p className="ms-partner-note">Stopped.</p>}
-      {failed && <p className="ms-partner-failed">{message.detail ?? "The turn did not finish."}</p>}
-      <Looked looked={message.looked ?? []} />
+    <div className="ms-turn ms-turn--partner">
+      <TurnHead who="partner" name={PARTNER} at={message.at} />
+      <div className="ms-turn-body">
+        {message.text !== "" &&
+          (rendered ? <Answer text={message.text} names={names} /> : <Paragraphs text={message.text} />)}
+        {message.outcome === "stopped" && <p className="ms-partner-note">Stopped.</p>}
+        {failed && <p className="ms-partner-failed">{message.detail ?? "The turn did not finish."}</p>}
+        <Looked looked={message.looked ?? []} />
+      </div>
     </div>
   );
 }
 
 /**
- * The capture a question was asked from, as a label that goes back to it.
+ * Who spoke, and when: the row that stands above every turn.
+ *
+ * The mark is inline in the name's own line rather than a column of its own,
+ * so that the mark, the name and the time keep one baseline in whatever face
+ * the conversation is read in — a terminal face and a proportional one put
+ * their letters at different heights inside the same line box, and a row built
+ * from three boxes would drift between them. The time goes to the row's end,
+ * and the page a question was asked from follows it: it belongs to the
+ * question, not under its words.
+ *
+ * It is the whole of what used to be said by a visually hidden label. A row a
+ * reader can see says the same thing to a reader who cannot.
+ */
+function TurnHead({
+  who,
+  name,
+  at,
+  children,
+}: {
+  who: "human" | "partner";
+  name: string;
+  at: string;
+  children?: ReactNode;
+}) {
+  const when = whenOf(at);
+  return (
+    <p className="ms-turn-head">
+      <span className="ms-turn-who">
+        {who === "human" ? (
+          <User className="ms-turn-mark" size={MARK} strokeWidth={1.75} aria-hidden="true" />
+        ) : (
+          <MessageSquare className="ms-turn-mark" size={MARK} strokeWidth={1.75} aria-hidden="true" />
+        )}
+        {name}
+      </span>
+      {when !== "" && <span className="ms-turn-when">{when}</span>}
+      {children}
+    </p>
+  );
+}
+
+/**
+ * The capture a question was asked from, as a label that goes back to it. It
+ * stands in the question's own header row, after the time: it says something
+ * about the asking, which is what that row is for.
  *
  * Clicking it opens that page with the view, filters, window and tab the
  * capture carries, through the board's own landing; the page then says what it
@@ -217,18 +298,18 @@ function AskedFrom({ capture }: { capture: Page }) {
 function Running() {
   const { store } = usePartner();
   const live = store.live;
-  if (live.text !== "") {
-    return (
-      <div className="ms-partner-said ms-partner-said--partner">
-        <p className="ms-visually-hidden">Project Partner</p>
-        <Paragraphs text={live.text} />
-      </div>
-    );
-  }
   return (
-    <div className="ms-partner-said ms-partner-said--partner">
-      <p className="ms-visually-hidden">Project Partner</p>
-      <p className="ms-partner-working">{live.doing === "" ? "Thinking…" : live.doing}</p>
+    <div className="ms-turn ms-turn--partner">
+      {/* A turn that has not finished has no instant to stamp: the time
+          arrives with the answer the server writes down. */}
+      <TurnHead who="partner" name={PARTNER} at="" />
+      <div className="ms-turn-body">
+        {live.text !== "" ? (
+          <Paragraphs text={live.text} />
+        ) : (
+          <p className="ms-partner-working">{live.doing === "" ? "Thinking…" : live.doing}</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -236,17 +317,19 @@ function Running() {
 /** A refusal, in the server's own words, with the line that installs it. */
 function Refusal({ reason, install }: { reason: string; install: string }) {
   return (
-    <div className="ms-partner-said ms-partner-said--partner">
-      <p className="ms-visually-hidden">Project Partner</p>
-      <p className="ms-partner-failed">
-        <AlertTriangle size={14} strokeWidth={1.75} aria-hidden="true" />
-        {reason}
-      </p>
-      {install !== "" && (
-        <pre className="ms-partner-install">
-          <code>{install}</code>
-        </pre>
-      )}
+    <div className="ms-turn ms-turn--partner">
+      <TurnHead who="partner" name={PARTNER} at="" />
+      <div className="ms-turn-body">
+        <p className="ms-partner-failed">
+          <AlertTriangle size={14} strokeWidth={1.75} aria-hidden="true" />
+          {reason}
+        </p>
+        {install !== "" && (
+          <pre className="ms-partner-install">
+            <code>{install}</code>
+          </pre>
+        )}
+      </div>
     </div>
   );
 }

@@ -24,12 +24,14 @@
 }
 
 /*
- * The face and the size the human chose, and the only two rules in this build
- * that read them. The other one is .ms-composer-field in shell/shell.css; the
- * chooser sets both properties on this element and on the composer's card, and
- * on nothing else, so the rest of the interface is untouched by a choice made
- * here (Wido, 2026-09-24: "I want a font chooser for the project partner ... I
- * also want a fixed width font so that it looks more like a terminal").
+ * The face, the size and the rhythm the human chose, and the only two rules in
+ * this build that read them. The other one is .ms-composer-field in
+ * shell/shell.css; the chooser sets all three properties on this element and
+ * on the composer's card, and on nothing else, so the rest of the interface is
+ * untouched by a choice made here (Wido, 2026-09-24: "I want a font chooser
+ * for the project partner ... I also want a fixed width font so that it looks
+ * more like a terminal", and "the distance between the lines, can I also
+ * change that?").
  *
  * Everything in the column below is declared in `em` and in a unitless line
  * height, so one property moves the whole conversation and the proportions it
@@ -39,7 +41,7 @@
 .ms-conversation {
   font-family: var(--ms-partner-face, inherit);
   font-size: var(--ms-partner-size, 16px);
-  line-height: 1.5;
+  line-height: var(--ms-partner-leading, 1.5);
 }
 
 .ms-partner-transcript {
@@ -50,54 +52,116 @@
   /* Twenty pixels between turns, and nothing at all between an answer and the
      line that says what it was given. */
   gap: 20px;
-  line-height: 1.5;
   padding-bottom: 8px;
-}
-
-.ms-partner-said {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
 }
 
 /* ------------------------------------------------------------- the voices -- */
 
 /*
- * A question: a block against the right edge, at most two thirds of the
- * measure, at the size a message is written at rather than the size prose is
- * read at. Under it, small and quiet, the page it was asked from.
+ * One column, and every turn attributed the same way.
+ *
+ * Shape alone told the two voices apart until now — a block against the right
+ * edge, and prose beside it — and one cue is not enough for a reader scanning
+ * back through a long conversation. So a turn is a header row and a body, both
+ * spanning the column, and nothing is aligned to the right: attribution is in
+ * the row, not in the position.
  */
-.ms-partner-said--human {
-  align-self: flex-end;
-  align-items: flex-end;
-  max-width: 66%;
-  gap: 4px;
-}
-
-.ms-partner-bubble {
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: var(--ms-surface-2);
-}
-
-.ms-partner-bubble .ms-partner-text {
-  font-size: 0.875em;
-  line-height: 1.5;
+.ms-turn {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  min-width: 0;
+  gap: 6px;
 }
 
 /*
- * An answer: plain prose, no box and no bubble — an answer is read, not
- * received — with six pixels between it and its meta line.
+ * Who spoke, and when: one quiet twelve pixel row above every turn.
+ *
+ * The mark is inline in the name's own line rather than a box of its own, so
+ * the mark, the name and the time keep one baseline whatever face the
+ * conversation is read in — two faces put their letters at different heights
+ * inside the same line box, and a row built from three boxes drifts between
+ * them. The time goes to the row's end, the page a question was asked from
+ * follows it, and a narrow drawer wraps that page onto a line of its own
+ * rather than cutting the name.
  */
-.ms-partner-said--partner {
-  align-self: stretch;
+.ms-turn-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+}
+
+.ms-turn-who {
+  min-width: 0;
+  font-weight: 500;
+  color: var(--ms-text-2);
+}
+
+.ms-turn-mark {
+  /* The reset draws every svg as a block, which would put the mark on a line
+     of its own; here it belongs in the name's line, lowered by three tenths of
+     the row, which puts a sixteen pixel mark's middle on the middle of a
+     twelve pixel name rather than its baseline. */
+  display: inline-block;
+  vertical-align: -0.3em;
+  margin-right: 6px;
+}
+
+/*
+ * The time, in the face digits are read in, so one turn's clock stands under
+ * the last one's whatever the conversation is set in.
+ */
+.ms-turn-when {
+  flex: none;
+  margin-left: auto;
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--ms-text-3);
+}
+
+.ms-turn-body {
+  min-width: 0;
+}
+
+/*
+ * The human's turn: a tinted block spanning the column, at the size the rest
+ * of the conversation is read at — the chooser sets one size, and a question
+ * set smaller than the answer to it was a second size nobody asked for.
+ *
+ * The tint is the surface family's own rather than the one the old bubble
+ * wore: the drawer's ground is the surface colour itself, so a block a shade
+ * from it disappears in the very place this conversation is usually read.
+ */
+.ms-turn--human .ms-turn-body {
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--ms-surface-3);
+}
+
+/*
+ * The Partner's answer: plain prose on the page's own ground — an answer is
+ * read, not received — carrying its mark's colour in a two pixel rule from the
+ * header to the meta line, so a long answer is still one object. The human's
+ * block needs none: it is one already.
+ */
+.ms-turn--partner .ms-turn-body {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
+  padding-left: 12px;
+  border-left: 2px solid var(--ms-accent);
 }
 
 .ms-partner-text {
   margin: 0;
   font-size: 1em;
-  line-height: 1.5;
+  line-height: var(--ms-partner-leading, 1.5);
   color: var(--ms-text);
   white-space: pre-wrap;
 }
@@ -119,7 +183,7 @@
 .ms-conversation .ms-md-list,
 .ms-conversation .ms-md-h3 {
   font-size: 1em;
-  line-height: 1.5;
+  line-height: var(--ms-partner-leading, 1.5);
 }
 
 .ms-conversation .ms-md-h1 {
@@ -332,17 +396,22 @@
 
 /* ----------------------------------------------- what a question was from -- */
 
-/* A tiny muted label under the question, not a chip beside it. */
+/*
+ * A quiet label in the question's own header row, after the time. It takes the
+ * row's size, shrinks before the name does, and is cut with an ellipsis rather
+ * than widening a drawer somebody has narrowed.
+ */
 .ms-partner-asked-from {
+  min-width: 0;
   max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--ms-text-3);
   font: inherit;
-  font-size: 11px;
-  line-height: 16px;
-  text-align: right;
   cursor: pointer;
 }
 
@@ -691,16 +760,10 @@
   color: var(--ms-text);
 }
 
-.ms-font-leading {
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--ms-text-3);
-}
-
 /*
- * The one preview that shows both: the chosen face at the chosen size, in the
- * rhythm the size carries with it. It is set the same way the conversation is,
- * by the two properties and nothing else.
+ * The one preview that shows all three: the chosen face, at the chosen size,
+ * in the chosen rhythm. It is set the same way the conversation is, by the
+ * three properties and nothing else.
  */
 .ms-font-sample {
   margin: 4px 0 0;
@@ -711,7 +774,7 @@
   color: var(--ms-text);
   font-family: var(--ms-partner-face, inherit);
   font-size: var(--ms-partner-size, 16px);
-  line-height: 1.5;
+  line-height: var(--ms-partner-leading, 1.5);
   overflow-wrap: anywhere;
 }
 
@@ -831,13 +894,6 @@
 
   .ms-focused-conversation {
     padding: 16px;
-  }
-}
-
-/* A question takes more of a narrow screen, because two thirds of it is a word. */
-@media (max-width: 599px) {
-  .ms-partner-said--human {
-    max-width: 85%;
   }
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ANY, DEFAULT_WINDOW, named, noFilters, NONE } from "./backlog/filters";
-import { DEFAULT_SIZE, DEFAULT_TYPEFACE, INTERFACE, MONO } from "./partner/typeface";
+import { DEFAULT_LEADING, DEFAULT_SIZE, DEFAULT_TYPEFACE, INTERFACE, MONO } from "./partner/typeface";
 import {
   BACKLOG_ARC_KEY,
   BACKLOG_DONE_KEY,
@@ -16,6 +16,7 @@ import {
   GOAL_TAB_KEY,
   PARTNER_FONT_KEY,
   PARTNER_FONT_SIZE_KEY,
+  PARTNER_LINE_HEIGHT_KEY,
   PROJECT_TAB_KEY,
   RAIL_KEY,
   readBacklogFilters,
@@ -303,47 +304,60 @@ describe("the stored view state", () => {
     expect(readDoneWindow(written)).toBe(30);
   });
 
-  // The conversation's face and its size: two keys, because a human who
-  // changed the size has not changed their mind about the face. Both are
-  // validated on the way out, so a name nothing could render and a size
-  // nothing could read arrive as the defaults rather than as a broken column.
-  it("remembers the conversation's face and size under their own keys", () => {
+  // The conversation's face, its size and its line spacing: three keys,
+  // because a human who changed the size has not changed their mind about the
+  // face. All three are validated on the way out, so a name nothing could
+  // render, a size nothing could read and a spacing nothing ever offered
+  // arrive as the defaults rather than as a broken column.
+  it("remembers the conversation's face, size and spacing under their own keys", () => {
     const written = store({});
 
-    writePartnerTypeface({ face: "Meslo LG M for Powerline", size: 18 }, written);
+    writePartnerTypeface({ face: "Meslo LG M for Powerline", size: 18, leading: 1.8 }, written);
 
     expect(written.getItem(PARTNER_FONT_KEY)).toBe("Meslo LG M for Powerline");
     expect(written.getItem(PARTNER_FONT_SIZE_KEY)).toBe("18");
-    expect(readPartnerTypeface(written)).toEqual({ face: "Meslo LG M for Powerline", size: 18 });
+    expect(written.getItem(PARTNER_LINE_HEIGHT_KEY)).toBe("1.8");
+    expect(readPartnerTypeface(written)).toEqual({
+      face: "Meslo LG M for Powerline",
+      size: 18,
+      leading: 1.8,
+    });
 
-    writePartnerTypeface({ face: MONO, size: 12 }, written);
+    writePartnerTypeface({ face: MONO, size: 12, leading: 1.2 }, written);
 
-    expect(readPartnerTypeface(written)).toEqual({ face: MONO, size: 12 });
+    expect(readPartnerTypeface(written)).toEqual({ face: MONO, size: 12, leading: 1.2 });
   });
 
   it("reads the conversation's defaults where nothing is stored", () => {
     expect(readPartnerTypeface(store({}))).toEqual(DEFAULT_TYPEFACE);
-    expect(readPartnerTypeface(store({ [PARTNER_FONT_KEY]: MONO }))).toEqual({ face: MONO, size: DEFAULT_SIZE });
+    expect(readPartnerTypeface(store({ [PARTNER_FONT_KEY]: MONO }))).toEqual({
+      face: MONO,
+      size: DEFAULT_SIZE,
+      leading: DEFAULT_LEADING,
+    });
   });
 
   it("reads the conversation's defaults where something invalid is stored", () => {
     const nonsense = store({
       [PARTNER_FONT_KEY]: "x; color: red",
       [PARTNER_FONT_SIZE_KEY]: "enormous",
+      [PARTNER_LINE_HEIGHT_KEY]: "roomy",
     });
 
     expect(readPartnerTypeface(nonsense)).toEqual(DEFAULT_TYPEFACE);
     expect(readPartnerTypeface(store({ [PARTNER_FONT_KEY]: '"Menlo"' })).face).toBe(INTERFACE);
     expect(readPartnerTypeface(store({ [PARTNER_FONT_SIZE_KEY]: "400" })).size).toBe(28);
     expect(readPartnerTypeface(store({ [PARTNER_FONT_SIZE_KEY]: "2" })).size).toBe(12);
+    expect(readPartnerTypeface(store({ [PARTNER_LINE_HEIGHT_KEY]: "3" })).leading).toBe(DEFAULT_LEADING);
+    expect(readPartnerTypeface(store({ [PARTNER_LINE_HEIGHT_KEY]: "1" })).leading).toBe(DEFAULT_LEADING);
   });
 
   it("keeps the conversation's face out of a store that refuses to keep it", () => {
     expect(readPartnerTypeface(throwing)).toEqual(DEFAULT_TYPEFACE);
     expect(readPartnerTypeface(null)).toEqual(DEFAULT_TYPEFACE);
     expect(() => {
-      writePartnerTypeface({ face: MONO, size: 20 }, throwing);
-      writePartnerTypeface({ face: MONO, size: 20 }, null);
+      writePartnerTypeface({ face: MONO, size: 20, leading: 1.6 }, throwing);
+      writePartnerTypeface({ face: MONO, size: 20, leading: 1.6 }, null);
     }).not.toThrow();
   });
 

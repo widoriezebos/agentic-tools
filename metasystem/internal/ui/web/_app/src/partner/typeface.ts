@@ -3,10 +3,9 @@
  *
  * Wido reads his terminal in Meslo LG M for Powerline and wanted the Project
  * Partner to look the same way, so this file is the whole of what a chosen
- * face is allowed to be. Three faces are this build's own — the one the pages
- * use, the one the documents are read in, and the bundled monospace — and
- * everything else is a name that may or may not exist on the computer the
- * browser is running on.
+ * face is allowed to be. Two faces are this build's own — the one the pages
+ * use and the bundled monospace — and everything else is a name that may or
+ * may not exist on the computer the browser is running on.
  *
  * A name is letters, digits, spaces and hyphens, and nothing else ever reaches
  * a stylesheet: `familyOf` refuses a name that is not one of those before it
@@ -22,9 +21,10 @@
  * terminal face for their Partner has said nothing about the board.
  */
 
-/** The two custom properties the conversation and the composer's field read. */
+/** The three custom properties the conversation and the composer's field read. */
 export const FACE_PROPERTY = "--ms-partner-face";
 export const SIZE_PROPERTY = "--ms-partner-size";
+export const LEADING_PROPERTY = "--ms-partner-leading";
 
 /**
  * The face the pages use. It is written here as well as in fonts.css, which is
@@ -33,23 +33,31 @@ export const SIZE_PROPERTY = "--ms-partner-size";
 export const INTERFACE_STACK = '"Inter Variable", system-ui, sans-serif';
 
 /**
- * The face the documents are read in.
+ * The face the documents are read in, which is what a proportional name falls
+ * back to where the computer has not got it.
  *
  * It is the interface's own face today: the reader sets a measure, a size and a
  * rhythm for a document and inherits the family from the root like everything
- * else. The token is here all the same, because the design offers it as a
- * choice and because the day the documents take a face of their own is the day
- * this one value changes and the chooser follows it.
+ * else. It is a stack rather than a choice — the chooser offered it as one and
+ * offered the interface's own face twice by doing so — and the day the
+ * documents take a face of their own is the day this one value changes and the
+ * list gains an entry that means something.
  */
 export const READING_STACK = INTERFACE_STACK;
 
 /** The bundled monospace, and the fallbacks the rest of the build names with it. */
 export const MONO_STACK = '"JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace';
 
-/** The three faces this build carries, which are chosen by these three words. */
+/** The two faces this build carries, which are chosen by these two words. */
 export const INTERFACE = "interface";
-export const READING = "reading";
 export const MONO = "mono";
+
+/**
+ * The word the chooser used to write for the face the documents are read in.
+ * It is read back out of storage — a browser that chose it under g1-s32 still
+ * carries it — and nothing writes it any more.
+ */
+const WAS_READING = "reading";
 
 /**
  * How big the conversation may be read, in pixels, and what it is read at
@@ -60,13 +68,28 @@ export const SMALLEST_SIZE = 12;
 export const LARGEST_SIZE = 28;
 export const DEFAULT_SIZE = 16;
 
-/** The rhythm the chosen size is read at, which follows it rather than a count of pixels. */
-export const LEADING = 1.5;
+/**
+ * How far apart the lines stand, as a multiple of the size rather than a count
+ * of pixels: the rhythm follows the size, so one choice does not undo the
+ * other (Wido, 2026-09-24: "the distance between the lines, can I also change
+ * that?").
+ *
+ * Twelve tenths is as tight as a paragraph stays readable at; twice the size
+ * is a page a human is skimming down. It moves a tenth at a time, which is the
+ * smallest step the eye can tell from the one before it.
+ */
+export const SMALLEST_LEADING = 1.2;
+export const LARGEST_LEADING = 2;
+export const LEADING_STEP = 0.1;
+export const DEFAULT_LEADING = 1.5;
 
-/** What a human chose: a face by name or by token, and a size in pixels. */
-export type Typeface = { face: string; size: number };
+/**
+ * What a human chose: a face by name or by token, a size in pixels, and the
+ * rhythm it is read at.
+ */
+export type Typeface = { face: string; size: number; leading: number };
 
-export const DEFAULT_TYPEFACE: Typeface = { face: INTERFACE, size: DEFAULT_SIZE };
+export const DEFAULT_TYPEFACE: Typeface = { face: INTERFACE, size: DEFAULT_SIZE, leading: DEFAULT_LEADING };
 
 /** What an unrecognised name falls back to, visibly, when it is not installed. */
 export type FallbackKind = "mono" | "reading";
@@ -115,9 +138,9 @@ export function isFaceName(value: string): boolean {
   return name !== "" && name.length <= LONGEST_NAME && NAME.test(name);
 }
 
-/** True where the word names one of the three faces this build carries. */
+/** True where the word names one of the two faces this build carries. */
 export function isToken(face: string): boolean {
-  return face === INTERFACE || face === READING || face === MONO;
+  return face === INTERFACE || face === MONO;
 }
 
 /**
@@ -147,9 +170,6 @@ export function stackOf(kind: FallbackKind): string {
  * at all: it reads as the interface's own face.
  */
 export function familyOf(face: string): string {
-  if (face === READING) {
-    return READING_STACK;
-  }
   if (face === MONO) {
     return MONO_STACK;
   }
@@ -174,8 +194,36 @@ export function clampSize(size: number): number {
 }
 
 /**
+ * A rhythm held inside what the stepper offers, rounded to the tenth it steps
+ * in. The rounding is the whole of the arithmetic: a tenth added to a tenth in
+ * binary is not a tenth, and a value that drifted would be written to storage
+ * and read back as the number nobody chose.
+ */
+export function clampLeading(leading: number): number {
+  if (!Number.isFinite(leading)) {
+    return DEFAULT_LEADING;
+  }
+  const stepped = Math.round(leading * 10) / 10;
+  return Math.min(Math.max(stepped, SMALLEST_LEADING), LARGEST_LEADING);
+}
+
+/** The rhythm as a stylesheet takes it: a multiple, with no unit on it. */
+export function leadingOf(leading: number): string {
+  return String(clampLeading(leading));
+}
+
+/** The rhythm as the stepper says it out loud, always to the tenth. */
+export function leadingText(leading: number): string {
+  return clampLeading(leading).toFixed(1);
+}
+
+/**
  * A stored face, or the interface's own where what is stored is not a face
  * this build would ever have written.
+ *
+ * The word the old Reading entry wrote is read as the interface's own face,
+ * which is the face it drew: a browser that chose it comes back to exactly
+ * what it was looking at, and the entry it chose it from is gone.
  */
 export function normalizeFace(value: string | null | undefined): string {
   if (typeof value !== "string") {
@@ -183,6 +231,9 @@ export function normalizeFace(value: string | null | undefined): string {
   }
   if (isToken(value)) {
     return value;
+  }
+  if (value.trim() === WAS_READING) {
+    return INTERFACE;
   }
   return isFaceName(value) ? value.trim() : INTERFACE;
 }
@@ -200,12 +251,32 @@ export function normalizeSize(value: string | null | undefined): number {
 }
 
 /**
- * Sets the chosen face and size on one element, and on nothing else.
+ * A stored rhythm, or the default where what is stored is not one.
  *
- * Two custom properties rather than two declarations: what inherits from here
- * is a value, and the two rules that read it are the conversation's root and
- * the composer's field. Everything else under this element is declared in `em`
- * and in a unitless line height, so one property moves the whole column.
+ * It is read more strictly than the size is: a size outside the stepper's
+ * range is a size a human once had and is brought back inside it, while a
+ * rhythm outside it was never offered by anything this build ever drew, so it
+ * is a value from somewhere else and the default is what answers it.
+ */
+export function normalizeLeading(value: string | null | undefined): number {
+  if (typeof value !== "string" || !/^\d+(\.\d+)?$/.test(value.trim())) {
+    return DEFAULT_LEADING;
+  }
+  const asked = Number.parseFloat(value.trim());
+  if (asked < SMALLEST_LEADING || asked > LARGEST_LEADING) {
+    return DEFAULT_LEADING;
+  }
+  return clampLeading(asked);
+}
+
+/**
+ * Sets the chosen face, size and rhythm on one element, and on nothing else.
+ *
+ * Three custom properties rather than three declarations: what inherits from
+ * here is a value, and the two rules that read them are the conversation's
+ * root and the composer's field. Everything else under this element is
+ * declared in `em` and in a unitless line height, so one property moves the
+ * whole column.
  */
 export function apply(element: HTMLElement | null, typeface: Typeface): void {
   if (element === null) {
@@ -213,6 +284,7 @@ export function apply(element: HTMLElement | null, typeface: Typeface): void {
   }
   element.style.setProperty(FACE_PROPERTY, familyOf(typeface.face));
   element.style.setProperty(SIZE_PROPERTY, sizeOf(typeface.size));
+  element.style.setProperty(LEADING_PROPERTY, leadingOf(typeface.leading));
 }
 
 /**

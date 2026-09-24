@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  clampLeading,
   clampSize,
+  DEFAULT_LEADING,
   DEFAULT_SIZE,
   DEFAULT_TYPEFACE,
   fallbackKind,
@@ -13,15 +15,19 @@ import {
   INTERFACE_STACK,
   isFaceName,
   isToken,
+  LARGEST_LEADING,
   LARGEST_SIZE,
+  leadingOf,
+  leadingText,
   measuredInstalled,
   MONO,
   MONO_STACK,
   normalizeFace,
+  normalizeLeading,
   normalizeSize,
   OFFERED,
-  READING,
   READING_STACK,
+  SMALLEST_LEADING,
   SMALLEST_SIZE,
   sizeOf,
 } from "./typeface";
@@ -71,9 +77,8 @@ describe("a face name", () => {
 });
 
 describe("the font-family a face becomes", () => {
-  it("is the stack behind each of the three this build carries", () => {
+  it("is the stack behind each of the two this build carries", () => {
     expect(familyOf(INTERFACE)).toBe(INTERFACE_STACK);
-    expect(familyOf(READING)).toBe(READING_STACK);
     expect(familyOf(MONO)).toBe(MONO_STACK);
   });
 
@@ -156,15 +161,84 @@ describe("the size", () => {
   });
 });
 
+/**
+ * The rhythm the conversation is read at (Wido, 2026-09-24: "the distance
+ * between the lines, can I also change that?").
+ *
+ * The arithmetic is the part that is easy to get wrong: a tenth added to a
+ * tenth in binary is not a tenth, so the stepper would drift to 1.7999999 and
+ * write that to storage. Every step is rounded back to the tenth it stepped
+ * in, which is what these assert.
+ */
+describe("the line spacing", () => {
+  it("is held inside what the stepper offers", () => {
+    expect(clampLeading(1.2)).toBe(SMALLEST_LEADING);
+    expect(clampLeading(2)).toBe(LARGEST_LEADING);
+    expect(clampLeading(1.1)).toBe(SMALLEST_LEADING);
+    expect(clampLeading(0)).toBe(SMALLEST_LEADING);
+    expect(clampLeading(-3)).toBe(SMALLEST_LEADING);
+    expect(clampLeading(2.1)).toBe(LARGEST_LEADING);
+    expect(clampLeading(40)).toBe(LARGEST_LEADING);
+  });
+
+  it("steps in tenths, without the drift a tenth carries", () => {
+    expect(clampLeading(1.5 + 0.1)).toBe(1.6);
+    expect(clampLeading(1.7 + 0.1)).toBe(1.8);
+    expect(clampLeading(1.3 - 0.1)).toBe(1.2);
+    expect(clampLeading(1.74)).toBe(1.7);
+    expect(clampLeading(1.75)).toBe(1.8);
+  });
+
+  it("is the default where it is not a number at all", () => {
+    expect(clampLeading(Number.NaN)).toBe(DEFAULT_LEADING);
+    expect(clampLeading(Number.POSITIVE_INFINITY)).toBe(DEFAULT_LEADING);
+    expect(DEFAULT_LEADING).toBe(1.5);
+  });
+
+  it("reaches a stylesheet as a multiple, with no unit on it", () => {
+    expect(leadingOf(1.5)).toBe("1.5");
+    expect(leadingOf(1.7 + 0.1)).toBe("1.8");
+    expect(leadingOf(9)).toBe("2");
+  });
+
+  it("is said out loud to the tenth, however round it is", () => {
+    expect(leadingText(1.5)).toBe("1.5");
+    expect(leadingText(2)).toBe("2.0");
+    expect(leadingText(1.2)).toBe("1.2");
+  });
+
+  // A spacing outside the stepper's range was never offered by anything this
+  // build drew, so it came from somewhere else and the default answers it —
+  // where a size outside its range is one a human once had, and is clamped.
+  it("is the default where what is stored was never offered", () => {
+    expect(normalizeLeading("1.8")).toBe(1.8);
+    expect(normalizeLeading(" 1.2 ")).toBe(1.2);
+    expect(normalizeLeading("2")).toBe(2);
+    expect(normalizeLeading("1.1")).toBe(DEFAULT_LEADING);
+    expect(normalizeLeading("2.4")).toBe(DEFAULT_LEADING);
+    expect(normalizeLeading("loose")).toBe(DEFAULT_LEADING);
+    expect(normalizeLeading("-1.5")).toBe(DEFAULT_LEADING);
+    expect(normalizeLeading("")).toBe(DEFAULT_LEADING);
+    expect(normalizeLeading(null)).toBe(DEFAULT_LEADING);
+    expect(normalizeLeading(undefined)).toBe(DEFAULT_LEADING);
+  });
+});
+
 describe("what is read back out of storage", () => {
-  it("keeps the three tokens and any name this build would have written", () => {
+  it("keeps the two tokens and any name this build would have written", () => {
     expect(normalizeFace(INTERFACE)).toBe(INTERFACE);
-    expect(normalizeFace(READING)).toBe(READING);
     expect(normalizeFace(MONO)).toBe(MONO);
     expect(normalizeFace("Meslo LG M for Powerline")).toBe("Meslo LG M for Powerline");
     expect(normalizeFace("  Menlo ")).toBe("Menlo");
     expect(isToken(INTERFACE)).toBe(true);
     expect(isToken("Menlo")).toBe(false);
+  });
+
+  // The chooser's Reading entry was the interface's own face drawn twice, and
+  // is gone. A browser that chose it comes back to the face it was drawing.
+  it("reads the gone Reading entry as the interface's own face", () => {
+    expect(normalizeFace("reading")).toBe(INTERFACE);
+    expect(isToken("reading")).toBe(false);
   });
 
   it("reads the interface's own face where what is stored is not a face", () => {
@@ -186,8 +260,8 @@ describe("what is read back out of storage", () => {
     expect(normalizeSize(null)).toBe(DEFAULT_SIZE);
   });
 
-  it("opens at the interface's own face and sixteen pixels", () => {
-    expect(DEFAULT_TYPEFACE).toEqual({ face: INTERFACE, size: DEFAULT_SIZE });
+  it("opens at the interface's own face, sixteen pixels and one and a half", () => {
+    expect(DEFAULT_TYPEFACE).toEqual({ face: INTERFACE, size: DEFAULT_SIZE, leading: DEFAULT_LEADING });
     expect(DEFAULT_SIZE).toBe(16);
   });
 });
