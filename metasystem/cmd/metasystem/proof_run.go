@@ -1597,6 +1597,10 @@ func retainRefusedTerminal(completion proofrun.CompletionContext, refused error,
 }
 
 func commitProofTerminalWithReason(completion proofrun.CompletionContext, receipt json.RawMessage, testResult *proofrun.TestResult, reason string) error {
+	return commitProofTerminalWithReasonAndReads(completion, receipt, testResult, reason, nil)
+}
+
+func commitProofTerminalWithReasonAndReads(completion proofrun.CompletionContext, receipt json.RawMessage, testResult *proofrun.TestResult, reason string, reads *dispatchcore.ProofAdmissionReads) error {
 	attempt, err := proofrun.ReadAttempt(completion.ControlRoot, completion.AttemptID)
 	if err != nil {
 		return err
@@ -1637,7 +1641,12 @@ func commitProofTerminalWithReason(completion proofrun.CompletionContext, receip
 	if err != nil {
 		return fmt.Errorf("proof terminal commit clock: %w", err)
 	}
-	binding, err := dispatchcore.ResolveGoalBinding(completion.ControlRoot, attempt.GoalID, finalizedAt)
+	var binding dispatchcore.GoalBinding
+	if reads == nil {
+		binding, err = dispatchcore.ResolveGoalBinding(completion.ControlRoot, attempt.GoalID, finalizedAt)
+	} else {
+		binding, err = dispatchcore.ResolveGoalBindingWithReads(completion.ControlRoot, attempt.GoalID, finalizedAt, *reads)
+	}
 	if err != nil || binding.Revision != attempt.GoalRevision || binding.Fence != nil {
 		return fmt.Errorf("proof terminal commit lost goal-revision authority")
 	}

@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -2631,6 +2632,10 @@ func fileSHA256(path string) (string, error) {
 // result first and turns a missing one into a failed exit, so this guard is
 // the commit's own defence.
 func testingTerminalCommit(workerResultPath string, retained **proofrun.TestResult) func(proofrun.CompletionContext, json.RawMessage) error {
+	return testingTerminalCommitWithReads(workerResultPath, retained, nil)
+}
+
+func testingTerminalCommitWithReads(workerResultPath string, retained **proofrun.TestResult, reads *dispatchcore.ProofAdmissionReads) func(proofrun.CompletionContext, json.RawMessage) error {
 	return func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
 		if *retained == nil {
 			result, readErr := readTestingWorkerResult(workerResultPath)
@@ -2638,12 +2643,12 @@ func testingTerminalCommit(workerResultPath string, retained **proofrun.TestResu
 				if completion.ExitStatus == 0 {
 					return readErr
 				}
-				return commitProofTerminalWithReason(completion, receipt, nil,
-					"proof launcher completed; the worker left no usable result: "+readErr.Error())
+				return commitProofTerminalWithReasonAndReads(completion, receipt, nil,
+					"proof launcher completed; the worker left no usable result: "+readErr.Error(), reads)
 			}
 			*retained = &result
 		}
-		return commitProofTerminalWithTestResult(completion, receipt, *retained)
+		return commitProofTerminalWithReasonAndReads(completion, receipt, *retained, "proof launcher completed", reads)
 	}
 }
 

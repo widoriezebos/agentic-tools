@@ -370,7 +370,11 @@ func goalBranchSweepState(state string, abandoned bool) error {
 }
 
 func listGoalBranchSweep(root string, endpoint goal.Endpoint, tree *goal.TreeGoals) int {
-	out, err := goalBranchGit(root, "ls-remote", "--heads", endpoint.Remote, "refs/heads/goal/*", "refs/heads/landing/*")
+	return listGoalBranchSweepWithGit(root, endpoint, tree, goalBranchGit)
+}
+
+func listGoalBranchSweepWithGit(root string, endpoint goal.Endpoint, tree *goal.TreeGoals, gitRead func(string, ...string) (string, error)) int {
+	out, err := gitRead(root, "ls-remote", "--heads", endpoint.Remote, "refs/heads/goal/*", "refs/heads/landing/*")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -627,20 +631,24 @@ func goalBranchEndpoint(root string) (goal.Endpoint, error) {
 }
 
 func goalBranchEndpointTip(root string, endpoint goal.Endpoint) (tip string, err error) {
+	return goalBranchEndpointTipWithGit(root, endpoint, goalBranchGit)
+}
+
+func goalBranchEndpointTipWithGit(root string, endpoint goal.Endpoint, git func(string, ...string) (string, error)) (tip string, err error) {
 	opid, err := branchOperationID()
 	if err != nil {
 		return "", err
 	}
 	temporary := "refs/metasystem/goals/endpoint/" + opid
 	defer func() {
-		if _, clearErr := goalBranchGit(root, "update-ref", "-d", temporary); err == nil && clearErr != nil {
+		if _, clearErr := git(root, "update-ref", "-d", temporary); err == nil && clearErr != nil {
 			err = clearErr
 		}
 	}()
-	if _, err = goalBranchGit(root, "fetch", "--no-tags", "--refmap=", endpoint.Remote, "+refs/heads/main:"+temporary); err != nil {
+	if _, err = git(root, "fetch", "--no-tags", "--refmap=", endpoint.Remote, "+refs/heads/main:"+temporary); err != nil {
 		return "", err
 	}
-	return goalBranchGit(root, "rev-parse", "--verify", temporary+"^{commit}")
+	return git(root, "rev-parse", "--verify", temporary+"^{commit}")
 }
 
 func goalBranchOriginTip(root string, endpoint goal.Endpoint, goalID string) (tip string, present bool, err error) {
@@ -710,6 +718,13 @@ func goalBranchHolderRoot(root string) string {
 }
 
 func runGoalBranchCheck(args []string) int {
+	return runGoalBranchCheckWith(args, nil, nil, nil)
+}
+
+func runGoalBranchCheckWith(args []string, configLookup func(string, string) (string, error), cliGitRead func(string, ...string) (string, error), rangeGitRead func(string, ...string) ([]byte, error)) int {
+	if cliGitRead == nil {
+		cliGitRead = goalBranchGit
+	}
 	flags := flag.NewFlagSet("goal branch check", flag.ContinueOnError)
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
@@ -719,7 +734,13 @@ func runGoalBranchCheck(args []string) int {
 		fmt.Fprintln(os.Stderr, "goal branch check needs --goal")
 		return 2
 	}
-	endpoint, err := goal.ResolveEndpoint(*root)
+	var endpoint goal.Endpoint
+	var err error
+	if configLookup == nil {
+		endpoint, err = goal.ResolveEndpoint(*root)
+	} else {
+		endpoint, err = goal.ResolveEndpointWithConfig(*root, configLookup)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -735,7 +756,7 @@ func runGoalBranchCheck(args []string) int {
 			return 1
 		}
 	} else {
-		endpointTip, err = goalBranchGit(*root, "rev-parse", "--verify", "refs/remotes/"+endpoint.Remote+"/main^{commit}")
+		endpointTip, err = cliGitRead(*root, "rev-parse", "--verify", "refs/remotes/"+endpoint.Remote+"/main^{commit}")
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
@@ -743,7 +764,7 @@ func runGoalBranchCheck(args []string) int {
 	}
 	var tip string
 	if *tipFlag != "" {
-		tip, err = goalBranchGit(*root, "rev-parse", "--verify", "-q", *tipFlag+"^{commit}")
+		tip, err = cliGitRead(*root, "rev-parse", "--verify", "-q", *tipFlag+"^{commit}")
 	} else if !*noFetch {
 		var present bool
 		tip, present, err = goalBranchOriginTip(*root, endpoint, *goalID)
@@ -752,7 +773,7 @@ func runGoalBranchCheck(args []string) int {
 			return 0
 		}
 	} else {
-		tip, err = goalBranchGit(*root, "rev-parse", "--verify", "-q", "refs/remotes/"+endpoint.Remote+"/goal/"+*goalID+"^{commit}")
+		tip, err = cliGitRead(*root, "rev-parse", "--verify", "-q", "refs/remotes/"+endpoint.Remote+"/goal/"+*goalID+"^{commit}")
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.ExitCode() == 1 {
 			fmt.Println("no branch")
@@ -763,7 +784,12 @@ func runGoalBranchCheck(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	commits, err := branch.ValidateRange(*root, endpointTip, tip, *goalID)
+	var commits []branch.Commit
+	if rangeGitRead == nil {
+		commits, err = branch.ValidateRange(*root, endpointTip, tip, *goalID)
+	} else {
+		commits, err = branch.ValidateRangeWithGit(*root, endpointTip, tip, *goalID, rangeGitRead)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

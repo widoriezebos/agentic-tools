@@ -104,6 +104,14 @@ type ordinaryDetached struct {
 func (d *ordinaryDetached) Workspace() gittree.Workspace { return d.workspace }
 func (d *ordinaryDetached) Close() error                 { d.owner.closed++; return os.RemoveAll(d.root) }
 
+func writeOrdinaryFixtureFile(t *testing.T, path string, data []byte, mode os.FileMode) {
+	t.Helper()
+	writeTestingFixtureFile(t, path, data, mode)
+	if err := os.Chmod(path, mode); err != nil {
+		t.Fatalf("set ordinary fixture mode for %s: %v", path, err)
+	}
+}
+
 func newOrdinaryCandidateFixture(t *testing.T) *ordinaryCandidateFixture {
 	t.Helper()
 	originalPath := os.Getenv("PATH")
@@ -112,7 +120,7 @@ func newOrdinaryCandidateFixture(t *testing.T) *ordinaryCandidateFixture {
 	if err := os.WriteFile(log, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	writeTestingFixtureFile(t, filepath.Join(shim, "git"), []byte("#!/bin/sh\nprintf 'denied git invocation\\n' >> '"+log+"'\nexit 97\n"), 0o755)
+	writeOrdinaryFixtureFile(t, filepath.Join(shim, "git"), []byte("#!/bin/sh\nprintf 'denied git invocation\\n' >> '"+log+"'\nexit 97\n"), 0o755)
 	t.Setenv("PATH", shim+string(os.PathListSeparator)+originalPath)
 	root := t.TempDir()
 	f := &ordinaryCandidateFixture{t: t, root: root, installation: filepath.Join(root, "metasystem"), denialLog: log,
@@ -136,7 +144,7 @@ chmod +x "$3"
 	f.writeFiles()
 	f.declareSnapshot(ordinaryProjectTree, ordinaryInstallationTree, ordinaryEngineTree, ordinaryBaseScriptBlob, "")
 	f.policyEngine = filepath.Join(t.TempDir(), "policy-engine")
-	writeTestingFixtureFile(t, f.policyEngine, []byte("#!/usr/bin/env bash\n# enrolled policy engine\nexit 0\n"), 0o755)
+	writeOrdinaryFixtureFile(t, f.policyEngine, []byte("#!/usr/bin/env bash\n# enrolled policy engine\nexit 0\n"), 0o755)
 	digest, err := fileSHA256(f.policyEngine)
 	if err != nil {
 		t.Fatal(err)
@@ -230,13 +238,13 @@ func (f *ordinaryCandidateFixture) snapshot(tree string) ordinaryCandidateSnapsh
 }
 func (f *ordinaryCandidateFixture) writeFiles() {
 	f.t.Helper()
-	writeTestingFixtureFile(f.t, filepath.Join(f.installation, "scripts/agents/go-build.sh"), f.script, 0o755)
-	writeTestingFixtureFile(f.t, filepath.Join(f.installation, "cmd/metasystem/engine.txt"), f.source, 0o644)
+	writeOrdinaryFixtureFile(f.t, filepath.Join(f.installation, "scripts/agents/go-build.sh"), f.script, 0o755)
+	writeOrdinaryFixtureFile(f.t, filepath.Join(f.installation, "cmd/metasystem/engine.txt"), f.source, 0o644)
 	if f.sum != nil {
-		writeTestingFixtureFile(f.t, filepath.Join(f.installation, "go.sum"), f.sum, 0o644)
+		writeOrdinaryFixtureFile(f.t, filepath.Join(f.installation, "go.sum"), f.sum, 0o644)
 	}
 	if f.records != nil {
-		writeTestingFixtureFile(f.t, filepath.Join(f.installation, "records/counselor/peer.md"), f.records, 0o644)
+		writeOrdinaryFixtureFile(f.t, filepath.Join(f.installation, "records/counselor/peer.md"), f.records, 0o644)
 	}
 }
 func (f *ordinaryCandidateFixture) workspace() gittree.Workspace {
@@ -441,13 +449,13 @@ func (f *ordinaryCandidateFixture) prepareDetached(tree string) {
 	s := f.snapshot(tree)
 	parent := f.t.TempDir()
 	f.detachedRoot, f.detachedTree = parent, tree
-	writeTestingFixtureFile(f.t, filepath.Join(parent, "metasystem/scripts/agents/go-build.sh"), s.script, 0o755)
-	writeTestingFixtureFile(f.t, filepath.Join(parent, "metasystem/cmd/metasystem/engine.txt"), s.source, 0o644)
+	writeOrdinaryFixtureFile(f.t, filepath.Join(parent, "metasystem/scripts/agents/go-build.sh"), s.script, 0o755)
+	writeOrdinaryFixtureFile(f.t, filepath.Join(parent, "metasystem/cmd/metasystem/engine.txt"), s.source, 0o644)
 	if s.sum != nil {
-		writeTestingFixtureFile(f.t, filepath.Join(parent, "metasystem/go.sum"), s.sum, 0o644)
+		writeOrdinaryFixtureFile(f.t, filepath.Join(parent, "metasystem/go.sum"), s.sum, 0o644)
 	}
 	if s.records != nil {
-		writeTestingFixtureFile(f.t, filepath.Join(parent, "metasystem/records/counselor/peer.md"), s.records, 0o644)
+		writeOrdinaryFixtureFile(f.t, filepath.Join(parent, "metasystem/records/counselor/peer.md"), s.records, 0o644)
 	}
 }
 func (f *ordinaryCandidateFixture) open(workspace gittree.Workspace, tree string) (candidateDetachedWorkspace, error) {

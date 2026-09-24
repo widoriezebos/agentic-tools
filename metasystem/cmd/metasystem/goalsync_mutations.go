@@ -1734,8 +1734,9 @@ func trySyncMutationWithDependencies(name string, args []string, commandNow func
 }
 
 type completionInputs struct {
-	localTip func(repo, ref string) (string, bool, error)
-	reporter func(metrics.Options) (metrics.Result, error)
+	localTip    func(repo, ref string) (string, bool, error)
+	endpointTip func(string, goal.Endpoint) (string, error)
+	reporter    func(metrics.Options) (metrics.Result, error)
 }
 
 func trySyncMutationWithCompletion(name string, args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, parkBranchCheck func(string, goal.Endpoint) func(string, string) (string, error), completion completionInputs) (int, bool) {
@@ -1919,7 +1920,11 @@ func trySyncMutationWithCompletion(name string, args []string, commandNow func(s
 			if err != nil || !shouldSweep {
 				return err
 			}
-			endpointTip, err := goalBranchEndpointTip(f.root, req.Endpoint)
+			readEndpointTip := completion.endpointTip
+			if readEndpointTip == nil {
+				readEndpointTip = goalBranchEndpointTip
+			}
+			endpointTip, err := readEndpointTip(f.root, req.Endpoint)
 			if err != nil {
 				return err
 			}

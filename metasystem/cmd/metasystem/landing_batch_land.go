@@ -549,10 +549,14 @@ func batchPrefixReceiptArgsWithFresh(root, controlRoot, goalID, tree, resultPath
 }
 
 func recoverBatchLanding(root string, store batch.Store, id, actor string, at time.Time) error {
+	return batch.RecoverPushedSeries(store, id, actor, at, batchRecoverySeamsWithGit(root, store, id, at, gitOutput))
+}
+
+func batchRecoverySeamsWithGit(root string, store batch.Store, id string, at time.Time, gitRead func(string, ...string) (string, error)) batch.RecoverySeams {
 	controlRoot := batch.ModuleRoot(root)
 	findTrailer := func(matches func(string) bool) (string, bool, error) {
 		format := "%H%x00%B%x00"
-		output, err := gitOutput(root, "log", "--first-parent", "origin/main", "--format="+format)
+		output, err := gitRead(root, "log", "--first-parent", "origin/main", "--format="+format)
 		if err != nil {
 			return "", false, err
 		}
@@ -566,7 +570,7 @@ func recoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 		}
 		return "", false, nil
 	}
-	return batch.RecoverPushedSeries(store, id, actor, at, batch.RecoverySeams{
+	return batch.RecoverySeams{
 		OriginCommit: func(unit batch.Unit) (string, bool, error) {
 			return findTrailer(func(line string) bool { return landingProvenanceNamesChain(line, unit.Chain) })
 		},
@@ -611,7 +615,7 @@ func recoverBatchLanding(root string, store batch.Store, id, actor string, at ti
 			}
 			return batch.CleanupLandingBranch(root, id, record.Landing.PushedTip)
 		},
-	})
+	}
 }
 
 // landingProvenanceNamesChain mirrors the field parsing in internal/landing/held.go.

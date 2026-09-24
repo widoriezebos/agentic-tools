@@ -482,47 +482,42 @@ func TestGoalBranchCommitRefusesToMoveAnArmedCheckout(t *testing.T) {
 }
 
 func TestGoalBranchCheckPrintsKinds(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	upstream := filepath.Join(t.TempDir(), "upstream.git")
-	goalSyncMutationGit(t, filepath.Dir(upstream), "init", "-q", "--bare", upstream)
-	goalSyncMutationGit(t, root, "remote", "add", "upstream", upstream)
-	goalSyncMutationGit(t, root, "config", "goal.sync-remote", "upstream")
-	base := goalSyncMutationGit(t, root, "rev-parse", "HEAD")
-	goalSyncMutationGit(t, root, "push", "-q", "upstream", "HEAD:main")
-	goalSyncMutationGit(t, root, "update-ref", "refs/remotes/upstream/main", base)
+	root := t.TempDir()
+	base, plan, unit, tip, bad := inspectionID('a'), inspectionID('b'), inspectionID('c'), inspectionID('d'), inspectionID('e')
+	args := []string{"--goal", "goal-a", "--root", root, "--no-fetch"}
+	missing := inspectionMissingRefError(t)
+	config, cli, rangeRead := inspectionReaders(t, root, append(inspectionCheckPrefix(root, "refs/heads/main", base),
+		inspectionFailure(root, missing, "rev-parse", "--verify", "-q", "refs/remotes/upstream/goal/goal-a^{commit}"))...)
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"check", "--goal", "goal-a", "--root", root, "--no-fetch"})
+		return runGoalBranchCheckWith(args, config, cli, rangeRead)
 	})
 	if code != 0 || stdout != "no branch\n" || stderr != "" {
 		t.Fatalf("absent branch: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	commit := func(path, body, message string) string {
-		full := filepath.Join(root, filepath.FromSlash(path))
-		writeTestingFixtureFile(t, full, []byte(body), 0o644)
-		goalSyncMutationGit(t, root, "add", ".")
-		goalSyncMutationGit(t, root, "commit", "-qm", message)
-		return goalSyncMutationGit(t, root, "rev-parse", "HEAD")
+	series := []inspectionCommit{
+		{plan, base, "Goal-Plan: goal-a\n", "metasystem/plans/x.md"},
+		{unit, plan, "Goal-Unit: goal-a/u1\n", "metasystem/code.go"},
+		{tip, unit, "Goal-Read: goal-a/u1 " + unit + "\n", "metasystem/records/reads/goal-a/" + unit + ".json"},
 	}
-	commit("metasystem/plans/x.md", "plan", "plan\n\nGoal-Plan: goal-a")
-	unit := commit("metasystem/code.go", "unit", "unit\n\nGoal-Unit: goal-a/u1")
-	tip := commit("metasystem/records/reads/goal-a/"+unit+".json", "{}", "read\n\nGoal-Read: goal-a/u1 "+unit)
+	config, cli, rangeRead = inspectionReaders(t, root, inspectionCheckCalls(root, base, tip, series)...)
 	code, stdout, stderr = captureCommandOutput(t, true, true, func() int {
-		return runGoalBranch([]string{"check", "--goal", "goal-a", "--root", root, "--no-fetch", "--tip", tip})
+		return runGoalBranchCheckWith(append(args, "--tip", tip), config, cli, rangeRead)
 	})
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
 	if code != 0 || stderr != "" || len(lines) != 3 || !strings.Contains(lines[0], " plan ") || !strings.Contains(lines[1], unit[:12]+" unit u1 ") || !strings.Contains(lines[2], " read u1") {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
-	bad := commit("metasystem/plans/bad.md", "bad", "bad\n\nGoal-Unit: goal-a/u2")
+	badSeries := append(append([]inspectionCommit(nil), series...), inspectionCommit{bad, tip, "Goal-Unit: goal-a/u2\n", "metasystem/plans/bad.md"})
+	config, cli, rangeRead = inspectionReaders(t, root, inspectionCheckCalls(root, base, bad, badSeries)...)
 	stderr, code = captureStderr(t, func() int {
-		return runGoalBranch([]string{"check", "--goal", "goal-a", "--root", root, "--no-fetch", "--tip", bad})
+		return runGoalBranchCheckWith(append(args, "--tip", bad), config, cli, rangeRead)
 	})
 	if code == 0 || !strings.Contains(stderr, "GOAL_BRANCH_RANGE") {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
-	goalSyncMutationGit(t, root, "config", "goal.sync-branch", "refs/heads/develop")
+	config, cli, rangeRead = inspectionReaders(t, root, inspectionConfig(root, "refs/heads/develop")...)
 	stderr, code = captureStderr(t, func() int {
-		return runGoalBranch([]string{"check", "--goal", "goal-a", "--root", root, "--no-fetch", "--tip", tip})
+		return runGoalBranchCheckWith(append(args, "--tip", tip), config, cli, rangeRead)
 	})
 	if code == 0 || !strings.Contains(stderr, "GOAL_BRANCH_ENDPOINT_UNSUPPORTED") {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
@@ -810,26 +805,17 @@ func TestGoalBranchStatusReportsAbsentOrigin(t *testing.T) {
 
 func TestGoalBranchSweepListsParkedDoneAbandonedAndOrphan(t *testing.T) {
 	root := t.TempDir()
-	origin := filepath.Join(t.TempDir(), "origin.git")
-	goalSyncMutationGit(t, root, "init", "-q", "-b", "main")
-	goalSyncMutationGit(t, root, "config", "user.name", "fixture")
-	goalSyncMutationGit(t, root, "config", "user.email", "fixture@example.invalid")
-	writeTestingFixtureFile(t, filepath.Join(root, "base"), []byte("base\n"), 0o644)
-	goalSyncMutationGit(t, root, "add", "base")
-	goalSyncMutationGit(t, root, "commit", "-qm", "base")
-	base := goalSyncMutationGit(t, root, "rev-parse", "HEAD")
-	goalSyncMutationGit(t, filepath.Dir(origin), "init", "-q", "--bare", origin)
-	goalSyncMutationGit(t, root, "remote", "add", "origin", origin)
-	for _, ref := range []string{"refs/heads/goal/done", "refs/heads/goal/abandoned", "refs/heads/landing/orphan"} {
-		goalSyncMutationGit(t, root, "push", "-q", "origin", base+":"+ref)
-	}
+	base := inspectionID('a')
+	refs := base + "\trefs/heads/goal/done\n" + base + "\trefs/heads/goal/abandoned\n" + base + "\trefs/heads/landing/orphan\n"
+	_, cli, _ := inspectionReaders(t, root, inspectionAnswer(root, []byte(refs),
+		"ls-remote", "--heads", "origin", "refs/heads/goal/*", "refs/heads/landing/*"))
 	tree := &goal.TreeGoals{
 		Live:      map[string]*goal.GoalFile{"parked": {Id: "parked", State: goal.StateParked, NextStep: "resume commit abc"}},
 		Done:      map[string]*goal.GoalFile{"done": {Id: "done", State: goal.StateDone}},
 		Abandoned: map[string]*goal.GoalFile{"abandoned": {Id: "abandoned", State: goal.StateAbandoned}},
 	}
 	code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-		return listGoalBranchSweep(root, goal.Endpoint{Remote: "origin"}, tree)
+		return listGoalBranchSweepWithGit(root, goal.Endpoint{Remote: "origin"}, tree, cli)
 	})
 	for _, line := range []string{"parked-missing goal/parked", "done goal/done", "abandoned goal/abandoned", "orphan landing/orphan"} {
 		if !strings.Contains(stdout, line) {

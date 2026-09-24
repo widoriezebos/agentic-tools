@@ -20,7 +20,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
@@ -131,6 +133,10 @@ func authorizedFixtureClockEnvironment(root string, environment []string) ([]str
 // that is widened here, and none of it passes through a root this verb
 // lets the caller choose.
 func goalCaller(root string, callerPid int64, verb string) (goal.Caller, error) {
+	return goalCallerWithRepositoryTop(root, callerPid, verb, stateroot.RepositoryTop)
+}
+
+func goalCallerWithRepositoryTop(root string, callerPid int64, verb string, repositoryTop func(string) (string, error)) (goal.Caller, error) {
 	if callerPid == 0 {
 		callerPid = int64(os.Getppid())
 	}
@@ -142,7 +148,7 @@ func goalCaller(root string, callerPid int64, verb string) (goal.Caller, error) 
 		}
 	}
 
-	view, err := classifyVerbCaller(root, callerPid)
+	view, err := classifyVerbCallerWith(root, callerPid, repositoryTop)
 	if err != nil {
 		return goal.Caller{}, fmt.Errorf("caller classification failed: %v", err)
 	}
@@ -190,6 +196,27 @@ func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*strin
 func goalMutationWithSync(name string, args []string, extra func(*flag.FlagSet) []*string,
 	run func(*goal.Store, goal.Caller, []string) (goal.Result, error),
 	trySync func(string, []string) (int, bool)) int {
+	return goalMutationWithInputs(name, args, extra, run, trySync, legacyMutationInputs{})
+}
+
+type legacyMutationInputs struct {
+	repositoryTop func(string) (string, error)
+	ensureGuard   func(string) error
+	reporter      func(metrics.Options) (metrics.Result, error)
+}
+
+func goalMutationWithInputs(name string, args []string, extra func(*flag.FlagSet) []*string,
+	run func(*goal.Store, goal.Caller, []string) (goal.Result, error),
+	trySync func(string, []string) (int, bool), inputs legacyMutationInputs) int {
+	if inputs.repositoryTop == nil {
+		inputs.repositoryTop = stateroot.RepositoryTop
+	}
+	if inputs.ensureGuard == nil {
+		inputs.ensureGuard = ensureGuardEnrolled
+	}
+	if inputs.reporter == nil {
+		inputs.reporter = generateMetricsReport
+	}
 	if code, handled := trySync(name, args); handled {
 		return code
 	}
@@ -203,7 +230,7 @@ func goalMutationWithSync(name string, args []string, extra func(*flag.FlagSet) 
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	caller, err := goalCaller(*root, *callerPid, name)
+	caller, err := goalCallerWithRepositoryTop(*root, *callerPid, name, inputs.repositoryTop)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -212,7 +239,7 @@ func goalMutationWithSync(name string, args []string, extra func(*flag.FlagSet) 
 	// pre-commit hook (the behavioral probe), and an unauthorized
 	// caller must not be able to trigger foreign hook code through a
 	// refused mutation.
-	if err := ensureGuardEnrolled(*root); err != nil {
+	if err := inputs.ensureGuard(*root); err != nil {
 		fmt.Fprintln(os.Stderr, "goal "+name+": "+err.Error())
 		return 1
 	}
@@ -231,7 +258,7 @@ func goalMutationWithSync(name string, args []string, extra func(*flag.FlagSet) 
 		fmt.Println("dropped: " + dropped)
 	}
 	if name == "done" && len(values) > 0 {
-		return reportAfterConfirmedDone(0, *root, values[0], os.Stderr)
+		return reportAfterConfirmedDoneWithReporter(0, *root, values[0], os.Stderr, inputs.reporter)
 	}
 	return 0
 }

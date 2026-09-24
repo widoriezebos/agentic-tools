@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
 
 const batchProvenanceTestID = "01j5x00000000000000000baff"
@@ -267,6 +269,7 @@ func TestBatchChainCommitKeepsWouldRefuseVerdictBehavior(t *testing.T) {
 }
 
 func TestBatchRecoveryFindsProductionProvenanceShapes(t *testing.T) {
+	t.Parallel()
 	change := strings.Repeat("a", 64)
 	certified := strings.Repeat("b", 64)
 	for _, test := range []struct {
@@ -288,6 +291,7 @@ func TestBatchRecoveryFindsProductionProvenanceShapes(t *testing.T) {
 }
 
 func TestBatchRecoveryRequiresExactChainField(t *testing.T) {
+	t.Parallel()
 	change := strings.Repeat("c", 64)
 	for _, test := range []struct {
 		name, trailer string
@@ -384,6 +388,7 @@ func TestBatchMixedBranchAndChainMembersLandInBothOrders(t *testing.T) {
 }
 
 func TestBatchRecoveryResolvesEachChainToItsOwnCommit(t *testing.T) {
+	t.Parallel()
 	change := strings.Repeat("d", 64)
 	record, commits := recoverBatchProvenanceFixture(t,
 		[]string{"chain-a", "chain-b"},
@@ -398,6 +403,7 @@ func TestBatchRecoveryResolvesEachChainToItsOwnCommit(t *testing.T) {
 }
 
 func TestBatchRecoveryUsesNewestMatchingCommit(t *testing.T) {
+	t.Parallel()
 	change := strings.Repeat("e", 64)
 	record, commits := recoverBatchProvenanceFixture(t,
 		[]string{"repeated-chain"},
@@ -414,25 +420,14 @@ func TestBatchRecoveryUsesNewestMatchingCommit(t *testing.T) {
 func recoverBatchProvenanceFixture(t *testing.T, chains []string, commitTrailers [][]string) (batch.Record, []string) {
 	t.Helper()
 	root := t.TempDir()
-	origin := filepath.Join(t.TempDir(), "origin.git")
-	batchProvenanceGit(t, "init", "-q", "--bare", origin)
-	batchProvenanceGit(t, "init", "-q", "-b", "main", root)
-	batchProvenanceGit(t, "-C", root, "config", "user.name", "Fixture")
-	batchProvenanceGit(t, "-C", root, "config", "user.email", "fixture@example.invalid")
-	batchProvenanceGit(t, "-C", root, "commit", "--allow-empty", "-qm", "base")
-	batchProvenanceGit(t, "-C", root, "remote", "add", "origin", origin)
-	batchProvenanceGit(t, "-C", root, "push", "-q", "-u", "origin", "main")
-
-	commits := make([]string, 0, len(commitTrailers))
-	for index, trailers := range commitTrailers {
-		args := []string{"-C", root, "commit", "--allow-empty", "-qm", "landing fixture " + string(rune('a'+index))}
-		for _, trailer := range trailers {
-			args = append(args, "--trailer", trailer)
-		}
-		batchProvenanceGit(t, args...)
-		commits = append(commits, batchProvenanceGit(t, "-C", root, "rev-parse", "HEAD"))
+	commits := make([]string, len(commitTrailers))
+	var log strings.Builder
+	for index := range commitTrailers {
+		commits[index] = fmt.Sprintf("%040x", index+1)
 	}
-	batchProvenanceGit(t, "-C", root, "push", "-q", "origin", "main")
+	for index := len(commitTrailers) - 1; index >= 0; index-- {
+		log.WriteString(commits[index] + "\x00" + strings.Join(commitTrailers[index], "\n") + "\n\x00")
+	}
 
 	units := make([]batch.Unit, 0, len(chains))
 	for index, chain := range chains {
@@ -444,27 +439,73 @@ func recoverBatchProvenanceFixture(t *testing.T, chains []string, commitTrailers
 	store := batch.NewStore(root, nil)
 	record := batch.Record{
 		Schema: 1, BatchID: batchProvenanceTestID, State: batch.StateLanding, Units: units,
-		Landing: &batch.LandingProgress{PushComplete: true, PushedTip: batchProvenanceGit(t, "-C", root, "rev-parse", "HEAD")},
+		Landing: &batch.LandingProgress{PushComplete: true, PushedTip: commits[len(commits)-1]},
 	}
 	if err := store.Create(record); err != nil {
 		t.Fatal(err)
 	}
-
-	original := batchChildRunner
-	originalNext := batchRecoveryGoalNext
-	originalRearm := batchRecoveryRearm
-	t.Cleanup(func() {
-		batchChildRunner, batchRecoveryGoalNext, batchRecoveryRearm = original, originalNext, originalRearm
-	})
-	batchChildRunner = func(string, string, ...string) error { return nil }
-	batchRecoveryGoalNext = func(string, string, time.Time) (string, error) { return "", nil }
-	batchRecoveryRearm = func(string, string) error { return nil }
-	if err := recoverBatchLanding(root, store, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0)); err != nil {
+	expected := make([]testgit.Expectation, len(chains))
+	for index := range expected {
+		expected[index] = testgit.Expectation{
+			Call:   testgit.Call{Dir: root, Args: []string{"log", "--first-parent", "origin/main", "--format=%H%x00%B%x00"}},
+			Result: testgit.Result{Stdout: []byte(log.String())},
+		}
+	}
+	stub := testgit.New(t, expected...)
+	gitRead := func(dir string, args ...string) (string, error) {
+		result := stub.Run(testgit.Call{Dir: dir, Args: args})
+		return string(result.Stdout), result.Err
+	}
+	seams := batchRecoverySeamsWithGit(root, store, batchProvenanceTestID, time.Unix(3, 0), gitRead)
+	finalized := make(map[string]string)
+	seams.Finalize = func(unit batch.Unit, commit string) error {
+		validUnit, validCommit := false, false
+		for index, chain := range chains {
+			if unit.GoalID == "goal-"+string(rune('a'+index)) && unit.Chain == chain {
+				validUnit = true
+			}
+		}
+		for _, candidate := range commits {
+			validCommit = validCommit || candidate == commit
+		}
+		if !validUnit || !validCommit || finalized[unit.GoalID] != "" {
+			t.Fatalf("unexpected recovery finalization: unit=%+v commit=%q", unit, commit)
+		}
+		finalized[unit.GoalID] = commit
+		return nil
+	}
+	rearms, cleanups := 0, 0
+	seams.Rearm = func(tip string) error {
+		if tip != commits[len(commits)-1] {
+			t.Fatalf("rearm tip=%q, want %q", tip, commits[len(commits)-1])
+		}
+		rearms++
+		return nil
+	}
+	seams.Cleanup = func() error { cleanups++; return nil }
+	if err := batch.RecoverPushedSeries(store, batchProvenanceTestID, landingOwnerLineage, time.Unix(3, 0), seams); err != nil {
 		t.Fatal(err)
 	}
 	recovered, err := store.Load(batchProvenanceTestID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	landed := 0
+	for _, unit := range recovered.Units {
+		if unit.P6Done {
+			landed++
+			if finalized[unit.GoalID] != unit.LandedCommit {
+				t.Fatalf("finalized commit for %s=%q, durable commit=%q", unit.GoalID, finalized[unit.GoalID], unit.LandedCommit)
+			}
+		} else if finalized[unit.GoalID] != "" {
+			t.Fatalf("unrecognized unit %s was finalized", unit.GoalID)
+		}
+	}
+	if len(finalized) != landed || rearms != 0 && rearms != 1 || cleanups != rearms ||
+		(rearms == 1) != (landed == len(chains)) ||
+		(rearms == 1) != recovered.Landing.RearmComplete || (cleanups == 1) != recovered.Landing.CleanupDone ||
+		(recovered.State == batch.StateLanded) != (landed == len(chains)) {
+		t.Fatalf("recovery callbacks finalizations=%v rearm=%d cleanup=%d, record=%+v", finalized, rearms, cleanups, recovered)
 	}
 	return recovered, commits
 }

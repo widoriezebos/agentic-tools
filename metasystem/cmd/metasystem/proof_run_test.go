@@ -2028,7 +2028,9 @@ func TestProofRunLimitsRejectEffectiveLocalAndEnvironmentOverlays(t *testing.T) 
 // decision 3 of the hang-detection design removed the recheck anyway (the
 // deadline is a reservation horizon, proven in proofrun's launcher test).
 func TestCommitProofTerminalRefusesWithoutGoalRevisionAuthority(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
+	repository := newProofAdmissionRepositoryFixture(t, time.Now().UTC(), false)
+	root := repository.root
+	reads := repository.reads()
 	proofIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "deadline-finalization", nil, 2)
 	if err != nil {
 		t.Fatal(err)
@@ -2072,7 +2074,9 @@ while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 		WatchdogExecutable: watchdog, Command: []string{"true"},
 		PrepareSuccess: func(proofrun.CompletionContext) (json.RawMessage, error) {
 			return json.RawMessage(`{"preparedAt":"before-terminal-locks"}`), nil
-		}, CommitTerminal: commitProofTerminal})
+		}, CommitTerminal: func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
+			return commitProofTerminalWithReasonAndReads(completion, receipt, nil, "proof launcher completed", &reads)
+		}})
 	if result == 0 || !strings.Contains(launcherErrors.String(), "lost goal-revision authority") {
 		t.Fatalf("a terminal commit without goal-revision authority was not refused by name: result %d\n%s", result, launcherErrors.String())
 	}
@@ -3298,11 +3302,27 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 func terminalCommitFixture(t *testing.T, existing ...proofrun.Attempt) (string, proofrun.Attempt, func([]string, func(proofrun.CompletionContext, json.RawMessage) error) (int, string)) {
 	t.Helper()
 	var root string
-	var attempt proofrun.Attempt
 	if len(existing) != 0 {
-		attempt, root = existing[0], existing[0].ControlRoot
+		root = existing[0].ControlRoot
 	} else {
 		root, _ = proofExtensionGoalFixture(t)
+	}
+	return terminalCommitFixtureAt(t, root, existing...)
+}
+
+func gitFreeTerminalCommitFixture(t *testing.T) (string, proofrun.Attempt, func([]string, func(proofrun.CompletionContext, json.RawMessage) error) (int, string), dispatchcore.ProofAdmissionReads) {
+	t.Helper()
+	repository := newProofAdmissionRepositoryFixture(t, time.Now().UTC(), true)
+	root, attempt, launch := terminalCommitFixtureAt(t, repository.root)
+	return root, attempt, launch, repository.reads()
+}
+
+func terminalCommitFixtureAt(t *testing.T, root string, existing ...proofrun.Attempt) (string, proofrun.Attempt, func([]string, func(proofrun.CompletionContext, json.RawMessage) error) (int, string)) {
+	t.Helper()
+	var attempt proofrun.Attempt
+	if len(existing) != 0 {
+		attempt = existing[0]
+	} else {
 		proofIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "terminal-commit", nil, 2)
 		if err != nil {
 			t.Fatal(err)
@@ -3375,7 +3395,7 @@ func scriptTerminalLocks(t *testing.T, seam terminalLockSeam) (notes *bytes.Buff
 }
 
 func TestCommitProofTerminalTriesARefusedLockAgainAndNamesTheHolder(t *testing.T) {
-	root, attempt, launch := terminalCommitFixture(t)
+	root, attempt, launch, reads := gitFreeTerminalCommitFixture(t)
 	fenceCalls, goalCalls := 0, 0
 	notes, pauses := scriptTerminalLocks(t, terminalLockSeam{
 		stopFence: func(root, verb string, ref identity.Ref, scaleMilli int) (*lock.Lock, error) {
@@ -3393,7 +3413,9 @@ func TestCommitProofTerminalTriesARefusedLockAgainAndNamesTheHolder(t *testing.T
 			return goalrevision.Acquire(root, goalID, revision, tag)
 		},
 	})
-	result, launcherErrors := launch([]string{"true"}, commitProofTerminal)
+	result, launcherErrors := launch([]string{"true"}, func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
+		return commitProofTerminalWithReasonAndReads(completion, receipt, nil, "proof launcher completed", &reads)
+	})
 	if result != 0 {
 		t.Fatalf("a commit whose locks were refused and then granted did not succeed: result %d\n%s", result, launcherErrors)
 	}
@@ -3432,7 +3454,7 @@ func TestCommitProofTerminalTriesARefusedLockAgainAndNamesTheHolder(t *testing.T
 }
 
 func TestCommitProofTerminalGivesUpAfterNamedTriesWithTheHolderInTheRecord(t *testing.T) {
-	root, attempt, launch := terminalCommitFixture(t)
+	root, attempt, launch, reads := gitFreeTerminalCommitFixture(t)
 	calls := 0
 	// The shape the lock produces for an unreadable owner file: no holder
 	// identity, unproven liveness, the read error as the cause.
@@ -3443,7 +3465,10 @@ func TestCommitProofTerminalGivesUpAfterNamedTriesWithTheHolderInTheRecord(t *te
 				Cause: errors.New("owner.json: permission denied")}
 		},
 	})
-	result, launcherErrors := launch([]string{"true"}, commitProofTerminal)
+	commit := func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
+		return commitProofTerminalWithReasonAndReads(completion, receipt, nil, "proof launcher completed", &reads)
+	}
+	result, launcherErrors := launch([]string{"true"}, commit)
 	if result == 0 || !strings.Contains(launcherErrors,
 		"proof terminal commit refused 6 times; the last holder: lock fence is held by pid 0 (started 0) of unproven liveness (uninspectable is alive); owner file: owner.json: permission denied") {
 		t.Fatalf("the last refusal was not reported by name with its cause: result %d\n%s", result, launcherErrors)
@@ -3462,7 +3487,7 @@ func TestCommitProofTerminalGivesUpAfterNamedTriesWithTheHolderInTheRecord(t *te
 	// recorded it. The intent lands during the first refused try, after the
 	// launch (which refuses an attempt already cancelled) and before the
 	// retained terminal.
-	root, attempt, launch = terminalCommitFixture(t)
+	root, attempt, launch, reads = gitFreeTerminalCommitFixture(t)
 	cancelledRoot, cancelledAttempt := root, attempt.AttemptID
 	scriptTerminalLocks(t, terminalLockSeam{
 		stopFence: func(string, string, identity.Ref, int) (*lock.Lock, error) {
@@ -3472,7 +3497,9 @@ func TestCommitProofTerminalGivesUpAfterNamedTriesWithTheHolderInTheRecord(t *te
 			return nil, &lock.HolderError{Path: "fence", Holder: lock.Identity{Pid: 4242, PidStartedAt: 7}, State: lock.Alive}
 		},
 	})
-	if result, _ := launch([]string{"true"}, commitProofTerminal); result == 0 {
+	if result, _ := launch([]string{"true"}, func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
+		return commitProofTerminalWithReasonAndReads(completion, receipt, nil, "proof launcher completed", &reads)
+	}); result == 0 {
 		t.Fatal("a refused commit on a cancelled attempt reported success")
 	}
 	stored, err = proofrun.ReadAttempt(root, attempt.AttemptID)
@@ -3482,10 +3509,10 @@ func TestCommitProofTerminalGivesUpAfterNamedTriesWithTheHolderInTheRecord(t *te
 }
 
 func TestATestingWorkerThatWroteNoResultEndsItsAttemptFailedWithTheFileNamed(t *testing.T) {
-	root, attempt, launch := terminalCommitFixture(t)
+	root, attempt, launch, reads := gitFreeTerminalCommitFixture(t)
 	missing := filepath.Join(root, "artifacts", "terminal-commit", "worker-result.json")
 	var retained *proofrun.TestResult
-	result, launcherErrors := launch([]string{"false"}, testingTerminalCommit(missing, &retained))
+	result, launcherErrors := launch([]string{"false"}, testingTerminalCommitWithReads(missing, &retained, &reads))
 	if result != 1 || strings.Contains(launcherErrors, "commit terminal proof result") {
 		t.Fatalf("a failed worker without a result did not commit its terminal: result %d\n%s", result, launcherErrors)
 	}
@@ -3499,9 +3526,9 @@ func TestATestingWorkerThatWroteNoResultEndsItsAttemptFailedWithTheFileNamed(t *
 	// real launch PrepareSuccess reads the result first and a missing one
 	// already fails the exit; this fixture's PrepareSuccess returns a canned
 	// payload, which is what reaches the commit's own guard.
-	root, attempt, launch = terminalCommitFixture(t)
+	root, attempt, launch, reads = gitFreeTerminalCommitFixture(t)
 	missing = filepath.Join(root, "artifacts", "terminal-commit", "worker-result.json")
-	result, launcherErrors = launch([]string{"true"}, testingTerminalCommit(missing, &retained))
+	result, launcherErrors = launch([]string{"true"}, testingTerminalCommitWithReads(missing, &retained, &reads))
 	if result == 0 || !strings.Contains(launcherErrors, "commit terminal proof result: open "+missing) {
 		t.Fatalf("a success without its result was committed: result %d\n%s", result, launcherErrors)
 	}
