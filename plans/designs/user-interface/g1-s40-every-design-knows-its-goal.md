@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M39ZE2PMKCAHV8708BJY386F
-- Status: accepted
+- Status: done
 - Cites: 01M348YTJ2EY11F37Y5KBVNSER
 
 Revision 2, 2026-09-24, Claude on Fable, after Astra's critique of revision 1 ([g1-s40-astra-critique.md](g1-s40-astra-critique.md): eight material findings, "build after the eight listed changes", all eight taken; the first of them, that revision 1 had joined what Wido separated, splits this design into two slices). Revision 1 was on Wido's checks and ruling: "can you check that goal designs have indeed the goal designated?" (they do not: the 102 historical designs under `metasystem/plans/` have no head at all, and 73 of them are named for a ledger goal) and "Will these have the proper metadata?" going forward (from the interface yes; from a seat no, because the kit's own instructions never learned the record head). Ruled: "Create a design for this, get it critiqued by Astra, and then implement it." Draft until Astra has read it.
