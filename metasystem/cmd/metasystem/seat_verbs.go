@@ -62,6 +62,7 @@ func seatFleetReport(root string, fetch bool, now time.Time) (seat.Report, error
 	report.WindowSeconds = int(window / time.Second)
 
 	namespace, source := seat.TickNamespace, "the tick"
+	fetched := false
 	if fetch {
 		id, err := goal.NewOperationULID()
 		if err != nil {
@@ -75,6 +76,8 @@ func seatFleetReport(root string, fetch bool, now time.Time) (seat.Report, error
 		defer func() { _ = transport.DeleteNamespace(namespace) }()
 		if err := transport.Fetch(namespace); err != nil {
 			report.CopyProblem = err.Error()
+		} else {
+			fetched = true
 		}
 	}
 	if transport.Local {
@@ -97,9 +100,14 @@ func seatFleetReport(root string, fetch bool, now time.Time) (seat.Report, error
 	if err != nil {
 		previous = seat.StandingsState{Machines: map[string]seat.Observation{}}
 	}
+	// The age of the copy is the age of the last SUCCESSFUL fetch. A --fetch
+	// that failed read whatever the tick last brought in, and saying it was
+	// fetched now would report a fresh fleet from stale refs.
 	report.CopyReadAt = previous.ReadAt
-	if fetch {
+	if fetched {
 		report.CopyReadAt = seat.FormatTime(now)
+	} else if fetch {
+		report.CopySource = "the tick; this read's own fetch failed"
 	}
 	report.Machines = seat.Fleet(seat.FleetInput{
 		This: machine, Copy: fleetCopy, Claims: claims, ClaimsUnavailable: unavailable,

@@ -116,6 +116,35 @@ func TestSeatFleetVerbExitsZeroWithoutANickname(t *testing.T) {
 	}
 }
 
+func TestAFailedFetchDoesNotDateTheCopyNow(t *testing.T) {
+	t.Parallel()
+	root := seatVerbCheckout(t, "m1e")
+	// A remote that is not there: --fetch fails and the read falls back on
+	// whatever the tick last brought in.
+	seatVerbGit(t, root, "config", "goal.sync-remote", "origin")
+	seatVerbGit(t, root, "remote", "add", "origin", filepath.Join(t.TempDir(), "gone.git"))
+	if err := seat.SaveStandings(root, seat.StandingsState{
+		ReadAt:   seat.FormatTime(seatVerbClock.Add(-90 * time.Minute)),
+		Machines: map[string]seat.Observation{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := seatFleetReport(root, true, seatVerbClock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.CopyProblem == "" {
+		t.Fatal("a failed fetch was not reported")
+	}
+	if report.CopyReadAt != seat.FormatTime(seatVerbClock.Add(-90*time.Minute)) {
+		t.Fatalf("copy read at = %q; a failed fetch must not date the copy now", report.CopyReadAt)
+	}
+	if !strings.Contains(report.Text(), "1 h ago by the tick; this read's own fetch failed") {
+		t.Fatalf("text = %q; it must report the age of the copy it actually read", report.Text())
+	}
+}
+
 func TestSeatFamilyIsRegistered(t *testing.T) {
 	t.Parallel()
 	var found bool
