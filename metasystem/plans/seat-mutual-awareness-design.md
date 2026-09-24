@@ -457,13 +457,36 @@ name per machine, still one writer each, with the one caveat that a
 branch ruleset forbidding force pushes to all branches must exempt
 `presence/*`.
 
-The namespace is proven, not assumed: the first publish after arming is
-the preflight. When the remote refuses the ref (a pre-receive hook, a
-funny-ref refusal or a ruleset), the component records `failed` with the
-detail `SEAT_PRESENCE_NAMESPACE_REFUSED: <git's words>` and the health
-role's remedy names the key and the branch namespace, so an operator
-learns on the first tick, never at rollout, and fixes it with one
-configuration line and no rebuild.
+The fallback is automatic, a ladder the publisher climbs by itself, so a
+remote that refuses the first rung never leaves a fleet without presence
+(Wido, 2026-09-24: presence must not fail on a corporate GitHub
+Enterprise). The rungs, tried in order on every publish until one is
+accepted, and remembered in the publication state so later ticks start
+from the rung that worked:
+
+| rung | ref | push | cost |
+|---|---|---|---|
+| 1 | `refs/metasystem/presence/<machine>` | force, parentless | none; proven on github.com, standard git elsewhere; already the kind of ref this remote holds (`refs/metasystem/goals/accepted` and `refs/metasystem/machines/*` are at origin today) |
+| 2 | `refs/heads/presence/<machine>` | force, parentless | a branch per machine appears in the host's branch list; blocked only by a ruleset that forbids force pushes to every branch |
+| 3 | `refs/heads/presence/<machine>` | fast-forward, each record a child of the last | works under any branch policy that allows pushes at all; history grows by one small commit per tick, and the publisher deletes and recreates the branch once a week where deletion is allowed, otherwise the history simply grows |
+
+A refusal that names the ref (git's `funny refname`, a pre-receive hook, a
+ruleset message) moves the publisher one rung down for that publish and
+the next; a transport failure that names no ref (a timeout, a credential
+fault) does not, because the rung was not the fault. `seat.presence-namespace`
+pins the ladder to one rung for an operator who knows the host, and is
+otherwise unset. The rung in use is a fact on the health line (`presence
+published 2 min ago on rung 2, a branch per machine`) and in the
+publication state, and readers do not need to know it: every presence
+fetch carries both remote namespaces, `refs/metasystem/presence/*` and
+`refs/heads/presence/*`, into two local sub-namespaces of the reader's
+own, and the reader joins them by machine, the newest `tickAt` winning, so
+a machine that moved rungs is read from its live rung and its stale ref on
+the other rung is ignored and, once deleted, pruned. The remote's answer to
+the first publish is therefore the preflight, and an operator learns on
+the first tick, never at rollout, which rung a host allows; a host that
+refuses all three refuses git pushes altogether, and then the ledger does
+not work either.
 
 ## 9. Deferred, with their shape fixed so they stay small
 
@@ -501,7 +524,10 @@ after one, two and three failures and after recovery; the transition check
 firing once per change; the text and JSON of `seat fleet` from an injected
 clock.
 
-Behaviour tests also cover: a pending-setup reservation composing a chain
+Behaviour tests also cover: the ladder, with a fake remote refusing rung 1
+by name, refusing rungs 1 and 2, and failing with a timeout that moves no
+rung; the reader joining both namespaces with the newest `tickAt` winning;
+the pinned key; a pending-setup reservation composing a chain
 with a null `startedAt`; a corrupt job record yielding a null chain with a
 named detail; a tick without runner context skipping; the verdict
 precedence of section 5 case by case; and the transition order, queue then
@@ -546,7 +572,8 @@ Build order, smallest first:
    the start of ledger-attention; the runner context and the `--lineage` handoff from `steward arm` to
    `steward run`; the health role and its `hasLawfulAutomaticRemedy` case;
    the transition check and its notification; `metasystem seat fleet`; the
-   configuration key; refusal rows; the tests above. One build
+   namespace ladder, its state and the two-namespace fetch; the
+   configuration keys; refusal rows; the tests above. One build
    lane (Claude on Opus), one code read (Codex on Sol), after one design
    critique of this page (Codex on Astra, Wido's named extra read). Box: two
    attempts, 90 to 150 job-minutes.
