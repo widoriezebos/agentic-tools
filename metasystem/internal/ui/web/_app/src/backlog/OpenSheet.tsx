@@ -150,6 +150,20 @@ export function OpenSheet({
       form
       eyebrow="Opens in To Do, not yet approved"
       title="New goal"
+      // What the Partner is given when the head's Ask is pressed: the three
+      // answers of the common case first, so the chip reads the id and the
+      // intent, then what the tier is derived from and what the disclosures
+      // hold. Every one of them is a field a human typed; none is a secret.
+      fields={[
+        { name: "Id", value: asked.id },
+        { name: "Intent", value: intake.intent },
+        { name: "First next step", value: intake.nextStep },
+        { name: "Tier", value: intake.tier === "" ? String(derivedTier(risk)) : intake.tier },
+        { name: "Basis", value: risk.basis },
+        { name: "Why that tier", value: intake.why },
+        { name: "Labels", value: intake.labels },
+        { name: "Unblocks", value: intake.blocks },
+      ]}
       unproven=""
       refusal={refusal}
       note={cannot === "" ? (blocked === "" ? openNote(authority.human) : blocked) : ""}

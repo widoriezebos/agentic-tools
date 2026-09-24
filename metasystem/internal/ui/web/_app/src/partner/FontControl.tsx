@@ -131,6 +131,7 @@ export function FontControl() {
         title={FONT_LABEL}
         closeLabel="Close the font chooser"
         bodyClassName="ms-sheet-body--font"
+        sheetName="Font"
       >
         <FontForm />
       </Sheet>

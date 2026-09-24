@@ -95,6 +95,23 @@ export function ActSheet({
     <Panel
       eyebrow={approving ? "To Do → Ready for Work" : "Ready for Work → To Do"}
       title={approving ? "Approve" : "Withdraw approval"}
+      // What the head's Ask hands over: the goal this is about, and the budget
+      // or the reason that is the whole of what a human fills in here.
+      fields={
+        approving
+          ? [
+              { name: "Goal", value: request.goal.ref.id },
+              { name: "Elapsed limit", value: draft.elapsedLimit },
+              { name: "Attempts", value: draft.attemptLimit },
+              { name: "Reserved job minutes", value: draft.reservedJobMinutesLimit },
+              { name: "Active jobs", value: draft.activeJobLimit },
+              { name: "Review rounds", value: draft.reviewRoundLimit },
+            ]
+          : [
+              { name: "Goal", value: request.goal.ref.id },
+              { name: "Reason", value: reason },
+            ]
+      }
       goal={request.goal}
       unproven={authority.proven ? "" : authority.reason}
       refusal={refusal}

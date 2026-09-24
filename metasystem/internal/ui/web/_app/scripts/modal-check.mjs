@@ -13,6 +13,13 @@ import { chromium } from "playwright";
  *
  * This check is run by hand during the walkthrough. It is never a Go test and
  * never part of the gate: it needs a browser and a running server.
+ *
+ * g1-s35 made every sheet but sign-in modal for the work area, and a sheet of
+ * that mode is told modal={false}: Radix locks no scroll for it, appends no
+ * style, and there is nothing here for it to check. Sign-in is the one sheet
+ * that still takes Radix's own modality, so it is the dialog this check must
+ * be pointed at — a page whose "Open a dialog" opens anything else will fail
+ * on the overflow, and rightly: it would be proving nothing.
  */
 
 const address = process.argv[2];

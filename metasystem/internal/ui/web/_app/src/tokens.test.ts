@@ -37,8 +37,15 @@ const COLOUR_TOKENS = [
   "shadow",
 ];
 
-/** The stacking order, which is the same in both themes. */
-const LAYER_TOKENS = ["z-chrome", "z-scrim", "z-sheet", "z-tooltip"];
+/**
+ * The stacking order, which is the same in both themes.
+ *
+ * z-work joined the three when a sheet stopped being modal for the whole
+ * window: a sheet that covers the work area and leaves the Project Partner
+ * live needs a layer of its own BELOW the chrome the drawer belongs to, which
+ * none of the other three could be without moving the drawer above sign-in.
+ */
+const LAYER_TOKENS = ["z-work", "z-chrome", "z-scrim", "z-sheet", "z-tooltip"];
 
 /** The declarations of one rule, by the selector that opens it. */
 function block(css: string, selector: string): Map<string, string> {

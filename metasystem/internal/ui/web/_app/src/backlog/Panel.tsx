@@ -1,7 +1,12 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import type { Row } from "./api";
+import { AskAboutSheet } from "../partner/AskSheet";
+import type { Field } from "../partner/drafting";
+import { useOpenSheet } from "../partner/store";
 import { Button } from "../shell/controls";
+import { DEFAULT_MODALITY, useOpener, useWorkModal, type Modality } from "../shell/workmodal";
 
 /**
  * The chrome every act of this section shares, before the act is made.
@@ -12,13 +17,25 @@ import { Button } from "../shell/controls";
  * be published under whose name. Only the ledger's confirmation moves a card.
  *
  * It is a panel and not a browser dialog, and it follows the Project sheet's
- * pattern exactly: a section with the dialog role, focus held inside while it
- * is open and returned to whatever opened it, Escape to close, a scrim that
- * dims and does not close. A refusal is the server's own sentence, shown
- * here, with the fields still filled in and nothing moved.
+ * pattern exactly: a section with the dialog role, focus returned to whatever
+ * opened it, Escape to close, a scrim that dims and does not close. A refusal
+ * is the server's own sentence, shown here, with the fields still filled in
+ * and nothing moved.
  *
  * It is one component because there are three of these acts now, and a focus
  * trap written three times is a focus trap that will be right in two places.
+ *
+ * How modal it is, is workmodal.tsx's. Modal for the work area — the default —
+ * it renders into the work area's own layer, the scrim covers that box and no
+ * more, the work behind it is inert, and focus is NOT held inside: Tab leaves
+ * for the drawer and comes back, because the Project Partner beneath is meant
+ * to be usable while a goal is being written. Modal for the window, which is
+ * what it falls back to where there is no work area, it holds focus as it
+ * always did — there is nothing beside it there to hold focus for.
+ *
+ * Its head carries "Ask about this", which hands the fields as they stand to
+ * the Partner as a draft. Its caller says what the sheet is called and which
+ * fields are its own.
  */
 
 /** Everything that can hold focus inside the panel, in the order it is met. */
@@ -35,6 +52,9 @@ export function Panel({
   act,
   aside,
   form = false,
+  modal = DEFAULT_MODALITY,
+  sheetName,
+  fields = [],
   onClose,
   children,
 }: {
@@ -62,21 +82,31 @@ export function Panel({
    * the button that did not work.
    */
   form?: boolean;
+  /** How much of the window this is modal for. The work area, by default. */
+  modal?: Modality;
+  /** What the capture calls this sheet while it is open. Its title, by default. */
+  sheetName?: string;
+  /** The fields "Ask about this" hands over, in the order the sheet asks them. */
+  fields?: Field[];
   onClose: () => void;
   children: ReactNode;
 }) {
+  // Declared first, so that its cleanup is first: the work area is live again
+  // before the caret is handed back to whatever opened this.
+  const host = useWorkModal(modal);
+  useOpenSheet(sheetName ?? title);
   const panel = useRef<HTMLElement | null>(null);
+  // Read while it still has the caret: covering the work area takes the caret
+  // off whatever had it, and an effect reads the document too late.
+  const opener = useOpener();
 
   useEffect(() => {
-    const opener = globalThis.document.activeElement;
     const inside = panel.current?.querySelector<HTMLElement>(FOCUSABLE);
     (inside ?? panel.current)?.focus();
     return () => {
-      if (opener instanceof HTMLElement) {
-        opener.focus();
-      }
+      opener.current?.focus();
     };
-  }, []);
+  }, [opener]);
 
   const keys = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
@@ -84,7 +114,10 @@ export function Panel({
       onClose();
       return;
     }
-    if (event.key !== "Tab" || panel.current === null) {
+    // Focus is held inside only while this is modal for the whole window.
+    // Over the work area the Partner beneath is live, and Tab is how a human
+    // reaches it.
+    if (event.key !== "Tab" || panel.current === null || host !== null) {
       return;
     }
     const stops = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
@@ -103,23 +136,29 @@ export function Panel({
     }
   };
 
-  return (
+  const sheet = (
     <>
       <div className="ms-act-scrim" aria-hidden="true" />
       <section
         className={form ? "ms-act-sheet ms-act-sheet--form" : "ms-act-sheet"}
         role="dialog"
-        aria-modal="true"
+        // Only a sheet that blocks the whole window is modal to a reader: one
+        // that leaves the drawer live has to say so, or a screen reader would
+        // be told the Partner beneath it is not there.
+        aria-modal={host === null}
         aria-labelledby="ms-act-title"
         tabIndex={-1}
         ref={panel}
         onKeyDown={keys}
       >
-        <div>
-          <p className="ms-act-eyebrow">{eyebrow}</p>
-          <h2 className="ms-act-title" id="ms-act-title">
-            {title}
-          </h2>
+        <div className="ms-act-head">
+          <div>
+            <p className="ms-act-eyebrow">{eyebrow}</p>
+            <h2 className="ms-act-title" id="ms-act-title">
+              {title}
+            </h2>
+          </div>
+          {fields.length > 0 && <AskAboutSheet sheet={sheetName ?? title} fields={fields} />}
         </div>
         {goal !== undefined && (
           <div className="ms-act-goal">
@@ -154,4 +193,8 @@ export function Panel({
       </section>
     </>
   );
+
+  // Over the work area the sheet renders into the work area's own layer, so
+  // the scrim is that box and the drawer beneath is outside it.
+  return host === null ? sheet : createPortal(sheet, host);
 }

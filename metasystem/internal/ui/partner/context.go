@@ -262,12 +262,77 @@ func displayedSource(page Page) string {
 // A chosen passage goes first and whole. It is the one thing in this block the
 // human pointed at, and a bound that cut it would be the bound throwing away
 // the subject in order to fit the context.
+//
+// A sheet the human handed over goes next, for the same reason and with one
+// more: it is the only thing in the block that is not read from anywhere. The
+// ledger does not have it and the checkout does not have it, so if it is not
+// here it is nowhere, and it is marked as a draft so that it cannot be
+// answered about as though it were already written down.
 func seenLines(facts Facts, observed snapshot.Observation, page Page) (string, int, int) {
 	block, supplied, total := pageLines(facts, observed, page)
+	block = draftLines(page) + block
 	if quote := strings.TrimSpace(page.Quote); quote != "" {
 		return quoteLines(page) + block, supplied, total
 	}
 	return block, supplied, total
+}
+
+// Draft is a sheet as the human has filled it in, handed over by pressing
+// "Ask about this" in that sheet's head. It is not a record and never becomes
+// one here: the acts that write are the acts, and this is what is on screen
+// while somebody decides whether to make one.
+type Draft struct {
+	// Sheet is what the sheet is called, as its head says it: "New goal".
+	Sheet string `json:"sheet"`
+	// Fields are what the human has written, in the order the sheet asks
+	// them, with the empty ones already dropped by the page.
+	Fields []DraftField `json:"fields,omitempty"`
+}
+
+// DraftField is one field of a sheet: what it is called, and what is in it.
+type DraftField struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// draftPhrase is what a draft is called every time one appears, so that the
+// Partner is never left to infer whether it is reading the ledger.
+const draftPhrase = "a draft the human is filling in, not saved"
+
+// maxDraftField is how much of one field of a draft travels. A sheet's field
+// is a line or a paragraph; a human who pasted a chapter into one still gets
+// a block, not a context spent on it.
+const maxDraftField = 2000
+
+// draftLines is the sheet a human offered, field by field, marked for what it
+// is. A field holding a secret never reaches here: the one sheet that takes a
+// secret has no "Ask about this" at all.
+func draftLines(page Page) string {
+	if page.Draft == nil {
+		return ""
+	}
+	sheet := strings.TrimSpace(page.Draft.Sheet)
+	if sheet == "" {
+		return ""
+	}
+	var built strings.Builder
+	built.WriteString("- The human offered the " + sheet + " sheet — " + draftPhrase + ":\n")
+	for _, field := range page.Draft.Fields {
+		value := strings.TrimSpace(field.Value)
+		name := strings.TrimSpace(field.Name)
+		if value == "" || name == "" {
+			continue
+		}
+		if len(value) > maxDraftField {
+			value = value[:maxDraftField] + "…"
+		}
+		if strings.Contains(value, "\n") {
+			built.WriteString("  - " + name + ":\n" + quoted(value))
+			continue
+		}
+		built.WriteString("  - " + name + ": " + value + "\n")
+	}
+	return built.String()
 }
 
 // quoteLines is the selected passage, with where it came from.
@@ -340,6 +405,12 @@ func whereLines(page Page) string {
 	write("View", page.View)
 	write("Tab", page.Tab)
 	write("Done reaches back", page.Window)
+	// A sheet open over the work area is where the human is standing, so it
+	// belongs here and not among the facts of the page: it says what they are
+	// looking at, and what is IN it travels only if they offered it.
+	if sheet := strings.TrimSpace(page.Sheet); sheet != "" {
+		write("Open sheet", sheet+" (open over the page; nothing in it is saved)")
+	}
 	if page.Subject != "" {
 		kind := page.Kind
 		if kind == "" {

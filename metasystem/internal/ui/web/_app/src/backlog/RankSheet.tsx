@@ -74,6 +74,12 @@ export function RankSheet({
     <Panel
       eyebrow={`${rankOf(goal)} → ${rankOf({ priority: Number(priority) || 0, sequence: Number(sequence) || 0 })}`}
       title="Set priority"
+      // What the head's Ask hands over: the goal, and the rank being asked for.
+      fields={[
+        { name: "Goal", value: goal.ref.id },
+        { name: "Priority", value: priority },
+        { name: "Position in that priority", value: sequence },
+      ]}
       goal={goal}
       unproven={authority.proven ? "" : authority.reason}
       refusal={refusal}

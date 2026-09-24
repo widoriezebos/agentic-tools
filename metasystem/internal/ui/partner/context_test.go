@@ -215,6 +215,64 @@ func TestADocumentThatCannotBeReadSaysWhy(t *testing.T) {
 		"The displayed document could not be read: no document at that id"), true)
 }
 
+// A sheet open over the work area says where the human is standing, and says
+// so without saying anything about what is in it: a form half filled in is
+// theirs until they hand it over.
+func TestAnOpenSheetIsWhereTheHumanIsAndNothingMore(t *testing.T) {
+	t.Parallel()
+	composed := Compose(readingFacts(), Page{
+		Section: "Backlog", Path: "/backlog", View: "board", Sheet: "New goal",
+	}, "Wido", composedAt)
+	testutil.Expect(t, "the sheet is named", strings.Contains(composed, "Open sheet: New goal"), true)
+	testutil.Expect(t, "and marked unsaved", strings.Contains(composed, "nothing in it is saved"), true)
+	testutil.Expect(t, "no fields travelled", strings.Contains(composed, "The human offered"), false)
+}
+
+// A sheet the human handed over travels field by field, marked as a draft so
+// that it cannot be answered about as though the ledger already had it.
+func TestAnOfferedDraftIsCarriedAndMarkedAsADraft(t *testing.T) {
+	t.Parallel()
+	composed := Compose(readingFacts(), Page{
+		Section: "Backlog", Path: "/backlog", View: "board", Sheet: "New goal",
+		Draft: &Draft{Sheet: "New goal", Fields: []DraftField{
+			{Name: "Id", Value: "refund-worker"},
+			{Name: "Intent", Value: "Refunds are issued within a day."},
+			{Name: "Basis", Value: ""},
+		}},
+	}, "Wido", composedAt)
+	testutil.Expect(t, "it says which sheet", strings.Contains(composed,
+		"The human offered the New goal sheet — "+draftPhrase), true)
+	testutil.Expect(t, "the id travelled", strings.Contains(composed, "- Id: refund-worker"), true)
+	testutil.Expect(t, "the intent travelled", strings.Contains(composed,
+		"- Intent: Refunds are issued within a day."), true)
+	testutil.Expect(t, "an empty field says nothing", strings.Contains(composed, "Basis"), false)
+}
+
+// A field a human wrote a paragraph into is marked off from the block around
+// it, so a draft written in list items cannot be read as the block's own.
+func TestADraftsMultipleLinesAreQuoted(t *testing.T) {
+	t.Parallel()
+	composed := Compose(readingFacts(), Page{
+		Section: "Backlog", Path: "/backlog",
+		Draft: &Draft{Sheet: "New goal", Fields: []DraftField{
+			{Name: "Intent", Value: "- one\n- two"},
+		}},
+	}, "Wido", composedAt)
+	testutil.Expect(t, "the field opens", strings.Contains(composed, "- Intent:\n"), true)
+	testutil.Expect(t, "and is quoted", strings.Contains(composed, "  > - one\n  > - two\n"), true)
+}
+
+// A draft with no sheet name is not a draft anything can be said about, and
+// carrying it would be carrying an anonymous claim.
+func TestADraftWithoutASheetCarriesNothing(t *testing.T) {
+	t.Parallel()
+	composed := Compose(readingFacts(), Page{
+		Section: "Backlog", Path: "/backlog",
+		Draft: &Draft{Sheet: "  ", Fields: []DraftField{{Name: "Id", Value: "refund-worker"}}},
+	}, "Wido", composedAt)
+	testutil.Expect(t, "nothing was offered", strings.Contains(composed, "refund-worker"), false)
+}
+
 func readingFacts() Facts {
 	return Facts{Observe: func() snapshot.Observation { return readObservation() }}
 }

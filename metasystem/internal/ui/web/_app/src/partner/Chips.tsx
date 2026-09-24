@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 
+import { draftClearLabel, draftLabel, draftSource, type SheetDraft } from "./drafting";
 import { usePartner } from "./store";
 import { chipLabel, registerFor, type Chosen } from "./subject";
 import { suggestionsFor } from "./suggestions";
@@ -59,6 +60,30 @@ export function Suggestions() {
         </Hint>
       ))}
     </div>
+  );
+}
+
+/**
+ * A sheet a human handed over, with the × that takes it back.
+ *
+ * It stands beside the subject chip and reads the same way, because it is the
+ * same kind of answer to the same question — what the next question is about.
+ * What it says it is, it says out loud: a draft, named by the sheet it came
+ * from, and not anything the ledger holds.
+ */
+export function DraftChip({ draft, onClear }: { draft: SheetDraft; onClear: () => void }) {
+  return (
+    <span className="ms-partner-subject-chip ms-partner-draft-chip" title={`From ${draftSource(draft)}, not saved`}>
+      <span className="ms-partner-subject-what">{draftLabel(draft)}</span>
+      <button
+        type="button"
+        className="ms-partner-subject-clear"
+        aria-label={draftClearLabel(draft)}
+        onClick={onClear}
+      >
+        <X size={12} strokeWidth={2} aria-hidden="true" />
+      </button>
+    </span>
   );
 }
 

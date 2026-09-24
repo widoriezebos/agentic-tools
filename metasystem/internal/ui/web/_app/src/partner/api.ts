@@ -14,6 +14,8 @@
  * Markdown parser in this application and it is the server's.
  */
 
+import type { SheetDraft } from "./drafting";
+
 const PARTNER = "/api/partner";
 const TURNS = "/api/partner/turns";
 /** What the Partner will be given for the next question, from a capture. */
@@ -58,6 +60,17 @@ export type Page = {
   quoteFrom?: string;
   quoteRevision?: string;
   quoteAnchor?: string;
+  /**
+   * The sheet the human had open when they asked, by the name on its head. It
+   * says where the human was; it reopens nothing.
+   */
+  sheet?: string;
+  /**
+   * A sheet's fields as the human had filled them in when they offered them.
+   * It is there only because they pressed "Ask about this": a sheet nobody
+   * offered carries nothing but its name above.
+   */
+  draft?: SheetDraft;
   /** The address this capture returns to, composed by the page that made it. */
   return?: string;
 };

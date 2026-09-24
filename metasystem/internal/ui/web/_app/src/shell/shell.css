@@ -13,6 +13,16 @@
  * of the theme-paired token table.
  */
 :root {
+  /*
+   * A sheet modal for the work area only. It is the lowest layer of the four
+   * and not one of the three above, because it is the one layer something
+   * else is meant to stand over: the Project Partner's drawer is chrome, it
+   * comes after the work area in the document, and a sheet that left it live
+   * must not paint across it. Inside this layer the scrim and the sheet order
+   * themselves with the two tokens below, which is safe because a layer with
+   * a z-index of its own confines what is in it.
+   */
+  --ms-z-work: 5;
   --ms-z-chrome: 10;
   --ms-z-scrim: 30;
   --ms-z-sheet: 31;
@@ -125,6 +135,61 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/*
+ * The work area as a sheet sees it: the pane under a cover the sheet renders
+ * into. The panel is the positioned ancestor, so the cover is exactly this
+ * box and stops where the drawer begins.
+ */
+.ms-work-panel {
+  position: relative;
+}
+
+.ms-work-under {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/*
+ * The layer a work-area sheet renders into. It is empty until one opens and
+ * lets every pointer through while it is; the scrim and the sheet inside it
+ * take their own. Its z-index makes it a stacking context, which is what
+ * keeps the scrim and the sheet below the drawer's chrome however high they
+ * count inside it.
+ */
+.ms-work-modal {
+  position: absolute;
+  inset: 0;
+  z-index: var(--ms-z-work);
+  pointer-events: none;
+}
+
+.ms-work-modal > * {
+  pointer-events: auto;
+}
+
+/*
+ * Every sheet inside that layer is positioned against it rather than against
+ * the window: the cover is the work area's box, and a sheet modal for the
+ * work area may not reach past it. The one rule for all three sheet shapes is
+ * here rather than in each stylesheet, because it is one fact about the layer
+ * and not three facts about sheets.
+ */
+.ms-work-modal .ms-scrim,
+.ms-work-modal .ms-act-scrim,
+.ms-work-modal .ms-writing-scrim,
+.ms-work-modal .ms-sheet {
+  position: absolute;
+}
+
+.ms-work-modal .ms-act-sheet,
+.ms-work-modal .ms-writing-sheet {
+  position: absolute;
+  top: 16px;
+  max-height: calc(100% - 32px);
 }
 
 .ms-work {
@@ -399,6 +464,15 @@ body {
  * drawer's width and everything in it fits or is cut.
  */
 .ms-drawer {
+  /*
+   * The drawer stands over a sheet that is modal for the work area: it is
+   * chrome, it is what such a sheet deliberately leaves live, and being later
+   * in the document is not enough on its own to paint above a layer that has
+   * a z-index. It stays under the whole-window scrim, which is what sign-in
+   * needs in order to block it.
+   */
+  position: relative;
+  z-index: var(--ms-z-chrome);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
@@ -1077,6 +1151,52 @@ body {
 }
 
 /* ---------------------------------------------------------------- sheets -- */
+
+/*
+ * "Ask about this" in a sheet's head: the same affordance every object on a
+ * page carries, for the sheet a human is filling in. It is quiet — a sheet's
+ * head is about the act, and this is the offer to talk about it first — and
+ * it says nothing at all while there is nothing filled in to offer.
+ */
+.ms-sheet-ask {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  padding: 3px 8px;
+  border: 1px solid var(--ms-border);
+  border-radius: 999px;
+  background: var(--ms-surface-2);
+  color: var(--ms-text-2);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ms-sheet-ask:hover:not(:disabled) {
+  border-color: var(--ms-border-strong);
+  color: var(--ms-text);
+}
+
+.ms-sheet-ask:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ms-sheet-ask:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: 2px;
+}
+
+/* The head of a sheet: what it is on the left, the offer to discuss it on the
+   right. One rule for the two sheet shapes that have a head of their own. */
+.ms-act-head,
+.ms-writing-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
 
 .ms-scrim {
   position: fixed;

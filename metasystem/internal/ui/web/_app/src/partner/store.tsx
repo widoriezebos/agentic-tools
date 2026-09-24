@@ -4,6 +4,7 @@ import { useLocation } from "react-router";
 import { isBusy, loadPartner, PartnerError, sendTurn, stopTurn, type Page } from "./api";
 import { captureOf, readingMoved } from "./capture";
 import { chipped, insertAt } from "./composing";
+import type { SheetDraft } from "./drafting";
 import { keyFor } from "./asking";
 import { busy, emptyStore, loaded, received, refused, retrying, unavailable, asked, type Store } from "./conversation";
 import type { Chosen } from "./subject";
@@ -51,6 +52,24 @@ type Partner = {
   ask: (chosen: Chosen) => void;
   /** Clear the chosen subject, which is what the chip's × does. */
   clearChosen: () => void;
+
+  /**
+   * A sheet a human handed over with "Ask about this", or null. It stands as a
+   * chip above the composer until it is removed or another sheet replaces it,
+   * exactly as a chosen subject does: what "this" means, and what the draft
+   * beside it is, both stay put while a human writes their question.
+   */
+  sheetDraft: SheetDraft | null;
+  /** Offer this sheet's fields, and take the caret to the composer. */
+  askAbout: (draft: SheetDraft) => void;
+  /** Stop offering it, which is what that chip's × does. */
+  clearSheetDraft: () => void;
+  /**
+   * Say that this sheet is open, for as long as it is. The capture carries
+   * its name, the Seeing line ends with it, and the message a question becomes
+   * keeps it. It returns the way to take it back, so it is used as an effect.
+   */
+  noteSheet: (name: string) => () => void;
   /**
    * The capture the next question would carry, composed from the page as it
    * stands. It is what the "Seeing:" sheet asks about and what Send sends.
@@ -84,6 +103,10 @@ const nothing: Partner = {
   chosen: null,
   ask: () => {},
   clearChosen: () => {},
+  sheetDraft: null,
+  askAbout: () => {},
+  clearSheetDraft: () => {},
+  noteSheet: () => () => {},
   capture: { section: "", path: "" },
   moved: false,
   refresh: () => {},
@@ -99,6 +122,25 @@ export function usePartner(): Partner {
   return useContext(PartnerContext);
 }
 
+/**
+ * While this sheet is on screen, the capture says so: the Seeing line ends
+ * with "· New goal sheet open", the question carries the name, and the message
+ * it becomes keeps it.
+ *
+ * A sheet that shows the capture itself passes "" and names nothing, because a
+ * sheet naming itself in the very block it is displaying would be telling the
+ * human about the act of looking rather than about the page.
+ */
+export function useOpenSheet(name: string): void {
+  const { noteSheet } = usePartner();
+  useEffect(() => {
+    if (name === "") {
+      return;
+    }
+    return noteSheet(name);
+  }, [noteSheet, name]);
+}
+
 export function PartnerProvider({ children }: { children: ReactNode }) {
   const [store, setStore] = useState<Store>(emptyStore);
   const [draft, setDraft] = useState("");
@@ -106,6 +148,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // The subject a human chose. It survives navigation, and it is cleared by
   // its own chip and by choosing another — never by arriving somewhere else.
   const [chosen, setChosen] = useState<Chosen | null>(null);
+  // The sheet a human handed over, and the sheets that are open over the work
+  // area. They are two different facts: a sheet is open whether or not anybody
+  // offered it, and an offered draft outlives the sheet it came from, because
+  // the question about it is still being written.
+  const [sheetDraft, setSheetDraft] = useState<SheetDraft | null>(null);
+  const [sheets, setSheets] = useState<readonly string[]>([]);
   // The capture the last question was sent with, which is what "the page has
   // moved since" is measured against. Refresh replaces it with the page as it
   // stands, which prepares the next capture and changes no stamp.
@@ -159,9 +207,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   // is composed here because it belongs to the moment of asking, and it is
   // what the sheet shows, what the question carries, and what the message
   // keeps — one composition rather than three.
+  // The innermost sheet is the one a human is standing in, and the one the
+  // capture names.
+  const sheet = sheets.at(-1) ?? "";
   const capture = useMemo(
-    () => captureOf({ pathname: location.pathname, page: subject, chosen, label }),
-    [location.pathname, subject, chosen, label],
+    () => captureOf({ pathname: location.pathname, page: subject, chosen, label, sheet, draft: sheetDraft }),
+    [location.pathname, subject, chosen, label, sheet, sheetDraft],
   );
   const moved = useMemo(() => readingMoved(baseline, subject), [baseline, subject]);
 
@@ -228,6 +279,39 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
     setChosen(null);
   }, []);
 
+  /**
+   * Ask about this sheet: what is written in it right now becomes a chip above
+   * the composer, the drawer opens, and the caret goes to the field. It is the
+   * same act Ask on a card is, and it takes the same route — nothing is sent,
+   * and the question is still the human's to write.
+   */
+  const askAbout = useCallback((draft: SheetDraft) => {
+    const active = globalThis.document.activeElement;
+    cameFrom.current = active instanceof HTMLElement ? active : null;
+    setSheetDraft(draft);
+    setWanted((at) => at + 1);
+  }, []);
+
+  const clearSheetDraft = useCallback(() => {
+    setSheetDraft(null);
+  }, []);
+
+  /**
+   * A sheet says it is open, and says so again by its own name rather than by
+   * an identity, because two sheets of the same name are the same answer to
+   * "where is the human". They are held as a stack so that a sheet opened over
+   * a sheet is the one that is named, and closing it names the one beneath.
+   */
+  const noteSheet = useCallback((name: string) => {
+    setSheets((held) => [...held, name]);
+    return () => {
+      setSheets((held) => {
+        const at = held.lastIndexOf(name);
+        return at < 0 ? held : [...held.slice(0, at), ...held.slice(at + 1)];
+      });
+    };
+  }, []);
+
   const returnFocus = useCallback(() => {
     const source = cameFrom.current;
     cameFrom.current = null;
@@ -266,10 +350,12 @@ export function PartnerProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       store, busy: running, draft, setDraft, send, stop, sending,
-      chosen, ask, clearChosen, capture, moved, refresh, suggest, offerInsert,
+      chosen, ask, clearChosen, sheetDraft, askAbout, clearSheetDraft, noteSheet,
+      capture, moved, refresh, suggest, offerInsert,
       wanted, returnFocus,
     }),
     [store, running, draft, send, stop, sending, chosen, ask, clearChosen,
+      sheetDraft, askAbout, clearSheetDraft, noteSheet,
       capture, moved, refresh, suggest, offerInsert, wanted, returnFocus],
   );
 

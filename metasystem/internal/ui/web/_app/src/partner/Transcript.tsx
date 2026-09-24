@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router";
 
 import type { Message, Page } from "./api";
-import { chipOf, whenOf } from "./capture";
+import { chipOf, sheetNote, whenOf } from "./capture";
 import { nameOf } from "./conversation";
 import { useTypefaceOn } from "./FontControl";
 import { Looked } from "./Looked";
@@ -269,20 +269,29 @@ function AskedFrom({ capture }: { capture: Page }) {
   const navigate = useNavigate();
   const said = chipOf(capture);
   const to = capture.return ?? capture.path;
-  if (said === "") {
+  // What was open over that page, which is part of where the human was and no
+  // part of where the chip goes: the address carries no sheet, so going back
+  // reopens nothing.
+  const sheet = sheetNote(capture);
+  if (said === "" && sheet === "") {
     return null;
   }
   return (
-    <button
-      type="button"
-      className="ms-partner-asked-from"
-      title={`Go back to ${said}`}
-      onClick={() => {
-        void navigate(to);
-      }}
-    >
-      {said}
-    </button>
+    <>
+      {said !== "" && (
+        <button
+          type="button"
+          className="ms-partner-asked-from"
+          title={`Go back to ${said}`}
+          onClick={() => {
+            void navigate(to);
+          }}
+        >
+          {said}
+        </button>
+      )}
+      {sheet !== "" && <span className="ms-partner-asked-with">{sheet}</span>}
+    </>
   );
 }
 

@@ -11,6 +11,7 @@ import { PHONE_QUERY, RAIL_QUERY, useMediaQuery } from "./media";
 import { Rail } from "./Rail";
 import { RefreshProvider } from "./refresh";
 import { Sheet } from "./Sheet";
+import { WorkAreaProvider } from "./workmodal";
 import { BacklogPane } from "../backlog/BacklogPane";
 import { sectionHelp } from "../help/terms";
 import { useNotifications } from "../notifications/store";
@@ -102,6 +103,13 @@ function Frame() {
   // the panel's and the focused page's are three elements for one sentence,
   // and the store is what all three read it from.
   const [caret, setCaret] = useState<Caret>("none");
+  // The work area, as two elements a sheet borrows: the layer a work-area
+  // sheet renders into, over the work area's own box and under the drawer,
+  // and the content beneath it, which goes inert while one is open. They are
+  // held as state rather than in a ref because the sheets read them through a
+  // context, and a ref nobody re-renders for would hand them null forever.
+  const [layer, setLayer] = useState<HTMLElement | null>(null);
+  const [under, setUnder] = useState<HTMLElement | null>(null);
   // Ask on a card, and Cmd/Ctrl+J, ask for the composer by counting. The
   // drawer opens for them, because a composer nobody can see is a composer
   // that must never be given the caret.
@@ -203,12 +211,24 @@ function Frame() {
   // Cmd/Ctrl+J focuses the composer from any page. It is refused while a
   // modal is open, because a shortcut that moved the caret out of a sheet
   // would take it somewhere the sheet's own focus trap forbids.
+  //
+  // A sheet modal for the work area is not one of those: it has no focus trap
+  // and the composer is exactly where it means to let a human go. So what is
+  // refused is a layer outside the work area's own — sign-in, a sheet on the
+  // focused page, a card's menu — and not a sheet that is standing over the
+  // work area with the drawer live beneath it.
   useEffect(() => {
     const pressed = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== "j" || !(event.metaKey || event.ctrlKey) || event.altKey) {
         return;
       }
-      if (globalThis.document.querySelector("[role='dialog'], [role='menu']") !== null) {
+      // The layer is read from the page rather than from the state above, so
+      // that this handler needs no dependency on it and is never stale.
+      const area = globalThis.document.querySelector(".ms-work-modal");
+      const blocking = [...globalThis.document.querySelectorAll("[role='dialog'], [role='menu']")].some(
+        (element) => area?.contains(element) !== true,
+      );
+      if (blocking) {
         return;
       }
       event.preventDefault();
@@ -279,7 +299,7 @@ function Frame() {
   );
 
   return (
-    <>
+    <WorkAreaProvider layer={focused ? null : layer} under={focused ? null : under}>
         <div className="ms-shell">
           <a className="ms-skip-link" href="#content">
             Skip to content
@@ -320,7 +340,12 @@ function Frame() {
                   onLayoutChanged={remember}
                 >
                   <Panel id={WORK_PANEL} className="ms-work-panel" minSize={MINIMUM_WORK_HEIGHT}>
-                    {work}
+                    <div className="ms-work-under" ref={setUnder}>
+                      {work}
+                    </div>
+                    {/* The layer a work-area sheet renders into. It is empty
+                        and lets every pointer through until one opens. */}
+                    <div className="ms-work-modal" ref={setLayer} />
                   </Panel>
                   {drawn && (
                     <>
@@ -357,6 +382,7 @@ function Frame() {
               title="Sections"
               closeLabel="Close the sections"
               bodyClassName="ms-sheet-body--rail"
+              sheetName="Sections"
             >
               <Rail
                 inSheet
@@ -376,7 +402,7 @@ function Frame() {
           It is mounted once, above every pane, because a selection is the
           page's and not any one pane's. */}
       <AskSelection />
-    </>
+    </WorkAreaProvider>
   );
 }
 

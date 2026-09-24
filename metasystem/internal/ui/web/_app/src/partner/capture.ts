@@ -1,4 +1,5 @@
 import type { Page } from "./api";
+import type { SheetDraft } from "./drafting";
 import type { Chosen } from "./subject";
 import { activeSection } from "../routes";
 import type { Subject } from "../shell/about";
@@ -28,6 +29,10 @@ export type Capturing = {
   chosen: Chosen | null;
   /** The line the drawer showed, which is what the human read. */
   label: string;
+  /** The sheet open over the work area, by its own name, or "". */
+  sheet?: string;
+  /** A sheet a human offered with "Ask about this", or null. */
+  draft?: SheetDraft | null;
 };
 
 /** Compose one capture. */
@@ -41,6 +46,13 @@ export function captureOf(from: Capturing): Page {
   put(page, "observedAt", page_.observedAt);
   put(page, "window", page_.window);
   put(page, "label", from.label);
+  // Where the human is standing, which is now a sheet as often as a page. The
+  // name travels and nothing else does: a sheet half filled in is the human's
+  // until they hand it over, and handing it over is the draft below.
+  put(page, "sheet", from.sheet);
+  if (from.draft !== undefined && from.draft !== null) {
+    page.draft = from.draft;
+  }
 
   // The subject: the chosen one where there is one, and the page's otherwise.
   // A chosen subject replaces the page's rather than standing beside it,
@@ -178,7 +190,25 @@ export function seeingLine(capture: Page): string {
   if (reading !== "") {
     parts.push(reading);
   }
+  // Last, because it is the newest thing to be true and the one a human is
+  // looking at while they read this line.
+  if (capture.sheet !== undefined && capture.sheet !== "") {
+    parts.push(`${capture.sheet} sheet open`);
+  }
   return parts.join(" · ");
+}
+
+/**
+ * What a question asked over an open sheet says about itself, in the header
+ * row of the message it became.
+ *
+ * It is a note on the asking and not part of the address the chip beside it
+ * returns to: going back to the board a question was asked from must not
+ * reopen a form the human has long since closed or sent.
+ */
+export function sheetNote(capture: Page): string {
+  const sheet = capture.sheet ?? "";
+  return sheet === "" ? "" : `asked with the ${sheet} sheet open`;
 }
 
 /** How many goals the captured board was showing, across its lanes. */

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import {
   askQuestion,
@@ -24,7 +25,11 @@ import {
   type Kind,
   type Scope,
 } from "./writing";
+import { AskAboutSheet } from "../partner/AskSheet";
+import type { Field } from "../partner/drafting";
+import { useOpenSheet } from "../partner/store";
 import { Button } from "../shell/controls";
+import { DEFAULT_MODALITY, useOpener, useWorkModal, type Modality } from "../shell/workmodal";
 
 /**
  * The sheet: every contribution, as a proposal, before it is made.
@@ -37,10 +42,15 @@ import { Button } from "../shell/controls";
  * what lands on disk.
  *
  * It is a panel and not a browser dialog: the element is a section with the
- * dialog role, focus is held inside it while it is open and returned to
- * whatever opened it when it closes, and Escape closes it. Nothing here
- * navigates and nothing here closes on a refusal — a refusal is the server's
- * own sentence, shown in the sheet, with the fields still filled in.
+ * dialog role, focus is returned to whatever opened it when it closes, and
+ * Escape closes it. Nothing here navigates and nothing here closes on a
+ * refusal — a refusal is the server's own sentence, shown in the sheet, with
+ * the fields still filled in.
+ *
+ * How modal it is, is workmodal.tsx's: over the work area by default, so the
+ * Project Partner beneath stays live and Tab reaches it, and over the whole
+ * window where there is no work area. Its head carries "Ask about this",
+ * which hands the fields as they stand to the Partner as a draft.
  */
 
 /**
@@ -67,31 +77,47 @@ export type Done =
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/** What the capture calls each of these sheets while it is open. */
+const SHEET_NAMES: Record<Request["mode"], string> = {
+  record: "New record",
+  status: "Change status",
+  question: "New question",
+  answer: "Answer",
+  discard: "Discard changes",
+};
+
 export function Sheet({
   request,
+  modal = DEFAULT_MODALITY,
   onClose,
   onDone,
 }: {
   request: Request;
+  /** How much of the window this is modal for. The work area, by default. */
+  modal?: Modality;
   onClose: () => void;
   onDone: (done: Done) => void;
 }) {
+  // Declared first, so its cleanup is first: the work area is live again
+  // before the caret goes back to whatever opened this.
+  const host = useWorkModal(modal);
+  useOpenSheet(SHEET_NAMES[request.mode]);
   const panel = useRef<HTMLElement | null>(null);
+  // Read while it still has the caret: covering the work area takes the caret
+  // off whatever had it, and an effect reads the document too late.
+  const opener = useOpener();
   const [refusal, setRefusal] = useState("");
   const [sending, setSending] = useState(false);
 
   // Focus enters the panel when it opens and goes back to whatever opened it
   // when it closes, so a human who cancels is where they were.
   useEffect(() => {
-    const opener = globalThis.document.activeElement;
     const inside = panel.current?.querySelector<HTMLElement>(FOCUSABLE);
     (inside ?? panel.current)?.focus();
     return () => {
-      if (opener instanceof HTMLElement) {
-        opener.focus();
-      }
+      opener.current?.focus();
     };
-  }, []);
+  }, [opener]);
 
   const send = (make: () => Promise<Done>) => {
     setSending(true);
@@ -113,7 +139,10 @@ export function Sheet({
       onClose();
       return;
     }
-    if (event.key !== "Tab" || panel.current === null) {
+    // Focus is held inside only while this is modal for the whole window.
+    // Over the work area the Partner beneath is live, and Tab is how a human
+    // reaches it.
+    if (event.key !== "Tab" || panel.current === null || host !== null) {
       return;
     }
     const stops = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
@@ -132,7 +161,7 @@ export function Sheet({
     }
   };
 
-  return (
+  const sheet = (
     <>
       {/* The scrim dims the page and does not close the sheet: a contribution
           half typed is not something to lose to a stray click. Escape and
@@ -141,7 +170,9 @@ export function Sheet({
       <section
         className="ms-writing-sheet"
         role="dialog"
-        aria-modal="true"
+        // Only a sheet that blocks the whole window is modal to a reader: one
+        // that leaves the drawer live has to say so.
+        aria-modal={host === null}
         aria-labelledby="ms-writing-title"
         tabIndex={-1}
         ref={panel}
@@ -168,18 +199,40 @@ export function Sheet({
       </section>
     </>
   );
+
+  // Over the work area the sheet renders into the work area's own layer, so
+  // the scrim is that box and the drawer beneath is outside it.
+  return host === null ? sheet : createPortal(sheet, host);
 }
 
 type Send = (make: () => Promise<Done>) => void;
 
-/** The head of every sheet: what this is, and what it is called. */
-function Head({ eyebrow, title }: { eyebrow: string; title: string }) {
+/**
+ * The head of every sheet: what this is, what it is called, and the offer to
+ * discuss it with the Project Partner before it is made.
+ */
+function Head({
+  eyebrow,
+  title,
+  sheet,
+  fields,
+}: {
+  eyebrow: string;
+  title: string;
+  /** What this sheet is called where the Partner is concerned. */
+  sheet: string;
+  /** What "Ask about this" hands over, in the order the sheet asks them. */
+  fields: Field[];
+}) {
   return (
-    <div>
-      <p className="ms-facts-eyebrow">{eyebrow}</p>
-      <h2 className="ms-writing-title" id="ms-writing-title">
-        {title}
-      </h2>
+    <div className="ms-writing-head">
+      <div>
+        <p className="ms-facts-eyebrow">{eyebrow}</p>
+        <h2 className="ms-writing-title" id="ms-writing-title">
+          {title}
+        </h2>
+      </div>
+      <AskAboutSheet sheet={sheet} fields={fields} />
     </div>
   );
 }
@@ -240,7 +293,16 @@ function RecordForm({
   const action = ACTIONS[draft.kind];
   return (
     <>
-      <Head eyebrow={action.eyebrow} title={action.offer} />
+      <Head
+        eyebrow={action.eyebrow}
+        title={action.offer}
+        sheet="New record"
+        fields={[
+          { name: "Kind", value: ACTIONS[draft.kind].eyebrow },
+          { name: "Title", value: draft.title },
+          { name: "The page, as it will be written", value: pageFor(draft) },
+        ]}
+      />
       {/* What it will be about is the draft's own, not the page's: a chapter
           of a book carries no goal even where the page has one. */}
       <About scope={draft.goals.length === 0 ? null : request.scope} />
@@ -292,7 +354,16 @@ function StatusForm({
   const [status, setStatus] = useState(request.status);
   return (
     <>
-      <Head eyebrow="Change status" title={request.title} />
+      <Head
+        eyebrow="Change status"
+        title={request.title}
+        sheet="Change status"
+        fields={[
+          { name: "Record", value: request.path },
+          { name: "From", value: request.status },
+          { name: "To", value: status },
+        ]}
+      />
       <div className="ms-writing-field">
         <label htmlFor="ms-writing-status">Status</label>
         <select
@@ -347,7 +418,12 @@ function QuestionForm({
   const blocked = blockedQuestion(question);
   return (
     <>
-      <Head eyebrow="Ask a question" title={ASK} />
+      <Head
+        eyebrow="Ask a question"
+        title={ASK}
+        sheet="New question"
+        fields={[{ name: "Question", value: question }]}
+      />
       <About scope={request.scope} />
       <div className="ms-writing-field">
         <label htmlFor="ms-writing-question">Question</label>
@@ -404,7 +480,15 @@ function AnswerForm({
   };
   return (
     <>
-      <Head eyebrow="Answer" title={request.question} />
+      <Head
+        eyebrow="Answer"
+        title={request.question}
+        sheet="Answer"
+        fields={[
+          { name: "Question", value: request.question },
+          { name: "Answered by", value: reference },
+        ]}
+      />
       <div className="ms-writing-field">
         <label htmlFor="ms-writing-reference">Answered by</label>
         <input
@@ -453,7 +537,12 @@ function DiscardForm({
 }) {
   return (
     <>
-      <Head eyebrow="Unsaved changes" title="Discard your changes?" />
+      <Head
+        eyebrow="Unsaved changes"
+        title="Discard your changes?"
+        sheet="Discard changes"
+        fields={[{ name: "Document", value: request.path }]}
+      />
       <Foot
         confirm="Discard"
         note={`The changes you made to ${request.path} are not written anywhere, and closing the editor loses them.`}

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { seeing, type Seeing as Composed } from "./api";
 import { seeingLine } from "./capture";
-import { SubjectChip } from "./Chips";
+import { DraftChip, SubjectChip } from "./Chips";
 import { usePartner } from "./store";
 import { effectiveSubject } from "./subject";
 import { Sheet } from "../shell/Sheet";
@@ -53,7 +53,7 @@ export function Seeing() {
  * transcript, because everything a human touches belongs to one object.
  */
 export function SeeingRow() {
-  const { chosen, clearChosen, moved, refresh } = usePartner();
+  const { chosen, clearChosen, sheetDraft, clearSheetDraft, moved, refresh } = usePartner();
   const page = useSubject();
   const subject = effectiveSubject(chosen, page);
   const [open, setOpen] = useState(false);
@@ -65,6 +65,10 @@ export function SeeingRow() {
         }}
       />
       {subject !== null && <SubjectChip subject={subject} onClear={chosen === null ? null : clearChosen} />}
+      {/* A sheet a human handed over stands here beside the subject: both are
+          answers to "what is this question about", and both are theirs to
+          take back. */}
+      {sheetDraft !== null && <DraftChip draft={sheetDraft} onClear={clearSheetDraft} />}
       {moved && (
         <button type="button" className="ms-seeing-refresh" onClick={refresh}>
           Refresh what it sees
@@ -127,6 +131,11 @@ function SeeingSheet({ onClose }: { onClose: () => void }) {
       title="What the Project Partner will see"
       closeLabel="Close"
       bodyClassName="ms-sheet-body--seeing"
+      // It takes the work area's modality like every other sheet, and names
+      // itself in no capture: this sheet IS the capture, and a block that
+      // reported the reading of itself would be telling the human about the
+      // act of looking rather than about the page.
+      sheetName=""
     >
       <p className="ms-seeing-note">
         This is what the next question will carry. Nothing has been sent, and opening this sends nothing.

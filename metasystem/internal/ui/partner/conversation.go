@@ -91,6 +91,17 @@ type Page struct {
 	// QuoteAnchor is the heading the passage sits under, which is what a
 	// message chip returns to when the passage itself has moved.
 	QuoteAnchor string `json:"quoteAnchor,omitempty"`
+	// Sheet is the sheet the human had open over the work area when they
+	// asked, by the name on its head. It says where they were standing and
+	// nothing more: a message chip returns to the page with the sheet named
+	// and does not reopen it.
+	Sheet string `json:"sheet,omitempty"`
+	// Draft is a sheet's fields as the human had them at the moment they
+	// offered it, and only because they offered it. It is context.go's, which
+	// is where it is read into the block and where what it is read as — a
+	// draft, not a record — is said. Nothing a human is still typing travels
+	// without that act.
+	Draft *Draft `json:"draft,omitempty"`
 	// Return is the address this capture takes a human back to, composed by
 	// the page that made it: the path with the view, filters, window, tab and
 	// subject it was showing. The page owns its own address grammar, so the

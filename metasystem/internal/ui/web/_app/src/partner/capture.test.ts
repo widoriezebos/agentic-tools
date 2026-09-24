@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { captureOf, chipOf, readingMoved, seeingLine, shownRows } from "./capture";
+import { captureOf, chipOf, readingMoved, seeingLine, sheetNote, shownRows } from "./capture";
+import { draftOf } from "./drafting";
 import type { Chosen } from "./subject";
 
 /**
@@ -167,5 +168,65 @@ describe("whether the page has moved since the last question", () => {
     // A page that reads no ledger has no reading to move.
     expect(readingMoved(sent, {})).toBe(false);
     expect(readingMoved(null, board)).toBe(false);
+  });
+});
+
+/**
+ * A sheet is where the human is standing, and what is in it is theirs until
+ * they hand it over. Both of those are facts about the capture, so both are
+ * asserted from it and not from the screen.
+ */
+describe("the capture a sheet makes", () => {
+  it("carries no sheet and no draft while no sheet is open", () => {
+    const capture = captureOf({ pathname: "/backlog", page: board, chosen: null, label: "" });
+    expect(capture.sheet).toBeUndefined();
+    expect(capture.draft).toBeUndefined();
+    expect(sheetNote(capture)).toBe("");
+  });
+
+  it("names the open sheet, and ends the Seeing line with it", () => {
+    const capture = captureOf({
+      pathname: "/backlog",
+      page: board,
+      chosen: null,
+      label: "",
+      sheet: "New goal",
+    });
+    expect(capture.sheet).toBe("New goal");
+    expect(seeingLine(capture).endsWith("· New goal sheet open")).toBe(true);
+  });
+
+  // The message the question becomes says what was open over the page; the
+  // address it returns to does not, so going back reopens nothing.
+  it("says on the message what was open, and keeps it out of the address", () => {
+    const capture = captureOf({
+      pathname: "/backlog",
+      page: board,
+      chosen: null,
+      label: "",
+      sheet: "New goal",
+    });
+    expect(sheetNote(capture)).toBe("asked with the New goal sheet open");
+    expect(capture.return).toBe(board.returnTo);
+  });
+
+  // An open sheet is not an offered one: the fields travel only because the
+  // human pressed "Ask about this".
+  it("carries the fields only once they have been offered", () => {
+    const offered = draftOf("New goal", [
+      { name: "Id", value: "refund-worker" },
+      { name: "Intent", value: "Refunds are issued within a day." },
+    ]);
+    const capture = captureOf({
+      pathname: "/backlog",
+      page: board,
+      chosen: null,
+      label: "",
+      sheet: "New goal",
+      draft: offered,
+    });
+    expect(capture.draft).toEqual(offered);
+    expect(captureOf({ pathname: "/backlog", page: board, chosen: null, label: "", sheet: "New goal", draft: null })
+      .draft).toBeUndefined();
   });
 });

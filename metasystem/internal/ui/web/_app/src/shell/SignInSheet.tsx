@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button } from "./controls";
 import { blockedForSignIn, signIn, SIGN_IN_NOTE, type SessionState, type SessionStatus } from "./session";
 import { Sheet } from "./Sheet";
+import { SIGN_IN_MODALITY } from "./workmodal";
 import { failureMessage } from "./workspace";
 
 /**
@@ -15,6 +16,12 @@ import { failureMessage } from "./workspace";
  *
  * The sheet is the shell's, so the focus trap, the return of focus to whatever
  * opened it, Escape and the scrim are Radix's and are not written again here.
+ *
+ * It is the one sheet that keeps the whole-window modality every sheet used to
+ * have. A code is typed once, from another screen, and nothing else should be
+ * reachable while it is — not the board behind it and not the Project Partner
+ * beneath it. The code itself is never offered to anything: this sheet has no
+ * "Ask about this", and a secret is not a field a sheet hands over.
  */
 export function SignInSheet({
   open,
@@ -68,6 +75,7 @@ export function SignInSheet({
     <Sheet
       open={open}
       onOpenChange={close}
+      modal={SIGN_IN_MODALITY}
       side="right"
       label="Sign in"
       title="Sign in"

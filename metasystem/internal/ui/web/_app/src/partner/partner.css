@@ -421,6 +421,20 @@
   text-underline-offset: 2px;
 }
 
+/*
+ * What was open over the page when the question was asked. It sits beside the
+ * chip and is not one: there is nowhere to go, because going back to a board
+ * must not reopen a form the human has long since closed.
+ */
+.ms-partner-asked-with {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ms-text-3);
+  font-style: italic;
+}
+
 /* A name in an answer that points at one thing. */
 .ms-partner-mention {
   color: var(--ms-accent);
@@ -469,6 +483,20 @@
   background: var(--ms-surface-2);
   font-size: 12px;
   line-height: 16px;
+}
+
+/*
+ * A draft is a chip like the subject beside it, and marked so it cannot be
+ * read as a record: the marker's own paper, which this build keeps for the
+ * thing that is not yet the ledger's.
+ */
+.ms-partner-draft-chip {
+  border-color: var(--ms-marker);
+  background: var(--ms-marker-bg);
+}
+
+.ms-partner-draft-chip .ms-partner-subject-what {
+  color: var(--ms-marker-fg);
 }
 
 .ms-partner-subject-what {
