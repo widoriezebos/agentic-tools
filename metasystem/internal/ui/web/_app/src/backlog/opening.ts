@@ -122,8 +122,8 @@ export type NewGoal = {
 export function goalOf(intake: Intake, risk: Risk): NewGoal {
   return {
     id: intake.id.trim(),
-    intent: intake.intent.trim(),
-    nextStep: intake.nextStep.trim(),
+    intent: oneLine(intake.intent),
+    nextStep: oneLine(intake.nextStep),
     tier: intake.tier === "" ? 0 : Number(intake.tier),
     why: intake.why.trim(),
     blocks: [...intake.blocks],
@@ -213,9 +213,18 @@ export function openNote(human: string): string {
  * desk height is read once, and a sentence nobody finishes is a sentence that
  * taught nothing.
  */
-export const INTENT_RULE = "One line saying what done looks like: the outcome, not the work.";
+export const INTENT_RULE = "What done looks like: the outcome, not the work. As long as it needs to be; a line break becomes a space, because the ledger keeps it on one line.";
 export const NEXT_STEP_RULE =
-  "What to take on, and what is free. A different machine has to be able to claim this without asking you what you meant.";
+  "Where whoever claims this goal starts: what to take on and what is free, never a script of the how. Another machine must be able to claim it and act without asking you.";
+
+/**
+ * The ledger keeps a goal's intent and next step as one `- Key: value` line
+ * each, so a line break cannot be stored; the sheet folds one into a space
+ * rather than refusing a paragraph a human wrote with breaks in it.
+ */
+export function oneLine(text: string): string {
+  return text.replace(/\s*[\r\n]+\s*/g, " ").trim();
+}
 
 /**
  * The id rule, in the engine's own terms, as the Id field's hint.

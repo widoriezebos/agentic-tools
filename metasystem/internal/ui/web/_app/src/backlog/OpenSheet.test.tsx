@@ -140,7 +140,7 @@ describe("the three fields", () => {
     expect(markup).toContain('id="ms-open-intent"');
     expect(markup).toContain('id="ms-open-nextStep"');
     expect(markup).toContain("e.g. refund-worker");
-    expect(markup).toContain("what done looks like");
+    expect(markup).toContain("What done looks like");
     // The two lines a human writes grow, so they are fields and not inputs.
     expect(markup).toMatch(/<textarea[^>]*id="ms-open-intent"/);
     expect(markup).toMatch(/<textarea[^>]*id="ms-open-nextStep"/);

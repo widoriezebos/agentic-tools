@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:12a9cbaa883abeb1565e1b9d78f4bc1be5d7eaffa0e45e0ca5b8c67f68090899",
+  "sourceDigest": "sha256:531be6678cc38f98b10d0dc21cd3cb4efcbc7f01de4cc0dbb143a1dc070a867b",
   "source": [
     {
       "path": ".npmrc",
@@ -100,11 +100,11 @@
     },
     {
       "path": "src/backlog/OpenSheet.test.tsx",
-      "sha256": "effc47804d9bc7a0582d872e6d2bf65e1cef8940aa8a164091758ac37ae2b4f1"
+      "sha256": "258bb6370194c420515f966adc8c1e4d0ab282353891e078dab9af1da24bedd4"
     },
     {
       "path": "src/backlog/OpenSheet.tsx",
-      "sha256": "ee0ee990bc54ececc4e0988ba0115848a5288bc9b03e1f16b6397437b0aae06d"
+      "sha256": "838bfdbf8a676bb994383ca7f78d68b2fa72f0a263532bd64f95e5b7f9edca2d"
     },
     {
       "path": "src/backlog/Panel.tsx",
@@ -144,7 +144,7 @@
     },
     {
       "path": "src/backlog/backlog.css",
-      "sha256": "31796c48767f09cbed19bc37c0ceb199330bbb52abe2ce55e4241957f4150ca2"
+      "sha256": "5b77cd3e6a063d7f67f96cc266d9d923ea77bf44d0c9d043e3a1d3a5ffc03fb8"
     },
     {
       "path": "src/backlog/columns.ts",
@@ -192,11 +192,11 @@
     },
     {
       "path": "src/backlog/opening.test.ts",
-      "sha256": "6512019e9b624b6e1006b2ea4569cf24da8908d5b179f3bec271a83fe791005a"
+      "sha256": "abb45a14e8ecb49edd08963268e09e74d400dc6d24dd1b815621000eff3e80c8"
     },
     {
       "path": "src/backlog/opening.ts",
-      "sha256": "b16ba89b98d7e51c8777e7f19d576c6ba17cac71f34525cb71e61d9e7e0e13a4"
+      "sha256": "5a0e1ec53c8beee65297d93462e08e89e1cb929481310a3a41893ea9dfaceb3c"
     },
     {
       "path": "src/backlog/reorder.test.ts",
@@ -746,11 +746,11 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "78ac9d9a7fbdcee35b12532101db7b99559aac3a420bd58ee72bdea57edc3d5f"
+      "sha256": "5ef14af3ab6aeb5caf7d3502e27929d664af573834376dc949ec27763a84a37f"
     },
     {
       "path": "assets/index.js",
-      "sha256": "09c0c77afc7c385731cb958ea90ba3aa9d663318ad149c6a4701cb0121352d1c"
+      "sha256": "b90ee3165c46027bfaa468572d73addeeac77cb82f99f69ce9b8558b6511c3e1"
     },
     {
       "path": "assets/inter-latin-ext-wght-normal.woff2",

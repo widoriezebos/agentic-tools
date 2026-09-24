@@ -229,7 +229,7 @@ export function OpenSheet({
       fields={[
         { name: "Id", value: asked.id },
         { name: "Intent", value: intake.intent },
-        { name: "First next step", value: intake.nextStep },
+        { name: "Next step", value: intake.nextStep },
         { name: "Tier", value: intake.tier === "" ? String(derivedTier(risk)) : intake.tier },
         { name: "Why these answers", value: risk.basis },
         { name: "Why that tier", value: intake.why },
@@ -286,7 +286,7 @@ export function OpenSheet({
         />
       </Field>
 
-      <Field id="ms-open-nextStep" label="First next step" hint={NEXT_STEP_RULE}>
+      <Field id="ms-open-nextStep" label="Next step" hint={NEXT_STEP_RULE}>
         <textarea
           id="ms-open-nextStep"
           rows={2}

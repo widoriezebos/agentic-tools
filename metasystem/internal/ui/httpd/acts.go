@@ -269,6 +269,14 @@ func (h *handler) openGoal(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
+	// The ledger keeps a goal's intent and next step on one line each; the
+	// sheet folds a break into a space, and a client that did not is refused
+	// before a broken record can be written.
+	if strings.ContainsAny(body.Intent, "\r\n") || strings.ContainsAny(body.NextStep, "\r\n") {
+		w.WriteHeader(http.StatusBadRequest)
+		writeActRefusal(w, "one-line", "a goal's intent and next step are each one line in the ledger; fold the line breaks before sending")
+		return
+	}
 	h.answerAct(w, h.info.Open(signed, act.Opened{
 		ID: body.ID, Intent: body.Intent, NextStep: body.NextStep,
 		Tier: body.Tier, Why: body.Why, Blocks: body.Blocks, BlockedBy: body.BlockedBy,

@@ -1155,6 +1155,15 @@
   overflow-y: auto;
 }
 
+/* The ring sits inside the border: an outline drawn outside a scrolling field
+   is cut by whatever clips around it, as the sheet's field was. */
+.ms-act-field textarea:focus-visible,
+.ms-act-field input:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: -1px;
+  border-color: var(--ms-accent);
+}
+
 .ms-act-field textarea::placeholder,
 .ms-act-field input::placeholder {
   color: var(--ms-text-3);

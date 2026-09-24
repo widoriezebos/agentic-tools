@@ -20,6 +20,7 @@ import {
   SCORES,
   type Intake,
   type Risk,
+  oneLine,
 } from "./opening";
 import { blockedForRank } from "./RankSheet";
 
@@ -326,5 +327,12 @@ describe("why the set-priority button is disabled", () => {
     expect(blockedForRank("2", "0")).toMatch(/whole number from 1/);
     expect(blockedForRank("2", "last")).toMatch(/whole number from 1/);
     expect(blockedForRank("2", "-1")).toMatch(/whole number from 1/);
+  });
+});
+
+describe("oneLine", () => {
+  it("folds line breaks into one space and trims, because the ledger keeps the line", () => {
+    expect(oneLine("what done\nlooks like\r\n\n  here ")).toBe("what done looks like here");
+    expect(oneLine("  no breaks  ")).toBe("no breaks");
   });
 });
