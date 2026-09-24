@@ -2,10 +2,10 @@
 
 - Kind: design
 - Id: 01M39FGA0X84X669Q6WREHDEGS
-- Status: draft
+- Status: accepted
 - Cites: 01M34HS374KF1RSS3EWKBGD2WE
 
-Revision 1, 2026-09-24, Claude on Fable, on Wido's finding: "a goal could unblock several others, right? And it could also be the other way around. A goal could be blocked by several others ... this feels to me like an oversight." Ruled: "design for this and get it implemented. And indeed, you need a critique from Astra." Draft until Astra has read it. Touches the goal package, a tier-1 floor, on Wido's word.
+Revision 2, 2026-09-24, Claude on Fable, after Astra's critique of revision 1 ([g1-s37-astra-critique.md](g1-s37-astra-critique.md): nine material findings, "build after the nine listed changes", all nine taken below). Revision 1 was on Wido's finding: "a goal could unblock several others, right? And it could also be the other way around. A goal could be blocked by several others ... this feels to me like an oversight." Ruled: "design for this and get it implemented. And indeed, you need a critique from Astra." Touches the goal package, a tier-1 floor, on Wido's word.
 
 ## What is true today
 
@@ -13,18 +13,19 @@ The ledger already holds the relation both ways: a goal's record carries `Blocke
 
 ## Step 1
 
-**Engine, `internal/goal`.**
+**Engine, `internal/goal`.** The relation is the existing `BlockedBy` list; `Parked.Blocker` is the *marker of a dependency-created park*, and release is governed by the whole list. Nothing new is stored.
 
-1. `goal open --blocks A,B` (repeatable or comma-separated): every named live goal gains the edge and, if not already parked, parks in the same publish with the new goal as its `Blocker`; an already-parked goal gains the edge only. The seat rule is unchanged: a seat's open must name its claimed goal among them.
-2. `goal open --blocked-by A,B`: the new goal opens with those edges and parks at once; `Blocker` names the first, `Because` names them all; the lift rule is the existing one, every listed goal done.
-3. `goal block --id X --by G`: adds the edge and parks X if it is live and unparked (any actor, as parking is today). `goal unblock --id X --by G`: removes the edge; when X's remaining blockers are all done or gone, X returns; removing an edge whose blocker is not done lifts a block early, which the ledger reserves to a human, so that case needs a human proof as `resume` does.
-4. Refusals: a goal never blocks itself; an edge that would close a cycle is refused naming the cycle; an unknown goal is refused as today; a done or abandoned goal cannot be blocked.
-5. History: the two new verbs record with the existing keys (actor, targets, reason); no new History key. The board's projection and the goal page read `BlockedBy` in both directions: the goals X waits for, and the goals that wait for X.
+1. **Who may write an edge** (the actor matrix). A **human** may block or unblock any live goal, open a goal that blocks several, and open a goal blocked by several. A **seat** keeps exactly today's power and no more: its open may name its own claimed goal as the one it blocks (`SeatOpenNeedsBlocker`), and `block` from a seat is admitted only for that same goal; naming one goal it holds never authorises the others. A seat never runs an early unblock.
+2. **`goal open --blocks A,B`** (repeatable or comma-separated) and **`goal open --blocked-by A,B`**. Every target that is live and not parked parks through the existing `parkBehindBlocker` path, which clears its claim, records the displacement, and *refuses* a breach-stopped claim (`clearClaimBinding`): that refusal is this verb's answer too, naming the fenced goal, and nothing publishes. A target already parked gains the edge only. A goal opened blocked-by parks at once with the marker on the first named blocker and `Because` naming them all. Satisfaction is evaluated in the mutation: a blocker already done is kept as a satisfied edge and causes no park; a blocker unknown to the ledger is refused as today; a done or abandoned target cannot be blocked; a self-edge and an edge that closes a cycle are refused by the existing validation, which already rejects missing, abandoned and cyclic blockers.
+3. **`goal block --id X --blocker G`** adds the edge and parks X under the same path and refusals as above. **`goal unblock --id X --blocker G`** removes the edge and nothing else, then applies one rule: a park returns only when it is a dependency-created park (its marker is set) *and* every remaining goal in the list is done; a missing goal is never satisfied. When the removed edge was the marker and live edges remain, the marker is rebound to the first remaining blocker, as `abandon` and `split` already repair it. An ordinary park, one a human set with no marker, survives both a blocker's completion and an edge's removal; lifting it stays `unpark`, a fenced claim stays `resume`; none of the three substitutes for another. Approval survives a dependency park; ownership does not return by itself.
+4. **Authority.** Removing an edge whose blocker is not done is an early lift and a human act; its admission is the approval gate's (`approvalProofClass`), which admits the enrolled terminal, the verified channel and the signed-in session, and its provenance is recorded with the existing History fields as approve does. `--by` stays the human's name everywhere; the blocker flag is `--blocker`.
+5. **Journal and recovery.** An open's journal intent carries both lists and recovery rebuilds the same mutation; `block` and `unblock` journal their edge and are replayed the same way, except an early unblock, whose human authority cannot be rebuilt from a stored name: a recovered one is refused and the human redoes it.
+6. **History**: `block` and `unblock` are verb names in the existing position, not keys; readers are unaffected.
 
 **Interface.**
 
-6. The New goal sheet's "More" holds two pickers, "Blocks" and "Blocked by", each taking several goals as chips (the picker of g1-s36 in multi mode); the request carries two lists; hints say the consequence in each direction: "The chosen goals wait for this one" and "This goal waits for the chosen ones and parks until they are done".
-7. The goal page shows "Waits for" and "Holds" with the goals as links and their states, and the acts to add or remove an edge through two routes, `POST /api/backlog/goals/{id}/block` and `/unblock`, under the same human-act rule as the board's other acts. A Waiting card's line reads "waiting for A and B to be done".
+7. The open request keeps `blocks` compatible: a string (one id, or comma-separated) or an array, normalised on the server, absent or empty meaning none; it gains `blockedBy` as an array with the same rule. The sheet's "More" holds two pickers, "Blocks" and "Blocked by", each taking several goals as chips, with the hints "The chosen goals wait for this one" and "This goal waits for the chosen ones and parks until they are done"; a fenced target's refusal is shown under the picker with the goal named.
+8. Two routes, `POST /api/backlog/goals/{dependent}/block {blocker}` and `/unblock {blocker}`, where the path id is always the goal that waits; a "Holds" row on G's page therefore acts on X's route. Authority comes from the act owner, never the body; an early unblock needs the signed-in human like every act. The goal page shows "Waits for" and "Holds" with states and links, the Waiting card's line reads "waiting for A and B to be done", and the board's unknown-blocker gap stays as it is.
 
 ## Later, when it hurts
 
