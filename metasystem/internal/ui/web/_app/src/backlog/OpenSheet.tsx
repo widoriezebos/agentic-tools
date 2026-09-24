@@ -5,11 +5,13 @@ import { actingAs } from "./acting";
 import { BacklogError, openGoal, type Backlog } from "./api";
 import {
   blockedForOpen,
+  chosenStop,
   derivedTier,
   emptyRisk,
   goalOf,
   idRefusal,
   intakeFor,
+  keepsDerived,
   openNote,
   overridesTier,
   slugFrom,
@@ -26,7 +28,7 @@ import {
   type Score,
 } from "./opening";
 import { Panel } from "./Panel";
-import { Button } from "../shell/controls";
+import { Button, Hint } from "../shell/controls";
 import { useSession } from "../shell/identity";
 import { failureMessage } from "../shell/workspace";
 
@@ -92,6 +94,16 @@ export function OpenSheet({
    */
   const [answersOpen, setAnswersOpen] = useState<boolean | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  /**
+   * Whether a human has asked to record a tier other than the derived one.
+   *
+   * The tier is text until then. It is derived — four answers already chose
+   * it — so a select sitting under those four answers reads as a fifth
+   * question, and a human who has just answered four is owed a statement
+   * rather than another box. The override is a link away for the case the
+   * engine allows, which is rare and deliberate.
+   */
+  const [overriding, setOverriding] = useState(false);
   const [refusal, setRefusal] = useState("");
   const [sending, setSending] = useState(false);
   const { session, askToSignIn } = useSession();
@@ -145,6 +157,12 @@ export function OpenSheet({
     setRisk({ ...risk, [key]: value });
   };
 
+  /** Take the override back: the select goes, and so does what it recorded. */
+  const keepDerived = () => {
+    setOverriding(false);
+    setIntake({ ...intake, tier: "", why: "" });
+  };
+
   return (
     <Panel
       form
@@ -159,7 +177,7 @@ export function OpenSheet({
         { name: "Intent", value: intake.intent },
         { name: "First next step", value: intake.nextStep },
         { name: "Tier", value: intake.tier === "" ? String(derivedTier(risk)) : intake.tier },
-        { name: "Basis", value: risk.basis },
+        { name: "Why these answers", value: risk.basis },
         { name: "Why that tier", value: intake.why },
         { name: "Labels", value: intake.labels },
         { name: "Unblocks", value: intake.blocks },
@@ -220,12 +238,14 @@ export function OpenSheet({
         open={answersOpen ?? false}
         onOpen={setAnswersOpen}
       >
-        {SCORES.map((score) => (
-          <Stops key={score.key} score={score} value={risk[score.key]} onChange={answer} />
-        ))}
+        <div className="ms-act-matrix">
+          {SCORES.map((score) => (
+            <Stops key={score.key} score={score} value={risk[score.key]} onChange={answer} />
+          ))}
+        </div>
         <Field
           id="ms-open-basis"
-          label="Basis"
+          label="Why these answers"
           hint="One line saying why those four answers are the answers."
         >
           <input
@@ -239,46 +259,70 @@ export function OpenSheet({
             }}
           />
         </Field>
-        <p className="ms-act-derived">{tierLine(risk)}</p>
-        <Field
-          id="ms-open-tier"
-          label="Tier"
-          hint="The tier the answers derive is the usual one. Another is recorded with why, and a lower one is a human's own act."
-        >
-          <select
-            id="ms-open-tier"
-            value={intake.tier}
-            aria-describedby="ms-open-tier-hint"
-            onChange={(event) => {
-              setIntake({ ...intake, tier: event.target.value as "" | Answer });
-            }}
-          >
-            <option value="">the one these answers derive ({derivedTier(risk)})</option>
-            {ANSWERS.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {overridesTier(asked, risk) && (
-          <Field
-            id="ms-open-why"
-            label="Why that tier"
-            hint="Why this goal is held to a rigor its own answers did not derive."
-          >
-            <input
-              id="ms-open-why"
-              type="text"
-              value={intake.why}
-              placeholder="e.g. the answers derive 3, but the fix shape is known and carries no design unknowns"
-              aria-describedby="ms-open-why-hint"
-              onChange={(event) => {
-                setIntake({ ...intake, why: event.target.value });
+        <div className="ms-act-tier">
+          <p className="ms-act-derived">{tierLine(risk)}</p>
+          {overriding ? (
+            <>
+              <Field
+                id="ms-open-tier"
+                label="Tier"
+                hint="The tier the answers derive is the usual one. Another is recorded with why, and a lower one is a human's own act."
+              >
+                <select
+                  id="ms-open-tier"
+                  value={intake.tier}
+                  aria-describedby="ms-open-tier-hint"
+                  onChange={(event) => {
+                    const chosen = event.target.value as "" | Answer;
+                    if (keepsDerived(risk, chosen)) {
+                      keepDerived();
+                      return;
+                    }
+                    setIntake({ ...intake, tier: chosen });
+                  }}
+                >
+                  <option value="">the one these answers derive ({derivedTier(risk)})</option>
+                  {ANSWERS.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {overridesTier(asked, risk) && (
+                <Field
+                  id="ms-open-why"
+                  label="Why that tier"
+                  hint="Why this goal is held to a rigor its own answers did not derive."
+                >
+                  <input
+                    id="ms-open-why"
+                    type="text"
+                    value={intake.why}
+                    placeholder="e.g. the answers derive 3, but the fix shape is known and carries no design unknowns"
+                    aria-describedby="ms-open-why-hint"
+                    onChange={(event) => {
+                      setIntake({ ...intake, why: event.target.value });
+                    }}
+                  />
+                </Field>
+              )}
+              <button type="button" className="ms-act-link" onClick={keepDerived}>
+                Keep the derived tier
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="ms-act-link"
+              onClick={() => {
+                setOverriding(true);
               }}
-            />
-          </Field>
-        )}
+            >
+              Record a different tier…
+            </button>
+          )}
+        </div>
       </Disclosure>
 
       <Disclosure label="More" open={moreOpen} onOpen={setMoreOpen}>
@@ -395,13 +439,20 @@ function Disclosure({
 }
 
 /**
- * One risk answer: the score's name, the question it answers, and the three
- * stops with what each of them means.
+ * One risk answer, as one row: the score's name, the question it answers and
+ * three pills on the same line, and under it the one phrase that is chosen.
  *
  * Every word here is the kit's; see SCORES in opening.ts for where each one
- * comes from. The three stops are a radio group rather than a select because
- * the whole scale is the thing being read — what a 1 means beside what a 3
- * means is the answer, and a select shows one of them at a time.
+ * comes from. What changed is how many of them are on screen. Twelve
+ * sentences laid out at once made this section taller than the form it
+ * belongs to and read as a wall rather than as four questions, so the other
+ * two phrases of each scale live in the pill's own tooltip — on hover and on
+ * focus both, which is what the shell's Hint gives — and in the pill's
+ * accessible name, so a screen reader hears what a 2 means without hovering
+ * anything.
+ *
+ * The three stops are still a radio group and not a select: what a 1 means
+ * beside what a 3 means is the answer, and a select shows one at a time.
  */
 function Stops({
   score,
@@ -430,42 +481,49 @@ function Stops({
 
   return (
     <div className="ms-act-score">
-      <p className="ms-act-score-name" id={name}>
-        {score.name}
-      </p>
-      <p className="ms-act-score-question" id={question}>
-        {score.question}
-      </p>
-      <div
-        className="ms-act-stops"
-        role="radiogroup"
-        aria-labelledby={name}
-        aria-describedby={question}
-        onKeyDown={keys}
-      >
-        {ANSWERS.map((stop, at) => (
-          <button
-            key={stop}
-            type="button"
-            className="ms-act-stop"
-            role="radio"
-            aria-checked={stop === value}
-            // The roving tab stop: one stop of the three is in the tab order,
-            // and it is the chosen one, so Tab moves between questions and the
-            // arrows move within one.
-            tabIndex={stop === value ? 0 : -1}
-            ref={(element) => {
-              stops.current[at] = element;
-            }}
-            onClick={() => {
-              onChange(score.key, stop);
-            }}
-          >
-            <span className="ms-act-stop-number">{stop}</span>
-            <span className="ms-act-stop-word">{score.stops[at]}</span>
-          </button>
-        ))}
+      <div className="ms-act-score-line">
+        <p className="ms-act-score-asked">
+          <span className="ms-act-score-name" id={name}>
+            {score.name}
+          </span>{" "}
+          <span id={question}>{score.question}</span>
+        </p>
+        <div
+          className="ms-act-pills"
+          role="radiogroup"
+          aria-labelledby={name}
+          aria-describedby={question}
+          onKeyDown={keys}
+        >
+          {ANSWERS.map((stop, at) => (
+            <Hint key={stop} label={score.stops[at]}>
+              <button
+                type="button"
+                className="ms-act-pill"
+                role="radio"
+                aria-checked={stop === value}
+                // The number a human reads opens the name, and what the number
+                // means follows it: a scale whose stops are named "1, 2, 3" to
+                // a screen reader is a scale nobody can answer.
+                aria-label={`${stop}, ${score.stops[at]}`}
+                // The roving tab stop: one pill of the three is in the tab
+                // order, and it is the chosen one, so Tab moves between
+                // questions and the arrows move within one.
+                tabIndex={stop === value ? 0 : -1}
+                ref={(element) => {
+                  stops.current[at] = element;
+                }}
+                onClick={() => {
+                  onChange(score.key, stop);
+                }}
+              >
+                {stop}
+              </button>
+            </Hint>
+          ))}
+        </div>
       </div>
+      <p className="ms-act-chosen">{chosenStop(score, value)}</p>
     </div>
   );
 }

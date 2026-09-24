@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   blockedForOpen,
+  chosenStop,
   derivedTier,
   emptyIntake,
   emptyRisk,
   goalOf,
   idRefusal,
   intakeFor,
+  keepsDerived,
   labelsOf,
   openNote,
   overridesTier,
@@ -226,14 +228,50 @@ describe("the four risk answers as the sheet asks them", () => {
     expect(SCORES[3].stops[0]).toBe("broadly examined since its last change");
   });
 
-  it("are read back as the tier they derive, and as why the other two do not lift it", () => {
-    expect(tierLine(answered)).toContain("Tier 2");
-    expect(tierLine(answered)).toContain("severity 1");
-    expect(tierLine(answered)).toContain("novelty 2");
-    expect(tierLine(answered)).toContain("scale the proof");
-    expect(tierLine({ ...answered, severity: "3" })).toContain("Tier 3");
-    // Exposure and accumulation move nothing about the line's tier.
-    expect(tierLine({ ...answered, exposure: "3", accumulation: "3" })).toContain("Tier 2");
+  // The tier is one line naming the two answers it came from, which is the
+  // answer to "why is there a Tier here when I just chose four boxes".
+  it("are read back as the tier they derive, and as the two that derived it", () => {
+    expect(tierLine(answered)).toBe("Tier 2, from severity 1 and novelty 2.");
+    expect(tierLine({ ...answered, severity: "3" })).toBe("Tier 3, from severity 3 and novelty 2.");
+    // Exposure and accumulation move nothing about the line.
+    expect(tierLine({ ...answered, exposure: "3", accumulation: "3" })).toBe("Tier 2, from severity 1 and novelty 2.");
+  });
+});
+
+describe("the one phrase on screen", () => {
+  // One of the three, and the one that was chosen: the other two are a hover
+  // or a focus away, in the pill's own tooltip.
+  it("is the chosen stop's, and its wording is the kit's", () => {
+    expect(chosenStop(SCORES[0], "1")).toBe("visible and reversible on one machine");
+    expect(chosenStop(SCORES[0], "3")).toBe("irreversible, or it moves authority, secrets or a landing bar");
+    expect(chosenStop(SCORES[1], "2")).toBe("new logic inside an existing owner");
+    expect(chosenStop(SCORES[2], "3")).toBe("every dispatch or every landing");
+    expect(chosenStop(SCORES[3], "2")).toBe("several landings since");
+  });
+
+  it("is one of the three the score carries, for every score and every stop", () => {
+    for (const score of SCORES) {
+      for (const stop of ["1", "2", "3"] as const) {
+        expect(score.stops).toContain(chosenStop(score, stop));
+      }
+    }
+  });
+});
+
+describe("a tier chosen in the override select", () => {
+  // Choosing the derived tier is not an override, so the select goes and what
+  // it recorded goes with it, rather than the sheet asking why a human chose
+  // the tier it had already chosen for them.
+  it("is no override when it is the derived one, by name or by number", () => {
+    expect(keepsDerived(answered, "")).toBe(true);
+    expect(keepsDerived(answered, "2")).toBe(true);
+    expect(keepsDerived({ ...answered, severity: "3" }, "3")).toBe(true);
+  });
+
+  it("is an override when it is any other tier", () => {
+    expect(keepsDerived(answered, "1")).toBe(false);
+    expect(keepsDerived(answered, "3")).toBe(false);
+    expect(keepsDerived(emptyRisk, "2")).toBe(false);
   });
 });
 

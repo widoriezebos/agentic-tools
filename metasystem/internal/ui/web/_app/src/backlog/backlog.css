@@ -698,7 +698,8 @@
 .ms-sheet-body > form > .ms-act-field,
 .ms-act-stack > .ms-act-field,
 .ms-act-body > .ms-act-field,
-.ms-act-disclosed > .ms-act-field {
+.ms-act-disclosed > .ms-act-field,
+.ms-act-tier > .ms-act-field {
   flex: 0 0 auto;
 }
 
@@ -1213,22 +1214,39 @@
   padding: 0 10px 10px;
 }
 
-/* One risk answer: its name, the question it answers, and the three stops. */
+/*
+ * The four risk answers as a matrix rather than as four panels.
+ *
+ * Laid out as twelve sentences at once the section was taller than the form
+ * it belongs to and read as a wall: a human answering four questions is
+ * reading the answer they chose, not the eight they did not. So each score is
+ * one row — its name, its question and three pills on one line — with the
+ * chosen phrase under it and the other two a hover or a focus away. The rows
+ * are told apart by the space between them; four boxes inside a disclosure
+ * inside a sheet is three frames deep and one too many.
+ */
+.ms-act-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .ms-act-score {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
 }
 
-.ms-act-score-name {
-  margin: 0;
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 600;
-  color: var(--ms-text-2);
+.ms-act-score-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
 }
 
-.ms-act-score-question {
+/* The name and the question, in that order, on one line where they fit. */
+.ms-act-score-asked {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   font-size: 12px;
   line-height: 16px;
@@ -1236,80 +1254,119 @@
   overflow-wrap: anywhere;
 }
 
-/*
- * The three stops in one outline, the chosen one filled. They are equal
- * thirds rather than three widths, because a scale a human reads left to
- * right is a scale whose stops are the same size.
- */
-.ms-act-stops {
-  display: flex;
-  border: 1px solid var(--ms-border-strong);
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--ms-surface);
+.ms-act-score-name {
+  font-weight: 600;
+  color: var(--ms-text-2);
 }
 
-.ms-act-stop {
-  appearance: none;
-  flex: 1 1 0;
-  min-width: 0;
+/* The three pills sit at the end of the row and keep their size when the
+   question beside them wraps: a scale that moved as the text reflowed would
+   be a different target on every row. */
+.ms-act-pills {
+  flex: none;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 6px 4px;
-  border: none;
+  gap: 4px;
+}
+
+.ms-act-pill {
+  appearance: none;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 4px;
   background: var(--ms-surface);
   color: var(--ms-text-2);
   font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
 
-.ms-act-stop + .ms-act-stop {
-  border-left: 1px solid var(--ms-border-strong);
-}
-
-.ms-act-stop-number {
-  font-size: 13px;
-  line-height: 17px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.ms-act-stop-word {
-  font-size: 11px;
-  line-height: 15px;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-
-.ms-act-stop[aria-checked="true"] {
+.ms-act-pill[aria-checked="true"] {
+  border-color: var(--ms-accent);
   background: var(--ms-accent);
   color: var(--ms-accent-fg);
 }
 
 /* Hover is written per state: one rule for both would out-specify the chosen
-   stop and paint it as though it were not chosen. */
-.ms-act-stop[aria-checked="false"]:hover {
+   pill and paint it as though it were not chosen. */
+.ms-act-pill[aria-checked="false"]:hover {
   background: var(--ms-surface-2);
 }
 
-.ms-act-stop[aria-checked="true"]:hover {
+.ms-act-pill[aria-checked="true"]:hover {
+  border-color: var(--ms-accent-hover);
   background: var(--ms-accent-hover);
 }
 
-.ms-act-stop:focus-visible {
+.ms-act-pill:focus-visible {
   outline: 2px solid var(--ms-accent);
-  outline-offset: -2px;
+  outline-offset: 1px;
 }
 
-/* The tier the four answers derive, as text: it is read, not chosen. */
+/* What the chosen stop means: one phrase, under the row it answers. */
+.ms-act-chosen {
+  margin: 0;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The tier the four answers derive, and the override a link away. Its fields
+ * are held to their own height by the stacked-field rule above: a field that
+ * grows inside a column takes a share of the sheet and puts bands of nothing
+ * between the select and the why, which is the fold this sheet already fixed
+ * once.
+ */
+.ms-act-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .ms-act-derived {
   margin: 0;
   font-size: 12px;
   line-height: 16px;
   color: var(--ms-text-2);
   overflow-wrap: anywhere;
+}
+
+/*
+ * A link that acts on this sheet rather than going anywhere, so it is a
+ * button wearing a link's face: muted, underlined, and no larger than the
+ * line above it. It is the way to a case the engine allows and a human rarely
+ * wants, which is exactly what a link is for and a control is not.
+ */
+.ms-act-link {
+  align-self: flex-start;
+  appearance: none;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: none;
+  color: var(--ms-text-3);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.ms-act-link:hover {
+  color: var(--ms-text-2);
+}
+
+.ms-act-link:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: 2px;
 }
 
 /* -------------------------------------------- landing on one goal -- */

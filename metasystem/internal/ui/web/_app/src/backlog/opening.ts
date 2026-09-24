@@ -334,7 +334,37 @@ export const SCORES: readonly Score[] = [
   },
 ];
 
-/** What the tier means, and which two answers made it: read, never chosen. */
+/**
+ * What the chosen stop means: the one phrase of three that is on screen.
+ *
+ * The other two are a pill away, in the tooltip. Twelve sentences at once is
+ * what made this section taller than the form it belongs to, and a human
+ * choosing an answer is reading the one they chose.
+ */
+export function chosenStop(score: Score, value: Answer): string {
+  return score.stops[Number(value) - 1];
+}
+
+/**
+ * The tier, and the two answers it came from: read, never chosen.
+ *
+ * It names severity and novelty rather than "the four answers" because the
+ * confusion it answers is exactly that one — four boxes were chosen and only
+ * two of them decide this. The other two are not silent: they scale the
+ * proof, which is the engine's business and not this sheet's.
+ */
 export function tierLine(risk: Risk): string {
-  return `Tier ${String(derivedTier(risk))}, the worse of severity ${risk.severity} and novelty ${risk.novelty}. Exposure and accumulation do not lift it; they scale the proof.`;
+  return `Tier ${String(derivedTier(risk))}, from severity ${risk.severity} and novelty ${risk.novelty}.`;
+}
+
+/**
+ * Whether a tier chosen in the override select is no override at all.
+ *
+ * The empty option is the derived tier by name, and the derived tier's own
+ * number is the derived tier by value; either is a human saying they want
+ * what the answers already said, so the sheet takes the override back rather
+ * than recording one that changes nothing and then asking why.
+ */
+export function keepsDerived(risk: Risk, chosen: "" | Answer): boolean {
+  return chosen === "" || Number(chosen) === derivedTier(risk);
 }

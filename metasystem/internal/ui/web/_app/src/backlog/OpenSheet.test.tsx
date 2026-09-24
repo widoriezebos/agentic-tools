@@ -1,8 +1,10 @@
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { Backlog, LedgerState, Row } from "./api";
 import { OpenSheet } from "./OpenSheet";
+import { SCORES } from "./opening";
 
 /**
  * The New goal sheet as one screen.
@@ -88,13 +90,22 @@ function backlog(state: LedgerState = "read", proven = true): Backlog {
 
 function sheet(over: { state?: LedgerState; proven?: boolean; intent?: string } = {}): string {
   return renderToStaticMarkup(
-    <OpenSheet
-      backlog={backlog(over.state ?? "read", over.proven ?? true)}
-      intent={over.intent}
-      onClose={() => undefined}
-      onDone={() => undefined}
-    />,
+    // The pills carry the shell's tooltip, and the shell's tooltip is a Radix
+    // root that needs its provider; the application's is in App.tsx.
+    <TooltipPrimitive.Provider>
+      <OpenSheet
+        backlog={backlog(over.state ?? "read", over.proven ?? true)}
+        intent={over.intent}
+        onClose={() => undefined}
+        onDone={() => undefined}
+      />
+    </TooltipPrimitive.Provider>,
   );
+}
+
+/** Every phrase the sheet actually puts on screen under a risk row. */
+function chosen(markup: string): string[] {
+  return [...markup.matchAll(/<p class="ms-act-chosen">([^<]*)<\/p>/g)].map((found) => found[1]);
 }
 
 describe("the head of the New goal sheet", () => {
@@ -171,24 +182,50 @@ describe("what is disclosed", () => {
     expect(sheet()).toContain("Tier 1 · from the four answers below");
   });
 
-  it("holds the four answers as radio groups in the kit's own words", () => {
+  it("holds the four answers as one row each, as radio groups, in the kit's words", () => {
     const markup = sheet();
     expect(markup.split('role="radiogroup"').length - 1).toBe(4);
+    expect(markup.split('class="ms-act-score-line"').length - 1).toBe(4);
     expect(markup).toContain("How severe could the harm be if the change is wrong?");
     expect(markup).toContain("How unfamiliar is the approach to the system and its independent examiners?");
     expect(markup).toContain("How many users or systems can it affect?");
     expect(markup).toContain("How much change has accumulated since the last broad examination of the touched area?");
-    expect(markup).toContain("visible and reversible on one machine");
-    expect(markup).toContain("a new law, verb, schema, seam or role");
+    // Three pills per row, and the pill is the number: what it means is under
+    // the row, in the tooltip, and in the accessible name.
+    expect(markup.split('class="ms-act-pill"').length - 1).toBe(12);
+    expect(markup).toContain('aria-label="2, new logic inside an existing owner"');
   });
 
-  it("holds the basis, the derived tier as text, and the override", () => {
+  // One phrase per row, and the one that was chosen: eleven of the twelve
+  // sentences are off the screen until a human asks for them.
+  it("puts one phrase on screen per row, and it is the chosen stop's", () => {
+    const shown = chosen(sheet());
+    expect(shown).toEqual(SCORES.map((score) => score.stops[0]));
+    expect(shown).toHaveLength(4);
+    // The other two of a scale are nowhere in the visible lines.
+    expect(shown).not.toContain(SCORES[0].stops[1]);
+    expect(shown).not.toContain(SCORES[0].stops[2]);
+  });
+
+  it("holds the why-these-answers line, and calls it that", () => {
     const markup = sheet();
     expect(markup).toContain('id="ms-open-basis"');
-    expect(markup).toContain("Tier 1, the worse of severity 1 and novelty 1");
-    expect(markup).toContain('id="ms-open-tier"');
-    // The why appears only once a tier that is not the derived one is chosen.
+    expect(markup).toContain(">Why these answers</label>");
+    expect(markup).toContain("One line saying why those four answers are the answers.");
+    // The field the request carries is unchanged; only its name is new.
+    expect(markup).not.toContain(">Basis</label>");
+  });
+
+  // The tier is derived, so it is a statement and not a fifth question. The
+  // select is a link away, for the case the engine allows and a human rarely
+  // wants.
+  it("states the tier and keeps the override behind a link", () => {
+    const markup = sheet();
+    expect(markup).toContain("Tier 1, from severity 1 and novelty 1.");
+    expect(markup).toContain("Record a different tier…");
+    expect(markup).not.toContain('id="ms-open-tier"');
     expect(markup).not.toContain('id="ms-open-why"');
+    expect(markup).not.toContain("Keep the derived tier");
   });
 
   it("holds the labels and the blocker behind More", () => {
