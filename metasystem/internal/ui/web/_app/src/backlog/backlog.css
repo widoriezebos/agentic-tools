@@ -696,7 +696,9 @@
    becomes bands of nothing (the New goal sheet, 2026-09-24). */
 .ms-sheet-body > .ms-act-field,
 .ms-sheet-body > form > .ms-act-field,
-.ms-act-stack > .ms-act-field {
+.ms-act-stack > .ms-act-field,
+.ms-act-body > .ms-act-field,
+.ms-act-disclosed > .ms-act-field {
   flex: 0 0 auto;
 }
 
@@ -1063,6 +1065,251 @@
 .ms-act-sheet {
   max-height: 86vh;
   overflow-y: auto;
+}
+
+/* ------------------------------------------------ the one-screen form -- */
+
+/*
+ * A form a human fills, rather than a confirmation they read.
+ *
+ * The difference is where the scroll lives. A confirmation is short and the
+ * whole sheet may scroll; a form is long enough that the button which ends it
+ * would go below the fold, so the sheet holds its own height and only the
+ * body between the head and the foot scrolls. The foot is then pinned by the
+ * layout rather than by a position, which is why nothing here is sticky: the
+ * head and the foot are simply not in the scrolling box.
+ *
+ * 560px is the measure: three fields and a button, wide enough that an intent
+ * is written on one line and narrow enough to read as one column.
+ */
+.ms-act-sheet--form {
+  width: min(560px, calc(100vw - 32px));
+  gap: 16px;
+  overflow: hidden;
+}
+
+.ms-act-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* min-height:0 is what lets the body shrink inside the flex column at all;
+     without it the body claims its content's height and the foot is pushed
+     past the sheet's own edge, which is the fold this slice exists to fix. */
+  min-height: 0;
+  overflow-y: auto;
+  /* Room for a focus ring on the last field, which a clipped scroll box
+     would otherwise cut in half. */
+  padding: 2px;
+  margin: -2px;
+}
+
+/* The hint under a field: what the field is for, in one line, at the size of
+   something read once rather than something read every time. */
+.ms-act-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+/* What the field itself refuses, before the act is sent. */
+.ms-act-refuse {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-danger);
+  overflow-wrap: anywhere;
+}
+
+/* Why this seat cannot open a goal at all, under the head. */
+.ms-act-cannot {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The two lines a human writes. `field-sizing: content` is what grows them,
+ * so nothing measures the text and nothing writes a height into the element:
+ * two lines to start and eight at the most, after which the field scrolls
+ * rather than pushing the button off the sheet.
+ */
+.ms-act-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  field-sizing: content;
+  min-height: calc(2em * 1.45 + 18px);
+  max-height: calc(8em * 1.45 + 18px);
+  padding: 8px 10px;
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 6px;
+  background: var(--ms-surface);
+  color: var(--ms-text);
+  font: inherit;
+  line-height: 1.45;
+  resize: none;
+  overflow-y: auto;
+}
+
+.ms-act-field textarea::placeholder,
+.ms-act-field input::placeholder {
+  color: var(--ms-text-3);
+}
+
+/*
+ * A disclosure: what the engine needs and a human usually does not change.
+ * The browser owns the open state and tells a screen reader about it, so
+ * nothing here has to be kept in step with it. The default marker goes in
+ * both spellings, because the chevron that replaces it is the one that turns.
+ */
+.ms-act-disclosure {
+  border: 1px solid var(--ms-border);
+  border-radius: 8px;
+  background: var(--ms-surface-2);
+}
+
+.ms-act-disclosure-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  list-style: none;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ms-text);
+}
+
+.ms-act-disclosure-line::-webkit-details-marker {
+  display: none;
+}
+
+.ms-act-disclosure-line:hover {
+  background: var(--ms-surface-3);
+}
+
+.ms-act-disclosure-line:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: -2px;
+}
+
+.ms-act-chevron {
+  flex: none;
+  color: var(--ms-text-3);
+}
+
+.ms-act-disclosure[open] .ms-act-chevron {
+  transform: rotate(90deg);
+}
+
+.ms-act-disclosed {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 10px 10px;
+}
+
+/* One risk answer: its name, the question it answers, and the three stops. */
+.ms-act-score {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-act-score-name {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ms-text-2);
+}
+
+.ms-act-score-question {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-3);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The three stops in one outline, the chosen one filled. They are equal
+ * thirds rather than three widths, because a scale a human reads left to
+ * right is a scale whose stops are the same size.
+ */
+.ms-act-stops {
+  display: flex;
+  border: 1px solid var(--ms-border-strong);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--ms-surface);
+}
+
+.ms-act-stop {
+  appearance: none;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border: none;
+  background: var(--ms-surface);
+  color: var(--ms-text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ms-act-stop + .ms-act-stop {
+  border-left: 1px solid var(--ms-border-strong);
+}
+
+.ms-act-stop-number {
+  font-size: 13px;
+  line-height: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ms-act-stop-word {
+  font-size: 11px;
+  line-height: 15px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.ms-act-stop[aria-checked="true"] {
+  background: var(--ms-accent);
+  color: var(--ms-accent-fg);
+}
+
+/* Hover is written per state: one rule for both would out-specify the chosen
+   stop and paint it as though it were not chosen. */
+.ms-act-stop[aria-checked="false"]:hover {
+  background: var(--ms-surface-2);
+}
+
+.ms-act-stop[aria-checked="true"]:hover {
+  background: var(--ms-accent-hover);
+}
+
+.ms-act-stop:focus-visible {
+  outline: 2px solid var(--ms-accent);
+  outline-offset: -2px;
+}
+
+/* The tier the four answers derive, as text: it is read, not chosen. */
+.ms-act-derived {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ms-text-2);
+  overflow-wrap: anywhere;
 }
 
 /* -------------------------------------------- landing on one goal -- */

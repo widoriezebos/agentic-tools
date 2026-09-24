@@ -162,7 +162,179 @@ export function openNote(human: string): string {
   return `Publishes goal open as ${who}, with origin human. The goal arrives in To Do, unapproved: opening it authorizes nothing.`;
 }
 
-/** The intake rule the sheet quotes where a human is writing the two lines. */
-export const INTENT_RULE = "One line saying what done looks like — the outcome, not the work.";
+/**
+ * The intake rule the sheet quotes where a human is writing the two lines.
+ *
+ * Each is a hint under its own field now rather than a rule beside it, and
+ * each is the shortest form of the rule that still carries it: a form read at
+ * desk height is read once, and a sentence nobody finishes is a sentence that
+ * taught nothing.
+ */
+export const INTENT_RULE = "One line saying what done looks like: the outcome, not the work.";
 export const NEXT_STEP_RULE =
-  "Intent, constraints and freedoms, never a script of the how: a different machine has to be able to claim this and execute it without asking you what you meant.";
+  "What to take on, and what is free. A different machine has to be able to claim this without asking you what you meant.";
+
+/**
+ * The id rule, in the engine's own terms, as the Id field's hint.
+ *
+ * `internal/goal/goal.go`'s validId is the authority: lowercase letters,
+ * digits and hyphens, and at most a hundred characters. The sentence saying
+ * what an id is for is the one the disabled button used to carry; it belongs
+ * beside the field a human is filling rather than under the whole form.
+ */
+export const ID_RULE = "The short name every seat will use for this goal. Lowercase letters, digits and hyphens.";
+
+/** What the engine's own validId accepts, repeated so the field can say no first. */
+const KEBAB = /^[a-z0-9-]+$/;
+
+/**
+ * The ceiling an id actually has. internal/goal/goal.go carries two: validId
+ * takes a hundred characters for filesystem safety, and boundGoal refuses
+ * anything past MaxIdBytes, which is sixty-four. The tighter of the two is
+ * the one a goal file must pass, so it is the one this field says.
+ */
+const ID_LIMIT = 64;
+
+/**
+ * Why this id cannot be this goal's, or "" when it can.
+ *
+ * Both refusals are the engine's own, said here before the act is sent
+ * rather than after it is refused: an id that is not kebab-case, and an id
+ * the ledger already carries. Nothing is said about an empty id — an
+ * untouched field is not a mistake, and the foot already names it as the
+ * thing the act is waiting on.
+ */
+export function idRefusal(id: string, taken: readonly string[]): string {
+  const wanted = id.trim();
+  if (wanted === "") {
+    return "";
+  }
+  if (!KEBAB.test(wanted)) {
+    return "An id is kebab-case [a-z0-9-]: lowercase letters, digits and hyphens, and nothing else.";
+  }
+  if (wanted.length > ID_LIMIT) {
+    return `An id is at most ${String(ID_LIMIT)} characters; this one is ${String(wanted.length)}.`;
+  }
+  if (taken.includes(wanted)) {
+    return `The backlog already carries ${wanted}, and ids are unique across all sections.`;
+  }
+  return "";
+}
+
+/** The most words a suggestion takes from the intent, and its longest form. */
+const SLUG_WORDS = 6;
+const SLUG_LENGTH = 40;
+
+/**
+ * An id suggested from the intent's first words.
+ *
+ * It is a suggestion and never a value: the sheet stops offering one the
+ * moment a human types in the Id field, because the id is what every other
+ * record will refer to and a browser must not quietly rewrite one a human
+ * chose. The cut is at six words or forty characters, whichever comes first,
+ * and it is made at a word rather than inside one — an id truncated
+ * mid-word reads as a typo rather than as a name.
+ */
+export function slugFrom(intent: string): string {
+  const words = intent
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter((word) => word !== "")
+    .slice(0, SLUG_WORDS);
+  // The first word is the floor: one word longer than the whole allowance is
+  // cut rather than dropped, because an empty suggestion helps nobody.
+  let slug = (words.at(0) ?? "").slice(0, SLUG_LENGTH);
+  for (const word of words.slice(1)) {
+    const next = `${slug}-${word}`;
+    if (next.length > SLUG_LENGTH) {
+      break;
+    }
+    slug = next;
+  }
+  return slug;
+}
+
+/**
+ * Why this seat cannot open a goal at all, or "" when it can.
+ *
+ * It is one sentence and not four: a ledger the server could not project is
+ * a ledger no act can append to, and the pane's own statement already says
+ * which of the four ways it failed. Nothing here is about proof — a server
+ * with no human behind it is still offered the act, and answers it with the
+ * sign-in this page can open.
+ */
+export function unopenable(state: string): string {
+  return state === "read" ? "" : "The accepted ledger cannot be read here, so no goal can be opened until it is.";
+}
+
+/** One risk answer as the sheet asks it: its name, its question, its stops. */
+export type Score = {
+  key: "severity" | "novelty" | "exposure" | "accumulation";
+  name: string;
+  /** The question this score answers, in the kit's own words. */
+  question: string;
+  /** What 1, 2 and 3 mean, in the kit's own words, in that order. */
+  stops: readonly [string, string, string];
+};
+
+/**
+ * The four questions, and what each answer means, in the kit's own words.
+ *
+ * Not one syllable of this is the browser's. The four questions are
+ * docs/paper/06-proof-over-trust.md and 11-economy.md, and the meaning of
+ * each stop is plans/severity-tiered-rigor-p2-design.md's STR4-RISK-RECORD-15
+ * — the one place in the kit that says what a 1, a 2 and a 3 are for each
+ * score. Two parentheticals of that passage are left out, because neither is
+ * part of what the answer means: severity 2's "(the bounded/severe line of
+ * round 1)" cites a critique round, and exposure 3's list of shared-law paths
+ * is where the answer is usually true rather than what it says.
+ *
+ * The same passage's tier formula is NOT used here and must not be read from
+ * it: it was superseded by goal tier-from-severity-and-novelty, and
+ * derivedTier above follows internal/goal/file.go as it stands.
+ */
+export const SCORES: readonly Score[] = [
+  {
+    key: "severity",
+    name: "Severity",
+    question: "How severe could the harm be if the change is wrong?",
+    stops: [
+      "visible and reversible on one machine",
+      "recoverable but it crosses a proof, authority, secrets, data or external-side-effect boundary",
+      "irreversible, or it moves authority, secrets or a landing bar",
+    ],
+  },
+  {
+    key: "novelty",
+    name: "Novelty",
+    question: "How unfamiliar is the approach to the system and its independent examiners?",
+    stops: [
+      "an existing owner whose existing checks cover the change",
+      "new logic inside an existing owner",
+      "a new law, verb, schema, seam or role",
+    ],
+  },
+  {
+    key: "exposure",
+    name: "Exposure",
+    question: "How many users or systems can it affect?",
+    stops: ["one machine or one fixture", "every seat of the fleet", "every dispatch or every landing"],
+  },
+  {
+    key: "accumulation",
+    name: "Accumulation",
+    question: "How much change has accumulated since the last broad examination of the touched area?",
+    stops: [
+      "broadly examined since its last change",
+      "several landings since",
+      "the area's last broad examination predates the goal's own base",
+    ],
+  },
+];
+
+/** What the tier means, and which two answers made it: read, never chosen. */
+export function tierLine(risk: Risk): string {
+  return `Tier ${String(derivedTier(risk))}, the worse of severity ${risk.severity} and novelty ${risk.novelty}. Exposure and accumulation do not lift it; they scale the proof.`;
+}

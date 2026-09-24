@@ -6,10 +6,15 @@ import {
   emptyIntake,
   emptyRisk,
   goalOf,
+  idRefusal,
   intakeFor,
   labelsOf,
   openNote,
   overridesTier,
+  slugFrom,
+  tierLine,
+  unopenable,
+  SCORES,
   type Intake,
   type Risk,
 } from "./opening";
@@ -136,6 +141,108 @@ describe("the intake a sheet opens on", () => {
   // off until a human has written the rest of what the verb requires.
   it("does not on its own make the act sendable", () => {
     expect(blockedForOpen(intakeFor("The design's own title"), emptyRisk)).not.toBe("");
+  });
+});
+
+describe("the id suggested from the intent", () => {
+  it("is the first words, lowercased and hyphenated", () => {
+    expect(slugFrom("The board opens a goal")).toBe("the-board-opens-a-goal");
+    expect(slugFrom("Refunds Are Issued")).toBe("refunds-are-issued");
+  });
+
+  it("keeps only what an id may be made of", () => {
+    expect(slugFrom("Refunds: issued, within a day!")).toBe("refunds-issued-within-a-day");
+    expect(slugFrom("  spaced   out  ")).toBe("spaced-out");
+    expect(slugFrom("CI/CD is 90% of it")).toBe("ci-cd-is-90-of-it");
+  });
+
+  it("is cut at a sane length, and cut at a word", () => {
+    // Six words at the most, whatever they are.
+    expect(slugFrom("one two three four five six seven eight")).toBe("one-two-three-four-five-six");
+    // Forty characters at the most, and the word that would pass it is left
+    // out whole rather than truncated.
+    const long = slugFrom("interface refactoring programme quarterly review");
+    expect(long).toBe("interface-refactoring-programme");
+    expect(long.length).toBeLessThanOrEqual(40);
+    // One word longer than the whole allowance is cut rather than dropped:
+    // an empty suggestion would help nobody.
+    expect(slugFrom("a".repeat(60))).toBe("a".repeat(40));
+  });
+
+  it("is nothing at all where there is nothing to make one from", () => {
+    expect(slugFrom("")).toBe("");
+    expect(slugFrom("   ")).toBe("");
+    expect(slugFrom("!!! ???")).toBe("");
+  });
+});
+
+describe("what the id field refuses", () => {
+  it("says nothing about a field nobody has typed in", () => {
+    expect(idRefusal("", ["ui-new"])).toBe("");
+    expect(idRefusal("   ", ["ui-new"])).toBe("");
+  });
+
+  // internal/goal/goal.go's validId: lowercase letters, digits and hyphens.
+  it("refuses anything that is not kebab-case", () => {
+    expect(idRefusal("Refund Worker", [])).toMatch(/kebab-case/);
+    expect(idRefusal("refund_worker", [])).toMatch(/kebab-case/);
+    expect(idRefusal("RefundWorker", [])).toMatch(/kebab-case/);
+    expect(idRefusal("refund-worker", [])).toBe("");
+    expect(idRefusal("refund-worker-2", [])).toBe("");
+  });
+
+  // The tighter of the engine's two bounds is MaxIdBytes, which is 64.
+  it("refuses an id past the bound a goal file must pass", () => {
+    expect(idRefusal("a".repeat(64), [])).toBe("");
+    expect(idRefusal("a".repeat(65), [])).toMatch(/at most 64 characters/);
+  });
+
+  it("refuses an id the ledger already carries, live or closed", () => {
+    expect(idRefusal("ui-new", ["ui-old", "ui-new"])).toMatch(/already carries ui-new/);
+    expect(idRefusal("  ui-new  ", ["ui-new"])).toMatch(/already carries ui-new/);
+    expect(idRefusal("ui-newer", ["ui-new"])).toBe("");
+  });
+});
+
+describe("the four risk answers as the sheet asks them", () => {
+  // Not one syllable of this is the browser's: the questions are the paper's
+  // and the stops are plans/severity-tiered-rigor-p2-design.md's.
+  it("are the kit's four, in the engine's own order", () => {
+    expect(SCORES.map((score) => score.key)).toEqual(["severity", "novelty", "exposure", "accumulation"]);
+  });
+
+  it("carry the kit's question and its three stops, and never a stop of ours", () => {
+    for (const score of SCORES) {
+      expect(score.question).not.toBe("");
+      expect(score.stops).toHaveLength(3);
+      expect(score.stops.every((stop) => stop !== "")).toBe(true);
+    }
+    const severity = SCORES[0];
+    expect(severity.question).toBe("How severe could the harm be if the change is wrong?");
+    expect(severity.stops[0]).toBe("visible and reversible on one machine");
+    expect(severity.stops[2]).toBe("irreversible, or it moves authority, secrets or a landing bar");
+    expect(SCORES[1].stops[2]).toBe("a new law, verb, schema, seam or role");
+    expect(SCORES[2].stops[1]).toBe("every seat of the fleet");
+    expect(SCORES[3].stops[0]).toBe("broadly examined since its last change");
+  });
+
+  it("are read back as the tier they derive, and as why the other two do not lift it", () => {
+    expect(tierLine(answered)).toContain("Tier 2");
+    expect(tierLine(answered)).toContain("severity 1");
+    expect(tierLine(answered)).toContain("novelty 2");
+    expect(tierLine(answered)).toContain("scale the proof");
+    expect(tierLine({ ...answered, severity: "3" })).toContain("Tier 3");
+    // Exposure and accumulation move nothing about the line's tier.
+    expect(tierLine({ ...answered, exposure: "3", accumulation: "3" })).toContain("Tier 2");
+  });
+});
+
+describe("why a seat cannot open a goal at all", () => {
+  it("is the ledger, and only the ledger", () => {
+    expect(unopenable("read")).toBe("");
+    for (const state of ["absent", "no-ledger", "broken", "unreadable", "refused"]) {
+      expect(unopenable(state)).toMatch(/ledger cannot be read/);
+    }
   });
 });
 
