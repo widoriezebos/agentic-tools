@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
 )
 
 func TestHookPreviewWarmCostAtSyntheticVolume(t *testing.T) {
@@ -67,13 +69,14 @@ func TestHookPreviewWarmCostAtSyntheticVolume(t *testing.T) {
 
 	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
 	started := time.Now()
-	first := PreviewHealthAt(root, root, now, healthProbe{})
+	first, coldWork := previewHealthAtWithWork(root, now)
 	cold := time.Since(started)
+	appended := syntheticTranscriptLine(t, root, "seat-request-appended")
 	file, err := os.OpenFile(warmTranscript, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := file.Write(syntheticTranscriptLine(t, root, "seat-request-appended")); err != nil {
+	if _, err := file.Write(appended); err != nil {
 		file.Close()
 		t.Fatal(err)
 	}
@@ -82,20 +85,32 @@ func TestHookPreviewWarmCostAtSyntheticVolume(t *testing.T) {
 	}
 	started = time.Now()
 	cpuBefore := processCPUTime()
-	second := PreviewHealthAt(root, root, now.Add(time.Minute), healthProbe{})
+	second, warmWork := previewHealthAtWithWork(root, now.Add(time.Minute))
 	warm := time.Since(started)
 	warmCPU := processCPUTime() - cpuBefore
-	fmt.Printf("hook preview synthetic volume: cold=%s warm=%s warm-cpu=%s\n", cold, warm, warmCPU)
+	fmt.Printf("hook preview synthetic volume: cold=%s warm=%s warm-cpu=%s cold-work=%+v warm-work=%+v\n", cold, warm, warmCPU, coldWork, warmWork)
 	if len(first.Roles) != len(healthRoleOrder) || len(second.Roles) != len(healthRoleOrder) {
 		t.Fatalf("synthetic health preview omitted roles: cold=%d warm=%d", len(first.Roles), len(second.Roles))
 	}
-	// The ceiling is on the work, not the clock: under a saturated box the
-	// wall time of a cheap preview is the scheduler's, and a wall-clock bound
-	// that fails under load is not a test (Wido, 2026-09-11). CPU time is
-	// what the preview itself costs.
-	if warmCPU >= time.Second {
-		t.Fatalf("warm hook preview cost %s of CPU (wall %s); the one-second ceiling is a small fraction of the Stop hook budget", warmCPU, warm)
+	if coldWork.JobRecordsRead != 700 || coldWork.TranscriptLinesParsed != 45 || coldWork.CacheWrites != 41 {
+		t.Fatalf("cold preview work = %+v, want 700 job reads, 45 parsed lines, and 41 cache writes", coldWork)
 	}
+	if coldWork.TranscriptBytesRead < 25*1024*1024 || coldWork.TranscriptBytesRead >= 40*5*1024*1024 {
+		t.Fatalf("cold preview transcript bytes = %d, want all five seat files but bounded foreign-file probes", coldWork.TranscriptBytesRead)
+	}
+	if warmWork.JobRecordsRead != 0 || warmWork.TranscriptBytesRead != int64(len(appended)) || warmWork.TranscriptLinesParsed != 1 || warmWork.CacheWrites != 1 {
+		t.Fatalf("warm preview did not resume only the appended transcript suffix: work=%+v appended=%d", warmWork, len(appended))
+	}
+}
+
+func previewHealthAtWithWork(root string, now time.Time) (HealthVerdict, spend.MeasureWork) {
+	var work spend.MeasureWork
+	measure := func(repoRoot, machine string, observedAt time.Time) (spend.Ledger, error) {
+		ledger, measured, err := spend.MeasureWithWork(repoRoot, machine, observedAt)
+		work = measured
+		return ledger, err
+	}
+	return previewHealthAtWithMeasure(root, root, now, healthProbe{}, measure), work
 }
 
 func writeSyntheticTranscript(t *testing.T, path, cwd, requestID string, size int) {

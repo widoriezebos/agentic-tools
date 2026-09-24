@@ -9,7 +9,6 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -287,40 +286,41 @@ func resolveStopSurfaceBase(workspace gittree.Workspace, requested string) (stri
 }
 
 func discoverStopSurfaceFiles(root string) ([]stopSurfaceFile, error) {
-	files := []stopSurfaceFile{}
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if path == root {
-			return nil
-		}
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		relative = filepath.ToSlash(relative)
-		if entry.IsDir() {
-			// node_modules is skipped by name at any depth, as vendor is
-			// elsewhere: an installed dependency tree is content on disk,
-			// never a stop surface (g1-s8 revision 5).
-			if relative == ".git" || entry.Name() == "node_modules" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		kind, selected := stopSurfaceFileKind(relative)
-		if !selected {
-			return nil
-		}
-		if !validStopSurfacePath(relative) {
-			return fmt.Errorf("discovered non-canonical path %q", relative)
-		}
-		files = append(files, stopSurfaceFile{Kind: kind, Path: relative})
-		return nil
-	})
+	command := exec.Command("git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--")
+	command.Env = gittree.ScrubbedEnviron()
+	output, err := command.CombinedOutput()
 	if err != nil {
-		return nil, err
+		detail := strings.TrimSpace(string(output))
+		if detail == "" {
+			return nil, fmt.Errorf("list candidate stop decision surface files: %w", err)
+		}
+		return nil, fmt.Errorf("list candidate stop decision surface files: %s: %w", detail, err)
+	}
+
+	files := []stopSurfaceFile{}
+	seen := map[stopSurfaceFile]bool{}
+	for _, raw := range bytes.Split(output, []byte{0}) {
+		if len(raw) == 0 {
+			continue
+		}
+		path := filepath.ToSlash(string(raw))
+		// An installed dependency tree is content on disk, never a stop
+		// surface, whether or not the checkout ignores it (g1-s8 revision 5).
+		if isDependencyTreePath(path) {
+			continue
+		}
+		kind, selected := stopSurfaceFileKind(path)
+		if !selected {
+			continue
+		}
+		if !validStopSurfacePath(path) {
+			return nil, fmt.Errorf("candidate inventory contains non-canonical path %q", path)
+		}
+		file := stopSurfaceFile{Kind: kind, Path: path}
+		if !seen[file] {
+			files = append(files, file)
+			seen[file] = true
+		}
 	}
 	sortStopSurfaceFiles(files)
 	return files, nil
@@ -338,6 +338,9 @@ func discoverStopSurfaceFilesAtTree(root, tree string) ([]stopSurfaceFile, error
 			continue
 		}
 		path := string(raw)
+		if isDependencyTreePath(path) {
+			continue
+		}
 		kind, selected := stopSurfaceFileKind(path)
 		if !selected {
 			continue
@@ -349,6 +352,11 @@ func discoverStopSurfaceFilesAtTree(root, tree string) ([]stopSurfaceFile, error
 	}
 	sortStopSurfaceFiles(files)
 	return files, nil
+}
+
+// isDependencyTreePath reports a path inside a node_modules tree at any depth.
+func isDependencyTreePath(path string) bool {
+	return strings.HasPrefix(path, "node_modules/") || strings.Contains(path, "/node_modules/")
 }
 
 func stopSurfaceFileKind(path string) (string, bool) {

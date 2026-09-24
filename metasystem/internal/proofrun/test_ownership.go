@@ -150,6 +150,14 @@ func allocateTestOwnershipLocked(attempt *Attempt, request AdmissionRequest) err
 			expiry = request.FreshnessExpiresAt
 		}
 		observation, found := newestOwnedObservation(attempts, id, identity, episode, binding, expiry, request.Now)
+		if found && observation.ambiguous {
+			if !request.ForceGroups || observation.live {
+				return fmt.Errorf("testing history for %s has ambiguous admission order", id)
+			}
+			// Explicit group execution creates a new numbered owner without
+			// treating either tied terminal record as reusable evidence.
+			found = false
+		}
 		if found && observation.live {
 			if observation.attempt.TestAdmission >= attempt.TestAdmission {
 				return fmt.Errorf("testing wait for %s would point to a later admission", id)
@@ -204,11 +212,12 @@ func BindJoinedTestOwnershipLocked(root, attemptID string, request AdmissionRequ
 }
 
 type ownedObservation struct {
-	attempt Attempt
-	at      time.Time
-	live    bool
-	passed  bool
-	failed  bool
+	attempt   Attempt
+	at        time.Time
+	live      bool
+	passed    bool
+	failed    bool
+	ambiguous bool
 }
 
 func cloneFreshGroups(groups map[string]bool) map[string]bool {
@@ -387,8 +396,22 @@ func newestOwnedObservationWhere(attempts []Attempt, id, identity, episode, bind
 		if !candidate.live && !candidate.passed && !candidate.failed {
 			continue
 		}
-		if !found || candidate.live && !newest.live || candidate.live == newest.live && candidate.at.After(newest.at) {
+		if !found {
 			newest, found = candidate, true
+			continue
+		}
+		newestStarted, _ := time.Parse(time.RFC3339Nano, newest.attempt.StartedAt)
+		candidateStarted, _ := time.Parse(time.RFC3339Nano, candidate.attempt.StartedAt)
+		switch compareTestingAttemptObservations(
+			testingAttemptObservation{attempt: newest.attempt, live: newest.live, at: newest.at, started: newestStarted},
+			testingAttemptObservation{attempt: candidate.attempt, live: candidate.live, at: candidate.at, started: candidateStarted},
+		) {
+		case testingAttemptNewer:
+			newest = candidate
+		case testingAttemptAmbiguous:
+			newest.ambiguous = true
+			newest.passed = false
+			newest.failed = true
 		}
 	}
 	return newest, found
@@ -441,6 +464,15 @@ func sharedComponentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchRe
 			expiry = request.FreshnessExpiresAt
 		}
 		observation, found := newestOwnedObservation(attempts, id, identity, episode, binding, expiry, request.Now)
+		if found && observation.ambiguous {
+			if !request.ForceGroups || observation.live {
+				return nil, LaunchResult{}, false, fmt.Errorf("testing history for %s has ambiguous admission order", id)
+			}
+			// A forced run may supersede tied terminal history, but the tied
+			// records remain unusable and cannot nominate one retry source.
+			allPassed = false
+			continue
+		}
 		if !found || observation.live || !observation.passed {
 			allPassed = false
 		}
@@ -477,6 +509,13 @@ func sharedComponentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchRe
 // WaitForTestProducer observes the original terminal record. It never holds a
 // native execution slot or changes the producer's cancellation state.
 func WaitForTestProducer(ctx context.Context, root string, consumer Attempt, id string) (GroupResult, error) {
+	return WaitForTestProducerWithWaitCheck(ctx, root, consumer, id, nil)
+}
+
+// WaitForTestProducerWithWaitCheck lets the caller end a producer wait when
+// its admission authority changes. Cancellation remains a separate
+// infrastructure failure supplied by the caller's context.
+func WaitForTestProducerWithWaitCheck(ctx context.Context, root string, consumer Attempt, id string, check func() error) (GroupResult, error) {
 	ownerID := consumer.TestWaits[id]
 	identity := consumer.TestInventory[id]
 	if ownerID == "" || identity == "" {
@@ -485,6 +524,11 @@ func WaitForTestProducer(ctx context.Context, root string, consumer Attempt, id 
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		if check != nil {
+			if err := check(); err != nil {
+				return GroupResult{}, err
+			}
+		}
 		owner, err := ReadAttempt(root, ownerID)
 		if err != nil {
 			return GroupResult{}, fmt.Errorf("read testing producer %s: %w", ownerID, err)
@@ -518,7 +562,7 @@ func WaitForTestProducer(ctx context.Context, root string, consumer Attempt, id 
 	}
 }
 
-func validateAdmittedTestResult(attempt Attempt, result TestResult) error {
+func validateAdmittedTestResult(attempt Attempt, result TestResult, now time.Time) error {
 	if len(attempt.TestInventory) == 0 {
 		return nil
 	}
@@ -556,7 +600,7 @@ func validateAdmittedTestResult(attempt Attempt, result TestResult) error {
 				!ownsTestComponent(owner, group.ID, group.ExecutionIdentity) {
 				return fmt.Errorf("waited group %s has no earlier terminal producer", group.ID)
 			}
-			original, err := nativeSourceGroup(attempt, group)
+			original, err := nativeSourceGroup(attempt, group, now)
 			if err != nil {
 				return err
 			}
@@ -576,7 +620,7 @@ func validateAdmittedTestResult(attempt Attempt, result TestResult) error {
 			if group.ReuseAttempt != attempt.TestSources[group.ID] {
 				return fmt.Errorf("reused group %s changes its admitted source", group.ID)
 			}
-			original, err := nativeSourceGroup(attempt, group)
+			original, err := nativeSourceGroup(attempt, group, now)
 			if err != nil || original.Status != "passed" || !original.CollectionComplete {
 				return fmt.Errorf("reused group %s has no complete native source: %v", group.ID, err)
 			}
@@ -585,13 +629,69 @@ func validateAdmittedTestResult(attempt Attempt, result TestResult) error {
 	return nil
 }
 
+// normalizeInvalidInheritedTestEvidence keeps an unsuccessful diagnostic
+// record structurally complete when an exact admitted reuse disappears before
+// the terminal commit. It does not make the inherited evidence usable: the
+// group becomes explicitly not run and delivery is recomputed as insufficient.
+func normalizeInvalidInheritedTestEvidence(attempt Attempt, result TestResult, now time.Time) TestResult {
+	if len(attempt.TestInventory) == 0 || !admittedTestFreshnessMatches(attempt, result) ||
+		len(result.Groups) != len(attempt.TestInventory) {
+		return result
+	}
+	normalized := result
+	normalized.Groups = append([]GroupResult(nil), result.Groups...)
+	normalized.Uncertainty = append([]string(nil), result.Uncertainty...)
+	changed := false
+	for index, group := range result.Groups {
+		if attempt.TestInventory[group.ID] != group.ExecutionIdentity || group.Status != "reused" || group.NativeLaunched {
+			continue
+		}
+		source := attempt.TestSources[group.ID]
+		if source == "" {
+			source = attempt.TestWaits[group.ID]
+		}
+		if source == "" || group.ReuseAttempt != source {
+			continue
+		}
+		original, err := nativeSourceGroup(attempt, group, now)
+		if err == nil && original.Status == "passed" && original.CollectionComplete {
+			continue
+		}
+		if err == nil {
+			err = fmt.Errorf("group %s source is not a complete native pass", group.ID)
+		}
+		reason := "admitted inherited evidence became invalid before terminal retention: " + err.Error()
+		normalized.Groups[index] = GroupResult{ID: group.ID, Kind: group.Kind, Obligations: append([]string(nil), group.Obligations...),
+			InputDigest: group.InputDigest, InputManifest: append([]string(nil), group.InputManifest...), ExecutionIdentity: group.ExecutionIdentity,
+			IdentityVersion: group.IdentityVersion, CWD: group.CWD, Status: "not-run", NotRunReason: reason,
+			ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}
+		switch group.Kind {
+		case "build":
+			if normalized.LaunchCounts.ReusedBuild > 0 {
+				normalized.LaunchCounts.ReusedBuild--
+			}
+		default:
+			if normalized.LaunchCounts.ReusedTest > 0 {
+				normalized.LaunchCounts.ReusedTest--
+			}
+		}
+		normalized.Uncertainty = append(normalized.Uncertainty, reason)
+		changed = true
+	}
+	if changed {
+		normalized.Cost.ReusedLaunches = normalized.LaunchCounts.ReusedTest + normalized.LaunchCounts.ReusedBuild + normalized.LaunchCounts.ReusedOther
+		normalized.RecomputeDelivery()
+	}
+	return normalized
+}
+
 func admittedTestFreshnessMatches(attempt Attempt, result TestResult) bool {
 	return result.FreshnessEpisode == attempt.FreshnessEpisode &&
 		result.FreshnessBinding == attempt.FreshnessBinding &&
 		result.FreshnessExpiresAt == attempt.FreshnessExpiresAt
 }
 
-func nativeSourceGroup(consumer Attempt, group GroupResult) (GroupResult, error) {
+func nativeSourceGroup(consumer Attempt, group GroupResult, now time.Time) (GroupResult, error) {
 	owner, err := ReadAttempt(consumer.ControlRoot, group.ReuseAttempt)
 	if err != nil || owner.Terminal == nil || owner.TestResult == nil ||
 		!sameGroupFreshness(owner, consumer, group.ID) {
@@ -599,8 +699,11 @@ func nativeSourceGroup(consumer Attempt, group GroupResult) (GroupResult, error)
 	}
 	episode, _ := attemptGroupFreshness(owner, group.ID)
 	if episode != "" && owner.FreshnessExpiresAt != "" {
+		if now.IsZero() {
+			now = time.Now().UTC()
+		}
 		expires, err := time.Parse(time.RFC3339Nano, owner.FreshnessExpiresAt)
-		if err != nil || !expires.After(time.Now().UTC()) {
+		if err != nil || !expires.After(now) {
 			return GroupResult{}, fmt.Errorf("group %s native source has expired", group.ID)
 		}
 	}

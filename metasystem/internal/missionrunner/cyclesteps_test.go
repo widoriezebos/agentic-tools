@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // The cycle steps' guard paths, driven directly through the cycle context
@@ -20,8 +23,31 @@ func TestCycleReserveRefusesBrokenFences(t *testing.T) {
 	os.MkdirAll(stateDir, 0o755)
 	statePath := filepath.Join(stateDir, "state.json")
 	os.WriteFile(statePath, []byte(`{broken`), 0o644)
+	lockPath := filepath.Join(stateDir, "mission-fence.lock")
+	clockSampled := false
+	engine.Now = func() time.Time {
+		file, openErr := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+		if openErr != nil {
+			t.Fatalf("open mission lock during runner clock sample: %v", openErr)
+		}
+		lockErr := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if lockErr == nil {
+			_ = unix.Flock(int(file.Fd()), unix.LOCK_UN)
+			_ = file.Close()
+			t.Fatal("mission runner sampled its clock before the mission owner acquired the lock")
+		}
+		_ = file.Close()
+		if lockErr != unix.EWOULDBLOCK && lockErr != unix.EAGAIN {
+			t.Fatalf("inspect mission lock during runner clock sample: %v", lockErr)
+		}
+		clockSampled = true
+		return time.Date(2026, time.September, 21, 12, 0, 0, 0, time.UTC)
+	}
 	c := &cycleContext{statePath: statePath, ledger: filepath.Join(stateDir, "ledger.md"), state: map[string]any{}}
 	final, done, err := engine.cycleReserveAndBuildTurn(c)
+	if !clockSampled {
+		t.Fatal("mission runner reservation did not sample its clock")
+	}
 	if !done {
 		t.Fatalf("a failed reservation must end the cycle: final=%v err=%v", final, err)
 	}

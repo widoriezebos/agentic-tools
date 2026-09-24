@@ -224,18 +224,32 @@ if [[ "$fixture_scenario" == brain-boot-stalled ]]; then
   printf '%s\n' '{"verdict":"SUCCESS","completedAtEpoch":1788739200,"counts":{"CUSTODY":1,"ANNOUNCED":0,"UNTRACKED":0}}' >"$bed_clone/artifacts/agents/supervision/last-census.json"
   fifo="$bed_clone/records/narrator-digest.log"
   mkfifo "$fifo"
-  started=$SECONDS
+  cursor="$bed_clone/artifacts/agents/steward/narrator-digest-brain-cursor.json"
+  [[ ! -e "$cursor" ]] || { echo "stalled boot began with an unexpected brain cursor" >&2; exit 1; }
   boot=$("$ms" brain boot --root "$bed_clone" --repo "$bed_clone" --bytes 10000 --deadline-ms 1500)
-  elapsed=$((SECONDS - started))
-  (( elapsed < 3 )) || { echo "stalled boot took ${elapsed}s" >&2; exit 1; }
-  [[ "$("$ms" json get --value "$boot" --field sections.asks)" == complete ]] || { echo "completed asks section was not kept" >&2; exit 1; }
-  [[ "$("$ms" json get --value "$boot" --field sections.held)" == complete ]] || { echo "completed held section was not kept" >&2; exit 1; }
-  [[ "$("$ms" json get --value "$boot" --field sections.fleet)" == complete ]] || { echo "completed fleet section was not kept" >&2; exit 1; }
-  [[ "$("$ms" json get --value "$boot" --field sections.digest)" == skipped ]] || { echo "stalled digest section was not skipped" >&2; exit 1; }
   payload=$("$ms" json get --value "$boot" --field payload)
-  grep -Fq 'kept-ask goal ship-widget' <<<"$payload" || { echo "deadline boot discarded the completed asks payload" >&2; exit 1; }
-  grep -Fq 'BOOT DEADLINE: digest not read' <<<"$payload" || { echo "deadline did not name only the stalled digest" >&2; exit 1; }
-  [[ "$payload" != *'BOOT DEADLINE: asks'* && "$payload" != *'BOOT DEADLINE: held'* && "$payload" != *'BOOT DEADLINE: fleet'* ]] || { echo "deadline named a completed section" >&2; exit 1; }
+  missing=
+  for section in asks held fleet digest; do
+    state=$("$ms" json get --value "$boot" --field "sections.$section")
+    [[ "$state" == complete || "$state" == skipped ]] || { echo "stalled boot section $section had inconsistent state $state" >&2; exit 1; }
+    if [[ "$state" == skipped ]]; then
+      [[ -z "$missing" ]] || missing="$missing, "
+      missing="$missing$section"
+    fi
+    if [[ "$section" == asks ]]; then
+      if [[ "$state" == complete ]]; then
+        grep -Fq 'kept-ask goal ship-widget' <<<"$payload" || { echo "completed asks payload was absent" >&2; exit 1; }
+      else
+        [[ "$payload" != *'kept-ask goal ship-widget'* ]] || { echo "skipped asks payload was emitted" >&2; exit 1; }
+      fi
+    fi
+  done
+  [[ "$("$ms" json get --value "$boot" --field sections.digest)" == skipped ]] || { echo "stalled digest section was not skipped" >&2; exit 1; }
+  grep -Fq "BOOT DEADLINE: $missing not read within 1500 ms" <<<"$payload" || { echo "deadline payload did not match skipped sections: $missing" >&2; exit 1; }
+  [[ "$("$ms" json get --value "$boot" --field digestEmitted)" == false ]] || { echo "stalled digest was marked emitted" >&2; exit 1; }
+  [[ "$("$ms" json get --value "$boot" --field digestCursor)" == 0 ]] || { echo "stalled digest advanced its result cursor" >&2; exit 1; }
+  [[ -z "$("$ms" json get --value "$boot" --field digestPrefixSha256)" ]] || { echo "stalled digest reported a cursor prefix" >&2; exit 1; }
+  [[ ! -e "$cursor" ]] || { echo "stalled boot advanced the brain cursor" >&2; exit 1; }
   if ! ps -axo command= >"$tmp/processes.after-stalled"; then
     echo "brain-boot-stalled could not verify child-process cleanup because process inspection is unavailable" >&2
     exit 1

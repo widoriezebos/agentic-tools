@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	goalbranch "github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
@@ -26,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -62,8 +65,72 @@ type batchE2EFixture struct {
 }
 
 func TestBatchLandingLifecycleEndToEnd(t *testing.T) {
-	retainBatchE2ESharedEngine(t)
 	t.Parallel()
+	runIsolatedBatchLandingLifecycle(t, "two-green")
+}
+
+func TestBatchLandingLifecycleEjectRedEndToEnd(t *testing.T) {
+	t.Parallel()
+	runIsolatedBatchLandingLifecycle(t, "eject-red")
+}
+
+func TestBatchLandingLifecycleTrunkMovedEndToEnd(t *testing.T) {
+	t.Parallel()
+	runIsolatedBatchLandingLifecycle(t, "trunk-moved")
+}
+
+func TestBatchLandingLifecycleWithdrawEndToEnd(t *testing.T) {
+	t.Parallel()
+	runIsolatedBatchLandingLifecycle(t, "withdraw")
+}
+
+func runIsolatedBatchLandingLifecycle(t *testing.T, scenario string) {
+	t.Helper()
+	const selector = "METASYSTEM_BATCH_LIFECYCLE_SCENARIO"
+	if os.Getenv(selector) == scenario {
+		runBatchLandingLifecycleScenario(t, scenario)
+		return
+	}
+	pid := 0
+	testenv.ReapFixtureProcessGroups(t, []testenv.FixtureProcessGroup{{
+		Verb: "batch landing lifecycle " + scenario,
+		Resolve: func() (int, bool, error) {
+			return pid, pid != 0, nil
+		},
+	}})
+	arguments := []string{"-test.run=^" + t.Name() + "$", "-test.count=1"}
+	arguments = append(arguments, inheritedTestCoverageArguments()...)
+	command := exec.Command(os.Args[0], arguments...)
+	command.Env = append(os.Environ(), selector+"="+scenario)
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid = command.Process.Pid
+	if err := command.Wait(); err != nil {
+		t.Fatalf("batch lifecycle scenario %s: %v\n%s", scenario, err, output.String())
+	}
+}
+
+func inheritedTestCoverageArguments() []string {
+	for index, argument := range os.Args[1:] {
+		if strings.HasPrefix(argument, "-test.gocoverdir=") {
+			if strings.TrimPrefix(argument, "-test.gocoverdir=") != "" {
+				return []string{argument}
+			}
+			return nil
+		}
+		if argument == "-test.gocoverdir" && index+2 < len(os.Args) && os.Args[index+2] != "" {
+			return []string{argument, os.Args[index+2]}
+		}
+	}
+	return nil
+}
+
+func runBatchLandingLifecycleScenario(t *testing.T, scenario string) {
+	retainBatchE2ESharedEngine(t)
 	batchE2EProcessEnvironment.Lock()
 	t.Cleanup(batchE2EProcessEnvironment.Unlock)
 	engine := batchE2ESharedEngine
@@ -133,169 +200,178 @@ func TestBatchLandingLifecycleEndToEnd(t *testing.T) {
 		_ = os.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", originalAdmissionRoot)
 		signal.Reset(syscall.SIGUSR1)
 	})
+	switch scenario {
+	case "two-green":
+		runBatchLandingLifecycleTwoGreen(t, harness, engine, now)
+	case "eject-red":
+		runBatchLandingLifecycleEjectRed(t, harness, engine, now)
+	case "trunk-moved":
+		runBatchLandingLifecycleTrunkMoved(t, harness, engine, now)
+	case "withdraw":
+		runBatchLandingLifecycleWithdraw(t, harness, engine, now)
+	default:
+		t.Fatalf("unknown batch lifecycle scenario %q", scenario)
+	}
+}
+
+func runBatchLandingLifecycleTwoGreen(t *testing.T, harness *batchE2EHarness, engine *batchE2EEngine, now time.Time) {
 	observed, statusFailures := map[string]bool{}, []string{}
+	fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b")
+	batchID := fixture.join("goal-a")
+	fixture.joinInto(batchID, "goal-b")
+	observe := func(state string) {
+		if observed[state] {
+			return
+		}
+		observed[state] = true
+		if err := fixture.statusAndWait(batchID, state); err != nil {
+			statusFailures = append(statusFailures, err.Error())
+		}
+	}
+	observe(batch.StateOpen)
+	fixture.planObserve = func() { observe(batch.StateSealed) }
+	fixture.proof = func(request batchProofLaunch, _ int) proofrun.TestResult {
+		observe(batch.StateProving)
+		return batchE2EProofResult(request, true, nil)
+	}
+	fixture.tick(batchID)
+	fixture.assertState(batchID, batch.StateLanding)
+	observe(batch.StateLanding)
+	if len(fixture.proofCalls) != 1 || fixture.proofCalls[0].Tree != fixture.load(batchID).TipTree {
+		t.Fatalf("tip proof calls = %+v, want one call for the union tree", fixture.proofCalls)
+	}
+	fixture.tick(batchID)
+	fixture.assertState(batchID, batch.StateLanded)
+	observe(batch.StateLanded)
+	fixture.assertLandedUnits("goal-a", "goal-b")
+	fixture.assertRemoteBranch("goal-a", false)
+	fixture.assertRemoteBranch("goal-b", false)
+	for _, state := range []string{batch.StateOpen, batch.StateSealed, batch.StateProving, batch.StateLanding, batch.StateLanded} {
+		if !observed[state] {
+			t.Fatalf("status and wait did not observe %s", state)
+		}
+	}
+	if len(statusFailures) != 0 {
+		t.Fatalf("status and wait failures: %s", strings.Join(statusFailures, "; "))
+	}
+}
 
-	t.Run("two-green", func(t *testing.T) {
-		fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b")
-		batchID := fixture.join("goal-a")
-		fixture.joinInto(batchID, "goal-b")
-		observe := func(state string) {
-			if observed[state] {
-				return
-			}
-			observed[state] = true
-			if err := fixture.statusAndWait(batchID, state); err != nil {
-				statusFailures = append(statusFailures, err.Error())
-			}
+func runBatchLandingLifecycleEjectRed(t *testing.T, harness *batchE2EHarness, engine *batchE2EEngine, now time.Time) {
+	fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b", "goal-c")
+	fixture.proof = func(request batchProofLaunch, call int) proofrun.TestResult {
+		if call == 1 {
+			return batchE2EProofResult(request, false, []string{"units/goal-b.txt"})
 		}
-		observe(batch.StateOpen)
-		fixture.planObserve = func() { observe(batch.StateSealed) }
-		fixture.proof = func(request batchProofLaunch, _ int) proofrun.TestResult {
-			observe(batch.StateProving)
-			return batchE2EProofResult(request, true, nil)
+		return batchE2EProofResult(request, true, nil)
+	}
+	fixture.diagnostic = func(request batch.DiagnosticRequest) batch.DiagnosticResult {
+		if fixture.treeHas(request.Tree, "units/goal-b.txt") {
+			return batch.DiagnosticResult{AttemptID: "diagnose-goal-b", Groups: []batch.RedGroup{{ID: "app-unit", Status: "failed", Failures: []batch.Failure{{Name: "TestGoalB", Status: "failed"}}}}}
 		}
-		fixture.tick(batchID)
-		fixture.assertState(batchID, batch.StateLanding)
-		observe(batch.StateLanding)
-		if len(fixture.proofCalls) != 1 || fixture.proofCalls[0].Tree != fixture.load(batchID).TipTree {
-			t.Fatalf("tip proof calls = %+v, want one call for the union tree", fixture.proofCalls)
-		}
-		fixture.tick(batchID)
-		fixture.assertState(batchID, batch.StateLanded)
-		observe(batch.StateLanded)
-		fixture.assertLandedUnits("goal-a", "goal-b")
-		fixture.assertRemoteBranch("goal-a", false)
-		fixture.assertRemoteBranch("goal-b", false)
-	})
+		return batch.DiagnosticResult{AttemptID: "diagnose-green"}
+	}
+	batchID := fixture.join("goal-a")
+	fixture.joinInto(batchID, "goal-b")
+	fixture.joinInto(batchID, "goal-c")
+	ejectedTip := fixture.remoteBranchTip("goal-b")
+	fixture.tick(batchID)
+	fixture.assertState(batchID, batch.StateDiagnosing)
+	fixture.tick(batchID)
+	record := fixture.load(batchID)
+	unit := batchE2EUnit(record, "goal-b")
+	if unit.State != batch.UnitReturnPending || unit.Outcome != batch.UnitEjected || !strings.Contains(unit.Failure, "TestGoalB") {
+		t.Fatalf("diagnosed unit = %+v", unit)
+	}
+	fixture.tick(batchID)
+	fixture.assertState(batchID, batch.StateLanding)
+	fixture.tick(batchID)
+	fixture.assertState(batchID, batch.StateLanded)
+	if len(fixture.proofCalls) != 2 {
+		t.Fatalf("tip proof calls = %d, want red union and green survivors", len(fixture.proofCalls))
+	}
+	fixture.assertLandedUnits("goal-a", "goal-c")
+	if fixture.originHas("units/goal-b.txt") {
+		t.Fatal("the ejected unit reached origin/main")
+	}
+	fixture.assertRemoteBranch("goal-b", true)
+	if got := fixture.remoteBranchTip("goal-b"); got != ejectedTip {
+		t.Fatalf("ejected branch tip=%s want untouched %s", got, ejectedTip)
+	}
+}
 
-	t.Run("eject-red", func(t *testing.T) {
-		fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b", "goal-c")
-		fixture.proof = func(request batchProofLaunch, call int) proofrun.TestResult {
-			if call == 1 {
-				return batchE2EProofResult(request, false, []string{"units/goal-b.txt"})
-			}
-			return batchE2EProofResult(request, true, nil)
-		}
-		fixture.diagnostic = func(request batch.DiagnosticRequest) batch.DiagnosticResult {
-			if fixture.treeHas(request.Tree, "units/goal-b.txt") {
-				return batch.DiagnosticResult{AttemptID: "diagnose-goal-b", Groups: []batch.RedGroup{{ID: "app-unit", Status: "failed", Failures: []batch.Failure{{Name: "TestGoalB", Status: "failed"}}}}}
-			}
-			return batch.DiagnosticResult{AttemptID: "diagnose-green"}
-		}
-		batchID := fixture.join("goal-a")
-		fixture.joinInto(batchID, "goal-b")
-		fixture.joinInto(batchID, "goal-c")
-		ejectedTip := fixture.remoteBranchTip("goal-b")
-		fixture.tick(batchID)
-		fixture.assertState(batchID, batch.StateDiagnosing)
-		fixture.tick(batchID)
-		record := fixture.load(batchID)
-		unit := batchE2EUnit(record, "goal-b")
-		if unit.State != batch.UnitReturnPending || unit.Outcome != batch.UnitEjected || !strings.Contains(unit.Failure, "TestGoalB") {
-			t.Fatalf("diagnosed unit = %+v", unit)
-		}
-		fixture.tick(batchID)
-		fixture.assertState(batchID, batch.StateLanding)
-		fixture.tick(batchID)
-		fixture.assertState(batchID, batch.StateLanded)
-		if len(fixture.proofCalls) != 2 {
-			t.Fatalf("tip proof calls = %d, want red union and green survivors", len(fixture.proofCalls))
-		}
-		fixture.assertLandedUnits("goal-a", "goal-c")
-		if fixture.originHas("units/goal-b.txt") {
-			t.Fatal("the ejected unit reached origin/main")
-		}
-		fixture.assertRemoteBranch("goal-b", true)
-		if got := fixture.remoteBranchTip("goal-b"); got != ejectedTip {
-			t.Fatalf("ejected branch tip=%s want untouched %s", got, ejectedTip)
-		}
-	})
+func runBatchLandingLifecycleTrunkMoved(t *testing.T, harness *batchE2EHarness, engine *batchE2EEngine, now time.Time) {
+	fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b")
+	fixture.proof = func(request batchProofLaunch, _ int) proofrun.TestResult {
+		return batchE2EProofResult(request, true, []string{"app/**"})
+	}
+	batchID := fixture.join("goal-a")
+	fixture.joinInto(batchID, "goal-b")
+	fixture.tick(batchID)
+	proved := fixture.load(batchID)
+	fixture.moveTrunk("app/trunk.txt")
+	movedTip := fixture.originTip()
+	fixture.tick(batchID)
+	reopened := fixture.load(batchID)
+	if reopened.State != batch.StateOpen || reopened.Proof != nil || fixture.originTip() != movedTip {
+		t.Fatalf("moved trunk result = state %s proof=%+v origin=%s want open, nil, %s", reopened.State, reopened.Proof, fixture.originTip(), movedTip)
+	}
+	if proved.Proof == nil || proved.Proof.BaseCommit == movedTip {
+		t.Fatalf("first proof did not bind the old base: %+v", proved.Proof)
+	}
+	fixture.tick(batchID)
+	fixture.assertState(batchID, batch.StateLanding)
+	fixture.tick(batchID)
+	fixture.assertState(batchID, batch.StateLanded)
+	if len(fixture.proofCalls) != 2 || fixture.proofCalls[0].Tree == fixture.proofCalls[1].Tree {
+		t.Fatalf("proof calls did not rebind to the moved base: %+v", fixture.proofCalls)
+	}
+	fixture.assertLandedUnits("goal-a", "goal-b")
+}
 
-	t.Run("trunk-moved", func(t *testing.T) {
-		fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b")
-		fixture.proof = func(request batchProofLaunch, _ int) proofrun.TestResult {
-			return batchE2EProofResult(request, true, []string{"app/**"})
-		}
-		batchID := fixture.join("goal-a")
-		fixture.joinInto(batchID, "goal-b")
-		fixture.tick(batchID)
-		proved := fixture.load(batchID)
-		fixture.moveTrunk("app/trunk.txt")
-		movedTip := fixture.originTip()
-		fixture.tick(batchID)
-		reopened := fixture.load(batchID)
-		if reopened.State != batch.StateOpen || reopened.Proof != nil || fixture.originTip() != movedTip {
-			t.Fatalf("moved trunk result = state %s proof=%+v origin=%s want open, nil, %s", reopened.State, reopened.Proof, fixture.originTip(), movedTip)
-		}
-		if proved.Proof == nil || proved.Proof.BaseCommit == movedTip {
-			t.Fatalf("first proof did not bind the old base: %+v", proved.Proof)
-		}
-		fixture.tick(batchID)
-		fixture.assertState(batchID, batch.StateLanding)
-		fixture.tick(batchID)
-		fixture.assertState(batchID, batch.StateLanded)
-		if len(fixture.proofCalls) != 2 || fixture.proofCalls[0].Tree == fixture.proofCalls[1].Tree {
-			t.Fatalf("proof calls did not rebind to the moved base: %+v", fixture.proofCalls)
-		}
-		fixture.assertLandedUnits("goal-a", "goal-b")
+func runBatchLandingLifecycleWithdraw(t *testing.T, harness *batchE2EHarness, engine *batchE2EEngine, now time.Time) {
+	joinedAt := now.Add(-2 * time.Minute)
+	if err := os.Setenv("METASYSTEM_GOAL_NOW", joinedAt.Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b")
+	batchID := fixture.join("goal-a")
+	fixture.joinInto(batchID, "goal-b")
+	withdrawnTip := fixture.remoteBranchTip("goal-b")
+	joined := batchE2EUnit(fixture.load(batchID), "goal-b")
+	seatRoot := joined.SeatRoot
+	if err := os.Setenv("METASYSTEM_OWNER_LINEAGE", joined.Claim.Lineage); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := captureCommandOutput(t, true, true, func() int {
+		return runLandingBatch([]string{"withdraw", "--root", seatRoot, "--goal", "goal-b"})
 	})
-
-	t.Run("withdraw", func(t *testing.T) {
-		joinedAt := time.Now().UTC().Truncate(time.Second).Add(-2 * time.Minute)
-		if err := os.Setenv("METASYSTEM_GOAL_NOW", joinedAt.Format(time.RFC3339)); err != nil {
-			t.Fatal(err)
-		}
-		fixture := newBatchE2EFixture(t, harness, engine, now, "goal-a", "goal-b")
-		batchID := fixture.join("goal-a")
-		fixture.joinInto(batchID, "goal-b")
-		withdrawnTip := fixture.remoteBranchTip("goal-b")
-		joined := batchE2EUnit(fixture.load(batchID), "goal-b")
-		seatRoot := joined.SeatRoot
-		if err := os.Setenv("METASYSTEM_OWNER_LINEAGE", joined.Claim.Lineage); err != nil {
-			t.Fatal(err)
-		}
-		code, _, stderr := captureCommandOutput(t, true, true, func() int {
-			return runLandingBatch([]string{"withdraw", "--root", seatRoot, "--goal", "goal-b"})
-		})
-		if code != 0 {
-			t.Fatalf("withdraw code=%d stderr=%q", code, stderr)
-		}
-		fixture.tick(batchID)
-		withdrawn := batchE2EUnit(fixture.load(batchID), "goal-b")
-		if withdrawn.State != batch.UnitWithdrawn || withdrawn.Outcome != batch.UnitWithdrawn {
-			t.Fatalf("withdrawn unit = %+v", withdrawn)
-		}
-		fixture.assertState(batchID, batch.StateOpen)
-		if err := os.Setenv("METASYSTEM_GOAL_NOW", joinedAt.Add(2*time.Minute).Format(time.RFC3339)); err != nil {
-			t.Fatal(err)
-		}
-		fixture.tick(batchID)
-		fixture.assertState(batchID, batch.StateLanding)
-		if proof := fixture.load(batchID).Proof; proof == nil || proof.Window != "expired" {
-			t.Fatalf("remaining unit proof window = %+v, want expired", proof)
-		}
-		fixture.tick(batchID)
-		fixture.assertState(batchID, batch.StateLanded)
-		fixture.assertLandedUnits("goal-a")
-		if fixture.originHas("units/goal-b.txt") {
-			t.Fatal("the withdrawn unit reached origin/main")
-		}
-		fixture.assertRemoteBranch("goal-b", true)
-		if got := fixture.remoteBranchTip("goal-b"); got != withdrawnTip {
-			t.Fatalf("withdrawn branch tip=%s want untouched %s", got, withdrawnTip)
-		}
-	})
-
-	t.Run("status-and-wait", func(t *testing.T) {
-		for _, state := range []string{batch.StateOpen, batch.StateSealed, batch.StateProving, batch.StateLanding, batch.StateLanded} {
-			if !observed[state] {
-				t.Fatalf("status and wait did not observe %s", state)
-			}
-		}
-		if len(statusFailures) != 0 {
-			t.Fatalf("status and wait failures: %s", strings.Join(statusFailures, "; "))
-		}
-	})
+	if code != 0 {
+		t.Fatalf("withdraw code=%d stderr=%q", code, stderr)
+	}
+	fixture.tick(batchID)
+	withdrawn := batchE2EUnit(fixture.load(batchID), "goal-b")
+	if withdrawn.State != batch.UnitWithdrawn || withdrawn.Outcome != batch.UnitWithdrawn {
+		t.Fatalf("withdrawn unit = %+v", withdrawn)
+	}
+	fixture.assertState(batchID, batch.StateOpen)
+	if err := os.Setenv("METASYSTEM_GOAL_NOW", joinedAt.Add(2*time.Minute).Format(time.RFC3339)); err != nil {
+		t.Fatal(err)
+	}
+	fixture.tick(batchID)
+	fixture.assertState(batchID, batch.StateLanding)
+	if proof := fixture.load(batchID).Proof; proof == nil || proof.Window != "expired" {
+		t.Fatalf("remaining unit proof window = %+v, want expired", proof)
+	}
+	fixture.tick(batchID)
+	fixture.assertState(batchID, batch.StateLanded)
+	fixture.assertLandedUnits("goal-a")
+	if fixture.originHas("units/goal-b.txt") {
+		t.Fatal("the withdrawn unit reached origin/main")
+	}
+	fixture.assertRemoteBranch("goal-b", true)
+	if got := fixture.remoteBranchTip("goal-b"); got != withdrawnTip {
+		t.Fatalf("withdrawn branch tip=%s want untouched %s", got, withdrawnTip)
+	}
 }
 
 func retainBatchE2ESharedEngine(t *testing.T) {
@@ -334,11 +410,16 @@ func newBatchE2EFixture(t *testing.T, harness *batchE2EHarness, engine *batchE2E
 
 	fixture.landing = filepath.Join(t.TempDir(), "landing")
 	fixture.clone(fixture.landing, "landing")
-	if err := os.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(t.TempDir(), "host-admission")); err != nil {
+	admissionDirectory := filepath.Join(t.TempDir(), "host-admission")
+	if err := os.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDirectory); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", fixture.landing); err != nil {
 		t.Fatal(err)
+	}
+	if selected, present, err := proofrun.FixtureHostAdmissionDirectory(fixture.landing); err != nil || !present || selected != admissionDirectory {
+		t.Fatalf("validate private proof admission namespace: selected=%q present=%t TMPDIR=%q admission=%q fixture-mode=%t error=%v",
+			selected, present, os.TempDir(), admissionDirectory, fixtureauth.FixtureModeRoot(fixture.landing), err)
 	}
 	fixture.enrollPolicyEngine(batchE2EGit(t, fixture.landing, "rev-parse", "HEAD"), engine)
 	fixture.holdLanding()

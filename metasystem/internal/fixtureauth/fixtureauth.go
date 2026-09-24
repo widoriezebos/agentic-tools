@@ -31,7 +31,11 @@ import (
 // here.
 const fixtureEnv = "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE"
 
-const goalNowEnv = "METASYSTEM_GOAL_NOW"
+const (
+	goalNowEnv       = "METASYSTEM_GOAL_NOW"
+	goalBootIDEnv    = "METASYSTEM_GOAL_BOOT_ID"
+	goalBootNanosEnv = "METASYSTEM_GOAL_BOOT_NANOS"
+)
 
 // Authorization is the root-checked fixture authority. A nil
 // *Authorization is valid everywhere and refuses every fixture read —
@@ -63,10 +67,11 @@ func New(root string) (*Authorization, error) {
 	absRoot = filepath.Clean(absRoot)
 	mode, modeErr := fixtureModeRoot(root)
 	path := os.Getenv(fixtureEnv)
-	if modeErr != nil && (path != "" || os.Getenv(goalNowEnv) != "" && !errors.Is(modeErr, os.ErrNotExist)) {
+	clockRequest := os.Getenv(goalNowEnv) != "" || os.Getenv(goalBootIDEnv) != "" || os.Getenv(goalBootNanosEnv) != ""
+	if modeErr != nil && (path != "" || clockRequest && !errors.Is(modeErr, os.ErrNotExist)) {
 		request := fixtureEnv
 		if path == "" {
-			request = goalNowEnv
+			request = "fixture clock"
 		}
 		return nil, fmt.Errorf("%s is set but fixture runtime configuration is invalid: %w", request, modeErr)
 	}
@@ -260,6 +265,26 @@ func (p ClockProbe) GoalNow() (time.Time, bool, error) {
 		return time.Time{}, false, fmt.Errorf("%s must be an RFC3339 timestamp: %v", goalNowEnv, err)
 	}
 	return parsed.UTC(), true, nil
+}
+
+// GoalBootClock returns a fixture boot identity and monotonic elapsed value as
+// one indivisible clock sample. Both values must be present together.
+func (p ClockProbe) GoalBootClock() (string, time.Duration, bool, error) {
+	if p.a == nil || !p.a.fixtureMode {
+		return "", 0, false, nil
+	}
+	bootID, rawNanos := os.Getenv(goalBootIDEnv), os.Getenv(goalBootNanosEnv)
+	if bootID == "" && rawNanos == "" {
+		return "", 0, false, nil
+	}
+	if bootID == "" || rawNanos == "" {
+		return "", 0, false, fmt.Errorf("%s and %s must be set together", goalBootIDEnv, goalBootNanosEnv)
+	}
+	nanos, err := strconv.ParseInt(rawNanos, 10, 64)
+	if err != nil || nanos < 0 {
+		return "", 0, false, fmt.Errorf("%s must be a non-negative duration in nanoseconds", goalBootNanosEnv)
+	}
+	return bootID, time.Duration(nanos), true, nil
 }
 
 // GoalHumanAuthorityProbe is the fixture-only grant for a human-reserved goal

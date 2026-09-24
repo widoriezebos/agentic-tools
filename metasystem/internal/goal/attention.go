@@ -40,9 +40,10 @@ type attentionGitRun func(context.Context, string, []byte, ...string) (string, e
 type waitGitContextFunc func(context.Context, time.Duration, []string) (context.Context, context.CancelFunc)
 
 type waitGitDependencies struct {
-	run         attentionGitRun
-	withTimeout waitGitContextFunc
-	timers      attentionTimerSource
+	run              attentionGitRun
+	withTimeout      waitGitContextFunc
+	withFetchTimeout waitGitContextFunc
+	timers           attentionTimerSource
 }
 
 type waitGitDependenciesKey struct{}
@@ -58,6 +59,11 @@ func waitDependencies(ctx context.Context) waitGitDependencies {
 	}
 	if dependencies.withTimeout == nil {
 		dependencies.withTimeout = func(parent context.Context, budget time.Duration, _ []string) (context.Context, context.CancelFunc) {
+			return context.WithTimeout(parent, budget)
+		}
+	}
+	if dependencies.withFetchTimeout == nil {
+		dependencies.withFetchTimeout = func(parent context.Context, budget time.Duration, _ []string) (context.Context, context.CancelFunc) {
 			return context.WithTimeout(parent, budget)
 		}
 	}
@@ -214,7 +220,8 @@ func captureWaitTip(ctx context.Context, e Endpoint, budget time.Duration) (Boun
 		cleanupWaitTip(ctx, e, opid)
 		return BoundedCapture{}, cause
 	}
-	fetchCtx, cancel := context.WithTimeout(ctx, budget)
+	fetchArgs := []string{"fetch", "--no-tags", "--refmap=", e.Remote, "+" + e.Branch + ":" + fetchRefFor(opid)}
+	fetchCtx, cancel := waitDependencies(ctx).withFetchTimeout(ctx, budget, fetchArgs)
 	defer cancel()
 	if e.LocalMode() {
 		tip, readErr := runWaitGit(fetchCtx, e.Root, nil, "rev-parse", "--verify", LocalLedgerBranch)
@@ -226,7 +233,7 @@ func captureWaitTip(ctx context.Context, e Endpoint, budget time.Duration) (Boun
 		}
 		return BoundedCapture{Tip: strings.TrimSpace(tip), OperationID: opid}, nil
 	}
-	_, err = runWaitGit(fetchCtx, e.Root, nil, "fetch", "--no-tags", "--refmap=", e.Remote, "+"+e.Branch+":"+fetchRefFor(opid))
+	_, err = runWaitGit(fetchCtx, e.Root, nil, fetchArgs...)
 	if err != nil {
 		return fail(err)
 	}

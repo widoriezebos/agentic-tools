@@ -137,7 +137,17 @@ func assertLegacyHostContractCoverage(t *testing.T, current testpolicy.Contract)
 			}
 		}
 		for _, name := range oldTests {
-			containsAll(old.ID+" tests", nowTests, []string{name})
+			requiredNames := []string{name}
+			if old.ID == "authority-standard" && name == "TestTemporaryGoalProofUsesTheRealWallClock" {
+				// Temporary goal authority keeps both guarantees from the retired
+				// wall-clock test: wrapper validation and deterministic time policy.
+				// Only this exact legacy name in this group may use replacements.
+				requiredNames = []string{
+					"TestTemporaryGoalProofWrapperRejectsIncompleteWordPair",
+					"TestTemporaryGoalProofEnforcesReviewExpiryAndHorizon",
+				}
+			}
+			containsAll(old.ID+" tests", nowTests, requiredNames)
 		}
 		old.Inputs, now.Inputs = nil, nil
 		old.Packages, now.Packages = nil, nil

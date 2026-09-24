@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"bufio"
 	"encoding/json"
 	"io"
 	"os"
@@ -119,10 +120,11 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 		t.Fatalf("probe proof stop helper: state=%s err=%v", state, err)
 	}
 	prober := &proofStopProbe{exact: exact, state: identity.Alive}
-	now := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
+	started := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
+	cancelRequestedAt := started.Add(58 * time.Second)
 	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "bounded", GoalRevision: 2, AccountingRevision: 2,
-		ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: now,
+		ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: started,
 	}))
 
 	if err != nil {
@@ -136,21 +138,33 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 	self, _ := proofrun.CurrentProcessIdentity(nil)
 	unrelated, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
 		ControlRoot: root, ExecutionRoot: root, GoalID: "other-goal", GoalRevision: 1, AccountingRevision: 1,
-		ReservedMinutes: 5, Identity: unrelatedIdentity, Launcher: self, Now: now,
+		ReservedMinutes: 5, Identity: unrelatedIdentity, Launcher: self, Now: started,
 	}))
 
 	if err != nil {
 		t.Fatal(err)
 	}
 	requireProofReservationNotAdmissionRefused(t, decision)
-	stamp := now.Format(time.RFC3339)
+	competingIdentity, err := proofrun.BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "competing-green", []string{"gate"}, behaviorsurface.SupportedVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	competing, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{
+		ControlRoot: root, ExecutionRoot: root, GoalID: "competing-goal", GoalRevision: 1, AccountingRevision: 1,
+		ReservedMinutes: 5, Identity: competingIdentity, Launcher: self, Now: started.Add(time.Second),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireProofReservationNotAdmissionRefused(t, decision)
+	stamp := cancelRequestedAt.Format(time.RFC3339)
 	batch := goal.StopBatch{StopID: "stop-bounded-r3-f1", GoalID: "bounded", GoalRevision: 3,
 		FenceEpoch: 1, CapabilityGeneration: 3, Machine: "bed-m1", ClaimEpoch: 7,
 		Reason: goal.StopReasonElapsedLimit, State: goal.StopBatchOpen, OpenedAt: stamp, UpdatedAt: stamp}
 	if err := goal.WriteStopBatch(root, batch); err != nil {
 		t.Fatal(err)
 	}
-	batch, err = ReconcileStopBatch(root, batch.StopID, now)
+	batch, err = ReconcileStopBatch(root, batch.StopID, cancelRequestedAt)
 	if err != nil || strings.Join(batch.PendingProofs, ",") != attempt.AttemptID || len(batch.ObservedProofs) != 1 {
 		t.Fatalf("proof-only stop batch did not retain its exact member: batch=%+v err=%v", batch, err)
 	}
@@ -160,21 +174,39 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 		member.Machine != "bed-m1" || member.ClaimEpoch != 7 {
 		t.Fatalf("proof stop member lost authority coordinates: %+v", member)
 	}
-	clock := now
+	clock := cancelRequestedAt
+	competingGreenAt := started.Add(61 * time.Second)
+	var competingErr error
 	var proofStopWaits int
+	killSent := false
 	if err := cancelStopProof(root, batch.StopID, attempt.AttemptID, proofrun.StopOptions{
 		Prober: prober,
 		Now:    func() time.Time { return clock },
+		Signal: func(target int, signal syscall.Signal) error {
+			if signal != syscall.SIGKILL {
+				return nil
+			}
+			killSent = true
+			err := syscall.Kill(target, signal)
+			prober.state = identity.Dead
+			return err
+		},
 		Sleep: func(duration time.Duration) {
 			proofStopWaits++
 			clock = clock.Add(duration)
-			prober.state = identity.Dead
+			if competingErr == nil && !clock.Before(competingGreenAt) {
+				var retained proofrun.Attempt
+				retained, competingErr = proofrun.ReadAttempt(root, competing.AttemptID)
+				if competingErr == nil && retained.Terminal == nil {
+					_, competingErr = proofrun.FinalizeAttempt(root, competing.AttemptID, proofrun.TerminalSuccess, 0, "competing green completed during cleanup", nil, competingGreenAt)
+				}
+			}
 		},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if proofStopWaits != 1 {
-		t.Fatalf("proof stop waits = %d, want one artificial-clock wait", proofStopWaits)
+	if proofStopWaits == 0 || !killSent {
+		t.Fatalf("proof stop did not advance through TERM grace and KILL: waits=%d kill=%t", proofStopWaits, killSent)
 	}
 	<-waited
 	killed = true
@@ -182,7 +214,15 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 	if err != nil || stopped.Terminal == nil || stopped.Terminal.Result != proofrun.TerminalCancelled {
 		t.Fatalf("proof cancellation was not durably joined: attempt=%+v err=%v", stopped, err)
 	}
-	batch, err = ReconcileStopBatch(root, batch.StopID, now.Add(time.Second))
+	terminalAt, parseErr := time.Parse(time.RFC3339Nano, stopped.Terminal.At)
+	green, greenErr := proofrun.ReadAttempt(root, competing.AttemptID)
+	if competingErr != nil || greenErr != nil || green.Terminal == nil || green.Terminal.Result != proofrun.TerminalSuccess || green.Terminal.At != competingGreenAt.Format(time.RFC3339Nano) {
+		t.Fatalf("competing green did not become terminal during cleanup: attempt=%+v finalize=%v read=%v", green, competingErr, greenErr)
+	}
+	if parseErr != nil || !terminalAt.Equal(started.Add(63*time.Second)) || !terminalAt.After(competingGreenAt) || stopped.ObservedMinutes != 2 {
+		t.Fatalf("cleanup completion accounting: terminal=%s parse=%v observed=%d, want 63s after start, after competing green, charged two minutes", stopped.Terminal.At, parseErr, stopped.ObservedMinutes)
+	}
+	batch, err = ReconcileStopBatch(root, batch.StopID, clock.Add(time.Second))
 	if err != nil || batch.State != goal.StopBatchComplete || len(batch.PendingProofs) != 0 ||
 		strings.Join(batch.TerminalProofs, ",") != attempt.AttemptID {
 		t.Fatalf("proof-only stop batch did not reach its terminal fixed point: batch=%+v err=%v", batch, err)
@@ -191,7 +231,7 @@ func TestProofOnlyGoalStopBatch(t *testing.T) {
 	if err != nil || stillLive.Terminal != nil || stillLive.CancellationIntent != "" {
 		t.Fatalf("unrelated goal proof was affected: attempt=%+v err=%v", stillLive, err)
 	}
-	if _, err := proofrun.FinalizeAttempt(root, unrelated.AttemptID, proofrun.TerminalFailed, 1, "fixture cleanup", nil, now.Add(2*time.Second)); err != nil {
+	if _, err := proofrun.FinalizeAttempt(root, unrelated.AttemptID, proofrun.TerminalFailed, 1, "fixture cleanup", nil, clock.Add(2*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -226,20 +266,43 @@ func TestProofGovernedReservationJoin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	child := exec.Command("sleep", "60")
-	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := child.Start(); err != nil {
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
 		t.Fatal(err)
 	}
+	releaseRead, releaseWrite, err := os.Pipe()
+	if err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		t.Fatal(err)
+	}
+	child := exec.Command("/bin/sh", "-c", "printf 'ready\\n' >&3; IFS= read -r _ <&4")
+	child.ExtraFiles = []*os.File{readyWrite, releaseRead}
+	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := child.Start(); err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		_ = releaseRead.Close()
+		_ = releaseWrite.Close()
+		t.Fatal(err)
+	}
+	_ = readyWrite.Close()
+	_ = releaseRead.Close()
 	waited := make(chan error, 1)
 	go func() { waited <- child.Wait() }()
 	finished := false
 	t.Cleanup(func() {
 		if !finished {
+			_ = releaseWrite.Close()
 			_ = child.Process.Kill()
 			<-waited
 		}
 	})
+	ready, readyErr := bufio.NewReader(readyRead).ReadString('\n')
+	_ = readyRead.Close()
+	if readyErr != nil || ready != "ready\n" {
+		t.Fatalf("governed owner readiness=%q err=%v", ready, readyErr)
+	}
 	pgid, err := syscall.Getpgid(child.Process.Pid)
 	bindErr := store.Bind("governed-proof", nonce, int64(child.Process.Pid), int64(pgid))
 	if err != nil || bindErr != nil {
@@ -278,6 +341,7 @@ func TestProofGovernedReservationJoin(t *testing.T) {
 	}
 	<-waited
 	finished = true
+	_ = releaseWrite.Close()
 	clock = started.Add(time.Minute)
 	if err := store.WriteSidecar(record.RunId, record.Generation, record.LaunchNonce, 0); err != nil {
 		t.Fatal(err)

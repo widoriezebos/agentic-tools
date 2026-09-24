@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 type processRefProber struct {
@@ -125,20 +125,14 @@ func TestGroupOwnedEmptyScanExitsIndeterminate(t *testing.T) {
 }
 
 func TestGroupOwnedLiveNonOwnerExitsNotOwned(t *testing.T) {
+	if _, err := identity.AllPids(); err != nil {
+		t.Skipf("process enumeration is unavailable: %v", err)
+	}
 	tag := fmt.Sprintf("metasystem-job-not-owned-%d", os.Getpid())
-	readyRead, readyWrite, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer readyRead.Close()
-	command := exec.Command("sh", "-c", "printf x >&3; exec sleep 30")
-	command.ExtraFiles = []*os.File{readyWrite}
-	pgid := startTestProcessGroup(t, command)
-	_ = readyWrite.Close()
-	var ready [1]byte
-	if _, err := io.ReadFull(readyRead, ready[:]); err != nil {
-		t.Fatalf("wait for live non-owner group: %v", err)
-	}
+	command := exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :")
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	held := testutil.StartHeldProcess(t, command)
+	pgid := int64(held.Command.Process.Pid)
 	assertGroupOwnership(t, pgid, tag, janitor.GroupNotOwned)
 	if code := runIdentityGroupOwned([]string{"--pgid", fmt.Sprint(pgid), "--tag", tag}); code != 1 {
 		t.Fatalf("not-owned live group scan exit=%d, want 1 (NOT-OWNED)", code)

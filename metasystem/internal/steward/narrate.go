@@ -34,7 +34,7 @@ func NarrationPath(repoRoot string) string {
 // failure path returns silently, because the tick's real duties must
 // never hang on the storyteller.
 func Narrate(repoRoot string, result TickResult, cfg TickConfig) {
-	line := narrationLine(repoRoot, result, cfg, time.Now())
+	line := narrationLine(repoRoot, result, cfg, cfg.now())
 	if line == "" {
 		return
 	}
@@ -181,7 +181,7 @@ func narrationLine(repoRoot string, result TickResult, cfg TickConfig, now time.
 		notes = append(notes, "reviving stalled work: "+result.Decision.Reason)
 	}
 	notes = append(notes, noticingLines(noticingsAt(repoRoot, result, cfg, now))...)
-	sentence := now.Format("2006-01-02 15:04") + "  " + machine + " is " + doing
+	sentence := now.In(cfg.localNarrationLocation()).Format("2006-01-02 15:04") + "  " + machine + " is " + doing
 	if len(notes) > 0 {
 		sentence += "; " + strings.Join(notes, "; ")
 	}

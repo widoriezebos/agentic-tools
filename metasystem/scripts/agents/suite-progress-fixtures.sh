@@ -25,28 +25,7 @@ case ${1:-} in
     progress=$2 suite=$3 section=$4
     printf '{"suite":"%s","section":"%s","event":"start","at":"%s","depth":0}\n' \
       "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
-    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-      echo "fixture output is still growing"
-      sleep 0.1
-    done
-    printf '{"suite":"%s","section":"%s","event":"end","at":"%s","depth":0}\n' \
-      "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
-    exit 0
-    ;;
-  __printing_forever)
-    progress=$2 suite=$3 section=$4
-    printf '{"suite":"%s","section":"%s","event":"start","at":"%s","depth":0}\n' \
-      "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
-    while :; do echo "fixture remains chatty"; sleep 0.05; done
-    ;;
-  __printing_until)
-    release=$2 progress=$3 suite=$4 section=$5
-    printf '{"suite":"%s","section":"%s","event":"start","at":"%s","depth":0}\n' \
-      "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
-    while [[ ! -e "$release" ]]; do
-      echo "fixture output is still growing"
-      sleep 0.05
-    done
+    echo "fixture output proves the public launcher wiring"
     printf '{"suite":"%s","section":"%s","event":"end","at":"%s","depth":0}\n' \
       "$suite" "$section" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
     exit 0
@@ -68,7 +47,8 @@ case ${1:-} in
     tmp=$bed/tmp
     mkdir -p "$tmp"
     echo $$ >"$tmp/suite.pid"
-    sleep 300 &
+    "$fixture_bin" util hold --tag stopped-suite-group-member \
+      --ready-file "$tmp/group-child.ready" &
     echo $! >"$tmp/group-child.pid"
     "$fixture_bin" gate guard-acquire --root "$bed" --owner "stopped suite fixture" \
       --wait-sec 2 --progress-sec 1 >/dev/null
@@ -152,7 +132,8 @@ wait_for_exact_death() { # name, pid, exact ref
   fi
 }
 
-# Output growth keeps a section alive beyond the shortened silence window.
+# The public shell entry proves launcher, journal, and banner wiring. Native
+# watchdog tests own the deterministic cadence and expired-deadline assertions.
 printing="$tmp/printing"
 printing_banner='suite-cost suite=printing witness=armed duration=minutes heartbeat=progress.jsonl logs=logs/suite.log'
 launch_fixture "$printing" printing long-printing "$printing_banner" \
@@ -162,50 +143,6 @@ launch_fixture "$printing" printing long-printing "$printing_banner" \
     "$printing/progress.jsonl" printing long-printing
 [[ $(grep -c -xF "$printing_banner" "$printing/logs/suite.log") -eq 1 ]] \
   || { echo "suite-progress fixture: cost banner was not logged exactly once" >&2; exit 1; }
-
-# A chatty section past its cap runs on: the clock ends nothing (decision 3
-# of the hang-detection design). The watchdog notes the cap once, the
-# section finishes its own work, and the launch succeeds.
-chatty="$tmp/chatty"
-chatty_out="$tmp/chatty.out"
-chatty_release="$tmp/chatty.release"
-chatty_note='section over-cap passed its 400ms cap while still producing output'
-launch_fixture "$chatty" chatty over-cap \
-  'suite-cost suite=chatty witness=armed duration=minutes heartbeat=progress.jsonl logs=logs/suite.log' \
-  --silence-ms 2000 --section-cap-ms 400 --evidence-timeout-ms 1000 \
-  --evidence-max-bytes 1048576 --poll-ms 50 --term-grace-ms 100 --kill-grace-ms 100 -- \
-  bash "$root/scripts/agents/suite-progress-fixtures.sh" "$harness_fixture_tag" __printing_until \
-    "$chatty_release" "$chatty/progress.jsonl" chatty over-cap >"$chatty_out" 2>&1 &
-chatty_pid=$!
-owned_pids+=("$chatty_pid")
-harness_fixture_hold_pid "$chatty_pid"
-chatty_deadline=$((SECONDS + wait_cap))
-chatty_noted=0
-while (( SECONDS < chatty_deadline )); do
-  if grep -Fq "$chatty_note" "$chatty_out"; then
-    chatty_noted=1
-    break
-  fi
-  kill -0 "$chatty_pid" 2>/dev/null || break
-  sleep 0.05
-done
-if (( chatty_noted == 0 )); then
-  kill "$chatty_pid" 2>/dev/null || true
-  wait "$chatty_pid" 2>/dev/null || true
-  owned_pids=()
-  echo "suite-progress fixture: the watchdog did not note the section past its cap within ${wait_cap}s" >&2
-  sed 's/^/  launcher: /' "$chatty_out" >&2
-  exit 1
-fi
-: >"$chatty_release"
-chatty_status=0
-wait "$chatty_pid" || chatty_status=$?
-owned_pids=()
-if (( chatty_status != 0 )); then
-  echo "suite-progress fixture: a printing section past its cap ended with status $chatty_status" >&2
-  sed 's/^/  launcher: /' "$chatty_out" >&2
-  exit 1
-fi
 
 # A missing selector section is structural red even when the command succeeds.
 silent="$tmp/silent"
@@ -300,21 +237,30 @@ printf '{"suite":"outer","section":"parent","event":"start","at":"%s","depth":0}
   >>"$watch_workspace/artifacts/agents/supervision/suite-progress.jsonl"
 printf '{"suite":"inner","section":"child","event":"start","at":"%s","depth":1}\n' "$watch_now" \
   >>"$watch_workspace/artifacts/agents/supervision/suite-progress.jsonl"
-[[ "$("$bin" proof-run heartbeat --root "$watch_workspace")" == 'inner:child since 0min' ]] \
+watch_heartbeat=$("$bin" proof-run heartbeat --root "$watch_workspace")
+[[ "$watch_heartbeat" =~ ^inner:child\ since\ [0-9]+min$ ]] \
   || { echo "suite-progress fixture: deepest live heartbeat was not selected" >&2; exit 1; }
 printf '{"status":"completed","workspaceRoot":"%s"}\n' "$watch_workspace" >"$watch_jobs/prefix-job.json"
 : >"$watch_state"
 METASYSTEM_BIN="$bin" "$root/scripts/watch-background-jobs.sh" \
   --dir "$watch_jobs" --scope "$watch_workspace" --state "$watch_state" --once >"$watch_out" 2>&1
-grep -Fq 'inner:child since 0min DONE prefix-job status=completed' "$watch_out" \
-  || { echo "suite-progress fixture: background watcher did not prefix its job note with the deepest heartbeat" >&2; cat "$watch_out" >&2; exit 1; }
+watch_note_prefix="$watch_heartbeat DONE prefix-job status=completed age="
+watch_note_suffix="m record=$watch_jobs/prefix-job.json"
+watch_note_count=$(grep -Fc "$watch_note_prefix" "$watch_out" || true)
+watch_note=$(grep -F "$watch_note_prefix" "$watch_out" || true)
+[[ "$watch_note_count" -eq 1 && "$watch_note" == "$watch_note_prefix"*"$watch_note_suffix" ]] \
+  || { echo "suite-progress fixture: background watcher did not emit the complete deepest-heartbeat job note" >&2; cat "$watch_out" >&2; exit 1; }
+watch_age=${watch_note#"$watch_note_prefix"}
+watch_age=${watch_age%"$watch_note_suffix"}
+[[ "$watch_age" =~ ^[0-9]+$ ]] \
+  || { echo "suite-progress fixture: background watcher did not emit a numeric job age" >&2; cat "$watch_out" >&2; exit 1; }
 dispatch_watch_job="suite-prefix-$watch_run_id"
 watch_dispatch_record="$watch_root/artifacts/agents/jobs/$dispatch_watch_job.json"
 printf '{"jobId":"%s","operationId":"reserve-%s","round":1,"status":"completed","startedAt":"%s","endedAt":"%s","workspaceRoot":"%s"}\n' \
   "$dispatch_watch_job" "$dispatch_watch_job" "$watch_now" "$watch_now" "$watch_workspace" >"$watch_dispatch_record"
 METASYSTEM_BIN="$watch_root/bin/metasystem" "$watch_root/scripts/agents/dispatch.sh" watch \
   --job "$dispatch_watch_job" >"$dispatch_watch_out" 2>&1
-grep -Fq 'inner:child since 0min' "$dispatch_watch_out" \
+grep -Eq '^inner:child since [0-9]+min' "$dispatch_watch_out" \
   || { echo "suite-progress fixture: dispatch watch did not print the deepest heartbeat" >&2; cat "$dispatch_watch_out" >&2; exit 1; }
 
 # The bounded copier reports the exact truncated source in its loud result,
@@ -346,12 +292,14 @@ stopped_launcher_pid=$!
 harness_fixture_hold_pid "$stopped_launcher_pid"
 stopped_deadline=$((SECONDS + wait_cap))
 while [[ ! -s "$stopped/tmp/suite.pid" || ! -s "$stopped/tmp/group-child.pid" \
-    || ! -s "$stopped/tmp/detached.pid" || ! -e "$stopped/tmp/detached.ready" ]] \
+    || ! -e "$stopped/tmp/group-child.ready" || ! -s "$stopped/tmp/detached.pid" \
+    || ! -e "$stopped/tmp/detached.ready" ]] \
     && kill -0 "$stopped_launcher_pid" 2>/dev/null && (( SECONDS < stopped_deadline )); do
   sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
 done
 if [[ ! -s "$stopped/tmp/suite.pid" || ! -s "$stopped/tmp/group-child.pid" \
-    || ! -s "$stopped/tmp/detached.pid" || ! -e "$stopped/tmp/detached.ready" ]]; then
+    || ! -e "$stopped/tmp/group-child.ready" || ! -s "$stopped/tmp/detached.pid" \
+    || ! -e "$stopped/tmp/detached.ready" ]]; then
   echo "suite-progress fixture: stopped suite did not publish its three pids and detached readiness" >&2
   wait "$stopped_launcher_pid" 2>/dev/null || true
   cat "$stopped_out" >&2
@@ -360,6 +308,14 @@ fi
 suite_pid=$(<"$stopped/tmp/suite.pid")
 group_child_pid=$(<"$stopped/tmp/group-child.pid")
 detached_pid=$(<"$stopped/tmp/detached.pid")
+group_child_ref=$(harness_fixture_engine_call proc ref --pid "$group_child_pid") || {
+  echo "suite-progress fixture: stopped-suite group member $group_child_pid has unknown exact identity" >&2
+  exit 1
+}
+[[ -n "$group_child_ref" ]] || {
+  echo "suite-progress fixture: stopped-suite group member $group_child_pid has empty exact identity" >&2
+  exit 1
+}
 harness_fixture_hold_pid "$suite_pid"
 harness_fixture_hold_pid "$group_child_pid"
 harness_fixture_hold_pid "$detached_pid"
@@ -391,6 +347,7 @@ if (( stopped_status == 0 )); then
 fi
 grep -Fq 'suite stalled in section stopped-section' "$stopped_out" \
   || { echo "suite-progress fixture: stopped-suite failure did not name its section" >&2; cat "$stopped_out" >&2; exit 1; }
+wait_for_exact_death "stopped-suite group member" "$group_child_pid" "$group_child_ref"
 evidence_dir=$(find "$stopped/artifacts/agents/suite-failures" -mindepth 1 -maxdepth 1 -type d | head -1)
 [[ -n "$evidence_dir" && -f "$evidence_dir/copy-note.txt" ]]
 find "$evidence_dir" -type f -name evidence.txt -print -quit | grep -q . \
@@ -519,10 +476,21 @@ mkdir -p "$recycle"
   printf '{"suite":"recycle","section":"guard","event":"verdict","at":"%s","depth":0,"verdict":"dead"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } >"$recycle/progress.jsonl"
 : >"$recycle/log"
-METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" sleep "$wait_cap" 9>&- &
+recycle_ready=$recycle/ready
+recycle_stopped=$recycle/stopped
+METASYSTEM_FIXTURE_OWNER="$harness_fixture_key_value" \
+  "$bin" util hold --tag recycled-identity-subject \
+    --ready-file "$recycle_ready" --stopped-file "$recycle_stopped" 9>&- &
 recycle_pid=$!
 owned_pids+=("$recycle_pid")
 harness_fixture_hold_pid "$recycle_pid"
+recycle_ready_deadline=$((SECONDS + wait_cap))
+while [[ ! -s "$recycle_ready" ]] && kill -0 "$recycle_pid" 2>/dev/null &&
+    (( SECONDS < recycle_ready_deadline )); do
+  sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+done
+[[ -s "$recycle_ready" ]] \
+  || { echo "suite-progress fixture: recycled-identity subject did not publish readiness" >&2; exit 1; }
 if "$bin" proof-run watchdog --suite recycle --root "$recycle" \
     --conf "$root/metasystem.conf" \
     --progress "$recycle/progress.jsonl" --done "$recycle/done" --log "$recycle/log" \
@@ -539,6 +507,8 @@ grep -Fq 'kill refused because suite pid' "$recycle/out" \
   || { echo "suite-progress fixture: recycled-identity refusal was not loud" >&2; exit 1; }
 kill "$recycle_pid" 2>/dev/null || true
 wait "$recycle_pid" 2>/dev/null || true
+[[ -s "$recycle_stopped" ]] \
+  || { echo "suite-progress fixture: recycled-identity subject did not acknowledge cleanup" >&2; exit 1; }
 owned_pids=()
 
 echo "suite progress fixtures passed"

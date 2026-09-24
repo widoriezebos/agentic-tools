@@ -591,10 +591,21 @@ func CancelStopProof(root, stopID, attemptID string) error {
 		KillGrace: time.Second,
 		Now:       time.Now,
 		Sleep:     time.Sleep,
-	})
+	}, nil)
 }
 
-func cancelStopProof(root, stopID, attemptID string, options proofrun.StopOptions) error {
+// CancelStopProofAt records the semantic terminal observation at the caller's
+// root-authorized time. Process signal grace remains on the kernel clock.
+func CancelStopProofAt(root, stopID, attemptID string, observedAt time.Time) error {
+	return cancelStopProof(root, stopID, attemptID, proofrun.StopOptions{
+		TermGrace: 5 * time.Second,
+		KillGrace: time.Second,
+		Now:       time.Now,
+		Sleep:     time.Sleep,
+	}, &observedAt)
+}
+
+func cancelStopProof(root, stopID, attemptID string, options proofrun.StopOptions, observedAt ...*time.Time) error {
 	if options.Now == nil {
 		options.Now = time.Now
 	}
@@ -679,8 +690,12 @@ func cancelStopProof(root, stopID, attemptID string, options proofrun.StopOption
 	if err != nil || attempt.Terminal != nil {
 		return err
 	}
+	terminalAt := options.Now().UTC()
+	if len(observedAt) > 0 && observedAt[0] != nil {
+		terminalAt = observedAt[0].UTC()
+	}
 	_, err = proofrun.FinalizeAttemptLocked(root, attemptID, proofrun.TerminalCancelled, 1,
-		"cancelled by goal stop batch "+stopID, nil, options.Now().UTC())
+		"cancelled by goal stop batch "+stopID, nil, terminalAt)
 	return err
 }
 

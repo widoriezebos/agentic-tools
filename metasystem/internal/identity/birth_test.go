@@ -4,14 +4,17 @@ import (
 	"os"
 	"os/exec"
 	"testing"
-	"time"
 )
 
 func TestProcessBirthReadsALiveProcess(t *testing.T) {
-	afterBirth := time.Now()
-	birth, ok := ProcessBirth(int64(os.Getpid()))
-	if !ok || birth.IsZero() || birth.After(afterBirth) {
-		t.Fatalf("ProcessBirth(self) = %s, %t; wall clock after birth = %s", birth, ok, afterBirth)
+	self := int64(os.Getpid())
+	start, state, err := (KernelProber{}).ReadStart(self)
+	if err != nil || state != Alive || start.StartedAt.IsZero() || !start.Ref().NativeExact() {
+		t.Fatalf("ReadStart(self) = %+v, %s, %v", start, state, err)
+	}
+	birth, ok := ProcessBirth(self)
+	if !ok || birth.IsZero() {
+		t.Fatalf("ProcessBirth(self) = %s, %t; ReadStart = %s", birth, ok, start.StartedAt)
 	}
 }
 

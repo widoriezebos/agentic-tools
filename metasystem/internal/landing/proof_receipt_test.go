@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +45,16 @@ func TestCanonicalReceiptProofContext(t *testing.T) {
 		t.Fatal("receipt projection was published before the atomic terminal-success commit")
 	}
 	fixture.commit(t)
+	currentManifest, err := proofrun.FullDigest(fixture.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixture.attempt.PendingCoverage == nil || fixture.attempt.PendingCoverage.Evidence == nil {
+		t.Fatal("retained attempt has no completed coverage evidence")
+	}
+	if recorded := fixture.attempt.PendingCoverage.Evidence.InputManifest; recorded != currentManifest {
+		t.Fatalf("retained coverage manifest=%q current=%q", recorded, currentManifest)
+	}
 	published, err := PublishCommittedReceipt(fixture.root, fixture.attempt.AttemptID, fixture.tree)
 	if err != nil || published.Time != fixture.receipt.Time || !fullReceiptCommandAccepted(published) {
 		t.Fatalf("canonical committed receipt was not accepted: receipt=%+v err=%v", published, err)
@@ -62,6 +74,83 @@ func TestCanonicalReceiptProofContext(t *testing.T) {
 	if fullReceiptCommandAccepted(withoutCoverage) {
 		t.Fatal("canonical command without producer coverage qualified as full proof")
 	}
+}
+
+func TestCanonicalReceiptCoverageRefusesChangedParentProjectInput(t *testing.T) {
+	t.Parallel()
+	fixture := newCanonicalReceiptFixture(t)
+	fixture.commit(t)
+	if _, err := PublishCommittedReceipt(fixture.root, fixture.attempt.AttemptID, fixture.tree); err != nil {
+		t.Fatal(err)
+	}
+	parentInput := filepath.Join(filepath.Dir(fixture.root), "development", "metasystem-design.md")
+	if err := os.WriteFile(parentInput, []byte("changed parent project input\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readTestReceipt(ObserveParams{RepoRoot: fixture.root, CandidateTree: fixture.tree,
+		TestReceipt: TestReceiptPath(fixture.root, fixture.tree)}); err == nil ||
+		!strings.Contains(err.Error(), "coverage no longer matches current project inputs") {
+		t.Fatalf("receipt-bound coverage accepted changed parent input: %v", err)
+	}
+}
+
+func TestReceiptPreparationCopiesUnreachableStagedTreeIntoStandaloneSnapshot(t *testing.T) {
+	t.Parallel()
+	f := newObserveFixture(t)
+	f.write("staged-only.txt", "unreachable candidate\n")
+	f.git("add", "staged-only.txt")
+	tree, err := (gittree.Workspace{Dir: f.root}).StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(f.git("rev-list", "--objects", "--all"), "\n") {
+		if fields := strings.Fields(line); len(fields) > 0 && fields[0] == tree {
+			t.Fatalf("staged tree %s unexpectedly reachable from a source ref", tree)
+		}
+	}
+
+	preparation, err := PrepareTestReceipt(f.root, tree, "true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := false
+	t.Cleanup(func() {
+		if !closed {
+			_ = preparation.Close()
+		}
+	})
+	if preparation.AcceptedIndexTree() != tree {
+		t.Fatalf("accepted index = %s, want %s", preparation.AcceptedIndexTree(), tree)
+	}
+
+	sourceProject := filepath.Dir(f.root)
+	unavailableSource := sourceProject + "-unavailable"
+	if err := os.Rename(sourceProject, unavailableSource); err != nil {
+		t.Fatal(err)
+	}
+	restored := false
+	defer func() {
+		if !restored {
+			_ = os.Rename(unavailableSource, sourceProject)
+		}
+	}()
+	candidate := gittree.Workspace{Dir: preparation.ExecutionRoot()}
+	if got, err := candidate.StagedTree(); err != nil || got != tree {
+		t.Fatalf("standalone candidate index = %s, %v; want %s", got, err, tree)
+	}
+	command := exec.Command("git", "-C", preparation.ExecutionRoot(), "fsck", "--connectivity-only", "--no-dangling", "HEAD", tree)
+	command.Env = gittree.ScrubbedEnviron()
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("standalone candidate lost object connectivity: %v\n%s", err, output)
+	}
+	if err := os.Rename(unavailableSource, sourceProject); err != nil {
+		t.Fatal(err)
+	}
+	restored = true
+	if err := preparation.Close(); err != nil {
+		t.Fatal(err)
+	}
+	closed = true
 }
 
 func TestReceiptPublicationRecovery(t *testing.T) {
@@ -165,7 +254,7 @@ func TestLegacyReceiptPreservesNestedSuiteFailureEvidenceBeforeCandidateCleanup(
 
 func TestReceiptPreparationSurvivesCanonicalRecordMotion(t *testing.T) {
 	f := newObserveFixture(t)
-	f.write("metasystem.conf", "dispatch.cap-max=120\n")
+	f.write("metasystem.conf", "metasystem.runtimes=fake\ndispatch.cap-max=120\n")
 	f.write("internal/proofrun/stub.go", "package proofrun\n")
 	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
 		f.write(filepath.Join("scripts", "agents", name), `{"floors":{"internal/proofrun":1},"exempt":{}}`)
@@ -190,8 +279,10 @@ func TestReceiptPreparationSurvivesCanonicalRecordMotion(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: preparation.ExecutionRoot(),
-		GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: now}, tree))
+	request := candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: preparation.ExecutionRoot(),
+		GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: proofIdentity, Launcher: launcher, Now: now}, tree)
+	request = proofrun.WithTestHostAdmissionDirectory(request, filepath.Join(t.TempDir(), "host-admission"))
+	attempt, decision, err := proofrun.ReserveLocked(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +323,7 @@ type canonicalReceiptFixture struct {
 func newCanonicalReceiptFixture(t *testing.T) *canonicalReceiptFixture {
 	t.Helper()
 	f := newObserveFixture(t)
-	f.write("metasystem.conf", "dispatch.cap-min=5\ndispatch.cap-max=120\n")
+	f.write("metasystem.conf", "metasystem.runtimes=fake\ndispatch.cap-min=5\ndispatch.cap-max=120\n")
 	f.write("internal/proofrun/stub.go", "package proofrun\n")
 	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
 		f.write(filepath.Join("scripts", "agents", name), `{"floors":{"internal/proofrun":1},"exempt":{}}`)
@@ -247,7 +338,12 @@ func newCanonicalReceiptFixture(t *testing.T) *canonicalReceiptFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = preparation.Close() })
-	identity, err := proofrun.BuildProofIdentity(preparation.ExecutionRoot(), filepath.Join(preparation.ExecutionRoot(), "metasystem.conf"),
+	executionRoot := preparation.ExecutionRoot()
+	parentInput := filepath.Join(filepath.Dir(executionRoot), "development", "metasystem-design.md")
+	if data, err := os.ReadFile(parentInput); err != nil || string(data) != "fixture\n" {
+		t.Fatalf("actual receipt preparation lost untracked parent input before admission: bytes=%q err=%v", data, err)
+	}
+	identity, err := proofrun.BuildProofIdentity(executionRoot, filepath.Join(executionRoot, "metasystem.conf"),
 		"full", "landing-test-receipt", []string{"gate"}, behaviorsurface.SupportedVersion)
 	if err != nil {
 		t.Fatal(err)
@@ -257,9 +353,11 @@ func newCanonicalReceiptFixture(t *testing.T) *canonicalReceiptFixture {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root,
-		ExecutionRoot: preparation.ExecutionRoot(), GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
-		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}, tree))
+	request := candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root,
+		ExecutionRoot: executionRoot, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
+		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}, tree)
+	request = proofrun.WithTestHostAdmissionDirectory(request, filepath.Join(t.TempDir(), "host-admission"))
+	attempt, decision, err := proofrun.ReserveLocked(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,8 +366,8 @@ func newCanonicalReceiptFixture(t *testing.T) *canonicalReceiptFixture {
 	if runtime.GOOS == "linux" {
 		baselineName = "coverage-ratchet-linux.json"
 	}
-	begin := proofrun.CoverageBeginOptions{ControlRoot: f.root, ExecutionRoot: preparation.ExecutionRoot(),
-		AttemptID: attempt.AttemptID, BaselinePath: filepath.Join(preparation.ExecutionRoot(), "scripts", "agents", baselineName),
+	begin := proofrun.CoverageBeginOptions{ControlRoot: f.root, ExecutionRoot: executionRoot,
+		AttemptID: attempt.AttemptID, BaselinePath: filepath.Join(executionRoot, "scripts", "agents", baselineName),
 		ProducerClass: "full", ProducerPID: int64(os.Getpid()), CallerPID: int64(os.Getpid())}
 	if err := proofrun.BeginCoverage(begin); err != nil {
 		t.Fatal(err)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -95,21 +96,34 @@ func runGateControllerDescendant(args []string) int {
 }
 
 func runGateWitnessFreeze(args []string) int {
+	return runGateWitnessFreezeWithWriters(args, os.Stdout, os.Stderr)
+}
+
+func runGateWitnessFreezeWithWriters(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("gate witness-freeze", flag.ContinueOnError)
+	flags.SetOutput(stderr)
 	root := pathFlag(flags, "root", "", "metasystem tree to freeze")
+	cleanup := pathFlag(flags, "cleanup", "", "exact frozen project snapshot to remove")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *root == "" || flags.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: metasystem gate witness-freeze --root R")
+	if flags.NArg() != 0 || (*root == "") == (*cleanup == "") {
+		fmt.Fprintln(stderr, "usage: metasystem gate witness-freeze (--root R | --cleanup SNAPSHOT)")
 		return 2
+	}
+	if *cleanup != "" {
+		if err := proofrun.CleanupFrozenExport(*cleanup); err != nil {
+			fmt.Fprintln(stderr, "gate witness-freeze:", err)
+			return 1
+		}
+		return 0
 	}
 	frozen, err := proofrun.Freeze(*root)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "gate witness-freeze:", err)
+		fmt.Fprintln(stderr, "gate witness-freeze:", err)
 		return 1
 	}
-	fmt.Printf("%s %s\n", frozen.Digest, frozen.Root)
+	fmt.Fprintf(stdout, "%s\t%s\t%s\n", frozen.Digest, frozen.Root, frozen.SnapshotRoot)
 	return 0
 }
 

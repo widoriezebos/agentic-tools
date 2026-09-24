@@ -1,10 +1,10 @@
 package proofrun
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -248,21 +248,80 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 			}
 		})
 	})
+	t.Run("nested_wait_observers_compose_once_and_release_or_cancel", checkHostResourceWaitObserversComposeOnceAndReleaseOrCancel)
+}
+
+func checkHostResourceWaitObserversComposeOnceAndReleaseOrCancel(t *testing.T) {
+	t.Run("release holder", func(t *testing.T) {
+		directory, conf := isolatedHostResources(t)
+		holder, err := AcquireHostResources(t.Context(), directory, conf, "heavy", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = holder.Close() }()
+
+		outerCalls, innerCalls := 0, 0
+		var releaseErr error
+		ctx := WithHostResourceWaitObserver(t.Context(), func() {
+			outerCalls++
+			releaseErr = errors.Join(MarkHostResourcesClean(holder.Files()), holder.Close())
+		})
+		ctx = WithHostResourceWaitObserver(ctx, func() { innerCalls++ })
+		lease, err := AcquireHostResources(ctx, directory, conf, "heavy", nil)
+		if err != nil || releaseErr != nil {
+			t.Fatalf("acquire after observer release: acquire=%v release=%v", err, releaseErr)
+		}
+		if outerCalls != 1 || innerCalls != 1 {
+			t.Fatalf("nested observer calls = outer %d inner %d, want one each", outerCalls, innerCalls)
+		}
+		if err := MarkHostResourcesClean(lease.Files()); err != nil {
+			t.Fatal(err)
+		}
+		if err := lease.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("cancel wait", func(t *testing.T) {
+		directory, conf := isolatedHostResources(t)
+		holder, err := AcquireHostResources(t.Context(), directory, conf, "heavy", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = MarkHostResourcesClean(holder.Files()); _ = holder.Close() }()
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		outerCalls, innerCalls := 0, 0
+		ctx = WithHostResourceWaitObserver(ctx, func() { outerCalls++ })
+		ctx = WithHostResourceWaitObserver(ctx, func() {
+			innerCalls++
+			cancel()
+		})
+		lease, err := AcquireHostResources(ctx, directory, conf, "heavy", nil)
+		if lease != nil || !errors.Is(err, context.Canceled) {
+			if lease != nil {
+				_ = lease.Close()
+			}
+			t.Fatalf("cancelled nested observer acquire = lease %v error %v", lease, err)
+		}
+		if outerCalls != 1 || innerCalls != 1 {
+			t.Fatalf("cancelled nested observer calls = outer %d inner %d, want one each", outerCalls, innerCalls)
+		}
+	})
 }
 
 func TestHostResourceNestedLeaseRequiresHeldSubset(t *testing.T) {
 	directory, conf := isolatedHostResources(t)
 	f := newOwnershipFixture(t)
 	attempt, _ := f.reserve("nested-goal", "nested-plan", map[string]string{"native": strings.Repeat("a", 64)}, "", "", 0)
-	runChild := func(lease *HostResourceLease, class, resource string, success, legacy bool) {
+	runChild := func(lease *HostResourceLease, class, resource string, legacy bool, expectedError string) {
 		t.Helper()
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
 		mode := "managed"
 		if legacy {
 			mode = "legacy"
 		}
-		command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestHostResourceNestedLeaseSubprocess$", "--", directory, conf, class, resource, mode)
+		command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestHostResourceNestedLeaseSubprocess$", "--", directory, conf, class, resource, mode)
 		command.Env = append(os.Environ(), "GO_WANT_PROOF_ENTRYPOINT_HELPER=1",
 			"METASYSTEM_PROOF_CONTROL_ROOT="+f.root, "METASYSTEM_PROOF_ATTEMPT="+attempt.AttemptID)
 		if lease != nil {
@@ -270,18 +329,27 @@ func TestHostResourceNestedLeaseRequiresHeldSubset(t *testing.T) {
 			command.Env = append(command.Env, HostResourceFDEnvironment(lease.Files()))
 		}
 		output, err := command.CombinedOutput()
-		if success && err != nil || !success && err == nil {
-			t.Fatalf("nested %s/%s success=%v: err=%v output=%s", class, resource, success, err, output)
+		if t.Context().Err() != nil {
+			t.Fatalf("nested %s/%s reached its unsuccessful context guard: %v output=%s", class, resource, t.Context().Err(), output)
+		}
+		if expectedError == "" {
+			if err != nil {
+				t.Fatalf("nested %s/%s did not borrow its held subset: err=%v output=%s", class, resource, err, output)
+			}
+			return
+		}
+		if err == nil || !strings.Contains(string(output), expectedError) {
+			t.Fatalf("nested %s/%s did not return %q: err=%v output=%s", class, resource, expectedError, err, output)
 		}
 	}
-	runChild(nil, "heavy", "", false, false)
-	runChild(nil, "heavy", "", true, true)
-	runChild(nil, "heavy", "fixture-db", false, true)
+	runChild(nil, "heavy", "", false, "proof parent has no active resource lease or counted legacy launcher")
+	runChild(nil, "heavy", "", true, "")
+	runChild(nil, "heavy", "fixture-db", true, "legacy proof parent has no named resource lease")
 	cheap, err := AcquireHostResources(context.Background(), directory, conf, "cheap", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runChild(cheap, "heavy", "", false, false)
+	runChild(cheap, "heavy", "", false, "proof parent lease claim does not match inherited capacity or resources")
 	if err := MarkHostResourcesClean(cheap.Files()); err != nil {
 		t.Fatal(err)
 	}
@@ -293,8 +361,8 @@ func TestHostResourceNestedLeaseRequiresHeldSubset(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = MarkHostResourcesClean(heavy.Files()); _ = heavy.Close() }()
-	runChild(heavy, "heavy", "fixture-db", true, false)
-	runChild(heavy, "heavy", "new-db", false, false)
+	runChild(heavy, "heavy", "fixture-db", false, "")
+	runChild(heavy, "heavy", "new-db", false, `proof parent lease does not cover named resource "new-db"`)
 	active, err := activeHostResourceSlots(directory)
 	if err != nil || active != 1 {
 		t.Fatalf("nested borrowing double-counted or lost capacity: %d %v", active, err)
@@ -428,61 +496,137 @@ func TestHostResourceChildRetainsSlotAfterOwnerDies(t *testing.T) {
 func TestHostResourceLaunchSuiteCleansUnforwardedGrandchildBeforeRelease(t *testing.T) {
 	engine := buildResourceCustodyEngine(t)
 	directory, conf := isolatedHostResources(t)
+	if err := os.WriteFile(filepath.Join(directory, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	processFile := filepath.Join(directory, "processes.json")
+	if err := os.WriteFile(processFile, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processFile)
 	lease, err := AcquireHostResources(context.Background(), directory, conf, "heavy", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lease.Close()
+	leaseClosed := false
+	t.Cleanup(func() {
+		if !leaseClosed {
+			_ = lease.Close()
+		}
+	})
 	childPID := filepath.Join(directory, "native-child.pid")
 	ready := filepath.Join(directory, "native-child.ready")
+	release := filepath.Join(directory, "native-child.release")
+	childRelease := filepath.Join(directory, "native-child-lifetime.release")
 	closeFDs := ""
 	for index := range lease.Files() {
 		closeFDs += fmt.Sprintf("exec %d>&-; ", 3+index)
 	}
-	script := "(" + closeFDs + `exec >/dev/null 2>&1; printf ready > "$2"; exec sleep 60) & echo $! > "$1"; ` +
-		`while [ ! -f "$2" ]; do sleep 0.02; done`
-	result := LaunchSuite(LaunchOptions{Suite: "native-custody", Root: directory, ConfPath: conf,
-		ProgressPath: filepath.Join(directory, "progress.jsonl"), LogPath: filepath.Join(directory, "launcher.log"),
-		Banner: "native custody fixture", Silence: time.Second, SectionCap: time.Second,
-		EvidenceTimeout: time.Second, EvidenceMax: 1024, Poll: 20 * time.Millisecond,
-		TermGrace: 20 * time.Millisecond, KillGrace: 20 * time.Millisecond,
-		WatchdogExecutable: engine, Command: []string{"sh", "-c", script, "sh", childPID, ready},
-		HostResourceFiles: lease.Files(), Output: io.Discard, ErrorOutput: io.Discard})
-	if result == 0 {
-		t.Error("launcher accepted a worker that left an ordinary native child alive")
-	}
-	pidData, err := os.ReadFile(childPID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(pidData)))
-	if err != nil {
-		t.Fatal(err)
-	}
+	script := "(" + closeFDs + `exec >/dev/null 2>&1; printf ready > "$2"; while [ ! -f "$4" ]; do sleep 0.02; done) & echo $! > "$1"; ` +
+		`while [ ! -f "$2" ]; do sleep 0.02; done; while [ ! -f "$3" ]; do sleep 0.02; done`
+	var stdout, stderr bytes.Buffer
+	runDone := make(chan struct{})
+	var result int
+	go func() {
+		result = LaunchSuite(LaunchOptions{Suite: "native-custody", Root: directory, ConfPath: conf,
+			ProgressPath: filepath.Join(directory, "progress.jsonl"), LogPath: filepath.Join(directory, "launcher.log"),
+			Banner: "native custody fixture", Silence: time.Second, SectionCap: time.Second,
+			EvidenceTimeout: time.Second, EvidenceMax: 1024, Poll: 20 * time.Millisecond,
+			TermGrace: 20 * time.Millisecond, KillGrace: 20 * time.Millisecond,
+			WatchdogExecutable: engine, Command: []string{"sh", "-c", script, "sh", childPID, ready, release, childRelease},
+			HostResourceFiles: lease.Files(), Output: &stdout, ErrorOutput: &stderr})
+		close(runDone)
+	}()
+	t.Cleanup(func() {
+		_ = os.WriteFile(release, []byte("release"), 0o600)
+		_ = os.WriteFile(childRelease, []byte("release"), 0o600)
+		<-runDone
+	})
+	waitCustodyFile(t, ready, 0)
 	prober := identity.KernelProber{}
-	child, state, err := prober.Probe(int64(pid))
-	if err == nil && state == identity.Alive {
-		t.Cleanup(func() { _ = identity.SignalExact(prober, child.Ref(), syscall.SIGKILL, syscall.Kill) })
+	child := waitCustodyRef(t, prober, childPID, 0)
+	t.Cleanup(func() { _ = identity.SignalExact(prober, child, syscall.SIGKILL, syscall.Kill) })
+	type acquireResult struct {
+		lease *HostResourceLease
+		err   error
+	}
+	acquired := make(chan acquireResult, 1)
+	observed := make(chan struct{})
+	waitCtx, cancelWait := context.WithCancel(t.Context())
+	defer cancelWait()
+	waitCtx = WithHostResourceWaitObserver(waitCtx, func() { close(observed) })
+	go func() {
+		next, acquireErr := AcquireHostResources(waitCtx, directory, conf, "heavy", nil)
+		acquired <- acquireResult{lease: next, err: acquireErr}
+	}()
+	select {
+	case result := <-acquired:
+		if result.lease != nil {
+			_ = result.lease.Close()
+		}
+		t.Fatalf("contender did not wait behind the live ordinary child: err=%v", result.err)
+	case <-observed:
+	case <-t.Context().Done():
+		t.Fatalf("contender did not observe the live ordinary child's custody: %v", t.Context().Err())
+	}
+	if !liveCustodyRef(prober, child) {
+		t.Fatalf("exact ordinary child %d died before the contender observed custody", child.Pid)
+	}
+	if active, activeErr := activeHostResourceSlots(directory); activeErr != nil || active != 1 {
+		t.Fatalf("live ordinary child did not keep its slot occupied: active=%d err=%v", active, activeErr)
+	}
+	cancelWait()
+	next := <-acquired
+	if next.lease != nil {
+		_ = next.lease.Close()
+		t.Fatal("contender acquired while the ordinary child retained custody")
+	}
+	if !errors.Is(next.err, context.Canceled) {
+		t.Fatalf("controlled contender cancellation returned %v", next.err)
+	}
+	if err := os.WriteFile(release, []byte("release"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-runDone:
+	case <-t.Context().Done():
+		t.Fatalf("native custody launch did not finish: %v", t.Context().Err())
+	}
+	diagnostics := stdout.String() + stderr.String()
+	if result == 0 || !strings.Contains(diagnostics, "native descendants survived direct worker completion") {
+		t.Fatalf("launcher did not retain the intended ordinary-child failure: exit=%d output=%s", result, diagnostics)
+	}
+	waitCustodyTerminal(t, prober, child)
+	var marker hostLeaseRecord
+	markerFound := false
+	for _, file := range lease.Files() {
+		if !strings.HasPrefix(filepath.Base(file.Name()), "lease-") {
+			continue
+		}
+		markerFound = true
+		var readErr error
+		marker, _, readErr = readHostLeaseRecord(file)
+		if readErr != nil {
+			t.Fatalf("read native custody marker: %v output=%s", readErr, diagnostics)
+		}
+	}
+	if !markerFound || !marker.Cleared {
+		t.Fatalf("native custody returned without a clean marker: found=%t marker=%+v output=%s", markerFound, marker, diagnostics)
 	}
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)
-	defer cancel()
-	contender, acquireErr := AcquireHostResources(ctx, directory, conf, "heavy", nil)
-	if contender != nil {
-		defer contender.Close()
+	leaseClosed = true
+	nextLease, err := AcquireHostResources(t.Context(), directory, conf, "heavy", nil)
+	if err != nil || nextLease == nil {
+		t.Fatalf("capacity acquisition failed after exact cleanup: %v", err)
 	}
-	childNow, childState, probeErr := prober.Probe(int64(pid))
-	childLive := probeErr == nil && childState == identity.Alive && identity.SameIdentity(childNow, child.Ref()) && !childNow.Zombie
-	if childLive && acquireErr == nil {
-		t.Error("ordinary grandchild survived while its native capacity slot was released")
+	if err := MarkHostResourcesClean(nextLease.Files()); err != nil {
+		_ = nextLease.Close()
+		t.Fatal(err)
 	}
-	if childLive && acquireErr != nil && !errors.Is(acquireErr, context.DeadlineExceeded) {
-		t.Fatalf("surviving grandchild had an unexpected admission result: %v", acquireErr)
-	}
-	if !childLive && acquireErr != nil {
-		t.Fatalf("cleaned grandchild left capacity unavailable: %v", acquireErr)
+	if err := nextLease.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

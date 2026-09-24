@@ -696,8 +696,10 @@ wait_end_state runner-closes-chain 10
 # T3): a rotated session is reported in the result envelope with outcome
 # completed for the runner's adjudication; only a MISSING session keeps the
 # adapter's own exit-6 fault; and a start gate that never releases still
-# fails the launch. Driven against the real claude host adapter with only the
-# paid CLI call replaced.
+# fails the launch. The typed gate owner receives an authenticated fixture
+# expiry event, so this remains a refusal proof without waiting on wall time.
+# Driven against the real claude host adapter with only the paid CLI call
+# replaced.
 host_fixture=$fixture_root/host-adapter
 host_bin=$host_fixture/bin
 host_turn=$host_fixture/turns/host-session-t1-aaaa
@@ -741,11 +743,19 @@ set -e
    && "$("$root/bin/metasystem" json get --file "$host_turn/result-missing.json" --field sessionId)" == null ]] \
   || { echo "a missing session did not report unresumable with a null session" >&2; cat "$host_turn/result-missing.json" >&2; exit 1; }
 
+touch "$host_fixture/gate-expired"
+host_gate_installation=$host_fixture/gate-installation
+mkdir -p "$host_gate_installation/scripts/agents" "$host_gate_installation/bin"
+cp -R "$root/scripts/agents/hosts" "$host_gate_installation/scripts/agents/"
+cp "$root/bin/metasystem" "$host_gate_installation/bin/metasystem"
+chmod +x "$host_gate_installation/bin/metasystem"
+printf '%s\n' 'metasystem.runtimes=fake' >"$host_gate_installation/metasystem.conf"
 set +e
 FAKE_CLAUDE_SESSION=rotated-session PATH="$host_bin:$PATH" \
   METASYSTEM_HOST_START_GATE="$host_fixture/never-released" \
   METASYSTEM_HOST_START_GATE_TIMEOUT_SEC=1 \
-  "$root/scripts/agents/hosts/claude.sh" start-turn --mission host-session \
+  METASYSTEM_START_GATE_EXPIRY_EVENT="$host_fixture/gate-expired" \
+  "$host_gate_installation/scripts/agents/hosts/claude.sh" start-turn --mission host-session \
   --turn-id host-session-t1-aaaa --prompt "$host_turn/prompt.md" \
   --result "$host_turn/result-gate.json" --instance-tag fixture-host-session-tag \
   >"$fixture_root/host-gate-timeout.out" 2>&1

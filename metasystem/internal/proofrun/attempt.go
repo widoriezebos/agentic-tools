@@ -119,6 +119,8 @@ type AttemptTerminal struct {
 	Attribution string `json:"attribution,omitempty"`
 }
 
+const CoverageEvidenceSchemaVersion = 2
+
 type CoverageEvidence struct {
 	SchemaVersion    int                `json:"schemaVersion"`
 	Producer         ProcessIdentity    `json:"producer"`
@@ -128,6 +130,7 @@ type CoverageEvidence struct {
 	Measurements     map[string]float64 `json:"measurements"`
 	EngineDigest     string             `json:"engineDigest"`
 	EngineManifest   string             `json:"engineManifest"`
+	InputManifest    string             `json:"inputManifest,omitempty"`
 	BehaviorPolicy   int                `json:"behaviorPolicyVersion"`
 	Platform         string             `json:"platform"`
 	Toolchain        string             `json:"toolchain"`
@@ -614,7 +617,9 @@ func validateAttempt(attempt Attempt) error {
 			return fmt.Errorf("pending coverage producer is incomplete or contradictory")
 		}
 		if evidence := pending.Evidence; evidence != nil {
-			if evidence.SchemaVersion != 1 || evidence.Producer.Ref().Mode() == identity.CompareInvalid ||
+			compatibleSchema := evidence.SchemaVersion == 1 ||
+				(evidence.SchemaVersion == CoverageEvidenceSchemaVersion && validSHA256(evidence.InputManifest))
+			if !compatibleSchema || evidence.Producer.Ref().Mode() == identity.CompareInvalid ||
 				evidence.Producer.Ref() != pending.Producer.Ref() || evidence.ProducerClass != pending.ProducerClass ||
 				evidence.AttemptID != attempt.AttemptID || len(evidence.PackageInventory) == 0 || len(evidence.Measurements) == 0 ||
 				evidence.EngineDigest == "" || evidence.EngineManifest == "" || evidence.BehaviorPolicy < 1 ||
@@ -895,7 +900,10 @@ func componentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, 
 				continue
 			}
 			if observed, ok := latest[id]; ok {
-				newest := newerAttempt(&observed.attempt, candidate)
+				newest, ambiguous := newerAttempt(&observed.attempt, candidate)
+				if ambiguous {
+					return nil, LaunchResult{}, false, fmt.Errorf("testing attempt order is ambiguous for component %s between admissions %d and %d", id, observed.attempt.TestAdmission, candidate.TestAdmission)
+				}
 				if newest.AttemptID == observed.attempt.AttemptID {
 					continue
 				}
@@ -928,10 +936,18 @@ func componentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, 
 	for _, observed := range latest {
 		switch observed.state {
 		case "live":
-			newestLive = newerAttempt(newestLive, observed.attempt)
+			var ambiguous bool
+			newestLive, ambiguous = newerAttempt(newestLive, observed.attempt)
+			if ambiguous {
+				return nil, LaunchResult{}, false, fmt.Errorf("live testing attempt order is ambiguous at admission %d", observed.attempt.TestAdmission)
+			}
 		case "failed":
 			failedIDs[observed.attempt.AttemptID] = true
-			newestFailed = newerAttempt(newestFailed, observed.attempt)
+			var ambiguous bool
+			newestFailed, ambiguous = newerAttempt(newestFailed, observed.attempt)
+			if ambiguous {
+				return nil, LaunchResult{}, false, fmt.Errorf("failed testing attempt order is ambiguous at admission %d", observed.attempt.TestAdmission)
+			}
 		case "success":
 			successCount++
 		}
@@ -1050,18 +1066,90 @@ func BindJoinedTestComponentsLocked(root, attemptID string, identities map[strin
 	return attempt, nil
 }
 
-func newerAttempt(current *Attempt, candidate Attempt) *Attempt {
+type testingAttemptOrder int
+
+const (
+	testingAttemptOlder testingAttemptOrder = iota - 1
+	testingAttemptEqual
+	testingAttemptNewer
+	testingAttemptAmbiguous
+)
+
+type testingAttemptObservation struct {
+	attempt Attempt
+	live    bool
+	at      time.Time
+	started time.Time
+}
+
+func compareTestingAttemptObservations(current, candidate testingAttemptObservation) testingAttemptOrder {
+	currentAdmission, candidateAdmission := current.attempt.TestAdmission, candidate.attempt.TestAdmission
+	if currentAdmission != 0 && candidateAdmission != 0 {
+		switch {
+		case candidateAdmission > currentAdmission:
+			return testingAttemptNewer
+		case candidateAdmission < currentAdmission:
+			return testingAttemptOlder
+		case candidate.attempt.AttemptID != current.attempt.AttemptID:
+			return testingAttemptAmbiguous
+		default:
+			return testingAttemptEqual
+		}
+	}
+	// A later legacy record still participates through its retained state and
+	// timestamps so it cannot silently uncover an older numbered green.
+	if candidate.live != current.live {
+		if candidate.live {
+			return testingAttemptNewer
+		}
+		return testingAttemptOlder
+	}
+	if !candidate.at.Equal(current.at) {
+		if candidate.at.After(current.at) {
+			return testingAttemptNewer
+		}
+		return testingAttemptOlder
+	}
+	if !candidate.started.Equal(current.started) {
+		if candidate.started.After(current.started) {
+			return testingAttemptNewer
+		}
+		return testingAttemptOlder
+	}
+	if candidate.attempt.AttemptID == current.attempt.AttemptID {
+		return testingAttemptEqual
+	}
+	return testingAttemptAmbiguous
+}
+
+func testingAttempt(attempt Attempt) bool {
+	return attempt.TestAdmission != 0 || attempt.TestResult != nil || len(attempt.TestInventory) != 0 ||
+		len(attempt.TestOwned) != 0 || len(attempt.TestWaits) != 0 || len(attempt.PendingTestGroups) != 0
+}
+
+func newerAttempt(current *Attempt, candidate Attempt) (*Attempt, bool) {
 	if current == nil {
 		copy := candidate
-		return &copy
+		return &copy, false
 	}
 	currentStarted, _ := time.Parse(time.RFC3339Nano, current.StartedAt)
 	candidateStarted, _ := time.Parse(time.RFC3339Nano, candidate.StartedAt)
-	if candidateStarted.After(currentStarted) {
-		copy := candidate
-		return &copy
+	if !testingAttempt(*current) && !testingAttempt(candidate) {
+		if candidateStarted.After(currentStarted) {
+			copy := candidate
+			return &copy, false
+		}
+		return current, false
 	}
-	return current
+	order := compareTestingAttemptObservations(
+		testingAttemptObservation{attempt: *current, at: currentStarted, started: currentStarted},
+		testingAttemptObservation{attempt: candidate, at: candidateStarted, started: candidateStarted},
+	)
+	if order == testingAttemptNewer {
+		copy := candidate
+		return &copy, false
+	}
+	return current, order == testingAttemptAmbiguous
 }
 
 func noChildDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, bool, error) {
@@ -1415,7 +1503,13 @@ func FinalizeAttemptWithTestResultLocked(root, id, result string, exitStatus int
 		if err := ValidateTestResult(copyResult); err != nil {
 			return Attempt{}, fmt.Errorf("retain test result: %w", err)
 		}
-		if err := validateAdmittedTestResult(attempt, copyResult); err != nil {
+		if result != TerminalSuccess && !copyResult.Delivery.Sufficient {
+			copyResult = normalizeInvalidInheritedTestEvidence(attempt, copyResult, now)
+			if err := ValidateTestResult(copyResult); err != nil {
+				return Attempt{}, fmt.Errorf("retain normalized diagnostic test result: %w", err)
+			}
+		}
+		if err := validateAdmittedTestResult(attempt, copyResult, now); err != nil {
 			return Attempt{}, err
 		}
 		if identityBoundTestResultSchema(copyResult.SchemaVersion) {
@@ -1464,6 +1558,12 @@ func FinalizeAttemptWithTestResultLocked(root, id, result string, exitStatus int
 // RecordTestResult attaches normalized group evidence to an enclosing live
 // proof. The enclosing launcher still owns the one terminal transition.
 func RecordTestResult(root, id string, result TestResult) (Attempt, error) {
+	return RecordTestResultAt(root, id, result, time.Now().UTC())
+}
+
+// RecordTestResultAt validates joined native sources at the command's
+// admitted semantic time. Production callers use RecordTestResult.
+func RecordTestResultAt(root, id string, result TestResult, now time.Time) (Attempt, error) {
 	lock, err := AcquireMutation(root)
 	if err != nil {
 		return Attempt{}, err
@@ -1480,7 +1580,7 @@ func RecordTestResult(root, id string, result TestResult) (Attempt, error) {
 	if err := ValidateTestResult(result); err != nil {
 		return Attempt{}, fmt.Errorf("retain test result: %w", err)
 	}
-	if err := validateAdmittedTestResult(attempt, result); err != nil {
+	if err := validateAdmittedTestResult(attempt, result, now); err != nil {
 		return Attempt{}, err
 	}
 	if identityBoundTestResultSchema(result.SchemaVersion) {

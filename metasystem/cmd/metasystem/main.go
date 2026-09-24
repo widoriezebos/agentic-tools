@@ -294,6 +294,7 @@ func families() []family {
 				{"fake-effective-network", "edit the effective network for permission fixtures", runAdapterFakeEffectiveNetwork},
 				{"fake-guarded-write", "attempt a permission-guarded write (77 = refused)", runAdapterFakeGuardedWrite},
 				{"fake-guarded-network", "attempt a permission-guarded connection (77 = refused)", runAdapterFakeGuardedNetwork},
+				{"wait-start-gate", "wait for the runner-owned adapter or host start gate", runAdapterWaitStartGate},
 				{"fake-capability-snapshot", "write a fake capability-snapshot profile", runAdapterFakeCapabilitySnapshot},
 				{"fake-selftest-record", "write the fake selftest pass record", runAdapterFakeSelftestRecord},
 				{"normalize-return", "normalize the runtime reply into return.json/return.md", runAdapterNormalizeReturn},
@@ -494,6 +495,8 @@ func families() []family {
 			summary: "self-check that the repo runs under its own metasystem",
 			verbs: []verb{
 				{"check", "verify live settings carry the shipped lifecycle hooks", runHooksCheck},
+				{"stop-deadline-wait", "wait for one Stop worker or its deadline", runHooksStopDeadlineWait},
+				{"stop-deadline-cleanup", "stop one exact worker after its Stop deadline", runHooksStopDeadlineCleanup},
 			},
 		},
 		{

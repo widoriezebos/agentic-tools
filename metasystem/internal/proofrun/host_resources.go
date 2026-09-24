@@ -592,13 +592,19 @@ func AcquireHostResources(ctx context.Context, controlRoot, confPath, class stri
 
 type hostResourceWaitObserverKey struct{}
 
-// WithHostResourceWaitObserver reports the first failed resource scan after
-// this context is attached. It reports at most once per acquisition, after
-// releasing the admission guard and any partial locks; it does not replay
-// waits that happened before attachment.
+// WithHostResourceWaitObserver adds a callback for the first failed resource
+// scan after this context is attached. Nested callbacks run in attachment
+// order. Each reports at most once per acquisition, after releasing the
+// admission guard and any partial locks; none replay earlier waits.
 func WithHostResourceWaitObserver(ctx context.Context, observe func()) context.Context {
 	if observe == nil {
 		return ctx
+	}
+	if attached, ok := ctx.Value(hostResourceWaitObserverKey{}).(func()); ok {
+		return context.WithValue(ctx, hostResourceWaitObserverKey{}, func() {
+			attached()
+			observe()
+		})
 	}
 	return context.WithValue(ctx, hostResourceWaitObserverKey{}, observe)
 }

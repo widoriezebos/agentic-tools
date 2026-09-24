@@ -82,6 +82,9 @@ func claudeSlug(cwd string) string {
 }
 
 func parseClaudeLine(line []byte, ordinal int64, runtime, session string) (sample *CallSample, marker *Marker, sidechain bool) {
+	if callJSONDecodes != nil {
+		callJSONDecodes()
+	}
 	var raw map[string]any
 	decoder := json.NewDecoder(bytes.NewReader(line))
 	decoder.UseNumber()

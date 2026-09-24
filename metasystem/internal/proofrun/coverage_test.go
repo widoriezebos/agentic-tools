@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 )
 
 const coverageTestModule = "github.com/widoriezebos/agentic-tools/metasystem/"
@@ -44,7 +46,8 @@ func TestCoverageReceiptProducerConsumer(t *testing.T) {
 	}
 	evidence, err := CompleteCoverage(CoverageCompleteOptions{CoverageBeginOptions: begin, CoverageLog: coverageLog,
 		PackageInventory: inventory, ModulePrefix: coverageTestModule})
-	if err != nil || evidence.Measurements["internal/proofrun"] != 85 {
+	if err != nil || evidence.SchemaVersion != CoverageEvidenceSchemaVersion || evidence.InputManifest != identity.ManifestDigest ||
+		evidence.Measurements["internal/proofrun"] != 85 {
 		t.Fatalf("coverage evidence = %+v, %v", evidence, err)
 	}
 	if _, found, err := ReusableCoverage(root, root, baseline, []string{"internal/proofrun"}); err != nil || found {
@@ -56,12 +59,15 @@ func TestCoverageReceiptProducerConsumer(t *testing.T) {
 	if reused, found, err := ReusableCoverage(root, root, baseline, []string{"internal/proofrun"}); err != nil || !found || reused.AttemptID != attempt.AttemptID {
 		t.Fatalf("coverage was not reused after enclosing success: %+v found=%v err=%v", reused, found, err)
 	}
-	operatorNote := filepath.Join(root, "operator-note.txt")
+	operatorNote := filepath.Join(root, "artifacts", "operator-note.txt")
+	if err := os.MkdirAll(filepath.Dir(operatorNote), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(operatorNote, []byte("unrelated to ENGINE coverage\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if reused, found, err := ReusableCoverage(root, root, baseline, []string{"internal/proofrun"}); err != nil || !found || reused.AttemptID != attempt.AttemptID {
-		t.Fatalf("unrelated non-ENGINE note invalidated relevant coverage reuse: evidence=%+v found=%v err=%v", reused, found, err)
+		t.Fatalf("excluded runtime note invalidated relevant coverage reuse: evidence=%+v found=%v err=%v", reused, found, err)
 	}
 
 	mutated := filepath.Join(root, "internal", "proofrun", "new.go")
@@ -82,6 +88,84 @@ func TestCoverageReceiptProducerConsumer(t *testing.T) {
 	}
 	if _, found, err := ReusableCoverage(root, root, baseline, []string{"internal/proofrun"}); err != nil || found {
 		t.Fatalf("floor mutation reused coverage: found=%v err=%v", found, err)
+	}
+}
+
+func TestCoverageProducerConsumerExcludesLocalConfigurationAtEveryDepth(t *testing.T) {
+	t.Parallel()
+	root, _ := proofAttemptFixture(t, "coverage-local-configuration")
+	localConfigurations := []string{
+		filepath.Join(root, "metasystem.conf.local"),
+		filepath.Join(root, "internal", "private", "metasystem.conf.local"),
+	}
+	for _, path := range localConfigurations {
+		writeTestFile(t, path, []byte("dispatch.cap-max=120\nsynthetic.secret=first\n"), 0o600)
+	}
+	identity, err := BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full",
+		"coverage-local-configuration", []string{"gate"}, behaviorsurface.SupportedVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, baseline := completeCoverageAt(t, root, identity)
+
+	unreadable := 0
+	for _, path := range localConfigurations {
+		writeTestFile(t, path, []byte("dispatch.cap-max=121\nsynthetic.secret=rotated\n"), 0o600)
+		if err := os.Chmod(path, 0); err != nil {
+			t.Fatal(err)
+		}
+		file, openErr := os.Open(path)
+		if openErr != nil {
+			unreadable++
+			continue
+		}
+		_ = file.Close()
+	}
+	t.Logf("current uid made %d of %d synthetic local configurations unreadable", unreadable, len(localConfigurations))
+	if reused, found, err := ReusableCoverage(root, root, baseline, []string{"internal/proofrun"}); err != nil || !found || reused.AttemptID != attempt.AttemptID {
+		t.Fatalf("excluded synthetic local configuration invalidated retained coverage: evidence=%+v found=%v err=%v", reused, found, err)
+	}
+	if reused, found, err := ReusableCoverageForAttempt(root, root, baseline, attempt.AttemptID, []string{"internal/proofrun"}); err != nil || !found || reused.AttemptID != attempt.AttemptID {
+		t.Fatalf("excluded synthetic local configuration invalidated receipt-bound coverage: evidence=%+v found=%v err=%v", reused, found, err)
+	}
+}
+
+func TestCoverageReuseRefusesChangedCompleteProjectInputAndLegacyEvidence(t *testing.T) {
+	t.Parallel()
+	project := t.TempDir()
+	root := filepath.Join(project, "tools", "metasystem")
+	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(project, ".gitattributes"), []byte("testing.json merge=metasystem-testing\n"), 0o644)
+	writeTestFile(t, filepath.Join(root, "metasystem.conf"), []byte("dispatch.cap-max=120\n"), 0o600)
+	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
+		writeTestFile(t, filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600)
+	}
+	runFreezeTestGit(t, project, "init", "-q", "-b", "main")
+	runFreezeTestGit(t, project, "add", ".")
+	runFreezeTestGit(t, project, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "base")
+	identity, err := BuildProofIdentity(root, filepath.Join(root, "metasystem.conf"), "full", "coverage-parent-input", []string{"gate"}, behaviorsurface.SupportedVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, baseline := completeCoverageAt(t, root, identity)
+	writeTestFile(t, filepath.Join(project, ".gitattributes"), []byte("changed parent input\n"), 0o644)
+	if _, found, err := ReusableCoverage(root, root, baseline, []string{"internal/proofrun"}); err != nil || found {
+		t.Fatalf("changed parent input reused coverage: found=%v err=%v", found, err)
+	}
+	writeTestFile(t, filepath.Join(project, ".gitattributes"), []byte("testing.json merge=metasystem-testing\n"), 0o644)
+	stored, err := ReadAttempt(root, attempt.AttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.PendingCoverage.Evidence.SchemaVersion = 1
+	stored.PendingCoverage.Evidence.InputManifest = ""
+	if err := writeAttempt(stored); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := ReusableCoverage(root, root, baseline, []string{"internal/proofrun"}); err != nil || found {
+		t.Fatalf("legacy coverage was promoted to current proof: found=%v err=%v", found, err)
 	}
 }
 
@@ -209,6 +293,12 @@ func TestCoverageReuseSeparatesControlAndExecutionRoots(t *testing.T) {
 func completedCoverageFixture(t *testing.T) (string, Attempt, string) {
 	t.Helper()
 	root, identity := proofAttemptFixture(t, "coverage-negative")
+	attempt, baseline := completeCoverageAt(t, root, identity)
+	return root, attempt, baseline
+}
+
+func completeCoverageAt(t *testing.T, root string, identity ProofIdentity) (Attempt, string) {
+	t.Helper()
 	baseline := coverageRatchetPath(root)
 	launcher, _ := CurrentProcessIdentity(nil)
 	now := time.Now().UTC()
@@ -234,5 +324,5 @@ func completedCoverageFixture(t *testing.T) (string, Attempt, string) {
 	if _, err := FinalizeAttempt(root, attempt.AttemptID, TerminalSuccess, 0, "green", []byte(`{"receipt":true}`), now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	return root, attempt, baseline
+	return attempt, baseline
 }

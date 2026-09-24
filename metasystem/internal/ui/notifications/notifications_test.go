@@ -286,19 +286,9 @@ func TestFollowDeliversWhatArrivesAndEndsWithItsContext(t *testing.T) {
 		})
 	}()
 	appendLine(t, path, line(t, "I2", "alert", "arrived while watching", true)+"\n")
-	select {
-	case batch := <-batches:
-		equal(t, "the followed batch", ids(batch), []string{"I2"})
-	case <-time.After(5 * time.Second):
-		t.Fatal("the follower never saw the appended line")
-	}
+	equal(t, "the followed batch", ids(<-batches), []string{"I2"})
 	cancel()
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("a cancelled follow must end with its context's reason")
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the follower did not stop with its context")
+	if err := <-done; err == nil {
+		t.Fatal("a cancelled follow must end with its context's reason")
 	}
 }

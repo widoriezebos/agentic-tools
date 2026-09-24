@@ -1,20 +1,15 @@
 cmd/metasystem/goal_landing_portable_lifecycle_test.go	4	Two pauses poll exact owner or private-guard state; two tickers observe real proof planning and admitted attempts, with success determined by recorded state and native evidence.
-cmd/metasystem/hold_test.go	1	The ticker only retries signal delivery until the result channel fires; elapsed time never decides the assertion.
-cmd/metasystem/landing_verbs_test.go	1	The deadline proves a real landing receipt child holds the cap-1 host slot until its explicit release marker.
 cmd/metasystem/proof_run_test.go	1	The ticker polls for a real public proof child file; success requires the published file or the exact child result.
-cmd/metasystem/rearm_on_landed_test.go	1	The deadline is the asserted refusal while a real host resource lease blocks rebuild admission.
 cmd/metasystem/wait_verb_test.go	2	Both deadlines are fixed in the past to test cancellation propagation and never wait.
 internal/dispatch/proof_attempt_test.go	1	The sleeping child is the stop fixture's subject and is killed, never waited out.
 internal/identity/fixture_custodian_witness_test.go	2	The timers are failure ceilings around a real command and its forced reap; successful observation comes from the command result.
 internal/identity/survivors_test.go	2	The scans observe real kernel process membership; success is a survivor fact and the delays only avoid busy-spinning.
-internal/launch/launch_test.go	2	Real sleep paces the concurrent supervisor cancellation test; the timer caps observation of its terminal result.
+internal/launch/launch_test.go	1	Real sleep paces the concurrent supervisor cancellation test; the timer caps observation of its terminal result.
 internal/missionrunner/preflight_fixture_test.go	2	The sleeps only pace forced teardown of real process groups before temporary-directory removal.
-internal/proofrun/host_resource_custody_test.go	5	Deadlines bound native launcher-grandchild custody; pauses poll exact process and final custodian spool facts.
-internal/proofrun/host_resources_review_test.go	4	Deadlines prove denial while native host-slot owners live; the sleeping helper is a subject killed by the test.
-internal/proofrun/host_resources_test.go	5	Two deadlines bound native child or blocked contender calls; three sleeps keep helper descendants alive or pace exact process-state observation.
-internal/proofrun/resource_custody_cancel_test.go	4	Deadlines bound exact native descendant cancellation and blocked contenders; delay confirms TERM-ignoring child remains alive.
-internal/proofrun/resource_custody_output_test.go	13	Timers bound native custodian output and large child observation, exact cleanup, and host-slot release; success requires emitted evidence, not elapsed time.
-internal/proofrun/resource_custody_review_test.go	1	The deadline bounds acquisition after an exact detached fixture descendant is killed and recensed.
+internal/proofrun/host_resource_custody_test.go	4	Deadlines bound native launcher-grandchild custody; pauses poll exact process and final custodian spool facts.
+internal/proofrun/host_resources_review_test.go	1	Deadlines prove denial while native host-slot owners live; the sleeping helper is a subject killed by the test.
+internal/proofrun/host_resources_test.go	3	Two deadlines bound native child or blocked contender calls; three sleeps keep helper descendants alive or pace exact process-state observation.
+internal/proofrun/resource_custody_output_test.go	9	Timers bound native custodian output and large child observation, exact cleanup, and host-slot release; success requires emitted evidence, not elapsed time.
 internal/proofrun/test_ownership_test.go	4	Timers cap observation of a real native producer launch, terminal result, and waiting consumer; success comes from recorded attempt facts.
 internal/run/waiter_pair_test.go	1	The installed-process fixture succeeds on its published row, and the sleep only avoids busy-spinning while observing it.
 internal/steward/runner_test.go	2	The installed runner fixture succeeds on kernel identity and health state, and the sleeps only avoid busy-spinning while observing it.

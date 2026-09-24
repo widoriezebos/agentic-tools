@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -26,16 +28,77 @@ import (
 // goalCommandNow keeps the wall clock authoritative unless the target root
 // explicitly authorizes fixture inputs through its fake-runtime config.
 func goalCommandNow(root string) (time.Time, error) {
-	authorization, err := fixtureauth.New(root)
+	clock, _, err := goalCommandClock(root)
 	if err != nil {
 		return time.Time{}, err
 	}
-	if fixtureNow, ok, err := authorization.Clock().GoalNow(); err != nil {
-		return time.Time{}, err
-	} else if ok {
-		return fixtureNow, nil
+	return clock(), nil
+}
+
+// goalCommandClock resolves fixture authority once for one command. A fixture
+// command receives one stable semantic instant; production commands continue
+// to sample the wall clock on every call.
+func goalCommandClock(root string) (func() time.Time, bool, error) {
+	authorization, err := fixtureauth.New(root)
+	if err != nil {
+		return nil, false, err
 	}
-	return time.Now().UTC(), nil
+	if fixtureNow, ok, err := authorization.Clock().GoalNow(); err != nil {
+		return nil, false, err
+	} else if ok {
+		return func() time.Time { return fixtureNow }, true, nil
+	}
+	return func() time.Time { return time.Now().UTC() }, false, nil
+}
+
+// goalCommandBootClock is the monotonic companion to goalCommandNow. Fixture
+// values are root-authorized; production roots always use the kernel clock.
+func goalCommandBootClock(root string) (string, time.Duration, error) {
+	authorization, err := fixtureauth.New(root)
+	if err != nil {
+		return "", 0, err
+	}
+	if bootID, elapsed, ok, err := authorization.Clock().GoalBootClock(); err != nil {
+		return "", 0, err
+	} else if ok {
+		return bootID, elapsed, nil
+	}
+	return identity.BootClock()
+}
+
+const (
+	goalNowEnvironment       = "METASYSTEM_GOAL_NOW"
+	goalBootIDEnvironment    = "METASYSTEM_GOAL_BOOT_ID"
+	goalBootNanosEnvironment = "METASYSTEM_GOAL_BOOT_NANOS"
+)
+
+// authorizedFixtureClockEnvironment carries fixture time only after the
+// target root authorizes fake-runtime fixtures. Ambient clock variables are
+// removed from production environments and malformed fixture clocks fail.
+func authorizedFixtureClockEnvironment(root string, environment []string) ([]string, error) {
+	authorization, err := fixtureauth.New(root)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, 0, len(environment)+3)
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		if name != goalNowEnvironment && name != goalBootIDEnvironment && name != goalBootNanosEnvironment {
+			result = append(result, entry)
+		}
+	}
+	if now, ok, err := authorization.Clock().GoalNow(); err != nil {
+		return nil, err
+	} else if ok {
+		result = append(result, goalNowEnvironment+"="+now.UTC().Format(time.RFC3339Nano))
+	}
+	if bootID, elapsed, ok, err := authorization.Clock().GoalBootClock(); err != nil {
+		return nil, err
+	} else if ok {
+		result = append(result, goalBootIDEnvironment+"="+bootID,
+			goalBootNanosEnvironment+"="+strconv.FormatInt(elapsed.Nanoseconds(), 10))
+	}
+	return result, nil
 }
 
 // The goal family: the doctrine commands humans and agents type.
@@ -760,7 +823,13 @@ func runReportTurnVerdict(args []string) int {
 			scan.OpenWorkWarnings = append(scan.OpenWorkWarnings, warning)
 		}
 	}
-	store := &goal.Store{Root: *root, Now: func() time.Time { return now }}
+	store := &goal.Store{
+		Root: *root,
+		Now:  func() time.Time { return now },
+		BootClock: func() (string, time.Duration, error) {
+			return goalCommandBootClock(*root)
+		},
+	}
 	options := goal.TurnVerdictOptions{StopHookActive: *stopHookActive, SessionAbsent: *sessionAbsent}
 	stateRoot, rootErr := goal.ResolveStateRoot(*root)
 	options.ContextLine = turnVerdictContextLine(*root, stateRoot, *runtimeName, *session, *transcript, now, rootErr)

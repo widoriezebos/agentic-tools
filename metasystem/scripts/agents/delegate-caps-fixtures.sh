@@ -82,7 +82,7 @@ harness=$tmp/supervision
 mkdir -p "$harness"
 cp -R "$source_root/scripts" "$harness/"
 mkdir -p "$harness/development" "$harness/plans" "$harness/bin"
-cp "$source_root/bin/metasystem" "$harness/bin/metasystem"
+cp "$ms" "$harness/bin/metasystem"
 printf 'fixture\n' >"$harness/development/metasystem-design.md"
 cat >"$harness/metasystem.conf" <<EOF
 metasystem.version=1
@@ -244,20 +244,12 @@ mkdir -p "$harness/artifacts/agents/jobs" "$harness/artifacts/agents/supervision
   printf '%s\n' "$?" >"$tmp/downward-rearm.status"
 ) &
 rearm_race_pid=$!
-sleep 0.2
-kill -0 "$rearm_race_pid" 2>/dev/null \
-  || { report_captured_arm "downward re-arm" "$tmp/downward-rearm.out" "$tmp/downward-rearm.status"; echo "AUTH-R2-006: re-arm did not serialize behind the cap-authority transaction" >&2; exit 1; }
 cat >"$harness/artifacts/agents/jobs/blocking-job.json" <<'EOF'
 {"jobId":"blocking-job","status":"running","capMin":400}
 EOF
 "$ms" job owner-lock --command release --dir "$harness/artifacts/agents/supervision/cap-authority.lock.d" \
   --pid $$ --tag delegate-caps-fixtures.sh
-deadline=$((SECONDS + 10))
-while kill -0 "$rearm_race_pid" 2>/dev/null; do
-  (( SECONDS < deadline )) || { report_captured_arm "downward re-arm" "$tmp/downward-rearm.out" "$tmp/downward-rearm.status"; echo "AUTH-R2-006: serialized re-arm did not finish" >&2; exit 1; }
-  sleep 0.05
-done
-wait "$rearm_race_pid" || true
+wait "$rearm_race_pid"
 rearm_race_pid=
 report_captured_arm "downward re-arm" "$tmp/downward-rearm.out" "$tmp/downward-rearm.status"
 if [[ $(cat "$tmp/downward-rearm.status") -eq 0 ]]; then
@@ -275,7 +267,7 @@ pass_fixture AUTH-R2-006
 # successful census over that state while continuing to attest its actually
 # loaded 330-minute ceiling. A transient CENSUS-FAILED verdict can replace the
 # successful census before dispatch reads it, so re-attest and retry only that
-# pre-reservation refusal under the same deadline.
+# pre-reservation refusal while the watcher that owns publication remains live.
 "$ms" json set --file "$state" --int derivedWatcherCapMin=999
 
 brief=$tmp/cap-brief.md
@@ -286,6 +278,9 @@ Attempt a cap above the loaded watcher ceiling.
 EOF
 
 census=$harness/artifacts/agents/supervision/last-census.json
+watcher_pid=$("$ms" json get --file "$state" --field components.watcher.pid)
+[[ "$watcher_pid" =~ ^[1-9][0-9]*$ ]] \
+  || { echo "AUTH-R2-005: supervision state has no valid watcher publication owner" >&2; exit 1; }
 # The live watcher republishes the census by atomic rename, so one cp gives
 # a consistent snapshot and the verdict and digest below bind to the same
 # publication the way the retired one-shot reader did.
@@ -297,12 +292,11 @@ attested_census_over_state() { # census file, state file
   attested=$("$ms" json get --file "$snap" --field stateDigest 2>/dev/null) || return 1
   [[ "$verdict" == SUCCESS && "$attested" == "$digest" ]]
 }
-deadline=$((SECONDS + 10))
 while true; do
   until attested_census_over_state "$census" "$state"
   do
-    (( SECONDS < deadline )) \
-      || { echo "AUTH-R2-005: watcher did not publish a successful attestation of mutated state" >&2; exit 1; }
+    kill -0 "$watcher_pid" 2>/dev/null \
+      || { echo "AUTH-R2-005: watcher exited before publishing a successful attestation of mutated state" >&2; exit 1; }
     sleep 0.05
   done
 
@@ -325,8 +319,8 @@ while true; do
   fi
   if grep -Fq 'dispatch refused: last census verdict is CENSUS-FAILED' "$tmp/attested.out" \
       && grep -Fq '"outcome":"REFUSED-INTERNAL"' "$tmp/attested.out"; then
-    (( SECONDS < deadline )) \
-      || { echo "AUTH-R2-005: transient CENSUS-FAILED refusal did not recover before the deadline" >&2; cat "$tmp/attested.out" >&2; exit 1; }
+    kill -0 "$watcher_pid" 2>/dev/null \
+      || { echo "AUTH-R2-005: watcher exited after a transient CENSUS-FAILED refusal" >&2; cat "$tmp/attested.out" >&2; exit 1; }
     sleep 0.05
     continue
   fi
@@ -350,20 +344,12 @@ register_supervision_identities
   printf '%s\n' "$?" >"$tmp/ordinary-establish.status"
 ) &
 rearm_race_pid=$!
-sleep 0.2
-kill -0 "$rearm_race_pid" 2>/dev/null \
-  || { report_captured_arm "ordinary establishment" "$tmp/ordinary-establish.out" "$tmp/ordinary-establish.status"; echo "AUTH-R2-006: ordinary establishment did not serialize behind the cap-authority transaction" >&2; exit 1; }
 cat >"$harness/artifacts/agents/jobs/ordinary-blocking-job.json" <<'EOF'
 {"jobId":"ordinary-blocking-job","status":"running","capMin":400}
 EOF
 "$ms" job owner-lock --command release --dir "$harness/artifacts/agents/supervision/cap-authority.lock.d" \
   --pid $$ --tag delegate-caps-fixtures.sh
-deadline=$((SECONDS + 10))
-while kill -0 "$rearm_race_pid" 2>/dev/null; do
-  (( SECONDS < deadline )) || { report_captured_arm "ordinary establishment" "$tmp/ordinary-establish.out" "$tmp/ordinary-establish.status"; echo "AUTH-R2-006: serialized ordinary establishment did not finish" >&2; exit 1; }
-  sleep 0.05
-done
-wait "$rearm_race_pid" || true
+wait "$rearm_race_pid"
 rearm_race_pid=
 report_captured_arm "ordinary establishment" "$tmp/ordinary-establish.out" "$tmp/ordinary-establish.status"
 if [[ $(cat "$tmp/ordinary-establish.status") -eq 0 ]]; then

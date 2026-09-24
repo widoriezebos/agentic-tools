@@ -154,11 +154,12 @@ func TestConsumptionRestampsTheSetupGrace(t *testing.T) {
 	if err := MintIntent(root, it); err != nil {
 		t.Fatal(err)
 	}
-	old := time.Now().Add(-2 * time.Hour)
+	now := time.Date(2030, 1, 2, 3, 4, 5, 123456789, time.UTC)
+	old := now.Add(-2 * time.Hour)
 	if err := os.Chtimes(filepath.Join(intentsDir(root), "fc-3.json"), old, old); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ConsumeIntent(root, "fc-3"); err != nil {
+	if _, err := consumeIntentAt(root, "fc-3", now); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Stat(filepath.Join(consumedDir(root), "fc-3.json"))
@@ -167,8 +168,8 @@ func TestConsumptionRestampsTheSetupGrace(t *testing.T) {
 	}
 	// The reaper's grace measures from this mtime: an intent that sat
 	// through a notifier outage must still get its full setup window.
-	if time.Since(fi.ModTime()) > time.Minute {
-		t.Fatalf("consumption must restamp the grace anchor: %v", fi.ModTime())
+	if !fi.ModTime().Equal(now) {
+		t.Fatalf("consumption grace anchor = %v, want %v", fi.ModTime(), now)
 	}
 }
 

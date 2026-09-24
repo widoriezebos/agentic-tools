@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -85,9 +85,9 @@ exit 0`
 				go func() { done <- runResourceCommand(runCtx, command, lease, events) }()
 
 				prober := identity.KernelProber{}
-				waitCustodyFile(t, readyPath, 8*time.Second)
-				root := waitCustodyRef(t, prober, rootPIDPath, 3*time.Second)
-				child := waitCustodyRef(t, prober, childPIDPath, 3*time.Second)
+				waitCustodyFile(t, readyPath, 0)
+				root := waitCustodyRef(t, prober, rootPIDPath, 0)
+				child := waitCustodyRef(t, prober, childPIDPath, 0)
 				group, err := syscall.Getpgid(int(root.Pid))
 				if err != nil || group == int(root.Pid) {
 					t.Fatalf("worker did not join a distinct live custodian group: root=%d group=%d err=%v", root.Pid, group, err)
@@ -319,16 +319,26 @@ func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *
 
 	pidPath := filepath.Join(directory, "descendant.pid")
 	readyPath := filepath.Join(directory, "descendant.ready")
-	script := `(exec 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-; exec </dev/null >/dev/null 2>&1; trap '' TERM; : > "$2"; exec sleep 60) & echo $! > "$1"; wait`
-	command := exec.Command("sh", "-c", script, "sh", pidPath, readyPath)
+	termAckPath := filepath.Join(directory, "descendant.term-ack")
+	releasePath := filepath.Join(directory, "descendant.release")
+	script := `(exec 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&-; exec </dev/null >/dev/null 2>&1; trap 'printf "TERM\n" > "$3"' TERM; : > "$2"; while [ ! -f "$4" ]; do sleep 0.02 & wait $!; done) & echo $! > "$1"; wait`
+	command := exec.Command("sh", "-c", script, "sh", pidPath, readyPath, termAckPath, releasePath)
 	runCtx, cancelRun := context.WithCancel(WithResourceCustodyExecutable(context.Background(), engine))
-	defer cancelRun()
-	runDone := make(chan error, 1)
-	go func() { runDone <- RunResourceCommand(runCtx, command, first) }()
+	runDone := make(chan struct{})
+	var runErr error
+	go func() {
+		runErr = RunResourceCommand(runCtx, command, first)
+		close(runDone)
+	}()
+	t.Cleanup(func() {
+		cancelRun()
+		_ = os.WriteFile(releasePath, []byte("release\n"), 0o600)
+		<-runDone
+	})
 
 	prober := identity.KernelProber{}
-	waitCustodyFile(t, readyPath, 8*time.Second)
-	child := waitCustodyRef(t, prober, pidPath, 3*time.Second)
+	waitCustodyFile(t, readyPath, 0)
+	child := waitCustodyRef(t, prober, pidPath, 0)
 	childGroup, err := syscall.Getpgid(int(child.Pid))
 	if err != nil || childGroup == int(child.Pid) {
 		t.Fatalf("native descendant was not held by a distinct custodian group: child=%d group=%d err=%v", child.Pid, childGroup, err)
@@ -337,90 +347,112 @@ func TestGLEResourceCommandCancellationDrainsClosedFDDescendantBeforeRelease(t *
 	if err != nil || state != identity.Alive || custodian.Zombie || custodian.Exiting {
 		t.Fatalf("native descendant custodian was not live: group=%d state=%s exact=%+v err=%v", childGroup, state, custodian, err)
 	}
-	t.Cleanup(func() {
-		// Failure cleanup only: the assertion below observes death first.
-		if liveCustodyRef(prober, child) {
-			_ = identity.SignalExact(prober, child, syscall.SIGKILL)
-		}
-	})
 	if err := identity.SignalExact(prober, child, syscall.SIGTERM); err != nil {
 		t.Fatalf("send TERM to exact descendant: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond)
+	waitCustodyFile(t, termAckPath, 0)
+	termAck, err := os.ReadFile(termAckPath)
+	if err != nil || string(termAck) != "TERM\n" {
+		t.Fatalf("exact descendant did not acknowledge TERM: ack=%q err=%v", termAck, err)
+	}
 	if !liveCustodyRef(prober, child) {
-		t.Fatal("fixture descendant did not ignore TERM before cancellation")
+		t.Fatal("fixture descendant exited after acknowledging TERM")
 	}
 
-	contenderCtx, cancelContender := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancelContender()
-	type contender struct {
-		name   string
-		done   chan *HostResourceLease
-		errors chan error
+	type acquireResult struct {
+		acquired bool
+		err      error
 	}
-	startContender := func(name, class string, exclusive []string) contender {
-		waiting := contender{name: name, done: make(chan *HostResourceLease), errors: make(chan error, 1)}
+	type contender struct {
+		name     string
+		observed chan struct{}
+		finished chan struct{}
+		cancel   context.CancelFunc
+		result   acquireResult
+	}
+	startContender := func(name, class string, exclusive []string) *contender {
+		waitCtx, cancel := context.WithCancel(t.Context())
+		waiting := &contender{name: name, observed: make(chan struct{}, 1), finished: make(chan struct{}), cancel: cancel}
+		waitCtx = WithHostResourceWaitObserver(waitCtx, func() {
+			select {
+			case waiting.observed <- struct{}{}:
+			default:
+			}
+		})
 		go func() {
-			next, acquireErr := AcquireHostResources(contenderCtx, directory, conf, class, exclusive)
+			next, acquireErr := AcquireHostResources(waitCtx, directory, conf, class, exclusive)
 			if acquireErr != nil {
-				waiting.errors <- acquireErr
+				waiting.result.err = acquireErr
+				close(waiting.finished)
 				return
 			}
-			select {
-			case waiting.done <- next:
-			case <-contenderCtx.Done():
-				_ = next.Close()
+			waiting.result.acquired = true
+			if liveCustodyRef(prober, child) {
+				waiting.result.err = fmt.Errorf("acquired while exact descendant %d was alive", child.Pid)
 			}
+			if markErr := MarkHostResourcesClean(next.Files()); markErr != nil {
+				waiting.result.err = errors.Join(waiting.result.err, markErr)
+			}
+			waiting.result.err = errors.Join(waiting.result.err, next.Close())
+			close(waiting.finished)
 		}()
+		t.Cleanup(func() {
+			waiting.cancel()
+			<-waiting.finished
+		})
 		return waiting
 	}
 	capacity := startContender("capacity", "heavy", nil)
 	named := startContender("named resource", "cheap", []string{"fixture-db"})
-	for _, waiting := range []contender{capacity, named} {
+	for _, waiting := range []*contender{capacity, named} {
 		select {
-		case next := <-waiting.done:
-			_ = next.Close()
-			t.Fatalf("%s acquired while original descendant was alive", waiting.name)
-		case acquireErr := <-waiting.errors:
-			t.Fatalf("%s contender refused instead of waiting for custody: %v", waiting.name, acquireErr)
-		case <-time.After(150 * time.Millisecond):
+		case <-waiting.observed:
+		case <-waiting.finished:
+			t.Fatalf("%s contender completed before cancellation: acquired=%t err=%v", waiting.name, waiting.result.acquired, waiting.result.err)
+		case <-t.Context().Done():
+			t.Fatalf("%s contender did not observe a failed acquisition: %v", waiting.name, t.Context().Err())
+		}
+		if !liveCustodyRef(prober, child) {
+			t.Fatalf("exact descendant %d died before %s observed held custody", child.Pid, waiting.name)
 		}
 	}
 
 	cancelRun()
 	select {
-	case runErr := <-runDone:
+	case <-runDone:
 		if runErr == nil || !errors.Is(runErr, context.Canceled) {
 			t.Fatalf("cancelled native command must remain non-green: %v", runErr)
 		}
-	case <-time.After(8 * time.Second):
-		t.Fatal("resource command did not settle after cancellation")
+	case <-t.Context().Done():
+		t.Fatalf("resource command did not settle after cancellation: %v", t.Context().Err())
 	}
-	if liveCustodyRef(prober, child) {
-		t.Fatalf("exact descendant %d survived cancelled command custody", child.Pid)
+	waitCustodyTerminal(t, prober, child)
+	markerFound := false
+	for _, file := range first.Files() {
+		if !strings.HasPrefix(filepath.Base(file.Name()), "lease-") {
+			continue
+		}
+		markerFound = true
+		marker, _, readErr := readHostLeaseRecord(file)
+		if readErr != nil || !marker.Cleared {
+			t.Fatalf("cancelled command returned without a clean custody marker: marker=%+v err=%v", marker, readErr)
+		}
+	}
+	if !markerFound {
+		t.Fatal("cancelled command returned without a custody marker")
 	}
 	if err := first.Close(); err != nil {
 		t.Fatal(err)
 	}
 	firstClosed = true
-	for _, waiting := range []contender{capacity, named} {
+	for _, waiting := range []*contender{capacity, named} {
 		select {
-		case next := <-waiting.done:
-			if liveCustodyRef(prober, child) {
-				_ = next.Close()
-				t.Fatalf("%s acquired while exact descendant %d was alive", waiting.name, child.Pid)
+		case <-waiting.finished:
+			if !waiting.result.acquired || waiting.result.err != nil {
+				t.Fatalf("%s contender failed after exact descendant died: acquired=%t err=%v", waiting.name, waiting.result.acquired, waiting.result.err)
 			}
-			if err := MarkHostResourcesClean(next.Files()); err != nil {
-				_ = next.Close()
-				t.Fatal(err)
-			}
-			if err := next.Close(); err != nil {
-				t.Fatal(err)
-			}
-		case acquireErr := <-waiting.errors:
-			t.Fatalf("%s contender failed after exact descendant died: %v", waiting.name, acquireErr)
-		case <-contenderCtx.Done():
-			t.Fatalf("%s remained unavailable after exact descendant died: %v", waiting.name, contenderCtx.Err())
+		case <-t.Context().Done():
+			t.Fatalf("%s remained unavailable after exact descendant died: %v", waiting.name, t.Context().Err())
 		}
 	}
 }

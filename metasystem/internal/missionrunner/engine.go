@@ -55,7 +55,10 @@ type Engine struct {
 	Root         string
 	Installation string
 	Mission      string
-	emitter      events.Emitter
+	// Now supplies this engine's artifact clock. Nil keeps wall-clock
+	// behavior; fixtures set it without changing time for another engine.
+	Now     func() time.Time
+	emitter events.Emitter
 	// unattendedCheckout is the MISSION-START fact:
 	// true when the checkout lease carried this mission's own lineage as
 	// the loop began — the unattended arming's signature. A live read at
@@ -211,6 +214,17 @@ func clipSummary(text string) string {
 // nowISO is the timestamp format every runner artifact carries.
 func nowISO() string {
 	return time.Now().UTC().Format("2006-01-02T15:04:05Z")
+}
+
+func (e *Engine) nowISO() string {
+	return e.now().Format("2006-01-02T15:04:05Z")
+}
+
+func (e *Engine) now() time.Time {
+	if e.Now != nil {
+		return e.Now().UTC()
+	}
+	return time.Now().UTC()
 }
 
 // randomHex returns n random bytes as lowercase hex, for turn ids, instance

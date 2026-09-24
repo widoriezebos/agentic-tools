@@ -269,34 +269,20 @@ func turnOf(t *testing.T, response *httptest.ResponseRecorder) string {
 // drain reads the event stream until the turn ends.
 func drain(t *testing.T, events <-chan partner.Event) {
 	t.Helper()
-	deadline := time.NewTimer(20 * time.Second)
-	defer deadline.Stop()
-	for {
-		select {
-		case event := <-events:
-			if event.Kind == partner.EventDone || event.Kind == partner.EventStopped || event.Kind == partner.EventError {
-				return
-			}
-		case <-deadline.C:
-			t.Fatal("the turn never ended")
+	for event := range events {
+		if event.Kind == partner.EventDone || event.Kind == partner.EventStopped || event.Kind == partner.EventError {
 			return
 		}
 	}
+	t.Fatal("the turn never ended")
 }
 
 func waitForKind(t *testing.T, events <-chan partner.Event, kind string) {
 	t.Helper()
-	deadline := time.NewTimer(20 * time.Second)
-	defer deadline.Stop()
-	for {
-		select {
-		case event := <-events:
-			if event.Kind == kind {
-				return
-			}
-		case <-deadline.C:
-			t.Fatalf("no %s beat arrived", kind)
+	for event := range events {
+		if event.Kind == kind {
 			return
 		}
 	}
+	t.Fatalf("no %s beat arrived", kind)
 }

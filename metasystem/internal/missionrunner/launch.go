@@ -299,7 +299,7 @@ func (e *Engine) cleanupStaleLease() error {
 		}
 		for key, value := range map[string]any{
 			"status": "failed", "outcome": "failed",
-			"error": "turn-lost", "detail": "turn-lost", "hostTermination": termination, "endedAt": nowISO(),
+			"error": "turn-lost", "detail": "turn-lost", "hostTermination": termination, "endedAt": e.nowISO(),
 		} {
 			turn[key] = value
 		}
@@ -415,7 +415,7 @@ func (e *Engine) pinVerifiedContract(mode string, snapshot []byte, approvedSHA s
 		fences = map[string]any{
 			"schemaVersion": 1,
 			"missionId":     e.Mission,
-			"startedAt":     nowISO(),
+			"startedAt":     e.nowISO(),
 			"cycles":        0,
 			"reservations":  map[string]any{},
 		}
@@ -447,7 +447,7 @@ func (e *Engine) pinVerifiedContract(mode string, snapshot []byte, approvedSHA s
 			// The never-born mission spent none of its sealed budget:
 			// the remnant's clock resets so an interrupted cleanup
 			// cannot eat the first cycle's wall time.
-			fences["startedAt"] = nowISO()
+			fences["startedAt"] = e.nowISO()
 		}
 	}
 	sum := sha256.Sum256(snapshot)

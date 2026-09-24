@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestUpAssociationIgnoresEnv(t *testing.T) {
@@ -128,14 +129,8 @@ func TestExplicitIdentityFallbackRequiresAndVerifiesTheRecordedPair(t *testing.T
 }
 
 func TestExplicitIdentityFallbackRejectsALiveStrangerTuple(t *testing.T) {
-	command := exec.Command("sleep", "30")
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = command.Process.Kill()
-		_, _ = command.Process.Wait()
-	})
+	held := testutil.StartHeldProcess(t, exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :"))
+	command := held.Command
 	exact, state, err := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("read child identity: %v %s", err, state)

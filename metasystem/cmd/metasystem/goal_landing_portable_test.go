@@ -27,15 +27,17 @@ import (
 // Its tracked build script only wraps the MetaSystem engine installed for the
 // fixture; application acceptance never invokes a Go package gate.
 type portableProofFixture struct {
-	t              *testing.T
-	root           string
-	engine         string
-	admissionDir   string
-	baselineSource string
-	buildCounter   string
-	nativeCounter  string
-	contract       testpolicy.Contract
-	proofCommand   proofBinaryFixture
+	t                 *testing.T
+	root              string
+	engine            string
+	admissionDir      string
+	baselineSource    string
+	buildCounter      string
+	nativeCounter     string
+	installedSnapshot string
+	installedDigest   string
+	contract          testpolicy.Contract
+	proofCommand      proofBinaryFixture
 }
 
 func newPortableProofFixture(t *testing.T) *portableProofFixture {
@@ -1076,11 +1078,19 @@ func TestCommandApplicationGreenTipCannotHideRedPrefix(t *testing.T) {
 }
 
 func TestCommandApplicationFreshEpisodeResumesAndRenews(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	t.Setenv("METASYSTEM_GOAL_NOW", now.Format(time.RFC3339))
 	fixture := newPortableProofFixture(t)
+	processTable := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processTable)
 	fixture.writeEpisodeContract()
 	tree := fixture.commit("declare fresh command observation")
 	base := []string{"--root", fixture.root, "--goal", "portable", "--tree", tree, "--mode", "auto", "--purpose", "delivery"}
-	expires := time.Now().UTC().Add(time.Hour).Format(time.RFC3339)
+	expiresAt := now.Add(time.Hour)
+	expires := expiresAt.Format(time.RFC3339)
 	episode := func(digit string) []string {
 		return append(append([]string(nil), base...), "--fresh-episode", strings.Repeat(digit, 64), "--fresh-expires-at", expires)
 	}
@@ -1109,6 +1119,18 @@ func TestCommandApplicationFreshEpisodeResumesAndRenews(t *testing.T) {
 	_, observed = fixture.counts()
 	if observed["a"] != 2 {
 		t.Errorf("new episode reused an earlier fresh observation: %v", observed)
+	}
+	for _, boundary := range []struct {
+		name string
+		now  time.Time
+	}{{name: "at-expiry", now: expiresAt}, {name: "after-expiry", now: expiresAt.Add(time.Nanosecond)}} {
+		t.Run(boundary.name, func(t *testing.T) {
+			t.Setenv(goalNowEnvironment, boundary.now.Format(time.RFC3339Nano))
+			status, output := fixture.command(append([]string{"test", "verify"}, second...)...)
+			if status == 0 || !strings.Contains(output, "expired") {
+				t.Fatalf("public freshness verification at %s returned status=%d output=%s", boundary.now, status, output)
+			}
+		})
 	}
 }
 

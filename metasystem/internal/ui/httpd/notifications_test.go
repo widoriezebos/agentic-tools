@@ -224,8 +224,9 @@ func streamedFrom(t *testing.T, info Info, lastEventID string) *opened {
 	return stream
 }
 
-// line is the next line the stream sent. A stream that says nothing is the
-// bug, so this fails rather than waiting forever.
+// line is the next line the stream sent. A stream that says nothing hangs
+// here until the test binary's own deadline: no timer of this test's own
+// decides that verdict.
 func (o *opened) line(t *testing.T) string {
 	t.Helper()
 	select {
@@ -233,8 +234,6 @@ func (o *opened) line(t *testing.T) string {
 		return line
 	case err := <-o.problems:
 		t.Fatalf("the stream ended: %v", err)
-	case <-time.After(10 * time.Second):
-		t.Fatal("the stream said nothing")
 	}
 	return ""
 }

@@ -203,7 +203,12 @@ func TestDesignAndReadLaunchesRunThePackCheck(t *testing.T) {
 			content = "| Unit | Lines |\n|---|---|\n| fixture | 1 |\n" + content
 		}
 		brief := writeLaunchFile(t, kind+".md", content)
-		if err := m.Admit(StartSpec{Kind: kind, Brief: brief, WorkingDirectory: t.TempDir()}); err != nil {
+		spec := StartSpec{Kind: kind, Brief: brief, WorkingDirectory: t.TempDir()}
+		if kind == "critique" {
+			spec.Tag = "pack-check"
+			spec.Inputs = []string{writeLaunchFile(t, "page.md", "page\n"), writeLaunchFile(t, "design.md", "design\n")}
+		}
+		if err := m.Admit(spec); err != nil {
 			t.Fatalf("%s should not check packs: %v", kind, err)
 		}
 	}

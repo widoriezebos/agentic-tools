@@ -2,6 +2,7 @@ package missionrunner
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,18 +16,54 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
-func fixtureOrphanTurn(t *testing.T) (string, Item, *exec.Cmd) {
+type heldOrphanProcess struct {
+	command *exec.Cmd
+	release *os.File
+	done    chan struct{}
+}
+
+func fixtureOrphanTurn(t *testing.T) (string, Item, *heldOrphanProcess) {
 	t.Helper()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	tag := "metasystem-host-orphan-fixture"
-	command := exec.Command("sleep", "30")
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := command.Start(); err != nil {
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
 		t.Fatal(err)
 	}
+	releaseRead, releaseWrite, err := os.Pipe()
+	if err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		t.Fatal(err)
+	}
+	command := exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :")
+	command.Stdin = releaseRead
+	command.ExtraFiles = []*os.File{readyWrite}
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		_ = releaseRead.Close()
+		_ = releaseWrite.Close()
+		t.Fatal(err)
+	}
+	_ = readyWrite.Close()
+	_ = releaseRead.Close()
+	process := &heldOrphanProcess{command: command, release: releaseWrite, done: make(chan struct{})}
+	go func() { _ = command.Wait(); close(process.done) }()
+	t.Cleanup(func() {
+		_ = process.release.Close()
+		<-process.done
+	})
+	var ready [1]byte
+	if _, err := io.ReadFull(readyRead, ready[:]); err != nil || ready[0] != 'x' {
+		_ = readyRead.Close()
+		t.Fatalf("orphan readiness=%q err=%v", ready, err)
+	}
+	_ = readyRead.Close()
 	started, err := processStartedAt(command.Process.Pid)
 	if err != nil {
 		command.Process.Kill()
@@ -63,7 +100,7 @@ func fixtureOrphanTurn(t *testing.T) (string, Item, *exec.Cmd) {
 		t.Fatal("fixture item identity is invalid")
 	}
 	item.Liveness = identity.Alive.String()
-	return root, item, command
+	return root, item, process
 }
 
 func installWindDownClockWaitingFor(t *testing.T, waited <-chan struct{}) {
@@ -73,9 +110,7 @@ func installWindDownClockWaitingFor(t *testing.T, waited <-chan struct{}) {
 }
 
 func TestInventoryFindsOrphanTurnWithoutRunner(t *testing.T) {
-	root, _, command := fixtureOrphanTurn(t)
-	defer command.Wait()
-	defer command.Process.Kill()
+	root, _, _ := fixtureOrphanTurn(t)
 	items, err := Inventory(root)
 	if err != nil {
 		t.Fatal(err)
@@ -86,9 +121,7 @@ func TestInventoryFindsOrphanTurnWithoutRunner(t *testing.T) {
 }
 
 func TestStopTurnReportsSurvivorWhenSignalsDoNothing(t *testing.T) {
-	_, item, command := fixtureOrphanTurn(t)
-	defer command.Wait()
-	defer command.Process.Kill()
+	_, item, _ := fixtureOrphanTurn(t)
 	// The grace and kill windows pass on the artificial clock; the process
 	// probes stay real, and the group stays alive because nothing signals it.
 	installFakeClock(t)
@@ -198,11 +231,8 @@ func TestRunnerSignalClosesTurnWithoutChangingMissionState(t *testing.T) {
 }
 
 func TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost(t *testing.T) {
-	root, turn, command := fixtureOrphanTurn(t)
-	waited := make(chan struct{})
-	go func() { _ = command.Wait(); close(waited) }()
-	t.Cleanup(func() { _ = command.Process.Kill(); <-waited })
-	installWindDownClockWaitingFor(t, waited)
+	root, turn, process := fixtureOrphanTurn(t)
+	installWindDownClockWaitingFor(t, process.done)
 
 	engine := NewEngine(root, "orphan")
 	recordPath, _, _ := engine.runnerPaths()
@@ -238,7 +268,7 @@ func TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost(t *testing.T) {
 	if err != nil || outcome.Result != "already-gone" {
 		t.Fatalf("dead runner stop: %#v, %v", outcome, err)
 	}
-	<-waited
+	<-process.done
 	stoppedRunner, err := readJSONDoc(recordPath)
 	if err != nil || stoppedRunner["status"] != "stopped" {
 		t.Fatalf("runner conclusion: %#v, %v", stoppedRunner, err)
@@ -258,11 +288,8 @@ func TestStopDeadRunnerReleasesLeaseAndClosesOrphanHost(t *testing.T) {
 }
 
 func TestStopLiveRunnerSignalsOwnedGroup(t *testing.T) {
-	root, runner, command := fixtureOrphanTurn(t)
-	waited := make(chan struct{})
-	go func() { _ = command.Wait(); close(waited) }()
-	t.Cleanup(func() { _ = command.Process.Kill(); <-waited })
-	installWindDownClockWaitingFor(t, waited)
+	root, runner, process := fixtureOrphanTurn(t)
+	installWindDownClockWaitingFor(t, process.done)
 	runner.Kind = ItemRunner
 	engine := NewEngine(root, runner.MissionID)
 	runner.RecordPath, _, _ = engine.runnerPaths()
@@ -276,7 +303,7 @@ func TestStopLiveRunnerSignalsOwnedGroup(t *testing.T) {
 	if err != nil || outcome.Result != "stopped" || outcome.Signal != TerminationTerm {
 		t.Fatalf("live runner stop: %#v, %v", outcome, err)
 	}
-	<-waited
+	<-process.done
 	intent, err := readJSONDoc(filepath.Join(engine.missionDir(), "stop-intent.json"))
 	if err != nil || intent["missionId"] != runner.MissionID || !intentMatchesRunner(intent, record) {
 		t.Fatalf("stop intent did not bind the signalled runner: %#v, %v", intent, err)

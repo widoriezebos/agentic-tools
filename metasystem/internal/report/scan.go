@@ -128,7 +128,7 @@ func OpenWorkSignature(ctx context.Context, root string) (string, error) {
 // never suppress this checkout's goal. Every input the scan cannot read
 // surfaces in Unreadable; enumeration failure never collapses to idle.
 func Scan(root string) goal.ScanResult {
-	return scanWithProber(root, identity.KernelProber{})
+	return scanWithProberAt(root, identity.KernelProber{}, time.Now().UTC())
 }
 
 // ScanWithCompletion performs the ordinary judgment scan and captures the
@@ -136,30 +136,34 @@ func Scan(root string) goal.ScanResult {
 // record reads. The returned capture is not part of ScanResult.
 func ScanWithCompletion(root string) (goal.ScanResult, StopCompletionCapture) {
 	root = resolveRepo(root)
-	return scanWithProberAndStatusesAndCompletion(root, identity.KernelProber{}, inFlightStatuses(root))
+	return scanWithProberAndStatusesAndCompletionAt(root, identity.KernelProber{}, inFlightStatuses(root), time.Now().UTC())
 }
 
 // ScanForBrainDeclaration applies the brain's full in-flight set before a
 // declaration exists, so quiescence cannot overlook a pending-setup job.
 func ScanForBrainDeclaration(root string) goal.ScanResult {
 	root = resolveRepo(root)
-	return scanWithProberAndStatuses(root, identity.KernelProber{}, brainInFlightStatus)
+	return scanWithProberAndStatusesAt(root, identity.KernelProber{}, brainInFlightStatus, time.Now().UTC())
 }
 
 func scanWithProber(root string, prober identity.Prober) goal.ScanResult {
-	root = resolveRepo(root)
-	return scanWithProberAndStatuses(root, prober, inFlightStatuses(root))
+	return scanWithProberAt(root, prober, time.Now().UTC())
 }
 
-func scanWithProberAndStatuses(root string, prober identity.Prober, statuses map[string]bool) goal.ScanResult {
-	scan, _ := scanWithProberAndStatusesAndCompletion(root, prober, statuses)
+func scanWithProberAt(root string, prober identity.Prober, now time.Time) goal.ScanResult {
+	root = resolveRepo(root)
+	return scanWithProberAndStatusesAt(root, prober, inFlightStatuses(root), now)
+}
+
+func scanWithProberAndStatusesAt(root string, prober identity.Prober, statuses map[string]bool, now time.Time) goal.ScanResult {
+	scan, _ := scanWithProberAndStatusesAndCompletionAt(root, prober, statuses, now)
 	return scan
 }
 
-func scanWithProberAndStatusesAndCompletion(root string, prober identity.Prober, statuses map[string]bool) (goal.ScanResult, StopCompletionCapture) {
+func scanWithProberAndStatusesAndCompletionAt(root string, prober identity.Prober, statuses map[string]bool, now time.Time) (goal.ScanResult, StopCompletionCapture) {
 	var result goal.ScanResult
 	completion := StopCompletionCapture{Records: []StopCompletionRecord{}, Unavailable: []string{}}
-	goalIntents := readGoalIntents(root)
+	goalIntents := readGoalIntentsAt(root, now)
 
 	// Busy, three classes, all file facts.
 	jobItems, jobUnreadable := busyJobs(root, statuses, goalIntents)
@@ -198,7 +202,7 @@ func scanWithProberAndStatusesAndCompletion(root string, prober identity.Prober,
 	// run readers' own failure channel. Live runs also join Busy so the
 	// STILL WORKING sentence names them.
 	result.Jobs, completion.Records, completion.Unavailable = jobFacts(root, prober, statuses, goalIntents)
-	runFacts, runBusy, runUnreadable, runCompletion, runCompletionUnavailable := runFactsFor(root, prober)
+	runFacts, runBusy, runUnreadable, runCompletion, runCompletionUnavailable := runFactsForAt(root, prober, now)
 	result.Runs = runFacts
 	result.Busy = append(result.Busy, runBusy...)
 	result.RunUnreadable = runUnreadable
@@ -218,7 +222,7 @@ func scanWithProberAndStatusesAndCompletion(root string, prober identity.Prober,
 	for _, detail := range questionUnreadable {
 		result.Unreadable = append(result.Unreadable, "question scan: "+detail)
 	}
-	result = scanDrafts(root, result)
+	result = scanDraftsAt(root, result, now)
 
 	// Plans: open steps, human waits, staleness — goals.md never counts
 	// (scanner disjointness: only the goal parser reads the ledger).
@@ -228,7 +232,7 @@ func scanWithProberAndStatusesAndCompletion(root string, prober identity.Prober,
 	return result, completion
 }
 
-func scanDrafts(root string, result goal.ScanResult) goal.ScanResult {
+func scanDraftsAt(root string, result goal.ScanResult, now time.Time) goal.ScanResult {
 	if !goal.NewWorld(root) {
 		return result
 	}
@@ -242,7 +246,7 @@ func scanDrafts(root string, result goal.ScanResult) goal.ScanResult {
 		result.Unreadable = append(result.Unreadable, "draft scan: "+err.Error())
 		return result
 	}
-	projection, err := goal.Project(endpoint, false, time.Now().UTC())
+	projection, err := goal.Project(endpoint, false, now.UTC())
 	if err != nil {
 		result.Unreadable = append(result.Unreadable, "draft scan: "+err.Error())
 		return result
@@ -504,13 +508,13 @@ func jobFacts(root string, prober identity.Prober, statuses map[string]bool, goa
 	return facts, completion, unavailable
 }
 
-// runFactsFor reads run records into typed facts, Busy items for live
+// runFactsForAt reads run records into typed facts, Busy items for live
 // runs, and the run readers' failure channel — including the attestation
 // facts behind Supervised.
-func runFactsFor(root string, prober identity.Prober) ([]goal.RunFact, []goal.Item, []string, []StopCompletionRecord, []string) {
+func runFactsForAt(root string, prober identity.Prober, now time.Time) ([]goal.RunFact, []goal.Item, []string, []StopCompletionRecord, []string) {
 	store := &run.Store{Root: root}
 	records, unreadable := store.List()
-	attested, attestErr := readRunsPass(root, prober)
+	attested, attestErr := readRunsPassAt(root, prober, now)
 	if attestErr != "" {
 		unreadable = append(unreadable, attestErr)
 	}
@@ -594,13 +598,13 @@ func normalizeRoleTitle(role string) string {
 	return strings.TrimSpace(strings.NewReplacer("-", " ", "_", " ").Replace(role))
 }
 
-func readGoalIntents(root string) map[string]string {
+func readGoalIntentsAt(root string, now time.Time) map[string]string {
 	intents := map[string]string{}
 	endpoint, err := goal.ResolveEndpoint(root)
 	if err != nil {
 		return intents
 	}
-	projection, err := goal.Project(endpoint, false, time.Now().UTC())
+	projection, err := goal.Project(endpoint, false, now.UTC())
 	if err != nil || projection.Tree == nil {
 		return intents
 	}
@@ -612,9 +616,9 @@ func readGoalIntents(root string) map[string]string {
 	return intents
 }
 
-// readRunsPass loads the watcher's attestation: the set of lifecycle
+// readRunsPassAt loads the watcher's attestation: the set of lifecycle
 // triples a FRESH pass by the LIVE armed watcher scanned.
-func readRunsPass(root string, prober identity.Prober) (map[string]bool, string) {
+func readRunsPassAt(root string, prober identity.Prober, now time.Time) (map[string]bool, string) {
 	path := filepath.Join(root, "artifacts", "agents", "supervision", "runs-pass.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -647,8 +651,8 @@ func readRunsPass(root string, prober identity.Prober) (map[string]bool, string)
 		return nil, ""
 	}
 	completed, err := time.Parse("2006-01-02T15:04:05Z", attestation.CompletedAt)
-	if err != nil || completed.After(time.Now().Add(2*time.Second)) ||
-		time.Since(completed) > 2*time.Duration(intervalSec)*time.Second {
+	if err != nil || completed.After(now.Add(2*time.Second)) ||
+		now.Sub(completed) > 2*time.Duration(intervalSec)*time.Second {
 		return nil, ""
 	}
 	if identity.AliveRef(prober, identity.Ref{Pid: attestation.WatcherPid, StartedAtSec: attestation.WatcherStart}) != identity.Alive {

@@ -2,6 +2,7 @@ package launch
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,6 +114,39 @@ func TestRefusedLaunchLeavesNoRecordAndOneRefusalRow(t *testing.T) {
 	rows, readErr := m.Store.Refusals()
 	if readErr != nil || len(rows) != 1 || rows[0].Code != "LAUNCH_BUILD_UNSIZED" {
 		t.Fatalf("rows=%+v err=%v", rows, readErr)
+	}
+}
+
+func TestMalformedCritiqueIsRefusedBeforeRecordOrSupervisor(t *testing.T) {
+	t.Parallel()
+	for _, inputCount := range []int{0, 1} {
+		inputCount := inputCount
+		t.Run(fmt.Sprintf("inputs-%d", inputCount), func(t *testing.T) {
+			t.Parallel()
+			m, _, _, _ := manager(t)
+			starts := 0
+			m.Supervisor = fakeStarter{start: func(string) { starts++ }}
+			inputs := []string{}
+			if inputCount == 1 {
+				inputs = append(inputs, writeLaunchFile(t, "design.md", "design\n"))
+			}
+			_, err := m.Start(StartSpec{
+				ID:               fmt.Sprintf("malformed-critique-%d", inputCount),
+				Kind:             "critique",
+				Tag:              "design-r1",
+				WorkingDirectory: t.TempDir(),
+				Brief:            writeLaunchFile(t, "brief.md", "critique\n"),
+				Page:             writeLaunchFile(t, "page.md", "page\n"),
+				Inputs:           inputs,
+			})
+			if err == nil || err.Error() != "critique requires --tag and two --input files" {
+				t.Fatalf("error=%v", err)
+			}
+			records, listErr := m.Store.List()
+			if listErr != nil || len(records) != 0 || starts != 0 {
+				t.Fatalf("records=%+v supervisor starts=%d err=%v", records, starts, listErr)
+			}
+		})
 	}
 }
 

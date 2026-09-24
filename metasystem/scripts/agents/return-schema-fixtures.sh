@@ -252,12 +252,9 @@ expect_v3_refusal duplicate-finding-id "$duplicate_ids" 2 "$bounded_row" \
 # The classifier has no standalone command surface. These focused package
 # invocations execute its production normalization owner and keep each
 # validation-order rule independently visible in this fixture suite.
-(
-  cd "$root"
-  go test ./internal/critique -run '^TestNormalizeRecurrenceToUnproven$' -count=1
-  go test ./internal/critique -run '^TestNormalizeDangerousFactsToSevere$' -count=1
-  go test ./internal/critique -run '^TestNormalizeUnknownDangerousClassStaysUnproven$' -count=1
-)
+harness_fixture_go_test "$root" ./internal/critique -run '^TestNormalizeRecurrenceToUnproven$' -count=1
+harness_fixture_go_test "$root" ./internal/critique -run '^TestNormalizeDangerousFactsToSevere$' -count=1
+harness_fixture_go_test "$root" ./internal/critique -run '^TestNormalizeUnknownDangerousClassStaysUnproven$' -count=1
 
 # Version 1 and version 2 are frozen byte contracts, represented by their
 # engine-computed schema digests.

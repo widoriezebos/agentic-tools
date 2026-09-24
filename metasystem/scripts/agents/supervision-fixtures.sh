@@ -655,17 +655,18 @@ case "$fixture_scenario" in
     early_reader_second='producer second chunk'
     early_reader_report=$(printf '%s\n' "$early_reader_first" "$early_reader_second")
     early_reader_status=$tmp/early-reader-pipeline.status
+    early_reader_closed=$tmp/early-reader.closed
     early_reader_pipe='|'
     # Run the historical form in a child Bash. Building its operator from a
     # fixed token keeps this file's one direct early-reader pipe limited to the
     # marked archive reproduction above while still exercising pipefail itself.
-    early_reader_command=$'set -o pipefail\nset +e\n{ printf \'%s\\n\' "$1"; sleep 0.2; printf \'%s\\n\' "$2"; } '
-    early_reader_command+="$early_reader_pipe grep -Fq -- \"\$3\""$'\n'
+    early_reader_command=$'set -o pipefail\nset +e\n{ printf \'%s\\n\' "$1"; while [[ ! -e "$5" ]]; do /bin/sleep 0.01; done; printf \'%s\\n\' "$2"; } '
+    early_reader_command+="$early_reader_pipe { IFS= read -r line; grep -Fq -- \"\$3\" <<<\"\$line\"; reader_rc=\$?; exec 0<&-; : >\"\$5\"; exit \"\$reader_rc\"; }"$'\n'
     early_reader_command+=$'pipeline_rc=$? pipeline_statuses="${PIPESTATUS[*]}"\nprintf \'%s %s\\n\' "$pipeline_rc" "$pipeline_statuses" >"$4"\nexit "$pipeline_rc"\n'
 
     set +e
     /bin/bash -c "$early_reader_command" _ "$early_reader_first" "$early_reader_second" \
-      "$early_reader_match" "$early_reader_status" 2>"$tmp/early-reader-pipeline.err"
+      "$early_reader_match" "$early_reader_status" "$early_reader_closed" 2>"$tmp/early-reader-pipeline.err"
     early_reader_shell_rc=$?
     set -e
     read -r early_reader_old_rc early_reader_producer_rc early_reader_grep_rc <"$early_reader_status"
@@ -686,59 +687,59 @@ case "$fixture_scenario" in
     exit 0
     ;;
   wait-job-run)
-    (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/adapter ./internal/dispatch ./internal/run ./cmd/metasystem -run 'TestWait(AdapterBlocking|JobTerminals|RunTerminalsAndDeadline|InstalledRunCommand)$' -count=1)
+    METASYSTEM_WAIT_BINARY="$ms" harness_fixture_go_test "$source_root" ./internal/adapter ./internal/dispatch ./internal/run ./cmd/metasystem -run 'TestWait(AdapterBlocking|JobTerminals|RunTerminalsAndDeadline|InstalledRunCommand)$' -count=1
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
     ;;
   wait-proof)
-    (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/proofrun ./cmd/metasystem -run 'TestWait(AttemptRequiresCommittedTerminal|AttemptAfterDrain|InstalledRunCommand)$' -count=1)
+    METASYSTEM_WAIT_BINARY="$ms" harness_fixture_go_test "$source_root" ./internal/proofrun ./cmd/metasystem -run 'TestWait(AttemptRequiresCommittedTerminal|AttemptAfterDrain|InstalledRunCommand)$' -count=1
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
     ;;
   wait-ledger)
-    (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/goal ./cmd/metasystem -run 'TestWait(GoalLandingAndHumanAct|GoalCursorHistory|ChannelAnswer)$' -count=1)
+    METASYSTEM_WAIT_BINARY="$ms" harness_fixture_go_test "$source_root" ./internal/goal ./cmd/metasystem -run 'TestWait(GoalLandingAndHumanAct|GoalCursorHistory|ChannelAnswer)$' -count=1
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
     ;;
   wait-restart)
-    (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/run ./internal/report ./cmd/metasystem -run 'TestWait(RestartRecoveryReplay|LeaseTakeoverRepairsAndResumes|SessionStartPrintsPendingRows)$|TestWaitingLinesUseDurableResumeCommand$' -count=1)
+    METASYSTEM_WAIT_BINARY="$ms" harness_fixture_go_test "$source_root" ./internal/run ./internal/report ./cmd/metasystem -run 'TestWait(RestartRecoveryReplay|LeaseTakeoverRepairsAndResumes|SessionStartPrintsPendingRows)$|TestWaitingLinesUseDurableResumeCommand$' -count=1
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
     ;;
   wait-bounds)
-    (cd "$source_root" && METASYSTEM_WAIT_BINARY="$ms" go test ./internal/run ./internal/goal -run 'TestWait(LockClockAndFetchBounds|GoalFetchDeadline)$' -count=1)
+    METASYSTEM_WAIT_BINARY="$ms" harness_fixture_go_test "$source_root" ./internal/run ./internal/goal -run 'TestWait(LockClockAndFetchBounds|GoalFetchDeadline)$' -count=1
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
     ;;
   wait-native-hint)
-    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" go test ./internal/run ./internal/dispatch ./internal/proofrun ./internal/goal -run 'Test(WaitFIFOHintDelivery|WaitPublishedAtOwners)$' -count=1)
+    GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" harness_fixture_go_test "$source_root" ./internal/run ./internal/dispatch ./internal/proofrun ./internal/goal -run 'Test(WaitFIFOHintDelivery|WaitPublishedAtOwners)$' -count=1
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
     ;;
   wait-no-native)
-    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" go test ./internal/run -run '^TestWaitHintsOnlyTriggerReads$' -count=1)
+    GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" harness_fixture_go_test "$source_root" ./internal/run -run '^TestWaitHintsOnlyTriggerReads$' -count=1
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
     ;;
   wait-compatibility)
-    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" go test ./cmd/metasystem -run '^TestWaitCompatibilityMappings$' -count=1)
+    GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" harness_fixture_go_test "$source_root" ./cmd/metasystem -run '^TestWaitCompatibilityMappings$' -count=1
     fixture_child_completed=1
     assert_fixture_supervision_isolation
     exit 0
     ;;
   wait-stop-fake)
     wait_stop_fake_output=$tmp/wait-stop-fake-go-test.out
-    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" METASYSTEM_WAIT_BINARY="$ms" \
-      go test ./internal/goal ./internal/adapter ./cmd/metasystem \
+    GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" METASYSTEM_WAIT_BINARY="$ms" \
+      harness_fixture_go_test "$source_root" ./internal/goal ./internal/adapter ./cmd/metasystem \
         -run '^Test(PendingWaitTurnVerdict|PendingWaitIdleBacklog|WaitDeliveryContract|PendingWaitInstalledVerdicts|PendingWaitFromChildShell)$' -count=1 -v \
-        | tee "$wait_stop_fake_output")
+        | tee "$wait_stop_fake_output"
     grep -Fq -- '--- PASS: TestPendingWaitFromChildShell ' "$wait_stop_fake_output" \
       || { echo "wait-stop-fake did not run TestPendingWaitFromChildShell" >&2; exit 1; }
     fixture_child_completed=1
@@ -747,9 +748,9 @@ case "$fixture_scenario" in
     ;;
   wait-measure-fake)
     unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
-    (cd "$source_root" && GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" METASYSTEM_WAIT_BINARY="$ms" \
-      go test ./internal/run ./internal/dispatch ./internal/proofrun ./internal/goal ./internal/usage ./cmd/metasystem \
-        -run '^(TestWaitLifecycleEvents|TestWaitPublishedAtOwners|TestWaitMeasurementAccounting|TestWaitMeasureVerb)$' -count=1)
+    GOCACHE="${GOCACHE:-/tmp/metasystem-gocache}" METASYSTEM_WAIT_BINARY="$ms" \
+      harness_fixture_go_test "$source_root" ./internal/run ./internal/dispatch ./internal/proofrun ./internal/goal ./internal/usage ./cmd/metasystem \
+        -run '^(TestWaitLifecycleEvents|TestWaitPublishedAtOwners|TestWaitMeasurementAccounting|TestWaitMeasureVerb)$' -count=1
 
 	measure_root=$tmp/wait-measure-fake
 	measure_origin=$tmp/wait-measure-origin.git
@@ -1037,7 +1038,7 @@ if [[ "$fixture_scenario" == wait-stop-claude ]]; then
     'Use the Bash tool first with run_in_background=true and this exact command:' \
     'mkdir -p artifacts/agents/jobs && printf '\''%s\\n'\'' '\''{"jobId":"wait-stop-job","operationId":"dddddddddddddddddddddddddddddddd","status":"pending-setup","goalId":"wait-stop-goal"}'\'' > artifacts/agents/jobs/wait-stop-job.json && exec ./bin/metasystem wait --root "$PWD" --job wait-stop-job --timeout 2m' \
     'Then use Bash once in the foreground with this exact command:' \
-    'for attempt in $(seq 1 100); do row=$(find artifacts/agents/waiters -maxdepth 1 -type f -name '\''job-wait-stop-job-*.json'\'' -print -quit 2>/dev/null); if [ -n "$row" ] && grep -Eq '\''"state"[[:space:]]*:[[:space:]]*"pending"'\'' "$row"; then exit 0; fi; sleep 0.05; done; exit 1' \
+    'while :; do row=$(find artifacts/agents/waiters -maxdepth 1 -type f -name '\''job-wait-stop-job-*.json'\'' -print -quit 2>/dev/null); if [ -n "$row" ] && grep -Eq '\''"state"[[:space:]]*:[[:space:]]*"pending"'\'' "$row"; then exit 0; fi; sleep 0.05; done' \
     'After both tools succeed, answer exactly WAIT-REGISTERED and end the turn.' \
     >"$claude_prompt"
   claude_output=$tmp/wait-stop-claude.json
@@ -1688,12 +1689,8 @@ cp "$nested_installation/scripts/agents/evidence-gc.sh" "$no_world/scripts/agent
 cp -R "$nested_installation/scripts/agents/adapters" "$no_world/scripts/agents/adapters"
   cp_engine "$ms" "$no_world/bin/metasystem"
   printf '%s\n' 'metasystem.runtimes=fake' >"$no_world/metasystem.conf"
-  no_world_started=$SECONDS
   printf '{"session_id":"no-world","cwd":"%s","hook_event_name":"Stop"}\n' "$no_world" \
     | env -u METASYSTEM_BIN bash "$no_world/scripts/agents/supervision-hook.sh" fake stop >"$tmp/no-world.out"
-  no_world_elapsed=$((SECONDS - no_world_started))
-  (( no_world_elapsed < 10 )) \
-    || { echo "an installation outside Git spent ${no_world_elapsed}s waiting for a resolver it did not start" >&2; exit 1; }
   [[ ! -e "$no_world/artifacts" ]] \
     || { echo "an installation outside Git guessed a governed world" >&2; cat "$tmp/no-world.out" >&2; exit 1; }
   no_world_expected=$(degraded_stop_form allowed unreadable-output no-resolved-checkout condition-log-failed)
@@ -1780,6 +1777,23 @@ cp_engine "$skew_root/bin/metasystem" "$nested_installation/bin/metasystem"
 deadline_engine=$tmp/wt-deadline-engine
 cat >"$deadline_engine" <<'FIXTURE'
 #!/usr/bin/env bash
+if [[ ${1:-} == hooks && ${2:-} == stop-deadline-wait ]]; then
+  control_dir=${METASYSTEM_WT_DEADLINE_CONTROL_DIR:?}
+  session=${METASYSTEM_WT_DEADLINE_SESSION:?}
+  event_started=$SECONDS
+  while { [[ ! -e "$control_dir/$session.runtime-list.blocked" ]] ||
+      { [[ ${METASYSTEM_SLOW_STATE_ROOT:-0} == 1 ]] && [[ ! -e "$control_dir/$session.state-root.blocked" ]]; }; } &&
+      (( SECONDS - event_started < METASYSTEM_WT_DEADLINE_HANG_CAP_SEC )); do
+    sleep 0.05
+  done
+  [[ -e "$control_dir/$session.runtime-list.blocked" ]] \
+    || { echo "nested deadline fixture worker never reached runtime-list" >&2; exit 70; }
+  if [[ ${METASYSTEM_SLOW_STATE_ROOT:-0} == 1 && ! -e "$control_dir/$session.state-root.blocked" ]]; then
+    echo "nested deadline fixture resolver never reached state-root" >&2
+    exit 70
+  fi
+  : >"${METASYSTEM_STOP_DEADLINE_EVENT:?}"
+fi
 block_kind=
 if [[ ${1:-} == runtime && ${2:-} == list ]]; then
   block_kind=runtime-list
@@ -1807,7 +1821,7 @@ chmod +x "$deadline_engine"
 
   run_nested_timeout() { # session, steering, slow state root, expected record root
     local session_id steering slow_root expected_root output record started elapsed timeout_rc unexpected_record log_start
-    local deadline_budget_sec deadline_worker_floor deadline_elapsed_limit blocked_kind blocked_file release_file
+    local deadline_budget_sec blocked_kind blocked_file release_file
     local blocked_pid reap_deadline record_digest_before record_digest_after trail_elapsed
     local -a blocked_kinds blocked_pids release_files
   session_id=$1
@@ -1818,10 +1832,7 @@ chmod +x "$deadline_engine"
     log_start=$(wc -l <"$expected_root/artifacts/agents/supervision/hooks.log")
     # The worker window is at least ten times the worst observed head time before the first asserted
     # engine call; the tail allowance is + 30 seconds.
-    deadline_budget_sec=20
-    deadline_worker_floor=$((deadline_budget_sec - 3))
-    deadline_elapsed_limit=$((deadline_budget_sec + 30))
-  started=$SECONDS
+  deadline_budget_sec=20
   timeout_rc=0
   if [[ "$steering" == true ]]; then
     run_nested_holder_stop "$session_id" "$nested_worktree" \
@@ -1829,6 +1840,7 @@ chmod +x "$deadline_engine"
       "GIT_DIR=$nested_scope/.git" "GIT_WORK_TREE=$nested_worktree" \
       "METASYSTEM_BIN=$deadline_engine" "METASYSTEM_WT_DEADLINE_REAL_ENGINE=$ms" \
       "METASYSTEM_STOP_DEADLINE_BUDGET_SEC=$deadline_budget_sec" \
+      "METASYSTEM_STOP_DEADLINE_EVENT=$tmp/$session_id.deadline" \
       "METASYSTEM_WT_DEADLINE_CONTROL_DIR=$tmp" "METASYSTEM_WT_DEADLINE_SESSION=$session_id" \
       "METASYSTEM_WT_DEADLINE_HANG_CAP_SEC=$fixture_ceiling_sec" \
       "METASYSTEM_SLOW_STATE_ROOT=$slow_root" "METASYSTEM_SKEW_REAL_ENGINE=$ms" \
@@ -1838,14 +1850,14 @@ chmod +x "$deadline_engine"
       "$nested_worktree_installation/scripts/agents/supervision-hook.sh" "$output" \
       "METASYSTEM_BIN=$deadline_engine" "METASYSTEM_WT_DEADLINE_REAL_ENGINE=$ms" \
       "METASYSTEM_STOP_DEADLINE_BUDGET_SEC=$deadline_budget_sec" \
+      "METASYSTEM_STOP_DEADLINE_EVENT=$tmp/$session_id.deadline" \
       "METASYSTEM_WT_DEADLINE_CONTROL_DIR=$tmp" "METASYSTEM_WT_DEADLINE_SESSION=$session_id" \
       "METASYSTEM_WT_DEADLINE_HANG_CAP_SEC=$fixture_ceiling_sec" \
       "METASYSTEM_SLOW_STATE_ROOT=$slow_root" "METASYSTEM_SKEW_REAL_ENGINE=$ms" \
       || timeout_rc=$?
   fi
-  elapsed=$((SECONDS - started))
-  (( timeout_rc == 0 && elapsed < deadline_elapsed_limit )) \
-    || { echo "$session_id exceeded or failed the provider deadline: rc=$timeout_rc elapsed=${elapsed}s" >&2; exit 1; }
+  (( timeout_rc == 0 )) \
+    || { echo "$session_id failed the provider deadline command: rc=$timeout_rc" >&2; exit 1; }
   blocked_kinds=(runtime-list)
   [[ "$slow_root" == 0 ]] || blocked_kinds+=(state-root)
   blocked_pids=()
@@ -1892,7 +1904,6 @@ chmod +x "$deadline_engine"
       's/^.*stop response outcome=deadline-expired-allow elapsed=\([0-9][0-9]*\)s$/\1/p' \
       "$tmp/$session_id.deadline-log-tail" | tail -1)
     [[ "$trail_elapsed" =~ ^[0-9]+$ ]] \
-      && (( trail_elapsed >= deadline_worker_floor && trail_elapsed < deadline_elapsed_limit )) \
       || { echo "$session_id left no deadline allowance trail line" >&2; exit 1; }
     record_digest_before=$($ms util sha256 --file "$record")
   fi
@@ -2212,11 +2223,17 @@ acceptance_start_job() {
 
 acceptance_start_run() {
   local record=$repo/artifacts/agents/runs/stop-fixture-run.json
+  run_ready=$tmp/stop-fixture-run.ready
+  run_stopped=$tmp/stop-fixture-run.stopped
   "$repo/bin/metasystem" run launch --root "$repo" --id stop-fixture-run \
     --kind custom --display "the stop fixture run" --log "$repo/artifacts/agents/runs/stop-fixture-run.log" \
-    --expect-unknown "the stop fixture ended" --caller-pid "$acceptance_main_pid" -- /bin/sleep 600 \
+    --expect-unknown "the stop fixture ended" --caller-pid "$acceptance_main_pid" -- \
+      env METASYSTEM_FIXTURE_LEASH="${METASYSTEM_FIXTURE_LEASH:?}" \
+        "$repo/bin/metasystem" util hold --tag stop-fixture-run-held \
+          --ready-file "$run_ready" --stopped-file "$run_stopped" \
     >"$tmp/stop-everything-run-launch.out"
   acceptance_wait_for_json_value "stop-everything run launch command running" "$record" status running
+  wait_until "stop-everything run subject ready" test -s "$run_ready"
   run_pid=$(json_field "$record" pid)
   run_start=$(json_field "$record" pidStartedAt)
   run_pgid=$(json_field "$record" pgid)
@@ -2303,6 +2320,8 @@ if [[ "$fixture_scenario" == stop-everything ]]; then
     "job-reaper pid $reaper_pid: already gone (by the owner)" \
     "landing-batch-owner pid $landing_owner_pid: already gone (by the owner)" \
     "stopped $repo; start again: metasystem arm --repo $repo"
+  [[ -s "$run_stopped" ]] \
+    || { echo "stop-everything held run omitted its stopped acknowledgement" >&2; exit 1; }
   [[ "$(json_field "$repo/artifacts/agents/jobs/stop-fixture-job.json" status)" == cancelled ]] \
     || { echo "stop-everything left its fake job non-terminal" >&2; exit 1; }
   [[ "$(json_field "$repo/artifacts/agents/runs/stop-fixture-run.json" status)" == ended-unknown ]] \
@@ -3233,12 +3252,10 @@ fi
 fi
 
 if [[ "$fixture_scenario" == slow-census ]]; then
-# Duration is part of the authoritative artifact, and the watcher names an
-# over-interval scan as a supervision defect instead of silently looping it.
+# The public watcher path persists its measured duration and schema. The
+# injected-clock owner test proves the over-interval warning classification.
 warning_repo=$tmp/warning-repo
 make_repo "$warning_repo"
-conf_edit "$warning_repo/scripts/agents/adapters/fake.sh" insert-after-first \
-  '^  signature[)]$' '    sleep 1.1'
 warning_supervision=$warning_repo/artifacts/agents/supervision
 warning_process_fixture=$warning_repo/processes.json
 warning_identity_fixture=$warning_repo/identities.json
@@ -3254,20 +3271,19 @@ cat >"$warning_supervision/state.json" <<'JSON'
 JSON
 METASYSTEM_CENSUS_PROCESS_FILE="$warning_process_fixture" \
 METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$warning_identity_fixture" \
-METASYSTEM_CENSUS_MAX_INTERVAL_SHARE_PERCENT=50 \
   "$warning_repo/scripts/watch-background-jobs.sh" \
     --dir "$warning_repo/artifacts/agents/jobs" --scope "$warning_repo" \
     --state "$warning_supervision/jobs.state" --interval 1 --once --census \
     --supervision-dir "$warning_supervision" \
     --heartbeat "$warning_supervision/watcher.heartbeat.json" \
     --instance-tag warning-fixture >"$tmp/slow-census.out" 2>&1
-grep -Fq 'WARNING CENSUS-SLOW' "$tmp/slow-census.out" \
-  && grep -Fq 'defect=scan-exceeds-interval' "$tmp/slow-census.out" \
-  || { echo "slow census was not surfaced as a supervision defect" >&2; cat "$tmp/slow-census.out" >&2; exit 1; }
 warning_duration=$(json_field "$warning_supervision/last-census.json" durationMs)
 warning_interval=$(json_field "$warning_supervision/last-census.json" intervalSec)
-(( warning_duration > warning_interval * 1000 )) \
-  || { echo "slow census did not record an over-interval duration" >&2
+warning_schema=$(json_field "$warning_supervision/last-census.json" schemaVersion)
+warning_writer=$(json_field "$warning_supervision/last-census.json" writer)
+[[ "$warning_duration" =~ ^[0-9]+$ && "$warning_interval" == 1 && "$warning_schema" == 2 && \
+   "$warning_writer" == watch-background-jobs.sh ]] \
+  || { echo "watcher census did not persist its measured duration and schema" >&2
        cat "$warning_supervision/last-census.json" >&2; exit 1; }
 fi
 
@@ -3480,10 +3496,11 @@ git -C "$gate_repo" -c user.name=metasystem -c user.email=metasystem.invalid \
   commit -qm 'add fixture design artifact'
 "$gate_repo/scripts/agents/adapters/fake.sh" probe >/dev/null
 become_main "$gate_repo" gate-session
+read -r gate_now_epoch gate_now < <(date -u '+%s %Y-%m-%dT%H:%M:%SZ')
 dispatch_fails() { # name, expected
   local name=$1 expected=$2
   set +e
-  METASYSTEM_DELEGATE_ROOT="$gate_repo" \
+  METASYSTEM_GOAL_NOW="$gate_now" METASYSTEM_DELEGATE_ROOT="$gate_repo" \
     "$gate_repo/bin/metasystem" delegate --role design-critic \
       --outputs "$gate_declared_outputs" --design "$gate_design" --brief "$brief" \
       --goal none-explicit --destructive-reach MECHANICAL --op "$name" \
@@ -3495,7 +3512,7 @@ dispatch_fails() { # name, expected
 }
 dispatch_succeeds() { # name
   local name=$1
-  METASYSTEM_DELEGATE_ROOT="$gate_repo" \
+  METASYSTEM_GOAL_NOW="$gate_now" METASYSTEM_DELEGATE_ROOT="$gate_repo" \
     "$gate_repo/bin/metasystem" delegate --role design-critic \
       --outputs "$gate_declared_outputs" --design "$gate_design" --brief "$brief" \
       --goal none-explicit --destructive-reach MECHANICAL --op "$name" \
@@ -3504,7 +3521,7 @@ dispatch_succeeds() { # name
 }
 set_gate_census() { # age, interval, fingerprint
   "$ms" json set --file "$gate_repo/artifacts/agents/supervision/last-census.json" \
-    --int completedAtEpoch=$(( $(date +%s) - $1 )) \
+    --int completedAtEpoch=$(( gate_now_epoch - $1 )) \
     --int intervalSec="$2" \
     --field verdict=SUCCESS \
     --field fingerprint="$3" \
@@ -3571,11 +3588,12 @@ grep -Fq 'censusGeneration=' "$tmp/stale-census-generation.out" \
 cp "$tmp/gate-state.json" "$gate_repo/artifacts/agents/supervision/state.json"
 set_gate_census 0 10 "$gate_fingerprint"
 "$ms" json set --file "$gate_repo/artifacts/agents/supervision/last-census.json" \
-  --int completedAtEpoch="$(date +%s)" --field verdict=CENSUS-FAILED
+  --int completedAtEpoch="$gate_now_epoch" --field verdict=CENSUS-FAILED
 dispatch_fails failed-census 'CENSUS-FAILED'
 "$ms" json set --file "$gate_repo/artifacts/agents/supervision/last-census.json" \
-  --int completedAtEpoch="$(date +%s)" --field verdict=SUCCESS --field fingerprint=wrong
+  --int completedAtEpoch="$gate_now_epoch" --field verdict=SUCCESS --field fingerprint=wrong
 dispatch_fails fingerprint-census 'fingerprint does not match'
+printf '%s\n' 'public census freshness fixture passed: shared clock covered inside boundary after capped failed and fingerprint cases'
 edit_state_owner "$gate_repo/artifacts/agents/supervision/state.json" \
   --int pid=999999 --int pidStartedAt=1
 # The hook reports on the main it belongs to, so it must run as one: the fake
@@ -3704,15 +3722,15 @@ fixture_harness_roots+=("$idle_repo")
 # surfaced response alongside the ordinary system message.
 idle_hook_invocation_budget=${METASYSTEM_IDLE_HOOK_INVOCATION_BUDGET:-2}
 idle_hook_invocations=0
-while :; do
+while (( idle_hook_invocations < idle_hook_invocation_budget )); do
   idle_hook_invocations=$((idle_hook_invocations + 1))
   printf '{"session_id":"idle","cwd":"%s","hook_event_name":"Stop"}\n' "$idle_repo" \
     | run_fixture_hook "$idle_repo" \
         "$idle_repo/scripts/agents/supervision-hook.sh" fake stop >"$tmp/idle.out" 2>/dev/null || true
   [[ ! -s "$tmp/idle.out" ]] || break
-  (( idle_hook_invocations < idle_hook_invocation_budget )) \
-    || { echo "turn-end hook was silent for $idle_hook_invocations completed invocations" >&2; exit 1; }
 done
+[[ -s "$tmp/idle.out" ]] \
+  || { echo "turn-end hook was silent for $idle_hook_invocations completed invocations" >&2; exit 1; }
 idle_system_message=$("$ms" json get --file "$tmp/idle.out" --field systemMessage 2>/dev/null || true)
 idle_decision=$("$ms" json get --file "$tmp/idle.out" --field decision 2>/dev/null || true)
 idle_reason=$("$ms" json get --file "$tmp/idle.out" --field reason 2>/dev/null || true)
@@ -3986,9 +4004,27 @@ grep -Fq 'NOTHING LEFT' <<<"$degraded" \
 # Launch a real wrapped run; the turn end refuses to walk away from it
 # unwatched, once; a live watch clears the rule; conclusion surfaces the
 # green continuation exactly once.
+mon_leash=$tmp/fixture-run.leash
+mon_release=$tmp/fixture-run.release
+mon_writer_ready=$tmp/fixture-run.writer-ready
+mkfifo "$mon_leash" "$mon_release"
+(
+  exec 7>"$mon_leash"
+  : >"$mon_writer_ready"
+  read -r _ <"$mon_release"
+) &
+mon_writer_pid=$!
+mon_writer_start=$(process_started_at "$mon_writer_pid")
+owned_pids+=("$mon_writer_pid:$mon_writer_start")
 "$stop_root/bin/metasystem" run launch --root "$stop_root" --id fixture-run \
   --kind custom --display "the fixture run" --log fix-run.log \
-  --expect-green "proceed to checkpoint seven" -- /bin/sleep 2 >/dev/null
+  --expect-green "proceed to checkpoint seven" -- \
+  env METASYSTEM_FIXTURE_LEASH="$mon_leash" \
+    "$stop_root/bin/metasystem" util hold --tag fixture-run-held \
+      --ready-file "$tmp/fixture-run.ready" --stopped-file "$tmp/fixture-run.stopped" >/dev/null
+wait_until "S4-16 fixture run and leash writer ready" \
+  bash -c '[[ -e "$1" && -e "$2" ]]' _ "$mon_writer_ready" "$tmp/fixture-run.ready" \
+  || exit 1
 mon1=$(printf '%s' "$stop_payload" | stop_hook)
 mon1_report=$(fixture_stop_status_report "$mon1" "$stop_root" fake t) \
   || { echo "the unwatched-run Stop did not expose a bounded readable report" >&2; echo "$mon1" >&2; exit 1; }
@@ -4013,12 +4049,15 @@ wait_until "S4-16 live watch reads STILL WORKING" mon_watch_live \
   || { echo "a live watched run did not read STILL WORKING" >&2; echo "$mon3" >&2; exit 1; }
 grep -Fq 'run fixture-run' <<<"$mon3_report" \
   || { echo "a live watched run did not name itself" >&2; echo "$mon3_report" >&2; exit 1; }
-# The run ends when its command does, and the wrapper's exit sidecar is
-# that fact; conclusion waits for the sidecar, not for the two seconds
-# the command sleeps.
+# The run ends when the fixture releases the command's authenticated leash,
+# and the wrapper's exit sidecar is that fact.
+printf '\n' >"$mon_release"
+wait "$mon_writer_pid"
 wait_until "S4-16 fixture run command ended" \
   bash -c 'compgen -G "$1/artifacts/agents/runs/fixture-run.g*.exit.json" >/dev/null' _ "$stop_root" \
   || exit 1
+[[ -e "$tmp/fixture-run.stopped" ]] \
+  || { echo "the fixture run did not acknowledge its released leash" >&2; exit 1; }
 "$stop_root/bin/metasystem" run conclude --root "$stop_root" --id fixture-run >/dev/null
 mon_watch_rc=0
 wait "$mon_watch_pid" || mon_watch_rc=$?

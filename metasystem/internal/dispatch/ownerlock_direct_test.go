@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 // Direct tests for the owner-lock protocol: claim, re-claim
@@ -66,14 +67,10 @@ func TestOwnerLockKeepsALiveHolder(t *testing.T) {
 	lock := filepath.Join(t.TempDir(), "owner.lock.d")
 	// A live child whose argv carries the recorded tag is a LIVE holder.
 	tag := "ol-live-91b2"
-	holder := exec.Command("bash", "-c", "exec -a sleep-"+tag+" sleep 20")
-	holder.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := holder.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer holder.Process.Kill()
-	go holder.Wait()
-	if err := OwnerLockClaim(lock, int64(holder.Process.Pid), tag); err != nil {
+	command := exec.Command("bash", "-c", "printf x >&3; IFS= read -r _ || :", "sleep-"+tag)
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	holder := testutil.StartHeldProcess(t, command)
+	if err := OwnerLockClaim(lock, int64(holder.Command.Process.Pid), tag); err != nil {
 		t.Fatalf("seed claim: %v", err)
 	}
 	err := OwnerLockClaim(lock, int64(os.Getpid()), "tag-thief")

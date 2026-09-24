@@ -2,6 +2,8 @@ package proofrun
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -28,12 +30,13 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 	workerPID := filepath.Join(directory, "worker.pid")
 	grandPID := filepath.Join(directory, "grandchild.pid")
 	ready := filepath.Join(directory, "grandchild.ready")
+	grandRelease := filepath.Join(directory, "grandchild.release")
 	launcherLog, err := os.Create(filepath.Join(directory, "launcher-helper.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer launcherLog.Close()
-	launcher := exec.Command(os.Args[0], "-test.run=^TestGLEHostResourceCustodyProcessHelper$", "--", "launcher", directory, conf, engine, workerPID, grandPID, ready)
+	launcher := exec.Command(os.Args[0], "-test.run=^TestGLEHostResourceCustodyProcessHelper$", "--", "launcher", directory, conf, engine, workerPID, grandPID, ready, grandRelease)
 	launcher.Env = append(os.Environ(),
 		"METASYSTEM_HOST_CUSTODY_HELPER=1")
 	launcher.Stdout, launcher.Stderr = launcherLog, launcherLog
@@ -48,6 +51,7 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 	var worker, grandchild, watchdogProcess identity.Ref
 	launcherWaited := false
 	t.Cleanup(func() {
+		_ = os.WriteFile(grandRelease, []byte("release"), 0o600)
 		for _, ref := range []identity.Ref{grandchild, worker, watchdogProcess, launcherExact.Ref()} {
 			if ref.Pid > 0 {
 				_ = identity.SignalExact(prober, ref, syscall.SIGKILL)
@@ -57,17 +61,13 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 			_ = launcher.Wait()
 		}
 	})
-	waitCustodyFile(t, ready, 8*time.Second)
-	worker = waitCustodyRef(t, prober, workerPID, 3*time.Second)
-	grandchild = waitCustodyRef(t, prober, grandPID, 3*time.Second)
-	watchdogProcess = waitCustodyRecordWatchdog(t, directory, "custody-killed-launcher", 3*time.Second)
+	waitCustodyFile(t, ready, 0)
+	worker = waitCustodyRef(t, prober, workerPID, 0)
+	grandchild = waitCustodyRef(t, prober, grandPID, 0)
+	watchdogProcess = waitCustodyRecordWatchdog(t, directory, "custody-killed-launcher")
 	assertDurableSpools := func() {
-		deadline := time.Now().Add(3 * time.Second)
-		for liveCustodyRef(prober, watchdogProcess) && time.Now().Before(deadline) {
-			time.Sleep(20 * time.Millisecond)
-		}
 		if liveCustodyRef(prober, watchdogProcess) {
-			t.Fatal("resource custodian remained live after capacity cleanup")
+			t.Fatal("resource custodian returned to a live state after its terminal witness")
 		}
 		run, err := ReadLatestProgressRun(filepath.Join(directory, "progress.jsonl"))
 		if err != nil || len(run.Header.LogPaths) != 5 {
@@ -78,6 +78,53 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 				t.Fatalf("lost launcher spool %s is unreadable: %v", path, err)
 			}
 		}
+	}
+	markers, err := filepath.Glob(filepath.Join(directory, "lease-*"))
+	if err != nil || len(markers) != 1 {
+		t.Fatalf("expected one custody marker before cleanup: markers=%v err=%v", markers, err)
+	}
+	markerPath := markers[0]
+	acquired := make(chan *HostResourceLease, 1)
+	errs := make(chan error, 1)
+	observed := make(chan struct{})
+	observationCtx, cancelObservation := context.WithCancel(t.Context())
+	defer cancelObservation()
+	waitCtx := WithHostResourceWaitObserver(observationCtx, func() {
+		close(observed)
+		<-observationCtx.Done()
+	})
+	go func() {
+		lease, err := AcquireHostResources(waitCtx, directory, conf, "heavy", []string{"fixture-db"})
+		if err != nil {
+			errs <- err
+			return
+		}
+		acquired <- lease
+	}()
+	select {
+	case lease := <-acquired:
+		_ = lease.Close()
+		t.Fatalf("contender acquired before observing ordinary grandchild custody: grandchild=%s", identity.AliveRef(prober, grandchild))
+	case err := <-errs:
+		t.Fatalf("contender refused instead of waiting: %v", err)
+	case <-observed:
+	case <-t.Context().Done():
+		t.Fatalf("contender did not observe held ordinary grandchild custody: %v", t.Context().Err())
+	}
+	if !liveCustodyRef(prober, grandchild) {
+		t.Fatalf("exact grandchild %d died before the contender observed held custody", grandchild.Pid)
+	}
+	cancelObservation()
+	select {
+	case lease := <-acquired:
+		_ = lease.Close()
+		t.Fatal("observation-only contender acquired before custody cleanup")
+	case err := <-errs:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("observation-only contender ended unexpectedly: %v", err)
+		}
+	case <-t.Context().Done():
+		t.Fatalf("observation-only contender did not stop: %v", t.Context().Err())
 	}
 	if err := identity.SignalExact(prober, launcherExact.Ref(), syscall.SIGKILL); err != nil {
 		t.Fatal(err)
@@ -91,56 +138,52 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 			t.Fatal(err)
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-	defer cancel()
-	acquired := make(chan *HostResourceLease, 1)
-	errs := make(chan error, 1)
-	go func() {
-		lease, err := AcquireHostResources(ctx, directory, conf, "heavy", []string{"fixture-db"})
-		if err != nil {
-			errs <- err
-			return
-		}
-		acquired <- lease
-	}()
-	if liveCustodyRef(prober, grandchild) {
-		select {
-		case lease := <-acquired:
-			if liveCustodyRef(prober, grandchild) {
-				_ = lease.Close()
-				t.Fatal("capacity and named resource escaped while ordinary grandchild lived")
-			}
-			_ = lease.Close()
-			assertDurableSpools()
-			return
-		case err := <-errs:
-			t.Fatalf("contender refused instead of waiting: %v", err)
-		case <-time.After(250 * time.Millisecond):
-		}
+	waitCustodyTerminal(t, prober, watchdogProcess)
+	markerData, err := os.ReadFile(markerPath)
+	if err != nil {
+		t.Fatalf("read custody marker after custodian terminal: %v", err)
 	}
-	select {
-	case lease := <-acquired:
-		if liveCustodyRef(prober, grandchild) {
-			_ = lease.Close()
-			t.Fatal("contender acquired while ordinary grandchild was still executing")
+	var marker hostLeaseRecord
+	if err := json.Unmarshal(markerData, &marker); err != nil || !marker.Cleared {
+		logBytes, _ := os.ReadFile(filepath.Join(directory, "launcher-helper.log"))
+		custodyLog, _ := os.ReadFile(filepath.Join(directory, "launcher.log"))
+		spoolData := ""
+		if run, runErr := ReadLatestProgressRun(filepath.Join(directory, "progress.jsonl")); runErr == nil {
+			for _, path := range run.Header.LogPaths {
+				data, _ := os.ReadFile(path)
+				spoolData += filepath.Base(path) + ":" + string(data) + " "
+			}
 		}
-		defer lease.Close()
-		assertDurableSpools()
-	case err := <-errs:
-		t.Fatalf("contender did not acquire after cleanup: %v", err)
-	case <-ctx.Done():
+		t.Fatalf("resource custodian terminated without a clean marker: marker=%s err=%v helper=%s custodylog=%s spools=%s", markerData, err, logBytes, custodyLog, spoolData)
+	}
+	waitCustodyTerminal(t, prober, grandchild)
+	lease, err := AcquireHostResources(t.Context(), directory, conf, "heavy", []string{"fixture-db"})
+	if err != nil {
 		active, activeErr := activeHostResourceSlots(directory)
 		logBytes, _ := os.ReadFile(filepath.Join(directory, "launcher-helper.log"))
 		custodyLog, _ := os.ReadFile(filepath.Join(directory, "launcher.log"))
+		spoolData := ""
+		if run, runErr := ReadLatestProgressRun(filepath.Join(directory, "progress.jsonl")); runErr == nil {
+			for _, path := range run.Header.LogPaths {
+				data, _ := os.ReadFile(path)
+				spoolData += filepath.Base(path) + ":" + string(data) + " "
+			}
+		}
 		markers, _ := filepath.Glob(filepath.Join(directory, "lease-*"))
 		markerData := ""
 		for _, marker := range markers {
 			data, _ := os.ReadFile(marker)
 			markerData += filepath.Base(marker) + ":" + string(data) + " "
 		}
-		t.Fatalf("capacity and named resource stayed held after cleanup: active=%d err=%v worker=%s grandchild=%s watchdog=%s marker=%s helper=%s custodylog=%s", active, activeErr,
-			identity.AliveRef(prober, worker), identity.AliveRef(prober, grandchild), identity.AliveRef(prober, watchdogProcess), markerData, logBytes, custodyLog)
+		t.Fatalf("capacity and named resource stayed held after cleanup: acquire=%v context=%v active=%d err=%v worker=%s grandchild=%s watchdog=%s marker=%s helper=%s custodylog=%s spools=%s", err, t.Context().Err(), active, activeErr,
+			identity.AliveRef(prober, worker), identity.AliveRef(prober, grandchild), identity.AliveRef(prober, watchdogProcess), markerData, logBytes, custodyLog, spoolData)
 	}
+	if err := MarkHostResourcesClean(lease.Files()); err != nil {
+		_ = lease.Close()
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	assertDurableSpools()
 }
 
 func liveCustodyRef(prober identity.Prober, ref identity.Ref) bool {
@@ -148,30 +191,56 @@ func liveCustodyRef(prober identity.Prober, ref identity.Ref) bool {
 	return err == nil && state == identity.Alive && identity.SameIdentity(exact, ref) && !exact.Zombie
 }
 
-func waitCustodyRecordWatchdog(t *testing.T, root, suite string, bound time.Duration) identity.Ref {
+func waitCustodyRecordWatchdog(t *testing.T, root, suite string) identity.Ref {
 	t.Helper()
-	deadline := time.Now().Add(bound)
-	for time.Now().Before(deadline) {
+	poll := time.NewTicker(20 * time.Millisecond)
+	defer poll.Stop()
+	for {
 		record, err := ReadRecord(root, suite)
 		if err == nil && record.Watchdog.Pid > 0 {
 			return record.Watchdog.Ref()
 		}
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case <-poll.C:
+		case <-t.Context().Done():
+			t.Fatalf("resource custodian record was not published: %v", t.Context().Err())
+		}
 	}
-	t.Fatal("resource custodian record was not published")
-	return identity.Ref{}
 }
 
 func waitCustodyFile(t *testing.T, path string, bound time.Duration) {
 	t.Helper()
-	deadline := time.Now().Add(bound)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(path); err == nil {
+	poll := time.NewTicker(20 * time.Millisecond)
+	defer poll.Stop()
+	var deadline <-chan time.Time
+	var timer *time.Timer
+	if bound > 0 {
+		timer = time.NewTimer(bound)
+		deadline = timer.C
+		defer timer.Stop()
+	}
+	exists := func() bool {
+		_, err := os.Stat(path)
+		return err == nil
+	}
+	for {
+		if exists() {
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case <-poll.C:
+		case <-t.Context().Done():
+			if exists() {
+				return
+			}
+			t.Fatalf("custody barrier %s did not appear: %v", filepath.Base(path), t.Context().Err())
+		case <-deadline:
+			if exists() {
+				return
+			}
+			t.Fatalf("custody barrier %s did not appear", filepath.Base(path))
+		}
 	}
-	t.Fatalf("custody barrier %s did not appear", filepath.Base(path))
 }
 
 func waitCustodyRef(t *testing.T, prober identity.Prober, path string, bound time.Duration) identity.Ref {
@@ -192,6 +261,23 @@ func waitCustodyRef(t *testing.T, prober identity.Prober, path string, bound tim
 	return exact.Ref()
 }
 
+func waitCustodyTerminal(t *testing.T, prober identity.Prober, ref identity.Ref) {
+	t.Helper()
+	poll := time.NewTicker(20 * time.Millisecond)
+	defer poll.Stop()
+	for {
+		exact, state, err := prober.Probe(ref.Pid)
+		if err == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, ref) || exact.Zombie)) {
+			return
+		}
+		select {
+		case <-poll.C:
+		case <-t.Context().Done():
+			t.Fatalf("exact custody process %d did not become terminal: state=%s err=%v", ref.Pid, state, err)
+		}
+	}
+}
+
 func TestGLEHostResourceCustodyProcessHelper(t *testing.T) {
 	if os.Getenv("METASYSTEM_HOST_CUSTODY_HELPER") != "1" {
 		return
@@ -203,10 +289,10 @@ func TestGLEHostResourceCustodyProcessHelper(t *testing.T) {
 			break
 		}
 	}
-	if separator < 0 || len(os.Args)-separator != 8 || os.Args[separator+1] != "launcher" {
+	if separator < 0 || len(os.Args)-separator != 9 || os.Args[separator+1] != "launcher" {
 		t.Fatal("invalid custody helper arguments")
 	}
-	directory, conf, watchdog, workerPID, grandPID, ready := os.Args[separator+2], os.Args[separator+3], os.Args[separator+4], os.Args[separator+5], os.Args[separator+6], os.Args[separator+7]
+	directory, conf, watchdog, workerPID, grandPID, ready, grandRelease := os.Args[separator+2], os.Args[separator+3], os.Args[separator+4], os.Args[separator+5], os.Args[separator+6], os.Args[separator+7], os.Args[separator+8]
 	hostAdmissionDirectoryForTest = directory
 	loadSeams.launchers = func(int64) (int, bool) { return 0, true }
 	lease, err := AcquireHostResources(context.Background(), directory, conf, "heavy", []string{"fixture-db"})
@@ -218,13 +304,13 @@ func TestGLEHostResourceCustodyProcessHelper(t *testing.T) {
 	for index := range lease.Files() {
 		closeFDs += fmt.Sprintf("exec %d>&-; ", 3+index)
 	}
-	script := `echo $$ > "$1"; (` + closeFDs + `exec </dev/null >/dev/null 2>&1; : > "$3"; exec sleep 60) & echo $! > "$2"; trap '' TERM; while :; do sleep 1; done`
+	script := `echo $$ > "$1"; (` + closeFDs + `exec </dev/null >/dev/null 2>&1; : > "$3"; while [ ! -f "$4" ]; do sleep 0.02; done) & echo $! > "$2"; trap '' TERM; while :; do sleep 1; done`
 	code := LaunchSuite(LaunchOptions{Suite: "custody-killed-launcher", Root: directory, ConfPath: conf,
 		ProgressPath: filepath.Join(directory, "progress.jsonl"), LogPath: filepath.Join(directory, "launcher.log"),
 		Banner: "custody fixture", Silence: time.Second, SectionCap: time.Second,
 		EvidenceTimeout: time.Second, EvidenceMax: 1024, Poll: 20 * time.Millisecond,
 		TermGrace: 20 * time.Millisecond, KillGrace: 20 * time.Millisecond,
-		WatchdogExecutable: watchdog, Command: []string{"sh", "-c", script, "sh", workerPID, grandPID, ready},
+		WatchdogExecutable: watchdog, Command: []string{"sh", "-c", script, "sh", workerPID, grandPID, ready, grandRelease},
 		HostResourceFiles: lease.Files(), Output: os.Stdout, ErrorOutput: os.Stderr})
 	if code == 0 {
 		t.Fatal("native worker unexpectedly completed successfully")

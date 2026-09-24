@@ -29,6 +29,127 @@ func TestNewTestResultKeepsDigestOnlyIdentityForLegacyPolicyProbe(t *testing.T) 
 	}
 }
 
+func TestRunTestPlanFinalizesOperationalErrorResult(t *testing.T) {
+	t.Parallel()
+	for _, schema := range []int{testpolicy.SchemaVersion, testpolicy.ExecutionContractSchemaVersion} {
+		t.Run(fmt.Sprintf("schema-%d", schema), func(t *testing.T) {
+			root := t.TempDir()
+			progressDirectory := filepath.Join(root, "artifacts", "progress")
+			progressPath := filepath.Join(progressDirectory, "events.jsonl")
+			greenProgressDirectory := filepath.Join(root, "artifacts", "green-progress")
+			greenProgressPath := filepath.Join(greenProgressDirectory, "events.jsonl")
+			if err := os.MkdirAll(progressDirectory, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(greenProgressDirectory, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeTestResultFile(t, filepath.Join(root, "source.txt"), []byte("source\n"), 0o644)
+			redScript := fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p reports-red
+printf '%%s\n' '<testsuite><testcase classname="fixture" name="red"><failure message="red"/></testcase></testsuite>' > reports-red/tests.xml
+printf 'RAW-FAILED-OUTPUT\n' >&2
+mv %s %s
+printf 'closed\n' > %s
+exit 23
+`, strconv.Quote(progressDirectory), strconv.Quote(progressDirectory+"-closed"), strconv.Quote(progressDirectory))
+			writeTestResultFile(t, filepath.Join(root, "scripts", "red.sh"), []byte(redScript), 0o755)
+			greenScript := fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+mkdir -p reports-green
+printf '%%s\n' '<testsuite><testcase classname="fixture" name="green"/></testsuite>' > reports-green/tests.xml
+printf 'RAW-PASSED-OUTPUT\n' >&2
+mv %s %s
+printf 'closed\n' > %s
+`, strconv.Quote(greenProgressDirectory), strconv.Quote(greenProgressDirectory+"-closed"), strconv.Quote(greenProgressDirectory))
+			writeTestResultFile(t, filepath.Join(root, "scripts", "green.sh"), []byte(greenScript), 0o755)
+			writeTestResultScript(t, root, "later", "passed", 0)
+			runTestResultGit(t, root, "init", "-q", "-b", "main")
+			runTestResultGit(t, root, "add", ".")
+			runTestResultGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture")
+			tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+
+			group := func(id string) testpolicy.Group {
+				return testpolicy.Group{ID: id, Kind: "unit", Adapter: "command", CWD: ".", Inputs: []string{"source.txt", "scripts/" + id + ".sh"},
+					Outputs: []string{"reports-" + id}, Obligations: []string{id}, Platforms: []string{"any"}, TargetMS: 1000,
+					Argv: []string{"bash", "scripts/" + id + ".sh"}, Reports: []string{"reports-" + id}, Format: "junit-xml",
+					ExpectedTests: []testpolicy.ExpectedTest{{Report: "reports-" + id + "/tests.xml", Classname: "fixture", Name: id}}}
+			}
+			groups := []testpolicy.Group{group("red"), group("later"), group("green")}
+			if schema == testpolicy.ExecutionContractSchemaVersion {
+				for index := range groups {
+					groups[index].Phase, groups[index].EnvironmentMode = "acceptance", "inherit"
+				}
+			}
+			contract := testpolicy.Contract{SchemaVersion: schema,
+				ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+				Surfaces:    []testpolicy.Surface{{ID: "app", Paths: []string{"source.txt", "scripts/**"}, Standard: []string{"red", "later", "green"}}},
+				Groups:      groups, Always: testpolicy.Always{Canary: []string{"red"}, Standard: []string{"later", "green"}}, Unknown: []string{"red"}}
+			if err := contract.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			plan := testpolicy.Plan{Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeStandard, RequiredMode: testpolicy.ModeStandard,
+				ExecutedMode: testpolicy.ModeStandard, RequiredGroups: []string{"red", "later"}, SelectedGroups: []string{"red", "later"},
+				Stages: []testpolicy.Stage{{ID: "canary", Groups: []string{"red"}}, {ID: "standard", Groups: []string{"later"}}}}
+			request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, BaseCommit: "HEAD", PolicyBaseCommit: "HEAD", Contract: contract, Plan: plan,
+				AttemptID: "attempt", LogRoot: filepath.Join(root, "artifacts", "logs"), ProgressPath: progressPath,
+				CandidateEngineDigest: strings.Repeat("a", 64), Concurrency: 2}
+			if schema == testpolicy.ExecutionContractSchemaVersion {
+				request.Workers, request.AdmissionMaximum = 2, 0
+			}
+			identities, prepared, launches, err := PrepareGroupExecutionIdentities(context.Background(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.ComponentIdentities, request.PreparedGroups, request.PreparationLaunches = identities, prepared, launches
+			result, status, runErr := RunTestPlan(context.Background(), request)
+			if runErr == nil || !strings.Contains(runErr.Error(), "record testing group red end") || status == 0 {
+				t.Fatalf("operational error was not retained: status=%d err=%v", status, runErr)
+			}
+			if err := ValidateTestResult(result); err != nil {
+				t.Fatalf("operational result is not valid: %v\n%+v", err, result)
+			}
+			if result.Delivery.Sufficient || result.LaunchCounts.Test != 1 || len(result.Groups) != 2 || result.Groups[0].Status != "failed" ||
+				result.Groups[1].Status != "not-run" || result.Groups[1].NativeLaunched || result.Groups[1].ExecutionIdentity != identities["later"] {
+				t.Fatalf("operational result lost evidence or invented coverage: counts=%+v delivery=%+v groups=%+v", result.LaunchCounts, result.Delivery, result.Groups)
+			}
+			if len(result.Groups[0].Observed) != 1 || result.Groups[0].Observed[0].Name != "red" || result.Groups[0].Observed[0].Status != "failed" {
+				t.Fatalf("native JUnit failure join was lost: %+v", result.Groups[0].Observed)
+			}
+			logged, err := os.ReadFile(result.Groups[0].LogPath)
+			if err != nil || !strings.Contains(string(logged), "RAW-FAILED-OUTPUT") {
+				t.Fatalf("raw failed output was lost: err=%v output=%q", err, logged)
+			}
+
+			greenPlan := plan
+			greenPlan.RequiredGroups, greenPlan.SelectedGroups = []string{"green"}, []string{"green"}
+			greenPlan.Stages = []testpolicy.Stage{{ID: "canary", Groups: []string{"green"}}}
+			greenRequest := request
+			greenRequest.Plan, greenRequest.ProgressPath = greenPlan, greenProgressPath
+			greenIdentities, greenPrepared, greenLaunches, err := PrepareGroupExecutionIdentities(context.Background(), greenRequest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			greenRequest.ComponentIdentities, greenRequest.PreparedGroups, greenRequest.PreparationLaunches = greenIdentities, greenPrepared, greenLaunches
+			greenResult, greenStatus, greenErr := RunTestPlan(context.Background(), greenRequest)
+			if greenErr == nil || !strings.Contains(greenErr.Error(), "record testing group green end") || greenStatus == 0 {
+				t.Fatalf("all-pass operational error was not retained: status=%d err=%v", greenStatus, greenErr)
+			}
+			if err := ValidateTestResult(greenResult); err != nil {
+				t.Fatalf("all-pass operational result is not valid: %v\n%+v", err, greenResult)
+			}
+			if greenResult.Delivery.Sufficient || len(greenResult.Delivery.FailingGroups) != 0 || len(greenResult.Delivery.MissingGroups) != 0 ||
+				len(greenResult.Uncertainty) != 1 || len(greenResult.Delivery.Discrepancies) != 1 || len(greenResult.Groups) != 1 ||
+				greenResult.Groups[0].Status != "passed" || !greenResult.Groups[0].NativeLaunched || greenResult.Groups[0].ExecutionIdentity != greenIdentities["green"] ||
+				len(greenResult.Groups[0].Observed) != 1 || greenResult.Groups[0].Observed[0].Status != "passed" || greenResult.LaunchCounts.Test != 1 {
+				t.Fatalf("all-pass operational result lost evidence or invented failure: delivery=%+v uncertainty=%v counts=%+v groups=%+v",
+					greenResult.Delivery, greenResult.Uncertainty, greenResult.LaunchCounts, greenResult.Groups)
+			}
+		})
+	}
+}
+
 func TestSectionEnginePreparationPreservesBytesAndNestedSelector(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

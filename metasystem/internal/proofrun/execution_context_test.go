@@ -3,12 +3,13 @@ package proofrun
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestArchiveAndFrozenContextIdentity(t *testing.T) {
@@ -20,7 +21,7 @@ func TestArchiveAndFrozenContextIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(frozen.Root)) })
+	t.Cleanup(func() { _ = frozen.Close() })
 
 	readonly := replaceContextEnvironment(os.Environ(), map[string]string{
 		"GOFLAGS": "-mod=readonly", "METASYSTEM_GATE_FROZEN_TOOLCHAIN": "1",
@@ -151,7 +152,7 @@ func TestFreezeBindsEveryExportedNonRuntimeInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(frozen.Root)) })
+	t.Cleanup(func() { _ = frozen.Close() })
 	full, err := FullDigest(frozen.Root)
 	if err != nil {
 		t.Fatal(err)

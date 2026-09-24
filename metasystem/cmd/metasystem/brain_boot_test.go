@@ -191,6 +191,161 @@ func TestBrainBootDeadlineKeepsCompletedSections(t *testing.T) {
 	}
 }
 
+func TestBrainBootDeadlineKeepsThreeCompletedSections(t *testing.T) {
+	t.Parallel()
+
+	switch os.Getenv("GO_WANT_BRAIN_BOOT_THREE_SECTIONS_HELPER") {
+	case "body":
+		runBrainBootThreeSectionsBody(t)
+	case "sections":
+		runBrainBootThreeSectionsChild()
+	case "":
+		command := exec.Command(commandTestExecutable(t), "-test.run=^TestBrainBootDeadlineKeepsThreeCompletedSections$", "-test.count=1")
+		command.Env = brainBootThreeSectionsEnvironment("body")
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("isolated three-section deadline witness failed: %v\n%s", err, output)
+		}
+	default:
+		t.Fatalf("unknown three-section deadline helper role %q", os.Getenv("GO_WANT_BRAIN_BOOT_THREE_SECTIONS_HELPER"))
+	}
+}
+
+func runBrainBootThreeSectionsChild() {
+	terminated := make(chan os.Signal, 1)
+	signal.Notify(terminated, syscall.SIGTERM)
+	sections := []struct {
+		path    string
+		payload string
+	}{
+		{os.Getenv("BRAIN_BOOT_ASKS_PATH"), `{"status":"complete","lines":[{"text":"kept ask"}]}` + "\n"},
+		{os.Getenv("BRAIN_BOOT_HELD_PATH"), `{"status":"complete","lines":[{"text":"kept held goal"}]}` + "\n"},
+		{os.Getenv("BRAIN_BOOT_FLEET_PATH"), `{"status":"complete","lines":[{"text":"kept fleet goal"}]}` + "\n"},
+	}
+	for _, section := range sections {
+		if err := os.WriteFile(section.path, []byte(section.payload), 0o600); err != nil {
+			os.Exit(97)
+		}
+	}
+	ready := os.NewFile(3, "brain-boot-three-sections-ready")
+	if ready == nil {
+		os.Exit(97)
+	}
+	if _, err := ready.Write([]byte{'x'}); err != nil || ready.Close() != nil {
+		os.Exit(97)
+	}
+	<-terminated
+	if err := os.WriteFile(os.Getenv("BRAIN_BOOT_TERM_PATH"), []byte("term"), 0o600); err != nil {
+		os.Exit(97)
+	}
+	os.Exit(0)
+}
+
+func runBrainBootThreeSectionsBody(t *testing.T) {
+	t.Helper()
+
+	root := declaredBrainBootTestRoot(t)
+	originalCommand, originalNow, originalTimer := newBrainBootInputsCommand, brainBootNow, newBrainBootTimer
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+	})
+	termPath := filepath.Join(t.TempDir(), "term")
+	newBrainBootInputsCommand = func(_ string, args ...string) *exec.Cmd {
+		dir := ""
+		for index := 0; index+1 < len(args); index++ {
+			if args[index] == "--dir" {
+				dir = args[index+1]
+				break
+			}
+		}
+		if dir == "" {
+			t.Fatal("boot-inputs command omitted --dir")
+		}
+		command := exec.Command(commandTestExecutable(t), "-test.run=^TestBrainBootDeadlineKeepsThreeCompletedSections$", "-test.count=1")
+		command.Env = brainBootThreeSectionsEnvironment("sections",
+			"BRAIN_BOOT_ASKS_PATH="+filepath.Join(dir, "asks.json"),
+			"BRAIN_BOOT_HELD_PATH="+filepath.Join(dir, "held.json"),
+			"BRAIN_BOOT_FLEET_PATH="+filepath.Join(dir, "fleet.json"),
+			"BRAIN_BOOT_TERM_PATH="+termPath)
+		command.ExtraFiles = []*os.File{readyWrite}
+		return command
+	}
+	brainBootNow = func() time.Time { return time.Unix(1, 0) }
+	fired := 0
+	var firedDuration time.Duration
+	newBrainBootTimer = func(duration time.Duration) brainBootTimer {
+		if fired == 0 {
+			_ = readyWrite.Close()
+			var ready [1]byte
+			if _, err := io.ReadFull(readyRead, ready[:]); err != nil {
+				t.Fatalf("wait for three optional-input sections: %v", err)
+			}
+			fired++
+			firedDuration = duration
+			ch := make(chan time.Time, 1)
+			ch <- brainBootNow()
+			return brainBootTimer{C: ch, Stop: func() bool { return false }}
+		}
+		return brainBootTimer{C: make(chan time.Time), Stop: func() bool { return true }}
+	}
+	t.Cleanup(func() {
+		newBrainBootInputsCommand, brainBootNow, newBrainBootTimer = originalCommand, originalNow, originalTimer
+	})
+
+	output, err := composeBrainBoot(root, root, minimumBrainContextBytes, 250)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fired != 1 || firedDuration != 250*time.Millisecond {
+		t.Fatalf("deadline timer fired %d times at %s, want once at 250ms", fired, firedDuration)
+	}
+	if data, err := os.ReadFile(termPath); err != nil || string(data) != "term" {
+		t.Fatalf("deadline did not synchronously terminate the optional-input process group: data=%q err=%v", data, err)
+	}
+	for _, name := range []string{"asks", "held", "fleet"} {
+		if output.Sections[name] != "complete" {
+			t.Fatalf("published section %s = %q, want complete", name, output.Sections[name])
+		}
+	}
+	if output.Sections["digest"] != "skipped" {
+		t.Fatalf("unpublished digest section = %q, want skipped", output.Sections["digest"])
+	}
+	for _, retained := range []string{"kept ask", "kept held goal", "kept fleet goal"} {
+		if !strings.Contains(output.Payload, retained) {
+			t.Fatalf("deadline discarded %q from payload: %q", retained, output.Payload)
+		}
+	}
+	if !strings.Contains(output.Payload, "BOOT DEADLINE: digest not read") ||
+		strings.Contains(output.Payload, "BOOT DEADLINE: asks") ||
+		strings.Contains(output.Payload, "BOOT DEADLINE: held") ||
+		strings.Contains(output.Payload, "BOOT DEADLINE: fleet") {
+		t.Fatalf("deadline line did not name only the unpublished digest: %q", output.Payload)
+	}
+}
+
+func brainBootThreeSectionsEnvironment(role string, values ...string) []string {
+	replaced := map[string]bool{
+		"GO_WANT_BRAIN_BOOT_THREE_SECTIONS_HELPER": true,
+		"BRAIN_BOOT_ASKS_PATH":                     true,
+		"BRAIN_BOOT_HELD_PATH":                     true,
+		"BRAIN_BOOT_FLEET_PATH":                    true,
+		"BRAIN_BOOT_TERM_PATH":                     true,
+	}
+	environment := make([]string, 0, len(os.Environ())+len(values)+1)
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if !replaced[name] {
+			environment = append(environment, entry)
+		}
+	}
+	environment = append(environment, "GO_WANT_BRAIN_BOOT_THREE_SECTIONS_HELPER="+role)
+	return append(environment, values...)
+}
+
 func TestBrainReadOnlyBootDefersStatusUntilStartDelivered(t *testing.T) {
 	useFiringBrainBootTimer(t)
 	root := declaredBrainBootTestRoot(t)

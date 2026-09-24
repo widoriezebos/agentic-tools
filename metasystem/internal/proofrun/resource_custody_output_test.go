@@ -444,27 +444,38 @@ func TestResourceCustodyFailedPublicSuiteOutputStillDrainsLargeChild(t *testing.
 	})
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
-	deadline := time.NewTimer(5 * time.Second)
-	defer deadline.Stop()
+	childComplete := false
+	var result int
+
+waitForResult:
 	for {
-		if _, err := os.Stat(complete); err == nil {
-			break
+		if !childComplete {
+			_, err := os.Stat(complete)
+			childComplete = err == nil
+		}
+		var poll <-chan time.Time
+		if !childComplete {
+			poll = ticker.C
 		}
 		select {
-		case result := <-finished:
-			t.Fatalf("suite ended before writing all output: status=%d", result)
-		case <-ticker.C:
-		case <-deadline.C:
+		case result = <-finished:
+			if !childComplete {
+				if _, err := os.Stat(complete); err != nil {
+					t.Fatalf("suite ended before writing all output: status=%d marker=%v", result, err)
+				}
+			}
+			childComplete = true
+			break waitForResult
+		case <-poll:
+		case <-t.Context().Done():
+			if childComplete {
+				t.Fatal("large-output launch did not settle after child completion")
+			}
 			t.Fatal("suite stdout pipe stopped draining after public writer failed")
 		}
 	}
-	select {
-	case result := <-finished:
-		if result == 0 {
-			t.Fatal("failed public output produced a green launch")
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("large-output launch did not settle after child completion")
+	if result == 0 {
+		t.Fatal("failed public output produced a green launch")
 	}
 	logData, err := os.ReadFile(logPath)
 	if err != nil || !bytes.Contains(logData, []byte("noisy-last-line")) {
@@ -473,9 +484,7 @@ func TestResourceCustodyFailedPublicSuiteOutputStillDrainsLargeChild(t *testing.
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	next, err := AcquireHostResources(ctx, root, conf, "heavy", nil)
+	next, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
 	if err != nil {
 		t.Fatalf("large-output failure left host capacity held: %v", err)
 	}
@@ -548,9 +557,7 @@ printf '{"suite":"writer-failure","section":"over-cap","event":"end","at":"%s","
 	if err := lease.Close(); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	next, err := AcquireHostResources(ctx, root, conf, "heavy", nil)
+	next, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
 	if err != nil {
 		t.Fatalf("public writer failure left capacity held: %v", err)
 	}
@@ -575,7 +582,7 @@ printf '{"suite":"writer-failure","section":"over-cap","event":"end","at":"%s","
 		if err := next.Close(); err != nil {
 			t.Fatal(err)
 		}
-		released, err := AcquireHostResources(ctx, root, conf, "heavy", nil)
+		released, err := AcquireHostResources(t.Context(), root, conf, "heavy", nil)
 		if err != nil {
 			t.Fatalf("managed suite retained capacity: %v", err)
 		}

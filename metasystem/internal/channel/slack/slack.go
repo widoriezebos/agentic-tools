@@ -18,6 +18,25 @@ const defaultHTTPTimeout = 30 * time.Second
 
 type Adapter struct{ client *http.Client }
 
+type requestContextFunc func(context.Context, time.Duration) (context.Context, context.CancelFunc)
+type requestContextKey struct{}
+
+// WithRequestContext lets one call own its request lifetime while retaining
+// the adapter's configured timeout selection.
+func WithRequestContext(ctx context.Context, create func(context.Context, time.Duration) (context.Context, context.CancelFunc)) context.Context {
+	if create == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, requestContextKey{}, requestContextFunc(create))
+}
+
+func requestContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if create, ok := ctx.Value(requestContextKey{}).(requestContextFunc); ok {
+		return create(ctx, timeout)
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
 func New(client *http.Client) *Adapter {
 	if client == nil {
 		client = http.DefaultClient
@@ -44,7 +63,7 @@ func (a *Adapter) call(ctx context.Context, dest channel.DestinationConfig, meth
 	if timeout <= 0 {
 		timeout = defaultHTTPTimeout
 	}
-	requestCtx, cancel := context.WithTimeout(ctx, timeout)
+	requestCtx, cancel := requestContext(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, strings.TrimRight(dest.APIBase, "/")+"/"+method, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -139,10 +158,7 @@ func (a *Adapter) Receive(ctx context.Context, dest channel.DestinationConfig, t
 				if m.TS <= last[root] || m.TS == root || m.User == cred.UserID {
 					continue
 				}
-				sentAt := time.Time{}
-				if seconds, parseErr := strconv.ParseFloat(m.TS, 64); parseErr == nil {
-					sentAt = time.Unix(0, int64(seconds*float64(time.Second))).UTC()
-				}
+				sentAt, _ := parseTimestamp(m.TS)
 				inbound = append(inbound, channel.Inbound{Ref: channel.MessageRef{ID: m.TS, ThreadID: root}, ThreadID: root, UserID: m.User, Text: m.Text, SentAt: sentAt, Ack: channel.Cursor(m.TS)})
 			}
 			page = out.Metadata.Next
@@ -153,6 +169,37 @@ func (a *Adapter) Receive(ctx context.Context, dest channel.DestinationConfig, t
 	}
 	sort.SliceStable(inbound, func(i, j int) bool { return inbound[i].Ref.ID < inbound[j].Ref.ID })
 	return inbound, encodeCursor(next), nil
+}
+
+func parseTimestamp(value string) (time.Time, bool) {
+	secondsText, fractionText, hasFraction := strings.Cut(value, ".")
+	if !decimalDigits(secondsText) || strings.Contains(fractionText, ".") || len(fractionText) > 9 || (hasFraction && !decimalDigits(fractionText)) {
+		return time.Time{}, false
+	}
+	seconds, err := strconv.ParseInt(secondsText, 10, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+	nanoseconds := int64(0)
+	if hasFraction {
+		nanoseconds, err = strconv.ParseInt(fractionText+strings.Repeat("0", 9-len(fractionText)), 10, 64)
+		if err != nil {
+			return time.Time{}, false
+		}
+	}
+	return time.Unix(seconds, nanoseconds).UTC(), true
+}
+
+func decimalDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, digit := range []byte(value) {
+		if digit < '0' || digit > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *Adapter) Confirm(context.Context, channel.DestinationConfig, channel.Cursor) error {

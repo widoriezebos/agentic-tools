@@ -98,6 +98,11 @@ func runProofRunLaunch(args []string) int {
 		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
 		return 2
 	}
+	commandClock, fixtureClock, err := goalCommandClock(controlRoot)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
+		return 1
+	}
 	if *commandClass == "" {
 		*commandClass = *suite
 	}
@@ -106,6 +111,7 @@ func runProofRunLaunch(args []string) int {
 		fmt.Fprintln(os.Stderr, "proof-run launch:", err)
 		return 1
 	}
+	launchEnvironment := resolvedTestWorkerEnvironment(nil, limits.workers)
 	if *silenceMS > 0 {
 		limits.silence = time.Duration(*silenceMS) * time.Millisecond
 	}
@@ -185,7 +191,7 @@ func runProofRunLaunch(args []string) int {
 			ExpectedSections: expected, TwiceConsulted: repeated, Silence: limits.silence, SectionCap: limits.sectionCap,
 			EvidenceTimeout: limits.evidenceTimeout, EvidenceMax: limits.evidenceMax, Poll: time.Duration(*pollMS) * time.Millisecond,
 			TermGrace: time.Duration(*termGraceMS) * time.Millisecond, KillGrace: time.Duration(*killGraceMS) * time.Millisecond,
-			Command: command, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
+			Command: command, Environment: launchEnvironment, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
 			FenceReader: func(string) (stopfence.Record, error) {
 				err := checkFence()
 				if errors.Is(err, fenceClosed) {
@@ -206,7 +212,7 @@ func runProofRunLaunch(args []string) int {
 	attempt, decision, joined, err := admitProofLaunch(proofLaunchAdmission{
 		ControlRoot: controlRoot, ExecutionRoot: executionRoot, ConfPath: *conf, GoalID: *goalID, AuthorityGoalID: *authorityGoalID,
 		CapMin: *capMin, RetryDecision: *retryDecision, ScopeClass: *scopeClass,
-		CommandClass: *commandClass, Sections: expected, IdentityInputs: identityInputs,
+		CommandClass: *commandClass, Sections: expected, IdentityInputs: identityInputs, Environment: launchEnvironment, Now: commandClock(),
 	})
 	if err != nil {
 		refusal := proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionAdmissionRefused, ExitStatus: proofrun.ExitAdmissionRefused}
@@ -224,10 +230,17 @@ func runProofRunLaunch(args []string) int {
 		}
 		return decision.ExitStatus
 	}
-	deadline, _ := time.Parse(time.RFC3339Nano, attempt.Deadline)
-	resourceContext, cancelResource := context.WithDeadline(context.Background(), deadline)
+	deadline, deadlineCheck, err := proofDeadline(attempt.Deadline, commandClock)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "proof-run launch: admit native proof:", err)
+		status := retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
+		decision.ExitStatus, decision.Disposition = status, proofrun.DispositionAdmissionRefused
+		_ = proofrun.EncodeResult(os.Stderr, *resultPath, decision)
+		return status
+	}
+	resourceContext, cancelResource := proofDeadlineContext(context.Background(), deadline, fixtureClock)
 	defer cancelResource()
-	lease, release, leaseErr := acquireManagedProofLaunch(resourceContext, controlRoot, *conf)
+	lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(resourceContext, controlRoot, *conf, deadlineCheck)
 	if leaseErr != nil {
 		fmt.Fprintln(os.Stderr, "proof-run launch: admit native proof:", leaseErr)
 		status := retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
@@ -246,7 +259,8 @@ func runProofRunLaunch(args []string) int {
 		Poll:      time.Duration(*pollMS) * time.Millisecond,
 		TermGrace: time.Duration(*termGraceMS) * time.Millisecond,
 		KillGrace: time.Duration(*killGraceMS) * time.Millisecond,
-		Command:   command, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
+		Command:   command, Environment: launchEnvironment, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
+		Now: commandClock,
 		PrepareSuccess: func(completion proofrun.CompletionContext) (json.RawMessage, error) {
 			if joined {
 				return nil, nil
@@ -277,12 +291,6 @@ func runProofRunLaunch(args []string) int {
 		return 1
 	}
 	return launchStatus
-}
-
-// acquireManagedProofLaunch gives an executing public proof one host phase.
-// A retry or reusable decision calls no launcher and takes no phase slot.
-func acquireManagedProofLaunch(ctx context.Context, controlRoot, confPath string) (*proofrun.HostResourceLease, func(), error) {
-	return acquireManagedProofLaunchWithWaitCheck(ctx, controlRoot, confPath, nil)
 }
 
 func acquireManagedProofLaunchWithWaitCheck(ctx context.Context, controlRoot, confPath string, check func() error) (*proofrun.HostResourceLease, func(), error) {
@@ -554,8 +562,13 @@ func retainIncompleteProofAttempt(root, attemptID string, joined bool, status in
 	if status == 0 {
 		status = 1
 	}
+	now, nowErr := goalCommandNow(root)
+	if nowErr != nil {
+		fmt.Fprintln(os.Stderr, "proof-run launch: read terminal clock:", nowErr)
+		return 1
+	}
 	if _, err := proofrun.FinalizeAttempt(root, attemptID, proofrun.TerminalUnknown, status,
-		"proof launcher ended before its ordered terminal commit", nil, time.Now().UTC()); err != nil {
+		"proof launcher ended before its ordered terminal commit", nil, now); err != nil {
 		fmt.Fprintln(os.Stderr, "proof-run launch: retain unknown terminal outcome:", err)
 		return 1
 	}
@@ -599,6 +612,35 @@ type proofLaunchAdmission struct {
 	ForceGroups                                                                          bool
 	ManagedCapacity                                                                      bool
 	RequireDiagnosticHeadroom                                                            bool
+}
+
+// proofDeadline keeps the admitted absolute horizon in the command's clock
+// domain. Reaching the boundary is an admission refusal; an unrelated parent
+// cancellation is an unsuccessful infrastructure abort.
+func proofDeadline(raw string, clock func() time.Time) (time.Time, func() error, error) {
+	deadline, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}, nil, fmt.Errorf("admitted proof deadline is invalid: %w", err)
+	}
+	check := func() error {
+		now := clock()
+		if !deadline.After(now) {
+			return fmt.Errorf("admitted proof deadline %s has passed at semantic time %s",
+				deadline.UTC().Format(time.RFC3339Nano), now.UTC().Format(time.RFC3339Nano))
+		}
+		return nil
+	}
+	if err := check(); err != nil {
+		return time.Time{}, nil, err
+	}
+	return deadline, check, nil
+}
+
+func proofDeadlineContext(parent context.Context, deadline time.Time, fixtureClock bool) (context.Context, context.CancelFunc) {
+	if fixtureClock {
+		return context.WithCancel(parent)
+	}
+	return context.WithDeadline(parent, deadline)
 }
 
 func canonicalProofRoot(path string) (string, error) {
@@ -1510,8 +1552,13 @@ func retainRefusedTerminal(completion proofrun.CompletionContext, refused error,
 	if attempt, err := proofrun.ReadAttempt(completion.ControlRoot, completion.AttemptID); err == nil && attempt.CancellationIntent != "" {
 		result = proofrun.TerminalCancelled
 	}
+	now, nowErr := goalCommandNow(completion.ControlRoot)
+	if nowErr != nil {
+		fmt.Fprintf(notes, "proof terminal commit: read terminal clock: %v\n", nowErr)
+		return
+	}
 	if _, err := proofrun.FinalizeAttempt(completion.ControlRoot, completion.AttemptID, result, status,
-		refused.Error(), nil, time.Now().UTC()); err != nil {
+		refused.Error(), nil, now); err != nil {
 		fmt.Fprintf(notes, "proof terminal commit: retain the refused attempt: %v\n", err)
 	}
 }
@@ -1553,7 +1600,10 @@ func commitProofTerminalWithReason(completion proofrun.CompletionContext, receip
 	if err != nil || fence.State == stopfence.StateClosed || fence.Generation != record.FenceGeneration {
 		return fmt.Errorf("proof terminal commit lost stop-fence authority")
 	}
-	finalizedAt := time.Now().UTC()
+	finalizedAt, err := goalCommandNow(completion.ControlRoot)
+	if err != nil {
+		return fmt.Errorf("proof terminal commit clock: %w", err)
+	}
 	binding, err := dispatchcore.ResolveGoalBinding(completion.ControlRoot, attempt.GoalID, finalizedAt)
 	if err != nil || binding.Revision != attempt.GoalRevision || binding.Fence != nil {
 		return fmt.Errorf("proof terminal commit lost goal-revision authority")
@@ -1570,11 +1620,13 @@ func commitProofTerminalWithReason(completion proofrun.CompletionContext, receip
 }
 
 type proofRunLimits struct {
-	silence         time.Duration
-	sectionCap      time.Duration
-	evidenceTimeout time.Duration
-	evidenceMax     int64
-	concurrency     int
+	silence          time.Duration
+	sectionCap       time.Duration
+	evidenceTimeout  time.Duration
+	evidenceMax      int64
+	concurrency      int
+	workers          int
+	admissionMaximum int
 }
 
 // defaultTestingConcurrency is how many groups of one stage run at once when
@@ -1628,10 +1680,38 @@ func proofRunConfigProblems(confPath string) ([]string, error) {
 			problems = append(problems, fmt.Sprintf("%s must be an integer from %d through %d, got %q", knob.name, knob.minimum, knob.maximum, raw))
 		}
 	}
+	if raw, found, err := config.ConfLookup(confPath, "testing.workers"); err != nil {
+		return nil, err
+	} else if found {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 1 {
+			problems = append(problems, fmt.Sprintf("testing.workers must be a positive integer, got %q", raw))
+		}
+	}
 	return problems, nil
 }
 
+func defaultTestingWorkers(gomaxprocs, admissionMaximum int) int {
+	if gomaxprocs < 1 {
+		gomaxprocs = 1
+	}
+	divisor := admissionMaximum
+	if divisor < 1 {
+		divisor = 1
+	}
+	return max(1, gomaxprocs/divisor)
+}
+
 func resolveProofRunLimits(confPath string) (proofRunLimits, error) {
+	return resolveProofRunLimitsWithEnvironment(confPath, os.LookupEnv)
+}
+
+func resolveProofRunLimitsWithEnvironment(confPath string, lookup func(string) (string, bool)) (proofRunLimits, error) {
+	capturedGOMAXPROCS := runtime.GOMAXPROCS(0)
+	admission, err := proofrun.ResolveAdmissionCap(confPath, runtime.NumCPU())
+	if err != nil {
+		return proofRunLimits{}, err
+	}
 	read := func(key string, def, minimum, maximum int) (int, error) {
 		value, _, err := config.Get(config.GetParams{
 			Key: key, Default: strconv.Itoa(def), DefaultSet: true, ConfPath: confPath,
@@ -1665,13 +1745,45 @@ func resolveProofRunLimits(confPath string) (proofRunLimits, error) {
 	if err != nil {
 		return proofRunLimits{}, err
 	}
+	workerValue, _, err := config.Get(config.GetParams{Key: "testing.workers",
+		Default: strconv.Itoa(defaultTestingWorkers(capturedGOMAXPROCS, admission.Max)), DefaultSet: true, ConfPath: confPath})
+	if err != nil {
+		return proofRunLimits{}, err
+	}
+	workers, err := strconv.Atoi(workerValue)
+	if err != nil || workers < 1 {
+		return proofRunLimits{}, fmt.Errorf("testing.workers must be a positive integer")
+	}
+	if inherited, found := lookup(proofrun.TestWorkersEnvironment); found && inherited != "" {
+		ceiling, parseErr := strconv.Atoi(inherited)
+		if parseErr != nil || ceiling < 1 {
+			return proofRunLimits{}, fmt.Errorf("inherited %s must be a positive integer, got %q", proofrun.TestWorkersEnvironment, inherited)
+		}
+		workers = min(workers, ceiling)
+	}
 	return proofRunLimits{
-		silence:         time.Duration(silence) * time.Minute,
-		sectionCap:      time.Duration(section) * time.Minute,
-		evidenceTimeout: time.Duration(evidenceTimeout) * time.Second,
-		evidenceMax:     int64(evidenceMB) * 1024 * 1024,
-		concurrency:     concurrency,
+		silence:          time.Duration(silence) * time.Minute,
+		sectionCap:       time.Duration(section) * time.Minute,
+		evidenceTimeout:  time.Duration(evidenceTimeout) * time.Second,
+		evidenceMax:      int64(evidenceMB) * 1024 * 1024,
+		concurrency:      concurrency,
+		workers:          workers,
+		admissionMaximum: admission.Max,
 	}, nil
+}
+
+func resolvedTestWorkerEnvironment(base []string, workers int) []string {
+	if len(base) == 0 {
+		base = os.Environ()
+	}
+	result := make([]string, 0, len(base)+1)
+	for _, entry := range base {
+		name, _, _ := strings.Cut(entry, "=")
+		if name != proofrun.TestWorkersEnvironment {
+			result = append(result, entry)
+		}
+	}
+	return append(result, proofrun.TestWorkersEnvironment+"="+strconv.Itoa(workers))
 }
 
 func selectedSections(selector, selected string, enumerated bool) ([]string, map[string]bool, error) {
@@ -1722,6 +1834,18 @@ func selectedSections(selector, selected string, enumerated bool) ([]string, map
 	}
 	if selected == "" {
 		return sections, declaredTwice, nil
+	}
+	if !known[selected] {
+		command = exec.Command("bash", selector, "fixture", selected)
+		output, err = command.Output()
+		if err != nil {
+			return nil, nil, fmt.Errorf("selected section %q is absent from the selector and bounded fixture declarations: %w", selected, err)
+		}
+		lines := bytes.Split(bytes.TrimSpace(output), []byte{'\n'})
+		id, _, found := bytes.Cut(lines[0], []byte{'\t'})
+		if len(lines) != 1 || !found || string(id) != selected {
+			return nil, nil, fmt.Errorf("bounded fixture declaration for %q emitted invalid row %q", selected, output)
+		}
 	}
 	// A selected run drives one call site, so it expects one interval even
 	// when the full validation run consults that section more than once.

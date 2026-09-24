@@ -9,13 +9,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 )
 
 const recordLengthBytes = 8
@@ -35,10 +37,18 @@ type manifest struct {
 	entries []entry
 	records []byte
 	digest  string
+	layout  []byte
+}
+
+type completeManifestRoot struct {
+	projectRoot        string
+	installationPrefix string
+	hasGit             bool
 }
 
 func (m manifest) fullDigest() string {
 	var framed bytes.Buffer
+	framed.Write(m.layout)
 	for _, item := range m.entries {
 		body := recordBody(item)
 		var length [recordLengthBytes]byte
@@ -62,6 +72,26 @@ func (m manifest) fullDigest() string {
 // manifest digest is the SHA-256 digest of the concatenated length-framed
 // records.
 func readManifest(root string) (manifest, error) {
+	return readManifestAt(root, "", false)
+}
+
+func readCompleteManifest(root string) (manifest, completeManifestRoot, error) {
+	location, err := resolveCompleteManifestRoot(root)
+	if err != nil {
+		return manifest{}, completeManifestRoot{}, err
+	}
+	result, err := readManifestAt(location.projectRoot, location.installationPrefix, true)
+	if err == nil {
+		result.layout = completeLayoutRecord(location)
+	}
+	return result, location, err
+}
+
+func readManifestAt(root, installationPrefix string, complete bool) (manifest, error) {
+	return readManifestAtWithHook(root, installationPrefix, complete, nil)
+}
+
+func readManifestAtWithHook(root, installationPrefix string, complete bool, beforeEntry func(string, fs.DirEntry) error) (manifest, error) {
 	canonical, err := filepath.Abs(root)
 	if err != nil {
 		return manifest{}, fmt.Errorf("resolve manifest root: %w", err)
@@ -87,19 +117,51 @@ func readManifest(root string) (manifest, error) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
+		if isLocalConfiguration(rel) {
+			if dirEntry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if beforeEntry != nil {
+			if err := beforeEntry(rel, dirEntry); err != nil {
+				return err
+			}
+		}
 		if dirEntry.IsDir() {
+			if complete && rel == ".git" {
+				return filepath.SkipDir
+			}
+			if complete {
+				excluded, err := completeDirectoryExcluded(rel, installationPrefix)
+				if err != nil {
+					return err
+				}
+				if excluded {
+					return filepath.SkipDir
+				}
+			}
 			// Only the hard runtime roots prune whole subtrees; a
 			// directory name alone cannot answer projection membership
 			// (bare "scripts" matches no pattern while
 			// scripts/agents/** lives beneath it — first drawn as a
 			// dropped go-gate.sh in the frozen export, 2026-08-29).
-			if hardExcluded(rel) {
+			if !complete && hardExcluded(rel) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if hardExcluded(rel) {
+		if !complete && hardExcluded(rel) {
 			return nil
+		}
+		if complete {
+			included, err := completeInputIncluded(rel, installationPrefix)
+			if err != nil {
+				return err
+			}
+			if !included {
+				return nil
+			}
 		}
 		item, err := inspectEntry(path, rel, dirEntry)
 		if err != nil {
@@ -111,7 +173,7 @@ func readManifest(root string) (manifest, error) {
 		// skips, measured 2026-08-29), while only ENGINE-projection
 		// members are DIGESTED so deliberately mutated fixture copies
 		// still byte-match and reuse the proof.
-		item.digested = engineProjectionMember(rel)
+		item.digested = complete || engineProjectionMember(rel)
 		entries = append(entries, item)
 		return nil
 	})
@@ -135,6 +197,96 @@ func readManifest(root string) (manifest, error) {
 	}
 	digest := sha256.Sum256(framed.Bytes())
 	return manifest{entries: entries, records: framed.Bytes(), digest: hex.EncodeToString(digest[:])}, nil
+}
+
+func completeLayoutRecord(location completeManifestRoot) []byte {
+	kind := "no-git"
+	if location.hasGit {
+		kind = "git"
+	}
+	body := []byte("complete-project-layout\x00" + kind + "\x00" + location.installationPrefix)
+	framed := make([]byte, recordLengthBytes, recordLengthBytes+len(body))
+	binary.BigEndian.PutUint64(framed, uint64(len(body)))
+	return append(framed, body...)
+}
+
+func completeDirectoryExcluded(rel, installationPrefix string) (bool, error) {
+	prefix := strings.Trim(filepath.ToSlash(installationPrefix), "/")
+	if prefix != "" && (rel == prefix || strings.HasPrefix(prefix, rel+"/")) {
+		return false, nil
+	}
+	included, err := completeInputIncluded(rel, installationPrefix)
+	return !included, err
+}
+
+func resolveCompleteManifestRoot(root string) (completeManifestRoot, error) {
+	canonical, err := filepath.Abs(root)
+	if err == nil {
+		canonical, err = filepath.EvalSymlinks(canonical)
+	}
+	if err != nil {
+		return completeManifestRoot{}, fmt.Errorf("resolve complete manifest root: %w", err)
+	}
+	info, err := os.Stat(canonical)
+	if err != nil || !info.IsDir() {
+		if err == nil {
+			err = fmt.Errorf("not a directory")
+		}
+		return completeManifestRoot{}, fmt.Errorf("read complete manifest root %s: %w", root, err)
+	}
+	if !hasGitMarker(canonical) {
+		return completeManifestRoot{projectRoot: canonical}, nil
+	}
+	workspace := gittree.Workspace{Dir: canonical}
+	projectRoot, err := workspace.TopLevel()
+	if err != nil {
+		return completeManifestRoot{}, fmt.Errorf("resolve frozen project root: %w", err)
+	}
+	projectRoot, err = filepath.EvalSymlinks(projectRoot)
+	if err != nil {
+		return completeManifestRoot{}, fmt.Errorf("resolve frozen project root: %w", err)
+	}
+	prefix, err := filepath.Rel(projectRoot, canonical)
+	if err != nil || prefix == ".." || strings.HasPrefix(prefix, ".."+string(filepath.Separator)) {
+		return completeManifestRoot{}, fmt.Errorf("resolve frozen installation prefix: %w", err)
+	}
+	if prefix == "." {
+		prefix = ""
+	} else {
+		prefix = filepath.ToSlash(prefix)
+	}
+	return completeManifestRoot{projectRoot: projectRoot, installationPrefix: prefix, hasGit: true}, nil
+}
+
+func hasGitMarker(root string) bool {
+	for current := root; ; current = filepath.Dir(current) {
+		if _, err := os.Lstat(filepath.Join(current, ".git")); err == nil {
+			return true
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return false
+		}
+	}
+}
+
+func completeInputIncluded(rel, installationPrefix string) (bool, error) {
+	if isLocalConfiguration(rel) || rel == ".git" || strings.HasPrefix(rel, ".git/") {
+		return false, nil
+	}
+	if enginePolicyErr != nil {
+		return false, fmt.Errorf("load behavior-surface policy for frozen input: %w", enginePolicyErr)
+	}
+	return enginePolicy.Includes(behaviorsurface.Landing, rel, installationPrefix)
+}
+
+func isLocalConfiguration(rel string) bool {
+	for _, component := range strings.Split(filepath.ToSlash(rel), "/") {
+		if component == "metasystem.conf.local" {
+			return true
+		}
+	}
+	return false
 }
 
 // excluded inverts the ENGINE projection: the frozen closure is the
@@ -244,7 +396,7 @@ func Digest(root string) (string, error) {
 // FullDigest uses the same framing and exclusions as the witness manifest but
 // includes every non-runtime source/input entry, not only ENGINE projection.
 func FullDigest(root string) (string, error) {
-	m, err := readManifest(root)
+	m, _, err := readCompleteManifest(root)
 	if err != nil {
 		return "", err
 	}

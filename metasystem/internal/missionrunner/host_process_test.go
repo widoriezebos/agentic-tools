@@ -7,6 +7,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/janitor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"golang.org/x/sys/unix"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,43 @@ import (
 
 // The host process lifecycle, driven with real processes (Phase 3b's
 // coverage hardening: these paths run under every mission and had none).
+
+func startHeldHostProcess(t *testing.T, command *exec.Cmd) *hostProcess {
+	t.Helper()
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseRead, releaseWrite, err := os.Pipe()
+	if err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		t.Fatal(err)
+	}
+	command.Stdin = releaseRead
+	command.ExtraFiles = []*os.File{readyWrite}
+	process, err := startProcess(command)
+	if err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		_ = releaseRead.Close()
+		_ = releaseWrite.Close()
+		t.Fatal(err)
+	}
+	_ = readyWrite.Close()
+	_ = releaseRead.Close()
+	t.Cleanup(func() {
+		_ = releaseWrite.Close()
+		<-process.done
+	})
+	var ready [1]byte
+	if _, err := io.ReadFull(readyRead, ready[:]); err != nil || ready[0] != 'x' {
+		_ = readyRead.Close()
+		t.Fatalf("held host readiness=%q err=%v", ready, err)
+	}
+	_ = readyRead.Close()
+	return process
+}
 
 func TestStartProcessLifecycle(t *testing.T) {
 	process, err := startProcess(exec.Command("sleep", "0.1"))
@@ -36,11 +74,7 @@ func TestStartProcessLifecycle(t *testing.T) {
 }
 
 func TestWaitForBoundsItsWait(t *testing.T) {
-	process, err := startProcess(exec.Command("sleep", "30"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer process.cmd.Process.Kill()
+	process := startHeldHostProcess(t, exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :"))
 	if process.exited() {
 		t.Fatal("reported exited while sleeping")
 	}
@@ -72,7 +106,7 @@ func TestExitCodeShapes(t *testing.T) {
 		t.Fatalf("false exited %d", code)
 	}
 	// A signaled child reads as -1, the plain-failure convention.
-	process, _ = startProcess(exec.Command("sleep", "30"))
+	process = startHeldHostProcess(t, exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :"))
 	process.cmd.Process.Signal(syscall.SIGKILL)
 	<-process.done
 	if code := process.exitCode(); code != -1 {

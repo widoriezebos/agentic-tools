@@ -1354,7 +1354,22 @@ func runDispatchStopProofCancel(args []string) int {
 	if flags.Parse(args) != nil || *root == "" || *stopID == "" || *attemptID == "" {
 		return 2
 	}
-	return recordExit(dispatchcore.CancelStopProof(*root, *stopID, *attemptID))
+	return recordExit(cancelStopProofFromCommand(*root, *stopID, *attemptID,
+		dispatchcore.CancelStopProof, dispatchcore.CancelStopProofAt))
+}
+
+func cancelStopProofFromCommand(root, stopID, attemptID string,
+	cancel func(string, string, string) error,
+	cancelAt func(string, string, string, time.Time) error,
+) error {
+	clock, fixtureClock, err := goalCommandClock(root)
+	if err != nil {
+		return err
+	}
+	if fixtureClock {
+		return cancelAt(root, stopID, attemptID, clock())
+	}
+	return cancel(root, stopID, attemptID)
 }
 
 func runDispatchStopCancelAuthorize(args []string) int {
@@ -1508,16 +1523,21 @@ func runDispatchHandshakeEval(args []string) int {
 
 func runDispatchReapFacts(args []string) int {
 	flags := flag.NewFlagSet("job reap-facts", flag.ContinueOnError)
+	root := pathFlag(flags, "root", "", "checkout root authorizing fixture time")
 	record := flags.String("record", "", "job record file")
 	grace := flags.Int64("grace", dispatchcore.HandshakeBackstopGraceSec, "seconds past the handshake deadline before the backstop acts")
 	if flags.Parse(args) != nil {
 		return 2
 	}
-	if *record == "" {
-		fmt.Fprintln(os.Stderr, "job reap-facts: --record is required")
+	if *root == "" || *record == "" {
+		fmt.Fprintln(os.Stderr, "job reap-facts: --root and --record are required")
 		return 2
 	}
-	facts, err := dispatchcore.ComputeReapFacts(*record, *grace, time.Now())
+	now, err := goalCommandNow(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	facts, err := dispatchcore.ComputeReapFacts(*record, *grace, now)
 	if err != nil {
 		return recordExit(err)
 	}
@@ -1544,6 +1564,7 @@ func runDispatchCensusFresh(args []string) int {
 		return 2
 	}
 	expected := ""
+	now := time.Now()
 	if *root != "" {
 		fp, err := census.Fingerprint(*root, *repo)
 		if err != nil {
@@ -1551,8 +1572,13 @@ func runDispatchCensusFresh(args []string) int {
 			return 1
 		}
 		expected = fp
+		now, err = goalCommandNow(*root)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "dispatch refused: census clock cannot be resolved: %v\n", err)
+			return 1
+		}
 	}
-	if err := dispatchcore.CensusFresh(*verdict, *state, *arm, *repo, expected, time.Now()); err != nil {
+	if err := dispatchcore.CensusFresh(*verdict, *state, *arm, *repo, expected, now); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		var armingWindow dispatchcore.ArmingWindowError
 		if errors.As(err, &armingWindow) {

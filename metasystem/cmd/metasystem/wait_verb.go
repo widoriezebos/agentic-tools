@@ -18,7 +18,6 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
@@ -27,7 +26,6 @@ import (
 )
 
 var waitCallerPID = func() int64 { return int64(os.Getppid()) }
-var waitBootClock = identity.BootClock
 var waitPathStat = metarun.PathStat(os.Stat)
 var errChannelPollNotDue = errors.New("channel provider poll is not due")
 var waitOpenWorkSignature = report.OpenWorkSignature
@@ -359,6 +357,10 @@ func runWaitNotify(args []string) int {
 }
 
 func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Caller, runtimeName string, poll func(context.Context) error) (metarun.WaitOptions, error) {
+	semanticClock, _, err := goalCommandClock(root)
+	if err != nil {
+		return metarun.WaitOptions{}, err
+	}
 	adapterPath, err := waitAdapterPathForRuntime(root, runtimeName)
 	if err != nil {
 		return metarun.WaitOptions{}, err
@@ -427,11 +429,14 @@ func waitOptions(root string, selector metarun.WaitSelector, owner metarun.Calle
 	}
 	return metarun.WaitOptions{
 		Runtime:           runtimeName,
+		Now:               semanticClock,
 		Observe:           observe,
 		OpenHintReceiver:  openHintReceiver,
 		OpenWorkSignature: openWorkSignature,
-		BootClock:         waitBootClock,
-		EmitEvent:         emitWaitCommandEvent,
+		BootClock: func() (string, time.Duration, error) {
+			return goalCommandBootClock(root)
+		},
+		EmitEvent: emitWaitCommandEvent,
 		Deliver: func(ctx context.Context, waitID, nonce string, deadline time.Time, session string) (string, bool, error) {
 			answer, err := adapter.DeliverWait(ctx, adapterPath, adapter.WaitDeliveryRequest{WaitID: waitID, Nonce: nonce, Deadline: deadline, Session: session})
 			if errors.Is(err, adapter.ErrWaitDeliveryDeclined) {

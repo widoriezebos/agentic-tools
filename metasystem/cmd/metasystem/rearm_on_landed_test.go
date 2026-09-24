@@ -91,10 +91,16 @@ func TestLandedRearmRebuildWaitsForHostSlotAndClearsCustody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	blocked, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-	defer cancel()
-	if err := landedRearmRebuild(proofrun.WithResourceCustodyExecutable(blocked, engine), installation); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("rebuild did not wait for occupied host slot: %v", err)
+	blocked, cancel := context.WithCancel(t.Context())
+	observedWait := false
+	blocked = proofrun.WithHostResourceWaitObserver(blocked, func() {
+		observedWait = true
+		cancel()
+	})
+	err = landedRearmRebuild(proofrun.WithResourceCustodyExecutable(blocked, engine), installation)
+	cancel()
+	if !observedWait || !errors.Is(err, context.Canceled) {
+		t.Fatalf("rebuild contender did not complete a failed host resource scan: observed=%t err=%v", observedWait, err)
 	}
 	if _, err := os.Stat(filepath.Join(installation, "build-ran")); !os.IsNotExist(err) {
 		t.Fatalf("rebuild ran before host admission: %v", err)

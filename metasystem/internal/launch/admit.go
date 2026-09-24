@@ -48,6 +48,9 @@ func (m *Manager) Admit(spec StartSpec) error {
 }
 
 func (m *Manager) admit(spec StartSpec, settings Settings) error {
+	if spec.Kind == "critique" && (spec.Tag == "" || len(spec.Inputs) < 2) {
+		return fmt.Errorf("critique requires --tag and two --input files")
+	}
 	if spec.Kind == "read" && spec.DiffFile == "" {
 		return fmt.Errorf("LAUNCH_READ_UNSIZED missing=diff-file")
 	}

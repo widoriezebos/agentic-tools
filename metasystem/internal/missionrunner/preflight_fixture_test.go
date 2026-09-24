@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -275,41 +276,50 @@ func buildPreflightBed(t *testing.T, directive string, nested bool) *Engine {
 func writeFreshSupervision(t *testing.T, engine *Engine) {
 	t.Helper()
 	root := engine.Root
+	stableNow := time.Now().UTC().Truncate(time.Second)
+	engine.Now = func() time.Time { return stableNow }
 	watcherPid, watcherStart := spawnTaggedHold(t, "fixture-watcher-tag")
 	reaperPid, reaperStart := spawnTaggedHold(t, "fixture-reaper-tag")
+	landingPid, landingStart := spawnTaggedHold(t, "fixture-landing-owner-tag")
 	supervision := filepath.Join(root, "artifacts", "agents", "supervision")
 	os.MkdirAll(supervision, 0o755)
-	now := time.Now().Unix()
+	now := stableNow.Unix()
 	watcherBeat := filepath.Join(supervision, "watcher.heartbeat.json")
 	reaperBeat := filepath.Join(supervision, "reaper.heartbeat.json")
+	landingBeat := filepath.Join(supervision, "landing-owner.heartbeat.json")
 	writeDoc := func(path string, doc map[string]any) {
 		if err := atomicWriteJSON(path, doc); err != nil {
 			t.Fatal(err)
 		}
 	}
 	writeDoc(watcherBeat, map[string]any{
-		"function": "watcher", "pid": watcherPid, "pidStartedAt": watcherStart, "observedAtEpoch": now,
+		"function": "watcher", "pid": watcherPid, "pidStartedAt": watcherStart, "observedAtEpoch": now, "loadedCapMin": 330,
 	})
 	writeDoc(reaperBeat, map[string]any{
 		"function": "reaper", "pid": reaperPid, "pidStartedAt": reaperStart, "observedAtEpoch": now,
 	})
-	// The bed's census is written once and never refreshed, and the
-	// preflight counts a census older than the declared interval as stale;
-	// a fixture that spends its whole test on real mission births under a
-	// loaded box outlives sixty seconds (2026-09-11, the pooled battery),
-	// so the fixture declares the interval its tests actually need.
+	writeDoc(landingBeat, map[string]any{
+		"function": "landing-owner", "pid": landingPid, "pidStartedAt": landingStart, "observedAtEpoch": now,
+	})
 	writeDoc(filepath.Join(supervision, "state.json"), map[string]any{
-		"intervalSec": 600, "fingerprint": "fixture-fingerprint",
+		"intervalSec": 60, "fingerprint": "fixture-fingerprint", "generation": 1, "derivedWatcherCapMin": 330,
 		"components": map[string]any{
 			"watcher": map[string]any{"pid": watcherPid, "pidStartedAt": watcherStart,
 				"instanceTag": "fixture-watcher-tag", "heartbeat": watcherBeat},
 			"reaper": map[string]any{"pid": reaperPid, "pidStartedAt": reaperStart,
 				"instanceTag": "fixture-reaper-tag", "heartbeat": reaperBeat},
+			"landing-owner": map[string]any{"pid": landingPid, "pidStartedAt": landingStart,
+				"instanceTag": "fixture-landing-owner-tag", "heartbeat": landingBeat},
 		},
 	})
 	writeDoc(filepath.Join(supervision, "last-census.json"), map[string]any{
-		"completedAtEpoch": now, "verdict": "SUCCESS", "fingerprint": "fixture-fingerprint",
+		"completedAtEpoch": now, "verdict": "SUCCESS", "fingerprint": "fixture-fingerprint", "generation": 1,
 	})
+	inspection := supervise.InspectArmedAt(filepath.Join(root, "artifacts", "agents"), root,
+		int64(watcherPid), watcherStart, "fixture-watcher-tag", 60, stableNow)
+	if !inspection.Armed() {
+		t.Fatalf("fresh supervision did not pass at its semantic instant: %+v", inspection)
+	}
 }
 
 // The full launch gate passes in-process: arming, seal verification,
@@ -969,7 +979,8 @@ func TestStillbornInitCleansItsArtifacts(t *testing.T) {
 		"reservations":           map[string]any{},
 		"approvedContractSha256": strings.Repeat("d", 64),
 	})
-	lower := time.Now().UTC().Add(-2 * time.Second)
+	fixedNow := time.Now().UTC().Truncate(time.Second)
+	engine.Now = func() time.Time { return fixedNow }
 	if err := engine.armAndPreflight("start"); err != nil {
 		t.Fatalf("the corrected retry must re-pin over remnants: %v", err)
 	}
@@ -978,8 +989,8 @@ func TestStillbornInitCleansItsArtifacts(t *testing.T) {
 	refreshed := readTestDoc(t, engine.fencesPath())
 	started, _ := refreshed["startedAt"].(string)
 	stamp, perr := time.Parse(time.RFC3339, started)
-	if perr != nil || stamp.Before(lower) || stamp.After(time.Now().UTC().Add(2*time.Second)) {
-		t.Fatalf("the stillborn re-pin must refresh the clock to now: %v (%v)", started, perr)
+	if perr != nil || !stamp.Equal(fixedNow) {
+		t.Fatalf("the stillborn re-pin timestamp = %v, want %v (parse error %v)", stamp, fixedNow, perr)
 	}
 	signal := filepath.Join(t.TempDir(), "start.json")
 	if code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture-sb", signal); code != 0 {

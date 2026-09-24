@@ -1,6 +1,7 @@
 package supervise
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +31,93 @@ type armingProbeFunc func(int64) (identity.Exact, identity.Liveness, error)
 
 func (f armingProbeFunc) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
 	return f(pid)
+}
+
+type ownedHeldProcess struct {
+	command       *exec.Cmd
+	readyReader   *os.File
+	readyWriter   *os.File
+	releaseReader *os.File
+	releaseWriter *os.File
+	released      bool
+	joined        bool
+	waitErr       error
+}
+
+func newOwnedHeldProcess(t *testing.T, newSession bool, arguments ...string) *ownedHeldProcess {
+	t.Helper()
+	readyReader, readyWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseReader, releaseWriter, err := os.Pipe()
+	if err != nil {
+		_ = readyReader.Close()
+		_ = readyWriter.Close()
+		t.Fatal(err)
+	}
+	commandArguments := append([]string{"-c", "printf 'ready\\n' >&4; IFS= read -r _ <&3", "arming-held-process"}, arguments...)
+	command := exec.Command("sh", commandArguments...)
+	command.ExtraFiles = []*os.File{releaseReader, readyWriter}
+	if newSession {
+		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	}
+	held := &ownedHeldProcess{
+		command: command, readyReader: readyReader, readyWriter: readyWriter,
+		releaseReader: releaseReader, releaseWriter: releaseWriter,
+	}
+	t.Cleanup(func() {
+		_ = held.release()
+		_ = held.join()
+		_ = held.readyReader.Close()
+		_ = held.readyWriter.Close()
+		_ = held.releaseReader.Close()
+		_ = held.releaseWriter.Close()
+	})
+	return held
+}
+
+func startOwnedHeldProcess(t *testing.T, newSession bool, arguments ...string) *ownedHeldProcess {
+	t.Helper()
+	held := newOwnedHeldProcess(t, newSession, arguments...)
+	if err := held.command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	held.requireReady(t)
+	return held
+}
+
+func (p *ownedHeldProcess) requireReady(t *testing.T) {
+	t.Helper()
+	_ = p.readyWriter.Close()
+	_ = p.releaseReader.Close()
+	line, err := bufio.NewReader(p.readyReader).ReadString('\n')
+	_ = p.readyReader.Close()
+	if err != nil || line != "ready\n" {
+		t.Fatalf("held process readiness = %q, %v", line, err)
+	}
+}
+
+func (p *ownedHeldProcess) release() error {
+	if p.released {
+		return nil
+	}
+	p.released = true
+	_, writeErr := p.releaseWriter.Write([]byte("release\n"))
+	closeErr := p.releaseWriter.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
+}
+
+func (p *ownedHeldProcess) join() error {
+	if p.joined || p.command.Process == nil {
+		return p.waitErr
+	}
+	p.waitErr = p.command.Wait()
+	p.joined = true
+	return p.waitErr
 }
 
 func armingHelperArgs() ([]string, bool) {
@@ -713,13 +801,8 @@ func TestTakeoverRefusalNamesTheRecordedComponent(t *testing.T) {
 	if err := os.MkdirAll(SupervisionDir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("sleep", "30")
-	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := command.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() })
-	exact, state, err := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
+	heldProcess := startOwnedHeldProcess(t, true, "recorded-component-holder")
+	exact, state, err := (identity.KernelProber{}).Probe(int64(heldProcess.command.Process.Pid))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("read recorded component identity: state=%s err=%v", state, err)
 	}
@@ -739,6 +822,12 @@ func TestTakeoverRefusalNamesTheRecordedComponent(t *testing.T) {
 	var componentFailure *ComponentFailure
 	if !errors.As(err, &componentFailure) || componentFailure.Component != "job-reaper" || !strings.Contains(err.Error(), "no longer tag-authenticated") {
 		t.Fatalf("takeover refusal lost the component and authentication reason: %v", err)
+	}
+	if err := heldProcess.release(); err != nil {
+		t.Fatal(err)
+	}
+	if err := heldProcess.join(); err != nil {
+		t.Fatalf("recorded component holder did not exit cleanly: %v", err)
 	}
 }
 
@@ -982,15 +1071,11 @@ func TestCapAuthorityLockTimesOutBehindAnotherArmer(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(directory), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	holder := exec.Command("sleep", "30")
-	if err := holder.Start(); err != nil {
+	holder := startOwnedHeldProcess(t, false, "sleep")
+	if err := dispatch.OwnerLockClaim(directory, int64(holder.command.Process.Pid), "sleep"); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = holder.Process.Kill(); _, _ = holder.Process.Wait() })
-	if err := dispatch.OwnerLockClaim(directory, int64(holder.Process.Pid), "sleep"); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = dispatch.OwnerLockRelease(directory, int64(holder.Process.Pid), "sleep") })
+	t.Cleanup(func() { _ = dispatch.OwnerLockRelease(directory, int64(holder.command.Process.Pid), "sleep") })
 	if _, err := acquireCapAuthorityLock(root, 1); err == nil || !strings.Contains(err.Error(), "remained busy") {
 		t.Fatalf("a second armer crossed the cap-authority lock: %v", err)
 	}
@@ -1010,6 +1095,15 @@ func TestCapAuthorityLockTimesOutBehindAnotherArmer(t *testing.T) {
 	}
 	if elapsed := now.Sub(time.Unix(2000, 0)); elapsed != time.Second {
 		t.Fatalf("arming wait advanced fake time by %s, want 1s", elapsed)
+	}
+	if err := dispatch.OwnerLockRelease(directory, int64(holder.command.Process.Pid), "sleep"); err != nil {
+		t.Fatal(err)
+	}
+	if err := holder.release(); err != nil {
+		t.Fatal(err)
+	}
+	if err := holder.join(); err != nil {
+		t.Fatalf("cap-authority holder did not exit cleanly: %v", err)
 	}
 }
 
@@ -1124,20 +1218,46 @@ func TestLaunchOwnerReportsEarlyExitAndPublicationFailures(t *testing.T) {
 		}
 		options := armingOptions(root)
 		var mkdirErr error
+		var gate string
+		var holder *ownedHeldProcess
+		priorProbe := armingOwnerProbe
+		readyObserved := false
+		armingOwnerProbe = func(pid int64) (identity.Exact, identity.Liveness, error) {
+			if !readyObserved {
+				if holder == nil {
+					t.Fatal("start-gate holder was not constructed before identity probe")
+				}
+				holder.requireReady(t)
+				readyObserved = true
+			}
+			return priorProbe(pid)
+		}
+		t.Cleanup(func() { armingOwnerProbe = priorProbe })
 		options.Command = func(args ...string) (*exec.Cmd, error) {
-			gate := processArgument(args, "--gate")
+			gate = processArgument(args, "--gate")
 			mkdirErr = os.Mkdir(gate, 0o755)
 			if mkdirErr != nil {
 				return nil, mkdirErr
 			}
-			return exec.Command("sh", "-c", "sleep 30"), nil
+			holder = newOwnedHeldProcess(t, false, args...)
+			return holder.command, nil
 		}
 		_, err := launchOwner(options, "owner-tag")
 		if mkdirErr != nil {
 			t.Fatal(mkdirErr)
 		}
-		if err == nil {
-			t.Fatal("an owner whose start gate was blocked was accepted")
+		if holder == nil {
+			t.Fatal("start-gate holder was not constructed")
+		}
+		if !readyObserved {
+			t.Fatal("owner identity was published before child readiness was observed")
+		}
+		var pathErr *os.PathError
+		if !errors.As(err, &pathErr) || pathErr.Path != gate || !errors.Is(pathErr.Err, syscall.EISDIR) {
+			t.Fatalf("malformed owner start gate failure = %v, want EISDIR for %s", err, gate)
+		}
+		if waitErr := holder.join(); waitErr == nil {
+			t.Fatal("owner survived the malformed start-gate publication failure")
 		}
 	})
 }
@@ -1232,11 +1352,8 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 	if err := os.MkdirAll(ownerLockDir(root), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	deadCommand := exec.Command("sleep", "30")
-	deadCommand.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := deadCommand.Start(); err != nil {
-		t.Fatal(err)
-	}
+	deadProcess := startOwnedHeldProcess(t, true, "dead-owner-holder")
+	deadCommand := deadProcess.command
 	deadExact, state, err := (identity.KernelProber{}).Probe(int64(deadCommand.Process.Pid))
 	if err != nil || state != identity.Alive {
 		_ = deadCommand.Process.Kill()
@@ -1253,7 +1370,7 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 	if err := deadCommand.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
-	if err := deadCommand.Wait(); err == nil {
+	if err := deadProcess.join(); err == nil {
 		t.Fatal("the deliberately crashed owner exited successfully")
 	}
 

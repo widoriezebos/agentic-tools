@@ -23,6 +23,20 @@ func TestNarrationLineSpeaksPlainly(t *testing.T) {
 	}
 }
 
+func TestNarrateRendersTheInjectedInstantInTheLocalZone(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	instant := time.Date(2026, 9, 21, 8, 15, 0, 0, time.UTC)
+	local := time.FixedZone("CEST-fixture", 2*60*60)
+	Narrate(root, TickResult{OpenWork: "observing", Decision: Decision{Action: ActNone}}, TickConfig{
+		Now: instant, narrationLocation: local,
+	})
+	data, err := os.ReadFile(NarrationPath(root))
+	if err != nil || !strings.HasPrefix(string(data), "2026-09-21 10:15  ") {
+		t.Fatalf("local narration=%q err=%v", data, err)
+	}
+}
+
 func TestNarratedLandingWritesDurableDigestEntry(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 8, 29, 10, 0, 0, 0, time.UTC)

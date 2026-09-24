@@ -207,38 +207,25 @@ func serviceOn(t *testing.T, script fakeacp.Script) (*partner.Service, *partner.
 func collect(t *testing.T, events <-chan partner.Event, terminal ...string) []partner.Event {
 	t.Helper()
 	var read []partner.Event
-	deadline := time.NewTimer(20 * time.Second)
-	defer deadline.Stop()
-	for {
-		select {
-		case event := <-events:
-			read = append(read, event)
-			for _, kind := range terminal {
-				if event.Kind == kind {
-					return read
-				}
+	for event := range events {
+		read = append(read, event)
+		for _, kind := range terminal {
+			if event.Kind == kind {
+				return read
 			}
-		case <-deadline.C:
-			t.Fatalf("the turn never ended; read %d beats", len(read))
-			return read
 		}
 	}
+	t.Fatalf("the turn never ended; read %d beats", len(read))
+	return read
 }
 
 // waitFor reads beats until one of the given kind arrives.
 func waitFor(t *testing.T, events <-chan partner.Event, kind string) {
 	t.Helper()
-	deadline := time.NewTimer(20 * time.Second)
-	defer deadline.Stop()
-	for {
-		select {
-		case event := <-events:
-			if event.Kind == kind {
-				return
-			}
-		case <-deadline.C:
-			t.Fatalf("no %s beat arrived", kind)
+	for event := range events {
+		if event.Kind == kind {
 			return
 		}
 	}
+	t.Fatalf("no %s beat arrived", kind)
 }

@@ -95,6 +95,7 @@ type controls struct {
 type server struct {
 	dir              string
 	parked           chan<- WaitPoint
+	now              func() time.Time
 	longPollNow      func() time.Time
 	longPollAfter    func(time.Duration) <-chan time.Time
 	mu               sync.Mutex
@@ -124,6 +125,7 @@ type ServeHooks struct {
 	ConnState     func(net.Conn, http.ConnState)
 	Ready         chan<- string
 	Parked        chan<- WaitPoint
+	Now           func() time.Time
 	LongPollNow   func() time.Time
 	LongPollAfter func(time.Duration) <-chan time.Time
 }
@@ -153,12 +155,16 @@ func ServeWithHooks(ctx context.Context, dir string, hooks ServeHooks) error {
 	if hooks.LongPollNow == nil {
 		hooks.LongPollNow = time.Now
 	}
+	if hooks.Now == nil {
+		hooks.Now = time.Now
+	}
 	if hooks.LongPollAfter == nil {
 		hooks.LongPollAfter = time.After
 	}
 	s := &server{
 		dir:           dir,
 		parked:        hooks.Parked,
+		now:           hooks.Now,
 		longPollNow:   hooks.LongPollNow,
 		longPollAfter: hooks.LongPollAfter,
 		counter:       1000000,
@@ -225,7 +231,7 @@ func writeRename(path string, data []byte) error {
 
 func (s *server) nextID() int64 { s.counter++; return int64(s.counter) }
 func (s *server) nextTS() string {
-	micros := time.Now().UnixMicro()
+	micros := s.now().UnixMicro()
 	if micros <= s.lastTSMicros {
 		micros = s.lastTSMicros + 1
 	}
@@ -303,7 +309,7 @@ func (s *server) serveTelegram(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		id := s.nextID()
 		s.mu.Unlock()
-		json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{"message_id": id, "chat": map[string]any{"id": intValue(body["chat_id"])}, "date": time.Now().Unix(), "text": stringValue(body["text"])}})
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{"message_id": id, "chat": map[string]any{"id": intValue(body["chat_id"])}, "date": s.now().Unix(), "text": stringValue(body["text"])}})
 	case "getUpdates":
 		s.telegramUpdates(r.Context(), w, body, listener)
 	case "getMe":
@@ -482,7 +488,7 @@ func (s *server) loadNew() {
 				if row.Chat == 0 {
 					row.Chat = 1000
 				}
-				date := time.Now().Unix()
+				date := s.now().Unix()
 				if row.Date != nil {
 					date = *row.Date
 				}

@@ -171,6 +171,10 @@ func UpdateIntent(repoRoot string, it Intent) error {
 // deliberately not notification-gated; the operator is contacted only when
 // the machinery cannot complete the repair.
 func ConsumeIntent(repoRoot, nonce string) (Intent, error) {
+	return consumeIntentAt(repoRoot, nonce, time.Now())
+}
+
+func consumeIntentAt(repoRoot, nonce string, now time.Time) (Intent, error) {
 	live := filepath.Join(intentsDir(repoRoot), nonce+".json")
 	data, err := os.ReadFile(live)
 	if err != nil {
@@ -188,7 +192,6 @@ func ConsumeIntent(repoRoot, nonce string) (Intent, error) {
 	// irreversible move, so a restamp that cannot happen refuses
 	// consumption instead of launching behind a grace an outage may
 	// already have spent.
-	now := time.Now()
 	if err := os.Chtimes(live, now, now); err != nil {
 		return Intent{}, fmt.Errorf("intent %s: the setup grace could not anchor at consumption; launch refused: %w", nonce, err)
 	}

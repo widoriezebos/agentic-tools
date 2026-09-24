@@ -19,6 +19,17 @@ harness_fixture_without_outer_proof() { "${harness_fixture_proof_scrub[@]}" "$@"
 
 harness_fixture_exec_without_outer_proof() { exec "${harness_fixture_proof_scrub[@]}" "$@"; }
 
+harness_fixture_go_test() { # module directory, go test arguments...
+  local module_dir=$1 workers=${METASYSTEM_TEST_WORKERS:-1}
+  shift
+  [[ "$workers" =~ ^[1-9][0-9]*$ ]] \
+    || { echo "fixture Go test: METASYSTEM_TEST_WORKERS must be a positive integer" >&2; return 2; }
+  (
+    cd "$module_dir"
+    GOMAXPROCS=$workers go test -p="$workers" -parallel="$workers" "$@"
+  )
+}
+
 harness_fixture_prologue() {
   cat <<'FIXTURE_PROLOGUE'
 if [ -n "${METASYSTEM_FIXTURE_OWNER-}" ]; then
@@ -131,6 +142,33 @@ harness_fixture_record_pid() { # pid
     return 0
   }
   printf '+%s\n' "$ref" >>"${harness_fixture_record_file:?}"
+}
+
+# Reports only typed exact death or replacement as gone. An unreadable
+# observation is distinct from absence so cleanup owners retain the process
+# record and fail closed instead of losing custody.
+harness_fixture_exact_process_gone() { # observer executable, pid, exact reference
+  local observer=$1 pid=$2 expected_ref=$3 current_ref probe ref_rc probe_rc
+  if current_ref=$("$observer" proc ref --pid "$pid" 2>/dev/null); then
+    ref_rc=0
+  else
+    ref_rc=$?
+  fi
+  if (( ref_rc == 0 )); then
+    [[ "$current_ref" != "$expected_ref" ]] || return 1
+    return 0
+  fi
+
+  if probe=$("$observer" proc probe --pid "$pid" 2>&1); then
+    probe_rc=0
+  else
+    probe_rc=$?
+  fi
+  if (( probe_rc == 0 )) && [[ "$probe" == *'"liveness":"dead"'* ]]; then
+    return 0
+  fi
+  printf 'fixture process identity is indeterminate for pid %s: %s\n' "$pid" "${probe:-no probe result}" >&2
+  return 2
 }
 
 harness_fixture_hold_pid() { # pid
@@ -538,6 +576,11 @@ harness_fixture_semantic_cap() { # named product cap used as fixture input
     mission-job-minutes) printf '5\n' ;;
     mission-turn-minutes) printf '5\n' ;;
     minimum-minutes) printf '1\n' ;;
+    # Landing fixtures use tiny command/JUnit applications and retained
+    # engine evidence. This is reservation accounting input, never a deadline
+    # in which a host build has to finish.
+    landing-receipt-minutes) printf '3\n' ;;
+    landing-budget-refusal-minutes) printf '13\n' ;;
     dispatch-envelope-minutes) printf '120\n' ;;
     dispatch-over-envelope-minutes) printf '121\n' ;;
     watcher-config-minutes) printf '9\n' ;;

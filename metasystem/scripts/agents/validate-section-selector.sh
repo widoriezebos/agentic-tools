@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: scripts/agents/validate-section-selector.sh <catalog|context|list|twice|run SECTION_ID>" >&2
+  echo "Usage: scripts/agents/validate-section-selector.sh <catalog|context|list|twice|fixture SECTION_ID|run SECTION_ID>" >&2
 }
 
 sections() {
@@ -52,6 +52,15 @@ workflow-tooling-fixtures	workflow tooling fixtures
 adoption-fixtures	adoption fixtures
 watch-background-jobs-fixtures	background-job watcher fixtures
 EOF
+}
+
+fixture_section() { # explicitly bounded fixture section id
+  case "$1" in
+    checkout-execution-guard-fixture)
+      printf 'checkout-execution-guard-fixture\tcheckout execution guard fixture\n'
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 run_context() {
@@ -115,6 +124,11 @@ case ${1:-} in
   twice)
     [[ $# -eq 1 ]] || { usage; exit 2; }
     twice_consulted_sections
+    ;;
+  fixture)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    fixture_section "$2" \
+      || { echo "unknown bounded validation fixture section: $2" >&2; exit 2; }
     ;;
   run)
     [[ $# -eq 2 ]] || { usage; exit 2; }

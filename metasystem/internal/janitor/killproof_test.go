@@ -2,7 +2,6 @@ package janitor
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"syscall"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 const tag = "metasystem-supervision-owner-repo-123-watcher-2-456"
@@ -232,33 +232,19 @@ func TestGroupOwnershipOnLiveGroups(t *testing.T) {
 		t.Skipf("process enumeration is unavailable: %v", err)
 	}
 	tag := fmt.Sprintf("metasystem-job-live-%d", os.Getpid())
-	// The trailing words ride Bash's positional slots. Waiting on a child keeps
-	// Bash from replacing itself with sleep, so the observed argv stays stable
-	// across the start/argv/start verification.
-	owned := exec.Command("bash", "-c", "printf x; sleep 30 & wait", "metasystem", "util", "hold", "--tag", tag)
-	owned.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	ready, err := owned.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := owned.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = owned.Process.Kill(); _, _ = owned.Process.Wait() }()
-	if _, err := io.ReadFull(ready, make([]byte, 1)); err != nil {
-		t.Fatalf("wait for stable Bash argv: %v", err)
-	}
-	if got := GroupOwnership(int64(owned.Process.Pid), tag); got != GroupOwned {
+	// The trailing words ride Bash's positional slots while the release pipe
+	// keeps the observed argv stable across start/argv/start verification.
+	ownedCommand := exec.Command("bash", "-c", "cat <&0 & printf x >&3; wait", "metasystem", "util", "hold", "--tag", tag)
+	ownedCommand.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	owned := testutil.StartHeldProcess(t, ownedCommand)
+	if got := GroupOwnership(int64(owned.Command.Process.Pid), tag); got != GroupOwned {
 		t.Fatalf("shaped live group ownership = %s, want OWNED", got)
 	}
 
-	unshaped := exec.Command("sleep", "30")
-	unshaped.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := unshaped.Start(); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = unshaped.Process.Kill(); _, _ = unshaped.Process.Wait() }()
-	if got := GroupOwnership(int64(unshaped.Process.Pid), tag); got == GroupOwned {
+	unshapedCommand := exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :")
+	unshapedCommand.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	unshaped := testutil.StartHeldProcess(t, unshapedCommand)
+	if got := GroupOwnership(int64(unshaped.Command.Process.Pid), tag); got == GroupOwned {
 		t.Fatalf("tagless live group ownership = %s; a group without the positioned tag must never be OWNED", got)
 	}
 }

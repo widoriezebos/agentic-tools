@@ -96,18 +96,15 @@ func CompleteCoverage(options CoverageCompleteOptions) (CoverageEvidence, error)
 	if violations := audit.CheckCoverage(baseline, measured, inventory); len(violations) > 0 {
 		return CoverageEvidence{}, fmt.Errorf("coverage evidence refused: %s", strings.Join(violations, "; "))
 	}
-	// The complete frozen export is authenticated against the attempt before
-	// and after measurement. Reusable legacy ENGINE coverage deliberately uses
-	// the narrower behavior projection so unrelated non-engine records do not
-	// invalidate a measurement of identical executable source.
 	engineDigest, err := Digest(options.ExecutionRoot)
 	if err != nil {
 		return CoverageEvidence{}, err
 	}
-	evidence := CoverageEvidence{SchemaVersion: 1, Producer: producer, ProducerClass: options.ProducerClass,
+	evidence := CoverageEvidence{SchemaVersion: CoverageEvidenceSchemaVersion, Producer: producer, ProducerClass: options.ProducerClass,
 		AttemptID: attempt.AttemptID, PackageInventory: inventory, Measurements: measured,
-		EngineDigest: engineDigest, EngineManifest: engineDigest, BehaviorPolicy: attempt.ProofIdentity.BehaviorPolicy,
-		Platform: attempt.ProofIdentity.Platform, Toolchain: attempt.ProofIdentity.Toolchain,
+		EngineDigest: engineDigest, EngineManifest: engineDigest, InputManifest: attempt.ProofIdentity.ManifestDigest,
+		BehaviorPolicy: attempt.ProofIdentity.BehaviorPolicy,
+		Platform:       attempt.ProofIdentity.Platform, Toolchain: attempt.ProofIdentity.Toolchain,
 		RatchetDigest: attempt.ProofIdentity.RatchetDigest}
 	lock, err := AcquireMutation(options.ControlRoot)
 	if err != nil {
@@ -227,6 +224,10 @@ func reusableCoverageForAttempt(attempt Attempt, executionRoot, baselinePath str
 	if err != nil {
 		return nil, false, err
 	}
+	inputManifest, err := FullDigest(executionRoot)
+	if err != nil {
+		return nil, false, err
+	}
 	toolchain, err := CompleteToolchainIdentityAtWithEnvironment(executionRoot, os.Environ())
 	if err != nil {
 		return nil, false, err
@@ -236,8 +237,9 @@ func reusableCoverageForAttempt(attempt Attempt, executionRoot, baselinePath str
 		return nil, false, err
 	}
 	evidence := attempt.PendingCoverage.Evidence
-	if evidence.SchemaVersion != 1 || evidence.AttemptID != attempt.AttemptID || evidence.ProducerClass != "full" ||
+	if evidence.SchemaVersion != CoverageEvidenceSchemaVersion || evidence.AttemptID != attempt.AttemptID || evidence.ProducerClass != "full" ||
 		evidence.EngineDigest != engineDigest || evidence.EngineManifest != engineDigest ||
+		evidence.InputManifest != inputManifest || evidence.InputManifest != attempt.ProofIdentity.ManifestDigest ||
 		evidence.BehaviorPolicy != behaviorsurface.SupportedVersion ||
 		evidence.Platform != runtime.GOOS+"/"+runtime.GOARCH || evidence.Toolchain != toolchain || evidence.RatchetDigest != ratchet {
 		return nil, false, nil

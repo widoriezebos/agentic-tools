@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -46,7 +47,47 @@ func TestMain(m *testing.M) {
 	if os.Getenv("METASYSTEM_CONTEXT_COST_PROOF") == "1" {
 		declaredContextCostCandidateEngine = os.Getenv("METASYSTEM_BIN")
 	}
-	os.Exit(testenv.Main(m))
+	_, privateReceiptClockChild := receiptClockPrivateChildArguments()
+	privateReceiptClockProcess := privateReceiptClockChild ||
+		os.Getenv("GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD") == "shell-boundary" && os.Getenv(identity.FixtureCustodianEnv) == "1"
+	waitCandidateDir := ""
+	waitCandidate := os.Getenv("METASYSTEM_WAIT_BINARY")
+	if !privateReceiptClockProcess && (waitCandidate == "" || os.Getenv("METASYSTEM_WAIT_BINARY_SOURCE") != waitCandidate) {
+		waitCandidateDir, err = os.MkdirTemp("", "metasystem-wait-candidate-")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "create wait candidate directory:", err)
+			os.Exit(2)
+		}
+		waitCandidate = filepath.Join(waitCandidateDir, "metasystem")
+		build := exec.Command("go", "build", "-o", waitCandidate, ".")
+		build.Stdout, build.Stderr = os.Stderr, os.Stderr
+		if err := build.Run(); err != nil {
+			_ = os.RemoveAll(waitCandidateDir)
+			fmt.Fprintln(os.Stderr, "build wait candidate:", err)
+			os.Exit(2)
+		}
+		if err := os.Setenv("METASYSTEM_WAIT_BINARY", waitCandidate); err != nil {
+			_ = os.RemoveAll(waitCandidateDir)
+			fmt.Fprintln(os.Stderr, "publish wait candidate:", err)
+			os.Exit(2)
+		}
+		if err := os.Setenv("METASYSTEM_WAIT_BINARY_SOURCE", waitCandidate); err != nil {
+			_ = os.RemoveAll(waitCandidateDir)
+			fmt.Fprintln(os.Stderr, "bind wait candidate to package source:", err)
+			os.Exit(2)
+		}
+	}
+	var declarations []testenv.Declaration
+	if os.Getenv("GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD") != "" {
+		// The parent constructs this helper's private fixture selectors. Preserve
+		// only that child process's declared controls through the package scrub.
+		declarations = testenv.DeclareInheritedControls()
+	}
+	status := testenv.Main(m, declarations...)
+	if waitCandidateDir != "" {
+		_ = os.RemoveAll(waitCandidateDir)
+	}
+	os.Exit(status)
 }
 
 func TestGoTestHarnessRejectsHostileInheritedEngine(t *testing.T) {
@@ -74,7 +115,7 @@ exit 73
 		t.Fatal(err)
 	}
 	command := exec.Command(testBinary,
-		"-test.run=^(TestFreshInitializationUsesHumanGitCommitThenRealMigration|TestInheritedEngineAndInstallationSelectorsAreAbsent)$",
+		"-test.run=^(TestFreshInitializationUsesHumanGitCommitThenRealMigration|TestInheritedEngineAndInstallationSelectorsAreAbsent|TestInheritedWaitBinaryIsReplaced)$",
 		"-test.count=1",
 	)
 	command.Env = testenv.WithoutInheritedControls(os.Environ())
@@ -94,6 +135,7 @@ exit 73
 		"METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT="+hostileRoot,
 		"METASYSTEM_HOOK_DELEGATE_JOB=inherited-from-a-bed",
 		"METASYSTEM_HOOK_DELEGATE_STATE_ROOT="+hostileRoot,
+		"METASYSTEM_WAIT_BINARY="+hostileEngine,
 		"METASYSTEM_PROOF_ATTEMPT=hostile",
 		"METASYSTEM_PROOF_AUTH_BIN="+hostileEngine,
 		"METASYSTEM_PROOF_CONTROL_ROOT="+hostileRoot,
@@ -108,6 +150,16 @@ exit 73
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("hostile inherited engine was called: %v\n%s", err, output)
+	}
+}
+
+func TestInheritedWaitBinaryIsReplaced(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("GO_WANT_HOSTILE_ENGINE_INHERITANCE_HELPER") != "1" {
+		return
+	}
+	if got, hostile := os.Getenv("METASYSTEM_WAIT_BINARY"), filepath.Join(os.Getenv("HOSTILE_REGISTRY_HOME"), "bin", "metasystem"); got == "" || got == hostile {
+		t.Fatalf("METASYSTEM_WAIT_BINARY = %q, want a source-built candidate other than %q", got, hostile)
 	}
 }
 

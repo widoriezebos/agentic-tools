@@ -168,6 +168,8 @@ func TestWatcherPassCensusFailedOnFingerprintError(t *testing.T) {
 
 // A scan slower than the whole interval is warned as the serious defect.
 func TestWatcherPassWarnsWhenScanExceedsInterval(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	var warnings []string
 	fakeNow := time.Unix(1786000000, 0).UTC()
@@ -192,6 +194,17 @@ func TestWatcherPassWarnsWhenScanExceedsInterval(t *testing.T) {
 	}
 	if want := "defect=scan-exceeds-interval"; !strings.Contains(warnings[0], want) {
 		t.Fatalf("warning %q lacks %q", warnings[0], want)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, censusVerdictFile))
+	if err != nil {
+		t.Fatalf("read published verdict: %v", err)
+	}
+	var published census.Verdict
+	if err := json.Unmarshal(data, &published); err != nil {
+		t.Fatalf("decode published verdict: %v", err)
+	}
+	if published.DurationMs != 5 {
+		t.Fatalf("published durationMs = %d, want 5", published.DurationMs)
 	}
 }
 

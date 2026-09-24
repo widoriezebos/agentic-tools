@@ -257,8 +257,7 @@ track_armed_supervision() { # repository
   armed_supervision_repos+=("$repo")
 }
 cleanup() {
-  status=$?
-  local repo cleanup_failed=0
+  local status=$1 repo cleanup_failed=0
   trap - EXIT
   for repo in ${armed_supervision_repos[@]+"${armed_supervision_repos[@]}"}; do
     [[ -x "$repo/scripts/agents/arm-supervision.sh" ]] || continue
@@ -311,7 +310,7 @@ cleanup() {
   rm -rf "$tmp" 2>/dev/null || { sleep 1; rm -rf "$tmp" 2>/dev/null || true; }
   exit "$status"
 }
-trap cleanup EXIT
+trap 'cleanup "$?"' EXIT
 
 setup_brain_dispatch_bed() {
   brain_origin=$tmp/brain-origin.git
@@ -554,6 +553,30 @@ fake_adapter="$agent_repo/scripts/agents/adapters/fake.sh"
 agent_config="$agent_repo/scripts/metasystem-config.sh"
 good_agent_conf="$agent_fixture/good-metasystem.conf"
 cp "$agent_repo/metasystem.conf" "$good_agent_conf"
+owner_lock_ack_wrapper=$agent_fixture/owner-lock-ack-engine
+cat >"$owner_lock_ack_wrapper" <<'OWNER_LOCK_ACK'
+#!/usr/bin/env bash
+set -euo pipefail
+real_engine=$1
+lock_directory=$2
+acknowledgement=$3
+shift 3
+probe_tag=metasystem-owner-lock-probe-$$
+status=0
+"$real_engine" job owner-lock --command claim --dir "$lock_directory" \
+  --pid "$$" --tag "$probe_tag" || status=$?
+if (( status != 3 )); then
+  if (( status == 0 )); then
+    "$real_engine" job owner-lock --command release --dir "$lock_directory" \
+      --pid "$$" --tag "$probe_tag" || true
+  fi
+  echo "fixture contention probe returned $status instead of owner-lock busy" >&2
+  exit 1
+fi
+printf 'busy\n' >"$acknowledgement"
+exec "$@"
+OWNER_LOCK_ACK
+chmod +x "$owner_lock_ack_wrapper"
 
 if [[ "$fixture_scenario" == dispatch-a ]]; then
   # A restoration failure keeps its named stash available for manual recovery.
@@ -612,25 +635,18 @@ runner_repo=$(cd "$runner_repo" && pwd -P)
 enroll_fixture_repo "$runner_repo"
 # Fixture git writes race the previous mission's trailing anchor: runners
 # are detached, so "the mission returned" does not mean "its last git op
-# finished". Wait for a live lock, remove a dead one's leavings (a killed
-# runner leaves index.lock forever), then run the git op.
+# finished". Git's index lock carries no exact owner identity, so wait for it
+# to clear and fail loudly if its owner does not release it.
 runner_git_cap_sec=$(harness_fixture_cap runner-git-lock)
-runner_git_stale_sec=$(( $(harness_fixture_base_cap runner-git-lock) / 2 ))
 runner_git() {
   local deadline=$((SECONDS + runner_git_cap_sec))
   while [[ -e "$runner_repo/.git/index.lock" ]] && (( SECONDS < deadline )); do
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
-  if [[ -e "$runner_repo/.git/index.lock" ]]; then
-    # Old enough is a dead runner's leaving and is removed; a lock that
-    # vanishes mid-check (racing stat or unlink) is left alone.
-    local lock_mtime=
-    lock_mtime=$(stat -c %Y "$runner_repo/.git/index.lock" 2>/dev/null \
-      || stat -f %m "$runner_repo/.git/index.lock" 2>/dev/null) || lock_mtime=
-    if [[ -n "$lock_mtime" ]] && (( $(date +%s) - lock_mtime >= runner_git_stale_sec )); then
-      rm -f "$runner_repo/.git/index.lock" 2>/dev/null || true
-    fi
-  fi
+  [[ ! -e "$runner_repo/.git/index.lock" ]] || {
+    echo "mission runner fixture: Git index remained locked after ${runner_git_cap_sec}s; ownership is unproven" >&2
+    return 1
+  }
   # Harness acts, not agent ledger commits: the mission flow's own
   # goal mutations ENROLL the pre-commit guard (R2-11), and these
   # fixture-driven trunk/candidate movements bypass it by name.
@@ -770,6 +786,17 @@ wait_for_chain_lock() { # chain id, fixture name
   while [[ ! -f "$agent_repo/artifacts/agents/locks/$chain.d/owner.json" ]]; do
     (( SECONDS < deadline )) \
       || { echo "$name did not acquire its chain lock" >&2; return 1; }
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+}
+
+wait_for_owner_lock_busy_ack() { # acknowledgement, fixture name, wrapper pid
+  local acknowledgement=$1 name=$2 wrapper_pid=$3 deadline=$(( SECONDS + agent_fixture_cap_sec ))
+  while [[ ! -e "$acknowledgement" ]]; do
+    kill -0 "$wrapper_pid" 2>/dev/null \
+      || { echo "$name exited before observing the existing chain-lock owner" >&2; return 1; }
+    (( SECONDS < deadline )) \
+      || { echo "$name did not observe owner-lock's busy return within ${agent_fixture_cap_sec}s" >&2; return 1; }
     sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
   done
 }
@@ -1844,11 +1871,14 @@ wait_for_agent_census_fresh repeat-fresh-first
   >"$agent_fixture/repeat-fresh-first.out" 2>&1 &
 repeat_fresh_first_pid=$!
 wait_for_chain_lock repeat-fresh repeat-fresh-first
-(cd "$agent_repo" && "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
+repeat_fresh_busy_ack=$agent_fixture/repeat-fresh-owner-lock-busy
+(cd "$agent_repo" && "$owner_lock_ack_wrapper" "$agent_repo/bin/metasystem" \
+  "$agent_repo/artifacts/agents/locks/repeat-fresh.d" "$repeat_fresh_busy_ack" \
+  "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md \
   --brief "$repeat_fresh_brief" --job-id repeat-fresh) \
   >"$agent_fixture/repeat-fresh-second.out" 2>&1 &
 repeat_fresh_second_pid=$!
-sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+wait_for_owner_lock_busy_ack "$repeat_fresh_busy_ack" repeat-fresh-second "$repeat_fresh_second_pid"
 cap_lock_fixture_release
 repeat_fresh_first_rc=0
 repeat_fresh_second_rc=0
@@ -2406,6 +2436,7 @@ fi
 if dispatch_cluster b; then
 leg_happy
 leg_default_role
+make_code_brief
 make_follow_message
 pending_brief="$agent_fixture/pending.md"
 make_agent_brief "$pending_brief" design 'FAKE:no-session-signal'
@@ -2429,6 +2460,7 @@ wait_for_agent_fixture_process pending-chain-driver pending-chain "$pending_driv
 # record must never claim process loss or group death.
 launch_window_source="$agent_fixture/launch-window.json"
 launch_window_pending="$agent_fixture/launch-window-pending.json"
+launch_window_now=2026-09-21T12:00:00Z
 # The claim creates the real fingerprinted pending-setup reservation, including
 # its nonce tag and exact creator breadcrumb. Record setup then preserves those
 # fields while completing the same reservation into the launch-window shape.
@@ -2472,18 +2504,20 @@ done
 "$engine" json set --file "$launch_window_source" \
   --field jobId=launch-window --field operationId=launch-window \
   --field status=pending --field phase=handshake \
-  --field "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --field "startedAt=$launch_window_now" \
   --int round=1 --int sessionEstablishedTimeoutSec=60
 cp "$launch_window_source" "$launch_window_pending"
 run_agent_fixture launch-window-setup launch-window "$agent_dispatch" __record-setup --job launch-window --source "$launch_window_pending"
-run_agent_fixture launch-window-young-reap launch-window "$agent_dispatch" reap --job launch-window
+METASYSTEM_GOAL_NOW=$launch_window_now \
+  run_agent_fixture launch-window-young-reap launch-window "$agent_dispatch" reap --job launch-window
 launch_window_record="$agent_repo/artifacts/agents/jobs/launch-window.json"
 [[ "$("$engine" json get --file "$launch_window_record" --field status)" == pending ]] \
   || { echo "pending record was reaped inside its handshake window" >&2; exit 1; }
 # A LIVE record rewrite: json set stages beside the file and renames over
 # it, so the sweeping reaper never observes a torn read.
 "$engine" json set --file "$launch_window_record" --field startedAt=2000-01-01T00:00:00Z
-run_agent_fixture launch-window-old-reap launch-window "$agent_dispatch" reap --job launch-window
+METASYSTEM_GOAL_NOW=$launch_window_now \
+  run_agent_fixture launch-window-old-reap launch-window "$agent_dispatch" reap --job launch-window
 [[ "$("$engine" json get --file "$launch_window_record" --field status)" == failed \
    && "$("$engine" json get --file "$launch_window_record" --field error)" == creator-abandoned \
    && "$("$engine" json get --file "$launch_window_record" --field phase)" == reconciliation ]] \
@@ -2827,6 +2861,8 @@ run_agent_fixture packet-final-cap-parent packet-final-cap-parent "$agent_dispat
 	--brief "$packet_final_parent_brief" --job-id packet-final-cap-parent --wait
 [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job packet-final-cap-parent)" == completed ]] \
 	|| { echo "final-cap follow-up parent did not complete" >&2; exit 1; }
+"$engine" job critique-register-advance --repo "$agent_repo" \
+	--root-job packet-final-cap-parent --round-job packet-final-cap-parent >/dev/null
 change_design_page_after_round_one packet-final-cap-parent packet-final-cap-follow-up
 packet_final_parent_before=$(
 	find "$agent_repo/artifacts/agents/packet-final-cap-parent" "$agent_repo/artifacts/agents/jobs/packet-final-cap-parent.json" "$agent_repo/artifacts/agents/jobs/packet-final-cap-parent.log" -type f -print \
@@ -2871,14 +2907,16 @@ packet_final_parent_after=$(
 	|| { echo "refused final-cap follow-up changed its completed parent" >&2; exit 1; }
 [[ "$(composition_temporary_inventory)" == "$packet_final_follow_temporaries_before" ]] \
 	|| { echo "follow-up final-cap guard left composition temporaries" >&2; exit 1; }
+printf 'FINAL-CAP-FOLLOW-UP-REFUSAL exit=1 compose=0 bytes=%s child=absent parent=unchanged temporaries=unchanged\n' \
+	"$packet_final_follow_bytes"
 
 # Reap owns process loss, absolute caps, group death, and terminal mirroring.
 process_loss="$agent_fixture/process-loss.md"
 make_agent_brief "$process_loss" design 'FAKE:process-loss'
-set +e
-run_agent_fixture process-loss process-loss "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$process_loss" --job-id process-loss --wait
-process_loss_status=$?
-set -e
+wait_for_agent_census_fresh process-loss; (cd "$agent_repo" && exec "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$process_loss" --job-id process-loss --wait) & process_loss_driver=$!
+wait_for_agent_status process-loss running; run_agent_fixture process-loss-public-reap process-loss "$agent_dispatch" reap --job process-loss; printf 'PROCESS-LOSS-PUBLIC-REAP-PASS job=process-loss pass=completed\n'
+wait_for_agent_recollection "dead process-loss supervisor did not transition through reap" process-loss error process-lost process-loss-reap
+process_loss_status=0; wait_for_agent_fixture_process process-loss-driver process-loss "$process_loss_driver" || process_loss_status=$?; process_loss_driver=
 [[ $process_loss_status -eq 3 ]] || { echo "process loss mapped to $process_loss_status instead of 3" >&2; exit 1; }
 grep -Fq 'process-lost' "$agent_repo/artifacts/agents/jobs/process-loss.json" \
   || { echo "reap did not name process-lost" >&2; exit 1; }
@@ -2942,6 +2980,8 @@ wait_for_agent_census_fresh capped-wt
 capped_driver=$!
 wait_for_agent_status capped-wt running
 capped_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-wt.json" --field workspaceRoot)
+wait_for_agent_child_stopped "$agent_repo/artifacts/agents/capped-wt/rounds/1/child.pid" \
+  "the capped round did not finish child setup before the fixture bound"
 [[ -f "$capped_workspace/metasystem/capped-marker.txt" ]] \
   || { echo "the capped round did not write its worktree file before holding" >&2; exit 1; }
 "$engine" json set --file "$agent_repo/artifacts/agents/jobs/capped-wt.json" \
@@ -3023,7 +3063,20 @@ wait_for_agent_status capped-gone running
 run_agent_fixture capped-gone-reap capped-gone "$agent_dispatch" reap --job capped-gone
 wait_for_agent_fixture_process capped-gone-driver capped-gone "$gone_driver"
 gone_workspace=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/capped-gone.json" --field workspaceRoot)
+gone_gitdir=$(git -C "$gone_workspace" rev-parse --absolute-git-dir)
+gone_quarantine=$gone_gitdir/objects-quarantine
+gone_common_objects=$(git -C "$agent_repo" rev-parse --git-common-dir)/objects
+[[ "$gone_common_objects" = /* ]] || gone_common_objects="$agent_repo/$gone_common_objects"
+gone_alternates=$gone_common_objects/info/alternates
 git -C "$agent_repo" worktree remove --force "$gone_workspace" >/dev/null 2>&1 || rm -rf "$gone_workspace"
+if [[ -f "$gone_alternates" ]]; then
+  gone_alternates_next=$gone_alternates.capped-gone.$$
+  awk -v quarantine="$gone_quarantine" '$0 != quarantine { print }' \
+    "$gone_alternates" >"$gone_alternates_next"
+  mv "$gone_alternates_next" "$gone_alternates"
+fi
+! grep -qxF "$gone_quarantine" "$gone_alternates" 2>/dev/null \
+  || { echo "the capped-gone fixture left its removed worktree quarantine in alternates" >&2; exit 1; }
 agent_fails capped-gone-follow-up 'use a fresh dispatch' "$agent_dispatch" follow-up --job capped-gone --message "$follow_message"
 
 cancel_result="$agent_fixture/cancel.status"
@@ -3164,13 +3217,19 @@ happy_manifest_files=$("$engine" json get --file "$happy_mirror_home/manifest.js
 # of a worktree chain record the same GOCACHE under the worktree's git dir,
 # another chain records its own, and a shared-checkout job records none.
 run_agent_fixture cache-chain cache-chain "$agent_dispatch" dispatch --role implementer --brief "$code_brief" --job-id cache-chain --worktree --wait
-run_agent_fixture cache-chain-follow-up cache-chain-r2 "$agent_dispatch" follow-up --job cache-chain --message "$follow_message" --wait
 cache_round1=$(<"$agent_repo/artifacts/agents/cache-chain/rounds/1/build-cache.txt")
+[[ -n "$cache_round1" && -d "$cache_round1" ]] \
+  || { echo "the first waited round did not leave its chain build cache available: cache=$cache_round1" >&2; exit 1; }
+cache_sentinel="$cache_round1/warm-cache-sentinel-$RANDOM-$$"
+printf 'created-by-round-1\n' >"$cache_sentinel"
+run_agent_fixture cache-chain-follow-up cache-chain-r2 "$agent_dispatch" follow-up --job cache-chain --message "$follow_message" --wait
 cache_round2=$(<"$agent_repo/artifacts/agents/cache-chain/rounds/2/build-cache.txt")
 cache_worktree=$("$engine" json get --file "$agent_repo/artifacts/agents/jobs/cache-chain.json" --field workspaceRoot)
 cache_gitdir=$(git -C "$cache_worktree" rev-parse --absolute-git-dir)
-[[ -n "$cache_round1" && "$cache_round1" == "$cache_round2" && "$cache_round1" == "$cache_gitdir/metasystem-build-cache/go-cache" && -d "$cache_round1" ]] \
+[[ "$cache_round1" == "$cache_round2" && "$cache_round1" == "$cache_gitdir/metasystem-build-cache/go-cache" \
+   && -d "$cache_round1" && -f "$cache_sentinel" ]] \
   || { echo "chain rounds did not share one build cache under the worktree git dir: r1=$cache_round1 r2=$cache_round2 gitdir=$cache_gitdir" >&2; exit 1; }
+printf 'CACHE-PRESERVATION-PASS path=%s sentinel=retained\n' "$cache_round1"
 run_agent_fixture cache-chain-b cache-chain-b "$agent_dispatch" dispatch --role implementer --brief "$code_brief" --job-id cache-chain-b --worktree --wait
 [[ "$(<"$agent_repo/artifacts/agents/cache-chain-b/rounds/1/build-cache.txt")" != "$cache_round1" ]] \
   || { echo "two chains shared one build cache" >&2; exit 1; }
@@ -3178,16 +3237,17 @@ run_agent_fixture cache-chain-b cache-chain-b "$agent_dispatch" dispatch --role 
   || { echo "a shared-checkout job recorded a build cache" >&2; exit 1; }
 # The real adapters compute the path with job_build_cache_env; it must name
 # the same cache the fake runtime recorded, and nothing for a shared checkout.
-helper_cache=$(bash -c 'source "$1/scripts/agents/adapters/runtime-common.sh"; job_build_cache_env "$2" | sed -n "s/^GOCACHE=//p"' _ "$agent_repo" "$cache_worktree")
+helper_cache=$(bash -c 'source "$1/scripts/agents/adapters/runtime-common.sh"; agents="$1/artifacts/agents"; job_build_cache_env "$2" | sed -n "s/^GOCACHE=//p"' _ "$agent_repo" "$cache_worktree")
 [[ "$helper_cache" == "$cache_round1" ]] \
   || { echo "job_build_cache_env names a different cache than the rounds recorded: helper=$helper_cache recorded=$cache_round1" >&2; exit 1; }
-[[ -z "$(bash -c 'source "$1/scripts/agents/adapters/runtime-common.sh"; job_build_cache_env "$1"' _ "$agent_repo")" ]] \
+[[ -z "$(bash -c 'source "$1/scripts/agents/adapters/runtime-common.sh"; agents="$1/artifacts/agents"; job_build_cache_env "$1"' _ "$agent_repo")" ]] \
   || { echo "job_build_cache_env exported a cache for a shared checkout" >&2; exit 1; }
 # A reap that finds every member of the chain terminal removes its cache;
 # the worktree stays.
 run_agent_fixture cache-chain-reap cache-chain "$agent_dispatch" reap --job cache-chain
-[[ ! -d "$cache_round1" && -d "$cache_worktree" ]] \
+[[ ! -d "$cache_round1" && ! -e "$cache_sentinel" && -d "$cache_worktree" ]] \
   || { echo "reap of a terminal chain did not remove its build cache (or removed the worktree): cache=$cache_round1" >&2; exit 1; }
+printf 'CACHE-CLEANUP-PASS path=%s sentinel=removed worktree=retained\n' "$cache_round1"
 
 run_agent_fixture malformed-return-follow-up malformed-return-r2 "$agent_dispatch" follow-up --job malformed-return --message "$follow_message" --wait
 [[ "$(cd "$agent_repo" && scripts/agents/dispatch.sh status --job malformed-return-r2)" == completed ]] \
@@ -3533,7 +3593,8 @@ follow_up_read_closes_terminal_work() { # evidence form, prior stamp form
     METASYSTEM_FOLLOWUP_CLOSE_EVIDENCE_FORM="$evidence_form" \
     METASYSTEM_FOLLOWUP_CLOSE_REFUSAL_OUTPUT="$agent_fixture/${prefix}-redundant.out" \
     METASYSTEM_FOLLOWUP_CLOSE_REFUSAL_CODE="$refusal_rc" \
-    go test ./cmd/metasystem -run '^TestDispatchFollowUpReadClosesTerminalWork$' -count=1
+    bash -c 'source "$1/scripts/agents/fixture-budget.sh"; shift; harness_fixture_go_test "$@"' \
+      bash "$root" "$root" ./cmd/metasystem -run '^TestDispatchFollowUpReadClosesTerminalWork$' -count=1
   echo "follow-up-read-closes-terminal-work $evidence_form/$prior_stamp passed"
   export METASYSTEM_DISPATCH_FIXTURE_HAZARD=$previous_hazard
 }
@@ -3669,10 +3730,13 @@ wait_for_agent_census_fresh repeat-follow-first
   --message "$repeat_follow_message") >"$agent_fixture/repeat-follow-first.out" 2>&1 &
 repeat_follow_first_pid=$!
 wait_for_chain_lock repeat-follow repeat-follow-first
-(cd "$agent_repo" && "$agent_dispatch" follow-up --job repeat-follow \
+repeat_follow_busy_ack=$agent_fixture/repeat-follow-owner-lock-busy
+(cd "$agent_repo" && "$owner_lock_ack_wrapper" "$agent_repo/bin/metasystem" \
+  "$agent_repo/artifacts/agents/locks/repeat-follow.d" "$repeat_follow_busy_ack" \
+  "$agent_dispatch" follow-up --job repeat-follow \
   --message "$repeat_follow_message") >"$agent_fixture/repeat-follow-second.out" 2>&1 &
 repeat_follow_second_pid=$!
-sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+wait_for_owner_lock_busy_ack "$repeat_follow_busy_ack" repeat-follow-second "$repeat_follow_second_pid"
 cap_lock_fixture_release
 repeat_follow_first_rc=0
 repeat_follow_second_rc=0
@@ -4474,6 +4538,11 @@ grep -Fq "Roster resolution: $escalation_roster" "$escalation_display" \
   && grep -Fq "Cost direction: $escalation_direction" "$escalation_display" \
   || { echo "the escalation prompt did not display the recorded approval facts" >&2; exit 1; }
 
+# Mission fence state and every fence decision in this scenario share one
+# authorized instant, so fixture duration cannot spend mission wall time.
+fixture_mission_now=2026-09-20T00:00:00Z
+export METASYSTEM_GOAL_NOW=$fixture_mission_now
+
 # Dispatch only reads mission leases. The future mission runner owns their
 # acquisition and renewal; this fixture fabricates the frozen shape around
 # a process whose command line carries the instance tag.
@@ -4516,7 +4585,7 @@ stamp_fixture_contract() { # mission — seed the runner-owned contract pin
     mkdir -p "$(dirname "$fences")"
     staged=$(mktemp "$(dirname "$fences")/.fences.XXXXXX")
     printf '{"schemaVersion":1,"missionId":"%s","startedAt":"%s","cycles":0,"reservations":{},"approvedContractSha256":"%s"}\n' \
-      "$mission" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$contract_sha" >"$staged"
+      "$mission" "$fixture_mission_now" "$contract_sha" >"$staged"
     mv "$staged" "$fences"
   fi
 }
@@ -4537,7 +4606,7 @@ mission_process=$(METASYSTEM_FAKE_AGENT_ANCESTOR_PID="$mission_pid" \
     --pid "$mission_pid" --runtime fake)
 mission_pgid=$("$engine" json get --value "$mission_process" --field pgid)
 mission_identity="$agent_fixture/mission-process-identity.json"
-mission_lease_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+mission_lease_now=$fixture_mission_now
 mission_lease_staged=$(mktemp "$agent_repo/artifacts/agents/missions/mission-alpha/.lease.XXXXXX")
 printf '{"missionId":"mission-alpha","pid":%s,"pgid":%s,"instanceTag":"mission-lease-tag","startedAt":"%s","renewedAt":"%s"}\n' \
   "$mission_pid" "$mission_pgid" "$mission_lease_now" "$mission_lease_now" >"$mission_lease_staged"
@@ -4610,7 +4679,7 @@ fence.job-cap-min=$fixture_dispatch_envelope_cap_min
 \`\`\`
 EOF
   local fence_now fence_staged
-  fence_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  fence_now=$fixture_mission_now
   fence_staged=$(mktemp "$mission_dir/.lease.XXXXXX")
   printf '{"missionId":"%s","pid":%s,"pgid":%s,"instanceTag":"mission-lease-tag","startedAt":"%s","renewedAt":"%s"}\n' \
     "$mission" "$mission_pid" "$mission_pgid" "$fence_now" "$fence_now" >"$fence_staged"
@@ -4636,7 +4705,7 @@ agent_fails fence-wall 'mission fence refused job (wall-clock-hours)' env METASY
 assert_fence_ask mission-wall wall-clock-hours
 
 make_fence_mission mission-cycles 1 10 2 2
-printf '{"schemaVersion":1,"missionId":"mission-cycles","startedAt":"%s","cycles":1,"reservations":{}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+printf '{"schemaVersion":1,"missionId":"mission-cycles","startedAt":"%s","cycles":1,"reservations":{}}\n' "$fixture_mission_now" \
   >"$agent_repo/artifacts/agents/missions/mission-cycles/fences.json"
 stamp_fixture_contract mission-cycles
 agent_fails fence-cycles 'mission fence refused job (cycles)' env METASYSTEM_MISSION_TURN=mission-cycles-t1-fixture "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id fence-cycles --mission mission-cycles --stream main --wait
@@ -4644,7 +4713,7 @@ assert_fence_ask mission-cycles cycles
 
 make_fence_mission mission-jobs 10 1 2 2
 printf '{"schemaVersion":1,"missionId":"mission-jobs","startedAt":"%s","cycles":0,"reservations":{"prior":{"reservedAt":"2000-01-01T00:00:00Z","capMin":%s}}}\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$fixture_minimum_cap_min" \
+  "$fixture_mission_now" "$fixture_minimum_cap_min" \
   >"$agent_repo/artifacts/agents/missions/mission-jobs/fences.json"
 stamp_fixture_contract mission-jobs
 agent_fails fence-jobs 'mission fence refused job (jobs)' env METASYSTEM_MISSION_TURN=mission-jobs-t1-fixture "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id fence-jobs --mission mission-jobs --stream main --wait
@@ -4652,7 +4721,7 @@ assert_fence_ask mission-jobs jobs
 
 make_fence_mission mission-concurrency 10 10 1 2
 printf '{"schemaVersion":1,"missionId":"mission-concurrency","startedAt":"%s","cycles":0,"reservations":{"active":{"reservedAt":"2000-01-01T00:00:00Z","capMin":%s}}}\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$fixture_minimum_cap_min" \
+  "$fixture_mission_now" "$fixture_minimum_cap_min" \
   >"$agent_repo/artifacts/agents/missions/mission-concurrency/fences.json"
 stamp_fixture_contract mission-concurrency
 agent_fails fence-concurrency 'mission fence refused job (concurrency)' env METASYSTEM_MISSION_TURN=mission-concurrency-t1-fixture "$agent_dispatch" dispatch --role design-critic --outputs "$fixture_declared_outputs" --design metasystem/scripts/agents/roles/design-critic.md --brief "$happy_brief" --job-id fence-concurrency --mission mission-concurrency --stream main --wait
@@ -4730,6 +4799,7 @@ agent_fails ambiguous-mission 'ambiguous mission context' env METASYSTEM_MISSION
 kill "$mission_pid" 2>/dev/null || true
 wait_for_agent_fixture_process mission-lease-holder - "$mission_pid" 2>/dev/null || true
 export METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$agent_identity_fixture"
+unset METASYSTEM_GOAL_NOW
 
 agent_fails unknown-status-job '' "$agent_dispatch" status --job absent
 set +e
@@ -4835,6 +4905,18 @@ if (( ! runner_real_census_ok )); then
     METASYSTEM_CENSUS_PROCESS_FILE="$runner_process_fixture" \
     METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="$runner_identity_fixture")
 fi
+runner_mission_now=2026-09-20T00:00:00Z
+runner_mission_env=("${runner_process_env[@]}" "METASYSTEM_GOAL_NOW=$runner_mission_now")
+runner_main_start=$("${runner_process_env[@]}" \
+  "$runner_repo/bin/metasystem" proc started-at --pid "$$")
+agent_supervision_repo=$runner_repo
+track_armed_supervision "$runner_repo"
+run_fixture_arm "mission runner baseline arm" "$agent_fixture/runner-baseline-arming.out" \
+  "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+    "$runner_repo/scripts/agents/arm-supervision.sh" \
+    --repo "$runner_repo" --session runner-validator --pid "$$" \
+    --start-time "$runner_main_start" --tag metasystem-main-fake-runner-validator \
+  || { echo "mission runner fixture could not establish its baseline census" >&2; exit 1; }
 mv "$runner_repo/scripts/agents/arm-supervision.sh" \
   "$runner_repo/scripts/agents/arm-supervision-real.sh"
 cat >"$runner_repo/scripts/agents/arm-supervision.sh" <<'ARM'
@@ -4842,7 +4924,9 @@ cat >"$runner_repo/scripts/agents/arm-supervision.sh" <<'ARM'
 set -euo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 fixture_root=$(git -C "$script_dir" rev-parse --show-toplevel)
-called_at=$(date +%s)
+wait_for_post_arm_census=1
+[[ ${1:-} == fingerprint ]] && wait_for_post_arm_census=0
+for argument in "$@"; do [[ "$argument" == --shutdown ]] && wait_for_post_arm_census=0; done
 if "$script_dir/arm-supervision-real.sh" "$@"; then
   arm_status=0
 else
@@ -4850,18 +4934,7 @@ else
 fi
 echo "mission runner fixture real arm result (exit status $arm_status)" >&2
 (( arm_status == 0 )) || exit "$arm_status"
-[[ ${1:-} == fingerprint ]] && exit 0
-for argument in "$@"; do [[ "$argument" == --shutdown ]] && exit 0; done
-deadline=$((called_at + ${METASYSTEM_FIXTURE_AGENT_STATUS_CAP_SEC:?}))
-while (( $(date +%s) <= deadline )); do
-# A plain field read through the engine's JSON reader — the wait here is
-# newer-than-my-call, not the freshness policy (script-validate-2/D34).
-completed=$("$fixture_root/bin/metasystem" json get \
-  --file "$fixture_root/artifacts/agents/supervision/last-census.json" \
-  --field completedAtEpoch --default 0 2>/dev/null || true)
-[[ ${completed:-0} -ge $called_at ]] && break
-sleep "${METASYSTEM_FIXTURE_POLL_INTERVAL_SEC:?}"
-done
+(( wait_for_post_arm_census )) || exit 0
 if [[ -n "${METASYSTEM_MISSION_PROCESS_IDENTITY_FILE:-}" \
 && -f "$fixture_root/artifacts/agents/supervision/state.json" ]]; then
 state_file="$fixture_root/artifacts/agents/supervision/state.json"
@@ -4877,12 +4950,17 @@ printf '{"%s":{"pidStartedAt":%s,"command":"fixture %s"},"%s":{"pidStartedAt":%s
   "$reaper_pid" "$reaper_started" "$reaper_tag" >"$identity_staged"
 mv "$identity_staged" "$METASYSTEM_MISSION_PROCESS_IDENTITY_FILE"
 fi
+census_verdict="$fixture_root/artifacts/agents/supervision/last-census.json"
+census_state="$fixture_root/artifacts/agents/supervision/state.json"
+post_arm_generation=$("$fixture_root/bin/metasystem" json get --file "$census_verdict" --field generation)
+post_arm_scan=$("$fixture_root/bin/metasystem" json get --file "$census_verdict" --field scanSeq)
+"$fixture_root/bin/metasystem" job census-wait \
+  --verdict "$census_verdict" --state "$census_state" \
+  --root "$fixture_root" --repo "$fixture_root" \
+  --post-generation "$post_arm_generation" --post-scan "$post_arm_scan" \
+  --poll-ms 50
 ARM
 chmod +x "$runner_repo/scripts/agents/arm-supervision.sh"
-runner_main_start=$("${runner_process_env[@]}" \
-  "$runner_repo/bin/metasystem" proc started-at --pid "$$")
-agent_supervision_repo=$runner_repo
-track_armed_supervision "$runner_repo"
 run_fixture_arm "mission runner initial arm" "$agent_fixture/runner-arming.out" \
   "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
     "$runner_repo/scripts/agents/arm-supervision.sh" \
@@ -5065,7 +5143,7 @@ runner_git add candidate-score.txt
 runner_git commit --allow-empty -qm 'improve mission runner candidate'
 runner_git push -qu origin "$runner_branch"
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-cycle-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+run_runner_expect runner-cycle-start 0 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
   "$runner_engine" mission start --root "$runner_repo" --mission runner-cycle
 wait_runner_status runner-cycle 10
 cycle_turn=$(find "$runner_repo/artifacts/agents/missions/runner-cycle/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
@@ -5175,7 +5253,7 @@ cat >"$runner_repo/artifacts/agents/jobs/pat-lost.json" <<EOF
  "startedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)", "endedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 EOF
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-patience-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+run_runner_expect runner-patience-start 0 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
   "$runner_engine" mission start --root "$runner_repo" --mission runner-patience
 wait_runner_status runner-patience 11
 patience_ledger="$runner_repo/artifacts/agents/missions/runner-patience/ledger.md"
@@ -5286,7 +5364,7 @@ runner_git push -qu origin "$runner_branch"
 # binary-gate fuse key above.
 make_runner_contract runner-codex return-ok 5 '' codex gpt-5-fixture 'wall.host-artifacts=candidate-score.txt'
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-codex-start 0 "${runner_process_env[@]}" \
+run_runner_expect runner-codex-start 0 "${runner_mission_env[@]}" \
   PATH="$codex_host_bin:$PATH" METASYSTEM_AGENT_RUNTIME=fake \
   METASYSTEM_CODEX_FIXTURE_DIR="$codex_host_fixture" \
   METASYSTEM_CODEX_FIXTURE_TIMEOUT_SEC="$agent_fixture_cap_sec" \
@@ -5427,7 +5505,7 @@ grep -Fq 'oversized block' "$agent_fixture/prompt-oversized.out" \
 
 make_runner_contract runner-bad-prompt return-ok 5 '## Streams'
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-bad-prompt-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+run_runner_expect runner-bad-prompt-start 3 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
   "$runner_engine" mission start --root "$runner_repo" --mission runner-bad-prompt
 wait_runner_status runner-bad-prompt 11
 bad_turn=$(find "$runner_repo/artifacts/agents/missions/runner-bad-prompt/turns" -mindepth 1 -maxdepth 1 -type d | head -1)
@@ -5437,7 +5515,7 @@ grep -Fq 'prompt-refused' "$bad_turn/turn.json" \
 
 make_runner_contract runner-ghost dispatch-ghost 5
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-ghost-start 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+run_runner_expect runner-ghost-start 0 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
   "$runner_engine" mission start --root "$runner_repo" --mission runner-ghost
 wait_runner_status runner-ghost 10
 ghost_mission="$runner_repo/artifacts/agents/missions/runner-ghost"
@@ -5474,10 +5552,10 @@ ghost_ask="$ghost_mission/asks/$("$engine" json get --value "$ghost_rejected_ite
 make_runner_contract runner-fence return-ok 1
 mkdir -p "$runner_repo/artifacts/agents/missions/runner-fence"
 printf '{"schemaVersion":1,"missionId":"runner-fence","startedAt":"%s","cycles":1,"reservations":{}}\n' \
-  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  "$runner_mission_now" \
   >"$runner_repo/artifacts/agents/missions/runner-fence/fences.json"
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-fence-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+run_runner_expect runner-fence-start 3 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
   "$runner_engine" mission start --root "$runner_repo" --mission runner-fence
 wait_runner_status runner-fence 11
 fence_mission="$runner_repo/artifacts/agents/missions/runner-fence"
@@ -5491,14 +5569,17 @@ for fence_ask in "$fence_mission/asks"/*.json; do
     || { echo "unparseable mission ask: $fence_ask" >&2; exit 1; }
   [[ "$("$engine" json get --file "$fence_ask" --field reasonClass)" == fence ]] || continue
   [[ "$("$engine" json get --file "$fence_ask" --field answeredAt)" == null ]] || continue
-  fence_open_ask=1
+  fence_open_ask=$fence_ask
 done
 [[ -n "$fence_open_ask" ]] \
   || { echo "the fence park raised no unanswered fence ask" >&2; exit 1; }
+fence_question=$("$engine" json get --file "$fence_open_ask" --field question)
+[[ "$fence_question" == *'`cycles`'* && "$fence_question" != *'wall-clock-hours'* ]] \
+  || { echo "the runner fence refusal was not cycles-only: $fence_question" >&2; exit 1; }
 
 make_runner_contract runner-unverified return-ok 5
 close_bed_baseline "$runner_repo"
-run_runner_expect runner-unverified-start 3 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+run_runner_expect runner-unverified-start 3 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
   METASYSTEM_FAKE_HOST_START_UNVERIFIED=1 \
     "$runner_engine" mission start --root "$runner_repo" --mission runner-unverified
 wait_runner_status runner-unverified 11
@@ -5527,7 +5608,7 @@ for unverified_ask_file in "$unverified_mission/asks"/*.json; do
 done
 [[ -n "$unverified_ask" ]] \
   || { echo "no unanswered host-failure ask for the unverified start" >&2; exit 1; }
-run_runner_expect runner-unverified-answer 0 \
+run_runner_expect runner-unverified-answer 0 "${runner_mission_env[@]}" \
   "$runner_engine" mission answer --root "$runner_repo" --mission runner-unverified \
   --ask "$unverified_ask" --answer acknowledged
 wait_runner_status runner-unverified 0
@@ -5540,7 +5621,7 @@ agent_supervision_repo=
   || { echo "parked mission retained its runner lease" >&2; exit 1; }
 agent_supervision_repo=$runner_repo
 track_armed_supervision "$runner_repo"
-run_runner_expect runner-unverified-resume 0 "${runner_process_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
+run_runner_expect runner-unverified-resume 0 "${runner_mission_env[@]}" METASYSTEM_AGENT_RUNTIME=fake \
   "$runner_engine" mission resume --root "$runner_repo" --mission runner-unverified
 wait_runner_status runner-unverified 10
 [[ -f "$runner_repo/artifacts/agents/supervision/state.json" ]] \

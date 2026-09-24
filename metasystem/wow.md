@@ -27,7 +27,7 @@ The single routing layer. `AGENTS.md` owns always-on behavior; this table owns w
 | Metasystem retro | `skills/retro/SKILL.md` | `scripts/receipt.sh check` reports one due, or the human asks |
 | Reconciling an existing repository | `docs/metasystem-reconciliation.md` | Installing or upgrading where instructions or skills already exist |
 | App inception | `skills/inception/SKILL.md` | Birthing an app: covenant, doctrine, thread |
-| Answering a human about this workspace | `skills/project-partner/SKILL.md` | Sitting as the Project Partner in the browser interface: where a fact lives, and what may be claimed about it |
+| Answering in the browser | `skills/project-partner/SKILL.md` | Where a fact lives and what the Project Partner may claim about it |
 | Opt-in specialist skills | `optional-skills/` | Enabled during adaptation |
 | Metasystem maintenance and rationale | `development/` at the repository toplevel (template only) | Changing the metasystem template itself; absent in adopted projects |
 

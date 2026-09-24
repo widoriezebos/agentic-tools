@@ -38,6 +38,19 @@ func TestGoNativeArgumentsPinEveryNestedParallelismLayer(t *testing.T) {
 	}
 }
 
+func TestGoGateNativeFailurePrintsCompleteLogBeforeLocalEvidenceMove(t *testing.T) {
+	t.Parallel()
+	source, err := os.ReadFile(filepath.Join("..", "..", "scripts", "agents", "go-gate.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	complete := bytes.Index(source, []byte("cat \"$coverage_log\" >&2"))
+	move := bytes.Index(source, []byte("mv \"$coverage_log\" \"$keep\""))
+	if complete < 0 || move < 0 || complete > move {
+		t.Fatalf("native failure output is not copied to retained parent evidence before local move")
+	}
+}
+
 func TestGoNativePlainOutputPreservesDiagnosticLargerThanScannerLimit(t *testing.T) {
 	t.Parallel()
 	diagnostic := strings.Repeat("native-diagnostic-", 8192)
@@ -394,6 +407,9 @@ func TestD(t *testing.T) { barrier(t, "d") }
 			for index, readyEvent := range readyEvents {
 				select {
 				case <-readyEvent:
+				case result := <-done:
+					joined = true
+					t.Fatalf("Go group ended before partition %d published readiness: %+v", index, result)
 				case <-t.Context().Done():
 					t.Fatalf("Go partition %d did not publish readiness before test cancellation: %v", index, context.Cause(t.Context()))
 				}
@@ -421,6 +437,106 @@ func TestD(t *testing.T) { barrier(t, "d") }
 				t.Fatalf("barrier result=%+v", result)
 			}
 		})
+	}
+}
+
+func TestPerformanceGoPartitionsExportOneWorkerToNestedRunners(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	runTestResultGit(t, root, "init", "-q", "-b", "main")
+	runTestResultGit(t, root, "config", "user.name", "fixture")
+	runTestResultGit(t, root, "config", "user.email", "fixture@example.invalid")
+	writeTestResultFile(t, filepath.Join(root, "go.mod"), []byte("module example.invalid/nested\n\ngo 1.27\n"), 0o644)
+	writeTestResultFile(t, filepath.Join(root, "pkg", "pkg.go"), []byte("package pkg\n"), 0o644)
+	writeTestResultFile(t, filepath.Join(root, "pkg", "pkg_test.go"), []byte(`package pkg
+import (
+ "fmt"
+ "os"
+ "path/filepath"
+ "strconv"
+ "testing"
+ "time"
+)
+func nestedRunner(t *testing.T, leaf string) {
+ t.Helper()
+ workers, err := strconv.Atoi(os.Getenv("METASYSTEM_TEST_WORKERS"))
+ if err != nil || workers < 1 { t.Fatalf("nested worker allowance=%q err=%v", os.Getenv("METASYSTEM_TEST_WORKERS"), err) }
+ root := os.Getenv("NESTED_RUNNER_ROOT")
+ for worker := 1; worker <= workers; worker++ {
+  path := filepath.Join(root, leaf+"-worker-"+strconv.Itoa(worker)+".ready")
+  if err := os.WriteFile(path, []byte("ready"), 0600); err != nil { t.Fatal(err) }
+ }
+ if err := os.WriteFile(filepath.Join(root, leaf+".ready"), []byte("ready"), 0600); err != nil { t.Fatal(err) }
+ fmt.Println("nested runner ready", leaf)
+ for {
+  if _, err := os.Stat(filepath.Join(root, "release")); err == nil { return } else if !os.IsNotExist(err) { t.Fatal(err) }
+  time.Sleep(10 * time.Millisecond)
+ }
+}
+func TestA(t *testing.T) { nestedRunner(t, "a") }
+func TestB(t *testing.T) { nestedRunner(t, "b") }
+`), 0o644)
+	runTestResultGit(t, root, "add", ".")
+	runTestResultGit(t, root, "commit", "-qm", "fixture")
+	tree := runTestResultGit(t, root, "rev-parse", "HEAD^{tree}")
+	nestedRoot := t.TempDir()
+	group := testpolicy.Group{ID: "performance-go-nested", Kind: "performance", Adapter: "go", CWD: ".",
+		Inputs: []string{"go.mod", "pkg/**"}, Tools: []testpolicy.Tool{{ID: "go", Executable: "go", VersionArgs: []string{"version"}}},
+		Obligations: []string{"nested"}, Platforms: []string{"any"}, TargetMS: 1000, Packages: []string{"pkg"}, Tests: []byte(`"all"`),
+		Env: map[string]string{"NESTED_RUNNER_ROOT": nestedRoot}}
+	request := TestRunRequest{ProjectRoot: root, CandidateTree: tree, Workers: 2,
+		LogRoot: filepath.Join(root, "logs"), Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false")}
+	request.Contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
+	ready := []chan struct{}{make(chan struct{}), make(chan struct{})}
+	ctx := context.WithValue(t.Context(), goShardLifecycleHooksKey{}, goShardLifecycleHooks{
+		wrapOutput: func(index int, writer io.Writer) io.Writer {
+			return newCollectedOutputWriter(writer, "nested runner ready", ready[index])
+		},
+	})
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan GroupResult, 1)
+	go func() { done <- runTestGroup(ctx, request, group) }()
+	joined := false
+	var release sync.Once
+	releaseLeaves := func() {
+		release.Do(func() { _ = os.WriteFile(filepath.Join(nestedRoot, "release"), []byte("release"), 0o600) })
+	}
+	t.Cleanup(func() {
+		releaseLeaves()
+		cancel()
+		if !joined {
+			<-done
+		}
+	})
+	for index, event := range ready {
+		select {
+		case <-event:
+		case result := <-done:
+			joined = true
+			t.Fatalf("performance Go group ended before leaf %d published readiness: %+v", index, result)
+		case <-t.Context().Done():
+			t.Fatalf("performance Go leaf %d did not reach its nested runner: %v", index, context.Cause(t.Context()))
+		}
+	}
+	entries, err := os.ReadDir(nestedRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workers := 0
+	for _, entry := range entries {
+		if strings.Contains(entry.Name(), "-worker-") {
+			workers++
+		}
+	}
+	if workers != 2 {
+		t.Fatalf("two concurrent Go leaves propagated %d nested worker allowances, want 2: %v", workers, directoryNames(t, nestedRoot))
+	}
+	releaseLeaves()
+	result := <-done
+	joined = true
+	cancel()
+	if result.Status != "passed" || !result.CollectionComplete || len(result.Observed) != 2 {
+		t.Fatalf("performance Go nested-runner result=%+v", result)
 	}
 }
 

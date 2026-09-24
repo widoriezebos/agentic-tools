@@ -33,9 +33,7 @@ func (adapter ClaudeHeadless) Command(record Record, stateDir string) (Command, 
 	if err != nil {
 		return Command{}, err
 	}
-	if diff := readString(record.AdapterData, "readDiff"); diff != "" {
-		brief = append(brief, []byte("\nDiff: "+diff+"\n")...)
-	}
+	brief = appendReadPacket(brief, record)
 	model := readString(record.AdapterData, "model")
 	if model == "" {
 		switch record.Kind {

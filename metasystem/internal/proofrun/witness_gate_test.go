@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"io"
 	"os"
 	"os/exec"
@@ -14,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 const witnessGateInvocation = `set +e
@@ -362,13 +363,12 @@ func historicalWitnessGateSource(t *testing.T) []byte {
 		t.Fatalf("read current witness gate source: %v", err)
 	}
 	corrected := `  if (( witness_gate_rc != 0 )); then
-    rm -rf "$witness_state" || true
-    rm -rf "$witness_snap" || true
-    witness_state=
+    rm -rf "$witness_state"; witness_state=
+    [[ ! -d "$witness_freeze_snapshot" ]] \
+      || go run ./cmd/metasystem gate witness-freeze --cleanup "$witness_freeze_snapshot" >/dev/null 2>&1 \
+      || true
     if (( witness_gate_rc == 3 )); then
-      # Exit 3 is the gate's own refusal (the snapshot's tree shape or
-      # toolchain, never a test): environmental, so the plain gate answers.
-      echo "witness gate refused in its clean snapshot (reason above); falling back to the plain gate" >&2
+      echo "witness gate refused in its frozen project (reason above); falling back to the plain gate" >&2
       witness_fallback_rc=0
       if [[ "${WITNESS_GATE_FALLBACK:-plain}" == plain ]]; then
         bash scripts/agents/go-gate.sh || witness_fallback_rc=$?
@@ -377,9 +377,7 @@ func historicalWitnessGateSource(t *testing.T) []byte {
       fi
       return "$witness_fallback_rc" 2>/dev/null || exit "$witness_fallback_rc"
     fi
-    # A test failure or a coverage-ratchet refusal inside the snapshot is a
-    # deterministic answer; re-running everything would only repeat it.
-    echo "witness gate failed in its clean snapshot (exit $witness_gate_rc): the red above is the answer, no fallback" >&2
+    echo "witness gate failed in its frozen project (exit $witness_gate_rc): the red above is the answer, no fallback" >&2
     return "$witness_gate_rc" 2>/dev/null || exit "$witness_gate_rc"
   fi
 `
@@ -387,10 +385,12 @@ func historicalWitnessGateSource(t *testing.T) []byte {
     echo "witness gate did not complete; falling back to the plain gate" >&2
     rm -rf "$witness_state" || true
     witness_state=
+    [[ ! -d "$witness_freeze_snapshot" ]] \
+      || go run ./cmd/metasystem gate witness-freeze --cleanup "$witness_freeze_snapshot" >/dev/null 2>&1 \
+      || true
     if [[ "${WITNESS_GATE_FALLBACK:-plain}" == plain ]]; then
       bash scripts/agents/go-gate.sh
     fi
-    rm -rf "$witness_snap" || true
     return 0 2>/dev/null || exit 0
   fi
 `
@@ -544,6 +544,8 @@ func assertNoPublishedWitness(t *testing.T, observation witnessGateObservation) 
 func witnessGateGoHelper(arguments []string) int {
 	joined := strings.Join(arguments, " ")
 	switch {
+	case strings.Contains(joined, "gate witness-freeze"):
+		return witnessGateFreezeHelper(arguments)
 	case strings.Contains(joined, "behavior-surface select"):
 		if _, err := io.Copy(os.Stdout, os.Stdin); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -557,6 +559,56 @@ func witnessGateGoHelper(arguments []string) int {
 		fmt.Fprintf(os.Stderr, "unexpected go helper arguments: %q\n", arguments)
 		return 97
 	}
+}
+
+func witnessGateFreezeHelper(arguments []string) int {
+	value := func(flag string) string {
+		for index := range arguments {
+			if arguments[index] == flag && index+1 < len(arguments) {
+				return arguments[index+1]
+			}
+		}
+		return ""
+	}
+	if snapshot := value("--cleanup"); snapshot != "" {
+		if err := os.RemoveAll(filepath.Dir(snapshot)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 97
+		}
+		return 0
+	}
+	root := value("--root")
+	if root == "" {
+		fmt.Fprintln(os.Stderr, "witness-freeze helper received no root")
+		return 97
+	}
+	owner, err := os.MkdirTemp(os.Getenv("WITNESS_GATE_TMP_ROOT"), "metasystem-witness-freeze-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 97
+	}
+	snapshot := filepath.Join(owner, "project")
+	if err := os.MkdirAll(filepath.Join(snapshot, "scripts", "agents"), 0o700); err != nil {
+		_ = os.RemoveAll(owner)
+		fmt.Fprintln(os.Stderr, err)
+		return 97
+	}
+	source, err := os.ReadFile(filepath.Join(root, "scripts", "agents", "go-gate.sh"))
+	if err == nil {
+		err = testexec.WriteFile(filepath.Join(snapshot, "scripts", "agents", "go-gate.sh"), source, 0o700)
+	}
+	if err != nil {
+		_ = os.RemoveAll(owner)
+		fmt.Fprintln(os.Stderr, err)
+		return 97
+	}
+	fmt.Printf("%s\t%s\t%s\n", strings.Repeat("a", 64), snapshot, snapshot)
+	status, err := strconv.Atoi(os.Getenv("WITNESS_GATE_ARCHIVE_STATUS"))
+	if err != nil || status < 0 || status > 255 {
+		fmt.Fprintln(os.Stderr, "invalid freeze helper status")
+		return 97
+	}
+	return status
 }
 
 func witnessGateCommandHelper() int {

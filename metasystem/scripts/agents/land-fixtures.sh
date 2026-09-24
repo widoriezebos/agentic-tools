@@ -36,11 +36,29 @@ if (( fixture_bed_child )); then
   export GOMODCACHE=$fixture_outer_gomodcache
   export GOCACHE=$fixture_outer_gocache
   export GOPATH=$fixture_outer_gopath
-  fixture_isolated_home=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land-home.XXXXXX")
-  mkdir -p "$fixture_isolated_home/registry"
-  export HOME=$fixture_isolated_home
+  fixture_isolated_home=${METASYSTEM_FIXTURE_NAMESPACE:-}
+  if [[ -z "$fixture_isolated_home" ]]; then
+    fixture_isolated_home=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-land-home.XXXXXX")
+  fi
+  mkdir -p "$fixture_isolated_home/home" "$fixture_isolated_home/registry" \
+    "$fixture_isolated_home/tmp/host-admission"
+  chmod 700 "$fixture_isolated_home/home" "$fixture_isolated_home/registry" \
+    "$fixture_isolated_home/tmp/host-admission"
+  export HOME=$fixture_isolated_home/home
   export METASYSTEM_SUPERVISION_REGISTRY_HOME=$fixture_isolated_home/registry
+  export METASYSTEM_PROOF_ADMISSION_TEST_DIR=$fixture_isolated_home/tmp/host-admission
   trap 'rm -rf "$fixture_isolated_home"' EXIT
+fi
+
+fixture_minimum_cap_min=$(harness_fixture_semantic_cap minimum-minutes)
+fixture_receipt_cap_min=$(harness_fixture_semantic_cap landing-receipt-minutes)
+fixture_budget_refusal_cap_min=$(harness_fixture_semantic_cap landing-budget-refusal-minutes)
+fixture_receipt_now=
+if (( fixture_bed_child )); then
+  fixture_receipt_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  [[ "$fixture_scenario" != receipt-clock-boundary ]] \
+    || fixture_receipt_now=2000-01-01T00:00:00Z
+  export METASYSTEM_GOAL_NOW=$fixture_receipt_now
 fi
 if (( ! fixture_bed_child )); then
   fixture_bed_script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")
@@ -59,65 +77,65 @@ if (( ! fixture_bed_child )); then
 fi
 
 if [[ "$fixture_scenario" == batch-red-ejects-owner-and-lands-survivors ]]; then
-  (cd "$root" && go test -count=1 -run '^TestBatchSingleOwnerRedEjectsAndSurvivorsLand$' ./internal/landing/batch)
+  harness_fixture_go_test "$root" -count=1 -run '^TestBatchSingleOwnerRedEjectsAndSurvivorsLand$' ./internal/landing/batch
   echo "land batch-red-ejects-owner-and-lands-survivors fixture passed"
   exit 0
 fi
 
 if [[ "$fixture_scenario" == batch-conflicting-join-refused ]]; then
-  (cd "$root" && go test -count=1 -run '^(TestBatchJoinPrechecksBeforePublication|TestBatchJoinConflictNamesFiles)$' ./internal/landing/batch)
+  harness_fixture_go_test "$root" -count=1 -run '^(TestBatchJoinPrechecksBeforePublication|TestBatchJoinConflictNamesFiles)$' ./internal/landing/batch
   echo "land batch-conflicting-join-refused fixture passed"
   exit 0
 fi
 
 if [[ "$fixture_scenario" == batch-join-static-red-refused ]]; then
-  (cd "$root" && go test -count=1 -run '^TestGLEBatchJoinRedAdmissionReturnsMemberBeforeMembership$' ./internal/landing/batch)
-  (cd "$root" && go test -count=1 -run '^TestGoalLandingHostContractRetainsPriorGroupsAndGoGate$' ./cmd/metasystem)
+  harness_fixture_go_test "$root" -count=1 -run '^TestGLEBatchJoinRedAdmissionReturnsMemberBeforeMembership$' ./internal/landing/batch
+  harness_fixture_go_test "$root" -count=1 -run '^TestGoalLandingHostContractRetainsPriorGroupsAndGoGate$' ./cmd/metasystem
   echo "land batch-join-static-red-refused fixture passed"
   exit 0
 fi
 
 if [[ "$fixture_scenario" == batch-join-dropped-test-refused ]]; then
-  (cd "$root" && go test -count=1 -run '^TestBatchJoinRefusesDroppedProtectedTest$' ./internal/landing/batch)
-  (cd "$root" && go test -count=1 -run '^TestLandingBatchJoinRefusesDroppedListedTest$' ./cmd/metasystem)
+  harness_fixture_go_test "$root" -count=1 -run '^TestBatchJoinRefusesDroppedProtectedTest$' ./internal/landing/batch
+  harness_fixture_go_test "$root" -count=1 -run '^TestLandingBatchJoinRefusesDroppedListedTest$' ./cmd/metasystem
   echo "land batch-join-dropped-test-refused fixture passed"
   exit 0
 fi
 
 if [[ "$fixture_scenario" == batch-withdraw-before-and-after-seal ]]; then
-  (cd "$root" && go test -count=1 -run '^TestBatchWithdrawBeforeSealAndRefusesAfterSeal$' ./internal/landing/batch)
-  (cd "$root" && go test -count=1 -run '^TestBatchWithdrawCommandUsesRecordedJoinerIdentity$' ./cmd/metasystem)
+  harness_fixture_go_test "$root" -count=1 -run '^TestBatchWithdrawBeforeSealAndRefusesAfterSeal$' ./internal/landing/batch
+  harness_fixture_go_test "$root" -count=1 -run '^TestBatchWithdrawCommandUsesRecordedJoinerIdentity$' ./cmd/metasystem
   echo "land batch-withdraw-before-and-after-seal fixture passed"
   exit 0
 fi
 
 if [[ "$fixture_scenario" == batch-owner-holds-lease ]]; then
-  (cd "$root" && go test -count=1 -tags batchtest -run '^TestBatchOwnerHoldsTheLease$' ./cmd/metasystem)
+  harness_fixture_go_test "$root" -count=1 -tags batchtest -run '^TestBatchOwnerHoldsTheLease$' ./cmd/metasystem
   echo "land batch-owner-holds-lease fixture passed"
   exit 0
 fi
 
 if [[ "$fixture_scenario" == batch-lands-by-agent-commit ]]; then
-  (cd "$root" && go test -count=1 -run '^TestCommitWithRealWrapperWritesBatchTrailersAndExplicitIdentity$' ./internal/landing/batch)
+  harness_fixture_go_test "$root" -count=1 -run '^TestCommitWithRealWrapperWritesBatchTrailersAndExplicitIdentity$' ./internal/landing/batch
   echo "land batch-lands-by-agent-commit fixture passed"
   exit 0
 fi
 
 if [[ "$fixture_scenario" == batch-two-units-disjoint-groups ]]; then
-  (cd "$root" && go test -count=1 -run '^(TestPrefixReceiptsReuseByIdentity|TestBatchLandingTransportRunsWholeSeriesOnce)$' ./internal/landing/batch)
+  harness_fixture_go_test "$root" -count=1 -run '^(TestPrefixReceiptsReuseByIdentity|TestBatchLandingTransportRunsWholeSeriesOnce)$' ./internal/landing/batch
   echo "land batch-two-units-disjoint-groups fixture passed"
   exit 0
 fi
 
 if [[ "$fixture_scenario" == batch-land-trunk-moved ]]; then
-  (cd "$root" && go test -count=1 -run '^TestBatchLandTrunkMovedRebasesOrReopens$' ./cmd/metasystem)
-  (cd "$root" && go test -count=1 -run '^TestBatchLandingMovedInputReturnsOpenOnNewBase$' ./internal/landing/batch)
+  harness_fixture_go_test "$root" -count=1 -run '^TestBatchLandTrunkMovedRebasesOrReopens$' ./cmd/metasystem
+  harness_fixture_go_test "$root" -count=1 -run '^TestBatchLandingMovedInputReturnsOpenOnNewBase$' ./internal/landing/batch
   echo "land batch-land-trunk-moved fixture passed"
   exit 0
 fi
 
 if [[ "$fixture_scenario" == batch-land-resumes ]]; then
-  (cd "$root" && go test -count=1 -run '^TestBatchLandingResumeRebuildsCompleteSeries$' ./internal/landing/batch)
+  harness_fixture_go_test "$root" -count=1 -run '^TestBatchLandingResumeRebuildsCompleteSeries$' ./internal/landing/batch
   echo "land batch-land-resumes fixture passed"
   exit 0
 fi
@@ -129,9 +147,11 @@ receipt_environment=()
 receipt_runner_checkouts=()
 receipt_runner_engines=()
 receipt_runner_pids=()
+receipt_runner_refs=()
 receipt_runner_identity_files=()
 receipt_runner_registries=()
 receipt_runner_stop_logs=()
+appender_pid=
 
 is_workspace_receipt_scenario() {
   case "$fixture_scenario" in
@@ -157,7 +177,7 @@ is_carried_two_seat_scenario() {
 prepare_receipt_environment() { # process identity file, registry, fake-runtime checkout
   local identity_file=$1 registry=$2 checkout=$3 name value
   receipt_environment=()
-  for name in GOCACHE GOMODCACHE GOPATH GOROOT HOME LANG LC_ALL PATH SYSTEMROOT TEMP TMP TMPDIR TZ; do
+  for name in GOCACHE GOMODCACHE GOFLAGS GOPATH GOROOT HOME LANG LC_ALL METASYSTEM_TEST_WORKERS PATH SYSTEMROOT TEMP TMP TMPDIR TZ; do
     if value=$(printenv "$name" 2>/dev/null); then
       receipt_environment+=("$name=$value")
     fi
@@ -166,7 +186,8 @@ prepare_receipt_environment() { # process identity file, registry, fake-runtime 
     "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE=$identity_file"
     "METASYSTEM_SUPERVISION_REGISTRY_HOME=$registry"
     "METASYSTEM_OWNER_LINEAGE=land-receipt-fixture"
-    "METASYSTEM_PROOF_ADMISSION_TEST_DIR=$fixture_isolated_home/host-admission"
+    "METASYSTEM_GOAL_NOW=$fixture_receipt_now"
+    "METASYSTEM_PROOF_ADMISSION_TEST_DIR=$fixture_isolated_home/tmp/host-admission"
     "METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT=$checkout"
   )
 }
@@ -194,12 +215,13 @@ receipt_checkout_env_run() { # checkout, command...
 
 stop_receipt_runner() {
   local index checkout engine runner_pid identity_file registry stop_log
-  local stop_rc wait_deadline runner_dead=1
+  local stop_rc observation_rc runner_dead=0 runner_ref
   index=$((${#receipt_runner_checkouts[@]} - 1))
   (( index >= 0 )) || return 0
   checkout=${receipt_runner_checkouts[$index]}
   engine=${receipt_runner_engines[$index]}
   runner_pid=${receipt_runner_pids[$index]}
+  runner_ref=${receipt_runner_refs[$index]}
   identity_file=${receipt_runner_identity_files[$index]}
   registry=${receipt_runner_registries[$index]}
   stop_log=${receipt_runner_stop_logs[$index]}
@@ -210,20 +232,28 @@ stop_receipt_runner() {
   else
     stop_rc=$?
   fi
-  if [[ "$runner_pid" =~ ^[1-9][0-9]*$ ]]; then
-    wait_deadline=$((SECONDS + 30))
-    while kill -0 "$runner_pid" 2>/dev/null && (( SECONDS < wait_deadline )); do
-      sleep 0.25
-    done
-    if kill -0 "$runner_pid" 2>/dev/null; then
-      echo "land $fixture_scenario fixture: steward runner pid $runner_pid survived steward disarm --repo" >&2
-      runner_dead=0
+  # Disarm success and a missing ref are not death evidence. Only exact death
+  # or replacement releases the tracked runner; an unreadable probe keeps it
+  # under cleanup ownership and makes the fixture fail.
+  if [[ "$runner_pid" =~ ^[1-9][0-9]*$ && -n "$runner_ref" ]]; then
+    if harness_fixture_exact_process_gone "$source_engine" "$runner_pid" "$runner_ref"; then
+      runner_dead=1
+    else
+      observation_rc=$?
+      if (( observation_rc == 1 )); then
+        echo "land $fixture_scenario fixture: exact steward runner survived steward disarm --repo: $runner_ref" >&2
+      else
+        echo "land $fixture_scenario fixture: steward runner identity could not be proved gone; tracking retained: $runner_ref" >&2
+      fi
     fi
+  else
+    echo "land $fixture_scenario fixture: steward runner has no exact tracked identity; tracking retained" >&2
   fi
   if (( runner_dead )); then
     receipt_runner_checkouts=("${receipt_runner_checkouts[@]:0:$index}")
     receipt_runner_engines=("${receipt_runner_engines[@]:0:$index}")
     receipt_runner_pids=("${receipt_runner_pids[@]:0:$index}")
+    receipt_runner_refs=("${receipt_runner_refs[@]:0:$index}")
     receipt_runner_identity_files=("${receipt_runner_identity_files[@]:0:$index}")
     receipt_runner_registries=("${receipt_runner_registries[@]:0:$index}")
     receipt_runner_stop_logs=("${receipt_runner_stop_logs[@]:0:$index}")
@@ -253,6 +283,14 @@ select_receipt_runner_environment() { # checkout
 cleanup_land_fixture() {
   local status=$? cleanup_status=0 before stop_status
   trap - EXIT
+  if [[ -n "$appender_pid" ]]; then
+    kill -TERM "$appender_pid" 2>/dev/null || true
+    if ! wait "$appender_pid"; then
+      echo "land $fixture_scenario fixture: register appender did not stop cleanly" >&2
+      cleanup_status=1
+    fi
+    appender_pid=
+  fi
   while (( ${#receipt_runner_checkouts[@]} )); do
     before=${#receipt_runner_checkouts[@]}
     if stop_receipt_runner; then
@@ -801,7 +839,7 @@ BACKLOG
 }
 
 arm_receipt_runner() { # checkout, engine
-  local checkout=$1 engine=$2 identity_file registry arm_log runner_record deadline index runner_pid
+  local checkout=$1 engine=$2 identity_file registry arm_log runner_record index runner_pid runner_ref
   identity_file=$leg_root/process-identities.$(basename "$checkout").json
   registry=$leg_root/registry.$(basename "$checkout")
   arm_log=$leg_root/$(basename "$checkout").steward-arm.out
@@ -817,21 +855,22 @@ arm_receipt_runner() { # checkout, engine
   receipt_runner_checkouts+=("$checkout")
   receipt_runner_engines+=("$engine")
   receipt_runner_pids+=("")
+  receipt_runner_refs+=("")
   receipt_runner_identity_files+=("$identity_file")
   receipt_runner_registries+=("$registry")
   receipt_runner_stop_logs+=("$leg_root/$(basename "$checkout").disarm.out")
   runner_record=$checkout/artifacts/agents/steward/runner.json
-  deadline=$((SECONDS + 30))
-  while [[ ! -s "$runner_record" ]] && (( SECONDS < deadline )); do
-    sleep 0.25
-  done
+  # steward arm's successful return is the readiness acknowledgement: its Go
+  # owner has already waited for and proved this atomic runner record.
   [[ -s "$runner_record" ]] || {
     echo "land $fixture_scenario fixture: steward arm returned without a runner record" >&2
     return 1
   }
   runner_pid=$("$source_engine" json get --file "$runner_record" --field pid)
   receipt_runner_pids[$index]=$runner_pid
-  [[ "$runner_pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$runner_pid" 2>/dev/null || {
+  runner_ref=$("$source_engine" proc ref --pid "$runner_pid" 2>/dev/null || true)
+  receipt_runner_refs[$index]=$runner_ref
+  [[ "$runner_pid" =~ ^[1-9][0-9]*$ && -n "$runner_ref" ]] || {
     echo "land $fixture_scenario fixture: steward runner is not alive after arm" >&2
     return 1
   }
@@ -852,7 +891,9 @@ if is_carried_scenario; then
   carried_expired_now=$(date -u -r "$carried_expired_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) \
     || carried_expired_now=$(date -u -d "@$carried_expired_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) \
     || { echo "land $fixture_scenario fixture: cannot format the advanced run clock" >&2; exit 1; }
-  export METASYSTEM_GOAL_NOW=$carried_now
+  fixture_receipt_now=$carried_now
+  export METASYSTEM_GOAL_NOW=$fixture_receipt_now
+  select_receipt_runner_environment "$leg_local"
   if is_carried_two_seat_scenario || [[ "$fixture_scenario" == carried-crash-local ]]; then
     arm_receipt_runner "$leg_peer" "$leg_peer/bin/metasystem"
     peer_fixture_start=$(receipt_env_run "$leg_peer/bin/metasystem" proc started-at --pid "$$")
@@ -1341,7 +1382,7 @@ take_fixture_receipt() { # engine, checkout, output log
   fixture_receipt_tree=$(git -C "$checkout" write-tree)
   fixture_receipt_path=$checkout/artifacts/agents/landing/receipts/$fixture_receipt_tree.json
   if ! receipt_checkout_env_run "$checkout" "$engine" landing test-receipt --root "$checkout" \
-      --tree "$fixture_receipt_tree" --mode auto --goal fx --cap-min 3 >"$output" 2>&1; then
+      --tree "$fixture_receipt_tree" --mode auto --goal fx --cap-min "$fixture_receipt_cap_min" >"$output" 2>&1; then
     echo "land $fixture_scenario fixture: landing test-receipt failed" >&2
     sed -n '1,240p' "$output" >&2
     return 1
@@ -1351,6 +1392,56 @@ take_fixture_receipt() { # engine, checkout, output log
     return 1
   }
 }
+
+if [[ "$fixture_scenario" == receipt-clock-boundary ]]; then
+  clock_checkout=${METASYSTEM_RECEIPT_CLOCK_FIXTURE_ROOT:?}
+  clock_cap_min=${METASYSTEM_RECEIPT_CLOCK_CAP_MIN:?}
+  clock_test_executable=${METASYSTEM_RECEIPT_CLOCK_TEST_EXECUTABLE:?}
+  clock_ready=${METASYSTEM_RECEIPT_CLOCK_READY:?}
+  clock_release=${METASYSTEM_RECEIPT_CLOCK_RELEASE:?}
+  clock_observed=${METASYSTEM_RECEIPT_CLOCK_OBSERVED:?}
+  clock_result=${METASYSTEM_RECEIPT_CLOCK_RESULT:?}
+  [[ "$clock_cap_min" == 1 || "$clock_cap_min" == 3 ]] \
+    || { echo "land receipt-clock-boundary fixture: cap must be 1 or 3" >&2; exit 2; }
+  clock_identity=$tmp/clock-identities.json
+  clock_processes=$tmp/clock-processes.json
+  clock_registry=$tmp/clock-registry
+  clock_output=$tmp/clock-receipt.out
+  mkdir -p "$clock_registry"
+  printf '{}\n' >"$clock_identity"
+  printf '[]\n' >"$clock_processes"
+  prepare_receipt_environment "$clock_identity" "$clock_registry" "$clock_checkout"
+  receipt_environment+=("METASYSTEM_CENSUS_PROCESS_FILE=$clock_processes")
+  echo "land receipt-clock-boundary fixture: shell clock=$fixture_receipt_now cap-min=$clock_cap_min"
+  clock_fixture_start=$(receipt_env_run "$source_engine" proc started-at --pid "$$")
+  receipt_env_run env METASYSTEM_OWNER_LINEAGE=m1 "$source_engine" lease announce \
+    --root "$clock_checkout" --session receipt-clock-boundary --pid "$$" \
+    --start "$clock_fixture_start" --tag receipt-clock-boundary \
+    --runtime fake --owner-lineage m1 >/dev/null
+  printf -v clock_child_command \
+    'GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD=shell-boundary METASYSTEM_WAIT_BINARY=%q %q -test.run=^TestLandingReceiptShellCallerCarriesAuthorizedClock$ -test.count=1 -- --receipt-clock-private-child %q %q %q' \
+    "$source_engine" "$clock_test_executable" "$clock_observed" "$clock_ready" "$clock_release"
+  clock_tree=$(git -C "$clock_checkout" write-tree)
+  set +e
+  receipt_checkout_env_run "$clock_checkout" env METASYSTEM_OWNER_LINEAGE=m1 \
+    "$source_engine" landing test-receipt --root "$clock_checkout" \
+      --tree "$clock_tree" --command "$clock_child_command" --goal standing-validation \
+      --cap-min "$clock_cap_min" --result "$clock_result" >"$clock_output" 2>&1
+  clock_rc=$?
+  set -e
+  receipt_env_run env METASYSTEM_OWNER_LINEAGE=m1 "$source_engine" lease retire \
+    --root "$clock_checkout" --session receipt-clock-boundary --pid "$$" \
+    --start "$clock_fixture_start" >/dev/null || true
+  [[ $clock_rc -eq 0 ]] || {
+    echo "land receipt-clock-boundary fixture: public receipt exited $clock_rc" >&2
+    sed -n '1,240p' "$clock_output" >&2
+    exit "$clock_rc"
+  }
+  echo "land receipt-clock-boundary fixture: public receipt completed cap-min=$clock_cap_min"
+  cat "$clock_observed"
+  echo "land receipt-clock-boundary fixture passed"
+  exit 0
+fi
 
 publish_peer_ledger_move() { # optional peer checkout
   local checkout=${1:-$leg_peer} engine peer_start goal_base accepted_base sync_remote
@@ -2032,7 +2123,7 @@ if [[ "$fixture_scenario" == abandonment-route-recertified ]]; then
   recert_admission_authority=$fixture_isolated_home/admission-authority
   mkdir -p "$recert_admission_authority"
   printf '%s\n' 'metasystem.runtimes=fake' >"$recert_admission_authority/metasystem.conf"
-  export METASYSTEM_PROOF_ADMISSION_TEST_DIR="$fixture_isolated_home/host-admission"
+  export METASYSTEM_PROOF_ADMISSION_TEST_DIR="$fixture_isolated_home/tmp/host-admission"
   export METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="$recert_admission_authority"
   recert_root=abandonment-recertified-root
   recert_critic=abandonment-recertified-critic
@@ -2098,7 +2189,7 @@ JSON
   (
     cd "$leg_local"
     harness_fixture_without_outer_proof "$source_engine" landing test-receipt --root . --tree "$recert_candidate_tree" \
-      --command "grep -q 'recertified chain change' $recert_path" --goal ship-widget --cap-min 1
+      --command "grep -q 'recertified chain change' $recert_path" --goal ship-widget --cap-min "$fixture_minimum_cap_min"
   ) >"$leg_root/recert-receipt.out" 2>&1
   recert_receipt_rc=$?
   set -e
@@ -2191,7 +2282,7 @@ SH
   (
     cd "$leg_local"
     harness_fixture_without_outer_proof "$source_engine" landing test-receipt --root . --tree "$moved_candidate_tree" \
-      --command "grep -q 'recertified chain change' $recert_path" --goal ship-widget --cap-min 1
+      --command "grep -q 'recertified chain change' $recert_path" --goal ship-widget --cap-min "$fixture_minimum_cap_min"
   ) >"$leg_root/recert-moved-receipt.out" 2>&1
   moved_receipt_rc=$?
   set -e
@@ -2706,11 +2797,12 @@ fi
 # full-battery receipt and bar-a provenance.
 if [[ "$fixture_scenario" == full-width-chain ]]; then
 make_leg full-width-chain
-# This fake-runtime leg invokes landing test-receipt directly rather than
-# through the sterile receipt runner environment below.
-export METASYSTEM_PROOF_ADMISSION_TEST_DIR="$fixture_isolated_home/host-admission"
-export METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="$leg_local"
 export METASYSTEM_OWNER_LINEAGE=land-receipt-fixture
+full_chain_identity=$leg_root/process-identities.local.json
+full_chain_registry=$leg_root/registry.local
+mkdir -p "$full_chain_registry"
+printf '{}\n' >"$full_chain_identity"
+prepare_receipt_environment "$full_chain_identity" "$full_chain_registry" "$leg_local"
 full_chain_message=$leg_root/message.txt
 full_chain_missing_output=$leg_root/missing-receipt.out
 full_chain_usage_output=$leg_root/usage-refusal.out
@@ -2724,6 +2816,30 @@ full_battery_command=$(sed -n 's/^const FullBatteryCommand = "\(.*\)"$/\1/p' \
 printf 'fixture lands a receipted full-width chain\n' >"$full_chain_message"
 
 full_chain_base=$(git -C "$leg_local" rev-parse HEAD)
+full_chain_budget_refusal_output=$leg_root/budget-refusal.out
+full_chain_budget_command_marker=$leg_root/budget-command-ran
+set +e
+(
+  cd "$leg_local"
+  receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" landing test-receipt --root . \
+    --tree "$(git write-tree)" --command "touch $full_chain_budget_command_marker" \
+    --goal fx --cap-min "$fixture_budget_refusal_cap_min"
+) >"$full_chain_budget_refusal_output" 2>&1
+full_chain_budget_refusal_rc=$?
+set -e
+[[ $full_chain_budget_refusal_rc -ne 0 ]] || {
+  echo "land full-width-chain fixture: proof beyond the goal's semantic budget was admitted" >&2
+  exit 1
+}
+grep -Fq 'BUDGET_REFUSED' "$full_chain_budget_refusal_output" || {
+  echo "land full-width-chain fixture: proof refusal did not name the exhausted semantic budget" >&2
+  sed -n '1,160p' "$full_chain_budget_refusal_output" >&2
+  exit 1
+}
+[[ ! -e "$full_chain_budget_command_marker" ]] || {
+  echo "land full-width-chain fixture: budget-refused native command started" >&2
+  exit 1
+}
 set +e
 (
   cd "$leg_local"
@@ -2749,8 +2865,8 @@ fi
 full_chain_other_tree=$(git -C "$leg_local" rev-parse HEAD^{tree})
 (
   cd "$leg_local"
-  harness_fixture_without_outer_proof "$source_engine" landing test-receipt --root . \
-    --tree "$full_chain_other_tree" --command "$full_battery_command" --goal fx --cap-min 3
+  receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" landing test-receipt --root . \
+    --tree "$full_chain_other_tree" --command "$full_battery_command" --goal fx --cap-min "$fixture_receipt_cap_min"
 ) >/dev/null
 full_chain_other_receipt=artifacts/agents/landing/receipts/$full_chain_other_tree.json
 
@@ -2851,8 +2967,8 @@ fi
 
 (
   cd "$leg_local"
-  harness_fixture_without_outer_proof "$source_engine" landing test-receipt --root . \
-    --tree "$full_chain_candidate" --command "$full_battery_command" --goal fx --cap-min 3
+  receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" landing test-receipt --root . \
+    --tree "$full_chain_candidate" --command "$full_battery_command" --goal fx --cap-min "$fixture_receipt_cap_min"
 ) >/dev/null
 full_chain_receipt=artifacts/agents/landing/receipts/$full_chain_candidate.json
 (
@@ -2911,8 +3027,8 @@ cat >"$leg_local/artifacts/agents/full-chain-2/rounds/1/review.json" <<JSON
 JSON
 (
   cd "$leg_local"
-  harness_fixture_without_outer_proof "$source_engine" landing test-receipt --root . \
-    --tree "$full_chain_candidate_2" --command "$full_battery_command" --goal fx --cap-min 1
+  receipt_checkout_env_run "$leg_local" "$leg_local/bin/metasystem" landing test-receipt --root . \
+    --tree "$full_chain_candidate_2" --command "$full_battery_command" --goal fx --cap-min "$fixture_minimum_cap_min"
 ) >/dev/null
 full_chain_receipt_2=artifacts/agents/landing/receipts/$full_chain_candidate_2.json
 
@@ -2957,13 +3073,11 @@ full_chain_bg_expected=$leg_root/receipts.expected
 full_chain_passing_output=$leg_root/register-drift-passing.out
 : >"$full_chain_bg_log"
 appender_pid=
-trap 'kill "$appender_pid" 2>/dev/null' EXIT
 (
-  appender_deadline=$((SECONDS + 60))
   appender_stop=0
   appender_count=0
   trap 'appender_stop=1' TERM
-  while (( ! appender_stop && SECONDS < appender_deadline )); do
+  while (( ! appender_stop )); do
     appender_count=$((appender_count + 1))
     appender_line=receipt=bg-$appender_count
     printf '%s\n' "$appender_line" >>"$leg_local/memory/receipts.log"
@@ -2981,8 +3095,8 @@ set +e
 full_chain_passing_rc=$?
 kill -TERM "$appender_pid" 2>/dev/null
 wait "$appender_pid"
+appender_pid=
 set -e
-trap 'rm -rf "$tmp"' EXIT
 [[ $full_chain_passing_rc == 0 ]] || {
   echo "land full-width-chain fixture: register drift landing exited $full_chain_passing_rc, want 0" >&2
   sed -n '1,240p' "$full_chain_passing_output" >&2

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -58,6 +59,192 @@ func TestTestRunRearmsOnALandedEngine(t *testing.T) {
 	})
 	if status != 1 || called != 1 || !rearm {
 		t.Fatalf("outer test run did not enter landed re-arm: status=%d calls=%d rearm=%t", status, called, rearm)
+	}
+}
+
+func TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback(t *testing.T) {
+	t.Parallel()
+	semanticCommandStarted := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	afterPreparation := semanticCommandStarted.Add(2 * time.Minute)
+	afterFallbackDecision := afterPreparation.Add(time.Minute)
+
+	t.Run("advancing production clock", func(t *testing.T) {
+		clockSamples := make(chan time.Time, 2)
+		observed := make(chan proofLaunchAdmission, 2)
+		preparationStarted := make(chan struct{})
+		preparationReleased := make(chan struct{})
+		fallbackReleased := make(chan struct{})
+		done := make(chan struct{})
+		owner := testingCommandAdmission{
+			now: func() time.Time { return <-clockSamples },
+			admitRun: func(_ testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+				observed <- admission
+				return proofrun.Attempt{}, proofrun.LaunchResult{Disposition: proofrun.DispositionReusableSuccess}, false, nil
+			},
+			admitProof: func(admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+				observed <- admission
+				return proofrun.Attempt{}, proofrun.LaunchResult{Disposition: proofrun.DispositionExecuted}, false, nil
+			},
+		}
+		go func() {
+			defer close(done)
+			close(preparationStarted)
+			<-preparationReleased
+			_, _, _, _ = owner.initial(testingSelectionRequest{}, proofLaunchAdmission{Now: semanticCommandStarted})
+			<-fallbackReleased
+			_, _, _, _ = owner.forced(proofLaunchAdmission{Now: semanticCommandStarted})
+		}()
+
+		<-preparationStarted
+		clockSamples <- afterPreparation
+		close(preparationReleased)
+		initial := <-observed
+		clockSamples <- afterFallbackDecision
+		close(fallbackReleased)
+		fallback := <-observed
+		<-done
+		if initial.Now != afterPreparation || fallback.Now != afterFallbackDecision {
+			t.Fatalf("admission instants initial=%s fallback=%s, want %s then %s", initial.Now, fallback.Now, afterPreparation, afterFallbackDecision)
+		}
+		if !fallback.ForceAttempt || !fallback.ForceGroups {
+			t.Fatalf("forced fallback flags = attempt:%t groups:%t", fallback.ForceAttempt, fallback.ForceGroups)
+		}
+	})
+
+	t.Run("fixed authorized fixture clock", func(t *testing.T) {
+		observed := make(chan proofLaunchAdmission, 2)
+		owner := testingCommandAdmission{
+			now: func() time.Time { return semanticCommandStarted },
+			admitRun: func(_ testingSelectionRequest, admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+				observed <- admission
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, nil
+			},
+			admitProof: func(admission proofLaunchAdmission) (proofrun.Attempt, proofrun.LaunchResult, bool, error) {
+				observed <- admission
+				return proofrun.Attempt{}, proofrun.LaunchResult{}, false, nil
+			},
+		}
+		_, _, _, _ = owner.initial(testingSelectionRequest{}, proofLaunchAdmission{})
+		_, _, _, _ = owner.forced(proofLaunchAdmission{})
+		if initial, fallback := (<-observed).Now, (<-observed).Now; initial != semanticCommandStarted || fallback != semanticCommandStarted {
+			t.Fatalf("fixed fixture admission instants initial=%s fallback=%s, want both %s", initial, fallback, semanticCommandStarted)
+		}
+	})
+}
+
+func TestVerifySamplesFreshnessAfterRetainedProofRevalidation(t *testing.T) {
+	fixture := newPortableProofFixture(t)
+	fixture.writeEpisodeContract()
+	tree := fixture.commit("declare expiring command observation")
+	before := time.Now().UTC().Truncate(time.Second)
+	expires := before.Add(time.Minute)
+	t.Setenv("METASYSTEM_GOAL_NOW", before.Format(time.RFC3339Nano))
+	request := testingSelectionRequest{Root: fixture.root, GoalID: "portable", Tree: tree, Mode: testpolicy.ModeAuto,
+		Purpose: testpolicy.PurposeDelivery, FreshEpisode: strings.Repeat("1", 64), FreshExpiresAt: expires.Format(time.RFC3339Nano)}
+	prepared, err := prepareTestingForCommand(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveTestingPreparationWorkerPolicy(&prepared); err != nil {
+		t.Fatal(err)
+	}
+	buildIdentity, err := candidateEngineBuildIdentity(context.Background(), gittree.Workspace{Dir: prepared.ProjectRoot},
+		prepared.Prefix, prepared.CandidateTree, prepared.Environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runRequest := testingRunRequest(prepared, "", "", "", strings.Repeat("a", 64), buildIdentity)
+	runRequest.FreshnessEpisode, runRequest.FreshnessExpiresAt = request.FreshEpisode, request.FreshExpiresAt
+	runRequest.FreshGroups, _ = testingFreshGroups(prepared, request)
+	if err := bindTestingFreshnessProjection(&runRequest, prepared.Installation); err != nil {
+		t.Fatal(err)
+	}
+	identities, metadata, _, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), runRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runRequest.FreshnessBinding = testingFreshnessBinding(runRequest, identities, request.FreshEpisode)
+	result := proofrun.NewTestResultAt(runRequest, before)
+	zero := 0
+	for _, id := range prepared.Plan.SelectedGroups {
+		var definition testpolicy.Group
+		for _, group := range prepared.EffectiveContract.Groups {
+			if group.ID == id {
+				definition = group
+			}
+		}
+		item := metadata[id]
+		result.Groups = append(result.Groups, proofrun.GroupResult{ID: id, Kind: definition.Kind, Obligations: definition.Obligations,
+			InputDigest: item.InputDigest, InputManifest: append(append([]string(nil), definition.Inputs...), item.ImplicitInputs...),
+			ExecutionIdentity: identities[id], IdentityVersion: proofrun.GroupExecutionIdentityVersion, Argv: item.Argv, CWD: definition.CWD,
+			EnvironmentDigest: item.EnvironmentDigest, ToolIdentities: item.ToolIdentities, ExecutableDigests: item.ExecutableDigests,
+			Status: "passed", NativeLaunched: true, NativeExitStatus: &zero, Expected: item.Expected, Observed: item.Expected,
+			CollectionComplete: true, ReportDigests: map[string]string{}, StartedAt: before.Format(time.RFC3339Nano), EndedAt: before.Format(time.RFC3339Nano)})
+		result.LaunchCounts.Test++
+	}
+	result.RecomputeDelivery()
+	proofIdentity, err := proofrun.BuildProofIdentity(prepared.ProjectRoot, prepared.ConfPath, "selected", "testing", nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher, err := proofrun.CurrentProcessIdentity(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, decision, err := proofrun.ReserveLocked(privateProofAdmissionRequest(proofrun.WithTestHostLoadSampler(proofrun.AdmissionRequest{
+		ControlRoot: prepared.proofControlRoot(), ExecutionRoot: prepared.ProjectRoot, CandidateTree: prepared.CandidateTree,
+		GoalID: prepared.GoalID, GoalRevision: prepared.AccountingRevision, AccountingRevision: prepared.AccountingRevision,
+		CandidateGoalID: prepared.GoalID, CandidateRevision: prepared.AccountingRevision, ReservedMinutes: 2,
+		Identity: proofIdentity, Launcher: launcher, Now: before, ComponentIdentities: identities, SharedComponents: true,
+		FreshnessEpisode: request.FreshEpisode, FreshnessBinding: runRequest.FreshnessBinding,
+		FreshnessExpiresAt: request.FreshExpiresAt, FreshGroups: runRequest.FreshGroups,
+	}, "0")))
+	if err != nil || decision.Disposition != proofrun.DispositionExecuted {
+		t.Fatalf("reserve retained proof: decision=%+v err=%v", decision, err)
+	}
+	if _, err := proofrun.FinalizeAttemptWithTestResultLocked(prepared.proofControlRoot(), attempt.AttemptID,
+		proofrun.TerminalSuccess, 0, "controlled retained proof", nil, &result, before.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	fixed, err := verifyRetainedTesting(request)
+	if err != nil || !fixed.Delivery.Sufficient {
+		t.Fatalf("authorized fixed fixture clock lost reusable proof: sufficient=%t err=%v groups=%+v", fixed.Delivery.Sufficient, err, fixed.Groups)
+	}
+	for _, boundary := range []struct {
+		name       string
+		at         time.Time
+		sufficient bool
+	}{
+		{name: "before expiry", at: expires.Add(-time.Nanosecond), sufficient: true},
+		{name: "at expiry", at: expires},
+		{name: "after expiry", at: expires.Add(time.Nanosecond)},
+	} {
+		t.Run(boundary.name, func(t *testing.T) {
+			revalidated := false
+			result, err := verifyRetainedTestingPrepared(request, prepared, retainedTestingVerification{
+				clock: func() time.Time {
+					if revalidated {
+						return boundary.at
+					}
+					return before
+				},
+				revalidate: func(ctx context.Context, request proofrun.TestRunRequest, attempts []proofrun.Attempt) (map[string]string, error) {
+					identities, err := proofrun.RevalidateRetainedGroupExecutionIdentities(ctx, request, attempts)
+					revalidated = err == nil
+					return identities, err
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !revalidated {
+				t.Fatal("retained group identities were not revalidated")
+			}
+			if result.Delivery.Sufficient != boundary.sufficient {
+				t.Fatalf("proof sufficient at %s = %t, want %t; groups=%+v", boundary.at, result.Delivery.Sufficient, boundary.sufficient, result.Groups)
+			}
+		})
 	}
 }
 
@@ -108,7 +295,6 @@ func TestTestRunKeepsProofRecordsUnderTheControlRoot(t *testing.T) {
 	found := map[string]int{}
 	wantFirstArgument := map[string]bool{
 		"proofrun.ReadAttempts":        true,
-		"proofrun.RecordTestResult":    true,
 		"publishTestingResult":         true,
 		"retainIncompleteProofAttempt": true,
 	}
@@ -155,7 +341,18 @@ func TestTestRunKeepsProofRecordsUnderTheControlRoot(t *testing.T) {
 			if site != "" {
 				for _, element := range typed.Elts {
 					field, ok := element.(*ast.KeyValueExpr)
-					if !ok || !isIdentifier(field.Key, "ControlRoot") {
+					if !ok {
+						continue
+					}
+					if site == "proofrun.LaunchOptions.ControlRoot" && isIdentifier(field.Key, "CommitTerminal") {
+						found["proofrun.LaunchOptions.CommitTerminal"]++
+						call, ok := field.Value.(*ast.CallExpr)
+						if !ok || callName(call) != "testingTerminalCommit" {
+							t.Errorf("proofrun.LaunchOptions.CommitTerminal takes %s instead of testingTerminalCommit(...)", expressionText(field.Value))
+						}
+						continue
+					}
+					if !isIdentifier(field.Key, "ControlRoot") {
 						continue
 					}
 					found[site]++
@@ -184,16 +381,134 @@ func TestTestRunKeepsProofRecordsUnderTheControlRoot(t *testing.T) {
 		"controlRoot assignment",
 		"proofLaunchAdmission.ControlRoot",
 		"proofrun.ReadAttempts",
-		"proofrun.RecordTestResult",
 		"publishTestingResult",
 		"retainIncompleteProofAttempt",
 		"pathsRoot filepath.Join",
 		"proofrun.LaunchOptions.ControlRoot",
+		"proofrun.LaunchOptions.CommitTerminal",
 	} {
 		if found[site] == 0 {
 			t.Errorf("runTestRun has no %s site", site)
 		}
 	}
+	proofSource, err := os.ReadFile("proof_run.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcherSource, err := os.ReadFile(filepath.Join("..", "..", "internal", "proofrun", "launcher.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, problem := range testingTerminalControlRootProblems(source, proofSource, launcherSource) {
+		t.Error(problem)
+	}
+	t.Run("wrong root mutation is rejected", func(t *testing.T) {
+		wrongRoot := []byte(strings.Replace(string(proofSource),
+			"FinalizeAttemptWithTestResultLocked(completion.ControlRoot,",
+			"FinalizeAttemptWithTestResultLocked(completion.ExecutionRoot,", 1))
+		if string(wrongRoot) == string(proofSource) {
+			t.Fatal("wrong-root mutation did not find the terminal recording site")
+		}
+		if problems := testingTerminalControlRootProblems(source, wrongRoot, launcherSource); len(problems) == 0 {
+			t.Fatal("structural witness accepted terminal recording under the execution root")
+		}
+	})
+}
+
+func testingTerminalControlRootProblems(testSource, proofSource, launcherSource []byte) []string {
+	type parsedSource struct {
+		bodies map[string]*ast.BlockStmt
+	}
+	parse := func(name string, source []byte) (parsedSource, error) {
+		file, err := parser.ParseFile(token.NewFileSet(), name, source, 0)
+		if err != nil {
+			return parsedSource{}, err
+		}
+		parsed := parsedSource{bodies: map[string]*ast.BlockStmt{}}
+		for _, declaration := range file.Decls {
+			if function, ok := declaration.(*ast.FuncDecl); ok {
+				parsed.bodies[function.Name.Name] = function.Body
+			}
+		}
+		return parsed, nil
+	}
+	parsed := map[string]parsedSource{}
+	for _, input := range []struct {
+		name   string
+		source []byte
+	}{{"test.go", testSource}, {"proof_run.go", proofSource}, {"launcher.go", launcherSource}} {
+		value, err := parse(input.name, input.source)
+		if err != nil {
+			return []string{fmt.Sprintf("parse %s: %v", input.name, err)}
+		}
+		parsed[input.name] = value
+	}
+	var expressionPath func(ast.Expr) string
+	expressionPath = func(expression ast.Expr) string {
+		switch typed := expression.(type) {
+		case *ast.Ident:
+			return typed.Name
+		case *ast.SelectorExpr:
+			prefix := expressionPath(typed.X)
+			if prefix != "" {
+				return prefix + "." + typed.Sel.Name
+			}
+		}
+		return ""
+	}
+	hasCall := func(body *ast.BlockStmt, name, firstArgument string) bool {
+		found := false
+		ast.Inspect(body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if ok && expressionPath(call.Fun) == name && len(call.Args) > 0 && expressionPath(call.Args[0]) == firstArgument {
+				found = true
+			}
+			return !found
+		})
+		return found
+	}
+	hasCompletionRoots := func(body *ast.BlockStmt) bool {
+		found := false
+		ast.Inspect(body, func(node ast.Node) bool {
+			literal, ok := node.(*ast.CompositeLit)
+			if !ok || expressionPath(literal.Type) != "CompletionContext" {
+				return true
+			}
+			fields := map[string]string{}
+			for _, element := range literal.Elts {
+				if field, ok := element.(*ast.KeyValueExpr); ok {
+					fields[expressionPath(field.Key)] = expressionPath(field.Value)
+				}
+			}
+			found = fields["ControlRoot"] == "controlRoot" && fields["ExecutionRoot"] == "options.Root"
+			return !found
+		})
+		return found
+	}
+	var problems []string
+	checks := []struct {
+		file, function, call, argument string
+	}{
+		{"test.go", "runTestWorker", "canonicalProofRoot", "controlRoot"},
+		{"test.go", "runTestWorker", "proofrun.AuthenticateWorker", "canonicalControl"},
+		{"test.go", "runTestWorker", "proofrun.ReadAttempt", "canonicalControl"},
+		{"test.go", "testingTerminalCommit", "readTestingWorkerResult", "workerResultPath"},
+		{"test.go", "testingTerminalCommit", "commitProofTerminalWithTestResult", "completion"},
+		{"proof_run.go", "commitProofTerminalWithTestResult", "commitProofTerminalWithReason", "completion"},
+		{"proof_run.go", "commitProofTerminalWithReason", "proofrun.ReadProcessRecord", "completion.ControlRoot"},
+		{"proof_run.go", "commitProofTerminalWithReason", "proofrun.FinalizeAttemptWithTestResultLocked", "completion.ControlRoot"},
+		{"launcher.go", "LaunchSuite", "options.CommitTerminal", "completion"},
+	}
+	for _, check := range checks {
+		body := parsed[check.file].bodies[check.function]
+		if body == nil || !hasCall(body, check.call, check.argument) {
+			problems = append(problems, fmt.Sprintf("%s does not link %s to %s(%s)", check.function, check.file, check.call, check.argument))
+		}
+	}
+	if body := parsed["launcher.go"].bodies["LaunchSuite"]; body == nil || !hasCompletionRoots(body) {
+		problems = append(problems, "LaunchSuite does not keep the terminal control root distinct from its execution root")
+	}
+	return problems
 }
 
 func TestPolicyChildNeverFetchesOrReArms(t *testing.T) {
@@ -708,6 +1023,82 @@ func TestCandidateEngineArtifactReuseValidatesBytesAndBuildInputs(t *testing.T) 
 	if changedTool.Commit == changedEnvironment.Commit || buildCount() != 6 {
 		t.Fatalf("changed Go executable reused previous artifact: previous=%s current=%s count=%d", changedEnvironment.Commit, changedTool.Commit, buildCount())
 	}
+	t.Run("physical command origin includes event-held cold build", testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin)
+}
+
+func testRunTestPlanIncludesEventHeldColdBuildFromPhysicalCommandOrigin(t *testing.T) {
+	fixture := newCandidateEngineFixture(t)
+	controlRoot := t.TempDir()
+	writeTestingFixtureFile(t, filepath.Join(controlRoot, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=64\n"), 0o600)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(controlRoot, "admission"))
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", controlRoot)
+	semanticNow := time.Date(2026, 9, 19, 10, 30, 0, 0, time.UTC)
+	t.Setenv("METASYSTEM_GOAL_NOW", semanticNow.Format(time.RFC3339Nano))
+	custodyContext := candidateResourceCustodyContext(t)
+
+	physicalEntry := time.Now().UTC()
+	buildEntered, releaseBuild := make(chan struct{}), make(chan struct{})
+	type buildOutcome struct {
+		artifact *candidateEngineBuild
+		err      error
+	}
+	built := make(chan buildOutcome, 1)
+	go func() {
+		artifact, err := prepareCandidateEngineWithColdPreflight(custodyContext, controlRoot,
+			gittree.Workspace{Dir: fixture.projectRoot}, "metasystem", fixture.candidateTree, testingEnvironment(os.Environ()), func() error {
+				close(buildEntered)
+				<-releaseBuild
+				return nil
+			})
+		built <- buildOutcome{artifact: artifact, err: err}
+	}()
+	select {
+	case <-buildEntered:
+	case outcome := <-built:
+		t.Fatalf("candidate build returned before its cold-build event: %v", outcome.err)
+	case <-t.Context().Done():
+		t.Fatal(t.Context().Err())
+	}
+	releasedAt := time.Now().UTC()
+	close(releaseBuild)
+	var outcome buildOutcome
+	select {
+	case outcome = <-built:
+	case <-t.Context().Done():
+		t.Fatal(t.Context().Err())
+	}
+	if outcome.err != nil {
+		t.Fatal(outcome.err)
+	}
+	t.Cleanup(func() { _ = outcome.artifact.Close() })
+	entryReleaseMS := releasedAt.Sub(physicalEntry).Milliseconds()
+
+	request := proofrun.TestRunRequest{ProjectRoot: fixture.projectRoot, CandidateTree: fixture.candidateTree,
+		Contract: testpolicy.Contract{SchemaVersion: 1}, Plan: testpolicy.Plan{Purpose: testpolicy.PurposeDiagnostic},
+		CommandStartedAt: physicalEntry.Format(time.RFC3339Nano)}
+	for _, mode := range []struct {
+		name        string
+		controlRoot string
+		fixedStamps bool
+	}{{name: "production"}, {name: "authorized fixture", controlRoot: controlRoot, fixedStamps: true}} {
+		t.Run(mode.name, func(t *testing.T) {
+			candidate := request
+			candidate.ControlRoot = mode.controlRoot
+			result, status, err := proofrun.RunTestPlan(context.Background(), candidate)
+			if err != nil || status != 0 {
+				t.Fatalf("run result status=%d err=%v", status, err)
+			}
+			if result.Cost.ActualDurationMS+2 < entryReleaseMS {
+				t.Fatalf("actual duration %dms omits observed command-entry-to-build-release interval %dms", result.Cost.ActualDurationMS, entryReleaseMS)
+			}
+			if mode.fixedStamps {
+				want := semanticNow.Format(time.RFC3339Nano)
+				if result.StartedAt != want || result.EndedAt != want {
+					t.Fatalf("semantic stamps started=%s ended=%s, want %s", result.StartedAt, result.EndedAt, want)
+				}
+			}
+		})
+	}
 }
 
 func TestFailedCandidateEngineBuildCannotFillArtifactCache(t *testing.T) {
@@ -893,6 +1284,46 @@ func TestTestWorkerBuildIdentityCompatibilityDoorIsPolicyProbeOnly(t *testing.T)
 	if code != 3 || strings.Contains(stderr, "input-bound candidate engine is absent") ||
 		!strings.Contains(stderr, "input-bound policy engine changed") {
 		t.Fatalf("legacy policy probe did not pass the build-identity request check: code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestFrozenWorkerProbePathsCanonicalizeRootOnce(t *testing.T) {
+	t.Parallel()
+	physical := filepath.Join(t.TempDir(), "physical")
+	if err := os.Mkdir(physical, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(physical, alias); err != nil {
+		t.Fatal(err)
+	}
+	root, packet, result, err := frozenWorkerProbePaths(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantParent, err := canonicalPath(physical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(root) != wantParent || !strings.HasPrefix(filepath.Base(root), "metasystem-policy-probe.") {
+		t.Fatalf("probe root=%q, want canonical parent=%q and preserved prefix", root, wantParent)
+	}
+	if filepath.Dir(packet) != root || filepath.Dir(result) != root || packet == result {
+		t.Fatalf("probe paths root=%q packet=%q result=%q", root, packet, result)
+	}
+}
+
+func TestFrozenPolicyProbeRefusalNamesResultPathPredicate(t *testing.T) {
+	t.Parallel()
+	request := proofrun.TestRunRequest{
+		ProjectRoot: "/private/var/folders/metasystem-policy-probe.fixture",
+		Contract:    testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{{ID: "literal"}}},
+		Plan:        testpolicy.Plan{SelectedGroups: []string{"literal"}},
+	}
+	refusal := frozenPolicyProbeRefusal(request, "/var/folders/metasystem-policy-probe.fixture/result.json")
+	if !strings.Contains(refusal, `result directory="/var/folders/metasystem-policy-probe.fixture"`) ||
+		!strings.Contains(refusal, `project root="/private/var/folders/metasystem-policy-probe.fixture"`) {
+		t.Fatalf("result path predicate diagnostic=%q", refusal)
 	}
 }
 
@@ -1557,22 +1988,61 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Freeze the actual source under test, whether it is committed or still
-	// being edited. The executable and both commits must name these bytes.
-	frozen, err := proofrun.Freeze(moduleRoot)
+	source, err := proofrun.Freeze(moduleRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(frozen.Root)) })
-	projectRoot, err := filepath.EvalSymlinks(t.TempDir())
+	t.Cleanup(func() { _ = source.Close() })
+	t.Setenv("GIT_AUTHOR_DATE", "2026-09-21T00:00:00Z")
+	t.Setenv("GIT_COMMITTER_DATE", "2026-09-21T00:00:00Z")
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	builtForCommit := ""
+	now := time.Now().UTC()
+	for _, layout := range frozenCorpusSourceLayouts() {
+		t.Run(layout.name, func(t *testing.T) {
+			layoutRoot := materializeFrozenCorpusLayout(t, source.Root, layout)
+			runFrozenPublicVersionOneCorpus(t, layoutRoot, engine, &builtForCommit, now)
+		})
+	}
+}
+
+type frozenCorpusSourceLayout struct {
+	name, prefix string
+	git          bool
+}
+
+func frozenCorpusSourceLayouts() []frozenCorpusSourceLayout {
+	return []frozenCorpusSourceLayout{
+		{name: "standalone-no-git"},
+		{name: "project-root", git: true},
+		{name: "arbitrary-nested-prefix", prefix: "tools/custom-installation", git: true},
+	}
+}
+
+func materializeFrozenCorpusLayout(t *testing.T, sourceRoot string, layout frozenCorpusSourceLayout) string {
+	t.Helper()
+	project := t.TempDir()
+	root := project
+	if layout.prefix != "" {
+		root = filepath.Join(project, filepath.FromSlash(layout.prefix))
+	}
+	copyFrozenCorpusTree(t, sourceRoot, root)
+	if layout.git {
+		testingFixtureGit(t, project, "init", "-q", "-b", "main")
+		testingFixtureGit(t, project, "add", ".")
+		testingFixtureGit(t, project, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "source layout")
+	}
+	return root
+}
+
+func runFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot, engine string, builtForCommit *string, now time.Time) {
+	t.Helper()
+	frozen, err := proofrun.Freeze(sourceRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := filepath.Join(projectRoot, "metasystem")
-	if err := os.Rename(frozen.Root, root); err != nil {
-		t.Fatal(err)
-	}
-	testingFixtureGit(t, projectRoot, "init", "-q", "-b", "main")
+	t.Cleanup(func() { _ = frozen.Close() })
+	projectRoot, root := normalizeFrozenCorpusSource(t, frozen.Root)
 	testingFixtureGit(t, projectRoot, "config", "user.name", "Test")
 	testingFixtureGit(t, projectRoot, "config", "user.email", "test@example.invalid")
 	if err := os.Remove(filepath.Join(root, "testing.json")); err != nil && !os.IsNotExist(err) {
@@ -1625,7 +2095,6 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 		t.Fatal(err)
 	}
 	writeTestingFixtureFile(t, ignorePath, append(ignore, []byte("reports*/\n")...), 0o644)
-	now := time.Now().UTC()
 	risk := &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "The fixture runs one bounded policy corpus."}
 	// Six frozen cases through a real worker take about two and a half
 	// minutes under the race detector on a loaded box; a one-minute cap made
@@ -1658,13 +2127,17 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	testingFixtureGit(t, projectRoot, "update-ref", goal.AcceptedRef, candidateCommit)
 	testingFixtureGit(t, projectRoot, "config", "--local", "metasystem.steward.landing-ref", "refs/remotes/origin/main")
 
-	engine := filepath.Join(t.TempDir(), "metasystem")
-	build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
-		"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+candidateCommit, "-o", engine, ".")
-	build.Dir = filepath.Join(root, "cmd", "metasystem")
-	build.Env = gittree.ScrubbedEnviron()
-	if output, buildErr := build.CombinedOutput(); buildErr != nil {
-		t.Fatalf("build first-transition worker: %v\n%s", buildErr, output)
+	if *builtForCommit == "" {
+		build := exec.Command("go", "build", "-buildvcs=false", "-ldflags",
+			"-X github.com/widoriezebos/agentic-tools/metasystem/internal/supervise.BuildStamp="+candidateCommit, "-o", engine, ".")
+		build.Dir = filepath.Join(root, "cmd", "metasystem")
+		build.Env = gittree.ScrubbedEnviron()
+		if output, buildErr := build.CombinedOutput(); buildErr != nil {
+			t.Fatalf("build first-transition worker: %v\n%s", buildErr, output)
+		}
+		*builtForCommit = candidateCommit
+	} else if candidateCommit != *builtForCommit {
+		t.Fatalf("normalized source layout candidate commit=%s, shared engine commit=%s", candidateCommit, *builtForCommit)
 	}
 	identityTable := filepath.Join(t.TempDir(), "process-identities.json")
 	identities := map[string]map[string]any{
@@ -1685,10 +2158,16 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 		t.Fatal(err)
 	}
 	admissionDir := filepath.Join(t.TempDir(), "host-admission")
-	processTable := filepath.Join(t.TempDir(), "processes.json")
-	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
-		t.Fatal(err)
+	if !fixtureauth.FixtureModeRoot(root) {
+		t.Fatalf("frozen first-transition root %s does not authorize its synthetic fake-runtime admission", root)
 	}
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
+	if _, selected, err := proofrun.FixtureHostAdmissionDirectory(root); err != nil || !selected {
+		t.Fatalf("frozen admission namespace %s under temp %s is not usable: selected=%v err=%v", admissionDir, os.TempDir(), selected, err)
+	}
+	processTable := filepath.Join(t.TempDir(), "processes.json")
+	writeTestingFixtureFile(t, processTable, []byte("[]\n"), 0o600)
 	fixtureEnvironment := append(receiptCanaryEnvironment(),
 		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable,
 		"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
@@ -1717,6 +2196,80 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 		len(stored.DeliveryReceiptBytes) == 0 {
 		t.Fatalf("first-transition worker result is incomplete: attempt=%+v", stored)
 	}
+}
+
+func TestFrozenPublicVersionOneCorpusNormalizesSupportedSourceLayouts(t *testing.T) {
+	t.Parallel()
+	source := t.TempDir()
+	writeTestingFixtureFile(t, filepath.Join(source, "metasystem.conf"), []byte("metasystem.version=1\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(source, ".gitignore"), []byte("reports*/\n"), 0o644)
+	for _, test := range frozenCorpusSourceLayouts() {
+		t.Run(test.name, func(t *testing.T) {
+			writeTestingFixtureFile(t, filepath.Join(source, "internal", "shape.txt"), []byte(test.name+"\n"), 0o644)
+			root := materializeFrozenCorpusLayout(t, source, test)
+			if got := strings.TrimSpace(string(mustReadTestingFixtureFile(t, filepath.Join(root, ".gitignore")))); got != "reports*/" {
+				t.Fatalf("copied ignore file = %q", got)
+			}
+			if got := strings.TrimSpace(string(mustReadTestingFixtureFile(t, filepath.Join(root, "internal", "shape.txt")))); got != test.name {
+				t.Fatalf("copied source marker = %q, want %q", got, test.name)
+			}
+			frozen, err := proofrun.Freeze(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = frozen.Close() })
+			privateProject, privateRoot := normalizeFrozenCorpusSource(t, frozen.Root)
+			if privateRoot != filepath.Join(privateProject, "metasystem") {
+				t.Fatalf("normalized root = %s beneath %s", privateRoot, privateProject)
+			}
+			if got := strings.TrimSpace(string(mustReadTestingFixtureFile(t, filepath.Join(privateRoot, "internal", "shape.txt")))); got != test.name {
+				t.Fatalf("normalized source marker = %q, want %q", got, test.name)
+			}
+			wantProject, err := canonicalPath(privateProject)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.TrimSpace(testingFixtureGit(t, privateProject, "rev-parse", "--show-toplevel")); got != wantProject {
+				t.Fatalf("normalized Git root = %q, want %q", got, wantProject)
+			}
+		})
+	}
+}
+
+func copyFrozenCorpusTree(t *testing.T, sourceRoot, destinationRoot string) {
+	t.Helper()
+	if err := os.MkdirAll(destinationRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("cp", "-R", sourceRoot+string(filepath.Separator)+".", destinationRoot)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("copy frozen corpus source: %v\n%s", err, output)
+	}
+	if err := os.RemoveAll(filepath.Join(destinationRoot, ".git")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func normalizeFrozenCorpusSource(t *testing.T, sourceRoot string) (string, string) {
+	t.Helper()
+	projectRoot := t.TempDir()
+	projectRoot, err := canonicalPath(projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(projectRoot, "metasystem")
+	copyFrozenCorpusTree(t, sourceRoot, root)
+	testingFixtureGit(t, projectRoot, "init", "-q", "-b", "main")
+	return projectRoot, root
+}
+
+func mustReadTestingFixtureFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func TestAmbientTrustedPolicyDecisionCannotBypassRetainedEngine(t *testing.T) {

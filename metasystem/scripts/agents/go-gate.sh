@@ -194,7 +194,14 @@ fi
 # die with their process. Skipped only where no binary exists yet (the
 # bootstrap residual, bounded by this very gate's build step).
 go_gate_marker=
-consumer_export_parent=
+consumer_freeze_snapshot=
+consumer_live_root=$root
+cleanup_consumer_freeze() {
+  local snapshot=${consumer_freeze_snapshot:-}
+  [[ -n "$snapshot" ]] || return 0
+  consumer_freeze_snapshot=
+  ( cd "$consumer_live_root" && go run ./cmd/metasystem gate witness-freeze --cleanup "$snapshot" )
+}
 go_gate_name=go-gate.sh
 if [[ "$gate_fast" == 1 ]]; then
   go_gate_name="go-gate.sh --fast"
@@ -206,11 +213,10 @@ if [[ -x "$root/bin/metasystem" ]]; then
     exit 1
   }
 fi
-trap '[[ -z "$go_gate_marker" ]] || rm -f "$go_gate_marker"; [[ -z "${consumer_export_parent:-}" ]] || rm -rf "$consumer_export_parent"; [[ -z "${gate_build_scratch:-}" ]] || rm -f "$gate_build_scratch"' EXIT
+trap '[[ -z "$go_gate_marker" ]] || rm -f "$go_gate_marker"; cleanup_consumer_freeze >/dev/null 2>&1 || true; [[ -z "${gate_build_scratch:-}" ]] || rm -f "$gate_build_scratch"' EXIT
 
 # ---- The boundary-scoped gate witness (D33) ----------------------------
 # One validation run, one gate: the outer suite runs this gate inside an
-# extracted git-archive-HEAD snapshot with METASYSTEM_GATE_WITNESS_WRITE
 # set; descendant validations under that controller hand the resulting
 # witness back and skip re-proving byte-identical ENGINE content.
 # Everything here fails toward the full gate: any doubt, run it all.
@@ -324,17 +330,14 @@ witness_acceptable() {
   local refusal
   if refusal=$(witness_refusal); then echo "witness refused here: $refusal" >&2; return 3; fi
   local local_version local_digest local_payload_version local_payload local_toolchain payload_manifest
-  if [[ -n "$recorded_manifest_digest" ]]; then
-    [[ "$recorded_manifest_digest" =~ ^[a-f0-9]{64}$ ]] \
-      || { echo "witness manifest identity is malformed" >&2; return 3; }
-    go run ./cmd/metasystem gate witness-verify --root "$root" --witness "$canonical_witness" \
-      >/dev/null 2>&1 \
-      || { echo "full-tree manifest digest mismatch between witness and consumer" >&2; return 3; }
-    local_version=$recorded_version
-    local_digest=$recorded_digest
-  else
-    read -r local_version local_digest < <(gate_surface_identity ENGINE "witness consumer $root") || return 3
-  fi
+  [[ "$recorded_manifest_digest" =~ ^[a-f0-9]{64}$ ]] \
+    || { echo "witness has no compatible complete-project manifest identity" >&2; return 3; }
+  go run ./cmd/metasystem gate witness-verify --root "$root" --witness "$canonical_witness" \
+    >/dev/null 2>&1 \
+    || { echo "full-tree manifest digest mismatch between witness and consumer" >&2; return 3; }
+
+  read -r local_version local_digest < <(gate_surface_identity ENGINE "witness consumer $root") \
+    || { echo "consumer ENGINE surface identity could not be computed" >&2; return 3; }
   local_toolchain=$(gate_toolchain_identity) || return 3
   [[ "$local_version" == "$recorded_version" ]] \
     || { echo "behavior-surface policy version mismatch between witness and consumer (theirs $recorded_version, ours ENGINE=$local_version)" >&2; return 3; }
@@ -397,15 +400,13 @@ if [[ -n "${METASYSTEM_GATE_WITNESS:-}" \
     echo "go gate: witness consumer could not freeze its live tree; refusing to use it as a proof substrate" >&2
     exit 1
   fi
-  read -r consumer_manifest_digest consumer_export_root <<<"$consumer_freeze_output"
-  if [[ ! "$consumer_manifest_digest" =~ ^[a-f0-9]{64}$ || ! -d "$consumer_export_root" ]]; then
-    [[ -z "$consumer_export_root" ]] || rm -rf "$(dirname "$consumer_export_root")"
+  IFS=$'\t' read -r consumer_manifest_digest consumer_export_root consumer_freeze_snapshot <<<"$consumer_freeze_output"
+  if [[ ! "$consumer_manifest_digest" =~ ^[a-f0-9]{64}$ || ! -d "$consumer_export_root" || ! -d "$consumer_freeze_snapshot" ]]; then
+    cleanup_consumer_freeze >/dev/null 2>&1 || true
     echo "go gate: witness consumer freeze returned an invalid digest or export path" >&2
     exit 1
   fi
   consumer_export_root=$(cd "$consumer_export_root" && pwd -P)
-  consumer_export_parent=$(dirname "$consumer_export_root")
-  consumer_live_root=$root
   consumer_rc=0
   if [[ "$gate_witness_check_only" == 1 ]]; then
     ( cd "$consumer_export_root" \
@@ -430,8 +431,10 @@ if [[ -n "${METASYSTEM_GATE_WITNESS:-}" \
         || consumer_rc=1
     fi
   fi
-  rm -rf "$consumer_export_parent"
-  consumer_export_parent=
+  if ! cleanup_consumer_freeze; then
+    echo "go gate: frozen witness consumer could not release its owned project snapshot" >&2
+    consumer_rc=1
+  fi
   exit "$consumer_rc"
 fi
 
@@ -697,9 +700,10 @@ if [[ "$gate_fast" == 1 ]]; then
 fi
 
 # Full mode may require a later witness-specific build stamp, so the static
-# proof artifact is not itself the final runtime binary in that mode.
-rm -f "$gate_build_scratch"
-gate_build_scratch=
+# proof artifact is not the final runtime binary. Keep it privately until the
+# native stage, though: an enrolled authentication engine may lawfully predate
+# the candidate's go-gate-tests verb. Authentication remains with that trusted
+# engine; candidate-native behavior runs through this already-built artifact.
 
 # The standing Linux signal (go-production-grade Phase 1, P3): a darwin-only
 # regression is invisible until someone tries, so both Linux architectures
@@ -712,9 +716,9 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build ./... \
 # govulncheck, pinned like staticcheck (Phase 0d) and last of the static
 # stages: its cost belongs to the vulnerability-database fetch, which the
 # network owns, so every deterministic check gets to fail first. Version
-# v1.1.4 was proven under Go 1.27.1 on 2026-09-06.
-go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... \
-  || { echo "go gate: govulncheck v1.1.4 refused (or could not run)" >&2; exit 1; }
+# pins must use parser and SSA tooling compatible with the repository compiler.
+go run golang.org/x/vuln/cmd/govulncheck@v1.2.0 ./... \
+  || { echo "go gate: govulncheck v1.2.0 refused (or could not run)" >&2; exit 1; }
 
 # The snapshot-gated invocation (witness write) prepares here, after the
 # static verdicts and just ahead of the tests this preparation serves: the
@@ -744,11 +748,6 @@ if [[ -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ]] && ! witness_fenced_off && ! wi
   # first; the fence exempts this gate's own chain.
   bash scripts/agents/go-build.sh >/dev/null \
     || { echo "go gate: snapshot pre-build failed" >&2; exit 1; }
-  # And compile the covered test binaries before the timed tests run:
-  # -cover instrumentation is path-dependent, so a warm plain-race cache
-  # still leaves a fresh snapshot's covered build cold, and compiling
-  # thirty packages during the timing fixtures starves them.
-  go test -race -cover -count=1 -run NoSuchTestEver ./internal/... >/dev/null 2>&1 || true
 fi
 
 # The coverage floor is executable, not prose (records/kill-shell/kill-shell.md, the
@@ -774,144 +773,31 @@ if (( coverage_proof_candidate )); then
     *) rm -f "$coverage_log"; echo "go gate: coverage producer eligibility could not be authenticated" >&2; exit 1 ;;
   esac
 fi
-# The per-package ceiling is a hang bound, not a runtime target. The goal and
-# missionrunner packages contain 353 and 296 serial tests; each drives real
-# git repositories, and mission cycles carry real waits. Individual tests
-# finish in under twenty seconds under the race detector, but the serial sum
-# stretches under contention from roughly fifty package binaries. Under the
-# gate's contention, the slowest packages take about ten minutes on a large
-# machine and have passed thirty on a small one. Sixty minutes leaves room for
-# a small machine and still ends a hung package.
-# The two serial giants (goal, missionrunner) run as shards beside the rest:
-# their discovered test names are dealt round-robin into
-# METASYSTEM_GATE_SHARDS (default 4) race+cover launches each, with the
-# coverage data of every shard written under one directory and merged by
-# go tool covdata; the merged per-package lines join the coverage log last,
-# in go test's own summary shape, so the ratchet judges the whole package.
-# Every other package runs as before in one go test over the rest of
-# ./internal/... . The gate's wall time becomes its longest package or
-# shard instead of the serial sum of two.
-gate_shards=${METASYSTEM_GATE_SHARDS:-4}
-[[ "$gate_shards" =~ ^[1-9][0-9]*$ ]] || gate_shards=4
-# bash 3.2 under set -u cannot size an empty array, so counts travel beside them.
-gate_sharded_packages=()
-gate_rest_packages=()
-gate_sharded_count=0
-gate_rest_count=0
-while IFS= read -r gate_pkg; do
-  case "$gate_pkg" in
-    */internal/goal) gate_sharded_packages+=(internal/goal); gate_sharded_count=$((gate_sharded_count + 1)) ;;
-    */internal/missionrunner) gate_sharded_packages+=(internal/missionrunner); gate_sharded_count=$((gate_sharded_count + 1)) ;;
-    *) gate_rest_packages+=("$gate_pkg"); gate_rest_count=$((gate_rest_count + 1)) ;;
-  esac
-done < <(go list ./internal/... 2>/dev/null)
-gate_unit_rc=0
-gate_shard_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-gate-shards.XXXXXX")
-gate_shard_pids=()
-gate_shard_logs=()
-if (( gate_sharded_count == 0 )); then
-  # A module without the two giants (every fixture module, and a toolchain
-  # that cannot list) runs as the one launch it always was, spelled the way
-  # the fixture toolchains recognise.
-  gate_sharded_count=0
-  go test -race -cover -timeout 60m ./internal/... >"$gate_shard_root/rest.log" 2>&1 &
-  gate_shard_pids+=("$!")
-  gate_shard_logs+=("$gate_shard_root/rest.log")
-elif (( gate_rest_count )); then
-  go test -race -cover -timeout 60m "${gate_rest_packages[@]}" >"$gate_shard_root/rest.log" 2>&1 &
-  gate_shard_pids+=("$!")
-  gate_shard_logs+=("$gate_shard_root/rest.log")
-fi
-for gate_pkg in "${gate_sharded_packages[@]+"${gate_sharded_packages[@]}"}"; do
-  (( gate_sharded_count )) || break
-  gate_names=$(go test -list '.*' "./$gate_pkg" 2>/dev/null | grep -E '^Test' || true)
-  if [[ -z "$gate_names" ]]; then
-    go test -race -cover -timeout 60m "./$gate_pkg" >"$gate_shard_root/${gate_pkg//\//-}.log" 2>&1 &
-    gate_shard_pids+=("$!")
-    gate_shard_logs+=("$gate_shard_root/${gate_pkg//\//-}.log")
-    continue
-  fi
-  gate_pkg_dir="$gate_shard_root/${gate_pkg//\//-}"
-  for ((gate_i = 1; gate_i <= gate_shards; gate_i++)); do
-    gate_pattern=$(printf '%s\n' "$gate_names" | awk -v n="$gate_shards" -v i="$gate_i" 'NR % n == i % n {printf "%s%s", (c++ ? "|" : ""), $0}')
-    [[ -n "$gate_pattern" ]] || continue
-    mkdir -p "$gate_pkg_dir/shard-$gate_i"
-    go test -race -cover -timeout 60m -run "^($gate_pattern)\$" "./$gate_pkg" -args -test.gocoverdir="$gate_pkg_dir/shard-$gate_i" \
-      >"$gate_pkg_dir/shard-$gate_i.log" 2>&1 &
-    gate_shard_pids+=("$!")
-    gate_shard_logs+=("$gate_pkg_dir/shard-$gate_i.log")
-  done
-done
-# cmd's own tests run too, beside the unit stage rather than after it. The
-# package is coverage-ratchet-exempt as thin wiring, but exempt-from-floors
-# never meant exempt-from-running: a broken cmd test rode through this gate
-# unseen on 2026-08-14 because the race run above scopes to ./internal/...
-# (cli-10 follow-up). The cmd run keeps its output like the unit run: a red
-# without its output is a verdict nobody can act on (the pooled cadence runs
-# of 2026-09-11 ended "cmd tests failed" twice with the reason discarded).
-# The timeout matches the unit run; go test's own ten-minute default is what
-# a loaded box trips. Its verdict is read after the unit stage's.
-cmd_log=$(mktemp "${TMPDIR:-/tmp}/metasystem-gate-cmd.XXXXXX")
-# The run gets its own process group (job control on for the one launch),
-# because a signal to the go test driver alone leaves the compiled test
-# binary running to its end; the unit-red branch below ends the group.
-set -m
-go test -race -timeout 60m ./cmd/... >"$cmd_log" 2>&1 &
-gate_cmd_pid=$!
-set +m
-for gate_pid in "${gate_shard_pids[@]+"${gate_shard_pids[@]}"}"; do
-  wait "$gate_pid" || gate_unit_rc=1
-done
-for gate_log in "${gate_shard_logs[@]+"${gate_shard_logs[@]}"}"; do
-  cat "$gate_log" >>"$coverage_log"
-done
-if (( gate_unit_rc == 0 && gate_sharded_count )); then
-  for gate_pkg in "${gate_sharded_packages[@]+"${gate_sharded_packages[@]}"}"; do
-    gate_pkg_dir="$gate_shard_root/${gate_pkg//\//-}"
-    [[ -d "$gate_pkg_dir" ]] || continue
-    # Only the shard directories carry coverage data; the shard logs sit
-    # beside them and must not reach covdata.
-    gate_dirs=$(ls -d "$gate_pkg_dir"/shard-*/ 2>/dev/null | sed 's#/$##' | tr '\n' ',' | sed 's/,$//')
-    [[ -n "$gate_dirs" ]] || continue
-    if ! gate_merged=$(go tool covdata percent -i="$gate_dirs" 2>&1); then
-      echo "go gate: shard coverage merge failed for $gate_pkg: $gate_merged" | tee -a "$coverage_log" >&2
-      gate_unit_rc=1
-      continue
-    fi
-    printf '%s\n' "$gate_merged" | awk '$2 == "coverage:" {printf "ok  \t%s\t0.000s\tcoverage: %s of statements\n", $1, $3}' >>"$coverage_log"
-  done
-fi
-cat "$coverage_log"
-rm -rf "$gate_shard_root"
-if (( gate_unit_rc != 0 )); then
-  # Evidence beats disk (the suite's own rule): a transient test failure
-  # with its log deleted is undiagnosable — tonight's nested-gate flake
-  # was exactly that. Keep the failing run's output where the suite keeps
-  # its evidence.
+# The Go adapter owns the complete internal and command package inventory,
+# native process partitions, coverage merge, terminal checks, supervision,
+# and bounded diagnostic reruns. The gate passes the allowance inherited
+# from its admitted parent; a legacy standalone caller gets one worker.
+gate_workers=${METASYSTEM_TEST_WORKERS:-1}
+[[ "$gate_workers" =~ ^[1-9][0-9]*$ ]] \
+  || { rm -f "$coverage_log"; echo "go gate: METASYSTEM_TEST_WORKERS must be a positive integer" >&2; exit 1; }
+gate_native_root=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-gate-native.XXXXXX")
+if ! METASYSTEM_TEST_WORKERS="$gate_workers" "$gate_build_scratch" proof-run go-gate-tests --root "$root" \
+  --log-root "$gate_native_root" --workers "$gate_workers" >"$coverage_log" 2>&1; then
   keep="artifacts/agents/gate-failures/$(date -u +%Y%m%dT%H%M%SZ)-$$.log"
   mkdir -p "$(dirname "$keep")"
+  # The witness owner removes its failed snapshot. Copying inside that tree
+  # remains useful for local diagnosis, but the complete diagnostic must also
+  # reach the retained parent log before any snapshot cleanup can erase it.
+  cat "$coverage_log" >&2 || true
   mv "$coverage_log" "$keep" 2>/dev/null || true
-  echo "go gate: unit tests failed (output kept: $keep)" >&2
-  # The unit red is the verdict; the cmd run still in flight is ended
-  # rather than left to finish an answer nobody will read.
-  kill -TERM -- "-$gate_cmd_pid" 2>/dev/null || true
-  wait "$gate_cmd_pid" 2>/dev/null || true
-  kill -KILL -- "-$gate_cmd_pid" 2>/dev/null || true
-  rm -f "$cmd_log"
+  mv "$gate_native_root" "${keep%.log}.native" 2>/dev/null || true
+  echo "go gate: native Go tests failed (output kept: $keep)" >&2
   exit 1
 fi
-
-wait "$gate_cmd_pid" || {
-  keep="artifacts/agents/gate-failures/$(date -u +%Y%m%dT%H%M%SZ)-$$-cmd.log"
-  mkdir -p "$(dirname "$keep")"
-  mv "$cmd_log" "$keep" 2>/dev/null || true
-  # The failing tests' own words travel with the section log, because the
-  # kept file lives in a worktree the suite may clean up.
-  grep -nE -A8 '^(--- FAIL|panic:)' "$keep" 2>/dev/null | head -120 >&2 || true
-  echo "go gate: cmd tests failed (output kept: $keep)" >&2
-  exit 1
-}
-rm -f "$cmd_log"
+cat "$coverage_log"
+rm -rf "$gate_native_root"
+rm -f "$gate_build_scratch"
+gate_build_scratch=
 
 # Build the binary the shell fixtures and wrappers exec, through the one
 # shared fenced build (go-production-grade Phase 0a): stamped with its
@@ -951,20 +837,16 @@ rm -f "$coverage_log" "$pkg_list"
 
 # The witness write (D33): only the controller's snapshot-gated invocation
 # sets METASYSTEM_GATE_WITNESS_WRITE, and it runs this gate inside an
-# extracted git-archive-HEAD tree, so the digest below describes exactly
-# the bytes adoption stages. Seed and force runs never write.
 if [[ -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ]] && ! witness_fenced_off; then
   if refusal=$(witness_refusal); then
     echo "go gate: witness not written ($refusal)" >&2
   else
     witness_manifest_digest=${METASYSTEM_GATE_WITNESS_MANIFEST_DIGEST:-}
-    if [[ -n "$witness_manifest_digest" ]]; then
-      [[ "$witness_manifest_digest" =~ ^[a-f0-9]{64}$ ]] \
-        || { echo "go gate: frozen-export manifest digest is malformed" >&2; exit 1; }
-      go run ./cmd/metasystem gate witness-verify --root "$root" \
-        --witness "$witness_manifest_digest" >/dev/null \
-        || { echo "go gate: frozen export changed during the full proof; witness voided" >&2; exit 1; }
-    fi
+    [[ "$witness_manifest_digest" =~ ^[a-f0-9]{64}$ ]] \
+      || { echo "go gate: complete-project manifest identity is required for witness publication" >&2; exit 1; }
+    go run ./cmd/metasystem gate witness-verify --root "$root" \
+      --witness "$witness_manifest_digest" >/dev/null \
+      || { echo "go gate: frozen export changed during the full proof; witness voided" >&2; exit 1; }
     if [[ -z "$witness_digest" ]]; then
       read -r witness_policy_version witness_digest < <(gate_surface_identity ENGINE "outer snapshot $root")
     fi
@@ -993,21 +875,12 @@ if [[ -n "${METASYSTEM_GATE_WITNESS_WRITE:-}" ]] && ! witness_fenced_off; then
       [[ -z "${METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID:-}" ]] \
         || { echo "go gate: witness controller pair identity is malformed" >&2; exit 1; }
     fi
-    if [[ -n "$witness_manifest_digest" ]]; then
-      printf '{"policyVersion":%s,"engineDigest":"%s","manifestDigest":"%s","payloadDigest":"%s","payloadManifest":"%s","toolchainIdentity":"%s","runId":"%s","controller":{"pid":%s,"startedAtSec":%s,"startTicks":%s,"bootId":"%s"},"passedAt":"%s","goVersion":"%s","ratchetBaseline":"%s","summary":"full gate in frozen proof tree"}\n' \
-        "$witness_policy_version" "$witness_digest" "$witness_manifest_digest" "$witness_payload_digest" "$(basename "$witness_payload_manifest")" "$witness_toolchain_identity" \
-        "${METASYSTEM_GATE_WITNESS_RUN:-}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_PID}" \
-        "${METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS}" \
-        "${METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID:-}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        "$(go version | tr -d '"')" "$ratchet_baseline" >"$METASYSTEM_GATE_WITNESS_WRITE"
-    else
-      printf '{"policyVersion":%s,"engineDigest":"%s","payloadDigest":"%s","payloadManifest":"%s","toolchainIdentity":"%s","runId":"%s","controller":{"pid":%s,"startedAtSec":%s,"startTicks":%s,"bootId":"%s"},"passedAt":"%s","goVersion":"%s","ratchetBaseline":"%s","summary":"full gate in HEAD snapshot"}\n' \
-        "$witness_policy_version" "$witness_digest" "$witness_payload_digest" "$(basename "$witness_payload_manifest")" "$witness_toolchain_identity" \
-        "${METASYSTEM_GATE_WITNESS_RUN:-}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_PID}" \
-        "${METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS}" \
-        "${METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID:-}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        "$(go version | tr -d '"')" "$ratchet_baseline" >"$METASYSTEM_GATE_WITNESS_WRITE"
-    fi
+    printf '{"policyVersion":%s,"engineDigest":"%s","manifestDigest":"%s","payloadDigest":"%s","payloadManifest":"%s","toolchainIdentity":"%s","runId":"%s","controller":{"pid":%s,"startedAtSec":%s,"startTicks":%s,"bootId":"%s"},"passedAt":"%s","goVersion":"%s","ratchetBaseline":"%s","summary":"full gate in frozen proof tree"}\n' \
+      "$witness_policy_version" "$witness_digest" "$witness_manifest_digest" "$witness_payload_digest" "$(basename "$witness_payload_manifest")" "$witness_toolchain_identity" \
+      "${METASYSTEM_GATE_WITNESS_RUN:-}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_PID}" \
+      "${METASYSTEM_GATE_WITNESS_CONTROLLER_STARTED_AT}" "${METASYSTEM_GATE_WITNESS_CONTROLLER_START_TICKS}" \
+      "${METASYSTEM_GATE_WITNESS_CONTROLLER_BOOT_ID:-}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      "$(go version | tr -d '"')" "$ratchet_baseline" >"$METASYSTEM_GATE_WITNESS_WRITE"
     chmod 600 "$METASYSTEM_GATE_WITNESS_WRITE"
     echo "go gate: witness written (${witness_digest:0:8})"
   fi

@@ -179,6 +179,10 @@ func shortLandingID(id string) string {
 var landingReceiptTestRun = runTestRun
 
 func runLandingTestReceipt(args []string) (status int) {
+	return runLandingTestReceiptWithContext(context.Background(), goalCommandClock, args)
+}
+
+func runLandingTestReceiptWithContext(parent context.Context, resolveClock func(string) (func() time.Time, bool, error), args []string) (status int) {
 	flags := flag.NewFlagSet("landing test-receipt", flag.ContinueOnError)
 	root := pathFlag(flags, "root", "", "project checkout root")
 	tree := flags.String("tree", "", "candidate project tree")
@@ -202,6 +206,10 @@ func runLandingTestReceipt(args []string) (status int) {
 		return 2
 	}
 	controlRoot, err := canonicalProofRoot(*root)
+	if err != nil {
+		return recordExit(err)
+	}
+	commandClock, fixtureClock, err := resolveClock(controlRoot)
 	if err != nil {
 		return recordExit(err)
 	}
@@ -249,12 +257,12 @@ func runLandingTestReceipt(args []string) (status int) {
 		}
 		var receipt landing.TestReceipt
 		if result.AttemptID != "" {
-			receipt, err = landing.PublishCommittedReceipt(controlRoot, result.AttemptID, acceptedIndexTree)
+			receipt, err = landing.PublishCommittedReceiptAt(controlRoot, result.AttemptID, acceptedIndexTree, commandClock())
 		} else {
 			// A verifier may lawfully compose unchanged successful groups from
 			// several older outer attempts. No new execution or synthetic
 			// attempt is created for that schema-2 projection.
-			receipt, err = landing.CreateTestingReceipt(controlRoot, result.CandidateTree, result)
+			receipt, err = landing.CreateTestingReceiptAt(controlRoot, result.CandidateTree, result, commandClock())
 		}
 		if err != nil {
 			return recordExit(err)
@@ -291,6 +299,7 @@ func runLandingTestReceipt(args []string) (status int) {
 	if err != nil {
 		return recordExit(err)
 	}
+	executionEnvironment = resolvedTestWorkerEnvironment(executionEnvironment, limits.workers)
 	proofDir := filepath.Join(controlRoot, "artifacts", "agents", "proof-runs", "delivery")
 	if err := os.MkdirAll(proofDir, 0o700); err != nil {
 		return recordExit(err)
@@ -299,7 +308,7 @@ func runLandingTestReceipt(args []string) (status int) {
 		ExecutionRoot: preparation.ExecutionRoot(), ConfPath: confPath, GoalID: *goalID, CapMin: *capMin,
 		RetryDecision: *retryDecision, ScopeClass: "full", CommandClass: "landing-test-receipt", Sections: expected,
 		ExpectedGoalRevision: *expectedGoalRevision, ExpectedAccountingRevision: *expectedAccountingRevision,
-		Environment: executionEnvironment})
+		Environment: executionEnvironment, Now: commandClock()})
 	if err != nil {
 		decision = proofrun.LaunchResult{SchemaVersion: 1, Disposition: proofrun.DispositionAdmissionRefused, ExitStatus: proofrun.ExitAdmissionRefused}
 		_ = proofrun.EncodeResult(os.Stderr, *resultPath, decision)
@@ -308,7 +317,7 @@ func runLandingTestReceipt(args []string) (status int) {
 	}
 	if decision.Disposition != proofrun.DispositionExecuted {
 		if decision.Disposition == proofrun.DispositionReusableSuccess {
-			if _, err := landing.PublishCommittedReceipt(controlRoot, decision.AttemptID, preparation.AcceptedIndexTree()); err != nil {
+			if _, err := landing.PublishCommittedReceiptAt(controlRoot, decision.AttemptID, preparation.AcceptedIndexTree(), commandClock()); err != nil {
 				return recordExit(err)
 			}
 		}
@@ -317,14 +326,21 @@ func runLandingTestReceipt(args []string) (status int) {
 		}
 		return decision.ExitStatus
 	}
-	deadline, _ := time.Parse(time.RFC3339Nano, attempt.Deadline)
-	resourceContext, cancelResource := context.WithDeadline(context.Background(), deadline)
+	deadline, deadlineCheck, err := proofDeadline(attempt.Deadline, commandClock)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "landing test-receipt: admit native proof:", err)
+		status = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
+		decision.ExitStatus, decision.Disposition, decision.Reason = status, proofrun.DispositionAdmissionRefused, err.Error()
+		_ = proofrun.EncodeResult(os.Stderr, *resultPath, decision)
+		return status
+	}
+	resourceContext, cancelResource := proofDeadlineContext(parent, deadline, fixtureClock)
 	defer cancelResource()
-	lease, release, leaseErr := acquireManagedProofLaunch(resourceContext, controlRoot, confPath)
+	lease, release, leaseErr := acquireManagedProofLaunchWithWaitCheck(resourceContext, controlRoot, confPath, deadlineCheck)
 	if leaseErr != nil {
 		fmt.Fprintln(os.Stderr, "landing test-receipt: admit native proof:", leaseErr)
 		status = retainIncompleteProofAttempt(controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
-		decision.ExitStatus, decision.Disposition = status, proofrun.DispositionAdmissionRefused
+		decision.ExitStatus, decision.Disposition, decision.Reason = status, proofrun.DispositionAdmissionRefused, leaseErr.Error()
 		_ = proofrun.EncodeResult(os.Stderr, *resultPath, decision)
 		return status
 	}
@@ -336,7 +352,7 @@ func runLandingTestReceipt(args []string) (status int) {
 		Silence: limits.silence, SectionCap: limits.sectionCap,
 		EvidenceTimeout: limits.evidenceTimeout, EvidenceMax: limits.evidenceMax, Poll: time.Second,
 		TermGrace: 5 * time.Second, KillGrace: time.Second, Command: []string{"bash", "-c", *command}, HostResourceFiles: lease.Files(), RequireCustody: true, Output: os.Stdout, ErrorOutput: os.Stderr,
-		Environment: executionEnvironment,
+		Environment: executionEnvironment, Now: commandClock,
 		PrepareSuccess: func(completion proofrun.CompletionContext) (json.RawMessage, error) {
 			current, err := proofrun.ReadAttempt(controlRoot, attempt.AttemptID)
 			if err != nil {
@@ -356,7 +372,7 @@ func runLandingTestReceipt(args []string) (status int) {
 	if status != 0 {
 		decision.Disposition = proofrun.DispositionFailed
 	} else {
-		receipt, publishErr := landing.PublishCommittedReceipt(controlRoot, attempt.AttemptID, preparation.AcceptedIndexTree())
+		receipt, publishErr := landing.PublishCommittedReceiptAt(controlRoot, attempt.AttemptID, preparation.AcceptedIndexTree(), commandClock())
 		if publishErr != nil {
 			fmt.Fprintln(os.Stderr, publishErr)
 			status = 1

@@ -115,6 +115,9 @@ func TestKindSelectsTheAdapterAndTheDefaultModel(t *testing.T) {
 		if row.kind == "read" {
 			spec.DiffFile = writeLaunchFile(t, "change.diff", "")
 		}
+		if row.kind == "critique" {
+			spec.Inputs = []string{writeLaunchFile(t, "page.md", "page\n"), writeLaunchFile(t, "design.md", "design\n")}
+		}
 		record, err := m.Start(spec)
 		if err != nil || record.Adapter != row.adapter {
 			t.Fatalf("%s record=%+v err=%v", row.kind, record, err)

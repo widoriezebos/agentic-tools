@@ -30,8 +30,43 @@ func TestProjectionReadsTheAcceptedTreeOnly(t *testing.T) {
 	if _, visible := p.Tree.Live["seen"]; !visible {
 		t.Fatal("the accepted world is fully visible")
 	}
-	// With --fetch the read-side validator advances first.
-	p2, err := Project(endpointFor(a), true, now)
+	// With --fetch the read-side validator advances first. The fixture owns both
+	// deadline boundaries so delayed scheduling cannot turn this semantic proof
+	// into a transport-timeout assertion.
+	fetchStarted := make(chan struct{})
+	releaseFetch := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(releaseFetch)
+		}
+	}()
+	type projectionAnswer struct {
+		projection Projection
+		err        error
+	}
+	projected := make(chan projectionAnswer, 1)
+	go func() {
+		projection, projectErr := project(endpointFor(a), true, now, projectionDependencies{
+			deadline: make(chan time.Time),
+			fetch: func(endpoint Endpoint) (AdvanceResult, error) {
+				close(fetchStarted)
+				<-releaseFetch
+				return FetchAdvance(endpoint)
+			},
+		})
+		projected <- projectionAnswer{projection: projection, err: projectErr}
+	}()
+	<-fetchStarted
+	select {
+	case answer := <-projected:
+		t.Fatalf("fetch returned before its delayed-event release: %+v %v", answer.projection, answer.err)
+	default:
+	}
+	close(releaseFetch)
+	released = true
+	answer := <-projected
+	p2, err := answer.projection, answer.err
 	if err != nil {
 		t.Fatal(err)
 	}

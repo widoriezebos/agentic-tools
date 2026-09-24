@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
 	turnvocab "github.com/widoriezebos/agentic-tools/metasystem/internal/turn"
@@ -329,5 +328,5 @@ func (e *Engine) fenceReachedInner(values map[string]string) (bool, []string, er
 	if err != nil {
 		return false, nil, err
 	}
-	return fenceReachedAt(fences, values, missionJobStatuses(e.Root, e.Mission), time.Now().UTC())
+	return fenceReachedAt(fences, values, missionJobStatuses(e.Root, e.Mission), e.now())
 }

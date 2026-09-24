@@ -484,6 +484,11 @@ chmod +x "${out:-bin/metasystem}"
 func TestGLEBatchPortableNativeCapacityWaitEjectsElapsedFencedMember(t *testing.T) {
 	batchE2EProcessEnvironment.Lock()
 	t.Cleanup(batchE2EProcessEnvironment.Unlock)
+	// Civil and boot clocks advance only when the fixture advances them. Native
+	// process deadlines remain governed by the test context and kernel clock.
+	t0 := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	const fixtureBootID = "portable-native-capacity-fixture"
+	fixtureBootAtT0 := 6 * time.Hour
 	portable := newPortableProofFixture(t)
 	portable.engine = filepath.Join(filepath.Dir(portable.engine), proofrun.TestHostLoadCommandName("0"))
 	portable.contract.SchemaVersion = testpolicy.ExecutionContractSchemaVersion
@@ -516,24 +521,21 @@ func TestGLEBatchPortableNativeCapacityWaitEjectsElapsedFencedMember(t *testing.
 		if len(problems) != 0 {
 			t.Fatalf("parse seed goal %s: %v", id, problems)
 		}
-		// The portable seed is generated relative to physical now. Move its
-		// entire accepted history together so fixture clock advances remain
-		// earlier than every real native terminal observation.
-		shift := func(stamp string) string {
-			at, parseErr := time.Parse(time.RFC3339, stamp)
-			if parseErr != nil {
-				t.Fatalf("parse seed timestamp %q: %v", stamp, parseErr)
-			}
-			return at.Add(-20 * time.Minute).Format(time.RFC3339)
-		}
-		file.OpenedAt = shift(file.OpenedAt)
-		file.Approved.At = shift(file.Approved.At)
-		file.Claimed.At = shift(file.Claimed.At)
+		file.OpenedAt = t0.Add(-6 * time.Minute).Format(time.RFC3339)
+		file.Approved.At = t0.Format(time.RFC3339)
+		file.Claimed.At = t0.Add(-time.Minute).Format(time.RFC3339)
 		if file.Claimed.EpisodeAt != "" {
-			file.Claimed.EpisodeAt = shift(file.Claimed.EpisodeAt)
+			file.Claimed.EpisodeAt = file.Claimed.At
 		}
 		for index := range file.History {
-			file.History[index].At = shift(file.History[index].At)
+			switch file.History[index].Verb {
+			case "open":
+				file.History[index].At = file.OpenedAt
+			case "claim":
+				file.History[index].At = file.Claimed.At
+			case "approve":
+				file.History[index].At = file.Approved.At
+			}
 		}
 		lineage := "lineage-" + id
 		file.Claimed.Machine, file.Claimed.Lineage = id, lineage
@@ -612,10 +614,6 @@ exit 7
 	portable.git("push", "-q", "origin", "main")
 	portable.git("update-ref", goal.AcceptedRef, baseCommit)
 	landing := filepath.Join(t.TempDir(), "landing")
-	// Shifted seed claim and approval occurred about 25 and 24 minutes ago.
-	// Even the twelfth follow-up proof remains at least eight minutes behind
-	// physical time, while its native attempt deadline remains in the future.
-	t0 := time.Now().UTC().Truncate(time.Second).Add(-24 * time.Minute)
 	bed := &batchE2EFixture{t: t, origin: origin, landing: landing, seats: map[string]string{}, now: t0}
 	bed.clone(landing, "landing")
 	engine := &batchE2EEngine{path: portable.engine}
@@ -637,14 +635,23 @@ exit 7
 		t.Setenv(key, value)
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", t0.Format(time.RFC3339))
+	t.Setenv("METASYSTEM_GOAL_BOOT_ID", fixtureBootID)
+	t.Setenv("METASYSTEM_GOAL_BOOT_NANOS", strconv.FormatInt(fixtureBootAtT0.Nanoseconds(), 10))
 	clockEnvironment := func(at time.Time) []string {
 		var env []string
 		for _, entry := range portable.commandEnvironment() {
-			if !strings.HasPrefix(entry, "METASYSTEM_GOAL_NOW=") {
+			if !strings.HasPrefix(entry, "METASYSTEM_GOAL_NOW=") &&
+				!strings.HasPrefix(entry, "METASYSTEM_GOAL_BOOT_ID=") &&
+				!strings.HasPrefix(entry, "METASYSTEM_GOAL_BOOT_NANOS=") {
 				env = append(env, entry)
 			}
 		}
-		return append(env, "METASYSTEM_GOAL_NOW="+at.Format(time.RFC3339))
+		elapsed := fixtureBootAtT0 + at.Sub(t0)
+		return append(env,
+			"METASYSTEM_GOAL_NOW="+at.Format(time.RFC3339),
+			"METASYSTEM_GOAL_BOOT_ID="+fixtureBootID,
+			"METASYSTEM_GOAL_BOOT_NANOS="+strconv.FormatInt(elapsed.Nanoseconds(), 10),
+		)
 	}
 	commandAt := func(at time.Time, args ...string) *exec.Cmd {
 		return portable.proofCommand.command(clockEnvironment(at), portable.engine, args...)
@@ -928,12 +935,15 @@ exit 7
 	case <-t.Context().Done():
 		t.Fatalf("public capacity-wait proof tick did not finish after release before test cancellation: %v; state=%s", t.Context().Err(), bed.load(batchID).State)
 	}
+	var survivorClocks []time.Time
 	for step := range 12 {
 		current := bed.load(batchID)
 		if current.State == batch.StateLanded && current.Units[0].State == batch.UnitLanded {
 			break
 		}
-		follow := commandAt(t1.Add(time.Duration(step+1)*time.Minute), "landing", "batch", "tick", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--batch", batchID)
+		followAt := t1.Add(time.Duration(step+1) * time.Minute)
+		survivorClocks = append(survivorClocks, followAt)
+		follow := commandAt(followAt, "landing", "batch", "tick", "--root", bed.seats["goal-a"], "--landing-root", landing, "--max-wait", "1m", "--batch", batchID)
 		follow.Dir = landing
 		output, tickErr := follow.CombinedOutput()
 		if tickErr != nil {
@@ -961,6 +971,132 @@ exit 7
 	if nativeAfter["a"] <= nativeBefore["a"] {
 		t.Fatalf("survivor proof never ran its real command/JUnit check: before=%v after=%v", nativeBefore, nativeAfter)
 	}
+	requirePortablePrefixTimestampEvidence(t, controlRoot, queuedAttempt, landed, t1, survivorClocks)
+}
+
+func requirePortablePrefixTimestampEvidence(t *testing.T, controlRoot string, cancelled proofrun.Attempt, landed batch.Record, cancelClock time.Time, survivorClocks []time.Time) {
+	t.Helper()
+	cancelledIdentity := cancelled.TestOwned["app-a"]
+	if cancelledIdentity == "" || cancelled.TestOwned["app-b"] == "" || cancelled.TestOwned["app-b"] == cancelledIdentity {
+		t.Fatalf("cancelled union does not retain distinct A and B ownership: %+v", cancelled.TestOwned)
+	}
+	if cancelled.Terminal == nil || cancelled.Terminal.Result != proofrun.TerminalCancelled {
+		t.Fatalf("cancelled union has no cancellation terminal: %+v", cancelled.Terminal)
+	}
+	cancelledAt, err := time.Parse(time.RFC3339Nano, cancelled.Terminal.At)
+	if err != nil || !cancelledAt.Equal(cancelClock) {
+		t.Fatalf("cancelled union terminal is outside its governing fixture clock: at=%q want=%s err=%v", cancelled.Terminal.At, cancelClock.Format(time.RFC3339Nano), err)
+	}
+
+	if landed.Proof == nil || landed.Proof.Status != "green" || landed.Proof.GroupIdentities["app-a"] != cancelledIdentity {
+		t.Fatalf("survivor proof is not the matching green app-a tip: cancelled=%s proof=%+v", cancelledIdentity, landed.Proof)
+	}
+	reusedProducerID, reusePresent := landed.Proof.Reuse["app-a"]
+	executed := false
+	for _, groupID := range landed.Proof.Executions {
+		if groupID == "app-a" {
+			executed = true
+			break
+		}
+	}
+	if reusePresent && reusedProducerID == "" {
+		t.Fatalf("survivor proof has empty app-a reuse provenance: %+v", landed.Proof)
+	}
+	if reusedProducerID != "" && executed {
+		t.Fatalf("survivor proof both reused and executed app-a: %+v", landed.Proof)
+	}
+	selectorStatus := "reused"
+	selectedProducerID := reusedProducerID
+	if selectedProducerID == "" {
+		if !executed || landed.Proof.AttemptID == "" {
+			t.Fatalf("survivor proof has no app-a producer: %+v", landed.Proof)
+		}
+		selectorStatus = "executed"
+		selectedProducerID = landed.Proof.AttemptID
+	}
+	producer, err := proofrun.ReadAttempt(controlRoot, selectedProducerID)
+	if err != nil {
+		t.Fatalf("read selected app-a producer %s: %v", selectedProducerID, err)
+	}
+	if producer.AttemptID != selectedProducerID || producer.Terminal == nil || producer.Terminal.Result != proofrun.TerminalSuccess || producer.TestResult == nil {
+		t.Fatalf("selected app-a producer is not a terminal native green: %+v", producer)
+	}
+	if cancelled.FreshnessEpisode != "" || cancelled.FreshnessBinding != "" || cancelled.FreshnessExpiresAt != "" ||
+		producer.FreshnessEpisode != "" || producer.FreshnessBinding != "" || producer.FreshnessExpiresAt != "" ||
+		!proofrun.MatchesTestResultFreshness(cancelled, *producer.TestResult, "app-a") ||
+		!proofrun.MatchesTestResultFreshness(producer, *producer.TestResult, "app-a") {
+		t.Fatalf("ordinary app-a proof has inconsistent freshness: cancelled=(%q,%q,%q) producer=(%q,%q,%q)",
+			cancelled.FreshnessEpisode, cancelled.FreshnessBinding, cancelled.FreshnessExpiresAt,
+			producer.FreshnessEpisode, producer.FreshnessBinding, producer.FreshnessExpiresAt)
+	}
+
+	var green proofrun.GroupResult
+	for _, group := range producer.TestResult.Groups {
+		if group.ID == "app-a" {
+			green = group
+			break
+		}
+	}
+	if green.ID == "" || green.Status != "passed" || !green.CollectionComplete || !proofrun.NativeTestProducer(producer, green) ||
+		green.ExecutionIdentity != cancelledIdentity || producer.TestOwned["app-a"] != cancelledIdentity {
+		t.Fatalf("selected app-a record is not the matching owned native green: cancelled=%s producer-owned=%s group=%+v proof=%+v",
+			cancelledIdentity, producer.TestOwned["app-a"], green, landed.Proof)
+	}
+	startedAt, startErr := time.Parse(time.RFC3339Nano, producer.StartedAt)
+	groupStartedAt, groupStartErr := time.Parse(time.RFC3339Nano, green.StartedAt)
+	groupEndedAt, groupEndErr := time.Parse(time.RFC3339Nano, green.EndedAt)
+	producerEndedAt, producerEndErr := time.Parse(time.RFC3339Nano, producer.Terminal.At)
+	if startErr != nil || groupStartErr != nil || groupEndErr != nil || producerEndErr != nil {
+		t.Fatalf("selected app-a timestamps are malformed: attempt-start=%q group=(%q,%q) terminal=%q errors=(%v,%v,%v,%v)",
+			producer.StartedAt, green.StartedAt, green.EndedAt, producer.Terminal.At, startErr, groupStartErr, groupEndErr, producerEndErr)
+	}
+	clockMatched := false
+	for _, at := range survivorClocks {
+		if startedAt.Equal(at) && groupStartedAt.Equal(at) && groupEndedAt.Equal(at) && producerEndedAt.Equal(at) {
+			clockMatched = true
+			break
+		}
+	}
+	if !clockMatched || !groupEndedAt.After(cancelledAt) {
+		t.Fatalf("selector timestamps do not retain the safe fixture-clock order: cancelled=%s producer-start=%s group=(%s,%s) producer-end=%s clocks=%v",
+			cancelledAt.Format(time.RFC3339Nano), startedAt.Format(time.RFC3339Nano), groupStartedAt.Format(time.RFC3339Nano),
+			groupEndedAt.Format(time.RFC3339Nano), producerEndedAt.Format(time.RFC3339Nano), survivorClocks)
+	}
+	if green.DurationMS < 0 || green.CPUSeconds < 0 {
+		t.Fatalf("selected app-a physical observations are invalid: duration-ms=%d cpu-seconds=%f", green.DurationMS, green.CPUSeconds)
+	}
+
+	marker := struct {
+		SchemaVersion       int     `json:"schemaVersion"`
+		HistoricalR2Stamps  string  `json:"historicalR2Stamps"`
+		Component           string  `json:"component"`
+		ExecutionIdentity   string  `json:"executionIdentity"`
+		CancelledAttempt    string  `json:"cancelledAttempt"`
+		CancelledTerminalAt string  `json:"cancelledTerminalAt"`
+		NativeGreenAttempt  string  `json:"nativeGreenAttempt"`
+		NativeGreenStarted  string  `json:"nativeGreenStartedAt"`
+		NativeGreenEnded    string  `json:"nativeGreenEndedAt"`
+		PhysicalDurationMS  int64   `json:"physicalDurationMs"`
+		PhysicalCPUSeconds  float64 `json:"physicalCpuSeconds"`
+		FreshnessEpisode    string  `json:"freshnessEpisode"`
+		FreshnessBinding    string  `json:"freshnessBinding"`
+		FreshnessExpiresAt  string  `json:"freshnessExpiresAt"`
+		SelectorOrder       string  `json:"selectorOrder"`
+		SelectorStatus      string  `json:"selectorStatus"`
+		SelectedAttempt     string  `json:"selectedAttempt"`
+	}{
+		SchemaVersion: 1, HistoricalR2Stamps: "unavailable", Component: "app-a", ExecutionIdentity: cancelledIdentity,
+		CancelledAttempt: cancelled.AttemptID, CancelledTerminalAt: cancelled.Terminal.At,
+		NativeGreenAttempt: producer.AttemptID, NativeGreenStarted: green.StartedAt, NativeGreenEnded: green.EndedAt,
+		PhysicalDurationMS: green.DurationMS, PhysicalCPUSeconds: green.CPUSeconds,
+		FreshnessEpisode: producer.FreshnessEpisode, FreshnessBinding: producer.FreshnessBinding, FreshnessExpiresAt: producer.FreshnessExpiresAt,
+		SelectorOrder: "cancelled-terminal-at<green-group-ended-at", SelectorStatus: selectorStatus, SelectedAttempt: selectedProducerID,
+	}
+	encoded, err := json.Marshal(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("TB-CMD003-EVIDENCE %s", encoded)
 }
 
 func portableGoalBranch(t *testing.T, bed *batchE2EFixture, seat, goalID, input string) {

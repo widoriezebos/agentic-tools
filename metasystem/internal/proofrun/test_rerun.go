@@ -70,7 +70,10 @@ func runFailedTestAgain(ctx context.Context, request TestRunRequest, group testp
 	if acquireErr == nil {
 		defer release()
 	}
-	command, commandErr := explicitEnvironmentCommand(ctx, cwd, overlayTestEnvironment(environment, map[string]string{"GOMAXPROCS": "1"}), argv)
+	command, commandErr := explicitEnvironmentCommand(ctx, cwd, overlayTestEnvironment(environment, map[string]string{
+		"GOMAXPROCS":           "1",
+		TestWorkersEnvironment: "1",
+	}), argv)
 	logFile, logErr := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if acquireErr == nil && commandErr == nil && logErr == nil {
 		activity := newOutputActivity(time.Now())

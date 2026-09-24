@@ -567,7 +567,7 @@ func LaunchSuite(options LaunchOptions) int {
 		}
 		outcome := stopSuite(record.SuiteProcess, StopOptions{
 			TermGrace: options.TermGrace, KillGrace: options.KillGrace, Poll: options.Poll,
-			Prober: prober, Signal: options.Signal, Now: now, Sleep: waitForSuite,
+			Prober: prober, Signal: options.Signal, Sleep: waitForSuite,
 		})
 		if secondFenceErr != nil {
 			fmt.Fprintln(combinedErr, "suite launcher: second stop-fence read:", secondFenceErr)

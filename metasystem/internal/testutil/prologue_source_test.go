@@ -62,8 +62,8 @@ func TestHarnessPrologueMatchesShellPrologue(t *testing.T) {
 		t.Fatal("suite-progress detached fixture does not block on its leash")
 	}
 	fake := readFixtureSource(t, filepath.Join(root, "scripts", "agents", "hosts", "fake.sh"))
-	if !strings.Contains(fake, "exec 3<\"$METASYSTEM_FIXTURE_LEASH\"\n    read -r _ <&3") {
-		t.Fatal("fake host does not block on its leash")
+	if !strings.Contains(fake, `exec "$ms" util hold --tag "$instance_tag"`) {
+		t.Fatal("fake host does not delegate its leash-bound lifetime to util hold")
 	}
 }
 

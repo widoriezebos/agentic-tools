@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
@@ -119,6 +120,34 @@ func TestAlwaysFails(t *testing.T) { t.Fatal("red") }
 	}
 	if strings.Contains(result.NotRunReason, "fail-then-pass") {
 		t.Fatalf("fail-then-fail reason claims a pass: %q", result.NotRunReason)
+	}
+}
+
+func TestDiagnosticRerunExportsReservedWorkerShare(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeTestResultFile(t, filepath.Join(root, "go.mod"), []byte("module example.invalid/rerunleaf\n\ngo 1.27\n"), 0o644)
+	writeTestResultFile(t, filepath.Join(root, "pkg", "pkg.go"), []byte("package pkg\n"), 0o644)
+	writeTestResultFile(t, filepath.Join(root, "pkg", "pkg_test.go"), []byte(`package pkg
+import ("os"; "testing")
+func TestPass(t *testing.T) {
+ if workers := os.Getenv("METASYSTEM_TEST_WORKERS"); workers != "1" { t.Fatalf("diagnostic worker allowance=%q, want 1", workers) }
+}
+`), 0o644)
+	request := TestRunRequest{Workers: 2, LogRoot: filepath.Join(root, "logs"),
+		Environment: append(gittree.ScrubbedEnviron(), "GOFLAGS=-buildvcs=false")}
+	if err := os.MkdirAll(request.LogRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	group := testpolicy.Group{ID: "performance-rerun", Kind: "performance", Adapter: "go"}
+	environment := groupTestEnvironment(request, group)
+	if !strings.Contains(strings.Join(environment, "\n"), TestWorkersEnvironment+"=2") {
+		t.Fatalf("performance group did not retain the aggregate allowance: %v", environment)
+	}
+	finding := runFailedTestAgain(t.Context(), request, group, root, environment, supervisorLimits{}, time.Second,
+		NativeTestIdentity{Classname: "example.invalid/rerunleaf/pkg", Name: "TestPass"}, 1, LoadSample{})
+	if finding.First != "failed" || finding.Second != "passed" {
+		t.Fatalf("diagnostic rerun did not export its reserved one-worker share: %+v", finding)
 	}
 }
 

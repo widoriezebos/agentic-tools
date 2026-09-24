@@ -30,7 +30,10 @@ func TestFreshReceiptCannotMatchOrdinaryVerification(t *testing.T) {
 
 func TestFreshReceiptRequiresItsNativeProducerEpisodeBindingAndExpiry(t *testing.T) {
 	f := newObserveFixture(t)
-	f.write("metasystem.conf", "dispatch.cap-max=120\n")
+	f.write("metasystem.conf", "dispatch.cap-max=120\nmetasystem.runtimes=fake\n")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", f.root)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(t.TempDir(), "proof-admission"))
+	now := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
 	identity, err := proofrun.BuildProofIdentity(f.root, filepath.Join(f.root, "metasystem.conf"), "selected", "testing", nil, behaviorsurface.SupportedVersion)
 	if err != nil {
 		t.Fatal(err)
@@ -40,17 +43,17 @@ func TestFreshReceiptRequiresItsNativeProducerEpisodeBindingAndExpiry(t *testing
 		t.Fatal(err)
 	}
 	episode, binding, groupIdentity := strings.Repeat("1", 64), strings.Repeat("2", 64), strings.Repeat("3", 64)
-	expiry := time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
+	expiry := now.Add(time.Hour).Format(time.RFC3339Nano)
 	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
 		GoalID: "goal", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher,
-		Now: time.Now().UTC(), SharedComponents: true, ComponentIdentities: map[string]string{"check": groupIdentity},
+		Now: now, SharedComponents: true, ComponentIdentities: map[string]string{"check": groupIdentity},
 		FreshnessEpisode: episode, FreshnessBinding: binding, FreshnessExpiresAt: expiry}, strings.Repeat("b", 40)))
 	if err != nil || decision.Disposition != proofrun.DispositionExecuted {
 		t.Fatalf("fresh reservation: %+v %+v %v", attempt, decision, err)
 	}
 	result := proofrun.TestResult{AttemptID: attempt.AttemptID, FreshnessEpisode: episode, FreshnessBinding: binding, FreshnessExpiresAt: expiry,
 		Groups: []proofrun.GroupResult{{ID: "check", ExecutionIdentity: groupIdentity, Status: "passed", NativeLaunched: true, CollectionComplete: true}}}
-	if _, err := validateTestingAttemptOwners(f.root, result, true); err != nil {
+	if _, err := validateTestingAttemptOwnersAt(f.root, result, true, now); err != nil {
 		t.Fatalf("matching live native producer refused: %v", err)
 	}
 	for _, testCase := range []struct {
@@ -61,19 +64,19 @@ func TestFreshReceiptRequiresItsNativeProducerEpisodeBindingAndExpiry(t *testing
 		{"wrong episode", func(value *proofrun.TestResult) { value.FreshnessEpisode = strings.Repeat("4", 64) }},
 		{"wrong binding", func(value *proofrun.TestResult) { value.FreshnessBinding = strings.Repeat("5", 64) }},
 		{"wrong expiry", func(value *proofrun.TestResult) {
-			value.FreshnessExpiresAt = time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339Nano)
+			value.FreshnessExpiresAt = now.Add(2 * time.Hour).Format(time.RFC3339Nano)
 		}},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			changed := result
 			testCase.change(&changed)
-			if _, err := validateTestingAttemptOwners(f.root, changed, true); err == nil {
+			if _, err := validateTestingAttemptOwnersAt(f.root, changed, true, now); err == nil {
 				t.Fatal("fresh receipt accepted an unmatched producer")
 			}
 		})
 	}
 	expired := attempt
-	expired.FreshnessExpiresAt = time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)
+	expired.FreshnessExpiresAt = now.Format(time.RFC3339Nano)
 	encoded, err := json.Marshal(expired)
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +89,7 @@ func TestFreshReceiptRequiresItsNativeProducerEpisodeBindingAndExpiry(t *testing
 		t.Fatal(err)
 	}
 	result.FreshnessExpiresAt = expired.FreshnessExpiresAt
-	if _, err := validateTestingAttemptOwners(f.root, result, true); err == nil {
+	if _, err := validateTestingAttemptOwnersAt(f.root, result, true, now); err == nil {
 		t.Fatal("expired native producer satisfied fresh receipt")
 	}
 }
@@ -118,7 +121,7 @@ func TestGLEPathTestingReceiptPostureReadsLiteralManifest(t *testing.T) {
 
 func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	f := newObserveFixture(t)
-	f.write("metasystem.conf", "testing.contract=testing.json\ndispatch.cap-max=120\n")
+	f.write("metasystem.conf", "testing.contract=testing.json\nmetasystem.runtimes=fake\ndispatch.cap-max=120\n")
 	f.git("add", ".", "../development/metasystem-design.md")
 	projectRoot, err := (gittree.Workspace{Dir: f.root}).TopLevel()
 	if err != nil {
@@ -142,8 +145,14 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	attempt, decision, err := proofrun.ReserveLocked(candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
-		GoalID: "goal", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}, tree))
+	episode, binding := strings.Repeat("1", 64), strings.Repeat("2", 64)
+	expires := now.Add(time.Hour)
+	request := candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
+		GoalID: "goal", GoalRevision: 2, AccountingRevision: 2, ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now,
+		SharedComponents: true, ComponentIdentities: map[string]string{"application": strings.Repeat("a", 64)}, FreshGroups: map[string]bool{"application": true},
+		FreshnessEpisode: episode, FreshnessBinding: binding, FreshnessExpiresAt: expires.Format(time.RFC3339Nano)}, tree)
+	request = proofrun.WithTestHostAdmissionDirectory(request, filepath.Join(t.TempDir(), "host-admission"))
+	attempt, decision, err := proofrun.ReserveLocked(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,6 +162,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	result := proofrun.TestResult{SchemaVersion: proofrun.TestResultSchemaVersion,
 		WorkerPolicyVersion: proofrun.TestWorkerPolicyVersion, Workers: 1, AdmissionMaximum: &admissionMaximum,
 		CandidateEngineIdentityVersion: proofrun.CandidateEngineIdentitySchemaVersion, AttemptID: attempt.AttemptID,
+		FreshnessEpisode: episode, FreshnessBinding: binding, FreshnessExpiresAt: expires.Format(time.RFC3339Nano), FreshGroups: map[string]bool{"application": true},
 		Purpose: testpolicy.PurposeDelivery, RequestedMode: testpolicy.ModeAuto, RequiredMode: testpolicy.ModeStandard, ExecutedMode: testpolicy.ModeStandard,
 		ProjectRoot: projectRoot, BaseCommit: head, CandidateTree: tree, PolicyBaseCommit: head,
 		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, CandidateEngineDigest: strings.Repeat("e", 64),
@@ -178,15 +188,27 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	if _, err := proofrun.FinalizeAttemptWithTestResultLocked(f.root, attempt.AttemptID, proofrun.TerminalSuccess, 0, "fixture", payload, preparedReceipt.Testing, completedAt); err != nil {
 		t.Fatal(err)
 	}
-	published, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree)
+	published, err := PublishCommittedReceiptAt(f.root, attempt.AttemptID, tree, now)
 	if err != nil || published.Time != preparedReceipt.Time {
 		t.Fatalf("publish atomic schema-2 receipt: receipt=%+v err=%v", published, err)
+	}
+	committed := append([]byte(nil), payload...)
+	published, err = PublishCommittedReceiptAt(f.root, attempt.AttemptID, tree, expires.Add(-time.Nanosecond))
+	if err != nil || published.Time != preparedReceipt.Time {
+		t.Fatalf("publish immediately before owner expiry: receipt=%+v err=%v", published, err)
+	}
+	if projected, readErr := os.ReadFile(TestReceiptPath(f.root, tree)); readErr != nil ||
+		!bytes.Equal(bytes.TrimSpace(projected), bytes.TrimSpace(committed)) {
+		t.Fatalf("expiry-aware publication changed committed bytes: err=%v", readErr)
+	}
+	if _, err := PublishCommittedReceiptAt(f.root, attempt.AttemptID, tree, expires); err == nil {
+		t.Fatal("publication accepted an owner at its exact expiry")
 	}
 	projected, err := os.ReadFile(TestReceiptPath(f.root, tree))
 	if err != nil || !bytes.Equal(bytes.TrimSpace(projected), bytes.TrimSpace(payload)) {
 		t.Fatalf("schema-2 projection changed committed payload: err=%v\nprojected=%s\npayload=%s", err, projected, payload)
 	}
-	receipt, err := CreateTestingReceipt(f.root, tree, result)
+	receipt, err := CreateTestingReceiptAt(f.root, tree, result, expires.Add(-time.Nanosecond))
 	if err != nil || receipt.SchemaVersion != 2 || len(receipt.AttemptIDs) != 1 || !fullReceiptCommandAccepted(receipt) {
 		t.Fatalf("schema-2 receipt=%+v err=%v", receipt, err)
 	}
@@ -194,8 +216,14 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		receipt.CandidateEngineBuildIdentity != result.CandidateEngineBuildIdentity || receipt.ProvedTree != tree {
 		t.Fatalf("schema-2 receipt lost policy engine, candidate engine, or candidate tree: %+v", receipt)
 	}
-	if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree)}); err != nil {
+	if _, err := CreateTestingReceiptAt(f.root, tree, result, expires); err == nil {
+		t.Fatal("composition accepted an owner at its exact expiry")
+	}
+	if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires.Add(-time.Nanosecond)}); err != nil {
 		t.Fatalf("schema-2 receipt consumer: %v", err)
+	}
+	if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires}); err == nil {
+		t.Fatal("receipt read accepted an owner at its exact expiry")
 	}
 	writeReceipt := func(t *testing.T, value TestReceipt) {
 		t.Helper()
@@ -243,7 +271,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		if _, _, err := PrepareTestingReceiptPayload(f.root, tree, result, completedAt); err != nil {
 			t.Fatalf("workspace-equivalent index invalidated receipt preparation: %v", err)
 		}
-		if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, whole); err != nil {
+		if _, err := PublishCommittedReceiptAt(f.root, attempt.AttemptID, whole, now); err != nil {
 			t.Fatalf("publication refused the accepted index tree: %v", err)
 		}
 		if _, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree); err == nil {
@@ -261,7 +289,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		current := baseVerified
 		current.CandidateTree = whole
 		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree,
-			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(current, nil)}); err != nil {
+			TestReceipt: TestReceiptPath(f.root, tree), Now: now, VerifyTesting: verify(current, nil)}); err != nil {
 			t.Fatalf("workspace-equivalent receipt was refused: %v", err)
 		}
 	})
@@ -273,7 +301,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		current := baseVerified
 		current.CandidateTree = keyWhole
 		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: keyInstallation,
-			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: verify(current, nil)}); err != nil {
+			TestReceipt: TestReceiptPath(f.root, tree), Now: now, VerifyTesting: verify(current, nil)}); err != nil {
 			t.Fatalf("identity-equivalent receipt was refused: %v", err)
 		}
 	})
@@ -354,7 +382,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		writeReceipt(t, legacy)
 		called := false
 		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree,
-			TestReceipt: TestReceiptPath(f.root, tree), VerifyTesting: func() (proofrun.TestResult, error) {
+			TestReceipt: TestReceiptPath(f.root, tree), Now: now, VerifyTesting: func() (proofrun.TestResult, error) {
 				called = true
 				return proofrun.TestResult{}, fmt.Errorf("must not be called")
 			}}); err != nil {
@@ -370,7 +398,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		if err := os.WriteFile(TestReceiptPath(f.root, tree), legacyPayload, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree)}); err != nil {
+		if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree), Now: now}); err != nil {
 			t.Fatalf("shared landing receipt reader rejected an old-format schema-2 payload: %v", err)
 		}
 	})
@@ -406,7 +434,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		if err := os.WriteFile(attemptPath, append(encodedAttempt, '\n'), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		published, err := PublishCommittedReceipt(f.root, attempt.AttemptID, tree)
+		published, err := PublishCommittedReceiptAt(f.root, attempt.AttemptID, tree, now)
 		if err != nil || published.Testing == nil || published.Testing.CandidateEngineIdentityVersion != 0 {
 			t.Fatalf("committed receipt recovery rejected an old-format schema-2 payload: receipt=%+v err=%v", published, err)
 		}
@@ -503,13 +531,19 @@ func TestAdoptionRulingsPreserveApplicationAndLandingAuthority(t *testing.T) {
 // group is a complete pass.
 func TestSchemaTwoReceiptAcceptsReuseFromAFailedDeliveryPredecessor(t *testing.T) {
 	f := newObserveFixture(t)
-	f.write("metasystem.conf", "testing.contract=testing.json\ndispatch.cap-max=120\n")
+	f.write("metasystem.conf", "testing.contract=testing.json\nmetasystem.runtimes=fake\ndispatch.cap-max=120\n")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(t.TempDir(), "host-admission"))
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", f.root)
 	f.git("add", ".", "../development/metasystem-design.md")
 	projectRoot, err := (gittree.Workspace{Dir: f.root}).TopLevel()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tree, err := (gittree.Workspace{Dir: projectRoot}).StagedTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	installationTree, err := (gittree.Workspace{Dir: f.root}).TreeOf(tree)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -538,8 +572,12 @@ func TestSchemaTwoReceiptAcceptsReuseFromAFailedDeliveryPredecessor(t *testing.T
 	zero, failedExit, admissionMaximum := 0, 24, 0
 	digest := strings.Repeat("a", 64)
 	group := func(id, status string, exit *int) proofrun.GroupResult {
+		identityByte := id[:1]
+		if id == "later" {
+			identityByte = "b"
+		}
 		return proofrun.GroupResult{ID: id, Kind: "unit", Obligations: []string{id}, IdentityVersion: proofrun.GroupExecutionIdentityVersion,
-			InputDigest: digest, InputManifest: []string{id + "/**"}, ExecutionIdentity: strings.Repeat(id[:1], 64), CWD: ".", ToolIdentities: map[string]string{},
+			InputDigest: digest, InputManifest: []string{id + "/**"}, ExecutionIdentity: strings.Repeat(identityByte, 64), CWD: ".", ToolIdentities: map[string]string{},
 			Status: status, NativeLaunched: true, NativeExitStatus: exit, CollectionComplete: true, ReportDigests: map[string]string{}}
 	}
 	resultFor := func(attemptID string, purpose testpolicy.Purpose, groups []proofrun.GroupResult) proofrun.TestResult {
@@ -568,6 +606,74 @@ func TestSchemaTwoReceiptAcceptsReuseFromAFailedDeliveryPredecessor(t *testing.T
 	f.write("records/narrator-digest.log", "ordinary append\n")
 	if _, _, err := PrepareTestingReceiptPayload(f.root, tree, result, now.Add(2*time.Second)); err != nil {
 		t.Fatalf("delivery retry reusing a failed predecessor's pass was refused at the receipt: %v", err)
+	}
+	episode, binding := strings.Repeat("7", 64), strings.Repeat("8", 64)
+	expires := now.Add(time.Hour)
+	for _, attemptID := range []string{predecessor, retry} {
+		stored, err := proofrun.ReadAttempt(f.root, attemptID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stored.FreshnessEpisode, stored.FreshnessBinding = episode, binding
+		stored.FreshnessExpiresAt = expires.Format(time.RFC3339Nano)
+		stored.TestFreshGroups = map[string]bool{"application": true, "later": true}
+		stored.TestInventory = map[string]string{"application": strings.Repeat("a", 64), "later": strings.Repeat("b", 64)}
+		if attemptID == predecessor {
+			stored.TestAdmission = 1
+			stored.TestOwned = map[string]string{"application": strings.Repeat("a", 64), "later": strings.Repeat("b", 64)}
+		} else {
+			stored.TestAdmission = 2
+			stored.TestOwned = map[string]string{"later": strings.Repeat("b", 64)}
+			stored.TestSources = map[string]string{"application": predecessor}
+		}
+		if stored.TestResult != nil {
+			stored.TestResult.FreshnessEpisode, stored.TestResult.FreshnessBinding = episode, binding
+			stored.TestResult.FreshnessExpiresAt = expires.Format(time.RFC3339Nano)
+			stored.TestResult.FreshGroups = map[string]bool{"application": true, "later": true}
+		}
+		path, err := proofrun.AttemptPath(f.root, attemptID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := json.MarshalIndent(stored, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(encoded, '\n'), 0o600); err != nil {
+			t.Fatalf("stamp reused owner freshness: %v", err)
+		}
+		if _, err := proofrun.ReadAttempt(f.root, attemptID); err != nil {
+			t.Fatalf("read freshness-stamped reused owner %s: %v", attemptID, err)
+		}
+	}
+	result.FreshnessEpisode, result.FreshnessBinding = episode, binding
+	result.FreshnessExpiresAt = expires.Format(time.RFC3339Nano)
+	result.FreshGroups = map[string]bool{"application": true, "later": true}
+	receipt, payload, err := PrepareTestingReceiptPayload(f.root, tree, result, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatalf("prepare exact-episode reused-owner receipt: %v", err)
+	}
+	if _, err := proofrun.FinalizeAttemptWithTestResultLocked(f.root, retry, proofrun.TerminalSuccess, 0, "retry passed", payload, receipt.Testing, now.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PublishCommittedReceiptAt(f.root, retry, tree, expires.Add(-time.Nanosecond)); err != nil {
+		t.Fatalf("reused-owner publication before expiry: %v", err)
+	}
+	if _, err := PublishCommittedReceiptAt(f.root, retry, tree, expires); err == nil {
+		t.Fatal("reused-owner publication accepted exact expiry")
+	}
+	if _, err := CreateTestingReceiptAt(f.root, tree, result, expires.Add(-time.Nanosecond)); err != nil {
+		t.Fatalf("reused-owner composition before expiry: %v", err)
+	}
+	if _, err := CreateTestingReceiptAt(f.root, tree, result, expires); err == nil {
+		t.Fatal("reused-owner composition accepted exact expiry")
+	}
+	verify := func() (proofrun.TestResult, error) { return result, nil }
+	if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires.Add(-time.Nanosecond), VerifyTesting: verify}); err != nil {
+		t.Fatalf("reused-owner read before expiry: %v", err)
+	}
+	if _, err := readTestReceipt(ObserveParams{RepoRoot: f.root, CandidateTree: installationTree, TestReceipt: TestReceiptPath(f.root, tree), Now: expires, VerifyTesting: verify}); err == nil {
+		t.Fatal("reused-owner read accepted exact expiry")
 	}
 	cadence := result
 	cadence.Purpose = testpolicy.PurposeCadence

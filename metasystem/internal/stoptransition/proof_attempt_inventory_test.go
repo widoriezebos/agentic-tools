@@ -1,6 +1,7 @@
 package stoptransition
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,9 +32,11 @@ func TestProofReservationBeforeChildPublicationIsStoppable(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("dispatch.cap-max=120\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\ndispatch.cap-max=120\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(root, "proof-admission"))
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
 	for _, name := range []string{"coverage-ratchet.json", "coverage-ratchet-linux.json"} {
 		if err := os.WriteFile(filepath.Join(root, "scripts", "agents", name), []byte(`{"floors":{"internal/proofrun":1},"exempt":{}}`), 0o600); err != nil {
 			t.Fatal(err)
@@ -44,16 +47,44 @@ func TestProofReservationBeforeChildPublicationIsStoppable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	child := exec.Command("sleep", "60")
-	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := child.Start(); err != nil {
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
 		t.Fatal(err)
 	}
+	releaseRead, releaseWrite, err := os.Pipe()
+	if err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		t.Fatal(err)
+	}
+	child := exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :")
+	child.Stdin = releaseRead
+	child.ExtraFiles = []*os.File{readyWrite}
+	child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := child.Start(); err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		_ = releaseRead.Close()
+		_ = releaseWrite.Close()
+		t.Fatal(err)
+	}
+	_ = readyWrite.Close()
+	_ = releaseRead.Close()
+	var ready [1]byte
+	if _, err := io.ReadFull(readyRead, ready[:]); err != nil || ready[0] != 'x' {
+		_ = readyRead.Close()
+		_ = releaseWrite.Close()
+		_ = child.Process.Kill()
+		_ = child.Wait()
+		t.Fatalf("proof inventory helper readiness=%q err=%v", ready, err)
+	}
+	_ = readyRead.Close()
 	t.Logf("proof inventory helper pid: %d", child.Process.Pid)
 	waited := make(chan error, 1)
 	go func() { waited <- child.Wait() }()
 	finished := false
 	t.Cleanup(func() {
+		_ = releaseWrite.Close()
 		if !finished {
 			_ = child.Process.Kill()
 			<-waited

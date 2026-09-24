@@ -251,6 +251,16 @@ func runMissionRunnerResume(args []string) int {
 	return runMissionRunnerLaunch("resume", args)
 }
 
+func missionRunnerCommandEngine(root, mission string) (*missionrunner.Engine, error) {
+	commandClock, _, err := goalCommandClock(root)
+	if err != nil {
+		return nil, err
+	}
+	engine := missionrunner.NewEngine(root, mission)
+	engine.Now = commandClock
+	return engine, nil
+}
+
 func runMissionRunnerLaunch(mode string, args []string) int {
 	var root, mission string
 	foreground := false
@@ -265,7 +275,12 @@ func runMissionRunnerLaunch(mode string, args []string) int {
 	if code != 0 {
 		return code
 	}
-	return missionrunner.NewEngine(root, mission).LaunchAtGeneration(mode, foreground, generation)
+	engine, err := missionRunnerCommandEngine(root, mission)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "mission "+mode+":", err)
+		return 1
+	}
+	return engine.LaunchAtGeneration(mode, foreground, generation)
 }
 
 func runMissionRunnerStatus(args []string) int {
@@ -288,7 +303,12 @@ func runMissionRunnerAnswer(args []string) int {
 		missionRunnerUsage()
 		return 2
 	}
-	return missionrunner.NewEngine(root, mission).Answer(askID, answer)
+	engine, err := missionRunnerCommandEngine(root, mission)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "mission answer:", err)
+		return 1
+	}
+	return engine.Answer(askID, answer)
 }
 
 func runMissionRunnerResolveTaint(args []string) int {
@@ -374,5 +394,10 @@ func runMissionRunnerRunLoop(args []string) int {
 		(mode != "start" && mode != "resume") {
 		return 2
 	}
-	return missionrunner.NewEngine(root, mission).RunLoopAtGeneration(mode, tag, signal, generation, ignoreTerm)
+	engine, err := missionRunnerCommandEngine(root, mission)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "mission run-loop:", err)
+		return 1
+	}
+	return engine.RunLoopAtGeneration(mode, tag, signal, generation, ignoreTerm)
 }

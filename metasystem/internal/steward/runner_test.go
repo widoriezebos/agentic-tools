@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"bufio"
 	"context"
 	"os"
 	"os/exec"
@@ -375,19 +376,45 @@ func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	stuck := exec.Command("sleep", "60")
-	if err := stuck.Start(); err != nil {
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
 		t.Fatal(err)
 	}
+	releaseRead, releaseWrite, err := os.Pipe()
+	if err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		t.Fatal(err)
+	}
+	stuck := exec.Command("/bin/sh", "-c", "printf 'ready\\n' >&3; IFS= read -r _ <&4")
+	stuck.ExtraFiles = []*os.File{readyWrite, releaseRead}
+	if err := stuck.Start(); err != nil {
+		_ = readyRead.Close()
+		_ = readyWrite.Close()
+		_ = releaseRead.Close()
+		_ = releaseWrite.Close()
+		t.Fatal(err)
+	}
+	_ = readyWrite.Close()
+	_ = releaseRead.Close()
 	stuckDone := make(chan struct{})
 	go func() {
 		_, _ = stuck.Process.Wait()
 		close(stuckDone)
 	}()
+	stuckJoined := false
 	t.Cleanup(func() {
-		_ = stuck.Process.Kill()
-		<-stuckDone
+		_ = releaseWrite.Close()
+		if !stuckJoined {
+			_ = stuck.Process.Kill()
+			<-stuckDone
+		}
 	})
+	ready, readyErr := bufio.NewReader(readyRead).ReadString('\n')
+	_ = readyRead.Close()
+	if readyErr != nil || ready != "ready\n" {
+		t.Fatalf("overdue runner readiness=%q err=%v", ready, readyErr)
+	}
 	exact, state, err := identity.KernelProber{}.Probe(int64(stuck.Process.Pid))
 	if err != nil || state != identity.Alive {
 		t.Fatalf("read stuck fixture process: %v %s", err, state)
@@ -404,6 +431,9 @@ func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
 	if err != nil || repaired.Status != "RESTORED" || repaired.PreviousPid != exact.Pid || repaired.ReplacementPid == exact.Pid {
 		t.Fatalf("the watcher must replace an alive runner past its configured patience: %+v %v", repaired, err)
 	}
+	<-stuckDone
+	stuckJoined = true
+	_ = releaseWrite.Close()
 }
 
 func TestWatcherRepairStopsWhenTheStewardBreakerEndsHealing(t *testing.T) {

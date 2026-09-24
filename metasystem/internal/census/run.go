@@ -159,7 +159,7 @@ func runCensus(metasystemRoot, stateRoot, repo, fingerprint string, interval int
 	}
 
 	processes, enumErr := enumerate(metasystemRoot)
-	runOwners := loadRunOwners(repoReal, processes, &diagnostics)
+	runOwners := loadRunOwners(repoReal, processes, now, &diagnostics)
 	var signatures []Signature
 	if enumErr != nil {
 		errors = append(errors, "enumeration:"+enumErr.Error())
@@ -348,7 +348,7 @@ type runOwner struct {
 }
 
 // loadRunOwners reads run records, surfacing every unreadable input.
-func loadRunOwners(repo string, processes []Process, diagnostics *[]string) []runOwner {
+func loadRunOwners(repo string, processes []Process, now time.Time, diagnostics *[]string) []runOwner {
 	store := &run.Store{Root: repo}
 	records, unreadable := store.List()
 	for _, line := range unreadable {
@@ -369,7 +369,7 @@ func loadRunOwners(repo string, processes []Process, diagnostics *[]string) []ru
 			// wind-down the survivors surface as UNTRACKED — a stopped
 			// watcher must not let a dead run own a reused group forever.
 			if ended, err := time.Parse("2006-01-02T15:04:05Z", *record.EndedAt); err == nil {
-				if time.Since(ended) > time.Duration(record.WindDownMin)*time.Minute {
+				if now.Sub(ended) > time.Duration(record.WindDownMin)*time.Minute {
 					continue
 				}
 			}

@@ -54,13 +54,15 @@ if [[ ${METASYSTEM_FAKE_HOST_HOLD:-0} == 1 ]]; then
   else
     trap 'exit 0' TERM
   fi
-  : >"$turn_dir/host-ready"
-  if [[ -n ${METASYSTEM_FIXTURE_LEASH:-} ]]; then
-    exec 3<"$METASYSTEM_FIXTURE_LEASH"
-    read -r _ <&3
-  else
-    while true; do sleep 1; done
+  # The Go owner validates the exact fixture owner and watches the inherited
+  # leash. A fake host therefore cannot turn a missing fixture boundary into
+  # an unbounded process.
+  hold_term=()
+  if [[ ${METASYSTEM_FAKE_HOST_IGNORE_TERM:-0} == 1 ]]; then
+    hold_term=(--ignore-term --term-observed-file "$turn_dir/host-term-observed")
   fi
+  exec "$ms" util hold --tag "$instance_tag" --ready-file "$turn_dir/host-ready" \
+    --stopped-file "$turn_dir/host-stopped" ${hold_term[@]+"${hold_term[@]}"}
 fi
 
 behaviors=$(sed -n 's/.*FAKEHOST:\([a-z-][a-z-]*\).*/\1/p' "$prompt" | sort -u)

@@ -1037,23 +1037,43 @@ func TestChannelProofIsNotAnEnrolledTerminalProof(t *testing.T) {
 	}
 }
 
+func TestTemporaryGoalProofWrapperRejectsIncompleteWordPair(t *testing.T) {
+	t.Parallel()
+	root := authorityRoot(t)
+	if _, err := TemporaryGoalProof(root, "", ""); err == nil || !strings.Contains(err.Error(), "requires the supplied word") {
+		t.Fatalf("temporary goal proof wrapper did not enforce the word pair: %v", err)
+	}
+}
+
 func TestTemporaryGoalProofUsesTheRealWallClock(t *testing.T) {
+	t.Parallel()
 	root := authorityRoot(t)
 	horizon, err := time.Parse(reviewByDateLayout, governance.TemporaryGoalAuthorityHorizon)
 	if err != nil {
 		t.Fatal(err)
 	}
+	expiresAt := horizon.Add(24 * time.Hour)
 	before := time.Now().UTC()
 	proof, grantErr := TemporaryGoalProof(root, "Wido authorizes this goal mutation", governance.TemporaryGoalAuthorityHorizon)
 	after := time.Now().UTC()
-	if before.Truncate(24 * time.Hour).After(horizon) {
-		if grantErr == nil || !strings.Contains(grantErr.Error(), "is in the past") {
+	pastErr := "--review-by " + governance.TemporaryGoalAuthorityHorizon + " is in the past"
+
+	validProof := grantErr == nil && proof.TemporaryResumeFor(root) &&
+		!proof.CheckedAt.Before(before) && !proof.CheckedAt.After(after) && proof.CheckedAt.Before(expiresAt)
+	if after.Before(expiresAt) {
+		if !validProof {
+			t.Fatalf("temporary grant did not bind the real wall clock: proof=%+v before=%s after=%s err=%v", proof, before, after, grantErr)
+		}
+		return
+	}
+	if !before.Before(expiresAt) {
+		if grantErr == nil || grantErr.Error() != pastErr {
 			t.Fatalf("an expired wall-clock grant did not refuse as past: proof=%+v err=%v", proof, grantErr)
 		}
 		return
 	}
-	if grantErr != nil || proof.CheckedAt.Before(before) || proof.CheckedAt.After(after) {
-		t.Fatalf("temporary grant did not bind the real wall clock: checkedAt=%s before=%s after=%s err=%v", proof.CheckedAt, before, after, grantErr)
+	if !validProof && (grantErr == nil || grantErr.Error() != pastErr) {
+		t.Fatalf("a grant straddling expiry had neither a valid proof nor the past refusal: proof=%+v before=%s after=%s err=%v", proof, before, after, grantErr)
 	}
 }
 
@@ -1080,6 +1100,7 @@ func TestTemporaryProofRequiresTheWholeRemoteWordPair(t *testing.T) {
 }
 
 func TestTemporaryGoalProofEnforcesReviewExpiryAndHorizon(t *testing.T) {
+	t.Parallel()
 	root := authorityRoot(t)
 	for _, test := range []struct {
 		name     string
@@ -1095,6 +1116,11 @@ func TestTemporaryGoalProofEnforcesReviewExpiryAndHorizon(t *testing.T) {
 				t.Fatalf("temporary authority expiry refusal mismatch: %v", err)
 			}
 		})
+	}
+	now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	proof, err := temporaryGoalProofAt(root, "Wido authorizes this goal mutation", "2026-09-06", now)
+	if err != nil || !proof.CheckedAt.Equal(now) {
+		t.Fatalf("temporary proof checkedAt = %s, want %s: %v", proof.CheckedAt, now, err)
 	}
 }
 

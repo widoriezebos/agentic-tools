@@ -336,7 +336,7 @@ func containsEveryExpectedTest(values, required []testpolicy.ExpectedTest) bool 
 }
 
 func runFrozenWorkerProbe(ctx context.Context, outer proofrun.TestRunRequest, probe testpolicy.ProtectionProbeCase) error {
-	root, err := os.MkdirTemp("", "metasystem-policy-probe.")
+	root, packet, resultPath, err := frozenWorkerProbePaths("")
 	if err != nil {
 		return err
 	}
@@ -383,7 +383,6 @@ func runFrozenWorkerProbe(ctx context.Context, outer proofrun.TestRunRequest, pr
 			Status:          "passed", NativeLaunched: true, NativeExitStatus: &zero, CollectionComplete: true, ReuseAttempt: "forged-success",
 			ToolIdentities: map[string]string{}, ReportDigests: map[string]string{}}}
 	}
-	packet, resultPath := filepath.Join(root, "request.json"), filepath.Join(root, "result.json")
 	if err := writePrivateJSON(packet, request); err != nil {
 		return err
 	}
@@ -406,6 +405,19 @@ func runFrozenWorkerProbe(ctx context.Context, outer proofrun.TestRunRequest, pr
 		return fmt.Errorf("forged reusable owner survived")
 	}
 	return nil
+}
+
+func frozenWorkerProbePaths(tempRoot string) (string, string, string, error) {
+	createdRoot, err := os.MkdirTemp(tempRoot, "metasystem-policy-probe.")
+	if err != nil {
+		return "", "", "", err
+	}
+	root, err := canonicalPath(createdRoot)
+	if err != nil {
+		_ = os.RemoveAll(createdRoot)
+		return "", "", "", err
+	}
+	return root, filepath.Join(root, "request.json"), filepath.Join(root, "result.json"), nil
 }
 
 func readFrozenWorkerProbeResult(path string) (proofrun.TestResult, error) {

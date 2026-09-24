@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
@@ -74,6 +76,40 @@ func TestConfigurationIndependentChannelVerbs(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "metasystem.conf")); !os.IsNotExist(err) {
 		t.Fatal("configuration-independent verbs created or required metasystem.conf")
+	}
+}
+
+func TestChannelFakeServeRequiresBoundedLifetime(t *testing.T) {
+	t.Parallel()
+	deps := fixtureLifetimeTestDependencies(nil, nil, nil)
+	called := false
+	code := runChannelFakeServeWithDependencies([]string{"--dir", t.TempDir()}, deps, func(context.Context, string, chan<- string) error {
+		called = true
+		return nil
+	})
+	if code != 2 || called {
+		t.Fatalf("unbounded fake server exit=%d called=%t, want refusal before serve", code, called)
+	}
+}
+
+func TestChannelFakeServeStopsAtInjectedExpiry(t *testing.T) {
+	t.Parallel()
+	expiry := make(chan time.Time, 1)
+	deps := fixtureLifetimeTestDependencies(nil, func(time.Duration) <-chan time.Time { return expiry }, nil)
+	started := make(chan struct{})
+	done := make(chan int, 1)
+	dir := t.TempDir()
+	go func() {
+		done <- runChannelFakeServeWithDependencies([]string{"--dir", dir, "--max-seconds", "1"}, deps, func(ctx context.Context, _ string, _ chan<- string) error {
+			close(started)
+			<-ctx.Done()
+			return nil
+		})
+	}()
+	<-started
+	expiry <- time.Unix(1, 0)
+	if code := <-done; code != 0 {
+		t.Fatalf("injected-expiry fake server exit = %d, want 0", code)
 	}
 }
 
@@ -319,6 +355,45 @@ func TestTelegramPeekTokenNeverAppearsInErrors(t *testing.T) {
 			code, _, problem := captureChannelOutput(t, func() int { return runChannelTelegram([]string{"peek", "--root", root}) })
 			if code == 0 || strings.Contains(problem, token) || strings.Contains(problem, "/bot"+token+"/") {
 				t.Fatal(code, problem)
+			}
+		})
+	}
+}
+
+func TestChannelStatusUsesOnlyTheRootAuthorizedSemanticClock(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		runtime     string
+		fixtureNow  string
+		want        string
+		wantFailure bool
+	}{
+		{name: "fake root uses exact clock", runtime: "fake", fixtureNow: "2026-09-07T00:00:00Z", want: "this machine status 2026-09-07 00:00 +0000"},
+		{name: "normal root ignores malformed override", runtime: "none", fixtureNow: "not-a-time", want: "this machine status "},
+		{name: "fake root refuses malformed clock", runtime: "fake", fixtureNow: "not-a-time", want: "METASYSTEM_GOAL_NOW must be an RFC3339 timestamp", wantFailure: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes="+test.runtime+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			command := exec.Command(commandTestExecutable(t), "channel", "status", "--root", root)
+			command.Env = fixtureCommandEnvironment(t, "TZ=UTC", "METASYSTEM_GOAL_NOW="+test.fixtureNow)
+			output, err := command.CombinedOutput()
+			if test.wantFailure {
+				if err == nil || !strings.Contains(string(output), test.want) {
+					t.Fatalf("channel status output = %q, error = %v; want failure containing %q", output, err, test.want)
+				}
+				return
+			}
+			if err != nil || !strings.Contains(string(output), test.want) {
+				t.Fatalf("channel status output = %q, error = %v; want %q", output, err, test.want)
+			}
+			if test.runtime != "fake" && strings.Contains(string(output), "2026-09-07 00:00 +0000") {
+				t.Fatalf("normal root used fixture time: %s", output)
 			}
 		})
 	}

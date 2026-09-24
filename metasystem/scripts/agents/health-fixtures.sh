@@ -268,6 +268,33 @@ set_health_clock() {
   export METASYSTEM_GOAL_NOW=$stamp
 }
 
+parse_health_clock_epoch() {
+  local stamp=${1%Z}
+  stamp=${stamp%%.*}
+  date -u -j -f %Y-%m-%dT%H:%M:%S "$stamp" +%s 2>/dev/null \
+    || date -u -d "${stamp}Z" +%s
+}
+
+health_clock_after() {
+  local anchor=$1 seconds=$2 fraction= anchor_epoch shifted
+  [[ "$anchor" == *Z ]] || return 1
+  if [[ "$anchor" == *.*Z ]]; then
+    fraction=.${anchor#*.}
+    fraction=${fraction%Z}
+  fi
+  anchor_epoch=$(parse_health_clock_epoch "$anchor") || return 1
+  shifted=$(format_health_clock "$((anchor_epoch + seconds))") \
+    || return 1
+  printf '%s%sZ\n' "${shifted%Z}" "$fraction"
+}
+
+runner_is_stopped() {
+  local state
+  state=$(ps -o stat= -p "$1" 2>/dev/null) || return 1
+  [[ "$state" == *T* ]] || return 1
+  return 0
+}
+
 set_component_clock_evidence() {
   local component=$1 epoch=$2 stamp
   stamp=$(format_health_clock "$epoch") || fail "component clock timestamp could not be formatted"
@@ -374,26 +401,36 @@ if [[ "$fixture_scenario" == narrator-recovery ]]; then
 # Stopping the resident loop stalls narrator production without altering its
 # evidence. Equality at two producer intervals must make it stale.
 kill -STOP "$runner_pid"
-narrator_stalled=
-narrator_started=$SECONDS
 narrator_deadline=$((SECONDS + health_state_cap_sec))
-while :; do
-  run_health narrator-stalled
-  if grep -Fq 'narrator-freshness=dead' "$tmp/narrator-stalled.out"; then
-    narrator_stalled=yes
-    break
-  fi
-  if (( SECONDS >= narrator_deadline )); then
-    narrator_elapsed=$((SECONDS - narrator_started))
-    cat "$tmp/narrator-stalled.out" >&2 2>/dev/null || true
-    cat "$tmp/narrator-stalled.err" >&2 2>/dev/null || true
-    echo "health fixture wait ceiling reached: stopped narrator stale (elapsed: ${narrator_elapsed}s; scaled cap: ${health_state_cap_sec}s)" >&2
-    break
-  fi
+until runner_is_stopped "$runner_pid"; do
+  (( SECONDS < narrator_deadline )) \
+    || fail "resident runner did not enter the observable stopped state"
   sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
 done
-[[ "$narrator_stalled" == yes ]] || fail "stopped ticks did not make narrator evidence stale"
+narrator_last_success=$("$ms" json get \
+  --file "$repo/artifacts/agents/steward/components/narrator.json" --field lastSuccess) \
+  || fail "narrator last-success anchor is unreadable"
+narrator_anchor_epoch=$(parse_health_clock_epoch "$narrator_last_success") \
+  || fail "narrator last-success anchor is not a timestamp"
+narrator_tick_seconds=$(git -C "$repo" config --get metasystem.steward.tick-seconds) \
+  || fail "narrator tick interval is unreadable"
+health_clock_was_set=${METASYSTEM_GOAL_NOW+x}
+health_clock_before=${METASYSTEM_GOAL_NOW-}
+health_clock_args=(--metasystem-root "$fixture_install")
+METASYSTEM_GOAL_NOW=$(health_clock_after "$narrator_last_success" "$((2 * narrator_tick_seconds))") \
+  || fail "narrator equality clock could not preserve timestamp precision"
+export METASYSTEM_GOAL_NOW
+run_health narrator-stalled
+[[ "$health_rc" -eq 1 ]] || { cat "$tmp/narrator-stalled.err" >&2; fail "stopped narrator equality boundary returned $health_rc"; }
+grep -Fq 'narrator-freshness=dead' "$tmp/narrator-stalled.out" \
+  || fail "narrator was not stale at exactly two producer intervals"
 grep -Fq 'metasystem up --repo' "$tmp/narrator-stalled.out" || fail "stale narrator omitted the up remedy"
+if [[ -n "$health_clock_was_set" ]]; then
+  export METASYSTEM_GOAL_NOW=$health_clock_before
+else
+  unset METASYSTEM_GOAL_NOW
+fi
+health_clock_args=()
 continue_recorded_pids
 "$ms" steward restart --repo "$repo" >"$tmp/narrator-restart.out" 2>"$tmp/narrator-restart.err" || {
   cat "$tmp/narrator-restart.err" >&2

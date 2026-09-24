@@ -486,8 +486,15 @@ func (runner *UnitRunner) runReadSteps(record *UnitRunRecord, round *UnitRound, 
 		if !strings.HasPrefix(step.Name, "read") || step.State != StepPending && step.State != StepStarting {
 			continue
 		}
+		packet, err := unitReadPacket(diffPath, *step)
+		if err != nil {
+			return UnitResult{}, false, err
+		}
+		adapterData := map[string]json.RawMessage{}
+		setString(adapterData, "unitReadPacket", packet)
 		spec := StartSpec{Kind: "read", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: plan.Read.Brief,
-			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, DiffFile: diffPath, Package: step.Package, File: step.File, Wide: step.Mode == "wide"}
+			Inputs: inputs, Outputs: plan.Read.Outputs, Model: plan.Read.Model, DiffFile: diffPath, Package: step.Package, File: step.File,
+			Wide: step.Mode == "wide", AdapterData: adapterData}
 		if step.Rerun {
 			spec.readMode = step.Mode
 		}
@@ -513,6 +520,49 @@ func (runner *UnitRunner) runReadSteps(record *UnitRunRecord, round *UnitRound, 
 		}
 	}
 	return UnitResult{}, false, nil
+}
+
+func unitReadPacket(diffPath string, step UnitStep) (string, error) {
+	data, err := os.ReadFile(diffPath)
+	if err != nil {
+		return "", err
+	}
+	choice, err := ChooseReadMode(diffPath, 1<<62)
+	if err != nil {
+		return "", err
+	}
+	var packages []string
+	for name := range choice.Directories {
+		if name != step.Package {
+			packages = append(packages, name)
+		}
+	}
+	sort.Strings(packages)
+	selected := step.Package
+	coverage := strings.Join(packages, ", ") + " (separate unit read steps)"
+	if selected == "" {
+		selected = "all packages (whole or wide read)"
+		coverage = strings.Join(packages, ", ") + " (included in this read)"
+	}
+	if len(packages) == 0 {
+		coverage = "none"
+	}
+	packet := fmt.Sprintf("Full candidate diff: %s\nFull candidate SHA-256: %x\nSelected package: %s\nOther package coverage: %s\n",
+		diffPath, sha256.Sum256(data), selected, coverage)
+	if step.File != "" {
+		packet += "Selected file: " + step.File + "\n"
+	}
+	return packet, nil
+}
+
+func appendReadPacket(data []byte, record Record) []byte {
+	if packet := readString(record.AdapterData, "unitReadPacket"); packet != "" {
+		data = append(data, []byte("\n"+packet)...)
+	}
+	if diff := readString(record.AdapterData, "readDiff"); diff != "" {
+		data = append(data, []byte("\nDiff: "+diff+"\n")...)
+	}
+	return data
 }
 
 func (runner *UnitRunner) appendReadReruns(record *UnitRunRecord, round *UnitRound, diffPath string, readStart int) error {
@@ -686,7 +736,7 @@ func (runner *UnitRunner) writeDiff(worktree, base, target string) error {
 		return err
 	}
 	environment := []string{"GIT_INDEX_FILE=" + index, "GIT_OBJECT_DIRECTORY=" + objectDir, "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + strings.TrimSpace(string(objectsData))}
-	if _, err := git.Run(worktree, environment, "add", "-A", "--", "."); err != nil {
+	if _, err := git.Run(worktree, environment, "add", "-A", "--sparse", "--", "."); err != nil {
 		return err
 	}
 	diff, err := git.Run(worktree, environment, "diff", "--cached", "--binary", base, "--", ".")
@@ -752,15 +802,20 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 	if git == nil {
 		git = OSGitRunner{}
 	}
-	head, err := git.Run(worktree, nil, "rev-parse", "HEAD")
+	repositoryRoot, err := git.Run(worktree, nil, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
-	refs, err := git.Run(worktree, nil, "for-each-ref", "--format=%(refname) %(objectname)")
+	root := strings.TrimSpace(string(repositoryRoot))
+	head, err := git.Run(root, nil, "rev-parse", "HEAD")
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
-	indexPath, err := git.Run(worktree, nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
+	refs, err := git.Run(root, nil, "for-each-ref", "--format=%(refname) %(objectname)")
+	if err != nil {
+		return repositorySnapshot{}, err
+	}
+	indexPath, err := git.Run(root, nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
@@ -768,7 +823,7 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
-	objectsPath, err := git.Run(worktree, nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+	objectsPath, err := git.Run(root, nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
@@ -786,15 +841,32 @@ func (runner *UnitRunner) snapshotRepository(worktree string) (repositorySnapsho
 		return repositorySnapshot{}, err
 	}
 	environment := []string{"GIT_INDEX_FILE=" + index, "GIT_OBJECT_DIRECTORY=" + objectDir, "GIT_ALTERNATE_OBJECT_DIRECTORIES=" + strings.TrimSpace(string(objectsPath))}
-	if _, err := git.Run(worktree, environment, "add", "-A", "--", "."); err != nil {
+	environment = append(environment, "GIT_OPTIONAL_LOCKS=0")
+	indexDigest := sha256.New()
+	for _, stream := range []struct {
+		label string
+		args  []string
+	}{
+		{"ls-files-v-stage", []string{"ls-files", "-v", "--stage", "-z", "--full-name", "--", "."}},
+		{"ls-files-t-stage", []string{"ls-files", "-t", "--stage", "-z", "--full-name", "--", "."}},
+		{"diff-index-ita-invisible", []string{"diff-index", "--cached", "--raw", "-z", "--ita-invisible-in-index", "HEAD", "--", "."}},
+		{"ls-files-resolve-undo", []string{"ls-files", "--resolve-undo", "-z", "--full-name", "--", "."}},
+	} {
+		output, err := git.Run(root, environment, stream.args...)
+		if err != nil {
+			return repositorySnapshot{}, err
+		}
+		_, _ = fmt.Fprintf(indexDigest, "%d:%s:%d:", len(stream.label), stream.label, len(output))
+		_, _ = indexDigest.Write(output)
+	}
+	if _, err := git.Run(root, environment, "add", "-A", "--sparse", "--", "."); err != nil {
 		return repositorySnapshot{}, err
 	}
-	tree, err := git.Run(worktree, environment, "diff", "--cached", "--raw", "HEAD", "--", ".")
+	tree, err := git.Run(root, environment, "diff", "--cached", "--raw", "HEAD", "--", ".")
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
-	indexDigest := sha256.Sum256(indexData)
-	return repositorySnapshot{Head: string(head), Refs: string(refs), Index: fmt.Sprintf("%x", indexDigest), Tree: string(tree)}, nil
+	return repositorySnapshot{Head: string(head), Refs: string(refs), Index: fmt.Sprintf("%x", indexDigest.Sum(nil)), Tree: string(tree)}, nil
 }
 
 func proofMayStart(round UnitRound, buildCount int) error {

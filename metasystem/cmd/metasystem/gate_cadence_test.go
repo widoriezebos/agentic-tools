@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -155,4 +156,101 @@ func TestCadenceRevalidationDoesNotBuildBeforeClaim(t *testing.T) {
 	if start < 0 || end <= start || strings.Contains(string(data[start:end]), "buildCandidateEngine(") {
 		t.Fatal("cadence pre-claim revalidation invokes the candidate-engine build")
 	}
+}
+
+func TestCadenceRevalidationRetainsCurrentWorkerPolicyAcrossRepreparation(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "source.txt"), []byte("current\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("testing.workers=4\n"+proofrun.AdmissionCapKey+"=2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wantWorkers := 4
+	if inherited, found := os.LookupEnv(proofrun.TestWorkersEnvironment); found && inherited != "" {
+		ceiling, err := strconv.Atoi(inherited)
+		if err != nil || ceiling < 1 {
+			t.Fatalf("inherited %s must be a positive integer, got %q", proofrun.TestWorkersEnvironment, inherited)
+		}
+		wantWorkers = min(wantWorkers, ceiling)
+	}
+	testingFixtureGit(t, root, "init", "-q", "-b", "main")
+	testingFixtureGit(t, root, "add", "source.txt", "metasystem.conf")
+	testingFixtureGit(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture")
+	tree, err := (gittree.Workspace{Dir: root}).HeadTree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	share := min(2, wantWorkers)
+	group := testpolicy.Group{ID: "section/deep", Kind: "section", Adapter: "command", CWD: ".", Inputs: []string{"source.txt"},
+		Obligations: []string{"cadence-deep"}, Platforms: []string{"any"}, TargetMS: 1,
+		Resources: testpolicy.GroupResources{Workers: &share}, Argv: []string{"sh", "-c", "printf launched > native-launched"}, Format: "exit-status"}
+	contract := testpolicy.Contract{SchemaVersion: 1, Groups: []testpolicy.Group{group}}
+	plan := testpolicy.Plan{Purpose: testpolicy.PurposeCadence, RequestedMode: testpolicy.ModeDeep, RequiredMode: testpolicy.ModeDeep,
+		ExecutedMode: testpolicy.ModeDeep, RequiredGroups: []string{group.ID}, SelectedGroups: []string{group.ID},
+		Stages: []testpolicy.Stage{{ID: "deep", Groups: []string{group.ID}}}}
+	digest := strings.Repeat("a", 64)
+	buildIdentity, engineDigest := strings.Repeat("b", 40), strings.Repeat("c", 64)
+	prepared := testingPreparation{Installation: root, ControlRoot: root, ProjectRoot: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+		BaseCommit: "HEAD", PolicyBaseCommit: "HEAD", CandidateTree: tree, EffectiveContract: contract, Plan: plan,
+		ContractDigest: digest, BaseContractDigest: digest, PolicyEngineDigest: digest, BehaviorPolicyDigest: digest, JudgeKey: "cadence-worker-policy",
+		Environment: os.Environ()}
+	resolved := prepared
+	if _, err := resolveTestingPreparationWorkerPolicy(&resolved); err != nil || resolved.Workers != wantWorkers || resolved.AdmissionMaximum != 2 {
+		t.Fatalf("resolved cadence policy workers=%d admission=%d err=%v", resolved.Workers, resolved.AdmissionMaximum, err)
+	}
+	request := testingRunRequest(resolved, "cadence-retained", "", "", engineDigest, buildIdentity)
+	identities, metadata, launches, err := proofrun.PrepareGroupExecutionIdentities(context.Background(), request)
+	if err != nil || launches != 0 {
+		t.Fatalf("prepare retained cadence metadata launches=%d err=%v", launches, err)
+	}
+	zero := 0
+	preparedGroup := metadata[group.ID]
+	result := proofrun.NewTestResult(request)
+	if result.WorkerPolicyVersion != proofrun.TestWorkerPolicyVersion || result.Workers != wantWorkers ||
+		result.AdmissionMaximum == nil || *result.AdmissionMaximum != 2 {
+		t.Fatalf("retained cadence policy=%+v", result)
+	}
+	result.Groups = []proofrun.GroupResult{{ID: group.ID, Kind: group.Kind, Obligations: group.Obligations,
+		IdentityVersion: proofrun.GroupExecutionIdentityVersion, ExecutionIdentity: identities[group.ID],
+		InputDigest: preparedGroup.InputDigest, InputManifest: []string{"source.txt"}, EnvironmentDigest: preparedGroup.EnvironmentDigest,
+		ToolIdentities: preparedGroup.ToolIdentities, ExecutableDigests: preparedGroup.ExecutableDigests, Argv: preparedGroup.Argv,
+		Expected: preparedGroup.Expected, Status: "passed", NativeLaunched: true, NativeExitStatus: &zero,
+		CollectionComplete: true, EndedAt: time.Now().UTC().Format(time.RFC3339Nano)}}
+	result.RecomputeDelivery()
+	attempt := proofrun.Attempt{SchemaVersion: proofrun.IdentityAttemptSchemaVersion, AttemptID: request.AttemptID,
+		StartedAt: time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano), Terminal: &proofrun.AttemptTerminal{Result: proofrun.TerminalSuccess},
+		PendingTestGroups: map[string]string{group.ID: identities[group.ID]}, TestResult: &result}
+	repreparations := 0
+	dependencies := cadenceRevalidationDependencies{
+		readAttempts: func(string) ([]proofrun.Attempt, error) { return []proofrun.Attempt{attempt}, nil },
+		buildIdentity: func(context.Context, gittree.Workspace, string, string, []string) (string, error) {
+			return buildIdentity, nil
+		},
+		retainedDigest: func(testingPreparation, []proofrun.Attempt, string, bool) (string, error) { return engineDigest, nil },
+		prepare: func(request testingSelectionRequest) (testingPreparation, error) {
+			repreparations++
+			if request.Tree != tree || request.Purpose != testpolicy.PurposeCadence || !request.CadencePreflight {
+				return testingPreparation{}, errors.New("unexpected cadence re-preparation request")
+			}
+			return prepared, nil
+		},
+	}
+
+	assertReused := func(name string, input testingPreparation, wantRepreparations int) {
+		t.Helper()
+		revalidation, err := revalidateCadenceWith(root, input, gaterun.CadenceTrunk{Commit: "HEAD", Tree: tree}, []string{group.ID}, dependencies)
+		if err != nil || len(revalidation.Groups) != 1 || revalidation.Groups[0].Status != "reused" ||
+			revalidation.Groups[0].ReuseAttempt != attempt.AttemptID || repreparations != wantRepreparations {
+			t.Fatalf("%s revalidation=%+v repreparations=%d err=%v", name, revalidation, repreparations, err)
+		}
+		if _, err := os.Stat(filepath.Join(root, "native-launched")); !os.IsNotExist(err) {
+			t.Fatalf("%s revalidation launched the retained native group: %v", name, err)
+		}
+	}
+	assertReused("same-tree", prepared, 0)
+	changed := prepared
+	changed.CandidateTree = strings.Repeat("d", 40)
+	assertReused("changed-tree", changed, 1)
 }

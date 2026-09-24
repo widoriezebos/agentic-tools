@@ -32,7 +32,8 @@ type TickConfig struct {
 	MaxRevivals int
 	// Now is set only by fixture-authorized command boundaries. A zero value
 	// keeps each tick operation on the wall clock.
-	Now time.Time
+	Now               time.Time
+	narrationLocation *time.Location
 }
 
 var tickHealthNow = time.Now
@@ -52,6 +53,13 @@ func (c TickConfig) now() time.Time {
 		return time.Now().UTC()
 	}
 	return c.Now.UTC()
+}
+
+func (c TickConfig) localNarrationLocation() *time.Location {
+	if c.narrationLocation != nil {
+		return c.narrationLocation
+	}
+	return time.Local
 }
 
 // TickResult is everything the calling verb needs to act and report.

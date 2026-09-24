@@ -146,7 +146,16 @@ make_identity_engine() { # output engine
 set -euo pipefail
 [[ -z ${METASYSTEM_RUNTIME_HOOK_CALL_LOG:-} ]] || printf '%s\n' "$*" >>"$METASYSTEM_RUNTIME_HOOK_CALL_LOG"
 if [[ ${1:-} == proc && ${2:-} == find-ancestor ]]; then
-  sleep "${RUNTIME_HOOK_DELAY:-0}"
+  if [[ -n ${RUNTIME_HOOK_RESOLVER_ENTERED:-} ]]; then
+    printf '%s\n' "$$" >"$RUNTIME_HOOK_RESOLVER_ENTERED"
+    resolver_started=$SECONDS
+    while [[ ! -e "${RUNTIME_HOOK_RESOLVER_RELEASE:?}" ]] &&
+        (( SECONDS - resolver_started < RUNTIME_HOOK_RESOLVER_HANG_CAP_SEC )); do
+      sleep 0.05
+    done
+    [[ -e "$RUNTIME_HOOK_RESOLVER_RELEASE" ]] \
+      || { echo "runtime hook resolver release never arrived" >&2; exit 70; }
+  fi
   printf '{"runtime":"%s","pid":1,"pidStartedAt":1}\n' "${RUNTIME_HOOK_IDENTITY_RUNTIME:?}"
   exit 0
 fi
@@ -301,23 +310,41 @@ TestUnhintedLocalDelegateSkipsBeforeBrainEffects() {
 }
 
 TestRuntimeHookGuardDelayStillEmitsOneStopVerdictWithinTimeout() {
-  local repo=$tmp/delayed engine before after output started elapsed
+  local repo=$tmp/delayed engine before after output hook_pid entered release deadline
   make_repo "$repo"
   seed_coordinator_state "$repo"
   before=$(state_snapshot "$repo")
   engine=$tmp/delayed-engine
   make_identity_engine "$engine"
   : >"$tmp/delayed-calls.log"
-  started=$SECONDS
-  output=$(printf '{"session_id":"equal-session","cwd":"%s"}\n' "$repo" | \
+  entered=$tmp/delayed-resolver.entered
+  release=$tmp/delayed-resolver.release
+  printf '{"session_id":"equal-session","cwd":"%s"}\n' "$repo" | \
     METASYSTEM_RUNTIME_HOOK_CALL_LOG="$tmp/delayed-calls.log" METASYSTEM_BIN="$engine" \
-    RUNTIME_HOOK_REAL_ENGINE="$ms" RUNTIME_HOOK_IDENTITY_RUNTIME=devin RUNTIME_HOOK_DELAY=2 \
-    bash "$repo/scripts/agents/supervision-hook.sh" claude stop)
-  elapsed=$((SECONDS - started))
-  [[ -z "$output" && "$elapsed" -lt 15 ]] \
-    || { echo "delayed runtime guard did not finish as one silent Stop result in budget (elapsed ${elapsed}s): $output" >&2; return 1; }
+    RUNTIME_HOOK_REAL_ENGINE="$ms" RUNTIME_HOOK_IDENTITY_RUNTIME=devin \
+    RUNTIME_HOOK_RESOLVER_ENTERED="$entered" RUNTIME_HOOK_RESOLVER_RELEASE="$release" \
+    RUNTIME_HOOK_RESOLVER_HANG_CAP_SEC="$fixture_cap" \
+    bash "$repo/scripts/agents/supervision-hook.sh" claude stop >"$tmp/delayed.out" &
+  hook_pid=$!
+  owned_pids+=("$hook_pid")
+  owned_paths+=("$repo/scripts/agents/supervision-hook.sh")
+  deadline=$((SECONDS + fixture_cap))
+  while [[ ! -s "$entered" ]] && kill -0 "$hook_pid" 2>/dev/null && (( SECONDS < deadline )); do
+    sleep "$METASYSTEM_FIXTURE_POLL_INTERVAL_SEC"
+  done
+  [[ -s "$entered" && ! -e "$release" ]] \
+    || { echo "delayed runtime guard did not publish resolver readiness" >&2; return 1; }
+  : >"$release"
+  wait_owned delayed-runtime-guard "$hook_pid" || return 1
+  owned_pids=()
+  owned_paths=()
+  output=$(<"$tmp/delayed.out")
+  [[ -z "$output" ]] \
+    || { echo "delayed runtime guard did not finish as one silent Stop result: $output" >&2; return 1; }
   after=$(state_snapshot "$repo")
   [[ "$after" == "$before" ]] || { echo "delayed guard changed coordinator or brain state" >&2; return 1; }
+  grep -Fq 'proc find-ancestor' "$tmp/delayed-calls.log" \
+    || { echo "delayed foreign-runtime guard skipped the registry selector" >&2; return 1; }
   assert_no_brain_effect_calls "$tmp/delayed-calls.log" "delayed foreign-runtime guard"
 }
 
@@ -345,11 +372,10 @@ make_provider_child() { # script path
 #!/usr/bin/env bash
 set -euo pipefail
 [[ -z ${HOOK_GATE:-} ]] || {
-  deadline=$((SECONDS + 30))
-  while [[ ! -e "$HOOK_GATE" ]]; do
-    (( SECONDS < deadline )) || { echo "provider child gate timed out" >&2; exit 1; }
-    sleep 0.05
-  done
+  IFS= read -r gate_event <"$HOOK_GATE" \
+    || { echo "provider child gate closed before release" >&2; exit 1; }
+  [[ "$gate_event" == release ]] \
+    || { echo "provider child gate published an invalid release" >&2; exit 1; }
 }
 cd "${HOOK_WORKSPACE:?}"
 for event in start receipt stop end; do
@@ -406,6 +432,8 @@ TestConcurrentRuntimeChildrenAndDetachedCustodyIsolation() {
   # custody identity. The gate holds it until that identity is published.
   child=$tmp/detached-provider-child
   gate=$tmp/detached.gate
+  mkfifo "$gate"
+  exec 7<>"$gate"
   make_provider_child "$child"
   METASYSTEM_BIN="$registry/bin/metasystem" \
     METASYSTEM_HOOK_DELEGATE_STATE_ROOT="$registry" \
@@ -419,7 +447,8 @@ TestConcurrentRuntimeChildrenAndDetachedCustodyIsolation() {
   owned_paths+=("$child")
   write_job_owner "$registry" job-detached "$pid"
   before=$(state_snapshot "$registry")
-  : >"$gate"
+  printf 'release\n' >&7
+  exec 7>&-
   wait_owned detached-child-custody "$pid"
   after=$(state_snapshot "$registry")
   [[ "$after" == "$before" ]] || { echo "detached child custody changed coordinator or brain state" >&2; return 1; }

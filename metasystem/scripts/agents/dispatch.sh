@@ -1107,12 +1107,12 @@ wait_for_job_legacy() { # job; mixed-version fallback
     status=$(json_field "$record" status 2>/dev/null || true)
     case "$status" in
       completed|failed|timeout|cancelled)
-        lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job" \
+        lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job" --purpose post-wait \
           || return 3
         case "$status" in completed) return 0 ;; failed) return 3 ;; timeout) return 4 ;; cancelled) return 8 ;; esac
         ;;
       pending|running)
-        if ! lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job"; then
+        if ! lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job" --purpose post-wait; then
           [[ -f "$record" ]] || return 5
           return 3
         fi
@@ -1140,7 +1140,7 @@ wait_for_job() { # job
   fi
   case "$wait_rc" in
     0|1|2|3)
-      lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job" \
+      lease_run_held "$current_claim_epoch" "$0" __reap-held --job "$job" --purpose post-wait \
         || return 3
       case "$wait_rc" in
         0) return 0 ;;
@@ -1232,7 +1232,7 @@ reap_one_locked() { # job
   # abandonment, the handshake window, reconciliation readiness, and budget
   # expiry. Budget expiry is the SAME decision code the supervision reaper
   # runs, so the two can never disagree about one record.
-  facts=$("$ms" job reap-facts --record "$record" --grace "$handshake_backstop_grace_sec") || return 1
+  facts=$("$ms" job reap-facts --root "$root" --record "$record" --grace "$handshake_backstop_grace_sec") || return 1
   pid=$(json_field "$record" pid 2>/dev/null || true)
   phase=$(json_field "$record" phase 2>/dev/null || true)
   # A cancellation that won before any process identity was published has no
@@ -3052,7 +3052,7 @@ close_chain() {
 # mission drain actually use. A kill-capable shell daemon mode must not come
 # back: the standing-reaper ruling denies shell reapers kill authority.
 reap_jobs() {
-	local job= brain_fence_rc=0
+	local job= purpose=public brain_fence_rc=0
 	brain_outcome=$(brain_fence_outcome reap) || brain_fence_rc=$?
 	if (( brain_fence_rc == 0 )); then
 		record_delegate_outcome_raw "$brain_outcome"
@@ -3063,6 +3063,7 @@ reap_jobs() {
   while (($#)); do
     case "$1" in
       --job) [[ $# -ge 2 ]] || { usage; exit 2; }; job=$2; shift 2 ;;
+      --purpose) [[ ${2:-} == post-wait ]] || { usage; exit 2; }; purpose=$2; shift 2 ;;
       *) usage; exit 2 ;;
     esac
   done
@@ -3076,7 +3077,12 @@ reap_jobs() {
     fi
     return
   fi
-  if [[ -n "$job" ]]; then reap_one "$job"; reap_chain_build_cache "$job"; else
+  if [[ -n "$job" ]]; then
+    reap_one "$job"
+    # A waited round still needs its terminal record reconciled, but the next
+    # round owns the same chain cache until an explicit reap or close cleans it.
+    [[ "$purpose" == post-wait ]] || reap_chain_build_cache "$job"
+  else
     mkdir -p "$jobs"
     # One failing reap must not starve the jobs after it in sort order
     # (script-orchestration-07): visit every record, then report the

@@ -15,6 +15,7 @@ import (
 // the honest label, pid reuse never owned, unreadable records surfacing.
 func TestRunGroupCustody(t *testing.T) {
 	repo := t.TempDir()
+	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
 	nonce := strings.Repeat("ab", 16)
 	writeRecord := func(id, status, custody string, pid, pgid int64, endedAt string) {
 		ended := "null"
@@ -31,10 +32,10 @@ func TestRunGroupCustody(t *testing.T) {
 		os.WriteFile(run.RecordPath(repo, id), []byte(record), 0o644)
 	}
 	writeRecord("wrapped-run", "running", "wrapped", 900, 900, "")
-	writeRecord("drain-run", "draining", "wrapped", 901, 901, time.Now().UTC().Format("2006-01-02T15:04:05Z"))
+	writeRecord("drain-run", "draining", "wrapped", 901, 901, now.Format("2006-01-02T15:04:05Z"))
 	// A drain whose wind-down expired owns NOTHING anymore.
 	writeRecord("expired-drain", "draining", "wrapped", 902, 902,
-		time.Now().UTC().Add(-30*time.Minute).Format("2006-01-02T15:04:05Z"))
+		now.Add(-30*time.Minute).Format("2006-01-02T15:04:05Z"))
 	os.WriteFile(filepath.Join(run.Dir(repo), "broken.json"), []byte("{nope"), 0o644)
 
 	processes := []Process{
@@ -45,7 +46,7 @@ func TestRunGroupCustody(t *testing.T) {
 		{Pid: 940, PGID: 941, Started: 9000, Argv: "reused pid", Alive: true},
 	}
 	var diagnostics []string
-	owners := loadRunOwners(repo, processes, &diagnostics)
+	owners := loadRunOwners(repo, processes, now, &diagnostics)
 	if len(owners) != 2 {
 		t.Fatalf("owners wrong: %+v", owners)
 	}

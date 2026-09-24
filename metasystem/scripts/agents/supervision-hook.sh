@@ -1277,12 +1277,6 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     exit 0
   fi
   deadline_started=$SECONDS
-  METASYSTEM_STOP_DEADLINE_PARENT=$$ METASYSTEM_STOP_DEADLINE_STARTED=$deadline_started_epoch \
-    bash "${BASH_SOURCE[0]}" "$runtime" "$event" \
-    <"$deadline_payload" >"$deadline_stdout" 2>"$deadline_stderr" &
-  deadline_worker=$!
-  deadline_expires=$((deadline_started + deadline_worker_sec))
-
   deadline_installation=
   deadline_canonical=
   deadline_engine=
@@ -1293,6 +1287,39 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
       deadline_engine=
     fi
   fi
+
+  deadline_boot_id=
+  deadline_boot_origin_ns=
+  deadline_boot_deadline_ns=
+  if [[ -n "$deadline_engine" ]]; then
+    deadline_boot_reading=$("$deadline_engine" util bootclock 2>/dev/null) || deadline_boot_reading=
+    deadline_boot_extra=
+    read -r deadline_boot_id deadline_boot_origin_ns deadline_boot_extra <<<"$deadline_boot_reading"
+    if [[ -n "$deadline_boot_id" && "$deadline_boot_origin_ns" =~ ^[0-9]+$ &&
+          -z "$deadline_boot_extra" ]]; then
+      deadline_boot_origin_ns=$((10#$deadline_boot_origin_ns))
+      deadline_setup_elapsed=$((SECONDS - deadline_started))
+      (( deadline_setup_elapsed >= 0 )) || deadline_setup_elapsed=0
+      deadline_remaining_sec=$((deadline_worker_sec - deadline_setup_elapsed))
+      (( deadline_remaining_sec >= 0 )) || deadline_remaining_sec=0
+      deadline_boot_deadline_ns=$((deadline_boot_origin_ns + deadline_remaining_sec * 1000000000))
+      deadline_boot_origin_ns=$((deadline_boot_deadline_ns - deadline_worker_sec * 1000000000))
+      if (( deadline_boot_deadline_ns <= deadline_boot_origin_ns )); then
+        deadline_boot_id=
+        deadline_boot_origin_ns=
+        deadline_boot_deadline_ns=
+      fi
+    else
+      deadline_boot_id=
+      deadline_boot_origin_ns=
+      deadline_boot_deadline_ns=
+    fi
+  fi
+  METASYSTEM_STOP_DEADLINE_PARENT=$$ METASYSTEM_STOP_DEADLINE_STARTED=$deadline_started_epoch \
+    bash "${BASH_SOURCE[0]}" "$runtime" "$event" \
+    <"$deadline_payload" >"$deadline_stdout" 2>"$deadline_stderr" &
+  deadline_worker=$!
+  deadline_expires=$((deadline_started + deadline_worker_sec))
 
   # Resolve record coordinates alongside the worker, never ahead of it. The
   # session and root use separate files so either answer can be absent without
@@ -1379,26 +1406,70 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     deadline_coordinates_from_engine=true
   }
   deadline_stop_resolver() {
-    local resolver_command
+    local resolver_cleanup resolver_cleanup_rc resolver_cleanup_state
     [[ -n "$deadline_resolver" ]] || return 0
-    if kill -0 "$deadline_resolver" 2>/dev/null; then
-      resolver_command=$(ps -p "$deadline_resolver" -o command= 2>/dev/null || true)
-      if [[ "$resolver_command" == *"${BASH_SOURCE[0]}"* || "$resolver_command" == *supervision-hook.sh* ]]; then
-        kill -KILL "$deadline_resolver" 2>/dev/null || true
-      fi
+    if ! kill -0 "$deadline_resolver" 2>/dev/null; then
+      wait "$deadline_resolver" 2>/dev/null || true
+      deadline_resolver=
+      return 0
     fi
-    wait "$deadline_resolver" 2>/dev/null || true
+    resolver_cleanup=$deadline_dir/resolver-cleanup.json
+    resolver_cleanup_rc=0
+    "$deadline_engine" hooks stop-deadline-cleanup --pid "$deadline_resolver" \
+      --term-grace-ms 0 >"$resolver_cleanup" 2>/dev/null || resolver_cleanup_rc=$?
+    resolver_cleanup_state=
+    if (( resolver_cleanup_rc == 0 )); then
+      resolver_cleanup_state=$("$deadline_engine" json get --file "$resolver_cleanup" --field state 2>/dev/null) \
+        || resolver_cleanup_rc=$?
+    fi
+    case "$resolver_cleanup_state" in
+      worker-gone | term-sent)
+        wait "$deadline_resolver" 2>/dev/null || true
+        ;;
+      worker-unverifiable)
+        printf 'stop deadline: resolver %s cleanup refused; custody remains unverified\n' \
+          "$deadline_resolver" >&2
+        ;;
+      kill-sent)
+        printf 'stop deadline: resolver %s cleanup sent KILL without terminal acknowledgement; not waiting\n' \
+          "$deadline_resolver" >&2
+        ;;
+      *)
+        printf 'stop deadline: resolver %s cleanup failed operationally (status %s); not waiting\n' \
+          "$deadline_resolver" "$resolver_cleanup_rc" >&2
+        ;;
+    esac
+    rm -f "$resolver_cleanup"
     deadline_resolver=
   }
   deadline_running() {
     kill -0 "$deadline_worker" 2>/dev/null
   }
-  while deadline_running && (( SECONDS < deadline_expires )); do
-    deadline_capture_engine_coordinates
-    sleep 0.05
-  done
+  deadline_wait_result=$deadline_dir/deadline-wait.json
+  deadline_wait_state=
+  if [[ -n "$deadline_engine" && -n "$deadline_boot_id" ]] &&
+      "$deadline_engine" hooks stop-deadline-wait --root "$deadline_installation" \
+        --pid "$deadline_worker" --timeout-sec "$deadline_worker_sec" \
+        --boot-id "$deadline_boot_id" --origin-boot-ns "$deadline_boot_origin_ns" \
+        --deadline-boot-ns "$deadline_boot_deadline_ns" \
+        >"$deadline_wait_result" 2>>"$deadline_stderr"; then
+    deadline_wait_state=$("$deadline_engine" json get --file "$deadline_wait_result" --field state 2>/dev/null || true)
+  fi
+  if [[ "$deadline_wait_state" != worker-completed && "$deadline_wait_state" != deadline-reached ]]; then
+    # With no executable engine there is no typed owner to call. Retain the
+    # provider's original outer bound, but never let this fallback authorize a
+    # signal; exact cleanup below requires the Go owner's recorded identity.
+    while deadline_running && (( SECONDS < deadline_expires )); do
+      sleep 0.05
+    done
+    if deadline_running; then
+      deadline_wait_state=deadline-reached
+    else
+      deadline_wait_state=worker-completed
+    fi
+  fi
   deadline_capture_engine_coordinates
-  if ! deadline_running; then
+  if [[ "$deadline_wait_state" == worker-completed ]]; then
     deadline_rc=0
     wait "$deadline_worker" || deadline_rc=$?
     command cat "$deadline_stderr" >&2 || true
@@ -1414,7 +1485,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     if (( deadline_rc == 0 )) && [[ "$deadline_raw" == "$internal_skip_result" ]]; then
       deadline_stop_resolver
       deadline_capture_engine_coordinates
-      rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+      rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" "$deadline_wait_result" \
         "$deadline_resolution_session" "$deadline_resolution_root" "$deadline_resolution_ready" || true
       rmdir "$deadline_dir" 2>/dev/null || true
       exit 0
@@ -1475,7 +1546,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
       deadline_capture_engine_coordinates
       command cat "$deadline_stdout" || true
     fi
-    rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+    rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" "$deadline_wait_result" \
       "$deadline_resolution_session" "$deadline_resolution_root" "$deadline_resolution_ready" || true
     rmdir "$deadline_dir" 2>/dev/null || true
     exit 0
@@ -1531,44 +1602,43 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   deadline_capture_engine_coordinates
   deadline_worker_signalled=false
   deadline_worker_waited=false
-  deadline_command=$(ps -p "$deadline_worker" -o command= 2>/dev/null || true)
-  if [[ "$deadline_command" == *"${BASH_SOURCE[0]}"* || "$deadline_command" == *supervision-hook.sh* ]]; then
-    if kill -TERM "$deadline_worker" 2>/dev/null; then
-      deadline_worker_signalled=true
-    fi
+  deadline_cleanup_result=$deadline_dir/deadline-cleanup.json
+  deadline_cleanup_state=worker-unverifiable
+  if [[ -n "$deadline_engine" && -s "$deadline_wait_result" ]] &&
+      "$deadline_engine" hooks stop-deadline-cleanup --wait-result "$deadline_wait_result" \
+        --term-grace-ms 200 >"$deadline_cleanup_result" 2>>"$deadline_stderr"; then
+    deadline_cleanup_state=$("$deadline_engine" json get --file "$deadline_cleanup_result" --field state 2>/dev/null || true)
+    deadline_cleanup_term=$("$deadline_engine" json get --file "$deadline_cleanup_result" --field termSent 2>/dev/null || true)
+    [[ "$deadline_cleanup_term" != true ]] || deadline_worker_signalled=true
   fi
-  for _deadline_stop_attempt in {1..10}; do
-    deadline_running || break
-    sleep 0.02
-  done
-  if deadline_running; then
-    deadline_command=$(ps -p "$deadline_worker" -o command= 2>/dev/null || true)
-    if [[ "$deadline_command" == *"${BASH_SOURCE[0]}"* || "$deadline_command" == *supervision-hook.sh* ]]; then
-      if kill -KILL "$deadline_worker" 2>/dev/null; then
-        deadline_worker_signalled=true
+  case "$deadline_cleanup_state" in
+    term-sent | worker-gone)
+      wait "$deadline_worker" 2>/dev/null || true
+      deadline_worker_waited=true
+      if [[ "$deadline_worker_signalled" == false ]]; then
+        command cat "$deadline_stderr" >&2 || true
+        deadline_check_published
+        if [[ "$deadline_published" == true ]]; then
+          command cat "$deadline_stdout" || true
+          rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+            "$deadline_wait_result" "$deadline_cleanup_result" \
+            "$deadline_resolution_session" "$deadline_resolution_root" "$deadline_resolution_ready" || true
+          rmdir "$deadline_dir" 2>/dev/null || true
+          exit 0
+        fi
       fi
-    fi
-  fi
-  if [[ "$deadline_worker_signalled" == true ]] || ! deadline_running; then
-    wait "$deadline_worker" 2>/dev/null || true
-    deadline_worker_waited=true
-    if [[ "$deadline_worker_signalled" == false ]]; then
-      command cat "$deadline_stderr" >&2 || true
-      deadline_check_published
-      if [[ "$deadline_published" == true ]]; then
-        command cat "$deadline_stdout" || true
-        rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
-          "$deadline_resolution_session" "$deadline_resolution_root" "$deadline_resolution_ready" || true
-        rmdir "$deadline_dir" 2>/dev/null || true
-        exit 0
-      fi
-    fi
-  else
-    printf 'stop deadline: worker %s left running, command line unverifiable\n' "$deadline_worker" >&2
-  fi
-  deadline_now_epoch=$(date -u +%s)
-  deadline_elapsed_sec=$((deadline_now_epoch - deadline_started_epoch))
-  (( deadline_elapsed_sec >= 0 )) || deadline_elapsed_sec=0
+      ;;
+    kill-sent)
+      printf 'stop deadline: worker %s cleanup sent KILL without terminal acknowledgement; custody retained; not waiting\n' \
+        "$deadline_worker" >&2
+      ;;
+    *)
+      printf 'stop deadline: worker %s left running, command line unverifiable\n' "$deadline_worker" >&2
+      ;;
+  esac
+	deadline_now_epoch=$(date -u +%s)
+	deadline_elapsed_sec=$((deadline_now_epoch - deadline_started_epoch))
+	(( deadline_elapsed_sec >= 0 )) || deadline_elapsed_sec=0
   if [[ -n "${deadline_repo:-}" && -n "$deadline_engine" && -x "$deadline_engine" ]]; then
     "$deadline_engine" steward hook-expire --repo "$deadline_repo" \
       --elapsed-sec "$deadline_elapsed_sec" >/dev/null 2>&1 || true
@@ -1577,6 +1647,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
     command cat "$deadline_stdout" || true
     if [[ "$deadline_worker_waited" == true ]]; then
       rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+        "$deadline_wait_result" "$deadline_cleanup_result" \
         "$deadline_resolution_session" "$deadline_resolution_root" "$deadline_resolution_ready" || true
       rmdir "$deadline_dir" 2>/dev/null || true
     fi
@@ -1617,6 +1688,7 @@ if [[ "$event" == stop && "${METASYSTEM_STOP_DEADLINE_PARENT:-}" != "$PPID" ]]; 
   fi
   if [[ "$deadline_worker_waited" == true ]]; then
     rm -f "$deadline_stdout" "$deadline_stderr" "$deadline_payload" \
+      "$deadline_wait_result" "$deadline_cleanup_result" \
       "$deadline_resolution_session" "$deadline_resolution_root" "$deadline_resolution_ready" || true
     rmdir "$deadline_dir" 2>/dev/null || true
   fi

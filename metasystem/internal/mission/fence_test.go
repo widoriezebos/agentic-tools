@@ -3,6 +3,7 @@ package mission
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -28,6 +29,22 @@ func withFixedClock(t *testing.T) {
 	old := clock
 	clock = func() time.Time { return fixedNow }
 	t.Cleanup(func() { clock = old })
+}
+
+func missionFenceLockHeld(lockPath string) (bool, error) {
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if err == unix.EWOULDBLOCK || err == unix.EAGAIN {
+			return true, nil
+		}
+		return false, err
+	}
+	_ = unix.Flock(int(file.Fd()), unix.LOCK_UN)
+	return false, nil
 }
 
 const fenceContract = "```mission\n" +
@@ -100,6 +117,74 @@ func TestAuthorizeCapUsesPairCap(t *testing.T) {
 	fences, _ := readJSONObjectFile(filepath.Join(missionDir(repo, mission), "fences.json"))
 	if _, ok := reservationsMap(fences)["job-1"]; !ok {
 		t.Fatal("the job reservation should be recorded")
+	}
+}
+
+func TestFenceOperationsSampleClockWhileHoldingMissionLock(t *testing.T) {
+	t.Parallel()
+
+	const childMarker = "METASYSTEM_MISSION_CLOCK_LOCK_WITNESS_CHILD"
+	if os.Getenv(childMarker) != "1" {
+		command := exec.Command(os.Args[0], "-test.run=^TestFenceOperationsSampleClockWhileHoldingMissionLock$", "-test.count=1")
+		command.Env = append(os.Environ(), childMarker+"=1")
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("run private clock witness: %v\n%s", err, output)
+		}
+		return
+	}
+
+	for _, operation := range []string{"check", "cycle", "authorize", "release"} {
+		t.Run(operation, func(t *testing.T) {
+			repo, mission := fenceEnv(t)
+			if operation == "release" {
+				if _, err := AuthorizeCap(repo, mission, "job-release", "codex", "gpt-5-6-sol", "", nil); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			_, _, lockPath := fencePaths(repo, mission)
+			old := clock
+			var samples int
+			var sampledWithoutLock bool
+			var sampleErr error
+			clock = func() time.Time {
+				samples++
+				held, err := missionFenceLockHeld(lockPath)
+				if err != nil && sampleErr == nil {
+					sampleErr = err
+				}
+				if !held {
+					sampledWithoutLock = true
+				}
+				return fixedNow
+			}
+			t.Cleanup(func() { clock = old })
+
+			var err error
+			switch operation {
+			case "check":
+				err = CheckOrReserve(repo, mission, "job-check", 1, true)
+			case "cycle":
+				err = ReserveCycle(repo, mission)
+			case "authorize":
+				_, err = AuthorizeCap(repo, mission, "job-authorize", "codex", "gpt-5-6-sol", "", nil)
+			case "release":
+				err = ReleaseJob(repo, mission, "job-release")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if sampleErr != nil {
+				t.Fatalf("inspect mission lock during clock sample: %v", sampleErr)
+			}
+			if samples == 0 {
+				t.Fatal("mission fence operation did not sample its clock")
+			}
+			if sampledWithoutLock {
+				t.Fatal("mission fence operation sampled its clock before acquiring the mission lock")
+			}
+		})
 	}
 }
 

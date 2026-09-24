@@ -14,19 +14,17 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)
 ms="${METASYSTEM_BIN:-$root/bin/metasystem}"
 
 wait_for_start_gate() {
-  local gate=${METASYSTEM_HOST_START_GATE:-} cap=${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10} started=$SECONDS
-  local poll_ms=${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20} poll_sleep
+  local gate=${METASYSTEM_HOST_START_GATE:-} cap=${METASYSTEM_HOST_START_GATE_TIMEOUT_SEC:-10}
+  local poll_ms=${METASYSTEM_HANDSHAKE_POLL_INTERVAL_MS:-20} gate_rc=0
   [[ -z "$gate" ]] && return 0
   [[ "$cap" =~ ^[1-9][0-9]*$ ]] || { echo "$host_runtime host start-gate timeout is invalid" >&2; return 3; }
   [[ "$poll_ms" =~ ^[1-9][0-9]*$ ]] || { echo "$host_runtime host handshake poll interval is invalid" >&2; return 3; }
-  printf -v poll_sleep '%d.%03d' "$((poll_ms / 1000))" "$((poll_ms % 1000))"
-  while [[ ! -e "$gate" ]]; do
-    if (( SECONDS - started >= cap )); then
-      echo "$host_runtime host start gate was not released within ${cap}s" >&2
-      return 3
-    fi
-    sleep "$poll_sleep"
-  done
+  "$ms" adapter wait-start-gate --root "$root" --path "$gate" --timeout-sec "$cap" --poll-ms "$poll_ms" || gate_rc=$?
+  (( gate_rc == 0 )) && return 0
+  if (( gate_rc == 3 )); then
+    echo "$host_runtime host start gate was not released within ${cap}s" >&2
+  fi
+  return 3
 }
 
 host_parse_start_turn() { # "$@" — sets the six start-turn variables

@@ -103,6 +103,10 @@ func gitOutput(repo string, args ...string) (string, error) {
 // error, for the checks that treat a nonzero status as an answer rather
 // than a failure.
 func gitTry(repo string, args ...string) (string, int) {
+	return gitTryWithRunner(repo, boundedexec.Run, args...)
+}
+
+func gitTryWithRunner(repo string, run func(*exec.Cmd, boundedexec.Bound, string) error, args ...string) (string, int) {
 	cmd := exec.Command("git", contractGitArgs(repo, args)...)
 	cmd.Env = gittree.ScrubbedEnviron()
 	var stdout strings.Builder
@@ -110,7 +114,7 @@ func gitTry(repo string, args ...string) (string, int) {
 	// Bounded like every other external call; a timeout is a failure
 	// answer, not an exit code.
 	limit := boundedexec.Timeout(filepath.Join(repo, "metasystem.conf"), boundedexec.Local)
-	err := boundedexec.Run(cmd, limit, "git "+strings.Join(args, " "))
+	err := run(cmd, limit, "git "+strings.Join(args, " "))
 	if err == nil {
 		return stdout.String(), 0
 	}

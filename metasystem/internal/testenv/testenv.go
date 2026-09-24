@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"go/build"
 	"io"
 	"os"
 	"os/exec"
@@ -33,6 +34,8 @@ const registryHomePrefix = "metasystem-test-registry-"
 const registryOwnerFile = ".owner"
 
 const registryNonceSize = 32
+
+const processNamespacePrefix = "metasystem-test-process-"
 
 const (
 	fixtureCapScaleEnv      = "METASYSTEM_FIXTURE_CAP_SCALE_MILLI"
@@ -213,13 +216,25 @@ func Main(m *testing.M, declarations ...Declaration) (code int) {
 			}
 		}
 	}()
-	fixtureCustodian, fixtureCustodianRecords, err = startFixtureCustodian(func() *exec.Cmd { return exec.Command(os.Args[0]) }, os.Getenv(supervisionRegistryHome))
+	fixtureCustodian, fixtureCustodianRecords, err = startFixtureCustodian(fixtureCustodianCommand, os.Getenv(supervisionRegistryHome))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "start fixture custodian: %v\n", err)
 		return 2
 	}
 	code = exitScan(m.Run(), registeredFixtureKeys(), identity.FixtureSurvivors, identity.KernelProber{}, syscall.Kill, os.Stderr)
 	return code
+}
+
+func fixtureCustodianCommand() *exec.Cmd {
+	command := exec.Command(os.Args[0])
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		if name != "GOTELEMETRY" {
+			command.Env = append(command.Env, entry)
+		}
+	}
+	command.Env = append(command.Env, "GOTELEMETRY=off")
+	return command
 }
 
 type fixtureScanFunc func(identity.FixtureKey) ([]identity.FixtureSurvivor, error)
@@ -329,7 +344,12 @@ func startFixtureCustodian(build func() *exec.Cmd, registry string) (identity.Re
 		return identity.Ref{}, "", err
 	}
 	command := build()
-	for _, entry := range os.Environ() {
+	environment := command.Env
+	if environment == nil {
+		environment = os.Environ()
+	}
+	command.Env = nil
+	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
 		if name != identity.FixtureOwnerEnv && !strings.HasPrefix(name, identity.FixtureCustodianEnv) {
 			command.Env = append(command.Env, entry)
@@ -428,8 +448,13 @@ func prepare(declarations []Declaration) (func() error, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create registry home: %w", err)
 	}
-	fail := func(err error) (func() error, error) {
+	namespace, err := createProcessNamespace(os.MkdirTemp, registry.path)
+	if err != nil {
 		_ = registry.cleanup()
+		return nil, fmt.Errorf("create process namespace: %w", err)
+	}
+	fail := func(err error) (func() error, error) {
+		_ = errors.Join(namespace.cleanup(), registry.cleanup())
 		return nil, err
 	}
 
@@ -457,7 +482,105 @@ func prepare(declarations []Declaration) (func() error, error) {
 	if err := os.Setenv(supervisionRegistryHome, registry.path); err != nil {
 		return fail(fmt.Errorf("pin registry home: %w", err))
 	}
-	return registry.cleanup, nil
+	return func() error {
+		return errors.Join(namespace.cleanup(), registry.cleanup())
+	}, nil
+}
+
+type environmentValue struct {
+	value   string
+	present bool
+}
+
+type processNamespace struct {
+	root     string
+	previous map[string]environmentValue
+}
+
+func createProcessNamespace(mkdirTemp func(string, string) (string, error), rootDirectory string) (*processNamespace, error) {
+	shared := sharedGoCacheEnvironment()
+	root, err := mkdirTemp(rootDirectory, processNamespacePrefix)
+	if err != nil {
+		return nil, err
+	}
+	namespace := &processNamespace{root: root, previous: make(map[string]environmentValue)}
+	fail := func(err error) (*processNamespace, error) {
+		_ = namespace.cleanup()
+		return nil, err
+	}
+	directories := map[string]string{
+		"HOME":            filepath.Join(root, "home"),
+		"TMPDIR":          filepath.Join(root, "tmp"),
+		"TMP":             filepath.Join(root, "tmp"),
+		"TEMP":            filepath.Join(root, "tmp"),
+		"GOTMPDIR":        filepath.Join(root, "tmp"),
+		"XDG_CACHE_HOME":  filepath.Join(root, "xdg", "cache"),
+		"XDG_CONFIG_HOME": filepath.Join(root, "xdg", "config"),
+		"XDG_DATA_HOME":   filepath.Join(root, "xdg", "data"),
+		"XDG_RUNTIME_DIR": filepath.Join(root, "xdg", "runtime"),
+		"XDG_STATE_HOME":  filepath.Join(root, "xdg", "state"),
+	}
+	for _, directory := range directories {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			return fail(err)
+		}
+	}
+	values := make(map[string]string, len(directories)+len(shared))
+	for name, value := range directories {
+		values[name] = value
+	}
+	for name, value := range shared {
+		values[name] = value
+	}
+	for name, value := range values {
+		previous, present := os.LookupEnv(name)
+		namespace.previous[name] = environmentValue{value: previous, present: present}
+		if err := os.Setenv(name, value); err != nil {
+			return fail(fmt.Errorf("set %s: %w", name, err))
+		}
+	}
+	return namespace, nil
+}
+
+func sharedGoCacheEnvironment() map[string]string {
+	shared := make(map[string]string)
+	if os.Getenv("GOCACHE") == "" {
+		if cache, err := os.UserCacheDir(); err == nil && filepath.IsAbs(cache) {
+			shared["GOCACHE"] = filepath.Join(cache, "go-build")
+		}
+	}
+	gopath := os.Getenv("GOPATH")
+	if gopath == "" {
+		gopath = build.Default.GOPATH
+		if gopath != "" {
+			shared["GOPATH"] = gopath
+		}
+	}
+	if os.Getenv("GOMODCACHE") == "" {
+		if first := strings.Split(gopath, string(os.PathListSeparator))[0]; filepath.IsAbs(first) {
+			shared["GOMODCACHE"] = filepath.Join(first, "pkg", "mod")
+		}
+	}
+	return shared
+}
+
+func (namespace *processNamespace) cleanup() error {
+	if namespace == nil {
+		return nil
+	}
+	var errs []error
+	for name, previous := range namespace.previous {
+		if previous.present {
+			errs = append(errs, os.Setenv(name, previous.value))
+		} else {
+			errs = append(errs, os.Unsetenv(name))
+		}
+	}
+	if namespace.root != "" {
+		errs = append(errs, os.RemoveAll(namespace.root))
+		namespace.root = ""
+	}
+	return errors.Join(errs...)
 }
 
 type registryHomeLease struct {

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestStopVerdictWaitingLinesFromGateOnly(t *testing.T) {
@@ -101,12 +103,8 @@ func delegateRoot(t *testing.T) string {
 // carries our (signature-matched or not) command.
 func childPid(t *testing.T) int64 {
 	t.Helper()
-	cmd := exec.Command("/bin/sleep", "120")
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("spawn child: %v", err)
-	}
-	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	return int64(cmd.Process.Pid)
+	held := testutil.StartHeldProcess(t, exec.Command("/bin/sh", "-c", "printf x >&3; IFS= read -r _ || :"))
+	return int64(held.Command.Process.Pid)
 }
 
 func writeLedger(t *testing.T, root, body string) {
@@ -299,11 +297,16 @@ func TestGoalCommandClockOverrideIsFixtureOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", "not-a-time")
+	t.Setenv("METASYSTEM_GOAL_BOOT_ID", "hostile-boot")
+	t.Setenv("METASYSTEM_GOAL_BOOT_NANOS", "not-a-duration")
 	before := time.Now().UTC()
 	observed, err := goalCommandNow(production)
 	after := time.Now().UTC()
 	if err != nil || observed.Before(before) || observed.After(after) {
 		t.Fatalf("a production root must ignore the fixture clock completely: observed=%s err=%v", observed, err)
+	}
+	if bootID, elapsed, err := goalCommandBootClock(production); err != nil || bootID == "" || elapsed < 0 || bootID == "hostile-boot" {
+		t.Fatalf("a production root accepted the fixture boot clock: boot=%q elapsed=%s err=%v", bootID, elapsed, err)
 	}
 
 	fixture := t.TempDir()
@@ -311,12 +314,23 @@ func TestGoalCommandClockOverrideIsFixtureOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-28T09:45:00Z")
+	t.Setenv("METASYSTEM_GOAL_BOOT_ID", "fixture-boot")
+	t.Setenv("METASYSTEM_GOAL_BOOT_NANOS", strconv.FormatInt((3*time.Hour).Nanoseconds(), 10))
 	observed, err = goalCommandNow(fixture)
 	if err != nil || observed.Format(time.RFC3339) != "2026-08-28T09:45:00Z" {
 		t.Fatalf("a fake root must receive its explicit fixture instant: observed=%s err=%v", observed, err)
+	}
+	if bootID, elapsed, err := goalCommandBootClock(fixture); err != nil || bootID != "fixture-boot" || elapsed != 3*time.Hour {
+		t.Fatalf("a fake root did not receive its indivisible boot clock: boot=%q elapsed=%s err=%v", bootID, elapsed, err)
 	}
 	t.Setenv("METASYSTEM_GOAL_NOW", "not-a-time")
 	if _, err := goalCommandNow(fixture); err == nil {
 		t.Fatal("a malformed clock fixture must fail loudly in a fake root")
 	}
+	t.Setenv("METASYSTEM_GOAL_NOW", "2026-08-28T09:45:00Z")
+	t.Setenv("METASYSTEM_GOAL_BOOT_NANOS", "")
+	if _, _, err := goalCommandBootClock(fixture); err == nil {
+		t.Fatal("a partial boot-clock fixture must fail loudly in a fake root")
+	}
+	t.Run("stop proof cancellation keeps the frozen instant fixture-only", testStopProofCancelCommandKeepsFrozenInstantFixtureOnly)
 }

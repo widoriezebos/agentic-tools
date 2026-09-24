@@ -752,7 +752,7 @@ exec "${CLBM_REAL_GIT:-/usr/bin/git}" "$@"
 	if err := os.Chmod(filepath.Join(wrapperDir, "git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	fixtureEnvironment := receiptCanaryEnvironment()
+	fixtureEnvironment := receiptCanaryEnvironmentForRoot(t, root)
 	for index, entry := range fixtureEnvironment {
 		if strings.HasPrefix(entry, "PATH=") {
 			fixtureEnvironment[index] = "PATH=" + wrapperDir + string(os.PathListSeparator) + strings.TrimPrefix(entry, "PATH=")
@@ -1075,6 +1075,164 @@ func TestLandingTestReceiptRefusesPostCommandTreeDrift(t *testing.T) {
 	}
 }
 
+func TestLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
+	if os.Getenv("GO_WANT_LANDING_RECEIPT_DEADLINE_CHILD") == "1" {
+		testLandingTestReceiptPublicSemanticDeadlineBoundaries(t)
+		return
+	}
+	t.Parallel()
+	command := exec.Command(os.Args[0], "-test.run=^TestLandingTestReceiptPublicSemanticDeadlineBoundaries$", "-test.v")
+	command.Env = append(receiptCanaryEnvironmentBase(os.Environ()), "GO_WANT_LANDING_RECEIPT_DEADLINE_CHILD=1")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("owned public deadline fixture: %v\n%s", err, output)
+	}
+	if !bytes.Contains(output, []byte("--- PASS: TestLandingTestReceiptPublicSemanticDeadlineBoundaries")) || bytes.Contains(output, []byte("--- SKIP:")) {
+		t.Fatalf("owned public deadline fixture did not report a real pass:\n%s", output)
+	}
+}
+
+func testLandingTestReceiptPublicSemanticDeadlineBoundaries(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		advance       time.Duration
+		cancelParent  bool
+		wantLaunches  int
+		wantExit      int
+		wantReason    string
+		refusesExpiry bool
+	}{
+		{name: "deadline-minus-one-nanosecond", advance: -time.Nanosecond, wantLaunches: 1},
+		{name: "exact-deadline", wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time", refusesExpiry: true},
+		{name: "after-deadline", advance: time.Nanosecond, wantExit: proofrun.ExitAdmissionRefused, wantReason: "has passed at semantic time", refusesExpiry: true},
+		{name: "outer-cancellation", advance: -time.Second, cancelParent: true, wantExit: proofrun.ExitAdmissionRefused, wantReason: context.Canceled.Error()},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			startedAt := time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)
+			t.Setenv(goalNowEnvironment, startedAt.Format(time.RFC3339Nano))
+			root, _ := proofExtensionGoalFixtureAt(t, startedAt)
+			root, err := filepath.EvalSymlinks(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			confPath := filepath.Join(root, "metasystem.conf")
+			configuration, err := os.ReadFile(confPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			configuration = bytes.Replace(configuration,
+				[]byte(proofrun.AdmissionCapKey+"=4"), []byte(proofrun.AdmissionCapKey+"=1"), 1)
+			if !bytes.Contains(configuration, []byte(proofrun.AdmissionCapKey+"=1")) {
+				t.Fatal("public deadline fixture did not narrow host capacity to one")
+			}
+			if err := os.WriteFile(confPath, configuration, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			writeReceiptFixture(t, root, ".gitignore", "artifacts/\n")
+			runReceiptGit(t, root, "add", "metasystem.conf", ".gitignore")
+			runReceiptGit(t, root, "commit", "-qm", "cap-one public deadline fixture")
+			runReceiptGit(t, root, "update-ref", goal.LocalLedgerBranch, "HEAD")
+			runReceiptGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+			announceProofFixtureHolder(t, root)
+
+			admissionDir := filepath.Join(t.TempDir(), "host-admission")
+			t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
+			t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
+			holder, err := proofrun.AcquireHostResources(context.Background(), root, confPath, "heavy", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = holder.Close() })
+
+			tree := runReceiptGit(t, root, "write-tree")
+			launchCount := filepath.Join(t.TempDir(), "native-launches")
+			t.Setenv("LANDING_DEADLINE_LAUNCH_COUNT", launchCount)
+			resultPath := filepath.Join(t.TempDir(), "launch-result.json")
+			semanticNow := startedAt
+			deadline := startedAt.Add(time.Minute)
+			parent, cancelParent := context.WithCancel(context.Background())
+			defer cancelParent()
+			observedWait := 0
+			parent = proofrun.WithHostResourceWaitObserver(parent, func() {
+				observedWait++
+				semanticNow = deadline.Add(testCase.advance)
+				if testCase.cancelParent {
+					cancelParent()
+				}
+				_ = holder.Close()
+			})
+			resolveClock := func(requestRoot string) (func() time.Time, bool, error) {
+				if requestRoot != root {
+					return nil, false, fmt.Errorf("clock resolver received root %q, want %q", requestRoot, root)
+				}
+				return func() time.Time { return semanticNow }, true, nil
+			}
+			args := []string{"--root", root, "--tree", tree,
+				"--command", "printf 'launch\\n' >> " + strconv.Quote(launchCount),
+				"--goal", "standing-validation", "--cap-min", "1", "--result", resultPath}
+			code, _, problem := captureChannelOutput(t, func() int {
+				return runLandingTestReceiptWithContext(parent, resolveClock, args)
+			})
+			if code != testCase.wantExit || observedWait != 1 || !strings.Contains(problem, testCase.wantReason) {
+				t.Fatalf("public boundary exit=%d want=%d waits=%d stderr=%q", code, testCase.wantExit, observedWait, problem)
+			}
+			if testCase.cancelParent && strings.Contains(problem, "has passed at semantic time") {
+				t.Fatalf("outer cancellation was mislabeled semantic expiry: %s", problem)
+			}
+			launches := 0
+			if data, readErr := os.ReadFile(launchCount); readErr == nil {
+				launches = strings.Count(string(data), "launch\n")
+			} else if !os.IsNotExist(readErr) {
+				t.Fatal(readErr)
+			}
+			if launches != testCase.wantLaunches {
+				t.Fatalf("native launches=%d want=%d", launches, testCase.wantLaunches)
+			}
+			var launchResult proofrun.LaunchResult
+			encodedResult, readErr := os.ReadFile(resultPath)
+			if readErr != nil || json.Unmarshal(encodedResult, &launchResult) != nil || launchResult.ExitStatus != code {
+				t.Fatalf("structured result=%+v readErr=%v bytes=%s", launchResult, readErr, encodedResult)
+			}
+			if !strings.Contains(launchResult.Reason, testCase.wantReason) {
+				t.Fatalf("structured refusal reason=%q want substring %q", launchResult.Reason, testCase.wantReason)
+			}
+			if testCase.refusesExpiry && launchResult.Disposition != proofrun.DispositionAdmissionRefused {
+				t.Fatalf("semantic expiry disposition=%+v", launchResult)
+			}
+			attempts, err := proofrun.ReadAttempts(root)
+			if err != nil || len(attempts) != 1 {
+				t.Fatalf("public boundary attempts=%d err=%v", len(attempts), err)
+			}
+			attempt := attempts[0]
+			if attempt.ReservedMinutes != 1 || attempt.StartedAt != startedAt.Format(time.RFC3339Nano) ||
+				attempt.Deadline != deadline.Format(time.RFC3339Nano) || attempt.ObservedMinutes != 1 || attempt.Terminal == nil {
+				t.Fatalf("public boundary changed reservation/accounting: %+v", attempt)
+			}
+			if testCase.wantLaunches == 1 {
+				if attempt.Terminal.Result != proofrun.TerminalSuccess || len(proofrun.CommittedDeliveryReceipt(attempt)) == 0 {
+					t.Fatalf("accepted boundary lost custody or receipt: %+v", attempt)
+				}
+				if _, err := os.Stat(landing.TestReceiptPath(root, tree)); err != nil {
+					t.Fatalf("accepted boundary did not publish receipt: %v", err)
+				}
+			} else if attempt.Terminal.Result == proofrun.TerminalSuccess || len(proofrun.CommittedDeliveryReceipt(attempt)) != 0 {
+				t.Fatalf("refused boundary published success: %+v", attempt)
+			}
+			probe, acquireErr := proofrun.AcquireHostResources(t.Context(), root, confPath, "heavy", nil)
+			if acquireErr != nil || probe == nil {
+				t.Fatalf("released cap-one ownership was not reacquirable: lease=%v err=%v", probe, acquireErr)
+			}
+			if err := proofrun.MarkHostResourcesClean(probe.Files()); err != nil {
+				t.Fatal(err)
+			}
+			if err := probe.Close(); err != nil {
+				t.Fatal(err)
+			}
+			assertHostAdmissionClean(t, admissionDir, 1)
+		})
+	}
+}
+
 func TestLandingTestReceiptCanonicalCLIUsesSectionSelector(t *testing.T) {
 	for _, frozen := range []bool{false, true} {
 		name := "committed-candidate-archive"
@@ -1090,6 +1248,8 @@ func runCanonicalReceiptFixture(t *testing.T, frozen bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fixtureNow := time.Date(2026, 9, 21, 6, 0, 0, 0, time.UTC)
+	t.Setenv(goalNowEnvironment, fixtureNow.Format(time.RFC3339))
 	runReceiptGit(t, root, "init", "-q", "-b", "main")
 	runReceiptGit(t, root, "config", "user.name", "receipt fixture")
 	runReceiptGit(t, root, "config", "user.email", "receipt@example.invalid")
@@ -1124,20 +1284,55 @@ func runCanonicalReceiptFixture(t *testing.T, frozen bool) {
 	writeReceiptFixture(t, root, "scripts/agents/go-build.sh", `#!/usr/bin/env bash
 set -euo pipefail
 target=bin/metasystem
+candidate=0
 while (($#)); do
   case "$1" in
-    --out) target=$2; shift 2 ;;
+    --out) target=$2; candidate=1; shift 2 ;;
     *) shift ;;
   esac
 done
 mkdir -p "$(dirname "$target")"
-cp "$RECEIPT_CANARY_ENGINE" "$target"
+if (( candidate )); then
+  "$RECEIPT_CANARY_REAL_GO" build -o "$target" ./helpers/native-candidate.go
+else
+  cp "$RECEIPT_CANARY_ENGINE" "$target"
+fi
 chmod 755 "$target"
 `)
-	writeReceiptFixture(t, root, "helpers/gofmt", "#!/usr/bin/env bash\nexit 0\n")
+	writeReceiptFixture(t, root, "helpers/gofmt", `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$PWD" >"$RECEIPT_CANARY_SNAPSHOT_PATH"
+[[ "$(cat internal/proofrun/candidate.txt)" == 'candidate source' ]]
+`)
 	writeReceiptFixture(t, root, "helpers/proof-auth", `#!/usr/bin/env bash
 if [[ "${1:-} ${2:-}" == 'proof-run worker-authorized' ]]; then exit 0; fi
+if [[ "${1:-} ${2:-}" == 'proof-run go-gate-tests' ]]; then
+  printf 'unexpected\n' >"$RECEIPT_CANARY_OLD_AUTH_NEW_VERB"
+  echo 'old authentication engine: unknown verb go-gate-tests' >&2
+  exit 64
+fi
 exec "$RECEIPT_CANARY_ENGINE" "$@"
+`)
+	writeReceiptFixture(t, root, "helpers/native-candidate.go", `package main
+import (
+ "fmt"
+ "os"
+ "strconv"
+ "strings"
+ "syscall"
+)
+func main() {
+ if len(os.Args) >= 3 && os.Args[1] == "proof-run" && os.Args[2] == "go-gate-tests" {
+  path := os.Getenv("RECEIPT_CANARY_MEASUREMENT_COUNT")
+  measurements := 0
+  if data, err := os.ReadFile(path); err == nil { measurements, _ = strconv.Atoi(strings.TrimSpace(string(data))) }
+  if err := os.WriteFile(path, []byte(strconv.Itoa(measurements+1)+"\n"), 0600); err != nil { panic(err) }
+  fmt.Println("ok  github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun 0.1s coverage: 85.0% of statements")
+  return
+ }
+ engine := os.Getenv("RECEIPT_CANARY_ENGINE")
+ if err := syscall.Exec(engine, append([]string{engine}, os.Args[1:]...), os.Environ()); err != nil { panic(err) }
+}
 `)
 	writeReceiptFixture(t, root, "helpers/go", `#!/usr/bin/env bash
 set -euo pipefail
@@ -1159,7 +1354,7 @@ case "${1:-}" in
     fi
     ;;
   test)
-    if [[ " $* " == *" ./internal/... "* ]]; then
+	if [[ " $* " == *" ./internal/... "* ]]; then
 	  if [[ " $* " == *" -run NoSuchTestEver "* ]]; then exit 0; fi
       measurements=0
       if [[ -f "$RECEIPT_CANARY_MEASUREMENT_COUNT" ]]; then measurements=$(cat "$RECEIPT_CANARY_MEASUREMENT_COUNT"); fi
@@ -1197,8 +1392,9 @@ export METASYSTEM_PROOF_AUTH_BIN="$root/helpers/proof-auth"
 delivery_contract=0
 export PATH="$root/helpers:$PATH"
 WITNESS_GATE_FALLBACK=plain source scripts/agents/witness-gate.sh
-printf '%s\n' "$witness_snap" >"$RECEIPT_CANARY_SNAPSHOT_PATH"
-[[ "$(cat "$witness_snap/internal/proofrun/candidate.txt")" == 'candidate source' ]]
+[[ "$(cat "$RECEIPT_CANARY_SNAPSHOT_PATH")" == "$witness_snap" ]]
+[[ ! -e "$witness_snap" ]]
+[[ "$(cat "$root/internal/proofrun/candidate.txt")" == 'candidate source' ]]
 printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$progress"
 `
 	if frozen {
@@ -1211,7 +1407,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	if err := os.Chmod(filepath.Join(root, landing.CanonicalValidatorCommand), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	now := fixtureNow
 	rootRecord := &goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}
 	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1, ReviewRoundLimit: 2}
 	intent := "Drive the canonical receipt canary."
@@ -1250,6 +1446,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	}
 	launchCount := filepath.Join(root, "artifacts", "receipt-validator-launches")
 	measurementCount := filepath.Join(root, "artifacts", "receipt-coverage-measurements")
+	oldAuthNewVerb := filepath.Join(root, "artifacts", "receipt-old-auth-new-verb")
 	snapshotPath := filepath.Join(root, "artifacts", "receipt-witness-snapshot-path")
 	realGo, err := exec.LookPath("go")
 	if err != nil {
@@ -1266,19 +1463,25 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	if err := os.WriteFile(identityTable, []byte(fmt.Sprintf(`{"%d":{"terminal":true}}`, os.Getpid())), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	processTable := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	resultPath := filepath.Join(t.TempDir(), "result.json")
 	admissionDir := filepath.Join(t.TempDir(), "host-admission")
 	resourceReady := filepath.Join(t.TempDir(), "resource-ready")
 	resourceRelease := filepath.Join(t.TempDir(), "resource-release")
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
-	command := proofFixture.command(receiptCanaryEnvironment(), engine, "landing", "test-receipt", "--root", root, "--tree", tree,
+	command := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "landing", "test-receipt", "--root", root, "--tree", tree,
 		"--command", landing.CanonicalValidatorCommand, "--goal", "receipt-goal", "--cap-min", "1", "--result", resultPath)
 	command.Env = append(command.Env, "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
 		"RECEIPT_CANARY_MEASUREMENT_COUNT="+measurementCount, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
+		"RECEIPT_CANARY_OLD_AUTH_NEW_VERB="+oldAuthNewVerb,
 		"RECEIPT_CANARY_REAL_GO="+realGo, "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"RECEIPT_CANARY_RESOURCE_READY="+resourceReady, "RECEIPT_CANARY_RESOURCE_RELEASE="+resourceRelease,
 		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable,
+		"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
 		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
 		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
 	var outputBuffer bytes.Buffer
@@ -1288,14 +1491,19 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	}
 	defer command.Process.Kill()
 	waitForPublicRouteFile(t, resourceReady)
-	contender, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	contender, cancel := context.WithCancel(t.Context())
+	observedWait := false
+	contender = proofrun.WithHostResourceWaitObserver(contender, func() {
+		observedWait = true
+		cancel()
+	})
 	lease, acquireErr := proofrun.AcquireHostResources(contender, root, capacityConfig, "heavy", nil)
 	cancel()
 	if lease != nil {
 		_ = lease.Close()
 	}
-	if !errors.Is(acquireErr, context.DeadlineExceeded) {
-		t.Fatalf("landing receipt did not hold cap-1 slot: %v", acquireErr)
+	if !observedWait || !errors.Is(acquireErr, context.Canceled) {
+		t.Fatalf("landing receipt contender did not complete a failed cap-1 resource scan: observed=%t err=%v", observedWait, acquireErr)
 	}
 	if err := os.WriteFile(resourceRelease, []byte("release\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -1310,6 +1518,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	if err != nil || json.Unmarshal(data, &result) != nil || result.Disposition != proofrun.DispositionFailed || result.ExitStatus != 1 {
 		t.Fatalf("canonical receipt result = %+v readErr=%v bytes=%s", result, err, data)
 	}
+	t.Logf("canonical receipt command output before host-admission cleanup check:\n%s", output)
 	assertHostAdmissionClean(t, admissionDir, 1)
 	attempts, err := proofrun.ReadAttempts(root)
 	if err != nil || len(attempts) != 1 || attempts[0].Terminal == nil || attempts[0].Terminal.Result != proofrun.TerminalSuccess ||
@@ -1318,6 +1527,12 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		t.Fatalf("canonical receipt terminal diagnostics: reservations=%d readErr=%v fixture=%s\ncommand output:\n%s\nstructured result: %+v\nattempts:\n%s",
 			len(attempts), err, root, output, result, diagnostics)
 	}
+	if attempts[0].ReservedMinutes != 1 || attempts[0].ObservedMinutes != 1 ||
+		attempts[0].StartedAt != fixtureNow.Format(time.RFC3339Nano) || attempts[0].Deadline != fixtureNow.Add(time.Minute).Format(time.RFC3339Nano) ||
+		attempts[0].EndedAt != fixtureNow.Format(time.RFC3339Nano) {
+		t.Fatalf("canonical receipt lost controlled one-minute accounting: start=%s deadline=%s end=%s reserved=%d observed=%d",
+			attempts[0].StartedAt, attempts[0].Deadline, attempts[0].EndedAt, attempts[0].ReservedMinutes, attempts[0].ObservedMinutes)
+	}
 	measurements, measureErr := os.ReadFile(measurementCount)
 	snapshotBytes, snapshotErr := os.ReadFile(snapshotPath)
 	if measureErr != nil || strings.TrimSpace(string(measurements)) != "1" || snapshotErr != nil ||
@@ -1325,18 +1540,28 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 		t.Fatalf("snapshot coverage handoff measurements=%q measureErr=%v snapshot=%q snapshotErr=%v admitted=%q",
 			measurements, measureErr, snapshotBytes, snapshotErr, attempts[0].ExecutionRoot)
 	}
+	if _, err := os.Stat(oldAuthNewVerb); !os.IsNotExist(err) {
+		t.Fatalf("wrapper sent candidate native behavior to the old authentication engine: %v", err)
+	}
+	if snapshot := strings.TrimSpace(string(snapshotBytes)); snapshot != "" {
+		if _, err := os.Stat(snapshot); !os.IsNotExist(err) {
+			t.Fatalf("canonical receipt witness snapshot survived its source lifetime: %s (%v)", snapshot, err)
+		}
+	}
 	receiptPath := landing.TestReceiptPath(root, tree)
 	original := append([]byte(nil), attempts[0].DeliveryReceipt...)
 	if err := os.Remove(receiptsParent); err != nil {
 		t.Fatal(err)
 	}
 	repeatResult := filepath.Join(t.TempDir(), "repeat-result.json")
-	repeat := proofFixture.command(receiptCanaryEnvironment(), engine, "landing", "test-receipt", "--root", root, "--tree", tree,
+	repeat := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "landing", "test-receipt", "--root", root, "--tree", tree,
 		"--command", landing.CanonicalValidatorCommand, "--goal", "receipt-goal", "--cap-min", "1", "--result", repeatResult)
 	repeat.Env = append(repeat.Env, "RECEIPT_CANARY_ENGINE="+engine, "RECEIPT_CANARY_LAUNCH_COUNT="+launchCount,
 		"RECEIPT_CANARY_MEASUREMENT_COUNT="+measurementCount, "RECEIPT_CANARY_SNAPSHOT_PATH="+snapshotPath,
+		"RECEIPT_CANARY_OLD_AUTH_NEW_VERB="+oldAuthNewVerb,
 		"RECEIPT_CANARY_REAL_GO="+realGo, "PATH="+filepath.Join(root, "helpers")+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable,
+		"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
 		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
 		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
 	repeatOutput, repeatErr := repeat.CombinedOutput()
@@ -1348,6 +1573,7 @@ printf '{"suite":"landing-receipt","section":"tiny","event":"end","at":"%s","dep
 	if readErr != nil || json.Unmarshal(repeatedData, &repeated) != nil || repeated.Disposition != proofrun.DispositionReusableSuccess || repeated.AttemptID != attempts[0].AttemptID {
 		t.Fatalf("receipt recovery result=%+v readErr=%v bytes=%s", repeated, readErr, repeatedData)
 	}
+	t.Logf("canonical receipt recovery output before host-admission cleanup check:\n%s", repeatOutput)
 	assertHostAdmissionClean(t, admissionDir, 1)
 	recovered, err := os.ReadFile(receiptPath)
 	if err != nil || !bytes.Equal(bytes.TrimSpace(original), bytes.TrimSpace(recovered)) {
@@ -1445,6 +1671,8 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	fixtureNow := time.Date(2026, 9, 21, 7, 0, 0, 0, time.UTC)
+	t.Setenv(goalNowEnvironment, fixtureNow.Format(time.RFC3339))
 	runReceiptGit(t, projectRoot, "init", "-q", "-b", "main")
 	runReceiptGit(t, root, "config", "user.name", "receipt fixture")
 	runReceiptGit(t, root, "config", "user.email", "receipt@example.invalid")
@@ -1493,7 +1721,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	writeReceiptFixture(t, root, "testing.json", string(contractBytes))
 	writeReceiptFixture(t, root, "scripts/agents/coverage-ratchet.json", `{"floors":{"fixture/application":80.0}}`)
 	writeReceiptFixture(t, root, "scripts/agents/coverage-ratchet-linux.json", `{"floors":{"fixture/application":80.0}}`)
-	now := time.Now().UTC()
+	now := fixtureNow
 	rootRecord := &goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FBV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1}
 	budget := &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 1, ReservedJobMinutesLimit: 1, ActiveJobLimit: 1, ReviewRoundLimit: 2}
 	risk := &goal.RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "The fixture executes one tiny public shared testing group."}
@@ -1558,9 +1786,16 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	if err := os.WriteFile(identityTable, []byte(fmt.Sprintf(`{"%d":{"terminal":true}}`, os.Getpid())), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	processTable := filepath.Join(t.TempDir(), "processes.json")
+	if err := os.WriteFile(processTable, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	admissionDir := filepath.Join(t.TempDir(), "host-admission")
 	runPublic := func() ([]byte, error) {
-		command := proofFixture.command(receiptCanaryEnvironment(), engine, "landing", "test-receipt", "--root", root, "--tree", tree, "--mode", "auto", "--goal", "receipt-goal", "--cap-min", "1")
-		command.Env = append(command.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
+		command := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "landing", "test-receipt", "--root", root, "--tree", tree, "--mode", "auto", "--goal", "receipt-goal", "--cap-min", "1")
+		command.Env = append(command.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable,
+			"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
+			"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir, "METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
 		return command.CombinedOutput()
 	}
 	firstOutput, firstErr := runPublic()
@@ -1571,6 +1806,17 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	if err != nil || len(attempts) != 1 || attempts[0].Terminal == nil || attempts[0].Terminal.Result != proofrun.TerminalSuccess ||
 		attempts[0].TestResult == nil || !attempts[0].TestResult.Delivery.Sufficient || len(attempts[0].DeliveryReceiptBytes) == 0 {
 		t.Fatalf("public schema-two terminal authority missing: attempts=%+v err=%v output=%s", attempts, err, firstOutput)
+	}
+	if attempts[0].ReservedMinutes != 1 || attempts[0].ObservedMinutes != 1 ||
+		attempts[0].StartedAt != fixtureNow.Format(time.RFC3339Nano) || attempts[0].Deadline != fixtureNow.Add(time.Minute).Format(time.RFC3339Nano) ||
+		attempts[0].EndedAt != fixtureNow.Format(time.RFC3339Nano) || attempts[0].TestResult.StartedAt != fixtureNow.Format(time.RFC3339Nano) ||
+		attempts[0].TestResult.EndedAt != fixtureNow.Format(time.RFC3339Nano) {
+		t.Fatalf("public schema-two receipt lost controlled one-minute accounting: attempt=%+v result=%+v", attempts[0], attempts[0].TestResult)
+	}
+	for _, group := range attempts[0].TestResult.Groups {
+		if group.NativeLaunched && (group.StartedAt != fixtureNow.Format(time.RFC3339Nano) || group.EndedAt != fixtureNow.Format(time.RFC3339Nano)) {
+			t.Fatalf("native group %s crossed clock domains: start=%s end=%s semantic=%s", group.ID, group.StartedAt, group.EndedAt, fixtureNow.Format(time.RFC3339Nano))
+		}
 	}
 	original := append([]byte(nil), attempts[0].DeliveryReceiptBytes...)
 	originalTime := attempts[0].TestResult.EndedAt
@@ -1621,7 +1867,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	if err != nil || !bytes.Equal(bytes.TrimSpace(original), bytes.TrimSpace(reusedBytes)) {
 		t.Fatalf("current-candidate exact reuse changed the original committed receipt: err=%v", err)
 	}
-	verify := proofFixture.command(receiptCanaryEnvironment(), engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
+	verify := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
 	verify.Env = append(verify.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	verifyOutput, verifyErr := verify.CombinedOutput()
 	if verifyErr != nil || !strings.Contains(string(verifyOutput), "TEST-RESULT sufficient=true tree="+tree) {
@@ -1639,7 +1885,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	writeReceiptFixture(t, projectRoot, "payload.txt", "moved declared input\n")
 	runReceiptGit(t, projectRoot, "add", "payload.txt")
 	movedTree := runReceiptGit(t, projectRoot, "write-tree")
-	movedVerify := proofFixture.command(receiptCanaryEnvironment(), engine, "test", "verify", "--root", root, "--tree", movedTree, "--goal", "receipt-goal")
+	movedVerify := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "test", "verify", "--root", root, "--tree", movedTree, "--goal", "receipt-goal")
 	movedVerify.Env = append(movedVerify.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	movedOutput, movedErr := movedVerify.CombinedOutput()
 	if exit, ok := movedErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
@@ -1656,7 +1902,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	if err := os.Chmod(filepath.Join(fakeBin, "sh"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	environmentVerify := proofFixture.command(receiptCanaryEnvironment(), engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
+	environmentVerify := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
 	environmentVerify.Env = append(environmentVerify.Env, "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	environmentOutput, environmentErr := environmentVerify.CombinedOutput()
@@ -1676,7 +1922,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	writeReceiptFixture(t, root, "scripts/agents/coverage-ratchet.json", `{"floors":{"fixture/application":81.0}}`)
 	runReceiptGit(t, projectRoot, "add", engineDeclaredInput)
 	engineInputTree := runReceiptGit(t, projectRoot, "write-tree")
-	engineInputVerify := proofFixture.command(receiptCanaryEnvironment(), engine, "test", "verify", "--root", root, "--tree", engineInputTree, "--goal", "receipt-goal")
+	engineInputVerify := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "test", "verify", "--root", root, "--tree", engineInputTree, "--goal", "receipt-goal")
 	engineInputVerify.Env = append(engineInputVerify.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	engineInputOutput, engineInputErr := engineInputVerify.CombinedOutput()
 	if exit, ok := engineInputErr.(*exec.ExitError); !ok || exit.ExitCode() != 1 ||
@@ -1713,7 +1959,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 		if err := os.WriteFile(unmarkedPath, append(unmarkedBytes, '\n'), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		unmarkedObserve := proofFixture.command(receiptCanaryEnvironment(), engine, "landing", "observe", "--root", root, "--tree", tree, "--chain", chainID,
+		unmarkedObserve := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "landing", "observe", "--root", root, "--tree", tree, "--chain", chainID,
 			"--goal", "receipt-goal", "--test-receipt", unmarkedPath)
 		unmarkedObserve.Env = append(unmarkedObserve.Env, "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"),
 			"SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
@@ -1725,7 +1971,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 			t.Fatal(err)
 		}
 	}
-	verifyBeforeObserve := proofFixture.command(receiptCanaryEnvironment(), engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
+	verifyBeforeObserve := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "test", "verify", "--root", root, "--tree", tree, "--goal", "receipt-goal")
 	verifyBeforeObserve.Env = append(verifyBeforeObserve.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	if output, err := verifyBeforeObserve.CombinedOutput(); err != nil || !strings.Contains(string(output), "TEST-RESULT sufficient=true") {
 		t.Fatalf("pre-observer retained verification was not sufficient: %v\n%s", err, output)
@@ -1734,7 +1980,7 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 	if err != nil || os.Remove(attemptPath) != nil {
 		t.Fatalf("remove retained attempt before observer: path=%s err=%v", attemptPath, err)
 	}
-	observe := proofFixture.command(receiptCanaryEnvironment(), engine, "landing", "observe", "--root", root, "--tree", tree, "--chain", chainID,
+	observe := proofFixture.command(receiptCanaryEnvironmentForRoot(t, root), engine, "landing", "observe", "--root", root, "--tree", tree, "--chain", chainID,
 		"--goal", "receipt-goal", "--test-receipt", landing.TestReceiptPath(root, originalTree))
 	observe.Env = append(observe.Env, "SHARED_TEST_LAUNCH_COUNT="+launchCount, "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE="+identityTable)
 	observeOutput, observeErr := observe.CombinedOutput()
@@ -1767,10 +2013,23 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 }
 
 func receiptCanaryEnvironment() []string {
-	return receiptCanaryEnvironmentFrom(os.Environ())
+	return receiptCanaryEnvironmentBase(os.Environ())
 }
 
-func receiptCanaryEnvironmentFrom(source []string) []string {
+func receiptCanaryEnvironmentForRoot(t *testing.T, root string) []string {
+	t.Helper()
+	environment, err := receiptCanaryEnvironmentFrom(root, os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return environment
+}
+
+func receiptCanaryEnvironmentFrom(root string, source []string) ([]string, error) {
+	return authorizedFixtureClockEnvironment(root, receiptCanaryEnvironmentBase(source))
+}
+
+func receiptCanaryEnvironmentBase(source []string) []string {
 	allowed := map[string]bool{
 		"GOCACHE": true, "GOMODCACHE": true, "GOPATH": true, "GOROOT": true,
 		"HOME": true, "LANG": true, "LC_ALL": true, "PATH": true,
@@ -1787,6 +2046,10 @@ func receiptCanaryEnvironmentFrom(source []string) []string {
 }
 
 func TestReceiptCanaryEnvironmentIgnoresAmbientProofControls(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	base := []string{"HOME=/fixture", "PATH=/tools", "TMPDIR=/tmp", "GOCACHE=/cache"}
 	variations := []string{
 		"METASYSTEM_PROOF_ATTEMPT=foreign", "METASYSTEM_HOOK_DELEGATE_JOB=foreign",
@@ -1794,13 +2057,46 @@ func TestReceiptCanaryEnvironmentIgnoresAmbientProofControls(t *testing.T) {
 		"METASYSTEM_COVERAGE_RATCHET_SEED=1", "METASYSTEM_GATE_FORCE=1", "METASYSTEM_GATE_WITNESS=/foreign",
 		"METASYSTEM_SUITE_PROGRESS_SILENCE_MIN=99", "GOFLAGS=-overlay=foreign.json",
 	}
-	want := strings.Join(receiptCanaryEnvironmentFrom(base), "\x00")
+	wantEnvironment, err := receiptCanaryEnvironmentFrom(root, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join(wantEnvironment, "\x00")
 	for _, variation := range variations {
-		got := strings.Join(receiptCanaryEnvironmentFrom(append(append([]string(nil), base...), variation)), "\x00")
+		gotEnvironment, err := receiptCanaryEnvironmentFrom(root, append(append([]string(nil), base...), variation))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := strings.Join(gotEnvironment, "\x00")
 		if got != want {
 			t.Fatalf("ambient variation %q changed the explicit canary environment: got %q want %q", variation, got, want)
 		}
 	}
+	t.Setenv(goalNowEnvironment, "2026-09-21T06:00:00Z")
+	t.Setenv(goalBootIDEnvironment, "receipt-fixture-boot")
+	t.Setenv(goalBootNanosEnvironment, strconv.FormatInt((2*time.Hour).Nanoseconds(), 10))
+	production, err := receiptCanaryEnvironmentFrom(root, os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(production, "\x00"), "METASYSTEM_GOAL_") {
+		t.Fatalf("production receipt environment carried an ambient fixture clock: %q", production)
+	}
+	fixture := t.TempDir()
+	if err := os.WriteFile(filepath.Join(fixture, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	authorized, err := receiptCanaryEnvironmentFrom(fixture, os.Environ())
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(authorized, "\x00")
+	for _, want := range []string{goalNowEnvironment + "=2026-09-21T06:00:00Z", goalBootIDEnvironment + "=receipt-fixture-boot", goalBootNanosEnvironment + "=" + strconv.FormatInt((2*time.Hour).Nanoseconds(), 10)} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("authorized receipt environment omitted %q: %q", want, authorized)
+		}
+	}
+	testProofResourceWaitUsesSemanticDeadline(t)
 }
 
 func TestHCL55CarriedJudgeGrammar(t *testing.T) {
