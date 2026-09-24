@@ -1,5 +1,10 @@
 # The verification loop
 
+- Kind: design
+- Id: 01M3A3TATKKHVQ8X49KNA4YDNB
+- Status: accepted
+- Goals: trunk-versus-candidate-is-a-verification-step failures-show-observed-against-expected round-proof-feeds-the-next-brief delegate-sandbox-runs-the-beds every-round-gets-an-independent-read
+
 Design for the phase D program in `metasystem/plans/delivery-efficiency-plan.md`: five goals, three prerequisites they lean on, one loop with one controller at every transition and the seat at the points doctrine gives it.
 
 | Goal | Row | Contract |

@@ -1,5 +1,10 @@
 # Design: a rebuilt engine at its enrolled path re-arms itself; every other drift cause still reaches the human
 
+- Kind: design
+- Id: 01M3A3TATJ77BKJQFMKM7YNRQN
+- Status: done
+- Goals: engine-rebuild-rearms-itself
+
 Goal: engine-rebuild-rearms-itself (plans/goals/engine-rebuild-rearms-itself.md,
 revision 15, tier 3 DESIGN-BEARING). Author: implementer delegate under
 dispatch by m1 (lineage main-1788594343-3833-fb64b9). Revision 1 was written by

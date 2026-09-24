@@ -1,5 +1,10 @@
 # receipt-admission-caps-concurrent-batteries
 
+- Kind: design
+- Id: 01M3A3TATJBMGTM0WE0YG1V0G8
+- Status: done
+- Goals: receipt-admission-caps-concurrent-batteries
+
 - Owner: m1e (goal 1 of plans/delivery-efficiency-plan.md), claimed 2026-09-12 17:50Z.
 - Goal and current status: concurrent batteries on one host stop failing each other within R-35-m3 (no machine reservations between seats). Slice 1, the attribution, landed 0c621e4b (2026-09-12) after one critique round and is verified through the engine (attempt proof-mtykoip9 carries the load block): every attempt record carries the host's load and the overlapping attempts at its start and its end, a failed terminal under a crowded host is attributed to the load in the record, a retry decision names the load it retries against, and a consumption-bounded group that failed under load is filed as its own patience defect. The cap (slice 2) is designed here and waits on Wido's word.
 - In flight right now: nothing. Slice 2, the temporary cap, is built and landed (units U1 and U2 of 2026-09-16, section 4); the follow-up of section 6 (retiring the machine's shell lock) is not started.

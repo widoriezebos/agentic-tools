@@ -1,5 +1,10 @@
 # One word stops the metasystem: `metasystem stop`, `status` and `arm` (goal metasystem-stop-verb)
 
+- Kind: design
+- Id: 01M3A3TATJVS5JJJPZJXP0ZYQY
+- Status: done
+- Goals: metasystem-stop-verb
+
 - Status: superseded by plans/metasystem-stop-verb-design.md; the goal metasystem-stop-verb is done (a3131fbb)
 - Goal: metasystem-stop-verb (member of the arc verbs-match-intent; its
   slice 0 absorbs this page as the human page's three process verbs)

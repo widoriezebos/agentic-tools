@@ -1,5 +1,10 @@
 # delegate-proof-runs-inside-the-sandbox: design
 
+- Kind: design
+- Id: 01M3A3TATHV7HXE8TS399W5FNJ
+- Status: done
+- Goals: delegate-proof-runs-inside-the-sandbox
+
 Blocker of delegate-rounds-reuse-a-warm-gate (opened 2026-09-12 under
 R-93-m1e). One critique read of this page, then the build behind the fixtures
 in section 5, one code read, human commit.

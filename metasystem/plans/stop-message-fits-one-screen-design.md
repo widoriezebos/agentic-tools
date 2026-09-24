@@ -1,5 +1,10 @@
 # Design revision 9: blocked feedback instructs; allowed status informs
 
+- Kind: design
+- Id: 01M3A3TATJDBQG64QGR3WRQSJ7
+- Status: done
+- Goals: stop-refusal-fits-on-one-screen
+
 Goal: [stop-refusal-fits-on-one-screen](goals/stop-refusal-fits-on-one-screen.md).
 Design only. **Revision 9, 2026-09-14; re-applied after `094f836b`.**
 Revision 7 is landed in the supplied trunk baseline `113b3bcf`; its

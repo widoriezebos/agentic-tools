@@ -1,5 +1,10 @@
 # Design: a landing tells Wido the moment it lands
 
+- Kind: design
+- Id: 01M3A3TATH0XP94HDPH666T1C0
+- Status: done
+- Goals: channel-tells-me-when-something-lands
+
 Goal: channel-tells-me-when-something-lands
 (plans/goals/channel-tells-me-when-something-lands.md, revision 6, tier 3
 DESIGN-BEARING). Author: implementer delegate under dispatch by m1 (lineage

@@ -1,5 +1,10 @@
 # engine-runs-re-arm-themselves-on-a-landed-engine: design
 
+- Kind: design
+- Id: 01M3A3TATJFFXH4Q4EXV7R8QND
+- Status: done
+- Goals: engine-runs-re-arm-themselves-on-a-landed-engine
+
 Goal engine-runs-re-arm-themselves-on-a-landed-engine (tier 2, origin human,
 Wido 2026-09-12). One critique read of this page, then the build behind the
 fixtures in section 5 under R-98-m1e, one code read, human commit; the field

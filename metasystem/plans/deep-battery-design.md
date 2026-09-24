@@ -1,5 +1,10 @@
 # The deep battery under ten minutes
 
+- Kind: design
+- Id: 01M3A3TATHK4AECGDAFARP750M
+- Status: done
+- Goals: deep-battery-under-ten-minutes
+
 Owner: the proof runner (`internal/proofrun`) and its launcher knobs in
 `cmd/metasystem/proof_run.go`. Goal: deep-battery-under-ten-minutes, slices
 2, 3 and 5 of `plans/suite-speed-plan.md`. Ruling R-16 stands: runs continue

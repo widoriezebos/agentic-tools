@@ -1,5 +1,10 @@
 # Two bars for changes — landing provenance design
 
+- Kind: design
+- Id: 01M3A3TATKTQ5T0F4PR6E353N9
+- Status: done
+- Goals: two-bars-for-changes
+
 - Goal: two-bars-for-changes (plans/goals/two-bars-for-changes.md, revision 4)
 - Status: design, round 3 — every ACCEPTED finding of the Sol round-2
   critique (records/two-bars/two-bars-lp-critique-r2.md, TB-LP-R2B-01

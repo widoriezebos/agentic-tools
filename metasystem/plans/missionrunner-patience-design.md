@@ -1,5 +1,10 @@
 # Design: patience for the missionrunner terminate-group test family
 
+- Kind: design
+- Id: 01M3A3TATJGAQR8W09HPHQ1XEF
+- Status: accepted
+- Goals: missionrunner-terminate-flake
+
 - Goal: `plans/goals/missionrunner-terminate-flake.md` (claimed m0b,
   lineage main-1788250419-3170380-8a1fb3)
 - Revision 2, 2026-09-02, by the design delegate of job

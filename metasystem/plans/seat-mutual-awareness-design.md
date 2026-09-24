@@ -1,5 +1,10 @@
 # seat-mutual-awareness — design: seats see each other and ask each other (revision 5)
 
+- Kind: design
+- Id: 01M3A3TATJ3NB3JC43W342M8GC
+- Status: accepted
+- Goals: seat-mutual-awareness
+
 Goal: plans/goals/seat-mutual-awareness.md. Wido's order (2026-08-31,
 verbatim on the goal record): seats must be aware of each other and
 ask each other questions directly, without the human as relay; DONE

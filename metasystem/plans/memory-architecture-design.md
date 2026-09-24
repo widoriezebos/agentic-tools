@@ -1,5 +1,10 @@
 # Memory architecture: the information quadrants (design draft, round 2 folded)
 
+- Kind: design
+- Id: 01M3A3TATJ5S075929NTZXM61T
+- Status: done
+- Goals: memory-architecture
+
 Goal: memory-architecture (HIGH, Wido). Returns to Wido as a draft
 before any file moves (R-2). Critique loop: design-critic to
 convergence, FAILSAFE round 3 — survivors go to Wido with the

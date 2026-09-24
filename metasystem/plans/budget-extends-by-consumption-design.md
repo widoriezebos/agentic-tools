@@ -1,5 +1,10 @@
 # A budget extends once by consumption, and low-tier ceremony runs under power of attorney (goal budget-extends-by-consumption-and-breach-parks)
 
+- Kind: design
+- Id: 01M3A3TATHVCADQTPBZ6PDPXHS
+- Status: done
+- Goals: budget-extends-by-consumption-and-breach-parks
+
 - Status: revision 4 (2026-09-12 evening) after the second design read (Codex, gpt-5.6-sol; section 5); section 2b landed f3a9359b0 and rule 1 landed with it the same night (section 5 rounds 3 and 4, both on Opus). Rule 2 landed 4468c8211 for tier 1 (tier 2 joined with f55bbb6bf). Rule 1 is rewritten against both reads now that proof attempts settle to observed minutes (a633b7a08, 46e5678e4); the attorney unpark of R-105-m1e is section 2b. One invariant is Wido's (section 7); the build proceeds on the code's reading of it.
 - Goal: budget-extends-by-consumption-and-breach-parks (goal 8 of plans/delivery-efficiency-plan.md)
 - Next step: none

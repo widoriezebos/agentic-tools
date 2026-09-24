@@ -1,5 +1,10 @@
 # Live records and the landing gate: the gated carry convention
 
+- Kind: design
+- Id: 01M3A3TATJTT7DX0T003ND3QT8
+- Status: done
+- Goals: digest-landing-race
+
 - Goal: digest-landing-race (plans/goals/digest-landing-race.md, revision 4)
 - Mode: design slice (one 4h design slice per the goal's appetite; this
   document is its artifact)

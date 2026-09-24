@@ -1,5 +1,10 @@
 # Backlog ordered by priority
 
+- Kind: design
+- Id: 01M3A3TATHW37JEKBTRNZWJC7E
+- Status: done
+- Goals: backlog-ordered-by-priority
+
 Revision: 2 (final design round). Date: 2026-09-08. Design authoring job:
 `backlogorder-design5`.
 

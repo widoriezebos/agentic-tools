@@ -1,5 +1,10 @@
 # Backlog ordered by priority: a survivor's `done` event, and the goal the claim gate refuses
 
+- Kind: design
+- Id: 01M3A3TATHZSNCZS97XH3WPPPJ
+- Status: done
+- Goals: backlog-ordered-by-priority
+
 Revision: 2. Date: 2026-09-09. Design authoring jobs: `bolboc-design3`
 (revision 1), `bolboc-design4` (revision 2). The revision record is the last
 section.

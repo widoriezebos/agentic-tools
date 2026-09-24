@@ -1,5 +1,10 @@
 # actionable-metrics — design record (2026-08-27)
 
+- Kind: design
+- Id: 01M3A3TATH53FVDB4SWP5V064R
+- Status: accepted
+- Goals: actionable-metrics
+
 Working Mode: design
 
 Owner: m1 coordinator. Goal `actionable-metrics` (6h across three

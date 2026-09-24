@@ -1,5 +1,10 @@
 # One verb gives a goal a box (goal human-goal-verbs-forgiving, slice 1)
 
+- Kind: design
+- Id: 01M3A3TATJCCS1WXTZCEG51BTK
+- Status: done
+- Goals: human-goal-verbs-forgiving
+
 - Status: design, awaiting one critique
 - Goal: human-goal-verbs-forgiving (member of the arc verbs-match-intent)
 - Next step: waiting on the human (2026-09-13): the goal human-goal-verbs-forgiving is queued and not approved, so no seat may critique or build it; the one critique runs when Wido approves and allocates it

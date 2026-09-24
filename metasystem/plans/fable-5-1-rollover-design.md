@@ -1,5 +1,10 @@
 # Fable 5.1 rollover — design
 
+- Kind: design
+- Id: 01M3A3TATJ03N72B0WQDHH9DR9
+- Status: done
+- Goals: fable-5-1-model-rollover
+
 Goal: `plans/goals/fable-5-1-model-rollover.md`. Wido's order, verbatim
 (2026-09-02): "Fable 5.1 is released, make sure we use that model for
 Fable models going forwards". New model id `claude-fable-5-1` (CLI probe

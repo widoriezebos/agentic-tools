@@ -1,5 +1,10 @@
 # The proof a human act demands fits what the act enables (goal human-proof-fits-the-act, slice 1)
 
+- Kind: design
+- Id: 01M3A3TATJ1A92Q1Y8NZPQE3KH
+- Status: done
+- Goals: human-proof-fits-the-act
+
 - Status: design, revision 2, folding critique round one (nine findings,
   HPA-01 to HPA-09, all accepted; register and dispositions under
   `records/misc/human-proof-fits-the-act-critique-r1*.md`)

@@ -1,5 +1,10 @@
 # Design: the supervision hook resolves the metasystem world, not the outer repository
 
+- Kind: design
+- Id: 01M3A3TATJZRAA32FQBA9R6ZYC
+- Status: done
+- Goals: supervision-hook-wrong-root hook-root-resolver-design
+
 Goal: supervision-hook-wrong-root (plans/goals/supervision-hook-wrong-root.md,
 revision 10); since the 2026-09-06 split, the design's remaining scope is
 goal hook-root-resolver-design (member B), member A having landed as

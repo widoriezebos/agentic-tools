@@ -1,5 +1,10 @@
 # Two bars for changes — the caller-class slice (design, revision 3)
 
+- Kind: design
+- Id: 01M3A3TATJ28WCJ6S86JGXX1XK
+- Status: done
+- Goals: two-bars-for-changes
+
 - Goal: two-bars-for-changes (plans/goals/two-bars-for-changes.md,
   revision 26, the paragraph "NEW SLICE, THE REFUSE BIT BINDS ON THE
   CALLER'S CLASS")

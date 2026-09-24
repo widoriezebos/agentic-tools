@@ -1,5 +1,10 @@
 # Fleet conversation channel, slice 2: the provider switch and Telegram
 
+- Kind: design
+- Id: 01M3A3TATJD02C652Z4NJX5NMT
+- Status: done
+- Goals: fleet-slack-channel
+
 Goal: fleet-slack-channel. Author: m0b (Fable lane, design). Revision 3, 2026-09-03
 (revision 1 reviewed by fsc2-design-crit1, eight findings folded; revision 2 closed by
 fsc2-design-crit2, four findings folded as build law, §9).

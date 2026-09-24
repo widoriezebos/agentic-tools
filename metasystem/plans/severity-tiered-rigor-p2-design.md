@@ -1,5 +1,10 @@
 # severity-tiered-rigor-p2 — design: the risk basis (revision 4 of the tiering design)
 
+- Kind: design
+- Id: 01M3A3TATJGFK45GE96NCM3XBD
+- Status: done
+- Goals: severity-tiered-rigor-p2
+
 Parent design: plans/severity-tiered-rigor-design.md (revisions 1 to 3,
 owned by goal severity-tiered-rigor on m2). This file is revision 4 of
 that design, carried under goal severity-tiered-rigor-p2 on m3 because

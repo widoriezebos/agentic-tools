@@ -1,5 +1,9 @@
 # The Operator Surface — the claw-back design (v3, 2026-08-28, after critique round 2)
 
+- Kind: design
+- Id: 01M3A3TATJ5BGZRG5KKQHDSDMV
+- Status: done
+
 Working Mode: design
 
 Owner: m1 coordinator, in direct discussion with Wido; codex as

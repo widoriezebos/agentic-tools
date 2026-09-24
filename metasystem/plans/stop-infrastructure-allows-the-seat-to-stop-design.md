@@ -1,5 +1,10 @@
 # stop-infrastructure-allows-the-seat-to-stop: design
 
+- Kind: design
+- Id: 01M3A3TATJ9PSBKDWET84P0HFN
+- Status: done
+- Goals: stop-infrastructure-allows-the-seat-to-stop
+
 The first member of stop-hook-never-forces-an-empty-turn (its page,
 plans/stop-hook-never-forces-an-empty-turn-design.md, section 7). One
 mechanism: an infrastructure read failure never refuses a stop. Written by

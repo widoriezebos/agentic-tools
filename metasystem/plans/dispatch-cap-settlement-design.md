@@ -1,5 +1,10 @@
 # Design: reservation settlement for delegated jobs (goal dispatch-cap-necessity), revision 4
 
+- Kind: design
+- Id: 01M3A3TATJ64MW1D6S24VT9KQW
+- Status: done
+- Goals: dispatch-cap-necessity
+
 Date: 2026-09-02. Author: Fable design delegate (jobs cap-settle-design,
 cap-settle-design-r2, cap-settle-design-r3, cap-settle-design-r4) for
 orchestrator m1b+main-1788333346-60696-6a3256. Status: revision 4, for

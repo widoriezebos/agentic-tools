@@ -1,5 +1,10 @@
 # Per-landing verification is standard; deep runs at cadence
 
+- Kind: design
+- Id: 01M3A3TATJEQBVR8QK6JHGNQS1
+- Status: done
+- Goals: landing-runs-standard-deep-runs-at-cadence
+
 Owner: the testing contract (`testing.json`) and its policy package
 (`internal/testpolicy`). Ruling: R-3. Decided by Wido on 2026-09-10 as option
 B of slice 1 in `plans/suite-speed-plan.md`, with option C's move.

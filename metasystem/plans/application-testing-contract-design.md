@@ -1,5 +1,10 @@
 # One testing contract for MetaSystem and adopted applications
 
+- Kind: design
+- Id: 01M3A3TATHF24QSCBWSAJ12X0G
+- Status: done
+- Goals: coordinator-loop-prevention
+
 Status: design for main's adjudication and one bounded independent critique chain. No implementation, test, benchmark, or validation run is claimed here. Authoring lane: Codex `gpt-6-astra`, xhigh. Goal: the approved expansion of coordinator-loop-prevention; tier 3 and its approved two-day, sixteen-attempt, 1,200-reserved-minute, one-active-job, three-review-round budget remain unchanged.
 
 **The consequential decision:** landing checks what the change requires and consumes matching evidence. Low-risk, reversible work may finish with standard verification. Neither a requested mode nor the words “full battery” confer delivery authority.

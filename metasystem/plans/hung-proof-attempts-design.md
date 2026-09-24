@@ -1,5 +1,10 @@
 # hung-proof-attempts-end-at-their-deadline
 
+- Kind: design
+- Id: 01M3A3TATJ7GK6KZ0R45VTJRBA
+- Status: done
+- Goals: hung-proof-attempts-end-at-their-deadline
+
 - Owner: m1e (goal 3 of plans/delivery-efficiency-plan.md), claimed 2026-09-12.
 - Goal and current status: an attempt whose launcher is dead, whose recorded processes have all ended, or whose custody cannot be proven is reconciled by the checkout's standing reaper, never by a person reading `ps`. Slice 1 (this page) builds the reconciler, the health role and the status line; the fixture that kills a section mid-run is the watchdog's existing chatty scenario plus the reconciler's own tests.
 - In flight right now: none - slice 1 landed d25c2ee0 (2026-09-12); the reaper's first pass reconciled proof-mtvl0alu-d730 at 12:22:33Z and `supervise status` lists no live attempt; goal hung-proof-attempts-end-at-their-deadline is done.

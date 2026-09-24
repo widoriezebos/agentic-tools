@@ -1,5 +1,10 @@
 # Design: a proof group is hung when it makes no progress, never because a clock ran out
 
+- Kind: design
+- Id: 01M3A3TATJACP8PRYV9BSW9KQG
+- Status: done
+- Goals: proof-groups-detect-hangs-by-progress-not-the-clock
+
 Goal: proof-groups-detect-hangs-by-progress-not-the-clock (tier 3,
 DESIGN-BEARING). **Revision 1, 2026-09-10**, written on the m1 seat
 (lineage main-1788940932-18533-7fa6c2) against main at 99f2a9633.

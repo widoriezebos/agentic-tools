@@ -1,5 +1,10 @@
 # delivery-candidate-is-the-workspace — design: the delivery candidate is the workspace, not the ledger (revision 3)
 
+- Kind: design
+- Id: 01M3A3TATJ65FH40316H16JPJK
+- Status: done
+- Goals: delivery-candidate-is-the-workspace-not-the-ledger
+
 Goal: plans/goals/delivery-candidate-is-the-workspace-not-the-ledger.md
 (sixth member of plans/goals/the-metasystem-validates-itself-with-itself.md).
 Ruling: Wido, 2026-09-10 16:40, verbatim: "We should never have to wait

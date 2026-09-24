@@ -1,5 +1,10 @@
 # Spend-cap retirement design
 
+- Kind: design
+- Id: 01M3A3TATJ3YEVJPPZ3R9DETDK
+- Status: done
+- Goals: native-spend-cap-retirement
+
 Goal: native-spend-cap-retirement (goal file read at commit 9aa4dae4; the goal
 lineage landed after this worktree's branch point, so it is cited by commit).
 Wido's conditional mandate, verbatim from the goal: "KILL THIS STUPID CAP.

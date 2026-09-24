@@ -1,5 +1,10 @@
 # Host setup for interchangeable agent runtimes
 
+- Kind: design
+- Id: 01M3A3TATJFZ3Q7JH0RVQZPE64
+- Status: done
+- Goals: host-runtime-setup
+
 Goal: `host-runtime-setup`. User request, 2026-09-07: make Claude Code,
 Devin, and Codex work here, automatically where possible, while preserving
 Claude behavior. This is host registration, not the wider installation

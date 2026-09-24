@@ -1,5 +1,10 @@
 # A reviewed chain can land after main changes the same file
 
+- Kind: design
+- Id: 01M3A3TATH3CQHPZERYVKF397W
+- Status: done
+- Goals: chain-landing-after-base-move-recertifies
+
 Revision: 2 — 2026-09-08. Folds the five accepted findings from `clbm-crit1`: CLB-01 (durable unattended park), CLB-02 (mechanical text admission), CLB-03 (area-width test command), CLB-04 (Git diff grammar), and CLB-05 (isolated, reason-specific refusal canaries). Dispositions are recorded in `metasystem/records/misc/chain-landing-after-base-move-recertifies-critique-r1.md`. This is the final design fold; implementation proceeds behind the named fixtures, with no second design critique. Certification, the ledger, and the receipt remain the orchestrator's.
 
 Contract: `metasystem/plans/goals/chain-landing-after-base-move-recertifies.md`, revision 4. The observable acceptance is one previously reviewed chain, with main subsequently changing a different part of its file, passing the landing evaluator at bar a. Changing that merged candidate without certification must still produce `chain-output-mismatch`.

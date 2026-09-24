@@ -1,5 +1,10 @@
 # Proof-harness process custody: a load group that owns itself, and a sweep a seat may run (proof-harness-process-custody)
 
+- Kind: design
+- Id: 01M3A3TATJ2VCQMZGAGBT8XTG8
+- Status: done
+- Goals: proof-harness-process-custody
+
 Working Mode: design
 Goal: `plans/goals/proof-harness-process-custody.md` (revision 4, claimed by m1)
 Author: dispatch delegate custody-design-r1b, 2026-09-02, round 1

@@ -1,5 +1,10 @@
 # time-bound-tests-run-on-artificial-clocks
 
+- Kind: design
+- Id: 01M3A3TATJT5V7NZDD5BR23RRC
+- Status: done
+- Goals: time-bound-tests-run-on-artificial-clocks
+
 - Owner: m1e, claimed 2026-09-12; Wido's word R-104-m1e ("all time-bound tests use artificial clocks ... that is the only way forward").
 - Goal and current status: inventory first, then conversion in slices, each landed by human commit with the loaded sweep as its proof.
 - In flight right now: nothing; slices 1 to 5 landed (1f27c506, staticcheck orphans removed in 56bc8fbb) and the goal concluded on 2026-09-12.

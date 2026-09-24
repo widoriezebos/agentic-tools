@@ -1,5 +1,10 @@
 # Alert Channel Design — alert-escalation-channel (revision 13)
 
+- Kind: design
+- Id: 01M3A3TATHRM3ZZTV190DJHQ7X
+- Status: done
+- Goals: alert-escalation-channel
+
 Status: revision 13 folds BOTH material findings of the Sol round-6
 critique of revision 12
 (`records/misc/alert-channel-critique-r12.md`, critic
