@@ -174,6 +174,81 @@ func TestParseRefusesEachMalformedShape(t *testing.T) {
 	}
 }
 
+func TestAChainOfEmptyFieldsIsAMalformedRecord(t *testing.T) {
+	t.Parallel()
+	whole := map[string]any{
+		"root": "job-a", "job": "job-b", "role": "implementer", "round": 2,
+		"goal": "goal-a", "startedAt": "2026-09-24T09:30:05Z",
+	}
+	body := func(chain any) []byte {
+		return mustJSON(t, map[string]any{
+			"presenceSchema": 1, "machine": "m1c", "repoIdentity": "repo-b", "generation": 3,
+			"engine": "8a01d77", "armedLineage": "no-lease", "tickSeconds": 600,
+			"chain": chain, "tickAt": "2026-09-24T09:00:00Z",
+		})
+	}
+	if _, err := ParseRecord(body(whole)); err != nil {
+		t.Fatalf("a complete chain was refused: %v", err)
+	}
+	// An object with nothing in it is not a chain, and neither is one with a
+	// field missing or emptied: a reader that took either would report a
+	// machine as running nothing in particular.
+	broken := []struct {
+		name  string
+		chain map[string]any
+	}{{"an empty object", map[string]any{}}}
+	for _, key := range []string{"root", "job", "role", "round", "goal", "startedAt"} {
+		missing := map[string]any{}
+		emptied := map[string]any{}
+		for field, value := range whole {
+			emptied[field] = value
+			if field != key {
+				missing[field] = value
+			}
+		}
+		broken = append(broken, struct {
+			name  string
+			chain map[string]any
+		}{"a chain with no " + key, missing})
+		if key == "round" {
+			emptied[key] = -1
+		} else if key == "startedAt" {
+			emptied[key] = "not a time"
+		} else {
+			emptied[key] = ""
+		}
+		if key == "goal" {
+			// A goal-free job is lawful; only its absence is not.
+			continue
+		}
+		broken = append(broken, struct {
+			name  string
+			chain map[string]any
+		}{"a chain whose " + key + " is empty", emptied})
+	}
+	for _, test := range broken {
+		if _, err := ParseRecord(body(test.chain)); err == nil ||
+			!strings.Contains(err.Error(), "SEAT_PRESENCE_MALFORMED") {
+			t.Errorf("%s parsed: %v", test.name, err)
+		}
+	}
+	// A pending-setup reservation's null startedAt is lawful, and so is an
+	// unknown key inside the chain.
+	reservation := map[string]any{}
+	for field, value := range whole {
+		reservation[field] = value
+	}
+	reservation["startedAt"] = nil
+	reservation["somethingNewer"] = 42
+	record, err := ParseRecord(body(reservation))
+	if err != nil {
+		t.Fatalf("a reservation chain was refused: %v", err)
+	}
+	if record.Chain == nil || record.Chain.StartedAt != nil {
+		t.Fatalf("reservation chain = %+v", record.Chain)
+	}
+}
+
 func TestEncodeAndParseRoundTrip(t *testing.T) {
 	t.Parallel()
 	record, _, err := Compose("m1e", fixtureRunner(), JobSet{Records: []JobRecord{

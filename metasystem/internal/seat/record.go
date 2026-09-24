@@ -173,13 +173,72 @@ func ParseRecord(data []byte) (Record, error) {
 		TickAt:         tickAt.Format(time.RFC3339),
 	}
 	if string(raw.Chain) != "null" {
-		var chain Chain
-		if err := json.Unmarshal(raw.Chain, &chain); err != nil {
-			return malformed("the presence record's chain is neither an object nor null: %v", err)
+		chain, err := parseChain(raw.Chain)
+		if err != nil {
+			return malformed("%v", err)
 		}
-		record.Chain = &chain
+		record.Chain = chain
 	}
 	return record, nil
+}
+
+// rawChain tells an absent chain field from a present empty one, exactly as
+// rawRecord does for the record: a chain of empty fields is not a chain, and
+// a reader that accepted it would report a machine as running nothing in
+// particular rather than saying the record is malformed.
+type rawChain struct {
+	Root  *string `json:"root"`
+	Job   *string `json:"job"`
+	Role  *string `json:"role"`
+	Round *int    `json:"round"`
+	Goal  *string `json:"goal"`
+	// StartedAt is read raw for the same reason the record reads its chain
+	// raw: a pointer would make a present null look like an absent key.
+	StartedAt json.RawMessage `json:"startedAt"`
+}
+
+// parseChain validates the fields this engine knows and ignores the rest.
+func parseChain(data json.RawMessage) (*Chain, error) {
+	var raw rawChain
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("the presence record's chain is neither an object nor null: %v", err)
+	}
+	named := []struct {
+		key   string
+		value *string
+	}{{"root", raw.Root}, {"job", raw.Job}, {"role", raw.Role}}
+	for _, field := range named {
+		if field.value == nil {
+			return nil, fmt.Errorf("the presence record's chain has no %s", field.key)
+		}
+		if strings.TrimSpace(*field.value) == "" {
+			return nil, fmt.Errorf("the presence record's chain has an empty %s", field.key)
+		}
+	}
+	if raw.Round == nil {
+		return nil, fmt.Errorf("the presence record's chain has no round")
+	}
+	if *raw.Round < 0 {
+		return nil, fmt.Errorf("the presence record's chain has round %d", *raw.Round)
+	}
+	if raw.Goal == nil {
+		return nil, fmt.Errorf("the presence record's chain has no goal")
+	}
+	chain := Chain{Root: *raw.Root, Job: *raw.Job, Role: *raw.Role, Round: *raw.Round, Goal: *raw.Goal}
+	if raw.StartedAt == nil {
+		return nil, fmt.Errorf("the presence record's chain has no startedAt")
+	}
+	if string(raw.StartedAt) != "null" {
+		var started string
+		if err := json.Unmarshal(raw.StartedAt, &started); err != nil {
+			return nil, fmt.Errorf("the presence record's chain has a startedAt that is neither a time nor null")
+		}
+		if _, err := parsePresenceTime(started); err != nil {
+			return nil, fmt.Errorf("the presence record's chain has startedAt %q: %v", started, err)
+		}
+		chain.StartedAt = &started
+	}
+	return &chain, nil
 }
 
 // parsePresenceTime holds tickAt to RFC 3339 UTC at second precision, so a
