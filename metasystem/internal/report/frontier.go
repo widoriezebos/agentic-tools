@@ -168,16 +168,20 @@ func frontierGit(repo string, args ...string) (string, error) {
 // FrontierRecord implements `frontier record`. Returned lines print to
 // stdout; a *FrontierError carries the exit code and stderr text.
 func FrontierRecord(opts FrontierOptions) ([]string, *FrontierError) {
+	return frontierRecordWithGit(opts, frontierGit)
+}
+
+func frontierRecordWithGit(opts FrontierOptions, gitRead func(repo string, args ...string) (string, error)) ([]string, *FrontierError) {
 	if !frontierNumericRe.MatchString(opts.Score) {
 		return nil, frontierFail(2, "record requires a numeric --score")
 	}
 	if opts.Eval == "" {
 		return nil, frontierFail(2, "record requires --eval with the evaluation command that produced the score")
 	}
-	if _, err := frontierGit(opts.Repo, "rev-parse", "--is-inside-work-tree"); err != nil {
+	if _, err := gitRead(opts.Repo, "rev-parse", "--is-inside-work-tree"); err != nil {
 		return nil, frontierFail(2, "not inside a git repository")
 	}
-	dirty, err := frontierGit(opts.Repo, "status", "--porcelain")
+	dirty, err := gitRead(opts.Repo, "status", "--porcelain")
 	if err != nil || dirty != "" {
 		return nil, frontierFail(1, "worktree is dirty; a frontier must be an exact committed state")
 	}
@@ -238,11 +242,11 @@ func FrontierRecord(opts FrontierOptions) ([]string, *FrontierError) {
 				opts.Score, old, formatFloat(minDelta), direction)
 		}
 	}
-	sha, err := frontierGit(opts.Repo, "rev-parse", "HEAD")
+	sha, err := gitRead(opts.Repo, "rev-parse", "HEAD")
 	if err != nil {
 		return nil, frontierFail(2, "not inside a git repository")
 	}
-	shortSHA, _ := frontierGit(opts.Repo, "rev-parse", "--short", "HEAD")
+	shortSHA, _ := gitRead(opts.Repo, "rev-parse", "--short", "HEAD")
 	if err := os.MkdirAll(filepath.Dir(opts.File), 0o755); err != nil {
 		return nil, frontierFail(2, "cannot create frontier directory: %v", err)
 	}

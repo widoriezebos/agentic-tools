@@ -112,6 +112,14 @@ func CheckParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReade
 	return checkParkBranch(repo, goalID, next, readRemote, defaultStatusDependencies())
 }
 
+// CheckParkBranchWithLocalTip uses the ordinary branch policy with a caller's
+// raw local-ref reader. All other status readers retain their defaults.
+func CheckParkBranchWithLocalTip(repo, goalID, next string, readRemote ParkBranchRemoteReader, localTip func(repo, ref string) (string, bool, error)) (ParkBranchState, error) {
+	deps := defaultStatusDependencies()
+	deps.localTip = localTip
+	return checkParkBranch(repo, goalID, next, readRemote, deps)
+}
+
 func checkParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReader, deps statusDependencies) (ParkBranchState, error) {
 	localTip, localPresent, err := deps.localTip(repo, goalBranchRef(goalID))
 	if err != nil {

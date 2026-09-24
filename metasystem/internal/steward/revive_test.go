@@ -62,16 +62,6 @@ func prepareRevivalHandoff(t *testing.T, nonce string) (string, Intent) {
 	return root, intent
 }
 
-// reviveRepo: a real repository with an owned goal, a working notify
-// channel, and a provably-dead worker set.
-func reviveRepo(t *testing.T) string {
-	root := gitRepoWithCurrentGoal(t)
-	if out, err := gitConfig(root, "metasystem.steward.notify-command", "true"); err != nil {
-		t.Fatalf("config: %v\n%s", err, out)
-	}
-	return root
-}
-
 func TestFailedRevivalIsTheFirstPointThatEscalates(t *testing.T) {
 	revival := newRevivalFixture(t, 1, 1)
 	root := revival.root

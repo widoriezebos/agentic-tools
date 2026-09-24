@@ -48,19 +48,33 @@ func (p goalRecoveryPolicy) ParkBranchCheck(endpoint goal.Endpoint) func(string,
 }
 
 func goalParkBranchCheck(root string, endpoint goal.Endpoint) func(string, string) (string, error) {
+	return goalParkBranchCheckWithReaders(root, endpoint, nil, goalBranchEndpointTip, goalBranchOriginTip)
+}
+
+type parkLocalTipReader func(repo, ref string) (string, bool, error)
+type parkEndpointTipReader func(root string, endpoint goal.Endpoint) (string, error)
+type parkOriginTipReader func(root string, endpoint goal.Endpoint, goalID string) (string, bool, error)
+
+func goalParkBranchCheckWithReaders(root string, endpoint goal.Endpoint, localTip parkLocalTipReader, endpointTipReader parkEndpointTipReader, originTipReader parkOriginTipReader) func(string, string) (string, error) {
 	return func(goalID, next string) (string, error) {
 		readRemote := func() (string, string, bool, error) {
 			if endpoint.Branch != "refs/heads/main" {
 				return "", "", false, fmt.Errorf("GOAL_BRANCH_ENDPOINT_UNSUPPORTED: endpoint %s is not refs/heads/main", endpoint.Branch)
 			}
-			endpointTip, err := goalBranchEndpointTip(root, endpoint)
+			endpointTip, err := endpointTipReader(root, endpoint)
 			if err != nil {
 				return "", "", false, err
 			}
-			originTip, present, err := goalBranchOriginTip(root, endpoint, goalID)
+			originTip, present, err := originTipReader(root, endpoint, goalID)
 			return endpointTip, originTip, present, err
 		}
-		state, err := goalbranch.CheckParkBranch(root, goalID, next, readRemote)
+		var state goalbranch.ParkBranchState
+		var err error
+		if localTip == nil {
+			state, err = goalbranch.CheckParkBranch(root, goalID, next, readRemote)
+		} else {
+			state, err = goalbranch.CheckParkBranchWithLocalTip(root, goalID, next, readRemote, localTip)
+		}
 		return state.Summary, err
 	}
 }
@@ -600,10 +614,6 @@ func syncReqClassified(root, by, lineageFlag string, observedProof *humanauthori
 
 func syncReqClassifiedAt(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, commandNow func(string) (time.Time, error)) (goal.VerbRequest, error) {
 	return syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag, observedProof, classification, false, commandNow)
-}
-
-func syncReqClassifiedWithTerminalGrade(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, allowTerminal bool) (goal.VerbRequest, error) {
-	return syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag, observedProof, classification, allowTerminal, goalCommandNow)
 }
 
 func syncReqClassifiedWithTerminalGradeAt(root, by, lineageFlag string, observedProof *humanauthority.Proof, classification lease.ClassifyResult, allowTerminal bool, commandNow func(string) (time.Time, error)) (goal.VerbRequest, error) {
@@ -1480,14 +1490,6 @@ func runGoalBudgetWithInputs(args []string, prove goalAuthorityProver, commandNo
 	return runGoalBudgetPreparedWithInputs(values, flags, box, prove, commandNow, dependencies, binding)
 }
 
-func runGoalBudgetPrepared(values *humanVerbValues, flags *syncFlags, boxToken string, prove goalAuthorityProver) int {
-	return runGoalBudgetPreparedAt(values, flags, boxToken, prove, goalCommandNow)
-}
-
-func runGoalBudgetPreparedAt(values *humanVerbValues, flags *syncFlags, boxToken string, prove goalAuthorityProver, commandNow func(string) (time.Time, error)) int {
-	return runGoalBudgetPreparedWithInputs(values, flags, boxToken, prove, commandNow, defaultSyncRequestDependencies(), dispatchcore.ResolveGoalBinding)
-}
-
 func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, boxToken string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
 	values.bindSyncFlags(flags)
 	values.boxTyped = boxToken
@@ -1709,6 +1711,10 @@ func budgetRemedyAfterRefusal(values *humanVerbValues, endpoint goal.Endpoint, n
 // handled=false on a legacy checkout so the caller proceeds
 // unchanged.
 func trySyncMutation(name string, args []string) (int, bool) {
+	return trySyncMutationWithDependencies(name, args, goalCommandNow, defaultSyncRequestDependencies(), goalParkBranchCheck)
+}
+
+func trySyncMutationWithDependencies(name string, args []string, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, parkBranchCheck func(string, goal.Endpoint) func(string, string) (string, error)) (int, bool) {
 	f, ok := parseSyncFlags(name, args)
 	if !ok {
 		return 2, true
@@ -1772,9 +1778,9 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			}
 			proof = &observed
 		}
-		req, err = syncStoppingReqWithProof(name, f.root, f.by, f.lineage, proof)
+		req, err = syncStoppingReqWithProofWithDependencies(name, f.root, f.by, f.lineage, proof, commandNow, dependencies)
 	} else {
-		req, err = syncReq(name, f.root, f.by, f.lineage)
+		req, err = syncReqWithProofAtWithDependencies(name, f.root, f.by, f.lineage, nil, commandNow, dependencies)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -1843,7 +1849,7 @@ func trySyncMutation(name string, args []string) (int, bool) {
 			res, err := goal.ParkArc(req, f.id, f.because)
 			return printSyncResult(res, err), true
 		}
-		req.ParkBranchCheck = goalParkBranchCheck(f.root, req.Endpoint)
+		req.ParkBranchCheck = parkBranchCheck(f.root, req.Endpoint)
 		res, err := goal.Park(req, f.id, f.because)
 		return printSyncResult(res, err), true
 	case "unpark":
@@ -2007,6 +2013,15 @@ func runSyncOnlyWithRequest(name string, run func(req goal.VerbRequest, f *syncF
 		code := printSyncResult(res, runErr)
 		return code
 	}
+}
+
+func runGoalReleaseWithRequest(args []string, requestBuilder func(string, string, string, string) (goal.VerbRequest, error)) int {
+	return runSyncOnlyWithRequest("release", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		if f.arc != "" {
+			return goal.ReleaseArc(req, f.id)
+		}
+		return goal.Release(req, f.id)
+	}, requestBuilder, "id")(args)
 }
 
 func runGoalTrunkRed(args []string) int {
@@ -2715,10 +2730,6 @@ func runGoalSetBudgetWithInputs(args []string, prove goalAuthorityProver, comman
 	return runGoalBudgetPreparedWithInputs(values, f, "", prove, commandNow, dependencies, binding)
 }
 
-func stoppedGoalForSetBudget(flags *syncFlags) bool {
-	return stoppedGoalForSetBudgetWithInputs(flags, goalCommandNow, goal.ResolveEndpoint)
-}
-
 func stoppedGoalForSetBudgetWithInputs(flags *syncFlags, commandNow func(string) (time.Time, error), resolveEndpoint func(string) (goal.Endpoint, error)) bool {
 	if !converted(flags.root) || flags.id == "" {
 		return false
@@ -2740,10 +2751,6 @@ func stoppedGoalForSetBudgetWithInputs(flags *syncFlags, commandNow func(string)
 	}
 	file := projection.Tree.Live[flags.id]
 	return file != nil && file.StopFence != nil
-}
-
-func runGoalStoppedSetBudget(values *humanVerbValues, flags *syncFlags, prove goalAuthorityProver) int {
-	return runGoalStoppedSetBudgetWithInputs(values, flags, prove, goalCommandNow, defaultSyncRequestDependencies(), dispatchcore.ResolveGoalBinding)
 }
 
 func runGoalStoppedSetBudgetWithInputs(values *humanVerbValues, flags *syncFlags, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies, binding goalBindingResolver) int {
@@ -3491,13 +3498,8 @@ var (
 	runGoalRestamp = runSyncOnly("restamp", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.Restamp(req, f.id)
 	}, "id")
-	runGoalRelease = runSyncOnly("release", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
-		if f.arc != "" {
-			return goal.ReleaseArc(req, f.id)
-		}
-		return goal.Release(req, f.id)
-	}, "id")
-	runGoalSteal = runSyncOnly("steal", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+	runGoalRelease = func(args []string) int { return runGoalReleaseWithRequest(args, nil) }
+	runGoalSteal   = runSyncOnly("steal", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
 		return goal.Steal(req, f.id)
 	}, "id")
 	runGoalLandReady = runSyncOnly("land-ready", func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {

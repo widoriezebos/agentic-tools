@@ -64,14 +64,6 @@ func handoffGoalIsStillOwnedWithReader(repoRoot, goalID string, now time.Time, r
 	return false, nil
 }
 
-// decideForHandoff admits one staged replacement. The predecessor identity
-// proves that the recorded process ended; the worker census separately proves
-// that no live or uncertain seat holder remains on the machine. Delegate jobs
-// and monitored runs remain part of the successor's work snapshot.
-func decideForHandoff(repoRoot string, cfg TickConfig, workers Workers, ev Evidence, intent Intent, others int, providerOutage bool, workReason string, now time.Time) (Decision, string, error) {
-	return decideForHandoffWithReader(repoRoot, cfg, workers, ev, intent, others, providerOutage, workReason, now, goal.ReadClaimableBudgetedWork)
-}
-
 func decideForHandoffWithReader(repoRoot string, cfg TickConfig, workers Workers, ev Evidence, intent Intent, others int, providerOutage bool, workReason string, now time.Time, reader func(string, time.Time) (goal.ClaimableBudgetedWork, error)) (Decision, string, error) {
 	targetPresent, err := handoffGoalIsStillOwnedWithReader(repoRoot, intent.Goal, now, reader)
 	if err != nil {

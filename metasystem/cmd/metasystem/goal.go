@@ -184,7 +184,13 @@ func goalCaller(root string, callerPid int64, verb string) (goal.Caller, error) 
 // mutation, and the result on stdout.
 func goalMutation(name string, args []string, extra func(*flag.FlagSet) []*string,
 	run func(*goal.Store, goal.Caller, []string) (goal.Result, error)) int {
-	if code, handled := trySyncMutation(name, args); handled {
+	return goalMutationWithSync(name, args, extra, run, trySyncMutation)
+}
+
+func goalMutationWithSync(name string, args []string, extra func(*flag.FlagSet) []*string,
+	run func(*goal.Store, goal.Caller, []string) (goal.Result, error),
+	trySync func(string, []string) (int, bool)) int {
+	if code, handled := trySync(name, args); handled {
 		return code
 	}
 	flags := flag.NewFlagSet("goal "+name, flag.ContinueOnError)
@@ -259,7 +265,11 @@ func runGoalPromote(args []string) int {
 }
 
 func runGoalPark(args []string) int {
-	return goalMutation("park", args, func(f *flag.FlagSet) []*string {
+	return runGoalParkWithSync(args, trySyncMutation)
+}
+
+func runGoalParkWithSync(args []string, trySync func(string, []string) (int, bool)) int {
+	return goalMutationWithSync("park", args, func(f *flag.FlagSet) []*string {
 		return []*string{
 			f.String("id", "", "goal id"),
 			f.String("because", "", "why it parks"),
@@ -268,15 +278,19 @@ func runGoalPark(args []string) int {
 		}
 	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
 		return s.Park(c, v[0], v[1], v[2], v[3] == "true")
-	})
+	}, trySync)
 }
 
 func runGoalUnpark(args []string) int {
-	return goalMutation("unpark", args, func(f *flag.FlagSet) []*string {
+	return runGoalUnparkWithSync(args, trySyncMutation)
+}
+
+func runGoalUnparkWithSync(args []string, trySync func(string, []string) (int, bool)) int {
+	return goalMutationWithSync("unpark", args, func(f *flag.FlagSet) []*string {
 		return []*string{f.String("id", "", "parked goal id")}
 	}, func(s *goal.Store, c goal.Caller, v []string) (goal.Result, error) {
 		return s.Unpark(c, v[0])
-	})
+	}, trySync)
 }
 
 func runGoalDone(args []string) int {

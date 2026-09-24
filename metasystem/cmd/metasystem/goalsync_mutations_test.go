@@ -91,22 +91,6 @@ func enrollGoalSyncTerminal(t *testing.T, root, terminalID string) (humanauthori
 	return enrollment, reader
 }
 
-func proveSyncReqWithReader(t *testing.T, reader goalSyncEnrollmentReader) {
-	t.Helper()
-	original := proveSyncReqHumanAuthority
-	originalTerminal := proveSyncReqTerminalAuthority
-	proveSyncReqHumanAuthority = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
-		return humanauthority.Prove(root, reader.exact.Pid, reader, now)
-	}
-	proveSyncReqTerminalAuthority = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
-		return humanauthority.ProveTerminal(root, reader.exact.Pid, reader, now)
-	}
-	t.Cleanup(func() {
-		proveSyncReqHumanAuthority = original
-		proveSyncReqTerminalAuthority = originalTerminal
-	})
-}
-
 func TestSyncReqLineage(t *testing.T) {
 	const (
 		agentRefusal        = "mutations carry their coordinator's identity: export METASYSTEM_OWNER_LINEAGE or pass --lineage"
@@ -405,10 +389,12 @@ func TestRestampVerbRefusesTheByFlag(t *testing.T) {
 }
 
 func TestParkAcceptsFixtureHumanAuthorityAtTheCommandEdge(t *testing.T) {
-	root := syncedClaimedGoalFixture(t)
-	amendSyncedGoalFixture(t, root, "human-origin park fixture", func(file *goal.GoalFile) {
+	fixture := newParkArcCommandFixture(t)
+	root := fixture.root()
+	fixture.amend(t, func(file *goal.GoalFile) {
 		file.Origin = goal.OriginHuman
 	})
+	_, before := fixture.acceptedGoal()
 	t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 	t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
 
@@ -416,7 +402,7 @@ func TestParkAcceptsFixtureHumanAuthorityAtTheCommandEdge(t *testing.T) {
 	stderr, code := captureStderr(t, func() int {
 		var innerCode int
 		stdout, innerCode = captureStdout(t, func() int {
-			return runGoalPark([]string{
+			return fixture.park([]string{
 				"--root", root, "--id", "standing-validation", "--because", "fixture human pause",
 				"--by", "Wido", "--fixture-human-authority",
 			})
@@ -425,6 +411,12 @@ func TestParkAcceptsFixtureHumanAuthorityAtTheCommandEdge(t *testing.T) {
 	})
 	if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("fixture human park did not carry its proof through the stopping command edge: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	after, rendered := fixture.acceptedGoal()
+	if string(rendered) == string(before) || after.State != goal.StateParked || after.Parked == nil ||
+		after.Parked.By != "human:Wido" || after.Parked.Because != "fixture human pause" ||
+		after.History[len(after.History)-1].Verb != "park" || fixture.localCalls != 1 || fixture.endpointCalls != 0 || fixture.originCalls != 0 {
+		t.Fatalf("fixture human park state or raw reads: state=%s park=%+v reads=%d/%d/%d", after.State, after.Parked, fixture.localCalls, fixture.endpointCalls, fixture.originCalls)
 	}
 }
 
@@ -437,19 +429,19 @@ func TestParkCommandEdgeSkipsUnreadableRemoteOnlyWithoutLocalBranch(t *testing.T
 		{name: "local branch still needs origin", localBranch: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := syncedClaimedGoalFixture(t)
-			goalSyncMutationGit(t, root, "remote", "add", "local", filepath.Join(t.TempDir(), "unreachable.git"))
-			amendSyncedGoalFixture(t, root, "human-origin park fixture", func(file *goal.GoalFile) {
+			fixture := newParkArcCommandFixture(t)
+			root := fixture.root()
+			fixture.endpointErr = fmt.Errorf("git fetch: transport unavailable")
+			fixture.amend(t, func(file *goal.GoalFile) {
 				file.Origin = goal.OriginHuman
 			})
-			if test.localBranch {
-				goalSyncMutationGit(t, root, "update-ref", "refs/heads/goal/standing-validation", "HEAD")
-			}
+			fixture.localBranch = test.localBranch
+			_, before := fixture.acceptedGoal()
 			t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
 
 			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-				return runGoalPark([]string{
+				return fixture.park([]string{
 					"--root", root, "--id", "standing-validation", "--because", "fixture human pause",
 					"--by", "Wido", "--fixture-human-authority",
 				})
@@ -458,10 +450,19 @@ func TestParkCommandEdgeSkipsUnreadableRemoteOnlyWithoutLocalBranch(t *testing.T
 				if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) || stderr != "" {
 					t.Fatalf("branchless park fetched the unreadable remote: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 				}
+				after, rendered := fixture.acceptedGoal()
+				if string(rendered) == string(before) || after.State != goal.StateParked || after.Parked == nil || after.Parked.By != "human:Wido" ||
+					fixture.localCalls != 1 || fixture.endpointCalls != 0 || fixture.originCalls != 0 {
+					t.Fatalf("branchless park state or raw reads: state=%s reads=%d/%d/%d", after.State, fixture.localCalls, fixture.endpointCalls, fixture.originCalls)
+				}
 				return
 			}
 			if code == 0 || !strings.Contains(stdout, `"outcome":"rejected"`) || !strings.Contains(stdout, "git fetch") {
 				t.Fatalf("local branch treated an unreadable remote as absent: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			_, rendered := fixture.acceptedGoal()
+			if string(rendered) != string(before) || fixture.localCalls != 1 || fixture.endpointCalls != 1 || fixture.originCalls != 0 {
+				t.Fatalf("unreadable remote changed accepted state or raw reads: %d/%d/%d", fixture.localCalls, fixture.endpointCalls, fixture.originCalls)
 			}
 		})
 	}
@@ -645,19 +646,19 @@ func TestParkCommandEdgeChecksEndpointOnlyForLocalBranch(t *testing.T) {
 		{name: "local branch", localBranch: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := syncedClaimedGoalFixture(t)
-			goalSyncMutationGit(t, root, "config", "goal.sync-branch", "refs/heads/develop")
-			amendSyncedGoalFixture(t, root, "human-origin park fixture", func(file *goal.GoalFile) {
+			fixture := newParkArcCommandFixture(t)
+			root := fixture.root()
+			fixture.branch = "refs/heads/develop"
+			fixture.amend(t, func(file *goal.GoalFile) {
 				file.Origin = goal.OriginHuman
 			})
-			if test.localBranch {
-				goalSyncMutationGit(t, root, "update-ref", "refs/heads/goal/standing-validation", "HEAD")
-			}
+			fixture.localBranch = test.localBranch
+			_, before := fixture.acceptedGoal()
 			t.Setenv("METASYSTEM_OWNER_LINEAGE", "m1")
 			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
 
 			code, stdout, stderr := captureCommandOutput(t, true, true, func() int {
-				return runGoalPark([]string{
+				return fixture.park([]string{
 					"--root", root, "--id", "standing-validation", "--because", "fixture human pause",
 					"--by", "Wido", "--fixture-human-authority",
 				})
@@ -666,11 +667,20 @@ func TestParkCommandEdgeChecksEndpointOnlyForLocalBranch(t *testing.T) {
 				if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) || stderr != "" {
 					t.Fatalf("branchless park refused the unsupported endpoint: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 				}
+				after, rendered := fixture.acceptedGoal()
+				if string(rendered) == string(before) || after.State != goal.StateParked || after.Parked == nil || after.Parked.By != "human:Wido" ||
+					fixture.localCalls != 1 || fixture.endpointCalls != 0 || fixture.originCalls != 0 {
+					t.Fatalf("branchless unsupported endpoint state or raw reads: state=%s reads=%d/%d/%d", after.State, fixture.localCalls, fixture.endpointCalls, fixture.originCalls)
+				}
 				return
 			}
 			if code == 0 || !strings.Contains(stdout, `"outcome":"rejected"`) ||
 				!strings.Contains(stdout, "GOAL_BRANCH_ENDPOINT_UNSUPPORTED") || stderr != "" {
 				t.Fatalf("local branch bypassed the unsupported endpoint refusal: code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			_, rendered := fixture.acceptedGoal()
+			if string(rendered) != string(before) || fixture.localCalls != 1 || fixture.endpointCalls != 0 || fixture.originCalls != 0 {
+				t.Fatalf("unsupported endpoint changed accepted state or raw reads: %d/%d/%d", fixture.localCalls, fixture.endpointCalls, fixture.originCalls)
 			}
 		})
 	}
@@ -679,24 +689,24 @@ func TestParkCommandEdgeChecksEndpointOnlyForLocalBranch(t *testing.T) {
 func TestArcStoppingCommandsFallBackToTerminalGrade(t *testing.T) {
 	tests := []struct {
 		name    string
-		prepare func(*testing.T, string)
-		run     func([]string) int
+		prepare func(*testing.T, *parkArcCommandFixture)
+		run     func(*parkArcCommandFixture, []string) int
 		args    []string
 	}{
 		{
 			name: "release",
-			run:  runGoalRelease,
+			run:  (*parkArcCommandFixture).release,
 			args: []string{"--id", "standing-validation", "--by", "Wido", "--arc", "fixture-arc"},
 		},
 		{
 			name: "park",
-			run:  runGoalPark,
+			run:  (*parkArcCommandFixture).park,
 			args: []string{"--id", "standing-validation", "--because", "operator pause", "--by", "Wido", "--arc", "fixture-arc"},
 		},
 		{
 			name: "unpark",
-			prepare: func(t *testing.T, root string) {
-				amendSyncedGoalFixture(t, root, "parked arc stopping fixture", func(file *goal.GoalFile) {
+			prepare: func(t *testing.T, fixture *parkArcCommandFixture) {
+				fixture.amend(t, func(file *goal.GoalFile) {
 					file.State = goal.StateParked
 					file.Revision++
 					file.Budget = nil
@@ -705,31 +715,58 @@ func TestArcStoppingCommandsFallBackToTerminalGrade(t *testing.T) {
 					file.Parked = &goal.ParkRecord{By: "human:Wido", At: "2026-09-09T09:00:00Z", Because: "operator pause"}
 				})
 			},
-			run:  runGoalUnpark,
+			run:  (*parkArcCommandFixture).unpark,
 			args: []string{"--id", "standing-validation", "--by", "Wido", "--arc", "fixture-arc"},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			root := syncedClaimedGoalFixture(t)
+			fixture := newParkArcCommandFixture(t)
+			root := fixture.root()
 			if test.prepare != nil {
-				test.prepare(t, root)
+				test.prepare(t, fixture)
 			}
+			_, before := fixture.acceptedGoal()
 			t.Setenv("METASYSTEM_OWNER_LINEAGE", "")
 			t.Setenv("METASYSTEM_GOAL_NOW", "2026-09-09T10:00:00Z")
-			reader := goalSyncTerminalReader(t, root, "ttys:fixture_arc")
-			proveSyncReqWithReader(t, reader)
+			fixture.terminal(t)
 
 			args := append([]string{"--root", root}, test.args...)
 			var stdout string
 			stderr, code := captureStderr(t, func() int {
 				var innerCode int
-				stdout, innerCode = captureStdout(t, func() int { return test.run(args) })
+				stdout, innerCode = captureStdout(t, func() int { return test.run(fixture, args) })
 				return innerCode
 			})
 			if code != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 				t.Fatalf("arc %s did not use terminal-grade authority: code=%d stdout=%q stderr=%q", test.name, code, stdout, stderr)
+			}
+			if fixture.enrolledCalls != 1 || fixture.enrolledOutcome != humanauthority.OutcomeNotEnrolled || !fixture.enrolledErr ||
+				fixture.terminalCalls != 1 || fixture.terminalOutcome != humanauthority.OutcomeProven ||
+				fixture.terminalGrade != humanauthority.GradeTerminal || !fixture.terminalValid {
+				t.Fatalf("arc %s authority path: enrolled=%d outcome=%q error=%t terminal=%d outcome=%q grade=%q valid=%t",
+					test.name, fixture.enrolledCalls, fixture.enrolledOutcome, fixture.enrolledErr,
+					fixture.terminalCalls, fixture.terminalOutcome, fixture.terminalGrade, fixture.terminalValid)
+			}
+			after, rendered := fixture.acceptedGoal()
+			if string(rendered) == string(before) || after.History[len(after.History)-1].Verb != test.name ||
+				fixture.localCalls != 0 || fixture.endpointCalls != 0 || fixture.originCalls != 0 {
+				t.Fatalf("arc %s state or raw reads: state=%s reads=%d/%d/%d", test.name, after.State, fixture.localCalls, fixture.endpointCalls, fixture.originCalls)
+			}
+			switch test.name {
+			case "park":
+				if after.State != goal.StateParked || after.Parked == nil || after.Parked.By != "human:Wido" || after.Parked.Because != "operator pause" {
+					t.Fatalf("arc park state = %+v", after)
+				}
+			case "unpark":
+				if after.State != goal.StateQueued || after.Parked != nil {
+					t.Fatalf("arc unpark state = %+v", after)
+				}
+			case "release":
+				if after.State != goal.StateApproved || after.Claimed != nil {
+					t.Fatalf("arc release state = %+v", after)
+				}
 			}
 		})
 	}
@@ -2226,17 +2263,6 @@ func captureSetObligationOutputWithAuthority(t *testing.T, args []string, prove 
 	return stdout, stderr, code
 }
 
-func captureResumeOutputWithAuthority(t *testing.T, args []string, prove goalAuthorityProver) (string, string, int) {
-	t.Helper()
-	var stdout string
-	stderr, code := captureStderr(t, func() int {
-		var innerCode int
-		stdout, innerCode = captureStdout(t, func() int { return runGoalResumeWithAuthority(args, prove) })
-		return innerCode
-	})
-	return stdout, stderr, code
-}
-
 // fixedTemporaryGoalAuthority is compiled only into this package's test
 // binary. It supplies an already-granted proof to the direct worker seam so
 // historical/transaction tests remain meaningful after R-32-m1 expires;
@@ -2267,10 +2293,6 @@ func fixedFixtureGoalAuthority(root string, _ int64, _ humanauthority.Reader, _,
 	setPrivateAuthorityTestField(value.FieldByName("observedRoot"), reflect.ValueOf(filepath.Clean(abs)))
 	setPrivateAuthorityTestField(value.FieldByName("observed"), reflect.ValueOf(true))
 	return proof, nil
-}
-
-func fixedForgivingGoalNow(string) (time.Time, error) {
-	return time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), nil
 }
 
 func setPrivateAuthorityTestField(field, value reflect.Value) {
@@ -2427,4 +2449,127 @@ func TestProofGoalResolutionStaysAmbiguousBesideALandingClaim(t *testing.T) {
 	if err == nil || got != "" || !strings.Contains(err.Error(), "ambiguous") || !strings.Contains(err.Error(), "--goal") {
 		t.Fatalf("a working claim beside a landing claim did not stay ambiguous: %q %v", got, err)
 	}
+}
+
+// The physical files establish command policy; the accepted repository owns
+// every transaction and retains immutable copies of each published tree.
+type parkArcCommandFixture struct {
+	*obligationCommandFixture
+	localBranch                            bool
+	branch                                 string
+	endpointErr                            error
+	localCalls, endpointCalls, originCalls int
+	enrolledCalls, terminalCalls           int
+	enrolledOutcome, terminalOutcome       string
+	terminalGrade                          string
+	enrolledErr, terminalValid             bool
+}
+
+func newParkArcCommandFixture(t *testing.T) *parkArcCommandFixture {
+	t.Helper()
+	return &parkArcCommandFixture{obligationCommandFixture: newObligationCommandFixture(t), branch: "refs/heads/main"}
+}
+
+func (f *parkArcCommandFixture) amend(t *testing.T, mutate func(*goal.GoalFile)) {
+	t.Helper()
+	file, _ := f.acceptedGoal()
+	mutate(file)
+	data := goal.RenderFile(file)
+	files := obligationFilesCopy(f.repo.commit(f.repo.accepted).files)
+	files["plans/goals/standing-validation.md"] = data
+	id := fmt.Sprintf("%040x", 1)
+	f.repo = &obligationRepository{t: t, commits: map[string]obligationCommit{
+		id: {files: files, at: time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)},
+	}, canonical: id, accepted: id, serial: 1}
+	if err := os.WriteFile(filepath.Join(f.root(), "plans", "goals", "standing-validation.md"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f *parkArcCommandFixture) dependencies() syncRequestDependencies {
+	deps := f.obligationCommandFixture.dependencies()
+	deps.ownerLineage = func() string { return os.Getenv("METASYSTEM_OWNER_LINEAGE") }
+	endpoint := deps.endpoint
+	deps.endpoint = func(root string) (goal.Endpoint, error) {
+		e, err := endpoint(root)
+		e.Branch = f.branch
+		return e, err
+	}
+	return deps
+}
+
+func (f *parkArcCommandFixture) parkBranchCheck(root string, endpoint goal.Endpoint) func(string, string) (string, error) {
+	return goalParkBranchCheckWithReaders(root, endpoint,
+		func(repo, ref string) (string, bool, error) {
+			f.localCalls++
+			if repo != f.root() || ref != "refs/heads/goal/standing-validation" {
+				f.t.Fatalf("local tip read: repo=%q ref=%q", repo, ref)
+			}
+			return fmt.Sprintf("%040x", 7), f.localBranch, nil
+		},
+		func(root string, endpoint goal.Endpoint) (string, error) {
+			f.endpointCalls++
+			if root != f.root() || endpoint.Branch != f.branch {
+				f.t.Fatalf("endpoint tip read: root=%q branch=%q", root, endpoint.Branch)
+			}
+			if f.endpointErr != nil {
+				return "", f.endpointErr
+			}
+			return fmt.Sprintf("%040x", 1), nil
+		},
+		func(root string, endpoint goal.Endpoint, id string) (string, bool, error) {
+			f.originCalls++
+			if root != f.root() || id != "standing-validation" {
+				f.t.Fatalf("origin tip read: root=%q id=%q", root, id)
+			}
+			return "", false, fmt.Errorf("git fetch origin goal branch: transport unavailable")
+		})
+}
+
+func (f *parkArcCommandFixture) trySync(name string, args []string) (int, bool) {
+	deps := f.dependencies()
+	if f.facts.reader != nil {
+		deps = f.terminalDependencies()
+	}
+	return trySyncMutationWithDependencies(name, args, goalCommandNow, deps, f.parkBranchCheck)
+}
+
+func (f *parkArcCommandFixture) park(args []string) int {
+	return runGoalParkWithSync(args, f.trySync)
+}
+
+func (f *parkArcCommandFixture) unpark(args []string) int {
+	return runGoalUnparkWithSync(args, f.trySync)
+}
+
+func (f *parkArcCommandFixture) release(args []string) int {
+	return runGoalReleaseWithRequest(args, func(verb, root, by, lineage string) (goal.VerbRequest, error) {
+		return syncStoppingReqWithProofWithDependencies(verb, root, by, lineage, nil, goalCommandNow, f.terminalDependencies())
+	})
+}
+
+func (f *parkArcCommandFixture) terminal(t *testing.T) {
+	t.Helper()
+	reader := goalSyncTerminalReader(t, f.root(), "ttys:fixture_arc")
+	facts := f.facts
+	facts.reader = &reader
+}
+
+func (f *parkArcCommandFixture) terminalDependencies() syncRequestDependencies {
+	deps := f.dependencies()
+	reader := *f.facts.reader
+	deps.proveHuman = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
+		f.enrolledCalls++
+		proof, err := humanauthority.Prove(root, reader.exact.Pid, reader, now)
+		f.enrolledOutcome, f.enrolledErr = proof.Outcome, err != nil
+		return proof, err
+	}
+	deps.proveTerminal = func(root string, _ int64, _ humanauthority.Reader, now time.Time) (humanauthority.Proof, error) {
+		f.terminalCalls++
+		proof, err := humanauthority.ProveTerminal(root, reader.exact.Pid, reader, now)
+		f.terminalOutcome, f.terminalGrade = proof.Outcome, proof.AuthorityGrade()
+		f.terminalValid = err == nil && proof.TerminalValidFor(root)
+		return proof, err
+	}
+	return deps
 }

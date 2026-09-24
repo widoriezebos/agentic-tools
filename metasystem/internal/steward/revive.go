@@ -253,14 +253,6 @@ func claimSeatIdleGoal(repoRoot string, intent Intent) error {
 	return nil
 }
 
-// decideForRevival is decideNow with one intent excluded from the
-// active-continuation guard — an intent must not suppress itself.
-func decideForRevival(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, intent Intent) (Decision, string, error) {
-	return decideForRevivalWithDependencies(repoRoot, cfg, census, ev, intent, openWorkDependencies{
-		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
-	})
-}
-
 func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, intent Intent, dependencies openWorkDependencies) (Decision, string, error) {
 	cfg = cfg.withDefaults()
 	work, workReason, err := readOpenWorkWithDependencies(repoRoot, dependencies)
