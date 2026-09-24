@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Changed, FreshnessState, Group, Health, Item, Page } from "./api";
+import { underGoalsLine } from "./OverviewPane";
 import {
   blockAnchor,
   blockOrder,
@@ -95,6 +96,11 @@ function page(over: Partial<Page> = {}): Page {
       decisions: { total: 0, drafts: 0 },
       designs: { total: 0, done: 0, inFlight: 0, progress: [] },
       questions: 0,
+      scoped: {
+        decisions: { own: 0, underGoals: 0 },
+        designs: { own: 0, underGoals: 0 },
+        questions: { own: 0, underGoals: 0 },
+      },
     },
     health: { ok: true, syncedAt: at(0, 14, 36), freshness: "current", problems: { count: 0, items: [] } },
     ...over,
@@ -513,5 +519,23 @@ describe("where a row opens", () => {
   it("offers nothing for a reference this build has no surface for", () => {
     expect(destinationFor({ kind: "seat", id: "m1e" })).toEqual({ kind: "none" });
     expect(destinationFor({ kind: "goal", id: "" })).toEqual({ kind: "none" });
+  });
+});
+
+
+describe("the memory tiles' second line", () => {
+  // The tile's figure is the project's own records; this says the rest is
+  // there, so a human reading twelve designs knows that forty-three more
+  // exist rather than that the project has twelve.
+  it("says how many more of this kind are under goals", () => {
+    expect(underGoalsLine(43)).toBe("+43 under goals");
+    expect(underGoalsLine(1)).toBe("+1 under goals");
+  });
+
+  // Nothing left out is said with nothing: "+0 under goals" is furniture
+  // rather than a fact, and a tile of a kind nothing is scoped by carries no
+  // second line at all.
+  it("says nothing where nothing is under a goal", () => {
+    expect(underGoalsLine(0)).toBe("");
   });
 });

@@ -406,6 +406,119 @@ func withGoal(lines []string, record resolver.Record, goal string) ([]string, er
 	return lines, nil
 }
 
+// SetGoals says what one record is about, as the whole list, and leaves every
+// other byte of the file exactly as it was.
+//
+// It is the same line AddGoal appends to and a different statement. That one
+// is the machine writing down a goal it has just minted; this is a human
+// saying what this record is for, from the record's own page, through the
+// picker that offers the goals the ledger already carries so that nobody types
+// an id. Naming none is a statement too — the record is about the project as a
+// whole — and it takes the Goals line out rather than leaving an empty one,
+// because the grammar says a record about the project carries no Goals line at
+// all.
+//
+// Every goal named has to be in the ledger, either home, live or concluded: a
+// record may be about work that has already shipped as readily as about work
+// still open, and what a Goals line may name is what the resolver accepts. An
+// intent or a doctrine chapter is refused in the resolver's own words, for the
+// reason AddGoal refuses one.
+func SetGoals(roots Roots, id string, asked []string, now time.Time) (Document, error) {
+	read, err := resolver.Read(resolver.Roots(roots))
+	if err != nil {
+		return Document{}, err
+	}
+	record := read.Record(id)
+	if record == nil {
+		return Document{}, refuse(RefusalAbsent, "no record declares the id "+id)
+	}
+	if record.Kind == resolver.KindQuestion {
+		return Document{}, refuse(RefusalBad,
+			"the id "+id+" names a row of the register, whose goals are the row's own")
+	}
+	if resolver.BookKind(record.Kind) {
+		return Document{}, refuse(RefusalBad, resolver.GoalsRefused)
+	}
+	goals, refusal := ledgerGoals(read, asked)
+	if refusal != nil {
+		return Document{}, refusal
+	}
+
+	absolute := filepath.Join(roots.Checkout, filepath.FromSlash(record.Path))
+	if err := within(roots.Checkout, absolute); err != nil {
+		return Document{}, err
+	}
+	raw, err := os.ReadFile(absolute)
+	if err != nil {
+		return Document{}, fmt.Errorf("cannot read %s: %w", record.Path, err)
+	}
+	lines, err := withGoals(strings.Split(string(raw), "\n"), *record, goals)
+	if err != nil {
+		return Document{}, err
+	}
+	text := strings.Join(lines, "\n")
+	if problems := wouldRefuse(read, record.Path, text); len(problems) > 0 {
+		return Document{}, &Refusal{
+			Kind:     RefusalBad,
+			Message:  "the record this would write is one the project refuses",
+			Problems: problems,
+		}
+	}
+	if _, err := atomicfile.WriteText(absolute, text, roots.Checkout); err != nil {
+		return Document{}, fmt.Errorf("cannot write %s: %w", record.Path, err)
+	}
+	return Read(roots, record.Path, now)
+}
+
+// withGoals is the file's lines with this record's Goals line saying exactly
+// these goals: rewritten where the head declares one, written where it does
+// not, and taken out where the list is empty.
+//
+// The line it is about to change is read again, through the head grammar, and
+// a line that is no longer the one the resolver read is a file that changed
+// underneath rather than a line to overwrite.
+func withGoals(lines []string, record resolver.Record, goals []string) ([]string, error) {
+	changed := fmt.Errorf("%s changed while it was being read", record.Path)
+	field, declared := headField(record, goalsKey)
+	if !declared {
+		if len(goals) == 0 {
+			// Nothing to say and nowhere it was said: the file already means
+			// what the caller asked for, and the write is a copy of itself.
+			return append([]string{}, lines...), nil
+		}
+		at := goalsLineAt(record)
+		if at < 1 || at > len(lines) {
+			return nil, changed
+		}
+		before, carriage := strings.CutSuffix(lines[at-1], "\r")
+		if _, _, isHead := headLine(before); !isHead {
+			return nil, changed
+		}
+		line := "- " + goalsKey + ": " + strings.Join(goals, " ")
+		if carriage {
+			line += "\r"
+		}
+		return slices.Insert(lines, at, line), nil
+	}
+	at := field.Line - 1
+	if at < 0 || at >= len(lines) {
+		return nil, changed
+	}
+	line, carriage := strings.CutSuffix(lines[at], "\r")
+	if key, _, isHead := headLine(line); !isHead || !strings.EqualFold(key, goalsKey) {
+		return nil, changed
+	}
+	lines = append([]string{}, lines...)
+	if len(goals) == 0 {
+		return slices.Delete(lines, at, at+1), nil
+	}
+	lines[at] = "- " + field.Key + ": " + strings.Join(goals, " ")
+	if carriage {
+		lines[at] += "\r"
+	}
+	return lines, nil
+}
+
 // goalsLineAt is the line a head that declares no goals gets one after: the
 // Status line, which is where the grammar writes it and where every record
 // this surface creates carries it, and the head's last line where a record

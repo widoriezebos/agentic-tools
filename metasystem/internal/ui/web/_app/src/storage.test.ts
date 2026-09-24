@@ -17,6 +17,7 @@ import {
   PARTNER_FONT_KEY,
   PARTNER_FONT_SIZE_KEY,
   PARTNER_LINE_HEIGHT_KEY,
+  PROJECT_SCOPE_KEY,
   PROJECT_TAB_KEY,
   RAIL_KEY,
   readBacklogFilters,
@@ -26,6 +27,7 @@ import {
   readDoneWindow,
   readGoalTab,
   readPartnerTypeface,
+  readProjectScope,
   readProjectTab,
   readRailExpanded,
   readTheme,
@@ -36,6 +38,7 @@ import {
   writeDoneWindow,
   writeGoalTab,
   writePartnerTypeface,
+  writeProjectScope,
   writeProjectTab,
   writeRailExpanded,
   type Store,
@@ -64,7 +67,7 @@ const throwing: Store = {
 };
 
 describe("the stored view state", () => {
-  it("reads the thirteen keys", () => {
+  it("reads the fourteen keys", () => {
     const written = store({
       [THEME_KEY]: "dark",
       [RAIL_KEY]: "collapsed",
@@ -72,6 +75,7 @@ describe("the stored view state", () => {
       [DOCK_HEIGHT_KEY]: "55.5",
       [BACKLOG_VIEW_KEY]: "list",
       [PROJECT_TAB_KEY]: "designs",
+      [PROJECT_SCOPE_KEY]: "goals",
       [GOAL_TAB_KEY]: "questions",
       [BACKLOG_TEXT_KEY]: "ledger",
       [BACKLOG_PRIORITY_KEY]: "1",
@@ -87,6 +91,7 @@ describe("the stored view state", () => {
     expect(readDockHeight(written)).toBe(55.5);
     expect(readBacklogView(written)).toBe("list");
     expect(readProjectTab(written)).toBe("designs");
+    expect(readProjectScope(written)).toBe("goals");
     expect(readGoalTab(written)).toBe("questions");
     expect(readBacklogFilters(written)).toEqual({
       text: "ledger",
@@ -110,6 +115,7 @@ describe("the stored view state", () => {
     expect(readDockHeight(empty)).toBe(DEFAULT_DOCK_HEIGHT);
     expect(readBacklogView(empty)).toBe("board");
     expect(readProjectTab(empty)).toBeNull();
+    expect(readProjectScope(empty)).toBe("project");
     expect(readGoalTab(empty)).toBeNull();
     expect(readBacklogFilters(empty)).toEqual(noFilters);
     expect(readDoneWindow(empty)).toBe(DEFAULT_WINDOW);
@@ -122,6 +128,7 @@ describe("the stored view state", () => {
       [DOCK_KEY]: "ajar",
       [DOCK_HEIGHT_KEY]: "half",
       [BACKLOG_VIEW_KEY]: "outline",
+      [PROJECT_SCOPE_KEY]: "everything",
       [BACKLOG_PRIORITY_KEY]: "4",
       [BACKLOG_TIER_KEY]: "high",
       [BACKLOG_DONE_KEY]: "yesterday",
@@ -132,9 +139,33 @@ describe("the stored view state", () => {
     expect(readDockOpen(nonsense)).toBe(false);
     expect(readDockHeight(nonsense)).toBe(DEFAULT_DOCK_HEIGHT);
     expect(readBacklogView(nonsense)).toBe("board");
+    expect(readProjectScope(nonsense)).toBe("project");
     expect(readBacklogFilters(nonsense).priority).toBe(ANY);
     expect(readBacklogFilters(nonsense).tier).toBe(ANY);
     expect(readDoneWindow(nonsense)).toBe(DEFAULT_WINDOW);
+  });
+
+  /**
+   * The scope the Project page was last left on.
+   *
+   * It is one key for the page and not one per tab: scope is what a human is
+   * doing — settling the project's own shape, or working through what a goal
+   * is about — and a human who asked for the goal-scoped designs is asking
+   * the same of the decisions beside them.
+   */
+  it("remembers which records the Project page is showing", () => {
+    const written = store({});
+
+    expect(readProjectScope(written)).toBe("project");
+
+    writeProjectScope("goals", written);
+
+    expect(written.getItem(PROJECT_SCOPE_KEY)).toBe("goals");
+    expect(readProjectScope(written)).toBe("goals");
+
+    writeProjectScope("all", written);
+
+    expect(readProjectScope(written)).toBe("all");
   });
 
   it("remembers the Backlog's view the way the shell remembers the drawer", () => {

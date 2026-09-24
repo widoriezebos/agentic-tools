@@ -693,6 +693,19 @@ span.ms-overview-row:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * The rest of this kind, under the figure: the records that are under goals,
+ * where the figure above is the project's own. It wears the accent so that
+ * the tile says at a glance that there is more behind it, and it wraps rather
+ * than clipping, because "+43 under goals" cut to "+43 under" says nothing.
+ */
+.ms-overview-memory-under {
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--ms-accent);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ------------------------------------------------------------ the widths -- */
 
 /*

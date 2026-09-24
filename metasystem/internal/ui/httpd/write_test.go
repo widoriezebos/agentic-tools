@@ -31,8 +31,21 @@ type recorder struct {
 	previews []string
 	// named is every goal a record was asked to name, as the pair the route
 	// carried: the record's id from the path, and the goal from the body.
-	named   [][2]string
+	named [][2]string
+	// scoped is every whole list a record was told it is about, as the route
+	// carried it: the record's id from the path, and the goals from the body.
+	// It is kept apart from named because the two are different statements
+	// made through the same resource, and only this layer can say which of
+	// them a body asked for.
+	scoped  []scopedTo
 	refusal error
+}
+
+// scopedTo is one statement of what a record is about, as it reached the
+// writer: which record, and the whole list it was told to say.
+type scopedTo struct {
+	id    string
+	goals []string
 }
 
 // edited is one save as it reached the writer: which document, the text, and
@@ -63,6 +76,13 @@ func (rec *recorder) writing() Info {
 				return project.Document{}, rec.refusal
 			}
 			return namedDocument(goal), nil
+		},
+		SetRecordGoals: func(id string, goals []string) (project.Document, error) {
+			rec.scoped = append(rec.scoped, scopedTo{id: id, goals: goals})
+			if rec.refusal != nil {
+				return project.Document{}, rec.refusal
+			}
+			return scopedDocument(goals), nil
 		},
 		AskQuestion: func(asked project.NewQuestion) (project.Asked, error) {
 			rec.questions = append(rec.questions, asked)
@@ -103,6 +123,14 @@ func (rec *recorder) reached() int {
 // namedDocument is what naming a goal answers with: the document as it now
 // reads from disk, which at this layer is the head carrying the goal that was
 // just written into it.
+// scopedDocument is the document the set act answers with: the read of what
+// is now on disk, which at this layer is whatever the writer was handed.
+func scopedDocument(goals []string) project.Document {
+	document := namedDocument("")
+	document.Record = &project.Head{Kind: "design", ID: "01K7", Status: "accepted", Goals: goals}
+	return document
+}
+
 func namedDocument(goal string) project.Document {
 	return project.Document{
 		Kind: "document", ID: "plans/designs/the-design.md", Title: "The design",
@@ -224,6 +252,85 @@ func TestRecordGoalsRoute(t *testing.T) {
 	testutil.Require(t, "decode", json.Unmarshal(response.Body.Bytes(), &document), nil)
 	testutil.Expect(t, "the payload", document, namedDocument("g1-s26"))
 	testutil.Expect(t, "what the writer was asked for", rec.named, [][2]string{{"01K7", "g1-s26"}})
+}
+
+// The same resource carries two different statements, and the body says which.
+//
+// A list is a human saying what this record is for, from the record's own
+// page; a single id is the machine writing down a goal it has just minted. So
+// a body with a list reaches the one writer and a body with an id reaches the
+// other, and neither route guesses.
+func TestRecordGoalsRouteSetsTheWholeList(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	served := New(rec.writing(), loopback(), testBundle())
+
+	response := post(t, served, "/api/project/records/01K7/goals", `{"set":["g1-s26","g1-s27"]}`, nil)
+
+	testutil.Require(t, "status", response.Code, http.StatusOK)
+	testutil.Expect(t, "content type", response.Header().Get("Content-Type"), "application/json")
+	var document project.Document
+	testutil.Require(t, "decode", json.Unmarshal(response.Body.Bytes(), &document), nil)
+	testutil.Expect(t, "the payload", document, scopedDocument([]string{"g1-s26", "g1-s27"}))
+	testutil.Expect(t, "what the writer was asked for", rec.scoped,
+		[]scopedTo{{id: "01K7", goals: []string{"g1-s26", "g1-s27"}}})
+	testutil.Expect(t, "and the other act was not reached", rec.named, [][2]string(nil))
+}
+
+// An empty list is a statement and a missing one is not: a record told it is
+// about nothing is a record about the project as a whole, and a body that
+// carries no list at all is asking for the other act.
+func TestRecordGoalsRouteTellsAnEmptyListFromAMissingOne(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{}
+	served := New(rec.writing(), loopback(), testBundle())
+
+	empty := post(t, served, "/api/project/records/01K7/goals", `{"set":[]}`, nil)
+
+	testutil.Require(t, "the empty list is answered", empty.Code, http.StatusOK)
+	testutil.Expect(t, "the whole list, which is none of them", rec.scoped,
+		[]scopedTo{{id: "01K7", goals: []string{}}})
+	testutil.Expect(t, "and the other act was not reached", rec.named, [][2]string(nil))
+
+	// The same record, through the same resource, asking for the other act.
+	added := post(t, served, "/api/project/records/01K7/goals", `{"add":"g1-s26"}`, nil)
+
+	testutil.Require(t, "the add is answered too", added.Code, http.StatusOK)
+	testutil.Expect(t, "the machine's own act", rec.named, [][2]string{{"01K7", "g1-s26"}})
+	testutil.Expect(t, "and no second statement of scope", len(rec.scoped), 1)
+}
+
+// A refusal of the set act is answered exactly as a refusal of the add act is:
+// the status the refusal deserves, and the writer's own sentence, because that
+// sentence is what a human acts on.
+func TestRecordGoalsRouteAnswersASetRefusal(t *testing.T) {
+	t.Parallel()
+
+	rec := &recorder{refusal: &project.Refusal{
+		Kind: project.RefusalBad, Message: `the goal "g1-s99" is not in the ledger`,
+	}}
+	served := New(rec.writing(), loopback(), testBundle())
+
+	response := post(t, served, "/api/project/records/01K7/goals", `{"set":["g1-s99"]}`, nil)
+
+	testutil.Require(t, "status", response.Code, http.StatusBadRequest)
+	testutil.Expect(t, "the writer's own words", refusalBody(t, "the refusal", response).Error,
+		`the goal "g1-s99" is not in the ledger`)
+	testutil.Expect(t, "the writer was reached", len(rec.scoped), 1)
+}
+
+// An engine built without a project writer says so rather than answering as
+// though the write had happened.
+func TestRecordGoalsRouteSaysWhenThereIsNoWriter(t *testing.T) {
+	t.Parallel()
+
+	served := New(Info{}, loopback(), testBundle())
+
+	response := post(t, served, "/api/project/records/01K7/goals", `{"set":["g1-s26"]}`, nil)
+
+	testutil.Expect(t, "status", response.Code, http.StatusInternalServerError)
 }
 
 // The goals route refuses what every other write route refuses, with the

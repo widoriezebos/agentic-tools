@@ -69,6 +69,12 @@ type Info struct {
 	// writing the association a human would otherwise type: a goal opened
 	// from a design's page is named on that design by its own id.
 	AddRecordGoal func(id, goal string) (project.Document, error)
+	// SetRecordGoals says what one record is about, as the whole list, and
+	// answers the document as it now reads from disk. It is the human's own
+	// statement rather than the machine's: made from the record's page,
+	// through the picker that offers the goals the ledger carries, and an
+	// empty list is the record saying it is about the project as a whole.
+	SetRecordGoals func(id string, goals []string) (project.Document, error)
 	// EditDocument saves one document by the id the read route serves it
 	// under, against the revision the caller was given. A
 	// project.ErrNotFound is the read route's own 404; a project.Refusal

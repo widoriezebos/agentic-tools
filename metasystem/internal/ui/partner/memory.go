@@ -24,10 +24,16 @@ import (
 // true NOW — does this exist, is it still open, is there nothing of this kind
 // — is a tool call, and the tools read the project again when they are called.
 //
+// It is ordered by scope, because scope is what the project's own shape is:
+// the records whose head names no goal come first, as the small set that
+// shapes everything, and the goal-scoped ones follow grouped under the goal
+// each one names. A Partner asked what this project has decided is asked
+// about the first group far more often than about the last.
+//
 // It is bounded twice, by lines and by characters, because summaries are prose
 // and a hundred rich ones exhaust a character bound long before a line bound.
-// What does not fit is dropped a WHOLE KIND at a time, from the end, and the
-// kinds dropped are named with their counts: a reader that knows the designs
+// What does not fit is dropped a WHOLE GROUP at a time, from the end, and the
+// groups dropped are named with their counts: a reader that knows which goals
 // were left out can ask for them, where a reader handed a list silently cut
 // after the decisions cannot tell a short project from a trimmed one.
 
@@ -81,10 +87,11 @@ func Memory(facts Facts, now time.Time) MemoryIndex {
 	kinds := []indexKind{
 		{name: "Intent, in reading order", lines: chapterLines(pane.Intent)},
 		{name: "Doctrine, in reading order", lines: chapterLines(pane.Doctrine)},
-		{name: "Decisions, newest first", lines: recordLines(pane.Records, "decision")},
-		{name: "Designs, newest first", lines: recordLines(pane.Records, "design")},
-		{name: "Open questions, newest first", lines: questionLines(pane.Questions)},
+		{name: projectWide("Decisions"), lines: recordLines(projectRecords(pane.Records), "decision")},
+		{name: projectWide("Designs"), lines: recordLines(projectRecords(pane.Records), "design")},
+		{name: projectWide("Open questions"), lines: questionLines(projectQuestions(pane.Questions))},
 	}
+	kinds = append(kinds, goalGroups(pane)...)
 	kept, dropped := fit(built.Len(), kinds)
 	for _, kind := range kept {
 		built.WriteString(kind.name + " (" + strconv.Itoa(len(kind.lines)) + "):\n")
@@ -101,16 +108,17 @@ func Memory(facts Facts, now time.Time) MemoryIndex {
 		for _, kind := range dropped {
 			left = append(left, kind.name+" ("+strconv.Itoa(len(kind.lines))+")")
 		}
-		built.WriteString("- This index reached its bound, so whole kinds were left out of it rather than cut: " +
+		built.WriteString("- This index reached its bound, so whole groups were left out of it rather than cut: " +
 			strings.Join(left, "; ") + ". The records tool lists them.\n")
 	}
 	index.Block = built.String()
 	return index
 }
 
-// fit keeps the kinds that stay inside both bounds and reports the rest. It
+// fit keeps the groups that stay inside both bounds and reports the rest. It
 // counts from the end because the order is the reading order: intent before
-// doctrine before the decisions that rest on them.
+// doctrine before the decisions that rest on them, and the project's own
+// records before the ones under one goal of it.
 func fit(already int, kinds []indexKind) (kept, dropped []indexKind) {
 	lines, characters := 0, already
 	for at, kind := range kinds {
@@ -125,6 +133,140 @@ func fit(already int, kinds []indexKind) (kept, dropped []indexKind) {
 		characters += length
 	}
 	return kinds, nil
+}
+
+/* ----------------------------------------------------- the index by scope -- */
+
+// projectWide is what one of the first three groups is called: the kind, said
+// to be about the project as a whole, newest first.
+//
+// It says "about the project as a whole" and not "ungrouped", because that is
+// what a head with no Goals line means in this grammar. A Partner told that
+// the decisions here are the project's own can answer "what has this project
+// decided" from them without reading the four hundred under goals.
+func projectWide(kind string) string {
+	return kind + " about the project as a whole, newest first"
+}
+
+// projectRecords is the records whose head names no goal.
+func projectRecords(records []project.Record) []project.Record {
+	kept := make([]project.Record, 0, len(records))
+	for _, record := range records {
+		if len(record.Goals) == 0 {
+			kept = append(kept, record)
+		}
+	}
+	return kept
+}
+
+// projectQuestions is the register's rows that name no goal.
+func projectQuestions(questions []project.Question) []project.Question {
+	kept := make([]project.Question, 0, len(questions))
+	for _, question := range questions {
+		if len(question.Goals) == 0 {
+			kept = append(kept, question)
+		}
+	}
+	return kept
+}
+
+// goalGroups is one group per goal anything is about: the decisions, the
+// designs and the open questions whose head names it, in that order, newest
+// first within each.
+//
+// The goals come in the ledger's own order, which is the order every listing
+// of goals in this interface uses, and a goal named by a record that the
+// ledger does not carry keeps its place at the end under the id it is named
+// by: dropping it would drop the records that name it, and the check verb
+// refuses those records in the same breath. A goal nothing is about has no
+// group, because an empty group here would cost a line to say nothing.
+//
+// A record naming three goals stands under each of the three. That is the
+// point of the grouping and not a duplication to be tidied away: a Partner
+// asked about one goal is asked about every record that says it is about that
+// goal, whatever else those records also say.
+func goalGroups(pane project.Pane) []indexKind {
+	order := make([]string, 0, len(pane.Goals))
+	seen := map[string]bool{}
+	titles := map[string]string{}
+	for _, goal := range pane.Goals {
+		if seen[goal.ID] {
+			continue
+		}
+		seen[goal.ID] = true
+		order = append(order, goal.ID)
+		titles[goal.ID] = strings.TrimSpace(goal.Title)
+	}
+	named := func(id string) {
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		order = append(order, id)
+	}
+	for _, record := range pane.Records {
+		for _, id := range record.Goals {
+			named(id)
+		}
+	}
+	for _, question := range pane.Questions {
+		for _, id := range question.Goals {
+			named(id)
+		}
+	}
+
+	groups := make([]indexKind, 0, len(order))
+	for _, id := range order {
+		lines := recordLines(aboutGoal(pane.Records, id), "decision")
+		lines = append(lines, recordLines(aboutGoal(pane.Records, id), "design")...)
+		lines = append(lines, questionLines(questionsAbout(pane.Questions, id))...)
+		if len(lines) == 0 {
+			continue
+		}
+		groups = append(groups, indexKind{name: goalGroupName(id, titles[id]), lines: lines})
+	}
+	return groups
+}
+
+// goalGroupName is what one goal's group is called: its ledger id, and the
+// title where the ledger carries one that says something the id does not.
+func goalGroupName(id, title string) string {
+	name := "Under the goal " + id
+	if title != "" && title != id {
+		name += " · " + title
+	}
+	return name + ", newest first"
+}
+
+// aboutGoal is the records whose head names this goal.
+func aboutGoal(records []project.Record, id string) []project.Record {
+	kept := make([]project.Record, 0, len(records))
+	for _, record := range records {
+		if includes(record.Goals, id) {
+			kept = append(kept, record)
+		}
+	}
+	return kept
+}
+
+// questionsAbout is the register's rows whose goals column names this goal.
+func questionsAbout(questions []project.Question, id string) []project.Question {
+	kept := make([]project.Question, 0, len(questions))
+	for _, question := range questions {
+		if includes(question.Goals, id) {
+			kept = append(kept, question)
+		}
+	}
+	return kept
+}
+
+func includes(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 // chapterLines is one book's reading order. A chapter is a record by its id

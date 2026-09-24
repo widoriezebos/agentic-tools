@@ -9,10 +9,11 @@ import {
   type Window,
 } from "./backlog/filters";
 import { normalizeFace, normalizeLeading, normalizeSize, type Typeface } from "./partner/typeface";
+import { scopeOf, type ScopeFilter } from "./project/pane";
 import { normalizeTheme, THEME_KEY, type ThemePreference } from "./theme";
 
 /**
- * The seventeen keys this build remembers, and nothing else.
+ * The eighteen keys this build remembers, and nothing else.
  *
  * Every access is wrapped: a browser with site data blocked throws on the very
  * first read, and view state is never worth an error a human has to read. An
@@ -61,6 +62,19 @@ export const BACKLOG_VIEW_KEY = "ms.ui.backlog.view";
  */
 export const PROJECT_TAB_KEY = "ms.ui.project.tab";
 export const GOAL_TAB_KEY = "ms.ui.goal.tab";
+
+/**
+ * Which records the Project page is showing: its own, the ones under goals,
+ * or all of them.
+ *
+ * It is one key and not one per tab. Scope is what a human is doing rather
+ * than what they are reading — settling the project's own shape, or working
+ * through what a goal is about — and a human who asked for the goal-scoped
+ * designs is asking the same of the decisions beside them. The Project page
+ * is the only page with the control, so the key names it; a goal page is one
+ * goal's records by definition and has no scope to remember.
+ */
+export const PROJECT_SCOPE_KEY = "ms.ui.project.scope";
 
 /**
  * What the board is narrowed to, one key per field rather than one key
@@ -242,6 +256,20 @@ export function readGoalTab(store: Store | null = browserStore()): string | null
 
 export function writeGoalTab(tab: string, store: Store | null = browserStore()): void {
   write(GOAL_TAB_KEY, tab, store);
+}
+
+/**
+ * The scope the Project page was last left on. A value that is not one of the
+ * three is checked here, because this build knows all three of them, and a
+ * browser holding a word from a build that offered a fourth gets the default
+ * rather than a page showing nothing.
+ */
+export function readProjectScope(store: Store | null = browserStore()): ScopeFilter {
+  return scopeOf(read(PROJECT_SCOPE_KEY, store));
+}
+
+export function writeProjectScope(scope: ScopeFilter, store: Store | null = browserStore()): void {
+  write(PROJECT_SCOPE_KEY, scope, store);
 }
 
 /**

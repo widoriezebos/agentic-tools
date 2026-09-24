@@ -25,6 +25,7 @@ export type HelpId =
   | "goal-decisions"
   | "goal-designs"
   | "goal-questions"
+  | "project-scope"
   | "overview"
   | "overview-needs-you"
   | "overview-changed"
@@ -102,6 +103,10 @@ export const HELP: Record<HelpId, Term> = {
   "goal-questions": {
     term: "Open questions for this goal",
     text: "The questions opened about this goal that nobody has answered yet.",
+  },
+  "project-scope": {
+    term: "What this page is showing",
+    text: "Scope is a filter, not two lists. Project is the records whose head names no goal, which are the small set that shapes everything and what this page opens on. Goals is the rest, grouped under the goal each one names. All is both, flat. Find searches every scope whichever one is chosen.",
   },
   overview: {
     term: "Overview",

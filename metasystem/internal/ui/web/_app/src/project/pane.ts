@@ -33,6 +33,13 @@ export type Row = {
   summary: string;
   status: string;
   /**
+   * The ledger goals this row's record names, as the head wrote them. Empty
+   * is the project as a whole, which is a scope and not a missing field: the
+   * row carries what the record says about itself, and the page decides what
+   * to draw from it.
+   */
+  goals: string[];
+  /**
    * One quiet clause beside the status, or "" where the row has none. A
    * design's is how much of the work it names has landed; nothing else has one
    * yet.
@@ -107,6 +114,22 @@ export type NeedsYou = { questions: number; designs: number };
 /** The aside's second block: the size and health of what was read. */
 export type CheckoutFacts = { records: number; homes: number; goals: number; problems: number };
 
+/**
+ * One kind of record counted by what it is about: the project's own — the
+ * ones whose head names no goal — and the ones that name at least one.
+ *
+ * A record naming three goals is one record here and not three: this counts
+ * records, and the grouping below is where one record stands under each goal
+ * it names.
+ */
+export type ScopeCount = { own: number; underGoals: number };
+
+/** The three kinds the scope control narrows, each counted both ways. */
+export type ScopeCounts = { decisions: ScopeCount; designs: ScopeCount; questions: ScopeCount };
+
+/** Every row of the three narrowed tabs, whatever the scope says: Find's reach. */
+export type Everything = { decisions: Row[]; designs: Row[]; questions: Row[] };
+
 export type Briefing = {
   /** The goal this briefing is scoped to, or null for the whole project. */
   goal: GoalBriefing | null;
@@ -119,7 +142,47 @@ export type Briefing = {
   slices: SlicePlan | null;
   needsYou: NeedsYou;
   checkout: CheckoutFacts;
+  /**
+   * What the scope control narrowed away, still here.
+   *
+   * Find crosses every scope, so the box has to be able to search rows the
+   * control is not showing; and a goal page's tail line names how many
+   * project-wide records of its kind there are, which is a fact about the
+   * project rather than about the goal. Both read from here, so neither
+   * re-derives a selection this module already made.
+   */
+  across: Everything;
+  /** The three kinds counted by scope, over the whole project either way. */
+  scopes: ScopeCounts;
 };
+
+/**
+ * Which records the Project page is showing.
+ *
+ * Scope is a filter with a sensible default and not two lists: the project's
+ * own records are the small set that shapes everything, the ones under goals
+ * are one control away, and both are always found by Find. A goal page has no
+ * scope at all — it is one goal's records by definition.
+ */
+export type ScopeFilter = "project" | "goals" | "all";
+
+/** The scope a page opens on when the browser remembers nothing. */
+export const DEFAULT_SCOPE: ScopeFilter = "project";
+
+/** The control, in the order it is offered, with the word each choice reads by. */
+export const SCOPES: readonly { id: ScopeFilter; title: string }[] = [
+  { id: "project", title: "Project" },
+  { id: "goals", title: "Goals" },
+  { id: "all", title: "All" },
+];
+
+/** What the control is called, for anyone who cannot see that it is a control. */
+export const SCOPE_LABEL = "What this page is showing";
+
+/** A remembered value that is not one of the three is no preference at all. */
+export function scopeOf(value: string | null): ScopeFilter {
+  return SCOPES.some((scope) => scope.id === value) ? (value as ScopeFilter) : DEFAULT_SCOPE;
+}
 
 /** The two books, in reading order, with the words the briefing calls them. */
 const BOOKS: readonly { id: string; kind: string; title: string; word: string }[] = [
@@ -284,6 +347,166 @@ function selected(goals: string[], id: string | null): boolean {
   return id === null || goals.includes(id);
 }
 
+/** True when this scope shows a record whose head names these goals. */
+function inScope(goals: readonly string[], scope: ScopeFilter): boolean {
+  switch (scope) {
+    case "project":
+      return goals.length === 0;
+    case "goals":
+      return goals.length > 0;
+    default:
+      return true;
+  }
+}
+
+/** The rows of one list this scope shows, keeping the list's own order. */
+export function narrowed(rows: readonly Row[], scope: ScopeFilter): Row[] {
+  return rows.filter((row) => inScope(row.goals, scope));
+}
+
+/** One list counted both ways, which is what a tab's head says. */
+export function countScope(rows: readonly Row[]): ScopeCount {
+  return {
+    own: rows.filter((row) => row.goals.length === 0).length,
+    underGoals: rows.filter((row) => row.goals.length > 0).length,
+  };
+}
+
+/**
+ * What one tab's head says beside its count: the part of this kind the open
+ * scope is not showing, so a human reading twelve designs knows that
+ * forty-three more exist rather than that the project has twelve.
+ *
+ * All says nothing, because All leaves nothing out. Neither does a scope whose
+ * other side is empty: "0 under goals" is furniture, not a fact worth a line.
+ */
+export function scopeNote(scope: ScopeFilter, counted: ScopeCount): string {
+  if (scope === "project") {
+    return counted.underGoals === 0 ? "" : `${String(counted.underGoals)} under goals`;
+  }
+  if (scope === "goals") {
+    return counted.own === 0 ? "" : `${String(counted.own)} project-wide`;
+  }
+  return "";
+}
+
+/**
+ * The quiet figure beside a tab's name: how many this scope shows, and then
+ * what it is leaving out. It is one string and not two elements, because the
+ * two halves are one statement — twelve of these, and forty-three more — and
+ * a gap between two spans does not say "and".
+ */
+export function countText(shown: number, note: string): string {
+  return note === "" ? String(shown) : `${String(shown)} · ${note}`;
+}
+
+/**
+ * A tab's head as one line, which is what it reads as on the screen: the
+ * kind, how many this scope shows, and what it is leaving out —
+ * "Designs 12 · 43 under goals".
+ */
+export function countLine(title: string, shown: number, note: string): string {
+  return `${title} ${countText(shown, note)}`;
+}
+
+/** What the head says instead of a scope note while Find is narrowing. */
+export const FOUND_NOTE = "found in every scope";
+
+/** What a search that found nothing says, in the words that were typed. */
+export function noMatchLine(typed: string): string {
+  return `Nothing on this tab matches “${typed.trim()}”, in any scope.`;
+}
+
+/** One goal's group in the Goals scope: what to call it, and what is under it. */
+export type GoalGroup = { id: string; title: string; to: string; rows: Row[] };
+
+/**
+ * The goal-scoped rows, grouped under the goals they name.
+ *
+ * A record that names three goals stands under each of the three, because it
+ * is about each of them: a grouping that filed it under the first would hide
+ * it from the other two, which is the thing a human on a goal's group came
+ * here to find. The order is the ledger's own, which every other listing of
+ * goals in this interface uses; a goal the ledger does not carry keeps its
+ * place at the end under the id it is named by, rather than being dropped
+ * along with the records that name it.
+ */
+export function goalGroups(pane: Pane, rows: readonly Row[]): GoalGroup[] {
+  const groups: GoalGroup[] = [];
+  const byID = new Map<string, GoalGroup>();
+  const place = (id: string) => {
+    let group = byID.get(id);
+    if (group === undefined) {
+      const goal = goalWithID(pane, id);
+      group = { id, title: goal === null ? id : nameOf(goal), to: goalPath(id), rows: [] };
+      byID.set(id, group);
+      groups.push(group);
+    }
+    return group;
+  };
+  for (const goal of pane.goals) {
+    place(goal.id);
+  }
+  for (const row of rows) {
+    for (const id of row.goals) {
+      place(id).rows.push(row);
+    }
+  }
+  return groups.filter((group) => group.rows.length > 0);
+}
+
+/**
+ * The rows a typed line finds.
+ *
+ * Every word typed has to be somewhere in what the row shows — its title, its
+ * own first words, the goals it names, or its path — in any order and in any
+ * of them, because a human searching a listing remembers a word of what a
+ * record is about at least as often as they remember its title. Case is
+ * nothing. A line of only spaces is not a search, and answers with the rows it
+ * was given.
+ */
+export function found(rows: readonly Row[], typed: string): Row[] {
+  const words = typed
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word !== "");
+  if (words.length === 0) {
+    return [...rows];
+  }
+  return rows.filter((row) => {
+    const searched = `${row.title} ${row.summary} ${row.status} ${row.path} ${row.goals.join(" ")}`.toLowerCase();
+    return words.every((word) => searched.includes(word));
+  });
+}
+
+/** What the box that crosses every scope is called, and what it offers. */
+export const FIND_LABEL = "Find";
+export const FIND_PLACEHOLDER = "title or goal";
+
+/** What one kind is called in the line a goal page ends its tab with. */
+const PROJECT_WIDE: Readonly<Record<string, { one: string; many: string }>> = {
+  decisions: { one: "project-wide decision", many: "project-wide decisions" },
+  designs: { one: "project-wide design", many: "project-wide designs" },
+  [QUESTIONS_TAB]: { one: "project-wide open question", many: "project-wide open questions" },
+};
+
+/**
+ * The one muted line a goal page's tab ends with: how many records of this
+ * kind are about the project as a whole rather than about any goal.
+ *
+ * A goal page shows its own records only, which is right and is also a way to
+ * forget that the decisions everything rests on are one page away. The line
+ * says how many there are and leads to them. Nothing to say is said with
+ * nothing: a tab whose kind has no project-wide records carries no line.
+ */
+export function projectWideLine(tab: string, count: number): string {
+  const words = PROJECT_WIDE[tab];
+  if (words === undefined || count <= 0) {
+    return "";
+  }
+  return `${String(count)} ${count === 1 ? words.one : words.many} →`;
+}
+
 /** What a goal reads by: its own title where the ledger has one, else its id. */
 export function nameOf(goal: Goal): string {
   return goal.title === "" ? goal.id : goal.title;
@@ -302,11 +525,22 @@ export function goalWithID(pane: Pane, id: string): Goal | null {
  * the project's, and repeating them under every goal would say nothing. What a
  * goal page carries is its own intent, from the ledger, and then the decisions,
  * designs and open questions whose Goals name it.
+ *
+ * The scope narrows the project's own page and nothing else. A goal page is
+ * already one goal's records, and asking it for "the project's own" would ask
+ * for the records that name no goal among the records that name this one,
+ * which is nothing at all. The rows the scope leaves out are still carried,
+ * under `across`, because Find crosses every scope and because a goal page's
+ * tail line counts what is project-wide.
  */
-export function briefingFor(pane: Pane, id: string | null): Briefing {
-  const decisions = recordRows(pane, "decision", id);
-  const designs = designRuns(pane, id);
-  const questions = questionRows(pane, id);
+export function briefingFor(pane: Pane, id: string | null, scope: ScopeFilter = "all"): Briefing {
+  const narrow = (rows: Row[]) => (id === null ? narrowed(rows, scope) : rows);
+  const everyDecision = recordRows(pane, "decision", id);
+  const everyDesign = recordRows(pane, "design", id);
+  const everyQuestion = questionRows(pane, id);
+  const decisions = narrow(everyDecision);
+  const designs = designRuns(narrow(everyDesign));
+  const questions = narrow(everyQuestion);
   return {
     goal: id === null ? null : goalBriefing(pane, id),
     books: id === null ? BOOKS.map((book) => bookBriefing(pane, book.id, book.kind, book.title)) : [],
@@ -314,11 +548,23 @@ export function briefingFor(pane: Pane, id: string | null): Briefing {
     designs,
     questions,
     slices: id === null ? null : slicePlan(pane, id),
+    across: { decisions: everyDecision, designs: everyDesign, questions: everyQuestion },
+    // The counts are the project's, on either page: a goal page's tail line
+    // asks how many records are about the project as a whole, which is not a
+    // question about this goal.
+    scopes: {
+      decisions: countScope(recordRows(pane, "decision", null)),
+      designs: countScope(recordRows(pane, "design", null)),
+      questions: countScope(questionRows(pane, null)),
+    },
+    // What is waiting is what is waiting in this scope of the project, and
+    // narrowing the view does not answer a question. So it is counted over
+    // everything this page is about, whatever the control is showing.
     needsYou: {
-      questions: questions.filter((row) => row.status === "open").length,
+      questions: everyQuestion.filter((row) => row.status === "open").length,
       // An accepted design is one whose work has not shipped: shipping it is
       // what makes it done.
-      designs: designs.open.filter((row) => row.status === "accepted").length,
+      designs: everyDesign.filter((row) => !FINISHED.includes(row.status) && row.status === "accepted").length,
     },
     checkout: {
       records: pane.records.length,
@@ -581,8 +827,7 @@ function tocEntry(pane: Pane, chapter: Chapter, position: number): TocEntry {
  * governs stays open; what shipped and what was replaced go into one collapsed
  * run each, so a briefing is what is live rather than what has accumulated.
  */
-function designRuns(pane: Pane, goal: string | null): DesignRuns {
-  const designs = recordRows(pane, "design", goal);
+function designRuns(designs: Row[]): DesignRuns {
   return {
     open: designs.filter((row) => !FINISHED.includes(row.status)),
     runs: FINISHED.map((status) => ({ status, rows: designs.filter((row) => row.status === status) })).filter(
@@ -605,6 +850,7 @@ function rowOf(pane: Pane, record: ProjectRecord, key: string): Row {
     to: documentPath(record.path),
     summary: record.summary,
     status: record.status,
+    goals: record.goals,
     note: designNote(pane, record),
     path: record.path,
   };
@@ -620,6 +866,7 @@ function questionRows(pane: Pane, goal: string | null): Row[] {
       to: null,
       summary: "",
       status: question.status,
+      goals: question.goals,
       note: "",
       path: "",
     }));
@@ -674,6 +921,45 @@ export function aboutOf(pane: Pane | null, goals: string[]): About[] {
     const goal = pane === null ? null : goalWithID(pane, id);
     return { id, name: goal === null ? id : nameOf(goal), to: goalPath(id), known: goal !== null };
   });
+}
+
+/* ----------------------------------------------- a record's own scope, here -- */
+
+/** What the facts row calls the scope, what it says when there is none, and the act. */
+export const ABOUT_LABEL = "About";
+export const ABOUT_PROJECT = "this project";
+export const ABOUT_EDIT = "Edit";
+export const ABOUT_SAVE = "Save";
+export const ABOUT_CANCEL = "Cancel";
+
+/** The kinds that are about the project as a whole by definition. */
+const BOOK_KINDS = ["intent", "doctrine"];
+
+/**
+ * True when this record's scope can be changed from its own page.
+ *
+ * Intent and doctrine show no such act: a chapter of either is about the
+ * project as a whole by definition, the grammar refuses a Goals line on one,
+ * and an Edit that could only ever be refused is a control that lies.
+ */
+export function scopeEditable(kind: string): boolean {
+  return kind !== "" && !BOOK_KINDS.includes(kind);
+}
+
+/**
+ * What the About row says: the project as a whole, one goal by its id and its
+ * title, or several goals by their ids alone.
+ *
+ * One goal gets its title because there is room for it and because an id
+ * alone does not say what the record is about. Several do not: three ids and
+ * three titles is a paragraph in a facts row, and each id still opens the
+ * goal's own page where the title is the heading.
+ */
+export type AboutRow = { project: boolean; goals: About[]; named: boolean };
+
+export function aboutRow(pane: Pane | null, goals: string[]): AboutRow {
+  const about = aboutOf(pane, goals);
+  return { project: about.length === 0, goals: about, named: about.length === 1 };
 }
 
 /** The book whose reading order names this document, or null. */

@@ -11,6 +11,7 @@ import {
   loadPane,
   previewDocument,
   ResourceError,
+  setRecordGoals,
   setRecordStatus,
   type DocumentPayload,
   type Link as RecordLink,
@@ -30,7 +31,12 @@ import { Editor } from "./Editor";
 import { Markdown } from "./Markdown";
 import { outlineOf, useReadingRow, type OutlineRow } from "./outline";
 import {
-  aboutOf,
+  ABOUT_CANCEL,
+  ABOUT_EDIT,
+  ABOUT_LABEL,
+  ABOUT_PROJECT,
+  ABOUT_SAVE,
+  aboutRow,
   crumbsFor,
   designWork,
   DESIGN_DONE,
@@ -38,10 +44,11 @@ import {
   MARK_DONE,
   marksDone,
   railFor,
+  scopeEditable,
   shortID,
   WORK_LANDED,
   WORK_TITLE,
-  type About,
+  type AboutRow as AboutFacts,
   type DesignWork,
   type SiblingRail,
   REFRESH,
@@ -59,6 +66,7 @@ import { ASK_REVISION, ASK_SOURCE, ASK_SURFACE } from "../partner/AskSelection";
 import { usePartner } from "../partner/store";
 import { aboutLine, useAbout } from "../shell/about";
 import { Button, Chip, IconButton, Skeleton } from "../shell/controls";
+import { GoalPicker, type PickableGoal } from "../shell/GoalPicker";
 import { useWorkspaceState, type WorkspaceState } from "../shell/identity";
 import { titleFor, type Identity } from "../title";
 
@@ -105,6 +113,31 @@ type WorkActions = {
   refusal: string;
   onMarkDone: () => void;
   onNewGoal: () => void;
+};
+
+/**
+ * What the About row offers: which goals this record is about, and the act
+ * that says so differently.
+ *
+ * Scope is a fact a human can change, and this is where they change it: the
+ * row that states it. The picker is the board's own, so nobody types an id;
+ * it excludes nothing, because a record may be about a goal that has already
+ * been done as easily as one still open, and what the resolver accepts is the
+ * whole ledger. A kind that is about the project by definition carries none
+ * of this and is given null.
+ */
+type Scoping = {
+  /** The goals being chosen, while the picker is open; null while it is not. */
+  chosen: string[] | null;
+  busy: boolean;
+  /** What the route refused the last write with, in its own words, or "". */
+  refusal: string;
+  /** Every goal the ledger carries, as the picker offers them. */
+  goals: PickableGoal[];
+  onOpen: () => void;
+  onChoose: (chosen: string[]) => void;
+  onSave: () => void;
+  onCancel: () => void;
 };
 
 export function DocumentPane() {
@@ -301,6 +334,11 @@ function Read({
   const [goalSheet, setGoalSheet] = useState<Backlog | null>(null);
   const [busy, setBusy] = useState("");
   const [refusal, setRefusal] = useState("");
+  // What this record is about, while a human is changing it: the goals chosen
+  // so far, null while the picker is closed, and what the route refused.
+  const [scopeChosen, setScopeChosen] = useState<string[] | null>(null);
+  const [scopeBusy, setScopeBusy] = useState(false);
+  const [scopeRefusal, setScopeRefusal] = useState("");
 
   // What the drawer says this page is about: the record, and the section of it
   // being read, from the outline the reader already follows. The first heading
@@ -469,6 +507,65 @@ function Read({
       ? null
       : { work, busy, refusal, onMarkDone: markDone, onNewGoal: askForAGoal };
 
+  /**
+   * Saying what this record is about, as the whole list.
+   *
+   * It goes through the route that already names goals on a record, with the
+   * list rather than one id, and the page re-renders from the file the server
+   * read back. The project is read again beside it, because what changed is
+   * which listing this record appears under and the rails beside the reading
+   * are built from that read.
+   */
+  const saveScope = () => {
+    if (head === null || scopeChosen === null || scopeBusy) {
+      return;
+    }
+    setScopeBusy(true);
+    setScopeRefusal("");
+    setRecordGoals(head.id, scopeChosen)
+      .then((payload) => {
+        setScopeBusy(false);
+        setScopeChosen(null);
+        onSaved(payload);
+        onReread();
+      })
+      .catch((error: unknown) => {
+        setScopeBusy(false);
+        setScopeRefusal(failureMessage(error));
+      });
+  };
+
+  // The picker offers every goal the project payload carries, live and
+  // concluded alike, and refuses none of them: a record may be about a goal
+  // that has already shipped as easily as one still open, and what a Goals
+  // line may name is what the resolver accepts rather than what is in flight.
+  const pickable: PickableGoal[] = (pane?.goals ?? []).map((one) => ({
+    id: one.id,
+    intent: one.intent,
+    lane: one.state,
+    concluded: "",
+  }));
+
+  const scoping: Scoping | null =
+    head === null || !scopeEditable(head.kind)
+      ? null
+      : {
+          chosen: scopeChosen,
+          busy: scopeBusy,
+          refusal: scopeRefusal,
+          goals: pickable,
+          onOpen: () => {
+            setScopeChosen([...head.goals]);
+            setScopeRefusal("");
+          },
+          onChoose: setScopeChosen,
+          onSave: saveScope,
+          onCancel: () => {
+            setScopeChosen(null);
+            setScopeRefusal("");
+          },
+        };
+
   const done = (result: Done) => {
     setSheet(null);
     if (result.mode === "status") {
@@ -514,6 +611,7 @@ function Read({
                   lead={lead}
                   saved={saved}
                   working={working}
+                  scoping={scoping}
                   onReload={onReload}
                   onEdit={editable(document) ? open : null}
                   onStatusChange={(status) => {
@@ -745,6 +843,7 @@ function RecordFacts({
   lead,
   saved,
   working,
+  scoping,
   onReload,
   onEdit,
   onStatusChange,
@@ -755,6 +854,8 @@ function RecordFacts({
   saved: string;
   /** What this design says about its own work, or null for any other kind. */
   working: WorkActions | null;
+  /** What this record says it is about, and the act that changes it. */
+  scoping: Scoping | null;
   onReload: () => void;
   onEdit: (() => void) | null;
   onStatusChange: (status: string) => void;
@@ -802,7 +903,7 @@ function RecordFacts({
           {working.refusal}
         </p>
       )}
-      <Relationships document={document} pane={pane} />
+      <Relationships document={document} pane={pane} scoping={scoping} />
     </header>
   );
 }
@@ -1000,14 +1101,24 @@ function FileActions({
  * is a link, and so is a goal: the About line leads to the goal's own page,
  * where the designs, decisions and questions about it are gathered.
  */
-function Relationships({ document, pane }: { document: DocumentPayload; pane: PanePayload | null }) {
+function Relationships({
+  document,
+  pane,
+  scoping,
+}: {
+  document: DocumentPayload;
+  pane: PanePayload | null;
+  scoping: Scoping | null;
+}) {
   const head = document.record;
   if (head === null) {
     return null;
   }
-  // A design lists the goals it names under Work, with their states; the
-  // About row would be the same ids again without them.
-  const about = head.kind === "design" ? [] : aboutOf(pane, head.goals);
+  // Every record says what it is about, including one that names no goal:
+  // "about the project as a whole" is a scope and not a missing field, and a
+  // row that appeared only for the records that named something taught that
+  // the others had not been scoped yet.
+  const about = aboutRow(pane, head.goals);
   const lists: { label: string; links: RecordLink[] }[] = [
     { label: "Rests on", links: byID(pane, head.cites) },
     { label: "Affects", links: byID(pane, head.affects) },
@@ -1015,12 +1126,9 @@ function Relationships({ document, pane }: { document: DocumentPayload; pane: Pa
     { label: "Superseded by", links: document.supersededBy },
     { label: "Referenced by", links: document.referencedBy },
   ].filter((list) => list.links.length > 0);
-  if (lists.length === 0 && about.length === 0) {
-    return null;
-  }
   return (
     <div className="ms-facts-links">
-      {about.length > 0 && <AboutRow about={about} />}
+      <AboutRow about={about} pane={pane} scoping={scoping} />
       {lists.map((list) => (
         <p key={list.label} className="ms-facts-link-row">
           <span className="ms-facts-link-label">{list.label}</span>
@@ -1041,17 +1149,91 @@ function Relationships({ document, pane }: { document: DocumentPayload; pane: Pa
   );
 }
 
-/** The goals a record is about, each a link to its own page. */
-function AboutRow({ about }: { about: About[] }) {
+/**
+ * What this record is about, and the one act that changes it.
+ *
+ * Scope is the most consequential fact in a record's head and the only one a
+ * human could not reach from the page that states it: it decides which
+ * listings the record appears under, and until now it could be changed only
+ * by editing the Goals line by hand. So the row states it in words — the
+ * project as a whole, or the goals it names — and offers the picker beside
+ * it, which is the same field the board names goals with, so that nobody
+ * types an id.
+ *
+ * A refusal is shown here, where the act was made. The route re-reads the
+ * record through the resolver before it answers, so what comes back is what
+ * the file now says and what it refused is what a human has to act on.
+ */
+function AboutRow({
+  about,
+  pane,
+  scoping,
+}: {
+  about: AboutFacts;
+  pane: PanePayload | null;
+  scoping: Scoping | null;
+}) {
+  const chosen = scoping?.chosen ?? null;
   return (
-    <p className="ms-facts-link-row">
-      <span className="ms-facts-link-label">About</span>
-      {about.map((goal) => (
-        <NavLink key={goal.id} className="ms-mono" to={goal.to}>
-          {goal.name}
-        </NavLink>
-      ))}
-    </p>
+    <>
+      <p className="ms-facts-link-row">
+        <span className="ms-facts-link-label">{ABOUT_LABEL}</span>
+        {about.project ? (
+          <span className="ms-facts-about-project">{ABOUT_PROJECT}</span>
+        ) : (
+          about.goals.map((goal) => (
+            <span key={goal.id} className="ms-facts-about-goal">
+              <NavLink className="ms-mono" to={goal.to}>
+                {goal.id}
+              </NavLink>
+              {/* One goal gets its own words beside its id, where the ledger
+                  has a title that says something the id does not. */}
+              {about.named && goal.name !== goal.id && (
+                <span className="ms-facts-about-title"> · {goal.name}</span>
+              )}
+            </span>
+          ))
+        )}
+        {scoping !== null && chosen === null && (
+          <button type="button" className="ms-project-act" onClick={scoping.onOpen}>
+            {ABOUT_EDIT}
+          </button>
+        )}
+      </p>
+      {scoping !== null && chosen !== null && (
+        <div className="ms-facts-about-edit">
+          <GoalPicker
+            id="ms-facts-about"
+            goals={scoping.goals}
+            chosen={chosen}
+            placeholder="e.g. g1-s23"
+            onChoose={(picked) => {
+              scoping.onChoose(picked);
+            }}
+          />
+          <Button primary disabled={scoping.busy} onClick={scoping.onSave}>
+            {ABOUT_SAVE}
+          </Button>
+          <button type="button" className="ms-act-link" disabled={scoping.busy} onClick={scoping.onCancel}>
+            {ABOUT_CANCEL}
+          </button>
+        </div>
+      )}
+      {scoping !== null && chosen !== null && chosen.length === 0 && (
+        <p className="ms-project-note">Naming no goal says this record is about the project as a whole.</p>
+      )}
+      {scoping !== null && scoping.refusal !== "" && (
+        <p className="ms-project-reason" role="alert">
+          {scoping.refusal}
+        </p>
+      )}
+      {/* The picker is about the ledger the project payload carries; a page
+          that has not read it yet offers nothing to choose from, and says so
+          rather than opening an empty list. */}
+      {scoping !== null && chosen !== null && pane === null && (
+        <p className="ms-project-note">The project could not be read, so there are no goals to choose from.</p>
+      )}
+    </>
   );
 }
 

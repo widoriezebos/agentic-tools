@@ -160,11 +160,18 @@ type statusBody struct {
 	Status string `json:"status"`
 }
 
-// recordGoalsBody names one ledger goal to add to the record the path names.
-// It is one goal rather than a list because it is one act: a goal was just
-// opened, and this is where it is written down.
+// recordGoalsBody says what a record is about, in one of the two ways this
+// surface says it.
+//
+// Add names one more goal, which is the machine writing down a goal it has
+// just minted. Set names the whole list, which is a human saying what this
+// record is for from the record's own page. Set is a pointer because its
+// absence and its emptiness are two different statements: a body that carries
+// no list is asking for the other act, and a body carrying an empty one is
+// saying the record is about the project as a whole.
 type recordGoalsBody struct {
-	Add string `json:"add"`
+	Add string    `json:"add"`
+	Set *[]string `json:"set"`
 }
 
 type questionBody struct {
@@ -254,17 +261,35 @@ func (h *handler) recordStatus(w http.ResponseWriter, r *http.Request, id string
 	answer(w, func() (any, error) { return h.info.SetStatus(id, body.Status) })
 }
 
-// recordGoals names one more ledger goal on a record, and answers the document
-// as it now reads from disk, so the page re-renders from the file rather than
-// from the request. The id in the path is a record's, never a file's: what is
-// rewritten is the head of the record that declares it.
+// recordGoals says what a record is about, and answers the document as it now
+// reads from disk, so the page re-renders from the file rather than from the
+// request. The id in the path is a record's, never a file's: what is rewritten
+// is the head of the record that declares it.
+//
+// The body says which of the two acts it is. A list is the whole answer, so it
+// wins over a single id where a body somehow carries both, and a body carrying
+// neither is the add of an empty goal, which the writer refuses in its own
+// words rather than this route guessing at what was meant.
 func (h *handler) recordGoals(w http.ResponseWriter, r *http.Request, id string) {
-	if h.info.AddRecordGoal == nil {
+	if h.info.AddRecordGoal == nil && h.info.SetRecordGoals == nil {
 		writeFailure(w, "this engine was built without a project writer")
 		return
 	}
 	var body recordGoalsBody
 	if !decode(w, r, &body) {
+		return
+	}
+	if body.Set != nil {
+		if h.info.SetRecordGoals == nil {
+			writeFailure(w, "this engine was built without a project writer")
+			return
+		}
+		goals := *body.Set
+		answer(w, func() (any, error) { return h.info.SetRecordGoals(id, goals) })
+		return
+	}
+	if h.info.AddRecordGoal == nil {
+		writeFailure(w, "this engine was built without a project writer")
 		return
 	}
 	answer(w, func() (any, error) { return h.info.AddRecordGoal(id, body.Add) })
