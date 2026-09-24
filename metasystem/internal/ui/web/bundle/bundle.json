@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "sourceDigest": "sha256:5c6d1e8391108ace257a70a4a49c2b2a2232f667f92d95b039722917f0fa4d0f",
+  "sourceDigest": "sha256:2ef155b4808d18b9a1101c3e9eb5633a17c46664738618e149d897eb71f6749e",
   "source": [
     {
       "path": ".npmrc",
@@ -140,7 +140,7 @@
     },
     {
       "path": "src/backlog/backlog.css",
-      "sha256": "836b3ac10d515a7f51d929ce32d312baa7c6ad33b9eb1681ae067bd8680354d3"
+      "sha256": "99a351c047b37acb7829e693aee284b108eb730200f53c57232a384960a98393"
     },
     {
       "path": "src/backlog/columns.ts",
@@ -694,7 +694,7 @@
     },
     {
       "path": "assets/index.css",
-      "sha256": "4ea7c7ba3a98e36d5b75b809933617f47ca50b60a99f7ebd9cc9db3d63185cfe"
+      "sha256": "99113ff166e018bd29d0d61edf0fefcf2c4c3a428d94760a6d3c4d53f5ee2223"
     },
     {
       "path": "assets/index.js",

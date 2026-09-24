@@ -397,6 +397,18 @@
   color: var(--ms-text);
 }
 
+/* The name stays on one line: a head that wraps pushes every card down and
+   makes the lanes' heads uneven, so a long name is cut with an ellipsis and
+   the whole of it is the tooltip (Wido, 2026-09-24: "have the title not
+   wrap"). */
+.ms-column-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ms-column-count {
   margin-left: auto;
   font-size: 12px;
