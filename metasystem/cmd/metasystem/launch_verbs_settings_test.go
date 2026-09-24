@@ -36,7 +36,7 @@ func TestLaunchSettingsPrintsEachValueAndSource(t *testing.T) {
 		t.Fatalf("code=%d stderr=%q", code, stderr)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if len(lines) != 18 || lines[0] != "launch.seat.window.tokens=0 source=conf" || lines[15] != "launch.seat.window.shipped=0 source=absent" || lines[16] != "context.ceiling.tokens=250000 source=conf" || lines[17] != "context.handoff.margin.tokens=145000 source=conf" {
+	if len(lines) != 23 || lines[0] != "launch.seat.window.tokens=0 source=conf" || lines[20] != "launch.seat.window.shipped=0 source=absent" || lines[21] != "context.ceiling.tokens=250000 source=conf" || lines[22] != "context.handoff.margin.tokens=145000 source=conf" {
 		t.Fatalf("lines=%q", lines)
 	}
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.window.tokens=210000\n"), 0o600); err != nil {
@@ -55,7 +55,7 @@ func TestLaunchSettingsPrintsEachValueAndSource(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &values); err != nil {
 		t.Fatal(err)
 	}
-	shipped := values[15]
+	shipped := values[20]
 	if shipped.Key != launch.ShippedSeatWindowKey || shipped.Value != "200000" || shipped.Source != launch.ShippedClaudeSettingsSource || shipped.ShippedDiffersFromConf == nil || !*shipped.ShippedDiffersFromConf {
 		t.Fatalf("shipped setting=%+v", shipped)
 	}
